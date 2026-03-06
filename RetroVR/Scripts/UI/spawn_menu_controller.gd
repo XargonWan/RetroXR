@@ -110,6 +110,8 @@ func _connect_menu_signals() -> void:
 		menu.spawn_requested.connect(_on_spawn_requested)
 	if menu.has_signal("close_requested"):
 		menu.close_requested.connect(_hide_menu)
+	if menu.has_signal("spawn_cartridge_requested"):
+		menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
 	_menu_connected = true
 
 
@@ -261,3 +263,19 @@ func _on_spawn_requested(type: String) -> void:
 
 	obj.global_position = global_position + fwd * 0.5
 	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
+
+
+func _on_spawn_cartridge_requested(rom_path: String, game_label: String) -> void:
+	var obj := CART_SCENE.instantiate() as Node3D
+	obj.set("rom_path", rom_path)
+	obj.set("game_label", game_label)
+	get_tree().current_scene.add_child(obj)
+
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.001:
+		fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+
+	obj.global_position = global_position + fwd * 0.5
+	obj.global_position.y = SPAWN_Y.get("cartridge", 0.76)

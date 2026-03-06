@@ -9,6 +9,8 @@ signal spawn_requested(type: String)
 signal close_requested
 ## Emitted when the user changes a default core in the Manager tab.
 signal default_core_changed(systemid: String, core_name: String)
+## Emitted when the user clicks a ROM in the Cartridges tab.
+signal spawn_cartridge_requested(rom_path: String, game_label: String)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -45,6 +47,8 @@ var _manager_empty_label: Label         = null
 
 # Spawn > Systems tab — rebuilt whenever defaults change
 var _systems_vbox: VBoxContainer = null
+# Spawn > Cartridges tab — rebuilt whenever defaults change or tab opened
+var _cartridges_vbox: VBoxContainer = null
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -64,6 +68,12 @@ func _ready() -> void:
 	_init_core_db()
 	_init_core_defaults()
 	_init_download_manager()
+	# Always ensure the roms root exists, plus dirs for any already-configured systems
+	print("[SpawnMenu] USERPROFILE=", OS.get_environment("USERPROFILE"))
+	print("[SpawnMenu] roms root=", RomLibrary.default_roms_root())
+	RomLibrary.ensure_roms_root()
+	for sid: String in core_defaults.all_defaults():
+		RomLibrary.ensure_rom_dir(sid)
 	_build_ui()
 
 
@@ -215,11 +225,28 @@ func _build_spawn_view() -> Control:
 	systems_scroll.add_child(_systems_vbox)
 	_populate_systems_tab()
 
-	# Rebuild systems list whenever the user sets/changes a default
+	# Rebuild systems/cartridges lists whenever the user sets/changes a default
 	default_core_changed.connect(func(_sid: String, _cn: String): _populate_systems_tab())
+	default_core_changed.connect(func(_sid: String, _cn: String): _populate_cartridges_tab())
 
-	_add_spawn_tab(tabs, "TVs",        [["TV",         "tv"]])
-	_add_spawn_tab(tabs, "Cartridges", [["Cartridge",  "cartridge"]])
+	_add_spawn_tab(tabs, "TVs", [["TV", "tv"]])
+
+	# Cartridges tab — dynamic, one ribbon per system with default core set
+	var carts_scroll := ScrollContainer.new()
+	carts_scroll.name = "Cartridges"
+	tabs.add_child(carts_scroll)
+	_cartridges_vbox = VBoxContainer.new()
+	_cartridges_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cartridges_vbox.add_theme_constant_override("separation", 10)
+	carts_scroll.add_child(_cartridges_vbox)
+	_populate_cartridges_tab()
+
+	# Refresh on tab switch — picks up files added to disk since last open
+	tabs.tab_changed.connect(func(idx: int):
+		if idx == 2:
+			_populate_cartridges_tab()
+	)
+
 	return tabs
 
 
@@ -251,6 +278,58 @@ func _populate_systems_tab() -> void:
 		btn.add_theme_font_size_override("font_size", 26)
 		btn.pressed.connect(spawn_requested.emit.bind(systemid))
 		_systems_vbox.add_child(btn)
+
+
+func _populate_cartridges_tab() -> void:
+	if not _cartridges_vbox:
+		return
+	for child in _cartridges_vbox.get_children():
+		child.queue_free()
+	_cartridges_vbox.add_child(_spacer(10))
+	var defaults := core_defaults.all_defaults()
+	if defaults.is_empty():
+		var lbl := Label.new()
+		lbl.text = "No default cores set.\nGo to Cores \u25b8 Manager to configure systems."
+		lbl.add_theme_font_size_override("font_size", 20)
+		lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_cartridges_vbox.add_child(lbl)
+		return
+	for systemid: String in defaults:
+		RomLibrary.ensure_rom_dir(systemid)
+		# Collect all supported extensions for this system across all its cores
+		var exts: Array[String] = []
+		for entry: Dictionary in core_db.get_by_systemid(systemid):
+			for ext: String in entry.get("supported_extensions", "").split("|"):
+				var e := ext.strip_edges().to_lower()
+				if not e.is_empty() and e not in exts:
+					exts.append(e)
+		# System ribbon header
+		var system_name := core_db.get_systemname_for_id(systemid)
+		var hdr := Label.new()
+		hdr.text = system_name
+		hdr.add_theme_font_size_override("font_size", 22)
+		hdr.add_theme_color_override("font_color", COLOR_TITLE)
+		_cartridges_vbox.add_child(hdr)
+		_cartridges_vbox.add_child(HSeparator.new())
+		# ROM list
+		var roms := RomLibrary.scan_roms(systemid, exts)
+		if roms.is_empty():
+			var hint := Label.new()
+			hint.text = "Add ROMs to roms/%s/ to see them here." % systemid
+			hint.add_theme_font_size_override("font_size", 18)
+			hint.add_theme_color_override("font_color", COLOR_DESC)
+			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_cartridges_vbox.add_child(hint)
+		else:
+			for rom: Dictionary in roms:
+				var btn := Button.new()
+				btn.text = "  +  " + rom["label"]
+				btn.custom_minimum_size = Vector2(0, 72)
+				btn.add_theme_font_size_override("font_size", 22)
+				btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"]))
+				_cartridges_vbox.add_child(btn)
+		_cartridges_vbox.add_child(_spacer(8))
 
 
 func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:
@@ -416,14 +495,17 @@ func _build_manager_row(systemid: String, systemname: String, cores: Array) -> C
 	opt.selected = selected_idx
 	# If no default was saved yet, persist the auto-selected first entry
 	if current_default.is_empty() and not cores.is_empty():
-		core_defaults.set_default_core(systemid, (cores[0] as Dictionary)["core_name"] as String)
+		var auto_cn: String = (cores[0] as Dictionary)["core_name"] as String
+		core_defaults.set_default_core(systemid, auto_cn)
 		core_defaults.save()
-		default_core_changed.emit(systemid, (cores[0] as Dictionary)["core_name"])
+		RomLibrary.ensure_rom_dir(systemid)
+		default_core_changed.emit(systemid, auto_cn)
 
 	opt.item_selected.connect(func(idx: int) -> void:
 		var cn: String = (cores[idx] as Dictionary)["core_name"] as String
 		core_defaults.set_default_core(systemid, cn)
 		core_defaults.save()
+		RomLibrary.ensure_rom_dir(systemid)
 		default_core_changed.emit(systemid, cn)
 	)
 	row.add_child(opt)
@@ -617,6 +699,11 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 				push_warning("CoreDownload '%s' failed: %s" % [core_name, err_msg])
 			else:
 				call_deferred("_populate_manager_tab")
+				var dl_entry := core_db.get_by_core_name(core_name)
+				var dl_sid: String = dl_entry.get("systemid", "")
+				if not dl_sid.is_empty():
+					RomLibrary.ensure_rom_dir(dl_sid)
+				call_deferred("_populate_cartridges_tab")
 			btn.text = new_state
 			_style_dl_button(btn, new_state)
 	)

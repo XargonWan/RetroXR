@@ -63,3 +63,6 @@ func load_defaults() -> void:
 		var d: Variant = (parsed as Dictionary)["defaults"]
 		if d is Dictionary:
 			_defaults = d as Dictionary
+			# Ensure a roms/ folder exists for every configured system
+			for sid: String in _defaults:
+				RomLibrary.ensure_rom_dir(sid)
