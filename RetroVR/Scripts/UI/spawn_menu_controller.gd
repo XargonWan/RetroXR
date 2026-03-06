@@ -33,13 +33,21 @@ var _left_ctrl:   XRController3D = null
 var _right_ctrl:  XRController3D = null
 var _menu_connected := false
 
-# Scroll state
-var _right_trigger_held := false
-var _smoothed_aim_y:    float = 0.0   # low-pass filtered aim direction
+# Scroll state — driven by whichever stick whose controller points at the menu
+var _smoothed_scroll_y: float = 0.0
 const _SCROLL_SPEED    := 700.0   # pixels per second at full tilt
-const _SCROLL_DEADZONE := 25.0    # ignore controller tilts below this
-const _SCROLL_MIN_PX   := 1.5     # discard sub-pixel nudges to prevent micro-jitter
-const _SMOOTH_FACTOR   := 4.0     # lower = smoother / slower to respond
+const _SCROLL_DEADZONE := 0.25    # stick Y dead zone (0..1)
+const _SCROLL_MIN_PX   := 1.5     # discard sub-pixel nudges
+const _SMOOTH_FACTOR   := 4.0     # low-pass weight; lower = smoother
+
+# Locomotion nodes — suppressed per-controller while its pointer is on the menu
+var _move_turn:     Node = null   # right stick snap-turn
+var _func_teleport: Node = null   # right stick teleport aim
+var _move_direct:   Node = null   # left stick walking
+
+# FunctionPointer nodes for hit-testing
+var _left_pointer:  XRToolsFunctionPointer = null
+var _right_pointer: XRToolsFunctionPointer = null
 
 
 func _ready() -> void:
@@ -66,9 +74,22 @@ func _deferred_setup() -> void:
 		var ctrl := node as XRController3D
 		if ctrl.tracker == &"right_hand":
 			_right_ctrl = ctrl
-			_right_ctrl.button_pressed.connect(_on_right_button_pressed)
-			_right_ctrl.button_released.connect(_on_right_button_released)
 			break
+
+	# Locomotion nodes
+	_move_turn     = get_tree().root.find_child("MovementTurn",     true, false)
+	_func_teleport = get_tree().root.find_child("FunctionTeleport", true, false)
+	_move_direct   = get_tree().root.find_child("MovementDirect",   true, false)
+
+	# FunctionPointer nodes (one per controller) for hit-testing
+	for node: Node in get_tree().root.find_children("*", "XRToolsFunctionPointer", true, false):
+		var ptr := node as XRToolsFunctionPointer
+		var parent_ctrl := ptr.get_parent() as XRController3D
+		if parent_ctrl:
+			if parent_ctrl.tracker == &"left_hand":
+				_left_pointer = ptr
+			elif parent_ctrl.tracker == &"right_hand":
+				_right_pointer = ptr
 
 	# Give the SubViewport one frame to instantiate the 2D scene
 	await get_tree().process_frame
@@ -101,43 +122,66 @@ func _on_controller_button(action_name: String) -> void:
 		_toggle_menu()
 
 
-func _on_right_button_pressed(action_name: String) -> void:
-	if action_name == "trigger_click" or action_name == "trigger":
-		_right_trigger_held = true
-
-
-func _on_right_button_released(action_name: String) -> void:
-	if action_name == "trigger_click" or action_name == "trigger":
-		_right_trigger_held = false
-		_smoothed_aim_y = 0.0   # reset so scroll stops immediately on release
-
-
 # ── Scroll driving ────────────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
-	if not _viewport_node.visible:
+	var menu_visible: bool = _viewport_node.visible
+
+	# Determine which pointers are currently aimed at the menu panel
+	var right_over: bool = menu_visible and _pointer_over_menu(_right_pointer)
+	var left_over:  bool = menu_visible and _pointer_over_menu(_left_pointer)
+
+	# Suppress right-stick locomotion only when right controller points at menu
+	_set_node_enabled(_move_turn,     not right_over)
+	_set_node_enabled(_func_teleport, not right_over)
+	# Suppress left-stick walking only when left controller points at menu
+	_set_node_enabled(_move_direct,   not left_over)
+
+	if not (right_over or left_over):
+		_smoothed_scroll_y = 0.0
 		return
-	if not _right_ctrl:
+
+	# Combine stick inputs — whichever controller(s) are pointing contribute
+	var raw_y: float = 0.0
+	if right_over and _right_ctrl:
+		raw_y += _right_ctrl.get_vector2("primary").y
+	if left_over and _left_ctrl:
+		raw_y += _left_ctrl.get_vector2("primary").y
+	raw_y = clampf(raw_y, -1.0, 1.0)
+
+	_smoothed_scroll_y = lerpf(_smoothed_scroll_y, raw_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
+	if abs(_smoothed_scroll_y) < _SCROLL_DEADZONE:
 		return
-	# Accept either digital button state or analog trigger pull > 50 %
-	var trigger_active := _right_trigger_held or _right_ctrl.get_float("trigger") > 0.5
-	if not trigger_active:
-		_smoothed_aim_y = 0.0
-		return
-	# Forward vector of the right controller (-Z in local space)
-	var raw_aim_y: float = -_right_ctrl.global_transform.basis.z.y
-	# Exponential low-pass: smooths out hand tremor
-	_smoothed_aim_y = lerpf(_smoothed_aim_y, raw_aim_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
-	if abs(_smoothed_aim_y) < _SCROLL_DEADZONE:
-		return
-	# Remap: outside deadzone, scale to [0..1]
-	var t: float = (abs(_smoothed_aim_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
-	var pixels: float = -sign(_smoothed_aim_y) * t * _SCROLL_SPEED * delta
+
+	var t: float = (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
+	# Negate: stick up (negative Y in OpenXR) → scroll up (decrease scroll_vertical)
+	var pixels: float = -_smoothed_scroll_y * t * _SCROLL_SPEED * delta
 	if abs(pixels) < _SCROLL_MIN_PX:
 		return
+
 	var menu := _get_menu()
 	if menu:
 		menu.scroll_active(pixels)
+
+
+## Returns true if pointer's last_target is a node inside the spawn menu viewport.
+func _pointer_over_menu(pointer: XRToolsFunctionPointer) -> bool:
+	if not pointer:
+		return false
+	var tgt: Node3D = pointer.last_target
+	if not tgt:
+		return false
+	var node: Node = tgt
+	while node:
+		if node == _viewport_node:
+			return true
+		node = node.get_parent()
+	return false
+
+
+func _set_node_enabled(node: Node, value: bool) -> void:
+	if node and "enabled" in node:
+		node.set("enabled", value)
 
 
 func _get_menu() -> SpawnMenu2D:
@@ -174,6 +218,11 @@ func _show_menu() -> void:
 
 func _hide_menu() -> void:
 	_viewport_node.visible = false
+	_smoothed_scroll_y = 0.0
+	# Ensure locomotion is fully restored when menu closes
+	_set_node_enabled(_move_turn,     true)
+	_set_node_enabled(_func_teleport, true)
+	_set_node_enabled(_move_direct,   true)
 
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
