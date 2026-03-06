@@ -472,6 +472,10 @@ void Wrapper::_process(double delta)
 
     auto input = godot::Input::get_singleton();
 
+    // Only the instance the player is controlling should consume global input actions.
+    if (!m_input_enabled)
+        return;
+
     uint32_t joypad_buttons = 0;
 
     if (input->is_action_pressed("RETRO_JOYPAD_B"))

@@ -177,6 +177,7 @@ func _try_attach() -> void:
 	_label.no_depth_test = true
 	_controlled_system.add_child(_label)
 
+	system.set_input_enabled(true)
 	_set_player_input_enabled(false)
 	_spawn_gamepad_visuals()
 
@@ -189,6 +190,8 @@ func _detach() -> void:
 		_label.queue_free()
 	_label = null
 
+	if is_instance_valid(_controlled_system):
+		_controlled_system.set_input_enabled(false)
 	_controlled_system = null
 	_set_player_input_enabled(true)
 

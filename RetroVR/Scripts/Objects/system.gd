@@ -50,6 +50,12 @@ func _ready() -> void:
 	_spawn_cable()
 
 
+## Enable or disable libretro input polling for this system.
+## Only the actively-controlled instance should have input enabled.
+func set_input_enabled(enabled: bool) -> void:
+	_libretro.SetInputEnabled(enabled)
+
+
 ## Called by the TV's cable plug when it connects to a TV
 func on_tv_connected(tv: RetroTV) -> void:
 	connected_tv = tv

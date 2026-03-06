@@ -88,6 +88,7 @@ public:
     bool m_mutex_done = false;
     std::condition_variable m_condition_variable;
     bool m_running = false;
+    bool m_input_enabled = false;   // only true for the actively-controlled instance
 
     std::string m_root_directory;
     std::string m_temp_directory;

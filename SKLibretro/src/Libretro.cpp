@@ -32,6 +32,11 @@ void Libretro::SetCoreOption(const godot::String& key, const godot::String& valu
     m_wrapper->SetCoreOption(key.utf8().get_data(), value.utf8().get_data());
 }
 
+void Libretro::SetInputEnabled(bool enabled)
+{
+    m_wrapper->m_input_enabled = enabled;
+}
+
 void Libretro::_exit_tree()
 {
     m_wrapper->StopContent();
@@ -110,6 +115,7 @@ void Libretro::_bind_methods()
     ClassDB::bind_method(D_METHOD("StartContent", "node", "root_directory", "core_name", "game_path"), &Libretro::StartContent);
     ClassDB::bind_method(D_METHOD("StopContent"), &Libretro::StopContent);
     ClassDB::bind_method(D_METHOD("SetCoreOption", "key", "value"), &Libretro::SetCoreOption);
+    ClassDB::bind_method(D_METHOD("SetInputEnabled", "enabled"), &Libretro::SetInputEnabled);
 
     ADD_SIGNAL(MethodInfo("options_ready", PropertyInfo(Variant::DICTIONARY, "categories"), PropertyInfo(Variant::DICTIONARY, "definitions"), PropertyInfo(Variant::DICTIONARY, "current_values")));
 }
