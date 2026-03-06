@@ -132,9 +132,11 @@ func _on_controller_button(action_name: String) -> void:
 func _process(delta: float) -> void:
 	var menu_visible: bool = _viewport_node.visible
 
-	# When menu is closed, don't touch locomotion nodes — VRInputMapper owns them
+	# When menu is closed, handle core options panel scroll instead.
+	# VRInputMapper owns locomotion nodes when disabled — only touch them here
+	# if a pointer is actually aimed at a core options panel.
 	if not menu_visible:
-		_smoothed_scroll_y = 0.0
+		_process_core_options_scroll(delta)
 		return
 
 	# Determine which pointers are currently aimed at the menu panel
@@ -174,6 +176,43 @@ func _process(delta: float) -> void:
 		menu.scroll_active(pixels)
 
 
+## Drive scroll on any visible CoreOptionsPanel whose viewport the pointer is over.
+func _process_core_options_scroll(delta: float) -> void:
+	var right_vp := _find_core_options_viewport(_right_pointer)
+	var left_vp  := _find_core_options_viewport(_left_pointer)
+
+	if not disabled:
+		_set_node_enabled(_move_turn,     right_vp == null)
+		_set_node_enabled(_func_teleport, right_vp == null)
+		_set_node_enabled(_move_direct,   left_vp  == null)
+
+	if not right_vp and not left_vp:
+		_smoothed_scroll_y = 0.0
+		return
+
+	var any_vp := right_vp if right_vp else left_vp
+
+	var raw_y: float = 0.0
+	if right_vp and _right_ctrl:
+		raw_y += _right_ctrl.get_vector2("primary").y
+	if left_vp and _left_ctrl:
+		raw_y += _left_ctrl.get_vector2("primary").y
+	raw_y = clampf(raw_y, -1.0, 1.0)
+
+	_smoothed_scroll_y = lerpf(_smoothed_scroll_y, raw_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
+	if abs(_smoothed_scroll_y) < _SCROLL_DEADZONE:
+		return
+
+	var t: float = (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
+	var pixels: float = -_smoothed_scroll_y * t * _SCROLL_SPEED * delta
+	if abs(pixels) < _SCROLL_MIN_PX:
+		return
+
+	var opts_ui := _get_core_options_ui(any_vp)
+	if opts_ui:
+		opts_ui.scroll_active(pixels)
+
+
 ## Returns the RetroSystem the pointer is aimed at, or null if not pointing at one.
 ## Each RetroSystem has a PointerArea (StaticBody3D on layer 21) that the pointer
 ## raycast can hit. We walk up from last_target looking for a RetroSystem ancestor.
@@ -209,6 +248,38 @@ func _pointer_over_menu(pointer: XRToolsFunctionPointer) -> bool:
 			return true
 		node = node.get_parent()
 	return false
+
+
+## Returns the XRToolsViewport2DIn3D belonging to a CoreOptionsPanel that the
+## pointer is currently aimed at, or null if not pointing at one.
+func _find_core_options_viewport(pointer: XRToolsFunctionPointer) -> XRToolsViewport2DIn3D:
+	if not pointer:
+		return null
+	var tgt: Node3D = pointer.last_target
+	if not tgt:
+		return null
+	var node: Node = tgt
+	while node:
+		if node is XRToolsViewport2DIn3D:
+			# Walk up to see if this viewport lives inside a CoreOptionsPanel
+			var ancestor: Node = node.get_parent()
+			while ancestor:
+				if ancestor is CoreOptionsPanel:
+					return node as XRToolsViewport2DIn3D
+				ancestor = ancestor.get_parent()
+			return null
+		node = node.get_parent()
+	return null
+
+
+## Get the CoreOptions2D UI scene from a CoreOptionsPanel viewport node.
+func _get_core_options_ui(viewport_node: XRToolsViewport2DIn3D) -> CoreOptions2D:
+	var vp := viewport_node.get_node_or_null("Viewport") as SubViewport
+	if vp and vp.get_child_count() > 0:
+		var ui := vp.get_child(0)
+		if ui is CoreOptions2D:
+			return ui as CoreOptions2D
+	return null
 
 
 func _set_node_enabled(node: Node, value: bool) -> void:

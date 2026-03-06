@@ -83,6 +83,7 @@ func _ensure_ui_connected() -> void:
 		push_warning("[CoreOptionsPanel] SubViewport child is not CoreOptions2D")
 		return
 	ui.option_changed.connect(_on_option_changed)
+	ui.port_device_changed.connect(_on_port_device_changed)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 	print("[CoreOptionsPanel] 2D UI signals connected")
@@ -100,7 +101,7 @@ func _populate() -> void:
 	var ui := vp.get_child(0) as CoreOptions2D
 	if not ui:
 		return
-	ui.populate(_system._options_definitions, _system._options_values)
+	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info)
 
 
 ## Relay the user's option change from the 2D UI back to the system.
@@ -108,3 +109,9 @@ func _on_option_changed(key: String, value: String) -> void:
 	if _system and is_instance_valid(_system):
 		print("[CoreOptionsPanel] option changed: '%s' = '%s'" % [key, value])
 		_system.set_core_option(key, value)
+
+
+func _on_port_device_changed(port: int, device_id: int) -> void:
+	if _system and is_instance_valid(_system):
+		print("[CoreOptionsPanel] port %d device → %d" % [port, device_id])
+		_system.set_controller_port_device(port, device_id)

@@ -108,6 +108,12 @@ public:
     void SetCoreOption(const godot::String& key, const godot::String& value);
     void SetInputEnabled(bool enabled);
 
+    /// Returns per-port controller info as Array[Dictionary{port, controllers: Array[{name,id}], current_id}].
+    godot::Array GetControllerInfo();
+
+    /// Tell the running core which device type is active on a given port.
+    void SetControllerPortDevice(int port, int device);
+
     void ConnectOptionsReady(const godot::Callable& callable, uint32_t flags = 0u);
 
     void _exit_tree();

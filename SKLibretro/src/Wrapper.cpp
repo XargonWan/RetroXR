@@ -351,6 +351,45 @@ void Wrapper::SetScreenMesh(MeshInstance3D* new_mesh)
         m_audio_handler->SetPlaying(new_mesh != nullptr);
 }
 
+godot::Array Wrapper::GetControllerInfo() const
+{
+    Array result;
+    if (!m_input_handler)
+        return result;
+
+    const auto& controllers = m_input_handler->GetControllers();
+    for (uint32_t port = 0; port < controllers.size(); ++port)
+    {
+        Array port_controllers;
+        for (const auto& ctrl : controllers[port])
+        {
+            Dictionary entry;
+            entry["name"] = String(ctrl.name.c_str());
+            entry["id"]   = static_cast<int>(ctrl.id);
+            port_controllers.append(entry);
+        }
+        // Also record which device is currently selected for this port
+        Dictionary port_entry;
+        port_entry["port"]        = static_cast<int>(port);
+        port_entry["controllers"] = port_controllers;
+        port_entry["current_id"]  = static_cast<int>(m_input_handler->GetPortDevice(port));
+        result.append(port_entry);
+    }
+    return result;
+}
+
+void Wrapper::SetControllerPortDevice(uint32_t port, uint32_t device)
+{
+    if (!m_core || !m_input_handler)
+    {
+        LogError("SetControllerPortDevice: core or input handler is null");
+        return;
+    }
+    Log("SetControllerPortDevice: port=" + std::to_string(port) + " device=" + std::to_string(device));
+    m_input_handler->SetPortDevice(port, device);
+    m_core->retro_set_controller_port_device(port, device);
+}
+
 void Wrapper::SetCoreOption(const std::string& key, const std::string& value)
 {
     Log("SetCoreOption: key=" + key + " value=" + value);

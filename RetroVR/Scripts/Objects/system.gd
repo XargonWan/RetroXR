@@ -27,6 +27,10 @@ var is_powered_on: bool = false
 var _options_definitions: Dictionary = {}
 var _options_values: Dictionary = {}
 
+# Cached controller port info (populated alongside options_ready).
+# Array of Dictionaries: [{port, controllers: [{name, id}], current_id}]
+var _controller_info: Array = []
+
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
 var _cable_instance: Node3D = null
@@ -196,6 +200,10 @@ func _on_options_ready(_categories: Dictionary, definitions: Dictionary, current
 	print("[RetroSystem] options_ready — %d definitions received" % definitions.size())
 	_options_definitions = definitions
 	_options_values = current_values
+	# Controller info is set during retro_load_game, so it's ready by the time
+	# options_ready fires. Fetch it here so the panel can show both tabs.
+	_controller_info = _libretro.GetControllerInfo()
+	print("[RetroSystem] controller info fetched — %d ports" % _controller_info.size())
 	if _options_panel.visible:
 		_options_panel.refresh()
 
@@ -218,6 +226,18 @@ func set_core_option(key: String, value: String) -> void:
 	print("[RetroSystem] set_core_option '%s' = '%s'" % [key, value])
 	_options_values[key] = value
 	_libretro.SetCoreOption(key, value)
+
+
+## Switch the input device type on a given controller port.
+## device_id corresponds to RETRO_DEVICE_* constants (1 = joypad, 5 = analog, etc.).
+func set_controller_port_device(port: int, device_id: int) -> void:
+	print("[RetroSystem] set_controller_port_device port=%d device=%d" % [port, device_id])
+	# Update the cached current_id so reopening the panel shows the right selection
+	for entry in _controller_info:
+		if entry["port"] == port:
+			entry["current_id"] = device_id
+			break
+	_libretro.SetControllerPortDevice(port, device_id)
 
 
 # --- Cartridge slot callbacks ---

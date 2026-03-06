@@ -66,6 +66,14 @@ public:
     const std::unordered_map<std::string, std::string>& GetOptionValues() const { return m_options_handler->GetValues(); }
     void SetCoreOption(const std::string& key, const std::string& value);
 
+    /// Returns per-port controller info as an Array of Arrays of Dictionaries
+    /// [{name, id}], indexed by port number. Consumed by Libretro::GetControllerInfo().
+    godot::Array GetControllerInfo() const;
+
+    /// Tell the running core which device type is active on a given port.
+    /// Calls retro_set_controller_port_device and updates the local tracking map.
+    void SetControllerPortDevice(uint32_t port, uint32_t device);
+
     void _input(const godot::Ref<godot::InputEvent>& event);
     void _process(double delta);
 

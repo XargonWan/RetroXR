@@ -42,6 +42,16 @@ void Libretro::SetInputEnabled(bool enabled)
     m_wrapper->m_input_enabled = enabled;
 }
 
+godot::Array Libretro::GetControllerInfo()
+{
+    return m_wrapper->GetControllerInfo();
+}
+
+void Libretro::SetControllerPortDevice(int port, int device)
+{
+    m_wrapper->SetControllerPortDevice(static_cast<uint32_t>(port), static_cast<uint32_t>(device));
+}
+
 void Libretro::_exit_tree()
 {
     m_wrapper->StopContent();
@@ -122,6 +132,8 @@ void Libretro::_bind_methods()
     ClassDB::bind_method(D_METHOD("SetScreenMesh", "node"), &Libretro::SetScreenMesh);
     ClassDB::bind_method(D_METHOD("SetCoreOption", "key", "value"), &Libretro::SetCoreOption);
     ClassDB::bind_method(D_METHOD("SetInputEnabled", "enabled"), &Libretro::SetInputEnabled);
+    ClassDB::bind_method(D_METHOD("GetControllerInfo"), &Libretro::GetControllerInfo);
+    ClassDB::bind_method(D_METHOD("SetControllerPortDevice", "port", "device"), &Libretro::SetControllerPortDevice);
 
     ADD_SIGNAL(MethodInfo("options_ready", PropertyInfo(Variant::DICTIONARY, "categories"), PropertyInfo(Variant::DICTIONARY, "definitions"), PropertyInfo(Variant::DICTIONARY, "current_values")));
 }

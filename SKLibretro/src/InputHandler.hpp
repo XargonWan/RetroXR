@@ -72,6 +72,15 @@ public:
     bool SetInputDescriptors(const retro_input_descriptor* input_descriptors);
     bool SetControllerInfo(const retro_controller_info* controller_info);
     bool GetRumbleInterface(retro_rumble_interface* rumble_interface);
+
+    const std::vector<std::vector<RetroController>>& GetControllers() const { return m_controllers; }
+    /// Track which device type is active on each port (defaults to RETRO_DEVICE_JOYPAD).
+    void SetPortDevice(uint32_t port, uint32_t device) { m_port_devices[port] = device; }
+    uint32_t GetPortDevice(uint32_t port) const
+    {
+        auto it = m_port_devices.find(port);
+        return it != m_port_devices.end() ? it->second : RETRO_DEVICE_JOYPAD;
+    }
     bool GetInputDeviceCapabilities(uint32_t* capabilities);
     bool GetInputBitmasks(bool* available);
 
@@ -100,6 +109,7 @@ private:
     std::unordered_map<uint32_t, int16_t> m_analog_right_y;
 
     std::vector<std::vector<RetroController>> m_controllers;
+    std::unordered_map<uint32_t, uint32_t> m_port_devices;
     std::vector<RetroDevice> m_devices;
     retro_keyboard_event_t m_keyboard_event = nullptr;
 

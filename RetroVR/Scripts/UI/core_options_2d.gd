@@ -1,28 +1,38 @@
-## CoreOptions2D — 2D scrollable UI for libretro core options.
+## CoreOptions2D — 2D UI for libretro core options and controller port configuration.
 ## Loaded into CoreOptionsPanel's SubViewport via XRToolsViewport2DIn3D.
 ## Builds its entire UI programmatically (same pattern as SpawnMenu2D).
 ##
-## Usage:
-##   call populate(definitions, current_values) to fill the option rows.
-##   Emits option_changed(key, value) when the user cycles a value.
-##   Emits close_requested when the ✕ button is pressed.
+## Two tabs:
+##   Options   — cycle < / > through each core option value
+##   Controllers — OptionButton per port to choose the active device type
+##
+## Emits:
+##   option_changed(key, value)     — user changed a core option
+##   port_device_changed(port, id)  — user changed a port's device type
+##   close_requested                — user pressed ✕
 class_name CoreOptions2D
 extends Control
 
 signal option_changed(key: String, value: String)
+signal port_device_changed(port: int, device_id: int)
 signal close_requested
 
-# ── Palette (matches spawn menu style) ────────────────────────────────────────
+# ── Palette ────────────────────────────────────────────────────────────────────
 const COLOR_BG    := Color(0.08, 0.08, 0.16, 0.96)
 const COLOR_TITLE := Color(0.9,  0.9,  1.0)
 const COLOR_ROW   := Color(0.65, 0.65, 0.80)
 
 # ── State ──────────────────────────────────────────────────────────────────────
-var _scroll: ScrollContainer
-var _rows_container: VBoxContainer
-# Cached from last populate() call; used to re-populate while panel is open.
+var _options_scroll: ScrollContainer
+var _options_rows: VBoxContainer
+var _controllers_scroll: ScrollContainer
+var _controllers_rows: VBoxContainer
+var _active_scroll: ScrollContainer = null
+
 var _definitions: Dictionary = {}
 var _values: Dictionary = {}
+# Array of Dictionaries: [{port, controllers: [{name, id}], current_id}]
+var _controller_info: Array = []
 
 
 func _ready() -> void:
@@ -45,7 +55,6 @@ func _build_ui() -> void:
 	panel.add_theme_stylebox_override("panel", bg)
 	add_child(panel)
 
-	# Inner margin so content doesn't touch the panel edge
 	var margin := MarginContainer.new()
 	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
 		margin.add_theme_constant_override(side, 12)
@@ -60,7 +69,7 @@ func _build_ui() -> void:
 	root_vbox.add_child(title_row)
 
 	var title_lbl := Label.new()
-	title_lbl.text = "Core Options"
+	title_lbl.text = "System Settings"
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_lbl.add_theme_font_size_override("font_size", 26)
 	title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
@@ -74,44 +83,81 @@ func _build_ui() -> void:
 
 	root_vbox.add_child(HSeparator.new())
 
-	# ── Scrollable option rows ──────────────────────────────────────────────────
-	_scroll = ScrollContainer.new()
-	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_scroll.add_theme_constant_override("scrollbar_v_width", 40)
-	root_vbox.add_child(_scroll)
+	# ── Tab container ──────────────────────────────────────────────────────────
+	var tabs := TabContainer.new()
+	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tabs.add_theme_font_size_override("font_size", 18)
+	root_vbox.add_child(tabs)
 
-	_rows_container = VBoxContainer.new()
-	_rows_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_rows_container.add_theme_constant_override("separation", 2)
-	_scroll.add_child(_rows_container)
+	# Options tab
+	var opts_outer := VBoxContainer.new()
+	opts_outer.name = "Options"
+	tabs.add_child(opts_outer)
 
-	_show_placeholder()
+	_options_scroll = ScrollContainer.new()
+	_options_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_options_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_options_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_options_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	opts_outer.add_child(_options_scroll)
+
+	_options_rows = VBoxContainer.new()
+	_options_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_options_rows.add_theme_constant_override("separation", 2)
+	_options_scroll.add_child(_options_rows)
+
+	# Controllers tab
+	var ctrl_outer := VBoxContainer.new()
+	ctrl_outer.name = "Controllers"
+	tabs.add_child(ctrl_outer)
+
+	_controllers_scroll = ScrollContainer.new()
+	_controllers_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_controllers_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_controllers_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_controllers_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	ctrl_outer.add_child(_controllers_scroll)
+
+	_controllers_rows = VBoxContainer.new()
+	_controllers_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_controllers_rows.add_theme_constant_override("separation", 4)
+	_controllers_scroll.add_child(_controllers_rows)
+
+	# Track which scroll container is active for stick-driven scrolling
+	_active_scroll = _options_scroll
+	tabs.tab_changed.connect(func(idx: int):
+		match idx:
+			0: _active_scroll = _options_scroll
+			1: _active_scroll = _controllers_scroll
+	)
+
+	_show_options_placeholder()
+	_show_controllers_placeholder()
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-## Fill or refresh the option rows.
-## definitions: Dictionary[String, LibretroOptionDefinition]
-## current_values: Dictionary[String, String]
-func populate(definitions: Dictionary, current_values: Dictionary) -> void:
+## Fill or refresh all tabs.
+## controller_info: Array of Dicts [{port, controllers:[{name,id}], current_id}]
+func populate(definitions: Dictionary, current_values: Dictionary, controller_info: Array) -> void:
 	_definitions = definitions
 	_values = current_values
-	print("[CoreOptions2D] populate() — %d options" % definitions.size())
-	_refresh_rows()
+	_controller_info = controller_info
+	print("[CoreOptions2D] populate() — %d options, %d ports" % [definitions.size(), controller_info.size()])
+	_refresh_options()
+	_refresh_controllers()
 
 
-## Drive the scroll container from an external stick input.
-## pixels > 0 scrolls down, < 0 scrolls up.
+## Drive the active scroll container from an external stick input (pixels > 0 = down).
 func scroll_active(pixels: float) -> void:
-	_scroll.scroll_vertical += int(pixels)
+	if _active_scroll:
+		_active_scroll.scroll_vertical += int(pixels)
 
 
-# ── Row building ───────────────────────────────────────────────────────────────
+# ── Options tab ────────────────────────────────────────────────────────────────
 
-func _show_placeholder() -> void:
-	for c in _rows_container.get_children():
+func _show_options_placeholder() -> void:
+	for c in _options_rows.get_children():
 		c.queue_free()
 	var lbl := Label.new()
 	lbl.text = "No options available.\n(Start emulation first.)"
@@ -120,32 +166,28 @@ func _show_placeholder() -> void:
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.custom_minimum_size = Vector2(0, 80)
-	_rows_container.add_child(lbl)
+	_options_rows.add_child(lbl)
 
 
-func _refresh_rows() -> void:
-	for c in _rows_container.get_children():
+func _refresh_options() -> void:
+	for c in _options_rows.get_children():
 		c.queue_free()
 
 	if _definitions.is_empty():
-		_show_placeholder()
+		_show_options_placeholder()
 		return
 
-	# Sort keys alphabetically for a consistent display order
 	var keys: Array = _definitions.keys()
 	keys.sort()
 	for key in keys:
-		_add_row(key, _definitions[key], _values.get(key, ""))
+		_add_option_row(key, _definitions[key], _values.get(key, ""))
 
 	print("[CoreOptions2D] %d option rows built" % keys.size())
 
 
-## Build a single option row: [label] [<] [current value] [>]
-## defn and values_arr elements are LibretroOptionDefinition / LibretroOptionValue
-## RefCounted objects from C++. They must stay untyped (no Object/class annotation)
-## so GDScript uses dynamic ClassDB dispatch for method calls like GetLabel().
-func _add_row(key: String, defn, current_val: String) -> void:
-	# Prefer the shorter "categorized" description if available
+## Build a single option row: [description label] [<] [current value] [>]
+## defn is a LibretroOptionDefinition (untyped to allow dynamic ClassDB dispatch).
+func _add_option_row(key: String, defn, current_val: String) -> void:
 	var desc: String = defn.GetDescriptionCategorized()
 	if desc.is_empty():
 		desc = defn.GetDescription()
@@ -155,7 +197,7 @@ func _add_row(key: String, defn, current_val: String) -> void:
 	var row := HBoxContainer.new()
 	row.custom_minimum_size = Vector2(0, 52)
 	row.add_theme_constant_override("separation", 4)
-	_rows_container.add_child(row)
+	_options_rows.add_child(row)
 
 	var label := Label.new()
 	label.text = desc
@@ -167,12 +209,11 @@ func _add_row(key: String, defn, current_val: String) -> void:
 	row.add_child(label)
 
 	# values_arr elements are LibretroOptionValue objects (RefCounted from C++).
-	# We keep them untyped (plain Object/Variant) to avoid GDScript cast crashes.
+	# Kept untyped so GDScript uses dynamic ClassDB dispatch for GetValue/GetLabel.
 	var values_arr: Array = defn.GetValues()
 	if values_arr.is_empty():
 		return
 
-	# Find the index of the current value so we can start the cycle there
 	var cur_idx := 0
 	for i in range(values_arr.size()):
 		if values_arr[i].GetValue() == current_val:
@@ -200,11 +241,7 @@ func _add_row(key: String, defn, current_val: String) -> void:
 	next_btn.custom_minimum_size = Vector2(48, 48)
 	row.add_child(next_btn)
 
-	row.add_child(HSeparator.new())
-
-	# idx_ref is a one-element Array so the lambdas below can mutate it
 	var idx_ref := [cur_idx]
-
 	prev_btn.pressed.connect(func():
 		idx_ref[0] = (idx_ref[0] - 1 + values_arr.size()) % values_arr.size()
 		var v = values_arr[idx_ref[0]]
@@ -223,9 +260,83 @@ func _add_row(key: String, defn, current_val: String) -> void:
 	)
 
 
-## Return the human-readable label for a LibretroOptionValue, falling back to
-## the raw value string if the label is empty.
-## Parameter is intentionally untyped — see _add_row note above.
+## Return a LibretroOptionValue's display label, falling back to the raw value.
+## Parameter intentionally untyped — see _add_option_row note.
 func _value_label(v) -> String:
 	var lbl: String = v.GetLabel()
 	return lbl if not lbl.is_empty() else v.GetValue()
+
+
+# ── Controllers tab ────────────────────────────────────────────────────────────
+
+func _show_controllers_placeholder() -> void:
+	for c in _controllers_rows.get_children():
+		c.queue_free()
+	var lbl := Label.new()
+	lbl.text = "No controller info available.\n(Start emulation first.)"
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", COLOR_ROW)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.custom_minimum_size = Vector2(0, 80)
+	_controllers_rows.add_child(lbl)
+
+
+func _refresh_controllers() -> void:
+	for c in _controllers_rows.get_children():
+		c.queue_free()
+
+	if _controller_info.is_empty():
+		_show_controllers_placeholder()
+		return
+
+	for entry in _controller_info:
+		_add_controller_row(entry)
+
+	print("[CoreOptions2D] %d controller port rows built" % _controller_info.size())
+
+
+## Build one row per port: [Port N label] [OptionButton of device types]
+func _add_controller_row(entry: Dictionary) -> void:
+	var port: int = entry["port"]
+	var controllers: Array = entry["controllers"]
+	var current_id: int = entry["current_id"]
+
+	if controllers.is_empty():
+		return
+
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, 56)
+	row.add_theme_constant_override("separation", 8)
+	_controllers_rows.add_child(row)
+
+	var port_lbl := Label.new()
+	port_lbl.text = "Port %d" % (port + 1)
+	port_lbl.add_theme_font_size_override("font_size", 16)
+	port_lbl.add_theme_color_override("font_color", COLOR_ROW)
+	port_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	port_lbl.custom_minimum_size = Vector2(80, 0)
+	row.add_child(port_lbl)
+
+	var opt := OptionButton.new()
+	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opt.custom_minimum_size = Vector2(0, 48)
+	opt.add_theme_font_size_override("font_size", 15)
+
+	var selected_idx := 0
+	for i in range(controllers.size()):
+		var ctrl: Dictionary = controllers[i]
+		opt.add_item(ctrl["name"], i)
+		if ctrl["id"] == current_id:
+			selected_idx = i
+
+	opt.selected = selected_idx
+
+	opt.item_selected.connect(func(idx: int):
+		var device_id: int = (controllers[idx] as Dictionary)["id"]
+		print("[CoreOptions2D] port %d → device %d (%s)" % [port, device_id, controllers[idx]["name"]])
+		port_device_changed.emit(port, device_id)
+	)
+
+	row.add_child(opt)
+	_controllers_rows.add_child(HSeparator.new())
