@@ -11,9 +11,13 @@ signal close_requested
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
 
+## Download manager — added as a child so HTTPRequest nodes work correctly.
+var download_manager: CoreDownloadManager = null
+
 
 func _ready() -> void:
 	_init_core_db()
+	_init_download_manager()
 	_build_ui()
 
 
@@ -21,6 +25,12 @@ func _init_core_db() -> void:
 	core_db = CoreInfoDatabase.new()
 	core_db.load_from_project()
 	core_db.debug_print_summary()
+
+
+func _init_download_manager() -> void:
+	download_manager = CoreDownloadManager.new()
+	download_manager.name = "CoreDownloadManager"
+	add_child(download_manager)
 
 
 func _build_ui() -> void:
