@@ -59,6 +59,7 @@ public:
 
     void StartContent(godot::MeshInstance3D* node, const std::string& root_directory, const std::string& core_name, const std::string& game_path);
     void StopContent();
+    void SetScreenMesh(godot::MeshInstance3D* node);
 
     const std::unordered_map<std::string, OptionCategory>& GetOptionCategories() const { return m_options_handler->GetCategories(); }
     const std::unordered_map<std::string, OptionDefinition>& GetOptionDefinitions() const { return m_options_handler->GetDefinitions(); }

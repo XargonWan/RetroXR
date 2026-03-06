@@ -140,9 +140,27 @@ void VideoHandler::Init(MeshInstance3D* mesh)
     m_new_material->set_feature(StandardMaterial3D::FEATURE_EMISSION, true);
 }
 
+void VideoHandler::SetMesh(MeshInstance3D* old_mesh, MeshInstance3D* new_mesh)
+{
+    // Restore original material on old mesh
+    if (old_mesh && m_new_material.is_valid())
+        old_mesh->set_surface_override_material(0, m_original_surface_material_override);
+
+    if (new_mesh)
+    {
+        m_original_surface_material_override = new_mesh->get_surface_override_material(0);
+        new_mesh->set_surface_override_material(0, m_new_material);
+        // Re-apply existing texture if we already have one
+        if (m_texture.is_valid())
+            m_new_material->set_texture(StandardMaterial3D::TEXTURE_EMISSION, m_texture);
+    }
+}
+
 void VideoHandler::DeInit()
 {
-    Wrapper::GetCurrentThreadWrapper()->m_node->set_surface_override_material(0, m_original_surface_material_override);
+    auto* w = Wrapper::GetCurrentThreadWrapper();
+    if (w && w->m_node)
+        w->m_node->set_surface_override_material(0, m_original_surface_material_override);
 
     if (m_new_material.is_valid())
         m_new_material.unref();
@@ -328,7 +346,9 @@ void VideoHandler::CreateTexture(int32_t width, int32_t height, Image::Format im
 
     m_texture = ImageTexture::create_from_image(m_image);
 
-    Wrapper::GetCurrentThreadWrapper()->m_node->set_surface_override_material(0, m_new_material);
+    auto* w = Wrapper::GetCurrentThreadWrapper();
+    if (w && w->m_node)
+        w->m_node->set_surface_override_material(0, m_new_material);
     m_new_material->set_texture(StandardMaterial3D::TEXTURE_EMISSION, m_texture);
 }
 

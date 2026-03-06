@@ -21,6 +21,7 @@ public:
 
     void Init(godot::MeshInstance3D* mesh);
     void DeInit();
+    void SetMesh(godot::MeshInstance3D* old_mesh, godot::MeshInstance3D* new_mesh);
 
     bool InitHwRenderContext(int32_t width, int32_t height);
     void SetImageFormat(godot::Image::Format format);

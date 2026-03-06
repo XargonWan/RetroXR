@@ -104,6 +104,7 @@ public:
 
     void StartContent(godot::MeshInstance3D* node, godot::String root_directory, godot::String core_name, godot::String game_path);
     void StopContent();
+    void SetScreenMesh(godot::MeshInstance3D* node);
     void SetCoreOption(const godot::String& key, const godot::String& value);
     void SetInputEnabled(bool enabled);
 

@@ -299,7 +299,7 @@ void Wrapper::StartContent(MeshInstance3D* node, const std::string& root_directo
 
     auto audio_stream_player = memnew(AudioStreamPlayer3D);
     audio_stream_player->set_name("AudioStreamPlayer3D");
-    m_node->add_child(audio_stream_player);
+    m_libretro_node->add_child(audio_stream_player);
 
     std::filesystem::path core_path = std::filesystem::path(root_directory).append("cores").append(core_name + "_libretro").replace_extension(".dll");
 
@@ -339,6 +339,16 @@ void Wrapper::StartContent(MeshInstance3D* node, const std::string& root_directo
 void Wrapper::StopContent()
 {
     StopEmulationThread();
+}
+
+void Wrapper::SetScreenMesh(MeshInstance3D* new_mesh)
+{
+    if (!m_video_handler)
+        return;
+    m_video_handler->SetMesh(m_node, new_mesh);
+    m_node = new_mesh;
+    if (m_audio_handler)
+        m_audio_handler->SetPlaying(new_mesh != nullptr);
 }
 
 void Wrapper::SetCoreOption(const std::string& key, const std::string& value)

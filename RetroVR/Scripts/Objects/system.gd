@@ -61,12 +61,14 @@ func set_input_enabled(enabled: bool) -> void:
 ## Called by the TV's cable plug when it connects to a TV
 func on_tv_connected(tv: RetroTV) -> void:
 	connected_tv = tv
+	if is_powered_on:
+		_libretro.SetScreenMesh(tv.get_screen_mesh())
 
 
 ## Called by the TV's cable plug when it disconnects
 func on_tv_disconnected() -> void:
 	if is_powered_on:
-		power_off()
+		_libretro.SetScreenMesh(null)
 	connected_tv = null
 
 

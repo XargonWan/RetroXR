@@ -3,6 +3,7 @@
 #include <godot_cpp/variant/vector2.hpp>
 
 #include "Wrapper.hpp"
+#include "Libretro.hpp"
 #include "Debug.hpp"
 
 using namespace godot;
@@ -75,7 +76,7 @@ void AudioHandler::Init(float buffer_capacity_sec, double sample_rate)
     m_audio_stream_generator->set_mix_rate(m_audio_sample_rate);
     m_audio_stream_generator->set_buffer_length(m_audio_buffer_capacity_sec);
 
-    m_audio_stream_player = Wrapper::GetCurrentThreadWrapper()->m_node->get_node<godot::AudioStreamPlayer3D>("AudioStreamPlayer3D");
+    m_audio_stream_player = Wrapper::GetCurrentThreadWrapper()->m_libretro_node->get_node<godot::AudioStreamPlayer3D>("AudioStreamPlayer3D");
     m_audio_stream_player->set_stream(m_audio_stream_generator);
     m_audio_stream_player->play();
 
@@ -87,7 +88,7 @@ void AudioHandler::DeInit()
     if (m_audio_stream_player)
     {
         m_audio_stream_player->stop();
-        Wrapper::GetCurrentThreadWrapper()->m_node->remove_child(m_audio_stream_player);
+        Wrapper::GetCurrentThreadWrapper()->m_libretro_node->remove_child(m_audio_stream_player);
         m_audio_stream_player = nullptr;
     }
 
@@ -99,6 +100,22 @@ void AudioHandler::DeInit()
 
     if (m_audio_stream_generator.is_valid())
         m_audio_stream_generator.unref();
+}
+
+void AudioHandler::SetPlaying(bool playing)
+{
+    if (!m_audio_stream_player)
+        return;
+    if (playing)
+    {
+        m_audio_stream_player->play();
+        m_audio_stream_generator_playback = m_audio_stream_player->get_stream_playback();
+    }
+    else
+    {
+        m_audio_stream_player->stop();
+        m_audio_stream_generator_playback.unref();
+    }
 }
 
 bool AudioHandler::SetAudioBufferStatusCallback(const retro_audio_buffer_status_callback* callback)
