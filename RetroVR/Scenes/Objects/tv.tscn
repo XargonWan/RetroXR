@@ -1,0 +1,89 @@
+[gd_scene load_steps=12 format=3 uid="uid://retrotv_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/tv.gd" id="1_tvscript"]
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
+[ext_resource type="Script" path="res://Scripts/Objects/snap_highlight.gd" id="3_snaphis"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.5, 0.4, 0.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.5, 0.4, 0.3)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tvbody"]
+albedo_color = Color(0.1, 0.1, 0.1, 1.0)
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(0.35, 0.25)
+
+[sub_resource type="StandardMaterial3D" id="Mat_screen"]
+albedo_color = Color(0.0, 0.0, 0.0, 1.0)
+emission_enabled = true
+emission = Color(0.02, 0.02, 0.02, 1.0)
+
+[sub_resource type="CylinderMesh" id="CylMesh_port"]
+top_radius = 0.012
+bottom_radius = 0.012
+height = 0.02
+
+[sub_resource type="StandardMaterial3D" id="Mat_port"]
+albedo_color = Color(1.0, 0.85, 0.0, 1.0)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
+bounce = 0.0
+friction = 0.8
+
+[sub_resource type="CylinderMesh" id="CylMesh_plug_ghost"]
+top_radius = 0.015
+bottom_radius = 0.015
+height = 0.05
+
+[sub_resource type="StandardMaterial3D" id="Mat_plug_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1.0, 0.45)
+emission_enabled = true
+emission = Color(0.0, 0.15, 0.5, 1.0)
+emission_energy_multiplier = 0.4
+
+[node name="TV" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 196615
+physics_material_override = SubResource("PhysMat_tv")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_tvscript")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("4_pickhigh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="TVBody" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_tvbody")
+
+[node name="ScreenMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
+mesh = SubResource("QuadMesh_screen")
+surface_material_override/0 = SubResource("Mat_screen")
+
+[node name="CompositePort" parent="." unique_id=3000000001 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.15, -0.15, -0.14)
+snap_require = "composite_plug"
+grab_distance = 0.06
+
+[node name="PortVisual" type="MeshInstance3D" parent="CompositePort"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
+mesh = SubResource("CylMesh_port")
+surface_material_override/0 = SubResource("Mat_port")
+
+[node name="SnapHighlight" type="Node3D" parent="CompositePort"]
+script = ExtResource("3_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="CompositePort/SnapHighlight"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
+mesh = SubResource("CylMesh_plug_ghost")
+surface_material_override/0 = SubResource("Mat_plug_ghost")

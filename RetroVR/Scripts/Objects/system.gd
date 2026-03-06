@@ -1,0 +1,154 @@
+## RetroSystem — pickable retro console that loads a libretro core and renders to a connected TV.
+class_name RetroSystem
+extends XRToolsPickable
+
+
+## The libretro core filename (without extension), e.g. "fceumm"
+@export var core_name: String = ""
+
+## Path to directory containing the core DLL
+@export_dir var core_directory: String = ""
+
+## Human-readable label shown in UI
+@export var system_label: String = ""
+
+
+# Runtime state
+var rom_path: String = ""
+var connected_tv: RetroTV = null
+var is_powered_on: bool = false
+
+# Cable scene to instantiate
+const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
+var _cable_instance: Node3D = null
+var _cable_plug: CablePlug = null
+var _cable_rope: VerletRope = null
+
+
+@onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
+@onready var _cable_attach_point: Node3D = $CableAttachPoint
+@onready var _libretro: Libretro = $Libretro
+@onready var _power_button: VRButton = $PowerButton
+@onready var _reset_button: VRButton = $ResetButton
+
+
+func _ready() -> void:
+	super._ready()
+	add_to_group("retro_system")
+	_cartridge_slot.has_picked_up.connect(_on_cartridge_inserted)
+	_cartridge_slot.has_dropped.connect(_on_cartridge_removed)
+	_power_button.button_pressed.connect(toggle_power)
+	_reset_button.button_pressed.connect(reset)
+	# Initialize power button to "off" color
+	_power_button.set_color(Color(0.0, 0.8, 0.1))
+	# Spawn cable
+	_spawn_cable()
+
+
+## Called by the TV's cable plug when it connects to a TV
+func on_tv_connected(tv: RetroTV) -> void:
+	connected_tv = tv
+
+
+## Called by the TV's cable plug when it disconnects
+func on_tv_disconnected() -> void:
+	if is_powered_on:
+		power_off()
+	connected_tv = null
+
+
+# --- Cable management ---
+
+func _spawn_cable() -> void:
+	_cable_instance = CABLE_SCENE.instantiate()
+	# Add cable to scene root so it's not affected by system's RigidBody transform weirdness
+	call_deferred("_add_cable_to_scene")
+
+
+func _add_cable_to_scene() -> void:
+	get_tree().current_scene.add_child(_cable_instance)
+	_cable_plug = _cable_instance.get_node("CablePlug") as CablePlug
+	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+
+	# Tell the plug who owns it
+	_cable_plug.set_system(self)
+
+	# Exclude the plug from colliding with this system so it doesn't jitter on spawn
+	_cable_plug.add_collision_exception_with(self)
+
+	# Position plug below the cable attach point, clear of the system body
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, -0.2, 0)
+
+	# Wire rope anchors: start = system's attach point, end = plug
+	_cable_rope.start_node = _cable_attach_point
+	_cable_rope.end_node = _cable_plug
+	_cable_rope._init_points()
+
+
+## Power on: start this system's libretro core
+func power_on() -> void:
+	if is_powered_on:
+		return
+	if connected_tv == null:
+		push_error("RetroSystem: Cannot power on - no TV connected")
+		return
+	if rom_path.is_empty():
+		push_error("RetroSystem: Cannot power on - no cartridge inserted")
+		return
+	if core_name.is_empty():
+		push_error("RetroSystem: Cannot power on - core_name not set")
+		return
+	if core_directory.is_empty():
+		push_error("RetroSystem: Cannot power on - core_directory not set")
+		return
+
+	print("[RetroSystem] Powering on: core=%s, rom=%s" % [core_name, rom_path])
+	_libretro.StartContent(connected_tv.get_screen_mesh(), core_directory, core_name, rom_path)
+	is_powered_on = true
+	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Bright green when on
+
+
+## Power off: stop the running core
+func power_off() -> void:
+	if not is_powered_on:
+		return
+	print("[RetroSystem] Powering off")
+	_libretro.StopContent()
+	is_powered_on = false
+	_power_button.set_color(Color(0.0, 0.8, 0.1))  # Dim green when off
+
+
+## Toggle power (used by the power button)
+func toggle_power() -> void:
+	if is_powered_on:
+		power_off()
+	else:
+		power_on()
+
+
+## Hard reset: stop and restart with the same content
+func reset() -> void:
+	if is_powered_on:
+		power_off()
+		power_on()
+
+
+# --- Cartridge slot callbacks ---
+
+var _snapped_cartridge: Node3D = null
+
+func _on_cartridge_inserted(cartridge: Node3D) -> void:
+	_snapped_cartridge = cartridge
+	# Prevent the frozen kinematic cartridge from physically pushing the system body
+	add_collision_exception_with(cartridge)
+	if cartridge.has_method("get_rom_path"):
+		rom_path = cartridge.get_rom_path()
+
+
+func _on_cartridge_removed() -> void:
+	if _snapped_cartridge:
+		remove_collision_exception_with(_snapped_cartridge)
+		_snapped_cartridge = null
+	if is_powered_on:
+		power_off()
+	rom_path = ""

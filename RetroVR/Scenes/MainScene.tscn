@@ -1,0 +1,156 @@
+[gd_scene format=3 uid="uid://bh8x3sbal8nds"]
+
+[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="3_xrinit"]
+[ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/controller_model.gd" id="4_ctrlmodel"]
+[ext_resource type="PackedScene" uid="uid://b4ysuy43poobf" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="5_pickup"]
+[ext_resource type="PackedScene" uid="uid://cqhw276realc" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="6_pointer"]
+
+[ext_resource type="PackedScene" uid="uid://diyu06cw06syv" path="res://addons/godot-xr-tools/player/player_body.tscn" id="8_playerbody"]
+[ext_resource type="PackedScene" uid="uid://bl2nuu3qhlb5k" path="res://addons/godot-xr-tools/functions/movement_direct.tscn" id="9_movdirect"]
+[ext_resource type="PackedScene" uid="uid://b6bk2pj8vbj28" path="res://addons/godot-xr-tools/functions/movement_turn.tscn" id="10_movturn"]
+[ext_resource type="PackedScene" uid="uid://fiul51tsyoop" path="res://addons/godot-xr-tools/functions/function_teleport.tscn" id="11_teleport"]
+[ext_resource type="Script" uid="uid://bwevtpwvx1u2r" path="res://Scripts/stick_teleport.gd" id="12_stickteleport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/tv.tscn" id="13_tv"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/system_nes.tscn" id="14_nes"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cartridge.tscn" id="15_cartridge"]
+[ext_resource type="Script" uid="uid://0abdj5fqidtk" path="res://Scripts/UI/spawn_menu_controller.gd" id="16_menuctl"]
+[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="17_viewport2d3d"]
+[ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="18_spawnmenu"]
+[ext_resource type="Script" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProcSkyMat"]
+sky_top_color = Color(0.18, 0.31, 0.55, 1)
+sky_horizon_color = Color(0.52, 0.65, 0.85, 1)
+sky_curve = 0.15
+ground_bottom_color = Color(0.12, 0.1, 0.09, 1)
+ground_horizon_color = Color(0.3, 0.28, 0.25, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProcSkyMat")
+
+[sub_resource type="Environment" id="Env_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.4
+tonemap_mode = 2
+tonemap_exposure = 1.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(20, 0.1, 20)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(20, 20)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_table"]
+size = Vector3(2.6, 0.05, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_table"]
+size = Vector3(2.6, 0.05, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_table"]
+albedo_color = Color(0.55, 0.35, 0.18, 1)
+
+[node name="Root" type="Node3D" unique_id=1033434416]
+script = ExtResource("3_xrinit")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2000000070]
+environment = SubResource("Env_main")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2000000071]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 3, 0)
+light_energy = 1.2
+light_color = Color(1, 0.97, 0.88, 1)
+shadow_enabled = true
+
+[node name="XROrigin3D" type="XROrigin3D" parent="." unique_id=1434750428]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.2)
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=1434750429]
+
+[node name="PlayerBody" parent="XROrigin3D" unique_id=2000000030 instance=ExtResource("8_playerbody")]
+player_calibrate_height = false
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D" unique_id=1434750430]
+tracker = &"left_hand"
+script = ExtResource("4_ctrlmodel")
+
+[node name="FunctionPickup" parent="XROrigin3D/LeftController" unique_id=2000000001 instance=ExtResource("5_pickup")]
+
+[node name="FunctionPointer" parent="XROrigin3D/LeftController" unique_id=2000000002 instance=ExtResource("6_pointer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
+
+[node name="MovementDirect" parent="XROrigin3D/LeftController" unique_id=2000000031 instance=ExtResource("9_movdirect")]
+strafe = true
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D" unique_id=1434750431]
+tracker = &"right_hand"
+script = ExtResource("4_ctrlmodel")
+
+[node name="FunctionPickup" parent="XROrigin3D/RightController" unique_id=2000000003 instance=ExtResource("5_pickup")]
+
+[node name="FunctionPointer" parent="XROrigin3D/RightController" unique_id=2000000034 instance=ExtResource("6_pointer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.05, -0.1)
+
+[node name="MovementTurn" parent="XROrigin3D/RightController" unique_id=2000000032 instance=ExtResource("10_movturn")]
+turn_mode = 1
+
+[node name="FunctionTeleport" parent="XROrigin3D/RightController" unique_id=2000000033 instance=ExtResource("11_teleport")]
+script = ExtResource("12_stickteleport")
+stick_teleport_action = "primary"
+stick_teleport_threshold = 0.6
+teleport_button_action = ""
+
+[node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=611392543]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0138264, 1.70309, 1.532)
+omni_range = 2.2381
+
+[node name="Floor" type="StaticBody3D" parent="." unique_id=2000000020]
+collision_layer = 3
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor" unique_id=2000000021]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Floor" unique_id=2000000022]
+mesh = SubResource("PlaneMesh_floor")
+
+[node name="Table" type="StaticBody3D" parent="." unique_id=2000000040]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.15, 0, -0.9)
+collision_layer = 3
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Table" unique_id=2000000041]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.725, 0)
+shape = SubResource("BoxShape3D_table")
+
+[node name="TableTop" type="MeshInstance3D" parent="Table" unique_id=2000000042]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.725, 0)
+mesh = SubResource("BoxMesh_table")
+surface_material_override/0 = SubResource("Mat_table")
+
+[node name="TV" parent="." unique_id=-1294967286 instance=ExtResource("13_tv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 0.95, -1)
+
+[node name="NESSystem" parent="." unique_id=-294967286 instance=ExtResource("14_nes")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.8, -0.8)
+
+[node name="NESCartridge" parent="." unique_id=705032705 instance=ExtResource("15_cartridge")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.758, -0.55)
+rom_path = "C:/Users/user/libretro/probe.nes"
+game_label = "Super Mario Bros. (World)"
+
+[node name="SpawnMenuController" type="Node3D" parent="." unique_id=2000000050]
+script = ExtResource("16_menuctl")
+
+[node name="SpawnMenuViewport" parent="SpawnMenuController" unique_id=2000000051 instance=ExtResource("17_viewport2d3d")]
+screen_size = Vector2(0.6, 0.5)
+scene = ExtResource("18_spawnmenu")
+viewport_size = Vector2(600, 500)
+transparent = 1
+scene_properties_keys = PackedStringArray("spawn_menu.gd")
+
+[node name="VRInputMapper" type="Node3D" parent="." unique_id=2000000060]
+script = ExtResource("19_inputmapper")

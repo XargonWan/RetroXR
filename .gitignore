@@ -1,0 +1,7 @@
+# Ignore all files in Temp except Temp/SConscript
+Temp/*
+!Temp/SConscript
+
+vc140.pdb
+.sconsign.dblite
+Demo/SKLibretro/~*

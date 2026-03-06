@@ -1,0 +1,67 @@
+[gd_scene load_steps=10 format=3 uid="uid://cable_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/cable_plug.gd" id="1_plugscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/verlet_rope.gd" id="2_ropescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="3_pickhigh"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
+radius = 0.035
+
+[sub_resource type="CylinderMesh" id="CylMesh_plug"]
+top_radius = 0.01
+bottom_radius = 0.006
+height = 0.04
+
+[sub_resource type="StandardMaterial3D" id="Mat_plug"]
+albedo_color = Color(0.9, 0.9, 0.0, 1.0)
+
+[sub_resource type="CylinderMesh" id="CylMesh_strain"]
+top_radius = 0.008
+bottom_radius = 0.008
+height = 0.02
+
+[sub_resource type="StandardMaterial3D" id="Mat_strain"]
+albedo_color = Color(0.15, 0.15, 0.15, 1.0)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
+bounce = 0.0
+friction = 0.8
+
+[node name="Cable" type="Node3D"]
+
+[node name="CablePlug" type="RigidBody3D" parent="."]
+collision_layer = 4
+collision_mask = 196615
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.1
+linear_damp = 5.0
+angular_damp = 8.0
+gravity_scale = 1.0
+freeze = false
+freeze_mode = 1
+script = ExtResource("1_plugscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CablePlug"]
+shape = SubResource("SphereShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="CablePlug"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
+mesh = SubResource("CylMesh_plug")
+surface_material_override/0 = SubResource("Mat_plug")
+
+[node name="StrainRelief" type="MeshInstance3D" parent="CablePlug"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.03)
+mesh = SubResource("CylMesh_strain")
+surface_material_override/0 = SubResource("Mat_strain")
+
+[node name="PickableHighlight" type="Node3D" parent="CablePlug"]
+script = ExtResource("3_pickhigh")
+
+[node name="VerletRope" type="MeshInstance3D" parent="."]
+script = ExtResource("2_ropescript")
+segment_count = 15
+segment_length = 0.06
+tube_radius = 0.005
+tube_sides = 6
+rope_color = Color(0.15, 0.15, 0.15, 1.0)
+surface_collision_mask = 3
