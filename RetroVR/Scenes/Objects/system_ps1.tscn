@@ -4,5 +4,6 @@
 
 [node name="PS1System" instance=ExtResource("1_base")]
 core_name = "mednafen_psx"
-core_directory = "C:/Users/user/libretro"
+core_directory = ""
 system_label = "PS1"
+systemid = "psx"

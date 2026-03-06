@@ -3,14 +3,19 @@ class_name RetroSystem
 extends XRToolsPickable
 
 
-## The libretro core filename (without extension), e.g. "fceumm"
+## The libretro core filename (without extension), e.g. "fceumm".
+## If empty at power_on(), looked up from CoreDefaults using systemid.
 @export var core_name: String = ""
 
-## Path to directory containing the core DLL
+## Root directory passed to the C++ core loader (NOT the cores/ subdir — C++ appends that).
+## If empty at power_on(), defaults to CoreDownloadManager.default_core_root().
 @export_dir var core_directory: String = ""
 
 ## Human-readable label shown in UI
 @export var system_label: String = ""
+
+## libretro systemid (e.g. "nes", "super_nes"). Used for dynamic core lookup.
+@export var systemid: String = ""
 
 
 # Runtime state
@@ -95,15 +100,24 @@ func power_on() -> void:
 	if rom_path.is_empty():
 		push_error("RetroSystem: Cannot power on - no cartridge inserted")
 		return
-	if core_name.is_empty():
-		push_error("RetroSystem: Cannot power on - core_name not set")
-		return
-	if core_directory.is_empty():
-		push_error("RetroSystem: Cannot power on - core_directory not set")
+
+	# Resolve core_name from CoreDefaults if not baked into the scene
+	var resolved_core := core_name
+	if resolved_core.is_empty() and not systemid.is_empty():
+		var defaults := CoreDefaults.new()
+		defaults.setup(CoreDefaults.default_path())
+		resolved_core = defaults.get_default_core(systemid)
+	if resolved_core.is_empty():
+		push_error("RetroSystem: Cannot power on - no core set and no default for systemid '%s'" % systemid)
 		return
 
-	print("[RetroSystem] Powering on: core=%s, rom=%s" % [core_name, rom_path])
-	_libretro.StartContent(connected_tv.get_screen_mesh(), core_directory, core_name, rom_path)
+	# Resolve core_directory — C++ appends /cores/ internally, so pass the root dir
+	var resolved_dir := core_directory
+	if resolved_dir.is_empty():
+		resolved_dir = CoreDownloadManager.default_core_root()
+
+	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
+	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
 	is_powered_on = true
 	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Bright green when on
 

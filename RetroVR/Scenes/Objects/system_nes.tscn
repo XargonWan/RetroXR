@@ -4,5 +4,6 @@
 
 [node name="NESSystem" instance=ExtResource("1_base")]
 core_name = "fceumm"
-core_directory = "C:/Users/user/libretro"
+core_directory = ""
 system_label = "NES"
+systemid = "nes"

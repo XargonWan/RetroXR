@@ -4,5 +4,6 @@
 
 [node name="N64System" instance=ExtResource("1_base")]
 core_name = "mupen64plus_next"
-core_directory = "C:/Users/user/libretro"
+core_directory = ""
 system_label = "N64"
+systemid = "nintendo_64"

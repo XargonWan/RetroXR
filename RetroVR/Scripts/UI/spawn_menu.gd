@@ -43,6 +43,9 @@ var _vscrollbar: VScrollBar = null
 var _manager_list_vbox:   VBoxContainer = null
 var _manager_empty_label: Label         = null
 
+# Spawn > Systems tab — rebuilt whenever defaults change
+var _systems_vbox: VBoxContainer = null
+
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 const COLOR_BG           := Color(0.08, 0.08, 0.16, 0.96)
@@ -201,10 +204,53 @@ func scroll_active(pixels: float) -> void:
 func _build_spawn_view() -> Control:
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_add_spawn_tab(tabs, "Systems",    [["NES System", "nes"]])
+
+	# Systems tab — dynamic, driven by CoreDefaults
+	var systems_scroll := ScrollContainer.new()
+	systems_scroll.name = "Systems"
+	tabs.add_child(systems_scroll)
+	_systems_vbox = VBoxContainer.new()
+	_systems_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_systems_vbox.add_theme_constant_override("separation", 14)
+	systems_scroll.add_child(_systems_vbox)
+	_populate_systems_tab()
+
+	# Rebuild systems list whenever the user sets/changes a default
+	default_core_changed.connect(func(_sid: String, _cn: String): _populate_systems_tab())
+
 	_add_spawn_tab(tabs, "TVs",        [["TV",         "tv"]])
 	_add_spawn_tab(tabs, "Cartridges", [["Cartridge",  "cartridge"]])
 	return tabs
+
+
+func _populate_systems_tab() -> void:
+	if not _systems_vbox:
+		return
+	for child in _systems_vbox.get_children():
+		child.queue_free()
+	_systems_vbox.add_child(_spacer(10))
+	var defaults := core_defaults.all_defaults()
+	if defaults.is_empty():
+		var lbl := Label.new()
+		lbl.text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
+		lbl.add_theme_font_size_override("font_size", 20)
+		lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_systems_vbox.add_child(lbl)
+		return
+	for systemid: String in defaults:
+		var display_name := systemid
+		var entries := core_db.get_by_systemid(systemid)
+		if not entries.is_empty():
+			var e: Dictionary = entries[0]
+			if e.has("systemname"):
+				display_name = e["systemname"]
+		var btn := Button.new()
+		btn.text = "  +  " + display_name
+		btn.custom_minimum_size = Vector2(0, 80)
+		btn.add_theme_font_size_override("font_size", 26)
+		btn.pressed.connect(spawn_requested.emit.bind(systemid))
+		_systems_vbox.add_child(btn)
 
 
 func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:

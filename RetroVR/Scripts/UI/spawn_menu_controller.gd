@@ -6,14 +6,14 @@
 ## Toggle with the left controller's menu_button action.
 extends Node3D
 
-const NES_SCENE  := preload("res://Scenes/Objects/system_nes.tscn")
+const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE   := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE := preload("res://Scenes/Objects/cartridge.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
 	"tv":         0.95,
-	"nes":        0.80,
+	"system":     0.80,
 	"cartridge":  0.76,
 }
 
@@ -127,9 +127,14 @@ func _on_controller_button(action_name: String) -> void:
 func _process(delta: float) -> void:
 	var menu_visible: bool = _viewport_node.visible
 
+	# When menu is closed, don't touch locomotion nodes — VRInputMapper owns them
+	if not menu_visible:
+		_smoothed_scroll_y = 0.0
+		return
+
 	# Determine which pointers are currently aimed at the menu panel
-	var right_over: bool = menu_visible and _pointer_over_menu(_right_pointer)
-	var left_over:  bool = menu_visible and _pointer_over_menu(_left_pointer)
+	var right_over: bool = _pointer_over_menu(_right_pointer)
+	var left_over:  bool = _pointer_over_menu(_left_pointer)
 
 	# Suppress right-stick locomotion only when right controller points at menu
 	_set_node_enabled(_move_turn,     not right_over)
@@ -219,23 +224,32 @@ func _show_menu() -> void:
 func _hide_menu() -> void:
 	_viewport_node.visible = false
 	_smoothed_scroll_y = 0.0
-	# Ensure locomotion is fully restored when menu closes
-	_set_node_enabled(_move_turn,     true)
-	_set_node_enabled(_func_teleport, true)
-	_set_node_enabled(_move_direct,   true)
+	# Only restore locomotion if VRInputMapper hasn't taken control.
+	# When disabled=true, VRInputMapper owns those nodes — don't touch them.
+	if not disabled:
+		_set_node_enabled(_move_turn,     true)
+		_set_node_enabled(_func_teleport, true)
+		_set_node_enabled(_move_direct,   true)
 
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
 
 func _on_spawn_requested(type: String) -> void:
-	var scene: PackedScene
+	var obj: Node3D
 	match type:
-		"tv":        scene = TV_SCENE
-		"nes":       scene = NES_SCENE
-		"cartridge": scene = CART_SCENE
-		_: return
+		"tv":
+			obj = TV_SCENE.instantiate() as Node3D
+		"cartridge":
+			obj = CART_SCENE.instantiate() as Node3D
+		_:
+			# Any other type is treated as a systemid — spawn the generic system and assign it
+			var sys := SYSTEM_SCENE.instantiate() as Node3D
+			sys.set("systemid", type)
+			obj = sys
 
-	var obj := scene.instantiate() as Node3D
+	if not obj:
+		return
+
 	get_tree().current_scene.add_child(obj)
 
 	# Place the new object 0.5 m in front of the menu at table height
@@ -246,4 +260,4 @@ func _on_spawn_requested(type: String) -> void:
 	fwd = fwd.normalized()
 
 	obj.global_position = global_position + fwd * 0.5
-	obj.global_position.y = SPAWN_Y.get(type, 0.85)
+	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
