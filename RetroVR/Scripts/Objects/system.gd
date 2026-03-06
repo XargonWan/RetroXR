@@ -28,6 +28,7 @@ const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
 var _cable_instance: Node3D = null
 var _cable_plug: CablePlug = null
 var _cable_rope: VerletRope = null
+var _max_rope_length: float = 0.0
 
 
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
@@ -88,13 +89,34 @@ func _add_cable_to_scene() -> void:
 	# Exclude the plug from colliding with this system so it doesn't jitter on spawn
 	_cable_plug.add_collision_exception_with(self)
 
-	# Position plug below the cable attach point, clear of the system body
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, -0.2, 0)
+	# Position plug at the same Y as the rope's start anchor (the attach point)
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.1)
 
 	# Wire rope anchors: start = system's attach point, end = plug
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
 	_cable_rope._init_points()
+	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
+
+
+func _physics_process(_delta: float) -> void:
+	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
+		return
+	# Snapped to TV or actively held by the user — don't fight whoever owns the plug
+	if connected_tv != null or _cable_plug.is_picked_up():
+		return
+
+	var attach_pos := _cable_attach_point.global_position
+	var diff := _cable_plug.global_position - attach_pos
+	var dist := diff.length()
+
+	if dist > _max_rope_length:
+		var dir := diff / dist
+		# Clamp plug to rope length and kill outward velocity
+		_cable_plug.global_position = attach_pos + dir * _max_rope_length
+		var outward_vel := dir.dot(_cable_plug.linear_velocity)
+		if outward_vel > 0.0:
+			_cable_plug.linear_velocity -= dir * outward_vel
 
 
 ## Power on: start this system's libretro core
