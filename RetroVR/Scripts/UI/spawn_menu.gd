@@ -7,12 +7,17 @@ extends Control
 
 signal spawn_requested(type: String)
 signal close_requested
+## Emitted when the user changes a default core in the Manager tab.
+signal default_core_changed(systemid: String, core_name: String)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
 
 ## Download manager — added as a child so HTTPRequest nodes work correctly.
 var download_manager: CoreDownloadManager = null
+
+## Core defaults persistence (core_defaults.json).
+var core_defaults: CoreDefaults = null
 
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
@@ -34,6 +39,10 @@ var _download_list_scroll: ScrollContainer = null
 # Custom scroll indicator (replaces native scrollbar)
 var _vscrollbar: VScrollBar = null
 
+# Cores > Manager tab state
+var _manager_list_vbox:   VBoxContainer = null
+var _manager_empty_label: Label         = null
+
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 const COLOR_BG           := Color(0.08, 0.08, 0.16, 0.96)
@@ -50,6 +59,7 @@ const COLOR_BTN_BUSY     := Color(0.25, 0.20, 0.10)
 
 func _ready() -> void:
 	_init_core_db()
+	_init_core_defaults()
 	_init_download_manager()
 	_build_ui()
 
@@ -57,6 +67,11 @@ func _ready() -> void:
 func _init_core_db() -> void:
 	core_db = CoreInfoDatabase.new()
 	core_db.load_from_project()
+
+
+func _init_core_defaults() -> void:
+	core_defaults = CoreDefaults.new()
+	core_defaults.setup(CoreDefaults.default_path())
 
 
 func _init_download_manager() -> void:
@@ -220,16 +235,154 @@ func _build_cores_view() -> Control:
 	dl_container.name = "Download"
 	tabs.add_child(dl_container)
 
-	# Manager tab — Phase 4 placeholder
-	var mgr_scroll := ScrollContainer.new()
-	mgr_scroll.name = "Manager"
-	var mgr_label := Label.new()
-	mgr_label.text = "Coming soon — Phase 4"
-	mgr_label.add_theme_color_override("font_color", COLOR_LICENSE)
-	mgr_scroll.add_child(mgr_label)
-	tabs.add_child(mgr_scroll)
+	var mgr_container := _build_manager_tab()
+	mgr_container.name = "Manager"
+	tabs.add_child(mgr_container)
+
+	# Refresh Manager list each time the user switches to it
+	tabs.tab_changed.connect(func(idx: int):
+		if idx == 1:
+			_populate_manager_tab()
+	)
 
 	return tabs
+
+
+# ── Manager tab ───────────────────────────────────────────────────────────────────
+
+func _build_manager_tab() -> Control:
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 6)
+
+	var hdr := Label.new()
+	hdr.text = "Set the default core for each system that has downloaded cores."
+	hdr.add_theme_font_size_override("font_size", 15)
+	hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	outer.add_child(hdr)
+
+	outer.add_child(HSeparator.new())
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical  = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode   = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	outer.add_child(scroll)
+
+	_manager_list_vbox = VBoxContainer.new()
+	_manager_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_manager_list_vbox.add_theme_constant_override("separation", 4)
+	scroll.add_child(_manager_list_vbox)
+
+	_manager_empty_label = Label.new()
+	_manager_empty_label.text = "No cores downloaded yet.\nUse the Download tab to install cores."
+	_manager_empty_label.add_theme_font_size_override("font_size", 18)
+	_manager_empty_label.add_theme_color_override("font_color", COLOR_LICENSE)
+	_manager_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_manager_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_manager_list_vbox.add_child(_manager_empty_label)
+
+	return outer
+
+
+func _populate_manager_tab() -> void:
+	if not _manager_list_vbox:
+		return
+	for c in _manager_list_vbox.get_children():
+		c.queue_free()
+
+	# Scan cores dir for installed DLLs
+	var cores_dir := CoreDownloadManager.default_cores_dir()
+	var dir := DirAccess.open(cores_dir)
+	if not dir:
+		_manager_list_vbox.add_child(_manager_empty_label)
+		return
+
+	var core_names: Array[String] = []
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		if not dir.current_is_dir() and fname.ends_with("_libretro.dll"):
+			core_names.append(fname.trim_suffix("_libretro.dll"))
+		fname = dir.get_next()
+	dir.list_dir_end()
+
+	if core_names.is_empty():
+		_manager_list_vbox.add_child(_manager_empty_label)
+		return
+
+	# Group by systemid
+	# systemid -> Array[{core_name, display_name}]
+	var by_system: Dictionary = {}
+	var system_labels: Dictionary = {}   # systemid -> human label
+
+	for cn: String in core_names:
+		var info: Dictionary = core_db.get_by_core_name(cn)
+		var sid: String  = info.get("systemid",   "unknown") if not info.is_empty() else "unknown"
+		var sname: String = info.get("systemname", cn)       if not info.is_empty() else cn
+		if not by_system.has(sid):
+			by_system[sid]      = []
+			system_labels[sid]  = sname
+		(by_system[sid] as Array).append({"core_name": cn,
+			"display_name": info.get("corename", cn) if not info.is_empty() else cn})
+
+	# Sort systems alphabetically by label
+	var sids: Array = by_system.keys()
+	sids.sort_custom(func(a: String, b: String) -> bool:
+		return (system_labels[a] as String) < (system_labels[b] as String)
+	)
+
+	for sid: String in sids:
+		var cores_list: Array = by_system[sid] as Array
+		_manager_list_vbox.add_child(
+			_build_manager_row(sid, system_labels[sid] as String, cores_list)
+		)
+		_manager_list_vbox.add_child(HSeparator.new())
+
+
+## Builds one row: systemname label + OptionButton of available cores.
+func _build_manager_row(systemid: String, systemname: String, cores: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 68)
+
+	var lbl := Label.new()
+	lbl.text = systemname
+	lbl.add_theme_font_size_override("font_size", 19)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(lbl)
+
+	var opt := OptionButton.new()
+	opt.custom_minimum_size = Vector2(260, 56)
+	opt.add_theme_font_size_override("font_size", 17)
+
+	var current_default: String = core_defaults.get_default_core(systemid)
+	var selected_idx := 0
+	for i: int in cores.size():
+		var entry: Dictionary = cores[i] as Dictionary
+		opt.add_item(entry["display_name"] as String, i)
+		if entry["core_name"] == current_default:
+			selected_idx = i
+
+	opt.selected = selected_idx
+	# If no default was saved yet, persist the auto-selected first entry
+	if current_default.is_empty() and not cores.is_empty():
+		core_defaults.set_default_core(systemid, (cores[0] as Dictionary)["core_name"] as String)
+		core_defaults.save()
+		default_core_changed.emit(systemid, (cores[0] as Dictionary)["core_name"])
+
+	opt.item_selected.connect(func(idx: int) -> void:
+		var cn: String = (cores[idx] as Dictionary)["core_name"] as String
+		core_defaults.set_default_core(systemid, cn)
+		core_defaults.save()
+		default_core_changed.emit(systemid, cn)
+	)
+	row.add_child(opt)
+
+	return row
 
 
 # ── Download tab ──────────────────────────────────────────────────────────────
@@ -416,6 +569,8 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 			var new_state := "Re-Download" if success else "Download"
 			if not success:
 				push_warning("CoreDownload '%s' failed: %s" % [core_name, err_msg])
+			else:
+				call_deferred("_populate_manager_tab")
 			btn.text = new_state
 			_style_dl_button(btn, new_state)
 	)
