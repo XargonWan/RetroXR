@@ -1,0 +1,39 @@
+# type: ignore
+
+Import('env')
+
+env = env.Clone()
+
+env = SConscript("../godot-cpp/SConstruct")
+
+env.Append(CPPPATH=[
+    "SKLibretro/external/",
+    "SKLibretro/external/godot-cpp/",
+    "SKLibretro/external/godot-cpp/include/",
+    "SKLibretro/external/godot-cpp/gen/include/",
+    "SKLibretro/external/libretro-common/include/",
+    "SKLibretro/external/SDL3/include/"
+])
+
+env.Append(CXXFLAGS=["/std:c++latest"])
+
+env.Append(LIBPATH=[r"SKLibretro/external/SDL3/lib/x64"])
+
+env.Append(LIBS=["user32", "gdi32", "opengl32", "SDL3"])
+
+env.Append(LINKFLAGS=['/IGNORE:4099'])
+
+sources = Glob("SKLibretro/src/*.cpp")
+sources.extend(Glob("SKLibretro/external/libretro-common/compat/*.c"))
+sources.remove(File("SKLibretro/external/libretro-common/compat/compat_ifaddrs.c"))
+sources.extend(Glob("SKLibretro/external/libretro-common/encodings/*.c"))
+
+sources.append("SKLibretro/external/libretro-common/audio/conversion/s16_to_float.c")
+sources.append("SKLibretro/external/libretro-common/features/features_cpu.c")
+sources.append("SKLibretro/external/libretro-common/gfx/scaler/pixconv.c")
+sources.append("SKLibretro/external/libretro-common/string/stdstring.c")
+sources.append("SKLibretro/external/libretro-common/vfs/vfs_implementation.c")
+
+library = env.SharedLibrary("../Demo/SKLibretro/SKLibretro.{}.{}.{}{}".format(env["platform"], env["target"], env["arch"], env["SHLIBSUFFIX"]), source=sources)
+
+Default(library)
