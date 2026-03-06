@@ -151,6 +151,14 @@ text = "RESET"
 font_size = 12
 pixel_size = 0.001
 
+[node name="SystemNameLabel" type="Label3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.01, 0.13)
+text = ""
+font_size = 20
+pixel_size = 0.001
+horizontal_alignment = 1
+outline_size = 4
+
 [node name="Libretro" type="Libretro" parent="." unique_id=4000000010]
 
 [node name="PointerArea" type="StaticBody3D" parent="."]

@@ -46,6 +46,7 @@ var _max_rope_length: float = 0.0
 @onready var _reset_button: VRButton = $ResetButton
 @onready var _power_button_label: Label3D = $PowerButton/ButtonLabel
 @onready var _options_panel: CoreOptionsPanel = $CoreOptionsPanel
+@onready var _system_name_label: Label3D = $SystemNameLabel
 
 
 func _ready() -> void:
@@ -60,6 +61,18 @@ func _ready() -> void:
 	_libretro.options_ready.connect(_on_options_ready)
 	# Spawn cable
 	_spawn_cable()
+	_update_name_label()
+
+
+func _update_name_label() -> void:
+	var display_name := system_label
+	if display_name.is_empty() and not systemid.is_empty():
+		var db := CoreInfoDatabase.new()
+		db.load_from_project()
+		display_name = db.get_systemname_for_id(systemid)
+	if display_name.is_empty():
+		display_name = systemid
+	_system_name_label.text = display_name.to_upper()
 
 
 ## Enable or disable libretro input polling for this system.
