@@ -23,6 +23,10 @@ var rom_path: String = ""
 var connected_tv: RetroTV = null
 var is_powered_on: bool = false
 
+# Cached core options (populated when options_ready fires)
+var _options_definitions: Dictionary = {}
+var _options_values: Dictionary = {}
+
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
 var _cable_instance: Node3D = null
@@ -37,6 +41,7 @@ var _max_rope_length: float = 0.0
 @onready var _power_button: VRButton = $PowerButton
 @onready var _reset_button: VRButton = $ResetButton
 @onready var _power_button_label: Label3D = $PowerButton/ButtonLabel
+@onready var _options_panel: CoreOptionsPanel = $CoreOptionsPanel
 
 
 func _ready() -> void:
@@ -48,6 +53,7 @@ func _ready() -> void:
 	_reset_button.button_pressed.connect(reset)
 	# Initialize power button to "off" color
 	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Green when off
+	_libretro.options_ready.connect(_on_options_ready)
 	# Spawn cable
 	_spawn_cable()
 
@@ -163,6 +169,7 @@ func power_off() -> void:
 	is_powered_on = false
 	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Green when off
 	_power_button_label.text = "START"
+	_options_panel.hide_panel()
 
 
 ## Toggle power (used by the power button)
@@ -178,6 +185,39 @@ func reset() -> void:
 	if is_powered_on:
 		power_off()
 		power_on()
+
+
+# --- Core options ---
+
+## Fired by the Libretro node (via options_ready signal) once the emulation core
+## has registered its option set. Caches the data and refreshes the panel if it
+## is already open so live changes (e.g. second options_ready after reset) appear.
+func _on_options_ready(_categories: Dictionary, definitions: Dictionary, current_values: Dictionary) -> void:
+	print("[RetroSystem] options_ready — %d definitions received" % definitions.size())
+	_options_definitions = definitions
+	_options_values = current_values
+	if _options_panel.visible:
+		_options_panel.refresh()
+
+
+## Toggle the core options panel open or closed.
+## Called by SpawnMenuController when the user points at this system and presses
+## the left thumbstick (primary_click action).
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel.visible:
+		print("[RetroSystem] closing options panel")
+		_options_panel.hide_panel()
+	else:
+		print("[RetroSystem] opening options panel")
+		_options_panel.show_for(self, camera)
+
+
+## Apply a single core option change and forward it to the running libretro core.
+## Also updates the local cache so the panel stays in sync if reopened.
+func set_core_option(key: String, value: String) -> void:
+	print("[RetroSystem] set_core_option '%s' = '%s'" % [key, value])
+	_options_values[key] = value
+	_libretro.SetCoreOption(key, value)
 
 
 # --- Cartridge slot callbacks ---

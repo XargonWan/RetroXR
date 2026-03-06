@@ -118,10 +118,13 @@ func _connect_menu_signals() -> void:
 # ── Button handler ────────────────────────────────────────────────────────────
 
 func _on_controller_button(action_name: String) -> void:
-	if disabled:
-		return
 	if action_name == "primary_click":
-		_toggle_menu()
+		var sys := _get_pointed_system(_left_pointer)
+		if sys:
+			sys.toggle_options_ui(_camera)
+			return
+		if not disabled:
+			_toggle_menu()
 
 
 # ── Scroll driving ────────────────────────────────────────────────────────────
@@ -169,6 +172,28 @@ func _process(delta: float) -> void:
 	var menu := _get_menu()
 	if menu:
 		menu.scroll_active(pixels)
+
+
+## Returns the RetroSystem the pointer is aimed at, or null if not pointing at one.
+## Each RetroSystem has a PointerArea (StaticBody3D on layer 21) that the pointer
+## raycast can hit. We walk up from last_target looking for a RetroSystem ancestor.
+## We return null early if we encounter an XRToolsViewport2DIn3D, so clicking on
+## the spawn menu or core options panel is never misread as a system click.
+func _get_pointed_system(pointer: XRToolsFunctionPointer) -> RetroSystem:
+	if not pointer:
+		return null
+	var tgt: Node3D = pointer.last_target
+	if not tgt:
+		return null
+	var node: Node = tgt
+	while node:
+		# If the pointer is inside any viewport, it's a UI click — not a system click
+		if node is XRToolsViewport2DIn3D:
+			return null
+		if node is RetroSystem:
+			return node as RetroSystem
+		node = node.get_parent()
+	return null
 
 
 ## Returns true if pointer's last_target is a node inside the spawn menu viewport.

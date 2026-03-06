@@ -159,20 +159,41 @@ bool OptionsHandler::SetCoreOptionsUpdateDisplayCallback(const retro_core_option
 
 void OptionsHandler::SetVariable(const std::string& key, const std::string& value)
 {
-    if (key.empty() || value.empty() || !m_variables.contains(key))
-        return;
+    Log("OptionsHandler::SetVariable: key=" + key + " value=" + value);
 
+    if (key.empty())   { LogError("OptionsHandler::SetVariable: key is empty");          return; }
+    if (value.empty()) { LogError("OptionsHandler::SetVariable: value is empty");        return; }
+    if (!m_variables.contains(key)) { Log("OptionsHandler::SetVariable: key not found in m_variables, skipping"); return; }
+
+    Log("OptionsHandler::SetVariable: writing value to map");
     m_variables[key] = value;
     m_variable_update = true;
 
-    SetVariableUpdate(true);
+    Log("OptionsHandler::SetVariable: calling SerializeToFile");
     SerializeToFile();
+    Log("OptionsHandler::SetVariable: done");
 }
 
 void OptionsHandler::SerializeToFile()
 {
-    const auto& root_directory = Wrapper::GetCurrentThreadWrapper()->GetRootDirectory();
-    const auto& core_name = Wrapper::GetCurrentThreadWrapper()->m_core->GetName();
+    Log("SerializeToFile: start");
+
+    auto* wrapper = Wrapper::GetCurrentThreadWrapper();
+    if (!wrapper)
+    {
+        LogError("SerializeToFile: GetCurrentThreadWrapper() returned null — cannot serialize");
+        return;
+    }
+    Log("SerializeToFile: got wrapper, fetching root_directory");
+    const auto& root_directory = wrapper->GetRootDirectory();
+
+    Log("SerializeToFile: root_directory=" + root_directory + ", fetching core_name");
+    if (!wrapper->m_core)
+    {
+        LogError("SerializeToFile: wrapper->m_core is null");
+        return;
+    }
+    const auto& core_name = wrapper->m_core->GetName();
     std::filesystem::path file_path = std::filesystem::path(root_directory) / "core_options" / (core_name + ".opt");
     
     if (!std::filesystem::is_regular_file(file_path))

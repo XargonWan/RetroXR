@@ -353,8 +353,23 @@ void Wrapper::SetScreenMesh(MeshInstance3D* new_mesh)
 
 void Wrapper::SetCoreOption(const std::string& key, const std::string& value)
 {
-    if (m_options_handler)
-        m_options_handler->SetVariable(key, value);
+    Log("SetCoreOption: key=" + key + " value=" + value);
+
+    if (!m_options_handler)
+    {
+        Log("SetCoreOption: m_options_handler is null, skipping");
+        return;
+    }
+
+    // SerializeToFile (called by SetVariable) uses GetCurrentThreadWrapper() to
+    // resolve the root directory and core name. SetCoreOption runs on the main
+    // thread where the thread-local pointer is null, so we set it here — the
+    // same pattern used in StopEmulationThread for DeInit calls.
+    Log("SetCoreOption: setting thread-local wrapper and calling SetVariable");
+    SetCurrentThreadWrapper(this);
+    m_options_handler->SetVariable(key, value);
+    SetCurrentThreadWrapper(nullptr);
+    Log("SetCoreOption: done");
 }
 
 void Wrapper::_input(const godot::Ref<godot::InputEvent>& event)
