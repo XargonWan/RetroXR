@@ -122,6 +122,12 @@ shape = SubResource("BoxShape3D_power")
 mesh = SubResource("BoxMesh_power")
 surface_material_override/0 = SubResource("Mat_power")
 
+[node name="ButtonLabel" type="Label3D" parent="PowerButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.02, 0)
+text = "START"
+font_size = 12
+pixel_size = 0.001
+
 [node name="ResetButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08, 0.06, 0.1)
 script = ExtResource("3_vrbtn")
@@ -134,5 +140,11 @@ shape = SubResource("BoxShape3D_reset")
 [node name="ButtonMesh" type="MeshInstance3D" parent="ResetButton"]
 mesh = SubResource("BoxMesh_reset")
 surface_material_override/0 = SubResource("Mat_reset")
+
+[node name="ButtonLabel" type="Label3D" parent="ResetButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+text = "RESET"
+font_size = 12
+pixel_size = 0.001
 
 [node name="Libretro" type="Libretro" parent="." unique_id=4000000010]

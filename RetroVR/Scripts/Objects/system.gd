@@ -35,6 +35,7 @@ var _cable_rope: VerletRope = null
 @onready var _libretro: Libretro = $Libretro
 @onready var _power_button: VRButton = $PowerButton
 @onready var _reset_button: VRButton = $ResetButton
+@onready var _power_button_label: Label3D = $PowerButton/ButtonLabel
 
 
 func _ready() -> void:
@@ -45,7 +46,7 @@ func _ready() -> void:
 	_power_button.button_pressed.connect(toggle_power)
 	_reset_button.button_pressed.connect(reset)
 	# Initialize power button to "off" color
-	_power_button.set_color(Color(0.0, 0.8, 0.1))
+	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Green when off
 	# Spawn cable
 	_spawn_cable()
 
@@ -125,7 +126,8 @@ func power_on() -> void:
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
 	is_powered_on = true
-	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Bright green when on
+	_power_button.set_color(Color(1.0, 0.0, 0.0))  # Bright red when on
+	_power_button_label.text = "STOP"
 
 
 ## Power off: stop the running core
@@ -135,7 +137,8 @@ func power_off() -> void:
 	print("[RetroSystem] Powering off")
 	_libretro.StopContent()
 	is_powered_on = false
-	_power_button.set_color(Color(0.0, 0.8, 0.1))  # Dim green when off
+	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Green when off
+	_power_button_label.text = "START"
 
 
 ## Toggle power (used by the power button)
