@@ -4,7 +4,6 @@
 [ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/controller_model.gd" id="4_ctrlmodel"]
 [ext_resource type="PackedScene" uid="uid://b4ysuy43poobf" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="5_pickup"]
 [ext_resource type="PackedScene" uid="uid://cqhw276realc" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="6_pointer"]
-
 [ext_resource type="PackedScene" uid="uid://diyu06cw06syv" path="res://addons/godot-xr-tools/player/player_body.tscn" id="8_playerbody"]
 [ext_resource type="PackedScene" uid="uid://bl2nuu3qhlb5k" path="res://addons/godot-xr-tools/functions/movement_direct.tscn" id="9_movdirect"]
 [ext_resource type="PackedScene" uid="uid://b6bk2pj8vbj28" path="res://addons/godot-xr-tools/functions/movement_turn.tscn" id="10_movturn"]
@@ -16,12 +15,11 @@
 [ext_resource type="Script" uid="uid://0abdj5fqidtk" path="res://Scripts/UI/spawn_menu_controller.gd" id="16_menuctl"]
 [ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="17_viewport2d3d"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="18_spawnmenu"]
-[ext_resource type="Script" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
+[ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProcSkyMat"]
 sky_top_color = Color(0.18, 0.31, 0.55, 1)
 sky_horizon_color = Color(0.52, 0.65, 0.85, 1)
-sky_curve = 0.15
 ground_bottom_color = Color(0.12, 0.1, 0.09, 1)
 ground_horizon_color = Color(0.3, 0.28, 0.25, 1)
 
@@ -35,7 +33,6 @@ ambient_light_source = 3
 ambient_light_color = Color(1, 1, 1, 1)
 ambient_light_energy = 0.4
 tonemap_mode = 2
-tonemap_exposure = 1.0
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(20, 0.1, 20)
@@ -60,8 +57,8 @@ environment = SubResource("Env_main")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2000000071]
 transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 3, 0)
-light_energy = 1.2
 light_color = Color(1, 0.97, 0.88, 1)
+light_energy = 1.2
 shadow_enabled = true
 
 [node name="XROrigin3D" type="XROrigin3D" parent="." unique_id=1434750428]

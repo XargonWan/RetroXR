@@ -8,9 +8,19 @@ extends Control
 signal spawn_requested(type: String)
 signal close_requested
 
+## Shared core info database — populated on _ready, used by Download & Manager tabs.
+var core_db: CoreInfoDatabase = null
+
 
 func _ready() -> void:
+	_init_core_db()
 	_build_ui()
+
+
+func _init_core_db() -> void:
+	core_db = CoreInfoDatabase.new()
+	core_db.load_from_project()
+	core_db.debug_print_summary()
 
 
 func _build_ui() -> void:

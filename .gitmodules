@@ -3,5 +3,5 @@
 	url = https://github.com/godotengine/godot-cpp
 	branch = 4.5
 [submodule "libretro-core-info"]
-	path = libretro-core-info
+	path = RetroVR/libretro-core-info
 	url = https://github.com/libretro/libretro-core-info
