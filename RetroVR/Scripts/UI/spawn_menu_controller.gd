@@ -30,7 +30,16 @@ func _set_disabled(value: bool) -> void:
 
 var _camera:      XRCamera3D    = null
 var _left_ctrl:   XRController3D = null
+var _right_ctrl:  XRController3D = null
 var _menu_connected := false
+
+# Scroll state
+var _right_trigger_held := false
+var _smoothed_aim_y:    float = 0.0   # low-pass filtered aim direction
+const _SCROLL_SPEED    := 700.0   # pixels per second at full tilt
+const _SCROLL_DEADZONE := 25.0    # ignore controller tilts below this
+const _SCROLL_MIN_PX   := 1.5     # discard sub-pixel nudges to prevent micro-jitter
+const _SMOOTH_FACTOR   := 4.0     # lower = smoother / slower to respond
 
 
 func _ready() -> void:
@@ -50,6 +59,15 @@ func _deferred_setup() -> void:
 		if ctrl.tracker == &"left_hand":
 			_left_ctrl = ctrl
 			_left_ctrl.button_pressed.connect(_on_controller_button)
+			break
+
+	# Find right-hand XRController3D for scroll driving
+	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
+		var ctrl := node as XRController3D
+		if ctrl.tracker == &"right_hand":
+			_right_ctrl = ctrl
+			_right_ctrl.button_pressed.connect(_on_right_button_pressed)
+			_right_ctrl.button_released.connect(_on_right_button_released)
 			break
 
 	# Give the SubViewport one frame to instantiate the 2D scene
@@ -81,6 +99,54 @@ func _on_controller_button(action_name: String) -> void:
 		return
 	if action_name == "primary_click":
 		_toggle_menu()
+
+
+func _on_right_button_pressed(action_name: String) -> void:
+	if action_name == "trigger_click" or action_name == "trigger":
+		_right_trigger_held = true
+
+
+func _on_right_button_released(action_name: String) -> void:
+	if action_name == "trigger_click" or action_name == "trigger":
+		_right_trigger_held = false
+		_smoothed_aim_y = 0.0   # reset so scroll stops immediately on release
+
+
+# ── Scroll driving ────────────────────────────────────────────────────────────
+
+func _process(delta: float) -> void:
+	if not _viewport_node.visible:
+		return
+	if not _right_ctrl:
+		return
+	# Accept either digital button state or analog trigger pull > 50 %
+	var trigger_active := _right_trigger_held or _right_ctrl.get_float("trigger") > 0.5
+	if not trigger_active:
+		_smoothed_aim_y = 0.0
+		return
+	# Forward vector of the right controller (-Z in local space)
+	var raw_aim_y: float = -_right_ctrl.global_transform.basis.z.y
+	# Exponential low-pass: smooths out hand tremor
+	_smoothed_aim_y = lerpf(_smoothed_aim_y, raw_aim_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
+	if abs(_smoothed_aim_y) < _SCROLL_DEADZONE:
+		return
+	# Remap: outside deadzone, scale to [0..1]
+	var t: float = (abs(_smoothed_aim_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
+	var pixels: float = -sign(_smoothed_aim_y) * t * _SCROLL_SPEED * delta
+	if abs(pixels) < _SCROLL_MIN_PX:
+		return
+	var menu := _get_menu()
+	if menu:
+		menu.scroll_active(pixels)
+
+
+func _get_menu() -> SpawnMenu2D:
+	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
+	if vp and vp.get_child_count() > 0:
+		var m := vp.get_child(0)
+		if m is SpawnMenu2D:
+			return m as SpawnMenu2D
+	return null
 
 
 # ── Visibility ────────────────────────────────────────────────────────────────

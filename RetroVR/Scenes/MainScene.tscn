@@ -143,9 +143,9 @@ game_label = "Super Mario Bros. (World)"
 script = ExtResource("16_menuctl")
 
 [node name="SpawnMenuViewport" parent="SpawnMenuController" unique_id=2000000051 instance=ExtResource("17_viewport2d3d")]
-screen_size = Vector2(0.6, 0.5)
+screen_size = Vector2(0.9, 0.75)
 scene = ExtResource("18_spawnmenu")
-viewport_size = Vector2(600, 500)
+viewport_size = Vector2(900, 750)
 transparent = 1
 scene_properties_keys = PackedStringArray("spawn_menu.gd")
 
