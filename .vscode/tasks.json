@@ -6,7 +6,7 @@
         {
             "label": "build-debug",
             "type": "shell",
-            "command": "scons platform=windows arch=x86_64 target=template_debug dev_build=yes",
+            "command": "C:/Users/user/AppData/Roaming/Python/Python314/Scripts/scons.exe platform=windows arch=x86_64 target=template_debug dev_build=yes debug_symbols=yes",
             "args": [],
             "group": {
                 "kind": "build",
@@ -17,7 +17,7 @@
         {
             "label": "build-release",
             "type": "shell",
-            "command": "scons platform=windows arch=x86_64 target=template_release",
+            "command": "C:/Users/user/AppData/Roaming/Python/Python314/Scripts/scons.exe platform=windows arch=x86_64 target=template_release",
             "args": [],
             "group": {
                 "kind": "build",

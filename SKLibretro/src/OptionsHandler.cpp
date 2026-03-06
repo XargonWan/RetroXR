@@ -223,8 +223,14 @@ void OptionsHandler::SerializeToFile()
 
 void OptionsHandler::DeserializeFromFile()
 {
-    const auto& root_directory = Wrapper::GetCurrentThreadWrapper()->GetRootDirectory();
-    const auto& core_name = Wrapper::GetCurrentThreadWrapper()->m_core->GetName();
+    auto* wrapper = Wrapper::GetCurrentThreadWrapper();
+    if (!wrapper || !wrapper->m_core)
+    {
+        LogError("DeserializeFromFile: null wrapper or core");
+        return;
+    }
+    const auto& root_directory = wrapper->GetRootDirectory();
+    const auto& core_name = wrapper->m_core->GetName();
     std::filesystem::path file_path = std::filesystem::path(root_directory) / "core_options" / (core_name + ".opt");
 
     if (!std::filesystem::is_regular_file(file_path))

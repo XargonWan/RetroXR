@@ -387,7 +387,9 @@ void Wrapper::SetControllerPortDevice(uint32_t port, uint32_t device)
     }
     Log("SetControllerPortDevice: port=" + std::to_string(port) + " device=" + std::to_string(device));
     m_input_handler->SetPortDevice(port, device);
+    SetCurrentThreadWrapper(this);
     m_core->retro_set_controller_port_device(port, device);
+    SetCurrentThreadWrapper(nullptr);
 }
 
 void Wrapper::SetCoreOption(const std::string& key, const std::string& value)

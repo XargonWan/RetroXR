@@ -5,13 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Godot Project",
+            "name": "Launch RetroVR (debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "preLaunchTask": "build-debug",
-            "program": "D:/Godot/Godot_v4.4.1-stable_win64.exe",
-            "args": ["--path", "${workspaceFolder}/Demo"],
-            "cwd": "${workspaceFolder}"
+            "program": "C:/Program Files/Godot_v4.6.1-stable_mono_win64/Godot_v4.6.1-stable_mono_win64/Godot_v4.6.1-stable_mono_win64.exe",
+            "args": ["--path", "${workspaceFolder}/RetroVR"],
+            "cwd": "${workspaceFolder}",
+            "symbolSearchPath": "${workspaceFolder}/RetroVR/SKLibretro"
         }
     ]
 }
