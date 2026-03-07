@@ -7,10 +7,10 @@ extends RefCounted
 
 
 ## Root directory for ROMs.
-## On Android: app-private storage. On Windows: %USERPROFILE%/retrovr/roms.
+## On Android: app external files dir (no permission needed). On Windows: %USERPROFILE%/retrovr/roms.
 static func default_roms_root() -> String:
 	if OS.get_name() == "Android":
-		return OS.get_user_data_dir() + "/roms"
+		return "/sdcard/Android/data/com.sk.retrovr/files/roms"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/roms"
 
 

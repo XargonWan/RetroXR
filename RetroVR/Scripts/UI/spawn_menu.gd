@@ -315,7 +315,7 @@ func _populate_cartridges_tab() -> void:
 		var roms := RomLibrary.scan_roms(systemid, exts)
 		if roms.is_empty():
 			var hint := Label.new()
-			hint.text = "Add ROMs to roms/%s/ to see them here." % systemid
+			hint.text = "Add ROMs to %s/ to see them here." % RomLibrary.rom_dir_for_system(systemid)
 			hint.add_theme_font_size_override("font_size", 18)
 			hint.add_theme_color_override("font_color", COLOR_DESC)
 			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
