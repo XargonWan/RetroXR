@@ -36,7 +36,7 @@ func load_directory(info_dir: String) -> void:
 ## Convenience: load from the libretro-core-info submodule, which now lives
 ## inside the RetroVR project at res://libretro-core-info/.
 func load_from_project() -> void:
-	var info_dir: String = ProjectSettings.globalize_path("res://libretro-core-info")
+	var info_dir: String = "res://libretro-core-info"
 	print("[CoreInfoDatabase] Resolved info dir: %s" % info_dir)
 	load_directory(info_dir)
 

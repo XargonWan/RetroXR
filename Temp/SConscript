@@ -37,8 +37,12 @@ sources.append("SKLibretro/external/libretro-common/audio/conversion/s16_to_floa
 sources.append("SKLibretro/external/libretro-common/features/features_cpu.c")
 sources.append("SKLibretro/external/libretro-common/gfx/scaler/pixconv.c")
 sources.append("SKLibretro/external/libretro-common/string/stdstring.c")
+sources.append("SKLibretro/external/libretro-common/file/file_path.c")
+sources.append("SKLibretro/external/libretro-common/time/rtime.c")
+sources.append("SKLibretro/external/libretro-common/streams/file_stream.c")
 sources.append("SKLibretro/external/libretro-common/vfs/vfs_implementation.c")
 
-library = env.SharedLibrary("../RetroVR/SKLibretro/SKLibretro.{}.{}.{}{}".format(env["platform"], env["target"], env["arch"], env["SHLIBSUFFIX"]), source=sources)
+lib_prefix = "lib" if is_android else ""
+library = env.SharedLibrary("../RetroVR/SKLibretro/{}sklibretro.{}.{}.{}{}".format(lib_prefix, env["platform"], env["target"], env["arch"], env["SHLIBSUFFIX"]), source=sources)
 
 Default(library)

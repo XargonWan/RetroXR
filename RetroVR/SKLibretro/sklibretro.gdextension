@@ -8,5 +8,5 @@ reloadable = true
 
 windows.debug.x86_64 = "sklibretro.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "sklibretro.windows.template_release.x86_64.dll"
-android.debug.arm64 = "sklibretro.android.template_debug.arm64.so"
-android.release.arm64 = "sklibretro.android.template_release.arm64.so"
+android.debug.arm64 = "libsklibretro.android.template_debug.arm64.so"
+android.release.arm64 = "libsklibretro.android.template_release.arm64.so"
