@@ -40,6 +40,21 @@ const _SCROLL_DEADZONE := 0.25    # stick Y dead zone (0..1)
 const _SCROLL_MIN_PX   := 1.5     # discard sub-pixel nudges
 const _SMOOTH_FACTOR   := 4.0     # low-pass weight; lower = smoother
 
+# Grab constants
+const _GRIP_THRESHOLD := 0.3
+const _DEPTH_SPEED    := 0.8    # m/s at full stick
+const _DEPTH_MIN      := 0.3    # min distance from camera
+const _DEPTH_MAX      := 2.5    # max distance from camera
+const _RESIZE_SPEED   := 0.4    # screen_size m/s at full stick
+const _SIZE_MIN       := Vector2(0.45, 0.375)  # half default
+const _SIZE_MAX       := Vector2(1.8, 1.5)     # double default
+const _SCREEN_ASPECT  := 0.9 / 0.75
+
+# Grab state
+var _grab_active: bool = false
+var _grab_ctrl: XRController3D = null
+var _grab_distance: float = 0.0  # distance along pointer ray
+
 # Locomotion nodes — suppressed per-controller while its pointer is on the menu
 var _move_turn:     Node = null   # right stick snap-turn
 var _func_teleport: Node = null   # right stick teleport aim
@@ -52,6 +67,9 @@ var _right_pointer: XRToolsFunctionPointer = null
 
 func _ready() -> void:
 	_viewport_node.visible = false
+	# Remove layer 1 (default physics) so the menu doesn't collide with objects,
+	# but keep layers 21 and 23 for pointer interaction.
+	$SpawnMenuViewport/StaticBody3D.collision_layer = 5242880
 	call_deferred("_deferred_setup")
 
 
@@ -144,6 +162,17 @@ func _process(delta: float) -> void:
 	# Determine which pointers are currently aimed at the menu panel
 	var right_over: bool = _pointer_over_menu(_right_pointer)
 	var left_over:  bool = _pointer_over_menu(_left_pointer)
+
+	# Process grab (start, sustain, or end)
+	_process_grab(delta, right_over, left_over)
+	if _grab_active:
+		# Suppress locomotion for the grabbing controller only
+		if _grab_ctrl == _right_ctrl:
+			_set_node_enabled(_move_turn,     false)
+			_set_node_enabled(_func_teleport, false)
+		elif _grab_ctrl == _left_ctrl:
+			_set_node_enabled(_move_direct, false)
+		return
 
 	# Suppress right-stick locomotion only when right controller points at menu
 	_set_node_enabled(_move_turn,     not right_over)
@@ -289,6 +318,7 @@ func _set_node_enabled(node: Node, value: bool) -> void:
 		node.set("enabled", value)
 
 
+
 func _get_menu() -> SpawnMenu2D:
 	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
 	if vp and vp.get_child_count() > 0:
@@ -322,6 +352,7 @@ func _show_menu() -> void:
 
 
 func _hide_menu() -> void:
+	_end_grab()
 	_viewport_node.visible = false
 	_smoothed_scroll_y = 0.0
 	# Only restore locomotion if VRInputMapper hasn't taken control.
@@ -330,6 +361,71 @@ func _hide_menu() -> void:
 		_set_node_enabled(_move_turn,     true)
 		_set_node_enabled(_func_teleport, true)
 		_set_node_enabled(_move_direct,   true)
+
+
+# ── Grab / Move / Resize ──────────────────────────────────────────────────────
+
+func _process_grab(delta: float, right_over: bool, left_over: bool) -> void:
+	if _grab_active:
+		# Check grip still held
+		if _grab_ctrl.get_float("grip") < _GRIP_THRESHOLD:
+			_end_grab()
+			return
+		_update_grab_position()
+		var stick := _grab_ctrl.get_vector2("primary")
+		_process_grab_depth(delta, stick.y)
+		_process_grab_resize(delta, stick.x)
+	else:
+		# Try to start grab — right controller first, then left
+		if right_over and _right_ctrl:
+			_try_start_grab(_right_ctrl, _right_pointer, true)
+		if not _grab_active and left_over and _left_ctrl:
+			_try_start_grab(_left_ctrl, _left_pointer, true)
+
+
+func _try_start_grab(ctrl: XRController3D, _pointer: XRToolsFunctionPointer, over_menu: bool) -> void:
+	if not over_menu:
+		return
+	if ctrl.get_float("grip") < _GRIP_THRESHOLD:
+		return
+	_grab_active = true
+	_grab_ctrl = ctrl
+	_grab_distance = ctrl.global_position.distance_to(global_position)
+	_smoothed_scroll_y = 0.0
+
+
+func _end_grab() -> void:
+	_grab_active = false
+	_grab_ctrl = null
+	_grab_distance = 0.0
+
+
+func _update_grab_position() -> void:
+	# Place menu along controller's pointing direction at the stored distance
+	var ray_dir := -_grab_ctrl.global_transform.basis.z
+	global_position = _grab_ctrl.global_position + ray_dir * _grab_distance
+	if _camera:
+		look_at(_camera.global_position, Vector3.UP)
+		rotate_object_local(Vector3.UP, PI)
+
+
+func _process_grab_depth(delta: float, stick_y: float) -> void:
+	if abs(stick_y) < _SCROLL_DEADZONE:
+		return
+	# Stick up (positive Y) pushes menu further along the ray
+	var change := stick_y * _DEPTH_SPEED * delta
+	_grab_distance = clampf(_grab_distance + change, _DEPTH_MIN, _DEPTH_MAX)
+
+
+func _process_grab_resize(delta: float, stick_x: float) -> void:
+	if abs(stick_x) < _SCROLL_DEADZONE:
+		return
+	var current_size: Vector2 = _viewport_node.screen_size
+	var change := stick_x * _RESIZE_SPEED * delta
+	var new_w := clampf(current_size.x + change * _SCREEN_ASPECT, _SIZE_MIN.x, _SIZE_MAX.x)
+	var new_h := new_w / _SCREEN_ASPECT
+	new_h = clampf(new_h, _SIZE_MIN.y, _SIZE_MAX.y)
+	_viewport_node.screen_size = Vector2(new_w, new_h)
 
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
