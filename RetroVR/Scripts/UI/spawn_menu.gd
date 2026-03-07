@@ -11,6 +11,8 @@ signal close_requested
 signal default_core_changed(systemid: String, core_name: String)
 ## Emitted when the user clicks a ROM in the Cartridges tab.
 signal spawn_cartridge_requested(rom_path: String, game_label: String)
+## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
+signal turn_style_changed(value: String)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -24,8 +26,11 @@ var core_defaults: CoreDefaults = null
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
-var _nav_spawn_btn: Button  = null
-var _nav_cores_btn: Button  = null
+var _options_view:  Control = null
+var _nav_spawn_btn:   Button = null
+var _nav_cores_btn:   Button = null
+var _nav_options_btn: Button = null
+var _nav_buttons: Array[Button] = []
 
 # Cores > Download tab state
 var _download_list_vbox:    VBoxContainer = null
@@ -34,9 +39,14 @@ var _download_fetched:       bool         = false
 # core_name -> { "button": Button, "bar": ProgressBar }
 var _download_widgets: Dictionary = {}
 
-# The ScrollContainer currently in view (nil when spawn view active)
+# The ScrollContainer currently in view
 var _active_scroll:        ScrollContainer = null
 var _download_list_scroll: ScrollContainer = null
+var _options_scroll:       ScrollContainer = null
+
+# Spawn view tab ScrollContainers (indexed by tab index)
+var _spawn_tab_scrolls: Array[ScrollContainer] = []
+var _spawn_tabs: TabContainer = null
 
 # Custom scroll indicator (replaces native scrollbar)
 var _vscrollbar: VScrollBar = null
@@ -138,16 +148,20 @@ func _build_ui() -> void:
 	var nav_bar := HBoxContainer.new()
 	nav_bar.add_theme_constant_override("separation", 6)
 	root_vbox.add_child(nav_bar)
-	_nav_spawn_btn = _make_nav_button("  SPAWN  ")
-	_nav_cores_btn = _make_nav_button("  CORES  ")
+	_nav_spawn_btn   = _make_nav_button("  SPAWN  ")
+	_nav_cores_btn   = _make_nav_button("  CORES  ")
+	_nav_options_btn = _make_nav_button(" OPTIONS ")
 	_nav_spawn_btn.pressed.connect(_show_spawn_view)
 	_nav_cores_btn.pressed.connect(_show_cores_view)
+	_nav_options_btn.pressed.connect(_show_options_view)
 	nav_bar.add_child(_nav_spawn_btn)
 	nav_bar.add_child(_nav_cores_btn)
+	nav_bar.add_child(_nav_options_btn)
+	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_options_btn]
 
 	root_vbox.add_child(HSeparator.new())
 
-	# Content area — holds spawn_view and cores_view, only one visible at a time
+	# Content area — holds spawn_view, cores_view, and options_view
 	var content := Control.new()
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root_vbox.add_child(content)
@@ -159,6 +173,10 @@ func _build_ui() -> void:
 	_cores_view = _build_cores_view()
 	_cores_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_cores_view)
+
+	_options_view = _build_options_view()
+	_options_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_child(_options_view)
 
 	_show_spawn_view()
 
@@ -175,22 +193,39 @@ func _make_nav_button(lbl: String) -> Button:
 func _show_spawn_view() -> void:
 	_spawn_view.visible = true
 	_cores_view.visible = false
-	_active_scroll = null
-	_set_nav_active(_nav_spawn_btn, _nav_cores_btn)
+	_options_view.visible = false
+	_update_spawn_active_scroll(_spawn_tabs.current_tab if _spawn_tabs else 0)
+	_set_nav_active(_nav_spawn_btn)
 
 
 func _show_cores_view() -> void:
 	_spawn_view.visible = false
 	_cores_view.visible = true
+	_options_view.visible = false
 	_active_scroll = _download_list_scroll
-	_set_nav_active(_nav_cores_btn, _nav_spawn_btn)
+	_set_nav_active(_nav_cores_btn)
 	if not _download_fetched:
 		_download_fetched = true
 		_start_fetch()
 
 
-func _set_nav_active(active: Button, inactive: Button) -> void:
-	for btn: Button in [active, inactive]:
+func _show_options_view() -> void:
+	_spawn_view.visible = false
+	_cores_view.visible = false
+	_options_view.visible = true
+	_active_scroll = _options_scroll
+	_set_nav_active(_nav_options_btn)
+
+
+func _update_spawn_active_scroll(tab_idx: int) -> void:
+	if tab_idx >= 0 and tab_idx < _spawn_tab_scrolls.size():
+		_active_scroll = _spawn_tab_scrolls[tab_idx]
+	else:
+		_active_scroll = null
+
+
+func _set_nav_active(active: Button) -> void:
+	for btn: Button in _nav_buttons:
 		var is_active := (btn == active)
 		var s := StyleBoxFlat.new()
 		s.bg_color = COLOR_NAV_ACTIVE if is_active else COLOR_NAV_INACTIVE
@@ -213,11 +248,14 @@ func scroll_active(pixels: float) -> void:
 func _build_spawn_view() -> Control:
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_spawn_tabs = tabs
+	_spawn_tab_scrolls.clear()
 
 	# Systems tab — dynamic, driven by CoreDefaults
 	var systems_scroll := ScrollContainer.new()
 	systems_scroll.name = "Systems"
 	tabs.add_child(systems_scroll)
+	_spawn_tab_scrolls.append(systems_scroll)
 	_systems_vbox = VBoxContainer.new()
 	_systems_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_systems_vbox.add_theme_constant_override("separation", 14)
@@ -234,6 +272,7 @@ func _build_spawn_view() -> Control:
 	var carts_scroll := ScrollContainer.new()
 	carts_scroll.name = "Cartridges"
 	tabs.add_child(carts_scroll)
+	_spawn_tab_scrolls.append(carts_scroll)
 	_cartridges_vbox = VBoxContainer.new()
 	_cartridges_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cartridges_vbox.add_theme_constant_override("separation", 10)
@@ -241,9 +280,11 @@ func _build_spawn_view() -> Control:
 	_populate_cartridges_tab()
 
 	# Refresh on tab switch — picks up files added to disk since last open
+	# Also update _active_scroll to the current tab's ScrollContainer
 	tabs.tab_changed.connect(func(idx: int):
 		if idx == 2:
 			_populate_cartridges_tab()
+		_update_spawn_active_scroll(idx)
 	)
 
 	return tabs
@@ -335,6 +376,7 @@ func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void
 	var scroll := ScrollContainer.new()
 	scroll.name = tab_title
 	tabs.add_child(scroll)
+	_spawn_tab_scrolls.append(scroll)
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 14)
@@ -626,7 +668,6 @@ func _build_core_entry(core_name: String, remote_date: String, info: Dictionary)
 			desc_lbl.add_theme_font_size_override("font_size", 12)
 			desc_lbl.add_theme_color_override("font_color", COLOR_DESC)
 			desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			desc_lbl.max_lines_visible = 2
 			left.add_child(desc_lbl)
 
 	# Right: action button + progress bar
@@ -707,6 +748,50 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 			btn.text = new_state
 			_style_dl_button(btn, new_state)
 	)
+
+
+# ── Options view ──────────────────────────────────────────────────────────────
+
+func _build_options_view() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_options_scroll = scroll
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 14)
+	scroll.add_child(vbox)
+
+	vbox.add_child(_spacer(10))
+
+	# Turn Style option
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = "Turn Style"
+	lbl.add_theme_font_size_override("font_size", 22)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
+
+	var opt := OptionButton.new()
+	opt.custom_minimum_size = Vector2(220, 56)
+	opt.add_theme_font_size_override("font_size", 20)
+	opt.add_item("SNAP", 0)
+	opt.add_item("SMOOTH", 1)
+	opt.selected = 0
+	opt.item_selected.connect(func(idx: int) -> void:
+		turn_style_changed.emit("SNAP" if idx == 0 else "SMOOTH")
+	)
+	row.add_child(opt)
+
+	vbox.add_child(HSeparator.new())
+
+	return scroll
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

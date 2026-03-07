@@ -66,9 +66,13 @@ func _process(_delta: float) -> void:
 func set_color(color: Color) -> void:
 	if not _mesh:
 		return
-	# Get or create material override
+	# Get or create a per-instance material override.
+	# Scene sub-resources are shared across instances, so duplicate on first use.
 	var mat := _mesh.get_surface_override_material(0)
 	if not mat or not mat is StandardMaterial3D:
 		mat = StandardMaterial3D.new()
+		_mesh.set_surface_override_material(0, mat)
+	elif not mat.resource_local_to_scene:
+		mat = mat.duplicate() as StandardMaterial3D
 		_mesh.set_surface_override_material(0, mat)
 	(mat as StandardMaterial3D).albedo_color = color

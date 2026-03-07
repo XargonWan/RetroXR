@@ -112,6 +112,8 @@ func _connect_menu_signals() -> void:
 		menu.close_requested.connect(_hide_menu)
 	if menu.has_signal("spawn_cartridge_requested"):
 		menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
+	if menu.has_signal("turn_style_changed"):
+		menu.turn_style_changed.connect(_on_turn_style_changed)
 	_menu_connected = true
 
 
@@ -375,3 +377,10 @@ func _on_spawn_cartridge_requested(rom_path: String, game_label: String) -> void
 
 	obj.global_position = global_position + fwd * 0.5
 	obj.global_position.y = SPAWN_Y.get("cartridge", 0.76)
+
+
+func _on_turn_style_changed(value: String) -> void:
+	if not _move_turn:
+		return
+	# XRToolsMovementTurn.TurnMode: SNAP = 1, SMOOTH = 2
+	_move_turn.set("turn_mode", 1 if value == "SNAP" else 2)
