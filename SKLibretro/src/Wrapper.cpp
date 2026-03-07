@@ -301,7 +301,11 @@ void Wrapper::StartContent(MeshInstance3D* node, const std::string& root_directo
     audio_stream_player->set_name("AudioStreamPlayer3D");
     m_libretro_node->add_child(audio_stream_player);
 
+#ifdef __ANDROID__
+    std::filesystem::path core_path = std::filesystem::path(root_directory).append("cores").append(core_name + "_libretro_android").replace_extension(".so");
+#else
     std::filesystem::path core_path = std::filesystem::path(root_directory).append("cores").append(core_name + "_libretro").replace_extension(".dll");
+#endif
 
     m_core = std::make_unique<Core>(core_path.string());
     m_environment_handler = std::make_unique<EnvironmentHandler>();

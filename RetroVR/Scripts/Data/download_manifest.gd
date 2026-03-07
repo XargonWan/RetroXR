@@ -83,8 +83,10 @@ func get_downloaded_at(core_name: String) -> String:
 # ---------------------------------------------------------------------------
 
 func set_downloaded(core_name: String, remote_date: String) -> void:
+	var lib_suffix := "_libretro_android" if OS.get_name() == "Android" else "_libretro"
+	var lib_ext := ".so" if OS.get_name() == "Android" else ".dll"
 	_cores()[core_name] = {
-		"filename":      core_name + "_libretro.dll",
+		"filename":      core_name + lib_suffix + lib_ext,
 		"remote_date":   remote_date,
 		"downloaded_at": Time.get_datetime_string_from_system(false, true)
 	}

@@ -69,7 +69,6 @@ func _ready() -> void:
 	_init_core_defaults()
 	_init_download_manager()
 	# Always ensure the roms root exists, plus dirs for any already-configured systems
-	print("[SpawnMenu] USERPROFILE=", OS.get_environment("USERPROFILE"))
 	print("[SpawnMenu] roms root=", RomLibrary.default_roms_root())
 	RomLibrary.ensure_roms_root()
 	for sid: String in core_defaults.all_defaults():
@@ -424,12 +423,13 @@ func _populate_manager_tab() -> void:
 		_manager_list_vbox.add_child(_manager_empty_label)
 		return
 
+	var lib_suffix := "_libretro_android.so" if OS.get_name() == "Android" else "_libretro.dll"
 	var core_names: Array[String] = []
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
-		if not dir.current_is_dir() and fname.ends_with("_libretro.dll"):
-			core_names.append(fname.trim_suffix("_libretro.dll"))
+		if not dir.current_is_dir() and fname.ends_with(lib_suffix):
+			core_names.append(fname.trim_suffix(lib_suffix))
 		fname = dir.get_next()
 	dir.list_dir_end()
 

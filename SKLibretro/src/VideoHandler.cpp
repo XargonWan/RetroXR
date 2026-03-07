@@ -2,8 +2,10 @@
 
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 
+#ifdef _WIN32
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_opengl.h>
+#endif
 
 #include "Wrapper.hpp"
 #include "Debug.hpp"
@@ -30,6 +32,7 @@ void VideoHandler::RefreshCallback(const void* data, uint32_t width, uint32_t he
 
     PackedByteArray pixel_data;
 
+#ifdef _WIN32
     if (data == RETRO_HW_FRAME_BUFFER_VALID)
     {
         int bytes_per_pixel = 4;
@@ -49,6 +52,7 @@ void VideoHandler::RefreshCallback(const void* data, uint32_t width, uint32_t he
 
         return;
     }
+#endif
 
     switch (instance->m_video_handler->m_pixel_format)
     {
@@ -123,7 +127,11 @@ uintptr_t VideoHandler::HwRenderGetCurrentFramebuffer()
 
 retro_proc_address_t VideoHandler::HwRenderGetProcAddress(const char* sym)
 {
+#ifdef _WIN32
     return reinterpret_cast<retro_proc_address_t>(SDL_GL_GetProcAddress(sym));
+#else
+    return nullptr;
+#endif
 }
 
 void VideoHandler::Init(MeshInstance3D* mesh)
@@ -171,6 +179,7 @@ void VideoHandler::DeInit()
     if (m_image.is_valid())
         m_image.unref();
 
+#ifdef _WIN32
     if (m_sdl_gl_context)
     {
         SDL_GL_DestroyContext(m_sdl_gl_context);
@@ -182,6 +191,7 @@ void VideoHandler::DeInit()
         SDL_DestroyWindow(m_sdl_window);
         m_sdl_window = nullptr;
     }
+#endif
 }
 
 bool VideoHandler::InitHwRenderContext(int32_t width, int32_t height)
@@ -189,6 +199,7 @@ bool VideoHandler::InitHwRenderContext(int32_t width, int32_t height)
     if (!m_context_reset)
         return true;
 
+#ifdef _WIN32
     Log("Creating OpenGL context...");
 
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
@@ -223,6 +234,10 @@ bool VideoHandler::InitHwRenderContext(int32_t width, int32_t height)
     m_context_reset();
 
     return true;
+#else
+    LogWarning("Hardware rendering is not supported on this platform.");
+    return false;
+#endif
 }
 
 void VideoHandler::SetImageFormat(Image::Format format)

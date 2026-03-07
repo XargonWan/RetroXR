@@ -1,12 +1,11 @@
 #pragma once
 
-#include <SDL3/SDL_loadso.h>
-
 #include <libretro.h>
 
 #include <string>
 
 #include "Debug.hpp"
+#include "DynLib.hpp"
 
 namespace SK
 {
@@ -64,7 +63,7 @@ private:
     template<typename T>
     bool LoadFunction_(T& function_ptr, const std::string& function_name)
     {
-        function_ptr = reinterpret_cast<T>(SDL_LoadFunction(static_cast<SDL_SharedObject*>(m_handle), function_name.c_str()));
+        function_ptr = reinterpret_cast<T>(DynLib_Sym(m_handle, function_name.c_str()));
         if (!function_ptr)
         {
             LogError("Failed to load function: " + function_name);

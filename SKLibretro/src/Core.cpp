@@ -54,7 +54,11 @@ bool Core::Load()
     }
 
     std::string name = std::filesystem::path(m_path).filename().replace_extension("").string();
+#ifdef __ANDROID__
+    const std::string suffix = "_libretro_android";
+#else
     const std::string suffix = "_libretro";
+#endif
     size_t pos = name.rfind(suffix);
     if (pos != std::string::npos)
         name.erase(pos, suffix.length());
@@ -116,7 +120,7 @@ void Core::Unload()
 {
     if (m_handle)
     {
-        SDL_UnloadObject(static_cast<SDL_SharedObject*>(m_handle));
+        DynLib_Close(m_handle);
         m_handle = nullptr;
     }
 
@@ -137,7 +141,7 @@ bool Core::GetSupportsNoGame() const
 
 bool Core::LoadHandle()
 {
-    m_handle = static_cast<void*>(SDL_LoadObject(m_path.c_str()));
+    m_handle = DynLib_Open(m_path.c_str());
     if (!m_handle)
     {
         LogError("Failed to load core handle: " + m_path);

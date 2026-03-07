@@ -14,8 +14,6 @@
 #include <queue>
 #include <unordered_map>
 
-#include <SDL3/SDL_video.h>
-
 #include <libretro.h>
 #include <readerwriterqueue.h>
 
@@ -28,8 +26,6 @@
 #include "OptionsHandler.hpp"
 #include "MessageHandler.hpp"
 #include "LogHandler.hpp"
-
-class SDL_Window;
 
 namespace SK
 {

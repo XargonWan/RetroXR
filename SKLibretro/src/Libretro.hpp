@@ -26,8 +26,8 @@ private:
 protected:
     static void _bind_methods()
     {
-        godot::ClassDB::bind_method(godot::D_METHOD("GetDescription"), &GetDescription);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetInfo"), &GetInfo);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetDescription"), &LibretroOptionCategory::GetDescription);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetInfo"), &LibretroOptionCategory::GetInfo);
     }
 };
 
@@ -48,8 +48,8 @@ private:
 protected:
     static void _bind_methods()
     {
-        godot::ClassDB::bind_method(godot::D_METHOD("GetValue"), &GetValue);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetLabel"), &GetLabel);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetValue"), &LibretroOptionValue::GetValue);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetLabel"), &LibretroOptionValue::GetLabel);
     }
 };
 
@@ -80,13 +80,13 @@ private:
 protected:
     static void _bind_methods()
     {
-        godot::ClassDB::bind_method(godot::D_METHOD("GetDescription"), &GetDescription);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetDescriptionCategorized"), &GetDescriptionCategorized);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetInfo"), &GetInfo);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetInfoCategorized"), &GetInfoCategorized);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetCategoryKey"), &GetCategoryKey);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetValues"), &GetValues);
-        godot::ClassDB::bind_method(godot::D_METHOD("GetDefaultValue"), &GetDefaultValue);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetDescription"), &LibretroOptionDefinition::GetDescription);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetDescriptionCategorized"), &LibretroOptionDefinition::GetDescriptionCategorized);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetInfo"), &LibretroOptionDefinition::GetInfo);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetInfoCategorized"), &LibretroOptionDefinition::GetInfoCategorized);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetCategoryKey"), &LibretroOptionDefinition::GetCategoryKey);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetValues"), &LibretroOptionDefinition::GetValues);
+        godot::ClassDB::bind_method(godot::D_METHOD("GetDefaultValue"), &LibretroOptionDefinition::GetDefaultValue);
     }
 };
 
@@ -100,7 +100,7 @@ class Libretro : public godot::Node
     
 public:
     Libretro();
-    ~Libretro() = default;
+    ~Libretro();
 
     void StartContent(godot::MeshInstance3D* node, godot::String root_directory, godot::String core_name, godot::String game_path);
     void StopContent();
@@ -116,9 +116,9 @@ public:
 
     void ConnectOptionsReady(const godot::Callable& callable, uint32_t flags = 0u);
 
-    void _exit_tree();
-    void _input(const godot::Ref<godot::InputEvent>& event);
-    void _process(double delta);
+    void _exit_tree() override;
+    void _input(const godot::Ref<godot::InputEvent>& event) override;
+    void _process(double delta) override;
 
     /// Called from the emulation thread (via Wrapper::m_libretro_node) when options are ready.
     void NotifyOptionsReady();

@@ -6,7 +6,9 @@
 
 #include <cstdint>
 
+#ifdef _WIN32
 #include <SDL3/SDL_video.h>
+#endif
 
 #include <libretro.h>
 
@@ -44,8 +46,10 @@ private:
     godot::Image::Format m_image_format;
     godot::Ref<godot::Image> m_image = nullptr;
     godot::Ref<godot::ImageTexture> m_texture = nullptr;
+#ifdef _WIN32
     SDL_Window* m_sdl_window = nullptr;
     SDL_GLContext m_sdl_gl_context = nullptr;
+#endif
 
     uint32_t m_rotation = 0;
     retro_hw_context_reset_t m_context_reset = nullptr;

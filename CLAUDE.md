@@ -6,28 +6,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SK.Libretro.Godot is a GDExtension (C++) that runs libretro emulator cores inside Godot 4.5+. It bridges Godot's scene system with the libretro API, enabling retro game emulation within Godot projects.
 
-There are three Godot projects in this repo:
-- `Demo/` — desktop demo (flat screen)
-- `DemoXR/` — XR demo (VR headset)
+The Godot project in this repo:
 - `RetroVR/` — VR arcade room (primary development target, godot-xr-tools based)
 
 ## Build Commands
 
-Requires SCons and MSVC. The godot-cpp submodule must be initialized first:
+Requires SCons and MSVC (Windows) or Android NDK (Android). The godot-cpp submodule must be initialized first:
 ```bash
 git submodule update --init --recursive
 ```
 
 Build from the **workspace root** (not `-C Temp`):
 ```bash
-# Windows PowerShell — scons installs to Python Scripts dir
+# Windows (PowerShell)
 $scons = "C:\Users\user\AppData\Roaming\Python\Python314\Scripts\scons.exe"
 & $scons platform=windows arch=x86_64 target=template_debug dev_build=yes
 & $scons platform=windows arch=x86_64 target=template_release
+
+# Android / Quest (bash — requires ANDROID_NDK_ROOT)
+ANDROID_NDK_ROOT="C:/android/android-ndk-r27d" ANDROID_HOME="" \
+  scons platform=android arch=arm64 target=template_debug ANDROID_HOME=""
 ```
 
 The `SConstruct` is at the workspace root; `Temp/SConscript` does the actual build logic.
-Output DLLs go to **both** `Demo/SKLibretro/` and `RetroVR/SKLibretro/` (built in parallel by `Temp/SConscript`).
+Output libraries go to `RetroVR/SKLibretro/`.
 
 No test suite exists in this project.
 
@@ -52,7 +54,7 @@ ThreadCommands that execute on the main thread carry an explicit `Wrapper*` and 
 ### Key Classes (SKLibretro/src/)
 
 - **Wrapper** — Per-instance emulation orchestrator. Owns the emulation thread, all handlers, the command queue, and a back-pointer `Libretro* m_libretro_node`. Exposes `GetCurrentThreadWrapper()` / `SetCurrentThreadWrapper(Wrapper*)` as static helpers for the thread-local pattern.
-- **Core** — Dynamically loads a libretro `.dll` core via SDL, copies it to a temp directory for isolation, and binds all libretro callback function pointers. All callbacks resolve the current wrapper via `GetCurrentThreadWrapper()`.
+- **Core** — Dynamically loads a libretro core (`.dll` on Windows, `.so` on Android) via `DynLib.hpp` abstraction, copies it to a temp directory for isolation, and binds all libretro callback function pointers. All callbacks resolve the current wrapper via `GetCurrentThreadWrapper()`.
 - **Libretro** — The GDExtension Node exposed to GDScript. Instance methods only (`StartContent`, `StopContent`, `SetCoreOption`). Owns a `std::unique_ptr<Wrapper> m_wrapper`. Emits the `options_ready` signal via `NotifyOptionsReady()` (called from Wrapper across the thread boundary using `call_deferred`).
 
 ### Handler Subsystems
@@ -67,13 +69,13 @@ Each handler is owned by a `Wrapper` instance and manages one libretro subsystem
 
 ### Data Flow
 ```
-GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handlers → Libretro Core DLL
+GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handlers → Libretro Core (.dll/.so)
                                                ↑ ThreadCommand queue (ReaderWriterQueue) ↓
                                          Main thread (_process drains queue)
 ```
 
 ### GDScript Side
-- `Demo/Scripts/libretro.gd` / `DemoXR/Scripts/libretro.gd` / `RetroVR/Scripts/libretro.gd` — Main controller scripts. Use `@export var libretro_node: Libretro` to reference the `Libretro` node; fall back to `find_child("Libretro")` if unset.
+- `RetroVR/Scripts/libretro.gd` — Main controller script. Uses `@export var libretro_node: Libretro` to reference the `Libretro` node; falls back to `find_child("Libretro")` if unset.
 - `RetroVR/Scripts/Objects/system.gd` — Per-arcade-cabinet controller. Has `@onready var _libretro: Libretro = $Libretro` wired to a child `Libretro` node in the scene tree.
 - `RetroVR/Scenes/Objects/system.tscn` — Cabinet scene. Contains a `Libretro` child node (unique_id `4000000010`).
 - GDExtension registration at `MODULE_INITIALIZATION_LEVEL_SCENE`.
@@ -81,14 +83,14 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 ## Dependencies
 
 - **godot-cpp** (submodule, 4.5 branch) — Godot C++ bindings
-- **SDL3** — Core DLL loading and window management (`SKLibretro/external/SDL3/`)
+- **SDL3** — Core DLL loading and HW render window management on Windows only (`SKLibretro/external/SDL3/`). Not used on Android (replaced by `dlopen`/`dlsym` via `DynLib.hpp`).
 - **libretro-common** — Reference implementations for VFS, audio conversion, etc. (`SKLibretro/external/libretro-common/`)
 - **moodycamel::ReaderWriterQueue** — Lock-free SPSC queue for cross-thread communication
 - **godot-xr-tools v4.5.1** — VR locomotion, interactions, finger poses (`RetroVR/addons/godot-xr-tools/`)
 
 ## Code Conventions
 
-- C++latest standard (MSVC)
+- C++latest standard (MSVC on Windows), C++20 (Clang/NDK on Android)
 - Debug logging via `Log`, `LogOK`, `LogWarning`, `LogError` macros
 - Libretro option data exposed to GDScript as `LibretroOptionCategory`, `LibretroOptionDefinition`, `LibretroOptionValue` objects
 - Callback-based design throughout (video_refresh, audio_sample, input_poll, environment)

@@ -10,11 +10,26 @@ class_name CoreDownloadManager
 extends Node
 
 
-const BUILDBOT_URL := "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
+static func _buildbot_url() -> String:
+	if OS.get_name() == "Android":
+		return "https://buildbot.libretro.com/nightly/android/latest/arm64-v8a/"
+	return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
 
-## Default root directory: %USERPROFILE%/retrovr/libretro
-## DLLs go into the "cores" subdirectory beneath this.
+static func _core_lib_suffix() -> String:
+	if OS.get_name() == "Android":
+		return "_libretro_android"
+	return "_libretro"
+
+static func _core_lib_ext() -> String:
+	if OS.get_name() == "Android":
+		return ".so"
+	return ".dll"
+
+## Default root directory for libretro data.
+## On Android: app-private storage. On Windows: %USERPROFILE%/retrovr/libretro.
 static func default_core_root() -> String:
+	if OS.get_name() == "Android":
+		return OS.get_user_data_dir() + "/libretro"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/libretro"
 
 
@@ -80,7 +95,7 @@ func fetch_available_cores(callback: Callable) -> void:
 		func(result, response_code, _headers, body):
 			_on_listing_completed(result, response_code, body, callback)
 	)
-	var err := _listing_request.request(BUILDBOT_URL)
+	var err := _listing_request.request(_buildbot_url())
 	if err != OK:
 		push_error("CoreDownloadManager: failed to start listing request (err %d)" % err)
 		callback.call([])
@@ -110,9 +125,11 @@ func _on_listing_completed(result: int, response_code: int,
 func _parse_listing_html(html: String) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 
-	# Match relative hrefs that end in _libretro.dll.zip (the fallback table uses relative paths)
+	# Match relative hrefs that end in the platform-appropriate zip pattern
+	var zip_ext := _core_lib_ext() + "\\.zip"
+	var lib_suffix := _core_lib_suffix()
 	var href_regex := RegEx.new()
-	href_regex.compile('href="[^"]*?/([^"/_][^"]*?_libretro\\.dll\\.zip)"')
+	href_regex.compile('href="[^"]*?/([^"/_][^"]*?' + lib_suffix.replace("_", "\\_") + zip_ext + ')"')
 
 	# Date in the adjacent fb-d cell: "2026-03-06 03:10"
 	var date_regex := RegEx.new()
@@ -130,10 +147,11 @@ func _parse_listing_html(html: String) -> Array[Dictionary]:
 		var filename: String = m.get_string(1).get_file()  # strip any leading path
 
 		var core_name: String = filename
-		if core_name.ends_with(".dll.zip"):
-			core_name = core_name.left(core_name.length() - ".dll.zip".length())
-		if core_name.ends_with("_libretro"):
-			core_name = core_name.left(core_name.length() - "_libretro".length())
+		var zip_suffix := _core_lib_ext() + ".zip"
+		if core_name.ends_with(zip_suffix):
+			core_name = core_name.left(core_name.length() - zip_suffix.length())
+		if core_name.ends_with(_core_lib_suffix()):
+			core_name = core_name.left(core_name.length() - _core_lib_suffix().length())
 
 		# Find closest date entry that comes after this href in the HTML
 		var href_pos := m.get_start()
@@ -186,8 +204,8 @@ func download_core(core_name: String, remote_date: String,
 		push_warning("CoreDownloadManager: already downloading '%s'" % core_name)
 		return
 
-	var zip_filename := core_name + "_libretro.dll.zip"
-	var zip_url := BUILDBOT_URL + zip_filename
+	var zip_filename := core_name + _core_lib_suffix() + _core_lib_ext() + ".zip"
+	var zip_url := _buildbot_url() + zip_filename
 	var zip_path := default_cores_dir().path_join(zip_filename)
 
 	var http := HTTPRequest.new()

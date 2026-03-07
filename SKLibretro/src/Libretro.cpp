@@ -12,6 +12,8 @@ Libretro::Libretro()
     m_wrapper->m_libretro_node = this;
 }
 
+Libretro::~Libretro() = default;
+
 void Libretro::ConnectOptionsReady(const godot::Callable& callable, uint32_t flags)
 {
     connect("options_ready", callable, flags);
