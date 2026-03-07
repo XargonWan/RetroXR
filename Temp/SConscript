@@ -26,7 +26,7 @@ if is_windows:
 
 if is_android:
     env.Append(CXXFLAGS=["-std=c++20"])
-    env.Append(LIBS=["dl", "log"])
+    env.Append(LIBS=["dl", "log", "EGL", "GLESv3"])
 
 sources = Glob("SKLibretro/src/*.cpp")
 sources.extend(Glob("SKLibretro/external/libretro-common/compat/*.c"))

@@ -8,6 +8,8 @@
 
 #ifdef _WIN32
 #include <SDL3/SDL_video.h>
+#elif defined(__ANDROID__)
+#include <EGL/egl.h>
 #endif
 
 #include <libretro.h>
@@ -49,11 +51,16 @@ private:
 #ifdef _WIN32
     SDL_Window* m_sdl_window = nullptr;
     SDL_GLContext m_sdl_gl_context = nullptr;
+#elif defined(__ANDROID__)
+    EGLDisplay m_egl_display = EGL_NO_DISPLAY;
+    EGLContext m_egl_context = EGL_NO_CONTEXT;
+    EGLSurface m_egl_surface = EGL_NO_SURFACE;
 #endif
 
     uint32_t m_rotation = 0;
     retro_hw_context_reset_t m_context_reset = nullptr;
     retro_pixel_format m_pixel_format = RETRO_PIXEL_FORMAT_UNKNOWN;
     retro_hw_context_reset_t m_context_destroy = nullptr;
+    retro_hw_context_type m_hw_context_type = RETRO_HW_CONTEXT_NONE;
 };
 }

@@ -5,6 +5,9 @@
 #ifdef _WIN32
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_opengl.h>
+#elif defined(__ANDROID__)
+#include <EGL/egl.h>
+#include <GLES3/gl3.h>
 #endif
 
 #include "Wrapper.hpp"
@@ -32,14 +35,18 @@ void VideoHandler::RefreshCallback(const void* data, uint32_t width, uint32_t he
 
     PackedByteArray pixel_data;
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__ANDROID__)
     if (data == RETRO_HW_FRAME_BUFFER_VALID)
     {
         int bytes_per_pixel = 4;
 
         pixel_data.resize(width * height * bytes_per_pixel);
         glReadPixels(0, 0, (int)width, (int)height, GL_RGBA, GL_UNSIGNED_BYTE, pixel_data.ptrw());
+#ifdef _WIN32
         SDL_GL_SwapWindow(instance->m_video_handler->m_sdl_window);
+#elif defined(__ANDROID__)
+        eglSwapBuffers(instance->m_video_handler->m_egl_display, instance->m_video_handler->m_egl_surface);
+#endif
 
         if (instance->m_video_handler->m_image.is_null() || instance->m_video_handler->m_image_format != Image::FORMAT_RGBA8 || width != instance->m_video_handler->m_last_width || height != instance->m_video_handler->m_last_height)
         {
@@ -129,6 +136,8 @@ retro_proc_address_t VideoHandler::HwRenderGetProcAddress(const char* sym)
 {
 #ifdef _WIN32
     return reinterpret_cast<retro_proc_address_t>(SDL_GL_GetProcAddress(sym));
+#elif defined(__ANDROID__)
+    return reinterpret_cast<retro_proc_address_t>(eglGetProcAddress(sym));
 #else
     return nullptr;
 #endif
@@ -191,6 +200,29 @@ void VideoHandler::DeInit()
         SDL_DestroyWindow(m_sdl_window);
         m_sdl_window = nullptr;
     }
+#elif defined(__ANDROID__)
+    if (m_context_destroy)
+        m_context_destroy();
+
+    if (m_egl_display != EGL_NO_DISPLAY)
+    {
+        eglMakeCurrent(m_egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+
+        if (m_egl_context != EGL_NO_CONTEXT)
+        {
+            eglDestroyContext(m_egl_display, m_egl_context);
+            m_egl_context = EGL_NO_CONTEXT;
+        }
+
+        if (m_egl_surface != EGL_NO_SURFACE)
+        {
+            eglDestroySurface(m_egl_display, m_egl_surface);
+            m_egl_surface = EGL_NO_SURFACE;
+        }
+
+        eglTerminate(m_egl_display);
+        m_egl_display = EGL_NO_DISPLAY;
+    }
 #endif
 }
 
@@ -230,6 +262,102 @@ bool VideoHandler::InitHwRenderContext(int32_t width, int32_t height)
         LogError("Failed to make OpenGL context current: " + std::string(SDL_GetError()));
         return false;
     }
+
+    m_context_reset();
+
+    return true;
+#elif defined(__ANDROID__)
+    Log("Creating OpenGL ES context...");
+
+    m_egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (m_egl_display == EGL_NO_DISPLAY)
+    {
+        LogError("Failed to get EGL display.");
+        return false;
+    }
+
+    EGLint major, minor;
+    if (!eglInitialize(m_egl_display, &major, &minor))
+    {
+        LogError("Failed to initialize EGL.");
+        m_egl_display = EGL_NO_DISPLAY;
+        return false;
+    }
+
+    Log("EGL version: " + std::to_string(major) + "." + std::to_string(minor));
+
+    bool use_gles2 = (m_hw_context_type == RETRO_HW_CONTEXT_OPENGLES2);
+    EGLint renderable_type = use_gles2 ? EGL_OPENGL_ES2_BIT : 0x00000040; // EGL_OPENGL_ES3_BIT_KHR
+    EGLint context_version = use_gles2 ? 2 : 3;
+
+    Log("Requesting GLES " + std::to_string(context_version) + " context");
+
+    const EGLint config_attribs[] = {
+        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, renderable_type,
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_DEPTH_SIZE, 16,
+        EGL_STENCIL_SIZE, 8,
+        EGL_NONE
+    };
+
+    EGLConfig config;
+    EGLint num_configs;
+    if (!eglChooseConfig(m_egl_display, config_attribs, &config, 1, &num_configs) || num_configs == 0)
+    {
+        LogError("Failed to choose EGL config.");
+        eglTerminate(m_egl_display);
+        m_egl_display = EGL_NO_DISPLAY;
+        return false;
+    }
+
+    const EGLint pbuffer_attribs[] = {
+        EGL_WIDTH, width,
+        EGL_HEIGHT, height,
+        EGL_NONE
+    };
+
+    m_egl_surface = eglCreatePbufferSurface(m_egl_display, config, pbuffer_attribs);
+    if (m_egl_surface == EGL_NO_SURFACE)
+    {
+        LogError("Failed to create EGL pbuffer surface.");
+        eglTerminate(m_egl_display);
+        m_egl_display = EGL_NO_DISPLAY;
+        return false;
+    }
+
+    const EGLint context_attribs[] = {
+        EGL_CONTEXT_CLIENT_VERSION, context_version,
+        EGL_NONE
+    };
+
+    m_egl_context = eglCreateContext(m_egl_display, config, EGL_NO_CONTEXT, context_attribs);
+    if (m_egl_context == EGL_NO_CONTEXT)
+    {
+        LogError("Failed to create EGL context.");
+        eglDestroySurface(m_egl_display, m_egl_surface);
+        m_egl_surface = EGL_NO_SURFACE;
+        eglTerminate(m_egl_display);
+        m_egl_display = EGL_NO_DISPLAY;
+        return false;
+    }
+
+    if (!eglMakeCurrent(m_egl_display, m_egl_surface, m_egl_surface, m_egl_context))
+    {
+        LogError("Failed to make EGL context current.");
+        eglDestroyContext(m_egl_display, m_egl_context);
+        m_egl_context = EGL_NO_CONTEXT;
+        eglDestroySurface(m_egl_display, m_egl_surface);
+        m_egl_surface = EGL_NO_SURFACE;
+        eglTerminate(m_egl_display);
+        m_egl_display = EGL_NO_DISPLAY;
+        return false;
+    }
+
+    LogOK("OpenGL ES context created successfully.");
 
     m_context_reset();
 
@@ -327,7 +455,14 @@ bool VideoHandler::SetHwRender(retro_hw_render_callback* hw_render_callback)
     Log("Setting hardware render callback...");
 
     Log("Context type: " + std::to_string(hw_render_callback->context_type));
-    if (hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGL && hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGL_CORE)
+#ifdef __ANDROID__
+    if (hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGLES2 &&
+        hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGLES3 &&
+        hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGLES_VERSION)
+#else
+    if (hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGL &&
+        hw_render_callback->context_type != RETRO_HW_CONTEXT_OPENGL_CORE)
+#endif
     {
         LogError("Unsupported context type: " + std::to_string(hw_render_callback->context_type));
         return false;
@@ -335,6 +470,7 @@ bool VideoHandler::SetHwRender(retro_hw_render_callback* hw_render_callback)
 
     m_context_reset = hw_render_callback->context_reset;
     m_context_destroy = hw_render_callback->context_destroy;
+    m_hw_context_type = hw_render_callback->context_type;
 
     hw_render_callback->get_current_framebuffer = VideoHandler::HwRenderGetCurrentFramebuffer;
     hw_render_callback->get_proc_address = VideoHandler::HwRenderGetProcAddress;
@@ -347,7 +483,11 @@ bool VideoHandler::GetPreferredHwRender(retro_hw_context_type* hw_context_type) 
     if (!hw_context_type)
         return false;
 
+#ifdef __ANDROID__
+    *hw_context_type = RETRO_HW_CONTEXT_OPENGLES3;
+#else
     *hw_context_type = RETRO_HW_CONTEXT_OPENGL;
+#endif
     return true;
 }
 
