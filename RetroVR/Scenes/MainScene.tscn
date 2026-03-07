@@ -1,4 +1,4 @@
-[gd_scene load_steps=49 format=3 uid="uid://bh8x3sbal8nds"]
+[gd_scene format=3 uid="uid://bh8x3sbal8nds"]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="3_xrinit"]
 [ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/controller_model.gd" id="4_ctrlmodel"]
@@ -40,115 +40,80 @@ size = Vector3(20, 0.1, 20)
 [sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
 size = Vector2(20, 20)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_table"]
-size = Vector3(2.6, 0.05, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_table"]
-size = Vector3(2.6, 0.05, 1)
-
-[sub_resource type="StandardMaterial3D" id="Mat_table"]
-albedo_color = Color(0.55, 0.35, 0.18, 1)
+[sub_resource type="Gradient" id="Grad_wood"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.42, 0.26, 0.1, 1, 0.55, 0.36, 0.16, 1, 0.48, 0.3, 0.12, 1, 0.62, 0.42, 0.2, 1, 0.44, 0.27, 0.11, 1)
 
 [sub_resource type="FastNoiseLite" id="FNL_wood_grain"]
 noise_type = 2
 seed = 42
 frequency = 0.04
-fractal_type = 1
 fractal_octaves = 4
-fractal_lacunarity = 2.0
-fractal_gain = 0.5
 domain_warp_enabled = true
-domain_warp_type = 0
 domain_warp_amplitude = 35.0
 domain_warp_frequency = 0.02
-domain_warp_fractal_type = 1
 domain_warp_fractal_octaves = 2
 
-[sub_resource type="Gradient" id="Grad_wood"]
-offsets = PackedFloat32Array(0.0, 0.25, 0.5, 0.75, 1.0)
-colors = PackedColorArray(0.42, 0.26, 0.1, 1, 0.55, 0.36, 0.16, 1, 0.48, 0.3, 0.12, 1, 0.62, 0.42, 0.2, 1, 0.44, 0.27, 0.11, 1)
-
 [sub_resource type="NoiseTexture2D" id="NoiseTex_wood"]
-width = 512
-height = 512
-seamless = true
-seamless_blend_skirt = 0.1
 noise = SubResource("FNL_wood_grain")
 color_ramp = SubResource("Grad_wood")
+seamless = true
 
 [sub_resource type="StandardMaterial3D" id="Mat_floor_wood"]
 albedo_texture = SubResource("NoiseTex_wood")
-uv1_scale = Vector3(8.0, 8.0, 1.0)
 roughness = 0.65
+uv1_scale = Vector3(8, 8, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_south_wall"]
+size = Vector3(20, 3, 0.15)
 
 [sub_resource type="FastNoiseLite" id="FNL_plaster_bump"]
 noise_type = 5
 seed = 1337
 frequency = 0.8
-fractal_type = 1
 fractal_octaves = 4
-fractal_lacunarity = 2.0
 fractal_gain = 0.45
 
 [sub_resource type="NoiseTexture2D" id="NoiseTex_plaster_normal"]
-width = 512
-height = 512
+noise = SubResource("FNL_plaster_bump")
 seamless = true
-seamless_blend_skirt = 0.1
 as_normal_map = true
 bump_strength = 4.0
-noise = SubResource("FNL_plaster_bump")
 
 [sub_resource type="StandardMaterial3D" id="Mat_wall_plaster"]
-albedo_color = Color(0.93, 0.89, 0.82, 1.0)
-normal_enabled = true
-normal_texture = SubResource("NoiseTex_plaster_normal")
-normal_scale = 0.8
+albedo_color = Color(0.93, 0.89, 0.82, 1)
 roughness = 0.88
-uv1_scale = Vector3(6.0, 6.0, 1.0)
-
-[sub_resource type="StandardMaterial3D" id="Mat_door"]
-albedo_color = Color(0.22, 0.13, 0.07, 1.0)
-roughness = 0.7
-
-[sub_resource type="StandardMaterial3D" id="Mat_glass"]
-transparency = 1
-albedo_color = Color(0.62, 0.78, 0.92, 0.35)
-emission_enabled = true
-emission = Color(0.45, 0.62, 0.8, 1.0)
-emission_energy_multiplier = 0.25
-roughness = 0.05
-metallic = 0.1
-
-[sub_resource type="BoxMesh" id="BoxMesh_south_wall"]
-size = Vector3(20.0, 3.0, 0.15)
+normal_enabled = true
+normal_scale = 0.8
+normal_texture = SubResource("NoiseTex_plaster_normal")
+uv1_scale = Vector3(6, 6, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_south_wall"]
-size = Vector3(20.0, 3.0, 0.15)
+size = Vector3(20, 3, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_east_wall"]
-size = Vector3(0.15, 3.0, 20.0)
+size = Vector3(0.15, 3, 20)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_east_wall"]
-size = Vector3(0.15, 3.0, 20.0)
+size = Vector3(0.15, 3, 20)
 
 [sub_resource type="BoxMesh" id="BoxMesh_west_wall"]
-size = Vector3(0.15, 3.0, 20.0)
+size = Vector3(0.15, 3, 20)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_west_wall"]
-size = Vector3(0.15, 3.0, 20.0)
+size = Vector3(0.15, 3, 20)
 
 [sub_resource type="BoxMesh" id="BoxMesh_north_wall_L"]
-size = Vector3(9.4, 3.0, 0.15)
+size = Vector3(9.4, 3, 0.15)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_north_wall_L"]
-size = Vector3(9.4, 3.0, 0.15)
+size = Vector3(9.4, 3, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_north_wall_R"]
-size = Vector3(9.4, 3.0, 0.15)
+size = Vector3(9.4, 3, 0.15)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_north_wall_R"]
-size = Vector3(9.4, 3.0, 0.15)
+size = Vector3(9.4, 3, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_north_wall_top"]
 size = Vector3(1.2, 0.8, 0.15)
@@ -157,16 +122,38 @@ size = Vector3(1.2, 0.8, 0.15)
 size = Vector3(1.2, 0.8, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_ceiling"]
-size = Vector3(20.0, 0.15, 20.0)
+size = Vector3(20, 0.15, 20)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ceiling"]
-size = Vector3(20.0, 0.15, 20.0)
+size = Vector3(20, 0.15, 20)
 
 [sub_resource type="BoxMesh" id="BoxMesh_door"]
 size = Vector3(1.2, 2.2, 0.08)
 
+[sub_resource type="StandardMaterial3D" id="Mat_door"]
+albedo_color = Color(0.22, 0.13, 0.07, 1)
+roughness = 0.7
+
 [sub_resource type="BoxMesh" id="BoxMesh_window"]
 size = Vector3(1.5, 0.9, 0.04)
+
+[sub_resource type="StandardMaterial3D" id="Mat_glass"]
+transparency = 1
+albedo_color = Color(0.62, 0.78, 0.92, 0.35)
+metallic = 0.1
+roughness = 0.05
+emission_enabled = true
+emission = Color(0.45, 0.62, 0.8, 1)
+emission_energy_multiplier = 0.25
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_table"]
+size = Vector3(2.6, 0.05, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_table"]
+size = Vector3(2.6, 0.05, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_table"]
+albedo_color = Color(0.55, 0.35, 0.18, 1)
 
 [node name="Root" type="Node3D" unique_id=1033434416]
 script = ExtResource("3_xrinit")
@@ -235,95 +222,95 @@ shape = SubResource("BoxShape3D_floor")
 mesh = SubResource("PlaneMesh_floor")
 surface_material_override/0 = SubResource("Mat_floor_wood")
 
-[node name="Room" type="StaticBody3D" parent="." unique_id=3000000100]
+[node name="Room" type="StaticBody3D" parent="." unique_id=-1294967196]
 collision_layer = 3
 collision_mask = 0
 
-[node name="SouthWall" type="MeshInstance3D" parent="Room" unique_id=3000000101]
+[node name="SouthWall" type="MeshInstance3D" parent="Room" unique_id=-1294967195]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 10.075)
 mesh = SubResource("BoxMesh_south_wall")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="SouthWallCol" type="CollisionShape3D" parent="Room" unique_id=3000000102]
+[node name="SouthWallCol" type="CollisionShape3D" parent="Room" unique_id=-1294967194]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 10.075)
 shape = SubResource("BoxShape3D_south_wall")
 
-[node name="EastWall" type="MeshInstance3D" parent="Room" unique_id=3000000103]
+[node name="EastWall" type="MeshInstance3D" parent="Room" unique_id=-1294967193]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.075, 1.5, 0)
 mesh = SubResource("BoxMesh_east_wall")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="EastWallCol" type="CollisionShape3D" parent="Room" unique_id=3000000104]
+[node name="EastWallCol" type="CollisionShape3D" parent="Room" unique_id=-1294967192]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.075, 1.5, 0)
 shape = SubResource("BoxShape3D_east_wall")
 
-[node name="WestWall" type="MeshInstance3D" parent="Room" unique_id=3000000105]
+[node name="WestWall" type="MeshInstance3D" parent="Room" unique_id=-1294967191]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.075, 1.5, 0)
 mesh = SubResource("BoxMesh_west_wall")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="WestWallCol" type="CollisionShape3D" parent="Room" unique_id=3000000106]
+[node name="WestWallCol" type="CollisionShape3D" parent="Room" unique_id=-1294967190]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.075, 1.5, 0)
 shape = SubResource("BoxShape3D_west_wall")
 
-[node name="NorthWallL" type="MeshInstance3D" parent="Room" unique_id=3000000107]
+[node name="NorthWallL" type="MeshInstance3D" parent="Room" unique_id=-1294967189]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.3, 1.5, -10.075)
 mesh = SubResource("BoxMesh_north_wall_L")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="NorthWallLCol" type="CollisionShape3D" parent="Room" unique_id=3000000108]
+[node name="NorthWallLCol" type="CollisionShape3D" parent="Room" unique_id=-1294967188]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.3, 1.5, -10.075)
 shape = SubResource("BoxShape3D_north_wall_L")
 
-[node name="NorthWallR" type="MeshInstance3D" parent="Room" unique_id=3000000109]
+[node name="NorthWallR" type="MeshInstance3D" parent="Room" unique_id=-1294967187]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.3, 1.5, -10.075)
 mesh = SubResource("BoxMesh_north_wall_R")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="NorthWallRCol" type="CollisionShape3D" parent="Room" unique_id=3000000110]
+[node name="NorthWallRCol" type="CollisionShape3D" parent="Room" unique_id=-1294967186]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.3, 1.5, -10.075)
 shape = SubResource("BoxShape3D_north_wall_R")
 
-[node name="NorthWallTop" type="MeshInstance3D" parent="Room" unique_id=3000000111]
+[node name="NorthWallTop" type="MeshInstance3D" parent="Room" unique_id=-1294967185]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, -10.075)
 mesh = SubResource("BoxMesh_north_wall_top")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="NorthWallTopCol" type="CollisionShape3D" parent="Room" unique_id=3000000112]
+[node name="NorthWallTopCol" type="CollisionShape3D" parent="Room" unique_id=-1294967184]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, -10.075)
 shape = SubResource("BoxShape3D_north_wall_top")
 
-[node name="Ceiling" type="MeshInstance3D" parent="Room" unique_id=3000000113]
+[node name="Ceiling" type="MeshInstance3D" parent="Room" unique_id=-1294967183]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.075, 0)
 mesh = SubResource("BoxMesh_ceiling")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
-[node name="CeilingCol" type="CollisionShape3D" parent="Room" unique_id=3000000114]
+[node name="CeilingCol" type="CollisionShape3D" parent="Room" unique_id=-1294967182]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.075, 0)
 shape = SubResource("BoxShape3D_ceiling")
 
-[node name="Door" type="MeshInstance3D" parent="Room" unique_id=3000000115]
+[node name="Door" type="MeshInstance3D" parent="Room" unique_id=-1294967181]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, -9.96)
 mesh = SubResource("BoxMesh_door")
 surface_material_override/0 = SubResource("Mat_door")
 
-[node name="WindowEN" type="MeshInstance3D" parent="Room" unique_id=3000000116]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.927, 1.65, -4.0)
+[node name="WindowEN" type="MeshInstance3D" parent="Room" unique_id=-1294967180]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.927, 1.65, -4)
 mesh = SubResource("BoxMesh_window")
 surface_material_override/0 = SubResource("Mat_glass")
 
-[node name="WindowES" type="MeshInstance3D" parent="Room" unique_id=3000000117]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.927, 1.65, 4.0)
+[node name="WindowES" type="MeshInstance3D" parent="Room" unique_id=-1294967179]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.927, 1.65, 4)
 mesh = SubResource("BoxMesh_window")
 surface_material_override/0 = SubResource("Mat_glass")
 
-[node name="WindowWN" type="MeshInstance3D" parent="Room" unique_id=3000000118]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.927, 1.65, -4.0)
+[node name="WindowWN" type="MeshInstance3D" parent="Room" unique_id=-1294967178]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.927, 1.65, -4)
 mesh = SubResource("BoxMesh_window")
 surface_material_override/0 = SubResource("Mat_glass")
 
-[node name="WindowWS" type="MeshInstance3D" parent="Room" unique_id=3000000119]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.927, 1.65, 4.0)
+[node name="WindowWS" type="MeshInstance3D" parent="Room" unique_id=-1294967177]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.927, 1.65, 4)
 mesh = SubResource("BoxMesh_window")
 surface_material_override/0 = SubResource("Mat_glass")
 
@@ -352,27 +339,27 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.758, -0.55)
 rom_path = "C:/Users/user/libretro/probe.nes"
 game_label = "Super Mario Bros. (World)"
 
-[node name="CeilLight_NE" type="OmniLight3D" parent="." unique_id=3000000200]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.0, 2.7, -5.0)
-light_color = Color(1.0, 0.95, 0.85, 1)
+[node name="CeilLight_NE" type="OmniLight3D" parent="." unique_id=-1294967096]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 2.7, -5)
+light_color = Color(1, 0.95, 0.85, 1)
 light_energy = 1.8
 omni_range = 8.0
 
-[node name="CeilLight_NW" type="OmniLight3D" parent="." unique_id=3000000201]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.0, 2.7, -5.0)
-light_color = Color(1.0, 0.95, 0.85, 1)
+[node name="CeilLight_NW" type="OmniLight3D" parent="." unique_id=-1294967095]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 2.7, -5)
+light_color = Color(1, 0.95, 0.85, 1)
 light_energy = 1.8
 omni_range = 8.0
 
-[node name="CeilLight_SE" type="OmniLight3D" parent="." unique_id=3000000202]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.0, 2.7, 5.0)
-light_color = Color(1.0, 0.95, 0.85, 1)
+[node name="CeilLight_SE" type="OmniLight3D" parent="." unique_id=-1294967094]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 2.7, 5)
+light_color = Color(1, 0.95, 0.85, 1)
 light_energy = 1.8
 omni_range = 8.0
 
-[node name="CeilLight_SW" type="OmniLight3D" parent="." unique_id=3000000203]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.0, 2.7, 5.0)
-light_color = Color(1.0, 0.95, 0.85, 1)
+[node name="CeilLight_SW" type="OmniLight3D" parent="." unique_id=-1294967093]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 2.7, 5)
+light_color = Color(1, 0.95, 0.85, 1)
 light_energy = 1.8
 omni_range = 8.0
 
