@@ -1,5 +1,7 @@
 # type: ignore
 
-VariantDir('Temp', '.', duplicate=0)
+VariantDir('SKLibretro/Temp', 'SKLibretro', duplicate=0)
 env = Environment()
-SConscript('Temp/SConscript', exports='env')
+output_dir = '#RetroVR/SKLibretro'
+
+SConscript('SKLibretro/Temp/SConscript', exports=['env', 'output_dir'])

@@ -1,7 +1,6 @@
-[submodule "godot-cpp"]
-	path = godot-cpp
-	url = https://github.com/godotengine/godot-cpp.git
-	branch = 4.5
 [submodule "libretro-core-info"]
 	path = RetroVR/libretro-core-info
 	url = https://github.com/libretro/libretro-core-info
+[submodule "SKLibretro"]
+	path = SKLibretro
+	url = https://github.com/XenuIsWatching/libretro-godot.git
