@@ -5,6 +5,11 @@ Temp/*
 vc140.pdb
 .sconsign.dblite
 RetroVR/SKLibretro/~*
+# MSVC build artifacts (generated alongside the DLL, not needed at runtime)
+RetroVR/SKLibretro/*.exp
+RetroVR/SKLibretro/*.ilk
+RetroVR/SKLibretro/*.lib
+RetroVR/SKLibretro/*.pdb
 **/*.import
 
 *.apk
