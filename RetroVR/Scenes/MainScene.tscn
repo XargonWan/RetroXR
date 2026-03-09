@@ -14,6 +14,8 @@
 [ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="17_viewport2d3d"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="18_spawnmenu"]
 [ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
+[ext_resource type="Shader" uid="uid://ctwkb7jcoma01" path="res://Shaders/arcade_carpet.gdshader" id="20_carpet"]
+[ext_resource type="Shader" uid="uid://ck7deycag7kku" path="res://Shaders/ceiling_tiles.gdshader" id="21_ceiltiles"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProcSkyMat"]
 sky_top_color = Color(0.18, 0.31, 0.55, 1)
@@ -29,41 +31,26 @@ background_mode = 2
 sky = SubResource("Sky_main")
 ambient_light_source = 2
 ambient_light_color = Color(0.95, 0.92, 0.85, 1)
-ambient_light_energy = 0.25
+ambient_light_energy = 0.1
 tonemap_mode = 2
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(20, 0.1, 20)
+size = Vector3(10, 0.1, 10)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-size = Vector2(20, 20)
+size = Vector2(10, 10)
 
-[sub_resource type="Gradient" id="Grad_wood"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.42, 0.26, 0.1, 1, 0.55, 0.36, 0.16, 1, 0.48, 0.3, 0.12, 1, 0.62, 0.42, 0.2, 1, 0.44, 0.27, 0.11, 1)
-
-[sub_resource type="FastNoiseLite" id="FNL_wood_grain"]
-noise_type = 2
-seed = 42
-frequency = 0.04
-fractal_octaves = 4
-domain_warp_enabled = true
-domain_warp_amplitude = 35.0
-domain_warp_frequency = 0.02
-domain_warp_fractal_octaves = 2
-
-[sub_resource type="NoiseTexture2D" id="NoiseTex_wood"]
-noise = SubResource("FNL_wood_grain")
-color_ramp = SubResource("Grad_wood")
-seamless = true
-
-[sub_resource type="StandardMaterial3D" id="Mat_floor_wood"]
-albedo_texture = SubResource("NoiseTex_wood")
-roughness = 0.65
-uv1_scale = Vector3(8, 8, 1)
+[sub_resource type="ShaderMaterial" id="Mat_carpet"]
+render_priority = 0
+shader = ExtResource("20_carpet")
+shader_parameter/base_color = Color(0.06, 0.04, 0.08, 1)
+shader_parameter/color_cyan = Color(0, 0.9, 0.9, 1)
+shader_parameter/color_pink = Color(0.95, 0.1, 0.5, 1)
+shader_parameter/color_green = Color(0.2, 1, 0.3, 1)
+shader_parameter/tile_scale = 4.0
 
 [sub_resource type="BoxMesh" id="BoxMesh_south_wall"]
-size = Vector3(20, 3, 0.15)
+size = Vector3(10, 3, 0.15)
 
 [sub_resource type="FastNoiseLite" id="FNL_plaster_bump"]
 noise_type = 5
@@ -79,7 +66,7 @@ as_normal_map = true
 bump_strength = 4.0
 
 [sub_resource type="StandardMaterial3D" id="Mat_wall_plaster"]
-albedo_color = Color(0.93, 0.89, 0.82, 1)
+albedo_color = Color(0.15, 0.13, 0.18, 1)
 roughness = 0.88
 normal_enabled = true
 normal_scale = 0.8
@@ -87,31 +74,31 @@ normal_texture = SubResource("NoiseTex_plaster_normal")
 uv1_scale = Vector3(6, 6, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_south_wall"]
-size = Vector3(20, 3, 0.15)
+size = Vector3(10, 3, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_east_wall"]
-size = Vector3(0.15, 3, 20)
+size = Vector3(0.15, 3, 10)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_east_wall"]
-size = Vector3(0.15, 3, 20)
+size = Vector3(0.15, 3, 10)
 
 [sub_resource type="BoxMesh" id="BoxMesh_west_wall"]
-size = Vector3(0.15, 3, 20)
+size = Vector3(0.15, 3, 10)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_west_wall"]
-size = Vector3(0.15, 3, 20)
+size = Vector3(0.15, 3, 10)
 
 [sub_resource type="BoxMesh" id="BoxMesh_north_wall_L"]
-size = Vector3(9.4, 3, 0.15)
+size = Vector3(4.4, 3, 0.15)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_north_wall_L"]
-size = Vector3(9.4, 3, 0.15)
+size = Vector3(4.4, 3, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_north_wall_R"]
-size = Vector3(9.4, 3, 0.15)
+size = Vector3(4.4, 3, 0.15)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_north_wall_R"]
-size = Vector3(9.4, 3, 0.15)
+size = Vector3(4.4, 3, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_north_wall_top"]
 size = Vector3(1.2, 0.8, 0.15)
@@ -120,10 +107,18 @@ size = Vector3(1.2, 0.8, 0.15)
 size = Vector3(1.2, 0.8, 0.15)
 
 [sub_resource type="BoxMesh" id="BoxMesh_ceiling"]
-size = Vector3(20, 0.15, 20)
+size = Vector3(10, 0.15, 10)
+
+[sub_resource type="ShaderMaterial" id="Mat_ceiling_tiles"]
+render_priority = 0
+shader = ExtResource("21_ceiltiles")
+shader_parameter/tile_color = Color(0.88, 0.86, 0.82, 1)
+shader_parameter/grid_color = Color(0.25, 0.25, 0.25, 1)
+shader_parameter/tile_scale = 5.0
+shader_parameter/grid_width = 0.02
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ceiling"]
-size = Vector3(20, 0.15, 20)
+size = Vector3(10, 0.15, 10)
 
 [sub_resource type="BoxMesh" id="BoxMesh_door"]
 size = Vector3(1.2, 2.2, 0.08)
@@ -132,26 +127,100 @@ size = Vector3(1.2, 2.2, 0.08)
 albedo_color = Color(0.22, 0.13, 0.07, 1)
 roughness = 0.7
 
-[sub_resource type="BoxMesh" id="BoxMesh_window"]
-size = Vector3(1.5, 0.9, 0.04)
-
-[sub_resource type="StandardMaterial3D" id="Mat_glass"]
-transparency = 1
-albedo_color = Color(0.62, 0.78, 0.92, 0.35)
-metallic = 0.1
-roughness = 0.05
-emission_enabled = true
-emission = Color(0.45, 0.62, 0.8, 1)
-emission_energy_multiplier = 0.25
-
 [sub_resource type="BoxShape3D" id="BoxShape3D_table"]
-size = Vector3(2.6, 0.05, 1)
+size = Vector3(2.0, 0.05, 0.8)
 
 [sub_resource type="BoxMesh" id="BoxMesh_table"]
-size = Vector3(2.6, 0.05, 1)
+size = Vector3(2.0, 0.05, 0.8)
 
 [sub_resource type="StandardMaterial3D" id="Mat_table"]
-albedo_color = Color(0.55, 0.35, 0.18, 1)
+albedo_color = Color(0.18, 0.1, 0.06, 1)
+roughness = 0.55
+metallic = 0.05
+
+[sub_resource type="BoxMesh" id="BoxMesh_table_apron_long"]
+size = Vector3(2.0, 0.08, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_table_apron_short"]
+size = Vector3(0.03, 0.08, 0.74)
+
+[sub_resource type="StandardMaterial3D" id="Mat_table_apron"]
+albedo_color = Color(0.12, 0.07, 0.04, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="BoxMesh_table_leg"]
+size = Vector3(0.05, 0.7, 0.05)
+
+[sub_resource type="BoxMesh" id="BoxMesh_fixture"]
+size = Vector3(1.2, 0.04, 0.3)
+
+[sub_resource type="StandardMaterial3D" id="Mat_fixture"]
+albedo_color = Color(0.9, 0.88, 0.8, 1)
+emission_enabled = true
+emission = Color(1, 0.95, 0.85, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="QuadMesh" id="QuadMesh_neon"]
+size = Vector2(1.5, 0.08)
+
+[sub_resource type="StandardMaterial3D" id="Mat_neon_pink"]
+albedo_color = Color(0.05, 0.05, 0.05, 1)
+emission_enabled = true
+emission = Color(0.95, 0.1, 0.5, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_neon_cyan"]
+albedo_color = Color(0.05, 0.05, 0.05, 1)
+emission_enabled = true
+emission = Color(0, 0.9, 0.9, 1)
+emission_energy_multiplier = 2.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_neon_green"]
+albedo_color = Color(0.05, 0.05, 0.05, 1)
+emission_enabled = true
+emission = Color(0.2, 1, 0.3, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_baseboard"]
+size = Vector3(1, 0.1, 0.02)
+
+[sub_resource type="StandardMaterial3D" id="Mat_baseboard"]
+albedo_color = Color(0.06, 0.05, 0.05, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="BoxMesh_poster_frame"]
+size = Vector3(0.6, 0.8, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_frame"]
+albedo_color = Color(0.15, 0.08, 0.04, 1)
+roughness = 0.6
+
+[sub_resource type="QuadMesh" id="QuadMesh_poster_face"]
+size = Vector2(0.52, 0.72)
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_1"]
+albedo_color = Color(0.7, 0.2, 0.3, 1)
+emission_enabled = true
+emission = Color(0.3, 0.05, 0.1, 1)
+emission_energy_multiplier = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_2"]
+albedo_color = Color(0.2, 0.5, 0.7, 1)
+emission_enabled = true
+emission = Color(0.05, 0.15, 0.3, 1)
+emission_energy_multiplier = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_3"]
+albedo_color = Color(0.6, 0.4, 0.8, 1)
+emission_enabled = true
+emission = Color(0.2, 0.1, 0.3, 1)
+emission_energy_multiplier = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_4"]
+albedo_color = Color(0.8, 0.6, 0.2, 1)
+emission_enabled = true
+emission = Color(0.3, 0.2, 0.05, 1)
+emission_energy_multiplier = 0.3
 
 [node name="Root" type="Node3D" unique_id=1033434416]
 script = ExtResource("3_xrinit")
@@ -162,11 +231,11 @@ environment = SubResource("Env_main")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2000000071]
 transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 3, 0)
 light_color = Color(1, 0.97, 0.88, 1)
-light_energy = 0.3
+light_energy = 0.15
 shadow_enabled = true
 
 [node name="XROrigin3D" type="XROrigin3D" parent="." unique_id=1434750428]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.2)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=1434750429]
 
@@ -203,11 +272,6 @@ stick_teleport_action = "primary"
 stick_teleport_threshold = 0.6
 teleport_button_action = ""
 
-[node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=611392543]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0138264, 1.70309, 1.532)
-light_energy = 1.5
-omni_range = 6.0
-
 [node name="Floor" type="StaticBody3D" parent="." unique_id=2000000020]
 collision_layer = 3
 collision_mask = 0
@@ -218,102 +282,82 @@ shape = SubResource("BoxShape3D_floor")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Floor" unique_id=2000000022]
 mesh = SubResource("PlaneMesh_floor")
-surface_material_override/0 = SubResource("Mat_floor_wood")
+surface_material_override/0 = SubResource("Mat_carpet")
 
 [node name="Room" type="StaticBody3D" parent="." unique_id=-1294967196]
 collision_layer = 3
 collision_mask = 0
 
 [node name="SouthWall" type="MeshInstance3D" parent="Room" unique_id=-1294967195]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 5.075)
 mesh = SubResource("BoxMesh_south_wall")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
 [node name="SouthWallCol" type="CollisionShape3D" parent="Room" unique_id=-1294967194]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 5.075)
 shape = SubResource("BoxShape3D_south_wall")
 
 [node name="EastWall" type="MeshInstance3D" parent="Room" unique_id=-1294967193]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.075, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.075, 1.5, 0)
 mesh = SubResource("BoxMesh_east_wall")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
 [node name="EastWallCol" type="CollisionShape3D" parent="Room" unique_id=-1294967192]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.075, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.075, 1.5, 0)
 shape = SubResource("BoxShape3D_east_wall")
 
 [node name="WestWall" type="MeshInstance3D" parent="Room" unique_id=-1294967191]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.075, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.075, 1.5, 0)
 mesh = SubResource("BoxMesh_west_wall")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
 [node name="WestWallCol" type="CollisionShape3D" parent="Room" unique_id=-1294967190]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.075, 1.5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.075, 1.5, 0)
 shape = SubResource("BoxShape3D_west_wall")
 
 [node name="NorthWallL" type="MeshInstance3D" parent="Room" unique_id=-1294967189]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.3, 1.5, -10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.8, 1.5, -5.075)
 mesh = SubResource("BoxMesh_north_wall_L")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
 [node name="NorthWallLCol" type="CollisionShape3D" parent="Room" unique_id=-1294967188]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.3, 1.5, -10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.8, 1.5, -5.075)
 shape = SubResource("BoxShape3D_north_wall_L")
 
 [node name="NorthWallR" type="MeshInstance3D" parent="Room" unique_id=-1294967187]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.3, 1.5, -10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 1.5, -5.075)
 mesh = SubResource("BoxMesh_north_wall_R")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
 [node name="NorthWallRCol" type="CollisionShape3D" parent="Room" unique_id=-1294967186]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.3, 1.5, -10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 1.5, -5.075)
 shape = SubResource("BoxShape3D_north_wall_R")
 
 [node name="NorthWallTop" type="MeshInstance3D" parent="Room" unique_id=-1294967185]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, -10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, -5.075)
 mesh = SubResource("BoxMesh_north_wall_top")
 surface_material_override/0 = SubResource("Mat_wall_plaster")
 
 [node name="NorthWallTopCol" type="CollisionShape3D" parent="Room" unique_id=-1294967184]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, -10.075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, -5.075)
 shape = SubResource("BoxShape3D_north_wall_top")
 
 [node name="Ceiling" type="MeshInstance3D" parent="Room" unique_id=-1294967183]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.075, 0)
 mesh = SubResource("BoxMesh_ceiling")
-surface_material_override/0 = SubResource("Mat_wall_plaster")
+surface_material_override/0 = SubResource("Mat_ceiling_tiles")
 
 [node name="CeilingCol" type="CollisionShape3D" parent="Room" unique_id=-1294967182]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.075, 0)
 shape = SubResource("BoxShape3D_ceiling")
 
 [node name="Door" type="MeshInstance3D" parent="Room" unique_id=-1294967181]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, -9.96)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, -4.96)
 mesh = SubResource("BoxMesh_door")
 surface_material_override/0 = SubResource("Mat_door")
 
-[node name="WindowEN" type="MeshInstance3D" parent="Room" unique_id=-1294967180]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.927, 1.65, -4)
-mesh = SubResource("BoxMesh_window")
-surface_material_override/0 = SubResource("Mat_glass")
-
-[node name="WindowES" type="MeshInstance3D" parent="Room" unique_id=-1294967179]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.927, 1.65, 4)
-mesh = SubResource("BoxMesh_window")
-surface_material_override/0 = SubResource("Mat_glass")
-
-[node name="WindowWN" type="MeshInstance3D" parent="Room" unique_id=-1294967178]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.927, 1.65, -4)
-mesh = SubResource("BoxMesh_window")
-surface_material_override/0 = SubResource("Mat_glass")
-
-[node name="WindowWS" type="MeshInstance3D" parent="Room" unique_id=-1294967177]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.927, 1.65, 4)
-mesh = SubResource("BoxMesh_window")
-surface_material_override/0 = SubResource("Mat_glass")
-
 [node name="Table" type="StaticBody3D" parent="." unique_id=2000000040]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.15, 0, -0.9)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
 collision_layer = 3
 collision_mask = 0
 
@@ -326,32 +370,209 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.725, 0)
 mesh = SubResource("BoxMesh_table")
 surface_material_override/0 = SubResource("Mat_table")
 
+[node name="ApronFront" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.66, 0.385)
+mesh = SubResource("BoxMesh_table_apron_long")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="ApronBack" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.66, -0.385)
+mesh = SubResource("BoxMesh_table_apron_long")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="ApronLeft" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.985, 0.66, 0)
+mesh = SubResource("BoxMesh_table_apron_short")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="ApronRight" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.985, 0.66, 0)
+mesh = SubResource("BoxMesh_table_apron_short")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="LegFL" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.35, 0.35)
+mesh = SubResource("BoxMesh_table_leg")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="LegFR" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.95, 0.35, 0.35)
+mesh = SubResource("BoxMesh_table_leg")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="LegBL" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.35, -0.35)
+mesh = SubResource("BoxMesh_table_leg")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
+[node name="LegBR" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.95, 0.35, -0.35)
+mesh = SubResource("BoxMesh_table_leg")
+surface_material_override/0 = SubResource("Mat_table_apron")
+
 [node name="TV" parent="." unique_id=-1294967286 instance=ExtResource("13_tv")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 0.95, -1)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.95, -0.5)
 
-[node name="CeilLight_NE" type="OmniLight3D" parent="." unique_id=-1294967096]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 2.7, -5)
-light_color = Color(1, 0.95, 0.85, 1)
-light_energy = 1.8
-omni_range = 8.0
+[node name="CeilLight_NE" type="OmniLight3D" parent="." unique_id=-1294967096 groups=["ceiling_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.7, -2.5)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 0.8
+omni_range = 6.0
 
-[node name="CeilLight_NW" type="OmniLight3D" parent="." unique_id=-1294967095]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 2.7, -5)
-light_color = Color(1, 0.95, 0.85, 1)
-light_energy = 1.8
-omni_range = 8.0
+[node name="Fixture_NE" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.95, -2.5)
+mesh = SubResource("BoxMesh_fixture")
+surface_material_override/0 = SubResource("Mat_fixture")
 
-[node name="CeilLight_SE" type="OmniLight3D" parent="." unique_id=-1294967094]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 2.7, 5)
-light_color = Color(1, 0.95, 0.85, 1)
-light_energy = 1.8
-omni_range = 8.0
+[node name="CeilLight_NW" type="OmniLight3D" parent="." unique_id=-1294967095 groups=["ceiling_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.7, -2.5)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 0.8
+omni_range = 6.0
 
-[node name="CeilLight_SW" type="OmniLight3D" parent="." unique_id=-1294967093]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 2.7, 5)
-light_color = Color(1, 0.95, 0.85, 1)
-light_energy = 1.8
-omni_range = 8.0
+[node name="Fixture_NW" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.95, -2.5)
+mesh = SubResource("BoxMesh_fixture")
+surface_material_override/0 = SubResource("Mat_fixture")
+
+[node name="CeilLight_SE" type="OmniLight3D" parent="." unique_id=-1294967094 groups=["ceiling_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.7, 2.5)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 0.8
+omni_range = 6.0
+
+[node name="Fixture_SE" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.95, 2.5)
+mesh = SubResource("BoxMesh_fixture")
+surface_material_override/0 = SubResource("Mat_fixture")
+
+[node name="CeilLight_SW" type="OmniLight3D" parent="." unique_id=-1294967093 groups=["ceiling_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.7, 2.5)
+light_color = Color(1, 0.9, 0.7, 1)
+light_energy = 0.8
+omni_range = 6.0
+
+[node name="Fixture_SW" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.95, 2.5)
+mesh = SubResource("BoxMesh_fixture")
+surface_material_override/0 = SubResource("Mat_fixture")
+
+[node name="NeonSign_South" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 4.95)
+
+[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_South"]
+mesh = SubResource("QuadMesh_neon")
+surface_material_override/0 = SubResource("Mat_neon_pink")
+
+[node name="NeonLight" type="OmniLight3D" parent="NeonSign_South" groups=["neon_light"]]
+light_color = Color(0.95, 0.1, 0.5, 1)
+light_energy = 1.5
+omni_range = 3.5
+shadow_enabled = false
+
+[node name="NeonSign_East" type="Node3D" parent="."]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 4.95, 2.2, 0)
+
+[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_East"]
+mesh = SubResource("QuadMesh_neon")
+surface_material_override/0 = SubResource("Mat_neon_cyan")
+
+[node name="NeonLight" type="OmniLight3D" parent="NeonSign_East" groups=["neon_light"]]
+light_color = Color(0, 0.9, 0.9, 1)
+light_energy = 1.5
+omni_range = 3.5
+shadow_enabled = false
+
+[node name="NeonSign_West" type="Node3D" parent="."]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -4.95, 2.2, 0)
+
+[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_West"]
+mesh = SubResource("QuadMesh_neon")
+surface_material_override/0 = SubResource("Mat_neon_green")
+
+[node name="NeonLight" type="OmniLight3D" parent="NeonSign_West" groups=["neon_light"]]
+light_color = Color(0.2, 1, 0.3, 1)
+light_energy = 1.5
+omni_range = 3.5
+shadow_enabled = false
+
+[node name="Baseboard_South" type="MeshInstance3D" parent="."]
+transform = Transform3D(10, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 4.99)
+mesh = SubResource("BoxMesh_baseboard")
+surface_material_override/0 = SubResource("Mat_baseboard")
+
+[node name="Baseboard_North_L" type="MeshInstance3D" parent="."]
+transform = Transform3D(4.4, 0, 0, 0, 1, 0, 0, 0, 1, -2.8, 0.05, -4.99)
+mesh = SubResource("BoxMesh_baseboard")
+surface_material_override/0 = SubResource("Mat_baseboard")
+
+[node name="Baseboard_North_R" type="MeshInstance3D" parent="."]
+transform = Transform3D(4.4, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 0.05, -4.99)
+mesh = SubResource("BoxMesh_baseboard")
+surface_material_override/0 = SubResource("Mat_baseboard")
+
+[node name="Baseboard_East" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0, -10, 0, 1, 0, 1, 0, 0, 4.99, 0.05, 0)
+mesh = SubResource("BoxMesh_baseboard")
+surface_material_override/0 = SubResource("Mat_baseboard")
+
+[node name="Baseboard_West" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0, 10, 0, 1, 0, -1, 0, 0, -4.99, 0.05, 0)
+mesh = SubResource("BoxMesh_baseboard")
+surface_material_override/0 = SubResource("Mat_baseboard")
+
+[node name="Poster_S1" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1.8, 4.95)
+
+[node name="Frame" type="MeshInstance3D" parent="Poster_S1"]
+mesh = SubResource("BoxMesh_poster_frame")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="Poster_S1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
+mesh = SubResource("QuadMesh_poster_face")
+surface_material_override/0 = SubResource("Mat_poster_1")
+
+[node name="Poster_S2" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 1.8, 4.95)
+
+[node name="Frame" type="MeshInstance3D" parent="Poster_S2"]
+mesh = SubResource("BoxMesh_poster_frame")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="Poster_S2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
+mesh = SubResource("QuadMesh_poster_face")
+surface_material_override/0 = SubResource("Mat_poster_2")
+
+[node name="Poster_E" type="Node3D" parent="."]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 4.95, 1.8, -2)
+
+[node name="Frame" type="MeshInstance3D" parent="Poster_E"]
+mesh = SubResource("BoxMesh_poster_frame")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="Poster_E"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
+mesh = SubResource("QuadMesh_poster_face")
+surface_material_override/0 = SubResource("Mat_poster_3")
+
+[node name="Poster_W" type="Node3D" parent="."]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -4.95, 1.8, 2)
+
+[node name="Frame" type="MeshInstance3D" parent="Poster_W"]
+mesh = SubResource("BoxMesh_poster_frame")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="Poster_W"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
+mesh = SubResource("QuadMesh_poster_face")
+surface_material_override/0 = SubResource("Mat_poster_4")
+
+[node name="ReflectionProbe" type="ReflectionProbe" parent="." groups=["reflection_probe"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+size = Vector3(10, 3.5, 10)
+update_mode = 0
 
 [node name="SpawnMenuController" type="Node3D" parent="." unique_id=2000000050]
 script = ExtResource("16_menuctl")

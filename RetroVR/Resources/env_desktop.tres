@@ -1,0 +1,29 @@
+[gd_resource type="Environment" format=3 uid="uid://dtsqmfkogoc8g"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProcSkyMat"]
+sky_top_color = Color(0.18, 0.31, 0.55, 1)
+sky_horizon_color = Color(0.52, 0.65, 0.85, 1)
+ground_bottom_color = Color(0.12, 0.1, 0.09, 1)
+ground_horizon_color = Color(0.3, 0.28, 0.25, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProcSkyMat")
+
+[resource]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 2
+ambient_light_color = Color(0.95, 0.92, 0.85, 1)
+ambient_light_energy = 0.1
+tonemap_mode = 2
+glow_enabled = true
+glow_levels/1 = 1.0
+glow_levels/2 = 1.0
+glow_levels/4 = 1.0
+glow_intensity = 0.8
+glow_bloom = 0.1
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.01
+volumetric_fog_albedo = Color(1, 0.95, 0.85, 1)
+volumetric_fog_emission = Color(1, 0.95, 0.85, 1)
+volumetric_fog_emission_energy = 0.3
