@@ -596,7 +596,7 @@ func _process_pointer_highlight() -> void:
 		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
 		if ray_cast and ray_cast.is_colliding():
 			var body := _resolve_pickable(ray_cast.get_collider())
-			if body and body.can_pick_up(self):
+			if body and body.can_pick_up(self) and not _is_target_ray_grabbed_elsewhere(body):
 				new_target = body
 	_set_pointer_highlight(new_target)
 
@@ -614,6 +614,9 @@ func _set_pointer_highlight(new_target: XRToolsPickable) -> void:
 
 # Begin holding the target at the distance the ray currently hits it.
 func _start_ray_grab(target: XRToolsPickable) -> void:
+	if not is_instance_valid(target) or _is_target_ray_grabbed_elsewhere(target):
+		return
+
 	_ray_grab_distance = global_transform.origin.distance_to(
 			target.global_transform.origin)
 	_ray_grab_distance = clampf(
@@ -697,3 +700,20 @@ func _end_ray_grab() -> void:
 ## Used externally (e.g. spawn_menu_controller) to avoid conflicting grabs.
 func is_ray_grabbing() -> bool:
 	return is_instance_valid(_ray_grab_object)
+
+
+func is_ray_grabbing_target(target: XRToolsPickable) -> bool:
+	return is_instance_valid(target) and _ray_grab_object == target
+
+
+func _is_target_ray_grabbed_elsewhere(target: XRToolsPickable) -> bool:
+	if not is_instance_valid(target):
+		return false
+
+	for pickup in get_tree().root.find_children("*", "XRToolsFunctionPickup", true, false):
+		if pickup == self:
+			continue
+		if pickup is XRToolsFunctionPickup and pickup.is_ray_grabbing_target(target):
+			return true
+
+	return false
