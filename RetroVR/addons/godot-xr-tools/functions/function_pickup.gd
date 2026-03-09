@@ -99,11 +99,8 @@ var _pointer_highlighted : XRToolsPickable = null  # object highlighted by the l
 var _ray_grab_object : XRToolsPickable = null      # object currently held via the ray
 var _ray_grab_distance : float = 0.0              # hold distance along the ray
 var _ray_grab_other_controller : XRController3D = null
-var _ray_grab_locomotion_state := {}
-# Locomotion nodes — found globally by name, same as SpawnMenuController
-var _loco_move_turn     : Node = null
-var _loco_func_teleport : Node = null
-var _loco_move_direct   : Node = null
+var _locomotion_manager: LocomotionManager = null
+var _ray_grab_block_owner: StringName = &"ray_grab"
 
 ## Collision hand (if applicable)
 @onready var _collision_hand : XRToolsCollisionHand
@@ -182,6 +179,9 @@ func _exit_tree():
 	if _controller:
 		_controller.button_pressed.disconnect(_on_button_pressed)
 		_controller.button_released.disconnect(_on_button_released)
+
+	if _locomotion_manager:
+		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
 
 	if _collision_hand:
 		_remove_copied_collisions()
@@ -568,13 +568,13 @@ func _find_ray_pointer() -> void:
 		if child is XRToolsFunctionPointer:
 			_ray_pointer = child
 			break
+	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
 	if _controller.tracker == &"left_hand":
 		_ray_grab_other_controller = XRHelpers.get_right_controller(self)
+		_ray_grab_block_owner = &"ray_grab_left"
 	else:
 		_ray_grab_other_controller = XRHelpers.get_left_controller(self)
-	_loco_move_turn     = get_tree().root.find_child("MovementTurn",     true, false)
-	_loco_func_teleport = get_tree().root.find_child("FunctionTeleport", true, false)
-	_loco_move_direct   = get_tree().root.find_child("MovementDirect",   true, false)
+		_ray_grab_block_owner = &"ray_grab_right"
 
 
 # Resolve a raycast collider to the owning XRToolsPickable.
@@ -625,24 +625,18 @@ func _start_ray_grab(target: XRToolsPickable) -> void:
 	target.freeze = true
 	target.collision_layer = target.picked_up_layer
 	target.collision_mask = 0
-	# Disable all locomotion while a ray-held object is active.
-	_capture_loco_enabled_state()
-	_set_loco_enabled(_loco_move_turn, false)
-	_set_loco_enabled(_loco_func_teleport, false)
-	_set_loco_enabled(_loco_move_direct, false)
+	if _locomotion_manager:
+		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, true)
 	emit_signal("has_picked_up", target)
 
 
 # Each frame: reposition the ray-held object and adjust distance via thumbstick.
 func _process_ray_grab(delta: float) -> void:
 	if not is_instance_valid(_ray_grab_object):
+		if _locomotion_manager:
+			_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
 		_ray_grab_object = null
 		return
-	# Some project scripts toggle locomotion every frame, so enforce suppression
-	# continuously while a ray-held object exists.
-	_set_loco_enabled(_loco_move_turn, false)
-	_set_loco_enabled(_loco_func_teleport, false)
-	_set_loco_enabled(_loco_move_direct, false)
 	# Thumbstick Y — up moves away, down moves toward; 10 % dead-zone
 	if _controller:
 		var stick_y := _controller.get_vector2("primary").y
@@ -694,37 +688,9 @@ func _end_ray_grab() -> void:
 	_ray_grab_object.linear_velocity = _velocity_averager.linear_velocity() * impulse_factor
 	_ray_grab_object.angular_velocity = _velocity_averager.angular_velocity()
 	_ray_grab_object = null
-	_restore_loco_enabled_state()
+	if _locomotion_manager:
+		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
 	emit_signal("has_dropped")
-
-
-func _set_loco_enabled(node: Node, value: bool) -> void:
-	if node and "enabled" in node:
-		node.set("enabled", value)
-
-
-func _capture_loco_enabled_state() -> void:
-	_ray_grab_locomotion_state.clear()
-	_store_loco_enabled_state("move_turn", _loco_move_turn)
-	_store_loco_enabled_state("func_teleport", _loco_func_teleport)
-	_store_loco_enabled_state("move_direct", _loco_move_direct)
-
-
-func _store_loco_enabled_state(key: String, node: Node) -> void:
-	if node and "enabled" in node:
-		_ray_grab_locomotion_state[key] = node.get("enabled")
-
-
-func _restore_loco_enabled_state() -> void:
-	_restore_loco_node_enabled_state("move_turn", _loco_move_turn)
-	_restore_loco_node_enabled_state("func_teleport", _loco_func_teleport)
-	_restore_loco_node_enabled_state("move_direct", _loco_move_direct)
-	_ray_grab_locomotion_state.clear()
-
-
-func _restore_loco_node_enabled_state(key: String, node: Node) -> void:
-	if node and "enabled" in node and _ray_grab_locomotion_state.has(key):
-		node.set("enabled", _ray_grab_locomotion_state[key])
 
 
 ## Returns true while an object is held via the ray-pointer grab.

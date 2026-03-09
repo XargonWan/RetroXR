@@ -25,6 +25,7 @@ var disabled: bool = false: set = _set_disabled
 
 func _set_disabled(value: bool) -> void:
 	disabled = value
+	_apply_menu_locomotion_blocks(false, false)
 	if disabled:
 		_hide_menu()
 
@@ -55,10 +56,8 @@ var _grab_active: bool = false
 var _grab_ctrl: XRController3D = null
 var _grab_distance: float = 0.0  # distance along pointer ray
 
-# Locomotion nodes — suppressed per-controller while its pointer is on the menu
-var _move_turn:     Node = null   # right stick snap-turn
-var _func_teleport: Node = null   # right stick teleport aim
-var _move_direct:   Node = null   # left stick walking
+var _locomotion_manager: LocomotionManager = null
+var _move_turn: Node = null
 
 # FunctionPointer nodes for hit-testing
 var _left_pointer:  XRToolsFunctionPointer = null
@@ -71,6 +70,10 @@ func _ready() -> void:
 	# but keep layers 21 and 23 for pointer interaction.
 	$SpawnMenuViewport/StaticBody3D.collision_layer = 5242880
 	call_deferred("_deferred_setup")
+
+
+func _exit_tree() -> void:
+	_apply_menu_locomotion_blocks(false, false)
 
 
 func _deferred_setup() -> void:
@@ -94,10 +97,8 @@ func _deferred_setup() -> void:
 			_right_ctrl = ctrl
 			break
 
-	# Locomotion nodes
-	_move_turn     = get_tree().root.find_child("MovementTurn",     true, false)
-	_func_teleport = get_tree().root.find_child("FunctionTeleport", true, false)
-	_move_direct   = get_tree().root.find_child("MovementDirect",   true, false)
+	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
+	_move_turn = get_tree().root.find_child("MovementTurn", true, false)
 
 	# FunctionPointer nodes (one per controller) for hit-testing
 	for node: Node in get_tree().root.find_children("*", "XRToolsFunctionPointer", true, false):
@@ -150,12 +151,6 @@ func _on_controller_button(action_name: String) -> void:
 # ── Scroll driving ────────────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
-	if _any_ray_grab_active():
-		_set_node_enabled(_move_turn,     false)
-		_set_node_enabled(_func_teleport, false)
-		_set_node_enabled(_move_direct,   false)
-		return
-
 	var menu_visible: bool = _viewport_node.visible
 
 	# When menu is closed, handle core options panel scroll instead.
@@ -172,19 +167,10 @@ func _process(delta: float) -> void:
 	# Process grab (start, sustain, or end)
 	_process_grab(delta, right_over, left_over)
 	if _grab_active:
-		# Suppress locomotion for the grabbing controller only
-		if _grab_ctrl == _right_ctrl:
-			_set_node_enabled(_move_turn,     false)
-			_set_node_enabled(_func_teleport, false)
-		elif _grab_ctrl == _left_ctrl:
-			_set_node_enabled(_move_direct, false)
+		_apply_menu_locomotion_blocks(_grab_ctrl == _left_ctrl, _grab_ctrl == _right_ctrl)
 		return
 
-	# Suppress right-stick locomotion only when right controller points at menu
-	_set_node_enabled(_move_turn,     not right_over)
-	_set_node_enabled(_func_teleport, not right_over)
-	# Suppress left-stick walking only when left controller points at menu
-	_set_node_enabled(_move_direct,   not left_over)
+	_apply_menu_locomotion_blocks(left_over, right_over)
 
 	if not (right_over or left_over):
 		_smoothed_scroll_y = 0.0
@@ -215,19 +201,13 @@ func _process(delta: float) -> void:
 
 ## Drive scroll on any visible CoreOptionsPanel whose viewport the pointer is over.
 func _process_core_options_scroll(delta: float) -> void:
-	if _any_ray_grab_active():
-		_set_node_enabled(_move_turn,     false)
-		_set_node_enabled(_func_teleport, false)
-		_set_node_enabled(_move_direct,   false)
-		return
-
 	var right_vp := _find_core_options_viewport(_right_pointer)
 	var left_vp  := _find_core_options_viewport(_left_pointer)
 
-	if not disabled:
-		_set_node_enabled(_move_turn,     right_vp == null)
-		_set_node_enabled(_func_teleport, right_vp == null)
-		_set_node_enabled(_move_direct,   left_vp  == null)
+	if disabled:
+		_apply_menu_locomotion_blocks(false, false)
+	else:
+		_apply_menu_locomotion_blocks(left_vp != null, right_vp != null)
 
 	if not right_vp and not left_vp:
 		_smoothed_scroll_y = 0.0
@@ -325,19 +305,11 @@ func _get_core_options_ui(viewport_node: XRToolsViewport2DIn3D) -> CoreOptions2D
 	return null
 
 
-func _set_node_enabled(node: Node, value: bool) -> void:
-	if node and "enabled" in node:
-		node.set("enabled", value)
-
-
-func _any_ray_grab_active() -> bool:
-	for ctrl in [_left_ctrl, _right_ctrl]:
-		if not is_instance_valid(ctrl):
-			continue
-		for child in ctrl.get_children():
-			if child is XRToolsFunctionPickup and child.is_ray_grabbing():
-				return true
-	return false
+func _apply_menu_locomotion_blocks(left_blocked: bool, right_blocked: bool) -> void:
+	if not _locomotion_manager:
+		return
+	_locomotion_manager.set_block(&"spawn_menu_left", LocomotionManager.CHANNEL_LEFT, left_blocked and not disabled)
+	_locomotion_manager.set_block(&"spawn_menu_right", LocomotionManager.CHANNEL_RIGHT, right_blocked and not disabled)
 
 
 
@@ -377,12 +349,7 @@ func _hide_menu() -> void:
 	_end_grab()
 	_viewport_node.visible = false
 	_smoothed_scroll_y = 0.0
-	# Only restore locomotion if VRInputMapper hasn't taken control.
-	# When disabled=true, VRInputMapper owns those nodes — don't touch them.
-	if not disabled:
-		_set_node_enabled(_move_turn,     true)
-		_set_node_enabled(_func_teleport, true)
-		_set_node_enabled(_move_direct,   true)
+	_apply_menu_locomotion_blocks(false, false)
 
 
 # ── Grab / Move / Resize ──────────────────────────────────────────────────────

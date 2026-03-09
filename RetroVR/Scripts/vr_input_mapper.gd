@@ -30,8 +30,9 @@ const ANALOG_THRESHOLD := 0.15
 var _left_ctrl:  XRController3D = null
 var _right_ctrl: XRController3D = null
 
+var _locomotion_manager: LocomotionManager = null
+
 # Nodes to disable while in game mode
-var _movement_providers: Array[Node] = []
 var _pointer_nodes: Array[Node] = []
 var _pickup_nodes: Array[Node] = []
 var _extra_disable_nodes: Array[Node] = []  # SpawnMenuController etc.
@@ -70,9 +71,7 @@ func _deferred_setup() -> void:
 			ctrl.button_pressed.connect(_on_right_button_pressed)
 			ctrl.button_released.connect(_on_right_button_released)
 
-	# Collect movement providers (they have an "enabled" property)
-	for node: Node in get_tree().get_nodes_in_group("movement_providers"):
-		_movement_providers.append(node)
+	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
 
 	# Collect pointer nodes
 	for node: Node in get_tree().root.find_children("*", "XRToolsFunctionPointer", true, false):
@@ -266,9 +265,8 @@ func _destroy_gamepad_visuals() -> void:
 
 # Enable or disable locomotion, pointer, and pickup nodes
 func _set_player_input_enabled(enabled: bool) -> void:
-	for node: Node in _movement_providers:
-		if is_instance_valid(node) and "enabled" in node:
-			node.set("enabled", enabled)
+	if _locomotion_manager:
+		_locomotion_manager.set_block(&"retro_control_mode", LocomotionManager.CHANNEL_ALL, not enabled)
 
 	for node: Node in _pointer_nodes:
 		if is_instance_valid(node) and "enabled" in node:

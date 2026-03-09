@@ -14,6 +14,7 @@
 [ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="17_viewport2d3d"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="18_spawnmenu"]
 [ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
+[ext_resource type="Script" path="res://Scripts/locomotion_manager.gd" id="22_locomotionmgr"]
 [ext_resource type="Shader" uid="uid://ctwkb7jcoma01" path="res://Shaders/arcade_carpet.gdshader" id="20_carpet"]
 [ext_resource type="Shader" uid="uid://ck7deycag7kku" path="res://Shaders/ceiling_tiles.gdshader" id="21_ceiltiles"]
 
@@ -578,6 +579,9 @@ update_mode = 0
 
 [node name="SpawnMenuController" type="Node3D" parent="." unique_id=2000000050]
 script = ExtResource("16_menuctl")
+
+[node name="LocomotionManager" type="Node" parent="." unique_id=2000000061]
+script = ExtResource("22_locomotionmgr")
 
 [node name="SpawnMenuViewport" parent="SpawnMenuController" unique_id=2000000051 instance=ExtResource("17_viewport2d3d")]
 screen_size = Vector2(0.9, 0.75)
