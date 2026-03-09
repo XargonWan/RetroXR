@@ -150,6 +150,12 @@ func _on_controller_button(action_name: String) -> void:
 # ── Scroll driving ────────────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
+	if _any_ray_grab_active():
+		_set_node_enabled(_move_turn,     false)
+		_set_node_enabled(_func_teleport, false)
+		_set_node_enabled(_move_direct,   false)
+		return
+
 	var menu_visible: bool = _viewport_node.visible
 
 	# When menu is closed, handle core options panel scroll instead.
@@ -209,6 +215,12 @@ func _process(delta: float) -> void:
 
 ## Drive scroll on any visible CoreOptionsPanel whose viewport the pointer is over.
 func _process_core_options_scroll(delta: float) -> void:
+	if _any_ray_grab_active():
+		_set_node_enabled(_move_turn,     false)
+		_set_node_enabled(_func_teleport, false)
+		_set_node_enabled(_move_direct,   false)
+		return
+
 	var right_vp := _find_core_options_viewport(_right_pointer)
 	var left_vp  := _find_core_options_viewport(_left_pointer)
 
@@ -316,6 +328,16 @@ func _get_core_options_ui(viewport_node: XRToolsViewport2DIn3D) -> CoreOptions2D
 func _set_node_enabled(node: Node, value: bool) -> void:
 	if node and "enabled" in node:
 		node.set("enabled", value)
+
+
+func _any_ray_grab_active() -> bool:
+	for ctrl in [_left_ctrl, _right_ctrl]:
+		if not is_instance_valid(ctrl):
+			continue
+		for child in ctrl.get_children():
+			if child is XRToolsFunctionPickup and child.is_ray_grabbing():
+				return true
+	return false
 
 
 

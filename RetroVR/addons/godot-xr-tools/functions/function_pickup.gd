@@ -638,6 +638,11 @@ func _process_ray_grab(delta: float) -> void:
 	if not is_instance_valid(_ray_grab_object):
 		_ray_grab_object = null
 		return
+	# Some project scripts toggle locomotion every frame, so enforce suppression
+	# continuously while a ray-held object exists.
+	_set_loco_enabled(_loco_move_turn, false)
+	_set_loco_enabled(_loco_func_teleport, false)
+	_set_loco_enabled(_loco_move_direct, false)
 	# Thumbstick Y — up moves away, down moves toward; 10 % dead-zone
 	if _controller:
 		var stick_y := _controller.get_vector2("primary").y
