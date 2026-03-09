@@ -388,6 +388,10 @@ func _try_start_grab(ctrl: XRController3D, _pointer: XRToolsFunctionPointer, ove
 		return
 	if ctrl.get_float("grip") < _GRIP_THRESHOLD:
 		return
+	# Don't steal the grip if the controller's FunctionPickup is already ray-grabbing an object
+	for child in ctrl.get_children():
+		if child is XRToolsFunctionPickup and child.is_ray_grabbing():
+			return
 	_grab_active = true
 	_grab_ctrl = ctrl
 	_grab_distance = ctrl.global_position.distance_to(global_position)

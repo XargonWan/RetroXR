@@ -87,6 +87,24 @@ var _ranged_area : Area3D
 var _ranged_collision : CollisionShape3D
 var _active_copied_collisions : Array[CopiedCollision]
 
+# Ray-pointer grab constants
+const RAY_GRAB_DISTANCE_MIN := 0.3
+const RAY_GRAB_DISTANCE_MAX := 10.0
+const RAY_GRAB_SPEED := 3.0  # metres per second at full stick deflection
+const RAY_GRAB_ROTATE_SPEED := 2.5  # radians per second at full stick deflection
+
+# Ray-pointer grab state
+var _ray_pointer : XRToolsFunctionPointer = null   # sibling FunctionPointer
+var _pointer_highlighted : XRToolsPickable = null  # object highlighted by the laser
+var _ray_grab_object : XRToolsPickable = null      # object currently held via the ray
+var _ray_grab_distance : float = 0.0              # hold distance along the ray
+var _ray_grab_other_controller : XRController3D = null
+var _ray_grab_locomotion_state := {}
+# Locomotion nodes — found globally by name, same as SpawnMenuController
+var _loco_move_turn     : Node = null
+var _loco_func_teleport : Node = null
+var _loco_move_direct   : Node = null
+
 ## Collision hand (if applicable)
 @onready var _collision_hand : XRToolsCollisionHand
 
@@ -144,6 +162,9 @@ func _ready():
 	# Update the colliders
 	_update_colliders()
 
+	# Find the sibling FunctionPointer (deferred so all scene nodes are ready)
+	call_deferred("_find_ray_pointer")
+
 
 # Called when we're added to the tree
 func _enter_tree():
@@ -190,16 +211,26 @@ func _process(delta):
 		grip_pressed = true
 		_on_grip_pressed()
 
-	# Calculate average velocity
+	# Calculate average velocity (also tracks ray-grabbed objects for throw)
 	if is_instance_valid(picked_up_object) and picked_up_object.is_picked_up():
-		# Average velocity of picked up object
 		_velocity_averager.add_transform(delta, picked_up_object.global_transform)
+	elif is_instance_valid(_ray_grab_object):
+		_velocity_averager.add_transform(delta, _ray_grab_object.global_transform)
 	else:
-		# Average velocity of this pickup
 		_velocity_averager.add_transform(delta, global_transform)
 
 	_update_copied_collisions()
-	_update_closest_object()
+
+	# Ray-grab takes priority — reposition the held object each frame
+	if is_instance_valid(_ray_grab_object):
+		_process_ray_grab(delta)
+		return
+
+	# Pointer-based highlight drives the blue outline.
+	# Only fall back to ranged-area highlight when the laser is pointing at nothing.
+	_process_pointer_highlight()
+	if not is_instance_valid(_pointer_highlighted):
+		_update_closest_object()
 
 
 ## Find an [XRToolsFunctionPickup] node.
@@ -512,10 +543,186 @@ func _on_button_released(p_button) -> void:
 func _on_grip_pressed() -> void:
 	if is_instance_valid(picked_up_object) and !picked_up_object.press_to_hold:
 		drop_object()
+	elif is_instance_valid(_pointer_highlighted) and not is_instance_valid(picked_up_object):
+		# Laser is pointing at a pickable — grab it along the ray
+		_start_ray_grab(_pointer_highlighted)
 	elif is_instance_valid(closest_object):
 		_pick_up_object(closest_object)
 
 
 func _on_grip_release() -> void:
-	if is_instance_valid(picked_up_object) and picked_up_object.press_to_hold:
+	if is_instance_valid(_ray_grab_object):
+		_end_ray_grab()
+	elif is_instance_valid(picked_up_object) and picked_up_object.press_to_hold:
 		drop_object()
+
+
+# ----------  Ray-pointer grab helpers  ----------
+
+# Locate the sibling FunctionPointer; deferred so all controller children are ready.
+# Also cache locomotion nodes globally by name — identical to SpawnMenuController.
+func _find_ray_pointer() -> void:
+	if Engine.is_editor_hint() or not _controller:
+		return
+	for child in _controller.get_children():
+		if child is XRToolsFunctionPointer:
+			_ray_pointer = child
+			break
+	if _controller.tracker == &"left_hand":
+		_ray_grab_other_controller = XRHelpers.get_right_controller(self)
+	else:
+		_ray_grab_other_controller = XRHelpers.get_left_controller(self)
+	_loco_move_turn     = get_tree().root.find_child("MovementTurn",     true, false)
+	_loco_func_teleport = get_tree().root.find_child("FunctionTeleport", true, false)
+	_loco_move_direct   = get_tree().root.find_child("MovementDirect",   true, false)
+
+
+# Resolve a raycast collider to the owning XRToolsPickable.
+# The collider may be the pickable RigidBody itself, or a PointerArea (StaticBody3D)
+# that is a direct child of the pickable (see PointerArea pattern in system.tscn).
+func _resolve_pickable(collider: Node3D) -> XRToolsPickable:
+	if not collider:
+		return null
+	var direct := collider as XRToolsPickable
+	if direct:
+		return direct
+	return collider.get_parent() as XRToolsPickable
+
+
+# Each frame: highlight whichever pickable the laser is currently pointing at.
+func _process_pointer_highlight() -> void:
+	var new_target: XRToolsPickable = null
+	if enabled and _ray_pointer:
+		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
+		if ray_cast and ray_cast.is_colliding():
+			var body := _resolve_pickable(ray_cast.get_collider())
+			if body and body.can_pick_up(self):
+				new_target = body
+	_set_pointer_highlight(new_target)
+
+
+# Manage the pointer-driven highlight, clearing the old one and setting the new one.
+func _set_pointer_highlight(new_target: XRToolsPickable) -> void:
+	if new_target == _pointer_highlighted:
+		return
+	if is_instance_valid(_pointer_highlighted):
+		_pointer_highlighted.request_highlight(self, false)
+	_pointer_highlighted = new_target
+	if is_instance_valid(_pointer_highlighted):
+		_pointer_highlighted.request_highlight(self, true)
+
+
+# Begin holding the target at the distance the ray currently hits it.
+func _start_ray_grab(target: XRToolsPickable) -> void:
+	_ray_grab_distance = global_transform.origin.distance_to(
+			target.global_transform.origin)
+	_ray_grab_distance = clampf(
+			_ray_grab_distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
+	_ray_grab_object = target
+	_set_pointer_highlight(null)  # object transitions from "highlighted" to "held"
+	# Freeze physics and move to the held layer (mirrors XRToolsPickable.pick_up)
+	target.restore_freeze = target.freeze
+	target.freeze = true
+	target.collision_layer = target.picked_up_layer
+	target.collision_mask = 0
+	# Disable all locomotion while a ray-held object is active.
+	_capture_loco_enabled_state()
+	_set_loco_enabled(_loco_move_turn, false)
+	_set_loco_enabled(_loco_func_teleport, false)
+	_set_loco_enabled(_loco_move_direct, false)
+	emit_signal("has_picked_up", target)
+
+
+# Each frame: reposition the ray-held object and adjust distance via thumbstick.
+func _process_ray_grab(delta: float) -> void:
+	if not is_instance_valid(_ray_grab_object):
+		_ray_grab_object = null
+		return
+	# Thumbstick Y — up moves away, down moves toward; 10 % dead-zone
+	if _controller:
+		var stick_y := _controller.get_vector2("primary").y
+		if absf(stick_y) > 0.1:
+			_ray_grab_distance += stick_y * RAY_GRAB_SPEED * delta
+			_ray_grab_distance = clampf(
+					_ray_grab_distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
+	_process_ray_grab_rotation(delta)
+	# Reposition along the laser
+	if _ray_pointer:
+		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
+		if ray_cast:
+			var ray_dir := -ray_cast.global_transform.basis.z
+			_ray_grab_object.global_position = (
+					ray_cast.global_transform.origin + ray_dir * _ray_grab_distance)
+
+
+func _process_ray_grab_rotation(delta: float) -> void:
+	if not _ray_grab_other_controller or not _ray_grab_other_controller.get_is_active():
+		return
+
+	var stick := _ray_grab_other_controller.get_vector2("primary")
+	if stick.length_squared() <= 0.01:
+		return
+
+	var yaw := -stick.x * RAY_GRAB_ROTATE_SPEED * delta
+	var pitch := stick.y * RAY_GRAB_ROTATE_SPEED * delta
+	var basis := _ray_grab_object.global_basis
+
+	if absf(yaw) > 0.001:
+		basis = Basis(Vector3.UP, yaw) * basis
+
+	if absf(pitch) > 0.001:
+		var pitch_axis := _ray_grab_other_controller.global_transform.basis.x.normalized()
+		basis = Basis(pitch_axis, pitch) * basis
+
+	_ray_grab_object.global_basis = basis.orthonormalized()
+
+
+# Release the ray-held object and restore its physics.
+func _end_ray_grab() -> void:
+	if not is_instance_valid(_ray_grab_object):
+		_ray_grab_object = null
+		return
+	_ray_grab_object.freeze = _ray_grab_object.restore_freeze
+	_ray_grab_object.collision_mask = _ray_grab_object.original_collision_mask
+	_ray_grab_object.collision_layer = _ray_grab_object.original_collision_layer
+	# Apply throw velocity so the object can be tossed
+	_ray_grab_object.linear_velocity = _velocity_averager.linear_velocity() * impulse_factor
+	_ray_grab_object.angular_velocity = _velocity_averager.angular_velocity()
+	_ray_grab_object = null
+	_restore_loco_enabled_state()
+	emit_signal("has_dropped")
+
+
+func _set_loco_enabled(node: Node, value: bool) -> void:
+	if node and "enabled" in node:
+		node.set("enabled", value)
+
+
+func _capture_loco_enabled_state() -> void:
+	_ray_grab_locomotion_state.clear()
+	_store_loco_enabled_state("move_turn", _loco_move_turn)
+	_store_loco_enabled_state("func_teleport", _loco_func_teleport)
+	_store_loco_enabled_state("move_direct", _loco_move_direct)
+
+
+func _store_loco_enabled_state(key: String, node: Node) -> void:
+	if node and "enabled" in node:
+		_ray_grab_locomotion_state[key] = node.get("enabled")
+
+
+func _restore_loco_enabled_state() -> void:
+	_restore_loco_node_enabled_state("move_turn", _loco_move_turn)
+	_restore_loco_node_enabled_state("func_teleport", _loco_func_teleport)
+	_restore_loco_node_enabled_state("move_direct", _loco_move_direct)
+	_ray_grab_locomotion_state.clear()
+
+
+func _restore_loco_node_enabled_state(key: String, node: Node) -> void:
+	if node and "enabled" in node and _ray_grab_locomotion_state.has(key):
+		node.set("enabled", _ray_grab_locomotion_state[key])
+
+
+## Returns true while an object is held via the ray-pointer grab.
+## Used externally (e.g. spawn_menu_controller) to avoid conflicting grabs.
+func is_ray_grabbing() -> bool:
+	return is_instance_valid(_ray_grab_object)

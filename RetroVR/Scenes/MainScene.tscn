@@ -247,6 +247,7 @@ tracker = &"left_hand"
 script = ExtResource("4_ctrlmodel")
 
 [node name="FunctionPickup" parent="XROrigin3D/LeftController" unique_id=2000000001 instance=ExtResource("5_pickup")]
+ranged_enable = false
 
 [node name="FunctionPointer" parent="XROrigin3D/LeftController" unique_id=2000000002 instance=ExtResource("6_pointer")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
@@ -259,6 +260,7 @@ tracker = &"right_hand"
 script = ExtResource("4_ctrlmodel")
 
 [node name="FunctionPickup" parent="XROrigin3D/RightController" unique_id=2000000003 instance=ExtResource("5_pickup")]
+ranged_enable = false
 
 [node name="FunctionPointer" parent="XROrigin3D/RightController" unique_id=2000000034 instance=ExtResource("6_pointer")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.05, -0.1)
