@@ -1,9 +1,10 @@
-[gd_scene load_steps=13 format=3 uid="uid://retrotv_001"]
+[gd_scene load_steps=16 format=3 uid="uid://retrotv_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/tv.gd" id="1_tvscript"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
 [ext_resource type="Script" path="res://Scripts/Objects/snap_highlight.gd" id="3_snaphis"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_button.gd" id="5_vrbutton"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.5, 0.4, 0.3)
@@ -49,6 +50,12 @@ albedo_color = Color(0.2, 0.5, 1.0, 0.45)
 emission_enabled = true
 emission = Color(0.0, 0.15, 0.5, 1.0)
 emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_btn"]
+size = Vector3(0.025, 0.015, 0.025)
+
+[sub_resource type="BoxMesh" id="BoxMesh_btn"]
+size = Vector3(0.025, 0.01, 0.025)
 
 [node name="TV" type="RigidBody3D"]
 collision_layer = 4
@@ -99,6 +106,60 @@ script = ExtResource("3_snaphis")
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
 mesh = SubResource("CylMesh_plug_ghost")
 surface_material_override/0 = SubResource("Mat_plug_ghost")
+
+[node name="VolumeDownButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07, -0.105, 0.155)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("5_vrbutton")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeDownButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeDownButton"]
+mesh = SubResource("BoxMesh_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="VolumeDownButton"]
+text = "VOL-"
+pixel_size = 0.001
+font_size = 16
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0)
+
+[node name="VolumeUpButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, -0.105, 0.155)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("5_vrbutton")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeUpButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeUpButton"]
+mesh = SubResource("BoxMesh_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="VolumeUpButton"]
+text = "VOL+"
+pixel_size = 0.001
+font_size = 16
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0)
+
+[node name="TVToggleButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07, -0.105, 0.155)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("5_vrbutton")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TVToggleButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="TVToggleButton"]
+mesh = SubResource("BoxMesh_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="TVToggleButton"]
+text = "TV"
+pixel_size = 0.001
+font_size = 16
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0)
 
 [node name="PointerArea" type="StaticBody3D" parent="."]
 collision_layer = 1048576

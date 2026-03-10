@@ -81,6 +81,25 @@ func set_input_enabled(enabled: bool) -> void:
 	_libretro.SetInputEnabled(enabled)
 
 
+## Set the audio volume for the running libretro instance (0.0 = silent, 1.0 = 100%).
+func set_audio_volume(volume: float) -> void:
+	if not is_powered_on:
+		return
+	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
+	if asp:
+		asp.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
+
+
+## Show or hide the screen output (used by TV toggle button).
+func set_screen_enabled(enabled: bool) -> void:
+	if not is_powered_on:
+		return
+	if enabled and connected_tv:
+		_libretro.SetScreenMesh(connected_tv.get_screen_mesh())
+	else:
+		_libretro.SetScreenMesh(null)
+
+
 ## Called by the TV's cable plug when it connects to a TV
 func on_tv_connected(tv: RetroTV) -> void:
 	connected_tv = tv
