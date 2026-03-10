@@ -108,7 +108,7 @@ mesh = SubResource("CylMesh_plug_ghost")
 surface_material_override/0 = SubResource("Mat_plug_ghost")
 
 [node name="VolumeDownButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07, -0.105, 0.155)
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.07, -0.105, 0.155)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("5_vrbutton")
@@ -123,10 +123,10 @@ mesh = SubResource("BoxMesh_btn")
 text = "VOL-"
 pixel_size = 0.001
 font_size = 16
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
 
 [node name="VolumeUpButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, -0.105, 0.155)
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.0, -0.105, 0.155)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("5_vrbutton")
@@ -141,10 +141,10 @@ mesh = SubResource("BoxMesh_btn")
 text = "VOL+"
 pixel_size = 0.001
 font_size = 16
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
 
 [node name="TVToggleButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07, -0.105, 0.155)
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.07, -0.105, 0.155)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("5_vrbutton")
@@ -159,7 +159,7 @@ mesh = SubResource("BoxMesh_btn")
 text = "TV"
 pixel_size = 0.001
 font_size = 16
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
 
 [node name="PointerArea" type="StaticBody3D" parent="."]
 collision_layer = 1048576
