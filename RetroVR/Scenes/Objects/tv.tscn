@@ -1,30 +1,30 @@
-[gd_scene load_steps=16 format=3 uid="uid://retrotv_001"]
+[gd_scene format=3 uid="uid://mft7vy78rjrv"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/tv.gd" id="1_tvscript"]
+[ext_resource type="Script" uid="uid://c3b5c470fc0pa" path="res://Scripts/Objects/tv.gd" id="1_tvscript"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
-[ext_resource type="Script" path="res://Scripts/Objects/snap_highlight.gd" id="3_snaphis"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_button.gd" id="5_vrbutton"]
+[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/snap_highlight.gd" id="3_snaphis"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="5_vrbutton"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
+friction = 0.8
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.5, 0.4, 0.3)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
-size = Vector3(0.52, 0.42, 0.32)
 
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
 size = Vector3(0.5, 0.4, 0.3)
 
 [sub_resource type="StandardMaterial3D" id="Mat_tvbody"]
-albedo_color = Color(0.1, 0.1, 0.1, 1.0)
+albedo_color = Color(0.1, 0.1, 0.1, 1)
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(0.35, 0.25)
 
 [sub_resource type="StandardMaterial3D" id="Mat_screen"]
-albedo_color = Color(0.0, 0.0, 0.0, 1.0)
+albedo_color = Color(0, 0, 0, 1)
 emission_enabled = true
-emission = Color(0.02, 0.02, 0.02, 1.0)
+emission = Color(0.02, 0.02, 0.02, 1)
 emission_energy_multiplier = 2.0
 
 [sub_resource type="CylinderMesh" id="CylMesh_port"]
@@ -33,11 +33,7 @@ bottom_radius = 0.012
 height = 0.02
 
 [sub_resource type="StandardMaterial3D" id="Mat_port"]
-albedo_color = Color(1.0, 0.85, 0.0, 1.0)
-
-[sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
-bounce = 0.0
-friction = 0.8
+albedo_color = Color(1, 0.85, 0, 1)
 
 [sub_resource type="CylinderMesh" id="CylMesh_plug_ghost"]
 top_radius = 0.015
@@ -46,9 +42,9 @@ height = 0.05
 
 [sub_resource type="StandardMaterial3D" id="Mat_plug_ghost"]
 transparency = 1
-albedo_color = Color(0.2, 0.5, 1.0, 0.45)
+albedo_color = Color(0.2, 0.5, 1, 0.45)
 emission_enabled = true
-emission = Color(0.0, 0.15, 0.5, 1.0)
+emission = Color(0, 0.15, 0.5, 1)
 emission_energy_multiplier = 0.4
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_btn"]
@@ -57,113 +53,115 @@ size = Vector3(0.025, 0.015, 0.025)
 [sub_resource type="BoxMesh" id="BoxMesh_btn"]
 size = Vector3(0.025, 0.01, 0.025)
 
-[node name="TV" type="RigidBody3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.52, 0.42, 0.32)
+
+[node name="TV" type="RigidBody3D" unique_id=31035930]
 collision_layer = 4
 collision_mask = 196615
 physics_material_override = SubResource("PhysMat_tv")
+freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
-freeze_mode = 1
 script = ExtResource("1_tvscript")
 
-[node name="PickableHighlight" type="Node3D" parent="."]
+[node name="PickableHighlight" type="Node3D" parent="." unique_id=1080838854]
 script = ExtResource("4_pickhigh")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=817514727]
 shape = SubResource("BoxShape3D_body")
 
-[node name="TVBody" type="MeshInstance3D" parent="."]
+[node name="TVBody" type="MeshInstance3D" parent="." unique_id=768779981]
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_tvbody")
 
-[node name="ScreenMesh" type="MeshInstance3D" parent="."]
+[node name="ScreenMesh" type="MeshInstance3D" parent="." unique_id=1026455476]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
 mesh = SubResource("QuadMesh_screen")
 surface_material_override/0 = SubResource("Mat_screen")
 
-[node name="CompositePort" parent="." unique_id=3000000001 instance=ExtResource("2_snapzone")]
+[node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.15, -0.15, -0.14)
-snap_require = "composite_plug"
 grab_distance = 0.06
+snap_require = "composite_plug"
 
-[node name="PortVisual" type="MeshInstance3D" parent="CompositePort"]
+[node name="PortVisual" type="MeshInstance3D" parent="CompositePort" unique_id=79237654]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
 mesh = SubResource("CylMesh_port")
 surface_material_override/0 = SubResource("Mat_port")
 
-[node name="Ambilight" type="SpotLight3D" parent="."]
+[node name="SnapHighlight" type="Node3D" parent="CompositePort" unique_id=733690447]
+script = ExtResource("3_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="CompositePort/SnapHighlight" unique_id=1900781378]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
+mesh = SubResource("CylMesh_plug_ghost")
+surface_material_override/0 = SubResource("Mat_plug_ghost")
+
+[node name="Ambilight" type="SpotLight3D" parent="." unique_id=603587175]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
 light_color = Color(0.5, 0.5, 0.5, 1)
 light_energy = 0.6
 spot_range = 2.5
 spot_angle = 50.0
-shadow_enabled = false
 
-[node name="SnapHighlight" type="Node3D" parent="CompositePort"]
-script = ExtResource("3_snaphis")
-
-[node name="HighlightMesh" type="MeshInstance3D" parent="CompositePort/SnapHighlight"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_plug_ghost")
-surface_material_override/0 = SubResource("Mat_plug_ghost")
-
-[node name="VolumeDownButton" type="Area3D" parent="."]
+[node name="VolumeDownButton" type="Area3D" parent="." unique_id=624945899]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.07, -0.105, 0.155)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("5_vrbutton")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeDownButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeDownButton" unique_id=1222709164]
 shape = SubResource("BoxShape3D_btn")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeDownButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeDownButton" unique_id=1478904657]
 mesh = SubResource("BoxMesh_btn")
 
-[node name="ButtonLabel" type="Label3D" parent="VolumeDownButton"]
-text = "VOL-"
-pixel_size = 0.001
-font_size = 16
+[node name="ButtonLabel" type="Label3D" parent="VolumeDownButton" unique_id=8350321]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "VOL-"
+font_size = 16
 
-[node name="VolumeUpButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.0, -0.105, 0.155)
+[node name="VolumeUpButton" type="Area3D" parent="." unique_id=2081327174]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -0.105, 0.155)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("5_vrbutton")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeUpButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeUpButton" unique_id=673264484]
 shape = SubResource("BoxShape3D_btn")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeUpButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeUpButton" unique_id=1862024148]
 mesh = SubResource("BoxMesh_btn")
 
-[node name="ButtonLabel" type="Label3D" parent="VolumeUpButton"]
-text = "VOL+"
-pixel_size = 0.001
-font_size = 16
+[node name="ButtonLabel" type="Label3D" parent="VolumeUpButton" unique_id=1961053594]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "VOL+"
+font_size = 16
 
-[node name="TVToggleButton" type="Area3D" parent="."]
+[node name="TVToggleButton" type="Area3D" parent="." unique_id=121160075]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.07, -0.105, 0.155)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("5_vrbutton")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TVToggleButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TVToggleButton" unique_id=99375519]
 shape = SubResource("BoxShape3D_btn")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="TVToggleButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="TVToggleButton" unique_id=383170568]
 mesh = SubResource("BoxMesh_btn")
 
-[node name="ButtonLabel" type="Label3D" parent="TVToggleButton"]
-text = "TV"
-pixel_size = 0.001
-font_size = 16
+[node name="ButtonLabel" type="Label3D" parent="TVToggleButton" unique_id=1103064888]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "TV"
+font_size = 16
 
-[node name="PointerArea" type="StaticBody3D" parent="."]
+[node name="PointerArea" type="StaticBody3D" parent="." unique_id=1058972384]
 collision_layer = 1048576
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=2105383358]
 shape = SubResource("BoxShape3D_pointer")
