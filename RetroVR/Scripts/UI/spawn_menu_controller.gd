@@ -9,12 +9,14 @@ extends Node3D
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE   := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE := preload("res://Scenes/Objects/cartridge.tscn")
+const BOOK_SCENE := preload("res://Scenes/Objects/pdf_book.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
 	"tv":         0.95,
 	"system":     0.80,
 	"cartridge":  0.76,
+	"book":       0.80,
 }
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
@@ -131,6 +133,8 @@ func _connect_menu_signals() -> void:
 		menu.close_requested.connect(_hide_menu)
 	if menu.has_signal("spawn_cartridge_requested"):
 		menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
+	if menu.has_signal("spawn_manual_requested"):
+		menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
 	if menu.has_signal("turn_style_changed"):
 		menu.turn_style_changed.connect(_on_turn_style_changed)
 	_menu_connected = true
@@ -466,6 +470,21 @@ func _on_spawn_cartridge_requested(rom_path: String, game_label: String) -> void
 
 	obj.global_position = global_position + fwd * 0.5
 	obj.global_position.y = SPAWN_Y.get("cartridge", 0.76)
+
+
+func _on_spawn_manual_requested(pdf_path: String) -> void:
+	var obj := BOOK_SCENE.instantiate() as Node3D
+	obj.set("pdf_path", pdf_path)
+	get_tree().current_scene.add_child(obj)
+
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.001:
+		fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+
+	obj.global_position = global_position + fwd * 0.5
+	obj.global_position.y = SPAWN_Y.get("book", 0.80)
 
 
 func _on_turn_style_changed(value: String) -> void:

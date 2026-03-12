@@ -11,6 +11,8 @@ signal close_requested
 signal default_core_changed(systemid: String, core_name: String)
 ## Emitted when the user clicks a ROM in the Cartridges tab.
 signal spawn_cartridge_requested(rom_path: String, game_label: String)
+## Emitted when the user clicks the manual (📖) button for a ROM.
+signal spawn_manual_requested(pdf_path: String)
 ## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
 signal turn_style_changed(value: String)
 
@@ -363,12 +365,29 @@ func _populate_cartridges_tab() -> void:
 			_cartridges_vbox.add_child(hint)
 		else:
 			for rom: Dictionary in roms:
+				var row := HBoxContainer.new()
+				row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
 				var btn := Button.new()
 				btn.text = "  +  " + rom["label"]
 				btn.custom_minimum_size = Vector2(0, 72)
+				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				btn.add_theme_font_size_override("font_size", 22)
 				btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"]))
-				_cartridges_vbox.add_child(btn)
+				row.add_child(btn)
+
+				# Manual button — only shown when a matching PDF exists
+				if RomLibrary.has_manual(rom["path"]):
+					var manual_btn := Button.new()
+					manual_btn.text = "📖"
+					manual_btn.custom_minimum_size = Vector2(72, 72)
+					manual_btn.tooltip_text = "Spawn manual"
+					manual_btn.add_theme_font_size_override("font_size", 26)
+					var pdf_path := RomLibrary.manual_path(rom["path"])
+					manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
+					row.add_child(manual_btn)
+
+				_cartridges_vbox.add_child(row)
 		_cartridges_vbox.add_child(_spacer(8))
 
 

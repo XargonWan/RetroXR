@@ -65,3 +65,16 @@ static func scan_roms(systemid: String, extensions: Array[String]) -> Array[Dict
 		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
 	)
 	return results
+
+
+## Check whether a PDF manual exists alongside a ROM file.
+## Looks for a file with the same base name but .pdf extension in the same directory.
+static func has_manual(rom_path: String) -> bool:
+	var pdf_path := manual_path(rom_path)
+	return FileAccess.file_exists(pdf_path)
+
+
+## Return the expected PDF manual path for a given ROM path.
+## Replaces the ROM's extension with ".pdf".
+static func manual_path(rom_path: String) -> String:
+	return rom_path.get_basename() + ".pdf"

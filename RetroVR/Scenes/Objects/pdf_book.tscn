@@ -1,0 +1,105 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/pdf_book.gd" id="1_bookscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.36, 0.25, 0.02)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.40, 0.29, 0.04)
+
+[sub_resource type="StandardMaterial3D" id="Mat_cover"]
+albedo_color = Color(0.15, 0.15, 0.4, 1.0)
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_backcover"]
+albedo_color = Color(0.15, 0.15, 0.4, 1.0)
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_spine"]
+albedo_color = Color(0.12, 0.12, 0.35, 1.0)
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_page"]
+albedo_color = Color(0.98, 0.96, 0.92, 1.0)
+roughness = 0.85
+
+[sub_resource type="QuadMesh" id="QuadMesh_cover"]
+size = Vector2(0.18, 0.25)
+
+[sub_resource type="QuadMesh" id="QuadMesh_page"]
+size = Vector2(0.18, 0.25)
+
+[sub_resource type="BoxMesh" id="BoxMesh_stack"]
+size = Vector3(0.18, 0.25, 0.005)
+
+[sub_resource type="BoxMesh" id="BoxMesh_spine"]
+size = Vector3(0.01, 0.25, 0.02)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_book"]
+bounce = 0.0
+friction = 0.8
+
+[node name="PDFBook" type="RigidBody3D" groups=["book"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_book")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_bookscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="Spine" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="SpineMesh" type="MeshInstance3D" parent="Spine"]
+mesh = SubResource("BoxMesh_spine")
+surface_material_override/0 = SubResource("Mat_spine")
+
+[node name="Cover" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09, 0, 0.011)
+mesh = SubResource("QuadMesh_cover")
+surface_material_override/0 = SubResource("Mat_cover")
+
+[node name="BackCover" type="MeshInstance3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.09, 0, -0.011)
+mesh = SubResource("QuadMesh_cover")
+surface_material_override/0 = SubResource("Mat_backcover")
+
+[node name="LeftStack" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0, 0)
+visible = false
+mesh = SubResource("BoxMesh_stack")
+surface_material_override/0 = SubResource("Mat_page")
+
+[node name="LeftStackTop" type="MeshInstance3D" parent="LeftStack"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.003)
+mesh = SubResource("QuadMesh_page")
+surface_material_override/0 = SubResource("Mat_page")
+
+[node name="RightStack" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09, 0, 0)
+visible = false
+mesh = SubResource("BoxMesh_stack")
+surface_material_override/0 = SubResource("Mat_page")
+
+[node name="RightStackTop" type="MeshInstance3D" parent="RightStack"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.003)
+mesh = SubResource("QuadMesh_page")
+surface_material_override/0 = SubResource("Mat_page")
+
+[node name="ActiveLeafContainer" type="Node3D" parent="."]
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")

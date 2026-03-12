@@ -1,0 +1,41 @@
+# type: ignore
+
+Import('env', 'output_dir')
+
+env = env.Clone()
+
+env = SConscript("../../SKLibretro/godot-cpp/SConstruct")
+
+env.Append(CPPPATH=[
+    "external/pdfium/include/",
+])
+
+is_windows = env["platform"] == "windows"
+is_android = env["platform"] == "android"
+
+if is_windows:
+    env.Append(CXXFLAGS=["/std:c++latest"])
+    env.Append(LIBPATH=[r"external/pdfium/lib/win-x64"])
+    env.Append(LIBS=["pdfium.dll.lib"])
+    env.Append(LINKFLAGS=['/IGNORE:4099'])
+
+if is_android:
+    env.Append(CXXFLAGS=["-std=c++20"])
+    env.Append(LIBPATH=["external/pdfium/lib/android-arm64"])
+    env.Append(LIBS=["pdfium"])
+
+sources = Glob("src/*.cpp")
+
+lib_prefix = "lib" if is_android else ""
+library = env.SharedLibrary("{}/{}godot-pdfium.{}.{}.{}{}".format(output_dir, lib_prefix, env["platform"], env["target"], env["arch"], env["SHLIBSUFFIX"]), source=sources)
+
+# Copy runtime dependencies (shared libs) to output directory
+if is_windows:
+    pdfium_dll = env.InstallAs("{}/pdfium.dll".format(output_dir), "external/pdfium/lib/win-x64/pdfium.dll")
+    env.Depends(library, pdfium_dll)
+
+if is_android:
+    pdfium_so = env.InstallAs("{}/libpdfium.so".format(output_dir), "external/pdfium/lib/android-arm64/libpdfium.so")
+    env.Depends(library, pdfium_so)
+
+Default(library)
