@@ -1,8 +1,6 @@
 ## PDFBook — A VR-holdable book that displays PDF pages.
 ##
 ## Spawn via spawn menu (manual button) or instantiate and call load_pdf().
-## Uses an "active leaf" system: only one physics hinge exists at a time for
-## page turning; all other pages are static textures on stack meshes.
 class_name PDFBook
 extends XRToolsPickable
 
@@ -57,18 +55,22 @@ var _cache_dir: String = ""
 @onready var _spine_node: Node3D = $Spine
 @onready var _active_leaf_container: Node3D = $ActiveLeafContainer
 
-# The currently active turning leaf (XRToolsInteractableHinge or similar)
+# The currently active turning leaf
 var _active_leaf: Node3D = null
 var _is_turning: bool = false
 var _turn_direction: int = 0  # 1 = forward, -1 = backward
 var _loading: bool = false  # re-entry guard for load_pdf ↔ setter
 
 # VR page turning
-var _controllers: Array = []  # all XRController3D nodes
+var _controllers: Array = []
 var _turn_cooldown: float = 0.0
 const TURN_COOLDOWN_TIME := 0.5
 const GRIP_THRESHOLD := 0.3
-const GRIP_DETECT_RADIUS := 0.15  # meters from page center
+const GRIP_DETECT_RADIUS := 0.15
+
+# Async page rendering
+var _render_mutex := Mutex.new()
+var _pending_renders: Dictionary = {}  # page_index -> true
 
 # Loading placeholder texture
 var _loading_texture: ImageTexture = null
@@ -77,7 +79,6 @@ var _loading_texture: ImageTexture = null
 func _ready() -> void:
 	super._ready()
 	_create_loading_texture()
-	# Cache XR controllers for page turn detection
 	await get_tree().process_frame
 	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
 		_controllers.append(node as XRController3D)
@@ -92,7 +93,6 @@ func load_pdf(path: String) -> void:
 	pdf_path = path
 	_loading = false
 
-	# Create PDFRenderer instance
 	_renderer = ClassDB.instantiate("PDFRenderer")
 	if not _renderer:
 		push_error("[PDFBook] PDFRenderer class not available. Is the GDExtension loaded?")
@@ -112,7 +112,6 @@ func load_pdf(path: String) -> void:
 
 	_leaf_count = ceili(_page_count / 2.0)
 
-	# Get page dimensions from first page (aspect ratio)
 	var size: Vector2 = _renderer.GetPageSize(0)
 	_page_width = size.x
 	_page_height = size.y
@@ -121,30 +120,29 @@ func load_pdf(path: String) -> void:
 		var aspect := _page_width / _page_height
 		_book_width = book_height * aspect
 	else:
-		_book_width = book_height * 0.7  # fallback ~letter ratio
+		_book_width = book_height * 0.7
 
-	# Set up disk cache
 	_cache_dir = "user://pdf_cache/" + path.md5_text() + "/"
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	_configure_meshes()
 	_set_state(BookState.CLOSED)
-	_update_cover_texture()
 
 	print("[PDFBook] Loaded: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
 		path, _page_count, _leaf_count, _book_width, book_height])
 
 
-## Get a page texture, loading from cache or rendering on demand.
+# ── Async page texture loading ────────────────────────────────────────────────
+
+## Get a page texture if cached, otherwise return placeholder and start background render.
 func _get_page_texture(page_index: int) -> ImageTexture:
 	if page_index < 0 or page_index >= _page_count:
 		return null
 
-	# Check memory cache
 	if _texture_cache.has(page_index):
 		return _texture_cache[page_index]
 
-	# Check disk cache
+	# Check disk cache (fast — no PDF render needed)
 	var cache_path := _cache_dir + "page_%03d.png" % page_index
 	if FileAccess.file_exists(cache_path):
 		var img := Image.load_from_file(cache_path)
@@ -153,44 +151,100 @@ func _get_page_texture(page_index: int) -> ImageTexture:
 			_texture_cache[page_index] = tex
 			return tex
 
-	# Render the page
+	# Queue background render
+	_request_page_render(page_index)
+	return _loading_texture
+
+
+## Queue a page for background rendering if not already pending.
+func _request_page_render(page_index: int) -> void:
+	if _pending_renders.has(page_index):
+		return
 	if not _renderer or not _renderer.IsOpen():
-		return _loading_texture
+		return
+	_pending_renders[page_index] = true
+	var renderer_ref := _renderer
+	var dpi := render_dpi
+	var cache_dir := _cache_dir
+	WorkerThreadPool.add_task(func():
+		_render_mutex.lock()
+		var img: Image = null
+		if renderer_ref and renderer_ref.IsOpen():
+			img = renderer_ref.RenderPage(page_index, dpi)
+		_render_mutex.unlock()
+		if img:
+			img.save_png(cache_dir + "page_%03d.png" % page_index)
+		call_deferred("_on_page_rendered", page_index, img)
+	)
 
-	var img: Image = _renderer.RenderPage(page_index, render_dpi)
+
+## Called on main thread when a background page render completes.
+func _on_page_rendered(page_index: int, img: Image) -> void:
+	_pending_renders.erase(page_index)
 	if not img:
-		return _loading_texture
-
-	# Save to disk cache
-	img.save_png(cache_path)
-
+		return
 	var tex := ImageTexture.create_from_image(img)
 	_texture_cache[page_index] = tex
-	return tex
+	_refresh_visible_textures()
+
+
+## Re-apply textures to currently visible meshes (after async render completes).
+func _refresh_visible_textures() -> void:
+	match _state:
+		BookState.CLOSED:
+			_update_cover_texture()
+			_update_back_cover_texture()
+		BookState.OPEN:
+			_update_cover_texture()
+			_update_back_cover_texture()
+			_update_spread_textures()
+		BookState.LAST_PAGE:
+			_update_back_cover_texture()
 
 
 ## Unload textures that are far from the current spread to save VRAM.
 func _trim_texture_cache() -> void:
 	var keep_min := maxi(0, (_current_leaf * 2) - 4)
 	var keep_max := mini(_page_count - 1, (_current_leaf * 2) + 6)
+	# Always keep cover and back cover
 	var to_remove: Array[int] = []
 	for key: int in _texture_cache:
+		if key == 0 or key == _page_count - 1:
+			continue
 		if key < keep_min or key > keep_max:
 			to_remove.append(key)
 	for key: int in to_remove:
 		_texture_cache.erase(key)
 
 
-## Configure mesh sizes based on PDF aspect ratio.
+# ── Mesh configuration ────────────────────────────────────────────────────────
+
+## Configure mesh sizes and create unique materials for each mesh.
 func _configure_meshes() -> void:
-	# Cover mesh — full page size
+	var half_w := _book_width / 2.0
+
 	_set_mesh_size(_cover_mesh, _book_width, book_height)
 	_set_mesh_size(_back_cover_mesh, _book_width, book_height)
 	_set_mesh_size(_left_stack_top, _book_width, book_height)
 	_set_mesh_size(_right_stack_top, _book_width, book_height)
 
+	# Update stack box sizes
+	if _left_stack.mesh is BoxMesh:
+		(_left_stack.mesh as BoxMesh).size = Vector3(_book_width, book_height, 0.005)
+	if _right_stack.mesh is BoxMesh:
+		(_right_stack.mesh as BoxMesh).size = Vector3(_book_width, book_height, 0.005)
 
-## Set a MeshInstance3D's QuadMesh size (assumes QuadMesh or PlaneMesh).
+	# Update positions to match computed book width
+	_left_stack.position = Vector3(-half_w, 0, 0)
+	_right_stack.position = Vector3(half_w, 0, 0)
+
+	# Create unique materials so textures don't bleed between meshes
+	_ensure_unique_material(_cover_mesh)
+	_ensure_unique_material(_back_cover_mesh)
+	_ensure_unique_material(_left_stack_top)
+	_ensure_unique_material(_right_stack_top)
+
+
 func _set_mesh_size(mesh_node: MeshInstance3D, w: float, h: float) -> void:
 	if not mesh_node:
 		return
@@ -199,6 +253,14 @@ func _set_mesh_size(mesh_node: MeshInstance3D, w: float, h: float) -> void:
 		(mesh as QuadMesh).size = Vector2(w, h)
 	elif mesh is PlaneMesh:
 		(mesh as PlaneMesh).size = Vector2(w, h)
+
+
+func _ensure_unique_material(mesh_node: MeshInstance3D) -> void:
+	if not mesh_node:
+		return
+	var mat := mesh_node.get_active_material(0)
+	if mat:
+		mesh_node.set_surface_override_material(0, mat.duplicate())
 
 
 ## Apply a texture to a MeshInstance3D's material albedo.
@@ -226,25 +288,44 @@ func _apply_back_texture(mesh_node: MeshInstance3D, tex: Texture2D) -> void:
 
 func _set_state(new_state: BookState) -> void:
 	_state = new_state
+	var half_w := _book_width / 2.0
+
 	match new_state:
 		BookState.CLOSED:
 			_cover_mesh.visible = true
+			_cover_mesh.position = Vector3(half_w, 0, 0.011)
+			_cover_mesh.rotation_degrees = Vector3.ZERO
 			_back_cover_mesh.visible = true
+			_back_cover_mesh.position = Vector3(half_w, 0, -0.011)
+			_back_cover_mesh.rotation_degrees = Vector3(0, 180, 0)
 			_left_stack.visible = false
 			_right_stack.visible = false
+			_update_cover_texture()
 			_update_back_cover_texture()
+
 		BookState.OPEN:
-			_cover_mesh.visible = false
-			_back_cover_mesh.visible = false
+			_cover_mesh.visible = true
+			_cover_mesh.rotation_degrees = Vector3(0, 180, 0)
+			_back_cover_mesh.visible = true
+			_back_cover_mesh.rotation_degrees = Vector3(0, 180, 0)
 			_left_stack.visible = true
 			_right_stack.visible = true
+			_update_cover_texture()
+			_update_back_cover_texture()
 			_update_spread_textures()
-			_update_stack_thickness()
+			_update_stack_thickness()  # also positions covers behind stacks
+
 		BookState.LAST_PAGE:
-			_cover_mesh.visible = false
+			# Mirror of CLOSED — back cover on the LEFT, front cover behind it
+			_cover_mesh.visible = true
+			_cover_mesh.position = Vector3(-half_w, 0, -0.011)
+			_cover_mesh.rotation_degrees = Vector3(0, 180, 0)
 			_back_cover_mesh.visible = true
+			_back_cover_mesh.position = Vector3(-half_w, 0, 0.011)
+			_back_cover_mesh.rotation_degrees = Vector3.ZERO
 			_left_stack.visible = false
 			_right_stack.visible = false
+			_update_cover_texture()
 			_update_back_cover_texture()
 
 
@@ -273,29 +354,34 @@ func _update_spread_textures() -> void:
 
 
 func _update_stack_thickness() -> void:
-	# Each leaf ≈ 0.001m thick
 	var leaf_thickness := 0.001
-	var left_count := _current_leaf + 1  # leaves that have been turned
-	var right_count := _leaf_count - _current_leaf - 1  # leaves remaining
+	var left_count := _current_leaf + 1
+	var right_count := _leaf_count - _current_leaf - 1
+
+	var left_thick := maxf(left_count * leaf_thickness, 0.001)
+	var right_thick := maxf(right_count * leaf_thickness, 0.001)
 
 	if _left_stack:
-		var left_thick := maxf(left_count * leaf_thickness, 0.001)
-		_left_stack.scale.z = left_thick / 0.001  # assuming base mesh is 0.001m thick
+		_left_stack.scale.z = left_thick / 0.005
 	if _right_stack:
-		var right_thick := maxf(right_count * leaf_thickness, 0.001)
-		_right_stack.scale.z = right_thick / 0.001
+		_right_stack.scale.z = right_thick / 0.005
+
+	# Position covers just behind the stacks so they don't clip
+	if _state == BookState.OPEN:
+		var half_w := _book_width / 2.0
+		var cover_offset := 0.001  # small gap to prevent z-fighting
+		_cover_mesh.position = Vector3(-half_w, 0, -(left_thick / 2.0 + cover_offset))
+		_back_cover_mesh.position = Vector3(half_w, 0, -(right_thick / 2.0 + cover_offset))
 
 
 # ── Page turning ──────────────────────────────────────────────────────────────
 
-## Called when the user grips the right stack to turn forward.
 func turn_page_forward() -> void:
 	if _is_turning:
 		return
 
 	match _state:
 		BookState.CLOSED:
-			# Open the cover
 			_current_leaf = 0
 			if _leaf_count <= 1:
 				_set_state(BookState.LAST_PAGE)
@@ -309,10 +395,9 @@ func turn_page_forward() -> void:
 				_update_spread_textures()
 				_update_stack_thickness()
 		BookState.LAST_PAGE:
-			pass  # Already at the end
+			pass
 
 
-## Called when the user grips the left stack to turn backward.
 func turn_page_backward() -> void:
 	if _is_turning:
 		return
@@ -332,12 +417,11 @@ func turn_page_backward() -> void:
 				_update_spread_textures()
 				_update_stack_thickness()
 		BookState.CLOSED:
-			pass  # Already at the beginning
+			pass
 
 
 # ── Active leaf hinge system ──────────────────────────────────────────────────
 
-## Spawn the active turning leaf for a forward page turn.
 func _spawn_active_leaf_forward() -> void:
 	if _active_leaf:
 		_despawn_active_leaf()
@@ -345,7 +429,6 @@ func _spawn_active_leaf_forward() -> void:
 	_is_turning = true
 	_turn_direction = 1
 
-	# The leaf being turned: front = right page (even), back = left page after turn (odd)
 	var front_page_idx: int
 	var back_page_idx: int
 
@@ -360,7 +443,6 @@ func _spawn_active_leaf_forward() -> void:
 	_active_leaf_container.add_child(_active_leaf)
 
 
-## Spawn the active turning leaf for a backward page turn.
 func _spawn_active_leaf_backward() -> void:
 	if _active_leaf:
 		_despawn_active_leaf()
@@ -372,16 +454,14 @@ func _spawn_active_leaf_backward() -> void:
 	var back_page_idx := front_page_idx + 1
 
 	_active_leaf = _create_leaf_mesh(front_page_idx, back_page_idx)
-	_active_leaf.rotation_degrees.y = 180.0  # starts fully turned
+	_active_leaf.rotation_degrees.y = 180.0
 	_active_leaf_container.add_child(_active_leaf)
 
 
-## Create a thin leaf mesh with front and back textures.
 func _create_leaf_mesh(front_page_idx: int, back_page_idx: int) -> Node3D:
 	var leaf := Node3D.new()
 	leaf.name = "ActiveLeaf"
 
-	# Front face
 	var front_mesh := MeshInstance3D.new()
 	front_mesh.name = "FrontFace"
 	var front_quad := QuadMesh.new()
@@ -393,10 +473,9 @@ func _create_leaf_mesh(front_page_idx: int, back_page_idx: int) -> Node3D:
 	if front_tex:
 		front_mat.albedo_texture = front_tex
 	front_mesh.material_override = front_mat
-	front_mesh.position.x = _book_width / 2.0  # pivot at left edge (spine)
+	front_mesh.position.x = _book_width / 2.0
 	leaf.add_child(front_mesh)
 
-	# Back face (rotated 180° around Y so it faces the other direction)
 	var back_mesh := MeshInstance3D.new()
 	back_mesh.name = "BackFace"
 	var back_quad := QuadMesh.new()
@@ -416,7 +495,6 @@ func _create_leaf_mesh(front_page_idx: int, back_page_idx: int) -> Node3D:
 	return leaf
 
 
-## Remove the active leaf and finalize the page turn.
 func _despawn_active_leaf() -> void:
 	if _active_leaf:
 		_active_leaf.queue_free()
@@ -425,7 +503,6 @@ func _despawn_active_leaf() -> void:
 	_turn_direction = 0
 
 
-## Snap the active leaf to completion with a short tween.
 func _snap_leaf_to_completion(target_angle: float) -> void:
 	if not _active_leaf:
 		return
@@ -439,7 +516,6 @@ func _snap_leaf_to_completion(target_angle: float) -> void:
 		tween.tween_callback(_complete_backward_turn)
 
 
-## Check if the active leaf is close enough to snap (called from _process).
 func _check_snap() -> void:
 	if not _active_leaf or not _is_turning:
 		return
@@ -473,9 +549,7 @@ func _detect_page_grip() -> void:
 		if ctrl.get_float("grip") < GRIP_THRESHOLD:
 			continue
 
-		# Check if this controller is close enough to the book
 		var ctrl_pos_local: Vector3 = to_local(ctrl.global_position)
-		# Book is oriented with pages along X axis; left is -X, right is +X
 		if absf(ctrl_pos_local.y) > book_height * 0.6:
 			continue
 		if absf(ctrl_pos_local.z) > 0.08:
@@ -484,24 +558,20 @@ func _detect_page_grip() -> void:
 			continue
 
 		if ctrl_pos_local.x > 0.0:
-			# Gripping right side → turn forward
 			turn_page_forward()
 			_turn_cooldown = TURN_COOLDOWN_TIME
 			return
 		else:
-			# Gripping left side → turn backward
 			turn_page_backward()
 			_turn_cooldown = TURN_COOLDOWN_TIME
 			return
 
 
-## Complete a forward page turn (called when hinge reaches ~180°).
 func _complete_forward_turn() -> void:
 	_despawn_active_leaf()
 	turn_page_forward()
 
 
-## Complete a backward page turn (called when hinge reaches ~0°).
 func _complete_backward_turn() -> void:
 	_despawn_active_leaf()
 	turn_page_backward()
@@ -511,15 +581,18 @@ func _complete_backward_turn() -> void:
 
 func _create_loading_texture() -> void:
 	var img := Image.create(256, 256, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0.9, 0.9, 0.85))  # cream/paper color
+	img.fill(Color(0.9, 0.9, 0.85))
 	_loading_texture = ImageTexture.create_from_image(img)
 
 
 func _cleanup() -> void:
+	_render_mutex.lock()
 	if _renderer and _renderer.IsOpen():
 		_renderer.Close()
 	_renderer = null
+	_render_mutex.unlock()
 	_texture_cache.clear()
+	_pending_renders.clear()
 	_despawn_active_leaf()
 	_page_count = 0
 	_leaf_count = 0
