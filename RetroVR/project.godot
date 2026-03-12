@@ -180,6 +180,18 @@ RETRO_ANALOG_RIGHT_X_POSITIVE={
 ]
 }
 
+[layer_names]
+
+3d_physics/layer_1="World"
+3d_physics/layer_3="Pickable"
+3d_physics/layer_17="XRHand_SnapZone"
+3d_physics/layer_18="XRHand_Physics"
+3d_physics/layer_19="XRPickable"
+3d_physics/layer_20="XRButton"
+3d_physics/layer_21="XRPointer"
+3d_physics/layer_22="XRPoseDetector"
+3d_physics/layer_23="XRPointerSuppress"
+
 [rendering]
 
 textures/vram_compression/import_etc2_astc=true
