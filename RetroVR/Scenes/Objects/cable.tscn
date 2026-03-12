@@ -31,7 +31,7 @@ friction = 0.8
 
 [node name="CablePlug" type="RigidBody3D" parent="."]
 collision_layer = 4
-collision_mask = 196615
+collision_mask = 196613
 physics_material_override = SubResource("PhysMat_plug")
 mass = 0.1
 linear_damp = 5.0

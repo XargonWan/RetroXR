@@ -58,7 +58,7 @@ size = Vector3(0.52, 0.42, 0.32)
 
 [node name="TV" type="RigidBody3D" unique_id=31035930]
 collision_layer = 4
-collision_mask = 196615
+collision_mask = 196613
 physics_material_override = SubResource("PhysMat_tv")
 freeze_mode = 1
 linear_damp = 5.0

@@ -69,7 +69,7 @@ emission_energy_multiplier = 0.4
 
 [node name="System" type="RigidBody3D"]
 collision_layer = 4
-collision_mask = 196615
+collision_mask = 196613
 physics_material_override = SubResource("PhysMat_system")
 linear_damp = 5.0
 angular_damp = 8.0
@@ -117,7 +117,7 @@ surface_material_override/0 = SubResource("Mat_cable")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, 0.06, 0.1)
 script = ExtResource("3_vrbtn")
 collision_layer = 0
-collision_mask = 524288
+collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton"]
 shape = SubResource("BoxShape3D_power")
@@ -136,7 +136,7 @@ pixel_size = 0.001
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08, 0.06, 0.1)
 script = ExtResource("3_vrbtn")
 collision_layer = 0
-collision_mask = 524288
+collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ResetButton"]
 shape = SubResource("BoxShape3D_reset")
