@@ -34,9 +34,11 @@ static func ensure_rom_dir(systemid: String) -> void:
 	if systemid.is_empty():
 		return
 	var path := rom_dir_for_system(systemid)
+	if DirAccess.dir_exists_absolute(path):
+		return
 	var err := DirAccess.make_dir_recursive_absolute(path)
 	if err == OK:
-		print("[RomLibrary] Ensured rom dir: ", path)
+		print("[RomLibrary] Created rom dir: ", path)
 	else:
 		push_warning("[RomLibrary] Failed to create rom dir '%s' (err %d)" % [path, err])
 

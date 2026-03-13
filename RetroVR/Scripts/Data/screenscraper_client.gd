@@ -297,19 +297,24 @@ func _extract_media_urls(medias, rom_region_codes: Array = []) -> Dictionary:
 		var cands: Array = candidates[key]
 		if cands.is_empty():
 			continue
+		var picked_region := ""
 		var found := false
 		for prio: String in effective_priorities:
 			for c: Dictionary in cands:
 				if c.get("region", "") == prio:
 					result[key] = c["url"]
+					picked_region = prio
 					found = true
 					break
 			if found:
 				break
 		if not found:
 			# Fallback: first available
-			result[key] = (cands[0] as Dictionary).get("url", "")
-		print("[ScreenscraperClient] Media[%s] → region candidates: %s → picked: %s" % [key, str(cands.map(func(c): return c.get("region",""))), result[key].get_file()])
+			var fallback: Dictionary = cands[0]
+			result[key] = fallback.get("url", "")
+			picked_region = fallback.get("region", "?")
+		var regions_available := str(cands.map(func(c: Dictionary) -> String: return c.get("region", "")))
+		print("[ScreenscraperClient] Media[%s] regions=%s → picked region=%s" % [key, regions_available, picked_region])
 
 	return result
 
