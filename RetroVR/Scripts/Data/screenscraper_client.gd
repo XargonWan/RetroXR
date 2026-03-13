@@ -34,19 +34,24 @@ func _ready() -> void:
 ## Scrape a ROM by its checksums. Emits scrape_completed or scrape_failed.
 ## checksums: {crc, md5, sha1, size} from RomHasher.
 func scrape_rom(rom_path: String, systemid: String, checksums: Dictionary) -> void:
+	print("[ScreenscraperClient] scrape_rom: %s (system=%s)" % [rom_path.get_file(), systemid])
 	var systemeid := ScreenscraperSystems.get_systemeid(systemid)
 	if systemeid < 0:
+		push_warning("[ScreenscraperClient] No screenscraper systemeid for '%s'" % systemid)
 		scrape_failed.emit("System '%s' is not supported for scraping" % systemid)
 		return
 
 	if checksums.is_empty():
+		push_warning("[ScreenscraperClient] Checksums empty for: %s" % rom_path)
 		scrape_failed.emit("Could not read ROM file checksums")
 		return
 
+	print("[ScreenscraperClient] systemeid=%d  CRC=%s" % [systemeid, checksums.get("crc", "?")])
 	# Rate limit
 	await _wait_for_rate_limit()
 
 	var url := _build_query_url(rom_path, systemeid, checksums)
+	print("[ScreenscraperClient] Requesting: %s" % url)
 	_do_scrape_request(url, rom_path, 0)
 
 
@@ -96,6 +101,7 @@ func _do_scrape_request(url: String, rom_path: String, retry_count: int) -> void
 func _on_scrape_completed(result: int, response_code: int, body: PackedByteArray,
 						  url: String, rom_path: String, retry_count: int) -> void:
 	_cleanup_scrape_http()
+	print("[ScreenscraperClient] Response: result=%d code=%d body_len=%d" % [result, response_code, body.size()])
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		if retry_count < MAX_RETRIES:
@@ -111,15 +117,19 @@ func _on_scrape_completed(result: int, response_code: int, body: PackedByteArray
 
 	# Check for known error strings
 	if text.find("non trouvée") >= 0 or text.find("Erreur") >= 0:
+		push_warning("[ScreenscraperClient] API text error (non trouvée/Erreur): %s" % text.left(200))
 		scrape_failed.emit("Game not found in screenscraper database")
 		return
 	if text.find("API fermé") >= 0 or text.find("API totalement fermé") >= 0:
+		push_warning("[ScreenscraperClient] API closed")
 		scrape_failed.emit("ScreenScraper API is currently closed")
 		return
 	if text.find("blacklisté") >= 0:
+		push_warning("[ScreenscraperClient] Account blacklisted")
 		scrape_failed.emit("Your account has been blacklisted")
 		return
 	if text.find("Votre quota") >= 0:
+		push_warning("[ScreenscraperClient] Daily quota exceeded")
 		scrape_failed.emit("Daily scrape quota exceeded")
 		return
 
@@ -148,6 +158,7 @@ func _on_scrape_completed(result: int, response_code: int, body: PackedByteArray
 		return
 
 	var parsed := _parse_jeu(jeu)
+	print("[ScreenscraperClient] Scrape success: game_id=%s name=%s" % [parsed.get("game_id", "?"), parsed.get("name", "?")])
 	scrape_completed.emit(parsed)
 
 
@@ -324,6 +335,7 @@ func download_media(media_type: String, url: String, dest_path: String) -> void:
 func _on_media_download_completed(media_type: String, result: int,
 								  response_code: int, dest_path: String) -> void:
 	_cleanup_media_download(media_type)
+	print("[ScreenscraperClient] Media download: type=%s result=%d code=%d path=%s" % [media_type, result, response_code, dest_path])
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		if FileAccess.file_exists(dest_path):

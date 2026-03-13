@@ -971,15 +971,16 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 	btn.text = "⏳"
 	btn.disabled = true
 
-	# Compute checksums on a background thread to avoid UI freeze
-	var checksums := {}
-	var task_id := WorkerThreadPool.add_task(func():
-		checksums = RomHasher.compute_checksums(rom_path)
-	)
-	# Poll until the background task completes
-	while not WorkerThreadPool.is_task_completed(task_id):
+	# Compute checksums on a background thread to avoid UI freeze.
+	# Thread.wait_to_finish() returns the callable's return value directly,
+	# avoiding the WorkerThreadPool lambda-environment copy issue where
+	# variable reassignment inside add_task() doesn't propagate back.
+	var thread := Thread.new()
+	thread.start(func() -> Dictionary: return RomHasher.compute_checksums(rom_path))
+	while thread.is_alive():
 		await get_tree().process_frame
-	WorkerThreadPool.wait_for_task_completion(task_id)
+	var checksums: Dictionary = thread.wait_to_finish()
+	print("[SpawnMenu] Checksums done: ", checksums)
 
 	if checksums.is_empty():
 		btn.text = "✂️"
@@ -996,6 +997,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		scraper_client.scrape_failed.disconnect(failed_cb)
 		btn.text = "✂️"
 		btn.disabled = false
+		print("[SpawnMenu] Scrape completed for: %s" % rom_path.get_file())
 		_show_scrape_popup(rom_path, systemid, result)
 
 	failed_cb = func(error: String):

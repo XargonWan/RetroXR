@@ -25,12 +25,14 @@ static func _build_crc_table() -> PackedInt32Array:
 ## Returns {crc: String, md5: String, sha1: String, size: int} with uppercase hex strings.
 ## Returns empty dict on failure.
 static func compute_checksums(rom_path: String) -> Dictionary:
+	print("[RomHasher] Computing checksums: ", rom_path)
 	var file := FileAccess.open(rom_path, FileAccess.READ)
 	if not file:
 		push_error("[RomHasher] Failed to open: %s" % rom_path)
 		return {}
 
 	var file_size := file.get_length()
+	print("[RomHasher] File size: %d bytes" % file_size)
 
 	var md5_ctx := HashingContext.new()
 	var sha1_ctx := HashingContext.new()
@@ -58,9 +60,11 @@ static func compute_checksums(rom_path: String) -> Dictionary:
 	var md5_bytes := md5_ctx.finish()
 	var sha1_bytes := sha1_ctx.finish()
 
-	return {
+	var result := {
 		"crc": "%08X" % crc,
 		"md5": md5_bytes.hex_encode().to_upper(),
 		"sha1": sha1_bytes.hex_encode().to_upper(),
 		"size": file_size,
 	}
+	print("[RomHasher] Done — CRC=%s MD5=%s SHA1=%s" % [result["crc"], result["md5"], result["sha1"]])
+	return result

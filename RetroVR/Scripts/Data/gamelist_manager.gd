@@ -63,6 +63,7 @@ func save_gamelist(systemid: String) -> void:
 ## game_data: {game_id, name, desc, developer, publisher, genre}
 ## rom_data: {path, romname, releasedate, region}
 func add_or_merge_rom(systemid: String, game_data: Dictionary, rom_data: Dictionary) -> void:
+	print("[GamelistManager] add_or_merge_rom: system=%s game_id=%s rom=%s" % [systemid, game_data.get("game_id", "?"), rom_data.get("path", "?")])
 	var gamelist := load_gamelist(systemid)
 	var games: Array = gamelist["games"]
 	var game_id: String = game_data.get("game_id", "")
