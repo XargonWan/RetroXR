@@ -199,12 +199,15 @@ func _parse_jeu(jeu: Dictionary) -> Dictionary:
 	var regions: Dictionary = rom.get("regions", {})
 	var regions_en: Array = regions.get("regions_en", [])
 	result["rom_region"] = str(regions_en[0]) if not regions_en.is_empty() else ""
+	var regions_short: Array = regions.get("regions_shortname", [])
+	result["rom_region_codes"] = regions_short
+	print("[ScreenscraperClient] ROM region codes: %s" % str(regions_short))
 
 	# Release date
 	result["releasedate"] = _pick_by_region(jeu.get("dates", []))
 
-	# Media URLs
-	result["media"] = _extract_media_urls(jeu.get("medias", []))
+	# Media URLs — pass ROM region codes so media selection prefers the ROM's own region
+	result["media"] = _extract_media_urls(jeu.get("medias", []), regions_short)
 
 	return result
 
@@ -248,13 +251,27 @@ func _pick_by_language(arr) -> String:
 
 
 ## Extract media URLs we care about from the medias array.
+## rom_region_codes: short region codes from the matched ROM (e.g. ["us"]) — used as top priority.
 ## Returns {wheel: url, box: url, label: url, manual: url} (empty string if not found).
-func _extract_media_urls(medias) -> Dictionary:
+func _extract_media_urls(medias, rom_region_codes: Array = []) -> Dictionary:
 	var result := {"wheel": "", "box": "", "label": "", "manual": ""}
 	if not medias is Array:
 		return result
 
-	# Collect candidates per type, respecting region priority
+	# Build effective priority: ROM's own region codes first, then "wor", then user priorities.
+	var effective_priorities: Array[String] = []
+	for code in rom_region_codes:
+		var s := str(code)
+		if not effective_priorities.has(s):
+			effective_priorities.append(s)
+	if not effective_priorities.has("wor"):
+		effective_priorities.append("wor")
+	for code: String in config.region_priorities:
+		if not effective_priorities.has(code):
+			effective_priorities.append(code)
+	print("[ScreenscraperClient] Effective media region priorities: %s" % str(effective_priorities))
+
+	# Collect candidates per type
 	var candidates := {"wheel": [], "box": [], "label": [], "manual": []}
 
 	for entry in medias:
@@ -275,21 +292,16 @@ func _extract_media_urls(medias) -> Dictionary:
 		elif mtype == "manuel":
 			candidates["manual"].append({"url": url, "region": region})
 
-	# For each media type, pick best by region priority
+	# For each media type, pick best by effective region priority
 	for key: String in result.keys():
 		var cands: Array = candidates[key]
 		if cands.is_empty():
 			continue
-		# Try region priorities
 		var found := false
-		for prio: String in config.region_priorities:
+		for prio: String in effective_priorities:
 			for c: Dictionary in cands:
 				if c.get("region", "") == prio:
-					# Prefer wheel-hd over wheel if both match same region
-					if key == "wheel":
-						result[key] = c["url"]
-					else:
-						result[key] = c["url"]
+					result[key] = c["url"]
 					found = true
 					break
 			if found:
@@ -297,6 +309,7 @@ func _extract_media_urls(medias) -> Dictionary:
 		if not found:
 			# Fallback: first available
 			result[key] = (cands[0] as Dictionary).get("url", "")
+		print("[ScreenscraperClient] Media[%s] → region candidates: %s → picked: %s" % [key, str(cands.map(func(c): return c.get("region",""))), result[key].get_file()])
 
 	return result
 

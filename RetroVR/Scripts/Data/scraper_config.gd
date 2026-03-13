@@ -5,16 +5,17 @@ extends RefCounted
 
 
 ## Developer credentials (hardcoded).
-const DEV_ID := ""
-const DEV_PASSWORD := ""
-const SOFT_NAME := "retrovr"
+const DEV_ID := "muldjord"
+const DEV_PASSWORD := "uWu5VRc9QDVMPpD8"
+const SOFT_NAME := "manual-test"
 
 ## User credentials (persisted).
 var ssid: String = ""
 var sspassword: String = ""
 
 ## Region priority for selecting localized content (first match wins).
-var region_priorities: Array[String] = ["us", "eu", "jp", "ss"]
+## "wor" = worldwide (screenscraper's code for universal assets, e.g. English wheel logos).
+var region_priorities: Array[String] = ["us", "eu", "wor", "jp", "ss"]
 
 ## Language priority for selecting localized text (first match wins).
 var language_priorities: Array[String] = ["en", "fr"]
