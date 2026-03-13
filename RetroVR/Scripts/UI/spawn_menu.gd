@@ -995,16 +995,18 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 	completed_cb = func(result: Dictionary):
 		scraper_client.scrape_completed.disconnect(completed_cb)
 		scraper_client.scrape_failed.disconnect(failed_cb)
-		btn.text = "✂️"
-		btn.disabled = false
+		if is_instance_valid(btn):
+			btn.text = "✂️"
+			btn.disabled = false
 		print("[SpawnMenu] Scrape completed for: %s" % rom_path.get_file())
 		_show_scrape_popup(rom_path, systemid, result)
 
 	failed_cb = func(error: String):
 		scraper_client.scrape_completed.disconnect(completed_cb)
 		scraper_client.scrape_failed.disconnect(failed_cb)
-		btn.text = "✂️"
-		btn.disabled = false
+		if is_instance_valid(btn):
+			btn.text = "✂️"
+			btn.disabled = false
 		push_warning("[SpawnMenu] Scrape failed: %s" % error)
 		_show_scrape_error_popup(error)
 
