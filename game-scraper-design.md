@@ -65,6 +65,7 @@ super_nes
 nintendo64
 
 Each system will have a unique box and cartidge model for it. There may be best to use polymorphism in the design.. for easier code reuse
+We currenntly do not have a unique model yet. placeholders for now
 
 ### CD and JewelCase
 
@@ -74,4 +75,5 @@ Which systems uses a Jewelcase and CD (this is not exhuastive and may more need 
 Playstation
 Gamecube
 
-Each system will have a unique jewel case and disc model for it
+Each system will have a unique jewel case and disc model for it. There may be best to use polymorphism in the design.. for easier code reuse
+We currenntly do not have a unique model yet. placeholders for now
