@@ -73,6 +73,9 @@ var _scrape_popup: PanelContainer = null
 var _game_detail_panel: PanelContainer = null
 # ROM variants side panel
 var _rom_variants_panel: PanelContainer = null
+# Callback connected to scraper_client.media_download_completed so the tab
+# refreshes when a wheel image or manual PDF finishes downloading.
+var _media_dl_refresh_cb: Callable = Callable()
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -1172,11 +1175,24 @@ func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary)
 	gamelist_manager.add_or_merge_rom(systemid, game_data, rom_data)
 	gamelist_manager.save_gamelist(systemid)
 
+	# Disconnect any stale media refresh callback from a previous accept
+	if _media_dl_refresh_cb.is_valid() and \
+			scraper_client.media_download_completed.is_connected(_media_dl_refresh_cb):
+		scraper_client.media_download_completed.disconnect(_media_dl_refresh_cb)
+
+	# Re-populate when wheel or manual finishes downloading so the list
+	# updates without requiring a manual tab switch.
+	_media_dl_refresh_cb = func(mtype: String, _path: String) -> void:
+		if mtype == "wheel" or mtype == "manual":
+			print("[SpawnMenu] Media downloaded (%s), refreshing cartridges tab." % mtype)
+			_populate_cartridges_tab()
+	scraper_client.media_download_completed.connect(_media_dl_refresh_cb)
+
 	# Download media files asynchronously
 	var rom_basename := rom_path.get_file().get_basename()
 	scraper_client.download_all_media(result, systemid, rom_basename)
 
-	# Refresh the cartridges tab to show updated state
+	# Refresh immediately so the game name / metadata shows right away
 	_populate_cartridges_tab()
 
 
