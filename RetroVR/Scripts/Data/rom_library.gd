@@ -78,3 +78,9 @@ static func has_manual(rom_path: String) -> bool:
 ## Replaces the ROM's extension with ".pdf".
 static func manual_path(rom_path: String) -> String:
 	return rom_path.get_basename() + ".pdf"
+
+
+## Return the scraped manual path (in media/manual/ directory).
+static func scraped_manual_path(systemid: String, romname: String) -> String:
+	var base := romname.get_basename()
+	return rom_dir_for_system(systemid).path_join("media/manual").path_join(base + ".pdf")

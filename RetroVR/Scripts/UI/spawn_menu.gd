@@ -25,6 +25,11 @@ var download_manager: CoreDownloadManager = null
 ## Core defaults persistence (core_defaults.json).
 var core_defaults: CoreDefaults = null
 
+## Scraper infrastructure
+var gamelist_manager: GamelistManager = null
+var scraper_client: ScreenscraperClient = null
+var scraper_config: ScraperConfig = null
+
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
@@ -62,6 +67,13 @@ var _systems_vbox: VBoxContainer = null
 # Spawn > Cartridges tab — rebuilt whenever defaults change or tab opened
 var _cartridges_vbox: VBoxContainer = null
 
+# Scrape popup overlay
+var _scrape_popup: PanelContainer = null
+# Game detail side panel
+var _game_detail_panel: PanelContainer = null
+# ROM variants side panel
+var _rom_variants_panel: PanelContainer = null
+
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 const COLOR_BG           := Color(0.08, 0.08, 0.16, 0.96)
@@ -80,6 +92,7 @@ func _ready() -> void:
 	_init_core_db()
 	_init_core_defaults()
 	_init_download_manager()
+	_init_scraper()
 	# Always ensure the roms root exists, plus dirs for any already-configured systems
 	print("[SpawnMenu] roms root=", RomLibrary.default_roms_root())
 	RomLibrary.ensure_roms_root()
@@ -102,6 +115,16 @@ func _init_download_manager() -> void:
 	download_manager = CoreDownloadManager.new()
 	download_manager.name = "CoreDownloadManager"
 	add_child(download_manager)
+
+
+func _init_scraper() -> void:
+	scraper_config = ScraperConfig.new()
+	scraper_config.load_config()
+	gamelist_manager = GamelistManager.new()
+	scraper_client = ScreenscraperClient.new()
+	scraper_client.name = "ScreenscraperClient"
+	scraper_client.config = scraper_config
+	add_child(scraper_client)
 
 
 # ── Top-level UI ──────────────────────────────────────────────────────────────
@@ -364,28 +387,89 @@ func _populate_cartridges_tab() -> void:
 			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_cartridges_vbox.add_child(hint)
 		else:
+			# Track which games we've already shown (by game_id)
+			var shown_games: Dictionary = {}
+
 			for rom: Dictionary in roms:
+				var rom_path: String = rom["path"]
+				var game := gamelist_manager.get_game_for_rom(systemid, rom_path)
+				var is_scraped := not game.is_empty()
+
+				# If scraped and multi-ROM game, only show once (via preferred ROM)
+				if is_scraped:
+					var gid: String = game.get("game_id", "")
+					if shown_games.has(gid):
+						continue
+					shown_games[gid] = true
+
 				var row := HBoxContainer.new()
 				row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
+				# Spawn button — show wheel image if scraped, otherwise text
 				var btn := Button.new()
-				btn.text = "  +  " + rom["label"]
 				btn.custom_minimum_size = Vector2(0, 72)
 				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				btn.add_theme_font_size_override("font_size", 22)
-				btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"]))
+
+				var pref_rom: Dictionary = GamelistManager.get_preferred_rom(game) if is_scraped else {}
+
+				if is_scraped:
+					var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
+					var game_name: String = game.get("name", rom["label"])
+
+					# Try to load wheel image
+					var wheel_tex := _load_wheel_texture(systemid, pref_rom.get("romname", ""))
+					if wheel_tex:
+						btn.icon = wheel_tex
+						btn.text = ""
+						btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+						btn.expand_icon = true
+					else:
+						btn.text = "  +  " + game_name
+
+					btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name))
+				else:
+					btn.text = "  +  " + rom["label"]
+					btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"]))
+
 				row.add_child(btn)
 
-				# Manual button — only shown when a matching PDF exists
-				if RomLibrary.has_manual(rom["path"]):
+				# Game detail button — only for scraped games
+				if is_scraped:
+					var detail_btn := Button.new()
+					detail_btn.text = "🎮"
+					detail_btn.custom_minimum_size = Vector2(72, 72)
+					detail_btn.tooltip_text = "Game info"
+					detail_btn.add_theme_font_size_override("font_size", 26)
+					detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
+					row.add_child(detail_btn)
+
+				# Manual button — check both alongside ROM and scraped media
+				var has_man := RomLibrary.has_manual(rom["path"])
+				if not has_man and is_scraped:
+					has_man = _has_scraped_manual(systemid, pref_rom.get("romname", ""))
+				if has_man:
 					var manual_btn := Button.new()
 					manual_btn.text = "📖"
 					manual_btn.custom_minimum_size = Vector2(72, 72)
 					manual_btn.tooltip_text = "Spawn manual"
 					manual_btn.add_theme_font_size_override("font_size", 26)
-					var pdf_path := RomLibrary.manual_path(rom["path"])
+					var pdf_path: String
+					if RomLibrary.has_manual(rom["path"]):
+						pdf_path = RomLibrary.manual_path(rom["path"])
+					else:
+						pdf_path = _scraped_manual_path(systemid, pref_rom.get("romname", ""))
 					manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
 					row.add_child(manual_btn)
+
+				# Scrape button
+				var scrape_btn := Button.new()
+				scrape_btn.text = "✂️"
+				scrape_btn.custom_minimum_size = Vector2(72, 72)
+				scrape_btn.tooltip_text = "Scrape ROM"
+				scrape_btn.add_theme_font_size_override("font_size", 26)
+				scrape_btn.pressed.connect(_on_scrape_pressed.bind(rom["path"], systemid, scrape_btn))
+				row.add_child(scrape_btn)
 
 				_cartridges_vbox.add_child(row)
 		_cartridges_vbox.add_child(_spacer(8))
@@ -810,7 +894,545 @@ func _build_options_view() -> Control:
 
 	vbox.add_child(HSeparator.new())
 
+	# ── Scraper settings ─────────────────────────────────────────────────────
+	var scraper_hdr := Label.new()
+	scraper_hdr.text = "SCRAPER"
+	scraper_hdr.add_theme_font_size_override("font_size", 22)
+	scraper_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(scraper_hdr)
+
+	# User credentials
+	_add_options_text_field(vbox, "Username (ssid)", scraper_config.ssid, func(text: String):
+		scraper_config.ssid = text
+		scraper_config.save_config()
+	)
+	_add_options_text_field(vbox, "Password", scraper_config.sspassword, func(text: String):
+		scraper_config.sspassword = text
+		scraper_config.save_config()
+	, true)
+
+	# Region priorities
+	_add_options_text_field(vbox, "Region Priority", ", ".join(scraper_config.region_priorities), func(text: String):
+		var parts: Array[String] = []
+		for p in text.split(","):
+			var trimmed := p.strip_edges().to_lower()
+			if not trimmed.is_empty():
+				parts.append(trimmed)
+		if not parts.is_empty():
+			scraper_config.region_priorities = parts
+			scraper_config.save_config()
+	)
+
+	# Language priorities
+	_add_options_text_field(vbox, "Language Priority", ", ".join(scraper_config.language_priorities), func(text: String):
+		var parts: Array[String] = []
+		for p in text.split(","):
+			var trimmed := p.strip_edges().to_lower()
+			if not trimmed.is_empty():
+				parts.append(trimmed)
+		if not parts.is_empty():
+			scraper_config.language_priorities = parts
+			scraper_config.save_config()
+	)
+
+	vbox.add_child(HSeparator.new())
+
 	return scroll
+
+
+func _add_options_text_field(parent: VBoxContainer, label_text: String,
+							 initial_value: String, on_changed: Callable,
+							 secret: bool = false) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 56)
+	parent.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
+
+	var edit := LineEdit.new()
+	edit.text = initial_value
+	edit.custom_minimum_size = Vector2(260, 48)
+	edit.add_theme_font_size_override("font_size", 16)
+	edit.secret = secret
+	edit.text_submitted.connect(func(text: String): on_changed.call(text))
+	edit.focus_exited.connect(func(): on_changed.call(edit.text))
+	row.add_child(edit)
+
+
+# ── Scraper ──────────────────────────────────────────────────────────────────
+
+func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void:
+	btn.text = "⏳"
+	btn.disabled = true
+
+	# Compute checksums on a background thread to avoid UI freeze
+	var checksums := {}
+	var task_id := WorkerThreadPool.add_task(func():
+		checksums = RomHasher.compute_checksums(rom_path)
+	)
+	# Poll until the background task completes
+	while not WorkerThreadPool.is_task_completed(task_id):
+		await get_tree().process_frame
+	WorkerThreadPool.wait_for_task_completion(task_id)
+
+	if checksums.is_empty():
+		btn.text = "✂️"
+		btn.disabled = false
+		push_warning("[SpawnMenu] Failed to compute checksums for: %s" % rom_path)
+		return
+
+	# Connect one-shot signals for this scrape
+	var completed_cb: Callable
+	var failed_cb: Callable
+
+	completed_cb = func(result: Dictionary):
+		scraper_client.scrape_completed.disconnect(completed_cb)
+		scraper_client.scrape_failed.disconnect(failed_cb)
+		btn.text = "✂️"
+		btn.disabled = false
+		_show_scrape_popup(rom_path, systemid, result)
+
+	failed_cb = func(error: String):
+		scraper_client.scrape_completed.disconnect(completed_cb)
+		scraper_client.scrape_failed.disconnect(failed_cb)
+		btn.text = "✂️"
+		btn.disabled = false
+		push_warning("[SpawnMenu] Scrape failed: %s" % error)
+		_show_scrape_error_popup(error)
+
+	scraper_client.scrape_completed.connect(completed_cb)
+	scraper_client.scrape_failed.connect(failed_cb)
+	scraper_client.scrape_rom(rom_path, systemid, checksums)
+
+
+func _show_scrape_popup(rom_path: String, systemid: String, result: Dictionary) -> void:
+	_close_scrape_popup()
+
+	_scrape_popup = PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.1, 0.1, 0.2, 0.98)
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	_scrape_popup.add_theme_stylebox_override("panel", bg)
+	_scrape_popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top","margin_bottom","margin_left","margin_right"]:
+		margin.add_theme_constant_override(side, 14)
+	_scrape_popup.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Title
+	var title := Label.new()
+	title.text = "SCRAPE RESULT"
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(title)
+	vbox.add_child(HSeparator.new())
+
+	# Metadata
+	_add_scrape_info_row(vbox, "Game", result.get("name", "Unknown"))
+	_add_scrape_info_row(vbox, "Developer", result.get("developer", ""))
+	_add_scrape_info_row(vbox, "Publisher", result.get("publisher", ""))
+	_add_scrape_info_row(vbox, "Genre", result.get("genre", ""))
+	_add_scrape_info_row(vbox, "Region", result.get("rom_region", ""))
+	_add_scrape_info_row(vbox, "Release", result.get("releasedate", ""))
+
+	vbox.add_child(HSeparator.new())
+
+	# Media availability
+	var media: Dictionary = result.get("media", {})
+	var media_lbl := Label.new()
+	media_lbl.text = "MEDIA"
+	media_lbl.add_theme_font_size_override("font_size", 18)
+	media_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(media_lbl)
+
+	for mtype: String in ["wheel", "box", "label", "manual"]:
+		var has_it: bool = not (media.get(mtype, "") as String).is_empty()
+		var icon := "✅" if has_it else "❌"
+		_add_scrape_info_row(vbox, mtype.capitalize(), icon)
+
+	vbox.add_child(HSeparator.new())
+
+	# Buttons
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(btn_row)
+
+	var accept_btn := Button.new()
+	accept_btn.text = "  ACCEPT  "
+	accept_btn.custom_minimum_size = Vector2(0, 56)
+	accept_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	accept_btn.add_theme_font_size_override("font_size", 20)
+	var accept_style := StyleBoxFlat.new()
+	accept_style.bg_color = COLOR_BTN_DL
+	for k2 in ["corner_radius_top_left","corner_radius_top_right",
+			   "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		accept_style.set(k2, 5)
+	for state in ["normal", "hover", "pressed"]:
+		accept_btn.add_theme_stylebox_override(state, accept_style)
+	accept_btn.pressed.connect(_on_scrape_accepted.bind(rom_path, systemid, result))
+	btn_row.add_child(accept_btn)
+
+	var close_btn := Button.new()
+	close_btn.text = "  CLOSE  "
+	close_btn.custom_minimum_size = Vector2(0, 56)
+	close_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.pressed.connect(_close_scrape_popup)
+	btn_row.add_child(close_btn)
+
+	# Add popup as sibling of the spawn view content
+	_spawn_view.get_parent().add_child(_scrape_popup)
+
+
+func _show_scrape_error_popup(error: String) -> void:
+	_close_scrape_popup()
+
+	_scrape_popup = PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.2, 0.08, 0.08, 0.98)
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	_scrape_popup.add_theme_stylebox_override("panel", bg)
+	_scrape_popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top","margin_bottom","margin_left","margin_right"]:
+		margin.add_theme_constant_override(side, 14)
+	_scrape_popup.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "SCRAPE FAILED"
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
+	vbox.add_child(title)
+
+	var err_lbl := Label.new()
+	err_lbl.text = error
+	err_lbl.add_theme_font_size_override("font_size", 18)
+	err_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	err_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(err_lbl)
+
+	var close_btn := Button.new()
+	close_btn.text = "  CLOSE  "
+	close_btn.custom_minimum_size = Vector2(0, 56)
+	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.pressed.connect(_close_scrape_popup)
+	vbox.add_child(close_btn)
+
+	_spawn_view.get_parent().add_child(_scrape_popup)
+
+
+func _close_scrape_popup() -> void:
+	if _scrape_popup and is_instance_valid(_scrape_popup):
+		_scrape_popup.queue_free()
+	_scrape_popup = null
+
+
+func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary) -> void:
+	_close_scrape_popup()
+
+	var game_data := {
+		"game_id": result.get("game_id", ""),
+		"name": result.get("name", ""),
+		"desc": result.get("desc", ""),
+		"developer": result.get("developer", ""),
+		"publisher": result.get("publisher", ""),
+		"genre": result.get("genre", ""),
+	}
+	var rom_data := {
+		"path": "./" + rom_path.get_file(),
+		"romname": rom_path.get_file(),
+		"releasedate": result.get("releasedate", ""),
+		"region": result.get("rom_region", ""),
+	}
+
+	gamelist_manager.add_or_merge_rom(systemid, game_data, rom_data)
+	gamelist_manager.save_gamelist(systemid)
+
+	# Download media files asynchronously
+	var rom_basename := rom_path.get_file().get_basename()
+	scraper_client.download_all_media(result, systemid, rom_basename)
+
+	# Refresh the cartridges tab to show updated state
+	_populate_cartridges_tab()
+
+
+func _add_scrape_info_row(parent: VBoxContainer, key: String, value: String) -> void:
+	if value.is_empty():
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+
+	var k_lbl := Label.new()
+	k_lbl.text = key + ":"
+	k_lbl.add_theme_font_size_override("font_size", 17)
+	k_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	k_lbl.custom_minimum_size = Vector2(110, 0)
+	row.add_child(k_lbl)
+
+	var v_lbl := Label.new()
+	v_lbl.text = value
+	v_lbl.add_theme_font_size_override("font_size", 17)
+	v_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	v_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(v_lbl)
+
+
+func _show_game_detail_panel(game: Dictionary, systemid: String) -> void:
+	_close_game_detail_panel()
+
+	_game_detail_panel = PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.1, 0.1, 0.2, 0.98)
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	_game_detail_panel.add_theme_stylebox_override("panel", bg)
+	_game_detail_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top","margin_bottom","margin_left","margin_right"]:
+		margin.add_theme_constant_override(side, 14)
+	_game_detail_panel.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	# Title
+	var title := Label.new()
+	title.text = game.get("name", "Unknown")
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", COLOR_TITLE)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(title)
+	vbox.add_child(HSeparator.new())
+
+	# Metadata
+	_add_scrape_info_row(vbox, "Developer", game.get("developer", ""))
+	_add_scrape_info_row(vbox, "Publisher", game.get("publisher", ""))
+	_add_scrape_info_row(vbox, "Genre", game.get("genre", ""))
+
+	vbox.add_child(HSeparator.new())
+
+	# Description
+	var desc: String = game.get("desc", "")
+	if not desc.is_empty():
+		var desc_lbl := Label.new()
+		desc_lbl.text = desc
+		desc_lbl.add_theme_font_size_override("font_size", 16)
+		desc_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vbox.add_child(desc_lbl)
+		vbox.add_child(HSeparator.new())
+
+	# ROM variants button (if game has more than 1 ROM)
+	var roms: Array = game.get("roms", [])
+	if roms.size() > 1:
+		var variants_btn := Button.new()
+		variants_btn.text = "  ROM Variants (%d)  " % roms.size()
+		variants_btn.custom_minimum_size = Vector2(0, 56)
+		variants_btn.add_theme_font_size_override("font_size", 20)
+		variants_btn.pressed.connect(_show_rom_variants_panel.bind(game, systemid))
+		vbox.add_child(variants_btn)
+
+	# Close button
+	var close_btn := Button.new()
+	close_btn.text = "  CLOSE  "
+	close_btn.custom_minimum_size = Vector2(0, 56)
+	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.pressed.connect(_close_game_detail_panel)
+	vbox.add_child(close_btn)
+
+	_spawn_view.get_parent().add_child(_game_detail_panel)
+
+
+func _close_game_detail_panel() -> void:
+	_close_rom_variants_panel()
+	if _game_detail_panel and is_instance_valid(_game_detail_panel):
+		_game_detail_panel.queue_free()
+	_game_detail_panel = null
+
+
+func _show_rom_variants_panel(game: Dictionary, systemid: String) -> void:
+	_close_rom_variants_panel()
+
+	_rom_variants_panel = PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.12, 0.12, 0.22, 0.98)
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	_rom_variants_panel.add_theme_stylebox_override("panel", bg)
+	_rom_variants_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top","margin_bottom","margin_left","margin_right"]:
+		margin.add_theme_constant_override(side, 14)
+	_rom_variants_panel.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "ROM VARIANTS"
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(title)
+	vbox.add_child(HSeparator.new())
+
+	var game_id: String = game.get("game_id", "")
+	var roms: Array = game.get("roms", [])
+
+	for rom: Dictionary in roms:
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.custom_minimum_size = Vector2(0, 64)
+
+		# Star (preferred) button
+		var is_preferred: bool = rom.get("preferred", false)
+		var star_btn := Button.new()
+		star_btn.text = "⭐" if is_preferred else "☆"
+		star_btn.custom_minimum_size = Vector2(56, 56)
+		star_btn.add_theme_font_size_override("font_size", 22)
+		var rom_path_rel: String = rom.get("path", "")
+		star_btn.pressed.connect(func():
+			gamelist_manager.set_preferred_rom(systemid, game_id, rom_path_rel)
+			gamelist_manager.save_gamelist(systemid)
+			gamelist_manager.invalidate(systemid)
+			var updated_game := _find_game_by_id(systemid, game_id)
+			if not updated_game.is_empty():
+				_show_rom_variants_panel(updated_game, systemid)
+			_populate_cartridges_tab()
+		)
+		row.add_child(star_btn)
+
+		# ROM name / wheel
+		var rom_btn := Button.new()
+		rom_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rom_btn.custom_minimum_size = Vector2(0, 56)
+		rom_btn.add_theme_font_size_override("font_size", 18)
+
+		var romname: String = rom.get("romname", "")
+		var wheel_tex := _load_wheel_texture(systemid, romname)
+		if wheel_tex:
+			rom_btn.icon = wheel_tex
+			rom_btn.text = ""
+			rom_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			rom_btn.expand_icon = true
+		else:
+			rom_btn.text = romname.get_basename()
+
+		var abs_path := GamelistManager.to_absolute_path(systemid, rom.get("path", ""))
+		rom_btn.pressed.connect(spawn_cartridge_requested.emit.bind(abs_path, romname.get_basename()))
+		row.add_child(rom_btn)
+
+		# Region label
+		var region_str: String = rom.get("region", "")
+		if not region_str.is_empty():
+			var region_lbl := Label.new()
+			region_lbl.text = region_str
+			region_lbl.add_theme_font_size_override("font_size", 14)
+			region_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+			region_lbl.custom_minimum_size = Vector2(50, 0)
+			row.add_child(region_lbl)
+
+		# Manual button
+		if _has_scraped_manual(systemid, romname):
+			var manual_btn := Button.new()
+			manual_btn.text = "📖"
+			manual_btn.custom_minimum_size = Vector2(56, 56)
+			manual_btn.add_theme_font_size_override("font_size", 22)
+			var pdf_path := _scraped_manual_path(systemid, romname)
+			manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
+			row.add_child(manual_btn)
+
+		vbox.add_child(row)
+
+	vbox.add_child(HSeparator.new())
+
+	var close_btn := Button.new()
+	close_btn.text = "  CLOSE  "
+	close_btn.custom_minimum_size = Vector2(0, 56)
+	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.pressed.connect(_close_rom_variants_panel)
+	vbox.add_child(close_btn)
+
+	_spawn_view.get_parent().add_child(_rom_variants_panel)
+
+
+func _close_rom_variants_panel() -> void:
+	if _rom_variants_panel and is_instance_valid(_rom_variants_panel):
+		_rom_variants_panel.queue_free()
+	_rom_variants_panel = null
+
+
+func _load_wheel_texture(systemid: String, romname: String) -> Texture2D:
+	if romname.is_empty():
+		return null
+	var base := romname.get_basename()
+	var media_dir := RomLibrary.rom_dir_for_system(systemid).path_join("media/wheel")
+	# Try common image extensions
+	for ext in [".png", ".jpg", ".jpeg", ".webp"]:
+		var path := media_dir.path_join(base + ext)
+		if FileAccess.file_exists(path):
+			var img := Image.load_from_file(path)
+			if img:
+				return ImageTexture.create_from_image(img)
+	return null
+
+
+func _has_scraped_manual(systemid: String, romname: String) -> bool:
+	if romname.is_empty():
+		return false
+	return FileAccess.file_exists(_scraped_manual_path(systemid, romname))
+
+
+func _scraped_manual_path(systemid: String, romname: String) -> String:
+	var base := romname.get_basename()
+	return RomLibrary.rom_dir_for_system(systemid).path_join("media/manual").path_join(base + ".pdf")
+
+
+func _find_game_by_id(systemid: String, game_id: String) -> Dictionary:
+	var gamelist := gamelist_manager.load_gamelist(systemid)
+	for g: Dictionary in gamelist.get("games", []):
+		if g.get("game_id", "") == game_id:
+			return g
+	return {}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
