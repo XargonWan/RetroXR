@@ -69,6 +69,7 @@ var _cartridges_vbox: VBoxContainer = null
 
 # Scrape popup overlay
 var _scrape_popup: PanelContainer = null
+var _scrape_in_progress: bool = false
 # Game detail side panel
 var _game_detail_panel: PanelContainer = null
 # ROM variants side panel
@@ -971,6 +972,10 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 # ── Scraper ──────────────────────────────────────────────────────────────────
 
 func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void:
+	if _scrape_in_progress:
+		print("[SpawnMenu] Scrape already in progress, ignoring request for: %s" % rom_path.get_file())
+		return
+	_scrape_in_progress = true
 	btn.text = "⏳"
 	btn.disabled = true
 
@@ -986,6 +991,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 	print("[SpawnMenu] Checksums done: ", checksums)
 
 	if checksums.is_empty():
+		_scrape_in_progress = false
 		btn.text = "✂️"
 		btn.disabled = false
 		push_warning("[SpawnMenu] Failed to compute checksums for: %s" % rom_path)
@@ -998,6 +1004,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 	completed_cb = func(result: Dictionary):
 		scraper_client.scrape_completed.disconnect(completed_cb)
 		scraper_client.scrape_failed.disconnect(failed_cb)
+		_scrape_in_progress = false
 		if is_instance_valid(btn):
 			btn.text = "✂️"
 			btn.disabled = false
@@ -1007,6 +1014,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 	failed_cb = func(error: String):
 		scraper_client.scrape_completed.disconnect(completed_cb)
 		scraper_client.scrape_failed.disconnect(failed_cb)
+		_scrape_in_progress = false
 		if is_instance_valid(btn):
 			btn.text = "✂️"
 			btn.disabled = false

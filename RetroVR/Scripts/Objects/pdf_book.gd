@@ -275,10 +275,7 @@ func _configure_meshes() -> void:
 	_next_label.position = Vector3(stack_x + half_w + HINT_LABEL_OFFSET, 0, 0)
 	_prev_label.position = Vector3(-(stack_x + half_w + HINT_LABEL_OFFSET), 0, 0)
 
-	# Collision shape encompasses the full open book
-	var col_shape := $CollisionShape3D as CollisionShape3D
-	if col_shape and col_shape.shape is BoxShape3D:
-		(col_shape.shape as BoxShape3D).size = Vector3(stack_x * 2.0, book_height, closed_spine_depth)
+	# Collision shape will be sized per-state in _update_collision_shape()
 
 	# Create unique materials so textures don't bleed between meshes
 	_ensure_unique_material(_cover_mesh)
@@ -351,6 +348,7 @@ func _set_state(new_state: BookState) -> void:
 			_update_cover_texture()
 			_update_back_cover_texture()
 			_prefetch_nearby_pages()
+			_update_collision_shape()
 
 		BookState.OPEN:
 			_cover_mesh.visible = true
@@ -368,6 +366,7 @@ func _set_state(new_state: BookState) -> void:
 			_update_spread_textures()
 			_update_stack_thickness()
 			_prefetch_nearby_pages()
+			_update_collision_shape()
 
 		BookState.LAST_PAGE:
 			_back_cover_mesh.visible = true
@@ -385,6 +384,31 @@ func _set_state(new_state: BookState) -> void:
 			_update_cover_texture()
 			_update_back_cover_texture()
 			_prefetch_nearby_pages()
+			_update_collision_shape()
+
+
+## Update the CollisionShape3D so the grab/highlight area matches the visible book.
+func _update_collision_shape() -> void:
+	var col_shape := $CollisionShape3D as CollisionShape3D
+	if not col_shape or not col_shape.shape is BoxShape3D:
+		return
+	var half_w := _book_width / 2.0
+	var spine_half := SPINE_WIDTH / 2.0
+	var total_thick := maxf(_leaf_count * LEAF_THICKNESS, LEAF_THICKNESS * 2)
+	var depth := total_thick + COVER_THICKNESS + COVER_GAP * 2 + ZFIGHT_MARGIN
+	match _state:
+		BookState.CLOSED:
+			# Only the right stack + spine + cover is visible
+			(col_shape.shape as BoxShape3D).size = Vector3(_book_width + SPINE_WIDTH, book_height, depth)
+			col_shape.position = Vector3(half_w, 0, 0)
+		BookState.OPEN:
+			# Both page stacks visible, spanning the full open width
+			(col_shape.shape as BoxShape3D).size = Vector3(_book_width * 2.0 + SPINE_WIDTH, book_height, depth)
+			col_shape.position = Vector3.ZERO
+		BookState.LAST_PAGE:
+			# Only the left stack + spine + back cover is visible
+			(col_shape.shape as BoxShape3D).size = Vector3(_book_width + SPINE_WIDTH, book_height, depth)
+			col_shape.position = Vector3(-half_w, 0, 0)
 
 
 ## Set spine to full closed-book depth, centered at Z=0.

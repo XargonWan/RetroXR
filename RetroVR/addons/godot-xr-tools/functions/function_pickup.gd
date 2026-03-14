@@ -226,11 +226,13 @@ func _process(delta):
 		_process_ray_grab(delta)
 		return
 
-	# Pointer-based highlight drives the blue outline.
-	# Only fall back to ranged-area highlight when the laser is pointing at nothing.
-	_process_pointer_highlight()
-	if not is_instance_valid(_pointer_highlighted):
-		_update_closest_object()
+	# Always update closest proximity object first — it takes priority over the laser.
+	_update_closest_object()
+	# Only show pointer highlight when nothing is close enough to grab by hand.
+	if not is_instance_valid(closest_object):
+		_process_pointer_highlight()
+	else:
+		_set_pointer_highlight(null)
 
 
 ## Find an [XRToolsFunctionPickup] node.
@@ -465,6 +467,11 @@ func _pick_up_object(target: Node3D) -> void:
 		target = snap.picked_up_object
 		snap.drop_object()
 
+	# Re-check can_pick_up here: state may have changed since closest_object was last updated
+	# (e.g. another controller grabbed the same object on the same frame).
+	if target.has_method("can_pick_up") and not target.can_pick_up(self):
+		return
+
 	# Pick up our target. Note, target may do instant drop_and_free
 	picked_up_ranged = not _object_in_grab_area.has(target)
 	picked_up_object = target
@@ -543,11 +550,12 @@ func _on_button_released(p_button) -> void:
 func _on_grip_pressed() -> void:
 	if is_instance_valid(picked_up_object) and !picked_up_object.press_to_hold:
 		drop_object()
-	elif is_instance_valid(_pointer_highlighted) and not is_instance_valid(picked_up_object):
-		# Laser is pointing at a pickable — grab it along the ray
-		_start_ray_grab(_pointer_highlighted)
 	elif is_instance_valid(closest_object):
+		# Proximity grab takes priority over the laser
 		_pick_up_object(closest_object)
+	elif is_instance_valid(_pointer_highlighted) and not is_instance_valid(picked_up_object):
+		# Nothing close — grab along the ray
+		_start_ray_grab(_pointer_highlighted)
 
 
 func _on_grip_release() -> void:
