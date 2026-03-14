@@ -35,6 +35,7 @@ const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdsha
 var _outline_material: ShaderMaterial
 var _depth_material: ShaderMaterial
 var _overlays: Array[MeshInstance3D] = []
+var _overlay_sources: Array[MeshInstance3D] = []  # parallel to _overlays
 
 var _is_highlighted: bool = false
 var _is_ray_held:    bool = false
@@ -89,6 +90,7 @@ func _build_overlays() -> void:
 			overlay.extra_cull_margin = 16.0
 			add_child(overlay)
 			_overlays.append(overlay)
+			_overlay_sources.append(child as MeshInstance3D)
 
 
 func _connect_pickup_nodes() -> void:
@@ -148,9 +150,29 @@ func _update_state() -> void:
 
 
 func _set_overlays_visible(show: bool) -> void:
-	for overlay in _overlays:
-		if is_instance_valid(overlay):
-			overlay.visible = show
+	for i in range(_overlays.size()):
+		var overlay := _overlays[i]
+		if not is_instance_valid(overlay):
+			continue
+		if show and i < _overlay_sources.size() and is_instance_valid(_overlay_sources[i]):
+			var src := _overlay_sources[i]
+			overlay.transform = src.transform
+			overlay.visible = src.visible
+		else:
+			overlay.visible = false
+
+
+func _process(_delta: float) -> void:
+	# While any overlay is active, keep transforms and visibility in sync with
+	# their source meshes (which move/hide as the book state changes).
+	if _overlays.is_empty() or not _overlays[0].visible:
+		return
+	for i in range(mini(_overlays.size(), _overlay_sources.size())):
+		var overlay := _overlays[i]
+		var src := _overlay_sources[i]
+		if is_instance_valid(overlay) and is_instance_valid(src):
+			overlay.transform = src.transform
+			overlay.visible = src.visible
 
 
 func _set_color(color: Color) -> void:
