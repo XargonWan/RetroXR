@@ -5,7 +5,13 @@
       "WebFetch(domain:docs.godotengine.org)",
       "Bash(find /c/Users/user/SK.Libretro.Godot -type f -name \"*.gd\" 2>/dev/null | grep -iE \"\\(scrape|scrap\\)\" | head -20)",
       "WebFetch(domain:www.screenscraper.fr)",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "WebFetch(domain:godotvr.github.io)",
+      "Bash(grep:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(find:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)"
     ]
   }
 }
