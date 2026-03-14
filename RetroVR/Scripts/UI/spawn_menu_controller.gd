@@ -60,6 +60,7 @@ var _grab_distance: float = 0.0  # distance along pointer ray
 
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
+var _fps_label: Label3D = null
 
 # FunctionPointer nodes for hit-testing
 var _left_pointer:  XRToolsFunctionPointer = null
@@ -145,10 +146,15 @@ func _connect_menu_signals() -> void:
 		menu.scene_clear_requested.connect(_on_scene_clear_requested)
 	if menu.has_signal("auto_save_changed"):
 		menu.auto_save_changed.connect(_on_auto_save_changed)
+	if menu.has_signal("show_fps_changed"):
+		menu.show_fps_changed.connect(_on_show_fps_changed)
+	if menu.has_signal("snap_angle_changed"):
+		menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	_menu_connected = true
 
 	# Auto-load saved scene objects on startup (arcade only)
-	if SceneManager and SceneManager.current_scene_id == "arcade":
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm and sm.current_scene_id == "arcade":
 		var persistence := ScenePersistence.new()
 		if persistence.has_save():
 			persistence.load_scene(get_tree().current_scene)
@@ -169,6 +175,9 @@ func _on_controller_button(action_name: String) -> void:
 # ── Scroll driving ────────────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
+	if _fps_label:
+		_fps_label.text = "FPS: %d" % Engine.get_frames_per_second()
+
 	var menu_visible: bool = _viewport_node.visible
 
 	# When menu is closed, handle core options panel scroll instead.
@@ -511,13 +520,36 @@ func _on_turn_style_changed(value: String) -> void:
 	_move_turn.set("turn_mode", 1 if value == "SNAP" else 2)
 
 
+func _on_snap_angle_changed(degrees: float) -> void:
+	if _move_turn:
+		_move_turn.set("step_turn_angle", degrees)
+
+
+func _on_show_fps_changed(enabled: bool) -> void:
+	if enabled:
+		if _fps_label == null and _camera:
+			_fps_label = Label3D.new()
+			_fps_label.text = "FPS: --"
+			_fps_label.font_size = 48
+			_fps_label.modulate = Color(1.0, 1.0, 0.0)
+			_fps_label.no_depth_test = true
+			_fps_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			_fps_label.position = Vector3(-0.35, 0.2, -0.8)
+			_camera.add_child(_fps_label)
+	else:
+		if _fps_label:
+			_fps_label.queue_free()
+			_fps_label = null
+
+
 # ── Scene management ──────────────────────────────────────────────────────────
 
 func _on_scene_change_requested(scene_id: String) -> void:
-	if not SceneManager:
+	var sm := get_node_or_null("/root/SceneManager")
+	if not sm:
 		return
 	_hide_menu()
-	SceneManager.change_scene(scene_id)
+	sm.change_scene(scene_id)
 
 
 func _on_scene_save_requested() -> void:
@@ -531,5 +563,6 @@ func _on_scene_clear_requested() -> void:
 
 
 func _on_auto_save_changed(enabled: bool) -> void:
-	if SceneManager:
-		SceneManager.auto_save_on_switch = enabled
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm:
+		sm.auto_save_on_switch = enabled

@@ -23,6 +23,10 @@ signal scene_save_requested
 signal scene_clear_requested
 ## Emitted when the user toggles auto-save on scene switch.
 signal auto_save_changed(enabled: bool)
+## Emitted when the user toggles the FPS counter.
+signal show_fps_changed(enabled: bool)
+## Emitted when the user changes the snap turn angle.
+signal snap_angle_changed(degrees: float)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -948,6 +952,32 @@ func _build_options_view() -> Control:
 	)
 	row.add_child(opt)
 
+	# Snap Turn Angle option
+	var sa_row := HBoxContainer.new()
+	sa_row.add_theme_constant_override("separation", 10)
+	sa_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(sa_row)
+
+	var sa_lbl := Label.new()
+	sa_lbl.text = "Snap Angle"
+	sa_lbl.add_theme_font_size_override("font_size", 22)
+	sa_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	sa_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sa_row.add_child(sa_lbl)
+
+	var sa_opt := OptionButton.new()
+	sa_opt.custom_minimum_size = Vector2(140, 56)
+	sa_opt.add_theme_font_size_override("font_size", 20)
+	sa_opt.add_item("30°", 0)
+	sa_opt.add_item("45°", 1)
+	sa_opt.add_item("60°", 2)
+	sa_opt.selected = 1
+	sa_opt.item_selected.connect(func(idx: int) -> void:
+		var angles := [30.0, 45.0, 60.0]
+		snap_angle_changed.emit(angles[idx])
+	)
+	sa_row.add_child(sa_opt)
+
 	vbox.add_child(HSeparator.new())
 
 	# Auto-save scene on switch option
@@ -973,6 +1003,32 @@ func _build_options_view() -> Control:
 		auto_save_changed.emit(idx == 0)
 	)
 	as_row.add_child(as_opt)
+
+	vbox.add_child(HSeparator.new())
+
+	# Show FPS option
+	var fps_row := HBoxContainer.new()
+	fps_row.add_theme_constant_override("separation", 10)
+	fps_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(fps_row)
+
+	var fps_lbl := Label.new()
+	fps_lbl.text = "Show FPS"
+	fps_lbl.add_theme_font_size_override("font_size", 22)
+	fps_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fps_row.add_child(fps_lbl)
+
+	var fps_opt := OptionButton.new()
+	fps_opt.custom_minimum_size = Vector2(140, 56)
+	fps_opt.add_theme_font_size_override("font_size", 20)
+	fps_opt.add_item("OFF", 0)
+	fps_opt.add_item("ON", 1)
+	fps_opt.selected = 0
+	fps_opt.item_selected.connect(func(idx: int) -> void:
+		show_fps_changed.emit(idx == 1)
+	)
+	fps_row.add_child(fps_opt)
 
 	vbox.add_child(HSeparator.new())
 
@@ -1603,6 +1659,10 @@ func _spacer(height: int) -> Control:
 
 # ── Scene View ─────────────────────────────────────────────────────────────────
 
+func _get_scene_manager() -> Node:
+	return Engine.get_main_loop().root.get_node_or_null("SceneManager")
+
+
 const COLOR_SCENE_ACTIVE   := Color(0.3, 0.5, 0.3)
 const COLOR_SCENE_INACTIVE := Color(0.15, 0.15, 0.30)
 const COLOR_BTN_SAVE       := Color(0.15, 0.45, 0.15)
@@ -1639,7 +1699,8 @@ func _build_scene_view() -> Control:
 	var scenes: Array[Dictionary] = [
 		{"id": "arcade", "label": "Arcade Room", "color": Color(0.15, 0.13, 0.35)},
 	]
-	if SceneManager.is_passthrough_supported():
+	var sm := _get_scene_manager()
+	if sm and sm.is_passthrough_supported():
 		scenes.append({"id": "passthrough", "label": "Passthrough AR", "color": Color(0.85, 0.85, 0.9)})
 
 	_scene_card_buttons.clear()
@@ -1728,8 +1789,9 @@ func _make_scene_card(scene_def: Dictionary) -> Button:
 ## Update scene card highlights and save/clear button visibility.
 func _update_scene_buttons() -> void:
 	var current_id: String = ""
-	if SceneManager:
-		current_id = SceneManager.current_scene_id
+	var sm := _get_scene_manager()
+	if sm:
+		current_id = sm.current_scene_id
 
 	for card: Button in _scene_card_buttons:
 		var sid: String = card.get_meta("scene_id", "")
