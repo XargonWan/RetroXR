@@ -30,6 +30,10 @@ var gamelist_manager: GamelistManager = null
 var scraper_client: ScreenscraperClient = null
 var scraper_config: ScraperConfig = null
 
+## Web file server (HTTP file manager accessible from a PC browser).
+var web_server: WebFileServer = null
+var _server_address_label: Label = null
+
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
@@ -97,6 +101,7 @@ func _ready() -> void:
 	_init_core_defaults()
 	_init_download_manager()
 	_init_scraper()
+	_init_web_server()
 	# Always ensure the roms root exists, plus dirs for any already-configured systems
 	print("[SpawnMenu] roms root=", RomLibrary.default_roms_root())
 	RomLibrary.ensure_roms_root()
@@ -129,6 +134,16 @@ func _init_scraper() -> void:
 	scraper_client.name = "ScreenscraperClient"
 	scraper_client.config = scraper_config
 	add_child(scraper_client)
+
+
+func _init_web_server() -> void:
+	if OS.get_name() != "Android":
+		return
+	web_server = WebFileServer.new()
+	web_server.name = "WebFileServer"
+	add_child(web_server)
+	if scraper_config.web_server_enabled:
+		web_server.start()
 
 
 # ── Top-level UI ──────────────────────────────────────────────────────────────
@@ -897,6 +912,54 @@ func _build_options_view() -> Control:
 	row.add_child(opt)
 
 	vbox.add_child(HSeparator.new())
+
+	# ── File Server (Android / Quest only) ───────────────────────────────────
+	if OS.get_name() == "Android":
+		var fs_hdr := Label.new()
+		fs_hdr.text = "FILE SERVER"
+		fs_hdr.add_theme_font_size_override("font_size", 22)
+		fs_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+		vbox.add_child(fs_hdr)
+
+		var fs_row := HBoxContainer.new()
+		fs_row.add_theme_constant_override("separation", 10)
+		fs_row.custom_minimum_size = Vector2(0, 68)
+		vbox.add_child(fs_row)
+
+		var fs_lbl := Label.new()
+		fs_lbl.text = "Web File Manager"
+		fs_lbl.add_theme_font_size_override("font_size", 20)
+		fs_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+		fs_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		fs_row.add_child(fs_lbl)
+
+		var fs_opt := OptionButton.new()
+		fs_opt.custom_minimum_size = Vector2(140, 56)
+		fs_opt.add_theme_font_size_override("font_size", 20)
+		fs_opt.add_item("OFF", 0)
+		fs_opt.add_item("ON", 1)
+		fs_opt.selected = 1 if scraper_config.web_server_enabled else 0
+		fs_row.add_child(fs_opt)
+
+		_server_address_label = Label.new()
+		_server_address_label.add_theme_font_size_override("font_size", 16)
+		_server_address_label.add_theme_color_override("font_color", COLOR_DESC)
+		_server_address_label.text = "http://%s:8080" % WebFileServer.local_ip()
+		_server_address_label.visible = scraper_config.web_server_enabled
+		vbox.add_child(_server_address_label)
+
+		fs_opt.item_selected.connect(func(idx: int) -> void:
+			var enable := idx == 1
+			if enable:
+				web_server.start()
+			else:
+				web_server.stop()
+			scraper_config.web_server_enabled = enable
+			scraper_config.save_config()
+			_server_address_label.visible = enable
+		)
+
+		vbox.add_child(HSeparator.new())
 
 	# ── Scraper settings ─────────────────────────────────────────────────────
 	var scraper_hdr := Label.new()

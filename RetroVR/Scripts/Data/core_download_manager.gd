@@ -26,10 +26,13 @@ static func _core_lib_ext() -> String:
 	return ".dll"
 
 ## Default root directory for libretro data.
-## On Android: app-private storage. On Windows: %USERPROFILE%/retrovr/libretro.
+## On Android: same parent dir as ROMs (/sdcard/Android/data/com.sk.retrovr/files/libretro). On Windows: %USERPROFILE%/retrovr/libretro.
 static func default_core_root() -> String:
 	if OS.get_name() == "Android":
-		return OS.get_user_data_dir() + "/libretro"
+		# Use the same parent directory as ROMs
+		var roms_root := RomLibrary.default_roms_root()
+		var parent := roms_root.get_base_dir()
+		return parent.path_join("libretro")
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/libretro"
 
 

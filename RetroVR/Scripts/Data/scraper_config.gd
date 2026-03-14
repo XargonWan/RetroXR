@@ -20,6 +20,9 @@ var region_priorities: Array[String] = ["us", "eu", "wor", "jp", "ss"]
 ## Language priority for selecting localized text (first match wins).
 var language_priorities: Array[String] = ["en", "fr"]
 
+## Whether the web file server should auto-start on launch.
+var web_server_enabled: bool = false
+
 
 func load_config() -> void:
 	var path := _config_path()
@@ -49,6 +52,8 @@ func load_config() -> void:
 		for l in data["language_priorities"]:
 			language_priorities.append(str(l))
 
+	web_server_enabled = bool(data.get("web_server_enabled", false))
+
 	print("[ScraperConfig] Loaded config")
 
 
@@ -67,6 +72,7 @@ func save_config() -> void:
 		"sspassword": sspassword,
 		"region_priorities": region_priorities,
 		"language_priorities": language_priorities,
+		"web_server_enabled": web_server_enabled,
 	}
 	file.store_string(JSON.stringify(data, "\t"))
 	print("[ScraperConfig] Saved config")
