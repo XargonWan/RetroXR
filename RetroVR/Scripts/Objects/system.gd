@@ -40,6 +40,7 @@ var _max_rope_length: float = 0.0
 
 # TV to connect to after the cable finishes spawning (used by save/load restore)
 var _pending_tv_restore: RetroTV = null
+var _snapped_cartridge: Node3D = null
 
 
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
@@ -298,17 +299,13 @@ func restore_cable_connection(tv: RetroTV) -> void:
 
 
 func _snap_cable_to_tv(tv: RetroTV) -> void:
-	var port := tv.get_composite_port()
-	if port:
-		port.pick_up_object(_cable_plug)
+	tv.accept_plug_restore(_cable_plug)
 
 
 ## Restore a cartridge→slot insertion after loading from a save file.
 func restore_cartridge(cartridge: Node3D) -> void:
 	_cartridge_slot.pick_up_object(cartridge)
 
-
-var _snapped_cartridge: Node3D = null
 
 func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	_snapped_cartridge = cartridge

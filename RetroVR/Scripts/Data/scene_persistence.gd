@@ -22,9 +22,7 @@ func has_save() -> bool:
 
 ## Serialize all "spawned"-group objects under root to JSON.
 func save_scene(root: Node) -> void:
-	var nodes: Array[Node] = []
-	for node: Node in root.get_tree().get_nodes_in_group("spawned"):
-		nodes.append(node)
+	var nodes := root.get_tree().get_nodes_in_group("spawned")
 
 	# Build a node→index map so we can cross-reference connections.
 	var node_to_id: Dictionary = {}
@@ -66,45 +64,39 @@ func load_scene(root: Node) -> void:
 	if not objects is Array:
 		return
 
-	# Pass 1: spawn all objects indexed by their saved id.
-	var spawned: Array = []  # Array[Node3D?], index = saved object id
-	var entries: Array = []  # Array[Dictionary], parallel to spawned
+	# Pass 1: spawn all objects, keyed by their saved id.
+	var spawned: Dictionary = {}  # id -> Node3D
+	var entries: Dictionary = {}  # id -> Dictionary
 	var count := 0
 	for entry: Variant in objects as Array:
 		if not entry is Dictionary:
-			spawned.append(null)
-			entries.append({})
 			continue
 		var d := entry as Dictionary
+		var id: int = d.get("id", -1)
+		if id < 0:
+			continue
 		var obj := _deserialize_object(d)
 		if obj:
 			root.add_child(obj)
 			obj.add_to_group("spawned")
-			spawned.append(obj)
-			entries.append(d)
+			spawned[id] = obj
+			entries[id] = d
 			count += 1
-		else:
-			spawned.append(null)
-			entries.append({})
 
 	# Pass 2: restore connections (cable plug → TV, cartridge → system).
 	# Cable restoration may be deferred internally if the cable scene hasn't
 	# finished spawning yet (RetroSystem._add_cable_to_scene is call_deferred).
-	for i in range(spawned.size()):
-		var obj: Variant = spawned[i]
-		var d: Dictionary = entries[i]
-		if not obj:
+	for id: int in spawned:
+		if not spawned[id] is RetroSystem:
 			continue
-
-		if obj is RetroSystem:
-			var tv_id: int = d.get("connected_tv_id", -1)
-			if tv_id >= 0 and tv_id < spawned.size() and spawned[tv_id] is RetroTV:
-				(obj as RetroSystem).restore_cable_connection(spawned[tv_id] as RetroTV)
-
-		elif obj is RetroCartridge:
-			var sys_id: int = d.get("snapped_in_system_id", -1)
-			if sys_id >= 0 and sys_id < spawned.size() and spawned[sys_id] is RetroSystem:
-				(spawned[sys_id] as RetroSystem).restore_cartridge(obj)
+		var sys := spawned[id] as RetroSystem
+		var d: Dictionary = entries[id]
+		var tv_id: int = d.get("connected_tv_id", -1)
+		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+			sys.restore_cable_connection(spawned[tv_id] as RetroTV)
+		var cart_id: int = d.get("snapped_cartridge_id", -1)
+		if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
+			sys.restore_cartridge(spawned[cart_id])
 
 	print("[ScenePersistence] loaded %d objects" % count)
 
@@ -113,8 +105,8 @@ func load_scene(root: Node) -> void:
 func clear_scene(root: Node) -> void:
 	for node: Node in root.get_tree().get_nodes_in_group("spawned"):
 		# Power off systems before freeing so the emulation thread shuts down
-		if node is RetroSystem and node.get("is_powered_on"):
-			node.call("toggle_power")
+		if node is RetroSystem and (node as RetroSystem).is_powered_on:
+			(node as RetroSystem).toggle_power()
 		node.queue_free()
 
 
@@ -128,13 +120,16 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 	var rot := n3d.global_rotation_degrees
 
 	if node is RetroSystem:
-		var tv: RetroTV = node.get("connected_tv")
-		var tv_id: int = node_to_id.get(tv, -1) if tv != null else -1
+		var sys := node as RetroSystem
+		var tv_id: int = node_to_id.get(sys.connected_tv, -1) if sys.connected_tv != null else -1
+		var cart := sys.get_snapped_cartridge()
+		var cart_id: int = node_to_id.get(cart, -1) if cart != null else -1
 		return {
 			"id": id,
 			"type": "system",
-			"systemid": node.get("systemid"),
+			"systemid": sys.systemid,
 			"connected_tv_id": tv_id,
+			"snapped_cartridge_id": cart_id,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -146,19 +141,12 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"rotation": [rot.x, rot.y, rot.z],
 		}
 	elif node is RetroCartridge:
-		# Find which system (if any) has this cartridge snapped in its slot.
-		var sys_id := -1
-		for other: Variant in node_to_id.keys():
-			if other is RetroSystem:
-				if (other as RetroSystem).get_snapped_cartridge() == node:
-					sys_id = node_to_id[other]
-					break
+		var cart := node as RetroCartridge
 		return {
 			"id": id,
 			"type": "cartridge",
-			"rom_path": node.get("rom_path"),
-			"game_label": node.get("game_label"),
-			"snapped_in_system_id": sys_id,
+			"rom_path": cart.rom_path,
+			"game_label": cart.game_label,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -166,7 +154,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		return {
 			"id": id,
 			"type": "book",
-			"pdf_path": node.get("pdf_path"),
+			"pdf_path": (node as PDFBook).pdf_path,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -179,17 +167,20 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 
 	match obj_type:
 		"system":
-			obj = SYSTEM_SCENE.instantiate() as Node3D
-			obj.set("systemid", data.get("systemid", ""))
+			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+			sys.systemid = data.get("systemid", "")
+			obj = sys
 		"tv":
 			obj = TV_SCENE.instantiate() as Node3D
 		"cartridge":
-			obj = CART_SCENE.instantiate() as Node3D
-			obj.set("rom_path", data.get("rom_path", ""))
-			obj.set("game_label", data.get("game_label", ""))
+			var cart := CART_SCENE.instantiate() as RetroCartridge
+			cart.rom_path = data.get("rom_path", "")
+			cart.game_label = data.get("game_label", "")
+			obj = cart
 		"book":
-			obj = BOOK_SCENE.instantiate() as Node3D
-			obj.set("pdf_path", data.get("pdf_path", ""))
+			var book := BOOK_SCENE.instantiate() as PDFBook
+			book.pdf_path = data.get("pdf_path", "")
+			obj = book
 		_:
 			push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
 			return null
