@@ -71,6 +71,11 @@ func get_screen_mesh() -> MeshInstance3D:
 	return _screen_mesh
 
 
+## Snaps a cable plug into this TV's composite port (used by save/load to restore connections).
+func accept_plug_restore(plug: CablePlug) -> void:
+	_composite_port.pick_up_object(plug)
+
+
 ## Called when a cable plug snaps into the composite port
 func _on_plug_snapped(plug: Node3D) -> void:
 	cable_connected.emit(plug)
