@@ -10,6 +10,16 @@ RetroVR/SKLibretro/*.exp
 RetroVR/SKLibretro/*.ilk
 RetroVR/SKLibretro/*.lib
 RetroVR/SKLibretro/*.pdb
+
+# godot-pdfium build artifacts
+RetroVR/godot-pdfium/~*
+RetroVR/godot-pdfium/*.exp
+RetroVR/godot-pdfium/*.ilk
+RetroVR/godot-pdfium/*.lib
+RetroVR/godot-pdfium/*.pdb
+godot-pdfium/Temp/
+godot-pdfium/external/pdfium/include/*.orig
+
 **/*.import
 
 *.apk

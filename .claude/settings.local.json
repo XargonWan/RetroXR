@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch(domain:docs.godotengine.org)"
+      "WebFetch(domain:docs.godotengine.org)",
+      "Bash(find /c/Users/user/SK.Libretro.Godot -type f -name \"*.gd\" 2>/dev/null | grep -iE \"\\(scrape|scrap\\)\" | head -20)",
+      "WebFetch(domain:www.screenscraper.fr)",
+      "Bash(xargs wc:*)"
     ]
   }
 }
