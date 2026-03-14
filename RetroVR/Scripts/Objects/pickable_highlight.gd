@@ -44,6 +44,7 @@ var _ray_grabber:    Node = null   # which XRToolsFunctionPickup is ray-holding 
 
 
 func _ready() -> void:
+	set_process(false)  # enabled only while overlays are visible
 	# Pass 2: the visible outline.
 	_outline_material = ShaderMaterial.new()
 	_outline_material.shader = OUTLINE_SHADER
@@ -150,6 +151,7 @@ func _update_state() -> void:
 
 
 func _set_overlays_visible(show: bool) -> void:
+	set_process(show)
 	for i in range(_overlays.size()):
 		var overlay := _overlays[i]
 		if not is_instance_valid(overlay):
@@ -163,10 +165,9 @@ func _set_overlays_visible(show: bool) -> void:
 
 
 func _process(_delta: float) -> void:
-	# While any overlay is active, keep transforms and visibility in sync with
-	# their source meshes (which move/hide as the book state changes).
-	if _overlays.is_empty() or not _overlays[0].visible:
-		return
+	# Only runs while overlays are active (set_process toggles this).
+	# Keeps overlay transforms and visibility in sync with source meshes
+	# that move/hide as book state changes.
 	for i in range(mini(_overlays.size(), _overlay_sources.size())):
 		var overlay := _overlays[i]
 		var src := _overlay_sources[i]
