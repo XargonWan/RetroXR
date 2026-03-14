@@ -18,7 +18,9 @@ var auto_save_on_switch: bool = true
 
 func is_passthrough_supported() -> bool:
 	var xr := XRServer.find_interface("OpenXR")
-	return xr != null and xr.is_passthrough_supported()
+	if xr == null:
+		return false
+	return XRInterface.XR_ENV_BLEND_MODE_ALPHA_BLEND in xr.get_supported_environment_blend_modes()
 
 
 func change_scene(scene_id: String) -> void:
