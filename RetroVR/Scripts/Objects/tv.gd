@@ -71,6 +71,11 @@ func get_screen_mesh() -> MeshInstance3D:
 	return _screen_mesh
 
 
+## Returns the composite port snap zone (used by save/load to restore plug connections).
+func get_composite_port() -> XRToolsSnapZone:
+	return _composite_port
+
+
 ## Called when a cable plug snaps into the composite port
 func _on_plug_snapped(plug: Node3D) -> void:
 	cable_connected.emit(plug)
