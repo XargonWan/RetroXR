@@ -18,14 +18,16 @@ var _desktop: bool
 func _ready() -> void:
 	_desktop = OS.get_name() != "Android"
 	ambilight_interval = 10 if _desktop else 30
+	apply_environment()
+	_adjust_lights()
 
-	# Swap environment on the WorldEnvironment node
+
+## Apply the platform-appropriate environment to the WorldEnvironment node.
+## Called automatically in _ready() and by SceneManager when returning to arcade.
+func apply_environment() -> void:
 	var world_env := get_tree().root.find_child("WorldEnvironment", true, false) as WorldEnvironment
 	if world_env:
 		world_env.environment = env_desktop if _desktop else env_quest
-
-	# Adjust ceiling lights
-	_adjust_lights()
 
 
 func is_desktop() -> bool:

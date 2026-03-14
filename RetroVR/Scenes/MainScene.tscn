@@ -1,22 +1,10 @@
 [gd_scene format=3 uid="uid://bh8x3sbal8nds"]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="3_xrinit"]
-[ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/controller_model.gd" id="4_ctrlmodel"]
-[ext_resource type="PackedScene" uid="uid://b4ysuy43poobf" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="5_pickup"]
-[ext_resource type="PackedScene" uid="uid://cqhw276realc" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="6_pointer"]
-[ext_resource type="PackedScene" uid="uid://diyu06cw06syv" path="res://addons/godot-xr-tools/player/player_body.tscn" id="8_playerbody"]
-[ext_resource type="PackedScene" uid="uid://bl2nuu3qhlb5k" path="res://addons/godot-xr-tools/functions/movement_direct.tscn" id="9_movdirect"]
-[ext_resource type="PackedScene" uid="uid://b6bk2pj8vbj28" path="res://addons/godot-xr-tools/functions/movement_turn.tscn" id="10_movturn"]
-[ext_resource type="PackedScene" uid="uid://fiul51tsyoop" path="res://addons/godot-xr-tools/functions/function_teleport.tscn" id="11_teleport"]
-[ext_resource type="Script" uid="uid://bwevtpwvx1u2r" path="res://Scripts/stick_teleport.gd" id="12_stickteleport"]
 [ext_resource type="PackedScene" uid="uid://mft7vy78rjrv" path="res://Scenes/Objects/tv.tscn" id="13_tv"]
-[ext_resource type="Script" uid="uid://0abdj5fqidtk" path="res://Scripts/UI/spawn_menu_controller.gd" id="16_menuctl"]
-[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="17_viewport2d3d"]
-[ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="18_spawnmenu"]
-[ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
 [ext_resource type="Shader" uid="uid://ctwkb7jcoma01" path="res://Shaders/arcade_carpet.gdshader" id="20_carpet"]
 [ext_resource type="Shader" uid="uid://ck7deycag7kku" path="res://Shaders/ceiling_tiles.gdshader" id="21_ceiltiles"]
-[ext_resource type="Script" uid="uid://cwwam004ra1i" path="res://Scripts/locomotion_manager.gd" id="22_locomotionmgr"]
+[ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="23_playerrig"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProcSkyMat"]
 sky_top_color = Color(0.18, 0.31, 0.55, 1)
@@ -241,45 +229,7 @@ light_color = Color(1, 0.97, 0.88, 1)
 light_energy = 0.15
 shadow_enabled = true
 
-[node name="XROrigin3D" type="XROrigin3D" parent="." unique_id=1434750428]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
-
-[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=1434750429]
-
-[node name="PlayerBody" parent="XROrigin3D" unique_id=2000000030 instance=ExtResource("8_playerbody")]
-player_calibrate_height = false
-
-[node name="LeftController" type="XRController3D" parent="XROrigin3D" unique_id=1434750430]
-tracker = &"left_hand"
-script = ExtResource("4_ctrlmodel")
-
-[node name="FunctionPickup" parent="XROrigin3D/LeftController" unique_id=2000000001 instance=ExtResource("5_pickup")]
-ranged_enable = false
-
-[node name="FunctionPointer" parent="XROrigin3D/LeftController" unique_id=2000000002 instance=ExtResource("6_pointer")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
-
-[node name="MovementDirect" parent="XROrigin3D/LeftController" unique_id=2000000031 instance=ExtResource("9_movdirect")]
-strafe = true
-
-[node name="RightController" type="XRController3D" parent="XROrigin3D" unique_id=1434750431]
-tracker = &"right_hand"
-script = ExtResource("4_ctrlmodel")
-
-[node name="FunctionPickup" parent="XROrigin3D/RightController" unique_id=2000000003 instance=ExtResource("5_pickup")]
-ranged_enable = false
-
-[node name="FunctionPointer" parent="XROrigin3D/RightController" unique_id=2000000034 instance=ExtResource("6_pointer")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.05, -0.1)
-
-[node name="MovementTurn" parent="XROrigin3D/RightController" unique_id=2000000032 instance=ExtResource("10_movturn")]
-turn_mode = 1
-
-[node name="FunctionTeleport" parent="XROrigin3D/RightController" unique_id=2000000033 instance=ExtResource("11_teleport")]
-script = ExtResource("12_stickteleport")
-stick_teleport_action = "primary"
-stick_teleport_threshold = 0.6
-teleport_button_action = ""
+[node name="PlayerRig" parent="." instance=ExtResource("23_playerrig")]
 
 [node name="Floor" type="StaticBody3D" parent="." unique_id=2000000020]
 collision_mask = 0
@@ -576,18 +526,3 @@ surface_material_override/0 = SubResource("Mat_poster_4")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
 size = Vector3(10, 3.5, 10)
 
-[node name="SpawnMenuController" type="Node3D" parent="." unique_id=2000000050]
-script = ExtResource("16_menuctl")
-
-[node name="SpawnMenuViewport" parent="SpawnMenuController" unique_id=2000000051 instance=ExtResource("17_viewport2d3d")]
-screen_size = Vector2(0.9, 0.75)
-scene = ExtResource("18_spawnmenu")
-viewport_size = Vector2(900, 750)
-transparent = 1
-scene_properties_keys = PackedStringArray("spawn_menu.gd")
-
-[node name="LocomotionManager" type="Node" parent="." unique_id=2000000061]
-script = ExtResource("22_locomotionmgr")
-
-[node name="VRInputMapper" type="Node3D" parent="." unique_id=2000000060]
-script = ExtResource("19_inputmapper")

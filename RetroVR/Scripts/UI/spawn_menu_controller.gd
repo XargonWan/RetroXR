@@ -137,7 +137,21 @@ func _connect_menu_signals() -> void:
 		menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
 	if menu.has_signal("turn_style_changed"):
 		menu.turn_style_changed.connect(_on_turn_style_changed)
+	if menu.has_signal("scene_change_requested"):
+		menu.scene_change_requested.connect(_on_scene_change_requested)
+	if menu.has_signal("scene_save_requested"):
+		menu.scene_save_requested.connect(_on_scene_save_requested)
+	if menu.has_signal("scene_clear_requested"):
+		menu.scene_clear_requested.connect(_on_scene_clear_requested)
+	if menu.has_signal("auto_save_changed"):
+		menu.auto_save_changed.connect(_on_auto_save_changed)
 	_menu_connected = true
+
+	# Auto-load saved scene objects on startup (arcade only)
+	if SceneManager and SceneManager.current_scene_id == "arcade":
+		var persistence := ScenePersistence.new()
+		if persistence.has_save():
+			persistence.load_scene(get_tree().current_scene)
 
 
 # ── Button handler ────────────────────────────────────────────────────────────
@@ -444,6 +458,7 @@ func _on_spawn_requested(type: String) -> void:
 		return
 
 	get_tree().current_scene.add_child(obj)
+	obj.add_to_group("spawned")
 
 	# Place the new object 0.5 m in front of the menu at table height
 	var fwd := -global_transform.basis.z
@@ -461,6 +476,7 @@ func _on_spawn_cartridge_requested(rom_path: String, game_label: String) -> void
 	obj.set("rom_path", rom_path)
 	obj.set("game_label", game_label)
 	get_tree().current_scene.add_child(obj)
+	obj.add_to_group("spawned")
 
 	var fwd := -global_transform.basis.z
 	fwd.y = 0.0
@@ -476,6 +492,7 @@ func _on_spawn_manual_requested(pdf_path: String) -> void:
 	var obj := BOOK_SCENE.instantiate() as Node3D
 	obj.set("pdf_path", pdf_path)
 	get_tree().current_scene.add_child(obj)
+	obj.add_to_group("spawned")
 
 	var fwd := -global_transform.basis.z
 	fwd.y = 0.0
@@ -492,3 +509,27 @@ func _on_turn_style_changed(value: String) -> void:
 		return
 	# XRToolsMovementTurn.TurnMode: SNAP = 1, SMOOTH = 2
 	_move_turn.set("turn_mode", 1 if value == "SNAP" else 2)
+
+
+# ── Scene management ──────────────────────────────────────────────────────────
+
+func _on_scene_change_requested(scene_id: String) -> void:
+	if not SceneManager:
+		return
+	_hide_menu()
+	SceneManager.change_scene(scene_id)
+
+
+func _on_scene_save_requested() -> void:
+	var persistence := ScenePersistence.new()
+	persistence.save_scene(get_tree().current_scene)
+
+
+func _on_scene_clear_requested() -> void:
+	var persistence := ScenePersistence.new()
+	persistence.clear_scene(get_tree().current_scene)
+
+
+func _on_auto_save_changed(enabled: bool) -> void:
+	if SceneManager:
+		SceneManager.auto_save_on_switch = enabled

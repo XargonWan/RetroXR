@@ -15,6 +15,14 @@ signal spawn_cartridge_requested(rom_path: String, game_label: String)
 signal spawn_manual_requested(pdf_path: String)
 ## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
 signal turn_style_changed(value: String)
+## Emitted when the user clicks a scene card.
+signal scene_change_requested(scene_id: String)
+## Emitted when the user clicks Save Scene.
+signal scene_save_requested
+## Emitted when the user clicks Clear Scene.
+signal scene_clear_requested
+## Emitted when the user toggles auto-save on scene switch.
+signal auto_save_changed(enabled: bool)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -38,9 +46,11 @@ var _server_address_label: Label = null
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
 var _options_view:  Control = null
+var _scene_view:    Control = null
 var _nav_spawn_btn:   Button = null
 var _nav_cores_btn:   Button = null
 var _nav_options_btn: Button = null
+var _nav_scene_btn:   Button = null
 var _nav_buttons: Array[Button] = []
 
 # Cores > Download tab state
@@ -70,6 +80,13 @@ var _manager_empty_label: Label         = null
 var _systems_vbox: VBoxContainer = null
 # Spawn > Cartridges tab — rebuilt whenever defaults change or tab opened
 var _cartridges_vbox: VBoxContainer = null
+
+# Scene view state
+var _scene_scroll: ScrollContainer = null
+var _scene_save_btn: Button = null
+var _scene_clear_btn: Button = null
+var _scene_card_buttons: Array[Button] = []
+var _auto_save_btn: Button = null
 
 # Scrape popup overlay
 var _scrape_popup: PanelContainer = null
@@ -195,13 +212,16 @@ func _build_ui() -> void:
 	_nav_spawn_btn   = _make_nav_button("  SPAWN  ")
 	_nav_cores_btn   = _make_nav_button("  CORES  ")
 	_nav_options_btn = _make_nav_button(" OPTIONS ")
+	_nav_scene_btn   = _make_nav_button("  SCENE  ")
 	_nav_spawn_btn.pressed.connect(_show_spawn_view)
 	_nav_cores_btn.pressed.connect(_show_cores_view)
 	_nav_options_btn.pressed.connect(_show_options_view)
+	_nav_scene_btn.pressed.connect(_show_scene_view)
 	nav_bar.add_child(_nav_spawn_btn)
 	nav_bar.add_child(_nav_cores_btn)
 	nav_bar.add_child(_nav_options_btn)
-	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_options_btn]
+	nav_bar.add_child(_nav_scene_btn)
+	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_options_btn, _nav_scene_btn]
 
 	root_vbox.add_child(HSeparator.new())
 
@@ -222,6 +242,10 @@ func _build_ui() -> void:
 	_options_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_options_view)
 
+	_scene_view = _build_scene_view()
+	_scene_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_child(_scene_view)
+
 	_show_spawn_view()
 
 
@@ -238,6 +262,7 @@ func _show_spawn_view() -> void:
 	_spawn_view.visible = true
 	_cores_view.visible = false
 	_options_view.visible = false
+	_scene_view.visible = false
 	_update_spawn_active_scroll(_spawn_tabs.current_tab if _spawn_tabs else 0)
 	_set_nav_active(_nav_spawn_btn)
 
@@ -246,6 +271,7 @@ func _show_cores_view() -> void:
 	_spawn_view.visible = false
 	_cores_view.visible = true
 	_options_view.visible = false
+	_scene_view.visible = false
 	_active_scroll = _download_list_scroll
 	_set_nav_active(_nav_cores_btn)
 	if not _download_fetched:
@@ -257,8 +283,19 @@ func _show_options_view() -> void:
 	_spawn_view.visible = false
 	_cores_view.visible = false
 	_options_view.visible = true
+	_scene_view.visible = false
 	_active_scroll = _options_scroll
 	_set_nav_active(_nav_options_btn)
+
+
+func _show_scene_view() -> void:
+	_spawn_view.visible = false
+	_cores_view.visible = false
+	_options_view.visible = false
+	_scene_view.visible = true
+	_active_scroll = _scene_scroll
+	_set_nav_active(_nav_scene_btn)
+	_update_scene_buttons()
 
 
 func _update_spawn_active_scroll(tab_idx: int) -> void:
@@ -913,6 +950,32 @@ func _build_options_view() -> Control:
 
 	vbox.add_child(HSeparator.new())
 
+	# Auto-save scene on switch option
+	var as_row := HBoxContainer.new()
+	as_row.add_theme_constant_override("separation", 10)
+	as_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(as_row)
+
+	var as_lbl := Label.new()
+	as_lbl.text = "Auto-save Scene"
+	as_lbl.add_theme_font_size_override("font_size", 22)
+	as_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	as_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	as_row.add_child(as_lbl)
+
+	var as_opt := OptionButton.new()
+	as_opt.custom_minimum_size = Vector2(140, 56)
+	as_opt.add_theme_font_size_override("font_size", 20)
+	as_opt.add_item("ON", 0)
+	as_opt.add_item("OFF", 1)
+	as_opt.selected = 0
+	as_opt.item_selected.connect(func(idx: int) -> void:
+		auto_save_changed.emit(idx == 0)
+	)
+	as_row.add_child(as_opt)
+
+	vbox.add_child(HSeparator.new())
+
 	# ── File Server (Android / Quest only) ───────────────────────────────────
 	if OS.get_name() == "Android":
 		var fs_hdr := Label.new()
@@ -1536,3 +1599,157 @@ func _spacer(height: int) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(0, height)
 	return c
+
+
+# ── Scene View ─────────────────────────────────────────────────────────────────
+
+const COLOR_SCENE_ACTIVE   := Color(0.3, 0.5, 0.3)
+const COLOR_SCENE_INACTIVE := Color(0.15, 0.15, 0.30)
+const COLOR_BTN_SAVE       := Color(0.15, 0.45, 0.15)
+const COLOR_BTN_CLEAR      := Color(0.50, 0.15, 0.15)
+
+
+func _build_scene_view() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scene_scroll = scroll
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 14)
+	scroll.add_child(vbox)
+
+	vbox.add_child(_spacer(10))
+
+	var hdr := Label.new()
+	hdr.text = "SCENES"
+	hdr.add_theme_font_size_override("font_size", 24)
+	hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(hdr)
+
+	# Scene card grid
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	vbox.add_child(grid)
+
+	# Build scene list — passthrough only shown if supported
+	var scenes: Array[Dictionary] = [
+		{"id": "arcade", "label": "Arcade Room", "color": Color(0.15, 0.13, 0.35)},
+	]
+	if SceneManager.is_passthrough_supported():
+		scenes.append({"id": "passthrough", "label": "Passthrough AR", "color": Color(0.85, 0.85, 0.9)})
+
+	_scene_card_buttons.clear()
+	for scene_def: Dictionary in scenes:
+		var card := _make_scene_card(scene_def)
+		grid.add_child(card)
+		_scene_card_buttons.append(card)
+
+	vbox.add_child(HSeparator.new())
+
+	# Save / Clear buttons (arcade only — hidden in passthrough)
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(btn_row)
+
+	_scene_save_btn = Button.new()
+	_scene_save_btn.text = "  Save Scene  "
+	_scene_save_btn.add_theme_font_size_override("font_size", 22)
+	_scene_save_btn.custom_minimum_size = Vector2(0, 64)
+	_scene_save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var save_style := StyleBoxFlat.new()
+	save_style.bg_color = COLOR_BTN_SAVE
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		save_style.set(k, 6)
+	_scene_save_btn.add_theme_stylebox_override("normal", save_style)
+	_scene_save_btn.pressed.connect(func(): scene_save_requested.emit())
+	btn_row.add_child(_scene_save_btn)
+
+	_scene_clear_btn = Button.new()
+	_scene_clear_btn.text = "  Clear Scene  "
+	_scene_clear_btn.add_theme_font_size_override("font_size", 22)
+	_scene_clear_btn.custom_minimum_size = Vector2(0, 64)
+	_scene_clear_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var clear_style := StyleBoxFlat.new()
+	clear_style.bg_color = COLOR_BTN_CLEAR
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		clear_style.set(k, 6)
+	_scene_clear_btn.add_theme_stylebox_override("normal", clear_style)
+	_scene_clear_btn.pressed.connect(func(): scene_clear_requested.emit())
+	btn_row.add_child(_scene_clear_btn)
+
+	return scroll
+
+
+func _make_scene_card(scene_def: Dictionary) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(0, 120)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 6)
+	card_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(card_vbox)
+
+	# Color thumbnail placeholder
+	var thumb := PanelContainer.new()
+	thumb.custom_minimum_size = Vector2(0, 70)
+	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var thumb_style := StyleBoxFlat.new()
+	thumb_style.bg_color = scene_def.get("color", Color.DARK_GRAY)
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		thumb_style.set(k, 4)
+	thumb.add_theme_stylebox_override("panel", thumb_style)
+	card_vbox.add_child(thumb)
+
+	# Scene name label
+	var lbl := Label.new()
+	lbl.text = scene_def.get("label", "")
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_vbox.add_child(lbl)
+
+	# Store scene_id in metadata for the click handler
+	var scene_id: String = scene_def.get("id", "")
+	btn.set_meta("scene_id", scene_id)
+	btn.pressed.connect(func(): scene_change_requested.emit(scene_id))
+
+	return btn
+
+
+## Update scene card highlights and save/clear button visibility.
+func _update_scene_buttons() -> void:
+	var current_id: String = ""
+	if SceneManager:
+		current_id = SceneManager.current_scene_id
+
+	for card: Button in _scene_card_buttons:
+		var sid: String = card.get_meta("scene_id", "")
+		var is_active := (sid == current_id)
+		var style := StyleBoxFlat.new()
+		style.bg_color = COLOR_SCENE_ACTIVE if is_active else COLOR_SCENE_INACTIVE
+		for k in ["corner_radius_top_left","corner_radius_top_right",
+				  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+			style.set(k, 6)
+		if is_active:
+			style.border_width_top = 3
+			style.border_width_bottom = 3
+			style.border_width_left = 3
+			style.border_width_right = 3
+			style.border_color = Color(0.5, 0.8, 0.5)
+		card.add_theme_stylebox_override("normal", style)
+
+	# Hide save/clear in passthrough mode
+	var in_arcade := current_id == "arcade" or current_id.is_empty()
+	if _scene_save_btn:
+		_scene_save_btn.visible = in_arcade
+	if _scene_clear_btn:
+		_scene_clear_btn.visible = in_arcade

@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/passthrough_init.gd" id="1_ptinit"]
+[ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pt_floor"]
+size = Vector3(100, 0.1, 100)
+
+[sub_resource type="Environment" id="Env_passthrough"]
+background_mode = 0
+ambient_light_source = 1
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.8
+
+[node name="Root" type="Node3D"]
+script = ExtResource("1_ptinit")
+
+[node name="PlayerRig" parent="." instance=ExtResource("2_playerrig")]
+
+[node name="Floor" type="StaticBody3D" parent="."]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape3D_pt_floor")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_passthrough")

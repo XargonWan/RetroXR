@@ -1,0 +1,73 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/controller_model.gd" id="1_ctrlmodel"]
+[ext_resource type="PackedScene" uid="uid://b4ysuy43poobf" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="2_pickup"]
+[ext_resource type="PackedScene" uid="uid://cqhw276realc" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="3_pointer"]
+[ext_resource type="PackedScene" uid="uid://diyu06cw06syv" path="res://addons/godot-xr-tools/player/player_body.tscn" id="4_playerbody"]
+[ext_resource type="PackedScene" uid="uid://bl2nuu3qhlb5k" path="res://addons/godot-xr-tools/functions/movement_direct.tscn" id="5_movdirect"]
+[ext_resource type="PackedScene" uid="uid://b6bk2pj8vbj28" path="res://addons/godot-xr-tools/functions/movement_turn.tscn" id="6_movturn"]
+[ext_resource type="PackedScene" uid="uid://fiul51tsyoop" path="res://addons/godot-xr-tools/functions/function_teleport.tscn" id="7_teleport"]
+[ext_resource type="Script" uid="uid://bwevtpwvx1u2r" path="res://Scripts/stick_teleport.gd" id="8_stickteleport"]
+[ext_resource type="Script" uid="uid://0abdj5fqidtk" path="res://Scripts/UI/spawn_menu_controller.gd" id="9_menuctl"]
+[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="10_viewport2d3d"]
+[ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="11_spawnmenu"]
+[ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="12_inputmapper"]
+[ext_resource type="Script" uid="uid://cwwam004ra1i" path="res://Scripts/locomotion_manager.gd" id="13_locomotionmgr"]
+
+[node name="PlayerRig" type="Node3D"]
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+
+[node name="PlayerBody" parent="XROrigin3D" instance=ExtResource("4_playerbody")]
+player_calibrate_height = false
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+tracker = &"left_hand"
+script = ExtResource("1_ctrlmodel")
+
+[node name="FunctionPickup" parent="XROrigin3D/LeftController" instance=ExtResource("2_pickup")]
+ranged_enable = false
+
+[node name="FunctionPointer" parent="XROrigin3D/LeftController" instance=ExtResource("3_pointer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
+
+[node name="MovementDirect" parent="XROrigin3D/LeftController" instance=ExtResource("5_movdirect")]
+strafe = true
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+tracker = &"right_hand"
+script = ExtResource("1_ctrlmodel")
+
+[node name="FunctionPickup" parent="XROrigin3D/RightController" instance=ExtResource("2_pickup")]
+ranged_enable = false
+
+[node name="FunctionPointer" parent="XROrigin3D/RightController" instance=ExtResource("3_pointer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.05, -0.1)
+
+[node name="MovementTurn" parent="XROrigin3D/RightController" instance=ExtResource("6_movturn")]
+turn_mode = 1
+
+[node name="FunctionTeleport" parent="XROrigin3D/RightController" instance=ExtResource("7_teleport")]
+script = ExtResource("8_stickteleport")
+stick_teleport_action = "primary"
+stick_teleport_threshold = 0.6
+teleport_button_action = ""
+
+[node name="SpawnMenuController" type="Node3D" parent="."]
+script = ExtResource("9_menuctl")
+
+[node name="SpawnMenuViewport" parent="SpawnMenuController" instance=ExtResource("10_viewport2d3d")]
+screen_size = Vector2(0.9, 0.75)
+scene = ExtResource("11_spawnmenu")
+viewport_size = Vector2(900, 750)
+transparent = 1
+scene_properties_keys = PackedStringArray("spawn_menu.gd")
+
+[node name="LocomotionManager" type="Node" parent="."]
+script = ExtResource("13_locomotionmgr")
+
+[node name="VRInputMapper" type="Node3D" parent="."]
+script = ExtResource("12_inputmapper")
