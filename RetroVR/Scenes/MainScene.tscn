@@ -9,14 +9,14 @@
 [ext_resource type="PackedScene" uid="uid://b6bk2pj8vbj28" path="res://addons/godot-xr-tools/functions/movement_turn.tscn" id="10_movturn"]
 [ext_resource type="PackedScene" uid="uid://fiul51tsyoop" path="res://addons/godot-xr-tools/functions/function_teleport.tscn" id="11_teleport"]
 [ext_resource type="Script" uid="uid://bwevtpwvx1u2r" path="res://Scripts/stick_teleport.gd" id="12_stickteleport"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/tv.tscn" id="13_tv"]
+[ext_resource type="PackedScene" uid="uid://mft7vy78rjrv" path="res://Scenes/Objects/tv.tscn" id="13_tv"]
 [ext_resource type="Script" uid="uid://0abdj5fqidtk" path="res://Scripts/UI/spawn_menu_controller.gd" id="16_menuctl"]
 [ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="17_viewport2d3d"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="18_spawnmenu"]
 [ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="19_inputmapper"]
-[ext_resource type="Script" path="res://Scripts/locomotion_manager.gd" id="22_locomotionmgr"]
 [ext_resource type="Shader" uid="uid://ctwkb7jcoma01" path="res://Shaders/arcade_carpet.gdshader" id="20_carpet"]
 [ext_resource type="Shader" uid="uid://ck7deycag7kku" path="res://Shaders/ceiling_tiles.gdshader" id="21_ceiltiles"]
+[ext_resource type="Script" uid="uid://cwwam004ra1i" path="res://Scripts/locomotion_manager.gd" id="22_locomotionmgr"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProcSkyMat"]
 sky_top_color = Color(0.18, 0.31, 0.55, 1)
@@ -135,25 +135,25 @@ albedo_color = Color(0.22, 0.13, 0.07, 1)
 roughness = 0.7
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_table"]
-size = Vector3(2.0, 0.05, 0.8)
+size = Vector3(2, 0.05, 0.8)
 
 [sub_resource type="BoxMesh" id="BoxMesh_table"]
-size = Vector3(2.0, 0.05, 0.8)
+size = Vector3(2, 0.05, 0.8)
 
 [sub_resource type="StandardMaterial3D" id="Mat_table"]
 albedo_color = Color(0.18, 0.1, 0.06, 1)
-roughness = 0.55
 metallic = 0.05
+roughness = 0.55
 
 [sub_resource type="BoxMesh" id="BoxMesh_table_apron_long"]
-size = Vector3(2.0, 0.08, 0.03)
-
-[sub_resource type="BoxMesh" id="BoxMesh_table_apron_short"]
-size = Vector3(0.03, 0.08, 0.74)
+size = Vector3(2, 0.08, 0.03)
 
 [sub_resource type="StandardMaterial3D" id="Mat_table_apron"]
 albedo_color = Color(0.12, 0.07, 0.04, 1)
 roughness = 0.6
+
+[sub_resource type="BoxMesh" id="BoxMesh_table_apron_short"]
+size = Vector3(0.03, 0.08, 0.74)
 
 [sub_resource type="BoxMesh" id="BoxMesh_table_leg"]
 size = Vector3(0.05, 0.7, 0.05)
@@ -282,7 +282,6 @@ stick_teleport_threshold = 0.6
 teleport_button_action = ""
 
 [node name="Floor" type="StaticBody3D" parent="." unique_id=2000000020]
-collision_layer = 1
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Floor" unique_id=2000000021]
@@ -294,7 +293,6 @@ mesh = SubResource("PlaneMesh_floor")
 surface_material_override/0 = SubResource("Mat_carpet")
 
 [node name="Room" type="StaticBody3D" parent="." unique_id=-1294967196]
-collision_layer = 1
 collision_mask = 0
 
 [node name="SouthWall" type="MeshInstance3D" parent="Room" unique_id=-1294967195]
@@ -367,7 +365,6 @@ surface_material_override/0 = SubResource("Mat_door")
 
 [node name="Table" type="StaticBody3D" parent="." unique_id=2000000040]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
-collision_layer = 1
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Table" unique_id=2000000041]
@@ -379,42 +376,42 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.725, 0)
 mesh = SubResource("BoxMesh_table")
 surface_material_override/0 = SubResource("Mat_table")
 
-[node name="ApronFront" type="MeshInstance3D" parent="Table"]
+[node name="ApronFront" type="MeshInstance3D" parent="Table" unique_id=1538582152]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.66, 0.385)
 mesh = SubResource("BoxMesh_table_apron_long")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="ApronBack" type="MeshInstance3D" parent="Table"]
+[node name="ApronBack" type="MeshInstance3D" parent="Table" unique_id=538374127]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.66, -0.385)
 mesh = SubResource("BoxMesh_table_apron_long")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="ApronLeft" type="MeshInstance3D" parent="Table"]
+[node name="ApronLeft" type="MeshInstance3D" parent="Table" unique_id=479813542]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.985, 0.66, 0)
 mesh = SubResource("BoxMesh_table_apron_short")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="ApronRight" type="MeshInstance3D" parent="Table"]
+[node name="ApronRight" type="MeshInstance3D" parent="Table" unique_id=1286397208]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.985, 0.66, 0)
 mesh = SubResource("BoxMesh_table_apron_short")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="LegFL" type="MeshInstance3D" parent="Table"]
+[node name="LegFL" type="MeshInstance3D" parent="Table" unique_id=969174286]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.35, 0.35)
 mesh = SubResource("BoxMesh_table_leg")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="LegFR" type="MeshInstance3D" parent="Table"]
+[node name="LegFR" type="MeshInstance3D" parent="Table" unique_id=1055080951]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.95, 0.35, 0.35)
 mesh = SubResource("BoxMesh_table_leg")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="LegBL" type="MeshInstance3D" parent="Table"]
+[node name="LegBL" type="MeshInstance3D" parent="Table" unique_id=72202051]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.35, -0.35)
 mesh = SubResource("BoxMesh_table_leg")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="LegBR" type="MeshInstance3D" parent="Table"]
+[node name="LegBR" type="MeshInstance3D" parent="Table" unique_id=1155107031]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.95, 0.35, -0.35)
 mesh = SubResource("BoxMesh_table_leg")
 surface_material_override/0 = SubResource("Mat_table_apron")
@@ -428,7 +425,7 @@ light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
 
-[node name="Fixture_NE" type="MeshInstance3D" parent="."]
+[node name="Fixture_NE" type="MeshInstance3D" parent="." unique_id=886382473]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.95, -2.5)
 mesh = SubResource("BoxMesh_fixture")
 surface_material_override/0 = SubResource("Mat_fixture")
@@ -439,7 +436,7 @@ light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
 
-[node name="Fixture_NW" type="MeshInstance3D" parent="."]
+[node name="Fixture_NW" type="MeshInstance3D" parent="." unique_id=478382590]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.95, -2.5)
 mesh = SubResource("BoxMesh_fixture")
 surface_material_override/0 = SubResource("Mat_fixture")
@@ -450,7 +447,7 @@ light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
 
-[node name="Fixture_SE" type="MeshInstance3D" parent="."]
+[node name="Fixture_SE" type="MeshInstance3D" parent="." unique_id=1688788680]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.95, 2.5)
 mesh = SubResource("BoxMesh_fixture")
 surface_material_override/0 = SubResource("Mat_fixture")
@@ -461,133 +458,126 @@ light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
 
-[node name="Fixture_SW" type="MeshInstance3D" parent="."]
+[node name="Fixture_SW" type="MeshInstance3D" parent="." unique_id=279387271]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.95, 2.5)
 mesh = SubResource("BoxMesh_fixture")
 surface_material_override/0 = SubResource("Mat_fixture")
 
-[node name="NeonSign_South" type="Node3D" parent="."]
+[node name="NeonSign_South" type="Node3D" parent="." unique_id=1576643289]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 4.95)
 
-[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_South"]
+[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_South" unique_id=1624373427]
 mesh = SubResource("QuadMesh_neon")
 surface_material_override/0 = SubResource("Mat_neon_pink")
 
-[node name="NeonLight" type="OmniLight3D" parent="NeonSign_South" groups=["neon_light"]]
+[node name="NeonLight" type="OmniLight3D" parent="NeonSign_South" unique_id=1692349355 groups=["neon_light"]]
 light_color = Color(0.95, 0.1, 0.5, 1)
 light_energy = 1.5
 omni_range = 3.5
-shadow_enabled = false
 
-[node name="NeonSign_East" type="Node3D" parent="."]
+[node name="NeonSign_East" type="Node3D" parent="." unique_id=1249212750]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 4.95, 2.2, 0)
 
-[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_East"]
+[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_East" unique_id=1377393509]
 mesh = SubResource("QuadMesh_neon")
 surface_material_override/0 = SubResource("Mat_neon_cyan")
 
-[node name="NeonLight" type="OmniLight3D" parent="NeonSign_East" groups=["neon_light"]]
+[node name="NeonLight" type="OmniLight3D" parent="NeonSign_East" unique_id=1500393000 groups=["neon_light"]]
 light_color = Color(0, 0.9, 0.9, 1)
 light_energy = 1.5
 omni_range = 3.5
-shadow_enabled = false
 
-[node name="NeonSign_West" type="Node3D" parent="."]
+[node name="NeonSign_West" type="Node3D" parent="." unique_id=24206868]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -4.95, 2.2, 0)
 
-[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_West"]
+[node name="NeonQuad" type="MeshInstance3D" parent="NeonSign_West" unique_id=55545014]
 mesh = SubResource("QuadMesh_neon")
 surface_material_override/0 = SubResource("Mat_neon_green")
 
-[node name="NeonLight" type="OmniLight3D" parent="NeonSign_West" groups=["neon_light"]]
+[node name="NeonLight" type="OmniLight3D" parent="NeonSign_West" unique_id=496482046 groups=["neon_light"]]
 light_color = Color(0.2, 1, 0.3, 1)
 light_energy = 1.5
 omni_range = 3.5
-shadow_enabled = false
 
-[node name="Baseboard_South" type="MeshInstance3D" parent="."]
+[node name="Baseboard_South" type="MeshInstance3D" parent="." unique_id=210019768]
 transform = Transform3D(10, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 4.99)
 mesh = SubResource("BoxMesh_baseboard")
 surface_material_override/0 = SubResource("Mat_baseboard")
 
-[node name="Baseboard_North_L" type="MeshInstance3D" parent="."]
+[node name="Baseboard_North_L" type="MeshInstance3D" parent="." unique_id=1316549304]
 transform = Transform3D(4.4, 0, 0, 0, 1, 0, 0, 0, 1, -2.8, 0.05, -4.99)
 mesh = SubResource("BoxMesh_baseboard")
 surface_material_override/0 = SubResource("Mat_baseboard")
 
-[node name="Baseboard_North_R" type="MeshInstance3D" parent="."]
+[node name="Baseboard_North_R" type="MeshInstance3D" parent="." unique_id=67089844]
 transform = Transform3D(4.4, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 0.05, -4.99)
 mesh = SubResource("BoxMesh_baseboard")
 surface_material_override/0 = SubResource("Mat_baseboard")
 
-[node name="Baseboard_East" type="MeshInstance3D" parent="."]
+[node name="Baseboard_East" type="MeshInstance3D" parent="." unique_id=1630067604]
 transform = Transform3D(0, 0, -10, 0, 1, 0, 1, 0, 0, 4.99, 0.05, 0)
 mesh = SubResource("BoxMesh_baseboard")
 surface_material_override/0 = SubResource("Mat_baseboard")
 
-[node name="Baseboard_West" type="MeshInstance3D" parent="."]
+[node name="Baseboard_West" type="MeshInstance3D" parent="." unique_id=1761319662]
 transform = Transform3D(0, 0, 10, 0, 1, 0, -1, 0, 0, -4.99, 0.05, 0)
 mesh = SubResource("BoxMesh_baseboard")
 surface_material_override/0 = SubResource("Mat_baseboard")
 
-[node name="Poster_S1" type="Node3D" parent="."]
+[node name="Poster_S1" type="Node3D" parent="." unique_id=2059839969]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1.8, 4.95)
 
-[node name="Frame" type="MeshInstance3D" parent="Poster_S1"]
+[node name="Frame" type="MeshInstance3D" parent="Poster_S1" unique_id=1929651869]
 mesh = SubResource("BoxMesh_poster_frame")
 surface_material_override/0 = SubResource("Mat_poster_frame")
 
-[node name="Face" type="MeshInstance3D" parent="Poster_S1"]
+[node name="Face" type="MeshInstance3D" parent="Poster_S1" unique_id=1115032624]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
 mesh = SubResource("QuadMesh_poster_face")
 surface_material_override/0 = SubResource("Mat_poster_1")
 
-[node name="Poster_S2" type="Node3D" parent="."]
+[node name="Poster_S2" type="Node3D" parent="." unique_id=1949982083]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 1.8, 4.95)
 
-[node name="Frame" type="MeshInstance3D" parent="Poster_S2"]
+[node name="Frame" type="MeshInstance3D" parent="Poster_S2" unique_id=1687527452]
 mesh = SubResource("BoxMesh_poster_frame")
 surface_material_override/0 = SubResource("Mat_poster_frame")
 
-[node name="Face" type="MeshInstance3D" parent="Poster_S2"]
+[node name="Face" type="MeshInstance3D" parent="Poster_S2" unique_id=1172493539]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
 mesh = SubResource("QuadMesh_poster_face")
 surface_material_override/0 = SubResource("Mat_poster_2")
 
-[node name="Poster_E" type="Node3D" parent="."]
+[node name="Poster_E" type="Node3D" parent="." unique_id=159874230]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 4.95, 1.8, -2)
 
-[node name="Frame" type="MeshInstance3D" parent="Poster_E"]
+[node name="Frame" type="MeshInstance3D" parent="Poster_E" unique_id=749386846]
 mesh = SubResource("BoxMesh_poster_frame")
 surface_material_override/0 = SubResource("Mat_poster_frame")
 
-[node name="Face" type="MeshInstance3D" parent="Poster_E"]
+[node name="Face" type="MeshInstance3D" parent="Poster_E" unique_id=1646237355]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
 mesh = SubResource("QuadMesh_poster_face")
 surface_material_override/0 = SubResource("Mat_poster_3")
 
-[node name="Poster_W" type="Node3D" parent="."]
+[node name="Poster_W" type="Node3D" parent="." unique_id=285701132]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -4.95, 1.8, 2)
 
-[node name="Frame" type="MeshInstance3D" parent="Poster_W"]
+[node name="Frame" type="MeshInstance3D" parent="Poster_W" unique_id=461962918]
 mesh = SubResource("BoxMesh_poster_frame")
 surface_material_override/0 = SubResource("Mat_poster_frame")
 
-[node name="Face" type="MeshInstance3D" parent="Poster_W"]
+[node name="Face" type="MeshInstance3D" parent="Poster_W" unique_id=614218598]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.016)
 mesh = SubResource("QuadMesh_poster_face")
 surface_material_override/0 = SubResource("Mat_poster_4")
 
-[node name="ReflectionProbe" type="ReflectionProbe" parent="." groups=["reflection_probe"]]
+[node name="ReflectionProbe" type="ReflectionProbe" parent="." unique_id=1388420262 groups=["reflection_probe"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
 size = Vector3(10, 3.5, 10)
-update_mode = 0
 
 [node name="SpawnMenuController" type="Node3D" parent="." unique_id=2000000050]
 script = ExtResource("16_menuctl")
-
-[node name="LocomotionManager" type="Node" parent="." unique_id=2000000061]
-script = ExtResource("22_locomotionmgr")
 
 [node name="SpawnMenuViewport" parent="SpawnMenuController" unique_id=2000000051 instance=ExtResource("17_viewport2d3d")]
 screen_size = Vector2(0.9, 0.75)
@@ -595,6 +585,9 @@ scene = ExtResource("18_spawnmenu")
 viewport_size = Vector2(900, 750)
 transparent = 1
 scene_properties_keys = PackedStringArray("spawn_menu.gd")
+
+[node name="LocomotionManager" type="Node" parent="." unique_id=2000000061]
+script = ExtResource("22_locomotionmgr")
 
 [node name="VRInputMapper" type="Node3D" parent="." unique_id=2000000060]
 script = ExtResource("19_inputmapper")
