@@ -12,7 +12,7 @@
             "program": "C:/Program Files/Godot_v4.6.1-stable_mono_win64/Godot_v4.6.1-stable_mono_win64/Godot_v4.6.1-stable_mono_win64.exe",
             "args": ["--path", "${workspaceFolder}/RetroVR"],
             "cwd": "${workspaceFolder}",
-            "symbolSearchPath": "${workspaceFolder}/RetroVR/SKLibretro"
+            "symbolSearchPath": "${workspaceFolder}/RetroVR/libretro-godot"
         }
     ]
 }

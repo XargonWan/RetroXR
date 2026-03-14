@@ -35,6 +35,7 @@ var _camera:      XRCamera3D    = null
 var _left_ctrl:   XRController3D = null
 var _right_ctrl:  XRController3D = null
 var _menu_connected := false
+var _connect_retry_count: int = 0
 
 # Scroll state — driven by whichever stick whose controller points at the menu
 var _smoothed_scroll_y: float = 0.0
@@ -57,6 +58,8 @@ const _SCREEN_ASPECT  := 0.9 / 0.75
 var _grab_active: bool = false
 var _grab_ctrl: XRController3D = null
 var _grab_distance: float = 0.0  # distance along pointer ray
+
+var _last_fps: int = -1
 
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
@@ -85,19 +88,15 @@ func _deferred_setup() -> void:
 	if not cams.is_empty():
 		_camera = cams[0] as XRCamera3D
 
-	# Find left-hand XRController3D and hook menu_button
+	# Find left and right XRController3D in a single pass
 	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
 		var ctrl := node as XRController3D
 		if ctrl.tracker == &"left_hand":
 			_left_ctrl = ctrl
 			_left_ctrl.button_pressed.connect(_on_controller_button)
-			break
-
-	# Find right-hand XRController3D for scroll driving
-	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
-		var ctrl := node as XRController3D
-		if ctrl.tracker == &"right_hand":
+		elif ctrl.tracker == &"right_hand":
 			_right_ctrl = ctrl
+		if _left_ctrl and _right_ctrl:
 			break
 
 	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
@@ -123,33 +122,27 @@ func _connect_menu_signals() -> void:
 		return
 	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
 	if not vp or vp.get_child_count() == 0:
-		# Scene hasn't loaded yet — retry next frame
+		if _connect_retry_count >= 30:
+			push_error("SpawnMenuController: menu scene failed to load after 30 frames")
+			return
+		_connect_retry_count += 1
 		await get_tree().process_frame
 		_connect_menu_signals()
 		return
-	var menu := vp.get_child(0)
-	if menu.has_signal("spawn_requested"):
-		menu.spawn_requested.connect(_on_spawn_requested)
-	if menu.has_signal("close_requested"):
-		menu.close_requested.connect(_hide_menu)
-	if menu.has_signal("spawn_cartridge_requested"):
-		menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
-	if menu.has_signal("spawn_manual_requested"):
-		menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
-	if menu.has_signal("turn_style_changed"):
-		menu.turn_style_changed.connect(_on_turn_style_changed)
-	if menu.has_signal("scene_change_requested"):
-		menu.scene_change_requested.connect(_on_scene_change_requested)
-	if menu.has_signal("scene_save_requested"):
-		menu.scene_save_requested.connect(_on_scene_save_requested)
-	if menu.has_signal("scene_clear_requested"):
-		menu.scene_clear_requested.connect(_on_scene_clear_requested)
-	if menu.has_signal("auto_save_changed"):
-		menu.auto_save_changed.connect(_on_auto_save_changed)
-	if menu.has_signal("show_fps_changed"):
-		menu.show_fps_changed.connect(_on_show_fps_changed)
-	if menu.has_signal("snap_angle_changed"):
-		menu.snap_angle_changed.connect(_on_snap_angle_changed)
+	var menu := vp.get_child(0) as SpawnMenu2D
+	if not menu:
+		return
+	menu.spawn_requested.connect(_on_spawn_requested)
+	menu.close_requested.connect(_hide_menu)
+	menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
+	menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
+	menu.turn_style_changed.connect(_on_turn_style_changed)
+	menu.scene_change_requested.connect(_on_scene_change_requested)
+	menu.scene_save_requested.connect(_on_scene_save_requested)
+	menu.scene_clear_requested.connect(_on_scene_clear_requested)
+	menu.auto_save_changed.connect(_on_auto_save_changed)
+	menu.show_fps_changed.connect(_on_show_fps_changed)
+	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	_menu_connected = true
 
 	# Auto-load saved scene objects on startup (arcade only)
@@ -176,7 +169,10 @@ func _on_controller_button(action_name: String) -> void:
 
 func _process(delta: float) -> void:
 	if _fps_label:
-		_fps_label.text = "FPS: %d" % Engine.get_frames_per_second()
+		var fps := Engine.get_frames_per_second()
+		if fps != _last_fps:
+			_fps_label.text = "FPS: %d" % fps
+			_last_fps = fps
 
 	var menu_visible: bool = _viewport_node.visible
 
@@ -211,19 +207,11 @@ func _process(delta: float) -> void:
 		raw_y += _left_ctrl.get_vector2("primary").y
 	raw_y = clampf(raw_y, -1.0, 1.0)
 
-	_smoothed_scroll_y = lerpf(_smoothed_scroll_y, raw_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
-	if abs(_smoothed_scroll_y) < _SCROLL_DEADZONE:
-		return
-
-	var t: float = (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
-	# Negate: stick up (negative Y in OpenXR) → scroll up (decrease scroll_vertical)
-	var pixels: float = -_smoothed_scroll_y * t * _SCROLL_SPEED * delta
-	if abs(pixels) < _SCROLL_MIN_PX:
-		return
-
-	var menu := _get_menu()
-	if menu:
-		menu.scroll_active(pixels)
+	var pixels := _compute_scroll_pixels(delta, raw_y)
+	if pixels != 0.0:
+		var menu := _get_menu()
+		if menu:
+			menu.scroll_active(pixels)
 
 
 ## Drive scroll on any visible CoreOptionsPanel whose viewport the pointer is over.
@@ -249,18 +237,22 @@ func _process_core_options_scroll(delta: float) -> void:
 		raw_y += _left_ctrl.get_vector2("primary").y
 	raw_y = clampf(raw_y, -1.0, 1.0)
 
+	var pixels := _compute_scroll_pixels(delta, raw_y)
+	if pixels != 0.0:
+		var opts_ui := _get_core_options_ui(any_vp)
+		if opts_ui:
+			opts_ui.scroll_active(pixels)
+
+
+## Shared scroll-pixel calculation used by both menu and core-options scroll paths.
+## Updates _smoothed_scroll_y and returns the pixel delta (0.0 if below threshold).
+func _compute_scroll_pixels(delta: float, raw_y: float) -> float:
 	_smoothed_scroll_y = lerpf(_smoothed_scroll_y, raw_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
 	if abs(_smoothed_scroll_y) < _SCROLL_DEADZONE:
-		return
-
-	var t: float = (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
-	var pixels: float = -_smoothed_scroll_y * t * _SCROLL_SPEED * delta
-	if abs(pixels) < _SCROLL_MIN_PX:
-		return
-
-	var opts_ui := _get_core_options_ui(any_vp)
-	if opts_ui:
-		opts_ui.scroll_active(pixels)
+		return 0.0
+	var t := (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
+	var pixels := -_smoothed_scroll_y * t * _SCROLL_SPEED * delta
+	return 0.0 if abs(pixels) < _SCROLL_MIN_PX else pixels
 
 
 ## Returns the RetroSystem the pointer is aimed at, or null if not pointing at one.
@@ -450,6 +442,19 @@ func _process_grab_resize(delta: float, stick_x: float) -> void:
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
 
+## Add obj to the scene, place it 0.5 m in front of the menu at the type's table height.
+func _place_spawned(obj: Node3D, type: String) -> void:
+	get_tree().current_scene.add_child(obj)
+	obj.add_to_group("spawned")
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.001:
+		fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+	obj.global_position = global_position + fwd * 0.5
+	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
+
+
 func _on_spawn_requested(type: String) -> void:
 	var obj: Node3D
 	match type:
@@ -458,59 +463,25 @@ func _on_spawn_requested(type: String) -> void:
 		"cartridge":
 			obj = CART_SCENE.instantiate() as Node3D
 		_:
-			# Any other type is treated as a systemid — spawn the generic system and assign it
-			var sys := SYSTEM_SCENE.instantiate() as Node3D
-			sys.set("systemid", type)
+			# Any other type is treated as a systemid
+			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+			sys.systemid = type
 			obj = sys
-
-	if not obj:
-		return
-
-	get_tree().current_scene.add_child(obj)
-	obj.add_to_group("spawned")
-
-	# Place the new object 0.5 m in front of the menu at table height
-	var fwd := -global_transform.basis.z
-	fwd.y = 0.0
-	if fwd.length_squared() < 0.001:
-		fwd = Vector3.FORWARD
-	fwd = fwd.normalized()
-
-	obj.global_position = global_position + fwd * 0.5
-	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
+	if obj:
+		_place_spawned(obj, type)
 
 
 func _on_spawn_cartridge_requested(rom_path: String, game_label: String) -> void:
-	var obj := CART_SCENE.instantiate() as Node3D
-	obj.set("rom_path", rom_path)
-	obj.set("game_label", game_label)
-	get_tree().current_scene.add_child(obj)
-	obj.add_to_group("spawned")
-
-	var fwd := -global_transform.basis.z
-	fwd.y = 0.0
-	if fwd.length_squared() < 0.001:
-		fwd = Vector3.FORWARD
-	fwd = fwd.normalized()
-
-	obj.global_position = global_position + fwd * 0.5
-	obj.global_position.y = SPAWN_Y.get("cartridge", 0.76)
+	var cart := CART_SCENE.instantiate() as RetroCartridge
+	cart.rom_path = rom_path
+	cart.game_label = game_label
+	_place_spawned(cart, "cartridge")
 
 
 func _on_spawn_manual_requested(pdf_path: String) -> void:
-	var obj := BOOK_SCENE.instantiate() as Node3D
-	obj.set("pdf_path", pdf_path)
-	get_tree().current_scene.add_child(obj)
-	obj.add_to_group("spawned")
-
-	var fwd := -global_transform.basis.z
-	fwd.y = 0.0
-	if fwd.length_squared() < 0.001:
-		fwd = Vector3.FORWARD
-	fwd = fwd.normalized()
-
-	obj.global_position = global_position + fwd * 0.5
-	obj.global_position.y = SPAWN_Y.get("book", 0.80)
+	var book := BOOK_SCENE.instantiate() as PDFBook
+	book.pdf_path = pdf_path
+	_place_spawned(book, "book")
 
 
 func _on_turn_style_changed(value: String) -> void:
@@ -540,6 +511,7 @@ func _on_show_fps_changed(enabled: bool) -> void:
 		if _fps_label:
 			_fps_label.queue_free()
 			_fps_label = null
+			_last_fps = -1
 
 
 # ── Scene management ──────────────────────────────────────────────────────────

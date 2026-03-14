@@ -1,6 +1,6 @@
 [submodule "libretro-core-info"]
 	path = RetroVR/libretro-core-info
 	url = https://github.com/libretro/libretro-core-info
-[submodule "SKLibretro"]
-	path = SKLibretro
+[submodule "libretro-godot"]
+	path = libretro-godot
 	url = https://github.com/XenuIsWatching/libretro-godot.git

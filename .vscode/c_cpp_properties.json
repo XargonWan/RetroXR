@@ -6,9 +6,9 @@
                 "${workspaceFolder}/godot-cpp/**",
                 "${workspaceFolder}/godot-cpp/include/**",
                 "${workspaceFolder}/godot-cpp/gen/include/**",
-                "${workspaceFolder}/SKLibretro/external/**",
-                "${workspaceFolder}/SKLibretro/external/libretro-common/include/**",
-                "${workspaceFolder}/SKLibretro/external/SDL3/include/**"
+                "${workspaceFolder}/libretro-godot/external/**",
+                "${workspaceFolder}/libretro-godot/external/libretro-common/include/**",
+                "${workspaceFolder}/libretro-godot/external/SDL3/include/**"
             ],
             "defines": [
                 "_DEBUG",

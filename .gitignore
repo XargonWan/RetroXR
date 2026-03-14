@@ -4,12 +4,12 @@ Temp/*
 
 vc140.pdb
 .sconsign.dblite
-RetroVR/SKLibretro/~*
+RetroVR/libretro-godot/~*
 # MSVC build artifacts (generated alongside the DLL, not needed at runtime)
-RetroVR/SKLibretro/*.exp
-RetroVR/SKLibretro/*.ilk
-RetroVR/SKLibretro/*.lib
-RetroVR/SKLibretro/*.pdb
+RetroVR/libretro-godot/*.exp
+RetroVR/libretro-godot/*.ilk
+RetroVR/libretro-godot/*.lib
+RetroVR/libretro-godot/*.pdb
 
 # godot-pdfium build artifacts
 RetroVR/godot-pdfium/~*

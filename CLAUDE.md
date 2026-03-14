@@ -29,7 +29,7 @@ ANDROID_NDK_ROOT="C:/android/android-ndk-r27d" ANDROID_HOME="" \
 ```
 
 The `SConstruct` is at the workspace root; `Temp/SConscript` does the actual build logic.
-Output libraries go to `RetroVR/SKLibretro/`.
+Output libraries go to `RetroVR/libretro-godot/`.
 
 No test suite exists in this project.
 
@@ -51,7 +51,7 @@ Wrapper* w = Wrapper::GetCurrentThreadWrapper();
 ```
 ThreadCommands that execute on the main thread carry an explicit `Wrapper*` and call `SetCurrentThreadWrapper` around their work so handler callbacks invoked during Execute() can also resolve the right instance.
 
-### Key Classes (SKLibretro/src/)
+### Key Classes (libretro-godot/src/)
 
 - **Wrapper** — Per-instance emulation orchestrator. Owns the emulation thread, all handlers, the command queue, and a back-pointer `Libretro* m_libretro_node`. Exposes `GetCurrentThreadWrapper()` / `SetCurrentThreadWrapper(Wrapper*)` as static helpers for the thread-local pattern.
 - **Core** — Dynamically loads a libretro core (`.dll` on Windows, `.so` on Android) via `DynLib.hpp` abstraction, copies it to a temp directory for isolation, and binds all libretro callback function pointers. All callbacks resolve the current wrapper via `GetCurrentThreadWrapper()`.
@@ -83,8 +83,8 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 ## Dependencies
 
 - **godot-cpp** (submodule, 4.5 branch) — Godot C++ bindings
-- **SDL3** — Core DLL loading and HW render window management on Windows only (`SKLibretro/external/SDL3/`). Not used on Android (replaced by `dlopen`/`dlsym` via `DynLib.hpp`).
-- **libretro-common** — Reference implementations for VFS, audio conversion, etc. (`SKLibretro/external/libretro-common/`)
+- **SDL3** — Core DLL loading and HW render window management on Windows only (`libretro-godot/external/SDL3/`). Not used on Android (replaced by `dlopen`/`dlsym` via `DynLib.hpp`).
+- **libretro-common** — Reference implementations for VFS, audio conversion, etc. (`libretro-godot/external/libretro-common/`)
 - **moodycamel::ReaderWriterQueue** — Lock-free SPSC queue for cross-thread communication
 - **godot-xr-tools v4.5.1** — VR locomotion, interactions, finger poses (`RetroVR/addons/godot-xr-tools/`)
 

@@ -4,7 +4,7 @@ Import('env', 'output_dir')
 
 env = env.Clone()
 
-env = SConscript("../../SKLibretro/godot-cpp/SConstruct")
+env = SConscript("../../libretro-godot/godot-cpp/SConstruct")
 
 env.Append(CPPPATH=[
     "external/pdfium/include/",

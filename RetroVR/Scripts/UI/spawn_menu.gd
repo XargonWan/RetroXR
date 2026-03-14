@@ -262,43 +262,31 @@ func _make_nav_button(lbl: String) -> Button:
 	return btn
 
 
+func _show_view(view: Control, scroll: ScrollContainer, nav_btn: Button) -> void:
+	for v: Control in [_spawn_view, _cores_view, _options_view, _scene_view]:
+		v.visible = v == view
+	_active_scroll = scroll
+	_set_nav_active(nav_btn)
+
+
 func _show_spawn_view() -> void:
-	_spawn_view.visible = true
-	_cores_view.visible = false
-	_options_view.visible = false
-	_scene_view.visible = false
+	_show_view(_spawn_view, null, _nav_spawn_btn)
 	_update_spawn_active_scroll(_spawn_tabs.current_tab if _spawn_tabs else 0)
-	_set_nav_active(_nav_spawn_btn)
 
 
 func _show_cores_view() -> void:
-	_spawn_view.visible = false
-	_cores_view.visible = true
-	_options_view.visible = false
-	_scene_view.visible = false
-	_active_scroll = _download_list_scroll
-	_set_nav_active(_nav_cores_btn)
+	_show_view(_cores_view, _download_list_scroll, _nav_cores_btn)
 	if not _download_fetched:
 		_download_fetched = true
 		_start_fetch()
 
 
 func _show_options_view() -> void:
-	_spawn_view.visible = false
-	_cores_view.visible = false
-	_options_view.visible = true
-	_scene_view.visible = false
-	_active_scroll = _options_scroll
-	_set_nav_active(_nav_options_btn)
+	_show_view(_options_view, _options_scroll, _nav_options_btn)
 
 
 func _show_scene_view() -> void:
-	_spawn_view.visible = false
-	_cores_view.visible = false
-	_options_view.visible = false
-	_scene_view.visible = true
-	_active_scroll = _scene_scroll
-	_set_nav_active(_nav_scene_btn)
+	_show_view(_scene_view, _scene_scroll, _nav_scene_btn)
 	_update_scene_buttons()
 
 
@@ -375,20 +363,28 @@ func _build_spawn_view() -> Control:
 	return tabs
 
 
+func _clear_vbox(vbox: VBoxContainer) -> void:
+	for child in vbox.get_children():
+		child.queue_free()
+	vbox.add_child(_spacer(10))
+
+
+func _add_no_defaults_label(container: Container) -> void:
+	var lbl := Label.new()
+	lbl.text = "No default cores set.\nGo to Cores \u25b8 Manager to configure systems."
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	container.add_child(lbl)
+
+
 func _populate_systems_tab() -> void:
 	if not _systems_vbox:
 		return
-	for child in _systems_vbox.get_children():
-		child.queue_free()
-	_systems_vbox.add_child(_spacer(10))
+	_clear_vbox(_systems_vbox)
 	var defaults := core_defaults.all_defaults()
 	if defaults.is_empty():
-		var lbl := Label.new()
-		lbl.text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
-		lbl.add_theme_font_size_override("font_size", 20)
-		lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_systems_vbox.add_child(lbl)
+		_add_no_defaults_label(_systems_vbox)
 		return
 	for systemid: String in defaults:
 		var display_name := systemid
@@ -408,17 +404,10 @@ func _populate_systems_tab() -> void:
 func _populate_cartridges_tab() -> void:
 	if not _cartridges_vbox:
 		return
-	for child in _cartridges_vbox.get_children():
-		child.queue_free()
-	_cartridges_vbox.add_child(_spacer(10))
+	_clear_vbox(_cartridges_vbox)
 	var defaults := core_defaults.all_defaults()
 	if defaults.is_empty():
-		var lbl := Label.new()
-		lbl.text = "No default cores set.\nGo to Cores \u25b8 Manager to configure systems."
-		lbl.add_theme_font_size_override("font_size", 20)
-		lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_cartridges_vbox.add_child(lbl)
+		_add_no_defaults_label(_cartridges_vbox)
 		return
 	for systemid: String in defaults:
 		RomLibrary.ensure_rom_dir(systemid)
