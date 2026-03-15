@@ -27,8 +27,10 @@ extends XRToolsPickable
 # ── Internal state ────────────────────────────────────────────────────────────
 
 enum BookState { CLOSED, OPEN, LAST_PAGE }
+enum _Format { PDF, CBZ }
 
 var _state: BookState = BookState.CLOSED
+var _format: _Format = _Format.PDF
 var _page_count: int = 0
 var _leaf_count: int = 0
 
@@ -37,7 +39,9 @@ var _leaf_count: int = 0
 ## 0 = cover just opened (left = page 1, right = page 2).
 var _current_leaf: int = 0
 
-var _renderer: RefCounted = null  # PDFRenderer instance
+var _renderer: RefCounted = null  # PDFRenderer instance (PDF only)
+var _cbz_entries: Array[String] = []  # sorted image filenames inside the CBZ (CBZ only)
+var _cbz_path: String = ""            # stored for per-task ZIPReader opens (CBZ only)
 var _page_width: float = 0.0
 var _page_height: float = 0.0
 var _book_width: float = 0.0  # single page width in meters
@@ -102,13 +106,22 @@ func _ready() -> void:
 		load_pdf(pdf_path)
 
 
-## Open a PDF file and configure the book.
+## Open a PDF or CBZ file and configure the book.
 func load_pdf(path: String) -> void:
 	_cleanup()
 	_loading = true
 	pdf_path = path
 	_loading = false
 
+	var ext := path.get_extension().to_lower()
+	if ext == "cbz":
+		_load_cbz(path)
+	else:
+		_load_pdf_internal(path)
+
+
+func _load_pdf_internal(path: String) -> void:
+	_format = _Format.PDF
 	_renderer = ClassDB.instantiate("PDFRenderer")
 	if not _renderer:
 		push_error("[PDFBook] PDFRenderer class not available. Is the GDExtension loaded?")
@@ -138,14 +151,92 @@ func load_pdf(path: String) -> void:
 	else:
 		_book_width = book_height * 0.7
 
+	_cache_dir = "user://pdf_cache/" + pdf_path.md5_text() + "/"
+	DirAccess.make_dir_recursive_absolute(_cache_dir)
+
+	_configure_meshes()
+	_set_state(BookState.CLOSED)
+
+	print("[PDFBook] Loaded PDF: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
+		pdf_path, _page_count, _leaf_count, _book_width, book_height])
+
+
+func _load_cbz(path: String) -> void:
+	_format = _Format.CBZ
+	_cbz_path = path
+
+	var reader := ZIPReader.new()
+	var err := reader.open(path)
+	if err != OK:
+		push_error("[PDFBook] Failed to open CBZ: %s (err %d)" % [path, err])
+		return
+
+	# Filter entries to supported image types, sort naturally
+	var IMAGE_EXTS := ["jpg", "jpeg", "png", "webp"]
+	var entries: Array[String] = []
+	for entry: String in reader.get_files():
+		if entry.get_extension().to_lower() in IMAGE_EXTS:
+			entries.append(entry)
+	entries.sort_custom(func(a: String, b: String) -> bool:
+		return a.naturalnocasecmp_to(b) < 0
+	)
+	reader.close()
+
+	if entries.is_empty():
+		push_warning("[PDFBook] CBZ has no image entries: %s" % path)
+		return
+
+	_cbz_entries = entries
+	_page_count = entries.size()
+	_leaf_count = ceili(_page_count / 2.0)
+
+	# Decode the first image to get page dimensions
+	var first_img := _decode_cbz_page(0)
+	if first_img:
+		_page_width = first_img.get_width()
+		_page_height = first_img.get_height()
+	else:
+		_page_width = 1.0
+		_page_height = 1.0
+
+	if _page_height > 0:
+		_book_width = book_height * (_page_width / _page_height)
+	else:
+		_book_width = book_height * 0.65
+
 	_cache_dir = "user://pdf_cache/" + path.md5_text() + "/"
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	_configure_meshes()
 	_set_state(BookState.CLOSED)
 
-	print("[PDFBook] Loaded: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
+	print("[PDFBook] Loaded CBZ: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
 		path, _page_count, _leaf_count, _book_width, book_height])
+
+
+## Decode a CBZ page image by index. Opens and closes its own ZIPReader (thread-safe).
+func _decode_cbz_page(page_index: int) -> Image:
+	if page_index < 0 or page_index >= _cbz_entries.size():
+		return null
+	var reader := ZIPReader.new()
+	if reader.open(_cbz_path) != OK:
+		return null
+	var data := reader.read_file(_cbz_entries[page_index])
+	reader.close()
+	if data.is_empty():
+		return null
+	var img := Image.new()
+	var ext := _cbz_entries[page_index].get_extension().to_lower()
+	var decode_err: Error
+	if ext == "png":
+		decode_err = img.load_png_from_buffer(data)
+	elif ext == "webp":
+		decode_err = img.load_webp_from_buffer(data)
+	else:  # jpg / jpeg
+		decode_err = img.load_jpg_from_buffer(data)
+	if decode_err != OK:
+		return null
+	return img
 
 
 # ── Async page texture loading ────────────────────────────────────────────────
@@ -176,9 +267,22 @@ func _get_page_texture(page_index: int) -> ImageTexture:
 func _request_page_render(page_index: int) -> void:
 	if _pending_renders.has(page_index):
 		return
-	if not _renderer or not _renderer.IsOpen():
-		return
 	_pending_renders[page_index] = true
+
+	if _format == _Format.CBZ:
+		var cache_dir := _cache_dir
+		WorkerThreadPool.add_task(func():
+			var img := _decode_cbz_page(page_index)
+			if img:
+				img.save_png(cache_dir + "page_%03d.png" % page_index)
+			call_deferred("_on_page_rendered", page_index, img)
+		)
+		return
+
+	# PDF path
+	if not _renderer or not _renderer.IsOpen():
+		_pending_renders.erase(page_index)
+		return
 	var renderer_ref := _renderer
 	var dpi := render_dpi
 	var cache_dir := _cache_dir
@@ -723,7 +827,7 @@ func _create_hint_labels() -> void:
 
 ## Pre-render pages near the current spread so they're ready before the user turns.
 func _prefetch_nearby_pages() -> void:
-	if not _renderer or not _renderer.IsOpen():
+	if _page_count == 0:
 		return
 	var center := _current_leaf * 2
 	for i in range(maxi(0, center - prefetch_pages), mini(_page_count, center + prefetch_pages + 2)):
@@ -736,6 +840,8 @@ func _cleanup() -> void:
 		_renderer.Close()
 	_renderer = null
 	_render_mutex.unlock()
+	_cbz_entries.clear()
+	_cbz_path = ""
 	_texture_cache.clear()
 	_pending_renders.clear()
 	_despawn_active_leaf()

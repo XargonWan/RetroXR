@@ -117,7 +117,8 @@ static func scan_books() -> Array[Dictionary]:
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
-		if not dir.current_is_dir() and fname.get_extension().to_lower() == "pdf":
+		var ext := fname.get_extension().to_lower()
+		if not dir.current_is_dir() and (ext == "pdf" or ext == "cbz"):
 			results.append({"path": dir_path.path_join(fname), "label": fname.get_basename()})
 		fname = dir.get_next()
 	dir.list_dir_end()
