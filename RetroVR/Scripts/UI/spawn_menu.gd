@@ -450,6 +450,7 @@ func _populate_systems_tab() -> void:
 func _populate_cartridges_tab() -> void:
 	if not _cartridges_inner_tabs:
 		return
+	var prev_tab := _cartridges_inner_tabs.current_tab
 	# Clear existing system tabs.
 	for child in _cartridges_inner_tabs.get_children():
 		_cartridges_inner_tabs.remove_child(child)
@@ -566,6 +567,8 @@ func _populate_cartridges_tab() -> void:
 				vbox.add_child(row)
 		vbox.add_child(_spacer(8))
 
+	if prev_tab < _cartridges_inner_tabs.get_tab_count():
+		_cartridges_inner_tabs.current_tab = prev_tab
 	_update_cartridges_inner_scroll()
 
 
