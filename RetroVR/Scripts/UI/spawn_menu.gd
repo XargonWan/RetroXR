@@ -87,8 +87,8 @@ var _manager_empty_label: Label         = null
 
 # Spawn > Systems tab — rebuilt whenever defaults change
 var _systems_vbox: VBoxContainer = null
-# Spawn > Cartridges tab — rebuilt whenever defaults change or tab opened
-var _cartridges_vbox: VBoxContainer = null
+# Spawn > Cartridges tab — inner TabContainer, one tab per system
+var _cartridges_inner_tabs: TabContainer = null
 # Spawn > Books tab — rebuilt each time the tab is opened
 var _books_vbox: VBoxContainer = null
 
@@ -310,8 +310,18 @@ func _show_about_view() -> void:
 
 
 func _update_spawn_active_scroll(tab_idx: int) -> void:
-	if tab_idx >= 0 and tab_idx < _spawn_tab_scrolls.size():
+	if tab_idx == 2:
+		_update_cartridges_inner_scroll()
+	elif tab_idx >= 0 and tab_idx < _spawn_tab_scrolls.size():
 		_active_scroll = _spawn_tab_scrolls[tab_idx]
+	else:
+		_active_scroll = null
+
+
+func _update_cartridges_inner_scroll() -> void:
+	if _cartridges_inner_tabs and _cartridges_inner_tabs.get_tab_count() > 0:
+		_active_scroll = _cartridges_inner_tabs.get_tab_control(
+				_cartridges_inner_tabs.current_tab) as ScrollContainer
 	else:
 		_active_scroll = null
 
@@ -360,15 +370,15 @@ func _build_spawn_view() -> Control:
 
 	_add_spawn_tab(tabs, "TVs", [["TV", "tv"]])
 
-	# Cartridges tab — dynamic, one ribbon per system with default core set
-	var carts_scroll := ScrollContainer.new()
-	carts_scroll.name = "Cartridges"
-	tabs.add_child(carts_scroll)
-	_spawn_tab_scrolls.append(carts_scroll)
-	_cartridges_vbox = VBoxContainer.new()
-	_cartridges_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_cartridges_vbox.add_theme_constant_override("separation", 10)
-	carts_scroll.add_child(_cartridges_vbox)
+	# Cartridges tab — inner TabContainer, one tab per system
+	_cartridges_inner_tabs = TabContainer.new()
+	_cartridges_inner_tabs.name = "Cartridges"
+	_cartridges_inner_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tabs.add_child(_cartridges_inner_tabs)
+	_spawn_tab_scrolls.append(null)  # handled via _update_cartridges_inner_scroll
+	_cartridges_inner_tabs.tab_changed.connect(func(_idx: int):
+		_update_cartridges_inner_scroll()
+	)
 	_populate_cartridges_tab()
 
 	# Books tab — lists PDFs from the books root directory
@@ -434,31 +444,45 @@ func _populate_systems_tab() -> void:
 
 
 func _populate_cartridges_tab() -> void:
-	if not _cartridges_vbox:
+	if not _cartridges_inner_tabs:
 		return
-	_clear_vbox(_cartridges_vbox)
+	# Clear existing system tabs.
+	for child in _cartridges_inner_tabs.get_children():
+		_cartridges_inner_tabs.remove_child(child)
+		child.queue_free()
+
 	var defaults := core_defaults.all_defaults()
 	if defaults.is_empty():
-		_add_no_defaults_label(_cartridges_vbox)
+		var placeholder := ScrollContainer.new()
+		placeholder.name = "Systems"
+		_cartridges_inner_tabs.add_child(placeholder)
+		var ph_vbox := VBoxContainer.new()
+		ph_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		placeholder.add_child(ph_vbox)
+		ph_vbox.add_child(_spacer(10))
+		_add_no_defaults_label(ph_vbox)
 		return
+
 	for systemid: String in defaults:
 		RomLibrary.ensure_rom_dir(systemid)
-		# Collect all supported extensions for this system across all its cores
+		# Collect all supported extensions for this system across all its cores.
 		var exts: Array[String] = []
 		for entry: Dictionary in core_db.get_by_systemid(systemid):
 			for ext: String in entry.get("supported_extensions", "").split("|"):
 				var e := ext.strip_edges().to_lower()
 				if not e.is_empty() and e not in exts:
 					exts.append(e)
-		# System ribbon header
+
 		var system_name := core_db.get_systemname_for_id(systemid)
-		var hdr := Label.new()
-		hdr.text = system_name
-		hdr.add_theme_font_size_override("font_size", 22)
-		hdr.add_theme_color_override("font_color", COLOR_TITLE)
-		_cartridges_vbox.add_child(hdr)
-		_cartridges_vbox.add_child(HSeparator.new())
-		# ROM list
+		var sys_scroll := ScrollContainer.new()
+		sys_scroll.name = system_name
+		_cartridges_inner_tabs.add_child(sys_scroll)
+		var vbox := VBoxContainer.new()
+		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_theme_constant_override("separation", 10)
+		sys_scroll.add_child(vbox)
+		vbox.add_child(_spacer(10))
+
 		var roms := RomLibrary.scan_roms(systemid, exts)
 		if roms.is_empty():
 			var hint := Label.new()
@@ -466,17 +490,14 @@ func _populate_cartridges_tab() -> void:
 			hint.add_theme_font_size_override("font_size", 18)
 			hint.add_theme_color_override("font_color", COLOR_DESC)
 			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			_cartridges_vbox.add_child(hint)
+			vbox.add_child(hint)
 		else:
-			# Track which games we've already shown (by game_id)
 			var shown_games: Dictionary = {}
-
 			for rom: Dictionary in roms:
 				var rom_path: String = rom["path"]
 				var game := gamelist_manager.get_game_for_rom(systemid, rom_path)
 				var is_scraped := not game.is_empty()
 
-				# If scraped and multi-ROM game, only show once (via preferred ROM)
 				if is_scraped:
 					var gid: String = game.get("game_id", "")
 					if shown_games.has(gid):
@@ -486,7 +507,6 @@ func _populate_cartridges_tab() -> void:
 				var row := HBoxContainer.new()
 				row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-				# Spawn button — show wheel image if scraped, otherwise text
 				var btn := Button.new()
 				btn.custom_minimum_size = Vector2(0, 72)
 				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -497,8 +517,6 @@ func _populate_cartridges_tab() -> void:
 				if is_scraped:
 					var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
 					var game_name: String = game.get("name", rom["label"])
-
-					# Try to load wheel image
 					var wheel_tex := _load_wheel_texture(systemid, pref_rom.get("romname", ""))
 					if wheel_tex:
 						btn.icon = wheel_tex
@@ -507,7 +525,6 @@ func _populate_cartridges_tab() -> void:
 						btn.expand_icon = true
 					else:
 						btn.text = "  +  " + game_name
-
 					btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name))
 				else:
 					btn.text = "  +  " + rom["label"]
@@ -515,7 +532,6 @@ func _populate_cartridges_tab() -> void:
 
 				row.add_child(btn)
 
-				# Game detail button — only for scraped games
 				if is_scraped:
 					var detail_btn := Button.new()
 					detail_btn.text = "🎮"
@@ -525,7 +541,6 @@ func _populate_cartridges_tab() -> void:
 					detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
 					row.add_child(detail_btn)
 
-				# Manual button — scraped media/manual/ only
 				if is_scraped and _has_scraped_manual(systemid, pref_rom.get("romname", "")):
 					var manual_btn := Button.new()
 					manual_btn.text = "📖"
@@ -536,7 +551,6 @@ func _populate_cartridges_tab() -> void:
 					manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
 					row.add_child(manual_btn)
 
-				# Scrape button
 				var scrape_btn := Button.new()
 				scrape_btn.text = "✂️"
 				scrape_btn.custom_minimum_size = Vector2(72, 72)
@@ -545,8 +559,10 @@ func _populate_cartridges_tab() -> void:
 				scrape_btn.pressed.connect(_on_scrape_pressed.bind(rom["path"], systemid, scrape_btn))
 				row.add_child(scrape_btn)
 
-				_cartridges_vbox.add_child(row)
-		_cartridges_vbox.add_child(_spacer(8))
+				vbox.add_child(row)
+		vbox.add_child(_spacer(8))
+
+	_update_cartridges_inner_scroll()
 
 
 func _populate_books_tab() -> void:

@@ -10,6 +10,7 @@ var _tcp := TCPServer.new()
 ## Each entry: { peer: StreamPeerTCP, buf: PackedByteArray }
 var _connections: Array = []
 var _running := false
+var _thread: Thread = null
 
 
 ## Root of the served filesystem.
@@ -38,14 +39,17 @@ func start(port: int = DEFAULT_PORT) -> bool:
 		push_error("[WebFileServer] listen(%d) failed: %s" % [port, error_string(err)])
 		return false
 	_running = true
-	set_process(true)
+	_thread = Thread.new()
+	_thread.start(_thread_loop)
 	print("[WebFileServer] Listening on http://%s:%d  root=%s" % [local_ip(), port, server_root()])
 	return true
 
 
 func stop() -> void:
 	_running = false
-	set_process(false)
+	if _thread:
+		_thread.wait_to_finish()
+		_thread = null
 	for c: Dictionary in _connections:
 		(c["peer"] as StreamPeerTCP).disconnect_from_host()
 	_connections.clear()
@@ -53,38 +57,37 @@ func stop() -> void:
 	print("[WebFileServer] Stopped")
 
 
-func _ready() -> void:
-	set_process(false)
+func _thread_loop() -> void:
+	while _running:
+		# Accept new connections.
+		while _tcp.is_connection_available():
+			var peer := _tcp.take_connection()
+			_connections.append({"peer": peer, "buf": PackedByteArray()})
 
+		# Service connections.
+		var to_remove: Array = []
+		for c: Dictionary in _connections:
+			var peer := c["peer"] as StreamPeerTCP
+			peer.poll()
+			var st := peer.get_status()
+			if st == StreamPeerTCP.STATUS_NONE or st == StreamPeerTCP.STATUS_ERROR:
+				to_remove.append(c)
+				continue
+			var avail := peer.get_available_bytes()
+			if avail > 0:
+				var result := peer.get_data(avail)
+				if result[0] == OK:
+					var new_buf: PackedByteArray = c["buf"]
+					new_buf.append_array(result[1])
+					c["buf"] = new_buf
+			if _try_handle(c):
+				to_remove.append(c)
 
-func _process(_delta: float) -> void:
-	# Accept new connections.
-	while _tcp.is_connection_available():
-		var peer := _tcp.take_connection()
-		_connections.append({"peer": peer, "buf": PackedByteArray()})
+		for c: Dictionary in to_remove:
+			(c["peer"] as StreamPeerTCP).disconnect_from_host()
+			_connections.erase(c)
 
-	# Service connections.
-	var to_remove: Array = []
-	for c: Dictionary in _connections:
-		var peer := c["peer"] as StreamPeerTCP
-		peer.poll()
-		var st := peer.get_status()
-		if st == StreamPeerTCP.STATUS_NONE or st == StreamPeerTCP.STATUS_ERROR:
-			to_remove.append(c)
-			continue
-		var avail := peer.get_available_bytes()
-		if avail > 0:
-			var result := peer.get_data(avail)
-			if result[0] == OK:
-				var new_buf: PackedByteArray = c["buf"]
-				new_buf.append_array(result[1])
-				c["buf"] = new_buf
-		if _try_handle(c):
-			to_remove.append(c)
-
-	for c: Dictionary in to_remove:
-		(c["peer"] as StreamPeerTCP).disconnect_from_host()
-		_connections.erase(c)
+		OS.delay_msec(1)
 
 
 ## Returns true when the request is fully received and handled.
@@ -344,6 +347,7 @@ button:hover{background:#800}
 <div id="bc"></div>
 <div id="dz">Drop files here to upload &nbsp;(multiple OK)</div>
 <div id="st"></div>
+<div id="pb" style="display:none;height:8px;background:#222;border-radius:4px;margin-bottom:10px;overflow:hidden"><div id="pf" style="height:100%;width:0%;background:#8af;border-radius:4px;transition:width .15s"></div></div>
 <table><tbody id="tb"></tbody></table>
 <script>
 var cur='';
@@ -391,22 +395,42 @@ document.addEventListener('click',function(e){
 var dz=document.getElementById('dz');
 dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('over');});
 dz.addEventListener('dragleave',function(){dz.classList.remove('over');});
-dz.addEventListener('drop',async function(e){
+dz.addEventListener('drop',function(e){
   e.preventDefault();
   dz.classList.remove('over');
   var files=e.dataTransfer.files;
-  var st=document.getElementById('status');
-  if(!st)st=document.getElementById('st');
-  var done=0;
-  for(var i=0;i<files.length;i++){
-    st.textContent='Uploading '+(i+1)+' of '+files.length+': '+files[i].name;
+  var st=document.getElementById('st');
+  var pb=document.getElementById('pb');
+  var pf=document.getElementById('pf');
+  var i=0;
+  function uploadNext(){
+    if(i>=files.length){
+      st.textContent='Done \u2014 uploaded '+files.length+' file(s).';
+      pb.style.display='none';
+      pf.style.width='0%';
+      go(cur);
+      return;
+    }
+    var file=files[i];
+    st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name;
+    pb.style.display='block';
+    pf.style.width='0%';
     var fd=new FormData();
-    fd.append('file',files[i]);
-    await fetch('/api/upload?path='+encodeURIComponent(cur),{method:'POST',body:fd});
-    done++;
+    fd.append('file',file);
+    var xhr=new XMLHttpRequest();
+    xhr.upload.onprogress=function(ev){
+      if(ev.lengthComputable){
+        var pct=Math.round(ev.loaded/ev.total*100);
+        pf.style.width=pct+'%';
+        st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' ('+pct+'%)';
+      }
+    };
+    xhr.onload=function(){i++;uploadNext();};
+    xhr.onerror=function(){st.textContent='Error uploading '+file.name;i++;uploadNext();};
+    xhr.open('POST','/api/upload?path='+encodeURIComponent(cur));
+    xhr.send(fd);
   }
-  st.textContent='Done \u2014 uploaded '+done+' file(s).';
-  go(cur);
+  uploadNext();
 });
 go('');
 </script></body></html>"""
