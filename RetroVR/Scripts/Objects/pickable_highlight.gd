@@ -23,11 +23,8 @@ const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdsha
 ## Color shown while the object is held by a physical hand grab.
 @export var held_color:  Color = Color(0.25, 0.6, 1.0, 1.0)
 
-@export_range(0.0, 0.05, 0.001) var shell_width: float = 0.012
-## Primary outline thickness — screen-space, consistent at any distance.
-@export_range(0.0, 2.0, 0.01)   var perspective_width: float = 0.8
-## Width of the outline band. Small = crisp edge, large = wide glow halo.
-@export_range(0.001, 1.0, 0.01) var edge_softness: float = 0.5
+## Outline thickness — screen-space, consistent at any distance.
+@export_range(0.0, 3.0, 0.1)    var outline_width: float = 1.0
 @export_range(0.0, 8.0, 0.1)    var glow_strength: float = 2.0
 @export_range(0.0, 10.0, 0.1)   var fade_start: float = 0.0
 @export_range(0.1, 50.0, 0.1)   var fade_end: float = 10.0
@@ -206,9 +203,7 @@ func _sync_material_params() -> void:
 	if not _outline_material:
 		return
 	_outline_material.set_shader_parameter("outline_color", hover_color)
-	_outline_material.set_shader_parameter("shell_width", shell_width)
-	_outline_material.set_shader_parameter("perspective_width", perspective_width)
-	_outline_material.set_shader_parameter("edge_softness", edge_softness)
+	_outline_material.set_shader_parameter("outline_width", outline_width)
 	_outline_material.set_shader_parameter("glow_strength", glow_strength)
 	_outline_material.set_shader_parameter("fade_start", fade_start)
 	_outline_material.set_shader_parameter("fade_end", fade_end)
