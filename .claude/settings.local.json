@@ -11,7 +11,10 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(find:*)",
       "WebFetch(domain:github.com)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(\"C:/Users/user/AppData/Roaming/Python/Python314/Scripts/scons.exe\" platform=windows arch=x86_64 target=template_debug dev_build=yes 2>&1)",
+      "Bash(ANDROID_NDK_ROOT=\"C:/android/android-ndk-r27d\" ANDROID_HOME=\"\" \"C:/Users/user/AppData/Roaming/Python/Python314/Scripts/scons.exe\" platform=android arch=arm64 target=template_debug 2>&1)",
+      "Bash(ANDROID_NDK_ROOT=\"C:/android/android-ndk-r27d\" ANDROID_HOME=\"\" \"C:/Users/user/AppData/Roaming/Python/Python314/Scripts/scons.exe\" platform=android arch=arm64 target=template_debug 2>&1 | grep -E \"error|warning|Linking|done building\")"
     ]
   }
 }

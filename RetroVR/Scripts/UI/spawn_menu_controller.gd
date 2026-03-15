@@ -250,7 +250,7 @@ func _compute_scroll_pixels(delta: float, raw_y: float) -> float:
 	_smoothed_scroll_y = lerpf(_smoothed_scroll_y, raw_y, clampf(_SMOOTH_FACTOR * delta, 0.0, 1.0))
 	if abs(_smoothed_scroll_y) < _SCROLL_DEADZONE:
 		return 0.0
-	var t := (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
+	var t: float = (abs(_smoothed_scroll_y) - _SCROLL_DEADZONE) / (1.0 - _SCROLL_DEADZONE)
 	var pixels := -_smoothed_scroll_y * t * _SCROLL_SPEED * delta
 	return 0.0 if abs(pixels) < _SCROLL_MIN_PX else pixels
 
