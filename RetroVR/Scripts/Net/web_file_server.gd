@@ -553,31 +553,15 @@ dz.addEventListener('drop',function(e){
     var fd=new FormData();
     fd.append('file',file);
     var xhr=new XMLHttpRequest();
-    var pollTimer=null;
-    function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
     xhr.upload.onprogress=function(ev){
       if(ev.lengthComputable){
         var pct=Math.round(ev.loaded/ev.total*100);
         pf.style.width=pct+'%';
-        if(pct>=100&&!pollTimer){
-          pollTimer=setInterval(function(){
-            fetch('/api/progress').then(function(r){return r.json();}).then(function(d){
-              if(d.total&&d.total>0){
-                var wpct=Math.round(d.written/d.total*100);
-                pf.style.width=wpct+'%';
-                st.textContent='Saving to disk: '+d.filename+' ('+wpct+'%)';
-              } else {
-                st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' (100%) \u2014 waiting for server\u2026';
-              }
-            }).catch(function(){});
-          },100);
-        } else {
-          st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' ('+pct+'%)';
-        }
+        st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' ('+pct+'%)';
       }
     };
-    xhr.onload=function(){stopPoll();pf.style.width='100%';i++;uploadNext();};
-    xhr.onerror=function(){stopPoll();st.textContent='Error uploading '+file.name;i++;uploadNext();};
+    xhr.onload=function(){pf.style.width='100%';i++;uploadNext();};
+    xhr.onerror=function(){st.textContent='Error uploading '+file.name;i++;uploadNext();};
     xhr.open('POST','/api/upload?path='+encodeURIComponent(cur));
     xhr.send(fd);
   }
