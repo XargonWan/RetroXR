@@ -9,7 +9,7 @@
 ## picked_up/grabbed signals entirely and only emits has_picked_up on the pickup
 ## function node. Hand-grab emits picked_up/dropped on the pickable as normal.
 ##
-## Uses a two-pass fake-stencil technique (no SubViewport, works in VR stereo).
+## Uses a two-pass real-stencil technique (no SubViewport, works in VR stereo).
 ## See outline.gdshader for a detailed explanation.
 extends Node3D
 
@@ -48,7 +48,7 @@ func _ready() -> void:
 	_outline_material.render_priority = 2
 	_sync_material_params()
 
-	# Pass 1: invisible depth prepass — writes depth as the stencil mask.
+	# Pass 1: invisible stencil write — marks every pixel the mesh covers with stencil=1.
 	_depth_material = ShaderMaterial.new()
 	_depth_material.shader = DEPTH_PREPASS_SHADER
 	_depth_material.render_priority = 1
@@ -96,7 +96,7 @@ func _collect_mesh_overlays(node: Node) -> void:
 	for child in node.get_children():
 		if child == self:
 			continue
-		if child is MeshInstance3D:
+		if child is MeshInstance3D and not child.is_in_group("outline_exclude"):
 			var src := child as MeshInstance3D
 			var overlay := MeshInstance3D.new()
 			overlay.mesh = src.mesh
