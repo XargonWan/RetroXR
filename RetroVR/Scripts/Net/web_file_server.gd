@@ -170,6 +170,8 @@ func _dispatch(c: Dictionary, method: String, path: String,
 		_handle_list(peer, query.get("path", ""))
 	elif method == "GET" and path == "/api/progress":
 		_send_text(peer, 200, "application/json", JSON.stringify(_upload_progress))
+	elif method == "GET" and path == "/api/download":
+		_handle_download(peer, query.get("path", ""))
 	elif method == "DELETE" and path == "/api/delete":
 		_handle_delete(peer, query.get("path", ""))
 	elif method == "OPTIONS":
@@ -347,6 +349,24 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 	return false
 
 
+func _handle_download(peer: StreamPeerTCP, rel: String) -> void:
+	var abs := _resolve(rel)
+	if abs.is_empty() or abs == server_root():
+		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
+		return
+	var f := FileAccess.open(abs, FileAccess.READ)
+	if not f:
+		_send_text(peer, 404, "text/plain", "Not Found")
+		return
+	var data := f.get_buffer(f.get_length())
+	f.close()
+	var filename := abs.get_file()
+	var hdr := "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"%s\"\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" \
+			   % [filename, data.size()]
+	peer.put_data(hdr.to_utf8_buffer())
+	peer.put_data(data)
+
+
 func _handle_delete(peer: StreamPeerTCP, rel: String) -> void:
 	var abs := _resolve(rel)
 	if abs.is_empty() or abs == server_root():
@@ -448,9 +468,12 @@ td{padding:9px 6px;font-size:14px;vertical-align:middle}
 .dn{color:#8af;cursor:pointer}
 .dn:hover{text-decoration:underline}
 .sz{color:#555;text-align:right;width:80px;white-space:nowrap}
-.ac{text-align:right;width:44px}
-button{background:#500;border:none;color:#f88;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:13px}
-button:hover{background:#800}
+.ac{text-align:right;width:84px;white-space:nowrap}
+button{border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:13px}
+.dl{background:#050;color:#8f8}
+.dl:hover{background:#070}
+.rm{background:#500;color:#f88}
+.rm:hover{background:#800}
 </style></head><body>
 <h1>RetroVR Files</h1>
 <div id="bc"></div>
@@ -488,13 +511,16 @@ function draw(d){
   });
   (d.files||[]).forEach(function(f){
     var fp=cur?cur+'/'+f.name:f.name;
-    h+='<tr><td class="ic">📄</td><td class="nm">'+esc(f.name)+'</td><td class="sz">'+fmt(f.size)+'</td><td class="ac"><button data-del="'+esc(fp)+'">✕</button></td></tr>';
+    h+='<tr><td class="ic">📄</td><td class="nm">'+esc(f.name)+'</td><td class="sz">'+fmt(f.size)+'</td><td class="ac"><button class="dl" data-dl="'+esc(fp)+'">↓</button> <button class="rm" data-del="'+esc(fp)+'">✕</button></td></tr>';
   });
   if(!h)h='<tr><td colspan="4" style="color:#333;padding:20px;text-align:center">Empty</td></tr>';
   tb.innerHTML=h;
 }
 document.addEventListener('click',function(e){
   if(e.target.hasAttribute('data-nav'))go(e.target.getAttribute('data-nav'));
+  if(e.target.hasAttribute('data-dl')){
+    window.location='/api/download?path='+encodeURIComponent(e.target.getAttribute('data-dl'));
+  }
   if(e.target.hasAttribute('data-del')){
     var p=e.target.getAttribute('data-del');
     if(confirm('Delete '+p.split('/').pop()+'?'))
