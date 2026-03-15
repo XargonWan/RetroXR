@@ -84,6 +84,8 @@ var _manager_empty_label: Label         = null
 var _systems_vbox: VBoxContainer = null
 # Spawn > Cartridges tab — rebuilt whenever defaults change or tab opened
 var _cartridges_vbox: VBoxContainer = null
+# Spawn > Books tab — rebuilt each time the tab is opened
+var _books_vbox: VBoxContainer = null
 
 # Scene view state
 var _scene_scroll: ScrollContainer = null
@@ -128,6 +130,7 @@ func _ready() -> void:
 	RomLibrary.ensure_roms_root()
 	for sid: String in core_defaults.all_defaults():
 		RomLibrary.ensure_rom_dir(sid)
+	RomLibrary.ensure_books_root()
 	_build_ui()
 
 
@@ -352,11 +355,24 @@ func _build_spawn_view() -> Control:
 	carts_scroll.add_child(_cartridges_vbox)
 	_populate_cartridges_tab()
 
+	# Books tab — lists PDFs from the books root directory
+	var books_scroll := ScrollContainer.new()
+	books_scroll.name = "Books"
+	tabs.add_child(books_scroll)
+	_spawn_tab_scrolls.append(books_scroll)
+	_books_vbox = VBoxContainer.new()
+	_books_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_books_vbox.add_theme_constant_override("separation", 10)
+	books_scroll.add_child(_books_vbox)
+	_populate_books_tab()
+
 	# Refresh on tab switch — picks up files added to disk since last open
 	# Also update _active_scroll to the current tab's ScrollContainer
 	tabs.tab_changed.connect(func(idx: int):
 		if idx == 2:
 			_populate_cartridges_tab()
+		elif idx == 3:
+			_populate_books_tab()
 		_update_spawn_active_scroll(idx)
 	)
 
@@ -522,6 +538,28 @@ func _populate_cartridges_tab() -> void:
 
 				_cartridges_vbox.add_child(row)
 		_cartridges_vbox.add_child(_spacer(8))
+
+
+func _populate_books_tab() -> void:
+	if not _books_vbox:
+		return
+	_clear_vbox(_books_vbox)
+	var books := RomLibrary.scan_books()
+	if books.is_empty():
+		var hint := Label.new()
+		hint.text = "No PDFs found in books folder."
+		hint.add_theme_color_override("font_color", COLOR_DESC)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_books_vbox.add_child(hint)
+		return
+	for book: Dictionary in books:
+		var btn := Button.new()
+		btn.text = "  📖  " + book["label"]
+		btn.custom_minimum_size = Vector2(0, 72)
+		btn.add_theme_font_size_override("font_size", 24)
+		btn.pressed.connect(spawn_manual_requested.emit.bind(book["path"]))
+		_books_vbox.add_child(btn)
+	_books_vbox.add_child(_spacer(8))
 
 
 func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:

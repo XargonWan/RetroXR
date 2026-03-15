@@ -86,3 +86,42 @@ static func manual_path(rom_path: String) -> String:
 static func scraped_manual_path(systemid: String, romname: String) -> String:
 	var base := romname.get_basename()
 	return rom_dir_for_system(systemid).path_join("media/manual").path_join(base + ".pdf")
+
+
+## Root directory for books (PDFs).
+## Sits alongside the roms/ folder in the same files root.
+static func default_books_root() -> String:
+	if OS.get_name() == "Android":
+		return "/sdcard/Android/data/com.xenu.retrovr/files/books"
+	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/books"
+
+
+## Create the books root if it doesn't already exist.
+static func ensure_books_root() -> void:
+	var path := default_books_root()
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err == OK:
+		print("[RomLibrary] Ensured books root: ", path)
+	else:
+		push_warning("[RomLibrary] Failed to create books root '%s' (err %d)" % [path, err])
+
+
+## Scan the books root and return all PDF files sorted by name.
+## Returns Array of {path: String, label: String}.
+static func scan_books() -> Array[Dictionary]:
+	var dir_path := default_books_root()
+	var dir := DirAccess.open(dir_path)
+	if not dir:
+		return []
+	var results: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		if not dir.current_is_dir() and fname.get_extension().to_lower() == "pdf":
+			results.append({"path": dir_path.path_join(fname), "label": fname.get_basename()})
+		fname = dir.get_next()
+	dir.list_dir_end()
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
+	)
+	return results
