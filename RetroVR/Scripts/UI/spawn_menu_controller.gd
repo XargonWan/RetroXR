@@ -64,6 +64,7 @@ var _last_fps: int = -1
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
 var _fps_label: Label3D = null
+var _vram_label: Label3D = null
 
 # FunctionPointer nodes for hit-testing
 var _left_pointer:  XRToolsFunctionPointer = null
@@ -173,6 +174,9 @@ func _process(delta: float) -> void:
 		if fps != _last_fps:
 			_fps_label.text = "FPS: %d" % fps
 			_last_fps = fps
+	if _vram_label:
+		var vram_mb := int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1_048_576)
+		_vram_label.text = "VRAM: %d MB" % vram_mb
 
 	var menu_visible: bool = _viewport_node.visible
 
@@ -501,17 +505,28 @@ func _on_show_fps_changed(enabled: bool) -> void:
 		if _fps_label == null and _camera:
 			_fps_label = Label3D.new()
 			_fps_label.text = "FPS: --"
-			_fps_label.font_size = 48
+			_fps_label.font_size = 18
 			_fps_label.modulate = Color(1.0, 1.0, 0.0)
 			_fps_label.no_depth_test = true
 			_fps_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			_fps_label.position = Vector3(-0.35, 0.2, -0.8)
+			_fps_label.position = Vector3(-0.35, 0.16, -0.8)
 			_camera.add_child(_fps_label)
+			_vram_label = Label3D.new()
+			_vram_label.text = "VRAM: --"
+			_vram_label.font_size = 18
+			_vram_label.modulate = Color(0.6, 1.0, 0.6)
+			_vram_label.no_depth_test = true
+			_vram_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			_vram_label.position = Vector3(-0.35, 0.12, -0.8)
+			_camera.add_child(_vram_label)
 	else:
 		if _fps_label:
 			_fps_label.queue_free()
 			_fps_label = null
 			_last_fps = -1
+		if _vram_label:
+			_vram_label.queue_free()
+			_vram_label = null
 
 
 # ── Scene management ──────────────────────────────────────────────────────────

@@ -51,10 +51,12 @@ var _spawn_view:    Control = null
 var _cores_view:    Control = null
 var _options_view:  Control = null
 var _scene_view:    Control = null
+var _about_view:    Control = null
 var _nav_spawn_btn:   Button = null
 var _nav_cores_btn:   Button = null
 var _nav_options_btn: Button = null
 var _nav_scene_btn:   Button = null
+var _nav_about_btn:   Button = null
 var _nav_buttons: Array[Button] = []
 
 # Cores > Download tab state
@@ -68,6 +70,7 @@ var _download_widgets: Dictionary = {}
 var _active_scroll:        ScrollContainer = null
 var _download_list_scroll: ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
+var _about_scroll:         ScrollContainer = null
 
 # Spawn view tab ScrollContainers (indexed by tab index)
 var _spawn_tab_scrolls: Array[ScrollContainer] = []
@@ -220,15 +223,18 @@ func _build_ui() -> void:
 	_nav_cores_btn   = _make_nav_button("  CORES  ")
 	_nav_options_btn = _make_nav_button(" OPTIONS ")
 	_nav_scene_btn   = _make_nav_button("  SCENE  ")
+	_nav_about_btn   = _make_nav_button("  ABOUT  ")
 	_nav_spawn_btn.pressed.connect(_show_spawn_view)
 	_nav_cores_btn.pressed.connect(_show_cores_view)
 	_nav_options_btn.pressed.connect(_show_options_view)
 	_nav_scene_btn.pressed.connect(_show_scene_view)
+	_nav_about_btn.pressed.connect(_show_about_view)
 	nav_bar.add_child(_nav_spawn_btn)
 	nav_bar.add_child(_nav_cores_btn)
 	nav_bar.add_child(_nav_options_btn)
 	nav_bar.add_child(_nav_scene_btn)
-	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_options_btn, _nav_scene_btn]
+	nav_bar.add_child(_nav_about_btn)
+	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_options_btn, _nav_scene_btn, _nav_about_btn]
 
 	root_vbox.add_child(HSeparator.new())
 
@@ -253,6 +259,10 @@ func _build_ui() -> void:
 	_scene_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_scene_view)
 
+	_about_view = _build_about_view()
+	_about_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_child(_about_view)
+
 	_show_spawn_view()
 
 
@@ -266,7 +276,7 @@ func _make_nav_button(lbl: String) -> Button:
 
 
 func _show_view(view: Control, scroll: ScrollContainer, nav_btn: Button) -> void:
-	for v: Control in [_spawn_view, _cores_view, _options_view, _scene_view]:
+	for v: Control in [_spawn_view, _cores_view, _options_view, _scene_view, _about_view]:
 		v.visible = v == view
 	_active_scroll = scroll
 	_set_nav_active(nav_btn)
@@ -291,6 +301,10 @@ func _show_options_view() -> void:
 func _show_scene_view() -> void:
 	_show_view(_scene_view, _scene_scroll, _nav_scene_btn)
 	_update_scene_buttons()
+
+
+func _show_about_view() -> void:
+	_show_view(_about_view, _about_scroll, _nav_about_btn)
 
 
 func _update_spawn_active_scroll(tab_idx: int) -> void:
@@ -1674,6 +1688,104 @@ func _find_game_by_id(systemid: String, game_id: String) -> Dictionary:
 
 func _sync_vscrollbar() -> void:
 	pass # no longer used
+
+
+func _build_about_view() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_about_scroll = scroll
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 14)
+	scroll.add_child(vbox)
+	vbox.add_child(_spacer(16))
+
+	# Author credit
+	var author_lbl := Label.new()
+	author_lbl.text = "Ryan McClelland"
+	author_lbl.add_theme_font_size_override("font_size", 32)
+	author_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	author_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(author_lbl)
+
+	var role_lbl := Label.new()
+	role_lbl.text = "Author"
+	role_lbl.add_theme_font_size_override("font_size", 18)
+	role_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	role_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(role_lbl)
+
+	vbox.add_child(_spacer(8))
+
+	# Donate button
+	var donate_btn := Button.new()
+	donate_btn.text = "  ❤  DONATE  "
+	donate_btn.custom_minimum_size = Vector2(0, 64)
+	donate_btn.add_theme_font_size_override("font_size", 24)
+	var donate_style := StyleBoxFlat.new()
+	donate_style.bg_color = COLOR_BTN_DL
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		donate_style.set(k, 8)
+	for state in ["normal", "hover", "pressed"]:
+		donate_btn.add_theme_stylebox_override(state, donate_style)
+	donate_btn.pressed.connect(func(): OS.shell_open("https://placeholder"))
+	vbox.add_child(donate_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# OSS libraries header
+	var libs_hdr := Label.new()
+	libs_hdr.text = "OPEN SOURCE LIBRARIES"
+	libs_hdr.add_theme_font_size_override("font_size", 20)
+	libs_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(libs_hdr)
+
+	const LIBS: Array = [
+		["SK.Libretro.Godot", "SKurdt", "MIT"],
+		["pdfium",            "The Chromium Authors", "BSD 3-Clause"],
+		["godot-xr-tools",   "Bastiaan Olij",   "MIT"],
+		["godot-cpp",        "Godot Engine contributors", "MIT"],
+		["SDL3",             "Sam Lantinga / SDL contributors", "zlib"],
+		["libretro-common",  "libretro team",   "MIT"],
+		["ReaderWriterQueue","Cameron Desrochers","BSD"],
+	]
+	for entry: Array in LIBS:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		row.custom_minimum_size = Vector2(0, 52)
+		vbox.add_child(row)
+
+		var left := VBoxContainer.new()
+		left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		left.add_theme_constant_override("separation", 2)
+		row.add_child(left)
+
+		var name_lbl := Label.new()
+		name_lbl.text = entry[0] as String
+		name_lbl.add_theme_font_size_override("font_size", 18)
+		name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		left.add_child(name_lbl)
+
+		var author_sub := Label.new()
+		author_sub.text = entry[1] as String
+		author_sub.add_theme_font_size_override("font_size", 14)
+		author_sub.add_theme_color_override("font_color", COLOR_LICENSE)
+		left.add_child(author_sub)
+
+		var lic_lbl := Label.new()
+		lic_lbl.text = entry[2] as String
+		lic_lbl.add_theme_font_size_override("font_size", 16)
+		lic_lbl.add_theme_color_override("font_color", COLOR_DESC)
+		lic_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(lic_lbl)
+
+		vbox.add_child(HSeparator.new())
+
+	vbox.add_child(_spacer(12))
+	return scroll
 
 
 func _spacer(height: int) -> Control:
