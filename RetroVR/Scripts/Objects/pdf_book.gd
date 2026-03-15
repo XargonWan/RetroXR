@@ -346,16 +346,24 @@ func _configure_meshes() -> void:
 	# Stack center X: pages start at the outer edge of the spine
 	var stack_x := half_w + spine_half
 
-	_set_mesh_size(_cover_mesh, _book_width, book_height)
-	_set_mesh_size(_back_cover_mesh, _book_width, book_height)
-	_set_mesh_size(_left_stack_top, _book_width, book_height)
-	_set_mesh_size(_right_stack_top, _book_width, book_height)
-
-	# Duplicate shared box meshes so stacks are independent
+	# Duplicate all shared meshes before resizing so instances don't affect each other
+	if _cover_mesh.mesh:
+		_cover_mesh.mesh = _cover_mesh.mesh.duplicate()
+	if _back_cover_mesh.mesh:
+		_back_cover_mesh.mesh = _back_cover_mesh.mesh.duplicate()
+	if _left_stack_top.mesh:
+		_left_stack_top.mesh = _left_stack_top.mesh.duplicate()
+	if _right_stack_top.mesh:
+		_right_stack_top.mesh = _right_stack_top.mesh.duplicate()
 	if _left_stack.mesh:
 		_left_stack.mesh = _left_stack.mesh.duplicate()
 	if _right_stack.mesh:
 		_right_stack.mesh = _right_stack.mesh.duplicate()
+
+	_set_mesh_size(_cover_mesh, _book_width, book_height)
+	_set_mesh_size(_back_cover_mesh, _book_width, book_height)
+	_set_mesh_size(_left_stack_top, _book_width, book_height)
+	_set_mesh_size(_right_stack_top, _book_width, book_height)
 
 	# Stack box sizes and positions — offset outward so they don't overlap the spine
 	if _left_stack.mesh is BoxMesh:
