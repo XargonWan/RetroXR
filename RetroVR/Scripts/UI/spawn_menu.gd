@@ -272,6 +272,72 @@ func _build_ui() -> void:
 	_show_spawn_view()
 
 
+func _make_toggle(initial_on: bool, on_toggled: Callable) -> Button:
+	const W      := 100.0
+	const H      := 52.0
+	const KNOB_S := 40.0
+	const MARGIN := 6.0
+
+	var btn := Button.new()
+	btn.toggle_mode = true
+	btn.button_pressed = initial_on
+	btn.custom_minimum_size = Vector2(W, H)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.text = ""
+
+	var off_style := StyleBoxFlat.new()
+	off_style.bg_color = Color(0.20, 0.20, 0.26)
+	off_style.border_color = Color(0.50, 0.50, 0.58)
+	for side in ["border_width_left", "border_width_right", "border_width_top", "border_width_bottom"]:
+		off_style.set(side, 2)
+	for k in ["corner_radius_top_left", "corner_radius_top_right",
+			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		off_style.set(k, int(H / 2.0))
+	for m in ["content_margin_left", "content_margin_right",
+			  "content_margin_top", "content_margin_bottom"]:
+		off_style.set(m, 0)
+
+	var on_style := StyleBoxFlat.new()
+	on_style.bg_color = Color(0.14, 0.55, 0.30)
+	on_style.border_color = Color(0.30, 0.80, 0.50)
+	for side in ["border_width_left", "border_width_right", "border_width_top", "border_width_bottom"]:
+		on_style.set(side, 2)
+	for k in ["corner_radius_top_left", "corner_radius_top_right",
+			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		on_style.set(k, int(H / 2.0))
+	for m in ["content_margin_left", "content_margin_right",
+			  "content_margin_top", "content_margin_bottom"]:
+		on_style.set(m, 0)
+
+	btn.add_theme_stylebox_override("normal",        off_style)
+	btn.add_theme_stylebox_override("hover",         off_style)
+	btn.add_theme_stylebox_override("pressed",       on_style)
+	btn.add_theme_stylebox_override("hover_pressed", on_style)
+	btn.add_theme_stylebox_override("focus",         StyleBoxEmpty.new())
+
+	var knob := Panel.new()
+	knob.size = Vector2(KNOB_S, KNOB_S)
+	knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ks := StyleBoxFlat.new()
+	ks.bg_color = Color.WHITE
+	for k in ["corner_radius_top_left", "corner_radius_top_right",
+			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		ks.set(k, int(KNOB_S / 2.0))
+	knob.add_theme_stylebox_override("panel", ks)
+
+	var knob_y := (H - KNOB_S) / 2.0
+	var x_off  := MARGIN
+	var x_on   := W - KNOB_S - MARGIN
+	knob.position = Vector2(x_on if initial_on else x_off, knob_y)
+	btn.add_child(knob)
+
+	btn.toggled.connect(func(on: bool) -> void:
+		knob.position.x = x_on if on else x_off
+		on_toggled.call(on)
+	)
+	return btn
+
+
 func _make_nav_button(lbl: String) -> Button:
 	var btn := Button.new()
 	btn.text = lbl
@@ -1094,16 +1160,9 @@ func _build_options_view() -> Control:
 	as_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	as_row.add_child(as_lbl)
 
-	var as_opt := OptionButton.new()
-	as_opt.custom_minimum_size = Vector2(140, 56)
-	as_opt.add_theme_font_size_override("font_size", 20)
-	as_opt.add_item("ON", 0)
-	as_opt.add_item("OFF", 1)
-	as_opt.selected = 0
-	as_opt.item_selected.connect(func(idx: int) -> void:
-		auto_save_changed.emit(idx == 0)
-	)
-	as_row.add_child(as_opt)
+	as_row.add_child(_make_toggle(true, func(on: bool) -> void:
+		auto_save_changed.emit(on)
+	))
 
 	vbox.add_child(HSeparator.new())
 
@@ -1120,16 +1179,9 @@ func _build_options_view() -> Control:
 	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fps_row.add_child(fps_lbl)
 
-	var fps_opt := OptionButton.new()
-	fps_opt.custom_minimum_size = Vector2(140, 56)
-	fps_opt.add_theme_font_size_override("font_size", 20)
-	fps_opt.add_item("OFF", 0)
-	fps_opt.add_item("ON", 1)
-	fps_opt.selected = 0
-	fps_opt.item_selected.connect(func(idx: int) -> void:
-		show_fps_changed.emit(idx == 1)
-	)
-	fps_row.add_child(fps_opt)
+	fps_row.add_child(_make_toggle(false, func(on: bool) -> void:
+		show_fps_changed.emit(on)
+	))
 
 	vbox.add_child(HSeparator.new())
 
@@ -1153,13 +1205,16 @@ func _build_options_view() -> Control:
 		fs_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		fs_row.add_child(fs_lbl)
 
-		var fs_opt := OptionButton.new()
-		fs_opt.custom_minimum_size = Vector2(140, 56)
-		fs_opt.add_theme_font_size_override("font_size", 20)
-		fs_opt.add_item("OFF", 0)
-		fs_opt.add_item("ON", 1)
-		fs_opt.selected = 1 if scraper_config.web_server_enabled else 0
-		fs_row.add_child(fs_opt)
+		var fs_toggle := _make_toggle(scraper_config.web_server_enabled, func(on: bool) -> void:
+			if on:
+				web_server.start()
+			else:
+				web_server.stop()
+			scraper_config.web_server_enabled = on
+			scraper_config.save_config()
+			_server_address_label.visible = on
+		)
+		fs_row.add_child(fs_toggle)
 
 		_server_address_label = Label.new()
 		_server_address_label.add_theme_font_size_override("font_size", 16)
@@ -1167,17 +1222,6 @@ func _build_options_view() -> Control:
 		_server_address_label.text = "http://%s:8080" % WebFileServer.local_ip()
 		_server_address_label.visible = scraper_config.web_server_enabled
 		vbox.add_child(_server_address_label)
-
-		fs_opt.item_selected.connect(func(idx: int) -> void:
-			var enable := idx == 1
-			if enable:
-				web_server.start()
-			else:
-				web_server.stop()
-			scraper_config.web_server_enabled = enable
-			scraper_config.save_config()
-			_server_address_label.visible = enable
-		)
 
 		vbox.add_child(HSeparator.new())
 
