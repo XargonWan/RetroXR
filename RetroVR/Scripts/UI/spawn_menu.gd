@@ -375,6 +375,10 @@ func _build_spawn_view() -> Control:
 	_cartridges_inner_tabs.name = "Cartridges"
 	_cartridges_inner_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tabs.add_child(_cartridges_inner_tabs)
+	# Allow the tab bar to scroll when there are more systems than fit.
+	var carts_tab_bar := _cartridges_inner_tabs.get_tab_bar()
+	carts_tab_bar.scrolling_enabled = true
+	carts_tab_bar.scroll_to_selected = true
 	_spawn_tab_scrolls.append(null)  # handled via _update_cartridges_inner_scroll
 	_cartridges_inner_tabs.tab_changed.connect(func(_idx: int):
 		_update_cartridges_inner_scroll()
