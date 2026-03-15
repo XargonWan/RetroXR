@@ -76,22 +76,42 @@ func _ready() -> void:
 
 
 func _build_overlays() -> void:
+	rebuild_overlays()
+
+
+## Rebuild overlays from scratch — call this after the parent's meshes are resized or replaced.
+func rebuild_overlays() -> void:
+	for overlay in _overlays:
+		if is_instance_valid(overlay):
+			overlay.queue_free()
+	_overlays.clear()
+	_overlay_sources.clear()
+
 	var parent := get_parent()
 	if not parent:
 		return
 
-	for child in parent.get_children():
-		if child is MeshInstance3D and child != self:
+	_collect_mesh_overlays(parent)
+
+
+func _collect_mesh_overlays(node: Node) -> void:
+	var parent_inv: Transform3D = (get_parent() as Node3D).global_transform.affine_inverse()
+	for child in node.get_children():
+		if child == self:
+			continue
+		if child is MeshInstance3D:
+			var src := child as MeshInstance3D
 			var overlay := MeshInstance3D.new()
-			overlay.mesh = child.mesh
-			overlay.transform = child.transform
-			overlay.material_override = _depth_material  # pass 1 → pass 2 via next_pass
+			overlay.mesh = src.mesh
+			overlay.transform = parent_inv * src.global_transform
+			overlay.material_override = _depth_material
 			overlay.visible = false
 			overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			overlay.extra_cull_margin = 16.0
 			add_child(overlay)
 			_overlays.append(overlay)
-			_overlay_sources.append(child as MeshInstance3D)
+			_overlay_sources.append(src)
+		_collect_mesh_overlays(child)
 
 
 func _connect_pickup_nodes() -> void:
@@ -166,13 +186,15 @@ func _set_overlays_visible(show: bool) -> void:
 
 func _process(_delta: float) -> void:
 	# Only runs while overlays are active (set_process toggles this).
-	# Keeps overlay transforms and visibility in sync with source meshes
-	# that move/hide as book state changes.
+	# Keeps overlay mesh, transform, and visibility in sync with source meshes.
+	var parent_inv: Transform3D = (get_parent() as Node3D).global_transform.affine_inverse()
 	for i in range(mini(_overlays.size(), _overlay_sources.size())):
 		var overlay := _overlays[i]
 		var src := _overlay_sources[i]
 		if is_instance_valid(overlay) and is_instance_valid(src):
-			overlay.transform = src.transform
+			if overlay.mesh != src.mesh:
+				overlay.mesh = src.mesh
+			overlay.transform = parent_inv * src.global_transform
 			overlay.visible = src.visible
 
 

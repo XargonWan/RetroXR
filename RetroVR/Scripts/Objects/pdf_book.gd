@@ -154,6 +154,7 @@ func _load_pdf_internal(path: String) -> void:
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	_configure_meshes()
+	_rebuild_highlight_overlays()
 	_set_state(BookState.CLOSED)
 
 	print("[PDFBook] Loaded PDF: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
@@ -207,6 +208,7 @@ func _load_cbz(path: String) -> void:
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	_configure_meshes()
+	_rebuild_highlight_overlays()
 	_set_state(BookState.CLOSED)
 
 	print("[PDFBook] Loaded CBZ: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
@@ -839,6 +841,13 @@ func _prefetch_nearby_pages() -> void:
 	var center := _current_leaf * 2
 	for i in range(maxi(0, center - prefetch_pages), mini(_page_count, center + prefetch_pages + 2)):
 		_get_page_texture(i)  # triggers background render if not cached
+
+
+func _rebuild_highlight_overlays() -> void:
+	for child in get_children():
+		if child.has_method("rebuild_overlays"):
+			child.rebuild_overlays()
+			break
 
 
 func _cleanup() -> void:
