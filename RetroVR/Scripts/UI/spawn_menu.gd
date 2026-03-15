@@ -27,6 +27,8 @@ signal auto_save_changed(enabled: bool)
 signal show_fps_changed(enabled: bool)
 ## Emitted when the user changes the snap turn angle.
 signal snap_angle_changed(degrees: float)
+## Emitted when the user adjusts the player height offset.
+signal height_offset_changed(offset: float)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -1011,6 +1013,43 @@ func _build_options_view() -> Control:
 		snap_angle_changed.emit(angles[idx])
 	)
 	sa_row.add_child(sa_opt)
+
+	vbox.add_child(HSeparator.new())
+
+	# Height Offset slider
+	var ho_header := HBoxContainer.new()
+	ho_header.add_theme_constant_override("separation", 10)
+	vbox.add_child(ho_header)
+
+	var ho_lbl := Label.new()
+	ho_lbl.text = "Height Offset"
+	ho_lbl.add_theme_font_size_override("font_size", 22)
+	ho_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	ho_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ho_header.add_child(ho_lbl)
+
+	var ho_val := Label.new()
+	ho_val.text = "0.00 m"
+	ho_val.add_theme_font_size_override("font_size", 20)
+	ho_val.add_theme_color_override("font_color", COLOR_LICENSE)
+	ho_val.custom_minimum_size = Vector2(80, 0)
+	ho_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ho_header.add_child(ho_val)
+
+	var ho_slider := HSlider.new()
+	ho_slider.min_value = -1.0
+	ho_slider.max_value = 1.0
+	ho_slider.step = 0.01
+	ho_slider.value = 0.0
+	ho_slider.custom_minimum_size = Vector2(0, 48)
+	ho_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ho_slider.add_theme_constant_override("grabber_offset", 0)
+	vbox.add_child(ho_slider)
+
+	ho_slider.value_changed.connect(func(v: float) -> void:
+		ho_val.text = "%+.2f m" % v
+		height_offset_changed.emit(v)
+	)
 
 	vbox.add_child(HSeparator.new())
 

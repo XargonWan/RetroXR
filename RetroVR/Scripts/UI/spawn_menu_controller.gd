@@ -63,6 +63,7 @@ var _last_fps: int = -1
 
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
+var _player_body: XRToolsPlayerBody = null
 var _fps_label: Label3D = null
 var _vram_label: Label3D = null
 
@@ -102,6 +103,7 @@ func _deferred_setup() -> void:
 
 	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
 	_move_turn = get_tree().root.find_child("MovementTurn", true, false)
+	_player_body = get_tree().root.find_child("PlayerBody", true, false) as XRToolsPlayerBody
 
 	# FunctionPointer nodes (one per controller) for hit-testing
 	for node: Node in get_tree().root.find_children("*", "XRToolsFunctionPointer", true, false):
@@ -144,6 +146,7 @@ func _connect_menu_signals() -> void:
 	menu.auto_save_changed.connect(_on_auto_save_changed)
 	menu.show_fps_changed.connect(_on_show_fps_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
+	menu.height_offset_changed.connect(_on_height_offset_changed)
 	_menu_connected = true
 
 	# Auto-load saved scene objects on startup (arcade only)
@@ -500,24 +503,31 @@ func _on_snap_angle_changed(degrees: float) -> void:
 		_move_turn.set("step_turn_angle", degrees)
 
 
+func _on_height_offset_changed(offset: float) -> void:
+	if _player_body:
+		_player_body.player_height_offset = offset
+
+
 func _on_show_fps_changed(enabled: bool) -> void:
 	if enabled:
 		if _fps_label == null and _camera:
 			_fps_label = Label3D.new()
 			_fps_label.text = "FPS: --"
-			_fps_label.font_size = 18
+			_fps_label.font_size = 12
+			_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			_fps_label.modulate = Color(1.0, 1.0, 0.0)
 			_fps_label.no_depth_test = true
 			_fps_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			_fps_label.position = Vector3(-0.35, 0.16, -0.8)
+			_fps_label.position = Vector3(-0.5, 0.15, -0.8)
 			_camera.add_child(_fps_label)
 			_vram_label = Label3D.new()
 			_vram_label.text = "VRAM: --"
-			_vram_label.font_size = 18
+			_vram_label.font_size = 12
+			_vram_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			_vram_label.modulate = Color(0.6, 1.0, 0.6)
 			_vram_label.no_depth_test = true
 			_vram_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			_vram_label.position = Vector3(-0.35, 0.12, -0.8)
+			_vram_label.position = Vector3(-0.5, 0.08, -0.8)
 			_camera.add_child(_vram_label)
 	else:
 		if _fps_label:
