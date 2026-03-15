@@ -509,21 +509,14 @@ func _populate_cartridges_tab() -> void:
 					detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
 					row.add_child(detail_btn)
 
-				# Manual button — check both alongside ROM and scraped media
-				var has_man := RomLibrary.has_manual(rom["path"])
-				if not has_man and is_scraped:
-					has_man = _has_scraped_manual(systemid, pref_rom.get("romname", ""))
-				if has_man:
+				# Manual button — scraped media/manual/ only
+				if is_scraped and _has_scraped_manual(systemid, pref_rom.get("romname", "")):
 					var manual_btn := Button.new()
 					manual_btn.text = "📖"
 					manual_btn.custom_minimum_size = Vector2(72, 72)
 					manual_btn.tooltip_text = "Spawn manual"
 					manual_btn.add_theme_font_size_override("font_size", 26)
-					var pdf_path: String
-					if RomLibrary.has_manual(rom["path"]):
-						pdf_path = RomLibrary.manual_path(rom["path"])
-					else:
-						pdf_path = _scraped_manual_path(systemid, pref_rom.get("romname", ""))
+					var pdf_path := _scraped_manual_path(systemid, pref_rom.get("romname", ""))
 					manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
 					row.add_child(manual_btn)
 
@@ -1661,7 +1654,12 @@ func _has_scraped_manual(systemid: String, romname: String) -> bool:
 
 func _scraped_manual_path(systemid: String, romname: String) -> String:
 	var base := romname.get_basename()
-	return RomLibrary.rom_dir_for_system(systemid).path_join("media/manual").path_join(base + ".pdf")
+	var dir := RomLibrary.rom_dir_for_system(systemid).path_join("media/manual")
+	for ext in ["pdf", "cbz"]:
+		var path := dir.path_join(base + "." + ext)
+		if FileAccess.file_exists(path):
+			return path
+	return dir.path_join(base + ".pdf")
 
 
 func _find_game_by_id(systemid: String, game_id: String) -> Dictionary:

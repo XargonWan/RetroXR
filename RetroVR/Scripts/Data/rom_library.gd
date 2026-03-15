@@ -69,23 +69,16 @@ static func scan_roms(systemid: String, extensions: Array[String]) -> Array[Dict
 	return results
 
 
-## Check whether a PDF manual exists alongside a ROM file.
-## Looks for a file with the same base name but .pdf extension in the same directory.
-static func has_manual(rom_path: String) -> bool:
-	var pdf_path := manual_path(rom_path)
-	return FileAccess.file_exists(pdf_path)
-
-
-## Return the expected PDF manual path for a given ROM path.
-## Replaces the ROM's extension with ".pdf".
-static func manual_path(rom_path: String) -> String:
-	return rom_path.get_basename() + ".pdf"
-
-
 ## Return the scraped manual path (in media/manual/ directory).
+## Prefers .pdf; falls back to .cbz; returns .pdf path if neither exists.
 static func scraped_manual_path(systemid: String, romname: String) -> String:
 	var base := romname.get_basename()
-	return rom_dir_for_system(systemid).path_join("media/manual").path_join(base + ".pdf")
+	var dir := rom_dir_for_system(systemid).path_join("media/manual")
+	for ext in ["pdf", "cbz"]:
+		var path := dir.path_join(base + "." + ext)
+		if FileAccess.file_exists(path):
+			return path
+	return dir.path_join(base + ".pdf")
 
 
 ## Root directory for books (PDFs).
