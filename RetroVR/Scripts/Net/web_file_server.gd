@@ -4,16 +4,15 @@
 class_name WebFileServer
 extends Node
 
-const DEFAULT_PORT    := 8080
-const WRITE_CHUNK_SIZE := 524288  # 512 KB per loop iteration
+const DEFAULT_PORT := 8080
 
 var _tcp := TCPServer.new()
 ## Each entry: { peer: StreamPeerTCP, buf: PackedByteArray }
-## While writing: also has "write" → { queue, idx, f, offset, total, saved }
+## While streaming an upload: also has "us" → upload stream state dict
 var _connections: Array = []
 var _running := false
 var _thread: Thread = null
-## Shared progress state read by /api/progress (written on server thread, read on same thread via a new connection).
+## Shared progress state read by /api/progress.
 var _upload_progress: Dictionary = {}
 
 
@@ -71,13 +70,28 @@ func _thread_loop() -> void:
 		# Service connections.
 		var to_remove: Array = []
 		for c: Dictionary in _connections:
-			if c.has("write"):
-				# Writing phase — advance one chunk; done when true is returned.
-				if _write_chunk(c):
+			if c.has("us"):
+				# Streaming upload — feed incoming bytes directly to the state machine.
+				var peer := c["peer"] as StreamPeerTCP
+				peer.poll()
+				var st := peer.get_status()
+				if st == StreamPeerTCP.STATUS_NONE or st == StreamPeerTCP.STATUS_ERROR:
+					var us: Dictionary = c["us"]
+					if us["f"]:
+						(us["f"] as FileAccess).close()
+					to_remove.append(c)
+					continue
+				var new_bytes := PackedByteArray()
+				var avail := peer.get_available_bytes()
+				if avail > 0:
+					var result := peer.get_data(avail)
+					if result[0] == OK:
+						new_bytes = result[1]
+				if _feed_upload_stream(c, new_bytes):
 					to_remove.append(c)
 				continue
 
-			# Receiving phase.
+			# Receiving phase — buffer until full (non-upload) request arrives.
 			var peer := c["peer"] as StreamPeerTCP
 			peer.poll()
 			var st := peer.get_status()
@@ -92,8 +106,7 @@ func _thread_loop() -> void:
 					new_buf.append_array(result[1])
 					c["buf"] = new_buf
 			if _try_handle(c):
-				# Upload requests stay alive while writing; all others close.
-				if not c.has("write"):
+				if not c.has("us"):
 					to_remove.append(c)
 
 		for c: Dictionary in to_remove:
@@ -128,16 +141,22 @@ func _try_handle(c: Dictionary) -> bool:
 			hdrs[lines[i].substr(0, colon).strip_edges().to_lower()] = \
 				lines[i].substr(colon + 1).strip_edges()
 
+	var q_pos := raw_path.find("?")
+	var path := raw_path.substr(0, q_pos if q_pos != -1 else raw_path.length())
+	var query := _parse_query(raw_path.substr(q_pos + 1) if q_pos != -1 else "")
+
+	# Intercept uploads — start streaming immediately without waiting for full body.
+	if method == "POST" and path == "/api/upload":
+		var body_start := sep + 4
+		_start_upload_stream(c, query.get("path", ""), hdrs, buf.slice(body_start))
+		return true
+
 	var body_start := sep + 4
 	var content_length := int(hdrs.get("content-length", "0"))
 	if buf.size() < body_start + content_length:
 		return false  # body incomplete
 
 	var body := buf.slice(body_start, body_start + content_length)
-	var q_pos := raw_path.find("?")
-	var path := raw_path.substr(0, q_pos if q_pos != -1 else raw_path.length())
-	var query := _parse_query(raw_path.substr(q_pos + 1) if q_pos != -1 else "")
-
 	_dispatch(c, method, path, query, hdrs, body)
 	return true
 
@@ -151,8 +170,6 @@ func _dispatch(c: Dictionary, method: String, path: String,
 		_handle_list(peer, query.get("path", ""))
 	elif method == "GET" and path == "/api/progress":
 		_send_text(peer, 200, "application/json", JSON.stringify(_upload_progress))
-	elif method == "POST" and path == "/api/upload":
-		_handle_upload(c, query.get("path", ""), headers, body)
 	elif method == "DELETE" and path == "/api/delete":
 		_handle_delete(peer, query.get("path", ""))
 	elif method == "OPTIONS":
@@ -193,10 +210,10 @@ func _handle_list(peer: StreamPeerTCP, rel: String) -> void:
 	_send_text(peer, 200, "application/json", JSON.stringify({"dirs": dirs, "files": files}))
 
 
-## Parses the multipart body and queues files for chunked writing.
-## The connection stays open; _write_chunk advances the write each loop iteration.
-func _handle_upload(c: Dictionary, rel: String,
-					headers: Dictionary, body: PackedByteArray) -> void:
+## Starts a streaming multipart upload. Called as soon as HTTP headers arrive,
+## before the body has been fully received.
+func _start_upload_stream(c: Dictionary, rel: String, headers: Dictionary,
+						   body_so_far: PackedByteArray) -> void:
 	var peer := c["peer"] as StreamPeerTCP
 	var abs := _resolve(rel)
 	if abs.is_empty():
@@ -208,76 +225,126 @@ func _handle_upload(c: Dictionary, rel: String,
 		_send_text(peer, 400, "application/json", '{"error":"no boundary"}')
 		return
 	var boundary := ct.substr(b_idx + 9).strip_edges()
-	var parts := _parse_multipart(body, boundary)
-	var queue: Array = []
-	for part: Dictionary in parts:
-		var filename := _extract_filename(part["headers"] as String)
-		if filename.is_empty():
-			continue
-		queue.append({"dest": abs.path_join(filename.get_file()),
-					  "data": part["data"] as PackedByteArray,
-					  "filename": filename.get_file()})
-	if queue.is_empty():
-		_send_text(peer, 200, "application/json", '{"saved":0}')
-		return
-	c["write"] = {"queue": queue, "idx": 0, "f": null, "offset": 0, "total": 0, "saved": 0}
-	_start_next_write(c)
+	if boundary.begins_with('"'):
+		boundary = boundary.trim_prefix('"').trim_suffix('"')
+	c["us"] = {
+		"phase":     "part_preamble",
+		"dest_dir":  abs,
+		"delim":     ("--" + boundary).to_utf8_buffer(),
+		"data_term": ("\r\n--" + boundary).to_utf8_buffer(),
+		"buf":       body_so_far.duplicate(),
+		"f":         null,
+		"filename":  "",
+		"written":   0,
+		"total":     int(headers.get("content-length", "0")),
+		"saved":     0,
+	}
 
 
-func _start_next_write(c: Dictionary) -> void:
-	var w: Dictionary = c["write"]
-	var item: Dictionary = w["queue"][w["idx"]]
-	var f := FileAccess.open(item["dest"], FileAccess.WRITE)
-	if not f:
-		push_error("[WebFileServer] Cannot open %s for writing" % item["dest"])
-		w["idx"] += 1
-		if w["idx"] < (w["queue"] as Array).size():
-			_start_next_write(c)
+## State-machine step for streaming uploads. Appends new_data to the upload buffer
+## and writes file bytes to disk as they arrive, keeping only a tiny lookahead buffer.
+## Returns true when the upload is complete (HTTP response already sent).
+func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
+	var us: Dictionary = c["us"]
+	if new_data.size() > 0:
+		var b: PackedByteArray = us["buf"]
+		b.append_array(new_data)
+		us["buf"] = b
+
+	while true:
+		var phase: String = us["phase"]
+
+		if phase == "part_preamble":
+			var delim: PackedByteArray = us["delim"]
+			var buf: PackedByteArray   = us["buf"]
+			var pos := _find_bytes(buf, delim)
+			if pos == -1:
+				break
+			var after := pos + delim.size()
+			if after + 1 >= buf.size():
+				break  # need 2 more bytes to classify
+			if buf[after] == 45 and buf[after + 1] == 45:
+				# "--boundary--" with no parts.
+				_send_text(c["peer"] as StreamPeerTCP, 200, "application/json",
+						   '{"saved":%d}' % us["saved"])
+				return true
+			# Skip CRLF after delimiter.
+			if buf[after] == 13 and buf[after + 1] == 10:
+				after += 2
+			us["buf"]   = buf.slice(after)
+			us["phase"] = "part_headers"
+
+		elif phase == "part_headers":
+			var buf: PackedByteArray = us["buf"]
+			var hdr_end := _find_bytes(buf, "\r\n\r\n".to_utf8_buffer())
+			if hdr_end == -1:
+				break
+			var hdr_text := buf.slice(0, hdr_end).get_string_from_utf8()
+			us["buf"] = buf.slice(hdr_end + 4)
+			var filename := _extract_filename(hdr_text)
+			if filename.is_empty():
+				us["phase"] = "part_preamble"
+				continue
+			var dest: String = (us["dest_dir"] as String).path_join(filename.get_file())
+			var f := FileAccess.open(dest, FileAccess.WRITE)
+			if not f:
+				push_error("[WebFileServer] Cannot open %s for writing" % dest)
+				us["phase"] = "part_preamble"
+				continue
+			us["f"]        = f
+			us["filename"] = filename.get_file()
+			us["written"]  = 0
+			us["phase"]    = "data"
+			_upload_progress = {"filename": us["filename"], "written": 0, "total": us["total"]}
+			print("[WebFileServer] Streaming write: %s" % dest)
+
+		elif phase == "data":
+			var buf: PackedByteArray  = us["buf"]
+			var term: PackedByteArray = us["data_term"]
+			var term_pos := _find_bytes(buf, term)
+			if term_pos != -1:
+				var after_term := term_pos + term.size()
+				if after_term + 1 >= buf.size():
+					# Write up to the possible terminator and wait for 2 more bytes.
+					if term_pos > 0:
+						(us["f"] as FileAccess).store_buffer(buf.slice(0, term_pos))
+						us["written"] = (us["written"] as int) + term_pos
+						_upload_progress["written"] = us["written"]
+					us["buf"] = buf.slice(term_pos)
+					break
+				# Write data before the terminator, then close file.
+				if term_pos > 0:
+					(us["f"] as FileAccess).store_buffer(buf.slice(0, term_pos))
+					us["written"] = (us["written"] as int) + term_pos
+					_upload_progress["written"] = us["written"]
+				(us["f"] as FileAccess).close()
+				us["f"]    = null
+				us["saved"] = (us["saved"] as int) + 1
+				print("[WebFileServer] Saved: %s" % us["filename"])
+				if buf[after_term] == 45 and buf[after_term + 1] == 45:
+					# Final boundary "--" → done.
+					_send_text(c["peer"] as StreamPeerTCP, 200, "application/json",
+							   '{"saved":%d}' % us["saved"])
+					return true
+				# More parts → skip CRLF, read next part headers.
+				if buf[after_term] == 13 and buf[after_term + 1] == 10:
+					after_term += 2
+				us["buf"]   = buf.slice(after_term)
+				us["phase"] = "part_headers"
+			else:
+				# Terminator not found yet. Flush all bytes that can't be part of it.
+				var safe := buf.size() - (term.size() - 1)
+				if safe > 0:
+					(us["f"] as FileAccess).store_buffer(buf.slice(0, safe))
+					us["written"] = (us["written"] as int) + safe
+					_upload_progress["written"] = us["written"]
+					us["buf"] = buf.slice(safe)
+				break
+
 		else:
-			_send_text(c["peer"] as StreamPeerTCP, 200, "application/json",
-					   '{"saved":%d}' % w["saved"])
-			c.erase("write")
-			_upload_progress = {}
-		return
-	w["f"] = f
-	w["offset"] = 0
-	w["total"] = (item["data"] as PackedByteArray).size()
-	_upload_progress = {"filename": item["filename"], "written": 0, "total": w["total"]}
-	print("[WebFileServer] Writing %s (%d bytes)" % [item["dest"], w["total"]])
+			break
 
-
-## Writes one WRITE_CHUNK_SIZE chunk. Returns true when all files in the queue are done.
-func _write_chunk(c: Dictionary) -> bool:
-	var w: Dictionary = c["write"]
-	var item: Dictionary = (w["queue"] as Array)[w["idx"]]
-	var data := item["data"] as PackedByteArray
-	var f    := w["f"]     as FileAccess
-	var offset: int = w["offset"]
-	var chunk_end := mini(offset + WRITE_CHUNK_SIZE, data.size())
-	f.store_buffer(data.slice(offset, chunk_end))
-	w["offset"] = chunk_end
-	_upload_progress["written"] = chunk_end
-
-	if chunk_end < data.size():
-		return false  # still writing this file
-
-	# File complete.
-	f.close()
-	w["f"] = null
-	w["saved"] = (w["saved"] as int) + 1
-	print("[WebFileServer] Saved %s" % item["dest"])
-	w["idx"] = (w["idx"] as int) + 1
-	if (w["idx"] as int) < (w["queue"] as Array).size():
-		_start_next_write(c)
-		return false  # more files to write
-
-	# All files written — send response and signal done.
-	# Leave _upload_progress set (written == total) so in-flight polls see 100%.
-	# It will be overwritten when the next upload begins.
-	_send_text(c["peer"] as StreamPeerTCP, 200, "application/json",
-			   '{"saved":%d}' % w["saved"])
-	c.erase("write")
-	return true
+	return false
 
 
 func _handle_delete(peer: StreamPeerTCP, rel: String) -> void:
@@ -311,40 +378,6 @@ func _parse_query(s: String) -> Dictionary:
 			d[pair.substr(0, eq).uri_decode()] = pair.substr(eq + 1).uri_decode()
 	return d
 
-
-func _parse_multipart(body: PackedByteArray, boundary: String) -> Array:
-	var delim := ("--" + boundary).to_utf8_buffer()
-	var crlf2 := "\r\n\r\n".to_utf8_buffer()
-	var results: Array = []
-	var pos := 0
-	while true:
-		var d_pos := _find_bytes(body, delim, pos)
-		if d_pos == -1:
-			break
-		pos = d_pos + delim.size()
-		# Final boundary ends with "--"
-		if pos + 1 < body.size() and body[pos] == 45 and body[pos + 1] == 45:
-			break
-		# Skip CRLF after delimiter
-		if pos + 1 < body.size() and body[pos] == 13 and body[pos + 1] == 10:
-			pos += 2
-		# Find end of part headers
-		var hdr_end := _find_bytes(body, crlf2, pos)
-		if hdr_end == -1:
-			break
-		var hdr_text := body.slice(pos, hdr_end).get_string_from_utf8()
-		pos = hdr_end + 4
-		# Find next delimiter to bound the data
-		var next_d := _find_bytes(body, delim, pos)
-		if next_d == -1:
-			break
-		var data_end := next_d
-		# Strip trailing CRLF before next delimiter
-		if data_end >= 2 and body[data_end - 2] == 13 and body[data_end - 1] == 10:
-			data_end -= 2
-		results.append({"headers": hdr_text, "data": body.slice(pos, data_end)})
-		pos = next_d
-	return results
 
 
 func _extract_filename(part_headers: String) -> String:
