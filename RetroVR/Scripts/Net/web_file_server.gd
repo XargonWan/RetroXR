@@ -4,13 +4,17 @@
 class_name WebFileServer
 extends Node
 
-const DEFAULT_PORT := 8080
+const DEFAULT_PORT    := 8080
+const WRITE_CHUNK_SIZE := 524288  # 512 KB per loop iteration
 
 var _tcp := TCPServer.new()
 ## Each entry: { peer: StreamPeerTCP, buf: PackedByteArray }
+## While writing: also has "write" → { queue, idx, f, offset, total, saved }
 var _connections: Array = []
 var _running := false
 var _thread: Thread = null
+## Shared progress state read by /api/progress (written on server thread, read on same thread via a new connection).
+var _upload_progress: Dictionary = {}
 
 
 ## Root of the served filesystem.
@@ -67,6 +71,13 @@ func _thread_loop() -> void:
 		# Service connections.
 		var to_remove: Array = []
 		for c: Dictionary in _connections:
+			if c.has("write"):
+				# Writing phase — advance one chunk; done when true is returned.
+				if _write_chunk(c):
+					to_remove.append(c)
+				continue
+
+			# Receiving phase.
 			var peer := c["peer"] as StreamPeerTCP
 			peer.poll()
 			var st := peer.get_status()
@@ -81,7 +92,9 @@ func _thread_loop() -> void:
 					new_buf.append_array(result[1])
 					c["buf"] = new_buf
 			if _try_handle(c):
-				to_remove.append(c)
+				# Upload requests stay alive while writing; all others close.
+				if not c.has("write"):
+					to_remove.append(c)
 
 		for c: Dictionary in to_remove:
 			(c["peer"] as StreamPeerTCP).disconnect_from_host()
@@ -125,18 +138,21 @@ func _try_handle(c: Dictionary) -> bool:
 	var path := raw_path.substr(0, q_pos if q_pos != -1 else raw_path.length())
 	var query := _parse_query(raw_path.substr(q_pos + 1) if q_pos != -1 else "")
 
-	_dispatch(c["peer"] as StreamPeerTCP, method, path, query, hdrs, body)
+	_dispatch(c, method, path, query, hdrs, body)
 	return true
 
 
-func _dispatch(peer: StreamPeerTCP, method: String, path: String,
+func _dispatch(c: Dictionary, method: String, path: String,
 			   query: Dictionary, headers: Dictionary, body: PackedByteArray) -> void:
+	var peer := c["peer"] as StreamPeerTCP
 	if method == "GET" and path == "/":
 		_send_text(peer, 200, "text/html", _HTML)
 	elif method == "GET" and path == "/api/list":
 		_handle_list(peer, query.get("path", ""))
+	elif method == "GET" and path == "/api/progress":
+		_send_text(peer, 200, "application/json", JSON.stringify(_upload_progress))
 	elif method == "POST" and path == "/api/upload":
-		_handle_upload(peer, query.get("path", ""), headers, body)
+		_handle_upload(c, query.get("path", ""), headers, body)
 	elif method == "DELETE" and path == "/api/delete":
 		_handle_delete(peer, query.get("path", ""))
 	elif method == "OPTIONS":
@@ -177,8 +193,11 @@ func _handle_list(peer: StreamPeerTCP, rel: String) -> void:
 	_send_text(peer, 200, "application/json", JSON.stringify({"dirs": dirs, "files": files}))
 
 
-func _handle_upload(peer: StreamPeerTCP, rel: String,
+## Parses the multipart body and queues files for chunked writing.
+## The connection stays open; _write_chunk advances the write each loop iteration.
+func _handle_upload(c: Dictionary, rel: String,
 					headers: Dictionary, body: PackedByteArray) -> void:
+	var peer := c["peer"] as StreamPeerTCP
 	var abs := _resolve(rel)
 	if abs.is_empty():
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
@@ -190,18 +209,75 @@ func _handle_upload(peer: StreamPeerTCP, rel: String,
 		return
 	var boundary := ct.substr(b_idx + 9).strip_edges()
 	var parts := _parse_multipart(body, boundary)
-	var saved := 0
+	var queue: Array = []
 	for part: Dictionary in parts:
 		var filename := _extract_filename(part["headers"] as String)
 		if filename.is_empty():
 			continue
-		var dest := abs.path_join(filename.get_file())
-		var f := FileAccess.open(dest, FileAccess.WRITE)
-		if f:
-			f.store_buffer(part["data"])
-			saved += 1
-			print("[WebFileServer] Saved %s (%d bytes)" % [dest, (part["data"] as PackedByteArray).size()])
-	_send_text(peer, 200, "application/json", '{"saved":%d}' % saved)
+		queue.append({"dest": abs.path_join(filename.get_file()),
+					  "data": part["data"] as PackedByteArray,
+					  "filename": filename.get_file()})
+	if queue.is_empty():
+		_send_text(peer, 200, "application/json", '{"saved":0}')
+		return
+	c["write"] = {"queue": queue, "idx": 0, "f": null, "offset": 0, "total": 0, "saved": 0}
+	_start_next_write(c)
+
+
+func _start_next_write(c: Dictionary) -> void:
+	var w: Dictionary = c["write"]
+	var item: Dictionary = w["queue"][w["idx"]]
+	var f := FileAccess.open(item["dest"], FileAccess.WRITE)
+	if not f:
+		push_error("[WebFileServer] Cannot open %s for writing" % item["dest"])
+		w["idx"] += 1
+		if w["idx"] < (w["queue"] as Array).size():
+			_start_next_write(c)
+		else:
+			_send_text(c["peer"] as StreamPeerTCP, 200, "application/json",
+					   '{"saved":%d}' % w["saved"])
+			c.erase("write")
+			_upload_progress = {}
+		return
+	w["f"] = f
+	w["offset"] = 0
+	w["total"] = (item["data"] as PackedByteArray).size()
+	_upload_progress = {"filename": item["filename"], "written": 0, "total": w["total"]}
+	print("[WebFileServer] Writing %s (%d bytes)" % [item["dest"], w["total"]])
+
+
+## Writes one WRITE_CHUNK_SIZE chunk. Returns true when all files in the queue are done.
+func _write_chunk(c: Dictionary) -> bool:
+	var w: Dictionary = c["write"]
+	var item: Dictionary = (w["queue"] as Array)[w["idx"]]
+	var data := item["data"] as PackedByteArray
+	var f    := w["f"]     as FileAccess
+	var offset: int = w["offset"]
+	var chunk_end := mini(offset + WRITE_CHUNK_SIZE, data.size())
+	f.store_buffer(data.slice(offset, chunk_end))
+	w["offset"] = chunk_end
+	_upload_progress["written"] = chunk_end
+
+	if chunk_end < data.size():
+		return false  # still writing this file
+
+	# File complete.
+	f.close()
+	w["f"] = null
+	w["saved"] = (w["saved"] as int) + 1
+	print("[WebFileServer] Saved %s" % item["dest"])
+	w["idx"] = (w["idx"] as int) + 1
+	if (w["idx"] as int) < (w["queue"] as Array).size():
+		_start_next_write(c)
+		return false  # more files to write
+
+	# All files written — send response and signal done.
+	# Leave _upload_progress set (written == total) so in-flight polls see 100%.
+	# It will be overwritten when the next upload begins.
+	_send_text(c["peer"] as StreamPeerTCP, 200, "application/json",
+			   '{"saved":%d}' % w["saved"])
+	c.erase("write")
+	return true
 
 
 func _handle_delete(peer: StreamPeerTCP, rel: String) -> void:
@@ -418,15 +494,31 @@ dz.addEventListener('drop',function(e){
     var fd=new FormData();
     fd.append('file',file);
     var xhr=new XMLHttpRequest();
+    var pollTimer=null;
+    function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
     xhr.upload.onprogress=function(ev){
       if(ev.lengthComputable){
         var pct=Math.round(ev.loaded/ev.total*100);
         pf.style.width=pct+'%';
-        st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' ('+pct+'%)';
+        if(pct>=100&&!pollTimer){
+          pollTimer=setInterval(function(){
+            fetch('/api/progress').then(function(r){return r.json();}).then(function(d){
+              if(d.total&&d.total>0){
+                var wpct=Math.round(d.written/d.total*100);
+                pf.style.width=wpct+'%';
+                st.textContent='Saving to disk: '+d.filename+' ('+wpct+'%)';
+              } else {
+                st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' (100%) \u2014 waiting for server\u2026';
+              }
+            }).catch(function(){});
+          },100);
+        } else {
+          st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' ('+pct+'%)';
+        }
       }
     };
-    xhr.onload=function(){i++;uploadNext();};
-    xhr.onerror=function(){st.textContent='Error uploading '+file.name;i++;uploadNext();};
+    xhr.onload=function(){stopPoll();pf.style.width='100%';i++;uploadNext();};
+    xhr.onerror=function(){stopPoll();st.textContent='Error uploading '+file.name;i++;uploadNext();};
     xhr.open('POST','/api/upload?path='+encodeURIComponent(cur));
     xhr.send(fd);
   }
