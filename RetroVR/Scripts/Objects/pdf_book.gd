@@ -145,11 +145,10 @@ func _load_pdf_internal(path: String) -> void:
 	_page_width = size.x
 	_page_height = size.y
 
-	if _page_height > 0:
-		var aspect := _page_width / _page_height
-		_book_width = book_height * aspect
-	else:
-		_book_width = book_height * 0.7
+	# PDF points → meters: 1 pt = 1/72 inch = 0.0254/72 m ≈ 0.0003528 m
+	const PTS_TO_METERS := 0.0254 / 72.0
+	_book_width = _page_width * PTS_TO_METERS
+	book_height  = _page_height * PTS_TO_METERS
 
 	_cache_dir = "user://pdf_cache/" + pdf_path.md5_text() + "/"
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
