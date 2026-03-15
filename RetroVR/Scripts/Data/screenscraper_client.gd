@@ -14,6 +14,7 @@ const MIN_MEDIA_SIZE := 256  # bytes — reject placeholder/error responses
 
 signal scrape_completed(result: Dictionary)
 signal scrape_failed(error: String)
+signal scrape_status(message: String)
 signal media_download_completed(media_type: String, path: String)
 signal media_download_failed(media_type: String, error: String)
 
@@ -78,6 +79,11 @@ func _build_query_url(rom_path: String, systemeid: int, checksums: Dictionary) -
 
 
 func _do_scrape_request(url: String, rom_path: String, retry_count: int) -> void:
+	if retry_count == 0:
+		scrape_status.emit("Sending request...")
+	else:
+		scrape_status.emit("Retrying (%d/%d)..." % [retry_count, MAX_RETRIES])
+
 	if _scrape_http != null:
 		_scrape_http.queue_free()
 

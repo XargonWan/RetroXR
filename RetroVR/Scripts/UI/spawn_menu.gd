@@ -102,6 +102,9 @@ var _auto_save_btn: Button = null
 # Scrape popup overlay
 var _scrape_popup: PanelContainer = null
 var _scrape_in_progress: bool = false
+# Scrape status bar (shows hashing / request / retry state below the menu)
+var _scrape_status_bar: PanelContainer = null
+var _scrape_status_label: Label = null
 # Game detail side panel
 var _game_detail_panel: PanelContainer = null
 # ROM variants side panel
@@ -163,6 +166,7 @@ func _init_scraper() -> void:
 	scraper_client.name = "ScreenscraperClient"
 	scraper_client.config = scraper_config
 	add_child(scraper_client)
+	scraper_client.scrape_status.connect(_update_scrape_status)
 
 
 func _init_web_server() -> void:
@@ -509,20 +513,21 @@ func _populate_cartridges_tab() -> void:
 						continue
 					shown_games[gid] = true
 
+				var pref_rom: Dictionary = GamelistManager.get_preferred_rom(game) if is_scraped else {}
+				var wheel_tex: Texture2D = _load_wheel_texture(systemid, pref_rom.get("romname", "")) if is_scraped else null
+				var row_h: int = 100 if wheel_tex else 72
+
 				var row := HBoxContainer.new()
 				row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 				var btn := Button.new()
-				btn.custom_minimum_size = Vector2(0, 72)
+				btn.custom_minimum_size = Vector2(0, row_h)
 				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				btn.add_theme_font_size_override("font_size", 22)
-
-				var pref_rom: Dictionary = GamelistManager.get_preferred_rom(game) if is_scraped else {}
 
 				if is_scraped:
 					var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
 					var game_name: String = game.get("name", rom["label"])
-					var wheel_tex := _load_wheel_texture(systemid, pref_rom.get("romname", ""))
 					if wheel_tex:
 						btn.icon = wheel_tex
 						btn.text = ""
@@ -540,7 +545,7 @@ func _populate_cartridges_tab() -> void:
 				if is_scraped:
 					var detail_btn := Button.new()
 					detail_btn.text = "🎮"
-					detail_btn.custom_minimum_size = Vector2(72, 72)
+					detail_btn.custom_minimum_size = Vector2(72, row_h)
 					detail_btn.tooltip_text = "Game info"
 					detail_btn.add_theme_font_size_override("font_size", 26)
 					detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
@@ -549,7 +554,7 @@ func _populate_cartridges_tab() -> void:
 				if is_scraped and _has_scraped_manual(systemid, pref_rom.get("romname", "")):
 					var manual_btn := Button.new()
 					manual_btn.text = "📖"
-					manual_btn.custom_minimum_size = Vector2(72, 72)
+					manual_btn.custom_minimum_size = Vector2(72, row_h)
 					manual_btn.tooltip_text = "Spawn manual"
 					manual_btn.add_theme_font_size_override("font_size", 26)
 					var pdf_path := _scraped_manual_path(systemid, pref_rom.get("romname", ""))
@@ -558,7 +563,7 @@ func _populate_cartridges_tab() -> void:
 
 				var scrape_btn := Button.new()
 				scrape_btn.text = "✂️"
-				scrape_btn.custom_minimum_size = Vector2(72, 72)
+				scrape_btn.custom_minimum_size = Vector2(72, row_h)
 				scrape_btn.tooltip_text = "Scrape ROM"
 				scrape_btn.add_theme_font_size_override("font_size", 26)
 				scrape_btn.pressed.connect(_on_scrape_pressed.bind(rom["path"], systemid, scrape_btn))
@@ -1256,6 +1261,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 	_scrape_in_progress = true
 	btn.text = "⏳"
 	btn.disabled = true
+	_show_scrape_status("Hashing ROM...")
 
 	# Compute checksums on a background thread to avoid UI freeze.
 	# Thread.wait_to_finish() returns the callable's return value directly,
@@ -1272,6 +1278,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		_scrape_in_progress = false
 		btn.text = "✂️"
 		btn.disabled = false
+		_hide_scrape_status()
 		push_warning("[SpawnMenu] Failed to compute checksums for: %s" % rom_path)
 		return
 
@@ -1286,6 +1293,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		if is_instance_valid(btn):
 			btn.text = "✂️"
 			btn.disabled = false
+		_hide_scrape_status()
 		print("[SpawnMenu] Scrape completed for: %s" % rom_path.get_file())
 		_show_scrape_popup(rom_path, systemid, result)
 
@@ -1296,6 +1304,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		if is_instance_valid(btn):
 			btn.text = "✂️"
 			btn.disabled = false
+		_hide_scrape_status()
 		push_warning("[SpawnMenu] Scrape failed: %s" % error)
 		_show_scrape_error_popup(error)
 
@@ -1438,6 +1447,64 @@ func _close_scrape_popup() -> void:
 	if _scrape_popup and is_instance_valid(_scrape_popup):
 		_scrape_popup.queue_free()
 	_scrape_popup = null
+
+
+func _show_scrape_status(msg: String) -> void:
+	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
+		if _scrape_status_label != null:
+			_scrape_status_label.text = msg
+		return
+
+	_scrape_status_bar = PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05, 0.10, 0.28, 0.96)
+	for k in ["corner_radius_top_left", "corner_radius_top_right",
+			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	_scrape_status_bar.add_theme_stylebox_override("panel", bg)
+
+	# Anchor horizontally centered at the very bottom of the menu viewport.
+	_scrape_status_bar.anchor_left   = 0.1
+	_scrape_status_bar.anchor_right  = 0.9
+	_scrape_status_bar.anchor_top    = 1.0
+	_scrape_status_bar.anchor_bottom = 1.0
+	_scrape_status_bar.offset_top    = -54.0
+	_scrape_status_bar.offset_bottom = -8.0
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, 8)
+	_scrape_status_bar.add_child(margin)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 10)
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	margin.add_child(hbox)
+
+	var icon := Label.new()
+	icon.text = "⏳"
+	icon.add_theme_font_size_override("font_size", 18)
+	hbox.add_child(icon)
+
+	_scrape_status_label = Label.new()
+	_scrape_status_label.text = msg
+	_scrape_status_label.add_theme_font_size_override("font_size", 18)
+	_scrape_status_label.add_theme_color_override("font_color", COLOR_TITLE)
+	hbox.add_child(_scrape_status_label)
+
+	add_child(_scrape_status_bar)
+
+
+func _update_scrape_status(msg: String) -> void:
+	if _scrape_status_label != null and is_instance_valid(_scrape_status_label):
+		_scrape_status_label.text = msg
+
+
+func _hide_scrape_status() -> void:
+	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
+		_scrape_status_bar.queue_free()
+	_scrape_status_bar = null
+	_scrape_status_label = null
 
 
 func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary) -> void:
