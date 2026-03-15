@@ -7,16 +7,18 @@
 //     pixel the original mesh covers on screen.
 //
 //   pass 2 (this shader, set as pass 1's next_pass):
-//     Renders the expanded (cull_front) hull but only where stencil != 1 —
-//     i.e. only outside the original silhouette ring. Interior pixels are
-//     discarded by the stencil test, not by a depth trick.
+//     Renders the expanded (cull_front) hull with depth_test_disabled so the
+//     outline is always visible even when the object is behind other geometry.
+//     Only renders where stencil != 1 — i.e. outside the original silhouette.
+//     Interior pixels are discarded by the stencil test. Depth test disabled
+//     also eliminates flickering at inside edges caused by depth precision.
 //
 //   Expansion is center-to-vertex in NDC screen space (not normal-based).
 //   This works correctly for flat QuadMesh geometry (book cover, back cover, stacks)
 //   where every vertex shares the same normal and normal-based expansion produces zero.
 //
 shader_type spatial;
-render_mode cull_front, unshaded, blend_mix, depth_draw_never;
+render_mode cull_front, unshaded, blend_mix, depth_draw_never, depth_test_disabled;
 stencil_mode read, write, compare_not_equal, 1;
 
 uniform vec4  outline_color  : source_color = vec4(0.25, 0.6, 1.0, 1.0);
