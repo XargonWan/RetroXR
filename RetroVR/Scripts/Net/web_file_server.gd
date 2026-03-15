@@ -15,7 +15,7 @@ var _running := false
 ## Root of the served filesystem.
 static func server_root() -> String:
 	if OS.get_name() == "Android":
-		return "/sdcard/Android/data/com.sk.retrovr/files"
+		return "/sdcard/Android/data/com.xenu.retrovr/files"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr"
 
 

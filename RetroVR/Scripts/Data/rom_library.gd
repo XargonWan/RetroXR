@@ -10,7 +10,7 @@ extends RefCounted
 ## On Android: app external files dir (no permission needed). On Windows: %USERPROFILE%/retrovr/roms.
 static func default_roms_root() -> String:
 	if OS.get_name() == "Android":
-		return "/sdcard/Android/data/com.sk.retrovr/files/roms"
+		return "/sdcard/Android/data/com.xenu.retrovr/files/roms"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/roms"
 
 
