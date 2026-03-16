@@ -99,7 +99,7 @@ mesh = SubResource("CylMesh_plug_ghost")
 surface_material_override/0 = SubResource("Mat_plug_ghost")
 
 [node name="Ambilight" type="SpotLight3D" parent="." unique_id=603587175]
-transform = Transform3D(1, 0, 0, 0, -0.99999994, 8.742277e-08, 0, -8.742277e-08, -0.99999994, 0, 0.05, 0.151)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
 light_color = Color(0.5, 0.5, 0.5, 1)
 light_energy = 0.6
 spot_range = 2.5
@@ -110,8 +110,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.145, -0.105, 0.156)
 pixel_size = 0.001
 text = "100"
 font_size = 16
-outline_size = 4
 horizontal_alignment = 2
+outline_size = 4
 
 [node name="VolumeDownButton" type="Area3D" parent="." unique_id=624945899]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.07, -0.105, 0.155)

@@ -22,6 +22,7 @@ glow_levels/2 = 1.0
 glow_levels/4 = 1.0
 glow_intensity = 0.8
 glow_bloom = 0.1
+volumetric_fog_enabled = true
 volumetric_fog_density = 0.01
 volumetric_fog_albedo = Color(1, 0.95, 0.85, 1)
 volumetric_fog_emission = Color(1, 0.95, 0.85, 1)
