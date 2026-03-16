@@ -22,6 +22,7 @@ func _ready() -> void:
 	# the parent's transform, letting us position it freely in world space.
 	top_level = true
 	visible = false
+	_set_viewport_updating(false)
 	print("[CoreOptionsPanel] ready — attached to ", get_parent().name)
 
 
@@ -47,6 +48,7 @@ func show_for(system: RetroSystem, camera: Node3D) -> void:
 	# Pre-position before making visible to avoid a one-frame flash at the wrong spot
 	if _system:
 		global_position = _system.global_position + Vector3(0, FLOAT_HEIGHT, 0)
+	_set_viewport_updating(true)
 	visible = true
 	print("[CoreOptionsPanel] showing for system '%s'" % system.name)
 	_ensure_ui_connected()
@@ -56,7 +58,14 @@ func show_for(system: RetroSystem, camera: Node3D) -> void:
 ## Hide the panel without destroying it.
 func hide_panel() -> void:
 	visible = false
+	_set_viewport_updating(false)
 	print("[CoreOptionsPanel] hidden")
+
+
+func _set_viewport_updating(enabled: bool) -> void:
+	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
+	if vp:
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
 
 
 ## Called by the system when fresh options data arrives and the panel is already open.

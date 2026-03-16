@@ -74,6 +74,7 @@ var _right_pointer: XRToolsFunctionPointer = null
 
 func _ready() -> void:
 	_viewport_node.visible = false
+	_set_viewport_updating(false)
 	# Remove layer 1 (default physics) so the menu doesn't collide with objects,
 	# but keep layers 21 and 23 for pointer interaction.
 	$SpawnMenuViewport/StaticBody3D.collision_layer = 5242880
@@ -370,14 +371,22 @@ func _show_menu() -> void:
 		# look_at makes -Z face the camera; rotate 180° so +Z (the UV face) faces the player
 		look_at(_camera.global_position, Vector3.UP)
 		rotate_object_local(Vector3.UP, PI)
+	_set_viewport_updating(true)
 	_viewport_node.visible = true
 
 
 func _hide_menu() -> void:
 	_end_grab()
 	_viewport_node.visible = false
+	_set_viewport_updating(false)
 	_smoothed_scroll_y = 0.0
 	_apply_menu_locomotion_blocks(false, false)
+
+
+func _set_viewport_updating(enabled: bool) -> void:
+	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
+	if vp:
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
 
 
 # ── Grab / Move / Resize ──────────────────────────────────────────────────────

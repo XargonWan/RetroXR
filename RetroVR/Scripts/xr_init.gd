@@ -13,5 +13,8 @@ func _ready():
 			xr_interface.set_display_refresh_rate(best)
 			print("XRInit: display refresh rate set to %s Hz (available: %s)" % [best, supported_rates])
 		get_viewport().use_xr = true
+		print("XRInit: multiview enabled in project = ", ProjectSettings.get_setting("rendering/openxr/multiview", false))
+		print("XRInit: renderer = forward_plus:%s mobile:%s gl_compat:%s" % [
+				OS.has_feature("forward_plus"), OS.has_feature("mobile"), OS.has_feature("gl_compatibility")])
 	else:
 		push_warning("OpenXR not initialized, running in flat screen mode")

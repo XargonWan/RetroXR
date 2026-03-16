@@ -20,14 +20,9 @@ background_mode = 2
 sky = SubResource("Sky_main")
 ambient_light_source = 2
 ambient_light_color = Color(0.95, 0.92, 0.85, 1)
-ambient_light_energy = 0.1
+ambient_light_energy = 0.4
 tonemap_mode = 2
-glow_enabled = true
-glow_levels/2 = 0.4
-glow_levels/4 = 0.2
-glow_levels/6 = 0.1
-glow_intensity = 0.6
-glow_strength = 0.7
+glow_enabled = false
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(10, 0.1, 10)
@@ -371,6 +366,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.95, -0.5)
 
 [node name="CeilLight_NE" type="OmniLight3D" parent="." unique_id=-1294967096 groups=["ceiling_light"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.7, -2.5)
+visible = false
 light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
@@ -382,6 +378,7 @@ surface_material_override/0 = SubResource("Mat_fixture")
 
 [node name="CeilLight_NW" type="OmniLight3D" parent="." unique_id=-1294967095 groups=["ceiling_light"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.7, -2.5)
+visible = false
 light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
@@ -393,6 +390,7 @@ surface_material_override/0 = SubResource("Mat_fixture")
 
 [node name="CeilLight_SE" type="OmniLight3D" parent="." unique_id=-1294967094 groups=["ceiling_light"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 2.7, 2.5)
+visible = false
 light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
@@ -404,6 +402,7 @@ surface_material_override/0 = SubResource("Mat_fixture")
 
 [node name="CeilLight_SW" type="OmniLight3D" parent="." unique_id=-1294967093 groups=["ceiling_light"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5, 2.7, 2.5)
+visible = false
 light_color = Color(1, 0.9, 0.7, 1)
 light_energy = 0.8
 omni_range = 6.0
@@ -421,6 +420,7 @@ mesh = SubResource("QuadMesh_neon")
 surface_material_override/0 = SubResource("Mat_neon_pink")
 
 [node name="NeonLight" type="OmniLight3D" parent="NeonSign_South" unique_id=1692349355 groups=["neon_light"]]
+visible = false
 light_color = Color(0.95, 0.1, 0.5, 1)
 light_energy = 1.5
 omni_range = 3.5
@@ -433,6 +433,7 @@ mesh = SubResource("QuadMesh_neon")
 surface_material_override/0 = SubResource("Mat_neon_cyan")
 
 [node name="NeonLight" type="OmniLight3D" parent="NeonSign_East" unique_id=1500393000 groups=["neon_light"]]
+visible = false
 light_color = Color(0, 0.9, 0.9, 1)
 light_energy = 1.5
 omni_range = 3.5
@@ -445,6 +446,7 @@ mesh = SubResource("QuadMesh_neon")
 surface_material_override/0 = SubResource("Mat_neon_green")
 
 [node name="NeonLight" type="OmniLight3D" parent="NeonSign_West" unique_id=496482046 groups=["neon_light"]]
+visible = false
 light_color = Color(0.2, 1, 0.3, 1)
 light_energy = 1.5
 omni_range = 3.5
