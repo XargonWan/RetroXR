@@ -101,6 +101,9 @@ var _ray_grab_distance : float = 0.0              # hold distance along the ray
 var _ray_grab_other_controller : XRController3D = null
 var _locomotion_manager: LocomotionManager = null
 var _ray_grab_block_owner: StringName = &"ray_grab"
+# Accumulated rotation tracked independently of the physics body — prevents
+# _direct_state_changed from corrupting our rotation between physics ticks.
+var _ray_grab_basis : Basis = Basis.IDENTITY
 
 ## Collision hand (if applicable)
 @onready var _collision_hand : XRToolsCollisionHand
@@ -190,6 +193,16 @@ func _exit_tree():
 	super._exit_tree()
 
 
+# Drive the ray-grabbed body from _physics_process so the transform is written
+# AFTER _direct_state_changed (which runs earlier in the same physics tick) and
+# is never overwritten by the physics engine before the render.
+func _physics_process(delta: float) -> void:
+	if Engine.is_editor_hint():
+		return
+	if is_instance_valid(_ray_grab_object):
+		_process_ray_grab(delta)
+
+
 # Called on each frame to update the pickup
 func _process(delta):
 	super._process(delta)
@@ -221,9 +234,10 @@ func _process(delta):
 
 	_update_copied_collisions()
 
-	# Ray-grab takes priority — reposition the held object each frame
+	# Ray-grab position/rotation is handled in _physics_process, which runs
+	# after _direct_state_changed — so the physics body is never overwritten by
+	# the physics tick between our write and the render.
 	if is_instance_valid(_ray_grab_object):
-		_process_ray_grab(delta)
 		return
 
 	# Always update closest proximity object first — it takes priority over the laser.
@@ -634,6 +648,7 @@ func _start_ray_grab(target: XRToolsPickable) -> void:
 	_ray_grab_distance = clampf(
 			_ray_grab_distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
 	_ray_grab_object = target
+	_ray_grab_basis = target.global_basis  # seed our independent rotation tracker
 	_set_pointer_highlight(null)  # object transitions from "highlighted" to "held"
 	# Freeze physics and move to the held layer (mirrors XRToolsPickable.pick_up)
 	target.restore_freeze = target.freeze
@@ -659,39 +674,54 @@ func _process_ray_grab(delta: float) -> void:
 			_ray_grab_distance += stick_y * RAY_GRAB_SPEED * delta
 			_ray_grab_distance = clampf(
 					_ray_grab_distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
-	_process_ray_grab_rotation(delta)
-	# Reposition along the laser
+	# Compute rotation and position together, then write in ONE transform assignment.
+	# Writing global_basis and global_position separately causes the physics server to
+	# receive two distinct body_set_state calls with an intermediate (new_basis, old_pos)
+	# state. At high frame rates this intermediate state gets rendered, producing a ghost
+	# at the original rotation that grows apart as total rotation accumulates.
+	var new_basis := _compute_ray_grab_rotation(delta)
 	if _ray_pointer:
 		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
 		if ray_cast:
 			var ray_dir := -ray_cast.global_transform.basis.z
-			_ray_grab_object.global_position = (
-					ray_cast.global_transform.origin + ray_dir * _ray_grab_distance)
+			var new_pos := ray_cast.global_transform.origin + ray_dir * _ray_grab_distance
+			var new_transform := Transform3D(new_basis, new_pos)
+			_ray_grab_object.global_transform = new_transform
+			# Explicitly sync to the physics server — frozen bodies can silently drop the
+			# node→physics update, causing _direct_state_changed to restore the stale
+			# pickup-time transform on the next physics tick.
+			PhysicsServer3D.body_set_state(
+					_ray_grab_object.get_rid(),
+					PhysicsServer3D.BODY_STATE_TRANSFORM,
+					new_transform)
+			return
+	_ray_grab_object.global_basis = new_basis
 
 
-func _process_ray_grab_rotation(delta: float) -> void:
-	if not _ray_grab_other_controller or not _ray_grab_other_controller.get_is_active():
-		return
+func _compute_ray_grab_rotation(delta: float) -> Basis:
+	# Read _ray_grab_basis (our own tracker), NOT _ray_grab_object.global_basis.
+	# The physics body's basis can be reset by _direct_state_changed mid-sequence;
+	# using our own variable keeps the accumulated rotation stable across physics ticks.
+	var basis := _ray_grab_basis
 
-	var stick := _ray_grab_other_controller.get_vector2("primary")
-	if stick.length_squared() <= 0.01:
-		return
+	if _ray_grab_other_controller and _ray_grab_other_controller.get_is_active():
+		var stick := _ray_grab_other_controller.get_vector2("primary")
+		if stick.length_squared() > 0.01:
+			var yaw := -stick.x * RAY_GRAB_ROTATE_SPEED * delta
+			var pitch := stick.y * RAY_GRAB_ROTATE_SPEED * delta
 
-	var yaw := -stick.x * RAY_GRAB_ROTATE_SPEED * delta
-	var pitch := stick.y * RAY_GRAB_ROTATE_SPEED * delta
-	var basis := _ray_grab_object.global_basis
+			if absf(yaw) > 0.001:
+				var yaw_axis := _controller.global_transform.basis.y.normalized()
+				basis = Basis(yaw_axis, yaw) * basis
 
-	if absf(yaw) > 0.001:
-		# Yaw around the holding controller's up — left/right relative to the player's view.
-		var yaw_axis := _controller.global_transform.basis.y.normalized()
-		basis = Basis(yaw_axis, yaw) * basis
+			if absf(pitch) > 0.001:
+				var pitch_axis := _controller.global_transform.basis.x.normalized()
+				basis = Basis(pitch_axis, pitch) * basis
 
-	if absf(pitch) > 0.001:
-		# Pitch around the holding controller's right — spins away/toward the player down the ray.
-		var pitch_axis := _controller.global_transform.basis.x.normalized()
-		basis = Basis(pitch_axis, pitch) * basis
+			basis = basis.orthonormalized()
 
-	_ray_grab_object.global_basis = basis.orthonormalized()
+	_ray_grab_basis = basis
+	return basis
 
 
 # Release the ray-held object and restore its physics.
