@@ -227,7 +227,7 @@ environment = SubResource("Env_main")
 transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 3, 0)
 light_color = Color(1, 0.97, 0.88, 1)
 light_energy = 0.15
-shadow_enabled = true
+shadow_enabled = false
 
 [node name="PlayerRig" parent="." instance=ExtResource("23_playerrig")]
 
