@@ -105,6 +105,14 @@ light_energy = 0.6
 spot_range = 2.5
 spot_angle = 50.0
 
+[node name="VolumeLabel" type="Label3D" parent="." unique_id=501234567]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.145, -0.105, 0.156)
+pixel_size = 0.001
+text = "100"
+font_size = 16
+horizontal_alignment = 2
+outline_size = 4
+
 [node name="VolumeDownButton" type="Area3D" parent="." unique_id=624945899]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.07, -0.105, 0.155)
 collision_layer = 0

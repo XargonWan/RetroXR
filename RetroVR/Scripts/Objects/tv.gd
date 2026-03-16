@@ -16,6 +16,7 @@ signal cable_disconnected
 @onready var _vol_down_btn: VRButton = $VolumeDownButton
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
+@onready var _volume_label: Label3D = $VolumeLabel
 
 # Track the last-snapped plug so we can disconnect properly
 var _snapped_plug: CablePlug = null
@@ -39,6 +40,7 @@ func _ready() -> void:
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
+	_update_volume_label()
 
 
 func _process(_delta: float) -> void:
@@ -103,14 +105,20 @@ func _on_plug_released() -> void:
 		_snapped_plug = null
 
 
+func _update_volume_label() -> void:
+	_volume_label.text = "%d" % roundi(_volume * 100.0)
+
+
 func _on_volume_down() -> void:
 	_volume = maxf(0.0, _volume - 0.1)
+	_update_volume_label()
 	if _tv_enabled and _connected_system:
 		_connected_system.set_audio_volume(_volume)
 
 
 func _on_volume_up() -> void:
 	_volume = minf(1.0, _volume + 0.1)
+	_update_volume_label()
 	if _tv_enabled and _connected_system:
 		_connected_system.set_audio_volume(_volume)
 
