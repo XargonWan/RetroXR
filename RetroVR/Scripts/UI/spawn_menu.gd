@@ -2245,7 +2245,17 @@ func _make_state_card(slot: Dictionary, active_slot_id: String) -> Control:
 		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		edit.add_theme_font_size_override("font_size", 20)
 		_scene_rename_edit = edit
-		edit.text_submitted.connect(func(_t: String) -> void: _finish_rename())
+		# Meta XR overlay keyboard bounce fix (same pattern as options fields)
+		edit.focus_entered.connect(func() -> void:
+			if is_instance_valid(edit) and edit.get_meta("kb_cooling", false):
+				edit.release_focus.call_deferred()
+		)
+		edit.text_submitted.connect(func(_t: String) -> void:
+			_finish_rename()
+		)
+		edit.focus_exited.connect(func() -> void:
+			_finish_rename()
+		)
 		name_row.add_child(edit)
 	elif readonly:
 		var name_lbl := Label.new()
@@ -2344,9 +2354,9 @@ func _start_rename(slot_id: String, current_name: String) -> void:
 	_scene_rename_slot_id = slot_id
 	_scene_rename_edit = null
 	_rebuild_states_grid()
-	if _scene_rename_edit:
-		_scene_rename_edit.grab_focus()
-		DisplayServer.virtual_keyboard_show(_scene_rename_edit.text)
+	# Don't programmatically grab_focus() — it causes Android EditText desync
+	# (Godot #72969). The user taps the LineEdit to focus it, which naturally
+	# opens the overlay keyboard via virtual_keyboard_enabled (default true).
 
 
 func _finish_rename() -> void:
@@ -2358,7 +2368,6 @@ func _finish_rename() -> void:
 	# Clear state first so any re-entrant calls are no-ops.
 	_scene_rename_slot_id = ""
 	_scene_rename_edit = null
-	DisplayServer.virtual_keyboard_hide()
 	var new_name := edit.text.strip_edges() if edit else ""
 	if not new_name.is_empty():
 		scene_slot_rename_requested.emit(slot_id, new_name)

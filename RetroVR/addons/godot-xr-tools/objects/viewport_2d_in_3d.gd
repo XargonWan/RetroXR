@@ -145,6 +145,15 @@ func _ready():
 	# Update the render objects
 	_update_render()
 
+	# Intercept the DisplayServer text-input callback so that virtual-keyboard
+	# text (Android IME / Meta overlay keyboard) reaches Controls inside the
+	# SubViewport.  Without this, push_text_input() only targets the main
+	# Window and the SubViewport's focused LineEdit/TextEdit never receives
+	# backspace, cursor edits, or composition updates.
+	if not Engine.is_editor_hint() and input_keyboard:
+		DisplayServer.window_set_input_text_callback(
+			_on_vk_text_input)
+
 
 # Provide custom property information
 func _get_property_list() -> Array[Dictionary]:
@@ -309,6 +318,29 @@ func connect_scene_signal(which : String, callback : Callable, flags : int = 0):
 # Handle pointer event from screen-body
 func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 	pointer_event.emit(event)
+
+
+# Virtual-keyboard text-input callback.  Called by DisplayServer whenever the
+# platform IME commits text (characters, backspace, composition changes).
+# We forward to the SubViewport when it owns the focus; otherwise fall back
+# to the main viewport so normal text input keeps working.
+func _on_vk_text_input(text: String, _emit_signal: Variant = null) -> void:
+	if is_instance_valid($Viewport) and $Viewport.gui_get_focus_owner():
+		$Viewport.push_text_input(text)
+	else:
+		var root := get_tree().get_root() if get_tree() else null
+		if root:
+			root.push_text_input(text)
+
+
+func _exit_tree() -> void:
+	# Restore text-input forwarding to the main window so text input keeps
+	# working after this node is freed.
+	if not Engine.is_editor_hint() and input_keyboard and get_tree():
+		var root := get_tree().get_root()
+		DisplayServer.window_set_input_text_callback(
+			func(text: String, _es: Variant = null) -> void:
+				root.push_text_input(text))
 
 
 # Handler for input events
