@@ -324,7 +324,7 @@ func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 # platform IME commits text (characters, backspace, composition changes).
 # We forward to the SubViewport when it owns the focus; otherwise fall back
 # to the main viewport so normal text input keeps working.
-func _on_vk_text_input(text: String, _emit_signal: Variant = null) -> void:
+func _on_vk_text_input(text: String, _emit_signal: bool = false) -> void:
 	if is_instance_valid($Viewport) and $Viewport.gui_get_focus_owner():
 		$Viewport.push_text_input(text)
 	else:
@@ -337,10 +337,12 @@ func _exit_tree() -> void:
 	# Restore text-input forwarding to the main window so text input keeps
 	# working after this node is freed.
 	if not Engine.is_editor_hint() and input_keyboard and get_tree():
-		var root := get_tree().get_root()
+		var root_id := get_tree().get_root().get_instance_id()
 		DisplayServer.window_set_input_text_callback(
-			func(text: String, _es: Variant = null) -> void:
-				root.push_text_input(text))
+			func(text: String, _es: bool = false) -> void:
+				var root := instance_from_id(root_id)
+				if root:
+					root.push_text_input(text))
 
 
 # Handler for input events
