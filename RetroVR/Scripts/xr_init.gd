@@ -6,6 +6,12 @@ func _ready():
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		# Use roomscale tracking so Y=0 is the physical floor
 		xr_interface.set_play_area_mode(XRInterface.XR_PLAY_AREA_ROOMSCALE)
+		# Request the highest available refresh rate (system setting alone is not enough)
+		var supported_rates: Array = xr_interface.get_available_display_refresh_rates()
+		if not supported_rates.is_empty():
+			var best: float = supported_rates.max()
+			xr_interface.set_display_refresh_rate(best)
+			print("XRInit: display refresh rate set to %s Hz (available: %s)" % [best, supported_rates])
 		get_viewport().use_xr = true
 	else:
 		push_warning("OpenXR not initialized, running in flat screen mode")
