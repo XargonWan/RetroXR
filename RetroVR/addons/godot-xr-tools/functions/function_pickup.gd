@@ -624,6 +624,10 @@ func _set_pointer_highlight(new_target: XRToolsPickable) -> void:
 func _start_ray_grab(target: XRToolsPickable) -> void:
 	if not is_instance_valid(target) or _is_target_ray_grabbed_elsewhere(target):
 		return
+	# Only one ray-grab allowed at a time — prevents the free hand from grabbing
+	# a second object while the other controller is already ray-holding something.
+	if _is_any_other_pickup_ray_grabbing():
+		return
 
 	_ray_grab_distance = global_transform.origin.distance_to(
 			target.global_transform.origin)
@@ -678,10 +682,13 @@ func _process_ray_grab_rotation(delta: float) -> void:
 	var basis := _ray_grab_object.global_basis
 
 	if absf(yaw) > 0.001:
-		basis = Basis(Vector3.UP, yaw) * basis
+		# Yaw around the holding controller's up — left/right relative to the player's view.
+		var yaw_axis := _controller.global_transform.basis.y.normalized()
+		basis = Basis(yaw_axis, yaw) * basis
 
 	if absf(pitch) > 0.001:
-		var pitch_axis := _ray_grab_other_controller.global_transform.basis.x.normalized()
+		# Pitch around the holding controller's right — spins away/toward the player down the ray.
+		var pitch_axis := _controller.global_transform.basis.x.normalized()
 		basis = Basis(pitch_axis, pitch) * basis
 
 	_ray_grab_object.global_basis = basis.orthonormalized()
@@ -712,6 +719,15 @@ func is_ray_grabbing() -> bool:
 
 func is_ray_grabbing_target(target: XRToolsPickable) -> bool:
 	return is_instance_valid(target) and _ray_grab_object == target
+
+
+func _is_any_other_pickup_ray_grabbing() -> bool:
+	for pickup in get_tree().root.find_children("*", "XRToolsFunctionPickup", true, false):
+		if pickup == self:
+			continue
+		if pickup is XRToolsFunctionPickup and pickup.is_ray_grabbing():
+			return true
+	return false
 
 
 func _is_target_ray_grabbed_elsewhere(target: XRToolsPickable) -> bool:
