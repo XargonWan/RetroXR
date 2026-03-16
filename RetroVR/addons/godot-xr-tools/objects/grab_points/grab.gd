@@ -153,7 +153,9 @@ func release() -> void:
 				.bind(copy) \
 				.bind(collision_hand.get_rid()))
 
-	# Report the release
+	# Report the release — guard against freed references (e.g. during clear_scene)
+	if not is_instance_valid(what) or not is_instance_valid(by):
+		return
 	print_verbose("%s> released by %s", [what.name, by.name])
 	what.released.emit(what, by)
 

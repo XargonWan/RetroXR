@@ -15,12 +15,18 @@ signal spawn_cartridge_requested(rom_path: String, game_label: String)
 signal spawn_manual_requested(pdf_path: String)
 ## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
 signal turn_style_changed(value: String)
-## Emitted when the user clicks a scene card.
+## Emitted when the user clicks a room card that maps directly to a scene (e.g. passthrough).
 signal scene_change_requested(scene_id: String)
-## Emitted when the user clicks Save Scene.
-signal scene_save_requested
-## Emitted when the user clicks Clear Scene.
-signal scene_clear_requested
+## Emitted when the user clicks Load on a state card.
+signal scene_slot_load_requested(slot_id: String)
+## Emitted when the user clicks Save on a state card (overwrite).
+signal scene_slot_save_requested(slot_id: String)
+## Emitted when the user clicks Delete on a state card.
+signal scene_slot_delete_requested(slot_id: String)
+## Emitted when the user clicks "Save New".
+signal scene_slot_create_requested
+## Emitted when the user confirms a rename via the inline LineEdit.
+signal scene_slot_rename_requested(slot_id: String, new_name: String)
 ## Emitted when the user toggles auto-save on scene switch.
 signal auto_save_changed(enabled: bool)
 ## Emitted when the user toggles the FPS counter.
@@ -93,10 +99,14 @@ var _cartridges_inner_tabs: TabContainer = null
 var _books_vbox: VBoxContainer = null
 
 # Scene view state
-var _scene_scroll: ScrollContainer = null
-var _scene_save_btn: Button = null
-var _scene_clear_btn: Button = null
-var _scene_card_buttons: Array[Button] = []
+var _scene_scroll:        ScrollContainer = null   # rooms-level scroll
+var _scene_rooms_panel:   Control         = null   # Level 1: room picker
+var _scene_states_panel:  Control         = null   # Level 2: slot grid
+var _scene_states_scroll: ScrollContainer = null
+var _scene_states_vbox:   VBoxContainer   = null
+var _scene_hover_timer:   Dictionary      = {}     # slot_id -> bool (pending-hide)
+var _scene_rename_slot_id: String         = ""
+var _scene_rename_edit:   LineEdit        = null
 var _auto_save_btn: Button = null
 
 # Scrape popup overlay
@@ -371,8 +381,26 @@ func _show_options_view() -> void:
 
 
 func _show_scene_view() -> void:
-	_show_view(_scene_view, _scene_scroll, _nav_scene_btn)
-	_update_scene_buttons()
+	_show_view(_scene_view, null, _nav_scene_btn)
+	_show_rooms_view()
+
+
+func _show_rooms_view() -> void:
+	if _scene_rooms_panel:
+		_scene_rooms_panel.visible = true
+	if _scene_states_panel:
+		_scene_states_panel.visible = false
+	_active_scroll = _scene_scroll
+	_update_room_card_highlights()
+
+
+func _show_states_view() -> void:
+	if _scene_rooms_panel:
+		_scene_rooms_panel.visible = false
+	if _scene_states_panel:
+		_scene_states_panel.visible = true
+	_active_scroll = _scene_states_scroll
+	_rebuild_states_grid()
 
 
 func _show_about_view() -> void:
@@ -1998,87 +2026,125 @@ const COLOR_SCENE_ACTIVE   := Color(0.3, 0.5, 0.3)
 const COLOR_SCENE_INACTIVE := Color(0.15, 0.15, 0.30)
 const COLOR_BTN_SAVE       := Color(0.15, 0.45, 0.15)
 const COLOR_BTN_CLEAR      := Color(0.50, 0.15, 0.15)
+const COLOR_BTN_LOAD       := Color(0.15, 0.30, 0.55)
+const COLOR_SLOT_ACTIVE    := Color(0.20, 0.42, 0.20)
+const COLOR_SLOT_NORMAL    := Color(0.12, 0.12, 0.27)
 
 
 func _build_scene_view() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scene_scroll = scroll
+	# Root container — two panels stack here via PRESET_FULL_RECT.
+	var root := Control.new()
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 14)
-	scroll.add_child(vbox)
+	# ── Level 1: Rooms panel ──────────────────────────────────────────────────
+	var rooms_scroll := ScrollContainer.new()
+	rooms_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	rooms_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	rooms_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_scene_scroll = rooms_scroll
+	_scene_rooms_panel = rooms_scroll
+	root.add_child(rooms_scroll)
 
-	vbox.add_child(_spacer(10))
+	var rooms_vbox := VBoxContainer.new()
+	rooms_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rooms_vbox.add_theme_constant_override("separation", 14)
+	rooms_scroll.add_child(rooms_vbox)
+
+	rooms_vbox.add_child(_spacer(10))
 
 	var hdr := Label.new()
 	hdr.text = "SCENES"
 	hdr.add_theme_font_size_override("font_size", 24)
 	hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(hdr)
+	rooms_vbox.add_child(hdr)
 
-	# Scene card grid
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 12)
-	vbox.add_child(grid)
+	rooms_vbox.add_child(grid)
 
-	# Build scene list — passthrough only shown if supported
-	var scenes: Array[Dictionary] = [
-		{"id": "arcade", "label": "Arcade Room", "color": Color(0.15, 0.13, 0.35)},
-	]
+	# Arcade Room card → navigates to state grid
+	grid.add_child(_make_room_card("Arcade Room", Color(0.15, 0.13, 0.35), _show_states_view))
+
+	# Passthrough card (only if supported) → direct scene switch
 	var sm := _get_scene_manager()
 	if sm and sm.is_passthrough_supported():
-		scenes.append({"id": "passthrough", "label": "Passthrough AR", "color": Color(0.85, 0.85, 0.9)})
+		grid.add_child(_make_room_card("Passthrough AR", Color(0.85, 0.85, 0.9),
+			func(): scene_change_requested.emit("passthrough")))
 
-	_scene_card_buttons.clear()
-	for scene_def: Dictionary in scenes:
-		var card := _make_scene_card(scene_def)
-		grid.add_child(card)
-		_scene_card_buttons.append(card)
+	# ── Level 2: States panel ─────────────────────────────────────────────────
+	var states_root := VBoxContainer.new()
+	states_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	states_root.add_theme_constant_override("separation", 0)
+	states_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	states_root.visible = false
+	_scene_states_panel = states_root
+	root.add_child(states_root)
 
-	vbox.add_child(HSeparator.new())
+	# Back / title row
+	var back_row := HBoxContainer.new()
+	back_row.add_theme_constant_override("separation", 8)
+	back_row.custom_minimum_size = Vector2(0, 52)
+	states_root.add_child(back_row)
 
-	# Save / Clear buttons (arcade only — hidden in passthrough)
-	var btn_row := HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 12)
-	vbox.add_child(btn_row)
+	var back_btn := Button.new()
+	back_btn.text = "← Back"
+	back_btn.add_theme_font_size_override("font_size", 20)
+	back_btn.pressed.connect(_show_rooms_view)
+	back_row.add_child(back_btn)
 
-	_scene_save_btn = Button.new()
-	_scene_save_btn.text = "  Save Scene  "
-	_scene_save_btn.add_theme_font_size_override("font_size", 22)
-	_scene_save_btn.custom_minimum_size = Vector2(0, 64)
-	_scene_save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var save_style := StyleBoxFlat.new()
-	save_style.bg_color = COLOR_BTN_SAVE
+	var title_lbl := Label.new()
+	title_lbl.text = "Arcade Room"
+	title_lbl.add_theme_font_size_override("font_size", 22)
+	title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	back_row.add_child(title_lbl)
+
+	# Spacer so title stays centered despite back button width
+	var back_spacer := Control.new()
+	back_spacer.custom_minimum_size = back_btn.custom_minimum_size
+	back_spacer.size_flags_horizontal = Control.SIZE_SHRINK_END
+	back_row.add_child(back_spacer)
+
+	# Slot scroll
+	var states_scroll := ScrollContainer.new()
+	states_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	states_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scene_states_scroll = states_scroll
+	states_root.add_child(states_scroll)
+
+	var states_vbox := VBoxContainer.new()
+	states_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	states_vbox.add_theme_constant_override("separation", 10)
+	_scene_states_vbox = states_vbox
+	states_scroll.add_child(states_vbox)
+
+	# Bottom bar: Save New
+	var bottom_bar := HBoxContainer.new()
+	bottom_bar.custom_minimum_size = Vector2(0, 64)
+	bottom_bar.add_theme_constant_override("separation", 0)
+	states_root.add_child(bottom_bar)
+
+	var save_new_btn := Button.new()
+	save_new_btn.text = "  + Save New  "
+	save_new_btn.add_theme_font_size_override("font_size", 22)
+	save_new_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_new_btn.custom_minimum_size = Vector2(0, 64)
+	var sn_style := StyleBoxFlat.new()
+	sn_style.bg_color = COLOR_BTN_SAVE
 	for k in ["corner_radius_top_left","corner_radius_top_right",
 			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		save_style.set(k, 6)
-	_scene_save_btn.add_theme_stylebox_override("normal", save_style)
-	_scene_save_btn.pressed.connect(func(): scene_save_requested.emit())
-	btn_row.add_child(_scene_save_btn)
+		sn_style.set(k, 6)
+	save_new_btn.add_theme_stylebox_override("normal", sn_style)
+	save_new_btn.pressed.connect(func(): scene_slot_create_requested.emit())
+	bottom_bar.add_child(save_new_btn)
 
-	_scene_clear_btn = Button.new()
-	_scene_clear_btn.text = "  Clear Scene  "
-	_scene_clear_btn.add_theme_font_size_override("font_size", 22)
-	_scene_clear_btn.custom_minimum_size = Vector2(0, 64)
-	_scene_clear_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var clear_style := StyleBoxFlat.new()
-	clear_style.bg_color = COLOR_BTN_CLEAR
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		clear_style.set(k, 6)
-	_scene_clear_btn.add_theme_stylebox_override("normal", clear_style)
-	_scene_clear_btn.pressed.connect(func(): scene_clear_requested.emit())
-	btn_row.add_child(_scene_clear_btn)
-
-	return scroll
+	return root
 
 
-func _make_scene_card(scene_def: Dictionary) -> Button:
+func _make_room_card(label_text: String, thumb_color: Color, on_press: Callable) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(0, 120)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2088,61 +2154,212 @@ func _make_scene_card(scene_def: Dictionary) -> Button:
 	card_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(card_vbox)
 
-	# Color thumbnail placeholder
 	var thumb := PanelContainer.new()
 	thumb.custom_minimum_size = Vector2(0, 70)
 	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var thumb_style := StyleBoxFlat.new()
-	thumb_style.bg_color = scene_def.get("color", Color.DARK_GRAY)
+	thumb_style.bg_color = thumb_color
 	for k in ["corner_radius_top_left","corner_radius_top_right",
 			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
 		thumb_style.set(k, 4)
 	thumb.add_theme_stylebox_override("panel", thumb_style)
 	card_vbox.add_child(thumb)
 
-	# Scene name label
 	var lbl := Label.new()
-	lbl.text = scene_def.get("label", "")
+	lbl.text = label_text
 	lbl.add_theme_font_size_override("font_size", 18)
 	lbl.add_theme_color_override("font_color", COLOR_TITLE)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card_vbox.add_child(lbl)
 
-	# Store scene_id in metadata for the click handler
-	var scene_id: String = scene_def.get("id", "")
-	btn.set_meta("scene_id", scene_id)
-	btn.pressed.connect(func(): scene_change_requested.emit(scene_id))
-
+	btn.pressed.connect(on_press)
 	return btn
 
 
-## Update scene card highlights and save/clear button visibility.
-func _update_scene_buttons() -> void:
-	var current_id: String = ""
+## Update arcade room card highlight (called when entering the rooms panel).
+func _update_room_card_highlights() -> void:
+	# Currently the room cards are plain buttons with no active-state tracking.
+	# Extend here if a visual active indicator for "Arcade Room" is desired.
+	pass
+
+
+## Rebuild the slot grid inside _scene_states_vbox.
+func _rebuild_states_grid() -> void:
+	if not _scene_states_vbox:
+		return
+	for child in _scene_states_vbox.get_children():
+		child.queue_free()
+	_scene_hover_timer.clear()
+
+	var persistence := ScenePersistence.new()
+	var slots := persistence.get_slots()
 	var sm := _get_scene_manager()
-	if sm:
-		current_id = sm.current_scene_id
+	var active_id: String = sm.active_slot_id if sm else "clean"
 
-	for card: Button in _scene_card_buttons:
-		var sid: String = card.get_meta("scene_id", "")
-		var is_active := (sid == current_id)
-		var style := StyleBoxFlat.new()
-		style.bg_color = COLOR_SCENE_ACTIVE if is_active else COLOR_SCENE_INACTIVE
-		for k in ["corner_radius_top_left","corner_radius_top_right",
-				  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-			style.set(k, 6)
-		if is_active:
-			style.border_width_top = 3
-			style.border_width_bottom = 3
-			style.border_width_left = 3
-			style.border_width_right = 3
-			style.border_color = Color(0.5, 0.8, 0.5)
-		card.add_theme_stylebox_override("normal", style)
+	for slot: Dictionary in slots:
+		var card := _make_state_card(slot, active_id)
+		_scene_states_vbox.add_child(card)
 
-	# Hide save/clear in passthrough mode
-	var in_arcade := current_id == "arcade" or current_id.is_empty()
-	if _scene_save_btn:
-		_scene_save_btn.visible = in_arcade
-	if _scene_clear_btn:
-		_scene_clear_btn.visible = in_arcade
+	_scene_states_vbox.add_child(_spacer(8))
+
+
+func _make_state_card(slot: Dictionary, active_slot_id: String) -> Control:
+	var slot_id: String   = slot.get("id", "")
+	var slot_name: String = slot.get("name", "")
+	var readonly: bool    = slot.get("readonly", false)
+	var is_active: bool   = (slot_id == active_slot_id)
+	var is_renaming: bool = (slot_id == _scene_rename_slot_id)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 90)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var card_style := StyleBoxFlat.new()
+	card_style.bg_color = COLOR_SLOT_ACTIVE if is_active else COLOR_SLOT_NORMAL
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		card_style.set(k, 6)
+	if is_active:
+		card_style.border_width_top = 2
+		card_style.border_width_bottom = 2
+		card_style.border_width_left = 2
+		card_style.border_width_right = 2
+		card_style.border_color = Color(0.5, 0.8, 0.5)
+	panel.add_theme_stylebox_override("panel", card_style)
+
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", 4)
+	inner.mouse_filter = Control.MOUSE_FILTER_PASS
+	panel.add_child(inner)
+
+	# Name row
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 6)
+	name_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	inner.add_child(name_row)
+
+	if is_renaming:
+		var edit := LineEdit.new()
+		edit.text = slot_name
+		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		edit.add_theme_font_size_override("font_size", 20)
+		_scene_rename_edit = edit
+		edit.text_submitted.connect(func(_t: String) -> void: _finish_rename())
+		name_row.add_child(edit)
+	elif readonly:
+		var name_lbl := Label.new()
+		name_lbl.text = slot_name
+		name_lbl.add_theme_font_size_override("font_size", 20)
+		name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_row.add_child(name_lbl)
+	else:
+		var name_btn := Button.new()
+		name_btn.text = slot_name
+		name_btn.add_theme_font_size_override("font_size", 20)
+		name_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_btn.flat = true
+		name_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		name_btn.pressed.connect(_start_rename.bind(slot_id, slot_name))
+		name_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, null))
+		name_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, null))
+		name_row.add_child(name_btn)
+
+	if is_active:
+		var dot := Label.new()
+		dot.text = "●"
+		dot.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
+		dot.add_theme_font_size_override("font_size", 18)
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_row.add_child(dot)
+
+	# Action row (hidden until hover)
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 8)
+	action_row.visible = false
+	action_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	inner.add_child(action_row)
+
+	var load_btn := _make_action_btn("Load", COLOR_BTN_LOAD)
+	load_btn.pressed.connect(func(): scene_slot_load_requested.emit(slot_id))
+	load_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
+	load_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
+	action_row.add_child(load_btn)
+
+	if not readonly:
+		var save_btn := _make_action_btn("Save", COLOR_BTN_SAVE)
+		save_btn.pressed.connect(func(): scene_slot_save_requested.emit(slot_id))
+		save_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
+		save_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
+		action_row.add_child(save_btn)
+
+		var del_btn := _make_action_btn("Delete", COLOR_BTN_CLEAR)
+		del_btn.pressed.connect(func(): scene_slot_delete_requested.emit(slot_id))
+		del_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
+		del_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
+		action_row.add_child(del_btn)
+
+	# Hover on the outer panel itself
+	panel.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
+	panel.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
+
+	return panel
+
+
+func _make_action_btn(label_text: String, bg_color: Color) -> Button:
+	var btn := Button.new()
+	btn.text = label_text
+	btn.add_theme_font_size_override("font_size", 18)
+	btn.custom_minimum_size = Vector2(80, 36)
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg_color
+	for k in ["corner_radius_top_left","corner_radius_top_right",
+			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
+		s.set(k, 4)
+	btn.add_theme_stylebox_override("normal", s)
+	return btn
+
+
+func _on_card_hover_enter(slot_id: String, action_row: HBoxContainer) -> void:
+	_scene_hover_timer[slot_id] = false
+	if action_row:
+		action_row.visible = true
+
+
+func _on_card_hover_exit(slot_id: String, action_row: HBoxContainer) -> void:
+	_scene_hover_timer[slot_id] = true
+	(func(): _deferred_card_hide(slot_id, action_row)).call_deferred()
+
+
+func _deferred_card_hide(slot_id: String, action_row: HBoxContainer) -> void:
+	if _scene_hover_timer.get(slot_id, false):
+		if is_instance_valid(action_row):
+			action_row.visible = false
+		_scene_hover_timer.erase(slot_id)
+
+
+func _start_rename(slot_id: String, current_name: String) -> void:
+	_scene_rename_slot_id = slot_id
+	_scene_rename_edit = null
+	_rebuild_states_grid()
+	if _scene_rename_edit:
+		_scene_rename_edit.grab_focus()
+		DisplayServer.virtual_keyboard_show(_scene_rename_edit.text)
+
+
+func _finish_rename() -> void:
+	# Guard: if already cleared (e.g. called twice), bail immediately.
+	if _scene_rename_slot_id.is_empty():
+		return
+	var edit := _scene_rename_edit
+	var slot_id := _scene_rename_slot_id
+	# Clear state first so any re-entrant calls are no-ops.
+	_scene_rename_slot_id = ""
+	_scene_rename_edit = null
+	DisplayServer.virtual_keyboard_hide()
+	var new_name := edit.text.strip_edges() if edit else ""
+	if not new_name.is_empty():
+		scene_slot_rename_requested.emit(slot_id, new_name)
+	_rebuild_states_grid()

@@ -1,14 +1,17 @@
 ## ScenePersistence — saves and restores dynamically-spawned objects for the
 ## arcade scene.  Objects must be in the "spawned" group to be tracked.
 ##
-## Save file: user://scenes/arcade.json
+## Save directory: user://scenes/arcade/
+## Manifest:       user://scenes/arcade/manifest.json
+## Slot files:     user://scenes/arcade/{id}.json
 class_name ScenePersistence
 extends RefCounted
 
 
-const SAVE_DIR  := "user://scenes"
-const SAVE_FILE := "user://scenes/arcade.json"
-const VERSION   := 1
+const SAVE_DIR      := "user://scenes"
+const ARCADE_DIR    := "user://scenes/arcade"
+const MANIFEST_FILE := "user://scenes/arcade/manifest.json"
+const VERSION       := 1
 
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE     := preload("res://Scenes/Objects/tv.tscn")
@@ -16,57 +19,199 @@ const CART_SCENE   := preload("res://Scenes/Objects/cartridge.tscn")
 const BOOK_SCENE   := preload("res://Scenes/Objects/pdf_book.tscn")
 
 
+# ── Multi-slot public API ──────────────────────────────────────────────────────
+
+## Returns ordered slot list. "clean" is always first and is never stored in the
+## manifest — it is prepended here.
+func get_slots() -> Array[Dictionary]:
+	var m := _load_manifest()
+	var result: Array[Dictionary] = [{"id": "clean", "name": "Clean Room", "readonly": true}]
+	for s: Variant in m.get("slots", []):
+		result.append(s as Dictionary)
+	return result
+
+
+## Save current scene state to the named slot. Returns false on I/O error.
+func save_slot(root: Node, slot_id: String) -> bool:
+	if slot_id == "clean":
+		return false
+	DirAccess.make_dir_recursive_absolute(ARCADE_DIR)
+	return _write_scene_to_file(root, _slot_file(slot_id))
+
+
+## Clear the scene then restore from the slot file.
+## Loading "clean" just clears the scene.
+func load_slot(root: Node, slot_id: String) -> bool:
+	if slot_id == "clean":
+		clear_scene(root)
+		return true
+	var path := _slot_file(slot_id)
+	if not FileAccess.file_exists(path):
+		push_warning("ScenePersistence: slot file not found '%s'" % path)
+		return false
+	clear_scene(root)
+	return _read_scene_from_file(root, path)
+
+
+## Remove a slot from the manifest and delete its file.
+func delete_slot(slot_id: String) -> bool:
+	if slot_id == "clean":
+		return false
+	var m := _load_manifest()
+	var slots: Array = m.get("slots", [])
+	var new_slots: Array = []
+	for s: Variant in slots:
+		if (s as Dictionary).get("id", "") != slot_id:
+			new_slots.append(s)
+	m["slots"] = new_slots
+	_save_manifest(m)
+	var path := _slot_file(slot_id)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+	return true
+
+
+## Rename a slot in the manifest.
+func rename_slot(slot_id: String, new_name: String) -> bool:
+	if slot_id == "clean":
+		return false
+	var m := _load_manifest()
+	var slots: Array = m.get("slots", [])
+	for s: Variant in slots:
+		var d := s as Dictionary
+		if d.get("id", "") == slot_id:
+			d["name"] = new_name
+			m["slots"] = slots
+			return _save_manifest(m)
+	return false
+
+
+## Save current scene to a brand-new slot and append it to the manifest.
+## Returns the new slot id.
+func create_new_slot(root: Node, name: String) -> String:
+	DirAccess.make_dir_recursive_absolute(ARCADE_DIR)
+	var slot_id := _generate_id()
+	_write_scene_to_file(root, _slot_file(slot_id))
+	var m := _load_manifest()
+	var slots: Array = m.get("slots", [])
+	slots.append({"id": slot_id, "name": name})
+	m["slots"] = slots
+	_save_manifest(m)
+	return slot_id
+
+
+# ── Legacy stubs (kept so any surviving callers still compile) ─────────────────
+
 func has_save() -> bool:
-	return FileAccess.file_exists(SAVE_FILE)
+	# New system: "has saves" means there is at least one user slot.
+	var slots := get_slots()
+	return slots.size() > 1   # > 1 because "clean" is always present
 
 
-## Serialize all "spawned"-group objects under root to JSON.
-func save_scene(root: Node) -> void:
+func save_scene(_root: Node) -> void:
+	push_warning("ScenePersistence.save_scene() is deprecated — use save_slot() instead")
+
+
+func load_scene(_root: Node) -> void:
+	push_warning("ScenePersistence.load_scene() is deprecated — use load_slot() instead")
+
+
+## Free all dynamically-spawned objects.
+func clear_scene(root: Node) -> void:
+	var spawned := root.get_tree().get_nodes_in_group("spawned")
+
+	# Pre-pass: drop cable plugs while their TV snap-zone is still alive.
+	# Cable instances are in "spawned" (added by _add_cable_to_scene).  Their
+	# CablePlug child may be snapped into a RetroTV socket.  Calling drop()
+	# clears the plug's _grab_driver so _exit_tree won't access the freed socket
+	# via grab.release() → by.name.
+	for node: Node in spawned:
+		var plug := node.get_node_or_null("CablePlug")
+		if plug and plug.has_method("drop"):
+			plug.call("drop")
+
+	# Main pass: power off and free everything.
+	for node: Node in spawned:
+		# Power off systems so the emulation thread shuts down cleanly.
+		if node is RetroSystem and (node as RetroSystem).is_powered_on:
+			(node as RetroSystem).toggle_power()
+		# drop_and_free() clears _grab_driver before queue_free, preventing a
+		# use-after-free in XRToolsPickable._exit_tree when a snap-zone that
+		# was "holding" this pickable gets freed first.
+		if node.has_method("drop_and_free"):
+			node.call("drop_and_free")
+		else:
+			node.queue_free()
+
+
+# ── Private helpers ────────────────────────────────────────────────────────────
+
+func _slot_file(slot_id: String) -> String:
+	return ARCADE_DIR + "/" + slot_id + ".json"
+
+
+func _generate_id() -> String:
+	return "%08x" % (randi() ^ Time.get_ticks_msec())
+
+
+func _load_manifest() -> Dictionary:
+	if not FileAccess.file_exists(MANIFEST_FILE):
+		return {"version": VERSION, "slots": []}
+	var f := FileAccess.open(MANIFEST_FILE, FileAccess.READ)
+	if not f:
+		return {"version": VERSION, "slots": []}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if parsed is Dictionary:
+		return parsed as Dictionary
+	return {"version": VERSION, "slots": []}
+
+
+func _save_manifest(m: Dictionary) -> bool:
+	DirAccess.make_dir_recursive_absolute(ARCADE_DIR)
+	var f := FileAccess.open(MANIFEST_FILE, FileAccess.WRITE)
+	if not f:
+		push_error("ScenePersistence: cannot write manifest (err %d)" % FileAccess.get_open_error())
+		return false
+	f.store_string(JSON.stringify(m, "\t"))
+	return true
+
+
+func _write_scene_to_file(root: Node, path: String) -> bool:
 	var nodes := root.get_tree().get_nodes_in_group("spawned")
-
-	# Build a node→index map so we can cross-reference connections.
 	var node_to_id: Dictionary = {}
 	for i in range(nodes.size()):
 		node_to_id[nodes[i]] = i
-
 	var objects: Array[Dictionary] = []
 	for i in range(nodes.size()):
 		var data := _serialize_node(nodes[i], i, node_to_id)
 		if not data.is_empty():
 			objects.append(data)
-
-	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
-	var f := FileAccess.open(SAVE_FILE, FileAccess.WRITE)
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if not f:
-		push_error("ScenePersistence: cannot write '%s' (err %d)" % [SAVE_FILE, FileAccess.get_open_error()])
-		return
+		push_error("ScenePersistence: cannot write '%s' (err %d)" % [path, FileAccess.get_open_error()])
+		return false
 	f.store_string(JSON.stringify({"version": VERSION, "objects": objects}, "\t"))
-	print("[ScenePersistence] saved %d objects" % objects.size())
+	print("[ScenePersistence] saved %d objects to '%s'" % [objects.size(), path])
+	return true
 
 
-## Remove all spawned objects, then recreate from the save file.
-func load_scene(root: Node) -> void:
-	if not has_save():
-		return
-
-	clear_scene(root)
-
-	var f := FileAccess.open(SAVE_FILE, FileAccess.READ)
+func _read_scene_from_file(root: Node, path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.READ)
 	if not f:
-		return
+		return false
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
 	if not parsed is Dictionary:
-		push_error("ScenePersistence: invalid save file")
-		return
+		push_error("ScenePersistence: invalid slot file '%s'" % path)
+		return false
 
 	var data := parsed as Dictionary
 	var objects: Variant = data.get("objects", [])
 	if not objects is Array:
-		return
+		return false
 
-	# Pass 1: spawn all objects, keyed by their saved id.
-	var spawned: Dictionary = {}  # id -> Node3D
-	var entries: Dictionary = {}  # id -> Dictionary
+	# Pass 1: spawn all objects.
+	var spawned: Dictionary = {}
+	var entries: Dictionary = {}
 	var count := 0
 	for entry: Variant in objects as Array:
 		if not entry is Dictionary:
@@ -83,31 +228,33 @@ func load_scene(root: Node) -> void:
 			entries[id] = d
 			count += 1
 
-	# Pass 2: restore connections (cable plug → TV, cartridge → system).
-	# Cable restoration may be deferred internally if the cable scene hasn't
-	# finished spawning yet (RetroSystem._add_cable_to_scene is call_deferred).
+	# Pass 2: restore connections.
 	for id: int in spawned:
 		if not spawned[id] is RetroSystem:
 			continue
 		var sys := spawned[id] as RetroSystem
 		var d: Dictionary = entries[id]
 		var tv_id: int = d.get("connected_tv_id", -1)
+		var tv_path: String = d.get("connected_tv_path", "")
+		print("[ScenePersistence] system id=%d connected_tv_id=%d tv_path=%s" % [id, tv_id, tv_path])
 		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+			print("[ScenePersistence] restoring cable connection system→spawned tv")
 			sys.restore_cable_connection(spawned[tv_id] as RetroTV)
+		elif not tv_path.is_empty():
+			# Scene-placed TV — look it up by absolute node path
+			var tv_node := root.get_node_or_null(tv_path) as RetroTV
+			if tv_node:
+				print("[ScenePersistence] restoring cable connection system→scene tv '%s'" % tv_path)
+				sys.restore_cable_connection(tv_node)
+			else:
+				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
 		var cart_id: int = d.get("snapped_cartridge_id", -1)
 		if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
+			print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
 			sys.restore_cartridge(spawned[cart_id])
 
-	print("[ScenePersistence] loaded %d objects" % count)
-
-
-## Free all dynamically-spawned objects.
-func clear_scene(root: Node) -> void:
-	for node: Node in root.get_tree().get_nodes_in_group("spawned"):
-		# Power off systems before freeing so the emulation thread shuts down
-		if node is RetroSystem and (node as RetroSystem).is_powered_on:
-			(node as RetroSystem).toggle_power()
-		node.queue_free()
+	print("[ScenePersistence] loaded %d objects from '%s'" % [count, path])
+	return true
 
 
 # ── Serialization ──────────────────────────────────────────────────────────────
@@ -122,9 +269,14 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 	if node is RetroSystem:
 		var sys := node as RetroSystem
 		var tv_id: int = node_to_id.get(sys.connected_tv, -1) if sys.connected_tv != null else -1
+		# If the TV is a scene-placed node (not in spawned group), save its path instead.
+		var tv_path: String = ""
+		if sys.connected_tv != null and tv_id == -1:
+			tv_path = str(sys.connected_tv.get_path())
 		var cart := sys.get_snapped_cartridge()
 		var cart_id: int = node_to_id.get(cart, -1) if cart != null else -1
-		return {
+		print("[ScenePersistence] serialize system id=%d systemid=%s tv_id=%d tv_path=%s cart_id=%d" % [id, sys.systemid, tv_id, tv_path, cart_id])
+		var result := {
 			"id": id,
 			"type": "system",
 			"systemid": sys.systemid,
@@ -133,6 +285,9 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+		if not tv_path.is_empty():
+			result["connected_tv_path"] = tv_path
+		return result
 	elif node is RetroTV:
 		return {
 			"id": id,

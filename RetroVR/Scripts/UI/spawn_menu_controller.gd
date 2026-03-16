@@ -141,20 +141,22 @@ func _connect_menu_signals() -> void:
 	menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
 	menu.turn_style_changed.connect(_on_turn_style_changed)
 	menu.scene_change_requested.connect(_on_scene_change_requested)
-	menu.scene_save_requested.connect(_on_scene_save_requested)
-	menu.scene_clear_requested.connect(_on_scene_clear_requested)
+	menu.scene_slot_load_requested.connect(_on_slot_load)
+	menu.scene_slot_save_requested.connect(_on_slot_save)
+	menu.scene_slot_delete_requested.connect(_on_slot_delete)
+	menu.scene_slot_create_requested.connect(_on_slot_create)
+	menu.scene_slot_rename_requested.connect(_on_slot_rename)
 	menu.auto_save_changed.connect(_on_auto_save_changed)
 	menu.show_fps_changed.connect(_on_show_fps_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
 	_menu_connected = true
 
-	# Auto-load saved scene objects on startup (arcade only)
+	# Auto-load last active slot on startup (arcade only)
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm and sm.current_scene_id == "arcade":
-		var persistence := ScenePersistence.new()
-		if persistence.has_save():
-			persistence.load_scene(get_tree().current_scene)
+		if sm.active_slot_id != "clean":
+			ScenePersistence.new().load_slot(get_tree().current_scene, sm.active_slot_id)
 
 
 # ── Button handler ────────────────────────────────────────────────────────────
@@ -549,14 +551,56 @@ func _on_scene_change_requested(scene_id: String) -> void:
 	sm.change_scene(scene_id)
 
 
-func _on_scene_save_requested() -> void:
+func _on_slot_load(slot_id: String) -> void:
 	var persistence := ScenePersistence.new()
-	persistence.save_scene(get_tree().current_scene)
+	persistence.load_slot(get_tree().current_scene, slot_id)
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm:
+		sm.set_active_slot(slot_id)
+	var menu := _get_menu()
+	if menu:
+		menu._rebuild_states_grid()
 
 
-func _on_scene_clear_requested() -> void:
+func _on_slot_save(slot_id: String) -> void:
+	if slot_id == "clean":
+		return
+	ScenePersistence.new().save_slot(get_tree().current_scene, slot_id)
+
+
+func _on_slot_delete(slot_id: String) -> void:
+	if slot_id == "clean":
+		return
 	var persistence := ScenePersistence.new()
-	persistence.clear_scene(get_tree().current_scene)
+	persistence.delete_slot(slot_id)
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm and sm.active_slot_id == slot_id:
+		sm.set_active_slot("clean")
+	var menu := _get_menu()
+	if menu:
+		menu._rebuild_states_grid()
+
+
+func _on_slot_create() -> void:
+	var persistence := ScenePersistence.new()
+	var user_count := persistence.get_slots().filter(func(s: Dictionary) -> bool:
+		return not s.get("readonly", false)
+	).size()
+	var name := "State %d" % (user_count + 1)
+	var new_id := persistence.create_new_slot(get_tree().current_scene, name)
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm:
+		sm.set_active_slot(new_id)
+	var menu := _get_menu()
+	if menu:
+		menu._rebuild_states_grid()
+
+
+func _on_slot_rename(slot_id: String, new_name: String) -> void:
+	ScenePersistence.new().rename_slot(slot_id, new_name)
+	var menu := _get_menu()
+	if menu:
+		menu._rebuild_states_grid()
 
 
 func _on_auto_save_changed(enabled: bool) -> void:

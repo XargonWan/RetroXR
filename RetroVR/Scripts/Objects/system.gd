@@ -128,6 +128,8 @@ func _spawn_cable() -> void:
 
 func _add_cable_to_scene() -> void:
 	get_tree().current_scene.add_child(_cable_instance)
+	# Track cable in the "spawned" group so clear_scene() includes it.
+	_cable_instance.add_to_group("spawned")
 	_cable_plug = _cable_instance.get_node("CablePlug") as CablePlug
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
 
@@ -148,6 +150,7 @@ func _add_cable_to_scene() -> void:
 
 	# Restore a pending TV connection requested before the cable was ready
 	if _pending_tv_restore != null:
+		print("[RetroSystem] _add_cable_to_scene: restoring pending TV connection")
 		_snap_cable_to_tv(_pending_tv_restore)
 		_pending_tv_restore = null
 
@@ -292,9 +295,11 @@ func get_snapped_cartridge() -> Node3D:
 ## Safe to call before the cable has finished spawning — the snap will be
 ## deferred until _add_cable_to_scene() runs if the plug isn't ready yet.
 func restore_cable_connection(tv: RetroTV) -> void:
+	print("[RetroSystem] restore_cable_connection: plug=%s tv=%s" % [_cable_plug, tv])
 	if _cable_plug != null:
 		_snap_cable_to_tv(tv)
 	else:
+		print("[RetroSystem] cable plug not ready yet, deferring restore")
 		_pending_tv_restore = tv
 
 
