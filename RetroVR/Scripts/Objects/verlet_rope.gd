@@ -1,6 +1,6 @@
 ## Verlet rope — purely visual rope simulation between two 3D anchor points.
 ## Attach as a child; call set_anchors() or set start_node / end_node.
-## Renders as a tube mesh using ImmediateMesh.
+## Renders as a tube mesh using ArrayMesh with indexed triangles.
 class_name VerletRope
 extends MeshInstance3D
 
@@ -24,7 +24,7 @@ extends MeshInstance3D
 @export var tube_radius: float = 0.005
 
 ## Number of radial segments for the tube cross-section
-@export var tube_sides: int = 6
+@export var tube_sides: int = 4
 
 ## Rope color
 @export var rope_color: Color = Color(0.15, 0.15, 0.15, 1.0)
@@ -32,9 +32,12 @@ extends MeshInstance3D
 ## Collision mask used for raycasting rope points against surfaces (layers 1+2 = floor/table)
 @export_flags_3d_physics var surface_collision_mask: int = 3
 
+## How many physics frames to skip between surface raycasts (higher = cheaper)
+@export var raycast_interval: int = 3
+
 
 # Internal point data
-var _points: PackedVector3Array = []  # current positions (global space)
+var _points: PackedVector3Array = []       # current positions (global space)
 var _prev_points: PackedVector3Array = []  # previous positions for verlet
 
 # Anchors
@@ -43,17 +46,73 @@ var end_node: Node3D = null
 
 var _material: StandardMaterial3D
 
+# Pre-cached trig tables (rebuilt when tube_sides changes)
+var _cos_table: PackedFloat32Array
+var _sin_table: PackedFloat32Array
+
+# Pre-allocated vertex buffer updated each frame
+var _vertex_array: PackedVector3Array
+
+# Raycast throttle counter
+var _raycast_frame: int = 0
+
+# Reusable raycast query (avoids per-point allocation)
+var _ray_query: PhysicsRayQueryParameters3D
+
 
 func _ready() -> void:
-	# Create ImmediateMesh
-	mesh = ImmediateMesh.new()
 	_material = StandardMaterial3D.new()
 	_material.albedo_color = rope_color
 	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	# Ensure we render as a global-space mesh (we'll supply global coords)
 	top_level = true
 	global_transform = Transform3D.IDENTITY
+
+	_build_trig_tables()
+	_build_mesh_topology()
 	_init_points()
+
+	if surface_collision_mask != 0:
+		_ray_query = PhysicsRayQueryParameters3D.new()
+		_ray_query.collision_mask = surface_collision_mask
+		_ray_query.hit_back_faces = false
+
+
+func _build_trig_tables() -> void:
+	_cos_table.resize(tube_sides)
+	_sin_table.resize(tube_sides)
+	for j in tube_sides:
+		var angle := TAU * float(j) / float(tube_sides)
+		_cos_table[j] = cos(angle)
+		_sin_table[j] = sin(angle)
+
+
+func _build_mesh_topology() -> void:
+	var ring_count := segment_count + 1
+	_vertex_array = PackedVector3Array()
+	_vertex_array.resize(ring_count * tube_sides)
+
+	# Index buffer — topology never changes, built once
+	var indices := PackedInt32Array()
+	indices.resize(segment_count * tube_sides * 6)
+	var idx := 0
+	for i in segment_count:
+		for j in tube_sides:
+			var a := i * tube_sides + j
+			var b := i * tube_sides + (j + 1) % tube_sides
+			var c := (i + 1) * tube_sides + j
+			var d := (i + 1) * tube_sides + (j + 1) % tube_sides
+			indices[idx]     = a; indices[idx + 1] = b; indices[idx + 2] = c
+			indices[idx + 3] = b; indices[idx + 4] = d; indices[idx + 5] = c
+			idx += 6
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = _vertex_array
+	arrays[Mesh.ARRAY_INDEX]  = indices
+
+	mesh = ArrayMesh.new()
+	(mesh as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	(mesh as ArrayMesh).surface_set_material(0, _material)
 
 
 func _init_points() -> void:
@@ -61,35 +120,32 @@ func _init_points() -> void:
 	_points.resize(count)
 	_prev_points.resize(count)
 
-	# Place points in a straight line between anchors (or a short droop if no anchors yet)
 	var start_pos := start_node.global_position if start_node else global_position
-	var end_pos := end_node.global_position if end_node else start_pos + Vector3(0, -segment_count * segment_length, 0)
+	var end_pos   := end_node.global_position   if end_node   else start_pos + Vector3(0, -segment_count * segment_length, 0)
 
 	for i in count:
 		var t := float(i) / float(count - 1) if count > 1 else 0.0
-		_points[i] = start_pos.lerp(end_pos, t)
+		_points[i]      = start_pos.lerp(end_pos, t)
 		_prev_points[i] = _points[i]
 
 
-func _process(delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _points.size() == 0:
 		return
 
-	# --- Verlet integration ---
 	var count := _points.size()
-	for i in range(1, count):  # skip point 0 (pinned)
+
+	# --- Verlet integration ---
+	for i in range(1, count):
 		var current := _points[i]
-		var prev := _prev_points[i]
-		var velocity := (current - prev) * (1.0 - damping)
+		var velocity := (current - _prev_points[i]) * (1.0 - damping)
 		_prev_points[i] = current
 		_points[i] = current + velocity + gravity * (delta * delta)
 
-	# Pin first point to start anchor
+	# Pin anchors
 	if start_node:
 		_points[0] = start_node.global_position
 		_prev_points[0] = _points[0]
-
-	# Pin last point to end anchor
 	if end_node:
 		_points[count - 1] = end_node.global_position
 		_prev_points[count - 1] = _points[count - 1]
@@ -103,101 +159,75 @@ func _process(delta: float) -> void:
 			var dist := diff.length()
 			if dist < 0.0001:
 				continue
-			var error := (dist - segment_length) / dist
-			var correction := diff * error * 0.5
-
+			var correction := diff * ((dist - segment_length) / dist) * 0.5
 			if i == 0:
-				# Point 0 is pinned — only move b
 				_points[i + 1] = b - correction * 2.0
 			elif i + 1 == count - 1 and end_node:
-				# Last point is pinned — only move a
 				_points[i] = a + correction * 2.0
 			else:
-				_points[i] = a + correction
+				_points[i]     = a + correction
 				_points[i + 1] = b - correction
 
-		# Re-pin anchors after each iteration
 		if start_node:
 			_points[0] = start_node.global_position
 		if end_node:
 			_points[count - 1] = end_node.global_position
 
-	# --- Surface collision: raycast each point downward ---
-	if surface_collision_mask != 0:
-		var space_state := get_world_3d().direct_space_state
-		for i in range(count):
-			# Skip pinned anchor points
-			if i == 0 and start_node:
-				continue
-			if i == count - 1 and end_node:
-				continue
-			var from := _points[i] + Vector3(0, 0.05, 0)
-			var to := _points[i] + Vector3(0, -0.5, 0)
-			var query := PhysicsRayQueryParameters3D.create(from, to, surface_collision_mask)
-			var hit := space_state.intersect_ray(query)
-			if hit and _points[i].y < hit["position"].y:
-				_points[i].y = hit["position"].y
-				_prev_points[i].y = hit["position"].y
+	# --- Surface collision (throttled) ---
+	if surface_collision_mask != 0 and _ray_query:
+		_raycast_frame += 1
+		if _raycast_frame >= raycast_interval:
+			_raycast_frame = 0
+			var space_state := get_world_3d().direct_space_state
+			for i in range(count):
+				if (i == 0 and start_node) or (i == count - 1 and end_node):
+					continue
+				_ray_query.from = _points[i] + Vector3(0, 0.05, 0)
+				_ray_query.to   = _points[i] + Vector3(0, -0.5, 0)
+				var hit := space_state.intersect_ray(_ray_query)
+				if hit and _points[i].y < hit["position"].y:
+					_points[i].y      = hit["position"].y
+					_prev_points[i].y = hit["position"].y
 
-	# --- Render ---
-	_render_tube()
+
+func _process(_delta: float) -> void:
+	if _points.size() >= 2:
+		_render_tube()
 
 
 func _render_tube() -> void:
-	var im := mesh as ImmediateMesh
-	im.clear_surfaces()
-
 	var count := _points.size()
-	if count < 2:
-		return
 
-	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP, _material)
+	# Pre-compute one ring frame per ring (avoids recomputing per vertex)
+	var sides:  Array[Vector3] = []
+	var ups:    Array[Vector3] = []
+	sides.resize(count)
+	ups.resize(count)
 
-	# Build tube geometry — for each pair of adjacent points, emit a ring
-	for i in range(count):
-		# Tangent direction
+	for i in count:
 		var tangent: Vector3
 		if i == 0:
-			tangent = (_points[1] - _points[0]).normalized()
+			tangent = _points[1] - _points[0]
 		elif i == count - 1:
-			tangent = (_points[i] - _points[i - 1]).normalized()
+			tangent = _points[i] - _points[i - 1]
 		else:
-			tangent = (_points[i + 1] - _points[i - 1]).normalized()
-
+			tangent = _points[i + 1] - _points[i - 1]
 		if tangent.length_squared() < 0.0001:
 			tangent = Vector3.UP
+		else:
+			tangent = tangent.normalized()
+		var ref := Vector3.UP if abs(tangent.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
+		var side := tangent.cross(ref).normalized()
+		sides[i] = side
+		ups[i]   = side.cross(tangent).normalized()
 
-		# Build a local coordinate frame
-		var up := Vector3.UP if abs(tangent.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
-		var side := tangent.cross(up).normalized()
-		up = side.cross(tangent).normalized()
+	# Fill vertex buffer
+	for i in count:
+		var base := i * tube_sides
+		var side := sides[i]
+		var up   := ups[i]
+		for j in tube_sides:
+			_vertex_array[base + j] = _points[i] + (side * _cos_table[j] + up * _sin_table[j]) * tube_radius
 
-		for j in range(tube_sides + 1):
-			var angle := TAU * float(j) / float(tube_sides)
-			var offset := (side * cos(angle) + up * sin(angle)) * tube_radius
-			var pos := _points[i] + offset
-			var normal := offset.normalized()
-			im.surface_set_normal(normal)
-			im.surface_add_vertex(pos)
-
-			# Connect to next ring — add degenerate if not last point
-			if i < count - 1:
-				var next_tangent: Vector3
-				if i + 1 == count - 1:
-					next_tangent = (_points[i + 1] - _points[i]).normalized()
-				else:
-					next_tangent = (_points[i + 2] - _points[i]).normalized()
-				if next_tangent.length_squared() < 0.0001:
-					next_tangent = tangent
-
-				var next_up := Vector3.UP if abs(next_tangent.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
-				var next_side := next_tangent.cross(next_up).normalized()
-				next_up = next_side.cross(next_tangent).normalized()
-
-				var next_offset := (next_side * cos(angle) + next_up * sin(angle)) * tube_radius
-				var next_pos := _points[i + 1] + next_offset
-				var next_normal := next_offset.normalized()
-				im.surface_set_normal(next_normal)
-				im.surface_add_vertex(next_pos)
-
-	im.surface_end()
+	# Single bulk upload to GPU
+	(mesh as ArrayMesh).surface_update_vertex_region(0, 0, _vertex_array.to_byte_array())
