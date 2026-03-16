@@ -6,10 +6,11 @@
 ## Toggle with the left controller's menu_button action.
 extends Node3D
 
-const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
-const TV_SCENE   := preload("res://Scenes/Objects/tv.tscn")
-const CART_SCENE := preload("res://Scenes/Objects/cartridge.tscn")
-const BOOK_SCENE := preload("res://Scenes/Objects/pdf_book.tscn")
+const SYSTEM_SCENE     := preload("res://Scenes/Objects/system.tscn")
+const TV_SCENE         := preload("res://Scenes/Objects/tv.tscn")
+const CART_SCENE       := preload("res://Scenes/Objects/cartridge.tscn")
+const BOOK_SCENE       := preload("res://Scenes/Objects/pdf_book.tscn")
+const TRASH_CAN_SCENE  := preload("res://Scenes/Objects/trash_can.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
@@ -17,6 +18,7 @@ const SPAWN_Y := {
 	"system":     0.80,
 	"cartridge":  0.76,
 	"book":       0.80,
+	"trash_can":  0.90,
 }
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
@@ -480,6 +482,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = TV_SCENE.instantiate() as Node3D
 		"cartridge":
 			obj = CART_SCENE.instantiate() as Node3D
+		"trash_can":
+			obj = TRASH_CAN_SCENE.instantiate() as Node3D
 		_:
 			# Any other type is treated as a systemid
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem

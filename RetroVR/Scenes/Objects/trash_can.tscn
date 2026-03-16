@@ -1,0 +1,77 @@
+[gd_scene load_steps=12 format=3 uid="uid://trashcan_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/trash_can.gd" id="1_trashscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+
+[sub_resource type="CylinderShape3D" id="CylShape_body"]
+radius = 0.16
+height = 0.40
+
+[sub_resource type="CylinderMesh" id="CylMesh_body"]
+top_radius = 0.16
+bottom_radius = 0.13
+height = 0.40
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.18, 0.18, 0.18, 1.0)
+
+[sub_resource type="CylinderMesh" id="CylMesh_rim"]
+top_radius = 0.175
+bottom_radius = 0.165
+height = 0.025
+
+[sub_resource type="StandardMaterial3D" id="Mat_rim"]
+albedo_color = Color(0.08, 0.08, 0.08, 1.0)
+
+[sub_resource type="CylinderShape3D" id="CylShape_trash_area"]
+radius = 0.22
+height = 0.25
+
+[sub_resource type="CylinderShape3D" id="CylShape_pointer"]
+radius = 0.16
+height = 0.40
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_trash"]
+bounce = 0.0
+friction = 0.8
+
+[node name="TrashCan" type="RigidBody3D" groups=["spawned"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_trash")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_trashscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CylShape_body")
+
+[node name="CanMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylMesh_body")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="RimMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2125, 0)
+mesh = SubResource("CylMesh_rim")
+surface_material_override/0 = SubResource("Mat_rim")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("CylShape_pointer")
+
+[node name="TrashArea" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.325, 0)
+collision_layer = 0
+collision_mask = 65540
+monitoring = true
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TrashArea"]
+shape = SubResource("CylShape_trash_area")

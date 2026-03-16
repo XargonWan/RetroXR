@@ -503,6 +503,8 @@ func _build_spawn_view() -> Control:
 	books_scroll.add_child(_books_vbox)
 	_populate_books_tab()
 
+	_add_spawn_tab(tabs, "Objects", [["Trash Can", "trash_can"]])
+
 	# Refresh on tab switch — picks up files added to disk since last open
 	# Also update _active_scroll to the current tab's ScrollContainer
 	tabs.tab_changed.connect(func(idx: int):

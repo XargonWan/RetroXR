@@ -1,9 +1,10 @@
 ## PickableHighlight — add as a child of any XRToolsPickable.
 ## Automatically builds outline overlay meshes for every MeshInstance3D direct-child
-## of the parent and manages three visual states:
+## of the parent and manages four visual states:
 ##   - Ray hovering  → white   (highlight_updated signal on parent pickable)
 ##   - Ray held      → yellow  (has_picked_up on XRToolsFunctionPickup nodes, ray-grab path)
 ##   - Hand held     → blue    (picked_up / dropped signals on parent pickable, hand-grab path)
+##   - In trash      → red     (set_trash_mode(true) called by TrashCan — highest priority)
 ##
 ## Why the two separate paths: godot-xr-tools ray-grab bypasses the pickable's
 ## picked_up/grabbed signals entirely and only emits has_picked_up on the pickup
@@ -11,6 +12,7 @@
 ##
 ## Uses a two-pass real-stencil technique (no SubViewport, works in VR stereo).
 ## See outline.gdshader for a detailed explanation.
+class_name PickableHighlight
 extends Node3D
 
 const OUTLINE_SHADER       := preload("res://Shaders/outline.gdshader")
@@ -22,6 +24,8 @@ const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdsha
 @export var ray_color:   Color = Color(1.0, 0.85, 0.0, 1.0)
 ## Color shown while the object is held by a physical hand grab.
 @export var held_color:  Color = Color(0.25, 0.6, 1.0, 1.0)
+## Color shown while the object is inside a TrashCan detection area (overrides held colour).
+@export var trash_color: Color = Color(1.0, 0.15, 0.15, 1.0)
 
 ## Outline thickness — screen-space, consistent at any distance.
 @export_range(0.0, 3.0, 0.1)    var outline_width: float = 1.0
@@ -37,6 +41,7 @@ var _overlay_sources: Array[MeshInstance3D] = []  # parallel to _overlays
 var _is_highlighted: bool = false
 var _is_ray_held:    bool = false
 var _is_hand_held:   bool = false
+var _is_in_trash:    bool = false
 var _ray_grabber:    Node = null   # which XRToolsFunctionPickup is ray-holding us
 
 
@@ -154,7 +159,10 @@ func _on_ray_dropped(pickup: Node) -> void:
 # --- State machine ---
 
 func _update_state() -> void:
-	if _is_hand_held:
+	if _is_in_trash:
+		_set_color(trash_color)
+		_set_overlays_visible(true)
+	elif _is_hand_held:
 		_set_color(held_color)
 		_set_overlays_visible(true)
 	elif _is_ray_held:
@@ -165,6 +173,12 @@ func _update_state() -> void:
 		_set_overlays_visible(true)
 	else:
 		_set_overlays_visible(false)
+
+
+## Called by TrashCan when this object enters or exits the trash detection area.
+func set_trash_mode(in_trash: bool) -> void:
+	_is_in_trash = in_trash
+	_update_state()
 
 
 func _set_overlays_visible(show: bool) -> void:
