@@ -5,6 +5,12 @@
 class_name SpawnMenu2D
 extends Control
 
+## Scale factor applied to the entire UI.  Increase this when viewport_size
+## is higher than the logical design resolution so content stays the same
+## apparent physical size in VR.  Default 2.0 matches viewport_size 1800×1500
+## against the original 900×750 design resolution.
+@export var ui_scale: float = 2.0
+
 signal spawn_requested(type: String)
 signal close_requested
 ## Emitted when the user changes a default core in the Manager tab.
@@ -192,8 +198,11 @@ func _init_web_server() -> void:
 # ── Top-level UI ──────────────────────────────────────────────────────────────
 
 func _build_ui() -> void:
-	anchor_right  = 1.0
-	anchor_bottom = 1.0
+	# Scale the entire UI so it fills the same apparent physical area regardless
+	# of viewport_size.  pivot_offset keeps scaling centred on the panel.
+	scale = Vector2(ui_scale, ui_scale)
+	anchor_right  = 1.0 / ui_scale
+	anchor_bottom = 1.0 / ui_scale
 
 	var panel := PanelContainer.new()
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
