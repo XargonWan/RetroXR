@@ -46,22 +46,43 @@ static func ensure_rom_dir(systemid: String) -> void:
 ## Scan a system's ROM folder and return all matching files.
 ## extensions: lowercase strings without dots, e.g. ["nes", "fds"].
 ## Returns Array of {path: String, label: String} sorted by label, or [] if folder missing.
+##
+## Multi-file disc images (bin/cue, img/ccd, mdf/mds) are collapsed to their
+## descriptor file — the data-only companion is hidden when its descriptor exists.
 static func scan_roms(systemid: String, extensions: Array[String]) -> Array[Dictionary]:
 	var dir_path := rom_dir_for_system(systemid)
 	var dir := DirAccess.open(dir_path)
 	if not dir:
 		return []
 
-	var results: Array[Dictionary] = []
+	# data ext -> descriptor ext that supersedes it
+	const SHADOWED_BY := {"bin": "cue", "img": "ccd", "mdf": "mds"}
+
+	# First pass: collect all filenames present in the directory
+	var all_files: Dictionary = {}  # filename (lowercase) -> true
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
-		if not dir.current_is_dir() and not fname.begins_with("."):
-			var ext := fname.get_extension().to_lower()
-			if extensions.is_empty() or ext in extensions:
-				results.append({"path": dir_path.path_join(fname), "label": fname.get_basename()})
+		if not dir.current_is_dir():
+			all_files[fname.to_lower()] = true
 		fname = dir.get_next()
 	dir.list_dir_end()
+
+	# Second pass: build results, skipping data files whose descriptor exists
+	var results: Array[Dictionary] = []
+	for file: String in all_files:
+		if file.begins_with("."):
+			continue
+		var ext := file.get_extension()
+		if ext in SHADOWED_BY:
+			var descriptor_ext: String = SHADOWED_BY[ext]
+			var descriptor := file.get_basename() + "." + descriptor_ext
+			if descriptor in all_files and (extensions.is_empty() or descriptor_ext in extensions):
+				continue  # hidden — the .cue/.ccd/.mds entry covers it
+		if not extensions.is_empty() and ext not in extensions:
+			continue
+		var full_path := dir_path.path_join(file)
+		results.append({"path": full_path, "label": file.get_basename()})
 
 	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
