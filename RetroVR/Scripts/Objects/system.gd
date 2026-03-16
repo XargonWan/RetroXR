@@ -17,6 +17,13 @@ extends XRToolsPickable
 ## libretro systemid (e.g. "nes", "super_nes"). Used for dynamic core lookup.
 @export var systemid: String = ""
 
+## Spatial audio settings for the AudioStreamPlayer3D created at runtime.
+@export_group("Spatial Audio")
+@export var audio_unit_size: float = 3.0        ## Reference distance (m) for full volume
+@export var audio_max_distance: float = 15.0    ## Distance (m) at which sound is fully silent
+@export var audio_panning_strength: float = 1.0 ## Left/right stereo separation (1.0 = default)
+@export_group("")
+
 
 # Runtime state
 var rom_path: String = ""
@@ -203,6 +210,11 @@ func power_on() -> void:
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
+	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
+	if asp:
+		asp.unit_size        = audio_unit_size
+		asp.max_distance     = audio_max_distance
+		asp.panning_strength = audio_panning_strength
 	is_powered_on = true
 	_power_button.set_color(Color(1.0, 0.0, 0.0))  # Bright red when on
 	_power_button_label.text = "STOP"
