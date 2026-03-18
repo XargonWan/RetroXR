@@ -5,9 +5,9 @@ extends RefCounted
 
 
 ## Developer credentials (hardcoded).
-const DEV_ID := "muldjord"
-const DEV_PASSWORD := "uWu5VRc9QDVMPpD8"
-const SOFT_NAME := "manual-test"
+const DEV_ID := "XenuIsWatching"
+const DEV_PASSWORD := "cRF2f81Fdgi"
+const SOFT_NAME := "retrovr"
 
 ## User credentials (persisted).
 var ssid: String = ""
