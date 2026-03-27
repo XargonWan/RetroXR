@@ -8,12 +8,12 @@ extends XRToolsPickable
 const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
 const RETRO_DEVICE_LIGHTGUN := 7
 
-# Lightgun button IDs (libretro API)
-const LIGHTGUN_TRIGGER := 0
-const LIGHTGUN_CURSOR  := 1
-const LIGHTGUN_TURBO   := 2
-const LIGHTGUN_PAUSE   := 3
-const LIGHTGUN_START   := 4
+const LIGHTGUN_TRIGGER    := 0
+const LIGHTGUN_CURSOR     := 1
+const LIGHTGUN_TURBO      := 2
+const LIGHTGUN_PAUSE      := 3
+const LIGHTGUN_START      := 4
+const SECONDARY_GRAB_DIST := 0.25
 
 ## libretro device type reported to the system when plugged in.
 var device_type: int = RETRO_DEVICE_LIGHTGUN
@@ -40,6 +40,12 @@ var _screen_h: float = 0.0
 var _allow_drop := false
 var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null
+var _secondary_ctrl: XRController3D = null
+
+var _locomotion_manager: LocomotionManager = null
+var _spawn_menu_ctrl: Node = null
+var _left_vr_ctrl: XRController3D = null
+var _right_vr_ctrl: XRController3D = null
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _barrel_tip: Node3D = $BarrelTip
@@ -55,31 +61,102 @@ func _ready() -> void:
 	dropped.connect(_on_dropped_signal)
 	_laser_dot.visible = false
 	_spawn_cable()
+	call_deferred("_find_vr_nodes")
 
+
+func _find_vr_nodes() -> void:
+	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
+	_spawn_menu_ctrl = get_tree().root.find_child("SpawnMenuController", true, false)
+	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
+		var ctrl := node as XRController3D
+		if ctrl == null:
+			continue
+		if ctrl.tracker == &"left_hand":
+			_left_vr_ctrl = ctrl
+			ctrl.button_pressed.connect(_on_vr_grip_pressed.bind(ctrl))
+		elif ctrl.tracker == &"right_hand":
+			_right_vr_ctrl = ctrl
+			ctrl.button_pressed.connect(_on_vr_grip_pressed.bind(ctrl))
+
+
+func _on_vr_grip_pressed(button: String, from_ctrl: XRController3D) -> void:
+	if button != "grip_click":
+		return
+	if from_ctrl == _holding_ctrl:
+		return
+	if not is_instance_valid(_holding_ctrl) or is_instance_valid(_secondary_ctrl):
+		return
+	if from_ctrl.global_position.distance_to(global_position) > SECONDARY_GRAB_DIST:
+		return
+	_secondary_ctrl = from_ctrl
+	_set_model_visible(from_ctrl, false)
+	_update_locomotion_block()
+
+
+# ── Toggle-hold ───────────────────────────────────────────────────────────────
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
-	_saved_by = by
 	var pickup := by as XRToolsFunctionPickup
-	_holding_ctrl = pickup.get_controller() if pickup else null
+	var ctrl := pickup.get_controller() if pickup else null as XRController3D
+	if ctrl == null:
+		return
+
+	if is_instance_valid(_holding_ctrl) and _holding_ctrl != ctrl:
+		_secondary_ctrl = _holding_ctrl
+		_allow_drop = true
+
+	_saved_by = by
+	_holding_ctrl = ctrl
+	_set_model_visible(ctrl, false)
+	_update_locomotion_block()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
 	if not _allow_drop and is_instance_valid(_saved_by):
 		call_deferred("_rehold")
 	else:
+		_set_model_visible(_holding_ctrl, true)
+		_set_model_visible(_secondary_ctrl, true)
 		_allow_drop = false
 		_saved_by = null
 		_holding_ctrl = null
+		_secondary_ctrl = null
+		_update_locomotion_block()
 
 
 func _rehold() -> void:
-	if _allow_drop or not is_instance_valid(_saved_by):
+	if _allow_drop:
 		_allow_drop = false
+		return
+	if not is_instance_valid(_saved_by):
+		_set_model_visible(_holding_ctrl, true)
+		_set_model_visible(_secondary_ctrl, true)
 		_saved_by = null
 		_holding_ctrl = null
+		_secondary_ctrl = null
+		_update_locomotion_block()
 		return
 	_saved_by.call("_pick_up_object", self)
 
+
+func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
+	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
+		ctrl.call("set_model_visible", show)
+
+
+func _update_locomotion_block() -> void:
+	var left_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"left_hand") \
+	              or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"left_hand")
+	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
+	               or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"right_hand")
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
+	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
+		_spawn_menu_ctrl.set("disabled", left_held)
+
+
+# ── Cable ─────────────────────────────────────────────────────────────────────
 
 func _spawn_cable() -> void:
 	_cable_instance = CONTROLLER_CABLE_SCENE.instantiate()
@@ -125,7 +202,8 @@ func _physics_process(_delta: float) -> void:
 			_cable_plug.linear_velocity -= dir * outward_vel
 
 
-## Called by ControllerPlug.on_plugged_in when the cable snaps into a system port.
+# ── Port events ───────────────────────────────────────────────────────────────
+
 func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_connected_system = system
 	_port_index = port_index
@@ -134,7 +212,6 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_cache_screen_geometry()
 
 
-## Called by ControllerPlug.on_unplugged when the cable is removed from a port.
 func on_unplugged() -> void:
 	print("[RayGun] unplugged from port %d" % _port_index)
 	_laser_dot.visible = false
@@ -157,7 +234,6 @@ func _cache_screen_geometry() -> void:
 	_screen_h = aabb.size.y
 
 
-## Called by scene_persistence to restore a cable→port connection after load.
 func restore_port_connection(system: RetroSystem, port_index: int) -> void:
 	if _cable_plug != null:
 		system.restore_controller_plug(port_index, _cable_plug)
@@ -165,7 +241,29 @@ func restore_port_connection(system: RetroSystem, port_index: int) -> void:
 		_pending_port_restore = {"system": system, "port_index": port_index}
 
 
+# ── Input forwarding ──────────────────────────────────────────────────────────
+
 func _process(_delta: float) -> void:
+	# Two-handed: position between both hands.
+	if is_instance_valid(_holding_ctrl) and is_instance_valid(_secondary_ctrl):
+		global_position = (_holding_ctrl.global_position + _secondary_ctrl.global_position) * 0.5
+
+	# Drop combo: always checked regardless of port connection.
+	if is_instance_valid(_holding_ctrl):
+		var ctrl := _holding_ctrl
+		if ctrl.get_float("grip") > 0.5 \
+				and ctrl.get_float("trigger") > 0.5 \
+				and ctrl.get_float("primary_click") > 0.5:
+			_set_model_visible(ctrl, true)
+			_set_model_visible(_secondary_ctrl, true)
+			_allow_drop = true
+			_holding_ctrl = null
+			_secondary_ctrl = null
+			_laser_dot.visible = false
+			_update_locomotion_block()
+			drop()
+			return
+
 	if _connected_system == null or _port_index < 0:
 		return
 
@@ -182,16 +280,6 @@ func _process(_delta: float) -> void:
 
 	var ctrl := _holding_ctrl
 
-	# Drop combo: grip + trigger + thumbstick click.
-	if ctrl.get_float("grip") > 0.5 \
-			and ctrl.get_float("trigger") > 0.5 \
-			and ctrl.get_float("primary_click") > 0.5:
-		_allow_drop = true
-		_holding_ctrl = null
-		_laser_dot.visible = false
-		drop()
-		return
-
 	libretro.SetLightgunButton(_port_index, LIGHTGUN_TRIGGER, ctrl.get_float("trigger") > 0.3)
 	libretro.SetLightgunButton(_port_index, LIGHTGUN_START,   ctrl.get_float("primary_click") > 0.5)
 	libretro.SetLightgunButton(_port_index, LIGHTGUN_PAUSE,   ctrl.get_float("ax_button")     > 0.5)
@@ -206,7 +294,6 @@ func _update_aim(libretro: Libretro) -> void:
 		_laser_dot.visible = false
 		return
 
-	# Build a plane from the screen surface, then intersect the gun ray
 	var screen_transform := _screen_mesh.global_transform
 	var screen_normal := screen_transform.basis.z
 	var plane := Plane(screen_normal, screen_transform.origin)
@@ -220,11 +307,10 @@ func _update_aim(libretro: Libretro) -> void:
 		_laser_dot.visible = false
 		return
 
-	# Convert world hit to local screen UV
 	var local: Vector3 = screen_transform.affine_inverse() * (hit as Vector3)
 
 	var u := (local.x / _screen_w) + 0.5
-	var v := (-local.y / _screen_h) + 0.5  # Y flipped: local up → smaller v
+	var v := (-local.y / _screen_h) + 0.5
 
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
 		libretro.SetLightgunIsOffscreen(_port_index, true)
@@ -236,6 +322,5 @@ func _update_aim(libretro: Libretro) -> void:
 	libretro.SetLightgunPosition(_port_index, lx, ly)
 	libretro.SetLightgunIsOffscreen(_port_index, false)
 
-	# Place laser dot on the screen surface
 	_laser_dot.visible = true
 	_laser_dot.global_position = hit + screen_normal * 0.002
