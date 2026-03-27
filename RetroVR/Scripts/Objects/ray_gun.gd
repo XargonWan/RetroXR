@@ -8,11 +8,12 @@ extends XRToolsPickable
 const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
 const RETRO_DEVICE_LIGHTGUN := 7
 
-const LIGHTGUN_TRIGGER    := 0
-const LIGHTGUN_CURSOR     := 1
-const LIGHTGUN_TURBO      := 2
-const LIGHTGUN_PAUSE      := 3
-const LIGHTGUN_START      := 4
+## libretro.h RETRO_DEVICE_ID_LIGHTGUN_* values (IDs 0/1 are relative X/Y, not buttons).
+const LIGHTGUN_TRIGGER    := 2   # RETRO_DEVICE_ID_LIGHTGUN_TRIGGER
+const LIGHTGUN_AUX_A      := 3   # RETRO_DEVICE_ID_LIGHTGUN_AUX_A
+const LIGHTGUN_AUX_B      := 4   # RETRO_DEVICE_ID_LIGHTGUN_AUX_B
+const LIGHTGUN_START      := 6   # RETRO_DEVICE_ID_LIGHTGUN_START
+const LIGHTGUN_SELECT     := 7   # RETRO_DEVICE_ID_LIGHTGUN_SELECT
 const SECONDARY_GRAB_DIST := 0.25
 
 ## libretro device type reported to the system when plugged in.
@@ -168,9 +169,9 @@ func _drop_all() -> void:
 
 func _update_locomotion_block() -> void:
 	var left_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"left_hand") \
-	              or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"left_hand")
+				  or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"left_hand")
 	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
-	               or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"right_hand")
+				   or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"right_hand")
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
@@ -303,17 +304,17 @@ func _process(_delta: float) -> void:
 		libretro.SetLightgunIsOffscreen(_port_index, true)
 		libretro.SetLightgunButton(_port_index, LIGHTGUN_TRIGGER, false)
 		libretro.SetLightgunButton(_port_index, LIGHTGUN_START,   false)
-		libretro.SetLightgunButton(_port_index, LIGHTGUN_PAUSE,   false)
-		libretro.SetLightgunButton(_port_index, LIGHTGUN_CURSOR,  false)
+		libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_A,   false)
+		libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_B,   false)
 		_laser_dot.visible = false
 		return
 
 	var ctrl := _holding_ctrl
 
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_TRIGGER, ctrl.get_float("trigger") > 0.3)
+	libretro.SetLightgunButton(_port_index, LIGHTGUN_TRIGGER, ctrl.get_float("trigger")       > 0.3)
 	libretro.SetLightgunButton(_port_index, LIGHTGUN_START,   ctrl.get_float("primary_click") > 0.5)
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_PAUSE,   ctrl.get_float("ax_button")     > 0.5)
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_CURSOR,  ctrl.get_float("by_button")     > 0.5)
+	libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_A,   ctrl.get_float("ax_button")     > 0.5)
+	libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_B,   ctrl.get_float("by_button")     > 0.5)
 
 	_update_aim(libretro)
 
@@ -347,8 +348,8 @@ func _update_aim(libretro: Libretro) -> void:
 		_laser_dot.visible = false
 		return
 
-	var lx := int((u * 2.0 - 1.0) * 16384)
-	var ly := int((v * 2.0 - 1.0) * 16384)
+	var lx := int((u * 2.0 - 1.0) * 32767)
+	var ly := int((v * 2.0 - 1.0) * 32767)
 	libretro.SetLightgunPosition(_port_index, lx, ly)
 	libretro.SetLightgunIsOffscreen(_port_index, false)
 
