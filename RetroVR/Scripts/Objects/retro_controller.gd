@@ -194,6 +194,27 @@ func _update_locomotion_block() -> void:
 		_spawn_menu_ctrl.set("disabled", left_held)
 
 
+func _is_combo_pressed(ctrl: XRController3D) -> bool:
+	return is_instance_valid(ctrl) \
+		and ctrl.get_float("grip") > 0.5 \
+		and ctrl.get_float("trigger") > 0.5 \
+		and ctrl.get_float("primary_click") > 0.5
+
+
+func _transfer_to(pickup: XRToolsFunctionPickup) -> void:
+	pickup.call("_pick_up_object", self)
+
+
+func _drop_all() -> void:
+	_set_model_visible(_holding_ctrl, true)
+	_set_model_visible(_secondary_ctrl, true)
+	_allow_drop = true
+	_holding_ctrl = null
+	_secondary_ctrl = null
+	_update_locomotion_block()
+	drop()
+
+
 # ── Port events ───────────────────────────────────────────────────────────────
 
 func on_plugged_in(system: RetroSystem, port_index: int) -> void:
@@ -222,19 +243,29 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(_holding_ctrl) and is_instance_valid(_secondary_ctrl):
 		global_position = (_holding_ctrl.global_position + _secondary_ctrl.global_position) * 0.5
 
-	# Drop combo: always checked regardless of port connection.
-	if is_instance_valid(_holding_ctrl):
-		var ctrl := _holding_ctrl
-		if ctrl.get_float("grip") > 0.5 \
-				and ctrl.get_float("trigger") > 0.5 \
-				and ctrl.get_float("primary_click") > 0.5:
-			_set_model_visible(ctrl, true)
-			_set_model_visible(_secondary_ctrl, true)
-			_allow_drop = true
-			_holding_ctrl = null
-			_secondary_ctrl = null
-			_update_locomotion_block()
-			drop()
+	# Drop combo: each hand only releases itself.
+	if _is_combo_pressed(_secondary_ctrl):
+		_set_model_visible(_secondary_ctrl, true)
+		_secondary_ctrl = null
+		_update_locomotion_block()
+	elif _is_combo_pressed(_holding_ctrl):
+		if is_instance_valid(_secondary_ctrl):
+			# Transfer: find secondary's XRToolsFunctionPickup then hand off.
+			var new_ctrl := _secondary_ctrl
+			var pickups := new_ctrl.find_children("*", "XRToolsFunctionPickup", true, false)
+			if pickups.size() > 0:
+				_set_model_visible(_holding_ctrl, true)
+				_allow_drop = true
+				_holding_ctrl = null
+				_secondary_ctrl = null
+				_update_locomotion_block()
+				_saved_by.call("drop_object")
+				call_deferred("_transfer_to", pickups[0])
+			else:
+				_drop_all()
+				return
+		else:
+			_drop_all()
 			return
 
 	if _connected_system == null or _port_index < 0:
