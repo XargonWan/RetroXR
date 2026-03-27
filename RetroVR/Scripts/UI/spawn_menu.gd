@@ -505,6 +505,11 @@ func _build_spawn_view() -> Control:
 
 	_add_spawn_tab(tabs, "Objects", [["Trash Can", "trash_can"]])
 
+	_add_spawn_tab(tabs, "Controllers", [
+		["Regular Controller", "retro_controller"],
+		["Ray Gun",            "ray_gun"],
+	])
+
 	# Refresh on tab switch — picks up files added to disk since last open
 	# Also update _active_scroll to the current tab's ScrollContainer
 	tabs.tab_changed.connect(func(idx: int):

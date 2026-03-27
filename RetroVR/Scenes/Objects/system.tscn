@@ -1,11 +1,14 @@
-[gd_scene load_steps=23 format=3 uid="uid://system_base_001"]
+[gd_scene format=3 uid="uid://bx7j6wq6htitx"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system.gd" id="1_sysscript"]
-[ext_resource type="PackedScene" uid="uid://core_opts_panel_001" path="res://Scenes/UI/core_options_panel.tscn" id="6_coreopts"]
+[ext_resource type="Script" uid="uid://blgmq6gwsoeho" path="res://Scripts/Objects/system.gd" id="1_sysscript"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_button.gd" id="3_vrbtn"]
-[ext_resource type="Script" path="res://Scripts/Objects/snap_highlight.gd" id="4_snaphis"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="5_pickhigh"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="3_vrbtn"]
+[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/snap_highlight.gd" id="4_snaphis"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="5_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/UI/core_options_panel.tscn" id="6_coreopts"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_system"]
+friction = 0.8
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.3, 0.1, 0.25)
@@ -14,7 +17,33 @@ size = Vector3(0.3, 0.1, 0.25)
 size = Vector3(0.3, 0.1, 0.25)
 
 [sub_resource type="StandardMaterial3D" id="Mat_body"]
-albedo_color = Color(0.5, 0.5, 0.5, 1.0)
+albedo_color = Color(0.5, 0.5, 0.5, 1)
+
+[sub_resource type="CylinderMesh" id="CylMesh_slot"]
+top_radius = 0.03
+bottom_radius = 0.03
+height = 0.015
+
+[sub_resource type="StandardMaterial3D" id="Mat_slot"]
+albedo_color = Color(0.15, 0.15, 0.15, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_cart_ghost"]
+size = Vector3(0.105, 0.085, 0.018)
+
+[sub_resource type="StandardMaterial3D" id="Mat_cart_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1, 0.45)
+emission_enabled = true
+emission = Color(0, 0.15, 0.5, 1)
+emission_energy_multiplier = 0.4
+
+[sub_resource type="CylinderMesh" id="CylMesh_cable"]
+top_radius = 0.012
+bottom_radius = 0.012
+height = 0.02
+
+[sub_resource type="StandardMaterial3D" id="Mat_cable"]
+albedo_color = Color(0.8, 0.8, 0.8, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_power"]
 size = Vector3(0.04, 0.02, 0.04)
@@ -23,7 +52,7 @@ size = Vector3(0.04, 0.02, 0.04)
 size = Vector3(0.04, 0.02, 0.04)
 
 [sub_resource type="StandardMaterial3D" id="Mat_power"]
-albedo_color = Color(0.0, 0.8, 0.1, 1.0)
+albedo_color = Color(0, 0.8, 0.1, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_reset"]
 size = Vector3(0.03, 0.02, 0.03)
@@ -32,141 +61,214 @@ size = Vector3(0.03, 0.02, 0.03)
 size = Vector3(0.03, 0.02, 0.03)
 
 [sub_resource type="StandardMaterial3D" id="Mat_reset"]
-albedo_color = Color(0.2, 0.2, 0.2, 1.0)
-
-[sub_resource type="CylinderMesh" id="CylMesh_slot"]
-top_radius = 0.03
-bottom_radius = 0.03
-height = 0.015
-
-[sub_resource type="StandardMaterial3D" id="Mat_slot"]
-albedo_color = Color(0.15, 0.15, 0.15, 1.0)
-
-[sub_resource type="CylinderMesh" id="CylMesh_cable"]
-top_radius = 0.012
-bottom_radius = 0.012
-height = 0.02
-
-[sub_resource type="StandardMaterial3D" id="Mat_cable"]
-albedo_color = Color(0.8, 0.8, 0.8, 1.0)
+albedo_color = Color(0.2, 0.2, 0.2, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.32, 0.14, 0.27)
 
-[sub_resource type="PhysicsMaterial" id="PhysMat_system"]
-bounce = 0.0
-friction = 0.8
+[sub_resource type="BoxMesh" id="BoxMesh_port_recess"]
+size = Vector3(0.018, 0.012, 0.005)
 
-[sub_resource type="BoxMesh" id="BoxMesh_cart_ghost"]
-size = Vector3(0.105, 0.085, 0.018)
+[sub_resource type="StandardMaterial3D" id="Mat_port"]
+albedo_color = Color(0.08, 0.08, 0.08, 1)
 
-[sub_resource type="StandardMaterial3D" id="Mat_cart_ghost"]
-transparency = 1
-albedo_color = Color(0.2, 0.5, 1.0, 0.45)
-emission_enabled = true
-emission = Color(0.0, 0.15, 0.5, 1.0)
-emission_energy_multiplier = 0.4
+[sub_resource type="BoxMesh" id="BoxMesh_port_ghost"]
+size = Vector3(0.018, 0.012, 0.02)
 
-[node name="System" type="RigidBody3D"]
+[node name="System" type="RigidBody3D" unique_id=567228976]
 collision_layer = 4
 collision_mask = 196613
 physics_material_override = SubResource("PhysMat_system")
+freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
-freeze_mode = 1
 script = ExtResource("1_sysscript")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1244016491]
 shape = SubResource("BoxShape3D_body")
 
-[node name="SystemBody" type="MeshInstance3D" parent="."]
+[node name="SystemBody" type="MeshInstance3D" parent="." unique_id=1806706224]
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_body")
 
-[node name="PickableHighlight" type="Node3D" parent="."]
+[node name="PickableHighlight" type="Node3D" parent="." unique_id=1748385500]
 script = ExtResource("5_pickhigh")
 
-[node name="CartridgeSlot" parent="." unique_id=4000000001 instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0.0)
-snap_require = "cartridge"
+[node name="CartridgeSlot" parent="." unique_id=-294967295 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0)
 grab_distance = 0.07
+snap_require = "cartridge"
 
-[node name="SlotVisual" type="MeshInstance3D" parent="CartridgeSlot"]
+[node name="SlotVisual" type="MeshInstance3D" parent="CartridgeSlot" unique_id=231872354]
 mesh = SubResource("CylMesh_slot")
 surface_material_override/0 = SubResource("Mat_slot")
 
-[node name="SnapHighlight" type="Node3D" parent="CartridgeSlot"]
+[node name="SnapHighlight" type="Node3D" parent="CartridgeSlot" unique_id=2113262660]
 script = ExtResource("4_snaphis")
 
-[node name="HighlightMesh" type="MeshInstance3D" parent="CartridgeSlot/SnapHighlight"]
+[node name="HighlightMesh" type="MeshInstance3D" parent="CartridgeSlot/SnapHighlight" unique_id=224416059]
 mesh = SubResource("BoxMesh_cart_ghost")
 surface_material_override/0 = SubResource("Mat_cart_ghost")
 
-[node name="ControllerCordAttach" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, 0.125)
+[node name="ControllerCordAttach" type="Node3D" parent="." unique_id=946150953]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.125)
 
-[node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.0, -0.125)
+[node name="CableAttachPoint" type="Node3D" parent="." unique_id=1663596345]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.125)
 
-[node name="PortVisual" type="MeshInstance3D" parent="CableAttachPoint"]
+[node name="PortVisual" type="MeshInstance3D" parent="CableAttachPoint" unique_id=1368038536]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
 mesh = SubResource("CylMesh_cable")
 surface_material_override/0 = SubResource("Mat_cable")
 
-[node name="PowerButton" type="Area3D" parent="."]
+[node name="PowerButton" type="Area3D" parent="." unique_id=1201968380]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, 0.06, 0.1)
-script = ExtResource("3_vrbtn")
 collision_layer = 0
 collision_mask = 0
+script = ExtResource("3_vrbtn")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton" unique_id=1270381229]
 shape = SubResource("BoxShape3D_power")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="PowerButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="PowerButton" unique_id=530787034]
 mesh = SubResource("BoxMesh_power")
 surface_material_override/0 = SubResource("Mat_power")
 
-[node name="ButtonLabel" type="Label3D" parent="PowerButton"]
+[node name="ButtonLabel" type="Label3D" parent="PowerButton" unique_id=1810609276]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.02, 0)
+pixel_size = 0.001
 text = "START"
 font_size = 12
-pixel_size = 0.001
 
-[node name="ResetButton" type="Area3D" parent="."]
+[node name="ResetButton" type="Area3D" parent="." unique_id=32238266]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08, 0.06, 0.1)
-script = ExtResource("3_vrbtn")
 collision_layer = 0
 collision_mask = 0
+script = ExtResource("3_vrbtn")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ResetButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ResetButton" unique_id=1403384708]
 shape = SubResource("BoxShape3D_reset")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="ResetButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="ResetButton" unique_id=1521134892]
 mesh = SubResource("BoxMesh_reset")
 surface_material_override/0 = SubResource("Mat_reset")
 
-[node name="ButtonLabel" type="Label3D" parent="ResetButton"]
+[node name="ButtonLabel" type="Label3D" parent="ResetButton" unique_id=700653508]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
 text = "RESET"
 font_size = 12
-pixel_size = 0.001
 
-[node name="SystemNameLabel" type="Label3D" parent="."]
+[node name="SystemNameLabel" type="Label3D" parent="." unique_id=1897051898]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0.05)
-text = ""
-font_size = 20
 pixel_size = 0.001
-horizontal_alignment = 1
-outline_size = 4
 billboard = 2
+font_size = 20
+outline_size = 4
 
-[node name="Libretro" type="Libretro" parent="." unique_id=4000000010]
+[node name="Libretro" type="Libretro" parent="." unique_id=-294967286]
 
-[node name="PointerArea" type="StaticBody3D" parent="."]
+[node name="PointerArea" type="StaticBody3D" parent="." unique_id=1211839617]
 collision_layer = 1048576
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=1639053817]
 shape = SubResource("BoxShape3D_pointer")
 
-[node name="CoreOptionsPanel" parent="." instance=ExtResource("6_coreopts")]
+[node name="CoreOptionsPanel" parent="." unique_id=1062382995 instance=ExtResource("6_coreopts")]
+
+[node name="ControllerPort1" parent="." unique_id=-294967276 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0, 0.125)
+grab_distance = 0.04
+snap_require = "controller_plug"
+
+[node name="PortRecess" type="MeshInstance3D" parent="ControllerPort1" unique_id=1207865850]
+mesh = SubResource("BoxMesh_port_recess")
+surface_material_override/0 = SubResource("Mat_port")
+
+[node name="PortLabel" type="Label3D" parent="ControllerPort1" unique_id=87930233]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, -0.016, 0.02)
+pixel_size = 0.001
+billboard = 2
+text = "1"
+font_size = 14
+
+[node name="SnapHighlight" type="Node3D" parent="ControllerPort1" unique_id=400000001]
+script = ExtResource("4_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="ControllerPort1/SnapHighlight" unique_id=400000002]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+mesh = SubResource("BoxMesh_port_ghost")
+surface_material_override/0 = SubResource("Mat_cart_ghost")
+
+[node name="ControllerPort2" parent="." unique_id=-294967275 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0, 0.125)
+grab_distance = 0.04
+snap_require = "controller_plug"
+
+[node name="PortRecess" type="MeshInstance3D" parent="ControllerPort2" unique_id=1384901772]
+mesh = SubResource("BoxMesh_port_recess")
+surface_material_override/0 = SubResource("Mat_port")
+
+[node name="PortLabel" type="Label3D" parent="ControllerPort2" unique_id=66052103]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, -0.016, 0.02)
+pixel_size = 0.001
+billboard = 2
+text = "2"
+font_size = 14
+
+[node name="SnapHighlight" type="Node3D" parent="ControllerPort2" unique_id=400000003]
+script = ExtResource("4_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="ControllerPort2/SnapHighlight" unique_id=400000004]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+mesh = SubResource("BoxMesh_port_ghost")
+surface_material_override/0 = SubResource("Mat_cart_ghost")
+
+[node name="ControllerPort3" parent="." unique_id=-294967274 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, 0, 0.125)
+grab_distance = 0.04
+snap_require = "controller_plug"
+
+[node name="PortRecess" type="MeshInstance3D" parent="ControllerPort3" unique_id=1770774815]
+mesh = SubResource("BoxMesh_port_recess")
+surface_material_override/0 = SubResource("Mat_port")
+
+[node name="PortLabel" type="Label3D" parent="ControllerPort3" unique_id=1491622730]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, -0.016, 0.02)
+pixel_size = 0.001
+billboard = 2
+text = "3"
+font_size = 14
+
+[node name="SnapHighlight" type="Node3D" parent="ControllerPort3" unique_id=400000005]
+script = ExtResource("4_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="ControllerPort3/SnapHighlight" unique_id=400000006]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+mesh = SubResource("BoxMesh_port_ghost")
+surface_material_override/0 = SubResource("Mat_cart_ghost")
+
+[node name="ControllerPort4" parent="." unique_id=-294967273 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09, 0, 0.125)
+grab_distance = 0.04
+snap_require = "controller_plug"
+
+[node name="PortRecess" type="MeshInstance3D" parent="ControllerPort4" unique_id=626904000]
+mesh = SubResource("BoxMesh_port_recess")
+surface_material_override/0 = SubResource("Mat_port")
+
+[node name="PortLabel" type="Label3D" parent="ControllerPort4" unique_id=765701517]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, -0.016, 0.02)
+pixel_size = 0.001
+billboard = 2
+text = "4"
+font_size = 14
+
+[node name="SnapHighlight" type="Node3D" parent="ControllerPort4" unique_id=400000007]
+script = ExtResource("4_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="ControllerPort4/SnapHighlight" unique_id=400000008]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+mesh = SubResource("BoxMesh_port_ghost")
+surface_material_override/0 = SubResource("Mat_cart_ghost")

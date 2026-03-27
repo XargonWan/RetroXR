@@ -58,6 +58,12 @@ var _snapped_cartridge: Node3D = null
 @onready var _power_button_label: Label3D = $PowerButton/ButtonLabel
 @onready var _options_panel: CoreOptionsPanel = $CoreOptionsPanel
 @onready var _system_name_label: Label3D = $SystemNameLabel
+@onready var _port_zones: Array = [
+	$ControllerPort1,
+	$ControllerPort2,
+	$ControllerPort3,
+	$ControllerPort4,
+]
 
 
 func _ready() -> void:
@@ -70,6 +76,11 @@ func _ready() -> void:
 	# Initialize power button to "off" color
 	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Green when off
 	_libretro.options_ready.connect(_on_options_ready)
+	# Wire controller port snap signals
+	for i in range(4):
+		var idx := i
+		_port_zones[i].has_picked_up.connect(func(obj: Node3D) -> void: _on_port_snapped(idx, obj))
+		_port_zones[i].has_dropped.connect(func(obj: Node3D) -> void: _on_port_released(idx, obj))
 	# Spawn cable
 	_spawn_cable()
 	_update_name_label()
@@ -296,6 +307,31 @@ func set_controller_port_device(port: int, device_id: int) -> void:
 	_libretro.SetControllerPortDevice(port, device_id)
 
 
+## Returns the Libretro node so plugged-in controller objects can call input methods on it.
+func get_libretro_node() -> Libretro:
+	return _libretro
+
+
+# --- Controller port snap handlers ---
+
+func _on_port_snapped(port_index: int, controller: Node3D) -> void:
+	add_collision_exception_with(controller)
+	var device_type: int = controller.get("device_type") if "device_type" in controller else 1
+	print("[RetroSystem] port %d snapped: device_type=%d" % [port_index, device_type])
+	set_controller_port_device(port_index, device_type)
+	if controller.has_method("on_plugged_in"):
+		controller.on_plugged_in(self, port_index)
+
+
+func _on_port_released(port_index: int, controller: Node3D) -> void:
+	print("[RetroSystem] port %d released" % port_index)
+	if is_instance_valid(controller):
+		remove_collision_exception_with(controller)
+	set_controller_port_device(port_index, 0)  # RETRO_DEVICE_NONE
+	if is_instance_valid(controller) and controller.has_method("on_unplugged"):
+		controller.on_unplugged()
+
+
 # --- Cartridge slot callbacks ---
 
 ## Returns the currently snapped cartridge, or null (used by save/load).
@@ -322,6 +358,13 @@ func _snap_cable_to_tv(tv: RetroTV) -> void:
 ## Restore a cartridge→slot insertion after loading from a save file.
 func restore_cartridge(cartridge: Node3D) -> void:
 	_cartridge_slot.pick_up_object(cartridge)
+
+
+## Restore a controller plug into a port after loading from a save file.
+func restore_controller_plug(port_index: int, plug: ControllerPlug) -> void:
+	if port_index < 0 or port_index >= _port_zones.size():
+		return
+	_port_zones[port_index].pick_up_object(plug)
 
 
 func _on_cartridge_inserted(cartridge: Node3D) -> void:

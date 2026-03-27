@@ -13,10 +13,12 @@ const ARCADE_DIR    := "user://scenes/arcade"
 const MANIFEST_FILE := "user://scenes/arcade/manifest.json"
 const VERSION       := 1
 
-const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
-const TV_SCENE     := preload("res://Scenes/Objects/tv.tscn")
-const CART_SCENE   := preload("res://Scenes/Objects/cartridge.tscn")
-const BOOK_SCENE   := preload("res://Scenes/Objects/pdf_book.tscn")
+const SYSTEM_SCENE           := preload("res://Scenes/Objects/system.tscn")
+const TV_SCENE               := preload("res://Scenes/Objects/tv.tscn")
+const CART_SCENE             := preload("res://Scenes/Objects/cartridge.tscn")
+const BOOK_SCENE             := preload("res://Scenes/Objects/pdf_book.tscn")
+const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
+const RAY_GUN_SCENE          := preload("res://Scenes/Objects/ray_gun.tscn")
 
 
 # ── Multi-slot public API ──────────────────────────────────────────────────────
@@ -120,15 +122,14 @@ func load_scene(_root: Node) -> void:
 func clear_scene(root: Node) -> void:
 	var spawned := root.get_tree().get_nodes_in_group("spawned")
 
-	# Pre-pass: drop cable plugs while their TV snap-zone is still alive.
-	# Cable instances are in "spawned" (added by _add_cable_to_scene).  Their
-	# CablePlug child may be snapped into a RetroTV socket.  Calling drop()
-	# clears the plug's _grab_driver so _exit_tree won't access the freed socket
-	# via grab.release() → by.name.
+	# Pre-pass: drop cable/controller plugs while their snap-zones are still alive.
+	# Cable instances are in "spawned".  Their plug child may be snapped into a
+	# snap-zone.  Calling drop() clears _grab_driver before queue_free.
 	for node: Node in spawned:
-		var plug := node.get_node_or_null("CablePlug")
-		if plug and plug.has_method("drop"):
-			plug.call("drop")
+		for plug_name: String in ["CablePlug", "ControllerPlug"]:
+			var plug := node.get_node_or_null(plug_name)
+			if plug and plug.has_method("drop"):
+				plug.call("drop")
 
 	# Main pass: power off and free everything.
 	for node: Node in spawned:
@@ -230,28 +231,43 @@ func _read_scene_from_file(root: Node, path: String) -> bool:
 
 	# Pass 2: restore connections.
 	for id: int in spawned:
-		if not spawned[id] is RetroSystem:
-			continue
-		var sys := spawned[id] as RetroSystem
 		var d: Dictionary = entries[id]
-		var tv_id: int = d.get("connected_tv_id", -1)
-		var tv_path: String = d.get("connected_tv_path", "")
-		print("[ScenePersistence] system id=%d connected_tv_id=%d tv_path=%s" % [id, tv_id, tv_path])
-		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-			print("[ScenePersistence] restoring cable connection system→spawned tv")
-			sys.restore_cable_connection(spawned[tv_id] as RetroTV)
-		elif not tv_path.is_empty():
-			# Scene-placed TV — look it up by absolute node path
-			var tv_node := root.get_node_or_null(tv_path) as RetroTV
-			if tv_node:
-				print("[ScenePersistence] restoring cable connection system→scene tv '%s'" % tv_path)
-				sys.restore_cable_connection(tv_node)
-			else:
-				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-		var cart_id: int = d.get("snapped_cartridge_id", -1)
-		if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
-			print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
-			sys.restore_cartridge(spawned[cart_id])
+		if spawned[id] is RetroSystem:
+			var sys := spawned[id] as RetroSystem
+			var tv_id: int = d.get("connected_tv_id", -1)
+			var tv_path: String = d.get("connected_tv_path", "")
+			print("[ScenePersistence] system id=%d connected_tv_id=%d tv_path=%s" % [id, tv_id, tv_path])
+			if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+				print("[ScenePersistence] restoring cable connection system→spawned tv")
+				sys.restore_cable_connection(spawned[tv_id] as RetroTV)
+			elif not tv_path.is_empty():
+				var tv_node := root.get_node_or_null(tv_path) as RetroTV
+				if tv_node:
+					print("[ScenePersistence] restoring cable connection system→scene tv '%s'" % tv_path)
+					sys.restore_cable_connection(tv_node)
+				else:
+					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+			var cart_id: int = d.get("snapped_cartridge_id", -1)
+			if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
+				print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
+				sys.restore_cartridge(spawned[cart_id])
+		elif spawned[id] is RetroController or spawned[id] is RayGun:
+			var ctrl: Node3D = spawned[id]
+			var port_idx: int = d.get("port_index", -1)
+			if port_idx < 0:
+				continue
+			var sys_id: int = d.get("connected_system_id", -1)
+			var sys_path: String = d.get("connected_system_path", "")
+			var sys: RetroSystem = null
+			if spawned.has(sys_id) and spawned[sys_id] is RetroSystem:
+				sys = spawned[sys_id] as RetroSystem
+			elif not sys_path.is_empty():
+				sys = root.get_node_or_null(sys_path) as RetroSystem
+			if sys == null:
+				push_warning("[ScenePersistence] controller id=%d: system not found" % id)
+				continue
+			print("[ScenePersistence] restoring controller id=%d → system port %d" % [id, port_idx])
+			ctrl.call("restore_port_connection", sys, port_idx)
 
 	print("[ScenePersistence] loaded %d objects from '%s'" % [count, path])
 	return true
@@ -313,6 +329,24 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+	elif node is RetroController or node is RayGun:
+		var obj_type := "retro_controller" if node is RetroController else "ray_gun"
+		var connected_sys = (node as Node).get("_connected_system")
+		var port_idx: int = (node as Node).get("_port_index") if connected_sys != null else -1
+		var sys_id: int = node_to_id.get(connected_sys, -1) if connected_sys != null else -1
+		var sys_path: String = ""
+		if connected_sys != null and sys_id == -1:
+			sys_path = str((connected_sys as Node).get_path())
+		return {
+			"id": id,
+			"type": obj_type,
+			"device_type": (node as Node).get("device_type") as int,
+			"connected_system_id": sys_id,
+			"connected_system_path": sys_path,
+			"port_index": port_idx,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	return {}
 
 
@@ -336,6 +370,10 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			var book := BOOK_SCENE.instantiate() as PDFBook
 			book.pdf_path = data.get("pdf_path", "")
 			obj = book
+		"retro_controller":
+			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
+		"ray_gun":
+			obj = RAY_GUN_SCENE.instantiate() as Node3D
 		_:
 			push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
 			return null
