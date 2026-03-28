@@ -46,6 +46,8 @@ var _holding_ctrl: XRController3D = null
 
 var _locomotion_manager: LocomotionManager = null
 var _spawn_menu_ctrl: Node = null
+var _left_vr_ctrl: XRController3D = null
+var _right_vr_ctrl: XRController3D = null
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _barrel_tip: Node3D = $BarrelTip
@@ -66,6 +68,14 @@ func _ready() -> void:
 func _find_vr_nodes() -> void:
 	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
 	_spawn_menu_ctrl = get_tree().root.find_child("SpawnMenuController", true, false)
+	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
+		var ctrl := node as XRController3D
+		if ctrl == null:
+			continue
+		if ctrl.tracker == &"left_hand":
+			_left_vr_ctrl = ctrl
+		elif ctrl.tracker == &"right_hand":
+			_right_vr_ctrl = ctrl
 
 
 # ── Toggle-hold ───────────────────────────────────────────────────────────────
@@ -134,6 +144,16 @@ func _update_locomotion_block() -> void:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
+	_set_pointer_enabled(_left_vr_ctrl,  not left_held)
+	_set_pointer_enabled(_right_vr_ctrl, not right_held)
+
+
+func _set_pointer_enabled(ctrl: XRController3D, enabled: bool) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var pointer := ctrl.get_node_or_null("FunctionPointer") as Node3D
+	if pointer:
+		pointer.visible = enabled
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────

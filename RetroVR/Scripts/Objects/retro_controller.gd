@@ -192,6 +192,16 @@ func _update_locomotion_block() -> void:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
+	_set_pointer_enabled(_left_vr_ctrl,  not left_held)
+	_set_pointer_enabled(_right_vr_ctrl, not right_held)
+
+
+func _set_pointer_enabled(ctrl: XRController3D, enabled: bool) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var pointer := ctrl.get_node_or_null("FunctionPointer") as Node3D
+	if pointer:
+		pointer.visible = enabled
 
 
 func _is_combo_pressed(ctrl: XRController3D) -> bool:
