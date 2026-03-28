@@ -66,9 +66,11 @@ func _ready() -> void:
 		push_warning("PickableHighlight: parent has no highlight_updated signal")
 		return
 
-	# Hand-grab path: these signals only fire for physical hand grabs.
-	if parent.has_signal("picked_up"):
-		parent.picked_up.connect(_on_hand_picked_up)
+	# Hand-grab path: use grabbed(pickable, by) so we can filter out snap-zone
+	# pickups — snap zones also call pick_up() which would otherwise set
+	# _is_hand_held and leave the item permanently outlined while slotted.
+	if parent.has_signal("grabbed"):
+		parent.grabbed.connect(_on_grabbed)
 	if parent.has_signal("dropped"):
 		parent.dropped.connect(_on_hand_dropped)
 
@@ -130,9 +132,10 @@ func _on_highlight_updated(_object: Node, highlighted: bool) -> void:
 	_update_state()
 
 
-func _on_hand_picked_up(_pickable) -> void:
-	_is_hand_held = true
-	_update_state()
+func _on_grabbed(_pickable, by: Node) -> void:
+	if by is XRToolsFunctionPickup:
+		_is_hand_held = true
+		_update_state()
 
 
 func _on_hand_dropped(_pickable) -> void:
