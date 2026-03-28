@@ -193,7 +193,7 @@ func _set_overlays_visible(show: bool) -> void:
 		if show and i < _overlay_sources.size() and is_instance_valid(_overlay_sources[i]):
 			var src := _overlay_sources[i]
 			overlay.transform = src.transform
-			overlay.visible = src.visible
+			overlay.visible = src.is_visible_in_tree()
 		else:
 			overlay.visible = false
 
@@ -209,7 +209,7 @@ func _process(_delta: float) -> void:
 			if overlay.mesh != src.mesh:
 				overlay.mesh = src.mesh
 			overlay.transform = parent_inv * src.global_transform
-			overlay.visible = src.visible
+			overlay.visible = src.is_visible_in_tree()
 
 
 func _set_color(color: Color) -> void:
