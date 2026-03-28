@@ -82,6 +82,7 @@ const COVER_GAP := 0.001            # gap between page stack face and cover quad
 const STACK_BASE_DEPTH := 0.005     # BoxMesh baseline depth used as scale divisor
 const ZFIGHT_MARGIN := 0.0005       # tiny margin to prevent Z-fighting on coplanar faces
 const HINT_LABEL_OFFSET := 0.02     # distance outside the book edge for hint labels
+const MIN_COLLISION_DEPTH := 0.04   # minimum collision shape Z — keeps thin books stable on surfaces
 
 # Async page rendering
 var _render_mutex := Mutex.new()
@@ -508,7 +509,7 @@ func _update_collision_shape() -> void:
 	var half_w := _book_width / 2.0
 	var spine_half := SPINE_WIDTH / 2.0
 	var total_thick := maxf(_leaf_count * LEAF_THICKNESS, LEAF_THICKNESS * 2)
-	var depth := total_thick + COVER_THICKNESS + COVER_GAP * 2 + ZFIGHT_MARGIN
+	var depth := maxf(total_thick + COVER_THICKNESS + COVER_GAP * 2 + ZFIGHT_MARGIN, MIN_COLLISION_DEPTH)
 	match _state:
 		BookState.CLOSED:
 			# Only the right stack + spine + cover is visible
