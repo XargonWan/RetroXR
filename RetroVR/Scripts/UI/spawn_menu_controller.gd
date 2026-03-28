@@ -158,6 +158,7 @@ func _connect_menu_signals() -> void:
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
+	menu.controller_bindings_changed.connect(_on_controller_bindings_changed)
 	_menu_connected = true
 
 	# Auto-load last active slot on startup (arcade only)
@@ -532,6 +533,12 @@ func _on_aim_crosshair_changed(enabled: bool) -> void:
 		var gun := node as RayGun
 		if gun:
 			gun.show_laser_dot = enabled
+
+
+func _on_controller_bindings_changed() -> void:
+	for node in get_tree().get_nodes_in_group("spawned"):
+		if node.has_method("reload_bindings"):
+			node.call("reload_bindings")
 
 
 func _on_show_fps_changed(enabled: bool) -> void:

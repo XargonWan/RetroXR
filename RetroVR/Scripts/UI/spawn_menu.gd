@@ -43,6 +43,8 @@ signal aim_crosshair_changed(enabled: bool)
 signal snap_angle_changed(degrees: float)
 ## Emitted when the user adjusts the player height offset.
 signal height_offset_changed(offset: float)
+## Emitted when the user saves controller bindings (global or per-system).
+signal controller_bindings_changed
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -65,14 +67,16 @@ var _server_address_label: Label = null
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
+var _controls_view: Control = null
 var _options_view:  Control = null
 var _scene_view:    Control = null
 var _about_view:    Control = null
-var _nav_spawn_btn:   Button = null
-var _nav_cores_btn:   Button = null
-var _nav_options_btn: Button = null
-var _nav_scene_btn:   Button = null
-var _nav_about_btn:   Button = null
+var _nav_spawn_btn:    Button = null
+var _nav_cores_btn:    Button = null
+var _nav_controls_btn: Button = null
+var _nav_options_btn:  Button = null
+var _nav_scene_btn:    Button = null
+var _nav_about_btn:    Button = null
 var _nav_buttons: Array[Button] = []
 
 # Cores > Download tab state
@@ -85,6 +89,7 @@ var _download_widgets: Dictionary = {}
 # The ScrollContainer currently in view
 var _active_scroll:        ScrollContainer = null
 var _download_list_scroll: ScrollContainer = null
+var _controls_scroll:      ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
 var _about_scroll:         ScrollContainer = null
 
@@ -130,6 +135,13 @@ var _rom_variants_panel: PanelContainer = null
 # Callback connected to scraper_client.media_download_completed so the tab
 # refreshes when a wheel image or manual PDF finishes downloading.
 var _media_dl_refresh_cb: Callable = Callable()
+
+# Working copies of controller bindings being edited in the Controls section.
+var _edit_button_map:  Dictionary = {}
+var _edit_stick_map:   Dictionary = {}
+var _edit_lightgun_map: Dictionary = {}
+# OptionButton references for the Controls section (source_key → OptionButton).
+var _controls_opts: Dictionary = {}
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -246,22 +258,25 @@ func _build_ui() -> void:
 	var nav_bar := HBoxContainer.new()
 	nav_bar.add_theme_constant_override("separation", 6)
 	root_vbox.add_child(nav_bar)
-	_nav_spawn_btn   = _make_nav_button("  SPAWN  ")
-	_nav_cores_btn   = _make_nav_button("  CORES  ")
-	_nav_options_btn = _make_nav_button(" OPTIONS ")
-	_nav_scene_btn   = _make_nav_button("  SCENE  ")
-	_nav_about_btn   = _make_nav_button("  ABOUT  ")
+	_nav_spawn_btn    = _make_nav_button("  SPAWN  ")
+	_nav_cores_btn    = _make_nav_button("  CORES  ")
+	_nav_controls_btn = _make_nav_button(" CONTROLS ")
+	_nav_options_btn  = _make_nav_button(" OPTIONS ")
+	_nav_scene_btn    = _make_nav_button("  SCENE  ")
+	_nav_about_btn    = _make_nav_button("  ABOUT  ")
 	_nav_spawn_btn.pressed.connect(_show_spawn_view)
 	_nav_cores_btn.pressed.connect(_show_cores_view)
+	_nav_controls_btn.pressed.connect(_show_controls_view)
 	_nav_options_btn.pressed.connect(_show_options_view)
 	_nav_scene_btn.pressed.connect(_show_scene_view)
 	_nav_about_btn.pressed.connect(_show_about_view)
 	nav_bar.add_child(_nav_spawn_btn)
 	nav_bar.add_child(_nav_cores_btn)
+	nav_bar.add_child(_nav_controls_btn)
 	nav_bar.add_child(_nav_options_btn)
 	nav_bar.add_child(_nav_scene_btn)
 	nav_bar.add_child(_nav_about_btn)
-	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_options_btn, _nav_scene_btn, _nav_about_btn]
+	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_controls_btn, _nav_options_btn, _nav_scene_btn, _nav_about_btn]
 
 	root_vbox.add_child(HSeparator.new())
 
@@ -277,6 +292,10 @@ func _build_ui() -> void:
 	_cores_view = _build_cores_view()
 	_cores_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_cores_view)
+
+	_controls_view = _build_controls_view()
+	_controls_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_child(_controls_view)
 
 	_options_view = _build_options_view()
 	_options_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -369,7 +388,7 @@ func _make_nav_button(lbl: String) -> Button:
 
 
 func _show_view(view: Control, scroll: ScrollContainer, nav_btn: Button) -> void:
-	for v: Control in [_spawn_view, _cores_view, _options_view, _scene_view, _about_view]:
+	for v: Control in [_spawn_view, _cores_view, _controls_view, _options_view, _scene_view, _about_view]:
 		v.visible = v == view
 	_active_scroll = scroll
 	_set_nav_active(nav_btn)
@@ -385,6 +404,10 @@ func _show_cores_view() -> void:
 	if not _download_fetched:
 		_download_fetched = true
 		_start_fetch()
+
+
+func _show_controls_view() -> void:
+	_show_view(_controls_view, _controls_scroll, _nav_controls_btn)
 
 
 func _show_options_view() -> void:
@@ -1380,6 +1403,269 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 	)
 
 	row.add_child(edit)
+
+
+# ── Controls remapping view ───────────────────────────────────────────────────
+
+func _build_controls_view() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_controls_scroll = scroll
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 14)
+	scroll.add_child(vbox)
+
+	vbox.add_child(_spacer(10))
+	_build_controls_section(vbox)
+	vbox.add_child(_spacer(10))
+
+	return scroll
+
+
+# ── Controls remapping ────────────────────────────────────────────────────────
+
+## Joypad button target choices: [display_name, bit_index].
+const _JOYPAD_OPTIONS: Array = [
+	["None",    -1],
+	["B",        0], ["Y",       1], ["SELECT",  2], ["START",   3],
+	["D-Up",     4], ["D-Down",  5], ["D-Left",  6], ["D-Right", 7],
+	["A",        8], ["X",       9], ["L",       10], ["R",      11],
+	["L2",      12], ["R2",     13], ["L3",      14], ["R3",     15],
+]
+
+## Analog stick target choices: [display_name, target_string].
+const _STICK_OPTIONS: Array = [
+	["Left + D-pad",  "left+dpad"],
+	["Left Analog",   "left"],
+	["Right + D-pad", "right+dpad"],
+	["Right Analog",  "right"],
+	["D-pad only",    "dpad"],
+]
+
+## Lightgun button target choices: [display_name, button_id].
+const _LIGHTGUN_OPTIONS: Array = [
+	["None",    -1],
+	["Trigger",  2], ["Aux A",   3], ["Aux B",    4], ["Aux C",    5],
+	["Start",    6], ["Select",  7],
+	["D-Up",     8], ["D-Down",  9], ["D-Left",  10], ["D-Right", 11],
+]
+
+## Order in which joypad button sources appear in the Controls UI.
+const _BUTTON_SOURCE_ORDER: Array = [
+	"right_ax_button", "right_by_button", "right_grip", "right_trigger", "right_primary_click",
+	"left_ax_button",  "left_by_button",  "left_grip",  "left_trigger",  "left_primary_click",
+]
+
+## Order in which lightgun sources appear in the Controls UI.
+const _LIGHTGUN_SOURCE_ORDER: Array = [
+	"trigger", "grip", "ax_button", "by_button", "primary_click",
+]
+
+
+func _stick_opt_idx(target: String) -> int:
+	for i: int in range(_STICK_OPTIONS.size()):
+		if _STICK_OPTIONS[i][1] == target:
+			return i
+	return 0
+
+
+func _build_controls_section(vbox: VBoxContainer) -> void:
+	# Load current global bindings as the working copy.
+	var global := ControllerBindings.get_global()
+	_edit_button_map  = global["buttons"].duplicate()
+	_edit_stick_map   = global["sticks"].duplicate()
+	_edit_lightgun_map = global["lightgun"].duplicate()
+
+	# ── Header ────────────────────────────────────────────────────────────────
+	var hdr := Label.new()
+	hdr.text = "CONTROLS"
+	hdr.add_theme_font_size_override("font_size", 22)
+	hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(hdr)
+
+	# ── Joypad Buttons ────────────────────────────────────────────────────────
+	var btn_hdr := Label.new()
+	btn_hdr.text = "Joypad Buttons"
+	btn_hdr.add_theme_font_size_override("font_size", 18)
+	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(btn_hdr)
+
+	for src: String in _BUTTON_SOURCE_ORDER:
+		var label: String = ControllerBindings.BUTTON_SOURCE_LABELS.get(src, src)
+		var current_bit: int = _edit_button_map.get(src, -1)
+		var row := _make_mapping_row("btn:" + src, label, _JOYPAD_OPTIONS, current_bit,
+			func(new_id: int) -> void: _edit_button_map[src] = new_id)
+		vbox.add_child(row)
+
+	# ── Analog Sticks ─────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var stick_hdr := Label.new()
+	stick_hdr.text = "Analog Sticks"
+	stick_hdr.add_theme_font_size_override("font_size", 18)
+	stick_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(stick_hdr)
+
+	for stick: String in ["stick_left", "stick_right"]:
+		var label := "Left Stick" if stick == "stick_left" else "Right Stick"
+		var def_target := "left+dpad" if stick == "stick_left" else "right"
+		var current_target: String = _edit_stick_map.get(stick, def_target)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		row.custom_minimum_size = Vector2(0, 56)
+		var lbl := Label.new()
+		lbl.text = label
+		lbl.add_theme_font_size_override("font_size", 20)
+		lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lbl)
+		var opt := OptionButton.new()
+		opt.custom_minimum_size = Vector2(220, 52)
+		opt.add_theme_font_size_override("font_size", 18)
+		for i: int in range(_STICK_OPTIONS.size()):
+			opt.add_item(_STICK_OPTIONS[i][0] as String, i)
+		opt.selected = _stick_opt_idx(current_target)
+		var captured_stick := stick
+		opt.item_selected.connect(func(idx: int) -> void:
+			_edit_stick_map[captured_stick] = _STICK_OPTIONS[idx][1] as String
+		)
+		_controls_opts["stick:" + stick] = opt
+		row.add_child(opt)
+		vbox.add_child(row)
+
+	# ── Light Gun Buttons ─────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var gun_hdr := Label.new()
+	gun_hdr.text = "Light Gun Buttons"
+	gun_hdr.add_theme_font_size_override("font_size", 18)
+	gun_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(gun_hdr)
+
+	for src: String in _LIGHTGUN_SOURCE_ORDER:
+		var label: String = ControllerBindings.LIGHTGUN_SOURCE_LABELS.get(src, src)
+		var current_id: int = _edit_lightgun_map.get(src, -1)
+		var row := _make_mapping_row("gun:" + src, label, _LIGHTGUN_OPTIONS, current_id,
+			func(new_id: int) -> void: _edit_lightgun_map[src] = new_id)
+		vbox.add_child(row)
+
+	# Thumbstick mode row (separate from the button map entries above)
+	var stick_label: String = ControllerBindings.LIGHTGUN_SOURCE_LABELS.get("stick", "Thumbstick")
+	var stick_mode_row := HBoxContainer.new()
+	stick_mode_row.add_theme_constant_override("separation", 10)
+	stick_mode_row.custom_minimum_size = Vector2(0, 56)
+	var sml := Label.new()
+	sml.text = stick_label
+	sml.add_theme_font_size_override("font_size", 20)
+	sml.add_theme_color_override("font_color", COLOR_TITLE)
+	sml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stick_mode_row.add_child(sml)
+	var sm_opt := OptionButton.new()
+	sm_opt.custom_minimum_size = Vector2(160, 52)
+	sm_opt.add_theme_font_size_override("font_size", 18)
+	sm_opt.add_item("None",  0)
+	sm_opt.add_item("D-pad", 1)
+	var cur_stick_mode: String = str(_edit_lightgun_map.get("stick", "dpad"))
+	sm_opt.selected = 0 if cur_stick_mode == "none" else 1
+	sm_opt.item_selected.connect(func(idx: int) -> void:
+		_edit_lightgun_map["stick"] = "none" if idx == 0 else "dpad"
+	)
+	_controls_opts["gun:stick"] = sm_opt
+	stick_mode_row.add_child(sm_opt)
+	vbox.add_child(stick_mode_row)
+
+	# ── Action buttons ────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 10)
+	action_row.custom_minimum_size = Vector2(0, 60)
+	vbox.add_child(action_row)
+
+	var reset_btn := Button.new()
+	reset_btn.text = "Reset to Default"
+	reset_btn.custom_minimum_size = Vector2(220, 52)
+	reset_btn.add_theme_font_size_override("font_size", 18)
+	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reset_btn.pressed.connect(_on_controls_reset)
+	action_row.add_child(reset_btn)
+
+	var save_btn := Button.new()
+	save_btn.text = "Save as Global"
+	save_btn.custom_minimum_size = Vector2(220, 52)
+	save_btn.add_theme_font_size_override("font_size", 18)
+	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_btn.pressed.connect(_on_controls_save_global)
+	action_row.add_child(save_btn)
+
+
+## Build a single label + OptionButton row for a remapping entry.
+## key is stored in _controls_opts for later reset. options: Array of [label, id] pairs.
+## on_changed receives the selected id.
+func _make_mapping_row(key: String, label_text: String, options: Array, current_id: int, on_changed: Callable) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 56)
+
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
+
+	var opt := OptionButton.new()
+	opt.custom_minimum_size = Vector2(160, 52)
+	opt.add_theme_font_size_override("font_size", 18)
+	var selected_idx := 0
+	for i: int in range(options.size()):
+		var entry: Array = options[i]
+		opt.add_item(entry[0] as String, entry[1] as int)
+		if (entry[1] as int) == current_id:
+			selected_idx = i
+	opt.selected = selected_idx
+	opt.item_selected.connect(func(idx: int) -> void:
+		on_changed.call(options[idx][1] as int)
+	)
+	_controls_opts[key] = opt
+	row.add_child(opt)
+	return row
+
+
+func _on_controls_reset() -> void:
+	_edit_button_map   = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
+	_edit_stick_map    = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
+	_edit_lightgun_map = ControllerBindings.DEFAULT_LIGHTGUN_MAP.duplicate()
+	# Update each stored OptionButton to reflect the reset values.
+	for src: String in _BUTTON_SOURCE_ORDER:
+		var opt := _controls_opts.get("btn:" + src) as OptionButton
+		if opt == null: continue
+		var target_id: int = _edit_button_map.get(src, -1)
+		for i: int in range(_JOYPAD_OPTIONS.size()):
+			if (_JOYPAD_OPTIONS[i][1] as int) == target_id:
+				opt.selected = i
+				break
+	for stick: String in ["stick_left", "stick_right"]:
+		var opt := _controls_opts.get("stick:" + stick) as OptionButton
+		if opt == null: continue
+		opt.selected = _stick_opt_idx(_edit_stick_map.get(stick, "left+dpad" if stick == "stick_left" else "right"))
+	for src: String in _LIGHTGUN_SOURCE_ORDER:
+		var opt := _controls_opts.get("gun:" + src) as OptionButton
+		if opt == null: continue
+		var target_id: int = _edit_lightgun_map.get(src, -1)
+		for i: int in range(_LIGHTGUN_OPTIONS.size()):
+			if (_LIGHTGUN_OPTIONS[i][1] as int) == target_id:
+				opt.selected = i
+				break
+	var sm_opt := _controls_opts.get("gun:stick") as OptionButton
+	if sm_opt:
+		var mode: String = str(_edit_lightgun_map.get("stick", "dpad"))
+		sm_opt.selected = 0 if mode == "none" else 1
+
+
+func _on_controls_save_global() -> void:
+	ControllerBindings.save_global(_edit_button_map, _edit_stick_map, _edit_lightgun_map)
+	controller_bindings_changed.emit()
 
 
 # ── Scraper ──────────────────────────────────────────────────────────────────

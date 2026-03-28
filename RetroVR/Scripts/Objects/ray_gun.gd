@@ -1,25 +1,32 @@
 ## RayGun — pickable light-gun that plugs into a RetroSystem controller port.
 ## While held and plugged in: casts a ray from the barrel to the TV screen each
 ## frame and reports the hit position as libretro lightgun coordinates.
+## Button mappings are data-driven via ControllerBindings.
 class_name RayGun
 extends XRToolsPickable
 
 
 const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
 const RETRO_DEVICE_LIGHTGUN := 7
+const DPAD_THRESHOLD := 0.35
 
-## libretro.h RETRO_DEVICE_ID_LIGHTGUN_* values (IDs 0/1 are relative X/Y, not buttons).
-const LIGHTGUN_TRIGGER    := 2   # RETRO_DEVICE_ID_LIGHTGUN_TRIGGER
-const LIGHTGUN_AUX_A      := 3   # RETRO_DEVICE_ID_LIGHTGUN_AUX_A
-const LIGHTGUN_AUX_B      := 4   # RETRO_DEVICE_ID_LIGHTGUN_AUX_B
-const LIGHTGUN_START      := 6   # RETRO_DEVICE_ID_LIGHTGUN_START
-const LIGHTGUN_SELECT     := 7   # RETRO_DEVICE_ID_LIGHTGUN_SELECT
+## Input thresholds per XRController float input name.
+const INPUT_THRESHOLDS: Dictionary = {
+	"trigger":       0.3,
+	"grip":          0.3,
+	"ax_button":     0.5,
+	"by_button":     0.5,
+	"primary_click": 0.5,
+}
 
 ## libretro device type reported to the system when plugged in.
 var device_type: int = RETRO_DEVICE_LIGHTGUN
 
 ## Whether to show the laser-dot aim indicator on the screen.
 var show_laser_dot: bool = true
+
+# Active bindings (loaded from ControllerBindings on plug-in)
+var _lightgun_map: Dictionary = ControllerBindings.DEFAULT_LIGHTGUN_MAP.duplicate()
 
 # Port connection state
 var _connected_system: RetroSystem = null
@@ -208,8 +215,22 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_connected_system = system
 	_port_index = port_index
 	_laser_dot.visible = true
+	_load_bindings()
 	print("[RayGun] plugged into system port %d" % port_index)
 	_cache_screen_geometry()
+
+
+## Reload bindings from disk (called externally after the user saves new bindings).
+func reload_bindings() -> void:
+	_load_bindings()
+
+
+func _load_bindings() -> void:
+	var systemid := ""
+	if is_instance_valid(_connected_system):
+		systemid = _connected_system.systemid
+	var bindings := ControllerBindings.get_for_system(systemid)
+	_lightgun_map = bindings["lightgun"]
 
 
 func on_unplugged() -> void:
@@ -256,19 +277,37 @@ func _process(_delta: float) -> void:
 
 	if not is_instance_valid(_holding_ctrl):
 		libretro.SetLightgunIsOffscreen(_port_index, true)
-		libretro.SetLightgunButton(_port_index, LIGHTGUN_TRIGGER, false)
-		libretro.SetLightgunButton(_port_index, LIGHTGUN_START,   false)
-		libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_A,   false)
-		libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_B,   false)
+		for vr_source: String in _lightgun_map:
+			if vr_source == "stick": continue
+			var lid: int = _lightgun_map[vr_source]
+			if lid >= 0:
+				libretro.SetLightgunButton(_port_index, lid, false)
+		if _lightgun_map.get("stick", "none") == "dpad":
+			libretro.SetLightgunButton(_port_index, 8,  false)
+			libretro.SetLightgunButton(_port_index, 9,  false)
+			libretro.SetLightgunButton(_port_index, 10, false)
+			libretro.SetLightgunButton(_port_index, 11, false)
 		_laser_dot.visible = false
 		return
 
 	var ctrl := _holding_ctrl
 
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_TRIGGER, ctrl.get_float("trigger")       > 0.3)
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_START,   ctrl.get_float("primary_click") > 0.5)
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_A,   ctrl.get_float("ax_button")     > 0.5)
-	libretro.SetLightgunButton(_port_index, LIGHTGUN_AUX_B,   ctrl.get_float("by_button")     > 0.5)
+	# Set lightgun buttons via data-driven map ("stick" key handled separately).
+	for vr_source: String in _lightgun_map:
+		if vr_source == "stick": continue
+		var lid: int = _lightgun_map[vr_source]
+		if lid < 0:
+			continue
+		var threshold: float = INPUT_THRESHOLDS.get(vr_source, 0.5)
+		libretro.SetLightgunButton(_port_index, lid, ctrl.get_float(vr_source) > threshold)
+
+	# Thumbstick → lightgun d-pad (thresholded).
+	if _lightgun_map.get("stick", "none") == "dpad":
+		var stick: Vector2 = ctrl.get_vector2("primary")
+		libretro.SetLightgunButton(_port_index, 8,  stick.y >  DPAD_THRESHOLD)
+		libretro.SetLightgunButton(_port_index, 9,  stick.y < -DPAD_THRESHOLD)
+		libretro.SetLightgunButton(_port_index, 10, stick.x < -DPAD_THRESHOLD)
+		libretro.SetLightgunButton(_port_index, 11, stick.x >  DPAD_THRESHOLD)
 
 	_update_aim(libretro)
 

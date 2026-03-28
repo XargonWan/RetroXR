@@ -1,6 +1,7 @@
 ## RetroController — pickable joypad that plugs into a RetroSystem controller port.
 ## Grip once to toggle-hold; grip+trigger+thumbstick-click to drop.
 ## While held and plugged in, VR controller input routes to the assigned port.
+## Button and analog mappings are data-driven via ControllerBindings.
 class_name RetroController
 extends XRToolsPickable
 
@@ -12,12 +13,25 @@ const DPAD_THRESHOLD      := 0.35
 const ANALOG_SCALE        := 0x7fff
 const SECONDARY_GRAB_DIST := 0.25
 
+## Input thresholds per XRController float input name.
+const INPUT_THRESHOLDS: Dictionary = {
+	"ax_button":     0.5,
+	"by_button":     0.5,
+	"primary_click": 0.5,
+	"grip":          0.3,
+	"trigger":       0.3,
+}
+
 ## libretro device type reported to the system when plugged in.
 var device_type: int = RETRO_DEVICE_JOYPAD
 
 # Port connection state
 var _connected_system: RetroSystem = null
 var _port_index: int = -1
+
+# Active bindings (loaded from ControllerBindings on plug-in)
+var _button_map: Dictionary = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
+var _stick_map:  Dictionary = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
 
 # Cable
 var _cable_instance: Node3D = null
@@ -230,6 +244,7 @@ func _drop_all() -> void:
 func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_connected_system = system
 	_port_index = port_index
+	_load_bindings()
 	print("[RetroController] plugged into system port %d" % port_index)
 
 
@@ -244,6 +259,47 @@ func restore_port_connection(system: RetroSystem, port_index: int) -> void:
 		system.restore_controller_plug(port_index, _cable_plug)
 	else:
 		_pending_port_restore = {"system": system, "port_index": port_index}
+
+
+# ── Bindings ──────────────────────────────────────────────────────────────────
+
+## Reload bindings from disk for the currently-connected system (or global if unplugged).
+func reload_bindings() -> void:
+	_load_bindings()
+
+
+func _load_bindings() -> void:
+	var systemid := ""
+	if is_instance_valid(_connected_system):
+		systemid = _connected_system.systemid
+	var bindings := ControllerBindings.get_for_system(systemid)
+	_button_map = bindings["buttons"]
+	_stick_map  = bindings["sticks"]
+
+
+# Returns the joypad button bitmask contributed by one controller.
+# Only processes sources prefixed for the given hand.
+func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
+	var bits: int = 0
+	for full_source: String in _button_map:
+		var bit: int = _button_map[full_source]
+		if bit < 0:
+			continue
+		var vr_input: String
+		if full_source.begins_with("right_"):
+			if left_hand:
+				continue
+			vr_input = full_source.substr(6)
+		elif full_source.begins_with("left_"):
+			if not left_hand:
+				continue
+			vr_input = full_source.substr(5)
+		else:
+			vr_input = full_source
+		var threshold: float = INPUT_THRESHOLDS.get(vr_input, 0.5)
+		if ctrl.get_float(vr_input) > threshold:
+			bits |= (1 << bit)
+	return bits
 
 
 # ── Input forwarding ──────────────────────────────────────────────────────────
@@ -287,47 +343,47 @@ func _process(_delta: float) -> void:
 
 	var ctrl := _holding_ctrl
 	var left_hand := ctrl.tracker == &"left_hand"
+
 	var btn: int = 0
 
-	var ls: Vector2 = ctrl.get_vector2("primary")
-	if ls.y >  DPAD_THRESHOLD: btn |= (1 << 4)
-	if ls.y < -DPAD_THRESHOLD: btn |= (1 << 5)
-	if ls.x < -DPAD_THRESHOLD: btn |= (1 << 6)
-	if ls.x >  DPAD_THRESHOLD: btn |= (1 << 7)
-	if ctrl.get_float("ax_button") > 0.5:
-		btn |= (1 << (9 if left_hand else 8))
-	if ctrl.get_float("by_button") > 0.5:
-		btn |= (1 << (1 if left_hand else 0))
-	if ctrl.get_float("grip") > 0.3:
-		btn |= (1 << (10 if left_hand else 11))
-	if ctrl.get_float("trigger") > 0.3:
-		btn |= (1 << (12 if left_hand else 13))
-	if ctrl.get_float("primary_click") > 0.5:
-		btn |= (1 << (2 if left_hand else 3))
-
-	var arx := 0
-	var ary := 0
-
+	# Face / grip / trigger buttons via button_map.
+	btn |= _apply_buttons_for_ctrl(ctrl, left_hand)
 	if is_instance_valid(_secondary_ctrl):
-		var sc := _secondary_ctrl
-		var sc_left := sc.tracker == &"left_hand"
-		if sc.get_float("ax_button") > 0.5:
-			btn |= (1 << (9 if sc_left else 8))
-		if sc.get_float("by_button") > 0.5:
-			btn |= (1 << (1 if sc_left else 0))
-		if sc.get_float("grip") > 0.3:
-			btn |= (1 << (10 if sc_left else 11))
-		if sc.get_float("trigger") > 0.3:
-			btn |= (1 << (12 if sc_left else 13))
-		if sc.get_float("primary_click") > 0.5:
-			btn |= (1 << (2 if sc_left else 3))
-		var right_ctrl := ctrl if not left_hand else sc
-		var rs: Vector2 = right_ctrl.get_vector2("primary")
-		arx = int(rs.x * ANALOG_SCALE)
-		ary = int(-rs.y * ANALOG_SCALE)
-	else:
-		var rs: Vector2 = ctrl.get_vector2("secondary")
-		arx = int(rs.x * ANALOG_SCALE)
-		ary = int(-rs.y * ANALOG_SCALE)
+		btn |= _apply_buttons_for_ctrl(_secondary_ctrl, _secondary_ctrl.tracker == &"left_hand")
 
-	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, 0, 0, arx, ary)
+	# pstick = primary/left thumbstick; sstick = secondary/right thumbstick.
+	var pstick: Vector2 = ctrl.get_vector2("primary")
+	var sstick: Vector2
+	if is_instance_valid(_secondary_ctrl):
+		# Two-hand: use whichever hand's primary stick is the "right" one.
+		var right_ctrl := ctrl if not left_hand else _secondary_ctrl
+		sstick = right_ctrl.get_vector2("primary")
+	else:
+		sstick = ctrl.get_vector2("secondary")
+
+	var alx := 0; var aly := 0
+	var arx := 0; var ary := 0
+
+	# Target strings: "left", "right", "dpad", "left+dpad", "right+dpad"
+	# Substring checks handle combined targets ("dpad" in "left+dpad" → true).
+	var lt: String = _stick_map.get("stick_left",  "left+dpad")
+	var rt: String = _stick_map.get("stick_right", "right")
+
+	if "left"  in lt: alx = int(pstick.x * ANALOG_SCALE); aly = int(-pstick.y * ANALOG_SCALE)
+	elif "right" in lt: arx = int(pstick.x * ANALOG_SCALE); ary = int(-pstick.y * ANALOG_SCALE)
+	if "dpad" in lt: btn |= _threshold_to_dpad(pstick)
+
+	if "right" in rt: arx = int(sstick.x * ANALOG_SCALE); ary = int(-sstick.y * ANALOG_SCALE)
+	elif "left" in rt: alx = int(sstick.x * ANALOG_SCALE); aly = int(-sstick.y * ANALOG_SCALE)
+	if "dpad" in rt: btn |= _threshold_to_dpad(sstick)
+
+	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
+
+
+static func _threshold_to_dpad(stick: Vector2) -> int:
+	var bits := 0
+	if stick.y >  DPAD_THRESHOLD: bits |= (1 << 4)
+	if stick.y < -DPAD_THRESHOLD: bits |= (1 << 5)
+	if stick.x < -DPAD_THRESHOLD: bits |= (1 << 6)
+	if stick.x >  DPAD_THRESHOLD: bits |= (1 << 7)
+	return bits

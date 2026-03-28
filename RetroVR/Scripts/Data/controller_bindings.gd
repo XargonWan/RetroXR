@@ -1,0 +1,221 @@
+## ControllerBindings — load/save/query VR controller remapping profiles.
+## Profiles are stored in user://controller_bindings.json.
+## Lookup order: per-system → global → default (hardcoded).
+class_name ControllerBindings
+extends RefCounted
+
+const SAVE_PATH := "user://controller_bindings.json"
+
+# ── Joypad button bit indices (RETRO_JOYPAD_*) ───────────────────────────────
+const JOYPAD_NONE   := -1
+const JOYPAD_B      := 0
+const JOYPAD_Y      := 1
+const JOYPAD_SELECT := 2
+const JOYPAD_START  := 3
+const JOYPAD_UP     := 4
+const JOYPAD_DOWN   := 5
+const JOYPAD_LEFT   := 6
+const JOYPAD_RIGHT  := 7
+const JOYPAD_A      := 8
+const JOYPAD_X      := 9
+const JOYPAD_L      := 10
+const JOYPAD_R      := 11
+const JOYPAD_L2     := 12
+const JOYPAD_R2     := 13
+const JOYPAD_L3     := 14
+const JOYPAD_R3     := 15
+
+## Human-readable names for joypad buttons (bit index → label).
+const JOYPAD_NAMES: Dictionary = {
+    -1: "None",
+    0:  "B",
+    1:  "Y",
+    2:  "SELECT",
+    3:  "START",
+    4:  "D-Up",
+    5:  "D-Down",
+    6:  "D-Left",
+    7:  "D-Right",
+    8:  "A",
+    9:  "X",
+    10: "L",
+    11: "R",
+    12: "L2",
+    13: "R2",
+    14: "L3",
+    15: "R3",
+}
+
+# ── Lightgun button IDs (RETRO_DEVICE_ID_LIGHTGUN_*) ─────────────────────────
+const LIGHTGUN_NONE      := -1
+const LIGHTGUN_TRIGGER   := 2
+const LIGHTGUN_AUX_A     := 3
+const LIGHTGUN_AUX_B     := 4
+const LIGHTGUN_AUX_C     := 5
+const LIGHTGUN_START     := 6
+const LIGHTGUN_SELECT    := 7
+const LIGHTGUN_DPAD_UP   := 8
+const LIGHTGUN_DPAD_DOWN := 9
+const LIGHTGUN_DPAD_LEFT := 10
+const LIGHTGUN_DPAD_RIGHT := 11
+
+## Human-readable names for lightgun buttons.
+const LIGHTGUN_NAMES: Dictionary = {
+    -1: "None",
+    2:  "Trigger",
+    3:  "Aux A",
+    4:  "Aux B",
+    5:  "Aux C",
+    6:  "Start",
+    7:  "Select",
+    8:  "D-Up",
+    9:  "D-Down",
+    10: "D-Left",
+    11: "D-Right",
+}
+
+# ── Default mappings ──────────────────────────────────────────────────────────
+
+## Default joypad button map: "hand_source" → RETRO_JOYPAD bit index.
+## Keys use "right_" or "left_" prefix + XRController input name.
+## -1 = unassigned (button produces no output).
+const DEFAULT_BUTTON_MAP: Dictionary = {
+    "right_ax_button":     8,   # A
+    "right_by_button":     0,   # B
+    "right_grip":          11,  # R
+    "right_trigger":       13,  # R2
+    "right_primary_click": 3,   # START
+    "left_ax_button":      9,   # X
+    "left_by_button":      1,   # Y
+    "left_grip":           10,  # L
+    "left_trigger":        12,  # L2
+    "left_primary_click":  2,   # SELECT
+}
+
+## Human-readable labels for each joypad button source.
+const BUTTON_SOURCE_LABELS: Dictionary = {
+    "right_ax_button":     "Right A",
+    "right_by_button":     "Right B",
+    "right_grip":          "Right Grip",
+    "right_trigger":       "Right Trigger",
+    "right_primary_click": "Right Stick Button",
+    "left_ax_button":      "Left X",
+    "left_by_button":      "Left Y",
+    "left_grip":           "Left Grip",
+    "left_trigger":        "Left Trigger",
+    "left_primary_click":  "Left Stick Button",
+}
+
+## Default analog stick map: "stick_left"/"stick_right" → stick target string.
+## Targets: "left", "right", "dpad", "left+dpad", "right+dpad"
+const DEFAULT_STICK_MAP: Dictionary = {
+    "stick_left":  "left+dpad",
+    "stick_right": "right",
+}
+
+## Default lightgun button map: XRController input name → LIGHTGUN_* id.
+## -1 = unassigned. "stick" key is special: value is "none" or "dpad" (string).
+const DEFAULT_LIGHTGUN_MAP: Dictionary = {
+    "trigger":       2,      # LIGHTGUN_TRIGGER
+    "ax_button":     3,      # LIGHTGUN_AUX_A
+    "by_button":     4,      # LIGHTGUN_AUX_B
+    "grip":          -1,     # unassigned by default
+    "primary_click": 6,      # LIGHTGUN_START
+    "stick":         "dpad", # thumbstick → lightgun d-pad
+}
+
+## Human-readable labels for each lightgun button source.
+const LIGHTGUN_SOURCE_LABELS: Dictionary = {
+    "trigger":       "Trigger",
+    "grip":          "Grip",
+    "ax_button":     "A / X button",
+    "by_button":     "B / Y button",
+    "primary_click": "Stick Click",
+    "stick":         "Thumbstick",
+}
+
+# ── File I/O ──────────────────────────────────────────────────────────────────
+
+static func _load_file() -> Dictionary:
+    if not FileAccess.file_exists(SAVE_PATH):
+        return {}
+    var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+    if f == null:
+        return {}
+    var text := f.get_as_text()
+    f.close()
+    var result: Variant = JSON.parse_string(text)
+    if result is Dictionary:
+        return result
+    return {}
+
+
+static func _save_file(data: Dictionary) -> void:
+    var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+    if f == null:
+        push_error("ControllerBindings: cannot write to %s" % SAVE_PATH)
+        return
+    f.store_string(JSON.stringify(data, "\t"))
+    f.close()
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+## Save global (fallback) bindings. Existing per-system profiles are preserved.
+static func save_global(button_map: Dictionary, stick_map: Dictionary, lightgun_map: Dictionary) -> void:
+    var data := _load_file()
+    if not data.has("global"):
+        data["global"] = {}
+    data["global"]["buttons"] = button_map
+    data["global"]["sticks"] = stick_map
+    data["global"]["lightgun"] = lightgun_map
+    _save_file(data)
+
+
+## Save per-system bindings. Falls back to save_global if systemid is empty.
+static func save_for_system(systemid: String, button_map: Dictionary, stick_map: Dictionary, lightgun_map: Dictionary) -> void:
+    if systemid.is_empty():
+        save_global(button_map, stick_map, lightgun_map)
+        return
+    var data := _load_file()
+    if not data.has("per_system"):
+        data["per_system"] = {}
+    data["per_system"][systemid] = {
+        "buttons":  button_map,
+        "sticks":   stick_map,
+        "lightgun": lightgun_map,
+    }
+    _save_file(data)
+
+
+## Get merged bindings for a system: per-system overrides global, which overrides defaults.
+## Returns a Dictionary with keys "buttons", "sticks", "lightgun".
+static func get_for_system(systemid: String) -> Dictionary:
+    var data := _load_file()
+    var global_data: Dictionary = data.get("global", {}) as Dictionary
+    var sys_data: Dictionary = {}
+    if not systemid.is_empty():
+        var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
+        sys_data = per_sys.get(systemid, {}) as Dictionary
+
+    return {
+        "buttons":  _merge(DEFAULT_BUTTON_MAP,   global_data.get("buttons",  {}), sys_data.get("buttons",  {})),
+        "sticks":   _merge(DEFAULT_STICK_MAP,     global_data.get("sticks",   {}), sys_data.get("sticks",   {})),
+        "lightgun": _merge(DEFAULT_LIGHTGUN_MAP,  global_data.get("lightgun", {}), sys_data.get("lightgun", {})),
+    }
+
+
+## Get global bindings (global overrides of defaults, no per-system layer).
+static func get_global() -> Dictionary:
+    return get_for_system("")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# Apply base, then overlay1, then overlay2. Returns a new dictionary (last writer wins).
+static func _merge(base: Dictionary, overlay1: Dictionary, overlay2: Dictionary) -> Dictionary:
+    var result := base.duplicate()
+    for k: String in overlay1:
+        result[k] = overlay1[k]
+    for k: String in overlay2:
+        result[k] = overlay2[k]
+    return result
