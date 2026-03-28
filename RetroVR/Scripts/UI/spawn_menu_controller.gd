@@ -41,6 +41,7 @@ var _camera:      XRCamera3D    = null
 var _left_ctrl:   XRController3D = null
 var _right_ctrl:  XRController3D = null
 var _menu_connected := false
+var _aim_crosshair_enabled := true
 var _connect_retry_count: int = 0
 
 # Scroll state — driven by whichever stick whose controller points at the menu
@@ -154,6 +155,7 @@ func _connect_menu_signals() -> void:
 	menu.scene_slot_rename_requested.connect(_on_slot_rename)
 	menu.auto_save_changed.connect(_on_auto_save_changed)
 	menu.show_fps_changed.connect(_on_show_fps_changed)
+	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
 	_menu_connected = true
@@ -482,7 +484,9 @@ func _on_spawn_requested(type: String) -> void:
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"ray_gun":
-			obj = RAY_GUN_SCENE.instantiate() as Node3D
+			var gun := RAY_GUN_SCENE.instantiate() as RayGun
+			gun.show_laser_dot = _aim_crosshair_enabled
+			obj = gun
 		_:
 			# Any other type is treated as a systemid
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
@@ -520,6 +524,14 @@ func _on_snap_angle_changed(degrees: float) -> void:
 func _on_height_offset_changed(offset: float) -> void:
 	if _player_body:
 		_player_body.player_height_offset = offset
+
+
+func _on_aim_crosshair_changed(enabled: bool) -> void:
+	_aim_crosshair_enabled = enabled
+	for node in get_tree().get_nodes_in_group("spawned"):
+		var gun := node as RayGun
+		if gun:
+			gun.show_laser_dot = enabled
 
 
 func _on_show_fps_changed(enabled: bool) -> void:

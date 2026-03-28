@@ -37,6 +37,8 @@ signal scene_slot_rename_requested(slot_id: String, new_name: String)
 signal auto_save_changed(enabled: bool)
 ## Emitted when the user toggles the FPS counter.
 signal show_fps_changed(enabled: bool)
+## Emitted when the user toggles the ray gun aim crosshair.
+signal aim_crosshair_changed(enabled: bool)
 ## Emitted when the user changes the snap turn angle.
 signal snap_angle_changed(degrees: float)
 ## Emitted when the user adjusts the player height offset.
@@ -1225,6 +1227,25 @@ func _build_options_view() -> Control:
 
 	fps_row.add_child(_make_toggle(false, func(on: bool) -> void:
 		show_fps_changed.emit(on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
+	# Ray Gun crosshair option
+	var xhair_row := HBoxContainer.new()
+	xhair_row.add_theme_constant_override("separation", 10)
+	xhair_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(xhair_row)
+
+	var xhair_lbl := Label.new()
+	xhair_lbl.text = "Ray Gun Crosshair"
+	xhair_lbl.add_theme_font_size_override("font_size", 22)
+	xhair_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	xhair_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	xhair_row.add_child(xhair_lbl)
+
+	xhair_row.add_child(_make_toggle(true, func(on: bool) -> void:
+		aim_crosshair_changed.emit(on)
 	))
 
 	vbox.add_child(HSeparator.new())
