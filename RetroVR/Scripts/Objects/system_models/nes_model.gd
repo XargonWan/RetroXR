@@ -31,13 +31,12 @@ func get_controller_port_count() -> int:
 
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton) -> void:
 	var glb := get_child(0)
-	# "Finger Button *" empties mark the exact press point and travel direction (-Z axis)
 	var power_finger := glb.find_child("Finger Button Power", true, false)
 	var reset_finger := glb.find_child("Finger Button Reset", true, false)
 	var power_mesh := glb.find_child("ButtonPower", true, false) as MeshInstance3D
 	var reset_mesh := glb.find_child("ButtonReset", true, false) as MeshInstance3D
 	if power_mesh:
-		power_btn.set_button_mesh(power_mesh)
+		power_btn.set_button_mesh(power_mesh)  # also hides the placeholder box
 	if power_finger:
 		power_btn.global_position = power_finger.global_position
 		power_btn.set_depress_axis_from_node(power_finger)
@@ -46,34 +45,48 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton) -> void:
 	if reset_finger:
 		reset_btn.global_position = reset_finger.global_position
 		reset_btn.set_depress_axis_from_node(reset_finger)
+	# Hide placeholder button labels — NES uses its own physical button geometry
+	for btn in [power_btn, reset_btn]:
+		var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
+		if lbl:
+			lbl.hide()
 
 
 func configure_controller_ports(port_zones: Array) -> void:
 	var glb := get_child(0)
-	# NES model provides one marker per port; search for Port1, Port2, etc.
 	for i in range(port_zones.size()):
 		var marker := glb.find_child("Cable Plug Port%d" % (i + 1), true, false)
 		if marker:
 			port_zones[i].global_position = marker.global_position
+		# Hide placeholder port visuals regardless of whether the model has a marker
+		var recess := port_zones[i].get_node_or_null("PortRecess") as MeshInstance3D
+		if recess:
+			recess.hide()
+		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
+		if lbl:
+			lbl.hide()
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
 	var glb := get_child(0)
-	# "Cable Plug (YW)" is the RF/video output on the NES
 	var marker := glb.find_child("Cable Plug (YW)", true, false)
 	if marker:
 		attach_point.global_position = marker.global_position
+	var port_visual := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
+	if port_visual:
+		port_visual.hide()
 
 
 func configure_cartridge_slot(slot: Node3D) -> void:
 	var glb := get_child(0)
-	# "System Socket" marks the cartridge slot entrance.
-	# Its local +Z faces outward (toward the player) — the direction the cartridge comes from.
 	var socket := glb.find_child("System Socket", true, false)
 	if socket:
 		slot.global_position = socket.global_position
 		slot.global_rotation = socket.global_rotation
 		_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
+	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
+	if slot_visual:
+		slot_visual.hide()
 
 
 func get_cartridge_insert_direction() -> Vector3:
