@@ -351,14 +351,17 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(_secondary_ctrl):
 		btn |= _apply_buttons_for_ctrl(_secondary_ctrl, _secondary_ctrl.tracker == &"left_hand")
 
-	# pstick = primary/left thumbstick; sstick = secondary/right thumbstick.
-	var pstick: Vector2 = ctrl.get_vector2("primary")
+	# pstick = left-hand thumbstick; sstick = right-hand thumbstick.
+	var pstick: Vector2
 	var sstick: Vector2
 	if is_instance_valid(_secondary_ctrl):
-		# Two-hand: use whichever hand's primary stick is the "right" one.
+		# Two-hand: identify each hand regardless of which is _holding_ctrl.
+		var left_ctrl  := ctrl if left_hand else _secondary_ctrl
 		var right_ctrl := ctrl if not left_hand else _secondary_ctrl
+		pstick = left_ctrl.get_vector2("primary")
 		sstick = right_ctrl.get_vector2("primary")
 	else:
+		pstick = ctrl.get_vector2("primary")
 		sstick = ctrl.get_vector2("secondary")
 
 	var alx := 0; var aly := 0
