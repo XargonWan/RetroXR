@@ -36,3 +36,6 @@ export_presets.cfg
 .mono/
 data_*/
 mono_crash.*.json
+
+# Blender-specific ignores
+*.blend[0-9]*
