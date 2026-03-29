@@ -6,4 +6,4 @@
 core_name = "mednafen_psx"
 core_directory = ""
 system_label = "PS1"
-systemid = "psx"
+systemid = "playstation"

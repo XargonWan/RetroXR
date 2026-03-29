@@ -3,6 +3,12 @@ class_name RetroSystem
 extends XRToolsPickable
 
 
+## Maps systemid → GDScript path for the hardware model subclass.
+const _MODEL_SCRIPTS: Dictionary = {
+	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
+	"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
+}
+
 ## The libretro core filename (without extension), e.g. "fceumm".
 ## If empty at power_on(), looked up from CoreDefaults using systemid.
 @export var core_name: String = ""
@@ -38,6 +44,9 @@ var _options_values: Dictionary = {}
 # Array of Dictionaries: [{port, controllers: [{name, id}], current_id}]
 var _controller_info: Array = []
 
+# Active system model (RetroSystemModel subclass), or null if using placeholder
+var _model: RetroSystemModel = null
+
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
 var _cable_instance: Node3D = null
@@ -50,6 +59,7 @@ var _pending_tv_restore: RetroTV = null
 var _snapped_cartridge: Node3D = null
 
 
+@onready var _system_body: MeshInstance3D = $SystemBody
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _libretro: Libretro = $Libretro
@@ -81,6 +91,8 @@ func _ready() -> void:
 		var idx := i
 		_port_zones[i].has_picked_up.connect(func(obj: Node3D) -> void: _on_port_snapped(idx, obj))
 		_port_zones[i].has_dropped.connect(func(obj: Node3D) -> void: _on_port_released(idx, obj))
+	# Load system-specific model (hides placeholder if found)
+	_load_system_model()
 	# Spawn cable
 	_spawn_cable()
 	_update_name_label()
@@ -95,6 +107,27 @@ func _update_name_label() -> void:
 	if display_name.is_empty():
 		display_name = systemid
 	_system_name_label.text = display_name.to_upper()
+
+
+func _load_system_model() -> void:
+	var script_path: String = _MODEL_SCRIPTS.get(systemid, "")
+	if script_path.is_empty():
+		return  # No model for this system yet — placeholder stays visible
+	var script := load(script_path) as GDScript
+	if not script:
+		push_warning("RetroSystem: failed to load model script: %s" % script_path)
+		return
+	_model = script.new() as RetroSystemModel
+	add_child(_model)
+	_system_body.hide()
+	_model.configure_buttons(_power_button, _reset_button)
+	_model.configure_controller_ports(_port_zones)
+	_model.configure_cable_attach(_cable_attach_point)
+	_model.configure_cartridge_slot(_cartridge_slot)
+	# Hide controller port snap zones beyond what this system supports
+	var port_count := _model.get_controller_port_count()
+	for i in range(_port_zones.size()):
+		_port_zones[i].visible = i < port_count
 
 
 ## Enable or disable libretro input polling for this system.
@@ -229,6 +262,8 @@ func power_on() -> void:
 	is_powered_on = true
 	_power_button.set_color(Color(1.0, 0.0, 0.0))  # Bright red when on
 	_power_button_label.text = "STOP"
+	if _model:
+		_model.on_power_on()
 
 
 ## Power off: stop the running core
@@ -241,6 +276,8 @@ func power_off() -> void:
 	_power_button.set_color(Color(0.0, 1.0, 0.0))  # Green when off
 	_power_button_label.text = "START"
 	_options_panel.hide_panel()
+	if _model:
+		_model.on_power_off()
 
 
 ## Toggle power (used by the power button)
@@ -251,11 +288,24 @@ func toggle_power() -> void:
 		power_on()
 
 
-## Hard reset: stop and restart with the same content
+## Hard reset: restart the running core without going through power on/off.
+## Does not change button state, labels, or fire power model hooks.
 func reset() -> void:
-	if is_powered_on:
-		power_off()
-		power_on()
+	if not is_powered_on:
+		return
+	if _model:
+		_model.play_reset()
+	var resolved_core := core_name
+	if resolved_core.is_empty() and not systemid.is_empty():
+		var defaults := CoreDefaults.new()
+		defaults.setup(CoreDefaults.default_path())
+		resolved_core = defaults.get_default_core(systemid)
+	var resolved_dir := core_directory
+	if resolved_dir.is_empty():
+		resolved_dir = CoreDownloadManager.default_core_root()
+	print("[RetroSystem] Resetting: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
+	_libretro.StopContent()
+	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
 
 
 # --- Core options ---
@@ -373,10 +423,14 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	add_collision_exception_with(cartridge)
 	if cartridge.has_method("get_rom_path"):
 		rom_path = cartridge.get_rom_path()
+	if _model:
+		_model.play_cartridge_insert(cartridge, _cartridge_slot)
 
 
 func _on_cartridge_removed() -> void:
 	if _snapped_cartridge:
+		if _model:
+			_model.play_cartridge_eject(_snapped_cartridge, _cartridge_slot)
 		remove_collision_exception_with(_snapped_cartridge)
 		_snapped_cartridge = null
 	if is_powered_on:
