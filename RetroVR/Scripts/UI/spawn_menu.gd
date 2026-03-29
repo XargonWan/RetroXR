@@ -140,8 +140,10 @@ var _media_dl_refresh_cb: Callable = Callable()
 var _edit_button_map:  Dictionary = {}
 var _edit_stick_map:   Dictionary = {}
 var _edit_lightgun_map: Dictionary = {}
-# OptionButton references for the Controls section (source_key → OptionButton).
+# Inline-dropdown state for the Controls section (source_key → dict).
 var _controls_opts: Dictionary = {}
+# Key of the currently-open inline dropdown ("" = none).
+var _open_dropdown_key: String = ""
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -310,6 +312,15 @@ func _build_ui() -> void:
 	content.add_child(_about_view)
 
 	_show_spawn_view()
+
+
+## Create an OptionButton configured for VR pointer use.
+## ACTION_MODE_BUTTON_PRESS means the dropdown opens on trigger-squeeze (press),
+## not on trigger-release, preventing accidental activation.
+func _make_opt() -> OptionButton:
+	var opt := OptionButton.new()
+	opt.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	return opt
 
 
 func _make_toggle(initial_on: bool, on_toggled: Callable) -> Button:
@@ -884,7 +895,7 @@ func _build_manager_row(systemid: String, systemname: String, cores: Array) -> C
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	row.add_child(lbl)
 
-	var opt := OptionButton.new()
+	var opt := _make_opt()
 	opt.custom_minimum_size = Vector2(260, 56)
 	opt.add_theme_font_size_override("font_size", 17)
 
@@ -1140,7 +1151,7 @@ func _build_options_view() -> Control:
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(lbl)
 
-	var opt := OptionButton.new()
+	var opt := _make_opt()
 	opt.custom_minimum_size = Vector2(220, 56)
 	opt.add_theme_font_size_override("font_size", 20)
 	opt.add_item("SNAP", 0)
@@ -1164,7 +1175,7 @@ func _build_options_view() -> Control:
 	sa_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sa_row.add_child(sa_lbl)
 
-	var sa_opt := OptionButton.new()
+	var sa_opt := _make_opt()
 	sa_opt.custom_minimum_size = Vector2(140, 56)
 	sa_opt.add_theme_font_size_override("font_size", 20)
 	sa_opt.add_item("30°", 0)
@@ -1407,6 +1418,164 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 
 # ── Controls remapping view ───────────────────────────────────────────────────
 
+## Close the named inline dropdown and reset its toggle arrow.
+func _close_dropdown(k: String) -> void:
+	var entry: Variant = _controls_opts.get(k)
+	if not entry is Dictionary:
+		return
+	var d := entry as Dictionary
+	var panel := d.get("panel") as PanelContainer
+	var toggle := d.get("toggle") as Button
+	if panel:
+		panel.visible = false
+	if toggle and toggle.text.ends_with(" ▴"):
+		toggle.text = toggle.text.trim_suffix(" ▴") + " ▾"
+	if _open_dropdown_key == k:
+		_open_dropdown_key = ""
+
+
+## Update an inline dropdown to reflect a new selection without reopening it.
+func _reset_vr_dropdown(k: String, new_id: Variant) -> void:
+	var entry: Variant = _controls_opts.get(k)
+	if not entry is Dictionary:
+		return
+	var d := entry as Dictionary
+	var toggle := d.get("toggle") as Button
+	var panel  := d.get("panel")  as PanelContainer
+	var opt_btns: Array = d.get("opt_btns", [])
+	var ids: Array      = d.get("ids",      [])
+	var options: Array  = d.get("options",  [])
+
+	var new_label := ""
+	for i: int in range(options.size()):
+		if options[i][1] == new_id:
+			new_label = options[i][0] as String
+			break
+	if toggle:
+		toggle.text = new_label + " ▾"
+	for i: int in range(opt_btns.size()):
+		var btn := opt_btns[i] as Button
+		if btn:
+			btn.text = ("✓  " if ids[i] == new_id else "    ") + (options[i][0] as String)
+	if panel:
+		panel.visible = false
+	if _open_dropdown_key == k:
+		_open_dropdown_key = ""
+
+
+## Build a label + inline-expandable dropdown row that lives entirely inside the
+## ScrollContainer (no floating PopupMenu window).  All buttons use
+## ACTION_MODE_BUTTON_PRESS so trigger-release never activates them.
+## options: Array of [display_name, id] where id is int or String.
+func _make_vr_dropdown_row(
+		key: String,
+		label_text: String,
+		options: Array,
+		current_id: Variant,
+		on_changed: Callable,
+		grid_cols: int = 1
+) -> VBoxContainer:
+	var wrapper := VBoxContainer.new()
+	wrapper.add_theme_constant_override("separation", 0)
+
+	# ── Header row ────────────────────────────────────────────────────────────
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 56)
+	wrapper.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
+
+	var init_label := ""
+	for opt_entry: Array in options:
+		if opt_entry[1] == current_id:
+			init_label = opt_entry[0] as String
+			break
+
+	var toggle := Button.new()
+	toggle.text = init_label + " ▾"
+	toggle.custom_minimum_size = Vector2(220, 52)
+	toggle.add_theme_font_size_override("font_size", 18)
+	toggle.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	toggle.focus_mode = Control.FOCUS_NONE
+	row.add_child(toggle)
+
+	# ── Dropdown panel ────────────────────────────────────────────────────────
+	var panel := PanelContainer.new()
+	panel.visible = false
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.10, 0.10, 0.22, 0.97)
+	ps.border_color = Color(0.35, 0.35, 0.65)
+	for side in ["border_width_left", "border_width_right",
+			"border_width_top", "border_width_bottom"]:
+		ps.set(side, 2)
+	for k2 in ["corner_radius_top_left", "corner_radius_top_right",
+			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		ps.set(k2, 6)
+	panel.add_theme_stylebox_override("panel", ps)
+	wrapper.add_child(panel)
+
+	var list := GridContainer.new()
+	list.columns = max(1, grid_cols)
+	list.add_theme_constant_override("h_separation", 4)
+	list.add_theme_constant_override("v_separation", 2)
+	panel.add_child(list)
+
+	var opt_btns: Array[Button] = []
+	var ids: Array = []
+
+	for i: int in range(options.size()):
+		var opt_entry: Array = options[i]
+		var opt_label := opt_entry[0] as String
+		var opt_id: Variant = opt_entry[1]
+		ids.append(opt_id)
+
+		var opt_btn := Button.new()
+		opt_btn.text = ("✓  " if opt_id == current_id else "    ") + opt_label
+		opt_btn.custom_minimum_size = Vector2(0, 40 if grid_cols > 1 else 48)
+		opt_btn.add_theme_font_size_override("font_size", 16 if grid_cols > 1 else 18)
+		opt_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		opt_btn.focus_mode = Control.FOCUS_NONE
+		opt_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		opt_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+
+		var captured_id:  Variant = opt_id
+		var captured_lbl := opt_label
+		opt_btn.pressed.connect(func() -> void:
+			on_changed.call(captured_id)
+			toggle.text = captured_lbl + " ▾"
+			for j: int in range(opt_btns.size()):
+				opt_btns[j].text = ("✓  " if ids[j] == captured_id else "    ") \
+						+ (options[j][0] as String)
+			panel.visible = false
+			if _open_dropdown_key == key:
+				_open_dropdown_key = ""
+		)
+		list.add_child(opt_btn)
+		opt_btns.append(opt_btn)
+
+	toggle.pressed.connect(func() -> void:
+		if _open_dropdown_key != "" and _open_dropdown_key != key:
+			_close_dropdown(_open_dropdown_key)
+		var opening := not panel.visible
+		panel.visible = opening
+		_open_dropdown_key = key if opening else ""
+		var base := toggle.text.trim_suffix(" ▾").trim_suffix(" ▴")
+		toggle.text = base + (" ▴" if opening else " ▾")
+	)
+
+	_controls_opts[key] = {
+		"toggle": toggle, "panel": panel,
+		"opt_btns": opt_btns, "ids": ids, "options": options
+	}
+	return wrapper
+
+
 func _build_controls_view() -> Control:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1438,9 +1607,9 @@ const _JOYPAD_OPTIONS: Array = [
 
 ## Analog stick target choices: [display_name, target_string].
 const _STICK_OPTIONS: Array = [
-	["Left + D-pad",  "left+dpad"],
+	["Left Analog + D-pad",  "left+dpad"],
 	["Left Analog",   "left"],
-	["Right + D-pad", "right+dpad"],
+	["Right Analog + D-pad", "right+dpad"],
 	["Right Analog",  "right"],
 	["D-pad only",    "dpad"],
 ]
@@ -1465,12 +1634,6 @@ const _LIGHTGUN_SOURCE_ORDER: Array = [
 ]
 
 
-func _stick_opt_idx(target: String) -> int:
-	for i: int in range(_STICK_OPTIONS.size()):
-		if _STICK_OPTIONS[i][1] == target:
-			return i
-	return 0
-
 
 func _build_controls_section(vbox: VBoxContainer) -> void:
 	# Load current global bindings as the working copy.
@@ -1488,7 +1651,7 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 
 	# ── Joypad Buttons ────────────────────────────────────────────────────────
 	var btn_hdr := Label.new()
-	btn_hdr.text = "Joypad Buttons"
+	btn_hdr.text = "XR Joypad Buttons"
 	btn_hdr.add_theme_font_size_override("font_size", 18)
 	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
 	vbox.add_child(btn_hdr)
@@ -1496,9 +1659,12 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	for src: String in _BUTTON_SOURCE_ORDER:
 		var label: String = ControllerBindings.BUTTON_SOURCE_LABELS.get(src, src)
 		var current_bit: int = _edit_button_map.get(src, -1)
-		var row := _make_mapping_row("btn:" + src, label, _JOYPAD_OPTIONS, current_bit,
-			func(new_id: int) -> void: _edit_button_map[src] = new_id)
-		vbox.add_child(row)
+		var captured_src := src
+		vbox.add_child(_make_vr_dropdown_row(
+			"btn:" + src, label, _JOYPAD_OPTIONS, current_bit,
+			func(v: Variant) -> void: _edit_button_map[captured_src] = v as int,
+			4
+		))
 
 	# ── Analog Sticks ─────────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
@@ -1509,31 +1675,15 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	vbox.add_child(stick_hdr)
 
 	for stick: String in ["stick_left", "stick_right"]:
-		var label := "Left Stick" if stick == "stick_left" else "Right Stick"
+		var s_label := "Left Stick" if stick == "stick_left" else "Right Stick"
 		var def_target := "left+dpad" if stick == "stick_left" else "right"
 		var current_target: String = _edit_stick_map.get(stick, def_target)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		row.custom_minimum_size = Vector2(0, 56)
-		var lbl := Label.new()
-		lbl.text = label
-		lbl.add_theme_font_size_override("font_size", 20)
-		lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(lbl)
-		var opt := OptionButton.new()
-		opt.custom_minimum_size = Vector2(220, 52)
-		opt.add_theme_font_size_override("font_size", 18)
-		for i: int in range(_STICK_OPTIONS.size()):
-			opt.add_item(_STICK_OPTIONS[i][0] as String, i)
-		opt.selected = _stick_opt_idx(current_target)
 		var captured_stick := stick
-		opt.item_selected.connect(func(idx: int) -> void:
-			_edit_stick_map[captured_stick] = _STICK_OPTIONS[idx][1] as String
-		)
-		_controls_opts["stick:" + stick] = opt
-		row.add_child(opt)
-		vbox.add_child(row)
+		vbox.add_child(_make_vr_dropdown_row(
+			"stick:" + stick, s_label, _STICK_OPTIONS, current_target,
+			func(v: Variant) -> void: _edit_stick_map[captured_stick] = v as String,
+			3
+		))
 
 	# ── Light Gun Buttons ─────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
@@ -1546,34 +1696,23 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	for src: String in _LIGHTGUN_SOURCE_ORDER:
 		var label: String = ControllerBindings.LIGHTGUN_SOURCE_LABELS.get(src, src)
 		var current_id: int = _edit_lightgun_map.get(src, -1)
-		var row := _make_mapping_row("gun:" + src, label, _LIGHTGUN_OPTIONS, current_id,
-			func(new_id: int) -> void: _edit_lightgun_map[src] = new_id)
-		vbox.add_child(row)
+		var captured_src := src
+		vbox.add_child(_make_vr_dropdown_row(
+			"gun:" + src, label, _LIGHTGUN_OPTIONS, current_id,
+			func(v: Variant) -> void: _edit_lightgun_map[captured_src] = v as int,
+			4
+		))
 
-	# Thumbstick mode row (separate from the button map entries above)
+	# Thumbstick mode row
 	var stick_label: String = ControllerBindings.LIGHTGUN_SOURCE_LABELS.get("stick", "Thumbstick")
-	var stick_mode_row := HBoxContainer.new()
-	stick_mode_row.add_theme_constant_override("separation", 10)
-	stick_mode_row.custom_minimum_size = Vector2(0, 56)
-	var sml := Label.new()
-	sml.text = stick_label
-	sml.add_theme_font_size_override("font_size", 20)
-	sml.add_theme_color_override("font_color", COLOR_TITLE)
-	sml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stick_mode_row.add_child(sml)
-	var sm_opt := OptionButton.new()
-	sm_opt.custom_minimum_size = Vector2(160, 52)
-	sm_opt.add_theme_font_size_override("font_size", 18)
-	sm_opt.add_item("None",  0)
-	sm_opt.add_item("D-pad", 1)
 	var cur_stick_mode: String = str(_edit_lightgun_map.get("stick", "dpad"))
-	sm_opt.selected = 0 if cur_stick_mode == "none" else 1
-	sm_opt.item_selected.connect(func(idx: int) -> void:
-		_edit_lightgun_map["stick"] = "none" if idx == 0 else "dpad"
-	)
-	_controls_opts["gun:stick"] = sm_opt
-	stick_mode_row.add_child(sm_opt)
-	vbox.add_child(stick_mode_row)
+	vbox.add_child(_make_vr_dropdown_row(
+		"gun:stick", stick_label,
+		[["None", "none"], ["D-pad", "dpad"]],
+		cur_stick_mode,
+		func(v: Variant) -> void: _edit_lightgun_map["stick"] = v as String,
+		2
+	))
 
 	# ── Action buttons ────────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
@@ -1599,68 +1738,18 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	action_row.add_child(save_btn)
 
 
-## Build a single label + OptionButton row for a remapping entry.
-## key is stored in _controls_opts for later reset. options: Array of [label, id] pairs.
-## on_changed receives the selected id.
-func _make_mapping_row(key: String, label_text: String, options: Array, current_id: int, on_changed: Callable) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 56)
-
-	var lbl := Label.new()
-	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(lbl)
-
-	var opt := OptionButton.new()
-	opt.custom_minimum_size = Vector2(160, 52)
-	opt.add_theme_font_size_override("font_size", 18)
-	var selected_idx := 0
-	for i: int in range(options.size()):
-		var entry: Array = options[i]
-		opt.add_item(entry[0] as String, entry[1] as int)
-		if (entry[1] as int) == current_id:
-			selected_idx = i
-	opt.selected = selected_idx
-	opt.item_selected.connect(func(idx: int) -> void:
-		on_changed.call(options[idx][1] as int)
-	)
-	_controls_opts[key] = opt
-	row.add_child(opt)
-	return row
-
-
 func _on_controls_reset() -> void:
 	_edit_button_map   = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
 	_edit_stick_map    = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
 	_edit_lightgun_map = ControllerBindings.DEFAULT_LIGHTGUN_MAP.duplicate()
-	# Update each stored OptionButton to reflect the reset values.
 	for src: String in _BUTTON_SOURCE_ORDER:
-		var opt := _controls_opts.get("btn:" + src) as OptionButton
-		if opt == null: continue
-		var target_id: int = _edit_button_map.get(src, -1)
-		for i: int in range(_JOYPAD_OPTIONS.size()):
-			if (_JOYPAD_OPTIONS[i][1] as int) == target_id:
-				opt.selected = i
-				break
+		_reset_vr_dropdown("btn:" + src, _edit_button_map.get(src, -1))
 	for stick: String in ["stick_left", "stick_right"]:
-		var opt := _controls_opts.get("stick:" + stick) as OptionButton
-		if opt == null: continue
-		opt.selected = _stick_opt_idx(_edit_stick_map.get(stick, "left+dpad" if stick == "stick_left" else "right"))
+		var def := "left+dpad" if stick == "stick_left" else "right"
+		_reset_vr_dropdown("stick:" + stick, _edit_stick_map.get(stick, def))
 	for src: String in _LIGHTGUN_SOURCE_ORDER:
-		var opt := _controls_opts.get("gun:" + src) as OptionButton
-		if opt == null: continue
-		var target_id: int = _edit_lightgun_map.get(src, -1)
-		for i: int in range(_LIGHTGUN_OPTIONS.size()):
-			if (_LIGHTGUN_OPTIONS[i][1] as int) == target_id:
-				opt.selected = i
-				break
-	var sm_opt := _controls_opts.get("gun:stick") as OptionButton
-	if sm_opt:
-		var mode: String = str(_edit_lightgun_map.get("stick", "dpad"))
-		sm_opt.selected = 0 if mode == "none" else 1
+		_reset_vr_dropdown("gun:" + src, _edit_lightgun_map.get(src, -1))
+	_reset_vr_dropdown("gun:stick", str(_edit_lightgun_map.get("stick", "dpad")))
 
 
 func _on_controls_save_global() -> void:

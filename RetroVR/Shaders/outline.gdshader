@@ -19,7 +19,7 @@
 //
 shader_type spatial;
 render_mode cull_front, unshaded, blend_mix, depth_draw_never, depth_test_disabled;
-stencil_mode read, write, compare_not_equal, 1;
+stencil_mode read, compare_not_equal, 1;
 
 uniform vec4  outline_color  : source_color = vec4(0.25, 0.6, 1.0, 1.0);
 uniform float outline_width  : hint_range(0.0, 3.0) = 1.0;

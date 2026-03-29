@@ -3,11 +3,16 @@
 // The outline shader (pass 2, set as next_pass) only renders where stencil != 1,
 // i.e. outside the original mesh silhouette, producing a clean ring outline.
 shader_type spatial;
-render_mode cull_back, depth_draw_always, unshaded, blend_mix;
+render_mode cull_back, depth_draw_never, unshaded, blend_mix;
 stencil_mode write, compare_always, 1;
 
 void fragment() {
 	// Fully transparent — no color written to screen.
 	// Stencil value 1 is written for every pixel the mesh covers.
 	ALPHA = 0.0;
+}
+
+void vertex() {
+    // Shrink the mask slightly so it never touches the outer edge of the mesh
+    VERTEX *= 1.001; 
 }
