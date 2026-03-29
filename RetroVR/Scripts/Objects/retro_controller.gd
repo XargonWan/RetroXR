@@ -351,18 +351,11 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(_secondary_ctrl):
 		btn |= _apply_buttons_for_ctrl(_secondary_ctrl, _secondary_ctrl.tracker == &"left_hand")
 
-	# pstick = left-hand thumbstick; sstick = right-hand thumbstick.
-	var pstick: Vector2
-	var sstick: Vector2
-	if is_instance_valid(_secondary_ctrl):
-		# Two-hand: identify each hand regardless of which is _holding_ctrl.
-		var left_ctrl  := ctrl if left_hand else _secondary_ctrl
-		var right_ctrl := ctrl if not left_hand else _secondary_ctrl
-		pstick = left_ctrl.get_vector2("primary")
-		sstick = right_ctrl.get_vector2("primary")
-	else:
-		pstick = ctrl.get_vector2("primary")
-		sstick = ctrl.get_vector2("secondary")
+	# lstick = left hand's primary stick; rstick = right hand's primary stick.
+	var left_ctrl  := ctrl if left_hand else _secondary_ctrl
+	var right_ctrl := ctrl if not left_hand else _secondary_ctrl
+	var lstick: Vector2 = left_ctrl.get_vector2("primary") if is_instance_valid(left_ctrl) else Vector2.ZERO
+	var rstick: Vector2 = right_ctrl.get_vector2("primary") if is_instance_valid(right_ctrl) else Vector2.ZERO
 
 	var alx := 0; var aly := 0
 	var arx := 0; var ary := 0
@@ -372,13 +365,13 @@ func _process(_delta: float) -> void:
 	var lt: String = _stick_map.get("stick_left",  "left+dpad")
 	var rt: String = _stick_map.get("stick_right", "right")
 
-	if "left"  in lt: alx = int(pstick.x * ANALOG_SCALE); aly = int(-pstick.y * ANALOG_SCALE)
-	elif "right" in lt: arx = int(pstick.x * ANALOG_SCALE); ary = int(-pstick.y * ANALOG_SCALE)
-	if "dpad" in lt: btn |= _threshold_to_dpad(pstick)
+	if "left"  in lt: alx = int(lstick.x * ANALOG_SCALE); aly = int(-lstick.y * ANALOG_SCALE)
+	elif "right" in lt: arx = int(lstick.x * ANALOG_SCALE); ary = int(-lstick.y * ANALOG_SCALE)
+	if "dpad" in lt: btn |= _threshold_to_dpad(lstick)
 
-	if "right" in rt: arx = int(sstick.x * ANALOG_SCALE); ary = int(-sstick.y * ANALOG_SCALE)
-	elif "left" in rt: alx = int(sstick.x * ANALOG_SCALE); aly = int(-sstick.y * ANALOG_SCALE)
-	if "dpad" in rt: btn |= _threshold_to_dpad(sstick)
+	if "right" in rt: arx = int(rstick.x * ANALOG_SCALE); ary = int(-rstick.y * ANALOG_SCALE)
+	elif "left" in rt: alx = int(rstick.x * ANALOG_SCALE); aly = int(-rstick.y * ANALOG_SCALE)
+	if "dpad" in rt: btn |= _threshold_to_dpad(rstick)
 
 	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
 
