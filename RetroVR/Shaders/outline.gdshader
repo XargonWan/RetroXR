@@ -26,25 +26,21 @@ uniform float outline_width  : hint_range(0.0, 3.0) = 1.0;
 uniform float glow_strength  : hint_range(0.0, 8.0) = 2.0;
 uniform float fade_start     : hint_range(0.0, 10.0) = 0.0;
 uniform float fade_end       : hint_range(0.1, 50.0) = 10.0;
+// AABB center of this specific mesh in model space — set per-overlay by PickableHighlight.
+// Ensures expansion radiates from the visual center rather than the model origin,
+// which fixes non-centered pivots on complex models (e.g. the NES system GLB).
+uniform vec3  mesh_center    = vec3(0.0, 0.0, 0.0);
 
 varying float v_view_dist;
 
 void vertex() {
-	vec4 clip_pos    = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
-	vec4 clip_center = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0);
-
 	v_view_dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 
-	vec2 ndc_pos    = clip_pos.xy / clip_pos.w;
-	vec2 ndc_center = clip_center.xy / clip_center.w;
-	vec2 expand_dir = ndc_pos - ndc_center;
+	vec3 expand_dir = VERTEX - mesh_center;
 	float dir_len   = length(expand_dir);
-
 	if (dir_len > 1e-4) {
-		clip_pos.xy += (expand_dir / dir_len) * outline_width * 0.01 * clip_pos.w;
+		VERTEX += (expand_dir / dir_len) * outline_width * 0.005;
 	}
-
-	POSITION = clip_pos;
 }
 
 void fragment() {

@@ -33,10 +33,9 @@ const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdsha
 @export_range(0.0, 10.0, 0.1)   var fade_start: float = 0.0
 @export_range(0.1, 50.0, 0.1)   var fade_end: float = 10.0
 
-var _outline_material: ShaderMaterial
-var _depth_material: ShaderMaterial
 var _overlays: Array[MeshInstance3D] = []
-var _overlay_sources: Array[MeshInstance3D] = []  # parallel to _overlays
+var _overlay_sources: Array[MeshInstance3D] = []    # parallel to _overlays
+var _outline_materials: Array[ShaderMaterial] = []  # parallel to _overlays, one per mesh
 
 var _is_highlighted: bool = false
 var _is_ray_held:    bool = false
@@ -47,17 +46,6 @@ var _ray_grabber:    Node = null   # which XRToolsFunctionPickup is ray-holding 
 
 func _ready() -> void:
 	set_process(false)  # enabled only while overlays are visible
-	# Pass 2: the visible outline.
-	_outline_material = ShaderMaterial.new()
-	_outline_material.shader = OUTLINE_SHADER
-	_outline_material.render_priority = 2
-	_sync_material_params()
-
-	# Pass 1: invisible stencil write — marks every pixel the mesh covers with stencil=1.
-	_depth_material = ShaderMaterial.new()
-	_depth_material.shader = DEPTH_PREPASS_SHADER
-	_depth_material.render_priority = 1
-	_depth_material.next_pass = _outline_material
 
 	var parent := get_parent()
 	if parent and parent.has_signal("highlight_updated"):
@@ -90,6 +78,7 @@ func rebuild_overlays() -> void:
 			overlay.queue_free()
 	_overlays.clear()
 	_overlay_sources.clear()
+	_outline_materials.clear()
 
 	var parent := get_parent()
 	if not parent:
@@ -105,16 +94,35 @@ func _collect_mesh_overlays(node: Node) -> void:
 			continue
 		if child is MeshInstance3D and not child.is_in_group("outline_exclude"):
 			var src := child as MeshInstance3D
+
+			# Per-overlay material pair so each mesh can have its own mesh_center.
+			var outline_mat := ShaderMaterial.new()
+			outline_mat.shader = OUTLINE_SHADER
+			outline_mat.render_priority = 2
+			outline_mat.set_shader_parameter("outline_color", hover_color)
+			outline_mat.set_shader_parameter("outline_width", outline_width)
+			outline_mat.set_shader_parameter("glow_strength", glow_strength)
+			outline_mat.set_shader_parameter("fade_start", fade_start)
+			outline_mat.set_shader_parameter("fade_end", fade_end)
+			if src.mesh:
+				outline_mat.set_shader_parameter("mesh_center", src.mesh.get_aabb().get_center())
+
+			var depth_mat := ShaderMaterial.new()
+			depth_mat.shader = DEPTH_PREPASS_SHADER
+			depth_mat.render_priority = 1
+			depth_mat.next_pass = outline_mat
+
 			var overlay := MeshInstance3D.new()
 			overlay.mesh = src.mesh
 			overlay.transform = parent_inv * src.global_transform
-			overlay.material_override = _depth_material
+			overlay.material_override = depth_mat
 			overlay.visible = false
 			overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			overlay.extra_cull_margin = 16.0
 			add_child(overlay)
 			_overlays.append(overlay)
 			_overlay_sources.append(src)
+			_outline_materials.append(outline_mat)
 		_collect_mesh_overlays(child)
 
 
@@ -213,14 +221,14 @@ func _process(_delta: float) -> void:
 
 
 func _set_color(color: Color) -> void:
-	_outline_material.set_shader_parameter("outline_color", color)
+	for mat in _outline_materials:
+		mat.set_shader_parameter("outline_color", color)
 
 
 func _sync_material_params() -> void:
-	if not _outline_material:
-		return
-	_outline_material.set_shader_parameter("outline_color", hover_color)
-	_outline_material.set_shader_parameter("outline_width", outline_width)
-	_outline_material.set_shader_parameter("glow_strength", glow_strength)
-	_outline_material.set_shader_parameter("fade_start", fade_start)
-	_outline_material.set_shader_parameter("fade_end", fade_end)
+	for mat in _outline_materials:
+		mat.set_shader_parameter("outline_color", hover_color)
+		mat.set_shader_parameter("outline_width", outline_width)
+		mat.set_shader_parameter("glow_strength", glow_strength)
+		mat.set_shader_parameter("fade_start", fade_start)
+		mat.set_shader_parameter("fade_end", fade_end)
