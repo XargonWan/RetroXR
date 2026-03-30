@@ -81,7 +81,7 @@ mesh = SubResource("QuadMesh_screen")
 surface_material_override/0 = SubResource("Mat_screen")
 
 [node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.15, -0.15, -0.14)
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.15, -0.15, -0.16002099)
 grab_distance = 0.06
 snap_require = "composite_plug"
 
