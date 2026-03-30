@@ -2,6 +2,13 @@
 ## While held and plugged in: casts a ray from the barrel to the TV screen each
 ## frame and reports the hit position as libretro lightgun coordinates.
 ## Button mappings are data-driven via ControllerBindings.
+##
+## Desktop mode (grabbed by DesktopHand group):
+##   desktop_fps_snap = true  → desktop_pickup.gd locks the gun to the camera
+##   lower-right (FPS weapon view).  Aiming uses the camera centre ray so the
+##   crosshair reticle always matches where the gun is pointing.
+##   Trigger  = left mouse button  (trigger_left action)
+##   Aux/dpad = RETRO_JOYPAD_* keyboard actions
 class_name RayGun
 extends XRToolsPickable
 
@@ -18,6 +25,18 @@ const INPUT_THRESHOLDS: Dictionary = {
 	"by_button":     0.5,
 	"primary_click": 0.5,
 }
+
+## Desktop lightgun button map: Godot action name → LIGHTGUN_* id.
+const DESKTOP_LIGHTGUN_BUTTONS: Dictionary = {
+	"trigger_left":        ControllerBindings.LIGHTGUN_TRIGGER,
+	"RETRO_JOYPAD_A":      ControllerBindings.LIGHTGUN_AUX_A,
+	"RETRO_JOYPAD_B":      ControllerBindings.LIGHTGUN_AUX_B,
+	"RETRO_JOYPAD_START":  ControllerBindings.LIGHTGUN_START,
+	"RETRO_JOYPAD_SELECT": ControllerBindings.LIGHTGUN_SELECT,
+}
+
+## Set true so desktop_pickup.gd uses FPS-snap positioning instead of ray-hold.
+var desktop_fps_snap: bool = true
 
 ## libretro device type reported to the system when plugged in.
 var device_type: int = RETRO_DEVICE_LIGHTGUN
@@ -46,10 +65,13 @@ var _screen_mesh: MeshInstance3D = null
 var _screen_w: float = 0.0
 var _screen_h: float = 0.0
 
-# Toggle-hold state
+# Toggle-hold state (VR)
 var _allow_drop := false
 var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null
+
+# Desktop-hold state
+var _desktop_held: bool = false
 
 var _locomotion_manager: LocomotionManager = null
 var _spawn_menu_ctrl: Node = null
@@ -91,6 +113,10 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	var pickup := by as XRToolsFunctionPickup
 	var ctrl := pickup.get_controller() if pickup else null as XRController3D
 	if ctrl == null:
+		# Desktop pickup: just flag desktop-held mode, don't set up VR toggle-hold
+		if by.is_in_group("desktop_hand"):
+			_desktop_held = true
+			_laser_dot.visible = _connected_system != null and show_laser_dot
 		return
 	_saved_by = by
 	_holding_ctrl = ctrl
@@ -106,6 +132,8 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 		_allow_drop = false
 		_saved_by = null
 		_holding_ctrl = null
+		_desktop_held = false
+		_laser_dot.visible = false
 		_update_locomotion_block()
 
 
@@ -265,7 +293,7 @@ func restore_port_connection(system: RetroSystem, port_index: int) -> void:
 # ── Input forwarding ──────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
-	# Drop combo.
+	# VR drop combo (desktop drop is handled by desktop_pickup via left click)
 	if _is_combo_pressed(_holding_ctrl):
 		_drop_all()
 		return
@@ -275,6 +303,12 @@ func _process(_delta: float) -> void:
 
 	var libretro := _connected_system.get_libretro_node()
 
+	# Desktop mode: aim from camera centre, read keyboard/mouse for buttons
+	if _desktop_held:
+		_process_desktop_lightgun(libretro)
+		return
+
+	# VR mode: no controller held → report offscreen and clear buttons
 	if not is_instance_valid(_holding_ctrl):
 		libretro.SetLightgunIsOffscreen(_port_index, true)
 		for vr_source: String in _lightgun_map:
@@ -312,6 +346,28 @@ func _process(_delta: float) -> void:
 	_update_aim(libretro)
 
 
+## Desktop: read keyboard+mouse, aim from camera centre ray.
+func _process_desktop_lightgun(libretro: Libretro) -> void:
+	# Buttons
+	for action: String in DESKTOP_LIGHTGUN_BUTTONS:
+		var lid: int = DESKTOP_LIGHTGUN_BUTTONS[action]
+		if lid >= 0:
+			libretro.SetLightgunButton(_port_index, lid, Input.is_action_pressed(action))
+
+	# D-pad from WASD/retro joypad actions
+	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_UP,
+		Input.is_action_pressed("RETRO_JOYPAD_UP"))
+	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_DOWN,
+		Input.is_action_pressed("RETRO_JOYPAD_DOWN"))
+	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_LEFT,
+		Input.is_action_pressed("RETRO_JOYPAD_LEFT"))
+	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_RIGHT,
+		Input.is_action_pressed("RETRO_JOYPAD_RIGHT"))
+
+	_update_aim_desktop(libretro)
+
+
+## VR aim: ray from barrel tip along barrel -Z.
 func _update_aim(libretro: Libretro) -> void:
 	if _screen_mesh == null or _screen_w == 0.0:
 		libretro.SetLightgunIsOffscreen(_port_index, true)
@@ -323,6 +379,40 @@ func _update_aim(libretro: Libretro) -> void:
 	var plane := Plane(screen_normal, screen_transform.origin)
 	var ray_origin := _barrel_tip.global_position
 	var ray_dir := -_barrel_tip.global_transform.basis.z
+
+	_apply_aim_hit(libretro, plane, screen_transform, screen_normal, ray_origin, ray_dir)
+
+
+## Desktop aim: ray from camera centre along camera -Z (matches the crosshair).
+func _update_aim_desktop(libretro: Libretro) -> void:
+	if _screen_mesh == null or _screen_w == 0.0:
+		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_laser_dot.visible = false
+		return
+
+	var cam := get_viewport().get_camera_3d()
+	if not is_instance_valid(cam):
+		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_laser_dot.visible = false
+		return
+
+	var screen_transform := _screen_mesh.global_transform
+	var screen_normal := screen_transform.basis.z
+	var plane := Plane(screen_normal, screen_transform.origin)
+	var ray_origin := cam.global_position
+	var ray_dir := -cam.global_transform.basis.z
+
+	_apply_aim_hit(libretro, plane, screen_transform, screen_normal, ray_origin, ray_dir)
+
+
+## Shared hit-test and coordinate conversion for both VR and desktop aim.
+func _apply_aim_hit(
+		libretro: Libretro,
+		plane: Plane,
+		screen_transform: Transform3D,
+		screen_normal: Vector3,
+		ray_origin: Vector3,
+		ray_dir: Vector3) -> void:
 
 	var hit: Variant = plane.intersects_ray(ray_origin, ray_dir)
 
@@ -347,4 +437,4 @@ func _update_aim(libretro: Libretro) -> void:
 	libretro.SetLightgunIsOffscreen(_port_index, false)
 
 	_laser_dot.visible = show_laser_dot
-	_laser_dot.global_position = hit + screen_normal * 0.002
+	_laser_dot.global_position = (hit as Vector3) + screen_normal * 0.002

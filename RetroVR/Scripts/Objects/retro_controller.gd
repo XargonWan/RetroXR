@@ -47,6 +47,27 @@ var _allow_drop := false
 var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null    # primary holder (official XRTools)
 var _secondary_ctrl: XRController3D = null  # second hand tracked manually
+var _desktop_held: bool = false
+
+## Keyboard action → RETRO_JOYPAD bit index for desktop mode.
+const DESKTOP_BUTTON_MAP: Dictionary = {
+	"RETRO_JOYPAD_B":      ControllerBindings.JOYPAD_B,
+	"RETRO_JOYPAD_Y":      ControllerBindings.JOYPAD_Y,
+	"RETRO_JOYPAD_SELECT": ControllerBindings.JOYPAD_SELECT,
+	"RETRO_JOYPAD_START":  ControllerBindings.JOYPAD_START,
+	"RETRO_JOYPAD_UP":     ControllerBindings.JOYPAD_UP,
+	"RETRO_JOYPAD_DOWN":   ControllerBindings.JOYPAD_DOWN,
+	"RETRO_JOYPAD_LEFT":   ControllerBindings.JOYPAD_LEFT,
+	"RETRO_JOYPAD_RIGHT":  ControllerBindings.JOYPAD_RIGHT,
+	"RETRO_JOYPAD_A":      ControllerBindings.JOYPAD_A,
+	"RETRO_JOYPAD_X":      ControllerBindings.JOYPAD_X,
+	"RETRO_JOYPAD_L":      ControllerBindings.JOYPAD_L,
+	"RETRO_JOYPAD_R":      ControllerBindings.JOYPAD_R,
+	"RETRO_JOYPAD_L2":     ControllerBindings.JOYPAD_L2,
+	"RETRO_JOYPAD_R2":     ControllerBindings.JOYPAD_R2,
+	"RETRO_JOYPAD_L3":     ControllerBindings.JOYPAD_L3,
+	"RETRO_JOYPAD_R3":     ControllerBindings.JOYPAD_R3,
+}
 
 var _locomotion_manager: LocomotionManager = null
 var _spawn_menu_ctrl: Node = null
@@ -150,6 +171,8 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	var pickup := by as XRToolsFunctionPickup
 	var ctrl := pickup.get_controller() if pickup else null as XRController3D
 	if ctrl == null:
+		if by.is_in_group("desktop_hand"):
+			_desktop_held = true
 		return
 
 	if is_instance_valid(_holding_ctrl) and _holding_ctrl != ctrl:
@@ -173,6 +196,7 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 		_saved_by = null
 		_holding_ctrl = null
 		_secondary_ctrl = null
+		_desktop_held = false
 		_update_locomotion_block()
 
 
@@ -337,6 +361,10 @@ func _process(_delta: float) -> void:
 	if _connected_system == null or _port_index < 0:
 		return
 
+	if _desktop_held:
+		_process_desktop_joypad()
+		return
+
 	if not is_instance_valid(_holding_ctrl):
 		_connected_system.get_libretro_node().SetJoypadState(_port_index, 0, 0, 0, 0, 0)
 		return
@@ -372,6 +400,26 @@ func _process(_delta: float) -> void:
 	if "right" in rt: arx = int(rstick.x * ANALOG_SCALE); ary = int(-rstick.y * ANALOG_SCALE)
 	elif "left" in rt: alx = int(rstick.x * ANALOG_SCALE); aly = int(-rstick.y * ANALOG_SCALE)
 	if "dpad" in rt: btn |= _threshold_to_dpad(rstick)
+
+	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
+
+
+func _process_desktop_joypad() -> void:
+	var btn: int = 0
+	for action: String in DESKTOP_BUTTON_MAP:
+		var bit: int = DESKTOP_BUTTON_MAP[action]
+		if Input.is_action_pressed(action):
+			btn |= (1 << bit)
+
+	# Left stick from RETRO_ANALOG_LEFT_* actions; Y negated to match VR convention.
+	var lx := Input.get_axis("RETRO_ANALOG_LEFT_X_NEGATIVE",  "RETRO_ANALOG_LEFT_X_POSITIVE")
+	var ly := Input.get_axis("RETRO_ANALOG_LEFT_Y_NEGATIVE",  "RETRO_ANALOG_LEFT_Y_POSITIVE")
+	var rx := Input.get_axis("RETRO_ANALOG_RIGHT_X_NEGATIVE", "RETRO_ANALOG_RIGHT_X_POSITIVE")
+	var ry := Input.get_axis("RETRO_ANALOG_RIGHT_Y_NEGATIVE", "RETRO_ANALOG_RIGHT_Y_POSITIVE")
+	var alx := int(lx * ANALOG_SCALE)
+	var aly := int(-ly * ANALOG_SCALE)
+	var arx := int(rx * ANALOG_SCALE)
+	var ary := int(-ry * ANALOG_SCALE)
 
 	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
 
