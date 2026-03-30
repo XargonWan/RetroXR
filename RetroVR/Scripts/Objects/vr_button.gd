@@ -17,13 +17,13 @@ signal button_pressed
 ## How much the mesh travels when pressed (metres)
 @export var depress_depth: float = 0.008
 
-## Direction the mesh moves when pressed, in the mesh's LOCAL space.
-## Default (0,-1,0) pushes down on Y.  For front-face buttons use (0,0,-1) or
-## derive it from the model's Finger Button empty's -Z axis via set_depress_axis_from_node().
+## Direction the mesh moves when pressed, in WORLD space (unit vector).
+## Default (0,-1,0) pushes down on Y.  For front-face buttons derive it from
+## the model's Finger Button empty's -Z axis via set_depress_axis_from_node().
 @export var depress_axis: Vector3 = Vector3(0, -1, 0)
 
-# Cached original local position of ButtonMesh
-var _mesh_origin: Vector3
+# Cached original GLOBAL position of the active mesh
+var _mesh_global_origin: Vector3
 
 # Whether the button is currently held down
 var _is_pressed: bool = false
@@ -35,7 +35,7 @@ var _controllers: Array[XRController3D] = []
 
 
 func _ready() -> void:
-	_mesh_origin = _mesh.position
+	_mesh_global_origin = _mesh.global_position
 	# Controllers aren't added until the first frame, so wait one frame
 	await get_tree().process_frame
 	# Find all XRController3D nodes in the scene by type
@@ -60,11 +60,11 @@ func _process(_delta: float) -> void:
 
 	if touching and not _is_pressed:
 		_is_pressed = true
-		_mesh.position = _mesh_origin + depress_axis.normalized() * depress_depth
+		_mesh.global_position = _mesh_global_origin + depress_axis.normalized() * depress_depth
 		button_pressed.emit()
 	elif not touching and _is_pressed:
 		_is_pressed = false
-		_mesh.position = _mesh_origin
+		_mesh.global_position = _mesh_global_origin
 
 
 ## Swap the mesh used for the depress animation and hide the original ButtonMesh child.
@@ -74,7 +74,7 @@ func set_button_mesh(mesh: MeshInstance3D) -> void:
 	if old:
 		old.hide()
 	_mesh = mesh
-	_mesh_origin = mesh.position
+	_mesh_global_origin = mesh.global_position
 
 
 ## Derive the depress axis from a GLB "Finger Button" empty node.
@@ -82,10 +82,7 @@ func set_button_mesh(mesh: MeshInstance3D) -> void:
 ## of travel.  This converts that to the button mesh's local space.
 func set_depress_axis_from_node(finger_node: Node3D) -> void:
 	# Global -Z of the finger empty = travel direction in world space
-	var world_dir := -finger_node.global_transform.basis.z
-	# Convert to the button mesh's local space
-	if _mesh:
-		depress_axis = _mesh.global_transform.basis.inverse() * world_dir
+	depress_axis = -finger_node.global_transform.basis.z.normalized()
 
 
 ## Set the button's visual color by changing its material albedo

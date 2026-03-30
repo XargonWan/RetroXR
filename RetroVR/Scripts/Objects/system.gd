@@ -123,7 +123,9 @@ func _load_system_model() -> void:
 	_model.configure_cartridge_slot(_cartridge_slot)
 	var port_count := _model.get_controller_port_count()
 	for i in range(_port_zones.size()):
-		_port_zones[i].visible = i < port_count
+		var active := i < port_count
+		_port_zones[i].visible = active
+		_port_zones[i].enabled = active
 
 
 ## Enable or disable libretro input polling for this system.
