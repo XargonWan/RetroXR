@@ -1,9 +1,8 @@
 ## DesktopPickup — mouse-driven object pickup for desktop (non-VR) mode.
 ##
 ## Attach to XRCamera3D.  When XR is not active:
-##   Right-click       — toggle grab: click to pick up, click again to drop.
-##                       Left-click is intentionally NOT used for grab/drop so
-##                       it remains free as the lightgun trigger.
+##   Left-click             — pick up the XRToolsPickable under the cursor.
+##   Ctrl + Left-click      — drop the currently held object.
 ##   Scroll up/down    — push/pull the held object along the camera ray.
 ##                       (Disabled for FPS-snap objects.)
 ##   Middle-mouse drag — rotate the held object in place.
@@ -75,11 +74,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mbe := event as InputEventMouseButton
 		match mbe.button_index:
-			MOUSE_BUTTON_RIGHT:
-				# Toggle grab/drop.  Right-click is used so left-click stays
-				# free as the lightgun/action trigger.
+			MOUSE_BUTTON_LEFT:
 				if mbe.pressed:
-					_try_grab()
+					if _held_object and mbe.ctrl_pressed:
+						# Ctrl+click drops the held object.
+						_drop()
+						get_viewport().set_input_as_handled()
+					elif not _held_object:
+						# Plain click picks up; ignored when already holding so
+						# left-click remains free as the lightgun/action trigger.
+						_try_grab()
 
 			MOUSE_BUTTON_MIDDLE:
 				_middle_held = mbe.pressed
