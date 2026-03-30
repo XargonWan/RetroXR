@@ -148,12 +148,8 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var glb := get_child(0)
 	var socket := glb.find_child("System Socket", true, false)
 	if socket:
-		slot.global_rotation = socket.global_rotation
+		slot.global_position = socket.global_position
 		_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
-		if _nes_cradle:
-			slot.global_position = socket.global_position + _nes_cradle.global_transform.basis * CARTRIDGE_SLOT_OFFSET
-		else:
-			slot.global_position = socket.global_position
 	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if slot_visual:
 		slot_visual.hide()
