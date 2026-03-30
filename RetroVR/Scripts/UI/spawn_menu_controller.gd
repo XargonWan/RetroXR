@@ -170,6 +170,29 @@ func _connect_menu_signals() -> void:
 
 # ── Button handler ────────────────────────────────────────────────────────────
 
+func _unhandled_input(event: InputEvent) -> void:
+	# Desktop: Tab toggles the spawn menu
+	if event.is_action_pressed("desktop_spawn_menu"):
+		if not disabled:
+			_toggle_menu()
+		get_viewport().set_input_as_handled()
+		return
+
+	# Desktop: scroll wheel scrolls the visible spawn menu (when no object is held)
+	if _viewport_node.visible and event is InputEventMouseButton:
+		var mbe := event as InputEventMouseButton
+		var scroll_px := 0.0
+		if mbe.button_index == MOUSE_BUTTON_WHEEL_UP:
+			scroll_px = -_SCROLL_SPEED * 0.016
+		elif mbe.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			scroll_px =  _SCROLL_SPEED * 0.016
+		if scroll_px != 0.0:
+			var menu := _get_menu()
+			if menu:
+				menu.scroll_active(scroll_px)
+			get_viewport().set_input_as_handled()
+
+
 func _on_controller_button(action_name: String) -> void:
 	if action_name == "primary_click":
 		var sys := _get_pointed_system(_left_pointer)

@@ -12,6 +12,11 @@ func _ready():
 			var best: float = supported_rates.max()
 			xr_interface.set_display_refresh_rate(best)
 			print("XRInit: display refresh rate set to %s Hz (available: %s)" % [best, supported_rates])
+		# Enable XR rendering — this also signals desktop support nodes to disable
+		# themselves (xr_start_shim.gd returns get_viewport().use_xr).
 		get_viewport().use_xr = true
+		print("XRInit: VR mode active")
 	else:
-		push_warning("OpenXR not initialized, running in flat screen mode")
+		push_warning("OpenXR not initialized — desktop mode active")
+		# Ensure the window starts with a sensible resolution for desktop play
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)

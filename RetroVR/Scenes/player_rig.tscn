@@ -13,44 +13,73 @@
 [ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="11_spawnmenu"]
 [ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="12_inputmapper"]
 [ext_resource type="Script" uid="uid://cwwam004ra1i" path="res://Scripts/locomotion_manager.gd" id="13_locomotionmgr"]
+[ext_resource type="Script" path="res://Scripts/xr_staging_shim.gd" id="14_stagingshim"]
+[ext_resource type="Script" path="res://Scripts/xr_start_shim.gd" id="15_startshim"]
+[ext_resource type="PackedScene" uid="uid://6uusxts6n6gm" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_direct.tscn" id="16_desktopdirect"]
+[ext_resource type="PackedScene" uid="uid://c4d13r420hnx2" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_turn.tscn" id="17_desktopturn"]
+[ext_resource type="PackedScene" uid="uid://bkse5rxsx5tb3" path="res://addons/godot-xr-tools/desktop-support/mouse_capture.tscn" id="18_mousecapture"]
+[ext_resource type="PackedScene" uid="uid://chb848dtavews" path="res://addons/godot-xr-tools/desktop-support/controller_hider.tscn" id="19_ctrlhider"]
+[ext_resource type="PackedScene" uid="uid://42xbeno6pt3y" path="res://addons/godot-xr-tools/desktop-support/function_desktop_pointer.tscn" id="20_deskpointer"]
+[ext_resource type="Script" path="res://Scripts/desktop_pickup.gd" id="21_desktoppickup"]
+[ext_resource type="PackedScene" path="res://Scenes/UI/desktop_reticle.tscn" id="22_reticle"]
 
 [node name="PlayerRig" type="Node3D"]
 
-[node name="XROrigin3D" type="XROrigin3D" parent="."]
+[node name="Staging" type="Node3D" parent="."]
+script = ExtResource("14_stagingshim")
+
+[node name="StartXR" type="Node" parent="Staging"]
+script = ExtResource("15_startshim")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="Staging"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
 
-[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+[node name="XRCamera3D" type="XRCamera3D" parent="Staging/XROrigin3D"]
+script = ExtResource("21_desktoppickup")
 
-[node name="PlayerBody" parent="XROrigin3D" instance=ExtResource("4_playerbody")]
+[node name="FunctionDesktopPointer" parent="Staging/XROrigin3D/XRCamera3D" instance=ExtResource("20_deskpointer")]
+
+[node name="PlayerBody" parent="Staging/XROrigin3D" instance=ExtResource("4_playerbody")]
 player_calibrate_height = false
 
-[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+[node name="MovementDesktopDirect" parent="Staging/XROrigin3D" instance=ExtResource("16_desktopdirect")]
+strafe = true
+
+[node name="MovementDesktopTurn" parent="Staging/XROrigin3D" instance=ExtResource("17_desktopturn")]
+
+[node name="MouseCapture" parent="Staging/XROrigin3D" instance=ExtResource("18_mousecapture")]
+
+[node name="LeftController" type="XRController3D" parent="Staging/XROrigin3D"]
 tracker = &"left_hand"
 script = ExtResource("1_ctrlmodel")
 
-[node name="FunctionPickup" parent="XROrigin3D/LeftController" instance=ExtResource("2_pickup")]
+[node name="ControllerHider" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("19_ctrlhider")]
+
+[node name="FunctionPickup" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("2_pickup")]
 ranged_enable = false
 
-[node name="FunctionPointer" parent="XROrigin3D/LeftController" instance=ExtResource("3_pointer")]
+[node name="FunctionPointer" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("3_pointer")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
 
-[node name="MovementDirect" parent="XROrigin3D/LeftController" instance=ExtResource("5_movdirect")]
+[node name="MovementDirect" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("5_movdirect")]
 strafe = true
 
-[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+[node name="RightController" type="XRController3D" parent="Staging/XROrigin3D"]
 tracker = &"right_hand"
 script = ExtResource("1_ctrlmodel")
 
-[node name="FunctionPickup" parent="XROrigin3D/RightController" instance=ExtResource("2_pickup")]
+[node name="ControllerHider" parent="Staging/XROrigin3D/RightController" instance=ExtResource("19_ctrlhider")]
+
+[node name="FunctionPickup" parent="Staging/XROrigin3D/RightController" instance=ExtResource("2_pickup")]
 ranged_enable = false
 
-[node name="FunctionPointer" parent="XROrigin3D/RightController" instance=ExtResource("3_pointer")]
+[node name="FunctionPointer" parent="Staging/XROrigin3D/RightController" instance=ExtResource("3_pointer")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.05, -0.1)
 
-[node name="MovementTurn" parent="XROrigin3D/RightController" instance=ExtResource("6_movturn")]
+[node name="MovementTurn" parent="Staging/XROrigin3D/RightController" instance=ExtResource("6_movturn")]
 turn_mode = 1
 
-[node name="FunctionTeleport" parent="XROrigin3D/RightController" instance=ExtResource("7_teleport")]
+[node name="FunctionTeleport" parent="Staging/XROrigin3D/RightController" instance=ExtResource("7_teleport")]
 script = ExtResource("8_stickteleport")
 stick_teleport_action = "primary"
 stick_teleport_threshold = 0.6
@@ -65,6 +94,8 @@ scene = ExtResource("11_spawnmenu")
 viewport_size = Vector2(1800, 1500)
 transparent = 1
 scene_properties_keys = PackedStringArray("spawn_menu.gd")
+
+[node name="DesktopReticle" parent="." instance=ExtResource("22_reticle")]
 
 [node name="LocomotionManager" type="Node" parent="."]
 script = ExtResource("13_locomotionmgr")

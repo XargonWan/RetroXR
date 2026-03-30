@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://desktop_reticle" path="res://Scripts/desktop_reticle.gd" id="1_reticle"]
+
+[node name="DesktopReticle" type="CanvasLayer"]
+layer = 128
+
+[node name="Crosshair" type="Control" parent="."]
+script = ExtResource("1_reticle")
