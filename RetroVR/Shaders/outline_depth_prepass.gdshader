@@ -3,7 +3,7 @@
 // The outline shader (pass 2, set as next_pass) only renders where stencil != 1,
 // i.e. outside the original mesh silhouette, producing a clean ring outline.
 shader_type spatial;
-render_mode cull_back, depth_draw_never, unshaded, blend_mix;
+render_mode cull_back, depth_draw_never, depth_test_disabled, unshaded, blend_mix;
 stencil_mode write, compare_always, 1;
 
 void fragment() {
