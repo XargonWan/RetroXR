@@ -10,13 +10,15 @@
 ## picked_up/grabbed signals entirely and only emits has_picked_up on the pickup
 ## function node. Hand-grab emits picked_up/dropped on the pickable as normal.
 ##
-## Uses a two-pass real-stencil technique (no SubViewport, works in VR stereo).
-## See outline.gdshader for a detailed explanation.
+## Uses a single-pass cull_front outline technique (no stencil, no prepass).
+## Each overlay renders at render_priority=1; the source meshes write depth first
+## at priority 0. Interior back faces fail the depth test and disappear naturally.
+## Multiple overlays on complex objects (e.g. NES with 25 sub-meshes) compose
+## correctly because they all share the same depth buffer.
 class_name PickableHighlight
 extends Node3D
 
-const OUTLINE_SHADER       := preload("res://Shaders/outline.gdshader")
-const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdshader")
+const OUTLINE_SHADER := preload("res://Shaders/outline.gdshader")
 
 ## Color shown while the pointer ray is hovering over the object.
 @export var hover_color: Color = Color(1.0, 1.0, 1.0, 1.0)
@@ -27,25 +29,29 @@ const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdsha
 ## Color shown while the object is inside a TrashCan detection area (overrides held colour).
 @export var trash_color: Color = Color(1.0, 0.15, 0.15, 1.0)
 
-## Outline thickness — screen-space, consistent at any distance.
-@export_range(0.0, 3.0, 0.1)    var outline_width: float = 1.0
-@export_range(0.0, 8.0, 0.1)    var glow_strength: float = 2.0
-@export_range(0.0, 10.0, 0.1)   var fade_start: float = 0.0
-@export_range(0.1, 50.0, 0.1)   var fade_end: float = 10.0
+@export_range(0.0, 3.0, 0.1)  var outline_width: float = 1.0
+@export_range(0.0, 8.0, 0.1)  var glow_strength: float = 2.0
+@export_range(0.0, 10.0, 0.1) var fade_start: float = 0.0
+@export_range(0.1, 50.0, 0.1) var fade_end: float = 10.0
 
 var _overlays: Array[MeshInstance3D] = []
-var _overlay_sources: Array[MeshInstance3D] = []    # parallel to _overlays
-var _outline_materials: Array[ShaderMaterial] = []  # parallel to _overlays, one per mesh
+var _overlay_sources: Array[MeshInstance3D] = []  # parallel to _overlays
+var _outline_material: ShaderMaterial = null      # shared — all overlays use the same instance
 
 var _is_highlighted: bool = false
 var _is_ray_held:    bool = false
 var _is_hand_held:   bool = false
 var _is_in_trash:    bool = false
-var _ray_grabber:    Node = null   # which XRToolsFunctionPickup is ray-holding us
+var _ray_grabber:    Node = null
 
 
 func _ready() -> void:
-	set_process(false)  # enabled only while overlays are visible
+	set_process(false)
+
+	_outline_material = ShaderMaterial.new()
+	_outline_material.shader = OUTLINE_SHADER
+	_outline_material.render_priority = 1
+	_sync_material_params()
 
 	var parent := get_parent()
 	if parent and parent.has_signal("highlight_updated"):
@@ -54,80 +60,49 @@ func _ready() -> void:
 		push_warning("PickableHighlight: parent has no highlight_updated signal")
 		return
 
-	# Hand-grab path: use grabbed(pickable, by) so we can filter out snap-zone
-	# pickups — snap zones also call pick_up() which would otherwise set
-	# _is_hand_held and leave the item permanently outlined while slotted.
 	if parent.has_signal("grabbed"):
 		parent.grabbed.connect(_on_grabbed)
 	if parent.has_signal("dropped"):
 		parent.dropped.connect(_on_hand_dropped)
 
-	# Ray-grab path: connect deferred so the full scene tree is available.
 	_connect_pickup_nodes.call_deferred()
-	_build_overlays.call_deferred()
+	rebuild_overlays.call_deferred()
 
 
-func _build_overlays() -> void:
-	rebuild_overlays()
-
-
-## Rebuild overlays from scratch — call this after the parent's meshes are resized or replaced.
+## Rebuild overlays from scratch — call this after the parent's meshes change.
 func rebuild_overlays() -> void:
 	for overlay in _overlays:
 		if is_instance_valid(overlay):
 			overlay.queue_free()
 	_overlays.clear()
 	_overlay_sources.clear()
-	_outline_materials.clear()
 
 	var parent := get_parent()
-	if not parent:
-		return
-
-	_collect_mesh_overlays(parent)
+	if parent:
+		_collect_overlays(parent)
 
 
-func _collect_mesh_overlays(node: Node) -> void:
-	var parent_inv: Transform3D = (get_parent() as Node3D).global_transform.affine_inverse()
+func _collect_overlays(node: Node) -> void:
+	var parent_inv := (get_parent() as Node3D).global_transform.affine_inverse()
 	for child in node.get_children():
 		if child == self:
 			continue
 		if child is MeshInstance3D and not child.is_in_group("outline_exclude"):
 			var src := child as MeshInstance3D
-
-			# Per-overlay material pair so each mesh can have its own mesh_center.
-			var outline_mat := ShaderMaterial.new()
-			outline_mat.shader = OUTLINE_SHADER
-			outline_mat.render_priority = 2
-			outline_mat.set_shader_parameter("outline_color", hover_color)
-			outline_mat.set_shader_parameter("outline_width", outline_width)
-			outline_mat.set_shader_parameter("glow_strength", glow_strength)
-			outline_mat.set_shader_parameter("fade_start", fade_start)
-			outline_mat.set_shader_parameter("fade_end", fade_end)
-			if src.mesh:
-				outline_mat.set_shader_parameter("mesh_center", src.mesh.get_aabb().get_center())
-
-			var depth_mat := ShaderMaterial.new()
-			depth_mat.shader = DEPTH_PREPASS_SHADER
-			depth_mat.render_priority = 1
-			depth_mat.next_pass = outline_mat
-
 			var overlay := MeshInstance3D.new()
 			overlay.mesh = src.mesh
 			overlay.transform = parent_inv * src.global_transform
-			overlay.material_override = depth_mat
+			overlay.material_override = _outline_material
 			overlay.visible = false
 			overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			overlay.extra_cull_margin = 16.0
 			add_child(overlay)
 			_overlays.append(overlay)
 			_overlay_sources.append(src)
-			_outline_materials.append(outline_mat)
-		_collect_mesh_overlays(child)
+		_collect_overlays(child)
 
 
 func _connect_pickup_nodes() -> void:
-	# Find every XRToolsFunctionPickup in the scene and hook its ray-grab signals.
 	for node in get_tree().root.find_children("*", "XRToolsFunctionPickup", true, false):
 		node.has_picked_up.connect(_on_ray_picked_up.bind(node))
 		node.has_dropped.connect(_on_ray_dropped.bind(node))
@@ -200,22 +175,21 @@ func set_trash_mode(in_trash: bool) -> void:
 
 func _set_overlays_visible(show: bool) -> void:
 	set_process(show)
+	var parent_inv := (get_parent() as Node3D).global_transform.affine_inverse()
 	for i in range(_overlays.size()):
 		var overlay := _overlays[i]
 		if not is_instance_valid(overlay):
 			continue
 		if show and i < _overlay_sources.size() and is_instance_valid(_overlay_sources[i]):
 			var src := _overlay_sources[i]
-			overlay.transform = src.transform
+			overlay.transform = parent_inv * src.global_transform
 			overlay.visible = src.is_visible_in_tree()
 		else:
 			overlay.visible = false
 
 
 func _process(_delta: float) -> void:
-	# Only runs while overlays are active (set_process toggles this).
-	# Keeps overlay mesh, transform, and visibility in sync with source meshes.
-	var parent_inv: Transform3D = (get_parent() as Node3D).global_transform.affine_inverse()
+	var parent_inv := (get_parent() as Node3D).global_transform.affine_inverse()
 	for i in range(mini(_overlays.size(), _overlay_sources.size())):
 		var overlay := _overlays[i]
 		var src := _overlay_sources[i]
@@ -227,14 +201,15 @@ func _process(_delta: float) -> void:
 
 
 func _set_color(color: Color) -> void:
-	for mat in _outline_materials:
-		mat.set_shader_parameter("outline_color", color)
+	if _outline_material:
+		_outline_material.set_shader_parameter("outline_color", color)
 
 
 func _sync_material_params() -> void:
-	for mat in _outline_materials:
-		mat.set_shader_parameter("outline_color", hover_color)
-		mat.set_shader_parameter("outline_width", outline_width)
-		mat.set_shader_parameter("glow_strength", glow_strength)
-		mat.set_shader_parameter("fade_start", fade_start)
-		mat.set_shader_parameter("fade_end", fade_end)
+	if not _outline_material:
+		return
+	_outline_material.set_shader_parameter("outline_color", hover_color)
+	_outline_material.set_shader_parameter("outline_width", outline_width)
+	_outline_material.set_shader_parameter("glow_strength", glow_strength)
+	_outline_material.set_shader_parameter("fade_start", fade_start)
+	_outline_material.set_shader_parameter("fade_end", fade_end)

@@ -1,46 +1,39 @@
-// Outline shader — pass 2 of the stencil-based silhouette technique.
+// Outline shader — single-pass cull_front technique.
 //
-// WHY THIS WORKS:
+// The real mesh (source or overlay copy) renders at priority 0 and writes depth.
+// This pass renders at priority 1 with cull_front (back faces only):
+//   - Vertices are pushed outward along their view-space normal.
+//   - Interior back faces are behind the already-written depth → fail depth test → hidden.
+//   - Edge back faces are not occluded → pass depth test → visible as outline.
 //
-//   pass 1 (outline_depth_prepass.gdshader, set as the overlay's material_override):
-//     Renders the mesh's front faces invisibly and writes stencil=1 for every
-//     pixel the original mesh covers on screen.
+// No stencil or prepass needed. Works correctly on complex multi-mesh objects
+// because the shared depth buffer handles masking across all overlays naturally.
 //
-//   pass 2 (this shader, set as pass 1's next_pass):
-//     Renders the expanded (cull_front) hull with depth_test_disabled so the
-//     outline is always visible even when the object is behind other geometry.
-//     Only renders where stencil != 1 — i.e. outside the original silhouette.
-//     Interior pixels are discarded by the stencil test. Depth test disabled
-//     also eliminates flickering at inside edges caused by depth precision.
-//
-//   Expansion is center-to-vertex in NDC screen space (not normal-based).
-//   This works correctly for flat QuadMesh geometry (book cover, back cover, stacks)
-//   where every vertex shares the same normal and normal-based expansion produces zero.
-//
+// Note: flat geometry (normals parallel to view) gets no outline — view_normal.xy ≈ 0
+// means no expansion, which is correct for interior label planes etc.
 shader_type spatial;
-render_mode cull_front, unshaded, blend_mix, depth_draw_never, depth_test_disabled;
-stencil_mode read, compare_not_equal, 1;
+render_mode cull_front, unshaded, depth_draw_never;
 
-uniform vec4  outline_color  : source_color = vec4(0.25, 0.6, 1.0, 1.0);
-uniform float outline_width  : hint_range(0.0, 3.0) = 1.0;
-uniform float glow_strength  : hint_range(0.0, 8.0) = 2.0;
-uniform float fade_start     : hint_range(0.0, 10.0) = 0.0;
-uniform float fade_end       : hint_range(0.1, 50.0) = 10.0;
-// AABB center of this specific mesh in model space — set per-overlay by PickableHighlight.
-// Ensures expansion radiates from the visual center rather than the model origin,
-// which fixes non-centered pivots on complex models (e.g. the NES system GLB).
-uniform vec3  mesh_center    = vec3(0.0, 0.0, 0.0);
+uniform vec4  outline_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform float outline_width : hint_range(0.0, 3.0) = 1.0;
+uniform float glow_strength : hint_range(0.0, 8.0) = 2.0;
+uniform float fade_start    : hint_range(0.0, 10.0) = 0.0;
+uniform float fade_end      : hint_range(0.1, 50.0) = 10.0;
 
 varying float v_view_dist;
 
 void vertex() {
+	vec4 clip_pos    = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vec3 view_normal = normalize(mat3(MODELVIEW_MATRIX) * NORMAL);
+
 	v_view_dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 
-	vec3 expand_dir = VERTEX - mesh_center;
-	float dir_len   = length(expand_dir);
-	if (dir_len > 1e-4) {
-		VERTEX += (expand_dir / dir_len) * outline_width * 0.005;
+	float n_len = length(view_normal.xy);
+	if (n_len > 1e-4) {
+		clip_pos.xy += (view_normal.xy / n_len) * outline_width * clip_pos.w / VIEWPORT_SIZE.x;
 	}
+
+	POSITION = clip_pos;
 }
 
 void fragment() {
