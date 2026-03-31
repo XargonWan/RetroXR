@@ -44,7 +44,7 @@ var _raycast     : RayCast3D = null
 var _hand_pivot  : Node3D    = null
 
 var _middle_held : bool = false
-var _hovered_object : XRToolsPickable = null
+var _hovered_target : Node3D = null
 
 
 func _ready() -> void:
@@ -53,7 +53,7 @@ func _ready() -> void:
 	_raycast.name = "PickupRay"
 	_raycast.collision_mask      = PICKABLE_MASK
 	_raycast.collide_with_bodies = true
-	_raycast.collide_with_areas  = false
+	_raycast.collide_with_areas  = true
 	_raycast.target_position     = Vector3(0, 0, -MAX_DIST)
 	_raycast.enabled             = true
 	add_child(_raycast)
@@ -148,20 +148,11 @@ func _try_grab() -> void:
 		return
 
 	var collider := _raycast.get_collider()
-	var pickable := _find_pickable(collider)
-	if not pickable or not pickable.can_pick_up(_hand_pivot):
+	var target := _find_pick_target(collider)
+	if not _can_pick_target(target):
 		return
 
-	# Position the pivot at the object's origin so the grab offset is ~zero,
-	# giving clean behaviour for both ray-hold and FPS-snap modes.
-	_grab_dist = clampf(
-		global_position.distance_to(pickable.global_position),
-		MIN_DIST, MAX_DIST)
-	_hand_pivot.global_transform = pickable.global_transform
-
-	_set_hovered_object(null)
-	pickable.pick_up(_hand_pivot)
-	_held_object = pickable
+	_grab_target(target)
 
 
 ## Drop the currently held object.
@@ -196,40 +187,81 @@ func _is_fps_snap() -> bool:
 
 func _update_reticle_highlight() -> void:
 	if get_viewport().use_xr or _held_object:
-		_set_hovered_object(null)
+		_set_hovered_target(null)
 		return
 
 	_raycast.force_raycast_update()
 	if not _raycast.is_colliding():
-		_set_hovered_object(null)
+		_set_hovered_target(null)
 		return
 
 	var collider := _raycast.get_collider()
-	var pickable := _find_pickable(collider)
+	var target := _find_pick_target(collider)
+	if not _can_pick_target(target):
+		_set_hovered_target(null)
+		return
+
+	_set_hovered_target(target)
+
+
+func _set_hovered_target(target: Node3D) -> void:
+	if target == _hovered_target:
+		return
+
+	if _hovered_target and _hovered_target.has_method("request_highlight"):
+		_hovered_target.request_highlight(self, false)
+
+	_hovered_target = target
+
+	if _hovered_target and _hovered_target.has_method("request_highlight"):
+		_hovered_target.request_highlight(self, true)
+
+
+func _grab_target(target: Node3D) -> void:
+	var pickable: XRToolsPickable = null
+	var snap_zone := target as XRToolsSnapZone
+	if snap_zone:
+		pickable = snap_zone.picked_up_object as XRToolsPickable
+		if not pickable:
+			return
+		snap_zone.drop_object()
+	else:
+		pickable = target as XRToolsPickable
+
 	if not pickable or not pickable.can_pick_up(_hand_pivot):
-		_set_hovered_object(null)
 		return
 
-	_set_hovered_object(pickable)
+	# Position the pivot at the object's origin so the grab offset is ~zero,
+	# giving clean behaviour for both ray-hold and FPS-snap modes.
+	_grab_dist = clampf(
+		global_position.distance_to(pickable.global_position),
+		MIN_DIST, MAX_DIST)
+	_hand_pivot.global_transform = pickable.global_transform
+
+	_set_hovered_target(null)
+	pickable.pick_up(_hand_pivot)
+	_held_object = pickable
 
 
-func _set_hovered_object(pickable: XRToolsPickable) -> void:
-	if pickable == _hovered_object:
-		return
+func _can_pick_target(target: Node3D) -> bool:
+	if not target:
+		return false
 
-	if _hovered_object:
-		_hovered_object.request_highlight(self, false)
+	var snap_zone := target as XRToolsSnapZone
+	if snap_zone:
+		return is_instance_valid(snap_zone.picked_up_object) and snap_zone.can_pick_up(_hand_pivot)
 
-	_hovered_object = pickable
-
-	if _hovered_object:
-		_hovered_object.request_highlight(self, true)
+	var pickable := target as XRToolsPickable
+	return pickable != null and pickable.can_pick_up(_hand_pivot)
 
 
-## Walk up the collision hierarchy to find an XRToolsPickable ancestor.
-func _find_pickable(node: Node) -> XRToolsPickable:
+## Walk up the collision hierarchy to find an XRToolsSnapZone or XRToolsPickable ancestor.
+## Snap zones take priority so slotted objects can be unsnapped and grabbed directly.
+func _find_pick_target(node: Node) -> Node3D:
 	var n := node
 	while n:
+		if n is XRToolsSnapZone:
+			return n as XRToolsSnapZone
 		if n is XRToolsPickable:
 			return n as XRToolsPickable
 		n = n.get_parent()
