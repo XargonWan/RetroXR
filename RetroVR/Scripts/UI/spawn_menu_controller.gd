@@ -27,6 +27,9 @@ const SPAWN_Y := {
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
 
+## Action name waiting for a key/mouse press during desktop rebinding ("" = none).
+var _rebinding_action: String = ""
+
 ## Set to true by VRInputMapper while a system is being controlled, so the
 ## spawn menu toggle doesn't fire during gameplay.
 var disabled: bool = false: set = _set_disabled
@@ -159,6 +162,7 @@ func _connect_menu_signals() -> void:
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
 	menu.controller_bindings_changed.connect(_on_controller_bindings_changed)
+	menu.rebind_started.connect(_on_rebind_started)
 	_menu_connected = true
 
 	# Auto-load last active slot on startup (arcade only)
@@ -168,9 +172,37 @@ func _connect_menu_signals() -> void:
 			ScenePersistence.new().load_slot(get_tree().current_scene, sm.active_slot_id)
 
 
+# ── Rebinding ─────────────────────────────────────────────────────────────────
+
+func _on_rebind_started(action: String) -> void:
+	_rebinding_action = action
+
+
 # ── Button handler ────────────────────────────────────────────────────────────
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Desktop key rebinding: capture the next key or mouse button press.
+	if _rebinding_action != "":
+		var is_key   := event is InputEventKey
+		var is_mouse := event is InputEventMouseButton
+		if not (is_key or is_mouse):
+			return
+		# Only act on press, not release.
+		if is_key   and not (event as InputEventKey).pressed:          return
+		if is_mouse and not (event as InputEventMouseButton).pressed:   return
+		var action := _rebinding_action
+		_rebinding_action = ""
+		var cancelled := is_key \
+			and (event as InputEventKey).physical_keycode == KEY_ESCAPE
+		if not cancelled:
+			InputMap.action_erase_events(action)
+			InputMap.action_add_event(action, event)
+		var menu := _get_menu()
+		if menu:
+			menu.on_rebind_complete(action, null if cancelled else event)
+		get_viewport().set_input_as_handled()
+		return
+
 	# Desktop: Tab toggles the spawn menu
 	if event.is_action_pressed("desktop_spawn_menu"):
 		if not disabled:

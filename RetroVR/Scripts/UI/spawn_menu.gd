@@ -45,6 +45,9 @@ signal snap_angle_changed(degrees: float)
 signal height_offset_changed(offset: float)
 ## Emitted when the user saves controller bindings (global or per-system).
 signal controller_bindings_changed
+## Emitted when the user clicks a desktop rebind button. spawn_menu_controller
+## captures the next key/mouse press and calls back on_rebind_complete().
+signal rebind_started(action_name: String)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -140,6 +143,11 @@ var _media_dl_refresh_cb: Callable = Callable()
 var _edit_button_map:  Dictionary = {}
 var _edit_stick_map:   Dictionary = {}
 var _edit_lightgun_map: Dictionary = {}
+
+# Desktop rebinding state: action currently waiting for a key press, and a
+# map from action_name → Button node so on_rebind_complete() can update labels.
+var _rebinding_action: String = ""
+var _rebind_buttons: Dictionary = {}
 # Inline-dropdown state for the Controls section (source_key → dict).
 var _controls_opts: Dictionary = {}
 # Key of the currently-open inline dropdown ("" = none).
@@ -1636,18 +1644,25 @@ const _LIGHTGUN_SOURCE_ORDER: Array = [
 
 
 func _build_controls_section(vbox: VBoxContainer) -> void:
-	# Load current global bindings as the working copy.
-	var global := ControllerBindings.get_global()
-	_edit_button_map  = global["buttons"].duplicate()
-	_edit_stick_map   = global["sticks"].duplicate()
-	_edit_lightgun_map = global["lightgun"].duplicate()
-
 	# ── Header ────────────────────────────────────────────────────────────────
 	var hdr := Label.new()
 	hdr.text = "CONTROLS"
 	hdr.add_theme_font_size_override("font_size", 22)
 	hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(hdr)
+
+	if get_viewport().use_xr:
+		_build_xr_controls(vbox)
+	else:
+		_build_desktop_controls(vbox)
+
+
+func _build_xr_controls(vbox: VBoxContainer) -> void:
+	# Load current global bindings as the working copy.
+	var global := ControllerBindings.get_global()
+	_edit_button_map  = global["buttons"].duplicate()
+	_edit_stick_map   = global["sticks"].duplicate()
+	_edit_lightgun_map = global["lightgun"].duplicate()
 
 	# ── Joypad Buttons ────────────────────────────────────────────────────────
 	var btn_hdr := Label.new()
@@ -1736,6 +1751,109 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	save_btn.pressed.connect(_on_controls_save_global)
 	action_row.add_child(save_btn)
+
+
+func _build_desktop_controls(vbox: VBoxContainer) -> void:
+	_rebind_buttons.clear()
+
+	# ── Gamepad Buttons ───────────────────────────────────────────────────────
+	var btn_hdr := Label.new()
+	btn_hdr.text = "Gamepad Buttons"
+	btn_hdr.add_theme_font_size_override("font_size", 18)
+	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(btn_hdr)
+
+	for action: String in DesktopBindings.JOYPAD_ACTIONS:
+		vbox.add_child(_make_rebind_row(action))
+
+	# ── Analog Sticks ─────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var stick_hdr := Label.new()
+	stick_hdr.text = "Analog Sticks"
+	stick_hdr.add_theme_font_size_override("font_size", 18)
+	stick_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(stick_hdr)
+
+	for action: String in DesktopBindings.ANALOG_ACTIONS:
+		vbox.add_child(_make_rebind_row(action))
+
+	# ── Save / Reset ──────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 10)
+	action_row.custom_minimum_size = Vector2(0, 60)
+	vbox.add_child(action_row)
+
+	var reset_btn := Button.new()
+	reset_btn.text = "Reset to Default"
+	reset_btn.custom_minimum_size = Vector2(220, 52)
+	reset_btn.add_theme_font_size_override("font_size", 18)
+	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reset_btn.pressed.connect(_on_desktop_controls_reset)
+	action_row.add_child(reset_btn)
+
+	var save_btn := Button.new()
+	save_btn.text = "Save"
+	save_btn.custom_minimum_size = Vector2(220, 52)
+	save_btn.add_theme_font_size_override("font_size", 18)
+	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_btn.pressed.connect(DesktopBindings.save)
+	action_row.add_child(save_btn)
+
+
+## Creates a single rebind row: [Label: action display name] [Button: current key]
+func _make_rebind_row(action: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 48)
+
+	var lbl := Label.new()
+	lbl.text = DesktopBindings.ACTION_LABELS.get(action, action)
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
+
+	var btn := Button.new()
+	btn.text = DesktopBindings.event_display_name(action)
+	btn.custom_minimum_size = Vector2(140, 44)
+	btn.add_theme_font_size_override("font_size", 18)
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	_rebind_buttons[action] = btn
+
+	var captured_action := action
+	btn.pressed.connect(func() -> void:
+		# Cancel any in-progress rebind first.
+		if _rebinding_action != "" and _rebinding_action != captured_action:
+			var old_btn: Button = _rebind_buttons.get(_rebinding_action) as Button
+			if is_instance_valid(old_btn):
+				old_btn.text = DesktopBindings.event_display_name(_rebinding_action)
+		_rebinding_action = captured_action
+		btn.text = "[ Press a key… ]"
+		rebind_started.emit(captured_action)
+	)
+	row.add_child(btn)
+	return row
+
+
+## Called by spawn_menu_controller after a key/mouse press is captured.
+## event is null when the user cancelled with Escape.
+func on_rebind_complete(action: String, event: InputEvent) -> void:
+	_rebinding_action = ""
+	var btn: Button = _rebind_buttons.get(action) as Button
+	if not is_instance_valid(btn):
+		return
+	btn.text = DesktopBindings.event_display_name(action)
+
+
+func _on_desktop_controls_reset() -> void:
+	# Reload project defaults by restoring from project settings.
+	InputMap.load_from_project_settings()
+	# Refresh all button labels.
+	for action: String in _rebind_buttons:
+		var btn: Button = _rebind_buttons[action] as Button
+		if is_instance_valid(btn):
+			btn.text = DesktopBindings.event_display_name(action)
 
 
 func _on_controls_reset() -> void:
