@@ -44,6 +44,7 @@ var _raycast     : RayCast3D = null
 var _hand_pivot  : Node3D    = null
 
 var _middle_held : bool = false
+var _hovered_object : XRToolsPickable = null
 
 
 func _ready() -> void:
@@ -118,6 +119,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	_update_reticle_highlight()
+
 	if not _held_object:
 		return
 	if get_viewport().use_xr:
@@ -146,7 +149,7 @@ func _try_grab() -> void:
 
 	var collider := _raycast.get_collider()
 	var pickable := _find_pickable(collider)
-	if not pickable or pickable.is_picked_up():
+	if not pickable or not pickable.can_pick_up(_hand_pivot):
 		return
 
 	# Position the pivot at the object's origin so the grab offset is ~zero,
@@ -156,6 +159,7 @@ func _try_grab() -> void:
 		MIN_DIST, MAX_DIST)
 	_hand_pivot.global_transform = pickable.global_transform
 
+	_set_hovered_object(null)
 	pickable.pick_up(_hand_pivot)
 	_held_object = pickable
 
@@ -188,6 +192,38 @@ func _on_pivot_drop_object() -> void:
 ## Returns true when the held object wants FPS-snap positioning.
 func _is_fps_snap() -> bool:
 	return _held_object != null and _held_object.get("desktop_fps_snap")
+
+
+func _update_reticle_highlight() -> void:
+	if get_viewport().use_xr or _held_object:
+		_set_hovered_object(null)
+		return
+
+	_raycast.force_raycast_update()
+	if not _raycast.is_colliding():
+		_set_hovered_object(null)
+		return
+
+	var collider := _raycast.get_collider()
+	var pickable := _find_pickable(collider)
+	if not pickable or not pickable.can_pick_up(_hand_pivot):
+		_set_hovered_object(null)
+		return
+
+	_set_hovered_object(pickable)
+
+
+func _set_hovered_object(pickable: XRToolsPickable) -> void:
+	if pickable == _hovered_object:
+		return
+
+	if _hovered_object:
+		_hovered_object.request_highlight(self, false)
+
+	_hovered_object = pickable
+
+	if _hovered_object:
+		_hovered_object.request_highlight(self, true)
 
 
 ## Walk up the collision hierarchy to find an XRToolsPickable ancestor.

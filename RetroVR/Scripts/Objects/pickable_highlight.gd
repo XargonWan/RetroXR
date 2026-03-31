@@ -2,8 +2,8 @@
 ## Automatically builds outline overlay meshes for every MeshInstance3D direct-child
 ## of the parent and manages four visual states:
 ##   - Ray hovering  → white   (highlight_updated signal on parent pickable)
-##   - Ray held      → yellow  (has_picked_up on XRToolsFunctionPickup nodes, ray-grab path)
-##   - Hand held     → blue    (picked_up / dropped signals on parent pickable, hand-grab path)
+##   - Ray held      → yellow  (XRTools ray-grab, plus desktop_hand pickup)
+##   - Hand held     → blue    (picked_up / dropped signals on parent pickable, XR hand-grab path)
 ##   - In trash      → red     (set_trash_mode(true) called by TrashCan — highest priority)
 ##
 ## Why the two separate paths: godot-xr-tools ray-grab bypasses the pickable's
@@ -143,11 +143,17 @@ func _on_highlight_updated(_object: Node, highlighted: bool) -> void:
 func _on_grabbed(_pickable, by: Node) -> void:
 	if by is XRToolsFunctionPickup:
 		_is_hand_held = true
-		_update_state()
+	elif by.is_in_group("desktop_hand"):
+		_is_ray_held = true
+		_ray_grabber = by
+	_update_state()
 
 
 func _on_hand_dropped(_pickable) -> void:
 	_is_hand_held = false
+	if is_instance_valid(_ray_grabber) and _ray_grabber.is_in_group("desktop_hand"):
+		_is_ray_held = false
+		_ray_grabber = null
 	_update_state()
 
 
