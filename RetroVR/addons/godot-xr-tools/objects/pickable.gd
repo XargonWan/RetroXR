@@ -367,9 +367,42 @@ func let_go(by: Node3D, p_linear_velocity: Vector3, p_angular_velocity: Vector3)
 	collision_mask = original_collision_mask
 	collision_layer = original_collision_layer
 
-	# Set velocity
-	linear_velocity = p_linear_velocity
+	# Frozen bodies driven by the grab driver can leave the physics server with a
+	# stale transform. Push the released transform back immediately so gravity and
+	# contacts resume from the visible pose instead of waiting for another wakeup.
+	force_update_transform()
+	PhysicsServer3D.body_set_state(
+		get_rid(),
+		PhysicsServer3D.BODY_STATE_TRANSFORM,
+		global_transform)
+
+	# Set velocity. If we are releasing from rest, add a tiny gravity-aligned
+	# nudge so the body immediately enters active simulation instead of waiting
+	# for some later contact to wake it.
+	var release_linear_velocity := p_linear_velocity
+	if not freeze and release_linear_velocity.is_zero_approx():
+		var gravity_dir := Vector3.DOWN
+		if ProjectSettings.has_setting("physics/3d/default_gravity_vector"):
+			gravity_dir = ProjectSettings.get_setting("physics/3d/default_gravity_vector")
+		if gravity_dir.length_squared() > 0.0:
+			release_linear_velocity = gravity_dir.normalized() * 0.05
+
+	linear_velocity = release_linear_velocity
 	angular_velocity = p_angular_velocity
+	PhysicsServer3D.body_set_state(
+		get_rid(),
+		PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY,
+		release_linear_velocity)
+	PhysicsServer3D.body_set_state(
+		get_rid(),
+		PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY,
+		p_angular_velocity)
+	if not freeze:
+		sleeping = false
+		PhysicsServer3D.body_set_state(
+			get_rid(),
+			PhysicsServer3D.BODY_STATE_SLEEPING,
+			false)
 
 	# let interested parties know
 	dropped.emit(self)
