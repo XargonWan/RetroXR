@@ -745,6 +745,22 @@ func _process(delta: float) -> void:
 	_update_hints_and_detect_grip()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	# Desktop page turning: E = next page, Q = previous page.
+	# Reuses RETRO_JOYPAD_R (E key) and RETRO_JOYPAD_L (Q key) actions.
+	# Only fires when the book is held and not mid-turn.
+	if not is_picked_up() or _page_count == 0 or _turn_cooldown > 0.0:
+		return
+	if event.is_action_pressed("RETRO_JOYPAD_R"):
+		turn_page_forward()
+		_turn_cooldown = TURN_COOLDOWN_TIME
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("RETRO_JOYPAD_L"):
+		turn_page_backward()
+		_turn_cooldown = TURN_COOLDOWN_TIME
+		get_viewport().set_input_as_handled()
+
+
 ## Check controller proximity for hints, and detect grip for page turn.
 func _update_hints_and_detect_grip() -> void:
 	_next_label.visible = false

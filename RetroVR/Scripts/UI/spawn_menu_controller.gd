@@ -161,6 +161,7 @@ func _connect_menu_signals() -> void:
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
+	menu.fov_changed.connect(_on_fov_changed)
 	menu.controller_bindings_changed.connect(_on_controller_bindings_changed)
 	menu.rebind_started.connect(_on_rebind_started)
 	_menu_connected = true
@@ -580,6 +581,11 @@ func _on_snap_angle_changed(degrees: float) -> void:
 func _on_height_offset_changed(offset: float) -> void:
 	if _player_body:
 		_player_body.player_height_offset = offset
+
+
+func _on_fov_changed(degrees: float) -> void:
+	if _camera:
+		_camera.fov = degrees
 
 
 func _on_aim_crosshair_changed(enabled: bool) -> void:

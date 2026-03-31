@@ -43,6 +43,8 @@ signal aim_crosshair_changed(enabled: bool)
 signal snap_angle_changed(degrees: float)
 ## Emitted when the user adjusts the player height offset.
 signal height_offset_changed(offset: float)
+## Emitted when the user changes the desktop camera FOV.
+signal fov_changed(degrees: float)
 ## Emitted when the user saves controller bindings (global or per-system).
 signal controller_bindings_changed
 ## Emitted when the user clicks a desktop rebind button. spawn_menu_controller
@@ -1146,57 +1148,94 @@ func _build_options_view() -> Control:
 
 	vbox.add_child(_spacer(10))
 
-	# Turn Style option
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(row)
+	if get_viewport().use_xr:
+		# Turn Style option (XR only)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		row.custom_minimum_size = Vector2(0, 68)
+		vbox.add_child(row)
 
-	var lbl := Label.new()
-	lbl.text = "Turn Style"
-	lbl.add_theme_font_size_override("font_size", 22)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(lbl)
+		var lbl := Label.new()
+		lbl.text = "Turn Style"
+		lbl.add_theme_font_size_override("font_size", 22)
+		lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lbl)
 
-	var opt := _make_opt()
-	opt.custom_minimum_size = Vector2(220, 56)
-	opt.add_theme_font_size_override("font_size", 20)
-	opt.add_item("SNAP", 0)
-	opt.add_item("SMOOTH", 1)
-	opt.selected = 0
-	opt.item_selected.connect(func(idx: int) -> void:
-		turn_style_changed.emit("SNAP" if idx == 0 else "SMOOTH")
-	)
-	row.add_child(opt)
+		var opt := _make_opt()
+		opt.custom_minimum_size = Vector2(220, 56)
+		opt.add_theme_font_size_override("font_size", 20)
+		opt.add_item("SNAP", 0)
+		opt.add_item("SMOOTH", 1)
+		opt.selected = 0
+		opt.item_selected.connect(func(idx: int) -> void:
+			turn_style_changed.emit("SNAP" if idx == 0 else "SMOOTH")
+		)
+		row.add_child(opt)
 
-	# Snap Turn Angle option
-	var sa_row := HBoxContainer.new()
-	sa_row.add_theme_constant_override("separation", 10)
-	sa_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(sa_row)
+		# Snap Turn Angle option (XR only)
+		var sa_row := HBoxContainer.new()
+		sa_row.add_theme_constant_override("separation", 10)
+		sa_row.custom_minimum_size = Vector2(0, 68)
+		vbox.add_child(sa_row)
 
-	var sa_lbl := Label.new()
-	sa_lbl.text = "Snap Angle"
-	sa_lbl.add_theme_font_size_override("font_size", 22)
-	sa_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	sa_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sa_row.add_child(sa_lbl)
+		var sa_lbl := Label.new()
+		sa_lbl.text = "Snap Angle"
+		sa_lbl.add_theme_font_size_override("font_size", 22)
+		sa_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		sa_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sa_row.add_child(sa_lbl)
 
-	var sa_opt := _make_opt()
-	sa_opt.custom_minimum_size = Vector2(140, 56)
-	sa_opt.add_theme_font_size_override("font_size", 20)
-	sa_opt.add_item("30°", 0)
-	sa_opt.add_item("45°", 1)
-	sa_opt.add_item("60°", 2)
-	sa_opt.selected = 1
-	sa_opt.item_selected.connect(func(idx: int) -> void:
-		var angles := [30.0, 45.0, 60.0]
-		snap_angle_changed.emit(angles[idx])
-	)
-	sa_row.add_child(sa_opt)
+		var sa_opt := _make_opt()
+		sa_opt.custom_minimum_size = Vector2(140, 56)
+		sa_opt.add_theme_font_size_override("font_size", 20)
+		sa_opt.add_item("30°", 0)
+		sa_opt.add_item("45°", 1)
+		sa_opt.add_item("60°", 2)
+		sa_opt.selected = 1
+		sa_opt.item_selected.connect(func(idx: int) -> void:
+			var angles := [30.0, 45.0, 60.0]
+			snap_angle_changed.emit(angles[idx])
+		)
+		sa_row.add_child(sa_opt)
 
-	vbox.add_child(HSeparator.new())
+		vbox.add_child(HSeparator.new())
+	else:
+		# FOV slider (desktop only)
+		var fov_header := HBoxContainer.new()
+		fov_header.add_theme_constant_override("separation", 10)
+		vbox.add_child(fov_header)
+
+		var fov_lbl := Label.new()
+		fov_lbl.text = "Field of View"
+		fov_lbl.add_theme_font_size_override("font_size", 22)
+		fov_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		fov_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		fov_header.add_child(fov_lbl)
+
+		var fov_val := Label.new()
+		fov_val.text = "75°"
+		fov_val.add_theme_font_size_override("font_size", 20)
+		fov_val.add_theme_color_override("font_color", COLOR_LICENSE)
+		fov_val.custom_minimum_size = Vector2(60, 0)
+		fov_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		fov_header.add_child(fov_val)
+
+		var fov_slider := HSlider.new()
+		fov_slider.min_value = 60.0
+		fov_slider.max_value = 110.0
+		fov_slider.step = 1.0
+		fov_slider.value = 75.0
+		fov_slider.custom_minimum_size = Vector2(0, 48)
+		fov_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_child(fov_slider)
+
+		fov_slider.value_changed.connect(func(v: float) -> void:
+			fov_val.text = "%d°" % int(v)
+			fov_changed.emit(v)
+		)
+
+		vbox.add_child(HSeparator.new())
 
 	# Height Offset slider
 	var ho_header := HBoxContainer.new()

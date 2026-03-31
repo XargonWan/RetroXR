@@ -16,8 +16,16 @@ func _ready():
 		# Enable XR rendering — this also signals desktop support nodes to disable
 		# themselves (xr_start_shim.gd returns get_viewport().use_xr).
 		get_viewport().use_xr = true
-		print("XRInit: VR mode active")
+		print("=====================================")
+		print("  RetroVR: running in XR / VR mode")
+		print("=====================================")
 	else:
-		push_warning("OpenXR not initialized — desktop mode active")
+		print("=====================================")
+		print("  RetroVR: running in DESKTOP mode")
+		print("  WASD = move   Mouse = look")
+		print("  Left-click = grab/shoot")
+		print("  Ctrl+Left-click = drop (held gun)")
+		print("  Tab = spawn menu")
+		print("=====================================")
 		# Ensure the window starts with a sensible resolution for desktop play
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)

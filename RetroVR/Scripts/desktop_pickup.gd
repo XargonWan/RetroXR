@@ -81,13 +81,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		match mbe.button_index:
 			MOUSE_BUTTON_LEFT:
 				if mbe.pressed:
-					if _held_object and mbe.ctrl_pressed:
-						# Ctrl+click drops the held object.
-						_drop()
-						get_viewport().set_input_as_handled()
-					elif not _held_object:
-						# Plain click picks up; ignored when already holding so
-						# left-click remains free as the lightgun/action trigger.
+					if _held_object:
+						# Ctrl+click drops any held object.
+						# Plain click also drops non-FPS-snap objects (books, controllers, etc.)
+						# so the user doesn't need Ctrl for those.
+						# FPS-snap objects (ray gun) require Ctrl+click to drop because
+						# plain left-click is the shoot/trigger action while the gun is held.
+						if mbe.ctrl_pressed or not _is_fps_snap():
+							_drop()
+							get_viewport().set_input_as_handled()
+					else:
 						_try_grab()
 
 			MOUSE_BUTTON_MIDDLE:
@@ -103,11 +106,14 @@ func _unhandled_input(event: InputEvent) -> void:
 					_grab_dist = clampf(_grab_dist + SCROLL_STEP, MIN_DIST, MAX_DIST)
 					get_viewport().set_input_as_handled()
 
-	elif event is InputEventMouseMotion and _middle_held and _held_object and not _is_fps_snap():
-		var delta := (event as InputEventMouseMotion).relative
-		# Yaw around camera's up axis, pitch around camera's right axis
-		_hand_pivot.rotate(global_transform.basis.y.normalized(), -delta.x * ROT_SENSITIVITY)
-		_hand_pivot.rotate(global_transform.basis.x.normalized(), -delta.y * ROT_SENSITIVITY)
+	elif event is InputEventMouseMotion and _middle_held:
+		if _held_object and not _is_fps_snap():
+			var delta := (event as InputEventMouseMotion).relative
+			# Yaw around camera's up axis, pitch around camera's right axis
+			_hand_pivot.rotate(global_transform.basis.y.normalized(), -delta.x * ROT_SENSITIVITY)
+			_hand_pivot.rotate(global_transform.basis.x.normalized(), -delta.y * ROT_SENSITIVITY)
+		# Always consume mouse motion while MMB is held so MovementDesktopTurn
+		# doesn't also rotate the player.
 		get_viewport().set_input_as_handled()
 
 

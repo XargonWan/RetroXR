@@ -39,6 +39,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
 script = ExtResource("21_desktoppickup")
 
 [node name="FunctionDesktopPointer" parent="Staging/XROrigin3D/XRCamera3D" instance=ExtResource("20_deskpointer")]
+active_button_action = "trigger_left"
 
 [node name="PlayerBody" parent="Staging/XROrigin3D" instance=ExtResource("4_playerbody")]
 player_calibrate_height = false
