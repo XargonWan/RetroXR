@@ -3,6 +3,8 @@
 class_name XRToolsDesktopFunctionPointer
 extends Node3D
 
+const InteractionResolver := preload("res://Scripts/Interaction/interaction_resolver.gd")
+const InteractionTargetType := preload("res://Scripts/Interaction/interaction_target.gd")
 
 ## XR Tools Function Pointer Script
 ##
@@ -104,6 +106,9 @@ var target : Node3D = null
 ## Last target node
 var last_target : Node3D = null
 
+## Shared desktop interaction result for the current pointer ray
+var resolved_target : InteractionTarget = null
+
 ## Last collision point
 var last_collided_at : Vector3 = Vector3.ZERO
 
@@ -126,6 +131,8 @@ func _ready():
 	# Do not initialise if in the editor
 	if Engine.is_editor_hint():
 		return
+
+	resolved_target = InteractionTargetType.none()
 
 	# Read the initial world-scale
 	_world_scale = XRServer.world_scale
@@ -163,19 +170,19 @@ func _process(_delta):
 	# Find the new pointer target
 	var new_target : Node3D
 	var new_at : Vector3
-	var suppress_area := $SuppressArea
-	var hit := _get_pointer_hit()
+	var interaction := resolve_interaction_target()
 	if (enabled and
 		not $SuppressArea.has_overlapping_bodies() and
 		not $SuppressArea.has_overlapping_areas() and
-		hit):
-		new_at = hit.position
+		interaction.is_valid() and
+		is_instance_valid(interaction.pointer_event_target)):
+		new_at = interaction.position
 		if target:
 			# Locked to 'target' even if we're colliding with something else
 			new_target = target
 		else:
 			# Target is whatever the pointer ray resolves to
-			new_target = hit.collider
+			new_target = interaction.pointer_event_target
 
 	# If no current or previous collisions then skip
 	if not new_target and not last_target:
@@ -392,11 +399,11 @@ func _update_pointer() -> void:
 
 # Pointer-activation button pressed handler
 func _button_pressed() -> void:
-	var hit := _get_pointer_hit()
-	if hit:
+	var interaction := resolve_interaction_target()
+	if interaction.is_valid() and is_instance_valid(interaction.pointer_event_target):
 		# Report pressed
-		target = hit.collider
-		last_collided_at = hit.position
+		target = interaction.pointer_event_target
+		last_collided_at = interaction.position
 		XRToolsPointerEvent.pressed(self, target, last_collided_at)
 
 
@@ -486,34 +493,62 @@ func _visible_miss() -> void:
 	$Laser.position.z = distance * -0.5
 
 
-func _get_pointer_hit() -> Dictionary:
+func resolve_interaction_target() -> InteractionTarget:
 	var ray_cast := $RayCast as RayCast3D
 	if not is_instance_valid(ray_cast):
-		return {}
+		resolved_target = InteractionTargetType.none()
+		return resolved_target
+	if not enabled:
+		resolved_target = InteractionTargetType.none()
+		return resolved_target
+	if $SuppressArea.has_overlapping_bodies() or $SuppressArea.has_overlapping_areas():
+		resolved_target = InteractionTargetType.none()
+		return resolved_target
 
-	var from := ray_cast.global_transform.origin
-	var to := ray_cast.to_global(ray_cast.target_position)
-	var space_state := get_world_3d().direct_space_state
+	var pickup_ray := _get_pickup_ray()
+	var pickup_from := ray_cast.global_transform.origin
+	var pickup_to := ray_cast.to_global(ray_cast.target_position)
+	var pickup_mask := 0
+	var pickup_collide_bodies := false
+	var pickup_collide_areas := false
+	if is_instance_valid(pickup_ray):
+		pickup_from = pickup_ray.global_transform.origin
+		pickup_to = pickup_ray.to_global(pickup_ray.target_position)
+		pickup_mask = pickup_ray.collision_mask
+		pickup_collide_bodies = pickup_ray.collide_with_bodies
+		pickup_collide_areas = pickup_ray.collide_with_areas
 
-	var area_query := PhysicsRayQueryParameters3D.create(from, to, collision_mask)
-	area_query.collide_with_bodies = false
-	area_query.collide_with_areas = collide_with_areas
-	var area_hit := space_state.intersect_ray(area_query)
+	resolved_target = InteractionResolver.resolve_desktop(
+		get_world_3d().direct_space_state,
+		ray_cast.global_transform.origin,
+		ray_cast.to_global(ray_cast.target_position),
+		collision_mask,
+		collide_with_bodies,
+		collide_with_areas,
+		pickup_from,
+		pickup_to,
+		pickup_mask,
+		pickup_collide_bodies,
+		pickup_collide_areas,
+		_get_desktop_grabber())
+	return resolved_target
 
-	var body_query := PhysicsRayQueryParameters3D.create(from, to, collision_mask)
-	body_query.collide_with_bodies = collide_with_bodies
-	body_query.collide_with_areas = false
-	var body_hit := space_state.intersect_ray(body_query)
 
-	if area_hit.is_empty():
-		return body_hit
-	if body_hit.is_empty():
-		return area_hit
+func get_resolved_target() -> InteractionTarget:
+	if resolved_target == null:
+		return InteractionTargetType.none()
+	return resolved_target
 
-	var area_dist := from.distance_squared_to(area_hit.position)
-	var body_dist := from.distance_squared_to(body_hit.position)
 
-	if area_dist <= body_dist + 0.000001:
-		return area_hit
+func _get_pickup_ray() -> RayCast3D:
+	var parent := get_parent()
+	if not parent:
+		return null
+	return parent.get_node_or_null("PickupRay") as RayCast3D
 
-	return body_hit
+
+func _get_desktop_grabber() -> Node3D:
+	var parent := get_parent()
+	if not parent:
+		return null
+	return parent.get_node_or_null("DesktopHand") as Node3D

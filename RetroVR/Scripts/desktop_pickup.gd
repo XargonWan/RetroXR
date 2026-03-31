@@ -21,6 +21,8 @@
 ## global_transform, so moving/rotating the pivot moves/rotates the held object.
 extends Node3D
 
+const InteractionTargetType := preload("res://Scripts/Interaction/interaction_target.gd")
+
 ## Collision layer 3 ("Pickable") = bit 2 = value 4
 const PICKABLE_MASK := 4
 
@@ -146,22 +148,11 @@ func _try_grab() -> void:
 		_drop()
 		return
 
-	_raycast.force_raycast_update()
-	var pointer_target := _get_pointer_pick_target()
-	if pointer_target:
-		_grab_target(pointer_target)
-		return
-	if _pointer_blocks_pickup():
-		return
-	if not _raycast.is_colliding():
+	var interaction := _resolve_interaction_target(true)
+	if not interaction.can_grab or not is_instance_valid(interaction.action_node):
 		return
 
-	var collider := _raycast.get_collider()
-	var target := _find_pick_target(collider)
-	if not _can_pick_target(target):
-		return
-
-	_grab_target(target)
+	_grab_target(interaction.action_node)
 
 
 ## Drop the currently held object.
@@ -199,26 +190,12 @@ func _update_reticle_highlight() -> void:
 		_set_hovered_target(null)
 		return
 
-	var pointer_target := _get_pointer_pick_target()
-	if pointer_target:
-		_set_hovered_target(pointer_target)
-		return
-	if _pointer_blocks_pickup():
+	var interaction := _resolve_interaction_target(false)
+	if not interaction.can_grab or not is_instance_valid(interaction.highlight_node):
 		_set_hovered_target(null)
 		return
 
-	_raycast.force_raycast_update()
-	if not _raycast.is_colliding():
-		_set_hovered_target(null)
-		return
-
-	var collider := _raycast.get_collider()
-	var target := _find_pick_target(collider)
-	if not _can_pick_target(target):
-		_set_hovered_target(null)
-		return
-
-	_set_hovered_target(target)
+	_set_hovered_target(interaction.highlight_node)
 
 
 func _set_hovered_target(target: Node3D) -> void:
@@ -260,68 +237,10 @@ func _grab_target(target: Node3D) -> void:
 	_held_object = pickable
 
 
-func _can_pick_target(target: Node3D) -> bool:
-	if not target:
-		return false
-
-	var snap_zone := target as XRToolsSnapZone
-	if snap_zone:
-		return is_instance_valid(snap_zone.picked_up_object) and snap_zone.can_pick_up(_hand_pivot)
-
-	var pickable := target as XRToolsPickable
-	return pickable != null and pickable.can_pick_up(_hand_pivot)
-
-
-func _pointer_blocks_pickup() -> bool:
-	var pointer_collider := _get_pointer_collider()
-	if not is_instance_valid(pointer_collider):
-		return false
-
-	# If the pointer is directly over a pointer-interactable target that is not
-	# itself a pickup target, prefer that interaction over the pickable behind it.
-	return _resolve_pointer_pick_target(pointer_collider) == null
-
-
-func _get_pointer_pick_target() -> Node3D:
-	var pointer_collider := _get_pointer_collider()
-	if not is_instance_valid(pointer_collider):
-		return null
-	return _resolve_pointer_pick_target(pointer_collider)
-
-
-func _get_pointer_collider() -> Node3D:
+func _resolve_interaction_target(refresh: bool) -> InteractionTarget:
 	if not is_instance_valid(_desktop_pointer):
-		return null
+		return InteractionTargetType.none()
 
-	if is_instance_valid(_desktop_pointer.target):
-		return _desktop_pointer.target
-	if is_instance_valid(_desktop_pointer.last_target):
-		return _desktop_pointer.last_target
-	return null
-
-
-func _resolve_pointer_pick_target(node: Node) -> Node3D:
-	var n := node
-	while n:
-		if n is XRToolsSnapZone:
-			return n as XRToolsSnapZone
-		if n is XRToolsPickable:
-			return n as XRToolsPickable
-		if n.has_method("pointer_event") or n.has_signal("pointer_event"):
-			return null
-		n = n.get_parent()
-
-	return null
-
-
-## Walk up the collision hierarchy to find an XRToolsSnapZone or XRToolsPickable ancestor.
-## Snap zones take priority so slotted objects can be unsnapped and grabbed directly.
-func _find_pick_target(node: Node) -> Node3D:
-	var n := node
-	while n:
-		if n is XRToolsSnapZone:
-			return n as XRToolsSnapZone
-		if n is XRToolsPickable:
-			return n as XRToolsPickable
-		n = n.get_parent()
-	return null
+	if refresh:
+		return _desktop_pointer.resolve_interaction_target()
+	return _desktop_pointer.get_resolved_target()
