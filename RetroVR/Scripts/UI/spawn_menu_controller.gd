@@ -43,6 +43,7 @@ func _set_disabled(value: bool) -> void:
 var _camera:      XRCamera3D    = null
 var _left_ctrl:   XRController3D = null
 var _right_ctrl:  XRController3D = null
+var _desktop_pointer: XRToolsDesktopFunctionPointer = null
 var _menu_connected := false
 var _aim_crosshair_enabled := true
 var _connect_retry_count: int = 0
@@ -99,6 +100,8 @@ func _deferred_setup() -> void:
 	var cams := get_tree().root.find_children("*", "XRCamera3D", true, false)
 	if not cams.is_empty():
 		_camera = cams[0] as XRCamera3D
+	if _camera:
+		_desktop_pointer = _camera.get_node_or_null("FunctionDesktopPointer") as XRToolsDesktopFunctionPointer
 
 	# Find left and right XRController3D in a single pass
 	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
@@ -204,8 +207,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	# Desktop: Tab toggles the spawn menu
+	# Desktop: Tab toggles the spawn menu (or core options when pointing at a system)
 	if event.is_action_pressed("desktop_spawn_menu"):
+		if not get_viewport().use_xr and is_instance_valid(_desktop_pointer):
+			var tgt := _desktop_pointer.last_target
+			if is_instance_valid(tgt):
+				var sys := _system_from_target(tgt)
+				if sys:
+					sys.toggle_options_ui(_camera)
+					get_viewport().set_input_as_handled()
+					return
 		if not disabled:
 			_toggle_menu()
 		get_viewport().set_input_as_handled()
@@ -343,6 +354,19 @@ func _get_pointed_system(pointer: XRToolsFunctionPointer) -> RetroSystem:
 	var node: Node = tgt
 	while node:
 		# If the pointer is inside any viewport, it's a UI click — not a system click
+		if node is XRToolsViewport2DIn3D:
+			return null
+		if node is RetroSystem:
+			return node as RetroSystem
+		node = node.get_parent()
+	return null
+
+
+## Walk up from a raw target node to find an enclosing RetroSystem (desktop variant
+## of _get_pointed_system — works without an XRToolsFunctionPointer).
+func _system_from_target(tgt: Node3D) -> RetroSystem:
+	var node: Node = tgt
+	while node:
 		if node is XRToolsViewport2DIn3D:
 			return null
 		if node is RetroSystem:
