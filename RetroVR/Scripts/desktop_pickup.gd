@@ -58,11 +58,16 @@ func _ready() -> void:
 	add_child(_raycast)
 
 	# Invisible pivot that the grabbed object follows.
+	# Uses DesktopHandPivot script to satisfy XRToolsPickable's grabber interface
+	# (picked_up_ranged property + drop_object() callback).
 	# Placed in the "desktop_hand" group so ray_gun.gd / retro_controller.gd
 	# can detect desktop-grab in their _on_grabbed_signal handlers.
+	var pivot_script := load("res://Scripts/desktop_hand_pivot.gd")
 	_hand_pivot = Node3D.new()
+	_hand_pivot.set_script(pivot_script)
 	_hand_pivot.name = "DesktopHand"
 	_hand_pivot.add_to_group("desktop_hand")
+	_hand_pivot._owner_pickup = weakref(self)
 	add_child(_hand_pivot)
 
 
@@ -152,8 +157,16 @@ func _try_grab() -> void:
 ## Drop the currently held object.
 func _drop() -> void:
 	if _held_object:
-		_held_object.drop()
-		_held_object = null
+		var obj := _held_object
+		_held_object = null   # clear first to prevent re-entrancy via _on_pivot_drop_object
+		obj.drop()
+	_middle_held = false
+
+
+## Called by DesktopHandPivot.drop_object() when pickable.gd notifies the
+## grabber of a drop (e.g. from a snap zone or external pickable.drop() call).
+func _on_pivot_drop_object() -> void:
+	_held_object = null
 	_middle_held = false
 
 
