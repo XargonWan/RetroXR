@@ -27,6 +27,7 @@ show_laser = 0
 laser_length = 1
 show_target = true
 target_radius = 0.01
+collide_with_areas = true
 
 [node name="RayCast" type="RayCast3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)

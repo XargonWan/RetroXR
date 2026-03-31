@@ -164,17 +164,18 @@ func _process(_delta):
 	var new_target : Node3D
 	var new_at : Vector3
 	var suppress_area := $SuppressArea
+	var hit := _get_pointer_hit()
 	if (enabled and
 		not $SuppressArea.has_overlapping_bodies() and
 		not $SuppressArea.has_overlapping_areas() and
-		$RayCast.is_colliding()):
-		new_at = $RayCast.get_collision_point()
+		hit):
+		new_at = hit.position
 		if target:
 			# Locked to 'target' even if we're colliding with something else
 			new_target = target
 		else:
-			# Target is whatever the raycast is colliding with
-			new_target = $RayCast.get_collider()
+			# Target is whatever the pointer ray resolves to
+			new_target = hit.collider
 
 	# If no current or previous collisions then skip
 	if not new_target and not last_target:
@@ -391,10 +392,11 @@ func _update_pointer() -> void:
 
 # Pointer-activation button pressed handler
 func _button_pressed() -> void:
-	if $RayCast.is_colliding():
+	var hit := _get_pointer_hit()
+	if hit:
 		# Report pressed
-		target = $RayCast.get_collider()
-		last_collided_at = $RayCast.get_collision_point()
+		target = hit.collider
+		last_collided_at = hit.position
 		XRToolsPointerEvent.pressed(self, target, last_collided_at)
 
 
@@ -482,3 +484,36 @@ func _visible_miss() -> void:
 	# Restore laser length if set to collide-length
 	$Laser.mesh.size.z = distance
 	$Laser.position.z = distance * -0.5
+
+
+func _get_pointer_hit() -> Dictionary:
+	var ray_cast := $RayCast as RayCast3D
+	if not is_instance_valid(ray_cast):
+		return {}
+
+	var from := ray_cast.global_transform.origin
+	var to := ray_cast.to_global(ray_cast.target_position)
+	var space_state := get_world_3d().direct_space_state
+
+	var area_query := PhysicsRayQueryParameters3D.create(from, to, collision_mask)
+	area_query.collide_with_bodies = false
+	area_query.collide_with_areas = collide_with_areas
+	var area_hit := space_state.intersect_ray(area_query)
+
+	var body_query := PhysicsRayQueryParameters3D.create(from, to, collision_mask)
+	body_query.collide_with_bodies = collide_with_bodies
+	body_query.collide_with_areas = false
+	var body_hit := space_state.intersect_ray(body_query)
+
+	if area_hit.is_empty():
+		return body_hit
+	if body_hit.is_empty():
+		return area_hit
+
+	var area_dist := from.distance_squared_to(area_hit.position)
+	var body_dist := from.distance_squared_to(body_hit.position)
+
+	if area_dist <= body_dist + 0.000001:
+		return area_hit
+
+	return body_hit

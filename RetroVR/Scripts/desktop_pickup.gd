@@ -42,6 +42,7 @@ var _grab_dist   : float = 1.5
 
 var _raycast     : RayCast3D = null
 var _hand_pivot  : Node3D    = null
+var _desktop_pointer : XRToolsDesktopFunctionPointer = null
 
 var _middle_held : bool = false
 var _hovered_target : Node3D = null
@@ -70,6 +71,8 @@ func _ready() -> void:
 	_hand_pivot.add_to_group("desktop_hand")
 	_hand_pivot._owner_pickup = weakref(self)
 	add_child(_hand_pivot)
+
+	_desktop_pointer = get_node_or_null("FunctionDesktopPointer") as XRToolsDesktopFunctionPointer
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -144,6 +147,12 @@ func _try_grab() -> void:
 		return
 
 	_raycast.force_raycast_update()
+	var pointer_target := _get_pointer_pick_target()
+	if pointer_target:
+		_grab_target(pointer_target)
+		return
+	if _pointer_blocks_pickup():
+		return
 	if not _raycast.is_colliding():
 		return
 
@@ -187,6 +196,14 @@ func _is_fps_snap() -> bool:
 
 func _update_reticle_highlight() -> void:
 	if get_viewport().use_xr or _held_object:
+		_set_hovered_target(null)
+		return
+
+	var pointer_target := _get_pointer_pick_target()
+	if pointer_target:
+		_set_hovered_target(pointer_target)
+		return
+	if _pointer_blocks_pickup():
 		_set_hovered_target(null)
 		return
 
@@ -253,6 +270,48 @@ func _can_pick_target(target: Node3D) -> bool:
 
 	var pickable := target as XRToolsPickable
 	return pickable != null and pickable.can_pick_up(_hand_pivot)
+
+
+func _pointer_blocks_pickup() -> bool:
+	var pointer_collider := _get_pointer_collider()
+	if not is_instance_valid(pointer_collider):
+		return false
+
+	# If the pointer is directly over a pointer-interactable target that is not
+	# itself a pickup target, prefer that interaction over the pickable behind it.
+	return _resolve_pointer_pick_target(pointer_collider) == null
+
+
+func _get_pointer_pick_target() -> Node3D:
+	var pointer_collider := _get_pointer_collider()
+	if not is_instance_valid(pointer_collider):
+		return null
+	return _resolve_pointer_pick_target(pointer_collider)
+
+
+func _get_pointer_collider() -> Node3D:
+	if not is_instance_valid(_desktop_pointer):
+		return null
+
+	if is_instance_valid(_desktop_pointer.target):
+		return _desktop_pointer.target
+	if is_instance_valid(_desktop_pointer.last_target):
+		return _desktop_pointer.last_target
+	return null
+
+
+func _resolve_pointer_pick_target(node: Node) -> Node3D:
+	var n := node
+	while n:
+		if n is XRToolsSnapZone:
+			return n as XRToolsSnapZone
+		if n is XRToolsPickable:
+			return n as XRToolsPickable
+		if n.has_method("pointer_event") or n.has_signal("pointer_event"):
+			return null
+		n = n.get_parent()
+
+	return null
 
 
 ## Walk up the collision hierarchy to find an XRToolsSnapZone or XRToolsPickable ancestor.
