@@ -164,14 +164,23 @@ func _try_grab() -> void:
 func _drop() -> void:
 	if _held_object:
 		var obj := _held_object
-		_held_object = null   # clear first to prevent re-entrancy via _on_pivot_drop_object
-		obj.drop()
+		_held_object = null
+		if obj.is_picked_up() and obj.get_picked_up_by() == _hand_pivot:
+			obj.let_go(_hand_pivot, Vector3.ZERO, Vector3.ZERO)
+			obj.sleeping = false
 	_middle_held = false
 
 
 ## Called by DesktopHandPivot.drop_object() when pickable.gd notifies the
 ## grabber of a drop (e.g. from a snap zone or external pickable.drop() call).
 func _on_pivot_drop_object() -> void:
+	if _held_object and _held_object.is_picked_up() and _held_object.get_picked_up_by() == _hand_pivot:
+		var obj := _held_object
+		_held_object = null
+		obj.let_go(_hand_pivot, Vector3.ZERO, Vector3.ZERO)
+		obj.sleeping = false
+		_middle_held = false
+		return
 	_held_object = null
 	_middle_held = false
 

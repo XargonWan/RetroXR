@@ -66,6 +66,8 @@ func _unhandled_input(event):
 	if !enabled:
 		return
 	if event is InputEventMouseMotion:
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+			return
 		event.relative*=.1
 		if invert_y:
 			event.relative.y *= -1
