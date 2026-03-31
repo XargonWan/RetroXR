@@ -37,6 +37,7 @@ var _mesh_depress_parent: Node3D = null
 var _touch_pressed: bool = false
 var _pointer_pressed: bool = false
 var _pointer_hovered: bool = false
+var _latched_pressed: bool = false
 
 @onready var _mesh: MeshInstance3D = $ButtonMesh
 
@@ -78,7 +79,6 @@ func _process(_delta: float) -> void:
 	if touching and not _touch_pressed:
 		_touch_pressed = true
 		_update_visual_state()
-		print("[VRButton] pressed: ", name)
 		button_pressed.emit()
 	elif not touching and _touch_pressed:
 		_touch_pressed = false
@@ -138,12 +138,19 @@ func set_color(color: Color) -> void:
 	_apply_mesh_color(color)
 
 
+func set_latched_pressed(pressed: bool) -> void:
+	_latched_pressed = pressed
+	_update_visual_state()
+
+
 func _update_visual_state() -> void:
 	if not _mesh:
 		return
 
-	if _touch_pressed or _pointer_pressed:
-		_mesh.position = _mesh_local_origin + depress_axis.normalized() * depress_depth
+	if _touch_pressed or _pointer_pressed or _latched_pressed:
+		# depress_axis may already encode inverse parent scale from
+		# set_depress_axis_from_node(), so do not renormalize it here.
+		_mesh.position = _mesh_local_origin + depress_axis * depress_depth
 	else:
 		_mesh.position = _mesh_local_origin
 

@@ -3,6 +3,7 @@ class_name RetroSystemModelNES
 extends RetroSystemModel
 
 const _MODEL_PATH := "res://imported-assets/nes/nes-system-2.glb"
+const BUTTON_DEPRESS_DEPTH := 0.003
 
 ## Lid open rotation on X axis in radians. Tune after Blender hinge origin is set,
 ## or set to 0 and read from a "Lid Open Angle" empty node if one is added.
@@ -14,6 +15,7 @@ const CARTRIDGE_SLOT_OFFSET := Vector3(0.0, 0.0, 0.05)
 
 var _power_light_mesh: MeshInstance3D = null
 var _power_light_lamp: Node3D = null
+var _power_button: VRButton = null
 var _cartridge_insert_dir: Vector3 = Vector3.FORWARD
 var _nes_lid: Node3D = null
 var _nes_cradle: Node3D = null
@@ -97,11 +99,16 @@ func get_controller_port_count() -> int:
 
 
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton) -> void:
+	_power_button = power_btn
 	var glb := get_child(0)
 	var power_finger := glb.find_child("Finger Button Power", true, false)
 	var reset_finger := glb.find_child("Finger Button Reset", true, false)
 	var power_mesh := glb.find_child("ButtonPower", true, false) as MeshInstance3D
 	var reset_mesh := glb.find_child("ButtonReset", true, false) as MeshInstance3D
+	power_btn.depress_depth = BUTTON_DEPRESS_DEPTH
+	reset_btn.depress_depth = BUTTON_DEPRESS_DEPTH
+	power_btn.set_latched_pressed(false)
+	reset_btn.set_latched_pressed(false)
 	if power_mesh:
 		power_btn.set_button_mesh(power_mesh)  # also hides the placeholder box
 	if power_finger:
@@ -162,6 +169,8 @@ func get_cartridge_insert_direction() -> Vector3:
 
 
 func on_power_on() -> void:
+	if _power_button:
+		_power_button.set_latched_pressed(true)
 	if _power_light_mesh:
 		_power_light_mesh.show()
 	if _power_light_lamp:
@@ -169,6 +178,8 @@ func on_power_on() -> void:
 
 
 func on_power_off() -> void:
+	if _power_button:
+		_power_button.set_latched_pressed(false)
 	if _power_light_mesh:
 		_power_light_mesh.hide()
 	if _power_light_lamp:
