@@ -78,6 +78,10 @@ var _spawn_menu_ctrl: Node = null
 var _left_vr_ctrl: XRController3D = null
 var _right_vr_ctrl: XRController3D = null
 
+# Reference-counted pointer blocking — prevents multi-instance conflicts.
+var _blocking_left: bool = false
+var _blocking_right: bool = false
+
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _barrel_tip: Node3D = $BarrelTip
 @onready var _laser_dot: MeshInstance3D = $LaserDot
@@ -121,6 +125,7 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_saved_by = by
 	_holding_ctrl = ctrl
 	_set_model_visible(ctrl, false)
+	_update_pointer_block(ctrl, true)
 	_update_locomotion_block()
 
 
@@ -129,6 +134,7 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 		call_deferred("_rehold")
 	else:
 		_set_model_visible(_holding_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
 		_allow_drop = false
 		_saved_by = null
 		_holding_ctrl = null
@@ -143,6 +149,7 @@ func _rehold() -> void:
 		return
 	if not is_instance_valid(_saved_by):
 		_set_model_visible(_holding_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
 		_saved_by = null
 		_holding_ctrl = null
 		_update_locomotion_block()
@@ -164,11 +171,24 @@ func _is_combo_pressed(ctrl: XRController3D) -> bool:
 
 func _drop_all() -> void:
 	_set_model_visible(_holding_ctrl, true)
+	_update_pointer_block(_holding_ctrl, false)
 	_allow_drop = true
 	_holding_ctrl = null
 	_laser_dot.visible = false
 	_update_locomotion_block()
 	drop()
+
+
+func _exit_tree() -> void:
+	if _blocking_left and is_instance_valid(_left_vr_ctrl):
+		_update_pointer_block(_left_vr_ctrl, false)
+	if _blocking_right and is_instance_valid(_right_vr_ctrl):
+		_update_pointer_block(_right_vr_ctrl, false)
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
+	_allow_drop = true
+	super._exit_tree()
 
 
 func _update_locomotion_block() -> void:
@@ -179,16 +199,30 @@ func _update_locomotion_block() -> void:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
-	_set_pointer_enabled(_left_vr_ctrl,  not left_held)
-	_set_pointer_enabled(_right_vr_ctrl, not right_held)
 
 
-func _set_pointer_enabled(ctrl: XRController3D, enabled: bool) -> void:
+## Reference-counted pointer blocking (same mechanism as RetroController).
+func _update_pointer_block(ctrl: XRController3D, should_block: bool) -> void:
 	if not is_instance_valid(ctrl):
 		return
-	var pointer := ctrl.get_node_or_null("FunctionPointer") as Node3D
-	if pointer:
-		pointer.visible = enabled
+	var is_left := ctrl.tracker == &"left_hand"
+	var currently_blocking: bool = _blocking_left if is_left else _blocking_right
+	if should_block == currently_blocking:
+		return
+	if is_left:
+		_blocking_left = should_block
+	else:
+		_blocking_right = should_block
+	var pointer: Node3D = ctrl.get_node_or_null("FunctionPointer")
+	if not pointer:
+		return
+	var delta_count := 1 if should_block else -1
+	var count: int = maxi(0, pointer.get_meta("block_count", 0) + delta_count)
+	pointer.set_meta("block_count", count)
+	pointer.visible = count == 0
+	var ray: RayCast3D = pointer.get_node_or_null("RayCast") as RayCast3D
+	if ray:
+		ray.enabled = count == 0
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────

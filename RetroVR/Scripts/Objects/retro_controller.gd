@@ -11,7 +11,6 @@ const RETRO_DEVICE_JOYPAD := 1
 
 const DPAD_THRESHOLD      := 0.35
 const ANALOG_SCALE        := 0x7fff
-const SECONDARY_GRAB_DIST := 0.25
 
 ## Input thresholds per XRController float input name.
 const INPUT_THRESHOLDS: Dictionary = {
@@ -45,9 +44,12 @@ var _pending_port_restore: Dictionary = {}
 # Toggle-hold state
 var _allow_drop := false
 var _saved_by: Node3D = null
-var _holding_ctrl: XRController3D = null    # primary holder (official XRTools)
-var _secondary_ctrl: XRController3D = null  # second hand tracked manually
+var _holding_ctrl: XRController3D = null    # primary holder
 var _desktop_held: bool = false
+
+# Reference-counted pointer blocking — prevents multi-instance conflicts.
+var _blocking_left: bool = false
+var _blocking_right: bool = false
 
 ## Keyboard action → RETRO_JOYPAD bit index for desktop mode.
 const DESKTOP_BUTTON_MAP: Dictionary = {
@@ -88,9 +90,11 @@ var _desktop_rumble_active: bool = false
 func _ready() -> void:
 	super._ready()
 	press_to_hold = false
+	second_hand_grab = SecondHandGrab.SECOND
 	add_to_group("spawned")
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
+	released.connect(_on_released_signal)
 	_spawn_cable()
 	call_deferred("_find_vr_nodes")
 
@@ -104,28 +108,15 @@ func _find_vr_nodes() -> void:
 			continue
 		if ctrl.tracker == &"left_hand":
 			_left_vr_ctrl = ctrl
-			ctrl.button_pressed.connect(_on_vr_grip_pressed.bind(ctrl))
 		elif ctrl.tracker == &"right_hand":
 			_right_vr_ctrl = ctrl
-			ctrl.button_pressed.connect(_on_vr_grip_pressed.bind(ctrl))
 
 
-## Secondary hold: grip press on the other hand picks it up; only the combo drops it.
-func _on_vr_grip_pressed(button: String, from_ctrl: XRController3D) -> void:
-	if button != "grip_click":
-		return
-	# Primary hand — XRTools toggle handles this.
-	if from_ctrl == _holding_ctrl:
-		return
-	# Free hand trying to grab as secondary.
-	if not is_instance_valid(_holding_ctrl) or is_instance_valid(_secondary_ctrl):
-		return
-	if from_ctrl.global_position.distance_to(global_position) > SECONDARY_GRAB_DIST:
-		return
-	_secondary_ctrl = from_ctrl
-	_set_model_visible(from_ctrl, false)
-	_update_locomotion_block()
-	_apply_rumble()
+## Returns the XRController3D of the secondary (two-hand) grab, or null.
+func _get_secondary_ctrl() -> XRController3D:
+	if _grab_driver and _grab_driver.secondary:
+		return _grab_driver.secondary.controller
+	return null
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────
@@ -184,32 +175,65 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 			_desktop_held = true
 		return
 
-	if is_instance_valid(_holding_ctrl) and _holding_ctrl != ctrl:
-		# XRTools transferred to second hand — keep old hand as secondary.
-		_secondary_ctrl = _holding_ctrl
-		_allow_drop = true
+	# Only set _holding_ctrl for the first (primary) grab.
+	if not is_instance_valid(_holding_ctrl):
+		_saved_by = by
+		_holding_ctrl = ctrl
 
-	_saved_by = by
-	_holding_ctrl = ctrl
 	_set_model_visible(ctrl, false)
+	_update_pointer_block(ctrl, true)
 	_update_locomotion_block()
-	# If a rumble is already in progress, route it to the new hand.
 	_apply_rumble()
+
+
+## Fires for any individual grab release (primary or secondary).
+func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
+	var pickup := by as XRToolsFunctionPickup
+	if not is_instance_valid(pickup):
+		return
+	var ctrl: XRController3D = pickup.get_controller()
+	if ctrl == null:
+		return
+
+	if _allow_drop:
+		# Intentional drop — clean up this hand.
+		_set_model_visible(ctrl, true)
+		_update_pointer_block(ctrl, false)
+		if ctrl == _holding_ctrl:
+			if _grab_driver and _grab_driver.primary:
+				_holding_ctrl = _grab_driver.primary.controller
+				_saved_by = _grab_driver.primary.by
+			else:
+				_holding_ctrl = null
+				_saved_by = null
+		_update_locomotion_block()
+		_apply_rumble()
+		return
+
+	# Toggle grip — rehold the released hand.
+	if ctrl == _holding_ctrl:
+		if _grab_driver and _grab_driver.primary:
+			# Secondary was promoted to primary. Update our tracking.
+			_holding_ctrl = _grab_driver.primary.controller
+			_saved_by = _grab_driver.primary.by
+			call_deferred("_rehold_hand", by)
+		# else: no secondary, full drop follows — _on_dropped_signal handles rehold.
+	else:
+		# Secondary hand toggle — rehold it.
+		call_deferred("_rehold_hand", by)
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
 	if not _allow_drop and is_instance_valid(_saved_by):
 		call_deferred("_rehold")
 	else:
-		_set_model_visible(_holding_ctrl, true)
-		_set_model_visible(_secondary_ctrl, true)
 		_allow_drop = false
+		_set_model_visible(_holding_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
 		_saved_by = null
 		_holding_ctrl = null
-		_secondary_ctrl = null
 		_desktop_held = false
 		_update_locomotion_block()
-		# Drop any in-flight rumble along with the physical grip.
 		_apply_rumble()
 
 
@@ -219,13 +243,19 @@ func _rehold() -> void:
 		return
 	if not is_instance_valid(_saved_by):
 		_set_model_visible(_holding_ctrl, true)
-		_set_model_visible(_secondary_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
 		_saved_by = null
 		_holding_ctrl = null
-		_secondary_ctrl = null
 		_update_locomotion_block()
 		return
 	_saved_by.call("_pick_up_object", self)
+
+
+## Re-grab a hand that was released by toggle (not combo).
+func _rehold_hand(by: Node3D) -> void:
+	if _allow_drop or not is_instance_valid(by):
+		return
+	by.call("_pick_up_object", self)
 
 
 func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
@@ -234,25 +264,44 @@ func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
 
 
 func _update_locomotion_block() -> void:
+	var secondary_ctrl := _get_secondary_ctrl()
 	var left_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"left_hand") \
-				  or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"left_hand")
+				  or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"left_hand")
 	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
-				   or (is_instance_valid(_secondary_ctrl) and _secondary_ctrl.tracker == &"right_hand")
+				   or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"right_hand")
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
-	_set_pointer_enabled(_left_vr_ctrl,  not left_held)
-	_set_pointer_enabled(_right_vr_ctrl, not right_held)
 
 
-func _set_pointer_enabled(ctrl: XRController3D, enabled: bool) -> void:
+## Reference-counted pointer blocking. Multiple pickables can independently
+## block the same pointer without conflicting. The pointer is re-enabled only
+## when ALL blockers release.
+func _update_pointer_block(ctrl: XRController3D, should_block: bool) -> void:
 	if not is_instance_valid(ctrl):
 		return
-	var pointer := ctrl.get_node_or_null("FunctionPointer") as Node3D
-	if pointer:
-		pointer.visible = enabled
+	var is_left := ctrl.tracker == &"left_hand"
+	var currently_blocking: bool = _blocking_left if is_left else _blocking_right
+	if should_block == currently_blocking:
+		return
+	if is_left:
+		_blocking_left = should_block
+	else:
+		_blocking_right = should_block
+	var pointer: Node3D = ctrl.get_node_or_null("FunctionPointer")
+	if not pointer:
+		return
+	var delta_count := 1 if should_block else -1
+	var count: int = maxi(0, pointer.get_meta("block_count", 0) + delta_count)
+	pointer.set_meta("block_count", count)
+	pointer.visible = count == 0
+	# FunctionPickup._process_pointer_highlight queries the RayCast directly,
+	# bypassing pointer.enabled. Disable it too so ray-grab is fully blocked.
+	var ray: RayCast3D = pointer.get_node_or_null("RayCast") as RayCast3D
+	if ray:
+		ray.enabled = count == 0
 
 
 func _is_combo_pressed(ctrl: XRController3D) -> bool:
@@ -262,18 +311,35 @@ func _is_combo_pressed(ctrl: XRController3D) -> bool:
 		and ctrl.get_float("primary_click") > 0.5
 
 
-func _transfer_to(pickup: XRToolsFunctionPickup) -> void:
-	pickup.call("_pick_up_object", self)
-
-
 func _drop_all() -> void:
 	_set_model_visible(_holding_ctrl, true)
-	_set_model_visible(_secondary_ctrl, true)
+	_update_pointer_block(_holding_ctrl, false)
+	var secondary_ctrl := _get_secondary_ctrl()
+	if is_instance_valid(secondary_ctrl):
+		_set_model_visible(secondary_ctrl, true)
+		_update_pointer_block(secondary_ctrl, false)
 	_allow_drop = true
 	_holding_ctrl = null
-	_secondary_ctrl = null
 	_update_locomotion_block()
 	drop()
+
+
+func _exit_tree() -> void:
+	# Release any active pointer blocks so other objects aren't stuck.
+	if _blocking_left and is_instance_valid(_left_vr_ctrl):
+		_update_pointer_block(_left_vr_ctrl, false)
+	if _blocking_right and is_instance_valid(_right_vr_ctrl):
+		_update_pointer_block(_right_vr_ctrl, false)
+	XRToolsRumbleManager.clear(self)
+	if _desktop_rumble_active:
+		for device in Input.get_connected_joypads():
+			Input.stop_joy_vibration(device)
+		_desktop_rumble_active = false
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
+	_allow_drop = true
+	super._exit_tree()
 
 
 # ── Port events ───────────────────────────────────────────────────────────────
@@ -316,7 +382,8 @@ func _apply_rumble() -> void:
 	# so transferring hands mid-rumble doesn't leave the old hand buzzing.
 	XRToolsRumbleManager.clear(self)
 
-	var is_held: bool = is_instance_valid(_holding_ctrl) or is_instance_valid(_secondary_ctrl) or _desktop_held
+	var secondary_ctrl := _get_secondary_ctrl()
+	var is_held: bool = is_instance_valid(_holding_ctrl) or is_instance_valid(secondary_ctrl) or _desktop_held
 
 	# No physical holder → stop desktop vibration if active, nothing else to do.
 	if not is_held or combined <= 0.0:
@@ -328,7 +395,7 @@ func _apply_rumble() -> void:
 
 	# VR path: queue an indefinite event on whichever tracker(s) are holding.
 	# XRToolsRumbleManager re-pulses each tick until cleared.
-	if is_instance_valid(_holding_ctrl) or is_instance_valid(_secondary_ctrl):
+	if is_instance_valid(_holding_ctrl) or is_instance_valid(secondary_ctrl):
 		if _rumble_event == null:
 			_rumble_event = XRToolsRumbleEvent.new()
 			_rumble_event.indefinite = true
@@ -336,8 +403,8 @@ func _apply_rumble() -> void:
 		var trackers: Array = []
 		if is_instance_valid(_holding_ctrl):
 			trackers.append(_holding_ctrl.tracker)
-		if is_instance_valid(_secondary_ctrl):
-			trackers.append(_secondary_ctrl.tracker)
+		if is_instance_valid(secondary_ctrl):
+			trackers.append(secondary_ctrl.tracker)
 		if not trackers.is_empty():
 			XRToolsRumbleManager.add(self, _rumble_event, trackers)
 
@@ -404,32 +471,34 @@ func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
 # ── Input forwarding ──────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
+	var secondary_ctrl := _get_secondary_ctrl()
+
 	# Two-handed: position between both hands.
-	if is_instance_valid(_holding_ctrl) and is_instance_valid(_secondary_ctrl):
-		global_position = (_holding_ctrl.global_position + _secondary_ctrl.global_position) * 0.5
+	if is_instance_valid(_holding_ctrl) and is_instance_valid(secondary_ctrl):
+		global_position = (_holding_ctrl.global_position + secondary_ctrl.global_position) * 0.5
 
 	# Drop combo: each hand only releases itself.
-	if _is_combo_pressed(_secondary_ctrl):
-		_set_model_visible(_secondary_ctrl, true)
-		_secondary_ctrl = null
+	if _is_combo_pressed(secondary_ctrl):
+		_allow_drop = true
+		_set_model_visible(secondary_ctrl, true)
+		_update_pointer_block(secondary_ctrl, false)
+		if _grab_driver and _grab_driver.secondary:
+			_grab_driver.secondary.pickup.drop_object()
+		_allow_drop = false
 		_update_locomotion_block()
 		_apply_rumble()
 	elif _is_combo_pressed(_holding_ctrl):
-		if is_instance_valid(_secondary_ctrl):
-			# Transfer: find secondary's XRToolsFunctionPickup then hand off.
-			var new_ctrl := _secondary_ctrl
-			var pickups := new_ctrl.find_children("*", "XRToolsFunctionPickup", true, false)
-			if pickups.size() > 0:
-				_set_model_visible(_holding_ctrl, true)
-				_allow_drop = true
-				_holding_ctrl = null
-				_secondary_ctrl = null
-				_update_locomotion_block()
+		if is_instance_valid(secondary_ctrl):
+			# Drop primary only; XRTools promotes secondary to primary.
+			_allow_drop = true
+			_set_model_visible(_holding_ctrl, true)
+			_update_pointer_block(_holding_ctrl, false)
+			if is_instance_valid(_saved_by):
 				_saved_by.call("drop_object")
-				call_deferred("_transfer_to", pickups[0])
-			else:
-				_drop_all()
-				return
+			# _on_released_signal already updated _holding_ctrl to promoted hand.
+			_allow_drop = false
+			_update_locomotion_block()
+			_apply_rumble()
 		else:
 			_drop_all()
 			return
@@ -452,12 +521,12 @@ func _process(_delta: float) -> void:
 
 	# Face / grip / trigger buttons via button_map.
 	btn |= _apply_buttons_for_ctrl(ctrl, left_hand)
-	if is_instance_valid(_secondary_ctrl):
-		btn |= _apply_buttons_for_ctrl(_secondary_ctrl, _secondary_ctrl.tracker == &"left_hand")
+	if is_instance_valid(secondary_ctrl):
+		btn |= _apply_buttons_for_ctrl(secondary_ctrl, secondary_ctrl.tracker == &"left_hand")
 
 	# lstick = left hand's primary stick; rstick = right hand's primary stick.
-	var left_ctrl  := ctrl if left_hand else _secondary_ctrl
-	var right_ctrl := ctrl if not left_hand else _secondary_ctrl
+	var left_ctrl  := ctrl if left_hand else secondary_ctrl
+	var right_ctrl := ctrl if not left_hand else secondary_ctrl
 	var lstick: Vector2 = left_ctrl.get_vector2("primary") if is_instance_valid(left_ctrl) else Vector2.ZERO
 	var rstick: Vector2 = right_ctrl.get_vector2("primary") if is_instance_valid(right_ctrl) else Vector2.ZERO
 
