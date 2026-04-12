@@ -473,10 +473,6 @@ func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
 func _process(_delta: float) -> void:
 	var secondary_ctrl := _get_secondary_ctrl()
 
-	# Two-handed: position between both hands.
-	if is_instance_valid(_holding_ctrl) and is_instance_valid(secondary_ctrl):
-		global_position = (_holding_ctrl.global_position + secondary_ctrl.global_position) * 0.5
-
 	# Drop combo: each hand only releases itself.
 	if _is_combo_pressed(secondary_ctrl):
 		_allow_drop = true
