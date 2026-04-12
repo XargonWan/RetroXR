@@ -74,6 +74,12 @@ var _snapped_cartridge: Node3D = null
 	$ControllerPort4,
 ]
 
+## Cached RetroController currently plugged into each cabinet port (same index
+## as the libretro port the core sees). Populated by the snap/release handlers
+## so rumble signals can be routed back to the physical holder without a
+## node tree scan on every core callback.
+var _port_controllers: Array = [null, null, null, null]
+
 
 func _ready() -> void:
 	super._ready()
@@ -83,6 +89,7 @@ func _ready() -> void:
 	_power_button.button_pressed.connect(toggle_power)
 	_reset_button.button_pressed.connect(reset)
 	_libretro.options_ready.connect(_on_options_ready)
+	_libretro.rumble_state_changed.connect(_on_rumble_state_changed)
 	# Wire controller port snap signals
 	for i in range(4):
 		var idx := i
@@ -266,6 +273,11 @@ func power_off() -> void:
 	if not is_powered_on:
 		return
 	print("[RetroSystem] Powering off")
+	# Zero any active rumble on all plugged-in controllers so vibration
+	# doesn't leak past core unload if the core was rumbling at shutdown.
+	for ctrl in _port_controllers:
+		if ctrl and is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
+			ctrl.set_rumble(0.0, 0.0)
 	_libretro.StopContent()
 	is_powered_on = false
 	_options_panel.hide_panel()
@@ -360,17 +372,39 @@ func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 	var device_type: int = controller.get("device_type") if "device_type" in controller else 1
 	print("[RetroSystem] port %d snapped: device_type=%d" % [port_index, device_type])
 	set_controller_port_device(port_index, device_type)
+	# The snapped node is a ControllerPlug (cable end). Unwrap to the actual
+	# RetroController so rumble can be routed to its set_rumble() method.
+	_port_controllers[port_index] = controller.get_controller() \
+		if controller.has_method("get_controller") else controller
 	if controller.has_method("on_plugged_in"):
 		controller.on_plugged_in(self, port_index)
 
 
 func _on_port_released(port_index: int, controller: Node3D) -> void:
 	print("[RetroSystem] port %d released" % port_index)
+	# Stop any active rumble on the controller being unplugged. The snapped
+	# node is a ControllerPlug, so unwrap to the real RetroController first.
+	var actual_ctrl: Node3D = controller.get_controller() \
+		if is_instance_valid(controller) and controller.has_method("get_controller") \
+		else controller
+	if is_instance_valid(actual_ctrl) and actual_ctrl.has_method("set_rumble"):
+		actual_ctrl.set_rumble(0.0, 0.0)
 	if is_instance_valid(controller):
 		remove_collision_exception_with(controller)
+	_port_controllers[port_index] = null
 	set_controller_port_device(port_index, 0)  # RETRO_DEVICE_NONE
 	if is_instance_valid(controller) and controller.has_method("on_unplugged"):
 		controller.on_unplugged()
+
+
+## Route a rumble request from the core to the RetroController currently
+## plugged into the matching cabinet port.
+func _on_rumble_state_changed(port: int, weak: float, strong: float) -> void:
+	if port < 0 or port >= _port_controllers.size():
+		return
+	var ctrl = _port_controllers[port]
+	if ctrl and is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
+		ctrl.set_rumble(weak, strong)
 
 
 # --- Cartridge slot callbacks ---

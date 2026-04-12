@@ -16,6 +16,11 @@ func _ready() -> void:
 	add_to_group("controller_plug")
 
 
+## Returns the owning controller (RetroController or RayGun).
+func get_controller() -> Node3D:
+	return _controller
+
+
 ## Called by the owning controller when the cable is spawned.
 func set_controller(controller: Node3D) -> void:
 	_controller = controller

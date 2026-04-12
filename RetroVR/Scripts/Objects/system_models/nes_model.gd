@@ -2,7 +2,7 @@
 class_name RetroSystemModelNES
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/nes/nes-system-2.glb"
+const _MODEL_PATH := "res://Models/nes_system_2.tscn"
 const BUTTON_DEPRESS_DEPTH := 0.003
 
 ## Lid open rotation on X axis in radians. Tune after Blender hinge origin is set,

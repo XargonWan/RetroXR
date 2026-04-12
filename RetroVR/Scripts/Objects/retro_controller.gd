@@ -74,6 +74,14 @@ var _spawn_menu_ctrl: Node = null
 var _left_vr_ctrl: XRController3D = null
 var _right_vr_ctrl: XRController3D = null
 
+# Rumble state pushed from RetroSystem._on_rumble_state_changed.
+# Normalized 0.0..1.0; _apply_rumble() translates to XR haptics or joy vibration.
+var _rumble_weak: float = 0.0
+var _rumble_strong: float = 0.0
+var _rumble_event: XRToolsRumbleEvent = null
+# Track joy devices currently vibrating so we can stop them exactly when state goes to zero.
+var _desktop_rumble_active: bool = false
+
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 
 
@@ -117,6 +125,7 @@ func _on_vr_grip_pressed(button: String, from_ctrl: XRController3D) -> void:
 	_secondary_ctrl = from_ctrl
 	_set_model_visible(from_ctrl, false)
 	_update_locomotion_block()
+	_apply_rumble()
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────
@@ -184,6 +193,8 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_holding_ctrl = ctrl
 	_set_model_visible(ctrl, false)
 	_update_locomotion_block()
+	# If a rumble is already in progress, route it to the new hand.
+	_apply_rumble()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
@@ -198,6 +209,8 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 		_secondary_ctrl = null
 		_desktop_held = false
 		_update_locomotion_block()
+		# Drop any in-flight rumble along with the physical grip.
+		_apply_rumble()
 
 
 func _rehold() -> void:
@@ -276,6 +289,68 @@ func on_unplugged() -> void:
 	print("[RetroController] unplugged from port %d" % _port_index)
 	_connected_system = null
 	_port_index = -1
+	# Stop any lingering rumble when the cable is yanked. Usually already
+	# cleared by RetroSystem._on_port_released, but idempotent and safer.
+	_rumble_weak = 0.0
+	_rumble_strong = 0.0
+	_apply_rumble()
+
+
+# ── Rumble ────────────────────────────────────────────────────────────────────
+
+## Push a new rumble state from the system (ultimately from the libretro core).
+## weak / strong are normalized 0.0..1.0.
+func set_rumble(weak: float, strong: float) -> void:
+	_rumble_weak = weak
+	_rumble_strong = strong
+	_apply_rumble()
+
+
+## Translate the current rumble state into real haptics. Called on any state
+## change and whenever the physical holder changes (grab/drop) so the new
+## hand picks up ongoing rumble.
+func _apply_rumble() -> void:
+	var combined: float = XRToolsRumbleManager.combine_magnitudes(_rumble_weak, _rumble_strong)
+
+	# Always drop any previously-queued XR event keyed on self before re-adding
+	# so transferring hands mid-rumble doesn't leave the old hand buzzing.
+	XRToolsRumbleManager.clear(self)
+
+	var is_held: bool = is_instance_valid(_holding_ctrl) or is_instance_valid(_secondary_ctrl) or _desktop_held
+
+	# No physical holder → stop desktop vibration if active, nothing else to do.
+	if not is_held or combined <= 0.0:
+		if _desktop_rumble_active:
+			for device in Input.get_connected_joypads():
+				Input.stop_joy_vibration(device)
+			_desktop_rumble_active = false
+		return
+
+	# VR path: queue an indefinite event on whichever tracker(s) are holding.
+	# XRToolsRumbleManager re-pulses each tick until cleared.
+	if is_instance_valid(_holding_ctrl) or is_instance_valid(_secondary_ctrl):
+		if _rumble_event == null:
+			_rumble_event = XRToolsRumbleEvent.new()
+			_rumble_event.indefinite = true
+		_rumble_event.magnitude = combined
+		var trackers: Array = []
+		if is_instance_valid(_holding_ctrl):
+			trackers.append(_holding_ctrl.tracker)
+		if is_instance_valid(_secondary_ctrl):
+			trackers.append(_secondary_ctrl.tracker)
+		if not trackers.is_empty():
+			XRToolsRumbleManager.add(self, _rumble_event, trackers)
+
+	# Desktop path: vibrate every connected physical pad. Desktop input is
+	# action-based and merges all connected pads into the same libretro port,
+	# so routing rumble to all of them is the faithful mirror. Single-pad
+	# (the common case) works perfectly; multi-pad rumbles uniformly.
+	# TODO: when desktop input gains per-device routing, vibrate only the
+	# pad actually bound to this port.
+	if _desktop_held:
+		for device in Input.get_connected_joypads():
+			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
+		_desktop_rumble_active = true
 
 
 func restore_port_connection(system: RetroSystem, port_index: int) -> void:
@@ -338,6 +413,7 @@ func _process(_delta: float) -> void:
 		_set_model_visible(_secondary_ctrl, true)
 		_secondary_ctrl = null
 		_update_locomotion_block()
+		_apply_rumble()
 	elif _is_combo_pressed(_holding_ctrl):
 		if is_instance_valid(_secondary_ctrl):
 			# Transfer: find secondary's XRToolsFunctionPickup then hand off.
