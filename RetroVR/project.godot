@@ -229,6 +229,7 @@ RETRO_ANALOG_RIGHT_X_POSITIVE={
 
 [physics]
 
+3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=90
 common/physics_interpolation=true
 common/max_physics_steps_per_frame=8
