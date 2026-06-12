@@ -16,10 +16,17 @@
 // Requires Godot 4.4+ stencil support (experimental). Stencil reads only work
 // in the transparent pass — writing ALPHA puts both passes there.
 //
+// cull_disabled, NOT cull_front: classic inverted hulls draw back faces, but
+// under perspective back faces project smaller than the silhouette (which the
+// closer front faces define), so a few pixels of inflation never clears the
+// stencil footprint and the outline vanishes on any face-on edge. The inflated
+// front faces contain the silhouette and always extend past it; the stencil
+// mask removes their interior.
+//
 // Note: flat geometry (normals parallel to view) gets no outline — view_normal.xy ≈ 0
 // means no expansion, which is correct for interior label planes etc.
 shader_type spatial;
-render_mode cull_front, unshaded, depth_draw_never, depth_test_disabled;
+render_mode cull_disabled, unshaded, depth_draw_never, depth_test_disabled;
 stencil_mode read, compare_not_equal, 2;
 
 uniform vec4  outline_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
@@ -31,19 +38,25 @@ uniform float fade_end      : hint_range(0.1, 50.0) = 10.0;
 varying float v_view_dist;
 
 void vertex() {
-	vec4 clip_pos    = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vec3 view_pos    = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 view_normal = normalize(mat3(MODELVIEW_MATRIX) * NORMAL);
 
-	v_view_dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	v_view_dist = length(view_pos);
 
+	// View-space size of one pixel at this depth. abs() because Godot's Vulkan
+	// projection has a negative Y scale — never hand-map offsets into clip
+	// space here, push in view space and let PROJECTION_MATRIX handle signs.
+	float pixel_size = 2.0 * max(-view_pos.z, 0.01) / (abs(PROJECTION_MATRIX[1][1]) * VIEWPORT_SIZE.y);
+
+	// Inflate along the screen-plane component of the normal, renormalized so
+	// the outline keeps full pixel width even where the normal tilts toward
+	// the camera.
 	float n_len = length(view_normal.xy);
 	if (n_len > 1e-4) {
-		// outline_width is in pixels: NDC spans 2 units, scaled per-axis so the
-		// outline is equally thick on horizontal and vertical edges.
-		clip_pos.xy += (view_normal.xy / n_len) * outline_width * 2.0 * clip_pos.w / VIEWPORT_SIZE;
+		view_pos += vec3(view_normal.xy / n_len, 0.0) * outline_width * pixel_size;
 	}
 
-	POSITION = clip_pos;
+	POSITION = PROJECTION_MATRIX * vec4(view_pos, 1.0);
 }
 
 void fragment() {
