@@ -1,4 +1,3 @@
-* there needs to be a pop up just like the "hashing rom..." notification when saving, loading, delete scenes in the menu
 * the plug end of a controller, when pluged in to a system will show the blue outline of where the plug can go to the right or left of it
     * the plug highlight 'action' sphere' is maybe too large where it's possible to hold the plug in front of the system and multiple plugs get highlighted
 * the collision of a book seems to be off in a direction, i saw this only a few times, doesn't seem to always happen (maybe something with scene restoring??)
