@@ -140,3 +140,47 @@ static func scan_books() -> Array[Dictionary]:
 		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
 	)
 	return results
+
+
+## Video file extensions playable via the FFmpeg addon.
+const VIDEO_EXTENSIONS := ["mp4", "mkv", "avi", "webm", "mov"]
+
+
+## Root directory for videos.
+## Sits alongside the roms/ and books/ folders in the same files root.
+static func default_videos_root() -> String:
+	if OS.get_name() == "Android":
+		return "/sdcard/Android/data/com.xenu.retrovr/files/videos"
+	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/videos"
+
+
+## Create the videos root if it doesn't already exist.
+static func ensure_videos_root() -> void:
+	var path := default_videos_root()
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err == OK:
+		print("[RomLibrary] Ensured videos root: ", path)
+	else:
+		push_warning("[RomLibrary] Failed to create videos root '%s' (err %d)" % [path, err])
+
+
+## Scan the videos root and return all video files sorted by name.
+## Returns Array of {path: String, label: String}.
+static func scan_videos() -> Array[Dictionary]:
+	var dir_path := default_videos_root()
+	var dir := DirAccess.open(dir_path)
+	if not dir:
+		return []
+	var results: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		var ext := fname.get_extension().to_lower()
+		if not dir.current_is_dir() and ext in VIDEO_EXTENSIONS:
+			results.append({"path": dir_path.path_join(fname), "label": fname.get_basename()})
+		fname = dir.get_next()
+	dir.list_dir_end()
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
+	)
+	return results

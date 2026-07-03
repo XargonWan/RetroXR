@@ -19,6 +19,8 @@ const CART_SCENE             := preload("res://Scenes/Objects/cartridge.tscn")
 const BOOK_SCENE             := preload("res://Scenes/Objects/pdf_book.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
 const RAY_GUN_SCENE          := preload("res://Scenes/Objects/ray_gun.tscn")
+const VCR_SCENE              := preload("res://Scenes/Objects/vcr_player.tscn")
+const TAPE_SCENE             := preload("res://Scenes/Objects/vcr_tape.tscn")
 
 
 # ── Multi-slot public API ──────────────────────────────────────────────────────
@@ -251,6 +253,21 @@ func _read_scene_from_file(root: Node, path: String) -> bool:
 			if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
 				print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
 				sys.restore_cartridge(spawned[cart_id])
+		elif spawned[id] is VCRPlayer:
+			var vcr := spawned[id] as VCRPlayer
+			var tv_id: int = d.get("connected_tv_id", -1)
+			var tv_path: String = d.get("connected_tv_path", "")
+			if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+				vcr.restore_cable_connection(spawned[tv_id] as RetroTV)
+			elif not tv_path.is_empty():
+				var tv_node := root.get_node_or_null(tv_path) as RetroTV
+				if tv_node:
+					vcr.restore_cable_connection(tv_node)
+				else:
+					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+			var tape_id: int = d.get("snapped_tape_id", -1)
+			if spawned.has(tape_id) and spawned[tape_id] is VCRTape:
+				vcr.restore_tape(spawned[tape_id])
 		elif spawned[id] is RetroController or spawned[id] is RayGun:
 			var ctrl: Node3D = spawned[id]
 			var port_idx: int = d.get("port_index", -1)
@@ -329,6 +346,34 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+	elif node is VCRPlayer:
+		var vcr := node as VCRPlayer
+		var tv_id: int = node_to_id.get(vcr.connected_tv, -1) if vcr.connected_tv != null else -1
+		var tv_path: String = ""
+		if vcr.connected_tv != null and tv_id == -1:
+			tv_path = str(vcr.connected_tv.get_path())
+		var tape := vcr.get_snapped_tape()
+		var tape_id: int = node_to_id.get(tape, -1) if tape != null else -1
+		var result := {
+			"id": id,
+			"type": "vcr_player",
+			"connected_tv_id": tv_id,
+			"snapped_tape_id": tape_id,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
+		if not tv_path.is_empty():
+			result["connected_tv_path"] = tv_path
+		return result
+	elif node is VCRTape:
+		return {
+			"id": id,
+			"type": "vcr_tape",
+			"video_path": (node as VCRTape).video_path,
+			"video_label": (node as VCRTape).video_label,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	elif node is RetroController or node is RayGun:
 		var obj_type := "retro_controller" if node is RetroController else "ray_gun"
 		var connected_sys = (node as Node).get("_connected_system")
@@ -374,6 +419,13 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"ray_gun":
 			obj = RAY_GUN_SCENE.instantiate() as Node3D
+		"vcr_player":
+			obj = VCR_SCENE.instantiate() as Node3D
+		"vcr_tape":
+			var tape := TAPE_SCENE.instantiate() as VCRTape
+			tape.video_path = data.get("video_path", "")
+			tape.video_label = data.get("video_label", "")
+			obj = tape
 		_:
 			push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
 			return null

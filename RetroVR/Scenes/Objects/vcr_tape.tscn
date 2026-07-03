@@ -1,0 +1,70 @@
+[gd_scene load_steps=9 format=3 uid="uid://vcrtape_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/vcr_tape.gd" id="1_tapescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tape"]
+size = Vector3(0.14, 0.08, 0.025)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.16, 0.1, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tape"]
+size = Vector3(0.14, 0.08, 0.025)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tape"]
+albedo_color = Color(0.08, 0.08, 0.09, 1.0)
+
+[sub_resource type="BoxMesh" id="BoxMesh_label"]
+size = Vector3(0.11, 0.045, 0.002)
+
+[sub_resource type="StandardMaterial3D" id="Mat_label"]
+albedo_color = Color(0.9, 0.9, 0.85, 1.0)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_tape"]
+bounce = 0.0
+friction = 0.8
+
+[node name="VCRTape" type="RigidBody3D" groups=["vcr_tape"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_tape")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_tapescript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_tape")
+
+[node name="TapeMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_tape")
+surface_material_override/0 = SubResource("Mat_tape")
+
+[node name="LabelMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0.013)
+mesh = SubResource("BoxMesh_label")
+surface_material_override/0 = SubResource("Mat_label")
+
+[node name="VideoLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0.015)
+modulate = Color(0, 0, 0, 1)
+text = ""
+pixel_size = 0.0004
+font_size = 16
+outline_size = 4
+horizontal_alignment = 1
+vertical_alignment = 1
+max_lines_visible = 2
+width = 260.0
+no_depth_test = true
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")

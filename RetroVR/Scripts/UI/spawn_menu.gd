@@ -19,6 +19,8 @@ signal default_core_changed(systemid: String, core_name: String)
 signal spawn_cartridge_requested(rom_path: String, game_label: String)
 ## Emitted when the user clicks the manual (📖) button for a ROM.
 signal spawn_manual_requested(pdf_path: String)
+## Emitted when the user clicks a video (📼) in the Videos tab.
+signal spawn_video_requested(video_path: String)
 ## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
 signal turn_style_changed(value: String)
 ## Emitted when the user clicks a room card that maps directly to a scene (e.g. passthrough).
@@ -115,6 +117,8 @@ var _systems_vbox: VBoxContainer = null
 var _cartridges_inner_tabs: TabContainer = null
 # Spawn > Books tab — rebuilt each time the tab is opened
 var _books_vbox: VBoxContainer = null
+# Spawn > Videos tab — rebuilt each time the tab is opened
+var _videos_vbox: VBoxContainer = null
 
 # Scene view state
 var _scene_scroll:        ScrollContainer = null   # rooms-level scroll
@@ -181,6 +185,7 @@ func _ready() -> void:
 	for sid: String in core_defaults.all_defaults():
 		RomLibrary.ensure_rom_dir(sid)
 	RomLibrary.ensure_books_root()
+	RomLibrary.ensure_videos_root()
 	_build_ui()
 
 
@@ -549,7 +554,21 @@ func _build_spawn_view() -> Control:
 	books_scroll.add_child(_books_vbox)
 	_populate_books_tab()
 
-	_add_spawn_tab(tabs, "Objects", [["Trash Can", "trash_can"]])
+	# Videos tab — lists video files from the videos root directory
+	var videos_scroll := ScrollContainer.new()
+	videos_scroll.name = "Videos"
+	tabs.add_child(videos_scroll)
+	_spawn_tab_scrolls.append(videos_scroll)
+	_videos_vbox = VBoxContainer.new()
+	_videos_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_videos_vbox.add_theme_constant_override("separation", 10)
+	videos_scroll.add_child(_videos_vbox)
+	_populate_videos_tab()
+
+	_add_spawn_tab(tabs, "Objects", [
+		["Trash Can", "trash_can"],
+		["VCR",       "vcr_player"],
+	])
 
 	_add_spawn_tab(tabs, "Controllers", [
 		["Regular Controller", "retro_controller"],
@@ -563,6 +582,8 @@ func _build_spawn_view() -> Control:
 			_populate_cartridges_tab()
 		elif idx == 3:
 			_populate_books_tab()
+		elif idx == 4:
+			_populate_videos_tab()
 		_update_spawn_active_scroll(idx)
 	)
 
@@ -753,6 +774,28 @@ func _populate_books_tab() -> void:
 		btn.pressed.connect(spawn_manual_requested.emit.bind(book["path"]))
 		_books_vbox.add_child(btn)
 	_books_vbox.add_child(_spacer(8))
+
+
+func _populate_videos_tab() -> void:
+	if not _videos_vbox:
+		return
+	_clear_vbox(_videos_vbox)
+	var videos := RomLibrary.scan_videos()
+	if videos.is_empty():
+		var hint := Label.new()
+		hint.text = "No videos found in videos folder."
+		hint.add_theme_color_override("font_color", COLOR_DESC)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_videos_vbox.add_child(hint)
+		return
+	for video: Dictionary in videos:
+		var btn := Button.new()
+		btn.text = "  📼  " + video["label"]
+		btn.custom_minimum_size = Vector2(0, 72)
+		btn.add_theme_font_size_override("font_size", 24)
+		btn.pressed.connect(spawn_video_requested.emit.bind(video["path"]))
+		_videos_vbox.add_child(btn)
+	_videos_vbox.add_child(_spacer(8))
 
 
 func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:

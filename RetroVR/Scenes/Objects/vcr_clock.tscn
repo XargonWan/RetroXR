@@ -1,0 +1,24 @@
+[gd_scene load_steps=4 format=3 uid="uid://vcrclock_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/vcr_clock.gd" id="1_clockscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/seven_segment_display.gd" id="2_segscript"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(0.24, 0.032)
+
+[node name="VCRClock" type="Node3D"]
+script = ExtResource("1_clockscript")
+
+[node name="ClockViewport" type="SubViewport" parent="."]
+size = Vector2i(760, 104)
+disable_3d = true
+gui_disable_input = true
+render_target_update_mode = 4
+
+[node name="Display" type="Control" parent="ClockViewport"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("2_segscript")
+
+[node name="Screen" type="MeshInstance3D" parent="."]
+mesh = SubResource("QuadMesh_screen")

@@ -224,8 +224,8 @@ RETRO_ANALOG_RIGHT_X_POSITIVE={
 
 [physics]
 
-3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=90
+3d/physics_engine="Jolt Physics"
 3d/sleep_threshold_linear=0.15
 3d/sleep_threshold_angular=0.1
 3d/solver/contact_recycle_radius=0.005
@@ -234,9 +234,9 @@ common/physics_interpolation=true
 [rendering]
 
 textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=2
 openxr/multiview=true
 renderer/rendering_method.android="mobile"
-anti_aliasing/quality/msaa_3d=2
 
 [xr]
 

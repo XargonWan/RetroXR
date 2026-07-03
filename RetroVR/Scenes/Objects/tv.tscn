@@ -80,6 +80,19 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
 mesh = SubResource("QuadMesh_screen")
 surface_material_override/0 = SubResource("Mat_screen")
 
+[node name="OSDLabel" type="Label3D" parent="ScreenMesh" unique_id=1026455477]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.155, 0.095, 0.006)
+visible = false
+pixel_size = 0.0006
+modulate = Color(0.25, 1, 0.35, 1)
+render_priority = 2
+no_depth_test = true
+text = ""
+font_size = 64
+outline_size = 16
+outline_modulate = Color(0, 0, 0, 1)
+horizontal_alignment = 2
+
 [node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.15, -0.15, -0.16002099)
 grab_distance = 0.06

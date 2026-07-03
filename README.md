@@ -2,6 +2,25 @@
 
 GDExtension to run libretro cores inside of Godot 4
 
+## Video player (VCR)
+
+Besides emulator systems, the arcade room can play video files on the same TVs, driven
+by the [EIRTeam.FFmpeg](https://github.com/EIRTeam/EIRTeam.FFmpeg) addon (FFmpeg 6.0).
+
+1. Drop video files into the `videos/` folder (next to `roms/` and `books/`):
+   - Windows: `%USERPROFILE%\retrovr\videos`
+   - Quest/Android: `/sdcard/Android/data/com.xenu.retrovr/files/videos`
+   - Supported: `.mp4`, `.mkv`, `.avi`, `.webm`, `.mov`
+2. Open the spawn menu (`Tab`), go to the **Videos** tab, and click a video to spawn a
+   **VHS tape** carrying that file's path (like a cartridge carries a ROM path).
+3. From the **Objects** tab, spawn a **VCR** and a **TV**.
+4. Plug the VCR's cable into the TV (same cable/plug the emulator systems use).
+5. Insert the tape into the VCR's slot, then use the on-unit buttons:
+   **Play**, **Pause**, **Stop** (eject/blank), **&lt;&lt;** (rewind), **&gt;&gt;** (fast-forward).
+
+The video renders onto the connected TV's screen, and the TV's volume/power buttons
+control the VCR's audio and screen just like a system.
+
 ## Desktop mode controls
 
 When no VR headset is detected, RetroVR falls back to a desktop mode with mouse/keyboard controls.

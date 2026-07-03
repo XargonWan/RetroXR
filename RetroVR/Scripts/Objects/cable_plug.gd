@@ -1,12 +1,14 @@
 ## CablePlug — the grabbable end of a cable that snaps into a TV's CompositePort.
 ## Must be in the "composite_plug" group so the TV's snap zone accepts it.
-## Holds a back-reference to the parent RetroSystem.
+## Holds a back-reference to the host that owns the cable. The host is any node
+## implementing the TV contract (on_tv_connected/on_tv_disconnected/
+## set_audio_volume/set_screen_enabled) — a RetroSystem or a VCRPlayer.
 class_name CablePlug
 extends XRToolsPickable
 
 
-## The system this cable belongs to (set by system.gd when cable is instantiated)
-var _system: RetroSystem = null
+## The host this cable belongs to (set by the host when the cable is instantiated)
+var _system: Node3D = null
 
 
 func _ready() -> void:
@@ -15,11 +17,11 @@ func _ready() -> void:
 	add_to_group("composite_plug")
 
 
-## Returns the system this cable belongs to
-func get_system() -> RetroSystem:
+## Returns the host this cable belongs to
+func get_system() -> Node3D:
 	return _system
 
 
-## Set the owning system (called by the system when creating the cable)
-func set_system(system: RetroSystem) -> void:
+## Set the owning host (called by the host when creating the cable)
+func set_system(system: Node3D) -> void:
 	_system = system

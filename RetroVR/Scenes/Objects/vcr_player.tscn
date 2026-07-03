@@ -1,0 +1,217 @@
+[gd_scene load_steps=19 format=3 uid="uid://vcrplayer_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/vcr_player.gd" id="1_vcrscript"]
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="3_vrbtn"]
+[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/snap_highlight.gd" id="4_snaphis"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="5_pickhigh"]
+[ext_resource type="PackedScene" uid="uid://vcr_opts_panel_001" path="res://Scenes/UI/vcr_options_panel.tscn" id="6_vcropts"]
+[ext_resource type="PackedScene" uid="uid://vcrclock_001" path="res://Scenes/Objects/vcr_clock.tscn" id="7_vcrclock"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_vcr"]
+friction = 0.8
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.3, 0.09, 0.25)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.3, 0.09, 0.25)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.12, 0.12, 0.13, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_slot"]
+size = Vector3(0.16, 0.01, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="Mat_slot"]
+albedo_color = Color(0.05, 0.05, 0.05, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tape_ghost"]
+size = Vector3(0.14, 0.025, 0.08)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tape_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1, 0.45)
+emission_enabled = true
+emission = Color(0, 0.15, 0.5, 1)
+emission_energy_multiplier = 0.4
+
+[sub_resource type="CylinderMesh" id="CylMesh_cable"]
+top_radius = 0.012
+bottom_radius = 0.012
+height = 0.02
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_btn"]
+size = Vector3(0.035, 0.02, 0.035)
+
+[sub_resource type="BoxMesh" id="BoxMesh_btn"]
+size = Vector3(0.035, 0.02, 0.035)
+
+[sub_resource type="StandardMaterial3D" id="Mat_btn"]
+albedo_color = Color(0.3, 0.3, 0.3, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.32, 0.09, 0.27)
+
+[node name="VCRPlayer" type="RigidBody3D" groups=["vcr_player"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_vcr")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_vcrscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="VCRBody" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("5_pickhigh")
+
+[node name="TapeSlot" parent="." instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -0.02)
+grab_distance = 0.09
+snap_require = "vcr_tape"
+
+[node name="SlotVisual" type="MeshInstance3D" parent="TapeSlot"]
+mesh = SubResource("BoxMesh_slot")
+surface_material_override/0 = SubResource("Mat_slot")
+
+[node name="SnapHighlight" type="Node3D" parent="TapeSlot"]
+script = ExtResource("4_snaphis")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="TapeSlot/SnapHighlight"]
+mesh = SubResource("BoxMesh_tape_ghost")
+surface_material_override/0 = SubResource("Mat_tape_ghost")
+
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.125)
+
+[node name="PortVisual" type="MeshInstance3D" parent="CableAttachPoint"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
+mesh = SubResource("CylMesh_cable")
+
+[node name="PlayButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0.045, 0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlayButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="PlayButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="PlayButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "PLAY"
+font_size = 10
+
+[node name="PauseButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0.045, 0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PauseButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="PauseButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="PauseButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "PAUSE"
+font_size = 10
+
+[node name="StopButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StopButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="StopButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="StopButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "STOP"
+font_size = 10
+
+[node name="RewindButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0.045, 0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="RewindButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="RewindButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="RewindButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "<<"
+font_size = 10
+
+[node name="FastForwardButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.045, 0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FastForwardButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="FastForwardButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="FastForwardButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = ">>"
+font_size = 10
+
+[node name="NameLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, 0.05)
+pixel_size = 0.001
+billboard = 2
+font_size = 20
+outline_size = 4
+text = "VCR"
+
+[node name="VideoViewport" type="SubViewport" parent="."]
+size = Vector2i(16, 16)
+render_target_update_mode = 0
+
+[node name="VideoStreamPlayer" type="VideoStreamPlayer" parent="VideoViewport"]
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="VCROptionsPanel" parent="." instance=ExtResource("6_vcropts")]
+
+[node name="VCRClock" parent="." instance=ExtResource("7_vcrclock")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.126)

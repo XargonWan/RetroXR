@@ -17,12 +17,19 @@ signal cable_disconnected
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
 @onready var _volume_label: Label3D = $VolumeLabel
+@onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
+
+# Bumped each time an OSD message is shown or hidden so a stale auto-hide timer
+# from a previous message can't clear a newer one.
+var _osd_token: int = 0
 
 # Track the last-snapped plug so we can disconnect properly
 var _snapped_plug: CablePlug = null
 
-# Button state and volume control
-var _connected_system: RetroSystem = null
+# Button state and volume control. The connected host is any node implementing
+# the TV contract (on_tv_connected/on_tv_disconnected/set_audio_volume/
+# set_screen_enabled) — a RetroSystem or a VCRPlayer — so it's typed loosely.
+var _connected_system: Node3D = null
 var _volume: float = 1.0       # 0.0–1.0, default 100%
 var _tv_enabled: bool = true
 
@@ -71,6 +78,34 @@ func _process(_delta: float) -> void:
 ## Returns the screen MeshInstance3D so Libretro can render onto it
 func get_screen_mesh() -> MeshInstance3D:
 	return _screen_mesh
+
+
+# ── On-screen display (top-right corner) ────────────────────────────────────────
+
+## Show a persistent OSD message (stays until replaced or hidden).
+func show_osd(text: String) -> void:
+	_osd_token += 1
+	_osd_label.text = text
+	_osd_label.visible = true
+
+
+## Show an OSD message that auto-hides after `seconds` (unless superseded).
+func show_osd_timed(text: String, seconds: float) -> void:
+	_osd_token += 1
+	var tok := _osd_token
+	_osd_label.text = text
+	_osd_label.visible = true
+	get_tree().create_timer(seconds).timeout.connect(func():
+		if tok == _osd_token:
+			hide_osd()
+	)
+
+
+## Clear the OSD.
+func hide_osd() -> void:
+	_osd_token += 1
+	_osd_label.visible = false
+	_osd_label.text = ""
 
 
 ## Snaps a cable plug into this TV's composite port (used by save/load to restore connections).

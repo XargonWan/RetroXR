@@ -1,0 +1,14 @@
+[gd_scene load_steps=4 format=3 uid="uid://vcr_opts_panel_001"]
+
+[ext_resource type="Script" path="res://Scripts/UI/vcr_options_panel.gd" id="1_panelscript"]
+[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="2_viewport2d3d"]
+[ext_resource type="PackedScene" uid="uid://vcr_opts_2d_001" path="res://Scenes/UI/vcr_options_2d.tscn" id="3_vcropts2d"]
+
+[node name="VCROptionsPanel" type="Node3D"]
+script = ExtResource("1_panelscript")
+
+[node name="VCROptionsViewport" parent="." instance=ExtResource("2_viewport2d3d")]
+screen_size = Vector2(0.5, 0.4)
+scene = ExtResource("3_vcropts2d")
+viewport_size = Vector2(500, 400)
+transparent = 1

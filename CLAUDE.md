@@ -31,7 +31,58 @@ ANDROID_NDK_ROOT="C:/android/android-ndk-r27d" ANDROID_HOME="" \
 The `SConstruct` is at the workspace root; `Temp/SConscript` does the actual build logic.
 Output libraries go to `RetroVR/libretro-godot/`.
 
-No test suite exists in this project.
+## Headless Testing & Validation
+
+There is no formal test suite. The project is validated by running the Godot editor
+**headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
+tests. This works without a VR headset (desktop fallback) and without a display.
+
+Godot binary (Windows):
+```
+C:\Program Files\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64_console.exe
+```
+Use the `_console.exe` variant so stdout/stderr is captured. `$proj` below is
+`C:\Users\user\SK.Libretro.Godot\RetroVR`.
+
+### 1. Compile / import check (catches parse, shader & scene-load errors)
+```bash
+"$godot" --headless --path "$proj" --editor --quit
+```
+This reimports resources, recompiles every GDScript, compiles shaders, and (critically)
+**regenerates the global `class_name` cache**. Run it after adding or renaming any
+`class_name`, or a probe that references the new class will fail with
+`Could not find type "X" in the current scope`. Filter output for
+`SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate`.
+
+### 2. Functional probe (exercises real code paths)
+Write a tiny `probe.gd` (`extends Node`) + `probe.tscn`, run it, print `[probe] ...`
+lines, then `get_tree().quit(0)`:
+```bash
+"$godot" --headless --path "$proj" res://probe.tscn 2>&1 | grep -a "\[probe\]"
+```
+Always **delete the probe `.gd`/`.tscn` (and generated `.uid`/`.import`) when done.**
+Include a `get_tree().create_timer(5.0).timeout.connect(...quit)` safety net so a probe
+can never hang the run.
+
+### Gotchas
+- **Warnings are treated as errors** for some warnings — notably inferring a `:=`
+  variable from a `Variant` (e.g. `var x := ClassDB.instantiate(...)`). Use an explicit
+  type (`var x: Object = ...`). `unsafe_method_access` (calling a method not on the
+  static type, i.e. duck typing) is **not** an error, so it's fine.
+- **A `SubViewport` with `render_target_update_mode = ALWAYS` hangs a headless run**
+  (no GPU to service the render target). It renders fine in a real session — just don't
+  drive extra `await process_frame`s over such a viewport in a headless probe; test the
+  logic/wiring instead and eyeball the visual on-device.
+- **Known headless noise to filter out** (pre-existing, not your change): OpenXR
+  `xrCreateInstance failed`, missing GDExtension DLLs in the `template_debug` path
+  (`libgodotopenxrvendors`, `godot-pdfium`, `libretro_godot`), `.NET Sdk not found`, and
+  `xr_staging_shim.gd ... is_xr_class ... placeholder instance`. Grep these out.
+- **PowerShell buffers `& $godot ... | Out-String` until the process exits**, so a
+  backgrounded run shows an empty output file until it finishes. The Bash tool with
+  `timeout 90 "$godot" ... 2>&1 | grep` streams and bounds the run — prefer it.
+
+No compiled C++ test harness exists; GDExtension changes are validated by rebuilding
+(above) and loading in the headless editor.
 
 ## Architecture
 

@@ -13,6 +13,8 @@ const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
+const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
+const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
@@ -23,6 +25,8 @@ const SPAWN_Y := {
 	"trash_can":        0.90,
 	"retro_controller": 0.80,
 	"ray_gun":          0.82,
+	"vcr_player":       0.80,
+	"tape":             0.78,
 }
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
@@ -152,6 +156,7 @@ func _connect_menu_signals() -> void:
 	menu.close_requested.connect(_hide_menu)
 	menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
 	menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
+	menu.spawn_video_requested.connect(_on_spawn_video_requested)
 	menu.turn_style_changed.connect(_on_turn_style_changed)
 	menu.scene_change_requested.connect(_on_scene_change_requested)
 	menu.scene_slot_load_requested.connect(_on_slot_load)
@@ -212,9 +217,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not get_viewport().use_xr and is_instance_valid(_desktop_pointer):
 			var tgt := _desktop_pointer.last_target
 			if is_instance_valid(tgt):
-				var sys := _system_from_target(tgt)
-				if sys:
-					sys.toggle_options_ui(_camera)
+				var host := _options_host_from_target(tgt)
+				if host:
+					host.toggle_options_ui(_camera)
 					get_viewport().set_input_as_handled()
 					return
 		if not disabled:
@@ -239,9 +244,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_controller_button(action_name: String) -> void:
 	if action_name == "primary_click":
-		var sys := _get_pointed_system(_left_pointer)
-		if sys:
-			sys.toggle_options_ui(_camera)
+		var host := _get_pointed_options_host(_left_pointer)
+		if host:
+			host.toggle_options_ui(_camera)
 			return
 		if not disabled:
 			_toggle_menu()
@@ -345,7 +350,7 @@ func _compute_scroll_pixels(delta: float, raw_y: float) -> float:
 ## raycast can hit. We walk up from last_target looking for a RetroSystem ancestor.
 ## We return null early if we encounter an XRToolsViewport2DIn3D, so clicking on
 ## the spawn menu or core options panel is never misread as a system click.
-func _get_pointed_system(pointer: XRToolsFunctionPointer) -> RetroSystem:
+func _get_pointed_options_host(pointer: XRToolsFunctionPointer) -> Node3D:
 	if not pointer:
 		return null
 	var tgt: Node3D = pointer.last_target
@@ -353,24 +358,25 @@ func _get_pointed_system(pointer: XRToolsFunctionPointer) -> RetroSystem:
 		return null
 	var node: Node = tgt
 	while node:
-		# If the pointer is inside any viewport, it's a UI click — not a system click
+		# If the pointer is inside any viewport, it's a UI click — not an object click
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem:
-			return node as RetroSystem
+		if node is RetroSystem or node is VCRPlayer:
+			return node as Node3D
 		node = node.get_parent()
 	return null
 
 
-## Walk up from a raw target node to find an enclosing RetroSystem (desktop variant
-## of _get_pointed_system — works without an XRToolsFunctionPointer).
-func _system_from_target(tgt: Node3D) -> RetroSystem:
+## Walk up from a raw target node to find an enclosing options host — a RetroSystem
+## or VCRPlayer (desktop variant of _get_pointed_options_host — works without an
+## XRToolsFunctionPointer).
+func _options_host_from_target(tgt: Node3D) -> Node3D:
 	var node: Node = tgt
 	while node:
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem:
-			return node as RetroSystem
+		if node is RetroSystem or node is VCRPlayer:
+			return node as Node3D
 		node = node.get_parent()
 	return null
 
@@ -401,10 +407,10 @@ func _find_core_options_viewport(pointer: XRToolsFunctionPointer) -> XRToolsView
 	var node: Node = tgt
 	while node:
 		if node is XRToolsViewport2DIn3D:
-			# Walk up to see if this viewport lives inside a CoreOptionsPanel
+			# Walk up to see if this viewport lives inside an options panel
 			var ancestor: Node = node.get_parent()
 			while ancestor:
-				if ancestor is CoreOptionsPanel:
+				if ancestor is CoreOptionsPanel or ancestor is VCROptionsPanel:
 					return node as XRToolsViewport2DIn3D
 				ancestor = ancestor.get_parent()
 			return null
@@ -412,13 +418,14 @@ func _find_core_options_viewport(pointer: XRToolsFunctionPointer) -> XRToolsView
 	return null
 
 
-## Get the CoreOptions2D UI scene from a CoreOptionsPanel viewport node.
-func _get_core_options_ui(viewport_node: XRToolsViewport2DIn3D) -> CoreOptions2D:
+## Get the scrollable options UI (CoreOptions2D or VCROptions2D) from a panel
+## viewport node. Both expose scroll_active(pixels).
+func _get_core_options_ui(viewport_node: XRToolsViewport2DIn3D) -> Control:
 	var vp := viewport_node.get_node_or_null("Viewport") as SubViewport
 	if vp and vp.get_child_count() > 0:
 		var ui := vp.get_child(0)
-		if ui is CoreOptions2D:
-			return ui as CoreOptions2D
+		if ui is CoreOptions2D or ui is VCROptions2D:
+			return ui as Control
 	return null
 
 
@@ -562,6 +569,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = CART_SCENE.instantiate() as Node3D
 		"trash_can":
 			obj = TRASH_CAN_SCENE.instantiate() as Node3D
+		"vcr_player":
+			obj = VCR_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"ray_gun":
@@ -588,6 +597,13 @@ func _on_spawn_manual_requested(pdf_path: String) -> void:
 	var book := BOOK_SCENE.instantiate() as PDFBook
 	book.pdf_path = pdf_path
 	_place_spawned(book, "book")
+
+
+func _on_spawn_video_requested(video_path: String) -> void:
+	var tape := TAPE_SCENE.instantiate() as VCRTape
+	tape.video_path = video_path
+	tape.video_label = video_path.get_file().get_basename()
+	_place_spawned(tape, "tape")
 
 
 func _on_turn_style_changed(value: String) -> void:
