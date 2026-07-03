@@ -19,6 +19,10 @@ run/main_scene="uid://bh8x3sbal8nds"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://Textures/icon.svg"
 
+[audio]
+
+driver/mix_rate=48000
+
 [autoload]
 
 XRToolsUserSettings="*uid://bqgb8i74tm0t"
