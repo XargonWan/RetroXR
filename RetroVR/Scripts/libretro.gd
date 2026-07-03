@@ -41,24 +41,6 @@ func _on_controller_button_pressed(button_name: String):
 			vbox.visible = !vbox.visible
 
 
-func _unhandled_input(event):
-	if event.is_action_pressed("retro_start_emulation"):
-		if !monitor_node:
-			print("monitor node not found")
-			return
-
-		clear_options()
-		libretro_node.StartContent(monitor_node, core_directory, core_name, rom_path)
-
-	if event.is_action_pressed("retro_stop_emulation"):
-		libretro_node.StopContent()
-		clear_options()
-		
-	if event.is_action_pressed("retro_toggle_core_options"):
-		if vbox:
-			vbox.visible = !vbox.visible
-
-
 func _on_options_ready(categories, definitions, values):
 	vbox = options_scene.instantiate()
 	get_tree().current_scene.add_child(vbox)
