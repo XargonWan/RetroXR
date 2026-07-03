@@ -9,6 +9,8 @@ When no VR headset is detected, RetroVR falls back to a desktop mode with mouse/
 **Movement / camera**
 - `WASD` — move
 - Mouse — look
+- `Ctrl` (hold) — crouch
+- `Caps Lock` (hold) — walk (move slower, finer-grained control)
 
 **Interaction**
 - Left-click — grab/pick up object under cursor (or shoot, if holding the ray gun)

@@ -22,6 +22,8 @@
 [ext_resource type="PackedScene" uid="uid://42xbeno6pt3y" path="res://addons/godot-xr-tools/desktop-support/function_desktop_pointer.tscn" id="20_deskpointer"]
 [ext_resource type="Script" path="res://Scripts/desktop_pickup.gd" id="21_desktoppickup"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/desktop_reticle.tscn" id="22_reticle"]
+[ext_resource type="PackedScene" uid="uid://d2iqcc25yvk61" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_crouch.tscn" id="23_desktopcrouch"]
+[ext_resource type="PackedScene" uid="uid://dgm5op1hausw5" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_sprint.tscn" id="24_desktopwalk"]
 
 [node name="PlayerRig" type="Node3D"]
 
@@ -50,6 +52,12 @@ strafe = true
 [node name="MovementDesktopTurn" parent="Staging/XROrigin3D" instance=ExtResource("17_desktopturn")]
 
 [node name="MouseCapture" parent="Staging/XROrigin3D" instance=ExtResource("18_mousecapture")]
+
+[node name="MovementDesktopCrouch" parent="Staging/XROrigin3D" instance=ExtResource("23_desktopcrouch")]
+
+[node name="MovementDesktopWalk" parent="Staging/XROrigin3D" instance=ExtResource("24_desktopwalk")]
+sprint_button = "action_walk"
+sprint_speed_multiplier = 0.4
 
 [node name="LeftController" type="XRController3D" parent="Staging/XROrigin3D"]
 tracker = &"left_hand"
