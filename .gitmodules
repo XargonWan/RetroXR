@@ -4,3 +4,6 @@
 [submodule "libretro-godot"]
 	path = libretro-godot
 	url = https://github.com/XenuIsWatching/libretro-godot.git
+[submodule "EIRTeam.FFmpeg"]
+	path = EIRTeam.FFmpeg
+	url = https://github.com/EIRTeam/EIRTeam.FFmpeg.git
