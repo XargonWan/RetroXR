@@ -24,9 +24,15 @@ var video_path: String = ""
 var connected_tv: RetroTV = null
 var is_playing: bool = false
 # Scan direction: 0 = normal, +1 = fast-forward scan, -1 = rewind scan.
-# While scanning, the VideoStreamPlayer is paused and we step stream_position
-# manually each frame so the picture flies by with no audio (real-VCR feel).
+# While scanning the player keeps PLAYING (so it presents frames) but we jump
+# stream_position ahead/back in throttled steps so the picture visibly races,
+# with audio muted (real-VCR feel).
 var _scan_dir: int = 0
+var _scan_accum: float = 0.0            # time since the last scan seek
+var _pre_scan_volume_db: float = 0.0    # volume to restore when a scan ends
+# How often (seconds) to seek while scanning. Seeking every frame overloads the
+# decoder; ~12 seeks/sec still reads as a smooth fast-scan.
+const SCAN_SEEK_INTERVAL := 0.08
 
 # Cable scene to instantiate (shared with RetroSystem)
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
@@ -76,6 +82,8 @@ func _ready() -> void:
 	_rewind_button.set_color(Color(0.1, 0.4, 0.9))    # blue
 	_ff_button.set_color(Color(0.1, 0.4, 0.9))        # blue
 	_video_player.finished.connect(_on_video_finished)
+	# A larger audio buffer reduces crackle/underruns during playback.
+	_video_player.buffering_msec = 1000
 	_spawn_cable()
 	_update_name_label()
 
@@ -101,22 +109,34 @@ func _process(delta: float) -> void:
 		_clock.set_blank()
 
 
-## While scanning, step the (paused) player's position so frames fly by at
-## scan_speed. Hitting either end stops the scan and holds there.
+## While scanning, jump the (still-playing) player's position forward/back in
+## throttled steps so frames visibly race by at scan_speed. Hitting either end
+## stops the scan and holds there.
 func _update_scan(delta: float) -> void:
 	if _scan_dir == 0 or not is_playing:
 		return
+	_scan_accum += delta
+	if _scan_accum < SCAN_SEEK_INTERVAL:
+		return
 	var length := _video_player.get_stream_length()
-	var pos := _video_player.get_stream_position() + delta * scan_speed * float(_scan_dir)
+	var pos := _video_player.get_stream_position() + _scan_accum * scan_speed * float(_scan_dir)
+	_scan_accum = 0.0
 	if pos <= 0.0:
-		pos = 0.0
-		_scan_dir = 0   # reached the start; hold here (paused)
-		_osd("PAUSE", true)
+		_video_player.set_stream_position(0.0)
+		_end_scan_hold()   # reached the start; hold here
 	elif length > 0.0 and pos >= length:
-		pos = length
-		_scan_dir = 0   # reached the end; hold here (paused)
-		_osd("PAUSE", true)
-	_video_player.set_stream_position(pos)
+		_video_player.set_stream_position(length)
+		_end_scan_hold()   # reached the end; hold here
+	else:
+		_video_player.set_stream_position(pos)
+
+
+## Stop an in-progress scan and freeze on the current frame (used at either end).
+func _end_scan_hold() -> void:
+	_scan_dir = 0
+	_video_player.set_paused(true)
+	_video_player.volume_db = _pre_scan_volume_db
+	_osd("PAUSE", true)
 
 
 ## Toggle the floating VCR settings panel (mirrors RetroSystem.toggle_options_ui).
@@ -206,11 +226,15 @@ func _osd(text: String, sticky: bool) -> void:
 
 
 ## Enter (dir = ±1) or leave (dir = 0) a fast-forward/rewind scan.
-## Scanning pauses the player so it doesn't auto-advance or play audio; leaving
-## resumes normal-speed playback.
+## The player keeps playing during a scan (so frames present) but is muted;
+## leaving restores normal-speed playback and the prior volume.
 func _set_scan(dir: int) -> void:
+	if dir != 0 and _scan_dir == 0:
+		_pre_scan_volume_db = _video_player.volume_db
 	_scan_dir = dir
-	_video_player.set_paused(dir != 0)
+	_scan_accum = 0.0
+	_video_player.set_paused(false)
+	_video_player.volume_db = -80.0 if dir != 0 else _pre_scan_volume_db
 
 
 func play() -> void:
@@ -237,6 +261,8 @@ func play() -> void:
 func stop() -> void:
 	if not is_playing:
 		return
+	if _scan_dir != 0:
+		_video_player.volume_db = _pre_scan_volume_db
 	_scan_dir = 0
 	_video_player.stop()
 	is_playing = false

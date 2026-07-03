@@ -214,14 +214,15 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Desktop: Tab toggles the spawn menu (or core options when pointing at a system)
 	if event.is_action_pressed("desktop_spawn_menu"):
-		if not get_viewport().use_xr and is_instance_valid(_desktop_pointer):
-			var tgt := _desktop_pointer.last_target
-			if is_instance_valid(tgt):
-				var host := _options_host_from_target(tgt)
-				if host:
-					host.toggle_options_ui(_camera)
-					get_viewport().set_input_as_handled()
-					return
+		if not get_viewport().use_xr:
+			# The desktop InteractionResolver only reports interactable targets
+			# (buttons/pickables), not a system/VCR's plain PointerArea body, so
+			# raycast the pointable layer straight down the camera's aim instead.
+			var host := _raycast_options_host()
+			if host:
+				host.toggle_options_ui(_camera)
+				get_viewport().set_input_as_handled()
+				return
 		if not disabled:
 			_toggle_menu()
 		get_viewport().set_input_as_handled()
@@ -365,6 +366,25 @@ func _get_pointed_options_host(pointer: XRToolsFunctionPointer) -> Node3D:
 			return node as Node3D
 		node = node.get_parent()
 	return null
+
+
+## Raycast forward from the camera against the pointable layer (21) and return the
+## RetroSystem / VCRPlayer the reticle is aimed at, or null. Used on desktop where
+## the InteractionResolver won't report a bare PointerArea body.
+func _raycast_options_host() -> Node3D:
+	if not is_instance_valid(_camera):
+		return null
+	var space := _camera.get_world_3d().direct_space_state
+	var from := _camera.global_position
+	var to := from - _camera.global_transform.basis.z * 10.0
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 1 << 20   # 21: pointable
+	q.collide_with_areas = true
+	q.collide_with_bodies = true
+	var hit := space.intersect_ray(q)
+	if hit.is_empty():
+		return null
+	return _options_host_from_target(hit["collider"] as Node3D)
 
 
 ## Walk up from a raw target node to find an enclosing options host — a RetroSystem
