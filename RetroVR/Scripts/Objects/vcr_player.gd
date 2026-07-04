@@ -319,9 +319,7 @@ func _bind_screen_to_tv() -> void:
 	if _screen_material is ShaderMaterial:
 		(_screen_material as ShaderMaterial).set_shader_parameter("video_tex", tex)
 	else:
-		var std := _screen_material as StandardMaterial3D
-		std.albedo_texture = tex
-		std.emission_texture = tex
+		(_screen_material as StandardMaterial3D).albedo_texture = tex
 	mesh.set_surface_override_material(0, _screen_material)
 
 
@@ -338,10 +336,10 @@ func _make_screen_material() -> Material:
 		var mat := ShaderMaterial.new()
 		mat.shader = VCR_SHADER
 		return mat
+	# Unshaded so the picture reads as a self-lit screen (same look as the shader
+	# path, without the VHS effect) instead of being lit + double-bright emission.
 	var std := StandardMaterial3D.new()
-	std.emission_enabled = true
-	std.emission = Color(1, 1, 1)
-	std.emission_energy_multiplier = 1.0
+	std.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	return std
 
 
