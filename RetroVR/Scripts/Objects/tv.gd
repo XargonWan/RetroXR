@@ -10,14 +10,27 @@ signal cable_connected(plug)
 signal cable_disconnected
 
 
+const CRT_SHADER := preload("res://Shaders/crt_effect.gdshader")
+const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
+
+## CRT display filter (curvature, scanlines, aperture mask). Applied to
+## whatever source is showing — a system's game or the VCR's video.
+@export var crt_enabled: bool = true
+
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
 @onready var _ambilight: SpotLight3D = $Ambilight
 @onready var _vol_down_btn: VRButton = $VolumeDownButton
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
+@onready var _crt_btn: VRButton = $CRTButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
+
+# CRT wrap state: the ShaderMaterial we install over the source material, and
+# the source material we replaced (restored when the filter turns off).
+var _crt_material: ShaderMaterial = null
+var _crt_wrapped: Material = null
 
 # Bumped each time an OSD message is shown or hidden so a stale auto-hide timer
 # from a previous message can't clear a newer one.
@@ -44,13 +57,17 @@ func _ready() -> void:
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
 	_vol_up_btn.button_pressed.connect(_on_volume_up)
 	_tv_toggle_btn.button_pressed.connect(_on_tv_toggle)
+	_crt_btn.button_pressed.connect(_on_crt_toggle)
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
+	_update_crt_button_color()
 	_update_volume_label()
 
 
 func _process(_delta: float) -> void:
+	_update_crt()
+
 	if not _ambilight or not _ambilight.visible:
 		return
 
@@ -60,12 +77,11 @@ func _process(_delta: float) -> void:
 		return
 	_ambilight_frame = 0
 
-	# Sample average screen color from the screen material's texture
-	var mat := _screen_mesh.get_surface_override_material(0) as StandardMaterial3D
-	if not mat or not mat.albedo_texture:
+	# Sample average screen color from the current source texture (works for
+	# system emission materials, VCR materials and the CRT wrapper alike).
+	var tex := _current_source_texture()
+	if not tex:
 		return
-
-	var tex := mat.albedo_texture
 	var img := tex.get_image()
 	if not img:
 		return
@@ -73,6 +89,103 @@ func _process(_delta: float) -> void:
 	img.resize(1, 1, Image.INTERPOLATE_BILINEAR)
 	var avg := img.get_pixel(0, 0)
 	_ambilight.light_color = Color(avg.r, avg.g, avg.b)
+
+
+# ── CRT filter ─────────────────────────────────────────────────────────────────
+
+## Keep the CRT filter applied to whatever is currently on the screen. The
+## sources own the screen material (the C++ video handler re-asserts its own
+## material whenever the core's texture changes; the VCR swaps materials on
+## play/stop/effect-toggle), so instead of fighting them we watch the override
+## each frame and re-wrap when it changes — identity checks only, so the steady
+## state costs nothing.
+func _update_crt() -> void:
+	var override := _screen_mesh.get_surface_override_material(0)
+	if override == null:
+		_crt_wrapped = null
+		return
+
+	# VHS shader on the screen: chain the CRT stage inside it via its
+	# crt_enabled uniform rather than replacing the material.
+	if override is ShaderMaterial and override != _crt_material:
+		var sm := override as ShaderMaterial
+		if sm.shader == VCR_SHADER:
+			# Note: an unset uniform reads back as null, never bool — compare
+			# against the Variant directly.
+			var cur: Variant = sm.get_shader_parameter("crt_enabled")
+			if (cur == true) != crt_enabled:
+				sm.set_shader_parameter("crt_enabled", crt_enabled)
+		_crt_wrapped = null
+		return
+
+	if not crt_enabled:
+		if override == _crt_material and _crt_wrapped != null:
+			_screen_mesh.set_surface_override_material(0, _crt_wrapped)
+		_crt_wrapped = null
+		return
+
+	if override == _crt_material:
+		return
+
+	# A new source material appeared — wrap it if it carries a picture.
+	var tex := _extract_texture(override)
+	if tex == null:
+		return
+	if _crt_material == null:
+		_crt_material = ShaderMaterial.new()
+		_crt_material.shader = CRT_SHADER
+	_crt_material.set_shader_parameter("source_tex", tex)
+	_crt_wrapped = override
+	_screen_mesh.set_surface_override_material(0, _crt_material)
+
+
+## Pull the picture texture out of a screen material, whichever shape it has:
+## the C++ video handler uses emission, the VCR uses albedo or a video_tex
+## uniform, and our own CRT wrapper uses source_tex.
+func _extract_texture(mat: Material) -> Texture2D:
+	if mat is StandardMaterial3D:
+		var std := mat as StandardMaterial3D
+		if std.emission_texture != null:
+			return std.emission_texture
+		return std.albedo_texture
+	if mat is ShaderMaterial:
+		var sm := mat as ShaderMaterial
+		var tex: Variant = sm.get_shader_parameter("video_tex")
+		if tex == null:
+			tex = sm.get_shader_parameter("source_tex")
+		return tex as Texture2D
+	return null
+
+
+## The texture currently being shown, regardless of which material owns it.
+func _current_source_texture() -> Texture2D:
+	var mat := _screen_mesh.get_surface_override_material(0)
+	if mat == null:
+		return null
+	return _extract_texture(mat)
+
+
+## Restore the wrapped source material. Called before hosts (re)take the
+## screen so the C++ video handler captures/restores a clean original instead
+## of our wrapper.
+func _unwrap_crt() -> void:
+	if _crt_wrapped != null and _screen_mesh.get_surface_override_material(0) == _crt_material:
+		_screen_mesh.set_surface_override_material(0, _crt_wrapped)
+	_crt_wrapped = null
+
+
+func set_crt_enabled(enabled: bool) -> void:
+	crt_enabled = enabled
+	_update_crt_button_color()
+
+
+func _on_crt_toggle() -> void:
+	set_crt_enabled(not crt_enabled)
+
+
+func _update_crt_button_color() -> void:
+	if _crt_btn:
+		_crt_btn.set_color(Color(1.0, 0.6, 0.1) if crt_enabled else Color(0.35, 0.35, 0.35))
 
 
 ## Returns the screen MeshInstance3D so Libretro can render onto it
@@ -117,6 +230,9 @@ func accept_plug_restore(plug: CablePlug) -> void:
 
 ## Called when a cable plug snaps into the composite port
 func _on_plug_snapped(plug: Node3D) -> void:
+	# Hand the incoming host a clean screen so the C++ video handler doesn't
+	# capture our CRT wrapper as the "original" material to restore later.
+	_unwrap_crt()
 	cable_connected.emit(plug)
 	if plug is CablePlug:
 		_snapped_plug = plug as CablePlug
@@ -130,6 +246,9 @@ func _on_plug_snapped(plug: Node3D) -> void:
 
 ## Called when the cable plug leaves the composite port
 func _on_plug_released() -> void:
+	# Unwrap before the host tears down so it restores over its own material,
+	# not our CRT wrapper.
+	_unwrap_crt()
 	cable_disconnected.emit()
 	if _snapped_plug:
 		remove_collision_exception_with(_snapped_plug)

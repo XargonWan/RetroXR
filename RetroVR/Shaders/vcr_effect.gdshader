@@ -9,7 +9,13 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
 
+#include "res://Shaders/crt_filter.gdshaderinc"
+
 uniform sampler2D video_tex : source_color, filter_linear, repeat_disable;
+
+// Chained CRT display stage (set by the connected RetroTV when its CRT filter
+// is on): tape signal (VHS effects above) → tube (curvature/scanlines/mask).
+uniform bool crt_enabled = false;
 
 // Master switch (0 = pass the picture through untouched, 1 = full effect).
 uniform float effect_amount : hint_range(0.0, 1.0) = 1.0;
@@ -31,6 +37,12 @@ float hash(vec2 p) {
 
 void fragment() {
 	vec2 uv = UV;
+	if (crt_enabled) {
+		// Curve into tube coordinates first: the VHS signal distortions below
+		// then happen "on the tube", and the border/scanlines stay fixed to it.
+		uv = crt_warp(uv);
+	}
+	vec2 crt_uv = uv;
 	float amt = effect_amount;
 
 	// Scrolling tracking band — a distorted stripe that crawls up the screen,
@@ -72,6 +84,13 @@ void fragment() {
 	col *= 1.0 - dot(vc, vc) * vignette_strength * 2.0 * amt;
 
 	col *= mix(1.0, brightness, amt);
+
+	if (crt_enabled) {
+		// Display stage: scanlines/mask/vignette in tube space (pre-wobble so
+		// the tube geometry doesn't jitter with the tape), then glass border.
+		col = crt_apply(col, crt_uv, FRAGCOORD.x);
+		col *= crt_border(crt_uv);
+	}
 
 	ALBEDO = clamp(col, 0.0, 1.0);
 }

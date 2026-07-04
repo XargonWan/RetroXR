@@ -327,6 +327,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"type": "tv",
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
+			"crt_enabled": (node as RetroTV).crt_enabled,
 		}
 	elif node is RetroCartridge:
 		var cart := node as RetroCartridge
@@ -405,7 +406,9 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			sys.systemid = data.get("systemid", "")
 			obj = sys
 		"tv":
-			obj = TV_SCENE.instantiate() as Node3D
+			var tv := TV_SCENE.instantiate() as RetroTV
+			tv.crt_enabled = data.get("crt_enabled", true)
+			obj = tv
 		"cartridge":
 			var cart := CART_SCENE.instantiate() as RetroCartridge
 			cart.rom_path = data.get("rom_path", "")
