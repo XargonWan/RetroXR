@@ -29,10 +29,16 @@ extends MeshInstance3D
 ## Rope color
 @export var rope_color: Color = Color(0.15, 0.15, 0.15, 1.0)
 
-## Collision mask used for raycasting rope points against surfaces (layers 1+2 = floor/table)
-@export_flags_3d_physics var surface_collision_mask: int = 3
+## Collision mask for rope-vs-world collision (1+2 = floor/room/table, 4 = pickables like TVs)
+@export_flags_3d_physics var surface_collision_mask: int = 7
 
-## How many physics frames to skip between surface raycasts (higher = cheaper)
+## Collision radius around each rope point (slightly larger than tube_radius so the tube doesn't clip)
+@export var collision_radius: float = 0.008
+
+## Fraction of sliding velocity removed on surface contact (0 = slick, 1 = sticky)
+@export_range(0.0, 1.0) var surface_friction: float = 0.4
+
+## Physics frames between resting-contact shape queries (motion sweeps still run every frame)
 @export var raycast_interval: int = 3
 
 
@@ -56,8 +62,10 @@ var _vertex_array: PackedVector3Array
 # Raycast throttle counter
 var _raycast_frame: int = 0
 
-# Reusable raycast query (avoids per-point allocation)
+# Reusable collision queries (avoids per-point allocation)
 var _ray_query: PhysicsRayQueryParameters3D
+var _shape_query: PhysicsShapeQueryParameters3D
+var _sphere: SphereShape3D
 
 
 func _ready() -> void:
@@ -75,6 +83,12 @@ func _ready() -> void:
 		_ray_query = PhysicsRayQueryParameters3D.new()
 		_ray_query.collision_mask = surface_collision_mask
 		_ray_query.hit_back_faces = false
+		_sphere = SphereShape3D.new()
+		_sphere.radius = collision_radius
+		_shape_query = PhysicsShapeQueryParameters3D.new()
+		_shape_query.shape = _sphere
+		_shape_query.collision_mask = surface_collision_mask
+		_refresh_exclusions()
 
 
 func _build_trig_tables() -> void:
@@ -128,6 +142,26 @@ func _init_points() -> void:
 		_points[i]      = start_pos.lerp(end_pos, t)
 		_prev_points[i] = _points[i]
 
+	_refresh_exclusions()
+
+
+## Exclude the plug body and the host machine's body from rope collision —
+## the anchor points sit at/inside those colliders and would jitter forever.
+func _refresh_exclusions() -> void:
+	var rids: Array[RID] = []
+	var anchors: Array[Node3D] = [start_node, end_node]
+	for anchor in anchors:
+		var n: Node = anchor
+		while n != null:
+			if n is CollisionObject3D:
+				rids.append((n as CollisionObject3D).get_rid())
+				break
+			n = n.get_parent()
+	if _ray_query:
+		_ray_query.exclude = rids
+	if _shape_query:
+		_shape_query.exclude = rids
+
 
 func _physics_process(delta: float) -> void:
 	if _points.size() == 0:
@@ -173,21 +207,50 @@ func _physics_process(delta: float) -> void:
 		if end_node:
 			_points[count - 1] = end_node.global_position
 
-	# --- Surface collision (throttled) ---
+	# --- Surface collision ---
 	if surface_collision_mask != 0 and _ray_query:
 		_raycast_frame += 1
-		if _raycast_frame >= raycast_interval:
+		var do_rest := _raycast_frame >= raycast_interval
+		if do_rest:
 			_raycast_frame = 0
-			var space_state := get_world_3d().direct_space_state
-			for i in range(count):
-				if (i == 0 and start_node) or (i == count - 1 and end_node):
-					continue
-				_ray_query.from = _points[i] + Vector3(0, 0.05, 0)
-				_ray_query.to   = _points[i] + Vector3(0, -0.5, 0)
+		var space_state := get_world_3d().direct_space_state
+		for i in range(count):
+			if (i == 0 and start_node) or (i == count - 1 and end_node):
+				continue
+			# Sweep this frame's motion so a point can't tunnel through thin
+			# geometry, even between rest-query frames.
+			var from := _prev_points[i]
+			var to := _points[i]
+			var motion := to - from
+			if motion.length_squared() > 0.000001:
+				_ray_query.from = from
+				_ray_query.to = to + motion.normalized() * collision_radius
 				var hit := space_state.intersect_ray(_ray_query)
-				if hit and _points[i].y < hit["position"].y:
-					_points[i].y      = hit["position"].y
-					_prev_points[i].y = hit["position"].y
+				if hit:
+					var hit_normal: Vector3 = hit["normal"]
+					if hit_normal != Vector3.ZERO:
+						var hit_point: Vector3 = hit["position"]
+						_resolve_contact(i, hit_point, hit_normal)
+						continue
+			# Resting contact / pushout for points already touching a surface
+			# or being pushed into by moving bodies (throttled — heavier query).
+			if do_rest:
+				_shape_query.transform = Transform3D(Basis.IDENTITY, _points[i])
+				var rest := space_state.get_rest_info(_shape_query)
+				if not rest.is_empty():
+					var rest_normal: Vector3 = rest["normal"]
+					if rest_normal != Vector3.ZERO:
+						var rest_point: Vector3 = rest["point"]
+						_resolve_contact(i, rest_point, rest_normal)
+
+
+## Snap point i to just outside a surface and convert its velocity into a
+## friction-damped slide along the surface (no bounce).
+func _resolve_contact(i: int, contact: Vector3, normal: Vector3) -> void:
+	var vel := _points[i] - _prev_points[i]
+	var tangential := vel - normal * vel.dot(normal)
+	_points[i] = contact + normal * collision_radius
+	_prev_points[i] = _points[i] - tangential * (1.0 - surface_friction)
 
 
 func _process(_delta: float) -> void:
@@ -231,3 +294,12 @@ func _render_tube() -> void:
 
 	# Single bulk upload to GPU
 	(mesh as ArrayMesh).surface_update_vertex_region(0, 0, _vertex_array.to_byte_array())
+
+	# Keep culling bounds in sync — surface_update_vertex_region() does NOT
+	# recompute the mesh AABB (it stays a zero-size box at the origin), and this
+	# node is top_level at the world origin, so without this the rope gets
+	# frustum-culled (goes invisible) whenever the origin is off-screen.
+	var aabb := AABB(_points[0], Vector3.ZERO)
+	for i in range(1, count):
+		aabb = aabb.expand(_points[i])
+	custom_aabb = aabb.grow(collision_radius * 2.0)
