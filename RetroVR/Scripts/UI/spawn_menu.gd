@@ -52,6 +52,10 @@ signal controller_bindings_changed
 ## Emitted when the user clicks a desktop rebind button. spawn_menu_controller
 ## captures the next key/mouse press and calls back on_rebind_complete().
 signal rebind_started(action_name: String)
+## Emitted when the user clicks a GAME CONTROLLER rebind button.
+## spawn_menu_controller captures the next joypad press and calls back
+## on_pad_rebind_complete().
+signal pad_rebind_started(target: String)
 
 ## Shared core info database — populated on _ready, used by Download & Manager tabs.
 var core_db: CoreInfoDatabase = null
@@ -158,6 +162,15 @@ var _rebind_buttons: Dictionary = {}
 var _controls_opts: Dictionary = {}
 # Key of the currently-open inline dropdown ("" = none).
 var _open_dropdown_key: String = ""
+
+# Working copies of physical-gamepad bindings edited in the GAME CONTROLLER section.
+var _edit_pad_button_map: Dictionary = {}
+var _edit_pad_stick_map:  Dictionary = {}
+# Gamepad rebinding state: target waiting for a joypad press, target → Button node.
+var _pad_rebinding_target: String = ""
+var _pad_rebind_buttons: Dictionary = {}
+# Live "connected pads" status label in the GAME CONTROLLER section.
+var _pad_status_label: Label = null
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -1738,6 +1751,12 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	else:
 		_build_desktop_controls(vbox)
 
+	# Physical gamepad section — shown in both modes (a real pad works whether
+	# the player is in VR or at the desktop). Added unconditionally because
+	# get_viewport().use_xr is unreliable inside this SubViewport-hosted menu.
+	vbox.add_child(HSeparator.new())
+	_build_gamepad_controls(vbox)
+
 
 func _build_xr_controls(vbox: VBoxContainer) -> void:
 	# Load current global bindings as the working copy.
@@ -1955,6 +1974,174 @@ func _on_controls_reset() -> void:
 func _on_controls_save_global() -> void:
 	ControllerBindings.save_global(_edit_button_map, _edit_stick_map, _edit_lightgun_map)
 	controller_bindings_changed.emit()
+
+
+# ── Physical gamepad remapping ────────────────────────────────────────────────
+
+func _build_gamepad_controls(vbox: VBoxContainer) -> void:
+	_pad_rebind_buttons.clear()
+	var pad := GamepadBindings.get_global()
+	_edit_pad_button_map = pad["buttons"].duplicate()
+	_edit_pad_stick_map  = pad["sticks"].duplicate()
+
+	# ── Header ────────────────────────────────────────────────────────────────
+	var hdr := Label.new()
+	hdr.text = "GAME CONTROLLER"
+	hdr.add_theme_font_size_override("font_size", 22)
+	hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(hdr)
+
+	# ── Connected-pad status line ─────────────────────────────────────────────
+	var status := Label.new()
+	status.add_theme_font_size_override("font_size", 16)
+	status.add_theme_color_override("font_color", COLOR_LICENSE)
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(status)
+	_pad_status_label = status
+	_refresh_pad_status()
+	if not Input.joy_connection_changed.is_connected(_on_pad_connection_changed):
+		Input.joy_connection_changed.connect(_on_pad_connection_changed)
+
+	# ── Buttons (press-to-rebind; joypad presses reach us in VR and desktop) ──
+	var btn_hdr := Label.new()
+	btn_hdr.text = "Buttons"
+	btn_hdr.add_theme_font_size_override("font_size", 18)
+	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(btn_hdr)
+
+	for target: String in GamepadBindings.TARGET_ORDER:
+		vbox.add_child(_make_pad_rebind_row(target))
+
+	# ── Analog Sticks ─────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var stick_hdr := Label.new()
+	stick_hdr.text = "Analog Sticks"
+	stick_hdr.add_theme_font_size_override("font_size", 18)
+	stick_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(stick_hdr)
+
+	for stick: String in ["stick_left", "stick_right"]:
+		var s_label := "Left Stick" if stick == "stick_left" else "Right Stick"
+		var def_target := "left+dpad" if stick == "stick_left" else "right"
+		var current_target: String = _edit_pad_stick_map.get(stick, def_target)
+		var captured_stick := stick
+		vbox.add_child(_make_vr_dropdown_row(
+			"padstick:" + stick, s_label, _STICK_OPTIONS, current_target,
+			func(v: Variant) -> void: _edit_pad_stick_map[captured_stick] = v as String,
+			3
+		))
+
+	# ── Action buttons ────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 10)
+	action_row.custom_minimum_size = Vector2(0, 60)
+	vbox.add_child(action_row)
+
+	var reset_btn := Button.new()
+	reset_btn.text = "Reset to Default"
+	reset_btn.custom_minimum_size = Vector2(220, 52)
+	reset_btn.add_theme_font_size_override("font_size", 18)
+	reset_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	reset_btn.focus_mode = Control.FOCUS_NONE
+	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reset_btn.pressed.connect(_on_pad_controls_reset)
+	action_row.add_child(reset_btn)
+
+	var save_btn := Button.new()
+	save_btn.text = "Save"
+	save_btn.custom_minimum_size = Vector2(220, 52)
+	save_btn.add_theme_font_size_override("font_size", 18)
+	save_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	save_btn.focus_mode = Control.FOCUS_NONE
+	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_btn.pressed.connect(_on_pad_controls_save)
+	action_row.add_child(save_btn)
+
+
+## Creates a single gamepad rebind row: [Label: RetroPad target] [Button: binding].
+func _make_pad_rebind_row(target: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 48)
+
+	var lbl := Label.new()
+	lbl.text = GamepadBindings.TARGET_LABELS.get(target, target)
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
+
+	var binding: String = _edit_pad_button_map.get(target, "none")
+	var btn := Button.new()
+	btn.text = GamepadBindings.binding_display_name(binding)
+	btn.custom_minimum_size = Vector2(160, 44)
+	btn.add_theme_font_size_override("font_size", 18)
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	btn.focus_mode = Control.FOCUS_NONE
+	_pad_rebind_buttons[target] = btn
+
+	var captured_target := target
+	btn.pressed.connect(func() -> void:
+		# Cancel any in-progress pad rebind first.
+		if _pad_rebinding_target != "" and _pad_rebinding_target != captured_target:
+			var old_btn: Button = _pad_rebind_buttons.get(_pad_rebinding_target) as Button
+			if is_instance_valid(old_btn):
+				var prev: String = _edit_pad_button_map.get(_pad_rebinding_target, "none")
+				old_btn.text = GamepadBindings.binding_display_name(prev)
+		_pad_rebinding_target = captured_target
+		btn.text = "[ Press gamepad… ]"
+		pad_rebind_started.emit(captured_target)
+	)
+	row.add_child(btn)
+	return row
+
+
+## Called by spawn_menu_controller after a joypad press is captured.
+## binding is "" when the user cancelled.
+func on_pad_rebind_complete(target: String, binding: String) -> void:
+	_pad_rebinding_target = ""
+	if binding != "":
+		_edit_pad_button_map[target] = binding
+	var btn: Button = _pad_rebind_buttons.get(target) as Button
+	if is_instance_valid(btn):
+		var cur: String = _edit_pad_button_map.get(target, "none")
+		btn.text = GamepadBindings.binding_display_name(cur)
+
+
+func _on_pad_controls_reset() -> void:
+	_edit_pad_button_map = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
+	_edit_pad_stick_map  = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
+	for target: String in GamepadBindings.TARGET_ORDER:
+		var btn: Button = _pad_rebind_buttons.get(target) as Button
+		if is_instance_valid(btn):
+			var cur: String = _edit_pad_button_map.get(target, "none")
+			btn.text = GamepadBindings.binding_display_name(cur)
+	for stick: String in ["stick_left", "stick_right"]:
+		var def := "left+dpad" if stick == "stick_left" else "right"
+		_reset_vr_dropdown("padstick:" + stick, _edit_pad_stick_map.get(stick, def))
+
+
+func _on_pad_controls_save() -> void:
+	GamepadBindings.save_global(_edit_pad_button_map, _edit_pad_stick_map)
+	controller_bindings_changed.emit()
+
+
+func _refresh_pad_status() -> void:
+	if not is_instance_valid(_pad_status_label):
+		return
+	var pads := Input.get_connected_joypads()
+	if pads.is_empty():
+		_pad_status_label.text = "No gamepad detected — connect one via USB or Bluetooth."
+		return
+	var names: Array[String] = []
+	for device: int in pads:
+		names.append(Input.get_joy_name(device))
+	_pad_status_label.text = "%d pad(s): %s" % [pads.size(), ", ".join(names)]
+
+
+func _on_pad_connection_changed(_device: int, _connected: bool) -> void:
+	_refresh_pad_status()
 
 
 # ── Scraper ──────────────────────────────────────────────────────────────────

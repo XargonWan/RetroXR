@@ -32,6 +32,10 @@ var _port_index: int = -1
 var _button_map: Dictionary = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
 var _stick_map:  Dictionary = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
 
+# Physical gamepad bindings (loaded from GamepadBindings, merged into held input)
+var _pad_button_map: Dictionary = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
+var _pad_stick_map:  Dictionary = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
+
 # Cable
 var _cable_instance: Node3D = null
 var _cable_plug: ControllerPlug = null
@@ -82,7 +86,7 @@ var _rumble_weak: float = 0.0
 var _rumble_strong: float = 0.0
 var _rumble_event: XRToolsRumbleEvent = null
 # Track joy devices currently vibrating so we can stop them exactly when state goes to zero.
-var _desktop_rumble_active: bool = false
+var _pad_rumble_active: bool = false
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 
@@ -331,10 +335,10 @@ func _exit_tree() -> void:
 	if _blocking_right and is_instance_valid(_right_vr_ctrl):
 		_update_pointer_block(_right_vr_ctrl, false)
 	XRToolsRumbleManager.clear(self)
-	if _desktop_rumble_active:
+	if _pad_rumble_active:
 		for device in Input.get_connected_joypads():
 			Input.stop_joy_vibration(device)
-		_desktop_rumble_active = false
+		_pad_rumble_active = false
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
@@ -387,10 +391,10 @@ func _apply_rumble() -> void:
 
 	# No physical holder → stop desktop vibration if active, nothing else to do.
 	if not is_held or combined <= 0.0:
-		if _desktop_rumble_active:
+		if _pad_rumble_active:
 			for device in Input.get_connected_joypads():
 				Input.stop_joy_vibration(device)
-			_desktop_rumble_active = false
+			_pad_rumble_active = false
 		return
 
 	# VR path: queue an indefinite event on whichever tracker(s) are holding.
@@ -408,16 +412,15 @@ func _apply_rumble() -> void:
 		if not trackers.is_empty():
 			XRToolsRumbleManager.add(self, _rumble_event, trackers)
 
-	# Desktop path: vibrate every connected physical pad. Desktop input is
-	# action-based and merges all connected pads into the same libretro port,
-	# so routing rumble to all of them is the faithful mirror. Single-pad
-	# (the common case) works perfectly; multi-pad rumbles uniformly.
-	# TODO: when desktop input gains per-device routing, vibrate only the
-	# pad actually bound to this port.
-	if _desktop_held:
+	# Physical-pad path: vibrate every connected pad whenever this controller is
+	# held (VR or desktop). All pads merge into the one held controller's port,
+	# so rumbling all of them is the faithful mirror. Single-pad (the common
+	# case) works perfectly; multi-pad rumbles uniformly. Runs alongside the VR
+	# haptics above, so a hand and a pad can buzz together.
+	if is_held:
 		for device in Input.get_connected_joypads():
 			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
-		_desktop_rumble_active = true
+		_pad_rumble_active = true
 
 
 func restore_port_connection(system: RetroSystem, port_index: int) -> void:
@@ -441,6 +444,9 @@ func _load_bindings() -> void:
 	var bindings := ControllerBindings.get_for_system(systemid)
 	_button_map = bindings["buttons"]
 	_stick_map  = bindings["sticks"]
+	var pad := GamepadBindings.get_global()
+	_pad_button_map = pad["buttons"]
+	_pad_stick_map  = pad["sticks"]
 
 
 # Returns the joypad button bitmask contributed by one controller.
@@ -542,7 +548,8 @@ func _process(_delta: float) -> void:
 	elif "left" in rt: alx = int(rstick.x * ANALOG_SCALE); aly = int(-rstick.y * ANALOG_SCALE)
 	if "dpad" in rt: btn |= _threshold_to_dpad(rstick)
 
-	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
+	var m := _merge_pad_state(btn, alx, aly, arx, ary)
+	_connected_system.get_libretro_node().SetJoypadState(_port_index, m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
 
 
 func _process_desktop_joypad() -> void:
@@ -562,7 +569,25 @@ func _process_desktop_joypad() -> void:
 	var arx := int(rx * ANALOG_SCALE)
 	var ary := int(-ry * ANALOG_SCALE)
 
-	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
+	var m := _merge_pad_state(btn, alx, aly, arx, ary)
+	_connected_system.get_libretro_node().SetJoypadState(_port_index, m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+
+
+## Merge physical-gamepad state into the current (VR or keyboard) state.
+## Buttons OR together; each analog stick takes whichever source has the larger
+## magnitude, so a real pad and the VR thumbstick don't fight.
+func _merge_pad_state(btn: int, alx: int, aly: int, arx: int, ary: int) -> Dictionary:
+	var pad := GamepadBindings.poll(_pad_button_map, _pad_stick_map)
+	btn |= int(pad["btn"])
+	var plx: int = pad["alx"]
+	var ply: int = pad["aly"]
+	var prx: int = pad["arx"]
+	var pry: int = pad["ary"]
+	if plx * plx + ply * ply > alx * alx + aly * aly:
+		alx = plx; aly = ply
+	if prx * prx + pry * pry > arx * arx + ary * ary:
+		arx = prx; ary = pry
+	return {"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}
 
 
 static func _threshold_to_dpad(stick: Vector2) -> int:

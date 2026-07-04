@@ -34,6 +34,9 @@ const SPAWN_Y := {
 ## Action name waiting for a key/mouse press during desktop rebinding ("" = none).
 var _rebinding_action: String = ""
 
+## RetroPad target waiting for a joypad press during GAME CONTROLLER rebinding ("" = none).
+var _pad_rebinding_target: String = ""
+
 ## Set to true by VRInputMapper while a system is being controlled, so the
 ## spawn menu toggle doesn't fire during gameplay.
 var disabled: bool = false: set = _set_disabled
@@ -172,6 +175,7 @@ func _connect_menu_signals() -> void:
 	menu.fov_changed.connect(_on_fov_changed)
 	menu.controller_bindings_changed.connect(_on_controller_bindings_changed)
 	menu.rebind_started.connect(_on_rebind_started)
+	menu.pad_rebind_started.connect(_on_pad_rebind_started)
 	_menu_connected = true
 
 	# Auto-load last active slot on startup (arcade only)
@@ -187,9 +191,43 @@ func _on_rebind_started(action: String) -> void:
 	_rebinding_action = action
 
 
+func _on_pad_rebind_started(target: String) -> void:
+	_pad_rebinding_target = target
+	# Suspend live polling so the capture press can't drive a running game.
+	GamepadBindings.suspend_polling = true
+
+
+func _finish_pad_rebind(target: String, binding: String) -> void:
+	_pad_rebinding_target = ""
+	GamepadBindings.suspend_polling = false
+	var menu := _get_menu()
+	if menu:
+		menu.on_pad_rebind_complete(target, binding)
+
+
 # ── Button handler ────────────────────────────────────────────────────────────
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Gamepad rebinding: capture the next joypad button / axis push.
+	if _pad_rebinding_target != "":
+		var target := _pad_rebinding_target
+		# Escape (keyboard) cancels.
+		if event is InputEventKey and (event as InputEventKey).pressed \
+				and (event as InputEventKey).physical_keycode == KEY_ESCAPE:
+			_finish_pad_rebind(target, "")
+			get_viewport().set_input_as_handled()
+			return
+		var binding := ""
+		if event is InputEventJoypadButton and (event as InputEventJoypadButton).pressed:
+			binding = GamepadBindings.encode_event(event)
+		elif event is InputEventJoypadMotion \
+				and absf((event as InputEventJoypadMotion).axis_value) > 0.6:
+			binding = GamepadBindings.encode_event(event)
+		if binding != "":
+			_finish_pad_rebind(target, binding)
+			get_viewport().set_input_as_handled()
+		return
+
 	# Desktop key rebinding: capture the next key or mouse button press.
 	if _rebinding_action != "":
 		var is_key   := event is InputEventKey
