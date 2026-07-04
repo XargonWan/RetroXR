@@ -165,7 +165,7 @@ static func create_lerp(
 	var driver := XRToolsGrabDriver.new()
 	driver.name = p_target.name + "_driver"
 	driver.top_level = true
-	driver.process_physics_priority = -80
+	driver.process_physics_priority = _priority_for(p_grab)
 	driver.state = GrabState.LERP
 	driver.target = p_target
 	driver.primary = p_grab
@@ -197,7 +197,7 @@ static func create_snap(
 	var driver := XRToolsGrabDriver.new()
 	driver.name = p_target.name + "_driver"
 	driver.top_level = true
-	driver.process_physics_priority = -80
+	driver.process_physics_priority = _priority_for(p_grab)
 	driver.state = GrabState.SNAP
 	driver.target = p_target
 	driver.primary = p_grab
@@ -215,6 +215,19 @@ static func create_snap(
 
 	# Return the driver
 	return driver
+
+
+# LOCAL PATCH (RetroVR): physics priority for a new grab driver.
+#
+# Drivers all ran at -80, so a driver following a snap zone *inside* another
+# held pickable (e.g. a cartridge snapped into a carried system) could run
+# before that carrier's own driver in the same physics tick (same priority →
+# tree order decides). It then read the snap zone's previous-tick transform,
+# leaving the snapped object visibly trailing one physics tick behind while
+# the carrier moves. Snap-zone-held drivers now run at -70 — after all
+# hand-held drivers (-80) — so they always see this tick's carrier transform.
+static func _priority_for(p_grab : Grab) -> int:
+	return -70 if p_grab.by is XRToolsSnapZone else -80
 
 
 # Calculate the lerp voting from a to b
