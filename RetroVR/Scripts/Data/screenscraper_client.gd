@@ -33,7 +33,8 @@ func _ready() -> void:
 
 
 ## Scrape a ROM by its checksums. Emits scrape_completed or scrape_failed.
-## checksums: {crc, md5, sha1, size} from RomHasher.
+## checksums: {md5, sha1, size} from RomHasher (md5/sha1 are alternative rom
+## identifiers on screenscraper — either one is enough for a match).
 func scrape_rom(rom_path: String, systemid: String, checksums: Dictionary) -> void:
 	print("[ScreenscraperClient] scrape_rom: %s (system=%s)" % [rom_path.get_file(), systemid])
 	var systemeid := ScreenscraperSystems.get_systemeid(systemid)
@@ -47,7 +48,7 @@ func scrape_rom(rom_path: String, systemid: String, checksums: Dictionary) -> vo
 		scrape_failed.emit("Could not read ROM file checksums")
 		return
 
-	print("[ScreenscraperClient] systemeid=%d  CRC=%s" % [systemeid, checksums.get("crc", "?")])
+	print("[ScreenscraperClient] systemeid=%d  MD5=%s" % [systemeid, checksums.get("md5", "?")])
 	# Rate limit
 	await _wait_for_rate_limit()
 
@@ -69,7 +70,6 @@ func _build_query_url(rom_path: String, systemeid: int, checksums: Dictionary) -
 
 	params.append("systemeid=%d" % systemeid)
 	params.append("output=json")
-	params.append("crc=%s" % checksums.get("crc", ""))
 	params.append("md5=%s" % checksums.get("md5", ""))
 	params.append("sha1=%s" % checksums.get("sha1", ""))
 	params.append("romnom=%s" % rom_path.get_file().uri_encode())
