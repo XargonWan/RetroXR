@@ -251,6 +251,7 @@ func _unwrap_crt() -> void:
 func set_crt_enabled(enabled: bool) -> void:
 	crt_enabled = enabled
 	_update_crt_button_color()
+	NetworkManager.report_event(NetObjectSync.EV_TV_CRT, {"tv": self, "on": enabled})
 
 
 func _on_crt_toggle() -> void:
@@ -373,6 +374,8 @@ func _on_plug_snapped(plug: Node3D) -> void:
 		if system:
 			_connected_system = system
 			system.on_tv_connected(self)
+			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
+				{"owner": system, "tv": self})
 
 
 ## Called when the cable plug leaves the composite port
@@ -388,6 +391,7 @@ func _on_plug_released() -> void:
 			system.on_tv_disconnected()
 		_connected_system = null
 		_snapped_plug = null
+		NetworkManager.report_event(NetObjectSync.EV_TV_UNPLUG, {"tv": self})
 
 
 # Remote-control entry points (TVRemote): identical to pressing the bezel
@@ -421,6 +425,7 @@ func _on_volume_down() -> void:
 		show_volume_osd()
 	if _tv_enabled and _connected_system:
 		_connected_system.set_audio_volume(_volume)
+	NetworkManager.report_event(NetObjectSync.EV_TV_VOL_DOWN, {"tv": self})
 
 
 func _on_volume_up() -> void:
@@ -430,6 +435,7 @@ func _on_volume_up() -> void:
 		show_volume_osd()
 	if _tv_enabled and _connected_system:
 		_connected_system.set_audio_volume(_volume)
+	NetworkManager.report_event(NetObjectSync.EV_TV_VOL_UP, {"tv": self})
 
 
 func _on_tv_toggle() -> void:
@@ -446,3 +452,4 @@ func _on_tv_toggle() -> void:
 	if _connected_system:
 		_connected_system.set_screen_enabled(_tv_enabled)
 		_connected_system.set_audio_volume(_volume if _tv_enabled else 0.0)
+	NetworkManager.report_event(NetObjectSync.EV_TV_POWER, {"tv": self})

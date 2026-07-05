@@ -213,6 +213,15 @@ func _read_scene_from_file(root: Node, path: String) -> bool:
 	if not objects is Array:
 		return false
 
+	var spawned := instantiate_objects(root, objects as Array)
+	print("[ScenePersistence] loaded %d objects from '%s'" % [spawned.size(), path])
+	return true
+
+
+## Instantiate serialized object entries under root and restore their
+## cross-connections (two passes). Returns {id: Node3D} for the spawned set.
+## Shared by slot loading and multiplayer world snapshots (ObjectSync).
+func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 	# Pass 1: spawn all objects.
 	var spawned: Dictionary = {}
 	var entries: Dictionary = {}
@@ -287,8 +296,9 @@ func _read_scene_from_file(root: Node, path: String) -> bool:
 			print("[ScenePersistence] restoring controller id=%d → system port %d" % [id, port_idx])
 			ctrl.call("restore_port_connection", sys, port_idx)
 
-	print("[ScenePersistence] loaded %d objects from '%s'" % [count, path])
-	return true
+	if count > 0:
+		print("[ScenePersistence] instantiated %d objects" % count)
+	return spawned
 
 
 # ── Serialization ──────────────────────────────────────────────────────────────

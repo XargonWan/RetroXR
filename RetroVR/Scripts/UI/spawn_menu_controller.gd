@@ -618,6 +618,9 @@ func _place_spawned(obj: Node3D, type: String) -> void:
 	fwd = fwd.normalized()
 	obj.global_position = global_position + fwd * 0.5
 	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
+	# In a multiplayer session the host registers + broadcasts; a client's
+	# local copy is converted into a spawn request the host executes.
+	NetworkManager.on_local_spawn(obj)
 
 
 func _on_spawn_requested(type: String) -> void:

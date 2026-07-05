@@ -286,10 +286,33 @@ func power_off() -> void:
 
 ## Toggle power (used by the power button)
 func toggle_power() -> void:
+	if NetworkManager.is_active() and not NetworkManager.is_event_applying():
+		if NetworkManager.is_client():
+			# Pre-netplay: emulation runs on the host only — send the intent.
+			NetworkManager.report_event(NetObjectSync.EV_SYS_POWER, {"sys": self})
+			return
 	if is_powered_on:
 		power_off()
 	else:
 		power_on()
+	# Host in a session: tell clients the new state (placeholder screens).
+	if NetworkManager.is_active() and NetworkManager.is_host() \
+			and not NetworkManager.is_event_applying():
+		NetworkManager.report_event(NetObjectSync.EV_SYS_POWER_STATE,
+			{"sys": self, "on": is_powered_on})
+
+
+## True on clients while the host runs this system's emulation.
+var net_remote_powered := false
+
+## Client-side mirror of the host's power state (pre-netplay placeholder).
+func net_set_remote_power(on: bool) -> void:
+	net_remote_powered = on
+	if connected_tv:
+		if on:
+			connected_tv.show_osd("LIVE ON HOST")
+		else:
+			connected_tv.hide_osd()
 
 
 ## Hard reset: restart the running core without going through power on/off.
@@ -378,6 +401,8 @@ func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 		if controller.has_method("get_controller") else controller
 	if controller.has_method("on_plugged_in"):
 		controller.on_plugged_in(self, port_index)
+	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
+		{"sys": self, "ctrl": _port_controllers[port_index], "port": port_index})
 
 
 func _on_port_released(port_index: int, controller: Node3D) -> void:
@@ -395,6 +420,8 @@ func _on_port_released(port_index: int, controller: Node3D) -> void:
 	set_controller_port_device(port_index, 0)  # RETRO_DEVICE_NONE
 	if is_instance_valid(controller) and controller.has_method("on_unplugged"):
 		controller.on_unplugged()
+	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG,
+		{"sys": self, "port": port_index})
 
 
 ## Route a rumble request from the core to the RetroController currently
@@ -449,6 +476,8 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	if cartridge.has_method("get_rom_path"):
 		rom_path = cartridge.get_rom_path()
 	_model.play_cartridge_insert(cartridge, _cartridge_slot)
+	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
+		{"sys": self, "cart": cartridge})
 
 
 func _on_cartridge_removed() -> void:
@@ -459,3 +488,4 @@ func _on_cartridge_removed() -> void:
 	if is_powered_on:
 		power_off()
 	rom_path = ""
+	NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})

@@ -25,6 +25,7 @@ const CH_FILE := 3      # reliable: file/state chunks
 
 const AVATAR_SCENE := preload("res://Scenes/Net/remote_avatar.tscn")
 const POSE_BROADCASTER := preload("res://Scripts/Net/pose_broadcaster.gd")
+const OBJECT_SYNC := preload("res://Scripts/Net/object_sync.gd")
 
 ## Avatar palette — color_idx assigned by the host at registration.
 const PLAYER_COLORS: Array[Color] = [
@@ -56,6 +57,7 @@ var pose_source: Callable = Callable()
 var _active := false
 var _accepted := false           # handshake complete (host: immediately)
 var _signals_wired := false
+var _object_sync: NetObjectSync = null
 var _pose_accum := 0.0
 var _latest_poses: Dictionary = {}     # peer_id -> PackedFloat32Array(21)
 var _avatars_container: Node3D = null
@@ -64,6 +66,10 @@ var _broadcaster: Node = null
 
 
 func _ready() -> void:
+	# Fixed-path RPC child — must exist on every peer before any session RPC.
+	_object_sync = OBJECT_SYNC.new()
+	_object_sync.name = "ObjectSync"
+	add_child(_object_sync)
 	# React to host-driven scene switches (rebuild avatars in the new scene).
 	if has_node("/root/SceneManager"):
 		SceneManager.scene_changed.connect(_on_scene_changed)
@@ -94,11 +100,11 @@ func is_active() -> bool:
 
 
 func is_host() -> bool:
-	return _active and multiplayer.is_server()
+	return _active and multiplayer != null and multiplayer.is_server()
 
 
 func is_client() -> bool:
-	return _active and not multiplayer.is_server()
+	return _active and multiplayer != null and not multiplayer.is_server()
 
 
 func host_game(port := DEFAULT_PORT) -> Error:
@@ -140,6 +146,7 @@ func join_game(ip: String, port := DEFAULT_PORT) -> Error:
 func leave_session(reason := "left session") -> void:
 	if not _active:
 		return
+	_object_sync.end_session()
 	_active = false
 	_accepted = false
 	if multiplayer.multiplayer_peer != null:
@@ -150,6 +157,25 @@ func leave_session(reason := "left session") -> void:
 	_teardown_world()
 	status_changed.emit("Not connected")
 	session_ended.emit(reason)
+
+
+# ── Object-sync facade (hooks in world objects call these) ────────────────────
+
+## Forward a state-transition event to the shared world (no-op offline).
+func report_event(kind: int, args: Dictionary) -> void:
+	if _active and _object_sync != null:
+		_object_sync.report_event(kind, args)
+
+
+## True while remote state is being applied locally (hooks must not re-report).
+func is_event_applying() -> bool:
+	return _object_sync != null and _object_sync.is_applying()
+
+
+## Called by the spawn flow when a new object was placed while in a session.
+func on_local_spawn(obj: Node3D) -> void:
+	if _active and _object_sync != null:
+		_object_sync.local_spawn(obj)
 
 
 ## Local LAN IPv4 addresses (for the host UI).
@@ -271,7 +297,9 @@ func _peer_left_msg(id: int) -> void:
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _scene_change(scene_id: String) -> void:
 	if has_node("/root/SceneManager"):
+		SceneManager.net_scene_override = true
 		SceneManager.change_scene(scene_id)
+		SceneManager.net_scene_override = false
 
 
 # ── Pose sync ─────────────────────────────────────────────────────────────────
@@ -350,6 +378,7 @@ func _setup_world() -> void:
 		if id != self_id:
 			_add_avatar(id, peers[id])
 	_attach_broadcaster()
+	_object_sync.on_world_ready()
 
 
 func _teardown_world() -> void:
@@ -403,5 +432,6 @@ func _on_scene_changed(scene_id: String) -> void:
 	# Host propagates the switch; everyone rebuilds avatars in the new scene.
 	if is_host():
 		_scene_change.rpc(scene_id)
+	_object_sync.reset_for_scene_change()
 	world_root = null
 	call_deferred("_setup_world")

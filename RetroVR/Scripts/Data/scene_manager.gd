@@ -18,6 +18,10 @@ var current_scene_id: String = "arcade"
 var auto_save_on_switch: bool = true
 var active_slot_id: String = "clean"
 
+## Set by NetworkManager around host-driven scene switches so the client
+## guard in change_scene() doesn't block them.
+var net_scene_override: bool = false
+
 
 func _ready() -> void:
 	load_prefs()
@@ -64,8 +68,16 @@ func change_scene(scene_id: String) -> void:
 		push_warning("SceneManager: passthrough not supported on this device")
 		return
 
-	# Auto-save arcade state before leaving (skip if clean slot — it's readonly)
-	if current_scene_id == "arcade" and auto_save_on_switch and active_slot_id != "clean":
+	# In a session only the host decides scenes; clients follow via the network.
+	var net_client: bool = has_node("/root/NetworkManager") and NetworkManager.is_client()
+	if net_client and not net_scene_override:
+		push_warning("SceneManager: only the host can change scenes during a session")
+		return
+
+	# Auto-save arcade state before leaving (skip if clean slot — it's readonly;
+	# skip on clients — the shared world is the host's, not ours to save).
+	if current_scene_id == "arcade" and auto_save_on_switch and active_slot_id != "clean" \
+			and not net_client:
 		var persistence := ScenePersistence.new()
 		persistence.save_slot(get_tree().current_scene, active_slot_id)
 

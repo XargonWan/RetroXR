@@ -158,6 +158,8 @@ func _on_tape_inserted(tape: Node3D) -> void:
 	add_collision_exception_with(tape)
 	if tape.has_method("get_video_path"):
 		video_path = tape.get_video_path()
+	NetworkManager.report_event(NetObjectSync.EV_TAPE_INSERT,
+		{"vcr": self, "tape": tape})
 
 
 func _on_tape_removed() -> void:
@@ -166,6 +168,16 @@ func _on_tape_removed() -> void:
 		_snapped_tape = null
 	stop()
 	video_path = ""
+	NetworkManager.report_event(NetObjectSync.EV_TAPE_REMOVE, {"vcr": self})
+
+
+## Client-in-session: transport commands run on the host only (pre-netplay);
+## returns true when the command was forwarded instead of handled locally.
+func _net_forward_cmd(cmd: String) -> bool:
+	if NetworkManager.is_client() and not NetworkManager.is_event_applying():
+		NetworkManager.report_event(NetObjectSync.EV_VCR_CMD, {"vcr": self, "cmd": cmd})
+		return true
+	return false
 
 
 # --- Playback controls ---
@@ -194,6 +206,8 @@ func remote_rewind() -> void:
 
 
 func _on_play_pressed() -> void:
+	if _net_forward_cmd("play"):
+		return
 	if is_playing:
 		# Leaving a scan or resuming from pause both mean "back to normal play".
 		if _scan_dir != 0 or _video_player.is_paused():
@@ -204,6 +218,8 @@ func _on_play_pressed() -> void:
 
 
 func _on_pause_pressed() -> void:
+	if _net_forward_cmd("pause"):
+		return
 	if is_playing:
 		_scan_dir = 0
 		_video_player.set_paused(true)
@@ -211,11 +227,15 @@ func _on_pause_pressed() -> void:
 
 
 func _on_stop_pressed() -> void:
+	if _net_forward_cmd("stop"):
+		return
 	stop()
 
 
 ## Rewind button: toggle reverse scan (press again, or Play/Pause, to exit).
 func _on_rewind_pressed() -> void:
+	if _net_forward_cmd("rew"):
+		return
 	if not is_playing:
 		return
 	if _scan_dir == -1:
@@ -228,6 +248,8 @@ func _on_rewind_pressed() -> void:
 
 ## Fast-forward button: toggle forward scan (press again, or Play/Pause, to exit).
 func _on_ff_pressed() -> void:
+	if _net_forward_cmd("ff"):
+		return
 	if not is_playing:
 		return
 	if _scan_dir == 1:
