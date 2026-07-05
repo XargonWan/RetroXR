@@ -581,6 +581,7 @@ func _build_spawn_view() -> Control:
 	_add_spawn_tab(tabs, "Objects", [
 		["Trash Can", "trash_can"],
 		["VCR",       "vcr_player"],
+		["TV Remote", "tv_remote"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [

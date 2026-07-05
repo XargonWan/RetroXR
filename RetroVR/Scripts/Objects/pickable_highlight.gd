@@ -37,6 +37,8 @@ const OUTLINE_MASK_SHADER := preload("res://Shaders/outline_mask.gdshader")
 @export var held_color:  Color = Color(0.25, 0.6, 1.0, 1.0)
 ## Color shown while the object is inside a TrashCan detection area (overrides held colour).
 @export var trash_color: Color = Color(1.0, 0.15, 0.15, 1.0)
+## Color shown while a held TV remote is pointing at the object.
+@export var remote_color: Color = Color(0.5, 0.0, 0.13, 1.0)
 
 @export_range(0.0, 8.0, 0.1)  var outline_width: float = 1.0
 @export_range(0.0, 8.0, 0.1)  var glow_strength: float = 2.0
@@ -52,11 +54,12 @@ var _mask_material: ShaderMaterial = null         # stencil footprint pass, next
 # meshes across many pickables (e.g. spawned cartridges) share one copy.
 static var _outline_mesh_cache: Dictionary = {}
 
-var _is_highlighted: bool = false
-var _is_ray_held:    bool = false
-var _is_hand_held:   bool = false
-var _is_in_trash:    bool = false
-var _ray_grabber:    Node = null
+var _is_highlighted:   bool = false
+var _is_ray_held:      bool = false
+var _is_hand_held:     bool = false
+var _is_in_trash:      bool = false
+var _is_remote_target: bool = false
+var _ray_grabber:      Node = null
 
 
 func _ready() -> void:
@@ -173,6 +176,9 @@ func _update_state() -> void:
 	if _is_in_trash:
 		_set_color(trash_color)
 		_set_overlays_visible(true)
+	elif _is_remote_target:
+		_set_color(remote_color)
+		_set_overlays_visible(true)
 	elif _is_hand_held:
 		_set_color(held_color)
 		_set_overlays_visible(true)
@@ -189,6 +195,12 @@ func _update_state() -> void:
 ## Called by TrashCan when this object enters or exits the trash detection area.
 func set_trash_mode(in_trash: bool) -> void:
 	_is_in_trash = in_trash
+	_update_state()
+
+
+## Called by a held TVRemote when it starts/stops pointing at this object.
+func set_remote_target(active: bool) -> void:
+	_is_remote_target = active
 	_update_state()
 
 

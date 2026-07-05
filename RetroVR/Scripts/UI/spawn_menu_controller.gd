@@ -15,6 +15,7 @@ const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.t
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
+const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/tv_remote.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
@@ -27,6 +28,7 @@ const SPAWN_Y := {
 	"ray_gun":          0.82,
 	"vcr_player":       0.80,
 	"tape":             0.78,
+	"tv_remote":        0.78,
 }
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
@@ -629,6 +631,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = TRASH_CAN_SCENE.instantiate() as Node3D
 		"vcr_player":
 			obj = VCR_SCENE.instantiate() as Node3D
+		"tv_remote":
+			obj = TV_REMOTE_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"ray_gun":

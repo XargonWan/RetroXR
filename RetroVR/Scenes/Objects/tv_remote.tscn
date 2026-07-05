@@ -1,0 +1,85 @@
+[gd_scene load_steps=12 format=3 uid="uid://tv_remote_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/tv_remote.gd" id="1_remotescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_remote"]
+size = Vector3(0.05, 0.025, 0.15)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.09, 0.06, 0.19)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.048, 0.022, 0.148)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.12, 0.12, 0.14, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pad"]
+size = Vector3(0.036, 0.004, 0.08)
+
+[sub_resource type="StandardMaterial3D" id="Mat_pad"]
+albedo_color = Color(0.25, 0.25, 0.28, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_power"]
+size = Vector3(0.01, 0.004, 0.01)
+
+[sub_resource type="StandardMaterial3D" id="Mat_power"]
+albedo_color = Color(0.8, 0.1, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tip"]
+size = Vector3(0.02, 0.012, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tip"]
+albedo_color = Color(0.2, 0.02, 0.02, 1)
+emission_enabled = true
+emission = Color(0.5, 0.04, 0.04, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_remote"]
+bounce = 0.0
+friction = 0.8
+
+[node name="TVRemote" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_remote")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_remotescript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_remote")
+
+[node name="BodyMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="ButtonPad" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.012, 0.015)
+mesh = SubResource("BoxMesh_pad")
+surface_material_override/0 = SubResource("Mat_pad")
+
+[node name="PowerDot" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.014, 0.013, -0.055)
+mesh = SubResource("BoxMesh_power")
+surface_material_override/0 = SubResource("Mat_power")
+
+[node name="TipMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.076)
+mesh = SubResource("BoxMesh_tip")
+surface_material_override/0 = SubResource("Mat_tip")
+
+[node name="Tip" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.082)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")

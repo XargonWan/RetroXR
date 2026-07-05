@@ -21,6 +21,21 @@ by the [EIRTeam.FFmpeg](https://github.com/EIRTeam/EIRTeam.FFmpeg) addon (FFmpeg
 The video renders onto the connected TV's screen, and the TV's volume/power buttons
 control the VCR's audio and screen just like a system.
 
+## TV remote
+
+Spawn a **TV Remote** from the spawn menu's **Objects** tab. While held, point it at a
+TV or VCR — the target is outlined maroon and a small menu pops up above the remote:
+
+- **TV**: `POWER` / `VOL +` / `VOL −`
+- **VCR**: `PLAY` / `PAUSE` / `STOP` / `FF` / `REW`
+
+**VR**: flick the thumbstick up/down to move the selection, press the primary button
+(`A`/`X`) or click the thumbstick to activate.
+
+**Desktop**: the remote snaps to the lower-right corner aiming where you look (like the
+ray gun). `Arrow Up`/`Arrow Down` move the selection, `Enter` activates, and — because
+it is FPS-snapped — dropping it requires **`Ctrl` + Left-click** (plain click won't drop it).
+
 ## Desktop mode controls
 
 When no VR headset is detected, RetroVR falls back to a desktop mode with mouse/keyboard controls.
@@ -33,8 +48,9 @@ When no VR headset is detected, RetroVR falls back to a desktop mode with mouse/
 
 **Interaction**
 - Left-click — grab/pick up object under cursor (or shoot, if holding the ray gun)
-- `Ctrl` + Left-click — drop held object (plain click also drops non-gun objects)
-- Scroll wheel — push/pull held object along view ray (disabled while gun is FPS-snapped)
+- `Ctrl` + Left-click — drop held object (required for FPS-snapped objects: ray gun,
+  TV remote; plain click also drops everything else)
+- Scroll wheel — push/pull held object along view ray (disabled while FPS-snapped)
 - Middle-mouse drag — rotate held object in place
 - `Tab` — toggle spawn menu
 

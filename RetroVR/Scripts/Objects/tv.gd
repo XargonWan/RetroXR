@@ -259,6 +259,26 @@ func _on_plug_released() -> void:
 		_snapped_plug = null
 
 
+# Remote-control entry points (TVRemote): identical to pressing the bezel
+# buttons, so the volume label / power button color stay in sync.
+
+func remote_power_toggle() -> void:
+	_on_tv_toggle()
+
+
+func remote_volume_up() -> void:
+	_on_volume_up()
+
+
+func remote_volume_down() -> void:
+	_on_volume_down()
+
+
+## True when the TV is switched on (used by the remote's POWER row label).
+func is_powered_on() -> bool:
+	return _tv_enabled
+
+
 func _update_volume_label() -> void:
 	_volume_label.text = "%d" % roundi(_volume * 100.0)
 

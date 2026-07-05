@@ -21,6 +21,7 @@ const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.t
 const RAY_GUN_SCENE          := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE              := preload("res://Scenes/Objects/vcr_player.tscn")
 const TAPE_SCENE             := preload("res://Scenes/Objects/vcr_tape.tscn")
+const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 
 
 # ── Multi-slot public API ──────────────────────────────────────────────────────
@@ -329,6 +330,13 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"rotation": [rot.x, rot.y, rot.z],
 			"crt_enabled": (node as RetroTV).crt_enabled,
 		}
+	elif node is TVRemote:
+		return {
+			"id": id,
+			"type": "tv_remote",
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	elif node is RetroCartridge:
 		var cart := node as RetroCartridge
 		return {
@@ -409,6 +417,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			var tv := TV_SCENE.instantiate() as RetroTV
 			tv.crt_enabled = data.get("crt_enabled", true)
 			obj = tv
+		"tv_remote":
+			obj = TV_REMOTE_SCENE.instantiate() as Node3D
 		"cartridge":
 			var cart := CART_SCENE.instantiate() as RetroCartridge
 			cart.rom_path = data.get("rom_path", "")

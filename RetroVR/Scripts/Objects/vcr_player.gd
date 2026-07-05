@@ -170,6 +170,29 @@ func _on_tape_removed() -> void:
 
 # --- Playback controls ---
 
+# Remote-control entry points (TVRemote): identical to pressing the unit's
+# front-panel buttons, including FF/REW scan toggling and OSD messages.
+
+func remote_play() -> void:
+	_on_play_pressed()
+
+
+func remote_pause() -> void:
+	_on_pause_pressed()
+
+
+func remote_stop() -> void:
+	_on_stop_pressed()
+
+
+func remote_ff() -> void:
+	_on_ff_pressed()
+
+
+func remote_rewind() -> void:
+	_on_rewind_pressed()
+
+
 func _on_play_pressed() -> void:
 	if is_playing:
 		# Leaving a scan or resuming from pause both mean "back to normal play".
