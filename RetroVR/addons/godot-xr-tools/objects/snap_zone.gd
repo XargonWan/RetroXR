@@ -168,6 +168,8 @@ func drop_object() -> void:
 	picked_up_object = null
 	has_dropped.emit()
 	highlight_updated.emit(self, enabled)
+	# LOCAL PATCH (RetroVR): the ghost may come back now that the zone is free
+	_update_close_highlight()
 
 
 # Check for an initial object pickup
@@ -218,9 +220,17 @@ func _on_snap_zone_body_entered(target: Node3D) -> void:
 	if snap_mode == SnapMode.DROPPED and target.has_signal("dropped"):
 		target.connect("dropped", _on_target_dropped, CONNECT_DEFERRED)
 
+	# LOCAL PATCH (RetroVR): re-evaluate the highlight when this object's
+	# held-state changes — an object snapped into a NEIGHBORING zone stays
+	# inside our grab sphere forever (no body_exited), which used to leave
+	# the ghost lit permanently.
+	if target.has_signal("picked_up") and not target.is_connected("picked_up", _on_area_object_state_changed):
+		target.connect("picked_up", _on_area_object_state_changed, CONNECT_DEFERRED)
+	if target.has_signal("dropped") and not target.is_connected("dropped", _on_area_object_state_changed):
+		target.connect("dropped", _on_area_object_state_changed, CONNECT_DEFERRED)
+
 	# Show highlight when something could be snapped
-	if not is_instance_valid(picked_up_object):
-		close_highlight_updated.emit(self, enabled)
+	_update_close_highlight()
 
 
 # Called when a body leaves the snap zone
@@ -232,9 +242,44 @@ func _on_snap_zone_body_exited(target: Node3D) -> void:
 	if target.has_signal("dropped") and target.is_connected("dropped", _on_target_dropped):
 		target.disconnect("dropped", _on_target_dropped)
 
+	# LOCAL PATCH (RetroVR): stop tracking held-state changes
+	if target.has_signal("picked_up") and target.is_connected("picked_up", _on_area_object_state_changed):
+		target.disconnect("picked_up", _on_area_object_state_changed)
+	if target.has_signal("dropped") and target.is_connected("dropped", _on_area_object_state_changed):
+		target.disconnect("dropped", _on_area_object_state_changed)
+
 	# Hide highlight when nothing could be snapped
-	if _object_in_grab_area.is_empty():
+	_update_close_highlight()
+
+
+# LOCAL PATCH (RetroVR): true when the object could still be snapped here —
+# objects currently snapped INTO a snap zone (this one or a neighbor) don't
+# count. Hand-held and free-lying objects do.
+func _is_candidate_available(o: Node3D) -> bool:
+	if not o.has_method("is_picked_up") or not o.is_picked_up():
+		return true
+	var driver: Variant = o.get("_grab_driver")
+	if driver and driver.primary and driver.primary.by is XRToolsSnapZone:
+		return false
+	return true
+
+
+# LOCAL PATCH (RetroVR): recompute and emit the close-highlight state.
+func _update_close_highlight() -> void:
+	if not enabled or is_instance_valid(picked_up_object):
 		close_highlight_updated.emit(self, false)
+		return
+	for o in _object_in_grab_area:
+		if is_instance_valid(o) and _is_candidate_available(o):
+			close_highlight_updated.emit(self, true)
+			return
+	close_highlight_updated.emit(self, false)
+
+
+# LOCAL PATCH (RetroVR): an object in our grab area was picked up or dropped
+# somewhere (by a hand, another zone, or us) — refresh the ghost.
+func _on_area_object_state_changed(_target: Node3D) -> void:
+	_update_close_highlight()
 
 
 # Test if this snap zone has a picked up object
@@ -281,6 +326,8 @@ func _set_enabled(p_enabled: bool) -> void:
 		highlight_updated.emit(
 			self,
 			enabled and not is_instance_valid(picked_up_object))
+	# LOCAL PATCH (RetroVR): the close ghost follows the enabled state too
+	_update_close_highlight()
 
 
 # Called when the grab distance has been modified

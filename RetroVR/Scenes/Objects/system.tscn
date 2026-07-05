@@ -179,7 +179,7 @@ shape = SubResource("BoxShape3D_pointer")
 
 [node name="ControllerPort1" parent="." unique_id=-294967276 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0, 0.125)
-grab_distance = 0.04
+grab_distance = 0.03
 snap_require = "controller_plug"
 
 [node name="PortRecess" type="MeshInstance3D" parent="ControllerPort1" unique_id=1207865850]
@@ -203,7 +203,7 @@ surface_material_override/0 = SubResource("Mat_cart_ghost")
 
 [node name="ControllerPort2" parent="." unique_id=-294967275 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0, 0.125)
-grab_distance = 0.04
+grab_distance = 0.03
 snap_require = "controller_plug"
 
 [node name="PortRecess" type="MeshInstance3D" parent="ControllerPort2" unique_id=1384901772]
@@ -227,7 +227,7 @@ surface_material_override/0 = SubResource("Mat_cart_ghost")
 
 [node name="ControllerPort3" parent="." unique_id=-294967274 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, 0, 0.125)
-grab_distance = 0.04
+grab_distance = 0.03
 snap_require = "controller_plug"
 
 [node name="PortRecess" type="MeshInstance3D" parent="ControllerPort3" unique_id=1770774815]
@@ -251,7 +251,7 @@ surface_material_override/0 = SubResource("Mat_cart_ghost")
 
 [node name="ControllerPort4" parent="." unique_id=-294967273 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09, 0, 0.125)
-grab_distance = 0.04
+grab_distance = 0.03
 snap_require = "controller_plug"
 
 [node name="PortRecess" type="MeshInstance3D" parent="ControllerPort4" unique_id=626904000]
