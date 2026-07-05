@@ -379,6 +379,11 @@ func _build_menu() -> void:
 	_menu = Node3D.new()
 	_menu.top_level = true
 	_menu.visible = false
+	# The menu teleports to its anchor when (re)shown; with the project's
+	# physics_interpolation enabled that teleport renders as a visible slide
+	# from the old position. The menu is repositioned every frame anyway, so
+	# interpolation buys nothing — turn it off (children inherit).
+	_menu.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(_menu)
 
 	var bg_mat := StandardMaterial3D.new()

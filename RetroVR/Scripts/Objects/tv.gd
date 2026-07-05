@@ -26,11 +26,21 @@ const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
 @onready var _crt_btn: VRButton = $CRTButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
+@onready var _osd_viewport: SubViewport = $OSDViewport
+@onready var _osd_text_2d: Label = $OSDViewport/OSDText
 
 # CRT wrap state: the ShaderMaterial we install over the source material, and
 # the source material we replaced (restored when the filter turns off).
 var _crt_material: ShaderMaterial = null
 var _crt_wrapped: Material = null
+
+# TV-owned screen states: blue "no signal" (ON with no live input) and the
+# original dark bezel material (OFF).
+var _blue_material: StandardMaterial3D = null
+var _dark_material: Material = null
+
+# CRT power-on animation (thin horizontal line expanding to full height).
+var _poweron_tween: Tween = null
 
 # Bumped each time an OSD message is shown or hidden so a stale auto-hide timer
 # from a previous message can't clear a newer one.
@@ -64,9 +74,21 @@ func _ready() -> void:
 	_update_crt_button_color()
 	_update_volume_label()
 
+	# The tscn's dark bezel material is the OFF look; blue is the ON-with-no-
+	# signal look. Blue carries a tiny texture so the CRT watcher can wrap it
+	# (curvature/scanlines apply to the blue screen too) and ambilight samples it.
+	_dark_material = _screen_mesh.get_surface_override_material(0)
+	var blue_img := Image.create(2, 2, false, Image.FORMAT_RGB8)
+	blue_img.fill(Color(0.0, 0.05, 0.65))
+	_blue_material = StandardMaterial3D.new()
+	_blue_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_blue_material.albedo_texture = ImageTexture.create_from_image(blue_img)
+
 
 func _process(_delta: float) -> void:
+	_update_screen_source()
 	_update_crt()
+	_route_osd()
 
 	if not _ambilight or not _ambilight.visible:
 		return
@@ -89,6 +111,54 @@ func _process(_delta: float) -> void:
 	img.resize(1, 1, Image.INTERPOLATE_BILINEAR)
 	var avg := img.get_pixel(0, 0)
 	_ambilight.light_color = Color(avg.r, avg.g, avg.b)
+
+
+# ── Screen source (blue / dark states) ─────────────────────────────────────────
+
+## Own the "no signal" presentation like a retro TV: ON with no live input →
+## blue screen; OFF → the original dark bezel material. Live sources (the C++
+## video handler, the VCR) install their own materials over ours and this
+## backs off automatically; when they blank/restore a textureless material we
+## take over again next frame.
+func _update_screen_source() -> void:
+	var override := _screen_mesh.get_surface_override_material(0)
+	var effective := _crt_wrapped if override == _crt_material else override
+
+	if _tv_enabled:
+		var has_picture := false
+		if effective != null and effective != _blue_material and effective != _dark_material:
+			# VHS shader = live VCR; standard materials are live once they
+			# carry a picture texture.
+			has_picture = effective is ShaderMaterial or _extract_texture(effective) != null
+		if not has_picture and effective != _blue_material:
+			_unwrap_crt()
+			_screen_mesh.set_surface_override_material(0, _blue_material)
+	else:
+		if effective == _blue_material or effective == null:
+			_unwrap_crt()
+			_screen_mesh.set_surface_override_material(0, _dark_material)
+
+
+## Retro CRT turn-on: the picture starts as a thin horizontal line and expands
+## to full height. Scaling the screen mesh squashes everything (picture, OSD).
+func _play_power_on_anim() -> void:
+	if _poweron_tween:
+		_poweron_tween.kill()
+	_screen_mesh.scale = Vector3(1.0, 0.02, 1.0)
+	# Snap to the thin line instantly — don't let physics interpolation smooth
+	# the collapse (the expansion itself is tweened below).
+	_screen_mesh.reset_physics_interpolation()
+	_poweron_tween = create_tween()
+	_poweron_tween.tween_interval(0.07)
+	_poweron_tween.tween_property(_screen_mesh, "scale", Vector3.ONE, 0.3) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+func _stop_power_on_anim() -> void:
+	if _poweron_tween:
+		_poweron_tween.kill()
+		_poweron_tween = null
+	_screen_mesh.scale = Vector3.ONE
 
 
 # ── CRT filter ─────────────────────────────────────────────────────────────────
@@ -194,20 +264,22 @@ func get_screen_mesh() -> MeshInstance3D:
 
 
 # ── On-screen display (top-right corner) ────────────────────────────────────────
+# The text lives in two places: a 2D Label rendered into OSDViewport (composited
+# INSIDE the CRT/VHS shaders so the OSD curves and scanlines with the picture)
+# and the legacy OSDLabel Label3D used as a fallback when no shader owns the
+# screen. _route_osd() picks the right one every frame.
 
 ## Show a persistent OSD message (stays until replaced or hidden).
 func show_osd(text: String) -> void:
 	_osd_token += 1
-	_osd_label.text = text
-	_osd_label.visible = true
+	_set_osd_text(text)
 
 
 ## Show an OSD message that auto-hides after `seconds` (unless superseded).
 func show_osd_timed(text: String, seconds: float) -> void:
 	_osd_token += 1
 	var tok := _osd_token
-	_osd_label.text = text
-	_osd_label.visible = true
+	_set_osd_text(text)
 	get_tree().create_timer(seconds).timeout.connect(func():
 		if tok == _osd_token:
 			hide_osd()
@@ -217,8 +289,34 @@ func show_osd_timed(text: String, seconds: float) -> void:
 ## Clear the OSD.
 func hide_osd() -> void:
 	_osd_token += 1
-	_osd_label.visible = false
-	_osd_label.text = ""
+	_set_osd_text("")
+
+
+func _set_osd_text(text: String) -> void:
+	_osd_label.text = text
+	_osd_text_2d.text = text
+	# One-shot re-render of the OSD texture (skipped headless — no GPU).
+	if text != "" and DisplayServer.get_name() != "headless":
+		_osd_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_route_osd()
+
+
+## Route the OSD to the screen shader when one is active (our CRT wrapper or
+## the VCR's VHS material), else to the fallback Label3D.
+func _route_osd() -> void:
+	var active := _osd_label.text != ""
+	var mat := _screen_mesh.get_surface_override_material(0)
+	var sm: ShaderMaterial = null
+	if mat is ShaderMaterial:
+		var candidate := mat as ShaderMaterial
+		if candidate == _crt_material or candidate.shader == VCR_SHADER:
+			sm = candidate
+	if sm != null:
+		sm.set_shader_parameter("osd_tex", _osd_viewport.get_texture())
+		sm.set_shader_parameter("osd_enabled", active)
+		_osd_label.visible = false
+	else:
+		_osd_label.visible = active
 
 
 ## Snaps a cable plug into this TV's composite port (used by save/load to restore connections).
@@ -300,6 +398,12 @@ func _on_volume_up() -> void:
 func _on_tv_toggle() -> void:
 	_tv_enabled = not _tv_enabled
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0) if _tv_enabled else Color(1.0, 0.1, 0.1))
+	if _tv_enabled:
+		_play_power_on_anim()
+		show_osd_timed("POWER", 3.0)
+	else:
+		_stop_power_on_anim()
+		hide_osd()
 	if _connected_system:
 		_connected_system.set_screen_enabled(_tv_enabled)
 		_connected_system.set_audio_volume(_volume if _tv_enabled else 0.0)

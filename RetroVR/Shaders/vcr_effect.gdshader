@@ -17,6 +17,12 @@ uniform sampler2D video_tex : source_color, filter_linear, repeat_disable;
 // is on): tape signal (VHS effects above) → tube (curvature/scanlines/mask).
 uniform bool crt_enabled = false;
 
+// On-screen display (green corner text) from the connected TV, composited
+// clean over the tape picture (the OSD is generated after tape decode, so it
+// doesn't get tape noise) but before the CRT stage (so it curves with the tube).
+uniform sampler2D osd_tex : source_color, filter_linear, repeat_disable;
+uniform bool osd_enabled = false;
+
 // Master switch (0 = pass the picture through untouched, 1 = full effect).
 uniform float effect_amount : hint_range(0.0, 1.0) = 1.0;
 
@@ -84,6 +90,13 @@ void fragment() {
 	col *= 1.0 - dot(vc, vc) * vignette_strength * 2.0 * amt;
 
 	col *= mix(1.0, brightness, amt);
+
+	if (osd_enabled) {
+		// Sample in tube space (pre-wobble) so the OSD stays put while the
+		// tape picture swims underneath it.
+		vec4 osd = texture(osd_tex, crt_uv);
+		col = mix(col, osd.rgb, osd.a);
+	}
 
 	if (crt_enabled) {
 		// Display stage: scanlines/mask/vignette in tube space (pre-wobble so
