@@ -57,7 +57,6 @@ horizontal_alignment = 1
 vertical_alignment = 1
 max_lines_visible = 2
 width = 260.0
-no_depth_test = true
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
