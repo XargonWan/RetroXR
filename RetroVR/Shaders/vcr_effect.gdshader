@@ -100,9 +100,10 @@ void fragment() {
 
 	if (crt_enabled) {
 		// Display stage: scanlines/mask/vignette in tube space (pre-wobble so
-		// the tube geometry doesn't jitter with the tape), then glass border.
+		// the tube geometry doesn't jitter with the tape). Beyond the curved
+		// glass edge the quad goes transparent so the bezel shows through.
 		col = crt_apply(col, crt_uv, FRAGCOORD.x);
-		col *= crt_border(crt_uv);
+		ALPHA = crt_border(crt_uv);
 	}
 
 	ALBEDO = clamp(col, 0.0, 1.0);

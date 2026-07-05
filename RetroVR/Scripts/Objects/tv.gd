@@ -26,8 +26,10 @@ const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
 @onready var _crt_btn: VRButton = $CRTButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
+@onready var _vol_osd_label: Label3D = $ScreenMesh/VolumeOSDLabel
 @onready var _osd_viewport: SubViewport = $OSDViewport
 @onready var _osd_text_2d: Label = $OSDViewport/OSDText
+@onready var _vol_osd_text_2d: Label = $OSDViewport/VolOSDText
 
 # CRT wrap state: the ShaderMaterial we install over the source material, and
 # the source material we replaced (restored when the filter turns off).
@@ -45,6 +47,8 @@ var _poweron_tween: Tween = null
 # Bumped each time an OSD message is shown or hidden so a stale auto-hide timer
 # from a previous message can't clear a newer one.
 var _osd_token: int = 0
+# Same, for the independent volume-bars OSD at the bottom of the screen.
+var _vol_osd_token: int = 0
 
 # Track the last-snapped plug so we can disconnect properly
 var _snapped_plug: CablePlug = null
@@ -295,6 +299,31 @@ func hide_osd() -> void:
 func _set_osd_text(text: String) -> void:
 	_osd_label.text = text
 	_osd_text_2d.text = text
+	_refresh_osd_texture(text)
+
+
+## Volume-bars OSD (bottom of screen, like an old set): VOL |||||||---
+## Independent of the corner OSD; auto-hides after 2 s.
+func show_volume_osd() -> void:
+	_vol_osd_token += 1
+	var tok := _vol_osd_token
+	var filled := roundi(_volume * 10.0)
+	var text := "VOL " + "|".repeat(filled) + "-".repeat(10 - filled)
+	_set_vol_osd_text(text)
+	get_tree().create_timer(2.0).timeout.connect(func():
+		if tok == _vol_osd_token:
+			_vol_osd_token += 1
+			_set_vol_osd_text("")
+	)
+
+
+func _set_vol_osd_text(text: String) -> void:
+	_vol_osd_label.text = text
+	_vol_osd_text_2d.text = text
+	_refresh_osd_texture(text)
+
+
+func _refresh_osd_texture(text: String) -> void:
 	# One-shot re-render of the OSD texture (skipped headless — no GPU).
 	if text != "" and DisplayServer.get_name() != "headless":
 		_osd_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -302,9 +331,11 @@ func _set_osd_text(text: String) -> void:
 
 
 ## Route the OSD to the screen shader when one is active (our CRT wrapper or
-## the VCR's VHS material), else to the fallback Label3D.
+## the VCR's VHS material), else to the fallback Label3Ds. Both the corner OSD
+## and the volume bars share the same OSD viewport texture.
 func _route_osd() -> void:
-	var active := _osd_label.text != ""
+	var main_active := _osd_label.text != ""
+	var vol_active := _vol_osd_label.text != ""
 	var mat := _screen_mesh.get_surface_override_material(0)
 	var sm: ShaderMaterial = null
 	if mat is ShaderMaterial:
@@ -313,10 +344,12 @@ func _route_osd() -> void:
 			sm = candidate
 	if sm != null:
 		sm.set_shader_parameter("osd_tex", _osd_viewport.get_texture())
-		sm.set_shader_parameter("osd_enabled", active)
+		sm.set_shader_parameter("osd_enabled", main_active or vol_active)
 		_osd_label.visible = false
+		_vol_osd_label.visible = false
 	else:
-		_osd_label.visible = active
+		_osd_label.visible = main_active
+		_vol_osd_label.visible = vol_active
 
 
 ## Snaps a cable plug into this TV's composite port (used by save/load to restore connections).
@@ -384,6 +417,8 @@ func _update_volume_label() -> void:
 func _on_volume_down() -> void:
 	_volume = maxf(0.0, _volume - 0.1)
 	_update_volume_label()
+	if _tv_enabled:
+		show_volume_osd()
 	if _tv_enabled and _connected_system:
 		_connected_system.set_audio_volume(_volume)
 
@@ -391,6 +426,8 @@ func _on_volume_down() -> void:
 func _on_volume_up() -> void:
 	_volume = minf(1.0, _volume + 0.1)
 	_update_volume_label()
+	if _tv_enabled:
+		show_volume_osd()
 	if _tv_enabled and _connected_system:
 		_connected_system.set_audio_volume(_volume)
 
@@ -404,6 +441,8 @@ func _on_tv_toggle() -> void:
 	else:
 		_stop_power_on_anim()
 		hide_osd()
+		_vol_osd_token += 1
+		_set_vol_osd_text("")
 	if _connected_system:
 		_connected_system.set_screen_enabled(_tv_enabled)
 		_connected_system.set_audio_volume(_volume if _tv_enabled else 0.0)

@@ -26,6 +26,8 @@ void fragment() {
 		col = mix(col, osd.rgb, osd.a);
 	}
 	col = crt_apply(col, wuv, FRAGCOORD.x);
-	col *= crt_border(wuv);
 	ALBEDO = clamp(col, 0.0, 1.0);
+	// Beyond the curved glass edge the quad is transparent (not black), so the
+	// TV bezel shows through instead of a dark rectangle.
+	ALPHA = crt_border(wuv);
 }
