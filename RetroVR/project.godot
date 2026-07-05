@@ -29,6 +29,7 @@ XRToolsUserSettings="*uid://bqgb8i74tm0t"
 XRToolsRumbleManager="*uid://by853dk86g1qw"
 QualityManager="*res://Scripts/quality_manager.gd"
 SceneManager="*res://Scripts/Data/scene_manager.gd"
+NetworkManager="*res://Scripts/Net/network_manager.gd"
 
 [display]
 

@@ -82,6 +82,16 @@ var _controls_view: Control = null
 var _options_view:  Control = null
 var _scene_view:    Control = null
 var _about_view:    Control = null
+var _net_view:      Control = null
+var _net_scroll:    ScrollContainer = null
+var _nav_net_btn:      Button = null
+var _net_status_lbl:   Label = null
+var _net_name_edit:    LineEdit = null
+var _net_ip_edit:      LineEdit = null
+var _net_players_box:  VBoxContainer = null
+var _net_host_btn:     Button = null
+var _net_join_btn:     Button = null
+var _net_leave_btn:    Button = null
 var _nav_spawn_btn:    Button = null
 var _nav_cores_btn:    Button = null
 var _nav_controls_btn: Button = null
@@ -293,20 +303,23 @@ func _build_ui() -> void:
 	_nav_controls_btn = _make_nav_button(" CONTROLS ")
 	_nav_options_btn  = _make_nav_button(" OPTIONS ")
 	_nav_scene_btn    = _make_nav_button("  SCENE  ")
+	_nav_net_btn      = _make_nav_button("  NET  ")
 	_nav_about_btn    = _make_nav_button("  ABOUT  ")
 	_nav_spawn_btn.pressed.connect(_show_spawn_view)
 	_nav_cores_btn.pressed.connect(_show_cores_view)
 	_nav_controls_btn.pressed.connect(_show_controls_view)
 	_nav_options_btn.pressed.connect(_show_options_view)
 	_nav_scene_btn.pressed.connect(_show_scene_view)
+	_nav_net_btn.pressed.connect(_show_net_view)
 	_nav_about_btn.pressed.connect(_show_about_view)
 	nav_bar.add_child(_nav_spawn_btn)
 	nav_bar.add_child(_nav_cores_btn)
 	nav_bar.add_child(_nav_controls_btn)
 	nav_bar.add_child(_nav_options_btn)
 	nav_bar.add_child(_nav_scene_btn)
+	nav_bar.add_child(_nav_net_btn)
 	nav_bar.add_child(_nav_about_btn)
-	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_controls_btn, _nav_options_btn, _nav_scene_btn, _nav_about_btn]
+	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_controls_btn, _nav_options_btn, _nav_scene_btn, _nav_net_btn, _nav_about_btn]
 
 	root_vbox.add_child(HSeparator.new())
 
@@ -334,6 +347,10 @@ func _build_ui() -> void:
 	_scene_view = _build_scene_view()
 	_scene_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_scene_view)
+
+	_net_view = _build_net_view()
+	_net_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_child(_net_view)
 
 	_about_view = _build_about_view()
 	_about_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -427,7 +444,7 @@ func _make_nav_button(lbl: String) -> Button:
 
 
 func _show_view(view: Control, scroll: ScrollContainer, nav_btn: Button) -> void:
-	for v: Control in [_spawn_view, _cores_view, _controls_view, _options_view, _scene_view, _about_view]:
+	for v: Control in [_spawn_view, _cores_view, _controls_view, _options_view, _scene_view, _net_view, _about_view]:
 		v.visible = v == view
 	_active_scroll = scroll
 	_set_nav_active(nav_btn)
@@ -478,6 +495,222 @@ func _show_states_view() -> void:
 
 func _show_about_view() -> void:
 	_show_view(_about_view, _about_scroll, _nav_about_btn)
+
+
+func _show_net_view() -> void:
+	_show_view(_net_view, _net_scroll, _nav_net_btn)
+	_refresh_net_ui()
+
+
+# ── Multiplayer (NET) view ────────────────────────────────────────────────────
+
+const NET_PREFS_PATH := "user://net_prefs.json"
+
+
+func _build_net_view() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_net_scroll = scroll
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 10)
+	scroll.add_child(vbox)
+
+	var prefs := _load_net_prefs()
+
+	var hdr := Label.new()
+	hdr.text = "MULTIPLAYER (LAN)"
+	hdr.add_theme_font_size_override("font_size", 22)
+	hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(hdr)
+
+	_net_status_lbl = Label.new()
+	_net_status_lbl.text = "Not connected"
+	_net_status_lbl.add_theme_font_size_override("font_size", 18)
+	_net_status_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	_net_status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_net_status_lbl)
+
+	# ── Player name ───────────────────────────────────────────────────────────
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 10)
+	name_row.custom_minimum_size = Vector2(0, 56)
+	vbox.add_child(name_row)
+	var name_lbl := Label.new()
+	name_lbl.text = "Name"
+	name_lbl.add_theme_font_size_override("font_size", 20)
+	name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	name_row.add_child(name_lbl)
+	_net_name_edit = LineEdit.new()
+	_net_name_edit.text = str(prefs.get("name", "Player"))
+	_net_name_edit.max_length = 24
+	_net_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_net_name_edit.add_theme_font_size_override("font_size", 20)
+	name_row.add_child(_net_name_edit)
+
+	# ── Host ──────────────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	_net_host_btn = Button.new()
+	_net_host_btn.text = "Host Game"
+	_net_host_btn.custom_minimum_size = Vector2(0, 56)
+	_net_host_btn.add_theme_font_size_override("font_size", 20)
+	_net_host_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	_net_host_btn.focus_mode = Control.FOCUS_NONE
+	_net_host_btn.pressed.connect(_on_net_host)
+	vbox.add_child(_net_host_btn)
+
+	# ── Join ──────────────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var join_row := HBoxContainer.new()
+	join_row.add_theme_constant_override("separation", 10)
+	join_row.custom_minimum_size = Vector2(0, 56)
+	vbox.add_child(join_row)
+	var ip_lbl := Label.new()
+	ip_lbl.text = "Host IP"
+	ip_lbl.add_theme_font_size_override("font_size", 20)
+	ip_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	join_row.add_child(ip_lbl)
+	_net_ip_edit = LineEdit.new()
+	_net_ip_edit.text = str(prefs.get("ip", ""))
+	_net_ip_edit.placeholder_text = "192.168.1.10"
+	_net_ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_net_ip_edit.add_theme_font_size_override("font_size", 20)
+	join_row.add_child(_net_ip_edit)
+	_net_join_btn = Button.new()
+	_net_join_btn.text = "  Join  "
+	_net_join_btn.custom_minimum_size = Vector2(120, 52)
+	_net_join_btn.add_theme_font_size_override("font_size", 20)
+	_net_join_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	_net_join_btn.focus_mode = Control.FOCUS_NONE
+	_net_join_btn.pressed.connect(_on_net_join)
+	join_row.add_child(_net_join_btn)
+
+	# On-menu keypad so the IP can be typed with the VR pointer.
+	var pad := GridContainer.new()
+	pad.columns = 6
+	pad.add_theme_constant_override("h_separation", 6)
+	pad.add_theme_constant_override("v_separation", 6)
+	vbox.add_child(pad)
+	for key: String in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", ".", "⌫"]:
+		var kb := Button.new()
+		kb.text = key
+		kb.custom_minimum_size = Vector2(0, 52)
+		kb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		kb.add_theme_font_size_override("font_size", 22)
+		kb.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		kb.focus_mode = Control.FOCUS_NONE
+		var captured := key
+		kb.pressed.connect(func() -> void:
+			if captured == "⌫":
+				_net_ip_edit.text = _net_ip_edit.text.left(_net_ip_edit.text.length() - 1)
+			else:
+				_net_ip_edit.text += captured
+		)
+		pad.add_child(kb)
+
+	# ── Players ───────────────────────────────────────────────────────────────
+	vbox.add_child(HSeparator.new())
+	var players_hdr := Label.new()
+	players_hdr.text = "Players"
+	players_hdr.add_theme_font_size_override("font_size", 18)
+	players_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(players_hdr)
+	_net_players_box = VBoxContainer.new()
+	_net_players_box.add_theme_constant_override("separation", 4)
+	vbox.add_child(_net_players_box)
+
+	# ── Disconnect ────────────────────────────────────────────────────────────
+	_net_leave_btn = Button.new()
+	_net_leave_btn.text = "Disconnect"
+	_net_leave_btn.custom_minimum_size = Vector2(0, 56)
+	_net_leave_btn.add_theme_font_size_override("font_size", 20)
+	_net_leave_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	_net_leave_btn.focus_mode = Control.FOCUS_NONE
+	_net_leave_btn.pressed.connect(func() -> void: NetworkManager.leave_session())
+	vbox.add_child(_net_leave_btn)
+
+	# Live updates from the session.
+	NetworkManager.status_changed.connect(func(text: String) -> void:
+		if is_instance_valid(_net_status_lbl):
+			_net_status_lbl.text = text
+	)
+	NetworkManager.session_started.connect(func(_h: bool) -> void: _refresh_net_ui())
+	NetworkManager.session_ended.connect(func(_r: String) -> void: _refresh_net_ui())
+	NetworkManager.peer_registered.connect(func(_i: int, _d: Dictionary) -> void: _refresh_net_ui())
+	NetworkManager.peer_left.connect(func(_i: int) -> void: _refresh_net_ui())
+
+	return scroll
+
+
+func _on_net_host() -> void:
+	NetworkManager.player_name = _net_name_edit.text.strip_edges()
+	_save_net_prefs()
+	NetworkManager.host_game()
+
+
+func _on_net_join() -> void:
+	var ip := _net_ip_edit.text.strip_edges()
+	if not ip.is_valid_ip_address():
+		if is_instance_valid(_net_status_lbl):
+			_net_status_lbl.text = "Invalid IP address: '%s'" % ip
+		return
+	NetworkManager.player_name = _net_name_edit.text.strip_edges()
+	_save_net_prefs()
+	NetworkManager.join_game(ip)
+
+
+func _refresh_net_ui() -> void:
+	if not is_instance_valid(_net_players_box):
+		return
+	var active: bool = NetworkManager.is_active()
+	_net_host_btn.disabled = active
+	_net_join_btn.disabled = active
+	_net_leave_btn.disabled = not active
+	_net_name_edit.editable = not active
+
+	for child in _net_players_box.get_children():
+		child.queue_free()
+	var self_id: int = NetworkManager.multiplayer.get_unique_id() if active else -1
+	for id: int in NetworkManager.peers:
+		var info: Dictionary = NetworkManager.peers[id]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var swatch := ColorRect.new()
+		swatch.color = NetworkManager.PLAYER_COLORS[int(info.get("color_idx", 0)) % NetworkManager.PLAYER_COLORS.size()]
+		swatch.custom_minimum_size = Vector2(26, 26)
+		row.add_child(swatch)
+		var lbl := Label.new()
+		var suffix := ""
+		if id == 1:
+			suffix += "  (host)"
+		if id == self_id:
+			suffix += "  (you)"
+		lbl.text = "%s%s" % [info.get("name", "?"), suffix]
+		lbl.add_theme_font_size_override("font_size", 18)
+		lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		row.add_child(lbl)
+		_net_players_box.add_child(row)
+
+
+func _load_net_prefs() -> Dictionary:
+	if not FileAccess.file_exists(NET_PREFS_PATH):
+		return {}
+	var f := FileAccess.open(NET_PREFS_PATH, FileAccess.READ)
+	if f == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	return parsed if parsed is Dictionary else {}
+
+
+func _save_net_prefs() -> void:
+	var f := FileAccess.open(NET_PREFS_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({
+			"name": _net_name_edit.text.strip_edges(),
+			"ip": _net_ip_edit.text.strip_edges(),
+		}))
 
 
 func _update_spawn_active_scroll(tab_idx: int) -> void:
