@@ -48,6 +48,10 @@ player_calibrate_height = false
 
 [node name="MovementDesktopDirect" parent="Staging/XROrigin3D" instance=ExtResource("16_desktopdirect")]
 strafe = true
+input_forward = "desktop_move_forward"
+input_backward = "desktop_move_backward"
+input_left = "desktop_move_left"
+input_right = "desktop_move_right"
 
 [node name="MovementDesktopTurn" parent="Staging/XROrigin3D" instance=ExtResource("17_desktopturn")]
 
