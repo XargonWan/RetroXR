@@ -14,6 +14,16 @@ extends XRToolsPickable
 ## Render DPI — higher = sharper but more memory. 150 is good for Quest.
 @export_range(72, 300) var render_dpi: int = 150
 
+## Half-page mode for scanned two-page spreads: each source page is split down
+## the middle into two book pages (left half first, then right half).
+@export var half_page_mode: bool = false:
+	set(value):
+		if half_page_mode == value:
+			return
+		half_page_mode = value
+		if not _loading and is_inside_tree() and not pdf_path.is_empty():
+			load_pdf(pdf_path)
+
 ## Fixed book height in meters (width is derived from PDF aspect ratio).
 @export var book_height: float = 0.25
 
@@ -61,6 +71,7 @@ var _cache_dir: String = ""
 @onready var _right_stack_top: MeshInstance3D = $RightStack/RightStackTop
 @onready var _spine_node: Node3D = $Spine
 @onready var _active_leaf_container: Node3D = $ActiveLeafContainer
+@onready var _options_panel: BookOptionsPanel = $BookOptionsPanel
 
 # The currently active turning leaf
 var _active_leaf: Node3D = null
@@ -107,6 +118,16 @@ func _ready() -> void:
 		load_pdf(pdf_path)
 
 
+## Toggle the floating book settings panel (mirrors VCRPlayer.toggle_options_ui).
+## Called by SpawnMenuController when the menu button is pressed while pointing
+## at this book.
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel.visible:
+		_options_panel.hide_panel()
+	else:
+		_options_panel.show_for(self, camera)
+
+
 ## Open a PDF or CBZ file and configure the book.
 func load_pdf(path: String) -> void:
 	_cleanup()
@@ -140,18 +161,23 @@ func _load_pdf_internal(path: String) -> void:
 		_renderer = null
 		return
 
-	_leaf_count = ceili(_page_count / 2.0)
-
 	var size: Vector2 = _renderer.GetPageSize(0)
 	_page_width = size.x
 	_page_height = size.y
+
+	# Half-page mode: each source page yields two book pages of half the width.
+	if half_page_mode:
+		_page_count *= 2
+		_page_width /= 2.0
+
+	_leaf_count = ceili(_page_count / 2.0)
 
 	# PDF points → meters: 1 pt = 1/72 inch = 0.0254/72 m ≈ 0.0003528 m
 	const PTS_TO_METERS := 0.0254 / 72.0
 	_book_width = _page_width * PTS_TO_METERS
 	book_height  = _page_height * PTS_TO_METERS
 
-	_cache_dir = "user://pdf_cache/" + pdf_path.md5_text() + "/"
+	_cache_dir = "user://pdf_cache/" + pdf_path.md5_text() + ("_half/" if half_page_mode else "/")
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	_configure_meshes()
@@ -189,7 +215,6 @@ func _load_cbz(path: String) -> void:
 
 	_cbz_entries = entries
 	_page_count = entries.size()
-	_leaf_count = ceili(_page_count / 2.0)
 
 	# Decode the first image to get page dimensions
 	var first_img := _decode_cbz_page(0)
@@ -200,12 +225,19 @@ func _load_cbz(path: String) -> void:
 		_page_width = 1.0
 		_page_height = 1.0
 
+	# Half-page mode: each source image yields two book pages of half the width.
+	if half_page_mode:
+		_page_count *= 2
+		_page_width /= 2.0
+
+	_leaf_count = ceili(_page_count / 2.0)
+
 	if _page_height > 0:
 		_book_width = book_height * (_page_width / _page_height)
 	else:
 		_book_width = book_height * 0.65
 
-	_cache_dir = "user://pdf_cache/" + path.md5_text() + "/"
+	_cache_dir = "user://pdf_cache/" + path.md5_text() + ("_half/" if half_page_mode else "/")
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	_configure_meshes()
@@ -265,16 +297,33 @@ func _get_page_texture(page_index: int) -> ImageTexture:
 	return _loading_texture
 
 
+## Crop a source image to the half selected by a logical page index (half-page
+## mode only; passthrough otherwise). Even logical pages = left half.
+func _crop_to_half(img: Image, page_index: int) -> Image:
+	if not half_page_mode or img == null:
+		return img
+	var half_w := img.get_width() / 2
+	if half_w <= 0:
+		return img
+	var x := 0 if page_index % 2 == 0 else half_w
+	return img.get_region(Rect2i(x, 0, half_w, img.get_height()))
+
+
 ## Queue a page for background rendering if not already pending.
+## page_index is a LOGICAL book page: in half-page mode two logical pages map
+## to the two halves of one source page.
 func _request_page_render(page_index: int) -> void:
 	if _pending_renders.has(page_index):
 		return
 	_pending_renders[page_index] = true
 
+	var src_index := page_index / 2 if half_page_mode else page_index
+
 	if _format == _Format.CBZ:
 		var cache_dir := _cache_dir
 		WorkerThreadPool.add_task(func():
-			var img := _decode_cbz_page(page_index)
+			var img := _decode_cbz_page(src_index)
+			img = _crop_to_half(img, page_index)
 			if img:
 				img.save_png(cache_dir + "page_%03d.png" % page_index)
 			call_deferred("_on_page_rendered", page_index, img)
@@ -292,8 +341,9 @@ func _request_page_render(page_index: int) -> void:
 		_render_mutex.lock()
 		var img: Image = null
 		if renderer_ref and renderer_ref.IsOpen():
-			img = renderer_ref.RenderPage(page_index, dpi)
+			img = renderer_ref.RenderPage(src_index, dpi)
 		_render_mutex.unlock()
+		img = _crop_to_half(img, page_index)
 		if img:
 			img.save_png(cache_dir + "page_%03d.png" % page_index)
 		call_deferred("_on_page_rendered", page_index, img)
@@ -348,6 +398,15 @@ func _configure_meshes() -> void:
 	var spine_half := SPINE_WIDTH / 2.0
 	# Stack center X: pages start at the outer edge of the spine
 	var stack_x := half_w + spine_half
+
+	# Duplicate the collision shape too — the tscn sub-resource is SHARED across
+	# all book instances, so without this every _update_collision_shape() call
+	# resized every book's collision box (visible as "collision off to one side"
+	# whenever multiple books of different sizes/states existed, e.g. after a
+	# scene restore).
+	var col_shape := $CollisionShape3D as CollisionShape3D
+	if col_shape and col_shape.shape:
+		col_shape.shape = col_shape.shape.duplicate()
 
 	# Duplicate all shared meshes before resizing so instances don't affect each other
 	if _cover_mesh.mesh:

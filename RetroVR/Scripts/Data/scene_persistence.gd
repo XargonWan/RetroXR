@@ -352,6 +352,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"id": id,
 			"type": "book",
 			"pdf_path": (node as PDFBook).pdf_path,
+			"half_pages": (node as PDFBook).half_page_mode,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -426,6 +427,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			obj = cart
 		"book":
 			var book := BOOK_SCENE.instantiate() as PDFBook
+			book.half_page_mode = data.get("half_pages", false)
 			book.pdf_path = data.get("pdf_path", "")
 			obj = book
 		"retro_controller":

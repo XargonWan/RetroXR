@@ -402,15 +402,15 @@ func _get_pointed_options_host(pointer: XRToolsFunctionPointer) -> Node3D:
 		# If the pointer is inside any viewport, it's a UI click — not an object click
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer:
+		if node is RetroSystem or node is VCRPlayer or node is PDFBook:
 			return node as Node3D
 		node = node.get_parent()
 	return null
 
 
 ## Raycast forward from the camera against the pointable layer (21) and return the
-## RetroSystem / VCRPlayer the reticle is aimed at, or null. Used on desktop where
-## the InteractionResolver won't report a bare PointerArea body.
+## RetroSystem / VCRPlayer / PDFBook the reticle is aimed at, or null. Used on
+## desktop where the InteractionResolver won't report a bare PointerArea body.
 func _raycast_options_host() -> Node3D:
 	if not is_instance_valid(_camera):
 		return null
@@ -435,7 +435,7 @@ func _options_host_from_target(tgt: Node3D) -> Node3D:
 	while node:
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer:
+		if node is RetroSystem or node is VCRPlayer or node is PDFBook:
 			return node as Node3D
 		node = node.get_parent()
 	return null

@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://book_opts_2d_001"]
+
+[ext_resource type="Script" path="res://Scripts/UI/book_options_2d.gd" id="1_bookopts2d"]
+
+[node name="BookOptions2D" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_bookopts2d")
