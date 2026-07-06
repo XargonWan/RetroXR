@@ -131,6 +131,12 @@ func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictiona
 	_system = _resolve_system(sys_net_id)
 	if _system == null:
 		push_warning("[Netplay] client cannot resolve system net_id %d" % sys_net_id)
+		_np_ready_fail.rpc_id(1, "cannot resolve game system")
+		return
+	# ROM policy: verify-by-hash only (never transferred). A peer without a
+	# byte-identical local copy can't join the lockstep game.
+	if _system.has_method("net_resolve_rom") and not _system.net_resolve_rom(rom_md5):
+		_np_ready_fail.rpc_id(1, "missing ROM (md5 %s…)" % rom_md5.left(8))
 		return
 	_cold_start_local(start_frame)
 	_np_ready.rpc_id(1)
@@ -156,6 +162,34 @@ func _np_ready() -> void:
 		_resume_after_join(sender)   # late joiner has loaded the savestate
 	else:
 		_mark_ready(sender)          # cold-start readiness
+
+
+## A peer can't take part (missing ROM, unresolvable system, failed load).
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_ready_fail(reason: String) -> void:
+	if not _nm.is_host():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	print("[Netplay] peer %d cannot join: %s" % [sender, reason])
+	if _joining.has(sender):
+		# Late joiner failed — resume the game without them (they keep the
+		# placeholder screen). Non-fatal for the running session.
+		_resume_after_join(sender)
+		_spectators[sender] = true
+		return
+	# Cold start: if the failed peer owns a port the game can't happen; abort
+	# for everyone. A non-owner failure just proceeds without them.
+	for port: int in _owners:
+		if int(_owners[port]) == sender:
+			var msg := "netplay aborted: player %s — %s" % [
+				str(_nm.peers.get(sender, {}).get("name", sender)), reason]
+			if _nm.has_signal("status_changed"):
+				_nm.status_changed.emit(msg)
+			stop(msg)
+			return
+	_spectators[sender] = true
+	_ready_peers[sender] = true   # counts as "answered" so the start isn't held up
+	_mark_ready(1)                # re-evaluate: everyone else may be ready now
 
 
 func _mark_ready(peer_id: int) -> void:
@@ -535,6 +569,10 @@ func _np_savestate(sys_net_id: int, core: String, rom_md5: String, options: Dict
 	_set_owners(owners)
 	_system = _resolve_system(sys_net_id)
 	if _system == null:
+		_np_ready_fail.rpc_id(1, "cannot resolve game system")
+		return
+	if _system.has_method("net_resolve_rom") and not _system.net_resolve_rom(rom_md5):
+		_np_ready_fail.rpc_id(1, "missing ROM (md5 %s…)" % rom_md5.left(8))
 		return
 	_cold_start_local(frame)
 	if _lib != null and _lib.has_method("RequestLoadState"):
@@ -548,6 +586,7 @@ func _on_join_loaded(ok: bool) -> void:
 		_lib.savestate_loaded.disconnect(_on_join_loaded)
 	if not ok:
 		push_warning("[Netplay] late-join load failed")
+		_np_ready_fail.rpc_id(1, "savestate load failed")
 		return
 	_begin_running()
 	_np_ready.rpc_id(1)

@@ -170,7 +170,10 @@ func _serialize_registry_entry(node: Node) -> Dictionary:
 	var node_to_id := {}
 	for id: int in _registry:
 		node_to_id[_registry[id]] = id
-	return _persistence._serialize_node(node, id_of(node), node_to_id)
+	var entry := _persistence._serialize_node(node, id_of(node), node_to_id)
+	if not entry.is_empty():
+		_augment_file_fields(node, entry)
+	return entry
 
 
 func _broadcast_spawn(node: Node) -> void:
@@ -193,6 +196,7 @@ func _request_snapshot() -> void:
 	for id: int in _registry:
 		var entry := _persistence._serialize_node(_registry[id], id, node_to_id)
 		if not entry.is_empty():
+			_augment_file_fields(_registry[id], entry)
 			entries.append(entry)
 	_world_snapshot.rpc_id(multiplayer.get_remote_sender_id(), entries)
 
@@ -207,6 +211,10 @@ func _world_snapshot(entries: Array) -> void:
 	var spawned := _persistence.instantiate_objects(root, entries)
 	for id: Variant in spawned:
 		_register_client(spawned[id], int(id))
+	for entry: Variant in entries:
+		var node: Node = spawned.get(int((entry as Dictionary).get("id", -1)))
+		if node != null:
+			_resolve_file_fields(node, entry)
 	_applying = false
 	print("[NetObjectSync] snapshot applied: %d objects" % spawned.size())
 
@@ -260,6 +268,7 @@ func _spawn_object(entry: Dictionary) -> void:
 	var spawned := _persistence.instantiate_objects(root, [entry])
 	for id: Variant in spawned:
 		_register_client(spawned[id], int(entry.get("id", -1)))
+		_resolve_file_fields(spawned[id], entry)
 	_applying = false
 
 
@@ -623,6 +632,167 @@ func _decode_args(wire: Dictionary) -> Dictionary:
 		else:
 			out[k] = v
 	return out
+
+
+# ── File-backed objects (M3) ──────────────────────────────────────────────────
+#
+# Spawn entries for file-backed objects carry file_md5/file_size so clients can
+# resolve content they don't have at the host's path. Policy per kind:
+#  - book / video: transferable via NetFileTransfer (content-addressed).
+#  - rom: HASH-VERIFY ONLY — never transferred (copyright: see file_transfer.gd).
+#    The client searches its own rom library for a byte-identical file and remaps
+#    the path; a missing ROM just means netplay won't start for that peer.
+
+## md5 -> {net_id, prop} for transfers this client has in flight.
+var _fetching: Dictionary = {}
+var _ft_wired := false
+
+
+## What file (if any) backs this object: {kind, prop}.
+func _file_desc(node: Node) -> Dictionary:
+	if node is PDFBook:
+		return {"kind": "book", "prop": "pdf_path"}
+	if node is RetroCartridge:
+		return {"kind": "rom", "prop": "rom_path"}
+	if node is VCRTape:
+		return {"kind": "video", "prop": "video_path"}
+	return {}
+
+
+## Host: attach file_md5/file_size to a spawn entry. Uses the persistent hash
+## cache; a cache miss hashes on a worker thread and follows up with _file_info
+## so big files (videos) never hitch the frame.
+func _augment_file_fields(node: Node, entry: Dictionary) -> void:
+	if not _nm.is_host():
+		return
+	var d := _file_desc(node)
+	if d.is_empty():
+		return
+	var path := str(node.get(d["prop"]))
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return
+	var md5 := str(node.get_meta("net_md5", ""))
+	if md5.is_empty():
+		md5 = NetFileTransfer.cached_hash_of(path)
+	if not md5.is_empty():
+		node.set_meta("net_md5", md5)
+		entry["file_md5"] = md5
+		entry["file_size"] = NetFileTransfer.size_of(path)
+		if NetFileTransfer.TRANSFER_KINDS.has(str(d["kind"])):
+			_nm._file_transfer.serve_register(md5, path)
+		return
+	# Not cached yet — hash in the background, then broadcast the follow-up.
+	var net_id := id_of(node)
+	if net_id < 0 or node.has_meta("net_hashing"):
+		return
+	node.set_meta("net_hashing", true)
+	WorkerThreadPool.add_task(func() -> void:
+		var h := NetFileTransfer.hash_of(path)
+		call_deferred("_on_file_hashed", net_id, h, path))
+
+
+func _on_file_hashed(net_id: int, md5: String, path: String) -> void:
+	var node: Node = _registry.get(net_id)
+	if not is_instance_valid(node) or md5.is_empty():
+		return
+	node.remove_meta("net_hashing")
+	node.set_meta("net_md5", md5)
+	var d := _file_desc(node)
+	if NetFileTransfer.TRANSFER_KINDS.has(str(d.get("kind", ""))):
+		_nm._file_transfer.serve_register(md5, path)
+	if _nm.is_host() and _nm.is_active():
+		_file_info.rpc(net_id, md5, NetFileTransfer.size_of(path))
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _file_info(net_id: int, md5: String, size: int) -> void:
+	var node: Node = _registry.get(net_id)
+	if is_instance_valid(node):
+		_resolve_file_fields(node, {"file_md5": md5, "file_size": size})
+
+
+## Client: make the object's backing file usable locally, or arrange for it.
+func _resolve_file_fields(node: Node, entry: Dictionary) -> void:
+	if not _nm.is_client():
+		return
+	var d := _file_desc(node)
+	if d.is_empty():
+		return
+	var prop := str(d["prop"])
+	var kind := str(d["kind"])
+	var path := str(node.get(prop))
+	if not path.is_empty() and FileAccess.file_exists(path):
+		return   # host's path happens to exist here (same machine / shared lib)
+	var md5 := str(entry.get("file_md5", ""))
+	var size := int(entry.get("file_size", 0))
+	if md5.is_empty():
+		# Host hasn't hashed it yet — _file_info will re-enter when it has.
+		node.set(prop, "")
+		return
+	if kind == "rom":
+		# Verify-only: find our own byte-identical copy, never transfer.
+		var dirs: Array = [RomLibrary.default_roms_root()]
+		var found := NetFileTransfer.resolve_by_md5(md5, kind, size, path, dirs)
+		if not found.is_empty():
+			node.set(prop, found)
+			print("[NetObjectSync] rom matched by hash: %s" % found)
+		else:
+			node.set(prop, "")
+			print("[NetObjectSync] rom %s… not in local library (verify-only, not transferred)" % md5.left(8))
+		return
+	var found := NetFileTransfer.resolve_by_md5(md5, kind, size, path)
+	if not found.is_empty():
+		node.set(prop, found)
+		return
+	# Fetch it. Track by md5 so transfer signals route back to this object.
+	node.set(prop, "")
+	_wire_transfer_signals()
+	_fetching[md5] = {"net_id": id_of(node), "prop": prop}
+	if node.has_method("net_set_download_status"):
+		node.call("net_set_download_status", "DOWNLOADING…")
+	_nm._file_transfer.request_file(md5, kind, size, path.get_extension())
+
+
+func _wire_transfer_signals() -> void:
+	if _ft_wired:
+		return
+	_ft_wired = true
+	var ft: NetFileTransfer = _nm._file_transfer
+	ft.transfer_progress.connect(_on_transfer_progress)
+	ft.transfer_done.connect(_on_transfer_done)
+	ft.transfer_failed.connect(_on_transfer_failed)
+
+
+func _fetch_node(md5: String) -> Node:
+	var info: Dictionary = _fetching.get(md5, {})
+	if info.is_empty():
+		return null
+	var node: Node = _registry.get(int(info["net_id"]))
+	return node if is_instance_valid(node) else null
+
+
+func _on_transfer_progress(md5: String, received: int, total: int) -> void:
+	var node := _fetch_node(md5)
+	if node != null and node.has_method("net_set_download_status") and total > 0:
+		node.call("net_set_download_status", "DOWNLOADING %d%%" % int(received * 100.0 / total))
+
+
+func _on_transfer_done(md5: String, path: String) -> void:
+	var info: Dictionary = _fetching.get(md5, {})
+	_fetching.erase(md5)
+	var node: Node = _registry.get(int(info.get("net_id", -1)))
+	if is_instance_valid(node):
+		if node.has_method("net_set_download_status"):
+			node.call("net_set_download_status", "")
+		node.set(str(info["prop"]), path)
+
+
+func _on_transfer_failed(md5: String, reason: String) -> void:
+	var node := _fetch_node(md5)
+	_fetching.erase(md5)
+	if node != null and node.has_method("net_set_download_status"):
+		node.call("net_set_download_status", "UNAVAILABLE")
+	print("[NetObjectSync] transfer %s… failed: %s" % [md5.left(8), reason])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

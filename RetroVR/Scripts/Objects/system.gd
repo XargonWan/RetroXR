@@ -336,10 +336,38 @@ func _resolve_dir() -> String:
 
 
 ## MD5 of the inserted ROM (for netplay peer verification). Empty if none.
+## Cached (mtime-keyed) so only the first hash of a given file touches disk.
 func net_rom_md5() -> String:
 	if rom_path.is_empty():
 		return ""
-	return str(RomHasher.compute_checksums(rom_path).get("md5", ""))
+	return NetFileTransfer.hash_of(rom_path)
+
+
+## Netplay cold start (client): make sure we own a byte-identical copy of the
+## host's ROM. Checks the current rom_path first, then searches the local rom
+## library by hash. ROMs are VERIFY-ONLY — never transferred (copyright; see
+## file_transfer.gd). Returns false when no matching copy exists locally.
+func net_resolve_rom(md5: String) -> bool:
+	if md5.is_empty():
+		return false
+	# Refresh from the seated cartridge — object_sync may have remapped it.
+	if _snapped_cartridge and _snapped_cartridge.has_method("get_rom_path"):
+		var cart_path: String = _snapped_cartridge.get_rom_path()
+		if not cart_path.is_empty():
+			rom_path = cart_path
+	if not rom_path.is_empty() and FileAccess.file_exists(rom_path) \
+			and NetFileTransfer.hash_of(rom_path) == md5:
+		return true
+	var found := NetFileTransfer.resolve_by_md5(md5, "rom", 0, rom_path,
+		[RomLibrary.default_roms_root()])
+	if found.is_empty():
+		push_warning("[RetroSystem] netplay: no local ROM matches md5 %s… — not transferable" % md5.left(8))
+		return false
+	rom_path = found
+	if _snapped_cartridge and "rom_path" in _snapped_cartridge:
+		_snapped_cartridge.set("rom_path", found)
+	print("[RetroSystem] netplay: rom matched by hash → %s" % found)
+	return true
 
 
 # ── Netplay core seam (driven by NetplaySession on every peer) ────────────────

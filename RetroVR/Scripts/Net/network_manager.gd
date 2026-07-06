@@ -27,6 +27,7 @@ const AVATAR_SCENE := preload("res://Scenes/Net/remote_avatar.tscn")
 const POSE_BROADCASTER := preload("res://Scripts/Net/pose_broadcaster.gd")
 const OBJECT_SYNC := preload("res://Scripts/Net/object_sync.gd")
 const NETPLAY := preload("res://Scripts/Net/netplay_session.gd")
+const FILE_TRANSFER := preload("res://Scripts/Net/file_transfer.gd")
 
 ## Avatar palette — color_idx assigned by the host at registration.
 const PLAYER_COLORS: Array[Color] = [
@@ -60,6 +61,7 @@ var _accepted := false           # handshake complete (host: immediately)
 var _signals_wired := false
 var _object_sync: NetObjectSync = null
 var _netplay: NetplaySession = null
+var _file_transfer: NetFileTransfer = null
 var _pose_accum := 0.0
 var _latest_poses: Dictionary = {}     # peer_id -> PackedFloat32Array(21)
 var _avatars_container: Node3D = null
@@ -76,6 +78,10 @@ func _ready() -> void:
 	_netplay = NETPLAY.new()
 	_netplay.name = "Netplay"
 	add_child(_netplay)
+	# Fixed-path file delivery (M3) — books/videos by content hash.
+	_file_transfer = FILE_TRANSFER.new()
+	_file_transfer.name = "FileTransfer"
+	add_child(_file_transfer)
 	# React to host-driven scene switches (rebuild avatars in the new scene).
 	if has_node("/root/SceneManager"):
 		SceneManager.scene_changed.connect(_on_scene_changed)
@@ -154,6 +160,7 @@ func leave_session(reason := "left session") -> void:
 		return
 	if _netplay != null:
 		_netplay.stop("session ended")
+	_file_transfer.end_session()
 	_object_sync.end_session()
 	_active = false
 	_accepted = false

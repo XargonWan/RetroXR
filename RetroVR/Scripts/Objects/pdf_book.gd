@@ -106,6 +106,31 @@ var _loading_texture: ImageTexture = null
 var _next_label: Label3D = null
 var _prev_label: Label3D = null
 
+# Multiplayer download status (shown while NetObjectSync fetches the file)
+var _net_status_label: Label3D = null
+
+
+## Show or clear a floating status line above the book ("" hides it). Called by
+## NetObjectSync while the backing PDF is being transferred from the host.
+func net_set_download_status(text: String) -> void:
+	if text.is_empty():
+		if _net_status_label:
+			_net_status_label.visible = false
+		return
+	if _net_status_label == null:
+		_net_status_label = Label3D.new()
+		_net_status_label.font_size = 40
+		_net_status_label.pixel_size = 0.001
+		_net_status_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_net_status_label.no_depth_test = true
+		_net_status_label.modulate = Color(1.0, 0.9, 0.4)
+		_net_status_label.outline_modulate = Color(0, 0, 0, 0.8)
+		_net_status_label.outline_size = 6
+		_net_status_label.position = Vector3(0, book_height * 0.8 + 0.05, 0)
+		add_child(_net_status_label)
+	_net_status_label.text = text
+	_net_status_label.visible = true
+
 
 func _ready() -> void:
 	super._ready()
