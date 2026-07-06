@@ -67,6 +67,12 @@ func id_of(node: Node) -> int:
 	return node.get_meta("net_id", -1) if is_instance_valid(node) else -1
 
 
+## Reverse lookup: the registered node for a net_id, or null.
+func node_for_id(net_id: int) -> Node:
+	var node: Node = _registry.get(net_id)
+	return node if is_instance_valid(node) else null
+
+
 # ── Session lifecycle (called by NetworkManager) ──────────────────────────────
 
 ## Called whenever the world is (re)ready: session start and after scene changes.

@@ -287,8 +287,17 @@ func power_off() -> void:
 ## Toggle power (used by the power button)
 func toggle_power() -> void:
 	if NetworkManager.is_active() and not NetworkManager.is_event_applying():
+		# A running lockstep game: power stops it on every peer.
+		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+			NetworkManager.netplay_stop("powered off")
+			return
+		# Host powering on a determinism-verified core → start lockstep netplay:
+		# every peer runs the core locally instead of the host-only placeholder.
+		if NetworkManager.is_host() and not is_powered_on and _netplay_eligible():
+			if NetworkManager.netplay_start_host(self, _resolve_core(), net_rom_md5()):
+				return   # cold start drives net_start_core on every peer
 		if NetworkManager.is_client():
-			# Pre-netplay: emulation runs on the host only — send the intent.
+			# Non-netplay core: emulation runs on the host only — send the intent.
 			NetworkManager.report_event(NetObjectSync.EV_SYS_POWER, {"sys": self})
 			return
 	if is_powered_on:
@@ -300,6 +309,86 @@ func toggle_power() -> void:
 			and not NetworkManager.is_event_applying():
 		NetworkManager.report_event(NetObjectSync.EV_SYS_POWER_STATE,
 			{"sys": self, "on": is_powered_on})
+
+
+## True if this system can run lockstep netplay right now: a determinism-verified
+## core is resolvable and a ROM is inserted.
+func _netplay_eligible() -> bool:
+	if rom_path.is_empty():
+		return false
+	return NetworkManager.netplay_capable(_resolve_core())
+
+
+func _resolve_core() -> String:
+	var c := core_name
+	if c.is_empty() and not systemid.is_empty():
+		var defaults := CoreDefaults.new()
+		defaults.setup(CoreDefaults.default_path())
+		c = defaults.get_default_core(systemid)
+	return c
+
+
+func _resolve_dir() -> String:
+	var dir := core_directory
+	if dir.is_empty():
+		dir = CoreDownloadManager.default_core_root()
+	return dir
+
+
+## MD5 of the inserted ROM (for netplay peer verification). Empty if none.
+func net_rom_md5() -> String:
+	if rom_path.is_empty():
+		return ""
+	return str(RomHasher.compute_checksums(rom_path).get("md5", ""))
+
+
+# ── Netplay core seam (driven by NetplaySession on every peer) ────────────────
+
+## Start the local core under the netplay gate. The gate (SetNetplayMode) is set
+## BEFORE StartContent so the core holds at `start_frame` until inputs post.
+## Returns the Libretro node (the session connects its signals). null on failure.
+func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
+	if connected_tv == null:
+		push_error("RetroSystem: netplay start — no TV connected")
+		return null
+	if rom_path.is_empty():
+		push_error("RetroSystem: netplay start — no cartridge inserted")
+		return null
+	var resolved_core := _resolve_core()
+	if resolved_core.is_empty():
+		push_error("RetroSystem: netplay start — no core for systemid '%s'" % systemid)
+		return null
+	if is_powered_on:
+		_libretro.StopContent()
+		is_powered_on = false
+	for k: Variant in options:
+		_libretro.SetCoreOption(str(k), str(options[k]))
+	_libretro.SetNetplayMode(true, port_mask, start_frame)
+	_libretro.StartContent(connected_tv.get_screen_mesh(), _resolve_dir(), resolved_core, rom_path)
+	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
+	if asp:
+		asp.unit_size        = audio_unit_size
+		asp.max_distance     = audio_max_distance
+		asp.panning_strength = audio_panning_strength
+	is_powered_on = true
+	net_remote_powered = false
+	if connected_tv:
+		connected_tv.hide_osd()   # real local output now, not the placeholder
+	_model.on_power_on()
+	return _libretro
+
+
+## Stop the local netplay core and clear the gate.
+func net_stop_core() -> void:
+	for ctrl in _port_controllers:
+		if ctrl and is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
+			ctrl.set_rumble(0.0, 0.0)
+	_libretro.SetNetplayMode(false, 1, 0)
+	if is_powered_on:
+		_libretro.StopContent()
+		is_powered_on = false
+		_options_panel.hide_panel()
+		_model.on_power_off()
 
 
 ## True on clients while the host runs this system's emulation.

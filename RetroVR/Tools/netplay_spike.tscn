@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://probe_netplay.gd" id="1"]
+[ext_resource type="Script" path="res://Tools/netplay_spike.gd" id="1"]
 
-[node name="ProbeNetplay" type="Node3D"]
+[node name="NetplaySpike" type="Node3D"]
 script = ExtResource("1")

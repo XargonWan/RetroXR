@@ -26,6 +26,7 @@ const CH_FILE := 3      # reliable: file/state chunks
 const AVATAR_SCENE := preload("res://Scenes/Net/remote_avatar.tscn")
 const POSE_BROADCASTER := preload("res://Scripts/Net/pose_broadcaster.gd")
 const OBJECT_SYNC := preload("res://Scripts/Net/object_sync.gd")
+const NETPLAY := preload("res://Scripts/Net/netplay_session.gd")
 
 ## Avatar palette — color_idx assigned by the host at registration.
 const PLAYER_COLORS: Array[Color] = [
@@ -58,6 +59,7 @@ var _active := false
 var _accepted := false           # handshake complete (host: immediately)
 var _signals_wired := false
 var _object_sync: NetObjectSync = null
+var _netplay: NetplaySession = null
 var _pose_accum := 0.0
 var _latest_poses: Dictionary = {}     # peer_id -> PackedFloat32Array(21)
 var _avatars_container: Node3D = null
@@ -70,6 +72,10 @@ func _ready() -> void:
 	_object_sync = OBJECT_SYNC.new()
 	_object_sync.name = "ObjectSync"
 	add_child(_object_sync)
+	# Fixed-path netplay session (M4) — one active game at a time.
+	_netplay = NETPLAY.new()
+	_netplay.name = "Netplay"
+	add_child(_netplay)
 	# React to host-driven scene switches (rebuild avatars in the new scene).
 	if has_node("/root/SceneManager"):
 		SceneManager.scene_changed.connect(_on_scene_changed)
@@ -146,6 +152,8 @@ func join_game(ip: String, port := DEFAULT_PORT) -> Error:
 func leave_session(reason := "left session") -> void:
 	if not _active:
 		return
+	if _netplay != null:
+		_netplay.stop("session ended")
 	_object_sync.end_session()
 	_active = false
 	_accepted = false
@@ -176,6 +184,66 @@ func is_event_applying() -> bool:
 func on_local_spawn(obj: Node3D) -> void:
 	if _active and _object_sync != null:
 		_object_sync.local_spawn(obj)
+
+
+# ── Netplay facade (M4) ───────────────────────────────────────────────────────
+
+## True if the core is determinism-verified for lockstep netplay.
+func netplay_capable(core_name: String) -> bool:
+	return NetplayCores.is_capable(core_name)
+
+
+## True while a netplay game is running.
+func netplay_running() -> bool:
+	return _netplay != null and _netplay.is_running()
+
+
+## The system currently under netplay, or null.
+func netplay_system() -> Object:
+	return _netplay._system if _netplay != null else null
+
+
+## Host: begin lockstep netplay for `system`. `owners` maps port -> peer_id
+## (defaults to a sensible assignment across connected peers). Returns false if
+## not host, core not verified, or already running.
+func netplay_start_host(system: Object, core: String, rom_md5: String,
+		owners: Dictionary = {}, delay := 3) -> bool:
+	if _netplay == null or not is_host():
+		return false
+	if owners.is_empty():
+		owners = default_owners(system)
+	return _netplay.start_host(system, core, rom_md5, owners, delay)
+
+
+## Assign participating ports to peers: port index i -> the i-th peer (host
+## first). Only ports with a controller plugged in participate.
+func default_owners(system: Object) -> Dictionary:
+	var ids: Array = peers.keys()
+	ids.sort()
+	var owners := {}
+	var plugged: Array = []
+	if system != null and "_port_controllers" in system:
+		var pc: Array = system.get("_port_controllers")
+		for i in range(pc.size()):
+			if pc[i] != null:
+				plugged.append(i)
+	if plugged.is_empty():
+		plugged = [0]   # at least port 0 participates
+	for i in range(plugged.size()):
+		owners[plugged[i]] = ids[i % ids.size()]
+	return owners
+
+
+## Stop the active netplay game.
+func netplay_stop(reason := "stopped") -> void:
+	if _netplay != null:
+		_netplay.stop(reason)
+
+
+## Input seam: called from retro_controller. Returns true if netplay consumed
+## the input (caller must not drive the core directly).
+func netplay_route(system: Object, port: int, m: Dictionary) -> bool:
+	return _netplay != null and _netplay.route(system, port, m)
 
 
 ## Local LAN IPv4 addresses (for the host UI).
@@ -214,6 +282,10 @@ func _on_peer_disconnected(id: int) -> void:
 		_peer_left_msg.rpc(id)
 		peer_left.emit(id)
 		status_changed.emit("%d player(s) connected" % peers.size())
+		# A departed peer that owned a netplay port would stall the assembler
+		# forever — end the game for everyone.
+		if _netplay != null and _netplay.is_active():
+			_netplay.on_peer_left(id)
 
 
 func _local_info(color_idx: int) -> Dictionary:
@@ -257,6 +329,9 @@ func _register(info: Dictionary, version: int) -> void:
 	_add_avatar(sender, entry)
 	peer_registered.emit(sender, entry)
 	status_changed.emit("%d player(s) connected" % peers.size())
+	# A peer joining mid-game gets caught up via the netplay savestate flow.
+	if _netplay != null and _netplay.is_running():
+		_netplay.on_peer_joined(sender)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)

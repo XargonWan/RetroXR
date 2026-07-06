@@ -513,7 +513,7 @@ func _process(_delta: float) -> void:
 		return
 
 	if not is_instance_valid(_holding_ctrl):
-		_connected_system.get_libretro_node().SetJoypadState(_port_index, 0, 0, 0, 0, 0)
+		_send_joypad(0, 0, 0, 0, 0)
 		return
 
 	var ctrl := _holding_ctrl
@@ -549,7 +549,7 @@ func _process(_delta: float) -> void:
 	if "dpad" in rt: btn |= _threshold_to_dpad(rstick)
 
 	var m := _merge_pad_state(btn, alx, aly, arx, ary)
-	_connected_system.get_libretro_node().SetJoypadState(_port_index, m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
 
 
 func _process_desktop_joypad() -> void:
@@ -570,7 +570,16 @@ func _process_desktop_joypad() -> void:
 	var ary := int(-ry * ANALOG_SCALE)
 
 	var m := _merge_pad_state(btn, alx, aly, arx, ary)
-	_connected_system.get_libretro_node().SetJoypadState(_port_index, m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+
+
+## Route input to the connected system's core, via netplay when a lockstep game
+## is running (the gate applies the agreed frame on every peer), else directly.
+func _send_joypad(btn: int, alx: int, aly: int, arx: int, ary: int) -> void:
+	if NetworkManager.netplay_route(_connected_system, _port_index,
+			{"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}):
+		return
+	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
 
 
 ## Merge physical-gamepad state into the current (VR or keyboard) state.
