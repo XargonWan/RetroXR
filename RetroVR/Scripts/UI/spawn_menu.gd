@@ -641,6 +641,16 @@ func _build_net_view() -> Control:
 	NetworkManager.peer_registered.connect(func(_i: int, _d: Dictionary) -> void: _refresh_net_ui())
 	NetworkManager.peer_left.connect(func(_i: int) -> void: _refresh_net_ui())
 
+	# Keep ping readouts fresh while the NET view is on screen.
+	var ping_timer := Timer.new()
+	ping_timer.wait_time = 1.0
+	ping_timer.autostart = true
+	ping_timer.timeout.connect(func() -> void:
+		if NetworkManager.is_active() and is_instance_valid(_net_view) and _net_view.visible:
+			_refresh_net_ui()
+	)
+	vbox.add_child(ping_timer)
+
 	return scroll
 
 
@@ -687,6 +697,9 @@ func _refresh_net_ui() -> void:
 			suffix += "  (host)"
 		if id == self_id:
 			suffix += "  (you)"
+		var ping: int = NetworkManager.ping_ms(id)
+		if ping > 0:
+			suffix += "  %d ms" % ping
 		lbl.text = "%s%s" % [info.get("name", "?"), suffix]
 		lbl.add_theme_font_size_override("font_size", 18)
 		lbl.add_theme_color_override("font_color", COLOR_TITLE)

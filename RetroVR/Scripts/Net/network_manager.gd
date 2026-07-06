@@ -193,6 +193,12 @@ func on_local_spawn(obj: Node3D) -> void:
 		_object_sync.local_spawn(obj)
 
 
+## Host VCR transport changed — broadcast the new state for drift sync (M5).
+func report_vcr_state(vcr: Node) -> void:
+	if _active and _object_sync != null:
+		_object_sync.send_vcr_state(vcr)
+
+
 # ── Netplay facade (M4) ───────────────────────────────────────────────────────
 
 ## True if the core is determinism-verified for lockstep netplay.
@@ -251,6 +257,26 @@ func netplay_stop(reason := "stopped") -> void:
 ## the input (caller must not drive the core directly).
 func netplay_route(system: Object, port: int, m: Dictionary) -> bool:
 	return _netplay != null and _netplay.route(system, port, m)
+
+
+## Round-trip time in ms to peer `id` as known locally, or -1 when unknown.
+## The host knows every client's RTT; a client only knows its RTT to the host.
+func ping_ms(id: int) -> int:
+	if not _active or multiplayer == null:
+		return -1
+	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if peer == null:
+		return -1
+	var self_id := multiplayer.get_unique_id()
+	if id == self_id:
+		return 0
+	var target := id if is_host() else 1
+	if not is_host() and id != 1:
+		return -1   # client can't see client<->client RTT
+	var p: ENetPacketPeer = peer.get_peer(target)
+	if p == null:
+		return -1
+	return int(p.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
 
 
 ## Local LAN IPv4 addresses (for the host UI).

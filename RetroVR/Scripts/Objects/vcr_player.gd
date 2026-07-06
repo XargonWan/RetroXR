@@ -171,13 +171,62 @@ func _on_tape_removed() -> void:
 	NetworkManager.report_event(NetObjectSync.EV_TAPE_REMOVE, {"vcr": self})
 
 
-## Client-in-session: transport commands run on the host only (pre-netplay);
-## returns true when the command was forwarded instead of handled locally.
+## Client-in-session: transport intents route to the host (authoritative
+## transport). The host executes and its state broadcast drives every peer's
+## LOCAL playback (M5) — video files arrive via NetFileTransfer.
+## Returns true when the command was forwarded instead of handled locally.
 func _net_forward_cmd(cmd: String) -> bool:
 	if NetworkManager.is_client() and not NetworkManager.is_event_applying():
 		NetworkManager.report_event(NetObjectSync.EV_VCR_CMD, {"vcr": self, "cmd": cmd})
 		return true
 	return false
+
+
+# ── Multiplayer playback sync (M5) ────────────────────────────────────────────
+# Host is transport authority; every peer plays its own local copy of the video.
+# Sync is drift-corrected, not lockstep: the host broadcasts
+# (playing, paused, position) on transport changes plus a heartbeat, and a peer
+# seeks whenever its position drifts past NET_DRIFT_TOLERANCE.
+
+const NET_DRIFT_TOLERANCE := 0.75   # seconds off host before a corrective seek
+
+## Host: push the current transport state to peers (no-op offline/client).
+func _net_push_state() -> void:
+	if NetworkManager.is_host() and not NetworkManager.is_event_applying():
+		NetworkManager.report_vcr_state(self)
+
+
+## Current transport state for the sync layer.
+func net_get_state() -> Dictionary:
+	return {
+		"playing": is_playing,
+		"paused": is_playing and _video_player.is_paused(),
+		"pos": _video_player.get_stream_position() if is_playing else 0.0,
+	}
+
+
+## Client: mirror the host's transport state on the LOCAL player.
+func net_apply_state(playing: bool, paused: bool, pos: float) -> void:
+	if not playing:
+		if is_playing:
+			stop()
+		return
+	# Ensure we have a local file — the tape's path is remapped/downloaded by
+	# object_sync; refresh in case the transfer landed after insertion.
+	if video_path.is_empty() and _snapped_tape and _snapped_tape.has_method("get_video_path"):
+		video_path = _snapped_tape.get_video_path()
+	if not is_playing:
+		if video_path.is_empty() or connected_tv == null:
+			_osd("WAITING FOR TAPE…", true)
+			return
+		play()
+		if is_playing and pos > NET_DRIFT_TOLERANCE:
+			_video_player.set_stream_position(pos)
+	if not is_playing:
+		return
+	_video_player.set_paused(paused)
+	if not paused and absf(_video_player.get_stream_position() - pos) > NET_DRIFT_TOLERANCE:
+		_video_player.set_stream_position(pos)
 
 
 # --- Playback controls ---
@@ -224,6 +273,7 @@ func _on_pause_pressed() -> void:
 		_scan_dir = 0
 		_video_player.set_paused(true)
 		_osd("PAUSE", true)
+		_net_push_state()
 
 
 func _on_stop_pressed() -> void:
@@ -280,6 +330,7 @@ func _set_scan(dir: int) -> void:
 	_scan_accum = 0.0
 	_video_player.set_paused(false)
 	_video_player.volume_db = -80.0 if dir != 0 else _pre_scan_volume_db
+	_net_push_state()
 
 
 func play() -> void:
@@ -301,6 +352,7 @@ func play() -> void:
 	_scan_dir = 0
 	_bind_screen_to_tv()
 	_osd("PLAY", false)
+	_net_push_state()
 
 
 func stop() -> void:
@@ -314,6 +366,7 @@ func stop() -> void:
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
+	_net_push_state()
 
 
 # --- TV connection contract (identical to RetroSystem's) ---

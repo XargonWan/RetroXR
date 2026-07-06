@@ -53,6 +53,9 @@ var _xform_targets: Dictionary = {}  # net_id -> [Vector3, Quaternion] (client l
 var _applying := false               # applying remote state — suppress echo
 var _xform_accum := 0.0
 var _held_accum := 0.0
+var _vcr_accum := 0.0                # host heartbeat for VCR drift sync (M5)
+
+const VCR_HEARTBEAT := 2.0
 
 
 func _ready() -> void:
@@ -330,6 +333,10 @@ func _process(delta: float) -> void:
 		if _xform_accum >= XFORM_INTERVAL:
 			_xform_accum = 0.0
 			_host_send_xforms()
+		_vcr_accum += delta
+		if _vcr_accum >= VCR_HEARTBEAT:
+			_vcr_accum = 0.0
+			_host_vcr_heartbeat()
 	else:
 		_client_lerp_targets(delta)
 		_held_accum += delta
@@ -584,9 +591,12 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 			if _valid(a, ["tv"]):
 				a["tv"].set_crt_enabled(bool(a.get("on", true)))
 		EV_VCR_CMD:
-			# Transport runs on the host only pre-netplay (playback is local
-			# to the host; clients see the placeholder screen).
+			# Transport is host-authoritative; the host executes the command and
+			# its state broadcast (send_vcr_state) drives every peer's local
+			# playback (M5 drift sync). Run un-suppressed so the transport hook's
+			# _net_push_state() actually broadcasts.
 			if _nm.is_host() and _valid(a, ["vcr"]):
+				_applying = false
 				var vcr: Node = a["vcr"]
 				match str(a.get("cmd", "")):
 					"play": vcr.remote_play()
@@ -632,6 +642,40 @@ func _decode_args(wire: Dictionary) -> Dictionary:
 		else:
 			out[k] = v
 	return out
+
+
+# ── VCR playback sync (M5) ────────────────────────────────────────────────────
+# Drift-corrected, not lockstep: the host's transport is authoritative and every
+# peer plays its own local copy of the video (delivered by NetFileTransfer).
+# State goes out reliably on every transport change (vcr_player hooks) plus a
+# heartbeat while playing; peers seek when they drift past the tolerance.
+
+## Called via the NetworkManager facade from vcr_player transport hooks (host).
+func send_vcr_state(vcr: Node) -> void:
+	if not _nm.is_host():
+		return
+	var id := id_of(vcr)
+	if id < 0 or not vcr.has_method("net_get_state"):
+		return
+	var s: Dictionary = vcr.net_get_state()
+	_vcr_state.rpc(id, bool(s["playing"]), bool(s["paused"]), float(s["pos"]))
+
+
+func _host_vcr_heartbeat() -> void:
+	for id: int in _registry:
+		var node: Node = _registry[id]
+		if is_instance_valid(node) and node.has_method("net_get_state") \
+				and bool(node.get("is_playing")):
+			send_vcr_state(node)
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _vcr_state(net_id: int, playing: bool, paused: bool, pos: float) -> void:
+	var node: Node = _registry.get(net_id)
+	if is_instance_valid(node) and node.has_method("net_apply_state"):
+		_applying = true
+		node.call("net_apply_state", playing, paused, pos)
+		_applying = false
 
 
 # ── File-backed objects (M3) ──────────────────────────────────────────────────
