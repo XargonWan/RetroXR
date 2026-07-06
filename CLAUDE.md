@@ -84,6 +84,70 @@ can never hang the run.
 No compiled C++ test harness exists; GDExtension changes are validated by rebuilding
 (above) and loading in the headless editor.
 
+## On-Device Testing (Quest over adb, nobody wearing the headset)
+
+The Quest 3 usually sits on the desk on USB (`adb devices` → authorized; USB keeps it
+charged). RetroVR can be exported, installed, launched, and probed on it fully
+unattended. Verified end-to-end 2026-07-06 (x64↔arm64 netplay determinism run).
+
+In Git Bash, `export MSYS_NO_PATHCONV=1` first or `/sdcard/...` args get mangled into
+`C:/Program Files/Git/sdcard/...`.
+
+### Export + install
+```bash
+"$godot" --headless --path "$proj" --export-debug "Quest" out.apk
+adb install -r out.apk        # -r keeps app data
+```
+- **Stale-script trap**: the gradle export can silently ship an old compiled script —
+  `RetroVR/android/build/src/main/assets/**.gdc` is not always re-staged after a source
+  edit. If an on-device change doesn't take: `rm -rf RetroVR/android/build/src/main/assets
+  RetroVR/android/build/build/intermediates/assets` and re-export. To verify before
+  installing: a `.gdc` is a 12-byte `GDSC` header + zstd; decompress with Python 3.14's
+  `compression.zstd` and grep the payload for a string you just added.
+- `FileAccess.file_exists("res://….tscn")` is **false in exported builds** (paths are
+  remapped into the pck) — use `ResourceLoader.exists()`.
+
+### Launching with no one wearing it — ALL three are required
+```bash
+adb shell am broadcast -a com.oculus.vrpowermanager.prox_close   # fake "worn"
+adb shell setprop debug.oculus.guardian_pause 1                  # else a Guardian dialog blocks
+adb shell monkey -p com.xenu.retrovr 1                           # GodotApp isn't exported; am start = Permission Denial
+```
+- The manifest must declare `oculus.software.handtracking` or the shell blocks with a
+  controllers-required dialog (controllers are off/dead). That needs BOTH the export
+  preset `meta_xr_features/hand_tracking=1` AND project.godot
+  `xr/openxr/extensions/hand_tracking=true` — the vendors plugin only injects the
+  manifest feature when the OpenXR project setting is on (enabled since b9f1481).
+- If an OS dialog is showing, the launch is **cached** and fires once it clears
+  (`adb shell input keyevent KEYCODE_BACK` can dismiss).
+- Cleanup when done: `guardian_pause 0`, broadcast `prox_open`, `am force-stop`.
+
+### Paths on device
+- `user://` = **internal** `/data/user/0/com.xenu.retrovr/files/` — readable/writable via
+  `run-as com.xenu.retrovr` (debug builds). Cores + system dirs live there
+  (`files/libretro/…`, populated by the in-app CoreDownloadManager).
+- ROMs/books/videos live on the **external** dir `/sdcard/Android/data/com.xenu.retrovr/files/`
+  (plain `adb push`/`ls` works there).
+- Extra cores: same source the app uses (core_download_manager.gd) —
+  `buildbot.libretro.com/nightly/android/latest/arm64-v8a/<core>_libretro_android.so.zip`.
+
+### Running the netplay determinism spike on-device
+NetworkManager boots `Tools/netplay_spike.tscn` at startup when `user://spike.cfg`
+exists (the spike deletes the cfg immediately, so a crash can't wedge the app):
+```bash
+printf -- '--spike-core=fceumm\n--spike-rom=/sdcard/Android/data/com.xenu.retrovr/files/roms/nes/ROM.nes\n--spike-root=/data/user/0/com.xenu.retrovr/files/libretro\n' > spike.cfg
+adb push spike.cfg /data/local/tmp/
+adb shell "cat /data/local/tmp/spike.cfg | run-as com.xenu.retrovr sh -c 'cat > files/spike.cfg'"
+```
+Then launch (above) and compare the `[crc]` lines against a Windows spike run.
+
+### Log capture
+The logcat ring buffer rotates away in **under a minute** (VrApi spam) — poll-grepping
+loses boot output. Stream from before the launch instead:
+```bash
+adb logcat -c && adb logcat -s godot:* > quest.log &
+```
+
 ## Architecture
 
 ### Multi-Instance Design (post-refactor)
