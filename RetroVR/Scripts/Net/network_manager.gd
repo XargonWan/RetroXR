@@ -89,6 +89,16 @@ func _ready() -> void:
 
 
 func _parse_cmdline() -> void:
+	# On-device QA hook: a user://spike.cfg boots straight into the netplay
+	# determinism spike (used to vet cores over adb on Quest, where there are
+	# no command-line args). The spike deletes the cfg so the next launch is
+	# normal even if the run crashes mid-way. NB: ResourceLoader.exists, not
+	# FileAccess — .tscn paths are remapped inside exported pcks.
+	if FileAccess.file_exists("user://spike.cfg") \
+			and ResourceLoader.exists("res://Tools/netplay_spike.tscn"):
+		print("[NetworkManager] spike.cfg found — launching netplay spike")
+		get_tree().change_scene_to_file("res://Tools/netplay_spike.tscn")
+		return
 	var args := OS.get_cmdline_user_args()
 	var do_host := false
 	var join_ip := ""

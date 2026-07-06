@@ -31,7 +31,18 @@ var _done := false
 
 
 func _ready() -> void:
-	for arg: String in OS.get_cmdline_user_args():
+	# Android/adb path: args come from user://spike.cfg (one --spike-* per
+	# line), planted by NetworkManager's QA hook. Delete it IMMEDIATELY so a
+	# crashing run can't wedge the app into spike mode.
+	var cfg_args: PackedStringArray = []
+	if FileAccess.file_exists("user://spike.cfg"):
+		var f := FileAccess.open("user://spike.cfg", FileAccess.READ)
+		if f:
+			cfg_args = f.get_as_text().split("\n", false)
+			f.close()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://spike.cfg"))
+	for arg: String in OS.get_cmdline_user_args() + cfg_args:
+		arg = arg.strip_edges()
 		if arg.begins_with("--spike-core="):
 			core = arg.trim_prefix("--spike-core=")
 		elif arg.begins_with("--spike-rom="):
