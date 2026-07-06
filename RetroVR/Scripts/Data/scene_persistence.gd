@@ -358,11 +358,16 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"rotation": [rot.x, rot.y, rot.z],
 		}
 	elif node is PDFBook:
+		var book := node as PDFBook
+		var page := book.net_get_page()
 		return {
 			"id": id,
 			"type": "book",
-			"pdf_path": (node as PDFBook).pdf_path,
-			"half_pages": (node as PDFBook).half_page_mode,
+			"pdf_path": book.pdf_path,
+			"half_pages": book.half_page_mode,
+			"size_scale": book.size_scale,
+			"page_state": int(page.get("state", 0)),
+			"page_leaf": int(page.get("leaf", 0)),
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -438,7 +443,10 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 		"book":
 			var book := BOOK_SCENE.instantiate() as PDFBook
 			book.half_page_mode = data.get("half_pages", false)
+			book.size_scale = data.get("size_scale", 1.0)
 			book.pdf_path = data.get("pdf_path", "")
+			# Applied after the PDF loads (stashed while _page_count == 0).
+			book.set_page(int(data.get("page_state", 0)), int(data.get("page_leaf", 0)))
 			obj = book
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D

@@ -162,9 +162,16 @@ func _process(_delta):
 		_update_y_offset()
 	set_enabled(!xr_start_node.is_xr_active())
 
-	if Input.is_action_just_released(active_button_action):
+	# LOCAL PATCH (RetroVR): real press/drag/release semantics instead of the
+	# original synthetic click-on-release (press+release both fired when the
+	# button was let go). Click-on-release made 2D sliders on panels jump to
+	# the release position instead of tracking the drag. Pressing on press
+	# locks `target` (see below) so MOVED events during the hold become mouse
+	# drags with button_mask=1 in viewport_2d_in_3d_body. Button-style controls
+	# are unaffected (Godot buttons fire on release by default).
+	if Input.is_action_just_pressed(active_button_action):
 		_on_button_pressed(active_button_action)
-		await get_tree().process_frame
+	if Input.is_action_just_released(active_button_action):
 		_on_button_released(active_button_action)
 
 	# Find the new pointer target

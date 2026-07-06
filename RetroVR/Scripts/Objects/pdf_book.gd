@@ -27,6 +27,14 @@ extends XRToolsPickable
 ## Fixed book height in meters (width is derived from PDF aspect ratio).
 @export var book_height: float = 0.25
 
+## Uniform size multiplier (aspect ratio always preserved). Driven live by the
+## settings-panel slider; also restored from saves and synced in multiplayer.
+@export_range(0.5, 2.5) var size_scale: float = 1.0:
+	set(value):
+		size_scale = clampf(value, 0.5, 2.5)
+		if not _loading and is_inside_tree() and _page_count > 0:
+			_apply_dimensions()
+
 ## Snap threshold in degrees — when a turning page is within this many degrees
 ## of fully open (180°) or fully closed (0°), it snaps to completion.
 @export var snap_threshold_deg: float = 15.0
@@ -54,7 +62,11 @@ var _cbz_entries: Array[String] = []  # sorted image filenames inside the CBZ (C
 var _cbz_path: String = ""            # stored for per-task ZIPReader opens (CBZ only)
 var _page_width: float = 0.0
 var _page_height: float = 0.0
-var _book_width: float = 0.0  # single page width in meters
+var _book_width: float = 0.0  # single page width in meters (scaled)
+var _base_width: float = 0.0   # unscaled dimensions (size_scale = 1.0)
+var _base_height: float = 0.0
+var _export_height: float = 0.25   # pristine book_height (CBZ sizing base)
+var _pending_page: Dictionary = {}  # {state, leaf} to apply once loaded
 
 # Texture cache (page_index -> ImageTexture)
 var _texture_cache: Dictionary = {}
@@ -134,6 +146,7 @@ func net_set_download_status(text: String) -> void:
 
 func _ready() -> void:
 	super._ready()
+	_export_height = book_height   # pristine value: the CBZ sizing base
 	_create_loading_texture()
 	_create_hint_labels()
 	await get_tree().process_frame
@@ -199,15 +212,16 @@ func _load_pdf_internal(path: String) -> void:
 
 	# PDF points → meters: 1 pt = 1/72 inch = 0.0254/72 m ≈ 0.0003528 m
 	const PTS_TO_METERS := 0.0254 / 72.0
-	_book_width = _page_width * PTS_TO_METERS
-	book_height  = _page_height * PTS_TO_METERS
+	_base_width = _page_width * PTS_TO_METERS
+	_base_height = _page_height * PTS_TO_METERS
 
 	_cache_dir = "user://pdf_cache/" + pdf_path.md5_text() + ("_half/" if half_page_mode else "/")
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
-	_configure_meshes()
-	_rebuild_highlight_overlays()
-	_set_state(BookState.CLOSED)
+	_current_leaf = 0
+	_state = BookState.CLOSED
+	_apply_dimensions()
+	_consume_pending_page()
 
 	print("[PDFBook] Loaded PDF: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
 		pdf_path, _page_count, _leaf_count, _book_width, book_height])
@@ -258,16 +272,18 @@ func _load_cbz(path: String) -> void:
 	_leaf_count = ceili(_page_count / 2.0)
 
 	if _page_height > 0:
-		_book_width = book_height * (_page_width / _page_height)
+		_base_width = _export_height * (_page_width / _page_height)
 	else:
-		_book_width = book_height * 0.65
+		_base_width = _export_height * 0.65
+	_base_height = _export_height
 
 	_cache_dir = "user://pdf_cache/" + path.md5_text() + ("_half/" if half_page_mode else "/")
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
-	_configure_meshes()
-	_rebuild_highlight_overlays()
-	_set_state(BookState.CLOSED)
+	_current_leaf = 0
+	_state = BookState.CLOSED
+	_apply_dimensions()
+	_consume_pending_page()
 
 	print("[PDFBook] Loaded CBZ: %s (%d pages, %d leaves, %.2f x %.2f m)" % [
 		path, _page_count, _leaf_count, _book_width, book_height])
@@ -296,6 +312,53 @@ func _decode_cbz_page(page_index: int) -> Image:
 	if decode_err != OK:
 		return null
 	return img
+
+
+## Recompute the scaled dimensions and rebuild every size-dependent piece
+## (meshes, collision, spine, labels) while keeping the current page/state.
+func _apply_dimensions() -> void:
+	if _page_count == 0:
+		return
+	_book_width = _base_width * size_scale
+	book_height = _base_height * size_scale
+	_configure_meshes()
+	_rebuild_highlight_overlays()
+	_despawn_active_leaf()
+	_set_state(_state)
+	if _net_status_label:
+		_net_status_label.position = Vector3(0, book_height * 0.8 + 0.05, 0)
+
+
+# ── Page state (persistence + multiplayer sync) ──────────────────────────────
+
+## Jump directly to a spread with no turn animation. Safe to call before the
+## book has loaded — the target page is stashed and applied after load.
+func set_page(state: int, leaf: int) -> void:
+	if _page_count == 0:
+		_pending_page = {"state": state, "leaf": leaf}
+		return
+	_despawn_active_leaf()
+	_current_leaf = clampi(leaf, 0, maxi(_leaf_count - 1, 0))
+	_set_state(clampi(state, BookState.CLOSED, BookState.LAST_PAGE) as BookState)
+
+
+func net_get_page() -> Dictionary:
+	return {"state": int(_state), "leaf": _current_leaf}
+
+
+func _consume_pending_page() -> void:
+	if _pending_page.is_empty():
+		return
+	var p := _pending_page
+	_pending_page = {}
+	set_page(int(p.get("state", 0)), int(p.get("leaf", 0)))
+
+
+## Broadcast the page we landed on so other players' copies follow along.
+func _report_page() -> void:
+	if NetworkManager.is_active() and not NetworkManager.is_event_applying():
+		NetworkManager.report_event(NetObjectSync.EV_BOOK_PAGE,
+			{"book": self, "state": int(_state), "leaf": _current_leaf})
 
 
 # ── Async page texture loading ────────────────────────────────────────────────
@@ -674,6 +737,7 @@ func turn_page_forward() -> void:
 	if _is_turning:
 		return
 
+	var before := [_state, _current_leaf]
 	match _state:
 		BookState.CLOSED:
 			_current_leaf = 0
@@ -691,12 +755,15 @@ func turn_page_forward() -> void:
 				_prefetch_nearby_pages()
 		BookState.LAST_PAGE:
 			pass
+	if before != [_state, _current_leaf]:
+		_report_page()
 
 
 func turn_page_backward() -> void:
 	if _is_turning:
 		return
 
+	var before := [_state, _current_leaf]
 	match _state:
 		BookState.LAST_PAGE:
 			_current_leaf = _leaf_count - 2
@@ -714,6 +781,8 @@ func turn_page_backward() -> void:
 				_prefetch_nearby_pages()
 		BookState.CLOSED:
 			pass
+	if before != [_state, _current_leaf]:
+		_report_page()
 
 
 # ── Active leaf hinge system ──────────────────────────────────────────────────

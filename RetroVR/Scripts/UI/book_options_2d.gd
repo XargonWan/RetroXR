@@ -4,11 +4,15 @@
 ##
 ## Emits:
 ##   half_page_toggled(enabled) — user toggled half-page (split spread) mode
+##   size_changed(scale)        — size slider moved (fires live while dragging)
+##   size_committed(scale)      — size slider drag finished (for net replication)
 ##   close_requested            — user pressed ✕
 class_name BookOptions2D
 extends Control
 
 signal half_page_toggled(enabled: bool)
+signal size_changed(scale: float)
+signal size_committed(scale: float)
 signal close_requested
 
 # ── Palette (matches CoreOptions2D) ─────────────────────────────────────────────
@@ -17,8 +21,10 @@ const COLOR_TITLE := Color(0.9,  0.9,  1.0)
 const COLOR_ROW   := Color(0.65, 0.65, 0.80)
 
 var _half_check: CheckBox = null
+var _size_slider: HSlider = null
+var _size_val: Label = null
 var _active_scroll: ScrollContainer = null
-# Guard so populate() doesn't re-emit half_page_toggled when it sets the checkbox.
+# Guard so populate() doesn't re-emit signals when it sets control values.
 var _suppress_signal := false
 
 
@@ -101,14 +107,58 @@ func _build_ui() -> void:
 	)
 	row.add_child(_half_check)
 
+	# Size slider row: [label + value] then a full-width slider under it.
+	var size_header := HBoxContainer.new()
+	size_header.add_theme_constant_override("separation", 8)
+	rows.add_child(size_header)
+
+	var size_lbl := Label.new()
+	size_lbl.text = "Book size"
+	size_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_lbl.add_theme_font_size_override("font_size", 18)
+	size_lbl.add_theme_color_override("font_color", COLOR_ROW)
+	size_header.add_child(size_lbl)
+
+	_size_val = Label.new()
+	_size_val.text = "1.00×"
+	_size_val.add_theme_font_size_override("font_size", 18)
+	_size_val.add_theme_color_override("font_color", COLOR_TITLE)
+	_size_val.custom_minimum_size = Vector2(70, 0)
+	_size_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	size_header.add_child(_size_val)
+
+	_size_slider = HSlider.new()
+	_size_slider.min_value = 0.5
+	_size_slider.max_value = 2.5
+	_size_slider.step = 0.05
+	_size_slider.value = 1.0
+	_size_slider.custom_minimum_size = Vector2(0, 48)
+	_size_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rows.add_child(_size_slider)
+
+	# value_changed fires continuously while dragging → live resize; the
+	# commit signal on drag end is what gets replicated to other players.
+	_size_slider.value_changed.connect(func(v: float):
+		_size_val.text = "%.2f×" % v
+		if not _suppress_signal:
+			size_changed.emit(v)
+	)
+	_size_slider.drag_ended.connect(func(value_changed_flag: bool):
+		if not _suppress_signal and value_changed_flag:
+			size_committed.emit(_size_slider.value)
+	)
+
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 ## Sync the UI to the book's current state without re-emitting signals.
-func populate(half_pages: bool) -> void:
+func populate(half_pages: bool, size_scale := 1.0) -> void:
 	_suppress_signal = true
 	if _half_check:
 		_half_check.button_pressed = half_pages
+	if _size_slider:
+		_size_slider.value = size_scale
+		_size_val.text = "%.2f×" % size_scale
 	_suppress_signal = false
 
 

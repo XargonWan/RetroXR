@@ -41,6 +41,9 @@ enum {
 	EV_TV_VOL_DOWN,      # {tv}
 	EV_TV_CRT,           # {tv, on}
 	EV_VCR_CMD,          # {vcr, cmd}    client intent -> host transport
+	EV_BOOK_PAGE,        # {book, state, leaf}  page turned -> everyone follows
+	EV_BOOK_SIZE,        # {book, scale}        size slider committed
+	EV_BOOK_HALF,        # {book, on}           half-page mode toggled
 }
 
 var _nm: Node = null
@@ -604,6 +607,15 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 					"stop": vcr.remote_stop()
 					"ff": vcr.remote_ff()
 					"rew": vcr.remote_rewind()
+		EV_BOOK_PAGE:
+			if _valid(a, ["book"]) and a["book"].has_method("set_page"):
+				a["book"].set_page(int(a.get("state", 0)), int(a.get("leaf", 0)))
+		EV_BOOK_SIZE:
+			if _valid(a, ["book"]):
+				a["book"].set("size_scale", float(a.get("scale", 1.0)))
+		EV_BOOK_HALF:
+			if _valid(a, ["book"]):
+				a["book"].set("half_page_mode", bool(a.get("on", false)))
 	_applying = false
 
 

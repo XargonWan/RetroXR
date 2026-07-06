@@ -68,6 +68,8 @@ func _ensure_ui_connected() -> void:
 		call_deferred("_ensure_ui_connected")
 		return
 	ui.half_page_toggled.connect(_on_half_page_toggled)
+	ui.size_changed.connect(_on_size_changed)
+	ui.size_committed.connect(_on_size_committed)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 
@@ -79,9 +81,25 @@ func _populate() -> void:
 	if not ui:
 		call_deferred("_populate")
 		return
-	ui.populate(_book.half_page_mode)
+	ui.populate(_book.half_page_mode, _book.size_scale)
 
 
 func _on_half_page_toggled(enabled: bool) -> void:
 	if _book and is_instance_valid(_book):
 		_book.half_page_mode = enabled
+		NetworkManager.report_event(NetObjectSync.EV_BOOK_HALF,
+			{"book": _book, "on": enabled})
+
+
+## Live while the slider is dragged — resizes the local book every tick.
+func _on_size_changed(scale: float) -> void:
+	if _book and is_instance_valid(_book):
+		_book.size_scale = scale
+
+
+## Drag finished — replicate the final size to the other players.
+func _on_size_committed(scale: float) -> void:
+	if _book and is_instance_valid(_book):
+		_book.size_scale = scale
+		NetworkManager.report_event(NetObjectSync.EV_BOOK_SIZE,
+			{"book": _book, "scale": scale})
