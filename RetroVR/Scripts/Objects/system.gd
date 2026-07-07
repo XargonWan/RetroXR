@@ -7,6 +7,8 @@ extends XRToolsPickable
 const _MODEL_SCRIPTS: Dictionary = {
 	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
 	"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
+	"game_boy": "res://Scripts/Objects/system_models/game_boy_model.gd",
+	"game_boy_advance": "res://Scripts/Objects/system_models/game_boy_advance_model.gd",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -46,6 +48,9 @@ var _controller_info: Array = []
 
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
+
+# Held-input component (handhelds only — the device itself is the controller)
+var _handheld_input: HandheldInput = null
 
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
@@ -143,6 +148,22 @@ func _load_system_model() -> void:
 	_memcard_slot.enabled = cards
 	if cards:
 		_model.configure_memory_card_slot(_memcard_slot)
+	# Handhelds: built-in screen, on-device controls, and the held-input
+	# component that turns the device itself into the port-0 controller.
+	if _model.is_handheld():
+		_power_button.visible = false
+		_power_button.set_deferred("monitoring", false)
+		_reset_button.visible = false
+		_reset_button.set_deferred("monitoring", false)
+		if _model.has_method("configure_handheld_body"):
+			_model.configure_handheld_body(self)
+		_model.configure_handheld_controls(self)
+		_handheld_input = HandheldInput.new()
+		_handheld_input.name = "HandheldInput"
+		add_child(_handheld_input)
+		_handheld_input.setup(self)
+		# Route port-0 rumble to the holding hands via the existing path.
+		_port_controllers[0] = _handheld_input
 
 
 ## Enable or disable libretro input polling for this system.
@@ -160,14 +181,19 @@ func set_audio_volume(volume: float) -> void:
 		asp.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
 
 
+## The mesh the core should render to right now: a connected TV wins,
+## otherwise a handheld's built-in LCD, otherwise null (no display).
+func _screen_target() -> MeshInstance3D:
+	if connected_tv != null:
+		return connected_tv.get_screen_mesh()
+	return _model.get_builtin_screen() if _model else null
+
+
 ## Show or hide the screen output (used by TV toggle button).
 func set_screen_enabled(enabled: bool) -> void:
 	if not is_powered_on:
 		return
-	if enabled and connected_tv:
-		_libretro.SetScreenMesh(connected_tv.get_screen_mesh())
-	else:
-		_libretro.SetScreenMesh(null)
+	_libretro.SetScreenMesh(_screen_target() if enabled else null)
 
 
 ## Called by the TV's cable plug when it connects to a TV
@@ -177,11 +203,12 @@ func on_tv_connected(tv: RetroTV) -> void:
 		_libretro.SetScreenMesh(tv.get_screen_mesh())
 
 
-## Called by the TV's cable plug when it disconnects
+## Called by the TV's cable plug when it disconnects. Handhelds take the
+## picture back onto their built-in LCD; consoles go dark.
 func on_tv_disconnected() -> void:
-	if is_powered_on:
-		_libretro.SetScreenMesh(null)
 	connected_tv = null
+	if is_powered_on:
+		_libretro.SetScreenMesh(_screen_target())
 
 
 # --- Cable management ---
@@ -221,6 +248,19 @@ func _add_cable_to_scene() -> void:
 		_pending_tv_restore = null
 
 
+func _process(_delta: float) -> void:
+	# Tilt-sensor feed (handhelds): the device's physical orientation IS the
+	# accelerometer for tilt carts (WarioWare Twisted, Kirby Tilt 'n' Tumble).
+	# libretro frame: X = screen-right, Y = screen-top, Z = out of the screen;
+	# at rest flat (screen up) = (0,0,1) g. Our shell: screen normal = +Y,
+	# screen-top = -Z, screen-right = +X. Skipped during netplay — sensor
+	# values are not part of the deterministic input stream.
+	if _model != null and _model.is_handheld() and is_powered_on \
+			and not NetworkManager.netplay_running():
+		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
+		_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
+
+
 func _physics_process(_delta: float) -> void:
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
@@ -245,8 +285,8 @@ func _physics_process(_delta: float) -> void:
 func power_on() -> void:
 	if is_powered_on:
 		return
-	if connected_tv == null:
-		push_error("RetroSystem: Cannot power on - no TV connected")
+	if _screen_target() == null:
+		push_error("RetroSystem: Cannot power on - no display (connect a TV)")
 		return
 	if rom_path.is_empty():
 		push_error("RetroSystem: Cannot power on - no cartridge inserted")
@@ -269,7 +309,7 @@ func power_on() -> void:
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_libretro.SetSramPath(_compose_sram_path(resolved_core))
-	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
+	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
 	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
 	if asp:
 		asp.unit_size        = audio_unit_size
@@ -387,8 +427,8 @@ func net_resolve_rom(md5: String) -> bool:
 ## BEFORE StartContent so the core holds at `start_frame` until inputs post.
 ## Returns the Libretro node (the session connects its signals). null on failure.
 func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
-	if connected_tv == null:
-		push_error("RetroSystem: netplay start — no TV connected")
+	if _screen_target() == null:
+		push_error("RetroSystem: netplay start — no display (connect a TV)")
 		return null
 	if rom_path.is_empty():
 		push_error("RetroSystem: netplay start — no cartridge inserted")
@@ -413,7 +453,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	else:
 		_libretro.SetSramPath(_compose_sram_path(resolved_core))
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
-	_libretro.StartContent(connected_tv.get_screen_mesh(), _resolve_dir(), resolved_core, rom_path)
+	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
 	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
 	if asp:
 		asp.unit_size        = audio_unit_size
@@ -469,7 +509,7 @@ func reset() -> void:
 		resolved_dir = CoreDownloadManager.default_core_root()
 	print("[RetroSystem] Resetting: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_libretro.StopContent()
-	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
+	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
 
 
 # --- Core options ---

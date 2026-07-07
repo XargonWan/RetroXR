@@ -40,6 +40,25 @@ func uses_memory_cards() -> bool:
 	return false
 
 
+## True for handheld hardware (Game Boy family): the device has a built-in
+## screen, is played while held, and its VR-controller input drives port 0.
+func is_handheld() -> bool:
+	return false
+
+
+## The device's built-in display mesh (handhelds), or null. When no TV is
+## connected the core renders here; plugging the video-out cable into a TV
+## moves the picture there and unplugging brings it back.
+func get_builtin_screen() -> MeshInstance3D:
+	return null
+
+
+## Handhelds: create and wire the on-device controls (volume slider, power
+## switch) against the owning RetroSystem. Called after the model loads.
+func configure_handheld_controls(host: Node3D) -> void:
+	pass
+
+
 ## Reposition the memory-card snap zone to the model's physical card slot.
 func configure_memory_card_slot(slot: Node3D) -> void:
 	pass
