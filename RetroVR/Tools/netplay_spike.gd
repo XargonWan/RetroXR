@@ -9,11 +9,20 @@
 ## Usage (windowed; needs the GDExtension + a real core/ROM):
 ##   godot --path RetroVR --rendering-driver opengl3 res://Tools/netplay_spike.tscn \
 ##     -- --spike-core=fceumm "--spike-rom=C:/path/to/rom.nes"
+##
+## --spike-rollback runs the same input timeline through the ROLLBACK engine:
+## confirmations are posted LAGGED behind execution, so every scripted input
+## transition is first mispredicted (hold-last) and then corrected by a
+## rewind+replay. The [crc] stream MUST be identical to a lockstep run of the
+## same timeline — diff the two runs to prove rollback correctness.
 extends Node3D
 
 var root_dir := "C:/Users/user/retrovr/libretro"
 var core := "fceumm"
 var rom := "C:/Users/user/retrovr/roms/nes/probe.nes"
+var rollback := false
+const ROLLBACK_LAG := 3      # confirmations trail execution by this many frames
+const ROLLBACK_MAX_AHEAD := 8
 
 const SAVE_AT := 600
 const END_AT := 1800
@@ -49,6 +58,8 @@ func _ready() -> void:
 			rom = arg.trim_prefix("--spike-rom=")
 		elif arg.begins_with("--spike-root="):
 			root_dir = arg.trim_prefix("--spike-root=")
+		elif arg == "--spike-rollback":
+			rollback = true
 	get_tree().create_timer(110.0).timeout.connect(func() -> void:
 		var f: int = _lib.GetFrameCount() if _lib else -1
 		print("[spike] TIMEOUT phase=%s frame=%d" % [_phase, f])
@@ -64,8 +75,11 @@ func _ready() -> void:
 	_lib.connect("savestate_loaded", _on_state_loaded)
 	# Gate BEFORE starting content: the core holds at frame 0 until inputs post.
 	_lib.SetNetplayMode(true, 0x1, 0)
+	# Rollback mode: port 0 is REMOTE (local_mask 0) so the engine predicts it
+	# and our lagged confirmations force rewind+replay corrections.
+	_lib.SetNetplayRollback(rollback, 0, ROLLBACK_MAX_AHEAD)
 	_lib.StartContent(_mesh, root_dir, core, rom)
-	print("[spike] started %s / %s" % [core, rom.get_file()])
+	print("[spike] started %s / %s%s" % [core, rom.get_file(), " (ROLLBACK)" if rollback else ""])
 
 
 ## Deterministic scripted play: START to get in-game, then run right with
@@ -94,9 +108,18 @@ func _process(_delta: float) -> void:
 	if _done or _lib == null or _phase == "B_LOADING":
 		return
 	var cur: int = _lib.GetFrameCount()
-	while _next_feed < cur + 90:
-		_lib.PostNetplayInputs(_next_feed, _flat(_next_feed))
-		_next_feed += 1
+	if rollback:
+		# Confirmations trail execution — the engine must predict first, then
+		# get corrected. (The speculation throttle keeps this from deadlocking:
+		# execution stalls at watermark + max_ahead, which keeps cur - LAG
+		# ahead of the feed pointer.)
+		while _next_feed <= cur - ROLLBACK_LAG:
+			_lib.PostNetplayInputs(_next_feed, _flat(_next_feed))
+			_next_feed += 1
+	else:
+		while _next_feed < cur + 90:
+			_lib.PostNetplayInputs(_next_feed, _flat(_next_feed))
+			_next_feed += 1
 	if _phase == "A" and not _saved and cur >= SAVE_AT:
 		_saved = true
 		_lib.RequestSaveState()
@@ -150,6 +173,12 @@ func _finish() -> void:
 				print("[spike] MISMATCH frame %d: A=%08x B=%08x" % [f, _crc_a[f], _crc_b[f]])
 	var ok := compared >= 15 and mismatches == 0
 	print("[spike] compared %d CRC checkpoints after reload, %d mismatches" % [compared, mismatches])
+	if rollback:
+		var rb: int = _lib.GetNetplayRollbackCount() if _lib.has_method("GetNetplayRollbackCount") else -1
+		print("[spike] rollbacks performed: %d" % rb)
+		if rb <= 0:
+			ok = false
+			print("[spike] FAIL: rollback mode ran but no rollbacks happened")
 	print("[spike] RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_lib.StopContent()
 	await get_tree().create_timer(0.5).timeout

@@ -31,6 +31,7 @@ const STALL_MS := 100           # gate stall before a reliable re-request
 const REREQ_THROTTLE_MS := 50
 const CRC_STRIKES := 3
 const PRUNE_BEHIND := 120       # keep this many frames behind the gate
+const MAX_AHEAD := 10           # rollback: speculation cap past the confirmed frame
 
 signal desync_detected(peer_id: int, frame: int)
 signal session_stopped(reason: String)
@@ -48,6 +49,7 @@ var _core := ""
 var _rom_md5 := ""
 var _options: Dictionary = {}
 var _delay := 3
+var _rollback := false          # GGPO-style: local input live, remote predicted
 var _all_ports: PackedInt32Array = PackedInt32Array()   # sorted participating ports
 var _local_ports: Dictionary = {}       # port -> true (owned by this peer)
 var _owners: Dictionary = {}            # port -> peer_id
@@ -96,7 +98,9 @@ func is_active() -> bool:
 
 ## Host entry point. `owners` maps participating port -> peer_id. Verifies the
 ## core is netplay-capable, then drives the cold-start handshake on all peers.
-func start_host(system: Object, core: String, rom_md5: String, owners: Dictionary, delay: int) -> bool:
+## rollback: 1 = force on, 0 = force lockstep, -1 = auto (core capability).
+func start_host(system: Object, core: String, rom_md5: String, owners: Dictionary,
+		delay: int, rollback := -1) -> bool:
 	if not _nm.is_host():
 		return false
 	if not NetplayCores.is_capable(core):
@@ -108,12 +112,13 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 	_rom_md5 = rom_md5
 	_options = NetplayCores.forced_options(core)
 	_delay = clampi(delay, 1, 8)
+	_rollback = NetplayCores.rollback_capable(core) if rollback < 0 else rollback == 1
 	_set_owners(owners)
 	_ready_peers.clear()
 
 	var opt_wire := _options
 	# Everyone (incl. host) cold-starts through the same path.
-	_np_start.rpc(_sys_net_id, _core, _rom_md5, opt_wire, _owners, _delay, 0)
+	_np_start.rpc(_sys_net_id, _core, _rom_md5, opt_wire, _owners, _delay, 0, _rollback)
 	_cold_start_local(0)
 	_mark_ready(1)
 	return true
@@ -121,12 +126,13 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictionary,
-		owners: Dictionary, delay: int, start_frame: int) -> void:
+		owners: Dictionary, delay: int, start_frame: int, rollback := false) -> void:
 	_sys_net_id = sys_net_id
 	_core = core
 	_rom_md5 = rom_md5
 	_options = options
 	_delay = delay
+	_rollback = rollback
 	_set_owners(owners)
 	_system = _resolve_system(sys_net_id)
 	if _system == null:
@@ -145,6 +151,14 @@ func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictiona
 ## Bring the local core up under the netplay gate at `start_frame`.
 func _cold_start_local(start_frame: int) -> void:
 	_reset_runtime(start_frame)
+	# Rollback flags must be set before StartContent spins the emu thread up.
+	# get_libretro_node() exists on every system implementation (incl. mocks).
+	var pre_lib: Object = _system.get_libretro_node() if _system.has_method("get_libretro_node") else null
+	if pre_lib != null and pre_lib.has_method("SetNetplayRollback"):
+		var local_mask := 0
+		for port: int in _local_ports:
+			local_mask |= (1 << port)
+		pre_lib.SetNetplayRollback(_rollback, local_mask, MAX_AHEAD)
 	# net_start_core sets the gate (SetNetplayMode) BEFORE StartContent so the
 	# core holds at the start frame until inputs post.
 	_lib = _system.net_start_core(_port_mask, start_frame, _options)
@@ -252,6 +266,8 @@ func _stop_local(reason: String) -> void:
 	_join_paused = false
 	if _lib != null and _lib.has_signal("netplay_crc") and _lib.netplay_crc.is_connected(_on_local_crc):
 		_lib.netplay_crc.disconnect(_on_local_crc)
+	if _lib != null and _lib.has_method("SetNetplayRollback"):
+		_lib.SetNetplayRollback(false, 0, MAX_AHEAD)
 	if _system != null and _system.has_method("net_stop_core"):
 		_system.net_stop_core()
 	_lib = null
@@ -292,6 +308,11 @@ func route(system: Object, port: int, m: Dictionary) -> bool:
 	if not _is_participating(port):
 		return false
 	if _local_ports.has(port):
+		if _rollback:
+			# Rollback: let the controller hit SetJoypadState directly — the
+			# wrapper redirects locally-owned masked ports into the live-input
+			# slot the emu thread samples (zero added latency).
+			return false
 		_pending_local_route[port] = [
 			int(m.get("btn", 0)), int(m.get("alx", 0)), int(m.get("aly", 0)),
 			int(m.get("arx", 0)), int(m.get("ary", 0))]
@@ -311,13 +332,39 @@ func _capture_local() -> Dictionary:
 func _process(_delta: float) -> void:
 	if not _running or _lib == null:
 		return
-	_schedule_local()
+	if _rollback:
+		_pump_local_records()
+	else:
+		_schedule_local()
 	if _nm.is_host():
 		if not _join_paused:
 			_host_assemble()
 	_drain_to_core()
 	_check_stall()
 	_prune()
+
+
+## Rollback: the emu thread already ran frames with live local input — drain
+## its per-frame records (frame, port, 5 values) and ship them for assembly.
+func _pump_local_records() -> void:
+	if not _lib.has_method("TakeNetplayLocalRecords"):
+		return
+	var recs: PackedInt32Array = _lib.TakeNetplayLocalRecords()
+	var i := 0
+	while i + 7 <= recs.size():
+		var f := int(recs[i])
+		var port := int(recs[i + 1])
+		var vals := [int(recs[i + 2]), int(recs[i + 3]), int(recs[i + 4]),
+			int(recs[i + 5]), int(recs[i + 6])]
+		if not _local_inputs.has(f):
+			_local_inputs[f] = {}
+		_local_inputs[f][port] = vals
+		if _nm.is_host():
+			_recv_put(f, port, vals)
+		_sched_frame = maxi(_sched_frame, f + 1)
+		i += 7
+	if not _nm.is_host() and recs.size() > 0:
+		_send_local_window()
 
 
 ## Schedule local owned-port input up to emu+delay, and (re)send the window.
@@ -555,17 +602,19 @@ func _on_savestate_for_join(data: PackedByteArray, frame: int) -> void:
 		return
 	for peer_id: int in _joining.keys():
 		_np_savestate.rpc_id(peer_id, _sys_net_id, _core, _rom_md5, _options,
-			_owners, _delay, data, frame)
+			_owners, _delay, data, frame, _rollback)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_savestate(sys_net_id: int, core: String, rom_md5: String, options: Dictionary,
-		owners: Dictionary, delay: int, data: PackedByteArray, frame: int) -> void:
+		owners: Dictionary, delay: int, data: PackedByteArray, frame: int,
+		rollback := false) -> void:
 	_sys_net_id = sys_net_id
 	_core = core
 	_rom_md5 = rom_md5
 	_options = options
 	_delay = delay
+	_rollback = rollback
 	_set_owners(owners)
 	_system = _resolve_system(sys_net_id)
 	if _system == null:

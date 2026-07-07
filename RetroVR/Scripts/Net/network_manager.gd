@@ -226,16 +226,17 @@ func netplay_system() -> Object:
 	return _netplay._system if _netplay != null else null
 
 
-## Host: begin lockstep netplay for `system`. `owners` maps port -> peer_id
-## (defaults to a sensible assignment across connected peers). Returns false if
-## not host, core not verified, or already running.
+## Host: begin netplay for `system`. `owners` maps port -> peer_id (defaults to
+## a sensible assignment across connected peers). rollback: -1 auto (core
+## capability), 0 force lockstep, 1 force rollback. Returns false if not host,
+## core not verified, or already running.
 func netplay_start_host(system: Object, core: String, rom_md5: String,
-		owners: Dictionary = {}, delay := 3) -> bool:
+		owners: Dictionary = {}, delay := 3, rollback := -1) -> bool:
 	if _netplay == null or not is_host():
 		return false
 	if owners.is_empty():
 		owners = default_owners(system)
-	return _netplay.start_host(system, core, rom_md5, owners, delay)
+	return _netplay.start_host(system, core, rom_md5, owners, delay, rollback)
 
 
 ## Assign participating ports to peers: port index i -> the i-th peer (host

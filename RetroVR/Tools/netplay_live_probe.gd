@@ -127,10 +127,15 @@ func _process(_delta: float) -> void:
 	var np: NetplaySession = NetworkManager._netplay
 	if not np.is_running():
 		return
-	# Feed the scripted input for our owned port(s) at the scheduling horizon.
+	# Feed the scripted input for our owned port(s). Rollback: drive the live
+	# SetJoypadState path (the wrapper samples it each emu frame); lockstep:
+	# fill the scheduled route as before.
 	var f: int = np._sched_frame
 	for port: int in np._local_ports:
-		np._pending_local_route[port] = [_input_for_frame(f), 0, 0, 0, 0]
+		if np._rollback:
+			_sys.lib.SetJoypadState(port, _input_for_frame(int(_sys.lib.GetFrameCount()) + 1), 0, 0, 0, 0)
+		else:
+			np._pending_local_route[port] = [_input_for_frame(f), 0, 0, 0, 0]
 	var emu: int = _sys.lib.GetFrameCount()
 	if emu > 0 and emu % 600 == 0:
 		pass  # progress visible via [Netplay]/[live] lines
@@ -143,6 +148,8 @@ func _finish(ok: bool) -> void:
 		return
 	_done = true
 	var emu: int = _sys.lib.GetFrameCount() if _sys and _sys.lib else -1
+	if _sys and _sys.lib and _sys.lib.has_method("GetNetplayRollbackCount"):
+		print("[live] rollbacks performed: %d" % _sys.lib.GetNetplayRollbackCount())
 	print("[live] finished at frame %d" % emu)
 	print("[live] RESULT=%s" % ("PASS" if ok else "FAIL"))
 	if _is_host:

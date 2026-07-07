@@ -15,9 +15,10 @@ extends RefCounted
 const CORES: Dictionary = {
 	"fceumm": {
 		"verified": true,
+		"rollback": true,   # serialization is fast+small (13.7 KB) — per-frame savestates OK
 		"systems": ["nes"],
 		"options": {},   # SMB passed determinism with defaults
-		"notes": "NES. Verified GREEN 2026-07-05 (savestate + cold-start cross-process CRC match).",
+		"notes": "NES. Verified GREEN 2026-07-05 (savestate + cold-start cross-process CRC match; x64<->arm64 verified 2026-07-06).",
 	},
 	# Pending vetting with netplay_spike before they can be enabled:
 	"snes9x": {
@@ -45,6 +46,13 @@ static func is_capable(core_name: String) -> bool:
 static func forced_options(core_name: String) -> Dictionary:
 	var e: Dictionary = CORES.get(core_name, {})
 	return (e.get("options", {}) as Dictionary).duplicate()
+
+
+## True when the core supports rollback netplay: verified deterministic AND
+## cheap enough to savestate every frame (rollback rewinds via a state ring).
+static func rollback_capable(core_name: String) -> bool:
+	var e: Dictionary = CORES.get(core_name, {})
+	return bool(e.get("verified", false)) and bool(e.get("rollback", false))
 
 
 static func notes(core_name: String) -> String:

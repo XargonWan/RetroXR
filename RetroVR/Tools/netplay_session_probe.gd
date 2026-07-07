@@ -152,7 +152,9 @@ func _run() -> void:
 	client_np._pending_local_route[1] = [0xF0, -50, 75, 0, 0]
 
 	# ── Phase A: cold-start lockstep ──────────────────────────────────────────
-	var ok: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3)
+	# rollback=0: this probe's mock core implements the lockstep gate only —
+	# rollback correctness is proven by the real-core netplay_spike.
+	var ok: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3, 0)
 	_fail_if(not ok, "netplay_start_host returned false")
 	# Wait until running on both peers.
 	var running := false
@@ -206,7 +208,7 @@ func _run() -> void:
 	client_sys.lib.desync = true         # client's core will diverge
 	host_np._pending_local_route[0] = [0x01, 0, 0, 0, 0]
 	client_np._pending_local_route[1] = [0x02, 0, 0, 0, 0]
-	var ok2: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3)
+	var ok2: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3, 0)
 	_fail_if(not ok2, "restart for desync test failed")
 	# Run long enough to cross at least one CRC checkpoint (60 frames) + relay.
 	var detected := false
