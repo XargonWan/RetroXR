@@ -33,6 +33,18 @@ func get_controller_port_count() -> int:
 	return 2
 
 
+## True when this hardware saves to removable memory cards (CD-era consoles).
+## Enables the MemoryCardSlot snap zone; cartridge systems keep saves on the
+## cartridge itself and return false.
+func uses_memory_cards() -> bool:
+	return false
+
+
+## Reposition the memory-card snap zone to the model's physical card slot.
+func configure_memory_card_slot(slot: Node3D) -> void:
+	pass
+
+
 ## Show or hide the controller plug port visuals for a given port index.
 ## Called by RetroSystem when a controller is plugged in or removed.
 func set_controller_port_occupied(port_index: int, occupied: bool) -> void:

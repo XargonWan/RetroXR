@@ -110,6 +110,11 @@ script = ExtResource("4_snaphis")
 mesh = SubResource("BoxMesh_cart_ghost")
 surface_material_override/0 = SubResource("Mat_cart_ghost")
 
+[node name="MemoryCardSlot" parent="." unique_id=-294967294 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.02, 0.14)
+grab_distance = 0.05
+snap_require = "memory_card"
+
 [node name="ControllerCordAttach" type="Node3D" parent="." unique_id=946150953]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.125)
 

@@ -16,6 +16,7 @@ const VERSION       := 1
 const SYSTEM_SCENE           := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE               := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE             := preload("res://Scenes/Objects/cartridge.tscn")
+const MEMCARD_SCENE          := preload("res://Scenes/Objects/memory_card.tscn")
 const BOOK_SCENE             := preload("res://Scenes/Objects/pdf_book.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
 const RAY_GUN_SCENE          := preload("res://Scenes/Objects/ray_gun.tscn")
@@ -263,6 +264,10 @@ func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 			if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
 				print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
 				sys.restore_cartridge(spawned[cart_id])
+			var memcard_id: int = d.get("snapped_memcard_id", -1)
+			if spawned.has(memcard_id) and spawned[memcard_id] is MemoryCard:
+				print("[ScenePersistence] restoring memory card id=%d" % memcard_id)
+				sys.restore_memory_card(spawned[memcard_id])
 		elif spawned[id] is VCRPlayer:
 			var vcr := spawned[id] as VCRPlayer
 			var tv_id: int = d.get("connected_tv_id", -1)
@@ -319,6 +324,8 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			tv_path = str(sys.connected_tv.get_path())
 		var cart := sys.get_snapped_cartridge()
 		var cart_id: int = node_to_id.get(cart, -1) if cart != null else -1
+		var memcard := sys.get_snapped_memcard()
+		var memcard_id: int = node_to_id.get(memcard, -1) if memcard != null else -1
 		print("[ScenePersistence] serialize system id=%d systemid=%s tv_id=%d tv_path=%s cart_id=%d" % [id, sys.systemid, tv_id, tv_path, cart_id])
 		var result := {
 			"id": id,
@@ -326,6 +333,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"systemid": sys.systemid,
 			"connected_tv_id": tv_id,
 			"snapped_cartridge_id": cart_id,
+			"snapped_memcard_id": memcard_id,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -354,6 +362,18 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"type": "cartridge",
 			"rom_path": cart.rom_path,
 			"game_label": cart.game_label,
+			"save_id": cart.save_id,
+			"cart_systemid": cart.systemid,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
+	elif node is MemoryCard:
+		var card := node as MemoryCard
+		return {
+			"id": id,
+			"type": "memory_card",
+			"card_id": card.card_id,
+			"card_label": card.card_label,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -439,7 +459,14 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			var cart := CART_SCENE.instantiate() as RetroCartridge
 			cart.rom_path = data.get("rom_path", "")
 			cart.game_label = data.get("game_label", "")
+			cart.save_id = data.get("save_id", "")
+			cart.systemid = data.get("cart_systemid", "")
 			obj = cart
+		"memory_card":
+			var card := MEMCARD_SCENE.instantiate() as MemoryCard
+			card.card_id = data.get("card_id", "")
+			card.card_label = data.get("card_label", "MEMORY CARD")
+			obj = card
 		"book":
 			var book := BOOK_SCENE.instantiate() as PDFBook
 			book.half_page_mode = data.get("half_pages", false)

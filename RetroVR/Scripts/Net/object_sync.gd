@@ -44,6 +44,8 @@ enum {
 	EV_BOOK_PAGE,        # {book, state, leaf}  page turned -> everyone follows
 	EV_BOOK_SIZE,        # {book, scale}        size slider committed
 	EV_BOOK_HALF,        # {book, on}           half-page mode toggled
+	EV_MEMCARD_INSERT,   # {sys, card}
+	EV_MEMCARD_REMOVE,   # {sys}
 }
 
 var _nm: Node = null
@@ -616,6 +618,12 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_BOOK_HALF:
 			if _valid(a, ["book"]):
 				a["book"].set("half_page_mode", bool(a.get("on", false)))
+		EV_MEMCARD_INSERT:
+			if _valid(a, ["sys", "card"]):
+				a["sys"].restore_memory_card(a["card"])
+		EV_MEMCARD_REMOVE:
+			if _valid(a, ["sys"]):
+				a["sys"].get_node("MemoryCardSlot").drop_object()
 	_applying = false
 
 

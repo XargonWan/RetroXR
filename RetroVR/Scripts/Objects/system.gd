@@ -61,6 +61,7 @@ var _snapped_cartridge: Node3D = null
 
 @onready var _system_body: MeshInstance3D = $SystemBody
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
+@onready var _memcard_slot: XRToolsSnapZone = $MemoryCardSlot
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _libretro: Libretro = $Libretro
 @onready var _power_button: VRButton = $PowerButton
@@ -86,6 +87,8 @@ func _ready() -> void:
 	add_to_group("retro_system")
 	_cartridge_slot.has_picked_up.connect(_on_cartridge_inserted)
 	_cartridge_slot.has_dropped.connect(_on_cartridge_removed)
+	_memcard_slot.has_picked_up.connect(_on_memcard_inserted)
+	_memcard_slot.has_dropped.connect(_on_memcard_removed)
 	_power_button.button_pressed.connect(toggle_power)
 	_reset_button.button_pressed.connect(reset)
 	_libretro.options_ready.connect(_on_options_ready)
@@ -133,6 +136,13 @@ func _load_system_model() -> void:
 		var active := i < port_count
 		_port_zones[i].visible = active
 		_port_zones[i].enabled = active
+	# Memory-card slot only on CD-era hardware (PSX); cartridge systems keep
+	# their battery save on the cartridge itself.
+	var cards := _model.uses_memory_cards()
+	_memcard_slot.visible = cards
+	_memcard_slot.enabled = cards
+	if cards:
+		_model.configure_memory_card_slot(_memcard_slot)
 
 
 ## Enable or disable libretro input polling for this system.
@@ -258,6 +268,7 @@ func power_on() -> void:
 		resolved_dir = CoreDownloadManager.default_core_root()
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
+	_libretro.SetSramPath(_compose_sram_path(resolved_core))
 	_libretro.StartContent(connected_tv.get_screen_mesh(), resolved_dir, resolved_core, rom_path)
 	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
 	if asp:
@@ -391,6 +402,16 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 		is_powered_on = false
 	for k: Variant in options:
 		_libretro.SetCoreOption(str(k), str(options[k]))
+	# SRAM: netplay override (session-injected identical bytes) or the normal
+	# local composition when the session didn't set one (offline-like start).
+	if _net_sram_override:
+		_libretro.SetSramPath(_net_sram_path)
+		if not _net_sram_data.is_empty():
+			_libretro.SetSramData(_net_sram_data)
+		_net_sram_override = false
+		_net_sram_data = PackedByteArray()
+	else:
+		_libretro.SetSramPath(_compose_sram_path(resolved_core))
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_libretro.StartContent(connected_tv.get_screen_mesh(), _resolve_dir(), resolved_core, rom_path)
 	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
@@ -592,6 +613,10 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	add_collision_exception_with(cartridge)
 	if cartridge.has_method("get_rom_path"):
 		rom_path = cartridge.get_rom_path()
+	# Back-fill the cartridge's systemid (save-recovery list needs it to
+	# resolve the core) — a cart inserted into an NES is an NES cart.
+	if "systemid" in cartridge and str(cartridge.get("systemid")).is_empty():
+		cartridge.set("systemid", systemid)
 	_model.play_cartridge_insert(cartridge, _cartridge_slot)
 	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
 		{"sys": self, "cart": cartridge})
@@ -606,3 +631,89 @@ func _on_cartridge_removed() -> void:
 		power_off()
 	rom_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})
+
+
+# --- Memory card slot (CD-era consoles) ---
+
+## The MemoryCard currently seated, or null.
+var _snapped_memcard: Node3D = null
+
+# Netplay SRAM override (set by NetplaySession before net_start_core):
+# path "" on clients (no local persistence of someone else's game) and the
+# host's real bytes injected on every peer so all cores boot identically.
+var _net_sram_override := false
+var _net_sram_path := ""
+var _net_sram_data := PackedByteArray()
+
+
+func get_snapped_memcard() -> Node3D:
+	return _snapped_memcard
+
+
+func _on_memcard_inserted(card: Node3D) -> void:
+	_snapped_memcard = card
+	add_collision_exception_with(card)
+	if is_powered_on:
+		# Hot-swap: the C++ side flushes the old card and loads this one —
+		# except mid-netplay, where SRAM is part of the deterministic state.
+		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+			push_warning("[RetroSystem] memory card ignored during netplay")
+		else:
+			_libretro.SetSramPath(_compose_sram_path(_resolve_core()))
+	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_INSERT,
+		{"sys": self, "card": card})
+
+
+func _on_memcard_removed() -> void:
+	if _snapped_memcard:
+		remove_collision_exception_with(_snapped_memcard)
+		_snapped_memcard = null
+	if is_powered_on:
+		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+			push_warning("[RetroSystem] memory card removal ignored during netplay")
+		else:
+			_libretro.SetSramPath("")   # authentic: no card, no saving
+	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_REMOVE, {"sys": self})
+
+
+## Restore a memory card into the slot after loading from a save file.
+func restore_memory_card(card: Node3D) -> void:
+	_memcard_slot.pick_up_object(card)
+
+
+# --- Battery saves (SRAM) ---
+
+## Where this run's .srm lives. Card systems: the seated card's folder, or ""
+## (no card = authentic no-persistence). Cartridge systems: the cartridge's
+## own save_id file — each physical cart holds its own save.
+func _compose_sram_path(resolved_core: String) -> String:
+	if resolved_core.is_empty() or rom_path.is_empty():
+		return ""
+	if _model.uses_memory_cards():
+		if _snapped_memcard and "card_id" in _snapped_memcard:
+			return SramPaths.card_save_path(resolved_core, rom_path,
+				str(_snapped_memcard.get("card_id")))
+		return ""
+	if _snapped_cartridge and "save_id" in _snapped_cartridge:
+		return SramPaths.cart_save_path(resolved_core, rom_path,
+			str(_snapped_cartridge.get("save_id")))
+	return ""
+
+
+## Netplay: override the SRAM source for the next net_start_core (see
+## NetplaySession). path "" disables local persistence; data (may be empty)
+## is injected so every peer boots with identical SRAM.
+func net_set_sram(path: String, data: PackedByteArray) -> void:
+	_net_sram_override = true
+	_net_sram_path = path
+	_net_sram_data = data
+
+
+## Host: the current .srm file bytes for the seated content (shipped to peers
+## in the netplay cold-start payload). Empty when no file exists yet.
+func net_sram_file_bytes() -> PackedByteArray:
+	var path := _compose_sram_path(_resolve_core())
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return PackedByteArray()
+	var f := FileAccess.open(path, FileAccess.READ)
+	return f.get_buffer(f.get_length()) if f else PackedByteArray()

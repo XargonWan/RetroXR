@@ -16,7 +16,7 @@ signal close_requested
 ## Emitted when the user changes a default core in the Manager tab.
 signal default_core_changed(systemid: String, core_name: String)
 ## Emitted when the user clicks a ROM in the Cartridges tab.
-signal spawn_cartridge_requested(rom_path: String, game_label: String)
+signal spawn_cartridge_requested(rom_path: String, game_label: String, systemid: String)
 ## Emitted when the user clicks the manual (📖) button for a ROM.
 signal spawn_manual_requested(pdf_path: String)
 ## Emitted when the user clicks a video (📼) in the Videos tab.
@@ -825,9 +825,10 @@ func _build_spawn_view() -> Control:
 	_populate_videos_tab()
 
 	_add_spawn_tab(tabs, "Objects", [
-		["Trash Can", "trash_can"],
-		["VCR",       "vcr_player"],
-		["TV Remote", "tv_remote"],
+		["Trash Can",   "trash_can"],
+		["VCR",         "vcr_player"],
+		["TV Remote",   "tv_remote"],
+		["Memory Card", "memory_card"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [
@@ -972,10 +973,10 @@ func _populate_cartridges_tab() -> void:
 						btn.expand_icon = true
 					else:
 						btn.text = "  +  " + game_name
-					btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name))
+					btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name, systemid))
 				else:
 					btn.text = "  +  " + rom["label"]
-					btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"]))
+					btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"], systemid))
 
 				row.add_child(btn)
 
@@ -2870,7 +2871,7 @@ func _show_rom_variants_panel(game: Dictionary, systemid: String) -> void:
 			rom_btn.text = romname.get_basename()
 
 		var abs_path := GamelistManager.to_absolute_path(systemid, rom.get("path", ""))
-		rom_btn.pressed.connect(spawn_cartridge_requested.emit.bind(abs_path, romname.get_basename()))
+		rom_btn.pressed.connect(spawn_cartridge_requested.emit.bind(abs_path, romname.get_basename(), systemid))
 		row.add_child(rom_btn)
 
 		# Region label

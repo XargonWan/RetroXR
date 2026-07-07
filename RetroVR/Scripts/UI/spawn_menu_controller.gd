@@ -14,6 +14,7 @@ const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
+const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/tv_remote.tscn")
 
@@ -29,6 +30,7 @@ const SPAWN_Y := {
 	"vcr_player":       0.80,
 	"tape":             0.78,
 	"tv_remote":        0.78,
+	"memory_card":      0.78,
 }
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
@@ -402,15 +404,16 @@ func _get_pointed_options_host(pointer: XRToolsFunctionPointer) -> Node3D:
 		# If the pointer is inside any viewport, it's a UI click — not an object click
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer or node is PDFBook:
+		if node is RetroSystem or node is VCRPlayer or node is PDFBook or node is RetroCartridge:
 			return node as Node3D
 		node = node.get_parent()
 	return null
 
 
 ## Raycast forward from the camera against the pointable layer (21) and return the
-## RetroSystem / VCRPlayer / PDFBook the reticle is aimed at, or null. Used on
-## desktop where the InteractionResolver won't report a bare PointerArea body.
+## RetroSystem / VCRPlayer / PDFBook / RetroCartridge the reticle is aimed at, or
+## null. Used on desktop where the InteractionResolver won't report a bare
+## PointerArea body.
 func _raycast_options_host() -> Node3D:
 	if not is_instance_valid(_camera):
 		return null
@@ -435,7 +438,7 @@ func _options_host_from_target(tgt: Node3D) -> Node3D:
 	while node:
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer or node is PDFBook:
+		if node is RetroSystem or node is VCRPlayer or node is PDFBook or node is RetroCartridge:
 			return node as Node3D
 		node = node.get_parent()
 	return null
@@ -636,6 +639,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = VCR_SCENE.instantiate() as Node3D
 		"tv_remote":
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D
+		"memory_card":
+			obj = MEMCARD_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"ray_gun":
@@ -651,10 +656,11 @@ func _on_spawn_requested(type: String) -> void:
 		_place_spawned(obj, type)
 
 
-func _on_spawn_cartridge_requested(rom_path: String, game_label: String) -> void:
+func _on_spawn_cartridge_requested(rom_path: String, game_label: String, systemid := "") -> void:
 	var cart := CART_SCENE.instantiate() as RetroCartridge
 	cart.rom_path = rom_path
 	cart.game_label = game_label
+	cart.systemid = systemid
 	_place_spawned(cart, "cartridge")
 
 

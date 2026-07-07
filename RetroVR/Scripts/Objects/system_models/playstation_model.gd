@@ -15,3 +15,14 @@ func _ready() -> void:
 
 func get_controller_port_count() -> int:
 	return 2
+
+
+## PSX saves live on removable memory cards (PCSX-ReARMed exposes memcard 1
+## as RETRO_MEMORY_SAVE_RAM).
+func uses_memory_cards() -> bool:
+	return true
+
+
+## Put the card slot on the front-left of the console, next to controller port 1.
+func configure_memory_card_slot(slot: Node3D) -> void:
+	slot.position = Vector3(-0.09, 0.02, 0.14)

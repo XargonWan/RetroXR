@@ -117,8 +117,15 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 	_ready_peers.clear()
 
 	var opt_wire := _options
-	# Everyone (incl. host) cold-starts through the same path.
-	_np_start.rpc(_sys_net_id, _core, _rom_md5, opt_wire, _owners, _delay, 0, _rollback)
+	# SRAM: every peer must boot with IDENTICAL battery-save content or the
+	# cores desync at frame 0. Ship the host's .srm bytes; the host itself
+	# boots from the same bytes but keeps its real file for persistence.
+	var sram := PackedByteArray()
+	if system.has_method("net_sram_file_bytes"):
+		sram = system.net_sram_file_bytes()
+	# Everyone (incl. host) cold-starts through the same path. The host loads
+	# from its own file — byte-identical to `sram` since it was read just now.
+	_np_start.rpc(_sys_net_id, _core, _rom_md5, opt_wire, _owners, _delay, 0, _rollback, sram)
 	_cold_start_local(0)
 	_mark_ready(1)
 	return true
@@ -126,7 +133,8 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictionary,
-		owners: Dictionary, delay: int, start_frame: int, rollback := false) -> void:
+		owners: Dictionary, delay: int, start_frame: int, rollback := false,
+		sram := PackedByteArray()) -> void:
 	_sys_net_id = sys_net_id
 	_core = core
 	_rom_md5 = rom_md5
@@ -144,6 +152,9 @@ func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictiona
 	if _system.has_method("net_resolve_rom") and not _system.net_resolve_rom(rom_md5):
 		_np_ready_fail.rpc_id(1, "missing ROM (md5 %s…)" % rom_md5.left(8))
 		return
+	# Boot with the host's SRAM, and never persist someone else's game locally.
+	if _system.has_method("net_set_sram"):
+		_system.net_set_sram("", sram)
 	_cold_start_local(start_frame)
 	_np_ready.rpc_id(1)
 
@@ -623,6 +634,9 @@ func _np_savestate(sys_net_id: int, core: String, rom_md5: String, options: Dict
 	if _system.has_method("net_resolve_rom") and not _system.net_resolve_rom(rom_md5):
 		_np_ready_fail.rpc_id(1, "missing ROM (md5 %s…)" % rom_md5.left(8))
 		return
+	# Late joiner: SRAM arrives inside the serialized state; don't persist.
+	if _system.has_method("net_set_sram"):
+		_system.net_set_sram("", PackedByteArray())
 	_cold_start_local(frame)
 	if _lib != null and _lib.has_method("RequestLoadState"):
 		if not _lib.savestate_loaded.is_connected(_on_join_loaded):
