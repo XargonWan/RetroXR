@@ -101,15 +101,19 @@ var _nav_about_btn:    Button = null
 var _nav_buttons: Array[Button] = []
 
 # Cores > Download tab state
-var _download_list_vbox:    VBoxContainer = null
 var _download_loading_label: Label        = null
 var _download_fetched:       bool         = false
 # core_name -> { "button": Button, "bar": ProgressBar }
 var _download_widgets: Dictionary = {}
+# Drill-down browser + fetched cores grouped by systemid ("__other__" = unknown):
+#   sid -> Array[{ "core_name", "remote_date", "info" }]
+var _download_browser: SystemGridBrowser = null
+var _download_cores_by_system: Dictionary = {}
+# Outer Download/Manager TabContainer of the Cores view.
+var _cores_tabs: TabContainer = null
 
 # The ScrollContainer currently in view
 var _active_scroll:        ScrollContainer = null
-var _download_list_scroll: ScrollContainer = null
 var _controls_scroll:      ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
 var _about_scroll:         ScrollContainer = null
@@ -121,14 +125,15 @@ var _spawn_tabs: TabContainer = null
 # Custom scroll indicator (replaces native scrollbar)
 var _vscrollbar: VScrollBar = null
 
-# Cores > Manager tab state
-var _manager_list_vbox:   VBoxContainer = null
-var _manager_empty_label: Label         = null
+# Cores > Manager tab state — drill-down browser + installed cores grouped by
+# systemid: sid -> Array[{ "core_name", "display_name" }]
+var _manager_browser: SystemGridBrowser = null
+var _manager_cores_by_system: Dictionary = {}
 
 # Spawn > Systems tab — rebuilt whenever defaults change
 var _systems_vbox: VBoxContainer = null
-# Spawn > Cartridges tab — inner TabContainer, one tab per system
-var _cartridges_inner_tabs: TabContainer = null
+# Spawn > Cartridges tab — drill-down browser, one tile per system
+var _cartridges_browser: SystemGridBrowser = null
 # Spawn > Books tab — rebuilt each time the tab is opened
 var _books_vbox: VBoxContainer = null
 # Spawn > Videos tab — rebuilt each time the tab is opened
@@ -456,10 +461,28 @@ func _show_spawn_view() -> void:
 
 
 func _show_cores_view() -> void:
-	_show_view(_cores_view, _download_list_scroll, _nav_cores_btn)
+	_show_view(_cores_view, null, _nav_cores_btn)
+	_update_cores_active_scroll()
 	if not _download_fetched:
 		_download_fetched = true
 		_start_fetch()
+
+
+## Point _active_scroll at the visible browser's current page.
+func _update_cores_active_scroll() -> void:
+	var idx := _cores_tabs.current_tab if _cores_tabs else 0
+	if idx == 1 and _manager_browser:
+		_active_scroll = _manager_browser.get_active_scroll()
+	elif _download_browser:
+		_active_scroll = _download_browser.get_active_scroll()
+	else:
+		_active_scroll = null
+
+
+## Connected to both cores browsers; updates _active_scroll on page switches.
+func _on_cores_browser_scroll_changed(s: ScrollContainer) -> void:
+	if _cores_view and _cores_view.visible:
+		_active_scroll = s
 
 
 func _show_controls_view() -> void:
@@ -736,9 +759,8 @@ func _update_spawn_active_scroll(tab_idx: int) -> void:
 
 
 func _update_cartridges_inner_scroll() -> void:
-	if _cartridges_inner_tabs and _cartridges_inner_tabs.get_tab_count() > 0:
-		_active_scroll = _cartridges_inner_tabs.get_tab_control(
-				_cartridges_inner_tabs.current_tab) as ScrollContainer
+	if _cartridges_browser:
+		_active_scroll = _cartridges_browser.get_active_scroll()
 	else:
 		_active_scroll = null
 
@@ -787,19 +809,17 @@ func _build_spawn_view() -> Control:
 
 	_add_spawn_tab(tabs, "TVs", [["TV", "tv"]])
 
-	# Cartridges tab — inner TabContainer, one tab per system
-	_cartridges_inner_tabs = TabContainer.new()
-	_cartridges_inner_tabs.name = "Cartridges"
-	_cartridges_inner_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tabs.add_child(_cartridges_inner_tabs)
-	# Allow the tab bar to scroll when there are more systems than fit.
-	var carts_tab_bar := _cartridges_inner_tabs.get_tab_bar()
-	carts_tab_bar.scrolling_enabled = true
-	carts_tab_bar.scroll_to_selected = true
-	_spawn_tab_scrolls.append(null)  # handled via _update_cartridges_inner_scroll
-	_cartridges_inner_tabs.tab_changed.connect(func(_idx: int):
+	# Cartridges tab — drill-down browser, one tile per system
+	_cartridges_browser = SystemGridBrowser.new()
+	_cartridges_browser.name = "Cartridges"
+	_cartridges_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_cartridges_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
+	_cartridges_browser.set_detail_populator(_populate_cartridges_detail)
+	_cartridges_browser.active_scroll_changed.connect(func(_s: ScrollContainer):
 		_update_cartridges_inner_scroll()
 	)
+	tabs.add_child(_cartridges_browser)
+	_spawn_tab_scrolls.append(null)  # index 2 handled via _update_cartridges_inner_scroll
 	_populate_cartridges_tab()
 
 	# Books tab — lists PDFs from the books root directory
@@ -889,130 +909,114 @@ func _populate_systems_tab() -> void:
 		_systems_vbox.add_child(btn)
 
 
+## Rebuild the Cartridges home grid: one tile per system that has a default
+## core. ROMs are scanned lazily, only when a system tile is opened.
 func _populate_cartridges_tab() -> void:
-	if not _cartridges_inner_tabs:
+	if not _cartridges_browser:
 		return
-	var prev_tab := _cartridges_inner_tabs.current_tab
-	# Clear existing system tabs.
-	for child in _cartridges_inner_tabs.get_children():
-		_cartridges_inner_tabs.remove_child(child)
-		child.queue_free()
+	var systems: Array = []
+	for systemid: String in core_defaults.all_defaults():
+		systems.append({"systemid": systemid, "name": core_db.get_systemname_for_id(systemid)})
+	_cartridges_browser.set_systems(systems)
+	# If a system detail is open, re-run it so newly-added ROMs appear.
+	_cartridges_browser.refresh()
 
-	var defaults := core_defaults.all_defaults()
-	if defaults.is_empty():
-		var placeholder := ScrollContainer.new()
-		placeholder.name = "Systems"
-		_cartridges_inner_tabs.add_child(placeholder)
-		var ph_vbox := VBoxContainer.new()
-		ph_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		placeholder.add_child(ph_vbox)
-		ph_vbox.add_child(_spacer(10))
-		_add_no_defaults_label(ph_vbox)
+
+## Detail page for one system: its scanned ROMs (deduped by scraped game).
+func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
+	RomLibrary.ensure_rom_dir(systemid)
+	# Collect all supported extensions for this system across all its cores.
+	var exts: Array[String] = []
+	for entry: Dictionary in core_db.get_by_systemid(systemid):
+		for ext: String in entry.get("supported_extensions", "").split("|"):
+			var e := ext.strip_edges().to_lower()
+			if not e.is_empty() and e not in exts:
+				exts.append(e)
+
+	vbox.add_child(_spacer(4))
+	var roms := RomLibrary.scan_roms(systemid, exts)
+	if roms.is_empty():
+		var hint := Label.new()
+		hint.text = "Add ROMs to %s/ to see them here." % RomLibrary.rom_dir_for_system(systemid)
+		hint.add_theme_font_size_override("font_size", 18)
+		hint.add_theme_color_override("font_color", COLOR_DESC)
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vbox.add_child(hint)
 		return
 
-	for systemid: String in defaults:
-		RomLibrary.ensure_rom_dir(systemid)
-		# Collect all supported extensions for this system across all its cores.
-		var exts: Array[String] = []
-		for entry: Dictionary in core_db.get_by_systemid(systemid):
-			for ext: String in entry.get("supported_extensions", "").split("|"):
-				var e := ext.strip_edges().to_lower()
-				if not e.is_empty() and e not in exts:
-					exts.append(e)
+	var shown_games: Dictionary = {}
+	for rom: Dictionary in roms:
+		var rom_path: String = rom["path"]
+		var game := gamelist_manager.get_game_for_rom(systemid, rom_path)
+		var is_scraped := not game.is_empty()
+		if is_scraped:
+			var gid: String = game.get("game_id", "")
+			if shown_games.has(gid):
+				continue
+			shown_games[gid] = true
+		vbox.add_child(_build_rom_row(systemid, rom, game, is_scraped))
+	vbox.add_child(_spacer(8))
 
-		var system_name := core_db.get_systemname_for_id(systemid)
-		var sys_scroll := ScrollContainer.new()
-		sys_scroll.name = system_name
-		_cartridges_inner_tabs.add_child(sys_scroll)
-		var vbox := VBoxContainer.new()
-		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		vbox.add_theme_constant_override("separation", 10)
-		sys_scroll.add_child(vbox)
-		vbox.add_child(_spacer(10))
 
-		var roms := RomLibrary.scan_roms(systemid, exts)
-		if roms.is_empty():
-			var hint := Label.new()
-			hint.text = "Add ROMs to %s/ to see them here." % RomLibrary.rom_dir_for_system(systemid)
-			hint.add_theme_font_size_override("font_size", 18)
-			hint.add_theme_color_override("font_color", COLOR_DESC)
-			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			vbox.add_child(hint)
+## One ROM row: spawn button (+ wheel icon) plus scrape/detail/manual buttons.
+func _build_rom_row(systemid: String, rom: Dictionary, game: Dictionary, is_scraped: bool) -> Control:
+	var pref_rom: Dictionary = GamelistManager.get_preferred_rom(game) if is_scraped else {}
+	var wheel_tex: Texture2D = _load_wheel_texture(systemid, pref_rom.get("romname", "")) if is_scraped else null
+	var row_h: int = 100 if wheel_tex else 72
+
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(0, row_h)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.add_theme_font_size_override("font_size", 22)
+
+	if is_scraped:
+		var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
+		var game_name: String = game.get("name", rom["label"])
+		if wheel_tex:
+			btn.icon = wheel_tex
+			btn.text = ""
+			btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			btn.expand_icon = true
 		else:
-			var shown_games: Dictionary = {}
-			for rom: Dictionary in roms:
-				var rom_path: String = rom["path"]
-				var game := gamelist_manager.get_game_for_rom(systemid, rom_path)
-				var is_scraped := not game.is_empty()
+			btn.text = "  +  " + game_name
+		btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name, systemid))
+	else:
+		btn.text = "  +  " + rom["label"]
+		btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"], systemid))
 
-				if is_scraped:
-					var gid: String = game.get("game_id", "")
-					if shown_games.has(gid):
-						continue
-					shown_games[gid] = true
+	row.add_child(btn)
 
-				var pref_rom: Dictionary = GamelistManager.get_preferred_rom(game) if is_scraped else {}
-				var wheel_tex: Texture2D = _load_wheel_texture(systemid, pref_rom.get("romname", "")) if is_scraped else null
-				var row_h: int = 100 if wheel_tex else 72
+	if is_scraped:
+		var detail_btn := Button.new()
+		detail_btn.text = "🎮"
+		detail_btn.custom_minimum_size = Vector2(72, row_h)
+		detail_btn.tooltip_text = "Game info"
+		detail_btn.add_theme_font_size_override("font_size", 26)
+		detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
+		row.add_child(detail_btn)
 
-				var row := HBoxContainer.new()
-				row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if is_scraped and _has_scraped_manual(systemid, pref_rom.get("romname", "")):
+		var manual_btn := Button.new()
+		manual_btn.text = "📖"
+		manual_btn.custom_minimum_size = Vector2(72, row_h)
+		manual_btn.tooltip_text = "Spawn manual"
+		manual_btn.add_theme_font_size_override("font_size", 26)
+		var pdf_path := _scraped_manual_path(systemid, pref_rom.get("romname", ""))
+		manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
+		row.add_child(manual_btn)
 
-				var btn := Button.new()
-				btn.custom_minimum_size = Vector2(0, row_h)
-				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				btn.add_theme_font_size_override("font_size", 22)
+	var scrape_btn := Button.new()
+	scrape_btn.text = "✂️"
+	scrape_btn.custom_minimum_size = Vector2(72, row_h)
+	scrape_btn.tooltip_text = "Scrape ROM"
+	scrape_btn.add_theme_font_size_override("font_size", 26)
+	scrape_btn.pressed.connect(_on_scrape_pressed.bind(rom["path"], systemid, scrape_btn))
+	row.add_child(scrape_btn)
 
-				if is_scraped:
-					var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
-					var game_name: String = game.get("name", rom["label"])
-					if wheel_tex:
-						btn.icon = wheel_tex
-						btn.text = ""
-						btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-						btn.expand_icon = true
-					else:
-						btn.text = "  +  " + game_name
-					btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name, systemid))
-				else:
-					btn.text = "  +  " + rom["label"]
-					btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"], systemid))
-
-				row.add_child(btn)
-
-				if is_scraped:
-					var detail_btn := Button.new()
-					detail_btn.text = "🎮"
-					detail_btn.custom_minimum_size = Vector2(72, row_h)
-					detail_btn.tooltip_text = "Game info"
-					detail_btn.add_theme_font_size_override("font_size", 26)
-					detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
-					row.add_child(detail_btn)
-
-				if is_scraped and _has_scraped_manual(systemid, pref_rom.get("romname", "")):
-					var manual_btn := Button.new()
-					manual_btn.text = "📖"
-					manual_btn.custom_minimum_size = Vector2(72, row_h)
-					manual_btn.tooltip_text = "Spawn manual"
-					manual_btn.add_theme_font_size_override("font_size", 26)
-					var pdf_path := _scraped_manual_path(systemid, pref_rom.get("romname", ""))
-					manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
-					row.add_child(manual_btn)
-
-				var scrape_btn := Button.new()
-				scrape_btn.text = "✂️"
-				scrape_btn.custom_minimum_size = Vector2(72, row_h)
-				scrape_btn.tooltip_text = "Scrape ROM"
-				scrape_btn.add_theme_font_size_override("font_size", 26)
-				scrape_btn.pressed.connect(_on_scrape_pressed.bind(rom["path"], systemid, scrape_btn))
-				row.add_child(scrape_btn)
-
-				vbox.add_child(row)
-		vbox.add_child(_spacer(8))
-
-	if prev_tab < _cartridges_inner_tabs.get_tab_count():
-		_cartridges_inner_tabs.current_tab = prev_tab
-	_update_cartridges_inner_scroll()
+	return row
 
 
 func _populate_books_tab() -> void:
@@ -1083,6 +1087,7 @@ func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void
 func _build_cores_view() -> Control:
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_cores_tabs = tabs
 
 	var dl_container := _build_download_tab()
 	dl_container.name = "Download"
@@ -1092,10 +1097,12 @@ func _build_cores_view() -> Control:
 	mgr_container.name = "Manager"
 	tabs.add_child(mgr_container)
 
-	# Refresh Manager list each time the user switches to it
+	# Refresh Manager list each time the user switches to it, and keep the VR
+	# scroll target pointed at the newly-visible tab's browser.
 	tabs.tab_changed.connect(func(idx: int):
 		if idx == 1:
 			_populate_manager_tab()
+		_update_cores_active_scroll()
 	)
 
 	return tabs
@@ -1108,7 +1115,7 @@ func _build_manager_tab() -> Control:
 	outer.add_theme_constant_override("separation", 6)
 
 	var hdr := Label.new()
-	hdr.text = "Set the default core for each system that has downloaded cores."
+	hdr.text = "Pick a system to set the default core it launches with."
 	hdr.add_theme_font_size_override("font_size", 15)
 	hdr.add_theme_color_override("font_color", COLOR_LICENSE)
 	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1116,130 +1123,103 @@ func _build_manager_tab() -> Control:
 
 	outer.add_child(HSeparator.new())
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical  = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode   = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	scroll.add_theme_constant_override("scrollbar_v_width", 40)
-	outer.add_child(scroll)
-
-	_manager_list_vbox = VBoxContainer.new()
-	_manager_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_manager_list_vbox.add_theme_constant_override("separation", 4)
-	scroll.add_child(_manager_list_vbox)
-
-	_manager_empty_label = Label.new()
-	_manager_empty_label.text = "No cores downloaded yet.\nUse the Download tab to install cores."
-	_manager_empty_label.add_theme_font_size_override("font_size", 18)
-	_manager_empty_label.add_theme_color_override("font_color", COLOR_LICENSE)
-	_manager_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_manager_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_manager_list_vbox.add_child(_manager_empty_label)
+	_manager_browser = SystemGridBrowser.new()
+	_manager_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_manager_browser.empty_text = "No cores downloaded yet.\nUse the Download tab to install cores."
+	_manager_browser.set_detail_populator(_populate_manager_detail)
+	_manager_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
+	outer.add_child(_manager_browser)
 
 	return outer
 
 
+## Rebuild the Manager home grid: one tile per system with installed cores,
+## badge = its current default core. Rescans the cores dir each call.
 func _populate_manager_tab() -> void:
-	if not _manager_list_vbox:
-		return
-	for c in _manager_list_vbox.get_children():
-		c.queue_free()
-
-	# Scan cores dir for installed DLLs
-	var cores_dir := CoreDownloadManager.default_cores_dir()
-	var dir := DirAccess.open(cores_dir)
-	if not dir:
-		_manager_list_vbox.add_child(_manager_empty_label)
+	if not _manager_browser:
 		return
 
-	var lib_suffix := "_libretro_android.so" if OS.get_name() == "Android" else "_libretro.dll"
-	var core_names: Array[String] = []
-	dir.list_dir_begin()
-	var fname := dir.get_next()
-	while fname != "":
-		if not dir.current_is_dir() and fname.ends_with(lib_suffix):
-			core_names.append(fname.trim_suffix(lib_suffix))
-		fname = dir.get_next()
-	dir.list_dir_end()
-
-	if core_names.is_empty():
-		_manager_list_vbox.add_child(_manager_empty_label)
-		return
-
-	# Group by systemid
-	# systemid -> Array[{core_name, display_name}]
-	var by_system: Dictionary = {}
+	_manager_cores_by_system.clear()
 	var system_labels: Dictionary = {}   # systemid -> human label
 
-	for cn: String in core_names:
-		var info: Dictionary = core_db.get_by_core_name(cn)
-		var sid: String  = info.get("systemid",   "unknown") if not info.is_empty() else "unknown"
-		var sname: String = info.get("systemname", cn)       if not info.is_empty() else cn
-		if not by_system.has(sid):
-			by_system[sid]      = []
-			system_labels[sid]  = sname
-		(by_system[sid] as Array).append({"core_name": cn,
-			"display_name": info.get("corename", cn) if not info.is_empty() else cn})
+	var cores_dir := CoreDownloadManager.default_cores_dir()
+	var dir := DirAccess.open(cores_dir)
+	if dir:
+		var lib_suffix := "_libretro_android.so" if OS.get_name() == "Android" else "_libretro.dll"
+		dir.list_dir_begin()
+		var fname := dir.get_next()
+		while fname != "":
+			if not dir.current_is_dir() and fname.ends_with(lib_suffix):
+				var cn := fname.trim_suffix(lib_suffix)
+				var info: Dictionary = core_db.get_by_core_name(cn)
+				var sid: String  = info.get("systemid",   "unknown") if not info.is_empty() else "unknown"
+				var sname: String = info.get("systemname", cn)       if not info.is_empty() else cn
+				if not _manager_cores_by_system.has(sid):
+					_manager_cores_by_system[sid] = []
+					system_labels[sid]  = sname
+				(_manager_cores_by_system[sid] as Array).append({"core_name": cn,
+					"display_name": info.get("corename", cn) if not info.is_empty() else cn})
+			fname = dir.get_next()
+		dir.list_dir_end()
 
-	# Sort systems alphabetically by label
-	var sids: Array = by_system.keys()
-	sids.sort_custom(func(a: String, b: String) -> bool:
-		return (system_labels[a] as String) < (system_labels[b] as String)
-	)
+	var systems: Array = []
+	for sid: String in _manager_cores_by_system:
+		var cores_list: Array = _manager_cores_by_system[sid] as Array
+		# If no default was saved yet, persist the first available core.
+		var current_default: String = core_defaults.get_default_core(sid)
+		if current_default.is_empty() and not cores_list.is_empty():
+			current_default = (cores_list[0] as Dictionary)["core_name"] as String
+			core_defaults.set_default_core(sid, current_default)
+			core_defaults.save()
+			RomLibrary.ensure_rom_dir(sid)
+			default_core_changed.emit(sid, current_default)
+		var badge := ""
+		for e: Dictionary in cores_list:
+			if e["core_name"] == current_default:
+				badge = e["display_name"] as String
+		systems.append({"systemid": sid, "name": system_labels[sid] as String, "badge": badge})
 
-	for sid: String in sids:
-		var cores_list: Array = by_system[sid] as Array
-		_manager_list_vbox.add_child(
-			_build_manager_row(sid, system_labels[sid] as String, cores_list)
+	_manager_browser.set_systems(systems)
+
+
+## Detail page for one system: its installed cores, tap to set the default.
+func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
+	var cores: Array = _manager_cores_by_system.get(systemid, [])
+	var current: String = core_defaults.get_default_core(systemid)
+	for entry: Dictionary in cores:
+		var cn: String = entry["core_name"] as String
+		var is_def := cn == current
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		row.custom_minimum_size = Vector2(0, 64)
+
+		var lbl := Label.new()
+		lbl.text = ("✓  " if is_def else "     ") + (entry["display_name"] as String)
+		lbl.add_theme_font_size_override("font_size", 20)
+		lbl.add_theme_color_override("font_color", COLOR_TITLE if is_def else COLOR_LICENSE)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(lbl)
+
+		var btn := Button.new()
+		btn.text = "Default" if is_def else "Set default"
+		btn.disabled = is_def
+		btn.custom_minimum_size = Vector2(180, 52)
+		btn.add_theme_font_size_override("font_size", 17)
+		btn.pressed.connect(func() -> void:
+			core_defaults.set_default_core(systemid, cn)
+			core_defaults.save()
+			RomLibrary.ensure_rom_dir(systemid)
+			default_core_changed.emit(systemid, cn)
+			# Rebuild tiles (badge) then re-render this detail (checkmarks).
+			_populate_manager_tab()
+			_manager_browser.open_system(systemid)
 		)
-		_manager_list_vbox.add_child(HSeparator.new())
+		row.add_child(btn)
 
-
-## Builds one row: systemname label + OptionButton of available cores.
-func _build_manager_row(systemid: String, systemname: String, cores: Array) -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 68)
-
-	var lbl := Label.new()
-	lbl.text = systemname
-	lbl.add_theme_font_size_override("font_size", 19)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	row.add_child(lbl)
-
-	var opt := _make_opt()
-	opt.custom_minimum_size = Vector2(260, 56)
-	opt.add_theme_font_size_override("font_size", 17)
-
-	var current_default: String = core_defaults.get_default_core(systemid)
-	var selected_idx := 0
-	for i: int in cores.size():
-		var entry: Dictionary = cores[i] as Dictionary
-		opt.add_item(entry["display_name"] as String, i)
-		if entry["core_name"] == current_default:
-			selected_idx = i
-
-	opt.selected = selected_idx
-	# If no default was saved yet, persist the auto-selected first entry
-	if current_default.is_empty() and not cores.is_empty():
-		var auto_cn: String = (cores[0] as Dictionary)["core_name"] as String
-		core_defaults.set_default_core(systemid, auto_cn)
-		core_defaults.save()
-		RomLibrary.ensure_rom_dir(systemid)
-		default_core_changed.emit(systemid, auto_cn)
-
-	opt.item_selected.connect(func(idx: int) -> void:
-		var cn: String = (cores[idx] as Dictionary)["core_name"] as String
-		core_defaults.set_default_core(systemid, cn)
-		core_defaults.save()
-		RomLibrary.ensure_rom_dir(systemid)
-		default_core_changed.emit(systemid, cn)
-	)
-	row.add_child(opt)
-
-	return row
+		vbox.add_child(row)
+		vbox.add_child(HSeparator.new())
 
 
 # ── Download tab ──────────────────────────────────────────────────────────────
@@ -1274,23 +1254,13 @@ func _build_download_tab() -> Control:
 	_download_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	outer.add_child(_download_loading_label)
 
-	# Scrollable core list — native scrollbar made wide for VR pointer
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical   = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode   = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_download_list_scroll = scroll
-	outer.add_child(scroll)
-
-	_download_list_vbox = VBoxContainer.new()
-	_download_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_download_list_vbox.add_theme_constant_override("separation", 2)
-	scroll.add_child(_download_list_vbox)
-
-	# Make the native scroll bar wide enough to grab with a VR pointer,
-	# using the theme constant so ScrollContainer properly reserves the space.
-	scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	# Drill-down browser: pick a system, then see its cores.
+	_download_browser = SystemGridBrowser.new()
+	_download_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_download_browser.empty_text = "No cores available."
+	_download_browser.set_detail_populator(_populate_download_detail)
+	_download_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
+	outer.add_child(_download_browser)
 
 	return outer
 
@@ -1298,8 +1268,6 @@ func _build_download_tab() -> Control:
 func _start_fetch() -> void:
 	_download_loading_label.text = "Fetching core list from buildbot..."
 	_download_loading_label.visible = true
-	for child in _download_list_vbox.get_children():
-		child.queue_free()
 	_download_widgets.clear()
 	download_manager.fetch_available_cores(_on_cores_fetched)
 
@@ -1310,12 +1278,48 @@ func _on_cores_fetched(cores: Array) -> void:
 		_download_loading_label.text = "Failed to fetch core list. Check your connection."
 		_download_loading_label.visible = true
 		return
+	# Group the flat buildbot list by system; cores unknown to the DB go in a
+	# single "Other" bucket so nothing is hidden.
+	_download_cores_by_system.clear()
 	for entry: Dictionary in cores:
-		var core_name: String  = entry["core_name"]
+		var core_name: String   = entry["core_name"]
 		var remote_date: String = entry["remote_date"]
-		var info: Dictionary   = core_db.get_by_core_name(core_name)
-		_download_list_vbox.add_child(_build_core_entry(core_name, remote_date, info))
-	_download_list_vbox.add_child(_spacer(20))
+		var info: Dictionary    = core_db.get_by_core_name(core_name)
+		var sid: String = info.get("systemid", "") if not info.is_empty() else ""
+		if sid.is_empty():
+			sid = "__other__"
+		if not _download_cores_by_system.has(sid):
+			_download_cores_by_system[sid] = []
+		(_download_cores_by_system[sid] as Array).append(
+			{"core_name": core_name, "remote_date": remote_date, "info": info})
+	_refresh_download_systems()
+
+
+## Build the Download home grid from the grouped fetch results.
+func _refresh_download_systems() -> void:
+	if not _download_browser:
+		return
+	var systems: Array = []
+	for sid: String in _download_cores_by_system:
+		var arr: Array = _download_cores_by_system[sid] as Array
+		var name := "Other / Uncategorized" if sid == "__other__" else core_db.get_systemname_for_id(sid)
+		var n := arr.size()
+		systems.append({"systemid": sid, "name": name,
+			"badge": "%d core%s" % [n, "" if n == 1 else "s"]})
+	_download_browser.set_systems(systems)
+
+
+## Detail page for one system: its downloadable cores (built lazily on open).
+func _populate_download_detail(systemid: String, vbox: VBoxContainer) -> void:
+	var arr: Array = _download_cores_by_system.get(systemid, [])
+	arr.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var an: String = a["info"].get("display_name", a["core_name"]) if not (a["info"] as Dictionary).is_empty() else a["core_name"]
+		var bn: String = b["info"].get("display_name", b["core_name"]) if not (b["info"] as Dictionary).is_empty() else b["core_name"]
+		return an.naturalnocasecmp_to(bn) < 0
+	)
+	for e: Dictionary in arr:
+		vbox.add_child(_build_core_entry(e["core_name"], e["remote_date"], e["info"]))
+	vbox.add_child(_spacer(20))
 
 
 func _build_core_entry(core_name: String, remote_date: String, info: Dictionary) -> Control:
@@ -1419,9 +1423,14 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 	download_manager.download_core(
 		core_name,
 		remote_date,
-		func(fraction: float): bar.value = fraction,
+		# The row can be freed if the user navigates away mid-download (detail
+		# pages are built lazily), so guard the captured widgets.
+		func(fraction: float):
+			if is_instance_valid(bar):
+				bar.value = fraction,
 		func(success: bool, err_msg: String):
-			bar.visible = false
+			if is_instance_valid(bar):
+				bar.visible = false
 			var new_state := "Re-Download" if success else "Download"
 			if not success:
 				push_warning("CoreDownload '%s' failed: %s" % [core_name, err_msg])
@@ -1432,8 +1441,9 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 				if not dl_sid.is_empty():
 					RomLibrary.ensure_rom_dir(dl_sid)
 				call_deferred("_populate_cartridges_tab")
-			btn.text = new_state
-			_style_dl_button(btn, new_state)
+			if is_instance_valid(btn):
+				btn.text = new_state
+				_style_dl_button(btn, new_state)
 	)
 
 
