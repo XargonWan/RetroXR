@@ -9,6 +9,12 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
 	"game_boy": "res://Scripts/Objects/system_models/game_boy_model.gd",
 	"game_boy_advance": "res://Scripts/Objects/system_models/game_boy_advance_model.gd",
+	"atari_lynx": "res://Scripts/Objects/system_models/atari_lynx_model.gd",
+	"wonderswan": "res://Scripts/Objects/system_models/wonderswan_model.gd",
+	"neo_geo_pocket": "res://Scripts/Objects/system_models/neo_geo_pocket_model.gd",
+	"pokemon_mini": "res://Scripts/Objects/system_models/pokemon_mini_model.gd",
+	"supervision": "res://Scripts/Objects/system_models/supervision_model.gd",
+	"playstation_portable": "res://Scripts/Objects/system_models/psp_model.gd",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
