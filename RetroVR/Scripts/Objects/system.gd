@@ -15,6 +15,8 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"pokemon_mini": "res://Scripts/Objects/system_models/pokemon_mini_model.gd",
 	"supervision": "res://Scripts/Objects/system_models/supervision_model.gd",
 	"playstation_portable": "res://Scripts/Objects/system_models/psp_model.gd",
+	"nds": "res://Scripts/Objects/system_models/nds_model.gd",
+	"3ds": "res://Scripts/Objects/system_models/n3ds_model.gd",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -265,6 +267,21 @@ func _process(_delta: float) -> void:
 			and not NetworkManager.netplay_running():
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
 		_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
+
+
+## Touch-screen feed (dual-screen handhelds): uv is a point in the COMPOSITE
+## core framebuffer (both screens), 0..1 — the model converts a poke on its
+## bottom screen through its UV window. RETRO_DEVICE_POINTER is how melonDS/
+## citra take touch input. Skipped during netplay — pointer state is not part
+## of the deterministic input stream (same limitation as the tilt sensor).
+func feed_touch(uv: Vector2, pressed: bool) -> void:
+	if _libretro == null or not is_powered_on:
+		return
+	if NetworkManager.netplay_running():
+		return
+	var px := int(clampf(uv.x, 0.0, 1.0) * 65534.0) - 32767
+	var py := int(clampf(uv.y, 0.0, 1.0) * 65534.0) - 32767
+	_libretro.SetPointerState(0, px, py, pressed)
 
 
 func _physics_process(_delta: float) -> void:
