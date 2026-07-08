@@ -347,6 +347,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 			"crt_enabled": (node as RetroTV).crt_enabled,
+			"scale_factor": (node as RetroTV).scale_factor,
 		}
 	elif node is TVRemote:
 		return {
@@ -452,6 +453,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 		"tv":
 			var tv := TV_SCENE.instantiate() as RetroTV
 			tv.crt_enabled = data.get("crt_enabled", true)
+			tv.scale_factor = data.get("scale_factor", 1.0)
 			obj = tv
 		"tv_remote":
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D

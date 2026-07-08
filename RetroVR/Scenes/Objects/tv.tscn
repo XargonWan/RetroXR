@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/snap_highlight.gd" id="3_snaphis"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="5_vrbutton"]
+[ext_resource type="PackedScene" uid="uid://tv_opts_panel_001" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
@@ -261,3 +262,5 @@ collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=2105383358]
 shape = SubResource("BoxShape3D_pointer")
+
+[node name="TVOptionsPanel" parent="." instance=ExtResource("6_tvoptspanel")]

@@ -1,0 +1,142 @@
+## TVOptions2D — 2D UI for a TV's settings.
+## Loaded into TVOptionsPanel's SubViewport via XRToolsViewport2DIn3D.
+## Built programmatically, mirroring BookOptions2D.
+##
+## Emits:
+##   scale_changed(scale)   — size slider moved (fires live while dragging)
+##   scale_committed(scale) — size slider drag finished (for net replication)
+##   close_requested        — user pressed ✕
+class_name TVOptions2D
+extends Control
+
+signal scale_changed(scale: float)
+signal scale_committed(scale: float)
+signal close_requested
+
+# ── Palette (matches BookOptions2D / CoreOptions2D) ──────────────────────────────
+const COLOR_BG    := Color(0.08, 0.08, 0.16, 0.96)
+const COLOR_TITLE := Color(0.9,  0.9,  1.0)
+const COLOR_ROW   := Color(0.65, 0.65, 0.80)
+
+const MIN_SCALE := 0.2
+const MAX_SCALE := 5.0
+
+var _size_slider: HSlider = null
+var _size_val: Label = null
+var _active_scroll: ScrollContainer = null
+# Guard so populate() doesn't re-emit signals when it sets control values.
+var _suppress_signal := false
+
+
+func _ready() -> void:
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_build_ui()
+
+
+func _build_ui() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = COLOR_BG
+	for corner in ["corner_radius_top_left", "corner_radius_top_right",
+			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		bg.set(corner, 10)
+	panel.add_theme_stylebox_override("panel", bg)
+	add_child(panel)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, 12)
+	panel.add_child(margin)
+
+	var root_vbox := VBoxContainer.new()
+	root_vbox.add_theme_constant_override("separation", 6)
+	margin.add_child(root_vbox)
+
+	# ── Title row ──────────────────────────────────────────────────────────────
+	var title_row := HBoxContainer.new()
+	root_vbox.add_child(title_row)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "TV Settings"
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.add_theme_font_size_override("font_size", 26)
+	title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	title_row.add_child(title_lbl)
+
+	var close_btn := Button.new()
+	close_btn.text = "  ✕  "
+	close_btn.add_theme_font_size_override("font_size", 22)
+	close_btn.pressed.connect(func(): close_requested.emit())
+	title_row.add_child(close_btn)
+
+	root_vbox.add_child(HSeparator.new())
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root_vbox.add_child(scroll)
+	_active_scroll = scroll
+
+	var rows := VBoxContainer.new()
+	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rows.add_theme_constant_override("separation", 4)
+	scroll.add_child(rows)
+
+	# Size slider row: [label + value] then a full-width slider under it.
+	var size_header := HBoxContainer.new()
+	size_header.add_theme_constant_override("separation", 8)
+	rows.add_child(size_header)
+
+	var size_lbl := Label.new()
+	size_lbl.text = "TV size"
+	size_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_lbl.add_theme_font_size_override("font_size", 18)
+	size_lbl.add_theme_color_override("font_color", COLOR_ROW)
+	size_header.add_child(size_lbl)
+
+	_size_val = Label.new()
+	_size_val.text = "1.0×"
+	_size_val.add_theme_font_size_override("font_size", 18)
+	_size_val.add_theme_color_override("font_color", COLOR_TITLE)
+	_size_val.custom_minimum_size = Vector2(70, 0)
+	_size_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	size_header.add_child(_size_val)
+
+	_size_slider = HSlider.new()
+	_size_slider.min_value = MIN_SCALE
+	_size_slider.max_value = MAX_SCALE
+	_size_slider.step = 0.1
+	_size_slider.value = 1.0
+	_size_slider.custom_minimum_size = Vector2(0, 48)
+	_size_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rows.add_child(_size_slider)
+
+	# value_changed fires continuously while dragging → live resize; the
+	# commit signal on drag end is what gets replicated to other players.
+	_size_slider.value_changed.connect(func(v: float):
+		_size_val.text = "%.1f×" % v
+		if not _suppress_signal:
+			scale_changed.emit(v)
+	)
+	_size_slider.drag_ended.connect(func(value_changed_flag: bool):
+		if not _suppress_signal and value_changed_flag:
+			scale_committed.emit(_size_slider.value)
+	)
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+## Sync the UI to the TV's current state without re-emitting signals.
+func populate(scale_factor := 1.0) -> void:
+	_suppress_signal = true
+	if _size_slider:
+		_size_slider.value = scale_factor
+		_size_val.text = "%.1f×" % scale_factor
+	_suppress_signal = false
+
+
+## Drive the active scroll container from an external stick input.
+func scroll_active(pixels: float) -> void:
+	if _active_scroll:
+		_active_scroll.scroll_vertical += int(pixels)

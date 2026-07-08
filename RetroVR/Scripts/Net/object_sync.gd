@@ -40,6 +40,7 @@ enum {
 	EV_TV_VOL_UP,        # {tv}
 	EV_TV_VOL_DOWN,      # {tv}
 	EV_TV_CRT,           # {tv, on}
+	EV_TV_SIZE,          # {tv, scale}   size slider committed
 	EV_VCR_CMD,          # {vcr, cmd}    client intent -> host transport
 	EV_BOOK_PAGE,        # {book, state, leaf}  page turned -> everyone follows
 	EV_BOOK_SIZE,        # {book, scale}        size slider committed
@@ -595,6 +596,9 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_CRT:
 			if _valid(a, ["tv"]):
 				a["tv"].set_crt_enabled(bool(a.get("on", true)))
+		EV_TV_SIZE:
+			if _valid(a, ["tv"]):
+				a["tv"].set_tv_scale(float(a.get("scale", 1.0)))
 		EV_VCR_CMD:
 			# Transport is host-authoritative; the host executes the command and
 			# its state broadcast (send_vcr_state) drives every peer's local

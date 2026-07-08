@@ -30,6 +30,7 @@ const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
 @onready var _osd_viewport: SubViewport = $OSDViewport
 @onready var _osd_text_2d: Label = $OSDViewport/OSDText
 @onready var _vol_osd_text_2d: Label = $OSDViewport/VolOSDText
+@onready var _options_panel: TVOptionsPanel = $TVOptionsPanel
 
 # CRT wrap state: the ShaderMaterial we install over the source material, and
 # the source material we replaced (restored when the filter turns off).
@@ -60,6 +61,13 @@ var _connected_system: Node3D = null
 var _volume: float = 1.0       # 0.0–1.0, default 100%
 var _tv_enabled: bool = true
 
+# Uniform display scale of the whole TV (1.0 = default set size). Adjusted from
+# the TV options panel and persisted per-scene. Applied to the RigidBody root so
+# the screen, bezel, buttons and cable port all scale together.
+const MIN_SCALE := 0.2
+const MAX_SCALE := 5.0
+var scale_factor: float = 1.0
+
 # Frame counter for ambilight sampling
 var _ambilight_frame: int = 0
 
@@ -77,6 +85,13 @@ func _ready() -> void:
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
 	_update_crt_button_color()
 	_update_volume_label()
+
+	# Keep the chosen display size across pickups: xr-tools' grab driver is a
+	# RemoteTransform3D that copies scale (forcing us back to 1x while held), so
+	# disable its scale copy on grab and reassert our scale on drop.
+	grabbed.connect(_on_tv_grabbed)
+	dropped.connect(_on_tv_dropped)
+	_apply_scale()
 
 	# The tscn's dark bezel material is the OFF look; blue is the ON-with-no-
 	# signal look. Blue carries a tiny texture so the CRT watcher can wrap it
@@ -407,6 +422,50 @@ func remote_volume_up() -> void:
 
 func remote_volume_down() -> void:
 	_on_volume_down()
+
+
+# ── Options panel / display scale ────────────────────────────────────────────────
+
+## Toggle the floating TV settings panel. Called by SpawnMenuController when the
+## menu button is pressed while pointing at this TV (mirrors PDFBook/VCRPlayer).
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel == null:
+		return
+	if _options_panel.visible:
+		_options_panel.hide_panel()
+	else:
+		_options_panel.show_for(self, camera)
+
+
+## Current display scale (1.0 = default). Read by the TV options panel.
+func get_scale_factor() -> float:
+	return scale_factor
+
+
+## Set the TV's uniform display scale, clamped to [MIN_SCALE, MAX_SCALE].
+func set_tv_scale(factor: float) -> void:
+	scale_factor = clampf(factor, MIN_SCALE, MAX_SCALE)
+	_apply_scale()
+
+
+func _apply_scale() -> void:
+	scale = Vector3.ONE * scale_factor
+
+
+func _on_tv_grabbed(_pickable: Node3D, _by: Node3D) -> void:
+	# The grab driver is created during the grab; stop it copying scale so the
+	# TV keeps its size while held (deferred so the driver exists first).
+	call_deferred("_lock_grab_scale")
+
+
+func _lock_grab_scale() -> void:
+	if _grab_driver != null and "update_scale" in _grab_driver:
+		_grab_driver.update_scale = false
+
+
+func _on_tv_dropped(_pickable: Node3D) -> void:
+	# Safety net: reassert our scale in case the release disturbed it.
+	_apply_scale()
 
 
 ## True when the TV is switched on (used by the remote's POWER row label).
