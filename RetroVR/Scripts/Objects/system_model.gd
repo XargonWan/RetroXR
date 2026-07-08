@@ -64,6 +64,14 @@ func configure_memory_card_slot(slot: Node3D) -> void:
 	pass
 
 
+## Core options this hardware REQUIRES (key -> value), merged into the core's
+## .opt file before every content start. Used when a model only works with a
+## specific core configuration (e.g. Virtual Boy forces vb_3dmode =
+## side-by-side so the stereo eyepiece shader gets both eyes).
+func get_forced_core_options() -> Dictionary:
+	return {}
+
+
 ## Show or hide the controller plug port visuals for a given port index.
 ## Called by RetroSystem when a controller is plugged in or removed.
 func set_controller_port_occupied(port_index: int, occupied: bool) -> void:

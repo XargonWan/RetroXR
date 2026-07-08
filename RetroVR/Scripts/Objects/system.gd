@@ -17,6 +17,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"playstation_portable": "res://Scripts/Objects/system_models/psp_model.gd",
 	"nds": "res://Scripts/Objects/system_models/nds_model.gd",
 	"3ds": "res://Scripts/Objects/system_models/n3ds_model.gd",
+	"virtual_boy": "res://Scripts/Objects/system_models/virtual_boy_model.gd",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -331,6 +332,7 @@ func power_on() -> void:
 		resolved_dir = CoreDownloadManager.default_core_root()
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
+	_apply_forced_core_options(resolved_dir, resolved_core)
 	_libretro.SetSramPath(_compose_sram_path(resolved_core))
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
 	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
@@ -475,6 +477,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 		_net_sram_data = PackedByteArray()
 	else:
 		_libretro.SetSramPath(_compose_sram_path(resolved_core))
+	_apply_forced_core_options(_resolve_dir(), resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
 	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
@@ -531,8 +534,47 @@ func reset() -> void:
 	if resolved_dir.is_empty():
 		resolved_dir = CoreDownloadManager.default_core_root()
 	print("[RetroSystem] Resetting: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
+	_apply_forced_core_options(resolved_dir, resolved_core)
 	_libretro.StopContent()
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
+
+
+## Merge the model's REQUIRED core options into <dir>/core_options/<core>.opt
+## before StartContent — the C++ OptionsHandler reads that file when the core
+## boots. (SetCoreOption needs a running core, so pre-start forcing goes
+## through the file; user-set values for other keys are preserved.)
+func _apply_forced_core_options(dir: String, core: String) -> void:
+	if _model == null:
+		return
+	var forced: Dictionary = _model.get_forced_core_options()
+	if forced.is_empty():
+		return
+	var opt_dir := dir.path_join("core_options")
+	var path := opt_dir.path_join(core + ".opt")
+	var entries: Dictionary = {}
+	if FileAccess.file_exists(path):
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f:
+			for line: String in f.get_as_text().split("\n"):
+				var eq := line.find("=")
+				if eq > 0:
+					entries[line.substr(0, eq).strip_edges()] = \
+						line.substr(eq + 1).strip_edges().trim_prefix("\"").trim_suffix("\"")
+	var changed := false
+	for k: Variant in forced:
+		if entries.get(str(k), null) != str(forced[k]):
+			entries[str(k)] = str(forced[k])
+			changed = true
+	if not changed:
+		return
+	DirAccess.make_dir_recursive_absolute(opt_dir)
+	var out := FileAccess.open(path, FileAccess.WRITE)
+	if out == null:
+		push_warning("RetroSystem: cannot write forced core options to %s" % path)
+		return
+	for k: String in entries:
+		out.store_string("%s = \"%s\"\n" % [k, entries[k]])
+	print("[RetroSystem] forced core options applied: %s -> %s" % [str(forced), path])
 
 
 # --- Core options ---
