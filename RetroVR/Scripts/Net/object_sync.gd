@@ -438,6 +438,7 @@ func _on_grabbed(pickable: Node3D, by: Node3D) -> void:
 	elif _nm.is_host():
 		# Host grabbed it back — revoke any remote hold.
 		_remote_held.erase(id)
+		_maybe_handoff_port(pickable, 1)
 
 
 func _on_dropped(pickable: Node3D) -> void:
@@ -473,6 +474,7 @@ func _request_grab(net_id: int) -> void:
 		return
 	_remote_held[net_id] = sender
 	_freeze_replica(node)
+	_maybe_handoff_port(node, sender)
 
 
 @rpc("authority", "call_remote", "reliable", 0)
@@ -497,6 +499,13 @@ func _held_pose(net_id: int, pos: Vector3, quat: Quaternion) -> void:
 	if is_instance_valid(node) and node is Node3D:
 		(node as Node3D).global_position = pos
 		(node as Node3D).quaternion = quat
+
+
+## Host: a pickable's grab authority just moved to `peer_id`. If it's a controller
+## plugged into a live netplay port, hand that port to the new holder (pass-me).
+func _maybe_handoff_port(node: Node, peer_id: int) -> void:
+	if _nm.is_host() and node is RetroController and _nm.has_method("netplay_handoff"):
+		_nm.netplay_handoff(node, peer_id)
 
 
 @rpc("any_peer", "call_remote", "reliable", 0)

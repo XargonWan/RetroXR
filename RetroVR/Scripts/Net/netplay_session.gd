@@ -32,6 +32,7 @@ const REREQ_THROTTLE_MS := 50
 const CRC_STRIKES := 3
 const PRUNE_BEHIND := 120       # keep this many frames behind the gate
 const MAX_AHEAD := 10           # rollback: speculation cap past the confirmed frame
+const TRANSFER_LEAD := 8        # frames ahead a port-ownership handoff is scheduled
 
 signal desync_detected(peer_id: int, frame: int)
 signal session_stopped(reason: String)
@@ -54,6 +55,11 @@ var _all_ports: PackedInt32Array = PackedInt32Array()   # sorted participating p
 var _local_ports: Dictionary = {}       # port -> true (owned by this peer)
 var _owners: Dictionary = {}            # port -> peer_id
 var _port_mask := 0
+# Scheduled ownership handoffs (controller passed to another player). Keyed by
+# port -> {frame, old, new, applied}. `frame` is the deterministic apply frame;
+# every peer flips _owners[port] to `new` exactly at it, so no frame ever gets a
+# port's input from two peers. Cleared once assembly passes `frame`.
+var _pending: Dictionary = {}
 
 var _running := false
 var _join_paused := false                # host: pipeline frozen for a late join
@@ -288,6 +294,7 @@ func _stop_local(reason: String) -> void:
 	_recv.clear()
 	_local_inputs.clear()
 	_crc_table.clear()
+	_pending.clear()
 	session_stopped.emit(reason)
 	print("[Netplay] stopped — %s" % reason)
 
@@ -304,6 +311,7 @@ func _reset_runtime(start_frame: int) -> void:
 	_strikes.clear()
 	_spectators.clear()
 	_joining.clear()
+	_pending.clear()
 	_running = false
 	_join_paused = false
 
@@ -336,6 +344,75 @@ func _capture_local() -> Dictionary:
 	for port: int in _local_ports:
 		out[port] = _pending_local_route.get(port, [0, 0, 0, 0, 0])
 	return out
+
+
+# ── Port handoff (pass-me: hand a controller to another player) ────────────────
+# The controller's cable plug holds the port, so passing the controller *body*
+# to another player keeps it plugged. When the body's grab authority resolves to
+# a new peer (host arbitration), the port that controller occupies is handed to
+# that peer here. Host-only and frame-scheduled: the swap lands on the same frame
+# on every peer so the deterministic core state never forks. Lockstep only — a
+# rollback core would need the emu-thread input mask re-issued mid-speculation.
+
+## Host: `controller` (a RetroController) changed hands to `new_peer`. If it
+## occupies a participating netplay port owned by someone else, schedule that
+## port's ownership to move to `new_peer`.
+func handoff_controller(controller: Object, new_peer: int) -> void:
+	if not _nm.is_host() or not _running or _rollback:
+		return
+	if controller == null or not is_instance_valid(controller):
+		return
+	if controller.get("_connected_system") != _system:
+		return
+	var port := int(controller.get("_port_index"))
+	if port < 0 or not _is_participating(port):
+		return
+	if new_peer <= 0 or new_peer == int(_owners.get(port, -1)):
+		return
+	if not _nm.peers.has(new_peer) or _spectators.has(new_peer):
+		return
+	# A second handoff of the same port before the first has landed just retargets
+	# it (the not-yet-reached frame keeps the latest holder).
+	_schedule_transfer(port, new_peer)
+
+
+## Host: pick a deterministic apply frame ahead of every peer's scheduler and
+## broadcast the handoff. Every peer (incl. host) records it and flips at `frame`.
+func _schedule_transfer(port: int, new_owner: int) -> void:
+	var old_owner := int(_owners.get(port, -1))
+	# Every peer schedules at most up to emu+delay, and no peer's emu can exceed
+	# _complete_upto+1 (the core gates on posted frames), so _complete_upto+delay+
+	# LEAD is strictly past every peer's current _sched_frame — a safe boundary.
+	var frame := _complete_upto + _delay + TRANSFER_LEAD
+	_pending[port] = {"frame": frame, "old": old_owner, "new": new_owner, "applied": false}
+	print("[Netplay] port %d handoff: peer %d -> %d @frame %d" %
+		[port, old_owner, new_owner, frame])
+	_np_transfer.rpc(port, old_owner, new_owner, frame)
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_transfer(port: int, old_owner: int, new_owner: int, frame: int) -> void:
+	_pending[port] = {"frame": frame, "old": old_owner, "new": new_owner, "applied": false}
+
+
+## Owner of `port` for a specific frame, honouring a pending (not-yet-cleared)
+## handoff. Used by the host's accept + stall paths, which straddle the boundary.
+func _owner_for_frame(port: int, f: int) -> int:
+	var p: Dictionary = _pending.get(port, {})
+	if not p.is_empty():
+		return int(p["old"]) if f < int(p["frame"]) else int(p["new"])
+	return int(_owners.get(port, -1))
+
+
+## Apply any handoff whose boundary this scheduled frame has reached, flipping
+## _owners + _local_ports so sampling switches exactly at the agreed frame.
+func _apply_pending_transfers(f: int) -> void:
+	for port: int in _pending:
+		var p: Dictionary = _pending[port]
+		if not bool(p["applied"]) and f >= int(p["frame"]):
+			_owners[port] = int(p["new"])
+			p["applied"] = true
+			_recompute_local_ports()
 
 
 # ── Per-frame drive ───────────────────────────────────────────────────────────
@@ -383,6 +460,7 @@ func _schedule_local() -> void:
 	var emu := int(_lib.GetFrameCount())
 	var horizon := emu + _delay
 	while _sched_frame <= horizon:
+		_apply_pending_transfers(_sched_frame)
 		var inp := _capture_local()
 		_local_inputs[_sched_frame] = inp
 		if _nm.is_host():
@@ -436,9 +514,9 @@ func _np_input(bytes: PackedByteArray) -> void:
 				return
 			var port := buf.get_u8()
 			var vals := _get_port(buf)
-			# Only accept from the peer that owns the port, and only for frames
-			# not yet assembled.
-			if int(_owners.get(port, -1)) == sender and f > _complete_upto:
+			# Only accept from the peer that owns the port on THAT frame (honours a
+			# pending handoff), and only for frames not yet assembled.
+			if _owner_for_frame(port, f) == sender and f > _complete_upto:
 				_recv_put(f, port, vals)
 
 
@@ -542,7 +620,7 @@ func _check_stall() -> void:
 		var pm: Dictionary = _recv.get(f, {})
 		for port in _all_ports:
 			if not pm.has(port):
-				var owner := int(_owners.get(port, -1))
+				var owner := _owner_for_frame(port, f)
 				if owner != 1 and owner > 0 and not _spectators.has(owner):
 					_np_input_req.rpc_id(owner, f)
 	else:
@@ -678,6 +756,13 @@ func on_peer_left(peer_id: int) -> void:
 		if int(_owners[port]) == peer_id:
 			stop("player left")
 			return
+	# A pending handoff to/from the departed peer would stall the gate at its
+	# boundary (nobody supplies that port for the affected frames) — end the game.
+	for port: int in _pending:
+		var p: Dictionary = _pending[port]
+		if int(p["old"]) == peer_id or int(p["new"]) == peer_id:
+			stop("player left")
+			return
 	# Cold-start may have been waiting on this peer's _np_ready.
 	if not _running and not _ready_peers.is_empty():
 		_mark_ready(1)
@@ -731,6 +816,7 @@ func _check_crc(frame: int) -> void:
 
 func _set_owners(owners: Dictionary) -> void:
 	_owners = owners.duplicate()
+	_pending.clear()
 	var ports: Array = []
 	for port: Variant in owners:
 		ports.append(int(port))
@@ -739,6 +825,11 @@ func _set_owners(owners: Dictionary) -> void:
 	_port_mask = 0
 	for p in _all_ports:
 		_port_mask |= (1 << p)
+	_recompute_local_ports()
+
+
+## Rebuild _local_ports (ports this peer samples) from the current _owners.
+func _recompute_local_ports() -> void:
 	_local_ports.clear()
 	var self_id := _self_id()
 	for port: int in _owners:
@@ -779,6 +870,11 @@ func _get_port(buf: StreamPeerBuffer) -> Array:
 
 
 func _prune() -> void:
+	# Drop landed handoffs once the pipeline has posted past their boundary — from
+	# then on _owners already reflects the new owner for every frame still in play.
+	for port: int in _pending.keys():
+		if _next_post > int(_pending[port]["frame"]):
+			_pending.erase(port)
 	var floor_frame := _next_post - PRUNE_BEHIND
 	if floor_frame <= 0:
 		return

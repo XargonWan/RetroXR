@@ -270,6 +270,14 @@ func netplay_route(system: Object, port: int, m: Dictionary) -> bool:
 	return _netplay != null and _netplay.route(system, port, m)
 
 
+## Host: a netplay-registered controller changed hands to `peer_id`. If it
+## occupies a participating netplay port owned by someone else, hand that port
+## (and thus who drives it) to the new holder. No-op off-session / non-host.
+func netplay_handoff(controller: Object, peer_id: int) -> void:
+	if _netplay != null:
+		_netplay.handoff_controller(controller, peer_id)
+
+
 ## Round-trip time in ms to peer `id` as known locally, or -1 when unknown.
 ## The host knows every client's RTT; a client only knows its RTT to the host.
 func ping_ms(id: int) -> int:
