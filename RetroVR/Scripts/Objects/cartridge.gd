@@ -37,12 +37,91 @@ func _ready() -> void:
 	if save_id.is_empty():
 		save_id = "%08x%08x" % [randi(), randi()]
 	_update_label()
+	_apply_system_size()
+	_apply_label_art()
 
 
 func _update_label() -> void:
 	var lbl := get_node_or_null("GameLabel") as Label3D
 	if lbl:
 		lbl.text = game_label
+
+
+## Resize the generic cartridge to this system's real-world dimensions
+## (MediaDimensions.CART_SIZES). All mesh/shape resources are DUPLICATED before
+## mutation — tscn sub_resources are shared across instances, so editing them
+## in place would resize every cartridge in the room.
+func _apply_system_size() -> void:
+	if not MediaDimensions.CART_SIZES.has(systemid):
+		return
+	var s := MediaDimensions.cart_size(systemid)
+
+	var body := get_node_or_null("CartridgeMesh") as MeshInstance3D
+	if body and body.mesh is BoxMesh:
+		var m := body.mesh.duplicate() as BoxMesh
+		m.size = s
+		body.mesh = m
+
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col and col.shape is BoxShape3D:
+		var shape := col.shape.duplicate() as BoxShape3D
+		# Grab padding: keep tiny carts (nds is 3.3 cm) comfortably pickable.
+		shape.size = Vector3(maxf(s.x, 0.05), maxf(s.y, 0.05), maxf(s.z + 0.025, 0.04))
+		col.shape = shape
+
+	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
+	if label_mesh and label_mesh.mesh is BoxMesh:
+		var lm := label_mesh.mesh.duplicate() as BoxMesh
+		lm.size = Vector3(s.x * 0.8, s.y * 0.62, 0.002)
+		label_mesh.mesh = lm
+		label_mesh.position = Vector3(0, s.y * 0.125, s.z / 2.0 + 0.001)
+
+	var lbl := get_node_or_null("GameLabel") as Label3D
+	if lbl:
+		lbl.position = Vector3(0, s.y * 0.125, s.z / 2.0 + 0.0045)
+		lbl.width = s.x * 2000.0
+
+	var pointer_col := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if pointer_col and pointer_col.shape is BoxShape3D and col:
+		var pshape := pointer_col.shape.duplicate() as BoxShape3D
+		pshape.size = (col.shape as BoxShape3D).size + Vector3(0.04, 0.04, 0)
+		pointer_col.shape = pshape
+
+
+## Apply the scraped "support" label art onto the label face. Missing art keeps
+## the existing generic label + title text fallback. Fresh material every time —
+## never mutate the shared Mat_label sub_resource.
+func _apply_label_art() -> void:
+	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
+	if tex == null:
+		return
+	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
+	if label_mesh == null or not (label_mesh.mesh is BoxMesh):
+		return
+	# Fit-within: shrink one axis of the label region to the texture's aspect so
+	# the art is never stretched (region set by _apply_system_size or the scene).
+	var region := (label_mesh.mesh as BoxMesh).size
+	var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
+	var fitted := Vector2(region.x, region.y)
+	if region.x / maxf(region.y, 0.0001) > aspect:
+		fitted.x = region.y * aspect
+	else:
+		fitted.y = region.x / aspect
+	# QuadMesh, not BoxMesh: a BoxMesh atlases the texture across its six faces
+	# (the front face would show only a crop). The quad faces +Z like the label.
+	var qm := QuadMesh.new()
+	qm.size = fitted
+	label_mesh.mesh = qm
+	label_mesh.position.z += region.z / 2.0 + 0.0002   # sit on the old face plane
+
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color.WHITE
+	mat.albedo_texture = tex
+	label_mesh.set_surface_override_material(0, mat)
+
+	var lbl := get_node_or_null("GameLabel") as Label3D
+	if lbl:
+		lbl.visible = false
 
 
 ## Returns the ROM path — called by RetroSystem when the cartridge snaps in

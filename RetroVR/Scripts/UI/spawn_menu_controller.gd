@@ -9,6 +9,7 @@ extends Node3D
 const SYSTEM_SCENE          := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE              := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE            := preload("res://Scenes/Objects/cartridge.tscn")
+const DISC_SCENE            := preload("res://Scenes/Objects/disc.tscn")
 const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
@@ -23,6 +24,7 @@ const SPAWN_Y := {
 	"tv":               0.95,
 	"system":           0.80,
 	"cartridge":        0.76,
+	"disc":             0.76,
 	"book":             0.80,
 	"trash_can":        0.90,
 	"retro_controller": 0.80,
@@ -657,11 +659,13 @@ func _on_spawn_requested(type: String) -> void:
 
 
 func _on_spawn_cartridge_requested(rom_path: String, game_label: String, systemid := "") -> void:
-	var cart := CART_SCENE.instantiate() as RetroCartridge
+	# Disc-based systems get a RetroDisc (same contract, disc-shaped body).
+	var is_disc := MediaDimensions.is_disc_system(systemid)
+	var cart := (DISC_SCENE if is_disc else CART_SCENE).instantiate() as RetroCartridge
 	cart.rom_path = rom_path
 	cart.game_label = game_label
 	cart.systemid = systemid
-	_place_spawned(cart, "cartridge")
+	_place_spawned(cart, "disc" if is_disc else "cartridge")
 
 
 func _on_spawn_manual_requested(pdf_path: String) -> void:

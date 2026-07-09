@@ -16,6 +16,7 @@ const VERSION       := 1
 const SYSTEM_SCENE           := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE               := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE             := preload("res://Scenes/Objects/cartridge.tscn")
+const DISC_SCENE             := preload("res://Scenes/Objects/disc.tscn")
 const MEMCARD_SCENE          := preload("res://Scenes/Objects/memory_card.tscn")
 const BOOK_SCENE             := preload("res://Scenes/Objects/pdf_book.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
@@ -356,6 +357,19 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+	elif node is RetroDisc:
+		# MUST precede the RetroCartridge branch — RetroDisc extends it.
+		var disc := node as RetroDisc
+		return {
+			"id": id,
+			"type": "disc",
+			"rom_path": disc.rom_path,
+			"game_label": disc.game_label,
+			"save_id": disc.save_id,
+			"cart_systemid": disc.systemid,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	elif node is RetroCartridge:
 		var cart := node as RetroCartridge
 		return {
@@ -464,6 +478,13 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			cart.save_id = data.get("save_id", "")
 			cart.systemid = data.get("cart_systemid", "")
 			obj = cart
+		"disc":
+			var disc := DISC_SCENE.instantiate() as RetroDisc
+			disc.rom_path = data.get("rom_path", "")
+			disc.game_label = data.get("game_label", "")
+			disc.save_id = data.get("save_id", "")
+			disc.systemid = data.get("cart_systemid", "")
+			obj = disc
 		"memory_card":
 			var card := MEMCARD_SCENE.instantiate() as MemoryCard
 			card.card_id = data.get("card_id", "")

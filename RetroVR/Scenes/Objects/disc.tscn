@@ -1,0 +1,85 @@
+[gd_scene load_steps=10 format=3 uid="uid://retrodisc_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/disc.gd" id="1_discscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+
+[sub_resource type="CylinderShape3D" id="CylShape_disc"]
+radius = 0.065
+height = 0.012
+
+[sub_resource type="CylinderShape3D" id="CylShape_pointer"]
+radius = 0.08
+height = 0.05
+
+[sub_resource type="CylinderMesh" id="CylMesh_disc"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.0025
+
+[sub_resource type="StandardMaterial3D" id="Mat_disc"]
+albedo_color = Color(0.82, 0.83, 0.87, 1.0)
+metallic = 0.85
+roughness = 0.25
+
+[sub_resource type="CylinderMesh" id="CylMesh_hub"]
+top_radius = 0.0075
+bottom_radius = 0.0075
+height = 0.003
+
+[sub_resource type="StandardMaterial3D" id="Mat_hub"]
+albedo_color = Color(0.95, 0.95, 0.95, 1.0)
+roughness = 0.6
+
+[sub_resource type="QuadMesh" id="QuadMesh_art"]
+size = Vector2(0.113, 0.113)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_disc"]
+bounce = 0.0
+friction = 0.8
+
+[node name="Disc" type="RigidBody3D" groups=["cartridge", "disc"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_disc")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_discscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CylShape_disc")
+
+[node name="DiscMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylMesh_disc")
+surface_material_override/0 = SubResource("Mat_disc")
+
+[node name="HubMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylMesh_hub")
+surface_material_override/0 = SubResource("Mat_hub")
+
+[node name="ArtQuad" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0.0018, 0)
+visible = false
+mesh = SubResource("QuadMesh_art")
+
+[node name="GameLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0.002, 0)
+modulate = Color(0.1, 0.1, 0.1, 1)
+text = ""
+pixel_size = 0.0004
+font_size = 16
+outline_size = 4
+horizontal_alignment = 1
+vertical_alignment = 1
+max_lines_visible = 2
+width = 200.0
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("CylShape_pointer")
