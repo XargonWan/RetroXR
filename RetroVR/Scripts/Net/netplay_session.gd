@@ -354,10 +354,11 @@ func _capture_local() -> Dictionary:
 # on every peer so the deterministic core state never forks. Lockstep only — a
 # rollback core would need the emu-thread input mask re-issued mid-speculation.
 
-## Host: `controller` (a RetroController) changed hands to `new_peer`. If it
-## occupies a participating netplay port owned by someone else, schedule that
-## port's ownership to move to `new_peer`.
-func handoff_controller(controller: Object, new_peer: int) -> void:
+## Host: the holder of `controller` (a RetroController) changed to `new_owner` —
+## a peer id when someone is holding it, or 0 when it was dropped (unowned; the
+## host then feeds that port neutral input until someone grabs it again). If the
+## controller occupies a participating netplay port, schedule the change.
+func handoff_controller(controller: Object, new_owner: int) -> void:
 	if not _nm.is_host() or not _running or _rollback:
 		return
 	if controller == null or not is_instance_valid(controller):
@@ -367,13 +368,23 @@ func handoff_controller(controller: Object, new_peer: int) -> void:
 	var port := int(controller.get("_port_index"))
 	if port < 0 or not _is_participating(port):
 		return
-	if new_peer <= 0 or new_peer == int(_owners.get(port, -1)):
+	# Compare against the latest intended owner so a rapid grab/drop coalesces
+	# (a second schedule just overwrites the not-yet-landed one).
+	if new_owner < 0 or new_owner == _intended_owner(port):
 		return
-	if not _nm.peers.has(new_peer) or _spectators.has(new_peer):
+	# 0 = unowned (host supplies neutral). A real owner must be a present, active
+	# peer.
+	if new_owner > 0 and (not _nm.peers.has(new_owner) or _spectators.has(new_owner)):
 		return
-	# A second handoff of the same port before the first has landed just retargets
-	# it (the not-yet-reached frame keeps the latest holder).
-	_schedule_transfer(port, new_peer)
+	_schedule_transfer(port, new_owner)
+
+
+## Latest owner intent for a port: the not-yet-landed handoff target if one is
+## pending, else the current owner.
+func _intended_owner(port: int) -> int:
+	if _pending.has(port):
+		return int(_pending[port]["new"])
+	return int(_owners.get(port, -1))
 
 
 ## Host: pick a deterministic apply frame ahead of every peer's scheduler and
@@ -524,19 +535,24 @@ func _host_assemble() -> void:
 	var changed := false
 	while true:
 		var f := _complete_upto + 1
-		var pm: Dictionary = _recv.get(f, {})
-		var complete := true
-		for port in _all_ports:
-			if not pm.has(port):
-				complete = false
-				break
-		if not complete:
+		if not _frame_ready(f):
 			break
-		_frames[f] = _flat_from_ports(pm)
+		_frames[f] = _flat_from_ports(_recv.get(f, {}))
 		_complete_upto = f
 		changed = true
 	if changed:
 		_broadcast_frames()
+
+
+## A frame is ready to assemble once every participating port has input — or is
+## unowned (dropped controller), which the host fills with neutral (absent from
+## _recv -> zeros in _flat_from_ports) rather than stalling on a missing sender.
+func _frame_ready(f: int) -> bool:
+	var pm: Dictionary = _recv.get(f, {})
+	for port in _all_ports:
+		if not pm.has(port) and _owner_for_frame(port, f) != 0:
+			return false
+	return true
 
 
 func _broadcast_frames() -> void:

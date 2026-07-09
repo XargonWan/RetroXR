@@ -445,7 +445,13 @@ func _on_dropped(pickable: Node3D) -> void:
 	if _applying or not _nm.is_active():
 		return
 	var id := id_of(pickable)
-	if id < 0 or not _held_by_me.has(id):
+	if id < 0:
+		return
+	# Host dropped a controller it was holding (no client holds it) -> unown its
+	# port. Client drops arrive via _release, which unowns there.
+	if _nm.is_host() and not _remote_held.has(id):
+		_maybe_release_port(pickable)
+	if not _held_by_me.has(id):
 		return
 	_held_by_me.erase(id)
 	var lin := Vector3.ZERO
@@ -508,6 +514,13 @@ func _maybe_handoff_port(node: Node, peer_id: int) -> void:
 		_nm.netplay_handoff(node, peer_id)
 
 
+## Host: a controller was dropped and nobody else holds it — release its netplay
+## port to unowned (owner 0), so it goes neutral and any player can grab it next.
+func _maybe_release_port(node: Node) -> void:
+	if _nm.is_host() and node is RetroController and _nm.has_method("netplay_handoff"):
+		_nm.netplay_handoff(node, 0)
+
+
 @rpc("any_peer", "call_remote", "reliable", 0)
 func _release(net_id: int, pos: Vector3, quat: Quaternion, lin: Vector3, ang: Vector3) -> void:
 	if not _nm.is_host():
@@ -516,6 +529,9 @@ func _release(net_id: int, pos: Vector3, quat: Quaternion, lin: Vector3, ang: Ve
 		return
 	_remote_held.erase(net_id)
 	var node: Node = _registry.get(net_id)
+	# A client let go of a controller and nobody grabbed it -> unown its port.
+	if is_instance_valid(node):
+		_maybe_release_port(node)
 	if is_instance_valid(node) and node is RigidBody3D:
 		var body := node as RigidBody3D
 		body.global_position = pos
