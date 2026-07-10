@@ -24,6 +24,7 @@ const RAY_GUN_SCENE          := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE              := preload("res://Scenes/Objects/vcr_player.tscn")
 const TAPE_SCENE             := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
+const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 
 
 # ── Multi-slot public API ──────────────────────────────────────────────────────
@@ -357,6 +358,13 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+	elif node is TrashCan:
+		return {
+			"id": id,
+			"type": "trash_can",
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	elif node is RetroDisc:
 		# MUST precede the RetroCartridge branch — RetroDisc extends it.
 		var disc := node as RetroDisc
@@ -471,6 +479,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			obj = tv
 		"tv_remote":
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D
+		"trash_can":
+			obj = TRASH_CAN_SCENE.instantiate() as Node3D
 		"cartridge":
 			var cart := CART_SCENE.instantiate() as RetroCartridge
 			cart.rom_path = data.get("rom_path", "")
