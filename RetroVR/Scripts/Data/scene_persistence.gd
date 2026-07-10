@@ -26,6 +26,7 @@ const TAPE_SCENE             := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
+const RETRO_KEYBOARD_SCENE   := preload("res://Scenes/Objects/retro_keyboard.tscn")
 
 
 # ── Multi-slot public API ──────────────────────────────────────────────────────
@@ -286,7 +287,7 @@ func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 			var tape_id: int = d.get("snapped_tape_id", -1)
 			if spawned.has(tape_id) and spawned[tape_id] is VCRTape:
 				vcr.restore_tape(spawned[tape_id])
-		elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse:
+		elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
 			var ctrl: Node3D = spawned[id]
 			var port_idx: int = d.get("port_index", -1)
 			if port_idx < 0:
@@ -443,12 +444,14 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
-	elif node is RetroController or node is RayGun or node is RetroMouse:
+	elif node is RetroController or node is RayGun or node is RetroMouse or node is RetroKeyboard:
 		var obj_type := "retro_controller"
 		if node is RayGun:
 			obj_type = "ray_gun"
 		elif node is RetroMouse:
 			obj_type = "retro_mouse"
+		elif node is RetroKeyboard:
+			obj_type = "retro_keyboard"
 		var connected_sys = (node as Node).get("_connected_system")
 		var port_idx: int = (node as Node).get("_port_index") if connected_sys != null else -1
 		var sys_id: int = node_to_id.get(connected_sys, -1) if connected_sys != null else -1
@@ -524,6 +527,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			var mouse := RETRO_MOUSE_SCENE.instantiate() as RetroMouse
 			mouse.sensitivity = data.get("sensitivity", 2400.0)
 			obj = mouse
+		"retro_keyboard":
+			obj = RETRO_KEYBOARD_SCENE.instantiate() as Node3D
 		"vcr_player":
 			obj = VCR_SCENE.instantiate() as Node3D
 		"vcr_tape":

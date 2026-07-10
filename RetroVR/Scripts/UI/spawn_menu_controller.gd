@@ -14,6 +14,7 @@ const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
 const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/retro_mouse.tscn")
+const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
@@ -30,6 +31,7 @@ const SPAWN_Y := {
 	"trash_can":        0.90,
 	"retro_controller": 0.80,
 	"retro_mouse":      0.78,
+	"retro_keyboard":   0.78,
 	"ray_gun":          0.82,
 	"vcr_player":       0.80,
 	"tape":             0.78,
@@ -649,6 +651,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
+		"retro_keyboard":
+			obj = RETRO_KEYBOARD_SCENE.instantiate() as Node3D
 		"ray_gun":
 			var gun := RAY_GUN_SCENE.instantiate() as RayGun
 			gun.show_laser_dot = _aim_crosshair_enabled

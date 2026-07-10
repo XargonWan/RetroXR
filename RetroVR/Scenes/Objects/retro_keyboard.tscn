@@ -1,0 +1,44 @@
+[gd_scene load_steps=6 format=3 uid="uid://retrokeyboard_01"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/retro_keyboard.gd" id="1_kbscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kb"]
+size = Vector3(0.44, 0.02, 0.16)
+
+[sub_resource type="BoxMesh" id="BoxMesh_base"]
+size = Vector3(0.44, 0.012, 0.16)
+
+[sub_resource type="StandardMaterial3D" id="Mat_base"]
+albedo_color = Color(0.35, 0.35, 0.4, 1)
+roughness = 0.6
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_kb"]
+bounce = 0.0
+friction = 0.8
+
+[node name="RetroKeyboard" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_kb")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_kbscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+shape = SubResource("BoxShape3D_kb")
+
+[node name="BaseMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.006, 0)
+mesh = SubResource("BoxMesh_base")
+surface_material_override/0 = SubResource("Mat_base")
+
+[node name="Keys" type="Node3D" parent="."]
+
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, -0.075)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")

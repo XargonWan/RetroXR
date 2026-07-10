@@ -75,6 +75,13 @@ var _recv_aux: Dictionary = {}             # host: frame -> Array(7)
 # Ports whose scheduled values are per-frame DELTAS (mouse dx/dy): zeroed after
 # the first scheduled frame consumes them, unlike held joypad state.
 var _drain_ports: Dictionary = {}          # port -> true
+# Keyboard events (RetroKeyboard / desktop typing): queued transitions, packed
+# up to KEY_SLOTS per scheduled frame as [keycode|down<<16, character] pairs.
+# Like aux, supplied by the port-0 owner. Overflow rolls to the next frame.
+const KEY_SLOTS := 4
+var _local_keys: Array = []                  # pending [packed, char] pairs
+var _local_keys_by_frame: Dictionary = {}    # frame -> Array (redundant resend)
+var _recv_keys: Dictionary = {}              # host: frame -> Array
 
 # Scheduling / assembly.
 var _sched_frame := 0                    # next frame to schedule local input for
@@ -328,6 +335,9 @@ func _reset_runtime(start_frame: int) -> void:
 	_local_aux_by_frame.clear()
 	_recv_aux.clear()
 	_drain_ports.clear()
+	_local_keys.clear()
+	_local_keys_by_frame.clear()
+	_recv_keys.clear()
 	_running = false
 	_join_paused = false
 
@@ -388,6 +398,20 @@ func set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
 	_local_aux[4] = px
 	_local_aux[5] = py
 	_local_aux[6] = 1 if pressed else 0
+
+
+## Queue a keyboard transition into the deterministic schedule. Returns true
+## when consumed (a lockstep game is running for this system and this peer
+## supplies the keyboard block).
+func queue_key_event(system: Object, keycode: int, down: bool, character: int) -> bool:
+	if not _running or _rollback or system != _system:
+		return false
+	if not _local_ports.has(0):
+		# Participating game but another peer owns the keyboard feed — swallow
+		# so the local core isn't driven directly (would desync).
+		return true
+	_local_keys.append([(keycode & 0xFFFF) | (65536 if down else 0), character])
+	return true
 
 
 # ── Port handoff (pass-me: hand a controller to another player) ────────────────
@@ -571,11 +595,18 @@ func _schedule_local() -> void:
 		_local_inputs[_sched_frame] = inp
 		if _local_ports.has(0):
 			_local_aux_by_frame[_sched_frame] = _local_aux.duplicate()
+			var kv: Array = []
+			while not _local_keys.is_empty() and kv.size() < KEY_SLOTS * 2:
+				var ev: Array = _local_keys.pop_front()
+				kv.append(int(ev[0]))
+				kv.append(int(ev[1]))
+			_local_keys_by_frame[_sched_frame] = kv
 		if _nm.is_host():
 			for port: int in inp:
 				_recv_put(_sched_frame, port, inp[port])
 			if _local_ports.has(0):
 				_recv_aux[_sched_frame] = _local_aux.duplicate()
+				_recv_keys[_sched_frame] = _local_keys_by_frame[_sched_frame]
 		_sched_frame += 1
 	if not _nm.is_host():
 		_send_local_window()
@@ -600,6 +631,7 @@ func _send_local_window() -> void:
 		for port: int in inp:
 			_put_port(buf, port, inp[port])
 		_put_aux(buf, _local_aux_by_frame.get(f, [0, 0, 0, 0, 0, 0, 0]))
+		_put_keys(buf, _local_keys_by_frame.get(f, []))
 	_np_input.rpc_id(1, buf.data_array)
 
 
@@ -629,12 +661,14 @@ func _np_input(bytes: PackedByteArray) -> void:
 			# pending handoff), and only for frames not yet assembled.
 			if _owner_for_frame(port, f) == sender and f > _complete_upto:
 				_recv_put(f, port, vals)
-		if buf.get_available_bytes() < 15:
+		if buf.get_available_bytes() < 15 + KEY_SLOTS * 4:
 			return
 		var aux := _get_aux(buf)
-		# Aux (tilt/touch) rides with the port-0 owner packets.
+		var keys := _get_keys(buf)
+		# Aux (tilt/touch) + key events ride with the port-0 owner packets.
 		if _owner_for_frame(0, f) == sender and f > _complete_upto:
 			_recv_aux[f] = aux
+			_recv_keys[f] = keys
 
 
 func _host_assemble() -> void:
@@ -643,7 +677,8 @@ func _host_assemble() -> void:
 		var f := _complete_upto + 1
 		if not _frame_ready(f):
 			break
-		_frames[f] = _flat_from_frame(_recv.get(f, {}), _recv_aux.get(f, [0, 0, 0, 0, 0, 0, 0]))
+		_frames[f] = _flat_from_frame(_recv.get(f, {}),
+			_recv_aux.get(f, [0, 0, 0, 0, 0, 0, 0]), _recv_keys.get(f, []))
 		_complete_upto = f
 		changed = true
 	if changed:
@@ -680,6 +715,10 @@ func _broadcast_frames() -> void:
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
 		_put_aux(buf, [flat[20], flat[21], flat[22], flat[23], flat[24], flat[25], flat[26]])
+		var kflat: Array = []
+		for i in range(KEY_SLOTS * 2):
+			kflat.append(flat[27 + i])
+		_put_keys(buf, kflat)
 	_np_frame.rpc(buf.data_array)
 
 
@@ -702,12 +741,12 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 		return
 	var nframes := buf.get_u8()
 	for _i in range(nframes):
-		var need := 4 + _all_ports.size() * 10 + 15
+		var need := 4 + _all_ports.size() * 10 + 15 + KEY_SLOTS * 4
 		if buf.get_available_bytes() < need:
 			return
 		var f := int(buf.get_u32())
 		var flat := PackedInt32Array()
-		flat.resize(20 + AUX_INTS)
+		flat.resize(20 + AUX_INTS + KEY_SLOTS * 2)
 		for port in _all_ports:
 			var base := port * 5
 			flat[base] = buf.get_u16()
@@ -716,6 +755,9 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 		var aux := _get_aux(buf)
 		for i in range(AUX_INTS):
 			flat[20 + i] = int(aux[i])
+		var keys := _get_keys(buf)
+		for i in range(KEY_SLOTS * 2):
+			flat[27 + i] = int(keys[i])
 		if f >= _next_post and not _frames.has(f):
 			_frames[f] = flat
 
@@ -776,6 +818,10 @@ func _np_frame_req(frame: int) -> void:
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
 		_put_aux(buf, [flat[20], flat[21], flat[22], flat[23], flat[24], flat[25], flat[26]])
+		var kflat: Array = []
+		for i in range(KEY_SLOTS * 2):
+			kflat.append(flat[27 + i])
+		_put_keys(buf, kflat)
 	_np_frame_reliable.rpc_id(sender, buf.data_array)
 
 
@@ -792,6 +838,7 @@ func _np_input_req(frame: int) -> void:
 	for port: int in inp:
 		_put_port(buf, port, inp[port])
 	_put_aux(buf, _local_aux_by_frame.get(frame, [0, 0, 0, 0, 0, 0, 0]))
+	_put_keys(buf, _local_keys_by_frame.get(frame, []))
 	_np_input.rpc_id(1, buf.data_array)
 
 
@@ -975,10 +1022,11 @@ func _recv_put(frame: int, port: int, vals: Array) -> void:
 	_recv[frame][port] = vals
 
 
-## Assembled frame: 4 ports x 5 ints + aux [flags, sx, sy, sz, px, py, pressed].
-func _flat_from_frame(pm: Dictionary, aux: Array) -> PackedInt32Array:
+## Assembled frame: 4 ports x 5 ints + aux [flags, sx, sy, sz, px, py, pressed]
+## + up to KEY_SLOTS key events x 2 ints [keycode|down<<16, character].
+func _flat_from_frame(pm: Dictionary, aux: Array, keys: Array) -> PackedInt32Array:
 	var flat := PackedInt32Array()
-	flat.resize(20 + AUX_INTS)
+	flat.resize(20 + AUX_INTS + KEY_SLOTS * 2)
 	for port: int in pm:
 		var v: Array = pm[port]
 		var base := port * 5
@@ -986,6 +1034,8 @@ func _flat_from_frame(pm: Dictionary, aux: Array) -> PackedInt32Array:
 			flat[base + i] = int(v[i])
 	for i in range(AUX_INTS):
 		flat[20 + i] = int(aux[i])
+	for i in range(mini(keys.size(), KEY_SLOTS * 2)):
+		flat[20 + AUX_INTS + i] = int(keys[i])
 	return flat
 
 
@@ -1022,6 +1072,32 @@ func _get_aux(buf: StreamPeerBuffer) -> Array:
 	return [flags, sx, sy, sz, px, py, pressed]
 
 
+## Key-event wire block (KEY_SLOTS x 4 bytes): u16 keycode|down<<15... packed
+## as u16 (keycode | down<<15) + u16 character per slot; keycode 0 = empty.
+func _put_keys(buf: StreamPeerBuffer, kv: Array) -> void:
+	for slot in range(KEY_SLOTS):
+		var packed := 0
+		var ch := 0
+		if slot * 2 + 1 < kv.size() or slot * 2 < kv.size():
+			var p := int(kv[slot * 2]) if slot * 2 < kv.size() else 0
+			ch = int(kv[slot * 2 + 1]) if slot * 2 + 1 < kv.size() else 0
+			packed = (p & 0x7FFF) | (0x8000 if (p & 65536) != 0 else 0)
+		buf.put_u16(packed)
+		buf.put_u16(ch & 0xFFFF)
+
+
+func _get_keys(buf: StreamPeerBuffer) -> Array:
+	var out: Array = []
+	for _slot in range(KEY_SLOTS):
+		var packed := buf.get_u16()
+		var ch := buf.get_u16()
+		var keycode := packed & 0x7FFF
+		var down := (packed & 0x8000) != 0
+		out.append(keycode | (65536 if down else 0))
+		out.append(ch)
+	return out
+
+
 func _prune() -> void:
 	# Drop landed handoffs once the pipeline has posted past their boundary — from
 	# then on _owners already reflects the new owner for every frame still in play.
@@ -1049,6 +1125,12 @@ func _prune() -> void:
 	for f: int in _recv_aux.keys():
 		if f < floor_frame:
 			_recv_aux.erase(f)
+	for f: int in _local_keys_by_frame.keys():
+		if f < floor_frame:
+			_local_keys_by_frame.erase(f)
+	for f: int in _recv_keys.keys():
+		if f < floor_frame:
+			_recv_keys.erase(f)
 
 
 func _self_id() -> int:

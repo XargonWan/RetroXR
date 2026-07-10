@@ -300,6 +300,13 @@ func netplay_set_aux_pointer(system: Object, px: int, py: int, pressed: bool) ->
 		_netplay.set_aux_pointer(system, px, py, pressed)
 
 
+## Queue a keyboard transition into the running netplay game's deterministic
+## schedule. Returns true when netplay consumed it (caller must NOT feed the
+## core directly).
+func netplay_queue_key(system: Object, keycode: int, down: bool, character: int) -> bool:
+	return _netplay != null and _netplay.queue_key_event(system, keycode, down, character)
+
+
 ## Round-trip time in ms to peer `id` as known locally, or -1 when unknown.
 ## The host knows every client's RTT; a client only knows its RTT to the host.
 func ping_ms(id: int) -> int:
