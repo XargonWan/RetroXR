@@ -72,6 +72,23 @@ var _max_rope_length: float = 0.0
 var _pending_tv_restore: RetroTV = null
 var _snapped_cartridge: Node3D = null
 
+# --- Disc loader (tray/slot) state ---
+const DISC_SPIN_MAX := 25.0    # rad/s (~240 RPM) — seated disc at full speed
+const DISC_SPIN_UP := 18.0     # rad/s² ramp-up (power on / tray closed)
+const DISC_SPIN_DOWN := 10.0   # rad/s² ramp-down (power off / tray opened)
+const TRAY_LID_OPEN_DEG := -75.0   # lid hinge angle when the tray is open
+const SLOT_INSET := 0.10       # slot-load: how far inside the console a disc rides
+const SLOT_PROTRUDE := 0.035   # slot-load: how far the ejected disc pokes out
+
+# How this system loads discs (MediaDimensions.LOADER_*), cached at model load.
+var _disc_loader := MediaDimensions.LOADER_NONE
+var _tray_open := false        # LOADER_TRAY: lid state (starts closed)
+var _disc_spin := 0.0          # current disc angular speed (rad/s)
+var _slot_ejecting := false    # LOADER_SLOT: slide-out animation in flight
+# Procedural disc well + hinged lid (default-model tray consoles only).
+var _tray_lid_pivot: Node3D = null
+var _tray_tween: Tween = null
+
 
 @onready var _system_body: MeshInstance3D = $SystemBody
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
@@ -80,6 +97,7 @@ var _snapped_cartridge: Node3D = null
 @onready var _libretro: Libretro = $Libretro
 @onready var _power_button: VRButton = $PowerButton
 @onready var _reset_button: VRButton = $ResetButton
+@onready var _eject_button: VRButton = $EjectButton
 @onready var _options_panel: CoreOptionsPanel = $CoreOptionsPanel
 @onready var _system_name_label: Label3D = $SystemNameLabel
 @onready var _port_zones: Array = [
@@ -105,6 +123,7 @@ func _ready() -> void:
 	_memcard_slot.has_dropped.connect(_on_memcard_removed)
 	_power_button.button_pressed.connect(toggle_power)
 	_reset_button.button_pressed.connect(reset)
+	_eject_button.button_pressed.connect(_on_eject_pressed)
 	_libretro.options_ready.connect(_on_options_ready)
 	_libretro.rumble_state_changed.connect(_on_rumble_state_changed)
 	# Wire controller port snap signals
@@ -157,6 +176,43 @@ func _load_system_model() -> void:
 	_memcard_slot.enabled = cards
 	if cards:
 		_model.configure_memory_card_slot(_memcard_slot)
+	# Disc loader: tray consoles (PS1/GameCube…) get an OPEN button gating a
+	# closed-by-default tray; slot loaders (PS2) get an always-open slot with
+	# an EJECT button. Cartridge systems hide the button entirely.
+	_disc_loader = MediaDimensions.disc_loader(systemid)
+	var has_loader := _disc_loader != MediaDimensions.LOADER_NONE
+	_eject_button.visible = has_loader
+	_eject_button.set_deferred("monitoring", has_loader)
+	_eject_button.set_process(has_loader)   # also stops touch-proximity checks
+	if has_loader:
+		var eject_label := _eject_button.get_node_or_null("ButtonLabel") as Label3D
+		if eject_label:
+			eject_label.text = "OPEN" if _disc_loader == MediaDimensions.LOADER_TRAY else "EJECT"
+		if _disc_loader == MediaDimensions.LOADER_TRAY:
+			_cartridge_slot.enabled = false   # tray starts closed
+		# The dark cartridge-slot puck would swallow a flat disc — hide it on
+		# disc hardware; the disc itself (or the tray) is the visual.
+		var slot_visual := _cartridge_slot.get_node_or_null("SlotVisual") as MeshInstance3D
+		if slot_visual:
+			slot_visual.visible = false
+		# The snap ghost is cartridge-shaped — reshape it into this system's
+		# disc so the blue "goes here" shadow reads correctly.
+		var ghost := _cartridge_slot.get_node_or_null("SnapHighlight/HighlightMesh") as MeshInstance3D
+		if ghost:
+			var ghost_mesh := CylinderMesh.new()
+			ghost_mesh.top_radius = MediaDimensions.disc_diameter(systemid) / 2.0
+			ghost_mesh.bottom_radius = ghost_mesh.top_radius
+			ghost_mesh.height = 0.004
+			ghost.mesh = ghost_mesh
+		# Tray consoles on the placeholder box get a physical disc well + hinged
+		# lid (bespoke GLB models own their tray geometry instead).
+		if _disc_loader == MediaDimensions.LOADER_TRAY and systemid not in _MODEL_SCRIPTS:
+			_build_disc_tray()
+		# Slot loaders take the disc through a slit in the FRONT face: move the
+		# snap zone to the slit mouth and add the slit visual there.
+		if _disc_loader == MediaDimensions.LOADER_SLOT and systemid not in _MODEL_SCRIPTS:
+			_cartridge_slot.position = Vector3(0, 0.03, 0.125)
+			_build_disc_slit()
 	# Handhelds: built-in screen, on-device controls, and the held-input
 	# component that turns the device itself into the port-0 controller.
 	if _model.is_handheld():
@@ -268,6 +324,24 @@ func _process(_delta: float) -> void:
 			and not NetworkManager.netplay_running():
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
 		_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
+	_update_disc_spin(_delta)
+
+
+## Spin the seated disc: ramp up while powered with the tray shut, ramp down
+## when the tray opens or the power goes off. Purely visual — each peer derives
+## the same state from power + tray, so no sync is needed.
+func _update_disc_spin(delta: float) -> void:
+	var disc := _snapped_cartridge as RetroDisc
+	if disc == null or not is_instance_valid(disc):
+		_disc_spin = 0.0
+		return
+	var shut := _disc_loader != MediaDimensions.LOADER_TRAY or not _tray_open
+	var target := DISC_SPIN_MAX if (is_powered_on and shut) else 0.0
+	var rate := DISC_SPIN_UP if target > _disc_spin else DISC_SPIN_DOWN
+	_disc_spin = move_toward(_disc_spin, target, rate * delta)
+	# Only rotate while seated (frozen); a disc being grabbed out keeps its pose.
+	if _disc_spin > 0.0 and disc.freeze:
+		disc.rotate_object_local(Vector3.UP, _disc_spin * delta)
 
 
 ## Touch-screen feed (dual-screen handhelds): uv is a point in the COMPOSITE
@@ -723,6 +797,12 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	if "systemid" in cartridge and str(cartridge.get("systemid")).is_empty():
 		cartridge.set("systemid", systemid)
 	_model.play_cartridge_insert(cartridge, _cartridge_slot)
+	if cartridge is RetroDisc:
+		if _disc_loader == MediaDimensions.LOADER_SLOT:
+			_play_slot_insert(cartridge)
+		elif _disc_loader == MediaDimensions.LOADER_TRAY and not _tray_open:
+			# Restored/replicated insert with the lid shut — seal it inside.
+			cartridge.set("enabled", false)
 	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
 		{"sys": self, "cart": cartridge})
 
@@ -732,10 +812,219 @@ func _on_cartridge_removed() -> void:
 		_model.play_cartridge_eject(_snapped_cartridge, _cartridge_slot)
 		remove_collision_exception_with(_snapped_cartridge)
 		_snapped_cartridge = null
+	_disc_spin = 0.0
+	_slot_ejecting = false
 	if is_powered_on:
 		power_off()
 	rom_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})
+
+
+# --- Disc loader (tray lid / slot loading) ---
+
+## OPEN (tray consoles): toggles the lid, gating insert/remove and the spin.
+## EJECT (slot consoles): slides the seated disc out so it can be grabbed.
+func _on_eject_pressed() -> void:
+	match _disc_loader:
+		MediaDimensions.LOADER_TRAY:
+			_request_tray_state(not _tray_open)
+		MediaDimensions.LOADER_SLOT:
+			_slot_eject()
+
+
+## Local intent (OPEN button or pushing the lid shut): apply + replicate.
+func _request_tray_state(open: bool) -> void:
+	_set_tray_open(open)
+	NetworkManager.report_event(NetObjectSync.EV_TRAY,
+		{"sys": self, "open": _tray_open})
+
+
+## Apply a tray state: the snap zone only hover-accepts discs while open, and a
+## seated disc can only be grabbed out while open (no reaching through the lid).
+## The spin ramp follows via _update_disc_spin. Netplay applies remote toggles
+## through net_set_tray_open below.
+func _set_tray_open(open: bool) -> void:
+	_tray_open = open
+	_cartridge_slot.enabled = open
+	_eject_button.set_latched_pressed(open)
+	if open:
+		_model.play_open()
+	else:
+		_model.play_close()
+	# Swing the procedural lid on its hinge (default-model tray consoles).
+	if _tray_lid_pivot:
+		if _tray_tween:
+			_tray_tween.kill()
+		_tray_tween = create_tween()
+		_tray_tween.tween_property(_tray_lid_pivot, "rotation_degrees:x",
+			TRAY_LID_OPEN_DEG if open else 0.0, 0.4) \
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	if _snapped_cartridge is RetroDisc:
+		_snapped_cartridge.set("enabled", open)
+
+
+## Build the physical disc well + hinged lid on the placeholder box body:
+## a raised pod bridging the box top (y=0.05) up to the seated-disc height
+## (y=0.07), a dark recessed bed the disc rests in, and a lid hinged at the
+## pod's back edge. The lid doubles as a touch button — physically pushing an
+## open lid shuts it (same replicated path as the OPEN button).
+func _build_disc_tray() -> void:
+	var d := MediaDimensions.disc_diameter(systemid)
+	var pod_r := d / 2.0 + 0.024
+	var lid_r := d / 2.0 + 0.028
+	var hinge_z := -(d / 2.0 + 0.03)
+
+	var pod_mat := StandardMaterial3D.new()
+	pod_mat.albedo_color = Color(0.45, 0.45, 0.48)
+	var bed_mat := StandardMaterial3D.new()
+	bed_mat.albedo_color = Color(0.10, 0.10, 0.12)
+	var lid_mat := StandardMaterial3D.new()
+	lid_mat.albedo_color = Color(0.55, 0.55, 0.58)
+
+	# Raised pod (disc sits on its recessed top).
+	var pod := MeshInstance3D.new()
+	pod.name = "DiscTrayPod"
+	var pod_mesh := CylinderMesh.new()
+	pod_mesh.top_radius = pod_r
+	pod_mesh.bottom_radius = pod_r
+	pod_mesh.height = 0.0167
+	pod.mesh = pod_mesh
+	pod.set_surface_override_material(0, pod_mat)
+	pod.position = Vector3(0, 0.05 + 0.0167 / 2.0, 0)   # top at 0.0667
+	add_child(pod)
+
+	# Dark bed the disc rests in (just under the seated disc's underside).
+	var bed := MeshInstance3D.new()
+	bed.name = "DiscTrayBed"
+	var bed_mesh := CylinderMesh.new()
+	bed_mesh.top_radius = d / 2.0 + 0.006
+	bed_mesh.bottom_radius = d / 2.0 + 0.006
+	bed_mesh.height = 0.002
+	bed.mesh = bed_mesh
+	bed.set_surface_override_material(0, bed_mat)
+	bed.position = Vector3(0, 0.0677, 0)   # top at 0.0687, disc bottom 0.06875
+	add_child(bed)
+
+	# Hinged lid: pivot at the pod's back edge, lid disc swings up/back.
+	_tray_lid_pivot = Node3D.new()
+	_tray_lid_pivot.name = "DiscTrayLidPivot"
+	_tray_lid_pivot.position = Vector3(0, 0.076, hinge_z)
+	add_child(_tray_lid_pivot)
+
+	var lid_btn := VRButton.new()
+	lid_btn.name = "DiscTrayLid"
+	lid_btn.position = Vector3(0, 0, -hinge_z)   # lid centre, forward of hinge
+	lid_btn.trigger_radius = lid_r + 0.01
+	lid_btn.depress_depth = 0.002
+	var lid_col := CollisionShape3D.new()
+	var lid_col_shape := CylinderShape3D.new()
+	lid_col_shape.radius = lid_r
+	lid_col_shape.height = 0.02
+	lid_col.shape = lid_col_shape
+	lid_btn.add_child(lid_col)
+	var lid_mesh_inst := MeshInstance3D.new()
+	lid_mesh_inst.name = "ButtonMesh"   # VRButton drives this mesh
+	var lid_mesh := CylinderMesh.new()
+	lid_mesh.top_radius = lid_r
+	lid_mesh.bottom_radius = lid_r
+	lid_mesh.height = 0.005
+	lid_mesh_inst.mesh = lid_mesh
+	lid_mesh_inst.set_surface_override_material(0, lid_mat)
+	lid_btn.add_child(lid_mesh_inst)
+	_tray_lid_pivot.add_child(lid_btn)
+	lid_btn.button_pressed.connect(_on_lid_pressed)
+
+
+## Physically pushing (or pointer-clicking) the lid while open shuts the tray.
+func _on_lid_pressed() -> void:
+	if _disc_loader == MediaDimensions.LOADER_TRAY and _tray_open:
+		_request_tray_state(false)
+
+
+## Netplay: another player toggled this console's tray.
+func net_set_tray_open(open: bool) -> void:
+	if _disc_loader == MediaDimensions.LOADER_TRAY and open != _tray_open:
+		_set_tray_open(open)
+
+
+## Dark slit on the front face where slot-loaded discs go in.
+func _build_disc_slit() -> void:
+	var d := MediaDimensions.disc_diameter(systemid)
+	var slit := MeshInstance3D.new()
+	slit.name = "DiscSlit"
+	var slit_mesh := BoxMesh.new()
+	slit_mesh.size = Vector3(d + 0.008, 0.007, 0.003)
+	slit.mesh = slit_mesh
+	var slit_mat := StandardMaterial3D.new()
+	slit_mat.albedo_color = Color(0.08, 0.08, 0.1)
+	slit.set_surface_override_material(0, slit_mat)
+	slit.position = Vector3(0, 0.03, 0.1255)
+	add_child(slit)
+
+
+## Slot loader: animate the disc riding the mechanism INTO the console, then
+## lock it so it can't be grabbed through the case (EJECT is the way out).
+## The snap seats the disc half-swallowed at the slit mouth, which pops badly —
+## restart the ride from fully OUTSIDE the face (edge kissing the slit) so the
+## whole disc visibly feeds through the opening.
+func _play_slot_insert(disc: Node3D) -> void:
+	var slot_pos := _cartridge_slot.global_position
+	var into := -_cartridge_slot.global_transform.basis.z
+	var start := slot_pos - into * (MediaDimensions.disc_diameter(systemid) / 2.0 + 0.01)
+	# Stay FROZEN for the whole ride: an unfrozen body sags under gravity while
+	# the tween drives it (the disc visibly dipped below the slit). Frozen
+	# kinematic bodies accept position writes fine (same as eject + spin).
+	if disc is RigidBody3D:
+		(disc as RigidBody3D).freeze = true
+	disc.global_position = start
+	# The snap driver writes the zone pose once on the frame after pick-up —
+	# cover it with a deferred re-set, and interpolate with an EXPLICIT
+	# from->to (tween_property would capture the stomped position as its start).
+	disc.set_deferred("global_position", start)
+	var tween := disc.create_tween()
+	tween.tween_method(_set_ride_pos.bind(disc), start,
+		slot_pos + into * SLOT_INSET, 1.0) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		disc.set("enabled", false))
+
+
+## tween_method target for the slot ride (explicit from->to interpolation).
+func _set_ride_pos(p: Vector3, disc: Node3D) -> void:
+	if is_instance_valid(disc):
+		disc.global_position = p
+
+
+## Slot loader: slide the seated disc out of the slot, then release it from the
+## snap zone so it can be grabbed (the removal handler powers off as usual).
+func _slot_eject() -> void:
+	var disc := _snapped_cartridge
+	if disc == null or not is_instance_valid(disc) or _slot_ejecting:
+		return
+	_slot_ejecting = true
+	_disc_spin = 0.0
+	# Ride the mechanism back out: from inside the console to poking out of
+	# the front slit, where it can be grabbed.
+	var out_pos: Vector3 = _cartridge_slot.global_position \
+		+ _cartridge_slot.global_transform.basis.z * SLOT_PROTRUDE
+	var tween := disc.create_tween()
+	tween.tween_property(disc, "global_position", out_pos, 1.0) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		_slot_ejecting = false
+		# The released disc still overlaps the zone's grab sphere and the zone
+		# re-stashes anything dropped inside it — disarm it around the release,
+		# then leave the disc frozen protruding from the slit (held by the
+		# mechanism, not falling) until someone takes it.
+		_cartridge_slot.enabled = false
+		_cartridge_slot.drop_object()
+		if is_instance_valid(disc) and disc is RigidBody3D:
+			(disc as RigidBody3D).freeze = true
+			(disc as RigidBody3D).global_position = out_pos
+		disc.set("enabled", true)
+		get_tree().create_timer(0.25).timeout.connect(func() -> void:
+			if _disc_loader == MediaDimensions.LOADER_SLOT:
+				_cartridge_slot.enabled = true))
 
 
 # --- Memory card slot (CD-era consoles) ---

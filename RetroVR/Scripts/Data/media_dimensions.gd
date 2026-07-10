@@ -42,6 +42,16 @@ const DISC_DIAMETERS: Dictionary = {
 ## Default disc diameter (standard CD/DVD) for a disc systemid without an entry.
 const DISC_DIAMETER_DEFAULT := 0.12
 
+## Disc loading mechanisms.
+const LOADER_NONE := 0   # cartridge system — no disc loader
+const LOADER_TRAY := 1   # lid/tray: OPEN button gates insert/remove (PS1, GameCube…)
+const LOADER_SLOT := 2   # slot-load: disc injects on insert, EJECT slides it out (PS2)
+
+## Systems that slot-load instead of using a lid/tray.
+const SLOT_LOAD_SYSTEMS: Dictionary = {
+	"playstation2": true,
+}
+
 
 ## True when the systemid's games ship on discs (spawn a RetroDisc).
 static func is_disc_system(systemid: String) -> bool:
@@ -56,6 +66,13 @@ static func cart_size(systemid: String) -> Vector3:
 ## Disc diameter for a system, or the standard 12 cm.
 static func disc_diameter(systemid: String) -> float:
 	return float(DISC_DIAMETERS.get(systemid, DISC_DIAMETER_DEFAULT))
+
+
+## How this system loads discs: LOADER_NONE / LOADER_TRAY / LOADER_SLOT.
+static func disc_loader(systemid: String) -> int:
+	if not DISC_DIAMETERS.has(systemid):
+		return LOADER_NONE
+	return LOADER_SLOT if SLOT_LOAD_SYSTEMS.has(systemid) else LOADER_TRAY
 
 
 ## Load the scraped "support" art (physical media label) for a ROM, or null.

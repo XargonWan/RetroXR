@@ -63,6 +63,15 @@ size = Vector3(0.03, 0.02, 0.03)
 [sub_resource type="StandardMaterial3D" id="Mat_reset"]
 albedo_color = Color(0.2, 0.2, 0.2, 1)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_eject"]
+size = Vector3(0.03, 0.02, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_eject"]
+size = Vector3(0.03, 0.02, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Mat_eject"]
+albedo_color = Color(0.15, 0.45, 0.9, 1)
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.32, 0.14, 0.27)
 
@@ -162,6 +171,26 @@ surface_material_override/0 = SubResource("Mat_reset")
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
 pixel_size = 0.001
 text = "RESET"
+font_size = 12
+
+[node name="EjectButton" type="Area3D" parent="." unique_id=1919000001]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, 0.1)
+visible = false
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EjectButton" unique_id=1919000002]
+shape = SubResource("BoxShape3D_eject")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="EjectButton" unique_id=1919000003]
+mesh = SubResource("BoxMesh_eject")
+surface_material_override/0 = SubResource("Mat_eject")
+
+[node name="ButtonLabel" type="Label3D" parent="EjectButton" unique_id=1919000004]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "OPEN"
 font_size = 12
 
 [node name="SystemNameLabel" type="Label3D" parent="." unique_id=1897051898]

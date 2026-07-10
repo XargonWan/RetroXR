@@ -47,6 +47,7 @@ enum {
 	EV_BOOK_HALF,        # {book, on}           half-page mode toggled
 	EV_MEMCARD_INSERT,   # {sys, card}
 	EV_MEMCARD_REMOVE,   # {sys}
+	EV_TRAY,             # {sys, open}   disc tray lid opened/closed
 }
 
 var _nm: Node = null
@@ -653,6 +654,9 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_MEMCARD_REMOVE:
 			if _valid(a, ["sys"]):
 				a["sys"].get_node("MemoryCardSlot").drop_object()
+		EV_TRAY:
+			if _valid(a, ["sys"]) and a["sys"].has_method("net_set_tray_open"):
+				a["sys"].net_set_tray_open(bool(a.get("open", false)))
 	_applying = false
 
 
