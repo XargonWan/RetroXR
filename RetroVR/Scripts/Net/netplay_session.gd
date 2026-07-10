@@ -462,6 +462,8 @@ func _apply_disk_op(op: int, md5: String, index: int, frame: int) -> void:
 			# demotion) takes it from there.
 			push_warning("[Netplay] disc swap: no local file for md5 %s…" % md5.left(8))
 			return
+	print("[Netplay] disc op %d armed @frame %d%s" %
+		[op, frame, "" if path.is_empty() else " (" + path.get_file() + ")"])
 	_lib.ScheduleDiscOp(frame, op, index, path)
 
 

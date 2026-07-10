@@ -822,6 +822,7 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	# disc without a reboot (multi-disc games — FF7 "insert disc 2").
 	if is_powered_on and _has_disk_control and _disc_ejected \
 			and not rom_path.is_empty() and not NetworkManager.is_event_applying():
+		print("[RetroSystem] Hot swap: disc index %d -> %s" % [_disc_index, rom_path])
 		_request_disk_op(1, rom_path)
 	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
 		{"sys": self, "cart": cartridge})
@@ -838,6 +839,7 @@ func _on_cartridge_removed() -> void:
 		# Hot eject: open the core's virtual tray — the game keeps running and
 		# waits for the next disc. rom_path stays mounted (the disc image is
 		# still what the core is running).
+		print("[RetroSystem] Hot eject: game keeps running, waiting for next disc (%s)" % rom_path)
 		if not NetworkManager.is_event_applying():
 			_request_disk_op(0, "")
 		NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})
@@ -849,8 +851,13 @@ func _on_cartridge_removed() -> void:
 
 
 ## Cached disk-control state from the emulation thread (async signal).
-func _on_disk_control_ready(has_control: bool, _count: int, current_index: int,
+func _on_disk_control_ready(has_control: bool, count: int, current_index: int,
 		ejected: bool) -> void:
+	# Log state changes (not every echo) — the boot answer and each op's result.
+	if has_control != _has_disk_control or current_index != _disc_index \
+			or ejected != _disc_ejected:
+		print("[RetroSystem] Disk control: has=%s images=%d index=%d ejected=%s" %
+			[has_control, count, current_index, ejected])
 	_has_disk_control = has_control
 	_disc_index = current_index
 	_disc_ejected = ejected
@@ -866,6 +873,7 @@ func _request_disk_op(op: int, path: String) -> void:
 		if NetworkManager.is_host():
 			NetworkManager.netplay_schedule_disk(self, op, md5, _disc_index)
 		else:
+			print("[RetroSystem] Disc op %d intent -> host (md5 %s…)" % [op, md5.left(8)])
 			NetworkManager.report_event(NetObjectSync.EV_DISK_OP,
 				{"sys": self, "op": op, "md5": md5, "index": _disc_index})
 		# The core-side state flips on the scheduled frame; the mirror updates
