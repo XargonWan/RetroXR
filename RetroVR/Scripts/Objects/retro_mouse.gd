@@ -1,0 +1,281 @@
+## RetroMouse — pickable mouse that plugs into a RetroSystem controller port
+## (same cable/plug as a controller). While held ON a surface and plugged in,
+## lateral motion is reported as libretro RETRO_DEVICE_MOUSE relative deltas
+## (Mario Paint, ScummVM, DOS…). Trigger = left button, A = right, B = middle.
+##
+## Surface stickiness: when the mouse comes near a surface it GLUES to the
+## surface plane — the visible mouse is the hand's position projected onto the
+## plane, so micro lifts and wobbles neither show nor move the cursor. Only
+## when the hand pulls farther than STICK_BREAK does the visual snap back to
+## the hand's true position (and motion reporting stops until it re-lands).
+class_name RetroMouse
+extends XRToolsPickable
+
+
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/mouse_options_panel.tscn")
+const RETRO_DEVICE_MOUSE := 2
+
+# libretro RETRO_DEVICE_ID_MOUSE_* button bits (C++ tests buttons & (1 << id)).
+const MOUSE_BTN_LEFT := 1 << 2
+const MOUSE_BTN_RIGHT := 1 << 3
+const MOUSE_BTN_MIDDLE := 1 << 6
+
+## Cursor units reported per metre of surface travel.
+@export var sensitivity: float = 2400.0
+
+## Base-to-surface distance that engages the stick (metres).
+const STICK_ON := 0.035
+## Hand-to-plane distance that breaks the stick (snap back to the hand).
+const STICK_BREAK := 0.07
+
+## libretro device type reported to the system when plugged in.
+var device_type: int = RETRO_DEVICE_MOUSE
+
+## Desktop: plain left-click is the mouse's own LEFT button while held, so
+## dropping requires Ctrl+click (same rule as the ray gun's trigger).
+var desktop_ctrl_drop := true
+
+var _options_panel: MouseOptionsPanel = null
+
+# Port connection state
+var _connected_system: RetroSystem = null
+var _port_index: int = -1
+
+# Cable (same pattern as RetroController)
+var _cable_instance: Node3D = null
+var _cable_plug: ControllerPlug = null
+var _cable_rope: VerletRope = null
+var _max_rope_length: float = 0.0
+var _pending_port_restore: Dictionary = {}
+
+# Hold state
+var _holding_ctrl: XRController3D = null
+var _desktop_held := false
+
+# Sticky-surface state
+var _stuck := false
+var _plane := Plane()
+var _prev_plane_pos := Vector3.ZERO
+var _accum := Vector2.ZERO    # metres of surface travel, pending report
+var _carry := Vector2.ZERO    # fractional cursor units carried between frames
+var _last_buttons := 0
+
+@onready var _visual: Node3D = $MouseVisual
+@onready var _ray: RayCast3D = $SurfaceRay
+@onready var _cable_attach_point: Node3D = $CableAttachPoint
+
+
+func _ready() -> void:
+	super._ready()
+	press_to_hold = false
+	add_to_group("spawned")
+	grabbed.connect(_on_grabbed_signal)
+	dropped.connect(_on_dropped_signal)
+	_spawn_cable()
+
+
+# ── Cable (mirrors RetroController) ──────────────────────────────────────────
+
+func _spawn_cable() -> void:
+	_cable_instance = CONTROLLER_CABLE_SCENE.instantiate()
+	call_deferred("_add_cable_to_scene")
+
+
+func _add_cable_to_scene() -> void:
+	get_tree().current_scene.add_child(_cable_instance)
+	_cable_instance.add_to_group("spawned")
+	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
+	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+	_cable_plug.set_controller(self)
+	_cable_plug.add_collision_exception_with(self)
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
+	_cable_rope.start_node = _cable_attach_point
+	_cable_rope.end_node = _cable_plug
+	_cable_rope._init_points()
+	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
+
+	if not _pending_port_restore.is_empty():
+		var sys: RetroSystem = _pending_port_restore.get("system")
+		var idx: int = _pending_port_restore.get("port_index", -1)
+		_pending_port_restore = {}
+		if is_instance_valid(sys) and idx >= 0:
+			sys.restore_controller_plug(idx, _cable_plug)
+
+
+# ── Port events (duck-typed contract used by RetroSystem) ────────────────────
+
+func on_plugged_in(system: RetroSystem, port_index: int) -> void:
+	_connected_system = system
+	_port_index = port_index
+	print("[RetroMouse] plugged into system port %d" % port_index)
+
+
+func on_unplugged() -> void:
+	print("[RetroMouse] unplugged from port %d" % _port_index)
+	_connected_system = null
+	_port_index = -1
+
+
+func restore_port_connection(system: RetroSystem, port_index: int) -> void:
+	if _cable_plug != null:
+		system.restore_controller_plug(port_index, _cable_plug)
+	else:
+		_pending_port_restore = {"system": system, "port_index": port_index}
+
+
+## Toggle the floating settings panel (sensitivity slider). Called by
+## SpawnMenuController when the menu button is pressed while pointing here.
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel == null:
+		_options_panel = OPTIONS_PANEL_SCENE.instantiate()
+		add_child(_options_panel)
+	if _options_panel.visible:
+		_options_panel.hide_panel()
+	else:
+		_options_panel.show_for(self, camera)
+
+
+# ── Hold tracking ─────────────────────────────────────────────────────────────
+
+func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
+	var pickup := by as XRToolsFunctionPickup
+	var ctrl := pickup.get_controller() if pickup else null as XRController3D
+	if ctrl:
+		_holding_ctrl = ctrl
+	elif by.is_in_group("desktop_hand"):
+		_desktop_held = true
+
+
+func _on_dropped_signal(_pickable: Node3D) -> void:
+	_holding_ctrl = null
+	_desktop_held = false
+	_unstick()
+
+
+# ── Sticky surface ────────────────────────────────────────────────────────────
+
+func _physics_process(_delta: float) -> void:
+	# Cable rope clamp (same as RetroController).
+	if _cable_plug != null and _cable_attach_point != null and _max_rope_length > 0.0 \
+			and not _cable_plug.is_picked_up() and _connected_system == null:
+		var attach_pos := _cable_attach_point.global_position
+		var diff := _cable_plug.global_position - attach_pos
+		var dist := diff.length()
+		if dist > _max_rope_length:
+			var dir := diff / dist
+			_cable_plug.global_position = attach_pos + dir * _max_rope_length
+			var outward := dir.dot(_cable_plug.linear_velocity)
+			if outward > 0.0:
+				_cable_plug.linear_velocity -= dir * outward
+
+	_update_sticky()
+
+
+func _update_sticky() -> void:
+	var held := is_picked_up() and (is_instance_valid(_holding_ctrl) or _desktop_held)
+	if not held:
+		if _stuck:
+			_unstick()
+		return
+
+	if not _stuck:
+		_ray.force_raycast_update()
+		if _ray.is_colliding() \
+				and global_position.distance_to(_ray.get_collision_point()) <= STICK_ON:
+			_stick(_ray.get_collision_point(), _ray.get_collision_normal())
+
+	if _stuck:
+		# Break only when the HAND (the body follows it) pulls past the
+		# threshold — micro lifts stay glued and invisible.
+		if absf(_plane.distance_to(global_position)) > STICK_BREAK:
+			_unstick()
+			return
+		var before := _visual.global_position
+		_apply_stick_visual()
+		var delta3 := _visual.global_position - before
+		# Express plane travel in the mouse's own frame: +x right, +y toward
+		# the user (libretro mouse +y = cursor down = pulling the mouse back).
+		var right := _visual.global_transform.basis.x
+		var fwd := -_visual.global_transform.basis.z
+		_accum += Vector2(delta3.dot(right), -delta3.dot(fwd))
+
+
+func _stick(point: Vector3, normal: Vector3) -> void:
+	_stuck = true
+	_plane = Plane(normal.normalized(), point)
+	_visual.top_level = true
+	_apply_stick_visual()
+	_accum = Vector2.ZERO
+
+
+func _unstick() -> void:
+	if not _stuck:
+		return
+	_stuck = false
+	# Snap the visual back to the hand's true position.
+	_visual.top_level = false
+	_visual.transform = Transform3D.IDENTITY
+	_accum = Vector2.ZERO
+
+
+## Place the visual at the hand's position projected onto the surface plane,
+## flattened so the mouse sits on the surface with the hand's yaw.
+func _apply_stick_visual() -> void:
+	var n := _plane.normal
+	var pos := _plane.project(global_position)
+	var fwd := -global_transform.basis.z
+	fwd = fwd - n * fwd.dot(n)
+	if fwd.length_squared() < 0.0001:
+		fwd = Vector3.FORWARD - n * Vector3.FORWARD.dot(n)
+	fwd = fwd.normalized()
+	_visual.global_transform = Transform3D(
+		Basis(fwd.cross(n), n, -fwd).orthonormalized(), pos + n * 0.001)
+
+
+# ── Input reporting ───────────────────────────────────────────────────────────
+
+func _process(_delta: float) -> void:
+	if _connected_system == null or _port_index < 0:
+		return
+
+	var move := _accum * sensitivity + _carry
+	_accum = Vector2.ZERO
+	var dx := int(move.x)
+	var dy := int(move.y)
+	_carry = move - Vector2(dx, dy)
+	var buttons := _poll_buttons()
+
+	# Netplay: mouse deltas ride the deterministic schedule through the same
+	# seam as joypads — dx/dy packed into the analog-left slots. "drain": the
+	# session zeroes the deltas after the first scheduled frame consumes them
+	# (deltas are per-frame quantities, unlike held joypad state). The emu
+	# thread routes them to the mouse device because the port's device type is
+	# RETRO_DEVICE_MOUSE.
+	if NetworkManager.netplay_route(_connected_system, _port_index,
+			{"btn": buttons, "alx": dx, "aly": dy, "arx": 0, "ary": 0, "drain": true}):
+		_last_buttons = buttons
+		return
+
+	if dx != 0 or dy != 0 or buttons != _last_buttons:
+		_connected_system.get_libretro_node().SetMouseState(_port_index, dx, dy, buttons)
+		_last_buttons = buttons
+
+
+func _poll_buttons() -> int:
+	var b := 0
+	if is_instance_valid(_holding_ctrl):
+		if _holding_ctrl.get_float("trigger") > 0.5:
+			b |= MOUSE_BTN_LEFT
+		if _holding_ctrl.get_float("ax_button") > 0.5:
+			b |= MOUSE_BTN_RIGHT
+		if _holding_ctrl.get_float("by_button") > 0.5:
+			b |= MOUSE_BTN_MIDDLE
+	elif _desktop_held:
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			b |= MOUSE_BTN_LEFT
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			b |= MOUSE_BTN_RIGHT
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+			b |= MOUSE_BTN_MIDDLE
+	return b

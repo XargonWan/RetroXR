@@ -287,6 +287,19 @@ func netplay_schedule_disk(system: Object, op: int, md5: String, index: int) -> 
 		_netplay.schedule_disk_op(system, op, md5, index)
 
 
+## Aux input feeds for the running netplay game (port-0 owner only): tilt
+## sensor in milli-g and touch pointer. Both ride the deterministic frame
+## schedule so every peer's core sees identical values on identical frames.
+func netplay_set_aux_sensor(system: Object, x_mg: int, y_mg: int, z_mg: int) -> void:
+	if _netplay != null:
+		_netplay.set_aux_sensor(system, x_mg, y_mg, z_mg)
+
+
+func netplay_set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
+	if _netplay != null:
+		_netplay.set_aux_pointer(system, px, py, pressed)
+
+
 ## Round-trip time in ms to peer `id` as known locally, or -1 when unknown.
 ## The host knows every client's RTT; a client only knows its RTT to the host.
 func ping_ms(id: int) -> int:

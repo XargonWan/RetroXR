@@ -93,7 +93,9 @@ func _unhandled_input(event: InputEvent) -> void:
 						# so the user doesn't need Ctrl for those.
 						# FPS-snap objects (ray gun) require Ctrl+click to drop because
 						# plain left-click is the shoot/trigger action while the gun is held.
-						if mbe.ctrl_pressed or not _is_fps_snap():
+						# Objects with desktop_ctrl_drop (mouse) do too — plain click is
+						# their own LEFT button while held.
+						if mbe.ctrl_pressed or not (_is_fps_snap() or _needs_ctrl_drop()):
 							_drop()
 							get_viewport().set_input_as_handled()
 					else:
@@ -183,6 +185,12 @@ func _on_pivot_drop_object() -> void:
 ## Returns true when the held object wants FPS-snap positioning.
 func _is_fps_snap() -> bool:
 	return _held_object != null and _held_object.get("desktop_fps_snap")
+
+
+## True when the held object claims plain left-click as its own input
+## (RetroMouse) — dropping then needs Ctrl+click, like the ray gun.
+func _needs_ctrl_drop() -> bool:
+	return _held_object != null and bool(_held_object.get("desktop_ctrl_drop"))
 
 
 func _update_reticle_highlight() -> void:

@@ -854,6 +854,7 @@ func _build_spawn_view() -> Control:
 	_add_spawn_tab(tabs, "Controllers", [
 		["Regular Controller", "retro_controller"],
 		["Ray Gun",            "ray_gun"],
+		["Mouse",              "retro_mouse"],
 	])
 
 	# Refresh on tab switch — picks up files added to disk since last open

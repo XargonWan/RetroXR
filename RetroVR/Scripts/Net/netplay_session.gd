@@ -65,6 +65,17 @@ var _pending: Dictionary = {}
 var _running := false
 var _join_paused := false                # host: pipeline frozen for a late join
 
+# Aux input (sensor tilt + touch pointer, port 0) — part of the deterministic
+# frame payload: [flags, sx, sy, sz (milli-g), px, py, pressed]. flags bit0 =
+# sensor valid, bit1 = pointer valid. Only the port-0 owner supplies it.
+const AUX_INTS := 7
+var _local_aux: Array = [0, 0, 0, 0, 0, 0, 0]
+var _local_aux_by_frame: Dictionary = {}   # frame -> Array(7) (redundant resend)
+var _recv_aux: Dictionary = {}             # host: frame -> Array(7)
+# Ports whose scheduled values are per-frame DELTAS (mouse dx/dy): zeroed after
+# the first scheduled frame consumes them, unlike held joypad state.
+var _drain_ports: Dictionary = {}          # port -> true
+
 # Scheduling / assembly.
 var _sched_frame := 0                    # next frame to schedule local input for
 var _next_post := 0                      # next frame to feed the local core
@@ -313,6 +324,10 @@ func _reset_runtime(start_frame: int) -> void:
 	_spectators.clear()
 	_joining.clear()
 	_pending.clear()
+	_local_aux = [0, 0, 0, 0, 0, 0, 0]
+	_local_aux_by_frame.clear()
+	_recv_aux.clear()
+	_drain_ports.clear()
 	_running = false
 	_join_paused = false
 
@@ -336,6 +351,10 @@ func route(system: Object, port: int, m: Dictionary) -> bool:
 		_pending_local_route[port] = [
 			int(m.get("btn", 0)), int(m.get("alx", 0)), int(m.get("aly", 0)),
 			int(m.get("arx", 0)), int(m.get("ary", 0))]
+		# Delta devices (mouse): their values are per-frame quantities — mark
+		# the port so _capture_local zeroes the deltas after one frame uses them.
+		if m.get("drain", false):
+			_drain_ports[port] = true
 	# Participating port (local or remote-owned) is driven by the gate — swallow.
 	return true
 
@@ -343,8 +362,32 @@ func route(system: Object, port: int, m: Dictionary) -> bool:
 func _capture_local() -> Dictionary:
 	var out := {}
 	for port: int in _local_ports:
-		out[port] = _pending_local_route.get(port, [0, 0, 0, 0, 0])
+		var vals: Array = _pending_local_route.get(port, [0, 0, 0, 0, 0])
+		out[port] = vals
+		# Deltas are consumed by the first scheduled frame; later frames get
+		# zero motion (buttons persist — they are held state).
+		if _drain_ports.has(port):
+			_pending_local_route[port] = [vals[0], 0, 0, 0, 0]
 	return out
+
+
+## Aux feeds from the game system (only meaningful on the port-0 owner).
+func set_aux_sensor(system: Object, x_mg: int, y_mg: int, z_mg: int) -> void:
+	if system != _system or not _local_ports.has(0):
+		return
+	_local_aux[0] = int(_local_aux[0]) | 1
+	_local_aux[1] = x_mg
+	_local_aux[2] = y_mg
+	_local_aux[3] = z_mg
+
+
+func set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
+	if system != _system or not _local_ports.has(0):
+		return
+	_local_aux[0] = int(_local_aux[0]) | 2
+	_local_aux[4] = px
+	_local_aux[5] = py
+	_local_aux[6] = 1 if pressed else 0
 
 
 # ── Port handoff (pass-me: hand a controller to another player) ────────────────
@@ -526,9 +569,13 @@ func _schedule_local() -> void:
 		_apply_pending_transfers(_sched_frame)
 		var inp := _capture_local()
 		_local_inputs[_sched_frame] = inp
+		if _local_ports.has(0):
+			_local_aux_by_frame[_sched_frame] = _local_aux.duplicate()
 		if _nm.is_host():
 			for port: int in inp:
 				_recv_put(_sched_frame, port, inp[port])
+			if _local_ports.has(0):
+				_recv_aux[_sched_frame] = _local_aux.duplicate()
 		_sched_frame += 1
 	if not _nm.is_host():
 		_send_local_window()
@@ -552,6 +599,7 @@ func _send_local_window() -> void:
 		buf.put_u8(inp.size())
 		for port: int in inp:
 			_put_port(buf, port, inp[port])
+		_put_aux(buf, _local_aux_by_frame.get(f, [0, 0, 0, 0, 0, 0, 0]))
 	_np_input.rpc_id(1, buf.data_array)
 
 
@@ -581,6 +629,12 @@ func _np_input(bytes: PackedByteArray) -> void:
 			# pending handoff), and only for frames not yet assembled.
 			if _owner_for_frame(port, f) == sender and f > _complete_upto:
 				_recv_put(f, port, vals)
+		if buf.get_available_bytes() < 15:
+			return
+		var aux := _get_aux(buf)
+		# Aux (tilt/touch) rides with the port-0 owner packets.
+		if _owner_for_frame(0, f) == sender and f > _complete_upto:
+			_recv_aux[f] = aux
 
 
 func _host_assemble() -> void:
@@ -589,7 +643,7 @@ func _host_assemble() -> void:
 		var f := _complete_upto + 1
 		if not _frame_ready(f):
 			break
-		_frames[f] = _flat_from_ports(_recv.get(f, {}))
+		_frames[f] = _flat_from_frame(_recv.get(f, {}), _recv_aux.get(f, [0, 0, 0, 0, 0, 0, 0]))
 		_complete_upto = f
 		changed = true
 	if changed:
@@ -625,6 +679,7 @@ func _broadcast_frames() -> void:
 			buf.put_u16(int(flat[base]) & 0xFFFF)
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
+		_put_aux(buf, [flat[20], flat[21], flat[22], flat[23], flat[24], flat[25], flat[26]])
 	_np_frame.rpc(buf.data_array)
 
 
@@ -647,17 +702,20 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 		return
 	var nframes := buf.get_u8()
 	for _i in range(nframes):
-		var need := 4 + _all_ports.size() * 10
+		var need := 4 + _all_ports.size() * 10 + 15
 		if buf.get_available_bytes() < need:
 			return
 		var f := int(buf.get_u32())
 		var flat := PackedInt32Array()
-		flat.resize(20)
+		flat.resize(20 + AUX_INTS)
 		for port in _all_ports:
 			var base := port * 5
 			flat[base] = buf.get_u16()
 			flat[base + 1] = buf.get_16(); flat[base + 2] = buf.get_16()
 			flat[base + 3] = buf.get_16(); flat[base + 4] = buf.get_16()
+		var aux := _get_aux(buf)
+		for i in range(AUX_INTS):
+			flat[20 + i] = int(aux[i])
 		if f >= _next_post and not _frames.has(f):
 			_frames[f] = flat
 
@@ -717,6 +775,7 @@ func _np_frame_req(frame: int) -> void:
 			buf.put_u16(int(flat[base]) & 0xFFFF)
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
+		_put_aux(buf, [flat[20], flat[21], flat[22], flat[23], flat[24], flat[25], flat[26]])
 	_np_frame_reliable.rpc_id(sender, buf.data_array)
 
 
@@ -732,6 +791,7 @@ func _np_input_req(frame: int) -> void:
 	buf.put_u8(inp.size())
 	for port: int in inp:
 		_put_port(buf, port, inp[port])
+	_put_aux(buf, _local_aux_by_frame.get(frame, [0, 0, 0, 0, 0, 0, 0]))
 	_np_input.rpc_id(1, buf.data_array)
 
 
@@ -915,14 +975,17 @@ func _recv_put(frame: int, port: int, vals: Array) -> void:
 	_recv[frame][port] = vals
 
 
-func _flat_from_ports(pm: Dictionary) -> PackedInt32Array:
+## Assembled frame: 4 ports x 5 ints + aux [flags, sx, sy, sz, px, py, pressed].
+func _flat_from_frame(pm: Dictionary, aux: Array) -> PackedInt32Array:
 	var flat := PackedInt32Array()
-	flat.resize(20)
+	flat.resize(20 + AUX_INTS)
 	for port: int in pm:
 		var v: Array = pm[port]
 		var base := port * 5
 		for i in range(5):
 			flat[base + i] = int(v[i])
+	for i in range(AUX_INTS):
+		flat[20 + i] = int(aux[i])
 	return flat
 
 
@@ -935,6 +998,28 @@ func _put_port(buf: StreamPeerBuffer, port: int, v: Array) -> void:
 
 func _get_port(buf: StreamPeerBuffer) -> Array:
 	return [buf.get_u16(), buf.get_16(), buf.get_16(), buf.get_16(), buf.get_16()]
+
+
+## Aux wire block (15 bytes): u8 flags, 3x s16 sensor milli-g, 2x s16 pointer,
+## u8 pressed, u8 reserved.
+func _put_aux(buf: StreamPeerBuffer, aux: Array) -> void:
+	buf.put_u8(int(aux[0]) & 0xFF)
+	buf.put_16(int(aux[1])); buf.put_16(int(aux[2])); buf.put_16(int(aux[3]))
+	buf.put_16(int(aux[4])); buf.put_16(int(aux[5]))
+	buf.put_u8(1 if int(aux[6]) != 0 else 0)
+	buf.put_u8(0)
+
+
+func _get_aux(buf: StreamPeerBuffer) -> Array:
+	var flags := buf.get_u8()
+	var sx := buf.get_16()
+	var sy := buf.get_16()
+	var sz := buf.get_16()
+	var px := buf.get_16()
+	var py := buf.get_16()
+	var pressed := buf.get_u8()
+	buf.get_u8()
+	return [flags, sx, sy, sz, px, py, pressed]
 
 
 func _prune() -> void:
@@ -958,6 +1043,12 @@ func _prune() -> void:
 	for f: int in _crc_table.keys():
 		if f < floor_frame:
 			_crc_table.erase(f)
+	for f: int in _local_aux_by_frame.keys():
+		if f < floor_frame:
+			_local_aux_by_frame.erase(f)
+	for f: int in _recv_aux.keys():
+		if f < floor_frame:
+			_recv_aux.erase(f)
 
 
 func _self_id() -> int:

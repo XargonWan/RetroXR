@@ -327,12 +327,17 @@ func _process(_delta: float) -> void:
 	# accelerometer for tilt carts (WarioWare Twisted, Kirby Tilt 'n' Tumble).
 	# libretro frame: X = screen-right, Y = screen-top, Z = out of the screen;
 	# at rest flat (screen up) = (0,0,1) g. Our shell: screen normal = +Y,
-	# screen-top = -Z, screen-right = +X. Skipped during netplay — sensor
-	# values are not part of the deterministic input stream.
-	if _model != null and _model.is_handheld() and is_powered_on \
-			and not NetworkManager.netplay_running():
+	# screen-top = -Z, screen-right = +X. During netplay the tilt rides the
+	# deterministic frame schedule (aux block, supplied by the port-0 owner)
+	# instead of feeding the core directly.
+	if _model != null and _model.is_handheld() and is_powered_on:
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
-		_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
+		if NetworkManager.netplay_running():
+			if NetworkManager.netplay_system() == self:
+				NetworkManager.netplay_set_aux_sensor(self,
+					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
+		else:
+			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
 	_update_disc_spin(_delta)
 
 
@@ -356,15 +361,17 @@ func _update_disc_spin(delta: float) -> void:
 ## Touch-screen feed (dual-screen handhelds): uv is a point in the COMPOSITE
 ## core framebuffer (both screens), 0..1 — the model converts a poke on its
 ## bottom screen through its UV window. RETRO_DEVICE_POINTER is how melonDS/
-## citra take touch input. Skipped during netplay — pointer state is not part
-## of the deterministic input stream (same limitation as the tilt sensor).
+## citra take touch input. During netplay the touch rides the deterministic
+## frame schedule (aux block, supplied by the port-0 owner).
 func feed_touch(uv: Vector2, pressed: bool) -> void:
 	if _libretro == null or not is_powered_on:
 		return
-	if NetworkManager.netplay_running():
-		return
 	var px := int(clampf(uv.x, 0.0, 1.0) * 65534.0) - 32767
 	var py := int(clampf(uv.y, 0.0, 1.0) * 65534.0) - 32767
+	if NetworkManager.netplay_running():
+		if NetworkManager.netplay_system() == self:
+			NetworkManager.netplay_set_aux_pointer(self, px, py, pressed)
+		return
 	_libretro.SetPointerState(0, px, py, pressed)
 
 

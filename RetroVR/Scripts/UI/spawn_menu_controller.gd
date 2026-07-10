@@ -13,6 +13,7 @@ const DISC_SCENE            := preload("res://Scenes/Objects/disc.tscn")
 const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
+const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/retro_mouse.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
@@ -28,6 +29,7 @@ const SPAWN_Y := {
 	"book":             0.80,
 	"trash_can":        0.90,
 	"retro_controller": 0.80,
+	"retro_mouse":      0.78,
 	"ray_gun":          0.82,
 	"vcr_player":       0.80,
 	"tape":             0.78,
@@ -406,7 +408,7 @@ func _get_pointed_options_host(pointer: XRToolsFunctionPointer) -> Node3D:
 		# If the pointer is inside any viewport, it's a UI click — not an object click
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV:
+		if node is RetroSystem or node is VCRPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV or node is RetroMouse:
 			return node as Node3D
 		node = node.get_parent()
 	return null
@@ -440,7 +442,7 @@ func _options_host_from_target(tgt: Node3D) -> Node3D:
 	while node:
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV:
+		if node is RetroSystem or node is VCRPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV or node is RetroMouse:
 			return node as Node3D
 		node = node.get_parent()
 	return null
@@ -645,6 +647,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = MEMCARD_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
+		"retro_mouse":
+			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
 		"ray_gun":
 			var gun := RAY_GUN_SCENE.instantiate() as RayGun
 			gun.show_laser_dot = _aim_crosshair_enabled
