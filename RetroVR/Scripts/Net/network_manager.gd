@@ -278,6 +278,15 @@ func netplay_handoff(controller: Object, peer_id: int) -> void:
 		_netplay.handoff_controller(controller, peer_id)
 
 
+## Host: frame-schedule a disc eject/swap for the running netplay game so
+## every peer's core applies it on the same frame. op 0 = eject, op 1 =
+## replace image `index` with the disc whose md5 matches (resolved locally
+## on each peer — disc files are never transferred).
+func netplay_schedule_disk(system: Object, op: int, md5: String, index: int) -> void:
+	if _netplay != null:
+		_netplay.schedule_disk_op(system, op, md5, index)
+
+
 ## Round-trip time in ms to peer `id` as known locally, or -1 when unknown.
 ## The host knows every client's RTT; a client only knows its RTT to the host.
 func ping_ms(id: int) -> int:

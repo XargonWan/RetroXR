@@ -89,6 +89,14 @@ var _slot_ejecting := false    # LOADER_SLOT: slide-out animation in flight
 var _tray_lid_pivot: Node3D = null
 var _tray_tween: Tween = null
 
+# --- Disk control (multi-disc games: FF7 "insert disc 2") ---
+# Mirrors the core's libretro disk-control state (disk_control_ready signal).
+# When the running core owns the interface, pulling the disc hot-ejects
+# (game keeps running) and inserting the next disc swaps it in live.
+var _has_disk_control := false
+var _disc_index := 0
+var _disc_ejected := false
+
 
 @onready var _system_body: MeshInstance3D = $SystemBody
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
@@ -126,6 +134,7 @@ func _ready() -> void:
 	_eject_button.button_pressed.connect(_on_eject_pressed)
 	_libretro.options_ready.connect(_on_options_ready)
 	_libretro.rumble_state_changed.connect(_on_rumble_state_changed)
+	_libretro.disk_control_ready.connect(_on_disk_control_ready)
 	# Wire controller port snap signals
 	for i in range(4):
 		var idx := i
@@ -416,6 +425,9 @@ func power_on() -> void:
 		asp.panning_strength = audio_panning_strength
 	is_powered_on = true
 	_model.on_power_on()
+	# Learn whether this core exposes the disk-control interface (multi-disc
+	# swap); the command drains after retro_load_game, so the answer is real.
+	_libretro.RequestDiskInfo()
 
 
 ## Power off: stop the running core
@@ -430,6 +442,9 @@ func power_off() -> void:
 			ctrl.set_rumble(0.0, 0.0)
 	_libretro.StopContent()
 	is_powered_on = false
+	_has_disk_control = false
+	_disc_index = 0
+	_disc_ejected = false
 	_options_panel.hide_panel()
 	_model.on_power_off()
 
@@ -803,6 +818,11 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 		elif _disc_loader == MediaDimensions.LOADER_TRAY and not _tray_open:
 			# Restored/replicated insert with the lid shut — seal it inside.
 			cartridge.set("enabled", false)
+	# Hot swap: a powered disc console with its virtual tray open takes the new
+	# disc without a reboot (multi-disc games — FF7 "insert disc 2").
+	if is_powered_on and _has_disk_control and _disc_ejected \
+			and not rom_path.is_empty() and not NetworkManager.is_event_applying():
+		_request_disk_op(1, rom_path)
 	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
 		{"sys": self, "cart": cartridge})
 
@@ -814,10 +834,50 @@ func _on_cartridge_removed() -> void:
 		_snapped_cartridge = null
 	_disc_spin = 0.0
 	_slot_ejecting = false
+	if is_powered_on and _has_disk_control:
+		# Hot eject: open the core's virtual tray — the game keeps running and
+		# waits for the next disc. rom_path stays mounted (the disc image is
+		# still what the core is running).
+		if not NetworkManager.is_event_applying():
+			_request_disk_op(0, "")
+		NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})
+		return
 	if is_powered_on:
 		power_off()
 	rom_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})
+
+
+## Cached disk-control state from the emulation thread (async signal).
+func _on_disk_control_ready(has_control: bool, _count: int, current_index: int,
+		ejected: bool) -> void:
+	_has_disk_control = has_control
+	_disc_index = current_index
+	_disc_ejected = ejected
+
+
+## Perform a disc op — op 0 = eject (open the core's tray), op 1 = replace the
+## current image with `path` and close the tray. Offline: straight to the core.
+## Netplay: frame-scheduled so every lockstep peer swaps on the same frame
+## (host schedules; clients send intent via EV_DISK_OP).
+func _request_disk_op(op: int, path: String) -> void:
+	if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+		var md5 := "" if path.is_empty() else NetFileTransfer.hash_of(path)
+		if NetworkManager.is_host():
+			NetworkManager.netplay_schedule_disk(self, op, md5, _disc_index)
+		else:
+			NetworkManager.report_event(NetObjectSync.EV_DISK_OP,
+				{"sys": self, "op": op, "md5": md5, "index": _disc_index})
+		# The core-side state flips on the scheduled frame; the mirror updates
+		# via disk_control_ready then.
+		return
+	if op == 0:
+		_libretro.SetDiskEjectState(true)
+		_disc_ejected = true
+	else:
+		_libretro.ReplaceDiskImage(_disc_index, path)
+		_libretro.SetDiskEjectState(false)
+		_disc_ejected = false
 
 
 # --- Disc loader (tray lid / slot loading) ---

@@ -48,6 +48,7 @@ enum {
 	EV_MEMCARD_INSERT,   # {sys, card}
 	EV_MEMCARD_REMOVE,   # {sys}
 	EV_TRAY,             # {sys, open}   disc tray lid opened/closed
+	EV_DISK_OP,          # {sys, op, md5, index}  client disc-swap intent -> host schedules
 }
 
 var _nm: Node = null
@@ -657,6 +658,12 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TRAY:
 			if _valid(a, ["sys"]) and a["sys"].has_method("net_set_tray_open"):
 				a["sys"].net_set_tray_open(bool(a.get("open", false)))
+		EV_DISK_OP:
+			# Client disc-swap intent — the host frame-schedules it for all
+			# peers through the netplay session (system.gd _request_disk_op).
+			if _nm.is_host() and _valid(a, ["sys"]) and _nm.has_method("netplay_schedule_disk"):
+				_nm.netplay_schedule_disk(a["sys"], int(a.get("op", 0)),
+					str(a.get("md5", "")), int(a.get("index", 0)))
 	_applying = false
 
 

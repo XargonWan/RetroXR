@@ -33,6 +33,7 @@ const CRC_STRIKES := 3
 const PRUNE_BEHIND := 120       # keep this many frames behind the gate
 const MAX_AHEAD := 10           # rollback: speculation cap past the confirmed frame
 const TRANSFER_LEAD := 8        # frames ahead a port-ownership handoff is scheduled
+const DISK_LEAD := 8            # frames ahead a disc eject/swap is scheduled
 
 signal desync_detected(peer_id: int, frame: int)
 signal session_stopped(reason: String)
@@ -424,6 +425,55 @@ func _apply_pending_transfers(f: int) -> void:
 			_owners[port] = int(p["new"])
 			p["applied"] = true
 			_recompute_local_ports()
+
+
+# ── Disc swap (multi-disc games during netplay) ────────────────────────────────
+# A disc eject/replace changes deterministic core state, so every peer applies
+# it on the SAME frame: the host picks a frame safely ahead of the pipeline and
+# broadcasts; each peer resolves the disc by md5 locally (never transferred)
+# and hands it to the C++ gate (ScheduleDiscOp), which applies it strictly
+# before running that frame. Lockstep only, same as port handoffs.
+
+## Host: schedule a disc op for this session's system. op 0 = eject,
+## op 1 = replace the image at `index` with the disc whose md5 matches.
+func schedule_disk_op(system: Object, op: int, md5: String, index: int) -> void:
+	if not _nm.is_host() or not _running or _rollback or system != _system:
+		return
+	var frame := _complete_upto + _delay + DISK_LEAD
+	print("[Netplay] disc op %d (md5 %s…) @frame %d" % [op, md5.left(8), frame])
+	_np_disk.rpc(op, md5, index, frame)
+	_apply_disk_op(op, md5, index, frame)
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_disk(op: int, md5: String, index: int, frame: int) -> void:
+	_apply_disk_op(op, md5, index, frame)
+
+
+func _apply_disk_op(op: int, md5: String, index: int, frame: int) -> void:
+	if _lib == null or not _lib.has_method("ScheduleDiscOp"):
+		return
+	var path := ""
+	if op == 1:
+		path = _resolve_disk_path(md5)
+		if path.is_empty():
+			# No local copy of the new disc — this peer will desync at the
+			# swap frame; the CRC checker's savestate resync (or spectator
+			# demotion) takes it from there.
+			push_warning("[Netplay] disc swap: no local file for md5 %s…" % md5.left(8))
+			return
+	_lib.ScheduleDiscOp(frame, op, index, path)
+
+
+## Find this peer's byte-identical copy of the new disc (verify-only, never
+## transferred — same policy as ROMs at cold start).
+func _resolve_disk_path(md5: String) -> String:
+	if md5.is_empty():
+		return ""
+	if _system != null and _system.has_method("net_resolve_rom") \
+			and _system.net_resolve_rom(md5):
+		return str(_system.get("rom_path"))
+	return ""
 
 
 # ── Per-frame drive ───────────────────────────────────────────────────────────
