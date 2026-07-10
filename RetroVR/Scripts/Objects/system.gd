@@ -822,7 +822,10 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	# disc without a reboot (multi-disc games — FF7 "insert disc 2").
 	if is_powered_on and _has_disk_control and _disc_ejected \
 			and not rom_path.is_empty() and not NetworkManager.is_event_applying():
-		print("[RetroSystem] Hot swap: disc index %d -> %s" % [_disc_index, rom_path])
+		# _disc_index is the core's internal image-list SLOT (get_image_index),
+		# not a disc number — without .m3u the list has one slot (0) and the
+		# swap overwrites the file in it (replace_image_index).
+		print("[RetroSystem] Hot swap: image slot %d -> %s" % [_disc_index, rom_path])
 		_request_disk_op(1, rom_path)
 	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
 		{"sys": self, "cart": cartridge})
