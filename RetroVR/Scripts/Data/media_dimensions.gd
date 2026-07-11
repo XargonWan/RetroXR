@@ -47,9 +47,10 @@ const LOADER_NONE := 0   # cartridge system — no disc loader
 const LOADER_TRAY := 1   # lid/tray: OPEN button gates insert/remove (PS1, GameCube…)
 const LOADER_SLOT := 2   # slot-load: disc injects on insert, EJECT slides it out (PS2)
 
-## Systems that slot-load instead of using a lid/tray.
+## Systems that slot-load instead of using a lid/tray (PS2 disc slot, PSP UMD).
 const SLOT_LOAD_SYSTEMS: Dictionary = {
 	"playstation2": true,
+	"playstation_portable": true,
 }
 
 

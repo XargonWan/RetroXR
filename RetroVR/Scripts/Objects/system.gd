@@ -173,7 +173,15 @@ func _load_system_model() -> void:
 	_model.configure_controller_ports(_port_zones)
 	_model.configure_cable_attach(_cable_attach_point)
 	_model.configure_cartridge_slot(_cartridge_slot)
+	# Native controller ports: prefer the per-system SystemInfo descriptor (the
+	# real console's built-in port count) over the model's default, clamped to
+	# the cabinet's available snap zones. A multitap plugged into a port extends
+	# players beyond this on its own.
 	var port_count := _model.get_controller_port_count()
+	var info := SystemInfo.for_system(systemid)
+	if info and info.native_ports > 0:
+		port_count = info.native_ports
+	port_count = clampi(port_count, 1, _port_zones.size())
 	for i in range(_port_zones.size()):
 		var active := i < port_count
 		_port_zones[i].visible = active
