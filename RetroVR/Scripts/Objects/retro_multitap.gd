@@ -47,23 +47,39 @@ func _ready() -> void:
 	grabbed.connect(func(_p: Node3D, _by: Node3D) -> void: pass)
 
 
-## Four sub-port snap zones spaced across the front face of the adapter.
+## Four sub-port snap zones across the FRONT face of the adapter, each with a
+## recessed port box and a number label below it — matching the console's own
+## controller ports (system.tscn ControllerPort#).
+const PORT_XS := [-0.09, -0.03, 0.03, 0.09]  # front-face X positions (metres)
+const PORT_FACE_Z := 0.03                     # front face of the 0.06-deep body
+
 func _build_ports() -> void:
-	var spacing := 0.055
-	var x0 := -spacing * (SUB_PORTS - 1) / 2.0
+	var recess_mat := StandardMaterial3D.new()
+	recess_mat.albedo_color = Color(0.08, 0.08, 0.08)
 	for i in range(SUB_PORTS):
 		var zone: XRToolsSnapZone = SNAP_ZONE_SCENE.instantiate()
 		zone.snap_require = "controller_plug"
 		zone.grab_distance = 0.03
 		_ports_root.add_child(zone)
-		zone.position = Vector3(x0 + i * spacing, 0.0, 0.0)
+		zone.position = Vector3(PORT_XS[i], 0.006, PORT_FACE_Z)
+
+		# Recessed port box on the front face (dark inset, like the console).
+		var recess := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.018, 0.012, 0.005)
+		recess.mesh = box
+		recess.set_surface_override_material(0, recess_mat)
+		zone.add_child(recess)
+
+		# Number label just below the port, billboarded to face the player.
 		var lbl := Label3D.new()
 		lbl.text = str(i + 1)
 		lbl.pixel_size = 0.001
 		lbl.font_size = 14
-		lbl.rotation_degrees = Vector3(-90, 0, 0)
-		lbl.position = Vector3(x0 + i * spacing, 0.006, -0.03)
-		_ports_root.add_child(lbl)
+		lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		lbl.position = Vector3(0, -0.018, 0.006)
+		zone.add_child(lbl)
+
 		var idx := i
 		zone.has_picked_up.connect(func(obj: Node3D) -> void: _on_sub_snapped(idx, obj))
 		zone.has_dropped.connect(func(obj: Node3D) -> void: _on_sub_released(idx, obj))
@@ -127,7 +143,8 @@ func _add_cable_to_scene() -> void:
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
 	_cable_plug.set_controller(self)
 	_cable_plug.add_collision_exception_with(self)
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, 0.12)
+	# Cable exits the back of the adapter (ports are on the front).
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
 	_cable_rope._init_points()
