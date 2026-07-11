@@ -18,23 +18,36 @@ const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.t
 const RETRO_DEVICE_KEYBOARD := 3
 
 # Key grid geometry (board-local metres). X = right, Z = toward the user.
-const KEY_PITCH := 0.026
-const KEY_SIZE := 0.023
+const KEY_PITCH := 0.021       # 1u - full-size 104-key board is ~50 cm wide
+const KEY_GAP := 0.0025        # spacing between caps
 const KEY_TOP_Y := 0.014       # resting key-cap top
-const PRESS_TRAVEL := 0.006    # cap sink when pressed
+const PRESS_TRAVEL := 0.005    # cap sink when pressed
 const TOUCH_MAX_Y := 0.06      # controller tip must be within this above caps
 const PRESS_Y := 0.010         # tip below this (board-local) = pressed
 
 # RETROK_* keycodes (libretro.h).
 const RK := {
-	"esc": 27, "bksp": 8, "tab": 9, "return": 13, "space": 32, "lshift": 304,
-	"minus": 45, "equals": 61, "lbracket": 91, "rbracket": 93,
-	"semicolon": 59, "quote": 39, "comma": 44, "period": 46, "slash": 47,
+	"esc": 27, "bksp": 8, "tab": 9, "return": 13, "space": 32, "pause": 19,
+	"minus": 45, "equals": 61, "lbracket": 91, "backslash": 92, "rbracket": 93,
+	"backquote": 96, "semicolon": 59, "quote": 39, "comma": 44, "period": 46,
+	"slash": 47, "delete": 127,
 	"up": 273, "down": 274, "right": 275, "left": 276,
+	"insert": 277, "home": 278, "end": 279, "pgup": 280, "pgdn": 281,
+	"numlock": 300, "capslock": 301, "scrlk": 302,
+	"rshift": 303, "lshift": 304, "rctrl": 305, "lctrl": 306,
+	"ralt": 307, "lalt": 308, "lsuper": 311, "rsuper": 312,
+	"print": 316, "menu": 319,
+	"kp0": 256, "kp1": 257, "kp2": 258, "kp3": 259, "kp4": 260, "kp5": 261,
+	"kp6": 262, "kp7": 263, "kp8": 264, "kp9": 265, "kp_dot": 266,
+	"kp_div": 267, "kp_mul": 268, "kp_minus": 269, "kp_plus": 270,
+	"kp_enter": 271,
 }
 
-## Layout rows: [label, retrok keycode, width in key units].
-## Letters use RETROK a..z = 97..122; digits 0..9 = 48..57.
+## Layout: array of {z: row position in key units, keys: Array}. Each key is
+## [label, retrok, width_u] with optional 4th element height_u (numpad + and
+## Enter are 2 rows tall); a null label = spacer gap. Column plan: main block
+## 0..15u, nav cluster 15.5..18.5u, numpad 19..23u - the standard US ANSI
+## 104-key arrangement.
 var _layout: Array = []
 
 ## libretro device type reported to the system when plugged in.
@@ -84,86 +97,145 @@ func _find_controllers() -> void:
 
 func _build_layout() -> void:
 	_layout = []
-	var row0: Array = [["ESC", RK.esc, 1.0]]
+	var F: Array = []
+	for i in range(12):
+		F.append(["F%d" % (i + 1), 282 + i, 1.0])
+
+	# Function row (z 0): ESC, F1-F4 / F5-F8 / F9-F12 groups, PrtSc/ScrLk/Pause.
+	var func_row: Array = [["ESC", RK.esc, 1.0], [null, 0, 1.0]]
+	func_row += F.slice(0, 4) + [[null, 0, 0.5]] + F.slice(4, 8)
+	func_row += [[null, 0, 0.5]] + F.slice(8, 12)
+	func_row += [[null, 0, 0.5],
+		["PRT", RK.print, 1.0], ["SCR", RK.scrlk, 1.0], ["PAU", RK.pause, 1.0]]
+	_layout.append({"z": 0.0, "keys": func_row})
+
+	# Main rows sit 0.4u below the function row.
+	var digits: Array = [["`", RK.backquote, 1.0]]
 	for d in "1234567890":
-		row0.append([d, d.unicode_at(0), 1.0])
-	row0.append(["-", RK.minus, 1.0])
-	row0.append(["=", RK.equals, 1.0])
-	row0.append(["BKSP", RK.bksp, 1.6])
-	_layout.append(row0)
+		digits.append([d, d.unicode_at(0), 1.0])
+	digits += [["-", RK.minus, 1.0], ["=", RK.equals, 1.0], ["BKSP", RK.bksp, 2.0]]
+	digits += [[null, 0, 0.5],
+		["INS", RK.insert, 1.0], ["HOM", RK.home, 1.0], ["PUP", RK.pgup, 1.0],
+		[null, 0, 0.5],
+		["NUM", RK.numlock, 1.0], ["/", RK.kp_div, 1.0], ["*", RK.kp_mul, 1.0],
+		["-", RK.kp_minus, 1.0]]
+	_layout.append({"z": 1.4, "keys": digits})
 
-	var row1: Array = [["TAB", RK.tab, 1.4]]
+	var qrow: Array = [["TAB", RK.tab, 1.5]]
 	for c in "qwertyuiop":
-		row1.append([c.to_upper(), c.unicode_at(0), 1.0])
-	row1.append(["[", RK.lbracket, 1.0])
-	row1.append(["]", RK.rbracket, 1.0])
-	_layout.append(row1)
+		qrow.append([c.to_upper(), c.unicode_at(0), 1.0])
+	qrow += [["[", RK.lbracket, 1.0], ["]", RK.rbracket, 1.0],
+		["\\", RK.backslash, 1.5]]
+	qrow += [[null, 0, 0.5],
+		["DEL", RK.delete, 1.0], ["END", RK.end, 1.0], ["PDN", RK.pgdn, 1.0],
+		[null, 0, 0.5],
+		["7", RK.kp7, 1.0], ["8", RK.kp8, 1.0], ["9", RK.kp9, 1.0],
+		["+", RK.kp_plus, 1.0, 2.0]]
+	_layout.append({"z": 2.4, "keys": qrow})
 
-	var row2: Array = []
+	var arow: Array = [["CAPS", RK.capslock, 1.75]]
 	for c in "asdfghjkl":
-		row2.append([c.to_upper(), c.unicode_at(0), 1.0])
-	row2.append([";", RK.semicolon, 1.0])
-	row2.append(["'", RK.quote, 1.0])
-	row2.append(["ENTER", RK["return"], 1.8])
-	_layout.append(row2)
+		arow.append([c.to_upper(), c.unicode_at(0), 1.0])
+	arow += [[";", RK.semicolon, 1.0], ["'", RK.quote, 1.0],
+		["ENTER", RK["return"], 2.25]]
+	arow += [[null, 0, 4.0],
+		["4", RK.kp4, 1.0], ["5", RK.kp5, 1.0], ["6", RK.kp6, 1.0]]
+	_layout.append({"z": 3.4, "keys": arow})
 
-	var row3: Array = [["SHIFT", RK.lshift, 1.8]]
+	var zrow: Array = [["SHIFT", RK.lshift, 2.25]]
 	for c in "zxcvbnm":
-		row3.append([c.to_upper(), c.unicode_at(0), 1.0])
-	row3.append([",", RK.comma, 1.0])
-	row3.append([".", RK.period, 1.0])
-	row3.append(["/", RK.slash, 1.0])
-	_layout.append(row3)
+		zrow.append([c.to_upper(), c.unicode_at(0), 1.0])
+	zrow += [[",", RK.comma, 1.0], [".", RK.period, 1.0], ["/", RK.slash, 1.0],
+		["SHIFT", RK.rshift, 2.75]]
+	zrow += [[null, 0, 1.5], ["↑", RK.up, 1.0], [null, 0, 1.5],
+		["1", RK.kp1, 1.0], ["2", RK.kp2, 1.0], ["3", RK.kp3, 1.0],
+		["ENT", RK.kp_enter, 1.0, 2.0]]
+	_layout.append({"z": 4.4, "keys": zrow})
 
-	_layout.append([
-		["SPACE", RK.space, 7.0],
-		["←", RK.left, 1.0], ["↓", RK.down, 1.0],
-		["↑", RK.up, 1.0], ["→", RK.right, 1.0],
-	])
+	var space_row: Array = [
+		["CTRL", RK.lctrl, 1.25], ["WIN", RK.lsuper, 1.25], ["ALT", RK.lalt, 1.25],
+		["SPACE", RK.space, 6.25],
+		["ALT", RK.ralt, 1.25], ["WIN", RK.rsuper, 1.25], ["MENU", RK.menu, 1.25],
+		["CTRL", RK.rctrl, 1.25],
+		[null, 0, 0.5],
+		["←", RK.left, 1.0], ["↓", RK.down, 1.0], ["→", RK.right, 1.0],
+		[null, 0, 0.5],
+		["0", RK.kp0, 2.0], [".", RK.kp_dot, 1.0]]
+	_layout.append({"z": 5.4, "keys": space_row})
 
 
 func _build_keys() -> void:
 	var cap_mat := StandardMaterial3D.new()
 	cap_mat.albedo_color = Color(0.22, 0.22, 0.26)
-	var rows := _layout.size()
-	# Total width from the widest row, to centre everything.
-	var max_w := 0.0
-	for row: Array in _layout:
-		var w := 0.0
-		for k: Array in row:
-			w += float(k[2]) * KEY_PITCH
-		max_w = maxf(max_w, w)
-	var z0 := -(rows * KEY_PITCH) / 2.0
-	for r in range(rows):
-		var row: Array = _layout[r]
-		var row_w := 0.0
-		for k: Array in row:
-			row_w += float(k[2]) * KEY_PITCH
-		var x := -row_w / 2.0
-		for k: Array in row:
+
+	# Board extents from the layout (key units), centred on the body.
+	var max_xu := 0.0
+	var max_zu := 0.0
+	for rowd: Dictionary in _layout:
+		var xu := 0.0
+		var hz := 1.0
+		for k: Array in rowd["keys"]:
+			xu += float(k[2])
+			if k.size() > 3:
+				hz = maxf(hz, float(k[3]))
+		max_xu = maxf(max_xu, xu)
+		max_zu = maxf(max_zu, float(rowd["z"]) + hz)
+	var x0 := -(max_xu * KEY_PITCH) / 2.0
+	var z0 := -(max_zu * KEY_PITCH) / 2.0
+
+	for rowd: Dictionary in _layout:
+		var zr := float(rowd["z"])
+		var x := x0
+		for k: Array in rowd["keys"]:
 			var w := float(k[2]) * KEY_PITCH
+			if k[0] == null:
+				x += w   # spacer gap
+				continue
+			var hu := float(k[3]) if k.size() > 3 else 1.0
+			var d := hu * KEY_PITCH
 			var mesh := MeshInstance3D.new()
 			var box := BoxMesh.new()
-			box.size = Vector3(w - (KEY_PITCH - KEY_SIZE), 0.008, KEY_SIZE)
+			box.size = Vector3(w - KEY_GAP, 0.008, d - KEY_GAP)
 			mesh.mesh = box
 			mesh.set_surface_override_material(0, cap_mat)
-			mesh.position = Vector3(x + w / 2.0, KEY_TOP_Y - 0.004, z0 + (r + 0.5) * KEY_PITCH)
+			var cz := z0 + (zr + hu / 2.0) * KEY_PITCH
+			mesh.position = Vector3(x + w / 2.0, KEY_TOP_Y - 0.004, cz)
 			_key_root.add_child(mesh)
 			var lbl := Label3D.new()
 			lbl.text = str(k[0])
 			lbl.pixel_size = 0.0004
-			lbl.font_size = 24 if str(k[0]).length() == 1 else 14
+			lbl.font_size = 18 if str(k[0]).length() == 1 else 9
 			lbl.rotation_degrees = Vector3(-90, 0, 0)
-			lbl.position = Vector3(x + w / 2.0, KEY_TOP_Y + 0.001, z0 + (r + 0.5) * KEY_PITCH)
+			lbl.position = Vector3(x + w / 2.0, KEY_TOP_Y + 0.001, cz)
 			_key_root.add_child(lbl)
 			_keys.append({
-				"rect": Rect2(x, z0 + r * KEY_PITCH, w, KEY_PITCH),
+				"rect": Rect2(x, z0 + zr * KEY_PITCH, w, d),
 				"keycode": int(k[1]),
 				"mesh": mesh,
 				"base_y": mesh.position.y,
 			})
-			_key_index_by_code[int(k[1])] = _keys.size() - 1
+			# First physical key wins the visual-feedback slot (left modifiers).
+			if not _key_index_by_code.has(int(k[1])):
+				_key_index_by_code[int(k[1])] = _keys.size() - 1
 			x += w
+
+	# Fit the body + collision to the computed grid (the tscn ships a
+	# placeholder size; resources are duplicated so instances never share).
+	var bw := max_xu * KEY_PITCH + 0.024
+	var bd := max_zu * KEY_PITCH + 0.024
+	var base := get_node_or_null("BaseMesh") as MeshInstance3D
+	if base and base.mesh is BoxMesh:
+		var bm := base.mesh.duplicate() as BoxMesh
+		bm.size = Vector3(bw, 0.012, bd)
+		base.mesh = bm
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col and col.shape is BoxShape3D:
+		var shape := col.shape.duplicate() as BoxShape3D
+		shape.size = Vector3(bw, 0.02, bd)
+		col.shape = shape
+	var attach := get_node_or_null("CableAttachPoint") as Node3D
+	if attach:
+		attach.position = Vector3(0, 0.008, -bd / 2.0)
 
 
 # ── Cable (mirrors RetroController) ──────────────────────────────────────────
@@ -308,7 +380,7 @@ func _release_all() -> void:
 func _shift_held() -> bool:
 	for name_key: String in _hand_pressed:
 		var idx: int = _hand_pressed[name_key]
-		if idx >= 0 and int(_keys[idx]["keycode"]) == RK.lshift:
+		if idx >= 0 and int(_keys[idx]["keycode"]) in [RK.lshift, RK.rshift]:
 			return true
 	return false
 
