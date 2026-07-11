@@ -43,6 +43,32 @@ const RK := {
 	"kp_enter": 271,
 }
 
+## US layout: keycode -> the CHARACTER produced while shift is held
+## (shift+4 = $, shift+; = :, ...). Letters are handled separately.
+const SHIFT_MAP := {
+	49: 33,   # 1 !
+	50: 64,   # 2 @
+	51: 35,   # 3 #
+	52: 36,   # 4 $
+	53: 37,   # 5 %
+	54: 94,   # 6 ^
+	55: 38,   # 7 &
+	56: 42,   # 8 *
+	57: 40,   # 9 (
+	48: 41,   # 0 )
+	45: 95,   # - _
+	61: 43,   # = +
+	91: 123,  # [ {
+	93: 125,  # ] }
+	92: 124,  # \ |
+	59: 58,   # ; :
+	39: 34,   # ' "
+	44: 60,   # , <
+	46: 62,   # . >
+	47: 63,   # / ?
+	96: 126,  # ` ~
+}
+
 ## Layout: array of {z: row position in key units, keys: Array}. Each key is
 ## [label, retrok, width_u] with optional 4th element height_u (numpad + and
 ## Enter are 2 rows tall); a null label = spacer gap. Column plan: main block
@@ -393,8 +419,11 @@ func _send_key(keycode: int, down: bool) -> void:
 	var character := 0
 	if keycode >= 32 and keycode <= 126:
 		character = keycode
-		if _shift_held() and keycode >= 97 and keycode <= 122:
-			character = keycode - 32   # uppercase letters
+		if _shift_held():
+			if keycode >= 97 and keycode <= 122:
+				character = keycode - 32           # uppercase letters
+			elif SHIFT_MAP.has(keycode):
+				character = int(SHIFT_MAP[keycode])  # US shifted symbols ($, :, ...)
 	# Netplay: key events ride the deterministic frame schedule.
 	if NetworkManager.netplay_queue_key(_connected_system, keycode, down, character):
 		return
