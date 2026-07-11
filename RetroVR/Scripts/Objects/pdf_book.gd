@@ -930,7 +930,7 @@ func _update_hints_and_detect_grip() -> void:
 		if not ctrl or not ctrl.get_is_active() or ctrl == holding_ctrl:
 			continue
 
-		var ctrl_pos_local: Vector3 = to_local(ctrl.global_position)
+		var ctrl_pos_local: Vector3 = to_local(PokeTip.tip_of(ctrl))
 		if absf(ctrl_pos_local.y) > book_height * 0.6:
 			continue
 		if absf(ctrl_pos_local.z) > 0.08:

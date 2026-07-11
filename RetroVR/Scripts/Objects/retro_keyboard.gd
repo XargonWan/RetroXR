@@ -268,7 +268,7 @@ func _scan_hands() -> void:
 		if not is_instance_valid(ctrl) or not (ctrl as XRController3D).get_is_active():
 			continue
 		var name_key := str((ctrl as XRController3D).tracker)
-		var tip: Vector3 = to_local((ctrl as Node3D).global_position)
+		var tip: Vector3 = to_local(PokeTip.tip_of(ctrl as Node3D))
 		var hit := -1
 		if tip.y >= 0.0 and tip.y <= TOUCH_MAX_Y and tip.y < PRESS_Y:
 			hit = _key_at(Vector2(tip.x, tip.z))

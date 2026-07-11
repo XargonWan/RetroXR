@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/controller_model.gd" id="1_ctrlmodel"]
+[ext_resource type="Script" path="res://Scripts/Objects/poke_tip.gd" id="1_poketip"]
 [ext_resource type="PackedScene" uid="uid://b4ysuy43poobf" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="2_pickup"]
 [ext_resource type="PackedScene" uid="uid://cqhw276realc" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="3_pointer"]
 [ext_resource type="PackedScene" uid="uid://diyu06cw06syv" path="res://addons/godot-xr-tools/player/player_body.tscn" id="4_playerbody"]
@@ -78,6 +79,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
 [node name="MovementDirect" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("5_movdirect")]
 strafe = true
 
+[node name="PokeTip" type="Node3D" parent="Staging/XROrigin3D/LeftController"]
+script = ExtResource("1_poketip")
+
 [node name="RightController" type="XRController3D" parent="Staging/XROrigin3D"]
 tracker = &"right_hand"
 script = ExtResource("1_ctrlmodel")
@@ -92,6 +96,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.02, 0.05, -0.1)
 
 [node name="MovementTurn" parent="Staging/XROrigin3D/RightController" instance=ExtResource("6_movturn")]
 turn_mode = 1
+
+[node name="PokeTip" type="Node3D" parent="Staging/XROrigin3D/RightController"]
+script = ExtResource("1_poketip")
 
 [node name="FunctionTeleport" parent="Staging/XROrigin3D/RightController" instance=ExtResource("7_teleport")]
 script = ExtResource("8_stickteleport")

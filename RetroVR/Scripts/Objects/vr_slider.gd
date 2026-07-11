@@ -55,16 +55,16 @@ func _process(_delta: float) -> void:
 	# hysteresis so a jittery hand doesn't flicker on the boundary.
 	if _engaged_ctrl != null:
 		if not is_instance_valid(_engaged_ctrl) or not _engaged_ctrl.get_is_active() \
-				or global_position.distance_to(_engaged_ctrl.global_position) > engage_radius * 1.8:
+				or global_position.distance_to(PokeTip.tip_of(_engaged_ctrl)) > engage_radius * 1.8:
 			_engaged_ctrl = null
 		else:
-			_track_world_point(_engaged_ctrl.global_position)
+			_track_world_point(PokeTip.tip_of(_engaged_ctrl))
 			return
 	for ctrl in _controllers:
 		if ctrl and ctrl.get_is_active() \
-				and global_position.distance_to(ctrl.global_position) <= engage_radius:
+				and global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius:
 			_engaged_ctrl = ctrl
-			_track_world_point(ctrl.global_position)
+			_track_world_point(PokeTip.tip_of(ctrl))
 			return
 
 

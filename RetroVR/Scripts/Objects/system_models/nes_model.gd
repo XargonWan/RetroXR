@@ -67,7 +67,7 @@ func _process(_delta: float) -> void:
 	for ctrl in controllers:
 		if not ctrl is XRController3D:
 			continue
-		var inside: bool = to_local(ctrl.global_position).distance_to(_lid_local_pos) <= _lid_zone_radius
+		var inside: bool = to_local(PokeTip.tip_of(ctrl)).distance_to(_lid_local_pos) <= _lid_zone_radius
 		var was_inside: bool = ctrl in _controllers_in_lid_zone
 		if inside and not was_inside:
 			_controllers_in_lid_zone.append(ctrl)

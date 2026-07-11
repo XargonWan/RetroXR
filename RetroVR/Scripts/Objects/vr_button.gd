@@ -71,7 +71,7 @@ func _process(_delta: float) -> void:
 	for controller in _controllers:
 		if not controller.get_is_active():
 			continue
-		var dist: float = global_position.distance_to(controller.global_position)
+		var dist: float = global_position.distance_to(PokeTip.tip_of(controller))
 		if dist <= trigger_radius:
 			touching = true
 			break

@@ -200,18 +200,18 @@ func _process_fingertip_touch() -> void:
 		return
 	if _touch_ctrl != null:
 		if not is_instance_valid(_touch_ctrl) or not _touch_ctrl.get_is_active() \
-				or not _tip_on_screen(_touch_ctrl.global_position, 1.6):
+				or not _tip_on_screen(PokeTip.tip_of(_touch_ctrl), 1.6):
 			var last := _touch_ctrl
 			_touch_ctrl = null
 			if is_instance_valid(last):
-				_send_touch(last.global_position, false)
+				_send_touch(PokeTip.tip_of(last), false)
 		else:
-			_send_touch(_touch_ctrl.global_position, true)
+			_send_touch(PokeTip.tip_of(_touch_ctrl), true)
 			return
 	for ctrl in _touch_controllers:
-		if ctrl and ctrl.get_is_active() and _tip_on_screen(ctrl.global_position, 1.0):
+		if ctrl and ctrl.get_is_active() and _tip_on_screen(PokeTip.tip_of(ctrl), 1.0):
 			_touch_ctrl = ctrl
-			_send_touch(ctrl.global_position, true)
+			_send_touch(PokeTip.tip_of(ctrl), true)
 			return
 
 
