@@ -5,9 +5,11 @@
 ##
 ## VR typing: the key grid is built procedurally; each hand presses at most the
 ## single nearest key under its controller tip (so a palm can't mash a row).
-## Desktop typing: offline, the OS keyboard already flows through the C++
-## _input path; during netplay this script forwards OS keys into the
-## deterministic schedule instead (the C++ path blocks itself then).
+## Real-keyboard passthrough: while the board is PICKED UP and plugged, a
+## physical keyboard (desktop OS, or a Bluetooth keyboard paired to the Quest)
+## drives it — offline straight to the core, in netplay through the
+## deterministic schedule — and the matching virtual keycaps sink. The raw C++
+## OS-keyboard path is suppressed while this is active (no double feed).
 class_name RetroKeyboard
 extends XRToolsPickable
 
@@ -54,6 +56,10 @@ var _keys: Array = []
 # Currently pressed keycode per hand tracker name ("" -> keycode or -1).
 var _hand_pressed: Dictionary = {}
 var _controllers: Array = []
+# keycode -> key index (visual feedback when a REAL keyboard drives us).
+var _key_index_by_code: Dictionary = {}
+# True while any hand (VR or desktop) holds the board.
+var _held := false
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _key_root: Node3D = $Keys
@@ -66,6 +72,8 @@ func _ready() -> void:
 	_build_layout()
 	_build_keys()
 	_spawn_cable()
+	grabbed.connect(_on_grabbed_signal)
+	dropped.connect(_on_dropped_signal)
 	call_deferred("_find_controllers")
 
 
@@ -154,6 +162,7 @@ func _build_keys() -> void:
 				"mesh": mesh,
 				"base_y": mesh.position.y,
 			})
+			_key_index_by_code[int(k[1])] = _keys.size() - 1
 			x += w
 
 
@@ -191,13 +200,41 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_connected_system = system
 	_port_index = port_index
 	print("[RetroKeyboard] plugged into system port %d" % port_index)
+	_update_os_capture()
 
 
 func on_unplugged() -> void:
 	print("[RetroKeyboard] unplugged from port %d" % _port_index)
 	_release_all()
+	_update_os_capture(true)
 	_connected_system = null
 	_port_index = -1
+
+
+func _on_grabbed_signal(_pickable: Node3D, _by: Node3D) -> void:
+	_held = true
+	_update_os_capture()
+
+
+func _on_dropped_signal(_pickable: Node3D) -> void:
+	_held = false
+	_update_os_capture()
+
+
+## While held AND plugged, this object owns the OS-keyboard feed for its
+## system: real keys (desktop OS keyboard, or a Bluetooth keyboard paired to
+## the Quest) route through here — including into the netplay schedule — and
+## the raw C++ path is suppressed so events aren't double-fed.
+func _os_capture_active() -> bool:
+	return _held and _connected_system != null and _port_index >= 0
+
+
+func _update_os_capture(force_off := false) -> void:
+	if _connected_system == null or not is_instance_valid(_connected_system):
+		return
+	var lib: Libretro = _connected_system.get_libretro_node()
+	if lib and lib.has_method("SetOsKeyboardCapture"):
+		lib.SetOsKeyboardCapture(false if force_off else _os_capture_active())
 
 
 func restore_port_connection(system: RetroSystem, port_index: int) -> void:
@@ -292,20 +329,38 @@ func _send_key(keycode: int, down: bool) -> void:
 	_connected_system.get_libretro_node().SetKeyState(0, keycode, down, character)
 
 
-## Desktop typing during netplay: the C++ OS-keyboard path blocks itself while
-## port 0 is netplay-masked, so forward OS keys into the schedule here.
-## (Offline, C++ handles OS keys directly — don't double-feed.)
+## Real-keyboard passthrough: while this board is PICKED UP and plugged, keys
+## from a physical keyboard (desktop OS, or a Bluetooth keyboard on Quest)
+## drive it — offline straight to the core, during netplay through the
+## deterministic schedule. The matching virtual keycap sinks for feedback.
+## (The C++ raw OS path is suppressed via SetOsKeyboardCapture while active.)
 func _unhandled_key_input(event: InputEvent) -> void:
-	if _connected_system == null or not NetworkManager.netplay_running():
+	if not _os_capture_active():
 		return
 	var key := event as InputEventKey
 	if key == null or key.is_echo():
 		return
-	var keycode := _godot_to_retrok(key.keycode)
+	if _handle_os_key(key.keycode, key.is_pressed(), int(key.unicode)):
+		get_viewport().set_input_as_handled()
+
+
+## Route one real-keyboard transition. Returns true when consumed.
+func _handle_os_key(gd_keycode: int, pressed: bool, unicode: int) -> bool:
+	var keycode := _godot_to_retrok(gd_keycode)
 	if keycode == 0:
-		return
-	var character := int(key.unicode)
-	NetworkManager.netplay_queue_key(_connected_system, keycode, key.is_pressed(), character)
+		return false
+	# Visual: sink the matching virtual keycap.
+	var idx: int = _key_index_by_code.get(keycode, -1)
+	if idx >= 0:
+		var k: Dictionary = _keys[idx]
+		(k["mesh"] as MeshInstance3D).position.y = float(k["base_y"]) - (PRESS_TRAVEL if pressed else 0.0)
+	var character := unicode
+	if character == 0 and keycode >= 32 and keycode <= 126:
+		character = keycode
+	if NetworkManager.netplay_queue_key(_connected_system, keycode, pressed, character):
+		return true
+	_connected_system.get_libretro_node().SetKeyState(0, keycode, pressed, character)
+	return true
 
 
 ## Minimal Godot -> RETROK map for desktop netplay typing (letters, digits,
@@ -335,4 +390,18 @@ static func _godot_to_retrok(gd: int) -> int:
 		KEY_DOWN: return 274
 		KEY_RIGHT: return 275
 		KEY_LEFT: return 276
+		KEY_CTRL: return 306      # LCTRL
+		KEY_ALT: return 308       # LALT
+		KEY_META: return 311      # LSUPER
+		KEY_CAPSLOCK: return 301
+		KEY_INSERT: return 277
+		KEY_DELETE: return 127
+		KEY_HOME: return 278
+		KEY_END: return 279
+		KEY_PAGEUP: return 280
+		KEY_PAGEDOWN: return 281
+		KEY_BACKSLASH: return 92
+		KEY_QUOTELEFT: return 96  # backtick
+	if gd >= KEY_F1 and gd <= KEY_F12:
+		return 282 + (gd - KEY_F1)   # RETROK_F1..F12
 	return 0
