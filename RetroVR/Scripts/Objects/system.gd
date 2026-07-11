@@ -727,7 +727,11 @@ func set_controller_port_device(port: int, device_id: int) -> void:
 		if entry["port"] == port:
 			entry["current_id"] = device_id
 			break
-	_libretro.SetControllerPortDevice(port, device_id)
+	# Guard: a controller can be plugged in before the core is started (or in a
+	# headless probe where the GDExtension isn't loaded). The device selection is
+	# re-applied at core start, so skipping here is safe.
+	if is_instance_valid(_libretro) and _libretro.has_method("SetControllerPortDevice"):
+		_libretro.SetControllerPortDevice(port, device_id)
 
 
 ## Returns the Libretro node so plugged-in controller objects can call input methods on it.
@@ -769,6 +773,41 @@ func _on_port_released(port_index: int, controller: Node3D) -> void:
 		controller.on_unplugged()
 	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG,
 		{"sys": self, "port": port_index})
+
+
+## Attach a controller (by its cable plug) to an EXPANDED libretro port that has
+## no cabinet snap zone — used by a multitap plugged into a native port to fan
+## out to consecutive ports. Mirrors _on_port_snapped without a snap zone.
+## Rumble routing is registered only for ports within _port_controllers; input
+## and device selection work for any port the core supports.
+func attach_expanded_controller(port: int, plug: Node3D) -> void:
+	if port < 0 or not is_instance_valid(plug):
+		return
+	var dev: int = plug.get("device_type") if "device_type" in plug else 1
+	set_controller_port_device(port, dev)
+	var ctrl: Node3D = plug.get_controller() if plug.has_method("get_controller") else plug
+	if port < _port_controllers.size():
+		_port_controllers[port] = ctrl
+	if plug.has_method("on_plugged_in"):
+		plug.on_plugged_in(self, port)
+	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
+		{"sys": self, "ctrl": ctrl, "port": port})
+
+
+## Detach a controller from an expanded port (see attach_expanded_controller).
+func detach_expanded_controller(port: int, plug: Node3D) -> void:
+	if port < 0:
+		return
+	var actual: Node3D = plug.get_controller() \
+		if is_instance_valid(plug) and plug.has_method("get_controller") else plug
+	if is_instance_valid(actual) and actual.has_method("set_rumble"):
+		actual.set_rumble(0.0, 0.0)
+	if port < _port_controllers.size():
+		_port_controllers[port] = null
+	set_controller_port_device(port, 0)  # RETRO_DEVICE_NONE
+	if is_instance_valid(plug) and plug.has_method("on_unplugged"):
+		plug.on_unplugged()
+	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG, {"sys": self, "port": port})
 
 
 ## Route a rumble request from the core to the RetroController currently
