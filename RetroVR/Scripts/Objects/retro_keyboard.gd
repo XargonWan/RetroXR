@@ -99,6 +99,10 @@ var _controllers: Array = []
 var _key_index_by_code: Dictionary = {}
 # True while any hand (VR or desktop) holds the board.
 var _held := false
+# Whether the caps currently show their shifted glyphs, and whether a real
+# keyboard's Shift is down (so passthrough typing relabels the caps too).
+var _labels_shifted := false
+var _os_shift_held := false
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _key_root: Node3D = $Keys
@@ -228,16 +232,26 @@ func _build_keys() -> void:
 			mesh.position = Vector3(x + w / 2.0, KEY_TOP_Y - 0.004, cz)
 			_key_root.add_child(mesh)
 			var lbl := Label3D.new()
-			lbl.text = str(k[0])
+			var base_text := str(k[0])
+			lbl.text = base_text
 			lbl.pixel_size = 0.0004
-			lbl.font_size = 18 if str(k[0]).length() == 1 else 9
+			lbl.font_size = 18 if base_text.length() == 1 else 9
 			lbl.rotation_degrees = Vector3(-90, 0, 0)
 			lbl.position = Vector3(x + w / 2.0, KEY_TOP_Y + 0.001, cz)
 			_key_root.add_child(lbl)
+			# Glyph shown while shift is held: number-row / punctuation keys swap
+			# to their US shifted symbol; letters already read uppercase so they
+			# (and every non-symbol key) keep their label.
+			var shift_text := base_text
+			if SHIFT_MAP.has(int(k[1])):
+				shift_text = String.chr(int(SHIFT_MAP[int(k[1])]))
 			_keys.append({
 				"rect": Rect2(x, z0 + zr * KEY_PITCH, w, d),
 				"keycode": int(k[1]),
 				"mesh": mesh,
+				"label": lbl,
+				"base_text": base_text,
+				"shift_text": shift_text,
 				"base_y": mesh.position.y,
 			})
 			# First physical key wins the visual-feedback slot (left modifiers).
@@ -378,6 +392,7 @@ func _scan_hands() -> void:
 		if hit >= 0:
 			_set_key(hit, true)
 		_hand_pressed[name_key] = hit
+	_refresh_shift_labels()
 
 
 func _key_at(p: Vector2) -> int:
@@ -400,15 +415,36 @@ func _release_all() -> void:
 		if idx >= 0:
 			_set_key(idx, false)
 	_hand_pressed.clear()
+	_os_shift_held = false
+	_refresh_shift_labels()
 
 
-## True while either on-board SHIFT is held (either hand).
+## True while a SHIFT is held — either on-board cap (either hand) or a real
+## keyboard's Shift while this board owns the OS-keyboard feed.
 func _shift_held() -> bool:
+	if _os_shift_held:
+		return true
 	for name_key: String in _hand_pressed:
 		var idx: int = _hand_pressed[name_key]
 		if idx >= 0 and int(_keys[idx]["keycode"]) in [RK.lshift, RK.rshift]:
 			return true
 	return false
+
+
+## Swap every keycap's label between its normal and shifted glyph to match the
+## current shift state. Cheap: only touches labels when the state flips.
+func _refresh_shift_labels() -> void:
+	var want := _shift_held()
+	if want == _labels_shifted:
+		return
+	_labels_shifted = want
+	for k: Dictionary in _keys:
+		var lbl := k["label"] as Label3D
+		var text: String = k["shift_text"] if want else k["base_text"]
+		if lbl.text == text:
+			continue
+		lbl.text = text
+		lbl.font_size = 18 if text.length() == 1 else 9
 
 
 # ── Key routing ───────────────────────────────────────────────────────────────
@@ -450,6 +486,10 @@ func _handle_os_key(gd_keycode: int, pressed: bool, unicode: int) -> bool:
 	var keycode := _godot_to_retrok(gd_keycode)
 	if keycode == 0:
 		return false
+	# A real Shift relabels the caps just like an on-board SHIFT does.
+	if keycode in [RK.lshift, RK.rshift]:
+		_os_shift_held = pressed
+		_refresh_shift_labels()
 	# Visual: sink the matching virtual keycap.
 	var idx: int = _key_index_by_code.get(keycode, -1)
 	if idx >= 0:
