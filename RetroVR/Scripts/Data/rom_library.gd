@@ -184,3 +184,46 @@ static func scan_videos() -> Array[Dictionary]:
 		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
 	)
 	return results
+
+
+## Path to the DVDs root — real DVD images (a VIDEO_TS/ folder, or an .iso/.img
+## file) live here, played by the libVLC-backed DVDPlayer.
+static func default_dvd_root() -> String:
+	if OS.get_name() == "Android":
+		return "/sdcard/Android/data/com.xenu.retrovr/files/dvd"
+	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/dvd"
+
+
+## Create the dvd root if it doesn't already exist.
+static func ensure_dvd_root() -> void:
+	var path := default_dvd_root()
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err == OK:
+		print("[RomLibrary] Ensured dvd root: ", path)
+	else:
+		push_warning("[RomLibrary] Failed to create dvd root '%s' (err %d)" % [path, err])
+
+
+## Scan the dvd root. Each disc is either a subfolder containing a VIDEO_TS/ dir,
+## or a standalone .iso/.img image. Returns Array of {path: String, label: String}.
+static func scan_dvds() -> Array[Dictionary]:
+	var root := default_dvd_root()
+	var dir := DirAccess.open(root)
+	if not dir:
+		return []
+	var results: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		var full: String = root.path_join(fname)
+		if dir.current_is_dir():
+			if DirAccess.dir_exists_absolute(full.path_join("VIDEO_TS")):
+				results.append({"path": full, "label": fname})
+		elif fname.get_extension().to_lower() in ["iso", "img"]:
+			results.append({"path": full, "label": fname.get_basename()})
+		fname = dir.get_next()
+	dir.list_dir_end()
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
+	)
+	return results

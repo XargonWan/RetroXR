@@ -21,6 +21,8 @@ signal spawn_cartridge_requested(rom_path: String, game_label: String, systemid:
 signal spawn_manual_requested(pdf_path: String)
 ## Emitted when the user clicks a video (📼) in the Videos tab.
 signal spawn_video_requested(video_path: String)
+
+signal spawn_dvd_requested(dvd_path: String)
 ## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
 signal turn_style_changed(value: String)
 ## Emitted when the user clicks a room card that maps directly to a scene (e.g. passthrough).
@@ -138,6 +140,7 @@ var _cartridges_browser: SystemGridBrowser = null
 var _books_vbox: VBoxContainer = null
 # Spawn > Videos tab — rebuilt each time the tab is opened
 var _videos_vbox: VBoxContainer = null
+var _dvds_vbox: VBoxContainer = null
 
 # Scene view state
 var _scene_scroll:        ScrollContainer = null   # rooms-level scroll
@@ -214,6 +217,7 @@ func _ready() -> void:
 		RomLibrary.ensure_rom_dir(sid)
 	RomLibrary.ensure_books_root()
 	RomLibrary.ensure_videos_root()
+	RomLibrary.ensure_dvd_root()
 	_build_ui()
 
 
@@ -844,9 +848,21 @@ func _build_spawn_view() -> Control:
 	videos_scroll.add_child(_videos_vbox)
 	_populate_videos_tab()
 
+	# DVDs tab — lists DVD images (VIDEO_TS folders / .iso / .img) from the dvd root
+	var dvds_scroll := ScrollContainer.new()
+	dvds_scroll.name = "DVDs"
+	tabs.add_child(dvds_scroll)
+	_spawn_tab_scrolls.append(dvds_scroll)
+	_dvds_vbox = VBoxContainer.new()
+	_dvds_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_dvds_vbox.add_theme_constant_override("separation", 10)
+	dvds_scroll.add_child(_dvds_vbox)
+	_populate_dvds_tab()
+
 	_add_spawn_tab(tabs, "Objects", [
 		["Trash Can",   "trash_can"],
 		["VCR",         "vcr_player"],
+		["DVD Player",  "dvd_player"],
 		["TV Remote",   "tv_remote"],
 		["Memory Card", "memory_card"],
 	])
@@ -867,6 +883,8 @@ func _build_spawn_view() -> Control:
 			_populate_books_tab()
 		elif idx == 4:
 			_populate_videos_tab()
+		elif idx == 5:
+			_populate_dvds_tab()
 		_update_spawn_active_scroll(idx)
 	)
 
@@ -1063,6 +1081,28 @@ func _populate_videos_tab() -> void:
 		btn.pressed.connect(spawn_video_requested.emit.bind(video["path"]))
 		_videos_vbox.add_child(btn)
 	_videos_vbox.add_child(_spacer(8))
+
+
+func _populate_dvds_tab() -> void:
+	if not _dvds_vbox:
+		return
+	_clear_vbox(_dvds_vbox)
+	var dvds := RomLibrary.scan_dvds()
+	if dvds.is_empty():
+		var hint := Label.new()
+		hint.text = "No DVD images found in dvd folder."
+		hint.add_theme_color_override("font_color", COLOR_DESC)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_dvds_vbox.add_child(hint)
+		return
+	for dvd: Dictionary in dvds:
+		var btn := Button.new()
+		btn.text = "  💿  " + dvd["label"]
+		btn.custom_minimum_size = Vector2(0, 72)
+		btn.add_theme_font_size_override("font_size", 24)
+		btn.pressed.connect(spawn_dvd_requested.emit.bind(dvd["path"]))
+		_dvds_vbox.add_child(btn)
+	_dvds_vbox.add_child(_spacer(8))
 
 
 func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:

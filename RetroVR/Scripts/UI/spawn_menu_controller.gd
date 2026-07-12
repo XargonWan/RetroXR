@@ -21,6 +21,8 @@ const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/tv_remote.tscn")
+const DVD_PLAYER_SCENE      := preload("res://Scenes/Objects/dvd_player.tscn")
+const DVD_DISC_SCENE        := preload("res://Scenes/Objects/dvd_disc.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
@@ -37,6 +39,8 @@ const SPAWN_Y := {
 	"ray_gun":          0.82,
 	"vcr_player":       0.80,
 	"tape":             0.78,
+	"dvd_player":       0.80,
+	"dvd_disc":         0.78,
 	"tv_remote":        0.78,
 	"memory_card":      0.78,
 }
@@ -172,6 +176,7 @@ func _connect_menu_signals() -> void:
 	menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
 	menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
 	menu.spawn_video_requested.connect(_on_spawn_video_requested)
+	menu.spawn_dvd_requested.connect(_on_spawn_dvd_requested)
 	menu.turn_style_changed.connect(_on_turn_style_changed)
 	menu.scene_change_requested.connect(_on_scene_change_requested)
 	menu.scene_slot_load_requested.connect(_on_slot_load)
@@ -645,6 +650,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = TRASH_CAN_SCENE.instantiate() as Node3D
 		"vcr_player":
 			obj = VCR_SCENE.instantiate() as Node3D
+		"dvd_player":
+			obj = DVD_PLAYER_SCENE.instantiate() as Node3D
 		"tv_remote":
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D
 		"memory_card":
@@ -691,6 +698,13 @@ func _on_spawn_video_requested(video_path: String) -> void:
 	tape.video_path = video_path
 	tape.video_label = video_path.get_file().get_basename()
 	_place_spawned(tape, "tape")
+
+
+func _on_spawn_dvd_requested(dvd_path: String) -> void:
+	var disc := DVD_DISC_SCENE.instantiate() as DVDDisc
+	disc.dvd_path = dvd_path
+	disc.dvd_label = dvd_path.get_file().get_basename()
+	_place_spawned(disc, "dvd_disc")
 
 
 func _on_turn_style_changed(value: String) -> void:

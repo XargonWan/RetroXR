@@ -280,7 +280,7 @@ func _scan_for_target() -> Node3D:
 
 	var n := hit["collider"] as Node
 	while n:
-		if n is RetroTV or n is VCRPlayer:
+		if n is RetroTV or n is VCRPlayer or n is DVDPlayer:
 			return n as Node3D
 		n = n.get_parent()
 	return null
@@ -306,6 +306,13 @@ func _set_target_highlight(target: Node3D, active: bool) -> void:
 
 func _process_vr_selection() -> void:
 	var ctrl := _holding_ctrl
+
+	# In a DVD menu the stick is a direct 4-way D-pad and confirm = OK, rather
+	# than the linear list-select model used elsewhere.
+	if _target is DVDPlayer and (_target as DVDPlayer).is_in_menu():
+		_process_dvd_menu_nav(ctrl, _target as DVDPlayer)
+		return
+
 	var y := ctrl.get_vector2("primary").y
 
 	if _stick_latched:
@@ -321,6 +328,31 @@ func _process_vr_selection() -> void:
 	var confirm := ctrl.get_float("ax_button") > 0.5 or ctrl.get_float("primary_click") > 0.5
 	if confirm and not _prev_confirm:
 		_activate_selection()
+	_prev_confirm = confirm
+
+
+## DVD menu mode: stick flick = one D-pad step (4-way, single latch), confirm = OK.
+func _process_dvd_menu_nav(ctrl: XRController3D, dvd: DVDPlayer) -> void:
+	var v := ctrl.get_vector2("primary")
+	if _stick_latched:
+		if v.length() < STICK_REARM:
+			_stick_latched = false
+	elif v.y > STICK_STEP:
+		dvd.dvd_menu_up()
+		_stick_latched = true
+	elif v.y < -STICK_STEP:
+		dvd.dvd_menu_down()
+		_stick_latched = true
+	elif v.x < -STICK_STEP:
+		dvd.dvd_menu_left()
+		_stick_latched = true
+	elif v.x > STICK_STEP:
+		dvd.dvd_menu_right()
+		_stick_latched = true
+
+	var confirm := ctrl.get_float("ax_button") > 0.5 or ctrl.get_float("primary_click") > 0.5
+	if confirm and not _prev_confirm:
+		dvd.dvd_ok()
 	_prev_confirm = confirm
 
 
@@ -369,6 +401,26 @@ func _activate_selection() -> void:
 			2: vcr.remote_stop()
 			3: vcr.remote_ff()
 			4: vcr.remote_rewind()
+	elif _target is DVDPlayer:
+		# Row layout mirrors _row_texts (menu vs playback). VR menu nav also runs
+		# via the stick in _process_dvd_menu_nav; this covers desktop + pointer.
+		var dvd := _target as DVDPlayer
+		if dvd.is_in_menu():
+			match _selection:
+				0: dvd.dvd_menu_up()
+				1: dvd.dvd_menu_down()
+				2: dvd.dvd_menu_left()
+				3: dvd.dvd_menu_right()
+				4: dvd.dvd_ok()
+				5: dvd.dvd_root_menu()
+		else:
+			match _selection:
+				0: dvd.remote_play()
+				1: dvd.remote_pause()
+				2: dvd.remote_stop()
+				3: dvd.dvd_prev_chapter()
+				4: dvd.dvd_next_chapter()
+				5: dvd.dvd_root_menu()
 	# POWER [ON]/[OFF] state may have changed.
 	_refresh_menu_labels()
 
@@ -425,6 +477,12 @@ func _row_texts() -> Array[String]:
 		return rows
 	if _target is VCRPlayer:
 		return VCR_ROWS.duplicate()
+	if _target is DVDPlayer:
+		if (_target as DVDPlayer).is_in_menu():
+			var nav: Array[String] = ["▲ UP", "▼ DOWN", "◄ LEFT", "► RIGHT", "● OK", "↩ MENU"]
+			return nav
+		var transport: Array[String] = ["PLAY", "PAUSE", "STOP", "|◄◄ PREV CH", "NEXT CH ►►|", "↩ MENU"]
+		return transport
 	var empty: Array[String] = []
 	return empty
 
