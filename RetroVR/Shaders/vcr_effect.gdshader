@@ -102,7 +102,7 @@ void fragment() {
 		// Display stage: scanlines/mask/vignette in tube space (pre-wobble so
 		// the tube geometry doesn't jitter with the tape). Beyond the curved
 		// glass edge the quad goes transparent so the bezel shows through.
-		col = crt_apply(col, crt_uv, FRAGCOORD.x);
+		col = crt_apply(col, crt_uv, FRAGCOORD.xy);
 		ALPHA = crt_border(crt_uv);
 	}
 

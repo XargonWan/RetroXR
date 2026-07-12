@@ -20,12 +20,12 @@ uniform bool osd_enabled = false;
 
 void fragment() {
 	vec2 wuv = crt_warp(UV);
-	vec3 col = texture(source_tex, wuv).rgb;
+	vec3 col = crt_smear_sample(source_tex, wuv);
 	if (osd_enabled) {
 		vec4 osd = texture(osd_tex, wuv);
 		col = mix(col, osd.rgb, osd.a);
 	}
-	col = crt_apply(col, wuv, FRAGCOORD.x);
+	col = crt_apply(col, wuv, FRAGCOORD.xy);
 	ALBEDO = clamp(col, 0.0, 1.0);
 	// Beyond the curved glass edge the quad is transparent (not black), so the
 	// TV bezel shows through instead of a dark rectangle.

@@ -37,6 +37,25 @@ const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
 var _crt_material: ShaderMaterial = null
 var _crt_wrapped: Material = null
 
+# Tunable CRT display-stage uniforms (crt_filter.gdshaderinc). Adjustable from
+# the TV options panel; applied to whichever material carries the CRT stage (our
+# wrapper or the chained VCR shader). Defaults mirror the shader's own defaults.
+var _crt_params := {
+	"crt_curvature": 0.07,
+	"crt_corner_radius": 0.04,
+	"crt_mask_mode": 2,
+	"crt_mask_strength": 0.45,
+	"crt_pixel_size": 3.0,
+	"crt_scanline_strength": 0.35,
+	"crt_scanline_thickness": 1.0,
+	"crt_scanline_interval": 3.0,
+	"crt_grain": 0.06,
+	"crt_smear": 0.0,
+	"crt_wiggle": 0.0,
+	"crt_vignette": 0.18,
+	"crt_brightness": 1.25,
+}
+
 # TV-owned screen states: blue "no signal" (ON with no live input) and the
 # original dark bezel material (OFF).
 var _blue_material: StandardMaterial3D = null
@@ -204,6 +223,8 @@ func _update_crt() -> void:
 			var cur: Variant = sm.get_shader_parameter("crt_enabled")
 			if (cur == true) != crt_enabled:
 				sm.set_shader_parameter("crt_enabled", crt_enabled)
+				if crt_enabled:
+					_apply_crt_params(sm)   # sync tube tuning onto the tape shader
 		_crt_wrapped = null
 		return
 
@@ -223,9 +244,35 @@ func _update_crt() -> void:
 	if _crt_material == null:
 		_crt_material = ShaderMaterial.new()
 		_crt_material.shader = CRT_SHADER
+		_apply_crt_params(_crt_material)
 	_crt_material.set_shader_parameter("source_tex", tex)
 	_crt_wrapped = override
 	_screen_mesh.set_surface_override_material(0, _crt_material)
+
+
+## Push every tunable CRT uniform onto a material carrying the CRT display stage
+## (our wrapper or the chained VCR shader).
+func _apply_crt_params(mat: ShaderMaterial) -> void:
+	for key: String in _crt_params:
+		mat.set_shader_parameter(key, _crt_params[key])
+
+
+## Set one CRT display-stage uniform live (from the TV options panel) and apply
+## it to whichever material currently shows the CRT stage.
+func set_crt_param(pname: String, value: Variant) -> void:
+	if not _crt_params.has(pname):
+		return
+	_crt_params[pname] = value
+	if _crt_material != null:
+		_crt_material.set_shader_parameter(pname, value)
+	var override := _screen_mesh.get_surface_override_material(0)
+	if override is ShaderMaterial and (override as ShaderMaterial).shader == VCR_SHADER:
+		(override as ShaderMaterial).set_shader_parameter(pname, value)
+
+
+## Current CRT tuning values, for the options panel to populate its controls.
+func get_crt_params() -> Dictionary:
+	return _crt_params.duplicate()
 
 
 ## Pull the picture texture out of a screen material, whichever shape it has:

@@ -69,6 +69,7 @@ func _ensure_ui_connected() -> void:
 		return
 	ui.scale_changed.connect(_on_scale_changed)
 	ui.scale_committed.connect(_on_scale_committed)
+	ui.crt_param_changed.connect(_on_crt_param_changed)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 
@@ -81,6 +82,13 @@ func _populate() -> void:
 		call_deferred("_populate")
 		return
 	ui.populate(_tv.get_scale_factor())
+	ui.populate_crt(_tv.get_crt_params())
+
+
+## A CRT filter slider/dropdown moved — apply live to the local TV.
+func _on_crt_param_changed(pname, value) -> void:
+	if _tv and is_instance_valid(_tv):
+		_tv.set_crt_param(pname, value)
 
 
 ## Live while the slider is dragged — resizes the local TV every tick.
