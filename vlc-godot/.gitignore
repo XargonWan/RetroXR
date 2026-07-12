@@ -1,0 +1,12 @@
+# SCons / MSVC build artifacts
+*.obj
+*.os
+*.o
+*.exp
+*.ilk
+*.pdb
+*.lib
+.sconsign.dblite
+*.log
+# vendored import libs ARE tracked (needed to build); allow them back:
+!vendor/lib/*.lib

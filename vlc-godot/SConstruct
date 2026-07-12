@@ -1,0 +1,52 @@
+# type: ignore
+#
+# Standalone GDExtension: vlc_godot (libVLC-backed DVD/video player for RetroVR).
+# Builds separately from libretro-godot (two extensions can't share one SCons
+# invocation), but reuses the same godot-cpp submodule checked out under
+# libretro-godot/godot-cpp. Modeled on libretro-godot/Temp/SConscript and the
+# godot-pdfium standalone build.
+#
+# Windows:  scons platform=windows arch=x86_64 target=template_debug
+# Android:  scons platform=android arch=arm64 target=template_debug (Phase 3)
+#
+# Output goes to RetroVR/vlc-godot/ alongside the vendored libvlc.dll runtime.
+
+import os
+
+output_dir = '#../RetroVR/vlc-godot'
+godot_cpp = '../libretro-godot/godot-cpp'
+
+env = SConscript(godot_cpp + '/SConstruct')
+
+env.Append(CPPPATH=[
+    'vendor/include/',
+    godot_cpp + '/include/',
+    godot_cpp + '/gen/include/',
+    godot_cpp + '/gdextension/',
+])
+
+is_windows = env['platform'] == 'windows'
+is_android = env['platform'] == 'android'
+
+if is_windows:
+    env.Append(CXXFLAGS=['/std:c++latest'])
+    env.Append(LIBPATH=['vendor/lib/'])
+    env.Append(LIBS=['libvlc'])
+    env.Append(LINKFLAGS=['/IGNORE:4099'])
+
+if is_android:
+    env.Append(CXXFLAGS=['-std=c++20'])
+    # libVLC arm64 .so + import handled in Phase 3 (extracted from the LibVLC AAR).
+    env.Append(LIBPATH=['vendor/android/arm64/'])
+    env.Append(LIBS=['vlc'])
+
+sources = Glob('src/*.cpp')
+
+lib_prefix = 'lib' if is_android else ''
+library = env.SharedLibrary(
+    '{}/{}vlc_godot.{}.{}.{}{}'.format(
+        output_dir, lib_prefix, env['platform'], env['target'], env['arch'],
+        env['SHLIBSUFFIX']),
+    source=sources)
+
+Default(library)
