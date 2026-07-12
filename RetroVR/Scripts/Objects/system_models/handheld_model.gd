@@ -29,9 +29,45 @@ var _power_switch: VRSlider = null
 var _volume_slider: VRSlider = null
 var _host: Node3D = null
 
+# Optional per-device LCD display filter (e.g. the DMG dot-matrix look). A
+# subclass sets _lcd_shader; the base then wraps the built-in screen's material
+# with it — the same watch-and-rewrap the TV uses for its CRT, since the C++
+# video handler re-asserts its own StandardMaterial3D (emission = picture) each
+# frame. Left null → no filter (GBA colour LCD, etc.).
+var _lcd_shader: Shader = null
+var _lcd_material: ShaderMaterial = null
+
 
 func is_handheld() -> bool:
 	return true
+
+
+## Keep the LCD filter wrapped over the live core picture. Cheap identity checks
+## in the steady state; only re-installs when the source material changes.
+func _process(_delta: float) -> void:
+	if _lcd_shader == null or _screen == null:
+		return
+	var override := _screen.get_surface_override_material(0)
+	if override == null or override == _lcd_material:
+		return
+	var tex := _screen_emission_texture(override)
+	if tex == null:
+		return   # off / no picture — leave the unlit LCD material alone
+	if _lcd_material == null:
+		_lcd_material = ShaderMaterial.new()
+		_lcd_material.shader = _lcd_shader
+	_lcd_material.set_shader_parameter("source_tex", tex)
+	_screen.set_surface_override_material(0, _lcd_material)
+
+
+## The live picture texture out of whichever material the core installed (it uses
+## an emissive StandardMaterial3D; our own wrapper carries source_tex).
+func _screen_emission_texture(mat: Material) -> Texture2D:
+	if mat is StandardMaterial3D:
+		return (mat as StandardMaterial3D).emission_texture
+	if mat is ShaderMaterial:
+		return (mat as ShaderMaterial).get_shader_parameter("source_tex") as Texture2D
+	return null
 
 
 func get_controller_port_count() -> int:

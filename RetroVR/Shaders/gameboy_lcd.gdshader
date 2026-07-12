@@ -1,0 +1,53 @@
+// Game Boy (DMG) LCD display filter for the RetroVR handheld screen.
+//
+// Reproduces the classic dot-matrix look — a 4-shade green palette plus the
+// faint pixel grid of the reflective LCD — as a `spatial` material on the
+// handheld's built-in screen mesh (sampling the core's picture via source_tex),
+// the same way crt_effect.gdshader wraps the TV tube. render_mode unshaded so
+// the screen reads self-lit.
+//
+// Effect inspired by ivanskodje's godot-gameboy-shaders (MIT); that project is
+// Godot 2.x (its shaders ship as old-format .tres and can't run in Godot 4), so
+// the two effects — 4-colour quantise + LCD grid — are re-implemented natively.
+shader_type spatial;
+render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
+
+uniform sampler2D source_tex : source_color, filter_nearest, repeat_disable;
+
+// Native panel resolution the grid aligns to (DMG = 160x144).
+uniform vec2 gb_resolution = vec2(160.0, 144.0);
+
+// DMG green palette, darkest → lightest (default = the real hardware greens).
+uniform vec4 gb_c0 : source_color = vec4(0.059, 0.220, 0.059, 1.0);
+uniform vec4 gb_c1 : source_color = vec4(0.188, 0.384, 0.188, 1.0);
+uniform vec4 gb_c2 : source_color = vec4(0.545, 0.675, 0.059, 1.0);
+uniform vec4 gb_c3 : source_color = vec4(0.608, 0.737, 0.059, 1.0);
+
+// Pixel-grid darkening between cells (the reflective-LCD gap).
+uniform float gb_grid_strength : hint_range(0.0, 1.0) = 0.22;
+uniform float gb_grid_width : hint_range(0.0, 0.5) = 0.08;
+
+void fragment() {
+	vec3 src = texture(source_tex, UV).rgb;
+
+	// Quantise luminance into the 4 DMG shades (dark image → dark green).
+	float luma = dot(src, vec3(0.299, 0.587, 0.114));
+	vec3 col;
+	if (luma < 0.25) {
+		col = gb_c0.rgb;
+	} else if (luma < 0.50) {
+		col = gb_c1.rgb;
+	} else if (luma < 0.75) {
+		col = gb_c2.rgb;
+	} else {
+		col = gb_c3.rgb;
+	}
+
+	// Faint pixel grid: darken toward each source pixel's borders.
+	vec2 cell = fract(UV * gb_resolution);
+	float edge = min(min(cell.x, 1.0 - cell.x), min(cell.y, 1.0 - cell.y));
+	float inside = smoothstep(0.0, gb_grid_width, edge);
+	col *= mix(1.0 - gb_grid_strength, 1.0, inside);
+
+	ALBEDO = col;
+}

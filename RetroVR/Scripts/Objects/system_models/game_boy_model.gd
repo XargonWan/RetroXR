@@ -2,6 +2,9 @@
 class_name RetroSystemModelGameBoy
 extends RetroSystemModelHandheld
 
+## Classic DMG dot-matrix green LCD filter, applied to the built-in screen.
+const LCD_SHADER := preload("res://Shaders/gameboy_lcd.gdshader")
+
 
 func _init() -> void:
 	# Real DMG: 90 × 148 × 32 mm; screen 47 × 43 mm (160:144 ≈ 10:9).
@@ -10,3 +13,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, -0.033)
 	body_color = Color(0.75, 0.73, 0.70)
 	accent_color = Color(0.55, 0.15, 0.45)
+	_lcd_shader = LCD_SHADER
