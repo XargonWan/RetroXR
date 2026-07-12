@@ -66,6 +66,7 @@ func _ensure_ui_connected() -> void:
 		return
 	ui.effect_toggled.connect(_on_effect_toggled)
 	ui.scan_speed_changed.connect(_on_scan_speed_changed)
+	ui.vcr_param_changed.connect(_on_vcr_param_changed)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 
@@ -81,6 +82,7 @@ func _populate() -> void:
 	if not ui:
 		return
 	ui.populate(_vcr.vcr_effect_enabled, _vcr.scan_speed)
+	ui.populate_vcr(_vcr.get_vcr_params())
 
 
 func _on_effect_toggled(enabled: bool) -> void:
@@ -91,3 +93,8 @@ func _on_effect_toggled(enabled: bool) -> void:
 func _on_scan_speed_changed(value: float) -> void:
 	if _vcr and is_instance_valid(_vcr):
 		_vcr.scan_speed = value
+
+
+func _on_vcr_param_changed(pname, value) -> void:
+	if _vcr and is_instance_valid(_vcr):
+		_vcr.set_vcr_param(pname, value)

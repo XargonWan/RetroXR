@@ -37,6 +37,23 @@ uniform float vignette_strength : hint_range(0.0, 1.0) = 0.30;
 uniform float desaturation : hint_range(0.0, 1.0) = 0.15;
 uniform float brightness = 1.12;
 
+// ── Extra VHS artifacts (ported from pend00's CC0 "VHS and CRT monitor effect")
+// Vertical roll: a slow bright bar that scrolls up the picture, dragging the
+// image sideways as it passes (the classic "vertical hold" slip).
+uniform float roll_amount : hint_range(0.0, 0.05) = 0.008;
+uniform float roll_speed = 0.5;
+uniform float roll_size = 8.0;
+// Banded noise: animated horizontal bands of static that flicker per-line.
+uniform float banded_noise_opacity : hint_range(0.0, 1.0) = 0.15;
+uniform float noise_bands = 24.0;
+uniform float noise_speed = 8.0;
+// Pixelate: crush the sample UV into a coarse grid (VHS luma resolution loss).
+uniform bool pixelate = true;
+uniform vec2 pixelate_resolution = vec2(640.0, 480.0);
+// Discolor: the contrast half of the VHS colour crush (saturation-cut half is
+// the existing `desaturation`); pushes mids apart for that punchy tape look.
+uniform float vhs_contrast : hint_range(0.5, 2.0) = 1.12;
+
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
@@ -62,6 +79,18 @@ void fragment() {
 	float wob = sin(uv.y * 60.0 + TIME * 5.0) * wobble_strength;
 	uv.x += (wob + line_jitter * tracking_strength * track) * amt;
 
+	// Vertical roll: a soft bar scrolling up the frame that slips the picture
+	// sideways as it passes (distinct, slower than the tracking band above).
+	float rb = fract(uv.y * roll_size - TIME * roll_speed);
+	float roll = smoothstep(0.0, 0.2, rb) * smoothstep(0.4, 0.2, rb);
+	uv.x += roll * roll_amount * amt;
+
+	// Pixelate the sample UV into a coarse grid (VHS luma-only resolution loss).
+	if (pixelate) {
+		vec2 puv = (floor(uv * pixelate_resolution) + 0.5) / pixelate_resolution;
+		uv = mix(uv, puv, amt);
+	}
+
 	// Chromatic aberration — split the colour channels horizontally, stronger in
 	// the tracking band.
 	float ab = aberration * amt * (1.0 + track * 4.0);
@@ -70,9 +99,10 @@ void fragment() {
 	float b = texture(video_tex, uv - vec2(ab, 0.0)).b;
 	vec3 col = vec3(r, g, b);
 
-	// Slight colour washout.
+	// Slight colour washout, then the VHS contrast crush (discolor).
 	float luma = dot(col, vec3(0.299, 0.587, 0.114));
 	col = mix(col, vec3(luma), desaturation * amt);
+	col = mix(col, (col - 0.5) * vhs_contrast + 0.5, amt);
 
 	// Scanlines.
 	float scan = sin(uv.y * scanline_count * 3.14159) * 0.5 + 0.5;
@@ -81,6 +111,10 @@ void fragment() {
 	// Tape grain.
 	float n = hash(uv * vec2(320.0, 240.0) + fract(TIME) * 60.0);
 	col += (n - 0.5) * noise_strength * amt;
+
+	// Banded noise: horizontal stripes of static that flicker per-line.
+	float nb = hash(vec2(floor(uv.y * noise_bands), floor(TIME * noise_speed)));
+	col *= 1.0 - banded_noise_opacity * amt * step(0.6, nb);
 
 	// Bright static crackle inside the tracking band.
 	col += track * (hash(uv + fract(TIME)) - 0.3) * 0.5;

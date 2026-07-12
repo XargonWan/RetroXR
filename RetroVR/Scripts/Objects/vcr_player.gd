@@ -18,6 +18,27 @@ extends XRToolsPickable
 
 const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
 
+# Tunable VHS/VCR shader uniforms (vcr_effect.gdshader). Adjustable from the VCR
+# options panel's "VHS Effect" tab; applied to the screen ShaderMaterial. Defaults
+# mirror the shader's own defaults. (CRT display-stage uniforms are owned by the
+# connected TV and tuned from the TV panel, so they're not duplicated here.)
+var _vcr_params := {
+	"effect_amount": 1.0,
+	"aberration": 0.0025,
+	"scanline_strength": 0.22,
+	"noise_strength": 0.10,
+	"wobble_strength": 0.0016,
+	"tracking_strength": 0.02,
+	"desaturation": 0.15,
+	"brightness": 1.12,
+	"roll_amount": 0.008,
+	"roll_speed": 0.5,
+	"banded_noise_opacity": 0.15,
+	"noise_speed": 8.0,
+	"vhs_contrast": 1.12,
+	"pixelate": true,
+}
+
 
 # Runtime state
 var video_path: String = ""
@@ -433,6 +454,7 @@ func _make_screen_material() -> Material:
 	if vcr_effect_enabled:
 		var mat := ShaderMaterial.new()
 		mat.shader = VCR_SHADER
+		_apply_vcr_params(mat)
 		return mat
 	# Unshaded so the picture reads as a self-lit screen (same look as the shader
 	# path, without the VHS effect) instead of being lit + double-bright emission.
@@ -448,6 +470,27 @@ func set_vcr_effect_enabled(enabled: bool) -> void:
 	vcr_effect_enabled = enabled
 	if is_playing:
 		_bind_screen_to_tv()
+
+
+## Push every stored VHS uniform onto the given screen shader material.
+func _apply_vcr_params(mat: ShaderMaterial) -> void:
+	for key: String in _vcr_params:
+		mat.set_shader_parameter(key, _vcr_params[key])
+
+
+## Set one VHS uniform, remembering it and applying live if the effect material
+## is currently installed. Called by VCROptionsPanel.
+func set_vcr_param(pname: String, value: Variant) -> void:
+	if not _vcr_params.has(pname):
+		return
+	_vcr_params[pname] = value
+	if _screen_material is ShaderMaterial:
+		(_screen_material as ShaderMaterial).set_shader_parameter(pname, value)
+
+
+## Current VHS uniform values, for the options panel to populate its controls.
+func get_vcr_params() -> Dictionary:
+	return _vcr_params.duplicate()
 
 
 func _blank_screen() -> void:
