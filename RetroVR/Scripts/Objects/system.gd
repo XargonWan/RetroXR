@@ -176,12 +176,15 @@ func _load_system_model() -> void:
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
 	# real console's built-in port count) over the model's default, clamped to
 	# the cabinet's available snap zones. A multitap plugged into a port extends
-	# players beyond this on its own.
-	var port_count := _model.get_controller_port_count()
-	var info := SystemInfo.for_system(systemid)
-	if info and info.native_ports > 0:
-		port_count = info.native_ports
-	port_count = clampi(port_count, 1, _port_zones.size())
+	# players beyond this on its own. Handhelds are their own controller (the
+	# HandheldInput below drives port 0), so they expose NO external port zones.
+	var port_count := 0
+	if not _model.is_handheld():
+		port_count = _model.get_controller_port_count()
+		var info := SystemInfo.for_system(systemid)
+		if info and info.native_ports > 0:
+			port_count = info.native_ports
+		port_count = clampi(port_count, 1, _port_zones.size())
 	for i in range(_port_zones.size()):
 		var active := i < port_count
 		_port_zones[i].visible = active

@@ -130,6 +130,13 @@ func _process(_delta: float) -> void:
 		_stereo_mat.set_shader_parameter("source_tex", tex)
 
 
+## The single controller cable plugs into the base at the rear, not the default
+## floating console position out in front of the stand.
+func configure_controller_ports(port_zones: Array) -> void:
+	if port_zones.size() > 0:
+		port_zones[0].position = Vector3(0, 0.015, -0.06)
+
+
 func configure_cartridge_slot(slot: Node3D) -> void:
 	# Cart drops into the top of the visor, like the real loading slot.
 	slot.position = Vector3(0, _visor_center_y + VISOR_SIZE.y / 2.0 + 0.01, 0)
