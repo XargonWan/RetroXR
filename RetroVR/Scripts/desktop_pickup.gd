@@ -190,7 +190,7 @@ func _is_fps_snap() -> bool:
 ## True when the held object claims plain left-click as its own input
 ## (RetroMouse) — dropping then needs Ctrl+click, like the ray gun.
 func _needs_ctrl_drop() -> bool:
-	return _held_object != null and bool(_held_object.get("desktop_ctrl_drop"))
+	return _held_object != null and _held_object.get("desktop_ctrl_drop") == true
 
 
 func _update_reticle_highlight() -> void:
