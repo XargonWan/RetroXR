@@ -20,6 +20,13 @@ var _vlc: Object = null                 # VlcPlayer (GDExtension)
 var _screen_material: StandardMaterial3D = null
 var _snapped_disc: Node3D = null
 
+# Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
+# an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
+# sound is spatialised (and the TV volume knob scales it) like the console audio.
+var _audio_player: AudioStreamPlayer3D = null
+var _audio_playback: AudioStreamGeneratorPlayback = null
+var _volume_linear: float = 1.0
+
 # Cable (shared with RetroSystem / VCRPlayer)
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
 var _cable_instance: Node3D = null
@@ -37,6 +44,7 @@ var _max_rope_length: float = 0.0
 @onready var _next_button: VRButton = $NextChapterButton
 @onready var _eject_button: VRButton = $EjectButton
 @onready var _name_label: Label3D = $NameLabel
+@onready var _options_panel: DVDOptionsPanel = $DVDOptionsPanel
 
 
 func _ready() -> void:
@@ -65,8 +73,22 @@ func _ready() -> void:
 	else:
 		push_error("DVDPlayer: VlcPlayer extension not loaded — DVD playback unavailable")
 
+	_setup_audio()
 	_spawn_cable()
 	_update_name_label()
+
+
+## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
+func _setup_audio() -> void:
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
+	gen.buffer_length = 0.25
+	_audio_player = AudioStreamPlayer3D.new()
+	_audio_player.name = "AudioStreamPlayer3D"
+	_audio_player.stream = gen
+	_audio_player.unit_size = 3.0
+	_audio_player.max_distance = 15.0
+	add_child(_audio_player)
 
 
 func _update_name_label() -> void:
@@ -81,6 +103,22 @@ func _process(_delta: float) -> void:
 	_vlc.update_frame()
 	if is_playing and connected_tv != null:
 		_bind_screen_to_tv()
+	_pump_audio()
+	# Emanate the sound from the connected TV so it's spatialised there.
+	if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
+		_audio_player.global_position = connected_tv.global_position
+
+
+## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
+func _pump_audio() -> void:
+	if _audio_playback == null:
+		return
+	var avail := _audio_playback.get_frames_available()
+	if avail <= 0:
+		return
+	var frames: PackedVector2Array = _vlc.read_audio(avail)
+	if frames.size() > 0:
+		_audio_playback.push_buffer(frames)
 
 
 ## Toggle the disc menu-control routing is done via the remote; the front Menu
@@ -151,7 +189,13 @@ func play() -> void:
 		push_error("DVDPlayer: VlcPlayer.open failed for ", dvd_path)
 		return
 	_vlc.play()
+	# Full internal gain — level is controlled by the Godot 3D player (TV knob).
+	_vlc.set_volume(100)
 	is_playing = true
+	if _audio_player:
+		_audio_player.play()
+		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
 	_osd("DVD")
 
 
@@ -161,6 +205,9 @@ func stop() -> void:
 	if _vlc:
 		_vlc.stop()
 	is_playing = false
+	if _audio_player:
+		_audio_player.stop()
+	_audio_playback = null
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
@@ -200,6 +247,45 @@ func is_in_menu() -> bool:
 	return _vlc != null and _vlc.is_in_menu()
 
 
+# --- Options panel (audio track / subtitles) ---
+
+## Toggle the floating DVD settings panel. Called by SpawnMenuController when the
+## menu button is pressed while pointing at this player.
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel == null:
+		return
+	if _options_panel.visible:
+		_options_panel.hide_panel()
+	else:
+		_options_panel.show_for(self, camera)
+
+
+func get_audio_tracks() -> Array:
+	return _vlc.get_audio_tracks() if _vlc else []
+
+
+func get_audio_track() -> int:
+	return _vlc.get_audio_track() if _vlc else -1
+
+
+func set_audio_track(id: int) -> void:
+	if _vlc:
+		_vlc.set_audio_track(id)
+
+
+func get_subtitle_tracks() -> Array:
+	return _vlc.get_subtitle_tracks() if _vlc else []
+
+
+func get_subtitle() -> int:
+	return _vlc.get_subtitle() if _vlc else -1
+
+
+func set_subtitle(id: int) -> void:
+	if _vlc:
+		_vlc.set_subtitle(id)
+
+
 func _osd(text: String) -> void:
 	if connected_tv:
 		connected_tv.show_osd_timed(text, 2.0)
@@ -218,8 +304,9 @@ func on_tv_disconnected() -> void:
 
 
 func set_audio_volume(volume: float) -> void:
-	if _vlc:
-		_vlc.set_volume(int(clampf(volume, 0.0, 1.0) * 100.0))
+	_volume_linear = clampf(volume, 0.0, 1.0)
+	if _audio_player:
+		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
 
 
 func set_screen_enabled(enabled: bool) -> void:

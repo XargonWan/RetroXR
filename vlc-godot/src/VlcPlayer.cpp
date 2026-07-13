@@ -3,9 +3,11 @@
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 #include <vlc/vlc.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 
@@ -23,7 +25,11 @@ static void set_plugin_path_env(const char *path)
 #endif
 }
 
-VlcPlayer::VlcPlayer() {}
+VlcPlayer::VlcPlayer()
+{
+    // ~2 seconds of stereo headroom so brief main-thread stalls don't underrun.
+    m_audio_ring.assign((size_t)m_audio_rate * m_audio_channels * 2, 0);
+}
 
 VlcPlayer::~VlcPlayer()
 {
@@ -92,6 +98,12 @@ bool VlcPlayer::open(const String &path, bool is_dvd)
 
     libvlc_video_set_callbacks(mp, cb_lock, cb_unlock, cb_display, this);
     libvlc_video_set_format_callbacks(mp, cb_format, cb_cleanup);
+
+    // Route audio to Godot: decode to interleaved S16 stereo @48k into our ring
+    // buffer; the owner drains it into an AudioStreamGenerator on a 3D player.
+    libvlc_audio_set_format(mp, "S16N", m_audio_rate, m_audio_channels);
+    libvlc_audio_set_callbacks(mp, cb_audio_play, nullptr, nullptr, cb_audio_flush, nullptr, this);
+
     attach_events();
     return true;
 }
@@ -338,6 +350,138 @@ void VlcPlayer::set_volume(int volume)
         libvlc_audio_set_volume(static_cast<libvlc_media_player_t *>(m_mp), volume);
 }
 
+// ── Godot-routed audio ───────────────────────────────────────────────────────
+
+int VlcPlayer::get_audio_rate() const { return m_audio_rate; }
+int VlcPlayer::get_audio_channels() const { return m_audio_channels; }
+
+void VlcPlayer::cb_audio_play(void *data, const void *samples, unsigned count, int64_t pts)
+{
+    (void)pts;
+    VlcPlayer *self = static_cast<VlcPlayer *>(data);
+    const int16_t *pcm = static_cast<const int16_t *>(samples);
+    size_t n = (size_t)count * (size_t)self->m_audio_channels; // total int16 samples
+    std::lock_guard<std::mutex> lock(self->m_audio_mutex);
+    size_t cap = self->m_audio_ring.size();
+    if (cap == 0)
+        return;
+    for (size_t i = 0; i < n; i++)
+    {
+        self->m_audio_ring[self->m_audio_tail] = pcm[i];
+        self->m_audio_tail = (self->m_audio_tail + 1) % cap;
+        if (self->m_audio_count < cap)
+            self->m_audio_count++;
+        else
+            self->m_audio_head = (self->m_audio_head + 1) % cap; // overwrite oldest
+    }
+}
+
+void VlcPlayer::cb_audio_flush(void *data, int64_t pts)
+{
+    (void)pts;
+    VlcPlayer *self = static_cast<VlcPlayer *>(data);
+    std::lock_guard<std::mutex> lock(self->m_audio_mutex);
+    self->m_audio_head = 0;
+    self->m_audio_tail = 0;
+    self->m_audio_count = 0;
+}
+
+PackedVector2Array VlcPlayer::read_audio(int max_frames)
+{
+    PackedVector2Array out;
+    int ch = m_audio_channels;
+    if (ch < 1 || max_frames <= 0)
+        return out;
+    std::lock_guard<std::mutex> lock(m_audio_mutex);
+    size_t cap = m_audio_ring.size();
+    if (cap == 0)
+        return out;
+    int frames_avail = (int)(m_audio_count / (size_t)ch);
+    int frames = std::min(max_frames, frames_avail);
+    if (frames <= 0)
+        return out;
+    out.resize(frames);
+    Vector2 *w = out.ptrw();
+    for (int f = 0; f < frames; f++)
+    {
+        int16_t l = m_audio_ring[m_audio_head];
+        m_audio_head = (m_audio_head + 1) % cap;
+        int16_t r = l;
+        if (ch >= 2)
+        {
+            r = m_audio_ring[m_audio_head];
+            m_audio_head = (m_audio_head + 1) % cap;
+        }
+        for (int c = 2; c < ch; c++) // discard extra channels (we request stereo)
+            m_audio_head = (m_audio_head + 1) % cap;
+        w[f] = Vector2((float)l / 32768.0f, (float)r / 32768.0f);
+        m_audio_count -= (size_t)ch;
+    }
+    return out;
+}
+
+// ── Audio-track / subtitle selection ─────────────────────────────────────────
+
+static Array vlc_desc_to_array(libvlc_track_description_t *t)
+{
+    Array a;
+    while (t)
+    {
+        Dictionary d;
+        d["id"] = t->i_id;
+        d["name"] = String::utf8(t->psz_name ? t->psz_name : "");
+        a.append(d);
+        t = t->p_next;
+    }
+    return a;
+}
+
+Array VlcPlayer::get_audio_tracks() const
+{
+    if (!m_mp)
+        return Array();
+    libvlc_media_player_t *mp = static_cast<libvlc_media_player_t *>(m_mp);
+    libvlc_track_description_t *t = libvlc_audio_get_track_description(mp);
+    Array a = vlc_desc_to_array(t);
+    if (t)
+        libvlc_track_description_list_release(t);
+    return a;
+}
+
+int VlcPlayer::get_audio_track() const
+{
+    return m_mp ? libvlc_audio_get_track(static_cast<libvlc_media_player_t *>(m_mp)) : -1;
+}
+
+void VlcPlayer::set_audio_track(int id)
+{
+    if (m_mp)
+        libvlc_audio_set_track(static_cast<libvlc_media_player_t *>(m_mp), id);
+}
+
+Array VlcPlayer::get_subtitle_tracks() const
+{
+    if (!m_mp)
+        return Array();
+    libvlc_media_player_t *mp = static_cast<libvlc_media_player_t *>(m_mp);
+    libvlc_track_description_t *t = libvlc_video_get_spu_description(mp);
+    Array a = vlc_desc_to_array(t);
+    if (t)
+        libvlc_track_description_list_release(t);
+    return a;
+}
+
+int VlcPlayer::get_subtitle() const
+{
+    return m_mp ? libvlc_video_get_spu(static_cast<libvlc_media_player_t *>(m_mp)) : -1;
+}
+
+void VlcPlayer::set_subtitle(int id)
+{
+    if (m_mp)
+        libvlc_video_set_spu(static_cast<libvlc_media_player_t *>(m_mp), id);
+}
+
 // ── bindings ─────────────────────────────────────────────────────────────────
 
 void VlcPlayer::_bind_methods()
@@ -377,6 +521,17 @@ void VlcPlayer::_bind_methods()
     ClassDB::bind_method(D_METHOD("get_length"), &VlcPlayer::get_length);
     ClassDB::bind_method(D_METHOD("get_time"), &VlcPlayer::get_time);
     ClassDB::bind_method(D_METHOD("set_volume", "volume"), &VlcPlayer::set_volume);
+
+    ClassDB::bind_method(D_METHOD("get_audio_rate"), &VlcPlayer::get_audio_rate);
+    ClassDB::bind_method(D_METHOD("get_audio_channels"), &VlcPlayer::get_audio_channels);
+    ClassDB::bind_method(D_METHOD("read_audio", "max_frames"), &VlcPlayer::read_audio);
+
+    ClassDB::bind_method(D_METHOD("get_audio_tracks"), &VlcPlayer::get_audio_tracks);
+    ClassDB::bind_method(D_METHOD("get_audio_track"), &VlcPlayer::get_audio_track);
+    ClassDB::bind_method(D_METHOD("set_audio_track", "id"), &VlcPlayer::set_audio_track);
+    ClassDB::bind_method(D_METHOD("get_subtitle_tracks"), &VlcPlayer::get_subtitle_tracks);
+    ClassDB::bind_method(D_METHOD("get_subtitle"), &VlcPlayer::get_subtitle);
+    ClassDB::bind_method(D_METHOD("set_subtitle", "id"), &VlcPlayer::set_subtitle);
 
     ADD_SIGNAL(MethodInfo("finished"));
 }

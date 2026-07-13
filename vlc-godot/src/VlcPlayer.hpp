@@ -17,8 +17,11 @@
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_vector2_array.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/vector2i.hpp>
 
+#include <cstdint>
 #include <mutex>
 #include <vector>
 
@@ -72,7 +75,24 @@ public:
     void set_position(double pos);
     int64_t get_length() const;    // ms
     int64_t get_time() const;      // ms
-    void set_volume(int volume);   // 0..100
+    void set_volume(int volume);   // 0..100 (libVLC internal gain)
+
+    // Godot-routed audio: libVLC decodes to a PCM ring buffer here; the owner
+    // pulls frames each _process into an AudioStreamGenerator on a 3D player, so
+    // DVD sound is spatialised at the TV and follows Godot's volume/attenuation.
+    int get_audio_rate() const;        // Hz (we request 48000)
+    int get_audio_channels() const;    // channels (we request stereo = 2)
+    // Pop up to max_frames stereo frames (L,R in -1..1); returns what was ready.
+    godot::PackedVector2Array read_audio(int max_frames);
+
+    // Audio-track + subtitle (spu) selection for the options panel. Each entry is
+    // { "id": int, "name": String }; id -1 disables (subtitles off).
+    godot::Array get_audio_tracks() const;
+    int get_audio_track() const;
+    void set_audio_track(int id);
+    godot::Array get_subtitle_tracks() const;
+    int get_subtitle() const;
+    void set_subtitle(int id);
 
 protected:
     static void _bind_methods();
@@ -91,6 +111,9 @@ private:
     static void cb_cleanup(void *opaque);
     // End-of-media event → deferred "finished" signal.
     static void cb_event(const void *event, void *data);
+    // libVLC audio callbacks (VLC-free signatures matching the typedefs).
+    static void cb_audio_play(void *data, const void *samples, unsigned count, int64_t pts);
+    static void cb_audio_flush(void *data, int64_t pts);
 
     void *m_vlc = nullptr;   // libvlc_instance_t*
     void *m_mp = nullptr;    // libvlc_media_player_t*
@@ -105,5 +128,14 @@ private:
 
     godot::Ref<godot::Image> m_image;
     godot::Ref<godot::ImageTexture> m_texture;
+
+    // Audio PCM ring buffer (interleaved int16), filled on VLC's audio thread.
+    mutable std::mutex m_audio_mutex;
+    std::vector<int16_t> m_audio_ring;
+    size_t m_audio_head = 0;
+    size_t m_audio_tail = 0;
+    size_t m_audio_count = 0;
+    int m_audio_rate = 48000;
+    int m_audio_channels = 2;
 };
 } // namespace SK
