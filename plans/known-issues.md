@@ -16,3 +16,7 @@
     * i also don't see the start button, toggle to stop when it is running
 * Scraping a system '3ds' gives a is not supported for scraper
 * I can't find the start button for a NDS or a 3DS
+* DVD remote has no "Return" (go-up-one-menu-level) button — libVLC 3's navigate API
+  only exposes up/down/left/right/activate/popup (no dvdnav go_up), so a true Return
+  isn't implementable on the current stack. "Menu" already escapes any submenu to the
+  root menu; revisit a dedicated Return if/when we move to libVLC 4.
