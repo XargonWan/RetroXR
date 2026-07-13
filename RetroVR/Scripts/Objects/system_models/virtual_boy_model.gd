@@ -146,7 +146,8 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	attach_point.position = Vector3(-VISOR_SIZE.x / 2.0 - 0.002, _visor_center_y, 0)
+	# Video-out on the rear of the visor, not the left edge.
+	attach_point.position = Vector3(0, _visor_center_y, -VISOR_SIZE.z / 2.0 - 0.002)
 
 
 func on_power_on() -> void:
