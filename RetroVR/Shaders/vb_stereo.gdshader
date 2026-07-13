@@ -18,6 +18,7 @@ uniform float powered: hint_range(0.0, 1.0) = 0.0;
 
 void fragment() {
 	vec2 uv = vec2(UV.x * 0.5 + (VIEW_INDEX == VIEW_RIGHT ? 0.5 : 0.0), UV.y);
-	ALBEDO = vec3(0.0);
-	EMISSION = texture(source_tex, uv).rgb * powered;
+	// render_mode is unshaded, so the output is ALBEDO (EMISSION is not applied).
+	// Write the picture to ALBEDO so the eyepiece actually shows it.
+	ALBEDO = texture(source_tex, uv).rgb * powered;
 }
