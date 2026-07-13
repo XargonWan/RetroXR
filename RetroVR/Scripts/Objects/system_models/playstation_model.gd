@@ -152,3 +152,13 @@ func uses_memory_cards() -> bool:
 ## Put the card slot on the front-left of the console, next to controller port 1.
 func configure_memory_card_slot(slot: Node3D) -> void:
 	slot.position = Vector3(-0.09, 0.02, 0.14)
+
+
+## Seat the disc on the CD rotor inside the bay (exposed when the lid opens),
+## not the default slot floating above the console centre. The rotor sits at
+## ~(0, 0.047, 0.011) in the console's local space.
+func configure_cartridge_slot(slot: Node3D) -> void:
+	slot.position = Vector3(0.0, 0.05, 0.011)
+	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
+	if visual:
+		visual.visible = false
