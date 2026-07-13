@@ -2,20 +2,13 @@
     * Tested in VR with a mouse in a SNES on Mario Paint
 * Stoping a system (core) causes a stuttur (game freezes for less than a second)
 * can't seem to drop a nintendo DS when picked up with hand in VR
-* Nintendo DS and Virtual Boy (check others) controller port seems to just be floating in front of it, it needes to be on the model and to scale
-* Nintendo DS and Virtual Boy (check others) 'video port' is still the same as the system, i needs to be on the rear of the handheld and to scale
-* Virtual Boy seems to float in the air a bit, when it is tried to be placed on the ground
-* Playstation seem top load a 'model, but it's way off the origin
-    * playstation model should also use the lid for the animation of the opening and closing, same for the buttons when press rather than the vr button squares
-* Game Disks seems to have a 'square outline' from the pickable shader
-    * tested on a disk that had it's support texture loaded on it for a playstatation 1 game
-    * The outline should just outline the circle of the disk
-* when walking around, sometimes when I step on a object, I get 'launched' in a direction until I hit a wall
-* I don't see the image on the virtual boy when i start a rom
-    * I do see the image when i plug it in to a TV, but I don't see the stero image, i just see the side by side image
-    * i also don't see the start button, toggle to stop when it is running
-* Scraping a system '3ds' gives a is not supported for scraper
-* I can't find the start button for a NDS or a 3DS
+    * drop is grip+trigger+stick-click on the holding hand (same as cabinet
+      controllers); confirm whether that combo drops a cabinet controller to tell
+      if this is DS-specific or just the combo being hard to find
+* Virtual Boy on a TV shows the raw side-by-side frame, not a single/stereo image
+    * currently by design — the video-out treats the TV like a capture card
+    * revisit if a single-eye (or anaglyph) TV view is wanted
+* Virtual Boy has no easy-to-find start/stop (power) control while a game is running
 * DVD remote has no "Return" (go-up-one-menu-level) button — libVLC 3's navigate API
   only exposes up/down/left/right/activate/popup (no dvdnav go_up), so a true Return
   isn't implementable on the current stack. "Menu" already escapes any submenu to the
