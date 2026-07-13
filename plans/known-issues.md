@@ -13,3 +13,8 @@
 * when walking around, sometimes when I step on a object, I get 'launched' in a direction until I hit a wall
 * Menu button when pressed on remote when looking at a DVD player, doesn't take me back to the menu
 * TV Remote menu seems to update when a button is pressed, so if it enters a playback where 'ok' is no longer function and next/prev chapter are availabe, the menu doesn't updated until a button is pressed
+* I don't see the image on the virtual boy when i start a rom
+    * I do see the image when i plug it in to a TV, but I don't see the stero image, i just see the side by side image
+    * i also don't see the start button, toggle to stop when it is running
+* Scraping a system '3ds' gives a is not supported for scraper
+* I can't find the start button for a NDS or a 3DS
