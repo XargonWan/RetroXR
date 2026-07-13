@@ -150,6 +150,19 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 	attach_point.position = Vector3(0, _visor_center_y, -VISOR_SIZE.z / 2.0 - 0.002)
 
 
+## The default console collision box (bottom at y=-0.05) leaves the Virtual Boy
+## floating above the floor. Size the box to the model's footprint/height and sit
+## its bottom at y=0 so the stand base rests on the ground.
+func configure_collision(host: Node3D) -> void:
+	var col := host.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col == null or not (col.shape is BoxShape3D):
+		return
+	col.shape = col.shape.duplicate()
+	var top := _visor_center_y + VISOR_SIZE.y / 2.0   # full height from the floor
+	(col.shape as BoxShape3D).size = Vector3(VISOR_SIZE.x, top, 0.14)
+	col.position = Vector3(0, top / 2.0, 0)
+
+
 func on_power_on() -> void:
 	if _stereo_mat:
 		_stereo_mat.set_shader_parameter("powered", 1.0)

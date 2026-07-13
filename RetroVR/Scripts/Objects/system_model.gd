@@ -111,6 +111,15 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 	pass
 
 
+## Adjust the root collision shape to fit this model. Custom non-handheld models
+## whose geometry doesn't match the default console box (e.g. the tall Virtual
+## Boy standing on its bipod) override this so the body rests on the ground
+## instead of floating. Default: leave the scene's collision box unchanged.
+## (Handhelds resize collision separately via configure_handheld_body.)
+func configure_collision(host: Node3D) -> void:
+	pass
+
+
 ## Reposition the cartridge snap zone to the model's physical slot location.
 ## Also returns the insertion offset — the vector the cartridge travels from its
 ## pre-animation position to the snapped position (in world space).

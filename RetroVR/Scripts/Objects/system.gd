@@ -173,6 +173,7 @@ func _load_system_model() -> void:
 	_model.configure_controller_ports(_port_zones)
 	_model.configure_cable_attach(_cable_attach_point)
 	_model.configure_cartridge_slot(_cartridge_slot)
+	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
 	# real console's built-in port count) over the model's default, clamped to
 	# the cabinet's available snap zones. A multitap plugged into a port extends
