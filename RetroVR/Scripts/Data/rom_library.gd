@@ -11,6 +11,8 @@ extends RefCounted
 static func default_roms_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retrovr/files/roms"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retrovr/roms"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/roms"
 
 
@@ -107,6 +109,8 @@ static func scraped_manual_path(systemid: String, romname: String) -> String:
 static func default_books_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retrovr/files/books"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retrovr/books"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/books"
 
 
@@ -151,6 +155,8 @@ const VIDEO_EXTENSIONS := ["mp4", "mkv", "avi", "webm", "mov"]
 static func default_videos_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retrovr/files/videos"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retrovr/videos"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/videos"
 
 
@@ -191,6 +197,8 @@ static func scan_videos() -> Array[Dictionary]:
 static func default_dvd_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retrovr/files/dvd"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retrovr/dvd"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/dvd"
 
 

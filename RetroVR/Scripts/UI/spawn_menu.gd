@@ -1187,7 +1187,8 @@ func _populate_manager_tab() -> void:
 	var cores_dir := CoreDownloadManager.default_cores_dir()
 	var dir := DirAccess.open(cores_dir)
 	if dir:
-		var lib_suffix := "_libretro_android.so" if OS.get_name() == "Android" else "_libretro.dll"
+		var lib_ext := ".so" if OS.get_name() in ["Android", "Linux"] else ".dll"
+		var lib_suffix := ("_libretro_android" if OS.get_name() == "Android" else "_libretro") + lib_ext
 		dir.list_dir_begin()
 		var fname := dir.get_next()
 		while fname != "":

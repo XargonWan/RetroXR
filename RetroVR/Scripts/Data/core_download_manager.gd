@@ -13,6 +13,8 @@ extends Node
 static func _buildbot_url() -> String:
 	if OS.get_name() == "Android":
 		return "https://buildbot.libretro.com/nightly/android/latest/arm64-v8a/"
+	if OS.get_name() == "Linux":
+		return "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
 	return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
 
 static func _core_lib_suffix() -> String:
@@ -21,15 +23,18 @@ static func _core_lib_suffix() -> String:
 	return "_libretro"
 
 static func _core_lib_ext() -> String:
-	if OS.get_name() == "Android":
+	if OS.get_name() in ["Android", "Linux"]:
 		return ".so"
 	return ".dll"
 
 ## Default root directory for libretro data.
-## On Android: same parent dir as ROMs (/sdcard/Android/data/com.xenu.retrovr/files/libretro). On Windows: %USERPROFILE%/retrovr/libretro.
+## On Android: same parent dir as ROMs (/sdcard/Android/data/com.xenu.retrovr/files/libretro).
+## On Linux: $HOME/retrovr/libretro. On Windows: %USERPROFILE%/retrovr/libretro.
 static func default_core_root() -> String:
 	if OS.get_name() == "Android":
 		return OS.get_user_data_dir() + "/libretro"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retrovr/libretro"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/libretro"
 
 
