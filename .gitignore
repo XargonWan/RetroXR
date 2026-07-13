@@ -39,3 +39,7 @@ mono_crash.*.json
 
 # Blender-specific ignores
 *.blend[0-9]*
+
+# Local libretro core root. On Linux default_core_root() is $HOME/retrovr/libretro,
+# which lands inside the repo when it's cloned at ~/retrovr. Never commit cores.
+/libretro/
