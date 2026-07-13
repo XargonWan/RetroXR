@@ -26,6 +26,15 @@ var _snapped_disc: Node3D = null
 var _audio_player: AudioStreamPlayer3D = null
 var _audio_playback: AudioStreamGeneratorPlayback = null
 var _volume_linear: float = 1.0
+var _paused: bool = false
+
+# Multiplayer (Phase 5): the host is the transport + menu authority; every peer
+# plays its own local copy of the disc (verify-only by MD5, never transferred —
+# same legal stance as ROMs). Sync is drift-corrected on title/chapter/time, not
+# lockstep; the disc's menu-VM highlight state is not replicated (both peers boot
+# the same root menu, and content transitions resync via title/chapter). See the
+# NetObjectSync header.
+const NET_DRIFT_TOLERANCE := 1.0   # seconds of content drift before a seek
 
 # Cable (shared with RetroSystem / VCRPlayer)
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
@@ -33,6 +42,8 @@ var _cable_instance: Node3D = null
 var _cable_plug: CablePlug = null
 var _cable_rope: VerletRope = null
 var _max_rope_length: float = 0.0
+# TV to reconnect to once the cable finishes spawning (save/load + net restore).
+var _pending_tv_restore: RetroTV = null
 
 @onready var _disc_slot: XRToolsSnapZone = $DiscSlot
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
@@ -134,7 +145,12 @@ func _on_disc_inserted(disc: Node3D) -> void:
 	add_collision_exception_with(disc)
 	if disc.has_method("get_dvd_path"):
 		dvd_path = disc.get_dvd_path()
-	play()
+	NetworkManager.report_event(NetObjectSync.EV_DVD_INSERT, {"dvd": self, "disc": disc})
+	# In a session, playback is host-authoritative — it starts via the transport
+	# commands / DVD state broadcast (mirrors the VCR, which never auto-plays on
+	# insert). Offline, auto-boot straight to the disc menu.
+	if not NetworkManager.is_active():
+		play()
 
 
 func _on_disc_removed() -> void:
@@ -143,6 +159,7 @@ func _on_disc_removed() -> void:
 		_snapped_disc = null
 	stop()
 	dvd_path = ""
+	NetworkManager.report_event(NetObjectSync.EV_DVD_REMOVE, {"dvd": self})
 
 
 func _on_eject_pressed() -> void:
@@ -159,20 +176,30 @@ func remote_stop() -> void: _on_stop_pressed()
 
 
 func _on_play_pressed() -> void:
+	if _net_forward_cmd("play"):
+		return
 	if not is_playing:
 		play()
 	else:
 		_vlc.set_paused(false)
-	_osd("PLAY")
+		_paused = false
+		_osd("PLAY")
+		_net_push_state()
 
 
 func _on_pause_pressed() -> void:
+	if _net_forward_cmd("pause"):
+		return
 	if is_playing and _vlc:
 		_vlc.set_paused(true)
+		_paused = true
 		_osd("PAUSE")
+		_net_push_state()
 
 
 func _on_stop_pressed() -> void:
+	if _net_forward_cmd("stop"):
+		return
 	stop()
 
 
@@ -192,11 +219,13 @@ func play() -> void:
 	# Full internal gain — level is controlled by the Godot 3D player (TV knob).
 	_vlc.set_volume(100)
 	is_playing = true
+	_paused = false
 	if _audio_player:
 		_audio_player.play()
 		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
 		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
 	_osd("DVD")
+	_net_push_state()
 
 
 func stop() -> void:
@@ -205,12 +234,14 @@ func stop() -> void:
 	if _vlc:
 		_vlc.stop()
 	is_playing = false
+	_paused = false
 	if _audio_player:
 		_audio_player.stop()
 	_audio_playback = null
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
+	_net_push_state()
 
 
 func _on_disc_finished() -> void:
@@ -219,32 +250,153 @@ func _on_disc_finished() -> void:
 
 # --- DVD menu / chapter control (called by the remote) ---
 
-func dvd_menu_up() -> void: if _vlc: _vlc.menu_up()
-func dvd_menu_down() -> void: if _vlc: _vlc.menu_down()
-func dvd_menu_left() -> void: if _vlc: _vlc.menu_left()
-func dvd_menu_right() -> void: if _vlc: _vlc.menu_right()
-func dvd_ok() -> void: if _vlc: _vlc.menu_activate()
+func dvd_menu_up() -> void:
+	if _net_forward_cmd("menu_up"): return
+	if _vlc: _vlc.menu_up()
+	_net_push_state()
+
+
+func dvd_menu_down() -> void:
+	if _net_forward_cmd("menu_down"): return
+	if _vlc: _vlc.menu_down()
+	_net_push_state()
+
+
+func dvd_menu_left() -> void:
+	if _net_forward_cmd("menu_left"): return
+	if _vlc: _vlc.menu_left()
+	_net_push_state()
+
+
+func dvd_menu_right() -> void:
+	if _net_forward_cmd("menu_right"): return
+	if _vlc: _vlc.menu_right()
+	_net_push_state()
+
+
+func dvd_ok() -> void:
+	if _net_forward_cmd("ok"): return
+	if _vlc: _vlc.menu_activate()
+	_net_push_state()
+
+
 func dvd_root_menu() -> void:
+	if _net_forward_cmd("root"): return
 	if _vlc:
 		_vlc.menu_popup()
 		_osd("MENU")
+	_net_push_state()
 
 
 func dvd_next_chapter() -> void:
+	if _net_forward_cmd("next_ch"): return
 	if _vlc:
 		_vlc.next_chapter()
 		_osd("NEXT")
+	_net_push_state()
 
 
 func dvd_prev_chapter() -> void:
+	if _net_forward_cmd("prev_ch"): return
 	if _vlc:
 		_vlc.prev_chapter()
 		_osd("PREV")
+	_net_push_state()
 
 
 ## Whether the disc is currently showing a menu (drives the remote's button set).
 func is_in_menu() -> bool:
 	return _vlc != null and _vlc.is_in_menu()
+
+
+# ── Multiplayer sync (Phase 5) ────────────────────────────────────────────────
+# Host is transport + menu authority. A client's transport/menu intent is
+# forwarded to the host, which executes it and broadcasts DVD state; every peer
+# plays its own local disc copy and drift-corrects to the host's title/chapter/
+# time. Disc images are verify-only (MD5), never sent (see file_transfer.gd).
+
+## Client-in-session: route a transport/menu intent to the host instead of
+## acting locally. Returns true when forwarded (caller must then return).
+func _net_forward_cmd(cmd: String) -> bool:
+	if NetworkManager.is_client() and not NetworkManager.is_event_applying():
+		NetworkManager.report_event(NetObjectSync.EV_DVD_CMD, {"dvd": self, "cmd": cmd})
+		return true
+	return false
+
+
+## Host: broadcast the current transport state for peer drift sync (no-op
+## offline / on clients / while applying a remote event).
+func _net_push_state() -> void:
+	if NetworkManager.is_host() and not NetworkManager.is_event_applying():
+		NetworkManager.report_dvd_state(self)
+
+
+## Current transport state for the sync layer.
+func net_get_state() -> Dictionary:
+	if not is_playing or _vlc == null:
+		return {"playing": false, "paused": false, "title": 0, "chapter": 0,
+			"time": 0, "length": 0, "menu": false}
+	return {
+		"playing": true,
+		"paused": _paused,
+		"title": _vlc.get_title(),
+		"chapter": _vlc.get_chapter(),
+		"time": _vlc.get_time(),
+		"length": _vlc.get_length(),
+		"menu": _vlc.is_in_menu(),
+	}
+
+
+## Client: mirror the host's transport state on the LOCAL player.
+func net_apply_state(playing: bool, paused: bool, title: int, chapter: int,
+		time_ms: int, length_ms: int, menu: bool) -> void:
+	if not playing:
+		if is_playing:
+			stop()
+		return
+	# The disc path is resolved by object_sync after insertion (verify-only);
+	# refresh in case it landed after the insert event.
+	if dvd_path.is_empty() and _snapped_disc and _snapped_disc.has_method("get_dvd_path"):
+		dvd_path = _snapped_disc.get_dvd_path()
+	if not is_playing:
+		if dvd_path.is_empty() or connected_tv == null:
+			_osd("WAITING FOR DISC…")
+			return
+		play()
+	if not is_playing or _vlc == null:
+		return
+	# Follow the host into the same content position. Menu-highlight state is not
+	# replicated, so only correct title/chapter/time when the host is out of a
+	# menu (i.e. actually playing a title).
+	if not menu:
+		if _vlc.get_title() != title:
+			_vlc.set_title(title)
+		if _vlc.get_chapter() != chapter:
+			_vlc.set_chapter(chapter)
+		if length_ms > 0 and absf(float(_vlc.get_time() - time_ms)) > NET_DRIFT_TOLERANCE * 1000.0:
+			_vlc.set_position(clampf(float(time_ms) / float(length_ms), 0.0, 1.0))
+	_vlc.set_paused(paused)
+	_paused = paused
+
+
+# ── Save/load + net restore ───────────────────────────────────────────────────
+
+func get_snapped_disc() -> Node3D:
+	return _snapped_disc
+
+
+## Snap a disc into the slot programmatically (event/save restore).
+func restore_disc(disc: Node3D) -> void:
+	_disc_slot.pick_up_object(disc)
+
+
+## Reconnect the cable to a TV programmatically (EV_TV_PLUG + save restore). If
+## the cable hasn't finished spawning yet, defer until it has.
+func restore_cable_connection(tv: RetroTV) -> void:
+	if _cable_plug != null:
+		tv.accept_plug_restore(_cable_plug)
+	else:
+		_pending_tv_restore = tv
 
 
 # --- Options panel (audio track / subtitles) ---
@@ -377,6 +529,9 @@ func _add_cable_to_scene() -> void:
 	_cable_rope.end_node = _cable_plug
 	_cable_rope._init_points()
 	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
+	if _pending_tv_restore != null:
+		_pending_tv_restore.accept_plug_restore(_cable_plug)
+		_pending_tv_restore = null
 
 
 func _physics_process(_delta: float) -> void:

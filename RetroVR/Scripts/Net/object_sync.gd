@@ -49,6 +49,9 @@ enum {
 	EV_MEMCARD_REMOVE,   # {sys}
 	EV_TRAY,             # {sys, open}   disc tray lid opened/closed
 	EV_DISK_OP,          # {sys, op, md5, index}  client disc-swap intent -> host schedules
+	EV_DVD_INSERT,       # {dvd, disc}
+	EV_DVD_REMOVE,       # {dvd}
+	EV_DVD_CMD,          # {dvd, cmd}    client intent -> host transport/menu
 }
 
 var _nm: Node = null
@@ -664,6 +667,32 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 			if _nm.is_host() and _valid(a, ["sys"]) and _nm.has_method("netplay_schedule_disk"):
 				_nm.netplay_schedule_disk(a["sys"], int(a.get("op", 0)),
 					str(a.get("md5", "")), int(a.get("index", 0)))
+		EV_DVD_INSERT:
+			if _valid(a, ["dvd", "disc"]):
+				a["dvd"].restore_disc(a["disc"])
+		EV_DVD_REMOVE:
+			if _valid(a, ["dvd"]):
+				a["dvd"].get_node("DiscSlot").drop_object()
+		EV_DVD_CMD:
+			# DVD transport/menu is host-authoritative: the host executes the
+			# command and its state broadcast (send_dvd_state) drives every
+			# peer's local playback. Run un-suppressed so the command hook's
+			# _net_push_state() actually broadcasts.
+			if _nm.is_host() and _valid(a, ["dvd"]):
+				_applying = false
+				var dvd: Node = a["dvd"]
+				match str(a.get("cmd", "")):
+					"play": dvd.remote_play()
+					"pause": dvd.remote_pause()
+					"stop": dvd.remote_stop()
+					"menu_up": dvd.dvd_menu_up()
+					"menu_down": dvd.dvd_menu_down()
+					"menu_left": dvd.dvd_menu_left()
+					"menu_right": dvd.dvd_menu_right()
+					"ok": dvd.dvd_ok()
+					"root": dvd.dvd_root_menu()
+					"next_ch": dvd.dvd_next_chapter()
+					"prev_ch": dvd.dvd_prev_chapter()
 	_applying = false
 
 
@@ -726,7 +755,12 @@ func _host_vcr_heartbeat() -> void:
 		var node: Node = _registry[id]
 		if is_instance_valid(node) and node.has_method("net_get_state") \
 				and bool(node.get("is_playing")):
-			send_vcr_state(node)
+			# Route by state shape: DVD states carry a title/chapter, VCR states a
+			# scalar position (keeps the sync layer agnostic of the concrete class).
+			if node.net_get_state().has("title"):
+				send_dvd_state(node)
+			else:
+				send_vcr_state(node)
 
 
 @rpc("authority", "call_remote", "reliable", 0)
@@ -735,6 +769,33 @@ func _vcr_state(net_id: int, playing: bool, paused: bool, pos: float) -> void:
 	if is_instance_valid(node) and node.has_method("net_apply_state"):
 		_applying = true
 		node.call("net_apply_state", playing, paused, pos)
+		_applying = false
+
+
+# ── DVD playback sync (Phase 5) ───────────────────────────────────────────────
+# Like the VCR, but the state carries the DVD's structural position (title +
+# chapter + time) so peers can follow the host across menu→title transitions and
+# chapter jumps. Menu-highlight state is NOT replicated (host is menu authority).
+
+## Called via the NetworkManager facade from DVDPlayer transport/menu hooks (host).
+func send_dvd_state(dvd: Node) -> void:
+	if not _nm.is_host():
+		return
+	var id := id_of(dvd)
+	if id < 0 or not dvd.has_method("net_get_state"):
+		return
+	var s: Dictionary = dvd.net_get_state()
+	_dvd_state.rpc(id, bool(s["playing"]), bool(s["paused"]), int(s["title"]),
+		int(s["chapter"]), int(s["time"]), int(s["length"]), bool(s["menu"]))
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _dvd_state(net_id: int, playing: bool, paused: bool, title: int,
+		chapter: int, time_ms: int, length_ms: int, menu: bool) -> void:
+	var node: Node = _registry.get(net_id)
+	if is_instance_valid(node) and node.has_method("net_apply_state"):
+		_applying = true
+		node.call("net_apply_state", playing, paused, title, chapter, time_ms, length_ms, menu)
 		_applying = false
 
 
@@ -760,6 +821,11 @@ func _file_desc(node: Node) -> Dictionary:
 		return {"kind": "rom", "prop": "rom_path"}
 	if node is VCRTape:
 		return {"kind": "video", "prop": "video_path"}
+	if node is DVDDisc:
+		# DVD images are large + copyrighted — verify-only by hash, never sent
+		# (same stance as ROMs). Only single-file images (.iso/.img) can be
+		# hash-verified; a VIDEO_TS folder simply won't resolve on a peer.
+		return {"kind": "dvd", "prop": "dvd_path"}
 	return {}
 
 
@@ -833,16 +899,17 @@ func _resolve_file_fields(node: Node, entry: Dictionary) -> void:
 		# Host hasn't hashed it yet — _file_info will re-enter when it has.
 		node.set(prop, "")
 		return
-	if kind == "rom":
+	if kind == "rom" or kind == "dvd":
 		# Verify-only: find our own byte-identical copy, never transfer.
-		var dirs: Array = [RomLibrary.default_roms_root()]
+		var dirs: Array = [RomLibrary.default_roms_root()] if kind == "rom" \
+			else [RomLibrary.default_dvd_root()]
 		var found := NetFileTransfer.resolve_by_md5(md5, kind, size, path, dirs)
 		if not found.is_empty():
 			node.set(prop, found)
-			print("[NetObjectSync] rom matched by hash: %s" % found)
+			print("[NetObjectSync] %s matched by hash: %s" % [kind, found])
 		else:
 			node.set(prop, "")
-			print("[NetObjectSync] rom %s… not in local library (verify-only, not transferred)" % md5.left(8))
+			print("[NetObjectSync] %s %s… not in local library (verify-only, not transferred)" % [kind, md5.left(8)])
 		return
 	var found := NetFileTransfer.resolve_by_md5(md5, kind, size, path)
 	if not found.is_empty():

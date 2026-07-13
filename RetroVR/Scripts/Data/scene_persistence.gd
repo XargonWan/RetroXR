@@ -23,6 +23,8 @@ const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.t
 const RAY_GUN_SCENE          := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE              := preload("res://Scenes/Objects/vcr_player.tscn")
 const TAPE_SCENE             := preload("res://Scenes/Objects/vcr_tape.tscn")
+const DVD_SCENE              := preload("res://Scenes/Objects/dvd_player.tscn")
+const DVD_DISC_SCENE         := preload("res://Scenes/Objects/dvd_disc.tscn")
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
@@ -287,6 +289,21 @@ func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 			var tape_id: int = d.get("snapped_tape_id", -1)
 			if spawned.has(tape_id) and spawned[tape_id] is VCRTape:
 				vcr.restore_tape(spawned[tape_id])
+		elif spawned[id] is DVDPlayer:
+			var dvd := spawned[id] as DVDPlayer
+			var tv_id: int = d.get("connected_tv_id", -1)
+			var tv_path: String = d.get("connected_tv_path", "")
+			if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+				dvd.restore_cable_connection(spawned[tv_id] as RetroTV)
+			elif not tv_path.is_empty():
+				var tv_node := root.get_node_or_null(tv_path) as RetroTV
+				if tv_node:
+					dvd.restore_cable_connection(tv_node)
+				else:
+					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+			var disc_id: int = d.get("snapped_disc_id", -1)
+			if spawned.has(disc_id) and spawned[disc_id] is DVDDisc:
+				dvd.restore_disc(spawned[disc_id])
 		elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
 			var ctrl: Node3D = spawned[id]
 			var port_idx: int = d.get("port_index", -1)
@@ -444,6 +461,34 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+	elif node is DVDPlayer:
+		var dvd := node as DVDPlayer
+		var tv_id: int = node_to_id.get(dvd.connected_tv, -1) if dvd.connected_tv != null else -1
+		var tv_path: String = ""
+		if dvd.connected_tv != null and tv_id == -1:
+			tv_path = str(dvd.connected_tv.get_path())
+		var disc := dvd.get_snapped_disc()
+		var disc_id: int = node_to_id.get(disc, -1) if disc != null else -1
+		var result := {
+			"id": id,
+			"type": "dvd_player",
+			"connected_tv_id": tv_id,
+			"snapped_disc_id": disc_id,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
+		if not tv_path.is_empty():
+			result["connected_tv_path"] = tv_path
+		return result
+	elif node is DVDDisc:
+		return {
+			"id": id,
+			"type": "dvd_disc",
+			"dvd_path": (node as DVDDisc).dvd_path,
+			"dvd_label": (node as DVDDisc).dvd_label,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	elif node is RetroController or node is RayGun or node is RetroMouse or node is RetroKeyboard:
 		var obj_type := "retro_controller"
 		if node is RayGun:
@@ -536,6 +581,13 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			tape.video_path = data.get("video_path", "")
 			tape.video_label = data.get("video_label", "")
 			obj = tape
+		"dvd_player":
+			obj = DVD_SCENE.instantiate() as Node3D
+		"dvd_disc":
+			var disc := DVD_DISC_SCENE.instantiate() as DVDDisc
+			disc.dvd_path = data.get("dvd_path", "")
+			disc.dvd_label = data.get("dvd_label", "")
+			obj = disc
 		_:
 			push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
 			return null

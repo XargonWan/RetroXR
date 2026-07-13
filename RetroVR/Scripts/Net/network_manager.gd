@@ -209,6 +209,12 @@ func report_vcr_state(vcr: Node) -> void:
 		_object_sync.send_vcr_state(vcr)
 
 
+## Host DVD transport/menu changed — broadcast the new state for drift sync (Phase 5).
+func report_dvd_state(dvd: Node) -> void:
+	if _active and _object_sync != null:
+		_object_sync.send_dvd_state(dvd)
+
+
 # ── Netplay facade (M4) ───────────────────────────────────────────────────────
 
 ## True if the core is determinism-verified for lockstep netplay.
