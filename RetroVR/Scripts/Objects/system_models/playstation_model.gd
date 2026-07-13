@@ -11,12 +11,37 @@ func _ready() -> void:
 		push_warning("RetroSystemModelPlaystation: could not load model at %s" % _MODEL_PATH)
 		return
 	var inst := scene.instantiate() as Node3D
-	# The GLB authored the console far from its own origin (its combined mesh AABB
-	# centres at ~(+1.294, -2.959) in X/Z); recentre it on the cabinet origin so
-	# it lines up with the controller ports / memory-card slot, with the console
-	# body base sitting at y=0.
-	inst.position = Vector3(-1.294, 0.0, 2.959)
+	# The GLB's front faces +X and it's authored far from its own origin. Rotate
+	# its front to +Z (the cabinet front, where the controller ports and the
+	# memory-card slot sit), then recentre it in X/Z on the origin (its body base
+	# is already at y=0). Recentring is computed from the rotated mesh AABB so it
+	# stays correct regardless of the rotation or a future re-export.
+	inst.rotation_degrees.y = -90.0
 	add_child(inst)
+	var xz := _model_xz_center(inst)
+	inst.position = Vector3(-xz.x, 0.0, -xz.y)
+
+
+## Combined X/Z centre of all of `inst`'s meshes, expressed in this model node's
+## local space (call after add_child, before setting inst.position).
+func _model_xz_center(inst: Node3D) -> Vector2:
+	var acc := AABB()
+	var first := true
+	var stack: Array[Node] = [inst]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D:
+			var mi := n as MeshInstance3D
+			var ab: AABB = (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+			if first:
+				acc = ab
+				first = false
+			else:
+				acc = acc.merge(ab)
+		for ch in n.get_children():
+			stack.append(ch)
+	var ctr := acc.position + acc.size * 0.5
+	return Vector2(ctr.x, ctr.z)
 
 
 ## Rest the console body on the ground. The default console collision box bottoms
