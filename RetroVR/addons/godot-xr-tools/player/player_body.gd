@@ -47,6 +47,11 @@ const ON_GROUND_DISTANCE := 0.1
 ## Ground distance considered "near" the ground
 const NEAR_GROUND_DISTANCE := 1.0
 
+## Max plausible speed (m/s) for the surface under the player's feet. Above this
+## the ground-velocity reading is treated as a spurious spike (a small RigidBody
+## shoved/tipped from under the player) and ignored, to avoid launching them.
+const MAX_GROUND_VELOCITY := 5.0
+
 
 ## If true, the player body performs physics processing and movement
 @export var enabled : bool = true: set = set_enabled
@@ -799,6 +804,12 @@ func _update_ground_information(delta: float):
 		var pos_old := _previous_ground_global
 		var pos_new := ground_node.to_global(_previous_ground_local)
 		ground_velocity = (pos_new - pos_old) / delta
+		# Guard against being launched: a small RigidBody the player steps on can be
+		# shoved out from under them (push_rigid_bodies) or tip over, spiking the
+		# tracked ground point's velocity and flinging the player across the room.
+		# A real moving platform stays well under this; treat a spike as spurious.
+		if ground_velocity.length() > MAX_GROUND_VELOCITY:
+			ground_velocity = Vector3.ZERO
 
 	# Update ground velocity information
 	_previous_ground_node = ground_node
