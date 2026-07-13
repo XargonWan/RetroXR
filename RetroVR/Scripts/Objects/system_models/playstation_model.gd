@@ -14,6 +14,9 @@ var _lid_open: Transform3D
 var _lid_tween: Tween
 var _lid_poses_ready := false
 
+var _power_light: OmniLight3D = null
+var _led: MeshInstance3D = null
+
 
 func _ready() -> void:
 	var scene := load(_MODEL_PATH) as PackedScene
@@ -36,6 +39,16 @@ func _ready() -> void:
 	# computed lazily on first open (see _ensure_lid_poses) — global_transform is
 	# not settled yet here in _ready.
 	_lid = inst.find_child("DeckelPSX", true, false)
+
+	# Power LED: the GLB ships a very bright always-on OmniLight (energy 3.14) that
+	# blooms hard — worse, it lights the metallic buttons/shell into a big glare.
+	# A real power LED doesn't illuminate the room, so disable the light entirely
+	# and represent the LED with a small emissive mesh instead (driven by power).
+	_power_light = inst.find_child("Power Light", true, false) as OmniLight3D
+	if _power_light:
+		_power_light.visible = false
+	_led = inst.find_child("Licht PSX 2000", true, false) as MeshInstance3D
+	_set_led(false)
 
 
 ## Combined X/Z centre of all of `inst`'s meshes, expressed in this model node's
@@ -139,11 +152,39 @@ func _wire_button(btn: VRButton, mesh_name: String, finger_name: String) -> void
 	var anchor: Node3D = finger if finger else mesh
 	if anchor:
 		btn.global_position = anchor.global_position
-	if finger:
-		btn.set_depress_axis_from_node(finger)
+	# These buttons are on the top face and press straight down. The GLB finger
+	# empties' -Z points sideways here (the model is rotated -90 deg), so drive the
+	# travel from world-down instead of the empty.
+	btn.depress_depth = 0.0035
+	btn.set_depress_axis_world(Vector3.DOWN)
 	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 	if lbl:
 		lbl.hide()
+
+
+## Light the power LED only while the console is on — a subtle green glow.
+func on_power_on() -> void:
+	_set_led(true)
+
+
+func on_power_off() -> void:
+	_set_led(false)
+
+
+func _set_led(on: bool) -> void:
+	if _led == null:
+		return
+	var mat := _led.get_surface_override_material(0) as StandardMaterial3D
+	if mat == null or not mat.resource_local_to_scene:
+		mat = StandardMaterial3D.new()
+		mat.resource_local_to_scene = true
+		_led.set_surface_override_material(0, mat)
+	mat.albedo_color = Color(0.15, 0.85, 0.3) if on else Color(0.12, 0.18, 0.12)
+	mat.emission_enabled = on
+	# Keep emission just under the glow HDR threshold (~1.0) so the tiny LED reads
+	# as a lit green dot with only a faint halo, not a blown-out bloom.
+	mat.emission = Color(0.25, 0.9, 0.4)
+	mat.emission_energy_multiplier = 0.9 if on else 0.0
 
 
 func get_controller_port_count() -> int:
@@ -157,8 +198,12 @@ func uses_memory_cards() -> bool:
 
 
 ## Video-out where the cable/rope attaches — the AV/power output on the back.
+## The placeholder gray cylinder (PortVisual) is hidden; the model has its own port.
 func configure_cable_attach(attach_point: Node3D) -> void:
 	attach_point.position = Vector3(-0.04, 0.02, -0.126)
+	var visual := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
+	if visual:
+		visual.visible = false
 
 
 ## The two controller ports sit on the front face, below the memory-card slots.

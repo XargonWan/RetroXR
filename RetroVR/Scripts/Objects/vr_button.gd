@@ -131,6 +131,17 @@ func set_depress_axis_from_node(finger_node: Node3D) -> void:
 		depress_axis = world_dir
 
 
+## Set the depress travel direction from a WORLD-space direction (converted to the
+## button mesh's parent local space). Use when a GLB's finger-button empties don't
+## encode the travel axis reliably — e.g. after the model itself has been rotated.
+func set_depress_axis_world(world_dir: Vector3) -> void:
+	var parent := _mesh_depress_parent if _mesh_depress_parent else _mesh.get_parent() as Node3D
+	if parent:
+		depress_axis = parent.global_transform.basis.inverse() * world_dir.normalized()
+	else:
+		depress_axis = world_dir.normalized()
+
+
 ## Set the button's visual color by changing its material albedo
 func set_color(color: Color) -> void:
 	if not _mesh:
