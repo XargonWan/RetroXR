@@ -64,12 +64,19 @@ func _model_xz_center(inst: Node3D) -> Vector2:
 ## out at y=-0.05, but this model's body base is at y=0 — without this it would
 ## float 5 cm once recentred.
 func configure_collision(host: Node3D) -> void:
-	var col := host.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if col == null or not (col.shape is BoxShape3D):
-		return
-	col.shape = col.shape.duplicate()
-	(col.shape as BoxShape3D).size = Vector3(0.2, 0.055, 0.28)
-	col.position = Vector3(0, 0.0275, 0)
+	# Size BOTH the pickup box and the pointer-grab proxy (PointerArea) to the
+	# console with their tops just below the top/front buttons (~y 0.051). The
+	# PointerArea box otherwise reaches y=0.07 and, being closer than the button
+	# Area3Ds, steals the desktop pointer ray — so buttons can't be clicked or
+	# highlighted (VR poke still works, it's proximity-based).
+	var box := Vector3(0.2, 0.046, 0.28)
+	var pos := Vector3(0.0, 0.023, 0.0)
+	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
+		var col := host.get_node_or_null(path) as CollisionShape3D
+		if col and col.shape is BoxShape3D:
+			col.shape = col.shape.duplicate()
+			(col.shape as BoxShape3D).size = box
+			col.position = pos
 
 
 ## Open/close the CD lid (driven by the OPEN button via RetroSystem's tray state).
@@ -147,6 +154,19 @@ func get_controller_port_count() -> int:
 ## as RETRO_MEMORY_SAVE_RAM).
 func uses_memory_cards() -> bool:
 	return true
+
+
+## Video-out where the cable/rope attaches — the AV/power output on the back.
+func configure_cable_attach(attach_point: Node3D) -> void:
+	attach_point.position = Vector3(-0.04, 0.02, -0.126)
+
+
+## The two controller ports sit on the front face, below the memory-card slots.
+func configure_controller_ports(port_zones: Array) -> void:
+	if port_zones.size() >= 1:
+		port_zones[0].position = Vector3(-0.032, 0.02, 0.12)
+	if port_zones.size() >= 2:
+		port_zones[1].position = Vector3(0.03, 0.02, 0.12)
 
 
 ## Put the card slot on the front-left of the console, next to controller port 1.
