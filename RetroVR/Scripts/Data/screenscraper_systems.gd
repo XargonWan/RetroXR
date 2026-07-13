@@ -7,6 +7,7 @@ extends RefCounted
 ## Source: https://www.screenscraper.fr/webapi2.php (system list)
 const SYSTEM_MAP := {
 	"3do": 29,
+	"3ds": 17,
 	"amiga": 64,
 	"apple_ii": 86,
 	"arcadia": 94,
