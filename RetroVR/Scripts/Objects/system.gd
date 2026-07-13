@@ -275,6 +275,12 @@ func _screen_target() -> MeshInstance3D:
 	return _model.get_builtin_screen() if _model else null
 
 
+## True when the running core outputs a side-by-side stereo frame (Virtual Boy);
+## a connected TV uses this to split the picture per-eye. Read by RetroTV.
+func is_stereo_output() -> bool:
+	return _model != null and _model.is_stereo_side_by_side()
+
+
 ## Show or hide the screen output (used by TV toggle button).
 func set_screen_enabled(enabled: bool) -> void:
 	if not is_powered_on:

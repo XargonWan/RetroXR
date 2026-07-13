@@ -246,8 +246,18 @@ func _update_crt() -> void:
 		_crt_material.shader = CRT_SHADER
 		_apply_crt_params(_crt_material)
 	_crt_material.set_shader_parameter("source_tex", tex)
+	# Virtual Boy source: split the side-by-side frame per-eye (left half → left
+	# eye, right half → right eye), like the console's own eyepiece.
+	_crt_material.set_shader_parameter("stereo_sbs", _source_is_sbs())
 	_crt_wrapped = override
 	_screen_mesh.set_surface_override_material(0, _crt_material)
+
+
+## True when the connected source outputs a side-by-side stereo frame (Virtual Boy).
+func _source_is_sbs() -> bool:
+	return _connected_system != null \
+		and _connected_system.has_method("is_stereo_output") \
+		and _connected_system.is_stereo_output()
 
 
 ## Push every tunable CRT uniform onto a material carrying the CRT display stage

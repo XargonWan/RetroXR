@@ -37,6 +37,10 @@ func get_builtin_screen() -> MeshInstance3D:
 	return _proxy   # hidden — VideoHandler renders here, the eyepiece samples it
 
 
+func is_stereo_side_by_side() -> bool:
+	return true
+
+
 func get_forced_core_options() -> Dictionary:
 	return {"vb_3dmode": "side-by-side", "vb_sidebyside_separation": "0"}
 

@@ -53,6 +53,12 @@ func get_builtin_screen() -> MeshInstance3D:
 	return null
 
 
+## True if the core outputs a side-by-side stereo frame (left eye | right eye),
+## i.e. the Virtual Boy. A connected TV then splits it per-eye like the eyepiece.
+func is_stereo_side_by_side() -> bool:
+	return false
+
+
 ## Handhelds: create and wire the on-device controls (volume slider, power
 ## switch) against the owning RetroSystem. Called after the model loads.
 func configure_handheld_controls(host: Node3D) -> void:
