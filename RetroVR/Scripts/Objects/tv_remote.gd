@@ -63,6 +63,10 @@ var _lost_time: float = 0.0
 var _selection: int = 0
 var _stick_latched := false
 var _prev_confirm := false
+# DVD menu/playback context, tracked so the row set follows the disc's own
+# menu→playback transitions (not just button presses). -1 unknown, 0 playback,
+# 1 in-menu.
+var _dvd_menu_state: int = -1
 
 # Menu nodes (built in code)
 var _menu: Node3D = null
@@ -225,10 +229,26 @@ func _process(delta: float) -> void:
 		return
 
 	_update_target(delta)
+	_poll_dvd_menu_state()
 	_update_menu_transform()
 
 	if _target != null and is_instance_valid(_holding_ctrl):
 		_process_vr_selection()
+
+
+## While aimed at a DVD player, rebuild the row set whenever the disc flips
+## between its menu and playback on its own (e.g. a selected title starts, or a
+## feature ends back at the menu) — otherwise the rows would only refresh on the
+## next button press.
+func _poll_dvd_menu_state() -> void:
+	if not (_target is DVDPlayer):
+		_dvd_menu_state = -1
+		return
+	var s := 1 if (_target as DVDPlayer).is_in_menu() else 0
+	if s != _dvd_menu_state:
+		_dvd_menu_state = s
+		_selection = 0
+		_rebuild_menu_rows()
 
 
 func _update_target(delta: float) -> void:
@@ -308,8 +328,9 @@ func _process_vr_selection() -> void:
 	var ctrl := _holding_ctrl
 
 	# In a DVD menu the stick is a direct 4-way D-pad and confirm = OK, rather
-	# than the linear list-select model used elsewhere.
-	if _target is DVDPlayer and (_target as DVDPlayer).is_in_menu():
+	# than the linear list-select model used elsewhere. Reuse the menu state
+	# polled earlier this frame (kept in sync by _poll_dvd_menu_state).
+	if _target is DVDPlayer and _dvd_menu_state == 1:
 		_process_dvd_menu_nav(ctrl, _target as DVDPlayer)
 		return
 

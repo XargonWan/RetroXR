@@ -283,7 +283,9 @@ func dvd_ok() -> void:
 func dvd_root_menu() -> void:
 	if _net_forward_cmd("root"): return
 	if _vlc:
-		_vlc.menu_popup()
+		# Real "Menu" button: return to the disc's root menu from anywhere (a
+		# popup navigate does nothing mid-title on most discs).
+		_vlc.go_to_menu()
 		_osd("MENU")
 	_net_push_state()
 
@@ -365,12 +367,13 @@ func net_apply_state(playing: bool, paused: bool, title: int, chapter: int,
 		play()
 	if not is_playing or _vlc == null:
 		return
-	# Follow the host into the same content position. Menu-highlight state is not
-	# replicated, so only correct title/chapter/time when the host is out of a
-	# menu (i.e. actually playing a title).
+	# Follow the host's title so menu↔playback transitions (incl. the "Menu"
+	# button returning to a menu title) track on every peer. Chapter/time drift
+	# is only corrected during actual playback; the menu-highlight VM state is
+	# not replicated (host is the menu authority).
+	if _vlc.get_title() != title:
+		_vlc.set_title(title)
 	if not menu:
-		if _vlc.get_title() != title:
-			_vlc.set_title(title)
 		if _vlc.get_chapter() != chapter:
 			_vlc.set_chapter(chapter)
 		if length_ms > 0 and absf(float(_vlc.get_time() - time_ms)) > NET_DRIFT_TOLERANCE * 1000.0:

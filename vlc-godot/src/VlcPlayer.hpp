@@ -59,6 +59,9 @@ public:
     void menu_right();
     void menu_activate();
     void menu_popup();
+    // Return to the disc's root menu (the "Menu" button). libVLC 3's navigate()
+    // has no root-menu mode, so jump to the first menu-flagged title instead.
+    void go_to_menu();
 
     void next_chapter();
     void prev_chapter();

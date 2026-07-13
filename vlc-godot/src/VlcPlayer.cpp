@@ -257,6 +257,35 @@ void VlcPlayer::menu_right() { navigate(libvlc_navigate_right); }
 void VlcPlayer::menu_activate() { navigate(libvlc_navigate_activate); }
 void VlcPlayer::menu_popup() { navigate(libvlc_navigate_popup); }
 
+void VlcPlayer::go_to_menu()
+{
+    if (!m_mp)
+        return;
+    libvlc_media_player_t *mp = static_cast<libvlc_media_player_t *>(m_mp);
+    // Find the first title flagged as a menu and jump to it — that returns the
+    // dvdnav VM to the disc menu from anywhere in playback. (navigate(popup)
+    // only requests a popup overlay, which most discs ignore mid-title.)
+    libvlc_title_description_t **titles = nullptr;
+    int n = libvlc_media_player_get_full_title_descriptions(mp, &titles);
+    int menu_title = -1;
+    if (n > 0 && titles)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            if (titles[i] && (titles[i]->i_flags & libvlc_title_menu))
+            {
+                menu_title = i;
+                break;
+            }
+        }
+        libvlc_title_descriptions_release(titles, n);
+    }
+    if (menu_title >= 0)
+        libvlc_media_player_set_title(mp, menu_title);
+    else
+        libvlc_media_player_navigate(mp, libvlc_navigate_popup);   // fallback
+}
+
 void VlcPlayer::next_chapter()
 {
     if (m_mp)
@@ -504,6 +533,7 @@ void VlcPlayer::_bind_methods()
     ClassDB::bind_method(D_METHOD("menu_right"), &VlcPlayer::menu_right);
     ClassDB::bind_method(D_METHOD("menu_activate"), &VlcPlayer::menu_activate);
     ClassDB::bind_method(D_METHOD("menu_popup"), &VlcPlayer::menu_popup);
+    ClassDB::bind_method(D_METHOD("go_to_menu"), &VlcPlayer::go_to_menu);
 
     ClassDB::bind_method(D_METHOD("next_chapter"), &VlcPlayer::next_chapter);
     ClassDB::bind_method(D_METHOD("prev_chapter"), &VlcPlayer::prev_chapter);
