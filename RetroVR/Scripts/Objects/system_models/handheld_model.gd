@@ -205,6 +205,16 @@ func configure_handheld_controls(host: Node3D) -> void:
 	_power_switch.travel = 0.016
 	_power_switch.position = Vector3(-body_size.x * 0.25, half_y + 0.003, -body_size.z / 2.0 + 0.008)
 	add_child(_power_switch)
+	# Label the switch so players can find how to power the system on/off — it's a
+	# small knob on the top edge that's otherwise easy to miss.
+	var power_label := Label3D.new()
+	power_label.text = "POWER"
+	power_label.pixel_size = 0.00022
+	power_label.font_size = 16
+	power_label.modulate = Color(0.1, 0.1, 0.12)
+	power_label.rotation_degrees = Vector3(-90, 0, 0)   # lie flat, readable from above
+	power_label.position = Vector3(_power_switch.position.x, half_y + 0.0035, _power_switch.position.z + 0.016)
+	add_child(power_label)
 	_power_switch.value_changed.connect(func(v: float) -> void:
 		if _host == null or not _host.has_method("toggle_power"):
 			return
