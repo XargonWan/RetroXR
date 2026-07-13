@@ -11,7 +11,7 @@ The Godot project in this repo:
 
 ## Build Commands
 
-Requires SCons and MSVC (Windows) or Android NDK (Android). The godot-cpp submodule must be initialized first:
+Requires SCons and MSVC (Windows), GCC/Clang (Linux), or Android NDK (Android). The godot-cpp submodule must be initialized first:
 ```bash
 git submodule update --init --recursive
 ```
@@ -26,10 +26,20 @@ $scons = "C:\Users\user\AppData\Roaming\Python\Python314\Scripts\scons.exe"
 # Android / Quest (bash — requires ANDROID_NDK_ROOT)
 ANDROID_NDK_ROOT="C:/android/android-ndk-r27d" ANDROID_HOME="" \
   scons platform=android arch=arm64 target=template_debug ANDROID_HOME=""
+
+# Linux desktop x86_64 (bash — GCC/Clang; SCons via `pip install --user scons`)
+scons platform=linux arch=x86_64 target=template_debug
+scons platform=linux arch=x86_64 target=template_release
 ```
 
 The `SConstruct` is at the workspace root; `Temp/SConscript` does the actual build logic.
 Output libraries go to `RetroVR/libretro-godot/`.
+
+The Linux build links `libvulkan.so.1`, `libSDL3.so.0`, and `libGL.so.1` by soname (no
+`-dev`/`-devel` packages needed). All three render paths work on Linux: software, Vulkan
+HW-render, and OpenGL HW-render (SDL3-created hidden GL window — needs a display server at
+runtime). Desktop Linux support was added 2026-07-13 (Windows x86_64 + Android arm64 were
+the original targets).
 
 ## Headless Testing & Validation
 
@@ -43,6 +53,13 @@ C:\Program Files\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64\G
 ```
 Use the `_console.exe` variant so stdout/stderr is captured. `$proj` below is
 `C:\Users\user\SK.Libretro.Godot\RetroVR`.
+
+Godot binary (Linux): `/home/user/Godot/Godot_v4.7-stable_linux.x86_64`
+(the project targets Godot 4.7 — see `project.godot config/features`; `Godot_v4.6.3` also
+sits in that dir). `$proj` on Linux is `/home/user/retrovr/RetroVR`. Note Godot
+4.7 promoted "Not all code paths return a value" to a hard parse error for `Variant`-returning
+virtual overrides (bit two `_property_get_revert` overrides in godot-xr-tools — fixed with a
+trailing `return null`).
 
 ### 1. Compile / import check (catches parse, shader & scene-load errors)
 ```bash
@@ -198,7 +215,7 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 ## Dependencies
 
 - **godot-cpp** (submodule, 4.5 branch) — Godot C++ bindings
-- **SDL3** — Core DLL loading and HW render window management on Windows only (`libretro-godot/external/SDL3/`). Not used on Android (replaced by `dlopen`/`dlsym` via `DynLib.hpp`).
+- **SDL3** — On Windows: core DLL loading (`DynLib.hpp`) + the OpenGL HW-render window. On Linux: the OpenGL HW-render window only (core loading uses `dlopen`); linked against the system `libSDL3.so.0` by soname, headers from `libretro-godot/external/SDL3/`. Not used on Android (`dlopen` + EGL via `DynLib.hpp`).
 - **libretro-common** — Reference implementations for VFS, audio conversion, etc. (`libretro-godot/external/libretro-common/`)
 - **moodycamel::ReaderWriterQueue** — Lock-free SPSC queue for cross-thread communication
 - **godot-xr-tools v4.5.1** — VR locomotion, interactions, finger poses (`RetroVR/addons/godot-xr-tools/`)
