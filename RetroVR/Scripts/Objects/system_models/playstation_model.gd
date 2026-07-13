@@ -4,6 +4,16 @@ extends RetroSystemModel
 
 const _MODEL_PATH := "res://imported-assets/King PSX.glb"
 
+## Disc-lid open angle (degrees) about the console's left-right axis. Negative
+## lifts the front edge up; the hinge is the lid node's own origin (rear-top edge).
+const LID_OPEN_DEG := -78.0
+
+var _lid: Node3D = null
+var _lid_closed: Transform3D
+var _lid_open: Transform3D
+var _lid_tween: Tween
+var _lid_poses_ready := false
+
 
 func _ready() -> void:
 	var scene := load(_MODEL_PATH) as PackedScene
@@ -20,6 +30,12 @@ func _ready() -> void:
 	add_child(inst)
 	var xz := _model_xz_center(inst)
 	inst.position = Vector3(-xz.x, 0.0, -xz.y)
+
+	# Disc lid (CD cover): its node origin is the rear-top hinge, so opening is a
+	# rotation about the console's left-right axis through that origin. Poses are
+	# computed lazily on first open (see _ensure_lid_poses) — global_transform is
+	# not settled yet here in _ready.
+	_lid = inst.find_child("DeckelPSX", true, false)
 
 
 ## Combined X/Z centre of all of `inst`'s meshes, expressed in this model node's
@@ -54,6 +70,46 @@ func configure_collision(host: Node3D) -> void:
 	col.shape = col.shape.duplicate()
 	(col.shape as BoxShape3D).size = Vector3(0.2, 0.055, 0.28)
 	col.position = Vector3(0, 0.0275, 0)
+
+
+## Open/close the CD lid (driven by the OPEN button via RetroSystem's tray state).
+func play_open() -> void:
+	_ensure_lid_poses()
+	_tween_lid(_lid_open)
+
+
+func play_close() -> void:
+	_ensure_lid_poses()
+	_tween_lid(_lid_closed)
+
+
+## Capture the closed pose and derive the open pose the first time the lid moves,
+## when the console's global transform has settled. The lid stays closed until the
+## OPEN button is pressed, so _lid.transform here is always the rest (closed) pose.
+func _ensure_lid_poses() -> void:
+	if _lid_poses_ready or _lid == null:
+		return
+	_lid_poses_ready = true
+	_lid_closed = _lid.transform
+	var axis := global_transform.basis.x.normalized()
+	var g0 := _lid.global_transform
+	var g_open := Transform3D(Basis(axis, deg_to_rad(LID_OPEN_DEG)) * g0.basis, g0.origin)
+	_lid_open = (_lid.get_parent() as Node3D).global_transform.affine_inverse() * g_open
+
+
+func _tween_lid(target: Transform3D) -> void:
+	if _lid == null:
+		return
+	if _lid_tween and _lid_tween.is_valid():
+		_lid_tween.kill()
+	# Interpolate via Transform3D.interpolate_with (slerp rotation + lerp scale) —
+	# a plain tween_property on a Transform3D lerps the raw basis components, which
+	# mangles this lid's heavily-scaled basis (the GLB cm->m factor) mid-animation.
+	var from := _lid.transform
+	_lid_tween = create_tween()
+	_lid_tween.tween_method(
+		func(t: float) -> void: _lid.transform = from.interpolate_with(target, t),
+		0.0, 1.0, 0.5).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 
 
 func get_controller_port_count() -> int:
