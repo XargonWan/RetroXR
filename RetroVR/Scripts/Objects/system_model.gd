@@ -93,9 +93,10 @@ func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
 
 ## Reposition the system's existing VRButton nodes to match the model's physical
 ## button locations and wire them to the GLB button meshes for depress animation.
-## The existing signal connections to toggle_power/reset are preserved — only the
-## position and mesh reference are updated.
-func configure_buttons(power_btn: VRButton, reset_btn: VRButton) -> void:
+## The existing signal connections to toggle_power/reset/eject are preserved — only
+## the position and mesh reference are updated. eject_btn is the OPEN/eject button
+## (disc consoles); models without a disc button ignore it.
+func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VRButton) -> void:
 	pass
 
 

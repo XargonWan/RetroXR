@@ -112,6 +112,33 @@ func _tween_lid(target: Transform3D) -> void:
 		0.0, 1.0, 0.5).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 
 
+## Drive the console's physical POWER/RESET/OPEN buttons instead of the placeholder
+## VR button squares: each VRButton is moved onto its GLB button, uses that mesh for
+## the depress animation, takes its press direction from the matching "Finger Button"
+## empty, and hides the placeholder label.
+func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
+	_wire_button(power_btn, "Start", "Finger Button Power")
+	_wire_button(reset_btn, "Reset Taste", "Finger Button Rest")
+	_wire_button(eject_btn, "Opern Taste", "Finger Button Open")
+
+
+func _wire_button(btn: VRButton, mesh_name: String, finger_name: String) -> void:
+	if btn == null:
+		return
+	var mesh := find_child(mesh_name, true, false) as MeshInstance3D
+	var finger := find_child(finger_name, true, false) as Node3D
+	if mesh:
+		btn.set_button_mesh(mesh)   # also hides the placeholder square
+	var anchor: Node3D = finger if finger else mesh
+	if anchor:
+		btn.global_position = anchor.global_position
+	if finger:
+		btn.set_depress_axis_from_node(finger)
+	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
+	if lbl:
+		lbl.hide()
+
+
 func get_controller_port_count() -> int:
 	return 2
 

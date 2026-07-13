@@ -169,7 +169,7 @@ func _load_system_model() -> void:
 	add_child(_model)
 	if systemid in _MODEL_SCRIPTS:
 		_system_body.hide()
-	_model.configure_buttons(_power_button, _reset_button)
+	_model.configure_buttons(_power_button, _reset_button, _eject_button)
 	_model.configure_controller_ports(_port_zones)
 	_model.configure_cable_attach(_cable_attach_point)
 	_model.configure_cartridge_slot(_cartridge_slot)

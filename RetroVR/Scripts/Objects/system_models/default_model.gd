@@ -14,7 +14,7 @@ func get_controller_port_count() -> int:
 	return 4
 
 
-func configure_buttons(power_btn: VRButton, reset_btn: VRButton) -> void:
+func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
 	_power_btn = power_btn
 	_reset_btn = reset_btn
 	_power_label = power_btn.get_node_or_null("ButtonLabel") as Label3D

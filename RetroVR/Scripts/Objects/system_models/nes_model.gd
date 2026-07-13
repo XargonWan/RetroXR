@@ -98,7 +98,7 @@ func get_controller_port_count() -> int:
 	return 2
 
 
-func configure_buttons(power_btn: VRButton, reset_btn: VRButton) -> void:
+func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
 	_power_button = power_btn
 	var glb := get_child(0)
 	var power_finger := glb.find_child("Finger Button Power", true, false)
