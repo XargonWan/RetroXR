@@ -18,10 +18,6 @@
       if this is DS-specific or just the combo being hard to find
         * i confirmed that this does not work
 * Virtual Boy collision doesn't match the model
-* DVD remote has no "Return" (go-up-one-menu-level) button — libVLC 3's navigate API
-  only exposes up/down/left/right/activate/popup (no dvdnav go_up), so a true Return
-  isn't implementable on the current stack. "Menu" already escapes any submenu to the
-  root menu; revisit a dedicated Return if/when we move to libVLC 4.
 * Virtual Boy, start button doesn't toggle to stop after pressing start
 * Virtual boy controller port should be under the red 'headset' in the front, pointing down
 * Virtual boy ray interesect doesn't seem to intersect with the model when selecting to be grabed by the ray
