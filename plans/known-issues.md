@@ -1,34 +1,32 @@
-* Mouse direction works with snes9x/bsnes but NOT bsnes2014 (resolved by switching
-  the SNES default core to bsnes)
-    * Root cause (frontend-side): InputHandler::ProcessMouseDevice returns the
-      accumulated delta and zeroes it on the FIRST read. bsnes2014 queries mouse
-      X/Y more than once per frame, so the read the game actually uses gets 0.
-      The libretro contract is: repeated queries within a frame return the same
-      value; the delta window resets at retro_input_poll. Fix if ever needed:
-      latch the accumulator once per frame (input_poll or frame-counter guard)
-      instead of zero-on-read — also affects other multi-poll cores (DOSBox etc.)
-* Stoping a system (core) causes a stuttur (game freezes for less than a second)
-    * A non-blocking StopContent (deferred join/teardown via _process) exists in the
-      libretro-godot working tree (restored 2026-07-13 from a git stash that the
-      deployed Windows template_debug DLL was already built from) — needs validation
-      and an Android rebuild before this can be marked fixed
-* can't seem to drop a nintendo DS when picked up with hand in VR
-    * drop is grip+trigger+stick-click on the holding hand (same as cabinet
-      controllers); confirm whether that combo drops a cabinet controller to tell
-      if this is DS-specific or just the combo being hard to find
-        * i confirmed that this does not work
-* Virtual Boy collision doesn't match the model
-* Virtual Boy, start button doesn't toggle to stop after pressing start
-* Virtual boy controller port should be under the red 'headset' in the front, pointing down
-* Virtual boy ray interesect doesn't seem to intersect with the model when selecting to be grabed by the ray
-* try to stop the n64 mupen gles3 core seems to freeze the game and the oculus quest says too much memory being used and it was killed
-    * Analysis 2026-07-13: StopContent used to JOIN the emulation thread from the
-      main thread — if mupen's GL teardown hangs, the whole app freezes and the OS
-      kills it. The restored non-blocking StopContent (deferred join in _process)
-      should turn that into a graceful degrade; needs an on-device retest with the
-      rebuilt Android .so before this can be closed
-* n64 mupen gles3 core seems to plays fast and the audio seems to crakle a lot
+# Open
+
+* Stopping a system (core) causes a stutter (game freezes for less than a second)
+    * Fix committed 2026-07-13 (non-blocking StopContent, libretro-godot b890571) —
+      close after an on-device pass confirms power-off no longer hitches
+* Drop combo (grip+trigger+stick-click) reported not working on cabinet controllers
+    * The powered-off-handheld case (undroppable DS) was a real gate bug, fixed in
+      b03c29f. The cabinet-controller code path reads correct, so that report is
+      unexplained — [drop-combo] diagnostics now log the three inputs on state
+      change; grab a console/logcat trace next VR session to see whether
+      primary_click ever registers or the drop handling fails
+* try to stop the n64 mupen gles3 core seems to freeze the game and the oculus
+  quest says too much memory being used and it was killed
+    * Likely the old blocking stop (main thread joined a hung GL teardown). Retest
+      with the 2026-07-13 non-blocking StopContent + rebuilt Android .so; if the
+      app now survives, remaining leak is the abandoned core thread
+* n64 mupen gles3 core seems to play fast and the audio crackles a lot
     * Needs an on-device session: check retro_get_system_av_info fps vs the
-      emulation-thread pacing, and whether GL HW-render frame delivery bypasses the
-      frame-duration accumulator on Android
-* tv remote doesn't point stright when held, It just points in the orientation that it was picked up, it should point stright just like the ray gun when it is picked
+      emulation-thread pacing, and whether GL HW-render frame delivery bypasses
+      the frame-duration accumulator on Android
+
+# Fixed this pass (2026-07-13) — verify in VR, then delete
+
+* Nintendo DS undroppable when picked up while powered off (b03c29f)
+* TV remote now snaps to a straight grip like the ray gun (669f86b)
+* Virtual Boy: collision matches the model + selection ray can hit it (4995021)
+* Virtual Boy: power button toggles START/STOP while running (9d31c45)
+* Virtual Boy: controller port under the visor front, pointing down (29d4696)
+* SNES mouse: plug-before-power-on now works (port-device persistence, submodule
+  8fbdd03); bsnes2014 still ignores mouse deltas by design of our zero-on-read
+  path — SNES default is bsnes now, latch fix documented in project memory if a
+  multi-poll core (DOSBox etc.) ever needs it
