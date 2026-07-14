@@ -10,6 +10,11 @@ extends RetroSystemModel
 
 const _MODEL_PATH := "res://imported-assets/N64 imported.glb"
 
+## The GLB's body material uses an embedded GREEN diffuse variant. Swap it for the
+## classic grey N64 diffuse (shipped alongside, same UV layout). Point this at
+## "..._GoildN64_System_diffuse_Recolors.png" instead for the gold variant.
+const _BODY_DIFFUSE := "res://imported-assets/N64 imported_diffuddddddddddddddse.png"
+
 var _led: Array[MeshInstance3D] = []
 
 
@@ -24,6 +29,8 @@ func _ready() -> void:
 	var b := _model_aabb(inst)
 	var c := b.position + b.size * 0.5
 	inst.position = Vector3(-c.x, -b.position.y, -c.z)
+
+	_recolor_body(inst)
 
 	# Power LED: the model ships bright always-on LED meshes — represent power state
 	# with a subtle red emissive instead (driven by on_power_on/off).
@@ -52,6 +59,32 @@ func _model_aabb(inst: Node3D) -> AABB:
 		for ch in n.get_children():
 			stack.append(ch)
 	return acc
+
+
+## Re-point every surface using the body's embedded green diffuse at _BODY_DIFFUSE
+## (grey). One texture is shared across the body/buttons/plugs; find it on the body
+## mesh, then override each surface that uses it, keeping the material's other maps.
+func _recolor_body(inst: Node3D) -> void:
+	var diffuse := load(_BODY_DIFFUSE) as Texture2D
+	if diffuse == null:
+		return
+	var body := inst.find_child("N64_System 1", true, false) as MeshInstance3D
+	if body == null or body.mesh == null:
+		return
+	var body_mat := body.mesh.surface_get_material(0) as StandardMaterial3D
+	if body_mat == null:
+		return
+	var green_tex := body_mat.albedo_texture
+	for n in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for s in range(mi.mesh.get_surface_count()):
+			var m := mi.mesh.surface_get_material(s) as StandardMaterial3D
+			if m and m.albedo_texture == green_tex:
+				var dup := m.duplicate() as StandardMaterial3D
+				dup.albedo_texture = diffuse
+				mi.set_surface_override_material(s, dup)
 
 
 ## Rest on the ground and keep the pickup/pointer boxes below the top-mounted
