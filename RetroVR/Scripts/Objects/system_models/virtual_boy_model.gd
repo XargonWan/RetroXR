@@ -134,11 +134,15 @@ func _process(_delta: float) -> void:
 		_stereo_mat.set_shader_parameter("source_tex", tex)
 
 
-## The single controller cable plugs into the base at the rear, not the default
-## floating console position out in front of the stand.
+## The single controller port sits under the front of the visor pointing down,
+## like the real EXT connector on the underside of the head unit.
 func configure_controller_ports(port_zones: Array) -> void:
 	if port_zones.size() > 0:
-		port_zones[0].position = Vector3(0, 0.015, -0.06)
+		var zone: Node3D = port_zones[0]
+		zone.position = Vector3(0, STAND_H - 0.008, VISOR_SIZE.z / 2.0 - 0.025)
+		# Rotate the zone's +Z (the plug's approach axis on every other system's
+		# front face) to face straight down.
+		zone.rotation_degrees = Vector3(90, 0, 0)
 
 
 func configure_cartridge_slot(slot: Node3D) -> void:
