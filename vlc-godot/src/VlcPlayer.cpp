@@ -7,6 +7,11 @@
 
 #include <vlc/vlc.h>
 
+#ifdef __ANDROID__
+#include <godot_cpp/classes/java_class_wrapper.hpp>
+#include <godot_cpp/classes/java_class.hpp>
+#endif
+
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -24,6 +29,37 @@ static void set_plugin_path_env(const char *path)
     setenv("VLC_PLUGIN_PATH", path, 1);
 #endif
 }
+
+#ifdef __ANDROID__
+// libvlc_new() aborts the whole process (assert s_jvm != NULL in libVLC's
+// android/specific.c) unless libvlc.so's JNI_OnLoad has run — and Godot loads
+// GDExtension dependencies with dlopen, which never calls JNI_OnLoad. Route a
+// Java System.loadLibrary("vlc") through JavaClassWrapper instead: the managed
+// caller frame under a Godot callback is GodotLib.step, whose classloader is
+// the app's, so ART resolves libvlc.so from the APK's native lib dir, notices
+// it is already loaded, and runs its JNI_OnLoad — handing libVLC the JavaVM.
+static bool ensure_android_jvm()
+{
+    static bool s_done = false;
+    if (s_done)
+        return true;
+    JavaClassWrapper *jcw = JavaClassWrapper::get_singleton();
+    if (!jcw)
+    {
+        UtilityFunctions::push_error("VlcPlayer: JavaClassWrapper unavailable");
+        return false;
+    }
+    Ref<JavaClass> system_class = jcw->wrap("java.lang.System");
+    if (system_class.is_null())
+    {
+        UtilityFunctions::push_error("VlcPlayer: could not wrap java.lang.System");
+        return false;
+    }
+    system_class->call("loadLibrary", "vlc");
+    s_done = true;
+    return true;
+}
+#endif
 
 VlcPlayer::VlcPlayer()
 {
@@ -45,6 +81,13 @@ void VlcPlayer::ensure_instance()
 {
     if (m_vlc)
         return;
+#ifdef __ANDROID__
+    if (!ensure_android_jvm())
+    {
+        UtilityFunctions::push_error("VlcPlayer: libVLC JavaVM handoff failed — DVD playback unavailable");
+        return;
+    }
+#endif
     // Point libVLC at the plugin tree we ship next to the extension.
     String plugins = ProjectSettings::get_singleton()->globalize_path("res://vlc-godot/plugins");
     set_plugin_path_env(plugins.utf8().get_data());
@@ -52,7 +95,13 @@ void VlcPlayer::ensure_instance()
     const char *args[] = {
         "--no-video-title-show",
         "--no-snapshot-preview",
+#ifdef __ANDROID__
+        // Debug builds: full module/demux tracing to logcat (tag "VLC") — the
+        // Android pipeline is young; keep failures diagnosable over adb.
+        "-vv",
+#else
         "--quiet",
+#endif
     };
     m_vlc = libvlc_new(sizeof(args) / sizeof(args[0]), args);
     if (!m_vlc)
@@ -80,7 +129,11 @@ bool VlcPlayer::open(const String &path, bool is_dvd)
     String p = path.replace("\\", "/");
     // Build an MRL. dvd:// for a DVD image (VIDEO_TS folder / .iso, dvdnav menus);
     // file:// for a plain media file (more robust on Windows than new_path).
-    String mrl = is_dvd ? (String("dvd:///") + p) : (String("file:///") + p);
+    // Unix-style absolute paths already start with '/': adding another slash
+    // makes VLC parse `//sdcard/...` as an authority and fail to stat it.
+    if (!p.begins_with("/"))
+        p = String("/") + p;
+    String mrl = (is_dvd ? String("dvd://") : String("file://")) + p;
     libvlc_media_t *media = libvlc_media_new_location(inst, mrl.utf8().get_data());
     if (!media)
     {
