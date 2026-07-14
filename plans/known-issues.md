@@ -15,3 +15,4 @@
 * Virtual boy controller port should be under the red 'headset' in the front, pointing down
 * Virtual boy ray interesect doesn't seem to intersect with the model when selecting to be grabed by the ray
 * try to stop the n64 mupen gles3 core seems to freeze the game and the oculus quest says too much memory being used and it was killed
+* n64 mupen gles3 core seems to plays fast and the audio seems to crakle a lot
