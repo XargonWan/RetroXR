@@ -132,8 +132,8 @@ var _vscrollbar: VScrollBar = null
 var _manager_browser: SystemGridBrowser = null
 var _manager_cores_by_system: Dictionary = {}
 
-# Spawn > Systems tab — rebuilt whenever defaults change
-var _systems_vbox: VBoxContainer = null
+# Spawn > Systems tab — drill-down browser, one title card per system
+var _systems_browser: SystemGridBrowser = null
 # Spawn > Cartridges tab — drill-down browser, one tile per system
 var _cartridges_browser: SystemGridBrowser = null
 # Spawn > Books tab — rebuilt each time the tab is opened
@@ -754,10 +754,19 @@ func _save_net_prefs() -> void:
 
 
 func _update_spawn_active_scroll(tab_idx: int) -> void:
-	if tab_idx == 2:
+	if tab_idx == 0:
+		_update_systems_inner_scroll()
+	elif tab_idx == 2:
 		_update_cartridges_inner_scroll()
 	elif tab_idx >= 0 and tab_idx < _spawn_tab_scrolls.size():
 		_active_scroll = _spawn_tab_scrolls[tab_idx]
+	else:
+		_active_scroll = null
+
+
+func _update_systems_inner_scroll() -> void:
+	if _systems_browser:
+		_active_scroll = _systems_browser.get_active_scroll()
 	else:
 		_active_scroll = null
 
@@ -796,15 +805,18 @@ func _build_spawn_view() -> Control:
 	_spawn_tabs = tabs
 	_spawn_tab_scrolls.clear()
 
-	# Systems tab — dynamic, driven by CoreDefaults
-	var systems_scroll := ScrollContainer.new()
-	systems_scroll.name = "Systems"
-	tabs.add_child(systems_scroll)
-	_spawn_tab_scrolls.append(systems_scroll)
-	_systems_vbox = VBoxContainer.new()
-	_systems_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_systems_vbox.add_theme_constant_override("separation", 14)
-	systems_scroll.add_child(_systems_vbox)
+	# Systems tab — drill-down browser, one title card per system (like Cores).
+	# Opening a system lists its spawnable items (console model(s) + peripherals).
+	_systems_browser = SystemGridBrowser.new()
+	_systems_browser.name = "Systems"
+	_systems_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_systems_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
+	_systems_browser.set_detail_populator(_populate_systems_detail)
+	_systems_browser.active_scroll_changed.connect(func(_s: ScrollContainer):
+		_update_systems_inner_scroll()
+	)
+	tabs.add_child(_systems_browser)
+	_spawn_tab_scrolls.append(null)  # index 0 handled via _update_systems_inner_scroll
 	_populate_systems_tab()
 
 	# Rebuild systems/cartridges lists whenever the user sets/changes a default
@@ -897,36 +909,38 @@ func _clear_vbox(vbox: VBoxContainer) -> void:
 	vbox.add_child(_spacer(10))
 
 
-func _add_no_defaults_label(container: Container) -> void:
-	var lbl := Label.new()
-	lbl.text = "No default cores set.\nGo to Cores \u25b8 Manager to configure systems."
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	container.add_child(lbl)
-
-
+## Rebuild the Systems home grid: one tile per system that has a default core.
+## Spawnable items are listed lazily, only when a system tile is opened.
 func _populate_systems_tab() -> void:
-	if not _systems_vbox:
+	if not _systems_browser:
 		return
-	_clear_vbox(_systems_vbox)
-	var defaults := core_defaults.all_defaults()
-	if defaults.is_empty():
-		_add_no_defaults_label(_systems_vbox)
-		return
-	for systemid: String in defaults:
-		var display_name := systemid
-		var entries := core_db.get_by_systemid(systemid)
-		if not entries.is_empty():
-			var e: Dictionary = entries[0]
-			if e.has("systemname"):
-				display_name = e["systemname"]
+	var systems: Array = []
+	for systemid: String in core_defaults.all_defaults():
+		var entry := {"systemid": systemid, "name": core_db.get_systemname_for_id(systemid)}
+		var n := SpawnCatalog.items_for(systemid).size()
+		if n > 1:
+			entry["badge"] = "%d items" % n
+		systems.append(entry)
+	_systems_browser.set_systems(systems)
+	# If a system detail is open, re-run it so catalog changes appear.
+	_systems_browser.refresh()
+
+
+## Detail page for one system: each spawnable item — the console model(s) plus
+## that system's controllers/peripherals. Tap to spawn; the menu stays open so
+## several items can be spawned in a row.
+func _populate_systems_detail(systemid: String, vbox: VBoxContainer) -> void:
+	vbox.add_child(_spacer(4))
+	for item: Dictionary in SpawnCatalog.items_for(systemid):
 		var btn := Button.new()
-		btn.text = "  +  " + display_name
+		btn.text = "  +  " + str(item.get("label", "Console"))
 		btn.custom_minimum_size = Vector2(0, 80)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 26)
-		btn.pressed.connect(spawn_requested.emit.bind(systemid))
-		_systems_vbox.add_child(btn)
+		btn.pressed.connect(spawn_requested.emit.bind(SpawnCatalog.spawn_token(systemid, item)))
+		vbox.add_child(btn)
+	vbox.add_child(_spacer(8))
 
 
 ## Rebuild the Cartridges home grid: one tile per system that has a default

@@ -21,6 +21,11 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"virtual_boy": "res://Scripts/Objects/system_models/virtual_boy_model.gd",
 }
 
+## Optional per-variant model overrides, keyed "<systemid>:<variant>".
+## Empty for now — the framework is in place so a new model variant is added by
+## dropping a "<systemid>:<variant>" → script entry here (plus a SpawnCatalog item).
+const _MODEL_VARIANTS: Dictionary = {}
+
 ## The libretro core filename (without extension), e.g. "fceumm".
 ## If empty at power_on(), looked up from CoreDefaults using systemid.
 @export var core_name: String = ""
@@ -34,6 +39,10 @@ const _MODEL_SCRIPTS: Dictionary = {
 
 ## libretro systemid (e.g. "nes", "super_nes"). Used for dynamic core lookup.
 @export var systemid: String = ""
+
+## Selects an alternate hardware model for this system (see _MODEL_VARIANTS and
+## SpawnCatalog). "" = the system's default model — today's behavior.
+@export var model_variant: String = ""
 
 ## Spatial audio settings for the AudioStreamPlayer3D created at runtime.
 @export_group("Spatial Audio")
@@ -174,14 +183,23 @@ func _update_name_label() -> void:
 
 func _load_system_model() -> void:
 	const DEFAULT := "res://Scripts/Objects/system_models/default_model.gd"
-	var script_path: String = _MODEL_SCRIPTS.get(systemid, DEFAULT)
+	# Prefer a variant-specific model, then the system's default model, then the
+	# generic placeholder. With model_variant=="" this collapses to the old
+	# _MODEL_SCRIPTS.get(systemid, DEFAULT) and is_bespoke == (systemid in _MODEL_SCRIPTS).
+	var script_path: String = DEFAULT
+	var vkey := "%s:%s" % [systemid, model_variant]
+	if not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
+		script_path = _MODEL_VARIANTS[vkey]
+	elif _MODEL_SCRIPTS.has(systemid):
+		script_path = _MODEL_SCRIPTS[systemid]
+	var is_bespoke := script_path != DEFAULT
 	var script := load(script_path) as GDScript
 	if not script:
 		push_warning("RetroSystem: failed to load model script: %s" % script_path)
 		return
 	_model = script.new() as RetroSystemModel
 	add_child(_model)
-	if systemid in _MODEL_SCRIPTS:
+	if is_bespoke:
 		_system_body.hide()
 	_model.configure_buttons(_power_button, _reset_button, _eject_button)
 	_model.configure_controller_ports(_port_zones)
@@ -241,11 +259,11 @@ func _load_system_model() -> void:
 			ghost.mesh = ghost_mesh
 		# Tray consoles on the placeholder box get a physical disc well + hinged
 		# lid (bespoke GLB models own their tray geometry instead).
-		if _disc_loader == MediaDimensions.LOADER_TRAY and systemid not in _MODEL_SCRIPTS:
+		if _disc_loader == MediaDimensions.LOADER_TRAY and not is_bespoke:
 			_build_disc_tray()
 		# Slot loaders take the disc through a slit in the FRONT face: move the
 		# snap zone to the slit mouth and add the slit visual there.
-		if _disc_loader == MediaDimensions.LOADER_SLOT and systemid not in _MODEL_SCRIPTS:
+		if _disc_loader == MediaDimensions.LOADER_SLOT and not is_bespoke:
 			_cartridge_slot.position = Vector3(0, 0.03, 0.125)
 			_build_disc_slit()
 	# Handhelds: built-in screen, on-device controls, and the held-input

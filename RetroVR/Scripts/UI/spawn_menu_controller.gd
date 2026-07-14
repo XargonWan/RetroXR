@@ -668,8 +668,15 @@ func _on_spawn_requested(type: String) -> void:
 			var gun := RAY_GUN_SCENE.instantiate() as RayGun
 			gun.show_laser_dot = _aim_crosshair_enabled
 			obj = gun
+		"system":
+			# Variant token "system:<systemid>:<variant>" (from SpawnCatalog).
+			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+			var parts := type.split(":")
+			sys.systemid = parts[1] if parts.size() > 1 else ""
+			sys.model_variant = parts[2] if parts.size() > 2 else ""
+			obj = sys
 		_:
-			# Any other type is treated as a systemid
+			# Any other type is treated as a bare systemid (default model).
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 			sys.systemid = type
 			obj = sys
