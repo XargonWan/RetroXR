@@ -147,6 +147,19 @@ func _ready() -> void:
 	_update_name_label()
 
 
+## The power button always reflects run state: green START when off, red STOP
+## while running. Owned here (not per-model) so bespoke models that override
+## on_power_on/off for their own visuals — the Virtual Boy's eyepiece shader —
+## can't lose the label toggle. Harmless no-op for handhelds (button hidden).
+func _update_power_button_visual() -> void:
+	if _power_button == null:
+		return
+	_power_button.set_color(Color(1.0, 0.0, 0.0) if is_powered_on else Color(0.0, 1.0, 0.0))
+	var lbl := _power_button.get_node_or_null("ButtonLabel") as Label3D
+	if lbl:
+		lbl.text = "STOP" if is_powered_on else "START"
+
+
 func _update_name_label() -> void:
 	var display_name := system_label
 	if display_name.is_empty() and not systemid.is_empty():
@@ -449,6 +462,7 @@ func power_on() -> void:
 		asp.max_distance     = audio_max_distance
 		asp.panning_strength = audio_panning_strength
 	is_powered_on = true
+	_update_power_button_visual()
 	_model.on_power_on()
 	# Learn whether this core exposes the disk-control interface (multi-disc
 	# swap); the command drains after retro_load_game, so the answer is real.
@@ -471,6 +485,7 @@ func power_off() -> void:
 	_disc_index = 0
 	_disc_ejected = false
 	_options_panel.hide_panel()
+	_update_power_button_visual()
 	_model.on_power_off()
 
 
