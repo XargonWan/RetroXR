@@ -22,5 +22,13 @@
 * Virtual boy controller port should be under the red 'headset' in the front, pointing down
 * Virtual boy ray interesect doesn't seem to intersect with the model when selecting to be grabed by the ray
 * try to stop the n64 mupen gles3 core seems to freeze the game and the oculus quest says too much memory being used and it was killed
+    * Analysis 2026-07-13: StopContent used to JOIN the emulation thread from the
+      main thread — if mupen's GL teardown hangs, the whole app freezes and the OS
+      kills it. The restored non-blocking StopContent (deferred join in _process)
+      should turn that into a graceful degrade; needs an on-device retest with the
+      rebuilt Android .so before this can be closed
 * n64 mupen gles3 core seems to plays fast and the audio seems to crakle a lot
+    * Needs an on-device session: check retro_get_system_av_info fps vs the
+      emulation-thread pacing, and whether GL HW-render frame delivery bypasses the
+      frame-duration accumulator on Android
 * tv remote doesn't point stright when held, It just points in the orientation that it was picked up, it should point stright just like the ray gun when it is picked
