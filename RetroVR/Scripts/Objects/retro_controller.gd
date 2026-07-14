@@ -315,6 +315,24 @@ func _is_combo_pressed(ctrl: XRController3D) -> bool:
 		and ctrl.get_float("primary_click") > 0.5
 
 
+# Diagnostic for the "drop combo doesn't fire" report: log the three combo
+# inputs whenever their combined state changes, so a logcat/console trace shows
+# whether detection (e.g. primary_click never reading pressed) or the drop
+# handling is at fault. State-change gated — silent while idle.
+var _combo_dbg_state := -1
+
+func _combo_debug(ctrl: XRController3D) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var state := (1 if ctrl.get_float("grip") > 0.5 else 0) \
+		| (2 if ctrl.get_float("trigger") > 0.5 else 0) \
+		| (4 if ctrl.get_float("primary_click") > 0.5 else 0)
+	if state != _combo_dbg_state:
+		_combo_dbg_state = state
+		print("[drop-combo] %s grip=%d trigger=%d stick_click=%d" % [name,
+			state & 1, (state >> 1) & 1, (state >> 2) & 1])
+
+
 func _drop_all() -> void:
 	_set_model_visible(_holding_ctrl, true)
 	_update_pointer_block(_holding_ctrl, false)
@@ -478,6 +496,7 @@ func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
 
 func _process(_delta: float) -> void:
 	var secondary_ctrl := _get_secondary_ctrl()
+	_combo_debug(_holding_ctrl)
 
 	# Drop combo: each hand only releases itself.
 	if _is_combo_pressed(secondary_ctrl):

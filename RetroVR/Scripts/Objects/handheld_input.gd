@@ -202,6 +202,24 @@ func _is_combo_pressed(ctrl: XRController3D) -> bool:
 		and ctrl.get_float("primary_click") > 0.5
 
 
+# Diagnostic for the "drop combo doesn't fire" report: log the three combo
+# inputs whenever their combined state changes, so a logcat/console trace shows
+# whether detection (e.g. primary_click never reading pressed) or the drop
+# handling is at fault. State-change gated — silent while idle.
+var _combo_dbg_state := -1
+
+func _combo_debug(ctrl: XRController3D) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var state := (1 if ctrl.get_float("grip") > 0.5 else 0) \
+		| (2 if ctrl.get_float("trigger") > 0.5 else 0) \
+		| (4 if ctrl.get_float("primary_click") > 0.5 else 0)
+	if state != _combo_dbg_state:
+		_combo_dbg_state = state
+		print("[drop-combo] %s grip=%d trigger=%d stick_click=%d" % [name,
+			state & 1, (state >> 1) & 1, (state >> 2) & 1])
+
+
 func _drop_all() -> void:
 	_update_pointer_block(_holding_ctrl, false)
 	var secondary := _get_secondary_ctrl()
@@ -268,10 +286,14 @@ func _update_pointer_block(ctrl: XRController3D, should_block: bool) -> void:
 # ── Input forwarding (adapted from retro_controller.gd) ───────────────────────
 
 func _process(_delta: float) -> void:
-	if _host == null or not bool(_host.get("is_powered_on")):
+	if _host == null:
 		return
 
+	# Drop combo: evaluated even while the system is powered OFF — the gate
+	# below is for game-input forwarding only. (A powered-off handheld used to
+	# be undroppable because this whole function bailed before the combo check.)
 	var secondary := _get_secondary_ctrl()
+	_combo_debug(_holding_ctrl)
 	# Drop combo: each hand only releases itself.
 	if _is_combo_pressed(secondary):
 		_allow_drop = true
@@ -292,6 +314,9 @@ func _process(_delta: float) -> void:
 		else:
 			_drop_all()
 			return
+
+	if not bool(_host.get("is_powered_on")):
+		return
 
 	if _desktop_held:
 		_process_desktop_joypad()
