@@ -198,12 +198,6 @@ font_size = 20
 outline_size = 4
 text = "VCR"
 
-[node name="VideoViewport" type="SubViewport" parent="."]
-size = Vector2i(16, 16)
-render_target_update_mode = 0
-
-[node name="VideoStreamPlayer" type="VideoStreamPlayer" parent="VideoViewport"]
-
 [node name="PointerArea" type="StaticBody3D" parent="."]
 collision_layer = 1048576
 collision_mask = 0

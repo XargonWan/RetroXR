@@ -27,12 +27,21 @@ env.Append(CPPPATH=[
 
 is_windows = env['platform'] == 'windows'
 is_android = env['platform'] == 'android'
+is_linux = env['platform'] == 'linux'
 
 if is_windows:
     env.Append(CXXFLAGS=['/std:c++latest'])
     env.Append(LIBPATH=['vendor/lib/'])
     env.Append(LIBS=['libvlc'])
     env.Append(LINKFLAGS=['/IGNORE:4099'])
+
+if is_linux:
+    # Link against the system libVLC (Fedora: vlc-devel provides /lib64/libvlc.so
+    # + headers; runtime needs only vlc-libs). libvlccore + the codec plugins are
+    # pulled in transitively / from VLC's system plugin dir, so HEVC/x265 works
+    # out of the box. The vendored vlc/*.h headers match the 3.x API.
+    env.Append(CXXFLAGS=['-std=c++20'])
+    env.Append(LIBS=['vlc'])
 
 if is_android:
     env.Append(CXXFLAGS=['-std=c++20'])

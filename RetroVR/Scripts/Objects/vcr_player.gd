@@ -1,7 +1,10 @@
 ## VCRPlayer — pickable VCR that plays a video from an inserted VCRTape and
 ## renders it onto a connected TV, reusing the same cable/plug/TV wiring as
-## RetroSystem. Playback is driven by Godot's built-in VideoStreamPlayer with
-## an FFmpegVideoStream (from the EIRTeam.FFmpeg addon).
+## RetroSystem. Playback is driven by the libVLC-backed VlcPlayer GDExtension
+## (the same engine as DVDPlayer): video is decoded to a texture and audio to a
+## PCM ring buffer drained into a spatialised AudioStreamPlayer3D at the TV.
+## Using libVLC gives broad codec support (incl. HEVC/x265) with one shared
+## video backend.
 class_name VCRPlayer
 extends XRToolsPickable
 
@@ -46,14 +49,23 @@ var connected_tv: RetroTV = null
 var is_playing: bool = false
 # Scan direction: 0 = normal, +1 = fast-forward scan, -1 = rewind scan.
 # While scanning the player keeps PLAYING (so it presents frames) but we jump
-# stream_position ahead/back in throttled steps so the picture visibly races,
-# with audio muted (real-VCR feel).
+# the position ahead/back in throttled steps so the picture visibly races, with
+# audio muted (real-VCR feel).
 var _scan_dir: int = 0
 var _scan_accum: float = 0.0            # time since the last scan seek
-var _pre_scan_volume_db: float = 0.0    # volume to restore when a scan ends
 # How often (seconds) to seek while scanning. Seeking every frame overloads the
 # decoder; ~12 seeks/sec still reads as a smooth fast-scan.
 const SCAN_SEEK_INTERVAL := 0.08
+
+# libVLC-backed engine (shared with DVDPlayer) + Godot-routed spatial audio.
+# libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into an
+# AudioStreamGenerator on a 3D player at the connected TV, so VHS sound is
+# spatialised (and the TV volume knob scales it) like the console/DVD audio.
+var _vlc: Object = null                 # VlcPlayer (GDExtension)
+var _audio_player: AudioStreamPlayer3D = null
+var _audio_playback: AudioStreamGeneratorPlayback = null
+var _volume_linear: float = 1.0
+var _paused: bool = false
 
 # Cable scene to instantiate (shared with RetroSystem)
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
@@ -72,7 +84,6 @@ var _screen_material: Material = null
 @onready var _vcr_body: MeshInstance3D = $VCRBody
 @onready var _tape_slot: XRToolsSnapZone = $TapeSlot
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
-@onready var _video_player: VideoStreamPlayer = $VideoViewport/VideoStreamPlayer
 @onready var _play_button: VRButton = $PlayButton
 @onready var _pause_button: VRButton = $PauseButton
 @onready var _stop_button: VRButton = $StopButton
@@ -102,11 +113,29 @@ func _ready() -> void:
 	_stop_button.set_color(Color(0.9, 0.1, 0.1))      # red
 	_rewind_button.set_color(Color(0.1, 0.4, 0.9))    # blue
 	_ff_button.set_color(Color(0.1, 0.4, 0.9))        # blue
-	_video_player.finished.connect(_on_video_finished)
-	# A larger audio buffer reduces crackle/underruns during playback.
-	_video_player.buffering_msec = 1000
+
+	if ClassDB.class_exists("VlcPlayer"):
+		_vlc = ClassDB.instantiate("VlcPlayer")
+		_vlc.finished.connect(_on_video_finished)
+	else:
+		push_error("VCRPlayer: VlcPlayer extension not loaded — video playback unavailable")
+
+	_setup_audio()
 	_spawn_cable()
 	_update_name_label()
+
+
+## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
+func _setup_audio() -> void:
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
+	gen.buffer_length = 0.25
+	_audio_player = AudioStreamPlayer3D.new()
+	_audio_player.name = "AudioStreamPlayer3D"
+	_audio_player.stream = gen
+	_audio_player.unit_size = 3.0
+	_audio_player.max_distance = 15.0
+	add_child(_audio_player)
 
 
 func _update_name_label() -> void:
@@ -115,12 +144,21 @@ func _update_name_label() -> void:
 
 
 func _process(delta: float) -> void:
+	if _vlc:
+		# Pump the latest decoded frame + PCM every frame.
+		_vlc.update_frame()
+		if is_playing and connected_tv != null:
+			_bind_screen_to_tv()
+		_pump_audio()
+		# Emanate the sound from the connected TV so it's spatialised there.
+		if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
+			_audio_player.global_position = connected_tv.global_position
 	_update_scan(delta)
 	if _clock == null:
 		return
 	if is_playing:
-		_last_total = _video_player.get_stream_length()
-		_clock.set_times(_video_player.get_stream_position(), _last_total)
+		_last_total = _vlc_length_sec()
+		_clock.set_times(_vlc_time_sec(), _last_total)
 	elif not video_path.is_empty():
 		# Tape inserted but stopped/paused-at-start — show 0 against the last
 		# known length (unknown until first played).
@@ -128,6 +166,41 @@ func _process(delta: float) -> void:
 	else:
 		_last_total = -1.0
 		_clock.set_blank()
+
+
+## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
+func _pump_audio() -> void:
+	if _audio_playback == null:
+		return
+	var avail := _audio_playback.get_frames_available()
+	if avail <= 0:
+		return
+	var frames: PackedVector2Array = _vlc.read_audio(avail)
+	if frames.size() > 0:
+		_audio_playback.push_buffer(frames)
+
+
+# --- Position helpers (VlcPlayer reports ms / 0..1; the VCR works in seconds) ---
+
+func _vlc_time_sec() -> float:
+	return (float(_vlc.get_time()) / 1000.0) if _vlc else 0.0
+
+
+func _vlc_length_sec() -> float:
+	if _vlc == null:
+		return -1.0
+	var ms: int = _vlc.get_length()
+	return (float(ms) / 1000.0) if ms > 0 else -1.0
+
+
+## Seek to an absolute time in seconds (needs a known length — libVLC seeks by
+## fraction). No-op when the length isn't known yet.
+func _vlc_seek_sec(sec: float) -> void:
+	if _vlc == null:
+		return
+	var length := _vlc_length_sec()
+	if length > 0.0:
+		_vlc.set_position(clampf(sec / length, 0.0, 1.0))
 
 
 ## While scanning, jump the (still-playing) player's position forward/back in
@@ -139,24 +212,26 @@ func _update_scan(delta: float) -> void:
 	_scan_accum += delta
 	if _scan_accum < SCAN_SEEK_INTERVAL:
 		return
-	var length := _video_player.get_stream_length()
-	var pos := _video_player.get_stream_position() + _scan_accum * scan_speed * float(_scan_dir)
+	var length := _vlc_length_sec()
+	var pos := _vlc_time_sec() + _scan_accum * scan_speed * float(_scan_dir)
 	_scan_accum = 0.0
 	if pos <= 0.0:
-		_video_player.set_stream_position(0.0)
+		_vlc_seek_sec(0.0)
 		_end_scan_hold()   # reached the start; hold here
 	elif length > 0.0 and pos >= length:
-		_video_player.set_stream_position(length)
+		_vlc_seek_sec(length)
 		_end_scan_hold()   # reached the end; hold here
 	else:
-		_video_player.set_stream_position(pos)
+		_vlc_seek_sec(pos)
 
 
 ## Stop an in-progress scan and freeze on the current frame (used at either end).
 func _end_scan_hold() -> void:
 	_scan_dir = 0
-	_video_player.set_paused(true)
-	_video_player.volume_db = _pre_scan_volume_db
+	if _vlc:
+		_vlc.set_paused(true)
+	_paused = true
+	_apply_volume()
 	_osd("PAUSE", true)
 
 
@@ -221,8 +296,8 @@ func _net_push_state() -> void:
 func net_get_state() -> Dictionary:
 	return {
 		"playing": is_playing,
-		"paused": is_playing and _video_player.is_paused(),
-		"pos": _video_player.get_stream_position() if is_playing else 0.0,
+		"paused": is_playing and _paused,
+		"pos": _vlc_time_sec() if is_playing else 0.0,
 	}
 
 
@@ -242,12 +317,14 @@ func net_apply_state(playing: bool, paused: bool, pos: float) -> void:
 			return
 		play()
 		if is_playing and pos > NET_DRIFT_TOLERANCE:
-			_video_player.set_stream_position(pos)
+			_vlc_seek_sec(pos)
 	if not is_playing:
 		return
-	_video_player.set_paused(paused)
-	if not paused and absf(_video_player.get_stream_position() - pos) > NET_DRIFT_TOLERANCE:
-		_video_player.set_stream_position(pos)
+	if _vlc:
+		_vlc.set_paused(paused)
+	_paused = paused
+	if not paused and absf(_vlc_time_sec() - pos) > NET_DRIFT_TOLERANCE:
+		_vlc_seek_sec(pos)
 
 
 # --- Playback controls ---
@@ -278,12 +355,15 @@ func remote_rewind() -> void:
 func _on_play_pressed() -> void:
 	if _net_forward_cmd("play"):
 		return
-	if is_playing:
+	if is_playing and (_scan_dir != 0 or _paused):
 		# Leaving a scan or resuming from pause both mean "back to normal play".
-		if _scan_dir != 0 or _video_player.is_paused():
-			_set_scan(0)
-			_osd("PLAY", false)
-			return
+		_set_scan(0)
+		if _vlc:
+			_vlc.set_paused(false)
+		_paused = false
+		_osd("PLAY", false)
+		_net_push_state()
+		return
 	play()
 
 
@@ -292,7 +372,10 @@ func _on_pause_pressed() -> void:
 		return
 	if is_playing:
 		_scan_dir = 0
-		_video_player.set_paused(true)
+		if _vlc:
+			_vlc.set_paused(true)
+		_paused = true
+		_apply_volume()   # undo any scan mute
 		_osd("PAUSE", true)
 		_net_push_state()
 
@@ -345,13 +428,24 @@ func _osd(text: String, sticky: bool) -> void:
 ## The player keeps playing during a scan (so frames present) but is muted;
 ## leaving restores normal-speed playback and the prior volume.
 func _set_scan(dir: int) -> void:
-	if dir != 0 and _scan_dir == 0:
-		_pre_scan_volume_db = _video_player.volume_db
 	_scan_dir = dir
 	_scan_accum = 0.0
-	_video_player.set_paused(false)
-	_video_player.volume_db = -80.0 if dir != 0 else _pre_scan_volume_db
+	if _vlc:
+		_vlc.set_paused(false)
+	_paused = false
+	if _audio_player:
+		_audio_player.volume_db = -80.0 if dir != 0 else _volume_db()
 	_net_push_state()
+
+
+## Set the audio-player level from the current linear volume (or silence).
+func _volume_db() -> float:
+	return linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
+
+
+func _apply_volume() -> void:
+	if _audio_player:
+		_audio_player.volume_db = _volume_db()
 
 
 func play() -> void:
@@ -361,16 +455,22 @@ func play() -> void:
 	if video_path.is_empty():
 		push_error("VCRPlayer: Cannot play - no tape inserted")
 		return
-
-	var stream := ClassDB.instantiate("FFmpegVideoStream") as VideoStream
-	if stream == null:
-		push_error("VCRPlayer: FFmpegVideoStream unavailable (FFmpeg addon not loaded)")
+	if _vlc == null:
+		push_error("VCRPlayer: VlcPlayer unavailable (extension not loaded)")
 		return
-	stream.set_file(video_path)
-	_video_player.stream = stream
-	_video_player.play()
+	if not _vlc.open(video_path, false):
+		push_error("VCRPlayer: VlcPlayer.open failed for ", video_path)
+		return
+	_vlc.play()
+	# Full internal gain — level is controlled by the Godot 3D player (TV knob).
+	_vlc.set_volume(100)
 	is_playing = true
+	_paused = false
 	_scan_dir = 0
+	if _audio_player:
+		_audio_player.play()
+		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+		_apply_volume()
 	_bind_screen_to_tv()
 	_osd("PLAY", false)
 	_net_push_state()
@@ -379,11 +479,14 @@ func play() -> void:
 func stop() -> void:
 	if not is_playing:
 		return
-	if _scan_dir != 0:
-		_video_player.volume_db = _pre_scan_volume_db
 	_scan_dir = 0
-	_video_player.stop()
+	if _vlc:
+		_vlc.stop()
 	is_playing = false
+	_paused = false
+	if _audio_player:
+		_audio_player.stop()
+	_audio_playback = null
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
@@ -408,7 +511,10 @@ func on_tv_disconnected() -> void:
 
 ## Set the audio volume (0.0 = silent, 1.0 = 100%). Called by the TV volume buttons.
 func set_audio_volume(volume: float) -> void:
-	_video_player.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
+	_volume_linear = clampf(volume, 0.0, 1.0)
+	# Don't fight an active scan mute; it restores on scan exit.
+	if _scan_dir == 0:
+		_apply_volume()
 
 
 ## Show or hide the screen output. Called by the TV toggle button.
@@ -423,14 +529,14 @@ func set_screen_enabled(enabled: bool) -> void:
 
 # --- Screen routing ---
 
-## Route the VideoStreamPlayer's frame texture onto the connected TV screen mesh.
+## Route the VlcPlayer's frame texture onto the connected TV screen mesh.
 func _bind_screen_to_tv() -> void:
-	if connected_tv == null:
+	if connected_tv == null or _vlc == null:
 		return
 	var mesh := connected_tv.get_screen_mesh()
 	if mesh == null:
 		return
-	var tex := _video_player.get_video_texture()
+	var tex: Texture2D = _vlc.get_texture()
 	if tex == null:
 		return
 	if _screen_material == null or not _material_matches_effect():
@@ -507,6 +613,10 @@ func _blank_screen() -> void:
 func _on_video_finished() -> void:
 	# Leave the last frame; mark as not playing so Play restarts from the top.
 	is_playing = false
+	_paused = false
+	if _audio_player:
+		_audio_player.stop()
+	_audio_playback = null
 
 
 # --- Cable management (mirrors RetroSystem) ---
