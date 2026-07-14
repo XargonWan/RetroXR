@@ -128,6 +128,15 @@ func _process(_delta: float) -> void:
 	_update_crt()
 	_route_osd()
 
+	# Grab-driver churn (second-hand grab, hand swap, desktop re-hold) recreates
+	# the RemoteTransform3D with scale copying re-enabled, which stomps the TV
+	# back to 1x — e.g. rotating a held TV with the other hand. Keep our chosen
+	# size authoritative for the whole hold.
+	if is_picked_up():
+		_lock_grab_scale()
+		if not scale.is_equal_approx(Vector3.ONE * scale_factor):
+			scale = Vector3.ONE * scale_factor
+
 	if not _ambilight or not _ambilight.visible:
 		return
 
