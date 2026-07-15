@@ -88,6 +88,22 @@ var _points: PackedVector3Array = []       # current positions (global space)
 var _prev_points: PackedVector3Array = []  # previous positions for verlet
 var _inv_mass: PackedFloat32Array = []     # 0 = pinned (anchored), 1 = free
 
+# Cached per-segment midpoint contact planes (refreshed on the throttled rest
+# pass, enforced every frame inside the constraint loop — see _solve_mid_contact).
+var _mid_contact: PackedByteArray = []         # 1 = segment has a cached contact
+var _mid_contact_point: PackedVector3Array = []
+var _mid_contact_normal: PackedVector3Array = []
+
+# Cached per-particle contact manifold: up to TWO planes (bit 1 / bit 2 of
+# _c_flags). Refreshed on the throttled rest pass; the second slot carries the
+# other face of an edge across refreshes (the physics query only ever reports
+# the deepest one, which alternates at a corner). Enforced inside the solver.
+var _c_flags: PackedByteArray = []
+var _c_p1: PackedVector3Array = []
+var _c_n1: PackedVector3Array = []
+var _c_p2: PackedVector3Array = []
+var _c_n2: PackedVector3Array = []
+
 # Anchors
 var start_node: Node3D = null
 var end_node: Node3D = null
@@ -132,7 +148,10 @@ func _ready() -> void:
 		_ray_query.collision_mask = surface_collision_mask
 		_ray_query.hit_back_faces = false
 		_sphere = SphereShape3D.new()
-		_sphere.radius = collision_radius
+		# Query slightly beyond the contact distance so a particle RESTING at
+		# exactly collision_radius keeps reporting (else its cached plane drops
+		# every refresh, it re-falls, and the contact cycles).
+		_sphere.radius = collision_radius * 1.3
 		_shape_query = PhysicsShapeQueryParameters3D.new()
 		_shape_query.shape = _sphere
 		_shape_query.collision_mask = surface_collision_mask
@@ -191,6 +210,18 @@ func _init_points() -> void:
 	_points.resize(count)
 	_prev_points.resize(count)
 	_inv_mass.resize(count)
+	_mid_contact.resize(segment_count)
+	_mid_contact_point.resize(segment_count)
+	_mid_contact_normal.resize(segment_count)
+	for i in segment_count:
+		_mid_contact[i] = 0
+	_c_flags.resize(count)
+	_c_p1.resize(count)
+	_c_n1.resize(count)
+	_c_p2.resize(count)
+	_c_n2.resize(count)
+	for i in count:
+		_c_flags[i] = 0
 
 	var start_pos := start_node.global_position if start_node else global_position
 	var end_pos   := end_node.global_position   if end_node   else start_pos + Vector3(0, -segment_count * segment_length, 0)
@@ -308,7 +339,37 @@ func _physics_process(delta: float) -> void:
 						_solve_bend(i, s, allowed, k_bend)
 				s *= 2
 				levels -= 1
+		# Cached contact planes (refreshed on the throttled rest pass below) —
+		# solved together with the other constraints so contacts, including
+		# edge wraps, are part of the equilibrium instead of oscillating.
+		for i in range(count - 1):
+			if _mid_contact[i] != 0:
+				_solve_mid_contact(i)
+		for i in count:
+			if _inv_mass[i] == 0.0 or _c_flags[i] == 0:
+				continue
+			if (_c_flags[i] & 1) != 0:
+				_project_plane(i, _c_p1[i], _c_n1[i])
+			if (_c_flags[i] & 2) != 0:
+				_project_plane(i, _c_p2[i], _c_n2[i])
 		_pin_anchors()
+
+	# Friction for cached resting contacts (once per frame, not per iteration):
+	# damp the tangential velocity of every particle a contact plane is holding,
+	# mirroring what _resolve_contact does for sweep hits.
+	for i in count:
+		if _inv_mass[i] == 0.0 or _c_flags[i] == 0:
+			continue
+		for slot in 2:
+			if (_c_flags[i] & (1 << slot)) == 0:
+				continue
+			var n := _c_n1[i] if slot == 0 else _c_n2[i]
+			var cp := _c_p1[i] if slot == 0 else _c_p2[i]
+			if (_points[i] - cp).dot(n) > collision_radius * 1.05:
+				continue
+			var vel := _points[i] - _prev_points[i]
+			var tangential := vel - n * vel.dot(n)
+			_prev_points[i] = _points[i] - tangential * (1.0 - surface_friction)
 
 	# --- Self collision ---
 	if self_collision:
@@ -351,26 +412,43 @@ func _physics_process(delta: float) -> void:
 						var hit_point: Vector3 = hit["position"]
 						_resolve_contact(i, hit_point, hit_normal)
 						continue
-			# Resting contact / pushout for points already touching a surface
-			# or being pushed into by moving bodies (throttled — heavier query).
+			# Resting contact (throttled — heavier query): refresh the particle's
+			# cached contact-plane manifold. The planes are enforced every frame
+			# INSIDE the constraint loop, so contacts are part of the solver's
+			# equilibrium — snapping the particle here instead fights the other
+			# constraints and jitters edge wraps. The query only reports the
+			# deepest plane (which alternates at a corner), so a still-valid
+			# previous plane with a different normal is kept as a second slot.
 			if do_rest:
 				_shape_query.transform = Transform3D(Basis.IDENTITY, _points[i])
 				var rest := space_state.get_rest_info(_shape_query)
-				if not rest.is_empty():
-					var rest_normal: Vector3 = rest["normal"]
-					if rest_normal != Vector3.ZERO:
-						var rest_point: Vector3 = rest["point"]
-						_resolve_contact(i, rest_point, rest_normal)
+				var keep1 := (_c_flags[i] & 1) != 0 and _plane_valid(i, _c_p1[i], _c_n1[i])
+				var keep2 := (_c_flags[i] & 2) != 0 and _plane_valid(i, _c_p2[i], _c_n2[i])
+				if not rest.is_empty() and rest["normal"] != Vector3.ZERO:
+					var np: Vector3 = rest["point"]
+					var nn: Vector3 = rest["normal"]
+					if keep1 and nn.dot(_c_n1[i]) > 0.9:
+						_c_p1[i] = np; _c_n1[i] = nn
+					elif keep2 and nn.dot(_c_n2[i]) > 0.9:
+						_c_p2[i] = np; _c_n2[i] = nn
+					elif not keep1:
+						_c_p1[i] = np; _c_n1[i] = nn; keep1 = true
+					else:
+						_c_p2[i] = np; _c_n2[i] = nn; keep2 = true
+				_c_flags[i] = (1 if keep1 else 0) | (2 if keep2 else 0)
 
-		# Segment-midpoint pushout (same throttled pass): particle collision
-		# alone lets the straight span BETWEEN two particles cut through a
-		# convex corner (each endpoint rests on its own face while the chord
-		# clips the edge). Testing each segment's midpoint and pushing both
-		# endpoints out makes the rope hug table edges instead.
+		# Segment-midpoint contact CACHE refresh (same throttled pass): particle
+		# collision alone lets the straight span BETWEEN two particles cut
+		# through a convex corner (each endpoint rests on its own face while
+		# the chord clips the edge). We only query here — the cached plane is
+		# enforced every frame inside the constraint loop (_solve_mid_contact),
+		# so the corner contact is part of the solver's equilibrium. Applying a
+		# push directly from this throttled pass instead fights the other
+		# constraints and makes an edge-wrapped rope visibly oscillate.
 		if do_rest:
 			for i in range(count - 1):
-				var w_sum := _inv_mass[i] + _inv_mass[i + 1]
-				if w_sum == 0.0:
+				_mid_contact[i] = 0
+				if _inv_mass[i] + _inv_mass[i + 1] == 0.0:
 					continue
 				var mid := (_points[i] + _points[i + 1]) * 0.5
 				_shape_query.transform = Transform3D(Basis.IDENTITY, mid)
@@ -380,11 +458,9 @@ func _physics_process(delta: float) -> void:
 				var n: Vector3 = rest["normal"]
 				if n == Vector3.ZERO:
 					continue
-				var target: Vector3 = rest["point"] + n * collision_radius
-				var push := target - mid
-				# Split so the MIDPOINT moves by the full pushout: Δi+Δj = 2·push.
-				_points[i] += push * (2.0 * _inv_mass[i] / w_sum)
-				_points[i + 1] += push * (2.0 * _inv_mass[i + 1] / w_sum)
+				_mid_contact[i] = 1
+				_mid_contact_point[i] = rest["point"]
+				_mid_contact_normal[i] = n
 
 	# --- Two-way anchor coupling ---
 	if anchor_pull > 0.0 and start_node and end_node:
@@ -441,6 +517,45 @@ func _solve_bend(b: int, spacing: int, allowed_dev: float, k: float) -> void:
 	_points[b] += v * (w_b / w_total)
 	_points[a] -= v * (0.5 * w_a / w_total)
 	_points[c] -= v * (0.5 * w_c / w_total)
+
+
+## Keep segment i's midpoint outside its cached contact plane, splitting the
+## correction so the midpoint clears fully (Δa+Δb = 2·push). The distance cap
+## guards against stale planes (they're only refreshed every raycast_interval
+## frames and extend infinitely).
+func _solve_mid_contact(i: int) -> void:
+	var w_a := _inv_mass[i]
+	var w_b := _inv_mass[i + 1]
+	var w_sum := w_a + w_b
+	if w_sum == 0.0:
+		return
+	var mid := (_points[i] + _points[i + 1]) * 0.5
+	if mid.distance_squared_to(_mid_contact_point[i]) > segment_length * segment_length * 4.0:
+		return
+	var n := _mid_contact_normal[i]
+	var d := (mid - _mid_contact_point[i]).dot(n)
+	if d >= collision_radius:
+		return
+	var push := n * (collision_radius - d)
+	_points[i] += push * (2.0 * w_a / w_sum)
+	_points[i + 1] += push * (2.0 * w_b / w_sum)
+
+
+## Whether a cached contact plane is still plausible for particle i: the
+## particle hasn't slid far from the contact and still sits near the plane.
+func _plane_valid(i: int, cp: Vector3, n: Vector3) -> bool:
+	var p := _points[i]
+	if p.distance_squared_to(cp) > segment_length * segment_length * 4.0:
+		return false
+	return absf((p - cp).dot(n)) < collision_radius * 3.0
+
+
+## Positional projection: keep particle i at least collision_radius outside
+## the cached plane (runs every solver iteration).
+func _project_plane(i: int, cp: Vector3, n: Vector3) -> void:
+	var d := (_points[i] - cp).dot(n)
+	if d < collision_radius:
+		_points[i] += n * (collision_radius - d)
 
 
 func _pin_anchors() -> void:
