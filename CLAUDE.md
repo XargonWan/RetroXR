@@ -47,6 +47,57 @@ HW-render, and OpenGL HW-render (SDL3-created hidden GL window — needs a displ
 runtime). Desktop Linux support was added 2026-07-13 (Windows x86_64 + Android arm64 were
 the original targets).
 
+Linux build internals worth knowing: SCons isn't system-wide here — it's `pip install
+--user scons` (lands in `~/.local/bin`, so prefix commands with `PATH="$HOME/.local/bin:$PATH"`).
+`CallbackTrampolines.cpp` has a dedicated `EmitTrampolineSysV` (x86-64 System V ABI:
+RDI/RSI/RDX/RCX/R8/R9 + XMM0-7 + AL) — the Windows `EmitTrampolineX64` uses the wrong ABI, so
+Linux/Windows/Android each need their own trampoline. GDScript platform logic used to be
+"Android-vs-else(=Windows)"; several files (`core_download_manager.gd`, `download_manifest.gd`,
+`spawn_menu.gd`, `rom_library.gd`) were made explicitly Linux-aware (buildbot URL
+`nightly/linux/x86_64/latest/`, `.so` ext, `$HOME/retrovr/...` roots). Runtime emulation of a
+real core on Linux is only lightly verified — build + extension-load + type-resolution are proven.
+
+### Sibling GDExtensions (vlc-godot, godot-pdfium)
+
+Two other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
+`<name>/` with `SConstruct` + `src/`, reusing `../libretro-godot/godot-cpp`, deploying to
+`RetroVR/<name>/`). Build each **from its own directory** (each has its own `VariantDir('Temp')`):
+
+- **vlc-godot** — libVLC-backed `VlcPlayer`, used by both the DVD player **and** the VHS/VCR
+  (the old `eirteam.ffmpeg` addon was dropped 2026-07-14 — libVLC is the single video backend;
+  it also handles x265/HEVC, which eirteam.ffmpeg did not).
+  ```bash
+  cd vlc-godot
+  PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_debug
+  PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_release
+  ```
+  Linux links the system `libvlc` (Fedora `vlc-devel` provides `/lib64/libvlc.so` + headers;
+  runtime needs `vlc-libs`). HEVC works out of the box via VLC's system plugin dir — no plugin
+  bundling on Linux. Output: `RetroVR/vlc-godot/libvlc_godot.linux.template_{debug,release}.x86_64.so`.
+
+- **godot-pdfium** — `PDFRenderer` (opens a PDF, renders a page to a Godot `Image`), backed by
+  the bblanchon/pdfium-binaries `libpdfium`. Fetch the Linux prebuilt first (headers are already
+  committed and identical across platforms; `Tools/download_pdfium.ps1` only grabs win-x64 +
+  android-arm64, so the Linux fetch is manual):
+  ```bash
+  curl -fL -o /tmp/p.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
+  mkdir -p godot-pdfium/external/pdfium/lib/linux-x64 && tar -xzf /tmp/p.tgz -C /tmp/pd
+  cp /tmp/pd/lib/libpdfium.so godot-pdfium/external/pdfium/lib/linux-x64/
+  cd godot-pdfium
+  PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_debug
+  PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_release
+  ```
+  **rpath gotcha:** the shipped `libpdfium.so` shares its SONAME with the Android arm64 copy
+  that sits in the output-dir root (tracked in git, referenced by the android `[dependencies]`
+  block). An x86_64 lib with the same name would clobber it and break Quest exports, so the
+  Linux lib installs to a `linux-x64/` **subdir** and the SConscript adds
+  `LINKFLAGS=["-Wl,-R,'$$ORIGIN/linux-x64'"]` (quote exactly like godot-cpp's `tools/linux.py` —
+  an unquoted `$$ORIGIN` collapses to a bare `/linux-x64` under this SCons). godot-cpp already
+  injects a bare `$ORIGIN` entry, so final RUNPATH is `$ORIGIN:$ORIGIN/linux-x64`; the loader
+  skips the arch-mismatched arm64 lib and falls through to the x86_64 subdir. Verify with
+  `objdump -p …so | grep RUNPATH` and `ldd …so | grep pdfium` (must resolve, not "not found").
+  Added 2026-07-15.
+
 ## Headless Testing & Validation
 
 There is no formal test suite. The project is validated by running the Godot editor
@@ -113,6 +164,29 @@ can never hang the run.
 
 No compiled C++ test harness exists; GDExtension changes are validated by rebuilding
 (above) and loading in the headless editor.
+
+### 3. Capturing a real screenshot on Linux (for visual validation)
+`--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
+`RenderingServer.frame_post_draw` just hangs; `get_image()` is blank). To actually render a
+RetroVR scene on this box, run Godot **on the real display** (`DISPLAY=:0`, NVIDIA RTX 3080,
+Vulkan Forward+ — a window briefly appears on the desktop, ok'd for validation) and draw into a
+**`SubViewport`**, not the window viewport (the uncomposited window swapchain reads back as
+clear-colour only). Xvfb does not work here (bwrap/glycin abort in the sandbox). Recipe:
+```gdscript
+var sv := SubViewport.new()
+sv.size = Vector2i(1000, 750)
+sv.own_world_3d = true
+sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+add_child(sv)   # add WorldEnvironment + DirectionalLight3D + your scene + Camera3D as children
+cam.current = true              # make_current() does NOT work inside a SubViewport
+for i in range(8): await get_tree().process_frame
+await RenderingServer.frame_post_draw
+await get_tree().process_frame
+sv.get_texture().get_image().save_png("res://shot.png")
+```
+Run `DISPLAY=:0 "$godot" --path "$proj" res://shot.tscn` (import first with `--headless … --import`).
+Then **surface the PNG inline via the Read tool** — the user sees it through the Claude app (the
+terminal itself doesn't paint it). Don't save renders to a folder; delete the probe + PNG when done.
 
 ## On-Device Testing (Quest over adb, nobody wearing the headset)
 
@@ -232,6 +306,10 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 - **libretro-common** — Reference implementations for VFS, audio conversion, etc. (`libretro-godot/external/libretro-common/`)
 - **moodycamel::ReaderWriterQueue** — Lock-free SPSC queue for cross-thread communication
 - **godot-xr-tools v4.5.1** — VR locomotion, interactions, finger poses (`RetroVR/addons/godot-xr-tools/`)
+- **vlc-godot** (libVLC) — the `VlcPlayer` GDExtension; single video backend for both the DVD
+  player and the VHS/VCR. Replaced `eirteam.ffmpeg` (dropped 2026-07-14; libVLC also does x265).
+- **godot-pdfium** (PDFium) — the `PDFRenderer` GDExtension for rendering PDF pages (books) to
+  Godot `Image`s. Prebuilt `libpdfium` from bblanchon/pdfium-binaries.
 
 ## Code Conventions
 
@@ -241,3 +319,21 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 - Callback-based design throughout (video_refresh, audio_sample, input_poll, environment)
 - All static libretro callbacks resolve their `Wrapper*` via `Wrapper::GetCurrentThreadWrapper()` — never store a raw global pointer
 - `call_deferred` used when Wrapper needs to signal back to the `Libretro` node on the main thread (e.g. `NotifyOptionsReady`)
+
+## Tools
+
+Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroVR/Tools/`,
+which holds in-editor probe scenes like `netplay_spike`).
+
+- **`Tools/bundle_convert.py`** — headless converter for imported `.bundle` models (each is a Unity
+  AssetBundle, magic `UnityFS`) → `.glb`, with no Unity editor. Deps: `pip install --user UnityPy
+  numpy pygltflib Pillow`. Usage: `python3 Tools/bundle_convert.py <file.bundle|dir> [out] [--audio]`.
+  Handles per-submesh PBR materials, full PBR maps (albedo/normal (DXT5nm)/ORM/emissive), Unity
+  built-in meshes, transparent proxy shells, embedded glTF animations (from the Unity generic
+  clip) + an `.anim.json` sidecar, MonoBehaviour metadata → `.meta.json`, and `--audio` extracts
+  AudioClips to `audio/*.wav`. **Gotcha:** UnityPy's `Mesh.export()` is already glTF-oriented —
+  do NOT apply any axis flip or you mirror the model. Source model libraries on this box live in
+  `~/Systems/` (consoles) and `~/Media/` (carts/tapes).
+- **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
+  bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
+  godot-pdfium build recipe above.
