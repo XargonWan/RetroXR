@@ -9,6 +9,12 @@ SK.Libretro.Godot is a GDExtension (C++) that runs libretro emulator cores insid
 The Godot project in this repo:
 - `RetroVR/` — VR arcade room (primary development target, godot-xr-tools based)
 
+## Git Workflow
+
+**Commit directly to `master` unless the user says otherwise.** This is a solo repo —
+do not branch-per-feature by default; commit and (when asked) push straight to `master`.
+Branch only when the user explicitly requests it.
+
 ## Build Commands
 
 Requires SCons and MSVC (Windows), GCC/Clang (Linux), or Android NDK (Android). The godot-cpp submodule must be initialized first:
@@ -47,9 +53,9 @@ There is no formal test suite. The project is validated by running the Godot edi
 **headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
 tests. This works without a VR headset (desktop fallback) and without a display.
 
-Godot binary (Windows):
+Godot binary (Windows) — use **Godot 4.7** (the project targets 4.7):
 ```
-C:\Program Files\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64\Godot_v4.6.1-stable_mono_win64_console.exe
+C:\Program Files\Godot\Godot_v4.7-stable_win64\Godot_v4.7-stable_win64_console.exe
 ```
 Use the `_console.exe` variant so stdout/stderr is captured. `$proj` below is
 `C:\Users\user\SK.Libretro.Godot\RetroVR`.
