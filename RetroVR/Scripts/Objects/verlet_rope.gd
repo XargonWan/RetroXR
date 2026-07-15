@@ -290,11 +290,15 @@ func _physics_process(delta: float) -> void:
 		# saturates with chain length (corrections propagate one particle per
 		# pass while gravity acts on all of them), so long ropes stay droopy no
 		# matter the stiffness; the long-range constraints fix that in O(log n)
-		# passes. Sweep direction alternates per iteration for the same reason.
+		# passes. The hierarchy depth scales with stiffness: soft cables
+		# (k ≲ 0.2) bend locally only — long-range constraints would leverage
+		# surface contacts and prop the rope up rod-like — while stiff ropes
+		# engage the full hierarchy. Sweep direction alternates per iteration.
 		# The free-bend allowance grows ~s² with spacing (sagitta of an arc).
 		if k_bend > 0.0:
+			var levels := 1 + roundi(k_bend * 3.0)
 			var s := 1
-			while s * 2 <= count - 1:
+			while s * 2 <= count - 1 and levels > 0:
 				var allowed := allowed_dev * float(s * s)
 				if iter_i % 2 == 0:
 					for i in range(s, count - s):
@@ -303,6 +307,7 @@ func _physics_process(delta: float) -> void:
 					for i in range(count - s - 1, s - 1, -1):
 						_solve_bend(i, s, allowed, k_bend)
 				s *= 2
+				levels -= 1
 		_pin_anchors()
 
 	# --- Self collision ---
@@ -356,6 +361,30 @@ func _physics_process(delta: float) -> void:
 					if rest_normal != Vector3.ZERO:
 						var rest_point: Vector3 = rest["point"]
 						_resolve_contact(i, rest_point, rest_normal)
+
+		# Segment-midpoint pushout (same throttled pass): particle collision
+		# alone lets the straight span BETWEEN two particles cut through a
+		# convex corner (each endpoint rests on its own face while the chord
+		# clips the edge). Testing each segment's midpoint and pushing both
+		# endpoints out makes the rope hug table edges instead.
+		if do_rest:
+			for i in range(count - 1):
+				var w_sum := _inv_mass[i] + _inv_mass[i + 1]
+				if w_sum == 0.0:
+					continue
+				var mid := (_points[i] + _points[i + 1]) * 0.5
+				_shape_query.transform = Transform3D(Basis.IDENTITY, mid)
+				var rest := space_state.get_rest_info(_shape_query)
+				if rest.is_empty():
+					continue
+				var n: Vector3 = rest["normal"]
+				if n == Vector3.ZERO:
+					continue
+				var target: Vector3 = rest["point"] + n * collision_radius
+				var push := target - mid
+				# Split so the MIDPOINT moves by the full pushout: Δi+Δj = 2·push.
+				_points[i] += push * (2.0 * _inv_mass[i] / w_sum)
+				_points[i + 1] += push * (2.0 * _inv_mass[i + 1] / w_sum)
 
 	# --- Two-way anchor coupling ---
 	if anchor_pull > 0.0 and start_node and end_node:
@@ -477,6 +506,13 @@ func _render_tube() -> void:
 	sides.resize(count)
 	ups.resize(count)
 
+	# Parallel-transport (rotation-minimizing) frames: build the first ring's
+	# basis from any perpendicular, then carry it along the tube by projecting
+	# the previous side vector onto each new tangent plane. Computing frames
+	# independently from a fixed reference vector twists neighbouring rings
+	# against each other whenever the tangent nears that reference (e.g. a
+	# vertically hanging cable), which pinches the tube like sausage links.
+	var prev_side := Vector3.ZERO
 	for i in count:
 		var tangent: Vector3
 		if i == 0:
@@ -489,8 +525,12 @@ func _render_tube() -> void:
 			tangent = Vector3.UP
 		else:
 			tangent = tangent.normalized()
-		var ref := Vector3.UP if abs(tangent.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
-		var side := tangent.cross(ref).normalized()
+		var side := prev_side - tangent * prev_side.dot(tangent)
+		if side.length_squared() < 0.000001:
+			var ref := Vector3.UP if absf(tangent.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
+			side = tangent.cross(ref)
+		side = side.normalized()
+		prev_side = side
 		sides[i] = side
 		ups[i]   = side.cross(tangent).normalized()
 
