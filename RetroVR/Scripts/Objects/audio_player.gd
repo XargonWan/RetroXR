@@ -1,0 +1,503 @@
+## RetroAudioPlayer — shared base for the pickable CD and cassette players. Plays
+## an inserted audio album (a folder of tracks, or a single audio file) through
+## the libVLC-backed VlcPlayer GDExtension — the same engine as the VCR/DVD, but
+## audio-only and self-contained: the sound emanates from the unit's own
+## spatialised AudioStreamPlayer3D, so no TV or cable is needed.
+##
+## Subclasses (CDPlayer / CassettePlayer) provide the scene + button set. The CD
+## has Prev/Next track buttons (and the remote shows them); the cassette is a
+## linear tape (play/pause/stop/ff/rew only, tracks auto-advance, no skip).
+##
+## Transport is host-authoritative in a netplay session (mirrors VCR/DVD): a
+## client's button/remote intent is forwarded to the host, which executes it and
+## broadcasts the transport state; every peer plays its own local copy of the
+## album (verify-by-name — albums are never transferred; see NetObjectSync).
+class_name RetroAudioPlayer
+extends XRToolsPickable
+
+## Human-readable label shown above the unit.
+@export var player_label: String = "AUDIO"
+
+## Fast-forward / rewind scan rate: seconds of audio traversed per real second.
+@export var scan_speed: float = 8.0
+
+# The snap-zone group the media item must belong to (set by subclass _ready).
+var _media_group: String = ""
+
+# Runtime state
+var album_path: String = ""
+var is_playing: bool = false
+var _paused: bool = false
+var _tracks: PackedStringArray = PackedStringArray()
+var _track_idx: int = 0
+
+# FF/REW scan: 0 = normal, +1 = forward, -1 = reverse. The player keeps playing
+# (so it presents audio position) but we jump the position in throttled steps and
+# mute, exactly like the VCR's video scan.
+var _scan_dir: int = 0
+var _scan_accum: float = 0.0
+const SCAN_SEEK_INTERVAL := 0.08
+## If Prev is pressed past this point in a track, it restarts the track instead
+## of skipping to the previous one (standard CD behaviour).
+const PREV_RESTART_SEC := 3.0
+
+var _vlc: Object = null                 # VlcPlayer (GDExtension)
+var _audio_player: AudioStreamPlayer3D = null
+var _audio_playback: AudioStreamGeneratorPlayback = null
+var _volume_linear: float = 1.0
+
+var _snapped_media: Node3D = null
+
+@onready var _media_slot: XRToolsSnapZone = $MediaSlot
+@onready var _name_label: Label3D = $NameLabel
+@onready var _play_button: VRButton = $PlayButton
+@onready var _pause_button: VRButton = $PauseButton
+@onready var _stop_button: VRButton = $StopButton
+@onready var _rewind_button: VRButton = $RewindButton
+@onready var _ff_button: VRButton = $FastForwardButton
+@onready var _prev_button: VRButton = get_node_or_null("PrevButton")
+@onready var _next_button: VRButton = get_node_or_null("NextButton")
+
+
+func _ready() -> void:
+	super._ready()
+	add_to_group("audio_player")
+	_media_slot.has_picked_up.connect(_on_media_inserted)
+	_media_slot.has_dropped.connect(_on_media_removed)
+	_play_button.button_pressed.connect(_on_play_pressed)
+	_pause_button.button_pressed.connect(_on_pause_pressed)
+	_stop_button.button_pressed.connect(_on_stop_pressed)
+	_rewind_button.button_pressed.connect(_on_rewind_pressed)
+	_ff_button.button_pressed.connect(_on_ff_pressed)
+	_play_button.set_color(Color(0.0, 0.9, 0.0))     # green
+	_pause_button.set_color(Color(0.9, 0.8, 0.0))     # amber
+	_stop_button.set_color(Color(0.9, 0.1, 0.1))      # red
+	_rewind_button.set_color(Color(0.1, 0.4, 0.9))    # blue
+	_ff_button.set_color(Color(0.1, 0.4, 0.9))        # blue
+	if _prev_button:
+		_prev_button.button_pressed.connect(_on_prev_pressed)
+		_prev_button.set_color(Color(0.5, 0.5, 0.55))
+	if _next_button:
+		_next_button.button_pressed.connect(_on_next_pressed)
+		_next_button.set_color(Color(0.5, 0.5, 0.55))
+
+	if ClassDB.class_exists("VlcPlayer"):
+		_vlc = ClassDB.instantiate("VlcPlayer")
+		_vlc.finished.connect(_on_track_finished)
+	else:
+		push_error("RetroAudioPlayer: VlcPlayer extension not loaded — audio playback unavailable")
+
+	_setup_audio()
+	_update_status()
+
+
+## Whether this player offers manual track skipping (CD yes, cassette no). Read by
+## the TV remote to pick its row set and by the net layer to gate skip commands.
+func has_track_skip() -> bool:
+	return _prev_button != null
+
+
+## True while playback is paused (used by the TV remote's play/pause cell).
+func is_paused() -> bool:
+	return _paused
+
+
+## Build the spatialised audio player fed by VlcPlayer's PCM ring buffer. As a
+## child of the (pickable) unit it follows the device around automatically.
+func _setup_audio() -> void:
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
+	gen.buffer_length = 0.25
+	_audio_player = AudioStreamPlayer3D.new()
+	_audio_player.name = "AudioStreamPlayer3D"
+	_audio_player.stream = gen
+	_audio_player.unit_size = 2.0
+	_audio_player.max_distance = 12.0
+	add_child(_audio_player)
+
+
+func _process(delta: float) -> void:
+	if _vlc:
+		_vlc.update_frame()
+		_pump_audio()
+	_update_scan(delta)
+
+
+## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
+func _pump_audio() -> void:
+	if _audio_playback == null:
+		return
+	var avail := _audio_playback.get_frames_available()
+	if avail <= 0:
+		return
+	var frames: PackedVector2Array = _vlc.read_audio(avail)
+	if frames.size() > 0:
+		_audio_playback.push_buffer(frames)
+
+
+# --- Position helpers (VlcPlayer reports ms / 0..1) ---
+
+func _vlc_time_sec() -> float:
+	return (float(_vlc.get_time()) / 1000.0) if _vlc else 0.0
+
+
+func _vlc_length_sec() -> float:
+	if _vlc == null:
+		return -1.0
+	var ms: int = _vlc.get_length()
+	return (float(ms) / 1000.0) if ms > 0 else -1.0
+
+
+func _vlc_seek_sec(sec: float) -> void:
+	if _vlc == null:
+		return
+	var length := _vlc_length_sec()
+	if length > 0.0:
+		_vlc.set_position(clampf(sec / length, 0.0, 1.0))
+
+
+## While scanning, jump the position forward/back in throttled steps. Hitting
+## either end of the current track stops the scan and holds there.
+func _update_scan(delta: float) -> void:
+	if _scan_dir == 0 or not is_playing:
+		return
+	_scan_accum += delta
+	if _scan_accum < SCAN_SEEK_INTERVAL:
+		return
+	var length := _vlc_length_sec()
+	var pos := _vlc_time_sec() + _scan_accum * scan_speed * float(_scan_dir)
+	_scan_accum = 0.0
+	if pos <= 0.0:
+		_vlc_seek_sec(0.0)
+		_end_scan_hold()
+	elif length > 0.0 and pos >= length:
+		_vlc_seek_sec(length)
+		_end_scan_hold()
+	else:
+		_vlc_seek_sec(pos)
+
+
+func _end_scan_hold() -> void:
+	_scan_dir = 0
+	if _vlc:
+		_vlc.set_paused(true)
+	_paused = true
+	_apply_volume()
+	_update_status()
+
+
+# --- Media slot callbacks ---
+
+func _on_media_inserted(media: Node3D) -> void:
+	_snapped_media = media
+	add_collision_exception_with(media)
+	if media.has_method("get_album_path"):
+		album_path = media.get_album_path()
+	_track_idx = 0
+	_rebuild_tracks()
+	NetworkManager.report_event(NetObjectSync.EV_AUDIO_INSERT, {"player": self, "media": media})
+	# Offline, auto-start on insert. In a session playback is host-authoritative
+	# (starts via the transport commands / state broadcast) like the VCR/DVD.
+	if not NetworkManager.is_active():
+		play()
+	_update_status()
+
+
+func _on_media_removed() -> void:
+	if _snapped_media:
+		remove_collision_exception_with(_snapped_media)
+		_snapped_media = null
+	stop()
+	album_path = ""
+	_tracks = PackedStringArray()
+	NetworkManager.report_event(NetObjectSync.EV_AUDIO_REMOVE, {"player": self})
+	_update_status()
+
+
+func _rebuild_tracks() -> void:
+	_tracks = RomLibrary.music_tracks(album_path)
+	_track_idx = clampi(_track_idx, 0, maxi(0, _tracks.size() - 1))
+
+
+func get_snapped_media() -> Node3D:
+	return _snapped_media
+
+
+## Snap a media item into the slot programmatically (event / save restore).
+func restore_media(media: Node3D) -> void:
+	_media_slot.pick_up_object(media)
+
+
+# --- Transport (front-panel buttons + remote entry points) ---
+
+func remote_play() -> void: _on_play_pressed()
+func remote_pause() -> void: _on_pause_pressed()
+func remote_stop() -> void: _on_stop_pressed()
+func remote_ff() -> void: _on_ff_pressed()
+func remote_rewind() -> void: _on_rewind_pressed()
+func remote_next() -> void: _on_next_pressed()
+func remote_prev() -> void: _on_prev_pressed()
+
+
+func _on_play_pressed() -> void:
+	if _net_forward_cmd("play"):
+		return
+	if is_playing and (_scan_dir != 0 or _paused):
+		_scan_dir = 0
+		if _vlc:
+			_vlc.set_paused(false)
+		_paused = false
+		_apply_volume()
+		_update_status()
+		_net_push_state()
+		return
+	play()
+
+
+func _on_pause_pressed() -> void:
+	if _net_forward_cmd("pause"):
+		return
+	if is_playing:
+		_scan_dir = 0
+		if _vlc:
+			_vlc.set_paused(true)
+		_paused = true
+		_apply_volume()
+		_update_status()
+		_net_push_state()
+
+
+func _on_stop_pressed() -> void:
+	if _net_forward_cmd("stop"):
+		return
+	stop()
+
+
+func _on_rewind_pressed() -> void:
+	if _net_forward_cmd("rew"):
+		return
+	if not is_playing:
+		return
+	_scan_dir = 0 if _scan_dir == -1 else -1
+	_apply_scan_mute()
+	_update_status()
+	_net_push_state()
+
+
+func _on_ff_pressed() -> void:
+	if _net_forward_cmd("ff"):
+		return
+	if not is_playing:
+		return
+	_scan_dir = 0 if _scan_dir == 1 else 1
+	_apply_scan_mute()
+	_update_status()
+	_net_push_state()
+
+
+func _on_next_pressed() -> void:
+	if not has_track_skip():
+		return
+	if _net_forward_cmd("next"):
+		return
+	_goto_track(_track_idx + 1)
+
+
+func _on_prev_pressed() -> void:
+	if not has_track_skip():
+		return
+	if _net_forward_cmd("prev"):
+		return
+	# Past the restart threshold, "previous" restarts the current track.
+	if is_playing and _vlc_time_sec() > PREV_RESTART_SEC:
+		_vlc_seek_sec(0.0)
+		_net_push_state()
+		return
+	_goto_track(_track_idx - 1)
+
+
+## Load and play a specific track index (clamped). No-op past the ends.
+func _goto_track(idx: int) -> void:
+	if _tracks.is_empty():
+		return
+	if idx < 0 or idx >= _tracks.size():
+		return
+	_track_idx = idx
+	_scan_dir = 0
+	play()
+
+
+func play() -> void:
+	if _vlc == null:
+		return
+	if _tracks.is_empty():
+		_rebuild_tracks()
+	if _tracks.is_empty():
+		push_error("RetroAudioPlayer: cannot play — no album inserted")
+		return
+	_track_idx = clampi(_track_idx, 0, _tracks.size() - 1)
+	if not _vlc.open(_tracks[_track_idx], false):
+		push_error("RetroAudioPlayer: VlcPlayer.open failed for ", _tracks[_track_idx])
+		return
+	_vlc.play()
+	_vlc.set_volume(100)
+	is_playing = true
+	_paused = false
+	_scan_dir = 0
+	if _audio_player:
+		_audio_player.play()
+		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+		_apply_volume()
+	_update_status()
+	_net_push_state()
+
+
+func stop() -> void:
+	if not is_playing:
+		return
+	_scan_dir = 0
+	if _vlc:
+		_vlc.stop()
+	is_playing = false
+	_paused = false
+	if _audio_player:
+		_audio_player.stop()
+	_audio_playback = null
+	_update_status()
+	_net_push_state()
+
+
+## A track reached its end. Auto-advance to the next one (both CD and cassette
+## play through an album); stop at the end of the last track.
+func _on_track_finished() -> void:
+	if NetworkManager.is_client():
+		return   # the host drives advancement; clients follow its state
+	if _track_idx + 1 < _tracks.size():
+		_track_idx += 1
+		play()
+	else:
+		is_playing = false
+		_paused = false
+		if _audio_player:
+			_audio_player.stop()
+		_audio_playback = null
+		_update_status()
+		_net_push_state()
+
+
+# --- Volume / status ---
+
+func _volume_db() -> float:
+	return linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
+
+
+func _apply_volume() -> void:
+	if _audio_player:
+		_audio_player.volume_db = -80.0 if _scan_dir != 0 else _volume_db()
+
+
+func _apply_scan_mute() -> void:
+	if _vlc:
+		_vlc.set_paused(false)
+	_paused = false
+	_scan_accum = 0.0
+	_apply_volume()
+
+
+func set_audio_volume(volume: float) -> void:
+	_volume_linear = clampf(volume, 0.0, 1.0)
+	if _scan_dir == 0:
+		_apply_volume()
+
+
+func _update_status() -> void:
+	if _name_label == null:
+		return
+	var txt := player_label.to_upper()
+	if _tracks.size() > 1:
+		txt += "  %d/%d" % [_track_idx + 1, _tracks.size()]
+	if is_playing:
+		if _scan_dir > 0:
+			txt += "  ▶▶"
+		elif _scan_dir < 0:
+			txt += "  ◀◀"
+		elif _paused:
+			txt += "  ❙❙"
+		else:
+			txt += "  ▶"
+	_name_label.text = txt
+
+
+# ── Multiplayer sync ──────────────────────────────────────────────────────────
+# Host is transport authority; every peer plays its own local copy of the album.
+# Drift-corrected, not lockstep: the host broadcasts (playing, paused, track,
+# pos) on transport changes plus a heartbeat, and a peer switches track / seeks
+# when it diverges.
+
+const NET_DRIFT_TOLERANCE := 0.75   # seconds off host before a corrective seek
+
+
+## Client-in-session: route a transport intent to the host instead of acting
+## locally. Returns true when forwarded (caller must then return).
+func _net_forward_cmd(cmd: String) -> bool:
+	if NetworkManager.is_client() and not NetworkManager.is_event_applying():
+		NetworkManager.report_event(NetObjectSync.EV_AUDIO_CMD, {"player": self, "cmd": cmd})
+		return true
+	return false
+
+
+## Host: broadcast the current transport state for peer drift sync.
+func _net_push_state() -> void:
+	if NetworkManager.is_host() and not NetworkManager.is_event_applying():
+		NetworkManager.report_audio_state(self)
+
+
+## Current transport state for the sync layer. The "track" key is the state-shape
+## discriminator the heartbeat uses to route audio states (vs VCR/DVD).
+func net_get_state() -> Dictionary:
+	return {
+		"playing": is_playing,
+		"paused": is_playing and _paused,
+		"track": _track_idx,
+		"pos": _vlc_time_sec() if is_playing else 0.0,
+	}
+
+
+## Client: mirror the host's transport state on the LOCAL player.
+func net_apply_state(playing: bool, paused: bool, track: int, pos: float) -> void:
+	if not playing:
+		if is_playing:
+			stop()
+		return
+	# The album path is resolved by object_sync after insertion (verify-by-name);
+	# refresh in case it landed after the insert event.
+	if _tracks.is_empty():
+		if album_path.is_empty() and _snapped_media and _snapped_media.has_method("get_album_path"):
+			album_path = _snapped_media.get_album_path()
+		_rebuild_tracks()
+	if _tracks.is_empty():
+		_update_status()
+		return
+	track = clampi(track, 0, _tracks.size() - 1)
+	if not is_playing or _track_idx != track:
+		_track_idx = track
+		play()
+	if not is_playing or _vlc == null:
+		return
+	if not paused and absf(_vlc_time_sec() - pos) > NET_DRIFT_TOLERANCE:
+		_vlc_seek_sec(pos)
+	if _vlc:
+		_vlc.set_paused(paused)
+	_paused = paused
+	_apply_volume()
+	_update_status()
+
+
+## Optional download-status hook (albums are verify-by-name, so this is only used
+## to surface an "album not found on this peer" state).
+func net_set_download_status(status: String) -> void:
+	if _name_label:
+		if status.is_empty():
+			_update_status()
+		else:
+			_name_label.text = "%s  %s" % [player_label.to_upper(), status]

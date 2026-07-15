@@ -344,6 +344,11 @@ func remote_stop() -> void:
 	_on_stop_pressed()
 
 
+## True while playback is paused (used by the TV remote's play/pause cell).
+func is_paused() -> bool:
+	return _paused
+
+
 func remote_ff() -> void:
 	_on_ff_pressed()
 

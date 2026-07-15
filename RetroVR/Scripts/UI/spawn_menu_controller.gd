@@ -23,6 +23,10 @@ const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/tv_remote.tscn")
 const DVD_PLAYER_SCENE      := preload("res://Scenes/Objects/dvd_player.tscn")
 const DVD_DISC_SCENE        := preload("res://Scenes/Objects/dvd_disc.tscn")
+const CD_PLAYER_SCENE       := preload("res://Scenes/Objects/cd_player.tscn")
+const CASSETTE_PLAYER_SCENE := preload("res://Scenes/Objects/cassette_player.tscn")
+const AUDIO_DISC_SCENE      := preload("res://Scenes/Objects/audio_disc.tscn")
+const AUDIO_CASSETTE_SCENE  := preload("res://Scenes/Objects/audio_cassette.tscn")
 
 # Y heights used when spawning each type onto the table
 const SPAWN_Y := {
@@ -41,6 +45,10 @@ const SPAWN_Y := {
 	"tape":             0.78,
 	"dvd_player":       0.80,
 	"dvd_disc":         0.78,
+	"cd_player":        0.80,
+	"cassette_player":  0.80,
+	"audio_disc":       0.78,
+	"audio_cassette":   0.78,
 	"tv_remote":        0.78,
 	"memory_card":      0.78,
 }
@@ -177,6 +185,8 @@ func _connect_menu_signals() -> void:
 	menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
 	menu.spawn_video_requested.connect(_on_spawn_video_requested)
 	menu.spawn_dvd_requested.connect(_on_spawn_dvd_requested)
+	menu.spawn_cd_requested.connect(_on_spawn_cd_requested)
+	menu.spawn_cassette_requested.connect(_on_spawn_cassette_requested)
 	menu.turn_style_changed.connect(_on_turn_style_changed)
 	menu.scene_change_requested.connect(_on_scene_change_requested)
 	menu.scene_slot_load_requested.connect(_on_slot_load)
@@ -652,6 +662,10 @@ func _on_spawn_requested(type: String) -> void:
 			obj = VCR_SCENE.instantiate() as Node3D
 		"dvd_player":
 			obj = DVD_PLAYER_SCENE.instantiate() as Node3D
+		"cd_player":
+			obj = CD_PLAYER_SCENE.instantiate() as Node3D
+		"cassette_player":
+			obj = CASSETTE_PLAYER_SCENE.instantiate() as Node3D
 		"tv_remote":
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D
 		"memory_card":
@@ -712,6 +726,20 @@ func _on_spawn_dvd_requested(dvd_path: String) -> void:
 	disc.dvd_path = dvd_path
 	disc.dvd_label = dvd_path.get_file().get_basename()
 	_place_spawned(disc, "dvd_disc")
+
+
+func _on_spawn_cd_requested(album_path: String) -> void:
+	var disc := AUDIO_DISC_SCENE.instantiate() as AudioDisc
+	disc.album_path = album_path
+	disc.album_label = album_path.get_file().get_basename()
+	_place_spawned(disc, "audio_disc")
+
+
+func _on_spawn_cassette_requested(album_path: String) -> void:
+	var tape := AUDIO_CASSETTE_SCENE.instantiate() as AudioCassette
+	tape.album_path = album_path
+	tape.album_label = album_path.get_file().get_basename()
+	_place_spawned(tape, "audio_cassette")
 
 
 func _on_turn_style_changed(value: String) -> void:

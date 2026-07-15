@@ -1,12 +1,16 @@
 ## TVRemote — pickable remote control. While held, it raycasts forward from its
-## tip; when pointed at a RetroTV or VCRPlayer the target is outlined maroon
-## (PickableHighlight.set_remote_target) and a small menu pops up above the
-## remote, billboarded to the camera:
-##   TV  → POWER / VOL + / VOL −
-##   VCR → PLAY / PAUSE / STOP / FF / REW
-## VR: thumbstick up/down moves the selection (one flick = one step), primary
-## button (A/X) or thumbstick click activates. Desktop: aim follows the camera
-## reticle, Arrow Up/Down move the selection, Enter activates.
+## tip; when pointed at a RetroTV / VCRPlayer / DVDPlayer / CD / Cassette player the
+## target is outlined maroon (PickableHighlight.set_remote_target) and a small
+## button GRID pops up above the remote, billboarded to the camera. Each device has
+## a stable, real-remote-style layout (icons from a Symbols Nerd Font); buttons that
+## don't apply right now (e.g. a DVD's menu arrows during playback) are greyed and
+## skipped rather than removed.
+##
+## VR: the thumbstick moves the highlight around the grid (up/down/left/right → the
+## nearest enabled cell), primary button (A/X) or thumbstick click activates.
+## Desktop: aim follows the camera reticle, arrow keys move the highlight, Enter
+## activates. There is ONE navigation model everywhere — a DVD's on-screen menu is
+## driven by highlighting and pressing its ▲/◀/●/▶/▼ cells like any other button.
 class_name TVRemote
 extends XRToolsPickable
 
@@ -15,25 +19,41 @@ const RAY_LENGTH := 8.0
 ## Seconds the ray may leave the target before the menu hides (hand jitter).
 const TARGET_GRACE := 0.4
 
-# Menu geometry (metres)
-const MENU_WIDTH   := 0.17
-const ROW_HEIGHT   := 0.03
-const MENU_MARGIN  := 0.01
+# Grid geometry (metres)
+const CELL_W       := 0.05
+const CELL_H       := 0.036
+const GAP          := 0.006
+const GRID_COLS    := 3
+const PANEL_PAD    := 0.012
 const FLOAT_HEIGHT := 0.16
 ## Desktop: camera-local menu anchor (right, up, forward) — just above the
-## FPS-snapped remote (desktop_pickup.FPS_SNAP_LOCAL is 0.20, -0.22, -0.45),
-## fixed in screen space so looking around doesn't move it.
+## FPS-snapped remote, fixed in screen space so looking around doesn't move it.
 const DESKTOP_MENU_OFFSET := Vector3(0.22, -0.03, -0.55)
 
 # Thumbstick step/latch thresholds
 const STICK_STEP  := 0.6
 const STICK_REARM := 0.3
 
-const COLOR_ROW_SELECTED := Color(1.0, 1.0, 1.0, 1.0)
-const COLOR_ROW_NORMAL   := Color(0.65, 0.65, 0.72, 1.0)
-const COLOR_MAROON       := Color(0.5, 0.0, 0.13, 0.9)
+const COLOR_MAROON          := Color(0.5, 0.0, 0.13, 0.9)
+const COLOR_CELL_BG         := Color(0.12, 0.12, 0.16, 0.92)
+const COLOR_PANEL_BG        := Color(0.05, 0.05, 0.1, 0.85)
+const COLOR_GLYPH           := Color(0.88, 0.90, 0.98)
+const COLOR_GLYPH_SELECTED  := Color(1.0, 1.0, 1.0)
+const COLOR_GLYPH_DISABLED  := Color(0.42, 0.42, 0.48, 0.55)
+const COLOR_GLYPH_ON        := Color(0.30, 1.0, 0.42)   # TV power = on
+const COLOR_GLYPH_MUTE      := Color(1.0, 0.35, 0.35)   # TV mute = active
+const COLOR_HILITE          := Color(0.62, 0.10, 0.22, 0.7)
 
-const VCR_ROWS: Array[String] = ["PLAY", "PAUSE", "STOP", "FF  »»", "REW  ««"]
+## Symbol codepoints (Font Awesome range in the Symbols Nerd Font). Built into the
+## _glyphs string map in _ready so layouts can name glyphs by key.
+const GLYPH_CODES := {
+	"play": 0xF04B, "pause": 0xF04C, "stop": 0xF28D,
+	"ff": 0xF04E, "rew": 0xF04A, "next": 0xF051, "prev": 0xF048,
+	"vol_up": 0xF028, "vol_down": 0xF027, "power": 0xF011, "menu": 0xF0C9,
+	"up": 0xF077, "down": 0xF078, "left": 0xF053, "right": 0xF054,
+	"ok": 0xF192, "mute": 0xF026,
+}
+const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 ## Desktop mode: lock to the camera lower-right pointing straight ahead
 ## (FPS-style, same as the RayGun — read by desktop_pickup.gd). Drop with
@@ -55,24 +75,26 @@ var _spawn_menu_ctrl: Node = null
 var _left_vr_ctrl: XRController3D = null
 var _right_vr_ctrl: XRController3D = null
 
-# Current aim target (RetroTV or VCRPlayer) and lost-ray grace timer.
+# Current aim target and lost-ray grace timer.
 var _target: Node3D = null
 var _lost_time: float = 0.0
 
-# Menu state
-var _selection: int = 0
+# Selection state
+var _selection: int = -1
 var _stick_latched := false
 var _prev_confirm := false
-# DVD menu/playback context, tracked so the row set follows the disc's own
-# menu→playback transitions (not just button presses). -1 unknown, 0 playback,
-# 1 in-menu.
-var _dvd_menu_state: int = -1
 
 # Menu nodes (built in code)
 var _menu: Node3D = null
 var _menu_bg: MeshInstance3D = null
-var _menu_bar: MeshInstance3D = null
-var _menu_labels: Array[Label3D] = []
+var _hilite: MeshInstance3D = null
+# Per-cell state: each is {id, glyph, col, row, span, cx, enabled, face, label}.
+var _cells: Array = []
+var _nrows: int = 0
+# key -> glyph String (built from GLYPH_CODES in _ready)
+var _glyphs: Dictionary = {}
+# Combined font: project default + the Symbols Nerd Font as a fallback for icons.
+var _font: Font = null
 
 @onready var _tip: Marker3D = $Tip
 @onready var _pointer_area: StaticBody3D = $PointerArea
@@ -84,8 +106,22 @@ func _ready() -> void:
 	add_to_group("spawned")
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
+	for k: String in GLYPH_CODES:
+		_glyphs[k] = String.chr(int(GLYPH_CODES[k]))
+	_build_font()
 	_build_menu()
 	call_deferred("_find_vr_nodes")
+
+
+## One shared font: the project default as base (for any text) with the Symbols
+## Nerd Font chained as a fallback so PUA icon codepoints resolve to glyphs.
+func _build_font() -> void:
+	var fv := FontVariation.new()
+	fv.base_font = ThemeDB.fallback_font
+	var symbols: Font = load(SYMBOL_FONT_PATH)
+	if symbols:
+		fv.fallbacks = [symbols]
+	_font = fv
 
 
 func _find_vr_nodes() -> void:
@@ -229,26 +265,14 @@ func _process(delta: float) -> void:
 		return
 
 	_update_target(delta)
-	_poll_dvd_menu_state()
 	_update_menu_transform()
 
-	if _target != null and is_instance_valid(_holding_ctrl):
-		_process_vr_selection()
-
-
-## While aimed at a DVD player, rebuild the row set whenever the disc flips
-## between its menu and playback on its own (e.g. a selected title starts, or a
-## feature ends back at the menu) — otherwise the rows would only refresh on the
-## next button press.
-func _poll_dvd_menu_state() -> void:
-	if not (_target is DVDPlayer):
-		_dvd_menu_state = -1
-		return
-	var s := 1 if (_target as DVDPlayer).is_in_menu() else 0
-	if s != _dvd_menu_state:
-		_dvd_menu_state = s
-		_selection = 0
-		_rebuild_menu_rows()
+	if _target != null:
+		# Greying + dynamic glyphs (play/pause, power/mute tint) follow the target's
+		# own state every frame — no special poll needed.
+		_refresh_states()
+		if is_instance_valid(_holding_ctrl):
+			_process_vr_selection()
 
 
 func _update_target(delta: float) -> void:
@@ -257,13 +281,12 @@ func _update_target(delta: float) -> void:
 		_lost_time = 0.0
 		return
 	if host != null:
-		# New target — switch highlight and rebuild the menu.
+		# New target — switch highlight and rebuild the grid for it.
 		_set_target_highlight(_target, false)
 		_target = host
 		_lost_time = 0.0
-		_selection = 0
 		_set_target_highlight(_target, true)
-		_rebuild_menu_rows()
+		_rebuild_grid()
 		_menu.visible = true
 		return
 	# Ray off-target: keep the menu through brief hand jitter.
@@ -277,7 +300,7 @@ func _update_target(delta: float) -> void:
 
 
 ## Raycast from the tip (VR) or camera centre (desktop) on the pointable layer,
-## then walk ancestors to the owning RetroTV / VCRPlayer.
+## then walk ancestors to the owning device.
 func _scan_for_target() -> Node3D:
 	var from: Vector3
 	var dir: Vector3
@@ -300,7 +323,7 @@ func _scan_for_target() -> Node3D:
 
 	var n := hit["collider"] as Node
 	while n:
-		if n is RetroTV or n is VCRPlayer or n is DVDPlayer:
+		if n is RetroTV or n is VCRPlayer or n is DVDPlayer or n is RetroAudioPlayer:
 			return n as Node3D
 		n = n.get_parent()
 	return null
@@ -322,63 +345,308 @@ func _set_target_highlight(target: Node3D, active: bool) -> void:
 		hl.call("set_remote_target", active)
 
 
+# ── Layout (per-device cell grid) ─────────────────────────────────────────────
+
+## The static cell specs for the current target: {id, glyph(key), col, row, span}.
+## `enabled` is resolved separately each frame in _refresh_states().
+func _layout_for_target() -> Array:
+	if _target is RetroTV:
+		return [
+			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 3},
+			{"id": "vol_down", "glyph": "vol_down", "col": 0, "row": 1},
+			{"id": "mute", "glyph": "mute", "col": 1, "row": 1},
+			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 1},
+		]
+	if _target is VCRPlayer or _target is RetroAudioPlayer:
+		# Transport grid: prev/play/next over rew/stop/ff. prev/next greyed unless CD.
+		return [
+			{"id": "prev", "glyph": "prev", "col": 0, "row": 0},
+			{"id": "playpause", "glyph": "play", "col": 1, "row": 0},
+			{"id": "next", "glyph": "next", "col": 2, "row": 0},
+			{"id": "rew", "glyph": "rew", "col": 0, "row": 1},
+			{"id": "stop", "glyph": "stop", "col": 1, "row": 1},
+			{"id": "ff", "glyph": "ff", "col": 2, "row": 1},
+		]
+	if _target is DVDPlayer:
+		# D-pad cluster (menu nav) + chapter/transport + a full-width MENU.
+		return [
+			{"id": "up", "glyph": "up", "col": 1, "row": 0},
+			{"id": "left", "glyph": "left", "col": 0, "row": 1},
+			{"id": "ok", "glyph": "ok", "col": 1, "row": 1},
+			{"id": "right", "glyph": "right", "col": 2, "row": 1},
+			{"id": "down", "glyph": "down", "col": 1, "row": 2},
+			{"id": "prev_ch", "glyph": "prev", "col": 0, "row": 3},
+			{"id": "playpause", "glyph": "play", "col": 1, "row": 3},
+			{"id": "next_ch", "glyph": "next", "col": 2, "row": 3},
+			{"id": "rew", "glyph": "rew", "col": 0, "row": 4},
+			{"id": "stop", "glyph": "stop", "col": 1, "row": 4},
+			{"id": "ff", "glyph": "ff", "col": 2, "row": 4},
+			{"id": "menu", "glyph": "menu", "col": 0, "row": 5, "span": 3},
+		]
+	return []
+
+
+## Whether a cell id is usable against the current target's state.
+func _cell_enabled(id: String) -> bool:
+	if _target is DVDPlayer:
+		var in_menu: bool = (_target as DVDPlayer).is_in_menu()
+		match id:
+			"up", "down", "left", "right", "ok":
+				return in_menu       # nav cluster only in a disc menu
+			"menu":
+				return true          # always usable (return to root menu)
+			_:
+				return not in_menu   # transport/chapter only during playback
+	if _target is VCRPlayer:
+		return id != "prev" and id != "next"
+	if _target is RetroAudioPlayer:
+		if id == "prev" or id == "next":
+			return (_target as RetroAudioPlayer).has_track_skip()
+		return true
+	return true   # TV: every cell always usable
+
+
+# ── Grid widget ───────────────────────────────────────────────────────────────
+
+func _build_menu() -> void:
+	_menu = Node3D.new()
+	_menu.top_level = true
+	_menu.visible = false
+	# Repositioned every frame; interpolation would render a visible slide on show.
+	_menu.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	add_child(_menu)
+
+	_menu_bg = MeshInstance3D.new()
+	_menu_bg.mesh = QuadMesh.new()
+	_menu_bg.material_override = _flat_mat(COLOR_PANEL_BG, 10)
+	_menu_bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Keep the menu out of PickableHighlight's outline overlays (a big highlighted
+	# quad would draw a huge hull and mask other objects' outlines behind it).
+	_menu_bg.add_to_group("outline_exclude")
+	_menu.add_child(_menu_bg)
+
+	_hilite = MeshInstance3D.new()
+	_hilite.mesh = QuadMesh.new()
+	_hilite.material_override = _flat_mat(COLOR_HILITE, 12)
+	_hilite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_hilite.add_to_group("outline_exclude")
+	_hilite.visible = false
+	_menu.add_child(_hilite)
+
+
+## An unshaded, alpha-blended, depth-test-off material at the given render priority.
+func _flat_mat(color: Color, priority: int) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = color
+	m.no_depth_test = true
+	m.render_priority = priority
+	return m
+
+
+## Local position of a cell's centre (row 0 on top).
+func _cell_center(col: int, row: int, span: int) -> Vector3:
+	var cx := float(col) + float(span - 1) * 0.5
+	var x := (cx - float(GRID_COLS - 1) * 0.5) * (CELL_W + GAP)
+	var y := (float(_nrows - 1) * 0.5 - float(row)) * (CELL_H + GAP)
+	return Vector3(x, y, 0.0)
+
+
+## Rebuild the grid for the current target: free old cells, create new faces +
+## labels from the layout, size the panel, and select the first enabled cell.
+func _rebuild_grid() -> void:
+	for cell: Dictionary in _cells:
+		var f: Node = cell.get("face")
+		if is_instance_valid(f):
+			f.queue_free()
+		var l: Node = cell.get("label")
+		if is_instance_valid(l):
+			l.queue_free()
+	_cells.clear()
+
+	var layout := _layout_for_target()
+	_nrows = 0
+	for spec: Dictionary in layout:
+		_nrows = maxi(_nrows, int(spec["row"]) + 1)
+
+	# Size the background panel to the grid bounds.
+	var panel_w := float(GRID_COLS) * CELL_W + float(GRID_COLS - 1) * GAP + PANEL_PAD * 2.0
+	var panel_h := float(_nrows) * CELL_H + float(_nrows - 1) * GAP + PANEL_PAD * 2.0
+	(_menu_bg.mesh as QuadMesh).size = Vector2(panel_w, panel_h)
+	_menu_bg.position = Vector3(0, 0, -0.001)
+
+	for spec: Dictionary in layout:
+		var span := int(spec.get("span", 1))
+		var col := int(spec["col"])
+		var row := int(spec["row"])
+		var center := _cell_center(col, row, span)
+		var w := float(span) * CELL_W + float(span - 1) * GAP
+
+		var face := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2(w, CELL_H)
+		face.mesh = qm
+		face.material_override = _flat_mat(COLOR_CELL_BG, 11)
+		face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		face.add_to_group("outline_exclude")
+		face.position = center + Vector3(0, 0, 0.001)
+		_menu.add_child(face)
+
+		var label := Label3D.new()
+		label.font = _font
+		label.pixel_size = 0.0011
+		label.font_size = 40
+		label.outline_size = 6
+		label.no_depth_test = true
+		label.render_priority = 13
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.text = str(_glyphs.get(str(spec["glyph"]), "?"))
+		label.position = center + Vector3(0, 0, 0.004)
+		_menu.add_child(label)
+
+		_cells.append({
+			"id": str(spec["id"]),
+			"glyph": str(spec["glyph"]),
+			"col": col, "row": row, "span": span,
+			"cx": float(col) + float(span - 1) * 0.5,
+			"enabled": true, "face": face, "label": label,
+		})
+
+	_selection = -1
+	_refresh_states()
+
+
+## Recompute each cell's enabled state + dynamic glyph/tint, keep the selection on
+## an enabled cell, and move the highlight. Cheap — runs each frame while shown.
+func _refresh_states() -> void:
+	if not is_instance_valid(_target):
+		return
+	for i in _cells.size():
+		var cell: Dictionary = _cells[i]
+		var id := str(cell["id"])
+		var en := _cell_enabled(id)
+		cell["enabled"] = en
+		var label := cell["label"] as Label3D
+		if not is_instance_valid(label):
+			continue
+		# Dynamic play/pause glyph.
+		var glyph_key := str(cell["glyph"])
+		if id == "playpause":
+			glyph_key = "pause" if _target_playing() else "play"
+			label.text = str(_glyphs.get(glyph_key, "?"))
+		# Colour: state tints first, then disabled/selected overrides.
+		var col := COLOR_GLYPH
+		if _target is RetroTV:
+			if id == "power" and (_target as RetroTV).is_powered_on():
+				col = COLOR_GLYPH_ON
+			elif id == "mute" and (_target as RetroTV).is_muted():
+				col = COLOR_GLYPH_MUTE
+		if not en:
+			col = COLOR_GLYPH_DISABLED
+		elif i == _selection:
+			col = COLOR_GLYPH_SELECTED if col == COLOR_GLYPH else col
+		label.modulate = col
+
+	# Keep selection valid (target flipped a group off, or first build).
+	if _selection < 0 or _selection >= _cells.size() or not bool(_cells[_selection]["enabled"]):
+		_selection = _first_enabled()
+	_refresh_highlight()
+
+
+## True when the target is actively playing (not stopped, not paused).
+func _target_playing() -> bool:
+	if not is_instance_valid(_target):
+		return false
+	if not bool(_target.get("is_playing")):
+		return false
+	if _target.has_method("is_paused"):
+		return not bool(_target.call("is_paused"))
+	return true
+
+
+func _first_enabled() -> int:
+	for i in _cells.size():
+		if bool(_cells[i]["enabled"]):
+			return i
+	return -1
+
+
+func _refresh_highlight() -> void:
+	if _selection < 0 or _selection >= _cells.size():
+		_hilite.visible = false
+		return
+	var cell: Dictionary = _cells[_selection]
+	var span := int(cell["span"])
+	var w := float(span) * CELL_W + float(span - 1) * GAP
+	(_hilite.mesh as QuadMesh).size = Vector2(w + 0.005, CELL_H + 0.005)
+	_hilite.position = _cell_center(int(cell["col"]), int(cell["row"]), span) + Vector3(0, 0, 0.0016)
+	_hilite.visible = true
+
+
 # ── Selection input ───────────────────────────────────────────────────────────
 
 func _process_vr_selection() -> void:
 	var ctrl := _holding_ctrl
-
-	# In a DVD menu the stick is a direct 4-way D-pad and confirm = OK, rather
-	# than the linear list-select model used elsewhere. Reuse the menu state
-	# polled earlier this frame (kept in sync by _poll_dvd_menu_state).
-	if _target is DVDPlayer and _dvd_menu_state == 1:
-		_process_dvd_menu_nav(ctrl, _target as DVDPlayer)
-		return
-
-	var y := ctrl.get_vector2("primary").y
-
-	if _stick_latched:
-		if absf(y) < STICK_REARM:
-			_stick_latched = false
-	elif y > STICK_STEP:
-		_move_selection(-1)
-		_stick_latched = true
-	elif y < -STICK_STEP:
-		_move_selection(1)
-		_stick_latched = true
-
-	var confirm := ctrl.get_float("ax_button") > 0.5 or ctrl.get_float("primary_click") > 0.5
-	if confirm and not _prev_confirm:
-		_activate_selection()
-	_prev_confirm = confirm
-
-
-## DVD menu mode: stick flick = one D-pad step (4-way, single latch), confirm = OK.
-func _process_dvd_menu_nav(ctrl: XRController3D, dvd: DVDPlayer) -> void:
 	var v := ctrl.get_vector2("primary")
 	if _stick_latched:
 		if v.length() < STICK_REARM:
 			_stick_latched = false
-	elif v.y > STICK_STEP:
-		dvd.dvd_menu_up()
-		_stick_latched = true
-	elif v.y < -STICK_STEP:
-		dvd.dvd_menu_down()
-		_stick_latched = true
-	elif v.x < -STICK_STEP:
-		dvd.dvd_menu_left()
-		_stick_latched = true
-	elif v.x > STICK_STEP:
-		dvd.dvd_menu_right()
-		_stick_latched = true
+	elif absf(v.y) >= absf(v.x):
+		if v.y > STICK_STEP:
+			_move_grid(0, -1); _stick_latched = true
+		elif v.y < -STICK_STEP:
+			_move_grid(0, 1); _stick_latched = true
+	else:
+		if v.x > STICK_STEP:
+			_move_grid(1, 0); _stick_latched = true
+		elif v.x < -STICK_STEP:
+			_move_grid(-1, 0); _stick_latched = true
 
 	var confirm := ctrl.get_float("ax_button") > 0.5 or ctrl.get_float("primary_click") > 0.5
 	if confirm and not _prev_confirm:
-		dvd.dvd_ok()
+		_activate_selected()
 	_prev_confirm = confirm
 
 
-## Desktop: Arrow Up/Down move the selection, Enter activates (left-click is
-## already taken by desktop_pickup's drop).
+## Move the highlight to the nearest enabled cell in the given grid direction
+## (dcol/drow ∈ {-1,0,1}); no-op if there's no enabled cell that way.
+func _move_grid(dcol: int, drow: int) -> void:
+	if _selection < 0 or _selection >= _cells.size():
+		_selection = _first_enabled()
+		_refresh_highlight()
+		return
+	var cur: Dictionary = _cells[_selection]
+	var best := -1
+	var best_score := INF
+	for i in _cells.size():
+		if i == _selection or not bool(_cells[i]["enabled"]):
+			continue
+		var c: Dictionary = _cells[i]
+		var ddc := float(c["cx"]) - float(cur["cx"])
+		var ddr := float(c["row"]) - float(cur["row"])
+		if drow < 0 and ddr >= 0.0: continue
+		if drow > 0 and ddr <= 0.0: continue
+		if dcol < 0 and ddc >= 0.0: continue
+		if dcol > 0 and ddc <= 0.0: continue
+		var primary := 0.0
+		var secondary := 0.0
+		if drow != 0:
+			primary = absf(ddr); secondary = absf(ddc)
+		else:
+			primary = absf(ddc); secondary = absf(ddr)
+		var score := primary * 10.0 + secondary
+		if score < best_score:
+			best_score = score
+			best = i
+	if best >= 0:
+		_selection = best
+		_refresh_highlight()
+
+
+## Desktop: arrow keys move the highlight, Enter activates (left-click is already
+## taken by desktop_pickup's drop).
 func _unhandled_input(event: InputEvent) -> void:
 	if not _desktop_held or _target == null:
 		return
@@ -387,184 +655,82 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	match key.physical_keycode:
 		KEY_UP:
-			_move_selection(-1)
-			get_viewport().set_input_as_handled()
+			_move_grid(0, -1); get_viewport().set_input_as_handled()
 		KEY_DOWN:
-			_move_selection(1)
-			get_viewport().set_input_as_handled()
+			_move_grid(0, 1); get_viewport().set_input_as_handled()
+		KEY_LEFT:
+			_move_grid(-1, 0); get_viewport().set_input_as_handled()
+		KEY_RIGHT:
+			_move_grid(1, 0); get_viewport().set_input_as_handled()
 		KEY_ENTER, KEY_KP_ENTER:
-			_activate_selection()
-			get_viewport().set_input_as_handled()
+			_activate_selected(); get_viewport().set_input_as_handled()
 
 
-func _move_selection(step: int) -> void:
-	var count := _menu_labels.size()
-	if count == 0:
+func _activate_selected() -> void:
+	if _selection < 0 or _selection >= _cells.size() or not is_instance_valid(_target):
 		return
-	_selection = clampi(_selection + step, 0, count - 1)
-	_refresh_menu_labels()
-
-
-func _activate_selection() -> void:
-	if not is_instance_valid(_target):
+	var cell: Dictionary = _cells[_selection]
+	if not bool(cell["enabled"]):
 		return
+	_activate(str(cell["id"]))
+	# Power/mute/play-pause state may have changed — refresh glyphs/tints.
+	_refresh_states()
+
+
+## A single Play/Pause cell: pause if actively playing, else (re)start playback.
+func _toggle_playpause(p: Node) -> void:
+	if _target_playing():
+		p.call("remote_pause")
+	else:
+		p.call("remote_play")
+
+
+func _activate(id: String) -> void:
 	if _target is RetroTV:
 		var tv := _target as RetroTV
-		match _selection:
-			0: tv.remote_power_toggle()
-			1: tv.remote_volume_up()
-			2: tv.remote_volume_down()
+		match id:
+			"power": tv.remote_power_toggle()
+			"vol_up": tv.remote_volume_up()
+			"vol_down": tv.remote_volume_down()
+			"mute": tv.remote_mute_toggle()
 	elif _target is VCRPlayer:
 		var vcr := _target as VCRPlayer
-		match _selection:
-			0: vcr.remote_play()
-			1: vcr.remote_pause()
-			2: vcr.remote_stop()
-			3: vcr.remote_ff()
-			4: vcr.remote_rewind()
+		match id:
+			"playpause": _toggle_playpause(vcr)
+			"stop": vcr.remote_stop()
+			"rew": vcr.remote_rewind()
+			"ff": vcr.remote_ff()
+	elif _target is RetroAudioPlayer:
+		var ap := _target as RetroAudioPlayer
+		match id:
+			"playpause": _toggle_playpause(ap)
+			"stop": ap.remote_stop()
+			"rew": ap.remote_rewind()
+			"ff": ap.remote_ff()
+			"prev": ap.remote_prev()
+			"next": ap.remote_next()
 	elif _target is DVDPlayer:
-		# Row layout mirrors _row_texts (menu vs playback). VR menu nav also runs
-		# via the stick in _process_dvd_menu_nav; this covers desktop + pointer.
 		var dvd := _target as DVDPlayer
-		if dvd.is_in_menu():
-			match _selection:
-				0: dvd.dvd_menu_up()
-				1: dvd.dvd_menu_down()
-				2: dvd.dvd_menu_left()
-				3: dvd.dvd_menu_right()
-				4: dvd.dvd_ok()
-				5: dvd.dvd_root_menu()
-		else:
-			match _selection:
-				0: dvd.remote_play()
-				1: dvd.remote_pause()
-				2: dvd.remote_stop()
-				3: dvd.dvd_prev_chapter()
-				4: dvd.dvd_next_chapter()
-				5: dvd.dvd_root_menu()
-	# POWER [ON]/[OFF] state may have changed.
-	_refresh_menu_labels()
+		match id:
+			"up": dvd.dvd_menu_up()
+			"down": dvd.dvd_menu_down()
+			"left": dvd.dvd_menu_left()
+			"right": dvd.dvd_menu_right()
+			"ok": dvd.dvd_ok()
+			"menu": dvd.dvd_root_menu()
+			"prev_ch": dvd.dvd_prev_chapter()
+			"next_ch": dvd.dvd_next_chapter()
+			"playpause": _toggle_playpause(dvd)
+			"rew": dvd.remote_rewind()
+			"ff": dvd.remote_ff()
+			"stop": dvd.remote_stop()
 
 
-# ── Menu widget ───────────────────────────────────────────────────────────────
+# ── Menu transform ────────────────────────────────────────────────────────────
 
-func _build_menu() -> void:
-	_menu = Node3D.new()
-	_menu.top_level = true
-	_menu.visible = false
-	# The menu teleports to its anchor when (re)shown; with the project's
-	# physics_interpolation enabled that teleport renders as a visible slide
-	# from the old position. The menu is repositioned every frame anyway, so
-	# interpolation buys nothing — turn it off (children inherit).
-	_menu.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	add_child(_menu)
-
-	var bg_mat := StandardMaterial3D.new()
-	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	bg_mat.albedo_color = Color(0.05, 0.05, 0.1, 0.85)
-	bg_mat.no_depth_test = true
-	bg_mat.render_priority = 10
-	_menu_bg = MeshInstance3D.new()
-	_menu_bg.mesh = QuadMesh.new()
-	_menu_bg.material_override = bg_mat
-	_menu_bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Keep the menu out of PickableHighlight's outline overlays: a highlighted
-	# quad this size draws a huge hull AND its stencil mask pass suppresses
-	# other objects' outlines (e.g. the target TV's maroon) behind it.
-	_menu_bg.add_to_group("outline_exclude")
-	_menu.add_child(_menu_bg)
-
-	var bar_mat := StandardMaterial3D.new()
-	bar_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bar_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	bar_mat.albedo_color = COLOR_MAROON
-	bar_mat.no_depth_test = true
-	bar_mat.render_priority = 11
-	var bar_mesh := QuadMesh.new()
-	bar_mesh.size = Vector2(MENU_WIDTH - 0.006, ROW_HEIGHT)
-	_menu_bar = MeshInstance3D.new()
-	_menu_bar.mesh = bar_mesh
-	_menu_bar.material_override = bar_mat
-	_menu_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_menu_bar.add_to_group("outline_exclude")
-	_menu.add_child(_menu_bar)
-
-
-func _row_texts() -> Array[String]:
-	if _target is RetroTV:
-		var on: bool = (_target as RetroTV).is_powered_on()
-		var rows: Array[String] = ["POWER   [%s]" % ("ON" if on else "OFF"), "VOL +", "VOL −"]
-		return rows
-	if _target is VCRPlayer:
-		return VCR_ROWS.duplicate()
-	if _target is DVDPlayer:
-		if (_target as DVDPlayer).is_in_menu():
-			var nav: Array[String] = ["▲ UP", "▼ DOWN", "◄ LEFT", "► RIGHT", "● OK", "↩ MENU"]
-			return nav
-		var transport: Array[String] = ["PLAY", "PAUSE", "STOP", "|◄◄ PREV CH", "NEXT CH ►►|", "↩ MENU"]
-		return transport
-	var empty: Array[String] = []
-	return empty
-
-
-func _rebuild_menu_rows() -> void:
-	for lbl in _menu_labels:
-		if is_instance_valid(lbl):
-			lbl.queue_free()
-	_menu_labels.clear()
-
-	var rows := _row_texts()
-	var count := rows.size()
-	var height := count * ROW_HEIGHT + MENU_MARGIN * 2.0
-
-	(_menu_bg.mesh as QuadMesh).size = Vector2(MENU_WIDTH, height)
-
-	for i in count:
-		var lbl := Label3D.new()
-		lbl.pixel_size = 0.0006
-		lbl.font_size = 30
-		lbl.outline_size = 8
-		lbl.no_depth_test = true
-		lbl.render_priority = 12
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		lbl.position = Vector3(-MENU_WIDTH * 0.5 + MENU_MARGIN, _row_y(i, count), 0.002)
-		_menu.add_child(lbl)
-		_menu_labels.append(lbl)
-
-	_refresh_menu_labels()
-
-
-## Local Y of row i's centre (row 0 on top).
-func _row_y(i: int, count: int) -> float:
-	var top := count * ROW_HEIGHT * 0.5
-	return top - (float(i) + 0.5) * ROW_HEIGHT
-
-
-func _refresh_menu_labels() -> void:
-	var rows := _row_texts()
-	var count := mini(rows.size(), _menu_labels.size())
-	for i in count:
-		var lbl := _menu_labels[i]
-		if not is_instance_valid(lbl):
-			continue
-		if i == _selection:
-			lbl.text = "▶ " + rows[i]
-			lbl.modulate = COLOR_ROW_SELECTED
-		else:
-			lbl.text = "   " + rows[i]
-			lbl.modulate = COLOR_ROW_NORMAL
-	if count > 0:
-		_menu_bar.position = Vector3(0.0, _row_y(_selection, count), 0.001)
-		_menu_bar.visible = true
-	else:
-		_menu_bar.visible = false
-
-
-## Position the menu. VR: float above the remote and billboard to the camera
-## (VCROptionsPanel pattern). Desktop: fixed camera-local anchor — the remote
-## itself is FPS-snapped to the camera, so anchoring to the remote would make
-## the menu wander as the player looks up/down.
+## Position the menu. VR: float above the remote and billboard to the camera.
+## Desktop: fixed camera-local anchor (the remote is FPS-snapped to the camera, so
+## anchoring to it would make the menu wander as the player looks around).
 func _update_menu_transform() -> void:
 	if _menu == null or not _menu.visible:
 		return

@@ -11,10 +11,19 @@ extends XRToolsPickable
 ## Human-readable label shown above the unit.
 @export var dvd_label: String = "DVD"
 
+## Fast-forward / rewind scan rate: seconds of video traversed per real second.
+@export var scan_speed: float = 8.0
+
 # Runtime state
 var dvd_path: String = ""
 var connected_tv: RetroTV = null
 var is_playing: bool = false
+
+# FF/REW scan (only meaningful during title playback, not in a disc menu):
+# 0 = normal, +1 = forward, -1 = reverse. Mirrors the VCR's scan.
+var _scan_dir: int = 0
+var _scan_accum: float = 0.0
+const SCAN_SEEK_INTERVAL := 0.08
 
 var _vlc: Object = null                 # VlcPlayer (GDExtension)
 var _screen_material: StandardMaterial3D = null
@@ -53,6 +62,8 @@ var _pending_tv_restore: RetroTV = null
 @onready var _menu_button: VRButton = $MenuButton
 @onready var _prev_button: VRButton = $PrevChapterButton
 @onready var _next_button: VRButton = $NextChapterButton
+@onready var _rewind_button: VRButton = $RewindButton
+@onready var _ff_button: VRButton = $FastForwardButton
 @onready var _eject_button: VRButton = $EjectButton
 @onready var _name_label: Label3D = $NameLabel
 @onready var _options_panel: DVDOptionsPanel = $DVDOptionsPanel
@@ -69,6 +80,8 @@ func _ready() -> void:
 	_menu_button.button_pressed.connect(_on_menu_pressed)
 	_prev_button.button_pressed.connect(dvd_prev_chapter)
 	_next_button.button_pressed.connect(dvd_next_chapter)
+	_rewind_button.button_pressed.connect(_on_rewind_pressed)
+	_ff_button.button_pressed.connect(_on_ff_pressed)
 	_eject_button.button_pressed.connect(_on_eject_pressed)
 	_play_button.set_color(Color(0.0, 0.9, 0.0))    # green
 	_pause_button.set_color(Color(0.9, 0.8, 0.0))    # amber
@@ -76,6 +89,8 @@ func _ready() -> void:
 	_menu_button.set_color(Color(0.2, 0.5, 0.95))    # blue
 	_prev_button.set_color(Color(0.5, 0.5, 0.55))
 	_next_button.set_color(Color(0.5, 0.5, 0.55))
+	_rewind_button.set_color(Color(0.1, 0.4, 0.9))   # blue
+	_ff_button.set_color(Color(0.1, 0.4, 0.9))       # blue
 	_eject_button.set_color(Color(0.8, 0.8, 0.85))
 
 	if ClassDB.class_exists("VlcPlayer"):
@@ -107,7 +122,7 @@ func _update_name_label() -> void:
 		_name_label.text = dvd_label.to_upper()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _vlc == null:
 		return
 	# Pump the latest decoded frame into the VLC texture every frame.
@@ -115,6 +130,7 @@ func _process(_delta: float) -> void:
 	if is_playing and connected_tv != null:
 		_bind_screen_to_tv()
 	_pump_audio()
+	_update_scan(delta)
 	# Emanate the sound from the connected TV so it's spatialised there.
 	if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
 		_audio_player.global_position = connected_tv.global_position
@@ -173,6 +189,13 @@ func _on_eject_pressed() -> void:
 func remote_play() -> void: _on_play_pressed()
 func remote_pause() -> void: _on_pause_pressed()
 func remote_stop() -> void: _on_stop_pressed()
+func remote_ff() -> void: _on_ff_pressed()
+func remote_rewind() -> void: _on_rewind_pressed()
+
+
+## True while playback is paused (used by the TV remote's play/pause cell).
+func is_paused() -> bool:
+	return _paused
 
 
 func _on_play_pressed() -> void:
@@ -181,6 +204,8 @@ func _on_play_pressed() -> void:
 	if not is_playing:
 		play()
 	else:
+		# Leaving a scan or resuming from pause both mean "back to normal play".
+		_set_scan(0)
 		_vlc.set_paused(false)
 		_paused = false
 		_osd("PLAY")
@@ -191,10 +216,91 @@ func _on_pause_pressed() -> void:
 	if _net_forward_cmd("pause"):
 		return
 	if is_playing and _vlc:
+		_set_scan(0)
 		_vlc.set_paused(true)
 		_paused = true
 		_osd("PAUSE")
 		_net_push_state()
+
+
+## Fast-forward button: toggle forward scan (press again, or Play/Pause, to exit).
+## No-op while showing a disc menu (there's nothing to scan through there).
+func _on_ff_pressed() -> void:
+	if _net_forward_cmd("ff"):
+		return
+	if not is_playing or is_in_menu():
+		return
+	if _scan_dir == 1:
+		_set_scan(0)
+		_osd("PLAY")
+	else:
+		_set_scan(1)
+		_osd("FF >>")
+
+
+## Rewind button: toggle reverse scan (press again, or Play/Pause, to exit).
+func _on_rewind_pressed() -> void:
+	if _net_forward_cmd("rew"):
+		return
+	if not is_playing or is_in_menu():
+		return
+	if _scan_dir == -1:
+		_set_scan(0)
+		_osd("PLAY")
+	else:
+		_set_scan(-1)
+		_osd("<< REW")
+
+
+## Enter (dir = ±1) or leave (dir = 0) a scan. The player keeps playing (frames
+## present) but is muted while scanning; leaving restores the prior volume.
+func _set_scan(dir: int) -> void:
+	_scan_dir = dir
+	_scan_accum = 0.0
+	if _vlc:
+		_vlc.set_paused(false)
+	_paused = false
+	if _audio_player:
+		_audio_player.volume_db = -80.0 if dir != 0 else _dvd_volume_db()
+
+
+func _dvd_volume_db() -> float:
+	return linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
+
+
+## While scanning, jump the (still-playing) position forward/back in throttled
+## steps so frames visibly race by; hold at either end of the title.
+func _update_scan(delta: float) -> void:
+	if _scan_dir == 0 or not is_playing or _vlc == null:
+		return
+	if is_in_menu():
+		_set_scan(0)
+		return
+	_scan_accum += delta
+	if _scan_accum < SCAN_SEEK_INTERVAL:
+		return
+	var length := float(_vlc.get_length())
+	var pos := float(_vlc.get_time()) + _scan_accum * scan_speed * 1000.0 * float(_scan_dir)
+	_scan_accum = 0.0
+	if length <= 0.0:
+		return
+	if pos <= 0.0:
+		_vlc.set_position(0.0)
+		_end_scan_hold()
+	elif pos >= length:
+		_vlc.set_position(1.0)
+		_end_scan_hold()
+	else:
+		_vlc.set_position(clampf(pos / length, 0.0, 1.0))
+
+
+func _end_scan_hold() -> void:
+	_set_scan(0)
+	if _vlc:
+		_vlc.set_paused(true)
+	_paused = true
+	_osd("PAUSE")
+	_net_push_state()
 
 
 func _on_stop_pressed() -> void:
@@ -220,6 +326,7 @@ func play() -> void:
 	_vlc.set_volume(100)
 	is_playing = true
 	_paused = false
+	_scan_dir = 0
 	if _audio_player:
 		_audio_player.play()
 		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
@@ -231,6 +338,7 @@ func play() -> void:
 func stop() -> void:
 	if not is_playing:
 		return
+	_scan_dir = 0
 	if _vlc:
 		_vlc.stop()
 	is_playing = false
@@ -460,7 +568,8 @@ func on_tv_disconnected() -> void:
 
 func set_audio_volume(volume: float) -> void:
 	_volume_linear = clampf(volume, 0.0, 1.0)
-	if _audio_player:
+	# Don't fight an active scan mute; it restores on scan exit.
+	if _audio_player and _scan_dir == 0:
 		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
 
 

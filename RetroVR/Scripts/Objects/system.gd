@@ -5,7 +5,6 @@ extends XRToolsPickable
 
 ## Maps systemid → GDScript path for the hardware model subclass.
 const _MODEL_SCRIPTS: Dictionary = {
-	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
 	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
 	"game_boy": "res://Scripts/Objects/system_models/game_boy_model.gd",

@@ -23,6 +23,10 @@ signal spawn_manual_requested(pdf_path: String)
 signal spawn_video_requested(video_path: String)
 
 signal spawn_dvd_requested(dvd_path: String)
+## Emitted when the user clicks an album (💿) in the CDs tab.
+signal spawn_cd_requested(album_path: String)
+## Emitted when the user clicks an album (🎵) in the Tapes tab.
+signal spawn_cassette_requested(album_path: String)
 ## Emitted when the user changes the turn style. value is "SNAP" or "SMOOTH".
 signal turn_style_changed(value: String)
 ## Emitted when the user clicks a room card that maps directly to a scene (e.g. passthrough).
@@ -141,6 +145,8 @@ var _books_vbox: VBoxContainer = null
 # Spawn > Videos tab — rebuilt each time the tab is opened
 var _videos_vbox: VBoxContainer = null
 var _dvds_vbox: VBoxContainer = null
+var _cds_vbox: VBoxContainer = null
+var _tapes_vbox: VBoxContainer = null
 
 # Scene view state
 var _scene_scroll:        ScrollContainer = null   # rooms-level scroll
@@ -218,6 +224,7 @@ func _ready() -> void:
 	RomLibrary.ensure_books_root()
 	RomLibrary.ensure_videos_root()
 	RomLibrary.ensure_dvd_root()
+	RomLibrary.ensure_music_root()
 	_build_ui()
 
 
@@ -871,12 +878,37 @@ func _build_spawn_view() -> Control:
 	dvds_scroll.add_child(_dvds_vbox)
 	_populate_dvds_tab()
 
+	# CDs tab — lists music albums (folders of audio files / loose files) from the
+	# music root; each spawns an AudioDisc for the CD player.
+	var cds_scroll := ScrollContainer.new()
+	cds_scroll.name = "CDs"
+	tabs.add_child(cds_scroll)
+	_spawn_tab_scrolls.append(cds_scroll)
+	_cds_vbox = VBoxContainer.new()
+	_cds_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cds_vbox.add_theme_constant_override("separation", 10)
+	cds_scroll.add_child(_cds_vbox)
+	_populate_cds_tab()
+
+	# Tapes tab — same music library, each spawns an AudioCassette for the deck.
+	var tapes_scroll := ScrollContainer.new()
+	tapes_scroll.name = "Tapes"
+	tabs.add_child(tapes_scroll)
+	_spawn_tab_scrolls.append(tapes_scroll)
+	_tapes_vbox = VBoxContainer.new()
+	_tapes_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tapes_vbox.add_theme_constant_override("separation", 10)
+	tapes_scroll.add_child(_tapes_vbox)
+	_populate_tapes_tab()
+
 	_add_spawn_tab(tabs, "Objects", [
-		["Trash Can",   "trash_can"],
-		["VCR",         "vcr_player"],
-		["DVD Player",  "dvd_player"],
-		["TV Remote",   "tv_remote"],
-		["Memory Card", "memory_card"],
+		["Trash Can",       "trash_can"],
+		["VCR",             "vcr_player"],
+		["DVD Player",      "dvd_player"],
+		["CD Player",       "cd_player"],
+		["Cassette Player", "cassette_player"],
+		["TV Remote",       "tv_remote"],
+		["Memory Card",     "memory_card"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [
@@ -897,6 +929,10 @@ func _build_spawn_view() -> Control:
 			_populate_videos_tab()
 		elif idx == 5:
 			_populate_dvds_tab()
+		elif idx == 6:
+			_populate_cds_tab()
+		elif idx == 7:
+			_populate_tapes_tab()
 		_update_spawn_active_scroll(idx)
 	)
 
@@ -1117,6 +1153,38 @@ func _populate_dvds_tab() -> void:
 		btn.pressed.connect(spawn_dvd_requested.emit.bind(dvd["path"]))
 		_dvds_vbox.add_child(btn)
 	_dvds_vbox.add_child(_spacer(8))
+
+
+func _populate_cds_tab() -> void:
+	_populate_music_vbox(_cds_vbox, "💿", spawn_cd_requested)
+
+
+func _populate_tapes_tab() -> void:
+	_populate_music_vbox(_tapes_vbox, "🎵", spawn_cassette_requested)
+
+
+## Shared list builder for the CDs / Tapes tabs — both list the same music
+## albums, differing only in the icon and which spawn signal a row fires.
+func _populate_music_vbox(vbox: VBoxContainer, icon: String, sig: Signal) -> void:
+	if not vbox:
+		return
+	_clear_vbox(vbox)
+	var albums := RomLibrary.scan_music()
+	if albums.is_empty():
+		var hint := Label.new()
+		hint.text = "No music found in music folder."
+		hint.add_theme_color_override("font_color", COLOR_DESC)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(hint)
+		return
+	for album: Dictionary in albums:
+		var btn := Button.new()
+		btn.text = "  %s  %s" % [icon, album["label"]]
+		btn.custom_minimum_size = Vector2(0, 72)
+		btn.add_theme_font_size_override("font_size", 24)
+		btn.pressed.connect(sig.emit.bind(album["path"]))
+		vbox.add_child(btn)
+	vbox.add_child(_spacer(8))
 
 
 func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:
@@ -3087,6 +3155,7 @@ func _build_about_view() -> Control:
 		["SDL3",             "Sam Lantinga / SDL contributors", "zlib"],
 		["libretro-common",  "libretro team",   "MIT"],
 		["ReaderWriterQueue","Cameron Desrochers","BSD"],
+		["libVLC",           "VideoLAN",        "LGPL v2.1"],
 	]
 	for entry: Array in LIBS:
 		var row := HBoxContainer.new()

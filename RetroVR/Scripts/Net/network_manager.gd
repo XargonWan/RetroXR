@@ -215,6 +215,12 @@ func report_dvd_state(dvd: Node) -> void:
 		_object_sync.send_dvd_state(dvd)
 
 
+## Host CD/cassette transport changed — broadcast the new state for drift sync.
+func report_audio_state(player: Node) -> void:
+	if _active and _object_sync != null:
+		_object_sync.send_audio_state(player)
+
+
 # ── Netplay facade (M4) ───────────────────────────────────────────────────────
 
 ## True if the core is determinism-verified for lockstep netplay.

@@ -235,3 +235,117 @@ static func scan_dvds() -> Array[Dictionary]:
 		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
 	)
 	return results
+
+
+## Audio file extensions playable via libVLC (used by the CD/cassette players).
+const MUSIC_EXTENSIONS := ["mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma"]
+
+
+## Root directory for music. Each subfolder is an album (multi-track); loose
+## audio files are single-track albums. Sits alongside roms/, videos/, dvd/.
+static func default_music_root() -> String:
+	if OS.get_name() == "Android":
+		return "/sdcard/Android/data/com.xenu.retrovr/files/music"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retrovr/music"
+	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr/music"
+
+
+## Create the music root if it doesn't already exist.
+static func ensure_music_root() -> void:
+	var path := default_music_root()
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err == OK:
+		print("[RomLibrary] Ensured music root: ", path)
+	else:
+		push_warning("[RomLibrary] Failed to create music root '%s' (err %d)" % [path, err])
+
+
+## True when the folder contains at least one playable audio file.
+static func _dir_has_audio(dir_path: String) -> bool:
+	var dir := DirAccess.open(dir_path)
+	if not dir:
+		return false
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		if not dir.current_is_dir() and fname.get_extension().to_lower() in MUSIC_EXTENSIONS:
+			dir.list_dir_end()
+			return true
+		fname = dir.get_next()
+	dir.list_dir_end()
+	return false
+
+
+## Scan the music root and return all albums. Each album is either a subfolder
+## containing audio files, or a standalone audio file (a single-track album).
+## Returns Array of {path: String, label: String}.
+static func scan_music() -> Array[Dictionary]:
+	var root := default_music_root()
+	var dir := DirAccess.open(root)
+	if not dir:
+		return []
+	var results: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		var full: String = root.path_join(fname)
+		if dir.current_is_dir():
+			if _dir_has_audio(full):
+				results.append({"path": full, "label": fname})
+		elif fname.get_extension().to_lower() in MUSIC_EXTENSIONS:
+			results.append({"path": full, "label": fname.get_basename()})
+		fname = dir.get_next()
+	dir.list_dir_end()
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
+	)
+	return results
+
+
+## Resolve an album path into an ordered list of track file paths. A folder is
+## expanded to its audio files (natural sort); a single file yields itself.
+static func music_tracks(album_path: String) -> PackedStringArray:
+	var tracks := PackedStringArray()
+	if album_path.is_empty():
+		return tracks
+	if DirAccess.dir_exists_absolute(album_path):
+		var dir := DirAccess.open(album_path)
+		if dir:
+			var names: Array[String] = []
+			dir.list_dir_begin()
+			var fname := dir.get_next()
+			while fname != "":
+				if not dir.current_is_dir() and fname.get_extension().to_lower() in MUSIC_EXTENSIONS:
+					names.append(fname)
+				fname = dir.get_next()
+			dir.list_dir_end()
+			names.sort_custom(func(a: String, b: String) -> bool:
+				return a.naturalnocasecmp_to(b) < 0)
+			for n in names:
+				tracks.append(album_path.path_join(n))
+	elif FileAccess.file_exists(album_path):
+		tracks.append(album_path)
+	return tracks
+
+
+## Find a local album (folder or file) in the music root whose basename matches
+## `name`, for verify-by-name netplay resolution (albums have no single hash).
+## Returns the local path, or "" if the peer doesn't have that album.
+static func find_music_album(name: String) -> String:
+	if name.is_empty():
+		return ""
+	var root := default_music_root()
+	var dir := DirAccess.open(root)
+	if not dir:
+		return ""
+	var result := ""
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		if fname == name:
+			result = root.path_join(fname)
+			break
+		fname = dir.get_next()
+	dir.list_dir_end()
+	return result

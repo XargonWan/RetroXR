@@ -8,8 +8,10 @@
 ## deliberately NOT transferable — commercial-game ROMs are copyrighted and
 ## sending copies to another player is distribution. Netplay instead verifies
 ## by hash that each peer already owns a byte-identical copy (the same stance
-## RetroArch's netplay takes). Books/videos are transferable: generic file
-## delivery for user-content-shaped media.
+## RetroArch's netplay takes). Books/videos/music are transferable: generic file
+## delivery for user-content-shaped media. Music albums are folders of tracks, so
+## they transfer per-track (NetObjectSync builds the manifest); each track is a
+## normal single-file transfer keyed by its own MD5.
 ##
 ## Wire: chunked 64 KB on CH_FILE (reliable), window of 8 chunks in flight,
 ## client sends a cumulative ack every 4 chunks. Receiver writes
@@ -27,7 +29,7 @@ const ACK_EVERY := 4         # client acks every N received chunks
 const REQUEST_TIMEOUT_MS := 10000   # no chunk/ack progress for this long → fail
 
 ## Kinds allowed on the wire. "rom" is intentionally absent (see header).
-const TRANSFER_KINDS := {"book": true, "video": true}
+const TRANSFER_KINDS := {"book": true, "video": true, "music": true}
 
 signal transfer_progress(md5: String, received: int, total: int)
 signal transfer_done(md5: String, path: String)

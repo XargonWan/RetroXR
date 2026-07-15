@@ -25,6 +25,10 @@ const VCR_SCENE              := preload("res://Scenes/Objects/vcr_player.tscn")
 const TAPE_SCENE             := preload("res://Scenes/Objects/vcr_tape.tscn")
 const DVD_SCENE              := preload("res://Scenes/Objects/dvd_player.tscn")
 const DVD_DISC_SCENE         := preload("res://Scenes/Objects/dvd_disc.tscn")
+const CD_PLAYER_SCENE        := preload("res://Scenes/Objects/cd_player.tscn")
+const CASSETTE_PLAYER_SCENE  := preload("res://Scenes/Objects/cassette_player.tscn")
+const AUDIO_DISC_SCENE       := preload("res://Scenes/Objects/audio_disc.tscn")
+const AUDIO_CASSETTE_SCENE   := preload("res://Scenes/Objects/audio_cassette.tscn")
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
@@ -304,6 +308,11 @@ func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 			var disc_id: int = d.get("snapped_disc_id", -1)
 			if spawned.has(disc_id) and spawned[disc_id] is DVDDisc:
 				dvd.restore_disc(spawned[disc_id])
+		elif spawned[id] is RetroAudioPlayer:
+			var ap := spawned[id] as RetroAudioPlayer
+			var media_id: int = d.get("snapped_media_id", -1)
+			if spawned.has(media_id) and (spawned[media_id] is AudioDisc or spawned[media_id] is AudioCassette):
+				ap.restore_media(spawned[media_id])
 		elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
 			var ctrl: Node3D = spawned[id]
 			var port_idx: int = d.get("port_index", -1)
@@ -490,6 +499,35 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
+	elif node is RetroAudioPlayer:
+		var ap := node as RetroAudioPlayer
+		var media := ap.get_snapped_media()
+		var media_id: int = node_to_id.get(media, -1) if media != null else -1
+		return {
+			"id": id,
+			"type": "cd_player" if node is CDPlayer else "cassette_player",
+			"snapped_media_id": media_id,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
+	elif node is AudioDisc:
+		return {
+			"id": id,
+			"type": "audio_disc",
+			"album_path": (node as AudioDisc).album_path,
+			"album_label": (node as AudioDisc).album_label,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
+	elif node is AudioCassette:
+		return {
+			"id": id,
+			"type": "audio_cassette",
+			"album_path": (node as AudioCassette).album_path,
+			"album_label": (node as AudioCassette).album_label,
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		}
 	elif node is RetroController or node is RayGun or node is RetroMouse or node is RetroKeyboard:
 		var obj_type := "retro_controller"
 		if node is RayGun:
@@ -590,6 +628,20 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			disc.dvd_path = data.get("dvd_path", "")
 			disc.dvd_label = data.get("dvd_label", "")
 			obj = disc
+		"cd_player":
+			obj = CD_PLAYER_SCENE.instantiate() as Node3D
+		"cassette_player":
+			obj = CASSETTE_PLAYER_SCENE.instantiate() as Node3D
+		"audio_disc":
+			var adisc := AUDIO_DISC_SCENE.instantiate() as AudioDisc
+			adisc.album_path = data.get("album_path", "")
+			adisc.album_label = data.get("album_label", "")
+			obj = adisc
+		"audio_cassette":
+			var acass := AUDIO_CASSETTE_SCENE.instantiate() as AudioCassette
+			acass.album_path = data.get("album_path", "")
+			acass.album_label = data.get("album_label", "")
+			obj = acass
 		_:
 			push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
 			return null

@@ -229,6 +229,44 @@ pixel_size = 0.001
 text = "EJECT"
 font_size = 9
 
+[node name="RewindButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.04, 0.03, 0.07)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="RewindButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="RewindButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="RewindButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "<<"
+font_size = 9
+
+[node name="FastForwardButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04, 0.03, 0.07)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FastForwardButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="FastForwardButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="FastForwardButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = ">>"
+font_size = 9
+
 [node name="NameLabel" type="Label3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0.05)
 pixel_size = 0.001

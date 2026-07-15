@@ -39,6 +39,7 @@ enum {
 	EV_TV_POWER,         # {tv}
 	EV_TV_VOL_UP,        # {tv}
 	EV_TV_VOL_DOWN,      # {tv}
+	EV_TV_MUTE,          # {tv}          mute toggled
 	EV_TV_CRT,           # {tv, on}
 	EV_TV_SIZE,          # {tv, scale}   size slider committed
 	EV_VCR_CMD,          # {vcr, cmd}    client intent -> host transport
@@ -52,6 +53,9 @@ enum {
 	EV_DVD_INSERT,       # {dvd, disc}
 	EV_DVD_REMOVE,       # {dvd}
 	EV_DVD_CMD,          # {dvd, cmd}    client intent -> host transport/menu
+	EV_AUDIO_INSERT,     # {player, media}   CD / cassette media inserted
+	EV_AUDIO_REMOVE,     # {player}
+	EV_AUDIO_CMD,        # {player, cmd}     client intent -> host transport
 }
 
 var _nm: Node = null
@@ -332,6 +336,7 @@ func _unregister(net_id: int) -> void:
 	_held_by_me.erase(net_id)
 	_remote_held.erase(net_id)
 	_xform_targets.erase(net_id)
+	_album_fetch.erase(net_id)
 
 
 # ── Transform sync ────────────────────────────────────────────────────────────
@@ -623,6 +628,9 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_VOL_DOWN:
 			if _valid(a, ["tv"]):
 				a["tv"].remote_volume_down()
+		EV_TV_MUTE:
+			if _valid(a, ["tv"]):
+				a["tv"].remote_mute_toggle()
 		EV_TV_CRT:
 			if _valid(a, ["tv"]):
 				a["tv"].set_crt_enabled(bool(a.get("on", true)))
@@ -693,6 +701,30 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 					"root": dvd.dvd_root_menu()
 					"next_ch": dvd.dvd_next_chapter()
 					"prev_ch": dvd.dvd_prev_chapter()
+					"ff": dvd.remote_ff()
+					"rew": dvd.remote_rewind()
+		EV_AUDIO_INSERT:
+			if _valid(a, ["player", "media"]):
+				a["player"].restore_media(a["media"])
+		EV_AUDIO_REMOVE:
+			if _valid(a, ["player"]):
+				a["player"].get_node("MediaSlot").drop_object()
+		EV_AUDIO_CMD:
+			# Audio transport is host-authoritative: the host executes and its
+			# state broadcast (send_audio_state) drives every peer's local
+			# playback. Run un-suppressed so the command hook's _net_push_state()
+			# actually broadcasts.
+			if _nm.is_host() and _valid(a, ["player"]):
+				_applying = false
+				var ap: Node = a["player"]
+				match str(a.get("cmd", "")):
+					"play": ap.remote_play()
+					"pause": ap.remote_pause()
+					"stop": ap.remote_stop()
+					"ff": ap.remote_ff()
+					"rew": ap.remote_rewind()
+					"next": ap.remote_next()
+					"prev": ap.remote_prev()
 	_applying = false
 
 
@@ -755,10 +787,14 @@ func _host_vcr_heartbeat() -> void:
 		var node: Node = _registry[id]
 		if is_instance_valid(node) and node.has_method("net_get_state") \
 				and bool(node.get("is_playing")):
-			# Route by state shape: DVD states carry a title/chapter, VCR states a
-			# scalar position (keeps the sync layer agnostic of the concrete class).
-			if node.net_get_state().has("title"):
+			# Route by state shape: DVD states carry a title/chapter, audio states a
+			# track index, VCR states a scalar position (keeps the sync layer
+			# agnostic of the concrete class).
+			var st: Dictionary = node.net_get_state()
+			if st.has("title"):
 				send_dvd_state(node)
+			elif st.has("track"):
+				send_audio_state(node)
 			else:
 				send_vcr_state(node)
 
@@ -799,6 +835,31 @@ func _dvd_state(net_id: int, playing: bool, paused: bool, title: int,
 		_applying = false
 
 
+# ── Audio playback sync (CD / cassette) ───────────────────────────────────────
+# Like the VCR, but the state carries the current track index so peers follow the
+# host across track skips / auto-advance. Albums play from each peer's own local
+# copy (verify-by-name — never transferred; see _resolve_file_fields).
+
+## Called via the NetworkManager facade from RetroAudioPlayer transport hooks (host).
+func send_audio_state(player: Node) -> void:
+	if not _nm.is_host():
+		return
+	var id := id_of(player)
+	if id < 0 or not player.has_method("net_get_state"):
+		return
+	var s: Dictionary = player.net_get_state()
+	_audio_state.rpc(id, bool(s["playing"]), bool(s["paused"]), int(s["track"]), float(s["pos"]))
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _audio_state(net_id: int, playing: bool, paused: bool, track: int, pos: float) -> void:
+	var node: Node = _registry.get(net_id)
+	if is_instance_valid(node) and node.has_method("net_apply_state"):
+		_applying = true
+		node.call("net_apply_state", playing, paused, track, pos)
+		_applying = false
+
+
 # ── File-backed objects (M3) ──────────────────────────────────────────────────
 #
 # Spawn entries for file-backed objects carry file_md5/file_size so clients can
@@ -811,6 +872,10 @@ func _dvd_state(net_id: int, playing: bool, paused: bool, title: int,
 ## md5 -> {net_id, prop} for transfers this client has in flight.
 var _fetching: Dictionary = {}
 var _ft_wired := false
+## net_id -> album-fetch state {name, dir, single, total, remaining:{md5:track},
+## final} while a client is downloading a multi-track album.
+var _album_fetch: Dictionary = {}
+const ALBUM_CACHE_DIR := "user://net_cache/albums"
 
 
 ## What file (if any) backs this object: {kind, prop}.
@@ -826,6 +891,11 @@ func _file_desc(node: Node) -> Dictionary:
 		# (same stance as ROMs). Only single-file images (.iso/.img) can be
 		# hash-verified; a VIDEO_TS folder simply won't resolve on a peer.
 		return {"kind": "dvd", "prop": "dvd_path"}
+	if node is AudioDisc or node is AudioCassette:
+		# Music albums are folders (no single hash) + potentially copyrighted —
+		# verify-BY-NAME, never transferred. Each peer plays its own album of the
+		# same name; a peer without it simply won't hear playback.
+		return {"kind": "music", "prop": "album_path"}
 	return {}
 
 
@@ -837,6 +907,28 @@ func _augment_file_fields(node: Node, entry: Dictionary) -> void:
 		return
 	var d := _file_desc(node)
 	if d.is_empty():
+		return
+	# Music albums are folders of tracks — carry the album name (for the peer's
+	# verify-by-name fast path) plus a per-track manifest (name/md5/size) so a peer
+	# without the album can fetch it track-by-track. Hashing may be deferred to a
+	# worker thread; the follow-up _album_manifest RPC re-enters resolution.
+	if str(d["kind"]) == "music":
+		var album := str(node.get(d["prop"]))
+		if album.is_empty():
+			return
+		entry["album_name"] = album.get_file()
+		var manifest := _music_manifest_of(album, false)   # cache-only, non-blocking
+		if not manifest.is_empty():
+			_register_album_serve(album, manifest)
+			entry["tracks"] = manifest
+			return
+		var net_id := id_of(node)
+		if net_id < 0 or node.has_meta("net_hashing"):
+			return
+		node.set_meta("net_hashing", true)
+		WorkerThreadPool.add_task(func() -> void:
+			var m := _music_manifest_of(album, true)   # blocking hash on the worker
+			call_deferred("_on_music_hashed", net_id, album, m))
 		return
 	var path := str(node.get(d["prop"]))
 	if path.is_empty() or not FileAccess.file_exists(path):
@@ -891,6 +983,24 @@ func _resolve_file_fields(node: Node, entry: Dictionary) -> void:
 	var prop := str(d["prop"])
 	var kind := str(d["kind"])
 	var path := str(node.get(prop))
+	if kind == "music":
+		# 1) keep the host's path if it exists locally (same machine / shared lib).
+		if not path.is_empty() and (FileAccess.file_exists(path) or DirAccess.dir_exists_absolute(path)):
+			return
+		# 2) verify-by-name: reuse our own album of the same name — no transfer.
+		var album_name := str(entry.get("album_name", path.get_file()))
+		var found := RomLibrary.find_music_album(album_name)
+		if not found.is_empty():
+			node.set(prop, found)
+			return
+		# 3) transfer it track-by-track using the manifest. If the manifest isn't
+		# here yet (host still hashing), wait for the _album_manifest follow-up.
+		var tracks: Array = entry.get("tracks", [])
+		if tracks.is_empty():
+			node.set(prop, "")
+			return
+		_start_album_fetch(node, album_name, tracks)
+		return
 	if not path.is_empty() and FileAccess.file_exists(path):
 		return   # host's path happens to exist here (same machine / shared lib)
 	var md5 := str(entry.get("file_md5", ""))
@@ -943,6 +1053,10 @@ func _fetch_node(md5: String) -> Node:
 
 
 func _on_transfer_progress(md5: String, received: int, total: int) -> void:
+	# Album tracks report progress via a track counter in _album_track_ready, not
+	# per-byte, so a single track's % doesn't clobber the "n/N" status.
+	if _fetching.get(md5, {}).get("album", false):
+		return
 	var node := _fetch_node(md5)
 	if node != null and node.has_method("net_set_download_status") and total > 0:
 		node.call("net_set_download_status", "DOWNLOADING %d%%" % int(received * 100.0 / total))
@@ -951,6 +1065,9 @@ func _on_transfer_progress(md5: String, received: int, total: int) -> void:
 func _on_transfer_done(md5: String, path: String) -> void:
 	var info: Dictionary = _fetching.get(md5, {})
 	_fetching.erase(md5)
+	if info.get("album", false):
+		_album_track_ready(int(info.get("net_id", -1)), md5, path)
+		return
 	var node: Node = _registry.get(int(info.get("net_id", -1)))
 	if is_instance_valid(node):
 		if node.has_method("net_set_download_status"):
@@ -959,11 +1076,145 @@ func _on_transfer_done(md5: String, path: String) -> void:
 
 
 func _on_transfer_failed(md5: String, reason: String) -> void:
-	var node := _fetch_node(md5)
+	var info: Dictionary = _fetching.get(md5, {})
 	_fetching.erase(md5)
-	if node != null and node.has_method("net_set_download_status"):
+	if info.get("album", false):
+		_album_fetch_failed(int(info.get("net_id", -1)), reason)
+		return
+	var node: Node = _registry.get(int(info.get("net_id", -1)))
+	if is_instance_valid(node) and node.has_method("net_set_download_status"):
 		node.call("net_set_download_status", "UNAVAILABLE")
 	print("[NetObjectSync] transfer %s… failed: %s" % [md5.left(8), reason])
+
+
+# ── Music album transfer (multi-track) ────────────────────────────────────────
+# An album is a folder of tracks (or a single audio file). It transfers as a set
+# of ordinary single-file transfers keyed by each track's MD5, driven by a
+# manifest [{name, md5, size}] the host builds. The client fetches each missing
+# track into the shared net cache, then reassembles the album folder locally.
+
+## Build the album's track manifest. allow_hash=false uses only cached hashes and
+## returns [] if any track isn't cached yet (caller then hashes off-thread);
+## allow_hash=true hashes every track (blocking — run on a worker thread).
+func _music_manifest_of(album: String, allow_hash: bool) -> Array:
+	var out: Array = []
+	for tp: String in RomLibrary.music_tracks(album):
+		var md5 := NetFileTransfer.cached_hash_of(tp)
+		if md5.is_empty():
+			if not allow_hash:
+				return []
+			md5 = NetFileTransfer.hash_of(tp)
+			if md5.is_empty():
+				continue
+		out.append({"name": tp.get_file(), "md5": md5, "size": NetFileTransfer.size_of(tp)})
+	return out
+
+
+## Host: offer each track for download by hash (main-thread only — _serve isn't
+## guarded for worker threads).
+func _register_album_serve(album: String, manifest: Array) -> void:
+	var is_dir := DirAccess.dir_exists_absolute(album)
+	for t: Variant in manifest:
+		var track_name := str((t as Dictionary).get("name", ""))
+		var tp := album.path_join(track_name) if is_dir else album
+		_nm._file_transfer.serve_register(str((t as Dictionary).get("md5", "")), tp)
+
+
+## Host: a background album hash finished — register the tracks and broadcast the
+## manifest so peers who were waiting can start fetching.
+func _on_music_hashed(net_id: int, album: String, manifest: Array) -> void:
+	var node: Node = _registry.get(net_id)
+	if not is_instance_valid(node) or manifest.is_empty():
+		return
+	node.remove_meta("net_hashing")
+	_register_album_serve(album, manifest)
+	if _nm.is_host() and _nm.is_active():
+		_album_manifest.rpc(net_id, str(album).get_file(), manifest)
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _album_manifest(net_id: int, album_name: String, tracks: Array) -> void:
+	var node: Node = _registry.get(net_id)
+	if is_instance_valid(node):
+		_resolve_file_fields(node, {"album_name": album_name, "tracks": tracks})
+
+
+## Client: begin fetching every track of an album. Tracks already in the net cache
+## are consumed immediately; the rest are requested over the wire.
+func _start_album_fetch(node: Node, album_name: String, tracks: Array) -> void:
+	var net_id := id_of(node)
+	if net_id < 0 or tracks.is_empty():
+		return
+	if _album_fetch.has(net_id):
+		return   # already downloading this album
+	# A single-file album (the album path IS the track) stays a bare file; a
+	# multi-track album reassembles into its own cache folder.
+	var single: bool = tracks.size() == 1 and str((tracks[0] as Dictionary).get("name", "")) == album_name
+	var dir := ""
+	if not single:
+		dir = ALBUM_CACHE_DIR.path_join(album_name)
+		DirAccess.make_dir_recursive_absolute(dir)
+	var remaining: Dictionary = {}
+	for t: Variant in tracks:
+		remaining[str((t as Dictionary)["md5"])] = t
+	_album_fetch[net_id] = {"name": album_name, "dir": dir, "single": single,
+		"total": tracks.size(), "remaining": remaining, "final": ""}
+	_wire_transfer_signals()
+	node.set("album_path", "")
+	if node.has_method("net_set_download_status"):
+		node.call("net_set_download_status", "DOWNLOADING 0/%d" % tracks.size())
+	for t: Variant in tracks:
+		var td := t as Dictionary
+		var md5 := str(td["md5"])
+		var cached := NetFileTransfer.resolve_by_md5(md5, "music", int(td.get("size", 0)), "")
+		if not cached.is_empty():
+			_album_track_ready(net_id, md5, cached)
+		else:
+			_fetching[md5] = {"net_id": net_id, "album": true}
+			_nm._file_transfer.request_file(md5, "music", int(td.get("size", 0)),
+				str(td["name"]).get_extension())
+
+
+## Client: one album track arrived (or was already cached). Place it under the
+## album folder; when the last one lands, point the object at the local album.
+func _album_track_ready(net_id: int, md5: String, cache_path: String) -> void:
+	var af: Dictionary = _album_fetch.get(net_id, {})
+	if af.is_empty():
+		return
+	var t: Dictionary = af["remaining"].get(md5, {})
+	if t.is_empty():
+		return
+	af["remaining"].erase(md5)
+	if af["single"]:
+		af["final"] = cache_path
+	else:
+		var dest := str(af["dir"]).path_join(str(t["name"]))
+		if not FileAccess.file_exists(dest):
+			DirAccess.copy_absolute(cache_path, dest)
+		af["final"] = af["dir"]
+	var node: Node = _registry.get(net_id)
+	var done: int = int(af["total"]) - af["remaining"].size()
+	if af["remaining"].is_empty():
+		_album_fetch.erase(net_id)
+		if is_instance_valid(node):
+			if node.has_method("net_set_download_status"):
+				node.call("net_set_download_status", "")
+			node.set("album_path", str(af["final"]))
+			print("[NetObjectSync] album '%s' assembled (%d tracks)" % [af["name"], af["total"]])
+	elif is_instance_valid(node) and node.has_method("net_set_download_status"):
+		node.call("net_set_download_status", "DOWNLOADING %d/%d" % [done, int(af["total"])])
+
+
+## Client: a track transfer failed — abandon the album (peer just won't hear it).
+func _album_fetch_failed(net_id: int, reason: String) -> void:
+	var af: Dictionary = _album_fetch.get(net_id, {})
+	if af.is_empty():
+		return
+	_album_fetch.erase(net_id)
+	var node: Node = _registry.get(net_id)
+	if is_instance_valid(node) and node.has_method("net_set_download_status"):
+		node.call("net_set_download_status", "UNAVAILABLE")
+	print("[NetObjectSync] album '%s' transfer failed: %s" % [af.get("name", "?"), reason])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

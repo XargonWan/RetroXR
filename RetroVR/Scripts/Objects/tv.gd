@@ -79,6 +79,9 @@ var _snapped_plug: CablePlug = null
 var _connected_system: Node3D = null
 var _volume: float = 1.0       # 0.0–1.0, default 100%
 var _tv_enabled: bool = true
+# Mute: silences the connected device's audio without changing _volume. A sticky
+# "MUTE" OSD stays up until mute is toggled off or a volume key is pressed.
+var _muted: bool = false
 
 # Uniform display scale of the whole TV (1.0 = default set size). Adjusted from
 # the TV options panel and persisted per-scene. Applied to the RigidBody root so
@@ -490,6 +493,10 @@ func remote_volume_down() -> void:
 	_on_volume_down()
 
 
+func remote_mute_toggle() -> void:
+	_on_mute_toggle()
+
+
 # ── Options panel / display scale ────────────────────────────────────────────────
 
 ## Toggle the floating TV settings panel. Called by SpawnMenuController when the
@@ -534,9 +541,32 @@ func _on_tv_dropped(_pickable: Node3D) -> void:
 	_apply_scale()
 
 
-## True when the TV is switched on (used by the remote's POWER row label).
+## True when the TV is switched on (used by the remote's POWER cell tint).
 func is_powered_on() -> bool:
 	return _tv_enabled
+
+
+## True when audio is muted (used by the remote's MUTE cell tint).
+func is_muted() -> bool:
+	return _muted
+
+
+## The volume actually sent to the connected device: silence while off or muted.
+func _effective_volume() -> float:
+	return 0.0 if (not _tv_enabled or _muted) else _volume
+
+
+## Push the current effective volume to the connected device (if any).
+func _apply_audio_volume() -> void:
+	if _connected_system:
+		_connected_system.set_audio_volume(_effective_volume())
+
+
+## A volume key clears mute (like a real set) so the change is audible.
+func _clear_mute_silently() -> void:
+	if _muted:
+		_muted = false
+		hide_osd()
 
 
 func _update_volume_label() -> void:
@@ -544,23 +574,37 @@ func _update_volume_label() -> void:
 
 
 func _on_volume_down() -> void:
+	_clear_mute_silently()
 	_volume = maxf(0.0, _volume - 0.1)
 	_update_volume_label()
 	if _tv_enabled:
 		show_volume_osd()
-	if _tv_enabled and _connected_system:
-		_connected_system.set_audio_volume(_volume)
+	if _tv_enabled:
+		_apply_audio_volume()
 	NetworkManager.report_event(NetObjectSync.EV_TV_VOL_DOWN, {"tv": self})
 
 
 func _on_volume_up() -> void:
+	_clear_mute_silently()
 	_volume = minf(1.0, _volume + 0.1)
 	_update_volume_label()
 	if _tv_enabled:
 		show_volume_osd()
-	if _tv_enabled and _connected_system:
-		_connected_system.set_audio_volume(_volume)
+	if _tv_enabled:
+		_apply_audio_volume()
 	NetworkManager.report_event(NetObjectSync.EV_TV_VOL_UP, {"tv": self})
+
+
+## Toggle mute: silence (or restore) the connected device and show/clear a sticky
+## "MUTE" OSD in the same corner "POWER" uses. No-op audibility change while off.
+func _on_mute_toggle() -> void:
+	_muted = not _muted
+	_apply_audio_volume()
+	if _muted:
+		show_osd("MUTE")
+	else:
+		hide_osd()
+	NetworkManager.report_event(NetObjectSync.EV_TV_MUTE, {"tv": self})
 
 
 func _on_tv_toggle() -> void:
@@ -568,7 +612,12 @@ func _on_tv_toggle() -> void:
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0) if _tv_enabled else Color(1.0, 0.1, 0.1))
 	if _tv_enabled:
 		_play_power_on_anim()
-		show_osd_timed("POWER", 3.0)
+		# Coming back on while muted keeps the sticky MUTE indicator, otherwise
+		# show the usual POWER flash.
+		if _muted:
+			show_osd("MUTE")
+		else:
+			show_osd_timed("POWER", 3.0)
 	else:
 		_stop_power_on_anim()
 		hide_osd()
@@ -576,5 +625,5 @@ func _on_tv_toggle() -> void:
 		_set_vol_osd_text("")
 	if _connected_system:
 		_connected_system.set_screen_enabled(_tv_enabled)
-		_connected_system.set_audio_volume(_volume if _tv_enabled else 0.0)
+		_connected_system.set_audio_volume(_effective_volume())
 	NetworkManager.report_event(NetObjectSync.EV_TV_POWER, {"tv": self})

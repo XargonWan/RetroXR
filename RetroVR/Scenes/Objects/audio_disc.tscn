@@ -1,0 +1,67 @@
+[gd_scene load_steps=9 format=3 uid="uid://audiodisc_0001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/audio_disc.gd" id="1"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_disc"]
+friction = 0.6
+
+[sub_resource type="CylinderShape3D" id="Cyl_col"]
+height = 0.006
+radius = 0.06
+
+[sub_resource type="CylinderMesh" id="Cyl_disc"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.0015
+
+[sub_resource type="StandardMaterial3D" id="Mat_disc"]
+metallic = 0.9
+roughness = 0.1
+albedo_color = Color(0.85, 0.86, 0.9, 1)
+
+[sub_resource type="CylinderMesh" id="Cyl_hub"]
+top_radius = 0.008
+bottom_radius = 0.008
+height = 0.0018
+
+[sub_resource type="StandardMaterial3D" id="Mat_hub"]
+albedo_color = Color(0.1, 0.1, 0.12, 1)
+
+[node name="AudioDisc" type="RigidBody3D" groups=["audio_disc"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_disc")
+freeze_mode = 1
+linear_damp = 3.0
+angular_damp = 5.0
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Cyl_col")
+
+[node name="DiscMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Cyl_disc")
+surface_material_override/0 = SubResource("Mat_disc")
+
+[node name="HubMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.001, 0)
+mesh = SubResource("Cyl_hub")
+surface_material_override/0 = SubResource("Mat_hub")
+
+[node name="DiscLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.0016, 0.022)
+pixel_size = 0.0005
+font_size = 20
+outline_size = 6
+text = "CD"
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("Cyl_col")
