@@ -53,6 +53,13 @@ There is no formal test suite. The project is validated by running the Godot edi
 **headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
 tests. This works without a VR headset (desktop fallback) and without a display.
 
+**For anything visual, a photo (or a video/GIF if it's animated) is the preferred proof
+of validation, delivered inline in the chat.** Headless runs catch parse/scene/shader
+errors but cannot confirm how something *looks* (glyphs, layout, colors, animation).
+When a change is visual, capture a screenshot or short recording (on-device screenshot,
+desktop render, or `gif_creator`) and surface it inline — don't just report that the
+headless import passed.
+
 Godot binary (Windows) — use **Godot 4.7** (the project targets 4.7):
 ```
 C:\Program Files\Godot\Godot_v4.7-stable_win64\Godot_v4.7-stable_win64_console.exe

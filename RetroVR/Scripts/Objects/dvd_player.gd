@@ -37,6 +37,13 @@ var _audio_playback: AudioStreamGeneratorPlayback = null
 var _volume_linear: float = 1.0
 var _paused: bool = false
 
+# Cached track counts for the remote's audio/subtitle greying (-1 = not yet
+# known; libVLC populates the lists a beat after play()). Refreshed on a low-rate
+# throttle in _process and after each cycle.
+var _n_audio: int = -1
+var _n_sub: int = -1
+var _track_refresh_accum: float = 0.0
+
 # Multiplayer (Phase 5): the host is the transport + menu authority; every peer
 # plays its own local copy of the disc (verify-only by MD5, never transferred —
 # same legal stance as ROMs). Sync is drift-corrected on title/chapter/time, not
@@ -131,6 +138,13 @@ func _process(delta: float) -> void:
 		_bind_screen_to_tv()
 	_pump_audio()
 	_update_scan(delta)
+	# Low-rate refresh of the cached audio/subtitle track counts (the remote reads
+	# these to grey its Audio/Subtitle cells).
+	if is_playing:
+		_track_refresh_accum += delta
+		if _track_refresh_accum >= 0.5:
+			_track_refresh_accum = 0.0
+			_refresh_track_counts()
 	# Emanate the sound from the connected TV so it's spatialised there.
 	if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
 		_audio_player.global_position = connected_tv.global_position
@@ -327,6 +341,8 @@ func play() -> void:
 	is_playing = true
 	_paused = false
 	_scan_dir = 0
+	_n_audio = -1        # unknown until libVLC parses the new disc
+	_n_sub = -1
 	if _audio_player:
 		_audio_player.play()
 		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
@@ -343,6 +359,8 @@ func stop() -> void:
 		_vlc.stop()
 	is_playing = false
 	_paused = false
+	_n_audio = -1
+	_n_sub = -1
 	if _audio_player:
 		_audio_player.stop()
 	_audio_playback = null
@@ -419,6 +437,92 @@ func is_in_menu() -> bool:
 	return _vlc != null and _vlc.is_in_menu()
 
 
+# --- Audio-track / subtitle cycling (called by the remote) ---
+
+func dvd_cycle_audio() -> void:
+	if _net_forward_cmd("audio"): return
+	_cycle_audio_local()
+	_net_push_state()
+
+
+func dvd_cycle_subtitle() -> void:
+	if _net_forward_cmd("subtitle"): return
+	_cycle_subtitle_local()
+	_net_push_state()
+
+
+## Advance to the next audio track (wraps), OSD the new track name.
+func _cycle_audio_local() -> void:
+	if _vlc == null:
+		return
+	var tracks: Array = _vlc.get_audio_tracks()
+	if tracks.size() <= 1:
+		_osd("AUDIO: —")
+		return
+	var id := _next_track_id(tracks, _vlc.get_audio_track())
+	_vlc.set_audio_track(id)
+	_osd("AUDIO: " + _track_name(tracks, id))
+	_refresh_track_counts()
+
+
+## Advance to the next subtitle track (wraps; libVLC's list includes a -1 "Disable"
+## entry, so cycling naturally passes through subtitles-off).
+func _cycle_subtitle_local() -> void:
+	if _vlc == null:
+		return
+	var tracks: Array = _vlc.get_subtitle_tracks()
+	if tracks.is_empty():
+		_osd("SUB: —")
+		return
+	var id := _next_track_id(tracks, _vlc.get_subtitle())
+	_vlc.set_subtitle(id)
+	_osd("SUB: " + _track_name(tracks, id))
+	_refresh_track_counts()
+
+
+## Next id after `cur` in a [{id,name}] track list, wrapping around.
+func _next_track_id(tracks: Array, cur: int) -> int:
+	var ids: Array = []
+	for t: Dictionary in tracks:
+		ids.append(int(t["id"]))
+	if ids.is_empty():
+		return cur
+	var idx := ids.find(cur)
+	return int(ids[(idx + 1) % ids.size()])
+
+
+## Human label for a track id (falls back to "Off" for -1, else the raw id).
+func _track_name(tracks: Array, id: int) -> String:
+	for t: Dictionary in tracks:
+		if int(t["id"]) == id:
+			var n := str(t["name"])
+			if not n.is_empty():
+				return n
+			return "Off" if id == -1 else str(id)
+	return "—"
+
+
+## Refresh the cached audio/subtitle track counts used for remote greying.
+func _refresh_track_counts() -> void:
+	if _vlc == null or not is_playing:
+		_n_audio = -1
+		_n_sub = -1
+		return
+	_n_audio = (_vlc.get_audio_tracks() as Array).size()
+	_n_sub = (_vlc.get_subtitle_tracks() as Array).size()
+
+
+## Whether the disc offers more than one audio track (read by the TV remote to
+## grey the Audio cell). Optimistic while the count is still unknown (-1).
+func has_audio_options() -> bool:
+	return _n_audio < 0 or _n_audio > 1
+
+
+## Whether the disc offers a real subtitle beyond libVLC's "Disable" entry.
+func has_subtitle_options() -> bool:
+	return _n_sub < 0 or _n_sub > 1
+
+
 # ── Multiplayer sync (Phase 5) ────────────────────────────────────────────────
 # Host is transport + menu authority. A client's transport/menu intent is
 # forwarded to the host, which executes it and broadcasts DVD state; every peer
@@ -445,7 +549,7 @@ func _net_push_state() -> void:
 func net_get_state() -> Dictionary:
 	if not is_playing or _vlc == null:
 		return {"playing": false, "paused": false, "title": 0, "chapter": 0,
-			"time": 0, "length": 0, "menu": false}
+			"time": 0, "length": 0, "menu": false, "audio": -1, "sub": -1}
 	return {
 		"playing": true,
 		"paused": _paused,
@@ -454,12 +558,14 @@ func net_get_state() -> Dictionary:
 		"time": _vlc.get_time(),
 		"length": _vlc.get_length(),
 		"menu": _vlc.is_in_menu(),
+		"audio": _vlc.get_audio_track(),
+		"sub": _vlc.get_subtitle(),
 	}
 
 
 ## Client: mirror the host's transport state on the LOCAL player.
 func net_apply_state(playing: bool, paused: bool, title: int, chapter: int,
-		time_ms: int, length_ms: int, menu: bool) -> void:
+		time_ms: int, length_ms: int, menu: bool, audio_id: int, sub_id: int) -> void:
 	if not playing:
 		if is_playing:
 			stop()
@@ -488,6 +594,11 @@ func net_apply_state(playing: bool, paused: bool, title: int, chapter: int,
 			_vlc.set_position(clampf(float(time_ms) / float(length_ms), 0.0, 1.0))
 	_vlc.set_paused(paused)
 	_paused = paused
+	# Follow the host's audio/subtitle selection (shared TV screen).
+	if audio_id >= 0 and _vlc.get_audio_track() != audio_id:
+		_vlc.set_audio_track(audio_id)
+	if _vlc.get_subtitle() != sub_id:
+		_vlc.set_subtitle(sub_id)
 
 
 # ── Save/load + net restore ───────────────────────────────────────────────────

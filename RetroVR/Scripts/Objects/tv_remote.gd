@@ -52,6 +52,7 @@ const GLYPH_CODES := {
 	"vol_up": 0xF028, "vol_down": 0xF027, "power": 0xF011, "menu": 0xF0C9,
 	"up": 0xF077, "down": 0xF078, "left": 0xF053, "right": 0xF054,
 	"ok": 0xF192, "mute": 0xF026,
+	"audio": 0xF1AB, "subtitle": 0xF0A16,
 }
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
@@ -382,6 +383,9 @@ func _layout_for_target() -> Array:
 			{"id": "stop", "glyph": "stop", "col": 1, "row": 4},
 			{"id": "ff", "glyph": "ff", "col": 2, "row": 4},
 			{"id": "menu", "glyph": "menu", "col": 0, "row": 5, "span": 3},
+			# Audio-track + subtitle cycle, two half-width cells filling the row.
+			{"id": "audio", "glyph": "audio", "col": 0.0, "row": 6, "span": 1.5},
+			{"id": "subtitle", "glyph": "subtitle", "col": 1.5, "row": 6, "span": 1.5},
 		]
 	return []
 
@@ -395,6 +399,10 @@ func _cell_enabled(id: String) -> bool:
 				return in_menu       # nav cluster only in a disc menu
 			"menu":
 				return true          # always usable (return to root menu)
+			"audio":
+				return not in_menu and (_target as DVDPlayer).has_audio_options()
+			"subtitle":
+				return not in_menu and (_target as DVDPlayer).has_subtitle_options()
 			_:
 				return not in_menu   # transport/chapter only during playback
 	if _target is VCRPlayer:
@@ -445,9 +453,10 @@ func _flat_mat(color: Color, priority: int) -> StandardMaterial3D:
 	return m
 
 
-## Local position of a cell's centre (row 0 on top).
-func _cell_center(col: int, row: int, span: int) -> Vector3:
-	var cx := float(col) + float(span - 1) * 0.5
+## Local position of a cell's centre (row 0 on top). col/span may be fractional
+## (e.g. two 1.5-span cells filling a 3-wide row).
+func _cell_center(col: float, row: int, span: float) -> Vector3:
+	var cx := col + (span - 1.0) * 0.5
 	var x := (cx - float(GRID_COLS - 1) * 0.5) * (CELL_W + GAP)
 	var y := (float(_nrows - 1) * 0.5 - float(row)) * (CELL_H + GAP)
 	return Vector3(x, y, 0.0)
@@ -477,11 +486,11 @@ func _rebuild_grid() -> void:
 	_menu_bg.position = Vector3(0, 0, -0.001)
 
 	for spec: Dictionary in layout:
-		var span := int(spec.get("span", 1))
-		var col := int(spec["col"])
+		var span := float(spec.get("span", 1))
+		var col := float(spec["col"])
 		var row := int(spec["row"])
 		var center := _cell_center(col, row, span)
-		var w := float(span) * CELL_W + float(span - 1) * GAP
+		var w := span * CELL_W + (span - 1.0) * GAP
 
 		var face := MeshInstance3D.new()
 		var qm := QuadMesh.new()
@@ -578,10 +587,10 @@ func _refresh_highlight() -> void:
 		_hilite.visible = false
 		return
 	var cell: Dictionary = _cells[_selection]
-	var span := int(cell["span"])
-	var w := float(span) * CELL_W + float(span - 1) * GAP
+	var span := float(cell["span"])
+	var w := span * CELL_W + (span - 1.0) * GAP
 	(_hilite.mesh as QuadMesh).size = Vector2(w + 0.005, CELL_H + 0.005)
-	_hilite.position = _cell_center(int(cell["col"]), int(cell["row"]), span) + Vector3(0, 0, 0.0016)
+	_hilite.position = _cell_center(float(cell["col"]), int(cell["row"]), span) + Vector3(0, 0, 0.0016)
 	_hilite.visible = true
 
 
@@ -724,6 +733,8 @@ func _activate(id: String) -> void:
 			"rew": dvd.remote_rewind()
 			"ff": dvd.remote_ff()
 			"stop": dvd.remote_stop()
+			"audio": dvd.dvd_cycle_audio()
+			"subtitle": dvd.dvd_cycle_subtitle()
 
 
 # ── Menu transform ────────────────────────────────────────────────────────────

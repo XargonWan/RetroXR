@@ -3156,6 +3156,7 @@ func _build_about_view() -> Control:
 		["libretro-common",  "libretro team",   "MIT"],
 		["ReaderWriterQueue","Cameron Desrochers","BSD"],
 		["libVLC",           "VideoLAN",        "LGPL v2.1"],
+		["Nerd Fonts",       "Ryan L McIntyre", "MIT"],
 	]
 	for entry: Array in LIBS:
 		var row := HBoxContainer.new()

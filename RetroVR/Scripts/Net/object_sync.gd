@@ -703,6 +703,8 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 					"prev_ch": dvd.dvd_prev_chapter()
 					"ff": dvd.remote_ff()
 					"rew": dvd.remote_rewind()
+					"audio": dvd.dvd_cycle_audio()
+					"subtitle": dvd.dvd_cycle_subtitle()
 		EV_AUDIO_INSERT:
 			if _valid(a, ["player", "media"]):
 				a["player"].restore_media(a["media"])
@@ -822,16 +824,19 @@ func send_dvd_state(dvd: Node) -> void:
 		return
 	var s: Dictionary = dvd.net_get_state()
 	_dvd_state.rpc(id, bool(s["playing"]), bool(s["paused"]), int(s["title"]),
-		int(s["chapter"]), int(s["time"]), int(s["length"]), bool(s["menu"]))
+		int(s["chapter"]), int(s["time"]), int(s["length"]), bool(s["menu"]),
+		int(s["audio"]), int(s["sub"]))
 
 
 @rpc("authority", "call_remote", "reliable", 0)
 func _dvd_state(net_id: int, playing: bool, paused: bool, title: int,
-		chapter: int, time_ms: int, length_ms: int, menu: bool) -> void:
+		chapter: int, time_ms: int, length_ms: int, menu: bool,
+		audio_id: int, sub_id: int) -> void:
 	var node: Node = _registry.get(net_id)
 	if is_instance_valid(node) and node.has_method("net_apply_state"):
 		_applying = true
-		node.call("net_apply_state", playing, paused, title, chapter, time_ms, length_ms, menu)
+		node.call("net_apply_state", playing, paused, title, chapter, time_ms, length_ms,
+			menu, audio_id, sub_id)
 		_applying = false
 
 
