@@ -12,6 +12,7 @@ env.Append(CPPPATH=[
 
 is_windows = env["platform"] == "windows"
 is_android = env["platform"] == "android"
+is_linux = env["platform"] == "linux"
 
 if is_windows:
     env.Append(CXXFLAGS=["/std:c++latest"])
@@ -24,9 +25,23 @@ if is_android:
     env.Append(LIBPATH=["external/pdfium/lib/android-arm64"])
     env.Append(LIBS=["pdfium"])
 
+if is_linux:
+    env.Append(CXXFLAGS=["-std=c++20"])
+    env.Append(LIBPATH=["external/pdfium/lib/linux-x64"])
+    env.Append(LIBS=["pdfium"])
+    # We ship our own libpdfium.so (it is not a system package). It lives in a
+    # linux-x64/ subdir so the x86_64 .so never clobbers the android arm64
+    # libpdfium.so that sits in the output dir root (they share a SONAME). The
+    # $ORIGIN/linux-x64 rpath lets the loader resolve the NEEDED libpdfium.so
+    # from that subdir at runtime. Quote exactly like godot-cpp's tools/linux.py
+    # ($$ORIGIN unquoted collapses to empty under this SCons); godot-cpp already
+    # adds a bare $ORIGIN entry — the loader skips the arch-mismatched arm64
+    # libpdfium.so there and falls through to this x86_64 subdir.
+    env.Append(LINKFLAGS=["-Wl,-R,'$$ORIGIN/linux-x64'"])
+
 sources = Glob("src/*.cpp")
 
-lib_prefix = "lib" if is_android else ""
+lib_prefix = "lib" if (is_android or is_linux) else ""
 library = env.SharedLibrary("{}/{}godot-pdfium.{}.{}.{}{}".format(output_dir, lib_prefix, env["platform"], env["target"], env["arch"], env["SHLIBSUFFIX"]), source=sources)
 
 # Copy runtime dependencies (shared libs) to output directory
@@ -36,6 +51,10 @@ if is_windows:
 
 if is_android:
     pdfium_so = env.InstallAs("{}/libpdfium.so".format(output_dir), "external/pdfium/lib/android-arm64/libpdfium.so")
+    env.Depends(library, pdfium_so)
+
+if is_linux:
+    pdfium_so = env.InstallAs("{}/linux-x64/libpdfium.so".format(output_dir), "external/pdfium/lib/linux-x64/libpdfium.so")
     env.Depends(library, pdfium_so)
 
 Default(library)
