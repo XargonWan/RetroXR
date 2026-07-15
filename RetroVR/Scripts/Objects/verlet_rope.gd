@@ -1,6 +1,23 @@
-## Verlet rope — purely visual rope simulation between two 3D anchor points.
-## Attach as a child; call set_anchors() or set start_node / end_node.
-## Renders as a tube mesh using ArrayMesh with indexed triangles.
+## Verlet rope — PBD rope simulation between two 3D anchor points (Obi-Rope-style
+## feature set on a position-based verlet core). Attach as a child; set start_node /
+## end_node and call _init_points(). Renders as a tube mesh using ArrayMesh.
+##
+## Constraints (all iteration-count-independent — stiffness is remapped per
+## iteration like XPBD, so changing constraint_iterations doesn't change the look):
+##   • Stretch  — distance constraints between neighbours, `stretch_stiffness`
+##     (1 = inextensible cable, lower = springy/elastic).
+##   • Bend     — distance constraints between second neighbours,
+##     `bend_stiffness` + `max_bend_degrees` free-bend allowance (0 = the rope
+##     always tries to straighten; e.g. 60 = only resists bends sharper than 60°).
+##   • Self-collision — optional particle-vs-particle pushout (`self_collision`).
+## Other Obi-style features:
+##   • Smoothing — Catmull-Rom render subdivision (`smoothing` extra rings per
+##     segment) so few sim particles still render as a smooth cable.
+##   • Two-way coupling — `anchor_pull` > 0 applies a pulling force to the
+##     RigidBody3D ancestors of the anchors when the rope is taut (a yanked
+##     controller cable tugs its console).
+##   • Runtime resize — `set_rope_length()` redistributes rest length (Obi
+##     "cursor"-lite; particle count stays fixed).
 class_name VerletRope
 extends MeshInstance3D
 
@@ -20,15 +37,31 @@ extends MeshInstance3D
 ## Number of constraint satisfaction iterations per physics frame
 @export var constraint_iterations: int = 5
 
+@export_group("Stiffness")
+## Resistance to stretching (1 = inextensible cable, lower = elastic/springy).
+@export_range(0.0, 1.0) var stretch_stiffness: float = 1.0
+
+## Resistance to bending (0 = perfectly floppy — pre-upgrade behaviour).
+@export_range(0.0, 1.0) var bend_stiffness: float = 0.0
+
+## Free bend allowance in degrees before bend stiffness kicks in (0 = the rope
+## always tries to be straight; 90 = bends up to 90° per particle are free).
+@export_range(0.0, 180.0) var max_bend_degrees: float = 0.0
+
+@export_group("Rendering")
 ## Tube radius for rendering
 @export var tube_radius: float = 0.005
 
 ## Number of radial segments for the tube cross-section
 @export var tube_sides: int = 4
 
+## Extra Catmull-Rom-interpolated rings per segment (0 = render sim points only).
+@export_range(0, 3) var smoothing: int = 0
+
 ## Rope color
 @export var rope_color: Color = Color(0.15, 0.15, 0.15, 1.0)
 
+@export_group("Collision")
 ## Collision mask for rope-vs-world collision (1+2 = floor/room/table, 4 = pickables like TVs)
 @export_flags_3d_physics var surface_collision_mask: int = 7
 
@@ -41,10 +74,19 @@ extends MeshInstance3D
 ## Physics frames between resting-contact shape queries (motion sweeps still run every frame)
 @export var raycast_interval: int = 3
 
+## Rope-vs-itself particle collision (lets coils stack instead of passing through).
+@export var self_collision: bool = false
+
+@export_group("Coupling")
+## Two-way coupling strength (N per metre of overstretch) applied to the anchors'
+## RigidBody3D ancestors when the rope is pulled taut. 0 = purely visual (default).
+@export var anchor_pull: float = 0.0
+
 
 # Internal point data
 var _points: PackedVector3Array = []       # current positions (global space)
 var _prev_points: PackedVector3Array = []  # previous positions for verlet
+var _inv_mass: PackedFloat32Array = []     # 0 = pinned (anchored), 1 = free
 
 # Anchors
 var start_node: Node3D = null
@@ -56,8 +98,10 @@ var _material: StandardMaterial3D
 var _cos_table: PackedFloat32Array
 var _sin_table: PackedFloat32Array
 
-# Pre-allocated vertex buffer updated each frame
+# Pre-allocated render buffers (ring centres incl. smoothing + vertices)
+var _ring_points: PackedVector3Array
 var _vertex_array: PackedVector3Array
+var _index_array: PackedInt32Array
 
 # Raycast throttle counter
 var _raycast_frame: int = 0
@@ -66,6 +110,10 @@ var _raycast_frame: int = 0
 var _ray_query: PhysicsRayQueryParameters3D
 var _shape_query: PhysicsShapeQueryParameters3D
 var _sphere: SphereShape3D
+
+# Anchor RigidBody3D ancestors for two-way coupling (cached with exclusions)
+var _start_body: RigidBody3D = null
+var _end_body: RigidBody3D = null
 
 
 func _ready() -> void:
@@ -91,6 +139,11 @@ func _ready() -> void:
 		_refresh_exclusions()
 
 
+## Rings actually rendered per segment (1 = sim points only).
+func _subdiv() -> int:
+	return smoothing + 1
+
+
 func _build_trig_tables() -> void:
 	_cos_table.resize(tube_sides)
 	_sin_table.resize(tube_sides)
@@ -101,28 +154,32 @@ func _build_trig_tables() -> void:
 
 
 func _build_mesh_topology() -> void:
-	var ring_count := segment_count + 1
+	var sub := _subdiv()
+	var ring_count := segment_count * sub + 1
+	var seg_rings := ring_count - 1
+	_ring_points = PackedVector3Array()
+	_ring_points.resize(ring_count)
 	_vertex_array = PackedVector3Array()
 	_vertex_array.resize(ring_count * tube_sides)
 
 	# Index buffer — topology never changes, built once
-	var indices := PackedInt32Array()
-	indices.resize(segment_count * tube_sides * 6)
+	_index_array = PackedInt32Array()
+	_index_array.resize(seg_rings * tube_sides * 6)
 	var idx := 0
-	for i in segment_count:
+	for i in seg_rings:
 		for j in tube_sides:
 			var a := i * tube_sides + j
 			var b := i * tube_sides + (j + 1) % tube_sides
 			var c := (i + 1) * tube_sides + j
 			var d := (i + 1) * tube_sides + (j + 1) % tube_sides
-			indices[idx]     = a; indices[idx + 1] = b; indices[idx + 2] = c
-			indices[idx + 3] = b; indices[idx + 4] = d; indices[idx + 5] = c
+			_index_array[idx]     = a; _index_array[idx + 1] = b; _index_array[idx + 2] = c
+			_index_array[idx + 3] = b; _index_array[idx + 4] = d; _index_array[idx + 5] = c
 			idx += 6
 
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = _vertex_array
-	arrays[Mesh.ARRAY_INDEX]  = indices
+	arrays[Mesh.ARRAY_INDEX]  = _index_array
 
 	mesh = ArrayMesh.new()
 	(mesh as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -133,6 +190,7 @@ func _init_points() -> void:
 	var count := segment_count + 1
 	_points.resize(count)
 	_prev_points.resize(count)
+	_inv_mass.resize(count)
 
 	var start_pos := start_node.global_position if start_node else global_position
 	var end_pos   := end_node.global_position   if end_node   else start_pos + Vector3(0, -segment_count * segment_length, 0)
@@ -141,20 +199,30 @@ func _init_points() -> void:
 		var t := float(i) / float(count - 1) if count > 1 else 0.0
 		_points[i]      = start_pos.lerp(end_pos, t)
 		_prev_points[i] = _points[i]
+		_inv_mass[i] = 1.0
+	_inv_mass[0] = 0.0
+	if end_node:
+		_inv_mass[count - 1] = 0.0
 
 	_refresh_exclusions()
 
 
 ## Exclude the plug body and the host machine's body from rope collision —
 ## the anchor points sit at/inside those colliders and would jitter forever.
+## Also caches the anchors' RigidBody3D ancestors for two-way coupling.
 func _refresh_exclusions() -> void:
 	var rids: Array[RID] = []
+	_start_body = null
+	_end_body = null
 	var anchors: Array[Node3D] = [start_node, end_node]
-	for anchor in anchors:
-		var n: Node = anchor
+	for a_idx in anchors.size():
+		var n: Node = anchors[a_idx]
 		while n != null:
 			if n is CollisionObject3D:
 				rids.append((n as CollisionObject3D).get_rid())
+				if n is RigidBody3D:
+					if a_idx == 0: _start_body = n as RigidBody3D
+					else:          _end_body = n as RigidBody3D
 				break
 			n = n.get_parent()
 	if _ray_query:
@@ -163,6 +231,21 @@ func _refresh_exclusions() -> void:
 		_shape_query.exclude = rids
 
 
+# ── Public Obi-style API ────────────────────────────────────────────────────────
+
+## Total rest length of the rope (metres).
+func rest_length() -> float:
+	return segment_count * segment_length
+
+
+## Resize the rope at runtime by redistributing rest length across the fixed
+## particle count (Obi "cursor"-lite).
+func set_rope_length(length: float) -> void:
+	segment_length = maxf(length, 0.01) / float(segment_count)
+
+
+# ── Simulation ──────────────────────────────────────────────────────────────────
+
 func _physics_process(delta: float) -> void:
 	if _points.size() == 0:
 		return
@@ -170,42 +253,73 @@ func _physics_process(delta: float) -> void:
 	var count := _points.size()
 
 	# --- Verlet integration ---
-	for i in range(1, count):
+	for i in count:
+		if _inv_mass[i] == 0.0:
+			continue
 		var current := _points[i]
 		var velocity := (current - _prev_points[i]) * (1.0 - damping)
 		_prev_points[i] = current
 		_points[i] = current + velocity + gravity * (delta * delta)
 
-	# Pin anchors
-	if start_node:
-		_points[0] = start_node.global_position
-		_prev_points[0] = _points[0]
-	if end_node:
-		_points[count - 1] = end_node.global_position
-		_prev_points[count - 1] = _points[count - 1]
+	_pin_anchors()
 
-	# --- Distance constraints ---
-	for _iter in constraint_iterations:
+	# Per-iteration stiffness so the look is independent of the iteration count
+	# (same remapping XPBD-style solvers use: k' = 1-(1-k)^(1/n)).
+	var iters := maxi(constraint_iterations, 1)
+	# Stretch stiffness is remapped so the rope's extensibility is independent of
+	# the iteration count (k' = 1-(1-k)^(1/n); 1.0 stays fully rigid).
+	var k_stretch := 1.0 - pow(1.0 - clampf(stretch_stiffness, 0.0, 1.0), 1.0 / float(iters))
+	# Bend stiffness is applied directly per iteration — remapping it the same
+	# way crushes mid-range values into "floppy" at typical iteration counts.
+	# (Consequence: more iterations = a somewhat stiffer-feeling rope.)
+	var k_bend := clampf(bend_stiffness, 0.0, 1.0)
+	# Bend: each interior particle is pulled toward the midpoint of its
+	# neighbours (angular PBD bending — unlike a second-neighbour distance
+	# constraint, its gradient does NOT vanish near-straight, so stiff ropes
+	# actually resist gravity sag). A bend of angle β deviates the particle
+	# L·sin(β/2) from the midpoint; bends up to max_bend_degrees are free.
+	var allowed_dev := segment_length * sin(deg_to_rad(max_bend_degrees) * 0.5)
+
+	# --- Constraint solve ---
+	for iter_i in iters:
+		# Stretch (distance) constraints
 		for i in range(count - 1):
-			var a := _points[i]
-			var b := _points[i + 1]
-			var diff := b - a
-			var dist := diff.length()
-			if dist < 0.0001:
-				continue
-			var correction := diff * ((dist - segment_length) / dist) * 0.5
-			if i == 0:
-				_points[i + 1] = b - correction * 2.0
-			elif i + 1 == count - 1 and end_node:
-				_points[i] = a + correction * 2.0
-			else:
-				_points[i]     = a + correction
-				_points[i + 1] = b - correction
+			_solve_pair(i, i + 1, segment_length, k_stretch, false)
+		# Bend constraints, hierarchical: besides adjacent triples (spacing 1),
+		# also constrain toward midpoints at spacing 2/4/8… — plain PBD bending
+		# saturates with chain length (corrections propagate one particle per
+		# pass while gravity acts on all of them), so long ropes stay droopy no
+		# matter the stiffness; the long-range constraints fix that in O(log n)
+		# passes. Sweep direction alternates per iteration for the same reason.
+		# The free-bend allowance grows ~s² with spacing (sagitta of an arc).
+		if k_bend > 0.0:
+			var s := 1
+			while s * 2 <= count - 1:
+				var allowed := allowed_dev * float(s * s)
+				if iter_i % 2 == 0:
+					for i in range(s, count - s):
+						_solve_bend(i, s, allowed, k_bend)
+				else:
+					for i in range(count - s - 1, s - 1, -1):
+						_solve_bend(i, s, allowed, k_bend)
+				s *= 2
+		_pin_anchors()
 
-		if start_node:
-			_points[0] = start_node.global_position
-		if end_node:
-			_points[count - 1] = end_node.global_position
+	# --- Self collision ---
+	if self_collision:
+		var min_d := collision_radius * 2.0
+		for i in range(count):
+			for j in range(i + 2, count):
+				var w_sum := _inv_mass[i] + _inv_mass[j]
+				if w_sum == 0.0:
+					continue
+				var diff := _points[j] - _points[i]
+				var dist := diff.length()
+				if dist >= min_d or dist < 0.0001:
+					continue
+				var push := diff * ((dist - min_d) / dist)
+				_points[i] += push * (_inv_mass[i] / w_sum)
+				_points[j] -= push * (_inv_mass[j] / w_sum)
 
 	# --- Surface collision ---
 	if surface_collision_mask != 0 and _ray_query:
@@ -215,7 +329,7 @@ func _physics_process(delta: float) -> void:
 			_raycast_frame = 0
 		var space_state := get_world_3d().direct_space_state
 		for i in range(count):
-			if (i == 0 and start_node) or (i == count - 1 and end_node):
+			if _inv_mass[i] == 0.0:
 				continue
 			# Sweep this frame's motion so a point can't tunnel through thin
 			# geometry, even between rest-query frames.
@@ -243,6 +357,72 @@ func _physics_process(delta: float) -> void:
 						var rest_point: Vector3 = rest["point"]
 						_resolve_contact(i, rest_point, rest_normal)
 
+	# --- Two-way anchor coupling ---
+	if anchor_pull > 0.0 and start_node and end_node:
+		var span := start_node.global_position.distance_to(end_node.global_position)
+		var excess := span - rest_length()
+		if excess > 0.0:
+			var force := excess * anchor_pull
+			if _start_body:
+				var dir_s := (end_node.global_position - start_node.global_position).normalized()
+				_start_body.apply_force(dir_s * force,
+					start_node.global_position - _start_body.global_position)
+			if _end_body:
+				var dir_e := (start_node.global_position - end_node.global_position).normalized()
+				_end_body.apply_force(dir_e * force,
+					end_node.global_position - _end_body.global_position)
+
+
+## Positional constraint between points a/b toward rest distance, split by
+## inverse mass. one_sided = only correct when closer than rest.
+func _solve_pair(a: int, b: int, rest: float, k: float, one_sided: bool) -> void:
+	var w_a := _inv_mass[a]
+	var w_b := _inv_mass[b]
+	var w_sum := w_a + w_b
+	if w_sum == 0.0:
+		return
+	var diff := _points[b] - _points[a]
+	var dist := diff.length()
+	if dist < 0.0001:
+		return
+	if one_sided and dist >= rest:
+		return
+	var correction := diff * ((dist - rest) / dist) * k
+	_points[a] += correction * (w_a / w_sum)
+	_points[b] -= correction * (w_b / w_sum)
+
+
+## Angular bend constraint: pull particle b toward the midpoint of its
+## neighbours at ±spacing (momentum-balanced: neighbours get half the opposite
+## correction), ignoring deviation below allowed_dev (max_bend_degrees).
+func _solve_bend(b: int, spacing: int, allowed_dev: float, k: float) -> void:
+	var a := b - spacing
+	var c := b + spacing
+	var w_a := _inv_mass[a]
+	var w_b := _inv_mass[b]
+	var w_c := _inv_mass[c]
+	var w_total := w_b + 0.5 * (w_a + w_c)
+	if w_total == 0.0:
+		return
+	var delta := (_points[a] + _points[c]) * 0.5 - _points[b]
+	var dev := delta.length()
+	if dev <= allowed_dev or dev < 0.0001:
+		return
+	var v := delta * ((dev - allowed_dev) / dev) * k
+	_points[b] += v * (w_b / w_total)
+	_points[a] -= v * (0.5 * w_a / w_total)
+	_points[c] -= v * (0.5 * w_c / w_total)
+
+
+func _pin_anchors() -> void:
+	if start_node:
+		_points[0] = start_node.global_position
+		_prev_points[0] = _points[0]
+	if end_node:
+		var last := _points.size() - 1
+		_points[last] = end_node.global_position
+		_prev_points[last] = _points[last]
+
 
 ## Snap point i to just outside a surface and convert its velocity into a
 ## friction-damped slide along the surface (no bounce).
@@ -253,13 +433,43 @@ func _resolve_contact(i: int, contact: Vector3, normal: Vector3) -> void:
 	_prev_points[i] = _points[i] - tangential * (1.0 - surface_friction)
 
 
+# ── Rendering ───────────────────────────────────────────────────────────────────
+
 func _process(_delta: float) -> void:
 	if _points.size() >= 2:
 		_render_tube()
 
 
-func _render_tube() -> void:
+## Fill _ring_points from the sim points — straight copy, or Catmull-Rom
+## subdivision when smoothing > 0.
+func _fill_ring_points() -> void:
 	var count := _points.size()
+	var sub := _subdiv()
+	if sub == 1:
+		for i in count:
+			_ring_points[i] = _points[i]
+		return
+	var r := 0
+	for i in range(count - 1):
+		var p0 := _points[maxi(i - 1, 0)]
+		var p1 := _points[i]
+		var p2 := _points[i + 1]
+		var p3 := _points[mini(i + 2, count - 1)]
+		for s in sub:
+			var t := float(s) / float(sub)
+			var t2 := t * t
+			var t3 := t2 * t
+			_ring_points[r] = 0.5 * ((2.0 * p1)
+				+ (-p0 + p2) * t
+				+ (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+				+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+			r += 1
+	_ring_points[r] = _points[count - 1]
+
+
+func _render_tube() -> void:
+	_fill_ring_points()
+	var count := _ring_points.size()
 
 	# Pre-compute one ring frame per ring (avoids recomputing per vertex)
 	var sides:  Array[Vector3] = []
@@ -270,11 +480,11 @@ func _render_tube() -> void:
 	for i in count:
 		var tangent: Vector3
 		if i == 0:
-			tangent = _points[1] - _points[0]
+			tangent = _ring_points[1] - _ring_points[0]
 		elif i == count - 1:
-			tangent = _points[i] - _points[i - 1]
+			tangent = _ring_points[i] - _ring_points[i - 1]
 		else:
-			tangent = _points[i + 1] - _points[i - 1]
+			tangent = _ring_points[i + 1] - _ring_points[i - 1]
 		if tangent.length_squared() < 0.0001:
 			tangent = Vector3.UP
 		else:
@@ -290,7 +500,7 @@ func _render_tube() -> void:
 		var side := sides[i]
 		var up   := ups[i]
 		for j in tube_sides:
-			_vertex_array[base + j] = _points[i] + (side * _cos_table[j] + up * _sin_table[j]) * tube_radius
+			_vertex_array[base + j] = _ring_points[i] + (side * _cos_table[j] + up * _sin_table[j]) * tube_radius
 
 	# Single bulk upload to GPU
 	(mesh as ArrayMesh).surface_update_vertex_region(0, 0, _vertex_array.to_byte_array())
@@ -300,6 +510,6 @@ func _render_tube() -> void:
 	# node is top_level at the world origin, so without this the rope gets
 	# frustum-culled (goes invisible) whenever the origin is off-screen.
 	var aabb := AABB(_points[0], Vector3.ZERO)
-	for i in range(1, count):
+	for i in range(1, _points.size()):
 		aabb = aabb.expand(_points[i])
 	custom_aabb = aabb.grow(collision_radius * 2.0)
