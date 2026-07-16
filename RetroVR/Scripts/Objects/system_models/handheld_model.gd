@@ -130,13 +130,18 @@ func _add_cosmetics(half_y: float) -> void:
 	var accent := StandardMaterial3D.new()
 	accent.albedo_color = accent_color
 
+	# The cosmetic set is sized for a Game Boy face — on narrower bodies
+	# (WonderSwan, Pokemon Mini) the fixed button spread hangs off the edge,
+	# so scale the d-pad bars, button radius and spread with body width.
+	var s := clampf(body_size.x / 0.09, 0.6, 1.0)
+
 	# Classic Game Boy layout: d-pad lower-left, A/B lower-right, below the
 	# screen. On landscape bodies (GBA / Lynx / NGP / PSP) that lands on the
 	# screen bezel — flank the screen instead (d-pad left, buttons right,
 	# centred on it), like the real hardware.
 	var dpad_pos := Vector3(-body_size.x * 0.28, half_y + 0.002, body_size.z * 0.28)
 	var btn_base := Vector3(body_size.x * 0.22, half_y + 0.002, body_size.z * 0.30)
-	var btn_offsets := [Vector3(0, 0, 0), Vector3(0.017, 0, -0.010)]
+	var btn_offsets := [Vector3(0, 0, 0), Vector3(0.017 * s, 0, -0.010 * s)]
 	if _hits_screen_bezel(dpad_pos, 0.014) or _hits_screen_bezel(btn_base, 0.014):
 		var side := (body_size.x / 2.0 + (screen_size.x + 0.012) / 2.0) / 2.0
 		dpad_pos = Vector3(-side, half_y + 0.002, screen_offset.z)
@@ -146,7 +151,8 @@ func _add_cosmetics(half_y: float) -> void:
 	for horizontal in [true, false]:
 		var bar := MeshInstance3D.new()
 		var bar_mesh := BoxMesh.new()
-		bar_mesh.size = Vector3(0.024, 0.004, 0.008) if horizontal else Vector3(0.008, 0.004, 0.024)
+		bar_mesh.size = Vector3(0.024 * s, 0.004, 0.008 * s) if horizontal \
+			else Vector3(0.008 * s, 0.004, 0.024 * s)
 		bar.mesh = bar_mesh
 		bar.set_surface_override_material(0, dark)
 		bar.position = dpad_pos
@@ -155,8 +161,8 @@ func _add_cosmetics(half_y: float) -> void:
 	for i in range(2):
 		var btn := MeshInstance3D.new()
 		var btn_mesh := CylinderMesh.new()
-		btn_mesh.top_radius = 0.006
-		btn_mesh.bottom_radius = 0.006
+		btn_mesh.top_radius = 0.006 * s
+		btn_mesh.bottom_radius = 0.006 * s
 		btn_mesh.height = 0.004
 		btn.mesh = btn_mesh
 		btn.set_surface_override_material(0, accent)
