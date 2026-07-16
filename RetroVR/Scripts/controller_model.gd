@@ -1,4 +1,12 @@
+class_name ControllerModel
 extends XRController3D
+
+## Global toggle for the wrap-around hand shown on held peripherals (mouse, retro
+## controller, ray gun…). When false the device hand is never drawn and the
+## controller art stays visible while holding. Default off; flipped by the
+## OPTIONS menu via SpawnMenuController. Static so the two rig controllers and
+## the menu all share one value.
+static var draw_hands: bool = false
 
 const TOUCH_PLUS_BASE = "res://Models/oculus-controller-art-v1.8/Meta Quest Touch Plus/"
 const TOUCH_PRO_BASE  = "res://Models/oculus-controller-art-v1.8/Meta Quest Touch Pro/"
@@ -211,13 +219,22 @@ func _apply_material_recursive(node: Node, mat: Material, exclude: Node = null):
 ## Show or hide the loaded controller model (called by VRInputMapper)
 func set_model_visible(v: bool) -> void:
 	if _model_root:
-		_model_root.visible = v
+		# With hands disabled the controller art always stays visible — a held
+		# peripheral shows the controller, never a hand — so ignore hide requests.
+		_model_root.visible = v or not draw_hands
 
 
 ## This controller grabbed a device peripheral — hide the controller art and
 ## show the device's own hand for this tracker (authored in the device scene).
 func _on_held_grabbed(what: Node) -> void:
 	if what == null or not what.is_in_group(HAND_HELD_GROUP):
+		return
+	# Hands turned off in the options menu — keep the controller art, no hand.
+	if not draw_hands:
+		return
+	# A ray-pointer (telekinesis) grab holds the object at a distance, not in the
+	# hand — its has_picked_up still fires, but no hand should be drawn on it.
+	if _pickup and _pickup.is_ray_grabbing_target(what as XRToolsPickable):
 		return
 	var hand_name := "HandLeft" if tracker == "left_hand" else "HandRight"
 	var hand := what.get_node_or_null(NodePath(hand_name)) as Node3D

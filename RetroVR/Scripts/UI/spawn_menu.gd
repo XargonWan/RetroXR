@@ -47,6 +47,8 @@ signal auto_save_changed(enabled: bool)
 signal show_fps_changed(enabled: bool)
 ## Emitted when the user toggles the ray gun aim crosshair.
 signal aim_crosshair_changed(enabled: bool)
+## Emitted when the user toggles the wrap-around hands drawn on held controllers.
+signal controller_hands_changed(enabled: bool)
 ## Emitted when the user changes the snap turn angle.
 signal snap_angle_changed(degrees: float)
 ## Emitted when the user adjusts the player height offset.
@@ -1766,6 +1768,25 @@ func _build_options_view() -> Control:
 
 	xhair_row.add_child(_make_toggle(true, func(on: bool) -> void:
 		aim_crosshair_changed.emit(on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
+	# Draw hands on held controllers option (default off)
+	var hands_row := HBoxContainer.new()
+	hands_row.add_theme_constant_override("separation", 10)
+	hands_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(hands_row)
+
+	var hands_lbl := Label.new()
+	hands_lbl.text = "Controller Hands"
+	hands_lbl.add_theme_font_size_override("font_size", 22)
+	hands_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	hands_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hands_row.add_child(hands_lbl)
+
+	hands_row.add_child(_make_toggle(ControllerModel.draw_hands, func(on: bool) -> void:
+		controller_hands_changed.emit(on)
 	))
 
 	vbox.add_child(HSeparator.new())

@@ -197,6 +197,7 @@ func _connect_menu_signals() -> void:
 	menu.auto_save_changed.connect(_on_auto_save_changed)
 	menu.show_fps_changed.connect(_on_show_fps_changed)
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
+	menu.controller_hands_changed.connect(_on_controller_hands_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
 	menu.fov_changed.connect(_on_fov_changed)
@@ -770,6 +771,16 @@ func _on_aim_crosshair_changed(enabled: bool) -> void:
 		var gun := node as RayGun
 		if gun:
 			gun.show_laser_dot = enabled
+
+
+func _on_controller_hands_changed(enabled: bool) -> void:
+	ControllerModel.draw_hands = enabled
+	# Reflect the change on the rig controllers now: turning hands off brings the
+	# controller art straight back; turning them on re-hides it (and shows the
+	# device hand) the next time a peripheral is grabbed.
+	for ctrl in get_tree().root.find_children("*", "XRController3D", true, false):
+		if ctrl is ControllerModel:
+			ctrl.set_model_visible(true)
 
 
 func _on_controller_bindings_changed() -> void:

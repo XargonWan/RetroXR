@@ -7,7 +7,7 @@ extends RetroSystemModelHandheld
 
 func _init() -> void:
 	# PSP-1000: ~170 × 74 × 23 mm; 4.3" screen, 480×272 (≈16:9, 1.765:1).
-	body_size = Vector3(0.17, 0.023, 0.074)
+	body_size = Vector3(0.17, 0.023, 0.074) 
 	screen_size = Vector2(0.0953, 0.054)
 	screen_offset = Vector3(0.0, 0.0, 0.0)
 	body_color = Color(0.05, 0.05, 0.06)     # glossy black
