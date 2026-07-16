@@ -5,8 +5,13 @@ extends XRToolsPickable
 
 ## Maps systemid → GDScript path for the hardware model subclass.
 const _MODEL_SCRIPTS: Dictionary = {
-	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
-	"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
+	# Disabled for now — the N64 / PlayStation (and NES) console models are
+	# imported-derived and replicate real hardware trade dress, an IP risk for
+	# store distribution (e.g. SideQuest). These systems fall back to the
+	# procedural default_model. To re-enable: restore the entry AND drop
+	# "imported-assets/*" from the export preset's exclude_filter.
+	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
+	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
 	"game_boy": "res://Scripts/Objects/system_models/game_boy_model.gd",
 	"game_boy_advance": "res://Scripts/Objects/system_models/game_boy_advance_model.gd",
 	"atari_lynx": "res://Scripts/Objects/system_models/atari_lynx_model.gd",
