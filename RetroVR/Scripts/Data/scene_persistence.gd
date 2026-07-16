@@ -270,6 +270,18 @@ func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 					sys.restore_cable_connection(tv_node)
 				else:
 					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+			# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
+			for ch in range(1, sys.get_channel_count()):
+				var ch_tv_id: int = d.get("connected_tv%d_id" % ch, -1)
+				var ch_tv_path: String = d.get("connected_tv%d_path" % ch, "")
+				if spawned.has(ch_tv_id) and spawned[ch_tv_id] is RetroTV:
+					sys.restore_cable_connection(spawned[ch_tv_id] as RetroTV, ch)
+				elif not ch_tv_path.is_empty():
+					var ch_tv_node := root.get_node_or_null(ch_tv_path) as RetroTV
+					if ch_tv_node:
+						sys.restore_cable_connection(ch_tv_node, ch)
+					else:
+						push_warning("[ScenePersistence] could not find scene TV at '%s'" % ch_tv_path)
 			var cart_id: int = d.get("snapped_cartridge_id", -1)
 			if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
 				print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
@@ -370,6 +382,15 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		}
 		if not tv_path.is_empty():
 			result["connected_tv_path"] = tv_path
+		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
+		for ch in range(1, sys.get_channel_count()):
+			var ch_tv := sys.get_channel_tv(ch)
+			if ch_tv == null:
+				continue
+			var ch_tv_id: int = node_to_id.get(ch_tv, -1)
+			result["connected_tv%d_id" % ch] = ch_tv_id
+			if ch_tv_id == -1:
+				result["connected_tv%d_path" % ch] = str(ch_tv.get_path())
 		return result
 	elif node is RetroTV:
 		return {

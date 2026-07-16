@@ -189,8 +189,12 @@ func configure_handheld_body(host: Node3D) -> void:
 ## On-device controls: volume slider (right edge) + power switch (top edge).
 func configure_handheld_controls(host: Node3D) -> void:
 	_host = host
-	var half_y := body_size.y / 2.0
+	_build_volume_slider()
+	_build_power_switch()
 
+
+func _build_volume_slider() -> void:
+	var half_y := body_size.y / 2.0
 	_volume_slider = _make_slider("VolumeSlider", 0, 1.0)
 	_volume_slider.axis_local = Vector3(0, 0, 1)
 	_volume_slider.travel = 0.022
@@ -200,6 +204,9 @@ func configure_handheld_controls(host: Node3D) -> void:
 		if _host and _host.has_method("set_audio_volume"):
 			_host.set_audio_volume(v))
 
+
+func _build_power_switch() -> void:
+	var half_y := body_size.y / 2.0
 	_power_switch = _make_slider("PowerSwitch", 2, 0.0)
 	_power_switch.axis_local = Vector3(1, 0, 0)
 	_power_switch.travel = 0.016

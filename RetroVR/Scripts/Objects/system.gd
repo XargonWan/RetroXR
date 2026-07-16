@@ -77,13 +77,26 @@ var _handheld_input: HandheldInput = null
 
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
-var _cable_instance: Node3D = null
-var _cable_plug: CablePlug = null
-var _cable_rope: VerletRope = null
-var _max_rope_length: float = 0.0
+# Window material for TVs on multi-output hardware (dual-screen handhelds).
+const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
-# TV to connect to after the cable finishes spawning (used by save/load restore)
-var _pending_tv_restore: RetroTV = null
+# Video-out channels from the model (single unlabelled entry on classic
+# hardware; TOP/BOTTOM on dual-screen handhelds). One cable per channel; all
+# per-channel arrays below share this indexing. connected_tv stays the
+# channel-0 TV for external readers (persistence, netplay OSD).
+var _channels: Array = []
+var _cable_instances: Array = []
+var _cable_plugs: Array = []
+var _cable_ropes: Array = []
+var _attach_points: Array = []
+var _max_rope_lengths: Array = []
+var _channel_tvs: Array = []
+# TVs to connect to after the cables finish spawning (save/load restore)
+var _pending_tv_restores: Array = []
+# screen_window ShaderMaterials mirrored onto connected TVs (multi-out only)
+var _tv_window_mats: Array = []
+# TVTouchSurface on the TV showing a touch channel (multi-out only)
+var _tv_touch_surfaces: Array = []
 var _snapped_cartridge: Node3D = null
 
 # --- Disc loader (tray/slot) state ---
@@ -156,8 +169,8 @@ func _ready() -> void:
 		_port_zones[i].has_dropped.connect(func(obj: Node3D) -> void: _on_port_released(idx, obj))
 	# Load system-specific model (falls back to default placeholder model)
 	_load_system_model()
-	# Spawn cable
-	_spawn_cable()
+	# Spawn one cable per video-out channel
+	_spawn_cables()
 	_update_name_label()
 
 
@@ -207,7 +220,27 @@ func _load_system_model() -> void:
 		_system_body.hide()
 	_model.configure_buttons(_power_button, _reset_button, _eject_button)
 	_model.configure_controller_ports(_port_zones)
-	_model.configure_cable_attach(_cable_attach_point)
+	# Video-out channels: one attach point + cable per channel. Channel 0 is
+	# the scene's CableAttachPoint; extra channels get their own Node3D.
+	_channels = _model.get_video_channels()
+	if _channels.is_empty():
+		_channels = [{"label": "", "rect": Rect2(0, 0, 1, 1), "touch": false, "eye_shift": 0.0}]
+	_attach_points = [_cable_attach_point]
+	for i in range(1, _channels.size()):
+		var pt := Node3D.new()
+		pt.name = "CableAttachPoint%d" % (i + 1)
+		add_child(pt)
+		_attach_points.append(pt)
+	for i in _channels.size():
+		_cable_instances.append(null)
+		_cable_plugs.append(null)
+		_cable_ropes.append(null)
+		_max_rope_lengths.append(0.0)
+		_channel_tvs.append(null)
+		_pending_tv_restores.append(null)
+		_tv_window_mats.append(null)
+		_tv_touch_surfaces.append(null)
+		_model.configure_cable_attach_for(_attach_points[i], i)
 	_model.configure_cartridge_slot(_cartridge_slot)
 	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
@@ -272,11 +305,17 @@ func _load_system_model() -> void:
 			_build_disc_slit()
 	# Handhelds: built-in screen, on-device controls, and the held-input
 	# component that turns the device itself into the port-0 controller.
+	# Dual-screen clamshells keep the cabinet START/STOP button (repositioned
+	# by their configure_buttons) — the back-edge power knob doesn't fit them.
 	if _model.is_handheld():
-		_power_button.visible = false
-		_power_button.set_deferred("monitoring", false)
+		var keep_power_btn := _model.has_start_stop_button()
+		_power_button.visible = keep_power_btn
+		_power_button.set_deferred("monitoring", keep_power_btn)
+		_power_button.set_process(keep_power_btn)
+		_update_power_button_visual()
 		_reset_button.visible = false
 		_reset_button.set_deferred("monitoring", false)
+		_reset_button.set_process(false)
 		if _model.has_method("configure_handheld_body"):
 			_model.configure_handheld_body(self)
 		_model.configure_handheld_controls(self)
@@ -305,7 +344,11 @@ func set_audio_volume(volume: float) -> void:
 
 ## The mesh the core should render to right now: a connected TV wins,
 ## otherwise a handheld's built-in LCD, otherwise null (no display).
+## Multi-output hardware (dual-screen handhelds) ALWAYS renders to its own
+## builtin proxy — connected TVs are fed per-channel by _update_tv_mirrors.
 func _screen_target() -> MeshInstance3D:
+	if _channels.size() > 1:
+		return _model.get_builtin_screen() if _model else null
 	if connected_tv != null:
 		return connected_tv.get_screen_mesh()
 	return _model.get_builtin_screen() if _model else null
@@ -318,62 +361,197 @@ func is_stereo_output() -> bool:
 
 
 ## Show or hide the screen output (used by TV toggle button).
+## Multi-output: per-TV blanking is handled by _update_tv_mirrors (it keys off
+## each TV's own power), so a single TV's toggle must not blank the core here.
 func set_screen_enabled(enabled: bool) -> void:
-	if not is_powered_on:
+	if not is_powered_on or _channels.size() > 1:
 		return
 	_libretro.SetScreenMesh(_screen_target() if enabled else null)
 
 
-## Called by the TV's cable plug when it connects to a TV
-func on_tv_connected(tv: RetroTV) -> void:
-	connected_tv = tv
+## Called by the TV when one of this system's plugs connects. `plug` tells us
+## which video-out channel landed (null = classic single-cable path).
+func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
+	var ch := plug.channel if plug != null else 0
+	if ch < 0 or ch >= _channels.size():
+		ch = 0
+	_channel_tvs[ch] = tv
+	if ch == 0:
+		connected_tv = tv
+	if _channels.size() > 1:
+		# Picture arrives via _update_tv_mirrors; a touch channel additionally
+		# turns the TV's glass into the touch screen.
+		if bool(_channels[ch].get("touch", false)):
+			_remove_touch_surface(ch)
+			var surf := TVTouchSurface.new()
+			surf.setup(self, _channels[ch]["rect"], tv.get_screen_mesh())
+			tv.get_screen_mesh().add_child(surf)
+			_tv_touch_surfaces[ch] = surf
+		return
 	if is_powered_on:
 		_libretro.SetScreenMesh(tv.get_screen_mesh())
 
 
-## Called by the TV's cable plug when it disconnects. Handhelds take the
-## picture back onto their built-in LCD; consoles go dark.
-func on_tv_disconnected() -> void:
-	connected_tv = null
+## Called by the TV when a plug disconnects. Handhelds take the picture back
+## onto their built-in LCD; consoles go dark.
+func on_tv_disconnected(plug: CablePlug = null) -> void:
+	var ch := plug.channel if plug != null else 0
+	if ch < 0 or ch >= _channels.size():
+		ch = 0
+	var tv: RetroTV = _channel_tvs[ch]
+	_channel_tvs[ch] = null
+	if ch == 0:
+		connected_tv = null
+	if _channels.size() > 1:
+		_remove_touch_surface(ch)
+		_uninstall_tv_mirror(ch, tv)
+		return
 	if is_powered_on:
 		_libretro.SetScreenMesh(_screen_target())
 
 
+## The TV connected to a given video-out channel, or null (persistence).
+func get_channel_tv(ch: int) -> RetroTV:
+	if ch < 0 or ch >= _channel_tvs.size():
+		return null
+	return _channel_tvs[ch]
+
+
+## How many video-out cables this system has (persistence).
+func get_channel_count() -> int:
+	return _channels.size()
+
+
+func _remove_touch_surface(ch: int) -> void:
+	var surf: TVTouchSurface = _tv_touch_surfaces[ch]
+	if surf != null and is_instance_valid(surf):
+		surf.queue_free()
+	_tv_touch_surfaces[ch] = null
+
+
+## Mirror the core's composite picture onto each connected TV through a
+## per-channel screen_window material (multi-output hardware only). The C++
+## VideoHandler owns only the hidden proxy; TVs are fed here, keyed off the
+## proxy's emission texture (identity checks — steady state costs nothing).
+func _update_tv_mirrors() -> void:
+	if _channels.size() <= 1:
+		return
+	var tex: Texture2D = null
+	if is_powered_on and _model != null:
+		var scr := _model.get_builtin_screen()
+		if scr != null:
+			var m := scr.get_surface_override_material(0)
+			if m is StandardMaterial3D:
+				tex = (m as StandardMaterial3D).emission_texture
+	for i in _channels.size():
+		var tv: RetroTV = _channel_tvs[i]
+		if tv == null or not is_instance_valid(tv):
+			continue
+		if tex == null or not tv.is_powered_on():
+			_uninstall_tv_mirror(i, tv)
+			continue
+		var mat: ShaderMaterial = _tv_window_mats[i]
+		if mat == null:
+			mat = ShaderMaterial.new()
+			mat.shader = SCREEN_WINDOW_SHADER
+			var r: Rect2 = _channels[i]["rect"]
+			mat.set_shader_parameter("source_rect",
+				Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
+			mat.set_shader_parameter("eye_shift", float(_channels[i].get("eye_shift", 0.0)))
+			_tv_window_mats[i] = mat
+		if mat.get_shader_parameter("source_tex") != tex:
+			mat.set_shader_parameter("source_tex", tex)
+		var mesh := tv.get_screen_mesh()
+		if mesh.get_surface_override_material(0) != mat:
+			mesh.set_surface_override_material(0, mat)
+
+
+## Take our window material off a TV so its own blue/dark states resume.
+func _uninstall_tv_mirror(ch: int, tv: RetroTV) -> void:
+	var mat: ShaderMaterial = _tv_window_mats[ch]
+	if mat == null or tv == null or not is_instance_valid(tv):
+		return
+	var mesh := tv.get_screen_mesh()
+	if mesh.get_surface_override_material(0) == mat:
+		mesh.set_surface_override_material(0, null)
+
+
+## A freed system must not leave its window materials / touch surfaces on TVs.
+func _exit_tree() -> void:
+	for i in _channels.size():
+		var tv: RetroTV = _channel_tvs[i]
+		if tv != null and is_instance_valid(tv):
+			_uninstall_tv_mirror(i, tv)
+		_remove_touch_surface(i)
+	super._exit_tree()
+
+
 # --- Cable management ---
 
-func _spawn_cable() -> void:
-	_cable_instance = CABLE_SCENE.instantiate()
-	# Add cable to scene root so it's not affected by system's RigidBody transform weirdness
-	call_deferred("_add_cable_to_scene")
+func _spawn_cables() -> void:
+	for i in _channels.size():
+		_cable_instances[i] = CABLE_SCENE.instantiate()
+	# Add cables to scene root so they're not affected by system's RigidBody transform weirdness
+	call_deferred("_add_cables_to_scene")
 
 
-func _add_cable_to_scene() -> void:
-	get_tree().current_scene.add_child(_cable_instance)
-	# Track cable in the "spawned" group so clear_scene() includes it.
-	_cable_instance.add_to_group("spawned")
-	_cable_plug = _cable_instance.get_node("CablePlug") as CablePlug
-	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+func _add_cables_to_scene() -> void:
+	for i in _channels.size():
+		var inst: Node3D = _cable_instances[i]
+		get_tree().current_scene.add_child(inst)
+		# Track cable in the "spawned" group so clear_scene() includes it.
+		inst.add_to_group("spawned")
+		var plug := inst.get_node("CablePlug") as CablePlug
+		var rope := inst.get_node("VerletRope") as VerletRope
+		_cable_plugs[i] = plug
+		_cable_ropes[i] = rope
 
-	# Tell the plug who owns it
-	_cable_plug.set_system(self)
+		# Tell the plug who owns it and which channel it carries
+		plug.set_system(self)
+		plug.channel = i
+		plug.channel_label = str(_channels[i].get("label", ""))
+		if not plug.channel_label.is_empty():
+			_decorate_channel_plug(plug, i)
 
-	# Exclude the plug from colliding with this system so it doesn't jitter on spawn
-	_cable_plug.add_collision_exception_with(self)
+		# Exclude the plug from colliding with this system so it doesn't jitter on spawn
+		plug.add_collision_exception_with(self)
 
-	# Position plug at the same Y as the rope's start anchor (the attach point)
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.1)
+		# Position plug near the rope's start anchor (the attach point), fanned
+		# out a little per channel so multiple plugs don't spawn intersecting
+		plug.global_position = _attach_points[i].global_position \
+			+ Vector3(0.05 * i, 0, -0.1)
 
-	# Wire rope anchors: start = system's attach point, end = plug
-	_cable_rope.start_node = _cable_attach_point
-	_cable_rope.end_node = _cable_plug
-	_cable_rope._init_points()
-	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
+		# Wire rope anchors: start = system's attach point, end = plug
+		rope.start_node = _attach_points[i]
+		rope.end_node = plug
+		rope._init_points()
+		_max_rope_lengths[i] = rope.segment_count * rope.segment_length
 
-	# Restore a pending TV connection requested before the cable was ready
-	if _pending_tv_restore != null:
-		print("[RetroSystem] _add_cable_to_scene: restoring pending TV connection")
-		_snap_cable_to_tv(_pending_tv_restore)
-		_pending_tv_restore = null
+		# Restore a pending TV connection requested before the cable was ready
+		if _pending_tv_restores[i] != null:
+			print("[RetroSystem] _add_cables_to_scene: restoring pending TV connection (ch %d)" % i)
+			_snap_cable_to_tv(_pending_tv_restores[i], i)
+			_pending_tv_restores[i] = null
+
+
+## Label a multi-output plug so the player can tell the cables apart: floating
+## billboard tag ("TOP"/"BOTTOM") plus a tinted tip on the second channel.
+func _decorate_channel_plug(plug: CablePlug, channel: int) -> void:
+	var lbl := Label3D.new()
+	lbl.name = "ChannelLabel"
+	lbl.text = plug.channel_label
+	lbl.pixel_size = 0.0005
+	lbl.font_size = 14
+	lbl.outline_size = 4
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.position = Vector3(0, 0.045, 0)
+	plug.add_child(lbl)
+	if channel > 0:
+		var tip := plug.get_node_or_null("PlugTip") as MeshInstance3D
+		if tip:
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(0.2, 0.6, 1.0)   # blue = BOTTOM
+			tip.set_surface_override_material(0, mat)
 
 
 func _process(_delta: float) -> void:
@@ -392,6 +570,7 @@ func _process(_delta: float) -> void:
 					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
 		else:
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
+	_update_tv_mirrors()
 	_update_disc_spin(_delta)
 
 
@@ -430,23 +609,26 @@ func feed_touch(uv: Vector2, pressed: bool) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
-		return
-	# Snapped to TV or actively held by the user — don't fight whoever owns the plug
-	if connected_tv != null or _cable_plug.is_picked_up():
-		return
+	for i in _channels.size():
+		var plug: CablePlug = _cable_plugs[i]
+		var max_len: float = _max_rope_lengths[i]
+		if plug == null or _attach_points[i] == null or max_len <= 0.0:
+			continue
+		# Snapped to TV or actively held by the user — don't fight whoever owns the plug
+		if _channel_tvs[i] != null or plug.is_picked_up():
+			continue
 
-	var attach_pos := _cable_attach_point.global_position
-	var diff := _cable_plug.global_position - attach_pos
-	var dist := diff.length()
+		var attach_pos: Vector3 = _attach_points[i].global_position
+		var diff := plug.global_position - attach_pos
+		var dist := diff.length()
 
-	if dist > _max_rope_length:
-		var dir := diff / dist
-		# Clamp plug to rope length and kill outward velocity
-		_cable_plug.global_position = attach_pos + dir * _max_rope_length
-		var outward_vel := dir.dot(_cable_plug.linear_velocity)
-		if outward_vel > 0.0:
-			_cable_plug.linear_velocity -= dir * outward_vel
+		if dist > max_len:
+			var dir := diff / dist
+			# Clamp plug to rope length and kill outward velocity
+			plug.global_position = attach_pos + dir * max_len
+			var outward_vel := dir.dot(plug.linear_velocity)
+			if outward_vel > 0.0:
+				plug.linear_velocity -= dir * outward_vel
 
 
 ## Power on: start this system's libretro core
@@ -876,19 +1058,23 @@ func get_snapped_cartridge() -> Node3D:
 
 
 ## Restore a cable→TV connection after loading from a save file.
-## Safe to call before the cable has finished spawning — the snap will be
-## deferred until _add_cable_to_scene() runs if the plug isn't ready yet.
-func restore_cable_connection(tv: RetroTV) -> void:
-	print("[RetroSystem] restore_cable_connection: plug=%s tv=%s" % [_cable_plug, tv])
-	if _cable_plug != null:
-		_snap_cable_to_tv(tv)
+## Safe to call before the cables have finished spawning — the snap will be
+## deferred until _add_cables_to_scene() runs if the plug isn't ready yet.
+## `channel` picks the video-out cable (0 on classic single-cable systems).
+func restore_cable_connection(tv: RetroTV, channel: int = 0) -> void:
+	if channel < 0 or channel >= _channels.size():
+		channel = 0
+	print("[RetroSystem] restore_cable_connection: ch=%d plug=%s tv=%s" %
+		[channel, _cable_plugs[channel] if channel < _cable_plugs.size() else null, tv])
+	if channel < _cable_plugs.size() and _cable_plugs[channel] != null:
+		_snap_cable_to_tv(tv, channel)
 	else:
 		print("[RetroSystem] cable plug not ready yet, deferring restore")
-		_pending_tv_restore = tv
+		_pending_tv_restores[channel] = tv
 
 
-func _snap_cable_to_tv(tv: RetroTV) -> void:
-	tv.accept_plug_restore(_cable_plug)
+func _snap_cable_to_tv(tv: RetroTV, channel: int = 0) -> void:
+	tv.accept_plug_restore(_cable_plugs[channel])
 
 
 ## Restore a cartridge→slot insertion after loading from a save file.

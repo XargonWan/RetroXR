@@ -1,23 +1,34 @@
 ## RetroSystemModelDualScreen — clamshell dual-screen handhelds (DS / 3DS).
 ##
 ## Dual-screen cores render BOTH screens into one composite framebuffer
-## (melonDS top/bottom stacked 256×384; citra/azahar default 400×480 with the
-## bottom screen centered). The C++ VideoHandler drives ONE mesh — the top
-## screen — with a single persistent emission material. The trick:
-##   * each screen quad is a QuadMesh whose UVs are remapped to its region of
-##     the composite framebuffer (`_make_uv_quad`), and
-##   * the model mirrors the top quad's surface-0 material onto the bottom
-##     quad each frame (cheap pointer compare), so both screens light up from
-##     the one core texture with zero extra copies.
+## (melonDS top/bottom stacked 256×384; patched azahar side-by-side stereo
+## 400×480). The C++ VideoHandler drives ONE mesh — here a hidden proxy quad
+## (the Virtual Boy pattern) — and this model feeds the proxy's emission
+## texture into a screen_window ShaderMaterial per visible screen quad:
+##   * each quad's `source_rect` selects its region of the composite, and
+##   * a stereo top screen (3DS) adds `eye_shift` so the RIGHT eye samples the
+##     right-eye half (VIEW_INDEX) — real depth in the headset.
+##
+## Video-out: TWO cables (get_video_channels), TOP and BOTTOM, each with its
+## own labelled port on the back edge. RetroSystem mirrors the same proxy
+## texture onto each connected TV through the same shader, and taps on the
+## BOTTOM TV feed the touch screen.
 ##
 ## The bottom screen is a touch screen: an Area3D over it accepts desktop
 ## pointer press/drag AND VR fingertip pokes, converts the hit to composite-
 ## framebuffer UV and feeds host.feed_touch() → RETRO_DEVICE_POINTER (which is
 ## how melonDS/citra take touch input).
 ##
+## Clamshells keep the cabinet START/STOP button (has_start_stop_button):
+## the tiny back-edge power knob other handhelds use would be swallowed by the
+## hinge, so configure_buttons shrinks the button and mounts it on the front
+## edge instead.
+##
 ## Subclasses set body/screen dimensions and the UV rects in _init.
 class_name RetroSystemModelDualScreen
 extends RetroSystemModelHandheld
+
+const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
 # Base local frame is the handheld convention: flat, top face +Y, hinge/back
 # edge -Z. The lid pivots at the back-top edge; interior angle `lid_open_deg`.
@@ -36,35 +47,40 @@ var bottom_screen_offset := Vector2(0.0, 0.0)
 ## Each screen's region of the composite core framebuffer.
 var top_uv_rect := Rect2(0.0, 0.0, 1.0, 0.5)
 var bottom_uv_rect := Rect2(0.0, 0.5, 1.0, 0.5)
+## Right-eye UV-x shift for a stereo side-by-side composite (3DS azahar).
+## 0 = mono core output (DS).
+var top_eye_shift := 0.0
 
 var _bottom_screen: MeshInstance3D = null
 var _lid_pivot: Node3D = null
 var _touch: Area3D = null
+# Hidden proxy quad the C++ VideoHandler renders the composite into.
+var _proxy: MeshInstance3D = null
+# screen_window materials feeding each quad from the proxy's texture.
+var _top_mat: ShaderMaterial = null
+var _bottom_mat: ShaderMaterial = null
+# Unlit-LCD materials shown while no core picture exists.
+var _top_off_mat: StandardMaterial3D = null
+var _bottom_off_mat: StandardMaterial3D = null
 # VR fingertip touch state (per engaged controller).
 var _touch_ctrl: XRController3D = null
 var _touch_pointer_down := false
 var _touch_controllers: Array[XRController3D] = []
 
 
-## Build a QuadMesh remapped so its UVs cover `uv_rect` of the texture instead
-## of the full [0,1] range — geometry/winding/normals identical to QuadMesh.
-static func _make_uv_quad(size: Vector2, uv_rect: Rect2) -> ArrayMesh:
-	var q := QuadMesh.new()
-	q.size = size
-	var arrays := q.surface_get_arrays(0)
-	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
-	for i in uvs.size():
-		uvs[i] = uv_rect.position + uvs[i] * uv_rect.size
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	var am := ArrayMesh.new()
-	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return am
-
-
 func _build_shell() -> void:
 	var half_y := body_size.y / 2.0
 	var off_mat := StandardMaterial3D.new()
 	off_mat.albedo_color = Color(0.05, 0.05, 0.06)   # dark, unlit LCD
+	_top_off_mat = off_mat
+	_bottom_off_mat = off_mat.duplicate()
+
+	# Window materials, ready before the first frame of core output.
+	_top_mat = ShaderMaterial.new()
+	_top_mat.shader = SCREEN_WINDOW_SHADER
+	_bottom_mat = ShaderMaterial.new()
+	_bottom_mat.shader = SCREEN_WINDOW_SHADER
+	_apply_window_params()
 
 	# ── Base (bottom half) ────────────────────────────────────────────────────
 	var base := MeshInstance3D.new()
@@ -95,7 +111,7 @@ func _build_shell() -> void:
 	lid.position = Vector3(0, lid_size.y / 2.0, -lid_size.z / 2.0)
 	_lid_pivot.add_child(lid)
 
-	# ── Top screen (lid interior face) — the mesh VideoHandler drives ─────────
+	# ── Top screen (lid interior face) ────────────────────────────────────────
 	var top_bezel := MeshInstance3D.new()
 	top_bezel.name = "TopBezel"
 	var tb_mesh := BoxMesh.new()
@@ -110,11 +126,13 @@ func _build_shell() -> void:
 
 	_screen = MeshInstance3D.new()
 	_screen.name = "TopScreen"
-	_screen.mesh = _make_uv_quad(top_screen_size, top_uv_rect)
+	var top_quad := QuadMesh.new()
+	top_quad.size = top_screen_size
+	_screen.mesh = top_quad
 	_screen.rotation_degrees = Vector3(-90, 0, 0)   # face lid-interior (+Y local)
 	_screen.position = Vector3(top_screen_offset.x, lid_size.y + 0.002,
 		-lid_size.z / 2.0 + top_screen_offset.y)
-	_screen.set_surface_override_material(0, off_mat)
+	_screen.set_surface_override_material(0, _top_off_mat)
 	_lid_pivot.add_child(_screen)
 
 	# ── Bottom screen (base top face) + touch area ────────────────────────────
@@ -129,11 +147,23 @@ func _build_shell() -> void:
 
 	_bottom_screen = MeshInstance3D.new()
 	_bottom_screen.name = "BottomScreen"
-	_bottom_screen.mesh = _make_uv_quad(bottom_screen_size, bottom_uv_rect)
+	var bot_quad := QuadMesh.new()
+	bot_quad.size = bottom_screen_size
+	_bottom_screen.mesh = bot_quad
 	_bottom_screen.rotation_degrees = Vector3(-90, 0, 0)
 	_bottom_screen.position = Vector3(bottom_screen_offset.x, half_y + 0.002, bottom_screen_offset.y)
-	_bottom_screen.set_surface_override_material(0, off_mat.duplicate())
+	_bottom_screen.set_surface_override_material(0, _bottom_off_mat)
 	add_child(_bottom_screen)
+
+	# ── Hidden proxy the C++ VideoHandler renders the composite into ──────────
+	_proxy = MeshInstance3D.new()
+	_proxy.name = "ProxyScreen"
+	var pquad := QuadMesh.new()
+	pquad.size = Vector2(0.01, 0.01)
+	_proxy.mesh = pquad
+	_proxy.position = Vector3(0, half_y, 0)
+	_proxy.visible = false
+	add_child(_proxy)
 
 	_touch = Area3D.new()
 	_touch.name = "TouchScreen"
@@ -152,6 +182,19 @@ func _build_shell() -> void:
 	_add_cosmetics(half_y)
 
 
+## Push the UV windows onto the window materials (rects are set by subclass
+## _init, so once at build time is enough).
+func _apply_window_params() -> void:
+	_top_mat.set_shader_parameter("source_rect",
+		Vector4(top_uv_rect.position.x, top_uv_rect.position.y,
+			top_uv_rect.size.x, top_uv_rect.size.y))
+	_top_mat.set_shader_parameter("eye_shift", top_eye_shift)
+	_bottom_mat.set_shader_parameter("source_rect",
+		Vector4(bottom_uv_rect.position.x, bottom_uv_rect.position.y,
+			bottom_uv_rect.size.x, bottom_uv_rect.size.y))
+	_bottom_mat.set_shader_parameter("eye_shift", 0.0)
+
+
 func _ready() -> void:
 	super()
 	await get_tree().process_frame
@@ -160,19 +203,112 @@ func _ready() -> void:
 
 
 func get_builtin_screen() -> MeshInstance3D:
-	return _screen   # top screen — VideoHandler's target
+	return _proxy   # hidden — VideoHandler renders here, the screen quads sample it
+
+
+## TWO video-out cables: TOP (plain) and BOTTOM (carries touch back to the
+## core — tapping the TV showing the bottom screen is tapping the touch screen).
+func get_video_channels() -> Array:
+	return [
+		{"label": "TOP", "rect": top_uv_rect, "touch": false, "eye_shift": top_eye_shift},
+		{"label": "BOTTOM", "rect": bottom_uv_rect, "touch": true, "eye_shift": 0.0},
+	]
+
+
+## Clamshells keep the labelled START/STOP cabinet button (see configure_buttons).
+func has_start_stop_button() -> bool:
+	return true
+
+
+## The composite picture texture currently on the proxy, or null when off.
+func _proxy_texture() -> Texture2D:
+	if _proxy == null:
+		return null
+	var mat := _proxy.get_surface_override_material(0)
+	if mat is StandardMaterial3D:
+		return (mat as StandardMaterial3D).emission_texture
+	return null
 
 
 func _process(_delta: float) -> void:
-	# Mirror the top screen's material onto the bottom quad: the C++
-	# VideoHandler owns the top's surface-0 override; the bottom shows the
-	# same material through its own UV window into the composite framebuffer.
-	if _screen and _bottom_screen:
-		var m := _screen.get_surface_override_material(0)
-		if _bottom_screen.get_surface_override_material(0) != m:
-			_bottom_screen.set_surface_override_material(0, m)
+	# Feed both screen quads from whatever emission texture the VideoHandler
+	# put on the proxy (copy-on-change identity checks, VB-eyepiece style).
+	var tex := _proxy_texture()
+	if tex != null:
+		if _top_mat.get_shader_parameter("source_tex") != tex:
+			_top_mat.set_shader_parameter("source_tex", tex)
+			_bottom_mat.set_shader_parameter("source_tex", tex)
+		if _screen.get_surface_override_material(0) != _top_mat:
+			_screen.set_surface_override_material(0, _top_mat)
+			_bottom_screen.set_surface_override_material(0, _bottom_mat)
+	else:
+		if _screen.get_surface_override_material(0) != _top_off_mat:
+			_screen.set_surface_override_material(0, _top_off_mat)
+			_bottom_screen.set_surface_override_material(0, _bottom_off_mat)
 
 	_process_fingertip_touch()
+
+
+## Shrink the cabinet power button to handheld scale and mount it on the front
+## edge of the base, facing the player, with its START/STOP label under it.
+## (RetroSystem keeps this button visible because has_start_stop_button().)
+func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VRButton) -> void:
+	power_btn.position = Vector3(body_size.x * 0.36, 0, body_size.z / 2.0 + 0.002)
+	power_btn.trigger_radius = 0.015
+	power_btn.depress_depth = 0.002
+	power_btn.depress_axis = Vector3(0, 0, -1)
+
+	var col := power_btn.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col and col.shape is BoxShape3D:
+		col.shape = col.shape.duplicate()
+		(col.shape as BoxShape3D).size = Vector3(0.016, 0.016, 0.008)
+
+	var small := MeshInstance3D.new()
+	small.name = "HandheldPowerMesh"
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.005
+	cyl.bottom_radius = 0.006
+	cyl.height = 0.005
+	small.mesh = cyl
+	small.rotation_degrees = Vector3(90, 0, 0)   # cylinder axis out of the front face
+	power_btn.add_child(small)
+	# Re-caches the depress origin and hides the console-scale ButtonMesh.
+	power_btn.set_button_mesh(small)
+
+	var lbl := power_btn.get_node_or_null("ButtonLabel") as Label3D
+	if lbl:
+		lbl.transform = Transform3D.IDENTITY
+		lbl.position = Vector3(0, -0.0105, 0.002)
+		lbl.pixel_size = 0.0004
+		lbl.font_size = 12
+
+
+## On-device controls: volume slider only. The back-edge power knob the other
+## handhelds get would sit inside the hinge — the START/STOP button replaces it.
+func configure_handheld_controls(host: Node3D) -> void:
+	_host = host
+	_build_volume_slider()
+
+
+## Two labelled video-out ports on the back edge, beside the cartridge slot:
+## TOP on the right, BOTTOM on the left.
+func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
+	var x := body_size.x * (0.30 if channel == 0 else -0.30)
+	attach_point.position = Vector3(x, 0, -body_size.z / 2.0 - 0.002)
+	_add_port_label("TOP" if channel == 0 else "BOTTOM", x)
+
+
+func _add_port_label(text: String, x: float) -> void:
+	var lbl := Label3D.new()
+	lbl.text = text
+	lbl.pixel_size = 0.00018
+	lbl.font_size = 16
+	lbl.modulate = Color(0.92, 0.92, 0.94)
+	lbl.outline_size = 4
+	# On the back face, reading correctly from behind the device.
+	lbl.rotation_degrees = Vector3(0, 180, 0)
+	lbl.position = Vector3(x, body_size.y * 0.16, -body_size.z / 2.0 - 0.0015)
+	add_child(lbl)
 
 
 # ── Touch screen ──────────────────────────────────────────────────────────────

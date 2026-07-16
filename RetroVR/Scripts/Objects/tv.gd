@@ -12,6 +12,9 @@ signal cable_disconnected
 
 const CRT_SHADER := preload("res://Shaders/crt_effect.gdshader")
 const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
+# Dual-screen handhelds mirror one channel of their composite framebuffer onto
+# the TV through this shader; the CRT stage chains inside it like the VCR's.
+const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
 ## CRT display filter (curvature, scanlines, aperture mask). Applied to
 ## whatever source is showing — a system's game or the VCR's video.
@@ -250,18 +253,18 @@ func _update_crt() -> void:
 		_crt_wrapped = null
 		return
 
-	# VHS shader on the screen: chain the CRT stage inside it via its
-	# crt_enabled uniform rather than replacing the material.
+	# VHS / screen-window shader on the screen: chain the CRT stage inside it
+	# via its crt_enabled uniform rather than replacing the material.
 	if override is ShaderMaterial and override != _crt_material:
 		var sm := override as ShaderMaterial
-		if sm.shader == VCR_SHADER:
+		if sm.shader == VCR_SHADER or sm.shader == WINDOW_SHADER:
 			# Note: an unset uniform reads back as null, never bool — compare
 			# against the Variant directly.
 			var cur: Variant = sm.get_shader_parameter("crt_enabled")
 			if (cur == true) != crt_enabled:
 				sm.set_shader_parameter("crt_enabled", crt_enabled)
 				if crt_enabled:
-					_apply_crt_params(sm)   # sync tube tuning onto the tape shader
+					_apply_crt_params(sm)   # sync tube tuning onto the source shader
 		_crt_wrapped = null
 		return
 
@@ -313,8 +316,10 @@ func set_crt_param(pname: String, value: Variant) -> void:
 	if _crt_material != null:
 		_crt_material.set_shader_parameter(pname, value)
 	var override := _screen_mesh.get_surface_override_material(0)
-	if override is ShaderMaterial and (override as ShaderMaterial).shader == VCR_SHADER:
-		(override as ShaderMaterial).set_shader_parameter(pname, value)
+	if override is ShaderMaterial:
+		var sh := (override as ShaderMaterial).shader
+		if sh == VCR_SHADER or sh == WINDOW_SHADER:
+			(override as ShaderMaterial).set_shader_parameter(pname, value)
 
 
 ## Current CRT tuning values, for the options panel to populate its controls.
@@ -450,7 +455,8 @@ func _route_osd() -> void:
 	var sm: ShaderMaterial = null
 	if mat is ShaderMaterial:
 		var candidate := mat as ShaderMaterial
-		if candidate == _crt_material or candidate.shader == VCR_SHADER:
+		if candidate == _crt_material or candidate.shader == VCR_SHADER \
+				or candidate.shader == WINDOW_SHADER:
 			sm = candidate
 	if sm != null:
 		sm.set_shader_parameter("osd_tex", _osd_viewport.get_texture())
@@ -482,9 +488,14 @@ func _on_plug_snapped(plug: Node3D) -> void:
 		var system := _snapped_plug.get_system()
 		if system:
 			_connected_system = system
-			system.on_tv_connected(self)
+			# Multi-output systems need to know WHICH cable landed; other
+			# hosts (VCR/DVD) keep the plain single-arg contract.
+			if system is RetroSystem:
+				(system as RetroSystem).on_tv_connected(self, _snapped_plug)
+			else:
+				system.on_tv_connected(self)
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
-				{"owner": system, "tv": self})
+				{"owner": system, "tv": self, "ch": _snapped_plug.channel})
 
 
 ## Called when the cable plug leaves the composite port
@@ -497,7 +508,10 @@ func _on_plug_released() -> void:
 		remove_collision_exception_with(_snapped_plug)
 		var system := _snapped_plug.get_system()
 		if system:
-			system.on_tv_disconnected()
+			if system is RetroSystem:
+				(system as RetroSystem).on_tv_disconnected(_snapped_plug)
+			else:
+				system.on_tv_disconnected()
 		_connected_system = null
 		_snapped_plug = null
 		NetworkManager.report_event(NetObjectSync.EV_TV_UNPLUG, {"tv": self})

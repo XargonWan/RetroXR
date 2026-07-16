@@ -10,6 +10,14 @@ extends XRToolsPickable
 ## The host this cable belongs to (set by the host when the cable is instantiated)
 var _system: Node3D = null
 
+## Which of the host's video-out channels this cable carries (multi-output
+## hardware: 0 = TOP, 1 = BOTTOM on a dual-screen handheld). Single-cable
+## hosts leave it 0.
+var channel: int = 0
+
+## Cable tag shown on the plug ("TOP"/"BOTTOM"); "" on single-cable hosts.
+var channel_label: String = ""
+
 
 func _ready() -> void:
 	super._ready()

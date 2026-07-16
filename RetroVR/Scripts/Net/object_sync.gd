@@ -30,7 +30,7 @@ enum {
 	EV_CART_REMOVE,      # {sys}
 	EV_TAPE_INSERT,      # {vcr, tape}
 	EV_TAPE_REMOVE,      # {vcr}
-	EV_TV_PLUG,          # {owner, tv}   owner = system or VCR
+	EV_TV_PLUG,          # {owner, tv, ch}  owner = system or VCR; ch = video-out channel
 	EV_TV_UNPLUG,        # {tv}
 	EV_PORT_PLUG,        # {sys, ctrl, port}
 	EV_PORT_UNPLUG,      # {sys, port}
@@ -600,7 +600,12 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 				a["vcr"].get_node("TapeSlot").drop_object()
 		EV_TV_PLUG:
 			if _valid(a, ["owner", "tv"]):
-				a["owner"].restore_cable_connection(a["tv"])
+				# Multi-output systems carry the cable channel; VCR/DVD keep
+				# the single-arg contract.
+				if a["owner"] is RetroSystem:
+					a["owner"].restore_cable_connection(a["tv"], int(a.get("ch", 0)))
+				else:
+					a["owner"].restore_cable_connection(a["tv"])
 		EV_TV_UNPLUG:
 			if _valid(a, ["tv"]):
 				a["tv"].get_node("CompositePort").drop_object()

@@ -59,6 +59,28 @@ func is_stereo_side_by_side() -> bool:
 	return false
 
 
+## Video-out channels this hardware exposes. Single-output hardware (default)
+## has one unlabelled channel showing the whole core frame, handled by the
+## classic path (the C++ VideoHandler renders straight onto the connected TV).
+## Multi-channel hardware (dual-screen handhelds) gets one cable PER channel;
+## each connected TV then shows that channel's UV window of the composite
+## framebuffer via the screen_window shader. Entry keys:
+##   label     String  cable/port tag ("TOP"/"BOTTOM"); "" on single-channel
+##   rect      Rect2   UV window into the composite framebuffer
+##   touch     bool    taps on a TV showing this channel feed the touch screen
+##   eye_shift float   right-eye UV-x shift for stereo SBS sources (0 = mono)
+func get_video_channels() -> Array:
+	return [{"label": "", "rect": Rect2(0, 0, 1, 1), "touch": false, "eye_shift": 0.0}]
+
+
+## Handhelds normally hide the cabinet START/STOP button (they carry their own
+## power switch). Dual-screen clamshells override this to keep the button —
+## their hinge swallows the tiny back-edge knob, so a proper labelled button
+## repositioned by configure_buttons() is the discoverable way to power them.
+func has_start_stop_button() -> bool:
+	return not is_handheld()
+
+
 ## Handhelds: create and wire the on-device controls (volume slider, power
 ## switch) against the owning RetroSystem. Called after the model loads.
 func configure_handheld_controls(host: Node3D) -> void:
@@ -116,6 +138,17 @@ func configure_controller_ports(port_zones: Array) -> void:
 ## Reposition the cable attach point to the model's physical video-out port.
 func configure_cable_attach(attach_point: Node3D) -> void:
 	pass
+
+
+## Reposition the attach point for video-out channel `channel` (multi-output
+## hardware). Channel 0 defaults to the classic single-port hook above; extra
+## channels get a small sideways offset unless the model places them itself.
+func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
+	if channel == 0:
+		configure_cable_attach(attach_point)
+	else:
+		configure_cable_attach(attach_point)
+		attach_point.position += Vector3(-0.04 * channel, 0, 0)
 
 
 ## Adjust the root collision shape to fit this model. Custom non-handheld models

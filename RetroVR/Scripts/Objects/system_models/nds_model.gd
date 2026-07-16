@@ -1,8 +1,21 @@
 ## RetroSystemModelNDS — Nintendo DS (clamshell, two 256×192 screens).
 ## melonDS/desmume default layout: top/bottom stacked in one 256×384
 ## framebuffer — top half = top screen, bottom half = touch screen.
+## Two video-out cables (TOP / BOTTOM, from the dual-screen base); tapping a
+## TV connected to the BOTTOM cable feeds the touch screen.
 class_name RetroSystemModelNDS
 extends RetroSystemModelDualScreen
+
+
+## The UV windows above assume the stacked composite, and taps (device pad or
+## the BOTTOM TV) arrive as RETRO_DEVICE_POINTER — melonDS only reads the
+## pointer in "Touch" mode (its default "Mouse" ignores it).
+func get_forced_core_options() -> Dictionary:
+	return {
+		"melonds_touch_mode": "Touch",
+		"melonds_screen_layout": "Top/Bottom",
+		"melonds_screen_gap": "0",
+	}
 
 
 func _init() -> void:
