@@ -18,19 +18,13 @@ uniform sampler2D source_tex : source_color, filter_linear, repeat_disable;
 uniform sampler2D osd_tex : source_color, filter_linear, repeat_disable;
 uniform bool osd_enabled = false;
 
-// Virtual Boy: the core outputs a side-by-side frame (left eye | right eye).
-// When set, each eye samples ITS half so a TV shows real per-eye stereo instead
-// of the squished side-by-side image (VIEW_INDEX is mono-left on desktop, so a
-// flat screen shows the left eye).
-uniform bool stereo_sbs = false;
+// NOTE: stereo side-by-side sources (Virtual Boy) are no longer split here —
+// RetroTV wraps them with screen_window.gdshader instead (which chains this
+// CRT stage inside it), so the per-eye split works with the CRT off too.
 
 void fragment() {
 	vec2 wuv = crt_warp(UV);
-	vec2 suv = wuv;
-	if (stereo_sbs) {
-		suv.x = wuv.x * 0.5 + (VIEW_INDEX == VIEW_RIGHT ? 0.5 : 0.0);
-	}
-	vec3 col = crt_smear_sample(source_tex, suv);
+	vec3 col = crt_smear_sample(source_tex, wuv);
 	if (osd_enabled) {
 		vec4 osd = texture(osd_tex, wuv);
 		col = mix(col, osd.rgb, osd.a);

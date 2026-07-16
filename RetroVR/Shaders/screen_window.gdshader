@@ -23,6 +23,9 @@ uniform sampler2D source_tex : source_color, filter_nearest, repeat_disable;
 uniform vec4 source_rect = vec4(0.0, 0.0, 1.0, 1.0);
 // Added to the sample x for the RIGHT eye (0 = mono source).
 uniform float eye_shift = 0.0;
+// Stereo presentation (set by the connected RetroTV's 3D button; no-op when
+// eye_shift is 0): 0 = per-eye stereo, 1 = left eye only, 2 = right eye only.
+uniform int stereo_mode = 0;
 
 // Chained CRT display stage (set by a connected RetroTV when its CRT is on).
 uniform bool crt_enabled = false;
@@ -34,7 +37,7 @@ uniform bool osd_enabled = false;
 void fragment() {
 	vec2 wuv = crt_enabled ? crt_warp(UV) : UV;
 	vec2 suv = source_rect.xy + wuv * source_rect.zw;
-	if (VIEW_INDEX == VIEW_RIGHT) {
+	if (stereo_mode == 2 || (stereo_mode == 0 && VIEW_INDEX == VIEW_RIGHT)) {
 		suv.x += eye_shift;
 	}
 	vec3 col = texture(source_tex, suv).rgb;

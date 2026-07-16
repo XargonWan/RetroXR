@@ -25,6 +25,8 @@ const MAX_SCALE := 5.0
 
 var _size_slider: HSlider = null
 var _size_val: Label = null
+var _options_scroll: ScrollContainer = null
+var _crt_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
 # CRT controls, keyed by shader uniform name → {slider, val_label, fmt}.
 var _crt_sliders: Dictionary = {}
@@ -77,16 +79,28 @@ func _build_ui() -> void:
 
 	root_vbox.add_child(HSeparator.new())
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root_vbox.add_child(scroll)
-	_active_scroll = scroll
+	# ── Tab container (mirrors VCROptions2D): Options | CRT ────────────────────
+	var tabs := TabContainer.new()
+	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tabs.add_theme_font_size_override("font_size", 18)
+	root_vbox.add_child(tabs)
+
+	var opts_outer := VBoxContainer.new()
+	opts_outer.name = "Options"
+	tabs.add_child(opts_outer)
+
+	_options_scroll = ScrollContainer.new()
+	_options_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_options_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_options_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_options_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	opts_outer.add_child(_options_scroll)
+	_active_scroll = _options_scroll
 
 	var rows := VBoxContainer.new()
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rows.add_theme_constant_override("separation", 4)
-	scroll.add_child(rows)
+	_options_scroll.add_child(rows)
 
 	# Size slider row: [label + value] then a full-width slider under it.
 	var size_header := HBoxContainer.new()
@@ -129,19 +143,31 @@ func _build_ui() -> void:
 			scale_committed.emit(_size_slider.value)
 	)
 
-	_build_crt_section(rows)
+	_build_crt_tab(tabs)
+
+	# Stick-scroll drives whichever tab is visible.
+	tabs.tab_changed.connect(func(idx: int) -> void:
+		_active_scroll = _options_scroll if idx == 0 else _crt_scroll)
 
 
-# ── CRT filter controls ──────────────────────────────────────────────────────
+# ── CRT filter controls (own tab, like the VCR panel's VHS tab) ───────────────
 
-func _build_crt_section(rows: VBoxContainer) -> void:
-	rows.add_child(HSeparator.new())
+func _build_crt_tab(tabs: TabContainer) -> void:
+	var outer := VBoxContainer.new()
+	outer.name = "CRT"
+	tabs.add_child(outer)
 
-	var header := Label.new()
-	header.text = "CRT Filter"
-	header.add_theme_font_size_override("font_size", 20)
-	header.add_theme_color_override("font_color", COLOR_TITLE)
-	rows.add_child(header)
+	_crt_scroll = ScrollContainer.new()
+	_crt_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_crt_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_crt_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_crt_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	outer.add_child(_crt_scroll)
+
+	var rows := VBoxContainer.new()
+	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rows.add_theme_constant_override("separation", 4)
+	_crt_scroll.add_child(rows)
 
 	# Mask mode dropdown (Off / Grid / Slot).
 	var mask_row := HBoxContainer.new()

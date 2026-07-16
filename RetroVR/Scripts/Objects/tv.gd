@@ -27,6 +27,7 @@ const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
 @onready var _crt_btn: VRButton = $CRTButton
+@onready var _stereo_btn: VRButton = $StereoButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
 @onready var _vol_osd_label: Label3D = $ScreenMesh/VolumeOSDLabel
@@ -39,6 +40,17 @@ const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 # the source material we replaced (restored when the filter turns off).
 var _crt_material: ShaderMaterial = null
 var _crt_wrapped: Material = null
+
+# Stereo wrapper for full-frame side-by-side sources (Virtual Boy): a
+# screen_window material (left-eye window + eye_shift, CRT chained inside) that
+# stays installed regardless of the CRT toggle, so the per-eye split never
+# depends on the tube filter.
+var _stereo_material: ShaderMaterial = null
+
+# Stereo presentation for stereo sources (the 3D bezel button, visible only
+# while one is connected): 0 = per-eye stereo, 1 = left eye, 2 = right eye.
+var stereo_mode: int = 0
+const STEREO_MODE_NAMES := ["3D: STEREO", "3D: LEFT EYE", "3D: RIGHT EYE"]
 
 # Tunable CRT display-stage uniforms (crt_filter.gdshaderinc). Adjustable from
 # the TV options panel; applied to whichever material carries the CRT stage (our
@@ -110,10 +122,18 @@ func _ready() -> void:
 	_vol_up_btn.button_pressed.connect(_on_volume_up)
 	_tv_toggle_btn.button_pressed.connect(_on_tv_toggle)
 	_crt_btn.button_pressed.connect(_on_crt_toggle)
+	_stereo_btn.button_pressed.connect(_on_stereo_toggle)
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
+	# Hidden until a stereo source is connected (see _update_stereo_button).
+	# VRButton._ready adds the pointable layer — strip it while hidden so the
+	# invisible button can't eat pokes or laser clicks (deferred: our _ready
+	# runs before the child button's).
+	_stereo_btn.set_process(false)
+	_stereo_btn.set_deferred("collision_layer", 0)
 	_update_crt_button_color()
+	_update_stereo_button_color()
 	_update_volume_label()
 
 	# Keep the chosen display size across pickups: xr-tools' grab driver is a
@@ -143,6 +163,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_screen_source()
 	_update_crt()
+	_update_stereo_button()
 	_route_osd()
 
 	# Grab-driver churn (second-hand grab, hand swap, desktop re-hold) recreates
@@ -161,7 +182,8 @@ func _process(_delta: float) -> void:
 	# readback that stalls the whole pipeline on Quest, and an idle TV (off /
 	# blue "no signal") has nothing new to sample anyway.
 	var override := _screen_mesh.get_surface_override_material(0)
-	var effective := _crt_wrapped if override == _crt_material else override
+	var effective := _crt_wrapped \
+		if (override == _crt_material or override == _stereo_material) else override
 	if not _tv_enabled or effective == _dark_material or effective == null:
 		_ambilight.light_energy = 0.0
 		return
@@ -200,7 +222,8 @@ func _process(_delta: float) -> void:
 ## take over again next frame.
 func _update_screen_source() -> void:
 	var override := _screen_mesh.get_surface_override_material(0)
-	var effective := _crt_wrapped if override == _crt_material else override
+	var effective := _crt_wrapped \
+		if (override == _crt_material or override == _stereo_material) else override
 
 	if _tv_enabled:
 		var has_picture := false
@@ -253,9 +276,11 @@ func _update_crt() -> void:
 		_crt_wrapped = null
 		return
 
-	# VHS / screen-window shader on the screen: chain the CRT stage inside it
-	# via its crt_enabled uniform rather than replacing the material.
-	if override is ShaderMaterial and override != _crt_material:
+	# VHS / a system's screen-window shader on the screen: chain the CRT stage
+	# inside it via its crt_enabled uniform rather than replacing the material.
+	# Window shaders additionally take this TV's stereo presentation mode.
+	if override is ShaderMaterial and override != _crt_material \
+			and override != _stereo_material:
 		var sm := override as ShaderMaterial
 		if sm.shader == VCR_SHADER or sm.shader == WINDOW_SHADER:
 			# Note: an unset uniform reads back as null, never bool — compare
@@ -265,10 +290,27 @@ func _update_crt() -> void:
 				sm.set_shader_parameter("crt_enabled", crt_enabled)
 				if crt_enabled:
 					_apply_crt_params(sm)   # sync tube tuning onto the source shader
+			if sm.shader == WINDOW_SHADER:
+				var cur_mode: Variant = sm.get_shader_parameter("stereo_mode")
+				if cur_mode != stereo_mode:
+					sm.set_shader_parameter("stereo_mode", stereo_mode)
 		_crt_wrapped = null
 		return
 
-	if not crt_enabled:
+	# Our stereo wrapper is installed (full-frame SBS source): it stays on
+	# regardless of the CRT toggle — only its uniforms follow the buttons.
+	if override == _stereo_material:
+		var cur_crt: Variant = _stereo_material.get_shader_parameter("crt_enabled")
+		if (cur_crt == true) != crt_enabled:
+			_stereo_material.set_shader_parameter("crt_enabled", crt_enabled)
+			if crt_enabled:
+				_apply_crt_params(_stereo_material)
+		var cur_mode: Variant = _stereo_material.get_shader_parameter("stereo_mode")
+		if cur_mode != stereo_mode:
+			_stereo_material.set_shader_parameter("stereo_mode", stereo_mode)
+		return
+
+	if not crt_enabled and not _source_is_sbs():
 		if override == _crt_material and _crt_wrapped != null:
 			_screen_mesh.set_surface_override_material(0, _crt_wrapped)
 		_crt_wrapped = null
@@ -281,14 +323,29 @@ func _update_crt() -> void:
 	var tex := _extract_texture(override)
 	if tex == null:
 		return
+	if _source_is_sbs():
+		# Full-frame side-by-side source (Virtual Boy): wrap with the windowing
+		# shader — left-eye window + eye_shift 0.5 gives the per-eye split (or
+		# LEFT/RIGHT via the 3D button) with the CRT stage chained inside, so
+		# stereo no longer depends on the CRT toggle.
+		if _stereo_material == null:
+			_stereo_material = ShaderMaterial.new()
+			_stereo_material.shader = WINDOW_SHADER
+			_stereo_material.set_shader_parameter("source_rect", Vector4(0.0, 0.0, 0.5, 1.0))
+			_stereo_material.set_shader_parameter("eye_shift", 0.5)
+		_stereo_material.set_shader_parameter("source_tex", tex)
+		_stereo_material.set_shader_parameter("stereo_mode", stereo_mode)
+		_stereo_material.set_shader_parameter("crt_enabled", crt_enabled)
+		if crt_enabled:
+			_apply_crt_params(_stereo_material)
+		_crt_wrapped = override
+		_screen_mesh.set_surface_override_material(0, _stereo_material)
+		return
 	if _crt_material == null:
 		_crt_material = ShaderMaterial.new()
 		_crt_material.shader = CRT_SHADER
 		_apply_crt_params(_crt_material)
 	_crt_material.set_shader_parameter("source_tex", tex)
-	# Virtual Boy source: split the side-by-side frame per-eye (left half → left
-	# eye, right half → right eye), like the console's own eyepiece.
-	_crt_material.set_shader_parameter("stereo_sbs", _source_is_sbs())
 	_crt_wrapped = override
 	_screen_mesh.set_surface_override_material(0, _crt_material)
 
@@ -298,6 +355,32 @@ func _source_is_sbs() -> bool:
 	return _connected_system != null \
 		and _connected_system.has_method("is_stereo_output") \
 		and _connected_system.is_stereo_output()
+
+
+## True while what's showing is a stereo source: a full-frame SBS system (VB)
+## or a dual-screen system's window channel with a per-eye shift (3DS top).
+func _stereo_source_active() -> bool:
+	if _source_is_sbs():
+		return true
+	var override := _screen_mesh.get_surface_override_material(0)
+	if override is ShaderMaterial and override != _stereo_material \
+			and (override as ShaderMaterial).shader == WINDOW_SHADER:
+		var es: Variant = (override as ShaderMaterial).get_shader_parameter("eye_shift")
+		return es != null and float(es) != 0.0
+	return false
+
+
+## Show the 3D button only while a stereo source is connected. Hidden buttons
+## also stop processing and drop off the pointable layer so an invisible
+## button can't eat pokes or laser clicks.
+func _update_stereo_button() -> void:
+	if _stereo_btn == null:
+		return
+	var active := _stereo_source_active()
+	if _stereo_btn.visible != active:
+		_stereo_btn.visible = active
+		_stereo_btn.set_process(active)
+		_stereo_btn.collision_layer = VRButton.POINTABLE_LAYER if active else 0
 
 
 ## Push every tunable CRT uniform onto a material carrying the CRT display stage
@@ -357,7 +440,8 @@ func _current_source_texture() -> Texture2D:
 ## screen so the C++ video handler captures/restores a clean original instead
 ## of our wrapper.
 func _unwrap_crt() -> void:
-	if _crt_wrapped != null and _screen_mesh.get_surface_override_material(0) == _crt_material:
+	var override := _screen_mesh.get_surface_override_material(0)
+	if _crt_wrapped != null and (override == _crt_material or override == _stereo_material):
 		_screen_mesh.set_surface_override_material(0, _crt_wrapped)
 	_crt_wrapped = null
 
@@ -375,6 +459,29 @@ func _on_crt_toggle() -> void:
 func _update_crt_button_color() -> void:
 	if _crt_btn:
 		_crt_btn.set_color(Color(1.0, 0.6, 0.1) if crt_enabled else Color(0.35, 0.35, 0.35))
+
+
+## Cycle the stereo presentation: STEREO → LEFT → RIGHT → … (3D bezel button).
+## _update_crt pushes the mode onto whichever shader is showing the source.
+func set_stereo_mode(mode: int) -> void:
+	stereo_mode = clampi(mode, 0, 2)
+	_update_stereo_button_color()
+	show_osd_timed(STEREO_MODE_NAMES[stereo_mode], 2.0)
+	NetworkManager.report_event(NetObjectSync.EV_TV_STEREO,
+		{"tv": self, "mode": stereo_mode})
+
+
+func _on_stereo_toggle() -> void:
+	set_stereo_mode((stereo_mode + 1) % 3)
+
+
+func _update_stereo_button_color() -> void:
+	if _stereo_btn:
+		# Magenta = per-eye stereo; dimmer purple flavors for single-eye modes.
+		match stereo_mode:
+			0: _stereo_btn.set_color(Color(1.0, 0.2, 1.0))
+			1: _stereo_btn.set_color(Color(0.55, 0.35, 0.75))
+			2: _stereo_btn.set_color(Color(0.35, 0.35, 0.75))
 
 
 ## Returns the screen MeshInstance3D so Libretro can render onto it

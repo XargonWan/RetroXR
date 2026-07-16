@@ -182,6 +182,44 @@ func _build_shell() -> void:
 	_add_cosmetics(half_y)
 
 
+## Clamshell cosmetics: the base handheld's d-pad / A-B placement assumes a
+## Game Boy face and lands on the bottom screen. Flank the screen instead —
+## d-pad in the left bezel strip, A/B in the right, centred on the screen,
+## like the real DS/3DS base.
+func _add_cosmetics(half_y: float) -> void:
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.15, 0.15, 0.17)
+	var accent := StandardMaterial3D.new()
+	accent.albedo_color = accent_color
+
+	var bezel_x := bottom_screen_size.x / 2.0 + 0.006
+	# Centre of the free strip between the screen bezel and the body edge.
+	var side := (body_size.x / 2.0 + bezel_x) / 2.0
+	var z0 := bottom_screen_offset.y
+
+	var dpad_pos := Vector3(-side, half_y + 0.002, z0)
+	for horizontal in [true, false]:
+		var bar := MeshInstance3D.new()
+		var bar_mesh := BoxMesh.new()
+		bar_mesh.size = Vector3(0.02, 0.004, 0.007) if horizontal else Vector3(0.007, 0.004, 0.02)
+		bar.mesh = bar_mesh
+		bar.set_surface_override_material(0, dark)
+		bar.position = dpad_pos
+		add_child(bar)
+
+	for i in range(2):
+		var btn := MeshInstance3D.new()
+		var btn_mesh := CylinderMesh.new()
+		btn_mesh.top_radius = 0.005
+		btn_mesh.bottom_radius = 0.005
+		btn_mesh.height = 0.004
+		btn.mesh = btn_mesh
+		btn.set_surface_override_material(0, accent)
+		btn.position = Vector3(side + (0.006 if i == 0 else -0.006), half_y + 0.002,
+			z0 + (-0.006 if i == 0 else 0.006))
+		add_child(btn)
+
+
 ## Push the UV windows onto the window materials (rects are set by subclass
 ## _init, so once at build time is enough).
 func _apply_window_params() -> void:
