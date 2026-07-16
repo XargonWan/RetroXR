@@ -17,6 +17,7 @@ const CART_SIZES: Dictionary = {
 	"mega_drive":       Vector3(0.110, 0.070, 0.017),
 	"atari_2600":       Vector3(0.079, 0.104, 0.021),
 	"nds":              Vector3(0.033, 0.035, 0.004),
+	"3ds":              Vector3(0.033, 0.035, 0.004),   # 3DS Game Card = DS footprint
 }
 
 ## Generic cartridge size (the original cartridge.tscn values) for systems

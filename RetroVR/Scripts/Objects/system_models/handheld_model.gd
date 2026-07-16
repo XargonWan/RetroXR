@@ -184,6 +184,16 @@ func configure_handheld_body(host: Node3D) -> void:
 	var body := host.get_node_or_null("SystemBody") as MeshInstance3D
 	if body:
 		body.visible = false
+	# The selection PointerArea keeps its console-sized box otherwise — a huge
+	# invisible pointable slab that the desktop reticle / VR laser hits FIRST,
+	# shadowing every on-device control (power switch, volume slider, START
+	# button, touch screen). Shrink it to the body so controls, which all poke
+	# out of the shell, win the raycast.
+	var pcol := host.get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if pcol and pcol.shape is BoxShape3D:
+		pcol.shape = pcol.shape.duplicate()
+		(pcol.shape as BoxShape3D).size = body_size
+		pcol.position = Vector3.ZERO
 
 
 ## On-device controls: volume slider (right edge) + power switch (top edge).
