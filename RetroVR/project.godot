@@ -17,7 +17,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 config/name="RetroVR"
 run/main_scene="uid://bh8x3sbal8nds"
 config/features=PackedStringArray("4.7", "Forward Plus")
-config/icon="res://Textures/icon.svg"
+config/icon="res://Textures/app_icon.png"
 
 [audio]
 
