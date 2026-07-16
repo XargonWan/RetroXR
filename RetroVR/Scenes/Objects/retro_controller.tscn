@@ -1,7 +1,9 @@
-[gd_scene load_steps=8 format=3 uid="uid://retro_controller_001"]
+[gd_scene load_steps=10 format=3 uid="uid://retro_controller_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/retro_controller.gd" id="1_ctrlscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.12, 0.06, 0.04)
@@ -19,7 +21,7 @@ albedo_color = Color(0.15, 0.15, 0.15, 1.0)
 bounce = 0.0
 friction = 0.8
 
-[node name="RetroController" type="RigidBody3D"]
+[node name="RetroController" type="RigidBody3D" groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 physics_material_override = SubResource("PhysMat_ctrl")
@@ -48,3 +50,14 @@ collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
 shape = SubResource("BoxShape3D_pointer")
+
+; Held-hand indicators: reposition/rotate these in the 3D editor to sit
+; naturally on the gamepad. Shown at runtime by controller_model.gd when this
+; device is grabbed (HandRight for a right-hand grab, HandLeft for a left).
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06, 0, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.06, 0, 0)
+visible = false

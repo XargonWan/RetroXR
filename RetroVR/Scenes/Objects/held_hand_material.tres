@@ -1,0 +1,13 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+; Light-blue, very transparent "held" hand indicator (see controller_model.gd).
+; Applied as XRToolsHand.hand_material_override on the rig's hand instances.
+
+[resource]
+resource_name = "HeldHandMaterial"
+transparency = 1
+cull_mode = 2
+albedo_color = Color(0.55, 0.78, 1, 0.28)
+emission_enabled = true
+emission = Color(0.4, 0.62, 0.85, 1)
+emission_energy_multiplier = 0.35

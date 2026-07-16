@@ -1,7 +1,9 @@
-[gd_scene load_steps=6 format=3 uid="uid://retrokeyboard_01"]
+[gd_scene load_steps=8 format=3 uid="uid://retrokeyboard_01"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/retro_keyboard.gd" id="1_kbscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_kb"]
 size = Vector3(0.44, 0.02, 0.16)
@@ -17,7 +19,7 @@ roughness = 0.6
 bounce = 0.0
 friction = 0.8
 
-[node name="RetroKeyboard" type="RigidBody3D"]
+[node name="RetroKeyboard" type="RigidBody3D" groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 physics_material_override = SubResource("PhysMat_kb")
@@ -42,3 +44,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, -0.075)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
+
+; Held-hand indicators (Grip pose). Reposition/rotate in the 3D editor to sit on
+; the keyboard edge. Shown at runtime by controller_model.gd when it is grabbed.
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, 0.02, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0.02, 0)
+visible = false

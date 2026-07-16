@@ -1,8 +1,10 @@
-[gd_scene load_steps=13 format=3 uid="uid://tv_remote_001"]
+[gd_scene load_steps=15 format=3 uid="uid://tv_remote_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/tv_remote.gd" id="1_remotescript"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="4_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="5_lhand"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_remote"]
 size = Vector3(0.05, 0.025, 0.15)
@@ -41,7 +43,7 @@ emission_energy_multiplier = 0.6
 bounce = 0.0
 friction = 0.8
 
-[node name="TVRemote" type="RigidBody3D"]
+[node name="TVRemote" type="RigidBody3D" groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 physics_material_override = SubResource("PhysMat_remote")
@@ -89,3 +91,13 @@ collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
 shape = SubResource("BoxShape3D_pointer")
+
+; Held-hand indicators (Grip pose). Reposition/rotate in the 3D editor to sit on
+; the remote. Shown at runtime by controller_model.gd when the remote is grabbed.
+[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.01, 0.03)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.01, 0.03)
+visible = false

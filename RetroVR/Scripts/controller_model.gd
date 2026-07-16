@@ -51,6 +51,25 @@ var _rest_pos := {}
 # Rest rotations for bones animated by rotation
 var _rest_rot := {}
 
+# --- Wrap-around hand indicator on held peripherals ---
+## A pickable must be in this group to get a wrap-around hand while held. Each
+## such device carries its own "HandLeft"/"HandRight" child (an XRToolsHand,
+## positioned + posed by hand in the editor); this controller simply shows the
+## one matching its tracker while the device is held.
+const HAND_HELD_GROUP := "hand_held_device"
+
+# This controller's godot-xr-tools pickup function (source of grab/drop events).
+var _pickup: XRToolsFunctionPickup
+# The device-mounted hand this controller is currently showing (null if none).
+var _shown_hand: Node3D
+
+func _ready():
+	# React to this controller's grabs/drops to show/hide the held device's hand.
+	_pickup = get_node_or_null("FunctionPickup") as XRToolsFunctionPickup
+	if _pickup:
+		_pickup.has_picked_up.connect(_on_held_grabbed)
+		_pickup.has_dropped.connect(_on_held_dropped)
+
 func _process(_delta):
 	if _model_loaded:
 		return
@@ -193,3 +212,25 @@ func _apply_material_recursive(node: Node, mat: Material, exclude: Node = null):
 func set_model_visible(v: bool) -> void:
 	if _model_root:
 		_model_root.visible = v
+
+
+## This controller grabbed a device peripheral — hide the controller art and
+## show the device's own hand for this tracker (authored in the device scene).
+func _on_held_grabbed(what: Node) -> void:
+	if what == null or not what.is_in_group(HAND_HELD_GROUP):
+		return
+	var hand_name := "HandLeft" if tracker == "left_hand" else "HandRight"
+	var hand := what.get_node_or_null(NodePath(hand_name)) as Node3D
+	if hand == null:
+		return
+	set_model_visible(false)
+	hand.visible = true
+	_shown_hand = hand
+
+
+## This controller released whatever it held — hide the hand, restore the art.
+func _on_held_dropped() -> void:
+	if is_instance_valid(_shown_hand):
+		_shown_hand.visible = false
+	_shown_hand = null
+	set_model_visible(true)

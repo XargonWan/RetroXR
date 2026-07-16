@@ -1,8 +1,10 @@
-[gd_scene load_steps=12 format=3 uid="uid://ray_gun_001"]
+[gd_scene load_steps=14 format=3 uid="uid://ray_gun_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/ray_gun.gd" id="1_gunscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_pistol_right.tscn" id="4_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_pistol_left.tscn" id="5_lhand"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.04, 0.12, 0.18)
@@ -34,7 +36,7 @@ emission_energy_multiplier = 2.0
 bounce = 0.0
 friction = 0.8
 
-[node name="RayGun" type="RigidBody3D"]
+[node name="RayGun" type="RigidBody3D" groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 physics_material_override = SubResource("PhysMat_gun")
@@ -87,3 +89,13 @@ collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
 shape = SubResource("BoxShape3D_pointer")
+
+; Held-hand indicators (Pistol pose). Reposition/rotate in the 3D editor to sit
+; on the grip. Shown at runtime by controller_model.gd when the gun is grabbed.
+[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, 0.04)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, 0.04)
+visible = false
