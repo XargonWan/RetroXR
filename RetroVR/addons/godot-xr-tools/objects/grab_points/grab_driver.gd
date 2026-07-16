@@ -38,6 +38,17 @@ var lerp_time : float = 0.0
 const PREVIEW_BLEND_SPEED := 8.0    # blend/sec (~0.12 s each way)
 var _preview_zone : XRToolsSnapZone = null
 var _preview_blend : float = 0.0
+# Cached bounding radius of the target so the preview engages at the same range
+# the socket's ghost used to (object surface reaching the grab sphere).
+var _preview_radius : float = -1.0
+# While previewing, the object is driven onto a socket that overlaps its owner
+# body (e.g. a cartridge into the console the socket is a child of). Their
+# collision shapes fight and the console — a dynamic RigidBody — is shoved, and
+# because the socket rides that same body the result is a feedback jitter. We
+# suppress collisions between the two while previewing, mirroring grab.gd.
+var _preview_collisions_on : bool = false
+var _preview_exc_target : Array[RID] = []
+var _preview_exc_owner : Array[RID] = []
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta : float) -> void:
@@ -108,16 +119,20 @@ func _physics_process(delta : float) -> void:
 	# the zone, so testing its own position could never disengage.
 	if state == GrabState.SNAP and is_instance_valid(target) \
 			and not (primary.by is XRToolsSnapZone):
-		var zone := XRToolsSnapZone.find_preview_zone(target, destination.origin)
+		var r := _get_preview_radius()
+		var zone := XRToolsSnapZone.find_preview_zone(target, destination.origin, r)
 		if zone == null and is_instance_valid(_preview_zone) \
 				and _preview_zone.can_preview(target) \
 				and _preview_zone.global_position.distance_to(destination.origin) \
-					< _preview_zone.grab_distance * 1.25:
+					< (_preview_zone.grab_distance + r) * 1.25:
 			zone = _preview_zone   # hysteresis: hold the zone a bit past range
 		if zone:
 			_preview_zone = zone
 		_preview_blend = move_toward(
 			_preview_blend, 1.0 if zone else 0.0, delta * PREVIEW_BLEND_SPEED)
+		# Suppress object<->socket-owner collisions while engaged so the console
+		# isn't shoved by the previewed object (which would jitter the socket).
+		_set_preview_collisions(zone != null)
 		if _preview_blend > 0.001 and is_instance_valid(_preview_zone):
 			var zt := _preview_zone.global_transform
 			var w := smoothstep(0.0, 1.0, _preview_blend)
@@ -128,6 +143,7 @@ func _physics_process(delta : float) -> void:
 				Basis(q).scaled(scale),
 				destination.origin.lerp(zt.origin, w))
 		elif _preview_blend <= 0.001:
+			_set_preview_collisions(false)
 			_preview_zone = null
 
 	if global_transform.is_equal_approx(destination):
@@ -186,8 +202,99 @@ func remove_grab(p_grab : Grab) -> void:
 
 # Discard the driver
 func discard():
+	# LOCAL PATCH (RetroVR): drop any preview collision exceptions we added.
+	# When a socket captures the previewed object this hand-driver is discarded
+	# and a new socket-driver takes over, so releasing here returns the object
+	# to its normal (pre-preview) collision behaviour.
+	_set_preview_collisions(false)
 	remote_path = NodePath()
 	queue_free()
+
+
+# LOCAL PATCH (RetroVR): bounding radius of the target, cached. Used so the snap
+# preview engages when the object's surface — not just its centre — reaches a
+# socket's grab sphere, matching where the old ghost appeared.
+func _get_preview_radius() -> float:
+	if _preview_radius >= 0.0:
+		return _preview_radius
+	_preview_radius = 0.0
+	# Use only the target body's OWN shapes (via the shape-owner API) — not any
+	# separate child CollisionObject3D such as a wider pointer/ray proxy.
+	var body := target as CollisionObject3D
+	if body:
+		for owner_id in body.get_shape_owners():
+			var off: float = body.shape_owner_get_transform(owner_id).origin.length()
+			for i in body.shape_owner_get_shape_count(owner_id):
+				var shape: Shape3D = body.shape_owner_get_shape(owner_id, i)
+				if shape:
+					_preview_radius = maxf(_preview_radius, off + _shape_extent(shape))
+	if _preview_radius <= 0.0:
+		_preview_radius = 0.03
+	return _preview_radius
+
+
+static func _shape_extent(shape: Shape3D) -> float:
+	if shape is SphereShape3D:
+		return shape.radius
+	if shape is BoxShape3D:
+		return shape.size.length() * 0.5
+	if shape is CapsuleShape3D:
+		return shape.radius + shape.height * 0.5
+	if shape is CylinderShape3D:
+		return maxf(shape.radius, shape.height * 0.5)
+	return 0.03
+
+
+# LOCAL PATCH (RetroVR): add/remove mutual collision exceptions between the
+# previewed object and the socket's owner body. Idempotent — only acts on a
+# change of state, and removes exactly the RIDs it added.
+func _set_preview_collisions(on: bool) -> void:
+	if on == _preview_collisions_on:
+		return
+	if on:
+		if not is_instance_valid(_preview_zone) or not is_instance_valid(target):
+			return
+		var owner_body := _owner_body(_preview_zone)
+		if owner_body == null:
+			return
+		_preview_exc_target = _body_rids(target)
+		_preview_exc_owner = _body_rids(owner_body)
+		for a in _preview_exc_target:
+			for b in _preview_exc_owner:
+				PhysicsServer3D.body_add_collision_exception(a, b)
+				PhysicsServer3D.body_add_collision_exception(b, a)
+		_preview_collisions_on = true
+	else:
+		for a in _preview_exc_target:
+			for b in _preview_exc_owner:
+				PhysicsServer3D.body_remove_collision_exception(a, b)
+				PhysicsServer3D.body_remove_collision_exception(b, a)
+		_preview_exc_target.clear()
+		_preview_exc_owner.clear()
+		_preview_collisions_on = false
+
+
+# First PhysicsBody3D ancestor of the socket (the body its Area3D rides on).
+static func _owner_body(zone: Node) -> PhysicsBody3D:
+	var n := zone.get_parent()
+	while n:
+		if n is PhysicsBody3D:
+			return n
+		n = n.get_parent()
+	return null
+
+
+# Collect the RIDs of `root` and its descendant physics bodies (skipping Area3D
+# subtrees so we don't grab neighbouring snapped objects).
+static func _body_rids(root: Node) -> Array[RID]:
+	var out: Array[RID] = []
+	if root is PhysicsBody3D:
+		out.push_back(root.get_rid())
+	for c in root.get_children():
+		if c is Area3D:
+			continue
+		out.append_array(_body_rids(c))
+	return out
 
 
 # Create the driver to lerp the target from its current location to the

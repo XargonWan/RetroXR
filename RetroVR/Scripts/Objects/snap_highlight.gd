@@ -1,28 +1,16 @@
 ## SnapHighlight — attach as a child of an XRToolsSnapZone node alongside a
-## HighlightMesh (MeshInstance3D) child. Shows the ghost mesh when a compatible
-## object enters the snap zone's grab radius; hides it once something snaps in.
+## HighlightMesh (MeshInstance3D) child.
+##
+## LOCAL PATCH (RetroVR): the old blue "ghost" preview is now superseded by the
+## held-object snap PREVIEW (grab_driver.gd blends the real cartridge/disc/plug
+## onto the socket while the hand hovers it in range). Showing the ghost on top
+## of that just double-draws the same hint, so this node keeps the ghost mesh
+## permanently hidden. The node is left in place (rather than deleted from every
+## scene) so existing scene references stay valid.
 extends Node3D
 
 
 func _ready() -> void:
+	# Hide the whole ghost subtree and leave it hidden — the snap preview draws
+	# the real object in its place.
 	visible = false
-	var zone := get_parent() as XRToolsSnapZone
-	if not zone:
-		push_warning("SnapHighlight: parent is not an XRToolsSnapZone")
-		return
-	zone.close_highlight_updated.connect(_on_close_highlight)
-	zone.has_picked_up.connect(_on_snapped)
-	zone.has_dropped.connect(_on_dropped)
-
-
-func _on_close_highlight(_zone: Node, show: bool) -> void:
-	visible = show
-
-
-func _on_snapped(_what: Node) -> void:
-	visible = false
-
-
-func _on_dropped() -> void:
-	# Zone is empty again — highlight is ready to show on next approach
-	pass

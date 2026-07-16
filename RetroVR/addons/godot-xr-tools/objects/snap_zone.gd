@@ -95,15 +95,18 @@ func can_preview(obj: Node3D) -> bool:
 
 ## LOCAL PATCH (RetroVR): nearest zone that could capture `obj` if released at
 ## `at` (the HAND's desired object position — not the object's actual one,
-## which sits at the zone while previewing). Null when none in range.
-static func find_preview_zone(obj: Node3D, at: Vector3) -> XRToolsSnapZone:
+## which sits at the zone while previewing). `radius` is the object's bounding
+## radius so the preview engages when the object's SURFACE reaches the grab
+## sphere — i.e. at the same range the old blue ghost lit (which triggered on
+## the Area3D body overlap, not the object centre). Null when none in range.
+static func find_preview_zone(obj: Node3D, at: Vector3, radius: float = 0.0) -> XRToolsSnapZone:
 	var best: XRToolsSnapZone = null
 	var best_d := INF
 	for z: XRToolsSnapZone in _live_zones:
 		if not is_instance_valid(z) or not z.can_preview(obj):
 			continue
 		var d := z.global_position.distance_to(at)
-		if d < z.grab_distance and d < best_d:
+		if d < z.grab_distance + radius and d < best_d:
 			best_d = d
 			best = z
 	return best
