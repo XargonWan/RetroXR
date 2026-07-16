@@ -61,9 +61,52 @@ var picked_up_ranged : bool = true
 var _object_in_grab_area = Array()
 
 
+# LOCAL PATCH (RetroVR): registry of live snap zones so held objects can find
+# a nearby compatible socket for the snap PREVIEW (see grab_driver.gd).
+static var _live_zones: Array[XRToolsSnapZone] = []
+
+
 # Add support for is_xr_class on XRTools classes
 func is_xr_class(xr_name:  String) -> bool:
 	return xr_name == "XRToolsSnapZone"
+
+
+func _enter_tree() -> void:
+	if not Engine.is_editor_hint():
+		_live_zones.append(self)
+
+
+func _exit_tree() -> void:
+	_live_zones.erase(self)
+
+
+## LOCAL PATCH (RetroVR): whether this zone would accept `obj` if dropped here
+## right now (used by the held-object snap preview). Only zones with an explicit
+## snap_require participate — generic catch-all zones don't preview.
+func can_preview(obj: Node3D) -> bool:
+	if not enabled or is_instance_valid(picked_up_object):
+		return false
+	if snap_require.is_empty() or not obj.is_in_group(snap_require):
+		return false
+	if not snap_exclude.is_empty() and obj.is_in_group(snap_exclude):
+		return false
+	return true
+
+
+## LOCAL PATCH (RetroVR): nearest zone that could capture `obj` if released at
+## `at` (the HAND's desired object position — not the object's actual one,
+## which sits at the zone while previewing). Null when none in range.
+static func find_preview_zone(obj: Node3D, at: Vector3) -> XRToolsSnapZone:
+	var best: XRToolsSnapZone = null
+	var best_d := INF
+	for z: XRToolsSnapZone in _live_zones:
+		if not is_instance_valid(z) or not z.can_preview(obj):
+			continue
+		var d := z.global_position.distance_to(at)
+		if d < z.grab_distance and d < best_d:
+			best_d = d
+			best = z
+	return best
 
 
 func _ready():

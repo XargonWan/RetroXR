@@ -104,12 +104,13 @@ There is no formal test suite. The project is validated by running the Godot edi
 **headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
 tests. This works without a VR headset (desktop fallback) and without a display.
 
-**For anything visual, a photo (or a video/GIF if it's animated) is the preferred proof
-of validation, delivered inline in the chat.** Headless runs catch parse/scene/shader
-errors but cannot confirm how something *looks* (glyphs, layout, colors, animation).
-When a change is visual, capture a screenshot or short recording (on-device screenshot,
-desktop render, or `gif_creator`) and surface it inline — don't just report that the
-headless import passed.
+**For anything visual, a photo (or a VIDEO if it's animated — mp4 preferred over
+animated GIF) is the preferred proof of validation, delivered inline in the chat.**
+Headless runs catch parse/scene/shader errors but cannot confirm how something *looks*
+(glyphs, layout, colors, animation). When a change is visual, capture a screenshot or
+short recording and surface it inline — don't just report that the headless import
+passed. To encode mp4 from probe PNG frames: `imageio` + `imageio-ffmpeg` are pip-installed
+(`imageio.get_writer("out.mp4", fps=15, codec="libx264", pixelformat="yuv420p")`).
 
 Godot binary (Windows) — use **Godot 4.7** (the project targets 4.7):
 ```

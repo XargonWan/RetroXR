@@ -30,6 +30,15 @@ var lerp_duration : float = 1.0
 ## Lerp time
 var lerp_time : float = 0.0
 
+# LOCAL PATCH (RetroVR): snap-zone preview state. While the hand holds a
+# compatible object within a socket's grab range, the object blends onto the
+# socket pose so the user sees exactly where it will seat. Releasing there
+# lets the zone capture it (standard DROPPED snap); pulling the hand away
+# blends the object back to the hand.
+const PREVIEW_BLEND_SPEED := 8.0    # blend/sec (~0.12 s each way)
+var _preview_zone : XRToolsSnapZone = null
+var _preview_blend : float = 0.0
+
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta : float) -> void:
 	# Skip if no primary node or its grabber has been freed
@@ -91,6 +100,35 @@ func _physics_process(delta : float) -> void:
 				_update_weight()
 				if primary: primary.set_arrived()
 				if secondary: secondary.set_arrived()
+
+	# LOCAL PATCH (RetroVR): snap-zone preview — blend the held object onto a
+	# compatible socket while the HAND's desired pose is within its grab range.
+	# The engage test must use `destination` (where the hand wants the object),
+	# not the object's actual position: while previewing, the object sits AT
+	# the zone, so testing its own position could never disengage.
+	if state == GrabState.SNAP and is_instance_valid(target) \
+			and not (primary.by is XRToolsSnapZone):
+		var zone := XRToolsSnapZone.find_preview_zone(target, destination.origin)
+		if zone == null and is_instance_valid(_preview_zone) \
+				and _preview_zone.can_preview(target) \
+				and _preview_zone.global_position.distance_to(destination.origin) \
+					< _preview_zone.grab_distance * 1.25:
+			zone = _preview_zone   # hysteresis: hold the zone a bit past range
+		if zone:
+			_preview_zone = zone
+		_preview_blend = move_toward(
+			_preview_blend, 1.0 if zone else 0.0, delta * PREVIEW_BLEND_SPEED)
+		if _preview_blend > 0.001 and is_instance_valid(_preview_zone):
+			var zt := _preview_zone.global_transform
+			var w := smoothstep(0.0, 1.0, _preview_blend)
+			var scale := destination.basis.get_scale()
+			var q := destination.basis.get_rotation_quaternion().slerp(
+				zt.basis.get_rotation_quaternion(), w)
+			destination = Transform3D(
+				Basis(q).scaled(scale),
+				destination.origin.lerp(zt.origin, w))
+		elif _preview_blend <= 0.001:
+			_preview_zone = null
 
 	if global_transform.is_equal_approx(destination):
 		return
