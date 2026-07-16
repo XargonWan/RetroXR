@@ -194,6 +194,11 @@ func get_cartridge_insert_direction() -> Vector3:
 ## side of the centred cartridge slot so the two plugs don't overlap.
 func configure_cable_attach(attach_point: Node3D) -> void:
 	attach_point.position = Vector3(body_size.x * 0.30, 0, -body_size.z / 2.0 - 0.002)
+	# The scene's console-scale grey port barrel dwarfs a handheld shell —
+	# hide it (the cable itself marks the port).
+	var vis := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
+	if vis:
+		vis.visible = false
 
 
 ## Shrink the root collision box to the device and hide the console body.
