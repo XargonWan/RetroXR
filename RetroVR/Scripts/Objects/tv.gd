@@ -92,6 +92,11 @@ var scale_factor: float = 1.0
 
 # Frame counter for ambilight sampling
 var _ambilight_frame: int = 0
+# The light's authored energy, so we can restore it after blanking (TV off).
+var _ambilight_energy: float = 0.6
+
+# The "no signal" blue — shared by the screen texture and the ambilight tint.
+const BLUE_SCREEN_COLOR := Color(0.0, 0.05, 0.65)
 
 
 func _ready() -> void:
@@ -115,12 +120,18 @@ func _ready() -> void:
 	dropped.connect(_on_tv_dropped)
 	_apply_scale()
 
+	if _ambilight:
+		_ambilight_energy = _ambilight.light_energy
+		# Random phase so multiple TVs don't all sample (GPU readback) on the
+		# same frame.
+		_ambilight_frame = randi() % 16
+
 	# The tscn's dark bezel material is the OFF look; blue is the ON-with-no-
 	# signal look. Blue carries a tiny texture so the CRT watcher can wrap it
 	# (curvature/scanlines apply to the blue screen too) and ambilight samples it.
 	_dark_material = _screen_mesh.get_surface_override_material(0)
 	var blue_img := Image.create(2, 2, false, Image.FORMAT_RGB8)
-	blue_img.fill(Color(0.0, 0.05, 0.65))
+	blue_img.fill(BLUE_SCREEN_COLOR)
 	_blue_material = StandardMaterial3D.new()
 	_blue_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_blue_material.albedo_texture = ImageTexture.create_from_image(blue_img)
@@ -143,14 +154,28 @@ func _process(_delta: float) -> void:
 	if not _ambilight or not _ambilight.visible:
 		return
 
+	# Static screen states never touch the texture: get_image() is a GPU→CPU
+	# readback that stalls the whole pipeline on Quest, and an idle TV (off /
+	# blue "no signal") has nothing new to sample anyway.
+	var override := _screen_mesh.get_surface_override_material(0)
+	var effective := _crt_wrapped if override == _crt_material else override
+	if not _tv_enabled or effective == _dark_material or effective == null:
+		_ambilight.light_energy = 0.0
+		return
+	_ambilight.light_energy = _ambilight_energy
+	if effective == _blue_material:
+		_ambilight.light_color = BLUE_SCREEN_COLOR
+		return
+
 	_ambilight_frame += 1
 	var interval: int = QualityManager.ambilight_interval if QualityManager else 10
 	if _ambilight_frame < interval:
 		return
 	_ambilight_frame = 0
 
-	# Sample average screen color from the current source texture (works for
-	# system emission materials, VCR materials and the CRT wrapper alike).
+	# Live source (emulator / tape / disc): sample the average screen color from
+	# the current texture (works for system emission materials, VCR materials
+	# and the CRT wrapper alike).
 	var tex := _current_source_texture()
 	if not tex:
 		return

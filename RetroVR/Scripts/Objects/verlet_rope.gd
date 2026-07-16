@@ -122,6 +122,23 @@ var _index_array: PackedInt32Array
 # Raycast throttle counter
 var _raycast_frame: int = 0
 
+# Sleep state — an idle cable was one of the biggest CPU items on Quest (the
+# solver, raycasts, rest-info queries and tube re-mesh all run per tick even
+# when nothing moves). Once every particle has been near-still for
+# SLEEP_FRAMES ticks the rope sleeps: the whole sim and the re-mesh are
+# skipped until an anchor moves. Caveat: geometry sliding out from UNDER a
+# sleeping rope won't wake it (anchors drive every real interaction here).
+const SLEEP_FRAMES := 30
+const SLEEP_POINT_EPS_SQ := 0.0015 * 0.0015   # per-tick particle movement²
+const WAKE_ANCHOR_EPS_SQ := 0.0005 * 0.0005   # anchor movement² that wakes
+var _asleep: bool = false
+var _still_frames: int = 0
+var _sleep_anchor_start: Vector3 = Vector3.ZERO
+var _sleep_anchor_end: Vector3 = Vector3.ZERO
+# Set by every simulated tick; cleared by _process after re-meshing, so a
+# sleeping rope stops uploading vertices too.
+var _mesh_dirty: bool = true
+
 # Reusable collision queries (avoids per-point allocation)
 var _ray_query: PhysicsRayQueryParameters3D
 var _shape_query: PhysicsShapeQueryParameters3D
@@ -235,6 +252,9 @@ func _init_points() -> void:
 	if end_node:
 		_inv_mass[count - 1] = 0.0
 
+	wake()
+	_sleep_anchor_start = _anchor_pos(start_node, start_pos)
+	_sleep_anchor_end = _anchor_pos(end_node, end_pos)
 	_refresh_exclusions()
 
 
@@ -273,6 +293,26 @@ func rest_length() -> float:
 ## particle count (Obi "cursor"-lite).
 func set_rope_length(length: float) -> void:
 	segment_length = maxf(length, 0.01) / float(segment_count)
+	wake()
+
+
+## Force the rope back into active simulation.
+func wake() -> void:
+	_asleep = false
+	_still_frames = 0
+
+
+func _anchor_pos(node: Node3D, fallback: Vector3) -> Vector3:
+	return node.global_position if node else fallback
+
+
+## True when either anchor has moved since the rope went to sleep.
+func _anchors_moved() -> bool:
+	if _anchor_pos(start_node, _sleep_anchor_start) \
+			.distance_squared_to(_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ:
+		return true
+	return _anchor_pos(end_node, _sleep_anchor_end) \
+			.distance_squared_to(_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ
 
 
 # ── Simulation ──────────────────────────────────────────────────────────────────
@@ -280,6 +320,13 @@ func set_rope_length(length: float) -> void:
 func _physics_process(delta: float) -> void:
 	if _points.size() == 0:
 		return
+
+	if _asleep:
+		if _anchors_moved():
+			wake()
+		else:
+			return
+	_mesh_dirty = true
 
 	var count := _points.size()
 
@@ -477,6 +524,31 @@ func _physics_process(delta: float) -> void:
 				_end_body.apply_force(dir_e * force,
 					end_node.global_position - _end_body.global_position)
 
+	# --- Sleep detection ---
+	# Still = every particle moved less than SLEEP_POINT_EPS_SQ this tick AND
+	# the anchors sit where we last saw them.
+	var still := true
+	for i in count:
+		if _points[i].distance_squared_to(_prev_points[i]) > SLEEP_POINT_EPS_SQ:
+			still = false
+			break
+	var a_start := _anchor_pos(start_node, _sleep_anchor_start)
+	var a_end := _anchor_pos(end_node, _sleep_anchor_end)
+	if a_start.distance_squared_to(_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ \
+			or a_end.distance_squared_to(_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ:
+		still = false
+	_sleep_anchor_start = a_start
+	_sleep_anchor_end = a_end
+	if still:
+		_still_frames += 1
+		if _still_frames >= SLEEP_FRAMES:
+			_asleep = true
+			# Zero implied velocities so waking doesn't inherit stale motion.
+			for i in count:
+				_prev_points[i] = _points[i]
+	else:
+		_still_frames = 0
+
 
 ## Positional constraint between points a/b toward rest distance, split by
 ## inverse mass. one_sided = only correct when closer than rest.
@@ -580,8 +652,9 @@ func _resolve_contact(i: int, contact: Vector3, normal: Vector3) -> void:
 # ── Rendering ───────────────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
-	if _points.size() >= 2:
+	if _points.size() >= 2 and _mesh_dirty:
 		_render_tube()
+		_mesh_dirty = false
 
 
 ## Fill _ring_points from the sim points — straight copy, or Catmull-Rom
