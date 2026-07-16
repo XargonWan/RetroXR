@@ -11,3 +11,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, -0.03)
 	body_color = Color(0.55, 0.55, 0.58)     # grey
 	accent_color = Color(0.20, 0.20, 0.25)
+	cart_size = Vector3(0.066, 0.070, 0.009)   # Supervision cart

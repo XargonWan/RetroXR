@@ -11,3 +11,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, -0.006)
 	body_color = Color(0.20, 0.35, 0.60)     # a classic blue shell
 	accent_color = Color(0.90, 0.85, 0.20)
+	cart_size = Vector3(0.048, 0.052, 0.008)   # NGP cart

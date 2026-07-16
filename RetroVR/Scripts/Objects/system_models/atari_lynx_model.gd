@@ -11,3 +11,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, 0.0)
 	body_color = Color(0.10, 0.10, 0.11)     # black brick
 	accent_color = Color(0.65, 0.12, 0.12)   # red A/B buttons
+	cart_size = Vector3(0.073, 0.086, 0.006)   # Lynx card

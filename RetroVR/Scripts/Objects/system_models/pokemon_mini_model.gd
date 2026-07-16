@@ -12,3 +12,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, -0.018)
 	body_color = Color(0.30, 0.50, 0.85)     # blue
 	accent_color = Color(0.90, 0.90, 0.30)
+	cart_size = Vector3(0.022, 0.033, 0.007)   # Pokemon mini cart

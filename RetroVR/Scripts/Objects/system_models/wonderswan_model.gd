@@ -12,3 +12,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, -0.028)
 	body_color = Color(0.70, 0.70, 0.72)     # silver
 	accent_color = Color(0.30, 0.30, 0.35)
+	cart_size = Vector3(0.048, 0.052, 0.008)   # WonderSwan cart

@@ -50,12 +50,6 @@ var bottom_uv_rect := Rect2(0.0, 0.5, 1.0, 0.5)
 ## Right-eye UV-x shift for a stereo side-by-side composite (3DS azahar).
 ## 0 = mono core output (DS).
 var top_eye_shift := 0.0
-## Game-card size (width, length-into-slot, thickness) — DS/3DS cards share
-## the 33×35×4 mm footprint (MediaDimensions "nds"/"3ds"). Drives the slot
-## mouth visual and how deep the card seats.
-var cart_size := Vector3(0.033, 0.035, 0.004)
-## How much of the seated card pokes out of the back for grabbing.
-const CART_PROTRUDE := 0.010
 
 var _bottom_screen: MeshInstance3D = null
 var _lid_pivot: Node3D = null
@@ -162,19 +156,7 @@ func _build_shell() -> void:
 	add_child(_bottom_screen)
 
 	# ── Game-card slot mouth: a dark recess in the back face of the base ──────
-	# The body is a solid box, so the "negative space" is a near-black inset
-	# box straddling the back face — it reads as the slot opening, and the
-	# seated card slides in through it (configure_cartridge_slot below).
-	var mouth := MeshInstance3D.new()
-	mouth.name = "CardSlotMouth"
-	var mouth_mesh := BoxMesh.new()
-	mouth_mesh.size = Vector3(cart_size.x + 0.005, cart_size.z + 0.003, 0.004)
-	mouth.mesh = mouth_mesh
-	var mouth_mat := StandardMaterial3D.new()
-	mouth_mat.albedo_color = Color(0.03, 0.03, 0.04)
-	mouth.set_surface_override_material(0, mouth_mat)
-	mouth.position = Vector3(0, 0, -body_size.z / 2.0)
-	add_child(mouth)
+	_build_cart_slot_mouth()
 
 	# ── Hidden proxy the C++ VideoHandler renders the composite into ──────────
 	_proxy = MeshInstance3D.new()
@@ -347,29 +329,6 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 func configure_handheld_controls(host: Node3D) -> void:
 	_host = host
 	_build_volume_slider()
-
-
-## Seat the game card INSIDE the base, through the slot mouth on the back
-## face: the card lies flat (label up), most of its length inside the body,
-## CART_PROTRUDE sticking out for grabbing. The base handheld's placement
-## left the card upright and floating at the back edge.
-func configure_cartridge_slot(slot: Node3D) -> void:
-	# Cartridge local frame: x = width, y = length (insert axis), z = thickness
-	# with the label on +Z. Rotating the zone -90° about X lays it flat —
-	# card length runs into the body (-Z), label faces up (+Y).
-	slot.rotation_degrees = Vector3(-90, 0, 0)
-	slot.position = Vector3(0, 0,
-		-body_size.z / 2.0 + cart_size.y / 2.0 - CART_PROTRUDE)
-	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
-	if visual:
-		visual.visible = false
-	# The snap ghost is a generic console-cartridge box — reshape it to the
-	# game card so the blue "goes here" shadow matches what fits.
-	var ghost := slot.get_node_or_null("SnapHighlight/HighlightMesh") as MeshInstance3D
-	if ghost:
-		var ghost_mesh := BoxMesh.new()
-		ghost_mesh.size = cart_size
-		ghost.mesh = ghost_mesh
 
 
 ## Two labelled video-out ports on the back edge, beside the cartridge slot:

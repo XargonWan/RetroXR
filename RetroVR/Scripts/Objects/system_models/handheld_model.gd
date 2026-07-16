@@ -23,6 +23,10 @@ var screen_size := Vector2(0.047, 0.043)
 var screen_offset := Vector3(0.0, 0.0, -0.03)
 var body_color := Color(0.75, 0.73, 0.70)     # classic DMG grey
 var accent_color := Color(0.45, 0.15, 0.45)   # button magenta
+## Cartridge size (width, length-into-slot, thickness) — should match the
+## system's MediaDimensions.CART_SIZES entry. Drives the slot-mouth visual
+## and how deep the cart seats. Default = Game Boy cart.
+var cart_size := Vector3(0.057, 0.065, 0.008)
 
 var _screen: MeshInstance3D = null
 var _power_switch: VRSlider = null
@@ -123,6 +127,32 @@ func _build_shell() -> void:
 	# Cosmetic d-pad + A/B buttons on the lower face area.
 	_add_cosmetics(half_y)
 
+	# Cartridge slot recess on the back face.
+	_build_cart_slot_mouth()
+
+
+## The media slot's dark "negative space" on the back face of the body. The
+## shell is a solid box, so the recess is a near-black inset box straddling
+## the back face — it reads as the slot opening, and the seated cartridge
+## slides in through it (configure_cartridge_slot). PSP overrides this with
+## a UMD slit.
+func _build_cart_slot_mouth() -> void:
+	var mouth := MeshInstance3D.new()
+	mouth.name = "CardSlotMouth"
+	var mouth_mesh := BoxMesh.new()
+	mouth_mesh.size = Vector3(cart_size.x + 0.005, cart_size.z + 0.003, 0.004)
+	mouth.mesh = mouth_mesh
+	var mouth_mat := StandardMaterial3D.new()
+	mouth_mat.albedo_color = Color(0.03, 0.03, 0.04)
+	mouth.set_surface_override_material(0, mouth_mat)
+	mouth.position = Vector3(0, 0, -body_size.z / 2.0)
+	add_child(mouth)
+
+
+## How much of the seated cartridge pokes out of the back for grabbing.
+func _cart_protrude() -> float:
+	return clampf(cart_size.y * 0.28, 0.008, 0.02)
+
 
 func _add_cosmetics(half_y: float) -> void:
 	var dark := StandardMaterial3D.new()
@@ -177,12 +207,26 @@ func _hits_screen_bezel(p: Vector3, half: float) -> bool:
 		and absf(p.z - screen_offset.z) < (screen_size.y + 0.012) / 2.0 + half
 
 
-## Reposition the cartridge slot to the back edge of the device.
+## Seat the cartridge INSIDE the body, through the slot mouth on the back
+## face: lying flat (label up), most of its length inside, _cart_protrude()
+## sticking out for grabbing.
 func configure_cartridge_slot(slot: Node3D) -> void:
-	slot.position = Vector3(0, 0, -body_size.z / 2.0 - 0.01)
+	# Cartridge local frame: x = width, y = length (insert axis), z = thickness
+	# with the label on +Z. Rotating the zone -90° about X lays it flat —
+	# length running into the body (-Z), label facing up (+Y).
+	slot.rotation_degrees = Vector3(-90, 0, 0)
+	slot.position = Vector3(0, 0,
+		-body_size.z / 2.0 + cart_size.y / 2.0 - _cart_protrude())
 	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if visual:
 		visual.visible = false
+	# The snap ghost is a generic console-cartridge box — reshape it to this
+	# system's cart so the blue "goes here" shadow matches what fits.
+	var ghost := slot.get_node_or_null("SnapHighlight/HighlightMesh") as MeshInstance3D
+	if ghost:
+		var ghost_mesh := BoxMesh.new()
+		ghost_mesh.size = cart_size
+		ghost.mesh = ghost_mesh
 
 
 ## Cartridges slide in from behind the device.
@@ -190,10 +234,16 @@ func get_cartridge_insert_direction() -> Vector3:
 	return Vector3(0, 0, -1)
 
 
-## Video-out port on the rear edge (the Super Game Boy fantasy), offset to the
-## side of the centred cartridge slot so the two plugs don't overlap.
+## Video-out port on the rear edge (the Super Game Boy fantasy), clear of the
+## centred cartridge slot mouth. On narrow bodies whose back edge is mostly
+## slot (Game Boy, WonderSwan, Supervision, Pokémon Mini) the port moves to
+## the right side edge instead.
 func configure_cable_attach(attach_point: Node3D) -> void:
-	attach_point.position = Vector3(body_size.x * 0.30, 0, -body_size.z / 2.0 - 0.002)
+	var back_x := maxf(body_size.x * 0.30, (cart_size.x + 0.005) / 2.0 + 0.010)
+	if back_x <= body_size.x / 2.0 - 0.008:
+		attach_point.position = Vector3(back_x, 0, -body_size.z / 2.0 - 0.002)
+	else:
+		attach_point.position = Vector3(body_size.x / 2.0 + 0.002, 0, -body_size.z * 0.30)
 	# The scene's console-scale grey port barrel dwarfs a handheld shell —
 	# hide it (the cable itself marks the port).
 	var vis := attach_point.get_node_or_null("PortVisual") as MeshInstance3D

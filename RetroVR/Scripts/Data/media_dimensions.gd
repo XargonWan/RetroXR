@@ -18,6 +18,11 @@ const CART_SIZES: Dictionary = {
 	"atari_2600":       Vector3(0.079, 0.104, 0.021),
 	"nds":              Vector3(0.033, 0.035, 0.004),
 	"3ds":              Vector3(0.033, 0.035, 0.004),   # 3DS Game Card = DS footprint
+	"atari_lynx":       Vector3(0.073, 0.086, 0.006),   # Lynx card
+	"wonderswan":       Vector3(0.048, 0.052, 0.008),
+	"neo_geo_pocket":   Vector3(0.048, 0.052, 0.008),
+	"pokemon_mini":     Vector3(0.022, 0.033, 0.007),
+	"supervision":      Vector3(0.066, 0.070, 0.009),
 }
 
 ## Generic cartridge size (the original cartridge.tscn values) for systems

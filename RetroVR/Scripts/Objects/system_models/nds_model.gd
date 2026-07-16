@@ -30,3 +30,4 @@ func _init() -> void:
 	bottom_uv_rect = Rect2(0.0, 0.5, 1.0, 0.5)
 	body_color = Color(0.92, 0.92, 0.94)     # DS Lite polar white
 	accent_color = Color(0.25, 0.25, 0.28)
+	cart_size = Vector3(0.033, 0.035, 0.004)   # DS Game Card

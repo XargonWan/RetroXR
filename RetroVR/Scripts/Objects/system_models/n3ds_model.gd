@@ -45,6 +45,7 @@ func _init() -> void:
 	top_eye_shift = 0.5
 	body_color = Color(0.12, 0.35, 0.65)     # aqua blue
 	accent_color = Color(0.85, 0.85, 0.88)
+	cart_size = Vector3(0.033, 0.035, 0.004)   # 3DS Game Card
 
 
 func _build_shell() -> void:

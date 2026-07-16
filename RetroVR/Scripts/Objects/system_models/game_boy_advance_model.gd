@@ -10,3 +10,4 @@ func _init() -> void:
 	screen_offset = Vector3(0.0, 0.0, 0.0)
 	body_color = Color(0.35, 0.30, 0.55)   # indigo
 	accent_color = Color(0.85, 0.85, 0.9)
+	cart_size = Vector3(0.058, 0.036, 0.007)   # GBA cart
