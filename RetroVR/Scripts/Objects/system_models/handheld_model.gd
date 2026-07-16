@@ -130,7 +130,19 @@ func _add_cosmetics(half_y: float) -> void:
 	var accent := StandardMaterial3D.new()
 	accent.albedo_color = accent_color
 
+	# Classic Game Boy layout: d-pad lower-left, A/B lower-right, below the
+	# screen. On landscape bodies (GBA / Lynx / NGP / PSP) that lands on the
+	# screen bezel — flank the screen instead (d-pad left, buttons right,
+	# centred on it), like the real hardware.
 	var dpad_pos := Vector3(-body_size.x * 0.28, half_y + 0.002, body_size.z * 0.28)
+	var btn_base := Vector3(body_size.x * 0.22, half_y + 0.002, body_size.z * 0.30)
+	var btn_offsets := [Vector3(0, 0, 0), Vector3(0.017, 0, -0.010)]
+	if _hits_screen_bezel(dpad_pos, 0.014) or _hits_screen_bezel(btn_base, 0.014):
+		var side := (body_size.x / 2.0 + (screen_size.x + 0.012) / 2.0) / 2.0
+		dpad_pos = Vector3(-side, half_y + 0.002, screen_offset.z)
+		btn_base = Vector3(side, half_y + 0.002, screen_offset.z)
+		btn_offsets = [Vector3(0.006, 0, -0.006), Vector3(-0.006, 0, 0.006)]
+
 	for horizontal in [true, false]:
 		var bar := MeshInstance3D.new()
 		var bar_mesh := BoxMesh.new()
@@ -148,9 +160,15 @@ func _add_cosmetics(half_y: float) -> void:
 		btn_mesh.height = 0.004
 		btn.mesh = btn_mesh
 		btn.set_surface_override_material(0, accent)
-		btn.position = Vector3(body_size.x * 0.22 + i * 0.017, half_y + 0.002,
-			body_size.z * 0.30 - i * 0.010)
+		btn.position = btn_base + btn_offsets[i]
 		add_child(btn)
+
+
+## True when a cosmetic centred at `p` (half-extent `half`) would land on the
+## screen bezel footprint on the top face.
+func _hits_screen_bezel(p: Vector3, half: float) -> bool:
+	return absf(p.x - screen_offset.x) < (screen_size.x + 0.012) / 2.0 + half \
+		and absf(p.z - screen_offset.z) < (screen_size.y + 0.012) / 2.0 + half
 
 
 ## Reposition the cartridge slot to the back edge of the device.
