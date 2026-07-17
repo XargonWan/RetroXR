@@ -192,7 +192,9 @@ func _rebuild_outline() -> void:
 	_outline_material.render_priority = 2
 	_outline_material.set_shader_parameter("outline_color", HOVER_OUTLINE_COLOR)
 	_outline_material.set_shader_parameter("outline_width", 1.0)
-	_outline_material.set_shader_parameter("glow_strength", 2.0)
+	# Mild HDR glow — enough to read as "hovered" without the outline blooming out
+	# under the room's glow post-process (was 2.0 -> green x3, far too bright).
+	_outline_material.set_shader_parameter("glow_strength", 0.3)
 	_outline_material.set_shader_parameter("fade_start", 0.0)
 	_outline_material.set_shader_parameter("fade_end", 10.0)
 	_outline_material.set_shader_parameter("mesh_center", _mesh.mesh.get_aabb().get_center())

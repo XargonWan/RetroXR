@@ -204,7 +204,7 @@ func _process(_delta):
 		XRToolsPointerEvent.moved(self, new_target, new_at, new_at)
 
 		# Update visible artifacts for hit
-		_visible_hit(new_at)
+		_visible_hit(new_at, new_target)
 	elif not new_target and last_target:
 		# Pointer exited last_target
 		XRToolsPointerEvent.exited(self, last_target, last_collided_at)
@@ -222,13 +222,13 @@ func _process(_delta):
 		XRToolsPointerEvent.moved(self, new_target, new_at, new_at)
 
 		# Move visible artifacts
-		_visible_move(new_at)
+		_visible_move(new_at, new_target)
 	elif new_at != last_collided_at:
 		# Pointer moved on new_target
 		XRToolsPointerEvent.moved(self, new_target, new_at, last_collided_at)
 
 		# Move visible artifacts
-		_visible_move(new_at)
+		_visible_move(new_at, new_target)
 
 	# Update last values
 	last_target = new_target
@@ -444,11 +444,15 @@ func _update_laser_active_material(hit : bool) -> void:
 
 
 # Update the visible artifacts to show a hit
-func _visible_hit(at : Vector3) -> void:
-	# Show target if enabled
-	if show_target:
+func _visible_hit(at : Vector3, hit : Node = null) -> void:
+	# Show the target dot only over a flat 2D-UI panel (the spawn menu / options
+	# panels), where it acts as a cursor. On 3D buttons/pickables it's redundant
+	# with their own hover highlight and just adds a blooming red blob, so hide it.
+	if show_target and _is_ui_target(hit):
 		$Target.global_transform.origin = at
 		$Target.visible = true
+	else:
+		$Target.visible = false
 
 	# Control laser visibility
 	if show_laser != LaserShow.HIDE:
@@ -472,10 +476,13 @@ func _visible_hit(at : Vector3) -> void:
 
 
 # Move the visible pointer artifacts to the target
-func _visible_move(at : Vector3) -> void:
-	# Move target if configured
-	if show_target:
+func _visible_move(at : Vector3, hit : Node = null) -> void:
+	# Keep the cursor dot only while over a 2D-UI panel (see _visible_hit).
+	if show_target and _is_ui_target(hit):
 		$Target.global_transform.origin = at
+		$Target.visible = true
+	else:
+		$Target.visible = false
 
 	# Adjust laser length if set to collide-length
 	if laser_length == LaserLength.COLLIDE:
@@ -559,3 +566,14 @@ func _get_desktop_grabber() -> Node3D:
 	if not parent:
 		return null
 	return parent.get_node_or_null("DesktopHand") as Node3D
+
+
+# True when the hit node is (or is a child of) a 2D-in-3D UI panel — the only
+# place the desktop cursor dot should appear.
+func _is_ui_target(node : Node) -> bool:
+	var n := node
+	while n:
+		if n is XRToolsViewport2DIn3D:
+			return true
+		n = n.get_parent()
+	return false

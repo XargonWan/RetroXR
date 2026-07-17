@@ -26,7 +26,7 @@ active_button_action = "trigger_left"
 show_laser = 0
 laser_length = 1
 show_target = true
-target_radius = 0.01
+target_radius = 0.005
 collide_with_areas = true
 
 [node name="RayCast" type="RayCast3D" parent="."]

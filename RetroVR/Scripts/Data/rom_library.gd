@@ -60,30 +60,34 @@ static func scan_roms(systemid: String, extensions: Array[String]) -> Array[Dict
 	# data ext -> descriptor ext that supersedes it
 	const SHADOWED_BY := {"bin": "cue", "img": "ccd", "mdf": "mds"}
 
-	# First pass: collect all filenames present in the directory
-	var all_files: Dictionary = {}  # filename (lowercase) -> true
+	# First pass: collect all filenames present in the directory. Key by lowercase
+	# for case-insensitive descriptor lookups, but keep the ORIGINAL-case name as
+	# the value — the real path must preserve case (Linux is case-sensitive, so a
+	# lowercased path fails to open; that broke ROM loading + scraper hashing).
+	var all_files: Dictionary = {}  # lowercase filename -> original filename
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
 		if not dir.current_is_dir():
-			all_files[fname.to_lower()] = true
+			all_files[fname.to_lower()] = fname
 		fname = dir.get_next()
 	dir.list_dir_end()
 
 	# Second pass: build results, skipping data files whose descriptor exists
 	var results: Array[Dictionary] = []
-	for file: String in all_files:
+	for lower: String in all_files:
+		var file: String = all_files[lower]   # original-case filename
 		if file.begins_with("."):
 			continue
-		var ext := file.get_extension()
+		var ext := lower.get_extension()   # lowercase for case-insensitive matching
 		if ext in SHADOWED_BY:
 			var descriptor_ext: String = SHADOWED_BY[ext]
-			var descriptor := file.get_basename() + "." + descriptor_ext
-			if descriptor in all_files and (extensions.is_empty() or descriptor_ext in extensions):
+			var descriptor_lower := lower.get_basename() + "." + descriptor_ext
+			if descriptor_lower in all_files and (extensions.is_empty() or descriptor_ext in extensions):
 				continue  # hidden — the .cue/.ccd/.mds entry covers it
 		if not extensions.is_empty() and ext not in extensions:
 			continue
-		var full_path := dir_path.path_join(file)
+		var full_path := dir_path.path_join(file)   # original case preserved
 		results.append({"path": full_path, "label": file.get_basename()})
 
 	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
