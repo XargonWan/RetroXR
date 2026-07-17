@@ -851,9 +851,12 @@ func _physics_process(_delta: float) -> void:
 func power_on() -> void:
 	if is_powered_on:
 		return
+	# A console with no TV connected still powers on and runs — the core renders
+	# to its texture with no bound mesh; connecting a TV later attaches the picture
+	# (SetScreenMesh), same as re-plugging a TV that was pulled mid-game. Handhelds
+	# always have a built-in screen so _screen_target() is non-null for them.
 	if _screen_target() == null:
-		push_error("RetroSystem: Cannot power on - no display (connect a TV)")
-		return
+		print("[RetroSystem] Powering on with no display connected (connect a TV to see output)")
 	if rom_path.is_empty():
 		push_error("RetroSystem: Cannot power on - no cartridge inserted")
 		return
