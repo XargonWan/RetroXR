@@ -1,63 +1,59 @@
-[gd_scene load_steps=10 format=3 uid="uid://retro_controller_001"]
+[gd_scene format=3 uid="uid://dilgbxngwow63"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/retro_controller.gd" id="1_ctrlscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://dmxawyrf0uv07" path="res://Scripts/Objects/retro_controller.gd" id="1_ctrlscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
 
+[sub_resource type="PhysicsMaterial" id="PhysMat_ctrl"]
+friction = 0.8
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.12, 0.06, 0.04)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
-size = Vector3(0.15, 0.09, 0.05)
 
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
 size = Vector3(0.12, 0.06, 0.04)
 
 [sub_resource type="StandardMaterial3D" id="Mat_body"]
-albedo_color = Color(0.15, 0.15, 0.15, 1.0)
+albedo_color = Color(0.15, 0.15, 0.15, 1)
 
-[sub_resource type="PhysicsMaterial" id="PhysMat_ctrl"]
-bounce = 0.0
-friction = 0.8
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.12, 0.06, 0.04)
 
-[node name="RetroController" type="RigidBody3D" groups=["hand_held_device"]]
+[node name="RetroController" type="RigidBody3D" unique_id=630831205 groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
-physics_material_override = SubResource("PhysMat_ctrl")
 mass = 0.2
+physics_material_override = SubResource("PhysMat_ctrl")
+freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
-freeze_mode = 1
 script = ExtResource("1_ctrlscript")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=579109256]
 shape = SubResource("BoxShape3D_body")
 
-[node name="ControllerMesh" type="MeshInstance3D" parent="."]
+[node name="ControllerMesh" type="MeshInstance3D" parent="." unique_id=185311573]
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_body")
 
-[node name="CableAttachPoint" type="Node3D" parent="."]
+[node name="CableAttachPoint" type="Node3D" parent="." unique_id=1053994500]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 
-[node name="PickableHighlight" type="Node3D" parent="."]
+[node name="PickableHighlight" type="Node3D" parent="." unique_id=1659693452]
 script = ExtResource("2_pickhigh")
 
-[node name="PointerArea" type="StaticBody3D" parent="."]
+[node name="PointerArea" type="StaticBody3D" parent="." unique_id=497430687]
 collision_layer = 1048576
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=32974893]
 shape = SubResource("BoxShape3D_pointer")
 
-; Held-hand indicators: reposition/rotate these in the 3D editor to sit
-; naturally on the gamepad. Shown at runtime by controller_model.gd when this
-; device is grabbed (HandRight for a right-hand grab, HandLeft for a left).
-[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+[node name="HandRight" parent="." unique_id=1869866057 instance=ExtResource("3_rhand")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06, 0, 0)
 visible = false
 
-[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+[node name="HandLeft" parent="." unique_id=914433094 instance=ExtResource("4_lhand")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.06, 0, 0)
 visible = false
