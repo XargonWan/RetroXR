@@ -67,6 +67,9 @@ var is_powered_on: bool = false
 var video_out_enabled: bool = true
 # Saved value restored by persistence (set before _ready; -1 = no override).
 var _video_out_from_save: int = -1
+# Clamshell (DS/3DS) lid open angle restored by persistence (deg, 0 shut … 180
+# flat; set before _ready; -1 = keep the model default).
+var _lid_angle_from_save: float = -1.0
 
 ## Ignore gravity: the system freezes exactly where it's dropped and floats
 ## there. Toggled from the options panel's System tab; default off.
@@ -441,6 +444,9 @@ func _load_system_model() -> void:
 		if _model.has_method("configure_handheld_body"):
 			_model.configure_handheld_body(self)
 		_model.configure_handheld_controls(self)
+		# Restore a saved clamshell lid angle (DS/3DS); else keep the model default.
+		if _lid_angle_from_save >= 0.0 and _model.has_method("set_lid_angle_deg"):
+			_model.set_lid_angle_deg(_lid_angle_from_save)
 		# Two-handed hold, like a game controller: HandheldInput already merges
 		# buttons/sticks from both hands (retro_controller pipeline) — the
 		# pickable just has to allow the second grab.
@@ -451,6 +457,14 @@ func _load_system_model() -> void:
 		_handheld_input.setup(self)
 		# Route port-0 rumble to the holding hands via the existing path.
 		_port_controllers[0] = _handheld_input
+
+
+## Interior open angle of a clamshell handheld's lid (0 shut … 180 flat), or
+## -1 for systems without a lid. Used by ScenePersistence.
+func get_lid_angle_deg() -> float:
+	if _model != null and _model.has_method("get_lid_angle_deg"):
+		return _model.get_lid_angle_deg()
+	return -1.0
 
 
 ## Enable or disable libretro input polling for this system.

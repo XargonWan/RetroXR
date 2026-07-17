@@ -384,6 +384,10 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		}
 		if not tv_path.is_empty():
 			result["connected_tv_path"] = tv_path
+		# Clamshell lid angle (DS/3DS); omitted (-1) for systems without a lid.
+		var lid_angle: float = sys.get_lid_angle_deg()
+		if lid_angle >= 0.0:
+			result["lid_angle"] = lid_angle
 		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
 		for ch in range(1, sys.get_channel_count()):
 			var ch_tv := sys.get_channel_tv(ch)
@@ -593,6 +597,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			sys.model_variant = data.get("model_variant", "")
 			if data.has("video_out"):
 				sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
+			sys._lid_angle_from_save = float(data.get("lid_angle", -1.0))
 			sys.ignore_gravity = bool(data.get("ignore_gravity", false))
 			obj = sys
 		"tv":

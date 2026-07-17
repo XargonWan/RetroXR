@@ -53,6 +53,11 @@ var top_eye_shift := 0.0
 
 var _bottom_screen: MeshInstance3D = null
 var _lid_pivot: Node3D = null
+# Grabbable lid hinge + cached pivot rotation (deg about X; 0 = flat/180° open,
+# 180 = folded shut). Public angle (get/set_lid_angle_deg) is the interior open
+# angle (180 - this).
+var _hinge: VRHinge = null
+var _lid_rot_deg := 0.0
 var _touch: Area3D = null
 # Hidden proxy quad the C++ VideoHandler renders the composite into.
 var _proxy: MeshInstance3D = null
@@ -113,7 +118,8 @@ func _build_shell() -> void:
 	_lid_pivot.position = Vector3(0, half_y, -body_size.z / 2.0)
 	# Panel extends -Z at 0°; rotating +X tips it up. Interior angle =
 	# 180° - rotation, so rotation = 180 - lid_open_deg.
-	_lid_pivot.rotation_degrees = Vector3(180.0 - lid_open_deg, 0, 0)
+	_lid_rot_deg = 180.0 - lid_open_deg
+	_lid_pivot.rotation_degrees = Vector3(_lid_rot_deg, 0, 0)
 	add_child(_lid_pivot)
 
 	var lid := MeshInstance3D.new()
@@ -122,7 +128,11 @@ func _build_shell() -> void:
 	lid_mesh.size = lid_size
 	lid.mesh = lid_mesh
 	lid.set_surface_override_material(0, body_mat)
-	lid.position = Vector3(0, lid_size.y / 2.0, -lid_size.z / 2.0)
+	# Lid hangs on the -Y side of the hinge so at flat (0°) it's coplanar with the
+	# base and folding to closed (0° interior) STACKS it on top of the base rather
+	# than folding down into the base volume. Its interior (+Y) face carries the
+	# top screen.
+	lid.position = Vector3(0, -lid_size.y / 2.0, -lid_size.z / 2.0)
 	_lid_pivot.add_child(lid)
 
 	# ── Top screen (lid interior face) ────────────────────────────────────────
@@ -134,7 +144,7 @@ func _build_shell() -> void:
 	var bezel_mat := StandardMaterial3D.new()
 	bezel_mat.albedo_color = Color(0.10, 0.10, 0.12)
 	top_bezel.set_surface_override_material(0, bezel_mat)
-	top_bezel.position = Vector3(top_screen_offset.x, lid_size.y + 0.0008,
+	top_bezel.position = Vector3(top_screen_offset.x, 0.0008,
 		-lid_size.z / 2.0 + top_screen_offset.y)
 	_lid_pivot.add_child(top_bezel)
 
@@ -144,7 +154,7 @@ func _build_shell() -> void:
 	top_quad.size = top_screen_size
 	_screen.mesh = top_quad
 	_screen.rotation_degrees = Vector3(-90, 0, 0)   # face lid-interior (+Y local)
-	_screen.position = Vector3(top_screen_offset.x, lid_size.y + 0.002,
+	_screen.position = Vector3(top_screen_offset.x, 0.002,
 		-lid_size.z / 2.0 + top_screen_offset.y)
 	_screen.set_surface_override_material(0, _top_off_mat)
 	_lid_pivot.add_child(_screen)
@@ -197,6 +207,43 @@ func _build_shell() -> void:
 	add_child(_touch)
 
 	_add_cosmetics(half_y)
+	_build_hinge()
+
+
+## Grabbable hinge over the lid's far/top edge — touch-drag (VR tip or desktop
+## pointer) swings the lid 0°(shut)…180°(flat). Proximity/pointer engaged, never
+## grip, so it doesn't conflict with grabbing the device or the cartridge stub.
+func _build_hinge() -> void:
+	_hinge = VRHinge.new()
+	_hinge.name = "LidHinge"
+	_hinge.target = _lid_pivot
+	_hinge.min_deg = 0.0     # rotation.x 0 = flat (180° interior open)
+	_hinge.max_deg = 180.0   # rotation.x 180 = folded shut (0° interior open)
+	_hinge.engage_radius = 0.045
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(lid_size.x * 0.55, lid_size.y + 0.02, 0.02)
+	col.shape = shape
+	_hinge.add_child(col)
+	# On the lid's far/top edge (the natural open/close grab spot), riding the lid.
+	_hinge.position = Vector3(0, -lid_size.y / 2.0, -lid_size.z + 0.006)
+	_lid_pivot.add_child(_hinge)
+	_hinge.rotation_changed.connect(func(deg: float) -> void: _lid_rot_deg = deg)
+
+
+## Interior open angle in degrees: 0 = folded shut, 180 = flat open.
+func get_lid_angle_deg() -> float:
+	return 180.0 - _lid_rot_deg
+
+
+## Set the interior open angle (0 shut … 180 flat).
+func set_lid_angle_deg(open_deg: float) -> void:
+	var rot := clampf(180.0 - open_deg, 0.0, 180.0)
+	_lid_rot_deg = rot
+	if _hinge:
+		_hinge.set_rotation_deg_no_signal(rot)
+	elif _lid_pivot:
+		_lid_pivot.rotation.x = deg_to_rad(rot)
 
 
 ## Clamshell cosmetics: the base handheld's d-pad / A-B placement assumes a
