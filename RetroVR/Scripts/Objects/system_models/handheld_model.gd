@@ -303,11 +303,16 @@ func configure_handheld_controls(host: Node3D) -> void:
 func _build_volume_slider() -> void:
 	var half_y := body_size.y / 2.0
 	_volume_slider = _make_slider("VolumeSlider", 0, 1.0)
-	# -Z = toward the back edge = "up" from the player's view: slide up for
-	# louder, down for quieter (same sense as the 3DS depth slider).
+	# -Z = toward the back/top edge = "up" from the player's view: slide up for
+	# louder, down for quieter (same sense as the 3DS depth slider). Sits high on
+	# the right edge (+X face), near the top — like a real Game Boy's volume dial.
+	# Travel scales with body depth so it reaches the top edge on both the deep
+	# Game Boy and the shallow clamshell base without overshooting.
 	_volume_slider.axis_local = Vector3(0, 0, -1)
-	_volume_slider.travel = 0.022
-	_volume_slider.position = Vector3(body_size.x / 2.0 + 0.002, half_y * 0.4, body_size.z * 0.18)
+	var travel: float = minf(0.022, body_size.z * 0.28)
+	_volume_slider.travel = travel
+	_volume_slider.position = Vector3(
+		body_size.x / 2.0 + 0.002, 0.0, -body_size.z / 2.0 + travel + 0.006)
 	add_child(_volume_slider)
 	_volume_slider.value_changed.connect(func(v: float) -> void:
 		if _host and _host.has_method("set_audio_volume"):
@@ -315,31 +320,27 @@ func _build_volume_slider() -> void:
 
 
 func _build_power_switch() -> void:
-	var half_y := body_size.y / 2.0
 	_power_switch = _make_slider("PowerSwitch", 2, 0.0)
+	# Slides left/right along the top edge, like a real Game Boy power switch.
 	_power_switch.axis_local = Vector3(1, 0, 0)
-	_power_switch.travel = 0.016
-	var sw_x := -body_size.x * 0.25
-	var sw_z := -body_size.z / 2.0 + 0.008
-	# Wide screens (PSP / Neo Geo Pocket) leave no clear strip behind the
-	# bezel — move the switch out past the bezel's left edge instead.
-	var bezel_far := screen_offset.z - (screen_size.y + 0.012) / 2.0
-	if sw_z > bezel_far - 0.004:
-		sw_x = -minf((screen_size.x + 0.012) / 2.0 + 0.014, body_size.x / 2.0 - 0.010)
-	_power_switch.position = Vector3(sw_x, half_y + 0.003, sw_z)
+	_power_switch.travel = 0.014
+	# On the TOP edge — the -Z face where the cartridge inserts — right at the
+	# FRONT edge (where the -Z face meets the +Y screen face), on the left. This
+	# is where a real Game Boy's top-edge power switch sits.
+	var sw_x := -body_size.x * 0.26
+	var sw_y := body_size.y / 2.0 - 0.003
+	_power_switch.position = Vector3(sw_x, sw_y, -body_size.z / 2.0 - 0.001)
 	add_child(_power_switch)
-	# Label the switch so players can find how to power the system on/off — it's a
-	# small knob on the top edge that's otherwise easy to miss. Tucked against
-	# the back edge BEHIND the knob: the old spot in front of it sat on the
-	# screen bezel (Game Boy).
+	# Label the switch, just below the knob on the top edge, facing -Z (readable
+	# from the top/back edge) so players can find the power control.
 	var s := clampf(body_size.x / 0.09, 0.6, 1.0)
 	var power_label := Label3D.new()
 	power_label.text = "POWER"
-	power_label.pixel_size = 0.00022 * s
+	power_label.pixel_size = 0.00016 * s
 	power_label.font_size = 16
 	power_label.modulate = Color(0.1, 0.1, 0.12)
-	power_label.rotation_degrees = Vector3(-90, 0, 0)   # lie flat, readable from above
-	power_label.position = Vector3(sw_x, half_y + 0.0035, -body_size.z / 2.0 + 0.0025)
+	power_label.rotation_degrees = Vector3(0, 180, 0)   # face -Z (upright on the top edge)
+	power_label.position = Vector3(sw_x, sw_y - 0.008, -body_size.z / 2.0 - 0.0015)
 	add_child(power_label)
 	_power_switch.value_changed.connect(func(v: float) -> void:
 		if _host == null or not _host.has_method("toggle_power"):
