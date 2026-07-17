@@ -49,6 +49,9 @@ var _preview_radius : float = -1.0
 var _preview_collisions_on : bool = false
 var _preview_exc_target : Array[RID] = []
 var _preview_exc_owner : Array[RID] = []
+# Whether the object is currently in snap-preview range; drives the pickable's
+# orange snap-preview outline. Notify the highlight only on transitions.
+var _prev_previewing : bool = false
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta : float) -> void:
@@ -128,6 +131,12 @@ func _physics_process(delta : float) -> void:
 			zone = _preview_zone   # hysteresis: hold the zone a bit past range
 		if zone:
 			_preview_zone = zone
+		# Orange snap-preview outline on the held object while it targets a
+		# socket (in range / hysteresis); notify the highlight only on change.
+		var previewing := zone != null
+		if previewing != _prev_previewing:
+			_prev_previewing = previewing
+			_notify_snap_preview(previewing)
 		_preview_blend = move_toward(
 			_preview_blend, 1.0 if zone else 0.0, delta * PREVIEW_BLEND_SPEED)
 		# Suppress object<->socket-owner collisions while engaged so the console
@@ -207,6 +216,7 @@ func discard():
 	# and a new socket-driver takes over, so releasing here returns the object
 	# to its normal (pre-preview) collision behaviour.
 	_set_preview_collisions(false)
+	_notify_snap_preview(false)
 	remote_path = NodePath()
 	queue_free()
 
@@ -395,3 +405,14 @@ func _update_weight():
 
 		if primary.collision_hand:
 			primary.collision_hand.set_held_weight(weight)
+
+
+# LOCAL PATCH (RetroVR): toggle the held object's orange snap-preview outline
+# via its PickableHighlight (a direct child exposing set_snap_preview).
+func _notify_snap_preview(on : bool) -> void:
+	if not is_instance_valid(target):
+		return
+	for child in target.get_children():
+		if child.has_method("set_snap_preview"):
+			child.set_snap_preview(on)
+			return
