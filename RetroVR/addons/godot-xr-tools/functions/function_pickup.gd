@@ -399,20 +399,42 @@ func _update_closest_object() -> void:
 
 
 # Find the pickable object closest to our hand's grab location
+#
+# LOCAL PATCH (RetroVR): snap zones only compete when the hand is INSIDE the
+# zone's own grab sphere (a deliberate reach at the socket), and then they WIN
+# over pickables. Plain origin-distance ranking let a zone buried inside a
+# small pickable — a handheld's cartridge slot — steal grabs aimed at the
+# body (the slot origin is nearer than the body's centre from behind), while
+# any bias in the other direction made short bodies (DS) steal deliberate
+# pinches at the protruding cart stub.
 func _get_closest_grab() -> Node3D:
 	var new_closest_obj: Node3D = null
 	var new_closest_distance := MAX_GRAB_DISTANCE2
+	var best_zone: Node3D = null
+	var best_zone_distance := MAX_GRAB_DISTANCE2
 	for o in _object_in_grab_area:
 		# skip objects that can not be picked up
 		if not o.can_pick_up(self):
 			continue
 
-		# Save if this object is closer than the current best
 		var distance_squared := global_transform.origin.distance_squared_to(
 				o.global_transform.origin)
+		if o is XRToolsSnapZone:
+			var zone_r: float = o.grab_distance
+			if distance_squared <= zone_r * zone_r \
+					and distance_squared < best_zone_distance:
+				best_zone = o
+				best_zone_distance = distance_squared
+			continue
+
+		# Save if this object is closer than the current best
 		if distance_squared < new_closest_distance:
 			new_closest_obj = o
 			new_closest_distance = distance_squared
+
+	# A directly-touched socket beats nearby pickables
+	if best_zone != null:
+		return best_zone
 
 	# Return best object
 	return new_closest_obj
