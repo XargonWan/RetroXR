@@ -17,6 +17,8 @@ signal option_changed(key: String, value: String)
 signal port_device_changed(port: int, device_id: int)
 ## System-tab toggle: show/hide the console's video-out cables.
 signal video_out_toggled(enabled: bool)
+## System-tab toggle: float in place where dropped (no gravity).
+signal ignore_gravity_toggled(enabled: bool)
 signal close_requested
 
 # ── Palette ────────────────────────────────────────────────────────────────────
@@ -30,7 +32,9 @@ var _options_rows: VBoxContainer
 var _controllers_scroll: ScrollContainer
 var _controllers_rows: VBoxContainer
 var _system_scroll: ScrollContainer
+var _video_out_row: HBoxContainer = null
 var _video_out_check: CheckBox = null
+var _ignore_grav_check: CheckBox = null
 var _tabs: TabContainer = null
 var _system_tab_idx := -1
 var _active_scroll: ScrollContainer = null
@@ -131,8 +135,8 @@ func _build_ui() -> void:
 	_controllers_rows.add_theme_constant_override("separation", 4)
 	_controllers_scroll.add_child(_controllers_rows)
 
-	# System tab (device-level settings, not core options). Hidden for
-	# consoles — they have no toggles here (video out is always on for them).
+	# System tab (device-level settings, not core options). The video-out row
+	# only shows for handhelds — consoles' cables are always on.
 	_tabs = tabs
 	var sys_outer := VBoxContainer.new()
 	sys_outer.name = "System"
@@ -151,10 +155,10 @@ func _build_ui() -> void:
 	sys_rows.add_theme_constant_override("separation", 4)
 	_system_scroll.add_child(sys_rows)
 
-	var vo_row := HBoxContainer.new()
-	vo_row.custom_minimum_size = Vector2(0, 56)
-	vo_row.add_theme_constant_override("separation", 8)
-	sys_rows.add_child(vo_row)
+	_video_out_row = HBoxContainer.new()
+	_video_out_row.custom_minimum_size = Vector2(0, 56)
+	_video_out_row.add_theme_constant_override("separation", 8)
+	sys_rows.add_child(_video_out_row)
 
 	var vo_lbl := Label.new()
 	vo_lbl.text = "Enable Video Out"
@@ -162,7 +166,7 @@ func _build_ui() -> void:
 	vo_lbl.add_theme_font_size_override("font_size", 18)
 	vo_lbl.add_theme_color_override("font_color", COLOR_ROW)
 	vo_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	vo_row.add_child(vo_lbl)
+	_video_out_row.add_child(vo_lbl)
 
 	_video_out_check = CheckBox.new()
 	_video_out_check.custom_minimum_size = Vector2(48, 48)
@@ -171,7 +175,29 @@ func _build_ui() -> void:
 		if not _suppress_signal:
 			video_out_toggled.emit(on)
 	)
-	vo_row.add_child(_video_out_check)
+	_video_out_row.add_child(_video_out_check)
+
+	var grav_row := HBoxContainer.new()
+	grav_row.custom_minimum_size = Vector2(0, 56)
+	grav_row.add_theme_constant_override("separation", 8)
+	sys_rows.add_child(grav_row)
+
+	var grav_lbl := Label.new()
+	grav_lbl.text = "Ignore Gravity"
+	grav_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grav_lbl.add_theme_font_size_override("font_size", 18)
+	grav_lbl.add_theme_color_override("font_color", COLOR_ROW)
+	grav_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	grav_row.add_child(grav_lbl)
+
+	_ignore_grav_check = CheckBox.new()
+	_ignore_grav_check.custom_minimum_size = Vector2(48, 48)
+	_ignore_grav_check.add_theme_font_size_override("font_size", 22)
+	_ignore_grav_check.toggled.connect(func(on: bool):
+		if not _suppress_signal:
+			ignore_gravity_toggled.emit(on)
+	)
+	grav_row.add_child(_ignore_grav_check)
 
 	# Track which scroll container is active for stick-driven scrolling
 	_active_scroll = _options_scroll
@@ -200,15 +226,16 @@ func populate(definitions: Dictionary, current_values: Dictionary, controller_in
 
 
 ## Sync the System tab to the device's current state (no signal re-emit).
-## `show_tab` false (consoles) hides the whole tab — no device toggles apply.
-func populate_system(video_out: bool, show_tab: bool = true) -> void:
+## `show_video_out` false (consoles) hides just that row — their cable is
+## always on; the tab stays for the other device toggles.
+func populate_system(video_out: bool, show_video_out: bool, ignore_grav: bool) -> void:
 	_suppress_signal = true
-	if _tabs and _system_tab_idx >= 0:
-		_tabs.set_tab_hidden(_system_tab_idx, not show_tab)
-		if not show_tab and _tabs.current_tab == _system_tab_idx:
-			_tabs.current_tab = 0
+	if _video_out_row:
+		_video_out_row.visible = show_video_out
 	if _video_out_check:
 		_video_out_check.button_pressed = video_out
+	if _ignore_grav_check:
+		_ignore_grav_check.button_pressed = ignore_grav
 	_suppress_signal = false
 
 

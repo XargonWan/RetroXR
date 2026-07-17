@@ -85,6 +85,7 @@ func _ensure_ui_connected() -> void:
 	ui.option_changed.connect(_on_option_changed)
 	ui.port_device_changed.connect(_on_port_device_changed)
 	ui.video_out_toggled.connect(_on_video_out_toggled)
+	ui.ignore_gravity_toggled.connect(_on_ignore_gravity_toggled)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 	print("[CoreOptionsPanel] 2D UI signals connected")
@@ -103,7 +104,8 @@ func _populate() -> void:
 	if not ui:
 		return
 	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info)
-	ui.populate_system(_system.video_out_enabled, _system.supports_video_out_toggle())
+	ui.populate_system(_system.video_out_enabled, _system.supports_video_out_toggle(),
+		_system.ignore_gravity)
 
 
 ## Relay the user's option change from the 2D UI back to the system.
@@ -117,6 +119,12 @@ func _on_option_changed(key: String, value: String) -> void:
 func _on_video_out_toggled(enabled: bool) -> void:
 	if _system and is_instance_valid(_system):
 		_system.set_video_out_enabled(enabled)
+
+
+## System-tab toggle: float in place where dropped.
+func _on_ignore_gravity_toggled(enabled: bool) -> void:
+	if _system and is_instance_valid(_system):
+		_system.set_ignore_gravity(enabled)
 
 
 func _on_port_device_changed(port: int, device_id: int) -> void:

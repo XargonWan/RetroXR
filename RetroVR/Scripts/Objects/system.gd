@@ -68,6 +68,10 @@ var video_out_enabled: bool = true
 # Saved value restored by persistence (set before _ready; -1 = no override).
 var _video_out_from_save: int = -1
 
+## Ignore gravity: the system freezes exactly where it's dropped and floats
+## there. Toggled from the options panel's System tab; default off.
+var ignore_gravity: bool = false
+
 # Cached core options (populated when options_ready fires)
 var _options_definitions: Dictionary = {}
 var _options_values: Dictionary = {}
@@ -172,6 +176,10 @@ func _ready() -> void:
 	# SNES, a PS1 disc only fits a PlayStation). Unlabelled legacy media keeps
 	# working everywhere; save/netplay restores bypass the filter.
 	_cartridge_slot.snap_filter = _accepts_media
+	# Ignore-gravity: re-freeze wherever the player lets go.
+	dropped.connect(_on_system_dropped)
+	if ignore_gravity:   # restored from a save — float at the saved pose
+		_freeze_in_place.call_deferred()
 	_memcard_slot.has_picked_up.connect(_on_memcard_inserted)
 	_memcard_slot.has_dropped.connect(_on_memcard_removed)
 	_power_button.button_pressed.connect(toggle_power)
@@ -563,6 +571,33 @@ func _add_cables_to_scene() -> void:
 ## consoles have no builtin screen, so their cable is always on).
 func supports_video_out_toggle() -> bool:
 	return _model != null and _model.is_handheld()
+
+
+## Toggle floating: on = freeze right where it is (or where it's next dropped);
+## off = normal physics resumes (unless currently held or being restored).
+func set_ignore_gravity(on: bool) -> void:
+	if on == ignore_gravity:
+		return
+	ignore_gravity = on
+	if on:
+		_freeze_in_place()
+	elif not is_picked_up():
+		freeze = false
+		sleeping = false
+	NetworkManager.report_event(NetObjectSync.EV_SYS_GRAVITY, {"sys": self, "on": on})
+
+
+func _on_system_dropped(_pickable: Node3D) -> void:
+	if ignore_gravity:
+		# Deferred: let the release finish (velocities applied) before parking.
+		_freeze_in_place.call_deferred()
+
+
+func _freeze_in_place() -> void:
+	if ignore_gravity and not is_picked_up():
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		freeze = true
 
 
 ## Show/hide+park the video-out cables per the video_out_enabled toggle.
