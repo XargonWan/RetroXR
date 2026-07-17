@@ -351,6 +351,10 @@ func _load_system_model() -> void:
 		if _model.has_method("configure_handheld_body"):
 			_model.configure_handheld_body(self)
 		_model.configure_handheld_controls(self)
+		# Two-handed hold, like a game controller: HandheldInput already merges
+		# buttons/sticks from both hands (retro_controller pipeline) — the
+		# pickable just has to allow the second grab.
+		second_hand_grab = SecondHandGrab.SECOND
 		_handheld_input = HandheldInput.new()
 		_handheld_input.name = "HandheldInput"
 		add_child(_handheld_input)
