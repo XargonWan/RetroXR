@@ -634,8 +634,60 @@ func _process_grab_resize(delta: float, stick_x: float) -> void:
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
 
-## Add obj to the scene, place it 0.5 m in front of the menu at the type's table height.
+## The "hand" that clicked the spawn button: the VR FunctionPickup of whichever
+## pointer is on the menu (trigger-pressed hand wins if both are), or the
+## DesktopPickup in desktop mode. Null when it can't be determined.
+func _spawn_grabber() -> Node:
+	if not get_viewport().use_xr:
+		var pivot := get_tree().get_first_node_in_group("desktop_hand")
+		if pivot:
+			var ref: Variant = pivot.get("_owner_pickup")
+			if ref is WeakRef:
+				return (ref as WeakRef).get_ref()
+		return null
+	var over: Array = []
+	for ptr: XRToolsFunctionPointer in [_right_pointer, _left_pointer]:
+		if ptr and _pointer_over_menu(ptr):
+			over.append(ptr)
+	for ptr: XRToolsFunctionPointer in over:
+		var ctrl := ptr.get_parent() as XRController3D
+		if ctrl and ctrl.is_button_pressed("trigger_click"):
+			return XRToolsFunctionPickup.find_instance(ctrl)
+	if not over.is_empty():
+		var ctrl := (over[0] as Node).get_parent() as XRController3D
+		if ctrl:
+			return XRToolsFunctionPickup.find_instance(ctrl)
+	return null
+
+
+## True when that hand already holds something.
+func _grabber_busy(grabber: Node) -> bool:
+	if grabber is XRToolsFunctionPickup:
+		return is_instance_valid((grabber as XRToolsFunctionPickup).picked_up_object)
+	if grabber != null and grabber.has_method("is_holding"):
+		return grabber.is_holding()
+	return false
+
+
+## Put a freshly spawned pickable into that hand.
+func _give_to_grabber(grabber: Node, obj: XRToolsPickable) -> void:
+	if grabber is XRToolsFunctionPickup:
+		(grabber as XRToolsFunctionPickup)._pick_up_object(obj)
+	elif grabber != null and grabber.has_method("grab_spawned"):
+		grabber.grab_spawned(obj)
+
+
+## Add obj to the scene, place it 0.5 m in front of the menu at the type's table
+## height, then hand it to whichever hand clicked the spawn button. A full hand
+## blocks the spawn ("Drop Item From Hand First" in the menu's status bar).
 func _place_spawned(obj: Node3D, type: String) -> void:
+	var grabber := _spawn_grabber()
+	if grabber != null and _grabber_busy(grabber):
+		obj.queue_free()
+		var menu := _get_menu()
+		if menu:
+			menu.show_notice("Drop Item From Hand First")
+		return
 	get_tree().current_scene.add_child(obj)
 	obj.add_to_group("spawned")
 	var fwd := -global_transform.basis.z
@@ -646,8 +698,14 @@ func _place_spawned(obj: Node3D, type: String) -> void:
 	obj.global_position = global_position + fwd * 0.5
 	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
 	# In a multiplayer session the host registers + broadcasts; a client's
-	# local copy is converted into a spawn request the host executes.
+	# local copy is converted into a spawn request the host executes (the copy
+	# is freed, so a client can't receive it in hand — it spawns placed).
 	NetworkManager.on_local_spawn(obj)
+	# Hand it over — except on a netplay client, whose local copy was just
+	# queue_freed by on_local_spawn (the host mints the real one, placed).
+	if grabber != null and not NetworkManager.is_client() \
+			and is_instance_valid(obj) and obj is XRToolsPickable:
+		_give_to_grabber(grabber, obj as XRToolsPickable)
 
 
 func _on_spawn_requested(type: String) -> void:

@@ -144,6 +144,18 @@ func _physics_process(_delta: float) -> void:
 		_hand_pivot.global_position = global_position + fwd * _grab_dist
 
 
+## True while the desktop hand is holding something (spawn-into-hand gate).
+func is_holding() -> bool:
+	return _held_object != null
+
+
+## Grab a freshly spawned pickable into the desktop hand (spawn-into-hand).
+func grab_spawned(pickable: XRToolsPickable) -> void:
+	if _held_object or not is_instance_valid(pickable):
+		return
+	_grab_target(pickable)
+
+
 ## Cast ray and grab the first XRToolsPickable hit.
 func _try_grab() -> void:
 	if _held_object:

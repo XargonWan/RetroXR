@@ -2796,6 +2796,24 @@ func _update_scrape_status(msg: String) -> void:
 		_scrape_status_label.text = msg
 
 
+# Bumped per notice so a stale auto-hide can't clear a newer message.
+var _notice_token := 0
+
+
+## Transient notice in the bottom status bar slot (same look as the scraper's
+## "Hashing rom…" bar) — e.g. "Drop Item From Hand First". Auto-hides.
+func show_notice(msg: String, seconds := 2.5) -> void:
+	_show_scrape_status(msg)
+	_notice_token += 1
+	var tok := _notice_token
+	get_tree().create_timer(seconds).timeout.connect(func() -> void:
+		# Only clear if nothing (newer notice / live scrape) replaced our text.
+		if tok == _notice_token and _scrape_status_label != null \
+				and is_instance_valid(_scrape_status_label) \
+				and _scrape_status_label.text == msg:
+			_hide_scrape_status())
+
+
 func _hide_scrape_status() -> void:
 	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
 		_scrape_status_bar.queue_free()
