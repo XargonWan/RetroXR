@@ -103,7 +103,7 @@ func _populate() -> void:
 	if not ui:
 		return
 	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info)
-	ui.populate_system(_system.video_out_enabled)
+	ui.populate_system(_system.video_out_enabled, _system.supports_video_out_toggle())
 
 
 ## Relay the user's option change from the 2D UI back to the system.

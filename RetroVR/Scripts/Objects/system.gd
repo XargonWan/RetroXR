@@ -259,8 +259,12 @@ func _load_system_model() -> void:
 		_tv_window_mats.append(null)
 		_tv_touch_surfaces.append(null)
 		_model.configure_cable_attach_for(_attach_points[i], i)
-	video_out_enabled = (_video_out_from_save == 1) if _video_out_from_save >= 0 \
-		else not _model.is_handheld()
+	# Consoles ALWAYS have video out (a TV is their only display — no toggle);
+	# handhelds default OFF and remember the saved choice.
+	if _model.is_handheld():
+		video_out_enabled = _video_out_from_save == 1
+	else:
+		video_out_enabled = true
 	_model.configure_cartridge_slot(_cartridge_slot)
 	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
@@ -555,10 +559,18 @@ func _add_cables_to_scene() -> void:
 	_apply_video_out()
 
 
+## True when this system offers the Enable Video Out toggle (handhelds only —
+## consoles have no builtin screen, so their cable is always on).
+func supports_video_out_toggle() -> bool:
+	return _model != null and _model.is_handheld()
+
+
 ## Show/hide+park the video-out cables per the video_out_enabled toggle.
 ## Disabling first unplugs any connected TV (so no picture lingers), then
 ## hides the whole cable and freezes it out of the simulation.
 func set_video_out_enabled(on: bool) -> void:
+	if not supports_video_out_toggle():
+		on = true   # consoles are always on, whatever a save/peer says
 	if on == video_out_enabled:
 		return
 	video_out_enabled = on

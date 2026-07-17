@@ -31,6 +31,8 @@ var _controllers_scroll: ScrollContainer
 var _controllers_rows: VBoxContainer
 var _system_scroll: ScrollContainer
 var _video_out_check: CheckBox = null
+var _tabs: TabContainer = null
+var _system_tab_idx := -1
 var _active_scroll: ScrollContainer = null
 # Guard so populate_system() doesn't re-emit when it sets control values.
 var _suppress_signal := false
@@ -129,10 +131,13 @@ func _build_ui() -> void:
 	_controllers_rows.add_theme_constant_override("separation", 4)
 	_controllers_scroll.add_child(_controllers_rows)
 
-	# System tab (device-level settings, not core options)
+	# System tab (device-level settings, not core options). Hidden for
+	# consoles — they have no toggles here (video out is always on for them).
+	_tabs = tabs
 	var sys_outer := VBoxContainer.new()
 	sys_outer.name = "System"
 	tabs.add_child(sys_outer)
+	_system_tab_idx = tabs.get_tab_count() - 1
 
 	_system_scroll = ScrollContainer.new()
 	_system_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -194,9 +199,14 @@ func populate(definitions: Dictionary, current_values: Dictionary, controller_in
 	_refresh_controllers()
 
 
-## Sync the System tab to the console's current state (no signal re-emit).
-func populate_system(video_out: bool) -> void:
+## Sync the System tab to the device's current state (no signal re-emit).
+## `show_tab` false (consoles) hides the whole tab — no device toggles apply.
+func populate_system(video_out: bool, show_tab: bool = true) -> void:
 	_suppress_signal = true
+	if _tabs and _system_tab_idx >= 0:
+		_tabs.set_tab_hidden(_system_tab_idx, not show_tab)
+		if not show_tab and _tabs.current_tab == _system_tab_idx:
+			_tabs.current_tab = 0
 	if _video_out_check:
 		_video_out_check.button_pressed = video_out
 	_suppress_signal = false
