@@ -344,6 +344,14 @@ func _process(delta: float) -> void:
 	var right_over: bool = _pointer_over_menu(_right_pointer)
 	var left_over:  bool = _pointer_over_menu(_left_pointer)
 
+	# Remember which hand STARTS a trigger press while its laser is on the
+	# menu — UI buttons emit `pressed` on trigger RELEASE, so by the time a
+	# spawn handler runs the clicking hand's trigger already reads up, and
+	# with both lasers on the menu the spawn used to fall back to the wrong
+	# hand (left click -> right hand).
+	_track_menu_press(_left_ctrl, left_over)
+	_track_menu_press(_right_ctrl, right_over)
+
 	# Process grab (start, sustain, or end)
 	_process_grab(delta, right_over, left_over)
 	if _grab_active:
@@ -634,9 +642,30 @@ func _process_grab_resize(delta: float, stick_x: float) -> void:
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
 
-## The "hand" that clicked the spawn button: the VR FunctionPickup of whichever
-## pointer is on the menu (trigger-pressed hand wins if both are), or the
-## DesktopPickup in desktop mode. Null when it can't be determined.
+# The hand that most recently STARTED a trigger press with its laser on the
+# menu (sampled per frame in _process) — the authoritative "who clicked".
+var _menu_press_ctrl: XRController3D = null
+var _menu_press_ms := 0
+var _trigger_was_down: Dictionary = {}
+
+
+## Rising-edge sampler: record the hand the moment its trigger goes down while
+## pointing at the menu. UI buttons fire on RELEASE, so this is captured
+## frames before any spawn handler runs.
+func _track_menu_press(ctrl: XRController3D, over_menu: bool) -> void:
+	if ctrl == null:
+		return
+	var down := ctrl.is_button_pressed("trigger_click")
+	var was: bool = _trigger_was_down.get(ctrl.tracker, false)
+	_trigger_was_down[ctrl.tracker] = down
+	if down and not was and over_menu:
+		_menu_press_ctrl = ctrl
+		_menu_press_ms = Time.get_ticks_msec()
+
+
+## The "hand" that clicked the spawn button: the hand whose trigger press on
+## the menu was recorded last (VR), or the DesktopPickup in desktop mode.
+## Null when it can't be determined.
 func _spawn_grabber() -> Node:
 	if not get_viewport().use_xr:
 		var pivot := get_tree().get_first_node_in_group("desktop_hand")
@@ -645,23 +674,20 @@ func _spawn_grabber() -> Node:
 			if ref is WeakRef:
 				return (ref as WeakRef).get_ref()
 		return null
-	# The spawning click IS a trigger press — the hand whose trigger is down
-	# right now is the selecting hand. That beats the over-menu test (the
-	# other hand's idle laser can also rest on the menu, and over-menu
-	# detection can miss the clicking hand).
-	var pressed: Array = []
+	return _spawn_grabber_xr()
+
+
+func _spawn_grabber_xr() -> Node:
+	# The recorded press-on-menu is the click that fired this spawn (UI
+	# buttons emit on release, so live trigger state can't be trusted here).
+	if is_instance_valid(_menu_press_ctrl) \
+			and Time.get_ticks_msec() - _menu_press_ms < 1500:
+		return XRToolsFunctionPickup.find_instance(_menu_press_ctrl)
+	# Fallbacks: a hand still holding its trigger, then whoever points at the
+	# menu.
 	for ctrl: XRController3D in [_left_ctrl, _right_ctrl]:
 		if ctrl and ctrl.is_button_pressed("trigger_click"):
-			pressed.append(ctrl)
-	if pressed.size() > 1:
-		# Both triggers down — the one pointing at the menu wins.
-		for ctrl: XRController3D in pressed:
-			var ptr := _left_pointer if ctrl == _left_ctrl else _right_pointer
-			if ptr and _pointer_over_menu(ptr):
-				return XRToolsFunctionPickup.find_instance(ctrl)
-	if not pressed.is_empty():
-		return XRToolsFunctionPickup.find_instance(pressed[0])
-	# No trigger down (edge case) — fall back to whoever points at the menu.
+			return XRToolsFunctionPickup.find_instance(ctrl)
 	for ptr: XRToolsFunctionPointer in [_right_pointer, _left_pointer]:
 		if ptr and _pointer_over_menu(ptr):
 			var ctrl := ptr.get_parent() as XRController3D
