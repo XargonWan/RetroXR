@@ -405,11 +405,11 @@ func _load_system_model() -> void:
 			eject_label.text = "OPEN" if _disc_loader == MediaDimensions.LOADER_TRAY else "EJECT"
 		if _disc_loader == MediaDimensions.LOADER_TRAY:
 			_cartridge_slot.enabled = false   # tray starts closed
-		# The dark cartridge-slot puck would swallow a flat disc — hide it on
-		# disc hardware; the disc itself (or the tray) is the visual.
-		var slot_visual := _cartridge_slot.get_node_or_null("SlotVisual") as MeshInstance3D
-		if slot_visual:
-			slot_visual.visible = false
+		# The cartridge recess would look wrong on disc hardware — the disc
+		# tray/slit is the visual instead.
+		var cart_recess := _system_body.get_node_or_null("CartSlotMouth") as MeshInstance3D
+		if cart_recess:
+			cart_recess.visible = false
 		# The snap ghost is cartridge-shaped — reshape it into this system's
 		# disc so the blue "goes here" shadow reads correctly.
 		var ghost := _cartridge_slot.get_node_or_null("SnapHighlight/HighlightMesh") as MeshInstance3D

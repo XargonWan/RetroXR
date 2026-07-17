@@ -27,6 +27,13 @@ height = 0.015
 [sub_resource type="StandardMaterial3D" id="Mat_slot"]
 albedo_color = Color(0.15, 0.15, 0.15, 1)
 
+[sub_resource type="BoxMesh" id="BoxMesh_cart_recess"]
+size = Vector3(0.12, 0.05, 0.038)
+
+[sub_resource type="StandardMaterial3D" id="Mat_cart_recess"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+roughness = 1.0
+
 [sub_resource type="BoxMesh" id="BoxMesh_cart_ghost"]
 size = Vector3(0.105, 0.085, 0.018)
 
@@ -100,24 +107,18 @@ shape = SubResource("BoxShape3D_body")
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_body")
 
+[node name="CartSlotMouth" type="MeshInstance3D" parent="SystemBody" unique_id=1806706225]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.026, 0)
+mesh = SubResource("BoxMesh_cart_recess")
+surface_material_override/0 = SubResource("Mat_cart_recess")
+
 [node name="PickableHighlight" type="Node3D" parent="." unique_id=1748385500]
 script = ExtResource("5_pickhigh")
 
 [node name="CartridgeSlot" parent="." unique_id=-294967295 instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.055, 0)
 grab_distance = 0.07
 snap_require = "cartridge"
-
-[node name="SlotVisual" type="MeshInstance3D" parent="CartridgeSlot" unique_id=231872354]
-mesh = SubResource("CylMesh_slot")
-surface_material_override/0 = SubResource("Mat_slot")
-
-[node name="SnapHighlight" type="Node3D" parent="CartridgeSlot" unique_id=2113262660]
-script = ExtResource("4_snaphis")
-
-[node name="HighlightMesh" type="MeshInstance3D" parent="CartridgeSlot/SnapHighlight" unique_id=224416059]
-mesh = SubResource("BoxMesh_cart_ghost")
-surface_material_override/0 = SubResource("Mat_cart_ghost")
 
 [node name="MemoryCardSlot" parent="." unique_id=-294967294 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.02, 0.14)
