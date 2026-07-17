@@ -87,6 +87,20 @@ func configure_handheld_controls(host: Node3D) -> void:
 	pass
 
 
+## Interior open angle of a clamshell handheld's lid in degrees (0 = folded
+## shut … 180 = flat open), or -1 for hardware without a lid. Read by
+## ScenePersistence to save the lid pose; the -1 sentinel is the same
+## "capability absent" convention as get_builtin_screen() → null.
+func get_lid_angle_deg() -> float:
+	return -1.0
+
+
+## Restore a clamshell lid's interior open angle (0 shut … 180 flat). Hardware
+## without a lid ignores it.
+func set_lid_angle_deg(_open_deg: float) -> void:
+	pass
+
+
 ## Reposition the memory-card snap zone to the model's physical card slot.
 func configure_memory_card_slot(slot: Node3D) -> void:
 	pass

@@ -35,13 +35,6 @@ func _ready() -> void:
 		_controllers.append(node as XRController3D)
 
 
-## Current target rotation about local X, in degrees.
-func current_deg() -> float:
-	if target:
-		return rad_to_deg(target.rotation.x)
-	return 0.0
-
-
 ## Set the target rotation without emitting (restore/populate use).
 func set_rotation_deg_no_signal(deg: float) -> void:
 	_apply(deg, false)

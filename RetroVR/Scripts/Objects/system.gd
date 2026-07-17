@@ -445,7 +445,7 @@ func _load_system_model() -> void:
 			_model.configure_handheld_body(self)
 		_model.configure_handheld_controls(self)
 		# Restore a saved clamshell lid angle (DS/3DS); else keep the model default.
-		if _lid_angle_from_save >= 0.0 and _model.has_method("set_lid_angle_deg"):
+		if _lid_angle_from_save >= 0.0:
 			_model.set_lid_angle_deg(_lid_angle_from_save)
 		# Two-handed hold, like a game controller: HandheldInput already merges
 		# buttons/sticks from both hands (retro_controller pipeline) — the
@@ -462,9 +462,7 @@ func _load_system_model() -> void:
 ## Interior open angle of a clamshell handheld's lid (0 shut … 180 flat), or
 ## -1 for systems without a lid. Used by ScenePersistence.
 func get_lid_angle_deg() -> float:
-	if _model != null and _model.has_method("get_lid_angle_deg"):
-		return _model.get_lid_angle_deg()
-	return -1.0
+	return _model.get_lid_angle_deg() if _model != null else -1.0
 
 
 ## Enable or disable libretro input polling for this system.

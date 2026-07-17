@@ -53,11 +53,10 @@ var top_eye_shift := 0.0
 
 var _bottom_screen: MeshInstance3D = null
 var _lid_pivot: Node3D = null
-# Grabbable lid hinge + cached pivot rotation (deg about X; 0 = flat/180° open,
-# 180 = folded shut). Public angle (get/set_lid_angle_deg) is the interior open
-# angle (180 - this).
+# Grabbable lid hinge. The lid's rotation about X lives on _lid_pivot (0 = flat /
+# 180° interior open, 180 = folded shut); the public angle (get/set_lid_angle_deg)
+# is the interior open angle, 180 minus that rotation.
 var _hinge: VRHinge = null
-var _lid_rot_deg := 0.0
 var _touch: Area3D = null
 # Hidden proxy quad the C++ VideoHandler renders the composite into.
 var _proxy: MeshInstance3D = null
@@ -118,8 +117,7 @@ func _build_shell() -> void:
 	_lid_pivot.position = Vector3(0, half_y, -body_size.z / 2.0)
 	# Panel extends -Z at 0°; rotating +X tips it up. Interior angle =
 	# 180° - rotation, so rotation = 180 - lid_open_deg.
-	_lid_rot_deg = 180.0 - lid_open_deg
-	_lid_pivot.rotation_degrees = Vector3(_lid_rot_deg, 0, 0)
+	_lid_pivot.rotation_degrees = Vector3(180.0 - lid_open_deg, 0, 0)
 	add_child(_lid_pivot)
 
 	var lid := MeshInstance3D.new()
@@ -228,18 +226,16 @@ func _build_hinge() -> void:
 	# On the lid's far/top edge (the natural open/close grab spot), riding the lid.
 	_hinge.position = Vector3(0, -lid_size.y / 2.0, -lid_size.z + 0.006)
 	_lid_pivot.add_child(_hinge)
-	_hinge.rotation_changed.connect(func(deg: float) -> void: _lid_rot_deg = deg)
 
 
 ## Interior open angle in degrees: 0 = folded shut, 180 = flat open.
 func get_lid_angle_deg() -> float:
-	return 180.0 - _lid_rot_deg
+	return 180.0 - rad_to_deg(_lid_pivot.rotation.x) if _lid_pivot else 180.0
 
 
 ## Set the interior open angle (0 shut … 180 flat).
 func set_lid_angle_deg(open_deg: float) -> void:
 	var rot := clampf(180.0 - open_deg, 0.0, 180.0)
-	_lid_rot_deg = rot
 	if _hinge:
 		_hinge.set_rotation_deg_no_signal(rot)
 	elif _lid_pivot:
