@@ -751,18 +751,14 @@ func _plug_is_fixed(node: Node3D) -> bool:
 	return false
 
 
-## World-space direction the cable should leave this anchor along.
-## • A plug (RigidBody3D) has an authored orientation, so use its plug_exit_axis.
-## • A host attach point (plain Node3D) isn't rotated in the scenes, so point the
-##   cable OUT of the device — from the device centre toward the attach point.
+## World-space direction the cable should leave this anchor along: the anchor's
+## plug_exit_axis (local -Z) rotated into world space. For a plug that's its
+## authored cable-exit end; for a host attach point that's the port face normal
+## (all the video-out attach points sit identity-oriented on the device's -Z
+## back, so the cable leaves straight out the back — perpendicular, not angled).
 func _plug_exit_dir(node: Node3D) -> Vector3:
 	if node == null:
 		return Vector3.ZERO
-	if not (node is RigidBody3D):
-		var parent := node.get_parent() as Node3D
-		var off := node.position
-		if parent != null and off.length_squared() > 1e-6:
-			return (parent.global_transform.basis.orthonormalized() * off).normalized()
 	return (node.global_transform.basis.orthonormalized() * plug_exit_axis).normalized()
 
 
