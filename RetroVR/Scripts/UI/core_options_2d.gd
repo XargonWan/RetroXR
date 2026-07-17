@@ -15,6 +15,8 @@ extends Control
 
 signal option_changed(key: String, value: String)
 signal port_device_changed(port: int, device_id: int)
+## System-tab toggle: show/hide the console's video-out cables.
+signal video_out_toggled(enabled: bool)
 signal close_requested
 
 # ── Palette ────────────────────────────────────────────────────────────────────
@@ -27,7 +29,11 @@ var _options_scroll: ScrollContainer
 var _options_rows: VBoxContainer
 var _controllers_scroll: ScrollContainer
 var _controllers_rows: VBoxContainer
+var _system_scroll: ScrollContainer
+var _video_out_check: CheckBox = null
 var _active_scroll: ScrollContainer = null
+# Guard so populate_system() doesn't re-emit when it sets control values.
+var _suppress_signal := false
 
 var _definitions: Dictionary = {}
 var _values: Dictionary = {}
@@ -123,12 +129,52 @@ func _build_ui() -> void:
 	_controllers_rows.add_theme_constant_override("separation", 4)
 	_controllers_scroll.add_child(_controllers_rows)
 
+	# System tab (device-level settings, not core options)
+	var sys_outer := VBoxContainer.new()
+	sys_outer.name = "System"
+	tabs.add_child(sys_outer)
+
+	_system_scroll = ScrollContainer.new()
+	_system_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_system_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_system_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_system_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	sys_outer.add_child(_system_scroll)
+
+	var sys_rows := VBoxContainer.new()
+	sys_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sys_rows.add_theme_constant_override("separation", 4)
+	_system_scroll.add_child(sys_rows)
+
+	var vo_row := HBoxContainer.new()
+	vo_row.custom_minimum_size = Vector2(0, 56)
+	vo_row.add_theme_constant_override("separation", 8)
+	sys_rows.add_child(vo_row)
+
+	var vo_lbl := Label.new()
+	vo_lbl.text = "Enable Video Out"
+	vo_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vo_lbl.add_theme_font_size_override("font_size", 18)
+	vo_lbl.add_theme_color_override("font_color", COLOR_ROW)
+	vo_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	vo_row.add_child(vo_lbl)
+
+	_video_out_check = CheckBox.new()
+	_video_out_check.custom_minimum_size = Vector2(48, 48)
+	_video_out_check.add_theme_font_size_override("font_size", 22)
+	_video_out_check.toggled.connect(func(on: bool):
+		if not _suppress_signal:
+			video_out_toggled.emit(on)
+	)
+	vo_row.add_child(_video_out_check)
+
 	# Track which scroll container is active for stick-driven scrolling
 	_active_scroll = _options_scroll
 	tabs.tab_changed.connect(func(idx: int):
 		match idx:
 			0: _active_scroll = _options_scroll
 			1: _active_scroll = _controllers_scroll
+			2: _active_scroll = _system_scroll
 	)
 
 	_show_options_placeholder()
@@ -146,6 +192,14 @@ func populate(definitions: Dictionary, current_values: Dictionary, controller_in
 	print("[CoreOptions2D] populate() — %d options, %d ports" % [definitions.size(), controller_info.size()])
 	_refresh_options()
 	_refresh_controllers()
+
+
+## Sync the System tab to the console's current state (no signal re-emit).
+func populate_system(video_out: bool) -> void:
+	_suppress_signal = true
+	if _video_out_check:
+		_video_out_check.button_pressed = video_out
+	_suppress_signal = false
 
 
 ## Drive the active scroll container from an external stick input (pixels > 0 = down).

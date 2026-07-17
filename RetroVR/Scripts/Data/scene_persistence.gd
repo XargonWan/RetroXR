@@ -377,6 +377,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"connected_tv_id": tv_id,
 			"snapped_cartridge_id": cart_id,
 			"snapped_memcard_id": memcard_id,
+			"video_out": sys.video_out_enabled,
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 		}
@@ -589,6 +590,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 			sys.systemid = data.get("systemid", "")
 			sys.model_variant = data.get("model_variant", "")
+			if data.has("video_out"):
+				sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
 			obj = sys
 		"tv":
 			var tv := TV_SCENE.instantiate() as RetroTV

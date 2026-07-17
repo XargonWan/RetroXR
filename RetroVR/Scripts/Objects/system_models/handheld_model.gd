@@ -154,6 +154,19 @@ func _cart_protrude() -> float:
 	return clampf(cart_size.y * 0.28, 0.008, 0.02)
 
 
+## Seated cart: only the protruding stub is grabbable — the cart's padded
+## grab box otherwise pokes through the thin shell and steals desktop clicks
+## / VR grabs aimed at the device.
+func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
+	if cartridge.has_method("set_seated_grab_stub"):
+		cartridge.set_seated_grab_stub(_cart_protrude() + 0.004)
+
+
+func play_cartridge_eject(cartridge: Node3D, _slot: Node3D) -> void:
+	if cartridge.has_method("reset_grab_shapes"):
+		cartridge.reset_grab_shapes()
+
+
 func _add_cosmetics(half_y: float) -> void:
 	var dark := StandardMaterial3D.new()
 	dark.albedo_color = Color(0.15, 0.15, 0.17)
@@ -212,11 +225,16 @@ func _hits_screen_bezel(p: Vector3, half: float) -> bool:
 ## sticking out for grabbing.
 func configure_cartridge_slot(slot: Node3D) -> void:
 	# Cartridge local frame: x = width, y = length (insert axis), z = thickness
-	# with the label on +Z. Rotating the zone -90° about X lays it flat —
-	# length running into the body (-Z), label facing up (+Y).
-	slot.rotation_degrees = Vector3(-90, 0, 0)
+	# with the label on +Z. This pose lays it flat with the length running into
+	# the body (-Z) and the LABEL FACING DOWN toward the device's back shell —
+	# like real handheld carts (the label is hidden while inserted).
+	slot.rotation_degrees = Vector3(90, 180, 0)
 	slot.position = Vector3(0, 0,
 		-body_size.z / 2.0 + cart_size.y / 2.0 - _cart_protrude())
+	# The console-scale 7 cm grab sphere (also the desktop click target for the
+	# seated cart) envelopes most of a handheld — clicking anywhere near the
+	# device grabbed the cart. Shrink it to just around the slot/stub.
+	slot.grab_distance = 0.03
 	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if visual:
 		visual.visible = false

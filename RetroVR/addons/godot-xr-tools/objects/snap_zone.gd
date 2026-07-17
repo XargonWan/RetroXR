@@ -44,6 +44,12 @@ enum SnapMode {
 ## Require grab-by to be in the specified group
 @export var grab_require : String = ""
 
+## LOCAL PATCH (RetroVR): optional extra acceptance test `func(obj) -> bool`
+## set by the zone's owner — e.g. a console slot only taking media whose
+## systemid matches. Applies to hover/snap and the held preview; programmatic
+## pick_up_object() (save/netplay restore) bypasses it on purpose.
+var snap_filter: Callable = Callable()
+
 ## Deny grab-by
 @export var grab_exclude : String= ""
 
@@ -89,6 +95,8 @@ func can_preview(obj: Node3D) -> bool:
 	if snap_require.is_empty() or not obj.is_in_group(snap_require):
 		return false
 	if not snap_exclude.is_empty() and obj.is_in_group(snap_exclude):
+		return false
+	if snap_filter.is_valid() and not snap_filter.call(obj):
 		return false
 	return true
 
@@ -252,6 +260,10 @@ func _on_snap_zone_body_entered(target: Node3D) -> void:
 
 	# Reject objects in the excluded snap group
 	if not snap_exclude.is_empty() and target.is_in_group(snap_exclude):
+		return
+
+	# LOCAL PATCH (RetroVR): owner-supplied acceptance test (media matching)
+	if snap_filter.is_valid() and not snap_filter.call(target):
 		return
 
 	# Reject climbable objects

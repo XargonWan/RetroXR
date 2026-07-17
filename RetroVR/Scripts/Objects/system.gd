@@ -61,6 +61,13 @@ var rom_path: String = ""
 var connected_tv: RetroTV = null
 var is_powered_on: bool = false
 
+## Video-out cables shown/usable. Handhelds default OFF (they have their own
+## screen — the cables are clutter until wanted); consoles default ON (a TV is
+## their only display). Toggled from the options panel's System tab.
+var video_out_enabled: bool = true
+# Saved value restored by persistence (set before _ready; -1 = no override).
+var _video_out_from_save: int = -1
+
 # Cached core options (populated when options_ready fires)
 var _options_definitions: Dictionary = {}
 var _options_values: Dictionary = {}
@@ -149,11 +156,22 @@ var _disc_ejected := false
 var _port_controllers: Array = [null, null, null, null]
 
 
+## Real-world cross-compatibility: media of these systemids also fits.
+## (The GBA plays original Game Boy carts — and mgba runs them.)
+const _MEDIA_COMPAT: Dictionary = {
+	"game_boy_advance": ["game_boy"],
+}
+
+
 func _ready() -> void:
 	super._ready()
 	add_to_group("retro_system")
 	_cartridge_slot.has_picked_up.connect(_on_cartridge_inserted)
 	_cartridge_slot.has_dropped.connect(_on_cartridge_removed)
+	# Only this system's own media fits its slot (a GB cart won't go into a
+	# SNES, a PS1 disc only fits a PlayStation). Unlabelled legacy media keeps
+	# working everywhere; save/netplay restores bypass the filter.
+	_cartridge_slot.snap_filter = _accepts_media
 	_memcard_slot.has_picked_up.connect(_on_memcard_inserted)
 	_memcard_slot.has_dropped.connect(_on_memcard_removed)
 	_power_button.button_pressed.connect(toggle_power)
@@ -241,6 +259,8 @@ func _load_system_model() -> void:
 		_tv_window_mats.append(null)
 		_tv_touch_surfaces.append(null)
 		_model.configure_cable_attach_for(_attach_points[i], i)
+	video_out_enabled = (_video_out_from_save == 1) if _video_out_from_save >= 0 \
+		else not _model.is_handheld()
 	_model.configure_cartridge_slot(_cartridge_slot)
 	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
@@ -532,6 +552,47 @@ func _add_cables_to_scene() -> void:
 			print("[RetroSystem] _add_cables_to_scene: restoring pending TV connection (ch %d)" % i)
 			_snap_cable_to_tv(_pending_tv_restores[i], i)
 			_pending_tv_restores[i] = null
+	_apply_video_out()
+
+
+## Show/hide+park the video-out cables per the video_out_enabled toggle.
+## Disabling first unplugs any connected TV (so no picture lingers), then
+## hides the whole cable and freezes it out of the simulation.
+func set_video_out_enabled(on: bool) -> void:
+	if on == video_out_enabled:
+		return
+	video_out_enabled = on
+	_apply_video_out()
+	NetworkManager.report_event(NetObjectSync.EV_SYS_VIDEO_OUT, {"sys": self, "on": on})
+
+
+func _apply_video_out() -> void:
+	for i in _channels.size():
+		var inst: Node3D = _cable_instances[i]
+		var plug: CablePlug = _cable_plugs[i]
+		if inst == null or plug == null or not is_instance_valid(plug):
+			continue
+		if not video_out_enabled and _channel_tvs[i] != null:
+			var tv: RetroTV = _channel_tvs[i]
+			var port := tv.get_node_or_null("CompositePort") as XRToolsSnapZone
+			if port and port.picked_up_object == plug:
+				# Disarm around the drop so the zone's stale grab list can't
+				# instantly re-snap the plug (same pattern as the disc slot).
+				port.enabled = false
+				port.drop_object()
+				port.set_deferred("enabled", true)
+		plug.enabled = video_out_enabled
+		if video_out_enabled:
+			inst.visible = true
+			inst.process_mode = Node.PROCESS_MODE_INHERIT
+			plug.freeze = false
+			plug.global_position = _attach_points[i].global_position \
+				+ Vector3(0.05 * i, 0, -0.1)
+			plug.linear_velocity = Vector3.ZERO
+		else:
+			plug.freeze = true
+			inst.visible = false
+			inst.process_mode = Node.PROCESS_MODE_DISABLED
 
 
 ## Label a multi-output plug so the player can tell the cables apart: floating
@@ -609,6 +670,8 @@ func feed_touch(uv: Vector2, pressed: bool) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	if not video_out_enabled:
+		return   # cables hidden and frozen — nothing to clamp
 	for i in _channels.size():
 		var plug: CablePlug = _cable_plugs[i]
 		var max_len: float = _max_rope_lengths[i]
@@ -1051,6 +1114,16 @@ func _on_rumble_state_changed(port: int, weak: float, strong: float) -> void:
 
 
 # --- Cartridge slot callbacks ---
+
+## True when a piece of media (cartridge/disc) belongs in this system's slot.
+func _accepts_media(obj: Node3D) -> bool:
+	if not "systemid" in obj:
+		return true
+	var mid := str(obj.get("systemid"))
+	if mid.is_empty():
+		return true
+	return mid == systemid or mid in _MEDIA_COMPAT.get(systemid, [])
+
 
 ## Returns the currently snapped cartridge, or null (used by save/load).
 func get_snapped_cartridge() -> Node3D:

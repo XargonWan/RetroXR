@@ -84,6 +84,7 @@ func _ensure_ui_connected() -> void:
 		return
 	ui.option_changed.connect(_on_option_changed)
 	ui.port_device_changed.connect(_on_port_device_changed)
+	ui.video_out_toggled.connect(_on_video_out_toggled)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 	print("[CoreOptionsPanel] 2D UI signals connected")
@@ -102,6 +103,7 @@ func _populate() -> void:
 	if not ui:
 		return
 	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info)
+	ui.populate_system(_system.video_out_enabled)
 
 
 ## Relay the user's option change from the 2D UI back to the system.
@@ -109,6 +111,12 @@ func _on_option_changed(key: String, value: String) -> void:
 	if _system and is_instance_valid(_system):
 		print("[CoreOptionsPanel] option changed: '%s' = '%s'" % [key, value])
 		_system.set_core_option(key, value)
+
+
+## System-tab toggle: show/hide the console's video-out cables.
+func _on_video_out_toggled(enabled: bool) -> void:
+	if _system and is_instance_valid(_system):
+		_system.set_video_out_enabled(enabled)
 
 
 func _on_port_device_changed(port: int, device_id: int) -> void:

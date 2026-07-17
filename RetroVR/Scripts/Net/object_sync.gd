@@ -57,6 +57,7 @@ enum {
 	EV_AUDIO_REMOVE,     # {player}
 	EV_AUDIO_CMD,        # {player, cmd}     client intent -> host transport
 	EV_TV_STEREO,        # {tv, mode}    stereo presentation (0 stereo / 1 left / 2 right)
+	EV_SYS_VIDEO_OUT,    # {sys, on}     video-out cables shown/hidden
 }
 
 var _nm: Node = null
@@ -643,6 +644,9 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_STEREO:
 			if _valid(a, ["tv"]):
 				a["tv"].set_stereo_mode(int(a.get("mode", 0)))
+		EV_SYS_VIDEO_OUT:
+			if _valid(a, ["sys"]):
+				a["sys"].set_video_out_enabled(bool(a.get("on", true)))
 		EV_TV_SIZE:
 			if _valid(a, ["tv"]):
 				a["tv"].set_tv_scale(float(a.get("scale", 1.0)))

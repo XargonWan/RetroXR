@@ -88,6 +88,43 @@ func _apply_system_size() -> void:
 		pointer_col.shape = pshape
 
 
+## While seated in a handheld's recessed slot only the grip end pokes out of
+## the body — limit grabbing (VR hands, desktop reticle, laser) to that stub.
+## The normal grab padding (a ≥5 cm box around a 3.3 cm card) otherwise pokes
+## through the thin shell and swallows clicks meant for the device itself.
+## `depth` is the exposed length along the cart's +Y (grip) end.
+func set_seated_grab_stub(depth: float) -> void:
+	if not MediaDimensions.CART_SIZES.has(systemid):
+		return
+	var s := MediaDimensions.cart_size(systemid)
+	var stub_center := Vector3(0, s.y / 2.0 - depth / 2.0, 0)
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col and col.shape is BoxShape3D:
+		var shape := col.shape.duplicate() as BoxShape3D
+		shape.size = Vector3(s.x, depth, s.z + 0.004)
+		col.shape = shape
+		col.position = stub_center
+	var pcol := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if pcol and pcol.shape is BoxShape3D:
+		var pshape := pcol.shape.duplicate() as BoxShape3D
+		pshape.size = Vector3(s.x + 0.01, depth + 0.006, s.z + 0.01)
+		pcol.shape = pshape
+		pcol.position = stub_center
+
+
+## Restore the normal (padded) grab shapes after leaving a handheld slot.
+func reset_grab_shapes() -> void:
+	if not MediaDimensions.CART_SIZES.has(systemid):
+		return
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col:
+		col.position = Vector3.ZERO
+	var pcol := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if pcol:
+		pcol.position = Vector3.ZERO
+	_apply_system_size()
+
+
 ## Apply the scraped "support" label art onto the label face. Missing art keeps
 ## the existing generic label + title text fallback. Fresh material every time —
 ## never mutate the shared Mat_label sub_resource.
