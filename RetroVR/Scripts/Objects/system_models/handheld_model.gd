@@ -303,7 +303,9 @@ func configure_handheld_controls(host: Node3D) -> void:
 func _build_volume_slider() -> void:
 	var half_y := body_size.y / 2.0
 	_volume_slider = _make_slider("VolumeSlider", 0, 1.0)
-	_volume_slider.axis_local = Vector3(0, 0, 1)
+	# -Z = toward the back edge = "up" from the player's view: slide up for
+	# louder, down for quieter (same sense as the 3DS depth slider).
+	_volume_slider.axis_local = Vector3(0, 0, -1)
 	_volume_slider.travel = 0.022
 	_volume_slider.position = Vector3(body_size.x / 2.0 + 0.002, half_y * 0.4, body_size.z * 0.18)
 	add_child(_volume_slider)

@@ -377,12 +377,16 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 
 ## VR fingertip: a controller tip hovering just above the bottom screen is a
 ## stylus. Engage within the pad's bounds + a small height window; release
-## when it leaves (with hysteresis, VRSlider-style).
+## when it leaves (with hysteresis, VRSlider-style). Hands HOLDING the device
+## never count — a gripping hand's tip hovers near the pad permanently and
+## would otherwise lock the touch (streaming a stuck press and blocking the
+## free hand from poking).
 func _process_fingertip_touch() -> void:
 	if _touch == null or _touch_pointer_down:
 		return
 	if _touch_ctrl != null:
 		if not is_instance_valid(_touch_ctrl) or not _touch_ctrl.get_is_active() \
+				or _is_holding_hand(_touch_ctrl) \
 				or not _tip_on_screen(PokeTip.tip_of(_touch_ctrl), 1.6):
 			var last := _touch_ctrl
 			_touch_ctrl = null
@@ -392,10 +396,25 @@ func _process_fingertip_touch() -> void:
 			_send_touch(PokeTip.tip_of(_touch_ctrl), true)
 			return
 	for ctrl in _touch_controllers:
-		if ctrl and ctrl.get_is_active() and _tip_on_screen(PokeTip.tip_of(ctrl), 1.0):
+		if ctrl and ctrl.get_is_active() and not _is_holding_hand(ctrl) \
+				and _tip_on_screen(PokeTip.tip_of(ctrl), 1.0):
 			_touch_ctrl = ctrl
 			_send_touch(PokeTip.tip_of(ctrl), true)
 			return
+
+
+## True when this controller's hand is currently gripping the device.
+func _is_holding_hand(ctrl: XRController3D) -> bool:
+	if _host == null:
+		return false
+	var driver: Variant = _host.get("_grab_driver")
+	if driver == null:
+		return false
+	if driver.primary and driver.primary.controller == ctrl:
+		return true
+	if driver.secondary and driver.secondary.controller == ctrl:
+		return true
+	return false
 
 
 func _tip_on_screen(world_pos: Vector3, slack: float) -> bool:
