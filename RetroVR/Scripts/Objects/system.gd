@@ -198,6 +198,8 @@ func _ready() -> void:
 	# Spawn one cable per video-out channel
 	_spawn_cables()
 	_update_name_label()
+	# Lay the name flat on the model's front face once meshes + text are built.
+	_place_name_label.call_deferred()
 
 
 ## The power button always reflects run state: green START when off, red STOP
@@ -222,6 +224,94 @@ func _update_name_label() -> void:
 	if display_name.is_empty():
 		display_name = systemid
 	_system_name_label.text = display_name.to_upper()
+
+
+## Lay the system name flat on the front face of the model, sized to fit, facing
+## one fixed direction (no billboard) — consoles use their +Z face (upright,
+## toward the player), handhelds their +Y top face (readable from above). Runs
+## deferred so the model meshes + the label's own text mesh have been built.
+func _place_name_label() -> void:
+	var body := _body_aabb()
+	if body.size.x <= 0.0 or body.size.y <= 0.0 or body.size.z <= 0.0:
+		return
+	var lbl := _system_name_label
+	lbl.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	lbl.scale = Vector3.ONE
+	lbl.rotation = Vector3.ZERO
+	var la := lbl.get_aabb()
+	if la.size.x <= 0.0 or la.size.y <= 0.0:
+		return
+	var cx := body.position.x + body.size.x * 0.5
+	const EPS := 0.003
+	# Placement config, overridable per-model via name_label_placement():
+	#   upright  — true = upright on the vertical +Z front face (consoles, and
+	#              clamshells whose front is the START-button face); false = flat
+	#              on the +Y top face (simple flat handhelds like the Game Boy).
+	#   v_center — vertical centre as a fraction of the face height.
+	#   h_frac   — label height as a fraction of the face height.
+	var cfg := {}
+	if _model != null and _model.has_method("name_label_placement"):
+		cfg = _model.name_label_placement()
+	var upright: bool = cfg.get("upright", not (_model != null and _model.is_handheld()))
+	if upright:
+		# Vertical front (+Z) face, upright toward the player. Default sits low
+		# as a nameplate strip so it clears the controller ports that occupy the
+		# centre of a default console's front face; thin faces (a clamshell base)
+		# override to centre + fill.
+		var v_center: float = cfg.get("v_center", 0.18)
+		var h_frac: float = cfg.get("h_frac", 0.26)
+		var s: float = min(body.size.x * 0.85 / la.size.x, body.size.y * h_frac / la.size.y)
+		lbl.scale = Vector3(s, s, s)
+		var cy := body.position.y + body.size.y * v_center
+		var front_z := body.position.z + body.size.z
+		lbl.position = Vector3(cx, cy, front_z + EPS)
+	else:
+		# Top (+Y) face, lying flat; sit on the front (+Z) strip below the screen.
+		lbl.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+		var s: float = min(body.size.x * 0.8 / la.size.x, body.size.z * 0.28 / la.size.y)
+		lbl.scale = Vector3(s, s, s)
+		var top_y := body.position.y + body.size.y
+		var front_z := body.position.z + body.size.z
+		lbl.position = Vector3(cx, top_y + EPS, front_z - la.size.y * s * 0.6)
+
+
+## AABB of the console/handheld body meshes in this system's local space
+## (default box or the bespoke model's meshes). Excludes buttons/ports/cables/
+## label, which are siblings of the body root. A model may narrow the measured
+## body via name_label_body() — e.g. a clamshell returns just its base so the
+## name lands on the base's front, not over the raised lid.
+func _body_aabb() -> AABB:
+	var meshes: Array[MeshInstance3D] = []
+	var src: Node = null
+	if _model != null and _model.has_method("name_label_body"):
+		src = _model.name_label_body()
+	if src != null:
+		_collect_meshes(src, meshes)
+	else:
+		if _system_body.visible:
+			meshes.append(_system_body)
+		if _model != null:
+			_collect_meshes(_model, meshes)
+	var inv := global_transform.affine_inverse()
+	var out := AABB()
+	var have := false
+	for mi in meshes:
+		if not mi.visible or mi.mesh == null:
+			continue
+		var a := (inv * mi.global_transform) * mi.get_aabb()
+		if not have:
+			out = a
+			have = true
+		else:
+			out = out.merge(a)
+	return out if have else AABB()
+
+
+func _collect_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
+	if node is MeshInstance3D:
+		out.append(node)
+	for c in node.get_children():
+		_collect_meshes(c, out)
 
 
 func _load_system_model() -> void:

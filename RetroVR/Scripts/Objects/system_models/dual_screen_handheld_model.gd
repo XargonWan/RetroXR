@@ -68,6 +68,20 @@ var _touch_pointer_down := false
 var _touch_controllers: Array[XRController3D] = []
 
 
+## Measure only the base (bottom clamshell half) when placing the system name
+## label, so it lands on the base's front — the same +Z face the START button
+## sits on — rather than over the raised lid / top screen. (Used by
+## RetroSystem._body_aabb / _place_name_label.)
+func name_label_body() -> Node3D:
+	return get_node_or_null("HandheldBody")
+
+
+## Upright on the base's vertical front (+Z) face (where the START button is),
+## centred and filling most of the thin base height — not flat on the top.
+func name_label_placement() -> Dictionary:
+	return {"upright": true, "v_center": 0.5, "h_frac": 0.72}
+
+
 func _build_shell() -> void:
 	var half_y := body_size.y / 2.0
 	var off_mat := StandardMaterial3D.new()
