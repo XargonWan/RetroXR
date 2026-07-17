@@ -70,9 +70,14 @@ func _run() -> void:
 	_check(left_ctrl.get_is_active(), "LeftController ACTIVE via fake tracker")
 
 	# ── DS with SM64DS, floating in front of the player ───────────────────────
+	var core := "melonds"
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--core="):
+			core = arg.trim_prefix("--core=")
+	print("[vrpoke] core = %s" % core)
 	var nds: RetroSystem = SYSTEM_SCENE.instantiate()
 	nds.systemid = "nds"
-	nds.core_name = "melonds"
+	nds.core_name = core
 	nds.freeze = true
 	get_tree().current_scene.add_child(nds)
 	nds.add_to_group("spawned")

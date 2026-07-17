@@ -8,13 +8,17 @@ extends RetroSystemModelDualScreen
 
 
 ## The UV windows above assume the stacked composite, and taps (device pad or
-## the BOTTOM TV) arrive as RETRO_DEVICE_POINTER — melonDS only reads the
-## pointer in "Touch" mode (its default "Mouse" ignores it).
+## the BOTTOM TV) arrive as RETRO_DEVICE_POINTER — both DS cores default to a
+## MOUSE-style pointer that ignores it (melonDS "Mouse" mode, DeSmuME
+## pointer_type "mouse"). Force touch mode on both; each core ignores the
+## other's keys.
 func get_forced_core_options() -> Dictionary:
 	return {
 		"melonds_touch_mode": "Touch",
 		"melonds_screen_layout": "Top/Bottom",
 		"melonds_screen_gap": "0",
+		"desmume_pointer_type": "touch",
+		"desmume_screens_layout": "top/bottom",
 	}
 
 
