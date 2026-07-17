@@ -480,7 +480,7 @@ func _is_holding_hand(ctrl: XRController3D) -> bool:
 
 func _tip_on_screen(world_pos: Vector3, slack: float) -> bool:
 	var local := _touch.to_local(world_pos)
-	return absf(local.y) <= 0.025 * slack \
+	return absf(local.y) <= 0.01 * slack \
 		and absf(local.x) <= bottom_screen_size.x / 2.0 + 0.005 * slack \
 		and absf(local.z) <= bottom_screen_size.y / 2.0 + 0.005 * slack
 
