@@ -82,6 +82,29 @@ extends MeshInstance3D
 ## RigidBody3D ancestors when the rope is pulled taut. 0 = purely visual (default).
 @export var anchor_pull: float = 0.0
 
+@export_group("End alignment")
+## Plug-end orientation stiffness. 0 = the plug spins freely (old behaviour); 1 =
+## the plug snaps to the rope direction each frame. When > 0, a free plug
+## RigidBody3D anchoring either rope end is rotated so its cable-exit axis follows
+## the rope's tangent there — the plug stops rotating freely and the cable emerges
+## straight out of it (a strain-relief look). Only rigidbody-anchored ends that
+## aren't currently held or plugged in are affected; a plain Node3D anchor (a host
+## attach point) is left alone.
+@export_range(0.0, 1.0) var end_align_stiffness: float = 0.0
+
+## The plug's LOCAL axis that the cable exits along (points back up the rope).
+## Default -Z matches the cable plug meshes (strain relief on the -Z back).
+@export var plug_exit_axis: Vector3 = Vector3(0, 0, -1)
+
+## Rigid strain-relief stub: how straight the first/last `end_stiff_segments`
+## segments are held so the cable emerges STIFF from each plug before it bends to
+## join the floppy middle. 0 = off, 1 = the stub is perfectly straight.
+@export_range(0.0, 1.0) var end_stiffness: float = 0.0
+
+## Number of segments at each end kept straight by `end_stiffness` (the length of
+## the rigid stub, in segments).
+@export_range(0, 8) var end_stiff_segments: int = 3
+
 
 # Internal point data
 var _points: PackedVector3Array = []       # current positions (global space)
@@ -358,6 +381,17 @@ func _physics_process(delta: float) -> void:
 	# L·sin(β/2) from the midpoint; bends up to max_bend_degrees are free.
 	var allowed_dev := segment_length * sin(deg_to_rad(max_bend_degrees) * 0.5)
 
+	# End orientation authority: a plug whose orientation is externally fixed (held
+	# in a hand or socketed into a port) drives the ROPE — the cable leaves it
+	# stiffly along the plug's exit axis (out of the socket). A free plug is the
+	# other way round: it follows the rope (see _align_anchor_plug after the solve).
+	# The two are exact complements, so a socketed cable is stiff in the direction
+	# it plugs in, and a dangling one hangs naturally.
+	var start_fixed := _plug_is_fixed(start_node)
+	var end_fixed := _plug_is_fixed(end_node)
+	var start_exit := _plug_exit_dir(start_node) if start_fixed else Vector3.ZERO
+	var end_exit := _plug_exit_dir(end_node) if end_fixed else Vector3.ZERO
+
 	# --- Constraint solve ---
 	for iter_i in iters:
 		# Stretch (distance) constraints
@@ -386,6 +420,43 @@ func _physics_process(delta: float) -> void:
 						_solve_bend(i, s, allowed, k_bend)
 				s *= 2
 				levels -= 1
+		# End stiffness (strain-relief boot): hold the first/last few segments
+		# perfectly straight (allowed_dev 0) with a strong direct stiffness, so
+		# the cable emerges rigid from each plug and only bends past the stub —
+		# the floppy middle is unaffected. Applied after the general bend so it
+		# wins near the ends. Anchor neighbours have inv_mass 0, so the pinned
+		# endpoint isn't moved; the stub straightens toward it.
+		if end_stiffness > 0.0 and end_stiff_segments > 0:
+			var ke := clampf(end_stiffness, 0.0, 1.0)
+			var n_end := mini(end_stiff_segments, (count - 1) / 2)
+			if iter_i % 2 == 0:
+				for i in range(1, n_end + 1):
+					_solve_bend(i, 1, 0.0, ke)
+				for i in range(count - 2, count - 2 - n_end, -1):
+					_solve_bend(i, 1, 0.0, ke)
+			else:
+				for i in range(n_end, 0, -1):
+					_solve_bend(i, 1, 0.0, ke)
+				for i in range(count - 1 - n_end, count - 1):
+					_solve_bend(i, 1, 0.0, ke)
+		# Directional stub for a FIXED end: pull the first/last few particles onto
+		# the line leaving the plug along its exit axis, so a held/socketed cable
+		# emerges stiffly in the direction it plugs in (then bends past the stub).
+		# Absolute targets — the pinned endpoint sits at _points[end].
+		if end_stiffness > 0.0 and end_stiff_segments > 0 and (start_fixed or end_fixed):
+			var ked := clampf(end_stiffness, 0.0, 1.0)
+			var nd := mini(end_stiff_segments, (count - 1) / 2)
+			if end_fixed:
+				var base_e := _points[count - 1]
+				for j in range(1, nd + 1):
+					var idx := count - 1 - j
+					if _inv_mass[idx] != 0.0:
+						_points[idx] = _points[idx].lerp(base_e + end_exit * (segment_length * float(j)), ked)
+			if start_fixed:
+				var base_s := _points[0]
+				for j in range(1, nd + 1):
+					if _inv_mass[j] != 0.0:
+						_points[j] = _points[j].lerp(base_s + start_exit * (segment_length * float(j)), ked)
 		# Cached contact planes (refreshed on the throttled rest pass below) —
 		# solved together with the other constraints so contacts, including
 		# edge wraps, are part of the equilibrium instead of oscillating.
@@ -524,6 +595,18 @@ func _physics_process(delta: float) -> void:
 				_end_body.apply_force(dir_e * force,
 					end_node.global_position - _end_body.global_position)
 
+	# --- Plug end-direction alignment (FREE ends only) ---
+	# A free plug rigidbody follows the rope: it's rotated so its cable exits along
+	# the rope's tangent instead of spinning freely. A FIXED end (held/socketed) is
+	# the complement — there the rope followed the plug in the solve above, so we
+	# skip it here. Rotating the plug doesn't move its anchor point, so this never
+	# perturbs the sim (and can't keep the rope awake).
+	if end_align_stiffness > 0.0 and count >= 2:
+		if not start_fixed:
+			_align_anchor_plug(start_node, _points[1] - _points[0], end_align_stiffness)
+		if not end_fixed:
+			_align_anchor_plug(end_node, _points[count - 2] - _points[count - 1], end_align_stiffness)
+
 	# --- Sleep detection ---
 	# Still = every particle moved less than SLEEP_POINT_EPS_SQ this tick AND
 	# the anchors sit where we last saw them.
@@ -647,6 +730,81 @@ func _resolve_contact(i: int, contact: Vector3, normal: Vector3) -> void:
 	var tangential := vel - normal * vel.dot(normal)
 	_points[i] = contact + normal * collision_radius
 	_prev_points[i] = _points[i] - tangential * (1.0 - surface_friction)
+
+
+## True when this anchor's orientation is externally fixed, so the cable should
+## leave it stiffly along its exit axis rather than hanging freely. That's the
+## case for BOTH ends' "connector" mounts: a host attach point (a plain Node3D
+## rigidly bolted to a system/DVD/controller — always fixed) and a plug that's
+## held in a hand or socketed into a port. A free-dangling plug is NOT fixed —
+## it follows the rope instead (see _align_anchor_plug).
+func _plug_is_fixed(node: Node3D) -> bool:
+	if node == null:
+		return false
+	var rb := node as RigidBody3D
+	if rb == null:
+		return true   # host attach point — rigidly mounted to its device
+	if rb.freeze:
+		return true
+	if rb.has_method("is_picked_up") and rb.is_picked_up():
+		return true
+	return false
+
+
+## World-space direction the cable should leave this anchor along.
+## • A plug (RigidBody3D) has an authored orientation, so use its plug_exit_axis.
+## • A host attach point (plain Node3D) isn't rotated in the scenes, so point the
+##   cable OUT of the device — from the device centre toward the attach point.
+func _plug_exit_dir(node: Node3D) -> Vector3:
+	if node == null:
+		return Vector3.ZERO
+	if not (node is RigidBody3D):
+		var parent := node.get_parent() as Node3D
+		var off := node.position
+		if parent != null and off.length_squared() > 1e-6:
+			return (parent.global_transform.basis.orthonormalized() * off).normalized()
+	return (node.global_transform.basis.orthonormalized() * plug_exit_axis).normalized()
+
+
+## Rotate a free plug rigidbody so its cable-exit axis (plug_exit_axis, local)
+## points along `target_dir` (the rope's tangent at this end, world space),
+## easing by `k` per frame. No-op unless the anchor is a RigidBody3D that isn't
+## frozen (plugged into a port) or currently picked up — those cases are driven
+## by the socket / grab and must not be fought.
+func _align_anchor_plug(node: Node3D, target_dir: Vector3, k: float) -> void:
+	var rb := node as RigidBody3D
+	if rb == null or rb.freeze:
+		return
+	if rb.has_method("is_picked_up") and rb.is_picked_up():
+		return
+	if target_dir.length_squared() < 1e-8:
+		return
+	target_dir = target_dir.normalized()
+	# We own this plug's rotation while it dangles free — kill any residual spin
+	# so the physics engine doesn't drift it between our frames.
+	rb.angular_velocity = Vector3.ZERO
+	var basis := rb.global_transform.basis.orthonormalized()
+	var cur_axis := (basis * plug_exit_axis).normalized()
+	if cur_axis.length_squared() < 1e-8:
+		return
+	var dot := clampf(cur_axis.dot(target_dir), -1.0, 1.0)
+	if dot > 0.9999:
+		return   # already aligned
+	var arc: Quaternion
+	if dot < -0.9999:
+		# Opposite directions — pick any perpendicular for the 180° flip.
+		var perp := cur_axis.cross(Vector3.UP)
+		if perp.length_squared() < 1e-6:
+			perp = cur_axis.cross(Vector3.RIGHT)
+		arc = Quaternion(perp.normalized(), PI)
+	else:
+		arc = Quaternion(cur_axis, target_dir)
+	var cur_q := basis.get_rotation_quaternion()
+	var target_q := (arc * cur_q).normalized()
+	var new_q := cur_q.slerp(target_q, clampf(k, 0.0, 1.0))
+	var xf := rb.global_transform
+	xf.basis = Basis(new_q)
+	rb.global_transform = xf
 
 
 # ── Rendering ───────────────────────────────────────────────────────────────────

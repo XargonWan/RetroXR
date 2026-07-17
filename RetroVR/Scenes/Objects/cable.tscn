@@ -1,8 +1,9 @@
-[gd_scene load_steps=10 format=3 uid="uid://cable_001"]
+[gd_scene load_steps=11 format=3 uid="uid://cable_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/cable_plug.gd" id="1_plugscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/verlet_rope.gd" id="2_ropescript"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="3_pickhigh"]
+[ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
 radius = 0.035
@@ -57,6 +58,9 @@ surface_material_override/0 = SubResource("Mat_strain")
 [node name="PickableHighlight" type="Node3D" parent="CablePlug"]
 script = ExtResource("3_pickhigh")
 
+[node name="SnapGrabPoint" parent="CablePlug" instance=ExtResource("4_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
 [node name="VerletRope" type="MeshInstance3D" parent="."]
 script = ExtResource("2_ropescript")
 segment_count = 30
@@ -69,3 +73,6 @@ smoothing = 1
 rope_color = Color(0.15, 0.15, 0.15, 1.0)
 surface_collision_mask = 7
 self_collision = true
+end_align_stiffness = 0.7
+end_stiffness = 0.6
+end_stiff_segments = 3
