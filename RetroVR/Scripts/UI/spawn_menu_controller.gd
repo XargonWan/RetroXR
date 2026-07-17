@@ -645,18 +645,28 @@ func _spawn_grabber() -> Node:
 			if ref is WeakRef:
 				return (ref as WeakRef).get_ref()
 		return null
-	var over: Array = []
+	# The spawning click IS a trigger press — the hand whose trigger is down
+	# right now is the selecting hand. That beats the over-menu test (the
+	# other hand's idle laser can also rest on the menu, and over-menu
+	# detection can miss the clicking hand).
+	var pressed: Array = []
+	for ctrl: XRController3D in [_left_ctrl, _right_ctrl]:
+		if ctrl and ctrl.is_button_pressed("trigger_click"):
+			pressed.append(ctrl)
+	if pressed.size() > 1:
+		# Both triggers down — the one pointing at the menu wins.
+		for ctrl: XRController3D in pressed:
+			var ptr := _left_pointer if ctrl == _left_ctrl else _right_pointer
+			if ptr and _pointer_over_menu(ptr):
+				return XRToolsFunctionPickup.find_instance(ctrl)
+	if not pressed.is_empty():
+		return XRToolsFunctionPickup.find_instance(pressed[0])
+	# No trigger down (edge case) — fall back to whoever points at the menu.
 	for ptr: XRToolsFunctionPointer in [_right_pointer, _left_pointer]:
 		if ptr and _pointer_over_menu(ptr):
-			over.append(ptr)
-	for ptr: XRToolsFunctionPointer in over:
-		var ctrl := ptr.get_parent() as XRController3D
-		if ctrl and ctrl.is_button_pressed("trigger_click"):
-			return XRToolsFunctionPickup.find_instance(ctrl)
-	if not over.is_empty():
-		var ctrl := (over[0] as Node).get_parent() as XRController3D
-		if ctrl:
-			return XRToolsFunctionPickup.find_instance(ctrl)
+			var ctrl := ptr.get_parent() as XRController3D
+			if ctrl:
+				return XRToolsFunctionPickup.find_instance(ctrl)
 	return null
 
 

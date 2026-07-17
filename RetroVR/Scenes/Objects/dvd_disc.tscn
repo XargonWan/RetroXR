@@ -50,7 +50,7 @@ mesh = SubResource("Cyl_hub")
 surface_material_override/0 = SubResource("Mat_hub")
 
 [node name="DiscLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.0016, 0.022)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0016, 0.022)
 pixel_size = 0.0005
 font_size = 20
 outline_size = 6
