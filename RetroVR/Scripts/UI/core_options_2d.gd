@@ -387,7 +387,10 @@ func _refresh_controllers() -> void:
 	print("[CoreOptions2D] %d controller port rows built" % _controller_info.size())
 
 
-## Build one row per port: [Port N label] [OptionButton of device types]
+## Build one row per port: [Port N] [inline dropdown of device types].
+## Uses VRDropdown rather than OptionButton — an OptionButton's PopupMenu is a
+## Window, and the VR viewport's duplicated press dismisses it on the same click
+## it opens on (see vr_dropdown.gd).
 func _add_controller_row(entry: Dictionary) -> void:
 	var port: int = entry["port"]
 	var controllers: Array = entry["controllers"]
@@ -396,38 +399,17 @@ func _add_controller_row(entry: Dictionary) -> void:
 	if controllers.is_empty():
 		return
 
-	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(0, 56)
-	row.add_theme_constant_override("separation", 8)
-	_controllers_rows.add_child(row)
+	var options: Array = []
+	for ctrl: Dictionary in controllers:
+		options.append([str(ctrl["name"]), int(ctrl["id"])])
 
-	var port_lbl := Label.new()
-	port_lbl.text = "Port %d" % (port + 1)
-	port_lbl.add_theme_font_size_override("font_size", 16)
-	port_lbl.add_theme_color_override("font_color", COLOR_ROW)
-	port_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	port_lbl.custom_minimum_size = Vector2(80, 0)
-	row.add_child(port_lbl)
-
-	var opt := OptionButton.new()
-	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	opt.custom_minimum_size = Vector2(0, 48)
-	opt.add_theme_font_size_override("font_size", 15)
-
-	var selected_idx := 0
-	for i in range(controllers.size()):
-		var ctrl: Dictionary = controllers[i]
-		opt.add_item(ctrl["name"], i)
-		if ctrl["id"] == current_id:
-			selected_idx = i
-
-	opt.selected = selected_idx
-
-	opt.item_selected.connect(func(idx: int):
-		var device_id: int = (controllers[idx] as Dictionary)["id"]
-		print("[CoreOptions2D] port %d → device %d (%s)" % [port, device_id, controllers[idx]["name"]])
-		port_device_changed.emit(port, device_id)
+	var drop := VRDropdown.create("Port %d" % (port + 1), options, current_id,
+		1, Vector2(300, 48), 16)
+	drop.set_placeholder("(device %d)" % current_id)
+	drop.item_selected.connect(func(device_id: Variant) -> void:
+		print("[CoreOptions2D] port %d → device %d" % [port, int(device_id)])
+		port_device_changed.emit(port, int(device_id))
 	)
 
-	row.add_child(opt)
+	_controllers_rows.add_child(drop)
 	_controllers_rows.add_child(HSeparator.new())

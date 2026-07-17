@@ -18,8 +18,8 @@ const COLOR_BG    := Color(0.08, 0.08, 0.16, 0.96)
 const COLOR_TITLE := Color(0.9,  0.9,  1.0)
 const COLOR_ROW   := Color(0.65, 0.65, 0.80)
 
-var _audio_opt: OptionButton = null
-var _sub_opt: OptionButton = null
+var _audio_opt: VRDropdown = null
+var _sub_opt: VRDropdown = null
 var _suppress := false
 
 
@@ -66,35 +66,23 @@ func _build_ui() -> void:
 	root.add_child(HSeparator.new())
 
 	_audio_opt = _add_dropdown_row(root, "Audio track")
-	_audio_opt.item_selected.connect(func(idx: int):
+	_audio_opt.item_selected.connect(func(id: Variant) -> void:
 		if not _suppress:
-			audio_track_selected.emit(_audio_opt.get_item_id(idx)))
+			audio_track_selected.emit(int(id)))
 
 	_sub_opt = _add_dropdown_row(root, "Subtitles")
-	_sub_opt.item_selected.connect(func(idx: int):
+	_sub_opt.item_selected.connect(func(id: Variant) -> void:
 		if not _suppress:
-			subtitle_selected.emit(_sub_opt.get_item_id(idx)))
+			subtitle_selected.emit(int(id)))
 
 
-func _add_dropdown_row(root: VBoxContainer, label_text: String) -> OptionButton:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(0, 56)
-	row.add_theme_constant_override("separation", 8)
-	root.add_child(row)
-
-	var label := Label.new()
-	label.text = label_text
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_font_size_override("font_size", 18)
-	label.add_theme_color_override("font_color", COLOR_ROW)
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(label)
-
-	var opt := OptionButton.new()
-	opt.custom_minimum_size = Vector2(240, 48)
-	opt.add_theme_font_size_override("font_size", 18)
-	row.add_child(opt)
-	return opt
+## VRDropdown, not OptionButton — a PopupMenu can't be clicked inside the VR
+## panel (see vr_dropdown.gd).
+func _add_dropdown_row(root: VBoxContainer, label_text: String) -> VRDropdown:
+	var drop := VRDropdown.create(label_text, [], -1, 1, Vector2(240, 48))
+	drop.set_placeholder("—")
+	root.add_child(drop)
+	return drop
 
 
 # ── Public API ──────────────────────────────────────────────────────────────────
@@ -110,22 +98,27 @@ func populate(audio_tracks: Array, cur_audio: int, sub_tracks: Array, cur_sub: i
 	_suppress = false
 
 
-func _fill(opt: OptionButton, tracks: Array, cur_id: int, off_label: String) -> void:
+func _fill(opt: VRDropdown, tracks: Array, cur_id: int, off_label: String) -> void:
 	if opt == null:
 		return
-	opt.clear()
+	var options: Array = []
 	var have_off := false
 	for t: Dictionary in tracks:
 		var id := int(t.get("id", 0))
 		if id == -1:
 			have_off = true
-		opt.add_item(str(t.get("name", "")), id)
+		options.append([str(t.get("name", "")), id])
 	if not off_label.is_empty() and not have_off:
-		opt.add_item(off_label, -1)
-	# Select the current id.
-	for i in opt.item_count:
-		if opt.get_item_id(i) == cur_id:
-			opt.select(i)
-			return
-	if opt.item_count > 0:
-		opt.select(0)
+		options.append([off_label, -1])
+
+	# Fall back to the first entry when the current id isn't in the list.
+	var selected: Variant = cur_id
+	var found := false
+	for entry: Array in options:
+		if entry[1] == cur_id:
+			found = true
+			break
+	if not found and not options.is_empty():
+		selected = (options[0] as Array)[1]
+
+	opt.set_options(options, selected)

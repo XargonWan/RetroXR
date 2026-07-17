@@ -184,10 +184,9 @@ var _edit_lightgun_map: Dictionary = {}
 # map from action_name → Button node so on_rebind_complete() can update labels.
 var _rebinding_action: String = ""
 var _rebind_buttons: Dictionary = {}
-# Inline-dropdown state for the Controls section (source_key → dict).
+# Inline dropdowns in the Controls section (source_key → VRDropdown).
+# Mutual exclusion (only one expanded at a time) is owned by VRDropdown itself.
 var _controls_opts: Dictionary = {}
-# Key of the currently-open inline dropdown ("" = none).
-var _open_dropdown_key: String = ""
 
 # Working copies of physical-gamepad bindings edited in the GAME CONTROLLER section.
 var _edit_pad_button_map: Dictionary = {}
@@ -375,15 +374,6 @@ func _build_ui() -> void:
 	content.add_child(_about_view)
 
 	_show_spawn_view()
-
-
-## Create an OptionButton configured for VR pointer use.
-## ACTION_MODE_BUTTON_PRESS means the dropdown opens on trigger-squeeze (press),
-## not on trigger-release, preventing accidental activation.
-func _make_opt() -> OptionButton:
-	var opt := OptionButton.new()
-	opt.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	return opt
 
 
 func _make_toggle(initial_on: bool, on_toggled: Callable) -> Button:
@@ -1591,54 +1581,22 @@ func _build_options_view() -> Control:
 
 	if get_viewport().use_xr:
 		# Turn Style option (XR only)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		row.custom_minimum_size = Vector2(0, 68)
-		vbox.add_child(row)
-
-		var lbl := Label.new()
-		lbl.text = "Turn Style"
-		lbl.add_theme_font_size_override("font_size", 22)
-		lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(lbl)
-
-		var opt := _make_opt()
-		opt.custom_minimum_size = Vector2(220, 56)
-		opt.add_theme_font_size_override("font_size", 20)
-		opt.add_item("SNAP", 0)
-		opt.add_item("SMOOTH", 1)
-		opt.selected = 0
-		opt.item_selected.connect(func(idx: int) -> void:
-			turn_style_changed.emit("SNAP" if idx == 0 else "SMOOTH")
+		var turn_opt := VRDropdown.create("Turn Style",
+			[["SNAP", "SNAP"], ["SMOOTH", "SMOOTH"]], "SNAP",
+			1, Vector2(220, 56), 22)
+		turn_opt.item_selected.connect(func(id: Variant) -> void:
+			turn_style_changed.emit(str(id))
 		)
-		row.add_child(opt)
+		vbox.add_child(turn_opt)
 
 		# Snap Turn Angle option (XR only)
-		var sa_row := HBoxContainer.new()
-		sa_row.add_theme_constant_override("separation", 10)
-		sa_row.custom_minimum_size = Vector2(0, 68)
-		vbox.add_child(sa_row)
-
-		var sa_lbl := Label.new()
-		sa_lbl.text = "Snap Angle"
-		sa_lbl.add_theme_font_size_override("font_size", 22)
-		sa_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		sa_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		sa_row.add_child(sa_lbl)
-
-		var sa_opt := _make_opt()
-		sa_opt.custom_minimum_size = Vector2(140, 56)
-		sa_opt.add_theme_font_size_override("font_size", 20)
-		sa_opt.add_item("30°", 0)
-		sa_opt.add_item("45°", 1)
-		sa_opt.add_item("60°", 2)
-		sa_opt.selected = 1
-		sa_opt.item_selected.connect(func(idx: int) -> void:
-			var angles := [30.0, 45.0, 60.0]
-			snap_angle_changed.emit(angles[idx])
+		var sa_opt := VRDropdown.create("Snap Angle",
+			[["30°", 30.0], ["45°", 45.0], ["60°", 60.0]], 45.0,
+			1, Vector2(140, 56), 22)
+		sa_opt.item_selected.connect(func(id: Variant) -> void:
+			snap_angle_changed.emit(float(id))
 		)
-		sa_row.add_child(sa_opt)
+		vbox.add_child(sa_opt)
 
 		vbox.add_child(HSeparator.new())
 	else:
@@ -1925,54 +1883,23 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 
 # ── Controls remapping view ───────────────────────────────────────────────────
 
-## Close the named inline dropdown and reset its toggle arrow.
+## Close the named inline dropdown.
 func _close_dropdown(k: String) -> void:
-	var entry: Variant = _controls_opts.get(k)
-	if not entry is Dictionary:
-		return
-	var d := entry as Dictionary
-	var panel := d.get("panel") as PanelContainer
-	var toggle := d.get("toggle") as Button
-	if panel:
-		panel.visible = false
-	if toggle and toggle.text.ends_with(" ▴"):
-		toggle.text = toggle.text.trim_suffix(" ▴") + " ▾"
-	if _open_dropdown_key == k:
-		_open_dropdown_key = ""
+	var drop := _controls_opts.get(k) as VRDropdown
+	if drop:
+		drop.close()
 
 
 ## Update an inline dropdown to reflect a new selection without reopening it.
 func _reset_vr_dropdown(k: String, new_id: Variant) -> void:
-	var entry: Variant = _controls_opts.get(k)
-	if not entry is Dictionary:
-		return
-	var d := entry as Dictionary
-	var toggle := d.get("toggle") as Button
-	var panel  := d.get("panel")  as PanelContainer
-	var opt_btns: Array = d.get("opt_btns", [])
-	var ids: Array      = d.get("ids",      [])
-	var options: Array  = d.get("options",  [])
-
-	var new_label := ""
-	for i: int in range(options.size()):
-		if options[i][1] == new_id:
-			new_label = options[i][0] as String
-			break
-	if toggle:
-		toggle.text = new_label + " ▾"
-	for i: int in range(opt_btns.size()):
-		var btn := opt_btns[i] as Button
-		if btn:
-			btn.text = ("✓  " if ids[i] == new_id else "    ") + (options[i][0] as String)
-	if panel:
-		panel.visible = false
-	if _open_dropdown_key == k:
-		_open_dropdown_key = ""
+	var drop := _controls_opts.get(k) as VRDropdown
+	if drop:
+		drop.select_id(new_id)
 
 
-## Build a label + inline-expandable dropdown row that lives entirely inside the
-## ScrollContainer (no floating PopupMenu window).  All buttons use
-## ACTION_MODE_BUTTON_PRESS so trigger-release never activates them.
+## Build a label + inline-expandable dropdown row. Thin wrapper over VRDropdown,
+## which is shared with the core/TV/DVD panels — see vr_dropdown.gd for why an
+## OptionButton cannot be used inside a VR viewport panel.
 ## options: Array of [display_name, id] where id is int or String.
 func _make_vr_dropdown_row(
 		key: String,
@@ -1982,105 +1909,11 @@ func _make_vr_dropdown_row(
 		on_changed: Callable,
 		grid_cols: int = 1
 ) -> VBoxContainer:
-	var wrapper := VBoxContainer.new()
-	wrapper.add_theme_constant_override("separation", 0)
-
-	# ── Header row ────────────────────────────────────────────────────────────
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 56)
-	wrapper.add_child(row)
-
-	var lbl := Label.new()
-	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(lbl)
-
-	var init_label := ""
-	for opt_entry: Array in options:
-		if opt_entry[1] == current_id:
-			init_label = opt_entry[0] as String
-			break
-
-	var toggle := Button.new()
-	toggle.text = init_label + " ▾"
-	toggle.custom_minimum_size = Vector2(220, 52)
-	toggle.add_theme_font_size_override("font_size", 18)
-	toggle.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	toggle.focus_mode = Control.FOCUS_NONE
-	row.add_child(toggle)
-
-	# ── Dropdown panel ────────────────────────────────────────────────────────
-	var panel := PanelContainer.new()
-	panel.visible = false
-	var ps := StyleBoxFlat.new()
-	ps.bg_color = Color(0.10, 0.10, 0.22, 0.97)
-	ps.border_color = Color(0.35, 0.35, 0.65)
-	for side in ["border_width_left", "border_width_right",
-			"border_width_top", "border_width_bottom"]:
-		ps.set(side, 2)
-	for k2 in ["corner_radius_top_left", "corner_radius_top_right",
-			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		ps.set(k2, 6)
-	panel.add_theme_stylebox_override("panel", ps)
-	wrapper.add_child(panel)
-
-	var list := GridContainer.new()
-	list.columns = max(1, grid_cols)
-	list.add_theme_constant_override("h_separation", 4)
-	list.add_theme_constant_override("v_separation", 2)
-	panel.add_child(list)
-
-	var opt_btns: Array[Button] = []
-	var ids: Array = []
-
-	for i: int in range(options.size()):
-		var opt_entry: Array = options[i]
-		var opt_label := opt_entry[0] as String
-		var opt_id: Variant = opt_entry[1]
-		ids.append(opt_id)
-
-		var opt_btn := Button.new()
-		opt_btn.text = ("✓  " if opt_id == current_id else "    ") + opt_label
-		opt_btn.custom_minimum_size = Vector2(0, 40 if grid_cols > 1 else 48)
-		opt_btn.add_theme_font_size_override("font_size", 16 if grid_cols > 1 else 18)
-		opt_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-		opt_btn.focus_mode = Control.FOCUS_NONE
-		opt_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		opt_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-
-		var captured_id:  Variant = opt_id
-		var captured_lbl := opt_label
-		opt_btn.pressed.connect(func() -> void:
-			on_changed.call(captured_id)
-			toggle.text = captured_lbl + " ▾"
-			for j: int in range(opt_btns.size()):
-				opt_btns[j].text = ("✓  " if ids[j] == captured_id else "    ") \
-						+ (options[j][0] as String)
-			panel.visible = false
-			if _open_dropdown_key == key:
-				_open_dropdown_key = ""
-		)
-		list.add_child(opt_btn)
-		opt_btns.append(opt_btn)
-
-	toggle.pressed.connect(func() -> void:
-		if _open_dropdown_key != "" and _open_dropdown_key != key:
-			_close_dropdown(_open_dropdown_key)
-		var opening := not panel.visible
-		panel.visible = opening
-		_open_dropdown_key = key if opening else ""
-		var base := toggle.text.trim_suffix(" ▾").trim_suffix(" ▴")
-		toggle.text = base + (" ▴" if opening else " ▾")
-	)
-
-	_controls_opts[key] = {
-		"toggle": toggle, "panel": panel,
-		"opt_btns": opt_btns, "ids": ids, "options": options
-	}
-	return wrapper
+	var drop := VRDropdown.create(label_text, options, current_id,
+		grid_cols, Vector2(220, 52), 20)
+	drop.item_selected.connect(func(id: Variant) -> void: on_changed.call(id))
+	_controls_opts[key] = drop
+	return drop
 
 
 func _build_controls_view() -> Control:

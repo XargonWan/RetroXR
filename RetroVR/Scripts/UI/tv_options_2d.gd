@@ -30,7 +30,7 @@ var _crt_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
 # CRT controls, keyed by shader uniform name → {slider, val_label, fmt}.
 var _crt_sliders: Dictionary = {}
-var _crt_mask_opt: OptionButton = null
+var _crt_mask_opt: VRDropdown = null
 # Guard so populate() doesn't re-emit signals when it sets control values.
 var _suppress_signal := false
 
@@ -169,25 +169,15 @@ func _build_crt_tab(tabs: TabContainer) -> void:
 	rows.add_theme_constant_override("separation", 4)
 	_crt_scroll.add_child(rows)
 
-	# Mask mode dropdown (Off / Grid / Slot).
-	var mask_row := HBoxContainer.new()
-	mask_row.add_theme_constant_override("separation", 8)
-	rows.add_child(mask_row)
-	var mask_lbl := Label.new()
-	mask_lbl.text = "RGB mask"
-	mask_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mask_lbl.add_theme_font_size_override("font_size", 18)
-	mask_lbl.add_theme_color_override("font_color", COLOR_ROW)
-	mask_row.add_child(mask_lbl)
-	_crt_mask_opt = OptionButton.new()
-	_crt_mask_opt.add_item("Off", 0)
-	_crt_mask_opt.add_item("Grid", 1)
-	_crt_mask_opt.add_item("Slot", 2)
-	_crt_mask_opt.item_selected.connect(func(idx: int):
+	# Mask mode dropdown (Off / Grid / Slot). VRDropdown, not OptionButton —
+	# see vr_dropdown.gd for why PopupMenu can't be clicked in a VR panel.
+	_crt_mask_opt = VRDropdown.create("RGB mask",
+		[["Off", 0], ["Grid", 1], ["Slot", 2]], 0)
+	_crt_mask_opt.item_selected.connect(func(id: Variant) -> void:
 		if not _suppress_signal:
-			crt_param_changed.emit("crt_mask_mode", idx)
+			crt_param_changed.emit("crt_mask_mode", int(id))
 	)
-	mask_row.add_child(_crt_mask_opt)
+	rows.add_child(_crt_mask_opt)
 
 	# Sliders: [uniform, label, min, max, step, value-format].
 	var specs := [
@@ -257,7 +247,7 @@ func populate(scale_factor := 1.0) -> void:
 func populate_crt(params: Dictionary) -> void:
 	_suppress_signal = true
 	if _crt_mask_opt and params.has("crt_mask_mode"):
-		_crt_mask_opt.select(_crt_mask_opt.get_item_index(int(params["crt_mask_mode"])))
+		_crt_mask_opt.select_id(int(params["crt_mask_mode"]))
 	for key: String in _crt_sliders:
 		if not params.has(key):
 			continue
