@@ -47,6 +47,7 @@ var _tween: Tween = null
 # host perfectly rigidly; KINEMATIC (the pickable default) drifts a couple of cm
 # under host rotation because the server keeps re-integrating it.
 var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_KINEMATIC
+var _riding: bool = false         # an insert/eject tween is animating the local pose
 
 
 func _ready() -> void:
@@ -65,6 +66,13 @@ func has_media() -> bool:
 
 func get_media() -> Node3D:
 	return _media
+
+
+## True when the media is fully seated (loaded, no insert/eject ride in flight), so
+## the host can drive its pose itself — e.g. spin a seated disc — without fighting
+## the ride tween.
+func is_media_seated() -> bool:
+	return _state == State.LOADED and not _riding
 
 
 ## Slot-local pose at the mouth (flush with the slot origin).
@@ -198,9 +206,11 @@ func _ride_to(target: Transform3D) -> void:
 	if _tween:
 		_tween.kill()
 	var from: Transform3D = _media.transform
+	_riding = true
 	_tween = _media.create_tween()
 	_tween.tween_method(func(t: float) -> void:
 			if is_instance_valid(_media):
 				_media.transform = from.interpolate_with(target, t),
 		0.0, 1.0, ride_time) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_tween.finished.connect(func() -> void: _riding = false)

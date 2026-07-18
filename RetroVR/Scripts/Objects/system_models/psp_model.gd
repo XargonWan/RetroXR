@@ -62,9 +62,9 @@ func _build_cart_slot_mouth() -> void:
 	add_child(slit)
 
 
-## UMD slot keeps the legacy flat placement at the back edge — the slot-load
-## disc ride (system._play_slot_insert) travels along the zone's -Z, so the
-## cartridge-style -90° zone rotation must not apply to the disc.
+## UMD slot keeps the flat placement at the back edge — the slot-load disc ride
+## (MediaSlot, wired in system._load_system_model) travels along the zone's -Z, so
+## the cartridge-style -90° zone rotation must not apply to the disc.
 func configure_cartridge_slot(slot: Node3D) -> void:
 	slot.position = Vector3(0, 0, -body_size.z / 2.0 - 0.01)
 	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
