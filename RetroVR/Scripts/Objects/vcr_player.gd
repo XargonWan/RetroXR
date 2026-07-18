@@ -439,6 +439,10 @@ func remote_rewind() -> void:
 	_on_rewind_pressed()
 
 
+func remote_eject() -> void:
+	_slot_eject()
+
+
 func _on_play_pressed() -> void:
 	if _net_forward_cmd("play"):
 		return

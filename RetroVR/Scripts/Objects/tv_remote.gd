@@ -51,7 +51,7 @@ const GLYPH_CODES := {
 	"ff": 0xF04E, "rew": 0xF04A, "next": 0xF051, "prev": 0xF048,
 	"vol_up": 0xF028, "vol_down": 0xF027, "power": 0xF011, "menu": 0xF0C9,
 	"up": 0xF077, "down": 0xF078, "left": 0xF053, "right": 0xF054,
-	"ok": 0xF192, "mute": 0xF026,
+	"ok": 0xF192, "mute": 0xF026, "eject": 0xF052,
 	"audio": 0xF1AB, "subtitle": 0xF0A16,
 }
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
@@ -353,7 +353,8 @@ func _set_target_highlight(target: Node3D, active: bool) -> void:
 func _layout_for_target() -> Array:
 	if _target is RetroTV:
 		return [
-			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 3},
+			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 1.5},
+			{"id": "eject", "glyph": "eject", "col": 1.5, "row": 0, "span": 1.5},
 			{"id": "vol_down", "glyph": "vol_down", "col": 0, "row": 1},
 			{"id": "mute", "glyph": "mute", "col": 1, "row": 1},
 			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 1},
@@ -411,7 +412,20 @@ func _cell_enabled(id: String) -> bool:
 		if id == "prev" or id == "next":
 			return (_target as RetroAudioPlayer).has_track_skip()
 		return true
-	return true   # TV: every cell always usable
+	if _target is RetroTV and id == "eject":
+		return _tv_eject_target() != null   # only when a VCR/DVD feeds the TV
+	return true   # TV: every other cell always usable
+
+
+## The VCR/DVD feeding the current TV target, if any (for the remote's Eject
+## cell — a TV-remote eject ejects the media from the connected source device).
+func _tv_eject_target() -> Node3D:
+	if not (_target is RetroTV):
+		return null
+	var src: Node3D = (_target as RetroTV).get_connected_source()
+	if src is VCRPlayer or src is DVDPlayer:
+		return src
+	return null
 
 
 # ── Grid widget ───────────────────────────────────────────────────────────────
@@ -702,6 +716,10 @@ func _activate(id: String) -> void:
 			"vol_up": tv.remote_volume_up()
 			"vol_down": tv.remote_volume_down()
 			"mute": tv.remote_mute_toggle()
+			"eject":
+				var src := _tv_eject_target()
+				if src != null:
+					src.remote_eject()
 	elif _target is VCRPlayer:
 		var vcr := _target as VCRPlayer
 		match id:
