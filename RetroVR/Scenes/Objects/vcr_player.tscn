@@ -73,7 +73,7 @@ surface_material_override/0 = SubResource("Mat_body")
 script = ExtResource("5_pickhigh")
 
 [node name="TapeSlot" parent="." instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.125)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0.125)
 grab_distance = 0.09
 snap_require = "vcr_tape"
 
@@ -228,4 +228,4 @@ shape = SubResource("BoxShape3D_pointer")
 [node name="VCROptionsPanel" parent="." instance=ExtResource("6_vcropts")]
 
 [node name="VCRClock" parent="." instance=ExtResource("7_vcrclock")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.126)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, 0.126)
