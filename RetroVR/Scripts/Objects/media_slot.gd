@@ -35,9 +35,6 @@ signal removed()
 @export var insert_depth: float = 0.10
 ## Insert / eject ride duration (seconds).
 @export var ride_time: float = 0.9
-## Seconds the host<->media collision stays suppressed after a grab, so the media
-## can lerp clear of the body before collisions resume.
-@export var grab_clear_delay: float = 0.5
 
 
 enum State { EMPTY, LOADED, PARKED }
@@ -111,6 +108,9 @@ func _accept(media: Node3D, seated_now: bool) -> void:
 		rb.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 		rb.freeze = true
 	media.reparent(_holder)
+	# Not grabbable while it's inside the unit — only once ejected (see eject()).
+	if "enabled" in media:
+		media.enabled = false
 	if is_instance_valid(host):
 		host.add_collision_exception_with(media)
 	if not media.picked_up.is_connected(_on_media_taken):
@@ -132,6 +132,9 @@ func eject() -> void:
 	if _state != State.LOADED or _media == null:
 		return
 	_state = State.PARKED
+	# Now grabbable — the disc/tape is coming out.
+	if "enabled" in _media:
+		_media.enabled = true
 	removed.emit()
 	_ride_to(_mouth_pose())
 
@@ -144,10 +147,16 @@ func eject() -> void:
 func _on_media_taken(media: Node3D) -> void:
 	if media.picked_up.is_connected(_on_media_taken):
 		media.picked_up.disconnect(_on_media_taken)
-	# Hand off with the media's normal freeze mode so XR-tools' grab drives it as usual.
+	# Hand off with the media's normal freeze mode so XR-tools' grab drives it as
+	# usual, and make sure it UN-freezes (falls) when the hand lets go — it was
+	# frozen while loaded, so XR-tools captured restore_freeze = true otherwise, and
+	# the disc/tape would hang in the air after being taken out.
 	if media is RigidBody3D:
 		(media as RigidBody3D).freeze_mode = _orig_freeze_mode
-	# Grabbed while still seated (no eject) counts as removal.
+	if "restore_freeze" in media:
+		media.restore_freeze = false
+	# Grabbed while still seated (shouldn't happen — grab is disabled while loaded —
+	# but stays correct if it ever does) counts as removal.
 	if _state == State.LOADED:
 		removed.emit()
 	if _tween:
@@ -156,21 +165,27 @@ func _on_media_taken(media: Node3D) -> void:
 	_media = null
 	_state = State.EMPTY
 	slot.enabled = true
+	# Hold the host collision exception until the hand DROPS the media, so it never
+	# hits the body while being pulled out or held near it. Connected now (not after
+	# the deferred reparent) so a same-frame drop can't slip past.
+	if media.has_signal("dropped") and not media.dropped.is_connected(_drop_host_exception):
+		media.dropped.connect(_drop_host_exception, CONNECT_ONE_SHOT)
 	call_deferred("_release_media", media)
 
 
-## Reparent the grabbed media to world (keeping its global pose) and drop the host
-## collision exception after a short delay so it doesn't hit the body mid pull-away.
+## Reparent the grabbed media to world, keeping its global pose, so the grab driver
+## isn't fighting the host's motion.
 func _release_media(media: Node3D) -> void:
-	if not is_instance_valid(media):
-		return
-	if media.get_parent() == _holder:
+	if is_instance_valid(media) and media.get_parent() == _holder:
 		media.reparent(get_tree().current_scene)
-	get_tree().create_timer(grab_clear_delay).timeout.connect(func() -> void:
-		# Skip if the media came back into this slot meanwhile (its exception was
-		# re-added and must stay).
-		if is_instance_valid(host) and is_instance_valid(media) and media != _media:
-			host.remove_collision_exception_with(media))
+
+
+## The hand let go of the media away from the slot — it's a normal body again, so
+## restore its collision with the host. Skipped if it was re-inserted meanwhile
+## (its exception was re-added and must stay).
+func _drop_host_exception(media: Node3D) -> void:
+	if is_instance_valid(host) and is_instance_valid(media) and media != _media:
+		host.remove_collision_exception_with(media)
 
 
 # --- Ride animation -----------------------------------------------------------
