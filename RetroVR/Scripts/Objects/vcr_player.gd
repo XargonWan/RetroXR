@@ -83,7 +83,10 @@ var _snapped_tape: Node3D = null
 # front where it protrudes, frozen and grabbable. Mirrors DVDPlayer/RetroSystem.
 const TAPE_HALF_DEPTH := 0.04   # tape depth/2 once laid flat (0.08 m deep)
 const SLOT_INSET := 0.10        # how far inside the VCR a loaded tape rides
-const SLOT_PROTRUDE := 0.10     # how far the ejected tape pokes out the front
+# How far the ejected tape pokes out the front. Kept under TAPE_HALF_DEPTH so the
+# tape's back edge stays behind the slot mouth (still overlapping the body) instead
+# of clearing it entirely and looking like it's floating in front of the VCR.
+const SLOT_PROTRUDE := 0.02
 var _slot_ejecting := false     # slide-out animation in flight
 
 var _screen_material: Material = null
