@@ -183,7 +183,14 @@ func _on_menu_pressed() -> void:
 
 func _on_disc_inserted(disc: Node3D) -> void:
 	_snapped_disc = disc
+	# Suppress disc<->player collision for the whole time the disc is in the unit's
+	# volume — seated, riding, or parked ejected at the slot origin (partly inside
+	# the body). Without this the frozen disc shoves the player when it overlaps.
+	# The exception is dropped only when a hand takes the disc away (its picked_up),
+	# not when it merely leaves the snap zone on eject.
 	add_collision_exception_with(disc)
+	if not disc.picked_up.is_connected(_on_slot_disc_taken):
+		disc.picked_up.connect(_on_slot_disc_taken)
 	if disc.has_method("get_dvd_path"):
 		dvd_path = disc.get_dvd_path()
 	# Ride the disc into the player (front slot-load look) — it's swallowed by the
@@ -197,9 +204,11 @@ func _on_disc_inserted(disc: Node3D) -> void:
 
 
 func _on_disc_removed() -> void:
-	if _snapped_disc:
-		remove_collision_exception_with(_snapped_disc)
-		_snapped_disc = null
+	# The disc left the snap zone (eject or a hand pulling it straight out). Stop
+	# playback and clear state, but keep the disc<->player collision exception: on
+	# eject the disc stays parked in the unit's volume and only truly leaves when
+	# picked up (_on_slot_disc_taken drops the exception then).
+	_snapped_disc = null
 	stop()
 	dvd_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_DVD_REMOVE, {"dvd": self})
@@ -257,22 +266,25 @@ func _slot_eject() -> void:
 
 
 ## Park the ejected disc at slot-local pose `local` and keep it riding with the
-## player — the slot mechanism still holds it — until someone picks it up.
+## player — the slot mechanism still holds it — until someone picks it up. The
+## picked_up connection that ends the ride is made once at insert (see
+## _on_disc_inserted), so it also covers a disc grabbed straight from the slot.
 func _begin_eject_follow(disc: Node3D, local: Transform3D) -> void:
 	_ejected_disc = disc
 	_ejected_local = local
 	disc.global_transform = _disc_slot.global_transform * local
-	if not disc.picked_up.is_connected(_end_eject_follow):
-		disc.picked_up.connect(_end_eject_follow)
 
 
-## Stop tracking the ejected disc (someone took it from the slot mouth — a hand,
-## or the slot itself re-capturing it).
-func _end_eject_follow(_disc: Node3D = null) -> void:
-	if is_instance_valid(_ejected_disc) \
-			and _ejected_disc.picked_up.is_connected(_end_eject_follow):
-		_ejected_disc.picked_up.disconnect(_end_eject_follow)
-	_ejected_disc = null
+## The disc left the unit for good — a hand took it (from the parked eject pose or
+## straight from the slot), or the slot re-captured it on re-insert. Restore its
+## collision with the player and stop the eject follow. On re-insert _on_disc_inserted
+## re-adds the exception and reconnects right after this runs.
+func _on_slot_disc_taken(disc: Node3D) -> void:
+	remove_collision_exception_with(disc)
+	if disc.picked_up.is_connected(_on_slot_disc_taken):
+		disc.picked_up.disconnect(_on_slot_disc_taken)
+	if _ejected_disc == disc:
+		_ejected_disc = null
 
 
 ## Ride a freshly-snapped disc from just outside the front slot to its seated

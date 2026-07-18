@@ -265,7 +265,14 @@ func toggle_options_ui(camera: Node3D) -> void:
 
 func _on_tape_inserted(tape: Node3D) -> void:
 	_snapped_tape = tape
+	# Suppress tape<->VCR collision for the whole time the tape is in the unit's
+	# volume — seated, riding, or parked ejected at the slot origin (partly inside
+	# the body). Without this the frozen tape shoves the VCR when it overlaps. The
+	# exception is dropped only when a hand takes the tape away (its picked_up),
+	# not when it merely leaves the snap zone on eject.
 	add_collision_exception_with(tape)
+	if not tape.picked_up.is_connected(_on_slot_tape_taken):
+		tape.picked_up.connect(_on_slot_tape_taken)
 	if tape.has_method("get_video_path"):
 		video_path = tape.get_video_path()
 	# Ride the tape into the VCR (front slot-load look) — laid flat, swallowed by
@@ -276,9 +283,11 @@ func _on_tape_inserted(tape: Node3D) -> void:
 
 
 func _on_tape_removed() -> void:
-	if _snapped_tape:
-		remove_collision_exception_with(_snapped_tape)
-		_snapped_tape = null
+	# The tape left the snap zone (eject or a hand pulling it straight out). Stop
+	# playback and clear state, but keep the tape<->VCR collision exception: on
+	# eject the tape stays parked in the unit's volume and only truly leaves when
+	# picked up (_on_slot_tape_taken drops the exception then).
+	_snapped_tape = null
 	stop()
 	video_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_TAPE_REMOVE, {"vcr": self})
@@ -411,22 +420,25 @@ func _slot_eject() -> void:
 
 
 ## Park the ejected tape at slot-local pose `local` and keep it riding with the
-## VCR — the slot mechanism still holds it — until someone picks it up.
+## VCR — the slot mechanism still holds it — until someone picks it up. The
+## picked_up connection that ends the ride is made once at insert (see
+## _on_tape_inserted), so it also covers a tape grabbed straight from the slot.
 func _begin_eject_follow(tape: Node3D, local: Transform3D) -> void:
 	_ejected_tape = tape
 	_ejected_local = local
 	tape.global_transform = _tape_slot.global_transform * local
-	if not tape.picked_up.is_connected(_end_eject_follow):
-		tape.picked_up.connect(_end_eject_follow)
 
 
-## Stop tracking the ejected tape (someone took it from the slot mouth — a hand,
-## or the slot itself re-capturing it).
-func _end_eject_follow(_tape: Node3D = null) -> void:
-	if is_instance_valid(_ejected_tape) \
-			and _ejected_tape.picked_up.is_connected(_end_eject_follow):
-		_ejected_tape.picked_up.disconnect(_end_eject_follow)
-	_ejected_tape = null
+## The tape left the unit for good — a hand took it (from the parked eject pose or
+## straight from the slot), or the slot re-captured it on re-insert. Restore its
+## collision with the VCR and stop the eject follow. On re-insert _on_tape_inserted
+## re-adds the exception and reconnects right after this runs.
+func _on_slot_tape_taken(tape: Node3D) -> void:
+	remove_collision_exception_with(tape)
+	if tape.picked_up.is_connected(_on_slot_tape_taken):
+		tape.picked_up.disconnect(_on_slot_tape_taken)
+	if _ejected_tape == tape:
+		_ejected_tape = null
 
 
 ## Client-in-session: transport intents route to the host (authoritative
