@@ -15,6 +15,7 @@ extends XRToolsPickable
 
 
 func _ready() -> void:
+	super()   # XRToolsPickable._ready collects grab points (SnapGrabPoint)
 	_update_label()
 
 
