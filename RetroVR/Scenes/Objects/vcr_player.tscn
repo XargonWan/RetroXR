@@ -21,7 +21,7 @@ size = Vector3(0.3, 0.09, 0.25)
 albedo_color = Color(0.12, 0.12, 0.13, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_slot"]
-size = Vector3(0.16, 0.01, 0.06)
+size = Vector3(0.16, 0.035, 0.03)
 
 [sub_resource type="StandardMaterial3D" id="Mat_slot"]
 albedo_color = Color(0.05, 0.05, 0.05, 1)
@@ -73,11 +73,12 @@ surface_material_override/0 = SubResource("Mat_body")
 script = ExtResource("5_pickhigh")
 
 [node name="TapeSlot" parent="." instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -0.02)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.125)
 grab_distance = 0.09
 snap_require = "vcr_tape"
 
 [node name="SlotVisual" type="MeshInstance3D" parent="TapeSlot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.007)
 mesh = SubResource("BoxMesh_slot")
 surface_material_override/0 = SubResource("Mat_slot")
 
@@ -189,6 +190,25 @@ transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
 pixel_size = 0.001
 text = ">>"
 font_size = 10
+
+[node name="EjectButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.045, 0.055)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EjectButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="EjectButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="EjectButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
+pixel_size = 0.001
+text = "EJECT"
+font_size = 8
 
 [node name="NameLabel" type="Label3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, 0.05)

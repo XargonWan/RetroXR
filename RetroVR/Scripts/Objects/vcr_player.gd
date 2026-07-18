@@ -78,6 +78,14 @@ var _max_rope_length: float = 0.0
 var _pending_tv_restore: RetroTV = null
 var _snapped_tape: Node3D = null
 
+# Slot loader (front-loading like a real VCR): a tape brought to the front slot
+# rides IN flat and is swallowed by the opaque body; Eject rides it back OUT the
+# front where it protrudes, frozen and grabbable. Mirrors DVDPlayer/RetroSystem.
+const TAPE_HALF_DEPTH := 0.04   # tape depth/2 once laid flat (0.08 m deep)
+const SLOT_INSET := 0.10        # how far inside the VCR a loaded tape rides
+const SLOT_PROTRUDE := 0.10     # how far the ejected tape pokes out the front
+var _slot_ejecting := false     # slide-out animation in flight
+
 var _screen_material: Material = null
 
 
@@ -89,6 +97,7 @@ var _screen_material: Material = null
 @onready var _stop_button: VRButton = $StopButton
 @onready var _rewind_button: VRButton = $RewindButton
 @onready var _ff_button: VRButton = $FastForwardButton
+@onready var _eject_button: VRButton = $EjectButton
 @onready var _name_label: Label3D = $NameLabel
 @onready var _options_panel: VCROptionsPanel = $VCROptionsPanel
 @onready var _clock: VCRClock = $VCRClock
@@ -108,11 +117,13 @@ func _ready() -> void:
 	_stop_button.button_pressed.connect(_on_stop_pressed)
 	_rewind_button.button_pressed.connect(_on_rewind_pressed)
 	_ff_button.button_pressed.connect(_on_ff_pressed)
+	_eject_button.button_pressed.connect(_on_eject_pressed)
 	_play_button.set_color(Color(0.0, 0.9, 0.0))     # green
 	_pause_button.set_color(Color(0.9, 0.8, 0.0))     # amber
 	_stop_button.set_color(Color(0.9, 0.1, 0.1))      # red
 	_rewind_button.set_color(Color(0.1, 0.4, 0.9))    # blue
 	_ff_button.set_color(Color(0.1, 0.4, 0.9))        # blue
+	_eject_button.set_color(Color(0.8, 0.8, 0.85))    # light grey
 
 	if ClassDB.class_exists("VlcPlayer"):
 		_vlc = ClassDB.instantiate("VlcPlayer")
@@ -254,6 +265,9 @@ func _on_tape_inserted(tape: Node3D) -> void:
 	add_collision_exception_with(tape)
 	if tape.has_method("get_video_path"):
 		video_path = tape.get_video_path()
+	# Ride the tape into the VCR (front slot-load look) — laid flat, swallowed by
+	# the opaque body and held frozen inside until Eject.
+	_play_slot_insert(tape)
 	NetworkManager.report_event(NetObjectSync.EV_TAPE_INSERT,
 		{"vcr": self, "tape": tape})
 
@@ -265,6 +279,74 @@ func _on_tape_removed() -> void:
 	stop()
 	video_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_TAPE_REMOVE, {"vcr": self})
+
+
+## Basis that lays the tape flat (label up) — the tape mesh is authored standing
+## with its label on +Z, so rotate -90 deg about the VCR's right axis.
+func _tape_flat_basis() -> Basis:
+	return global_transform.basis * Basis(Vector3(1, 0, 0), -PI / 2.0)
+
+
+## Ride a freshly-snapped tape from just outside the front slot to its seated
+## position inside the opaque body. Frozen for the whole ride (an unfrozen body
+## sags under gravity while the tween drives it). Mirrors DVDPlayer._play_slot_insert.
+func _play_slot_insert(tape: Node3D) -> void:
+	var slot_pos := _tape_slot.global_position
+	var into := -global_transform.basis.z            # front -> back, into the body
+	var flat := _tape_flat_basis()
+	var start := slot_pos - into * (TAPE_HALF_DEPTH + 0.01)
+	if tape is RigidBody3D:
+		(tape as RigidBody3D).freeze = true
+	tape.global_transform = Transform3D(flat, start)
+	# The snap driver writes the zone pose once on the frame after pick-up — cover
+	# it with a deferred re-set, and interpolate with an EXPLICIT from->to
+	# (_set_ride_pos re-asserts the flat basis every step).
+	tape.set_deferred("global_transform", Transform3D(flat, start))
+	var tween := tape.create_tween()
+	tween.tween_method(_set_ride_pos.bind(tape, flat), start,
+		slot_pos + into * SLOT_INSET, 0.9) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## tween_method target for the slot ride: sets the tape's full transform so the
+## flat orientation holds throughout (explicit from->to interpolation).
+func _set_ride_pos(p: Vector3, tape: Node3D, b: Basis) -> void:
+	if is_instance_valid(tape):
+		tape.global_transform = Transform3D(b, p)
+
+
+func _on_eject_pressed() -> void:
+	_slot_eject()
+
+
+## Slide the loaded tape out of the front slot, then release it from the snap zone
+## so it can be grabbed. It ends frozen and protruding (held by the mechanism, not
+## falling) until someone takes it. drop_object() fires has_dropped ->
+## _on_tape_removed, which stops playback and clears state.
+func _slot_eject() -> void:
+	var tape := _snapped_tape
+	if tape == null or not is_instance_valid(tape) or _slot_ejecting:
+		return
+	_slot_ejecting = true
+	var flat := _tape_flat_basis()
+	var out_pos: Vector3 = _tape_slot.global_position \
+		+ global_transform.basis.z * SLOT_PROTRUDE
+	var tween := tape.create_tween()
+	tween.tween_method(_set_ride_pos.bind(tape, flat), tape.global_position, out_pos, 0.9) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		_slot_ejecting = false
+		# The released tape still overlaps the zone's grab sphere and the zone
+		# re-stashes anything dropped inside it — disarm it around the release, then
+		# leave the tape frozen protruding from the slot until someone takes it.
+		_tape_slot.enabled = false
+		_tape_slot.drop_object()
+		if is_instance_valid(tape) and tape is RigidBody3D:
+			(tape as RigidBody3D).freeze = true
+			(tape as RigidBody3D).global_transform = Transform3D(flat, out_pos)
+		get_tree().create_timer(0.25).timeout.connect(func() -> void:
+			if is_instance_valid(_tape_slot):
+				_tape_slot.enabled = true))
 
 
 ## Client-in-session: transport intents route to the host (authoritative
