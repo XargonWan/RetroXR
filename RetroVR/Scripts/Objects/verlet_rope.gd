@@ -127,6 +127,10 @@ var _c_n1: PackedVector3Array = []
 var _c_p2: PackedVector3Array = []
 var _c_n2: PackedVector3Array = []
 
+# Consecutive rest passes a particle has been detected on the wrong side of a
+# slab (see the wrong-side recovery block) — recovery fires at 2.
+var _stuck_passes: PackedByteArray = []
+
 # Anchors
 var start_node: Node3D = null
 var end_node: Node3D = null
@@ -260,8 +264,10 @@ func _init_points() -> void:
 	_c_n1.resize(count)
 	_c_p2.resize(count)
 	_c_n2.resize(count)
+	_stuck_passes.resize(count)
 	for i in count:
 		_c_flags[i] = 0
+		_stuck_passes[i] = 0
 
 	var start_pos := start_node.global_position if start_node else global_position
 	var end_pos   := end_node.global_position   if end_node   else start_pos + Vector3(0, -segment_count * segment_length, 0)
@@ -542,7 +548,13 @@ func _physics_process(delta: float) -> void:
 				var rest := space_state.get_rest_info(_shape_query)
 				var keep1 := (_c_flags[i] & 1) != 0 and _plane_valid(i, _c_p1[i], _c_n1[i])
 				var keep2 := (_c_flags[i] & 2) != 0 and _plane_valid(i, _c_p2[i], _c_n2[i])
-				if not rest.is_empty() and rest["normal"] != Vector3.ZERO:
+				# Deep-penetration guard: if the particle centre is BEHIND the
+				# reported plane it has passed the surface, and ejecting along
+				# this normal can pop it out the FAR side of a slab (under the
+				# floor / on top of the ceiling). Don't cache — the wrong-side
+				# recovery pass below walks it back to the rope's side instead.
+				if not rest.is_empty() and rest["normal"] != Vector3.ZERO \
+						and (_points[i] - rest["point"]).dot(rest["normal"]) >= 0.0:
 					var np: Vector3 = rest["point"]
 					var nn: Vector3 = rest["normal"]
 					if keep1 and nn.dot(_c_n1[i]) > 0.9:
@@ -576,9 +588,62 @@ func _physics_process(delta: float) -> void:
 				var n: Vector3 = rest["normal"]
 				if n == Vector3.ZERO:
 					continue
+				# Same deep-penetration guard as the particle pass: a midpoint
+				# behind the reported plane must not be pushed out the far side.
+				if (mid - rest["point"]).dot(n) < 0.0:
+					continue
 				_mid_contact[i] = 1
 				_mid_contact_point[i] = rest["point"]
 				_mid_contact_normal[i] = n
+
+			# Wrong-side recovery: a particle that tunnelled through a slab gets
+			# locked on the far side — every time the stretch constraints pull it
+			# back toward the rope, the motion sweep hits the slab's far face
+			# front-on and re-strands it there, so the state is self-sustaining
+			# (the weird "cable pinned under the floor / above the ceiling" look).
+			# Local contact info can't detect this; CONNECTIVITY can: marching
+			# from the anchored end, cast the segment ray BOTH ways. A segment
+			# genuinely passing through a slab enters one face and exits through
+			# an opposing face (normals antiparallel), while a legit drape over an
+			# edge crosses roughly perpendicular faces. Require the state on two
+			# consecutive rest passes (transient corner clips self-correct via
+			# _solve_mid_contact), then teleport the particle back to the entry
+			# face. Runs of stuck particles recover march-order as each recovery
+			# updates the reference position for the next segment.
+			for i in range(1, count):
+				if _inv_mass[i] == 0.0:
+					continue
+				var seg_vec := _points[i] - _points[i - 1]
+				var seg_len := seg_vec.length()
+				if seg_len < 0.0001:
+					_stuck_passes[i] = 0
+					continue
+				_ray_query.from = _points[i - 1]
+				_ray_query.to = _points[i] + seg_vec * (collision_radius / seg_len)
+				var entry := space_state.intersect_ray(_ray_query)
+				var entry_n: Vector3 = entry["normal"] if not entry.is_empty() else Vector3.ZERO
+				# Must be meaningfully behind the entered face (not a corner graze)…
+				if entry_n == Vector3.ZERO \
+						or (_points[i] - entry["position"]).dot(entry_n) > -collision_radius:
+					_stuck_passes[i] = 0
+					continue
+				# …and the reverse ray must exit through an opposing face.
+				_ray_query.from = _points[i]
+				_ray_query.to = _points[i - 1]
+				var exit := space_state.intersect_ray(_ray_query)
+				if exit.is_empty() or entry_n.dot(exit["normal"]) > -0.7:
+					_stuck_passes[i] = 0
+					continue
+				_stuck_passes[i] += 1
+				if _stuck_passes[i] < 2:
+					continue
+				_stuck_passes[i] = 0
+				_points[i] = entry["position"] + entry_n * collision_radius
+				_prev_points[i] = _points[i]
+				_c_flags[i] = 0
+				_mid_contact[i - 1] = 0
+				if i < segment_count:
+					_mid_contact[i] = 0
 
 	# --- Two-way anchor coupling ---
 	if anchor_pull > 0.0 and start_node and end_node:
