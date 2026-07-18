@@ -738,10 +738,15 @@ func _apply_video_out() -> void:
 		if video_out_enabled:
 			inst.visible = true
 			inst.process_mode = Node.PROCESS_MODE_INHERIT
-			plug.freeze = false
-			plug.global_position = _attach_points[i].global_position \
-				+ Vector3(0.05 * i, 0, -0.1)
-			plug.linear_velocity = Vector3.ZERO
+			# A plug already socketed into a TV (e.g. restored from a save, where
+			# _apply_video_out runs right after the snap) is held frozen at the port by
+			# the snap zone. Unfreezing/parking it here drops it off the socket, and it
+			# then drifts under gravity + rope tension. Only park a free-dangling plug.
+			if not plug.is_picked_up():
+				plug.freeze = false
+				plug.global_position = _attach_points[i].global_position \
+					+ Vector3(0.05 * i, 0, -0.1)
+				plug.linear_velocity = Vector3.ZERO
 		else:
 			plug.freeze = true
 			inst.visible = false
