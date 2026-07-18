@@ -76,18 +76,12 @@ var _max_rope_length: float = 0.0
 
 # TV to connect to after the cable finishes spawning (used by save/load restore)
 var _pending_tv_restore: RetroTV = null
-var _snapped_tape: Node3D = null
 
-# Slot loader (front-loading like a real VCR): a tape brought to the front slot
-# rides IN flat and is swallowed by the opaque body; Eject rides it back OUT the
-# front where it protrudes, frozen and grabbable. Mirrors DVDPlayer/RetroSystem.
+# Front-loading tape bay (insert ride, eject, grab hand-off, collision) — all owned
+# by the shared MediaSlot; see media_slot.gd. The tape rides in 10 cm and lies flat
+# (the mesh is authored standing, so it's rotated -90° about the slot's X axis).
 const SLOT_INSET := 0.10        # how far inside the VCR a loaded tape rides
-var _slot_ejecting := false     # slide-out animation in flight
-var _slot_tween: Tween = null   # active insert/eject ride (killed when superseded)
-# Ejected tape parked at the slot mouth: the mechanism still holds it, so it
-# rides with the VCR when carried, until someone takes it.
-var _ejected_tape: Node3D = null
-var _ejected_local := Transform3D.IDENTITY
+var _slot: MediaSlot = null
 
 var _screen_material: Material = null
 
@@ -113,8 +107,14 @@ var _last_total: float = -1.0
 func _ready() -> void:
 	super._ready()
 	add_to_group("vcr_player")
-	_tape_slot.has_picked_up.connect(_on_tape_inserted)
-	_tape_slot.has_dropped.connect(_on_tape_removed)
+	_slot = MediaSlot.new()
+	_slot.host = self
+	_slot.slot = _tape_slot
+	_slot.insert_depth = SLOT_INSET
+	_slot.media_local_basis = Basis(Vector3(1, 0, 0), -PI / 2.0)   # lay the tape flat
+	add_child(_slot)
+	_slot.inserted.connect(_on_media_inserted)
+	_slot.removed.connect(_on_media_removed)
 	_play_button.button_pressed.connect(_on_play_pressed)
 	_pause_button.button_pressed.connect(_on_pause_pressed)
 	_stop_button.button_pressed.connect(_on_stop_pressed)
@@ -263,190 +263,25 @@ func toggle_options_ui(camera: Node3D) -> void:
 
 # --- Tape slot callbacks ---
 
-func _on_tape_inserted(tape: Node3D) -> void:
-	_snapped_tape = tape
-	# Suppress tape<->VCR collision for the whole time the tape is in the unit's
-	# volume — seated, riding, or parked ejected at the slot origin (partly inside
-	# the body). Without this the frozen tape shoves the VCR when it overlaps. The
-	# exception is dropped only when a hand takes the tape away (its picked_up),
-	# not when it merely leaves the snap zone on eject.
-	add_collision_exception_with(tape)
-	if not tape.picked_up.is_connected(_on_slot_tape_taken):
-		tape.picked_up.connect(_on_slot_tape_taken)
+## MediaSlot accepted a tape (the insert ride has begun). Cache its path and report
+## the insert; playback is user/host-started, never auto-played on insert.
+func _on_media_inserted(tape: Node3D) -> void:
 	if tape.has_method("get_video_path"):
 		video_path = tape.get_video_path()
-	# Ride the tape into the VCR (front slot-load look) — laid flat, swallowed by
-	# the opaque body and held frozen inside until Eject.
-	_play_slot_insert(tape)
 	NetworkManager.report_event(NetObjectSync.EV_TAPE_INSERT,
 		{"vcr": self, "tape": tape})
 
 
-func _on_tape_removed() -> void:
-	# The tape left the snap zone (eject or a hand pulling it straight out). Stop
-	# playback and clear state, but keep the tape<->VCR collision exception: on
-	# eject the tape stays parked in the unit's volume and only truly leaves when
-	# picked up (_on_slot_tape_taken drops the exception then).
-	_snapped_tape = null
+## MediaSlot reports the tape left (ejected, or pulled straight out). Stop playback
+## and clear state.
+func _on_media_removed() -> void:
 	stop()
 	video_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_TAPE_REMOVE, {"vcr": self})
 
 
-## Basis that lays the tape flat (label up) — the tape mesh is authored standing
-## with its label on +Z, so rotate -90 deg about the VCR's right axis.
-func _tape_flat_basis() -> Basis:
-	return global_transform.basis * Basis(Vector3(1, 0, 0), -PI / 2.0)
-
-
-## Ride a freshly-snapped tape from just outside the front slot to its seated
-## position inside the opaque body, laid flat, then hold it there.
-##
-## A snapped object is positioned by the snap-zone's grab DRIVER, which parks it
-## at the slot node's origin. Writing the tape's global_transform directly to ride
-## it deeper fought that driver: while the VCR sat still the write "won" and the
-## tape looked seated, but the moment the VCR was picked up and the slot began
-## moving each physics frame the driver reasserted the mouth pose and the tape
-## slid back out. Instead we animate the DRIVER's held pose — the single source of
-## truth — so the seated spot and the ride-in are one and the same, and the seated
-## tape rides rigidly with the VCR once carried.
-func _play_slot_insert(tape: Node3D) -> void:
-	if _slot_grab_driver(tape) == null:
-		return
-	if tape is RigidBody3D:
-		(tape as RigidBody3D).freeze = true
-	# Ride poses are captured RELATIVE TO THE SLOT (slot-local), so the tape feeds
-	# in tracking the slot even if the whole VCR is moved mid-insert, and stays
-	# seated relative to the VCR forever after.
-	var slot_inv := _tape_slot.global_transform.affine_inverse()
-	var flat := _tape_flat_basis()
-	var slot_pos := _tape_slot.global_position
-	var into := -global_transform.basis.z            # front -> back, into the body
-	var start := _slot_mouth_pose()
-	var seated := slot_inv * Transform3D(flat, slot_pos + into * SLOT_INSET)
-	# Begin the ride from just outside the slot, then interpolate the held pose in
-	# to the seated spot. Placing the tape at `start` synchronously (the driver
-	# only re-poses next physics frame) keeps it from flashing at the raw snap
-	# point — the slot origin — for a frame first, which read as an outward hop.
-	_set_slot_grab_pose(tape, start)
-	tape.global_transform = _tape_slot.global_transform * start
-	if _slot_tween:
-		_slot_tween.kill()
-	_slot_tween = tape.create_tween()
-	_slot_tween.tween_method(_ride_slot_pose.bind(tape, start, seated), 0.0, 1.0, 0.9) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-
-
-## tween_method step: hold the tape a fraction of the way from `start` to `seated`
-## (both slot-local poses).
-func _ride_slot_pose(t: float, tape: Node3D, start: Transform3D,
-		seated: Transform3D) -> void:
-	_set_slot_grab_pose(tape, start.interpolate_with(seated, t))
-
-
-## The snap-zone grab driver holding `tape`, or null if it isn't snapped here.
-func _slot_grab_driver(tape: Node3D) -> Variant:
-	if not is_instance_valid(tape):
-		return null
-	var driver: Variant = tape.get("_grab_driver")
-	if driver and driver.primary and driver.primary.by == _tape_slot:
-		return driver
-	return null
-
-
-## Anchor the snap-zone grab driver so it holds the tape at slot-local pose
-## `local`. The driver reproduces `slot.global_transform * offset.affine_inverse()`,
-## so the offset that yields `slot.global_transform * local` is `local.affine_inverse()`.
-## Storing the pose relative to the slot is what makes the tape ride with the slot —
-## and thus the whole VCR — rigidly when the VCR is picked up and moved.
-func _set_slot_grab_pose(tape: Node3D, local: Transform3D) -> void:
-	var driver: Variant = _slot_grab_driver(tape)
-	if driver == null:
-		return
-	driver.primary.transform = local.affine_inverse()
-
-
-## Slot-local pose of the snap-zone origin (the TapeSlot node itself): laid flat,
-## flush with the slot, no protrusion. Shared by the insert ride's start and the
-## eject ride's end, so an ejected tape sits exactly at the snap point a freshly-
-## dropped one would seize. Position is the slot origin; only the flat orientation
-## is applied.
-func _slot_mouth_pose() -> Transform3D:
-	return _tape_slot.global_transform.affine_inverse() * Transform3D(
-		_tape_flat_basis(), _tape_slot.global_position)
-
-
 func _on_eject_pressed() -> void:
-	_slot_eject()
-
-
-## Slide the loaded tape back out to the snap-zone origin, then release it from the
-## snap zone so it can be grabbed. It ends frozen at the slot (held by the mechanism,
-## not falling) until someone takes it. Like the insert, the ride animates the grab
-## DRIVER's slot-local pose, so it tracks the VCR if carried mid-eject and always
-## lands at the snap origin — the same spot the tape occupied when it first snapped in.
-## drop_object() fires has_dropped -> _on_tape_removed, which stops playback and
-## clears state.
-func _slot_eject() -> void:
-	var tape := _snapped_tape
-	if tape == null or not is_instance_valid(tape) or _slot_ejecting:
-		return
-	_slot_ejecting = true
-	var mouth := _slot_mouth_pose()
-	# Start from wherever the driver currently holds the tape (seated, or partway
-	# in if Eject lands mid-insert).
-	var driver: Variant = _slot_grab_driver(tape)
-	var from: Transform3D = driver.primary.transform.affine_inverse() if driver != null \
-		else _tape_slot.global_transform.affine_inverse() * tape.global_transform
-	if _slot_tween:
-		_slot_tween.kill()
-	_slot_tween = tape.create_tween()
-	_slot_tween.tween_method(_ride_slot_pose.bind(tape, from, mouth), 0.0, 1.0, 0.9) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_slot_tween.tween_callback(func() -> void:
-		_slot_ejecting = false
-		# The released tape still overlaps the zone's grab sphere and the zone
-		# re-stashes anything dropped inside it — disarm it around the release, then
-		# leave the tape frozen at the slot origin until someone takes it.
-		_tape_slot.enabled = false
-		_tape_slot.drop_object()
-		if is_instance_valid(tape):
-			if tape is RigidBody3D:
-				(tape as RigidBody3D).freeze = true
-			_begin_eject_follow(tape, mouth)
-		get_tree().create_timer(0.25).timeout.connect(func() -> void:
-			if is_instance_valid(_tape_slot):
-				_tape_slot.enabled = true))
-
-
-## Park the ejected tape at slot-local pose `local` and keep it riding with the
-## VCR — the slot mechanism still holds it — until someone picks it up. The
-## picked_up connection that ends the ride is made once at insert (see
-## _on_tape_inserted), so it also covers a tape grabbed straight from the slot.
-func _begin_eject_follow(tape: Node3D, local: Transform3D) -> void:
-	_ejected_tape = tape
-	_ejected_local = local
-	tape.global_transform = _tape_slot.global_transform * local
-
-
-## The tape left the unit for good — a hand took it (from the parked eject pose or
-## straight from the slot), or the slot re-captured it on re-insert. Stop the eject
-## follow immediately (so _physics_process stops pinning it and fighting the hand),
-## then restore its collision with the VCR after a short delay: a ranged grab lerps
-## the tape out through the body, and re-enabling collision mid-transit would let it
-## hit the unit. On re-insert _on_tape_inserted re-adds the exception and reconnects
-## right after this runs.
-func _on_slot_tape_taken(tape: Node3D) -> void:
-	if tape.picked_up.is_connected(_on_slot_tape_taken):
-		tape.picked_up.disconnect(_on_slot_tape_taken)
-	if _ejected_tape == tape:
-		_ejected_tape = null
-	get_tree().create_timer(0.5).timeout.connect(func() -> void:
-		# Skip if the tape came back into the slot in the meantime (its exception
-		# was re-added and must stay).
-		if is_instance_valid(self) and is_instance_valid(tape) \
-				and _snapped_tape != tape and _ejected_tape != tape:
-			remove_collision_exception_with(tape))
+	_slot.eject()
 
 
 ## Client-in-session: transport intents route to the host (authoritative
@@ -491,8 +326,9 @@ func net_apply_state(playing: bool, paused: bool, pos: float) -> void:
 		return
 	# Ensure we have a local file — the tape's path is remapped/downloaded by
 	# object_sync; refresh in case the transfer landed after insertion.
-	if video_path.is_empty() and _snapped_tape and _snapped_tape.has_method("get_video_path"):
-		video_path = _snapped_tape.get_video_path()
+	var tape := _slot.get_media()
+	if video_path.is_empty() and tape and tape.has_method("get_video_path"):
+		video_path = tape.get_video_path()
 	if not is_playing:
 		if video_path.is_empty() or connected_tv == null:
 			_osd("WAITING FOR TAPE…", true)
@@ -540,12 +376,12 @@ func remote_rewind() -> void:
 
 
 func remote_eject() -> void:
-	_slot_eject()
+	_slot.eject()
 
 
 ## True when a tape is loaded (the remote greys its Eject cell otherwise).
 func has_media() -> bool:
-	return _snapped_tape != null
+	return _slot.has_media()
 
 
 func _on_play_pressed() -> void:
@@ -840,16 +676,6 @@ func _add_cable_to_scene() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	# The ejected tape is still held by the slot mechanism — ride it with the VCR
-	# until someone takes it. Runs after the VCR's own grab driver (-80), so the
-	# slot transform is current-tick.
-	if _ejected_tape != null:
-		if not is_instance_valid(_ejected_tape):
-			_ejected_tape = null
-		else:
-			_ejected_tape.global_transform = \
-				_tape_slot.global_transform * _ejected_local
-			_ejected_tape.force_update_transform()
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
 	if connected_tv != null or _cable_plug.is_picked_up():
@@ -868,7 +694,7 @@ func _physics_process(_delta: float) -> void:
 # --- Save/load restore (mirrors RetroSystem) ---
 
 func get_snapped_tape() -> Node3D:
-	return _snapped_tape
+	return _slot.get_media()
 
 
 func restore_cable_connection(tv: RetroTV) -> void:
@@ -882,5 +708,6 @@ func _snap_cable_to_tv(tv: RetroTV) -> void:
 	tv.accept_plug_restore(_cable_plug)
 
 
+## Seat a tape programmatically (event/save restore) — no ride, bypasses the filter.
 func restore_tape(tape: Node3D) -> void:
-	_tape_slot.pick_up_object(tape)
+	_slot.restore(tape)

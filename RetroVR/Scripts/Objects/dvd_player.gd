@@ -27,18 +27,11 @@ const SCAN_SEEK_INTERVAL := 0.08
 
 var _vlc: Object = null                 # VlcPlayer (GDExtension)
 var _screen_material: StandardMaterial3D = null
-var _snapped_disc: Node3D = null
 
-# Slot loader (front-loading like a real DVD player): a disc brought to the front
-# slot rides IN and is swallowed by the opaque body; Eject rides it back OUT the
-# front where it protrudes, frozen and grabbable. Mirrors RetroSystem's LOADER_SLOT.
+# Front-loading disc bay (insert ride, eject, grab hand-off, collision) — all owned
+# by the shared MediaSlot; see media_slot.gd. Disc rides in 10 cm, lies flat.
 const SLOT_INSET := 0.10       # how far inside the player a loaded disc rides
-var _slot_ejecting := false    # slide-out animation in flight
-var _slot_tween: Tween = null  # active insert/eject ride (killed when superseded)
-# Ejected disc parked at the slot mouth: the mechanism still holds it, so it
-# rides with the player when carried, until someone takes it.
-var _ejected_disc: Node3D = null
-var _ejected_local := Transform3D.IDENTITY
+var _slot: MediaSlot = null
 
 # Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
 # an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
@@ -90,8 +83,13 @@ var _pending_tv_restore: RetroTV = null
 func _ready() -> void:
 	super._ready()
 	add_to_group("dvd_player")
-	_disc_slot.has_picked_up.connect(_on_disc_inserted)
-	_disc_slot.has_dropped.connect(_on_disc_removed)
+	_slot = MediaSlot.new()
+	_slot.host = self
+	_slot.slot = _disc_slot
+	_slot.insert_depth = SLOT_INSET
+	add_child(_slot)
+	_slot.inserted.connect(_on_media_inserted)
+	_slot.removed.connect(_on_media_removed)
 	_play_button.button_pressed.connect(_on_play_pressed)
 	_pause_button.button_pressed.connect(_on_pause_pressed)
 	_stop_button.button_pressed.connect(_on_stop_pressed)
@@ -181,185 +179,25 @@ func _on_menu_pressed() -> void:
 
 # --- Disc slot callbacks ---
 
-func _on_disc_inserted(disc: Node3D) -> void:
-	_snapped_disc = disc
-	# Suppress disc<->player collision for the whole time the disc is in the unit's
-	# volume — seated, riding, or parked ejected at the slot origin (partly inside
-	# the body). Without this the frozen disc shoves the player when it overlaps.
-	# The exception is dropped only when a hand takes the disc away (its picked_up),
-	# not when it merely leaves the snap zone on eject.
-	add_collision_exception_with(disc)
-	if not disc.picked_up.is_connected(_on_slot_disc_taken):
-		disc.picked_up.connect(_on_slot_disc_taken)
+## MediaSlot accepted a disc (the insert ride has begun). Cache its path and report
+## the insert; playback is user-started (remote / Play button) or host-driven in a
+## session — insert never auto-plays.
+func _on_media_inserted(disc: Node3D) -> void:
 	if disc.has_method("get_dvd_path"):
 		dvd_path = disc.get_dvd_path()
-	# Ride the disc into the player (front slot-load look) — it's swallowed by the
-	# opaque body and held frozen inside until Eject.
-	_play_slot_insert(disc)
 	NetworkManager.report_event(NetObjectSync.EV_DVD_INSERT, {"dvd": self, "disc": disc})
-	# Inserting no longer auto-plays — the user starts playback from the remote /
-	# front Play button (mirrors the VCR, which has never auto-played on insert).
-	# In a session, playback is host-authoritative anyway (transport commands / the
-	# DVD state broadcast drive it).
 
 
-func _on_disc_removed() -> void:
-	# The disc left the snap zone (eject or a hand pulling it straight out). Stop
-	# playback and clear state, but keep the disc<->player collision exception: on
-	# eject the disc stays parked in the unit's volume and only truly leaves when
-	# picked up (_on_slot_disc_taken drops the exception then).
-	_snapped_disc = null
+## MediaSlot reports the disc left (ejected, or pulled straight out). Stop playback
+## and clear state.
+func _on_media_removed() -> void:
 	stop()
 	dvd_path = ""
 	NetworkManager.report_event(NetObjectSync.EV_DVD_REMOVE, {"dvd": self})
 
 
 func _on_eject_pressed() -> void:
-	_slot_eject()
-
-
-## Slot-local pose of the snap-zone origin (the DiscSlot node itself): flush with
-## the slot, no protrusion. Shared by the insert ride's start and the eject ride's
-## end, so an ejected disc sits exactly at the snap point a freshly-dropped one
-## would seize. Position is the slot origin; orientation stays the slot's.
-func _slot_mouth_pose() -> Transform3D:
-	return Transform3D.IDENTITY
-
-
-## Slide the loaded disc back out to the snap-zone origin, then release it from the
-## snap zone so it can be grabbed. It ends frozen at the slot (held by the mechanism,
-## not falling) until someone takes it. Like the insert, the ride animates the grab
-## DRIVER's slot-local pose, so it tracks the player if carried mid-eject and always
-## lands at the snap origin — the same spot the disc occupied when it first snapped in.
-## drop_object() fires has_dropped -> _on_disc_removed, which stops playback and
-## clears state.
-func _slot_eject() -> void:
-	var disc := _snapped_disc
-	if disc == null or not is_instance_valid(disc) or _slot_ejecting:
-		return
-	_slot_ejecting = true
-	var mouth := _slot_mouth_pose()
-	# Start from wherever the driver currently holds the disc (seated, or partway
-	# in if Eject lands mid-insert).
-	var driver: Variant = _slot_grab_driver(disc)
-	var from: Transform3D = driver.primary.transform.affine_inverse() if driver != null \
-		else _disc_slot.global_transform.affine_inverse() * disc.global_transform
-	if _slot_tween:
-		_slot_tween.kill()
-	_slot_tween = disc.create_tween()
-	_slot_tween.tween_method(_ride_slot_pose.bind(disc, from, mouth), 0.0, 1.0, 0.9) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_slot_tween.tween_callback(func() -> void:
-		_slot_ejecting = false
-		# The released disc still overlaps the zone's grab sphere and the zone
-		# re-stashes anything dropped inside it — disarm it around the release, then
-		# leave the disc frozen at the slot origin until someone takes it.
-		_disc_slot.enabled = false
-		_disc_slot.drop_object()
-		if is_instance_valid(disc):
-			if disc is RigidBody3D:
-				(disc as RigidBody3D).freeze = true
-			_begin_eject_follow(disc, mouth)
-		get_tree().create_timer(0.25).timeout.connect(func() -> void:
-			if is_instance_valid(_disc_slot):
-				_disc_slot.enabled = true))
-
-
-## Park the ejected disc at slot-local pose `local` and keep it riding with the
-## player — the slot mechanism still holds it — until someone picks it up. The
-## picked_up connection that ends the ride is made once at insert (see
-## _on_disc_inserted), so it also covers a disc grabbed straight from the slot.
-func _begin_eject_follow(disc: Node3D, local: Transform3D) -> void:
-	_ejected_disc = disc
-	_ejected_local = local
-	disc.global_transform = _disc_slot.global_transform * local
-
-
-## The disc left the unit for good — a hand took it (from the parked eject pose or
-## straight from the slot), or the slot re-captured it on re-insert. Stop the eject
-## follow immediately (so _physics_process stops pinning it and fighting the hand),
-## then restore its collision with the player after a short delay: a ranged grab
-## lerps the disc out through the body, and re-enabling collision mid-transit would
-## let it hit the unit. On re-insert _on_disc_inserted re-adds the exception and
-## reconnects right after this runs.
-func _on_slot_disc_taken(disc: Node3D) -> void:
-	if disc.picked_up.is_connected(_on_slot_disc_taken):
-		disc.picked_up.disconnect(_on_slot_disc_taken)
-	if _ejected_disc == disc:
-		_ejected_disc = null
-	get_tree().create_timer(0.5).timeout.connect(func() -> void:
-		# Skip if the disc came back into the slot in the meantime (its exception
-		# was re-added and must stay).
-		if is_instance_valid(self) and is_instance_valid(disc) \
-				and _snapped_disc != disc and _ejected_disc != disc:
-			remove_collision_exception_with(disc))
-
-
-## Ride a freshly-snapped disc from just outside the front slot to its seated
-## position inside the opaque body, then hold it there.
-##
-## A snapped object is positioned by the snap-zone's grab DRIVER, which parks it
-## at the slot node's origin (the mouth). Writing the disc's global_position
-## directly to ride it deeper fought that driver: while the player sat still the
-## write "won" and the disc looked seated, but the moment the player was picked
-## up and the slot began moving each physics frame the driver reasserted the
-## mouth pose and the disc slid back out. Instead we animate the DRIVER's held
-## pose — the single source of truth — so the seated spot and the ride-in are one
-## and the same, and the seated disc rides rigidly with the player once carried.
-func _play_slot_insert(disc: Node3D) -> void:
-	if _slot_grab_driver(disc) == null:
-		return
-	if disc is RigidBody3D:
-		(disc as RigidBody3D).freeze = true
-	# Ride poses are captured RELATIVE TO THE SLOT (slot-local), so the disc feeds
-	# in tracking the slot even if the whole player is moved mid-insert, and stays
-	# seated relative to the player forever after.
-	var slot_inv := _disc_slot.global_transform.affine_inverse()
-	var basis := _disc_slot.global_transform.basis
-	var slot_pos := _disc_slot.global_position
-	var into := -_disc_slot.global_transform.basis.z
-	var start := _slot_mouth_pose()
-	var seated := slot_inv * Transform3D(basis, slot_pos + into * SLOT_INSET)
-	# Begin the ride from just outside the slot, then interpolate the held pose in
-	# to the seated spot. Placing the disc at `start` synchronously (the driver
-	# only re-poses next physics frame) keeps it from flashing at the raw snap
-	# point — the slot origin — for a frame first, which read as an outward hop.
-	_set_slot_grab_pose(disc, start)
-	disc.global_transform = _disc_slot.global_transform * start
-	if _slot_tween:
-		_slot_tween.kill()
-	_slot_tween = disc.create_tween()
-	_slot_tween.tween_method(_ride_slot_pose.bind(disc, start, seated), 0.0, 1.0, 0.9) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-
-
-## tween_method step: hold the disc a fraction of the way from `start` to `seated`
-## (both slot-local poses).
-func _ride_slot_pose(t: float, disc: Node3D, start: Transform3D,
-		seated: Transform3D) -> void:
-	_set_slot_grab_pose(disc, start.interpolate_with(seated, t))
-
-
-## The snap-zone grab driver holding `disc`, or null if it isn't snapped here.
-func _slot_grab_driver(disc: Node3D) -> Variant:
-	if not is_instance_valid(disc):
-		return null
-	var driver: Variant = disc.get("_grab_driver")
-	if driver and driver.primary and driver.primary.by == _disc_slot:
-		return driver
-	return null
-
-
-## Anchor the snap-zone grab driver so it holds the disc at slot-local pose
-## `local`. The driver reproduces `slot.global_transform * offset.affine_inverse()`,
-## so the offset that yields `slot.global_transform * local` is `local.affine_inverse()`.
-## Storing the pose relative to the slot is what makes the disc ride with the slot —
-## and thus the whole player — rigidly when the player is picked up and moved.
-func _set_slot_grab_pose(disc: Node3D, local: Transform3D) -> void:
-	var driver: Variant = _slot_grab_driver(disc)
-	if driver == null:
-		return
-	driver.primary.transform = local.affine_inverse()
+	_slot.eject()
 
 
 # --- Playback controls ---
@@ -369,9 +207,9 @@ func remote_pause() -> void: _on_pause_pressed()
 func remote_stop() -> void: _on_stop_pressed()
 func remote_ff() -> void: _on_ff_pressed()
 func remote_rewind() -> void: _on_rewind_pressed()
-func remote_eject() -> void: _slot_eject()
+func remote_eject() -> void: _slot.eject()
 ## True when a disc is loaded (the remote greys its Eject cell otherwise).
-func has_media() -> bool: return _snapped_disc != null
+func has_media() -> bool: return _slot.has_media()
 
 
 ## True while playback is paused (used by the TV remote's play/pause cell).
@@ -739,8 +577,9 @@ func net_apply_state(playing: bool, paused: bool, title: int, chapter: int,
 		return
 	# The disc path is resolved by object_sync after insertion (verify-only);
 	# refresh in case it landed after the insert event.
-	if dvd_path.is_empty() and _snapped_disc and _snapped_disc.has_method("get_dvd_path"):
-		dvd_path = _snapped_disc.get_dvd_path()
+	var disc := _slot.get_media()
+	if dvd_path.is_empty() and disc and disc.has_method("get_dvd_path"):
+		dvd_path = disc.get_dvd_path()
 	if not is_playing:
 		if dvd_path.is_empty() or connected_tv == null:
 			_osd("WAITING FOR DISC…")
@@ -771,12 +610,12 @@ func net_apply_state(playing: bool, paused: bool, title: int, chapter: int,
 # ── Save/load + net restore ───────────────────────────────────────────────────
 
 func get_snapped_disc() -> Node3D:
-	return _snapped_disc
+	return _slot.get_media()
 
 
-## Snap a disc into the slot programmatically (event/save restore).
+## Seat a disc programmatically (event/save restore) — no ride, bypasses the filter.
 func restore_disc(disc: Node3D) -> void:
-	_disc_slot.pick_up_object(disc)
+	_slot.restore(disc)
 
 
 ## Reconnect the cable to a TV programmatically (EV_TV_PLUG + save restore). If
@@ -925,16 +764,6 @@ func _add_cable_to_scene() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	# The ejected disc is still held by the slot mechanism — ride it with the
-	# player until someone takes it. Runs after the player's own grab driver
-	# (-80), so the slot transform is current-tick.
-	if _ejected_disc != null:
-		if not is_instance_valid(_ejected_disc):
-			_ejected_disc = null
-		else:
-			_ejected_disc.global_transform = \
-				_disc_slot.global_transform * _ejected_local
-			_ejected_disc.force_update_transform()
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
 	if connected_tv != null or _cable_plug.is_picked_up():
