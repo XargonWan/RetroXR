@@ -220,9 +220,15 @@ func _media_loaded(media: Node3D) -> void:
 	_track_idx = 0
 	_rebuild_tracks()
 	NetworkManager.report_event(NetObjectSync.EV_AUDIO_INSERT, {"player": self, "media": media})
-	if not NetworkManager.is_active():
+	if _autoplay_on_load() and not NetworkManager.is_active():
 		play()
 	_update_status()
+
+
+## Whether inserting media auto-starts playback offline. The cassette does (it
+## front-loads and plays); the CD waits for the lid to close over the disc.
+func _autoplay_on_load() -> bool:
+	return true
 
 
 ## Media left the deck (ejected / lid opened and taken). Stops and clears state.

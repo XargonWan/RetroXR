@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://cdplayer_0001"]
+[gd_scene load_steps=20 format=3 uid="uid://cdplayer_0001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/cd_player.gd" id="1_cdscript"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
@@ -39,6 +39,22 @@ size = Vector3(0.03, 0.02, 0.03)
 [sub_resource type="StandardMaterial3D" id="Mat_btn"]
 albedo_color = Color(0.3, 0.3, 0.3, 1)
 
+[sub_resource type="CylinderMesh" id="Cyl_well_bed"]
+top_radius = 0.066
+bottom_radius = 0.066
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="Mat_well_bed"]
+albedo_color = Color(0.05, 0.05, 0.06, 1)
+
+[sub_resource type="CylinderMesh" id="Cyl_lid"]
+top_radius = 0.078
+bottom_radius = 0.078
+height = 0.006
+
+[sub_resource type="StandardMaterial3D" id="Mat_lid"]
+albedo_color = Color(0.5, 0.52, 0.56, 1)
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.32, 0.06, 0.27)
 
@@ -61,8 +77,13 @@ surface_material_override/0 = SubResource("Mat_body")
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("5_pickhigh")
 
+[node name="DiscWellBed" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.031, -0.03)
+mesh = SubResource("Cyl_well_bed")
+surface_material_override/0 = SubResource("Mat_well_bed")
+
 [node name="MediaSlot" parent="." instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -0.02)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.035, -0.03)
 grab_distance = 0.09
 snap_require = "audio_disc"
 
@@ -72,6 +93,33 @@ script = ExtResource("4_snaphis")
 [node name="HighlightMesh" type="MeshInstance3D" parent="MediaSlot/SnapHighlight"]
 mesh = SubResource("Cyl_disc_ghost")
 surface_material_override/0 = SubResource("Mat_disc_ghost")
+
+[node name="TrayLidPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.035, -0.096)
+
+[node name="Lid" type="MeshInstance3D" parent="TrayLidPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.004, 0.066)
+mesh = SubResource("Cyl_lid")
+surface_material_override/0 = SubResource("Mat_lid")
+
+[node name="OpenButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, 0.03, 0.05)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="OpenButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="OpenButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="OpenButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "OPEN"
+font_size = 8
 
 [node name="PrevButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0.03, 0.11)
