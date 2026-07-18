@@ -294,8 +294,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	# Desktop: scroll wheel scrolls the visible spawn menu (when no object is held)
-	if _viewport_node.visible and event is InputEventMouseButton:
+	# Desktop: scroll wheel scrolls the options panel under the reticle, or falls
+	# back to the visible spawn menu (when no object is held — pickup's push/pull
+	# consumes the wheel first while holding).
+	if event is InputEventMouseButton:
 		var mbe := event as InputEventMouseButton
 		var scroll_px := 0.0
 		if mbe.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -303,10 +305,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mbe.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			scroll_px =  _SCROLL_SPEED * 0.016
 		if scroll_px != 0.0:
-			var menu := _get_menu()
-			if menu:
-				menu.scroll_active(scroll_px)
-			get_viewport().set_input_as_handled()
+			var ui := _raycast_scrollable_ui()
+			if ui:
+				ui.scroll_active(scroll_px)
+				get_viewport().set_input_as_handled()
+			elif _viewport_node.visible:
+				var menu := _get_menu()
+				if menu:
+					menu.scroll_active(scroll_px)
+				get_viewport().set_input_as_handled()
 
 
 func _on_controller_button(action_name: String) -> void:
@@ -361,7 +368,9 @@ func _process(delta: float) -> void:
 	_apply_menu_locomotion_blocks(left_over, right_over)
 
 	if not (right_over or left_over):
-		_smoothed_scroll_y = 0.0
+		# Menu is open but neither laser is on it — a floating options panel
+		# (system/TV/VCR/…) may still be under a pointer, so let it scroll.
+		_process_core_options_scroll(delta)
 		return
 
 	# Combine stick inputs — whichever controller(s) are pointing contribute
@@ -379,7 +388,7 @@ func _process(delta: float) -> void:
 			menu.scroll_active(pixels)
 
 
-## Drive scroll on any visible CoreOptionsPanel whose viewport the pointer is over.
+## Drive stick scroll on any visible options panel whose viewport a pointer is over.
 func _process_core_options_scroll(delta: float) -> void:
 	var right_vp := _find_core_options_viewport(_right_pointer)
 	var left_vp  := _find_core_options_viewport(_left_pointer)
@@ -404,7 +413,7 @@ func _process_core_options_scroll(delta: float) -> void:
 
 	var pixels := _compute_scroll_pixels(delta, raw_y)
 	if pixels != 0.0:
-		var opts_ui := _get_core_options_ui(any_vp)
+		var opts_ui := _get_scrollable_ui(any_vp)
 		if opts_ui:
 			opts_ui.scroll_active(pixels)
 
@@ -491,8 +500,9 @@ func _pointer_over_menu(pointer: XRToolsFunctionPointer) -> bool:
 	return false
 
 
-## Returns the XRToolsViewport2DIn3D belonging to a CoreOptionsPanel that the
-## pointer is currently aimed at, or null if not pointing at one.
+## Returns the XRToolsViewport2DIn3D of an options panel the pointer is currently
+## aimed at (any panel whose 2D UI exposes scroll_active — system, VCR, TV,
+## cartridge, book, …), or null. The spawn menu has its own scroll path.
 func _find_core_options_viewport(pointer: XRToolsFunctionPointer) -> XRToolsViewport2DIn3D:
 	if not pointer:
 		return null
@@ -502,25 +512,50 @@ func _find_core_options_viewport(pointer: XRToolsFunctionPointer) -> XRToolsView
 	var node: Node = tgt
 	while node:
 		if node is XRToolsViewport2DIn3D:
-			# Walk up to see if this viewport lives inside an options panel
-			var ancestor: Node = node.get_parent()
-			while ancestor:
-				if ancestor is CoreOptionsPanel or ancestor is VCROptionsPanel:
-					return node as XRToolsViewport2DIn3D
-				ancestor = ancestor.get_parent()
+			if node == _viewport_node:
+				return null
+			if _get_scrollable_ui(node as XRToolsViewport2DIn3D):
+				return node as XRToolsViewport2DIn3D
 			return null
 		node = node.get_parent()
 	return null
 
 
-## Get the scrollable options UI (CoreOptions2D or VCROptions2D) from a panel
-## viewport node. Both expose scroll_active(pixels).
-func _get_core_options_ui(viewport_node: XRToolsViewport2DIn3D) -> Control:
+## Get the scrollable options UI from a panel viewport node — the 2D root of any
+## panel that exposes scroll_active(pixels) (CoreOptions2D, TVOptions2D,
+## SpawnMenu2D, …). Null if the viewport is hidden or its UI can't scroll.
+func _get_scrollable_ui(viewport_node: XRToolsViewport2DIn3D) -> Control:
+	if not viewport_node.is_visible_in_tree():
+		return null
 	var vp := viewport_node.get_node_or_null("Viewport") as SubViewport
 	if vp and vp.get_child_count() > 0:
 		var ui := vp.get_child(0)
-		if ui is CoreOptions2D or ui is VCROptions2D:
+		if ui is Control and ui.has_method("scroll_active"):
 			return ui as Control
+	return null
+
+
+## Desktop wheel support: raycast the pointable layer (21) straight down the
+## camera's aim and return the scrollable 2D UI of whatever panel viewport the
+## reticle is over (spawn menu included), or null.
+func _raycast_scrollable_ui() -> Control:
+	if not is_instance_valid(_camera):
+		return null
+	var space := _camera.get_world_3d().direct_space_state
+	var from := _camera.global_position
+	var to := from - _camera.global_transform.basis.z * 10.0
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 1 << 20   # 21: pointable
+	q.collide_with_areas = true
+	q.collide_with_bodies = true
+	var hit := space.intersect_ray(q)
+	if hit.is_empty():
+		return null
+	var node: Node = hit["collider"] as Node3D
+	while node:
+		if node is XRToolsViewport2DIn3D:
+			return _get_scrollable_ui(node as XRToolsViewport2DIn3D)
+		node = node.get_parent()
 	return null
 
 
