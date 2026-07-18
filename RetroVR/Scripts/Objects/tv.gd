@@ -518,9 +518,30 @@ func hide_osd() -> void:
 	_set_osd_text("")
 
 
+# Long OSD messages (e.g. "AUDIO: English (Dolby Digital 5.1)" from the DVD/VHS
+# track cycling) would otherwise overflow past the edge of the screen at the
+# base font size. Short messages ("PLAY", "MUTE", "POWER"...) stay full-size;
+# anything past OSD_FIT_CHARS scales down (never below the min) to fit.
+const OSD_FIT_CHARS := 10
+const OSD_BASE_FONT_SIZE_3D := 64
+const OSD_MIN_FONT_SIZE_3D := 24
+const OSD_BASE_FONT_SIZE_2D := 44
+const OSD_MIN_FONT_SIZE_2D := 18
+
+
+func _fit_osd_font_size(text: String, base_size: int, min_size: int) -> int:
+	var length := text.length()
+	if length <= OSD_FIT_CHARS:
+		return base_size
+	return maxi(min_size, int(base_size * OSD_FIT_CHARS / float(length)))
+
+
 func _set_osd_text(text: String) -> void:
 	_osd_label.text = text
+	_osd_label.font_size = _fit_osd_font_size(text, OSD_BASE_FONT_SIZE_3D, OSD_MIN_FONT_SIZE_3D)
 	_osd_text_2d.text = text
+	_osd_text_2d.add_theme_font_size_override(
+			"font_size", _fit_osd_font_size(text, OSD_BASE_FONT_SIZE_2D, OSD_MIN_FONT_SIZE_2D))
 	_refresh_osd_texture(text)
 
 
