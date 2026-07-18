@@ -122,7 +122,7 @@ text = "OPEN"
 font_size = 8
 
 [node name="PrevButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -141,7 +141,7 @@ text = "|<<"
 font_size = 9
 
 [node name="RewindButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -160,7 +160,7 @@ text = "<<"
 font_size = 9
 
 [node name="PlayButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.04, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.04, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -179,7 +179,7 @@ text = "PLAY"
 font_size = 9
 
 [node name="PauseButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -198,7 +198,7 @@ text = "PAUSE"
 font_size = 9
 
 [node name="StopButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -217,7 +217,7 @@ text = "STOP"
 font_size = 9
 
 [node name="FastForwardButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -236,7 +236,7 @@ text = ">>"
 font_size = 9
 
 [node name="NextButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, 0.03, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, 0.03, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")

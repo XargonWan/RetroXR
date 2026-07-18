@@ -97,7 +97,7 @@ transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
 mesh = SubResource("CylMesh_cable")
 
 [node name="PlayButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0.045, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0.045, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -116,7 +116,7 @@ text = "PLAY"
 font_size = 10
 
 [node name="PauseButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0.045, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0.045, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -135,7 +135,7 @@ text = "PAUSE"
 font_size = 10
 
 [node name="StopButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -154,7 +154,7 @@ text = "STOP"
 font_size = 10
 
 [node name="RewindButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0.045, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0.045, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
@@ -173,7 +173,7 @@ text = "<<"
 font_size = 10
 
 [node name="FastForwardButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.045, 0.11)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.045, 0.1)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
