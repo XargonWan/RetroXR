@@ -134,6 +134,18 @@ func _process(_delta: float) -> void:
 		_stereo_mat.set_shader_parameter("source_tex", tex)
 
 
+## Sit the START/STOP and RESET buttons on the front of the bipod base plate
+## instead of leaving them at the default cabinet front-face height, where the
+## Virtual Boy's tall stand leaves them floating in mid-air. The StandBase plate
+## top is at y = 0.012; the button boxes are 0.02 tall (half-height 0.01), so a
+## button resting on the plate centres at y = 0.022. They keep the default
+## upright (+Z-facing) orientation, so the poke/press mechanics are unchanged.
+func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
+	power_btn.set_color(Color(0.0, 1.0, 0.0))   # START/STOP label+colour owned by system.gd
+	power_btn.position = Vector3(0.04, 0.022, 0.045)
+	reset_btn.position = Vector3(-0.04, 0.022, 0.045)
+
+
 ## The single controller port sits under the front of the visor pointing down,
 ## like the real EXT connector on the underside of the head unit.
 func configure_controller_ports(port_zones: Array) -> void:
