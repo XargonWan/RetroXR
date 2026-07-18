@@ -29,6 +29,14 @@ var _vlc: Object = null                 # VlcPlayer (GDExtension)
 var _screen_material: StandardMaterial3D = null
 var _snapped_disc: Node3D = null
 
+# Slot loader (front-loading like a real DVD player): a disc brought to the front
+# slot rides IN and is swallowed by the opaque body; Eject rides it back OUT the
+# front where it protrudes, frozen and grabbable. Mirrors RetroSystem's LOADER_SLOT.
+const DISC_RADIUS := 0.06      # DVDDisc mesh radius (12 cm disc)
+const SLOT_INSET := 0.10       # how far inside the player a loaded disc rides
+const SLOT_PROTRUDE := 0.06    # how far the ejected disc pokes out the front
+var _slot_ejecting := false    # slide-out animation in flight
+
 # Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
 # an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
 # sound is spatialised (and the TV volume knob scales it) like the console audio.
@@ -175,6 +183,9 @@ func _on_disc_inserted(disc: Node3D) -> void:
 	add_collision_exception_with(disc)
 	if disc.has_method("get_dvd_path"):
 		dvd_path = disc.get_dvd_path()
+	# Ride the disc into the player (front slot-load look) — it's swallowed by the
+	# opaque body and held frozen inside until Eject.
+	_play_slot_insert(disc)
 	NetworkManager.report_event(NetObjectSync.EV_DVD_INSERT, {"dvd": self, "disc": disc})
 	# In a session, playback is host-authoritative — it starts via the transport
 	# commands / DVD state broadcast (mirrors the VCR, which never auto-plays on
@@ -193,9 +204,62 @@ func _on_disc_removed() -> void:
 
 
 func _on_eject_pressed() -> void:
-	# Drop the snapped disc out of the slot (also stops playback via has_dropped).
-	if _snapped_disc and _disc_slot.has_method("drop_object"):
+	_slot_eject()
+
+
+## Slide the loaded disc out of the front slot, then release it from the snap zone
+## so it can be grabbed. It ends frozen and protruding from the slot (held by the
+## mechanism, not falling) until someone takes it. drop_object() fires has_dropped
+## -> _on_disc_removed, which stops playback and clears state.
+func _slot_eject() -> void:
+	var disc := _snapped_disc
+	if disc == null or not is_instance_valid(disc) or _slot_ejecting:
+		return
+	_slot_ejecting = true
+	var out_pos: Vector3 = _disc_slot.global_position \
+		+ _disc_slot.global_transform.basis.z * SLOT_PROTRUDE
+	var tween := disc.create_tween()
+	tween.tween_property(disc, "global_position", out_pos, 0.9) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		_slot_ejecting = false
+		# The released disc still overlaps the zone's grab sphere and the zone
+		# re-stashes anything dropped inside it — disarm it around the release, then
+		# leave the disc frozen protruding from the slot until someone takes it.
+		_disc_slot.enabled = false
 		_disc_slot.drop_object()
+		if is_instance_valid(disc) and disc is RigidBody3D:
+			(disc as RigidBody3D).freeze = true
+			(disc as RigidBody3D).global_position = out_pos
+		get_tree().create_timer(0.25).timeout.connect(func() -> void:
+			if is_instance_valid(_disc_slot):
+				_disc_slot.enabled = true))
+
+
+## Ride a freshly-snapped disc from just outside the front slot to its seated
+## position inside the opaque body. Frozen for the whole ride — an unfrozen body
+## sags under gravity while the tween drives it. Mirrors RetroSystem._play_slot_insert.
+func _play_slot_insert(disc: Node3D) -> void:
+	var slot_pos := _disc_slot.global_position
+	var into := -_disc_slot.global_transform.basis.z
+	var start := slot_pos - into * (DISC_RADIUS + 0.01)
+	if disc is RigidBody3D:
+		(disc as RigidBody3D).freeze = true
+	disc.global_position = start
+	# The snap driver writes the zone pose once on the frame after pick-up — cover
+	# it with a deferred re-set, and interpolate with an EXPLICIT from->to
+	# (tween_property would capture the stomped position as its start).
+	disc.set_deferred("global_position", start)
+	var tween := disc.create_tween()
+	tween.tween_method(_set_ride_pos.bind(disc), start,
+		slot_pos + into * SLOT_INSET, 0.9) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## tween_method target for the slot ride (explicit from->to interpolation).
+func _set_ride_pos(p: Vector3, disc: Node3D) -> void:
+	if is_instance_valid(disc):
+		disc.global_position = p
 
 
 # --- Playback controls ---
