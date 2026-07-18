@@ -18,7 +18,7 @@ const HOVER_OUTLINE_COLOR := Color(0.65, 1.0, 0.65, 1.0)
 ## How close (metres) the controller tip must be to trigger the button.
 ## The button face is at the top of the mesh, so ~half the mesh height is a
 ## good starting threshold.
-@export var trigger_radius: float = 0.04
+@export var trigger_radius: float = 0.01
 
 ## How much the mesh travels when pressed (metres)
 @export var depress_depth: float = 0.008
