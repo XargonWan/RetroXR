@@ -45,6 +45,7 @@ linear_damp = 5.0
 angular_damp = 8.0
 freeze_mode = 1
 script = ExtResource("1_discscript")
+grab_cylinder = Vector2(0.08, 0.025)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("CylShape_disc")

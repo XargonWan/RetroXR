@@ -89,6 +89,43 @@ const DEFAULT_LAYER := 0b0000_0000_0000_0001_0000_0000_0000_0000
 @export var picked_by_require : String = ""
 
 
+# ---- RetroVR local addition: per-object near-grab volume --------------------
+# By default a pickable is grabbable anywhere its collider overlaps the hand's
+# 0.3 m grab sphere (function_pickup.gd). These optional fields replace that
+# loose sphere with a tight, shaped test in the object's OWN local space, so a
+# grab only registers when the hand is actually on the object. Leave all unset
+# (zero) to keep the default reach. Precedence when several are set:
+# box > cylinder > sphere.
+
+## Box grab volume: half-extents (m) in local space. Vector3.ZERO = unused.
+@export var grab_box : Vector3 = Vector3.ZERO
+
+## Cylinder grab volume: x = radius, y = half-height (m), axis = local +Y.
+## Vector2.ZERO = unused. Suits flat round media (discs/CDs).
+@export var grab_cylinder : Vector2 = Vector2.ZERO
+
+## Sphere grab volume: radius (m). 0 = unused.
+@export var grab_radius : float = 0.0
+
+
+## True if the hand at world position `hand_origin` lies within this object's
+## configured near-grab volume. Returns true when no volume is set (the default
+## loose reach). Tested in the object's local space so the shape rotates with it.
+func hand_in_grab_volume(hand_origin: Vector3) -> bool:
+	if grab_box != Vector3.ZERO:
+		var p := global_transform.affine_inverse() * hand_origin
+		return absf(p.x) <= grab_box.x and absf(p.y) <= grab_box.y \
+				and absf(p.z) <= grab_box.z
+	if grab_cylinder != Vector2.ZERO:
+		var p := global_transform.affine_inverse() * hand_origin
+		return absf(p.y) <= grab_cylinder.y \
+				and (p.x * p.x + p.z * p.z) <= grab_cylinder.x * grab_cylinder.x
+	if grab_radius > 0.0:
+		return global_transform.origin.distance_squared_to(hand_origin) \
+				<= grab_radius * grab_radius
+	return true
+
+
 ## If true, the object can be picked up at range
 var can_ranged_grab: bool = true
 

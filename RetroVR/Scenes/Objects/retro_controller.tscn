@@ -29,6 +29,7 @@ freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_ctrlscript")
+grab_box = Vector3(0.08, 0.045, 0.035)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=579109256]
 shape = SubResource("BoxShape3D_body")

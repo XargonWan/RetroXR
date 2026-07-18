@@ -33,6 +33,7 @@ linear_damp = 5.0
 angular_damp = 8.0
 freeze_mode = 1
 script = ExtResource("1_cartscript")
+grab_box = Vector3(0.065, 0.055, 0.035)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("BoxShape3D_cart")
