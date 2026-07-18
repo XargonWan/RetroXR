@@ -288,24 +288,65 @@ func _tape_flat_basis() -> Basis:
 
 
 ## Ride a freshly-snapped tape from just outside the front slot to its seated
-## position inside the opaque body. Frozen for the whole ride (an unfrozen body
-## sags under gravity while the tween drives it). Mirrors DVDPlayer._play_slot_insert.
+## position inside the opaque body, laid flat, then hold it there.
+##
+## A snapped object is positioned by the snap-zone's grab DRIVER, which parks it
+## at the slot node's origin. Writing the tape's global_transform directly to ride
+## it deeper fought that driver: while the VCR sat still the write "won" and the
+## tape looked seated, but the moment the VCR was picked up and the slot began
+## moving each physics frame the driver reasserted the mouth pose and the tape
+## slid back out. Instead we animate the DRIVER's held pose — the single source of
+## truth — so the seated spot and the ride-in are one and the same, and the seated
+## tape rides rigidly with the VCR once carried.
 func _play_slot_insert(tape: Node3D) -> void:
-	var slot_pos := _tape_slot.global_position
-	var into := -global_transform.basis.z            # front -> back, into the body
-	var flat := _tape_flat_basis()
-	var start := slot_pos - into * (TAPE_HALF_DEPTH + 0.01)
+	if _slot_grab_driver(tape) == null:
+		return
 	if tape is RigidBody3D:
 		(tape as RigidBody3D).freeze = true
-	tape.global_transform = Transform3D(flat, start)
-	# The snap driver writes the zone pose once on the frame after pick-up — cover
-	# it with a deferred re-set, and interpolate with an EXPLICIT from->to
-	# (_set_ride_pos re-asserts the flat basis every step).
-	tape.set_deferred("global_transform", Transform3D(flat, start))
+	# Ride poses are captured RELATIVE TO THE SLOT (slot-local), so the tape feeds
+	# in tracking the slot even if the whole VCR is moved mid-insert, and stays
+	# seated relative to the VCR forever after.
+	var slot_inv := _tape_slot.global_transform.affine_inverse()
+	var flat := _tape_flat_basis()
+	var slot_pos := _tape_slot.global_position
+	var into := -global_transform.basis.z            # front -> back, into the body
+	var start := slot_inv * Transform3D(flat, slot_pos - into * (TAPE_HALF_DEPTH + 0.01))
+	var seated := slot_inv * Transform3D(flat, slot_pos + into * SLOT_INSET)
+	# Begin the ride from the slot mouth (overrides the driver's initial park),
+	# then interpolate the held pose in to the seated spot.
+	_set_slot_grab_pose(tape, start)
 	var tween := tape.create_tween()
-	tween.tween_method(_set_ride_pos.bind(tape, flat), start,
-		slot_pos + into * SLOT_INSET, 0.9) \
+	tween.tween_method(_ride_slot_pose.bind(tape, start, seated), 0.0, 1.0, 0.9) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## tween_method step: hold the tape a fraction of the way from `start` to `seated`
+## (both slot-local poses).
+func _ride_slot_pose(t: float, tape: Node3D, start: Transform3D,
+		seated: Transform3D) -> void:
+	_set_slot_grab_pose(tape, start.interpolate_with(seated, t))
+
+
+## The snap-zone grab driver holding `tape`, or null if it isn't snapped here.
+func _slot_grab_driver(tape: Node3D) -> Variant:
+	if not is_instance_valid(tape):
+		return null
+	var driver: Variant = tape.get("_grab_driver")
+	if driver and driver.primary and driver.primary.by == _tape_slot:
+		return driver
+	return null
+
+
+## Anchor the snap-zone grab driver so it holds the tape at slot-local pose
+## `local`. The driver reproduces `slot.global_transform * offset.affine_inverse()`,
+## so the offset that yields `slot.global_transform * local` is `local.affine_inverse()`.
+## Storing the pose relative to the slot is what makes the tape ride with the slot —
+## and thus the whole VCR — rigidly when the VCR is picked up and moved.
+func _set_slot_grab_pose(tape: Node3D, local: Transform3D) -> void:
+	var driver: Variant = _slot_grab_driver(tape)
+	if driver == null:
+		return
+	driver.primary.transform = local.affine_inverse()
 
 
 ## tween_method target for the slot ride: sets the tape's full transform so the

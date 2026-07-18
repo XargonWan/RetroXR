@@ -237,29 +237,65 @@ func _slot_eject() -> void:
 
 
 ## Ride a freshly-snapped disc from just outside the front slot to its seated
-## position inside the opaque body. Frozen for the whole ride — an unfrozen body
-## sags under gravity while the tween drives it. Mirrors RetroSystem._play_slot_insert.
+## position inside the opaque body, then hold it there.
+##
+## A snapped object is positioned by the snap-zone's grab DRIVER, which parks it
+## at the slot node's origin (the mouth). Writing the disc's global_position
+## directly to ride it deeper fought that driver: while the player sat still the
+## write "won" and the disc looked seated, but the moment the player was picked
+## up and the slot began moving each physics frame the driver reasserted the
+## mouth pose and the disc slid back out. Instead we animate the DRIVER's held
+## pose — the single source of truth — so the seated spot and the ride-in are one
+## and the same, and the seated disc rides rigidly with the player once carried.
 func _play_slot_insert(disc: Node3D) -> void:
-	var slot_pos := _disc_slot.global_position
-	var into := -_disc_slot.global_transform.basis.z
-	var start := slot_pos - into * (DISC_RADIUS + 0.01)
+	if _slot_grab_driver(disc) == null:
+		return
 	if disc is RigidBody3D:
 		(disc as RigidBody3D).freeze = true
-	disc.global_position = start
-	# The snap driver writes the zone pose once on the frame after pick-up — cover
-	# it with a deferred re-set, and interpolate with an EXPLICIT from->to
-	# (tween_property would capture the stomped position as its start).
-	disc.set_deferred("global_position", start)
+	# Ride poses are captured RELATIVE TO THE SLOT (slot-local), so the disc feeds
+	# in tracking the slot even if the whole player is moved mid-insert, and stays
+	# seated relative to the player forever after.
+	var slot_inv := _disc_slot.global_transform.affine_inverse()
+	var basis := _disc_slot.global_transform.basis
+	var slot_pos := _disc_slot.global_position
+	var into := -_disc_slot.global_transform.basis.z
+	var start := slot_inv * Transform3D(basis, slot_pos - into * (DISC_RADIUS + 0.01))
+	var seated := slot_inv * Transform3D(basis, slot_pos + into * SLOT_INSET)
+	# Begin the ride from the slot mouth (overrides the driver's initial park),
+	# then interpolate the held pose in to the seated spot.
+	_set_slot_grab_pose(disc, start)
 	var tween := disc.create_tween()
-	tween.tween_method(_set_ride_pos.bind(disc), start,
-		slot_pos + into * SLOT_INSET, 0.9) \
+	tween.tween_method(_ride_slot_pose.bind(disc, start, seated), 0.0, 1.0, 0.9) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
-## tween_method target for the slot ride (explicit from->to interpolation).
-func _set_ride_pos(p: Vector3, disc: Node3D) -> void:
-	if is_instance_valid(disc):
-		disc.global_position = p
+## tween_method step: hold the disc a fraction of the way from `start` to `seated`
+## (both slot-local poses).
+func _ride_slot_pose(t: float, disc: Node3D, start: Transform3D,
+		seated: Transform3D) -> void:
+	_set_slot_grab_pose(disc, start.interpolate_with(seated, t))
+
+
+## The snap-zone grab driver holding `disc`, or null if it isn't snapped here.
+func _slot_grab_driver(disc: Node3D) -> Variant:
+	if not is_instance_valid(disc):
+		return null
+	var driver: Variant = disc.get("_grab_driver")
+	if driver and driver.primary and driver.primary.by == _disc_slot:
+		return driver
+	return null
+
+
+## Anchor the snap-zone grab driver so it holds the disc at slot-local pose
+## `local`. The driver reproduces `slot.global_transform * offset.affine_inverse()`,
+## so the offset that yields `slot.global_transform * local` is `local.affine_inverse()`.
+## Storing the pose relative to the slot is what makes the disc ride with the slot —
+## and thus the whole player — rigidly when the player is picked up and moved.
+func _set_slot_grab_pose(disc: Node3D, local: Transform3D) -> void:
+	var driver: Variant = _slot_grab_driver(disc)
+	if driver == null:
+		return
+	driver.primary.transform = local.affine_inverse()
 
 
 # --- Playback controls ---
