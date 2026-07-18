@@ -15,7 +15,11 @@ class_name TVRemote
 extends XRToolsPickable
 
 
-const RAY_LENGTH := 8.0
+## Half-angle (degrees) of the acquisition cone: point roughly toward a device and
+## the one nearest the cone centre is targeted. Tunable in the inspector.
+@export var target_cone_angle_deg: float = 20.0
+## Max targeting range in metres (cone radius; also the desktop crosshair reach).
+@export var target_max_distance: float = 8.0
 ## Seconds the ray may leave the target before the menu hides (hand jitter).
 const TARGET_GRACE := 0.4
 
@@ -290,9 +294,13 @@ func _update_target(delta: float) -> void:
 		_rebuild_grid()
 		_menu.visible = true
 		return
-	# Ray off-target: keep the menu through brief hand jitter.
+	# Off-target. VR's cone is already forgiving, so drop it immediately; desktop's
+	# thin crosshair keeps the grace period to ride out brief jitter.
 	if _target != null:
 		if not is_instance_valid(_target):
+			_clear_target()
+			return
+		if not _desktop_held:
 			_clear_target()
 			return
 		_lost_time += delta
@@ -300,34 +308,89 @@ func _update_target(delta: float) -> void:
 			_clear_target()
 
 
-## Raycast from the tip (VR) or camera centre (desktop) on the pointable layer,
-## then walk ancestors to the owning device.
+## Desktop: a precise crosshair raycast from the camera. VR: a forgiving cone from
+## the tip — point in the general direction and the device nearest the cone centre
+## (with clear line-of-sight) is targeted.
 func _scan_for_target() -> Node3D:
-	var from: Vector3
-	var dir: Vector3
 	if _desktop_held:
 		var cam := get_viewport().get_camera_3d()
 		if not is_instance_valid(cam):
 			return null
-		from = cam.global_position
-		dir = -cam.global_transform.basis.z
-	else:
-		from = _tip.global_position
-		dir = -_tip.global_transform.basis.z
+		return _ray_device(cam.global_position, -cam.global_transform.basis.z)
+	return _cone_pick(_tip.global_position, -_tip.global_transform.basis.z)
 
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * RAY_LENGTH)
-	q.collision_mask = 1 << 20   # 21: pointable (PointerArea bodies)
-	q.exclude = [_pointer_area.get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	if hit.is_empty():
-		return null
 
-	var n := hit["collider"] as Node
+## Walk a collider up its ancestors to the owning device, or null.
+func _walk_to_device(n: Node) -> Node3D:
 	while n:
 		if n is RetroTV or n is VCRPlayer or n is DVDPlayer or n is RetroAudioPlayer:
 			return n as Node3D
 		n = n.get_parent()
 	return null
+
+
+## Thin-ray hit on the pointable layer (desktop crosshair), walked to its device.
+func _ray_device(from: Vector3, dir: Vector3) -> Node3D:
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * target_max_distance)
+	q.collision_mask = 1 << 20   # 21: pointable (PointerArea bodies)
+	q.exclude = [_pointer_area.get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return null
+	return _walk_to_device(hit["collider"] as Node)
+
+
+## Pick the pointable device nearest the cone centre (largest dot with `dir`) that
+## is within `target_cone_angle_deg` / `target_max_distance` and not occluded by
+## world geometry. Mirrors XRToolsFunctionPickup._get_closest_ranged.
+func _cone_pick(from: Vector3, dir: Vector3) -> Node3D:
+	var shape := SphereShape3D.new()
+	shape.radius = target_max_distance
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.transform = Transform3D(Basis.IDENTITY, from)
+	q.collision_mask = 1 << 20   # 21: pointable (PointerArea bodies)
+	q.exclude = [_pointer_area.get_rid()]
+	var space := get_world_3d().direct_space_state
+	var hits := space.intersect_shape(q, 64)
+
+	# Best dot product (cone centre = 1.0) per device, plus a point to sight-check.
+	var min_dp := cos(deg_to_rad(target_cone_angle_deg))
+	var best_dp: Dictionary = {}   # device -> dp
+	var best_pt: Dictionary = {}   # device -> collider world position
+	for h in hits:
+		var dev := _walk_to_device(h["collider"] as Node)
+		if dev == null:
+			continue
+		var col := h["collider"] as Node3D
+		var to: Vector3 = col.global_position - from
+		var dist := to.length()
+		if dist > target_max_distance or dist < 0.0001:
+			continue
+		var dp := dir.dot(to / dist)
+		if dp < min_dp:
+			continue
+		if not best_dp.has(dev) or dp > float(best_dp[dev]):
+			best_dp[dev] = dp
+			best_pt[dev] = col.global_position
+
+	# Closest-to-centre first; return the first with clear line-of-sight.
+	var devices: Array = best_dp.keys()
+	devices.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		return float(best_dp[a]) > float(best_dp[b]))
+	for dev: Node3D in devices:
+		if not _occluded(from, best_pt[dev]):
+			return dev
+	return null
+
+
+## True when world/room geometry (physics layer 1) blocks the straight line from
+## `from` to `to`. Devices live on layer 21, so they never self-block.
+func _occluded(from: Vector3, to: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 1 << 0   # world/walls
+	q.exclude = [_pointer_area.get_rid()]
+	return not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 
 func _clear_target() -> void:
