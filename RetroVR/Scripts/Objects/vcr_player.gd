@@ -430,15 +430,23 @@ func _begin_eject_follow(tape: Node3D, local: Transform3D) -> void:
 
 
 ## The tape left the unit for good — a hand took it (from the parked eject pose or
-## straight from the slot), or the slot re-captured it on re-insert. Restore its
-## collision with the VCR and stop the eject follow. On re-insert _on_tape_inserted
-## re-adds the exception and reconnects right after this runs.
+## straight from the slot), or the slot re-captured it on re-insert. Stop the eject
+## follow immediately (so _physics_process stops pinning it and fighting the hand),
+## then restore its collision with the VCR after a short delay: a ranged grab lerps
+## the tape out through the body, and re-enabling collision mid-transit would let it
+## hit the unit. On re-insert _on_tape_inserted re-adds the exception and reconnects
+## right after this runs.
 func _on_slot_tape_taken(tape: Node3D) -> void:
-	remove_collision_exception_with(tape)
 	if tape.picked_up.is_connected(_on_slot_tape_taken):
 		tape.picked_up.disconnect(_on_slot_tape_taken)
 	if _ejected_tape == tape:
 		_ejected_tape = null
+	get_tree().create_timer(0.5).timeout.connect(func() -> void:
+		# Skip if the tape came back into the slot in the meantime (its exception
+		# was re-added and must stay).
+		if is_instance_valid(self) and is_instance_valid(tape) \
+				and _snapped_tape != tape and _ejected_tape != tape:
+			remove_collision_exception_with(tape))
 
 
 ## Client-in-session: transport intents route to the host (authoritative
