@@ -26,8 +26,6 @@ const _KNOB_BORDER := Color(0.50, 0.51, 0.55)
 var _knob: Panel
 var _gloss: Panel
 var _label: Label
-var _x_on: float
-var _x_off: float
 
 
 ## Factory: a ready-to-use switch. on_toggled(on: bool) fires on user changes.
@@ -43,6 +41,8 @@ func _setup(initial_on: bool) -> void:
 	toggle_mode = true
 	button_pressed = initial_on
 	custom_minimum_size = Vector2(_W, _H)
+	# Don't let a taller menu row stretch the switch (which left the knob short).
+	size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	focus_mode = Control.FOCUS_NONE
 	text = ""
 	clip_contents = true
@@ -62,10 +62,10 @@ func _setup(initial_on: bool) -> void:
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(_label)
 
-	# Raised knob.
+	# Raised knob — anchored so it always fills the track height (minus a small
+	# inset), sliding left/right in _refresh.
 	_knob = Panel.new()
 	_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_knob.size = Vector2(_KNOB_W, _H - 2.0 * _MARGIN)
 	var ks := StyleBoxFlat.new()
 	ks.bg_color = _KNOB_BG
 	ks.border_color = _KNOB_BORDER
@@ -83,8 +83,10 @@ func _setup(initial_on: bool) -> void:
 	# Gloss highlight across the knob's top half (skeuomorphic sheen).
 	_gloss = Panel.new()
 	_gloss.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_gloss.size = Vector2(_KNOB_W - 6, (_H - 2.0 * _MARGIN) * 0.5)
-	_gloss.position = Vector2(3, 2)
+	_gloss.anchor_left = 0.0; _gloss.anchor_right = 1.0
+	_gloss.anchor_top = 0.0; _gloss.anchor_bottom = 0.5
+	_gloss.offset_left = 3; _gloss.offset_right = -3
+	_gloss.offset_top = 2; _gloss.offset_bottom = 0
 	var gs := StyleBoxFlat.new()
 	gs.bg_color = Color(1, 1, 1, 0.35)
 	for k in ["corner_radius_top_left", "corner_radius_top_right"]:
@@ -92,24 +94,45 @@ func _setup(initial_on: bool) -> void:
 	_gloss.add_theme_stylebox_override("panel", gs)
 	_knob.add_child(_gloss)
 
-	_x_off = _MARGIN
-	_x_on = _W - _KNOB_W - _MARGIN
 	_refresh(initial_on)
 	toggled.connect(func(on: bool) -> void: _refresh(on))
 
 
 func _refresh(on: bool) -> void:
-	_knob.position = Vector2(_x_on if on else _x_off, _MARGIN)
+	# Knob fills the full track height (minus inset) and sits on one side.
+	_knob.anchor_top = 0.0
+	_knob.anchor_bottom = 1.0
+	_knob.offset_top = _MARGIN
+	_knob.offset_bottom = -_MARGIN
+	# Label fills the full height so the text is vertically centered too.
+	_label.anchor_top = 0.0
+	_label.anchor_bottom = 1.0
+	_label.offset_top = 0
+	_label.offset_bottom = 0
 	if on:
+		# Knob on the right; "ON" centered in the left (blue) area.
+		_knob.anchor_left = 1.0
+		_knob.anchor_right = 1.0
+		_knob.offset_left = -(_KNOB_W + _MARGIN)
+		_knob.offset_right = -_MARGIN
 		_label.text = "ON"
 		_label.add_theme_color_override("font_color", Color.WHITE)
-		_label.position = Vector2(2, 0)
-		_label.size = Vector2(_x_on - 2, _H)
+		_label.anchor_left = 0.0
+		_label.anchor_right = 1.0
+		_label.offset_left = 0
+		_label.offset_right = -(_KNOB_W + _MARGIN)
 	else:
+		# Knob on the left; "OFF" centered in the right (gray) area.
+		_knob.anchor_left = 0.0
+		_knob.anchor_right = 0.0
+		_knob.offset_left = _MARGIN
+		_knob.offset_right = _MARGIN + _KNOB_W
 		_label.text = "OFF"
 		_label.add_theme_color_override("font_color", Color(0.42, 0.43, 0.47))
-		_label.position = Vector2(_KNOB_W + _MARGIN, 0)
-		_label.size = Vector2(_W - _KNOB_W - _MARGIN - 2, _H)
+		_label.anchor_left = 0.0
+		_label.anchor_right = 1.0
+		_label.offset_left = _KNOB_W + _MARGIN
+		_label.offset_right = 0
 
 
 func _track(bg: Color, border: Color) -> StyleBoxFlat:
