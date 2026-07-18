@@ -63,7 +63,7 @@ width = 260.0
 script = ExtResource("2_pickhigh")
 
 [node name="SnapGrabPoint" parent="." instance=ExtResource("3_snapgp")]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -0.1, 0)
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
 
 [node name="PointerArea" type="StaticBody3D" parent="."]
 collision_layer = 1048576
