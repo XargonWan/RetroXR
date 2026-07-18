@@ -582,12 +582,6 @@ func accept_plug_restore(plug: CablePlug) -> void:
 	print("[RetroTV] accept_plug_restore: done, port.picked_up=%s" % _composite_port.picked_up_object)
 
 
-## The source device (RetroSystem / VCRPlayer / DVDPlayer) currently feeding this
-## TV, or null. Used by the TV remote's Eject cell to reach the connected VCR/DVD.
-func get_connected_source() -> Node3D:
-	return _connected_system
-
-
 ## Called when a cable plug snaps into the composite port
 func _on_plug_snapped(plug: Node3D) -> void:
 	# Hand the incoming host a clean screen so the C++ video handler doesn't

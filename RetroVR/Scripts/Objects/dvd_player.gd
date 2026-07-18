@@ -270,6 +270,8 @@ func remote_stop() -> void: _on_stop_pressed()
 func remote_ff() -> void: _on_ff_pressed()
 func remote_rewind() -> void: _on_rewind_pressed()
 func remote_eject() -> void: _slot_eject()
+## True when a disc is loaded (the remote greys its Eject cell otherwise).
+func has_media() -> bool: return _snapped_disc != null
 
 
 ## True while playback is paused (used by the TV remote's play/pause cell).

@@ -443,6 +443,11 @@ func remote_eject() -> void:
 	_slot_eject()
 
 
+## True when a tape is loaded (the remote greys its Eject cell otherwise).
+func has_media() -> bool:
+	return _snapped_tape != null
+
+
 func _on_play_pressed() -> void:
 	if _net_forward_cmd("play"):
 		return

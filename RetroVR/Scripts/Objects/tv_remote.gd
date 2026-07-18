@@ -353,13 +353,23 @@ func _set_target_highlight(target: Node3D, active: bool) -> void:
 func _layout_for_target() -> Array:
 	if _target is RetroTV:
 		return [
-			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 1.5},
-			{"id": "eject", "glyph": "eject", "col": 1.5, "row": 0, "span": 1.5},
+			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 3},
 			{"id": "vol_down", "glyph": "vol_down", "col": 0, "row": 1},
 			{"id": "mute", "glyph": "mute", "col": 1, "row": 1},
 			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 1},
 		]
-	if _target is VCRPlayer or _target is RetroAudioPlayer:
+	if _target is VCRPlayer:
+		# Eject on its own top row, then the transport grid.
+		return [
+			{"id": "eject", "glyph": "eject", "col": 0, "row": 0, "span": 3},
+			{"id": "prev", "glyph": "prev", "col": 0, "row": 1},
+			{"id": "playpause", "glyph": "play", "col": 1, "row": 1},
+			{"id": "next", "glyph": "next", "col": 2, "row": 1},
+			{"id": "rew", "glyph": "rew", "col": 0, "row": 2},
+			{"id": "stop", "glyph": "stop", "col": 1, "row": 2},
+			{"id": "ff", "glyph": "ff", "col": 2, "row": 2},
+		]
+	if _target is RetroAudioPlayer:
 		# Transport grid: prev/play/next over rew/stop/ff. prev/next greyed unless CD.
 		return [
 			{"id": "prev", "glyph": "prev", "col": 0, "row": 0},
@@ -370,23 +380,24 @@ func _layout_for_target() -> Array:
 			{"id": "ff", "glyph": "ff", "col": 2, "row": 1},
 		]
 	if _target is DVDPlayer:
-		# D-pad cluster (menu nav) + chapter/transport + a full-width MENU.
+		# Eject on its own top row, then D-pad cluster + chapter/transport + MENU.
 		return [
-			{"id": "up", "glyph": "up", "col": 1, "row": 0},
-			{"id": "left", "glyph": "left", "col": 0, "row": 1},
-			{"id": "ok", "glyph": "ok", "col": 1, "row": 1},
-			{"id": "right", "glyph": "right", "col": 2, "row": 1},
-			{"id": "down", "glyph": "down", "col": 1, "row": 2},
-			{"id": "prev_ch", "glyph": "prev", "col": 0, "row": 3},
-			{"id": "playpause", "glyph": "play", "col": 1, "row": 3},
-			{"id": "next_ch", "glyph": "next", "col": 2, "row": 3},
-			{"id": "rew", "glyph": "rew", "col": 0, "row": 4},
-			{"id": "stop", "glyph": "stop", "col": 1, "row": 4},
-			{"id": "ff", "glyph": "ff", "col": 2, "row": 4},
-			{"id": "menu", "glyph": "menu", "col": 0, "row": 5, "span": 3},
+			{"id": "eject", "glyph": "eject", "col": 0, "row": 0, "span": 3},
+			{"id": "up", "glyph": "up", "col": 1, "row": 1},
+			{"id": "left", "glyph": "left", "col": 0, "row": 2},
+			{"id": "ok", "glyph": "ok", "col": 1, "row": 2},
+			{"id": "right", "glyph": "right", "col": 2, "row": 2},
+			{"id": "down", "glyph": "down", "col": 1, "row": 3},
+			{"id": "prev_ch", "glyph": "prev", "col": 0, "row": 4},
+			{"id": "playpause", "glyph": "play", "col": 1, "row": 4},
+			{"id": "next_ch", "glyph": "next", "col": 2, "row": 4},
+			{"id": "rew", "glyph": "rew", "col": 0, "row": 5},
+			{"id": "stop", "glyph": "stop", "col": 1, "row": 5},
+			{"id": "ff", "glyph": "ff", "col": 2, "row": 5},
+			{"id": "menu", "glyph": "menu", "col": 0, "row": 6, "span": 3},
 			# Audio-track + subtitle cycle, two half-width cells filling the row.
-			{"id": "audio", "glyph": "audio", "col": 0.0, "row": 6, "span": 1.5},
-			{"id": "subtitle", "glyph": "subtitle", "col": 1.5, "row": 6, "span": 1.5},
+			{"id": "audio", "glyph": "audio", "col": 0.0, "row": 7, "span": 1.5},
+			{"id": "subtitle", "glyph": "subtitle", "col": 1.5, "row": 7, "span": 1.5},
 		]
 	return []
 
@@ -396,6 +407,8 @@ func _cell_enabled(id: String) -> bool:
 	if _target is DVDPlayer:
 		var in_menu: bool = (_target as DVDPlayer).is_in_menu()
 		match id:
+			"eject":
+				return (_target as DVDPlayer).has_media()   # only with a disc in
 			"up", "down", "left", "right", "ok":
 				return in_menu       # nav cluster only in a disc menu
 			"menu":
@@ -407,25 +420,14 @@ func _cell_enabled(id: String) -> bool:
 			_:
 				return not in_menu   # transport/chapter only during playback
 	if _target is VCRPlayer:
+		if id == "eject":
+			return (_target as VCRPlayer).has_media()   # only with a tape in
 		return id != "prev" and id != "next"
 	if _target is RetroAudioPlayer:
 		if id == "prev" or id == "next":
 			return (_target as RetroAudioPlayer).has_track_skip()
 		return true
-	if _target is RetroTV and id == "eject":
-		return _tv_eject_target() != null   # only when a VCR/DVD feeds the TV
-	return true   # TV: every other cell always usable
-
-
-## The VCR/DVD feeding the current TV target, if any (for the remote's Eject
-## cell — a TV-remote eject ejects the media from the connected source device).
-func _tv_eject_target() -> Node3D:
-	if not (_target is RetroTV):
-		return null
-	var src: Node3D = (_target as RetroTV).get_connected_source()
-	if src is VCRPlayer or src is DVDPlayer:
-		return src
-	return null
+	return true   # TV: every cell always usable
 
 
 # ── Grid widget ───────────────────────────────────────────────────────────────
@@ -716,13 +718,10 @@ func _activate(id: String) -> void:
 			"vol_up": tv.remote_volume_up()
 			"vol_down": tv.remote_volume_down()
 			"mute": tv.remote_mute_toggle()
-			"eject":
-				var src := _tv_eject_target()
-				if src != null:
-					src.remote_eject()
 	elif _target is VCRPlayer:
 		var vcr := _target as VCRPlayer
 		match id:
+			"eject": vcr.remote_eject()
 			"playpause": _toggle_playpause(vcr)
 			"stop": vcr.remote_stop()
 			"rew": vcr.remote_rewind()
@@ -739,6 +738,7 @@ func _activate(id: String) -> void:
 	elif _target is DVDPlayer:
 		var dvd := _target as DVDPlayer
 		match id:
+			"eject": dvd.remote_eject()
 			"up": dvd.dvd_menu_up()
 			"down": dvd.dvd_menu_down()
 			"left": dvd.dvd_menu_left()
