@@ -32,10 +32,10 @@ var _snapped_disc: Node3D = null
 # Slot loader (front-loading like a real DVD player): a disc brought to the front
 # slot rides IN and is swallowed by the opaque body; Eject rides it back OUT the
 # front where it protrudes, frozen and grabbable. Mirrors RetroSystem's LOADER_SLOT.
-const DISC_RADIUS := 0.06      # DVDDisc mesh radius (12 cm disc)
 const SLOT_INSET := 0.10       # how far inside the player a loaded disc rides
-const SLOT_PROTRUDE := 0.06    # how far the ejected disc pokes out the front
+const SLOT_PROTRUDE := 0.06    # how far a disc at the slot mouth pokes out the front
 var _slot_ejecting := false    # slide-out animation in flight
+var _slot_tween: Tween = null  # active insert/eject ride (killed when superseded)
 
 # Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
 # an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
@@ -207,21 +207,39 @@ func _on_eject_pressed() -> void:
 	_slot_eject()
 
 
-## Slide the loaded disc out of the front slot, then release it from the snap zone
-## so it can be grabbed. It ends frozen and protruding from the slot (held by the
-## mechanism, not falling) until someone takes it. drop_object() fires has_dropped
-## -> _on_disc_removed, which stops playback and clears state.
+## Slot-local pose of the slot mouth: poking SLOT_PROTRUDE out the front.
+## Shared by the insert ride's start and the eject ride's end, so an ejected disc
+## sits exactly where a freshly-snapped one first parks.
+func _slot_mouth_pose() -> Transform3D:
+	return _disc_slot.global_transform.affine_inverse() * Transform3D(
+		_disc_slot.global_transform.basis,
+		_disc_slot.global_position + _disc_slot.global_transform.basis.z * SLOT_PROTRUDE)
+
+
+## Slide the loaded disc back out to the slot mouth, then release it from the snap
+## zone so it can be grabbed. It ends frozen and protruding (held by the mechanism,
+## not falling) until someone takes it. Like the insert, the ride animates the grab
+## DRIVER's slot-local pose, so it tracks the player if carried mid-eject and always
+## lands at the mouth — the same spot the disc occupied when it first snapped in.
+## drop_object() fires has_dropped -> _on_disc_removed, which stops playback and
+## clears state.
 func _slot_eject() -> void:
 	var disc := _snapped_disc
 	if disc == null or not is_instance_valid(disc) or _slot_ejecting:
 		return
 	_slot_ejecting = true
-	var out_pos: Vector3 = _disc_slot.global_position \
-		+ _disc_slot.global_transform.basis.z * SLOT_PROTRUDE
-	var tween := disc.create_tween()
-	tween.tween_property(disc, "global_position", out_pos, 0.9) \
+	var mouth := _slot_mouth_pose()
+	# Start from wherever the driver currently holds the disc (seated, or partway
+	# in if Eject lands mid-insert).
+	var driver: Variant = _slot_grab_driver(disc)
+	var from: Transform3D = driver.primary.transform.affine_inverse() if driver != null \
+		else _disc_slot.global_transform.affine_inverse() * disc.global_transform
+	if _slot_tween:
+		_slot_tween.kill()
+	_slot_tween = disc.create_tween()
+	_slot_tween.tween_method(_ride_slot_pose.bind(disc, from, mouth), 0.0, 1.0, 0.9) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_callback(func() -> void:
+	_slot_tween.tween_callback(func() -> void:
 		_slot_ejecting = false
 		# The released disc still overlaps the zone's grab sphere and the zone
 		# re-stashes anything dropped inside it — disarm it around the release, then
@@ -230,7 +248,8 @@ func _slot_eject() -> void:
 		_disc_slot.drop_object()
 		if is_instance_valid(disc) and disc is RigidBody3D:
 			(disc as RigidBody3D).freeze = true
-			(disc as RigidBody3D).global_position = out_pos
+			(disc as RigidBody3D).global_transform = \
+				_disc_slot.global_transform * mouth
 		get_tree().create_timer(0.25).timeout.connect(func() -> void:
 			if is_instance_valid(_disc_slot):
 				_disc_slot.enabled = true))
@@ -259,7 +278,7 @@ func _play_slot_insert(disc: Node3D) -> void:
 	var basis := _disc_slot.global_transform.basis
 	var slot_pos := _disc_slot.global_position
 	var into := -_disc_slot.global_transform.basis.z
-	var start := slot_inv * Transform3D(basis, slot_pos - into * (DISC_RADIUS + 0.01))
+	var start := _slot_mouth_pose()
 	var seated := slot_inv * Transform3D(basis, slot_pos + into * SLOT_INSET)
 	# Begin the ride from just outside the slot, then interpolate the held pose in
 	# to the seated spot. Placing the disc at `start` synchronously (the driver
@@ -267,8 +286,10 @@ func _play_slot_insert(disc: Node3D) -> void:
 	# point — the slot origin — for a frame first, which read as an outward hop.
 	_set_slot_grab_pose(disc, start)
 	disc.global_transform = _disc_slot.global_transform * start
-	var tween := disc.create_tween()
-	tween.tween_method(_ride_slot_pose.bind(disc, start, seated), 0.0, 1.0, 0.9) \
+	if _slot_tween:
+		_slot_tween.kill()
+	_slot_tween = disc.create_tween()
+	_slot_tween.tween_method(_ride_slot_pose.bind(disc, start, seated), 0.0, 1.0, 0.9) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
