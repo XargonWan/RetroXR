@@ -60,6 +60,8 @@ const _MODEL_VARIANTS: Dictionary = {}
 var rom_path: String = ""
 var connected_tv: RetroTV = null
 var is_powered_on: bool = false
+# Throttle for the emulator audio occlusion raycast (see _update_emulator_audio).
+var _audio_occ_accum: float = 0.0
 
 ## Video-out cables shown/usable. Handhelds default OFF (they have their own
 ## screen — the cables are clutter until wanted); consoles default ON (a TV is
@@ -516,6 +518,23 @@ func set_audio_volume(volume: float) -> void:
 		asp.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
 
 
+## Apply the shared spatial-audio preset to the emulator's AudioStreamPlayer3D
+## (created in C++ by StartContent). Handhelds emit from the device in hand with a
+## tight, intimate range; consoles emit from the connected TV (repositioned in
+## _process) with the room-scale CABINET preset. The per-scene exports still
+## override the console reference distance / range / panning.
+func _apply_emulator_audio_preset() -> void:
+	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
+	if asp == null:
+		return
+	var is_handheld: bool = _model != null and _model.is_handheld()
+	SpatialAudioPresets.apply(asp, SpatialAudioPresets.HANDHELD if is_handheld else SpatialAudioPresets.CABINET)
+	if not is_handheld:
+		asp.unit_size        = audio_unit_size
+		asp.max_distance     = audio_max_distance
+		asp.panning_strength = audio_panning_strength
+
+
 ## The mesh the core should render to right now: a connected TV wins,
 ## otherwise a handheld's built-in LCD, otherwise null (no display).
 ## Multi-output hardware (dual-screen handhelds) ALWAYS renders to its own
@@ -825,8 +844,31 @@ func _process(_delta: float) -> void:
 					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
 		else:
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
+	_update_emulator_audio(_delta)
 	_update_tv_mirrors()
 	_update_disc_spin(_delta)
+
+
+## Emanate console emulator audio from the connected TV (so the sound comes from
+## the picture, like the VCR/DVD) and muffle it when the listener's line of sight
+## is occluded. Handhelds keep emitting from the device in hand (only occlusion is
+## applied). The emulator's AudioStreamPlayer3D is created in C++ as a child of the
+## Libretro node; here we just drive its position + filter.
+func _update_emulator_audio(delta: float) -> void:
+	if not is_powered_on:
+		return
+	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
+	if asp == null:
+		return
+	var is_handheld: bool = _model != null and _model.is_handheld()
+	if not is_handheld and connected_tv != null and is_instance_valid(connected_tv):
+		asp.global_position = connected_tv.global_position
+	# Throttle the occlusion ray on the CPU-bound Quest; smooth on the real dt.
+	_audio_occ_accum += delta
+	var interval := 0.10 if OS.get_name() == "Android" else 0.0
+	if _audio_occ_accum >= interval:
+		SpatialAudioPresets.update_occlusion(asp, _audio_occ_accum, [self, connected_tv])
+		_audio_occ_accum = 0.0
 
 
 ## Spin the seated disc: ramp up while powered with the tray shut, ramp down
@@ -928,11 +970,7 @@ func power_on() -> void:
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	_libretro.SetSramPath(_compose_sram_path(resolved_core))
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
-	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
-	if asp:
-		asp.unit_size        = audio_unit_size
-		asp.max_distance     = audio_max_distance
-		asp.panning_strength = audio_panning_strength
+	_apply_emulator_audio_preset()
 	is_powered_on = true
 	_update_power_button_visual()
 	_model.on_power_on()
@@ -1081,11 +1119,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_apply_forced_core_options(_resolve_dir(), resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
-	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
-	if asp:
-		asp.unit_size        = audio_unit_size
-		asp.max_distance     = audio_max_distance
-		asp.panning_strength = audio_panning_strength
+	_apply_emulator_audio_preset()
 	is_powered_on = true
 	net_remote_powered = false
 	if connected_tv:
