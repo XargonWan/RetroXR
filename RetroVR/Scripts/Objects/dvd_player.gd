@@ -261,9 +261,12 @@ func _play_slot_insert(disc: Node3D) -> void:
 	var into := -_disc_slot.global_transform.basis.z
 	var start := slot_inv * Transform3D(basis, slot_pos - into * (DISC_RADIUS + 0.01))
 	var seated := slot_inv * Transform3D(basis, slot_pos + into * SLOT_INSET)
-	# Begin the ride from the slot mouth (overrides the driver's initial park),
-	# then interpolate the held pose in to the seated spot.
+	# Begin the ride from just outside the slot, then interpolate the held pose in
+	# to the seated spot. Placing the disc at `start` synchronously (the driver
+	# only re-poses next physics frame) keeps it from flashing at the raw snap
+	# point — the slot origin — for a frame first, which read as an outward hop.
 	_set_slot_grab_pose(disc, start)
+	disc.global_transform = _disc_slot.global_transform * start
 	var tween := disc.create_tween()
 	tween.tween_method(_ride_slot_pose.bind(disc, start, seated), 0.0, 1.0, 0.9) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
