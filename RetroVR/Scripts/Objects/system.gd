@@ -128,9 +128,13 @@ var _disc_spin := 0.0          # current disc angular speed (rad/s)
 # owned by the shared MediaSlot; created in _load_system_model for slot consoles.
 # Null for cartridge / tray / no-disc systems. See media_slot.gd.
 var _slot: MediaSlot = null
-# Procedural disc well + hinged lid (default-model tray consoles only).
+# LOADER_TRAY lid bay (well seating / lid gating / disc spin / grab hand-off /
+# collision), owned by the shared MediaTray; created in _load_system_model for tray
+# consoles. Null for cartridge / slot / no-disc systems. See media_tray.gd.
+var _tray: MediaTray = null
+# Procedural disc well + hinged lid (default-model tray consoles only); the lid
+# pivot is handed to _tray so MediaTray animates it.
 var _tray_lid_pivot: Node3D = null
-var _tray_tween: Tween = null
 
 # --- Disk control (multi-disc games: FF7 "insert disc 2") ---
 # Mirrors the core's libretro disk-control state (disk_control_ready signal).
@@ -425,6 +429,22 @@ func _load_system_model() -> void:
 		# lid (bespoke GLB models own their tray geometry instead).
 		if _disc_loader == MediaDimensions.LOADER_TRAY and not is_bespoke:
 			_build_disc_tray()
+		# Lid tray: hand the well seating / lid gating / spin / grab / collision to the
+		# shared MediaTray (bespoke models animate their own lid via play_open/close;
+		# a procedural lid pivot, if any, is animated by MediaTray). The zone's raw
+		# insert/remove signals are replaced by MediaTray's, which fire the same
+		# _on_cartridge_inserted/_removed for the emulation-side work.
+		if _disc_loader == MediaDimensions.LOADER_TRAY:
+			_cartridge_slot.has_picked_up.disconnect(_on_cartridge_inserted)
+			_cartridge_slot.has_dropped.disconnect(_on_cartridge_removed)
+			_tray = MediaTray.new()
+			_tray.host = self
+			_tray.slot = _cartridge_slot
+			_tray.lid_pivot = _tray_lid_pivot          # null for bespoke models
+			_tray.lid_open_deg = TRAY_LID_OPEN_DEG
+			add_child(_tray)
+			_tray.loaded.connect(_on_cartridge_inserted)
+			_tray.unloaded.connect(_on_cartridge_removed)
 		# Slot loaders take the disc through a slit in the FRONT face: move the
 		# snap zone to the slit mouth and add the slit visual there.
 		if _disc_loader == MediaDimensions.LOADER_SLOT and not is_bespoke:
@@ -817,15 +837,19 @@ func _update_disc_spin(delta: float) -> void:
 	if disc == null or not is_instance_valid(disc):
 		_disc_spin = 0.0
 		return
-	var shut := _disc_loader != MediaDimensions.LOADER_TRAY or not _tray_open
+	# "Shut and seated": a tray disc spins only with the lid closed (MediaTray.can_spin
+	# already means shut-over-a-disc); a slot disc has no lid but must have finished its
+	# insert ride so the spin doesn't fight MediaSlot's ride tween.
+	var shut := true
+	if _tray != null:
+		shut = _tray.can_spin()
+	elif _slot != null:
+		shut = _slot.is_media_seated()
 	var target := DISC_SPIN_MAX if (is_powered_on and shut) else 0.0
 	var rate := DISC_SPIN_UP if target > _disc_spin else DISC_SPIN_DOWN
 	_disc_spin = move_toward(_disc_spin, target, rate * delta)
-	# Only rotate while seated (frozen); a disc being grabbed out keeps its pose. For
-	# slot loaders, wait until MediaSlot has finished the insert ride so the spin
-	# doesn't fight the ride tween writing the disc's local transform.
-	var seated := _slot == null or _slot.is_media_seated()
-	if _disc_spin > 0.0 and disc.freeze and seated:
+	# A disc being grabbed out keeps its pose (it's no longer frozen in the bay).
+	if _disc_spin > 0.0 and disc.freeze:
 		disc.rotate_object_local(Vector3.UP, _disc_spin * delta)
 
 
@@ -1330,12 +1354,14 @@ func _snap_cable_to_tv(tv: RetroTV, channel: int = 0) -> void:
 	tv.accept_plug_restore(_cable_plugs[channel])
 
 
-## Restore a cartridge→slot insertion after loading from a save file. Slot loaders
-## seat the disc immediately through MediaSlot (no ride, filter bypassed); cartridge
-## and tray systems snap it through the zone as before.
+## Restore a cartridge→slot insertion after loading from a save file. Slot/tray
+## loaders seat the disc immediately through MediaSlot/MediaTray (no ride, filter
+## bypassed); plain cartridge systems snap it through the zone as before.
 func restore_cartridge(cartridge: Node3D) -> void:
 	if _slot != null:
 		_slot.restore(cartridge)
+	elif _tray != null:
+		_tray.restore(cartridge)
 	else:
 		_cartridge_slot.pick_up_object(cartridge)
 
@@ -1350,9 +1376,9 @@ func restore_controller_plug(port_index: int, plug: ControllerPlug) -> void:
 func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	_snapped_cartridge = cartridge
 	# Prevent the frozen kinematic cartridge from physically pushing the system body.
-	# Slot loaders let MediaSlot own the exception (held until the disc is grabbed
-	# clear), so don't add a second one here.
-	if _disc_loader != MediaDimensions.LOADER_SLOT:
+	# Slot/tray loaders let their MediaSlot/MediaTray own the exception (held until
+	# the disc is grabbed clear), so only plain cartridge decks add one here.
+	if _slot == null and _tray == null:
 		add_collision_exception_with(cartridge)
 	if cartridge.has_method("get_rom_path"):
 		rom_path = cartridge.get_rom_path()
@@ -1361,11 +1387,8 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	if "systemid" in cartridge and str(cartridge.get("systemid")).is_empty():
 		cartridge.set("systemid", systemid)
 	_model.play_cartridge_insert(cartridge, _cartridge_slot)
-	# Slot loaders: MediaSlot already rode the disc in. Only the tray path needs to
-	# seal a restored/replicated disc inside a shut lid.
-	if cartridge is RetroDisc:
-		if _disc_loader == MediaDimensions.LOADER_TRAY and not _tray_open:
-			cartridge.set("enabled", false)
+	# (Slot/tray loaders already seated the disc and set its grabbability through
+	# MediaSlot/MediaTray — the disc's enabled state follows the lid there.)
 	# Hot swap: a powered disc console with its virtual tray open takes the new
 	# disc without a reboot (multi-disc games — FF7 "insert disc 2").
 	if is_powered_on and _has_disk_control and _disc_ejected \
@@ -1382,9 +1405,9 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 func _on_cartridge_removed() -> void:
 	if _snapped_cartridge:
 		_model.play_cartridge_eject(_snapped_cartridge, _cartridge_slot)
-		# Slot loaders let MediaSlot manage (and hold) the collision exception until
-		# the disc is grabbed clear — don't drop it here.
-		if _disc_loader != MediaDimensions.LOADER_SLOT:
+		# Slot/tray loaders let MediaSlot/MediaTray manage (and hold) the collision
+		# exception until the disc is grabbed clear — don't drop it here.
+		if _slot == null and _tray == null:
 			remove_collision_exception_with(_snapped_cartridge)
 		_snapped_cartridge = null
 	_disc_spin = 0.0
@@ -1467,22 +1490,16 @@ func _request_tray_state(open: bool) -> void:
 ## through net_set_tray_open below.
 func _set_tray_open(open: bool) -> void:
 	_tray_open = open
-	_cartridge_slot.enabled = open
+	# MediaTray gates the well (accepts a disc only while open + empty), makes a
+	# seated disc grabbable only while open, and swings the procedural lid pivot.
+	if _tray:
+		_tray.set_open(open)
 	_eject_button.set_latched_pressed(open)
+	# Bespoke GLB tray models animate their own lid here.
 	if open:
 		_model.play_open()
 	else:
 		_model.play_close()
-	# Swing the procedural lid on its hinge (default-model tray consoles).
-	if _tray_lid_pivot:
-		if _tray_tween:
-			_tray_tween.kill()
-		_tray_tween = create_tween()
-		_tray_tween.tween_property(_tray_lid_pivot, "rotation_degrees:x",
-			TRAY_LID_OPEN_DEG if open else 0.0, 0.4) \
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	if _snapped_cartridge is RetroDisc:
-		_snapped_cartridge.set("enabled", open)
 
 
 ## Build the physical disc well + hinged lid on the placeholder box body:
