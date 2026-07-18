@@ -62,7 +62,7 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 ## Desktop mode: lock to the camera lower-right pointing straight ahead
 ## (FPS-style, same as the RayGun — read by desktop_pickup.gd). Drop with
-## Ctrl+click while snapped.
+## Shift+click while snapped.
 var desktop_fps_snap: bool = true
 
 # Toggle-hold state (mirrors RayGun)

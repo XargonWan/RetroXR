@@ -31,7 +31,7 @@ func _ready():
 		print("  RetroVR: running in DESKTOP mode")
 		print("  WASD = move   Mouse = look")
 		print("  Left-click = grab/shoot")
-		print("  Ctrl+Left-click = drop (held gun)")
+		print("  Shift+Left-click = drop (held gun)")
 		print("  Tab = spawn menu")
 		print("=====================================")
 		# Ensure the window starts with a sensible resolution for desktop play

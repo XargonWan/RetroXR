@@ -61,6 +61,7 @@ input_right = "desktop_move_right"
 [node name="MovementDesktopCrouch" parent="Staging/XROrigin3D" instance=ExtResource("23_desktopcrouch")]
 
 [node name="MovementDesktopWalk" parent="Staging/XROrigin3D" instance=ExtResource("24_desktopwalk")]
+sprint_type = 1
 sprint_button = "action_walk"
 sprint_speed_multiplier = 0.4
 

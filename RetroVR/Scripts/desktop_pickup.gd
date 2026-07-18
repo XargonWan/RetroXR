@@ -2,7 +2,7 @@
 ##
 ## Attach to XRCamera3D.  When XR is not active:
 ##   Left-click             — pick up the XRToolsPickable under the cursor.
-##   Ctrl + Left-click      — drop the currently held object.
+##   Shift + Left-click     — drop the currently held object.
 ##   Scroll up/down    — push/pull the held object along the camera ray.
 ##                       (Disabled for FPS-snap objects.)
 ##   Middle-mouse drag — rotate the held object in place.
@@ -88,14 +88,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				if mbe.pressed:
 					if _held_object:
-						# Ctrl+click drops any held object.
+						# Shift+click drops any held object.
 						# Plain click also drops non-FPS-snap objects (books, controllers, etc.)
-						# so the user doesn't need Ctrl for those.
-						# FPS-snap objects (ray gun) require Ctrl+click to drop because
+						# so the user doesn't need Shift for those.
+						# FPS-snap objects (ray gun) require Shift+click to drop because
 						# plain left-click is the shoot/trigger action while the gun is held.
-						# Objects with desktop_ctrl_drop (mouse) do too — plain click is
+						# Objects with desktop_shift_drop (mouse) do too — plain click is
 						# their own LEFT button while held.
-						if mbe.ctrl_pressed or not (_is_fps_snap() or _needs_ctrl_drop()):
+						if mbe.shift_pressed or not (_is_fps_snap() or _needs_shift_drop()):
 							_drop()
 							get_viewport().set_input_as_handled()
 					else:
@@ -200,9 +200,9 @@ func _is_fps_snap() -> bool:
 
 
 ## True when the held object claims plain left-click as its own input
-## (RetroMouse) — dropping then needs Ctrl+click, like the ray gun.
-func _needs_ctrl_drop() -> bool:
-	return _held_object != null and _held_object.get("desktop_ctrl_drop") == true
+## (RetroMouse) — dropping then needs Shift+click, like the ray gun.
+func _needs_shift_drop() -> bool:
+	return _held_object != null and _held_object.get("desktop_shift_drop") == true
 
 
 func _update_reticle_highlight() -> void:
