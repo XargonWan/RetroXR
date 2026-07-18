@@ -191,11 +191,10 @@ func _on_disc_inserted(disc: Node3D) -> void:
 	# opaque body and held frozen inside until Eject.
 	_play_slot_insert(disc)
 	NetworkManager.report_event(NetObjectSync.EV_DVD_INSERT, {"dvd": self, "disc": disc})
-	# In a session, playback is host-authoritative — it starts via the transport
-	# commands / DVD state broadcast (mirrors the VCR, which never auto-plays on
-	# insert). Offline, auto-boot straight to the disc menu.
-	if not NetworkManager.is_active():
-		play()
+	# Inserting no longer auto-plays — the user starts playback from the remote /
+	# front Play button (mirrors the VCR, which has never auto-played on insert).
+	# In a session, playback is host-authoritative anyway (transport commands / the
+	# DVD state broadcast drive it).
 
 
 func _on_disc_removed() -> void:
