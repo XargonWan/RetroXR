@@ -33,7 +33,6 @@ var _snapped_disc: Node3D = null
 # slot rides IN and is swallowed by the opaque body; Eject rides it back OUT the
 # front where it protrudes, frozen and grabbable. Mirrors RetroSystem's LOADER_SLOT.
 const SLOT_INSET := 0.10       # how far inside the player a loaded disc rides
-const SLOT_PROTRUDE := 0.06    # how far a disc at the slot mouth pokes out the front
 var _slot_ejecting := false    # slide-out animation in flight
 var _slot_tween: Tween = null  # active insert/eject ride (killed when superseded)
 # Ejected disc parked at the slot mouth: the mechanism still holds it, so it
@@ -210,20 +209,19 @@ func _on_eject_pressed() -> void:
 	_slot_eject()
 
 
-## Slot-local pose of the slot mouth: poking SLOT_PROTRUDE out the front.
-## Shared by the insert ride's start and the eject ride's end, so an ejected disc
-## sits exactly where a freshly-snapped one first parks.
+## Slot-local pose of the snap-zone origin (the DiscSlot node itself): flush with
+## the slot, no protrusion. Shared by the insert ride's start and the eject ride's
+## end, so an ejected disc sits exactly at the snap point a freshly-dropped one
+## would seize. Position is the slot origin; orientation stays the slot's.
 func _slot_mouth_pose() -> Transform3D:
-	return _disc_slot.global_transform.affine_inverse() * Transform3D(
-		_disc_slot.global_transform.basis,
-		_disc_slot.global_position + _disc_slot.global_transform.basis.z * SLOT_PROTRUDE)
+	return Transform3D.IDENTITY
 
 
-## Slide the loaded disc back out to the slot mouth, then release it from the snap
-## zone so it can be grabbed. It ends frozen and protruding (held by the mechanism,
+## Slide the loaded disc back out to the snap-zone origin, then release it from the
+## snap zone so it can be grabbed. It ends frozen at the slot (held by the mechanism,
 ## not falling) until someone takes it. Like the insert, the ride animates the grab
 ## DRIVER's slot-local pose, so it tracks the player if carried mid-eject and always
-## lands at the mouth — the same spot the disc occupied when it first snapped in.
+## lands at the snap origin — the same spot the disc occupied when it first snapped in.
 ## drop_object() fires has_dropped -> _on_disc_removed, which stops playback and
 ## clears state.
 func _slot_eject() -> void:
@@ -246,7 +244,7 @@ func _slot_eject() -> void:
 		_slot_ejecting = false
 		# The released disc still overlaps the zone's grab sphere and the zone
 		# re-stashes anything dropped inside it — disarm it around the release, then
-		# leave the disc frozen protruding from the slot until someone takes it.
+		# leave the disc frozen at the slot origin until someone takes it.
 		_disc_slot.enabled = false
 		_disc_slot.drop_object()
 		if is_instance_valid(disc):

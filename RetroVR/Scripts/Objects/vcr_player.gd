@@ -82,7 +82,6 @@ var _snapped_tape: Node3D = null
 # rides IN flat and is swallowed by the opaque body; Eject rides it back OUT the
 # front where it protrudes, frozen and grabbable. Mirrors DVDPlayer/RetroSystem.
 const SLOT_INSET := 0.10        # how far inside the VCR a loaded tape rides
-const SLOT_PROTRUDE := 0.02     # how far a tape at the slot mouth pokes out the front
 var _slot_ejecting := false     # slide-out animation in flight
 var _slot_tween: Tween = null   # active insert/eject ride (killed when superseded)
 # Ejected tape parked at the slot mouth: the mechanism still holds it, so it
@@ -358,24 +357,25 @@ func _set_slot_grab_pose(tape: Node3D, local: Transform3D) -> void:
 	driver.primary.transform = local.affine_inverse()
 
 
-## Slot-local pose of the slot mouth: flat, poking SLOT_PROTRUDE out the front.
-## Shared by the insert ride's start and the eject ride's end, so an ejected tape
-## sits exactly where a freshly-snapped one first parks.
+## Slot-local pose of the snap-zone origin (the TapeSlot node itself): laid flat,
+## flush with the slot, no protrusion. Shared by the insert ride's start and the
+## eject ride's end, so an ejected tape sits exactly at the snap point a freshly-
+## dropped one would seize. Position is the slot origin; only the flat orientation
+## is applied.
 func _slot_mouth_pose() -> Transform3D:
 	return _tape_slot.global_transform.affine_inverse() * Transform3D(
-		_tape_flat_basis(),
-		_tape_slot.global_position + global_transform.basis.z * SLOT_PROTRUDE)
+		_tape_flat_basis(), _tape_slot.global_position)
 
 
 func _on_eject_pressed() -> void:
 	_slot_eject()
 
 
-## Slide the loaded tape back out to the slot mouth, then release it from the snap
-## zone so it can be grabbed. It ends frozen and protruding (held by the mechanism,
+## Slide the loaded tape back out to the snap-zone origin, then release it from the
+## snap zone so it can be grabbed. It ends frozen at the slot (held by the mechanism,
 ## not falling) until someone takes it. Like the insert, the ride animates the grab
 ## DRIVER's slot-local pose, so it tracks the VCR if carried mid-eject and always
-## lands at the mouth — the same spot the tape occupied when it first snapped in.
+## lands at the snap origin — the same spot the tape occupied when it first snapped in.
 ## drop_object() fires has_dropped -> _on_tape_removed, which stops playback and
 ## clears state.
 func _slot_eject() -> void:
@@ -398,7 +398,7 @@ func _slot_eject() -> void:
 		_slot_ejecting = false
 		# The released tape still overlaps the zone's grab sphere and the zone
 		# re-stashes anything dropped inside it — disarm it around the release, then
-		# leave the tape frozen protruding from the slot until someone takes it.
+		# leave the tape frozen at the slot origin until someone takes it.
 		_tape_slot.enabled = false
 		_tape_slot.drop_object()
 		if is_instance_valid(tape):
