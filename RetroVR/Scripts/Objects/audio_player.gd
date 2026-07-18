@@ -62,8 +62,11 @@ var _snapped_media: Node3D = null
 func _ready() -> void:
 	super._ready()
 	add_to_group("audio_player")
-	_media_slot.has_picked_up.connect(_on_media_inserted)
-	_media_slot.has_dropped.connect(_on_media_removed)
+	# Physical media handling (how the disc/tape loads, ejects, rides, and collides)
+	# is provided by the subclass: the cassette front-loads through a MediaSlot like
+	# the VCR; the CD drops into a MediaTray (flip-up lid) like a PlayStation. Both
+	# call _media_loaded/_media_unloaded for the transport-side state.
+	_setup_loader()
 	_play_button.button_pressed.connect(_on_play_pressed)
 	_pause_button.button_pressed.connect(_on_pause_pressed)
 	_stop_button.button_pressed.connect(_on_stop_pressed)
@@ -186,27 +189,45 @@ func _end_scan_hold() -> void:
 	_update_status()
 
 
-# --- Media slot callbacks ---
+# --- Media load/unload (called by the subclass's loader) ---
 
-func _on_media_inserted(media: Node3D) -> void:
-	_snapped_media = media
+## Install the physical media loader. Overridden per subclass (MediaSlot for the
+## cassette, MediaTray for the CD). Default: the legacy plain-snap deck — the media
+## snaps onto the $MediaSlot zone and is lifted straight back off.
+func _setup_loader() -> void:
+	_media_slot.has_picked_up.connect(_legacy_snap_loaded)
+	_media_slot.has_dropped.connect(_legacy_snap_unloaded)
+
+
+func _legacy_snap_loaded(media: Node3D) -> void:
 	add_collision_exception_with(media)
+	_media_loaded(media)
+
+
+func _legacy_snap_unloaded() -> void:
+	if _snapped_media:
+		remove_collision_exception_with(_snapped_media)
+	_media_unloaded()
+
+
+## Media accepted into the deck (loader owns the physical ride + collision). Reads
+## the album, resets tracks, reports the insert. Offline, auto-starts; in a session
+## playback is host-authoritative (transport commands / state broadcast) like DVD/VCR.
+func _media_loaded(media: Node3D) -> void:
+	_snapped_media = media
 	if media.has_method("get_album_path"):
 		album_path = media.get_album_path()
 	_track_idx = 0
 	_rebuild_tracks()
 	NetworkManager.report_event(NetObjectSync.EV_AUDIO_INSERT, {"player": self, "media": media})
-	# Offline, auto-start on insert. In a session playback is host-authoritative
-	# (starts via the transport commands / state broadcast) like the VCR/DVD.
 	if not NetworkManager.is_active():
 		play()
 	_update_status()
 
 
-func _on_media_removed() -> void:
-	if _snapped_media:
-		remove_collision_exception_with(_snapped_media)
-		_snapped_media = null
+## Media left the deck (ejected / lid opened and taken). Stops and clears state.
+func _media_unloaded() -> void:
+	_snapped_media = null
 	stop()
 	album_path = ""
 	_tracks = PackedStringArray()
@@ -223,7 +244,9 @@ func get_snapped_media() -> Node3D:
 	return _snapped_media
 
 
-## Snap a media item into the slot programmatically (event / save restore).
+## Seat a media item programmatically (event / save restore). Overridden per
+## subclass to seat it through that deck's loader (MediaSlot / MediaTray). Default:
+## snap it onto the legacy zone.
 func restore_media(media: Node3D) -> void:
 	_media_slot.pick_up_object(media)
 
