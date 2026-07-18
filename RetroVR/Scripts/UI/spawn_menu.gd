@@ -376,70 +376,9 @@ func _build_ui() -> void:
 	_show_spawn_view()
 
 
+## Shared iOS-style switch (see VRToggle) so every toggle in the UI matches.
 func _make_toggle(initial_on: bool, on_toggled: Callable) -> Button:
-	const W      := 100.0
-	const H      := 52.0
-	const KNOB_S := 40.0
-	const MARGIN := 6.0
-
-	var btn := Button.new()
-	btn.toggle_mode = true
-	btn.button_pressed = initial_on
-	btn.custom_minimum_size = Vector2(W, H)
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.text = ""
-
-	var off_style := StyleBoxFlat.new()
-	off_style.bg_color = Color(0.20, 0.20, 0.26)
-	off_style.border_color = Color(0.50, 0.50, 0.58)
-	for side in ["border_width_left", "border_width_right", "border_width_top", "border_width_bottom"]:
-		off_style.set(side, 2)
-	for k in ["corner_radius_top_left", "corner_radius_top_right",
-			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		off_style.set(k, int(H / 2.0))
-	for m in ["content_margin_left", "content_margin_right",
-			  "content_margin_top", "content_margin_bottom"]:
-		off_style.set(m, 0)
-
-	var on_style := StyleBoxFlat.new()
-	on_style.bg_color = Color(0.14, 0.55, 0.30)
-	on_style.border_color = Color(0.30, 0.80, 0.50)
-	for side in ["border_width_left", "border_width_right", "border_width_top", "border_width_bottom"]:
-		on_style.set(side, 2)
-	for k in ["corner_radius_top_left", "corner_radius_top_right",
-			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		on_style.set(k, int(H / 2.0))
-	for m in ["content_margin_left", "content_margin_right",
-			  "content_margin_top", "content_margin_bottom"]:
-		on_style.set(m, 0)
-
-	btn.add_theme_stylebox_override("normal",        off_style)
-	btn.add_theme_stylebox_override("hover",         off_style)
-	btn.add_theme_stylebox_override("pressed",       on_style)
-	btn.add_theme_stylebox_override("hover_pressed", on_style)
-	btn.add_theme_stylebox_override("focus",         StyleBoxEmpty.new())
-
-	var knob := Panel.new()
-	knob.size = Vector2(KNOB_S, KNOB_S)
-	knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ks := StyleBoxFlat.new()
-	ks.bg_color = Color.WHITE
-	for k in ["corner_radius_top_left", "corner_radius_top_right",
-			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		ks.set(k, int(KNOB_S / 2.0))
-	knob.add_theme_stylebox_override("panel", ks)
-
-	var knob_y := (H - KNOB_S) / 2.0
-	var x_off  := MARGIN
-	var x_on   := W - KNOB_S - MARGIN
-	knob.position = Vector2(x_on if initial_on else x_off, knob_y)
-	btn.add_child(knob)
-
-	btn.toggled.connect(func(on: bool) -> void:
-		knob.position.x = x_on if on else x_off
-		on_toggled.call(on)
-	)
-	return btn
+	return VRToggle.create(initial_on, on_toggled)
 
 
 func _make_nav_button(lbl: String) -> Button:

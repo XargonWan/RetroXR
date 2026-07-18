@@ -33,8 +33,8 @@ var _controllers_scroll: ScrollContainer
 var _controllers_rows: VBoxContainer
 var _system_scroll: ScrollContainer
 var _video_out_row: HBoxContainer = null
-var _video_out_check: CheckBox = null
-var _ignore_grav_check: CheckBox = null
+var _video_out_check: VRToggle = null
+var _ignore_grav_check: VRToggle = null
 var _tabs: TabContainer = null
 var _system_tab_idx := -1
 var _active_scroll: ScrollContainer = null
@@ -168,13 +168,9 @@ func _build_ui() -> void:
 	vo_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_video_out_row.add_child(vo_lbl)
 
-	_video_out_check = CheckBox.new()
-	_video_out_check.custom_minimum_size = Vector2(48, 48)
-	_video_out_check.add_theme_font_size_override("font_size", 22)
-	_video_out_check.toggled.connect(func(on: bool):
+	_video_out_check = VRToggle.create(false, func(on: bool):
 		if not _suppress_signal:
-			video_out_toggled.emit(on)
-	)
+			video_out_toggled.emit(on))
 	_video_out_row.add_child(_video_out_check)
 
 	var grav_row := HBoxContainer.new()
@@ -190,13 +186,9 @@ func _build_ui() -> void:
 	grav_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	grav_row.add_child(grav_lbl)
 
-	_ignore_grav_check = CheckBox.new()
-	_ignore_grav_check.custom_minimum_size = Vector2(48, 48)
-	_ignore_grav_check.add_theme_font_size_override("font_size", 22)
-	_ignore_grav_check.toggled.connect(func(on: bool):
+	_ignore_grav_check = VRToggle.create(false, func(on: bool):
 		if not _suppress_signal:
-			ignore_gravity_toggled.emit(on)
-	)
+			ignore_gravity_toggled.emit(on))
 	grav_row.add_child(_ignore_grav_check)
 
 	# Track which scroll container is active for stick-driven scrolling
