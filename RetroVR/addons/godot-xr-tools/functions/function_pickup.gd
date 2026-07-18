@@ -45,7 +45,7 @@ class CopiedCollision extends RefCounted:
 @export var action_button_action : String = "trigger_click"
 
 ## Grab distance
-@export var grab_distance : float = 0.3: set = _set_grab_distance
+@export var grab_distance : float = 0.125: set = _set_grab_distance
 
 ## Grab collision mask
 @export_flags_3d_physics \
