@@ -28,7 +28,7 @@ const PICKABLE_MASK := 4
 
 ## Scroll step in metres
 const SCROLL_STEP := 0.15
-const MIN_DIST    := 0.3
+const MIN_DIST    := 0.15
 const MAX_DIST    := 5.0
 
 ## Mouse sensitivity for rotation (radians per pixel)
