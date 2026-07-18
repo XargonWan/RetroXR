@@ -36,6 +36,10 @@ const SLOT_INSET := 0.10       # how far inside the player a loaded disc rides
 const SLOT_PROTRUDE := 0.06    # how far a disc at the slot mouth pokes out the front
 var _slot_ejecting := false    # slide-out animation in flight
 var _slot_tween: Tween = null  # active insert/eject ride (killed when superseded)
+# Ejected disc parked at the slot mouth: the mechanism still holds it, so it
+# rides with the player when carried, until someone takes it.
+var _ejected_disc: Node3D = null
+var _ejected_local := Transform3D.IDENTITY
 
 # Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
 # an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
@@ -246,13 +250,32 @@ func _slot_eject() -> void:
 		# leave the disc frozen protruding from the slot until someone takes it.
 		_disc_slot.enabled = false
 		_disc_slot.drop_object()
-		if is_instance_valid(disc) and disc is RigidBody3D:
-			(disc as RigidBody3D).freeze = true
-			(disc as RigidBody3D).global_transform = \
-				_disc_slot.global_transform * mouth
+		if is_instance_valid(disc):
+			if disc is RigidBody3D:
+				(disc as RigidBody3D).freeze = true
+			_begin_eject_follow(disc, mouth)
 		get_tree().create_timer(0.25).timeout.connect(func() -> void:
 			if is_instance_valid(_disc_slot):
 				_disc_slot.enabled = true))
+
+
+## Park the ejected disc at slot-local pose `local` and keep it riding with the
+## player — the slot mechanism still holds it — until someone picks it up.
+func _begin_eject_follow(disc: Node3D, local: Transform3D) -> void:
+	_ejected_disc = disc
+	_ejected_local = local
+	disc.global_transform = _disc_slot.global_transform * local
+	if not disc.picked_up.is_connected(_end_eject_follow):
+		disc.picked_up.connect(_end_eject_follow)
+
+
+## Stop tracking the ejected disc (someone took it from the slot mouth — a hand,
+## or the slot itself re-capturing it).
+func _end_eject_follow(_disc: Node3D = null) -> void:
+	if is_instance_valid(_ejected_disc) \
+			and _ejected_disc.picked_up.is_connected(_end_eject_follow):
+		_ejected_disc.picked_up.disconnect(_end_eject_follow)
+	_ejected_disc = null
 
 
 ## Ride a freshly-snapped disc from just outside the front slot to its seated
@@ -885,6 +908,16 @@ func _add_cable_to_scene() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# The ejected disc is still held by the slot mechanism — ride it with the
+	# player until someone takes it. Runs after the player's own grab driver
+	# (-80), so the slot transform is current-tick.
+	if _ejected_disc != null:
+		if not is_instance_valid(_ejected_disc):
+			_ejected_disc = null
+		else:
+			_ejected_disc.global_transform = \
+				_disc_slot.global_transform * _ejected_local
+			_ejected_disc.force_update_transform()
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
 	if connected_tv != null or _cable_plug.is_picked_up():

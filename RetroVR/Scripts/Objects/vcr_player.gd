@@ -85,6 +85,10 @@ const SLOT_INSET := 0.10        # how far inside the VCR a loaded tape rides
 const SLOT_PROTRUDE := 0.02     # how far a tape at the slot mouth pokes out the front
 var _slot_ejecting := false     # slide-out animation in flight
 var _slot_tween: Tween = null   # active insert/eject ride (killed when superseded)
+# Ejected tape parked at the slot mouth: the mechanism still holds it, so it
+# rides with the VCR when carried, until someone takes it.
+var _ejected_tape: Node3D = null
+var _ejected_local := Transform3D.IDENTITY
 
 var _screen_material: Material = null
 
@@ -397,13 +401,32 @@ func _slot_eject() -> void:
 		# leave the tape frozen protruding from the slot until someone takes it.
 		_tape_slot.enabled = false
 		_tape_slot.drop_object()
-		if is_instance_valid(tape) and tape is RigidBody3D:
-			(tape as RigidBody3D).freeze = true
-			(tape as RigidBody3D).global_transform = \
-				_tape_slot.global_transform * mouth
+		if is_instance_valid(tape):
+			if tape is RigidBody3D:
+				(tape as RigidBody3D).freeze = true
+			_begin_eject_follow(tape, mouth)
 		get_tree().create_timer(0.25).timeout.connect(func() -> void:
 			if is_instance_valid(_tape_slot):
 				_tape_slot.enabled = true))
+
+
+## Park the ejected tape at slot-local pose `local` and keep it riding with the
+## VCR — the slot mechanism still holds it — until someone picks it up.
+func _begin_eject_follow(tape: Node3D, local: Transform3D) -> void:
+	_ejected_tape = tape
+	_ejected_local = local
+	tape.global_transform = _tape_slot.global_transform * local
+	if not tape.picked_up.is_connected(_end_eject_follow):
+		tape.picked_up.connect(_end_eject_follow)
+
+
+## Stop tracking the ejected tape (someone took it from the slot mouth — a hand,
+## or the slot itself re-capturing it).
+func _end_eject_follow(_tape: Node3D = null) -> void:
+	if is_instance_valid(_ejected_tape) \
+			and _ejected_tape.picked_up.is_connected(_end_eject_follow):
+		_ejected_tape.picked_up.disconnect(_end_eject_follow)
+	_ejected_tape = null
 
 
 ## Client-in-session: transport intents route to the host (authoritative
@@ -797,6 +820,16 @@ func _add_cable_to_scene() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# The ejected tape is still held by the slot mechanism — ride it with the VCR
+	# until someone takes it. Runs after the VCR's own grab driver (-80), so the
+	# slot transform is current-tick.
+	if _ejected_tape != null:
+		if not is_instance_valid(_ejected_tape):
+			_ejected_tape = null
+		else:
+			_ejected_tape.global_transform = \
+				_tape_slot.global_transform * _ejected_local
+			_ejected_tape.force_update_transform()
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
 	if connected_tv != null or _cable_plug.is_picked_up():
