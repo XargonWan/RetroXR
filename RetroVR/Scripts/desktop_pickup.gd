@@ -5,7 +5,9 @@
 ##   Shift + Left-click     — drop the currently held object.
 ##   Scroll up/down    — push/pull the held object along the camera ray.
 ##                       (Disabled for FPS-snap objects.)
-##   Middle-mouse drag — rotate the held object in place.
+##   Middle-mouse drag — rotate the held object in place (grab-drag: the face
+##                       toward you follows the mouse). Shift + horizontal
+##                       drag rolls it (right = clockwise).
 ##                       (Disabled for FPS-snap objects.)
 ##
 ## FPS-snap mode:
@@ -117,9 +119,25 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _middle_held:
 		if _held_object and not _is_fps_snap():
 			var delta := (event as InputEventMouseMotion).relative
-			# Yaw around camera's up axis, pitch around camera's right axis
-			_hand_pivot.rotate(global_transform.basis.y.normalized(), -delta.x * ROT_SENSITIVITY)
-			_hand_pivot.rotate(global_transform.basis.x.normalized(), -delta.y * ROT_SENSITIVITY)
+			# Grab-drag semantics: the face toward the camera follows the mouse.
+			# Mouse right → yaw right (+angle around world UP moves the near face
+			# right); mouse up → pitch up (delta.y is negative going up, and a
+			# negative angle around the camera's leveled right axis tips the near
+			# face up). Shift+drag horizontal → roll (right = clockwise).
+			var pitch_axis := global_transform.basis.x.normalized()
+			var roll_axis := (-global_transform.basis.z).normalized()
+			var flat_fwd := -global_transform.basis.z
+			flat_fwd.y = 0.0
+			if flat_fwd.length_squared() > 0.0001:
+				roll_axis = flat_fwd.normalized()
+				pitch_axis = roll_axis.cross(Vector3.UP).normalized()
+			var basis := _hand_pivot.global_basis
+			if (event as InputEventMouseMotion).shift_pressed:
+				basis = Basis(roll_axis, delta.x * ROT_SENSITIVITY) * basis
+			else:
+				basis = Basis(Vector3.UP, delta.x * ROT_SENSITIVITY) * basis
+			basis = Basis(pitch_axis, delta.y * ROT_SENSITIVITY) * basis
+			_hand_pivot.global_basis = basis.orthonormalized()
 		# Always consume mouse motion while MMB is held so MovementDesktopTurn
 		# doesn't also rotate the player.
 		get_viewport().set_input_as_handled()

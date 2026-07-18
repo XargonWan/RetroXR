@@ -729,8 +729,12 @@ func _compute_ray_grab_rotation(delta: float) -> Basis:
 	if _ray_grab_other_controller and _ray_grab_other_controller.get_is_active():
 		var stick := _ray_grab_other_controller.get_vector2("primary")
 		if stick.length_squared() > 0.01:
-			var yaw := -stick.x * RAY_GRAB_ROTATE_SPEED * delta
-			var pitch := stick.y * RAY_GRAB_ROTATE_SPEED * delta
+			# Grab-drag semantics: the face of the object toward the player follows
+			# the stick. Stick right → that face moves right (yaw right), stick up →
+			# it tips up (pitch up). Positive angle around world UP moves the near
+			# face right; negative angle around the player's right axis moves it up.
+			var yaw := stick.x * RAY_GRAB_ROTATE_SPEED * delta
+			var pitch := -stick.y * RAY_GRAB_ROTATE_SPEED * delta
 
 			# Rotate from the player's viewpoint using the HOLDING controller as the
 			# reference (not the headset): left/right yaws around world up (a stable
@@ -738,12 +742,23 @@ func _compute_ray_grab_rotation(delta: float) -> Basis:
 			# right axis, so the tilt follows where the ray is pointing. Both axes stay
 			# level, so wrist roll never turns the stick directions diagonal.
 			var pitch_axis := _controller.global_transform.basis.x.normalized()
+			var roll_axis := (-_controller.global_transform.basis.z).normalized()
 			var flat_fwd := -_controller.global_transform.basis.z
 			flat_fwd.y = 0.0
 			if flat_fwd.length_squared() > 0.0001:
-				pitch_axis = flat_fwd.normalized().cross(Vector3.UP).normalized()
+				roll_axis = flat_fwd.normalized()
+				pitch_axis = roll_axis.cross(Vector3.UP).normalized()
 
-			if absf(yaw) > 0.001:
+			# Roll mode: hold A/X on the rotating hand — stick X then rolls the
+			# object around the ray axis (right = clockwise from the player's view)
+			# instead of yawing it.
+			var roll_mode := _ray_grab_other_controller.is_button_pressed("ax_button")
+
+			if roll_mode:
+				var roll := stick.x * RAY_GRAB_ROTATE_SPEED * delta
+				if absf(roll) > 0.001:
+					basis = Basis(roll_axis, roll) * basis
+			elif absf(yaw) > 0.001:
 				basis = Basis(Vector3.UP, yaw) * basis
 
 			if absf(pitch) > 0.001:
