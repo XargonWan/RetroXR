@@ -306,6 +306,22 @@ func _play_slot_insert(tape: Node3D) -> void:
 	tween.tween_method(_set_ride_pos.bind(tape, flat), start,
 		slot_pos + into * SLOT_INSET, 0.9) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(_reanchor_tape_grab.bind(tape))
+
+
+## The snap-zone's grab driver freezes the tape's offset from the slot at the
+## moment it was grabbed — right at the slot mouth, before this ride-in tween
+## seats it deeper inside. That stale offset is what the driver falls back to
+## reproducing the instant the slot itself moves, so without this the tape
+## would visibly slide back out to the mouth the moment the VCR is picked up.
+## Re-anchor the grab transform to the just-reached seated pose so the tape
+## stays put relative to the VCR from here on.
+func _reanchor_tape_grab(tape: Node3D) -> void:
+	if not is_instance_valid(tape):
+		return
+	var driver: Variant = tape.get("_grab_driver")
+	if driver and driver.primary and driver.primary.by == _tape_slot:
+		driver.primary.transform = tape.global_transform.affine_inverse() * _tape_slot.global_transform
 
 
 ## tween_method target for the slot ride: sets the tape's full transform so the
