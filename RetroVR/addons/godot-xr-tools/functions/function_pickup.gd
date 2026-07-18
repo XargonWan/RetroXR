@@ -732,12 +732,21 @@ func _compute_ray_grab_rotation(delta: float) -> Basis:
 			var yaw := -stick.x * RAY_GRAB_ROTATE_SPEED * delta
 			var pitch := stick.y * RAY_GRAB_ROTATE_SPEED * delta
 
+			# Rotate from the player's viewpoint using the HOLDING controller as the
+			# reference (not the headset): left/right yaws around world up (a stable
+			# turntable spin); up/down pitches around the holding controller's leveled
+			# right axis, so the tilt follows where the ray is pointing. Both axes stay
+			# level, so wrist roll never turns the stick directions diagonal.
+			var pitch_axis := _controller.global_transform.basis.x.normalized()
+			var flat_fwd := -_controller.global_transform.basis.z
+			flat_fwd.y = 0.0
+			if flat_fwd.length_squared() > 0.0001:
+				pitch_axis = flat_fwd.normalized().cross(Vector3.UP).normalized()
+
 			if absf(yaw) > 0.001:
-				var yaw_axis := _controller.global_transform.basis.y.normalized()
-				basis = Basis(yaw_axis, yaw) * basis
+				basis = Basis(Vector3.UP, yaw) * basis
 
 			if absf(pitch) > 0.001:
-				var pitch_axis := _controller.global_transform.basis.x.normalized()
 				basis = Basis(pitch_axis, pitch) * basis
 
 			basis = basis.orthonormalized()
