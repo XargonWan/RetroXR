@@ -15,12 +15,28 @@ var _thread: Thread = null
 ## Shared progress state read by /api/progress.
 var _upload_progress: Dictionary = {}
 
+## 4-digit PIN required to log in. Set by the owner before start(); an empty PIN
+## disables authentication (open access) as a safety fallback.
+var pin: String = ""
+## Valid session tokens (token → true), created on successful login.
+var _sessions: Dictionary = {}
 
-## Root of the served filesystem.
+
+## Root of the served media filesystem (roms, books, videos, dvds).
 static func server_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retrovr/files"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retrovr"
+
+
+## Named roots exposed at the top level of the web UI. "media" is the ROM/book/
+## video/dvd tree; "libretro" is the cores + system dir (a separate filesystem on
+## Android — internal storage — so it can't be reached by walking into "media").
+static func _roots() -> Dictionary:
+	return {
+		"media": server_root(),
+		"libretro": CoreDownloadManager.default_core_root(),
+	}
 
 
 ## Best-guess LAN IP address (filters out loopback and IPv6).
@@ -36,7 +52,8 @@ static func local_ip() -> String:
 func start(port: int = DEFAULT_PORT) -> bool:
 	if _running:
 		return true
-	DirAccess.make_dir_recursive_absolute(server_root())
+	for base: String in _roots().values():
+		DirAccess.make_dir_recursive_absolute(base)
 	var err := _tcp.listen(port)
 	if err != OK:
 		push_error("[WebFileServer] listen(%d) failed: %s" % [port, error_string(err)])
@@ -56,6 +73,7 @@ func stop() -> void:
 	for c: Dictionary in _connections:
 		(c["peer"] as StreamPeerTCP).disconnect_from_host()
 	_connections.clear()
+	_sessions.clear()
 	_tcp.stop()
 	print("[WebFileServer] Stopped")
 
@@ -147,6 +165,10 @@ func _try_handle(c: Dictionary) -> bool:
 
 	# Intercept uploads — start streaming immediately without waiting for full body.
 	if method == "POST" and path == "/api/upload":
+		if not _is_authed(hdrs):
+			_send_text(c["peer"] as StreamPeerTCP, 401, "application/json",
+					   '{"error":"unauthorized"}')
+			return true
 		var body_start := sep + 4
 		_start_upload_stream(c, query.get("path", ""), hdrs, buf.slice(body_start))
 		return true
@@ -164,8 +186,16 @@ func _try_handle(c: Dictionary) -> bool:
 func _dispatch(c: Dictionary, method: String, path: String,
 			   query: Dictionary, headers: Dictionary, body: PackedByteArray) -> void:
 	var peer := c["peer"] as StreamPeerTCP
-	if method == "GET" and path == "/":
-		_send_text(peer, 200, "text/html", _HTML)
+	var authed := _is_authed(headers)
+	if method == "OPTIONS":
+		_send_text(peer, 200, "text/plain", "")
+	elif method == "POST" and path == "/api/login":
+		_handle_login(peer, body)
+	elif method == "GET" and path == "/":
+		# Serve the file manager when authed, otherwise the PIN login page.
+		_send_text(peer, 200, "text/html", _HTML if authed else _LOGIN_HTML)
+	elif not authed:
+		_send_text(peer, 401, "application/json", '{"error":"unauthorized"}')
 	elif method == "GET" and path == "/api/list":
 		_handle_list(peer, query.get("path", ""))
 	elif method == "GET" and path == "/api/progress":
@@ -174,15 +204,76 @@ func _dispatch(c: Dictionary, method: String, path: String,
 		_handle_download(peer, query.get("path", ""))
 	elif method == "DELETE" and path == "/api/delete":
 		_handle_delete(peer, query.get("path", ""))
-	elif method == "OPTIONS":
-		_send_text(peer, 200, "text/plain", "")
 	else:
 		_send_text(peer, 404, "text/plain", "Not Found")
+
+
+# ── Authentication ────────────────────────────────────────────────────────────
+
+## True if the request carries a valid session cookie. An empty PIN means auth is
+## disabled (open access) — every request is treated as authorised.
+func _is_authed(headers: Dictionary) -> bool:
+	if pin.is_empty():
+		return true
+	var token := _cookie(headers.get("cookie", ""), "rvrsession")
+	return not token.is_empty() and _sessions.has(token)
+
+
+## Validates the submitted PIN and, on success, issues a session cookie.
+func _handle_login(peer: StreamPeerTCP, body: PackedByteArray) -> void:
+	var submitted := _extract_pin(body.get_string_from_utf8())
+	if pin.is_empty() or submitted != pin:
+		_send_text(peer, 401, "application/json", '{"error":"bad pin"}')
+		return
+	var token := _gen_token()
+	_sessions[token] = true
+	var body_bytes := '{"ok":true}'.to_utf8_buffer()
+	var hdr := "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nSet-Cookie: rvrsession=%s; Path=/; Max-Age=86400; SameSite=Strict\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" \
+			   % [token, body_bytes.size()]
+	peer.put_data(hdr.to_utf8_buffer())
+	peer.put_data(body_bytes)
+
+
+## Pulls the PIN out of a login body (form-encoded `pin=1234` or JSON `{"pin":"1234"}`).
+func _extract_pin(body: String) -> String:
+	body = body.strip_edges()
+	if body.begins_with("{"):
+		var json := JSON.new()
+		if json.parse(body) == OK and json.data is Dictionary:
+			return str((json.data as Dictionary).get("pin", ""))
+		return ""
+	for pair in body.split("&"):
+		var eq := pair.find("=")
+		if eq != -1 and pair.substr(0, eq) == "pin":
+			return pair.substr(eq + 1).uri_decode()
+	return ""
+
+
+## Reads a single cookie value out of a Cookie header ("a=1; b=2").
+func _cookie(header: String, key: String) -> String:
+	for part in header.split(";"):
+		var kv := part.strip_edges()
+		var eq := kv.find("=")
+		if eq != -1 and kv.substr(0, eq) == key:
+			return kv.substr(eq + 1)
+	return ""
+
+
+func _gen_token() -> String:
+	return "%016x%016x" % [randi() ^ (randi() << 16), Time.get_ticks_usec() ^ randi()]
 
 
 # ── API handlers ──────────────────────────────────────────────────────────────
 
 func _handle_list(peer: StreamPeerTCP, rel: String) -> void:
+	# Virtual top level: list each named root as a folder.
+	if rel.is_empty():
+		var names: Array[String] = []
+		for k: String in _roots().keys():
+			names.append(k)
+		names.sort()
+		_send_text(peer, 200, "application/json", JSON.stringify({"dirs": names, "files": []}))
+		return
 	var abs := _resolve(rel)
 	if abs.is_empty():
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
@@ -351,7 +442,7 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 
 func _handle_download(peer: StreamPeerTCP, rel: String) -> void:
 	var abs := _resolve(rel)
-	if abs.is_empty() or abs == server_root():
+	if abs.is_empty() or _is_root_base(abs):
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
 		return
 	var f := FileAccess.open(abs, FileAccess.READ)
@@ -369,7 +460,7 @@ func _handle_download(peer: StreamPeerTCP, rel: String) -> void:
 
 func _handle_delete(peer: StreamPeerTCP, rel: String) -> void:
 	var abs := _resolve(rel)
-	if abs.is_empty() or abs == server_root():
+	if abs.is_empty() or _is_root_base(abs):
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
 		return
 	var err := DirAccess.remove_absolute(abs)
@@ -382,12 +473,32 @@ func _handle_delete(peer: StreamPeerTCP, rel: String) -> void:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+## Maps a URL path ("<root>/sub/dir") to an absolute path, confined to that named
+## root. Returns "" for the virtual top level (no single root) or on a bad/escaping
+## path. Callers that must reject the top level check `is_empty()`.
 func _resolve(rel: String) -> String:
-	var root := server_root()
 	if rel.is_empty():
-		return root
-	var abs := (root + "/" + rel.uri_decode()).simplify_path()
-	return abs if abs.begins_with(root) else ""
+		return ""  # virtual root has no single filesystem path
+	var decoded := rel.uri_decode()
+	var slash := decoded.find("/")
+	var root_name := decoded.substr(0, slash) if slash != -1 else decoded
+	var remainder := decoded.substr(slash + 1) if slash != -1 else ""
+	var roots := _roots()
+	if not roots.has(root_name):
+		return ""
+	var base: String = roots[root_name]
+	if remainder.is_empty():
+		return base
+	var abs := (base + "/" + remainder).simplify_path()
+	return abs if abs.begins_with(base) else ""
+
+
+## True if `abs` is one of the named-root base directories (never deletable/downloadable).
+func _is_root_base(abs: String) -> bool:
+	for base: String in _roots().values():
+		if abs == base:
+			return true
+	return false
 
 
 func _parse_query(s: String) -> Dictionary:
@@ -433,7 +544,7 @@ func _find_bytes(haystack: PackedByteArray, needle: PackedByteArray, from: int =
 func _send_text(peer: StreamPeerTCP, code: int, content_type: String, body: String) -> void:
 	var body_bytes := body.to_utf8_buffer()
 	var status_map := {
-		200: "OK", 201: "Created", 400: "Bad Request",
+		200: "OK", 201: "Created", 400: "Bad Request", 401: "Unauthorized",
 		403: "Forbidden", 404: "Not Found", 500: "Internal Server Error"
 	}
 	var status: String = status_map.get(code, "Unknown")
@@ -444,6 +555,44 @@ func _send_text(peer: StreamPeerTCP, code: int, content_type: String, body: Stri
 
 
 # ── Embedded HTML UI ──────────────────────────────────────────────────────────
+
+const _LOGIN_HTML := """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RetroVR Files — Sign in</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:monospace;background:#111;color:#ccc;min-height:100vh;
+     display:flex;align-items:center;justify-content:center;padding:16px}
+.card{background:#181820;border:1px solid #222;border-radius:10px;padding:28px;width:280px;text-align:center}
+h1{color:#8af;font-size:20px;margin-bottom:6px}
+p{color:#666;font-size:13px;margin-bottom:18px}
+input{width:100%;font-family:monospace;font-size:28px;text-align:center;letter-spacing:12px;
+      background:#111;color:#8af;border:1px solid #333;border-radius:6px;padding:10px 0;margin-bottom:14px}
+input:focus{outline:none;border-color:#8af}
+button{width:100%;border:none;padding:11px;border-radius:6px;cursor:pointer;font-size:15px;
+       background:#245;color:#8cf}
+button:hover{background:#367}
+#er{color:#f88;font-size:13px;min-height:18px;margin-top:10px}
+</style></head><body>
+<form class="card" id="f">
+<h1>RetroVR Files</h1>
+<p>Enter the 4-digit PIN shown in the headset options.</p>
+<input id="pin" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="••••" autofocus>
+<button type="submit">Sign in</button>
+<div id="er"></div>
+</form>
+<script>
+var f=document.getElementById('f'),pin=document.getElementById('pin'),er=document.getElementById('er');
+pin.addEventListener('input',function(){pin.value=pin.value.replace(/[^0-9]/g,'').slice(0,4);er.textContent='';});
+f.addEventListener('submit',function(e){
+  e.preventDefault();
+  if(pin.value.length!=4){er.textContent='Enter 4 digits.';return;}
+  fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pin:pin.value})}).then(function(r){
+    if(r.ok){location.reload();}
+    else{er.textContent='Incorrect PIN.';pin.value='';pin.focus();}
+  }).catch(function(){er.textContent='Connection error.';});
+});
+</script></body></html>"""
 
 const _HTML := """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -499,7 +648,10 @@ function go(p){
   var acc='';
   parts.forEach(function(s){acc+='/'+s;h+='<span class="sep">/</span><a data-nav="'+acc+'">'+esc(s)+'</a>';});
   bc.innerHTML=h;
-  fetch('/api/list?path='+encodeURIComponent(p)).then(function(r){return r.json();}).then(draw);
+  fetch('/api/list?path='+encodeURIComponent(p)).then(function(r){
+    if(r.status==401){location.reload();return null;}
+    return r.json();
+  }).then(function(d){if(d)draw(d);});
 }
 function draw(d){
   var tb=document.getElementById('tb');

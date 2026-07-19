@@ -261,6 +261,7 @@ func _init_web_server() -> void:
 		return
 	web_server = WebFileServer.new()
 	web_server.name = "WebFileServer"
+	web_server.pin = scraper_config.ensure_web_server_pin()
 	add_child(web_server)
 	if scraper_config.web_server_enabled:
 		web_server.start()
@@ -1734,7 +1735,8 @@ func _build_options_view() -> Control:
 		_server_address_label = Label.new()
 		_server_address_label.add_theme_font_size_override("font_size", 16)
 		_server_address_label.add_theme_color_override("font_color", COLOR_DESC)
-		_server_address_label.text = "http://%s:8080" % WebFileServer.local_ip()
+		_server_address_label.text = "http://%s:8080   PIN: %s" % \
+			[WebFileServer.local_ip(), scraper_config.ensure_web_server_pin()]
 		_server_address_label.visible = scraper_config.web_server_enabled
 		vbox.add_child(_server_address_label)
 
