@@ -376,6 +376,15 @@ func _build_ui() -> void:
 	_show_spawn_view()
 
 
+## Reliable VR-mode check. get_viewport().use_xr is false inside this
+## SubViewport-hosted menu even when the headset is active (only the root window
+## viewport is flagged use_xr, by xr_init.gd), so query the OpenXR interface
+## directly — this is correct regardless of which viewport we live in.
+func _is_vr_mode() -> bool:
+	var xr := XRServer.find_interface("OpenXR")
+	return xr != null and xr.is_initialized()
+
+
 ## Shared iOS-style switch (see VRToggle) so every toggle in the UI matches.
 func _make_toggle(initial_on: bool, on_toggled: Callable) -> Button:
 	return VRToggle.create(initial_on, on_toggled)
@@ -1518,7 +1527,7 @@ func _build_options_view() -> Control:
 
 	vbox.add_child(_spacer(10))
 
-	if get_viewport().use_xr:
+	if _is_vr_mode():
 		# Turn Style option (XR only)
 		var turn_opt := VRDropdown.create("Turn Style",
 			[["SNAP", "SNAP"], ["SMOOTH", "SMOOTH"]], "SNAP",
