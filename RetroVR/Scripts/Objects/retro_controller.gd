@@ -123,6 +123,32 @@ func _get_secondary_ctrl() -> XRController3D:
 	return null
 
 
+## RetroController drops only via the grip+trigger+stick combo, so a plain grip
+## press on a hand already holding it must be ignored — otherwise XRToolsFunctionPickup
+## would toggle-drop and the custom re-grab would pop the pose. Queried by the
+## LOCAL PATCH in function_pickup._on_grip_pressed.
+func wants_grip_toggle_drop() -> bool:
+	return false
+
+
+## Configure the grab transforms for the current hand count:
+## - Two hands: snap the controller to the midpoint of the two grabs with the
+##   averaged hand rotation. Identity grip frames make each grab's destination the
+##   hand pose, so the driver's default drive (1/1/0) lerps the origins to the
+##   midpoint and slerps the bases 0.5 (grab_driver.gd:63,73,76-78).
+## - One hand: precise — recapture the current offset so the remaining hand keeps
+##   the controller exactly where it is (no jump when the other hand lets go).
+func _refresh_two_hand_grip() -> void:
+	if not _grab_driver or not is_instance_valid(_grab_driver.primary):
+		return
+	if is_instance_valid(_grab_driver.secondary):
+		_grab_driver.primary.transform = Transform3D.IDENTITY
+		_grab_driver.secondary.transform = Transform3D.IDENTITY
+	else:
+		var g: Grab = _grab_driver.primary
+		g.transform = global_transform.affine_inverse() * g.by.global_transform
+
+
 # ── Cable ─────────────────────────────────────────────────────────────────────
 
 func _spawn_cable() -> void:
@@ -188,6 +214,7 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_update_pointer_block(ctrl, true)
 	_update_locomotion_block()
 	_apply_rumble()
+	_refresh_two_hand_grip()
 
 
 ## Fires for any individual grab release (primary or secondary).
@@ -212,6 +239,9 @@ func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
 				_saved_by = null
 		_update_locomotion_block()
 		_apply_rumble()
+		# Back to one hand after an intentional/combo drop → recapture precise so the
+		# survivor keeps the controller where it is (clears any two-hand identity frame).
+		_refresh_two_hand_grip()
 		return
 
 	# Toggle grip — rehold the released hand.
@@ -225,6 +255,7 @@ func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
 	else:
 		# Secondary hand toggle — rehold it.
 		call_deferred("_rehold_hand", by)
+	_refresh_two_hand_grip()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:

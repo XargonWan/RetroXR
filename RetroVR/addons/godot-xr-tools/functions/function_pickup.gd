@@ -585,6 +585,12 @@ func _on_button_released(p_button) -> void:
 
 func _on_grip_pressed() -> void:
 	if is_instance_valid(picked_up_object) and !picked_up_object.press_to_hold:
+		# LOCAL PATCH (RetroVR): let a pickable manage its own drop so a redundant grip
+		# press on an already-held object is a no-op (no drop->re-grab pose pop). Objects
+		# that drop only via their own gesture (e.g. RetroController's combo) return false.
+		if picked_up_object.has_method("wants_grip_toggle_drop") \
+				and not picked_up_object.wants_grip_toggle_drop():
+			return
 		drop_object()
 	elif is_instance_valid(closest_object):
 		# Proximity grab takes priority over the laser
