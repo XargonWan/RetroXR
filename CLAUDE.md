@@ -300,32 +300,6 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 - `RetroVR/Scenes/Objects/system.tscn` — Cabinet scene. Contains a `Libretro` child node (unique_id `4000000010`).
 - GDExtension registration at `MODULE_INITIALIZATION_LEVEL_SCENE`.
 
-### Spatial Audio (GDScript)
-Every RetroVR sound source streams live PCM into an `AudioStreamGenerator` on an
-`AudioStreamPlayer3D`. `RetroVR/Scripts/Audio/` holds the shared spatial layer that
-tunes and enriches them (built-in Godot audio — deliberately **not** Steam
-Audio/FMOD/Wwise: the sources are live streams, not authored events, and Quest is
-CPU-bound):
-- **`spatial_audio_presets.gd`** (`class_name SpatialAudioPresets`) — static preset
-  dicts (`CABINET`/`HANDHELD`/`TABLETOP`/`TV`) + `apply(asp, preset)` +
-  `update_occlusion(asp, delta, exclude)`. Occlusion is one listener→emitter raycast
-  (World layer) that drives the player's `attenuation_filter_cutoff_hz` down (~600 Hz)
-  when blocked; it never touches `volume_db` (devices own that).
-- **`spatial_audio_emitter.gd`** (`class_name SpatialAudioEmitter`, Node3D) — wraps
-  an `AudioStreamPlayer3D`+generator: `configure/start/stop/is_active/frames_available/
-  push/set_volume_db/set_follow/set_occluder_exclude`; drives follow + throttled
-  occlusion in `_process`. Used by the four VLC devices (`audio_player.gd`,
-  `vcr_player.gd`, `dvd_player.gd`; cd/cassette inherit). VCR/DVD `set_follow(connected_tv)`
-  so the sound comes from the picture.
-- **Emulator** audio node is created in C++ (`AudioHandler`, named `AudioStreamPlayer3D`,
-  child of the `Libretro` node); `system.gd` enriches it from GDScript —
-  `_apply_emulator_audio_preset()` (CABINET/HANDHELD) on power-on/net-start, and
-  `_update_emulator_audio()` in `_process` repositions console audio to `connected_tv`
-  (handhelds excluded) and runs occlusion.
-- **`audio_room.gd`** (autoload `AudioRoom`) spawns one large Area3D reverb zone that
-  sends every `area_mask` 1 source to the wet-only **Reverb** bus in
-  `RetroVR/Resources/default_bus_layout.tres` (`audio/buses/default_bus_layout`).
-
 ## Dependencies
 
 - **godot-cpp** (submodule, 4.5 branch) — Godot C++ bindings

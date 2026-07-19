@@ -22,7 +22,6 @@ config/icon="res://Textures/app_icon.png"
 [audio]
 
 driver/mix_rate=48000
-buses/default_bus_layout="res://Resources/default_bus_layout.tres"
 
 [autoload]
 
@@ -31,7 +30,6 @@ XRToolsRumbleManager="*uid://by853dk86g1qw"
 QualityManager="*res://Scripts/quality_manager.gd"
 SceneManager="*res://Scripts/Data/scene_manager.gd"
 NetworkManager="*res://Scripts/Net/network_manager.gd"
-AudioRoom="*res://Scripts/Audio/audio_room.gd"
 
 [display]
 

@@ -36,7 +36,8 @@ var _slot: MediaSlot = null
 # Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
 # an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
 # sound is spatialised (and the TV volume knob scales it) like the console audio.
-var _emitter: SpatialAudioEmitter = null
+var _audio_player: AudioStreamPlayer3D = null
+var _audio_playback: AudioStreamGeneratorPlayback = null
 var _volume_linear: float = 1.0
 var _paused: bool = false
 
@@ -119,14 +120,17 @@ func _ready() -> void:
 	_update_name_label()
 
 
-## Build the spatial audio emitter fed by VlcPlayer's PCM ring buffer. It emanates
-## from the connected TV (set_follow, below) so DVD sound comes from the picture,
-## with the shared occlusion muffling + distance filtering + doppler.
+## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
 func _setup_audio() -> void:
-	_emitter = SpatialAudioEmitter.new()
-	add_child(_emitter)
-	_emitter.configure(float(_vlc.get_audio_rate()) if _vlc else 48000.0, SpatialAudioPresets.TV)
-	_emitter.set_occluder_exclude([self])
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
+	gen.buffer_length = 0.25
+	_audio_player = AudioStreamPlayer3D.new()
+	_audio_player.name = "AudioStreamPlayer3D"
+	_audio_player.stream = gen
+	_audio_player.unit_size = 3.0
+	_audio_player.max_distance = 15.0
+	add_child(_audio_player)
 
 
 func _update_name_label() -> void:
@@ -151,20 +155,20 @@ func _process(delta: float) -> void:
 			_track_refresh_accum = 0.0
 			_refresh_track_counts()
 	# Emanate the sound from the connected TV so it's spatialised there.
-	if _emitter:
-		_emitter.set_follow(connected_tv)
+	if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
+		_audio_player.global_position = connected_tv.global_position
 
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
 func _pump_audio() -> void:
-	if _emitter == null or not _emitter.is_active():
+	if _audio_playback == null:
 		return
-	var avail := _emitter.frames_available()
+	var avail := _audio_playback.get_frames_available()
 	if avail <= 0:
 		return
 	var frames: PackedVector2Array = _vlc.read_audio(avail)
 	if frames.size() > 0:
-		_emitter.push(frames)
+		_audio_playback.push_buffer(frames)
 
 
 ## Toggle the disc menu-control routing is done via the remote; the front Menu
@@ -275,8 +279,8 @@ func _set_scan(dir: int) -> void:
 	if _vlc:
 		_vlc.set_paused(false)
 	_paused = false
-	if _emitter:
-		_emitter.set_volume_db(-80.0 if dir != 0 else _dvd_volume_db())
+	if _audio_player:
+		_audio_player.volume_db = -80.0 if dir != 0 else _dvd_volume_db()
 
 
 func _dvd_volume_db() -> float:
@@ -344,9 +348,10 @@ func play() -> void:
 	_scan_dir = 0
 	_n_audio = -1        # unknown until libVLC parses the new disc
 	_n_sub = -1
-	if _emitter:
-		_emitter.start()
-		_emitter.set_volume_db(linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0)
+	if _audio_player:
+		_audio_player.play()
+		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
 	_osd("DVD")
 	_net_push_state()
 
@@ -361,8 +366,9 @@ func stop() -> void:
 	_paused = false
 	_n_audio = -1
 	_n_sub = -1
-	if _emitter:
-		_emitter.stop()
+	if _audio_player:
+		_audio_player.stop()
+	_audio_playback = null
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
@@ -680,8 +686,8 @@ func on_tv_disconnected() -> void:
 func set_audio_volume(volume: float) -> void:
 	_volume_linear = clampf(volume, 0.0, 1.0)
 	# Don't fight an active scan mute; it restores on scan exit.
-	if _emitter and _scan_dir == 0:
-		_emitter.set_volume_db(linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0)
+	if _audio_player and _scan_dir == 0:
+		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
 
 
 func set_screen_enabled(enabled: bool) -> void:
