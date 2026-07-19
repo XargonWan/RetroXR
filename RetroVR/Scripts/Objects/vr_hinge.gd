@@ -86,7 +86,16 @@ func _track_world_point(world_pos: Vector3) -> void:
 	var rel := parent.to_local(world_pos) - target.position
 	if Vector2(rel.y, rel.z).length() < 0.001:
 		return   # hand at the pivot — angle undefined, ignore
-	_apply(rad_to_deg(atan2(rel.y, -rel.z)), true)
+	# atan2 wraps at ±180°, so near a limit a tiny cross-axis jitter can flip the
+	# sign (e.g. +179° → -179°) and snap the hinge to the opposite end. Unwrap
+	# onto the branch nearest the current angle to keep it continuous end-to-end.
+	var deg := rad_to_deg(atan2(rel.y, -rel.z))
+	var cur := rad_to_deg(target.rotation.x)
+	while deg - cur > 180.0:
+		deg -= 360.0
+	while deg - cur < -180.0:
+		deg += 360.0
+	_apply(deg, true)
 
 
 func _apply(deg: float, emit: bool) -> void:
