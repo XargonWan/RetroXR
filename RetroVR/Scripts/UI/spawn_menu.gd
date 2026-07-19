@@ -1931,14 +1931,14 @@ func _build_controls_section(vbox: VBoxContainer) -> void:
 	hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(hdr)
 
-	if get_viewport().use_xr:
+	if _is_vr_mode():
 		_build_xr_controls(vbox)
 	else:
 		_build_desktop_controls(vbox)
 
 	# Physical gamepad section — shown in both modes (a real pad works whether
-	# the player is in VR or at the desktop). Added unconditionally because
-	# get_viewport().use_xr is unreliable inside this SubViewport-hosted menu.
+	# the player is in VR or at the desktop). Added unconditionally because it
+	# applies regardless of headset/desktop.
 	vbox.add_child(HSeparator.new())
 	_build_gamepad_controls(vbox)
 
