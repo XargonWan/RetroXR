@@ -977,24 +977,27 @@ func _build_rom_row(systemid: String, rom: Dictionary, game: Dictionary, is_scra
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	var btn := Button.new()
+	# A wheel image fills the button; a text title uses a MarqueeButton so a long
+	# name scrolls within the button instead of expanding the row and shoving the
+	# detail/manual/scrape buttons off the right edge.
+	var game_name: String = game.get("name", rom["label"]) if is_scraped else rom["label"]
+	var use_wheel := is_scraped and wheel_tex != null
+	var btn: Button
+	if use_wheel:
+		btn = Button.new()
+		btn.icon = wheel_tex
+		btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		btn.expand_icon = true
+	else:
+		btn = MarqueeButton.create("  +  " + game_name, 22)
 	btn.custom_minimum_size = Vector2(0, row_h)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.add_theme_font_size_override("font_size", 22)
 
 	if is_scraped:
 		var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
-		var game_name: String = game.get("name", rom["label"])
-		if wheel_tex:
-			btn.icon = wheel_tex
-			btn.text = ""
-			btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			btn.expand_icon = true
-		else:
-			btn.text = "  +  " + game_name
 		btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name, systemid))
 	else:
-		btn.text = "  +  " + rom["label"]
 		btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"], systemid))
 
 	row.add_child(btn)
