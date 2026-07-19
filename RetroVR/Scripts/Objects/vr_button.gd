@@ -69,7 +69,9 @@ func _process(_delta: float) -> void:
 	# Check whether any controller tip is inside our trigger radius
 	var touching := false
 	for controller in _controllers:
-		if not controller.get_is_active():
+		# Skip a hand that's holding something — otherwise the poke tip of the
+		# hand gripping a handheld fires this button by drifting near it.
+		if not controller.get_is_active() or not PokeTip.is_poking(controller):
 			continue
 		var dist: float = global_position.distance_to(PokeTip.tip_of(controller))
 		if dist <= trigger_radius:

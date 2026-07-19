@@ -29,6 +29,21 @@ static func tip_of(ctrl: Node3D) -> Vector3:
 	return ctrl.global_position - ctrl.global_transform.basis.z * TIP_FORWARD
 
 
+## True when this controller's poke tip is "live" — the hand is NOT currently
+## holding an object (grabbed or ray-grabbed). VRButton/VRSlider skip controllers
+## for which this is false, so a hand busy holding a handheld can't trigger a
+## nearby widget by bumping it. Desktop hands (no FunctionPickup) always poke.
+static func is_poking(ctrl: Node3D) -> bool:
+	var pk := ctrl.get_node_or_null("FunctionPickup")
+	if pk == null:
+		return true
+	if is_instance_valid(pk.get("picked_up_object")):
+		return false
+	if pk.has_method("is_ray_grabbing") and pk.is_ray_grabbing():
+		return false
+	return true
+
+
 func _ready() -> void:
 	position = Vector3(0, 0, -TIP_FORWARD)
 	_pickup = get_parent().get_node_or_null("FunctionPickup")
@@ -57,6 +72,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	# Hide the nib while this hand holds something — poking doesn't apply and
-	# the cone would clip through the held object.
+	# the cone would clip through the held object. Same signal VRButton/VRSlider
+	# gate on, so the cone's visibility and the widgets' activation stay in sync.
 	if _pickup:
-		visible = not is_instance_valid(_pickup.get("picked_up_object"))
+		visible = is_poking(get_parent())

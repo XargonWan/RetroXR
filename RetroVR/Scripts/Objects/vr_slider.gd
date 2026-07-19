@@ -54,14 +54,17 @@ func _process(_delta: float) -> void:
 	# Engage: nearest active controller tip within radius. Disengage with
 	# hysteresis so a jittery hand doesn't flicker on the boundary.
 	if _engaged_ctrl != null:
+		# Also let go if the engaged hand grabs something mid-slide.
 		if not is_instance_valid(_engaged_ctrl) or not _engaged_ctrl.get_is_active() \
+				or not PokeTip.is_poking(_engaged_ctrl) \
 				or global_position.distance_to(PokeTip.tip_of(_engaged_ctrl)) > engage_radius * 1.8:
 			_engaged_ctrl = null
 		else:
 			_track_world_point(PokeTip.tip_of(_engaged_ctrl))
 			return
 	for ctrl in _controllers:
-		if ctrl and ctrl.get_is_active() \
+		# Skip a hand that's holding something so it can't grab the knob by bumping it.
+		if ctrl and ctrl.get_is_active() and PokeTip.is_poking(ctrl) \
 				and global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius:
 			_engaged_ctrl = ctrl
 			_track_world_point(PokeTip.tip_of(ctrl))
