@@ -1,6 +1,7 @@
 ## WebFileServer — lightweight HTTP file manager.
 ## Serves the retrovr user data directory (roms + cores) over a local HTTP port.
-## Supports directory listing, multi-file drag-and-drop upload, and deletion.
+## Supports directory listing, multi-file and whole-folder upload (drag-and-drop or
+## a folder picker — e.g. a ScummVM game folder), and deletion.
 class_name WebFileServer
 extends Node
 
@@ -375,17 +376,30 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 			var hdr_text := buf.slice(0, hdr_end).get_string_from_utf8()
 			us["buf"] = buf.slice(hdr_end + 4)
 			var filename := _extract_filename(hdr_text)
-			if filename.is_empty():
+			# Folder uploads transmit a relative path (e.g. "MyGame/save/data.001");
+			# preserve it instead of flattening so the directory tree is recreated.
+			var sub := _safe_subpath(filename)
+			if sub.is_empty():
 				us["phase"] = "part_preamble"
 				continue
-			var dest: String = (us["dest_dir"] as String).path_join(filename.get_file())
+			var dest_dir: String = us["dest_dir"]
+			var dest: String = dest_dir.path_join(sub)
+			# Defence in depth — _safe_subpath already strips "..", but never write
+			# outside the destination root even if that ever changes.
+			if not dest.simplify_path().begins_with(dest_dir + "/"):
+				push_error("[WebFileServer] Rejected escaping upload path: %s" % filename)
+				us["phase"] = "part_preamble"
+				continue
+			var parent := dest.get_base_dir()
+			if parent != dest_dir:
+				DirAccess.make_dir_recursive_absolute(parent)
 			var f := FileAccess.open(dest, FileAccess.WRITE)
 			if not f:
 				push_error("[WebFileServer] Cannot open %s for writing" % dest)
 				us["phase"] = "part_preamble"
 				continue
 			us["f"]        = f
-			us["filename"] = filename.get_file()
+			us["filename"] = sub
 			us["written"]  = 0
 			us["phase"]    = "data"
 			_upload_progress = {"filename": us["filename"], "written": 0, "total": us["total"]}
@@ -511,6 +525,21 @@ func _parse_query(s: String) -> Dictionary:
 
 
 
+## Sanitises a multipart filename — which for a folder upload carries a relative
+## path ("MyGame/save/data.001") — into a safe path relative to the destination
+## dir. Backslashes become "/", and empty / "." / ".." segments are dropped so the
+## result can never escape the destination or reference an absolute location.
+## Returns "" when nothing usable remains.
+func _safe_subpath(name: String) -> String:
+	var out: Array[String] = []
+	for seg in name.replace("\\", "/").split("/"):
+		var s := seg.strip_edges()
+		if s.is_empty() or s == "." or s == "..":
+			continue
+		out.append(s)
+	return "/".join(out)
+
+
 func _extract_filename(part_headers: String) -> String:
 	var idx := part_headers.find("filename=")
 	if idx == -1:
@@ -607,6 +636,8 @@ h1{color:#8af;margin-bottom:12px;font-size:20px}
 #dz{border:2px dashed #444;border-radius:8px;padding:18px;margin-bottom:10px;
     color:#666;text-align:center;font-size:14px;transition:border-color .15s,color .15s}
 #dz.over{border-color:#8af;color:#8af}
+.pk{color:#8cf;cursor:pointer;text-decoration:underline}
+.pk:hover{color:#adf}
 #st{min-height:18px;font-size:13px;color:#8f8;margin-bottom:10px}
 table{width:100%;border-collapse:collapse}
 tr{border-bottom:1px solid #1c1c1c}
@@ -626,7 +657,9 @@ button{border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:13
 </style></head><body>
 <h1>RetroVR Files</h1>
 <div id="bc"></div>
-<div id="dz">Drop files here to upload &nbsp;(multiple OK)</div>
+<div id="dz">Drop files or a folder here &nbsp;·&nbsp;
+<label class="pk">choose files<input type="file" id="pf_files" multiple hidden></label> &nbsp;·&nbsp;
+<label class="pk">choose folder<input type="file" id="pf_dir" webkitdirectory hidden></label></div>
 <div id="st"></div>
 <div id="pb" style="display:none;height:8px;background:#222;border-radius:4px;margin-bottom:10px;overflow:hidden"><div id="pf" style="height:100%;width:0%;background:#8af;border-radius:4px;transition:width .15s"></div></div>
 <table><tbody id="tb"></tbody></table>
@@ -680,44 +713,88 @@ document.addEventListener('click',function(e){
   }
 });
 var dz=document.getElementById('dz');
-dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('over');});
-dz.addEventListener('dragleave',function(){dz.classList.remove('over');});
-dz.addEventListener('drop',function(e){
-  e.preventDefault();
-  dz.classList.remove('over');
-  var files=e.dataTransfer.files;
-  var st=document.getElementById('st');
-  var pb=document.getElementById('pb');
-  var pf=document.getElementById('pf');
+var st=document.getElementById('st');
+var pb=document.getElementById('pb');
+var pf=document.getElementById('pf');
+// Upload a list of {file,path} items sequentially, sending each item's relative
+// path as the multipart filename so folder structure is recreated on the server.
+function uploadItems(items){
   var i=0;
-  function uploadNext(){
-    if(i>=files.length){
-      st.textContent='Done \u2014 uploaded '+files.length+' file(s).';
-      pb.style.display='none';
-      pf.style.width='0%';
-      go(cur);
-      return;
+  function next(){
+    if(i>=items.length){
+      st.textContent='Done \u2014 uploaded '+items.length+' file(s).';
+      pb.style.display='none';pf.style.width='0%';go(cur);return;
     }
-    var file=files[i];
-    st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name;
-    pb.style.display='block';
-    pf.style.width='0%';
+    var it=items[i],nm=it.path||it.file.name;
+    st.textContent='Uploading '+(i+1)+' of '+items.length+': '+nm;
+    pb.style.display='block';pf.style.width='0%';
     var fd=new FormData();
-    fd.append('file',file);
+    fd.append('file',it.file,it.path||it.file.name);
     var xhr=new XMLHttpRequest();
     xhr.upload.onprogress=function(ev){
       if(ev.lengthComputable){
         var pct=Math.round(ev.loaded/ev.total*100);
         pf.style.width=pct+'%';
-        st.textContent='Uploading '+(i+1)+' of '+files.length+': '+file.name+' ('+pct+'%)';
+        st.textContent='Uploading '+(i+1)+' of '+items.length+': '+nm+' ('+pct+'%)';
       }
     };
-    xhr.onload=function(){pf.style.width='100%';i++;uploadNext();};
-    xhr.onerror=function(){st.textContent='Error uploading '+file.name;i++;uploadNext();};
+    xhr.onload=function(){pf.style.width='100%';i++;next();};
+    xhr.onerror=function(){st.textContent='Error uploading '+nm;i++;next();};
     xhr.open('POST','/api/upload?path='+encodeURIComponent(cur));
     xhr.send(fd);
   }
-  uploadNext();
+  if(items.length)next();else st.textContent='Nothing to upload.';
+}
+// A <input type=file> selection (plain files, or a webkitdirectory folder whose
+// files carry webkitRelativePath) \u2192 {file,path} items.
+function itemsFromInput(inp){
+  var out=[],fs=inp.files;
+  for(var k=0;k<fs.length;k++)out.push({file:fs[k],path:fs[k].webkitRelativePath||fs[k].name});
+  return out;
+}
+document.getElementById('pf_files').addEventListener('change',function(e){uploadItems(itemsFromInput(e.target));e.target.value='';});
+document.getElementById('pf_dir').addEventListener('change',function(e){uploadItems(itemsFromInput(e.target));e.target.value='';});
+// Recursively walk a dropped FileSystemEntry, collecting {file,path} into out.
+function walkEntry(entry,prefix,out){
+  return new Promise(function(resolve){
+    if(entry.isFile){
+      entry.file(function(f){out.push({file:f,path:prefix+entry.name});resolve();},function(){resolve();});
+    }else if(entry.isDirectory){
+      var reader=entry.createReader(),kids=[];
+      (function read(){
+        reader.readEntries(function(ents){
+          if(!ents.length){
+            Promise.all(kids.map(function(c){return walkEntry(c,prefix+entry.name+'/',out);})).then(resolve);
+            return;
+          }
+          kids=kids.concat(Array.prototype.slice.call(ents));
+          read();
+        },function(){resolve();});
+      })();
+    }else{resolve();}
+  });
+}
+dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('over');});
+dz.addEventListener('dragleave',function(){dz.classList.remove('over');});
+dz.addEventListener('drop',function(e){
+  e.preventDefault();dz.classList.remove('over');
+  var dt=e.dataTransfer,its=dt.items;
+  // Prefer the entry API so a dropped folder keeps its structure. getAsEntry must
+  // be called synchronously here \u2014 the item list is invalidated after this handler.
+  if(its&&its.length&&its[0].webkitGetAsEntry){
+    var entries=[];
+    for(var k=0;k<its.length;k++){var en=its[k].webkitGetAsEntry();if(en)entries.push(en);}
+    if(entries.length){
+      var out=[];
+      st.textContent='Reading folder\u2026';
+      Promise.all(entries.map(function(en){return walkEntry(en,'',out);})).then(function(){uploadItems(out);});
+      return;
+    }
+  }
+  // Fallback: flat file list (older browsers / plain file drops).
+  var files=dt.files,out=[];
+  for(var k=0;k<files.length;k++)out.push({file:files[k],path:files[k].webkitRelativePath||files[k].name});
+  uploadItems(out);
 });
 go('');
 </script></body></html>"""
