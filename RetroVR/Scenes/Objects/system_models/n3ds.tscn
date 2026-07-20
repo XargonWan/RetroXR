@@ -1,0 +1,229 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/n3ds_model.gd" id="1_hqvy2"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
+size = Vector3(0.134, 0.0105, 0.074)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aybqj"]
+albedo_color = Color(0.12, 0.35, 0.65, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_jmku2"]
+size = Vector3(0.134, 0.0105, 0.074)
+
+[sub_resource type="BoxMesh" id="BoxMesh_v64ki"]
+size = Vector3(0.084800005, 0.0015, 0.054100003)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ag6as"]
+albedo_color = Color(0.1, 0.1, 0.12, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_kcwc5"]
+size = Vector2(0.0768, 0.0461)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_exibq"]
+albedo_color = Color(0.05, 0.05, 0.06, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gt5w6"]
+size = Vector3(0.0737, 0.0305, 0.02)
+
+[sub_resource type="BoxMesh" id="BoxMesh_j8vu0"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1ijud"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_v38ai"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_f21ab"]
+size = Vector3(0.0694, 0.0015, 0.054100003)
+
+[sub_resource type="QuadMesh" id="QuadMesh_padq3"]
+size = Vector2(0.0614, 0.0461)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2ikgk"]
+albedo_color = Color(0.05, 0.05, 0.06, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_2mi0k"]
+size = Vector3(0.038, 0.007, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_myfa0"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_152ug"]
+size = Vector2(0.01, 0.01)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_t54r4"]
+size = Vector3(0.0614, 0.006, 0.0461)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wssto"]
+size = Vector3(0.02, 0.004, 0.007)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rx5pe"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ne7l1"]
+size = Vector3(0.007, 0.004, 0.02)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_ih43k"]
+top_radius = 0.005
+bottom_radius = 0.005
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_01ai6"]
+albedo_color = Color(0.85, 0.85, 0.88, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_ba1fl"]
+top_radius = 0.005
+bottom_radius = 0.005
+height = 0.004
+
+[sub_resource type="BoxMesh" id="BoxMesh_akkew"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_bhlsk"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_argpl"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[node name="N3DS" type="Node3D" unique_id=1750505440]
+script = ExtResource("1_hqvy2")
+
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1394850341]
+mesh = SubResource("BoxMesh_jq3we")
+surface_material_override/0 = SubResource("StandardMaterial3D_aybqj")
+
+[node name="LidPivot" type="Node3D" parent="." unique_id=706293294]
+transform = Transform3D(1, 0, 0, 0, 0.42261824, -0.9063078, 0, 0.9063078, 0.42261824, 0, 0.00525, -0.037)
+
+[node name="Lid" type="MeshInstance3D" parent="LidPivot" unique_id=1068743946]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.00525, -0.037)
+mesh = SubResource("BoxMesh_jmku2")
+surface_material_override/0 = SubResource("StandardMaterial3D_aybqj")
+
+[node name="TopBezel" type="MeshInstance3D" parent="LidPivot" unique_id=1316755277]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0008, -0.037)
+mesh = SubResource("BoxMesh_v64ki")
+surface_material_override/0 = SubResource("StandardMaterial3D_ag6as")
+
+[node name="TopScreen" type="MeshInstance3D" parent="LidPivot" unique_id=1325079555]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.002, -0.037)
+mesh = SubResource("QuadMesh_kcwc5")
+surface_material_override/0 = SubResource("StandardMaterial3D_exibq")
+
+[node name="LidHinge" type="Area3D" parent="LidPivot" unique_id=827385197 node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.00525, -0.068)
+collision_layer = 1048577
+script = ExtResource("2_j3ekd")
+target = NodePath("..")
+engage_radius = 0.045
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge" unique_id=1329677641]
+shape = SubResource("BoxShape3D_gt5w6")
+
+[node name="Slider3D" type="Area3D" parent="LidPivot" unique_id=1171859271]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.062000003, 0.013499999, -0.037)
+collision_layer = 1048577
+script = ExtResource("3_kgfsk")
+axis_local = Vector3(0, 0, -1)
+travel = 0.022
+engage_radius = 0.02
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="LidPivot/Slider3D" unique_id=2063133580]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+mesh = SubResource("BoxMesh_j8vu0")
+surface_material_override/0 = SubResource("StandardMaterial3D_1ijud")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/Slider3D" unique_id=1028090692]
+shape = SubResource("BoxShape3D_v38ai")
+
+[node name="Slider3DLabel" type="Label3D" parent="LidPivot" unique_id=1879433474]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.062000003, 0.0139999995, -0.053000003)
+pixel_size = 0.00022
+modulate = Color(0.1, 0.1, 0.12, 1)
+text = "3D"
+font_size = 16
+
+[node name="BottomBezel" type="MeshInstance3D" parent="." unique_id=485884573]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00605, 0)
+mesh = SubResource("BoxMesh_f21ab")
+surface_material_override/0 = SubResource("StandardMaterial3D_ag6as")
+
+[node name="BottomScreen" type="MeshInstance3D" parent="." unique_id=1210555464]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.00725, 0)
+mesh = SubResource("QuadMesh_padq3")
+surface_material_override/0 = SubResource("StandardMaterial3D_2ikgk")
+
+[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=224702925]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
+mesh = SubResource("BoxMesh_2mi0k")
+surface_material_override/0 = SubResource("StandardMaterial3D_myfa0")
+
+[node name="ProxyScreen" type="MeshInstance3D" parent="." unique_id=405648502]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00525, 0)
+visible = false
+mesh = SubResource("QuadMesh_152ug")
+
+[node name="TouchScreen" type="Area3D" parent="." unique_id=56970722]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00725, 0)
+collision_layer = 1048577
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TouchScreen" unique_id=1977633638]
+shape = SubResource("BoxShape3D_t54r4")
+
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=607953927]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0)
+mesh = SubResource("BoxMesh_wssto")
+surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
+
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=620091300]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0)
+mesh = SubResource("BoxMesh_ne7l1")
+surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=868029758]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05785, 0.00725, -0.006)
+mesh = SubResource("CylinderMesh_ih43k")
+surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
+
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=783560170]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04585, 0.00725, 0.006)
+mesh = SubResource("CylinderMesh_ba1fl")
+surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
+
+[node name="PortLabelTop" type="Label3D" parent="." unique_id=1525452769]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.040200002, 0.00168, -0.0385)
+pixel_size = 0.00018
+modulate = Color(0.92, 0.92, 0.94, 1)
+text = "TOP"
+font_size = 16
+outline_size = 4
+
+[node name="PortLabelBottom" type="Label3D" parent="." unique_id=1531672921]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.040200002, 0.00168, -0.0385)
+pixel_size = 0.00018
+modulate = Color(0.92, 0.92, 0.94, 1)
+text = "BOTTOM"
+font_size = 16
+outline_size = 4
+
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=153663295]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.069, 0, -0.01028)
+collision_layer = 1048577
+script = ExtResource("3_kgfsk")
+axis_local = Vector3(0, 0, -1)
+travel = 0.02072000026702881
+engage_radius = 0.028
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=559146097]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01036)
+mesh = SubResource("BoxMesh_akkew")
+surface_material_override/0 = SubResource("StandardMaterial3D_bhlsk")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=163260176]
+shape = SubResource("BoxShape3D_argpl")

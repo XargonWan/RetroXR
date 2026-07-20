@@ -2,30 +2,33 @@
 ##
 ## A handheld is a RetroSystem whose model provides a BUILT-IN screen: the core
 ## renders to the on-device LCD when no TV is connected, and the video-out
-## cable moves the picture to a TV (Super Game Boy style). The model builds a
-## procedural shell (body, screen, cosmetic d-pad/buttons), repositions the
-## cartridge slot + video-out port, resizes the root collision to the device,
-## and adds the on-device controls: a volume slider and a 2-detent power switch.
+## cable moves the picture to a TV (Super Game Boy style).
 ##
-## Subclasses set the dimensions/colors in _init (Game Boy portrait, GBA
-## landscape) — everything else lives here.
+## The visible shell — body, screen, bezel, cosmetic d-pad/buttons, cartridge
+## slot mouth, and the on-device volume slider + power switch — is authored in
+## the per-device scene under Scenes/Objects/system_models/ (e.g. game_boy.tscn).
+## This script no longer BUILDS geometry: it caches the authored nodes, reads the
+## body/screen dimensions back from them, wires the control signals to the owning
+## RetroSystem, keeps the live LCD picture filtered, and repositions the shared
+## cabinet nodes (collision, cartridge slot, cable port) to fit the device.
+##
+## Subclasses set only NON-geometry data in _init (cartridge dimensions, the DMG
+## LCD shader) — the shape and layout live in the scene.
 class_name RetroSystemModelHandheld
 extends RetroSystemModel
 
 # Device local frame: lying flat, screen on the +Y (top) face, top edge of the
 # screen toward -Z, cartridge slot on the back edge (-Z), video-out on the left.
 
-## Body size in metres (x = width, y = thickness, z = length).
+## Body size in metres (x = width, y = thickness, z = length). Read back from the
+## authored HandheldBody mesh at _ready; the scene is the source of truth.
 var body_size := Vector3(0.09, 0.032, 0.148)
-## Screen quad size (x = width, z = height on the device face).
+## Screen quad size (x = width, z = height on the device face). Read back from the
+## authored HandheldScreen mesh at _ready.
 var screen_size := Vector2(0.047, 0.043)
-## Screen centre offset from the body centre, on the top face.
-var screen_offset := Vector3(0.0, 0.0, -0.03)
-var body_color := Color(0.75, 0.73, 0.70)     # classic DMG grey
-var accent_color := Color(0.45, 0.15, 0.45)   # button magenta
 ## Cartridge size (width, length-into-slot, thickness) — should match the
 ## system's MediaDimensions.CART_SIZES entry. Drives the slot-mouth visual
-## and how deep the cart seats. Default = Game Boy cart.
+## and how deep the cart seats. Default = Game Boy cart. Set per-device in _init.
 var cart_size := Vector3(0.057, 0.065, 0.008)
 
 var _screen: MeshInstance3D = null
@@ -44,6 +47,23 @@ var _lcd_material: ShaderMaterial = null
 
 func is_handheld() -> bool:
 	return true
+
+
+func _ready() -> void:
+	_cache_shell_nodes()
+
+
+## Cache the authored shell nodes and read the device dimensions back from their
+## meshes, so runtime placement (collision/slot/cable) tracks the scene geometry.
+func _cache_shell_nodes() -> void:
+	_screen = get_node_or_null("HandheldScreen") as MeshInstance3D
+	_volume_slider = get_node_or_null("VolumeSlider") as VRSlider
+	_power_switch = get_node_or_null("PowerSwitch") as VRSlider
+	var body := get_node_or_null("HandheldBody") as MeshInstance3D
+	if body and body.mesh is BoxMesh:
+		body_size = (body.mesh as BoxMesh).size
+	if _screen and _screen.mesh is QuadMesh:
+		screen_size = (_screen.mesh as QuadMesh).size
 
 
 ## Keep the LCD filter wrapped over the live core picture. Cheap identity checks
@@ -82,73 +102,6 @@ func get_builtin_screen() -> MeshInstance3D:
 	return _screen
 
 
-func _ready() -> void:
-	_build_shell()
-
-
-func _build_shell() -> void:
-	var half_y := body_size.y / 2.0
-
-	var body := MeshInstance3D.new()
-	body.name = "HandheldBody"
-	var body_mesh := BoxMesh.new()
-	body_mesh.size = body_size
-	body.mesh = body_mesh
-	var body_mat := StandardMaterial3D.new()
-	body_mat.albedo_color = body_color
-	body.set_surface_override_material(0, body_mat)
-	add_child(body)
-
-	# Screen bezel (slightly recessed dark plate) + the LCD quad on top of it.
-	var bezel := MeshInstance3D.new()
-	bezel.name = "ScreenBezel"
-	var bezel_mesh := BoxMesh.new()
-	bezel_mesh.size = Vector3(screen_size.x + 0.012, 0.002, screen_size.y + 0.012)
-	bezel.mesh = bezel_mesh
-	var bezel_mat := StandardMaterial3D.new()
-	bezel_mat.albedo_color = Color(0.12, 0.12, 0.14)
-	bezel.set_surface_override_material(0, bezel_mat)
-	bezel.position = screen_offset + Vector3(0, half_y + 0.001, 0)
-	add_child(bezel)
-
-	_screen = MeshInstance3D.new()
-	_screen.name = "HandheldScreen"
-	var quad := QuadMesh.new()
-	quad.size = screen_size
-	_screen.mesh = quad
-	# Face up (+Y), screen-top toward -Z.
-	_screen.rotation_degrees = Vector3(-90, 0, 0)
-	_screen.position = screen_offset + Vector3(0, half_y + 0.0025, 0)
-	var off_mat := StandardMaterial3D.new()
-	off_mat.albedo_color = Color(0.35, 0.4, 0.33)   # unlit DMG green-grey
-	_screen.set_surface_override_material(0, off_mat)
-	add_child(_screen)
-
-	# Cosmetic d-pad + A/B buttons on the lower face area.
-	_add_cosmetics(half_y)
-
-	# Cartridge slot recess on the back face.
-	_build_cart_slot_mouth()
-
-
-## The media slot's dark "negative space" on the back face of the body. The
-## shell is a solid box, so the recess is a near-black inset box straddling
-## the back face — it reads as the slot opening, and the seated cartridge
-## slides in through it (configure_cartridge_slot). PSP overrides this with
-## a UMD slit.
-func _build_cart_slot_mouth() -> void:
-	var mouth := MeshInstance3D.new()
-	mouth.name = "CardSlotMouth"
-	var mouth_mesh := BoxMesh.new()
-	mouth_mesh.size = Vector3(cart_size.x + 0.005, cart_size.z + 0.003, 0.004)
-	mouth.mesh = mouth_mesh
-	var mouth_mat := StandardMaterial3D.new()
-	mouth_mat.albedo_color = Color(0.03, 0.03, 0.04)
-	mouth.set_surface_override_material(0, mouth_mat)
-	mouth.position = Vector3(0, 0, -body_size.z / 2.0)
-	add_child(mouth)
-
-
 ## How much of the seated cartridge pokes out of the back for grabbing.
 func _cart_protrude() -> float:
 	return clampf(cart_size.y * 0.28, 0.008, 0.02)
@@ -165,59 +118,6 @@ func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
 func play_cartridge_eject(cartridge: Node3D, _slot: Node3D) -> void:
 	if cartridge.has_method("reset_grab_shapes"):
 		cartridge.reset_grab_shapes()
-
-
-func _add_cosmetics(half_y: float) -> void:
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.15, 0.15, 0.17)
-	var accent := StandardMaterial3D.new()
-	accent.albedo_color = accent_color
-
-	# The cosmetic set is sized for a Game Boy face — on narrower bodies
-	# (WonderSwan, Pokemon Mini) the fixed button spread hangs off the edge,
-	# so scale the d-pad bars, button radius and spread with body width.
-	var s := clampf(body_size.x / 0.09, 0.6, 1.0)
-
-	# Classic Game Boy layout: d-pad lower-left, A/B lower-right, below the
-	# screen. On landscape bodies (GBA / Lynx / NGP / PSP) that lands on the
-	# screen bezel — flank the screen instead (d-pad left, buttons right,
-	# centred on it), like the real hardware.
-	var dpad_pos := Vector3(-body_size.x * 0.28, half_y + 0.002, body_size.z * 0.28)
-	var btn_base := Vector3(body_size.x * 0.22, half_y + 0.002, body_size.z * 0.30)
-	var btn_offsets := [Vector3(0, 0, 0), Vector3(0.017 * s, 0, -0.010 * s)]
-	if _hits_screen_bezel(dpad_pos, 0.014) or _hits_screen_bezel(btn_base, 0.014):
-		var side := (body_size.x / 2.0 + (screen_size.x + 0.012) / 2.0) / 2.0
-		dpad_pos = Vector3(-side, half_y + 0.002, screen_offset.z)
-		btn_base = Vector3(side, half_y + 0.002, screen_offset.z)
-		btn_offsets = [Vector3(0.006, 0, -0.006), Vector3(-0.006, 0, 0.006)]
-
-	for horizontal in [true, false]:
-		var bar := MeshInstance3D.new()
-		var bar_mesh := BoxMesh.new()
-		bar_mesh.size = Vector3(0.024 * s, 0.004, 0.008 * s) if horizontal \
-			else Vector3(0.008 * s, 0.004, 0.024 * s)
-		bar.mesh = bar_mesh
-		bar.set_surface_override_material(0, dark)
-		bar.position = dpad_pos
-		add_child(bar)
-
-	for i in range(2):
-		var btn := MeshInstance3D.new()
-		var btn_mesh := CylinderMesh.new()
-		btn_mesh.top_radius = 0.006 * s
-		btn_mesh.bottom_radius = 0.006 * s
-		btn_mesh.height = 0.004
-		btn.mesh = btn_mesh
-		btn.set_surface_override_material(0, accent)
-		btn.position = btn_base + btn_offsets[i]
-		add_child(btn)
-
-
-## True when a cosmetic centred at `p` (half-extent `half`) would land on the
-## screen bezel footprint on the top face.
-func _hits_screen_bezel(p: Vector3, half: float) -> bool:
-	return absf(p.x - screen_offset.x) < (screen_size.x + 0.012) / 2.0 + half \
-		and absf(p.z - screen_offset.z) < (screen_size.y + 0.012) / 2.0 + half
 
 
 ## Seat the cartridge INSIDE the body, through the slot mouth on the back
@@ -293,87 +193,22 @@ func configure_handheld_body(host: Node3D) -> void:
 		pcol.position = Vector3.ZERO
 
 
-## On-device controls: volume slider (right edge) + power switch (top edge).
+## On-device controls: wire the authored volume slider + power switch to the
+## owning RetroSystem. The knobs/travel/positions are authored in the scene;
+## this only connects their signals.
 func configure_handheld_controls(host: Node3D) -> void:
 	_host = host
-	_build_volume_slider()
-	_build_power_switch()
-
-
-func _build_volume_slider() -> void:
-	var half_y := body_size.y / 2.0
-	_volume_slider = _make_slider("VolumeSlider", 0, 1.0)
-	# -Z = toward the back/top edge = "up" from the player's view: slide up for
-	# louder, down for quieter (same sense as the 3DS depth slider). Sits high on
-	# the right edge (+X face), near the top — like a real Game Boy's volume dial.
-	# Travel scales with body depth so it reaches the top edge on both the deep
-	# Game Boy and the shallow clamshell base without overshooting.
-	_volume_slider.axis_local = Vector3(0, 0, -1)
-	var travel: float = minf(0.022, body_size.z * 0.28)
-	_volume_slider.travel = travel
-	_volume_slider.position = Vector3(
-		body_size.x / 2.0 + 0.002, 0.0, -body_size.z / 2.0 + travel + 0.006)
-	add_child(_volume_slider)
-	_volume_slider.value_changed.connect(func(v: float) -> void:
-		if _host and _host.has_method("set_audio_volume"):
-			_host.set_audio_volume(v))
-
-
-func _build_power_switch() -> void:
-	_power_switch = _make_slider("PowerSwitch", 2, 0.0)
-	# Slides left/right along the top edge, like a real Game Boy power switch.
-	_power_switch.axis_local = Vector3(1, 0, 0)
-	_power_switch.travel = 0.014
-	# On the TOP edge — the -Z face where the cartridge inserts — right at the
-	# FRONT edge (where the -Z face meets the +Y screen face), on the left. This
-	# is where a real Game Boy's top-edge power switch sits.
-	var sw_x := -body_size.x * 0.26
-	var sw_y := body_size.y / 2.0 - 0.003
-	_power_switch.position = Vector3(sw_x, sw_y, -body_size.z / 2.0 - 0.001)
-	add_child(_power_switch)
-	# Label the switch, just below the knob on the top edge, facing -Z (readable
-	# from the top/back edge) so players can find the power control.
-	var s := clampf(body_size.x / 0.09, 0.6, 1.0)
-	var power_label := Label3D.new()
-	power_label.text = "POWER"
-	power_label.pixel_size = 0.00016 * s
-	power_label.font_size = 16
-	power_label.modulate = Color(0.1, 0.1, 0.12)
-	power_label.rotation_degrees = Vector3(0, 180, 0)   # face -Z (upright on the top edge)
-	power_label.position = Vector3(sw_x, sw_y - 0.008, -body_size.z / 2.0 - 0.0015)
-	add_child(power_label)
-	_power_switch.value_changed.connect(func(v: float) -> void:
-		if _host == null or not _host.has_method("toggle_power"):
-			return
-		var want_on := v > 0.5
-		if want_on != bool(_host.get("is_powered_on")):
-			_host.toggle_power())
-
-
-func _make_slider(slider_name: String, steps: int, initial: float) -> VRSlider:
-	var slider := VRSlider.new()
-	slider.name = slider_name
-	slider.steps = steps
-	slider.engage_radius = 0.028
-
-	var knob := MeshInstance3D.new()
-	knob.name = "KnobMesh"
-	var knob_mesh := BoxMesh.new()
-	knob_mesh.size = Vector3(0.008, 0.006, 0.008)
-	knob.mesh = knob_mesh
-	var knob_mat := StandardMaterial3D.new()
-	knob_mat.albedo_color = Color(0.2, 0.2, 0.22)
-	knob.set_surface_override_material(0, knob_mat)
-	slider.add_child(knob)
-
-	var col := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(0.03, 0.015, 0.03)
-	col.shape = shape
-	slider.add_child(col)
-
-	slider.set_value_no_signal(initial)
-	return slider
+	if _volume_slider:
+		_volume_slider.value_changed.connect(func(v: float) -> void:
+			if _host and _host.has_method("set_audio_volume"):
+				_host.set_audio_volume(v))
+	if _power_switch:
+		_power_switch.value_changed.connect(func(v: float) -> void:
+			if _host == null or not _host.has_method("toggle_power"):
+				return
+			var want_on := v > 0.5
+			if want_on != bool(_host.get("is_powered_on")):
+				_host.toggle_power())
 
 
 ## Reflect externally-driven power changes (e.g. cart removal powers off, or a

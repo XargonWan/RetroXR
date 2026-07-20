@@ -1,6 +1,11 @@
-## Headless probe for dual-screen handheld models (NDS / 3DS): UV windows on
-## the two screen quads, top→bottom material mirroring, and touch-poke →
-## composite-framebuffer UV conversion (including the 3DS's inset bottom rect).
+## Headless probe for dual-screen handheld models (NDS / 3DS): the composite
+## UV windows fed to the two screen quads (via the screen_window shader's
+## source_rect), top→bottom material mirroring off the hidden proxy, touch-poke →
+## composite-framebuffer UV conversion (including the 3DS's inset bottom rect),
+## and the clamshell lid sitting open.
+##
+## The models are now authored .tscn scenes (Scenes/Objects/system_models/); the
+## root node carries the RetroSystemModelDualScreen script that wires behaviour.
 ##
 ## Run: godot --headless --path RetroVR res://Tools/dual_screen_probe.tscn
 extends Node3D
@@ -22,48 +27,56 @@ func _fail_if(cond: bool, msg: String) -> void:
 		print("[probe] FAIL: %s" % msg)
 
 
-func _uv_bounds(mesh: MeshInstance3D) -> Rect2:
-	var arrays := (mesh.mesh as ArrayMesh).surface_get_arrays(0)
-	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
-	var lo := uvs[0]
-	var hi := uvs[0]
-	for uv in uvs:
-		lo = Vector2(minf(lo.x, uv.x), minf(lo.y, uv.y))
-		hi = Vector2(maxf(hi.x, uv.x), maxf(hi.y, uv.y))
-	return Rect2(lo, hi - lo)
+## The composite UV window a screen samples, read back from its screen_window
+## ShaderMaterial's source_rect (x, y, w, h).
+func _window(mat: ShaderMaterial) -> Rect2:
+	var r: Vector4 = mat.get_shader_parameter("source_rect")
+	return Rect2(r.x, r.y, r.z, r.w)
 
 
 func _check_model(path: String, want_top: Rect2, want_bottom: Rect2) -> void:
 	var nm := path.get_file()
-	var script := load(path) as GDScript
-	var model: RetroSystemModelDualScreen = script.new() as RetroSystemModelDualScreen
+	var model: RetroSystemModelDualScreen = (load(path) as PackedScene).instantiate()
 	add_child(model)
+	# _ready builds the window materials before its first await, but give it a
+	# frame so authored control scripts settle.
+	await get_tree().process_frame
 
 	_fail_if(not model.is_handheld(), "%s not handheld" % nm)
-	var top := model.get_builtin_screen()
+	var proxy := model.get_builtin_screen()            # hidden composite target
+	var top: MeshInstance3D = model._screen            # top screen (lid)
 	var bottom: MeshInstance3D = model._bottom_screen
-	_fail_if(top == null or bottom == null, "%s missing screens" % nm)
-	if top == null or bottom == null:
+	_fail_if(proxy == null or top == null or bottom == null, "%s missing screens" % nm)
+	if proxy == null or top == null or bottom == null:
 		return
 
-	# UV windows into the composite framebuffer.
-	var top_uv := _uv_bounds(top)
-	var bot_uv := _uv_bounds(bottom)
+	# UV windows into the composite framebuffer (carried by the window shaders).
+	var top_uv := _window(model._top_mat)
+	var bot_uv := _window(model._bottom_mat)
 	print("[probe] %s top_uv=%s bottom_uv=%s" % [nm, top_uv, bot_uv])
 	_fail_if(not top_uv.position.is_equal_approx(want_top.position)
 		or not top_uv.size.is_equal_approx(want_top.size), "%s top UV window" % nm)
 	_fail_if(not bot_uv.position.is_equal_approx(want_bottom.position)
 		or not bot_uv.size.is_equal_approx(want_bottom.size), "%s bottom UV window" % nm)
 
-	# Material mirroring: whatever lands on the top screen's surface 0 (the
-	# C++ VideoHandler's seat) must appear on the bottom quad next _process.
+	# Material mirroring: the C++ VideoHandler seats an emissive picture on the
+	# hidden proxy; next _process must route it onto BOTH visible screen quads
+	# through their window shaders.
+	var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
+	img.fill(Color.WHITE)
 	var core_mat := StandardMaterial3D.new()
-	top.set_surface_override_material(0, core_mat)
+	core_mat.emission_enabled = true
+	core_mat.emission_texture = ImageTexture.create_from_image(img)
+	proxy.set_surface_override_material(0, core_mat)
 	model._process(0.016)
-	_fail_if(bottom.get_surface_override_material(0) != core_mat,
-		"%s bottom did not mirror core material" % nm)
+	_fail_if(top.get_surface_override_material(0) != model._top_mat,
+		"%s top did not adopt window shader" % nm)
+	_fail_if(bottom.get_surface_override_material(0) != model._bottom_mat,
+		"%s bottom did not adopt window shader" % nm)
+	_fail_if(model._top_mat.get_shader_parameter("source_tex") != core_mat.emission_texture,
+		"%s window source_tex not fed from proxy" % nm)
 
-	# Touch conversion: pokes at the bottom screen's centre and corners map
+	# Touch conversion: pokes at the bottom screen's centre and corner map
 	# through the bottom UV window.
 	var host := StubHost.new()
 	add_child(host)
@@ -84,16 +97,16 @@ func _check_model(path: String, want_top: Rect2, want_bottom: Rect2) -> void:
 		_fail_if(not (t1[0] as Vector2).is_equal_approx(want_corner) or t1[1] != false,
 			"%s corner touch %s (want %s)" % [nm, t1[0], want_corner])
 
-	# Lid: top screen sits on the lid pivot, angled open (not coplanar with base).
-	var lid_x: float = model._lid_pivot.rotation_degrees.x
-	_fail_if(absf(lid_x - (180.0 - model.lid_open_deg)) > 0.01,
-		"%s lid angle %f" % [nm, lid_x])
+	# Lid: authored open (interior angle strictly between shut and flat).
+	var open := model.get_lid_angle_deg()
+	print("[probe] %s lid_open_deg=%f" % [nm, open])
+	_fail_if(open <= 1.0 or open >= 179.0, "%s lid not open (%.1f)" % [nm, open])
 
 
 func _ready() -> void:
-	_check_model("res://Scripts/Objects/system_models/nds_model.gd",
+	await _check_model("res://Scenes/Objects/system_models/nds.tscn",
 		Rect2(0, 0, 1, 0.5), Rect2(0, 0.5, 1, 0.5))
-	_check_model("res://Scripts/Objects/system_models/n3ds_model.gd",
-		Rect2(0, 0, 1, 0.5), Rect2(0.1, 0.5, 0.8, 0.5))
+	await _check_model("res://Scenes/Objects/system_models/n3ds.tscn",
+		Rect2(0, 0, 0.5, 0.5), Rect2(0.05, 0.5, 0.4, 0.5))
 	print("[probe] RESULT=%s" % ("FAIL" if _fail else "PASS"))
 	get_tree().quit(1 if _fail else 0)

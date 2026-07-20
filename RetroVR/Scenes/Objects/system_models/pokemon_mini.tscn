@@ -1,0 +1,150 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/pokemon_mini_model.gd" id="1_hop4r"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_0kfpa"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_lqker"]
+size = Vector3(0.058, 0.023, 0.074)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2qb12"]
+albedo_color = Color(0.3, 0.5, 0.85, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_656xg"]
+size = Vector3(0.0387, 0.002, 0.0298)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_l75id"]
+albedo_color = Color(0.12, 0.12, 0.14, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_h2hxq"]
+size = Vector2(0.0267, 0.0178)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_85cgt"]
+albedo_color = Color(0.35, 0.4, 0.33, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_im2rj"]
+size = Vector3(0.015466666, 0.004, 0.0051555554)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_r4dxc"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_q5g3o"]
+size = Vector3(0.0051555554, 0.004, 0.015466666)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_cuqui"]
+top_radius = 0.0038666665
+bottom_radius = 0.0038666665
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yixqc"]
+albedo_color = Color(0.9, 0.9, 0.3, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_ld2au"]
+top_radius = 0.0038666665
+bottom_radius = 0.0038666665
+height = 0.004
+
+[sub_resource type="BoxMesh" id="BoxMesh_0cq1p"]
+size = Vector3(0.027, 0.01, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wx37r"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_q5gur"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0iy4x"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_7njip"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_68f6r"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_44jl0"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_jdcbu"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[node name="PokemonMini" type="Node3D" unique_id=578007181]
+script = ExtResource("1_hop4r")
+
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=987757780]
+mesh = SubResource("BoxMesh_lqker")
+surface_material_override/0 = SubResource("StandardMaterial3D_2qb12")
+
+[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=658111203]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0125, -0.018)
+mesh = SubResource("BoxMesh_656xg")
+surface_material_override/0 = SubResource("StandardMaterial3D_l75id")
+
+[node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=2131432582]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.014, -0.018)
+mesh = SubResource("QuadMesh_h2hxq")
+surface_material_override/0 = SubResource("StandardMaterial3D_85cgt")
+
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=740663988]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.016239999, 0.0135, 0.02072)
+mesh = SubResource("BoxMesh_im2rj")
+surface_material_override/0 = SubResource("StandardMaterial3D_r4dxc")
+
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=1923159211]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.016239999, 0.0135, 0.02072)
+mesh = SubResource("BoxMesh_q5g3o")
+surface_material_override/0 = SubResource("StandardMaterial3D_r4dxc")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=211676641]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.012759999, 0.0135, 0.0222)
+mesh = SubResource("CylinderMesh_cuqui")
+surface_material_override/0 = SubResource("StandardMaterial3D_yixqc")
+
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1920739033]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.023715556, 0.0135, 0.015755555)
+mesh = SubResource("CylinderMesh_ld2au")
+surface_material_override/0 = SubResource("StandardMaterial3D_yixqc")
+
+[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=1668329345]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
+mesh = SubResource("BoxMesh_0cq1p")
+surface_material_override/0 = SubResource("StandardMaterial3D_wx37r")
+
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=343437249]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.031, 0, -0.01028)
+collision_layer = 1048577
+script = ExtResource("2_0kfpa")
+axis_local = Vector3(0, 0, -1)
+travel = 0.02072000026702881
+engage_radius = 0.028
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=1579018620]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01036)
+mesh = SubResource("BoxMesh_q5gur")
+surface_material_override/0 = SubResource("StandardMaterial3D_0iy4x")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=409095036]
+shape = SubResource("BoxShape3D_7njip")
+
+[node name="PowerSwitch" type="Area3D" parent="." unique_id=1228411775]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015079999, 0.0085, -0.038)
+collision_layer = 1048577
+script = ExtResource("2_0kfpa")
+travel = 0.014
+steps = 2
+engage_radius = 0.028
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=771284181]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
+mesh = SubResource("BoxMesh_68f6r")
+surface_material_override/0 = SubResource("StandardMaterial3D_44jl0")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=447283335]
+shape = SubResource("BoxShape3D_jdcbu")
+
+[node name="PowerLabel" type="Label3D" parent="." unique_id=659938694]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.015079999, 0.0005, -0.0385)
+pixel_size = 0.00010311111
+modulate = Color(0.1, 0.1, 0.12, 1)
+text = "POWER"
+font_size = 16

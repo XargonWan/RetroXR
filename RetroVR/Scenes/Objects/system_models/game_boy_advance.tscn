@@ -1,0 +1,150 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/game_boy_advance_model.gd" id="1_tvfqd"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_ncn8l"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_e1one"]
+size = Vector3(0.1445, 0.0245, 0.082)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dupi4"]
+albedo_color = Color(0.35, 0.3, 0.55, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_i83b2"]
+size = Vector3(0.073, 0.002, 0.053)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_o43db"]
+albedo_color = Color(0.12, 0.12, 0.14, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_3320q"]
+size = Vector2(0.061, 0.041)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_auqda"]
+albedo_color = Color(0.35, 0.4, 0.33, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_46oqj"]
+size = Vector3(0.024, 0.004, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_46ku1"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_obwfv"]
+size = Vector3(0.008, 0.004, 0.024)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_22pe1"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_vufj4"]
+albedo_color = Color(0.85, 0.85, 0.9, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_c88xr"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.004
+
+[sub_resource type="BoxMesh" id="BoxMesh_hn560"]
+size = Vector3(0.063, 0.01, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xcrsx"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_1atbe"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jc1dn"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_2ybok"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_jlhfx"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y55ni"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vmt2t"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[node name="GameBoyAdvance" type="Node3D" unique_id=890685834]
+script = ExtResource("1_tvfqd")
+
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=770239887]
+mesh = SubResource("BoxMesh_e1one")
+surface_material_override/0 = SubResource("StandardMaterial3D_dupi4")
+
+[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=1680430013]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01325, 0)
+mesh = SubResource("BoxMesh_i83b2")
+surface_material_override/0 = SubResource("StandardMaterial3D_o43db")
+
+[node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=884134283]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.01475, 0)
+mesh = SubResource("QuadMesh_3320q")
+surface_material_override/0 = SubResource("StandardMaterial3D_auqda")
+
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=1251406665]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.054375, 0.01425, 0)
+mesh = SubResource("BoxMesh_46oqj")
+surface_material_override/0 = SubResource("StandardMaterial3D_46ku1")
+
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=1025799270]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.054375, 0.01425, 0)
+mesh = SubResource("BoxMesh_obwfv")
+surface_material_override/0 = SubResource("StandardMaterial3D_46ku1")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=1906242208]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.060375, 0.01425, -0.006)
+mesh = SubResource("CylinderMesh_22pe1")
+surface_material_override/0 = SubResource("StandardMaterial3D_vufj4")
+
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1538229176]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.048375, 0.01425, 0.006)
+mesh = SubResource("CylinderMesh_c88xr")
+surface_material_override/0 = SubResource("StandardMaterial3D_vufj4")
+
+[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=291050804]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.041)
+mesh = SubResource("BoxMesh_hn560")
+surface_material_override/0 = SubResource("StandardMaterial3D_xcrsx")
+
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=838714436]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07425, 0, -0.013000001)
+collision_layer = 1048577
+script = ExtResource("2_ncn8l")
+axis_local = Vector3(0, 0, -1)
+travel = 0.022
+engage_radius = 0.028
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=266081843]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+mesh = SubResource("BoxMesh_1atbe")
+surface_material_override/0 = SubResource("StandardMaterial3D_jc1dn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=201784175]
+shape = SubResource("BoxShape3D_2ybok")
+
+[node name="PowerSwitch" type="Area3D" parent="." unique_id=1611828508]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03757, 0.00925, -0.042)
+collision_layer = 1048577
+script = ExtResource("2_ncn8l")
+travel = 0.014
+steps = 2
+engage_radius = 0.028
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=1382649740]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
+mesh = SubResource("BoxMesh_jlhfx")
+surface_material_override/0 = SubResource("StandardMaterial3D_y55ni")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=2059293730]
+shape = SubResource("BoxShape3D_vmt2t")
+
+[node name="PowerLabel" type="Label3D" parent="." unique_id=798946751]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.03757, 0.0012499996, -0.0425)
+pixel_size = 0.00016
+modulate = Color(0.1, 0.1, 0.12, 1)
+text = "POWER"
+font_size = 16

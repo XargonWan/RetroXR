@@ -3,7 +3,8 @@ class_name RetroSystem
 extends XRToolsPickable
 
 
-## Maps systemid → GDScript path for the hardware model subclass.
+## Maps systemid → GDScript path for the hardware model subclass. Used for
+## systems whose model is NOT an authored scene (see _MODEL_SCENES).
 const _MODEL_SCRIPTS: Dictionary = {
 	# Disabled for now — the N64 / PlayStation (and NES) console models are
 	# imported-derived and replicate real hardware trade dress, an IP risk for
@@ -12,17 +13,25 @@ const _MODEL_SCRIPTS: Dictionary = {
 	# "imported-assets/*" from the export preset's exclude_filter.
 	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
-	"game_boy": "res://Scripts/Objects/system_models/game_boy_model.gd",
-	"game_boy_advance": "res://Scripts/Objects/system_models/game_boy_advance_model.gd",
-	"atari_lynx": "res://Scripts/Objects/system_models/atari_lynx_model.gd",
-	"wonderswan": "res://Scripts/Objects/system_models/wonderswan_model.gd",
-	"neo_geo_pocket": "res://Scripts/Objects/system_models/neo_geo_pocket_model.gd",
-	"pokemon_mini": "res://Scripts/Objects/system_models/pokemon_mini_model.gd",
-	"supervision": "res://Scripts/Objects/system_models/supervision_model.gd",
-	"playstation_portable": "res://Scripts/Objects/system_models/psp_model.gd",
-	"nds": "res://Scripts/Objects/system_models/nds_model.gd",
-	"3ds": "res://Scripts/Objects/system_models/n3ds_model.gd",
-	"virtual_boy": "res://Scripts/Objects/system_models/virtual_boy_model.gd",
+}
+
+## Maps systemid → authored model .tscn. The handheld shells (body, screen,
+## bezel, cosmetics, on-device controls) live in editable scenes; the scene's
+## root node still carries the RetroSystemModel* script that wires behaviour.
+## Scenes win over _MODEL_SCRIPTS when both exist. To add or restyle a handheld,
+## edit its .tscn — no procedural geometry code involved.
+const _MODEL_SCENES: Dictionary = {
+	"game_boy": "res://Scenes/Objects/system_models/game_boy.tscn",
+	"game_boy_advance": "res://Scenes/Objects/system_models/game_boy_advance.tscn",
+	"atari_lynx": "res://Scenes/Objects/system_models/atari_lynx.tscn",
+	"wonderswan": "res://Scenes/Objects/system_models/wonderswan.tscn",
+	"neo_geo_pocket": "res://Scenes/Objects/system_models/neo_geo_pocket.tscn",
+	"pokemon_mini": "res://Scenes/Objects/system_models/pokemon_mini.tscn",
+	"supervision": "res://Scenes/Objects/system_models/supervision.tscn",
+	"playstation_portable": "res://Scenes/Objects/system_models/psp.tscn",
+	"nds": "res://Scenes/Objects/system_models/nds.tscn",
+	"3ds": "res://Scenes/Objects/system_models/n3ds.tscn",
+	"virtual_boy": "res://Scenes/Objects/system_models/virtual_boy.tscn",
 }
 
 ## Optional per-variant model overrides, keyed "<systemid>:<variant>".
@@ -328,18 +337,30 @@ func _load_system_model() -> void:
 	# Prefer a variant-specific model, then the system's default model, then the
 	# generic placeholder. With model_variant=="" this collapses to the old
 	# _MODEL_SCRIPTS.get(systemid, DEFAULT) and is_bespoke == (systemid in _MODEL_SCRIPTS).
-	var script_path: String = DEFAULT
 	var vkey := "%s:%s" % [systemid, model_variant]
-	if not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
-		script_path = _MODEL_VARIANTS[vkey]
-	elif _MODEL_SCRIPTS.has(systemid):
-		script_path = _MODEL_SCRIPTS[systemid]
-	var is_bespoke := script_path != DEFAULT
-	var script := load(script_path) as GDScript
-	if not script:
-		push_warning("RetroSystem: failed to load model script: %s" % script_path)
-		return
-	_model = script.new() as RetroSystemModel
+	var is_bespoke := false
+	# Authored .tscn model (handhelds): instantiate the editable scene. Its root
+	# carries the RetroSystemModel* script, so every configure_* call below is
+	# unchanged. A per-variant script override (rare) still wins over the scene.
+	if _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
+		var packed := load(_MODEL_SCENES[systemid]) as PackedScene
+		if not packed:
+			push_warning("RetroSystem: failed to load model scene: %s" % _MODEL_SCENES[systemid])
+			return
+		_model = packed.instantiate() as RetroSystemModel
+		is_bespoke = true
+	else:
+		var script_path: String = DEFAULT
+		if not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
+			script_path = _MODEL_VARIANTS[vkey]
+		elif _MODEL_SCRIPTS.has(systemid):
+			script_path = _MODEL_SCRIPTS[systemid]
+		is_bespoke = script_path != DEFAULT
+		var script := load(script_path) as GDScript
+		if not script:
+			push_warning("RetroSystem: failed to load model script: %s" % script_path)
+			return
+		_model = script.new() as RetroSystemModel
 	add_child(_model)
 	if is_bespoke:
 		_system_body.hide()

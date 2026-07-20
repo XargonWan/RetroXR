@@ -2,49 +2,38 @@
 ##
 ## Dual-screen cores render BOTH screens into one composite framebuffer
 ## (melonDS top/bottom stacked 256×384; patched azahar side-by-side stereo
-## 400×480). The C++ VideoHandler drives ONE mesh — here a hidden proxy quad
+## 400×480). The C++ VideoHandler drives ONE mesh — a hidden proxy quad
 ## (the Virtual Boy pattern) — and this model feeds the proxy's emission
 ## texture into a screen_window ShaderMaterial per visible screen quad:
 ##   * each quad's `source_rect` selects its region of the composite, and
 ##   * a stereo top screen (3DS) adds `eye_shift` so the RIGHT eye samples the
 ##     right-eye half (VIEW_INDEX) — real depth in the headset.
 ##
+## The visible shell — base, hinged lid, both screens + bezels, the touch area,
+## the hidden proxy quad, the grabbable lid hinge, cosmetics, and the volume
+## slider — is authored in the per-device scene (nds.tscn / n3ds.tscn). This
+## script caches those nodes, builds the two window ShaderMaterials at runtime
+## (source_tex is live core output — it can only be bound per-frame), feeds the
+## screens, and handles touch input.
+##
 ## Video-out: TWO cables (get_video_channels), TOP and BOTTOM, each with its
 ## own labelled port on the back edge. RetroSystem mirrors the same proxy
 ## texture onto each connected TV through the same shader, and taps on the
 ## BOTTOM TV feed the touch screen.
 ##
-## The bottom screen is a touch screen: an Area3D over it accepts desktop
-## pointer press/drag AND VR fingertip pokes, converts the hit to composite-
-## framebuffer UV and feeds host.feed_touch() → RETRO_DEVICE_POINTER (which is
-## how melonDS/citra take touch input).
-##
-## Clamshells keep the cabinet START/STOP button (has_start_stop_button):
-## the tiny back-edge power knob other handhelds use would be swallowed by the
-## hinge, so configure_buttons shrinks the button and mounts it on the front
-## edge instead.
-##
-## Subclasses set body/screen dimensions and the UV rects in _init.
+## Subclasses set the composite UV rects + stereo eye_shift in _init.
 class_name RetroSystemModelDualScreen
 extends RetroSystemModelHandheld
 
 const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
 # Base local frame is the handheld convention: flat, top face +Y, hinge/back
-# edge -Z. The lid pivots at the back-top edge; interior angle `lid_open_deg`.
+# edge -Z. The lid pivots at the back-top edge (LidPivot, authored in the scene).
 
-## Lid (top screen half) size: x = width, y = thickness, z = length.
-var lid_size := Vector3(0.133, 0.011, 0.0739)
-## Interior clamshell angle in degrees (180 = flat open).
-var lid_open_deg := 110.0
-## Physical screen sizes in metres (width × height on the panel face).
-var top_screen_size := Vector2(0.061, 0.0457)
+## Physical bottom-screen size in metres — read back from the authored
+## BottomScreen quad; drives the touch-area UV mapping.
 var bottom_screen_size := Vector2(0.061, 0.0457)
-## Screen centre offsets: top on the lid interior (x, along-lid), bottom on
-## the base top face (x, z).
-var top_screen_offset := Vector2(0.0, 0.0)
-var bottom_screen_offset := Vector2(0.0, 0.0)
-## Each screen's region of the composite core framebuffer.
+## Each screen's region of the composite core framebuffer (set in subclass _init).
 var top_uv_rect := Rect2(0.0, 0.0, 1.0, 0.5)
 var bottom_uv_rect := Rect2(0.0, 0.5, 1.0, 0.5)
 ## Right-eye UV-x shift for a stereo side-by-side composite (3DS azahar).
@@ -63,7 +52,7 @@ var _proxy: MeshInstance3D = null
 # screen_window materials feeding each quad from the proxy's texture.
 var _top_mat: ShaderMaterial = null
 var _bottom_mat: ShaderMaterial = null
-# Unlit-LCD materials shown while no core picture exists.
+# Unlit-LCD materials shown while no core picture exists (authored on the quads).
 var _top_off_mat: StandardMaterial3D = null
 var _bottom_off_mat: StandardMaterial3D = null
 # VR fingertip touch state (per engaged controller).
@@ -86,146 +75,37 @@ func name_label_placement() -> Dictionary:
 	return {"upright": true, "v_center": 0.5, "h_frac": 0.72}
 
 
-func _build_shell() -> void:
-	var half_y := body_size.y / 2.0
-	var off_mat := StandardMaterial3D.new()
-	off_mat.albedo_color = Color(0.05, 0.05, 0.06)   # dark, unlit LCD
-	_top_off_mat = off_mat
-	_bottom_off_mat = off_mat.duplicate()
-
+func _ready() -> void:
+	_cache_dual_nodes()
 	# Window materials, ready before the first frame of core output.
 	_top_mat = ShaderMaterial.new()
 	_top_mat.shader = SCREEN_WINDOW_SHADER
 	_bottom_mat = ShaderMaterial.new()
 	_bottom_mat.shader = SCREEN_WINDOW_SHADER
 	_apply_window_params()
-
-	# ── Base (bottom half) ────────────────────────────────────────────────────
-	var base := MeshInstance3D.new()
-	base.name = "HandheldBody"
-	var base_mesh := BoxMesh.new()
-	base_mesh.size = body_size
-	base.mesh = base_mesh
-	var body_mat := StandardMaterial3D.new()
-	body_mat.albedo_color = body_color
-	base.set_surface_override_material(0, body_mat)
-	add_child(base)
-
-	# ── Lid, hinged at the back-top edge ──────────────────────────────────────
-	_lid_pivot = Node3D.new()
-	_lid_pivot.name = "LidPivot"
-	_lid_pivot.position = Vector3(0, half_y, -body_size.z / 2.0)
-	# Panel extends -Z at 0°; rotating +X tips it up. Interior angle =
-	# 180° - rotation, so rotation = 180 - lid_open_deg.
-	_lid_pivot.rotation_degrees = Vector3(180.0 - lid_open_deg, 0, 0)
-	add_child(_lid_pivot)
-
-	var lid := MeshInstance3D.new()
-	lid.name = "Lid"
-	var lid_mesh := BoxMesh.new()
-	lid_mesh.size = lid_size
-	lid.mesh = lid_mesh
-	lid.set_surface_override_material(0, body_mat)
-	# Lid hangs on the -Y side of the hinge so at flat (0°) it's coplanar with the
-	# base and folding to closed (0° interior) STACKS it on top of the base rather
-	# than folding down into the base volume. Its interior (+Y) face carries the
-	# top screen.
-	lid.position = Vector3(0, -lid_size.y / 2.0, -lid_size.z / 2.0)
-	_lid_pivot.add_child(lid)
-
-	# ── Top screen (lid interior face) ────────────────────────────────────────
-	var top_bezel := MeshInstance3D.new()
-	top_bezel.name = "TopBezel"
-	var tb_mesh := BoxMesh.new()
-	tb_mesh.size = Vector3(top_screen_size.x + 0.008, 0.0015, top_screen_size.y + 0.008)
-	top_bezel.mesh = tb_mesh
-	var bezel_mat := StandardMaterial3D.new()
-	bezel_mat.albedo_color = Color(0.10, 0.10, 0.12)
-	top_bezel.set_surface_override_material(0, bezel_mat)
-	top_bezel.position = Vector3(top_screen_offset.x, 0.0008,
-		-lid_size.z / 2.0 + top_screen_offset.y)
-	_lid_pivot.add_child(top_bezel)
-
-	_screen = MeshInstance3D.new()
-	_screen.name = "TopScreen"
-	var top_quad := QuadMesh.new()
-	top_quad.size = top_screen_size
-	_screen.mesh = top_quad
-	_screen.rotation_degrees = Vector3(-90, 0, 0)   # face lid-interior (+Y local)
-	_screen.position = Vector3(top_screen_offset.x, 0.002,
-		-lid_size.z / 2.0 + top_screen_offset.y)
-	_screen.set_surface_override_material(0, _top_off_mat)
-	_lid_pivot.add_child(_screen)
-
-	# ── Bottom screen (base top face) + touch area ────────────────────────────
-	var bot_bezel := MeshInstance3D.new()
-	bot_bezel.name = "BottomBezel"
-	var bb_mesh := BoxMesh.new()
-	bb_mesh.size = Vector3(bottom_screen_size.x + 0.008, 0.0015, bottom_screen_size.y + 0.008)
-	bot_bezel.mesh = bb_mesh
-	bot_bezel.set_surface_override_material(0, bezel_mat)
-	bot_bezel.position = Vector3(bottom_screen_offset.x, half_y + 0.0008, bottom_screen_offset.y)
-	add_child(bot_bezel)
-
-	_bottom_screen = MeshInstance3D.new()
-	_bottom_screen.name = "BottomScreen"
-	var bot_quad := QuadMesh.new()
-	bot_quad.size = bottom_screen_size
-	_bottom_screen.mesh = bot_quad
-	_bottom_screen.rotation_degrees = Vector3(-90, 0, 0)
-	_bottom_screen.position = Vector3(bottom_screen_offset.x, half_y + 0.002, bottom_screen_offset.y)
-	_bottom_screen.set_surface_override_material(0, _bottom_off_mat)
-	add_child(_bottom_screen)
-
-	# ── Game-card slot mouth: a dark recess in the back face of the base ──────
-	_build_cart_slot_mouth()
-
-	# ── Hidden proxy the C++ VideoHandler renders the composite into ──────────
-	_proxy = MeshInstance3D.new()
-	_proxy.name = "ProxyScreen"
-	var pquad := QuadMesh.new()
-	pquad.size = Vector2(0.01, 0.01)
-	_proxy.mesh = pquad
-	_proxy.position = Vector3(0, half_y, 0)
-	_proxy.visible = false
-	add_child(_proxy)
-
-	_touch = Area3D.new()
-	_touch.name = "TouchScreen"
-	_touch.collision_layer |= VRSlider.POINTABLE_LAYER
-	var tcol := CollisionShape3D.new()
-	var tshape := BoxShape3D.new()
-	tshape.size = Vector3(bottom_screen_size.x, 0.006, bottom_screen_size.y)
-	tcol.shape = tshape
-	_touch.add_child(tcol)
-	_touch.position = _bottom_screen.position
-	# The interaction resolver walks UP from the hit collider to the first
-	# ancestor with pointer_event() — the TouchScreen area has none, so events
-	# land on this model's pointer_event below. (VRSliders keep their own.)
-	add_child(_touch)
-
-	_add_cosmetics(half_y)
-	_build_hinge()
+	await get_tree().process_frame
+	for node in get_tree().root.find_children("*", "XRController3D", true, false):
+		_touch_controllers.append(node as XRController3D)
 
 
-## Grabbable hinge over the lid's far/top edge — touch-drag (VR tip or desktop
-## pointer) swings the lid 0°(shut)…180°(flat). Proximity/pointer engaged, never
-## grip, so it doesn't conflict with grabbing the device or the cartridge stub.
-func _build_hinge() -> void:
-	_hinge = VRHinge.new()
-	_hinge.name = "LidHinge"
-	_hinge.target = _lid_pivot
-	_hinge.min_deg = 0.0     # rotation.x 0 = flat (180° interior open)
-	_hinge.max_deg = 180.0   # rotation.x 180 = folded shut (0° interior open)
-	_hinge.engage_radius = 0.045
-	var col := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(lid_size.x * 0.55, lid_size.y + 0.02, 0.02)
-	col.shape = shape
-	_hinge.add_child(col)
-	# On the lid's far/top edge (the natural open/close grab spot), riding the lid.
-	_hinge.position = Vector3(0, -lid_size.y / 2.0, -lid_size.z + 0.006)
-	_lid_pivot.add_child(_hinge)
+## Cache the authored shell nodes and read the dimensions the runtime logic needs.
+func _cache_dual_nodes() -> void:
+	_lid_pivot = get_node_or_null("LidPivot")
+	_screen = get_node_or_null("LidPivot/TopScreen") as MeshInstance3D
+	_bottom_screen = get_node_or_null("BottomScreen") as MeshInstance3D
+	_proxy = get_node_or_null("ProxyScreen") as MeshInstance3D
+	_touch = get_node_or_null("TouchScreen") as Area3D
+	_hinge = get_node_or_null("LidPivot/LidHinge") as VRHinge
+	_volume_slider = get_node_or_null("VolumeSlider") as VRSlider
+	var body := get_node_or_null("HandheldBody") as MeshInstance3D
+	if body and body.mesh is BoxMesh:
+		body_size = (body.mesh as BoxMesh).size
+	if _bottom_screen and _bottom_screen.mesh is QuadMesh:
+		bottom_screen_size = (_bottom_screen.mesh as QuadMesh).size
+	if _screen:
+		_top_off_mat = _screen.get_surface_override_material(0) as StandardMaterial3D
+	if _bottom_screen:
+		_bottom_off_mat = _bottom_screen.get_surface_override_material(0) as StandardMaterial3D
 
 
 ## Interior open angle in degrees: 0 = folded shut, 180 = flat open.
@@ -242,44 +122,6 @@ func set_lid_angle_deg(open_deg: float) -> void:
 		_lid_pivot.rotation.x = deg_to_rad(rot)
 
 
-## Clamshell cosmetics: the base handheld's d-pad / A-B placement assumes a
-## Game Boy face and lands on the bottom screen. Flank the screen instead —
-## d-pad in the left bezel strip, A/B in the right, centred on the screen,
-## like the real DS/3DS base.
-func _add_cosmetics(half_y: float) -> void:
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.15, 0.15, 0.17)
-	var accent := StandardMaterial3D.new()
-	accent.albedo_color = accent_color
-
-	var bezel_x := bottom_screen_size.x / 2.0 + 0.006
-	# Centre of the free strip between the screen bezel and the body edge.
-	var side := (body_size.x / 2.0 + bezel_x) / 2.0
-	var z0 := bottom_screen_offset.y
-
-	var dpad_pos := Vector3(-side, half_y + 0.002, z0)
-	for horizontal in [true, false]:
-		var bar := MeshInstance3D.new()
-		var bar_mesh := BoxMesh.new()
-		bar_mesh.size = Vector3(0.02, 0.004, 0.007) if horizontal else Vector3(0.007, 0.004, 0.02)
-		bar.mesh = bar_mesh
-		bar.set_surface_override_material(0, dark)
-		bar.position = dpad_pos
-		add_child(bar)
-
-	for i in range(2):
-		var btn := MeshInstance3D.new()
-		var btn_mesh := CylinderMesh.new()
-		btn_mesh.top_radius = 0.005
-		btn_mesh.bottom_radius = 0.005
-		btn_mesh.height = 0.004
-		btn.mesh = btn_mesh
-		btn.set_surface_override_material(0, accent)
-		btn.position = Vector3(side + (0.006 if i == 0 else -0.006), half_y + 0.002,
-			z0 + (-0.006 if i == 0 else 0.006))
-		add_child(btn)
-
-
 ## Push the UV windows onto the window materials (rects are set by subclass
 ## _init, so once at build time is enough).
 func _apply_window_params() -> void:
@@ -291,13 +133,6 @@ func _apply_window_params() -> void:
 		Vector4(bottom_uv_rect.position.x, bottom_uv_rect.position.y,
 			bottom_uv_rect.size.x, bottom_uv_rect.size.y))
 	_bottom_mat.set_shader_parameter("eye_shift", 0.0)
-
-
-func _ready() -> void:
-	super()
-	await get_tree().process_frame
-	for node in get_tree().root.find_children("*", "XRController3D", true, false):
-		_touch_controllers.append(node as XRController3D)
 
 
 func get_builtin_screen() -> MeshInstance3D:
@@ -379,13 +214,6 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 		lbl.position = Vector3(0, -0.0105, 0.002)
 		lbl.pixel_size = 0.0004
 		lbl.font_size = 12
-
-
-## On-device controls: volume slider only. The back-edge power knob the other
-## handhelds get would sit inside the hinge — the START/STOP button replaces it.
-func configure_handheld_controls(host: Node3D) -> void:
-	_host = host
-	_build_volume_slider()
 
 
 ## Two labelled video-out ports on the back edge, beside the cartridge slot:

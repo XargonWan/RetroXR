@@ -47,77 +47,17 @@ func get_forced_core_options() -> Dictionary:
 
 func _ready() -> void:
 	_visor_center_y = STAND_H + VISOR_SIZE.y / 2.0
-	_build_shell()
-
-
-func _build_shell() -> void:
-	var black := StandardMaterial3D.new()
-	black.albedo_color = Color(0.08, 0.08, 0.09)
-	var red := StandardMaterial3D.new()
-	red.albedo_color = Color(0.55, 0.08, 0.10)
-
-	# Bipod stand: base plate + column.
-	var base := MeshInstance3D.new()
-	base.name = "StandBase"
-	var base_mesh := BoxMesh.new()
-	base_mesh.size = Vector3(0.16, 0.012, 0.14)
-	base.mesh = base_mesh
-	base.set_surface_override_material(0, black)
-	base.position = Vector3(0, 0.006, 0)
-	add_child(base)
-
-	var column := MeshInstance3D.new()
-	column.name = "StandColumn"
-	var col_mesh := CylinderMesh.new()
-	col_mesh.top_radius = 0.012
-	col_mesh.bottom_radius = 0.012
-	col_mesh.height = STAND_H
-	column.mesh = col_mesh
-	column.set_surface_override_material(0, black)
-	column.position = Vector3(0, STAND_H / 2.0, 0)
-	add_child(column)
-
-	# Visor body (red) with a black eye-shade plate on the front (+Z), which
-	# is where the player leans in — the eyepiece screen sits on that plate.
-	var visor := MeshInstance3D.new()
-	visor.name = "Visor"
-	var visor_mesh := BoxMesh.new()
-	visor_mesh.size = VISOR_SIZE
-	visor.mesh = visor_mesh
-	visor.set_surface_override_material(0, red)
-	visor.position = Vector3(0, _visor_center_y, 0)
-	add_child(visor)
-
-	var shade := MeshInstance3D.new()
-	shade.name = "EyeShade"
-	var shade_mesh := BoxMesh.new()
-	shade_mesh.size = Vector3(VISOR_SIZE.x * 0.92, VISOR_SIZE.y * 0.82, 0.006)
-	shade.mesh = shade_mesh
-	shade.set_surface_override_material(0, black)
-	shade.position = Vector3(0, _visor_center_y, VISOR_SIZE.z / 2.0 + 0.003)
-	add_child(shade)
-
-	# Eyepiece: the stereo quad on the shade, facing the player (+Z).
+	# The stand / visor / eye-shade / eyepiece / hidden proxy are authored in
+	# virtual_boy.tscn; cache the two functional nodes.
+	_proxy = get_node_or_null("ProxyScreen") as MeshInstance3D
+	_eyepiece = get_node_or_null("Eyepiece") as MeshInstance3D
+	# The eyepiece's live stereo material is per-instance (source_tex is bound
+	# per-frame from the proxy), so build it here rather than sharing one packed
+	# sub-resource across every Virtual Boy in the room.
 	_stereo_mat = ShaderMaterial.new()
 	_stereo_mat.shader = STEREO_SHADER
-	_eyepiece = MeshInstance3D.new()
-	_eyepiece.name = "Eyepiece"
-	var quad := QuadMesh.new()
-	quad.size = EYE_SIZE
-	_eyepiece.mesh = quad
-	_eyepiece.position = Vector3(0, _visor_center_y, VISOR_SIZE.z / 2.0 + 0.0075)
-	_eyepiece.set_surface_override_material(0, _stereo_mat)
-	add_child(_eyepiece)
-
-	# Hidden proxy the C++ VideoHandler renders to (side-by-side composite).
-	_proxy = MeshInstance3D.new()
-	_proxy.name = "ProxyScreen"
-	var pquad := QuadMesh.new()
-	pquad.size = Vector2(0.01, 0.01)
-	_proxy.mesh = pquad
-	_proxy.position = Vector3(0, _visor_center_y, 0)
-	_proxy.visible = false
-	add_child(_proxy)
+	if _eyepiece:
+		_eyepiece.set_surface_override_material(0, _stereo_mat)
 
 
 func _process(_delta: float) -> void:

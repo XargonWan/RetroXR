@@ -1,0 +1,150 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/supervision_model.gd" id="1_p2wsw"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_2c4sv"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_ijuq4"]
+size = Vector3(0.09, 0.03, 0.16)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_80yfh"]
+albedo_color = Color(0.55, 0.55, 0.58, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_6sp0f"]
+size = Vector3(0.062, 0.002, 0.062)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pdt34"]
+albedo_color = Color(0.12, 0.12, 0.14, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_ecd4e"]
+size = Vector2(0.05, 0.05)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_m3xlo"]
+albedo_color = Color(0.35, 0.4, 0.33, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_bjtou"]
+size = Vector3(0.024, 0.004, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6w333"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_lic4x"]
+size = Vector3(0.008, 0.004, 0.024)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_ilrgk"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aiyso"]
+albedo_color = Color(0.2, 0.2, 0.25, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_m7anb"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.004
+
+[sub_resource type="BoxMesh" id="BoxMesh_awl5c"]
+size = Vector3(0.071, 0.011999999, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mswbe"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_0kwhd"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_n653a"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hirmj"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pslkp"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j5sa3"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_qm4ub"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[node name="Supervision" type="Node3D" unique_id=438335923]
+script = ExtResource("1_p2wsw")
+
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=182325168]
+mesh = SubResource("BoxMesh_ijuq4")
+surface_material_override/0 = SubResource("StandardMaterial3D_80yfh")
+
+[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=544594313]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015999999, -0.03)
+mesh = SubResource("BoxMesh_6sp0f")
+surface_material_override/0 = SubResource("StandardMaterial3D_pdt34")
+
+[node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=242668978]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0175, -0.03)
+mesh = SubResource("QuadMesh_ecd4e")
+surface_material_override/0 = SubResource("StandardMaterial3D_m3xlo")
+
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=706530829]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.025200002, 0.016999999, 0.0448)
+mesh = SubResource("BoxMesh_bjtou")
+surface_material_override/0 = SubResource("StandardMaterial3D_6w333")
+
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=17004627]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.025200002, 0.016999999, 0.0448)
+mesh = SubResource("BoxMesh_lic4x")
+surface_material_override/0 = SubResource("StandardMaterial3D_6w333")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=333999991]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0198, 0.016999999, 0.048)
+mesh = SubResource("CylinderMesh_ilrgk")
+surface_material_override/0 = SubResource("StandardMaterial3D_aiyso")
+
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1289351417]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0368, 0.016999999, 0.038000003)
+mesh = SubResource("CylinderMesh_m7anb")
+surface_material_override/0 = SubResource("StandardMaterial3D_aiyso")
+
+[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=89130336]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.08)
+mesh = SubResource("BoxMesh_awl5c")
+surface_material_override/0 = SubResource("StandardMaterial3D_mswbe")
+
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=1947748809]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.047000002, 0, -0.051999997)
+collision_layer = 1048577
+script = ExtResource("2_2c4sv")
+axis_local = Vector3(0, 0, -1)
+travel = 0.022
+engage_radius = 0.028
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=1966735856]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+mesh = SubResource("BoxMesh_0kwhd")
+surface_material_override/0 = SubResource("StandardMaterial3D_n653a")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=888313810]
+shape = SubResource("BoxShape3D_hirmj")
+
+[node name="PowerSwitch" type="Area3D" parent="." unique_id=1142193482]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.023400001, 0.012, -0.081)
+collision_layer = 1048577
+script = ExtResource("2_2c4sv")
+travel = 0.014
+steps = 2
+engage_radius = 0.028
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=1817200212]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
+mesh = SubResource("BoxMesh_pslkp")
+surface_material_override/0 = SubResource("StandardMaterial3D_j5sa3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=974223879]
+shape = SubResource("BoxShape3D_qm4ub")
+
+[node name="PowerLabel" type="Label3D" parent="." unique_id=726585071]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.023400001, 0.0039999997, -0.0815)
+pixel_size = 0.00016
+modulate = Color(0.1, 0.1, 0.12, 1)
+text = "POWER"
+font_size = 16

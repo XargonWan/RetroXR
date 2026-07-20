@@ -1,0 +1,150 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/wonderswan_model.gd" id="1_kigqs"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_m1dcs"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_vrkyx"]
+size = Vector3(0.0743, 0.024, 0.121)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dllot"]
+albedo_color = Color(0.7, 0.7, 0.72, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_qhes0"]
+size = Vector3(0.057, 0.002, 0.040999997)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xexob"]
+albedo_color = Color(0.12, 0.12, 0.14, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_d0x5g"]
+size = Vector2(0.045, 0.029)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4wncf"]
+albedo_color = Color(0.35, 0.4, 0.33, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_3w1lu"]
+size = Vector3(0.019813333, 0.004, 0.0066044442)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8yfbb"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_v6vbc"]
+size = Vector3(0.0066044442, 0.004, 0.019813333)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_genxv"]
+top_radius = 0.004953333
+bottom_radius = 0.004953333
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sm4ev"]
+albedo_color = Color(0.3, 0.3, 0.35, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_yxfmq"]
+top_radius = 0.004953333
+bottom_radius = 0.004953333
+height = 0.004
+
+[sub_resource type="BoxMesh" id="BoxMesh_8wddx"]
+size = Vector3(0.053, 0.011, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_iyhse"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_a3144"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nlgy6"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_220ik"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ovaok"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_iv7gi"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ovm8h"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[node name="WonderSwan" type="Node3D" unique_id=1679991219]
+script = ExtResource("1_kigqs")
+
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1514912891]
+mesh = SubResource("BoxMesh_vrkyx")
+surface_material_override/0 = SubResource("StandardMaterial3D_dllot")
+
+[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=603308733]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.013, -0.028)
+mesh = SubResource("BoxMesh_qhes0")
+surface_material_override/0 = SubResource("StandardMaterial3D_xexob")
+
+[node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=1345048735]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0145000005, -0.028)
+mesh = SubResource("QuadMesh_d0x5g")
+surface_material_override/0 = SubResource("StandardMaterial3D_4wncf")
+
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=1242406485]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020804, 0.014, 0.03388)
+mesh = SubResource("BoxMesh_3w1lu")
+surface_material_override/0 = SubResource("StandardMaterial3D_8yfbb")
+
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=1752972103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020804, 0.014, 0.03388)
+mesh = SubResource("BoxMesh_v6vbc")
+surface_material_override/0 = SubResource("StandardMaterial3D_8yfbb")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=644077822]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.016346, 0.014, 0.0363)
+mesh = SubResource("CylinderMesh_genxv")
+surface_material_override/0 = SubResource("StandardMaterial3D_sm4ev")
+
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1054499675]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.030380445, 0.014, 0.028044444)
+mesh = SubResource("CylinderMesh_yxfmq")
+surface_material_override/0 = SubResource("StandardMaterial3D_sm4ev")
+
+[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=1332036226]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0605)
+mesh = SubResource("BoxMesh_8wddx")
+surface_material_override/0 = SubResource("StandardMaterial3D_iyhse")
+
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=958712201]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03915, 0, -0.0325)
+collision_layer = 1048577
+script = ExtResource("2_m1dcs")
+axis_local = Vector3(0, 0, -1)
+travel = 0.022
+engage_radius = 0.028
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=2010678695]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+mesh = SubResource("BoxMesh_a3144")
+surface_material_override/0 = SubResource("StandardMaterial3D_nlgy6")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=695287728]
+shape = SubResource("BoxShape3D_220ik")
+
+[node name="PowerSwitch" type="Area3D" parent="." unique_id=312343353]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.019318, 0.009000001, -0.061499998)
+collision_layer = 1048577
+script = ExtResource("2_m1dcs")
+travel = 0.014
+steps = 2
+engage_radius = 0.028
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=471764467]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
+mesh = SubResource("BoxMesh_ovaok")
+surface_material_override/0 = SubResource("StandardMaterial3D_iv7gi")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=1993715394]
+shape = SubResource("BoxShape3D_ovm8h")
+
+[node name="PowerLabel" type="Label3D" parent="." unique_id=1375796775]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.019318, 0.001, -0.062)
+pixel_size = 0.00013208888
+modulate = Color(0.1, 0.1, 0.12, 1)
+text = "POWER"
+font_size = 16
