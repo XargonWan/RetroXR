@@ -6,7 +6,8 @@
 script = ExtResource("1")
 systemid = "scummvm"
 display_name = "ScummVM"
-native_ports = 1
+native_ports = 2
 media_type = 0
 supports_multitap = false
 multitap_ports = 0
+computer = true

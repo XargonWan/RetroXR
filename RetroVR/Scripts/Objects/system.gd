@@ -184,6 +184,11 @@ const _MEDIA_COMPAT: Dictionary = {
 	"game_boy_advance": ["game_boy"],
 }
 
+# RETRO_DEVICE_* types relevant to port routing (libretro.h).
+const RETRO_DEVICE_NONE := 0
+const RETRO_DEVICE_MOUSE := 2
+const RETRO_DEVICE_KEYBOARD := 3
+
 
 func _ready() -> void:
 	super._ready()
@@ -1252,6 +1257,30 @@ func set_controller_port_device(port: int, device_id: int) -> void:
 		_libretro.SetControllerPortDevice(port, device_id)
 
 
+## True when this system is a home computer (ScummVM, DOS, Amiga…) whose core
+## reads the mouse on port 0 and takes keyboard input globally.
+func _is_computer() -> bool:
+	var info := SystemInfo.for_system(systemid)
+	return info != null and info.computer
+
+
+## The libretro port a plugged peripheral should drive. On computer systems the
+## mouse always drives port 0 — where ScummVM/DOS/Amiga cores poll it — no matter
+## which cabinet slot it's in; every other device drives its own physical port.
+func _libretro_port_for(device_type: int, physical_port: int) -> int:
+	if device_type == RETRO_DEVICE_MOUSE and _is_computer():
+		return 0
+	return physical_port
+
+
+## Whether a plugged peripheral occupies a numbered libretro port device. A
+## computer keyboard does not: its keys are global to port 0 regardless, so it
+## leaves the port free for the mouse and avoids cores that mishandle a
+## RETRO_DEVICE_KEYBOARD "controller" set on a numbered port.
+func _claims_port_device(device_type: int) -> bool:
+	return not (device_type == RETRO_DEVICE_KEYBOARD and _is_computer())
+
+
 ## Returns the Libretro node so plugged-in controller objects can call input methods on it.
 func get_libretro_node() -> Libretro:
 	return _libretro
@@ -1262,14 +1291,20 @@ func get_libretro_node() -> Libretro:
 func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 	add_collision_exception_with(controller)
 	var device_type: int = controller.get("device_type") if "device_type" in controller else 1
-	print("[RetroSystem] port %d snapped: device_type=%d" % [port_index, device_type])
-	set_controller_port_device(port_index, device_type)
+	# The libretro port a peripheral drives isn't always its cabinet slot: on
+	# computer systems the mouse is forced to port 0 (where those cores poll it),
+	# so a mouse + keyboard can share the cabinet. See _libretro_port_for().
+	var lib_port := _libretro_port_for(device_type, port_index)
+	print("[RetroSystem] port %d snapped: device_type=%d -> libretro port %d" %
+		[port_index, device_type, lib_port])
+	if _claims_port_device(device_type):
+		set_controller_port_device(lib_port, device_type)
 	# The snapped node is a ControllerPlug (cable end). Unwrap to the actual
 	# RetroController so rumble can be routed to its set_rumble() method.
 	_port_controllers[port_index] = controller.get_controller() \
 		if controller.has_method("get_controller") else controller
 	if controller.has_method("on_plugged_in"):
-		controller.on_plugged_in(self, port_index)
+		controller.on_plugged_in(self, lib_port)
 	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
 		{"sys": self, "ctrl": _port_controllers[port_index], "port": port_index})
 
@@ -1283,10 +1318,15 @@ func _on_port_released(port_index: int, controller: Node3D) -> void:
 		else controller
 	if is_instance_valid(actual_ctrl) and actual_ctrl.has_method("set_rumble"):
 		actual_ctrl.set_rumble(0.0, 0.0)
+	# Clear the SAME libretro port the snap set (a computer mouse claimed port 0,
+	# not its cabinet slot; a computer keyboard claimed none).
+	var device_type: int = controller.get("device_type") \
+		if is_instance_valid(controller) and "device_type" in controller else 1
 	if is_instance_valid(controller):
 		remove_collision_exception_with(controller)
 	_port_controllers[port_index] = null
-	set_controller_port_device(port_index, 0)  # RETRO_DEVICE_NONE
+	if _claims_port_device(device_type):
+		set_controller_port_device(_libretro_port_for(device_type, port_index), RETRO_DEVICE_NONE)
 	if is_instance_valid(controller) and controller.has_method("on_unplugged"):
 		controller.on_unplugged()
 	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG,

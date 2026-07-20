@@ -33,6 +33,14 @@ enum MediaType { CARTRIDGE = 0, DISC_TRAY = 1, DISC_INSERT = 2 }
 ## PC Engine = 5, PlayStation = 8…). Only meaningful when supports_multitap.
 @export var multitap_ports: int = 4
 
+## Home computer whose libretro core reads the mouse on port 0 and takes keyboard
+## input globally (ScummVM, DOS, Amiga, C64, MSX…). When true a plugged mouse
+## always drives libretro port 0 regardless of which cabinet slot it's in, and a
+## plugged keyboard doesn't occupy a numbered port device (its keys are global to
+## port 0 anyway) — so a mouse and a keyboard can be used at once. Consoles leave
+## this false: their mouse peripherals stay on the port they're plugged into.
+@export var computer: bool = false
+
 ## Custom hardware model scene for this console. Empty for now — this is the
 ## slot the bespoke per-console models get dropped into later.
 @export var console_model: PackedScene = null
