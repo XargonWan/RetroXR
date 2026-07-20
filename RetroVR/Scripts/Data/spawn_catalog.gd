@@ -26,7 +26,7 @@ extends RefCounted
 const _CATALOG: Dictionary = {
 	"playstation": [
 		{"kind": "system",     "label": "Console",     "variant": ""},
-		{"kind": "peripheral", "label": "Controller",  "spawn": "retro_controller"},
+		{"kind": "peripheral", "label": "Dual Shock",  "spawn": "dualshock"},
 		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
 }

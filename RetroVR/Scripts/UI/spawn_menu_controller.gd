@@ -37,6 +37,7 @@ const SPAWN_Y := {
 	"book":             0.80,
 	"trash_can":        0.90,
 	"retro_controller": 0.80,
+	"dualshock":        0.80,
 	"retro_mouse":      0.78,
 	"retro_keyboard":   0.78,
 	"retro_multitap":   0.80,
@@ -802,6 +803,12 @@ func _on_spawn_requested(type: String) -> void:
 			obj = MEMCARD_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
+		"dualshock":
+			# GLB lives in export-excluded imported-assets/ while its licence is
+			# pending, so load at runtime and skip gracefully if absent (e.g. Quest).
+			obj = _instantiate_dualshock()
+			if obj == null:
+				return
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
 		"retro_keyboard":
@@ -826,6 +833,19 @@ func _on_spawn_requested(type: String) -> void:
 			obj = sys
 	if obj:
 		_place_spawned(obj, type)
+
+
+## Runtime-load the DualShock prop. Its model sits in the export-excluded
+## imported-assets/ dir (licence pending), so preloading would break any build
+## that omits it; this returns null gracefully when the asset isn't present.
+func _instantiate_dualshock() -> Node3D:
+	const DS_GLB := "res://imported-assets/dualshock.glb"
+	const DS_SCENE := "res://Scenes/Objects/dualshock.tscn"
+	if not ResourceLoader.exists(DS_GLB) or not ResourceLoader.exists(DS_SCENE):
+		push_warning("[spawn] DualShock asset not available in this build; skipping.")
+		return null
+	var ps := load(DS_SCENE) as PackedScene
+	return ps.instantiate() as Node3D if ps else null
 
 
 func _on_spawn_cartridge_requested(rom_path: String, game_label: String, systemid := "") -> void:
