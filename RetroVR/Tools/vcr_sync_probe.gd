@@ -1,7 +1,7 @@
 ## Headless two-branch probe for the VCR drift sync (M5) + book state sync.
 ##
 ## Real NetworkManager/ObjectSync pair over loopback ENet with MOCK VCRs (no
-## FFmpeg/video): verifies that
+## libVLC/video): verifies that
 ##   A. a host transport change (send_vcr_state) reaches the client's VCR
 ##   B. the heartbeat re-broadcasts state while playing (within ~2.5s)
 ##   C. stop propagates and the heartbeat goes quiet

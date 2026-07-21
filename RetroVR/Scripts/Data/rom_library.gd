@@ -150,7 +150,7 @@ static func scan_books() -> Array[Dictionary]:
 	return results
 
 
-## Video file extensions playable via the FFmpeg addon.
+## Video file extensions playable via the VlcPlayer GDExtension.
 const VIDEO_EXTENSIONS := ["mp4", "mkv", "avi", "webm", "mov"]
 
 
