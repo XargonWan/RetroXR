@@ -9,6 +9,12 @@ class_name RetroSystemModelPSP
 extends RetroSystemModelHandheld
 
 
+## Detailed PSP-1000 shell (an author imported). Export-excluded — store builds fall
+## back to the primitive shell authored in psp.tscn.
+func _glb_path() -> String:
+	return "res://imported-assets/psp.glb"
+
+
 ## The UMD EJECT button otherwise floats at its console-scale scene position.
 ## Real PSP: the eject latch sits on the top edge of the console — mount it on
 ## the top face at the back-right corner, shrunk to a small slide-latch.
