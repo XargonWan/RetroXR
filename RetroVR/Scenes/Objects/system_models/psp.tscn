@@ -2,10 +2,9 @@
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
 [ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_6e2pq"]
-[ext_resource type="PackedScene" path="res://imported-assets/psp.glb" id="3_6e2pq"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_33nuj"]
-size = Vector3(0.15739954, 0.024476781, 0.0715083)
+size = Vector3(0.17, 0.023, 0.074)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3enqv"]
 albedo_color = Color(0.05, 0.05, 0.06, 1)
@@ -16,8 +15,8 @@ size = Vector3(0.1073, 0.002, 0.066)
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ishpy"]
 albedo_color = Color(0.12, 0.12, 0.14, 1)
 
-[sub_resource type="QuadMesh" id="QuadMesh_3enqv"]
-size = Vector2(0.082067795, 0.046838574)
+[sub_resource type="QuadMesh" id="QuadMesh_65347"]
+size = Vector2(0.0953, 0.054)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_n6adx"]
 albedo_color = Color(0.35, 0.4, 0.33, 1)
@@ -72,48 +71,41 @@ size = Vector3(0.03, 0.015, 0.03)
 script = ExtResource("1_oixvq")
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=890343114]
-visible = false
 mesh = SubResource("BoxMesh_33nuj")
 surface_material_override/0 = SubResource("StandardMaterial3D_3enqv")
 
 [node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=1675919206]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0125, 0)
-visible = false
 mesh = SubResource("BoxMesh_6vp4s")
 surface_material_override/0 = SubResource("StandardMaterial3D_ishpy")
 
 [node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=935166976]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 1.66893e-06, 0.010732935, -0.0021037646)
-mesh = SubResource("QuadMesh_3enqv")
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.014, 0)
+mesh = SubResource("QuadMesh_65347")
 surface_material_override/0 = SubResource("StandardMaterial3D_n6adx")
 
 [node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=200688380]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.069325, 0.0135, 0)
-visible = false
 mesh = SubResource("BoxMesh_qmcsd")
 surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
 
 [node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=434421476]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.069325, 0.0135, 0)
-visible = false
 mesh = SubResource("BoxMesh_qjy2c")
 surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
 
 [node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=2002345741]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.075325, 0.0135, -0.006)
-visible = false
 mesh = SubResource("CylinderMesh_xgjj8")
 surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
 
 [node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1647338631]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.063325, 0.0135, 0.006)
-visible = false
 mesh = SubResource("CylinderMesh_vbvja")
 surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
 
 [node name="UMDSlit" type="MeshInstance3D" parent="." unique_id=746941152]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
-visible = false
 mesh = SubResource("BoxMesh_6vy4r")
 surface_material_override/0 = SubResource("StandardMaterial3D_tdojy")
 
@@ -128,7 +120,6 @@ value = 1.0
 
 [node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=13869205]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01036)
-visible = false
 mesh = SubResource("BoxMesh_fanjx")
 surface_material_override/0 = SubResource("StandardMaterial3D_31348")
 
@@ -136,7 +127,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_31348")
 shape = SubResource("BoxShape3D_ehrgs")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=1464879413]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.074598335, 0.0014279401, 0.016086234)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0442, 0.0085, -0.038)
 collision_layer = 1048577
 script = ExtResource("2_6e2pq")
 travel = 0.014
@@ -145,7 +136,6 @@ engage_radius = 0.028
 
 [node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=4784567]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
-visible = false
 mesh = SubResource("BoxMesh_3equ1")
 surface_material_override/0 = SubResource("StandardMaterial3D_ixh04")
 
@@ -158,6 +148,3 @@ pixel_size = 0.00016
 modulate = Color(0.1, 0.1, 0.12, 1)
 text = "POWER"
 font_size = 16
-
-[node name="Shell" type="Node3D" parent="." unique_id=1938426276 instance=ExtResource("3_6e2pq")]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 1.66893e-06, 0.001427941, 0.036796235)
