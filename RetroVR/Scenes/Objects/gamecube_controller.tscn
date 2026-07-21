@@ -1,0 +1,50 @@
+[gd_scene load_steps=8 format=3 uid="uid://gcctrlprop0000a"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/gamecube_controller.gd" id="1_gcscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
+[ext_resource type="PackedScene" path="res://imported-assets/gamecube_controller.glb" id="5_model"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_gc"]
+friction = 0.8
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gc"]
+size = Vector3(0.18, 0.12, 0.09)
+
+[node name="GamecubeController" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.2
+physics_material_override = SubResource("PhysMat_gc")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_gcscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_gc")
+
+[node name="Model" parent="." instance=ExtResource("5_model")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, -0.004)
+
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.04)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_gc")
+
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07, 0, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07, 0, 0)
+visible = false
