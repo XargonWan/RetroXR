@@ -92,10 +92,17 @@ func _cache_shell_nodes() -> void:
 ## ones), and move the power switch onto the GLB's switch marker. body_size is
 ## re-read from the GLB so collision / cart slot / cable placement track it.
 func _upgrade_to_glb(path: String) -> void:
+	# Already baked into the scene (authored "Shell" GLB instance + repositioned
+	# screen/controls)? Then the .tscn is self-contained — just keep the reference.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+		return
 	var scene := load(path) as PackedScene
 	if scene == null:
 		return
 	_glb = scene.instantiate() as Node3D
+	_glb.name = "Shell"
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
