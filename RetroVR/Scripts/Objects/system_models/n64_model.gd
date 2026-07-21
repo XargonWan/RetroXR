@@ -19,6 +19,16 @@ var _led: Array[MeshInstance3D] = []
 
 
 func _ready() -> void:
+	# Store-safe guard: GLB is export-excluded (licence pending). Re-show the host's
+	# placeholder box (system.gd hid it) if the model isn't in this build.
+	if not ResourceLoader.exists(_MODEL_PATH):
+		push_warning("RetroSystemModelN64: %s missing — using placeholder box" % _MODEL_PATH)
+		var host := get_parent()
+		if host:
+			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+			if body:
+				body.show()
+		return
 	var scene := load(_MODEL_PATH) as PackedScene
 	if scene == null:
 		push_warning("RetroSystemModelN64: could not load model at %s" % _MODEL_PATH)

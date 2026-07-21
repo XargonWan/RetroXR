@@ -19,6 +19,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"playstation": "res://Scripts/Objects/system_models/playstation_one_model.gd",
 	"sega_saturn": "res://Scripts/Objects/system_models/sega_saturn_model.gd",
 	"dreamcast": "res://Scripts/Objects/system_models/dreamcast_model.gd",
+	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 }
 
 ## Maps systemid → authored model .tscn. The handheld shells (body, screen,
