@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://dcctrlprop0000a"]
+[gd_scene format=3 uid="uid://cfiax4m78y6mk"]
 
 [ext_resource type="Script" uid="uid://dmxawyrf0uv07" path="res://Scripts/Objects/retro_controller.gd" id="1_dcscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://gcctrlprop0000a"]
+[gd_scene format=3 uid="uid://dkkmth5anl3vm"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/gamecube_controller.gd" id="1_gcscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
