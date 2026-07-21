@@ -326,7 +326,7 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroVR/Tools/`,
 which holds in-editor probe scenes like `netplay_spike`).
 
-- **`Tools/bundle_convert.py`** — headless converter for imported `.bundle` models (each is a Unity
+- **`Tools/bundle_convert.py`** — headless converter for `.bundle` models (each is a Unity
   AssetBundle, magic `UnityFS`) → `.glb`, with no Unity editor. Deps: `pip install --user UnityPy
   numpy pygltflib Pillow`. Usage: `python3 Tools/bundle_convert.py <file.bundle|dir> [out] [--audio]`.
   Handles per-submesh PBR materials, full PBR maps (albedo/normal (DXT5nm)/ORM/emissive), Unity
@@ -334,7 +334,8 @@ which holds in-editor probe scenes like `netplay_spike`).
   clip) + an `.anim.json` sidecar, MonoBehaviour metadata → `.meta.json`, and `--audio` extracts
   AudioClips to `audio/*.wav`. **Gotcha:** UnityPy's `Mesh.export()` is already glTF-oriented —
   do NOT apply any axis flip or you mirror the model. Source model libraries on this box live in
-  `~/Systems/` (consoles) and `~/Media/` (carts/tapes).
+  `~/Systems/` (consoles) and `~/Media/` (carts/tapes). Also need to note attrition and permission
+  from the authors of these ugcs if possible.
 - **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
   bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
   godot-pdfium build recipe above.
