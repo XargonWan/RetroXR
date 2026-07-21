@@ -5,7 +5,7 @@
 [ext_resource type="PackedScene" path="res://imported-assets/game_boy_dmg.glb" id="3_mi0jy"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_5ghi6"]
-size = Vector3(0.0853017, 0.031066652, 0.13806148)
+size = Vector3(0.0853017, 0.030537412, 0.13806148)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_u1opw"]
 albedo_color = Color(0.75, 0.73, 0.7, 1)
@@ -83,7 +83,7 @@ mesh = SubResource("BoxMesh_pjbxd")
 surface_material_override/0 = SubResource("StandardMaterial3D_44alc")
 
 [node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=1890076506]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 8.231029e-06, 0.015204872, -0.030595139)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -8.227304e-06, 0.015469492, -0.030595139)
 mesh = SubResource("QuadMesh_u1opw")
 surface_material_override/0 = SubResource("StandardMaterial3D_g45b0")
 
@@ -136,7 +136,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_ouria")
 shape = SubResource("BoxShape3D_ncas5")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=1897868592]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03119823, -0.0012000024, -0.06947514)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.030181773, -0.000935382, -0.06947514)
 collision_layer = 1048577
 script = ExtResource("2_mi0jy")
 travel = 0.014
@@ -159,5 +159,5 @@ modulate = Color(0.1, 0.1, 0.12, 1)
 text = "POWER"
 font_size = 16
 
-[node name="Shell" type="Node3D" parent="." unique_id=2050272819 instance=ExtResource("3_mi0jy")]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.0005082302, 3.7252903e-09, 0.06910486)
+[node name="Shell" type="Node3D" parent="." unique_id=595965751 instance=ExtResource("3_mi0jy")]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.00050822645, 0.00026462413, 0.06910486)
