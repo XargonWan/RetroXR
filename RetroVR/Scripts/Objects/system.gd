@@ -24,6 +24,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"playstation2": "res://Scripts/Objects/system_models/ps2_model.gd",
 	"nes": "res://Scripts/Objects/system_models/famicom_model.gd",
 	"atari_2600": "res://Scripts/Objects/system_models/atari_2600_model.gd",
+	"dos": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
 }
 
 ## Maps systemid → authored model .tscn. The handheld shells (body, screen,
