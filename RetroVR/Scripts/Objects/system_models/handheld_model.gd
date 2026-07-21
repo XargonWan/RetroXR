@@ -44,13 +44,33 @@ var _host: Node3D = null
 var _lcd_shader: Shader = null
 var _lcd_material: ShaderMaterial = null
 
+## When a subclass returns a GLB path from _glb_path(), the handheld swaps its
+## primitive stand-in shell for that detailed imported model (dev-only — the GLB lives
+## in export-excluded imported-assets/). Store builds (GLB absent) keep the authored
+## primitive shell, so on-device controls + screen still work everywhere.
+var _glb: Node3D = null
+
 
 func is_handheld() -> bool:
 	return true
 
 
+## Override to return a detailed shell GLB (else "" = keep the primitive shell).
+func _glb_path() -> String:
+	return ""
+
+## imported handheld GLBs are modelled upright (screen on +Z); RetroVR's frame is
+## lying flat with the screen on +Y, so the default lays it back. Override if a
+## particular GLB is authored differently.
+func _glb_rotation_degrees() -> Vector3:
+	return Vector3(-90, 0, 0)
+
+
 func _ready() -> void:
 	_cache_shell_nodes()
+	var gp := _glb_path()
+	if not gp.is_empty() and ResourceLoader.exists(gp):
+		_upgrade_to_glb(gp)
 
 
 ## Cache the authored shell nodes and read the device dimensions back from their
@@ -64,6 +84,94 @@ func _cache_shell_nodes() -> void:
 		body_size = (body.mesh as BoxMesh).size
 	if _screen and _screen.mesh is QuadMesh:
 		screen_size = (_screen.mesh as QuadMesh).size
+
+
+## Swap the primitive stand-in shell for the detailed GLB: lay it flat, recentre,
+## hide the GLB's bundled AV lead, adopt its flat screen quad as the live-picture
+## surface, hide the primitive shell meshes + control knobs (the GLB shows the real
+## ones), and move the power switch onto the GLB's switch marker. body_size is
+## re-read from the GLB so collision / cart slot / cable placement track it.
+func _upgrade_to_glb(path: String) -> void:
+	var scene := load(path) as PackedScene
+	if scene == null:
+		return
+	_glb = scene.instantiate() as Node3D
+	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if ap != null:
+		ap.autoplay = ""
+	_glb.rotation_degrees = _glb_rotation_degrees()
+	add_child(_glb)
+	_hide_glb_clutter(_glb)
+	# Centre the GLB on the model origin (handheld frame is centred; y=0 = mid-thickness).
+	var b := _glb_local_aabb(_glb)
+	_glb.position -= b.position + b.size * 0.5
+	b = _glb_local_aabb(_glb)
+	body_size = b.size
+	# The live picture keeps rendering on the KNOWN-GOOD primitive screen quad (proven
+	# UVs, the C++ video handler already targets it) — repositioned + resized onto the
+	# GLB's screen, raised a hair so it sits IN FRONT of the plastic lens. The GLB's
+	# own screen_mesh sits behind that opaque lens, so it's hidden.
+	var glb_screen := _glb.find_child("screen_mesh", true, false) as MeshInstance3D
+	if glb_screen != null and _screen != null:
+		var sab: AABB = glb_screen.global_transform * glb_screen.get_aabb()
+		var sctr := sab.position + sab.size * 0.5
+		_screen.global_position = sctr + Vector3(0.0, 0.0016, 0.0)
+		if _screen.mesh is QuadMesh:
+			var q := (_screen.mesh as QuadMesh).duplicate() as QuadMesh
+			# Small inset so the picture sits inside the bezel lip, not over it.
+			q.size = Vector2(sab.size.x, sab.size.z) * 0.92
+			_screen.mesh = q
+			screen_size = q.size
+		glb_screen.visible = false
+	# Hide the primitive stand-in shell meshes (keep the repositioned screen) + slider
+	# knobs — the GLB carries the real body, buttons and switch caps.
+	for child in get_children():
+		if child is MeshInstance3D and child != _screen:
+			(child as MeshInstance3D).visible = false
+	_hide_knob(_volume_slider)
+	_hide_knob(_power_switch)
+	# Move the power switch's interaction zone onto the GLB's real switch.
+	var pm := _glb.find_child("Power", true, false) as Node3D
+	if _power_switch != null and pm != null:
+		_power_switch.position = to_local(pm.global_position)
+
+
+func _hide_knob(slider: VRSlider) -> void:
+	if slider == null:
+		return
+	var k := slider.get_node_or_null("KnobMesh") as MeshInstance3D
+	if k != null:
+		k.visible = false
+
+
+## Hide the GLB's bundled AV lead / plug (RetroVR spawns its own video-out cable).
+func _hide_glb_clutter(root: Node3D) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null:
+			var nm := String(mi.name).to_lower()
+			if nm.contains("rca") or nm.contains("cable") or nm.contains("plug"):
+				mi.visible = false
+		for c in n.get_children():
+			stack.append(c)
+
+
+## Combined AABB of the GLB's visible meshes, in this model node's local space.
+func _glb_local_aabb(inst: Node3D) -> AABB:
+	var acc := AABB(); var first := true
+	var stack: Array[Node] = [inst]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null and mi.visible:
+			var ab: AABB = (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+			acc = ab if first else acc.merge(ab)
+			first = false
+		for ch in n.get_children():
+			stack.append(ch)
+	return acc
 
 
 ## Keep the LCD filter wrapped over the live core picture. Cheap identity checks
