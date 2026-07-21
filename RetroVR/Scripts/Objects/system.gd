@@ -17,6 +17,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	# export-excluded (imported-assets/*), and the model self-guards to re-show the
 	# placeholder box on any build that lacks the GLB. Licence still pending.
 	"playstation": "res://Scripts/Objects/system_models/playstation_one_model.gd",
+	"sega_saturn": "res://Scripts/Objects/system_models/sega_saturn_model.gd",
 }
 
 ## Maps systemid → authored model .tscn. The handheld shells (body, screen,
