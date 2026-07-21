@@ -43,3 +43,10 @@ mono_crash.*.json
 # Local libretro core root. On Linux default_core_root() is $HOME/retrovr/libretro,
 # which lands inside the repo when it's cloned at ~/retrovr. Never commit cores.
 /libretro/
+
+/roms/
+/dvd/
+/books/
+/audio/
+/videos/
+/music/
