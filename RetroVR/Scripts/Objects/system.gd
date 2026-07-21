@@ -13,6 +13,10 @@ const _MODEL_SCRIPTS: Dictionary = {
 	# "imported-assets/*" from the export preset's exclude_filter.
 	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
+	# Re-enabled dev-only (per user direction): an author's imported PSone. Its GLB is
+	# export-excluded (imported-assets/*), and the model self-guards to re-show the
+	# placeholder box on any build that lacks the GLB. Licence still pending.
+	"playstation": "res://Scripts/Objects/system_models/playstation_one_model.gd",
 }
 
 ## Maps systemid → authored model .tscn. The handheld shells (body, screen,
