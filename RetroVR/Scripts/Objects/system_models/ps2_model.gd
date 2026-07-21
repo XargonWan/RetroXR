@@ -10,8 +10,6 @@
 class_name RetroSystemModelPS2
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/ps2_slim.glb"
-
 var _glb: Node3D = null
 var _anim: AnimationPlayer = null
 var _lid: Node3D = null
@@ -19,19 +17,26 @@ var _lid_closed: Transform3D
 var _led: MeshInstance3D = null
 
 
+## Overridable so the Silver recolour can reuse all this wiring — the black and
+## silver PS2 Slim GLBs share node names and animations, only the shell differs.
+func _model_path() -> String:
+	return "res://imported-assets/ps2_slim.glb"
+
+
 func _ready() -> void:
 	# Store-safe guard — ResourceLoader.exists (NOT FileAccess; false in pck).
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("PS2Model: %s missing — using placeholder box" % _MODEL_PATH)
+	var path := _model_path()
+	if not ResourceLoader.exists(path):
+		push_warning("PS2Model: %s missing — using placeholder box" % path)
 		var host := get_parent()
 		if host:
 			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
 			if body:
 				body.show()
 		return
-	var ps := load(_MODEL_PATH) as PackedScene
+	var ps := load(path) as PackedScene
 	if ps == null:
-		push_warning("PS2Model: failed to load %s" % _MODEL_PATH)
+		push_warning("PS2Model: failed to load %s" % path)
 		return
 	_glb = ps.instantiate() as Node3D
 	# Disable the auto-played anim so the lid keeps its REST pose (= closed).

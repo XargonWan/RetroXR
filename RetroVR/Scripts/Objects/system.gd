@@ -51,6 +51,7 @@ const _MODEL_SCENES: Dictionary = {
 const _MODEL_VARIANTS: Dictionary = {
 	# Regional/colour badges reusing a base model (see SpawnCatalog for the menu item).
 	"mega_drive:megadrive": "res://Scripts/Objects/system_models/megadrive_model.gd",
+	"playstation2:silver": "res://Scripts/Objects/system_models/ps2_silver_model.gd",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
