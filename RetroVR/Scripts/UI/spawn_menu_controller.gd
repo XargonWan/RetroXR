@@ -38,6 +38,7 @@ const SPAWN_Y := {
 	"trash_can":        0.90,
 	"retro_controller": 0.80,
 	"dualshock":        0.80,
+	"dualshock2":       0.80,
 	"retro_mouse":      0.78,
 	"retro_keyboard":   0.78,
 	"retro_multitap":   0.80,
@@ -806,7 +807,11 @@ func _on_spawn_requested(type: String) -> void:
 		"dualshock":
 			# GLB lives in export-excluded imported-assets/ while its licence is
 			# pending, so load at runtime and skip gracefully if absent (e.g. Quest).
-			obj = _instantiate_dualshock()
+			obj = _instantiate_optional("res://imported-assets/dualshock.glb", "res://Scenes/Objects/dualshock.tscn")
+			if obj == null:
+				return
+		"dualshock2":
+			obj = _instantiate_optional("res://imported-assets/dualshock2.glb", "res://Scenes/Objects/dualshock2.tscn")
 			if obj == null:
 				return
 		"retro_mouse":
@@ -835,16 +840,14 @@ func _on_spawn_requested(type: String) -> void:
 		_place_spawned(obj, type)
 
 
-## Runtime-load the DualShock prop. Its model sits in the export-excluded
-## imported-assets/ dir (licence pending), so preloading would break any build
-## that omits it; this returns null gracefully when the asset isn't present.
-func _instantiate_dualshock() -> Node3D:
-	const DS_GLB := "res://imported-assets/dualshock.glb"
-	const DS_SCENE := "res://Scenes/Objects/dualshock.tscn"
-	if not ResourceLoader.exists(DS_GLB) or not ResourceLoader.exists(DS_SCENE):
-		push_warning("[spawn] DualShock asset not available in this build; skipping.")
+## Runtime-load a licence-pending prop whose GLB lives in the export-excluded
+## imported-assets/ dir. Preloading would break any build that omits it, so we
+## load at runtime and return null gracefully when the asset isn't present.
+func _instantiate_optional(glb_path: String, scene_path: String) -> Node3D:
+	if not ResourceLoader.exists(glb_path) or not ResourceLoader.exists(scene_path):
+		push_warning("[spawn] asset not available in this build; skipping: " + scene_path)
 		return null
-	var ps := load(DS_SCENE) as PackedScene
+	var ps := load(scene_path) as PackedScene
 	return ps.instantiate() as Node3D if ps else null
 
 

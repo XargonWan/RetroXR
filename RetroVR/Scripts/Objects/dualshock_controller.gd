@@ -88,7 +88,10 @@ func _find_pivot(mesh: MeshInstance3D, empty_name: String) -> Vector3:
 		if _norm(n.name) == target:
 			var n3d: Node3D = n as Node3D
 			return mesh.get_parent().to_local(n3d.global_position)
-	return Vector3.ZERO
+	# No pivot empty (e.g. the PS2 model ships none) — fall back to the mesh's
+	# own AABB centre so sticks/D-pad still rotate in place, not about the origin.
+	var a: AABB = mesh.get_aabb()
+	return mesh.transform * a.get_center()
 
 
 func _cache_meshes() -> void:
