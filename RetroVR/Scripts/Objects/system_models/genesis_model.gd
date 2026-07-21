@@ -6,33 +6,47 @@
 class_name RetroSystemModelGenesis
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/sega_genesis.glb"
-
 var _glb: Node3D = null
 var _led: MeshInstance3D = null
 
 
+## Overridable so regional badges (Mega Drive) can reuse all this wiring — the
+## Genesis and Mega Drive Model 1 GLBs share node names, only the shell differs.
+func _model_path() -> String:
+	return "res://imported-assets/sega_genesis.glb"
+
+
 func _ready() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("GenesisModel: %s missing — using placeholder box" % _MODEL_PATH)
+	var path := _model_path()
+	if not ResourceLoader.exists(path):
+		push_warning("GenesisModel: %s missing — using placeholder box" % path)
 		var host := get_parent()
 		if host:
 			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
 			if body:
 				body.show()
 		return
-	var scene := load(_MODEL_PATH) as PackedScene
+	var scene := load(path) as PackedScene
 	if scene == null:
-		push_warning("GenesisModel: failed to load %s" % _MODEL_PATH)
+		push_warning("GenesisModel: failed to load %s" % path)
 		return
 	_glb = scene.instantiate() as Node3D
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
 	add_child(_glb)
-	var rca := _glb.find_child("RCA_Silver", true, false) as Node3D
-	if rca != null:
-		rca.visible = false
+	# Hide the bundled AV plug and imported's invisible "Finger Button" trigger proxies
+	# (they import as untextured white meshes). RetroVR drives the buttons itself.
+	var stack: Array[Node] = [_glb]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null:
+			var nm := String(mi.name).to_lower()
+			if nm.contains("rca_silver") or nm.contains("finger"):
+				mi.visible = false
+		for ch in n.get_children():
+			stack.append(ch)
 	var b := _model_aabb(_glb)
 	var c := b.position + b.size * 0.5
 	_glb.position = Vector3(-c.x, -b.position.y, -c.z)   # recentre + rest base on ground
@@ -60,6 +74,16 @@ func _anchor(marker: String) -> Vector3:
 		return global_position
 	var n := _glb.find_child(marker, true, false) as Node3D
 	return n.global_position if n != null else global_position
+
+
+## First matching marker's world position (markers differ across regional GLBs).
+func _anchor_any(markers: Array) -> Vector3:
+	if _glb != null:
+		for m in markers:
+			var n := _glb.find_child(m, true, false) as Node3D
+			if n != null:
+				return n.global_position
+	return global_position
 
 
 func _mesh_center(mesh_name: String) -> Vector3:
@@ -121,7 +145,8 @@ func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	attach_point.global_position = _anchor("socket_av")
+	# Genesis GLB marks it "socket_av"; the Mega Drive GLB uses "Cable Plug (S)".
+	attach_point.global_position = _anchor_any(["socket_av", "Cable Plug (S)"])
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false

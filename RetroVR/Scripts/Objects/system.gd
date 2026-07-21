@@ -48,7 +48,10 @@ const _MODEL_SCENES: Dictionary = {
 ## Optional per-variant model overrides, keyed "<systemid>:<variant>".
 ## Empty for now — the framework is in place so a new model variant is added by
 ## dropping a "<systemid>:<variant>" → script entry here (plus a SpawnCatalog item).
-const _MODEL_VARIANTS: Dictionary = {}
+const _MODEL_VARIANTS: Dictionary = {
+	# Regional/colour badges reusing a base model (see SpawnCatalog for the menu item).
+	"mega_drive:megadrive": "res://Scripts/Objects/system_models/megadrive_model.gd",
+}
 
 ## The libretro core filename (without extension), e.g. "fceumm".
 ## If empty at power_on(), looked up from CoreDefaults using systemid.
