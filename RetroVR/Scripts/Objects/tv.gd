@@ -689,7 +689,56 @@ func set_tv_scale(factor: float) -> void:
 
 
 func _apply_scale() -> void:
+	# Grow/shrink away from whatever the TV is resting on rather than about its
+	# own origin. Scaling about the origin drives the bottom of the TV down into
+	# the table it is sitting on, and the solver resolves that penetration by
+	# ejecting it downward — the TV drops through the surface and falls out of
+	# the world. Pinning the lowest point keeps the contact intact, so the extra
+	# size grows upward instead.
+	#
+	# The bottom is derived from cached unscaled local bounds rather than
+	# re-measured in world space each time: a child's global_transform is still
+	# stale in the frame its parent's scale changes, so measuring after the
+	# write reads back pre-scale values and the correction cancels to nothing.
+	var previous := scale.y
 	scale = Vector3.ONE * scale_factor
+	# bottom_world = origin_y + s * local_bottom, so holding it fixed means
+	# shifting the origin by (old_s - new_s) * local_bottom.
+	global_position.y += (previous - scale_factor) * _local_bottom_y()
+
+
+## Lowest point of the TV's mesh geometry along Y, in local space at scale 1.
+## Cached: the meshes never move relative to the TV, so this is a constant.
+##
+## Only MeshInstance3D counts. A VisualInstance3D sweep would also pick up the
+## Ambilight SpotLight3D, whose AABB is its light cone — that reaches far below
+## the cabinet, and anchoring to it would lift the TV clean off the table.
+var _local_bottom_y_cache: float = NAN
+
+
+func _local_bottom_y() -> float:
+	if not is_nan(_local_bottom_y_cache):
+		return _local_bottom_y_cache
+	var to_local := global_transform.affine_inverse()
+	var lowest := INF
+	for mi: MeshInstance3D in _mesh_instances(self):
+		var box := mi.get_aabb()
+		var xf := to_local * mi.global_transform
+		for i in range(8):
+			lowest = minf(lowest, (xf * box.get_endpoint(i)).y)
+	# to_local already divided out the current scale, so this is the scale-1
+	# offset and stays valid however the TV is resized later.
+	_local_bottom_y_cache = 0.0 if is_inf(lowest) else lowest
+	return _local_bottom_y_cache
+
+
+func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
+	var found: Array[MeshInstance3D] = []
+	if node is MeshInstance3D and (node as MeshInstance3D).visible:
+		found.append(node as MeshInstance3D)
+	for child in node.get_children():
+		found.append_array(_mesh_instances(child))
+	return found
 
 
 func _on_tv_grabbed(_pickable: Node3D, _by: Node3D) -> void:
