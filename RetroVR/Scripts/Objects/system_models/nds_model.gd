@@ -27,6 +27,153 @@ func get_forced_core_options() -> Dictionary:
 	}
 
 
+## Insets from the base half's front-left corner, used only when the shell
+## doesn't model the slider as its own mesh (the Phat bakes it into the body).
+const _VOL_EDGE_INSET := 0.004
+const _VOL_FRONT_INSET := 0.020
+
+
+## Power LED. The DS Lite ships a lit/unlit mesh PAIR ("lights on" / "lights
+## off", coincident at the front-right corner) to swap between; the Phat bakes
+## its LED into the body and only marks the spot with a "Power Light" empty, so
+## a small emissive dot is built there instead. Green, like the hardware.
+const _LED_SIZE := Vector3(0.003, 0.002, 0.005)
+const _LED_COLOR := Color(0.35, 1.0, 0.35)
+
+var _led_on: MeshInstance3D = null
+var _led_off: MeshInstance3D = null
+
+
+func _ready() -> void:
+	super()
+	_place_volume_slider()
+	_setup_power_light()
+	_set_power_light(false)
+
+
+func _setup_power_light() -> void:
+	_led_on = find_child("lights on", true, false) as MeshInstance3D
+	_led_off = find_child("lights off", true, false) as MeshInstance3D
+	if _led_on != null:
+		return
+	var marker := find_child("Power Light", true, false) as Node3D
+	if marker == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "PowerLed"
+	var bm := BoxMesh.new()
+	bm.size = _LED_SIZE
+	mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = _LED_COLOR
+	mat.emission_enabled = true
+	mat.emission = _LED_COLOR
+	mat.emission_energy_multiplier = 2.5
+	mi.set_surface_override_material(0, mat)
+	add_child(mi)
+	mi.global_position = marker.global_position
+	_led_on = mi
+
+
+func _set_power_light(on: bool) -> void:
+	if _led_on != null:
+		_led_on.visible = on
+	if _led_off != null:
+		_led_off.visible = not on
+
+
+func on_power_on() -> void:
+	super()
+	_set_power_light(true)
+
+
+func on_power_off() -> void:
+	super()
+	_set_power_light(false)
+
+
+## Put the power control's touch zone on the shell's REAL power switch.
+##
+## The dual-screen base places a generic power button proportionally on the front
+## face (body_size.x * 0.36) and BUILDS a little cylinder mesh for it, because a
+## primitive clamshell has no power switch to point at. Both DS shells do model
+## one, so that stand-in ended up as a floating puck on the front lip while the
+## actual switch sat unused: the Lite models it as a mesh ("Power Slider", right
+## edge at x=+0.070); the Phat bakes it into the body but still marks it with a
+## "Power" empty (left edge, x=-0.057). Prefer the mesh, fall back to the marker,
+## and drop the synthetic puck in either case — the shell already draws a switch.
+func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
+	super(power_btn, reset_btn, eject_btn)
+	if power_btn == null:
+		return
+	var mesh := find_child("Power Slider", true, false) as MeshInstance3D
+	var marker := find_child("Power", true, false) as Node3D
+	var where := Vector3.ZERO
+	if mesh != null and mesh.mesh != null:
+		where = (mesh.global_transform * mesh.get_aabb() as AABB).get_center()
+		power_btn.set_button_mesh(mesh)
+	elif marker != null:
+		where = marker.global_position
+	else:
+		return   # no real switch on this shell: keep the base's stand-in
+	var puck := power_btn.get_node_or_null("HandheldPowerMesh") as MeshInstance3D
+	if puck != null and puck != mesh:
+		puck.hide()
+	power_btn.global_position = where
+	# The label is authored to sit under a front-face puck; on a side-edge switch
+	# it would float off the shell, and the hardware is self-explanatory.
+	var lbl := power_btn.get_node_or_null("ButtonLabel") as Label3D
+	if lbl != null:
+		lbl.hide()
+
+
+## Put the volume slider's touch zone on the shell's REAL volume control.
+##
+## Both DS scenes authored it at x=+0.0685 — which is the POWER switch side. The
+## base moves the power switch onto the GLB's "Power" marker (Lite: x=+0.0701),
+## so the two controls ended up 1.5 mm apart, each with a 2.8 cm engage radius:
+## reaching for one was indistinguishable from the other, and the volume slider
+## wasn't anywhere near the real hardware's slider.
+##
+## The DS Lite models the control ("Volume Slider" mesh, front-left at
+## x=-0.0554, z=+0.0384), so use it directly. The Phat bakes its buttons and
+## sliders into the body mesh, leaving nothing to snap to — fall back to the
+## base half's front-left edge, which is where the slider sits on real hardware.
+func _place_volume_slider() -> void:
+	var vs := get_node_or_null("VolumeSlider") as Node3D
+	if vs == null:
+		return
+	var mesh := find_child("Volume Slider", true, false) as MeshInstance3D
+	if mesh != null and mesh.mesh != null:
+		var ab: AABB = mesh.global_transform * mesh.get_aabb()
+		vs.global_position = ab.get_center()
+		return
+	var base := _base_half_aabb()
+	if base.size.x <= 0.0001:
+		return
+	vs.position = Vector3(base.position.x + _VOL_EDGE_INSET,
+		base.get_center().y, base.end.z - _VOL_FRONT_INSET)
+
+
+## Bounds of the lower half only, in model space. The lid meshes are reparented
+## onto LidPivot by the base's upgrade pass, so whatever is still under Shell IS
+## the base half.
+func _base_half_aabb() -> AABB:
+	var shell := get_node_or_null("Shell") as Node3D
+	if shell == null:
+		return AABB()
+	var acc := AABB()
+	var first := true
+	for n in shell.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or not mi.visible:
+			continue
+		var ab: AABB = (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+		acc = ab if first else acc.merge(ab)
+		first = false
+	return acc
+
+
 func _init() -> void:
 	# Stacked 256×384 composite: top half / bottom half.
 	top_uv_rect = Rect2(0.0, 0.0, 1.0, 0.5)
