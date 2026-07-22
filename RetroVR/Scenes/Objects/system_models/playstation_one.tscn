@@ -6,13 +6,35 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_lidgrab"]
 size = Vector3(0.11, 0.022, 0.03)
 
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.1934, 0.0371, 0.1438)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_shell"]
+albedo_color = Color(0.82, 0.82, 0.84, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_lid"]
+size = Vector3(0.1307, 0.0141, 0.1378)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lid"]
+albedo_color = Color(0.78, 0.78, 0.8, 1)
+
 [node name="PlaystationOne" type="Node3D" unique_id=1919100000]
 script = ExtResource("1_psone")
+
+[node name="ConsoleBody" type="MeshInstance3D" parent="." unique_id=1919100005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.019, 0)
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("StandardMaterial3D_shell")
 
 [node name="LidMount" type="Node3D" parent="." unique_id=1919100004]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.0262, -0.0717)
 
 [node name="LidPivot" type="Node3D" parent="LidMount" unique_id=1919100001]
+
+[node name="LidPlate" type="MeshInstance3D" parent="LidMount/LidPivot" unique_id=1919100006]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.007, -0.0689)
+mesh = SubResource("BoxMesh_lid")
+surface_material_override/0 = SubResource("StandardMaterial3D_lid")
 
 [node name="LidHinge" type="Area3D" parent="LidMount/LidPivot" unique_id=1919100002 node_paths=PackedStringArray("target")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.007, -0.1378)

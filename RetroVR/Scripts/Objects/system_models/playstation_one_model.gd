@@ -24,13 +24,11 @@ var _hinge: VRHinge = null
 
 func _ready() -> void:
 	# Store-safe guard — ResourceLoader.exists (NOT FileAccess; false in pck).
+	# The scene's own stand-in shell (ConsoleBody + LidPlate) is the fallback and
+	# is already visible, so there's nothing to switch on: it's a PSone-shaped
+	# body with a working hinge rather than the host's generic SystemBody box.
 	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("PlaystationOneModel: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
+		push_warning("PlaystationOneModel: %s missing — using the scene's stand-in shell" % _MODEL_PATH)
 		return
 	var ps := load(_MODEL_PATH) as PackedScene
 	if ps == null:
@@ -51,6 +49,13 @@ func _ready() -> void:
 	# Recentre on the console body in X/Z (base already rests near y=0).
 	var xz := _visible_xz_center(_glb)
 	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
+	# The real shell is in — retire the scene's stand-in boxes. They exist so the
+	# .tscn shows a PSone (and a swingable lid) when opened in the editor, where
+	# the GLB isn't instanced, and so a build without the GLB still gets a shell.
+	for path in ["ConsoleBody", "LidMount/LidPivot/LidPlate"]:
+		var ph := get_node_or_null(path) as MeshInstance3D
+		if ph != null:
+			ph.hide()
 	_mount_lid()
 
 
@@ -82,6 +87,10 @@ func _anchor(marker: String) -> Vector3:
 ## Half-depth of the scene's PortRecess/slot box, so the recess sits FLUSH in the
 ## front face rather than half-buried or floating proud of it.
 const _PORT_INSET := 0.0025
+## memory_card.tscn's box is 75 mm along its Z (the insertion axis); leave this
+## much of it standing proud of the face when seated.
+const _CARD_LENGTH := 0.075
+const _CARD_PROTRUDE := 0.022
 
 
 ## World-space centre of a GLB mesh's bounding box. Preferred over the marker
@@ -268,7 +277,13 @@ func configure_controller_ports(port_zones: Array) -> void:
 		if lbl != null:
 			lbl.hide()
 		if i < cols.size():
-			port_zones[i].global_position = Vector3(cols[i].x, y, z)
+			# Yawed 180°: a ControllerPlug's connector points down its +Z with the
+			# cable trailing -Z, so seated square-on to a FRONT-facing port it
+			# would drive the tip out of the console and run the lead in through
+			# the shell. Turn the zone to face the player instead.
+			port_zones[i].global_transform = Transform3D(
+				global_transform.basis * Basis(Vector3.UP, PI),
+				Vector3(cols[i].x, y, z))
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
@@ -283,7 +298,12 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 ## which put the card in mid-air above the console.)
 func configure_memory_card_slot(slot: Node3D) -> void:
 	var c := _mesh_center("psone_memcard_slot_01")
-	slot.global_position = Vector3(c.x, c.y, _front_face_z() - _PORT_INSET)
+	# Sunk in by half the card's length less _CARD_PROTRUDE: the zone seats a card
+	# on its CENTRE, so parking it on the face alone left the card half-hanging
+	# out of the console like a shelf. Seat it inserted, with a real card's worth
+	# of grip left proud so it can still be pulled back out.
+	slot.global_position = Vector3(c.x, c.y,
+		_front_face_z() - _PORT_INSET - (_CARD_LENGTH * 0.5 - _CARD_PROTRUDE))
 
 
 func configure_collision(host: Node3D) -> void:
