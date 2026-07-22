@@ -133,7 +133,11 @@ func _wire_button(btn: VRButton, mesh_name: String, anchor: String) -> void:
 
 # --- disc seat / ports / cable / memory card ---
 func configure_cartridge_slot(slot: Node3D) -> void:
-	slot.global_position = _anchor("spindle")   # RetroDisc seats on the CD rotor
+	# Seat the disc on socket_media, NOT the spindle: the spindle marker sits at
+	# the rotor's own height (y≈0.0245), which is *inside* the laser assembly
+	# (y 0.0212–0.0290) — the disc sank into the mechanism instead of resting on
+	# it. socket_media is the same point raised clear of the laser cover.
+	slot.global_position = _anchor("socket_media")
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
