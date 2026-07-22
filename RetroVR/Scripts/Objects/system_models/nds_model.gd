@@ -28,3 +28,15 @@ func _init() -> void:
 	top_uv_rect = Rect2(0.0, 0.0, 1.0, 0.5)
 	bottom_uv_rect = Rect2(0.0, 0.5, 1.0, 0.5)
 	cart_size = Vector3(0.033, 0.035, 0.004)   # DS Game Card
+
+
+## Detailed DS Lite shell (an author imported). Export-excluded — store builds keep
+## the primitive clamshell authored in nds.tscn.
+func _glb_path() -> String:
+	return "res://imported-assets/ds_lite.glb"
+
+
+## The upper clamshell half (folds with the hinge); the top screen lens + its
+## dark backing panel are handled by the base. Everything else = the base half.
+func _lid_mesh_names() -> PackedStringArray:
+	return PackedStringArray(["Top"])

@@ -77,6 +77,9 @@ func name_label_placement() -> Dictionary:
 
 func _ready() -> void:
 	_cache_dual_nodes()
+	var gp := _glb_path()
+	if not gp.is_empty() and ResourceLoader.exists(gp):
+		_upgrade_dual_to_glb(gp)
 	# Window materials, ready before the first frame of core output.
 	_top_mat = ShaderMaterial.new()
 	_top_mat.shader = SCREEN_WINDOW_SHADER
@@ -86,6 +89,227 @@ func _ready() -> void:
 	await get_tree().process_frame
 	for node in get_tree().root.find_children("*", "XRController3D", true, false):
 		_touch_controllers.append(node as XRController3D)
+
+
+## Override to return a detailed clamshell GLB (imported); "" keeps the primitive
+## shell (store builds — imported-assets/* is export-excluded).
+func _glb_path() -> String:
+	return ""
+
+
+## Exact mesh names in the GLB that belong to the LID (fold with the hinge).
+## Everything else is the base half. Override per device.
+func _lid_mesh_names() -> PackedStringArray:
+	return PackedStringArray()
+
+
+## Swap the primitive clamshell for the detailed GLB. The base script's runtime
+## nodes stay authoritative — the live TopScreen/BottomScreen picture quads, the
+## ProxyScreen, the TouchScreen pad, the grabbable LidHinge — but they get moved
+## onto the GLB's real geometry: centre the base half at the origin, split the
+## lid meshes onto LidPivot so they fold with the hinge (LidPivot's rest rotation
+## derived from the top lens's normal, its pivot from where the lid plane meets
+## the base's top face), drop the picture quads onto the GLB screen lenses, resize
+## the base collision + touch pad, and hide the primitive stand-ins, the GLB's own
+## opaque screen lenses, and its bundled AV lead. Idempotent (skips if the base
+## is already GLB-scaled from a prior run / baked scene).
+func _upgrade_dual_to_glb(path: String) -> void:
+	if _lid_pivot == null or _screen == null or _bottom_screen == null:
+		return
+	# Fully baked into the .tscn already (Shell + reparented lid + placed screens
+	# + hidden primitives authored in the scene) — nothing to do at runtime.
+	if has_meta("dual_glb_baked"):
+		return
+	var shell := get_node_or_null("Shell") as Node3D
+	if shell == null:
+		var scene := load(path) as PackedScene
+		if scene == null:
+			return
+		shell = scene.instantiate() as Node3D
+		shell.name = "Shell"
+		var ap := shell.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if ap != null:
+			ap.autoplay = ""
+		add_child(shell)
+	_hide_glb_clutter(shell)
+
+	# Split GLB meshes into lid vs base, and grab the two GLB screen lenses.
+	var lidnames := _lid_mesh_names()
+	var lid_meshes: Array[MeshInstance3D] = []
+	var glb_top: MeshInstance3D = null
+	var glb_bottom: MeshInstance3D = null
+	var base_aabb := AABB()
+	var base_first := true
+	var stack: Array[Node] = [shell]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null:
+			var nm := String(mi.name)
+			if nm == "screen_mesh Top":
+				glb_top = mi
+			elif nm == "screen_mesh Bottom":
+				glb_bottom = mi
+			elif nm.to_lower().contains("backface"):
+				mi.visible = false   # dark LCD backing — the live picture quad replaces it
+			elif mi.visible:
+				if lidnames.has(nm):
+					lid_meshes.append(mi)
+				else:
+					var ab := _local_aabb(mi)
+					base_aabb = ab if base_first else base_aabb.merge(ab)
+					base_first = false
+		for c in n.get_children():
+			stack.append(c)
+	if glb_top == null or glb_bottom == null or base_first:
+		return
+
+	# Centre the base half on the model origin (base mid-thickness → y=0) — unless
+	# it's already centred (a baked scene where the Shell was authored pre-centred).
+	var base_ctr := base_aabb.position + base_aabb.size * 0.5
+	if base_ctr.length() > 0.001:
+		shell.position -= base_ctr
+	body_size = base_aabb.size
+	var base_top_y := base_aabb.size.y * 0.5
+
+	var top_ab := _local_aabb(glb_top)
+	var top_ctr := top_ab.position + top_ab.size * 0.5
+	var bot_ab := _local_aabb(glb_bottom)
+	var bot_ctr := bot_ab.position + bot_ab.size * 0.5
+
+	# Hinge at the base's back-top edge (the clamshell pivot). The lid's open angle
+	# is the direction hinge → top-lens centre; the top screen's outward normal is
+	# perpendicular to that, facing up-and-forward. Derive orientation from the
+	# FOLD, not the GLB lens-mesh normals — on some devices `screen_mesh Top` is a
+	# small angled trim strip whose normal doesn't match the lid's screen plane.
+	var hinge := Vector3(0.0, base_top_y, -base_aabb.size.z * 0.5)
+	var lid_dir := top_ctr - hinge
+	lid_dir.x = 0.0
+	lid_dir = lid_dir.normalized()
+	var top_n := Vector3(0.0, -lid_dir.z, lid_dir.y).normalized()
+	if top_n.y < 0.0:
+		top_n = -top_n
+	var rest_rot := top_n.angle_to(Vector3.UP)
+	_lid_pivot.transform = Transform3D(Basis(Vector3.RIGHT, rest_rot), hinge)
+
+	# Split the lid meshes onto LidPivot so they fold with the hinge; the live
+	# TopScreen quad already rides there (authored under LidPivot).
+	for mi in lid_meshes:
+		mi.reparent(_lid_pivot, true)
+
+	# Live picture quads onto the GLB lenses (a hair proud of the opaque lens so
+	# the picture wins the depth test), sized to the lens, facing its normal.
+	var top_size := Vector2(maxf(top_ab.size.x, 0.001),
+		maxf(sqrt(top_ab.size.y * top_ab.size.y + top_ab.size.z * top_ab.size.z), 0.001))
+	# Raise each live quad clear of the lid/base outer glass (part of the shell
+	# meshes, which render opaque here) so the picture wins the depth test — the
+	# offset scales with how deep the lid's own screen surface sits over the lens.
+	var top_clear := _lens_clearance(top_ctr, top_n, maxf(top_size.x, top_size.y) * 0.5)
+	_place_screen(_screen, top_ctr + top_n * top_clear, top_n, top_size)
+	var bot_size := Vector2(maxf(bot_ab.size.x, 0.001), maxf(bot_ab.size.z, 0.001))
+	var bot_clear := _lens_clearance(bot_ctr, Vector3.UP, maxf(bot_size.x, bot_size.y) * 0.5)
+	_place_screen(_bottom_screen, bot_ctr + Vector3.UP * bot_clear, Vector3.UP, bot_size)
+	bottom_screen_size = bot_size
+	if _screen.mesh is QuadMesh:
+		var qt := (_screen.mesh as QuadMesh).duplicate() as QuadMesh
+		qt.size = top_size
+		_screen.mesh = qt
+	if _bottom_screen.mesh is QuadMesh:
+		var qb := (_bottom_screen.mesh as QuadMesh).duplicate() as QuadMesh
+		qb.size = bot_size
+		_bottom_screen.mesh = qb
+
+	# ProxyScreen + TouchScreen ride the bottom lens.
+	if _proxy != null:
+		_proxy.position = to_local(_bottom_screen.global_position)
+	if _touch != null:
+		_touch.global_position = _bottom_screen.global_position
+		var tcol := _touch.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		if tcol != null and tcol.shape is BoxShape3D:
+			tcol.shape = tcol.shape.duplicate()
+			(tcol.shape as BoxShape3D).size = Vector3(bot_size.x, 0.012, bot_size.y)
+
+	# Hide the GLB's opaque lenses (the live quads replace them) and every
+	# authored primitive stand-in (body, lid, bezels, buttons, knobs — anywhere in
+	# the tree, incl. under LidPivot) — the GLB shell carries the real ones. Keep
+	# the live picture quads and the reparented GLB lid meshes.
+	glb_top.visible = false
+	glb_bottom.visible = false
+	var keep: Array = [_screen, _bottom_screen, _proxy]
+	for lm in lid_meshes:
+		keep.append(lm)
+	var hstack: Array[Node] = [self]
+	while not hstack.is_empty():
+		var hn: Node = hstack.pop_back()
+		var hmi := hn as MeshInstance3D
+		if hmi != null and not keep.has(hmi) and not shell.is_ancestor_of(hmi):
+			hmi.visible = false
+		for hc in hn.get_children():
+			hstack.append(hc)
+
+
+## How far the shell's own (opaque) glass/surface sits over a lens along its
+## normal, so the live picture quad can be raised just clear of it. Samples the
+## shell body meshes within the screen footprint; falls back to a small default.
+func _lens_clearance(center: Vector3, normal: Vector3, radius: float) -> float:
+	var shell := get_node_or_null("Shell") as Node3D
+	if shell == null:
+		return 0.0016
+	var n := normal.normalized()
+	var best := 0.0
+	var stack: Array[Node] = [shell]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		var mi := node as MeshInstance3D
+		if mi != null and mi.visible and mi.mesh != null:
+			var nm := String(mi.name)
+			if not nm.begins_with("screen_mesh") and not nm.to_lower().contains("rca"):
+				var xf := global_transform.affine_inverse() * mi.global_transform
+				var arr := mi.mesh.surface_get_arrays(0)
+				var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+				for v in verts:
+					var p := xf * v - center
+					var along := p.dot(n)
+					if along <= 0.0 or along >= 0.02:
+						continue
+					if (p - n * along).length() <= radius:
+						best = maxf(best, along)
+		for c in node.get_children():
+			stack.append(c)
+	return best + 0.0008
+
+
+## Position + orient a screen quad (QuadMesh normal is +Z) to face `normal` at
+## `where`, both given in this model node's LOCAL space. Set via global_transform
+## so it's correct regardless of the quad's parent (TopScreen rides LidPivot).
+func _place_screen(quad: MeshInstance3D, where: Vector3, normal: Vector3, _size: Vector2) -> void:
+	var z := normal.normalized()
+	var up_hint := Vector3.FORWARD if absf(z.dot(Vector3.UP)) > 0.99 else Vector3.UP
+	var x := up_hint.cross(z)
+	if x.length() < 1e-5:
+		x = Vector3.RIGHT
+	x = x.normalized()
+	var y := z.cross(x).normalized()
+	quad.global_transform = global_transform * Transform3D(Basis(x, y, z), where)
+
+
+## Bundled AV lead / plug (RetroVR spawns its own video-out cables).
+func _hide_glb_clutter(root: Node3D) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null:
+			var nm := String(mi.name).to_lower()
+			if nm.contains("rca") or nm.contains("cable") or nm.contains("plug"):
+				mi.visible = false
+		for c in n.get_children():
+			stack.append(c)
+
+
+## AABB of a mesh in this model node's local space.
+func _local_aabb(mi: MeshInstance3D) -> AABB:
+	return (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
 
 
 ## Cache the authored shell nodes and read the dimensions the runtime logic needs.
