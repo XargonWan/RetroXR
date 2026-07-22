@@ -58,6 +58,10 @@ const _CATALOG: Dictionary = {
 		{"kind": "system",     "label": "Console",    "variant": ""},
 		{"kind": "peripheral", "label": "Controller", "spawn": "n64_controller"},
 	],
+	"nds": [
+		{"kind": "system", "label": "Nintendo DS", "variant": ""},
+		{"kind": "system", "label": "DS Lite",     "variant": "lite"},
+	],
 }
 
 

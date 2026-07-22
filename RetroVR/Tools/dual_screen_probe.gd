@@ -104,7 +104,7 @@ func _check_model(path: String, want_top: Rect2, want_bottom: Rect2) -> void:
 
 
 func _ready() -> void:
-	await _check_model("res://Scenes/Objects/system_models/nds.tscn",
+	await _check_model("res://Scenes/Objects/system_models/nds_lite.tscn",
 		Rect2(0, 0, 1, 0.5), Rect2(0, 0.5, 1, 0.5))
 	await _check_model("res://Scenes/Objects/system_models/n3ds.tscn",
 		Rect2(0, 0, 0.5, 0.5), Rect2(0.05, 0.5, 0.4, 0.5))

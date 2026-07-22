@@ -59,6 +59,14 @@ const _MODEL_VARIANTS: Dictionary = {
 	"nes:famicom": "res://Scripts/Objects/system_models/famicom_model.gd",
 }
 
+## Per-variant authored .tscn models — the scene-level twin of _MODEL_VARIANTS,
+## for variants whose shell is an editable scene rather than a bare script.
+## Checked FIRST, so a variant can override a system's default scene.
+const _MODEL_SCENE_VARIANTS: Dictionary = {
+	# "nds" is the original DS (Phat); the DS Lite is the later revision.
+	"nds:lite": "res://Scenes/Objects/system_models/nds_lite.tscn",
+}
+
 ## The libretro core filename (without extension), e.g. "fceumm".
 ## If empty at power_on(), looked up from CoreDefaults using systemid.
 @export var core_name: String = ""
@@ -367,10 +375,15 @@ func _load_system_model() -> void:
 	# Authored .tscn model (handhelds): instantiate the editable scene. Its root
 	# carries the RetroSystemModel* script, so every configure_* call below is
 	# unchanged. A per-variant script override (rare) still wins over the scene.
-	if _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
-		var packed := load(_MODEL_SCENES[systemid]) as PackedScene
+	var scene_path: String = ""
+	if _MODEL_SCENE_VARIANTS.has(vkey):
+		scene_path = _MODEL_SCENE_VARIANTS[vkey]
+	elif _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
+		scene_path = _MODEL_SCENES[systemid]
+	if not scene_path.is_empty():
+		var packed := load(scene_path) as PackedScene
 		if not packed:
-			push_warning("RetroSystem: failed to load model scene: %s" % _MODEL_SCENES[systemid])
+			push_warning("RetroSystem: failed to load model scene: %s" % scene_path)
 			return
 		_model = packed.instantiate() as RetroSystemModel
 		is_bespoke = true

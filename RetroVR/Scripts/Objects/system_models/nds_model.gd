@@ -1,4 +1,8 @@
-## RetroSystemModelNDS — Nintendo DS (clamshell, two 256×192 screens).
+## RetroSystemModelNDS — Nintendo DS, the original "Phat" (clamshell, two
+## 256×192 screens). This is the DEFAULT nds model; the later DS Lite is the
+## "nds:lite" variant (nds_lite_model.gd), which subclasses this and swaps only
+## the shell GLB — every dual-screen behaviour below is shared.
+##
 ## melonDS/desmume default layout: top/bottom stacked in one 256×384
 ## framebuffer — top half = top screen, bottom half = touch screen.
 ## Two video-out cables (TOP / BOTTOM, from the dual-screen base); tapping a
@@ -30,10 +34,14 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # DS Game Card
 
 
-## Detailed DS Lite shell (an author imported). Export-excluded — store builds keep
+## Detailed DS Phat shell (an author imported). Export-excluded — store builds keep
 ## the primitive clamshell authored in nds.tscn.
+##
+## Unlike nds_lite.tscn, this scene is NOT baked (no dual_glb_baked meta and no
+## authored Shell child), so the dual-screen base instantiates the GLB and does
+## the lid split / screen placement / collision fit at runtime.
 func _glb_path() -> String:
-	return "res://imported-assets/ds_lite.glb"
+	return "res://imported-assets/ds_phat.glb"
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens + its
