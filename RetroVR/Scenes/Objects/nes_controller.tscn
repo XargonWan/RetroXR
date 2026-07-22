@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bnescontrollerv1a"]
+[gd_scene format=3 uid="uid://c38a04up68i3a"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/nes_controller.gd" id="1_nesscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]

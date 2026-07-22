@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bn64controllerv1a"]
+[gd_scene format=3 uid="uid://x2essgwckapc"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/n64_controller.gd" id="1_n64script"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]

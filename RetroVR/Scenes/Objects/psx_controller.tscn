@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bpsxcontrollerv1a"]
+[gd_scene format=3 uid="uid://djv8a8rfru5bg"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/psx_controller.gd" id="1_psxscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
