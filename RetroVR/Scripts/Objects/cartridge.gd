@@ -33,12 +33,72 @@ const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/cartridge_options_panel.ts
 var _options_panel: Node3D = null
 
 
+## Real per-system cartridge models (imported). Export-excluded, so a store build
+## silently falls back to the procedural box.
+const _CART_MODELS := {
+	"nds": "res://imported-assets/nds_cart.glb",
+	"3ds": "res://imported-assets/n3ds_cart.glb",
+}
+
+## The model's own swappable label face, when a real cart model is in use.
+var _model_label: MeshInstance3D = null
+
+
 func _ready() -> void:
 	if save_id.is_empty():
 		save_id = "%08x%08x" % [randi(), randi()]
 	_update_label()
 	_apply_system_size()
+	_apply_cart_model()
 	_apply_label_art()
+
+
+## Swap the procedural box for this system's real cartridge model when one ships.
+## The GLB's body runs +Y from its connector at the origin with the label on +Z —
+## the same frame the framework uses — so centring its AABB lands it correctly
+## (connector -Y, grip +Y, label +Z) and everything downstream (snap pose, seated
+## grab stub, insert animation) keeps working unchanged.
+func _apply_cart_model() -> void:
+	if _model_label != null or has_node("CartModel"):
+		return
+	var path: String = _CART_MODELS.get(systemid, "")
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return
+	var scene := load(path) as PackedScene
+	if scene == null:
+		return
+	var glb := scene.instantiate() as Node3D
+	glb.name = "CartModel"
+	add_child(glb)
+	var ab := _cart_model_aabb(glb)
+	if ab.size.y <= 0.0001:
+		return
+	# Scale the (oversized) model down to the system's real card dimensions.
+	var s := MediaDimensions.cart_size(systemid)
+	var k: float = minf(s.x / maxf(ab.size.x, 0.0001), s.y / maxf(ab.size.y, 0.0001))
+	glb.scale = Vector3(k, k, k)
+	glb.position = -(ab.position + ab.size * 0.5) * k
+	var desync := glb.find_child("Desync", true, false) as MeshInstance3D
+	if desync != null:
+		desync.visible = false
+	_model_label = glb.find_child("media_label", true, false) as MeshInstance3D
+	# The procedural stand-ins are replaced by the real shell.
+	for nm in ["CartridgeMesh", "LabelMesh", "GameLabel"]:
+		var n := get_node_or_null(nm) as Node3D
+		if n != null:
+			n.visible = false
+
+
+func _cart_model_aabb(root: Node3D) -> AABB:
+	var acc := AABB(); var first := true
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var ab: AABB = mi.transform * mi.get_aabb()
+		acc = ab if first else acc.merge(ab)
+		first = false
+	return acc
 
 
 func _update_label() -> void:
@@ -131,6 +191,29 @@ func reset_grab_shapes() -> void:
 func _apply_label_art() -> void:
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
 	if tex == null:
+		return
+	# Real cart model: paint the art straight onto the model's own label face,
+	# replacing the placeholder art baked into the GLB. With no art the model
+	# keeps its own default, so this only ever runs when a label exists.
+	if _model_label != null:
+		var lm := StandardMaterial3D.new()
+		lm.albedo_color = Color.WHITE
+		lm.albedo_texture = tex
+		# The label face is a single quad and the models don't agree on its
+		# winding (the DS card's normal points into the shell), so draw both
+		# sides rather than have the art vanish on one of them.
+		lm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		# ...and where the plane faces into the shell, mirror the UV back so the
+		# art doesn't read reversed from the outside.
+		if _model_label.mesh != null and _model_label.mesh.get_surface_count() > 0:
+			var arr: Array = _model_label.mesh.surface_get_arrays(0)
+			var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+			if norms.size() > 0 and norms[0].z < 0.0:
+				lm.uv1_scale = Vector3(-1, 1, 1)
+		_model_label.set_surface_override_material(0, lm)
+		var glbl := get_node_or_null("GameLabel") as Label3D
+		if glbl != null:
+			glbl.visible = false
 		return
 	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
 	if label_mesh == null or not (label_mesh.mesh is BoxMesh):
