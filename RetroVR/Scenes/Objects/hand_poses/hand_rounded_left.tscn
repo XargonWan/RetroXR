@@ -109,7 +109,7 @@ bind/25/pose = Transform3D(1, -3.1237055e-06, 3.1385466e-06, 3.123643e-06, 1, 1.
 [node name="hand_rounded_left" type="Node3D" unique_id=71586219]
 
 [node name="Hand_Nails_low_L" type="Node3D" parent="." unique_id=1476601460]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.01, 0, 0.05)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.01, 0, 0.05)
 
 [node name="Armature" type="Node3D" parent="Hand_Nails_low_L" unique_id=460855632]
 
