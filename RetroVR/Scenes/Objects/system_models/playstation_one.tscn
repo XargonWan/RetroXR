@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/playstation_one_model.gd" id="1_psone"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_hinge"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lidgrab"]
+size = Vector3(0.11, 0.022, 0.03)
+
+[node name="PlaystationOne" type="Node3D" unique_id=1919100000]
+script = ExtResource("1_psone")
+
+[node name="LidMount" type="Node3D" parent="." unique_id=1919100004]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.0262, -0.0717)
+
+[node name="LidPivot" type="Node3D" parent="LidMount" unique_id=1919100001]
+
+[node name="LidHinge" type="Area3D" parent="LidMount/LidPivot" unique_id=1919100002 node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.007, -0.1378)
+collision_layer = 1048577
+script = ExtResource("2_hinge")
+target = NodePath("..")
+min_deg = 0.0
+max_deg = 70.0
+engage_radius = 0.05
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidMount/LidPivot/LidHinge" unique_id=1919100003]
+shape = SubResource("BoxShape3D_lidgrab")

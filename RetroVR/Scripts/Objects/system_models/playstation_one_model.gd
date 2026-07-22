@@ -1,9 +1,13 @@
 ## RetroSystemModelPlaystationOne — PS1 (PSone) disc-tray console model.
 ##
-## Loads an author's imported PSone GLB and wires the power/open buttons, the CD lid
-## (driven by the GLB's own PSOneOpen/PSOneClose animations), the disc seat,
-## memory-card slot, controller ports and cable. LOADER_TRAY: RetroSystem calls
-## play_open()/play_close() to animate the lid (system.gd:1560-1563).
+## Loads an author's imported PSone GLB and wires the power/open buttons, the CD lid,
+## the disc seat, memory-card slot, controller ports and cable. LOADER_TRAY:
+## RetroSystem calls play_open()/play_close() to swing the lid.
+##
+## The shell scene (playstation_one.tscn) owns the lid's LidPivot + its VRHinge,
+## so the lid can also be lifted BY HAND, the same way the 3DS clamshell works.
+## Both paths drive the one pivot, and a hand-swing reports the tray state back
+## to RetroSystem so the disc becomes grabbable exactly when the lid is up.
 ##
 ## Dev-only: the GLB lives in export-excluded imported-assets/ (licence pending);
 ## _ready() self-guards and re-shows the placeholder box if the GLB is absent.
@@ -14,8 +18,8 @@ const _MODEL_PATH := "res://imported-assets/playstation_one.glb"
 
 var _glb: Node3D = null
 var _anim: AnimationPlayer = null
-var _lid: Node3D = null
-var _lid_closed: Transform3D
+var _lid_pivot: Node3D = null
+var _hinge: VRHinge = null
 
 
 func _ready() -> void:
@@ -47,17 +51,7 @@ func _ready() -> void:
 	# Recentre on the console body in X/Z (base already rests near y=0).
 	var xz := _visible_xz_center(_glb)
 	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
-	# Cache the closed (rest) lid transform + derive the real hinge: the lid's own
-	# back-bottom edge (min z, min y of its AABB), which is where the PSone's lid
-	# is pinned. Rotating about this instead of the model origin keeps the lid
-	# attached to the console through the whole swing.
-	var lid_mesh := _glb.find_child("psone_cd_lid", true, false) as MeshInstance3D
-	_lid = lid_mesh
-	if lid_mesh != null:
-		_lid_closed = lid_mesh.transform
-		var ab: AABB = lid_mesh.get_aabb()
-		_lid_pivot = lid_mesh.transform * Vector3(
-			ab.position.x + ab.size.x * 0.5, ab.position.y, ab.position.z)
+	_mount_lid()
 
 
 func _visible_xz_center(root: Node3D) -> Vector2:
@@ -129,40 +123,82 @@ func uses_memory_cards() -> bool:
 # BEHIND the console (measured open centre (0.053, 0.012, -0.100) against a
 # body that stops at z=-0.072). Same failure as the NES flap. Rotate about the
 # lid's own real hinge instead: its back-bottom edge, axis +X.
-const LID_OPEN_DEG := -70.0
+const LID_OPEN_DEG := 70.0
 const LID_SWING_TIME := 0.55
+## Hand-swing thresholds (with hysteresis) at which the tray is reported open /
+## closed, so a half-lifted lid doesn't chatter the state.
+const _LID_OPEN_AT := 45.0
+const _LID_CLOSE_AT := 25.0
 
-var _lid_pivot: Vector3 = Vector3.ZERO
 var _lid_tween: Tween = null
 
 
+## Move the GLB's lid mesh under the scene's LidPivot, placed at the lid's REAL
+## hinge — the back-bottom edge of its own bounding box.
+##
+## The 180° yaw lives on LidMount, the pivot's PARENT, not on the pivot itself.
+## VRHinge measures the hand's angle in the target's PARENT frame while applying
+## it as the target's local rotation.x, so those two frames have to agree: with
+## the yaw on the pivot, every drag mapped into the second quadrant and clamped
+## straight to max_deg (the lid was un-draggable). The yaw is needed at all
+## because VRHinge expects the hinged leaf to lie along -Z, and the PSone's lid
+## extends +Z from its hinge — the mirror of the 3DS clamshell it was written for.
+func _mount_lid() -> void:
+	var mount := get_node_or_null("LidMount") as Node3D
+	_lid_pivot = get_node_or_null("LidMount/LidPivot") as Node3D
+	var lid := _glb.find_child("psone_cd_lid", true, false) as MeshInstance3D
+	if mount == null or _lid_pivot == null or lid == null:
+		return
+	var ab: AABB = lid.global_transform * lid.get_aabb()
+	mount.global_transform = Transform3D(
+		global_transform.basis * Basis(Vector3.UP, PI),
+		Vector3(ab.get_center().x, ab.position.y, ab.position.z))
+	var world := lid.global_transform
+	lid.reparent(_lid_pivot, false)
+	lid.global_transform = world
+	_hinge = _lid_pivot.get_node_or_null("LidHinge") as VRHinge
+	if _hinge != null:
+		_hinge.max_deg = LID_OPEN_DEG
+		_hinge.rotation_changed.connect(_on_lid_hand_swung)
+
+
 func play_open() -> void:
-	_swing_lid(deg_to_rad(LID_OPEN_DEG))
+	_swing_lid(LID_OPEN_DEG)
 
 func play_close() -> void:
 	_swing_lid(0.0)
 
 
-func _swing_lid(target: float) -> void:
-	if _lid == null:
+func _swing_lid(target_deg: float) -> void:
+	if _lid_pivot == null:
 		return
 	if _lid_tween != null and _lid_tween.is_valid():
 		_lid_tween.kill()
 	_lid_tween = create_tween()
 	_lid_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_lid_tween.tween_method(_set_lid_angle, _lid_angle(), target, LID_SWING_TIME)
+	# Tween from wherever the lid ACTUALLY is (a hand may have left it part-way).
+	_lid_tween.tween_method(_set_lid_angle,
+		rad_to_deg(_lid_pivot.rotation.x), target_deg, LID_SWING_TIME)
 
 
-## Current hinge angle, recovered from the lid's basis so an interrupted swing
-## resumes from where it actually is rather than snapping.
-func _lid_angle() -> float:
-	var z: Vector3 = (_lid_closed.basis.inverse() * _lid.transform.basis).z
-	return atan2(-z.y, z.z)
+func _set_lid_angle(deg: float) -> void:
+	_lid_pivot.rotation.x = deg_to_rad(deg)
 
 
-func _set_lid_angle(a: float) -> void:
-	var r := Basis(Vector3.RIGHT, a)
-	_lid.transform = Transform3D(r, _lid_pivot - r * _lid_pivot) * _lid_closed
+## Lifting or pushing the lid by hand IS opening/closing the tray — tell the host
+## so the disc becomes grabbable and the OPEN button's latch follows. The tween
+## is killed first: the hand owns the lid while it's being dragged.
+func _on_lid_hand_swung(deg: float) -> void:
+	var host := get_parent()
+	if host != null and host.has_method("request_tray_state"):
+		if deg >= _LID_OPEN_AT:
+			host.request_tray_state(true)
+		elif deg <= _LID_CLOSE_AT:
+			host.request_tray_state(false)
+	# Killed AFTER the state change, which routes back through play_open/close:
+	# the hand is holding the lid, so cancel the swing it just kicked off.
+	if _lid_tween != null and _lid_tween.is_valid():
+		_lid_tween.kill()
 
 
 # --- buttons ---

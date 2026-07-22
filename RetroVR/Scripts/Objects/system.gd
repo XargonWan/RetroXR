@@ -13,10 +13,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	# "imported-assets/*" from the export preset's exclude_filter.
 	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
-	# Re-enabled dev-only (per user direction): an author's imported PSone. Its GLB is
-	# export-excluded (imported-assets/*), and the model self-guards to re-show the
-	# placeholder box on any build that lacks the GLB. Licence still pending.
-	"playstation": "res://Scripts/Objects/system_models/playstation_one_model.gd",
+	# NOTE: "playstation" now has an authored scene — see _MODEL_SCENES below.
 	"sega_saturn": "res://Scripts/Objects/system_models/sega_saturn_model.gd",
 	"dreamcast": "res://Scripts/Objects/system_models/dreamcast_model.gd",
 	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
@@ -44,6 +41,11 @@ const _MODEL_SCENES: Dictionary = {
 	"nds": "res://Scenes/Objects/system_models/nds.tscn",
 	"3ds": "res://Scenes/Objects/system_models/n3ds.tscn",
 	"virtual_boy": "res://Scenes/Objects/system_models/virtual_boy.tscn",
+	# Dev-only (per user direction): an author's imported PSone. Its GLB is
+	# export-excluded (imported-assets/*), and the model self-guards to re-show
+	# the placeholder box on any build that lacks the GLB. Licence still pending.
+	# The scene owns the CD lid's hinge pivot + VRHinge, so the lid is hand-openable.
+	"playstation": "res://Scenes/Objects/system_models/playstation_one.tscn",
 }
 
 ## Optional per-variant model overrides, keyed "<systemid>:<variant>".
@@ -1632,6 +1634,13 @@ func _on_eject_pressed() -> void:
 		MediaDimensions.LOADER_SLOT:
 			if _slot:
 				_slot.eject()
+
+
+## A model's own hand-driven lid (e.g. the PSone's VRHinge) reporting the state
+## the player physically put it in. Idempotent, so a drag can report freely.
+func request_tray_state(open: bool) -> void:
+	if _disc_loader == MediaDimensions.LOADER_TRAY and open != _tray_open:
+		_request_tray_state(open)
 
 
 ## Local intent (OPEN button or pushing the lid shut): apply + replicate.
