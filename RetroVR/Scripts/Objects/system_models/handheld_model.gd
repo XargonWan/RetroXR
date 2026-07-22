@@ -79,7 +79,8 @@ func _cache_shell_nodes() -> void:
 	_screen = get_node_or_null("HandheldScreen") as MeshInstance3D
 	_volume_slider = get_node_or_null("VolumeSlider") as VRSlider
 	_power_switch = get_node_or_null("PowerSwitch") as VRSlider
-	var body := get_node_or_null("HandheldBody") as MeshInstance3D
+	# find_child, not get_node: the stand-in shell is a "Primitive" subtree now.
+	var body := find_child("HandheldBody", true, false) as MeshInstance3D
 	if body and body.mesh is BoxMesh:
 		body_size = (body.mesh as BoxMesh).size
 	if _screen and _screen.mesh is QuadMesh:

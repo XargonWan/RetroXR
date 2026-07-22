@@ -66,7 +66,10 @@ var _touch_controllers: Array[XRController3D] = []
 ## sits on — rather than over the raised lid / top screen. (Used by
 ## RetroSystem._body_aabb / _place_name_label.)
 func name_label_body() -> Node3D:
-	return get_node_or_null("HandheldBody")
+	# The stand-in body only exists on the fallback path; with the detailed shell
+	# in, the base half IS the Shell subtree (its lid rides LidPivot).
+	var body := find_child("HandheldBody", true, false) as Node3D
+	return body if body != null else get_node_or_null("Shell")
 
 
 ## Upright on the base's vertical front (+Z) face (where the START button is),
@@ -75,10 +78,23 @@ func name_label_placement() -> Dictionary:
 	return {"upright": true, "v_center": 0.5, "h_frac": 0.72}
 
 
+## Force the stand-in shell even when the detailed GLB is present. The fallback
+## path is otherwise never exercised in development (imported-assets/ is always
+## there), so this is what a probe flips to keep it honest.
+@export var force_primitive_shell: bool = false
+
+
 func _ready() -> void:
-	_cache_dual_nodes()
 	var gp := _glb_path()
-	if not gp.is_empty() and ResourceLoader.exists(gp):
+	var detailed := not force_primitive_shell and not gp.is_empty() and ResourceLoader.exists(gp)
+	# The stand-in is a SEPARATE scene, added only when there's no detailed shell,
+	# instead of living in the device scene permanently and being hidden. Nothing
+	# invisible is left behind to be measured by mistake — which is exactly how
+	# body_size used to come from a 133x11x74 box the player never sees.
+	if not detailed:
+		_spawn_primitive_shell()
+	_cache_dual_nodes()
+	if detailed:
 		_upgrade_dual_to_glb(gp)
 	# Window materials, ready before the first frame of core output.
 	_top_mat = ShaderMaterial.new()
@@ -103,6 +119,31 @@ func _lid_mesh_names() -> PackedStringArray:
 	return PackedStringArray()
 
 
+## Override to return the store-safe stand-in shell scene; "" = no fallback
+## geometry (the device scene carries its own, the old arrangement).
+func _primitive_path() -> String:
+	return ""
+
+
+## Add the stand-in shell. Its root holds the base-half meshes directly and its
+## lid parts under a "LidParts" child, which is reparented onto LidPivot so the
+## stand-in folds with the hinge exactly like the detailed shell's lid does.
+func _spawn_primitive_shell() -> void:
+	var pp := _primitive_path()
+	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
+		return
+	var scene := load(pp) as PackedScene
+	if scene == null:
+		return
+	var prim := scene.instantiate() as Node3D
+	prim.name = "Primitive"
+	add_child(prim)
+	var lid_parts := prim.get_node_or_null("LidParts") as Node3D
+	var pivot := get_node_or_null("LidPivot") as Node3D
+	if lid_parts != null and pivot != null:
+		lid_parts.reparent(pivot, false)
+
+
 ## Swap the primitive clamshell for the detailed GLB. The base script's runtime
 ## nodes stay authoritative — the live TopScreen/BottomScreen picture quads, the
 ## ProxyScreen, the TouchScreen pad, the grabbable LidHinge — but they get moved
@@ -117,8 +158,15 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	if _lid_pivot == null or _screen == null or _bottom_screen == null:
 		return
 	# Fully baked into the .tscn already (Shell + reparented lid + placed screens
-	# + hidden primitives authored in the scene) — nothing to do at runtime.
+	# + hidden primitives authored in the scene) — no placement to redo. body_size
+	# still has to be adopted from the real shell: _cache_dual_nodes seeds it from
+	# the primitive HandheldBody box, and on this path nothing ever overwrote it,
+	# so collision, the pointer area, the cart slot depth, the cable attach point
+	# and the power button were all sized to a stand-in the player can't even see.
 	if has_meta("dual_glb_baked"):
+		var baked := _base_half_size()
+		if baked.length() > 0.0:
+			body_size = baked
 		return
 	var shell := get_node_or_null("Shell") as Node3D
 	if shell == null:
@@ -251,6 +299,28 @@ func _upgrade_dual_to_glb(path: String) -> void:
 ## How far the shell's own (opaque) glass/surface sits over a lens along its
 ## normal, so the live picture quad can be raised just clear of it. Samples the
 ## shell body meshes within the screen footprint; falls back to a small default.
+## Dimensions of the BASE half of whatever shell is actually present, in model
+## space. On the runtime path the lid meshes are reparented onto LidPivot, but a
+## BAKED scene can leave them under Shell (nds_lite.tscn does), so the lid names
+## are excluded explicitly rather than assumed to have moved — otherwise this
+## measures the whole OPEN clamshell and the body comes out twice as tall.
+func _base_half_size() -> Vector3:
+	var shell := get_node_or_null("Shell") as Node3D
+	if shell == null:
+		return Vector3.ZERO
+	var lidnames := _lid_mesh_names()
+	var acc := AABB()
+	var first := true
+	for n in shell.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or not mi.visible or lidnames.has(String(mi.name)):
+			continue
+		var ab: AABB = (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+		acc = ab if first else acc.merge(ab)
+		first = false
+	return Vector3.ZERO if first else acc.size
+
+
 func _lens_clearance(center: Vector3, normal: Vector3, size: Vector2) -> float:
 	var shell := get_node_or_null("Shell") as Node3D
 	if shell == null:
@@ -336,7 +406,8 @@ func _cache_dual_nodes() -> void:
 	_touch = get_node_or_null("TouchScreen") as Area3D
 	_hinge = get_node_or_null("LidPivot/LidHinge") as VRHinge
 	_volume_slider = get_node_or_null("VolumeSlider") as VRSlider
-	var body := get_node_or_null("HandheldBody") as MeshInstance3D
+	# find_child, not get_node: the stand-in shell is a "Primitive" subtree now.
+	var body := find_child("HandheldBody", true, false) as MeshInstance3D
 	if body and body.mesh is BoxMesh:
 		body_size = (body.mesh as BoxMesh).size
 	if _bottom_screen and _bottom_screen.mesh is QuadMesh:

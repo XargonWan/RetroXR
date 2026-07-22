@@ -195,3 +195,9 @@ func _glb_path() -> String:
 ## dark backing panel are handled by the base. Everything else = the base half.
 func _lid_mesh_names() -> PackedStringArray:
 	return PackedStringArray(["Top"])
+
+
+## Store-safe stand-in, shared by both DS shells. Added ONLY when the detailed
+## GLB is absent, so with it present the model carries no hidden geometry.
+func _primitive_path() -> String:
+	return "res://Scenes/Objects/system_models/nds_primitive.tscn"
