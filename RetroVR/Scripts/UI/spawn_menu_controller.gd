@@ -41,6 +41,9 @@ const SPAWN_Y := {
 	"dualshock2":       0.80,
 	"gamecube_controller": 0.80,
 	"dreamcast_controller": 0.80,
+	"nes_controller":   0.80,
+	"n64_controller":   0.80,
+	"psx_controller":   0.80,
 	"retro_mouse":      0.78,
 	"retro_keyboard":   0.78,
 	"retro_multitap":   0.80,
@@ -822,6 +825,18 @@ func _on_spawn_requested(type: String) -> void:
 				return
 		"dreamcast_controller":
 			obj = _instantiate_optional("res://imported-assets/dreamcast_controller.glb", "res://Scenes/Objects/dreamcast_controller.tscn")
+			if obj == null:
+				return
+		"nes_controller":
+			obj = _instantiate_optional("res://imported-assets/nes_controller.glb", "res://Scenes/Objects/nes_controller.tscn")
+			if obj == null:
+				return
+		"n64_controller":
+			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/n64_controller.tscn")
+			if obj == null:
+				return
+		"psx_controller":
+			obj = _instantiate_optional("res://imported-assets/psx_controller.glb", "res://Scenes/Objects/psx_controller.tscn")
 			if obj == null:
 				return
 		"retro_mouse":

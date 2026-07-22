@@ -22,7 +22,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	"mega_drive": "res://Scripts/Objects/system_models/genesis_model.gd",
 	"playstation2": "res://Scripts/Objects/system_models/ps2_model.gd",
-	"nes": "res://Scripts/Objects/system_models/famicom_model.gd",
+	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
 	"atari_2600": "res://Scripts/Objects/system_models/atari_2600_model.gd",
 	"dos": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
 }
@@ -53,6 +53,8 @@ const _MODEL_VARIANTS: Dictionary = {
 	# Regional/colour badges reusing a base model (see SpawnCatalog for the menu item).
 	"mega_drive:megadrive": "res://Scripts/Objects/system_models/megadrive_model.gd",
 	"playstation2:silver": "res://Scripts/Objects/system_models/ps2_silver_model.gd",
+	# NES defaults to the US front-loader (nes_model); the Famicom is the JP variant.
+	"nes:famicom": "res://Scripts/Objects/system_models/famicom_model.gd",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -1233,6 +1235,9 @@ func _on_options_ready(_categories: Dictionary, definitions: Dictionary, current
 	# options_ready fires. Fetch it here so the panel can show both tabs.
 	_controller_info = _libretro.GetControllerInfo()
 	print("[RetroSystem] controller info fetched — %d ports" % _controller_info.size())
+	# A controller can be plugged before the core (and its options) exist. Now that
+	# the option set is known, (re)apply each plugged pad's preferred pad type.
+	_reapply_pad_types()
 	if _options_panel.visible:
 		_options_panel.refresh()
 
@@ -1271,6 +1276,72 @@ func set_controller_port_device(port: int, device_id: int) -> void:
 	# re-applied at core start, so skipping here is safe.
 	if is_instance_valid(_libretro) and _libretro.has_method("SetControllerPortDevice"):
 		_libretro.SetControllerPortDevice(port, device_id)
+
+
+## Auto-select the running core's per-port "pad type" option to match the pad
+## just plugged in: a DualShock (pad_type_pref "dualshock") switches the port to
+## the analog/DualShock profile, the original digital pad selects "standard".
+## Gated on the option actually existing (PCSX-ReARMed's pcsx_rearmed_padNtype),
+## so it is a no-op on every core that has no such option.
+func _apply_pad_type_option(lib_port: int, ctrl: Node) -> void:
+	if not is_instance_valid(ctrl) or not ("pad_type_pref" in ctrl):
+		return
+	var key := _pad_type_option_key(lib_port)
+	if key.is_empty():
+		return
+	var desired: String = ctrl.get("pad_type_pref")
+	var allowed := _pad_type_values(key)
+	var current := String(_options_values.get(key, ""))
+	var target := _decide_pad_type(allowed, desired, current)
+	if target.is_empty():
+		return
+	print("[RetroSystem] auto pad-type: port %d -> %s = '%s'" % [lib_port, key, target])
+	set_core_option(key, target)
+
+
+## Pure pad-type decision: given the option's allowed values, the pad's preferred
+## value and the current value, return the value to set, or "" for no change.
+## A DualShock on a core that offers only a plain analog pad falls back to it.
+static func _decide_pad_type(allowed: Array, desired: String, current: String) -> String:
+	if allowed.is_empty():
+		return ""
+	var pick := desired
+	if not (pick in allowed):
+		if desired == "dualshock" and "analog" in allowed:
+			pick = "analog"
+		else:
+			return ""
+	return "" if pick == current else pick
+
+
+## Re-apply every plugged pad's preferred pad type. Called when the option set
+## first becomes known (options_ready), covering pads plugged before core start.
+func _reapply_pad_types() -> void:
+	for i in range(_port_controllers.size()):
+		var ctrl: Node = _port_controllers[i]
+		if not is_instance_valid(ctrl):
+			continue
+		var dev: int = ctrl.get("device_type") if "device_type" in ctrl else 1
+		_apply_pad_type_option(_libretro_port_for(dev, i), ctrl)
+
+
+## The core option key that controls the pad type on a given libretro port, or
+## "" if the running core has none. PCSX-ReARMed exposes pcsx_rearmed_pad1type …
+## pad8type (1-based); extend here to cover another core if needed.
+func _pad_type_option_key(lib_port: int) -> String:
+	var key := "pcsx_rearmed_pad%dtype" % (lib_port + 1)
+	return key if _options_definitions.has(key) else ""
+
+
+## The list of allowed values for a pad-type option key (empty if unknown).
+func _pad_type_values(key: String) -> Array:
+	var def: Object = _options_definitions.get(key)
+	if def == null:
+		return []
+	var out: Array = []
+	for v in def.GetValues():
+		out.append(v.GetValue())
+	return out
 
 
 ## True when this system is a home computer (ScummVM, DOS, Amiga…) whose core
@@ -1321,6 +1392,9 @@ func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 		if controller.has_method("get_controller") else controller
 	if controller.has_method("on_plugged_in"):
 		controller.on_plugged_in(self, lib_port)
+	# Auto-select the core's per-port pad type (e.g. PCSX-ReARMed: DualShock vs
+	# the original digital pad). No-ops unless the core exposes such an option.
+	_apply_pad_type_option(lib_port, _port_controllers[port_index])
 	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
 		{"sys": self, "ctrl": _port_controllers[port_index], "port": port_index})
 

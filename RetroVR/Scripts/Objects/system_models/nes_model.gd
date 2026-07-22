@@ -1,116 +1,317 @@
-## RetroSystemModelNES — NES console model.
+## RetroSystemModelNES — the American front-loading NES (NES-001).
+##
+## Loads an author's imported "NES System" GLB and wires POWER / RESET, the power LED,
+## the two controller sockets, the RF video-out and the front-loading cartridge
+## bay. The bay sits behind a hinged front flap (the "NesLid"): the GLB ships an
+## authored Open/Close animation that swings the flap on its real hinge, so a
+## cartridge can only be seated or pulled while the flap is up. Poking the flap
+## with a controller face button toggles it; inserting/removing a cart drives it
+## automatically. The ZIF cartridge slides straight back into the socket.
+##
+## Registered as the default "nes" model (dev-only). GLB is export-excluded
+## (licence pending); _ready() self-guards to the placeholder box if it's absent.
 class_name RetroSystemModelNES
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://Models/nes_system_2.tscn"
-const BUTTON_DEPRESS_DEPTH := 0.003
+const _MODEL_PATH := "res://imported-assets/nes_system.glb"
+const BUTTON_DEPRESS_DEPTH := 0.0022
+const LID_ZONE_RADIUS := 0.10
+const INSERT_SLIDE := 0.07        # metres the cart slides in from the flap mouth
+const LID_OPEN_DEG := -105.0      # flap swing about its top-rear hinge edge
+const LID_ANIM_TIME := 0.35
 
-## Lid open rotation on X axis in radians. Tune after Blender hinge origin is set,
-## or set to 0 and read from a "Lid Open Angle" empty node if one is added.
-const LID_OPEN_ANGLE_X := -1.5
-const LID_ANIM_DURATION := 0.3
+var _glb: Node3D = null
 
-## Offset in cradle-local space to place the cartridge snap zone (tune as needed).
-const CARTRIDGE_SLOT_OFFSET := Vector3(0.0, 0.0, 0.05)
+# Front flap (hinge). The converter bakes all node transforms to identity, which
+# breaks the GLB's authored Open/Close clips (they'd pivot about the model
+# origin), so the flap is rotated about a hinge edge computed from its own AABB.
+var _lid_mesh: MeshInstance3D = null
+var _lid_rest: Transform3D = Transform3D.IDENTITY
+var _lid_pivot: Vector3 = Vector3.ZERO   # hinge point in the flap's parent space
+var _lid_amount: float = 0.0             # 0 = shut … 1 = fully open
+var _lid_tween: Tween = null
 
 var _power_light_mesh: MeshInstance3D = null
-var _power_light_lamp: Node3D = null
+var _power_light_mats: Array[StandardMaterial3D] = []
 var _power_button: VRButton = null
-var _cartridge_insert_dir: Vector3 = Vector3.FORWARD
-var _nes_lid: Node3D = null
-var _nes_cradle: Node3D = null
-var _cradle_rest_angle: float = 0.0
+
 var _cartridge_slot: Node3D = null
+var _cartridge_insert_dir: Vector3 = Vector3.FORWARD
+
+# Front-flap (hinge) interaction
 var _lid_open: bool = false
 var _lid_local_pos: Vector3 = Vector3.ZERO
-var _lid_zone_radius: float = 0.08
+var _has_lid_zone: bool = false
 var _controllers_in_lid_zone: Array = []
 
 
 func _ready() -> void:
-	var scene := load(_MODEL_PATH) as PackedScene
-	if scene:
-		var glb := scene.instantiate()
-		add_child(glb)
-		_power_light_mesh = glb.find_child("PowerLight", true, false) as MeshInstance3D
-		_power_light_lamp = glb.find_child("Power Light lampe", true, false)
-		_nes_lid = glb.find_child("NesLid", true, false)
-		_nes_cradle = glb.find_child("NesCradle", true, false)
-		# Capture the cradle's resting angle before any animation runs
-		if _nes_cradle:
-			_cradle_rest_angle = _nes_cradle.rotation.x
-		# Start with light off
-		if _power_light_mesh:
-			_power_light_mesh.hide()
-		if _power_light_lamp:
-			_power_light_lamp.hide()
-		# Set up lid interaction zone after GLB is in the tree
-		_setup_lid_zone(glb)
-	else:
-		push_warning("RetroSystemModelNES: could not load model at %s" % _MODEL_PATH)
-
-
-func _setup_lid_zone(glb: Node3D) -> void:
-	var finger := glb.find_child("Finger Button (Slider) Open Deckel", true, false)
-	if not finger:
-		push_warning("RetroSystemModelNES: Finger Button (Slider) Open Deckel not found")
+	if not ResourceLoader.exists(_MODEL_PATH):
+		push_warning("NESModel: %s missing — using placeholder box" % _MODEL_PATH)
+		var host := get_parent()
+		if host:
+			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+			if body:
+				body.show()
 		return
-	_lid_local_pos = to_local(finger.global_position)
+	var scene := load(_MODEL_PATH) as PackedScene
+	if scene == null:
+		push_warning("NESModel: failed to load %s" % _MODEL_PATH)
+		return
+	_glb = scene.instantiate() as Node3D
+	add_child(_glb)
+
+	# The GLB ships authored Open/Close/On/Off/Reset clips, but the .bundle→.glb
+	# converter bakes node transforms to identity, so their rotation tracks pivot
+	# about the model origin (the flap flies off). Stop any autoplay; the flap and
+	# buttons are driven directly instead.
+	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if ap != null:
+		ap.autoplay = ""
+		ap.active = false
+
+	_hide_clutter(_glb)
+	_fix_decal_alpha(_glb)
+	# Recentre on the visible body and rest the base on the ground.
+	var b := _model_aabb(_glb)
+	var c := b.position + b.size * 0.5
+	_glb.position = Vector3(-c.x, -b.position.y, -c.z)
+
+	# Capture the flap and its hinge: the top-rear edge of the NesLid mesh, along
+	# the console's left-right (X) axis. Rotating the flap about this lifts it up.
+	_lid_mesh = _glb.find_child("NesLid", true, false) as MeshInstance3D
+	if _lid_mesh:
+		_lid_rest = _lid_mesh.transform
+		var a := _lid_mesh.get_aabb()
+		var hinge_local := Vector3(a.position.x + a.size.x * 0.5, a.position.y + a.size.y, a.position.z)
+		_lid_pivot = _lid_mesh.transform * hinge_local
+		# The Nintendo logo (and any other decal printed on the door) is a separate
+		# quad flush with the flap face; parent those to the flap so they swing with
+		# the hinge instead of hanging in mid-air when it opens.
+		_attach_flap_decals()
+
+	_power_light_mesh = _glb.find_child("PowerLight", true, false) as MeshInstance3D
+	if _power_light_mesh:
+		_prep_power_light()
+		_set_power_light(false)
+
+	# Proximity zone over the flap's finger-slider marker so a face-button press
+	# there toggles the hinge (the contextual-action pattern used across RetroVR).
+	var finger := _glb.find_child("Finger Button (Slider) Open Deckel", true, false) as Node3D
+	if finger:
+		_lid_local_pos = to_local(finger.global_position)
+		_has_lid_zone = true
+
+
+# Hide the moulded RF/power leads and their plug ends — RetroVR spawns its own
+# video-out cable (attached at the "Cable Plug (YW)" marker). The console body,
+# flap, cradle, buttons and LED stay.
+func _hide_clutter(root: Node3D) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null:
+			var nm := String(mi.name).to_lower()
+			if nm.contains("cable") or nm.contains("plug") or nm.contains("rca") \
+					or nm.contains("connector"):
+				mi.visible = false
+		for ch in n.get_children():
+			stack.append(ch)
+
+
+# The printed labels/logos are decal quads whose atlas has a transparent
+# background, but the .bundle→.glb converter leaves the material OPAQUE, so the
+# alpha-0 background renders as its underlying white and boxes the text. Give any
+# textured surface with an alpha channel alpha-scissor (cutout) so the background
+# is discarded. Surfaces that are actually opaque keep every pixel (alpha > 0.5)
+# and are unchanged.
+func _fix_decal_alpha(root: Node3D) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null and mi.mesh != null:
+			for s in range(mi.mesh.get_surface_count()):
+				var mat := mi.get_active_material(s) as BaseMaterial3D
+				if mat == null or mat.albedo_texture == null:
+					continue
+				var img := mat.albedo_texture.get_image()
+				if img == null or img.detect_alpha() == Image.ALPHA_NONE:
+					continue
+				var dup := mat.duplicate() as BaseMaterial3D
+				dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				dup.alpha_scissor_threshold = 0.5
+				mi.set_surface_override_material(s, dup)
+		for c in n.get_children():
+			stack.append(c)
+
+
+# Parent any decal quad that sits on the flap face (the Nintendo logo) to the
+# NesLid mesh so it rotates with the hinge. Spatial test against the flap's own
+# (grown) world AABB — the deck, cradle and body-front decals fall outside it.
+func _attach_flap_decals() -> void:
+	var flap_aabb := (_lid_mesh.global_transform * _lid_mesh.get_aabb()).grow(0.004)
+	var to_move: Array[MeshInstance3D] = []
+	var stack: Array[Node] = [_glb]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null and mi != _lid_mesh and mi.mesh != null:
+			if flap_aabb.has_point(mi.global_transform * mi.get_aabb().get_center()):
+				to_move.append(mi)
+		for ch in n.get_children():
+			stack.append(ch)
+	for mi in to_move:
+		mi.reparent(_lid_mesh, true)
+
+
+# Give the power LED an emissive material so it visibly glows red when the console
+# is on (and reads as a dark unlit lens when off) instead of just toggling
+# visibility. Applied to the reddish lens surface(s) of the PowerLight mesh.
+func _prep_power_light() -> void:
+	_power_light_mats.clear()
+	for s in range(_power_light_mesh.mesh.get_surface_count()):
+		var src := _power_light_mesh.get_active_material(s) as BaseMaterial3D
+		var m := StandardMaterial3D.new()
+		if src != null:
+			m.albedo_color = src.albedo_color
+		m.emission_enabled = true
+		m.emission = Color(1.0, 0.05, 0.0)
+		m.emission_energy_multiplier = 0.0
+		_power_light_mesh.set_surface_override_material(s, m)
+		_power_light_mats.append(m)
+
+
+func _set_power_light(on: bool) -> void:
+	for m in _power_light_mats:
+		m.emission_energy_multiplier = 3.0 if on else 0.0
+
+
+func _model_aabb(inst: Node3D) -> AABB:
+	var acc := AABB(); var first := true
+	var stack: Array[Node] = [inst]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null and mi.visible:
+			var ab: AABB = (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+			acc = ab if first else acc.merge(ab)
+			first = false
+		for ch in n.get_children():
+			stack.append(ch)
+	return acc
+
+
+func _anchor(marker: String) -> Vector3:
+	if _glb == null:
+		return global_position
+	var n := _glb.find_child(marker, true, false) as Node3D
+	return n.global_position if n != null else global_position
+
+
+func _mesh_center(mesh_name: String) -> Vector3:
+	if _glb == null:
+		return global_position
+	var m := _glb.find_child(mesh_name, true, false) as MeshInstance3D
+	return (m.global_transform * m.get_aabb().get_center()) if m != null else global_position
+
+
+# --- front flap (hinge) ---------------------------------------------------------
+
+## Pose the flap: 0 = shut, 1 = fully open. Rotates the mesh about its hinge edge.
+func _set_lid(amount: float) -> void:
+	_lid_amount = amount
+	if _lid_mesh == null:
+		return
+	var r := Basis(Vector3.RIGHT, deg_to_rad(LID_OPEN_DEG) * amount)
+	var about := Transform3D(r, _lid_pivot - r * _lid_pivot)
+	_lid_mesh.transform = about * _lid_rest
+
+
+func _tween_lid(to: float) -> void:
+	if _lid_tween != null and _lid_tween.is_valid():
+		_lid_tween.kill()
+	_lid_tween = create_tween()
+	_lid_tween.tween_method(_set_lid, _lid_amount, to, LID_ANIM_TIME) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## Swing the flap up on its hinge and enable the cartridge bay.
+func play_open() -> void:
+	if _lid_open:
+		return
+	_lid_open = true
+	_tween_lid(1.0)
+	if _cartridge_slot != null:
+		_cartridge_slot.enabled = true
+
+
+## Swing the flap shut and gate the bay closed.
+func play_close() -> void:
+	if not _lid_open:
+		return
+	_lid_open = false
+	_tween_lid(0.0)
+	if _cartridge_slot != null:
+		_cartridge_slot.enabled = false
+
+
+func _toggle_lid() -> void:
+	if _lid_open:
+		play_close()
+	else:
+		play_open()
 
 
 func _process(_delta: float) -> void:
-	if _lid_local_pos == Vector3.ZERO:
+	if not _has_lid_zone:
 		return
 	var controllers := get_tree().get_nodes_in_group("xr_controllers")
 	if controllers.is_empty():
 		controllers = get_tree().root.find_children("*", "XRController3D", true, false)
 	for ctrl in controllers:
-		if not ctrl is XRController3D:
+		if not (ctrl is XRController3D):
 			continue
-		var inside: bool = to_local(PokeTip.tip_of(ctrl)).distance_to(_lid_local_pos) <= _lid_zone_radius
-		var was_inside: bool = ctrl in _controllers_in_lid_zone
+		var xr := ctrl as XRController3D
+		var inside: bool = to_local(PokeTip.tip_of(xr)).distance_to(_lid_local_pos) <= LID_ZONE_RADIUS
+		var was_inside: bool = xr in _controllers_in_lid_zone
 		if inside and not was_inside:
-			_controllers_in_lid_zone.append(ctrl)
-			(ctrl as XRController3D).button_pressed.connect(_on_lid_button.bind(ctrl))
+			_controllers_in_lid_zone.append(xr)
+			xr.button_pressed.connect(_on_lid_button.bind(xr))
 		elif not inside and was_inside:
-			_controllers_in_lid_zone.erase(ctrl)
-			if (ctrl as XRController3D).button_pressed.is_connected(_on_lid_button):
-				(ctrl as XRController3D).button_pressed.disconnect(_on_lid_button)
+			_controllers_in_lid_zone.erase(xr)
+			if xr.button_pressed.is_connected(_on_lid_button):
+				xr.button_pressed.disconnect(_on_lid_button)
 
 
 func _on_lid_button(action: String, _ctrl: XRController3D) -> void:
-	if action == "ax_button":
+	if action == "ax_button" or action == "by_button":
 		_toggle_lid()
 
 
-func _toggle_lid() -> void:
-	_lid_open = not _lid_open
-	var target_rot := LID_OPEN_ANGLE_X if _lid_open else 0.0
-	if _nes_lid:
-		var tween := create_tween()
-		tween.tween_property(_nes_lid, "rotation:x", target_rot, LID_ANIM_DURATION) \
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	if _cartridge_slot:
-		_cartridge_slot.enabled = _lid_open
-
+# --- ports / buttons / cable ----------------------------------------------------
 
 func get_controller_port_count() -> int:
 	return 2
 
 
+func uses_memory_cards() -> bool:
+	return false
+
+
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
 	_power_button = power_btn
-	var glb := get_child(0)
-	var power_finger := glb.find_child("Finger Button Power", true, false)
-	var reset_finger := glb.find_child("Finger Button Reset", true, false)
-	var power_mesh := glb.find_child("ButtonPower", true, false) as MeshInstance3D
-	var reset_mesh := glb.find_child("ButtonReset", true, false) as MeshInstance3D
+	var power_finger := _glb.find_child("Finger Button Power", true, false) as Node3D
+	var reset_finger := _glb.find_child("Finger Button Reset", true, false) as Node3D
+	var power_mesh := _glb.find_child("ButtonPower", true, false) as MeshInstance3D
+	var reset_mesh := _glb.find_child("ButtonReset", true, false) as MeshInstance3D
 	power_btn.depress_depth = BUTTON_DEPRESS_DEPTH
 	reset_btn.depress_depth = BUTTON_DEPRESS_DEPTH
 	power_btn.set_latched_pressed(false)
 	reset_btn.set_latched_pressed(false)
 	if power_mesh:
-		power_btn.set_button_mesh(power_mesh)  # also hides the placeholder box
+		power_btn.set_button_mesh(power_mesh)   # also hides the placeholder box
 	if power_finger:
 		power_btn.global_position = power_finger.global_position
 		power_btn.set_depress_axis_from_node(power_finger)
@@ -119,7 +320,6 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRB
 	if reset_finger:
 		reset_btn.global_position = reset_finger.global_position
 		reset_btn.set_depress_axis_from_node(reset_finger)
-	# Hide placeholder button labels — NES uses its own physical button geometry
 	for btn in [power_btn, reset_btn]:
 		var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 		if lbl:
@@ -127,12 +327,10 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRB
 
 
 func configure_controller_ports(port_zones: Array) -> void:
-	var glb := get_child(0)
 	for i in range(port_zones.size()):
-		var marker := glb.find_child("Cable Plug Port%d" % (i + 1), true, false)
+		var marker := _glb.find_child("Cable Plug Port%d" % (i + 1), true, false) as Node3D
 		if marker:
 			port_zones[i].global_position = marker.global_position
-		# Hide placeholder port visuals regardless of whether the model has a marker
 		var recess := port_zones[i].get_node_or_null("PortRecess") as MeshInstance3D
 		if recess:
 			recess.hide()
@@ -142,8 +340,7 @@ func configure_controller_ports(port_zones: Array) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	var glb := get_child(0)
-	var marker := glb.find_child("Cable Plug (YW)", true, false)
+	var marker := _glb.find_child("Cable Plug (YW)", true, false) as Node3D
 	if marker:
 		attach_point.global_position = marker.global_position
 	var port_visual := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
@@ -151,63 +348,54 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 		port_visual.hide()
 
 
+# --- cartridge (front-load: slides straight back into the ZIF socket) -----------
+
 func configure_cartridge_slot(slot: Node3D) -> void:
-	var glb := get_child(0)
-	var socket := glb.find_child("System Socket", true, false)
+	_cartridge_slot = slot
+	# Seat the cart in the visible cradle under the flap; take the insert axis
+	# (the console's front→back direction) from the socket marker's orientation.
+	var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
+	if cradle:
+		slot.global_position = cradle.global_transform * cradle.get_aabb().get_center()
+	var socket := _glb.find_child("System Socket", true, false) as Node3D
 	if socket:
-		slot.global_position = socket.global_position
 		_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
 	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if slot_visual:
 		slot_visual.hide()
-	_cartridge_slot = slot
-	_cartridge_slot.enabled = false  # only opens with the lid
+	# Bay is sealed by the flap: only accept a cartridge while the flap is open.
+	slot.enabled = _lid_open
 
 
 func get_cartridge_insert_direction() -> Vector3:
 	return _cartridge_insert_dir
 
 
+func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
+	# Make sure the flap is up, then slide the cart from the mouth back into the
+	# socket. XRTools has already snapped/frozen it at the final socket position.
+	play_open()
+	var final_pos := cartridge.global_position
+	cartridge.freeze = false
+	cartridge.global_position = final_pos + _cartridge_insert_dir * INSERT_SLIDE
+	var tween := cartridge.create_tween()
+	tween.tween_property(cartridge, "global_position", final_pos, 0.25) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void: cartridge.freeze = true)
+
+
+func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:
+	# Cart is already in hand; make sure the flap is up so the pull reads right.
+	play_open()
+
+
 func on_power_on() -> void:
 	if _power_button:
 		_power_button.set_latched_pressed(true)
-	if _power_light_mesh:
-		_power_light_mesh.show()
-	if _power_light_lamp:
-		_power_light_lamp.show()
+	_set_power_light(true)
 
 
 func on_power_off() -> void:
 	if _power_button:
 		_power_button.set_latched_pressed(false)
-	if _power_light_mesh:
-		_power_light_mesh.hide()
-	if _power_light_lamp:
-		_power_light_lamp.hide()
-
-
-func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
-	# Phase 1: slide horizontally into slot from in front of the opening.
-	# Phase 2: cradle presses down, locking the cartridge into the ZIF socket.
-	# XRTools already froze the cartridge at the final socket position.
-	var final_pos := cartridge.global_position
-	var slide_start := final_pos + _cartridge_insert_dir * 0.06
-	cartridge.freeze = false
-	cartridge.global_position = slide_start
-	var tween := cartridge.create_tween()
-	tween.tween_property(cartridge, "global_position", final_pos, 0.2) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	if _nes_cradle:
-		tween.tween_property(_nes_cradle, "rotation:x", 0.0, 0.2) \
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_callback(func() -> void: cartridge.freeze = true)
-
-
-func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:
-	# Cartridge is already in the user's hand (XRTools handled the grab).
-	# Just spring the cradle back to its resting (angled) position.
-	if not _nes_cradle:
-		return
-	var tween := create_tween()
-	tween.tween_property(_nes_cradle, "rotation:x", _cradle_rest_angle, 0.15) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_set_power_light(false)

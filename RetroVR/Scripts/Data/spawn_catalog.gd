@@ -26,6 +26,7 @@ extends RefCounted
 const _CATALOG: Dictionary = {
 	"playstation": [
 		{"kind": "system",     "label": "Console",     "variant": ""},
+		{"kind": "peripheral", "label": "Controller",  "spawn": "psx_controller"},
 		{"kind": "peripheral", "label": "Dual Shock",  "spawn": "dualshock"},
 		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
@@ -47,6 +48,15 @@ const _CATALOG: Dictionary = {
 	"mega_drive": [
 		{"kind": "system", "label": "Genesis (US)",   "variant": ""},
 		{"kind": "system", "label": "Mega Drive",     "variant": "megadrive"},
+	],
+	"nes": [
+		{"kind": "system",     "label": "Console",    "variant": ""},
+		{"kind": "system",     "label": "Famicom",    "variant": "famicom"},
+		{"kind": "peripheral", "label": "Controller", "spawn": "nes_controller"},
+	],
+	"nintendo_64": [
+		{"kind": "system",     "label": "Console",    "variant": ""},
+		{"kind": "peripheral", "label": "Controller", "spawn": "n64_controller"},
 	],
 }
 

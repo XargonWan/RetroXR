@@ -1,36 +1,35 @@
-[gd_scene format=3 uid="uid://d2j13s54qivwh"]
+[gd_scene format=3 uid="uid://bpsxcontrollerv1a"]
 
-[ext_resource type="Script" uid="uid://dsp6hppf34lfg" path="res://Scripts/Objects/dualshock_controller.gd" id="1_dsscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/psx_controller.gd" id="1_psxscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
-[ext_resource type="PackedScene" path="res://imported-assets/dualshock2.glb" id="5_model"]
+[ext_resource type="PackedScene" path="res://imported-assets/psx_controller.glb" id="5_model"]
 
-[sub_resource type="PhysicsMaterial" id="PhysMat_ds2"]
+[sub_resource type="PhysicsMaterial" id="PhysMat_psx"]
 friction = 0.8
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ds2"]
-size = Vector3(0.15, 0.07, 0.1)
+[sub_resource type="BoxShape3D" id="BoxShape3D_psx"]
+size = Vector3(0.15, 0.06, 0.1)
 
-[node name="DualShock2" type="RigidBody3D" groups=["hand_held_device"]]
+[node name="PsxController" type="RigidBody3D" groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 mass = 0.2
-physics_material_override = SubResource("PhysMat_ds2")
+physics_material_override = SubResource("PhysMat_psx")
 freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
-script = ExtResource("1_dsscript")
-pad_type_pref = "dualshock"
+script = ExtResource("1_psxscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
-shape = SubResource("BoxShape3D_ds2")
+shape = SubResource("BoxShape3D_psx")
 
 [node name="Model" parent="." instance=ExtResource("5_model")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.034, -0.03, -0.019)
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -2.9975, -0.0517, -1.4944001)
 
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0063921735, -0.03321655)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, -0.035)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
@@ -40,7 +39,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
-shape = SubResource("BoxShape3D_ds2")
+shape = SubResource("BoxShape3D_psx")
 
 [node name="HandRight" parent="." instance=ExtResource("3_rhand")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06, 0, 0)

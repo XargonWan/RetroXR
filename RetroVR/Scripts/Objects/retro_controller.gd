@@ -24,6 +24,13 @@ const INPUT_THRESHOLDS: Dictionary = {
 ## libretro device type reported to the system when plugged in.
 var device_type: int = RETRO_DEVICE_JOYPAD
 
+## Preferred per-port "pad type" core-option value. When this controller is
+## plugged into a system whose core exposes a per-port pad-type option (e.g.
+## PCSX-ReARMed's `pcsx_rearmed_padNtype`), RetroSystem auto-selects this value.
+## Digital pads leave it at "standard"; the analog DualShock scenes set
+## "dualshock". No-ops on cores without such an option.
+@export var pad_type_pref: String = "standard"
+
 # Port connection state
 var _connected_system: RetroSystem = null
 var _port_index: int = -1
