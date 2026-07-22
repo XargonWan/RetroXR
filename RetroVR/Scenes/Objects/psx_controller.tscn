@@ -21,6 +21,7 @@ freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_psxscript")
+plug_mesh_path = "res://imported-assets/psx_controller_plug.res"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("BoxShape3D_psx")

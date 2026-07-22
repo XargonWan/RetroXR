@@ -21,6 +21,27 @@ func get_controller() -> Node3D:
 	return _controller
 
 
+## Swap the generic cylinder plug for a console-accurate connector mesh.
+## Called by the owning controller when the cable is spawned; a blank or missing
+## path leaves the generic plug in place, so export-excluded models degrade
+## quietly. The mesh is authored in this node's own frame (connector on +Z,
+## cable trailing -Z), so it needs no transform here.
+func set_plug_mesh(path: String) -> void:
+	if path.is_empty() or has_node("PlugModel") or not ResourceLoader.exists(path):
+		return
+	var mesh := load(path) as Mesh
+	if mesh == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "PlugModel"
+	mi.mesh = mesh
+	add_child(mi)
+	for generic in ["PlugTip", "StrainRelief"]:
+		var g := get_node_or_null(generic) as MeshInstance3D
+		if g != null:
+			g.hide()
+
+
 ## Called by the owning controller when the cable is spawned.
 func set_controller(controller: Node3D) -> void:
 	_controller = controller

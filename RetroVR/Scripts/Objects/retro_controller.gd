@@ -31,6 +31,13 @@ var device_type: int = RETRO_DEVICE_JOYPAD
 ## "dualshock". No-ops on cores without such an option.
 @export var pad_type_pref: String = "standard"
 
+## Optional bespoke connector mesh for this controller's cable end. Empty (the
+## default) keeps controller_cable.tscn's generic cylinder plug. The PlayStation
+## pads point this at the real PS1 connector lifted out of the PSone console GLB
+## — see Tools/extract_psx_plug.gd. Missing resources fall back to the generic
+## plug, so an export-excluded model never breaks a build.
+@export var plug_mesh_path: String = ""
+
 # Port connection state
 var _connected_system: RetroSystem = null
 var _port_index: int = -1
@@ -169,6 +176,7 @@ func _add_cable_to_scene() -> void:
 	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
 	_cable_plug.set_controller(self)
+	_cable_plug.set_plug_mesh(plug_mesh_path)
 	_cable_plug.add_collision_exception_with(self)
 	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
 	_cable_rope.start_node = _cable_attach_point

@@ -277,12 +277,17 @@ func configure_controller_ports(port_zones: Array) -> void:
 		if lbl != null:
 			lbl.hide()
 		if i < cols.size():
-			# Yawed 180°: a ControllerPlug's connector points down its +Z with the
-			# cable trailing -Z, so seated square-on to a FRONT-facing port it
-			# would drive the tip out of the console and run the lead in through
-			# the shell. Turn the zone to face the player instead.
+			# Rolled 180° about Z. A ControllerPlug's connector points down its +Z
+			# with the cable trailing -Z, so a front-facing port needs the plug
+			# turned to face the player — but the zone's basis is NOT the plug's
+			# final pose: ControllerPlug carries a SnapGrabPoint rotated 180° about
+			# X, which the snap composes on top. Measured with a plain 180° yaw
+			# here, the plug came out diag(-1,-1,1) — upside down with the
+			# connector pointing back OUT of the console. Rolling instead cancels
+			# that flip and lands the plug at yaw-180: upright, connector inward.
+			# (Invisible on consoles still using the symmetric cylinder plug.)
 			port_zones[i].global_transform = Transform3D(
-				global_transform.basis * Basis(Vector3.UP, PI),
+				global_transform.basis * Basis(Vector3.BACK, PI),
 				Vector3(cols[i].x, y, z))
 
 

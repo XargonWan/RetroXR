@@ -22,6 +22,7 @@ linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_dsscript")
 pad_type_pref = "dualshock"
+plug_mesh_path = "res://imported-assets/psx_controller_plug.res"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1751167823]
 shape = SubResource("BoxShape3D_ds")
