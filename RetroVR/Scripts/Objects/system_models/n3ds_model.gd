@@ -76,3 +76,88 @@ func configure_handheld_controls(host: Node3D) -> void:
 		# forced options carry the value into the next boot otherwise.
 		if _host and _host.get("is_powered_on") and _host.has_method("set_core_option"):
 			_host.set_core_option("citra_factor_3d", str(roundi(v * 100.0))))
+
+
+# ── Physical control animation ────────────────────────────────────────────────
+# Driven each frame by HandheldInput from the exact joypad state it feeds the
+# core: face buttons and shoulders/triggers depress, the D-pad rocks, and the
+# Circle Pad SLIDES in its dish (it does not tilt like a thumbstick). Meshes come
+# from the runtime-loaded detailed GLB; a store build on the primitive fallback
+# simply has nothing to cache and no-ops.
+
+const _FACE_MESH := {
+	ControllerBindings.JOYPAD_A: "FireButtonRight",   # A
+	ControllerBindings.JOYPAD_B: "FireButtonBottom",  # B
+	ControllerBindings.JOYPAD_X: "FireButtonTop",     # X
+	ControllerBindings.JOYPAD_Y: "FireButtonLeft",    # Y
+	ControllerBindings.JOYPAD_START:  "StartButton",
+	ControllerBindings.JOYPAD_SELECT: "SelectButton",
+}
+const _SHOULDER_MESH := {
+	ControllerBindings.JOYPAD_L:  "LShoulderButton",
+	ControllerBindings.JOYPAD_R:  "RShoulderButton",
+	ControllerBindings.JOYPAD_L2: "LIndexTriggerButton",   # ZL
+	ControllerBindings.JOYPAD_R2: "RIndexTriggerButton",   # ZR
+}
+const _FACE_PRESS := 0.0026
+const _SHOULDER_PRESS := 0.0040
+const _PAD_SLIDE := 0.0032
+const _DPAD_TILT_DEG := 8.0
+const _ANIM_W := 0.4
+const _ANIM_PRESS_DIR := Vector3(0, -1, 0)
+
+var _anim_cached := false
+var _anim_btns: Array[Dictionary] = []   # {node, rest, bit, depth}
+var _anim_pad: Dictionary = {}           # circle pad: {node, rest}
+var _anim_dpad: Dictionary = {}          # {node, rest, pivot}
+
+
+func _cache_anim_meshes() -> void:
+	_anim_cached = true
+	for map: Dictionary in [_FACE_MESH, _SHOULDER_MESH]:
+		var depth: float = _FACE_PRESS if map == _FACE_MESH else _SHOULDER_PRESS
+		for bit: int in map:
+			var m := find_child(map[bit], true, false) as MeshInstance3D
+			if m != null:
+				_anim_btns.append({"node": m, "rest": m.transform, "bit": bit, "depth": depth})
+	var pad := find_child("StickLeft22", true, false) as MeshInstance3D
+	if pad != null:
+		_anim_pad = {"node": pad, "rest": pad.transform}
+	var dpad := find_child("Dpad22", true, false) as MeshInstance3D
+	if dpad != null:
+		var pivot := dpad.transform.origin
+		var e := find_child("Dpad", true, false)
+		if e != null and not (e is MeshInstance3D):
+			pivot = dpad.get_parent().to_local((e as Node3D).global_position)
+		_anim_dpad = {"node": dpad, "rest": dpad.transform, "pivot": pivot}
+
+
+## btn = RETRO_JOYPAD bitmask; lstick/rstick are the analog values (−1..1) as sent
+## to the core (y already screen-negated). Lerps the meshes toward that state.
+func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
+	if not _anim_cached:
+		_cache_anim_meshes()
+
+	for e: Dictionary in _anim_btns:
+		var node: MeshInstance3D = e["node"]
+		var rest: Transform3D = e["rest"]
+		var down := 1.0 if (btn & (1 << int(e["bit"]))) != 0 else 0.0
+		var tgt := Transform3D(rest.basis, rest.origin + _ANIM_PRESS_DIR * (float(e["depth"]) * down))
+		node.transform = node.transform.interpolate_with(tgt, _ANIM_W)
+
+	if not _anim_pad.is_empty():
+		var node: MeshInstance3D = _anim_pad["node"]
+		var rest: Transform3D = _anim_pad["rest"]
+		# x = right, z toward the hinge (lstick.y is screen-negated, so forward = −z).
+		var off := Vector3(lstick.x, 0.0, lstick.y) * _PAD_SLIDE
+		node.transform = node.transform.interpolate_with(Transform3D(rest.basis, rest.origin + off), _ANIM_W)
+
+	if not _anim_dpad.is_empty():
+		var pitch := float((btn >> ControllerBindings.JOYPAD_UP) & 1) - float((btn >> ControllerBindings.JOYPAD_DOWN) & 1)
+		var roll := float((btn >> ControllerBindings.JOYPAD_LEFT) & 1) - float((btn >> ControllerBindings.JOYPAD_RIGHT) & 1)
+		var r := Basis.from_euler(Vector3(deg_to_rad(pitch * _DPAD_TILT_DEG), 0.0, deg_to_rad(roll * _DPAD_TILT_DEG)))
+		var node: MeshInstance3D = _anim_dpad["node"]
+		var rest: Transform3D = _anim_dpad["rest"]
+		var pivot: Vector3 = _anim_dpad["pivot"]
+		var about := Transform3D(r, pivot - r * pivot)
+		node.transform = node.transform.interpolate_with(about * rest, _ANIM_W)

@@ -404,6 +404,13 @@ func _merge_pad_state(btn: int, alx: int, aly: int, arx: int, ary: int) -> Dicti
 
 
 func _send_joypad(btn: int, alx: int, aly: int, arx: int, ary: int) -> void:
+	# Drive the model's own physical controls (a handheld animating its buttons /
+	# slide-pad from the same state it feeds the core). No-ops on models without it.
+	var model: Object = _host.get_model() if _host.has_method("get_model") else null
+	if model != null and model.has_method("animate_controls"):
+		model.animate_controls(btn,
+			Vector2(float(alx) / ANALOG_SCALE, float(aly) / ANALOG_SCALE),
+			Vector2(float(arx) / ANALOG_SCALE, float(ary) / ANALOG_SCALE))
 	if NetworkManager.netplay_route(_host, 0, {"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}):
 		return
 	_host.get_libretro_node().SetJoypadState(0, btn, alx, aly, arx, ary)

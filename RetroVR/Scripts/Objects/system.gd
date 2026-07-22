@@ -1369,6 +1369,12 @@ func _claims_port_device(device_type: int) -> bool:
 
 
 ## Returns the Libretro node so plugged-in controller objects can call input methods on it.
+## The active hardware model (RetroSystemModel). Lets peripherals/held-input drive
+## model-side visuals (e.g. a handheld animating its own buttons from input).
+func get_model() -> RetroSystemModel:
+	return _model
+
+
 func get_libretro_node() -> Libretro:
 	return _libretro
 
