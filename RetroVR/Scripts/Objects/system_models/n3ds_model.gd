@@ -78,6 +78,34 @@ func configure_handheld_controls(host: Node3D) -> void:
 			_host.set_core_option("citra_factor_3d", str(roundi(v * 100.0))))
 
 
+## Power button: drive the real PowerButton3ds mesh on the front-right edge
+## rather than the base's generic nub, so the visible power button depresses when
+## pressed. The button→toggle_power connection is made once by RetroSystem; this
+## only repositions the VRButton and points it at the real mesh (as every other
+## model's configure_buttons does). The 3DS has no separate reset / eject.
+func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VRButton) -> void:
+	var mesh := find_child("PowerButton3ds", true, false) as MeshInstance3D
+	var marker := find_child("Power", true, false) as Node3D
+	power_btn.trigger_radius = 0.013
+	power_btn.depress_depth = 0.0014
+	power_btn.set_latched_pressed(false)
+	if mesh != null:
+		power_btn.set_button_mesh(mesh)   # depress the real button; hides the console ButtonMesh
+	if marker != null:
+		power_btn.global_position = marker.global_position
+		power_btn.set_depress_axis_from_node(marker)
+	elif mesh != null:
+		power_btn.global_position = mesh.global_transform * mesh.get_aabb().get_center()
+		power_btn.set_depress_axis_world(Vector3(0, 0, 1))   # press inward from the front face
+	var col := power_btn.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col != null and col.shape is BoxShape3D:
+		col.shape = col.shape.duplicate()
+		(col.shape as BoxShape3D).size = Vector3(0.012, 0.010, 0.010)
+	var lbl := power_btn.get_node_or_null("ButtonLabel") as Label3D
+	if lbl != null:
+		lbl.hide()
+
+
 # ── Physical control animation ────────────────────────────────────────────────
 # Driven each frame by HandheldInput from the exact joypad state it feeds the
 # core: face buttons and shoulders/triggers depress, the D-pad rocks, and the
