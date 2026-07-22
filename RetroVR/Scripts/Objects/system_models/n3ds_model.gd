@@ -47,9 +47,10 @@ func _glb_path() -> String:
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens is
-## handled by the base. Everything else in the GLB is the base half.
+## handled by the base. Everything else in the GLB is the base half. The two
+## slider knobs ride the lid's edges, so they fold with it too.
 func _lid_mesh_names() -> PackedStringArray:
-	return PackedStringArray(["top"])
+	return PackedStringArray(["top", "Slider3DKnob", "VolumeKnob"])
 
 
 ## Force the stereo output mode every boot; depth follows the physical slider.
@@ -66,16 +67,61 @@ func get_forced_core_options() -> Dictionary:
 ## azahar's citra_factor_3d — up (away from the hinge) = full 3D, down = 2D.
 func configure_handheld_controls(host: Node3D) -> void:
 	super(host)
+
+	# The GLB carries a real, separated knob for each slider (split out of the
+	# shell in Blender). Travel them with their slider so the physical cap rides
+	# its groove; the authored primitive stand-in knobs stay hidden.
+	_knob_3d = _cache_knob("Slider3DKnob")
+	_knob_vol = _cache_knob("VolumeKnob")
+	if _volume_slider != null:
+		_set_knob(_knob_vol, _volume_slider.value)
+		_volume_slider.value_changed.connect(func(v: float) -> void: _set_knob(_knob_vol, v))
+
 	_slider_3d = get_node_or_null("LidPivot/Slider3D") as VRSlider
 	if _slider_3d == null:
 		return
 	_depth_3d = _slider_3d.value
+	_set_knob(_knob_3d, _depth_3d)
 	_slider_3d.value_changed.connect(func(v: float) -> void:
 		_depth_3d = v
+		_set_knob(_knob_3d, v)
 		# Live while running (azahar applies option changes mid-game); the
 		# forced options carry the value into the next boot otherwise.
 		if _host and _host.get("is_powered_on") and _host.has_method("set_core_option"):
 			_host.set_core_option("citra_factor_3d", str(roundi(v * 100.0))))
+
+
+# ── Physical slider knobs ─────────────────────────────────────────────────────
+# Both grooves run along the lid's slanted side rim, so travel is a diagonal in
+# the model's local space. Value 0 = the hinge end (2D / quiet), 1 = the far end
+# by the top of the screen (full depth / loud) — matching the real hardware.
+const _KNOB_TRAVEL := 0.0105
+const _KNOB_AXIS := Vector3(0.0, -0.622, -0.783)
+
+var _knob_3d: Dictionary = {}
+var _knob_vol: Dictionary = {}
+
+
+func _cache_knob(mesh_name: String) -> Dictionary:
+	var m := find_child(mesh_name, true, false) as MeshInstance3D
+	if m == null:
+		return {}
+	# Express the travel axis in the knob's PARENT space, so it stays correct
+	# after the base reparents the knob onto the folding LidPivot.
+	var axis := _KNOB_AXIS
+	var parent := m.get_parent() as Node3D
+	if parent != null:
+		axis = parent.global_transform.basis.inverse() * (global_transform.basis * _KNOB_AXIS)
+	return {"node": m, "rest": m.position, "axis": axis.normalized()}
+
+
+func _set_knob(e: Dictionary, value: float) -> void:
+	if e.is_empty():
+		return
+	var node: MeshInstance3D = e["node"]
+	var rest: Vector3 = e["rest"]
+	var axis: Vector3 = e["axis"]
+	node.position = rest + axis * (clampf(value, 0.0, 1.0) * _KNOB_TRAVEL)
 
 
 ## Power button: drive the real PowerButton3ds mesh on the front-right edge
