@@ -96,6 +96,15 @@ extends MeshInstance3D
 ## Default -Z matches the cable plug meshes (strain relief on the -Z back).
 @export var plug_exit_axis: Vector3 = Vector3(0, 0, -1)
 
+## WHERE on each anchor the cable leaves it, in that anchor's LOCAL space — the
+## companion to plug_exit_axis, which only gives the direction. Zero (the
+## default) ends the rope at the anchor's origin, which is right for the generic
+## cylinder plug whose origin sits mid-barrel. A bespoke connector model whose
+## origin is its SEATING reference needs its own cable boss here, or the rope
+## terminates inside the shell and the tube visibly runs through the mesh.
+@export var start_anchor_offset: Vector3 = Vector3.ZERO
+@export var end_anchor_offset: Vector3 = Vector3.ZERO
+
 ## Rigid strain-relief stub: how straight the first/last `end_stiff_segments`
 ## segments are held so the cable emerges STIFF from each plug before it bends to
 ## join the floppy middle. 0 = off, 1 = the stub is perfectly straight.
@@ -269,8 +278,9 @@ func _init_points() -> void:
 		_c_flags[i] = 0
 		_stuck_passes[i] = 0
 
-	var start_pos := start_node.global_position if start_node else global_position
-	var end_pos   := end_node.global_position   if end_node   else start_pos + Vector3(0, -segment_count * segment_length, 0)
+	var start_pos := _anchor_point(start_node, start_anchor_offset, global_position)
+	var end_pos   := _anchor_point(end_node, end_anchor_offset,
+		start_pos + Vector3(0, -segment_count * segment_length, 0))
 
 	for i in count:
 		var t := float(i) / float(count - 1) if count > 1 else 0.0
@@ -282,8 +292,8 @@ func _init_points() -> void:
 		_inv_mass[count - 1] = 0.0
 
 	wake()
-	_sleep_anchor_start = _anchor_pos(start_node, start_pos)
-	_sleep_anchor_end = _anchor_pos(end_node, end_pos)
+	_sleep_anchor_start = _anchor_point(start_node, start_anchor_offset, start_pos)
+	_sleep_anchor_end = _anchor_point(end_node, end_anchor_offset, end_pos)
 	_refresh_exclusions()
 
 
@@ -331,16 +341,18 @@ func wake() -> void:
 	_still_frames = 0
 
 
-func _anchor_pos(node: Node3D, fallback: Vector3) -> Vector3:
-	return node.global_position if node else fallback
+## World point where the cable meets an anchor: its origin shifted by that
+## anchor's local exit offset (see start_anchor_offset / end_anchor_offset).
+func _anchor_point(node: Node3D, offset: Vector3, fallback: Vector3) -> Vector3:
+	return (node.global_transform * offset) if node else fallback
 
 
 ## True when either anchor has moved since the rope went to sleep.
 func _anchors_moved() -> bool:
-	if _anchor_pos(start_node, _sleep_anchor_start) \
+	if _anchor_point(start_node, start_anchor_offset, _sleep_anchor_start) \
 			.distance_squared_to(_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ:
 		return true
-	return _anchor_pos(end_node, _sleep_anchor_end) \
+	return _anchor_point(end_node, end_anchor_offset, _sleep_anchor_end) \
 			.distance_squared_to(_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ
 
 
@@ -647,18 +659,18 @@ func _physics_process(delta: float) -> void:
 
 	# --- Two-way anchor coupling ---
 	if anchor_pull > 0.0 and start_node and end_node:
-		var span := start_node.global_position.distance_to(end_node.global_position)
+		var ps := _anchor_point(start_node, start_anchor_offset, Vector3.ZERO)
+		var pe := _anchor_point(end_node, end_anchor_offset, Vector3.ZERO)
+		var span := ps.distance_to(pe)
 		var excess := span - rest_length()
 		if excess > 0.0:
 			var force := excess * anchor_pull
 			if _start_body:
-				var dir_s := (end_node.global_position - start_node.global_position).normalized()
-				_start_body.apply_force(dir_s * force,
-					start_node.global_position - _start_body.global_position)
+				var dir_s := (pe - ps).normalized()
+				_start_body.apply_force(dir_s * force, ps - _start_body.global_position)
 			if _end_body:
-				var dir_e := (start_node.global_position - end_node.global_position).normalized()
-				_end_body.apply_force(dir_e * force,
-					end_node.global_position - _end_body.global_position)
+				var dir_e := (ps - pe).normalized()
+				_end_body.apply_force(dir_e * force, pe - _end_body.global_position)
 
 	# --- Plug end-direction alignment (FREE ends only) ---
 	# A free plug rigidbody follows the rope: it's rotated so its cable exits along
@@ -680,8 +692,8 @@ func _physics_process(delta: float) -> void:
 		if _points[i].distance_squared_to(_prev_points[i]) > SLEEP_POINT_EPS_SQ:
 			still = false
 			break
-	var a_start := _anchor_pos(start_node, _sleep_anchor_start)
-	var a_end := _anchor_pos(end_node, _sleep_anchor_end)
+	var a_start := _anchor_point(start_node, start_anchor_offset, _sleep_anchor_start)
+	var a_end := _anchor_point(end_node, end_anchor_offset, _sleep_anchor_end)
 	if a_start.distance_squared_to(_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ \
 			or a_end.distance_squared_to(_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ:
 		still = false
@@ -780,11 +792,11 @@ func _project_plane(i: int, cp: Vector3, n: Vector3) -> void:
 
 func _pin_anchors() -> void:
 	if start_node:
-		_points[0] = start_node.global_position
+		_points[0] = _anchor_point(start_node, start_anchor_offset, _points[0])
 		_prev_points[0] = _points[0]
 	if end_node:
 		var last := _points.size() - 1
-		_points[last] = end_node.global_position
+		_points[last] = _anchor_point(end_node, end_anchor_offset, _points[last])
 		_prev_points[last] = _points[last]
 
 

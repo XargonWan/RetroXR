@@ -10,6 +10,12 @@ var _controller: Node3D = null
 ## Device type exposed so system.gd can read it without knowing the controller type.
 var device_type: int = 1  # RETRO_DEVICE_JOYPAD
 
+## Local point the cable leaves this plug at, fed to VerletRope.end_anchor_offset.
+## Zero for the generic cylinder plug, whose origin already sits mid-barrel with
+## the strain relief covering it; a bespoke connector sets its own cable boss in
+## set_plug_mesh, since its origin is the SEATING reference buried in the shell.
+var cable_anchor: Vector3 = Vector3.ZERO
+
 
 func _ready() -> void:
 	super._ready()
@@ -40,6 +46,10 @@ func set_plug_mesh(path: String) -> void:
 		var g := get_node_or_null(generic) as MeshInstance3D
 		if g != null:
 			g.hide()
+	# Where the cable leaves this connector: the centre of the shell's back face
+	# (min Z — the cable trails -Z, matching VerletRope.plug_exit_axis).
+	var ab: AABB = mesh.get_aabb()
+	cable_anchor = Vector3(ab.get_center().x, ab.get_center().y, ab.position.z)
 
 
 ## Called by the owning controller when the cable is spawned.
