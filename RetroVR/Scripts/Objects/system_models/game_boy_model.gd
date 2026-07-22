@@ -17,3 +17,26 @@ func _init() -> void:
 ## the primitive shell authored in game_boy.tscn.
 func _glb_path() -> String:
 	return "res://imported-assets/game_boy_dmg.glb"
+
+
+## Align the cart with the shell's own slot marker ACROSS the body — the base
+## centres it on the body's mid-plane, but the DMG's connector sits ~1 cm below
+## that, so on a 3 cm-thick shell the card sat visibly off the real slot.
+##
+## Only x/y come from the marker; the depth is set so the cart's outer end lands
+## FLUSH with the top of the shell, like real hardware — a Game Boy cartridge
+## drops fully into the back recess rather than standing proud. (Seating the
+## contacts on the marker instead left 30 mm of a 65 mm cart hanging out, and
+## the base's _cart_protrude() convention still left ~18 mm.) The marker's basis
+## already encodes the right pose — length running out of the top mouth, label
+## facing the console's back.
+## Falls back to the base placement when the detailed GLB is absent.
+func configure_cartridge_slot(slot: Node3D) -> void:
+	super(slot)
+	var sock := find_child("socket_media", true, false) as Node3D
+	if sock == null:
+		return
+	var b: Basis = (global_transform.basis.inverse() * sock.global_transform.basis).orthonormalized()
+	var p: Vector3 = to_local(sock.global_position)
+	var seat_z := -body_size.z * 0.5 + cart_size.y * 0.5
+	slot.transform = Transform3D(b, Vector3(p.x, p.y, seat_z))

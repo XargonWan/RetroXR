@@ -38,6 +38,8 @@ var _options_panel: Node3D = null
 const _CART_MODELS := {
 	"nds": "res://imported-assets/nds_cart.glb",
 	"3ds": "res://imported-assets/n3ds_cart.glb",
+	# Grey Game Boy / Game Boy Color cart (GBC games group under game_boy).
+	"game_boy": "res://imported-assets/game_boy_cart.glb",
 }
 
 ## The model's own swappable label face, when a real cart model is in use.
