@@ -27,7 +27,7 @@ pad_type_pref = "dualshock"
 shape = SubResource("BoxShape3D_ds")
 
 [node name="Model" parent="." unique_id=184727867 instance=ExtResource("5_model")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.034, -0.03, -0.019)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0131, -0.03, -0.019)
 
 [node name="CableAttachPoint" type="Node3D" parent="." unique_id=1217289298]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0063921735, -0.03321655)
