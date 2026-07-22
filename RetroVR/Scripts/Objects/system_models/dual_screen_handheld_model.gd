@@ -204,10 +204,10 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	# Raise each live quad clear of the lid/base outer glass (part of the shell
 	# meshes, which render opaque here) so the picture wins the depth test — the
 	# offset scales with how deep the lid's own screen surface sits over the lens.
-	var top_clear := _lens_clearance(top_ctr, top_n, maxf(top_size.x, top_size.y) * 0.5)
+	var top_clear := _lens_clearance(top_ctr, top_n, top_size)
 	_place_screen(_screen, top_ctr + top_n * top_clear, top_n, top_size)
 	var bot_size := Vector2(maxf(bot_ab.size.x, 0.001), maxf(bot_ab.size.z, 0.001))
-	var bot_clear := _lens_clearance(bot_ctr, Vector3.UP, maxf(bot_size.x, bot_size.y) * 0.5)
+	var bot_clear := _lens_clearance(bot_ctr, Vector3.UP, bot_size)
 	_place_screen(_bottom_screen, bot_ctr + Vector3.UP * bot_clear, Vector3.UP, bot_size)
 	bottom_screen_size = bot_size
 	if _screen.mesh is QuadMesh:
@@ -251,11 +251,25 @@ func _upgrade_dual_to_glb(path: String) -> void:
 ## How far the shell's own (opaque) glass/surface sits over a lens along its
 ## normal, so the live picture quad can be raised just clear of it. Samples the
 ## shell body meshes within the screen footprint; falls back to a small default.
-func _lens_clearance(center: Vector3, normal: Vector3, radius: float) -> float:
+func _lens_clearance(center: Vector3, normal: Vector3, size: Vector2) -> float:
 	var shell := get_node_or_null("Shell") as Node3D
 	if shell == null:
 		return 0.0016
 	var n := normal.normalized()
+	# Test the lens's own RECTANGULAR footprint, built on the same basis
+	# _place_screen uses so it matches the quad exactly. This used to be a circle
+	# of half the LARGER dimension, which on a 63x49 mm screen reaches 32 mm out
+	# — past the bezel into the surrounding shell. On the DS Phat, whose lower
+	# half is one big mesh with a raised surround, that picked up shell 11.4 mm
+	# above the lens and floated the live picture that far off the console.
+	var up_hint := Vector3.FORWARD if absf(n.dot(Vector3.UP)) > 0.99 else Vector3.UP
+	var ax := up_hint.cross(n)
+	if ax.length() < 1e-5:
+		ax = Vector3.RIGHT
+	ax = ax.normalized()
+	var ay := n.cross(ax).normalized()
+	var hx := size.x * 0.5
+	var hy := size.y * 0.5
 	var best := 0.0
 	var stack: Array[Node] = [shell]
 	while not stack.is_empty():
@@ -272,7 +286,8 @@ func _lens_clearance(center: Vector3, normal: Vector3, radius: float) -> float:
 					var along := p.dot(n)
 					if along <= 0.0 or along >= 0.02:
 						continue
-					if (p - n * along).length() <= radius:
+					var inplane := p - n * along
+					if absf(inplane.dot(ax)) <= hx and absf(inplane.dot(ay)) <= hy:
 						best = maxf(best, along)
 		for c in node.get_children():
 			stack.append(c)
