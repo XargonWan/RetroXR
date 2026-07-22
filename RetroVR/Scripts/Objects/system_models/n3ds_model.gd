@@ -40,6 +40,18 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # 3DS Game Card
 
 
+## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds keep
+## the primitive clamshell authored in n3ds.tscn.
+func _glb_path() -> String:
+	return "res://imported-assets/new_3ds_xl.glb"
+
+
+## The upper clamshell half (folds with the hinge); the top screen lens is
+## handled by the base. Everything else in the GLB is the base half.
+func _lid_mesh_names() -> PackedStringArray:
+	return PackedStringArray(["top"])
+
+
 ## Force the stereo output mode every boot; depth follows the physical slider.
 func get_forced_core_options() -> Dictionary:
 	return {
