@@ -124,6 +124,30 @@ func _set_knob(e: Dictionary, value: float) -> void:
 	node.position = rest + axis * (clampf(value, 0.0, 1.0) * _KNOB_TRAVEL)
 
 
+## The 3DS Game Card slot is on the FRONT edge, left of centre — not the generic
+## back-centre mouth the handheld base assumes. Re-seat the snap zone there so a
+## grabbed card snaps to where the slot actually is: lying flat, label DOWN, and
+## contacts leading in. Falls back to the base placement when the detailed GLB
+## isn't present (store build on the primitive shell).
+func configure_cartridge_slot(slot: Node3D) -> void:
+	super(slot)
+	var sock := find_child("socket_media", true, false) as Node3D
+	if sock == null:
+		return
+	# Seat the card off the socket marker itself (the connector, deepest point):
+	# its centre sits half a card-length toward the front mouth. Deriving this
+	# from body_size instead would overshoot — that spans the whole base half,
+	# which the rear AV lead inflates well past the real front edge.
+	var p := to_local(sock.global_position)
+	slot.position = Vector3(p.x, p.y, p.z + cart_size.y * 0.5)
+	slot.rotation_degrees = Vector3(90, 0, 0)             # base pose, flipped to a FRONT mouth
+
+
+## The card slides in from the front of the device (the base assumes the back).
+func get_cartridge_insert_direction() -> Vector3:
+	return Vector3(0, 0, 1)
+
+
 ## Power button: drive the real PowerButton3ds mesh on the front-right edge
 ## rather than the base's generic nub, so the visible power button depresses when
 ## pressed. The button→toggle_power connection is made once by RetroSystem; this
