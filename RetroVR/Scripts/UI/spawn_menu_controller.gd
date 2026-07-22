@@ -28,38 +28,6 @@ const CASSETTE_PLAYER_SCENE := preload("res://Scenes/Objects/cassette_player.tsc
 const AUDIO_DISC_SCENE      := preload("res://Scenes/Objects/audio_disc.tscn")
 const AUDIO_CASSETTE_SCENE  := preload("res://Scenes/Objects/audio_cassette.tscn")
 
-# Y heights used when spawning each type onto the table
-const SPAWN_Y := {
-	"tv":               0.95,
-	"system":           0.80,
-	"cartridge":        0.76,
-	"disc":             0.76,
-	"book":             0.80,
-	"trash_can":        0.90,
-	"retro_controller": 0.80,
-	"dualshock":        0.80,
-	"dualshock2":       0.80,
-	"gamecube_controller": 0.80,
-	"dreamcast_controller": 0.80,
-	"nes_controller":   0.80,
-	"n64_controller":   0.80,
-	"psx_controller":   0.80,
-	"retro_mouse":      0.78,
-	"retro_keyboard":   0.78,
-	"retro_multitap":   0.80,
-	"ray_gun":          0.82,
-	"vcr_player":       0.80,
-	"tape":             0.78,
-	"dvd_player":       0.80,
-	"dvd_disc":         0.78,
-	"cd_player":        0.80,
-	"cassette_player":  0.80,
-	"audio_disc":       0.78,
-	"audio_cassette":   0.78,
-	"tv_remote":        0.78,
-	"memory_card":      0.78,
-}
-
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
 
 ## Action name waiting for a key/mouse press during desktop rebinding ("" = none).
@@ -755,10 +723,10 @@ func _give_to_grabber(grabber: Node, obj: XRToolsPickable) -> void:
 		grabber.grab_spawned(obj)
 
 
-## Add obj to the scene, place it 0.5 m in front of the menu at the type's table
-## height, then hand it to whichever hand clicked the spawn button. A full hand
+## Add obj to the scene, place it 0.5 m in front of the menu, then hand it to
+## whichever hand clicked the spawn button. A full hand
 ## blocks the spawn ("Drop Item From Hand First" in the menu's status bar).
-func _place_spawned(obj: Node3D, type: String) -> void:
+func _place_spawned(obj: Node3D, _type: String) -> void:
 	var grabber := _spawn_grabber()
 	if grabber != null and _grabber_busy(grabber):
 		obj.queue_free()
@@ -774,7 +742,6 @@ func _place_spawned(obj: Node3D, type: String) -> void:
 		fwd = Vector3.FORWARD
 	fwd = fwd.normalized()
 	obj.global_position = global_position + fwd * 0.5
-	obj.global_position.y = SPAWN_Y.get(type, SPAWN_Y.get("system", 0.80))
 	# In a multiplayer session the host registers + broadcasts; a client's
 	# local copy is converted into a spawn request the host executes (the copy
 	# is freed, so a client can't receive it in hand — it spawns placed).
