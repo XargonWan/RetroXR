@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_rq1i2"]
 size = Vector3(0.16, 0.012, 0.14)
@@ -30,6 +31,9 @@ albedo_color = Color(0.03, 0.03, 0.04, 1)
 
 [sub_resource type="QuadMesh" id="QuadMesh_77fbx"]
 size = Vector2(0.01, 0.01)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vbvol"]
+size = Vector3(0.026, 0.024, 0.024)
 
 [node name="VirtualBoy" type="Node3D" unique_id=1385834482]
 script = ExtResource("1_dweg0")
@@ -63,3 +67,14 @@ surface_material_override/0 = SubResource("StandardMaterial3D_ifno2")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
 visible = false
 mesh = SubResource("QuadMesh_77fbx")
+
+[node name="VolumeSlider" type="Area3D" parent="."]
+collision_layer = 1048577
+script = ExtResource("9_vbvol")
+axis_local = Vector3(0, 0, -1)
+travel = 0.01
+engage_radius = 0.022
+value = 0.8
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+shape = SubResource("BoxShape3D_vbvol")

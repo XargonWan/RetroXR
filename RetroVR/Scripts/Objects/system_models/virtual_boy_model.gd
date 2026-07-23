@@ -127,6 +127,7 @@ func _upgrade_to_glb() -> void:
 		if ph != null:
 			ph.hide()
 	_place_eyepiece()
+	_place_volume_wheel()
 
 
 func _glb_aabb() -> AABB:
@@ -148,6 +149,52 @@ func _glb_aabb() -> AABB:
 ## (there is no head-in-a-vice divider), so a per-lens image would be shown to
 ## both eyes. A single quad sampled by VIEW_INDEX gives each eye its own half —
 ## correct stereo without needing the barrier the real hardware relies on.
+## The volume thumbwheel, split out of the body mesh in Blender (the shell ships
+## it welded into "Virtual Boy1"). Turning it drives the console's audio volume
+## and spins the wheel itself, so the one control the head unit really does have
+## actually works.
+const _VOL_SWEEP_DEG := 70.0
+
+var _vol_wheel: MeshInstance3D = null
+var _vol_rest: Transform3D
+var _vol_slider: VRSlider = null
+
+
+func _place_volume_wheel() -> void:
+	if _glb == null:
+		return
+	_vol_wheel = _glb.find_child("VolumeWheel", true, false) as MeshInstance3D
+	_vol_slider = get_node_or_null("VolumeSlider") as VRSlider
+	if _vol_wheel == null or _vol_slider == null:
+		return
+	_vol_rest = _vol_wheel.transform
+	var ab: AABB = (global_transform.affine_inverse() * _vol_wheel.global_transform) * _vol_wheel.get_aabb()
+	_vol_slider.global_position = to_global(ab.get_center())
+	var knob := _vol_slider.get_node_or_null("KnobMesh") as MeshInstance3D
+	if knob != null:
+		knob.hide()
+	_vol_slider.value_changed.connect(_on_volume)
+	_apply_volume(_vol_slider.value)
+
+
+func _on_volume(v: float) -> void:
+	_apply_volume(v)
+	var host := get_parent()
+	if host != null and host.has_method("set_audio_volume"):
+		host.set_audio_volume(v)
+
+
+## Spin the wheel about its own axle (the mesh's long axis, X) so the ribs
+## travel through the slot as the value changes.
+func _apply_volume(v: float) -> void:
+	if _vol_wheel == null:
+		return
+	var ab: AABB = _vol_wheel.get_aabb()
+	var pivot: Vector3 = _vol_rest * ab.get_center()
+	var r := Basis(Vector3.RIGHT, deg_to_rad((v - 0.5) * _VOL_SWEEP_DEG))
+	_vol_wheel.transform = Transform3D(r, pivot - r * pivot) * _vol_rest
+
+
 ## World position of a GLB marker empty.
 func _marker(nm: String) -> Vector3:
 	if _glb == null:
