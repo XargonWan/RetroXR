@@ -65,6 +65,8 @@ const _MODEL_VARIANTS: Dictionary = {
 const _MODEL_SCENE_VARIANTS: Dictionary = {
 	# "nds" is the original DS (Phat); the DS Lite is the later revision.
 	"nds:lite": "res://Scenes/Objects/system_models/nds_lite.tscn",
+	# "playstation" is the PSone; the full-size grey SCPH-100x is the original.
+	"playstation:original": "res://Scenes/Objects/system_models/playstation_original.tscn",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".

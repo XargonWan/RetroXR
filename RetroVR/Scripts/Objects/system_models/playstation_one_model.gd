@@ -14,7 +14,34 @@
 class_name RetroSystemModelPlaystationOne
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/playstation_one.glb"
+## Overridable shell description. A sibling PlayStation shell (the full-size
+## original) subclasses this model and swaps these out; everything else — the
+## lid rig, the hinge/tray sync, the disc seat — is shared.
+func _model_path() -> String:
+	return "res://imported-assets/playstation_one.glb"
+
+## Yaw applied to the GLB so the shell's FRONT faces +Z, the frame every
+## placement below assumes. 0 when the model is already authored that way.
+func _shell_yaw() -> float:
+	return 0.0
+
+## Bundled cables/plugs/props to hide — RetroVR spawns its own.
+func _hidden_meshes() -> PackedStringArray:
+	return PackedStringArray(["controller_plug_002", "RCA_Silver"])
+
+func _shell_mesh() -> String:
+	return "psone_console"
+
+func _lid_mesh() -> String:
+	return "psone_cd_lid"
+
+## Marker the disc rests on.
+func _disc_seat_marker() -> String:
+	return "socket_media"
+
+## Marker for the A/V out on the back.
+func _cable_marker() -> String:
+	return "Cable Plug (S)"
 
 var _glb: Node3D = null
 var _anim: AnimationPlayer = null
@@ -27,12 +54,13 @@ func _ready() -> void:
 	# The scene's own stand-in shell (ConsoleBody + LidPlate) is the fallback and
 	# is already visible, so there's nothing to switch on: it's a PSone-shaped
 	# body with a working hinge rather than the host's generic SystemBody box.
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("PlaystationOneModel: %s missing — using the scene's stand-in shell" % _MODEL_PATH)
+	var model_path := _model_path()
+	if not ResourceLoader.exists(model_path):
+		push_warning("%s: %s missing — using the scene's stand-in shell" % [name, model_path])
 		return
-	var ps := load(_MODEL_PATH) as PackedScene
+	var ps := load(model_path) as PackedScene
 	if ps == null:
-		push_warning("PlaystationOneModel: failed to load %s" % _MODEL_PATH)
+		push_warning("%s: failed to load %s" % [name, model_path])
 		return
 	_glb = ps.instantiate() as Node3D
 	# Disable the GLB's auto-played animation so the lid keeps its REST pose, which
@@ -42,11 +70,16 @@ func _ready() -> void:
 		_anim.autoplay = ""
 	add_child(_glb)
 	# Hide bundled cables/plugs — RetroVR spawns its own controllers + AV cable.
-	for extra in ["controller_plug_002", "RCA_Silver"]:
+	for extra in _hidden_meshes():
 		var e := _glb.find_child(extra, true, false) as Node3D
 		if e != null:
 			e.visible = false
-	# Recentre on the console body in X/Z (base already rests near y=0).
+	# Turn the shell so its front faces +Z, then recentre on the console body in
+	# X/Z (base already rests near y=0). The yaw must come FIRST — the recentre
+	# is measured in the rotated frame.
+	var yaw := _shell_yaw()
+	if not is_zero_approx(yaw):
+		_glb.basis = Basis(Vector3.UP, yaw)
 	var xz := _visible_xz_center(_glb)
 	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
 	# The real shell is in — retire the scene's stand-in boxes. They exist so the
@@ -110,7 +143,7 @@ func _mesh_center(mesh_name: String) -> Vector3:
 func _front_face_z() -> float:
 	if _glb == null:
 		return global_position.z
-	var mi := _glb.find_child("psone_console", true, false) as MeshInstance3D
+	var mi := _glb.find_child(_shell_mesh(), true, false) as MeshInstance3D
 	if mi == null or mi.mesh == null:
 		return global_position.z
 	return ((mi.global_transform * mi.get_aabb()) as AABB).end.z
@@ -155,7 +188,7 @@ var _lid_tween: Tween = null
 func _mount_lid() -> void:
 	var mount := get_node_or_null("LidMount") as Node3D
 	_lid_pivot = get_node_or_null("LidMount/LidPivot") as Node3D
-	var lid := _glb.find_child("psone_cd_lid", true, false) as MeshInstance3D
+	var lid := _glb.find_child(_lid_mesh(), true, false) as MeshInstance3D
 	if mount == null or _lid_pivot == null or lid == null:
 		return
 	var ab: AABB = lid.global_transform * lid.get_aabb()
@@ -250,7 +283,7 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	# the rotor's own height (y≈0.0245), which is *inside* the laser assembly
 	# (y 0.0212–0.0290) — the disc sank into the mechanism instead of resting on
 	# it. socket_media is the same point raised clear of the laser cover.
-	slot.global_position = _anchor("socket_media")
+	slot.global_position = _anchor(_disc_seat_marker())
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
@@ -292,7 +325,7 @@ func configure_controller_ports(port_zones: Array) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	attach_point.global_position = _anchor("Cable Plug (S)")
+	attach_point.global_position = _anchor(_cable_marker())
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false

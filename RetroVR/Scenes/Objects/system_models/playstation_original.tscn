@@ -1,0 +1,49 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/playstation_original_model.gd" id="1_psxorig"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_hinge"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lidgrab"]
+size = Vector3(0.14, 0.024, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.2652, 0.0527, 0.1853)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_shell"]
+albedo_color = Color(0.81, 0.81, 0.83, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_lid"]
+size = Vector3(0.1592, 0.0345, 0.1674)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lid"]
+albedo_color = Color(0.77, 0.77, 0.79, 1)
+
+[node name="PlaystationOriginal" type="Node3D" unique_id=1919200000]
+script = ExtResource("1_psxorig")
+
+[node name="ConsoleBody" type="MeshInstance3D" parent="." unique_id=1919200005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0264, 0)
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("StandardMaterial3D_shell")
+
+[node name="LidMount" type="Node3D" parent="." unique_id=1919200004]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.0222, -0.0837)
+
+[node name="LidPivot" type="Node3D" parent="LidMount" unique_id=1919200001]
+
+[node name="LidPlate" type="MeshInstance3D" parent="LidMount/LidPivot" unique_id=1919200006]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0172, -0.0837)
+mesh = SubResource("BoxMesh_lid")
+surface_material_override/0 = SubResource("StandardMaterial3D_lid")
+
+[node name="LidHinge" type="Area3D" parent="LidMount/LidPivot" unique_id=1919200002 node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0172, -0.1674)
+collision_layer = 1048577
+script = ExtResource("2_hinge")
+target = NodePath("..")
+min_deg = 0.0
+max_deg = 70.0
+engage_radius = 0.05
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidMount/LidPivot/LidHinge" unique_id=1919200003]
+shape = SubResource("BoxShape3D_lidgrab")
