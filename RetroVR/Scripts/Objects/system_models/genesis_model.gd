@@ -122,13 +122,18 @@ func _wire_button(btn: VRButton, mesh_name: String) -> void:
 
 
 # --- cartridge (top-load: drops straight down) ---
-## The two 9-pin ports on the front panel, measured off a straight-on render of
-## the face against the shell's own moulded CONTROL 1 / CONTROL 2 recesses. The
-## GLB marks the cart socket and the A/V out but not these, and nothing had ever
-## placed them — both zones sat at the framework default, on the floor in front
-## of the console. Shared with the Mega Drive: same hardware, same node layout.
-const _PORT_X := [0.0533, 0.0848]
-const _PORT_Y := 0.0169
+## The two 9-pin ports on the front panel. The GLB marks the cart socket and the
+## A/V out but not these, and nothing had ever placed them — both zones sat at the
+## framework default, on the floor in front of the console.
+##
+## First measured off a straight-on render against the shell's own moulded
+## CONTROL 1 / CONTROL 2 recesses, then replaced with the author's own numbers:
+## an author's SMS/32X bundle carries the SAME `megadrive_console` mesh plus two
+## `Port1`/`Port2` markers with plugs posed in them. The render-measured values
+## landed within 0.6 mm and 0.1 mm of those, which is the cross-check; these are
+## the exact ones. Shared with the Mega Drive — same hardware, same node layout.
+const _PORT_X := [0.0539, 0.0849]
+const _PORT_Y := 0.0156
 const _PORT_Z := 0.1077
 
 
