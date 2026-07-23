@@ -68,6 +68,16 @@ static func _get_front_hit(
 		if body_hit.is_empty():
 			return area_hit
 
+		# A VRButton wins over a body even when the body is nearer. Console grab
+		# collision (the PointerArea) is a single box that ENCLOSES the recessed
+		# power/reset buttons, so a ray reaches the box surface a couple of
+		# centimetres before the button area behind it. Without this the front hit
+		# collapses to the body and the button — which carries BUTTON_PRIORITY and
+		# is meant to win — is discarded before _choose_target ever sees it. That
+		# is why the Genesis and DS Phat power buttons were not clickable.
+		if area_hit.collider is VRButton:
+			return area_hit
+
 		var area_dist := from.distance_squared_to(area_hit.position)
 		var body_dist := from.distance_squared_to(body_hit.position)
 		if area_dist <= body_dist + DISTANCE_EPSILON:

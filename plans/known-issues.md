@@ -30,12 +30,10 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 
 # DS Phat
 
-* the power button isn't clickable
 * The cartridge appears to stick out when it is placed in and it doesn't appear to go in the slot right
 
 # Genesis / Mega Drive
 
-* the power button isn't clickable
 
 # Core-Info Known Issues
 
