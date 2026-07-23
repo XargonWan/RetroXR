@@ -22,6 +22,7 @@ class_name RetroSystemModelVirtualBoy
 extends RetroSystemModel
 
 const STEREO_SHADER := preload("res://Shaders/vb_stereo.gdshader")
+const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 const _MODEL_PATH := "res://imported-assets/virtual_boy.glb"
 
 ## The shell is authored with its EYEPIECES on -Z and its cart slot / A/V out on
@@ -43,6 +44,12 @@ var _glb: Node3D = null
 var _proxy: MeshInstance3D = null
 var _eyepiece: MeshInstance3D = null
 var _stereo_mat: ShaderMaterial = null
+## One live quad per PHYSICAL lens: the left pane shows the left-eye half of the
+## side-by-side frame and the right pane the right-eye half, exactly like the
+## hardware wires its two displays. With your head in the visor each eye lines up
+## with its own pane, which is the arrangement the console was built around.
+var _lens_quads: Array[MeshInstance3D] = []
+var _lens_mats: Array[ShaderMaterial] = []
 var _visor_center_y := 0.0
 
 
@@ -150,31 +157,49 @@ func _marker(nm: String) -> Vector3:
 
 
 func _place_eyepiece() -> void:
-	if _eyepiece == null or _glb == null:
+	if _glb == null:
 		return
-	var span := AABB()
-	var first := true
+	# The primitive single quad is retired: the shell models both panes, so feed
+	# them separately instead of stretching one image across the pair.
+	if _eyepiece != null:
+		_eyepiece.visible = false
+	var lenses: Array[MeshInstance3D] = []
 	for nm in _LENS:
 		var lens := _glb.find_child(nm, true, false) as MeshInstance3D
-		if lens == null or lens.mesh == null:
-			continue
-		var ab: AABB = (global_transform.affine_inverse() * lens.global_transform) * lens.get_aabb()
-		span = ab if first else span.merge(ab)
-		first = false
-		lens.visible = false          # the live quad replaces it
-	if first:
+		if lens != null and lens.mesh != null:
+			lenses.append(lens)
+	if lenses.size() < 2:
 		return
-	# Width from the aperture, height from ONE eye's 384x224 so the picture is
-	# not stretched across the pair.
-	var w: float = span.size.x
-	var h: float = w * (224.0 / 384.0)
-	if _eyepiece.mesh is QuadMesh:
-		var q := (_eyepiece.mesh as QuadMesh).duplicate() as QuadMesh
-		q.size = Vector2(w, h)
-		_eyepiece.mesh = q
-	var c := span.get_center()
-	# A hair proud of the panes so the picture wins the depth test.
-	_eyepiece.position = Vector3(c.x, c.y, span.end.z + 0.0015)
+	# Sort by x so index 0 is the player's LEFT pane. Facing the console (the
+	# player stands at +Z looking down -Z), the player's left is -X.
+	lenses.sort_custom(func(a: MeshInstance3D, b: MeshInstance3D) -> bool:
+		return _lens_x(a) < _lens_x(b))
+	for i in lenses.size():
+		var lens := lenses[i]
+		var ab: AABB = (global_transform.affine_inverse() * lens.global_transform) * lens.get_aabb()
+		lens.visible = false                      # our live quad replaces the pane
+		var quad := MeshInstance3D.new()
+		quad.name = "LensLeft" if i == 0 else "LensRight"
+		var qm := QuadMesh.new()
+		qm.size = Vector2(ab.size.x, ab.size.y)
+		quad.mesh = qm
+		var mat := ShaderMaterial.new()
+		mat.shader = WINDOW_SHADER
+		# Left half of the composite, pinned per pane: stereo_mode 1 never
+		# applies eye_shift (left eye), 2 always applies it (right eye).
+		mat.set_shader_parameter("source_rect", Vector4(0.0, 0.0, 0.5, 1.0))
+		mat.set_shader_parameter("eye_shift", 0.5)
+		mat.set_shader_parameter("stereo_mode", 1 if i == 0 else 2)
+		quad.set_surface_override_material(0, mat)
+		add_child(quad)
+		quad.position = Vector3(ab.get_center().x, ab.get_center().y, ab.end.z + 0.0012)
+		_lens_quads.append(quad)
+		_lens_mats.append(mat)
+
+
+func _lens_x(m: MeshInstance3D) -> float:
+	var ab: AABB = (global_transform.affine_inverse() * m.global_transform) * m.get_aabb()
+	return ab.get_center().x
 
 
 func _process(_delta: float) -> void:
@@ -189,6 +214,9 @@ func _process(_delta: float) -> void:
 		tex = (mat as StandardMaterial3D).get_texture(BaseMaterial3D.TEXTURE_EMISSION)
 	if _stereo_mat.get_shader_parameter("source_tex") != tex:
 		_stereo_mat.set_shader_parameter("source_tex", tex)
+	for m in _lens_mats:
+		if m.get_shader_parameter("source_tex") != tex:
+			m.set_shader_parameter("source_tex", tex)
 
 
 ## Sit the START/STOP and RESET buttons on the front of the bipod base plate
@@ -247,15 +275,24 @@ func _bind_to_shell(btn: VRButton, xz: Vector3, top_y: float) -> void:
 		lbl.hide()
 
 
+## Underside controller socket, from the bottom-face render.
+const _PORT_X := 0.082
+const _PORT_Z := -0.018
+
+
 ## The single controller port sits under the front of the visor pointing down,
 ## like the real EXT connector on the underside of the head unit.
 func configure_controller_ports(port_zones: Array) -> void:
 	if port_zones.size() > 0:
 		var zone: Node3D = port_zones[0]
 		if _glb != null:
-			# EXT port on the underside of the head unit, near the front edge.
+			# Controller socket on the UNDERSIDE, right of centre — measured off
+			# an orthographic render of the bottom face (with a reference marker
+			# at a known +X, because looking straight up makes left/right
+			# ambiguous). Matches the manual's bottom view: socket to one side,
+			# volume dial and headphone jack on the other.
 			var ab := _glb_aabb()
-			zone.position = Vector3(0.0, ab.position.y + 0.006, ab.end.z - 0.030)
+			zone.position = Vector3(_PORT_X, ab.position.y + 0.006, _PORT_Z)
 			zone.rotation_degrees = Vector3(90, 0, 0)
 			var recess := zone.get_node_or_null("PortRecess") as MeshInstance3D
 			if recess != null:
@@ -348,8 +385,12 @@ func configure_collision(host: Node3D) -> void:
 func on_power_on() -> void:
 	if _stereo_mat:
 		_stereo_mat.set_shader_parameter("powered", 1.0)
+	for q in _lens_quads:
+		q.visible = true
 
 
 func on_power_off() -> void:
 	if _stereo_mat:
 		_stereo_mat.set_shader_parameter("powered", 0.0)
+	for q in _lens_quads:
+		q.visible = false

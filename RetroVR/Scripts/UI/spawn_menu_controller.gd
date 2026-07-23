@@ -13,6 +13,8 @@ const DISC_SCENE            := preload("res://Scenes/Objects/disc.tscn")
 const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
+# Stand-in Virtual Boy pad: carries the console POWER switch, like the real one.
+const VB_CONTROLLER_SCENE   := preload("res://Scenes/Objects/vb_controller.tscn")
 const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/retro_mouse.tscn")
 const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/retro_multitap.tscn")
@@ -806,6 +808,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = _instantiate_optional("res://imported-assets/atari_joystick.glb", "res://Scenes/Objects/atari_joystick.tscn")
 			if obj == null:
 				return
+		"vb_controller":
+			obj = VB_CONTROLLER_SCENE.instantiate() as Node3D
 		"n64_controller":
 			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/n64_controller.tscn")
 			if obj == null:

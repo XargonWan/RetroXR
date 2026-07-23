@@ -1,0 +1,104 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/vb_controller.gd" id="1_vbctrl"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="5_slider"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_vb"]
+friction = 0.8
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.135, 0.055, 0.045)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.135, 0.055, 0.045)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.13, 0.13, 0.14, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pack"]
+size = Vector3(0.062, 0.030, 0.030)
+
+[sub_resource type="StandardMaterial3D" id="Mat_pack"]
+albedo_color = Color(0.55, 0.06, 0.06, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_knob"]
+size = Vector3(0.012, 0.008, 0.012)
+
+[sub_resource type="StandardMaterial3D" id="Mat_knob"]
+albedo_color = Color(0.75, 0.75, 0.78, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_knob"]
+size = Vector3(0.026, 0.020, 0.026)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.135, 0.055, 0.045)
+
+[node name="VbController" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.2
+physics_material_override = SubResource("PhysMat_vb")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_vbctrl")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="ControllerMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="BatteryPack" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0405, -0.004)
+mesh = SubResource("BoxMesh_pack")
+surface_material_override/0 = SubResource("Mat_pack")
+
+[node name="PowerSlider" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0405, 0.0125)
+collision_layer = 1048577
+script = ExtResource("5_slider")
+axis_local = Vector3(1, 0, 0)
+travel = 0.018
+engage_radius = 0.025
+value = 0.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSlider"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.009, 0, 0)
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("Mat_knob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSlider"]
+shape = SubResource("BoxShape3D_knob")
+
+[node name="PowerLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0405, 0.0295)
+pixel_size = 0.00022
+modulate = Color(0.85, 0.85, 0.9, 1)
+text = "POWER"
+font_size = 20
+
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0275, -0.012)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.055, 0, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.055, 0, 0)
+visible = false
