@@ -354,13 +354,31 @@ func configure_controller_ports(port_zones: Array) -> void:
 		zone.rotation_degrees = Vector3(90, 0, 0)
 
 
+## Where socket_media ends up once the cart is home, minus where the marker
+## sits at rest — both read off the bundle's own `Virtual Boy_Insert_PAN` clip
+## (see virtual_boy.anim.json). The clip translates on Z alone, which is what
+## fixes the insertion as horizontal rather than a drop-in from the top: the
+## cart slides in under the hood, flat, from the front.
+const _SEAT_DELTA := Vector3(-0.00256, -0.02196, 0.01468)
+
+
 func configure_cartridge_slot(slot: Node3D) -> void:
-	# Cart drops into the top of the visor, like the real loading slot.
 	if _glb != null:
-		# The shell marks the slot. socket_media is where the cart's CONNECTOR
-		# lands, and a snap zone seats on the object's CENTRE, so lift by half
-		# the cart's height or most of it disappears inside the shell.
-		slot.global_position = _marker("socket_media") 			+ Vector3.UP * (MediaDimensions.cart_size(_cart_systemid()).y * 0.5)
+		var mk := _glb.find_child("socket_media", true, false) as Node3D
+		if mk != null:
+			var b: Basis = _glb.global_transform.basis.orthonormalized()
+			# Lay the cart flat with the label up, connector leading along the
+			# clip's travel axis. A cartridge is authored connector -Y / label
+			# +Z, so map its +Y (grip) onto the shell's +Z and its +Z (label)
+			# onto world up. X has to invert for this to stay a rotation.
+			slot.global_transform = Transform3D(
+				b * Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
+				mk.global_position + b * _SEAT_DELTA)
+			var sv := slot.get_node_or_null("SlotVisual") as MeshInstance3D
+			if sv != null:
+				sv.visible = false
+			return
+		slot.global_position = _marker("socket_media")
 		var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 		if v != null:
 			v.visible = false

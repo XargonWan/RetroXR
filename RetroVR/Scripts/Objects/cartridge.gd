@@ -196,25 +196,41 @@ func _apply_label_art() -> void:
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
 	if tex == null:
 		return
-	# Real cart model: paint the art straight onto the model's own label face,
-	# replacing the placeholder art baked into the GLB. With no art the model
-	# keeps its own default, so this only ever runs when a label exists.
+	# Real cart model: cover the model's own label face with a quad of our own
+	# rather than repainting theirs.
+	#
+	# Painting onto the author's quad means inheriting the author's UVs, and the
+	# models agree on no convention at all — normals point in or out, u runs
+	# across on one card and up the face on another. Every "detect it and mirror
+	# the UV" rule got some cart backwards (the Virtual Boy label read in
+	# reverse; the rule that fixed it flipped Super Mario 64 DS). The label plane
+	# is a flat quad in the cart's XY facing +Z on all of them, so building a
+	# fresh quad over it from its measured bounds is right by construction and
+	# stays right for models we haven't imported yet.
 	if _model_label != null:
-		var lm := StandardMaterial3D.new()
-		lm.albedo_color = Color.WHITE
-		lm.albedo_texture = tex
-		# The label face is a single quad and the models don't agree on its
-		# winding (the DS card's normal points into the shell), so draw both
-		# sides rather than have the art vanish on one of them.
-		lm.cull_mode = BaseMaterial3D.CULL_DISABLED
-		# ...and where the plane faces into the shell, mirror the UV back so the
-		# art doesn't read reversed from the outside.
-		if _model_label.mesh != null and _model_label.mesh.get_surface_count() > 0:
-			var arr: Array = _model_label.mesh.surface_get_arrays(0)
-			var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-			if norms.size() > 0 and norms[0].z < 0.0:
-				lm.uv1_scale = Vector3(-1, 1, 1)
-		_model_label.set_surface_override_material(0, lm)
+		var ab: AABB = (global_transform.affine_inverse() * _model_label.global_transform) \
+			* _model_label.get_aabb()
+		if ab.size.x > 0.0001 and ab.size.y > 0.0001:
+			_model_label.visible = false
+			var art := MeshInstance3D.new()
+			art.name = "ModelLabelArt"
+			add_child(art)
+			# Fit-within, so art of any aspect is never stretched to the recess.
+			var fitted := Vector2(ab.size.x, ab.size.y)
+			var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
+			if fitted.x / maxf(fitted.y, 0.0001) > aspect:
+				fitted.x = fitted.y * aspect
+			else:
+				fitted.y = fitted.x / aspect
+			var qm := QuadMesh.new()
+			qm.size = fitted
+			art.mesh = qm
+			var c := ab.get_center()
+			art.position = Vector3(c.x, c.y, c.z + 0.0003)
+			var lm := StandardMaterial3D.new()
+			lm.albedo_color = Color.WHITE
+			lm.albedo_texture = tex
+			art.set_surface_override_material(0, lm)
 		var glbl := get_node_or_null("GameLabel") as Label3D
 		if glbl != null:
 			glbl.visible = false
