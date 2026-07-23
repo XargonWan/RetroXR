@@ -23,8 +23,6 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 
 # 3DS
 
-* Dpad animation for 3DS appears reversed for up and down (down press up in the animation of the button, and up presses down in the animation)
-  * Should check other controllers and handhelds for the same issue
 * 3DS On button is green for some reason, it should not,
 * 3DS L/R/ZR/ZL button animations go down, rather than inward to the handheld
 * taping on the screen in desktop mode also trys to pick up the console

@@ -282,7 +282,10 @@ func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
 	if not _anim_dpad.is_empty():
 		var pitch := float((btn >> ControllerBindings.JOYPAD_UP) & 1) - float((btn >> ControllerBindings.JOYPAD_DOWN) & 1)
 		var roll := float((btn >> ControllerBindings.JOYPAD_LEFT) & 1) - float((btn >> ControllerBindings.JOYPAD_RIGHT) & 1)
-		var r := Basis.from_euler(Vector3(deg_to_rad(pitch * _DPAD_TILT_DEG), 0.0, deg_to_rad(roll * _DPAD_TILT_DEG)))
+		# Negate pitch: UP must push the FAR edge of the cross down into the shell,
+		# not lift it. The unflipped sign tilted the d-pad backwards (pressing up
+		# read as down). Roll (left/right) was already correct.
+		var r := Basis.from_euler(Vector3(deg_to_rad(-pitch * _DPAD_TILT_DEG), 0.0, deg_to_rad(roll * _DPAD_TILT_DEG)))
 		var node: MeshInstance3D = _anim_dpad["node"]
 		var rest: Transform3D = _anim_dpad["rest"]
 		var pivot: Vector3 = _anim_dpad["pivot"]
