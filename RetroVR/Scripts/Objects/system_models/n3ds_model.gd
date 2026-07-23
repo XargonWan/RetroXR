@@ -200,6 +200,9 @@ const _SHOULDER_MESH := {
 const _FACE_PRESS := 0.0026
 const _SHOULDER_PRESS := 0.0040
 const _PAD_SLIDE := 0.0032
+## The New 3DS's C-Stick is a stiff nub, not a gimbal - on real hardware it
+## barely visibly moves. A small tilt reads without looking like a thumbstick.
+const _CSTICK_TILT_DEG := 6.0
 const _DPAD_TILT_DEG := 8.0
 const _ANIM_W := 0.4
 const _ANIM_PRESS_DIR := Vector3(0, -1, 0)
@@ -208,6 +211,7 @@ var _anim_cached := false
 var _anim_btns: Array[Dictionary] = []   # {node, rest, bit, depth}
 var _anim_pad: Dictionary = {}           # circle pad: {node, rest}
 var _anim_dpad: Dictionary = {}          # {node, rest, pivot}
+var _anim_cstick: Dictionary = {}        # C-Stick nub: {node, rest, pivot}
 
 
 func _cache_anim_meshes() -> void:
@@ -221,6 +225,17 @@ func _cache_anim_meshes() -> void:
 	var pad := find_child("StickLeft22", true, false) as MeshInstance3D
 	if pad != null:
 		_anim_pad = {"node": pad, "rest": pad.transform}
+	# The C-Stick. The GLB calls it "PSButton" (the modeller reused a PlayStation
+	# name), but its position gives it away: x=+0.0585, z=-0.0332 - right side,
+	# behind the ABXY cluster, which is exactly where the nub sits on hardware.
+	var cst := find_child("PSButton", true, false) as MeshInstance3D
+	if cst != null:
+		# Pivot at the nub's BASE so it rocks like a stick rather than swinging
+		# about its centre.
+		var ab: AABB = cst.get_aabb()
+		var base := Vector3(ab.get_center().x, ab.position.y, ab.get_center().z)
+		_anim_cstick = {"node": cst, "rest": cst.transform,
+			"pivot": cst.transform * base}
 	var dpad := find_child("Dpad22", true, false) as MeshInstance3D
 	if dpad != null:
 		var pivot := dpad.transform.origin
@@ -232,7 +247,7 @@ func _cache_anim_meshes() -> void:
 
 ## btn = RETRO_JOYPAD bitmask; lstick/rstick are the analog values (−1..1) as sent
 ## to the core (y already screen-negated). Lerps the meshes toward that state.
-func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
+func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
 	if not _anim_cached:
 		_cache_anim_meshes()
 
@@ -249,6 +264,18 @@ func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
 		# x = right, z toward the hinge (lstick.y is screen-negated, so forward = −z).
 		var off := Vector3(lstick.x, 0.0, lstick.y) * _PAD_SLIDE
 		node.transform = node.transform.interpolate_with(Transform3D(rest.basis, rest.origin + off), _ANIM_W)
+
+	if not _anim_cstick.is_empty():
+		# Rocks about its base in the stick's direction. Same axis convention as
+		# the circle pad: x = right, and rstick.y is already screen-negated.
+		var r := Basis.from_euler(Vector3(
+			deg_to_rad(rstick.y * _CSTICK_TILT_DEG), 0.0,
+			deg_to_rad(-rstick.x * _CSTICK_TILT_DEG)))
+		var node: MeshInstance3D = _anim_cstick["node"]
+		var rest: Transform3D = _anim_cstick["rest"]
+		var pivot: Vector3 = _anim_cstick["pivot"]
+		var about := Transform3D(r, pivot - r * pivot)
+		node.transform = node.transform.interpolate_with(about * rest, _ANIM_W)
 
 	if not _anim_dpad.is_empty():
 		var pitch := float((btn >> ControllerBindings.JOYPAD_UP) & 1) - float((btn >> ControllerBindings.JOYPAD_DOWN) & 1)
