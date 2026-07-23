@@ -51,6 +51,12 @@ func _apply_system_size() -> void:
 ## have transparent corners — the silver disc shows through). No art: quad stays
 ## hidden and the flat title text is the fallback.
 func _apply_label_art() -> void:
+	# A disc with a real media model (the PSP UMD caddy) carries the same
+	# swappable label face a cart model does — let the base paint it there, on the
+	# disc window inside the caddy, rather than on the hidden procedural ArtQuad.
+	if _model_label != null:
+		super._apply_label_art()
+		return
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
 	var quad := get_node_or_null("ArtQuad") as MeshInstance3D
 	if tex == null or quad == null:

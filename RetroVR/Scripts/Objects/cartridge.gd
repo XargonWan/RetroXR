@@ -48,6 +48,14 @@ const _CART_MODELS := {
 	"playstation_portable": "res://imported-assets/psp_umd.glb",
 }
 
+## Name of the model's swappable label face. Almost every imported media model calls
+## it "media_label"; the PSP UMD prints its disc-face art on "vetro" (Italian for
+## glass) instead, with a separate "media_label" quad buried behind it — so the
+## game art has to land on vetro or it hides under the caddy's placeholder print.
+const _LABEL_MESH := {
+	"playstation_portable": "vetro",
+}
+
 ## The model's own swappable label face, when a real cart model is in use.
 var _model_label: MeshInstance3D = null
 
@@ -89,7 +97,7 @@ func _apply_cart_model() -> void:
 	var desync := glb.find_child("Desync", true, false) as MeshInstance3D
 	if desync != null:
 		desync.visible = false
-	_model_label = glb.find_child("media_label", true, false) as MeshInstance3D
+	_model_label = glb.find_child(_LABEL_MESH.get(systemid, "media_label"), true, false) as MeshInstance3D
 	# The procedural stand-ins are replaced by the real shell. Includes the disc
 	# body meshes (DiscMesh/HubMesh/ArtQuad) so a RetroDisc with a real media
 	# model — the PSP UMD caddy — doesn't show a generic CD poking through it.
