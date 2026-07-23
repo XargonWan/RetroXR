@@ -41,6 +41,7 @@ const _CART_MODELS := {
 	# Grey Game Boy / Game Boy Color cart (GBC games group under game_boy).
 	"game_boy": "res://imported-assets/game_boy_cart.glb",
 	"atari_2600": "res://imported-assets/atari_2600_cart.glb",
+	"virtual_boy": "res://imported-assets/virtual_boy_cart.glb",
 }
 
 ## The model's own swappable label face, when a real cart model is in use.
