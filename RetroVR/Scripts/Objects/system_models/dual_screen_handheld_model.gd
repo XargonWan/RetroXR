@@ -350,10 +350,20 @@ func _base_half_size() -> Vector3:
 	return Vector3.ZERO if first else acc.size
 
 
+## How far to hold the picture off the shell surface once that surface has been
+## measured. This only has to beat depth-buffer precision — the geometry is
+## already accounted for — so it wants to be as small as will not z-fight. It was
+## 0.8 mm, which is most of a millimetre of visible gap on something you hold in
+## your hands: the DS Phat's bottom picture read as floating a hair off the
+## console, because `best` under that screen is 0.2 mm and the margin was the
+## rest of it.
+const _DEPTH_MARGIN := 0.0002
+
+
 func _lens_clearance(center: Vector3, normal: Vector3, size: Vector2) -> float:
 	var shell := get_node_or_null("Shell") as Node3D
 	if shell == null:
-		return 0.0016
+		return _DEPTH_MARGIN * 2.0
 	var n := normal.normalized()
 	# Test the lens's own RECTANGULAR footprint, built on the same basis
 	# _place_screen uses so it matches the quad exactly. This used to be a circle
@@ -390,7 +400,7 @@ func _lens_clearance(center: Vector3, normal: Vector3, size: Vector2) -> float:
 						best = maxf(best, along)
 		for c in node.get_children():
 			stack.append(c)
-	return best + 0.0008
+	return best + _DEPTH_MARGIN
 
 
 ## Position + orient a screen quad (QuadMesh normal is +Z) to face `normal` at
