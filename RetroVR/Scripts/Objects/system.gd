@@ -276,7 +276,10 @@ func _ready() -> void:
 func _update_power_button_visual() -> void:
 	if _power_button == null:
 		return
-	_power_button.set_color(Color(1.0, 0.0, 0.0) if is_powered_on else Color(0.0, 1.0, 0.0))
+	# Only the generic placeholder cap gets the green/red START/STOP tint; a
+	# modelled button (set_button_mesh) keeps its own material.
+	if _power_button.state_tint:
+		_power_button.set_color(Color(1.0, 0.0, 0.0) if is_powered_on else Color(0.0, 1.0, 0.0))
 	var lbl := _power_button.get_node_or_null("ButtonLabel") as Label3D
 	if lbl:
 		lbl.text = "STOP" if is_powered_on else "START"

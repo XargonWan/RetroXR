@@ -23,7 +23,6 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 
 # 3DS
 
-* 3DS On button is green for some reason, it should not,
 * taping on the screen in desktop mode also trys to pick up the console
 * when pointing at the console towards the screen in the area where the cartridge is under the screen, it's too easy to grab the cartridge while it is in it
 * The texture on the 3DS Shell appears off for some reason?

@@ -108,10 +108,19 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 
 ## Swap the mesh used for the depress animation and hide the original ButtonMesh child.
 ## Call this from a system model after the GLB has loaded to drive the real geometry.
+## True until a real GLB button mesh is adopted. The power button's green/red
+## START/STOP tint (RetroSystem._update_power_button_visual) is only meant for the
+## generic placeholder cap — painting it onto a modelled button (the 3DS's real
+## power key) turns that button pure green while the console is off. Cleared by
+## set_button_mesh so state colouring skips real meshes.
+var state_tint := true
+
+
 func set_button_mesh(mesh: MeshInstance3D) -> void:
 	var old := get_node_or_null("ButtonMesh") as MeshInstance3D
 	if old:
 		old.hide()
+	state_tint = false
 	_mesh = mesh
 	_mesh_local_origin = mesh.position
 	_mesh_depress_parent = mesh.get_parent() as Node3D
