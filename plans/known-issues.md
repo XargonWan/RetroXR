@@ -9,7 +9,6 @@ The Vulkan spec states: If a descriptor with type equal to any of VK_DESCRIPTOR_
 The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 feature must be enabled (https://docs.vulkan.org/spec/latest/chapters/drawing.html#VUID-vkCmdBindIndexBuffer-indexType-08787)
 
 * I don't see the model loaded for the playstation original or the DS Lite and Mega drive (i do see for genesis)
-* Add resolution and Windowed, Borderless, and Fullscreen options to the option menu for desktop
 * when downloading the media from screenscraper (manual, box, etc), it should show  a notification (that also stacks up) just like where it shows Hashing ROM
 * when opening up the system menu for the first time, it looks like it is 'moving' for a very brief second to where it needs to be
 

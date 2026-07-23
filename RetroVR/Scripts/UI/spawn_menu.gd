@@ -1518,6 +1518,48 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 
 # ── Options view ──────────────────────────────────────────────────────────────
 
+## --- Desktop window mode / resolution ------------------------------------------
+## The menu runs in a Viewport2Din3D, so these drive the real OS window through
+## DisplayServer. Resolution only bites in windowed/borderless.
+func _current_window_mode() -> String:
+	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN 			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		return "fullscreen"
+	return "borderless" if DisplayServer.window_get_flag(DisplayServer.WINDOW_FLAG_BORDERLESS) else "windowed"
+
+
+func _current_resolution_key() -> String:
+	var sz := DisplayServer.window_get_size()
+	return "%dx%d" % [sz.x, sz.y]
+
+
+func _apply_window_mode(mode: String) -> void:
+	match mode:
+		"fullscreen":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		"borderless":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+		_:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+
+
+func _apply_resolution(key: String) -> void:
+	var parts := key.split("x")
+	if parts.size() != 2:
+		return
+	var size := Vector2i(int(parts[0]), int(parts[1]))
+	# Only meaningful in windowed/borderless; leave fullscreen alone.
+	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN 			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		return
+	DisplayServer.window_set_size(size)
+	# Re-centre on the current screen so a bigger window doesn't spill off-screen.
+	var screen := DisplayServer.window_get_current_screen()
+	var origin := DisplayServer.screen_get_position(screen)
+	var usable := DisplayServer.screen_get_size(screen)
+	DisplayServer.window_set_position(origin + (usable - size) / 2)
+
+
 func _build_options_view() -> Control:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1585,6 +1627,24 @@ func _build_options_view() -> Control:
 			fov_val.text = "%d°" % int(v)
 			fov_changed.emit(v)
 		)
+
+		# Window mode (desktop only). VRDropdown, not OptionButton — the menu is a
+		# Viewport2Din3D and OptionButton double-fires there.
+		var win_opt := VRDropdown.create("Window Mode",
+			[["Windowed", "windowed"], ["Borderless", "borderless"], ["Fullscreen", "fullscreen"]],
+			_current_window_mode(), 3, Vector2(170, 52), 20)
+		win_opt.item_selected.connect(func(id: Variant) -> void:
+			_apply_window_mode(str(id)))
+		vbox.add_child(win_opt)
+
+		# Resolution (applies while windowed/borderless; ignored in fullscreen).
+		var res_opt := VRDropdown.create("Resolution",
+			[["1280×720", "1280x720"], ["1600×900", "1600x900"],
+			 ["1920×1080", "1920x1080"], ["2560×1440", "2560x1440"]],
+			_current_resolution_key(), 2, Vector2(150, 52), 20)
+		res_opt.item_selected.connect(func(id: Variant) -> void:
+			_apply_resolution(str(id)))
+		vbox.add_child(res_opt)
 
 		vbox.add_child(HSeparator.new())
 
