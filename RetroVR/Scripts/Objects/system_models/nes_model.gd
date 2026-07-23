@@ -72,6 +72,7 @@ func _ready() -> void:
 
 	_hide_clutter(_glb)
 	_fix_decal_alpha(_glb)
+	_fix_front_band(_glb)
 	# Recentre on the visible body and rest the base on the ground.
 	var b := _model_aabb(_glb)
 	var c := b.position + b.size * 0.5
@@ -326,15 +327,32 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRB
 			lbl.hide()
 
 
+## The two port sockets on the front panel, measured off the shell's own "1" and
+## "2" number decals (the Plane_003 / Plane_004 quads at x = 0.0645 / 0.0824,
+## z = 0.0978) and dropped to the socket mouths below them.
+##
+## The GLB's "Cable Plug Port1" marker is NOT the socket: like the PSone's, it is
+## where imported parks the plug prop, 2.1 cm proud of the face. And there is no
+## Port2 marker at all, so the old lookup left port 2 wherever the scene had put
+## it — down at floor level, off to the left of the console.
+const _PORT_X := [0.0645, 0.0824]
+const _PORT_Y := 0.0301
+const _PORT_Z := 0.0975
+
+
 func configure_controller_ports(port_zones: Array) -> void:
 	for i in range(port_zones.size()):
-		var marker := _glb.find_child("Cable Plug Port%d" % (i + 1), true, false) as Node3D
-		if marker:
-			port_zones[i].global_position = marker.global_position
-		var recess := port_zones[i].get_node_or_null("PortRecess") as MeshInstance3D
+		var zone: Node3D = port_zones[i]
+		if i < _PORT_X.size():
+			zone.position = Vector3(_PORT_X[i], _PORT_Y, _PORT_Z)
+			# Front-facing socket: roll 180 about Z so the plug seats connector-in
+			# and upright (a yaw would land it upside down - see the snap-zone
+			# note in plans/bundle-import-notes.md).
+			zone.rotation_degrees = Vector3(0, 0, 180)
+		var recess := zone.get_node_or_null("PortRecess") as MeshInstance3D
 		if recess:
 			recess.hide()
-		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
+		var lbl := zone.get_node_or_null("PortLabel") as Label3D
 		if lbl:
 			lbl.hide()
 
@@ -356,7 +374,13 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	# (the console's front→back direction) from the socket marker's orientation.
 	var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
 	if cradle:
-		slot.global_position = cradle.global_transform * cradle.get_aabb().get_center()
+		# Lay the cart FLAT, label up, connector pointing into the machine. A
+		# cartridge is authored connector -Y / label +Z, so map its +Y (grip)
+		# onto +Z (out the front) and its +Z (label) onto world up; X inverts to
+		# keep it a rotation. Without this the cart stood on end in the tray.
+		slot.global_transform = Transform3D(
+			Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
+			cradle.global_transform * cradle.get_aabb().get_center())
 	var socket := _glb.find_child("System Socket", true, false) as Node3D
 	if socket:
 		_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
@@ -399,3 +423,26 @@ func on_power_off() -> void:
 	if _power_button:
 		_power_button.set_latched_pressed(false)
 	_set_power_light(false)
+
+
+## The shell mesh's surface 2 is a near-black material (albedo 0.004) applied to a
+## vertical band across the front-right, running the full height of the console
+## and over the top face. No NES has that - the front panel is one grey. It reads
+## as a black slab stuck to the machine, so repaint it in the shell's own grey.
+##
+## Surface-level override, not a material edit: the same black material is shared
+## with NesCradle, which is genuinely black and must stay that way.
+const _BAND_SURFACE := 2
+
+
+func _fix_front_band(root: Node3D) -> void:
+	var deck := root.find_child("NesDeck", true, false) as MeshInstance3D
+	if deck == null or deck.mesh == null or deck.mesh.get_surface_count() <= _BAND_SURFACE:
+		return
+	var shell: Material = deck.get_active_material(0)
+	var band: Material = deck.get_active_material(_BAND_SURFACE)
+	if not (shell is BaseMaterial3D and band is BaseMaterial3D):
+		return
+	var fixed := (band as BaseMaterial3D).duplicate() as BaseMaterial3D
+	fixed.albedo_color = (shell as BaseMaterial3D).albedo_color
+	deck.set_surface_override_material(_BAND_SURFACE, fixed)

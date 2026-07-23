@@ -17,6 +17,19 @@ const NES_FACE: Dictionary = {
 }
 
 
+
+func _ready() -> void:
+	super._ready()
+	var model := get_node_or_null("Model")
+	if model == null:
+		return
+	# The wordmark and serial decals ship opaque, so each sat inside a solid
+	# black rectangle on the pad face...
+	ModelMaterialFix.enable_decal_alpha(model)
+	# ...and the wordmark quad faces into the shell, so its art read reversed.
+	ModelMaterialFix.mirror_uv(model, "LOGO Nintendo")
+
+
 func _cache_meshes() -> void:
 	_buttons.clear()
 	for base: String in NES_FACE:
@@ -27,4 +40,4 @@ func _cache_meshes() -> void:
 	var dm: MeshInstance3D = _find_mesh("StickLeft22")
 	if dm != null:
 		_dpad = {"node": dm, "rest": dm.transform, "pivot": _find_pivot(dm, "StickLeft")}
-	print("[nes] cached %d buttons, dpad=%s" % [_buttons.size(), not _dpad.is_empty()])
+

@@ -43,6 +43,46 @@ static func demetal(root: Node, value: float = 0.0) -> int:
 		return true)
 
 
+## Turn on alpha cutout for textured decal quads whose texture actually carries
+## alpha. Converted models routinely leave these OPAQUE, so a logo authored as
+## art-on-transparent renders as art on a solid black rectangle — the NES
+## controller wore a black box around its Nintendo wordmark. Returns surfaces
+## changed.
+static func enable_decal_alpha(root: Node) -> int:
+	return _walk(root, func(m: BaseMaterial3D) -> bool:
+		if m.albedo_texture == null or m.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+			return false
+		var img := m.albedo_texture.get_image()
+		if img == null or img.detect_alpha() == Image.ALPHA_NONE:
+			return false
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		m.alpha_scissor_threshold = 0.5
+		return true)
+
+
+## Mirror a decal's UV. Some decal quads are authored facing INTO the shell and
+## only show at all because culling is disabled, so what you see is the back of
+## the art — the NES controller's wordmark read "obnetniN".
+##
+## `axis` must be named per model rather than inferred. These quads do not agree
+## on which UV axis runs across the art: flipping `u` on the NES wordmark rotates
+## it 180 degrees instead of mirroring it, because there `u` runs up the face.
+## Pick the axis by looking at a render, not by reasoning about the normal — that
+## is the same trap that made a UV-winding rule impossible for cart labels.
+static func mirror_uv(root: Node, mesh_name: String, axis: String = "v") -> bool:
+	var mi := root.find_child(mesh_name, true, false) as MeshInstance3D
+	if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
+		return false
+	var src: Material = mi.get_active_material(0)
+	if not (src is BaseMaterial3D):
+		return false
+	var dup := (src as BaseMaterial3D).duplicate() as BaseMaterial3D
+	var s := dup.uv1_scale
+	dup.uv1_scale = Vector3(-s.x, s.y, s.z) if axis == "u" else Vector3(s.x, -s.y, s.z)
+	mi.set_surface_override_material(0, dup)
+	return true
+
+
 static func _walk(root: Node, fix: Callable) -> int:
 	var n := 0
 	for node in root.find_children("*", "MeshInstance3D", true, false):
