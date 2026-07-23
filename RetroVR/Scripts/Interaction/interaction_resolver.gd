@@ -68,14 +68,16 @@ static func _get_front_hit(
 		if body_hit.is_empty():
 			return area_hit
 
-		# A VRButton wins over a body even when the body is nearer. Console grab
-		# collision (the PointerArea) is a single box that ENCLOSES the recessed
-		# power/reset buttons, so a ray reaches the box surface a couple of
-		# centimetres before the button area behind it. Without this the front hit
-		# collapses to the body and the button — which carries BUTTON_PRIORITY and
-		# is meant to win — is discarded before _choose_target ever sees it. That
-		# is why the Genesis and DS Phat power buttons were not clickable.
-		if area_hit.collider is VRButton:
+		# An interactive pointer area wins over a body even when the body is
+		# nearer. Console grab collision (the PointerArea) is a single box that
+		# ENCLOSES the recessed power/reset buttons AND overlaps the touch screen,
+		# so a ray reaches the box surface a couple of centimetres before the area
+		# behind it. Without this the front hit collapses to the body and the area
+		# — which carries BUTTON_PRIORITY (buttons) or POINTER_PRIORITY (the touch
+		# screen) and is meant to win — is discarded before _choose_target sees it.
+		# That is why the Genesis/DS Phat power buttons were not clickable and why
+		# tapping a DS/3DS touch screen grabbed the console instead.
+		if _is_pointer_interactive(area_hit.collider):
 			return area_hit
 
 		var area_dist := from.distance_squared_to(area_hit.position)
@@ -88,6 +90,20 @@ static func _get_front_hit(
 	query.collide_with_bodies = collide_with_bodies
 	query.collide_with_areas = collide_with_areas
 	return space_state.intersect_ray(query)
+
+
+## True when this collider — or an ancestor — is something the pointer drives
+## (a VRButton, or a node exposing pointer_event like the DS/3DS touch screen).
+## Used to let those areas beat the enclosing grab body in _get_front_hit.
+static func _is_pointer_interactive(collider: Object) -> bool:
+	var node := collider as Node
+	while node:
+		if node is VRButton:
+			return true
+		if node.has_method("pointer_event") or node.has_signal("pointer_event"):
+			return true
+		node = node.get_parent()
+	return false
 
 
 static func _classify_pointer_hit(
