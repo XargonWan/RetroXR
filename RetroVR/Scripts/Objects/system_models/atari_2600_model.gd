@@ -164,7 +164,24 @@ const _CART_SEATED_HEIGHT := 0.0772
 
 
 func configure_cartridge_slot(slot: Node3D) -> void:
-	slot.global_position = _anchor("socket_media") + Vector3.UP * (_CART_SEATED_HEIGHT * 0.5)
+	if _glb == null:
+		return
+	var mk := _glb.find_child("socket_media", true, false) as Node3D
+	if mk == null:
+		slot.global_position = _anchor("socket_media") + Vector3.UP * (_CART_SEATED_HEIGHT * 0.5)
+		return
+	# Take the marker's BASIS, not just its position: the 2600's slot is raked
+	# 30° about X (measured: socket_media's Y is (0, 0.866, 0.500)), so a cart
+	# seated on an identity basis stood bolt upright out of an angled slot.
+	#
+	# The extra 180° yaw turns the label to face the console's BACK. A cart's
+	# own frame runs +Y from its connector with the label on +Z, so without this
+	# the label ends up on the wrong face. Yawing about the slot's own up axis
+	# leaves the rake untouched.
+	var b: Basis = mk.global_transform.basis.orthonormalized() * Basis(Vector3.UP, PI)
+	# Raise along the SLOT's up, not world up, or an angled cart slides off-axis.
+	slot.global_transform = Transform3D(b,
+		mk.global_position + b.y * (_CART_SEATED_HEIGHT * 0.5))
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
