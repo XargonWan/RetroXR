@@ -203,38 +203,48 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRB
 		# No bipod to sit on. Rest them ON the shell's top face, outboard of the
 		# carry handle and clear of the cart slot at the back, rather than at the
 		# front lip where the protruding eye shade leaves them floating in air.
+		# Use the shell's own top controls rather than dropping boxes on it.
 		var ab := _glb_aabb()
-		var y: float = ab.end.y - 0.006
-		var z: float = ab.get_center().z - 0.010
-		power_btn.position = Vector3(0.082, y, z)
-		reset_btn.position = Vector3(-0.082, y, z)
-		# The cabinet-sized button box is a brick on a 22 cm console; shrink both
-		# to something that reads as a control rather than a crate.
-		_shrink_button(power_btn)
-		_shrink_button(reset_btn)
+		_bind_to_shell(power_btn, _FOCUS_L, ab.end.y)
+		_bind_to_shell(reset_btn, _FOCUS_R, ab.end.y)
 		return
 	power_btn.position = Vector3(0.04, 0.022, 0.045)
 	reset_btn.position = Vector3(-0.04, 0.022, 0.045)
 
 
-## Console START/RESET default to a cabinet-scale box. Cut them down and drop
-## the press depth to match, so they sit proud of the shell by a few millimetres.
-const _BTN_SIZE := Vector3(0.020, 0.008, 0.020)
+## The shell's OWN top controls, measured off an orthographic render of the top
+## face (the model bakes them into the body mesh, so there is nothing to bind a
+## button mesh to — these are positions only).
+##
+## Note what they actually are: the two silver sliders are the LEFT and RIGHT
+## FOCUS adjusters (the word FOCUS is printed between them) and the dial above
+## is the IPD wheel. The real Virtual Boy has no power switch or volume on the
+## head unit at all — both live on the controller — so there is no authentic
+## console control to bind START/STOP to. These are the nearest real affordances.
+const _FOCUS_L := Vector3(-0.0163, 0.0, 0.0021)
+const _FOCUS_R := Vector3(0.0185, 0.0, 0.0021)
+## Focus sliders travel sideways (the caps are marked with left/right arrows).
+const _SLIDER_TRAVEL := 0.003
 
 
-func _shrink_button(btn: VRButton) -> void:
+## Put a control's touch zone on a real feature of the shell and remove our own
+## placeholder geometry entirely. Nothing animates: the controls are part of the
+## body mesh, so there is no separate node to move. Splitting them out would need
+## the Blender pass the 3DS slider knobs got.
+func _bind_to_shell(btn: VRButton, xz: Vector3, top_y: float) -> void:
 	if btn == null:
 		return
 	var mesh := btn.get_node_or_null("ButtonMesh") as MeshInstance3D
-	if mesh != null and mesh.mesh is BoxMesh:
-		var bm := (mesh.mesh as BoxMesh).duplicate() as BoxMesh
-		bm.size = _BTN_SIZE
-		mesh.mesh = bm
-	var col := btn.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if col != null and col.shape is BoxShape3D:
-		col.shape = col.shape.duplicate()
-		(col.shape as BoxShape3D).size = _BTN_SIZE + Vector3(0.006, 0.006, 0.006)
-	btn.depress_depth = 0.002
+	if mesh != null:
+		mesh.hide()
+	btn.position = Vector3(xz.x, top_y - 0.004, xz.z)
+	btn.depress_depth = _SLIDER_TRAVEL
+	btn.set_depress_axis_world(Vector3.LEFT)   # slides, not sinks
+	# Drop the cabinet's START/RESET caption: it would be printed across a
+	# control that is actually a focus slider, which is worse than no label.
+	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
+	if lbl != null:
+		lbl.hide()
 
 
 ## The single controller port sits under the front of the visor pointing down,
