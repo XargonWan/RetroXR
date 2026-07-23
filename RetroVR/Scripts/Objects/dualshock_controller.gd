@@ -94,6 +94,12 @@ func _find_pivot(mesh: MeshInstance3D, empty_name: String) -> Vector3:
 	return mesh.transform * a.get_center()
 
 
+## How far the "d-pad" rocks about its pivot. A flat pad only needs a few
+## degrees; a real joystick shaft swings much further. Override per controller.
+func _dpad_tilt_deg() -> float:
+	return DPAD_TILT_DEG
+
+
 func _cache_meshes() -> void:
 	_buttons.clear()
 	for base: String in FACE_BUTTONS:
@@ -153,7 +159,8 @@ func _animate(delta: float) -> void:
 	if not _dpad.is_empty():
 		var pitch: float = float((_cur_btn >> ControllerBindings.JOYPAD_UP) & 1) - float((_cur_btn >> ControllerBindings.JOYPAD_DOWN) & 1)
 		var roll: float  = float((_cur_btn >> ControllerBindings.JOYPAD_LEFT) & 1) - float((_cur_btn >> ControllerBindings.JOYPAD_RIGHT) & 1)
-		var r: Basis = Basis.from_euler(Vector3(deg_to_rad(pitch * DPAD_TILT_DEG), 0.0, deg_to_rad(roll * DPAD_TILT_DEG)))
+		var tilt := _dpad_tilt_deg()
+		var r: Basis = Basis.from_euler(Vector3(deg_to_rad(pitch * tilt), 0.0, deg_to_rad(roll * tilt)))
 		_apply_pivot(_dpad, r, 0.0, w)
 
 	if not _stick_l.is_empty():

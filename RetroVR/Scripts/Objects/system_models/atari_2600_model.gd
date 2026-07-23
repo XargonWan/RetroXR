@@ -77,30 +77,94 @@ func uses_memory_cards() -> bool:
 
 
 # POWER + RESET switches only (no eject — carts pull straight out).
+#
+# These are SWITCHES, not buttons: thin levers (5 x 17 x 13 mm) that slide along
+# the console's depth rather than sinking into the shell. Driving them with the
+# usual downward depress made the lever sink into the panel instead of flicking.
+# They still ride the VRButton plumbing — power/reset are momentary as far as
+# RetroSystem is concerned — only the motion differs.
+const _SWITCH_THROW := 0.005
+
+
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
-	_wire_button(power_btn, "Power Switch")
-	_wire_button(reset_btn, "Reset")
+	_wire_switch(power_btn, "Power Switch")
+	_wire_switch(reset_btn, "Reset")
 	if eject_btn != null:
 		eject_btn.visible = false
 
 
-func _wire_button(btn: VRButton, mesh_name: String) -> void:
+func _wire_switch(btn: VRButton, mesh_name: String) -> void:
 	if btn == null or _glb == null:
 		return
 	var mesh := _glb.find_child(mesh_name, true, false) as MeshInstance3D
 	if mesh != null:
 		btn.set_button_mesh(mesh)
 	btn.global_position = _mesh_center(mesh_name)
-	btn.depress_depth = 0.002
-	btn.set_depress_axis_world(Vector3.DOWN)
+	btn.depress_depth = _SWITCH_THROW
+	# FORWARD is -Z, away from the player: the 2600's levers push "up" the panel
+	# to switch on, and the console's front is +Z.
+	btn.set_depress_axis_world(Vector3.FORWARD)
 	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 	if lbl != null:
 		lbl.hide()
 
 
+## Joystick ports are on the BACK panel, flanking the power jack — the shell
+## prints "RIGHT CONTROLLER | POWER ADAPTOR | LEFT CONTROLLER" across it, read
+## from behind. Measured off an orthographic render of that face: the two
+## sockets sit ~32 mm either side of centre at y≈0.032.
+##
+## Port 1 is the LEFT controller (player 1 on real hardware), which is at -X when
+## the console is viewed from the FRONT.
+const _PORT_SPAN := 0.032
+const _PORT_Y := 0.0316
+const _PORT_INSET := 0.0025
+
+
+func configure_controller_ports(port_zones: Array) -> void:
+	if _glb == null:
+		return
+	var body := _glb.find_child("atari_2600_console", true, false) as MeshInstance3D
+	if body == null:
+		return
+	# LOCAL space, to match cols/_PORT_Y below — measuring this in world space and
+	# then passing it through to_global() would offset the whole back panel.
+	var local_ab: AABB = (global_transform.affine_inverse() * body.global_transform) * body.get_aabb()
+	var back_z: float = local_ab.position.z
+	var cols := [-_PORT_SPAN, _PORT_SPAN]
+	for i in range(port_zones.size()):
+		var recess := port_zones[i].get_node_or_null("PortRecess") as MeshInstance3D
+		if recess != null:
+			recess.hide()
+		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
+		if lbl != null:
+			lbl.hide()
+		if i < cols.size():
+			# A BACK-facing port needs a 180° roll about X, where a front-facing
+			# one needs it about Z: the plug's connector points down its local +Z
+			# and its SnapGrabPoint adds a 180° X flip, which this cancels
+			# outright so the connector goes in along +Z and the lead trails out
+			# behind the console.
+			port_zones[i].global_transform = Transform3D(
+				global_transform.basis * Basis(Vector3.RIGHT, PI),
+				to_global(Vector3(cols[i], _PORT_Y, back_z + _PORT_INSET)))
+
+
 # --- cartridge (top-load: drops straight down) ---
+#
+# `socket_media` marks where the cart's CONNECTOR lands, 24 mm below the shell's
+# top face — but a snap zone seats an object on its CENTRE, so parking the zone
+# on the marker buried 62 mm of a 77 mm cartridge inside the console. Raise it by
+# half the seated cart's height so the connector sits on the marker and the rest
+# stands proud, the way a 2600 cart actually sits.
+#
+# 77 mm is the cart GLB (74.7 mm tall) after cartridge.gd scales it uniformly to
+# the 79 mm width in MediaDimensions.CART_SIZES["atari_2600"].
+const _CART_SEATED_HEIGHT := 0.0772
+
+
 func configure_cartridge_slot(slot: Node3D) -> void:
-	slot.global_position = _anchor("socket_media")
+	slot.global_position = _anchor("socket_media") + Vector3.UP * (_CART_SEATED_HEIGHT * 0.5)
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
