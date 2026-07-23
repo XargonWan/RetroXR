@@ -208,6 +208,9 @@ const _CSTICK_TILT_DEG := 6.0
 const _DPAD_TILT_DEG := 8.0
 const _ANIM_W := 0.4
 const _ANIM_PRESS_DIR := Vector3(0, -1, 0)
+## Shoulders sit on the back edge and press INWARD toward the body (+Z on the
+## laid-flat shell), not straight down like the face buttons.
+const _SHOULDER_DIR := Vector3(0, 0, 1)
 
 var _anim_cached := false
 var _anim_btns: Array[Dictionary] = []   # {node, rest, bit, depth}
@@ -220,10 +223,11 @@ func _cache_anim_meshes() -> void:
 	_anim_cached = true
 	for map: Dictionary in [_FACE_MESH, _SHOULDER_MESH]:
 		var depth: float = _FACE_PRESS if map == _FACE_MESH else _SHOULDER_PRESS
+		var dir: Vector3 = _ANIM_PRESS_DIR if map == _FACE_MESH else _SHOULDER_DIR
 		for bit: int in map:
 			var m := find_child(map[bit], true, false) as MeshInstance3D
 			if m != null:
-				_anim_btns.append({"node": m, "rest": m.transform, "bit": bit, "depth": depth})
+				_anim_btns.append({"node": m, "rest": m.transform, "bit": bit, "depth": depth, "dir": dir})
 	var pad := find_child("StickLeft22", true, false) as MeshInstance3D
 	if pad != null:
 		_anim_pad = {"node": pad, "rest": pad.transform}
@@ -257,7 +261,8 @@ func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
 		var node: MeshInstance3D = e["node"]
 		var rest: Transform3D = e["rest"]
 		var down := 1.0 if (btn & (1 << int(e["bit"]))) != 0 else 0.0
-		var tgt := Transform3D(rest.basis, rest.origin + _ANIM_PRESS_DIR * (float(e["depth"]) * down))
+		var dir: Vector3 = e.get("dir", _ANIM_PRESS_DIR)
+		var tgt := Transform3D(rest.basis, rest.origin + dir * (float(e["depth"]) * down))
 		node.transform = node.transform.interpolate_with(tgt, _ANIM_W)
 
 	if not _anim_pad.is_empty():
