@@ -322,9 +322,12 @@ func _bind_to_shell(btn: VRButton, xz: Vector3, top_y: float) -> void:
 		lbl.hide()
 
 
-## Underside controller socket, from the bottom-face render.
+## Underside controller socket. Measured off a straight-up render of the bottom
+## face against the six-pin socket the shell actually models — not the marker
+## names, and not the battery-cover panel just behind it, which is what a first
+## eyeball estimate lands on.
 const _PORT_X := 0.082
-const _PORT_Z := -0.018
+const _PORT_Z := -0.0334
 
 
 ## The single controller port sits under the front of the visor pointing down,
