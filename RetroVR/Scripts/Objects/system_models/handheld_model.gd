@@ -98,6 +98,7 @@ func _upgrade_to_glb(path: String) -> void:
 	var baked := get_node_or_null("Shell") as Node3D
 	if baked != null:
 		_glb = baked
+		_fix_shell_materials()
 		return
 	var scene := load(path) as PackedScene
 	if scene == null:
@@ -119,6 +120,7 @@ func _upgrade_to_glb(path: String) -> void:
 	# UVs, the C++ video handler already targets it) — repositioned + resized onto the
 	# GLB's screen, raised a hair so it sits IN FRONT of the plastic lens. The GLB's
 	# own screen_mesh sits behind that opaque lens, so it's hidden.
+	_fix_shell_materials()
 	var glb_screen := _glb.find_child("screen_mesh", true, false) as MeshInstance3D
 	if glb_screen != null and _screen != null:
 		var sab: AABB = glb_screen.global_transform * glb_screen.get_aabb()
@@ -341,3 +343,13 @@ func on_power_off() -> void:
 	if _power_switch:
 		_power_switch.set_value_no_signal(0.0)
 	# Unlit LCD look returns automatically when the core releases the material.
+
+
+## Some converted shells ship emissiveFactor 1,1,1 with no emissive texture,
+## which Godot takes literally — the Arctic White GBA glowed like a lightbulb.
+## The live picture is drawn on our own quad, so nothing on the shell itself
+## should be self-illuminated. Runs on the baked path too: several handhelds
+## have their GLB saved into the .tscn and return before the load below.
+func _fix_shell_materials() -> void:
+	if _glb != null:
+		ModelMaterialFix.strip_emission(_glb)

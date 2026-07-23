@@ -20,6 +20,16 @@ const GC_TRIGGERS: Dictionary = {
 }
 
 
+
+func _ready() -> void:
+	super._ready()
+	# Shell and Buttons both ship metallicFactor 1.0 — moulded plastic rendered
+	# as a mirror. Neither carries a metallic map, so drop it outright.
+	var model := get_node_or_null("Model")
+	if model != null:
+		ModelMaterialFix.demetal(model)
+
+
 func _cache_meshes() -> void:
 	_buttons.clear()
 	for base: String in GC_FACE:

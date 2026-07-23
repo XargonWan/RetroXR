@@ -26,10 +26,10 @@ script = ExtResource("1_gcscript")
 shape = SubResource("BoxShape3D_gc")
 
 [node name="Model" parent="." instance=ExtResource("5_model")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, -0.004)
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0.0037, -0.0148)
 
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.04)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.004, -0.052)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")

@@ -1,7 +1,7 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://b60vmy0wyh0ve"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
+[ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_rq1i2"]
 size = Vector3(0.16, 0.012, 0.14)
@@ -68,7 +68,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
 visible = false
 mesh = SubResource("QuadMesh_77fbx")
 
-[node name="VolumeSlider" type="Area3D" parent="."]
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=1929891929]
 collision_layer = 1048577
 script = ExtResource("9_vbvol")
 axis_local = Vector3(0, 0, -1)
@@ -76,5 +76,5 @@ travel = 0.01
 engage_radius = 0.022
 value = 0.8
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=387028959]
 shape = SubResource("BoxShape3D_vbvol")
