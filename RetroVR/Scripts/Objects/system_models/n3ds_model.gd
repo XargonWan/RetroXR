@@ -50,7 +50,9 @@ func _glb_path() -> String:
 ## handled by the base. Everything else in the GLB is the base half. The two
 ## slider knobs ride the lid's edges, so they fold with it too.
 func _lid_mesh_names() -> PackedStringArray:
-	return PackedStringArray(["top", "Slider3DKnob", "VolumeKnob"])
+	# GlasTop is the lid's outer glass — it has to fold with the lid, not stay
+	# behind on the base half.
+	return PackedStringArray(["top", "GlasTop", "Slider3DKnob", "VolumeKnob"])
 
 
 ## Force the stereo output mode every boot; depth follows the physical slider.

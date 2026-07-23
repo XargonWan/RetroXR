@@ -202,6 +202,15 @@ func _upgrade_dual_to_glb(path: String) -> void:
 				mi.visible = false   # dark LCD backing — the live picture quad replaces it
 			elif mi.visible:
 				if lidnames.has(nm):
+					# Drop any rotation the lid mesh carries in its own right. The
+					# New 3DS XL's `top` (and its two slider knobs) ship a -65.7
+					# degree quaternion about X — an authored open pose whose PIVOT
+					# the .bundle conversion lost, so it swings about the model origin
+					# instead of the hinge and throws the lid below and behind the
+					# console. The giveaway is that `screen_mesh Top`, the lid's own
+					# lens, carries no rotation: unrotate the lid and the two land in
+					# the same place. The fold belongs to LidPivot, not to the mesh.
+					mi.transform.basis = Basis()
 					lid_meshes.append(mi)
 				else:
 					var ab := _local_aabb(mi)
@@ -235,6 +244,18 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	lid_dir.x = 0.0
 	lid_dir = lid_dir.normalized()
 	var top_n := Vector3(0.0, -lid_dir.z, lid_dir.y).normalized()
+	# ...but prefer the lens's OWN normal when the mesh really is one flat plane.
+	# The fold is only an estimate of the lid angle: it assumes the lens centre
+	# sits on the line the lid folds along, and on the DS Phat it does not — the
+	# fold says the lid is open 123 degrees while its glass is a clean 45 degree
+	# plane, so the picture sat 12 degrees off the panel it is meant to be lying
+	# on. The planarity test is what keeps this safe on shells where the lens is a
+	# little angled trim strip rather than the screen surface.
+	var flat := _planar_normal(glb_top)
+	if flat != Vector3.ZERO:
+		flat.x = 0.0
+		if flat.length() > 0.001:
+			top_n = flat.normalized()
 	if top_n.y < 0.0:
 		top_n = -top_n
 	var rest_rot := top_n.angle_to(Vector3.UP)
@@ -294,6 +315,14 @@ func _upgrade_dual_to_glb(path: String) -> void:
 			hmi.visible = false
 		for hc in hn.get_children():
 			hstack.append(hc)
+
+	# This pass is NOT re-runnable, so claim the same flag the authored-baked
+	# scenes use. It measures the base half from the visible meshes and then hides
+	# the lid's lens — so a second call measures a DIFFERENT base, moves the hinge,
+	# and drags the already-reparented lid with it. That is what threw the 3DS lid
+	# off the back of the console: `top` ended up 13.6 cm out on Z carrying a 91
+	# degree roll it never should have had.
+	set_meta("dual_glb_baked", true)
 
 
 ## How far the shell's own (opaque) glass/surface sits over a lens along its
@@ -627,3 +656,29 @@ func _send_touch(world_pos: Vector3, pressed: bool) -> void:
 	var fx := clampf(local.x / bottom_screen_size.x + 0.5, 0.0, 1.0)
 	var fy := clampf(local.z / bottom_screen_size.y + 0.5, 0.0, 1.0)
 	_host.feed_touch(bottom_uv_rect.position + Vector2(fx, fy) * bottom_uv_rect.size, pressed)
+
+
+## Mean normal of a mesh IF every face agrees on one — i.e. the mesh is a single
+## flat plane. Returns ZERO when the normals disagree, so callers can fall back
+## rather than trusting the normal of something that is not a screen surface.
+func _planar_normal(mi: MeshInstance3D) -> Vector3:
+	if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
+		return Vector3.ZERO
+	var arr: Array = mi.mesh.surface_get_arrays(0)
+	if arr.is_empty() or arr[Mesh.ARRAY_NORMAL] == null:
+		return Vector3.ZERO
+	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	if norms.is_empty():
+		return Vector3.ZERO
+	var basis_n: Vector3 = mi.global_transform.basis * norms[0]
+	basis_n = basis_n.normalized()
+	var acc := Vector3.ZERO
+	for n in norms:
+		var w: Vector3 = (mi.global_transform.basis * n).normalized()
+		# Two-sided quads list both facings; fold the back half onto the front.
+		if w.dot(basis_n) < 0.0:
+			w = -w
+		if w.dot(basis_n) < 0.99:
+			return Vector3.ZERO
+		acc += w
+	return acc.normalized()
