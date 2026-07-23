@@ -156,6 +156,7 @@ func get_cartridge_insert_direction() -> Vector3:
 ## only repositions the VRButton and points it at the real mesh (as every other
 ## model's configure_buttons does). The 3DS has no separate reset / eject.
 func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VRButton) -> void:
+	_set_leds(false)   # console starts off — indicators dark until power_on
 	var mesh := find_child("PowerButton3ds", true, false) as MeshInstance3D
 	var marker := find_child("Power", true, false) as Node3D
 	power_btn.trigger_radius = 0.013
@@ -296,3 +297,47 @@ func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
 		var pivot: Vector3 = _anim_dpad["pivot"]
 		var about := Transform3D(r, pivot - r * pivot)
 		node.transform = node.transform.interpolate_with(about * rest, _ANIM_W)
+
+
+# ── Power LEDs ────────────────────────────────────────────────────────────────
+# The shell's indicator LEDs (power, notification, wireless) ship with their
+# emission always on, so the console looked powered even when off. Gate them on
+# the run state: dark when off, lit when on.
+
+const _LED_MESHES := ["LED", "LED (1)", "LED (2)"]
+var _leds: Array[Dictionary] = []   # {mat, energy}
+var _leds_cached := false
+
+
+func _cache_leds() -> void:
+	_leds_cached = true
+	for nm in _LED_MESHES:
+		var mi := find_child(nm, true, false) as MeshInstance3D
+		if mi == null:
+			continue
+		var src := mi.get_active_material(0)
+		if not (src is BaseMaterial3D):
+			continue
+		# Own copy so the shared GLB material isn't dimmed for every 3DS at once.
+		var mat := (src as BaseMaterial3D).duplicate() as BaseMaterial3D
+		mi.set_surface_override_material(0, mat)
+		_leds.append({"mat": mat, "energy": mat.emission_energy_multiplier})
+
+
+func _set_leds(lit: bool) -> void:
+	if not _leds_cached:
+		_cache_leds()
+	for e: Dictionary in _leds:
+		var mat: BaseMaterial3D = e["mat"]
+		mat.emission_enabled = lit
+		mat.emission_energy_multiplier = float(e["energy"]) if lit else 0.0
+
+
+func on_power_on() -> void:
+	super.on_power_on()
+	_set_leds(true)
+
+
+func on_power_off() -> void:
+	super.on_power_off()
+	_set_leds(false)
