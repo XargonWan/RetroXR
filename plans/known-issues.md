@@ -36,5 +36,4 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 
 As this is a submodule, we need to somehow upstream the issues we found
 
-* Playstation Portable is just named "playstation_portable", this isn't visually appearling with the underscore and lack of captailizations
 * There is an insconsistency with the `systemname` "C64" where the corrisponding `systemid` is called either "commodore_c64" or "commodore_64"

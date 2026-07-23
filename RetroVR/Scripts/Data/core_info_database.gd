@@ -71,13 +71,36 @@ func get_unique_systemids() -> Array[String]:
 	return ids
 
 
+## Display-name overrides for systemids the bundled core-info database names
+## poorly (or not at all). Kept here rather than patched into the core-info
+## submodule, which we do not own — see plans/known-issues.md "Core-Info".
+const _NAME_OVERRIDES := {
+	"playstation_portable": "PlayStation Portable",
+}
+
+
 ## Return the human-readable systemname for a given systemid.
-## Uses the first matching entry. Returns the systemid itself if not found.
+## Overrides win; then the core-info entry; then a prettified fallback so a raw
+## "playstation_portable"-style id never reaches the UI verbatim.
 func get_systemname_for_id(systemid: String) -> String:
+	if _NAME_OVERRIDES.has(systemid):
+		return _NAME_OVERRIDES[systemid]
 	var entries := get_by_systemid(systemid)
 	if entries.is_empty():
+		return _prettify_systemid(systemid)
+	var nm: String = entries[0].get("systemname", systemid)
+	# The DB returns the raw id when it has no systemname — prettify that.
+	return _prettify_systemid(systemid) if nm == systemid else nm
+
+
+## Title-case an underscore systemid as a last-resort display name.
+func _prettify_systemid(systemid: String) -> String:
+	if systemid.is_empty():
 		return systemid
-	return entries[0].get("systemname", systemid)
+	var words := PackedStringArray()
+	for w in systemid.split("_", false):
+		words.append(w.capitalize() if w.length() > 0 else w)
+	return " ".join(words)
 
 
 # ---------------------------------------------------------------------------
