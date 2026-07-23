@@ -354,6 +354,19 @@ func configure_controller_ports(port_zones: Array) -> void:
 		zone.rotation_degrees = Vector3(90, 0, 0)
 
 
+## How far the cart's centre sits out from socket_media along the grip axis.
+##
+## socket_media marks where the connector mates and a snap zone seats on the
+## object's CENTRE, so some offset is needed or the cart vanishes inside the
+## shell — but a full half-length (27 mm) leaves it hanging 32 mm out in open
+## air. Sized off the shell instead: scanning the shell mesh across the band the
+## cart passes through (|x| < 0.03, y = 0.0147 +/- 0.004) puts its front face at
+## z = -0.0629, with the hood overhanging to -0.0761 just above. Park the cart's
+## grip end 2 mm proud of that overhang, so it reads as seated but still has a
+## lip to take hold of: 0.0781 - 0.0407 - 0.054 / 2.
+const _CART_SEAT_OUT := 0.0104
+
+
 func configure_cartridge_slot(slot: Node3D) -> void:
 	if _glb != null:
 		var mk := _glb.find_child("socket_media", true, false) as Node3D
@@ -372,12 +385,8 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 			# frames and differencing them is meaningless. The clip is good for
 			# the axis and nothing else.
 			#
-			# socket_media marks where the CONNECTOR seats and a snap zone seats
-			# on the object's CENTRE, so shift out along the grip axis by half
-			# the cart or it vanishes inside the shell.
 			var sb: Basis = b * Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0))
-			slot.global_transform = Transform3D(sb, mk.global_position \
-				+ sb.y * (MediaDimensions.cart_size(_cart_systemid()).y * 0.5))
+			slot.global_transform = Transform3D(sb, mk.global_position + sb.y * _CART_SEAT_OUT)
 			var sv := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 			if sv != null:
 				sv.visible = false
