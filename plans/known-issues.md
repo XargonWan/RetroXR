@@ -23,7 +23,6 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 
 # 3DS
 
-* when pointing at the console towards the screen in the area where the cartridge is under the screen, it's too easy to grab the cartridge while it is in it
 * The texture on the 3DS Shell appears off for some reason?
 * Closing the lid with the hindge back to 0 deg, doesnt look flush, nor does it look like it's on the right pivot
 

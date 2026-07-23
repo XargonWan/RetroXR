@@ -185,7 +185,12 @@ func set_seated_grab_stub(depth: float) -> void:
 	var pcol := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
 	if pcol and pcol.shape is BoxShape3D:
 		var pshape := pcol.shape.duplicate() as BoxShape3D
-		pshape.size = Vector3(s.x + 0.01, depth + 0.006, s.z + 0.01)
+		# Keep the pointer target to the exposed stub. It used to pad +1 cm on
+		# every axis, and that +1 cm of DEPTH pushed the grab volume ~6 mm past
+		# the slot mouth toward the screen — so pointing at the console just above
+		# a seated cart grabbed the cart. Match the grab box's depth (no bleed) and
+		# only pad x/y a hair so the small stub is still targetable.
+		pshape.size = Vector3(s.x + 0.004, depth + 0.002, s.z + 0.004)
 		pcol.shape = pshape
 		pcol.position = stub_center
 
