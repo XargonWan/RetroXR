@@ -282,6 +282,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mbe.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			scroll_px =  _SCROLL_SPEED * 0.016
 		if scroll_px != 0.0:
+			# While a desktop hand is holding an object the wheel is its push/pull
+			# (desktop_pickup). Bail WITHOUT consuming so that handler still gets
+			# it — otherwise, with the spawn menu open, the menu ate the wheel and
+			# the held object couldn't be pulled closer. (This is the "pickup
+			# consumes the wheel first while holding" the comment above assumes,
+			# which tree order does not actually guarantee.)
+			if not get_viewport().use_xr and _grabber_busy(_spawn_grabber()):
+				return
 			var ui := _raycast_scrollable_ui()
 			if ui:
 				ui.scroll_active(scroll_px)

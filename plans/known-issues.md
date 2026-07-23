@@ -3,7 +3,6 @@
       emulation-thread pacing, and whether GL HW-render frame delivery bypasses
       the frame-duration accumulator on Android
 * Pressing 'C' makes this appear [SK::VideoHandler::SetGeometry] 400x480 @ 400x480 (aspect ratio: 0.833333). I'm not sure why...
-* I Can't use the scroll wheel in desktop mode to bring an object closer while the spawn menu is opened
 * These errors show up for validation with vulkan, tested with the azahar core
 [SK::VulkanContext::Init::<lambda_1>::operator ()] VkValidation: vkQueueSubmit(): pSubmits[0] command buffer VkCommandBuffer 0x1c5ac5470d0 expects VkImage 0x100000000010 (subresource: aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, mipLevel = 0, arrayLayer = 0) to be in layout VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL--instead, current layout is VK_IMAGE_LAYOUT_UNDEFINED.
 The Vulkan spec states: If a descriptor with type equal to any of VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT is accessed as a result of this command, all image subresources identified by that descriptor must be in the image layout identified when the descriptor was written (https://docs.vulkan.org/spec/latest/chapters/drawing.html#VUID-vkCmdDraw-None-09600)
