@@ -153,7 +153,12 @@ func _animate(delta: float) -> void:
 		var node: MeshInstance3D = e["node"]
 		var rest: Transform3D = e["rest"]
 		var pressed: float = 1.0 if (_cur_btn & (1 << int(e["bit"]))) != 0 else 0.0
-		var target: Transform3D = Transform3D(rest.basis, rest.origin + PRESS_DIR * (float(e["depth"]) * pressed))
+		# Per-button press direction, defaulting to PRESS_DIR. Face buttons sink
+		# into the top surface, but a control mounted on another face travels
+		# into THAT face — a shoulder button on the back edge pressed along
+		# PRESS_DIR just slides down the outside of the shell.
+		var dir: Vector3 = e.get("dir", PRESS_DIR)
+		var target: Transform3D = Transform3D(rest.basis, rest.origin + dir * (float(e["depth"]) * pressed))
 		node.transform = node.transform.interpolate_with(target, w)
 
 	if not _dpad.is_empty():

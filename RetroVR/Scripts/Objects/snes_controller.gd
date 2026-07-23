@@ -22,7 +22,14 @@ const SNES_FACE: Dictionary = {
 	"StartButton":      ControllerBindings.JOYPAD_START,
 }
 
-# Shoulders travel further than a face button, like the DualShock's triggers.
+# Shoulders travel further than a face button, like the DualShock's triggers,
+# and they press INTO THE BACK FACE rather than down: measured, they sit at
+# y=0.046 in a body spanning 0.039-0.054 and z=-0.031 against a back edge of
+# -0.032, i.e. on the back face at mid-thickness. Pressed along the default
+# PRESS_DIR they slid down the outside of the shell instead of going in.
+# (Vector3.BACK is +Z, which is toward the player / into the pad from behind.)
+const SHOULDER_DIR := Vector3.BACK
+
 const SNES_SHOULDERS: Dictionary = {
 	"LShoulderButton": ControllerBindings.JOYPAD_L,
 	"RShoulderButton": ControllerBindings.JOYPAD_R,
@@ -40,7 +47,8 @@ func _cache_meshes() -> void:
 		var m: MeshInstance3D = _find_mesh(base)
 		if m != null:
 			_buttons.append({"node": m, "rest": m.transform,
-				"bit": int(SNES_SHOULDERS[base]), "depth": TRIGGER_PRESS})
+				"bit": int(SNES_SHOULDERS[base]), "depth": TRIGGER_PRESS,
+				"dir": SHOULDER_DIR})
 	# Same D-pad naming as the NES pad: mesh "StickLeft22", pivot empty "StickLeft".
 	var dm: MeshInstance3D = _find_mesh("StickLeft22")
 	if dm != null:
