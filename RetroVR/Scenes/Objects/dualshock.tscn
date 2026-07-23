@@ -21,6 +21,7 @@ freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_dsscript")
+systemid = "playstation"
 pad_type_pref = "dualshock"
 plug_mesh_path = "res://imported-assets/psx_controller_plug.res"
 

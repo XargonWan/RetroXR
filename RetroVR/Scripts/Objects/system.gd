@@ -214,6 +214,17 @@ const _MEDIA_COMPAT: Dictionary = {
 	"game_boy_advance": ["game_boy"],
 }
 
+## The same idea for connectors: controllers of these systemids ALSO fit this
+## system's ports. Deliberately empty — each console takes its own pad and
+## nothing else.
+##
+## Real hardware is looser than this, and each of these is one line if wanted:
+##   "playstation2": ["playstation"]   PS2 takes PS1 pads (identical connector)
+##   "mega_drive":   ["atari_2600"]    the DE-9 is shared, and vice versa
+## Physical fit only — a plug that cannot enter the socket does not belong here
+## however well its buttons would map.
+const _CONTROLLER_COMPAT: Dictionary = {}
+
 # RETRO_DEVICE_* types relevant to port routing (libretro.h).
 const RETRO_DEVICE_NONE := 0
 const RETRO_DEVICE_MOUSE := 2
@@ -246,6 +257,9 @@ func _ready() -> void:
 		var idx := i
 		_port_zones[i].has_picked_up.connect(func(obj: Node3D) -> void: _on_port_snapped(idx, obj))
 		_port_zones[i].has_dropped.connect(func(obj: Node3D) -> void: _on_port_released(idx, obj))
+		# A SNES pad does not fit a PlayStation. Same gate the cartridge slot
+		# uses for media, applied to the connector.
+		_port_zones[i].snap_filter = _accepts_plug
 	# Load system-specific model (falls back to default placeholder model)
 	_load_system_model()
 	# Spawn one cable per video-out channel
@@ -1501,6 +1515,24 @@ func _accepts_media(obj: Node3D) -> bool:
 	if mid.is_empty():
 		return true
 	return mid == systemid or mid in _MEDIA_COMPAT.get(systemid, [])
+
+
+## Port gate: does this plug's controller belong to this system?
+##
+## Reads the systemid the ControllerPlug copied off its controller. Empty means
+## universal and always fits — RetroVR's own props (generic pad, keyboard, mouse,
+## multitap, ray gun) stand in for hardware we have no model of, so locking them
+## to one system would strand every console that has no dedicated pad yet.
+##
+## Anything that is not a controller plug at all falls through to true and is
+## still filtered by the zone's snap_require = "controller_plug".
+func _accepts_plug(obj: Node3D) -> bool:
+	if not "systemid" in obj:
+		return true
+	var mid := str(obj.get("systemid"))
+	if mid.is_empty():
+		return true
+	return mid == systemid or mid in _CONTROLLER_COMPAT.get(systemid, [])
 
 
 ## Returns the currently snapped cartridge, or null (used by save/load).

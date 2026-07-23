@@ -38,6 +38,15 @@ var device_type: int = RETRO_DEVICE_JOYPAD
 ## plug, so an export-excluded model never breaks a build.
 @export var plug_mesh_path: String = ""
 
+## The systemid this controller physically belongs to, e.g. "super_nes". A port
+## only accepts a plug whose controller matches (see RetroSystem._accepts_plug),
+## the same way the cartridge slot only accepts media for its own system.
+##
+## Empty means UNIVERSAL and fits anything — that is deliberate for RetroVR's own
+## props (the generic pad, keyboard, mouse, multitap, ray gun), which stand in for
+## hardware we have no model of and must keep working on every system.
+@export var systemid: String = ""
+
 # Port connection state
 var _connected_system: RetroSystem = null
 var _port_index: int = -1

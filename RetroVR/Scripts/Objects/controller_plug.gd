@@ -9,6 +9,8 @@ var _controller: Node3D = null
 
 ## Device type exposed so system.gd can read it without knowing the controller type.
 var device_type: int = 1  # RETRO_DEVICE_JOYPAD
+## Systemid of the controller on the other end; "" = fits any port.
+var systemid: String = ""
 
 ## Local point the cable leaves this plug at, fed to VerletRope.end_anchor_offset.
 ## Zero for the generic cylinder plug, whose origin already sits mid-barrel with
@@ -57,6 +59,10 @@ func set_controller(controller: Node3D) -> void:
 	_controller = controller
 	if "device_type" in controller:
 		device_type = controller.device_type
+	# Which system this plug fits. The port zone's snap filter reads it off the
+	# plug rather than chasing the cable back to the controller.
+	if "systemid" in controller:
+		systemid = str(controller.get("systemid"))
 
 
 ## Called by system.gd when this plug snaps into a port.
