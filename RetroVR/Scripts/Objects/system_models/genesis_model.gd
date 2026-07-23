@@ -122,8 +122,39 @@ func _wire_button(btn: VRButton, mesh_name: String) -> void:
 
 
 # --- cartridge (top-load: drops straight down) ---
+## The two 9-pin ports on the front panel, measured off a straight-on render of
+## the face against the shell's own moulded CONTROL 1 / CONTROL 2 recesses. The
+## GLB marks the cart socket and the A/V out but not these, and nothing had ever
+## placed them — both zones sat at the framework default, on the floor in front
+## of the console. Shared with the Mega Drive: same hardware, same node layout.
+const _PORT_X := [0.0533, 0.0848]
+const _PORT_Y := 0.0169
+const _PORT_Z := 0.1077
+
+
+func configure_controller_ports(port_zones: Array) -> void:
+	for i in range(port_zones.size()):
+		var zone: Node3D = port_zones[i]
+		if i < _PORT_X.size():
+			zone.position = Vector3(_PORT_X[i], _PORT_Y, _PORT_Z)
+			# Front-facing socket: roll 180 about Z so the plug seats connector-in
+			# and upright, rather than the yaw that lands it upside down.
+			zone.rotation_degrees = Vector3(0, 0, 180)
+		var recess := zone.get_node_or_null("PortRecess") as MeshInstance3D
+		if recess != null:
+			recess.hide()
+		var lbl := zone.get_node_or_null("PortLabel") as Label3D
+		if lbl != null:
+			lbl.hide()
+
+
 func configure_cartridge_slot(slot: Node3D) -> void:
-	slot.global_position = _anchor("socket_media")
+	# socket_media is where the cart's CONNECTOR mates; a snap zone seats on the
+	# object's CENTRE, so lift by half the cart or it sinks into the deck. The
+	# authored basis is already right: the Genesis loads from the top with the
+	# cart upright and its label facing the player, which is the cartridge scene's
+	# own rest orientation (connector -Y, label +Z).
+	slot.global_position = _anchor("socket_media") 		+ Vector3.UP * (MediaDimensions.cart_size("mega_drive").y * 0.5)
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false

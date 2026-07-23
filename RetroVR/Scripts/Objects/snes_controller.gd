@@ -53,4 +53,3 @@ func _cache_meshes() -> void:
 	var dm: MeshInstance3D = _find_mesh("StickLeft22")
 	if dm != null:
 		_dpad = {"node": dm, "rest": dm.transform, "pivot": _find_pivot(dm, "StickLeft")}
-	print("[snes] cached %d buttons, dpad=%s" % [_buttons.size(), not _dpad.is_empty()])

@@ -152,7 +152,12 @@ func _animate(delta: float) -> void:
 	for e: Dictionary in _buttons:
 		var node: MeshInstance3D = e["node"]
 		var rest: Transform3D = e["rest"]
-		var pressed: float = 1.0 if (_cur_btn & (1 << int(e["bit"]))) != 0 else 0.0
+		# "mask" lets one mesh answer to several buttons. Some pads mould their
+		# face buttons as a single piece — the Genesis pad's A, B and C are one
+		# mesh — so there is nothing to press individually. Defaults to just this
+		# entry's own bit.
+		var mask: int = int(e.get("mask", 1 << int(e["bit"])))
+		var pressed: float = 1.0 if (_cur_btn & mask) != 0 else 0.0
 		# Per-button press direction, defaulting to PRESS_DIR. Face buttons sink
 		# into the top surface, but a control mounted on another face travels
 		# into THAT face — a shoulder button on the back edge pressed along
