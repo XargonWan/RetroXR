@@ -57,9 +57,10 @@ const LOADER_SLOT := 2   # slot-load: disc injects on insert, EJECT slides it ou
 ## Systems that slot-load instead of using a lid/tray (PSP UMD).
 ## NOTE: playstation2 was here (fat PS2 front slot) but our imported model is the PS2
 ## SLIM, which is top-loading (hinged disc cover) — so it uses LOADER_TRAY instead.
-const SLOT_LOAD_SYSTEMS: Dictionary = {
-	"playstation_portable": true,
-}
+## Slot-load = the disc injects on insert and the EJECT button slides it out
+## (PS2). Everything else with a disc is a lid/tray (OPEN reveals a well). The
+## PSP is a tray: its UMD sits behind a hinged door you flick open, not a slot.
+const SLOT_LOAD_SYSTEMS: Dictionary = {}
 
 
 ## True when the systemid's games ship on discs (spawn a RetroDisc).

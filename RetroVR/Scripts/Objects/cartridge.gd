@@ -45,6 +45,7 @@ const _CART_MODELS := {
 	# One EU-styled cart serves Genesis and Mega Drive alike (the shells differ,
 	# the cartridge does not).
 	"mega_drive": "res://imported-assets/genesis_cart.glb",
+	"playstation_portable": "res://imported-assets/psp_umd.glb",
 }
 
 ## The model's own swappable label face, when a real cart model is in use.
@@ -89,8 +90,10 @@ func _apply_cart_model() -> void:
 	if desync != null:
 		desync.visible = false
 	_model_label = glb.find_child("media_label", true, false) as MeshInstance3D
-	# The procedural stand-ins are replaced by the real shell.
-	for nm in ["CartridgeMesh", "LabelMesh", "GameLabel"]:
+	# The procedural stand-ins are replaced by the real shell. Includes the disc
+	# body meshes (DiscMesh/HubMesh/ArtQuad) so a RetroDisc with a real media
+	# model — the PSP UMD caddy — doesn't show a generic CD poking through it.
+	for nm in ["CartridgeMesh", "LabelMesh", "GameLabel", "DiscMesh", "HubMesh", "ArtQuad"]:
 		var n := get_node_or_null(nm) as Node3D
 		if n != null:
 			n.visible = false

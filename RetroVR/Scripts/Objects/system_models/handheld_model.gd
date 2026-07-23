@@ -59,6 +59,18 @@ func is_handheld() -> bool:
 func _glb_path() -> String:
 	return ""
 
+
+## Name of the GLB's screen-lens mesh. Most imported handhelds call it "screen_mesh";
+## some (the PSP-1000) suffix it "screen_mesh_0". Override to match.
+func _glb_screen_name() -> String:
+	return "screen_mesh"
+
+
+## Called at the end of _upgrade_to_glb once the shell is in place, laid back and
+## recentred. Subclasses cache their control meshes here for animate_controls().
+func _on_glb_ready() -> void:
+	pass
+
 ## imported handheld GLBs are modelled upright (screen on +Z); RetroVR's frame is
 ## lying flat with the screen on +Y, so the default lays it back. Override if a
 ## particular GLB is authored differently.
@@ -121,7 +133,7 @@ func _upgrade_to_glb(path: String) -> void:
 	# GLB's screen, raised a hair so it sits IN FRONT of the plastic lens. The GLB's
 	# own screen_mesh sits behind that opaque lens, so it's hidden.
 	_fix_shell_materials()
-	var glb_screen := _glb.find_child("screen_mesh", true, false) as MeshInstance3D
+	var glb_screen := _glb.find_child(_glb_screen_name(), true, false) as MeshInstance3D
 	if glb_screen != null and _screen != null:
 		var sab: AABB = glb_screen.global_transform * glb_screen.get_aabb()
 		var sctr := sab.position + sab.size * 0.5
@@ -144,6 +156,7 @@ func _upgrade_to_glb(path: String) -> void:
 	var pm := _glb.find_child("Power", true, false) as Node3D
 	if _power_switch != null and pm != null:
 		_power_switch.position = to_local(pm.global_position)
+	_on_glb_ready()
 
 
 func _hide_knob(slider: VRSlider) -> void:
