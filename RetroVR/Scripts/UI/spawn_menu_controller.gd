@@ -798,6 +798,10 @@ func _on_spawn_requested(type: String) -> void:
 			obj = _instantiate_optional("res://imported-assets/nes_controller.glb", "res://Scenes/Objects/nes_controller.tscn")
 			if obj == null:
 				return
+		"snes_controller":
+			obj = _instantiate_optional("res://imported-assets/snes_controller.glb", "res://Scenes/Objects/snes_controller.tscn")
+			if obj == null:
+				return
 		"n64_controller":
 			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/n64_controller.tscn")
 			if obj == null:
