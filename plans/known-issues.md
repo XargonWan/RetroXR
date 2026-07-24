@@ -19,8 +19,6 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 
 # 3DS
 
-* The texture on the 3DS Shell appears off for some reason?
-
 # DS Phat
 
 * The cartridge appears to stick out when it is placed in and it doesn't appear to go in the slot right
