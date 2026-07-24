@@ -15,7 +15,6 @@ extends RetroSystemModel
 
 const _MODEL_PATH := "res://imported-assets/nes_system.glb"
 const BUTTON_DEPRESS_DEPTH := 0.0022
-const LID_ZONE_RADIUS := 0.10
 const INSERT_SLIDE := 0.07        # metres the cart slides in from the flap mouth
 const LID_OPEN_DEG := -105.0      # flap swing about its top-rear hinge edge
 const LID_ANIM_TIME := 0.35
@@ -38,11 +37,16 @@ var _power_button: VRButton = null
 var _cartridge_slot: Node3D = null
 var _cartridge_insert_dir: Vector3 = Vector3.FORWARD
 
-# Front-flap (hinge) interaction
+# Front-flap (hinge) interaction — a grip-latched VRHinge drives the flap: grab
+# its top (free) half and swing it. _flap_frame/_flap_pivot form the angle-driver
+# frame the hinge reports into (its origin at the real hinge, -Z along the shut
+# flap); _deg_open is that frame's angle at full open, so the reported degrees map
+# onto _lid_amount 0..1.
 var _lid_open: bool = false
-var _lid_local_pos: Vector3 = Vector3.ZERO
-var _has_lid_zone: bool = false
-var _controllers_in_lid_zone: Array = []
+var _flap_hinge: VRHinge = null
+var _flap_frame: Node3D = null
+var _flap_pivot: Node3D = null
+var _deg_open: float = 0.0
 
 
 func _ready() -> void:
@@ -109,18 +113,13 @@ func _ready() -> void:
 		# quad flush with the flap face; parent those to the flap so they swing with
 		# the hinge instead of hanging in mid-air when it opens.
 		_attach_flap_decals()
+		# Grip-latched grab handle on the top (free) half of the flap.
+		_setup_flap_hinge()
 
 	_power_light_mesh = _glb.find_child("PowerLight", true, false) as MeshInstance3D
 	if _power_light_mesh:
 		_prep_power_light()
 		_set_power_light(false)
-
-	# Proximity zone over the flap's finger-slider marker so a face-button press
-	# there toggles the hinge (the contextual-action pattern used across RetroVR).
-	var finger := _glb.find_child("Finger Button (Slider) Open Deckel", true, false) as Node3D
-	if finger:
-		_lid_local_pos = to_local(finger.global_position)
-		_has_lid_zone = true
 
 
 # Hide the moulded RF/power leads and their plug ends — RetroVR spawns its own
@@ -262,12 +261,15 @@ func _tween_lid(to: float) -> void:
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
-## Swing the flap up on its hinge and enable the cartridge bay.
+## Swing the flap up on its hinge and enable the cartridge bay. Also snaps the
+## grab hinge to the open angle so a following grab resumes from the right pose.
 func play_open() -> void:
 	if _lid_open:
 		return
 	_lid_open = true
 	_tween_lid(1.0)
+	if _flap_hinge != null:
+		_flap_hinge.set_rotation_deg_no_signal(_deg_open)
 	if _cartridge_slot != null:
 		_cartridge_slot.enabled = true
 
@@ -278,41 +280,88 @@ func play_close() -> void:
 		return
 	_lid_open = false
 	_tween_lid(0.0)
+	if _flap_hinge != null:
+		_flap_hinge.set_rotation_deg_no_signal(0.0)
 	if _cartridge_slot != null:
 		_cartridge_slot.enabled = false
 
 
-func _toggle_lid() -> void:
-	if _lid_open:
-		play_close()
-	else:
-		play_open()
-
-
-func _process(_delta: float) -> void:
-	if not _has_lid_zone:
+## Build the grip-latched grab handle on the flap. A hidden angle-driver frame
+## (origin at the real hinge, -Z along the shut flap, X along the hinge axis) is
+## what the VRHinge reports into; the reported degrees are remapped onto the flap's
+## own about-the-hinge rotation via _set_lid, so the mesh keeps its proven pivot
+## math. The grab Area3D itself rides the flap mesh (its top/free half), so the
+## box, the VR proximity sphere and the floating hint icon track the swinging flap.
+func _setup_flap_hinge() -> void:
+	if _lid_mesh == null:
 		return
-	var controllers := get_tree().get_nodes_in_group("xr_controllers")
-	if controllers.is_empty():
-		controllers = get_tree().root.find_children("*", "XRController3D", true, false)
-	for ctrl in controllers:
-		if not (ctrl is XRController3D):
-			continue
-		var xr := ctrl as XRController3D
-		var inside: bool = to_local(PokeTip.tip_of(xr)).distance_to(_lid_local_pos) <= LID_ZONE_RADIUS
-		var was_inside: bool = xr in _controllers_in_lid_zone
-		if inside and not was_inside:
-			_controllers_in_lid_zone.append(xr)
-			xr.button_pressed.connect(_on_lid_button.bind(xr))
-		elif not inside and was_inside:
-			_controllers_in_lid_zone.erase(xr)
-			if xr.button_pressed.is_connected(_on_lid_button):
-				xr.button_pressed.disconnect(_on_lid_button)
+	var fp := _lid_mesh.get_parent() as Node3D
+	if fp == null:
+		return
+	var a := _lid_mesh.get_aabb()
+	var cx := a.position.x + a.size.x * 0.5
+	var cz := a.position.z + a.size.z * 0.5
+	# Hinge (top edge) and free edge (bottom edge) in the flap's rest parent space,
+	# plus where the free edge lands at full open (the same rotation _set_lid uses).
+	var hinge_par: Vector3 = _lid_rest * Vector3(cx, a.position.y + a.size.y, cz)
+	var free_par: Vector3 = _lid_rest * Vector3(cx, a.position.y, cz)
+	var open_rot := Basis(Vector3.RIGHT, deg_to_rad(LID_OPEN_DEG))
+	var free_open_par: Vector3 = hinge_par + open_rot * (free_par - hinge_par)
+	# Everything into this model node's local space.
+	var to_model: Transform3D = global_transform.affine_inverse() * fp.global_transform
+	var hinge_m: Vector3 = to_model * hinge_par
+	var free_m: Vector3 = to_model * free_par
+	var free_open_m: Vector3 = to_model * free_open_par
+	var axis_m: Vector3 = (to_model.basis * Vector3.RIGHT).normalized()
+	var shut_dir: Vector3 = (free_m - hinge_m).normalized()
+	# Frame basis: X = hinge axis, -Z = shut flap direction (VRHinge's rotation-0
+	# points -Z), Y completes a right-handed set. Orthonormalise against the axis.
+	var x_axis := axis_m
+	var z_axis := (-shut_dir - x_axis * (-shut_dir).dot(x_axis)).normalized()
+	var y_axis := z_axis.cross(x_axis).normalized()
+	_flap_frame = Node3D.new()
+	_flap_frame.name = "FlapHinge"
+	add_child(_flap_frame)
+	_flap_frame.transform = Transform3D(Basis(x_axis, y_axis, z_axis), hinge_m)
+	_flap_pivot = Node3D.new()
+	_flap_pivot.name = "FlapDragPivot"
+	_flap_frame.add_child(_flap_pivot)
+	# Frame angle when the flap is fully open — the remap divisor.
+	var open_rel: Vector3 = _flap_frame.transform.affine_inverse() * free_open_m
+	_deg_open = rad_to_deg(atan2(open_rel.y, -open_rel.z))
+	# Grab handle on the top (free) half of the flap, riding the flap mesh.
+	_flap_hinge = VRHinge.new()
+	_flap_hinge.name = "FlapGrab"
+	_flap_hinge.target = _flap_pivot
+	_flap_hinge.min_deg = minf(0.0, _deg_open)
+	_flap_hinge.max_deg = maxf(0.0, _deg_open)
+	_flap_hinge.engage_radius = clampf(maxf(a.size.x, a.size.y * 0.5) * 0.6, 0.03, 0.09)
+	_lid_mesh.add_child(_flap_hinge)
+	_flap_hinge.transform = Transform3D(Basis.IDENTITY,
+		Vector3(cx, a.position.y + a.size.y * 0.25, cz))
+	var col := CollisionShape3D.new()
+	col.name = "CollisionShape3D"
+	var box := BoxShape3D.new()
+	box.size = Vector3(a.size.x * 0.9, a.size.y * 0.5, maxf(a.size.z, 0.006) + 0.012)
+	col.shape = box
+	_flap_hinge.add_child(col)
+	_flap_hinge.icon_offset = Vector3(0.0, -a.size.y * 0.15,
+		maxf(a.size.z, 0.006) * 0.5 + 0.05)
+	_flap_hinge.rotation_changed.connect(_on_flap_drag)
 
 
-func _on_lid_button(action: String, _ctrl: XRController3D) -> void:
-	if action == "ax_button" or action == "by_button":
-		_toggle_lid()
+## Map the grab hinge's reported angle onto the flap open amount and gate the bay.
+func _on_flap_drag(deg: float) -> void:
+	if is_zero_approx(_deg_open):
+		return
+	var amount := clampf(deg / _deg_open, 0.0, 1.0)
+	_set_lid(amount)
+	var open := amount > 0.5
+	if open == _lid_open:
+		return
+	_lid_open = open
+	if _cartridge_slot != null:
+		_cartridge_slot.enabled = _lid_open
 
 
 # --- ports / buttons / cable ----------------------------------------------------

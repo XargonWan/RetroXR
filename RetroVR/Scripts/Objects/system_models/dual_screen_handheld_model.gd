@@ -225,6 +225,7 @@ func _upgrade_dual_to_glb(path: String) -> void:
 		var baked := _base_half_size()
 		if baked.length() > 0.0:
 			body_size = baked
+		_setup_lid_grab()
 		return
 	var shell := get_node_or_null("Shell") as Node3D
 	if shell == null:
@@ -387,6 +388,39 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	# off the back of the console: `top` ended up 13.6 cm out on Z carrying a 91
 	# degree roll it never should have had.
 	set_meta("dual_glb_baked", true)
+	_setup_lid_grab()
+
+
+## Size the lid's grab hinge to the TOP (free) HALF of the lid face — the part
+## farther from the hinge, which ends up on top when the lid is raised. The grab
+## box, the VR proximity sphere and the floating hint icon are all placed off the
+## live TopScreen quad (both it and LidHinge are LidPivot children, so this is one
+## local frame), so it tracks whatever pose the lid was calibrated into.
+func _setup_lid_grab() -> void:
+	if _hinge == null or _screen == null or _lid_pivot == null:
+		return
+	if not (_screen.mesh is QuadMesh):
+		return
+	var qsize: Vector2 = (_screen.mesh as QuadMesh).size
+	var w: float = maxf(qsize.x, 0.01)
+	var h: float = maxf(qsize.y, 0.01)
+	var st: Transform3D = _screen.transform          # quad-local → LidPivot-local
+	# Which ±Y edge of the quad is the FREE edge (farther from the hinge at the
+	# LidPivot origin)? The grab half centres on that edge's side.
+	var e_pos: Vector3 = st * Vector3(0.0, h * 0.5, 0.0)
+	var e_neg: Vector3 = st * Vector3(0.0, -h * 0.5, 0.0)
+	var free_sign: float = 1.0 if e_pos.length() >= e_neg.length() else -1.0
+	var center_local: Vector3 = st * Vector3(0.0, free_sign * h * 0.25, 0.0)
+	var basis: Basis = st.basis.orthonormalized()
+	_hinge.transform = Transform3D(basis, center_local)
+	var col := _hinge.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col and col.shape is BoxShape3D:
+		col.shape = col.shape.duplicate()
+		(col.shape as BoxShape3D).size = Vector3(w, h * 0.5, 0.02)
+	# VR proximity sphere covers the free half; icon floats off the face normal
+	# (quad local +Z) a touch toward the free edge.
+	_hinge.engage_radius = clampf(maxf(w, h * 0.5) * 0.55, 0.03, 0.07)
+	_hinge.icon_offset = Vector3(0.0, free_sign * 0.008, 0.045)
 
 
 ## How far the shell's own (opaque) glass/surface sits over a lens along its
