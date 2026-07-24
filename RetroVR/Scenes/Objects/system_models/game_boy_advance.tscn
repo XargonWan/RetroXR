@@ -218,51 +218,10 @@ shadow_mesh = SubResource("ArrayMesh_6eecd")
 [node name="GameBoyAdvance" type="Node3D" unique_id=890685834]
 script = ExtResource("1_tvfqd")
 
-[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=770239887]
-visible = false
-mesh = SubResource("BoxMesh_vufj4")
-surface_material_override/0 = SubResource("StandardMaterial3D_dupi4")
-
-[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=1680430013]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01325, 0)
-visible = false
-mesh = SubResource("BoxMesh_i83b2")
-surface_material_override/0 = SubResource("StandardMaterial3D_o43db")
-
 [node name="HandheldScreen" type="MeshInstance3D" parent="." unique_id=884134283]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -5.686283e-05, 0.012030515, -0.004468158)
 mesh = SubResource("QuadMesh_c88xr")
 surface_material_override/0 = SubResource("StandardMaterial3D_auqda")
-
-[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=1251406665]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.054375, 0.01425, 0)
-visible = false
-mesh = SubResource("BoxMesh_46oqj")
-surface_material_override/0 = SubResource("StandardMaterial3D_46ku1")
-
-[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=1025799270]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.054375, 0.01425, 0)
-visible = false
-mesh = SubResource("BoxMesh_obwfv")
-surface_material_override/0 = SubResource("StandardMaterial3D_46ku1")
-
-[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=1906242208]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.060375, 0.01425, -0.006)
-visible = false
-mesh = SubResource("CylinderMesh_22pe1")
-surface_material_override/0 = SubResource("StandardMaterial3D_vufj4")
-
-[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1538229176]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.048375, 0.01425, 0.006)
-visible = false
-mesh = SubResource("CylinderMesh_c88xr")
-surface_material_override/0 = SubResource("StandardMaterial3D_vufj4")
-
-[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=291050804]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.041)
-visible = false
-mesh = SubResource("BoxMesh_hn560")
-surface_material_override/0 = SubResource("StandardMaterial3D_xcrsx")
 
 [node name="VolumeSlider" type="Area3D" parent="." unique_id=838714436]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07425, 0, -0.013000001)

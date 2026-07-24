@@ -19,6 +19,11 @@ func _glb_path() -> String:
 	return "res://imported-assets/game_boy_dmg.glb"
 
 
+## Store-safe primitive stand-in (spawned only when the detailed DMG GLB is absent).
+func _primitive_path() -> String:
+	return "res://Scenes/Objects/system_models/game_boy_primitive.tscn"
+
+
 ## Align the cart with the shell's own slot marker ACROSS the body — the base
 ## centres it on the body's mid-plane, but the DMG's connector sits ~1 cm below
 ## that, so on a 3 cm-thick shell the card sat visibly off the real slot.

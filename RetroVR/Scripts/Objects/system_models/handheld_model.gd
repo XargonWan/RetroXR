@@ -89,8 +89,12 @@ func _glb_rotation_degrees() -> Vector3:
 func _ready() -> void:
 	_cache_shell_nodes()
 	var gp := _glb_path()
-	if not gp.is_empty() and ResourceLoader.exists(gp):
+	if get_node_or_null("Shell") != null or (not gp.is_empty() and ResourceLoader.exists(gp)):
 		_upgrade_to_glb(gp)
+	if _glb == null:
+		# No detailed shell (e.g. store build with the GLB export-excluded) — spawn
+		# the plain primitive stand-in kept in its own scene (see _primitive_path).
+		_spawn_primitive()
 	# An authored "CartSeat" marker (see configure_cartridge_slot) may carry a
 	# visible "SeatPreview" box so the seated-cart pose can be dialled in inside
 	# the Godot 3D editor. It's an editor aid only — hide it at runtime.
@@ -98,6 +102,31 @@ func _ready() -> void:
 	if preview is Node3D:
 		(preview as Node3D).visible = false
 	_setup_screen_light()
+
+
+## Override to return a store-safe primitive stand-in scene, spawned only when the
+## detailed GLB shell is absent. Default "" = no separate primitive (older
+## handhelds keep their stand-in inline in the device scene).
+func _primitive_path() -> String:
+	return ""
+
+
+## Spawn the primitive stand-in from its own scene, so baked handhelds keep their
+## device .tscn free of hidden clutter. Re-reads body_size from the spawned
+## HandheldBody so collision / cart slot / cable placement stay correct.
+func _spawn_primitive() -> void:
+	var pp := _primitive_path()
+	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
+		return
+	var scene := load(pp) as PackedScene
+	if scene == null:
+		return
+	var prim := scene.instantiate() as Node3D
+	prim.name = "Primitive"
+	add_child(prim)
+	var body := prim.find_child("HandheldBody", true, false) as MeshInstance3D
+	if body and body.mesh is BoxMesh:
+		body_size = (body.mesh as BoxMesh).size
 
 
 func _setup_screen_light() -> void:
@@ -147,6 +176,12 @@ func _upgrade_to_glb(path: String) -> void:
 	var baked := get_node_or_null("Shell") as Node3D
 	if baked != null:
 		_glb = baked
+		# body_size used to come from the primitive HandheldBody; on baked scenes
+		# that box is split out to a *_primitive.tscn, so measure the real shell
+		# instead (collision / cart slot / cable placement track it).
+		var bb := _glb_local_aabb(_glb)
+		if bb.size.length() > 0.0:
+			body_size = bb.size
 		_fix_shell_materials()
 		return
 	var scene := load(path) as PackedScene
