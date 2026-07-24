@@ -167,6 +167,10 @@ var _scrape_in_progress: bool = false
 # Scrape status bar (shows hashing / request / retry state below the menu)
 var _scrape_status_bar: PanelContainer = null
 var _scrape_status_label: Label = null
+# Stacking media-download toasts (screenscraper box/manual/wheel/label).
+# media_type -> { "bar": PanelContainer, "label": Label, "icon": Label }
+var _media_toasts: Dictionary = {}
+var _media_toast_stack: VBoxContainer = null
 # Game detail side panel
 var _game_detail_panel: PanelContainer = null
 # ROM variants side panel
@@ -254,6 +258,9 @@ func _init_scraper() -> void:
 	scraper_client.config = scraper_config
 	add_child(scraper_client)
 	scraper_client.scrape_status.connect(_update_scrape_status)
+	scraper_client.media_download_started.connect(_on_media_download_started)
+	scraper_client.media_download_completed.connect(_on_media_download_notice)
+	scraper_client.media_download_failed.connect(_on_media_download_notice_failed)
 
 
 func _init_web_server() -> void:
@@ -2665,6 +2672,106 @@ func _hide_scrape_status() -> void:
 		_scrape_status_bar.queue_free()
 	_scrape_status_bar = null
 	_scrape_status_label = null
+
+
+# ── Stacking media-download toasts ───────────────────────────────────────────
+# Same look as the "Hashing ROM…" bar, but one bar per in-flight media file so
+# simultaneous box/manual/wheel/label downloads stack up instead of clobbering
+# a single status line. Bars sit just above the scrape status bar.
+
+func _ensure_media_toast_stack() -> void:
+	if _media_toast_stack != null and is_instance_valid(_media_toast_stack):
+		return
+	_media_toast_stack = VBoxContainer.new()
+	_media_toast_stack.add_theme_constant_override("separation", 6)
+	_media_toast_stack.alignment = BoxContainer.ALIGNMENT_END
+	# Anchor to the bottom, sitting above the scrape status bar's slot.
+	_media_toast_stack.anchor_left   = 0.1
+	_media_toast_stack.anchor_right  = 0.9
+	_media_toast_stack.anchor_top    = 1.0
+	_media_toast_stack.anchor_bottom = 1.0
+	_media_toast_stack.offset_top    = -300.0
+	_media_toast_stack.offset_bottom = -62.0
+	_media_toast_stack.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_media_toast_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_media_toast_stack)
+
+
+func _make_media_toast(media_type: String, icon_text: String, msg: String) -> void:
+	_ensure_media_toast_stack()
+
+	var bar := PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05, 0.10, 0.28, 0.96)
+	for k in ["corner_radius_top_left", "corner_radius_top_right",
+			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	bar.add_theme_stylebox_override("panel", bg)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, 8)
+	bar.add_child(margin)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 10)
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	margin.add_child(hbox)
+
+	var icon := Label.new()
+	icon.text = icon_text
+	icon.add_theme_font_size_override("font_size", 18)
+	hbox.add_child(icon)
+
+	var label := Label.new()
+	label.text = msg
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", COLOR_TITLE)
+	hbox.add_child(label)
+
+	_media_toast_stack.add_child(bar)
+	_media_toasts[media_type] = {"bar": bar, "label": label, "icon": icon}
+
+
+func _on_media_download_started(media_type: String) -> void:
+	_make_media_toast(media_type, "⏳", "Downloading %s…" % media_type.capitalize())
+
+
+func _on_media_download_notice(media_type: String, _path: String) -> void:
+	_finish_media_toast(media_type, "✅", "%s downloaded" % media_type.capitalize())
+
+
+func _on_media_download_notice_failed(media_type: String, _error: String) -> void:
+	_finish_media_toast(media_type, "❌", "%s failed" % media_type.capitalize())
+
+
+func _finish_media_toast(media_type: String, icon_text: String, msg: String) -> void:
+	if not _media_toasts.has(media_type):
+		# No "started" toast (e.g. failed before request began) — make one so
+		# the outcome is still surfaced.
+		_make_media_toast(media_type, icon_text, msg)
+	else:
+		var toast: Dictionary = _media_toasts[media_type]
+		var lbl: Label = toast.get("label")
+		var icn: Label = toast.get("icon")
+		if lbl != null and is_instance_valid(lbl):
+			lbl.text = msg
+		if icn != null and is_instance_valid(icn):
+			icn.text = icon_text
+
+	# Auto-dismiss this toast after a short delay.
+	get_tree().create_timer(2.5).timeout.connect(
+		_remove_media_toast.bind(media_type))
+
+
+func _remove_media_toast(media_type: String) -> void:
+	if _media_toasts.has(media_type):
+		var toast: Dictionary = _media_toasts[media_type]
+		var bar: PanelContainer = toast.get("bar")
+		if bar != null and is_instance_valid(bar):
+			bar.queue_free()
+		_media_toasts.erase(media_type)
 
 
 func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary) -> void:

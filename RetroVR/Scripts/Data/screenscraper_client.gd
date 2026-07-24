@@ -15,6 +15,7 @@ const MIN_MEDIA_SIZE := 256  # bytes — reject placeholder/error responses
 signal scrape_completed(result: Dictionary)
 signal scrape_failed(error: String)
 signal scrape_status(message: String)
+signal media_download_started(media_type: String)
 signal media_download_completed(media_type: String, path: String)
 signal media_download_failed(media_type: String, error: String)
 
@@ -354,6 +355,9 @@ func download_media(media_type: String, url: String, dest_path: String) -> void:
 	if err != OK:
 		_cleanup_media_download(media_type)
 		media_download_failed.emit(media_type, "Failed to start request (err %d)" % err)
+		return
+
+	media_download_started.emit(media_type)
 
 
 func _on_media_download_completed(media_type: String, result: int,
