@@ -115,6 +115,10 @@ func _ready() -> void:
 		_vb_light.light_energy = 0.0
 		_vb_light.position = Vector3(0.0, 0.0, -0.05)
 		_eyepiece.add_child(_vb_light)
+	# Editor-only cart-seat preview box — hide it at runtime.
+	var seat_preview := find_child("SeatPreview", true, false)
+	if seat_preview is Node3D:
+		(seat_preview as Node3D).visible = false
 
 
 ## Swap the primitive bipod for the detailed shell. The functional nodes stay
@@ -390,6 +394,16 @@ const _CART_SEAT_OUT := 0.0104
 
 
 func configure_cartridge_slot(slot: Node3D) -> void:
+	# An authored "CartSeat" marker (baked into virtual_boy.tscn) wins over the
+	# socket_media-computed pose, so the seated-cart transform can be dialled in
+	# visually in the Godot 3D editor.
+	var seat := find_child("CartSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
+		var svv := slot.get_node_or_null("SlotVisual") as MeshInstance3D
+		if svv != null:
+			svv.visible = false
+		return
 	if _glb != null:
 		var mk := _glb.find_child("socket_media", true, false) as Node3D
 		if mk != null:

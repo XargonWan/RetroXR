@@ -1051,6 +1051,16 @@ _data = {
 &"DS Lite_Remove_PAN": SubResource("Animation_ui8mx")
 }
 
+[sub_resource type="BoxMesh" id="BoxMesh_cartseat"]
+size = Vector3(0.033, 0.035, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="Mat_cartseat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [node name="NDSLite" type="Node3D" unique_id=1414934860]
 script = ExtResource("1_l1txu")
 metadata/dual_glb_baked = true
@@ -1235,5 +1245,13 @@ skeleton = NodePath("")
 
 [node name="AnimationPlayer" parent="Shell" index="27" unique_id=1361474557]
 libraries/ = SubResource("AnimationLibrary_i40ch")
+
+[node name="CartSeat" type="Marker3D" parent="." unique_id=880001001]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, -0.032)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=880001002]
+mesh = SubResource("BoxMesh_cartseat")
+surface_material_override/0 = SubResource("Mat_cartseat")
 
 [editable path="Shell"]
