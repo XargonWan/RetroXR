@@ -1,14 +1,14 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://kx61fqbb4pii"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/nds_model.gd" id="1_l1txu"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_0o7mw"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_phat_nds_diffuse.png" id="3_4nau3"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_sss83"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_phat_normal.png" id="4_2kkqg"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_phat_Plugs_Albedo.png" id="7_ws2eg"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_phat_orm.png" id="8_2xwkg"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_phat_normal_3.png" id="9_r7u2d"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_phat_nds_emissive.png" id="10_nk2xw"]
+[ext_resource type="Script" uid="uid://dwc80mc8nm4u6" path="res://Scripts/Objects/system_models/nds_model.gd" id="1_l1txu"]
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_0o7mw"]
+[ext_resource type="Texture2D" uid="uid://bplkvla5vixmv" path="res://imported-assets/ds_phat_nds_diffuse.png" id="3_4nau3"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_sss83"]
+[ext_resource type="Texture2D" uid="uid://8wgl7u72drgj" path="res://imported-assets/ds_phat_normal.png" id="4_2kkqg"]
+[ext_resource type="Texture2D" uid="uid://7ek2n10o1imb" path="res://imported-assets/ds_phat_Plugs_Albedo.png" id="7_ws2eg"]
+[ext_resource type="Texture2D" uid="uid://cxqf0crbtrj8y" path="res://imported-assets/ds_phat_orm.png" id="8_2xwkg"]
+[ext_resource type="Texture2D" uid="uid://blmldhkgufu2g" path="res://imported-assets/ds_phat_normal_3.png" id="9_r7u2d"]
+[ext_resource type="Texture2D" uid="uid://1cpphhchyu38" path="res://imported-assets/ds_phat_nds_emissive.png" id="10_nk2xw"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_tek8h"]
 size = Vector2(0.063363925, 0.048092205)
@@ -747,7 +747,7 @@ mesh = SubResource("BoxMesh_apfcc")
 surface_material_override/0 = SubResource("StandardMaterial3D_in1mj")
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=1988822074]
-transform = Transform3D(-1, -8.742278e-08, 3.821371e-15, 0, -4.371139e-08, -1, 8.742278e-08, -1, 4.371139e-08, 0, -0.007, -0.025)
+transform = Transform3D(-1, -8.742278e-08, 3.821371e-15, 0, -4.371139e-08, -1, 8.742278e-08, -1, 4.371139e-08, 0, -0.007995919, -0.025)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=8435450]
