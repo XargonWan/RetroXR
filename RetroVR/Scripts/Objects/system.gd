@@ -401,10 +401,10 @@ func _load_system_model() -> void:
 		scene_path = _MODEL_SCENES[systemid]
 	if not scene_path.is_empty():
 		var packed := load(scene_path) as PackedScene
-		if not packed:
+		if packed:
+			_model = packed.instantiate() as RetroSystemModel
+		else:
 			push_warning("RetroSystem: failed to load model scene: %s" % scene_path)
-			return
-		_model = packed.instantiate() as RetroSystemModel
 		is_bespoke = true
 	else:
 		var script_path: String = DEFAULT
@@ -412,12 +412,23 @@ func _load_system_model() -> void:
 			script_path = _MODEL_VARIANTS[vkey]
 		elif _MODEL_SCRIPTS.has(systemid):
 			script_path = _MODEL_SCRIPTS[systemid]
-		is_bespoke = script_path != DEFAULT
 		var script := load(script_path) as GDScript
-		if not script:
+		if script:
+			_model = script.new() as RetroSystemModel
+		else:
 			push_warning("RetroSystem: failed to load model script: %s" % script_path)
-			return
-		_model = script.new() as RetroSystemModel
+		is_bespoke = script_path != DEFAULT
+	# Whatever went wrong above (missing scene, missing script, or the loaded
+	# root not actually being a RetroSystemModel) — never leave _model null.
+	# Every configure_*/on_*/play_* call below and everywhere else in this
+	# file assumes _model is valid once _ready() returns; a null here doesn't
+	# fail loudly at the point of failure, it silently crashes some unrelated
+	# caller much later (e.g. cartridge-insert during a save restore).
+	if _model == null:
+		push_warning("RetroSystem: model instantiation failed for systemid='%s' variant='%s' — falling back to the generic placeholder" % [systemid, model_variant])
+		var default_script := load(DEFAULT) as GDScript
+		_model = default_script.new() as RetroSystemModel
+		is_bespoke = false
 	add_child(_model)
 	if is_bespoke:
 		_system_body.hide()
