@@ -1,6 +1,6 @@
 ## QualityManager — Autoload singleton that adapts visual quality per platform.
 ##
-## Desktop VR gets full volumetric fog, high bloom, and ambilight.
+## Desktop VR gets high bloom and ambilight.
 ## Quest 3 gets stripped-down glow, depth fog only, and reduced lighting.
 extends Node
 
