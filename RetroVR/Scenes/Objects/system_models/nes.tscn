@@ -20,7 +20,7 @@ script = ExtResource("1_6rxnb")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00011532009, 0.045811404, 0.18831983)
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=702187248]
-transform = Transform3D(-1, 0, 0, 0, 0, 1, 0, 1, 0, -0.01951532, 0.0736114, 0.017319828)
+transform = Transform3D(-1, 0, 0, 0, 0, 1, 0, 1, 0, -0.01951532, 0.0736114, 0.03)
 gizmo_extents = 0.05
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=274033653]
