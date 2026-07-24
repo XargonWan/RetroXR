@@ -48,6 +48,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_discseat")
 
 [node name="ConsoleBody" type="MeshInstance3D" parent="." unique_id=1919200005]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0264, 0)
+visible = false
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("StandardMaterial3D_shell")
 
@@ -58,6 +59,7 @@ transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0
 
 [node name="LidPlate" type="MeshInstance3D" parent="LidMount/LidPivot" unique_id=1919200006]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0172, -0.0837)
+visible = false
 mesh = SubResource("BoxMesh_lid")
 surface_material_override/0 = SubResource("StandardMaterial3D_lid")
 
