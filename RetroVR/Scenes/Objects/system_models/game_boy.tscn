@@ -20,6 +20,16 @@
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_dmg_orm_15.png" id="18_y7xxy"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_dmg_normal_14.png" id="19_1m21g"]
 
+[sub_resource type="BoxMesh" id="BoxMesh_gbcartseat"]
+size = Vector3(0.057, 0.065, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="Mat_gbcartseat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [sub_resource type="BoxMesh" id="BoxMesh_a5vr4"]
 size = Vector3(0.0853017, 0.031066652, 0.13806148)
 
@@ -903,5 +913,13 @@ skeleton = NodePath("")
 
 [node name="AnimationPlayer" parent="Shell" index="20" unique_id=886905245]
 libraries/ = SubResource("AnimationLibrary_ejms5")
+
+[node name="CartSeat" type="Marker3D" parent="." unique_id=770002001]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, -0.01, -0.037)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=770002002]
+mesh = SubResource("BoxMesh_gbcartseat")
+surface_material_override/0 = SubResource("Mat_gbcartseat")
 
 [editable path="Shell"]
