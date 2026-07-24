@@ -37,6 +37,8 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 @export var max_deg: float = 180.0
 ## Controller tip distance (m) that engages the handle.
 @export var engage_radius: float = 0.04
+## Desktop: degrees the mouse wheel rolls the hinge per notch while held.
+@export var wheel_step_deg: float = 10.0
 ## Where the floating hint icon sits, in this hinge's local frame (above the lid).
 @export var icon_offset: Vector3 = Vector3(0.0, 0.0, 0.04)
 ## Icon glyph height, roughly, in metres.
@@ -88,15 +90,21 @@ func _process(_delta: float) -> void:
 ## Desktop reticle / VR laser support (same contract as VRButton/VRSlider). Press
 ## latches; the latch holds through MOVED even if the ray leaves the box, and only
 ## RELEASED lets go — EXITED just clears the hover highlight, never the drag.
+##
+## On DESKTOP a press only latches (fist icon) — the mouse WHEEL then rolls the
+## angle while held (see _unhandled_input), which is finer and steadier than
+## dragging the ray. In VR the laser pointer keeps its press-drag.
 func pointer_event(event: XRToolsPointerEvent) -> void:
+	var vr := get_viewport().use_xr
 	match event.event_type:
 		XRToolsPointerEvent.Type.ENTERED:
 			_pointer_hover = true
 		XRToolsPointerEvent.Type.PRESSED:
 			_pointer_held = true
-			_track_world_point(event.position)
+			if vr:
+				_track_world_point(event.position)
 		XRToolsPointerEvent.Type.MOVED:
-			if _pointer_held:
+			if _pointer_held and vr:
 				_track_world_point(event.position)
 		XRToolsPointerEvent.Type.RELEASED:
 			_pointer_held = false
@@ -104,6 +112,31 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			_pointer_hover = false
 			# NB: keep _pointer_held — a drag is allowed to leave the grab box.
 	_update_icon()
+
+
+## Desktop: while the lid is held (reticle pressed on the grab box), the mouse
+## wheel rolls the hinge open/closed. Wheel up opens, wheel down closes. Gated on
+## _pointer_held, so other wheel consumers (held-object push/pull) only see the
+## event when no hinge is grabbed. rotation.x grows toward SHUT on both the
+## clamshells (0 open → 180 shut) and the NES flap driver (0 shut → -105 open),
+## so "open" is always -step and "close" +step.
+func _unhandled_input(event: InputEvent) -> void:
+	if not _pointer_held or target == null:
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not mb.pressed:
+		return
+	var step := 0.0
+	if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+		step = -wheel_step_deg
+	elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		step = wheel_step_deg
+	else:
+		return
+	_apply(rad_to_deg(target.rotation.x) + step, true)
+	get_viewport().set_input_as_handled()
 
 
 ## Convert an engaged world point to an angle about the hinge axis (the target's
