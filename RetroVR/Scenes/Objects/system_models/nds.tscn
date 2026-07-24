@@ -5,7 +5,6 @@
 [ext_resource type="Texture2D" path="res://imported-assets/ds_phat_nds_diffuse.png" id="3_4nau3"]
 [ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_sss83"]
 [ext_resource type="Texture2D" path="res://imported-assets/ds_phat_normal.png" id="4_2kkqg"]
-[ext_resource type="PackedScene" path="res://imported-assets/ds_phat.glb" id="6_d0lh1"]
 [ext_resource type="Texture2D" path="res://imported-assets/ds_phat_Plugs_Albedo.png" id="7_ws2eg"]
 [ext_resource type="Texture2D" path="res://imported-assets/ds_phat_orm.png" id="8_2xwkg"]
 [ext_resource type="Texture2D" path="res://imported-assets/ds_phat_normal_3.png" id="9_r7u2d"]
@@ -689,7 +688,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_p6j3u")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=1970978706]
 shape = SubResource("BoxShape3D_igt8m")
 
-[node name="Shell" parent="." unique_id=1726529366 instance=ExtResource("6_d0lh1")]
+[node name="Shell" type="Node3D" parent="." unique_id=1726529366]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.450581e-09, -0.009449429, -0.00024557486)
 
 [node name="screen_mesh Bottom" type="MeshInstance3D" parent="Shell" unique_id=1196237271]
@@ -754,5 +753,3 @@ gizmo_extents = 0.03
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=8435450]
 mesh = SubResource("BoxMesh_qscha")
 surface_material_override/0 = SubResource("StandardMaterial3D_feibp")
-
-[editable path="Shell"]
