@@ -126,24 +126,33 @@ func _ready() -> void:
 ## stereo eyepiece — but the eyepiece is moved onto the real lens aperture and
 ## the GLB's own opaque panes are hidden behind it.
 func _upgrade_to_glb() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		return
-	var ps := load(_MODEL_PATH) as PackedScene
-	if ps == null:
-		return
-	_glb = ps.instantiate() as Node3D
-	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	if ap != null:
-		ap.autoplay = ""
-	_glb.basis = Basis(Vector3.UP, _SHELL_YAW)
-	add_child(_glb)
+	# Baked scene: virtual_boy.tscn ships the yawed + recentred shell as a "Shell"
+	# instance (so a CartSeat marker can be placed against it in the editor). Reuse
+	# it and skip the load / yaw / recentre — those are baked into Shell.transform.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		if not ResourceLoader.exists(_MODEL_PATH):
+			return
+		var ps := load(_MODEL_PATH) as PackedScene
+		if ps == null:
+			return
+		_glb = ps.instantiate() as Node3D
+		_glb.name = "Shell"
+		var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if ap != null:
+			ap.autoplay = ""
+		_glb.basis = Basis(Vector3.UP, _SHELL_YAW)
+		add_child(_glb)
 	for nm in _HIDE:
 		var e := _glb.find_child(nm, true, false) as Node3D
 		if e != null:
 			e.visible = false
-	# Rest the shell on the floor and centre it in X/Z, measured AFTER the yaw.
-	var ab := _glb_aabb()
-	_glb.position = Vector3(-ab.get_center().x, -ab.position.y, -ab.get_center().z)
+	if baked == null:
+		# Rest the shell on the floor and centre it in X/Z, measured AFTER the yaw.
+		var ab := _glb_aabb()
+		_glb.position = Vector3(-ab.get_center().x, -ab.position.y, -ab.get_center().z)
 	# Hide the primitive stand-ins now the real shell is in.
 	for nm in ["StandBase", "StandColumn", "Visor", "EyeShade"]:
 		var ph := get_node_or_null(nm) as MeshInstance3D

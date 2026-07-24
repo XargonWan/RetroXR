@@ -1,7 +1,8 @@
-[gd_scene format=3 uid="uid://b60vmy0wyh0ve"]
+[gd_scene format=3]
 
-[ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
-[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
+[ext_resource type="PackedScene" path="res://imported-assets/virtual_boy.glb" id="3_n6osu"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_rq1i2"]
 size = Vector3(0.16, 0.012, 0.14)
@@ -34,6 +35,16 @@ size = Vector2(0.01, 0.01)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_vbvol"]
 size = Vector3(0.026, 0.024, 0.024)
+
+[sub_resource type="BoxMesh" id="BoxMesh_rbfnt"]
+size = Vector3(0.065, 0.054, 0.006)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_bossr"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
 
 [node name="VirtualBoy" type="Node3D" unique_id=1385834482]
 script = ExtResource("1_dweg0")
@@ -78,3 +89,14 @@ value = 0.8
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=387028959]
 shape = SubResource("BoxShape3D_vbvol")
+
+[node name="Shell" type="Node3D" parent="." unique_id=1613796220 instance=ExtResource("3_n6osu")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.00040184706, 0.047593586, -0.01872674)
+
+[node name="CartSeat" type="Marker3D" parent="." unique_id=560108936]
+transform = Transform3D(1, -8.742278e-08, 0, 0, 0, 1, -8.742278e-08, -1, 0, -0.0005581558, 0.014653582, -0.051146742)
+gizmo_extents = 0.04
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=120859800]
+mesh = SubResource("BoxMesh_rbfnt")
+surface_material_override/0 = SubResource("StandardMaterial3D_bossr")
