@@ -165,6 +165,14 @@ func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
 		attach_point.position += Vector3(-0.04 * channel, 0, 0)
 
 
+## World-space offset from the video-out attach point where channel `channel`'s
+## cable plug first spawns — i.e. which way the rope initially trails out of the
+## console. Default trails it out the back (-Z); models whose port faces another
+## way override this (the NES's captive AV lead exits the right/+X side).
+func get_cable_spawn_offset(channel: int) -> Vector3:
+	return Vector3(0.05 * channel, 0, -0.1)
+
+
 ## Adjust the root collision shape to fit this model. Custom non-handheld models
 ## whose geometry doesn't match the default console box (e.g. the tall Virtual
 ## Boy standing on its bipod) override this so the body rests on the ground

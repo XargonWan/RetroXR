@@ -787,10 +787,11 @@ func _add_cables_to_scene() -> void:
 		# Exclude the plug from colliding with this system so it doesn't jitter on spawn
 		plug.add_collision_exception_with(self)
 
-		# Position plug near the rope's start anchor (the attach point), fanned
-		# out a little per channel so multiple plugs don't spawn intersecting
+		# Position plug near the rope's start anchor (the attach point), offset the
+		# way the console's port faces (per-model; default trails out the back -Z)
+		# so multiple plugs don't spawn intersecting.
 		plug.global_position = _attach_points[i].global_position \
-			+ Vector3(0.05 * i, 0, -0.1)
+			+ _model.get_cable_spawn_offset(i)
 
 		# Wire rope anchors: start = system's attach point, end = plug
 		rope.start_node = _attach_points[i]

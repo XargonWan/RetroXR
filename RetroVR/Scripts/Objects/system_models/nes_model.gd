@@ -127,14 +127,19 @@ func _ready() -> void:
 # video-out cable (attached at the "Cable Plug (YW)" marker). The console body,
 # flap, cradle, buttons and LED stay.
 func _hide_clutter(root: Node3D) -> void:
+	# KEEP the captive AV lead + its RCA plugs (yellow video / white audio) — the
+	# spawned video cable trails on from the "Cable Plug (YW)" marker at their tip.
+	# Everything else matching cable/plug/rca/connector (RF, power, controller
+	# leads) is clutter and hidden.
+	var keep := ["cables", "rca_yellow", "rca_white"]
 	var stack: Array[Node] = [root]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		var mi := n as MeshInstance3D
 		if mi != null:
 			var nm := String(mi.name).to_lower()
-			if nm.contains("cable") or nm.contains("plug") or nm.contains("rca") \
-					or nm.contains("connector"):
+			if (nm.contains("cable") or nm.contains("plug") or nm.contains("rca") \
+					or nm.contains("connector")) and not keep.has(nm):
 				mi.visible = false
 		for ch in n.get_children():
 			stack.append(ch)
@@ -382,9 +387,21 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 		var marker := _glb.find_child("Cable Plug (YW)", true, false) as Node3D
 		if marker:
 			attach_point.global_position = marker.global_position
+	# The rope leaves the attach point stiffly along its local -Z (VerletRope's
+	# plug_exit_axis). Video-out ports normally sit identity-oriented on the back
+	# (-Z), but the NES's captive AV lead + RCA plugs exit the RIGHT (+X) side, so
+	# rotate the attach point -90° about Y (local -Z -> device +X) to steer the
+	# cable out +X instead of straight back.
+	attach_point.rotation = Vector3(0.0, -PI / 2.0, 0.0)
 	var port_visual := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if port_visual:
 		port_visual.hide()
+
+
+## The NES's captive AV lead (with the yellow video RCA) runs out the right (+X)
+## side, so the video cable trails out +X instead of the default -Z.
+func get_cable_spawn_offset(channel: int) -> Vector3:
+	return Vector3(0.12, 0.0, 0.05 * channel)
 
 
 # --- cartridge (front-load: slides straight back into the ZIF socket) -----------
