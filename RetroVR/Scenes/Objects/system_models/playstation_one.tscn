@@ -2,6 +2,19 @@
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/playstation_one_model.gd" id="1_psone"]
 [ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_hinge"]
+[ext_resource type="PackedScene" path="res://imported-assets/playstation_one.glb" id="3_psoneglb"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_discseat"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.0015
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_discseat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_lidgrab"]
 size = Vector3(0.11, 0.022, 0.03)
@@ -20,6 +33,16 @@ albedo_color = Color(0.78, 0.78, 0.8, 1)
 
 [node name="PlaystationOne" type="Node3D" unique_id=1919100000]
 script = ExtResource("1_psone")
+
+[node name="Shell" parent="." instance=ExtResource("3_psoneglb")]
+
+[node name="DiscSeat" type="Marker3D" parent="Shell"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.000259, 0.030181, 0.014)
+gizmo_extents = 0.07
+
+[node name="SeatPreview" type="MeshInstance3D" parent="Shell/DiscSeat"]
+mesh = SubResource("CylinderMesh_discseat")
+surface_material_override/0 = SubResource("StandardMaterial3D_discseat")
 
 [node name="ConsoleBody" type="MeshInstance3D" parent="." unique_id=1919100005]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.019, 0)

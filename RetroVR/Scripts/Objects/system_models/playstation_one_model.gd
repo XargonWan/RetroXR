@@ -54,21 +54,32 @@ func _ready() -> void:
 	# The scene's own stand-in shell (ConsoleBody + LidPlate) is the fallback and
 	# is already visible, so there's nothing to switch on: it's a PSone-shaped
 	# body with a working hinge rather than the host's generic SystemBody box.
-	var model_path := _model_path()
-	if not ResourceLoader.exists(model_path):
-		push_warning("%s: %s missing — using the scene's stand-in shell" % [name, model_path])
-		return
-	var ps := load(model_path) as PackedScene
-	if ps == null:
-		push_warning("%s: failed to load %s" % [name, model_path])
-		return
-	_glb = ps.instantiate() as Node3D
+	# An authored scene may bake the shell as a "Shell" instance plus an
+	# editor-authorable "DiscSeat" marker (cylinder "SeatPreview") riding it. Reuse
+	# the instance when present, otherwise load the GLB the old runtime way.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		var model_path := _model_path()
+		if not ResourceLoader.exists(model_path):
+			push_warning("%s: %s missing — using the scene's stand-in shell" % [name, model_path])
+			return
+		var ps := load(model_path) as PackedScene
+		if ps == null:
+			push_warning("%s: failed to load %s" % [name, model_path])
+			return
+		_glb = ps.instantiate() as Node3D
+		add_child(_glb)
+	# The disc-seat preview is an editor aid only — hide it before the recentre AABB.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 	# Disable the GLB's auto-played animation so the lid keeps its REST pose, which
 	# is the closed lid (verified by diagnostic). PSOneClose is broken — don't use.
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim != null:
 		_anim.autoplay = ""
-	add_child(_glb)
 	# Hide bundled cables/plugs — RetroVR spawns its own controllers + AV cable.
 	for extra in _hidden_meshes():
 		var e := _glb.find_child(extra, true, false) as Node3D
@@ -76,12 +87,16 @@ func _ready() -> void:
 			e.visible = false
 	# Turn the shell so its front faces +Z, then recentre on the console body in
 	# X/Z (base already rests near y=0). The yaw must come FIRST — the recentre
-	# is measured in the rotated frame.
-	var yaw := _shell_yaw()
-	if not is_zero_approx(yaw):
-		_glb.basis = Basis(Vector3.UP, yaw)
-	var xz := _visible_xz_center(_glb)
-	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
+	# is measured in the rotated frame. Skipped when the scene has pre-baked the
+	# yaw+recentre into Shell.transform (metadata/shell_prebaked) — needed for a GLB
+	# whose native frame is offset far from origin (the full-size original), so the
+	# editor shows it home and the DiscSeat child lands on the console.
+	if not has_meta("shell_prebaked"):
+		var yaw := _shell_yaw()
+		if not is_zero_approx(yaw):
+			_glb.basis = Basis(Vector3.UP, yaw)
+		var xz := _visible_xz_center(_glb)
+		_glb.position = Vector3(-xz.x, 0.0, -xz.y)
 	# The real shell is in — retire the scene's stand-in boxes. They exist so the
 	# .tscn shows a PSone (and a swingable lid) when opened in the editor, where
 	# the GLB isn't instanced, and so a build without the GLB still gets a shell.
@@ -287,6 +302,12 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "DiscSeat" marker (baked into the scene, riding the Shell) wins
+	# over the seat marker above, so the disc rest can be dialled in visually in the
+	# editor. Absent → keep the GLB seat-marker pose.
+	var seat := find_child("DiscSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 ## Both ports live on the FRONT face, directly under the two memory-card slots.
