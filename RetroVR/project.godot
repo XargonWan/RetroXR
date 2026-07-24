@@ -264,5 +264,5 @@ openxr/enabled=true
 openxr/startup_alert=false
 openxr/extensions/hand_tracking=true
 shaders/enabled=true
-openxr/extensions/meta/color_space/starting_color_space=3
 openxr/extensions/meta/passthrough=true
+openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/sharpening_mode=2
