@@ -1,11 +1,11 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://dakvoet457wpr"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/n3ds_model.gd" id="1_hqvy2"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
-[ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
-[ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
-[ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
+[ext_resource type="Script" uid="uid://d3o3y54a3v0d3" path="res://Scripts/Objects/system_models/n3ds_model.gd" id="1_hqvy2"]
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
+[ext_resource type="Texture2D" uid="uid://bhuh5ye5tni37" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
+[ext_resource type="Texture2D" uid="uid://xd1gsici3404" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
+[ext_resource type="Texture2D" uid="uid://clu825a2xvww6" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
 size = Vector3(0.134, 0.0105, 0.074)
@@ -1531,7 +1531,7 @@ skeleton = NodePath("")
 libraries/ = SubResource("AnimationLibrary_wkngq")
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=622196954]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -0.028997174, -0.006244211, 0.027144516)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -0.028997174, -0.0055630733, 0.034163073)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=1133338033]
