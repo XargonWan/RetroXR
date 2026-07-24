@@ -650,7 +650,8 @@ func on_tv_disconnected(plug: CablePlug = null) -> void:
 	var ch := plug.channel if plug != null else 0
 	if ch < 0 or ch >= _channels.size():
 		ch = 0
-	var tv: RetroTV = _channel_tvs[ch]
+	var tv_obj = _channel_tvs[ch]
+	var tv: RetroTV = tv_obj as RetroTV if (tv_obj != null and is_instance_valid(tv_obj)) else null
 	_channel_tvs[ch] = null
 	if ch == 0:
 		connected_tv = null
@@ -696,9 +697,10 @@ func _update_tv_mirrors() -> void:
 			if m is StandardMaterial3D:
 				tex = (m as StandardMaterial3D).emission_texture
 	for i in _channels.size():
-		var tv: RetroTV = _channel_tvs[i]
-		if tv == null or not is_instance_valid(tv):
+		var tv_obj = _channel_tvs[i]
+		if tv_obj == null or not is_instance_valid(tv_obj):
 			continue
+		var tv := tv_obj as RetroTV
 		if tex == null or not tv.is_powered_on():
 			_uninstall_tv_mirror(i, tv)
 			continue
@@ -731,9 +733,11 @@ func _uninstall_tv_mirror(ch: int, tv: RetroTV) -> void:
 ## A freed system must not leave its window materials / touch surfaces on TVs.
 func _exit_tree() -> void:
 	for i in _channels.size():
-		var tv: RetroTV = _channel_tvs[i]
-		if tv != null and is_instance_valid(tv):
-			_uninstall_tv_mirror(i, tv)
+		# Untyped (Variant) read: assigning a previously freed instance to any
+		# Object-typed variable throws before is_instance_valid() can guard it.
+		var tv_obj = _channel_tvs[i]
+		if tv_obj != null and is_instance_valid(tv_obj):
+			_uninstall_tv_mirror(i, tv_obj as RetroTV)
 		_remove_touch_surface(i)
 	super._exit_tree()
 
@@ -839,8 +843,9 @@ func _apply_video_out() -> void:
 		var plug: CablePlug = _cable_plugs[i]
 		if inst == null or plug == null or not is_instance_valid(plug):
 			continue
-		if not video_out_enabled and _channel_tvs[i] != null:
-			var tv: RetroTV = _channel_tvs[i]
+		var tv_obj = _channel_tvs[i]
+		if not video_out_enabled and tv_obj != null and is_instance_valid(tv_obj):
+			var tv := tv_obj as RetroTV
 			var port := tv.get_node_or_null("CompositePort") as XRToolsSnapZone
 			if port and port.picked_up_object == plug:
 				# Disarm around the drop so the zone's stale grab list can't
