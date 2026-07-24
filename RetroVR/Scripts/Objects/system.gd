@@ -14,7 +14,6 @@ const _MODEL_SCRIPTS: Dictionary = {
 	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
 	# NOTE: "playstation" now has an authored scene — see _MODEL_SCENES below.
-	"sega_saturn": "res://Scripts/Objects/system_models/sega_saturn_model.gd",
 	"dreamcast": "res://Scripts/Objects/system_models/dreamcast_model.gd",
 	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	"playstation2": "res://Scripts/Objects/system_models/ps2_model.gd",
@@ -49,6 +48,9 @@ const _MODEL_SCENES: Dictionary = {
 	# Sega Genesis / Mega Drive Model 1 (base = Genesis shell). CartSeat rides the
 	# Shell so it survives genesis_model's runtime recentre.
 	"mega_drive": "res://Scenes/Objects/system_models/genesis.tscn",
+	# Sega Saturn (disc): shell instance + an editor-authorable "DiscSeat" marker
+	# (cylinder preview) riding the Shell through the model's recentre.
+	"sega_saturn": "res://Scenes/Objects/system_models/sega_saturn.tscn",
 	# Dev-only (per user direction): an author's imported PSone. Its GLB is
 	# export-excluded (imported-assets/*), and the model self-guards to re-show
 	# the placeholder box on any build that lacks the GLB. Licence still pending.

@@ -1,0 +1,31 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/sega_saturn_model.gd" id="1_satmdl"]
+[ext_resource type="PackedScene" path="res://imported-assets/sega_saturn.glb" id="2_satglb"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_satseat"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.0015
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_satseat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
+[node name="SegaSaturn" type="Node3D"]
+script = ExtResource("1_satmdl")
+
+[node name="Shell" parent="." instance=ExtResource("2_satglb")]
+
+[node name="DiscSeat" type="Marker3D" parent="Shell"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0121)
+gizmo_extents = 0.07
+
+[node name="SeatPreview" type="MeshInstance3D" parent="Shell/DiscSeat"]
+mesh = SubResource("CylinderMesh_satseat")
+surface_material_override/0 = SubResource("StandardMaterial3D_satseat")
+
+[editable path="Shell"]

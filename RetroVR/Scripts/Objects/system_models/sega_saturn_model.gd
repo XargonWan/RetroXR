@@ -17,24 +17,35 @@ var _lid_closed: Transform3D
 
 
 func _ready() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("SegaSaturnModel: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var ps := load(_MODEL_PATH) as PackedScene
-	if ps == null:
-		push_warning("SegaSaturnModel: failed to load %s" % _MODEL_PATH)
-		return
-	_glb = ps.instantiate() as Node3D
+	# The authored sega_saturn.tscn instances the shell as a "Shell" child plus an
+	# editor-authorable "DiscSeat" marker (translucent cylinder "SeatPreview") that
+	# rides the shell through the recentre below. Reuse the instance when present.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		if not ResourceLoader.exists(_MODEL_PATH):
+			push_warning("SegaSaturnModel: %s missing — using placeholder box" % _MODEL_PATH)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var ps := load(_MODEL_PATH) as PackedScene
+		if ps == null:
+			push_warning("SegaSaturnModel: failed to load %s" % _MODEL_PATH)
+			return
+		_glb = ps.instantiate() as Node3D
+		add_child(_glb)
+	# The disc-seat preview is an editor aid only — hide it before the recentre AABB.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 	# Keep the rest pose (lid CLOSED) on load — disable the GLB's auto-play.
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim != null:
 		_anim.autoplay = ""
-	add_child(_glb)
 	var rca := _glb.find_child("RCA_Silver", true, false) as Node3D
 	if rca != null:
 		rca.visible = false
@@ -131,6 +142,12 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "DiscSeat" marker (baked into sega_saturn.tscn, riding the Shell)
+	# wins over the spindle pose, so the disc rest can be dialled in visually in the
+	# editor. Absent → keep the Disc Spindle pose.
+	var seat := find_child("DiscSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
