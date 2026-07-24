@@ -17,24 +17,36 @@ func _model_path() -> String:
 
 
 func _ready() -> void:
-	var path := _model_path()
-	if not ResourceLoader.exists(path):
-		push_warning("GenesisModel: %s missing — using placeholder box" % path)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var scene := load(path) as PackedScene
-	if scene == null:
-		push_warning("GenesisModel: failed to load %s" % path)
-		return
-	_glb = scene.instantiate() as Node3D
+	# An authored scene (genesis.tscn / megadrive.tscn) instances the shell as a
+	# "Shell" child plus an editor-authorable "CartSeat" marker riding it. Reuse the
+	# instance instead of loading a second copy of the GLB.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		var path := _model_path()
+		if not ResourceLoader.exists(path):
+			push_warning("GenesisModel: %s missing — using placeholder box" % path)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var scene := load(path) as PackedScene
+		if scene == null:
+			push_warning("GenesisModel: failed to load %s" % path)
+			return
+		_glb = scene.instantiate() as Node3D
+		add_child(_glb)
+	# The cart-seat preview box is an editor aid only — hide it BEFORE the recentre
+	# so it doesn't skew the body AABB.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
-	add_child(_glb)
 	# Hide the bundled AV plug and imported's invisible "Finger Button" trigger proxies
 	# (they import as untextured white meshes). RetroVR drives the buttons itself.
 	var stack: Array[Node] = [_glb]
@@ -163,6 +175,12 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "CartSeat" marker (baked into genesis.tscn / megadrive.tscn,
+	# riding the Shell) wins over the computed pose, so the seated-cart transform
+	# can be dialled in visually in the editor. Absent → keep the computed pose.
+	var seat := find_child("CartSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 func get_cartridge_insert_direction() -> Vector3:

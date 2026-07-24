@@ -17,7 +17,6 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"sega_saturn": "res://Scripts/Objects/system_models/sega_saturn_model.gd",
 	"dreamcast": "res://Scripts/Objects/system_models/dreamcast_model.gd",
 	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
-	"mega_drive": "res://Scripts/Objects/system_models/genesis_model.gd",
 	"playstation2": "res://Scripts/Objects/system_models/ps2_model.gd",
 	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
 	"dos": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
@@ -47,6 +46,9 @@ const _MODEL_SCENES: Dictionary = {
 	# Atari 2600 VCS: same bake as the NES — recentred shell + editor-authorable
 	# "CartSeat" marker. atari_2600_model reuses the baked "Shell" instance.
 	"atari_2600": "res://Scenes/Objects/system_models/atari_2600.tscn",
+	# Sega Genesis / Mega Drive Model 1 (base = Genesis shell). CartSeat rides the
+	# Shell so it survives genesis_model's runtime recentre.
+	"mega_drive": "res://Scenes/Objects/system_models/genesis.tscn",
 	# Dev-only (per user direction): an author's imported PSone. Its GLB is
 	# export-excluded (imported-assets/*), and the model self-guards to re-show
 	# the placeholder box on any build that lacks the GLB. Licence still pending.
@@ -77,6 +79,8 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	# an editor-authorable "CartSeat" marker riding the shell. Wins over the
 	# nes:famicom script entry in _MODEL_VARIANTS.
 	"nes:famicom": "res://Scenes/Objects/system_models/famicom.tscn",
+	# Mega Drive (JP/EU badge of the Genesis): its own shell GLB, same wiring.
+	"mega_drive:megadrive": "res://Scenes/Objects/system_models/megadrive.tscn",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
