@@ -508,6 +508,11 @@ func _visible_miss() -> void:
 
 
 func resolve_interaction_target() -> InteractionTarget:
+	# During a scene switch this can run after the pointer has left the tree
+	# (get_world_3d() is null) — bail out instead of crashing.
+	if not is_inside_tree() or get_world_3d() == null:
+		resolved_target = InteractionTargetType.none()
+		return resolved_target
 	var ray_cast := $RayCast as RayCast3D
 	if not is_instance_valid(ray_cast):
 		resolved_target = InteractionTargetType.none()
