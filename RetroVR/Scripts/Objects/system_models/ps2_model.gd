@@ -10,10 +10,14 @@
 class_name RetroSystemModelPS2
 extends RetroSystemModel
 
+## The GLB PS2SlimOpen clip rotates about the model origin (converter bakes node
+## transforms to identity) → wrong direction. Drive a real back-edge hinge instead.
+const LID_OPEN_DEG := 80.0
+
 var _glb: Node3D = null
 var _anim: AnimationPlayer = null
-var _lid: Node3D = null
-var _lid_closed: Transform3D
+var _lid: MeshInstance3D = null
+var _lid_hinge: VRSpringLatchedHinge = null
 var _led: MeshInstance3D = null
 
 
@@ -59,9 +63,12 @@ func _ready() -> void:
 	var xz := _visible_xz_center(_glb)
 	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
 	# Cache the closed (rest) lid transform to snap fully shut after closing.
-	_lid = _glb.find_child("ps2s_disc_cover*", true, false) as Node3D
+	# Mount the disc cover on a real back-edge hinge (spring-loaded, button-opened).
+	_lid = _glb.find_child("ps2s_disc_cover*", true, false) as MeshInstance3D
 	if _lid != null:
-		_lid_closed = _lid.transform
+		_lid_hinge = VRSpringLatchedHinge.mount(self, _lid, LID_OPEN_DEG)
+		if _lid_hinge != null:
+			_lid_hinge.rotation_changed.connect(_on_lid_swung)
 	_led = _glb.find_child("Power Light", true, false) as MeshInstance3D
 	_set_led(false)
 
@@ -139,25 +146,22 @@ func uses_memory_cards() -> bool:
 
 
 # --- disc lid: RetroSystem drives these for LOADER_TRAY consoles ---
-# NOTE: "PS2SlimOpen" is authored REVERSED — t=0 is the raised (open) cover and
-# t=end is shut. The GLB's rest pose (autoplay off) is the closed cover, so:
-#   open  = play the anim BACKWARDS (rest→t=0, lid rises)
-#   close = play it FORWARDS (t=0→t=end) then snap to the cached closed rest.
+# Spring-loaded VRSpringLatchedHinge (replaces the origin-pivoting PS2SlimOpen clip
+# that opened the wrong way): OPEN button springs it fully up; the hand pulls it
+# down to close (release near-shut latches, release mid springs back open).
 func play_open() -> void:
-	if _anim != null and _anim.has_animation("PS2SlimOpen"):
-		_anim.play_backwards("PS2SlimOpen")
+	if _lid_hinge != null:
+		_lid_hinge.open()
 
 func play_close() -> void:
-	if _anim != null and _anim.has_animation("PS2SlimOpen"):
-		_anim.play("PS2SlimOpen")
-		if not _anim.animation_finished.is_connected(_on_close_finished):
-			_anim.animation_finished.connect(_on_close_finished, CONNECT_ONE_SHOT)
+	if _lid_hinge != null:
+		_lid_hinge.latch_closed()
 
-func _on_close_finished(_anim_name: StringName) -> void:
-	if _lid != null:
-		_lid.transform = _lid_closed
-	if _anim != null:
-		_anim.stop()
+func _on_lid_swung(_deg: float) -> void:
+	if _lid_hinge != null and _lid_hinge.is_latched_closed():
+		var host := get_parent()
+		if host != null and host.has_method("request_tray_state"):
+			host.request_tray_state(false)
 
 
 # --- buttons: POWER + EJECT (the Slim has no discrete RESET) ---

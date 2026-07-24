@@ -46,7 +46,7 @@ func _cable_marker() -> String:
 var _glb: Node3D = null
 var _anim: AnimationPlayer = null
 var _lid_pivot: Node3D = null
-var _hinge: VRHinge = null
+var _hinge: VRSpringLatchedHinge = null
 
 
 func _ready() -> void:
@@ -181,13 +181,6 @@ func uses_memory_cards() -> bool:
 # body that stops at z=-0.072). Same failure as the NES flap. Rotate about the
 # lid's own real hinge instead: its back-bottom edge, axis +X.
 const LID_OPEN_DEG := 70.0
-const LID_SWING_TIME := 0.55
-## Hand-swing thresholds (with hysteresis) at which the tray is reported open /
-## closed, so a half-lifted lid doesn't chatter the state.
-const _LID_OPEN_AT := 45.0
-const _LID_CLOSE_AT := 25.0
-
-var _lid_tween: Tween = null
 
 
 ## Move the GLB's lid mesh under the scene's LidPivot, placed at the lid's REAL
@@ -213,49 +206,33 @@ func _mount_lid() -> void:
 	var world := lid.global_transform
 	lid.reparent(_lid_pivot, false)
 	lid.global_transform = world
-	_hinge = _lid_pivot.get_node_or_null("LidHinge") as VRHinge
+	# The LidHinge is now a VRSpringLatchedHinge (see the .tscn): the OPEN button
+	# springs it fully up; the hand pulls it down to close (release near-shut latches,
+	# release mid springs back open); the hand can't start an open from closed.
+	_hinge = _lid_pivot.get_node_or_null("LidHinge") as VRSpringLatchedHinge
 	if _hinge != null:
+		_hinge.min_deg = 0.0
 		_hinge.max_deg = LID_OPEN_DEG
 		_hinge.rotation_changed.connect(_on_lid_hand_swung)
 
 
 func play_open() -> void:
-	_swing_lid(LID_OPEN_DEG)
+	if _hinge != null:
+		_hinge.open()
 
 func play_close() -> void:
-	_swing_lid(0.0)
+	if _hinge != null:
+		_hinge.latch_closed()
 
 
-func _swing_lid(target_deg: float) -> void:
-	if _lid_pivot == null:
-		return
-	if _lid_tween != null and _lid_tween.is_valid():
-		_lid_tween.kill()
-	_lid_tween = create_tween()
-	_lid_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	# Tween from wherever the lid ACTUALLY is (a hand may have left it part-way).
-	_lid_tween.tween_method(_set_lid_angle,
-		rad_to_deg(_lid_pivot.rotation.x), target_deg, LID_SWING_TIME)
-
-
-func _set_lid_angle(deg: float) -> void:
-	_lid_pivot.rotation.x = deg_to_rad(deg)
-
-
-## Lifting or pushing the lid by hand IS opening/closing the tray — tell the host
-## so the disc becomes grabbable and the OPEN button's latch follows. The tween
-## is killed first: the hand owns the lid while it's being dragged.
-func _on_lid_hand_swung(deg: float) -> void:
-	var host := get_parent()
-	if host != null and host.has_method("request_tray_state"):
-		if deg >= _LID_OPEN_AT:
-			host.request_tray_state(true)
-		elif deg <= _LID_CLOSE_AT:
+## A hand-swing that LATCHES the lid shut is the player closing the tray — tell the
+## host so the disc becomes ungrabbable and the OPEN button's state follows. Opening
+## is button-only, so nothing to report there.
+func _on_lid_hand_swung(_deg: float) -> void:
+	if _hinge != null and _hinge.is_latched_closed():
+		var host := get_parent()
+		if host != null and host.has_method("request_tray_state"):
 			host.request_tray_state(false)
-	# Killed AFTER the state change, which routes back through play_open/close:
-	# the hand is holding the lid, so cancel the swing it just kicked off.
-	if _lid_tween != null and _lid_tween.is_valid():
-		_lid_tween.kill()
 
 
 # --- buttons ---

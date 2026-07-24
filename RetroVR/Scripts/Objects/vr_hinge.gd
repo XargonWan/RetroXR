@@ -64,7 +64,8 @@ func set_rotation_deg_no_signal(deg: float) -> void:
 	_apply(deg, false)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var was_held := _grip_ctrl != null or _pointer_held
 	# VR: grip-latched engagement. A latched controller drives the hinge until it
 	# releases grip — regardless of how far the hand roams from the grab box.
 	if _grip_ctrl != null:
@@ -73,7 +74,7 @@ func _process(_delta: float) -> void:
 			_grip_ctrl = null
 		else:
 			_track_world_point(PokeTip.tip_of(_grip_ctrl))
-	elif not _pointer_held:
+	elif not _pointer_held and _can_engage():
 		# Not latched (and desktop isn't dragging): latch a hovering controller
 		# that squeezes grip.
 		for ctrl in _controllers:
@@ -84,6 +85,11 @@ func _process(_delta: float) -> void:
 				_grip_ctrl = ctrl
 				_track_world_point(PokeTip.tip_of(ctrl))
 				break
+	var held := _grip_ctrl != null or _pointer_held
+	if was_held and not held:
+		_on_released()
+	elif not held:
+		_on_idle(delta)
 	_update_icon()
 
 
@@ -100,9 +106,10 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 		XRToolsPointerEvent.Type.ENTERED:
 			_pointer_hover = true
 		XRToolsPointerEvent.Type.PRESSED:
-			_pointer_held = true
-			if vr:
-				_track_world_point(event.position)
+			if _can_engage():
+				_pointer_held = true
+				if vr:
+					_track_world_point(event.position)
 		XRToolsPointerEvent.Type.MOVED:
 			if _pointer_held and vr:
 				_track_world_point(event.position)
@@ -221,8 +228,29 @@ func _update_icon() -> void:
 
 
 func _vr_hovering() -> bool:
+	if not _can_engage():
+		return false
 	for ctrl in _controllers:
 		if ctrl and ctrl.get_is_active() \
 				and global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius:
 			return true
 	return false
+
+
+# --- override hooks (VRSpringLatchedHinge) -------------------------------------
+
+## Whether the hand/pointer may currently grab the hinge. Base: always. The spring
+## subclass returns false while latched shut so the hand can't start an open.
+func _can_engage() -> bool:
+	return true
+
+
+## Called the frame a grab ends (grip released / pointer released). Base: no-op.
+func _on_released() -> void:
+	pass
+
+
+## Called every frame the hinge is NOT held. Base: no-op (the lid stays put). The
+## spring subclass uses this to ease the lid back toward fully open.
+func _on_idle(_delta: float) -> void:
+	pass

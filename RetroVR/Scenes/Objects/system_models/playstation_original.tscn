@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/playstation_original_model.gd" id="1_psxorig"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_hinge"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="2_hinge"]
 [ext_resource type="PackedScene" path="res://imported-assets/playstation_original.glb" id="3_psxglb"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_discseat"]
