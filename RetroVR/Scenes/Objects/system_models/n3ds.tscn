@@ -5,7 +5,6 @@
 [ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
 [ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
 [ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
-[ext_resource type="PackedScene" path="res://imported-assets/new_3ds_xl.glb" id="6_v64ki"]
 [ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
@@ -1393,7 +1392,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_bhlsk")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=163260176]
 shape = SubResource("BoxShape3D_argpl")
 
-[node name="Shell" parent="." unique_id=1412885968 instance=ExtResource("6_v64ki")]
+[node name="Shell" type="Node3D" parent="." unique_id=1412885968]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00029717386, -0.013244203, 0.0032445155)
 
 [node name="FireButtonTop" type="MeshInstance3D" parent="Shell" unique_id=1213597225]
@@ -1538,5 +1537,3 @@ gizmo_extents = 0.03
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=1133338033]
 mesh = SubResource("BoxMesh_1ijud")
 surface_material_override/0 = SubResource("StandardMaterial3D_v38ai")
-
-[editable path="Shell"]
