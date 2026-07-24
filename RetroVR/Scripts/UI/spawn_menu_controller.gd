@@ -765,6 +765,19 @@ func _place_spawned(obj: Node3D, _type: String) -> void:
 
 func _on_spawn_requested(type: String) -> void:
 	var obj: Node3D
+	# Variant token "system:<systemid>:<variant>" (from SpawnCatalog) — checked
+	# BEFORE the match below, since `match` only does literal string equality and
+	# would never hit a "system" case against a string that starts with "system:".
+	# It silently fell to the `_:` default, spawning the default model with the
+	# whole token as a garbage systemid (e.g. "Mega Drive", "DS Lite" and
+	# "Console (Original)" all landed on their default shell instead of the variant).
+	if type.begins_with("system:"):
+		var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+		var parts := type.split(":")
+		sys.systemid = parts[1] if parts.size() > 1 else ""
+		sys.model_variant = parts[2] if parts.size() > 2 else ""
+		_place_spawned(sys, type)
+		return
 	match type:
 		"tv":
 			obj = TV_SCENE.instantiate() as Node3D
@@ -840,13 +853,6 @@ func _on_spawn_requested(type: String) -> void:
 			var gun := RAY_GUN_SCENE.instantiate() as RayGun
 			gun.show_laser_dot = _aim_crosshair_enabled
 			obj = gun
-		"system":
-			# Variant token "system:<systemid>:<variant>" (from SpawnCatalog).
-			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
-			var parts := type.split(":")
-			sys.systemid = parts[1] if parts.size() > 1 else ""
-			sys.model_variant = parts[2] if parts.size() > 2 else ""
-			obj = sys
 		_:
 			# Any other type is treated as a bare systemid (default model).
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
