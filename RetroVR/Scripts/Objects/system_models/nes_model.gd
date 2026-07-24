@@ -303,24 +303,25 @@ func uses_memory_cards() -> bool:
 
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
 	_power_button = power_btn
-	var power_finger := _glb.find_child("Finger Button Power", true, false) as Node3D
-	var reset_finger := _glb.find_child("Finger Button Reset", true, false) as Node3D
-	var power_mesh := _glb.find_child("ButtonPower", true, false) as MeshInstance3D
-	var reset_mesh := _glb.find_child("ButtonReset", true, false) as MeshInstance3D
 	power_btn.depress_depth = BUTTON_DEPRESS_DEPTH
 	reset_btn.depress_depth = BUTTON_DEPRESS_DEPTH
 	power_btn.set_latched_pressed(false)
 	reset_btn.set_latched_pressed(false)
-	if power_mesh:
-		power_btn.set_button_mesh(power_mesh)   # also hides the placeholder box
-	if power_finger:
-		power_btn.global_position = power_finger.global_position
-		power_btn.set_depress_axis_from_node(power_finger)
-	if reset_mesh:
-		reset_btn.set_button_mesh(reset_mesh)
-	if reset_finger:
-		reset_btn.global_position = reset_finger.global_position
-		reset_btn.set_depress_axis_from_node(reset_finger)
+	if _glb != null:
+		var power_finger := _glb.find_child("Finger Button Power", true, false) as Node3D
+		var reset_finger := _glb.find_child("Finger Button Reset", true, false) as Node3D
+		var power_mesh := _glb.find_child("ButtonPower", true, false) as MeshInstance3D
+		var reset_mesh := _glb.find_child("ButtonReset", true, false) as MeshInstance3D
+		if power_mesh:
+			power_btn.set_button_mesh(power_mesh)   # also hides the placeholder box
+		if power_finger:
+			power_btn.global_position = power_finger.global_position
+			power_btn.set_depress_axis_from_node(power_finger)
+		if reset_mesh:
+			reset_btn.set_button_mesh(reset_mesh)
+		if reset_finger:
+			reset_btn.global_position = reset_finger.global_position
+			reset_btn.set_depress_axis_from_node(reset_finger)
 	for btn in [power_btn, reset_btn]:
 		var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 		if lbl:
@@ -358,9 +359,10 @@ func configure_controller_ports(port_zones: Array) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	var marker := _glb.find_child("Cable Plug (YW)", true, false) as Node3D
-	if marker:
-		attach_point.global_position = marker.global_position
+	if _glb != null:
+		var marker := _glb.find_child("Cable Plug (YW)", true, false) as Node3D
+		if marker:
+			attach_point.global_position = marker.global_position
 	var port_visual := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if port_visual:
 		port_visual.hide()
@@ -370,20 +372,21 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 
 func configure_cartridge_slot(slot: Node3D) -> void:
 	_cartridge_slot = slot
-	# Seat the cart in the visible cradle under the flap; take the insert axis
-	# (the console's front→back direction) from the socket marker's orientation.
-	var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
-	if cradle:
-		# Lay the cart FLAT, label up, connector pointing into the machine. A
-		# cartridge is authored connector -Y / label +Z, so map its +Y (grip)
-		# onto +Z (out the front) and its +Z (label) onto world up; X inverts to
-		# keep it a rotation. Without this the cart stood on end in the tray.
-		slot.global_transform = Transform3D(
-			Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
-			cradle.global_transform * cradle.get_aabb().get_center())
-	var socket := _glb.find_child("System Socket", true, false) as Node3D
-	if socket:
-		_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
+	if _glb != null:
+		# Seat the cart in the visible cradle under the flap; take the insert axis
+		# (the console's front→back direction) from the socket marker's orientation.
+		var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
+		if cradle:
+			# Lay the cart FLAT, label up, connector pointing into the machine. A
+			# cartridge is authored connector -Y / label +Z, so map its +Y (grip)
+			# onto +Z (out the front) and its +Z (label) onto world up; X inverts to
+			# keep it a rotation. Without this the cart stood on end in the tray.
+			slot.global_transform = Transform3D(
+				Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
+				cradle.global_transform * cradle.get_aabb().get_center())
+		var socket := _glb.find_child("System Socket", true, false) as Node3D
+		if socket:
+			_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
 	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if slot_visual:
 		slot_visual.hide()
