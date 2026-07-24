@@ -190,6 +190,27 @@ func _spawn_primitive_shell() -> void:
 ## the base collision + touch pad, and hide the primitive stand-ins, the GLB's own
 ## opaque screen lenses, and its bundled AV lead. Idempotent (skips if the base
 ## is already GLB-scaled from a prior run / baked scene).
+## Baked-scene cleanup: the editable "Shell" instance re-creates the GLB's own
+## lid meshes on load, even though the bake reparented UNROTATED copies onto
+## LidPivot — so the Shell-side originals reappear at their authored open-pose
+## rotation and float free of the console. Hide those duplicates, plus the GLB's
+## own opaque screen lenses + LCD backing (the live TopScreen/BottomScreen quads
+## replace them). Runtime-only fix — the baked .tscn is untouched.
+func _hide_baked_shell_dupes() -> void:
+	var shell := get_node_or_null("Shell") as Node3D
+	if shell == null:
+		return
+	if _lid_pivot != null:
+		for lp in _lid_pivot.find_children("*", "MeshInstance3D", true, false):
+			var dup := shell.find_child(lp.name, true, false) as MeshInstance3D
+			if dup != null:
+				dup.visible = false
+	for n in shell.find_children("*", "MeshInstance3D", true, false):
+		var nm := String(n.name)
+		if nm == "screen_mesh Top" or nm == "screen_mesh Bottom" or nm.to_lower().contains("backface"):
+			(n as MeshInstance3D).visible = false
+
+
 func _upgrade_dual_to_glb(path: String) -> void:
 	if _lid_pivot == null or _screen == null or _bottom_screen == null:
 		return
@@ -200,6 +221,7 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	# so collision, the pointer area, the cart slot depth, the cable attach point
 	# and the power button were all sized to a stand-in the player can't even see.
 	if has_meta("dual_glb_baked"):
+		_hide_baked_shell_dupes()
 		var baked := _base_half_size()
 		if baked.length() > 0.0:
 			body_size = baked

@@ -54,7 +54,7 @@ shape = SubResource("BoxShape3D_vbvol")
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.00040184706, 0.047593586, -0.01872674)
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=560108936]
-transform = Transform3D(1, -8.742278e-08, 0, 0, 0, 1, -8.742278e-08, -1, 0, -0.0005581558, 0.014653582, -0.051146742)
+transform = Transform3D(1, -8.742278e-08, 0, 0, 0, 1, -8.742278e-08, -1, 0, -0.0005581558, 0.014653582, -0.036)
 gizmo_extents = 0.04
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=120859800]
