@@ -130,6 +130,14 @@ func _hinge_z_offset() -> float:
 	return 0.0
 
 
+## Downward correction added to the computed hinge Y position (base_top_y —
+## the base shell's own top face). 0 by default. Override when the real hinge
+## barrel sits measurably below the base's top face, which the naive estimate
+## can't see any more than the Z case above can — see n3ds_model.gd.
+func _hinge_y_offset() -> float:
+	return 0.0
+
+
 ## Override to return the store-safe stand-in shell scene; "" = no fallback
 ## geometry (the device scene carries its own, the old arrangement).
 func _primitive_path() -> String:
@@ -250,11 +258,13 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	# perpendicular to that, facing up-and-forward. Derive orientation from the
 	# FOLD, not the GLB lens-mesh normals — on some devices `screen_mesh Top` is a
 	# small angled trim strip whose normal doesn't match the lid's screen plane.
-	# _hinge_z_offset lets a device nudge the pivot forward off the base's raw
-	# bounding-box back edge — see n3ds_model.gd, where the real hinge barrel
-	# sits measurably forward of that edge and the naive corner overshot the
-	# lid's swept closed position (overhanging the back, short of the front).
-	var hinge := Vector3(0.0, base_top_y, -base_aabb.size.z * 0.5 + _hinge_z_offset())
+	# _hinge_y_offset / _hinge_z_offset let a device nudge the pivot off the
+	# base's raw bounding-box top-back corner — see n3ds_model.gd, where the
+	# real hinge barrel sits measurably forward AND below that corner (interactively
+	# calibrated in Tools/n3ds_hinge_calibrator.tscn) and the naive corner
+	# overshot the lid's swept closed position (overhanging the back, short of
+	# the front, and rotating around the wrong height).
+	var hinge := Vector3(0.0, base_top_y + _hinge_y_offset(), -base_aabb.size.z * 0.5 + _hinge_z_offset())
 	var lid_dir := top_ctr - hinge
 	lid_dir.x = 0.0
 	lid_dir = lid_dir.normalized()

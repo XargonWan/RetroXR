@@ -73,6 +73,15 @@ func _hinge_z_offset() -> float:
 	return 0.00895
 
 
+## The real hinge barrel also sits below the base shell's raw top face
+## (base_top_y ≈ 0.012877 for this GLB) — interactively pinned down with
+## Tools/n3ds_hinge_calibrator.tscn (drag HingeMarker's Y/Z, watch the
+## closed/rest/open cycle) to an absolute Y of 0.0065, which is this offset
+## added to base_top_y.
+func _hinge_y_offset() -> float:
+	return 0.0065 - 0.012877
+
+
 ## Force the stereo output mode every boot; depth follows the physical slider.
 func get_forced_core_options() -> Dictionary:
 	return {
