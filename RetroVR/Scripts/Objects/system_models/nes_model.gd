@@ -46,20 +46,34 @@ var _controllers_in_lid_zone: Array = []
 
 
 func _ready() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("NESModel: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var scene := load(_MODEL_PATH) as PackedScene
-	if scene == null:
-		push_warning("NESModel: failed to load %s" % _MODEL_PATH)
-		return
-	_glb = scene.instantiate() as Node3D
-	add_child(_glb)
+	# The authored nes.tscn instances the shell as a "Shell" child so the cartridge
+	# seat can be positioned in the Godot 3D editor (a "CartSeat" marker with a
+	# translucent "SeatPreview" box). Reuse that instance instead of loading a
+	# second copy of the GLB.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		if not ResourceLoader.exists(_MODEL_PATH):
+			push_warning("NESModel: %s missing — using placeholder box" % _MODEL_PATH)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var scene := load(_MODEL_PATH) as PackedScene
+		if scene == null:
+			push_warning("NESModel: failed to load %s" % _MODEL_PATH)
+			return
+		_glb = scene.instantiate() as Node3D
+		add_child(_glb)
+
+	# The cart-seat preview box is an editor aid only — hide it at runtime. It's a
+	# child of the model root (not the shell), so search self.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 
 	# The GLB ships authored Open/Close/On/Off/Reset clips, but the .bundle→.glb
 	# converter bakes node transforms to identity, so their rotation tracks pivot
@@ -70,13 +84,18 @@ func _ready() -> void:
 		ap.autoplay = ""
 		ap.active = false
 
+	# Clutter-hide + material fixes are cheap and idempotent, so they run every
+	# spawn (baked or not) — a safety net if the baked scene's visibility overrides
+	# don't persist. The recentre, however, is baked into the shell's transform;
+	# re-running it would double-shift, so it's skipped when the scene is baked.
 	_hide_clutter(_glb)
 	_fix_decal_alpha(_glb)
 	_fix_front_band(_glb)
-	# Recentre on the visible body and rest the base on the ground.
-	var b := _model_aabb(_glb)
-	var c := b.position + b.size * 0.5
-	_glb.position = Vector3(-c.x, -b.position.y, -c.z)
+	if baked == null:
+		# Recentre on the visible body and rest the base on the ground.
+		var b := _model_aabb(_glb)
+		var c := b.position + b.size * 0.5
+		_glb.position = Vector3(-c.x, -b.position.y, -c.z)
 
 	# Capture the flap and its hinge: the top-rear edge of the NesLid mesh, along
 	# the console's left-right (X) axis. Rotating the flap about this lifts it up.
@@ -387,6 +406,13 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 		var socket := _glb.find_child("System Socket", true, false) as Node3D
 		if socket:
 			_cartridge_insert_dir = socket.global_transform.basis.z.normalized()
+		# An authored "CartSeat" marker (baked into nes.tscn, a child of the model
+		# root) overrides the computed cradle pose, so the seated-cart transform can
+		# be dialled in visually in the Godot 3D editor. Absent (script-only
+		# fallback) → keep the cradle pose.
+		var seat := find_child("CartSeat", true, false) as Node3D
+		if seat != null:
+			slot.global_transform = seat.global_transform
 	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if slot_visual:
 		slot_visual.hide()

@@ -41,6 +41,10 @@ const _MODEL_SCENES: Dictionary = {
 	"nds": "res://Scenes/Objects/system_models/nds.tscn",
 	"3ds": "res://Scenes/Objects/system_models/n3ds.tscn",
 	"virtual_boy": "res://Scenes/Objects/system_models/virtual_boy.tscn",
+	# NES front-loader: authored scene bakes the recentred shell + an editable
+	# "CartSeat" marker (with a translucent preview box) so the cartridge seat can
+	# be positioned in the Godot editor. nes_model reuses the baked "Shell" instance.
+	"nes": "res://Scenes/Objects/system_models/nes.tscn",
 	# Dev-only (per user direction): an author's imported PSone. Its GLB is
 	# export-excluded (imported-assets/*), and the model self-guards to re-show
 	# the placeholder box on any build that lacks the GLB. Licence still pending.
