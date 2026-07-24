@@ -52,6 +52,13 @@ var _lens_quads: Array[MeshInstance3D] = []
 var _lens_mats: Array[ShaderMaterial] = []
 var _visor_center_y := 0.0
 
+## Screen-cast light: the visor spills the VB's signature red glow when it's
+## showing a picture (fixed red — the display is always red-on-black, so no
+## per-frame colour sample is needed; energy just tracks picture on/off).
+const VB_LIGHT_ENERGY := 0.7
+const VB_LIGHT_COLOR := Color(1.0, 0.05, 0.05)
+var _vb_light: OmniLight3D = null
+
 
 ## The systemid whose cart dimensions this console takes (MediaDimensions).
 func _cart_systemid() -> String:
@@ -96,6 +103,18 @@ func _ready() -> void:
 	if _eyepiece:
 		_eyepiece.set_surface_override_material(0, _stereo_mat)
 	_upgrade_to_glb()
+	# Red visor glow, parented to the (possibly GLB-repositioned) eyepiece so it
+	# spills out the eye-shade toward the viewer. Off until a picture is present.
+	if _eyepiece:
+		_vb_light = OmniLight3D.new()
+		_vb_light.name = "ScreenCastLight"
+		_vb_light.light_color = VB_LIGHT_COLOR
+		_vb_light.omni_range = 0.5
+		_vb_light.omni_attenuation = 1.5
+		_vb_light.shadow_enabled = false
+		_vb_light.light_energy = 0.0
+		_vb_light.position = Vector3(0.0, 0.0, -0.05)
+		_eyepiece.add_child(_vb_light)
 
 
 ## Swap the primitive bipod for the detailed shell. The functional nodes stay
@@ -264,6 +283,9 @@ func _process(_delta: float) -> void:
 	for m in _lens_mats:
 		if m.get_shader_parameter("source_tex") != tex:
 			m.set_shader_parameter("source_tex", tex)
+	# Visor glow tracks whether there's a picture (fixed red set at creation).
+	if _vb_light:
+		_vb_light.light_energy = VB_LIGHT_ENERGY if tex != null else 0.0
 
 
 ## Sit the START/STOP and RESET buttons on the front of the bipod base plate

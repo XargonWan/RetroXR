@@ -41,6 +41,8 @@ var bottom_uv_rect := Rect2(0.0, 0.5, 1.0, 0.5)
 var top_eye_shift := 0.0
 
 var _bottom_screen: MeshInstance3D = null
+# Screen-cast light for the bottom screen (the base handles the top via _screen).
+var _bottom_screen_light: OmniLight3D = null
 var _lid_pivot: Node3D = null
 # Grabbable lid hinge. The lid's rotation about X lives on _lid_pivot (0 = flat /
 # 180° interior open, 180 = folded shut); the public angle (get/set_lid_angle_deg)
@@ -96,6 +98,10 @@ func _ready() -> void:
 	_cache_dual_nodes()
 	if detailed:
 		_upgrade_dual_to_glb(gp)
+	# Screen-cast lights: both screens glow into the room (base _ready — which sets
+	# up the single-screen light — is not called here, so create both explicitly).
+	_screen_light = _make_screen_light(_screen)
+	_bottom_screen_light = _make_screen_light(_bottom_screen)
 	# Window materials, ready before the first frame of core output.
 	_top_mat = ShaderMaterial.new()
 	_top_mat.shader = SCREEN_WINDOW_SHADER
@@ -111,6 +117,12 @@ func _ready() -> void:
 ## shell (store builds — imported-assets/* is export-excluded).
 func _glb_path() -> String:
 	return ""
+
+
+## Both screens cast light (base drives only the top via _screen).
+func _update_screen_light() -> void:
+	_drive_screen_light(_screen, _screen_light)
+	_drive_screen_light(_bottom_screen, _bottom_screen_light)
 
 
 ## Exact mesh names in the GLB that belong to the LID (fold with the hinge).

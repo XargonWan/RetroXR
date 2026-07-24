@@ -50,6 +50,14 @@ var _lcd_material: ShaderMaterial = null
 ## primitive shell, so on-device controls + screen still work everywhere.
 var _glb: Node3D = null
 
+## Screen-cast light: the built-in LCD tints a small OmniLight so a powered
+## handheld glows onto the hand holding it and nearby surfaces (the personal-scale
+## sibling of the TV's ambilight). Off when the screen shows no picture; colour is
+## the throttled average of the live frame.
+const SCREEN_LIGHT_ENERGY := 0.6
+const SCREEN_LIGHT_RANGE := 0.45
+var _screen_light: OmniLight3D = null
+
 
 func is_handheld() -> bool:
 	return true
@@ -89,6 +97,29 @@ func _ready() -> void:
 	var preview := find_child("SeatPreview", true, false)
 	if preview is Node3D:
 		(preview as Node3D).visible = false
+	_setup_screen_light()
+
+
+func _setup_screen_light() -> void:
+	_screen_light = _make_screen_light(_screen)
+
+
+## Create + configure a screen-cast OmniLight just off `screen`'s surface (its
+## local +Z normal) so it glows out toward whoever's holding the device. Parented
+## to the screen so it tracks a GLB-repositioned screen automatically. Reusable
+## for devices with more than one screen (see RetroSystemModelDualScreen).
+func _make_screen_light(screen: MeshInstance3D) -> OmniLight3D:
+	if screen == null:
+		return null
+	var light := OmniLight3D.new()
+	light.name = "ScreenCastLight"
+	light.omni_range = SCREEN_LIGHT_RANGE
+	light.omni_attenuation = 1.5
+	light.shadow_enabled = false
+	light.light_energy = 0.0
+	light.position = Vector3(0.0, 0.0, 0.04)
+	screen.add_child(light)
+	return light
 
 
 ## Cache the authored shell nodes and read the device dimensions back from their
@@ -206,6 +237,7 @@ func _glb_local_aabb(inst: Node3D) -> AABB:
 ## Keep the LCD filter wrapped over the live core picture. Cheap identity checks
 ## in the steady state; only re-installs when the source material changes.
 func _process(_delta: float) -> void:
+	_update_screen_light()
 	if _lcd_shader == null or _screen == null:
 		return
 	var override := _screen.get_surface_override_material(0)
@@ -219,6 +251,37 @@ func _process(_delta: float) -> void:
 		_lcd_material.shader = _lcd_shader
 	_lcd_material.set_shader_parameter("source_tex", tex)
 	_screen.set_surface_override_material(0, _lcd_material)
+
+
+func _update_screen_light() -> void:
+	_drive_screen_light(_screen, _screen_light)
+
+
+## Drive one screen-cast light from its screen's live picture: on when the screen
+## shows a frame, tinted to the throttled average frame colour. get_image() is a
+## GPU→CPU readback, so it's rate-limited by QualityManager like the TV ambilight.
+## The per-light throttle counter rides on the light (meta) so several screens can
+## share this without a member counter each.
+func _drive_screen_light(screen: MeshInstance3D, light: OmniLight3D) -> void:
+	if light == null or screen == null:
+		return
+	var tex := _screen_emission_texture(screen.get_surface_override_material(0))
+	if tex == null:
+		light.light_energy = 0.0
+		return
+	light.light_energy = SCREEN_LIGHT_ENERGY
+	var f: int = int(light.get_meta("sl_frame", 0)) + 1
+	var interval: int = QualityManager.ambilight_interval if QualityManager else 10
+	if f < interval:
+		light.set_meta("sl_frame", f)
+		return
+	light.set_meta("sl_frame", 0)
+	var img := tex.get_image()
+	if img == null:
+		return
+	img.resize(1, 1, Image.INTERPOLATE_BILINEAR)
+	var avg := img.get_pixel(0, 0)
+	light.light_color = Color(avg.r, avg.g, avg.b)
 
 
 ## The live picture texture out of whichever material the core installed (it uses
