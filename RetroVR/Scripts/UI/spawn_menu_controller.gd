@@ -581,6 +581,11 @@ func _show_menu() -> void:
 		# look_at makes -Z face the camera; rotate 180° so +Z (the UV face) faces the player
 		look_at(_camera.global_position, Vector3.UP)
 		rotate_object_local(Vector3.UP, PI)
+		# This is a teleport, not motion — clear the interpolation history so the
+		# menu doesn't visibly slide from its previous transform (very noticeable
+		# on the first open, where it starts at the scene-default position) with
+		# common/physics_interpolation enabled.
+		reset_physics_interpolation()
 	_viewport_node.visible = true
 
 
