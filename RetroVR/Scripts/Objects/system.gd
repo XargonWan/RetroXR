@@ -73,6 +73,10 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	"nds:lite": "res://Scenes/Objects/system_models/nds_lite.tscn",
 	# "playstation" is the PSone; the full-size grey SCPH-100x is the original.
 	"playstation:original": "res://Scenes/Objects/system_models/playstation_original.tscn",
+	# Famicom (JP variant of the NES): same bake as the others — shell instance +
+	# an editor-authorable "CartSeat" marker riding the shell. Wins over the
+	# nes:famicom script entry in _MODEL_VARIANTS.
+	"nes:famicom": "res://Scenes/Objects/system_models/famicom.tscn",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".

@@ -18,23 +18,36 @@ var _glb: Node3D = null
 
 
 func _ready() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("FamicomModel: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var scene := load(_MODEL_PATH) as PackedScene
-	if scene == null:
-		push_warning("FamicomModel: failed to load %s" % _MODEL_PATH)
-		return
-	_glb = scene.instantiate() as Node3D
+	# The authored famicom.tscn instances the shell as a "Shell" child plus an
+	# editor-authorable "CartSeat" marker (translucent "SeatPreview" box), which
+	# rides the shell so it stays put through the runtime recentre below. Reuse the
+	# instance instead of loading a second copy of the GLB.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		if not ResourceLoader.exists(_MODEL_PATH):
+			push_warning("FamicomModel: %s missing — using placeholder box" % _MODEL_PATH)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var scene := load(_MODEL_PATH) as PackedScene
+		if scene == null:
+			push_warning("FamicomModel: failed to load %s" % _MODEL_PATH)
+			return
+		_glb = scene.instantiate() as Node3D
+		add_child(_glb)
+	# The cart-seat preview box is an editor aid only — hide it BEFORE the recentre
+	# so it doesn't skew the body AABB.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
-	add_child(_glb)
 	_hide_clutter(_glb)
 	# Recentre on the VISIBLE body (after the sprawling pads/leads are hidden) and
 	# rest the base on the ground.
@@ -130,6 +143,12 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "CartSeat" marker (baked into famicom.tscn, riding the Shell)
+	# wins over the socket pose above, so the seated-cart transform can be dialled
+	# in visually in the Godot 3D editor. Absent → keep the socket pose.
+	var seat := find_child("CartSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 func get_cartridge_insert_direction() -> Vector3:
