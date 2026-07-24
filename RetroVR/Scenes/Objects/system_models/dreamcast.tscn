@@ -1,0 +1,31 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/dreamcast_model.gd" id="1_mdl"]
+[ext_resource type="PackedScene" path="res://imported-assets/dreamcast_console.glb" id="2_glb"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_seat"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.0015
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_seat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
+[node name="Dreamcast" type="Node3D"]
+script = ExtResource("1_mdl")
+
+[node name="Shell" parent="." instance=ExtResource("2_glb")]
+
+[node name="DiscSeat" type="Marker3D" parent="Shell"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0734, 0.005)
+gizmo_extents = 0.07
+
+[node name="SeatPreview" type="MeshInstance3D" parent="Shell/DiscSeat"]
+mesh = SubResource("CylinderMesh_seat")
+surface_material_override/0 = SubResource("StandardMaterial3D_seat")
+
+[editable path="Shell"]

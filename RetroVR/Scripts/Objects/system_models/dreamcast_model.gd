@@ -18,23 +18,33 @@ var _lid_closed: Transform3D
 
 
 func _ready() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("DreamcastModel: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var ps := load(_MODEL_PATH) as PackedScene
-	if ps == null:
-		push_warning("DreamcastModel: failed to load %s" % _MODEL_PATH)
-		return
-	_glb = ps.instantiate() as Node3D
+	# The authored dreamcast.tscn instances the shell as a "Shell" child plus an
+	# editor-authorable "DiscSeat" marker (cylinder "SeatPreview") riding it. Reuse
+	# the instance when present.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		if not ResourceLoader.exists(_MODEL_PATH):
+			push_warning("DreamcastModel: %s missing — using placeholder box" % _MODEL_PATH)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var ps := load(_MODEL_PATH) as PackedScene
+		if ps == null:
+			push_warning("DreamcastModel: failed to load %s" % _MODEL_PATH)
+			return
+		_glb = ps.instantiate() as Node3D
+		add_child(_glb)
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim != null:
 		_anim.autoplay = ""   # keep the rest pose (lid closed) on load
-	add_child(_glb)
 	var xz := _visible_xz_center(_glb)
 	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
 	_lid = _glb.find_child("Lid", true, false) as Node3D
@@ -125,6 +135,11 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "DiscSeat" marker (baked into dreamcast.tscn, riding the Shell)
+	# wins over the spindle pose. Absent → keep the spindle pose.
+	var seat := find_child("DiscSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:

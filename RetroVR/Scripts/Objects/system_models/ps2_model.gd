@@ -24,26 +24,36 @@ func _model_path() -> String:
 
 
 func _ready() -> void:
-	# Store-safe guard — ResourceLoader.exists (NOT FileAccess; false in pck).
-	var path := _model_path()
-	if not ResourceLoader.exists(path):
-		push_warning("PS2Model: %s missing — using placeholder box" % path)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var ps := load(path) as PackedScene
-	if ps == null:
-		push_warning("PS2Model: failed to load %s" % path)
-		return
-	_glb = ps.instantiate() as Node3D
+	# The authored ps2.tscn / ps2_silver.tscn instances the shell as a "Shell" child
+	# plus an editor-authorable "DiscSeat" marker (cylinder "SeatPreview") riding it.
+	# Reuse the instance when present.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		# Store-safe guard — ResourceLoader.exists (NOT FileAccess; false in pck).
+		var path := _model_path()
+		if not ResourceLoader.exists(path):
+			push_warning("PS2Model: %s missing — using placeholder box" % path)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var ps := load(path) as PackedScene
+		if ps == null:
+			push_warning("PS2Model: failed to load %s" % path)
+			return
+		_glb = ps.instantiate() as Node3D
+		add_child(_glb)
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 	# Disable the auto-played anim so the lid keeps its REST pose (= closed).
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim != null:
 		_anim.autoplay = ""
-	add_child(_glb)
 	_hide_clutter(_glb)
 	# Recentre on the console body in X/Z (base already rests near y=0).
 	var xz := _visible_xz_center(_glb)
@@ -178,6 +188,11 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "DiscSeat" marker (baked into ps2.tscn / ps2_silver.tscn, riding
+	# the Shell) wins over socket_media. Absent → keep the socket_media pose.
+	var seat := find_child("DiscSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 func configure_controller_ports(port_zones: Array) -> void:

@@ -14,9 +14,7 @@ const _MODEL_SCRIPTS: Dictionary = {
 	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
 	# NOTE: "playstation" now has an authored scene — see _MODEL_SCENES below.
-	"dreamcast": "res://Scripts/Objects/system_models/dreamcast_model.gd",
 	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
-	"playstation2": "res://Scripts/Objects/system_models/ps2_model.gd",
 	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
 	"dos": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
 }
@@ -51,6 +49,10 @@ const _MODEL_SCENES: Dictionary = {
 	# Sega Saturn (disc): shell instance + an editor-authorable "DiscSeat" marker
 	# (cylinder preview) riding the Shell through the model's recentre.
 	"sega_saturn": "res://Scenes/Objects/system_models/sega_saturn.tscn",
+	# Sega Dreamcast (GD-ROM disc): same DiscSeat bake.
+	"dreamcast": "res://Scenes/Objects/system_models/dreamcast.tscn",
+	# PlayStation 2 Slim (DVD disc): same DiscSeat bake (base = black slim).
+	"playstation2": "res://Scenes/Objects/system_models/ps2.tscn",
 	# Dev-only (per user direction): an author's imported PSone. Its GLB is
 	# export-excluded (imported-assets/*), and the model self-guards to re-show
 	# the placeholder box on any build that lacks the GLB. Licence still pending.
@@ -83,6 +85,8 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	"nes:famicom": "res://Scenes/Objects/system_models/famicom.tscn",
 	# Mega Drive (JP/EU badge of the Genesis): its own shell GLB, same wiring.
 	"mega_drive:megadrive": "res://Scenes/Objects/system_models/megadrive.tscn",
+	# PS2 Slim silver badge: its own shell GLB, shares ps2_model wiring.
+	"playstation2:silver": "res://Scenes/Objects/system_models/ps2_silver.tscn",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
