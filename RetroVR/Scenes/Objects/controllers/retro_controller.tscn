@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dilgbxngwow63"]
 
-[ext_resource type="Script" uid="uid://dmxawyrf0uv07" path="res://Scripts/Objects/retro_controller.gd" id="1_ctrlscript"]
+[ext_resource type="Script" uid="uid://dmxawyrf0uv07" path="res://Scripts/Objects/controllers/retro_controller.gd" id="1_ctrlscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]

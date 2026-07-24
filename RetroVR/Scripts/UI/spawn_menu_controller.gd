@@ -12,12 +12,12 @@ const CART_SCENE            := preload("res://Scenes/Objects/cartridge.tscn")
 const DISC_SCENE            := preload("res://Scenes/Objects/disc.tscn")
 const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
-const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/retro_controller.tscn")
+const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
 # Stand-in Virtual Boy pad: carries the console POWER switch, like the real one.
-const VB_CONTROLLER_SCENE   := preload("res://Scenes/Objects/vb_controller.tscn")
+const VB_CONTROLLER_SCENE   := preload("res://Scenes/Objects/controllers/vb_controller.tscn")
 const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/retro_mouse.tscn")
 const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/retro_keyboard.tscn")
-const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/retro_multitap.tscn")
+const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_multitap.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
@@ -807,45 +807,45 @@ func _on_spawn_requested(type: String) -> void:
 		"dualshock":
 			# GLB lives in export-excluded imported-assets/ while its licence is
 			# pending, so load at runtime and skip gracefully if absent (e.g. Quest).
-			obj = _instantiate_optional("res://imported-assets/dualshock.glb", "res://Scenes/Objects/dualshock.tscn")
+			obj = _instantiate_optional("res://imported-assets/dualshock.glb", "res://Scenes/Objects/controllers/dualshock.tscn")
 			if obj == null:
 				return
 		"dualshock2":
-			obj = _instantiate_optional("res://imported-assets/dualshock2.glb", "res://Scenes/Objects/dualshock2.tscn")
+			obj = _instantiate_optional("res://imported-assets/dualshock2.glb", "res://Scenes/Objects/controllers/dualshock2.tscn")
 			if obj == null:
 				return
 		"gamecube_controller":
-			obj = _instantiate_optional("res://imported-assets/gamecube_controller.glb", "res://Scenes/Objects/gamecube_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/gamecube_controller.glb", "res://Scenes/Objects/controllers/gamecube_controller.tscn")
 			if obj == null:
 				return
 		"dreamcast_controller":
-			obj = _instantiate_optional("res://imported-assets/dreamcast_controller.glb", "res://Scenes/Objects/dreamcast_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/dreamcast_controller.glb", "res://Scenes/Objects/controllers/dreamcast_controller.tscn")
 			if obj == null:
 				return
 		"nes_controller":
-			obj = _instantiate_optional("res://imported-assets/nes_controller.glb", "res://Scenes/Objects/nes_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/nes_controller.glb", "res://Scenes/Objects/controllers/nes_controller.tscn")
 			if obj == null:
 				return
 		"genesis_controller":
-			obj = _instantiate_optional("res://imported-assets/genesis_controller.glb", "res://Scenes/Objects/genesis_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/genesis_controller.glb", "res://Scenes/Objects/controllers/genesis_controller.tscn")
 			if obj == null:
 				return
 		"snes_controller":
-			obj = _instantiate_optional("res://imported-assets/snes_controller.glb", "res://Scenes/Objects/snes_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/snes_controller.glb", "res://Scenes/Objects/controllers/snes_controller.tscn")
 			if obj == null:
 				return
 		"atari_joystick":
-			obj = _instantiate_optional("res://imported-assets/atari_joystick.glb", "res://Scenes/Objects/atari_joystick.tscn")
+			obj = _instantiate_optional("res://imported-assets/atari_joystick.glb", "res://Scenes/Objects/controllers/atari_joystick.tscn")
 			if obj == null:
 				return
 		"vb_controller":
 			obj = VB_CONTROLLER_SCENE.instantiate() as Node3D
 		"n64_controller":
-			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/n64_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/controllers/n64_controller.tscn")
 			if obj == null:
 				return
 		"psx_controller":
-			obj = _instantiate_optional("res://imported-assets/psx_controller.glb", "res://Scenes/Objects/psx_controller.tscn")
+			obj = _instantiate_optional("res://imported-assets/psx_controller.glb", "res://Scenes/Objects/controllers/psx_controller.tscn")
 			if obj == null:
 				return
 		"retro_mouse":
