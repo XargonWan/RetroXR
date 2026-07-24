@@ -20,7 +20,6 @@ The Vulkan spec states: If indexType is VK_INDEX_TYPE_UINT8, the indexTypeUint8 
 # 3DS
 
 * The texture on the 3DS Shell appears off for some reason?
-* Closing the lid with the hindge back to 0 deg, doesnt look flush, nor does it look like it's on the right pivot
 
 # DS Phat
 
