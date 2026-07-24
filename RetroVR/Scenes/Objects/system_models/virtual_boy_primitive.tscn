@@ -1,0 +1,47 @@
+[gd_scene load_steps=7 format=3]
+
+; Store-safe primitive stand-in for the Virtual Boy — a plain bipod + visor.
+; Spawned by virtual_boy_model only when the detailed GLB shell is absent
+; (mirrors the dual-screen nds_primitive pattern). Keeps the device scene clean.
+
+[sub_resource type="BoxMesh" id="BoxMesh_base"]
+size = Vector3(0.16, 0.012, 0.14)
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_col"]
+top_radius = 0.012
+bottom_radius = 0.012
+height = 0.25
+
+[sub_resource type="BoxMesh" id="BoxMesh_visor"]
+size = Vector3(0.22, 0.11, 0.095)
+
+[sub_resource type="StandardMaterial3D" id="Mat_red"]
+albedo_color = Color(0.55, 0.08, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_shade"]
+size = Vector3(0.2024, 0.0902, 0.006)
+
+[node name="VirtualBoyPrimitive" type="Node3D"]
+
+[node name="StandBase" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.006, 0)
+mesh = SubResource("BoxMesh_base")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="StandColumn" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.125, 0)
+mesh = SubResource("CylinderMesh_col")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Visor" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
+mesh = SubResource("BoxMesh_visor")
+surface_material_override/0 = SubResource("Mat_red")
+
+[node name="EyeShade" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.050499998)
+mesh = SubResource("BoxMesh_shade")
+surface_material_override/0 = SubResource("Mat_dark")

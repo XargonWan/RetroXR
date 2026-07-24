@@ -103,6 +103,8 @@ func _ready() -> void:
 	if _eyepiece:
 		_eyepiece.set_surface_override_material(0, _stereo_mat)
 	_upgrade_to_glb()
+	if _glb == null:
+		_spawn_primitive()   # store-safe fallback bipod when the GLB shell is absent
 	# Red visor glow, parented to the (possibly GLB-repositioned) eyepiece so it
 	# spills out the eye-shade toward the viewer. Off until a picture is present.
 	if _eyepiece:
@@ -153,13 +155,23 @@ func _upgrade_to_glb() -> void:
 		# Rest the shell on the floor and centre it in X/Z, measured AFTER the yaw.
 		var ab := _glb_aabb()
 		_glb.position = Vector3(-ab.get_center().x, -ab.position.y, -ab.get_center().z)
-	# Hide the primitive stand-ins now the real shell is in.
-	for nm in ["StandBase", "StandColumn", "Visor", "EyeShade"]:
-		var ph := get_node_or_null(nm) as MeshInstance3D
-		if ph != null:
-			ph.hide()
 	_place_eyepiece()
 	_place_volume_wheel()
+
+
+## Store-safe fallback: the detailed shell is export-excluded, so when it's absent
+## spawn the plain bipod primitive (kept in its own scene, like nds_primitive)
+## instead of baking it into virtual_boy.tscn.
+func _spawn_primitive() -> void:
+	var pp := "res://Scenes/Objects/system_models/virtual_boy_primitive.tscn"
+	if has_node("Primitive") or not ResourceLoader.exists(pp):
+		return
+	var scene := load(pp) as PackedScene
+	if scene == null:
+		return
+	var prim := scene.instantiate() as Node3D
+	prim.name = "Primitive"
+	add_child(prim)
 
 
 func _glb_aabb() -> AABB:
