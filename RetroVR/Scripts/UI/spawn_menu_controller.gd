@@ -86,6 +86,13 @@ var _player_body: XRToolsPlayerBody = null
 var _fps_label: Label3D = null
 var _vram_label: Label3D = null
 
+# World scale (below 1.0 = player feels smaller / room feels bigger). Applied at
+# startup and tunable from the menu's Controls section. Not persisted — resets to
+# the default each launch (like the other comfort settings).
+const DEFAULT_WORLD_SCALE := 0.7
+var _world_scale := 1.0
+var _base_eye_height := 1.65   # desktop XRCamera3D rest eye height; cached at setup
+
 # FunctionPointer nodes for hit-testing
 var _left_pointer:  XRToolsFunctionPointer = null
 var _right_pointer: XRToolsFunctionPointer = null
@@ -110,6 +117,9 @@ func _deferred_setup() -> void:
 		_camera = cams[0] as XRCamera3D
 	if _camera:
 		_desktop_pointer = _camera.get_node_or_null("FunctionDesktopPointer") as XRToolsDesktopFunctionPointer
+		# Cache the un-scaled desktop eye height, then apply the default world scale.
+		_base_eye_height = _camera.transform.origin.y
+		_apply_world_scale(DEFAULT_WORLD_SCALE)
 
 	# Find left and right XRController3D in a single pass
 	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
@@ -178,6 +188,7 @@ func _connect_menu_signals() -> void:
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
 	menu.fov_changed.connect(_on_fov_changed)
+	menu.world_scale_changed.connect(_on_world_scale_changed)
 	menu.controller_bindings_changed.connect(_on_controller_bindings_changed)
 	menu.rebind_started.connect(_on_rebind_started)
 	menu.pad_rebind_started.connect(_on_pad_rebind_started)
@@ -942,6 +953,22 @@ func _on_height_offset_changed(offset: float) -> void:
 func _on_fov_changed(degrees: float) -> void:
 	if _camera:
 		_camera.fov = degrees
+
+
+func _on_world_scale_changed(scale: float) -> void:
+	_apply_world_scale(scale)
+
+
+## Apply the world scale to both play modes. VR scales the tracked eye height +
+## IPD natively via XRServer.world_scale (so the room towers over you). Desktop
+## has a fixed camera that world_scale does NOT move, so scale its rest eye height
+## directly — in VR the HMD overwrites the camera transform each frame, so setting
+## it there is harmless.
+func _apply_world_scale(scale: float) -> void:
+	_world_scale = scale
+	XRServer.world_scale = scale
+	if _camera:
+		_camera.transform.origin.y = _base_eye_height * scale
 
 
 func _on_aim_crosshair_changed(enabled: bool) -> void:

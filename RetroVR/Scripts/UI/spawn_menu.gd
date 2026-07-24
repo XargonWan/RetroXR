@@ -55,6 +55,9 @@ signal snap_angle_changed(degrees: float)
 signal height_offset_changed(offset: float)
 ## Emitted when the user changes the desktop camera FOV.
 signal fov_changed(degrees: float)
+## Emitted when the user changes the world scale (below 1.0 = feel smaller /
+## everything bigger). Applies to VR (XRServer.world_scale) and desktop (eye height).
+signal world_scale_changed(scale: float)
 ## Emitted when the user saves controller bindings (global or per-system).
 signal controller_bindings_changed
 ## Emitted when the user clicks a desktop rebind button. spawn_menu_controller
@@ -1688,6 +1691,45 @@ func _build_options_view() -> Control:
 	ho_slider.value_changed.connect(func(v: float) -> void:
 		ho_val.text = "%+.2f m" % v
 		height_offset_changed.emit(v)
+	)
+
+	vbox.add_child(HSeparator.new())
+
+	# World Scale slider — below 1.0 makes you feel smaller and the room bigger.
+	var ws_header := HBoxContainer.new()
+	ws_header.add_theme_constant_override("separation", 10)
+	vbox.add_child(ws_header)
+
+	var ws_lbl := Label.new()
+	ws_lbl.text = "World Scale"
+	ws_lbl.add_theme_font_size_override("font_size", 22)
+	ws_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	ws_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ws_header.add_child(ws_lbl)
+
+	var ws_val := Label.new()
+	ws_val.add_theme_font_size_override("font_size", 20)
+	ws_val.add_theme_color_override("font_color", COLOR_LICENSE)
+	ws_val.custom_minimum_size = Vector2(80, 0)
+	ws_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ws_header.add_child(ws_val)
+
+	var ws_slider := HSlider.new()
+	ws_slider.min_value = 0.4
+	ws_slider.max_value = 1.5
+	ws_slider.step = 0.05
+	# Default matches DEFAULT_WORLD_SCALE in spawn_menu_controller.gd (applied at
+	# startup). Hardcoded rather than read from XRServer.world_scale because this
+	# view is built before the controller's deferred setup applies the default.
+	ws_slider.value = 0.7
+	ws_val.text = "%.2f×" % ws_slider.value
+	ws_slider.custom_minimum_size = Vector2(0, 48)
+	ws_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(ws_slider)
+
+	ws_slider.value_changed.connect(func(v: float) -> void:
+		ws_val.text = "%.2f×" % v
+		world_scale_changed.emit(v)
 	)
 
 	vbox.add_child(HSeparator.new())
