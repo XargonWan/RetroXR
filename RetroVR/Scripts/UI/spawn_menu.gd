@@ -3243,6 +3243,10 @@ func _build_scene_view() -> Control:
 	# Arcade Room card → navigates to state grid
 	grid.add_child(_make_room_card("Arcade Room", Color(0.15, 0.13, 0.35), _show_states_view))
 
+	# Cozy Den card → direct scene switch
+	grid.add_child(_make_room_card("Cozy Den", Color(0.4, 0.25, 0.12),
+		func(): scene_change_requested.emit("den")))
+
 	# Passthrough card (only if supported) → direct scene switch
 	var sm := _get_scene_manager()
 	if sm and sm.is_passthrough_supported():

@@ -10,6 +10,7 @@ signal active_slot_changed(slot_id: String)
 
 const SCENE_PATHS := {
 	"arcade":      "res://Scenes/MainScene.tscn",
+	"den":         "res://Scenes/DenScene.tscn",
 	"passthrough": "res://Scenes/PassthroughScene.tscn",
 }
 const PREFS_FILE := "user://scenes/prefs.json"
