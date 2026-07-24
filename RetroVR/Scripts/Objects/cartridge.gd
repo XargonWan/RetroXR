@@ -40,6 +40,7 @@ const _CART_MODELS := {
 	"3ds": "res://imported-assets/n3ds_cart.glb",
 	# Grey Game Boy / Game Boy Color cart (GBC games group under game_boy).
 	"game_boy": "res://imported-assets/game_boy_cart.glb",
+	"game_boy_advance": "res://imported-assets/game_boy_advance_cart.glb",
 	"atari_2600": "res://imported-assets/atari_2600_cart.glb",
 	"virtual_boy": "res://imported-assets/virtual_boy_cart.glb",
 	# One EU-styled cart serves Genesis and Mega Drive alike (the shells differ,

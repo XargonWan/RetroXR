@@ -9,6 +9,16 @@
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_advance_orm.png" id="7_obwfv"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_advance_normal_3.png" id="8_22pe1"]
 
+[sub_resource type="BoxMesh" id="BoxMesh_cartseat"]
+size = Vector3(0.058, 0.036, 0.007)
+
+[sub_resource type="StandardMaterial3D" id="Mat_cartseat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [sub_resource type="BoxMesh" id="BoxMesh_vufj4"]
 size = Vector3(0.13337943, 0.025836494, 0.07409274)
 
@@ -295,6 +305,14 @@ pixel_size = 0.00016
 modulate = Color(0.1, 0.1, 0.12, 1)
 text = "POWER"
 font_size = 16
+
+[node name="CartSeat" type="Marker3D" parent="." unique_id=770001001]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, -0.0065, -0.019)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=770001002]
+mesh = SubResource("BoxMesh_cartseat")
+surface_material_override/0 = SubResource("Mat_cartseat")
 
 [node name="Shell" parent="." unique_id=634695952 instance=ExtResource("3_3320q")]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -5.686283e-05, -0.0014372701, 0.03743684)

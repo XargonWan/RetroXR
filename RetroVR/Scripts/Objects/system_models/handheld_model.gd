@@ -83,6 +83,12 @@ func _ready() -> void:
 	var gp := _glb_path()
 	if not gp.is_empty() and ResourceLoader.exists(gp):
 		_upgrade_to_glb(gp)
+	# An authored "CartSeat" marker (see configure_cartridge_slot) may carry a
+	# visible "SeatPreview" box so the seated-cart pose can be dialled in inside
+	# the Godot 3D editor. It's an editor aid only — hide it at runtime.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 
 
 ## Cache the authored shell nodes and read the device dimensions back from their
@@ -276,6 +282,13 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 		var ghost_mesh := BoxMesh.new()
 		ghost_mesh.size = cart_size
 		ghost.mesh = ghost_mesh
+	# An authored "CartSeat" marker in the device .tscn wins over the computed pose
+	# above, so the exact seated-cart transform can be placed visually in the Godot
+	# 3D editor (drag/rotate CartSeat; its SeatPreview box shows the cart footprint).
+	# Devices without the marker keep the generic pose — nothing else changes.
+	var seat := find_child("CartSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 ## Cartridges slide in from behind the device.
