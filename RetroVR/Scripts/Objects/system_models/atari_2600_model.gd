@@ -16,27 +16,39 @@ var _glb: Node3D = null
 
 
 func _ready() -> void:
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("Atari2600Model: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var scene := load(_MODEL_PATH) as PackedScene
-	if scene == null:
-		push_warning("Atari2600Model: failed to load %s" % _MODEL_PATH)
-		return
-	_glb = scene.instantiate() as Node3D
+	# The authored atari_2600.tscn bakes the recentred shell as a "Shell" instance
+	# plus an editor-authorable "CartSeat" marker (translucent "SeatPreview" box).
+	# Reuse that instance instead of loading a second copy of the GLB.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		if not ResourceLoader.exists(_MODEL_PATH):
+			push_warning("Atari2600Model: %s missing — using placeholder box" % _MODEL_PATH)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var scene := load(_MODEL_PATH) as PackedScene
+		if scene == null:
+			push_warning("Atari2600Model: failed to load %s" % _MODEL_PATH)
+			return
+		_glb = scene.instantiate() as Node3D
+		add_child(_glb)
+		# Recentre on the console body and rest the base on the ground (the baked
+		# scene bakes this into Shell.position, so it's only for the runtime path).
+		var b := _model_aabb(_glb)
+		var c := b.position + b.size * 0.5
+		_glb.position = Vector3(-c.x, -b.position.y, -c.z)
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
-	add_child(_glb)
-	# Recentre on the console body and rest the base on the ground.
-	var b := _model_aabb(_glb)
-	var c := b.position + b.size * 0.5
-	_glb.position = Vector3(-c.x, -b.position.y, -c.z)
+	# The cart-seat preview box is an editor aid only — hide it at runtime.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 
 
 func _model_aabb(inst: Node3D) -> AABB:
@@ -185,6 +197,12 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+	# An authored "CartSeat" marker (baked into atari_2600.tscn) wins over the
+	# computed pose above, so the seated-cart transform can be dialled in visually
+	# in the Godot 3D editor. Absent (script-only fallback) → keep the socket pose.
+	var seat := find_child("CartSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 func get_cartridge_insert_direction() -> Vector3:

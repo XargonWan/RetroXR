@@ -20,7 +20,6 @@ const _MODEL_SCRIPTS: Dictionary = {
 	"mega_drive": "res://Scripts/Objects/system_models/genesis_model.gd",
 	"playstation2": "res://Scripts/Objects/system_models/ps2_model.gd",
 	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
-	"atari_2600": "res://Scripts/Objects/system_models/atari_2600_model.gd",
 	"dos": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
 }
 
@@ -45,6 +44,9 @@ const _MODEL_SCENES: Dictionary = {
 	# "CartSeat" marker (with a translucent preview box) so the cartridge seat can
 	# be positioned in the Godot editor. nes_model reuses the baked "Shell" instance.
 	"nes": "res://Scenes/Objects/system_models/nes.tscn",
+	# Atari 2600 VCS: same bake as the NES — recentred shell + editor-authorable
+	# "CartSeat" marker. atari_2600_model reuses the baked "Shell" instance.
+	"atari_2600": "res://Scenes/Objects/system_models/atari_2600.tscn",
 	# Dev-only (per user direction): an author's imported PSone. Its GLB is
 	# export-excluded (imported-assets/*), and the model self-guards to re-show
 	# the placeholder box on any build that lacks the GLB. Licence still pending.
