@@ -119,6 +119,17 @@ func _lid_mesh_names() -> PackedStringArray:
 	return PackedStringArray()
 
 
+## Forward (toward +Z, away from the very back edge) correction added to the
+## computed hinge Z position. 0 by default — the base's back bounding-box edge
+## is a fine hinge estimate on most shells. Override when a shell's real hinge
+## sits measurably forward of that edge (see n3ds_model.gd for how this was
+## derived: solve for the Z that makes the CLOSED lid's footprint match the
+## base's footprint, since the naive back-edge estimate is invisible at the
+## open angle the GLB ships in and only shows up once you swing the lid shut).
+func _hinge_z_offset() -> float:
+	return 0.0
+
+
 ## Override to return the store-safe stand-in shell scene; "" = no fallback
 ## geometry (the device scene carries its own, the old arrangement).
 func _primitive_path() -> String:
@@ -239,7 +250,11 @@ func _upgrade_dual_to_glb(path: String) -> void:
 	# perpendicular to that, facing up-and-forward. Derive orientation from the
 	# FOLD, not the GLB lens-mesh normals — on some devices `screen_mesh Top` is a
 	# small angled trim strip whose normal doesn't match the lid's screen plane.
-	var hinge := Vector3(0.0, base_top_y, -base_aabb.size.z * 0.5)
+	# _hinge_z_offset lets a device nudge the pivot forward off the base's raw
+	# bounding-box back edge — see n3ds_model.gd, where the real hinge barrel
+	# sits measurably forward of that edge and the naive corner overshot the
+	# lid's swept closed position (overhanging the back, short of the front).
+	var hinge := Vector3(0.0, base_top_y, -base_aabb.size.z * 0.5 + _hinge_z_offset())
 	var lid_dir := top_ctr - hinge
 	lid_dir.x = 0.0
 	lid_dir = lid_dir.normalized()

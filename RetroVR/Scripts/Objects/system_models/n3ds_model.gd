@@ -55,6 +55,24 @@ func _lid_mesh_names() -> PackedStringArray:
 	return PackedStringArray(["top", "GlasTop", "Slider3DKnob", "VolumeKnob"])
 
 
+## The New 3DS XL's real hinge barrel sits well forward of the base shell's
+## raw back-edge bounding box — the base's own AABB corner overshoots it by
+## about 9 mm. Invisible at the GLB's authored ~155° open rest pose (any hinge
+## choice reproduces that pose exactly — see the derivation below), it only
+## shows up once the lid swings closed: the naive corner sent the lid
+## overhanging past the back of the console while falling ~14 mm short of the
+## front edge.
+##
+## Derived by solving for the Z that makes the CLOSED lid's footprint (rotated
+## 180° − rest_rot about the naive Y) match the base shell's own footprint —
+## i.e. the value that makes the shut console actually look shut. Rotation
+## math and vertex data cross-checked directly against new_3ds_xl.glb; not
+## re-derived at runtime since that needs the raw (pre-recenter) mesh data
+## dual_screen_handheld_model.gd doesn't keep around after this pass runs.
+func _hinge_z_offset() -> float:
+	return 0.00895
+
+
 ## Force the stereo output mode every boot; depth follows the physical slider.
 func get_forced_core_options() -> Dictionary:
 	return {
