@@ -20,10 +20,10 @@ func _ready():
 					best = rate
 			xr_interface.set_display_refresh_rate(best)
 			print("XRInit: display refresh rate set to %s Hz (available: %s)" % [best, supported_rates])
-		_apply_eye_buffer_quality(xr_interface)
 		# Enable XR rendering — this also signals desktop support nodes to disable
 		# themselves (xr_start_shim.gd returns get_viewport().use_xr).
 		get_viewport().use_xr = true
+		_log_eye_buffer_quality(xr_interface)
 		print("=====================================")
 		print("  RetroVR: running in XR / VR mode")
 		print("=====================================")
@@ -39,40 +39,42 @@ func _ready():
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 
 
-## Quest: render each eye at the PANEL's resolution and pay for it with fixed
-## foveation.
+## Report what the OpenXR session actually came up with — the numbers that explain
+## how sharp any virtual screen can possibly look. On a Quest 3 this prints
+## 1680x1760 per eye, which is the runtime's RECOMMENDED swapchain and is smaller
+## than the 2064x2208 panel (the Godot window reports 4128x2208 for the pair), so
+## the compositor upscales every frame ~1.23x. That soft resample is app-wide and
+## is why RetroVR reads softer than comparable Unity titles; it also means 3c05e74's
+## compositor sharpening is sharpening an upscale.
 ##
-## Measured on a Quest 3 (arcade scene, 72 Hz, 13.9 ms budget). Godot asks OpenXR
-## for the runtime's *recommended* swapchain, which is 1680x1760 per eye — but the
-## panel is 2064x2208 (the Godot window reports 4128x2208 = both eyes), so the
-## compositor was UPSCALING every frame by 1.23x. That soft resample is on top of
-## everything, which is why the whole app read softer than comparable Unity
-## titles regardless of core/screen settings (see also 3c05e74, compositor
-## sharpening — a sharpen pass over an upscale, not a fix for it).
+## Not fixed yet, and NOT for want of trying — read this before attempting it again:
 ##
-##   1680x1760, no foveation (shipped)  13.55 ms  68 fps
-##   2065x2163, no foveation            17.04 ms  56 fps   <- can't afford alone
-##   2065x2163, foveation 2             12.92 ms  71 fps   <- CHEAPER than shipped
-##   2352x2464, foveation 3 dynamic     13.95 ms  68 fps
+##  * There is no `xr/openxr/render_target_size_multiplier` PROJECT setting (dumped
+##    the whole xr/* list to check). It exists only as an OpenXRInterface property,
+##    and Godot's docs are explicit that changing it needs the session restarted —
+##    assigning it from _ready() resizes Godot's render target but not the swapchain
+##    the runtime already allocated.
+##  * `xr/openxr/foveation_level` / `foveation_dynamic` ARE real project settings and
+##    do apply on Android — but level 2 (with Godot's default
+##    foveation_with_subsampled_images=true) renders the ENTIRE eye buffer as one
+##    flat brown fill on this stack: Godot 4.7 + vendors 5.1 + 4x MSAA + multiview,
+##    Quest 3. Confirmed with `adb exec-out screencap -p` (4128x2208, uniform
+##    (61,36,14) across both lens areas). VrApi timings looked perfect while the
+##    image was garbage, which is why perf numbers alone are not verification.
 ##
-## Fixed foveation shades the periphery at reduced rate, and on this scene it saves
-## more than the extra centre pixels cost — panel-native comes out ahead of what
-## was shipping. Anything held up and looked at sits in the full-rate centre.
-## 4x MSAA is kept: it resolves in tile memory on Adreno, and dropping to 2x
-## measured no cheaper (13.38 ms).
+## Measured GPU cost of the combination, kept for whoever picks this up (arcade
+## scene, 72 Hz, 13.9 ms budget, RenderingServer.viewport_get_measured_render_time_gpu):
 ##
-## Desktop/PCVR is left alone — those runtimes size and supersample their own
-## swapchains, and the GPU budget isn't ours to spend.
-const QUEST_EYE_BUFFER_SCALE := 1.229   # 2064/1680 — recommended -> panel native
-const QUEST_FOVEATION_LEVEL := 2        # 0 off .. 3 highest
-
-func _apply_eye_buffer_quality(xri: XRInterface) -> void:
-	if OS.get_name() != "Android":
-		return
-	xri.set("render_target_size_multiplier", QUEST_EYE_BUFFER_SCALE)
-	xri.set("foveation_level", QUEST_FOVEATION_LEVEL)
-	# Dynamic lets the runtime relax foveation when a frame is cheap (menus, an
-	# empty room) and lean on it when the arcade is busy.
-	xri.set("foveation_dynamic", true)
-	print("XRInit: eye buffer %s (x%.3f), foveation %d dynamic" % [
-		xri.get_render_target_size(), QUEST_EYE_BUFFER_SCALE, QUEST_FOVEATION_LEVEL])
+##   1680x1760, no foveation (current)   13.55 ms  68 fps
+##   2065x2163, no foveation             17.04 ms  56 fps
+##   2065x2163, foveation 2              12.92 ms  71 fps   <- cheaper than current
+##   2352x2464, foveation 3 dynamic      13.95 ms  68 fps
+##
+## So panel-native IS affordable if foveation can be made to work (fixed foveation
+## saves more in the periphery than the extra centre pixels cost). The route to try
+## is: set the interface property, then restart the session (uninitialize/initialize)
+## before the first XR frame, with foveation_with_subsampled_images=false — and
+## verify by screencap, not by frame timings.
+func _log_eye_buffer_quality(xri: XRInterface) -> void:
+	print("XRInit: eye buffer %s per eye, window %s, foveation %s" % [
+		xri.get_render_target_size(), get_viewport().size, xri.get("foveation_level")])
