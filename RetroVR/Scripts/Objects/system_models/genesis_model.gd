@@ -47,21 +47,28 @@ func _ready() -> void:
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
-	# Hide the bundled AV plug and imported's invisible "Finger Button" trigger proxies
-	# (they import as untextured white meshes). RetroVR drives the buttons itself.
+	# Hide imported's invisible "Finger Button" trigger proxies (they import as
+	# untextured white meshes). RetroVR drives the buttons itself.
 	var stack: Array[Node] = [_glb]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		var mi := n as MeshInstance3D
-		if mi != null:
-			var nm := String(mi.name).to_lower()
-			if nm.contains("rca_silver") or nm.contains("finger"):
-				mi.visible = false
+		if mi != null and String(mi.name).to_lower().contains("finger"):
+			mi.visible = false
 		for ch in n.get_children():
 			stack.append(ch)
+	# The bundled A/V plug prop STAYS VISIBLE — it is the connector the spawned
+	# video rope hangs off (hidden, the cable sprouted from empty air behind the
+	# shell). It does stick ~5 cm out the back though, so keep it out of the
+	# recentre AABB: hide it across the measurement, then bring it back.
+	var plug := _av_plug()
+	if plug != null:
+		plug.visible = false
 	var b := _model_aabb(_glb)
 	var c := b.position + b.size * 0.5
 	_glb.position = Vector3(-c.x, -b.position.y, -c.z)   # recentre + rest base on ground
+	if plug != null:
+		plug.visible = true
 	_led = _glb.find_child("PowerLight", true, false) as MeshInstance3D
 	_set_led(false)
 
@@ -198,9 +205,19 @@ func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
 	tween.tween_callback(func() -> void: cartridge.freeze = true)
 
 
+## The shell's bundled A/V (composite/RCA) plug prop — shown, not hidden.
+func _av_plug() -> MeshInstance3D:
+	if _glb == null:
+		return null
+	return _glb.find_child("RCA_Silver", true, false) as MeshInstance3D
+
+
 func configure_cable_attach(attach_point: Node3D) -> void:
-	# Genesis GLB marks it "socket_av"; the Mega Drive GLB uses "Cable Plug (S)".
-	attach_point.global_position = _anchor_any(["socket_av", "Cable Plug (S)"])
+	# Off the visible A/V plug's tip. The markers are the fallback: the Genesis GLB's
+	# "socket_av" sits at the back PANEL, so anchoring there would run the rope
+	# through the plug prop; the Mega Drive's "Cable Plug (S)" is the plug tip.
+	attach_point.global_position = av_plug_cable_end(
+		_av_plug(), _anchor_any(["socket_av", "Cable Plug (S)"]))
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false

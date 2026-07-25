@@ -40,10 +40,15 @@ func _shell_yaw() -> float:
 	return _SHELL_YAW
 
 
-## The bundled A/V + power leads and the memory-card prop already sitting in the
-## front slot; RetroVR spawns its own cables and cards.
+## The bundled power lead and the memory-card prop already sitting in the front
+## slot; RetroVR spawns its own cards. The A/V plug (AVStecker) stays visible —
+## see _av_plug_mesh below.
 func _hidden_meshes() -> PackedStringArray:
-	return PackedStringArray(["AVStecker", "PowerStecker", "MemoryCard"])
+	return PackedStringArray(["PowerStecker", "MemoryCard"])
+
+
+func _av_plug_mesh() -> String:
+	return "AVStecker"
 
 
 func _shell_mesh() -> String:

@@ -49,11 +49,17 @@ func _ready() -> void:
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim != null:
 		_anim.autoplay = ""
-	var rca := _glb.find_child("RCA_Silver", true, false) as Node3D
+	# The bundled A/V plug prop STAYS VISIBLE — it is the connector the spawned video
+	# rope hangs off (hidden, the cable sprouted from empty air behind the shell). It
+	# sticks ~4.5 cm out the back though, so keep it out of the recentre AABB: hide it
+	# across the measurement, then bring it back.
+	var rca := _av_plug()
 	if rca != null:
 		rca.visible = false
 	var xz := _visible_xz_center(_glb)
 	_glb.position = Vector3(-xz.x, 0.0, -xz.y)
+	if rca != null:
+		rca.visible = true
 	# Mount the CD lid on a real back-edge hinge (spring-loaded, button-opened).
 	_lid = _glb.find_child("CD Tray", true, false) as MeshInstance3D
 	if _lid != null:
@@ -162,8 +168,17 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 		slot.global_transform = seat.global_transform
 
 
+## The shell's bundled A/V (composite/RCA) plug prop — shown, not hidden.
+func _av_plug() -> MeshInstance3D:
+	if _glb == null:
+		return null
+	return _glb.find_child("RCA_Silver", true, false) as MeshInstance3D
+
+
 func configure_cable_attach(attach_point: Node3D) -> void:
-	attach_point.global_position = _anchor("Cable Plug (S)")
+	# Off the visible A/V plug's tip; the GLB's cable marker is the fallback.
+	attach_point.global_position = av_plug_cable_end(
+		_av_plug(), _anchor("Cable Plug (S)"))
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false

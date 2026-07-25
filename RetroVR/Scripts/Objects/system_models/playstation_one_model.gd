@@ -25,9 +25,16 @@ func _model_path() -> String:
 func _shell_yaw() -> float:
 	return 0.0
 
-## Bundled cables/plugs/props to hide — RetroVR spawns its own.
+## Bundled cables/plugs/props to hide — RetroVR spawns its own. The A/V plug prop
+## (see _av_plug_mesh) is deliberately NOT in here: it stays visible as the video
+## connector the spawned A/V rope hangs off.
 func _hidden_meshes() -> PackedStringArray:
-	return PackedStringArray(["controller_plug_002", "RCA_Silver"])
+	return PackedStringArray(["controller_plug_002"])
+
+## The shell's own A/V (composite/RCA) plug prop, kept visible so the video lead
+## visibly leaves a connector instead of the back panel's empty air.
+func _av_plug_mesh() -> String:
+	return "RCA_Silver"
 
 func _shell_mesh() -> String:
 	return "psone_console"
@@ -95,8 +102,16 @@ func _ready() -> void:
 		var yaw := _shell_yaw()
 		if not is_zero_approx(yaw):
 			_glb.basis = Basis(Vector3.UP, yaw)
+		# The A/V plug prop stays visible (it's the video rope's connector) but hangs
+		# ~4.5 cm off the back, so keep it out of the recentre AABB: hide it across the
+		# measurement, then bring it back.
+		var plug := _glb.find_child(_av_plug_mesh(), true, false) as Node3D
+		if plug != null:
+			plug.visible = false
 		var xz := _visible_xz_center(_glb)
 		_glb.position = Vector3(-xz.x, 0.0, -xz.y)
+		if plug != null:
+			plug.visible = true
 	# The real shell is in — retire the scene's stand-in boxes. They exist so the
 	# .tscn shows a PSone (and a swingable lid) when opened in the editor, where
 	# the GLB isn't instanced, and so a build without the GLB still gets a shell.
@@ -327,7 +342,10 @@ func configure_controller_ports(port_zones: Array) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	attach_point.global_position = _anchor(_cable_marker())
+	# Off the visible A/V plug's tip; the GLB's cable marker is the fallback.
+	attach_point.global_position = av_plug_cable_end(
+		_glb.find_child(_av_plug_mesh(), true, false) if _glb != null else null,
+		_anchor(_cable_marker()))
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false

@@ -128,6 +128,23 @@ func set_controller_port_occupied(port_index: int, occupied: bool) -> void:
 	pass
 
 
+## World point where a shell's bundled A/V plug prop's lead leaves it: the far end
+## of the plug mesh along the console's BACK (-Z), on the plug's own axis.
+##
+## The imported shells model the A/V lead already plugged in, so those plug props are
+## SHOWN (they are the visible connector the spawned rope hangs off — without them
+## the cable sprouts from thin air a few cm behind the console). The rope therefore
+## has to start at the plug's TIP: anchored at the socket instead it would run
+## straight back through the plug. `fallback` covers a shell with no plug prop.
+func av_plug_cable_end(plug: Node3D, fallback: Vector3) -> Vector3:
+	var mi := plug as MeshInstance3D
+	if mi == null or mi.mesh == null or not mi.visible:
+		return fallback
+	var ab: AABB = mi.global_transform * mi.get_aabb()
+	var c := ab.get_center()
+	return Vector3(c.x, c.y, ab.position.z)
+
+
 ## Show or hide the video/cable output port visual.
 ## Called by RetroSystem when a cable is connected or disconnected.
 func set_cable_port_occupied(occupied: bool) -> void:
