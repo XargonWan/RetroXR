@@ -50,13 +50,26 @@ var _lcd_material: ShaderMaterial = null
 ## primitive shell, so on-device controls + screen still work everywhere.
 var _glb: Node3D = null
 
-## Screen-cast light: the built-in LCD tints a small OmniLight so a powered
-## handheld glows onto the hand holding it and nearby surfaces (the personal-scale
-## sibling of the TV's ambilight). Off when the screen shows no picture; colour is
-## the throttled average of the live frame.
+## Screen-cast light: the built-in LCD tints a SpotLight3D aimed OUT of the glass,
+## so a powered handheld throws a glow on whatever it's pointed at — the
+## personal-scale sibling of the TV's ambilight, and the same recipe (see tv.tscn's
+## Ambilight: a spot sitting just off the screen, energy 0.6, 50° cone, tinted to
+## the average frame colour). This started as an OmniLight, which sat INSIDE the
+## shell and lit the whole device from within instead of casting anywhere.
+## Off when the screen shows no picture; colour is the throttled frame average.
 const SCREEN_LIGHT_ENERGY := 0.6
-const SCREEN_LIGHT_RANGE := 0.45
-var _screen_light: OmniLight3D = null
+## Cone width, matching the TV ambilight's.
+const SCREEN_LIGHT_ANGLE := 50.0
+## Reach, as a multiple of the screen's long edge, clamped. A 47 mm Game Boy LCD
+## has no business throwing the TV's 2.5 m cone, and a 25 mm Pokémon-mini screen
+## still wants to glow a little way out.
+const SCREEN_LIGHT_RANGE_FACTOR := 12.0
+const SCREEN_LIGHT_RANGE_MIN := 0.35
+const SCREEN_LIGHT_RANGE_MAX := 0.9
+## Clearance from the glass — the cone must start outside it (see the TV's
+## ambilight, which sits just proud of its screen).
+const SCREEN_LIGHT_OFFSET := 0.006
+var _screen_light: SpotLight3D = null
 
 
 func is_handheld() -> bool:
@@ -133,22 +146,34 @@ func _setup_screen_light() -> void:
 	_screen_light = _make_screen_light(_screen)
 
 
-## Create + configure a screen-cast OmniLight just off `screen`'s surface (its
-## local +Z normal) so it glows out toward whoever's holding the device. Parented
-## to the screen so it tracks a GLB-repositioned screen automatically. Reusable
-## for devices with more than one screen (see RetroSystemModelDualScreen).
-func _make_screen_light(screen: MeshInstance3D) -> OmniLight3D:
+## Create + configure a screen-cast spot just off `screen`'s glass, aimed out along
+## the screen's own normal. Parented to the screen so it tracks a GLB-repositioned
+## (or lid-mounted) screen automatically. Reusable for devices with more than one
+## screen (see RetroSystemModelDualScreen).
+func _make_screen_light(screen: MeshInstance3D) -> SpotLight3D:
 	if screen == null:
 		return null
-	var light := OmniLight3D.new()
+	var light := SpotLight3D.new()
 	light.name = "ScreenCastLight"
-	light.omni_range = SCREEN_LIGHT_RANGE
-	light.omni_attenuation = 1.5
+	# A QuadMesh screen faces its local +Z, but a SpotLight3D emits along its local
+	# -Z — so flip it, or the cone points back through the device.
+	light.rotation_degrees = Vector3(180.0, 0.0, 0.0)
+	light.spot_angle = SCREEN_LIGHT_ANGLE
+	light.spot_range = _screen_light_range(screen)
 	light.shadow_enabled = false
 	light.light_energy = 0.0
-	light.position = Vector3(0.0, 0.0, 0.04)
+	light.position = Vector3(0.0, 0.0, SCREEN_LIGHT_OFFSET)
 	screen.add_child(light)
 	return light
+
+
+## Reach for one screen's cast light, proportional to that screen's long edge.
+func _screen_light_range(screen: MeshInstance3D) -> float:
+	var s := screen_size
+	if screen.mesh is QuadMesh:
+		s = (screen.mesh as QuadMesh).size
+	return clampf(maxf(s.x, s.y) * SCREEN_LIGHT_RANGE_FACTOR,
+		SCREEN_LIGHT_RANGE_MIN, SCREEN_LIGHT_RANGE_MAX)
 
 
 ## Cache the authored shell nodes and read the device dimensions back from their
@@ -297,7 +322,7 @@ func _update_screen_light() -> void:
 ## GPU→CPU readback, so it's rate-limited by QualityManager like the TV ambilight.
 ## The per-light throttle counter rides on the light (meta) so several screens can
 ## share this without a member counter each.
-func _drive_screen_light(screen: MeshInstance3D, light: OmniLight3D) -> void:
+func _drive_screen_light(screen: MeshInstance3D, light: SpotLight3D) -> void:
 	if light == null or screen == null:
 		return
 	var tex := _screen_emission_texture(screen.get_surface_override_material(0))

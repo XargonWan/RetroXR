@@ -52,12 +52,17 @@ var _lens_quads: Array[MeshInstance3D] = []
 var _lens_mats: Array[ShaderMaterial] = []
 var _visor_center_y := 0.0
 
-## Screen-cast light: the visor spills the VB's signature red glow when it's
-## showing a picture (fixed red — the display is always red-on-black, so no
-## per-frame colour sample is needed; energy just tracks picture on/off).
+## Screen-cast light: the visor spills the VB's signature red glow out of the
+## eye-shade when it's showing a picture (fixed red — the display is always
+## red-on-black, so no per-frame colour sample is needed; energy just tracks
+## picture on/off). A SpotLight3D aimed out of the panes, like the TV's ambilight:
+## the first attempt was an OmniLight sitting 5 cm INSIDE the visor, which lit the
+## whole shell from within and cast nothing.
 const VB_LIGHT_ENERGY := 0.7
 const VB_LIGHT_COLOR := Color(1.0, 0.05, 0.05)
-var _vb_light: OmniLight3D = null
+const VB_LIGHT_ANGLE := 55.0
+const VB_LIGHT_RANGE := 0.6
+var _vb_light: SpotLight3D = null
 
 
 ## The systemid whose cart dimensions this console takes (MediaDimensions).
@@ -105,18 +110,18 @@ func _ready() -> void:
 	_upgrade_to_glb()
 	if _glb == null:
 		_spawn_primitive()   # store-safe fallback bipod when the GLB shell is absent
-	# Red visor glow, parented to the (possibly GLB-repositioned) eyepiece so it
-	# spills out the eye-shade toward the viewer. Off until a picture is present.
-	if _eyepiece:
-		_vb_light = OmniLight3D.new()
-		_vb_light.name = "ScreenCastLight"
-		_vb_light.light_color = VB_LIGHT_COLOR
-		_vb_light.omni_range = 0.5
-		_vb_light.omni_attenuation = 1.5
-		_vb_light.shadow_enabled = false
-		_vb_light.light_energy = 0.0
-		_vb_light.position = Vector3(0.0, 0.0, -0.05)
-		_eyepiece.add_child(_vb_light)
+	# Red visor glow: a spot just outside the eye-shade shining out along the panes'
+	# normal (+Z, where the player stands). Off until a picture is present.
+	_vb_light = SpotLight3D.new()
+	_vb_light.name = "ScreenCastLight"
+	_vb_light.light_color = VB_LIGHT_COLOR
+	_vb_light.spot_angle = VB_LIGHT_ANGLE
+	_vb_light.spot_range = VB_LIGHT_RANGE
+	_vb_light.shadow_enabled = false
+	_vb_light.light_energy = 0.0
+	_vb_light.rotation_degrees = Vector3(180.0, 0.0, 0.0)   # spots emit down -Z
+	add_child(_vb_light)
+	_vb_light.position = _visor_glow_origin()
 	# Editor-only cart-seat preview box — hide it at runtime.
 	var seat_preview := find_child("SeatPreview", true, false)
 	if seat_preview is Node3D:
@@ -237,6 +242,24 @@ func _apply_volume(v: float) -> void:
 	var pivot: Vector3 = _vol_rest * ab.get_center()
 	var r := Basis(Vector3.RIGHT, deg_to_rad((v - 0.5) * _VOL_SWEEP_DEG))
 	_vol_wheel.transform = Transform3D(r, pivot - r * pivot) * _vol_rest
+
+
+## Where the visor glow comes from, in this model's local frame: just proud of the
+## live lens panes when the detailed shell is in, else the authored Eyepiece quad.
+##
+## It is deliberately NOT parented to the Eyepiece: _place_eyepiece() HIDES that
+## quad once the shell's two panes take over, and a light parented under a hidden
+## node inherits the invisibility — so the glow never lit anything on a GLB shell.
+func _visor_glow_origin() -> Vector3:
+	if not _lens_quads.is_empty():
+		var c := Vector3.ZERO
+		for q in _lens_quads:
+			c += q.position
+		c /= float(_lens_quads.size())
+		return c + Vector3(0.0, 0.0, 0.010)
+	if _eyepiece != null:
+		return _eyepiece.position + Vector3(0.0, 0.0, 0.010)
+	return Vector3(0.0, _visor_center_y, 0.06)
 
 
 ## World position of a GLB marker empty.

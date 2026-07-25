@@ -42,7 +42,7 @@ var top_eye_shift := 0.0
 
 var _bottom_screen: MeshInstance3D = null
 # Screen-cast light for the bottom screen (the base handles the top via _screen).
-var _bottom_screen_light: OmniLight3D = null
+var _bottom_screen_light: SpotLight3D = null
 var _lid_pivot: Node3D = null
 # Grabbable lid hinge. The lid's rotation about X lives on _lid_pivot (0 = flat /
 # 180° interior open, 180 = folded shut); the public angle (get/set_lid_angle_deg)
