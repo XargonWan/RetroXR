@@ -257,17 +257,32 @@ func _upgrade_to_glb(path: String) -> void:
 	for child in get_children():
 		if child is MeshInstance3D and child != _screen:
 			(child as MeshInstance3D).visible = false
-	_hide_knob(_volume_slider)
-	_hide_knob(_power_switch)
-	# Move the power switch's interaction zone onto the GLB's real switch.
+	# Move the power switch's interaction zone onto the GLB's real switch FIRST —
+	# _adopt_knob derives the travel axis from the slider's global transform, so
+	# it has to run after the move.
 	var pm := _glb.find_child("Power", true, false) as Node3D
 	if _power_switch != null and pm != null:
 		_power_switch.position = to_local(pm.global_position)
+	_adopt_knob(_volume_slider, "Volume")
+	_adopt_knob(_power_switch, "Power")
 	_on_glb_ready()
 
 
-func _hide_knob(slider: VRSlider) -> void:
+## Point a slider at the GLB's real switch cap so its interaction box and green
+## highlight trace the geometry you can actually see. Without this a handheld
+## whose GLB has loaded would size both to the hidden primitive knob.
+##
+## Only a node that IS a MeshInstance3D is adopted — the slider moves whatever it
+## is handed, and grabbing a parent group would drag half the shell along with it.
+## Otherwise fall back to the old behaviour of just hiding the primitive.
+func _adopt_knob(slider: VRSlider, glb_node_name: String) -> void:
 	if slider == null:
+		return
+	var cap: MeshInstance3D = null
+	if _glb != null:
+		cap = _glb.find_child(glb_node_name, true, false) as MeshInstance3D
+	if cap != null:
+		slider.set_knob_mesh(cap)   # hides the placeholder itself
 		return
 	var k := slider.get_node_or_null("KnobMesh") as MeshInstance3D
 	if k != null:

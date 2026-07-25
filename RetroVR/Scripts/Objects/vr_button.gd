@@ -1,8 +1,16 @@
-## VRButton — Node3D that emits button_pressed when a VR controller touches it.
+## VRButton — Area3D that emits button_pressed when a VR controller interacts with it.
 ## Attach to any Area3D that has a child MeshInstance3D named "ButtonMesh".
 ## Uses direct XRController3D proximity checks each frame instead of physics
 ## bodies, so it reliably fires exactly where the controller/hand visually is.
 ## Also supports desktop reticle pointer hover/press.
+##
+## Two interaction modes:
+##   • TOUCH (default) — the fingertip crossing trigger_radius fires the button
+##     immediately. No confirmation, so a drifting hand presses things by accident.
+##   • TRIGGER (require_trigger = true) — the fingertip entering the interaction
+##     box only ARMS the button, outlining it green; pulling the controller's
+##     TRIGGER then fires it and the outline turns amber. Same shape as VRHinge's
+##     proximity-then-button latch, and the same amber for "engaged".
 class_name VRButton
 extends Area3D
 
@@ -10,15 +18,29 @@ extends Area3D
 signal button_pressed
 
 const POINTABLE_LAYER := 1 << 20
-const OUTLINE_SHADER := preload("res://Shaders/outline.gdshader")
-const DEPTH_PREPASS_SHADER := preload("res://Shaders/outline_depth_prepass.gdshader")
-const HOVER_OUTLINE_COLOR := Color(0.65, 1.0, 0.65, 1.0)
+
+## Analog trigger action, read as a float like the rest of the project
+## (grip_click/trigger_click bools are only read by godot-xr-tools itself).
+const TRIGGER_ACTION := "trigger"
+## Float that arms→engages, and the lower value that releases (hysteresis).
+## Mirrors VRHinge.GRIP_ON / GRIP_OFF.
+const TRIGGER_ON := 0.6
+const TRIGGER_OFF := 0.4
 
 
 ## How close (metres) the controller tip must be to trigger the button.
 ## The button face is at the top of the mesh, so ~half the mesh height is a
-## good starting threshold.
+## good starting threshold.  TOUCH mode only — TRIGGER mode uses interact_margin.
 @export var trigger_radius: float = 0.01
+
+## Require a TRIGGER pull while the fingertip is inside the interaction box,
+## instead of firing on touch alone. Off by default so authored buttons keep
+## their existing behaviour until switched over scene by scene.
+@export var require_trigger: bool = false
+
+## How far (metres) the interaction box extends past the button mesh's own AABB,
+## on every side. TRIGGER mode only.
+@export var interact_margin: float = 0.02
 
 ## How much the mesh travels when pressed (metres)
 @export var depress_depth: float = 0.008
@@ -39,19 +61,29 @@ var _pointer_pressed: bool = false
 var _pointer_hovered: bool = false
 var _latched_pressed: bool = false
 
+# TRIGGER mode state
+var _armed: bool = false                       # a fingertip is inside the box
+var _trigger_pressed: bool = false             # trigger held after arming
+var _engaged_ctrl: XRController3D = null       # controller holding the trigger
+# Controller instance ids whose trigger has dropped below TRIGGER_OFF since they
+# last fired this button — see _process_trigger_mode.
+var _rearmed: Dictionary = {}
+var _last_activate_frame: int = -1
+
 @onready var _mesh: MeshInstance3D = $ButtonMesh
 
 # Controller nodes — resolved once in _ready
 var _controllers: Array[XRController3D] = []
-var _outline_overlay: MeshInstance3D = null
-var _outline_material: ShaderMaterial = null
+var _outline: WidgetOutline = null
+var _outline_amber: bool = false
 
 
 func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
 	_mesh_local_origin = _mesh.position
 	_mesh_depress_parent = _mesh.get_parent() as Node3D
-	_rebuild_outline()
+	_outline = WidgetOutline.attach(self)
+	_outline.set_source(_mesh)
 	# Controllers aren't added until the first frame, so wait one frame
 	await get_tree().process_frame
 	# Find all XRController3D nodes in the scene by type
@@ -61,11 +93,16 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	if not _controllers.is_empty():
+		if require_trigger:
+			_process_trigger_mode()
+		else:
+			_process_touch_mode()
 	_sync_outline()
 
-	if _controllers.is_empty():
-		return
 
+## TOUCH mode — the original behaviour: crossing trigger_radius fires immediately.
+func _process_touch_mode() -> void:
 	# Check whether any controller tip is inside our trigger radius
 	var touching := false
 	for controller in _controllers:
@@ -81,10 +118,78 @@ func _process(_delta: float) -> void:
 	if touching and not _touch_pressed:
 		_touch_pressed = true
 		_update_visual_state()
-		button_pressed.emit()
+		_activate()
 	elif not touching and _touch_pressed:
 		_touch_pressed = false
 		_update_visual_state()
+
+
+## TRIGGER mode — arm on proximity, fire on the trigger's rising edge.
+func _process_trigger_mode() -> void:
+	# Re-arm bookkeeping. A controller may only fire this button once per trigger
+	# pull: without it, sweeping a HELD trigger across a row of buttons (a DVD
+	# player's transport strip) fires every one of them in turn.
+	for ctrl in _controllers:
+		if ctrl != null and ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+			_rearmed[ctrl.get_instance_id()] = true
+
+	if _trigger_pressed:
+		# Held. The hand is free to roam off the button — only releasing the
+		# trigger lets go.
+		if not is_instance_valid(_engaged_ctrl) or not _engaged_ctrl.get_is_active() \
+				or _engaged_ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+			_engaged_ctrl = null
+			_trigger_pressed = false
+			_update_visual_state()
+		_armed = _hovering_ctrl() != null
+		return
+
+	var ctrl := _hovering_ctrl()
+	_armed = ctrl != null
+	if ctrl == null or ctrl.get_float(TRIGGER_ACTION) <= TRIGGER_ON:
+		return
+	if not _rearmed.get(ctrl.get_instance_id(), false):
+		return
+	_rearmed[ctrl.get_instance_id()] = false
+	_engaged_ctrl = ctrl
+	_trigger_pressed = true
+	_update_visual_state()
+	_activate()
+
+
+## First active, non-holding controller whose poke tip is inside the box.
+func _hovering_ctrl() -> XRController3D:
+	if not is_instance_valid(_mesh) or _mesh.mesh == null:
+		return null
+	for ctrl in _controllers:
+		# Skip a hand that's holding something, same as TOUCH mode.
+		if ctrl == null or not ctrl.get_is_active() or not PokeTip.is_poking(ctrl):
+			continue
+		if _tip_in_box(PokeTip.tip_of(ctrl)):
+			return ctrl
+	return null
+
+
+## Interaction volume: the button mesh's own AABB grown by interact_margin on
+## every side, tested in the mesh's local space. Beats a sphere centred on the
+## Area3D origin for the wide, rectangular caps most console buttons have.
+func _tip_in_box(tip: Vector3) -> bool:
+	var box := _mesh.mesh.get_aabb().grow(interact_margin)
+	return box.has_point(_mesh.global_transform.affine_inverse() * tip)
+
+
+## Single funnel for every activation path, deduped to one emit per frame.
+##
+## XRToolsFunctionPointer.active_button_action is "trigger_click" — the same
+## physical pull the near-field path watches. Without this, a hand inside the box
+## while the laser is also on the button emits button_pressed TWICE in one frame.
+## Same idiom as VRDropdown._accept_activation.
+func _activate() -> void:
+	var frame := Engine.get_process_frames()
+	if frame == _last_activate_frame:
+		return
+	_last_activate_frame = frame
+	button_pressed.emit()
 
 
 func pointer_event(event: XRToolsPointerEvent) -> void:
@@ -100,7 +205,7 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			_pointer_hovered = true
 			_pointer_pressed = true
 			_update_visual_state()
-			button_pressed.emit()
+			_activate()
 		XRToolsPointerEvent.Type.RELEASED:
 			_pointer_pressed = false
 			_update_visual_state()
@@ -124,7 +229,9 @@ func set_button_mesh(mesh: MeshInstance3D) -> void:
 	_mesh = mesh
 	_mesh_local_origin = mesh.position
 	_mesh_depress_parent = mesh.get_parent() as Node3D
-	_rebuild_outline()
+	# The outline traces the real geometry, and so does the TRIGGER-mode AABB.
+	if _outline:
+		_outline.set_source(_mesh)
 	_update_visual_state()
 
 
@@ -169,7 +276,7 @@ func _update_visual_state() -> void:
 	if not _mesh:
 		return
 
-	if _touch_pressed or _pointer_pressed or _latched_pressed:
+	if _touch_pressed or _pointer_pressed or _latched_pressed or _trigger_pressed:
 		# depress_axis may already encode inverse parent scale from
 		# set_depress_axis_from_node(), so do not renormalize it here.
 		_mesh.position = _mesh_local_origin + depress_axis * depress_depth
@@ -189,51 +296,13 @@ func _apply_mesh_color(color: Color) -> void:
 	(mat as StandardMaterial3D).albedo_color = color
 
 
-func _rebuild_outline() -> void:
-	if is_instance_valid(_outline_overlay):
-		_outline_overlay.queue_free()
-	_outline_overlay = null
-	_outline_material = null
-
-	if not _mesh or not _mesh.mesh:
-		return
-
-	_outline_material = ShaderMaterial.new()
-	_outline_material.shader = OUTLINE_SHADER
-	_outline_material.render_priority = 2
-	_outline_material.set_shader_parameter("outline_color", HOVER_OUTLINE_COLOR)
-	_outline_material.set_shader_parameter("outline_width", 1.0)
-	# Mild HDR glow — enough to read as "hovered" without the outline blooming out
-	# under the room's glow post-process (was 2.0 -> green x3, far too bright).
-	_outline_material.set_shader_parameter("glow_strength", 0.3)
-	_outline_material.set_shader_parameter("fade_start", 0.0)
-	_outline_material.set_shader_parameter("fade_end", 10.0)
-	_outline_material.set_shader_parameter("mesh_center", _mesh.mesh.get_aabb().get_center())
-
-	var depth_mat := ShaderMaterial.new()
-	depth_mat.shader = DEPTH_PREPASS_SHADER
-	depth_mat.render_priority = 1
-	depth_mat.next_pass = _outline_material
-
-	_outline_overlay = MeshInstance3D.new()
-	_outline_overlay.top_level = true
-	_outline_overlay.mesh = _mesh.mesh
-	_outline_overlay.material_override = depth_mat
-	_outline_overlay.visible = false
-	_outline_overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_outline_overlay.extra_cull_margin = 16.0
-	add_child(_outline_overlay)
-	_sync_outline()
-
-
+## Green while armed (the trigger will act here), amber while the trigger is down.
+## The pointer-hover outline is unchanged by require_trigger — the laser has always
+## highlighted what it is over.
 func _sync_outline() -> void:
-	if not is_instance_valid(_outline_overlay) or not is_instance_valid(_mesh):
+	if _outline == null:
 		return
-
-	if _outline_overlay.mesh != _mesh.mesh:
-		_outline_overlay.mesh = _mesh.mesh
-		if _outline_material and _mesh.mesh:
-			_outline_material.set_shader_parameter("mesh_center", _mesh.mesh.get_aabb().get_center())
-
-	_outline_overlay.global_transform = _mesh.global_transform
-	_outline_overlay.visible = _pointer_hovered and _mesh.is_visible_in_tree()
+	if _trigger_pressed != _outline_amber:
+		_outline_amber = _trigger_pressed
+		_outline.set_color(WidgetOutline.ACTIVE_COLOR if _outline_amber else WidgetOutline.HOVER_COLOR)
+	_outline.sync(_armed or _trigger_pressed or _pointer_hovered)
