@@ -151,6 +151,13 @@ func configure_controller_ports(port_zones: Array) -> void:
 		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
 		if lbl != null:
 			lbl.hide()
+		# An authored "PortSeat1"/"PortSeat2" marker (baked into atari_2600.tscn)
+		# wins over the computed pose below, same idiom as CartSeat/DiscSeat/
+		# UMDSeat.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+			continue
 		if i < cols.size():
 			# A BACK-facing port needs a 180° roll about X, where a front-facing
 			# one needs it about Z: the plug's connector points down its local +Z

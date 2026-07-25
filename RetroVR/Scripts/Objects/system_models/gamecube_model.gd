@@ -162,7 +162,7 @@ func _wire_button(btn: VRButton, mesh_name: String, anchor_name: String) -> void
 
 ## No per-port marker meshes beyond the one modelled "GCPort" — the other 3
 ## are approximated at a real-hardware-typical pitch to its right. Baked as
-## authored "Port1".."Port4" markers in gamecube.tscn (dial-able in the 3D
+## authored "PortSeat1".."PortSeat4" markers in gamecube.tscn (dial-able in the 3D
 ## editor, same "authored wins over computed" idiom as CartSeat/DiscSeat) —
 ## this fallback only fires for a script-only instance with no baked scene.
 const _PORT_PITCH := 0.028
@@ -179,7 +179,7 @@ func configure_controller_ports(port_zones: Array) -> void:
 		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
 		if lbl != null:
 			lbl.hide()
-		var marker := find_child("Port%d" % (i + 1), true, false) as Node3D
+		var marker := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
 		if marker != null:
 			port_zones[i].global_transform = marker.global_transform
 		else:

@@ -405,6 +405,12 @@ const _PORT_Z := -0.0334
 func configure_controller_ports(port_zones: Array) -> void:
 	if port_zones.size() > 0:
 		var zone: Node3D = port_zones[0]
+		# An authored "PortSeat1" marker (baked into virtual_boy.tscn) wins
+		# over the computed pose below, same idiom as CartSeat/DiscSeat/UMDSeat.
+		var seat := find_child("PortSeat1", true, false) as Node3D
+		if seat != null:
+			zone.global_transform = seat.global_transform
+			return
 		if _glb != null:
 			# Controller socket on the UNDERSIDE, right of centre — measured off
 			# an orthographic render of the bottom face (with a reference marker

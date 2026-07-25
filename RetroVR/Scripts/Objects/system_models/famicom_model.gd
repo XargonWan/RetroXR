@@ -168,10 +168,17 @@ func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
 func configure_controller_ports(port_zones: Array) -> void:
 	var p1 := _anchor("prisemanette1_low")
 	var p2 := _anchor("prisemanette2_low")
+	# An authored "PortSeat1"/"PortSeat2" marker (baked into famicom.tscn)
+	# wins over the anchor-derived pose, same idiom as CartSeat/DiscSeat/
+	# UMDSeat.
+	var seat1 := find_child("PortSeat1", true, false) as Node3D
+	var seat2 := find_child("PortSeat2", true, false) as Node3D
 	if port_zones.size() >= 1:
-		port_zones[0].global_position = p1
+		port_zones[0].global_transform = seat1.global_transform if seat1 != null \
+			else Transform3D(global_transform.basis, p1)
 	if port_zones.size() >= 2:
-		port_zones[1].global_position = p2
+		port_zones[1].global_transform = seat2.global_transform if seat2 != null \
+			else Transform3D(global_transform.basis, p2)
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:

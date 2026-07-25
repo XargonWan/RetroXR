@@ -154,6 +154,13 @@ func configure_controller_ports(port_zones: Array) -> void:
 		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
 		if lbl != null:
 			lbl.hide()
+		# An authored "PortSeat1"/"PortSeat2" marker (baked into atari_5200.tscn)
+		# wins over the computed pose below, same idiom as CartSeat/DiscSeat/
+		# UMDSeat.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+			continue
 		if i < cols.size():
 			port_zones[i].global_transform = Transform3D(
 				global_transform.basis,

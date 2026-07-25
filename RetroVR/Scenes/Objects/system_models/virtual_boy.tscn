@@ -1,14 +1,17 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
+[ext_resource type="Shader" path="res://Shaders/vb_stereo.gdshader" id="2_rbfnt"]
 [ext_resource type="PackedScene" path="res://imported-assets/virtual_boy.glb" id="3_n6osu"]
 [ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_x7yte"]
 size = Vector2(0.132, 0.077)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ifno2"]
-albedo_color = Color(0.03, 0.03, 0.04, 1)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_bossr"]
+render_priority = 0
+shader = ExtResource("2_rbfnt")
+shader_parameter/powered = null
 
 [sub_resource type="QuadMesh" id="QuadMesh_77fbx"]
 size = Vector2(0.01, 0.01)
@@ -31,8 +34,9 @@ script = ExtResource("1_dweg0")
 
 [node name="Eyepiece" type="MeshInstance3D" parent="." unique_id=1675020021]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.055)
+visible = false
 mesh = SubResource("QuadMesh_x7yte")
-surface_material_override/0 = SubResource("StandardMaterial3D_ifno2")
+surface_material_override/0 = SubResource("ShaderMaterial_bossr")
 
 [node name="ProxyScreen" type="MeshInstance3D" parent="." unique_id=350218147]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
@@ -40,6 +44,7 @@ visible = false
 mesh = SubResource("QuadMesh_77fbx")
 
 [node name="VolumeSlider" type="Area3D" parent="." unique_id=1929891929]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08681823, 0.033249382, -0.044736918)
 collision_layer = 1048577
 script = ExtResource("9_vbvol")
 axis_local = Vector3(0, 0, -1)
@@ -58,5 +63,10 @@ transform = Transform3D(1, -8.742278e-08, 0, 0, 0, 1, -8.742278e-08, -1, 0, -0.0
 gizmo_extents = 0.04
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=120859800]
+visible = false
 mesh = SubResource("BoxMesh_rbfnt")
 surface_material_override/0 = SubResource("StandardMaterial3D_bossr")
+
+[node name="PortSeat1" type="Marker3D" parent="." unique_id=898907830]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0.082, -0.22254749, -0.0334)
+gizmo_extents = 0.02

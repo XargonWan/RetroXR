@@ -417,7 +417,13 @@ const _PORT_Z := 0.0975
 func configure_controller_ports(port_zones: Array) -> void:
 	for i in range(port_zones.size()):
 		var zone: Node3D = port_zones[i]
-		if i < _PORT_X.size():
+		# An authored "PortSeat1"/"PortSeat2" marker (baked into nes.tscn) wins
+		# over the computed pose below, same "authored wins over computed"
+		# idiom as CartSeat/DiscSeat/UMDSeat.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			zone.global_transform = seat.global_transform
+		elif i < _PORT_X.size():
 			zone.position = Vector3(_PORT_X[i], _PORT_Y, _PORT_Z)
 			# Front-facing socket: roll 180 about Z so the plug seats connector-in
 			# and upright (a yaw would land it upside down - see the snap-zone

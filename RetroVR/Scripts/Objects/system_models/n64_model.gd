@@ -139,6 +139,20 @@ func get_controller_port_count() -> int:
 ## Four front ports: the GLB names ports 1 & 2 (left of centre); mirror them across
 ## the console centre for ports 3 & 4.
 func configure_controller_ports(port_zones: Array) -> void:
+	# An authored "PortSeat1".."PortSeat4" marker (baked into the model's own
+	# scene, when it has one) wins over the GLB-anchor-derived pose below,
+	# same "authored wins over computed" idiom as CartSeat/DiscSeat/UMDSeat.
+	# "Port1"/"Port2" below are the shell's OWN native marker names (from the
+	# GLB itself, like Famicom's "prisemanette1_low") — not this convention —
+	# so they stay as the computed fallback, not something to rename.
+	var any_seat := false
+	for i in range(port_zones.size()):
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+			any_seat = true
+	if any_seat:
+		return
 	var p1 := find_child("Port1", true, false) as Node3D
 	var p2 := find_child("Port2", true, false) as Node3D
 	if p1 == null or p2 == null or port_zones.size() < 4:

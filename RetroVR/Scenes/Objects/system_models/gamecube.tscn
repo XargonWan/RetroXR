@@ -1,12 +1,12 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://b8q0csqfy5h85"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/gamecube_model.gd" id="1_gcnmdl"]
-[ext_resource type="Texture2D" path="res://imported-assets/gamecube_gamecube_console_color.png" id="3_hs00j"]
-[ext_resource type="Texture2D" path="res://imported-assets/gamecube_normal.png" id="4_lj8hf"]
-[ext_resource type="Texture2D" path="res://imported-assets/gamecube_orm.png" id="5_ru2yl"]
-[ext_resource type="Texture2D" path="res://imported-assets/gamecube_normal_2.png" id="6_vwbam"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="7_imrcj"]
-[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="8_veirt"]
+[ext_resource type="Script" uid="uid://4ao8fkh3iion" path="res://Scripts/Objects/system_models/gamecube_model.gd" id="1_gcnmdl"]
+[ext_resource type="Texture2D" uid="uid://brf8kja2tq1ro" path="res://imported-assets/gamecube_gamecube_console_color.png" id="3_hs00j"]
+[ext_resource type="Texture2D" uid="uid://cvxpo1pfij5h5" path="res://imported-assets/gamecube_normal.png" id="4_lj8hf"]
+[ext_resource type="Texture2D" uid="uid://bsj5bykbx4rgu" path="res://imported-assets/gamecube_orm.png" id="5_ru2yl"]
+[ext_resource type="Texture2D" uid="uid://csrmvn6yl5lwn" path="res://imported-assets/gamecube_normal_2.png" id="6_vwbam"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="7_imrcj"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="8_veirt"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d7t4c"]
 resource_name = "m_gc_console"
@@ -1283,16 +1283,6 @@ top_radius = 0.04
 bottom_radius = 0.04
 height = 0.003
 
-[sub_resource type="BoxMesh" id="BoxMesh_gcnmemcard"]
-size = Vector3(0.036073, 0.007493, 0.040196)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gcnmemcard"]
-transparency = 1
-albedo_color = Color(1, 0.55, 0.1, 0.35)
-emission_enabled = true
-emission = Color(1, 0.55, 0.1, 1)
-emission_energy_multiplier = 0.4
-
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gcnseat"]
 transparency = 1
 albedo_color = Color(1, 0.55, 0.1, 0.35)
@@ -1360,6 +1350,16 @@ base_font = SubResource("FontFile_6l2kl")
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ye3sx"]
 size = Vector3(0.119134866, 0.1456463, 0.05308533)
+
+[sub_resource type="BoxMesh" id="BoxMesh_gcnmemcard"]
+size = Vector3(0.036073, 0.007493, 0.040196)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gcnmemcard"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
 
 [node name="GameCube" type="Node3D" unique_id=2066010703]
 script = ExtResource("1_gcnmdl")
@@ -1609,26 +1609,26 @@ outline_size = 18
 [node name="CollisionShape3D" type="CollisionShape3D" parent="DiscLidPivot/DiscLidHinge" unique_id=245192499]
 shape = SubResource("BoxShape3D_ye3sx")
 
-[node name="Port1" type="Marker3D" parent="."]
+[node name="PortSeat1" type="Marker3D" parent="." unique_id=1605589445]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.043765, 0.066152, 0.090477)
 gizmo_extents = 0.02
 
-[node name="Port2" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015765, 0.066152, 0.090477)
+[node name="PortSeat2" type="Marker3D" parent="." unique_id=262536566]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.013399528, 0.066152, 0.090477)
 gizmo_extents = 0.02
 
-[node name="Port3" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.012235, 0.066152, 0.090477)
+[node name="PortSeat3" type="Marker3D" parent="." unique_id=298648473]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0133527545, 0.066152, 0.090477)
 gizmo_extents = 0.02
 
-[node name="Port4" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.040235, 0.066152, 0.090477)
+[node name="PortSeat4" type="Marker3D" parent="." unique_id=1294472756]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04398048, 0.066152, 0.090477)
 gizmo_extents = 0.02
 
-[node name="MemCardSeat" type="Marker3D" parent="."]
+[node name="MemCardSeat" type="Marker3D" parent="." unique_id=1341328554]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.028681, 0.040027, 0.084473)
 gizmo_extents = 0.03
 
-[node name="SeatPreview" type="MeshInstance3D" parent="MemCardSeat"]
+[node name="SeatPreview" type="MeshInstance3D" parent="MemCardSeat" unique_id=265789784]
 mesh = SubResource("BoxMesh_gcnmemcard")
 surface_material_override/0 = SubResource("StandardMaterial3D_gcnmemcard")
