@@ -870,23 +870,15 @@ mesh = SubResource("CylinderMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=314602703]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08911579, -0.048816755, 0.09922296)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.065, 0.0141, 0.093)
 gizmo_extents = 0.02
 
 [node name="PortSeat2" type="Marker3D" parent="." unique_id=919448685]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05911579, -0.048816755, 0.09922296)
-gizmo_extents = 0.02
-
-[node name="PortSeat3" type="Marker3D" parent="." unique_id=1299357928]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, -0.056416757, 0.125)
-gizmo_extents = 0.02
-
-[node name="PortSeat4" type="Marker3D" parent="." unique_id=318609031]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09, -0.056416757, 0.125)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0291, 0.0127, 0.093)
 gizmo_extents = 0.02
 
 [node name="MemCardSeat" type="Marker3D" parent="." unique_id=957629819]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.04411579, -0.056816757, 0.09922296)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.035898, 0.022217, 0.064919)
 gizmo_extents = 0.03
 
 [editable path="Shell"]

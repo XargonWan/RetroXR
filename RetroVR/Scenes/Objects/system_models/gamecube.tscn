@@ -1630,5 +1630,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.028681, 0.040027, 0.084473
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="MemCardSeat" unique_id=265789784]
+visible = false
 mesh = SubResource("BoxMesh_gcnmemcard")
 surface_material_override/0 = SubResource("StandardMaterial3D_gcnmemcard")

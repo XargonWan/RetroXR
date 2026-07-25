@@ -78,10 +78,11 @@ func _ready() -> void:
 			return
 		_glb = ps.instantiate() as Node3D
 		add_child(_glb)
-	# The disc-seat preview is an editor aid only — hide it before the recentre AABB.
-	var preview := find_child("SeatPreview", true, false)
-	if preview is Node3D:
-		(preview as Node3D).visible = false
+	# The seat previews (DiscSeat's and MemCardSeat's) are editor aids only —
+	# hide all matches before the recentre AABB, not just the first found.
+	for preview in find_children("SeatPreview", "", true, false):
+		if preview is Node3D:
+			(preview as Node3D).visible = false
 	# Disable the GLB's auto-played animation so the lid keeps its REST pose, which
 	# is the closed lid (verified by diagnostic). PSOneClose is broken — don't use.
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
