@@ -1,13 +1,13 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://bepe7b3rbr6j8"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/nds_lite_model.gd" id="1_l1txu"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_0o7mw"]
-[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_s8ri4"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_sss83"]
-[ext_resource type="PackedScene" path="res://imported-assets/ds_lite.glb" id="4_uxbae"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_lite_Plugs_Albedo.png" id="5_dy5q1"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_lite_orm.png" id="6_loftr"]
-[ext_resource type="Texture2D" path="res://imported-assets/ds_lite_normal.png" id="7_4nau3"]
+[ext_resource type="Script" uid="uid://bht25i54lhrue" path="res://Scripts/Objects/system_models/nds_lite_model.gd" id="1_l1txu"]
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_0o7mw"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_s8ri4"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_sss83"]
+[ext_resource type="PackedScene" uid="uid://c52qptv555ig1" path="res://imported-assets/ds_lite.glb" id="4_uxbae"]
+[ext_resource type="Texture2D" uid="uid://dn7vecunnqrre" path="res://imported-assets/ds_lite_Plugs_Albedo.png" id="5_dy5q1"]
+[ext_resource type="Texture2D" uid="uid://4ug81lrvjpj6" path="res://imported-assets/ds_lite_orm.png" id="6_loftr"]
+[ext_resource type="Texture2D" uid="uid://bw0axba4ift17" path="res://imported-assets/ds_lite_normal.png" id="7_4nau3"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_2kkqg"]
 size = Vector2(0.062476054, 0.049789213)
@@ -16,7 +16,7 @@ size = Vector2(0.062476054, 0.049789213)
 albedo_color = Color(0.05, 0.05, 0.06, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_dn7pm"]
-size = Vector3(0.062476054, 0.024894606, 0.02)
+size = Vector3(0.15209961, 0.024894606, 0.02)
 
 [sub_resource type="Image" id="Image_v64ki"]
 data = {
@@ -1275,10 +1275,11 @@ engage_radius = 0.03436182960867882
 icon_offset = Vector3(0, 0.008, 0.045)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge" unique_id=1337195052]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02249951, 0.0019610748)
 shape = SubResource("BoxShape3D_dn7pm")
 
 [node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge" unique_id=702495624]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, 0.045)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04001064, 0.00051121786)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1
@@ -1348,112 +1349,69 @@ shape = SubResource("BoxShape3D_igt8m")
 [node name="Shell" parent="." unique_id=1411996069 instance=ExtResource("4_uxbae")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0007858798, -0.0057364297, 0.0035657957)
 
-[node name="Power" parent="Shell" index="0" unique_id=1761575249]
-transform = Transform3D(0.15984203, 0, 0, 0, 5.519181e-05, 0.15984201, 0, -0.15984201, 5.519181e-05, 0.07040401, 0.00363, -0.012666321)
-
-[node name="Power Light" parent="Shell" index="2" unique_id=187341032]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06218, 0.0158, -0.0383)
-
 [node name="A Button" parent="Shell" index="3" unique_id=1061988928]
 mesh = SubResource("ArrayMesh_4e34x")
-skeleton = NodePath("")
 
 [node name="Power Slider" parent="Shell" index="4" unique_id=137673567]
 mesh = SubResource("ArrayMesh_ivx5n")
-skeleton = NodePath("")
 
 [node name="Y Button" parent="Shell" index="5" unique_id=1393380238]
 mesh = SubResource("ArrayMesh_0m7wf")
-skeleton = NodePath("")
 
 [node name="Bottom" parent="Shell" index="6" unique_id=1152737997]
 mesh = SubResource("ArrayMesh_a3t8y")
-skeleton = NodePath("")
 
 [node name="Button Text" parent="Shell" index="7" unique_id=1850559882]
 mesh = SubResource("ArrayMesh_euuk3")
-skeleton = NodePath("")
-
-[node name="DS Lite Body" parent="Shell" index="8" unique_id=875331225]
-transform = Transform3D(0.35, 0, 0, 0, 0.35, 0, 0, 0, 0.35, 0, -0.0054, 0)
-
-[node name="cartslot" parent="Shell" index="9" unique_id=1795006802]
-transform = Transform3D(-1, -2.2128143e-07, -5.974315e-06, 5.9743156e-06, -3.4570694e-06, -1, 2.2126073e-07, -1, 3.3974648e-06, 0, 0.0029, -0.0029)
 
 [node name="screen_mesh Bottom" parent="Shell" index="10" unique_id=449115492]
 visible = false
 mesh = SubResource("ArrayMesh_nfuog")
-skeleton = NodePath("")
 
 [node name="screen_mesh Top" parent="Shell" index="11" unique_id=1727113553]
 visible = false
 mesh = SubResource("ArrayMesh_rd5jq")
-skeleton = NodePath("")
 
 [node name="Select" parent="Shell" index="12" unique_id=682408940]
 mesh = SubResource("ArrayMesh_v4bxs")
-skeleton = NodePath("")
-
-[node name="Open" parent="Shell" index="13" unique_id=569538834]
-transform = Transform3D(2.2888204e-07, 4.3869065e-07, -0.6400006, -0.6283609, -0.12150467, -3.080051e-07, -0.12150466, 0.62836105, 3.8725858e-07, -1.8797418e-05, 0.052322358, -0.09878743)
 
 [node name="Start" parent="Shell" index="14" unique_id=952642944]
 mesh = SubResource("ArrayMesh_63wn4")
-skeleton = NodePath("")
 
 [node name="backface" parent="Shell" index="15" unique_id=241657454]
 visible = false
 mesh = SubResource("ArrayMesh_asekj")
-skeleton = NodePath("")
 
 [node name="X Button" parent="Shell" index="16" unique_id=938813546]
 mesh = SubResource("ArrayMesh_34727")
-skeleton = NodePath("")
 
 [node name="lights off" parent="Shell" index="17" unique_id=2014705219]
 mesh = SubResource("ArrayMesh_oqtbx")
-skeleton = NodePath("")
 
 [node name="B Button" parent="Shell" index="18" unique_id=155154451]
 mesh = SubResource("ArrayMesh_c3exb")
-skeleton = NodePath("")
 
 [node name="RCA_White" parent="Shell" index="19" unique_id=191298812]
 visible = false
 mesh = SubResource("ArrayMesh_6rfre")
-skeleton = NodePath("")
 
 [node name="Dpad" parent="Shell" index="20" unique_id=557989347]
 mesh = SubResource("ArrayMesh_2c76h")
-skeleton = NodePath("")
 
 [node name="Volume Slider" parent="Shell" index="21" unique_id=346012186]
 mesh = SubResource("ArrayMesh_7bqny")
-skeleton = NodePath("")
-
-[node name="socket_media" parent="Shell" index="22" unique_id=1245338425]
-transform = Transform3D(-1, -2.2128143e-07, -5.974315e-06, 5.9743156e-06, -3.4570694e-06, -1, 2.2126073e-07, -1, 3.3974648e-06, 3.4298597e-09, 0.0029000535, 0.0126)
 
 [node name="lights on" parent="Shell" index="23" unique_id=156392601]
 visible = false
 mesh = SubResource("ArrayMesh_iox76")
-skeleton = NodePath("")
-
-[node name="Close" parent="Shell" index="24" unique_id=1747704396]
-transform = Transform3D(-5.3405813e-07, 3.719334e-07, -0.6400006, -0.25048533, -0.5889465, -1.3324218e-07, -0.58894646, 0.25048536, 6.3702345e-07, -1.8797386e-05, 0.050924886, -0.09643681)
-
-[node name="Cable Plug (B)" parent="Shell" index="25" unique_id=255173423]
-transform = Transform3D(-0.63468, 0, 4.5395845e-07, 0, 0.63468, 0, -4.5395845e-07, 0, -0.63468, -0.0394, 0.0029, -0.0719)
 
 [node name="Backface Bottom" parent="Shell" index="26" unique_id=777001199]
 visible = false
 mesh = SubResource("ArrayMesh_lkb2j")
-skeleton = NodePath("")
 
 [node name="Top" parent="Shell" index="27" unique_id=818499303]
 visible = false
 mesh = SubResource("ArrayMesh_gmoj7")
-skeleton = NodePath("")
 
 [node name="AnimationPlayer" parent="Shell" index="28" unique_id=1266168670]
 libraries/ = SubResource("AnimationLibrary_i40ch")

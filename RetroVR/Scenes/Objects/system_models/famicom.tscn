@@ -1,10 +1,10 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://cb7velxqw8u7t"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/famicom_model.gd" id="1_fammdl"]
-[ext_resource type="PackedScene" path="res://imported-assets/famicom.glb" id="2_famglb"]
-[ext_resource type="Texture2D" path="res://imported-assets/famicom_GAP_F_Dejaeghere_Quentin_C.png" id="3_t2ydw"]
-[ext_resource type="Texture2D" path="res://imported-assets/famicom_orm.png" id="4_lrpxs"]
-[ext_resource type="Texture2D" path="res://imported-assets/famicom_normal.png" id="5_r3co6"]
+[ext_resource type="Script" uid="uid://dmlp344l28bio" path="res://Scripts/Objects/system_models/famicom_model.gd" id="1_fammdl"]
+[ext_resource type="PackedScene" uid="uid://dw5f15jgutf37" path="res://imported-assets/famicom.glb" id="2_famglb"]
+[ext_resource type="Texture2D" uid="uid://cym2np4150660" path="res://imported-assets/famicom_GAP_F_Dejaeghere_Quentin_C.png" id="3_t2ydw"]
+[ext_resource type="Texture2D" uid="uid://c0du5236kr78w" path="res://imported-assets/famicom_orm.png" id="4_lrpxs"]
+[ext_resource type="Texture2D" uid="uid://dye14f0mta14r" path="res://imported-assets/famicom_normal.png" id="5_r3co6"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_55mlo"]
 resource_name = "lambert1"
@@ -1183,162 +1183,113 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.7055225e-08, 0.023799164, 
 
 [node name="prisemanette2_low" parent="Shell" index="0" unique_id=911415217]
 mesh = SubResource("ArrayMesh_36cgt")
-skeleton = NodePath("")
 
 [node name="pPlane5" parent="Shell" index="1" unique_id=1090231870]
 visible = false
 mesh = SubResource("ArrayMesh_2fy2l")
-skeleton = NodePath("")
 
 [node name="startselect1_low" parent="Shell" index="2" unique_id=1935555194]
 visible = false
 mesh = SubResource("ArrayMesh_ljntj")
-skeleton = NodePath("")
 
 [node name="pins_low" parent="Shell" index="3" unique_id=241601872]
 mesh = SubResource("ArrayMesh_epq7c")
-skeleton = NodePath("")
-
-[node name="socket_media" parent="Shell" index="5" unique_id=1438077320]
-transform = Transform3D(0.016579, 0, 0, 0, 0.016579, 0, 0, 0, 0.016579, 0, 0.0094, -0.0713)
 
 [node name="prisecourant_low1" parent="Shell" index="6" unique_id=1731777672]
 mesh = SubResource("ArrayMesh_8t3oa")
-skeleton = NodePath("")
 
 [node name="cross_low" parent="Shell" index="7" unique_id=616004470]
 visible = false
 mesh = SubResource("ArrayMesh_c3fcc")
-skeleton = NodePath("")
 
 [node name="pPlane3" parent="Shell" index="8" unique_id=1689646033]
 visible = false
 mesh = SubResource("ArrayMesh_m5gwg")
-skeleton = NodePath("")
 
 [node name="pPlane4" parent="Shell" index="9" unique_id=2066653791]
 visible = false
 mesh = SubResource("ArrayMesh_a2o2j")
-skeleton = NodePath("")
 
 [node name="ab_low" parent="Shell" index="10" unique_id=1312932961]
 visible = false
 mesh = SubResource("ArrayMesh_pqd6k")
-skeleton = NodePath("")
 
 [node name="manette1_low" parent="Shell" index="11" unique_id=1424517603]
 visible = false
 mesh = SubResource("ArrayMesh_bqsff")
-skeleton = NodePath("")
 
 [node name="coque_low" parent="Shell" index="12" unique_id=1361254698]
 mesh = SubResource("ArrayMesh_qnybu")
-skeleton = NodePath("")
 
 [node name="clapet_low" parent="Shell" index="13" unique_id=273062883]
 mesh = SubResource("ArrayMesh_ku8kt")
-skeleton = NodePath("")
 
 [node name="cross1_low" parent="Shell" index="14" unique_id=1385082376]
 visible = false
 mesh = SubResource("ArrayMesh_2eim1")
-skeleton = NodePath("")
-
-[node name="Power" parent="Shell" index="15" unique_id=700913801]
-transform = Transform3D(-0.05, 0, 5.8114523e-08, 0, 0.05, 0, -5.8114523e-08, 0, -0.05, -0.040400047, 0.025799999, 0.039749954)
 
 [node name="startselect_low" parent="Shell" index="16" unique_id=1956606049]
 visible = false
 mesh = SubResource("ArrayMesh_rn75g")
-skeleton = NodePath("")
 
 [node name="courant_low" parent="Shell" index="17" unique_id=1973123310]
 mesh = SubResource("ArrayMesh_rebdg")
-skeleton = NodePath("")
 
 [node name="cable_low" parent="Shell" index="18" unique_id=1729522721]
 visible = false
 mesh = SubResource("ArrayMesh_bx5j8")
-skeleton = NodePath("")
 
 [node name="power_low" parent="Shell" index="19" unique_id=2023651657]
 mesh = SubResource("ArrayMesh_vcuvi")
-skeleton = NodePath("")
 
 [node name="pPlane2" parent="Shell" index="20" unique_id=153011135]
 visible = false
 mesh = SubResource("ArrayMesh_x20uk")
-skeleton = NodePath("")
-
-[node name="finallow" parent="Shell" index="21" unique_id=1201344645]
-transform = Transform3D(-0.05, 0, 5.8114523e-08, 0, 0.05, 0, -5.8114523e-08, 0, -0.05, 0, 0, 0)
 
 [node name="bigscrew_low" parent="Shell" index="22" unique_id=601819554]
 visible = false
 mesh = SubResource("ArrayMesh_8saoj")
-skeleton = NodePath("")
-
-[node name="plug" parent="Shell" index="23" unique_id=791204191]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03114, -0.0068, -0.14816)
 
 [node name="screw1_low" parent="Shell" index="24" unique_id=181659990]
 visible = false
 mesh = SubResource("ArrayMesh_ixsbb")
-skeleton = NodePath("")
 
 [node name="prisemanetteavant_low" parent="Shell" index="25" unique_id=1490747100]
 mesh = SubResource("ArrayMesh_q38k3")
-skeleton = NodePath("")
 
 [node name="prisetv_low" parent="Shell" index="26" unique_id=2014357064]
 mesh = SubResource("ArrayMesh_tx4mj")
-skeleton = NodePath("")
 
 [node name="screw_low" parent="Shell" index="27" unique_id=1659777710]
 visible = false
 mesh = SubResource("ArrayMesh_psxnp")
-skeleton = NodePath("")
 
 [node name="eject_low" parent="Shell" index="28" unique_id=359822372]
 mesh = SubResource("ArrayMesh_2ctx0")
-skeleton = NodePath("")
 
 [node name="manette_low2" parent="Shell" index="29" unique_id=141160069]
 visible = false
 mesh = SubResource("ArrayMesh_37asn")
-skeleton = NodePath("")
 
 [node name="prisemanette1_low" parent="Shell" index="30" unique_id=9732419]
 mesh = SubResource("ArrayMesh_6kshl")
-skeleton = NodePath("")
 
 [node name="ab1_low" parent="Shell" index="31" unique_id=1264479089]
 visible = false
 mesh = SubResource("ArrayMesh_4qk8x")
-skeleton = NodePath("")
 
 [node name="buttonback_low" parent="Shell" index="32" unique_id=1280242401]
 mesh = SubResource("ArrayMesh_dooj0")
-skeleton = NodePath("")
-
-[node name="group1" parent="Shell" index="33" unique_id=1265788666]
-transform = Transform3D(-0.05, 0, 5.8114523e-08, 0, 0.05, 0, -5.8114523e-08, 0, -0.05, 0, 0, 0)
-
-[node name="socket_av" parent="Shell" index="34" unique_id=1652310560]
-transform = Transform3D(-1, 0, -5.6176054e-07, 0, 1, 0, 5.6176054e-07, 0, -1, -0.03114, -0.0068, -0.14816)
 
 [node name="pPlane1" parent="Shell" index="35" unique_id=1395202244]
 visible = false
 mesh = SubResource("ArrayMesh_5clx8")
-skeleton = NodePath("")
 
 [node name="prisemetal_low" parent="Shell" index="36" unique_id=1051956583]
 mesh = SubResource("ArrayMesh_lgna6")
-skeleton = NodePath("")
 
 [node name="reset_low" parent="Shell" index="37" unique_id=165666342]
 mesh = SubResource("ArrayMesh_nmnx8")
-skeleton = NodePath("")
 
 [node name="AnimationPlayer" parent="Shell" index="38" unique_id=2038465086]
 libraries/ = SubResource("AnimationLibrary_qjh47")
@@ -1353,11 +1304,11 @@ mesh = SubResource("BoxMesh_famseat")
 surface_material_override/0 = SubResource("StandardMaterial3D_famseat")
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=1438254507]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.7055225e-08, -0.20474832, 0.03416209)
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.059834234, 0.018580679, -0.113863274)
 gizmo_extents = 0.02
 
 [node name="PortSeat2" type="Marker3D" parent="." unique_id=546418607]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.7055225e-08, -0.20474832, 0.03416209)
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.06, 0.019, -0.114)
 gizmo_extents = 0.02
 
 [editable path="Shell"]

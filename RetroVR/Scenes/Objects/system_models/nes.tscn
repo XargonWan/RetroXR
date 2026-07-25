@@ -1,21 +1,21 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://ca3oiy6xt5o6i"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/nes_model.gd" id="1_6rxnb"]
-[ext_resource type="PackedScene" path="res://imported-assets/nes_system.glb" id="2_ft4k7"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_Serial right1.png" id="3_k44e7"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_Serial right2.png" id="4_qvoy8"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_labels.png" id="5_rveo4"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_orm.png" id="6_ewojy"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_orm_5.png" id="7_38vst"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_normal.png" id="8_7lvg0"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_Plugs_Albedo.png" id="9_vm314"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_orm_10.png" id="10_j56ur"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_normal_9.png" id="11_v0b25"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_nicko.png" id="12_2lktl"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_orm_7.png" id="13_isoxq"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_nummer.png" id="14_5pt15"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_Unbenannt.png" id="15_mm4ga"]
-[ext_resource type="Texture2D" path="res://imported-assets/nes_system_info1.png" id="16_kugdp"]
+[ext_resource type="Script" uid="uid://bkh0g0n8uh1lk" path="res://Scripts/Objects/system_models/nes_model.gd" id="1_6rxnb"]
+[ext_resource type="PackedScene" uid="uid://bmdi4quiuu6fj" path="res://imported-assets/nes_system.glb" id="2_ft4k7"]
+[ext_resource type="Texture2D" uid="uid://bimblppi14x4p" path="res://imported-assets/nes_system_Serial right1.png" id="3_k44e7"]
+[ext_resource type="Texture2D" uid="uid://b8kta7rmmtmfw" path="res://imported-assets/nes_system_Serial right2.png" id="4_qvoy8"]
+[ext_resource type="Texture2D" uid="uid://byacilug6j2p3" path="res://imported-assets/nes_system_labels.png" id="5_rveo4"]
+[ext_resource type="Texture2D" uid="uid://d2bwvnk2122s1" path="res://imported-assets/nes_system_orm.png" id="6_ewojy"]
+[ext_resource type="Texture2D" uid="uid://b4xmr6ojtp4d3" path="res://imported-assets/nes_system_orm_5.png" id="7_38vst"]
+[ext_resource type="Texture2D" uid="uid://bntyxvob2ppe7" path="res://imported-assets/nes_system_normal.png" id="8_7lvg0"]
+[ext_resource type="Texture2D" uid="uid://ca3dy86do1nqm" path="res://imported-assets/nes_system_Plugs_Albedo.png" id="9_vm314"]
+[ext_resource type="Texture2D" uid="uid://drpphcq62xg7d" path="res://imported-assets/nes_system_orm_10.png" id="10_j56ur"]
+[ext_resource type="Texture2D" uid="uid://db7fb8fne0tig" path="res://imported-assets/nes_system_normal_9.png" id="11_v0b25"]
+[ext_resource type="Texture2D" uid="uid://4fhravsx13ya" path="res://imported-assets/nes_system_nicko.png" id="12_2lktl"]
+[ext_resource type="Texture2D" uid="uid://fq420ajl6uva" path="res://imported-assets/nes_system_orm_7.png" id="13_isoxq"]
+[ext_resource type="Texture2D" uid="uid://cjafkmm70t6sh" path="res://imported-assets/nes_system_nummer.png" id="14_5pt15"]
+[ext_resource type="Texture2D" uid="uid://ds6xdnohusiic" path="res://imported-assets/nes_system_Unbenannt.png" id="15_mm4ga"]
+[ext_resource type="Texture2D" uid="uid://btvtd5rv5apk5" path="res://imported-assets/nes_system_info1.png" id="16_kugdp"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_iruwa"]
 resource_name = "Serial right1"
@@ -650,6 +650,65 @@ roughness_texture_channel = 1
 emission_enabled = true
 metadata/_gltf_primary_texture_coord = 0
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xsue8"]
+resource_name = "nicko"
+cull_mode = 2
+albedo_texture = ExtResource("12_2lktl")
+metallic = 1.0
+metallic_texture = ExtResource("13_isoxq")
+metallic_texture_channel = 2
+roughness_texture = ExtResource("13_isoxq")
+roughness_texture_channel = 1
+emission_enabled = true
+metadata/_gltf_primary_texture_coord = 0
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_hquqy"]
+_surfaces = [{
+"aabb": AABB(-0.08777806, 0.021077937, -0.09072961, 0.11130606, 0.015874622, 1e-05),
+"format": 34896613377,
+"index_count": 6,
+"index_data": PackedByteArray("AAABAAIAAwABAAAA"),
+"name": "nicko",
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 4,
+"vertex_data": PackedByteArray("/////wAAAAAAAAAAMAAAAAAA//8AAAAA//8AADAAAAA=")
+}]
+blend_shape_mode = 0
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_g0s14"]
+resource_name = "nes_system_Plane"
+_surfaces = [{
+"aabb": AABB(-0.08777806, 0.021077937, -0.09072961, 0.11130606, 0.015874622, 1e-05),
+"attribute_data": PackedByteArray("AIAyb////v///zJvAID//w=="),
+"format": 34896613399,
+"index_count": 6,
+"index_data": PackedByteArray("AAABAAIAAwABAAAA"),
+"material": SubResource("StandardMaterial3D_xsue8"),
+"name": "nicko",
+"primitive": 3,
+"uv_scale": Vector4(1.9999162, 0.31241596, 0, 0),
+"vertex_count": 4,
+"vertex_data": PackedByteArray("/////wAAAAAAAAAAMAAAAAAA//8AAAAA//8AADAAAAD/f/9//3//f/9//3//f/9/")
+}]
+blend_shape_mode = 0
+shadow_mesh = SubResource("ArrayMesh_hquqy")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_v463a"]
+resource_name = "nicko"
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
+cull_mode = 2
+albedo_texture = ExtResource("12_2lktl")
+metallic = 1.0
+metallic_texture = ExtResource("13_isoxq")
+metallic_texture_channel = 2
+roughness_texture = ExtResource("13_isoxq")
+roughness_texture_channel = 1
+emission_enabled = true
+metadata/_gltf_primary_texture_coord = 0
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gvuwf"]
 resource_name = "labels 1"
 cull_mode = 2
@@ -934,65 +993,6 @@ _surfaces = [{
 }]
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_l05ks")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xsue8"]
-resource_name = "nicko"
-cull_mode = 2
-albedo_texture = ExtResource("12_2lktl")
-metallic = 1.0
-metallic_texture = ExtResource("13_isoxq")
-metallic_texture_channel = 2
-roughness_texture = ExtResource("13_isoxq")
-roughness_texture_channel = 1
-emission_enabled = true
-metadata/_gltf_primary_texture_coord = 0
-
-[sub_resource type="ArrayMesh" id="ArrayMesh_hquqy"]
-_surfaces = [{
-"aabb": AABB(-0.08777806, 0.021077937, -0.09072961, 0.11130606, 0.015874622, 1e-05),
-"format": 34896613377,
-"index_count": 6,
-"index_data": PackedByteArray("AAABAAIAAwABAAAA"),
-"name": "nicko",
-"primitive": 3,
-"uv_scale": Vector4(0, 0, 0, 0),
-"vertex_count": 4,
-"vertex_data": PackedByteArray("/////wAAAAAAAAAAMAAAAAAA//8AAAAA//8AADAAAAA=")
-}]
-blend_shape_mode = 0
-
-[sub_resource type="ArrayMesh" id="ArrayMesh_g0s14"]
-resource_name = "nes_system_Plane"
-_surfaces = [{
-"aabb": AABB(-0.08777806, 0.021077937, -0.09072961, 0.11130606, 0.015874622, 1e-05),
-"attribute_data": PackedByteArray("AIAyb////v///zJvAID//w=="),
-"format": 34896613399,
-"index_count": 6,
-"index_data": PackedByteArray("AAABAAIAAwABAAAA"),
-"material": SubResource("StandardMaterial3D_xsue8"),
-"name": "nicko",
-"primitive": 3,
-"uv_scale": Vector4(1.9999162, 0.31241596, 0, 0),
-"vertex_count": 4,
-"vertex_data": PackedByteArray("/////wAAAAAAAAAAMAAAAAAA//8AAAAA//8AADAAAAD/f/9//3//f/9//3//f/9/")
-}]
-blend_shape_mode = 0
-shadow_mesh = SubResource("ArrayMesh_hquqy")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_v463a"]
-resource_name = "nicko"
-transparency = 2
-alpha_scissor_threshold = 0.5
-alpha_antialiasing_mode = 0
-cull_mode = 2
-albedo_texture = ExtResource("12_2lktl")
-metallic = 1.0
-metallic_texture = ExtResource("13_isoxq")
-metallic_texture_channel = 2
-roughness_texture = ExtResource("13_isoxq")
-roughness_texture_channel = 1
-emission_enabled = true
-metadata/_gltf_primary_texture_coord = 0
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_817up"]
 resource_name = "nummer"
@@ -1575,147 +1575,91 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00011532009, 0.045811404, 
 
 [node name="Plane_010" parent="Shell" index="0" unique_id=1036355414]
 mesh = SubResource("ArrayMesh_0eovb")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_iwf6c")
-
-[node name="Finger Button Power" parent="Shell" index="1" unique_id=1660735441]
-transform = Transform3D(0.024446001, 0, 0, 0, 0.014744196, 0, 0, 0, 0.0034329728, -0.072854266, -0.020647792, -0.08712086)
-
-[node name="Cable Plug Port1" parent="Shell" index="2" unique_id=1413522213]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06469, -0.01575, -0.06924)
-
-[node name="Cable Plug Power" parent="Shell" index="3" unique_id=1931758328]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.09861, -0.018420001, -0.30362)
-
-[node name="System Socket" parent="Shell" index="4" unique_id=1458213125]
-transform = Transform3D(-0.982761, -8.59157e-08, 0, 0, 0, 0.982761, -8.59157e-08, 0.982761, 0, -0.019753495, 0.027910413, -0.24464841)
 
 [node name="NesDeck" parent="Shell" index="5" unique_id=1178071962]
 mesh = SubResource("ArrayMesh_78cp3")
-skeleton = NodePath("")
 surface_material_override/2 = SubResource("StandardMaterial3D_3s4pc")
 
 [node name="Plane_011" parent="Shell" index="6" unique_id=904583003]
 mesh = SubResource("ArrayMesh_ncby2")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_7mavv")
 
 [node name="ButtonPower" parent="Shell" index="7" unique_id=33997418]
 mesh = SubResource("ArrayMesh_gqqge")
-skeleton = NodePath("")
-
-[node name="Cable Plug (YW)" parent="Shell" index="8" unique_id=276339095]
-transform = Transform3D(0, 0, 0.75528276, 0, -1.1321545, 0, 0.9017652, 0, 0, 0.16343316, -0.017159007, -0.23776908)
 
 [node name="Plane_006" parent="Shell" index="9" unique_id=705847942]
 mesh = SubResource("ArrayMesh_8bvqs")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_7vsst")
 
 [node name="Cables" parent="Shell" index="10" unique_id=2086014787]
 mesh = SubResource("ArrayMesh_m8tk4")
-skeleton = NodePath("")
 
 [node name="Plane_007" parent="Shell" index="11" unique_id=1306414546]
 mesh = SubResource("ArrayMesh_u6les")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_frc3q")
-
-[node name="Power Light lampe" parent="Shell" index="12" unique_id=377115074]
-transform = Transform3D(1, 0, 0, 0, -0.9999999, 0.0005253883, 0, -0.0005253883, -0.9999999, -0.09038453, -0.02122764, -0.08829113)
 
 [node name="Plane_004" parent="Shell" index="13" unique_id=1982466066]
 mesh = SubResource("ArrayMesh_t3dnj")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_0qr2d")
-
-[node name="Finger Button (Slider) Open Deckel" parent="Shell" index="14" unique_id=1466960002]
-transform = Transform3D(0.030519102, 0, 0, 0, 0.010350598, 0, 0, 0, 0.0071141985, -0.0303, 0.009705068, -0.091000006)
 
 [node name="Plane_005" parent="Shell" index="15" unique_id=1604399477]
 mesh = SubResource("ArrayMesh_37iu0")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_jjask")
 
-[node name="Plugs" parent="Shell" index="16" unique_id=352578367]
-transform = Transform3D(0, 0, 0.75528276, 0, -1.1321545, 0, 0.9017652, 0, 0, 0.16343316, -0.017159007, -0.23776908)
-
-[node name="Plane_001" parent="Shell" index="17" unique_id=1568641754]
-mesh = SubResource("ArrayMesh_y2if7")
-skeleton = NodePath("")
-surface_material_override/0 = SubResource("StandardMaterial3D_5sok1")
-
-[node name="RCA_Yellow" parent="Shell" index="18" unique_id=1672741478]
-mesh = SubResource("ArrayMesh_yefj8")
-skeleton = NodePath("")
-
-[node name="GameObject" parent="Shell" index="19" unique_id=1869845936]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020736275, 0.017100042, -0.044165168)
-
-[node name="DC_Connector" parent="Shell" index="20" unique_id=1656984591]
-visible = false
-mesh = SubResource("ArrayMesh_vkpme")
-skeleton = NodePath("")
-
-[node name="ButtonReset" parent="Shell" index="21" unique_id=1117365248]
-mesh = SubResource("ArrayMesh_3ejyv")
-skeleton = NodePath("")
-
-[node name="NES System" parent="Shell" index="22" unique_id=1851548433]
-transform = Transform3D(0.982761, 0, 0, 0, 0.982761, 0, 0, 0, 0.982761, 0, 0, -0.1904)
-
-[node name="Plane_003" parent="Shell" index="23" unique_id=1087463375]
-mesh = SubResource("ArrayMesh_6f1wg")
-skeleton = NodePath("")
-surface_material_override/0 = SubResource("StandardMaterial3D_ad4cp")
-
-[node name="NesLid" parent="Shell" index="24" unique_id=2132558469]
-mesh = SubResource("ArrayMesh_1ux1e")
-skeleton = NodePath("")
-
-[node name="Plane" parent="Shell/NesLid" index="0" unique_id=537951962]
+[node name="Plane" parent="Shell" index="16" unique_id=537951962]
 mesh = SubResource("ArrayMesh_g0s14")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_v463a")
 
-[node name="Plane_009" parent="Shell" index="25" unique_id=686591543]
+[node name="Plane_001" parent="Shell" index="18" unique_id=1568641754]
+mesh = SubResource("ArrayMesh_y2if7")
+surface_material_override/0 = SubResource("StandardMaterial3D_5sok1")
+
+[node name="RCA_Yellow" parent="Shell" index="19" unique_id=1672741478]
+mesh = SubResource("ArrayMesh_yefj8")
+
+[node name="DC_Connector" parent="Shell" index="21" unique_id=1656984591]
+visible = false
+mesh = SubResource("ArrayMesh_vkpme")
+
+[node name="ButtonReset" parent="Shell" index="22" unique_id=1117365248]
+mesh = SubResource("ArrayMesh_3ejyv")
+
+[node name="Plane_003" parent="Shell" index="24" unique_id=1087463375]
+mesh = SubResource("ArrayMesh_6f1wg")
+surface_material_override/0 = SubResource("StandardMaterial3D_ad4cp")
+
+[node name="NesLid" parent="Shell" index="25" unique_id=2132558469]
+mesh = SubResource("ArrayMesh_1ux1e")
+
+[node name="Plane_009" parent="Shell" index="26" unique_id=686591543]
 mesh = SubResource("ArrayMesh_03a8v")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_7rvg7")
 
-[node name="NesCradle" parent="Shell" index="26" unique_id=1391157328]
+[node name="NesCradle" parent="Shell" index="27" unique_id=1391157328]
 mesh = SubResource("ArrayMesh_r8rde")
-skeleton = NodePath("")
 
-[node name="Plane_002" parent="Shell" index="27" unique_id=996342390]
+[node name="Plane_002" parent="Shell" index="28" unique_id=996342390]
 mesh = SubResource("ArrayMesh_ulvex")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_57nn8")
 
-[node name="PowerLight" parent="Shell" index="28" unique_id=2078047367]
+[node name="PowerLight" parent="Shell" index="29" unique_id=2078047367]
 mesh = SubResource("ArrayMesh_go1us")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_6nf5v")
 surface_material_override/1 = SubResource("StandardMaterial3D_xfm30")
 
-[node name="Finger Button Reset" parent="Shell" index="29" unique_id=650777368]
-transform = Transform3D(0.026754, 0, 0, 0, 0.013191797, 0, 0, 0, 0.004963476, -0.042438917, -0.02064812, -0.08842001)
-
-[node name="RCA_White" parent="Shell" index="30" unique_id=877644154]
+[node name="RCA_White" parent="Shell" index="31" unique_id=877644154]
 mesh = SubResource("ArrayMesh_syepu")
-skeleton = NodePath("")
 
-[node name="Plane_008" parent="Shell" index="31" unique_id=1753215735]
+[node name="Plane_008" parent="Shell" index="32" unique_id=1753215735]
 mesh = SubResource("ArrayMesh_rjt8b")
-skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_s5eqw")
 
-[node name="NesPlug" parent="Shell" index="32" unique_id=197136658]
+[node name="NesPlug" parent="Shell" index="33" unique_id=197136658]
 visible = false
 mesh = SubResource("ArrayMesh_1jsi6")
-skeleton = NodePath("")
 
-[node name="AnimationPlayer" parent="Shell" index="33" unique_id=1532546733]
+[node name="AnimationPlayer" parent="Shell" index="34" unique_id=1532546733]
 active = false
 libraries/ = SubResource("AnimationLibrary_lbb32")
 
@@ -1729,11 +1673,11 @@ mesh = SubResource("BoxMesh_kdclc")
 surface_material_override/0 = SubResource("StandardMaterial3D_653wc")
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=27750797]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0645, -0.058526386, 0.0975)
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0645, 0.028445192, 0.0975)
 gizmo_extents = 0.02
 
 [node name="PortSeat2" type="Marker3D" parent="." unique_id=313567530]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0824, -0.058526386, 0.0975)
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0824, 0.028123055, 0.0975)
 gizmo_extents = 0.02
 
 [editable path="Shell"]

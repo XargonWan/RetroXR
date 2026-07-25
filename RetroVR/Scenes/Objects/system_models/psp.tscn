@@ -1,15 +1,15 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://pde10amlgs0b"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_6e2pq"]
-[ext_resource type="Texture2D" path="res://imported-assets/psp_1000_psp_1.png" id="4_qmcsd"]
-[ext_resource type="Texture2D" path="res://imported-assets/psp_1000_normal.png" id="5_0tid2"]
-[ext_resource type="Texture2D" path="res://imported-assets/psp_1000_psp_1_screen.png" id="6_qjy2c"]
-[ext_resource type="Texture2D" path="res://imported-assets/psp_1000_LBUttons.png" id="7_xgjj8"]
-[ext_resource type="Texture2D" path="res://imported-assets/psp_1000_orm.png" id="8_xwq76"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="9_qmcsd"]
-[ext_resource type="Texture2D" path="res://imported-assets/psp_1000_grüüüüüüüüüü.png" id="9_vbvja"]
-[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="10_0tid2"]
+[ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="2_6e2pq"]
+[ext_resource type="Texture2D" uid="uid://bfpl0jslsog8g" path="res://imported-assets/psp_1000_psp_1.png" id="4_qmcsd"]
+[ext_resource type="Texture2D" uid="uid://ci4t65wioxaas" path="res://imported-assets/psp_1000_normal.png" id="5_0tid2"]
+[ext_resource type="Texture2D" uid="uid://b81hadhhxbh8g" path="res://imported-assets/psp_1000_psp_1_screen.png" id="6_qjy2c"]
+[ext_resource type="Texture2D" uid="uid://qsk4kjhm7d2d" path="res://imported-assets/psp_1000_LBUttons.png" id="7_xgjj8"]
+[ext_resource type="Texture2D" uid="uid://bpx8l3bsvl3ol" path="res://imported-assets/psp_1000_orm.png" id="8_xwq76"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="9_qmcsd"]
+[ext_resource type="Texture2D" uid="uid://bhyewi4p624eb" path="res://imported-assets/psp_1000_grüüüüüüüüüü.png" id="9_vbvja"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="10_0tid2"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_6vy4r"]
 size = Vector2(0.083904006, 0.047486406)
@@ -1948,7 +1948,7 @@ engage_radius = 0.03
 icon_offset = Vector3(0, -0.035, 0)
 
 [node name="HingeHint" type="Label3D" parent="UMDDoorPivot/UMDDoorHinge" unique_id=467265124]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.035, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.5956556e-09, -0.00086051784, 0.04367796)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1

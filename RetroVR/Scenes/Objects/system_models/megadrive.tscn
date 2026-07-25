@@ -1,12 +1,12 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://lfiab5mok50u"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/megadrive_model.gd" id="1_mdl"]
-[ext_resource type="PackedScene" path="res://imported-assets/sega_megadrive.glb" id="2_glb"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_megadrive_megadrive_console_color.png" id="3_igv5i"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_megadrive_normal.png" id="4_sl455"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_megadrive_Plugs_Albedo.png" id="5_p158k"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_megadrive_orm.png" id="6_ltfsd"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_megadrive_normal_3.png" id="7_jv1bj"]
+[ext_resource type="Script" uid="uid://b4b8xhgi7qyr6" path="res://Scripts/Objects/system_models/megadrive_model.gd" id="1_mdl"]
+[ext_resource type="PackedScene" uid="uid://cj57mg2pl5c8n" path="res://imported-assets/sega_megadrive.glb" id="2_glb"]
+[ext_resource type="Texture2D" uid="uid://dpwcdjtiui65j" path="res://imported-assets/sega_megadrive_megadrive_console_color.png" id="3_igv5i"]
+[ext_resource type="Texture2D" uid="uid://qnk5ldl1m5fi" path="res://imported-assets/sega_megadrive_normal.png" id="4_sl455"]
+[ext_resource type="Texture2D" uid="uid://bqr4ovf12mv77" path="res://imported-assets/sega_megadrive_Plugs_Albedo.png" id="5_p158k"]
+[ext_resource type="Texture2D" uid="uid://yoaa15djstrm" path="res://imported-assets/sega_megadrive_orm.png" id="6_ltfsd"]
+[ext_resource type="Texture2D" uid="uid://bpi5cvde7oht" path="res://imported-assets/sega_megadrive_normal_3.png" id="7_jv1bj"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d0yel"]
 resource_name = "megadrive_console_color"
@@ -544,61 +544,40 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0023746341, -0.00025056486
 
 [node name="console_text" parent="Shell" index="0" unique_id=1431286089]
 mesh = SubResource("ArrayMesh_7ryw5")
-skeleton = NodePath("")
-
-[node name="Cable Plug (S)" parent="Shell" index="1" unique_id=1522873977]
-transform = Transform3D(1.11895, -1.6080144e-12, 6.6027683e-06, 3.735399e-11, -1.11895, -6.602766e-06, 6.6027683e-06, 6.602766e-06, -1.11895, -0.08960026, 0.0226, -0.1494)
-
-[node name="PowerLight" parent="Shell" index="2" unique_id=1460964692]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0332, 0.05416, 0.06155)
-
-[node name="socket_media" parent="Shell" index="3" unique_id=1807647366]
-transform = Transform3D(1, 0, 0, 0, 1, 2.9206276e-06, 0, -2.9206276e-06, 1, 0.036053713, 0.0251, -0.039)
 
 [node name="megadrive_console" parent="Shell" index="4" unique_id=1731534245]
 mesh = SubResource("ArrayMesh_bfn6v")
-skeleton = NodePath("")
 
 [node name="power" parent="Shell" index="5" unique_id=355919764]
 mesh = SubResource("ArrayMesh_fofhg")
-skeleton = NodePath("")
 
 [node name="volume_slide" parent="Shell" index="6" unique_id=995083438]
 mesh = SubResource("ArrayMesh_rshsk")
-skeleton = NodePath("")
 
 [node name="reset" parent="Shell" index="7" unique_id=172317797]
 mesh = SubResource("ArrayMesh_sjjiw")
-skeleton = NodePath("")
 
 [node name="cart_cover01" parent="Shell" index="8" unique_id=1756863116]
 mesh = SubResource("ArrayMesh_qreos")
-skeleton = NodePath("")
 
 [node name="RCA_Silver" parent="Shell" index="9" unique_id=1925431876]
 mesh = SubResource("ArrayMesh_b28uo")
-skeleton = NodePath("")
 
 [node name="expansion_cover" parent="Shell" index="11" unique_id=1532916932]
 mesh = SubResource("ArrayMesh_k4mxk")
-skeleton = NodePath("")
 
 [node name="console_screws" parent="Shell" index="12" unique_id=109312443]
 mesh = SubResource("ArrayMesh_wvo3g")
-skeleton = NodePath("")
 
 [node name="cart_cover02" parent="Shell" index="13" unique_id=1553908824]
 mesh = SubResource("ArrayMesh_qmfm1")
-skeleton = NodePath("")
 
 [node name="Finger Button (Slider)" parent="Shell" index="14" unique_id=749053867]
 visible = false
 mesh = SubResource("ArrayMesh_0aux2")
-skeleton = NodePath("")
 
 [node name="vent_black" parent="Shell" index="15" unique_id=828742930]
 mesh = SubResource("ArrayMesh_wl3wa")
-skeleton = NodePath("")
 
 [node name="AnimationPlayer" parent="Shell" index="16" unique_id=324050217]
 libraries/ = SubResource("AnimationLibrary_nc401")
@@ -613,11 +592,11 @@ mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=1855628937]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0539, -0.21294749, 0.1077)
+transform = Transform3D(-1, 1.509958e-07, 0, -1.509958e-07, -1, 0, 0, 0, 1, 0.0539, 0.01654779, 0.1077)
 gizmo_extents = 0.02
 
 [node name="PortSeat2" type="Marker3D" parent="." unique_id=1861703914]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0849, -0.21294749, 0.1077)
+transform = Transform3D(-1, 1.509958e-07, 0, -1.509958e-07, -1, 0, 0, 0, 1, 0.085, 0.017, 0.108)
 gizmo_extents = 0.02
 
 [editable path="Shell"]

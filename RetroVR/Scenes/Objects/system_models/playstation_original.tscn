@@ -1,9 +1,9 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://0g8otlfo2ms5"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/playstation_original_model.gd" id="1_psxorig"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="2_hinge"]
-[ext_resource type="PackedScene" path="res://imported-assets/playstation_original.glb" id="3_psxglb"]
-[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="4_4kpbq"]
+[ext_resource type="Script" uid="uid://csjoqg2kwibqd" path="res://Scripts/Objects/system_models/playstation_original_model.gd" id="1_psxorig"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="2_hinge"]
+[ext_resource type="PackedScene" uid="uid://ou7uxghjra5n" path="res://imported-assets/playstation_original.glb" id="3_psxglb"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="4_4kpbq"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_discseat"]
 top_radius = 0.06
@@ -826,7 +826,7 @@ base_font = SubResource("FontFile_ewjjs")
 script = ExtResource("1_psxorig")
 metadata/shell_prebaked = true
 
-[node name="Shell" type="Node3D" parent="." unique_id=1724562541 instance=ExtResource("3_psxglb")]
+[node name="Shell" parent="." unique_id=1724562541 instance=ExtResource("3_psxglb")]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.959, 0, -1.30585)
 
 [node name="DiscSeat" type="Marker3D" parent="Shell" unique_id=1691797373]
@@ -880,21 +880,13 @@ font_size = 96
 outline_size = 18
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=2111987776]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, -0.031977654, -0.20817465, 0.09014994)
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, -0.031977654, 0.020557165, 0.09014994)
 gizmo_extents = 0.02
 
 [node name="PortSeat2" type="Marker3D" parent="." unique_id=546513991]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.031977654, -0.20817465, 0.09014994)
-gizmo_extents = 0.02
-
-[node name="PortSeat3" type="Marker3D" parent="." unique_id=19085426]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, -0.22854748, 0.125)
-gizmo_extents = 0.02
-
-[node name="PortSeat4" type="Marker3D" parent="." unique_id=1556670022]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09, -0.22854748, 0.125)
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.031977654, 0.020852253, 0.09014994)
 gizmo_extents = 0.02
 
 [node name="MemCardSeat" type="Marker3D" parent="." unique_id=1237839879]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.031977654, -0.19517463, 0.07464994)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.031977654, 0.030231237, 0.08923922)
 gizmo_extents = 0.03

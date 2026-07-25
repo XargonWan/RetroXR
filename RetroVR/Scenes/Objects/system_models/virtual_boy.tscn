@@ -1,9 +1,9 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://b60vmy0wyh0ve"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
-[ext_resource type="Shader" path="res://Shaders/vb_stereo.gdshader" id="2_rbfnt"]
-[ext_resource type="PackedScene" path="res://imported-assets/virtual_boy.glb" id="3_n6osu"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
+[ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
+[ext_resource type="Shader" uid="uid://bwfu7ewask6e" path="res://Shaders/vb_stereo.gdshader" id="2_rbfnt"]
+[ext_resource type="PackedScene" uid="uid://dmdm5hld5kp52" path="res://imported-assets/virtual_boy.glb" id="3_n6osu"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_x7yte"]
 size = Vector2(0.132, 0.077)
@@ -11,7 +11,7 @@ size = Vector2(0.132, 0.077)
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_bossr"]
 render_priority = 0
 shader = ExtResource("2_rbfnt")
-shader_parameter/powered = null
+shader_parameter/powered = 0.0
 
 [sub_resource type="QuadMesh" id="QuadMesh_77fbx"]
 size = Vector2(0.01, 0.01)
@@ -55,7 +55,7 @@ value = 0.8
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=387028959]
 shape = SubResource("BoxShape3D_vbvol")
 
-[node name="Shell" type="Node3D" parent="." unique_id=1613796220 instance=ExtResource("3_n6osu")]
+[node name="Shell" parent="." unique_id=1613796220 instance=ExtResource("3_n6osu")]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.00040184706, 0.047593586, -0.01872674)
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=560108936]
@@ -68,5 +68,5 @@ mesh = SubResource("BoxMesh_rbfnt")
 surface_material_override/0 = SubResource("StandardMaterial3D_bossr")
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=898907830]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0.082, -0.22254749, -0.0334)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0.082, 0.028491065, -0.035469845)
 gizmo_extents = 0.02

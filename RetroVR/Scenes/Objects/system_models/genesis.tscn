@@ -1,14 +1,14 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://boyddq5fcqo24"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/genesis_model.gd" id="1_mdl"]
-[ext_resource type="PackedScene" path="res://imported-assets/sega_genesis.glb" id="2_glb"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_megadrive_console_color.png" id="3_aeksl"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_normal.png" id="4_3ubkd"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_genesis_console_color.png" id="5_vjq2q"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_genesis-MD_console_Emission.png" id="6_6j4fr"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_Plugs_Albedo.png" id="7_a0ai4"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_orm.png" id="8_shyd8"]
-[ext_resource type="Texture2D" path="res://imported-assets/sega_genesis_normal_5.png" id="9_l7yvc"]
+[ext_resource type="Script" uid="uid://rtoq74py0ha8" path="res://Scripts/Objects/system_models/genesis_model.gd" id="1_mdl"]
+[ext_resource type="PackedScene" uid="uid://ji8fa8d7udcj" path="res://imported-assets/sega_genesis.glb" id="2_glb"]
+[ext_resource type="Texture2D" uid="uid://bdv6umtrtog4e" path="res://imported-assets/sega_genesis_megadrive_console_color.png" id="3_aeksl"]
+[ext_resource type="Texture2D" uid="uid://bs0dbn7xac326" path="res://imported-assets/sega_genesis_normal.png" id="4_3ubkd"]
+[ext_resource type="Texture2D" uid="uid://bqafpbtxruoc2" path="res://imported-assets/sega_genesis_genesis_console_color.png" id="5_vjq2q"]
+[ext_resource type="Texture2D" uid="uid://3ha2lgl07rmg" path="res://imported-assets/sega_genesis_genesis-MD_console_Emission.png" id="6_6j4fr"]
+[ext_resource type="Texture2D" uid="uid://bc5mcdvgjvctj" path="res://imported-assets/sega_genesis_Plugs_Albedo.png" id="7_a0ai4"]
+[ext_resource type="Texture2D" uid="uid://gfg6j3noffdg" path="res://imported-assets/sega_genesis_orm.png" id="8_shyd8"]
+[ext_resource type="Texture2D" uid="uid://dhvn0c0ei37s5" path="res://imported-assets/sega_genesis_normal_5.png" id="9_l7yvc"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_26ica"]
 resource_name = "megadrive_console_color"
@@ -630,70 +630,45 @@ script = ExtResource("1_mdl")
 [node name="Shell" parent="." unique_id=755427804 instance=ExtResource("2_glb")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0023746341, -0.00025056486, -0.001871869)
 
-[node name="PowerLight" parent="Shell" index="0" unique_id=138602053]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0332, 0.05416, 0.06155)
-
-[node name="socket_media" parent="Shell" index="1" unique_id=2064094568]
-transform = Transform3D(1, 0, 0, 0, 1, 2.9206276e-06, 0, -2.9206276e-06, 1, 0.036053713, 0.0251, -0.039)
-
 [node name="cart_cover01" parent="Shell" index="2" unique_id=1243604584]
 mesh = SubResource("ArrayMesh_oojf7")
-skeleton = NodePath("")
 
 [node name="vent_black" parent="Shell" index="3" unique_id=587554276]
 mesh = SubResource("ArrayMesh_dwdiv")
-skeleton = NodePath("")
 
 [node name="expansion_cover" parent="Shell" index="5" unique_id=1723191873]
 mesh = SubResource("ArrayMesh_1q57t")
-skeleton = NodePath("")
 
 [node name="console_screws" parent="Shell" index="6" unique_id=876661107]
 mesh = SubResource("ArrayMesh_ufev1")
-skeleton = NodePath("")
-
-[node name="socket_av" parent="Shell" index="7" unique_id=1571198435]
-transform = Transform3D(-1, 0, 1.1622905e-06, 0, 1, 0, -1.1622905e-06, 0, -1, -0.0896, 0.0227, -0.1015)
-
-[node name="Cable Plug (S)" parent="Shell" index="8" unique_id=249425519]
-transform = Transform3D(1.1189525, -1.6080181e-12, 6.602783e-06, 3.7354075e-11, -1.1189525, -6.602781e-06, 6.602783e-06, 6.602781e-06, -1.1189525, -0.08960026, 0.0226, -0.1494)
 
 [node name="Finger Button (Slider)" parent="Shell" index="9" unique_id=1489080129]
 visible = false
 mesh = SubResource("ArrayMesh_kds57")
-skeleton = NodePath("")
 
 [node name="cart_cover02" parent="Shell" index="10" unique_id=1413031571]
 mesh = SubResource("ArrayMesh_enj8q")
-skeleton = NodePath("")
 
 [node name="megadrive_console" parent="Shell" index="11" unique_id=148998946]
 mesh = SubResource("ArrayMesh_e8bjc")
-skeleton = NodePath("")
 
 [node name="power" parent="Shell" index="12" unique_id=58741432]
 mesh = SubResource("ArrayMesh_e1xfa")
-skeleton = NodePath("")
 
 [node name="console_text" parent="Shell" index="13" unique_id=1491198395]
 mesh = SubResource("ArrayMesh_tww65")
-skeleton = NodePath("")
 
 [node name="megadrive_console (1)" parent="Shell" index="14" unique_id=1788385553]
 mesh = SubResource("ArrayMesh_n5ask")
-skeleton = NodePath("")
 
 [node name="volume_slide" parent="Shell" index="15" unique_id=1670624840]
 mesh = SubResource("ArrayMesh_eq15o")
-skeleton = NodePath("")
 
 [node name="reset" parent="Shell" index="16" unique_id=1665568410]
 mesh = SubResource("ArrayMesh_pjhh6")
-skeleton = NodePath("")
 
 [node name="RCA_Silver" parent="Shell" index="17" unique_id=1579731854]
 mesh = SubResource("ArrayMesh_hywlh")
-skeleton = NodePath("")
 
 [node name="AnimationPlayer" parent="Shell" index="18" unique_id=1650337001]
 libraries/ = SubResource("AnimationLibrary_lov64")
@@ -708,11 +683,11 @@ mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
 
 [node name="PortSeat1" type="Marker3D" parent="." unique_id=356144940]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0539, -0.21294749, 0.1077)
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0539, 0.01654779, 0.1077)
 gizmo_extents = 0.02
 
 [node name="PortSeat2" type="Marker3D" parent="." unique_id=1499523670]
-transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.0849, -0.21294749, 0.1077)
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.085, 0.017, 0.108)
 gizmo_extents = 0.02
 
 [editable path="Shell"]

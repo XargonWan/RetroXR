@@ -1,9 +1,9 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://bxj38flgyab1e"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/playstation_one_model.gd" id="1_psone"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="2_hinge"]
-[ext_resource type="PackedScene" path="res://imported-assets/playstation_one.glb" id="3_psoneglb"]
-[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="4_7x0jt"]
+[ext_resource type="Script" uid="uid://bln7q1cifl2tc" path="res://Scripts/Objects/system_models/playstation_one_model.gd" id="1_psone"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="2_hinge"]
+[ext_resource type="PackedScene" uid="uid://btutsuwtqxmsk" path="res://imported-assets/playstation_one.glb" id="3_psoneglb"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="4_7x0jt"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_discseat"]
 top_radius = 0.06
@@ -37,6 +37,9 @@ data = PackedByteArray("d09GMgABAAAAAPpkABEAAAACT2gAAPoBAAEAAAAAAAAAAAAAAAAAAAAA
 font_name = "Open Sans SemiBold"
 style_name = "SemiBold"
 font_weight = 600
+subpixel_positioning = 0
+msdf_pixel_range = 14
+msdf_size = 128
 cache/0/variation_coordinates = {}
 cache/0/face_index = 0
 cache/0/embolden = 0.0
@@ -57,7 +60,7 @@ fallbacks = Array[Font]([ExtResource("4_7x0jt")])
 base_font = SubResource("FontFile_7x0jt")
 
 [sub_resource type="BoxMesh" id="BoxMesh_bhc18"]
-size = Vector3(0.055, 0.017, 0.075)
+size = Vector3(0.041, 0.006, 0.057)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kmgx6"]
 transparency = 1
@@ -69,7 +72,7 @@ emission_energy_multiplier = 0.4
 [node name="PlaystationOne" type="Node3D" unique_id=1919100000]
 script = ExtResource("1_psone")
 
-[node name="Shell" type="Node3D" parent="." unique_id=1954873455 instance=ExtResource("3_psoneglb")]
+[node name="Shell" parent="." unique_id=1954873455 instance=ExtResource("3_psoneglb")]
 
 [node name="DiscSeat" type="Marker3D" parent="Shell" unique_id=1835434588]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.000259, 0.030181, 0.014)
@@ -130,7 +133,7 @@ transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0.03
 gizmo_extents = 0.02
 
 [node name="MemCardSeat" type="Marker3D" parent="." unique_id=1510426477]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03363197, 0.017573599, 0.06742744)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03363197, 0.017573599, 0.08479775)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="MemCardSeat" unique_id=1072114468]
