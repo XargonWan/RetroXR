@@ -171,49 +171,52 @@ func _set_power_mesh(v: float) -> void:
 
 # --- UMD door + eject -------------------------------------------------------
 
-## The UMD lives behind a hinged door on the back. EJECT pops the door open; it
-## is a real mesh ("PSP UMD Deckel22") on a pivot empty ("PSP UMD Deckel").
-var _umd_door: MeshInstance3D = null
-var _umd_door_rest := Transform3D.IDENTITY
-var _umd_hinge := Vector3.ZERO
-var _umd_axis := Vector3.RIGHT
+## The UMD lives behind a hinged door on the back — a real mesh ("PSP UMD
+## Deckel22"; "Deckel" is German for "lid/cover", same shell as the German-named
+## AVKabel/PowerKabel cable meshes) on a real back-edge hinge. Mounted as a
+## VRSpringLatchedHinge (VRSpringLatchedHinge.mount, same rig as the disc
+## consoles' lids — Dreamcast/PS2/Saturn) rather than trusting the GLB's own
+## door animation/pivot empty ("PSP UMD Deckel"), which (like those consoles'
+## broken Close clips) doesn't drive the mesh correctly. This gives the door a
+## real spring: EJECT pops it open, and it can be grabbed and pushed shut by
+## hand — it only latches when released near the closed limit.
 const _UMD_OPEN_DEG := 62.0
+var _umd_door: MeshInstance3D = null
+var _umd_hinge: VRSpringLatchedHinge = null
 
 
 func _configure_umd_door() -> void:
 	_umd_door = find_child("PSP UMD Deckel22", true, false) as MeshInstance3D
 	if _umd_door == null:
 		return
-	_umd_door_rest = _umd_door.transform
-	# Hinge = the door's back edge; axis = across the console (the face's "right").
-	var ab: AABB = _umd_door.get_aabb()
-	var back := Vector3(ab.get_center().x, ab.get_center().y, ab.position.z)
-	_umd_hinge = _umd_door.transform * back
-	_umd_axis = Vector3.UP.cross(_press_dir).normalized()
-	if _umd_axis.length() < 0.5:
-		_umd_axis = Vector3.RIGHT
+	_umd_hinge = VRSpringLatchedHinge.mount(self, _umd_door, _UMD_OPEN_DEG)
+	if _umd_hinge != null:
+		_umd_hinge.rotation_changed.connect(_on_umd_door_swung)
+
+
+func has_spring_latched_lid() -> bool:
+	return _umd_hinge != null
 
 
 ## OPEN/CLOSE come through here on a tray-loader system (RetroSystem calls
-## play_open/play_close when the eject latch toggles). Swing the UMD door.
+## play_open/play_close when the eject latch toggles).
 func play_open() -> void:
-	set_umd_door_open(true)
+	if _umd_hinge != null:
+		_umd_hinge.open()
 
 
 func play_close() -> void:
-	set_umd_door_open(false)
+	if _umd_hinge != null:
+		_umd_hinge.latch_closed()
 
 
-## Tween the UMD door to the open or closed pose.
-func set_umd_door_open(open: bool) -> void:
-	if _umd_door == null:
-		return
-	var r := Basis(_umd_axis, deg_to_rad(_UMD_OPEN_DEG if open else 0.0))
-	var about := Transform3D(r, _umd_hinge - r * _umd_hinge)
-	var target := about * _umd_door_rest
-	var tw := _umd_door.create_tween()
-	tw.tween_property(_umd_door, "transform", target, 0.28) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+## The hand pushed the door home (or the wheel/laser did, on desktop) — tell
+## the host so it marks the UMD tray closed, same as the disc consoles.
+func _on_umd_door_swung(_deg: float) -> void:
+	if _umd_hinge != null and _umd_hinge.is_latched_closed():
+		var host := get_parent()
+		if host != null and host.has_method("request_tray_state"):
+			host.request_tray_state(false)
 
 
 func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, eject_btn: VRButton) -> void:
