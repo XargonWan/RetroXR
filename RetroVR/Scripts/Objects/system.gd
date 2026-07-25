@@ -93,6 +93,9 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	"mega_drive:megadrive": "res://Scenes/Objects/system_models/megadrive.tscn",
 	# PS2 Slim silver badge: its own shell GLB, shares ps2_model wiring.
 	"playstation2:silver": "res://Scenes/Objects/system_models/ps2_silver.tscn",
+	# GBA SP: clamshell revision of the GBA — its own model class (the fold
+	# hinge), own shell GLB.
+	"game_boy_advance:sp": "res://Scenes/Objects/system_models/game_boy_advance_sp.tscn",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".

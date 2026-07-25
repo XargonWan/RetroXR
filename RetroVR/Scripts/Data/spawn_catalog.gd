@@ -64,6 +64,10 @@ const _CATALOG: Dictionary = {
 		{"kind": "system", "label": "Nintendo DS", "variant": ""},
 		{"kind": "system", "label": "DS Lite",     "variant": "lite"},
 	],
+	"game_boy_advance": [
+		{"kind": "system", "label": "Game Boy Advance",    "variant": ""},
+		{"kind": "system", "label": "Game Boy Advance SP", "variant": "sp"},
+	],
 	"virtual_boy": [
 		{"kind": "system",     "label": "Console",    "variant": ""},
 		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
