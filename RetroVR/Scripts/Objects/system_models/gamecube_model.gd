@@ -47,18 +47,27 @@ func _ready() -> void:
 		var b := _model_aabb(_glb)
 		var c := b.position + b.size * 0.5
 		_glb.position = Vector3(-c.x, -b.position.y, -c.z)
-	var preview := find_child("SeatPreview", true, false)
-	if preview is Node3D:
-		(preview as Node3D).visible = false
+	# Two "SeatPreview" boxes ride this shell (DiscSeat and MemCardSeat) — both
+	# are editor aids only, hide all matches, not just the first.
+	for preview in find_children("SeatPreview", "", true, false):
+		if preview is Node3D:
+			(preview as Node3D).visible = false
 	_anim = _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim != null:
 		_anim.autoplay = ""   # keep the rest pose (lid closed) on load
 	# Mount the disc lid on a real back-edge hinge (spring-loaded, button-opened).
-	_lid = _glb.find_child("LID", true, false) as MeshInstance3D
-	if _lid != null:
-		_lid_hinge = VRSpringLatchedHinge.mount(self, _lid, LID_OPEN_DEG)
-		if _lid_hinge != null:
-			_lid_hinge.rotation_changed.connect(_on_lid_swung)
+	# Baked into gamecube.tscn as DiscLidPivot/DiscLidHinge/CollisionShape3D
+	# (mount()'s own node names) — same idiom as the PSP's UMDDoorPivot — so
+	# reuse it when present instead of rebuilding the rig every load.
+	var pivot := get_node_or_null("DiscLidPivot") as Node3D
+	if pivot != null:
+		_lid_hinge = pivot.get_node_or_null("DiscLidHinge") as VRSpringLatchedHinge
+	else:
+		_lid = _glb.find_child("LID", true, false) as MeshInstance3D
+		if _lid != null:
+			_lid_hinge = VRSpringLatchedHinge.mount(self, _lid, LID_OPEN_DEG)
+	if _lid_hinge != null:
+		_lid_hinge.rotation_changed.connect(_on_lid_swung)
 
 
 func _model_aabb(inst: Node3D) -> AABB:
@@ -152,8 +161,10 @@ func _wire_button(btn: VRButton, mesh_name: String, anchor_name: String) -> void
 
 
 ## No per-port marker meshes beyond the one modelled "GCPort" — the other 3
-## are approximated at a real-hardware-typical pitch to its right. Revisit if
-## a richer shell or reference photo turns up.
+## are approximated at a real-hardware-typical pitch to its right. Baked as
+## authored "Port1".."Port4" markers in gamecube.tscn (dial-able in the 3D
+## editor, same "authored wins over computed" idiom as CartSeat/DiscSeat) —
+## this fallback only fires for a script-only instance with no baked scene.
 const _PORT_PITCH := 0.028
 
 
@@ -168,15 +179,25 @@ func configure_controller_ports(port_zones: Array) -> void:
 		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
 		if lbl != null:
 			lbl.hide()
-		port_zones[i].global_transform = Transform3D(
-			global_transform.basis,
-			base + Vector3(_PORT_PITCH * i, 0, 0))
+		var marker := find_child("Port%d" % (i + 1), true, false) as Node3D
+		if marker != null:
+			port_zones[i].global_transform = marker.global_transform
+		else:
+			port_zones[i].global_transform = Transform3D(
+				global_transform.basis,
+				base + Vector3(_PORT_PITCH * i, 0, 0))
 
 
 ## Only slot 1 is modelled/wired — RetroSystem only has one MemoryCardSlot
 ## regardless of how many the real hardware has (same as the PSone's two
-## slots, only slot 1 wired).
+## slots, only slot 1 wired). An authored "MemCardSeat" marker (baked into
+## gamecube.tscn) wins over the computed mesh-centre pose, same idiom as the
+## controller ports above.
 func configure_memory_card_slot(slot: Node3D) -> void:
+	var seat := find_child("MemCardSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
+		return
 	slot.global_position = _mesh_center("gc_console_memcard_01")
 
 
