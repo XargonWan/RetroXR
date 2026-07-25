@@ -21,6 +21,12 @@ func _glb_path() -> String:
 	return "res://imported-assets/psp_1000.glb"
 
 
+## Store-safe primitive stand-in (spawned only when the GLB shell is absent
+## and the .tscn hasn't baked a "Shell" instance — see handheld_model.gd).
+func _primitive_path() -> String:
+	return "res://Scenes/Objects/system_models/psp_primitive.tscn"
+
+
 # --- button animation -------------------------------------------------------
 
 ## PSP face diamond → RetroPad. ✕ is the confirm/B button, ○ back/A, □ Y, △ X —
@@ -237,6 +243,13 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if visual:
 		visual.visible = false
+	# An authored "UMDSeat" marker (baked into the scene, riding the Shell) wins
+	# over the socket-derived pose above, so the UMD rest can be dialled in
+	# visually in the editor — same idiom as the disc systems' "DiscSeat"
+	# (see playstation_one_model.gd). Absent → keep the socket-derived pose.
+	var seat := find_child("UMDSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 # --- helpers ----------------------------------------------------------------

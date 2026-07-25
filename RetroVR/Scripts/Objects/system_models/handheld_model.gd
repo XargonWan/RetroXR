@@ -217,6 +217,7 @@ func _upgrade_to_glb(path: String) -> void:
 		if bb.size.length() > 0.0:
 			body_size = bb.size
 		_fix_shell_materials()
+		_on_glb_ready()
 		return
 	var scene := load(path) as PackedScene
 	if scene == null:
@@ -281,7 +282,9 @@ func _hide_glb_clutter(root: Node3D) -> void:
 		var mi := n as MeshInstance3D
 		if mi != null:
 			var nm := String(mi.name).to_lower()
-			if nm.contains("rca") or nm.contains("cable") or nm.contains("plug"):
+			# "kabel" catches a few imported shells (e.g. the PSP-1000's an author
+			# model) authored with German node names ("AVKabel", "PowerKabel1/2").
+			if nm.contains("rca") or nm.contains("cable") or nm.contains("kabel") or nm.contains("plug"):
 				mi.visible = false
 		for c in n.get_children():
 			stack.append(c)

@@ -1,0 +1,77 @@
+[gd_scene format=3]
+
+[sub_resource type="BoxMesh" id="BoxMesh_31348"]
+size = Vector3(0.15739954, 0.024476781, 0.0715083)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3enqv"]
+albedo_color = Color(0.05, 0.05, 0.06, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_6vp4s"]
+size = Vector3(0.1073, 0.002, 0.066)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ishpy"]
+albedo_color = Color(0.12, 0.12, 0.14, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_qmcsd"]
+size = Vector3(0.024, 0.004, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0tid2"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_qjy2c"]
+size = Vector3(0.008, 0.004, 0.024)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_xgjj8"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xwq76"]
+albedo_color = Color(0.16, 0.16, 0.2, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_vbvja"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.004
+
+[sub_resource type="BoxMesh" id="BoxMesh_6vy4r"]
+size = Vector3(0.07, 0.007, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tdojy"]
+albedo_color = Color(0.03, 0.03, 0.04, 1)
+
+[node name="PSPPrimitive" type="Node3D" unique_id=676703148]
+
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=890343114]
+mesh = SubResource("BoxMesh_31348")
+surface_material_override/0 = SubResource("StandardMaterial3D_3enqv")
+
+[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=1675919206]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0125, 0)
+mesh = SubResource("BoxMesh_6vp4s")
+surface_material_override/0 = SubResource("StandardMaterial3D_ishpy")
+
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=200688380]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.069325, 0.0135, 0)
+mesh = SubResource("BoxMesh_qmcsd")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=434421476]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.069325, 0.0135, 0)
+mesh = SubResource("BoxMesh_qjy2c")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=2002345741]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.075325, 0.0135, -0.006)
+mesh = SubResource("CylinderMesh_xgjj8")
+surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
+
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1647338631]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.063325, 0.0135, 0.006)
+mesh = SubResource("CylinderMesh_vbvja")
+surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
+
+[node name="UMDSlit" type="MeshInstance3D" parent="." unique_id=746941152]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
+mesh = SubResource("BoxMesh_6vy4r")
+surface_material_override/0 = SubResource("StandardMaterial3D_tdojy")
