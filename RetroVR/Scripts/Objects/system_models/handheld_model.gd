@@ -36,12 +36,21 @@ var _power_switch: VRSlider = null
 var _volume_slider: VRSlider = null
 var _host: Node3D = null
 
-# Optional per-device LCD display filter (e.g. the DMG dot-matrix look). A
-# subclass sets _lcd_shader; the base then wraps the built-in screen's material
-# with it — the same watch-and-rewrap the TV uses for its CRT, since the C++
-# video handler re-asserts its own StandardMaterial3D (emission = picture) each
-# frame. Left null → no filter (GBA colour LCD, etc.).
-var _lcd_shader: Shader = null
+# Per-device LCD display filter (e.g. the DMG dot-matrix look). A subclass may
+# replace _lcd_shader; the base wraps the built-in screen's material with it — the
+# same watch-and-rewrap the TV uses for its CRT, since the C++ video handler
+# re-asserts its own StandardMaterial3D (emission = picture) each frame.
+#
+# The DEFAULT is screen_pixel_aa: no device look, purely to get the core frame
+# sampled properly. A handheld's screen sits near 1:1 with the headset's pixels
+# (a 54 mm GBA panel at arm's length is ~0.94x — see Scripts/xr_init.gd), and at
+# non-integer ratios neither hardware filter works: linear is uniformly soft, and
+# nearest drops source rows and crawls as the head moves. pixel_aa.gdshaderinc
+# explains the fix; gameboy_lcd samples the same way, so a device look does not
+# cost sharpness.
+const PIXEL_AA_SHADER: Shader = preload("res://Shaders/screen_pixel_aa.gdshader")
+
+var _lcd_shader: Shader = PIXEL_AA_SHADER
 var _lcd_material: ShaderMaterial = null
 
 ## When a subclass returns a GLB path from _glb_path(), the handheld swaps its

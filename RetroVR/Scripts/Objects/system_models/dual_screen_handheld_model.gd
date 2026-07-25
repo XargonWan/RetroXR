@@ -611,6 +611,12 @@ func _proxy_texture() -> Texture2D:
 
 
 func _process(_delta: float) -> void:
+	# This override replaces the base's _process entirely (the base wraps its ONE
+	# screen with _lcd_shader, which does not apply here — both panels carry their
+	# own screen_window material below). The base's screen-cast lights still have to
+	# be driven, though: without this call the DS/3DS lights added in c988b76 never
+	# turned on at all.
+	_update_screen_light()
 	# Feed both screen quads from whatever emission texture the VideoHandler
 	# put on the proxy (copy-on-change identity checks, VB-eyepiece style).
 	var tex := _proxy_texture()

@@ -18,8 +18,10 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
 
 #include "res://Shaders/crt_filter.gdshaderinc"
+#include "res://Shaders/pixel_aa.gdshaderinc"
 
-uniform sampler2D source_tex : source_color, filter_nearest, repeat_disable;
+// filter_linear is REQUIRED by pixel_aa (it does the sub-pixel ramp).
+uniform sampler2D source_tex : source_color, filter_linear, repeat_disable;
 uniform vec4 source_rect = vec4(0.0, 0.0, 1.0, 1.0);
 // Added to the sample x for the RIGHT eye (0 = mono source).
 uniform float eye_shift = 0.0;
@@ -40,7 +42,7 @@ void fragment() {
 	if (stereo_mode == 2 || (stereo_mode == 0 && VIEW_INDEX == VIEW_RIGHT)) {
 		suv.x += eye_shift;
 	}
-	vec3 col = texture(source_tex, suv).rgb;
+	vec3 col = pixel_aa(source_tex, suv).rgb;
 	if (osd_enabled) {
 		vec4 osd = texture(osd_tex, wuv);
 		col = mix(col, osd.rgb, osd.a);

@@ -12,7 +12,10 @@
 shader_type spatial;
 render_mode unshaded;
 
-uniform sampler2D source_tex: source_color, filter_nearest;
+#include "res://Shaders/pixel_aa.gdshaderinc"
+
+// filter_linear is REQUIRED by pixel_aa (it does the sub-pixel ramp).
+uniform sampler2D source_tex: source_color, filter_linear;
 // 1.0 while the core runs; 0.0 shows the powered-off black eyepiece.
 uniform float powered: hint_range(0.0, 1.0) = 0.0;
 

@@ -12,7 +12,10 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
 
-uniform sampler2D source_tex : source_color, filter_nearest, repeat_disable;
+#include "res://Shaders/pixel_aa.gdshaderinc"
+
+// filter_linear is REQUIRED by pixel_aa (it does the sub-pixel ramp).
+uniform sampler2D source_tex : source_color, filter_linear, repeat_disable;
 
 // Native panel resolution the grid aligns to (DMG = 160x144).
 uniform vec2 gb_resolution = vec2(160.0, 144.0);
@@ -28,7 +31,7 @@ uniform float gb_grid_strength : hint_range(0.0, 1.0) = 0.22;
 uniform float gb_grid_width : hint_range(0.0, 0.5) = 0.08;
 
 void fragment() {
-	vec3 src = texture(source_tex, UV).rgb;
+	vec3 src = pixel_aa(source_tex, UV).rgb;
 
 	// Quantise luminance into the 4 DMG shades (dark image → dark green).
 	float luma = dot(src, vec3(0.299, 0.587, 0.114));

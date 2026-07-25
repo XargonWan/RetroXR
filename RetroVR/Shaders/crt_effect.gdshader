@@ -10,10 +10,13 @@ render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
 
 #include "res://Shaders/crt_filter.gdshaderinc"
 
-// filter_nearest, like the other core-picture shaders: the tube look wants crisp
-// source pixels to lay its scanlines and mask over. filter_linear pre-blurred the
-// picture and the CRT stage then blurred it again.
-uniform sampler2D source_tex : source_color, filter_nearest, repeat_disable;
+// Deliberately plain filter_linear, unlike the other core-picture shaders (which
+// sample via pixel_aa.gdshaderinc). Two reasons: the CRT stage imposes its own
+// scanlines/mask/curvature on top, so a slightly soft source is authentic here; and
+// this shader is ALSO used for the VCR's video when the VHS effect is off, where
+// pixel-grid snapping would make magnified video blocky. crt_smear_sample() lives in
+// the shared crt_filter include, so it cannot pick per-source either.
+uniform sampler2D source_tex : source_color, filter_linear, repeat_disable;
 
 // On-screen display (green corner text) rendered by the TV into a transparent
 // SubViewport texture and composited into the picture BEFORE the CRT stage,
