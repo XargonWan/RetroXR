@@ -326,6 +326,14 @@ func configure_controller_ports(port_zones: Array) -> void:
 		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
 		if lbl != null:
 			lbl.hide()
+		# An authored "PortSeat1"/"PortSeat2" marker (baked into
+		# playstation_one.tscn) wins over the computed pose below, same
+		# "authored wins over computed" idiom as CartSeat/DiscSeat/UMDSeat —
+		# so the port pose can be dialled in visually in the editor.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+			continue
 		if i < cols.size():
 			# Rolled 180° about Z. A ControllerPlug's connector points down its +Z
 			# with the cable trailing -Z, so a front-facing port needs the plug
@@ -355,6 +363,12 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 ## (It was previously derived from the controller-plug empty + a guessed offset,
 ## which put the card in mid-air above the console.)
 func configure_memory_card_slot(slot: Node3D) -> void:
+	# An authored "MemCardSeat" marker (baked into playstation_one.tscn) wins
+	# over the computed pose below, same idiom as the controller ports above.
+	var seat := find_child("MemCardSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
+		return
 	var c := _mesh_center("psone_memcard_slot_01")
 	# Sunk in by half the card's length less _CARD_PROTRUDE: the zone seats a card
 	# on its CENTRE, so parking it on the face alone left the card half-hanging
