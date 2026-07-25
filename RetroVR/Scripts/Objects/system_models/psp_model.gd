@@ -181,13 +181,15 @@ func _set_power_mesh(v: float) -> void:
 ## real spring: EJECT pops it open, and it can be grabbed and pushed shut by
 ## hand — it only latches when released near the closed limit.
 ##
-## Built by _mount_umd_door(), NOT the shared VRSpringLatchedHinge.mount(): that
-## helper yaws its pivot 180° about Y, which is right for the disc consoles'
-## upright lids (hinged at the back, lifting UP off a vertical front face) but
-## flips the swing direction for the PSP — laid flat, the door sits on the
-## UNDERSIDE (local Y-), so opening means dropping DOWN and away, not lifting
-## up through the shell. The pivot needs the model's own un-yawed orientation.
-const _UMD_OPEN_DEG := 62.0
+## Built by _mount_umd_door(), NOT the shared VRSpringLatchedHinge.mount()
+## as-is: that helper hinges at the AABB's global-Z-MINIMUM edge (right for
+## the disc consoles' lids), but the UMD door's real hinge is the OTHER end —
+## its global-Z-MAXIMUM edge, further into the body — so _mount_umd_door
+## hinges there instead. The 180°-about-Y pivot yaw is kept (unlike the first
+## attempt at this fix, which dropped it and hinged at the min-Z edge): with
+## the hinge moved to the opposite edge, that yaw is what keeps the door
+## swinging DOWN and away from the shell rather than up through it.
+const _UMD_OPEN_DEG := 40.0
 var _umd_door: MeshInstance3D = null
 var _umd_hinge: VRSpringLatchedHinge = null
 
@@ -205,10 +207,11 @@ func _configure_umd_door() -> void:
 		_umd_hinge.rotation_changed.connect(_on_umd_door_swung)
 
 
-## Build the UMD door's spring-lid rig: a pivot at the door's real back edge
-## (its global-Z-minimum), oriented exactly like the model (no yaw, unlike
-## VRSpringLatchedHinge.mount() — see the comment above), with the door (and
-## optionally the Schacht liner) reparented onto it so both swing together.
+## Build the UMD door's spring-lid rig: a pivot at the door's real hinge edge
+## (its global-Z-MAXIMUM — the opposite end from the disc consoles' lids, see
+## the comment above), yawed 180° about Y like VRSpringLatchedHinge.mount() so
+## the door swings DOWN and away from the shell, with the door (and optionally
+## the Schacht liner) reparented onto it so both swing together.
 func _mount_umd_door(door: MeshInstance3D, schacht: MeshInstance3D, open_deg: float) -> VRSpringLatchedHinge:
 	var ab: AABB = door.global_transform * door.get_aabb()
 	if schacht != null:
@@ -216,8 +219,8 @@ func _mount_umd_door(door: MeshInstance3D, schacht: MeshInstance3D, open_deg: fl
 	var pivot := Node3D.new()
 	pivot.name = "UMDDoorPivot"
 	add_child(pivot)
-	pivot.global_transform = Transform3D(global_transform.basis,
-		Vector3(ab.get_center().x, ab.get_center().y, ab.position.z))
+	pivot.global_transform = Transform3D(global_transform.basis * Basis(Vector3.UP, PI),
+		Vector3(ab.get_center().x, ab.get_center().y, ab.position.z + ab.size.z))
 	var meshes: Array[MeshInstance3D] = [door, schacht]
 	for mesh: MeshInstance3D in meshes:
 		if mesh == null:
@@ -236,8 +239,9 @@ func _mount_umd_door(door: MeshInstance3D, schacht: MeshInstance3D, open_deg: fl
 	var col := CollisionShape3D.new()
 	col.name = "CollisionShape3D"
 	var box := BoxShape3D.new()
-	# Un-yawed pivot: local X/Y/Z line up with the door's global X/Y/Z extents
-	# directly (width, thickness, depth) — unlike mount()'s flipped convention.
+	# The 180 deg Y yaw only flips the sign of local X/Z, not which global axis
+	# each corresponds to, so magnitudes still line up directly: width,
+	# thickness, depth.
 	box.size = Vector3(maxf(ab.size.x, 0.02), maxf(ab.size.y, 0.01) + 0.02, maxf(ab.size.z, 0.02))
 	col.shape = box
 	hinge.add_child(col)
