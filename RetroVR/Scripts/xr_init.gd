@@ -20,6 +20,8 @@ func _ready():
 					best = rate
 			xr_interface.set_display_refresh_rate(best)
 			print("XRInit: display refresh rate set to %s Hz (available: %s)" % [best, supported_rates])
+		# Before the first XR frame, so the swapchain is sized once (see below).
+		_apply_eye_buffer_scale(xr_interface)
 		# Enable XR rendering — this also signals desktop support nodes to disable
 		# themselves (xr_start_shim.gd returns get_viewport().use_xr).
 		get_viewport().use_xr = true
@@ -39,42 +41,46 @@ func _ready():
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 
 
-## Report what the OpenXR session actually came up with — the numbers that explain
-## how sharp any virtual screen can possibly look. On a Quest 3 this prints
-## 1680x1760 per eye, which is the runtime's RECOMMENDED swapchain and is smaller
-## than the 2064x2208 panel (the Godot window reports 4128x2208 for the pair), so
-## the compositor upscales every frame ~1.23x. That soft resample is app-wide and
-## is why RetroVR reads softer than comparable Unity titles; it also means 3c05e74's
-## compositor sharpening is sharpening an upscale.
+## Render each eye at the Quest's PANEL resolution instead of the runtime's
+## recommended swapchain.
 ##
-## Not fixed yet, and NOT for want of trying — read this before attempting it again:
+## The runtime recommends 1680x1760 per eye; the panel is 2064x2208 (the Godot
+## window reports 4128x2208 for the pair), so at 1.0 the compositor upscales every
+## frame ~1.23x. That soft resample sits on top of everything and is why RetroVR
+## reads softer than comparable Unity titles — it also means 3c05e74's compositor
+## sharpening was sharpening an upscale.
 ##
-##  * There is no `xr/openxr/render_target_size_multiplier` PROJECT setting (dumped
-##    the whole xr/* list to check). It exists only as an OpenXRInterface property,
-##    and Godot's docs are explicit that changing it needs the session restarted —
-##    assigning it from _ready() resizes Godot's render target but not the swapchain
-##    the runtime already allocated.
-##  * `xr/openxr/foveation_level` / `foveation_dynamic` ARE real project settings and
-##    do apply on Android — but level 2 (with Godot's default
-##    foveation_with_subsampled_images=true) renders the ENTIRE eye buffer as one
-##    flat brown fill on this stack: Godot 4.7 + vendors 5.1 + 4x MSAA + multiview,
-##    Quest 3. Confirmed with `adb exec-out screencap -p` (4128x2208, uniform
-##    (61,36,14) across both lens areas). VrApi timings looked perfect while the
-##    image was garbage, which is why perf numbers alone are not verification.
+## COSTS FRAME RATE, deliberately, for now. Measured on a Quest 3 (arcade scene,
+## 72 Hz = 13.9 ms budget):
 ##
-## Measured GPU cost of the combination, kept for whoever picks this up (arcade
-## scene, 72 Hz, 13.9 ms budget, RenderingServer.viewport_get_measured_render_time_gpu):
+##   1680x1760 (x1.0)      13.55 ms  68 fps
+##   2065x2163 (x1.229)    17.04 ms  56 fps   <- this
 ##
-##   1680x1760, no foveation (current)   13.55 ms  68 fps
-##   2065x2163, no foveation             17.04 ms  56 fps
-##   2065x2163, foveation 2              12.92 ms  71 fps   <- cheaper than current
-##   2352x2464, foveation 3 dynamic      13.95 ms  68 fps
+## Fixed foveation would pay for it outright (12.92 ms / 71 fps at x1.229), but
+## foveation_level >= 1 fills the whole eye buffer with one flat colour on this stack
+## (Godot 4.7 + vendors 5.1 + 4x MSAA + multiview / Quest 3) — see 21351c5. So the
+## resolution is turned up on its own and the frame rate is the price until that is
+## solved. Set QUEST_EYE_BUFFER_SCALE back to 1.0 to undo.
 ##
-## So panel-native IS affordable if foveation can be made to work (fixed foveation
-## saves more in the periphery than the extra centre pixels cost). The route to try
-## is: set the interface property, then restart the session (uninitialize/initialize)
-## before the first XR frame, with foveation_with_subsampled_images=false — and
-## verify by screencap, not by frame timings.
+## Assigned to the interface PROPERTY, not a project setting: there is no
+## `xr/openxr/render_target_size_multiplier` setting (the whole xr/* list was dumped
+## to check). It is set before `use_xr = true`, i.e. before the first XR frame, so
+## the swapchain is created once at this size rather than resized mid-session.
+##
+## Android only — PCVR runtimes size and supersample their own swapchains.
+const QUEST_EYE_BUFFER_SCALE := 1.229   # 2064/1680; 1.0 = runtime recommended
+
+func _apply_eye_buffer_scale(xri: XRInterface) -> void:
+	if OS.get_name() != "Android" or is_equal_approx(QUEST_EYE_BUFFER_SCALE, 1.0):
+		return
+	xri.set("render_target_size_multiplier", QUEST_EYE_BUFFER_SCALE)
+
+
+## Report what the session actually came up with, so a bad eye-buffer size is
+## visible in logcat instead of only in the headset. `foveation` should read 0 —
+## anything else means foveation crept back in and the view will be a flat colour
+## (21351c5); on a Quest 3 with the scale above, expect
+## "eye buffer (2064.72, 2163.04) per eye, window (4128, 2208), foveation 0".
 func _log_eye_buffer_quality(xri: XRInterface) -> void:
 	print("XRInit: eye buffer %s per eye, window %s, foveation %s" % [
 		xri.get_render_target_size(), get_viewport().size, xri.get("foveation_level")])
