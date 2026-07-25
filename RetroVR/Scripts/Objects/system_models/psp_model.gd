@@ -150,7 +150,7 @@ func _configure_power_slide() -> void:
 	_power_rest = _power_mesh.transform
 	# Sit the interaction zone on the real switch and let its motion drive the mesh.
 	if _power_switch != null:
-		_power_switch.global_position = _power_mesh.global_position
+		_power_switch.global_position = _mesh_center(_power_mesh)
 		_power_switch.value_changed.connect(_on_power_slide)
 		_set_power_mesh(_power_switch.value)
 
@@ -235,7 +235,7 @@ func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, eject_btn: VR
 	# Mount the eject latch on the GLB's own EjectButton position.
 	var em := find_child("EjectButton", true, false) as MeshInstance3D
 	if em != null:
-		eject_btn.global_position = em.global_position
+		eject_btn.global_position = _mesh_center(em)
 	eject_btn.trigger_radius = 0.015
 	eject_btn.depress_depth = 0.002
 	eject_btn.depress_axis = -_press_dir
@@ -268,6 +268,16 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 
 
 # --- helpers ----------------------------------------------------------------
+
+## True world position of a button/switch mesh. The PSP-1000 GLB's control
+## meshes all ship with an IDENTITY node transform — their offset lives
+## entirely in the baked vertex data, not the node's transform.origin — so
+## mesh.global_position always reads as Shell's own origin, not the mesh's
+## actual location. Every mesh-anchored interaction zone (eject latch, power
+## slide) needs this instead.
+func _mesh_center(mesh: MeshInstance3D) -> Vector3:
+	return mesh.global_transform * mesh.get_aabb().get_center()
+
 
 ## Mean outward normal of a mesh, snapped to the nearest primary axis, in this
 ## model's frame. Averaging cancels the button's bevel; snapping guards against a
