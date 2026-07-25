@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_advance_sp_orm_5.png" id="7_4fuwo"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_advance_sp_normal_4.png" id="8_gwgvc"]
 [ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="9_rjw3p"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="11_vrsld"]
 [ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="10_se2sk"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_g2k1q"]
@@ -948,6 +949,15 @@ ao_enabled = true
 ao_texture = ExtResource("4_qyue4")
 metadata/_gltf_primary_texture_coord = 0
 
+[sub_resource type="BoxMesh" id="BoxMesh_knob"]
+size = Vector3(0.002, 0.0038, 0.007)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_knob"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_slider"]
+size = Vector3(0.008, 0.01, 0.024)
+
 [sub_resource type="QuadMesh" id="QuadMesh_xl6yk"]
 size = Vector2(0.055809394, 0.037206263)
 
@@ -1142,6 +1152,40 @@ outline_size = 18
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge" unique_id=725171661]
 shape = SubResource("BoxShape3D_pnqqg")
+
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=1466203911]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.039397, -0.00292, -0.019195)
+collision_layer = 1048577
+script = ExtResource("11_vrsld")
+axis_local = Vector3(0, 0, 1)
+travel = 0.009
+engage_radius = 0.02
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=1466203912]
+visible = false
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("StandardMaterial3D_knob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=1466203913]
+shape = SubResource("BoxShape3D_slider")
+
+[node name="PowerSwitch" type="Area3D" parent="." unique_id=1466203914]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.039556, -0.002992, 0.016701)
+collision_layer = 1048577
+script = ExtResource("11_vrsld")
+axis_local = Vector3(0, 0, 1)
+travel = 0.009
+steps = 2
+engage_radius = 0.02
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=1466203915]
+visible = false
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("StandardMaterial3D_knob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=1466203916]
+shape = SubResource("BoxShape3D_slider")
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=2080376813]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0.00019006126, -0.007592, 0.012101)

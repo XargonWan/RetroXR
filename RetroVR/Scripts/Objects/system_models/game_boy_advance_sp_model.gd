@@ -59,18 +59,12 @@ func get_controller_port_count() -> int:
 	return 0
 
 
-func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VRButton) -> void:
-	if power_btn == null or _glb == null:
-		return
-	var mesh := _glb.find_child("POWER", true, false) as MeshInstance3D
-	if mesh != null:
-		power_btn.set_button_mesh(mesh)
-	power_btn.global_position = mesh.global_transform * mesh.get_aabb().get_center() if mesh else global_position
-	power_btn.depress_depth = 0.002
-	power_btn.set_depress_axis_world(Vector3.DOWN)
-	var lbl := power_btn.get_node_or_null("ButtonLabel") as Label3D
-	if lbl != null:
-		lbl.hide()
+# NB: no configure_buttons() override. A plain handheld hides the cabinet
+# START/STOP knob (has_start_stop_button() is false when is_handheld()) because
+# it carries its own power switch — and this one now does: PowerSwitch and
+# VolumeSlider are authored in game_boy_advance_sp.tscn, over the shell's real
+# POWER and VOLUME caps on the side edges. The old override aimed the hidden
+# cabinet button at the POWER cap, which both did nothing and double-claimed it.
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
