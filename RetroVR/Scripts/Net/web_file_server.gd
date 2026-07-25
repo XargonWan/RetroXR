@@ -692,11 +692,11 @@ function draw(d){
   if(cur){h+='<tr><td class="ic">📁</td><td class="nm dn" data-nav="'+esc(parent_of(cur))+'">..</td><td class="sz"></td><td class="ac"></td></tr>';}
   (d.dirs||[]).forEach(function(n){
     var cp=cur?cur+'/'+n:n;
-    h+='<tr><td class="ic">📁</td><td class="nm dn" data-nav="'+esc(cp)+'">'+esc(n)+'</td><td class="sz">—</td><td class="ac"></td></tr>';
+	h+='<tr><td class="ic">📁</td><td class="nm dn" data-nav="'+esc(cp)+'">'+esc(n)+'</td><td class="sz">—</td><td class="ac"></td></tr>';
   });
   (d.files||[]).forEach(function(f){
     var fp=cur?cur+'/'+f.name:f.name;
-    h+='<tr><td class="ic">📄</td><td class="nm">'+esc(f.name)+'</td><td class="sz">'+fmt(f.size)+'</td><td class="ac"><button class="dl" data-dl="'+esc(fp)+'">↓</button> <button class="rm" data-del="'+esc(fp)+'">✕</button></td></tr>';
+	h+='<tr><td class="ic">📄</td><td class="nm">'+esc(f.name)+'</td><td class="sz">'+fmt(f.size)+'</td><td class="ac"><button class="dl" data-dl="'+esc(fp)+'">↓</button> <button class="rm" data-del="'+esc(fp)+'">✕</button></td></tr>';
   });
   if(!h)h='<tr><td colspan="4" style="color:#333;padding:20px;text-align:center">Empty</td></tr>';
   tb.innerHTML=h;
