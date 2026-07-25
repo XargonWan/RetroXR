@@ -55,6 +55,11 @@ var _holder: Node3D = null
 var _open: bool = false
 var _lid_tween: Tween = null
 var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_KINEMATIC
+## `slot`'s rest pose relative to `disc_lid_pivot`, captured once at _ready()
+## (slot is a fixed child of `host`, not `disc_lid_pivot`, so its transform
+## has to be driven every frame in _process instead of via reparenting — it's
+## a shared XRToolsSnapZone with other wiring that assumes a stable parent).
+var _slot_rest_offset := Transform3D.IDENTITY
 
 
 func _ready() -> void:
@@ -62,12 +67,24 @@ func _ready() -> void:
 	_holder.name = "MediaHolder"
 	if disc_lid_pivot != null:
 		disc_lid_pivot.add_child(_holder)
+		if slot != null:
+			_slot_rest_offset = disc_lid_pivot.global_transform.affine_inverse() * slot.global_transform
 	elif slot:
 		slot.add_child(_holder)
 	if slot:
 		slot.has_picked_up.connect(_on_slot_captured)
 	# Start closed: the well can't take or give a disc until the lid opens.
 	_apply_open(false, false)
+	set_process(disc_lid_pivot != null)
+
+
+## Only running while `disc_lid_pivot` is set (every other console pays
+## nothing): keep the drop-in zone itself tracking the swinging door live, so
+## a new disc can be dropped onto the visibly open tray instead of wherever
+## the door's CLOSED rest position happened to be.
+func _process(_delta: float) -> void:
+	if disc_lid_pivot != null and slot != null:
+		slot.global_transform = disc_lid_pivot.global_transform * _slot_rest_offset
 
 
 func has_media() -> bool:
