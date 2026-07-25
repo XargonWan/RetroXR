@@ -49,7 +49,12 @@ const _CATALOG: Dictionary = {
 	"mega_drive": [
 		{"kind": "system", "label": "Genesis (US)",   "variant": ""},
 		{"kind": "system", "label": "Mega Drive",     "variant": "megadrive"},
-		{"kind": "peripheral", "label": "Controller", "spawn": "genesis_controller"},
+		{"kind": "peripheral", "label": "Genesis Pad",    "spawn": "genesis_controller"},
+		{"kind": "peripheral", "label": "Mega Drive Pad", "spawn": "megadrive_controller"},
+	],
+	"sega_saturn": [
+		{"kind": "system",     "label": "Console",    "variant": ""},
+		{"kind": "peripheral", "label": "Controller", "spawn": "saturn_controller"},
 	],
 	"nes": [
 		{"kind": "system",     "label": "Console",    "variant": ""},

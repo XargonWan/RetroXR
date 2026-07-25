@@ -10,6 +10,7 @@ const SYSTEM_SCENE          := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE              := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE            := preload("res://Scenes/Objects/cartridge.tscn")
 const DISC_SCENE            := preload("res://Scenes/Objects/disc.tscn")
+const UMD_DISC_SCENE        := preload("res://Scenes/Objects/umd_disc.tscn")
 const BOOK_SCENE            := preload("res://Scenes/Objects/pdf_book.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
@@ -844,6 +845,14 @@ func _on_spawn_requested(type: String) -> void:
 			obj = _instantiate_optional("res://imported-assets/genesis_controller.glb", "res://Scenes/Objects/controllers/genesis_controller.tscn")
 			if obj == null:
 				return
+		"megadrive_controller":
+			obj = _instantiate_optional("res://imported-assets/megadrive_controller.glb", "res://Scenes/Objects/controllers/megadrive_controller.tscn")
+			if obj == null:
+				return
+		"saturn_controller":
+			obj = _instantiate_optional("res://imported-assets/saturn_controller.glb", "res://Scenes/Objects/controllers/saturn_controller.tscn")
+			if obj == null:
+				return
 		"snes_controller":
 			obj = _instantiate_optional("res://imported-assets/snes_controller.glb", "res://Scenes/Objects/controllers/snes_controller.tscn")
 			if obj == null:
@@ -894,8 +903,10 @@ func _instantiate_optional(glb_path: String, scene_path: String) -> Node3D:
 
 func _on_spawn_cartridge_requested(rom_path: String, game_label: String, systemid := "") -> void:
 	# Disc-based systems get a RetroDisc (same contract, disc-shaped body).
+	# The PSP UMD is the one non-round disc — its own RetroUMD subclass/scene.
 	var is_disc := MediaDimensions.is_disc_system(systemid)
-	var cart := (DISC_SCENE if is_disc else CART_SCENE).instantiate() as RetroCartridge
+	var disc_scene := UMD_DISC_SCENE if systemid == "playstation_portable" else DISC_SCENE
+	var cart := (disc_scene if is_disc else CART_SCENE).instantiate() as RetroCartridge
 	cart.rom_path = rom_path
 	cart.game_label = game_label
 	cart.systemid = systemid
