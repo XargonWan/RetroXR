@@ -207,6 +207,16 @@ func configure_collision(host: Node3D) -> void:
 	pass
 
 
+## Optional pivot node the seated disc should physically ride along with,
+## instead of staying fixed to the console body (see MediaTray.disc_lid_pivot)
+## — a flip-open tray assembly (the PSP's UMD door) where the disc's resting
+## slot is part of the door itself, unlike a spindle console (PS1, GameCube...)
+## where the disc rests on the BASE and only the lid mesh swings. Null
+## (default): disc stays in its normal fixed seat.
+func get_disc_lid_pivot() -> Node3D:
+	return null
+
+
 ## Reposition the cartridge snap zone to the model's physical slot location.
 ## Also returns the insertion offset — the vector the cartridge travels from its
 ## pre-animation position to the snapped position (in world space).

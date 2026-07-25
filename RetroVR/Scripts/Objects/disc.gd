@@ -11,9 +11,19 @@ class_name RetroDisc
 extends RetroCartridge
 
 
+## Whether the host should visually spin this disc while it plays (system.gd's
+## _update_disc_spin rotates the whole node about its local Y — correct for a
+## round CD/mini-disc, since the visible geometry IS the spinning platter, but
+## wrong for a disc enclosed in an opaque caddy, where the real platter isn't
+## visible from outside anyway). True for every disc except an override says
+## otherwise (see RetroUMD).
+func can_visually_spin() -> bool:
+	return true
+
+
 ## Resize the disc to this system's diameter (12 cm CD/DVD, 8 cm GameCube
-## mini-disc, 6.4 cm PSP UMD). Duplicates every mesh/shape resource before
-## mutation — tscn sub_resources are shared across instances.
+## mini-disc). Duplicates every mesh/shape resource before mutation — tscn
+## sub_resources are shared across instances.
 func _apply_system_size() -> void:
 	var d := MediaDimensions.disc_diameter(systemid)
 

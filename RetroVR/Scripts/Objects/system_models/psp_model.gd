@@ -49,9 +49,16 @@ const _SHOULDER_PRESS := 0.0030
 const _NUB_SLIDE := 0.0022
 const _DPAD_TILT_DEG := 9.0
 const _ANIM_W := 0.4
-## Press axis in the shell's local frame — set from the face-button normal at
-## cache time, since the GLB carries its own baked lay-back rotation.
+## Press axis in the button meshes' PARENT frame ("Shell") — set from the
+## face-button normal at cache time, since the GLB carries its own baked
+## lay-back rotation (Shell is rotated ~-90° about X relative to this model
+## node) and every animated mesh's `.transform` is local to that same Shell,
+## not to this node.
 var _press_dir := Vector3(0, 0, -1)
+## This model's "up" (screen-normal) direction expressed in Shell's local
+## frame — the frame-consistent counterpart to _press_dir for building a
+## sideways axis (nub slide, power switch slide).
+var _shell_up := Vector3.UP
 
 var _anim_cached := false
 var _anim_btns: Array[Dictionary] = []   # {node, rest, bit, depth}
@@ -69,14 +76,18 @@ func _cache_anim_meshes() -> void:
 	if _anim_cached:
 		return
 	_anim_cached = true
-	# Press direction: into the face, i.e. the negated screen normal. Averaged
-	# over the button and snapped to an axis — a single triangle's normal catches
-	# a bevelled side (the PSP's read as diagonal). The laid-flat shell is
-	# screen-up, so this resolves to (0,-1,0), but deriving it keeps the model
-	# honest if a future shell bakes a different lay-back.
+	# Press direction: into the face, i.e. the negated screen normal, expressed
+	# in the button meshes' own parent frame (Shell) — every animated mesh's
+	# .transform lives there, NOT in this model node's frame, and Shell carries
+	# its own baked lay-back rotation relative to this node. Averaged over the
+	# button and snapped to an axis — a single triangle's normal catches a
+	# bevelled side (the PSP's read as diagonal).
 	var probe := find_child("FireButtonBottom", true, false) as MeshInstance3D
 	if probe != null:
-		_press_dir = -_axis_normal(probe)
+		var shell := probe.get_parent() as Node3D
+		if shell != null:
+			_press_dir = -_axis_normal(probe, shell)
+			_shell_up = shell.global_transform.basis.inverse() * Vector3.UP
 	for map: Dictionary in [_FACE_MESH, _SHOULDER_MESH]:
 		var depth: float = _FACE_PRESS if map == _FACE_MESH else _SHOULDER_PRESS
 		for bit: int in map:
@@ -109,8 +120,7 @@ func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
 	if not _anim_nub.is_empty():
 		# The nub slides in-plane. The plane is perpendicular to the press axis;
 		# lstick.x runs across the face, lstick.y up it (already screen-negated).
-		var up := Vector3.UP if absf(_press_dir.dot(Vector3.UP)) > 0.9 else Vector3.UP
-		var ax := up.cross(_press_dir).normalized()
+		var ax := _shell_up.cross(_press_dir).normalized()
 		if ax.length() < 0.5:
 			ax = Vector3.RIGHT
 		var ay := _press_dir.cross(ax).normalized()
@@ -123,9 +133,15 @@ func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
 		var pitch := float((btn >> ControllerBindings.JOYPAD_UP) & 1) - float((btn >> ControllerBindings.JOYPAD_DOWN) & 1)
 		var roll := float((btn >> ControllerBindings.JOYPAD_LEFT) & 1) - float((btn >> ControllerBindings.JOYPAD_RIGHT) & 1)
 		# Screen-up handheld: UP/DOWN tilt about the console's left-right axis (X),
-		# LEFT/RIGHT about the front-back axis (Z). Pitch is negated so UP pushes
-		# the far edge into the shell, matching the 3DS.
-		var r := Basis.from_euler(Vector3(deg_to_rad(-pitch * _DPAD_TILT_DEG), 0.0, deg_to_rad(roll * _DPAD_TILT_DEG)))
+		# LEFT/RIGHT about the front-back axis. Pitch is negated so UP pushes the
+		# far edge into the shell, matching the 3DS. This rotation is built and
+		# applied in Shell's LOCAL frame (Dpad2's .transform lives there), and
+		# Shell carries a ~-90° lay-back about X relative to this model node —
+		# so "front-back" in the model's own frame is Shell's local Y axis, not
+		# Z (rotating about Shell's Z instead, as a naive port of the 3DS code
+		# would, spins the whole pad around the screen-normal axis — exactly the
+		# "rolling" bug this was fixed from).
+		var r := Basis.from_euler(Vector3(deg_to_rad(-pitch * _DPAD_TILT_DEG), deg_to_rad(-roll * _DPAD_TILT_DEG), 0.0))
 		var node: MeshInstance3D = _anim_dpad["node"]
 		var rest: Transform3D = _anim_dpad["rest"]
 		var pivot: Vector3 = _anim_dpad["pivot"]
@@ -163,7 +179,7 @@ func _set_power_mesh(v: float) -> void:
 	if _power_mesh == null:
 		return
 	# Slides along the face's "up" axis (across the short edge on a laid-flat PSP).
-	var ax := Vector3.UP.cross(_press_dir).normalized()
+	var ax := _shell_up.cross(_press_dir).normalized()
 	if ax.length() < 0.5:
 		ax = Vector3.RIGHT
 	_power_mesh.transform = Transform3D(_power_rest.basis, _power_rest.origin + ax * (v * _POWER_SLIDE))
@@ -193,17 +209,27 @@ func _set_power_mesh(v: float) -> void:
 const _UMD_OPEN_DEG := 40.0
 var _umd_door: MeshInstance3D = null
 var _umd_hinge: VRSpringLatchedHinge = null
+var _umd_door_pivot: Node3D = null
 
 
 func _configure_umd_door() -> void:
 	var pivot := get_node_or_null("UMDDoorPivot") as Node3D
 	if pivot == null:
 		return
+	_umd_door_pivot = pivot
 	_umd_door = pivot.get_node_or_null("PSP UMD Deckel22") as MeshInstance3D
 	_umd_hinge = pivot.get_node_or_null("UMDDoorHinge") as VRSpringLatchedHinge
 	if _umd_hinge != null:
 		_umd_hinge.max_deg = _UMD_OPEN_DEG
 		_umd_hinge.rotation_changed.connect(_on_umd_door_swung)
+
+
+## The UMD's real slot is part of the door assembly itself (the "UMD Schacht"
+## chute liner is modelled as a child of this same pivot) — unlike a spindle
+## console, the seated disc should swing with the door, not stay fixed to
+## the shell. See MediaTray.disc_lid_pivot.
+func get_disc_lid_pivot() -> Node3D:
+	return _umd_door_pivot
 
 
 func has_spring_latched_lid() -> bool:
@@ -279,17 +305,19 @@ func _mesh_center(mesh: MeshInstance3D) -> Vector3:
 	return mesh.global_transform * mesh.get_aabb().get_center()
 
 
-## Mean outward normal of a mesh, snapped to the nearest primary axis, in this
-## model's frame. Averaging cancels the button's bevel; snapping guards against a
-## residual tilt sending presses in slightly off directions.
-func _axis_normal(mi: MeshInstance3D) -> Vector3:
+## Mean outward normal of a mesh, snapped to the nearest primary axis, in
+## `ref`'s frame (pass the mesh's own parent so the result lines up with the
+## `.transform` these meshes are actually animated in). Averaging cancels the
+## button's bevel; snapping guards against a residual tilt sending presses in
+## slightly off directions.
+func _axis_normal(mi: MeshInstance3D, ref: Node3D) -> Vector3:
 	if mi.mesh == null or mi.mesh.get_surface_count() == 0:
 		return Vector3.UP
 	var arr: Array = mi.mesh.surface_get_arrays(0)
 	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
 	if norms.is_empty():
 		return Vector3.UP
-	var rel := global_transform.affine_inverse() * mi.global_transform
+	var rel := ref.global_transform.affine_inverse() * mi.global_transform
 	var acc := Vector3.ZERO
 	for nrm in norms:
 		acc += (rel.basis * nrm).normalized()

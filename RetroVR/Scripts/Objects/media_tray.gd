@@ -42,6 +42,12 @@ signal closed()
 @export var lid_open_deg: float = -110.0
 ## Lid animation duration (seconds).
 @export var lid_time: float = 0.4
+## Optional pivot the seated disc should physically ride along with instead of
+## staying fixed to `slot` — a flip-open tray assembly (the PSP's UMD door)
+## where the disc's resting slot is part of the door itself, unlike a spindle
+## console (PS1, GameCube...) where the disc rests on the BASE and only the
+## lid mesh swings. Null (default): disc stays fixed under `slot`, as before.
+@export var disc_lid_pivot: Node3D
 
 
 var _media: Node3D = null
@@ -54,8 +60,11 @@ var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_KINEMATIC
 func _ready() -> void:
 	_holder = Node3D.new()
 	_holder.name = "MediaHolder"
-	if slot:
+	if disc_lid_pivot != null:
+		disc_lid_pivot.add_child(_holder)
+	elif slot:
 		slot.add_child(_holder)
+	if slot:
 		slot.has_picked_up.connect(_on_slot_captured)
 	# Start closed: the well can't take or give a disc until the lid opens.
 	_apply_open(false, false)

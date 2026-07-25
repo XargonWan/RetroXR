@@ -1,0 +1,7 @@
+[gd_scene load_steps=3 format=3 uid="uid://retroumd_001"]
+
+[ext_resource type="PackedScene" uid="uid://retrodisc_001" path="res://Scenes/Objects/disc.tscn" id="1_base"]
+[ext_resource type="Script" path="res://Scripts/Objects/umd_disc.gd" id="2_umdscript"]
+
+[node name="Disc" instance=ExtResource("1_base")]
+script = ExtResource("2_umdscript")

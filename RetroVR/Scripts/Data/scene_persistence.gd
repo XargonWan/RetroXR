@@ -17,6 +17,7 @@ const SYSTEM_SCENE           := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE               := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE             := preload("res://Scenes/Objects/cartridge.tscn")
 const DISC_SCENE             := preload("res://Scenes/Objects/disc.tscn")
+const UMD_DISC_SCENE         := preload("res://Scenes/Objects/umd_disc.tscn")
 const MEMCARD_SCENE          := preload("res://Scenes/Objects/memory_card.tscn")
 const BOOK_SCENE             := preload("res://Scenes/Objects/pdf_book.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
@@ -618,11 +619,13 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			cart.systemid = data.get("cart_systemid", "")
 			obj = cart
 		"disc":
-			var disc := DISC_SCENE.instantiate() as RetroDisc
+			var disc_systemid: String = data.get("cart_systemid", "")
+			var disc_scene := UMD_DISC_SCENE if disc_systemid == "playstation_portable" else DISC_SCENE
+			var disc := disc_scene.instantiate() as RetroDisc
 			disc.rom_path = data.get("rom_path", "")
 			disc.game_label = data.get("game_label", "")
 			disc.save_id = data.get("save_id", "")
-			disc.systemid = data.get("cart_systemid", "")
+			disc.systemid = disc_systemid
 			obj = disc
 		"memory_card":
 			var card := MEMCARD_SCENE.instantiate() as MemoryCard

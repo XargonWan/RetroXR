@@ -25,6 +25,9 @@ const CART_SIZES: Dictionary = {
 	"neo_geo_pocket":   Vector3(0.048, 0.052, 0.008),
 	"pokemon_mini":     Vector3(0.022, 0.033, 0.007),
 	"supervision":      Vector3(0.066, 0.070, 0.009),
+	# UMD caddy — square footprint, thin. Without an entry here _apply_cart_model()
+	# falls back to CART_SIZE_DEFAULT (10x8cm) and scales the UMD up ~40% too big.
+	"playstation_portable": Vector3(0.064, 0.064, 0.0042),
 }
 
 ## Generic cartridge size (the original cartridge.tscn values) for systems

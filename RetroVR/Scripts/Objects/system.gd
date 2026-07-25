@@ -560,6 +560,19 @@ func _load_system_model() -> void:
 			_tray.slot = _cartridge_slot
 			_tray.lid_pivot = _tray_lid_pivot          # null for bespoke models
 			_tray.lid_open_deg = TRAY_LID_OPEN_DEG
+			# A flip-open tray assembly (the PSP's UMD door) carries its disc with
+			# it — unlike a spindle console, where the disc stays fixed and only
+			# the lid mesh swings. _cartridge_slot's pose (already set above by
+			# configure_cartridge_slot) is where the disc should visually rest
+			# with the pivot at its baked rest orientation; re-express it as a
+			# LOCAL offset from that pivot so MediaTray can reparent the disc
+			# under it and have it swing rigidly with the door.
+			var disc_pivot: Node3D = _model.get_disc_lid_pivot() if _model != null else null
+			if disc_pivot != null:
+				_tray.disc_lid_pivot = disc_pivot
+				var rel := disc_pivot.global_transform.affine_inverse() * _cartridge_slot.global_transform
+				_tray.media_local_basis = rel.basis
+				_tray.seat_offset = rel.origin
 			add_child(_tray)
 			_tray.loaded.connect(_on_cartridge_inserted)
 			_tray.unloaded.connect(_on_cartridge_removed)
@@ -973,7 +986,7 @@ func _update_disc_spin(delta: float) -> void:
 	var rate := DISC_SPIN_UP if target > _disc_spin else DISC_SPIN_DOWN
 	_disc_spin = move_toward(_disc_spin, target, rate * delta)
 	# A disc being grabbed out keeps its pose (it's no longer frozen in the bay).
-	if _disc_spin > 0.0 and disc.freeze:
+	if _disc_spin > 0.0 and disc.freeze and disc.can_visually_spin():
 		disc.rotate_object_local(Vector3.UP, _disc_spin * delta)
 
 
