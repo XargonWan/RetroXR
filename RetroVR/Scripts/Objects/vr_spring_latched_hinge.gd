@@ -31,11 +31,13 @@ func _ready() -> void:
 	super._ready()
 	_latched_closed = start_closed
 	_apply(min_deg if _latched_closed else max_deg, false)
+	_set_interactive(not _latched_closed)
 
 
 ## Button-driven open (model.play_open): unlatch so the spring pulls it fully open.
 func open() -> void:
 	_latched_closed = false
+	_set_interactive(true)
 
 
 ## Latch fully shut (model.play_close, or the hand pushed it home). Emits so the
@@ -44,7 +46,26 @@ func latch_closed() -> void:
 	_latched_closed = true
 	_grip_ctrl = null
 	_pointer_held = false
+	_set_interactive(false)
 	_apply(min_deg, true)
+
+
+## A latched-shut lid genuinely can't be interacted with — only the OPEN
+## button unlatches it (_can_engage() already blocks a grab from starting)
+## — so hide the hover/held hint icon and disable the grab-box collision
+## entirely rather than leaving a dead hitbox a hand can bump into.
+func _set_interactive(active: bool) -> void:
+	for c in get_children():
+		if c is CollisionShape3D:
+			(c as CollisionShape3D).disabled = not active
+	if not active and _icon != null:
+		_icon.visible = false
+
+
+func _update_icon() -> void:
+	if _latched_closed:
+		return
+	super._update_icon()
 
 
 func is_latched_closed() -> bool:

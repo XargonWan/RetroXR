@@ -181,75 +181,29 @@ func _set_power_mesh(v: float) -> void:
 ## real spring: EJECT pops it open, and it can be grabbed and pushed shut by
 ## hand — it only latches when released near the closed limit.
 ##
-## Built by _mount_umd_door(), NOT the shared VRSpringLatchedHinge.mount()
-## as-is: that helper hinges at the AABB's global-Z-MINIMUM edge (right for
-## the disc consoles' lids), but the UMD door's real hinge is the OTHER end —
-## its global-Z-MAXIMUM edge, further into the body — so _mount_umd_door
-## hinges there instead. The 180°-about-Y pivot yaw is kept (unlike the first
-## attempt at this fix, which dropped it and hinged at the min-Z edge): with
-## the hinge moved to the opposite edge, that yaw is what keeps the door
-## swinging DOWN and away from the shell rather than up through it.
+## Baked into psp.tscn as UMDDoorPivot (with the door + UMD Schacht liner
+## reparented onto it) / UMDDoorPivot/UMDDoorHinge / .../CollisionShape3D —
+## same idiom as playstation_one.tscn's LidMount/LidPivot/LidHinge — rather
+## than built at runtime. The pivot hinges at the door's real edge (its
+## global-Z-MAXIMUM, the opposite end from the disc consoles' lids) with a
+## 180°-about-Y yaw so the door swings DOWN and away from the shell instead
+## of up through it; the hinge's grab box only covers the free (swinging)
+## half of the door, away from the pivot. See Tools/bake_psp.gd in history
+## for how it was built, if it ever needs rebuilding from a fresh GLB.
 const _UMD_OPEN_DEG := 40.0
 var _umd_door: MeshInstance3D = null
 var _umd_hinge: VRSpringLatchedHinge = null
 
 
 func _configure_umd_door() -> void:
-	_umd_door = find_child("PSP UMD Deckel22", true, false) as MeshInstance3D
-	if _umd_door == null:
+	var pivot := get_node_or_null("UMDDoorPivot") as Node3D
+	if pivot == null:
 		return
-	# "UMD Schacht" (German: UMD chute/shaft) is the slot liner right behind the
-	# door — it should swing open WITH the door instead of sitting fixed while
-	# the door lifts clear of it.
-	var schacht := find_child("UMD Schacht", true, false) as MeshInstance3D
-	_umd_hinge = _mount_umd_door(_umd_door, schacht, _UMD_OPEN_DEG)
+	_umd_door = pivot.get_node_or_null("PSP UMD Deckel22") as MeshInstance3D
+	_umd_hinge = pivot.get_node_or_null("UMDDoorHinge") as VRSpringLatchedHinge
 	if _umd_hinge != null:
+		_umd_hinge.max_deg = _UMD_OPEN_DEG
 		_umd_hinge.rotation_changed.connect(_on_umd_door_swung)
-
-
-## Build the UMD door's spring-lid rig: a pivot at the door's real hinge edge
-## (its global-Z-MAXIMUM — the opposite end from the disc consoles' lids, see
-## the comment above), yawed 180° about Y like VRSpringLatchedHinge.mount() so
-## the door swings DOWN and away from the shell, with the door (and optionally
-## the Schacht liner) reparented onto it so both swing together.
-func _mount_umd_door(door: MeshInstance3D, schacht: MeshInstance3D, open_deg: float) -> VRSpringLatchedHinge:
-	var ab: AABB = door.global_transform * door.get_aabb()
-	if schacht != null:
-		ab = ab.merge(schacht.global_transform * schacht.get_aabb())
-	var pivot := Node3D.new()
-	pivot.name = "UMDDoorPivot"
-	add_child(pivot)
-	pivot.global_transform = Transform3D(global_transform.basis * Basis(Vector3.UP, PI),
-		Vector3(ab.get_center().x, ab.get_center().y, ab.position.z + ab.size.z))
-	var meshes: Array[MeshInstance3D] = [door, schacht]
-	for mesh: MeshInstance3D in meshes:
-		if mesh == null:
-			continue
-		var world: Transform3D = mesh.global_transform
-		mesh.reparent(pivot, false)
-		mesh.global_transform = world
-	var hinge := VRSpringLatchedHinge.new()
-	hinge.name = "UMDDoorHinge"
-	hinge.target = pivot
-	hinge.min_deg = 0.0
-	hinge.max_deg = open_deg
-	hinge.engage_radius = clampf(maxf(ab.size.x, ab.size.z) * 0.4, 0.03, 0.09)
-	pivot.add_child(hinge)
-	hinge.position = pivot.to_local(ab.get_center())
-	var col := CollisionShape3D.new()
-	col.name = "CollisionShape3D"
-	var box := BoxShape3D.new()
-	# The 180 deg Y yaw only flips the sign of local X/Z, not which global axis
-	# each corresponds to, so magnitudes still line up directly: width,
-	# thickness, depth.
-	box.size = Vector3(maxf(ab.size.x, 0.02), maxf(ab.size.y, 0.01) + 0.02, maxf(ab.size.z, 0.02))
-	col.shape = box
-	hinge.add_child(col)
-	# Hint icon floats off the door's face — the panel's normal is local Y here
-	# (it lies flat against the underside), and the door is on the -Y side, so
-	# "off the glass" means further -Y, not +Z as mount()'s icon_offset assumes.
-	hinge.icon_offset = Vector3(0.0, -(maxf(ab.size.y, 0.01) * 0.5 + 0.03), 0.0)
-	return hinge
 
 
 func has_spring_latched_lid() -> bool:
