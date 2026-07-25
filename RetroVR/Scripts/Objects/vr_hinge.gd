@@ -195,9 +195,22 @@ func _apply(deg: float, emit: bool) -> void:
 ## parented to this Area3D (a child of the lid pivot), so it rides the lid as it
 ## swings. The Symbols Nerd Font is chained as a fallback so the PUA glyphs resolve
 ## (same recipe as tv_remote.gd).
+##
+## An authored "HingeHint" child (baked into the device .tscn, position dialled
+## in the 3D editor) wins over the computed icon_offset — same "authored marker
+## wins over the computed default" idiom as CartSeat/DiscSeat/UMDSeat. Absent,
+## one is built fresh at icon_offset. Every property but position is reapplied
+## either way, so an authored node only needs to exist at the right spot.
 func _build_icon() -> void:
-	_icon = Label3D.new()
-	_icon.name = "HingeHint"
+	var existing := get_node_or_null("HingeHint") as Label3D
+	if existing != null:
+		_icon = existing
+		icon_offset = existing.position
+	else:
+		_icon = Label3D.new()
+		_icon.name = "HingeHint"
+		_icon.position = icon_offset
+		add_child(_icon)
 	var fv := FontVariation.new()
 	fv.base_font = ThemeDB.fallback_font
 	var symbols: Font = load(SYMBOL_FONT_PATH)
@@ -211,9 +224,7 @@ func _build_icon() -> void:
 	_icon.render_priority = 2
 	_icon.outline_size = 18
 	_icon.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
-	_icon.position = icon_offset
 	_icon.visible = false
-	add_child(_icon)
 
 
 ## Show the fist while held, the open hand while hovering, nothing otherwise.
