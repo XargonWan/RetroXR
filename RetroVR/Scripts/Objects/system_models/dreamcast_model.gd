@@ -115,6 +115,18 @@ func _on_lid_swung(_deg: float) -> void:
 			host.request_tray_state(false)
 
 
+## The shell has no controller-port marker meshes at all — an authored
+## "PortSeat1".."PortSeat4" marker (baked into dreamcast.tscn) is the only
+## pose available, seeded from wherever the generic system.tscn default port
+## zones sit. Absent → leave the zones at that same generic default
+## (unchanged from before this existed).
+func configure_controller_ports(port_zones: Array) -> void:
+	for i in range(port_zones.size()):
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+
+
 # --- buttons (power + open; Dreamcast has no reset button) ---
 func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, eject_btn: VRButton) -> void:
 	_wire_button(power_btn, "Power Button")

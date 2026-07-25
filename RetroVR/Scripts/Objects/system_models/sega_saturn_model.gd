@@ -108,6 +108,18 @@ func uses_memory_cards() -> bool:
 	return false   # Saturn saves internally / to a backup cart, not a PSX card
 
 
+## The shell has no controller-port marker meshes at all (unlike the disc/AV
+## anchors below) — an authored "PortSeat1"/"PortSeat2" marker (baked into
+## sega_saturn.tscn) is the only pose available, seeded from wherever the
+## generic system.tscn default port zones sit. Absent → leave the zones at
+## that same generic default (unchanged from before this existed).
+func configure_controller_ports(port_zones: Array) -> void:
+	for i in range(port_zones.size()):
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+
+
 # --- disc lid (spring-loaded VRSpringLatchedHinge) ---
 # OPEN button → spring fully open. The hand/pointer pulls it down to close (release
 # near-shut latches; release mid springs back open); the hand can't start an open.

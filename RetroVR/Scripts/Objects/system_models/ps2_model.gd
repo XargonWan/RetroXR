@@ -205,10 +205,17 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 
 func configure_controller_ports(port_zones: Array) -> void:
 	var p := _anchor("Playstation Controller Plug")
-	if port_zones.size() >= 1:
-		port_zones[0].global_position = p
-	if port_zones.size() >= 2:
-		port_zones[1].global_position = p + Vector3(0.03, 0.0, 0.0)
+	for i in range(port_zones.size()):
+		# An authored "PortSeat1"/"PortSeat2" marker (baked into ps2.tscn /
+		# ps2_silver.tscn) wins over the computed pose, same idiom as
+		# CartSeat/DiscSeat/UMDSeat/PS1's own PortSeat markers.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+		elif i == 0:
+			port_zones[i].global_position = p
+		elif i == 1:
+			port_zones[i].global_position = p + Vector3(0.03, 0.0, 0.0)
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
@@ -219,6 +226,12 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 
 
 func configure_memory_card_slot(slot: Node3D) -> void:
+	# An authored "MemCardSeat" marker (baked into ps2.tscn / ps2_silver.tscn)
+	# wins over the computed pose, same idiom as the controller ports above.
+	var seat := find_child("MemCardSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
+		return
 	# The GLB's slot meshes are hidden (bars jutting off the right); mount the card on
 	# the front face beside the controller ports (PS2 cards slot in under the pads).
 	slot.global_position = _anchor("Playstation Controller Plug") + Vector3(0.045, -0.008, 0.0)

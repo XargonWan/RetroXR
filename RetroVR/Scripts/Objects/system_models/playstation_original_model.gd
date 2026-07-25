@@ -157,6 +157,13 @@ func configure_controller_ports(port_zones: Array) -> void:
 		var lbl := port_zones[i].get_node_or_null("PortLabel") as Label3D
 		if lbl != null:
 			lbl.hide()
+		# An authored "PortSeat1"/"PortSeat2" marker (baked into
+		# playstation_original.tscn) wins over the computed pose, same idiom
+		# as the PSone's own PortSeat markers.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			port_zones[i].global_transform = seat.global_transform
+			continue
 		if i < cols.size():
 			# Rolled 180° about Z for the same reason as the PSone: the plug's own
 			# SnapGrabPoint adds a 180° X flip that this cancels.
@@ -175,6 +182,12 @@ func _socket_marker() -> Node3D:
 
 ## Memory cards go in the row ABOVE the controller ports, inboard of them.
 func configure_memory_card_slot(slot: Node3D) -> void:
+	# An authored "MemCardSeat" marker (baked into playstation_original.tscn)
+	# wins over the computed pose, same idiom as the controller ports above.
+	var seat := find_child("MemCardSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
+		return
 	var mk := _socket_marker()
 	if mk == null:
 		super(slot)
