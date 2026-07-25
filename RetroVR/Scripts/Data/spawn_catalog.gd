@@ -40,7 +40,7 @@ const _CATALOG: Dictionary = {
 	"gamecube": [
 		{"kind": "system",     "label": "Console",     "variant": ""},
 		{"kind": "peripheral", "label": "Controller",  "spawn": "gamecube_controller"},
-		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
+		{"kind": "peripheral", "label": "Memory Card", "spawn": "gamecube_memory_card"},
 	],
 	"dreamcast": [
 		{"kind": "system",     "label": "Console",    "variant": ""},

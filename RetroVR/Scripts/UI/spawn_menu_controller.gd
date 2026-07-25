@@ -21,6 +21,7 @@ const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_m
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
+const GAMECUBE_MEMCARD_SCENE := preload("res://Scenes/Objects/gamecube_memory_card.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/tv_remote.tscn")
 const DVD_PLAYER_SCENE      := preload("res://Scenes/Objects/dvd_player.tscn")
@@ -813,6 +814,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D
 		"memory_card":
 			obj = MEMCARD_SCENE.instantiate() as Node3D
+		"gamecube_memory_card":
+			obj = GAMECUBE_MEMCARD_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"dualshock":
