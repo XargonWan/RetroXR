@@ -216,6 +216,10 @@ func _mount_lid() -> void:
 		_hinge.rotation_changed.connect(_on_lid_hand_swung)
 
 
+func has_spring_latched_lid() -> bool:
+	return _hinge != null
+
+
 func play_open() -> void:
 	if _hinge != null:
 		_hinge.open()

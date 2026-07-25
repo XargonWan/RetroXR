@@ -1717,10 +1717,24 @@ func _request_disk_op(op: int, path: String) -> void:
 func _on_eject_pressed() -> void:
 	match _disc_loader:
 		MediaDimensions.LOADER_TRAY:
-			_request_tray_state(not _tray_open)
+			# A spring-latched lid (PSone/PSX/Saturn/Dreamcast/PS2) is closed BY HAND —
+			# the button is only a latch release, so pressing it while the lid is already
+			# up does nothing. Pressing it used to snap the lid shut, which is not what
+			# the real hardware does.
+			if _has_spring_lid():
+				if not _tray_open:
+					_request_tray_state(true)
+			else:
+				_request_tray_state(not _tray_open)
 		MediaDimensions.LOADER_SLOT:
 			if _slot:
 				_slot.eject()
+
+
+## True when the model's lid is spring-loaded + hand-closed (see
+## RetroSystemModel.has_spring_latched_lid).
+func _has_spring_lid() -> bool:
+	return _model != null and _model.has_spring_latched_lid()
 
 
 ## A model's own hand-driven lid (e.g. the PSone's VRHinge) reporting the state
@@ -1747,7 +1761,10 @@ func _set_tray_open(open: bool) -> void:
 	# seated disc grabbable only while open, and swings the procedural lid pivot.
 	if _tray:
 		_tray.set_open(open)
-	_eject_button.set_latched_pressed(open)
+	# Latch the OPEN button down to show "tray open" — except on a spring lid, whose
+	# button is a momentary latch release (holding it down would advertise a second
+	# press that deliberately does nothing).
+	_eject_button.set_latched_pressed(open and not _has_spring_lid())
 	# Bespoke GLB tray models animate their own lid here.
 	if open:
 		_model.play_open()

@@ -46,6 +46,7 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 var _grip_ctrl: XRController3D = null    # latched controller (grip held)
 var _pointer_held := false               # desktop pointer latched
+var _held_prev := false                  # held state at the END of last _process
 var _pointer_hover := false              # desktop reticle over the grab box
 var _controllers: Array[XRController3D] = []
 var _icon: Label3D = null
@@ -65,7 +66,12 @@ func set_rotation_deg_no_signal(deg: float) -> void:
 
 
 func _process(delta: float) -> void:
-	var was_held := _grip_ctrl != null or _pointer_held
+	# NB: the previous held state is remembered ACROSS frames (_held_prev, set at the
+	# bottom). Sampling it here instead missed every desktop release — pointer_event
+	# clears _pointer_held between frames, so by the time _process ran the "was held"
+	# read was already false and _on_released() never fired (a lid wheeled shut then
+	# released sprang straight back open instead of latching).
+	var was_held := _held_prev
 	# VR: grip-latched engagement. A latched controller drives the hinge until it
 	# releases grip — regardless of how far the hand roams from the grab box.
 	if _grip_ctrl != null:
@@ -90,6 +96,7 @@ func _process(delta: float) -> void:
 		_on_released()
 	elif not held:
 		_on_idle(delta)
+	_held_prev = held
 	_update_icon()
 
 
@@ -126,7 +133,8 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 ## _pointer_held, so other wheel consumers (held-object push/pull) only see the
 ## event when no hinge is grabbed. rotation.x grows toward SHUT on both the
 ## clamshells (0 open → 180 shut) and the NES flap driver (0 shut → -105 open),
-## so "open" is always -step and "close" +step.
+## so "open" is -step there; the disc lids grow toward OPEN and flip the sign via
+## _open_toward_max(). Wheel UP always opens, wheel DOWN always closes.
 func _unhandled_input(event: InputEvent) -> void:
 	if not _pointer_held or target == null:
 		return
@@ -135,11 +143,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if not mb.pressed:
 		return
+	var open_step := wheel_step_deg if _open_toward_max() else -wheel_step_deg
 	var step := 0.0
 	if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-		step = -wheel_step_deg
+		step = open_step
 	elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-		step = wheel_step_deg
+		step = -open_step
 	else:
 		return
 	_apply(rad_to_deg(target.rotation.x) + step, true)
@@ -254,3 +263,10 @@ func _on_released() -> void:
 ## spring subclass uses this to ease the lid back toward fully open.
 func _on_idle(_delta: float) -> void:
 	pass
+
+
+## Which end of the range is "open", so the desktop mouse wheel rolls the right
+## way. Base: min_deg (the clamshells/NES flap grow toward shut). The disc lids
+## open toward max_deg and override this.
+func _open_toward_max() -> bool:
+	return false

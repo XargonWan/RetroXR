@@ -13,10 +13,18 @@
 class_name RetroSystemModelPlaystationOriginal
 extends RetroSystemModelPlaystationOne
 
-## The shell is authored with its FRONT along +X and its 265 mm width along Z —
+## The shell is authored with its FRONT along -X and its 265 mm width along Z —
 ## a quarter turn from the frame every placement assumes. Yawing the GLB is what
 ## lets the whole PSone implementation apply unchanged.
-const _SHELL_YAW := -PI * 0.5
+##
+## It is +90°, not -90°: measured against the GLB's own markers, -90° landed the
+## controller sockets and the three buttons on -Z and the A/V multi-out on +Z, i.e.
+## the shell 180° backwards. Everything derived from "front is +Z" inherited that
+## flip — worst of all _mount_lid, which hinged the CD lid on the lid box's min-z
+## edge and so swung it about its FRONT lip instead of the real rear hinge (the
+## GLB's DeckelPSX marker). The baked Shell transform in playstation_original.tscn
+## carries the same +90° (it is this yaw + the recentre, pre-applied).
+const _SHELL_YAW := PI * 0.5
 
 ## Green power LED, lit while powered.
 const _LED_COLOR := Color(0.45, 1.0, 0.5)

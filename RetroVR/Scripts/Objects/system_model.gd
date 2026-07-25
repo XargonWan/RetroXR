@@ -27,6 +27,14 @@ func play_close() -> void:
 	pass
 
 
+## True when this model's lid is a spring-loaded VRSpringLatchedHinge: the OPEN
+## button only ever OPENS it (pressing it again while open does nothing — as on
+## the real hardware, where the button is a latch release), and the lid is shut
+## by hand, which reports back through RetroSystem.request_tray_state().
+func has_spring_latched_lid() -> bool:
+	return false
+
+
 ## Returns the number of controller ports active on this hardware.
 ## The base system scene has 4 snap zones; ports beyond this count are hidden.
 func get_controller_port_count() -> int:

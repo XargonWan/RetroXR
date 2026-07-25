@@ -56,6 +56,11 @@ func _can_engage() -> bool:
 	return not _latched_closed
 
 
+# closed = min_deg, open = max_deg: wheel UP opens, wheel DOWN closes.
+func _open_toward_max() -> bool:
+	return true
+
+
 # On release: close if the hand left it near shut, else let the spring take over.
 func _on_released() -> void:
 	if target == null:

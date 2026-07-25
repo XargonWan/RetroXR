@@ -105,6 +105,10 @@ func uses_memory_cards() -> bool:
 # --- disc lid (spring-loaded VRSpringLatchedHinge) ---
 # OPEN button → spring fully open. The hand/pointer pulls it down to close (release
 # near-shut latches; release mid springs back open); the hand can't start an open.
+func has_spring_latched_lid() -> bool:
+	return _lid_hinge != null
+
+
 func play_open() -> void:
 	if _lid_hinge != null:
 		_lid_hinge.open()

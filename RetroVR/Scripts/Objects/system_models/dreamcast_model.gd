@@ -96,6 +96,10 @@ func uses_memory_cards() -> bool:
 
 
 # --- disc lid (spring-loaded VRSpringLatchedHinge) ---
+func has_spring_latched_lid() -> bool:
+	return _lid_hinge != null
+
+
 func play_open() -> void:
 	if _lid_hinge != null:
 		_lid_hinge.open()

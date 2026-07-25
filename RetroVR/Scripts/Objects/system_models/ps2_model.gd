@@ -149,6 +149,10 @@ func uses_memory_cards() -> bool:
 # Spring-loaded VRSpringLatchedHinge (replaces the origin-pivoting PS2SlimOpen clip
 # that opened the wrong way): OPEN button springs it fully up; the hand pulls it
 # down to close (release near-shut latches, release mid springs back open).
+func has_spring_latched_lid() -> bool:
+	return _lid_hinge != null
+
+
 func play_open() -> void:
 	if _lid_hinge != null:
 		_lid_hinge.open()

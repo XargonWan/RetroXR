@@ -36,7 +36,7 @@ script = ExtResource("1_psxorig")
 metadata/shell_prebaked = true
 
 [node name="Shell" parent="." instance=ExtResource("3_psxglb")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 2.959, 0, 1.30585)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.959, 0, -1.30585)
 
 [node name="DiscSeat" type="Marker3D" parent="Shell"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.30578, 0.047193, -2.95931)
