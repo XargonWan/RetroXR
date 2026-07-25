@@ -70,6 +70,7 @@ func _on_glb_ready() -> void:
 	_cache_anim_meshes()
 	_configure_power_slide()
 	_configure_umd_door()
+	_configure_power_led()
 
 
 func _cache_anim_meshes() -> void:
@@ -183,6 +184,50 @@ func _set_power_mesh(v: float) -> void:
 	if ax.length() < 0.5:
 		ax = Vector3.RIGHT
 	_power_mesh.transform = Transform3D(_power_rest.basis, _power_rest.origin + ax * (v * _POWER_SLIDE))
+
+
+# --- power LED ---------------------------------------------------------------
+
+## The GLB ships FOUR overlapping "PowerLED"/"PowerLED_001".."_003" meshes,
+## all stacked at the same position — looks like separate authored on/off/
+## brightness states meant to be toggled by visibility, but nothing ever did,
+## so all four render at once and the LED reads as permanently lit regardless
+## of power state. Keep just one ("PowerLED") and drive it dynamically instead
+## (same fix as the N64's always-lit LED meshes).
+var _power_led: MeshInstance3D = null
+
+
+func _configure_power_led() -> void:
+	_power_led = find_child("PowerLED", true, false) as MeshInstance3D
+	for nm in ["PowerLED_001", "PowerLED_002", "PowerLED_003"]:
+		var extra := find_child(nm, true, false) as MeshInstance3D
+		if extra != null:
+			extra.visible = false
+	_set_power_led(false)
+
+
+func on_power_on() -> void:
+	super.on_power_on()
+	_set_power_led(true)
+
+
+func on_power_off() -> void:
+	super.on_power_off()
+	_set_power_led(false)
+
+
+func _set_power_led(on: bool) -> void:
+	if _power_led == null:
+		return
+	var mat := _power_led.get_surface_override_material(0) as StandardMaterial3D
+	if mat == null or not mat.resource_local_to_scene:
+		mat = StandardMaterial3D.new()
+		mat.resource_local_to_scene = true
+		_power_led.set_surface_override_material(0, mat)
+	mat.albedo_color = Color(0.05, 0.3, 0.08) if on else Color(0.05, 0.06, 0.05)
+	mat.emission_enabled = on
+	mat.emission = Color(0.5, 1.0, 0.3)
+	mat.emission_energy_multiplier = 1.0 if on else 0.0
 
 
 # --- UMD door + eject -------------------------------------------------------
