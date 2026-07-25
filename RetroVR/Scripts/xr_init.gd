@@ -44,11 +44,26 @@ func _ready():
 ## Render each eye at the Quest's PANEL resolution instead of the runtime's
 ## recommended swapchain.
 ##
-## The runtime recommends 1680x1760 per eye; the panel is 2064x2208 (the Godot
-## window reports 4128x2208 for the pair), so at 1.0 the compositor upscales every
-## frame ~1.23x. That soft resample sits on top of everything and is why RetroVR
-## reads softer than comparable Unity titles — it also means 3c05e74's compositor
-## sharpening was sharpening an upscale.
+## x1.0 is NOT "native": OpenXR's recommendedImageRect is a performance
+## recommendation, not the display size. Meta ships Quest 3 with recommended
+## 1680x1760 per eye against a 2064x2208 panel (the Godot window reports 4128x2208
+## for the pair) — about 80% linear, on purpose. Unity's default eye texture is the
+## same recommended size; Quest titles that look sharper have raised it themselves.
+##
+## Nor is the shortfall a flat 1.23x upscale of the finished image: the compositor
+## warps a rectilinear eye buffer through the lens distortion, which over-samples
+## the periphery and under-samples the CENTRE, so the runtime sizes the
+## recommendation to land ~1:1 in the middle. The missing detail is therefore
+## concentrated exactly where you look, which is why raising this is worth real
+## frame time — and why foveation is its natural partner (spend the pixels in the
+## centre, drop the ones wasted at the edges). It also means 3c05e74's compositor
+## sharpening was sharpening an under-sampled centre rather than fixing it.
+##
+## Caveat not yet tested: xr/openxr/extensions/meta/dynamic_resolution is on (a
+## vendors-plugin default) and lets the runtime LOWER the eye buffer under GPU load,
+## which this scene is under. get_render_target_size() is only sampled at startup
+## below, so a mid-session drop would not show up. Log it per-second on-device to
+## find out.
 ##
 ## COSTS FRAME RATE, deliberately, for now. Measured on a Quest 3 (arcade scene,
 ## 72 Hz = 13.9 ms budget):
