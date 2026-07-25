@@ -43,6 +43,9 @@ const _MODEL_SCENES: Dictionary = {
 	# Atari 2600 VCS: same bake as the NES — recentred shell + editor-authorable
 	# "CartSeat" marker. atari_2600_model reuses the baked "Shell" instance.
 	"atari_2600": "res://Scenes/Objects/system_models/atari_2600.tscn",
+	# Atari 5200: same bake — recentred shell + editor-authorable "CartSeat"
+	# marker. atari_5200_model reuses the baked "Shell" instance.
+	"atari_5200": "res://Scenes/Objects/system_models/atari_5200.tscn",
 	# Sega Genesis / Mega Drive Model 1 (base = Genesis shell). CartSeat rides the
 	# Shell so it survives genesis_model's runtime recentre.
 	"mega_drive": "res://Scenes/Objects/system_models/genesis.tscn",

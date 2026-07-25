@@ -16,6 +16,7 @@ const CART_SIZES: Dictionary = {
 	"game_boy_advance": Vector3(0.058, 0.036, 0.007),
 	"mega_drive":       Vector3(0.110, 0.070, 0.017),
 	"atari_2600":       Vector3(0.079, 0.104, 0.021),
+	"atari_5200":       Vector3(0.108, 0.104, 0.021),   # squarer, wider shell than the 2600 cart
 	"virtual_boy":      Vector3(0.065, 0.054, 0.006),   # VB cart, measured off the model
 	"nds":              Vector3(0.033, 0.035, 0.004),
 	"3ds":              Vector3(0.033, 0.035, 0.004),   # 3DS Game Card = DS footprint

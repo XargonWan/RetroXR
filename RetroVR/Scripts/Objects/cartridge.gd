@@ -42,6 +42,7 @@ const _CART_MODELS := {
 	"game_boy": "res://imported-assets/game_boy_cart.glb",
 	"game_boy_advance": "res://imported-assets/game_boy_advance_cart.glb",
 	"atari_2600": "res://imported-assets/atari_2600_cart.glb",
+	"atari_5200": "res://imported-assets/atari_5200_cart.glb",
 	"virtual_boy": "res://imported-assets/virtual_boy_cart.glb",
 	# One EU-styled cart serves Genesis and Mega Drive alike (the shells differ,
 	# the cartridge does not).
