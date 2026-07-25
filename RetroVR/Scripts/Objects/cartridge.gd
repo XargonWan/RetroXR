@@ -250,6 +250,12 @@ func _apply_label_art() -> void:
 			var lm := StandardMaterial3D.new()
 			lm.albedo_color = Color.WHITE
 			lm.albedo_texture = tex
+			# A disc's scraped label art is a round scan with transparent corners
+			# (see disc.gd's own ArtQuad path) — this quad is square, so without
+			# alpha the corners show as an opaque black box instead of the silver
+			# disc showing through. Harmless no-op on a cart's opaque rectangular
+			# label (alpha stays 1.0 throughout).
+			lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			art.set_surface_override_material(0, lm)
 		var glbl := get_node_or_null("GameLabel") as Label3D
 		if glbl != null:
