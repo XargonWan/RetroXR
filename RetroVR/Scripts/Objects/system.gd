@@ -61,6 +61,9 @@ const _MODEL_SCENES: Dictionary = {
 	# the placeholder box on any build that lacks the GLB. Licence still pending.
 	# The scene owns the CD lid's hinge pivot + VRHinge, so the lid is hand-openable.
 	"playstation": "res://Scenes/Objects/system_models/playstation_one.tscn",
+	# Nintendo GameCube (mini-DVD disc): same DiscSeat bake as the Sony disc
+	# consoles. gamecube_model reuses the baked "Shell" instance.
+	"gamecube": "res://Scenes/Objects/system_models/gamecube.tscn",
 }
 
 ## Optional per-variant model overrides, keyed "<systemid>:<variant>".

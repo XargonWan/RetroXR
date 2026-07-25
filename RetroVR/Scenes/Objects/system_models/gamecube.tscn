@@ -1,0 +1,30 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/gamecube_model.gd" id="1_gcnmdl"]
+[ext_resource type="PackedScene" path="res://imported-assets/gamecube.glb" id="2_gcnglb"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_gcnseat"]
+top_radius = 0.04
+bottom_radius = 0.04
+height = 0.003
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gcnseat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
+[node name="GameCube" type="Node3D"]
+script = ExtResource("1_gcnmdl")
+
+[node name="Shell" parent="." instance=ExtResource("2_gcnglb")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.000372, 0.003338)
+
+[node name="DiscSeat" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.000155, 0.10476, 0.013867)
+gizmo_extents = 0.06
+
+[node name="SeatPreview" type="MeshInstance3D" parent="DiscSeat"]
+mesh = SubResource("CylinderMesh_gcnseat")
+surface_material_override/0 = SubResource("StandardMaterial3D_gcnseat")
