@@ -1,9 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://system_snes_001"]
-
-[ext_resource type="PackedScene" uid="uid://system_base_001" path="res://Scenes/Objects/system.tscn" id="1_base"]
-
-[node name="SNESSystem" instance=ExtResource("1_base")]
-core_name = "snes9x"
-core_directory = ""
-system_label = "SNES"
-systemid = "super_nes"
