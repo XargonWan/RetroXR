@@ -1920,7 +1920,6 @@ transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -0.0
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="UMDSeat" unique_id=1809934646]
-visible = false
 mesh = SubResource("BoxMesh_8243q")
 surface_material_override/0 = SubResource("StandardMaterial3D_vil5e")
 
