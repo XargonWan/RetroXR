@@ -1100,16 +1100,16 @@ surface_material_override/0 = SubResource("StandardMaterial3D_sfl2m")
 libraries/ = SubResource("AnimationLibrary_hmacb")
 
 [node name="LidPivot" type="Node3D" parent="." unique_id=87029438]
-transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0.01204, -0.036869)
+transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0.007656, -0.037468)
 
 [node name="TopScreen" type="MeshInstance3D" parent="LidPivot" unique_id=1088846889]
-transform = Transform3D(1, 0, 0, 0, 0.8660254, 0.5, 0, -0.5, 0.8660254, 0, -0.00288, 0.043314)
+transform = Transform3D(1, 0, 0, 0, 0.8660254, 0.5, 0, -0.5, 0.8660254, 0, 0.001215, 0.041641)
 mesh = SubResource("ArrayMesh_s7075")
 skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_6fbp5")
 
 [node name="HandheldScreen" type="MeshInstance3D" parent="LidPivot" unique_id=1261172832]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.00032, 0.00095, -0.04353)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.00032, 0.005046, -0.045203)
 mesh = SubResource("QuadMesh_xl6yk")
 
 [node name="ScreenCastLight" type="SpotLight3D" parent="LidPivot/HandheldScreen" unique_id=537920402]
@@ -1119,7 +1119,7 @@ spot_range = 0.6697127
 spot_angle = 50.0
 
 [node name="LidHinge" type="Area3D" parent="LidPivot" unique_id=1180149708 node_paths=PackedStringArray("target")]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.00032, 0.00095, -0.052832)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.00032, 0.005046, -0.054504)
 collision_layer = 1048577
 script = ExtResource("9_rjw3p")
 target = NodePath("..")
