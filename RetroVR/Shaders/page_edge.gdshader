@@ -30,6 +30,14 @@ uniform float z_scale = 1.0;
 // read as a pale band down the middle of the spread, brighter than the pages
 // either side of it.
 uniform float gutter_ao : hint_range(0.0, 1.0) = 0.8;
+// The sheet's own sag terms, so the block moves with it at the fore edge too.
+uniform float bow_amount = 0.0;
+uniform float fore_droop = 0.0;
+uniform float edge_curl = 0.0;
+
+const float PAPER_PI = 3.14159265;
+
+#include "res://Shaders/paper_rest.gdshaderinc"
 // Peak outward swell at mid-stack, in metres.
 uniform float bulge : hint_range(0.0, 0.01) = 0.0006;
 
@@ -62,13 +70,23 @@ void vertex() {
 	// Drop the top ring of the box into the gutter, following the top page.
 	// Only vertices on the upper face move, so the block thins toward the
 	// binding instead of the whole box sliding down.
-	// Deliberately unclamped: on a thin block the top ring has to travel further
-	// than the block is deep, and clamping it to the block's own underside left
-	// the page diving past a top face that had stopped following it. Overshoot
-	// just collapses the box locally, which the page above covers anyway.
-	if (VERTEX.z > 0.0 && gutter_dive > 0.0) {
-		VERTEX.z -= (gutter_dive * exp(-v_u * gutter_falloff)) / max(z_scale, 1e-4);
-	}
+	// Follow the sheet above. The block SAGS as one lump at the fore edge, so
+	// every vertex takes that; it THINS into the binding, so only the top ring
+	// takes the gutter dive. The sheet's bow is deliberately not followed —
+	// that is the top page lifting clear of the block, not the block moving.
+	//
+	// The gutter term is unclamped on purpose: on a thin block the top has to
+	// travel further than the block is deep, and clamping it to the block's own
+	// underside left the sheet diving past a top face that had stopped
+	// following. Overshoot collapses the box locally, under the page.
+	float v_v = clamp(0.5 + VERTEX.y / max(page_size.y, 1e-5), 0.0, 1.0);
+	float gutter;
+	float sag;
+	float bow;
+	paper_rest_parts(v_u, v_v, gutter_dive, gutter_falloff, bow_amount, fore_droop, edge_curl,
+		gutter, sag, bow);
+	float follow = sag + (VERTEX.z > 0.0 ? gutter : 0.0);
+	VERTEX.z += follow / max(z_scale, 1e-4);
 
 	if (v_side > 0.5 && bulge > 0.0) {
 		float e = 2.0 * t - 1.0;

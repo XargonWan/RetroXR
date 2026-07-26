@@ -194,6 +194,14 @@ const PAPER_AABB_DEPTH := 0.16
 const GUTTER_DIVE_RATIO := 0.6
 const GUTTER_DIVE_MAX := 0.008
 
+## Rest shape of a sheet, shared with the block it lies on so the two cannot
+## disagree (paper_rest.gdshaderinc). Set explicitly rather than left to the
+## shader defaults, because page_edge.gdshader has to be handed the same values.
+const REST_BOW := 0.0025
+const REST_DROOP := 0.0015
+const REST_EDGE_CURL := 0.002
+const REST_GUTTER_FALLOFF := 12.0
+
 # Async page rendering
 var _render_mutex := Mutex.new()
 var _pending_renders: Dictionary = {}  # page_index -> true
@@ -805,6 +813,11 @@ func _ensure_paper_material(mesh_node: MeshInstance3D, is_cover: bool) -> Shader
 		mat.set_shader_parameter("edge_curl", 0.0)
 		mat.set_shader_parameter("gutter_ao", 0.25)
 		mat.set_shader_parameter("backlight_amount", 0.0)
+	else:
+		mat.set_shader_parameter("bow_amount", REST_BOW)
+		mat.set_shader_parameter("fore_droop", REST_DROOP)
+		mat.set_shader_parameter("edge_curl", REST_EDGE_CURL)
+		mat.set_shader_parameter("gutter_falloff", REST_GUTTER_FALLOFF)
 	_apply_finish_to(mat, is_cover)
 	return mat
 
@@ -879,6 +892,8 @@ func _ensure_edge_material(mesh_node: MeshInstance3D, leaves: int) -> void:
 	# open kept the dive and its block sagged under a flat cover.
 	mat.set_shader_parameter("gutter_dive", 0.0)
 	mat.set_shader_parameter("gutter_ao", 0.0)
+	mat.set_shader_parameter("fore_droop", 0.0)
+	mat.set_shader_parameter("edge_curl", 0.0)
 
 
 ## Which way u runs on this page: the gutter is at book-local x = 0, so work out
@@ -1097,6 +1112,13 @@ func _update_gutter_depth() -> void:
 			edge.set_shader_parameter("gutter_dive", dive)
 			edge.set_shader_parameter("z_scale", stack.scale.z)
 			edge.set_shader_parameter("gutter_ao", 0.8)
+			# Same rest shape as the sheet on top, or the block pokes through it
+			# — at the gutter if it ignores the dive, at the fore edge if it
+			# ignores the droop.
+			edge.set_shader_parameter("gutter_falloff", REST_GUTTER_FALLOFF)
+			edge.set_shader_parameter("bow_amount", REST_BOW)
+			edge.set_shader_parameter("fore_droop", REST_DROOP)
+			edge.set_shader_parameter("edge_curl", REST_EDGE_CURL)
 
 
 ## The binding material. The cover's own inner edge is wrapped around the spine
@@ -1378,6 +1400,10 @@ func _spawn_leaf(dir: int) -> bool:
 	mat.set_shader_parameter("grain_texture", _paper_grain())
 	_apply_finish_to(mat, false)
 	mat.set_shader_parameter("gutter_dive", _gutter_dive_for(_page_plane_z(dir)))
+	mat.set_shader_parameter("bow_amount", REST_BOW)
+	mat.set_shader_parameter("fore_droop", REST_DROOP)
+	mat.set_shader_parameter("edge_curl", REST_EDGE_CURL)
+	mat.set_shader_parameter("gutter_falloff", REST_GUTTER_FALLOFF)
 	mat.set_shader_parameter("curl_taper", CURL_TAPER)
 	mat.set_shader_parameter("front_texture", _get_page_texture(int(plan["front"])))
 	var back_idx := int(plan["back"])

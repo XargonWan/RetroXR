@@ -50,32 +50,9 @@ uniform float sheen : hint_range(0.0, 1.0) = 0.18;
 varying float v_u;
 
 const float PI_ = 3.14159265;
+const float PAPER_PI = 3.14159265;
 
-// Rest height above the flat page plane, and its derivatives wrt u and v.
-// Kept in one place so vertex() can build an exact normal instead of leaving a
-// stale one behind.
-void rest_shape(float u, float v, out float z, out float dzdu, out float dzdv) {
-	float e = exp(-u * gutter_falloff);
-	float edge = 2.0 * v - 1.0;
-	float edge_p = abs(edge);
-
-	// smoothstep(0.55, 1.0, u) and its derivative
-	float t = clamp((u - 0.55) / 0.45, 0.0, 1.0);
-	float droop = t * t * (3.0 - 2.0 * t);
-	float droop_d = (u > 0.55 && u < 1.0) ? 6.0 * t * (1.0 - t) / 0.45 : 0.0;
-
-	z = -gutter_dive * e
-		+ bow_amount * sin(u * PI_)
-		- fore_droop * droop
-		+ edge_curl * edge_p * edge_p * edge_p * u;
-
-	dzdu = gutter_dive * gutter_falloff * e
-		+ bow_amount * PI_ * cos(u * PI_)
-		- fore_droop * droop_d
-		+ edge_curl * edge_p * edge_p * edge_p;
-
-	dzdv = edge_curl * 6.0 * edge_p * edge_p * sign(edge) * u;
-}
+#include "res://Shaders/paper_rest.gdshaderinc"
 
 void vertex() {
 	float w = max(page_size.x, 1e-5);
@@ -84,12 +61,17 @@ void vertex() {
 	float v = clamp(0.5 + VERTEX.y / h, 0.0, 1.0);
 	v_u = u;
 
-	float z;
+	float gutter;
+	float sag;
+	float bow;
+	paper_rest_parts(u, v, gutter_dive, gutter_falloff, bow_amount, fore_droop, edge_curl,
+		gutter, sag, bow);
 	float dzdu;
 	float dzdv;
-	rest_shape(u, v, z, dzdu, dzdv);
+	paper_rest_slope(u, v, gutter_dive, gutter_falloff, bow_amount, fore_droop, edge_curl,
+		dzdu, dzdv);
 
-	VERTEX.z += z;
+	VERTEX.z += gutter + sag + bow;
 
 	// Arc-length conservation: the sheet dipping into the gutter is longer than
 	// the flat span it covers, so a material point sits nearer the spine than
