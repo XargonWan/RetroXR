@@ -156,6 +156,10 @@ var _options_values: Dictionary = {}
 # Array of Dictionaries: [{port, controllers: [{name, id}], current_id}]
 var _controller_info: Array = []
 
+# The core's AudioStreamPlayer3D (created in C++ under the Libretro node),
+# cached at power-on so _process can steer it without a per-frame node lookup.
+var _audio_player: AudioStreamPlayer3D = null
+
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
 
@@ -645,11 +649,44 @@ func set_input_enabled(enabled: bool) -> void:
 
 ## Set the audio volume for the running libretro instance (0.0 = silent, 1.0 = 100%).
 func set_audio_volume(volume: float) -> void:
-	if not is_powered_on:
+	if not is_powered_on or _audio_player == null or not is_instance_valid(_audio_player):
 		return
-	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
-	if asp:
-		asp.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
+	_audio_player.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
+
+
+## Take hold of the AudioStreamPlayer3D the core just created (a child of the
+## Libretro node) and apply this system's spatial tuning.
+func _bind_audio_player() -> void:
+	_audio_player = _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
+	if _audio_player == null:
+		return
+	_audio_player.unit_size        = audio_unit_size
+	_audio_player.max_distance     = audio_max_distance
+	_audio_player.panning_strength = audio_panning_strength
+	_update_audio_position()
+
+
+## The TV this system's sound should come out of: whichever channel is plugged
+## in, channel 0 first (a dual-screen handheld can be wired up by its BOTTOM
+## cable alone). Null when nothing is connected.
+func _audio_tv() -> RetroTV:
+	for tv_obj in _channel_tvs:
+		if tv_obj != null and is_instance_valid(tv_obj):
+			return tv_obj as RetroTV
+	return null
+
+
+## Sound comes from whatever is showing the picture: a connected TV takes the
+## audio, and the hardware takes it back when the cable is pulled. Driven every
+## frame because both the system and the TV can be picked up and carried.
+func _update_audio_position() -> void:
+	if _audio_player == null or not is_instance_valid(_audio_player):
+		return
+	var tv := _audio_tv()
+	if tv != null:
+		_audio_player.global_position = tv.global_position
+	elif not _audio_player.position.is_zero_approx():
+		_audio_player.position = Vector3.ZERO
 
 
 ## The mesh the core should render to right now: a connected TV wins,
@@ -969,6 +1006,7 @@ func _process(_delta: float) -> void:
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
 	_update_tv_mirrors()
 	_update_disc_spin(_delta)
+	_update_audio_position()
 
 
 ## Spin the seated disc: ramp up while powered with the tray shut, ramp down
@@ -1070,11 +1108,7 @@ func power_on() -> void:
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	_libretro.SetSramPath(_compose_sram_path(resolved_core))
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
-	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
-	if asp:
-		asp.unit_size        = audio_unit_size
-		asp.max_distance     = audio_max_distance
-		asp.panning_strength = audio_panning_strength
+	_bind_audio_player()
 	is_powered_on = true
 	_update_power_button_visual()
 	_model.on_power_on()
@@ -1094,6 +1128,7 @@ func power_off() -> void:
 		if ctrl and is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
 			ctrl.set_rumble(0.0, 0.0)
 	_libretro.StopContent()
+	_audio_player = null
 	is_powered_on = false
 	_has_disk_control = false
 	_disc_index = 0
@@ -1223,11 +1258,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_apply_forced_core_options(_resolve_dir(), resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
-	var asp := _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
-	if asp:
-		asp.unit_size        = audio_unit_size
-		asp.max_distance     = audio_max_distance
-		asp.panning_strength = audio_panning_strength
+	_bind_audio_player()
 	is_powered_on = true
 	net_remote_powered = false
 	if connected_tv:
@@ -1244,6 +1275,7 @@ func net_stop_core() -> void:
 	_libretro.SetNetplayMode(false, 1, 0)
 	if is_powered_on:
 		_libretro.StopContent()
+		_audio_player = null
 		is_powered_on = false
 		_options_panel.hide_panel()
 		_model.on_power_off()
