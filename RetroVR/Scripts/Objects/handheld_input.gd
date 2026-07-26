@@ -129,6 +129,14 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_update_pointer_block(ctrl, true)
 	_update_locomotion_block()
 	_apply_rumble()
+	_refresh_grip()
+
+
+## Anchor each holding hand onto its own grip: one hand takes the device by that
+## side, two hands centre it between them. The anchors come from the handheld
+## model's body (RetroSystem.grip_anchor). See GripAnchor.
+func _refresh_grip() -> void:
+	GripAnchor.refresh(_host as XRToolsPickable, _host)
 
 
 func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
@@ -150,6 +158,8 @@ func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
 				_saved_by = null
 		_update_locomotion_block()
 		_apply_rumble()
+		# Back to one hand → the survivor takes the device by its own grip.
+		_refresh_grip()
 		return
 	# Toggle grip — rehold the released hand.
 	if ctrl == _holding_ctrl:
@@ -160,6 +170,7 @@ func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
 			call_deferred("_rehold_hand", by)
 	else:
 		call_deferred("_rehold_hand", by)
+	_refresh_grip()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:

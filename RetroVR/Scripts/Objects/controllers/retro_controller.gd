@@ -154,22 +154,19 @@ func wants_grip_toggle_drop() -> bool:
 	return false
 
 
-## Configure the grab transforms for the current hand count:
-## - Two hands: snap the controller to the midpoint of the two grabs with the
-##   averaged hand rotation. Identity grip frames make each grab's destination the
-##   hand pose, so the driver's default drive (1/1/0) lerps the origins to the
-##   midpoint and slerps the bases 0.5 (grab_driver.gd:63,73,76-78).
-## - One hand: precise — recapture the current offset so the remaining hand keeps
-##   the controller exactly where it is (no jump when the other hand lets go).
-func _refresh_two_hand_grip() -> void:
-	if not _grab_driver or not is_instance_valid(_grab_driver.primary):
-		return
-	if is_instance_valid(_grab_driver.secondary):
-		_grab_driver.primary.transform = Transform3D.IDENTITY
-		_grab_driver.secondary.transform = Transform3D.IDENTITY
-	else:
-		var g: Grab = _grab_driver.primary
-		g.transform = global_transform.affine_inverse() * g.by.global_transform
+## Anchor each holding hand onto its own grip: one hand takes the controller by
+## that side, two hands centre it between them. See GripAnchor.
+func _refresh_grip() -> void:
+	GripAnchor.refresh(self, self)
+
+
+## Where a hand grips this controller, in controller-local space. The authored
+## HandLeft/HandRight nodes are the source — the same transform that places the
+## wrap-around hand mesh (controller_model.gd), so the drawn hand sits on the
+## real one. Null when the scene carries no such node.
+func grip_anchor(is_left: bool) -> Variant:
+	var hand := get_node_or_null(^"HandLeft" if is_left else ^"HandRight") as Node3D
+	return hand.transform if hand != null else null
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────
@@ -242,7 +239,7 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_update_pointer_block(ctrl, true)
 	_update_locomotion_block()
 	_apply_rumble()
-	_refresh_two_hand_grip()
+	_refresh_grip()
 
 
 ## Fires for any individual grab release (primary or secondary).
@@ -267,9 +264,9 @@ func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
 				_saved_by = null
 		_update_locomotion_block()
 		_apply_rumble()
-		# Back to one hand after an intentional/combo drop → recapture precise so the
-		# survivor keeps the controller where it is (clears any two-hand identity frame).
-		_refresh_two_hand_grip()
+		# Back to one hand after an intentional/combo drop → the survivor takes the
+		# controller by its own grip.
+		_refresh_grip()
 		return
 
 	# Toggle grip — rehold the released hand.
@@ -283,7 +280,7 @@ func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
 	else:
 		# Secondary hand toggle — rehold it.
 		call_deferred("_rehold_hand", by)
-	_refresh_two_hand_grip()
+	_refresh_grip()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:

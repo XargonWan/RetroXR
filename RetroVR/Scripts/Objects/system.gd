@@ -635,6 +635,15 @@ func _load_system_model() -> void:
 		_port_controllers[0] = _handheld_input
 
 
+## Where a hand grips this system, in local space, or null when it has no
+## authored grip and should stay where it was grabbed. Only handhelds define
+## one — a console keeps the precise grab. Read by GripAnchor via HandheldInput.
+func grip_anchor(is_left: bool) -> Variant:
+	if _model != null and _model.has_method("get_grip_anchor"):
+		return _model.get_grip_anchor(is_left)
+	return null
+
+
 ## Interior open angle of a clamshell handheld's lid (0 shut … 180 flat), or
 ## -1 for systems without a lid. Used by ScenePersistence.
 func get_lid_angle_deg() -> float:

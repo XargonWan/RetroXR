@@ -463,6 +463,23 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 		vis.visible = false
 
 
+## How far down the body the hands grip, as a fraction of its length from centre.
+const GRIP_Z_FRACTION := 0.25
+
+
+## Where a hand grips the device, in the system's local frame — the side edges,
+## at mid-thickness, down toward the near edge where the hands actually sit (the
+## far edge is the cartridge slot). RetroSystem hands this to GripAnchor so a
+## held handheld sits in one hand or between two, rather than keeping whatever
+## offset it was touched at.
+func get_grip_anchor(is_left: bool) -> Transform3D:
+	var x := body_size.x * 0.5
+	return Transform3D(Basis(), Vector3(
+		-x if is_left else x,
+		0.0,
+		body_size.z * GRIP_Z_FRACTION))
+
+
 ## Shrink the root collision box to the device and hide the console body.
 ## Called by RetroSystem after the model loads.
 func configure_handheld_body(host: Node3D) -> void:
