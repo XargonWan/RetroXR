@@ -9,12 +9,68 @@ extends Node3D
 
 ## Called when the system is powered on (e.g. light up power LED, play boot animation).
 func on_power_on() -> void:
-	pass
+	if _power_slider != null:
+		_power_slider.set_value_no_signal(1.0)
 
 
 ## Called when the system is powered off (e.g. extinguish power LED).
 func on_power_off() -> void:
-	pass
+	if _power_slider != null:
+		_power_slider.set_value_no_signal(0.0)
+
+
+# --- power SLIDE switches ----------------------------------------------------
+#
+# Several consoles power on with a slide, not a push: the Genesis rocker travels
+# left to ON, the N64's slides up. Driving those from the cabinet's generic
+# VRButton made them sink into the case like a button, which is the wrong motion
+# and hides the ON/OFF legend the shell prints either side of the cap.
+#
+# build_power_slider() replaces the button with a VRSlider mounted ON the shell's
+# real cap, so the thing you grab is the thing that moves, and the two detents
+# map to off/on. Subclasses that override on_power_on/on_power_off must call
+# super() so an externally-driven power change (a save restore, a multiplayer
+# event, the cartridge being pulled) still moves the switch.
+var _power_slider: VRSlider = null
+
+
+## Mount a two-detent power slider on `cap` and hide the generic push button.
+## `axis` is the travel direction toward ON, in this model's local space;
+## `throw` is the total travel in metres.
+func build_power_slider(power_btn: VRButton, cap: MeshInstance3D,
+		axis: Vector3, throw: float) -> VRSlider:
+	if cap == null:
+		return null
+	if power_btn != null:
+		power_btn.visible = false
+		power_btn.set_deferred("monitoring", false)
+	var slider := VRSlider.new()
+	slider.name = "PowerSwitch"
+	slider.axis_local = axis.normalized()
+	slider.travel = throw
+	slider.steps = 2
+	slider.collision_layer = 1 | (1 << 20)
+	var ab: AABB = cap.global_transform * cap.get_aabb()
+	slider.engage_radius = clampf(maxf(ab.size.x, maxf(ab.size.y, ab.size.z)) * 0.9, 0.02, 0.05)
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = ab.size + Vector3(0.006, 0.006, 0.006)
+	col.shape = box
+	slider.add_child(col)
+	add_child(slider)                     # _ready() runs here, before adopting
+	slider.global_position = ab.get_center()
+	slider.set_knob_mesh(cap)
+	slider.value_changed.connect(_on_power_slider_changed)
+	_power_slider = slider
+	return slider
+
+
+func _on_power_slider_changed(v: float) -> void:
+	var host := get_parent()
+	if host == null or not host.has_method("toggle_power"):
+		return
+	if (v > 0.5) != bool(host.get("is_powered_on")):
+		host.toggle_power()
 
 
 ## Play the cartridge/disc tray open animation (if supported).

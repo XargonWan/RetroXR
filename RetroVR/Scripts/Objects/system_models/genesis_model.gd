@@ -121,7 +121,10 @@ func uses_memory_cards() -> bool:
 
 
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
-	_wire_button(power_btn, "power")
+	# POWER is a rocker, not a button. The shell prints "ON | | OFF" under it and
+	# the cap travels between those two ticks — about 9 mm, ON toward -X.
+	var cap := _glb.find_child("power", true, false) as MeshInstance3D if _glb != null else null
+	build_power_slider(power_btn, cap, Vector3.LEFT, 0.009)
 	_wire_button(reset_btn, "reset")
 
 
@@ -241,9 +244,11 @@ func configure_collision(host: Node3D) -> void:
 
 
 func on_power_on() -> void:
+	super.on_power_on()
 	_set_led(true)
 
 func on_power_off() -> void:
+	super.on_power_off()
 	_set_led(false)
 
 

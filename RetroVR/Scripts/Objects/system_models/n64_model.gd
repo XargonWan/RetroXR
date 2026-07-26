@@ -133,7 +133,10 @@ func configure_collision(host: Node3D) -> void:
 
 ## POWER + RESET only (cartridge system — no eject/OPEN button).
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
-	_wire_button(power_btn, "switch_power24")
+	# POWER is a slide switch, not a button — the shell prints ON above OFF beside
+	# it, so the cap travels along the console's depth, ON toward -Z (away).
+	var cap := find_child("switch_power24", true, false) as MeshInstance3D
+	build_power_slider(power_btn, cap, Vector3.FORWARD, 0.005)
 	_wire_button(reset_btn, "button_reset")
 
 
@@ -221,10 +224,12 @@ func uses_memory_cards() -> bool:
 
 
 func on_power_on() -> void:
+	super.on_power_on()
 	_set_led(true)
 
 
 func on_power_off() -> void:
+	super.on_power_off()
 	_set_led(false)
 
 
