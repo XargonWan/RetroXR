@@ -82,7 +82,6 @@ func _hinge_y_offset() -> float:
 	return 0.0065 - 0.012877
 
 
-## Force the stereo output mode every boot; depth follows the physical slider.
 ## Same front-face placement as the DS, but a smaller nameplate.
 ##
 ## The shared 0.72 is sized for "NINTENDO DS" — long enough that it nearly fills
@@ -97,6 +96,7 @@ func name_label_placement() -> Dictionary:
 	return cfg
 
 
+## Force the stereo output mode every boot; depth follows the physical slider.
 func get_forced_core_options() -> Dictionary:
 	return {
 		"citra_render_3d": "side-by-side",
@@ -138,8 +138,17 @@ func configure_handheld_controls(host: Node3D) -> void:
 # Both grooves run along the lid's slanted side rim, so travel is a diagonal in
 # the model's local space. Value 0 = the hinge end (2D / quiet), 1 = the far end
 # by the top of the screen (full depth / loud) — matching the real hardware.
+#
+# The Y sign used to be NEGATIVE, which ran both knobs diagonally OUT of their
+# grooves: value 0 sat correctly in the slot and value 1 left it entirely, the
+# tab ending up on the bare shell below. Two independent fits of the geometry
+# agree the groove climbs — the lid's own surface near the knob comes out at
+# (0.031, 0.337, -0.941), and the knob tab, which is elongated along the slot it
+# rides in, at (-0.025, 0.430, -0.902). X is fit noise (the grooves sit on the
+# side rims and run in the YZ plane; the two fits disagree even on its sign), so
+# it is dropped and the Y/Z pair averaged.
 const _KNOB_TRAVEL := 0.0105
-const _KNOB_AXIS := Vector3(0.0, -0.622, -0.783)
+const _KNOB_AXIS := Vector3(0.0, 0.384, -0.923)
 
 var _knob_3d: Dictionary = {}
 var _knob_vol: Dictionary = {}
