@@ -1138,11 +1138,17 @@ func _rebuild_romm_rows() -> void:
 
 	_romm_rows.clear()
 
-	# 1. Local files, keyed by lowercase filename.
+	# 1. Local files, keyed by lowercase basename.
+	#
+	# Scanned WITHOUT the extension filter: RomM stores ROMs as .zip, which is
+	# not in any core's supported_extensions, so a filtered scan cannot see a
+	# freshly downloaded file and every row stays stuck on "download me".
+	# Keying on the basename also survives the archive being unpacked, where
+	# X.zip becomes X.3ds.
 	var local_by_name: Dictionary = {}
-	for rom: Dictionary in RomLibrary.scan_roms(systemid, _romm_detail_exts):
+	for rom: Dictionary in RomLibrary.scan_roms(systemid, [] as Array[String]):
 		var fname := str(rom["path"]).get_file()
-		local_by_name[fname.to_lower()] = rom
+		local_by_name[fname.get_basename().to_lower()] = rom
 
 	# 2. Server entries; mark the ones already on disk.
 	var have_index := romm_catalog.load_index(systemid)
@@ -1161,7 +1167,7 @@ func _rebuild_romm_rows() -> void:
 			if entry.is_empty():
 				continue
 			var fs_name := str(entry.get("fs_name", ""))
-			var key := fs_name.to_lower()
+			var key := fs_name.get_basename().to_lower()
 			var local: Dictionary = local_by_name.get(key, {})
 			if not local.is_empty():
 				matched[key] = true
@@ -1172,11 +1178,15 @@ func _rebuild_romm_rows() -> void:
 				"label": str(entry.get("name", fs_name.get_basename())),
 			})
 
-	# 3. Local-only files the server doesn't know about.
+	# 3. Local-only files the server doesn't know about. The extension filter
+	# skipped in step 1 applies here, or gamelist.json lists itself as a ROM.
 	for key: String in local_by_name:
 		if matched.has(key):
 			continue
 		var rom: Dictionary = local_by_name[key]
+		var ext := str(rom["path"]).get_extension().to_lower()
+		if not _romm_detail_exts.is_empty() and ext not in _romm_detail_exts:
+			continue
 		var label := str(rom["label"])
 		if not _romm_filter.is_empty() and not label.to_lower().contains(_romm_filter):
 			continue
