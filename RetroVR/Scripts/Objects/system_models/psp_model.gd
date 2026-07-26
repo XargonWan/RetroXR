@@ -303,19 +303,22 @@ func _on_umd_door_swung(_deg: float) -> void:
 
 
 func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, eject_btn: VRButton) -> void:
-	# Mount the eject latch on the GLB's own EjectButton position.
+	# Mount the eject latch ON the GLB's own EjectButton mesh — set_button_mesh,
+	# not just a position. Every other console adopts its real cap this way; the
+	# PSP used to place the zone off the mesh and then hide the placeholder by
+	# hand, which left the latch as the one button in the room that never lit up
+	# under the pointer (WidgetOutline can't source from a hidden placeholder)
+	# and never depressed when pressed.
 	var em := find_child("EjectButton", true, false) as MeshInstance3D
 	if em != null:
 		eject_btn.global_position = _mesh_center(em)
+		eject_btn.set_button_mesh(em)   # hides the placeholder itself
 	eject_btn.trigger_radius = 0.015
 	eject_btn.depress_depth = 0.002
 	eject_btn.depress_axis = -_press_dir
 	var lbl := eject_btn.get_node_or_null("ButtonLabel") as Label3D
 	if lbl != null:
 		lbl.visible = false
-	var vis := eject_btn.get_node_or_null("ButtonMesh") as MeshInstance3D
-	if vis != null:
-		vis.visible = false
 
 
 ## UMD loads through the back-edge door. The MediaSlot ride travels the zone's
