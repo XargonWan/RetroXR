@@ -1,4 +1,4 @@
-## N64Controller — Nintendo 64 pad variant of DualShockController.
+## N64Controller — Nintendo 64 pad variant of AnimatedController.
 ## Same animation engine (inherited); only the mesh names and button→RETRO_JOYPAD
 ## bit map differ. Layout: A / B, Start, four yellow C-buttons, L / R shoulder +
 ## Z trigger, one analog stick and a D-pad. The C-buttons have no dedicated
@@ -10,7 +10,7 @@
 ## (C-buttons), LIndexTriggerButton (L), RShoulderButton (R), RIndexTriggerButton
 ## (Z), StickDpad2 (D-pad, pivot "Dpad") and StickLeft1 (analog, pivot "StickLeft").
 class_name N64Controller
-extends DualShockController
+extends AnimatedController
 
 const N64_FACE: Dictionary = {
 	"FireButtonBottom": ControllerBindings.JOYPAD_A,       # A

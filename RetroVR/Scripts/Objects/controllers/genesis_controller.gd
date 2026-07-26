@@ -1,5 +1,5 @@
 ## GenesisController — Sega Genesis / Mega Drive 3-button pad.
-## Same animation engine as the DualShock; only the mesh names and the
+## Same animation engine as every other pad; only the mesh names and the
 ## button→RETRO_JOYPAD map differ. Layout: a D-pad, one row of A/B/C, and START.
 ##
 ## Model: an author's imported "Genesis Controller" bundle. Its meshes are named for the
@@ -12,7 +12,7 @@
 ## depresses as a unit whenever any of the three is held, via the "mask" entry.
 ## Splitting it would mean inventing button geometry the author didn't model.
 class_name GenesisController
-extends DualShockController
+extends AnimatedController
 
 ## Mesh prefix for the moulded A/B/C row.
 const FACE_ROW := "Controler_001|C_Button"

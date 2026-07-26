@@ -1,6 +1,5 @@
 ## PsxController — the ORIGINAL PlayStation digital pad (SCPH-1080), i.e. the
-## controller that shipped before the DualShock. It reuses DualShockController's
-## animation engine (shared by all the imported pads) but is NOT a DualShock: it has
+## controller that shipped before the DualShock. It is NOT a DualShock — it has
 ## the four face buttons, L1/L2/R1/R2, Select/Start and a D-pad — and no analog
 ## sticks (so no stick meshes are cached and no stick ever tilts).
 ##
@@ -9,7 +8,7 @@
 ## (L1/R1), LIndexTriggerButton/RIndexTriggerButton (L2/R2), SelectButton,
 ## StartButton and StickLeft22 (the D-pad, rocking about the "StickLeft" pivot).
 class_name PsxController
-extends DualShockController
+extends AnimatedController
 
 # Mesh-base-name -> RETRO_JOYPAD bit (PSX/RetroArch standard glyph mapping,
 # identical to the DualShock's — same face glyphs, just no sticks).

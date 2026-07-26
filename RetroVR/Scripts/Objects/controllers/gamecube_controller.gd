@@ -1,10 +1,10 @@
-## GamecubeController — GameCube pad variant of DualShockController.
+## GamecubeController — GameCube pad variant of AnimatedController.
 ## Same animation engine (inherited); only the mesh names and button→RETRO_JOYPAD
 ## bit map differ. Layout: A/B/X/Y + Z + Start, one Analog stick + a C-stick,
 ## L/R analog triggers, and a D-pad. Bit map follows RetroArch's usual
 ## GameCube→RetroPad layout (implementer's choice; tune in-headset).
 class_name GamecubeController
-extends DualShockController
+extends AnimatedController
 
 const GC_FACE: Dictionary = {
 	"A Button": ControllerBindings.JOYPAD_A,

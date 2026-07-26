@@ -1,6 +1,6 @@
 ## SaturnController — Sega Saturn control pad.
 ##
-## Same animation engine as the DualShock (it is a thin subclass); only the mesh
+## Same animation engine as every other pad (it is a thin subclass); only the mesh
 ## names and the button→RETRO_JOYPAD map differ. Layout: a D-pad, six face
 ## buttons in two arcs of three (X/Y/Z above A/B/C), L and R shoulder triggers,
 ## and START. No analog sticks — this is the digital pad, so _stick_l/_stick_r
@@ -17,7 +17,7 @@
 ## the Genesis pads) and the X/Y/Z row on L/X/R, with the physical triggers on
 ## L2/R2.
 class_name SaturnController
-extends DualShockController
+extends AnimatedController
 
 const SATURN_FACE: Dictionary = {
 	"FireButtonBottom": ControllerBindings.JOYPAD_Y,   # A

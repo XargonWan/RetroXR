@@ -6,11 +6,11 @@
 ## SELECT/START, L/R shoulders, L2/R2 triggers and two analog sticks that also
 ## click (L3/R3) — all 16 buttons plus both axes.
 ##
-## Animation is DualShockController's engine. Because the meshes are authored
+## Animation is AnimatedController's engine. Because the meshes are authored
 ## here rather than imported, controls are bound by node path instead of the
 ## fuzzy mesh-name search the console models need.
 class_name RetroPadController
-extends DualShockController
+extends AnimatedController
 
 # Node path (from the pad root) -> RETRO_JOYPAD bit.
 const PAD_FACE: Dictionary = {

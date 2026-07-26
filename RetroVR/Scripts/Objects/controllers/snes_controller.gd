@@ -1,4 +1,4 @@
-## SnesController — SNES pad variant of DualShockController.
+## SnesController — SNES pad variant of AnimatedController.
 ## Same animation engine (inherited); only the mesh names and button→RETRO_JOYPAD
 ## bit map differ. SNES layout: a diamond of B/A/Y/X, L/R shoulders,
 ## Select/Start and a D-pad (no analog sticks).
@@ -8,7 +8,7 @@
 ## (FireButton*, LShoulderButton, RShoulderButton, Select/StartButton and
 ## StickLeft22 for the D-pad), so no mesh splitting was needed.
 class_name SnesController
-extends DualShockController
+extends AnimatedController
 
 # Mesh-base-name -> RETRO_JOYPAD bit. The GLB names the diamond by POSITION, so
 # map through the SNES face layout: bottom=B, right=A, left=Y, top=X — which is

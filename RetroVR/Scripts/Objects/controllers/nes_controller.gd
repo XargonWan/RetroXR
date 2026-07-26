@@ -1,4 +1,4 @@
-## NesController — NES pad variant of DualShockController.
+## NesController — NES pad variant of AnimatedController.
 ## Same animation engine (inherited); only the mesh names and button→RETRO_JOYPAD
 ## bit map differ. NES layout: A / B + Select / Start + a D-pad (no analog sticks).
 ##
@@ -6,7 +6,7 @@
 ## FireButtonRight (A), FireButtonBottom (B), SelectButton, StartButton and
 ## StickLeft22 (the D-pad, rocking about the "StickLeft" pivot empty).
 class_name NesController
-extends DualShockController
+extends AnimatedController
 
 # Mesh-base-name -> RETRO_JOYPAD bit (standard NES→RetroPad glyph mapping).
 const NES_FACE: Dictionary = {
@@ -40,4 +40,3 @@ func _cache_meshes() -> void:
 	var dm: MeshInstance3D = _find_mesh("StickLeft22")
 	if dm != null:
 		_dpad = {"node": dm, "rest": dm.transform, "pivot": _find_pivot(dm, "StickLeft")}
-
