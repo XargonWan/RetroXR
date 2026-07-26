@@ -70,8 +70,16 @@ var _touch_controllers: Array[XRController3D] = []
 func name_label_body() -> Node3D:
 	# The stand-in body only exists on the fallback path; with the detailed shell
 	# in, the base half IS the Shell subtree (its lid rides LidPivot).
+	#
+	# It has to be VISIBLE to count. n3ds.tscn still carries a hidden HandheldBody
+	# box from before the stand-in moved into its own *_primitive.tscn, and merely
+	# finding it handed the label an empty AABB (RetroSystem._body_aabb skips
+	# invisible meshes) — so _place_name_label bailed and the 3DS kept its label
+	# at the default scene pose, floating instead of sitting on the front.
 	var body := find_child("HandheldBody", true, false) as Node3D
-	return body if body != null else get_node_or_null("Shell")
+	if body != null and body.is_visible_in_tree():
+		return body
+	return get_node_or_null("Shell")
 
 
 ## Upright on the base's vertical front (+Z) face (where the START button is),

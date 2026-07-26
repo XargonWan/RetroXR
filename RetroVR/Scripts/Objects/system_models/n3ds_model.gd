@@ -83,6 +83,20 @@ func _hinge_y_offset() -> float:
 
 
 ## Force the stereo output mode every boot; depth follows the physical slider.
+## Same front-face placement as the DS, but a smaller nameplate.
+##
+## The shared 0.72 is sized for "NINTENDO DS" — long enough that it nearly fills
+## the base's width. This system's name resolves to just "3DS", so the width
+## constraint never binds and the height one does: at 0.72 three characters come
+## out 18.5 mm tall on a 25.8 mm base, spilling over the touch-screen bezel. 0.45
+## lands it on the front lip at about the weight of the shell's own moulded power
+## and Wi-Fi icons.
+func name_label_placement() -> Dictionary:
+	var cfg := super.name_label_placement()
+	cfg["h_frac"] = 0.45
+	return cfg
+
+
 func get_forced_core_options() -> Dictionary:
 	return {
 		"citra_render_3d": "side-by-side",
