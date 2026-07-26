@@ -87,9 +87,49 @@ var _cache_dir: String = ""
 @onready var _options_panel: BookOptionsPanel = $BookOptionsPanel
 
 # The currently active turning leaf
-var _active_leaf: Node3D = null
+var _active_leaf: MeshInstance3D = null
 var _is_turning: bool = false
 var _turn_direction: int = 0  # 1 = forward, -1 = backward
+
+# ── Hand-driven page fold ─────────────────────────────────────────────────────
+
+## Fraction of a page, measured in from the fore edge, that can be gripped. The
+## inner strip is deliberately left alone: the grab zones sit on the pointer
+## layer, which outranks a pickable, so a full-page zone would leave the laser
+## no way to pick the book up at all.
+const GRAB_BAND := 0.65
+const CURL_MIN := 0.003
+const CURL_MAX := 0.045
+## How much looser the crease is at the spine end than at the fore edge. Kept
+## gentle: a strong taper lands the flipped half of the page at visibly
+## different heights along its length.
+const CURL_TAPER := 0.5
+## Crease radius a completed turn closes down to. The flipped page ends up
+## 2 x this above the stack it lands on, so it has to be small enough to read as
+## flush — CURL_MIN would leave it floating 6 mm proud.
+const CURL_CLOSED := 0.0004
+## How close to the gutter the fold line may get before the binding stops it.
+const FOLD_GUTTER_MARGIN := 0.004
+## Fold progress past which letting go completes the turn instead of undoing it.
+const TURN_COMMIT := 0.5
+const LEAF_SETTLE_TIME := 0.28
+## A replayed remote turn covers the whole page, so it runs slower than the
+## settle that finishes a drag already most of the way over.
+const REMOTE_TURN_TIME := 0.45
+const LEAF_Z_GAP := 0.0008
+
+var _grab_right: PageGrab = null
+var _grab_left: PageGrab = null
+var _grab_dir: int = 0                     # 0 = no page in hand
+var _grab_anchor: Vector2 = Vector2.ZERO   # gripped point, leaf-local metres
+var _fold_origin: Vector2 = Vector2.ZERO
+var _fold_normal: Vector2 = Vector2.RIGHT
+var _curl_radius: float = CURL_MIN
+var _curl_taper: float = CURL_TAPER
+var _leaf_tween: Tween = null
+## Set while replaying a turn somebody else made: the spread to land on when
+## the animation finishes, instead of stepping locally and echoing it back.
+var _animate_target: Dictionary = {}
 var _loading: bool = false  # re-entry guard for load_pdf ↔ setter
 
 # VR page turning
@@ -98,7 +138,7 @@ var _turn_cooldown: float = 0.0
 const TURN_COOLDOWN_TIME := 0.5
 const GRIP_THRESHOLD := 0.3
 const GRIP_DETECT_RADIUS := 0.15
-const SPINE_WIDTH := 0.012          # width of the spine binding strip
+const SPINE_WIDTH := 0.005          # width of the spine binding strip
 const SPINE_HEIGHT_MARGIN := 0.004  # how much taller spine is than pages
 const LEAF_THICKNESS := 0.0001      # meters of depth per leaf (~0.1mm, realistic paper)
 const COVER_THICKNESS := 0.004      # combined depth contribution of front + back covers
@@ -189,6 +229,7 @@ func _ready() -> void:
 	_right_stack_top.add_to_group("outline_exclude")
 	_create_loading_texture()
 	_create_hint_labels()
+	_build_page_grabs()
 	await get_tree().process_frame
 	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
 		_controllers.append(node as XRController3D)
@@ -359,6 +400,8 @@ func _decode_cbz_page(page_index: int) -> Image:
 func _apply_dimensions() -> void:
 	if _page_count == 0:
 		return
+	# Resizing rebuilds every mesh, so a page in someone's hand has to go first.
+	_abort_grab()
 	_book_width = _base_width * size_scale
 	book_height = _base_height * size_scale
 	_configure_meshes()
@@ -377,9 +420,73 @@ func set_page(state: int, leaf: int) -> void:
 	if _page_count == 0:
 		_pending_page = {"state": state, "leaf": leaf}
 		return
+	# A page change arriving from the host (or a restore) while somebody is
+	# mid-drag must not delete the leaf out of their hand. Hold it and apply on
+	# release — _pending_page already means exactly "apply this once we can".
+	if _grab_dir != 0:
+		_pending_page = {"state": state, "leaf": leaf}
+		return
+	if _animate_page_step(state, leaf):
+		return
 	_despawn_active_leaf()
 	_current_leaf = clampi(leaf, 0, maxi(_leaf_count - 1, 0))
 	_set_state(clampi(state, BookState.CLOSED, BookState.LAST_PAGE) as BookState)
+
+
+## When another player turns a single page, play it as a real turn rather than
+## teleporting the spread. Only remote events qualify — a scene restore or a
+## size change jumps an arbitrary distance and should just snap.
+##
+## The fold itself is never streamed: it is 28 bytes at 20 Hz, but it would add
+## a third continuous channel to a system that deliberately has two, and a
+## client lerping toward a sampled copy of someone else's hand jitter looks
+## worse than a clean local animation.
+func _animate_page_step(state: int, leaf: int) -> bool:
+	if not NetworkManager.is_active() or not NetworkManager.is_event_applying():
+		return false
+	if _active_leaf != null or not is_inside_tree():
+		return false
+	var target_state := clampi(state, BookState.CLOSED, BookState.LAST_PAGE)
+	var target_leaf := clampi(leaf, 0, maxi(_leaf_count - 1, 0))
+	var dir := _step_direction(target_state, target_leaf)
+	if dir == 0:
+		return false
+	if not _spawn_leaf(dir):
+		return false
+	_grab_dir = dir
+	_animate_target = {"state": target_state, "leaf": target_leaf}
+	_fold_origin = Vector2(float(dir) * (_book_width * 0.5 + 0.01), 0.0)
+	_fold_normal = Vector2(float(dir), 0.0)
+	_curl_radius = CURL_MAX * 0.5
+	_curl_taper = CURL_TAPER
+	_push_fold(1.0)
+	_settle_leaf(true, REMOTE_TURN_TIME)
+	return true
+
+
+## +1 / -1 if the requested spread is exactly one page either side of the
+## current one, 0 for anything further.
+func _step_direction(target_state: int, target_leaf: int) -> int:
+	match _state:
+		BookState.CLOSED:
+			if target_state == BookState.OPEN and target_leaf == 0:
+				return 1
+			if target_state == BookState.LAST_PAGE and _leaf_count <= 1:
+				return 1
+		BookState.OPEN:
+			if target_state == BookState.OPEN:
+				if target_leaf == _current_leaf + 1:
+					return 1
+				if target_leaf == _current_leaf - 1:
+					return -1
+			elif target_state == BookState.LAST_PAGE and _current_leaf >= _leaf_count - 2:
+				return 1
+			elif target_state == BookState.CLOSED and _current_leaf == 0:
+				return -1
+		BookState.LAST_PAGE:
+			if target_state == BookState.OPEN and target_leaf == _leaf_count - 2:
+				return -1
+	return 0
 
 
 func net_get_page() -> Dictionary:
@@ -760,6 +867,7 @@ func _set_state(new_state: BookState) -> void:
 			_update_collision_shape()
 
 	_update_page_frames()
+	_layout_page_grabs()
 
 
 ## Update the CollisionShape3D so the grab/highlight area matches the visible book.
@@ -800,20 +908,51 @@ func _set_spine_closed(total_thick: float) -> void:
 		mat.set_shader_parameter("spine_depth", total_thick + COVER_GAP * 2.0)
 
 
-## How deep the gutter valley runs on a stack of this thickness.
-func _gutter_dive_for(thick: float) -> float:
-	return minf(thick * GUTTER_DIVE_RATIO, GUTTER_DIVE_MAX)
+## Sit a spread page on top of its stack, undoing the stack's Z scale.
+##
+## The page quad is a CHILD of the stack box, and the box is scaled on Z to
+## match its leaf count — so the page inherited that scale. Harmless while the
+## page was flat, but paper.gdshader displaces along Z, so a 1.65 mm gutter dive
+## rendered as 0.9 mm on a half-scaled stack and the normals skewed with it.
+func _seat_stack_top(stack: MeshInstance3D, top: MeshInstance3D, thick: float) -> void:
+	if stack == null or top == null:
+		return
+	var sz := maxf(stack.scale.z, 1e-4)
+	top.scale.z = 1.0 / sz
+	top.position.z = (thick * 0.5 + LEAF_Z_GAP) / sz
 
 
-## Push the per-side valley depth into the two spread page materials. The two
-## halves of an open book are rarely the same thickness, so each page dives by
-## its own amount.
-func _update_gutter_depth(left_thick: float, right_thick: float) -> void:
-	var pairs := [[_left_stack_top, left_thick], [_right_stack_top, right_thick]]
-	for pair: Array in pairs:
-		var mat := (pair[0] as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+## Z that both pages converge to at the binding.
+##
+## This has to be ONE depth shared by both sides. Diving each page by a fraction
+## of its own stack looks right in isolation but the two halves of an open book
+## are rarely the same thickness: at leaf 8 of 55 the right stack is 46 leaves
+## and the left is 9, so the right page's binding edge finished BELOW the left
+## page's and the turning page visibly slid underneath the one it was leaving.
+func _valley_z() -> float:
+	var shallow := minf(_page_plane_z(1), _page_plane_z(-1))
+	var deepest := maxf(_page_plane_z(1), _page_plane_z(-1))
+	var floor_z := -maxf(_side_thickness(1), _side_thickness(-1)) * 0.25
+	var valley := maxf(floor_z, deepest - GUTTER_DIVE_MAX)
+	# The shallower page still has to dive a little, or its gutter edge would be
+	# pushed up instead of down.
+	return minf(valley, shallow - ZFIGHT_MARGIN)
+
+
+## How far a page sitting at plane_z has to fall to reach the binding.
+func _gutter_dive_for(plane_z: float) -> float:
+	return maxf(plane_z - _valley_z(), 0.0)
+
+
+## Push the per-side valley depth into the two spread page materials. Each side
+## starts at a different height, so each dives by a different amount — to the
+## same place.
+func _update_gutter_depth() -> void:
+	for dir: int in [1, -1]:
+		var node := _right_stack_top if dir > 0 else _left_stack_top
+		var mat := node.get_surface_override_material(0) as ShaderMaterial
 		if mat:
-			mat.set_shader_parameter("gutter_dive", _gutter_dive_for(float(pair[1])))
+			mat.set_shader_parameter("gutter_dive", _gutter_dive_for(_page_plane_z(dir)))
 
 
 ## The binding material. The cover's own inner edge is wrapped around the spine
@@ -892,19 +1031,20 @@ func _update_stack_thickness() -> void:
 	if _left_stack:
 		_left_stack.scale.z = left_thick / STACK_BASE_DEPTH
 		_ensure_edge_material(_left_stack, left_count)
+		_seat_stack_top(_left_stack, _left_stack_top, left_thick)
 	if _right_stack:
 		_right_stack.scale.z = right_thick / STACK_BASE_DEPTH
 		_ensure_edge_material(_right_stack, right_count)
+		_seat_stack_top(_right_stack, _right_stack_top, right_thick)
 
-	_update_gutter_depth(left_thick, right_thick)
+	_update_gutter_depth()
 
 	# Open book: the binding is the FLOOR of the gutter valley, not a wall
-	# between the pages. Its top has to finish below where each page bottoms out
-	# diving into the gutter — centred at Z=0 with the full book depth it stood
-	# proud of both stacks as a bright slab down the middle of the spread.
+	# between the pages. Its top has to finish just below where the pages bottom
+	# out — centred at Z=0 with the full book depth it stood proud of both
+	# stacks as a bright slab down the middle of the spread.
 	var max_thick := maxf(left_thick, right_thick)
-	var valley_top := minf(left_thick * 0.5 - _gutter_dive_for(left_thick),
-		right_thick * 0.5 - _gutter_dive_for(right_thick)) - ZFIGHT_MARGIN
+	var valley_top := _valley_z() - ZFIGHT_MARGIN
 	var spine_bottom := -(max_thick * 0.5 + COVER_GAP)
 	var open_spine_depth := maxf(valley_top - spine_bottom, LEAF_THICKNESS * 4.0)
 	if _spine_mesh and _spine_mesh.mesh is BoxMesh:
@@ -976,114 +1116,334 @@ func turn_page_backward() -> void:
 		_report_page()
 
 
-# ── Active leaf hinge system ──────────────────────────────────────────────────
+# ── Active leaf: hand-driven fold ─────────────────────────────────────────────
+#
+# A page turn is one continuous deformation, not a rotation. The leaf wraps
+# around a fold line whose position comes straight from where the hand is:
+# the fold line is the perpendicular bisector of (grip point -> hand), pushed
+# toward the spine by half the crease circumference so paper length is
+# conserved. See paper.gdshader for the wrap itself.
+#
+# The classic Hong/Card/Chen cone model looks better but has no closed-form
+# inverse — you cannot solve its apex/angle from a touch point — and tracking
+# the hand exactly is the whole point here.
 
-func _spawn_active_leaf_forward() -> void:
-	if _active_leaf:
-		_despawn_active_leaf()
 
-	_is_turning = true
-	_turn_direction = 1
+## Build the two grab zones. Their geometry depends on the loaded page size, so
+## they are sized in _layout_page_grabs() rather than authored in the scene.
+func _build_page_grabs() -> void:
+	_grab_right = _make_page_grab(1)
+	_grab_left = _make_page_grab(-1)
 
-	var front_page_idx: int
-	var back_page_idx: int
 
-	if _state == BookState.CLOSED:
-		front_page_idx = 0
-		back_page_idx = 1
+func _make_page_grab(dir: int) -> PageGrab:
+	var zone := PageGrab.new()
+	zone.name = "PageGrabRight" if dir > 0 else "PageGrabLeft"
+	zone.direction = dir
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	zone.add_child(shape)
+	add_child(zone)
+	zone.grab_begin.connect(_on_page_grab_begin)
+	zone.grab_move.connect(_on_page_grab_move)
+	zone.grab_end.connect(_on_page_grab_end)
+	return zone
+
+
+## Thickness of the page stack on one side of the book.
+func _side_thickness(dir: int) -> float:
+	if _state != BookState.OPEN:
+		return maxf(_leaf_count * LEAF_THICKNESS, LEAF_THICKNESS * 2)
+	var leaves := (_leaf_count - _current_leaf - 1) if dir > 0 else (_current_leaf + 1)
+	return maxf(leaves * LEAF_THICKNESS, LEAF_THICKNESS)
+
+
+## Z of the page surface on one side of the book, in book-local space.
+func _page_plane_z(dir: int) -> float:
+	var gap := LEAF_Z_GAP if _state == BookState.OPEN else COVER_GAP
+	return _side_thickness(dir) * 0.5 + gap
+
+
+func _layout_page_grabs() -> void:
+	if _grab_right == null:
+		return
+	var spine_half := SPINE_WIDTH * 0.5
+	var half_x := _book_width * GRAB_BAND * 0.5
+	var reach := Vector3(half_x, book_height * 0.5, 0.035)
+	for pair: Array in [[_grab_right, 1.0], [_grab_left, -1.0]]:
+		var zone: PageGrab = pair[0]
+		var dir: float = pair[1]
+		# Centred on the outer band of the page, measured out from the gutter.
+		zone.position = Vector3(
+			dir * (spine_half + _book_width * (1.0 - GRAB_BAND * 0.5)),
+			0.0,
+			_page_plane_z(int(dir)))
+		zone.reach = reach
+		var shape := zone.get_child(0) as CollisionShape3D
+		(shape.shape as BoxShape3D).size = reach * 2.0
+	_grab_right.set_enabled(_page_count > 0 and _state != BookState.LAST_PAGE)
+	_grab_left.set_enabled(_page_count > 0 and _state != BookState.CLOSED)
+
+
+## Which pages the turning leaf carries, and what shows through underneath.
+## Returns {} when there is nothing to turn that way.
+func _leaf_plan(dir: int) -> Dictionary:
+	if dir > 0:
+		match _state:
+			BookState.CLOSED:
+				return {"front": 0, "back": 1, "hide": _cover_mesh,
+					"under": _right_stack_top, "under_page": 2}
+			BookState.OPEN:
+				var front := (_current_leaf + 1) * 2
+				return {"front": front, "back": front + 1, "hide": null,
+					"under": _right_stack_top, "under_page": (_current_leaf + 2) * 2}
 	else:
-		front_page_idx = (_current_leaf + 1) * 2
-		back_page_idx = front_page_idx + 1
-
-	_active_leaf = _create_leaf_mesh(front_page_idx, back_page_idx)
-	_active_leaf_container.add_child(_active_leaf)
-
-
-func _spawn_active_leaf_backward() -> void:
-	if _active_leaf:
-		_despawn_active_leaf()
-
-	_is_turning = true
-	_turn_direction = -1
-
-	var front_page_idx := _current_leaf * 2
-	var back_page_idx := front_page_idx + 1
-
-	_active_leaf = _create_leaf_mesh(front_page_idx, back_page_idx)
-	_active_leaf.rotation_degrees.y = 180.0
-	_active_leaf_container.add_child(_active_leaf)
+		match _state:
+			BookState.LAST_PAGE:
+				return {"front": _page_count - 1, "back": _page_count - 2, "hide": _back_cover_mesh,
+					"under": _left_stack_top, "under_page": _page_count - 3}
+			BookState.OPEN:
+				var front := _current_leaf * 2 + 1
+				return {"front": front, "back": front - 1, "hide": null,
+					"under": _left_stack_top, "under_page": (_current_leaf - 1) * 2 + 1}
+	return {}
 
 
-func _create_leaf_mesh(front_page_idx: int, back_page_idx: int) -> Node3D:
-	var leaf := Node3D.new()
+func _spawn_leaf(dir: int) -> bool:
+	var plan := _leaf_plan(dir)
+	if plan.is_empty():
+		return false
+	_despawn_active_leaf()
+
+	var leaf := MeshInstance3D.new()
 	leaf.name = "ActiveLeaf"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(_book_width, book_height)
+	var subdiv := LEAF_SUBDIV_DESKTOP if QualityManager.is_desktop() else LEAF_SUBDIV_QUEST
+	quad.subdivide_width = subdiv.x
+	quad.subdivide_depth = subdiv.y
+	leaf.mesh = quad
+	_set_paper_aabb(leaf, _book_width, book_height)
+	# The leaf deforms every frame; an inverted-hull outline copy would not.
+	leaf.add_to_group("outline_exclude")
 
-	var front_mesh := MeshInstance3D.new()
-	front_mesh.name = "FrontFace"
-	var front_quad := QuadMesh.new()
-	front_quad.size = Vector2(_book_width, book_height)
-	front_mesh.mesh = front_quad
-	var front_mat := StandardMaterial3D.new()
-	front_mat.cull_mode = BaseMaterial3D.CULL_BACK
-	var front_tex := _get_page_texture(front_page_idx)
-	if front_tex:
-		front_mat.albedo_texture = front_tex
-	front_mesh.material_override = front_mat
-	front_mesh.position.x = _book_width / 2.0
-	leaf.add_child(front_mesh)
+	var mat := ShaderMaterial.new()
+	mat.shader = PAPER_SHADER
+	mat.set_shader_parameter("page_size", Vector2(_book_width, book_height))
+	mat.set_shader_parameter("spine_sign", float(dir))
+	mat.set_shader_parameter("gutter_dive", _gutter_dive_for(_page_plane_z(dir)))
+	mat.set_shader_parameter("curl_taper", CURL_TAPER)
+	mat.set_shader_parameter("front_texture", _get_page_texture(int(plan["front"])))
+	var back_idx := int(plan["back"])
+	if back_idx >= 0 and back_idx < _page_count:
+		mat.set_shader_parameter("back_texture", _get_page_texture(back_idx))
+	leaf.set_surface_override_material(0, mat)
 
-	var back_mesh := MeshInstance3D.new()
-	back_mesh.name = "BackFace"
-	var back_quad := QuadMesh.new()
-	back_quad.size = Vector2(_book_width, book_height)
-	back_mesh.mesh = back_quad
-	var back_mat := StandardMaterial3D.new()
-	back_mat.cull_mode = BaseMaterial3D.CULL_BACK
-	if back_page_idx < _page_count:
-		var back_tex := _get_page_texture(back_page_idx)
-		if back_tex:
-			back_mat.albedo_texture = back_tex
-	back_mesh.material_override = back_mat
-	back_mesh.position.x = _book_width / 2.0
-	back_mesh.rotation_degrees.y = 180.0
-	leaf.add_child(back_mesh)
+	var stack_x := _book_width / 2.0 + SPINE_WIDTH / 2.0
+	leaf.position = Vector3(dir * stack_x, 0.0, _page_plane_z(dir))
+	_active_leaf_container.add_child(leaf)
+	_active_leaf = leaf
+	_is_turning = true
+	_turn_direction = dir
 
-	return leaf
+	# Reveal what the turning page is uncovering.
+	var hide_node := plan.get("hide") as MeshInstance3D
+	if hide_node:
+		hide_node.visible = false
+	var under := plan.get("under") as MeshInstance3D
+	var under_page := int(plan["under_page"])
+	if under:
+		if under_page >= 0 and under_page < _page_count:
+			under.visible = true
+			_apply_texture(under, _get_page_texture(under_page))
+		else:
+			# Nothing behind it — the stack's own cream top reads as blank paper.
+			under.visible = false
+	return true
 
 
 func _despawn_active_leaf() -> void:
+	if _leaf_tween and _leaf_tween.is_valid():
+		_leaf_tween.kill()
+	_leaf_tween = null
 	if _active_leaf:
 		_active_leaf.queue_free()
 		_active_leaf = null
 	_is_turning = false
 	_turn_direction = 0
+	_grab_dir = 0
+	_animate_target = {}
 
 
-func _snap_leaf_to_completion(target_angle: float) -> void:
-	if not _active_leaf:
+## Push the current fold into the leaf's material.
+func _push_fold(strength: float) -> void:
+	if _active_leaf == null:
 		return
-	var tween := create_tween()
-	tween.tween_property(_active_leaf, "rotation_degrees:y", target_angle, 0.15)
-	tween.set_ease(Tween.EASE_OUT)
-	tween.set_trans(Tween.TRANS_QUAD)
-	if _turn_direction == 1:
-		tween.tween_callback(_complete_forward_turn)
+	var mat := _active_leaf.get_surface_override_material(0) as ShaderMaterial
+	if mat == null:
+		return
+	mat.set_shader_parameter("fold_strength", strength)
+	mat.set_shader_parameter("fold_origin", _fold_origin)
+	mat.set_shader_parameter("fold_normal", _fold_normal)
+	mat.set_shader_parameter("curl_radius", _curl_radius)
+	mat.set_shader_parameter("curl_taper", _curl_taper)
+
+
+## Solve the fold line so the gripped point of the page sits under the hand.
+func _update_fold_from_hand(world_pos: Vector3) -> void:
+	if _active_leaf == null or _grab_dir == 0:
+		return
+	var hand: Vector3 = _active_leaf.to_local(world_pos)
+	var dir := float(_grab_dir)
+	var gutter_x := -dir * _book_width * 0.5
+	var away := Vector2(hand.x, hand.y) - _grab_anchor
+	var span := away.length()
+	if span < 1e-4:
+		return
+	# Fold normal points from the fold line back toward where the grip started.
+	var normal := -away / span
+	# Crease radius follows how high the hand lifted, capped at span/PI so the
+	# grip stays in the flipped-flap region — the only part of the wrap that
+	# inverts to an exact fold line.
+	var radius := clampf(minf(maxf(hand.z, 0.0) * 0.5, span / PI), CURL_MIN, CURL_MAX)
+	var dist := (span + PI * radius) * 0.5
+
+	# The fold line may never cross the gutter: the binding holds that edge. A
+	# page gripped close to the spine therefore barely folds at all, which is
+	# the stiffness a real book has — no special case needed.
+	var from_gutter := dir * (_grab_anchor.x - gutter_x)
+	var lean := dir * normal.x
+	if lean > 1e-5:
+		dist = minf(dist, maxf((from_gutter - FOLD_GUTTER_MARGIN) / lean, 0.0))
+
+	_fold_normal = normal
+	_curl_radius = radius
+	_fold_origin = _grab_anchor - normal * dist
+	_push_fold(1.0)
+
+
+## How far through the turn the fold line has travelled, 0 (untouched) to 1
+## (laid flat on the far side).
+func _turn_progress() -> float:
+	if _grab_dir == 0:
+		return 0.0
+	var dir := float(_grab_dir)
+	var fore_x := dir * _book_width * 0.5
+	return clampf(dir * (fore_x - _fold_origin.x) / maxf(_book_width, 1e-5), 0.0, 1.0)
+
+
+## Spring the page the rest of the way over, or back where it came from.
+func _settle_leaf(commit: bool, duration: float = LEAF_SETTLE_TIME) -> void:
+	if _active_leaf == null or _grab_dir == 0:
+		return
+	var dir := float(_grab_dir)
+	var to_origin: Vector2
+	var to_radius: float
+	var to_taper: float
+	# The page has to come to rest on the stack it lands on, not float above the
+	# one it left. Those two planes are different heights — the receiving stack
+	# is usually the thinner one — and the wrap always lifts the flipped half by
+	# two crease radii, so the leaf's own plane drops as the fold completes and
+	# the crease closes almost flat.
+	var to_z := _active_leaf.position.z
+	if commit:
+		# Fold line exactly on the book's gutter: the page lands mirrored onto
+		# the opposite stack.
+		to_origin = Vector2(-dir * (_book_width * 0.5 + SPINE_WIDTH * 0.5), 0.0)
+		to_radius = CURL_CLOSED
+		to_taper = 0.0
+		to_z = _page_plane_z(-_grab_dir) - CURL_CLOSED * 2.0
 	else:
-		tween.tween_callback(_complete_backward_turn)
+		# Fold line off the fore edge leaves every vertex on the flat side.
+		to_origin = Vector2(dir * (_book_width * 0.5 + 0.01), 0.0)
+		to_radius = _curl_radius
+		to_taper = _curl_taper
+	var from_origin := _fold_origin
+	var from_normal := _fold_normal
+	var to_normal := Vector2(dir, 0.0)
+	var from_radius := _curl_radius
+	var from_taper := _curl_taper
+	var from_z := _active_leaf.position.z
+	var leaf := _active_leaf
+
+	if _leaf_tween and _leaf_tween.is_valid():
+		_leaf_tween.kill()
+	_leaf_tween = create_tween()
+	_leaf_tween.set_ease(Tween.EASE_OUT)
+	_leaf_tween.set_trans(Tween.TRANS_CUBIC)
+	_leaf_tween.tween_method(
+		func(t: float) -> void:
+			_fold_origin = from_origin.lerp(to_origin, t)
+			_fold_normal = from_normal.slerp(to_normal, t)
+			_curl_radius = lerpf(from_radius, to_radius, t)
+			_curl_taper = lerpf(from_taper, to_taper, t)
+			if is_instance_valid(leaf):
+				leaf.position.z = lerpf(from_z, to_z, t)
+			_push_fold(1.0),
+		0.0, 1.0, duration)
+	var settled_dir := _grab_dir
+	_leaf_tween.tween_callback(func() -> void: _finish_turn(settled_dir, commit))
 
 
-func _check_snap() -> void:
-	if not _active_leaf or not _is_turning:
+func _finish_turn(dir: int, commit: bool) -> void:
+	var target := _animate_target
+	_animate_target = {}
+	_despawn_active_leaf()
+	if not commit:
+		_set_state(_state)
+	elif not target.is_empty():
+		# Replaying somebody else's turn: land exactly on the spread they
+		# reported, and do not report it back.
+		_current_leaf = clampi(int(target["leaf"]), 0, maxi(_leaf_count - 1, 0))
+		_set_state(clampi(int(target["state"]), BookState.CLOSED, BookState.LAST_PAGE) as BookState)
+	elif dir > 0:
+		turn_page_forward()
+	else:
+		turn_page_backward()
+	# A page change that arrived mid-drag was held back rather than yanking the
+	# page out of the player's hand — apply it now.
+	_consume_pending_page()
+
+
+## Drop a live grab immediately (no spring), e.g. because the book is being
+## resized or reloaded underneath it.
+func _abort_grab() -> void:
+	if _grab_dir == 0:
 		return
-	var angle: float = _active_leaf.rotation_degrees.y
-	if _turn_direction == 1 and angle >= (180.0 - snap_threshold_deg):
-		_snap_leaf_to_completion(180.0)
-	elif _turn_direction == -1 and angle <= snap_threshold_deg:
-		_snap_leaf_to_completion(0.0)
+	var was_state := _state
+	_despawn_active_leaf()
+	_set_state(was_state)
+
+
+func _on_page_grab_begin(dir: int, world_pos: Vector3) -> void:
+	if _grab_dir != 0 or _page_count == 0:
+		return
+	if not _spawn_leaf(dir):
+		return
+	_grab_dir = dir
+	# The spot you gripped is the spot that follows your hand.
+	var local: Vector3 = _active_leaf.to_local(world_pos)
+	_grab_anchor = Vector2(
+		clampf(local.x, -_book_width * 0.5, _book_width * 0.5),
+		clampf(local.y, -book_height * 0.5, book_height * 0.5))
+	_fold_origin = Vector2(float(dir) * (_book_width * 0.5 + 0.01), 0.0)
+	_fold_normal = Vector2(float(dir), 0.0)
+	_curl_radius = CURL_MIN
+	_curl_taper = CURL_TAPER
+	_push_fold(0.0)
+
+
+func _on_page_grab_move(world_pos: Vector3) -> void:
+	_update_fold_from_hand(world_pos)
+
+
+func _on_page_grab_end(_dir: int) -> void:
+	if _grab_dir == 0 or _active_leaf == null:
+		return
+	_settle_leaf(_turn_progress() >= TURN_COMMIT)
 
 
 func _process(delta: float) -> void:
-	_check_snap()
 	if _turn_cooldown > 0.0:
 		_turn_cooldown -= delta
 	_update_hints_and_detect_grip()
@@ -1105,12 +1465,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Check controller proximity for hints, and detect grip for page turn.
+## Show the page hints, and run the one-handed quick-flip fallback.
+##
+## The hints follow the trigger-grab zones, since that is the primary way to
+## turn a page. The grip flip stays as a fallback for turning pages with the
+## book in one hand, and never fires while a page is actually being dragged.
 func _update_hints_and_detect_grip() -> void:
 	_next_label.visible = false
 	_prev_label.visible = false
 
-	if not is_picked_up() or _page_count == 0:
+	if _page_count == 0 or _grab_dir != 0:
+		return
+
+	if _grab_right and _grab_right.is_hovering():
+		_next_label.visible = true
+	if _grab_left and _grab_left.is_hovering():
+		_prev_label.visible = true
+
+	if not is_picked_up():
 		return
 
 	var holding_ctrl: XRController3D = get_picked_up_by_controller()
@@ -1119,6 +1491,9 @@ func _update_hints_and_detect_grip() -> void:
 
 	for ctrl: XRController3D in _controllers:
 		if not ctrl or not ctrl.get_is_active() or ctrl == holding_ctrl:
+			continue
+		# A hand already holding something is not poking anything.
+		if not PokeTip.is_poking(ctrl):
 			continue
 
 		var ctrl_pos_local: Vector3 = to_local(PokeTip.tip_of(ctrl))
@@ -1129,14 +1504,12 @@ func _update_hints_and_detect_grip() -> void:
 		if absf(ctrl_pos_local.x) > _book_width + 0.05:
 			continue
 
-		# Controller is in range — show appropriate hint
 		var is_right := ctrl_pos_local.x > 0.0
 		if is_right and _state != BookState.LAST_PAGE:
 			_next_label.visible = true
 		elif not is_right and _state != BookState.CLOSED:
 			_prev_label.visible = true
 
-		# Check grip for actual page turn
 		if ctrl.get_float("grip") < GRIP_THRESHOLD:
 			continue
 		if _turn_cooldown > 0.0:
@@ -1144,21 +1517,10 @@ func _update_hints_and_detect_grip() -> void:
 
 		if is_right:
 			turn_page_forward()
-			_turn_cooldown = TURN_COOLDOWN_TIME
 		else:
 			turn_page_backward()
-			_turn_cooldown = TURN_COOLDOWN_TIME
+		_turn_cooldown = TURN_COOLDOWN_TIME
 		return
-
-
-func _complete_forward_turn() -> void:
-	_despawn_active_leaf()
-	turn_page_forward()
-
-
-func _complete_backward_turn() -> void:
-	_despawn_active_leaf()
-	turn_page_backward()
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
