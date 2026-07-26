@@ -16,39 +16,53 @@ const _MODEL_PATH := "res://imported-assets/N64 imported.glb"
 const _BODY_DIFFUSE := "res://imported-assets/N64 imported_diffuddddddddddddddse.png"
 
 var _led: Array[MeshInstance3D] = []
+var _glb: Node3D = null
 
 
 func _ready() -> void:
-	# Store-safe guard: GLB is export-excluded (licence pending). Re-show the host's
-	# placeholder box (system.gd hid it) if the model isn't in this build.
-	if not ResourceLoader.exists(_MODEL_PATH):
-		push_warning("RetroSystemModelN64: %s missing — using placeholder box" % _MODEL_PATH)
-		var host := get_parent()
-		if host:
-			var body := host.get_node_or_null("SystemBody") as MeshInstance3D
-			if body:
-				body.show()
-		return
-	var scene := load(_MODEL_PATH) as PackedScene
-	if scene == null:
-		push_warning("RetroSystemModelN64: could not load model at %s" % _MODEL_PATH)
-		return
-	var inst := scene.instantiate() as Node3D
-	add_child(inst)
-	# Front already faces +Z; recentre in X/Z and sit the body base on the ground.
-	var b := _model_aabb(inst)
-	var c := b.position + b.size * 0.5
-	inst.position = Vector3(-c.x, -b.position.y, -c.z)
+	# The authored n64.tscn bakes the recentred shell as a "Shell" instance plus
+	# editor-authorable "CartSeat" and "PortSeat1".."PortSeat4" markers. Reuse
+	# that instance instead of loading a second copy of the GLB.
+	var baked := get_node_or_null("Shell") as Node3D
+	if baked != null:
+		_glb = baked
+	else:
+		# Store-safe guard: GLB is export-excluded (licence pending). Re-show the host's
+		# placeholder box (system.gd hid it) if the model isn't in this build.
+		if not ResourceLoader.exists(_MODEL_PATH):
+			push_warning("RetroSystemModelN64: %s missing — using placeholder box" % _MODEL_PATH)
+			var host := get_parent()
+			if host:
+				var body := host.get_node_or_null("SystemBody") as MeshInstance3D
+				if body:
+					body.show()
+			return
+		var scene := load(_MODEL_PATH) as PackedScene
+		if scene == null:
+			push_warning("RetroSystemModelN64: could not load model at %s" % _MODEL_PATH)
+			return
+		_glb = scene.instantiate() as Node3D
+		add_child(_glb)
+		# Front already faces +Z; recentre in X/Z and sit the body base on the
+		# ground (the baked scene bakes this into Shell.position, so it's only
+		# for the runtime path).
+		var b := _model_aabb(_glb)
+		var c := b.position + b.size * 0.5
+		_glb.position = Vector3(-c.x, -b.position.y, -c.z)
 
-	_recolor_body(inst)
+	_recolor_body(_glb)
 
 	# Power LED: the model ships bright always-on LED meshes — represent power state
 	# with a subtle red emissive instead (driven by on_power_on/off).
 	for nm in ["Lichtno", "Lichtno (1)"]:
-		var m := inst.find_child(nm, true, false) as MeshInstance3D
+		var m := _glb.find_child(nm, true, false) as MeshInstance3D
 		if m:
 			_led.append(m)
 	_set_led(false)
+	# The cart-seat preview box is an editor aid only — hide it at runtime.
+	var preview := find_child("SeatPreview", true, false)
+	if preview is Node3D:
+		(preview as Node3D).visible = false
 
 
 ## Combined AABB of all of `inst`'s meshes, in this model node's local space.
@@ -185,6 +199,12 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if visual:
 		visual.visible = false
+	# An authored "CartSeat" marker (baked into n64.tscn) wins over the socket
+	# pose above, so the seated-cart transform can be dialled in visually in the
+	# Godot 3D editor. Same idiom as CartSeat/DiscSeat/UMDSeat elsewhere.
+	var seat := find_child("CartSeat", true, false) as Node3D
+	if seat != null:
+		slot.global_transform = seat.global_transform
 
 
 ## Cartridge saves live on the cart (or controller pak) — no removable memory cards.

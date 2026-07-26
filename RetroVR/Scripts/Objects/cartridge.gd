@@ -109,6 +109,50 @@ func _apply_cart_model() -> void:
 			n.visible = false
 
 
+## Bounds of the flat face of a model's label mesh, in cartridge space.
+##
+## A label mesh is not always the flat quad the art quad wants to cover. The
+## Atari 2600 and Mega Drive labels wrap over the top edge of the shell the way
+## the printed ones do, so the mesh AABB straddles the cart's whole depth and
+## its centre sits several millimetres inside the plastic — art placed there is
+## swallowed by the body. Keeping only the polygons that face along the label
+## normal leaves the flat front the sticker actually lives on. Either sign of
+## the normal counts: some models have the quad's winding inverted, and the
+## polygon lies in the label plane either way.
+func _label_face_bounds(mi: MeshInstance3D) -> AABB:
+	var xf := global_transform.affine_inverse() * mi.global_transform
+	var full: AABB = xf * mi.get_aabb()
+	var mesh := mi.mesh
+	if mesh == null:
+		return full
+	var acc := AABB()
+	var first := true
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		if arrays.size() <= Mesh.ARRAY_NORMAL:
+			continue
+		if arrays[Mesh.ARRAY_VERTEX] == null or arrays[Mesh.ARRAY_NORMAL] == null:
+			continue
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		if norms.size() != verts.size():
+			continue
+		for i in verts.size():
+			if absf((xf.basis * norms[i]).normalized().z) < 0.95:
+				continue
+			var p := xf * verts[i]
+			if first:
+				acc = AABB(p, Vector3.ZERO)
+				first = false
+			else:
+				acc = acc.expand(p)
+	# No face-on geometry (the 3DS quad's normals point along +Y) — the mesh is
+	# flat enough that its own AABB is the label plane.
+	if first or acc.size.x < 0.0001 or acc.size.y < 0.0001:
+		return full
+	return acc
+
+
 func _cart_model_aabb(root: Node3D) -> AABB:
 	var acc := AABB(); var first := true
 	for n in root.find_children("*", "MeshInstance3D", true, false):
@@ -229,8 +273,7 @@ func _apply_label_art() -> void:
 	# fresh quad over it from its measured bounds is right by construction and
 	# stays right for models we haven't imported yet.
 	if _model_label != null:
-		var ab: AABB = (global_transform.affine_inverse() * _model_label.global_transform) \
-			* _model_label.get_aabb()
+		var ab := _label_face_bounds(_model_label)
 		if ab.size.x > 0.0001 and ab.size.y > 0.0001:
 			_model_label.visible = false
 			var art := MeshInstance3D.new()
@@ -247,7 +290,7 @@ func _apply_label_art() -> void:
 			qm.size = fitted
 			art.mesh = qm
 			var c := ab.get_center()
-			art.position = Vector3(c.x, c.y, c.z + 0.0003)
+			art.position = Vector3(c.x, c.y, ab.position.z + ab.size.z + 0.0003)
 			var lm := StandardMaterial3D.new()
 			lm.albedo_color = Color.WHITE
 			lm.albedo_texture = tex

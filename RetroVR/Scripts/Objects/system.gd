@@ -64,6 +64,11 @@ const _MODEL_SCENES: Dictionary = {
 	# Nintendo GameCube (mini-DVD disc): same DiscSeat bake as the Sony disc
 	# consoles. gamecube_model reuses the baked "Shell" instance.
 	"gamecube": "res://Scenes/Objects/system_models/gamecube.tscn",
+	# Nintendo 64 (cartridge): recentred shell + editor-authorable "CartSeat"
+	# and "PortSeat1".."PortSeat4" markers. The GLB only anchors two of the four
+	# ports, so the other two were mirrored across the console centre at runtime
+	# — now four authored markers instead. n64_model reuses the baked "Shell".
+	"nintendo_64": "res://Scenes/Objects/system_models/n64.tscn",
 }
 
 ## Optional per-variant model overrides, keyed "<systemid>:<variant>".
