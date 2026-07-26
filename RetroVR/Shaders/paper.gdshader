@@ -63,15 +63,15 @@ void vertex() {
 
 	float gutter;
 	float sag;
-	float bow;
+	float lift;
 	paper_rest_parts(u, v, gutter_dive, gutter_falloff, bow_amount, fore_droop, edge_curl,
-		gutter, sag, bow);
+		gutter, sag, lift);
 	float dzdu;
 	float dzdv;
 	paper_rest_slope(u, v, gutter_dive, gutter_falloff, bow_amount, fore_droop, edge_curl,
 		dzdu, dzdv);
 
-	VERTEX.z += gutter + sag + bow;
+	VERTEX.z += gutter + sag + lift;
 
 	// Arc-length conservation: the sheet dipping into the gutter is longer than
 	// the flat span it covers, so a material point sits nearer the spine than

@@ -67,13 +67,10 @@ void vertex() {
 
 	v_u = clamp(0.5 + spine_sign * VERTEX.x / max(page_size.x, 1e-5), 0.0, 1.0);
 
-	// Drop the top ring of the box into the gutter, following the top page.
-	// Only vertices on the upper face move, so the block thins toward the
-	// binding instead of the whole box sliding down.
 	// Follow the sheet above. The block SAGS as one lump at the fore edge, so
 	// every vertex takes that; it THINS into the binding, so only the top ring
-	// takes the gutter dive. The sheet's bow is deliberately not followed —
-	// that is the top page lifting clear of the block, not the block moving.
+	// takes the gutter dive. `lift` is deliberately not followed — that is the
+	// sheet leaving the block behind, not the block moving.
 	//
 	// The gutter term is unclamped on purpose: on a thin block the top has to
 	// travel further than the block is deep, and clamping it to the block's own
@@ -82,9 +79,9 @@ void vertex() {
 	float v_v = clamp(0.5 + VERTEX.y / max(page_size.y, 1e-5), 0.0, 1.0);
 	float gutter;
 	float sag;
-	float bow;
+	float lift;
 	paper_rest_parts(v_u, v_v, gutter_dive, gutter_falloff, bow_amount, fore_droop, edge_curl,
-		gutter, sag, bow);
+		gutter, sag, lift);
 	float follow = sag + (VERTEX.z > 0.0 ? gutter : 0.0);
 	VERTEX.z += follow / max(z_scale, 1e-4);
 
