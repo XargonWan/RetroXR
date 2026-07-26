@@ -66,6 +66,19 @@ func _ready() -> void:
 		_lid = _glb.find_child("LID", true, false) as MeshInstance3D
 		if _lid != null:
 			_lid_hinge = VRSpringLatchedHinge.mount(self, _lid, LID_OPEN_DEG)
+	# The lid is two pieces: the LID shell and the "GC GEM" inlay seated in it.
+	# Only LID rode the pivot, so opening the lid left the gem hanging in mid-air
+	# over the hole.
+	if pivot != null:
+		var gem := _glb.find_child("GC GEM", true, false) as MeshInstance3D
+		if gem != null and gem.get_parent() != pivot:
+			gem.reparent(pivot, true)
+	# The shell ships a controller plug already seated in port 1 (the other three
+	# sockets are empty). RetroVR spawns its own plug on a cable, so that one is
+	# just a plug end permanently stuck in the console.
+	var seated_plug := _glb.find_child("GCPort", true, false) as MeshInstance3D
+	if seated_plug != null:
+		seated_plug.visible = false
 	if _lid_hinge != null:
 		_lid_hinge.rotation_changed.connect(_on_lid_swung)
 
