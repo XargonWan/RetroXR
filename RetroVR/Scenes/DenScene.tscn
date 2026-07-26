@@ -473,7 +473,7 @@ shape = SubResource("Shape_sidetable")
 transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, -1.55, 0.77, 1.72)
 
 [node name="TableLampLight" type="OmniLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 1.15, 1.72)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.46, 1.1075, 1.63)
 light_color = Color(1, 0.8, 0.55, 1)
 light_energy = 1.0
 omni_range = 3.5
@@ -482,7 +482,7 @@ omni_range = 3.5
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 2.5, 0, 1.95)
 
 [node name="FloorLampLight" type="OmniLight3D" parent="." groups=["ceiling_light"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.45, 1.55, 1.9)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.62, 1.5416, 1.83)
 light_color = Color(1, 0.78, 0.5, 1)
 light_energy = 2.4
 omni_range = 7.0
@@ -497,10 +497,10 @@ omni_range = 8.0
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 2.5, 0, -2.1)
 
 [node name="FanPivot" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.62, -0.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.7, -0.6)
 
 [node name="Fan" parent="FanPivot" instance=ExtResource("28_fan")]
-transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, -0.111, 0, 0.002)
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0.0024)
 
 [node name="FanSpin" type="AnimationPlayer" parent="."]
 libraries = {
