@@ -11,7 +11,7 @@ void initialize_vlc(ModuleInitializationLevel p_level)
     if (p_level != ModuleInitializationLevel::MODULE_INITIALIZATION_LEVEL_SCENE)
         return;
 
-    ClassDB::register_class<SK::VlcPlayer>();
+    ClassDB::register_class<Xenu::VlcPlayer>();
 }
 
 void uninitialize_vlc(ModuleInitializationLevel p_level)

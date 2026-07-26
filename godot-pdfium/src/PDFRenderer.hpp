@@ -7,7 +7,7 @@
 
 #include "fpdfview.h"
 
-namespace SK
+namespace Xenu
 {
 /// Renders PDF pages to Godot Images using the PDFium library.
 /// Usage from GDScript:

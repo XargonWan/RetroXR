@@ -18,7 +18,7 @@
 
 using namespace godot;
 
-namespace SK
+namespace Xenu
 {
 
 static void set_plugin_path_env(const char *path)
@@ -619,4 +619,4 @@ void VlcPlayer::_bind_methods()
     ADD_SIGNAL(MethodInfo("finished"));
 }
 
-} // namespace SK
+} // namespace Xenu

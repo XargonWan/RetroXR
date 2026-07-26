@@ -6,7 +6,7 @@
 
 using namespace godot;
 
-namespace SK
+namespace Xenu
 {
 
 PDFRenderer::PDFRenderer()

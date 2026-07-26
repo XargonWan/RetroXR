@@ -25,7 +25,7 @@
 #include <mutex>
 #include <vector>
 
-namespace SK
+namespace Xenu
 {
 class VlcPlayer : public godot::RefCounted
 {
@@ -141,4 +141,4 @@ private:
     int m_audio_rate = 48000;
     int m_audio_channels = 2;
 };
-} // namespace SK
+} // namespace Xenu

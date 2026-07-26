@@ -11,9 +11,9 @@ void initialize(ModuleInitializationLevel p_level)
     if (p_level != ModuleInitializationLevel::MODULE_INITIALIZATION_LEVEL_SCENE)
         return;
 
-    SK::PDFRenderer::InitLibrary();
+    Xenu::PDFRenderer::InitLibrary();
 
-    ClassDB::register_class<SK::PDFRenderer>();
+    ClassDB::register_class<Xenu::PDFRenderer>();
 }
 
 void uninitialize(ModuleInitializationLevel p_level)
@@ -21,7 +21,7 @@ void uninitialize(ModuleInitializationLevel p_level)
     if (p_level != ModuleInitializationLevel::MODULE_INITIALIZATION_LEVEL_SCENE)
         return;
 
-    SK::PDFRenderer::DestroyLibrary();
+    Xenu::PDFRenderer::DestroyLibrary();
 }
 
 extern "C"
