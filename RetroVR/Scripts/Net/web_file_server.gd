@@ -66,7 +66,23 @@ func start(port: int = DEFAULT_PORT) -> bool:
 	return true
 
 
+## Joining the thread is teardown, not politeness: _thread_loop reads this node's
+## members every iteration, so a thread left running past the node's lifetime
+## dereferences a freed script instance — a null _tcp here, a SIGSEGV on Android.
+## The spawn menu that owns the server rides inside the scene, so every scene
+## change frees it.
+func _exit_tree() -> void:
+	stop()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		stop()
+
+
 func stop() -> void:
+	if not _running and _thread == null:
+		return
 	_running = false
 	if _thread:
 		_thread.wait_to_finish()
