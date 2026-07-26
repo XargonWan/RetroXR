@@ -35,6 +35,17 @@ extends XRToolsPickable
 		if not _loading and is_inside_tree() and _page_count > 0:
 			_apply_dimensions()
 
+## Paper stock. Coating fills the fibre and flattens the surface, so a gloss
+## finish is not just shinier — it is smoother, more even, and more opaque.
+## Magazines and most game manuals are coated, so GLOSS is the default.
+enum PaperFinish { MATTE, SATIN, GLOSS }
+
+@export var paper_finish: PaperFinish = PaperFinish.GLOSS:
+	set(value):
+		paper_finish = value
+		if is_inside_tree() and _page_count > 0:
+			_apply_paper_finish()
+
 ## Number of pages to pre-render ahead/behind the current spread.
 @export var prefetch_pages: int = 6
 
@@ -112,7 +123,11 @@ const LEAF_SETTLE_TIME := 0.28
 ## A replayed remote turn covers the whole page, so it runs slower than the
 ## settle that finishes a drag already most of the way over.
 const REMOTE_TURN_TIME := 0.45
-const LEAF_Z_GAP := 0.0008
+## Gap between a spread page and the block it lies on. Was 0.8 mm to keep the
+## two off each other in the depth buffer, which is most of a nine-leaf stack —
+## the page floated clear of its own block and had that much further to dive.
+## Depth is written properly now, so one leaf's worth is plenty.
+const LEAF_Z_GAP := 0.00015
 ## Clearance between the turning leaf and whichever page is under it. Both the
 ## page it uncovers and the page it lands on sit exactly at _page_plane_z(), so
 ## without this the leaf is coplanar with them and z-fights — the two pages
@@ -790,10 +805,61 @@ func _ensure_paper_material(mesh_node: MeshInstance3D, is_cover: bool) -> Shader
 		mat.set_shader_parameter("edge_curl", 0.0)
 		mat.set_shader_parameter("gutter_ao", 0.25)
 		mat.set_shader_parameter("backlight_amount", 0.0)
-		mat.set_shader_parameter("roughness", 0.55)
-		mat.set_shader_parameter("sheen", 0.35)
-		mat.set_shader_parameter("fibre_strength", 0.12)
+	_apply_finish_to(mat, is_cover)
 	return mat
+
+
+## Surface properties of the chosen stock. Coating fills the paper's fibre and
+## evens out the surface, so gloss means smoother and more opaque as well as
+## shinier — turning roughness down on its own just makes matte paper look wet.
+## Covers are one step glossier than the pages inside them, as they are in print.
+func _apply_finish_to(mat: ShaderMaterial, is_cover: bool) -> void:
+	var rough := 0.82
+	var spec := 0.18
+	var fibre := 0.25
+	var rough_var := 0.06
+	var backlight := 0.22
+	match paper_finish:
+		PaperFinish.SATIN:
+			rough = 0.52
+			spec = 0.35
+			fibre = 0.14
+			rough_var = 0.04
+			backlight = 0.16
+		PaperFinish.GLOSS:
+			# A tight lobe, not a bright one. Varnish is still a dielectric, so
+			# pushing SPECULAR up instead of roughness down just spread the
+			# highlight into a sheet of glare across the whole spread and made
+			# the page unreadable.
+			rough = 0.20
+			spec = 0.28
+			fibre = 0.05
+			rough_var = 0.015
+			backlight = 0.09
+	if is_cover:
+		rough = maxf(rough - 0.1, 0.12)
+		spec = minf(spec + 0.1, 1.0)
+		fibre *= 0.5
+		backlight = 0.0
+	mat.set_shader_parameter("roughness", rough)
+	mat.set_shader_parameter("sheen", spec)
+	mat.set_shader_parameter("fibre_strength", fibre)
+	mat.set_shader_parameter("roughness_variation", rough_var)
+	if not is_cover:
+		mat.set_shader_parameter("backlight_amount", backlight)
+
+
+## Re-push the stock onto every page surface after a live finish change.
+func _apply_paper_finish() -> void:
+	for pair: Array in [[_cover_mesh, true], [_back_cover_mesh, true],
+			[_left_stack_top, false], [_right_stack_top, false]]:
+		var mat := (pair[0] as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+		if mat:
+			_apply_finish_to(mat, bool(pair[1]))
+	if _active_leaf:
+		var leaf_mat := _active_leaf.get_surface_override_material(0) as ShaderMaterial
+		if leaf_mat:
+			_apply_finish_to(leaf_mat, false)
 
 
 ## Fore-edge material for a page stack. leaf_count drives the stripe pitch, and
@@ -808,6 +874,11 @@ func _ensure_edge_material(mesh_node: MeshInstance3D, leaves: int) -> void:
 		mesh_node.set_surface_override_material(0, mat)
 	mat.set_shader_parameter("stack_depth", STACK_BASE_DEPTH)
 	mat.set_shader_parameter("leaf_count", float(maxi(leaves, 1)))
+	# Flat by default; only an OPEN spread digs a gutter, and _update_gutter_depth
+	# runs after this on that path. Without the reset a book closed after being
+	# open kept the dive and its block sagged under a flat cover.
+	mat.set_shader_parameter("gutter_dive", 0.0)
+	mat.set_shader_parameter("gutter_ao", 0.0)
 
 
 ## Which way u runs on this page: the gutter is at book-local x = 0, so work out
@@ -988,6 +1059,13 @@ func _valley_z() -> float:
 	var deepest := maxf(_page_plane_z(1), _page_plane_z(-1))
 	var floor_z := -maxf(_side_thickness(1), _side_thickness(-1)) * 0.25
 	var valley := maxf(floor_z, deepest - GUTTER_DIVE_MAX)
+	# Never below the underside of the THINNER block. Halfway through a book the
+	# two halves are wildly different thicknesses — nine leaves against forty-six
+	# at leaf 8 — and a valley set from the thick side put the thin side's page
+	# below its own block, so the page passed through it and the block's flat top
+	# face showed beside the spine.
+	var thinnest := minf(_side_thickness(1), _side_thickness(-1))
+	valley = maxf(valley, -thinnest * 0.5)
 	# The shallower page still has to dive a little, or its gutter edge would be
 	# pushed up instead of down.
 	return minf(valley, shallow - ZFIGHT_MARGIN)
@@ -1003,10 +1081,22 @@ func _gutter_dive_for(plane_z: float) -> float:
 ## same place.
 func _update_gutter_depth() -> void:
 	for dir: int in [1, -1]:
-		var node := _right_stack_top if dir > 0 else _left_stack_top
-		var mat := node.get_surface_override_material(0) as ShaderMaterial
+		var dive := _gutter_dive_for(_page_plane_z(dir))
+		var top := _right_stack_top if dir > 0 else _left_stack_top
+		var mat := top.get_surface_override_material(0) as ShaderMaterial
 		if mat:
-			mat.set_shader_parameter("gutter_dive", _gutter_dive_for(_page_plane_z(dir)))
+			mat.set_shader_parameter("gutter_dive", dive)
+		# The block underneath curves into the binding too, or its flat top face
+		# stands proud of the diving top page and shows as a pale strip beside
+		# the spine with the page apparently passing through it.
+		var stack := _right_stack if dir > 0 else _left_stack
+		var edge := stack.get_surface_override_material(0) as ShaderMaterial
+		if edge:
+			edge.set_shader_parameter("page_size", Vector2(_book_width, book_height))
+			edge.set_shader_parameter("spine_sign", _page_spine_sign(top))
+			edge.set_shader_parameter("gutter_dive", dive)
+			edge.set_shader_parameter("z_scale", stack.scale.z)
+			edge.set_shader_parameter("gutter_ao", 0.8)
 
 
 ## The binding material. The cover's own inner edge is wrapped around the spine
@@ -1286,6 +1376,7 @@ func _spawn_leaf(dir: int) -> bool:
 	mat.set_shader_parameter("page_size", Vector2(_book_width, book_height))
 	mat.set_shader_parameter("spine_sign", float(dir))
 	mat.set_shader_parameter("grain_texture", _paper_grain())
+	_apply_finish_to(mat, false)
 	mat.set_shader_parameter("gutter_dive", _gutter_dive_for(_page_plane_z(dir)))
 	mat.set_shader_parameter("curl_taper", CURL_TAPER)
 	mat.set_shader_parameter("front_texture", _get_page_texture(int(plan["front"])))

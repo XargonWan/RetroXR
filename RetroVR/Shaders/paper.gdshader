@@ -15,6 +15,9 @@ uniform sampler2D front_texture : source_color, hint_default_white, filter_linea
 uniform sampler2D back_texture : source_color, hint_default_white, filter_linear_mipmap;
 uniform vec4 paper_tint : source_color = vec4(0.98, 0.96, 0.92, 1.0);
 uniform float roughness : hint_range(0.0, 1.0) = 0.82;
+// How much the fibre texture breaks up the roughness. Coated stock is smooth
+// and even, so gloss finishes want almost none of this.
+uniform float roughness_variation : hint_range(0.0, 0.4) = 0.06;
 
 // Page frame.
 uniform vec2 page_size = vec2(0.18, 0.25);   // metres
@@ -162,7 +165,7 @@ void fragment() {
 			+ (TANGENT * (grain.r - 0.5) + BINORMAL * (grain.g - 0.5)) * fibre_strength);
 	}
 
-	ROUGHNESS = roughness - grain.b * 0.06;
+	ROUGHNESS = clamp(roughness - grain.b * roughness_variation, 0.02, 1.0);
 	METALLIC = 0.0;
 	SPECULAR = sheen;
 	// Paper is thin: light reaching the far side bleeds through.
