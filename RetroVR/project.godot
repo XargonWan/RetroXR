@@ -266,3 +266,9 @@ openxr/extensions/hand_tracking=true
 shaders/enabled=true
 openxr/extensions/meta/passthrough=true
 openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/sharpening_mode=1
+
+[importer_defaults]
+
+texture={
+"compress/size_limit": 2048
+}
