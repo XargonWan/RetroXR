@@ -9,32 +9,101 @@
 [sub_resource type="PhysicsMaterial" id="PhysMat_vb"]
 friction = 0.8
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
-size = Vector3(0.135, 0.055, 0.045)
+[sub_resource type="BoxShape3D" id="BoxShape3D_wings"]
+size = Vector3(0.169, 0.02, 0.066)
 
-[sub_resource type="BoxMesh" id="BoxMesh_body"]
-size = Vector3(0.135, 0.055, 0.045)
+[sub_resource type="BoxShape3D" id="BoxShape3D_center"]
+size = Vector3(0.056, 0.056, 0.044)
 
-[sub_resource type="StandardMaterial3D" id="Mat_body"]
-albedo_color = Color(0.13, 0.13, 0.14, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_pack"]
-size = Vector3(0.062, 0.03, 0.03)
-
-[sub_resource type="StandardMaterial3D" id="Mat_pack"]
-albedo_color = Color(0.55, 0.06, 0.06, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_knob"]
-size = Vector3(0.012, 0.008, 0.012)
-
-[sub_resource type="StandardMaterial3D" id="Mat_knob"]
-albedo_color = Color(0.75, 0.75, 0.78, 1)
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_grip"]
+radius = 0.0155
+height = 0.095
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_knob"]
 size = Vector3(0.026, 0.02, 0.026)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
-size = Vector3(0.135, 0.055, 0.045)
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.1, 0.1, 0.11, 1)
+roughness = 0.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_grip"]
+albedo_color = Color(0.07, 0.07, 0.075, 1)
+roughness = 0.45
+
+[sub_resource type="StandardMaterial3D" id="Mat_dpad"]
+albedo_color = Color(0.055, 0.055, 0.06, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_grey"]
+albedo_color = Color(0.55, 0.55, 0.57, 1)
+roughness = 0.45
+
+[sub_resource type="StandardMaterial3D" id="Mat_red"]
+albedo_color = Color(0.72, 0.1, 0.12, 1)
+roughness = 0.4
+
+[sub_resource type="StandardMaterial3D" id="Mat_pack"]
+albedo_color = Color(0.13, 0.13, 0.14, 1)
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_knob"]
+albedo_color = Color(0.62, 0.62, 0.65, 1)
+roughness = 0.45
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_outer"]
+top_radius = 0.03
+bottom_radius = 0.03
+height = 0.016
+radial_segments = 28
+rings = 1
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_inner"]
+top_radius = 0.02
+bottom_radius = 0.02
+height = 0.016
+radial_segments = 24
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_bridge"]
+size = Vector3(0.048, 0.016, 0.04)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
+size = Vector3(0.03, 0.006, 0.01)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
+size = Vector3(0.01, 0.006, 0.03)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_button"]
+top_radius = 0.006
+bottom_radius = 0.006
+height = 0.005
+radial_segments = 20
+rings = 1
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_shoulder"]
+top_radius = 0.008
+bottom_radius = 0.008
+height = 0.005
+radial_segments = 20
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_center"]
+size = Vector3(0.04, 0.034, 0.042)
+
+[sub_resource type="BoxMesh" id="BoxMesh_neck"]
+size = Vector3(0.03, 0.018, 0.026)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pack"]
+size = Vector3(0.056, 0.024, 0.03)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_grip"]
+radius = 0.0155
+height = 0.095
+radial_segments = 20
+rings = 6
+
+[sub_resource type="BoxMesh" id="BoxMesh_knob"]
+size = Vector3(0.009, 0.005, 0.009)
 
 [node name="VbController" type="RigidBody3D" unique_id=576776160 groups=["hand_held_device"]]
 collision_layer = 4
@@ -48,19 +117,170 @@ script = ExtResource("1_vbctrl")
 systemid = "virtual_boy"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2027470240]
-shape = SubResource("BoxShape3D_body")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.004, -0.01)
+shape = SubResource("BoxShape3D_wings")
 
-[node name="ControllerMesh" type="MeshInstance3D" parent="." unique_id=780501063]
-mesh = SubResource("BoxMesh_body")
-surface_material_override/0 = SubResource("Mat_body")
+[node name="CollisionCenter" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0.008)
+shape = SubResource("BoxShape3D_center")
+
+[node name="CollisionGripL" type="CollisionShape3D" parent="."]
+transform = Transform3D(0.9781476, 0.2079117, 0, -0.2008273, 0.944818, 0.258819, 0.05381151, -0.2531632, 0.9659258, -0.052, -0.044, 0.016)
+shape = SubResource("CapsuleShape3D_grip")
+
+[node name="CollisionGripR" type="CollisionShape3D" parent="."]
+transform = Transform3D(0.9781476, -0.2079117, 0, 0.2008273, 0.944818, 0.258819, -0.05381151, -0.2531632, 0.9659258, 0.052, -0.044, 0.016)
+shape = SubResource("CapsuleShape3D_grip")
+
+[node name="Model" type="Node3D" parent="."]
+
+[node name="WingL" type="Node3D" parent="Model"]
+transform = Transform3D(0.9396926, 0, -0.3420201, 0, 1, 0, 0.3420201, 0, 0.9396926, -0.03, 0.004, -0.004)
+
+[node name="OuterDisc" type="MeshInstance3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0, 0)
+mesh = SubResource("CylinderMesh_outer")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="InnerDisc" type="MeshInstance3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.022, 0, 0)
+mesh = SubResource("CylinderMesh_inner")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="Bridge" type="MeshInstance3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.002, 0, 0)
+mesh = SubResource("BoxMesh_bridge")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="DPad" type="MeshInstance3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0.01, 0)
+mesh = SubResource("BoxMesh_dpad_h")
+surface_material_override/0 = SubResource("Mat_dpad")
+
+[node name="DPadCross" type="MeshInstance3D" parent="Model/WingL/DPad"]
+mesh = SubResource("BoxMesh_dpad_v")
+surface_material_override/0 = SubResource("Mat_dpad")
+
+[node name="Select" type="MeshInstance3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.002, 0.0095, 0.006)
+mesh = SubResource("CylinderMesh_button")
+surface_material_override/0 = SubResource("Mat_grey")
+
+[node name="Start" type="MeshInstance3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.014, 0.0095, 0.006)
+mesh = SubResource("CylinderMesh_button")
+surface_material_override/0 = SubResource("Mat_grey")
+
+[node name="LabelSelect" type="Label3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.002, 0.0085, -0.006)
+pixel_size = 8e-05
+modulate = Color(0.8, 0.8, 0.82, 1)
+text = "SELECT"
+font_size = 30
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelStart" type="Label3D" parent="Model/WingL"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.014, 0.0085, -0.006)
+pixel_size = 8e-05
+modulate = Color(0.8, 0.8, 0.82, 1)
+text = "START"
+font_size = 30
+outline_size = 0
+alpha_cut = 1
+
+[node name="WingR" type="Node3D" parent="Model"]
+transform = Transform3D(0.9396926, 0, 0.3420201, 0, 1, 0, -0.3420201, 0, 0.9396926, 0.03, 0.004, -0.004)
+
+[node name="OuterDisc" type="MeshInstance3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.026, 0, 0)
+mesh = SubResource("CylinderMesh_outer")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="InnerDisc" type="MeshInstance3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.022, 0, 0)
+mesh = SubResource("CylinderMesh_inner")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="Bridge" type="MeshInstance3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.002, 0, 0)
+mesh = SubResource("BoxMesh_bridge")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="DPad" type="MeshInstance3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.026, 0.01, 0)
+mesh = SubResource("BoxMesh_dpad_h")
+surface_material_override/0 = SubResource("Mat_dpad")
+
+[node name="DPadCross" type="MeshInstance3D" parent="Model/WingR/DPad"]
+mesh = SubResource("BoxMesh_dpad_v")
+surface_material_override/0 = SubResource("Mat_dpad")
+
+[node name="ButtonA" type="MeshInstance3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.002, 0.0095, 0.006)
+mesh = SubResource("CylinderMesh_button")
+surface_material_override/0 = SubResource("Mat_red")
+
+[node name="ButtonB" type="MeshInstance3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.014, 0.0095, 0.006)
+mesh = SubResource("CylinderMesh_button")
+surface_material_override/0 = SubResource("Mat_red")
+
+[node name="LabelA" type="Label3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.002, 0.0085, -0.006)
+pixel_size = 8e-05
+modulate = Color(0.8, 0.8, 0.82, 1)
+text = "A"
+font_size = 30
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelB" type="Label3D" parent="Model/WingR"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.014, 0.0085, -0.006)
+pixel_size = 8e-05
+modulate = Color(0.8, 0.8, 0.82, 1)
+text = "B"
+font_size = 30
+outline_size = 0
+alpha_cut = 1
+
+[node name="CenterBlock" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.01, 0.008)
+mesh = SubResource("BoxMesh_center")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="SwitchNeck" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.001, -0.02)
+mesh = SubResource("BoxMesh_neck")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="GripL" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(0.9781476, 0.2079117, 0, -0.2008273, 0.944818, 0.258819, 0.05381151, -0.2531632, 0.9659258, -0.052, -0.044, 0.016)
+mesh = SubResource("CapsuleMesh_grip")
+surface_material_override/0 = SubResource("Mat_grip")
+
+[node name="GripR" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(0.9781476, -0.2079117, 0, 0.2008273, 0.944818, 0.258819, -0.05381151, -0.2531632, 0.9659258, 0.052, -0.044, 0.016)
+mesh = SubResource("CapsuleMesh_grip")
+surface_material_override/0 = SubResource("Mat_grip")
+
+[node name="ShoulderL" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, -0.0055, -0.014)
+mesh = SubResource("CylinderMesh_shoulder")
+surface_material_override/0 = SubResource("Mat_grey")
+
+[node name="ShoulderR" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, -0.0055, -0.014)
+mesh = SubResource("CylinderMesh_shoulder")
+surface_material_override/0 = SubResource("Mat_grey")
 
 [node name="BatteryPack" type="MeshInstance3D" parent="." unique_id=927806445]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0405, -0.004)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, 0.008)
 mesh = SubResource("BoxMesh_pack")
 surface_material_override/0 = SubResource("Mat_pack")
 
 [node name="PowerSlider" type="Area3D" parent="." unique_id=508315096]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0405, 0.0125)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0125, -0.02)
 collision_layer = 1048577
 script = ExtResource("5_slider")
 travel = 0.018
@@ -75,14 +295,16 @@ surface_material_override/0 = SubResource("Mat_knob")
 shape = SubResource("BoxShape3D_knob")
 
 [node name="PowerLabel" type="Label3D" parent="." unique_id=806969415]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0405, 0.0295)
-pixel_size = 0.00022
-modulate = Color(0.85, 0.85, 0.9, 1)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0105, -0.03)
+pixel_size = 8e-05
+modulate = Color(0.8, 0.8, 0.82, 1)
 text = "POWER"
-font_size = 20
+font_size = 30
+outline_size = 0
+alpha_cut = 1
 
 [node name="CableAttachPoint" type="Node3D" parent="." unique_id=253484350]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0275, -0.012)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.004, -0.034)
 
 [node name="PickableHighlight" type="Node3D" parent="." unique_id=987410344]
 script = ExtResource("2_pickhigh")
@@ -92,12 +314,25 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=327930366]
-shape = SubResource("BoxShape3D_pointer")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.004, -0.01)
+shape = SubResource("BoxShape3D_wings")
+
+[node name="CollisionCenter" type="CollisionShape3D" parent="PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0.008)
+shape = SubResource("BoxShape3D_center")
+
+[node name="CollisionGripL" type="CollisionShape3D" parent="PointerArea"]
+transform = Transform3D(0.9781476, 0.2079117, 0, -0.2008273, 0.944818, 0.258819, 0.05381151, -0.2531632, 0.9659258, -0.052, -0.044, 0.016)
+shape = SubResource("CapsuleShape3D_grip")
+
+[node name="CollisionGripR" type="CollisionShape3D" parent="PointerArea"]
+transform = Transform3D(0.9781476, -0.2079117, 0, 0.2008273, 0.944818, 0.258819, -0.05381151, -0.2531632, 0.9659258, 0.052, -0.044, 0.016)
+shape = SubResource("CapsuleShape3D_grip")
 
 [node name="HandRight" parent="." unique_id=1344070400 instance=ExtResource("3_rhand")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.055, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.052, -0.044, 0.016)
 visible = false
 
 [node name="HandLeft" parent="." unique_id=324960263 instance=ExtResource("4_lhand")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.055, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.052, -0.044, 0.016)
 visible = false
