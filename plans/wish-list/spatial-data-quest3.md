@@ -154,7 +154,11 @@ New (paths follow the current foldered `Scripts/` layout):
 `Tools/spatial_probe.tscn` ships as its own app so it never disturbs an installed RetroVR:
 export preset **QuestSpatialProbe** (`com.xenu.retrovr.spatialprobe`) declares the custom
 feature `spatialprobe`, which selects `run/main_scene.spatialprobe` and the gated `[xr]`
-settings. Nothing in the normal Quest build changes.
+settings. The spatial permissions ride on the preset's `permissions/custom_permissions`
+rather than on a global setting, because the vendors plugin's manifest injection reads
+`meta/scene_api` **without** feature-tag overrides — gating the setting alone would drop them.
+Verified end to end: gated build still reports 36 trackers / 31 planes. Nothing in the normal
+Quest build changes.
 
 ```bash
 "$godot" --headless --path "$proj" --export-debug "QuestSpatialProbe" probe.apk
@@ -178,6 +182,9 @@ Traps that cost a cycle each, all confirmed here:
   (and possibly a Guardian dialog). `adb shell dumpsys activity activities | grep
   GrantPermissionsActivity` shows it; a human has to answer it once. `adb exec-out screencap
   -p` is the fastest way to see what is on the panel.
+- **An APK's `AndroidManifest.xml` is binary XML with UTF-16LE strings**, so
+  `grep -a USE_SCENE` on it returns nothing whether or not the permission is there. Decode
+  first (`data.count("USE_SCENE".encode("utf-16-le"))`) or the check silently lies.
 - The probe prints an `alive t=… frames=…` heartbeat so "process died" is distinguishable
   from "process running but not ticking".
 
