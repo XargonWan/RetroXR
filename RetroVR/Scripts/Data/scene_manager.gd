@@ -12,6 +12,7 @@ const SCENE_PATHS := {
 	"arcade":      "res://Scenes/MainScene.tscn",
 	"den":         "res://Scenes/DenScene.tscn",
 	"passthrough": "res://Scenes/PassthroughScene.tscn",
+	"test":        "res://Scenes/TestScene.tscn",
 }
 const PREFS_FILE := "user://scenes/prefs.json"
 
