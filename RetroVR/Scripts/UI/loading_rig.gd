@@ -31,12 +31,3 @@ func set_title(title: String) -> void:
 
 func set_progress(value: float) -> void:
 	_screen.progress = clampf(value, 0.0, 1.0)
-
-
-## Give up the XR origin before the incoming scene's rig enters the tree —
-## two current XROrigin3Ds in the tree at once is an error, and the new scene's
-## rig has to win.
-func stand_down() -> void:
-	_origin.current = false
-	_camera.current = false
-	visible = false

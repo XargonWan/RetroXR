@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://cl0adr1g0001"]
+[gd_scene format=3 uid="uid://cl0adr1g0001"]
 
 [ext_resource type="Script" path="res://Scripts/UI/loading_rig.gd" id="1_rig"]
 [ext_resource type="PackedScene" uid="uid://bqumugyvkct4r" path="res://addons/godot-xr-tools/staging/loading_screen.tscn" id="2_loadscreen"]

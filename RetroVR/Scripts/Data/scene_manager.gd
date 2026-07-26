@@ -148,10 +148,14 @@ func _run_transition(path: String, title: String) -> void:
 
 	var packed: PackedScene = ResourceLoader.load_threaded_get(path)
 	var incoming: Node = packed.instantiate()
-	# The incoming scene brings its own XROrigin3D, and only one may be current.
-	rig.stand_down()
+	# The rig has to be out of the tree BEFORE the incoming scene enters, not just
+	# switched off. A Camera3D claims the viewport on entry only while the viewport
+	# has no camera registered at all, so a rig camera still sitting there — even
+	# with current = false — leaves the new scene's XRCamera3D unclaimed and the
+	# view grey. Leaving the tree also releases the XROrigin3D, of which only one
+	# may be current, and the rig's WorldEnvironment.
+	tree.root.remove_child(rig)
+	rig.queue_free()
 	tree.root.add_child(incoming)
 	tree.current_scene = incoming
-	await tree.process_frame
-	rig.queue_free()
 	_transitioning = false
