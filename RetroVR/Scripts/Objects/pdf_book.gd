@@ -35,10 +35,6 @@ extends XRToolsPickable
 		if not _loading and is_inside_tree() and _page_count > 0:
 			_apply_dimensions()
 
-## Snap threshold in degrees — when a turning page is within this many degrees
-## of fully open (180°) or fully closed (0°), it snaps to completion.
-@export var snap_threshold_deg: float = 15.0
-
 ## Number of pages to pre-render ahead/behind the current spread.
 @export var prefetch_pages: int = 6
 
@@ -127,6 +123,8 @@ var _fold_normal: Vector2 = Vector2.RIGHT
 var _curl_radius: float = CURL_MIN
 var _curl_taper: float = CURL_TAPER
 var _leaf_tween: Tween = null
+var _sfx: PageSfx = null
+var _grab_ctrl: XRController3D = null
 ## Set while replaying a turn somebody else made: the spread to land on when
 ## the animation finishes, instead of stepping locally and echoing it back.
 var _animate_target: Dictionary = {}
@@ -137,7 +135,6 @@ var _controllers: Array = []
 var _turn_cooldown: float = 0.0
 const TURN_COOLDOWN_TIME := 0.5
 const GRIP_THRESHOLD := 0.3
-const GRIP_DETECT_RADIUS := 0.15
 const SPINE_WIDTH := 0.005          # width of the spine binding strip
 const SPINE_HEIGHT_MARGIN := 0.004  # how much taller spine is than pages
 const LEAF_THICKNESS := 0.0001      # meters of depth per leaf (~0.1mm, realistic paper)
@@ -230,6 +227,9 @@ func _ready() -> void:
 	_create_loading_texture()
 	_create_hint_labels()
 	_build_page_grabs()
+	_sfx = PageSfx.new()
+	_sfx.name = "PageSfx"
+	add_child(_sfx)
 	await get_tree().process_frame
 	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
 		_controllers.append(node as XRController3D)
@@ -1366,6 +1366,12 @@ func _settle_leaf(commit: bool, duration: float = LEAF_SETTLE_TIME) -> void:
 	var from_z := _active_leaf.position.z
 	var leaf := _active_leaf
 
+	if _sfx:
+		# How much page is still to travel decides how fast the sweep sounds.
+		var remaining := 1.0 - _turn_progress() if commit else _turn_progress()
+		_sfx.play_riffle(1.15 - clampf(remaining, 0.0, 1.0) * 0.35)
+	_pulse(_grab_ctrl, 0.35, 60)
+
 	if _leaf_tween and _leaf_tween.is_valid():
 		_leaf_tween.kill()
 	_leaf_tween = create_tween()
@@ -1389,6 +1395,8 @@ func _finish_turn(dir: int, commit: bool) -> void:
 	var target := _animate_target
 	_animate_target = {}
 	_despawn_active_leaf()
+	if _sfx:
+		_sfx.play_settle()
 	if not commit:
 		_set_state(_state)
 	elif not target.is_empty():
@@ -1431,6 +1439,25 @@ func _on_page_grab_begin(dir: int, world_pos: Vector3) -> void:
 	_curl_radius = CURL_MIN
 	_curl_taper = CURL_TAPER
 	_push_fold(0.0)
+	# The sheet lifting off the stack: brief and high, not the full sweep.
+	if _sfx:
+		_sfx.play_riffle(1.35)
+	# Cached now: PageGrab has already let go of the controller by the time it
+	# reports the release, so the settle pulse could not look it up again.
+	var zone := _grab_right if dir > 0 else _grab_left
+	_grab_ctrl = zone.held_by() if zone else null
+	_pulse(_grab_ctrl, 0.25, 40)
+
+
+## Short rumble on the hand holding the page. Uses the project's XRTools rumble
+## manager rather than raw haptic pulses, matching retro_controller.gd.
+func _pulse(ctrl: XRController3D, magnitude: float, ms: int) -> void:
+	if ctrl == null or not is_instance_valid(ctrl):
+		return
+	var event := XRToolsRumbleEvent.new()
+	event.magnitude = magnitude
+	event.duration_ms = ms
+	XRToolsRumbleManager.add(&"page_turn", event, [ctrl.tracker])
 
 
 func _on_page_grab_move(world_pos: Vector3) -> void:

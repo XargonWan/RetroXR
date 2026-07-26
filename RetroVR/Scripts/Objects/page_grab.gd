@@ -77,6 +77,11 @@ func is_held() -> bool:
 	return _ctrl != null or _pointer_held
 
 
+## The controller latched onto this page, or null (desktop pointer, or nobody).
+func held_by() -> XRController3D:
+	return _ctrl
+
+
 ## True while a hand or the reticle is over the zone but not yet latched.
 func is_hovering() -> bool:
 	return _enabled and not is_held() and (_pointer_hover or _hovering_ctrl() != null)
