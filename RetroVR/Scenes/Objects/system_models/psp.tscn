@@ -1692,7 +1692,8 @@ shape = SubResource("BoxShape3D_ehrgs")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0019636303, 0.0050297156, -0.00071423873)
 collision_layer = 1048577
 script = ExtResource("2_6e2pq")
-travel = 0.014
+axis_local = Vector3(0, 0, -1)
+travel = 0.004
 steps = 2
 engage_radius = 0.028
 
@@ -1704,13 +1705,6 @@ surface_material_override/0 = SubResource("StandardMaterial3D_ixh04")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=1401093770]
 shape = SubResource("BoxShape3D_du4qc")
-
-[node name="PowerLabel" type="Label3D" parent="." unique_id=1371878356]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.0442, 0.0005, -0.0385)
-pixel_size = 0.00016
-modulate = Color(0.1, 0.1, 0.12, 1)
-text = "POWER"
-font_size = 16
 
 [node name="Shell" type="Node3D" parent="." unique_id=1413173937]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.0019636303, 0.0050297156, -0.00071423873)
@@ -1831,6 +1825,7 @@ skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_hd0e7")
 
 [node name="PSP Main" type="MeshInstance3D" parent="Shell" unique_id=1692240922]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.513958e-05, 0.00017673103, 0)
 mesh = SubResource("ArrayMesh_e6040")
 skeleton = NodePath("")
 surface_material_override/0 = SubResource("StandardMaterial3D_kkm1d")
@@ -1916,7 +1911,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_h5fi0")
 libraries/ = SubResource("AnimationLibrary_raqfd")
 
 [node name="UMDSeat" type="Marker3D" parent="." unique_id=1240970678]
-transform = Transform3D(-1.0, 0.0, 0.0000001509958, 0.0, 1.0, 0.0, -0.0000001509958, 0.0, -1.0, 0.00113215623423, -0.00426081009209, -0.00059876218438)
+transform = Transform3D(-1, 0, 1.509958e-07, 0, 1, 0, -1.509958e-07, 0, -1, 0.0011321562, -0.00426081, -0.0005987622)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="UMDSeat" unique_id=1809934646]

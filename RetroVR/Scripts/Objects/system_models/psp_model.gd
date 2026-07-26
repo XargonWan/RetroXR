@@ -153,37 +153,26 @@ func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
 # --- power slide ------------------------------------------------------------
 
 ## The PSP powers on with a SLIDE, not a button — the switch on the right edge
-## pushes up. The GLB's On clip translates PowerButton, so drive the real mesh
-## from the base's _power_switch value instead of hiding it under a primitive.
+## pushes up toward the top of the device.
+##
+## The VRSlider owns the real PowerButton cap (set_knob_mesh), so the switch you
+## see IS the knob: it traces the pointer highlight and travels with the value.
+## This used to be a second, parallel mechanism — the slider drove a hidden
+## placeholder while a bespoke _set_power_mesh() slid the real mesh off the
+## value_changed signal — which left the cap unlit under the pointer and the
+## travel axis defined in two places. Direction and throw are authored on the
+## slider in psp.tscn.
 var _power_mesh: MeshInstance3D = null
-var _power_rest := Transform3D.IDENTITY
-const _POWER_SLIDE := 0.004
 
 
 func _configure_power_slide() -> void:
 	_power_mesh = find_child("PowerButton", true, false) as MeshInstance3D
-	if _power_mesh == null:
+	if _power_mesh == null or _power_switch == null:
 		return
-	_power_rest = _power_mesh.transform
-	# Sit the interaction zone on the real switch and let its motion drive the mesh.
-	if _power_switch != null:
-		_power_switch.global_position = _mesh_center(_power_mesh)
-		_power_switch.value_changed.connect(_on_power_slide)
-		_set_power_mesh(_power_switch.value)
-
-
-func _on_power_slide(v: float) -> void:
-	_set_power_mesh(v)
-
-
-func _set_power_mesh(v: float) -> void:
-	if _power_mesh == null:
-		return
-	# Slides along the face's "up" axis (across the short edge on a laid-flat PSP).
-	var ax := _shell_up.cross(_press_dir).normalized()
-	if ax.length() < 0.5:
-		ax = Vector3.RIGHT
-	_power_mesh.transform = Transform3D(_power_rest.basis, _power_rest.origin + ax * (v * _POWER_SLIDE))
+	# Sit the interaction zone on the real switch FIRST — set_knob_mesh derives
+	# the travel axis from the slider's global transform, so it has to run after.
+	_power_switch.global_position = _mesh_center(_power_mesh)
+	_power_switch.set_knob_mesh(_power_mesh)
 
 
 # --- power LED ---------------------------------------------------------------
