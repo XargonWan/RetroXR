@@ -113,7 +113,7 @@ shape = SubResource("BoxShape3D_lidgrab")
 disabled = true
 
 [node name="HingeHint" type="Label3D" parent="LidMount/LidPivot/LidHinge" unique_id=1224611462]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.04)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.001499, -0.029501)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1

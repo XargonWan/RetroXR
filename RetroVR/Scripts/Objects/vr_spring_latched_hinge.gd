@@ -136,5 +136,10 @@ static func mount(host: Node3D, lid: MeshInstance3D, open_deg: float) -> VRSprin
 	box.size = Vector3(maxf(ab.size.x, 0.02), maxf(ab.size.z, 0.02), maxf(ab.size.y, 0.01) + 0.02)
 	col.shape = box
 	hinge.add_child(col)
-	hinge.icon_offset = Vector3(0.0, 0.0, maxf(ab.size.y, 0.01) * 0.5 + 0.04)
+	# Hint in the lid's OWN plane, just past the grab box — the authored lids
+	# carry this as their HingeHint node position; a code-built rig sets its own.
+	# The line is pivot -> hinge, which for this rig is simply hinge.position.
+	var away := hinge.position.normalized() if hinge.position.length() > 0.0001 else Vector3.UP
+	var reach: float = (absf(away.x) * box.size.x + absf(away.y) * box.size.y 		+ absf(away.z) * box.size.z) * 0.5
+	hinge.place_hint(away * (reach + 0.014))
 	return hinge

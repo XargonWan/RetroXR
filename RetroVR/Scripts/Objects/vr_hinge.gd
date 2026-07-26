@@ -40,8 +40,6 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 @export var engage_radius: float = 0.04
 ## Desktop: degrees the mouse wheel rolls the hinge per notch while held.
 @export var wheel_step_deg: float = 10.0
-## Where the floating hint icon sits, in this hinge's local frame (above the lid).
-@export var icon_offset: Vector3 = Vector3(0.0, 0.0, 0.04)
 ## Icon glyph height, roughly, in metres.
 @export var icon_size: float = 0.028
 
@@ -226,25 +224,21 @@ func _apply(deg: float, emit: bool) -> void:
 
 # --- floating hint icon --------------------------------------------------------
 
-## Build the open-hand / fist hint, billboarded and floating above the lid. It is
-## parented to this Area3D (a child of the lid pivot), so it rides the lid as it
-## swings. The Symbols Nerd Font is chained as a fallback so the PUA glyphs resolve
-## (same recipe as tv_remote.gd).
+## Build the open-hand / fist hint. It is parented to this Area3D (a child of the
+## lid pivot), so it rides the lid as it swings. The Symbols Nerd Font is chained
+## as a fallback so the PUA glyphs resolve (same recipe as tv_remote.gd).
 ##
-## An authored "HingeHint" child (baked into the device .tscn, position dialled
-## in the 3D editor) wins over the computed icon_offset — same "authored marker
-## wins over the computed default" idiom as CartSeat/DiscSeat/UMDSeat. Absent,
-## one is built fresh at icon_offset. Every property but position is reapplied
-## either way, so an authored node only needs to exist at the right spot.
+## WHERE it sits is the scene's business, not this script's: an authored
+## "HingeHint" child keeps the position it was given, dialled in the 3D editor.
+## Nothing here moves it. A rig built at runtime (no scene node to author) makes
+## its own and calls place_hint() — see VRSpringLatchedHinge.mount.
 func _build_icon() -> void:
 	var existing := get_node_or_null("HingeHint") as Label3D
 	if existing != null:
 		_icon = existing
-		icon_offset = existing.position
 	else:
 		_icon = Label3D.new()
 		_icon.name = "HingeHint"
-		_icon.position = icon_offset
 		add_child(_icon)
 	var fv := FontVariation.new()
 	fv.base_font = ThemeDB.fallback_font
@@ -266,8 +260,6 @@ func _build_icon() -> void:
 func _update_icon() -> void:
 	if _icon == null:
 		return
-	if _icon.position != icon_offset:
-		_icon.position = icon_offset
 	var held := _grip_ctrl != null or _pointer_held
 	if held:
 		_icon.text = String.chr(ICON_HELD)
@@ -280,6 +272,14 @@ func _update_icon() -> void:
 		_icon.visible = true
 		return
 	_icon.visible = false
+
+
+## Position the hint, for rigs assembled in code rather than authored in a scene.
+## `local_pos` is in this hinge's own frame, the same as the node position an
+## authored HingeHint carries.
+func place_hint(local_pos: Vector3) -> void:
+	if _icon != null:
+		_icon.position = local_pos
 
 
 func _vr_hovering() -> bool:

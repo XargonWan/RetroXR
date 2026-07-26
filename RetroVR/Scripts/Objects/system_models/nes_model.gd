@@ -345,8 +345,20 @@ func _setup_flap_hinge() -> void:
 	box.size = Vector3(a.size.x * 0.9, a.size.y * 0.5, maxf(a.size.z, 0.006) + 0.012)
 	col.shape = box
 	_flap_hinge.add_child(col)
-	_flap_hinge.icon_offset = Vector3(0.0, -a.size.y * 0.15,
-		maxf(a.size.z, 0.006) * 0.5 + 0.05)
+	# Hint in the flap's OWN plane, just past the grab box — the flap hinges along
+	# its top edge, so "past the free edge" is down it.
+	#
+	# Derived from the pivot rather than written as a literal -Y. The two agree
+	# today, but this hinge hangs off the flap MESH while its pivot lives under
+	# _flap_frame, so the hinge's own axes only happen to line up with the flap's;
+	# nothing enforces it. Solved in world space and converted back with a single
+	# to_local so any scale on the flap mesh cannot skew it.
+	var ax_w: Vector3 = _flap_pivot.global_transform.basis.x.normalized()
+	var radial: Vector3 = _flap_hinge.global_position - _flap_pivot.global_position
+	radial -= ax_w * radial.dot(ax_w)
+	if radial.length() > 0.0001:
+		_flap_hinge.place_hint(_flap_hinge.to_local(_flap_hinge.global_position
+			+ radial.normalized() * (a.size.y * 0.25 + 0.014)))
 	_flap_hinge.rotation_changed.connect(_on_flap_drag)
 
 

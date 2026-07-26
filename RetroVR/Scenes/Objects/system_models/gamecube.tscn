@@ -1592,10 +1592,9 @@ script = ExtResource("7_imrcj")
 target = NodePath("..")
 max_deg = 50.0
 engage_radius = 0.05825852155685425
-icon_offset = Vector3(0, 0, 0.056542665)
 
 [node name="HingeHint" type="Label3D" parent="DiscLidPivot/DiscLidHinge" unique_id=119288588]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.056543)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.012408, -0.054623)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1

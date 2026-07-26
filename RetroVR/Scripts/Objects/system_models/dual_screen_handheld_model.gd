@@ -428,7 +428,9 @@ func _setup_lid_grab() -> void:
 	# VR proximity sphere covers the free half; icon floats off the face normal
 	# (quad local +Z) a touch toward the free edge.
 	_hinge.engage_radius = clampf(maxf(w, h * 0.5) * 0.55, 0.03, 0.07)
-	_hinge.icon_offset = Vector3(0.0, free_sign * 0.008, 0.045)
+	# The hint's position is authored on the HingeHint node in each device scene,
+	# not set here. Driving it from code used to stand these three lids' hints out
+	# in front of the screen while every other lid sat edge-on.
 
 
 ## How far the shell's own (opaque) glass/surface sits over a lens along its

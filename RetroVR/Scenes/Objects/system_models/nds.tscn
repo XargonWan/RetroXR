@@ -749,13 +749,12 @@ collision_layer = 1048577
 script = ExtResource("2_0o7mw")
 target = NodePath("..")
 engage_radius = 0.03485015854239464
-icon_offset = Vector3(0, 0.008, 0.045)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge" unique_id=1337195052]
 shape = SubResource("BoxShape3D_d0lh1")
 
 [node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge" unique_id=1766614230]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, 0.045)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.027078, 0.004114)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1
