@@ -93,6 +93,17 @@ func set_color(color: Color) -> void:
 		_outline_material.set_shader_parameter("outline_color", color)
 
 
+## Draw even when the source mesh is hidden. Off by default — an outline around
+## something you cannot see is normally a bug.
+##
+## VRSlider turns it on. Its authored "KnobMesh" is a deliberately hidden
+## PLACEHOLDER: the baked handheld scenes size and place it over the shell's real
+## switch cap, then hide it because the GLB already draws that cap. So the thing
+## being outlined IS on screen, just not the node the outline is sourced from —
+## which this check cannot tell apart from a genuinely hidden widget.
+var outline_hidden_source: bool = false
+
+
 ## Show or hide the outline and keep it locked to the source. Call every frame.
 func sync(show: bool) -> void:
 	if not is_instance_valid(_source):
@@ -101,7 +112,8 @@ func sync(show: bool) -> void:
 	# Pick up a runtime mesh swap on the source itself.
 	if _source.mesh != _built_from:
 		_rebuild()
-	if not show or mesh == null or not _source.is_visible_in_tree():
+	if not show or mesh == null \
+			or not (outline_hidden_source or _source.is_visible_in_tree()):
 		visible = false
 		return
 	global_transform = _source.global_transform

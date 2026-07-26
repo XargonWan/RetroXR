@@ -77,6 +77,9 @@ func _ready() -> void:
 	_knob_axis = axis_local.normalized()
 	_update_knob()
 	_outline = WidgetOutline.attach(self)
+	# The knob is a hidden placeholder on every baked handheld — outline it anyway
+	# (see WidgetOutline.outline_hidden_source).
+	_outline.outline_hidden_source = true
 	_outline.set_source(_knob)
 	await get_tree().process_frame
 	for node in get_tree().root.find_children("*", "XRController3D", true, false):
@@ -246,14 +249,18 @@ func _update_knob() -> void:
 		_knob.position = _knob_origin + _knob_axis * (value - 0.5) * travel
 
 
-## Green while armed, amber while the trigger holds the knob. Gated on
-## require_trigger: in TOUCH mode VRSlider has never drawn an outline and this
-## change must not give it one.
+## Green while armed, amber while the trigger holds the knob.
+##
+## Only the ARMED/ENGAGED states are gated on require_trigger — they describe the
+## trigger mode and mean nothing without it. Pointer hover is not: the laser and
+## the desktop reticle highlight whatever they are over, which is what VRButton
+## has always done. Gating the whole method left every slider in the room silent
+## under the pointer while every button lit up.
 func _sync_outline() -> void:
 	if _outline == null:
 		return
 	if not require_trigger:
-		_outline.sync(false)
+		_outline.sync(_pointer_hovered)
 		return
 	var engaged := _engaged_ctrl != null or _pointer_engaged
 	if engaged != _outline_amber:
