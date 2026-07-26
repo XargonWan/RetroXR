@@ -143,3 +143,62 @@ func _run() -> void:
 		not zone.is_held())
 	_set_hand(grip, 0.0)
 	await _wait(50)
+
+	await _run_fold_directions()
+
+
+## How far the furthest corner of the page sits past the fold line — i.e. how
+## much material the fold is actually lifting. Zero means the sheet is flat,
+## whatever the fold parameters happen to say.
+func _page_material_past_fold() -> float:
+	var leaf := _book.get("_active_leaf") as MeshInstance3D
+	if leaf == null:
+		return 0.0
+	var mat := leaf.get_surface_override_material(0) as ShaderMaterial
+	if mat == null or float(mat.get_shader_parameter("fold_strength")) <= 0.0:
+		return 0.0
+	var origin: Vector2 = _book.get("_fold_origin")
+	var normal: Vector2 = _book.get("_fold_normal")
+	var w: float = _book.get("_book_width")
+	var h: float = _book.get("book_height")
+	var worst := 0.0
+	for sx: float in [-0.5, 0.5]:
+		for sy: float in [-0.5, 0.5]:
+			worst = maxf(worst, (Vector2(w * sx, h * sy) - origin).dot(normal))
+	return worst
+
+
+## A page is bound along its spine edge, so it may only be pulled ACROSS that
+## edge. Dragging parallel to the binding, or outward away from it, has to leave
+## the page where it is rather than hinging it over its top or fore edge.
+func _run_fold_directions() -> void:
+	var w: float = _book.get("_book_width")
+	var h: float = _book.get("book_height")
+	var spine_half := 0.0035 * 0.5
+	var plane_z: float = _book.call("_page_plane_z", 1)
+	var anchor := Vector3(spine_half + w * 0.9, 0.0, plane_z)
+	var lift := plane_z + 0.03
+
+	var cases := [
+		["toward the spine", Vector3(spine_half + w * 0.2, 0.0, lift), true],
+		["diagonally to the spine corner", Vector3(spine_half + w * 0.25, h * 0.35, lift), true],
+		["parallel to the spine, up", Vector3(anchor.x, h * 0.45, lift), false],
+		["parallel to the spine, down", Vector3(anchor.x, -h * 0.45, lift), false],
+		["outward past the fore edge", Vector3(spine_half + w * 1.4, 0.0, lift), false],
+	]
+	for c: Array in cases:
+		_book.call("_despawn_active_leaf")
+		_book.call("_on_page_grab_begin", 1, _book.to_global(anchor))
+		if int(_book.get("_grab_dir")) == 0:
+			_check("fold setup for '%s'" % c[0], false)
+			continue
+		_book.call("_update_fold_from_hand", _book.to_global(c[1] as Vector3))
+		# Measure the fold GEOMETRY, not _turn_progress: progress tracks the fold
+		# line's x, and a fold line parallel to the spine does not move in x at
+		# all, so it reported a harmless-looking 0.10 while the page was in fact
+		# hinging over its own top edge.
+		var lifted := _page_material_past_fold()
+		_check("drag %s %s (%.1f mm of page past the fold)"
+			% [c[0], "folds" if bool(c[2]) else "does NOT fold", lifted * 1000.0],
+			(lifted > 0.002) == bool(c[2]))
+	_book.call("_despawn_active_leaf")

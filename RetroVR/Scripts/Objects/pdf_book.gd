@@ -1492,13 +1492,27 @@ func _update_fold_from_hand(world_pos: Vector3) -> void:
 	var radius := clampf(minf(maxf(hand.z, 0.0) * 0.5, span / PI), CURL_MIN, CURL_MAX)
 	var dist := (span + PI * radius) * 0.5
 
-	# The fold line may never cross the gutter: the binding holds that edge. A
-	# page gripped close to the spine therefore barely folds at all, which is
-	# the stiffness a real book has — no special case needed.
-	var from_gutter := dir * (_grab_anchor.x - gutter_x)
-	var lean := dir * normal.x
-	if lean > 1e-5:
-		dist = minf(dist, maxf((from_gutter - FOLD_GUTTER_MARGIN) / lean, 0.0))
+	# The fold line may not cross the BOUND EDGE — the binding holds it, so a
+	# fold that would flip any part of the spine edge is impossible. Testing the
+	# whole edge, rather than just keeping the fold origin clear of the gutter,
+	# is what confines a turn to the spine: a horizontal fold line sails past a
+	# point test, and the page hinged over its own top edge.
+	#
+	# Two things fall out of this instead of needing rules. Dragging parallel to
+	# the spine cannot fold the page at all. Neither can dragging outward, away
+	# from the binding. Corner drags still work, because their fold line clears
+	# the bound edge at both ends.
+	var bound_a := Vector2(gutter_x, -book_height * 0.5)
+	var bound_b := Vector2(gutter_x, book_height * 0.5)
+	var reach := maxf((bound_a - _grab_anchor).dot(normal), (bound_b - _grab_anchor).dot(normal))
+	var limit := maxf(-reach - FOLD_GUTTER_MARGIN, 0.0)
+	if limit <= 1e-5:
+		# No fold in this direction is possible without tearing the binding.
+		_fold_origin = Vector2(dir * (_book_width * 0.5 + 0.01), 0.0)
+		_fold_normal = Vector2(dir, 0.0)
+		_push_fold(0.0)
+		return
+	dist = minf(dist, limit)
 
 	_fold_normal = normal
 	_curl_radius = radius
