@@ -1159,7 +1159,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.039397, -0.00292, -0.01919
 collision_layer = 1048577
 script = ExtResource("11_vrsld")
 axis_local = Vector3(0, 0, -1)
-travel = 0.003
+travel = 0.004
 engage_radius = 0.02
 value = 1.0
 

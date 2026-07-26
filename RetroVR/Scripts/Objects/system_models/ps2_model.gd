@@ -171,7 +171,10 @@ func _on_lid_swung(_deg: float) -> void:
 # --- buttons: POWER + EJECT (the Slim has no discrete RESET) ---
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
 	_wire_button(power_btn, "Power", _mesh_center("Power"))
-	_wire_button(eject_btn, "Eject", _anchor("OpenClose"))
+	# On the strip itself, not the "OpenClose" anchor — that empty sits on the PS
+	# logo, 51 mm away from the button, so the grab/click box was nowhere near
+	# the thing it highlights.
+	_wire_button(eject_btn, "Eject", _mesh_center("Eject"))
 	if reset_btn != null:
 		reset_btn.visible = false   # no reset button on the PS2 Slim
 

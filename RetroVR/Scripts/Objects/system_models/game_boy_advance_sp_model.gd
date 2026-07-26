@@ -56,24 +56,40 @@ func _on_glb_ready() -> void:
 	# Hand each slide switch the shell's real cap, so the switch you can see IS
 	# the knob — it takes the pointer highlight and travels with the value.
 	# Direction and throw are authored on the sliders in game_boy_advance_sp.tscn.
-	_adopt_switch(_volume_slider, "VOLUME")
+	#
+	# Both run in straight slots moulded into flat sides, so they slide along Z —
+	# unlike the PSP, whose switch sits on a tapering edge and needs an off-axis
+	# direction. Confirmed twice: each cap's own principal axis comes out as pure
+	# -Z, and the shell's outward profile beside each is constant (~0.0405) across
+	# the travel span. A tangent fit of the PSP kind is wrong here — it reads the
+	# rounded front corner leaking into the sample window, and travelling along it
+	# pushes the caps INTO the shell (worst clearance -1.3 mm against -0.2 mm).
+	#
+	# VOLUME is modelled parked in the MIDDLE of its bezel, so it anchors at
+	# mid-travel — value 1 then sits at one end and value 0 at the other.
+	_adopt_switch(_volume_slider, "VOLUME", 0.5)
+	# POWER is modelled OFF, which is value 0, so it anchors where it already is.
 	_adopt_switch(_power_switch, "POWER")
 
 
-## Unlike the PSP — whose switch sits on a tapering edge and needs an off-axis
-## travel direction — both of these run in straight slots moulded into flat
-## sides, so they slide along Z. Confirmed twice: each cap's own principal axis
-## comes out as pure -Z, and the shell's outward profile beside each is constant
-## (~0.0405) across the travel span. An earlier tangent fit here read a taper
-## that turned out to be the rounded front corner leaking into the sample
-## window, and moving along it pushed the caps INTO the shell rather than along
-## it (worst clearance -1.3 mm vs -0.2 mm for straight Z).
-func _adopt_switch(slider: VRSlider, mesh_name: String) -> void:
+## `anchor_value` is the slider value the GLB's modelled cap position represents.
+## set_knob_mesh pins the CURRENT value to wherever the cap is modelled, so a
+## switch modelled mid-bezel has to be adopted at 0.5 — adopting it at its
+## authored value (1.0, full volume) makes the centre the loud END, and the cap
+## then only ever travels one way out of the middle instead of sweeping the slot.
+func _adopt_switch(slider: VRSlider, mesh_name: String, anchor_value: float = -1.0) -> void:
 	if slider == null or _glb == null:
 		return
 	var cap := _glb.find_child(mesh_name, true, false) as MeshInstance3D
-	if cap != null:
+	if cap == null:
+		return
+	if anchor_value < 0.0:
 		slider.set_knob_mesh(cap)
+		return
+	var authored := slider.value
+	slider.value = anchor_value
+	slider.set_knob_mesh(cap)
+	slider.set_value_no_signal(authored)
 
 
 func get_controller_port_count() -> int:
