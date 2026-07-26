@@ -44,7 +44,7 @@ func open() -> void:
 ## host can mark the tray closed.
 func latch_closed() -> void:
 	_latched_closed = true
-	_grip_ctrl = null
+	_trigger_ctrl = null
 	_pointer_held = false
 	_set_interactive(false)
 	_apply(min_deg, true)

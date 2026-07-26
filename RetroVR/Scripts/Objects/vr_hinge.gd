@@ -1,20 +1,24 @@
-## VRHinge — a physical, grip-latched hinge: a grabbable lid that rotates a target
-## node about the target's local X axis, clamped between two angles (a clamshell
-## lid or a console flap).
+## VRHinge — a physical, trigger-latched hinge: a grabbable lid that rotates a
+## target node about the target's local X axis, clamped between two angles (a
+## clamshell lid or a console flap).
 ##
 ## Interaction (VR + desktop), unified:
 ##   • HOVER — a controller tip within engage_radius, or the desktop reticle over
 ##     the grab box, shows a floating OPEN-HAND icon above the lid ("grab here").
-##   • HELD  — hold the GRIP button (VR) / press-drag the reticle (desktop) to
-##     LATCH; the icon becomes a FIST and the lid rotates toward the hand/pointer.
-##     Once latched the hand need NOT stay in the grab box — the latch holds until
-##     grip is released (VR) / the click is released (desktop).
+##   • HELD  — pull the TRIGGER (VR) / press-drag the reticle (desktop) to LATCH;
+##     the icon becomes a FIST and the lid rotates toward the hand/pointer. Once
+##     latched the hand need NOT stay in the grab box — the latch holds until the
+##     trigger is released (VR) / the click is released (desktop).
 ##
-## It latches on grip / pointer-press rather than the grip-GRAB of a pickable. On
-## a fixed cabinet that is enough on its own, but a handheld or console IS an
-## XRToolsPickable, so one grip near the lid used to latch the hinge AND pick the
-## whole device up. claims_grip() below lets the pickup logic stand down when a
-## hand is on a lid — see the LOCAL PATCH in function_pickup._on_grip_pressed.
+## The TRIGGER, not the grip, and that is what keeps lids out of everything
+## else's way. Grip is how XRToolsFunctionPickup grabs a pickable, and a handheld
+## or console IS one — so a grip-latched lid meant one squeeze near the lid both
+## swung it and lifted the whole device off the table. On the trigger the two
+## never compete: grip picks the device up, trigger works its lid.
+##
+## Engagement also requires PokeTip.is_poking(), i.e. a hand NOT already holding
+## something — the same gate VRButton and VRSlider use. Without it, pulling the
+## trigger to fire a held object's action would swing any lid the hand was near.
 ##
 ## Attach to an Area3D with a child CollisionShape3D covering the grab region (the
 ## desktop reticle ray hits this; VR engages on tip proximity to the Area origin).
@@ -25,8 +29,10 @@ extends Area3D
 signal rotation_changed(degrees: float)
 
 const POINTABLE_LAYER := 1 << 20
-const GRIP_ON := 0.6      # grip float that latches the hinge
-const GRIP_OFF := 0.4     # grip float that releases it (hysteresis)
+## Analog trigger action, read as a float — same contract as VRButton/VRSlider.
+const TRIGGER_ACTION := "trigger"
+const TRIGGER_ON := 0.6   # trigger float that latches the hinge
+const TRIGGER_OFF := 0.4  # trigger float that releases it (hysteresis)
 const ICON_HOVER := 0xF256   # Nerd Font: open palm — "grab here"
 const ICON_HELD := 0xF255    # Nerd Font: closed fist — "holding"
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
@@ -43,12 +49,9 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 ## Icon glyph height, roughly, in metres.
 @export var icon_size: float = 0.028
 
-## Every hinge currently in the tree. Static so the grip handler can ask whether
-## a hand is on a lid WITHOUT walking the scene, on the hot path of every grip
-## press. Entries are added in _ready and removed in _exit_tree.
-static var _live: Array[VRHinge] = []
-
-var _grip_ctrl: XRController3D = null    # latched controller (grip held)
+var _trigger_ctrl: XRController3D = null   # latched controller (trigger held)
+# Controller instance ids whose trigger has dropped since they last latched.
+var _rearmed: Dictionary = {}
 var _pointer_held := false               # desktop pointer latched
 var _held_prev := false                  # held state at the END of last _process
 var _pointer_hover := false              # desktop reticle over the grab box
@@ -56,41 +59,12 @@ var _controllers: Array[XRController3D] = []
 var _icon: Label3D = null
 
 
-## The live hinge that would take this controller's grip right now — its poke tip
-## is inside that hinge's engage radius and the hinge is currently grabbable — or
-## null. Returns the hinge, not a bool, so the caller can tell WHICH object the
-## lid belongs to and only stand down for that one.
-##
-## The lid WINS: a hinge is a small, deliberate target sitting on top of a much
-## larger grab volume (the whole console), so if the hand is close enough to work
-## the lid, that is what the player meant. Without this the same grip did both —
-## the lid swung and the console came off the table with it.
-static func claims_grip(controller: XRController3D) -> VRHinge:
-	if controller == null or not controller.get_is_active():
-		return null
-	var tip := PokeTip.tip_of(controller)
-	for h: VRHinge in _live:
-		if not is_instance_valid(h) or not h.is_inside_tree() or not h.is_visible_in_tree():
-			continue
-		if not h._can_engage():
-			continue
-		if h.global_position.distance_to(tip) <= h.engage_radius:
-			return h
-	return null
-
-
 func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
-	if not _live.has(self):
-		_live.append(self)
 	_build_icon()
 	await get_tree().process_frame
 	for node in get_tree().root.find_children("*", "XRController3D", true, false):
 		_controllers.append(node as XRController3D)
-
-
-func _exit_tree() -> void:
-	_live.erase(self)
 
 
 ## Set the target rotation without emitting (restore/populate use).
@@ -105,26 +79,36 @@ func _process(delta: float) -> void:
 	# read was already false and _on_released() never fired (a lid wheeled shut then
 	# released sprang straight back open instead of latching).
 	var was_held := _held_prev
-	# VR: grip-latched engagement. A latched controller drives the hinge until it
-	# releases grip — regardless of how far the hand roams from the grab box.
-	if _grip_ctrl != null:
-		if not is_instance_valid(_grip_ctrl) or not _grip_ctrl.get_is_active() \
-				or _grip_ctrl.get_float("grip") < GRIP_OFF:
-			_grip_ctrl = null
+	# A trigger already down cannot grab lid after lid as the hand sweeps across a
+	# console — it has to fall below TRIGGER_OFF first. Same re-arm guard VRSlider
+	# uses.
+	for ctrl in _controllers:
+		if ctrl != null and ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+			_rearmed[ctrl.get_instance_id()] = true
+	# VR: trigger-latched engagement. A latched controller drives the hinge until
+	# it releases the trigger — however far the hand roams from the grab box.
+	if _trigger_ctrl != null:
+		if not is_instance_valid(_trigger_ctrl) or not _trigger_ctrl.get_is_active() \
+				or _trigger_ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+			_trigger_ctrl = null
 		else:
-			_track_world_point(PokeTip.tip_of(_grip_ctrl))
+			_track_world_point(PokeTip.tip_of(_trigger_ctrl))
 	elif not _pointer_held and _can_engage():
-		# Not latched (and desktop isn't dragging): latch a hovering controller
-		# that squeezes grip.
+		# Not latched (and desktop isn't dragging): latch a hovering hand that
+		# pulls the trigger. A hand holding something is skipped, so firing a held
+		# object's action never swings a lid as a side effect.
 		for ctrl in _controllers:
-			if ctrl == null or not ctrl.get_is_active():
+			if ctrl == null or not ctrl.get_is_active() or not PokeTip.is_poking(ctrl):
+				continue
+			if not _rearmed.get(ctrl.get_instance_id(), false):
 				continue
 			if global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius \
-					and ctrl.get_float("grip") > GRIP_ON:
-				_grip_ctrl = ctrl
+					and ctrl.get_float(TRIGGER_ACTION) > TRIGGER_ON:
+				_rearmed[ctrl.get_instance_id()] = false
+				_trigger_ctrl = ctrl
 				_track_world_point(PokeTip.tip_of(ctrl))
 				break
-	var held := _grip_ctrl != null or _pointer_held
+	var held := _trigger_ctrl != null or _pointer_held
 	if was_held and not held:
 		_on_released()
 	elif not held:
@@ -260,7 +244,7 @@ func _build_icon() -> void:
 func _update_icon() -> void:
 	if _icon == null:
 		return
-	var held := _grip_ctrl != null or _pointer_held
+	var held := _trigger_ctrl != null or _pointer_held
 	if held:
 		_icon.text = String.chr(ICON_HELD)
 		_icon.modulate = Color(1.0, 0.82, 0.28)   # fist — amber "holding"

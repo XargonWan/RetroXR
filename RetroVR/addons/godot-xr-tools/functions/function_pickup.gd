@@ -584,18 +584,6 @@ func _on_button_released(p_button) -> void:
 
 
 func _on_grip_pressed() -> void:
-	# LOCAL PATCH (RetroVR): a lid hinge under this hand wins the grip over the
-	# DEVICE THE LID BELONGS TO. A handheld or console is itself a pickable, so
-	# gripping to swing its lid also grabbed the whole thing — the lid moved and
-	# the console came with it.
-	#
-	# Scoped to that device on purpose: a cartridge stub or memory card seated
-	# near a hinge is a separate pickable and stays grabbable. Only guards the
-	# ACQUIRE path, so a grip that would drop something already held still drops.
-	if not is_instance_valid(picked_up_object):
-		var lid := VRHinge.claims_grip(_controller)
-		if lid != null and (not is_instance_valid(closest_object) 				or closest_object.is_ancestor_of(lid)):
-			return
 	if is_instance_valid(picked_up_object) and !picked_up_object.press_to_hold:
 		# LOCAL PATCH (RetroVR): let a pickable manage its own drop so a redundant grip
 		# press on an already-held object is a no-op (no drop->re-grab pose pop). Objects
