@@ -14,7 +14,15 @@ const SCENE_PATHS := {
 	"passthrough": "res://Scenes/PassthroughScene.tscn",
 	"test":        "res://Scenes/TestScene.tscn",
 }
+## Shown on the loading screen while each scene builds.
+const SCENE_TITLES := {
+	"arcade":      "ARCADE ROOM",
+	"den":         "COZY DEN",
+	"passthrough": "PASSTHROUGH",
+	"test":        "TEST HALLWAY",
+}
 const PREFS_FILE := "user://scenes/prefs.json"
+const LOADING_RIG_SCENE := preload("res://Scenes/UI/loading_rig.tscn")
 
 var current_scene_id: String = "arcade"
 var auto_save_on_switch: bool = true
@@ -23,6 +31,8 @@ var active_slot_id: String = "clean"
 ## Set by NetworkManager around host-driven scene switches so the client
 ## guard in change_scene() doesn't block them.
 var net_scene_override: bool = false
+
+var _transitioning: bool = false
 
 
 func _ready() -> void:
@@ -84,5 +94,64 @@ func change_scene(scene_id: String) -> void:
 		persistence.save_slot(get_tree().current_scene, active_slot_id)
 
 	current_scene_id = scene_id
-	get_tree().change_scene_to_file(SCENE_PATHS[scene_id])
+	# Deferred: the call arrives from a button inside the scene about to be freed,
+	# so the caller's stack has to unwind first.
+	_run_transition.call_deferred(SCENE_PATHS[scene_id], SCENE_TITLES.get(scene_id, ""))
 	scene_changed.emit(scene_id)
+
+
+## Swap scenes with a loading screen, freeing the outgoing scene BEFORE the
+## incoming one is built.
+##
+## SceneTree.change_scene_to_file() instantiates the new scene while the old one
+## is still live, so for one frame both worlds' nodes and every resource they
+## reference are resident at once. Going from the arcade into a heavy room that
+## way peaks at the sum of both, which is what the Quest cannot afford. Tearing
+## down first costs a black gap, which is what the loading rig is for.
+func _run_transition(path: String, title: String) -> void:
+	if _transitioning:
+		return
+	_transitioning = true
+	var tree := get_tree()
+
+	# Up first, so the headset keeps a tracked camera and something to look at.
+	var rig: LoadingRig = LOADING_RIG_SCENE.instantiate()
+	tree.root.add_child(rig)
+	rig.set_title("LOADING  %s" % title if not title.is_empty() else "LOADING")
+	await tree.process_frame
+
+	var outgoing := tree.current_scene
+	if outgoing != null:
+		tree.current_scene = null
+		tree.root.remove_child(outgoing)
+		outgoing.queue_free()
+	# Two frames: one for queue_free to run, one for the freed resources to drop
+	# out of the cache before the next scene starts pulling its own in.
+	await tree.process_frame
+	await tree.process_frame
+
+	ResourceLoader.load_threaded_request(path)
+	var progress: Array = []
+	while true:
+		var status := ResourceLoader.load_threaded_get_status(path, progress)
+		if status == ResourceLoader.THREAD_LOAD_LOADED:
+			break
+		if status != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			push_error("SceneManager: failed to load '%s' (status %d)" % [path, status])
+			rig.queue_free()
+			_transitioning = false
+			return
+		if not progress.is_empty():
+			rig.set_progress(float(progress[0]))
+		await tree.process_frame
+	rig.set_progress(1.0)
+
+	var packed: PackedScene = ResourceLoader.load_threaded_get(path)
+	var incoming: Node = packed.instantiate()
+	# The incoming scene brings its own XROrigin3D, and only one may be current.
+	rig.stand_down()
+	tree.root.add_child(incoming)
+	tree.current_scene = incoming
+	await tree.process_frame
+	rig.queue_free()
+	_transitioning = false

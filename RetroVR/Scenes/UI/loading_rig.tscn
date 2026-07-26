@@ -1,0 +1,41 @@
+[gd_scene load_steps=6 format=3 uid="uid://cl0adr1g0001"]
+
+[ext_resource type="Script" path="res://Scripts/UI/loading_rig.gd" id="1_rig"]
+[ext_resource type="PackedScene" uid="uid://bqumugyvkct4r" path="res://addons/godot-xr-tools/staging/loading_screen.tscn" id="2_loadscreen"]
+
+[sub_resource type="Environment" id="Env_loading"]
+background_mode = 1
+background_color = Color(0.015, 0.015, 0.02, 1)
+ambient_light_source = 3
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 1.0
+
+[sub_resource type="SystemFont" id="Font_load"]
+font_names = PackedStringArray("Consolas", "Courier New", "monospace")
+
+[node name="LoadingRig" type="Node3D"]
+script = ExtResource("1_rig")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_loading")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 0)
+
+[node name="LoadingScreen" parent="." instance=ExtResource("2_loadscreen")]
+
+; The stock splash is an 80x60 untextured plane — pure white filling the view.
+[node name="SplashScreen" parent="LoadingScreen" index="0"]
+visible = false
+
+[node name="TitleLabel" type="Label3D" parent="LoadingScreen"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, -10)
+pixel_size = 0.018
+modulate = Color(0.85, 0.9, 1, 1)
+outline_modulate = Color(0, 0, 0, 1)
+text = "LOADING"
+font = SubResource("Font_load")
+font_size = 64
+outline_size = 14
