@@ -35,34 +35,67 @@ So today you can spawn a TV in passthrough and it evaporates on scene change.
 | Planes | `OpenXRFbSceneManager` — `auto_create`, `create_scene_anchors()`, `get_anchor_node()`, `request_scene_capture()`, `is_scene_capture_supported()`; signals `openxr_fb_scene_anchor_created` / `_scene_data_missing` / `_scene_capture_completed` | `OpenXRPlaneTracker` (extends `OpenXRSpatialEntityTracker`) — `bounds_size`, `plane_alignment`, `plane_label`, `get_mesh()`, `get_shape()`, signal `mesh_changed`; reachable via `XRServer.get_trackers()` and bindable to an `XRAnchor3D` |
 | Anchors | `OpenXRFbSpatialAnchorManager` (persistent, UUID-keyed) | `enable_spatial_anchors` / `enable_persistent_anchors`, `OpenXRAnchorTracker` |
 | Quest 3 mesh | `OpenXRMetaSpatialEntityMeshExtension` | `OpenXRSpatialComponentMesh` |
-| Runtime support | certain on Meta | **unverified on the Quest runtime** — Phase 0 settles it |
+| Runtime support | verified working | **verified working** — Quest 3, Oculus runtime 207.65.0, OpenXR 1.1.54 |
 
 Enabling `meta/scene_api` is also what makes the vendors plugin inject
 `com.oculus.permission.USE_SCENE` / `USE_ANCHOR_API` into the manifest.
 
 ## Phases
 
-### Phase 0 — Capability probe (do this first; no new files)
-Flip `meta/scene_api = true` and `meta/anchor_api = true` in `project.godot`, export, and on
-device print:
-- `OpenXRFbSceneManager.is_scene_capture_supported()` / `is_scene_capture_enabled()`
-- `OpenXRSpatialEntityExtension.supports_capability(...)` for plane tracking + anchors
+### Phase 0 — Capability probe — **DONE 2026-07-26**
+Ran `Tools/spatial_probe.tscn` on a Quest 3 (Oculus runtime 207.65.0, OpenXR 1.1.54) via the
+`QuestSpatialProbe` export preset. **Verdict: take the core path.**
 
-Whichever path reports support wins, and every later phase is written against it. Prefer the
-core path if it works — it's vendor-neutral and needs no addon. Assume the Meta path
-otherwise. Do not write `spatial_manager.gd` before this answers.
+| Query | Result |
+|---|---|
+| `supports_capability(CAPABILITY_PLANE_TRACKING)` | true |
+| `supports_capability(CAPABILITY_ANCHOR)` | true |
+| `OpenXRSpatialPlaneTrackingCapability.is_supported()` | true |
+| `OpenXRSpatialAnchorCapability.is_spatial_anchor_supported()` | true |
+| `OpenXRSpatialAnchorCapability.is_spatial_persistence_supported()` | true |
+| marker tracking (QR / micro-QR / ArUco / AprilTag) | false — all four |
+| `OpenXRFbSpatialEntityExtension.is_spatial_entity_supported()` | true (fallback also fine) |
+| `OpenXRFbSceneCaptureExtension.is_scene_capture_supported()` | true, `is_scene_capture_enabled()` false |
+
+With `enable_builtin_plane_detection` on, Godot published **31 `OpenXRPlaneTracker`s (36
+trackers total) with no discovery code written at all** — 9 carried real geometry
+(0.92×2.03, 0.87×2.06, 1.73×2.32, 2.41×1.51, 1.85×1.00, 0.73×2.04 m and two ~0.45 m squares:
+walls, floor/ceiling and two small surfaces), the rest reported zero bounds. Frame rate held
+at ~71.5 fps against the 72 Hz target in an otherwise empty scene.
+
+Three things the probe taught us that the phases below now assume:
+
+1. **Spatial data needs Horizon OS consent, not just an Android permission.** `meta/scene_api`
+   injects `com.oculus.permission.USE_SCENE`, but it is a *runtime* permission that installs
+   `granted=false`, and even after `adb shell pm grant` the shell raises its own "Allow … to
+   access your spatial data?" dialog. Until it is answered the app **does not launch at all** —
+   the shell caches the launch ("Launch is blocked because: a Reprojected OS dialog is
+   currently showing"). Plan for a first-run consent step; a denied grant looks exactly like
+   an empty room. `USE_ANCHOR_API` is granted automatically.
+2. **Semantic labels came back empty on every plane.** `get_plane_label()` was `""` across all
+   31, so `COMPONENT_TYPE_PLANE_SEMANTIC_LABEL` is not populated by the built-in path. Snapping
+   cannot say "this is a table" yet — it has to work off `plane_alignment` + bounds, or drive
+   discovery manually and request the label component.
+3. **Built-in detection is a project-wide switch.** `enable_builtin_plane_detection` is a
+   project setting, so the arcade and den would run discovery too. On an already CPU-bound
+   scene that is not free. The settings are currently feature-gated to `.spatialprobe` so only
+   the probe preset gets them; Phase 1 must either accept the cost project-wide or drive
+   discovery by hand (`create_spatial_context` + `OpenXRSpatialPlaneTrackingCapability.start_entity_discovery`)
+   so it runs only in the passthrough room.
 
 ### Phase 1 — Planes in the passthrough scene
-Add scene understanding to `PassthroughScene.tscn`:
-- Meta path: drop in an `OpenXRFbSceneManager` with `auto_create = true` and a
-  `default_scene` that visualises one plane; it spawns an anchor node per Room Setup entity.
-  On `openxr_fb_scene_data_missing`, call `request_scene_capture()` to send the user to Room
-  Setup.
-- Core path: watch `XRServer` for `OpenXRPlaneTracker`s and spawn an `XRAnchor3D` per plane,
-  taking geometry straight from `get_mesh()` and collision from `get_shape()`.
+Watch `XRServer` for `OpenXRPlaneTracker`s and spawn a visual + collider per plane, taking
+geometry from `get_mesh()` and collision from `get_shape(thickness)`. The probe proves the
+trackers arrive on their own, so this is presentation, not discovery.
 
-Either way this is thin glue, not the plane bookkeeping the old draft imagined. Visual: a
-faint wireframe or ~10% alpha overlay, and a toggle to hide it once placement is done.
+Decide first whether to keep `enable_builtin_plane_detection` (simple, but project-wide) or
+run discovery manually so it is scoped to passthrough — see point 3 above. Ungate the
+`.spatialprobe` settings in `project.godot` as part of this phase, and add the first-run
+consent request.
+
+Visual: a faint wireframe or ~10% alpha overlay, and a toggle to hide it once placement is
+done. With labels empty, distinguish surfaces by `plane_alignment` plus bounds (a 2.4×1.5 m
+horizontal plane is the floor; ~0.9×2.0 m verticals are walls).
 
 ### Phase 2 — Make passthrough a real room
 Placement is pointless while nothing survives a scene change. Generalise persistence off the
@@ -101,19 +134,55 @@ New (paths follow the current foldered `Scripts/` layout):
 - `RetroVR/Scripts/Objects/spatial_plane.gd` — plane visual + collider + snap target
 
 ## Risks
-- **Runtime support for the core path is unverified** on Quest — Phase 0 exists to settle it.
+- ~~Runtime support for the core path is unverified~~ — settled in Phase 0: supported.
+- **Consent is a launch-blocker, not just a feature gate.** An unanswered spatial-data dialog
+  prevents the app from starting at all, and the failure mode is silent (cached launch). Any
+  automated/on-device testing has to answer it once per package.
 - **Perf.** The Quest is already CPU-bound (120 Hz target + GDScript verlet cables saturate
-  the main thread). Plane overlays plus passthrough plus an emulator is a real budget
-  question; measure before adding per-frame plane logic.
+  the main thread). Plane detection alone held ~71.5 fps in an *empty* scene, which is
+  encouraging but says nothing about the arcade; measure there before enabling it project-wide.
 - **Room Setup is a hard prerequisite.** With no room scanned there are no planes;
   `scene_data_missing` → `request_scene_capture()` is the only recovery, and it yanks the
   user out to the system UI.
+- **No semantic labels** from the built-in path, so surface classification is geometric
+  guesswork until manual discovery requests the label component.
 - **Guardian re-centring** moves world space under any non-anchored object. Phase 3's anchor
   UUIDs are the mitigation, which is why Phase 3 shouldn't be skipped.
 - Plane quality varies with lighting and surface type; expect coarse rectangles, not furniture.
 
+## Probe harness (how to re-run Phase 0)
+`Tools/spatial_probe.tscn` ships as its own app so it never disturbs an installed RetroVR:
+export preset **QuestSpatialProbe** (`com.xenu.retrovr.spatialprobe`) declares the custom
+feature `spatialprobe`, which selects `run/main_scene.spatialprobe` and the gated `[xr]`
+settings. Nothing in the normal Quest build changes.
+
+```bash
+"$godot" --headless --path "$proj" --export-debug "QuestSpatialProbe" probe.apk
+adb install -r probe.apk
+adb shell pm grant com.xenu.retrovr.spatialprobe com.oculus.permission.USE_SCENE
+adb shell pm grant com.xenu.retrovr.spatialprobe horizonos.permission.USE_SCENE
+adb shell am broadcast -a com.oculus.vrpowermanager.prox_close
+adb shell setprop debug.oculus.guardian_pause 1
+adb shell monkey -p com.xenu.retrovr.spatialprobe 1
+adb logcat -s 'godot:*' | grep '\[spatial\]'
+```
+
+Traps that cost a cycle each, all confirmed here:
+- **A scene path on the command line does not work in an export.** `command_line/extra_args`
+  bakes into `_cl_` fine, but the runtime aborts with *"compiled without support for path
+  overrides"* and re-logs it every frame — 2.1 GB of logcat in 100 s. Use a feature-tagged
+  `run/main_scene` instead.
+- **`adb logcat -s godot:*` unquoted is glob-eaten by the shell**, silently disabling the
+  filter. Quote it: `-s 'godot:*'`.
+- **The first launch after install will be swallowed** by the spatial-data consent dialog
+  (and possibly a Guardian dialog). `adb shell dumpsys activity activities | grep
+  GrantPermissionsActivity` shows it; a human has to answer it once. `adb exec-out screencap
+  -p` is the fastest way to see what is on the panel.
+- The probe prints an `alive t=… frames=…` heartbeat so "process died" is distinguishable
+  from "process running but not ticking".
+
 ## Verification
-1. Phase 0: on-device log line naming which API reported support.
+1. Phase 0: on-device log line naming which API reported support. **Done — see Phase 0 above.**
 2. Phase 1: passthrough scene with plane overlays on real walls/floor/table — capture a
    **screencap from the headset** (video, since it's head-motion dependent), not a headless run.
 3. Phase 2: spawn a TV in passthrough, switch to arcade and back, TV is still there.
