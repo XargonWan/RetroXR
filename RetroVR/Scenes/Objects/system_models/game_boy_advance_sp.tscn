@@ -1139,7 +1139,7 @@ engage_radius = 0.030695
 icon_offset = Vector3(0, 0.008, 0.045)
 
 [node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge" unique_id=982894102]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.054880925, -0.0018809065)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, 0.045)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1
