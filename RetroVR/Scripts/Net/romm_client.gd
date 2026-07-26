@@ -182,11 +182,20 @@ func test_connection(callback: Callable) -> void:
 			return
 		var sys: Dictionary = hb.get("SYSTEM", {}) if hb.get("SYSTEM") is Dictionary else {}
 		var version := str(sys.get("VERSION", "?"))
-		rom_count(0, func(ok: bool, total: int) -> void:
+		# Count from /api/platforms rather than an unfiltered /api/roms: with no
+		# platform_ids, RomM's default grouping collapses the result to a
+		# fraction of the library (141 of 1411 on the test server), which would
+		# report a wildly wrong number here. Summing rom_count also proves auth
+		# works and gives us the platform list we need anyway.
+		platforms(func(ok: bool, plats: Array) -> void:
 			if not ok:
 				callback.call(false, "RomM %s reached, but sign-in failed" % version)
 				return
-			callback.call(true, "RomM %s · %s games" % [version, _thousands(total)])
+			var total := 0
+			for p: Dictionary in plats:
+				total += int(p.get("rom_count", 0))
+			callback.call(true, "RomM %s · %s games across %d platform%s"
+				% [version, _thousands(total), plats.size(), "" if plats.size() == 1 else "s"])
 		)
 	)
 

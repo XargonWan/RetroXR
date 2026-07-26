@@ -176,8 +176,10 @@ const SLUG_MAP := {
 ## fs_slug beats slug because it's the folder the user named themselves — it may
 ## already BE our systemid (e.g. a folder literally called "super_nes").
 static func systemid_for(platform: Dictionary, overrides: Dictionary = {}) -> String:
-	var slug := str(platform.get("slug", "")).to_lower().strip_edges()
-	var fs_slug := str(platform.get("fs_slug", "")).to_lower().strip_edges()
+	var slug_v: Variant = platform.get("slug")
+	var fs_v: Variant = platform.get("fs_slug")
+	var slug := ("" if slug_v == null else str(slug_v)).to_lower().strip_edges()
+	var fs_slug := ("" if fs_v == null else str(fs_v)).to_lower().strip_edges()
 
 	for key: String in [slug, fs_slug]:
 		if not key.is_empty() and overrides.has(key):
@@ -210,7 +212,10 @@ static func partition(platforms: Array, overrides: Dictionary = {}) -> Dictionar
 	var unmapped: Array[Dictionary] = []
 
 	for p: Dictionary in platforms:
-		if int(p.get("rom_count", 0)) <= 0:
+		# rom_count can arrive as JSON null; Dictionary.get()'s default only
+		# covers an absent key, and int(null) is a hard error.
+		var count: Variant = p.get("rom_count")
+		if count == null or int(count) <= 0:
 			continue
 		var sid := systemid_for(p, overrides)
 		if sid.is_empty():

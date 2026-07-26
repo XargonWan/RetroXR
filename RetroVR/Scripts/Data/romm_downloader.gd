@@ -315,7 +315,19 @@ func _attempt_download(args: Dictionary, dest: String, part: String, rom_id: int
 		return {"status": "restart",
 				"error": "Incomplete download (%s of %s)" % [_human_size(got), _human_size(expected_size)]}
 
-	if not expected_md5.is_empty():
+	# RomM's md5_hash describes the ROM *content*, while fs_size_bytes describes
+	# the file as stored. For a ROM kept as a .zip those are different things —
+	# verified against the live server: a 17,086,996-byte zip whose md5_hash is
+	# actually the hash of the 134 MB .3ds inside it. Hashing the container would
+	# therefore never match, and every archived ROM would fail three retries and
+	# go terminal.
+	#
+	# Size is the authoritative check on what was transferred (it matched to the
+	# byte), so archives are verified on size alone. Hashing the inner entry
+	# instead is not an option: ZIPReader.read_file() has no streaming API, so a
+	# multi-GB inner image would have to be read into RAM whole — reintroducing
+	# exactly the OOM that the need_fullpath fix removed.
+	if not expected_md5.is_empty() and not _is_archive(part):
 		var sums := RomHasher.compute_checksums(part)
 		var md5 := str(sums.get("md5", "")).to_lower()
 		if not md5.is_empty() and md5 != expected_md5:
@@ -478,6 +490,25 @@ func _merge_gamelist(systemid: String, entry: Dictionary, fs_name: String) -> vo
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+## Detect an archive by magic bytes rather than extension — RomM serves whatever
+## is on disk, and the requested filename is chosen by the caller.
+static func _is_archive(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null or f.get_length() < 4:
+		return false
+	var magic := f.get_buffer(4)
+	f.close()
+	if magic.size() < 4:
+		return false
+	# PK\x03\x04 (zip), also matches the empty/spanned variants PK\x05\x06 / PK\x07\x08
+	if magic[0] == 0x50 and magic[1] == 0x4B:
+		return true
+	# 7z: 37 7A BC AF 27 1C
+	if magic[0] == 0x37 and magic[1] == 0x7A and magic[2] == 0xBC and magic[3] == 0xAF:
+		return true
+	return false
+
 
 static func _file_size(path: String) -> int:
 	if not FileAccess.file_exists(path):

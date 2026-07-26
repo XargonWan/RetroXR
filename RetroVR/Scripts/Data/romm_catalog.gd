@@ -305,6 +305,11 @@ func _sync_worker(args: Dictionary) -> void:
 			break
 
 		for item: Dictionary in items:
+			# RomM happily scans dot-directories (".media", ".media2") as ROMs:
+			# 600 MB entries with no name and no cover. RomLibrary.scan_roms
+			# already skips dot-prefixed files locally; do the same here.
+			if str(item.get("fs_name", "")).begins_with("."):
+				continue
 			var slim := _slim_row(item)
 			var id := int(slim.get("id", 0))
 			if id == 0:
@@ -343,12 +348,14 @@ func _sync_worker(args: Dictionary) -> void:
 	for id: int in merged:
 		var line: String = merged[id]
 		var parsed: Variant = JSON.parse_string(line)
-		var name := ""
+		var sort_key := ""
+		var display := ""
 		if parsed is Dictionary:
-			name = str((parsed as Dictionary).get("sort_name", ""))
-		rows.append({"name": name, "line": line, "id": id})
+			sort_key = str((parsed as Dictionary).get("sort_name", ""))
+			display = str((parsed as Dictionary).get("name", ""))
+		rows.append({"sort": sort_key, "display": display.to_lower(), "line": line, "id": id})
 	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return (a["name"] as String).naturalnocasecmp_to(b["name"] as String) < 0
+		return (a["sort"] as String).naturalnocasecmp_to(b["sort"] as String) < 0
 	)
 
 	# Write the index plus its three sidecars in one pass.
@@ -360,7 +367,10 @@ func _sync_worker(args: Dictionary) -> void:
 		var line: String = r["line"]
 		offsets.append(pos)
 		ids.append(int(r["id"]))
-		names_text += str(r["name"]) + "\n"
+		# Search index is the lowercased DISPLAY name, not name_sort_key —
+		# RomM's sort key zero-pads every number ("2in1" -> "000000000002in
+		# 000000000001"), which sorts correctly but is unsearchable as text.
+		names_text += str(r["display"]) + "\n"
 		var bytes := (line + "\n").to_utf8_buffer()
 		out.store_buffer(bytes)
 		pos += bytes.size()
@@ -408,32 +418,66 @@ func _page_path(platform_id: int, offset: int, group: bool,
 ## rest are fetched on demand from /api/roms/{id} when a detail panel opens.
 static func _slim_row(item: Dictionary) -> Dictionary:
 	var meta: Dictionary = item.get("metadatum", {}) if item.get("metadatum") is Dictionary else {}
-	var name := str(item.get("name", ""))
+	var name := _s(item, "name")
 	if name.is_empty():
-		name = str(item.get("fs_name_no_tags", item.get("fs_name", "")))
+		name = _s(item, "fs_name_no_tags")
+	if name.is_empty():
+		name = _s(item, "fs_name")
+
+	var sort_name := _s(item, "name_sort_key")
+	if sort_name.is_empty():
+		sort_name = name
 
 	return {
-		"id": int(item.get("id", 0)),
+		"id": _i(item, "id"),
 		"name": name,
-		"sort_name": str(item.get("name_sort_key", name)).to_lower(),
-		"fs_name": str(item.get("fs_name", "")),
-		"fs_extension": str(item.get("fs_extension", "")),
-		"fs_size_bytes": int(item.get("fs_size_bytes", 0)),
-		"md5_hash": str(item.get("md5_hash", "")),
-		"sha1_hash": str(item.get("sha1_hash", "")),
-		"crc_hash": str(item.get("crc_hash", "")),
-		"regions": item.get("regions", []),
-		"languages": item.get("languages", []),
-		"revision": str(item.get("revision", "")),
-		"cover_small": str(item.get("path_cover_small", "")),
-		"cover_large": str(item.get("path_cover_large", "")),
-		"has_manual": bool(item.get("has_manual", false)),
-		"multi": bool(item.get("has_multiple_files", false)),
-		"updated_at": str(item.get("updated_at", "")),
-		"first_release_date": int(meta.get("first_release_date", 0)),
-		"genres": meta.get("genres", []),
-		"companies": meta.get("companies", []),
+		"sort_name": sort_name.to_lower(),
+		"fs_name": _s(item, "fs_name"),
+		"fs_extension": _s(item, "fs_extension"),
+		"fs_size_bytes": _i(item, "fs_size_bytes"),
+		"md5_hash": _s(item, "md5_hash"),
+		"sha1_hash": _s(item, "sha1_hash"),
+		"crc_hash": _s(item, "crc_hash"),
+		"regions": _a(item, "regions"),
+		"languages": _a(item, "languages"),
+		"revision": _s(item, "revision"),
+		"cover_small": _s(item, "path_cover_small"),
+		"cover_large": _s(item, "path_cover_large"),
+		"has_manual": bool(item.get("has_manual", false) == true),
+		"multi": bool(item.get("has_multiple_files", false) == true),
+		"updated_at": _s(item, "updated_at"),
+		"first_release_date": _i(meta, "first_release_date"),
+		"genres": _a(meta, "genres"),
+		"companies": _a(meta, "companies"),
 	}
+
+
+# JSON null is not the same as a missing key: Dictionary.get()'s default only
+# applies when the key is ABSENT, so a field RomM sends as null comes back as a
+# real null and int(null) / str(null) blow up or produce "<null>". Most nullable
+# fields here (first_release_date, revision, name on unmatched ROMs, every
+# metadatum member) are null in practice on a server with metadata providers
+# disabled, so all server-derived reads go through these.
+
+static func _s(d: Dictionary, key: String) -> String:
+	var v: Variant = d.get(key)
+	return "" if v == null else str(v)
+
+
+static func _i(d: Dictionary, key: String) -> int:
+	var v: Variant = d.get(key)
+	if v == null:
+		return 0
+	if v is int or v is float:
+		return int(v)
+	if v is String and (v as String).is_valid_float():
+		return int((v as String).to_float())
+	return 0
+
+
+static func _a(d: Dictionary, key: String) -> Array:
+	var v: Variant = d.get(key)
+	return v if v is Array else []
 
 
 static func _read_existing_rows(path: String) -> Dictionary:
