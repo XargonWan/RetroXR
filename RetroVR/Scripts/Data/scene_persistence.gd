@@ -406,6 +406,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 			"crt_enabled": (node as RetroTV).crt_enabled,
+			"crt_params": (node as RetroTV).get_crt_params(),
 			"scale_factor": (node as RetroTV).scale_factor,
 			"stereo_mode": (node as RetroTV).stereo_mode,
 		}
@@ -604,6 +605,9 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 		"tv":
 			var tv := TV_SCENE.instantiate() as RetroTV
 			tv.crt_enabled = data.get("crt_enabled", true)
+			var crt_params: Dictionary = data.get("crt_params", {})
+			if not crt_params.is_empty():
+				tv.set_crt_params(crt_params)
 			tv.scale_factor = data.get("scale_factor", 1.0)
 			tv.stereo_mode = int(data.get("stereo_mode", 0))
 			obj = tv

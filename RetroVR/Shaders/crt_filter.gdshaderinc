@@ -1,49 +1,114 @@
 // Shared CRT display filter for RetroVR TV screens.
 //
-// The tube look (aperture/slot mask, scanlines, grain, YIQ smear, VHS wiggle) is
-// PORTED from the Flowerwall CRT shader by Art (art-oria), MIT licensed:
-//   https://github.com/art-oria/Flowerwall-CRT-shader-for-Godot
-// Flowerwall is a fullscreen `canvas_item` post-process; here its algorithm is
-// re-expressed as the *display stage* of a `spatial` material so it applies to
-// the one 3D TV tube (sampling the game/tape picture) instead of the whole VR
-// framebuffer, and composites with RetroVR's OSD + rounded-glass bezel.
+// Included by crt_effect.gdshader (wraps any picture source), screen_window.gdshader
+// (dual-screen handhelds mirrored to a TV) and vcr_effect.gdshader (chained after
+// the VHS pass). Public interface:
+//   crt_warp(uv)                  → tube UV (VHS wiggle + optional extra barrel)
+//   crt_border(wuv)               → glass-edge alpha
+//   crt_notch_sample(t, uv, base) → composite-cable horizontal notch
+//   crt_glow(tex, uv)             → halation, added AFTER the mask
+//   crt_apply(col, wuv)           → beam + mask + vignette
+//   crt_apply_full(col, glow, wuv)
 //
-// Included by crt_effect.gdshader (wraps any picture source) and by
-// vcr_effect.gdshader (chained after the VHS pass). Public interface kept stable
-// for both: crt_warp(uv) → tube UV, crt_border(wuv) → glass-edge alpha,
-// crt_apply(col, wuv, fragcoord) → mask/scanlines/grain/vignette. crt_effect
-// additionally uses crt_smear_sample() at sample time.
+// ── Why this is not a port of a libretro CRT shader ──────────────────────────
 //
-// The mask + scanlines key off FRAGCOORD (render pixels) exactly like the
-// original aperture grille — so zooming into a tube resolves the RGB triads.
+// Every desktop CRT shader (Lottes, royale, guest, easymode) keys its mask and
+// scanlines off gl_FragCoord, because a fullscreen post-process may assume the
+// tube fills the display and that the display's pixel grid is the finest thing
+// that exists. On a world-space tube seen through two eyes, both halves fail:
+//
+//   * The tube is an object at a variable distance. Its phosphor pitch and
+//     scanline count are properties of the GLASS, not of the panel. Keyed to
+//     FRAGCOORD, a triad stays the same number of render pixels wide however
+//     close you get — so leaning in never resolves the phosphors, it just shows
+//     the same fixed screen-space dither. (The version this replaced claimed the
+//     opposite in its header comment; it was wrong.)
+//   * Anything derived from FRAGCOORD lands on a different phase in each eye.
+//     A high-contrast stripe pattern that differs per eye is binocular rivalry:
+//     it shimmers, refuses to fuse, and causes eye strain.
+//
+// So mask and beam are computed in TUBE UV and antialiased against the screen-space
+// derivative. Everything below follows from that one decision.
+//
+// Colour space: this whole file works in LINEAR light. `source_color` samplers hand
+// back linear (Godot binds the sRGB texture view), and ALBEDO is linear on an
+// unshaded spatial material, with the renderer doing the sRGB encode. Mask and beam
+// multiplies are light-transport operations and belong exactly here.
 
 // ── Geometry ────────────────────────────────────────────────────────────────
-uniform float crt_curvature : hint_range(0.0, 0.3) = 0.07;
+// The tube face is real curved GEOMETRY now (Scenes/Objects/tv_screen_curved.tres),
+// so this barrel warp defaults to off. A UV warp is monoscopic — it has no parallax
+// and no binocular depth, so in a headset it reads as a flat sticker. Kept only as
+// an extra stylistic knob.
+uniform float crt_curvature : hint_range(0.0, 0.3) = 0.0;
 uniform float crt_corner_radius : hint_range(0.001, 0.2) = 0.04;
 
-// ── Aperture / slot mask (Flowerwall grid/slot) ─────────────────────────────
-// 0 = off, 1 = grid (straight RGB stripes), 2 = slot (staggered per row block).
-uniform int crt_mask_mode : hint_range(0, 2) = 2;
-uniform float crt_mask_strength : hint_range(0.0, 1.0) = 0.45;
-uniform float crt_pixel_size : hint_range(2.0, 8.0) = 3.0;
+// ── Phosphor mask ───────────────────────────────────────────────────────────
+// 0 = off, 1 = aperture grille, 2 = slot mask, 3 = shadow mask.
+uniform int crt_mask_mode : hint_range(0, 3) = 1;
+uniform float crt_mask_strength : hint_range(0.0, 1.0) = 0.55;
+// Triads across the tube's width and phosphor rows down its height. Both are set
+// from tv.gd out of a physical pitch in mm times the screen's world size, so
+// scaling the TV up adds triads instead of growing them.
+uniform float crt_mask_triads = 320.0;
+uniform float crt_mask_rows = 152.0;
 
-// ── Scanlines ───────────────────────────────────────────────────────────────
-uniform float crt_scanline_strength : hint_range(0.0, 1.0) = 0.35;
-uniform float crt_scanline_thickness : hint_range(0.0, 8.0) = 1.0;
-uniform float crt_scanline_interval : hint_range(1.0, 20.0) = 3.0;
+// ── Electron beam ───────────────────────────────────────────────────────────
+uniform float crt_scanline_strength : hint_range(0.0, 1.0) = 0.6;
+// Active lines in the signal — 224, 240, 480… Set from the source texture height.
+uniform float crt_scanline_count = 240.0;
+// Beam sigma in scanline units, for black and for full white. The beam gets FATTER
+// as it gets brighter (more gun current = bigger spot); that bloom is the strongest
+// single "this is a tube" cue.
+uniform float crt_beam_min : hint_range(0.05, 0.5) = 0.18;
+uniform float crt_beam_max : hint_range(0.05, 0.8) = 0.35;
 
-// ── Grain / analog artefacts ────────────────────────────────────────────────
-uniform float crt_grain : hint_range(0.0, 1.0) = 0.06;
+// ── Tube response ───────────────────────────────────────────────────────────
+// CRT gamma over panel gamma (2.4 / 2.2). Content was authored on ~2.4 gamma tubes;
+// the headset panel is ~2.2, so without this the shadows sit flat and washed out.
+uniform float crt_gamma : hint_range(0.8, 1.4) = 1.09;
+uniform float crt_halation : hint_range(0.0, 0.5) = 0.08;
+uniform float crt_glow_radius : hint_range(1.0, 16.0) = 6.0;
+
+// ── Signal artefacts ────────────────────────────────────────────────────────
+uniform float crt_notch : hint_range(0.0, 1.0) = 0.0;
+uniform float crt_grain : hint_range(0.0, 1.0) = 0.10;
 uniform float crt_smear : hint_range(0.0, 1.0) = 0.0;
 uniform float crt_wiggle : hint_range(0.0, 0.2) = 0.0;
 
 // ── Tube light ──────────────────────────────────────────────────────────────
 uniform float crt_vignette : hint_range(0.0, 1.0) = 0.18;
-uniform float crt_brightness : hint_range(0.5, 2.0) = 1.25;
+// 1.0 is correct: the mask and the beam are both normalised to a mean of exactly
+// 1.0, so neither costs any light and there is nothing to compensate for.
+uniform float crt_brightness : hint_range(0.5, 2.0) = 1.0;
 
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+// Integer-free hash. The classic sin(dot(p, k)) * 43758.5453 bands rather than
+// dithers at large UV magnitudes on mobile mediump.
 float crt_hash(vec2 p) {
-	return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+	vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+	q += dot(q, q.yzx + 33.33);
+	return fract((q.x + q.y) * q.z);
+}
+
+// sin(pi x) / (pi x).
+//
+// This is the exact box-filter response of a cosine harmonic over a footprint of
+// x periods, and it is what makes the mask below antialias itself: attenuate each
+// harmonic by its own sinc and you get the mathematically correct reconstruction
+// at every distance, with no mip chain, no LUT and no hand-tuned fade.
+float crt_sinc(float x) {
+	float a = PI * x;
+	return (abs(a) < 1e-4) ? 1.0 : sin(a) / a;
+}
+
+// erf, approximated: max abs error ~2.8e-3 for 1 exp2 + 1 sqrt.
+float crt_erf(float x) {
+	float s = sign(x);
+	float a = x * x;
+	return s * sqrt(max(1.0 - exp2(-1.8368 * a), 0.0));   // -4/(pi*ln2)
 }
 
 vec3 rgb2yiq(vec3 c) {
@@ -60,15 +125,21 @@ vec3 yiq2rgb(vec3 c) {
 		0.6210 * c.x - 0.6474 * c.y + 1.7046 * c.z);
 }
 
-// Quad UV → tube UV: optional VHS wiggle, then barrel curvature. Coordinates
-// leave [0,1] near the border (blanked by crt_border()).
+
+// ── Tube coordinates ────────────────────────────────────────────────────────
+
+// Quad UV → tube UV. Curvature is geometry now, so by default this only carries
+// the VCR's wiggle.
 vec2 crt_warp(vec2 uv) {
 	if (crt_wiggle > 0.0) {
 		uv.x += (crt_hash(vec2(uv.y * 8.0, floor(TIME * 30.0))) - 0.5) * crt_wiggle * 0.15;
 	}
-	vec2 cc = uv * 2.0 - 1.0;
-	cc *= 1.0 + crt_curvature * dot(cc, cc);
-	return cc * 0.5 + 0.5;
+	if (crt_curvature > 0.0) {
+		vec2 cc = uv * 2.0 - 1.0;
+		cc *= 1.0 + crt_curvature * dot(cc, cc);
+		return cc * 0.5 + 0.5;
+	}
+	return uv;
 }
 
 // 1.0 inside the rounded screen glass, fading to 0.0 outside.
@@ -78,65 +149,191 @@ float crt_border(vec2 wuv) {
 	return 1.0 - smoothstep(-0.006, 0.0, d);
 }
 
+
+// ── Signal ──────────────────────────────────────────────────────────────────
+
+// Composite-cable horizontal notch: [1, 2, 1] / 4 at exactly one source-texel pitch.
+//
+// That kernel's frequency response has an exact zero at Nyquist, and a 2-pixel
+// alternating dither sits exactly at Nyquist — so it collapses to a flat 50% blend.
+// This is the actual mechanism by which a composite cable's chroma trap turned
+// Sonic's waterfall dither into transparency, not an imitation of it.
+vec3 crt_notch_sample(sampler2D tex, vec2 uv, vec3 base) {
+	if (crt_notch <= 0.0) {
+		return base;
+	}
+	float tx = 1.0 / float(textureSize(tex, 0).x);
+	vec3 l = texture(tex, uv - vec2(tx, 0.0)).rgb;
+	vec3 r = texture(tex, uv + vec2(tx, 0.0)).rgb;
+	return mix(base, 0.25 * l + 0.5 * base + 0.25 * r, crt_notch);
+}
+
 // Optional NTSC-style chroma smear: keep luma sharp, bleed I/Q from taps to the
-// right. Called at sample time by crt_effect (the VCR path has its own smear).
+// right. Offsets are in source texels so the bleed distance doesn't change with
+// the core's resolution.
 vec3 crt_smear_sample(sampler2D tex, vec2 uv) {
 	vec3 c0 = texture(tex, uv).rgb;
 	if (crt_smear <= 0.0) {
 		return c0;
 	}
-	float d = crt_smear * 0.012;
+	float d = crt_smear * 3.0 / float(textureSize(tex, 0).x);
 	vec3 y0 = rgb2yiq(c0);
 	vec3 yi = rgb2yiq(texture(tex, uv + vec2(d, 0.0)).rgb);
 	vec3 yq = rgb2yiq(texture(tex, uv + vec2(d * 2.2, 0.0)).rgb);
 	return yiq2rgb(vec3(y0.x, yi.y, yq.z));
 }
 
-// Display stage: RGB aperture/slot mask + scanlines + grain + vignette, keyed to
-// render pixels (fc = FRAGCOORD.xy) so the triads are physical like real glass.
-vec3 crt_apply(vec3 col, vec2 wuv, vec2 fc) {
-	// Film grain.
+// Halation: light scattered under the faceplate, re-exciting distant phosphors.
+// Squared because it is superlinear in brightness (it only really shows on
+// near-white content), and warm because the red phosphor scatters most.
+//
+// `rect` is the (x, y, w, h) UV window the picture actually occupies, so a screen
+// windowed out of a composite framebuffer (a DS panel) can't pull glow in from the
+// other screen packed alongside it.
+vec3 crt_glow_rect(sampler2D tex, vec2 uv, vec4 rect) {
+	if (crt_halation <= 0.0) {
+		return vec3(0.0);
+	}
+	vec2 r = crt_glow_radius / vec2(textureSize(tex, 0));
+	vec2 lo = rect.xy;
+	vec2 hi = rect.xy + rect.zw;
+	vec3 g = texture(tex, clamp(uv + vec2( r.x,  r.y), lo, hi)).rgb
+	       + texture(tex, clamp(uv + vec2(-r.x,  r.y), lo, hi)).rgb
+	       + texture(tex, clamp(uv + vec2( r.x, -r.y), lo, hi)).rgb
+	       + texture(tex, clamp(uv + vec2(-r.x, -r.y), lo, hi)).rgb;
+	g *= 0.25;
+	return g * g * vec3(1.0, 0.82, 0.68) * crt_halation;
+}
+
+vec3 crt_glow(sampler2D tex, vec2 uv) {
+	return crt_glow_rect(tex, uv, vec4(0.0, 0.0, 1.0, 1.0));
+}
+
+
+// ── Display stage ───────────────────────────────────────────────────────────
+
+// RGB phosphor mask, locked to the tube and antialiased analytically.
+//
+// Each channel is 1 + a1*cos(phi) + 0.5*a2*cos(2 phi), which is the first two terms
+// of the Fourier series of a 1/3-duty square pulse (the exact coefficient ratio is
+// 1.654 : 0.827). Two things fall out of writing it this way:
+//
+//   * Every harmonic has zero mean, so each channel averages EXACTLY 1.0 at every
+//     distance. The mask costs no light — which is why crt_brightness is 1.0 and
+//     why the tube's brightness doesn't drift as you walk toward it.
+//   * Attenuating each harmonic by its own sinc antialiases it exactly. The
+//     harmonics die off in order — sharp bars up close, soft stripes mid-range,
+//     perfectly flat vec3(1.0) far away — so there is no moire and nothing to crawl.
+vec3 crt_mask(vec2 wuv) {
+	if (crt_mask_mode == 0 || crt_mask_strength <= 0.0) {
+		return vec3(1.0);
+	}
+
+	float tx = wuv.x * crt_mask_triads;    // horizontal position, in triads
+	float fw = fwidth(tx);                 // triads covered by this pixel
+	float a1 = max(crt_sinc(fw), 0.0);
+	float a2 = max(crt_sinc(2.0 * fw), 0.0);
+
+	float ty = wuv.y * crt_mask_rows;      // vertical position, in phosphor rows
+	float fy = fwidth(ty);
+
+	// Slot / shadow masks stagger alternate phosphor rows by half a triad. Built
+	// from odd harmonics so it antialiases the same way and flattens to a constant
+	// (a harmless global phase shift) once the rows stop resolving.
+	float stagger = 0.0;
+	if (crt_mask_mode >= 2) {
+		float b1 = max(crt_sinc(fy), 0.0);
+		float b3 = max(crt_sinc(3.0 * fy), 0.0);
+		float sq = 0.5 + 0.63662 * (b1 * sin(TAU * ty) + b3 * sin(3.0 * TAU * ty) / 3.0);
+		stagger = 0.5 * sq;
+	}
+
+	vec3 ph = TAU * (tx - stagger) - vec3(0.0, TAU / 3.0, 2.0 * TAU / 3.0);
+	vec3 m = vec3(1.0) + a1 * cos(ph) + (0.5 * a2) * cos(2.0 * ph);
+
+	// Dark band between phosphor rows. Zero mean too, and independent of the
+	// horizontal term, so the product still averages exactly 1.0.
+	if (crt_mask_mode >= 2) {
+		float ay = max(crt_sinc(fy), 0.0);
+		float depth = (crt_mask_mode == 3) ? 0.8 : 0.45;
+		m *= 1.0 + depth * ay * cos(TAU * ty);
+	}
+
+	return mix(vec3(1.0), max(m, vec3(0.0)), crt_mask_strength);
+}
+
+// Electron beam profile down the raster.
+//
+// The beam is Gaussian and widens with gun current, so sigma comes from max(r,g,b)
+// — the widest-driven channel sets the spot size — through a cube root, which keeps
+// the spot soft instead of turning it into a diamond the way a linear ramp does.
+//
+// The profile is INTEGRATED over the pixel's vertical footprint rather than point
+// sampled. That buys two things at once: a Gaussian integrates to 1, so brightness
+// is conserved for any sigma (the beam can bloom without lifting or crushing the
+// picture); and being a true area integral it is automatically antialiased, so as
+// the tube recedes the raster dissolves into the correct flat average instead of
+// aliasing into moire the way the step() it replaced did.
+float crt_beam(vec2 wuv, float lum) {
+	if (crt_scanline_strength <= 0.0) {
+		return 1.0;
+	}
+	float sig = mix(crt_beam_min, crt_beam_max, pow(clamp(lum, 0.0, 1.0), 1.0 / 3.0));
+
+	float sl = wuv.y * crt_scanline_count;
+	float d = fract(sl) - 0.5;             // distance from this scanline's centre
+	float ph = max(fwidth(sl), 1e-4);      // pixel footprint, in scanlines
+	float k = 1.0 / (max(sig, 1e-3) * 1.41421356);
+	float hp = 0.5 * ph;
+
+	// Three lines is exact while the footprint stays under ~3 scanlines, which is
+	// far past the point where the raster is resolvable at all.
+	float w = 0.0;
+	for (int n = -1; n <= 1; n++) {
+		float dn = d - float(n);
+		w += 0.5 * (crt_erf((dn + hp) * k) - crt_erf((dn - hp) * k));
+	}
+	w /= ph;
+
+	// Past that the truncated sum under-counts, so hand over to the flat average
+	// it is converging on anyway.
+	w = mix(w, 1.0, smoothstep(2.0, 3.5, ph));
+	return mix(1.0, w, crt_scanline_strength);
+}
+
+vec3 crt_apply_full(vec3 col, vec3 glow, vec2 wuv) {
+	// Gun transfer characteristic. Applied to the signal before the beam paints it,
+	// so the beam width below responds to post-gamma brightness like real current.
+	col = pow(max(col, vec3(0.0)), vec3(crt_gamma));
+
 	if (crt_grain > 0.0) {
-		float g = crt_hash(wuv * vec2(320.0, 240.0) + fract(TIME) * 60.0) - 0.5;
-		col += g * crt_grain;
+		// floor() matters twice over. Without it the hash varies per RENDER pixel,
+		// which puts different noise in each eye — the binocular rivalry this whole
+		// file exists to avoid; with it the grain sits in fixed cells on the glass
+		// that both eyes agree on. Stepped at ~15 Hz because regenerating it every
+		// frame at full amplitude boils in VR.
+		vec2 cell = floor(wuv * vec2(640.0, 480.0)) + floor(TIME * 15.0) * 71.7;
+		float g = crt_hash(cell) - 0.5;
+		// Multiplicative, not additive: this is signal noise, and it rides the
+		// signal. Adding a constant in linear light would be amplified enormously
+		// in the shadows by the sRGB encode — 0.015 of linear is 13% grey once
+		// encoded, which turns black into visible static.
+		col *= 1.0 + g * crt_grain;
 	}
 
-	int ps = int(max(2.0, crt_pixel_size));
-	int cellw = max(1, ps / 3);   // width in px of each R/G/B sub-stripe
+	col *= crt_beam(wuv, max(max(col.r, col.g), col.b));
+	col *= crt_mask(wuv);
 
-	// Aperture (grid) or slot mask.
-	if (crt_mask_mode > 0) {
-		int phase = int(fc.x) / cellw;
-		if (crt_mask_mode == 2) {
-			// Slot: shift the triad phase every row block so cells stagger.
-			int block = int(fc.y) / ps;
-			phase += block;
-		}
-		int idx = phase % 3;
-		vec3 m = vec3(1.0 - crt_mask_strength);
-		if (idx == 0) {
-			m.r = 1.0;
-		} else if (idx == 1) {
-			m.g = 1.0;
-		} else {
-			m.b = 1.0;
-		}
-		col *= m;
-	}
+	// Halation has already crossed the faceplate and lost the phosphor structure,
+	// so it is added after the mask rather than filtered through it.
+	col += glow;
 
-	// Scanlines: dark lines `thickness` px tall every `period` px. When a mask is
-	// on the period follows the mask cell; otherwise the standalone interval.
-	if (crt_scanline_strength > 0.0) {
-		float period = (crt_mask_mode == 0) ? crt_scanline_interval : float(ps);
-		float sl = mod(fc.y, period);
-		float dark = 1.0 - step(crt_scanline_thickness, sl);
-		col *= 1.0 - crt_scanline_strength * dark;
-	}
-
-	// Tube-corner light falloff.
 	vec2 vc = wuv - 0.5;
 	col *= 1.0 - dot(vc, vc) * crt_vignette * 2.0;
 
-	// Compensate the darkening from scanlines + mask.
 	return col * crt_brightness;
+}
+
+vec3 crt_apply(vec3 col, vec2 wuv) {
+	return crt_apply_full(col, vec3(0.0), wuv);
 }

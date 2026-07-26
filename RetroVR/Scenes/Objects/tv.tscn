@@ -6,6 +6,8 @@
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="5_vrbutton"]
 [ext_resource type="PackedScene" uid="uid://tv_opts_panel_001" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_screen_curved.res" id="7_screencurved"]
+[ext_resource type="Shader" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
@@ -22,8 +24,11 @@ size = Vector3(0.5, 0.4, 0.3)
 [sub_resource type="StandardMaterial3D" id="Mat_tvbody"]
 albedo_color = Color(0.1, 0.1, 0.1, 1)
 
-[sub_resource type="QuadMesh" id="QuadMesh_screen"]
-size = Vector2(0.35, 0.25)
+[sub_resource type="ShaderMaterial" id="Mat_phosphor_a"]
+shader = ExtResource("8_phosphor")
+
+[sub_resource type="ShaderMaterial" id="Mat_phosphor_b"]
+shader = ExtResource("8_phosphor")
 
 [sub_resource type="StandardMaterial3D" id="Mat_screen"]
 albedo_color = Color(0, 0, 0, 1)
@@ -79,9 +84,14 @@ shape = SubResource("BoxShape3D_body")
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_tvbody")
 
+; Curved tube face (Tools/gen_curved_screen.gd) rather than a flat QuadMesh — a
+; UV barrel warp is monoscopic, so in a headset it reads as a flat sticker. The
+; mesh bulges 16 mm toward the viewer at its centre (10 mm horizontal sagitta +
+; 6 mm vertical), so it sits 16 mm further back than the old flat quad's 0.151 to
+; keep the glass centre roughly flush with the bezel instead of protruding past it.
 [node name="ScreenMesh" type="MeshInstance3D" parent="." unique_id=1026455476]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
-mesh = SubResource("QuadMesh_screen")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.135)
+mesh = ExtResource("7_screencurved")
 surface_material_override/0 = SubResource("Mat_screen")
 
 [node name="OSDLabel" type="Label3D" parent="ScreenMesh" unique_id=1026455477]
@@ -237,6 +247,37 @@ theme_override_fonts/font = SubResource("Font_mono")
 theme_override_font_sizes/font_size = 44
 vertical_alignment = 2
 text = ""
+
+; Phosphor persistence accumulator — a ping-pong pair, because a viewport can't
+; sample itself. tv.gd resizes both to the core's own resolution, renders one over
+; (live frame, other viewport) each frame, and hands the result to the CRT stage as
+; its picture source. Both are UPDATE_ONCE driven per frame from _process, never
+; UPDATE_ALWAYS: an ALWAYS render target hangs headless runs (see CLAUDE.md).
+[node name="PhosphorA" type="SubViewport" parent="." unique_id=555230860]
+disable_3d = true
+size = Vector2i(320, 240)
+render_target_update_mode = 0
+
+[node name="PhosphorRect" type="ColorRect" parent="PhosphorA" unique_id=555230861]
+material = SubResource("Mat_phosphor_a")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PhosphorB" type="SubViewport" parent="." unique_id=555230862]
+disable_3d = true
+size = Vector2i(320, 240)
+render_target_update_mode = 0
+
+[node name="PhosphorRect" type="ColorRect" parent="PhosphorB" unique_id=555230863]
+material = SubResource("Mat_phosphor_b")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="CRTButton" type="Area3D" parent="." unique_id=555230841]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.14, -0.105, 0.155)

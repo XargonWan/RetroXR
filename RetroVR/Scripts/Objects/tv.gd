@@ -55,21 +55,47 @@ const STEREO_MODE_NAMES := ["3D: STEREO", "3D: LEFT EYE", "3D: RIGHT EYE"]
 # Tunable CRT display-stage uniforms (crt_filter.gdshaderinc). Adjustable from
 # the TV options panel; applied to whichever material carries the CRT stage (our
 # wrapper or the chained VCR shader). Defaults mirror the shader's own defaults.
+#
+# crt_mask_pitch_mm and crt_persistence are NOT shader uniforms — they're the
+# authoring values behind ones that are (see _apply_derived_crt_params and
+# _update_phosphor).
 var _crt_params := {
-	"crt_curvature": 0.07,
+	"crt_curvature": 0.0,          # geometry now — see Tools/gen_curved_screen.gd
 	"crt_corner_radius": 0.04,
-	"crt_mask_mode": 2,
-	"crt_mask_strength": 0.45,
-	"crt_pixel_size": 3.0,
-	"crt_scanline_strength": 0.35,
-	"crt_scanline_thickness": 1.0,
-	"crt_scanline_interval": 3.0,
-	"crt_grain": 0.06,
+	"crt_mask_mode": 1,
+	"crt_mask_strength": 0.55,
+	"crt_mask_pitch_mm": 1.1,
+	"crt_scanline_strength": 0.6,
+	"crt_beam_min": 0.18,
+	"crt_beam_max": 0.35,
+	"crt_gamma": 1.09,
+	"crt_halation": 0.08,
+	"crt_glow_radius": 6.0,
+	"crt_notch": 0.0,
+	"crt_persistence": 0.3,
+	"crt_grain": 0.1,
 	"crt_smear": 0.0,
 	"crt_wiggle": 0.0,
 	"crt_vignette": 0.18,
-	"crt_brightness": 1.25,
+	"crt_brightness": 1.0,
 }
+
+# Phosphor persistence ping-pong (Shaders/phosphor_decay.gdshader). A viewport
+# can't sample itself, so one renders while the other is read as "last frame".
+@onready var _phosphor_a: SubViewport = $PhosphorA
+@onready var _phosphor_b: SubViewport = $PhosphorB
+var _phosphor_write_a: bool = true
+# The raw picture texture we wrapped, kept because _crt_material's source_tex is
+# replaced by the accumulator once persistence is running.
+var _crt_source_tex: Texture2D = null
+# Signature of the inputs to _apply_derived_crt_params, so the per-frame refresh
+# only touches the material when one of them actually moved.
+var _crt_derived_key: String = ""
+
+# Tube face size in metres, read off the mesh in _ready. The phosphor pitch is a
+# physical property of the glass, so the triad count is derived from this times
+# scale_factor rather than being a fixed number of triads per UV.
+var _screen_size_m := Vector2(0.35, 0.25)
 
 # TV-owned screen states: blue "no signal" (ON with no live input) and the
 # original dark bezel material (OFF).
@@ -153,6 +179,11 @@ func _ready() -> void:
 	# signal look. Blue carries a tiny texture so the CRT watcher can wrap it
 	# (curvature/scanlines apply to the blue screen too) and ambilight samples it.
 	_dark_material = _screen_mesh.get_surface_override_material(0)
+	if _screen_mesh.mesh != null:
+		var aabb := _screen_mesh.mesh.get_aabb()
+		if aabb.size.x > 0.0 and aabb.size.y > 0.0:
+			_screen_size_m = Vector2(aabb.size.x, aabb.size.y)
+
 	var blue_img := Image.create(2, 2, false, Image.FORMAT_RGB8)
 	blue_img.fill(BLUE_SCREEN_COLOR)
 	_blue_material = StandardMaterial3D.new()
@@ -163,6 +194,8 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_screen_source()
 	_update_crt()
+	_refresh_crt_derived()
+	_update_phosphor()
 	_update_stereo_button()
 	_route_osd()
 
@@ -344,10 +377,57 @@ func _update_crt() -> void:
 	if _crt_material == null:
 		_crt_material = ShaderMaterial.new()
 		_crt_material.shader = CRT_SHADER
-		_apply_crt_params(_crt_material)
+	# source_tex before the params: _apply_derived_crt_params reads the source's
+	# resolution back off the material to get the scanline count.
 	_crt_material.set_shader_parameter("source_tex", tex)
+	_crt_source_tex = tex
+	_apply_crt_params(_crt_material)
 	_crt_wrapped = override
 	_screen_mesh.set_surface_override_material(0, _crt_material)
+
+
+## Phosphor persistence: run the live frame through the decay accumulator and feed
+## the CRT stage the result instead of the raw texture.
+##
+## Rides the crt_effect wrapper only. The chained VCR and dual-screen window
+## shaders keep sampling their source directly — three more ping-pong pairs isn't
+## worth it for a tape deck that has its own artefacts and for a handheld panel
+## that isn't a tube in the first place.
+func _update_phosphor() -> void:
+	if _crt_material == null or _crt_source_tex == null:
+		return
+	if _screen_mesh.get_surface_override_material(0) != _crt_material:
+		return
+
+	var amount: float = float(_crt_params.get("crt_persistence", 0.0))
+	if not crt_enabled or amount <= 0.001:
+		# Hand the raw picture back so turning persistence off is a true bypass.
+		if _crt_material.get_shader_parameter("source_tex") != _crt_source_tex:
+			_crt_material.set_shader_parameter("source_tex", _crt_source_tex)
+		return
+
+	var sz := Vector2i(_crt_source_tex.get_size())
+	if sz.x < 2 or sz.y < 2:
+		return
+
+	var write: SubViewport = _phosphor_a if _phosphor_write_a else _phosphor_b
+	var read: SubViewport = _phosphor_b if _phosphor_write_a else _phosphor_a
+	if write.size != sz:
+		write.size = sz
+		read.size = sz
+
+	var rect := write.get_child(0) as ColorRect
+	var pm := rect.material as ShaderMaterial
+	pm.set_shader_parameter("src", _crt_source_tex)
+	pm.set_shader_parameter("prev", read.get_texture())
+	# Red decays slowest, blue fastest, so the afterglow goes warm as it fades.
+	pm.set_shader_parameter("decay", Vector3(amount, amount * 0.85, amount * 0.7))
+	# UPDATE_ONCE re-armed every frame, never UPDATE_ALWAYS — an ALWAYS render
+	# target hangs headless runs.
+	write.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+	_crt_material.set_shader_parameter("source_tex", write.get_texture())
+	_phosphor_write_a = not _phosphor_write_a
 
 
 ## True when the connected source outputs a side-by-side stereo frame (Virtual Boy).
@@ -388,6 +468,70 @@ func _update_stereo_button() -> void:
 func _apply_crt_params(mat: ShaderMaterial) -> void:
 	for key: String in _crt_params:
 		mat.set_shader_parameter(key, _crt_params[key])
+	_apply_derived_crt_params(mat)
+
+
+## The two uniforms that aren't slider values. Both describe the tube and the
+## signal on it rather than a preference, so they're derived rather than authored
+## — and both have to be right for the mask and raster to stay glued to the glass
+## as you move, which is the whole point of the rewritten filter.
+func _apply_derived_crt_params(mat: ShaderMaterial) -> void:
+	# Phosphor pitch is a property of the glass, so the triad count follows the
+	# screen's WORLD width: scaling the TV up adds triads instead of stretching
+	# them, exactly as a physically bigger tube would.
+	var pitch_m: float = maxf(float(_crt_params.get("crt_mask_pitch_mm", 1.1)), 0.05) * 0.001
+	var triads: float = (_screen_size_m.x * scale_factor) / pitch_m
+	mat.set_shader_parameter("crt_mask_triads", triads)
+	# Slot/shadow phosphor cells run about 1.5x taller than they are wide.
+	mat.set_shader_parameter("crt_mask_rows",
+		triads * (_screen_size_m.y / _screen_size_m.x) / 1.5)
+
+	# Active lines in the signal, taken from the source itself. A fixed count is
+	# the point: the raster belongs to the signal, so walking backwards must not
+	# change how many scanlines are on the tube.
+	var lines := 240.0
+	var tex: Texture2D = _extract_texture(mat)
+	if tex != null:
+		var h: float = tex.get_size().y
+		# A window shader shows one sub-rect of a composite framebuffer, so a DS
+		# panel has half the lines the texture does.
+		var rect: Variant = mat.get_shader_parameter("source_rect")
+		if rect is Vector4:
+			h *= maxf((rect as Vector4).w, 0.01)
+		if h >= 16.0:
+			lines = h
+	mat.set_shader_parameter("crt_scanline_count", lines)
+
+
+## The installed material carrying the CRT display stage, if any.
+func _active_crt_material() -> ShaderMaterial:
+	var override := _screen_mesh.get_surface_override_material(0)
+	if override == _crt_material or override == _stereo_material:
+		return override as ShaderMaterial
+	if override is ShaderMaterial:
+		var sh := (override as ShaderMaterial).shader
+		if sh == VCR_SHADER or sh == WINDOW_SHADER:
+			return override as ShaderMaterial
+	return null
+
+
+## Recompute the derived uniforms when what they depend on moves — the TV's
+## display scale, the mask pitch, or the source's resolution. Cheap signature
+## check so the steady state costs nothing.
+func _refresh_crt_derived() -> void:
+	var mat := _active_crt_material()
+	if mat == null:
+		return
+	var tex := _extract_texture(mat)
+	var key := "%s|%.4f|%.4f|%s" % [
+		mat.get_instance_id(), scale_factor,
+		float(_crt_params.get("crt_mask_pitch_mm", 1.1)),
+		"null" if tex == null else str(tex.get_size()),
+	]
+	if key == _crt_derived_key:
+		return
+	_crt_derived_key = key
+	_apply_derived_crt_params(mat)
 
 
 ## Set one CRT display-stage uniform live (from the TV options panel) and apply
@@ -403,11 +547,37 @@ func set_crt_param(pname: String, value: Variant) -> void:
 		var sh := (override as ShaderMaterial).shader
 		if sh == VCR_SHADER or sh == WINDOW_SHADER:
 			(override as ShaderMaterial).set_shader_parameter(pname, value)
+	# crt_mask_pitch_mm isn't a uniform — it feeds the derived triad count.
+	_crt_derived_key = ""
 
 
 ## Current CRT tuning values, for the options panel to populate its controls.
 func get_crt_params() -> Dictionary:
 	return _crt_params.duplicate()
+
+
+## Seed the CRT tuning from a save. Merges only keys we already know, so a save
+## written by a build with a different set of uniforms can't inject stray shader
+## parameters, and coerces through the current value's type — JSON gives every
+## number back as a float, but crt_mask_mode is an int uniform.
+func set_crt_params(values: Dictionary) -> void:
+	for key: String in values:
+		if not _crt_params.has(key):
+			continue
+		if typeof(_crt_params[key]) == TYPE_INT:
+			_crt_params[key] = int(values[key])
+		else:
+			_crt_params[key] = float(values[key])
+	_crt_derived_key = ""
+	# Seeded before _ready (scene restore instantiates then sets): the values are
+	# in place and get pushed when the filter first wraps a source.
+	if _screen_mesh == null:
+		return
+	if _crt_material != null:
+		_apply_crt_params(_crt_material)
+	var mat := _active_crt_material()
+	if mat != null:
+		_apply_crt_params(mat)
 
 
 ## Pull the picture texture out of a screen material, whichever shape it has:
@@ -444,6 +614,8 @@ func _unwrap_crt() -> void:
 	if _crt_wrapped != null and (override == _crt_material or override == _stereo_material):
 		_screen_mesh.set_surface_override_material(0, _crt_wrapped)
 	_crt_wrapped = null
+	_crt_source_tex = null
+	_crt_derived_key = ""
 
 
 func set_crt_enabled(enabled: bool) -> void:

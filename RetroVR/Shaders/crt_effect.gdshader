@@ -9,13 +9,16 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
 
 #include "res://Shaders/crt_filter.gdshaderinc"
+#include "res://Shaders/pixel_aa.gdshaderinc"
 
-// Deliberately plain filter_linear, unlike the other core-picture shaders (which
-// sample via pixel_aa.gdshaderinc). Two reasons: the CRT stage imposes its own
-// scanlines/mask/curvature on top, so a slightly soft source is authentic here; and
-// this shader is ALSO used for the VCR's video when the VHS effect is off, where
-// pixel-grid snapping would make magnified video blocky. crt_smear_sample() lives in
-// the shared crt_filter include, so it cannot pick per-source either.
+// filter_linear is REQUIRED by pixel_aa (it does the sub-pixel ramp).
+//
+// This used to sample with plain bilinear on the theory that the CRT stage masks
+// the softness anyway, and that pixel-grid snapping would make the VCR's magnified
+// video blocky. Neither holds: it left this as the only core-picture path in the
+// project that wasn't pixel-AA sampled (and the softest), and at the ~1:1 ratio a
+// 640x480 video hits on a 0.35 m tube pixel_aa is within a hair of bilinear, so the
+// video concern never bites in practice.
 uniform sampler2D source_tex : source_color, filter_linear, repeat_disable;
 
 // On-screen display (green corner text) rendered by the TV into a transparent
@@ -30,13 +33,18 @@ uniform bool osd_enabled = false;
 
 void fragment() {
 	vec2 wuv = crt_warp(UV);
-	vec3 col = crt_smear_sample(source_tex, wuv);
+	vec2 suv = pixel_aa_uv(source_tex, wuv);
+
+	vec3 col = crt_smear_sample(source_tex, suv);
+	col = crt_notch_sample(source_tex, suv, col);
+	vec3 glow = crt_glow(source_tex, wuv);
+
 	if (osd_enabled) {
 		vec4 osd = texture(osd_tex, wuv);
 		col = mix(col, osd.rgb, osd.a);
 	}
-	col = crt_apply(col, wuv, FRAGCOORD.xy);
-	ALBEDO = clamp(col, 0.0, 1.0);
+
+	ALBEDO = clamp(crt_apply_full(col, glow, wuv), 0.0, 1.0);
 	// Beyond the curved glass edge the quad is transparent (not black), so the
 	// TV bezel shows through instead of a dark rectangle.
 	ALPHA = crt_border(wuv);

@@ -169,10 +169,10 @@ func _build_crt_tab(tabs: TabContainer) -> void:
 	rows.add_theme_constant_override("separation", 4)
 	_crt_scroll.add_child(rows)
 
-	# Mask mode dropdown (Off / Grid / Slot). VRDropdown, not OptionButton —
-	# see vr_dropdown.gd for why PopupMenu can't be clicked in a VR panel.
+	# Mask mode dropdown. VRDropdown, not OptionButton — see vr_dropdown.gd for
+	# why PopupMenu can't be clicked in a VR panel.
 	_crt_mask_opt = VRDropdown.create("RGB mask",
-		[["Off", 0], ["Grid", 1], ["Slot", 2]], 0)
+		[["Off", 0], ["Grille", 1], ["Slot", 2], ["Shadow", 3]], 1)
 	_crt_mask_opt.item_selected.connect(func(id: Variant) -> void:
 		if not _suppress_signal:
 			crt_param_changed.emit("crt_mask_mode", int(id))
@@ -180,12 +180,22 @@ func _build_crt_tab(tabs: TabContainer) -> void:
 	rows.add_child(_crt_mask_opt)
 
 	# Sliders: [uniform, label, min, max, step, value-format].
+	#
+	# "Phosphor pitch" is in millimetres on the glass, not pixels: the mask is
+	# locked to the tube, so the triad count follows from the pitch and the TV's
+	# world size. ~0.6 mm is a real arcade tube (too fine to resolve until you're
+	# ~30 cm away); 1.1 mm is the headset-resolution compromise.
 	var specs := [
 		["crt_mask_strength",     "Mask strength",    0.0, 1.0,  0.05, "%.2f"],
-		["crt_pixel_size",        "Mask size",        2.0, 8.0,  1.0,  "%.0f"],
+		["crt_mask_pitch_mm",     "Phosphor pitch",   0.4, 3.0,  0.1,  "%.1f mm"],
 		["crt_scanline_strength", "Scanlines",        0.0, 1.0,  0.05, "%.2f"],
-		["crt_scanline_thickness","Scanline width",   0.0, 8.0,  1.0,  "%.0f"],
-		["crt_curvature",         "Curvature",        0.0, 0.3,  0.01, "%.2f"],
+		["crt_beam_min",          "Beam (dark)",      0.05, 0.5, 0.01, "%.2f"],
+		["crt_beam_max",          "Beam (bright)",    0.05, 0.8, 0.01, "%.2f"],
+		["crt_gamma",             "Tube gamma",       0.8, 1.4,  0.01, "%.2f"],
+		["crt_halation",          "Halation",         0.0, 0.5,  0.01, "%.2f"],
+		["crt_persistence",       "Persistence",      0.0, 0.6,  0.05, "%.2f"],
+		["crt_notch",             "Composite blend",  0.0, 1.0,  0.05, "%.2f"],
+		["crt_curvature",         "Extra curvature",  0.0, 0.3,  0.01, "%.2f"],
 		["crt_grain",             "Grain",            0.0, 1.0,  0.02, "%.2f"],
 		["crt_smear",             "Smear",            0.0, 1.0,  0.05, "%.2f"],
 		["crt_wiggle",            "Wiggle",           0.0, 0.2,  0.02, "%.2f"],

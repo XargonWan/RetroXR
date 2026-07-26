@@ -38,17 +38,27 @@ uniform bool osd_enabled = false;
 
 void fragment() {
 	vec2 wuv = crt_enabled ? crt_warp(UV) : UV;
-	vec2 suv = source_rect.xy + wuv * source_rect.zw;
+	vec4 rect = source_rect;
 	if (stereo_mode == 2 || (stereo_mode == 0 && VIEW_INDEX == VIEW_RIGHT)) {
-		suv.x += eye_shift;
+		rect.x += eye_shift;
 	}
-	vec3 col = pixel_aa(source_tex, suv).rgb;
+	vec2 suv = pixel_aa_uv(source_tex, rect.xy + wuv * rect.zw);
+
+	vec3 col = texture(source_tex, suv).rgb;
+	vec3 glow = vec3(0.0);
+	if (crt_enabled) {
+		col = crt_notch_sample(source_tex, suv, col);
+		// Clamp the halation taps to this screen's window so a DS panel can't
+		// bleed glow in from the other screen packed into the same framebuffer.
+		glow = crt_glow_rect(source_tex, suv, rect);
+	}
+
 	if (osd_enabled) {
 		vec4 osd = texture(osd_tex, wuv);
 		col = mix(col, osd.rgb, osd.a);
 	}
 	if (crt_enabled) {
-		col = crt_apply(col, wuv, FRAGCOORD.xy);
+		col = crt_apply_full(col, glow, wuv);
 		ALPHA = crt_border(wuv);
 	}
 	ALBEDO = clamp(col, 0.0, 1.0);
