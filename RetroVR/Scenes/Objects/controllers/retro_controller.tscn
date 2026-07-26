@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dilgbxngwow63"]
 
-[ext_resource type="Script" uid="uid://dmxawyrf0uv07" path="res://Scripts/Objects/controllers/retro_controller.gd" id="1_ctrlscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/controllers/retropad_controller.gd" id="1_ctrlscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
@@ -9,16 +9,89 @@
 friction = 0.8
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
-size = Vector3(0.12, 0.06, 0.04)
+size = Vector3(0.152, 0.026, 0.064)
 
-[sub_resource type="BoxMesh" id="BoxMesh_body"]
-size = Vector3(0.12, 0.06, 0.04)
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.16, 0.165, 0.18, 1)
+roughness = 0.55
 
-[sub_resource type="StandardMaterial3D" id="Mat_body"]
-albedo_color = Color(0.15, 0.15, 0.15, 1)
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.07, 0.07, 0.08, 1)
+roughness = 0.62
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
-size = Vector3(0.12, 0.06, 0.04)
+[sub_resource type="StandardMaterial3D" id="Mat_stick"]
+albedo_color = Color(0.1, 0.1, 0.11, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_small"]
+albedo_color = Color(0.22, 0.23, 0.26, 1)
+roughness = 0.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_face_x"]
+albedo_color = Color(0.13, 0.33, 0.72, 1)
+roughness = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Mat_face_y"]
+albedo_color = Color(0.16, 0.55, 0.3, 1)
+roughness = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Mat_face_a"]
+albedo_color = Color(0.72, 0.15, 0.16, 1)
+roughness = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Mat_face_b"]
+albedo_color = Color(0.85, 0.68, 0.12, 1)
+roughness = 0.35
+
+[sub_resource type="BoxMesh" id="BoxMesh_shell"]
+size = Vector3(0.09, 0.024, 0.062)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_cap"]
+top_radius = 0.031
+bottom_radius = 0.031
+height = 0.024
+radial_segments = 28
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
+size = Vector3(0.031, 0.007, 0.011)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
+size = Vector3(0.011, 0.007, 0.031)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_face"]
+top_radius = 0.0058
+bottom_radius = 0.0058
+height = 0.005
+radial_segments = 20
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_small"]
+size = Vector3(0.012, 0.006, 0.007)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_shoulder"]
+top_radius = 0.005
+bottom_radius = 0.005
+height = 0.03
+radial_segments = 16
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_trigger"]
+size = Vector3(0.026, 0.01, 0.008)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stick"]
+top_radius = 0.0055
+bottom_radius = 0.0085
+height = 0.01
+radial_segments = 16
+rings = 1
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stick_cap"]
+top_radius = 0.0105
+bottom_radius = 0.0095
+height = 0.0035
+radial_segments = 20
+rings = 1
 
 [node name="RetroController" type="RigidBody3D" unique_id=630831205 groups=["hand_held_device"]]
 collision_layer = 4
@@ -33,12 +106,131 @@ script = ExtResource("1_ctrlscript")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=579109256]
 shape = SubResource("BoxShape3D_body")
 
-[node name="ControllerMesh" type="MeshInstance3D" parent="." unique_id=185311573]
-mesh = SubResource("BoxMesh_body")
-surface_material_override/0 = SubResource("Mat_body")
+[node name="Model" type="Node3D" parent="."]
+
+[node name="Shell" type="MeshInstance3D" parent="Model"]
+mesh = SubResource("BoxMesh_shell")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="ShellCapL" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.045, 0, 0)
+mesh = SubResource("CylinderMesh_cap")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="ShellCapR" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.045, 0, 0)
+mesh = SubResource("CylinderMesh_cap")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="DPad" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.044, 0.0145, -0.01)
+mesh = SubResource("BoxMesh_dpad_h")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="DPadCross" type="MeshInstance3D" parent="Model/DPad"]
+mesh = SubResource("BoxMesh_dpad_v")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="FaceX" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.044, 0.0135, -0.0235)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("Mat_face_x")
+
+[node name="Label" type="Label3D" parent="Model/FaceX"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0031, 0)
+pixel_size = 0.00012
+text = "X"
+font_size = 40
+alpha_cut = 1
+
+[node name="FaceY" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0305, 0.0135, -0.01)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("Mat_face_y")
+
+[node name="Label" type="Label3D" parent="Model/FaceY"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0031, 0)
+pixel_size = 0.00012
+text = "Y"
+font_size = 40
+alpha_cut = 1
+
+[node name="FaceA" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0575, 0.0135, -0.01)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("Mat_face_a")
+
+[node name="Label" type="Label3D" parent="Model/FaceA"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0031, 0)
+pixel_size = 0.00012
+text = "A"
+font_size = 40
+alpha_cut = 1
+
+[node name="FaceB" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.044, 0.0135, 0.0035)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("Mat_face_b")
+
+[node name="Label" type="Label3D" parent="Model/FaceB"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.0031, 0)
+pixel_size = 0.00012
+text = "B"
+font_size = 40
+alpha_cut = 1
+
+[node name="Select" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(0.9396926, 0, -0.34202, 0, 1, 0, 0.34202, 0, 0.9396926, -0.012, 0.0135, -0.008)
+mesh = SubResource("BoxMesh_small")
+surface_material_override/0 = SubResource("Mat_small")
+
+[node name="Start" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(0.9396926, 0, 0.34202, 0, 1, 0, -0.34202, 0, 0.9396926, 0.012, 0.0135, -0.008)
+mesh = SubResource("BoxMesh_small")
+surface_material_override/0 = SubResource("Mat_small")
+
+[node name="ShoulderL" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, -0.031, 0.007, -0.0315)
+mesh = SubResource("CylinderMesh_shoulder")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="ShoulderR" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, 0.031, 0.007, -0.0315)
+mesh = SubResource("CylinderMesh_shoulder")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="TriggerL" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.031, -0.0035, -0.0325)
+mesh = SubResource("BoxMesh_trigger")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="TriggerR" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.031, -0.0035, -0.0325)
+mesh = SubResource("BoxMesh_trigger")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="StickL" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.024, 0.017, 0.017)
+mesh = SubResource("CylinderMesh_stick")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Cap" type="MeshInstance3D" parent="Model/StickL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0068, 0)
+mesh = SubResource("CylinderMesh_stick_cap")
+surface_material_override/0 = SubResource("Mat_stick")
+
+[node name="StickR" type="MeshInstance3D" parent="Model"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.024, 0.017, 0.017)
+mesh = SubResource("CylinderMesh_stick")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Cap" type="MeshInstance3D" parent="Model/StickR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0068, 0)
+mesh = SubResource("CylinderMesh_stick_cap")
+surface_material_override/0 = SubResource("Mat_stick")
 
 [node name="CableAttachPoint" type="Node3D" parent="." unique_id=1053994500]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.032)
 
 [node name="PickableHighlight" type="Node3D" parent="." unique_id=1659693452]
 script = ExtResource("2_pickhigh")
@@ -48,7 +240,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=32974893]
-shape = SubResource("BoxShape3D_pointer")
+shape = SubResource("BoxShape3D_body")
 
 [node name="HandRight" parent="." unique_id=1869866057 instance=ExtResource("3_rhand")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06, 0, 0)

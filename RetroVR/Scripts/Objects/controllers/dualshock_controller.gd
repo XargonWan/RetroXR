@@ -100,6 +100,13 @@ func _dpad_tilt_deg() -> float:
 	return DPAD_TILT_DEG
 
 
+## Sign of the D-pad's pitch rotation. A positive pitch about the mesh parent's
+## X axis lifts whatever lies on -Z, so a model whose UP arm points -Z must
+## return -1.0 for UP to depress it. Roll is unaffected.
+func _dpad_pitch_sign() -> float:
+	return 1.0
+
+
 func _cache_meshes() -> void:
 	_buttons.clear()
 	for base: String in FACE_BUTTONS:
@@ -170,7 +177,7 @@ func _animate(delta: float) -> void:
 		var pitch: float = float((_cur_btn >> ControllerBindings.JOYPAD_UP) & 1) - float((_cur_btn >> ControllerBindings.JOYPAD_DOWN) & 1)
 		var roll: float  = float((_cur_btn >> ControllerBindings.JOYPAD_LEFT) & 1) - float((_cur_btn >> ControllerBindings.JOYPAD_RIGHT) & 1)
 		var tilt := _dpad_tilt_deg()
-		var r: Basis = Basis.from_euler(Vector3(deg_to_rad(pitch * tilt), 0.0, deg_to_rad(roll * tilt)))
+		var r: Basis = Basis.from_euler(Vector3(deg_to_rad(pitch * tilt * _dpad_pitch_sign()), 0.0, deg_to_rad(roll * tilt)))
 		_apply_pivot(_dpad, r, 0.0, w)
 
 	if not _stick_l.is_empty():
