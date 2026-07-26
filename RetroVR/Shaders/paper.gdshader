@@ -161,8 +161,12 @@ void fragment() {
 	float shade = 1.0 - gutter_ao * exp(-v_u * gutter_ao_falloff);
 	color.rgb *= shade;
 
+	// Deliberately no ALPHA write. Writing ALPHA at all moves a spatial material
+	// into the transparent pipeline, where it stops writing depth — and two
+	// depth-less page surfaces sort per-triangle against each other, so the page
+	// underneath punched through the one turning over it in patches. Paper is
+	// opaque; it belongs in the opaque pass.
 	ALBEDO = color.rgb;
-	ALPHA = color.a;
 
 	// Fibre grain, applied through the mesh tangent frame.
 	if (fibre_strength > 0.0) {

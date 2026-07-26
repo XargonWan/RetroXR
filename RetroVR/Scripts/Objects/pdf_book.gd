@@ -113,6 +113,11 @@ const LEAF_SETTLE_TIME := 0.28
 ## settle that finishes a drag already most of the way over.
 const REMOTE_TURN_TIME := 0.45
 const LEAF_Z_GAP := 0.0008
+## Clearance between the turning leaf and whichever page is under it. Both the
+## page it uncovers and the page it lands on sit exactly at _page_plane_z(), so
+## without this the leaf is coplanar with them and z-fights — the two pages
+## interleave in patches and the one underneath appears to be pulled through.
+const LEAF_LIFT := 0.0006
 
 var _grab_right: PageGrab = null
 var _grab_left: PageGrab = null
@@ -1240,7 +1245,7 @@ func _spawn_leaf(dir: int) -> bool:
 	leaf.set_surface_override_material(0, mat)
 
 	var stack_x := _book_width / 2.0 + SPINE_WIDTH / 2.0
-	leaf.position = Vector3(dir * stack_x, 0.0, _page_plane_z(dir))
+	leaf.position = Vector3(dir * stack_x, 0.0, _page_plane_z(dir) + LEAF_LIFT)
 	_active_leaf_container.add_child(leaf)
 	_active_leaf = leaf
 	_is_turning = true
@@ -1352,7 +1357,7 @@ func _settle_leaf(commit: bool, duration: float = LEAF_SETTLE_TIME) -> void:
 		to_origin = Vector2(-dir * (_book_width * 0.5 + SPINE_WIDTH * 0.5), 0.0)
 		to_radius = CURL_CLOSED
 		to_taper = 0.0
-		to_z = _page_plane_z(-_grab_dir) - CURL_CLOSED * 2.0
+		to_z = _page_plane_z(-_grab_dir) - CURL_CLOSED * 2.0 + LEAF_LIFT
 	else:
 		# Fold line off the fore edge leaves every vertex on the flat side.
 		to_origin = Vector2(dir * (_book_width * 0.5 + 0.01), 0.0)
