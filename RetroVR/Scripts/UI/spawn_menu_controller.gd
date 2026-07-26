@@ -600,11 +600,20 @@ func _show_menu() -> void:
 		# common/physics_interpolation enabled.
 		reset_physics_interpolation()
 	_viewport_node.visible = true
+	# The menu Control itself is always visible; it's this 3D node that gets
+	# toggled. Tell the menu so it can flush notifications that happened while
+	# it was hidden and do its cheap library change-check.
+	var menu := _get_menu()
+	if menu:
+		menu.on_menu_shown()
 
 
 func _hide_menu() -> void:
 	_end_grab()
 	_viewport_node.visible = false
+	var menu := _get_menu()
+	if menu:
+		menu.on_menu_hidden()
 	_smoothed_scroll_y = 0.0
 	_apply_menu_locomotion_blocks(false, false)
 

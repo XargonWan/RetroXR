@@ -86,6 +86,35 @@ var scraper_config: ScraperConfig = null
 var web_server: WebFileServer = null
 var _server_address_label: Label = null
 
+## RomM server integration (remote ROM library + cover art).
+var romm_config: RommConfig = null
+var romm_client: RommClient = null
+var romm_catalog: RommCatalog = null
+var romm_downloader: RommDownloader = null
+var romm_cache: RommCacheManifest = null
+var romm_art: RommArtCache = null
+## systemid -> platform dict from /api/platforms (with "systemid" added).
+var _romm_platforms: Dictionary = {}
+var _romm_unmapped: Array = []
+## Terminal outcomes that happened while the menu was closed, flushed on open.
+var _romm_pending_notices: Array[Dictionary] = []
+var _romm_status_label: Label = null
+## Merged local+server row model for the open Cartridges detail page.
+## Each entry: {source: "local"|"server"|"both", entry: Dictionary, path, label}
+var _romm_rows: Array[Dictionary] = []
+var _romm_detail_systemid: String = ""
+var _romm_detail_exts: Array[String] = []
+var _romm_filter: String = ""
+var _romm_list: VirtualRowList = null
+var _romm_empty_label: Label = null
+## rom_id -> percent, so a recycled row can show live progress when it scrolls
+## back into view mid-download.
+var _romm_progress_pct: Dictionary = {}
+## Row index whose delete button is armed for its second confirming tap.
+var _romm_delete_armed: int = -1
+## Remaining systemids for an explicit "Sync all now".
+var _romm_sync_queue: Array[String] = []
+
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
@@ -174,6 +203,11 @@ var _scrape_status_label: Label = null
 # media_type -> { "bar": PanelContainer, "label": Label, "icon": Label }
 var _media_toasts: Dictionary = {}
 var _media_toast_stack: VBoxContainer = null
+## The toast stack is anchored 300 px tall, so it holds ~5 bars before spilling
+## off the panel. Beyond this many, the oldest collapse into a "+N more" bar.
+const MAX_VISIBLE_TOASTS := 4
+var _toast_overflow_bar: PanelContainer = null
+var _toast_overflow_label: Label = null
 # Game detail side panel
 var _game_detail_panel: PanelContainer = null
 # ROM variants side panel
@@ -224,6 +258,7 @@ func _ready() -> void:
 	_init_download_manager()
 	_init_scraper()
 	_init_web_server()
+	_init_romm()
 	# Always ensure the roms root exists, plus dirs for any already-configured systems
 	print("[SpawnMenu] roms root=", RomLibrary.default_roms_root())
 	RomLibrary.ensure_roms_root()
@@ -264,6 +299,51 @@ func _init_scraper() -> void:
 	scraper_client.media_download_started.connect(_on_media_download_started)
 	scraper_client.media_download_completed.connect(_on_media_download_notice)
 	scraper_client.media_download_failed.connect(_on_media_download_notice_failed)
+
+
+## RomM: config + client + catalog + downloader + art cache, all wired to the
+## toast stack. Nothing here touches the network at startup — the heaviest thing
+## that ever runs on launch is one /api/stats ping, and only once the user opens
+## the menu with a configured server.
+func _init_romm() -> void:
+	romm_config = RommConfig.new()
+	romm_config.load_config()
+
+	romm_client = RommClient.new()
+	romm_client.name = "RommClient"
+	romm_client.setup(romm_config)
+	add_child(romm_client)
+	romm_client.auth_failed.connect(_on_romm_auth_failed)
+	romm_client.reachability_changed.connect(_on_romm_reachability_changed)
+
+	romm_cache = RommCacheManifest.new()
+	romm_cache.load_manifest()
+	romm_cache.changed.connect(_on_romm_cache_changed)
+
+	romm_catalog = RommCatalog.new()
+	romm_catalog.name = "RommCatalog"
+	romm_catalog.setup(romm_config)
+	add_child(romm_catalog)
+	romm_catalog.sync_started.connect(_on_romm_sync_started)
+	romm_catalog.sync_progress.connect(_on_romm_sync_progress)
+	romm_catalog.sync_finished.connect(_on_romm_sync_finished)
+
+	romm_downloader = RommDownloader.new()
+	romm_downloader.name = "RommDownloader"
+	romm_downloader.setup(romm_config, romm_cache)
+	add_child(romm_downloader)
+	romm_downloader.download_started.connect(_on_romm_dl_started)
+	romm_downloader.download_progress.connect(_on_romm_dl_progress)
+	romm_downloader.download_retrying.connect(_on_romm_dl_retrying)
+	romm_downloader.download_finished.connect(_on_romm_dl_finished)
+	romm_downloader.download_cancelled.connect(_on_romm_dl_cancelled)
+	romm_downloader.cache_evicted.connect(_on_romm_cache_evicted)
+
+	romm_art = RommArtCache.new()
+	romm_art.name = "RommArtCache"
+	romm_art.setup(romm_config.base_url)
+	add_child(romm_art)
+	romm_art.art_ready.connect(_on_romm_art_ready)
 
 
 func _init_web_server() -> void:
@@ -930,22 +1010,75 @@ func _populate_systems_detail(systemid: String, vbox: VBoxContainer) -> void:
 	vbox.add_child(_spacer(8))
 
 
-## Rebuild the Cartridges home grid: one tile per system that has a default
-## core. ROMs are scanned lazily, only when a system tile is opened.
+## Rebuild the Cartridges home grid: one tile per system that has a default core
+## OR a mapped RomM platform. ROMs are scanned/synced lazily, only when a system
+## tile is opened — a full library sync at launch would be minutes of transfer
+## before the user could do anything.
 func _populate_cartridges_tab() -> void:
 	if not _cartridges_browser:
 		return
+
+	var seen: Dictionary = {}
 	var systems: Array = []
 	for systemid: String in core_defaults.all_defaults():
+		seen[systemid] = true
 		systems.append({"systemid": systemid, "name": core_db.get_systemname_for_id(systemid)})
+
+	for systemid: String in _romm_platforms:
+		if not seen.has(systemid):
+			systems.append({"systemid": systemid, "name": _system_label(systemid)})
+
+	# Badge each tile with what's local vs on the server.
+	for s: Dictionary in systems:
+		var sid: String = s["systemid"]
+		var remote := 0
+		if _romm_platforms.has(sid):
+			remote = int((_romm_platforms[sid] as Dictionary).get("rom_count", 0))
+		if remote > 0:
+			s["badge"] = "%d on RomM" % remote
+
 	_cartridges_browser.set_systems(systems)
 	# If a system detail is open, re-run it so newly-added ROMs appear.
 	_cartridges_browser.refresh()
 
 
-## Detail page for one system: its scanned ROMs (deduped by scraped game).
+## One /api/platforms call, cached. Local systems are already on screen by the
+## time this returns — server platforms just merge in.
+func _romm_fetch_platforms() -> void:
+	if romm_config == null or not romm_config.is_configured():
+		return
+	romm_client.platforms(func(ok: bool, platforms: Array) -> void:
+		if not ok:
+			return
+		var part := RommPlatforms.partition(platforms, romm_config.platform_overrides)
+		_romm_platforms.clear()
+		for p: Dictionary in part["mapped"]:
+			_romm_platforms[str(p["systemid"])] = p
+		_romm_unmapped = part["unmapped"]
+
+		if not _romm_unmapped.is_empty():
+			# Don't drop these silently — the user can add an override.
+			notify("romm:map", "⚠", "%d RomM platform%s unmapped — see OPTIONS"
+				% [_romm_unmapped.size(), "" if _romm_unmapped.size() == 1 else "s"],
+				-1.0, 4.0)
+
+		_populate_cartridges_tab()
+		_update_romm_status_label()
+	)
+
+
+## Detail page for one system: local ROMs and the RomM library, merged.
+##
+## Local files render immediately; the server list appears when its index is
+## ready (syncing that platform in the background if it has never been synced).
+## The rows go into a VirtualRowList, so a 100k-entry platform costs the same as
+## a 12-entry one.
 func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	RomLibrary.ensure_rom_dir(systemid)
+	_romm_detail_systemid = systemid
+	_romm_rows.clear()
+	_romm_filter = ""
+
 	# Collect all supported extensions for this system across all its cores.
 	var exts: Array[String] = []
 	for entry: Dictionary in core_db.get_by_systemid(systemid):
@@ -953,30 +1086,341 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 			var e := ext.strip_edges().to_lower()
 			if not e.is_empty() and e not in exts:
 				exts.append(e)
+	_romm_detail_exts = exts
 
-	vbox.add_child(_spacer(4))
-	var roms := RomLibrary.scan_roms(systemid, exts)
-	if roms.is_empty():
-		var hint := Label.new()
-		hint.text = "Add ROMs to %s/ to see them here." % RomLibrary.rom_dir_for_system(systemid)
-		hint.add_theme_font_size_override("font_size", 18)
-		hint.add_theme_color_override("font_color", COLOR_DESC)
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		vbox.add_child(hint)
+	# Search box — filters locally over the cached names, so it stays instant
+	# even at 100k rows and works with the server offline.
+	var search := LineEdit.new()
+	search.placeholder_text = "Search %s…" % _system_label(systemid)
+	search.clear_button_enabled = true
+	search.custom_minimum_size = Vector2(0, 52)
+	search.add_theme_font_size_override("font_size", 20)
+	search.text_changed.connect(_on_romm_search_changed)
+	vbox.add_child(search)
+
+	_romm_empty_label = Label.new()
+	_romm_empty_label.add_theme_font_size_override("font_size", 18)
+	_romm_empty_label.add_theme_color_override("font_color", COLOR_DESC)
+	_romm_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_romm_empty_label.visible = false
+	vbox.add_child(_romm_empty_label)
+
+	_romm_list = VirtualRowList.new()
+	_romm_list.row_height = 100
+	_romm_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_romm_list.set_row_builder(_build_blank_rom_row)
+	_romm_list.set_row_binder(_bind_rom_row)
+	vbox.add_child(_romm_list)
+
+	_rebuild_romm_rows()
+
+	# Kick off a sync if this platform has server content we've never indexed.
+	if _romm_platforms.has(systemid) and not RommCatalog.has_index(systemid):
+		var pid := int((_romm_platforms[systemid] as Dictionary).get("id", 0))
+		if pid > 0:
+			romm_catalog.sync_platform(systemid, pid, true)
+
+
+## Build the merged row model: every local file, plus every server entry, with
+## entries that are both collapsed into one row.
+##
+## Dedupe is by filename first — cheap and correct for the overwhelmingly common
+## case. Hashing 361 GiB to build a list is not an option, so MD5 is only
+## consulted when a local hash happens to be cached already.
+func _rebuild_romm_rows() -> void:
+	var systemid := _romm_detail_systemid
+	if systemid.is_empty():
 		return
 
-	var shown_games: Dictionary = {}
-	for rom: Dictionary in roms:
-		var rom_path: String = rom["path"]
-		var game := gamelist_manager.get_game_for_rom(systemid, rom_path)
-		var is_scraped := not game.is_empty()
-		if is_scraped:
-			var gid: String = game.get("game_id", "")
-			if shown_games.has(gid):
+	_romm_rows.clear()
+
+	# 1. Local files, keyed by lowercase filename.
+	var local_by_name: Dictionary = {}
+	for rom: Dictionary in RomLibrary.scan_roms(systemid, _romm_detail_exts):
+		var fname := str(rom["path"]).get_file()
+		local_by_name[fname.to_lower()] = rom
+
+	# 2. Server entries; mark the ones already on disk.
+	var have_index := romm_catalog.load_index(systemid)
+	var matched: Dictionary = {}
+	if have_index:
+		var indices := PackedInt32Array()
+		if _romm_filter.is_empty():
+			indices.resize(romm_catalog.count())
+			for i in romm_catalog.count():
+				indices[i] = i
+		else:
+			indices = romm_catalog.search(_romm_filter)
+
+		for i: int in indices:
+			var entry := romm_catalog.row(i)
+			if entry.is_empty():
 				continue
-			shown_games[gid] = true
-		vbox.add_child(_build_rom_row(systemid, rom, game, is_scraped))
-	vbox.add_child(_spacer(8))
+			var fs_name := str(entry.get("fs_name", ""))
+			var key := fs_name.to_lower()
+			var local: Dictionary = local_by_name.get(key, {})
+			if not local.is_empty():
+				matched[key] = true
+			_romm_rows.append({
+				"source": "both" if not local.is_empty() else "server",
+				"entry": entry,
+				"path": str(local.get("path", "")),
+				"label": str(entry.get("name", fs_name.get_basename())),
+			})
+
+	# 3. Local-only files the server doesn't know about.
+	for key: String in local_by_name:
+		if matched.has(key):
+			continue
+		var rom: Dictionary = local_by_name[key]
+		var label := str(rom["label"])
+		if not _romm_filter.is_empty() and not label.to_lower().contains(_romm_filter):
+			continue
+		_romm_rows.append({
+			"source": "local",
+			"entry": {},
+			"path": str(rom["path"]),
+			"label": label,
+		})
+
+	if _romm_list != null and is_instance_valid(_romm_list):
+		_romm_list.set_row_count(_romm_rows.size())
+
+	if _romm_empty_label != null and is_instance_valid(_romm_empty_label):
+		_romm_empty_label.visible = _romm_rows.is_empty()
+		if _romm_rows.is_empty():
+			if not _romm_filter.is_empty():
+				_romm_empty_label.text = "No games match “%s”." % _romm_filter
+			elif romm_catalog.is_syncing():
+				_romm_empty_label.text = "Syncing from RomM…"
+			else:
+				_romm_empty_label.text = "Add ROMs to %s/ to see them here." \
+					% RomLibrary.rom_dir_for_system(systemid)
+
+
+func _on_romm_search_changed(text: String) -> void:
+	_romm_filter = text.strip_edges().to_lower()
+	_rebuild_romm_rows()
+
+
+# ── Virtualized ROM rows ──────────────────────────────────────────────────────
+# Glyph codepoints verified present in RetroVR/fonts/SymbolsNerdFont-Regular.ttf.
+# Two different delete glyphs is deliberate: the pictogram encodes whether the
+# file can be got back. (At row size the two trash cans look near-identical, so
+# the confirm text carries the real distinction — the glyph is a support cue.)
+const _ICON_DOWNLOAD  := 0xF0ED    # fa-cloud_download  — on the server, not here
+const _ICON_BUSY      := 0xF019    # fa-download        — transferring now
+const _ICON_DELETE    := 0xF01B4   # md-delete          — reversible (still on server)
+const _ICON_DELETE_FOREVER := 0xF05E8  # md-delete_forever — local only, gone for good
+const _ICON_RETRY     := 0xF021    # fa-refresh
+const _ICON_ERROR     := 0xF071    # fa-warning
+const _ICON_GAMEPAD   := 0xF11B    # fa-gamepad
+const _ICON_BOOK      := 0xF05DA   # md-book_open_page_variant
+const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
+
+const _TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
+const _TINT_BUSY     := Color(1.00, 0.75, 0.25)
+const _TINT_DELETE   := Color(0.95, 0.40, 0.40)
+
+## Built once and shared — the list recycles rows, so a FontVariation per row
+## (or per bind) would churn resources on every scroll.
+var _symbol_font: FontVariation = null
+
+
+func _symbols() -> FontVariation:
+	if _symbol_font != null:
+		return _symbol_font
+	_symbol_font = FontVariation.new()
+	_symbol_font.base_font = ThemeDB.fallback_font
+	var symbols: Font = load(_SYMBOL_FONT_PATH)
+	if symbols != null:
+		_symbol_font.fallbacks = [symbols]
+	return _symbol_font
+
+
+## Allocate one blank recyclable row. Called ~12 times total, not once per ROM.
+func _build_blank_rom_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+
+	var state := Button.new()
+	state.name = "State"
+	state.custom_minimum_size = Vector2(76, 100)
+	state.add_theme_font_override("font", _symbols())
+	state.add_theme_font_size_override("font_size", 40)
+	row.add_child(state)
+
+	var pct := Label.new()
+	pct.name = "Pct"
+	pct.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pct.add_theme_font_size_override("font_size", 15)
+	pct.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pct.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	pct.offset_top = -32
+	pct.offset_bottom = -14
+	pct.visible = false
+	state.add_child(pct)
+
+	var cover := TextureRect.new()
+	cover.name = "Cover"
+	cover.custom_minimum_size = Vector2(72, 96)
+	cover.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
+	cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	row.add_child(cover)
+
+	var main := MarqueeButton.create("", 22)
+	main.name = "Main"
+	main.custom_minimum_size = Vector2(0, 100)
+	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(main)
+
+	for n: String in ["Detail", "Manual"]:
+		var b := Button.new()
+		b.name = n
+		b.custom_minimum_size = Vector2(66, 100)
+		b.add_theme_font_override("font", _symbols())
+		b.add_theme_font_size_override("font_size", 26)
+		b.add_theme_color_override("font_color", Color(0.72, 0.72, 0.86))
+		row.add_child(b)
+
+	return row
+
+
+## Fill a recycled row for `index`. Runs on every scroll, so it must be cheap
+## and must disconnect anything it connected last time.
+func _bind_rom_row(row: Control, index: int) -> void:
+	if index < 0 or index >= _romm_rows.size():
+		return
+	var model: Dictionary = _romm_rows[index]
+	var entry: Dictionary = model["entry"]
+	var systemid := _romm_detail_systemid
+	var source := str(model["source"])
+	var label := str(model["label"])
+	var rom_id := int(entry.get("id", 0))
+
+	var state := row.get_node("State") as Button
+	var pct := state.get_node("Pct") as Label
+	var cover := row.get_node("Cover") as TextureRect
+	var main := row.get_node("Main") as MarqueeButton
+	var detail := row.get_node("Detail") as Button
+	var manual := row.get_node("Manual") as Button
+
+	_disconnect_all(state.pressed)
+	_disconnect_all(main.pressed)
+	_disconnect_all(detail.pressed)
+	_disconnect_all(manual.pressed)
+
+	# MarqueeButton keeps its own `text` empty and draws via an internal label —
+	# setting `text` directly would fight its width clipping.
+	main.set_marquee_text("  " + label)
+
+	# ── Leading state icon ──────────────────────────────────────────────────
+	var downloading := rom_id > 0 and romm_downloader.current_rom_id() == rom_id
+	pct.visible = false
+
+	if downloading:
+		state.text = String.chr(_ICON_BUSY)
+		state.add_theme_color_override("font_color", _TINT_BUSY)
+		state.tooltip_text = "Cancel download"
+		pct.visible = true
+		pct.add_theme_color_override("font_color", _TINT_BUSY)
+		pct.text = "%d%%" % _romm_progress_pct.get(rom_id, 0)
+		state.pressed.connect(func() -> void: romm_downloader.cancel_current())
+	elif source == "server":
+		state.text = String.chr(_ICON_DOWNLOAD)
+		# The cloud glyph is visually lighter than the trash glyphs at the same
+		# size — a small bump evens the weight out.
+		state.add_theme_font_size_override("font_size", 44)
+		state.add_theme_color_override("font_color", _TINT_DOWNLOAD)
+		state.tooltip_text = "Download from RomM (%s)" % _human_bytes(int(entry.get("fs_size_bytes", 0)))
+		state.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
+	else:
+		state.add_theme_font_size_override("font_size", 40)
+		var forever := source == "local"
+		state.text = String.chr(_ICON_DELETE_FOREVER if forever else _ICON_DELETE)
+		state.add_theme_color_override("font_color", _TINT_DELETE)
+		state.tooltip_text = "Delete permanently" if forever else "Delete local copy"
+		state.pressed.connect(_on_rom_delete_pressed.bind(index, state))
+
+	# ── Cover ───────────────────────────────────────────────────────────────
+	cover.texture = null
+	if rom_id > 0:
+		cover.texture = romm_art.get_or_request(rom_id, str(entry.get("cover_small", "")), systemid)
+	if cover.texture == null and not model["path"].is_empty():
+		cover.texture = MediaDimensions.load_label_texture(systemid, str(model["path"]))
+	cover.visible = cover.texture != null
+
+	# ── Launch ──────────────────────────────────────────────────────────────
+	var local_path := str(model["path"])
+	if not local_path.is_empty():
+		main.pressed.connect(func() -> void:
+			if romm_cache != null:
+				romm_cache.touch(systemid, local_path.get_file())
+			spawn_cartridge_requested.emit(local_path, label, systemid)
+		)
+	else:
+		# Not downloaded yet — tapping the title fetches it, same as the icon.
+		main.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
+
+	# ── Trailing cluster ────────────────────────────────────────────────────
+	var game := gamelist_manager.get_game_for_rom(systemid, local_path) if not local_path.is_empty() else {}
+	detail.text = String.chr(_ICON_GAMEPAD)
+	detail.visible = not game.is_empty()
+	if not game.is_empty():
+		detail.pressed.connect(_show_game_detail_panel.bind(game, systemid))
+
+	var has_manual := false
+	var manual_path := ""
+	if not local_path.is_empty():
+		manual_path = _scraped_manual_path(systemid, local_path.get_file())
+		has_manual = FileAccess.file_exists(manual_path)
+	manual.text = String.chr(_ICON_BOOK)
+	manual.visible = has_manual
+	if has_manual:
+		manual.pressed.connect(spawn_manual_requested.emit.bind(manual_path))
+
+
+## Two-stage delete: the first press arms it, the second within 3 s commits.
+## A single mis-tap must never delete a 4 GB download, and every
+## Viewport2Din3D click already fires twice.
+func _on_rom_delete_pressed(index: int, state: Button) -> void:
+	if index < 0 or index >= _romm_rows.size():
+		return
+	var model: Dictionary = _romm_rows[index]
+	var local_path := str(model["path"])
+	if local_path.is_empty():
+		return
+
+	if _romm_delete_armed != index:
+		_romm_delete_armed = index
+		state.text = String.chr(_ICON_ERROR)
+		var forever := str(model["source"]) == "local"
+		show_notice("Tap again to %s" % ("delete permanently" if forever else "delete local copy"), 3.0)
+		get_tree().create_timer(3.0).timeout.connect(func() -> void:
+			if _romm_delete_armed == index:
+				_romm_delete_armed = -1
+				if _romm_list != null and is_instance_valid(_romm_list):
+					_romm_list.rebind_visible()
+		)
+		return
+
+	_romm_delete_armed = -1
+	var systemid := _romm_detail_systemid
+	var fname := local_path.get_file()
+
+	if FileAccess.file_exists(local_path):
+		DirAccess.remove_absolute(local_path)
+	if romm_cache != null:
+		romm_cache.forget(systemid, fname)
+
+	show_notice("Deleted %s" % fname, 2.5)
+	_rebuild_romm_rows()
+
+
+## Rows are recycled, so every connection from the previous bind must go.
+static func _disconnect_all(sig: Signal) -> void:
+	for c: Dictionary in sig.get_connections():
+		sig.disconnect(c["callable"])
 
 
 ## One ROM row: spawn button (+ wheel icon) plus scrape/detail/manual buttons.
@@ -1851,6 +2295,9 @@ func _build_options_view() -> Control:
 
 		vbox.add_child(HSeparator.new())
 
+	# ── RomM server ──────────────────────────────────────────────────────────
+	_build_romm_options(vbox)
+
 	# ── Scraper settings ─────────────────────────────────────────────────────
 	var scraper_hdr := Label.new()
 	scraper_hdr.text = "SCRAPER"
@@ -1895,6 +2342,205 @@ func _build_options_view() -> Control:
 	vbox.add_child(HSeparator.new())
 
 	return scroll
+
+
+## ROMM SERVER section of the OPTIONS view.
+func _build_romm_options(vbox: VBoxContainer) -> void:
+	var hdr := Label.new()
+	hdr.text = "ROMM SERVER"
+	hdr.add_theme_font_size_override("font_size", 22)
+	hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(hdr)
+
+	var enable_row := HBoxContainer.new()
+	enable_row.custom_minimum_size = Vector2(0, 56)
+	enable_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(enable_row)
+
+	var enable_lbl := Label.new()
+	enable_lbl.text = "Enable RomM library"
+	enable_lbl.add_theme_font_size_override("font_size", 18)
+	enable_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	enable_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	enable_row.add_child(enable_lbl)
+
+	var enable_toggle := CheckButton.new()
+	enable_toggle.button_pressed = romm_config.enabled
+	enable_toggle.toggled.connect(func(on: bool) -> void:
+		romm_config.enabled = on
+		romm_config.save_config()
+		if on:
+			_romm_fetch_platforms()
+	)
+	enable_row.add_child(enable_toggle)
+
+	_add_options_text_field(vbox, "Server URL", romm_config.base_url, func(text: String) -> void:
+		romm_config.base_url = RommConfig.normalize_url(text)
+		romm_config.save_config()
+		if romm_art != null:
+			romm_art.setup(romm_config.base_url)
+	)
+
+	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
+	var mode_drop := VRDropdown.create("Sign in with",
+		[["API token", RommConfig.AUTH_TOKEN],
+		 ["Username + password", RommConfig.AUTH_BASIC]],
+		romm_config.auth_mode, 1, Vector2(300, 56), 18)
+	mode_drop.item_selected.connect(func(id: Variant) -> void:
+		romm_config.auth_mode = str(id)
+		romm_config.save_config()
+	)
+	vbox.add_child(mode_drop)
+
+	_add_options_text_field(vbox, "API token", romm_config.token, func(text: String) -> void:
+		romm_config.token = text.strip_edges()
+		romm_config.save_config()
+	, true)
+
+	_add_options_text_field(vbox, "Username", romm_config.username, func(text: String) -> void:
+		romm_config.username = text.strip_edges()
+		romm_config.save_config()
+	)
+
+	_add_options_text_field(vbox, "Password", romm_config.password, func(text: String) -> void:
+		romm_config.password = text
+		romm_config.save_config()
+	, true)
+
+	# Device pairing: type 8 digits instead of a 68-character token in VR.
+	_add_options_text_field(vbox, "Pair code (8 digits)", "", func(text: String) -> void:
+		var code := text.strip_edges()
+		if code.length() != 8:
+			return
+		romm_client.pair_with_code(code, func(ok: bool, token: String, err: String) -> void:
+			if ok:
+				romm_config.auth_mode = RommConfig.AUTH_TOKEN
+				romm_config.token = token
+				romm_config.enabled = true
+				romm_config.save_config()
+				notify("romm:conn", "✅", "Paired with RomM", -1.0, _ROMM_DWELL_OK)
+				_romm_fetch_platforms()
+			else:
+				notify("romm:conn", "❌", err, -1.0, _ROMM_DWELL_FAIL)
+		)
+	)
+
+	_add_options_text_field(vbox, "Cache budget (GB)", str(romm_config.cache_budget_gb),
+		func(text: String) -> void:
+			var v := text.strip_edges().to_float()
+			if v > 0.0:
+				romm_config.cache_budget_gb = v
+				romm_config.save_config()
+				_update_romm_status_label()
+	)
+
+	var group_row := HBoxContainer.new()
+	group_row.custom_minimum_size = Vector2(0, 56)
+	group_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(group_row)
+	var group_lbl := Label.new()
+	group_lbl.text = "Group multi-region duplicates"
+	group_lbl.add_theme_font_size_override("font_size", 18)
+	group_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	group_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	group_row.add_child(group_lbl)
+	var group_toggle := CheckButton.new()
+	group_toggle.button_pressed = romm_config.group_by_meta_id
+	group_toggle.toggled.connect(func(on: bool) -> void:
+		romm_config.group_by_meta_id = on
+		romm_config.save_config()
+	)
+	group_row.add_child(group_toggle)
+
+	# Actions
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 10)
+	vbox.add_child(actions)
+
+	var test_btn := Button.new()
+	test_btn.text = "  Test connection  "
+	test_btn.custom_minimum_size = Vector2(0, 56)
+	test_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	test_btn.add_theme_font_size_override("font_size", 18)
+	test_btn.pressed.connect(func() -> void:
+		notify("romm:conn", "⏳", "Contacting RomM…", -1.0)
+		romm_client.test_connection(func(ok: bool, summary: String) -> void:
+			notify("romm:conn", "✅" if ok else "❌", summary, -1.0,
+				_ROMM_DWELL_OK if ok else _ROMM_DWELL_FAIL)
+			if ok:
+				_romm_fetch_platforms()
+		)
+	)
+	actions.add_child(test_btn)
+
+	var sync_btn := Button.new()
+	sync_btn.text = "  Sync all now  "
+	sync_btn.custom_minimum_size = Vector2(0, 56)
+	sync_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sync_btn.add_theme_font_size_override("font_size", 18)
+	sync_btn.pressed.connect(_on_romm_sync_all_pressed)
+	actions.add_child(sync_btn)
+
+	_romm_status_label = Label.new()
+	_romm_status_label.add_theme_font_size_override("font_size", 16)
+	_romm_status_label.add_theme_color_override("font_color", COLOR_DESC)
+	_romm_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_romm_status_label)
+	_update_romm_status_label()
+
+	vbox.add_child(HSeparator.new())
+
+
+## Sync every mapped platform, one after another — for deliberate offline
+## browsing. Normal use never needs this; platforms sync when you open them.
+func _on_romm_sync_all_pressed() -> void:
+	if not romm_config.is_configured():
+		notify("romm:conn", "❌", "Set a server URL and sign-in first", -1.0, _ROMM_DWELL_FAIL)
+		return
+	if _romm_platforms.is_empty():
+		_romm_fetch_platforms()
+		return
+	_romm_sync_queue.clear()
+	for systemid: String in _romm_platforms:
+		_romm_sync_queue.append(systemid)
+	_pump_romm_sync_queue()
+
+
+func _pump_romm_sync_queue() -> void:
+	if _romm_sync_queue.is_empty() or romm_catalog.is_syncing():
+		return
+	var systemid: String = _romm_sync_queue.pop_front()
+	var pid := int((_romm_platforms.get(systemid, {}) as Dictionary).get("id", 0))
+	if pid > 0:
+		romm_catalog.sync_platform(systemid, pid, true)
+
+
+func _update_romm_status_label() -> void:
+	if _romm_status_label == null or not is_instance_valid(_romm_status_label):
+		return
+
+	var parts: Array[String] = []
+	if not romm_client.server_version.is_empty():
+		parts.append("RomM %s" % romm_client.server_version)
+	if not _romm_platforms.is_empty():
+		var total := 0
+		for sid: String in _romm_platforms:
+			total += int((_romm_platforms[sid] as Dictionary).get("rom_count", 0))
+		parts.append("%d games across %d platforms" % [total, _romm_platforms.size()])
+	if romm_cache != null:
+		parts.append("%s cached / %.0f GB budget"
+			% [_human_bytes(romm_cache.total_bytes()), romm_config.cache_budget_gb])
+
+	var text := " · ".join(PackedStringArray(parts)) if not parts.is_empty() \
+		else "Not connected."
+
+	if not _romm_unmapped.is_empty():
+		var names: Array[String] = []
+		for p: Dictionary in _romm_unmapped:
+			names.append("%s (%s)" % [RommPlatforms.display_name(p), str(p.get("slug", "?"))])
+		text += "\nUnmapped: " + ", ".join(PackedStringArray(names))
+
+	_romm_status_label.text = text
 
 
 func _add_options_text_field(parent: VBoxContainer, label_text: String,
@@ -2739,7 +3385,48 @@ func _ensure_media_toast_stack() -> void:
 	add_child(_media_toast_stack)
 
 
-func _make_media_toast(media_type: String, icon_text: String, msg: String) -> void:
+## Public notification entry point for background services (RomM sync/downloads,
+## cache eviction, …). Keyed so each concurrent operation owns one bar and
+## updates it in place — never one bar per progress tick or per retry.
+##
+## key      : stable per operation, e.g. "romm:dl:1289". Use a namespace prefix
+##            so it can't collide with the scraper's "box"/"wheel"/… keys.
+## progress : 0.0-1.0 to show a bar, or <0 for none.
+## seconds  : >0 auto-dismisses after that long; <=0 keeps it until replaced.
+func notify(key: String, icon_text: String, msg: String,
+			progress: float = -1.0, seconds: float = 0.0) -> void:
+	if _media_toasts.has(key):
+		_update_media_toast(key, icon_text, msg, progress)
+	else:
+		_make_media_toast(key, icon_text, msg, progress)
+	if seconds > 0.0:
+		get_tree().create_timer(seconds).timeout.connect(_remove_media_toast.bind(key))
+
+
+## Drop a notification immediately (e.g. an operation was cancelled).
+func notify_clear(key: String) -> void:
+	_remove_media_toast(key)
+
+
+func _update_media_toast(key: String, icon_text: String, msg: String,
+						 progress: float = -1.0) -> void:
+	if not _media_toasts.has(key):
+		return
+	var toast: Dictionary = _media_toasts[key]
+	var lbl: Label = toast.get("label")
+	var icn: Label = toast.get("icon")
+	var bar: ProgressBar = toast.get("progress")
+	if lbl != null and is_instance_valid(lbl):
+		lbl.text = msg
+	if icn != null and is_instance_valid(icn):
+		icn.text = icon_text
+	if bar != null and is_instance_valid(bar):
+		bar.visible = progress >= 0.0
+		bar.value = clampf(progress, 0.0, 1.0) * 100.0
+
+
+func _make_media_toast(media_type: String, icon_text: String, msg: String,
+					   progress: float = -1.0) -> void:
 	_ensure_media_toast_stack()
 
 	var bar := PanelContainer.new()
@@ -2772,8 +3459,34 @@ func _make_media_toast(media_type: String, icon_text: String, msg: String) -> vo
 	label.add_theme_color_override("font_color", COLOR_TITLE)
 	hbox.add_child(label)
 
+	# Optional progress bar, stacked under the icon+text line.
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	margin.remove_child(hbox)
+	vbox.add_child(hbox)
+	margin.add_child(vbox)
+
+	var prog := ProgressBar.new()
+	prog.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	prog.show_percentage = false
+	prog.custom_minimum_size = Vector2(0, 5)
+	prog.value = maxf(progress, 0.0) * 100.0
+	prog.visible = progress >= 0.0
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.45, 0.70, 1.0)
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(0.25, 0.25, 0.38)
+	for st: StyleBoxFlat in [fill, track]:
+		for k in ["corner_radius_top_left", "corner_radius_top_right",
+				  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+			st.set(k, 3)
+	prog.add_theme_stylebox_override("fill", fill)
+	prog.add_theme_stylebox_override("background", track)
+	vbox.add_child(prog)
+
 	_media_toast_stack.add_child(bar)
-	_media_toasts[media_type] = {"bar": bar, "label": label, "icon": icon}
+	_media_toasts[media_type] = {"bar": bar, "label": label, "icon": icon, "progress": prog}
+	_enforce_toast_cap()
 
 
 func _on_media_download_started(media_type: String) -> void:
@@ -2788,22 +3501,19 @@ func _on_media_download_notice_failed(media_type: String, _error: String) -> voi
 	_finish_media_toast(media_type, "❌", "%s failed" % media_type.capitalize())
 
 
-func _finish_media_toast(media_type: String, icon_text: String, msg: String) -> void:
+## `seconds` defaults to the old 2.5 s; failures pass a longer dwell, because
+## 2.5 s is not enough to read a failure reason through a headset.
+func _finish_media_toast(media_type: String, icon_text: String, msg: String,
+						 seconds: float = 2.5) -> void:
 	if not _media_toasts.has(media_type):
 		# No "started" toast (e.g. failed before request began) — make one so
 		# the outcome is still surfaced.
 		_make_media_toast(media_type, icon_text, msg)
 	else:
-		var toast: Dictionary = _media_toasts[media_type]
-		var lbl: Label = toast.get("label")
-		var icn: Label = toast.get("icon")
-		if lbl != null and is_instance_valid(lbl):
-			lbl.text = msg
-		if icn != null and is_instance_valid(icn):
-			icn.text = icon_text
+		_update_media_toast(media_type, icon_text, msg, -1.0)
 
 	# Auto-dismiss this toast after a short delay.
-	get_tree().create_timer(2.5).timeout.connect(
+	get_tree().create_timer(seconds).timeout.connect(
 		_remove_media_toast.bind(media_type))
 
 
@@ -2812,8 +3522,272 @@ func _remove_media_toast(media_type: String) -> void:
 		var toast: Dictionary = _media_toasts[media_type]
 		var bar: PanelContainer = toast.get("bar")
 		if bar != null and is_instance_valid(bar):
+			_media_toast_stack.remove_child(bar)
 			bar.queue_free()
 		_media_toasts.erase(media_type)
+		_enforce_toast_cap()
+
+
+## Keep at most MAX_VISIBLE_TOASTS bars on screen; older ones collapse into a
+## single "+N more" row at the top of the stack. Without this, a queue of
+## downloads pushes bars off the top of the menu panel.
+func _enforce_toast_cap() -> void:
+	if _media_toast_stack == null or not is_instance_valid(_media_toast_stack):
+		return
+
+	var bars: Array[Control] = []
+	for c: Node in _media_toast_stack.get_children():
+		if c == _toast_overflow_bar:
+			continue
+		if c is Control:
+			bars.append(c)
+
+	var overflow := maxi(0, bars.size() - MAX_VISIBLE_TOASTS)
+	# Newest are appended last, so hide from the front.
+	for i in bars.size():
+		bars[i].visible = i >= overflow
+
+	if overflow <= 0:
+		if _toast_overflow_bar != null and is_instance_valid(_toast_overflow_bar):
+			_toast_overflow_bar.queue_free()
+		_toast_overflow_bar = null
+		_toast_overflow_label = null
+		return
+
+	if _toast_overflow_bar == null or not is_instance_valid(_toast_overflow_bar):
+		_toast_overflow_bar = PanelContainer.new()
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(0.05, 0.10, 0.28, 0.80)
+		for k in ["corner_radius_top_left", "corner_radius_top_right",
+				  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+			bg.set(k, 8)
+		_toast_overflow_bar.add_theme_stylebox_override("panel", bg)
+		_toast_overflow_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+		var m := MarginContainer.new()
+		for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+			m.add_theme_constant_override(side, 6)
+		_toast_overflow_bar.add_child(m)
+
+		_toast_overflow_label = Label.new()
+		_toast_overflow_label.add_theme_font_size_override("font_size", 15)
+		_toast_overflow_label.add_theme_color_override("font_color", COLOR_DESC)
+		_toast_overflow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		m.add_child(_toast_overflow_label)
+
+		_media_toast_stack.add_child(_toast_overflow_bar)
+
+	_media_toast_stack.move_child(_toast_overflow_bar, 0)
+	_toast_overflow_label.text = "+%d more" % overflow
+
+
+# ── RomM notifications ────────────────────────────────────────────────────────
+# All of these land in the same bottom-of-menu toast stack the scraper uses.
+# Keys are namespaced "romm:" so they cannot collide with the scraper's
+# box/wheel/label/manual keys.
+
+const _ROMM_DWELL_OK   := 2.5
+const _ROMM_DWELL_INFO := 3.0
+const _ROMM_DWELL_FAIL := 6.0   # 2.5 s is not long enough to read a failure
+
+## Driven by the controller's _show_menu/_hide_menu — the Control is always
+## visible, it's the Viewport2Din3D node in the world that gets toggled.
+var _menu_shown: bool = false
+
+
+## Called when the menu panel becomes visible in the world.
+func on_menu_shown() -> void:
+	_menu_shown = true
+	_flush_romm_notices()
+	_romm_check_for_changes()
+
+
+func on_menu_hidden() -> void:
+	_menu_shown = false
+
+
+## The cheapest possible "did anything change?" — /api/stats is public and ~100
+## bytes. If the fingerprint matches, the library provably hasn't changed and no
+## /api/roms call is made at all.
+func _romm_check_for_changes() -> void:
+	if romm_config == null or not romm_config.is_configured():
+		return
+	romm_client.stats(func(ok: bool, stats: Dictionary) -> void:
+		if not ok or stats.is_empty():
+			return
+		if romm_config.stats_unchanged(stats):
+			return
+		romm_config.last_stats = stats
+		romm_config.save_config()
+		# Refresh the platform list; per-platform ROM sync still happens lazily
+		# when the user actually opens that system.
+		_romm_fetch_platforms()
+	)
+
+
+## Toasts can only be seen while the menu panel is open. A 4 GB download keeps
+## running while the user plays, so terminal outcomes are queued and flushed
+## (coalesced) the next time the menu opens, rather than vanishing unseen.
+func _romm_notify_or_queue(key: String, icon: String, msg: String, dwell: float) -> void:
+	if _menu_shown:
+		notify(key, icon, msg, -1.0, dwell)
+	else:
+		_romm_pending_notices.append({"ok": icon == "✅", "msg": msg})
+
+
+## Called when the menu becomes visible.
+func _flush_romm_notices() -> void:
+	if _romm_pending_notices.is_empty():
+		return
+	var done := 0
+	var failed := 0
+	for n: Dictionary in _romm_pending_notices:
+		if bool(n["ok"]):
+			done += 1
+		else:
+			failed += 1
+	_romm_pending_notices.clear()
+
+	# One summary, not a replay of every toast.
+	if done > 0 and failed == 0:
+		notify("romm:flush", "✅", "%d download%s finished" % [done, "" if done == 1 else "s"],
+			-1.0, _ROMM_DWELL_INFO)
+	elif done == 0 and failed > 0:
+		notify("romm:flush", "❌", "%d download%s failed" % [failed, "" if failed == 1 else "s"],
+			-1.0, _ROMM_DWELL_FAIL)
+	else:
+		notify("romm:flush", "✅", "%d finished · %d failed" % [done, failed],
+			-1.0, _ROMM_DWELL_FAIL)
+
+
+func _on_romm_auth_failed(detail: String) -> void:
+	push_warning("[RomM] auth failed: %s" % detail)
+	notify("romm:conn", "❌", "RomM sign-in expired — check OPTIONS", -1.0, _ROMM_DWELL_FAIL)
+
+
+## Fires only on a transition, so a dead server can't produce a toast stream.
+func _on_romm_reachability_changed(reachable: bool) -> void:
+	if reachable:
+		return
+	notify("romm:conn", "❌", "RomM unreachable", -1.0, _ROMM_DWELL_FAIL)
+
+
+func _on_romm_sync_started(systemid: String, total: int) -> void:
+	notify("romm:sync:" + systemid, "⏳",
+		"Syncing %s from RomM…" % _system_label(systemid), 0.0 if total <= 0 else 0.0)
+
+
+func _on_romm_sync_progress(systemid: String, done: int, total: int) -> void:
+	var frac := (float(done) / float(total)) if total > 0 else -1.0
+	notify("romm:sync:" + systemid, "⏳",
+		"Syncing %s · %s / %s" % [_system_label(systemid), _commas(done), _commas(total)], frac)
+
+
+func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int, error: String) -> void:
+	var key := "romm:sync:" + systemid
+	var label := _system_label(systemid)
+
+	if not ok:
+		notify(key, "❌", "RomM sync failed — %s" % error, -1.0, _ROMM_DWELL_FAIL)
+		return
+
+	# Record the watermark so the next open can skip the network entirely.
+	var meta := RommCatalog.read_meta(systemid)
+	romm_config.set_sync_state(systemid, str(meta.get("updated_after", "")), int(meta.get("total", 0)))
+	romm_config.save_config()
+
+	if added > 0:
+		notify(key, "✅", "%s · %d new game%s" % [label, added, "" if added == 1 else "s"],
+			-1.0, _ROMM_DWELL_INFO)
+	elif removed > 0:
+		notify(key, "✅", "%s · %d game%s removed" % [label, removed, "" if removed == 1 else "s"],
+			-1.0, _ROMM_DWELL_INFO)
+	else:
+		notify(key, "✅", "%s · up to date" % label, -1.0, 1.5)
+
+	# The open detail page is showing a stale list — rebuild it against the new index.
+	if systemid == _romm_detail_systemid:
+		_rebuild_romm_rows()
+	_update_romm_status_label()
+	_pump_romm_sync_queue()
+
+
+func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
+	notify("romm:dl:%d" % rom_id, "⬇", "%s · %s" % [label, _human_bytes(total_bytes)], 0.0)
+
+
+func _on_romm_dl_progress(rom_id: int, received: int, total: int) -> void:
+	var frac := (float(received) / float(total)) if total > 0 else -1.0
+	var pct := int(frac * 100.0) if frac >= 0.0 else 0
+	_romm_progress_pct[rom_id] = pct
+	notify("romm:dl:%d" % rom_id, "⬇",
+		"%d%% · %s / %s" % [pct, _human_bytes(received), _human_bytes(total)], frac)
+	if _romm_list != null and is_instance_valid(_romm_list):
+		_romm_list.rebind_visible()
+
+
+func _on_romm_dl_retrying(rom_id: int, attempt: int, max_attempts: int, reason: String) -> void:
+	notify("romm:dl:%d" % rom_id, "⏳",
+		"%s — retry %d/%d" % [reason, attempt, max_attempts], -1.0)
+
+
+func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) -> void:
+	var key := "romm:dl:%d" % rom_id
+	if ok:
+		_romm_notify_or_queue(key, "✅", "%s ready" % path.get_file().get_basename(), _ROMM_DWELL_OK)
+	else:
+		_romm_notify_or_queue(key, "❌", error, _ROMM_DWELL_FAIL)
+	_rebuild_romm_rows()
+
+
+func _on_romm_dl_cancelled(rom_id: int) -> void:
+	notify_clear("romm:dl:%d" % rom_id)
+	_rebuild_romm_rows()
+
+
+## Files silently vanishing from a library reads as data loss — always say so.
+func _on_romm_cache_evicted(freed_bytes: int, count: int) -> void:
+	notify("romm:cache", "🗑", "Freed %s — removed %d game%s"
+		% [_human_bytes(freed_bytes), count, "" if count == 1 else "s"], -1.0, 4.0)
+
+
+## Eviction can remove a file behind a visible row, so re-bind rather than let
+## the row icon lie about what is on disk.
+func _on_romm_cache_changed() -> void:
+	if _romm_list != null and is_instance_valid(_romm_list):
+		_romm_list.rebind_visible()
+
+
+func _on_romm_art_ready(_rom_id: int, _texture: Texture2D) -> void:
+	if _romm_list != null and is_instance_valid(_romm_list):
+		_romm_list.rebind_visible()
+
+
+func _system_label(systemid: String) -> String:
+	var name := core_db.get_systemname_for_id(systemid)
+	return name if not name.is_empty() else systemid
+
+
+static func _commas(n: int) -> String:
+	var s := str(n)
+	var out := ""
+	var c := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "," + out
+	return out
+
+
+static func _human_bytes(bytes: int) -> String:
+	if bytes >= 1073741824:
+		return "%.1f GB" % (float(bytes) / 1073741824.0)
+	if bytes >= 1048576:
+		return "%.0f MB" % (float(bytes) / 1048576.0)
+	if bytes >= 1024:
+		return "%.0f KB" % (float(bytes) / 1024.0)
+	return "%d B" % bytes
 
 
 func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary) -> void:
