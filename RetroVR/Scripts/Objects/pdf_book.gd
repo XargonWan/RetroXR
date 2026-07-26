@@ -722,6 +722,54 @@ func _set_paper_aabb(mesh_node: MeshInstance3D, w: float, h: float) -> void:
 		Vector3(w * 2.0 + m * 2.0, h + m * 2.0, PAPER_AABB_DEPTH))
 
 
+## Tiling paper-fibre texture, built once and shared by every book: RG hold the
+## fibre gradient, B a slow roughness variation. Paper fibres are long and thin,
+## so the field is blurred much wider across X than Y before differencing.
+static var _grain_texture: ImageTexture = null
+
+static func _paper_grain() -> ImageTexture:
+	if _grain_texture != null:
+		return _grain_texture
+	const N := 128
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0x9E3779B9
+	var field := PackedFloat32Array()
+	field.resize(N * N)
+	for i in N * N:
+		field[i] = rng.randf()
+
+	# Separable box blur, wrapping so the texture tiles: 9 wide on X, 3 on Y.
+	var pass_x := PackedFloat32Array()
+	pass_x.resize(N * N)
+	for y in N:
+		for x in N:
+			var acc := 0.0
+			for k in range(-4, 5):
+				acc += field[y * N + ((x + k + N) % N)]
+			pass_x[y * N + x] = acc / 9.0
+	var blur := PackedFloat32Array()
+	blur.resize(N * N)
+	for y in N:
+		for x in N:
+			var acc := 0.0
+			for k in range(-1, 2):
+				acc += pass_x[((y + k + N) % N) * N + x]
+			blur[y * N + x] = acc / 3.0
+
+	var img := Image.create(N, N, true, Image.FORMAT_RGB8)
+	for y in N:
+		for x in N:
+			var dx := blur[y * N + ((x + 1) % N)] - blur[y * N + ((x - 1 + N) % N)]
+			var dy := blur[((y + 1) % N) * N + x] - blur[((y - 1 + N) % N) * N + x]
+			img.set_pixel(x, y, Color(
+				clampf(0.5 + dx * 4.0, 0.0, 1.0),
+				clampf(0.5 + dy * 4.0, 0.0, 1.0),
+				blur[y * N + x]))
+	img.generate_mipmaps()
+	_grain_texture = ImageTexture.create_from_image(img)
+	return _grain_texture
+
+
 ## Give a page surface its own ShaderMaterial running paper.gdshader, and push
 ## the size-dependent uniforms into it. Covers are stiffer and opaque: no bow,
 ## no gutter dive, no light bleeding through.
@@ -734,6 +782,7 @@ func _ensure_paper_material(mesh_node: MeshInstance3D, is_cover: bool) -> Shader
 		mat.shader = PAPER_SHADER
 		mesh_node.set_surface_override_material(0, mat)
 	mat.set_shader_parameter("page_size", Vector2(_book_width, book_height))
+	mat.set_shader_parameter("grain_texture", _paper_grain())
 	if is_cover:
 		mat.set_shader_parameter("gutter_dive", 0.0)
 		mat.set_shader_parameter("bow_amount", 0.0)
@@ -1236,6 +1285,7 @@ func _spawn_leaf(dir: int) -> bool:
 	mat.shader = PAPER_SHADER
 	mat.set_shader_parameter("page_size", Vector2(_book_width, book_height))
 	mat.set_shader_parameter("spine_sign", float(dir))
+	mat.set_shader_parameter("grain_texture", _paper_grain())
 	mat.set_shader_parameter("gutter_dive", _gutter_dive_for(_page_plane_z(dir)))
 	mat.set_shader_parameter("curl_taper", CURL_TAPER)
 	mat.set_shader_parameter("front_texture", _get_page_texture(int(plan["front"])))

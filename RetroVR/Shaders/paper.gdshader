@@ -38,6 +38,8 @@ uniform float curl_taper : hint_range(0.0, 4.0) = 1.2;
 // Surface.
 uniform float gutter_ao : hint_range(0.0, 1.0) = 0.55;
 uniform float gutter_ao_falloff : hint_range(1.0, 40.0) = 9.0;
+uniform sampler2D grain_texture : hint_default_black, filter_linear_mipmap, repeat_enable;
+uniform vec2 grain_tile = vec2(6.0, 8.0);
 uniform float fibre_strength : hint_range(0.0, 1.0) = 0.25;
 uniform float backlight_amount : hint_range(0.0, 1.0) = 0.22;
 uniform float sheen : hint_range(0.0, 1.0) = 0.18;
@@ -128,25 +130,6 @@ void vertex() {
 	NORMAL = n;
 }
 
-// Cheap value noise — paper fibre, no texture fetch. Same spirit as
-// wood_planks.gdshader: a couple of hash calls is affordable on Quest.
-float hash21(vec2 p) {
-	p = fract(p * vec2(233.34, 851.73));
-	p += dot(p, p + 23.45);
-	return fract(p.x * p.y);
-}
-
-float vnoise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	float a = hash21(i);
-	float b = hash21(i + vec2(1.0, 0.0));
-	float c = hash21(i + vec2(0.0, 1.0));
-	float d = hash21(i + vec2(1.0, 1.0));
-	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
 void fragment() {
 	vec4 color;
 	if (FRONT_FACING) {
@@ -168,15 +151,18 @@ void fragment() {
 	// opaque; it belongs in the opaque pass.
 	ALBEDO = color.rgb;
 
-	// Fibre grain, applied through the mesh tangent frame.
+	// Fibre grain, applied through the mesh tangent frame. One fetch from a
+	// small tiling texture rather than value noise: the procedural version cost
+	// sixteen hash calls per fragment across four page surfaces, which is the
+	// wrong shape for a tile GPU on a scene already over its frame budget.
+	// RG carry the fibre gradient, B a slow roughness variation.
+	vec3 grain = texture(grain_texture, UV * grain_tile).rgb;
 	if (fibre_strength > 0.0) {
-		vec2 fp = UV * vec2(420.0, 560.0);
-		float nx = vnoise(fp) - vnoise(fp + vec2(1.7, 0.0));
-		float ny = vnoise(fp + vec2(0.0, 1.3)) - vnoise(fp);
-		NORMAL = normalize(NORMAL + (TANGENT * nx + BINORMAL * ny) * fibre_strength * 0.5);
+		NORMAL = normalize(NORMAL
+			+ (TANGENT * (grain.r - 0.5) + BINORMAL * (grain.g - 0.5)) * fibre_strength);
 	}
 
-	ROUGHNESS = roughness - vnoise(UV * 90.0) * 0.06;
+	ROUGHNESS = roughness - grain.b * 0.06;
 	METALLIC = 0.0;
 	SPECULAR = sheen;
 	// Paper is thin: light reaching the far side bleeds through.
