@@ -2294,7 +2294,7 @@ func _build_options_view() -> Control:
 
 	# ── Scraper settings ─────────────────────────────────────────────────────
 	var scraper_hdr := Label.new()
-	scraper_hdr.text = "SCRAPER"
+	scraper_hdr.text = "SCREENSCRAPER.FR"
 	scraper_hdr.add_theme_font_size_override("font_size", 22)
 	scraper_hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(scraper_hdr)
@@ -2347,26 +2347,23 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(hdr)
 
 	var enable_row := HBoxContainer.new()
-	enable_row.custom_minimum_size = Vector2(0, 56)
+	enable_row.custom_minimum_size = Vector2(0, 68)
 	enable_row.add_theme_constant_override("separation", 10)
 	vbox.add_child(enable_row)
 
 	var enable_lbl := Label.new()
 	enable_lbl.text = "Enable RomM library"
-	enable_lbl.add_theme_font_size_override("font_size", 18)
+	enable_lbl.add_theme_font_size_override("font_size", 20)
 	enable_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
 	enable_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enable_row.add_child(enable_lbl)
 
-	var enable_toggle := CheckButton.new()
-	enable_toggle.button_pressed = romm_config.enabled
-	enable_toggle.toggled.connect(func(on: bool) -> void:
+	enable_row.add_child(_make_toggle(romm_config.enabled, func(on: bool) -> void:
 		romm_config.enabled = on
 		romm_config.save_config()
 		if on:
 			_romm_fetch_platforms()
-	)
-	enable_row.add_child(enable_toggle)
+	))
 
 	_add_options_text_field(vbox, "Server URL", romm_config.base_url, func(text: String) -> void:
 		romm_config.base_url = RommConfig.normalize_url(text)
@@ -2429,22 +2426,19 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 	)
 
 	var group_row := HBoxContainer.new()
-	group_row.custom_minimum_size = Vector2(0, 56)
+	group_row.custom_minimum_size = Vector2(0, 68)
 	group_row.add_theme_constant_override("separation", 10)
 	vbox.add_child(group_row)
 	var group_lbl := Label.new()
 	group_lbl.text = "Group multi-region duplicates"
-	group_lbl.add_theme_font_size_override("font_size", 18)
+	group_lbl.add_theme_font_size_override("font_size", 20)
 	group_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
 	group_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	group_row.add_child(group_lbl)
-	var group_toggle := CheckButton.new()
-	group_toggle.button_pressed = romm_config.group_by_meta_id
-	group_toggle.toggled.connect(func(on: bool) -> void:
+	group_row.add_child(_make_toggle(romm_config.group_by_meta_id, func(on: bool) -> void:
 		romm_config.group_by_meta_id = on
 		romm_config.save_config()
-	)
-	group_row.add_child(group_toggle)
+	))
 
 	# Actions
 	var actions := HBoxContainer.new()
@@ -4260,6 +4254,10 @@ func _build_scene_view() -> Control:
 	# Cozy Den card → direct scene switch
 	grid.add_child(_make_room_card("Cozy Den", Color(0.4, 0.25, 0.12),
 		func(): scene_change_requested.emit("den")))
+
+	# Test Hallway card → direct scene switch
+	grid.add_child(_make_room_card("Test Hallway", Color(0.12, 0.32, 0.30),
+		func(): scene_change_requested.emit("test")))
 
 	# Passthrough card (only if supported) → direct scene switch
 	var sm := _get_scene_manager()
