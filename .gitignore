@@ -20,6 +20,13 @@ RetroVR/godot-pdfium/*.pdb
 godot-pdfium/Temp/
 godot-pdfium/external/pdfium/include/*.orig
 
+# vlc-godot build artifacts
+RetroVR/vlc-godot/~*
+RetroVR/vlc-godot/*.exp
+RetroVR/vlc-godot/*.ilk
+RetroVR/vlc-godot/*.lib
+RetroVR/vlc-godot/*.pdb
+
 **/*.import
 
 *.apk
