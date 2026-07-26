@@ -139,6 +139,12 @@ func configure_handheld_controls(host: Node3D) -> void:
 # the model's local space. Value 0 = the hinge end (2D / quiet), 1 = the far end
 # by the top of the screen (full depth / loud) — matching the real hardware.
 #
+# Throw measured against a 5 mm ruler laid along the groove in an orthographic
+# render taken face-on to the rim: the slot runs from 3.2 mm below the modelled
+# knob position to 16.9 mm above it, and the tab is 7.2 mm long, so its centre can
+# travel 12.9 mm before either end of the tab leaves the slot. At the old 10.5 mm
+# the knob stopped ~2.3 mm short of the far end.
+#
 # The Y sign used to be NEGATIVE, which ran both knobs diagonally OUT of their
 # grooves: value 0 sat correctly in the slot and value 1 left it entirely, the
 # tab ending up on the bare shell below. Two independent fits of the geometry
@@ -147,7 +153,7 @@ func configure_handheld_controls(host: Node3D) -> void:
 # rides in, at (-0.025, 0.430, -0.902). X is fit noise (the grooves sit on the
 # side rims and run in the YZ plane; the two fits disagree even on its sign), so
 # it is dropped and the Y/Z pair averaged.
-const _KNOB_TRAVEL := 0.0105
+const _KNOB_TRAVEL := 0.0128
 const _KNOB_AXIS := Vector3(0.0, 0.384, -0.923)
 
 var _knob_3d: Dictionary = {}
