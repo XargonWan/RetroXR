@@ -1661,13 +1661,13 @@ func _populate_manager_tab() -> void:
 	var cores_dir := CoreDownloadManager.default_cores_dir()
 	var dir := DirAccess.open(cores_dir)
 	if dir:
-		var lib_ext := ".so" if OS.get_name() in ["Android", "Linux"] else ".dll"
-		var lib_suffix := ("_libretro_android" if OS.get_name() == "Android" else "_libretro") + lib_ext
+		var seen: Dictionary = {}   # a core can sit there under two naming conventions
 		dir.list_dir_begin()
 		var fname := dir.get_next()
 		while fname != "":
-			if not dir.current_is_dir() and fname.ends_with(lib_suffix):
-				var cn := fname.trim_suffix(lib_suffix)
+			var cn := "" if dir.current_is_dir() else CoreDownloadManager.core_name_from_lib_filename(fname)
+			if not cn.is_empty() and not seen.has(cn):
+				seen[cn] = true
 				var info: Dictionary = core_db.get_by_core_name(cn)
 				var sid: String  = info.get("systemid",   "unknown") if not info.is_empty() else "unknown"
 				var sname: String = info.get("systemname", cn)       if not info.is_empty() else cn

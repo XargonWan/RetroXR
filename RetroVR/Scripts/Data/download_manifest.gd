@@ -82,11 +82,16 @@ func get_downloaded_at(core_name: String) -> String:
 # Mutations
 # ---------------------------------------------------------------------------
 
-func set_downloaded(core_name: String, remote_date: String) -> void:
+## filename is the library the core actually installed as; when empty the
+## conventional name is assumed (cores that break the convention, like azahar
+## on Android, pass theirs explicitly).
+func set_downloaded(core_name: String, remote_date: String, filename := "") -> void:
 	var lib_suffix := "_libretro_android" if OS.get_name() == "Android" else "_libretro"
 	var lib_ext := ".so" if OS.get_name() in ["Android", "Linux"] else ".dll"
+	if filename.is_empty():
+		filename = core_name + lib_suffix + lib_ext
 	_cores()[core_name] = {
-		"filename":      core_name + lib_suffix + lib_ext,
+		"filename":      filename,
 		"remote_date":   remote_date,
 		"downloaded_at": Time.get_datetime_string_from_system(false, true)
 	}

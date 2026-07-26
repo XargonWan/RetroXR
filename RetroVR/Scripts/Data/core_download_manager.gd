@@ -18,9 +18,56 @@ static func _buildbot_url() -> String:
 	return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
 
 static func _core_lib_suffix() -> String:
+	return core_lib_suffixes()[0]
+
+
+## Library-name suffixes this platform may see, canonical first.
+## Android cores are conventionally "<core>_libretro_android.so", but that infix
+## is a convention rather than a rule — azahar's CMake never set an Android
+## OUTPUT_NAME, so the buildbot ships "azahar_libretro.so.zip". Accept both.
+##
+## The naming-dependent helpers take the suffix list and extension as optional
+## arguments so a desktop probe can drive the Android naming without a device.
+static func core_lib_suffixes() -> PackedStringArray:
 	if OS.get_name() == "Android":
-		return "_libretro_android"
-	return "_libretro"
+		return PackedStringArray(["_libretro_android", "_libretro"])
+	return PackedStringArray(["_libretro"])
+
+
+## Library filenames a core may be installed under, canonical first.
+static func core_lib_filenames(core_name: String, suffixes := PackedStringArray(),
+							   ext := "") -> PackedStringArray:
+	if suffixes.is_empty():
+		suffixes = core_lib_suffixes()
+	if ext.is_empty():
+		ext = _core_lib_ext()
+	var names := PackedStringArray()
+	for suffix: String in suffixes:
+		names.append(core_name + suffix + ext)
+	return names
+
+
+## Strips the library suffix+extension off a filename, returning the bare core
+## name — or "" if the filename is not a core library for this platform.
+static func core_name_from_lib_filename(filename: String, suffixes := PackedStringArray(),
+										ext := "") -> String:
+	if suffixes.is_empty():
+		suffixes = core_lib_suffixes()
+	if ext.is_empty():
+		ext = _core_lib_ext()
+	for suffix: String in suffixes:
+		var tail := suffix + ext
+		if filename.ends_with(tail):
+			return filename.trim_suffix(tail)
+	return ""
+
+
+## Filename the core is actually installed under, or "" if it isn't installed.
+static func installed_core_lib(core_name: String) -> String:
+	for filename: String in core_lib_filenames(core_name):
+		if FileAccess.file_exists(default_cores_dir().path_join(filename)):
+			return filename
+	return ""
 
 static func _core_lib_ext() -> String:
 	if OS.get_name() in ["Android", "Linux"]:
@@ -127,14 +174,22 @@ func _on_listing_completed(result: int, response_code: int,
 ## The page always includes a <div id="fallback"> table for non-JS browsers with:
 ##   <a href="/nightly/.../fceumm_libretro.dll.zip">fceumm_libretro.dll.zip</a>
 ##   <td class="fb-d">2026-03-06 03:10</td>
-func _parse_listing_html(html: String) -> Array[Dictionary]:
+func _parse_listing_html(html: String, suffixes := PackedStringArray(),
+						 ext := "") -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
+	if suffixes.is_empty():
+		suffixes = core_lib_suffixes()
+	if ext.is_empty():
+		ext = _core_lib_ext()
 
-	# Match relative hrefs that end in the platform-appropriate zip pattern
-	var zip_ext := _core_lib_ext() + "\\.zip"
-	var lib_suffix := _core_lib_suffix()
+	# Match relative hrefs that end in any of the platform-appropriate zip patterns
+	var zip_ext := ext + "\\.zip"
+	var suffix_alts := PackedStringArray()
+	for suffix: String in suffixes:
+		suffix_alts.append(suffix.replace("_", "\\_"))
+	var lib_suffix := "(?:" + "|".join(suffix_alts) + ")"
 	var href_regex := RegEx.new()
-	href_regex.compile('href="[^"]*?/([^"/_][^"]*?' + lib_suffix.replace("_", "\\_") + zip_ext + ')"')
+	href_regex.compile('href="[^"]*?/([^"/_][^"]*?' + lib_suffix + zip_ext + ')"')
 
 	# Date in the adjacent fb-d cell: "2026-03-06 03:10"
 	var date_regex := RegEx.new()
@@ -151,12 +206,9 @@ func _parse_listing_html(html: String) -> Array[Dictionary]:
 	for m: RegExMatch in href_matches:
 		var filename: String = m.get_string(1).get_file()  # strip any leading path
 
-		var core_name: String = filename
-		var zip_suffix := _core_lib_ext() + ".zip"
-		if core_name.ends_with(zip_suffix):
-			core_name = core_name.left(core_name.length() - zip_suffix.length())
-		if core_name.ends_with(_core_lib_suffix()):
-			core_name = core_name.left(core_name.length() - _core_lib_suffix().length())
+		var core_name := core_name_from_lib_filename(filename.trim_suffix(".zip"), suffixes, ext)
+		if core_name.is_empty():
+			continue
 
 		# Find closest date entry that comes after this href in the HTML
 		var href_pos := m.get_start()
@@ -209,8 +261,38 @@ func download_core(core_name: String, remote_date: String,
 		push_warning("CoreDownloadManager: already downloading '%s'" % core_name)
 		return
 
-	var zip_filename := core_name + _core_lib_suffix() + _core_lib_ext() + ".zip"
-	var zip_url := _buildbot_url() + zip_filename
+	_active_downloads[core_name] = {
+		"http":        null,
+		"progress_cb": progress_callback,
+		"done_cb":     done_callback,
+		"zip_path":    "",
+		"remote_date": remote_date,
+		"candidates":  _zip_candidates(core_name),
+		"attempt":     0
+	}
+	_start_download_attempt(core_name)
+
+
+## Zip names to try for a core, best guess first: whatever the buildbot listing
+## actually advertised, then each platform naming convention.
+func _zip_candidates(core_name: String) -> PackedStringArray:
+	var candidates := PackedStringArray()
+	for entry: Dictionary in available_cores:
+		if entry.get("core_name", "") == core_name:
+			var listed: String = entry.get("filename", "")
+			if not listed.is_empty():
+				candidates.append(listed)
+			break
+	for filename: String in core_lib_filenames(core_name):
+		var zip_name := filename + ".zip"
+		if not candidates.has(zip_name):
+			candidates.append(zip_name)
+	return candidates
+
+
+func _start_download_attempt(core_name: String) -> void:
+	var info: Dictionary = _active_downloads[core_name]
+	var zip_filename: String = (info["candidates"] as PackedStringArray)[info["attempt"] as int]
 	var zip_path := default_cores_dir().path_join(zip_filename)
 
 	var http := HTTPRequest.new()
@@ -219,24 +301,20 @@ func download_core(core_name: String, remote_date: String,
 	http.download_chunk_size = 65536
 	add_child(http)
 
-	_active_downloads[core_name] = {
-		"http":        http,
-		"progress_cb": progress_callback,
-		"done_cb":     done_callback,
-		"zip_path":    zip_path,
-		"remote_date": remote_date
-	}
+	info["http"]     = http
+	info["zip_path"] = zip_path
 
 	http.request_completed.connect(
 		func(result, response_code, _headers, _body):
 			_on_download_completed(core_name, result, response_code)
 	)
 
-	var err := http.request(zip_url)
+	var err := http.request(_buildbot_url() + zip_filename)
 	if err != OK:
+		var done_cb: Callable = info["done_cb"]
 		push_error("CoreDownloadManager: failed to start download of '%s' (err %d)" % [core_name, err])
 		_cleanup_download(core_name)
-		done_callback.call(false, "Failed to start request (err %d)" % err)
+		done_cb.call(false, "Failed to start request (err %d)" % err)
 
 
 func _process(_delta: float) -> void:
@@ -244,6 +322,8 @@ func _process(_delta: float) -> void:
 	for core_name: String in _active_downloads.keys():
 		var info: Dictionary = _active_downloads[core_name]
 		var http: HTTPRequest = info["http"]
+		if not is_instance_valid(http):
+			continue
 		var downloaded := http.get_downloaded_bytes()
 		var total := http.get_body_size()
 		if total > 0 and info["progress_cb"].is_valid():
@@ -259,14 +339,23 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 	var zip_path: String  = info["zip_path"]
 	var remote_date: String = info["remote_date"]
 
-	_cleanup_download(core_name)
-
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		# Remove incomplete zip if it exists
 		if FileAccess.file_exists(zip_path):
 			DirAccess.remove_absolute(zip_path)
+		# A 404 usually means this core doesn't follow the naming convention we
+		# guessed (azahar has no "_android" infix on Android) — try the next one.
+		var next_attempt: int = (info["attempt"] as int) + 1
+		if next_attempt < (info["candidates"] as PackedStringArray).size():
+			info["attempt"] = next_attempt
+			_free_download_request(core_name)
+			_start_download_attempt(core_name)
+			return
+		_cleanup_download(core_name)
 		done_cb.call(false, "HTTP error result=%d code=%d" % [result, response_code])
 		return
+
+	_cleanup_download(core_name)
 
 	# Extract the zip
 	var extract_err := _extract_zip(zip_path, default_cores_dir())
@@ -278,8 +367,8 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 		done_cb.call(false, "Zip extraction failed (err %d)" % extract_err)
 		return
 
-	# Update manifest
-	manifest.set_downloaded(core_name, remote_date)
+	# Update manifest with the name the core actually landed under
+	manifest.set_downloaded(core_name, remote_date, installed_core_lib(core_name))
 	print("[CoreDownloadManager] Downloaded and extracted: %s" % core_name)
 	done_cb.call(true, "")
 
@@ -317,8 +406,16 @@ func _extract_zip(zip_path: String, dest_dir: String) -> int:
 # ---------------------------------------------------------------------------
 
 func _cleanup_download(core_name: String) -> void:
-	if _active_downloads.has(core_name):
-		var http: HTTPRequest = _active_downloads[core_name]["http"]
-		if is_instance_valid(http):
-			http.queue_free()
-		_active_downloads.erase(core_name)
+	_free_download_request(core_name)
+	_active_downloads.erase(core_name)
+
+
+## Drop the HTTPRequest but keep the download entry, so the next filename
+## candidate can reuse its callbacks.
+func _free_download_request(core_name: String) -> void:
+	if not _active_downloads.has(core_name):
+		return
+	var http: HTTPRequest = _active_downloads[core_name]["http"]
+	if is_instance_valid(http):
+		http.queue_free()
+	_active_downloads[core_name]["http"] = null
