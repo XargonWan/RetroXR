@@ -45,3 +45,18 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var p: Vector3 = to_local(sock.global_position)
 	var seat_z := -body_size.z * 0.5 + cart_size.y * 0.5
 	slot.transform = Transform3D(b, Vector3(p.x, p.y, seat_z))
+
+
+## Hand the power switch the shell's own cap ("Pulsante_Accensione", the tab on
+## the top edge) instead of leaving it driving a hidden placeholder KnobMesh.
+##
+## Direction and throw are authored on the slider in game_boy.tscn: the DMG
+## moulds "OFF ◄ ► ON" into the top edge and ships the cap parked at the -X end
+## of its slot, which is OFF — so ON is +X. The slot is ~10 mm long against a
+## 4 mm cap, hence the 6 mm throw.
+func _on_glb_ready() -> void:
+	if _power_switch == null or _glb == null:
+		return
+	var cap := _glb.find_child("Pulsante_Accensione", true, false) as MeshInstance3D
+	if cap != null:
+		_power_switch.set_knob_mesh(cap)

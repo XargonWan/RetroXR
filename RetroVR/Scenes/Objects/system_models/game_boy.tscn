@@ -775,7 +775,7 @@ shape = SubResource("BoxShape3D_ncas5")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.030181766, -0.0012000024, -0.06947514)
 collision_layer = 1048577
 script = ExtResource("2_mi0jy")
-travel = 0.014
+travel = 0.006
 steps = 2
 engage_radius = 0.028
 
