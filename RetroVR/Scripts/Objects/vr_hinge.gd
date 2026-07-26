@@ -10,10 +10,11 @@
 ##     Once latched the hand need NOT stay in the grab box — the latch holds until
 ##     grip is released (VR) / the click is released (desktop).
 ##
-## Because it latches on grip / pointer-press (not the grip-GRAB of a pickable) it
-## never conflicts with grip-grabbing the whole device or a nearby pickable (the
-## cartridge stub): the device isn't a pickable, and the grab zone is only the
-## top (free) half of the lid.
+## It latches on grip / pointer-press rather than the grip-GRAB of a pickable. On
+## a fixed cabinet that is enough on its own, but a handheld or console IS an
+## XRToolsPickable, so one grip near the lid used to latch the hinge AND pick the
+## whole device up. claims_grip() below lets the pickup logic stand down when a
+## hand is on a lid — see the LOCAL PATCH in function_pickup._on_grip_pressed.
 ##
 ## Attach to an Area3D with a child CollisionShape3D covering the grab region (the
 ## desktop reticle ray hits this; VR engages on tip proximity to the Area origin).
@@ -44,6 +45,11 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 ## Icon glyph height, roughly, in metres.
 @export var icon_size: float = 0.028
 
+## Every hinge currently in the tree. Static so the grip handler can ask whether
+## a hand is on a lid WITHOUT walking the scene, on the hot path of every grip
+## press. Entries are added in _ready and removed in _exit_tree.
+static var _live: Array[VRHinge] = []
+
 var _grip_ctrl: XRController3D = null    # latched controller (grip held)
 var _pointer_held := false               # desktop pointer latched
 var _held_prev := false                  # held state at the END of last _process
@@ -52,12 +58,41 @@ var _controllers: Array[XRController3D] = []
 var _icon: Label3D = null
 
 
+## The live hinge that would take this controller's grip right now — its poke tip
+## is inside that hinge's engage radius and the hinge is currently grabbable — or
+## null. Returns the hinge, not a bool, so the caller can tell WHICH object the
+## lid belongs to and only stand down for that one.
+##
+## The lid WINS: a hinge is a small, deliberate target sitting on top of a much
+## larger grab volume (the whole console), so if the hand is close enough to work
+## the lid, that is what the player meant. Without this the same grip did both —
+## the lid swung and the console came off the table with it.
+static func claims_grip(controller: XRController3D) -> VRHinge:
+	if controller == null or not controller.get_is_active():
+		return null
+	var tip := PokeTip.tip_of(controller)
+	for h: VRHinge in _live:
+		if not is_instance_valid(h) or not h.is_inside_tree() or not h.is_visible_in_tree():
+			continue
+		if not h._can_engage():
+			continue
+		if h.global_position.distance_to(tip) <= h.engage_radius:
+			return h
+	return null
+
+
 func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
+	if not _live.has(self):
+		_live.append(self)
 	_build_icon()
 	await get_tree().process_frame
 	for node in get_tree().root.find_children("*", "XRController3D", true, false):
 		_controllers.append(node as XRController3D)
+
+
+func _exit_tree() -> void:
+	_live.erase(self)
 
 
 ## Set the target rotation without emitting (restore/populate use).
