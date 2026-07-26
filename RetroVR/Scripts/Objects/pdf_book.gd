@@ -319,10 +319,19 @@ func _load_pdf_internal(path: String) -> void:
 
 	_leaf_count = ceili(_page_count / 2.0)
 
-	# PDF points → meters: 1 pt = 1/72 inch = 0.0254/72 m ≈ 0.0003528 m
-	const PTS_TO_METERS := 0.0254 / 72.0
-	_base_width = _page_width * PTS_TO_METERS
-	_base_height = _page_height * PTS_TO_METERS
+	# Size from the ASPECT RATIO only, never from the declared page box.
+	#
+	# A scraped manual's page box is almost never a physical size — it is
+	# usually the scan's pixel dimensions taken as 72 dpi. Across the manuals on
+	# hand that gave a Game Boy Advance booklet at 508 x 381 mm and a Nintendo
+	# Power at 88 x 118 mm, off in both directions, so a plausibility window
+	# does not save it: 88 x 118 looks like a perfectly reasonable book. The
+	# scan's aspect ratio does survive, so use that and normalise the height,
+	# exactly as the CBZ path has always done. size_scale is the knob for
+	# anything that wants to be bigger or smaller.
+	var aspect := _page_width / maxf(_page_height, 1.0)
+	_base_height = _export_height
+	_base_width = _export_height * aspect
 
 	_cache_dir = "user://pdf_cache/" + pdf_path.md5_text() + ("_half/" if half_page_mode else "/")
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
@@ -1082,8 +1091,11 @@ func _valley_z() -> float:
 	var thinnest := minf(_side_thickness(1), _side_thickness(-1))
 	valley = maxf(valley, -thinnest * 0.5)
 	# The shallower page still has to dive a little, or its gutter edge would be
-	# pushed up instead of down.
-	return minf(valley, shallow - ZFIGHT_MARGIN)
+	# pushed up instead of down. The margin has to scale with the book: a
+	# 4-leaf game manual is 0.4 mm thick all in, so a flat 0.5 mm ZFIGHT_MARGIN
+	# drove the valley deeper than the entire book and dug a trough through its
+	# own back cover.
+	return minf(valley, shallow - minf(ZFIGHT_MARGIN, thinnest * 0.25))
 
 
 ## How far a page sitting at plane_z has to fall to reach the binding.
