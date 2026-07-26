@@ -114,6 +114,10 @@ var _romm_progress_pct: Dictionary = {}
 var _romm_delete_armed: int = -1
 ## Remaining systemids for an explicit "Sync all now".
 var _romm_sync_queue: Array[String] = []
+## "<systemid>/<filename>" -> Texture2D or null.
+const MAX_WHEEL_TEXTURES := 200
+var _wheel_cache: Dictionary = {}
+var _wheel_cache_order: Array[String] = []
 
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
@@ -1298,6 +1302,7 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	var source := str(model["source"])
 	var label := str(model["label"])
 	var rom_id := int(entry.get("id", 0))
+	var local_path := str(model["path"])
 
 	var state := row.get_node("State") as Button
 	var pct := state.get_node("Pct") as Label
@@ -1313,9 +1318,22 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	_disconnect_all(manual.pressed)
 	_disconnect_all(scrape.pressed)
 
-	# MarqueeButton keeps its own `text` empty and draws via an internal label —
-	# setting `text` directly would fight its width clipping.
-	main.set_marquee_text("  " + label)
+	# A scraped wheel logo replaces the title text entirely; otherwise the title
+	# scrolls. MarqueeButton extends Button, so it carries the icon itself.
+	var wheel: Texture2D = null
+	if not local_path.is_empty():
+		wheel = _cached_wheel_texture(systemid, local_path.get_file())
+	if wheel != null:
+		main.icon = wheel
+		main.expand_icon = true
+		main.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		main.set_marquee_text("")
+	else:
+		main.icon = null
+		main.expand_icon = false
+		# MarqueeButton keeps its own `text` empty and draws via an internal
+		# label — setting `text` directly would fight its width clipping.
+		main.set_marquee_text("  " + label)
 
 	# ── Leading state icon ──────────────────────────────────────────────────
 	var downloading := rom_id > 0 and romm_downloader.current_rom_id() == rom_id
@@ -1354,7 +1372,6 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	cover.visible = cover.texture != null
 
 	# ── Launch ──────────────────────────────────────────────────────────────
-	var local_path := str(model["path"])
 	if not local_path.is_empty():
 		main.pressed.connect(func() -> void:
 			if romm_cache != null:
@@ -1428,6 +1445,22 @@ func _on_rom_delete_pressed(index: int, state: Button) -> void:
 
 	show_notice("Deleted %s" % fname, 2.5)
 	_rebuild_romm_rows()
+
+
+## Memoized _load_wheel_texture. Binding is per-row per-scroll, and the raw
+## lookup is 4 file_exists calls plus a synchronous decode — misses are cached
+## too, since most ROMs have no wheel.
+func _cached_wheel_texture(systemid: String, filename: String) -> Texture2D:
+	var key := systemid + "/" + filename
+	if _wheel_cache.has(key):
+		return _wheel_cache[key]
+
+	var tex := _load_wheel_texture(systemid, filename)
+	_wheel_cache[key] = tex
+	_wheel_cache_order.append(key)
+	while _wheel_cache_order.size() > MAX_WHEEL_TEXTURES:
+		_wheel_cache.erase(_wheel_cache_order.pop_front())
+	return tex
 
 
 ## Rows are recycled, so every connection from the previous bind must go.
@@ -3772,7 +3805,11 @@ func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary)
 	_media_dl_refresh_cb = func(mtype: String, _path: String) -> void:
 		if mtype == "wheel" or mtype == "manual":
 			print("[SpawnMenu] Media downloaded (%s), refreshing cartridges tab." % mtype)
+			# The memo cached a miss for this ROM before the art existed.
+			_wheel_cache.clear()
+			_wheel_cache_order.clear()
 			_populate_cartridges_tab()
+			_rebuild_romm_rows()
 	scraper_client.media_download_completed.connect(_media_dl_refresh_cb)
 
 	# Download media files asynchronously
