@@ -24,10 +24,17 @@ size = Vector3(0.5, 0.4, 0.3)
 [sub_resource type="StandardMaterial3D" id="Mat_tvbody"]
 albedo_color = Color(0.1, 0.1, 0.1, 1)
 
+; local_to_scene: every TV drives its OWN phosphor pair through these materials
+; each frame (_update_phosphor sets src/prev/decay, then arms the viewport). A
+; shared sub-resource makes the last writer in the frame win for every viewport
+; rendered that frame — with more than one TV in the room, an idle "no signal"
+; set overwrites a running core's picture and the game's TV goes blue.
 [sub_resource type="ShaderMaterial" id="Mat_phosphor_a"]
+resource_local_to_scene = true
 shader = ExtResource("8_phosphor")
 
 [sub_resource type="ShaderMaterial" id="Mat_phosphor_b"]
+resource_local_to_scene = true
 shader = ExtResource("8_phosphor")
 
 [sub_resource type="StandardMaterial3D" id="Mat_screen"]
