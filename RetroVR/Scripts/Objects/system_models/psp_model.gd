@@ -162,6 +162,14 @@ func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
 ## value_changed signal — which left the cap unlit under the pointer and the
 ## travel axis defined in two places. Direction and throw are authored on the
 ## slider in psp.tscn.
+##
+## That axis is NOT a cardinal direction. The right edge tapers — it is widest at
+## the bottom and narrows toward the top — so the cap has to travel along the
+## surface it sits in, about 19 degrees off -Z. Sliding it straight along -Z (the
+## obvious reading of "pushes up") buries it 1.4 mm into the shell over a 4 mm
+## throw. The authored (0.320634, 0, -0.947203) is the shell's own edge tangent,
+## least-squares fitted across the travel span at the switch's height; the cap
+## mesh's principal axis independently agrees to within 1.5 degrees.
 var _power_mesh: MeshInstance3D = null
 
 
