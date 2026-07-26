@@ -44,6 +44,12 @@ project/assembly_name="retrovr"
 
 enabled=PackedStringArray("res://addons/godot-xr-tools/plugin.cfg")
 
+[importer_defaults]
+
+texture={
+"compress/size_limit": 2048
+}
+
 [input]
 
 ui_left={
@@ -254,7 +260,7 @@ common/physics_interpolation=true
 [rendering]
 
 textures/vram_compression/import_etc2_astc=true
-anti_aliasing/quality/msaa_3d=2
+anti_aliasing/quality/msaa_3d=1
 openxr/multiview=true
 renderer/rendering_method.android="mobile"
 
@@ -266,9 +272,3 @@ openxr/extensions/hand_tracking=true
 shaders/enabled=true
 openxr/extensions/meta/passthrough=true
 openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/sharpening_mode=1
-
-[importer_defaults]
-
-texture={
-"compress/size_limit": 2048
-}
