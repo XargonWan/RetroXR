@@ -44,6 +44,25 @@ const TV_STACK_GAP := 0.012       ## air between stacked dual-screen TVs
 
 const LIGHT_SPACING := 4.0
 
+# --- Detail culling ---------------------------------------------------------
+# A 46 m hall puts all 34 stations in view at once, and a station is ~74
+# renderables for the console plus ~38 for each TV — port recesses, snap
+# highlights, button caps, labels. Submitting those for a station 30 m away
+# costs a draw call each and covers a pixel or two.
+#
+# Parts are graded by their own AABB rather than by name, so this keeps working
+# as models change. Three tiers, not two: one threshold either kept the junk or
+# culled the console shells along with it, because a shell is split into many
+# modestly-sized surfaces while the labels and port recesses are tiny.
+#
+# [below this size (m), draw distance (m)] — first match wins; anything larger
+# than the last entry is a silhouette and gets SILHOUETTE_CULL_DIST.
+const CULL_TIERS := [
+	[0.13, 8.0],    ## labels, port recesses, snap-highlight ghosts, button caps
+	[0.30, 17.0],   ## shell sub-surfaces, bezels, lids
+]
+const SILHOUETTE_CULL_DIST := 34.0
+
 # --- Exhibit --------------------------------------------------------------------
 
 ## Console generations, in order down the hallway. Each system is
@@ -221,6 +240,11 @@ func _build_station(systemid: String, variant: String, plaque: String,
 		# Cables spawn deferred, so this parks as a pending restore and snaps
 		# itself as soon as the plug exists.
 		sys.restore_cable_connection(tv, ch)
+		_cull_detail(tv)
+
+	# Deferred for the system: the model scene is instantiated in its _ready,
+	# so its meshes do not exist yet at this point.
+	_cull_detail.call_deferred(sys)
 
 
 ## Table: top slab, skirt and four legs, plus the name plaque on the front edge.
@@ -250,6 +274,8 @@ func _build_table(bay: Transform3D, name_stem: String, plaque: String) -> void:
 			body.add_child(_box_mesh("Leg", Vector3(0.06, leg_h, 0.06),
 				Vector3(sx * (TABLE_W * 0.5 - 0.06), leg_h * 0.5,
 					sz * (TABLE_D * 0.5 - 0.06)), _mat_table_frame))
+
+	_cull_detail(body)
 
 	var label := Label3D.new()
 	label.name = "Plaque"
@@ -362,6 +388,29 @@ func _box_mesh(mesh_name: String, size: Vector3, pos: Vector3,
 	mi.position = pos
 	mi.set_surface_override_material(0, mat)
 	return mi
+
+
+## Give every renderable under `root` a draw distance, sized by how big the part
+## itself is. Nothing is hidden that you could have made out anyway.
+func _cull_detail(root: Node) -> void:
+	if root == null or not is_instance_valid(root):
+		return
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if not (n is GeometryInstance3D):
+			continue
+		var g := n as GeometryInstance3D
+		var span: float = (g as VisualInstance3D).get_aabb().size.length()
+		var dist: float = SILHOUETTE_CULL_DIST
+		for tier: Array in CULL_TIERS:
+			if span < float(tier[0]):
+				dist = float(tier[1])
+				break
+		g.visibility_range_end = dist
+		g.visibility_range_end_margin = dist * 0.12
 
 
 ## The y a body must sit at for the bottom of its collision box to rest on
