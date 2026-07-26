@@ -82,6 +82,7 @@ var _cache_dir: String = ""
 @onready var _right_stack: MeshInstance3D = $RightStack
 @onready var _right_stack_top: MeshInstance3D = $RightStack/RightStackTop
 @onready var _spine_node: Node3D = $Spine
+@onready var _spine_mesh: MeshInstance3D = $Spine/SpineMesh
 @onready var _active_leaf_container: Node3D = $ActiveLeafContainer
 @onready var _options_panel: BookOptionsPanel = $BookOptionsPanel
 
@@ -107,12 +108,45 @@ const ZFIGHT_MARGIN := 0.0005       # tiny margin to prevent Z-fighting on copla
 const HINT_LABEL_OFFSET := 0.02     # distance outside the book edge for hint labels
 const MIN_COLLISION_DEPTH := 0.04   # minimum collision shape Z — keeps thin books stable on surfaces
 
+# ── Paper rendering ───────────────────────────────────────────────────────────
+
+const PAPER_SHADER := preload("res://Shaders/paper.gdshader")
+const EDGE_SHADER := preload("res://Shaders/page_edge.gdshader")
+const SPINE_SHADER := preload("res://Shaders/spine.gdshader")
+
+## Grid resolution of the resting spread pages and of the leaf being turned.
+## The resting pages only carry the smooth rest bow; the turning leaf has to
+## resolve a crease of radius ~1 cm, so it gets a much finer grid. Quest runs
+## roughly half the density (the arcade scene is already over frame budget).
+const SPREAD_SUBDIV_DESKTOP := Vector2i(12, 8)
+const SPREAD_SUBDIV_QUEST := Vector2i(8, 6)
+const LEAF_SUBDIV_DESKTOP := Vector2i(32, 22)
+const LEAF_SUBDIV_QUEST := Vector2i(20, 14)
+
+## Vertex displacement does not update a mesh's culling bounds, so every paper
+## surface gets an explicit custom_aabb sized to the worst-case curl envelope —
+## without it a folded page vanishes as soon as the book's origin leaves the
+## frustum (the same trap verlet_rope.gd hit with surface_update_vertex_region).
+const PAPER_AABB_MARGIN := 0.02
+const PAPER_AABB_DEPTH := 0.16
+
+## How deep the gutter valley runs, as a fraction of the stack on that side.
+## A thick book has a deep valley and a thin magazine barely any, so this cannot
+## be a constant — at a fixed 4 mm a 110-page magazine's pages dove clean
+## through its own back cover.
+const GUTTER_DIVE_RATIO := 0.6
+const GUTTER_DIVE_MAX := 0.008
+
 # Async page rendering
 var _render_mutex := Mutex.new()
 var _pending_renders: Dictionary = {}  # page_index -> true
 
 # Loading placeholder texture
 var _loading_texture: ImageTexture = null
+
+# 1-pixel-wide colour strip taken from the cover's inner edge, wrapped around
+# the binding by spine.gdshader. Built once per loaded book.
+var _spine_strip: ImageTexture = null
 
 # Hint labels for page turning
 var _next_label: Label3D = null
@@ -147,6 +181,12 @@ func net_set_download_status(text: String) -> void:
 func _ready() -> void:
 	super._ready()
 	_export_height = book_height   # pristine value: the CBZ sizing base
+	# The spread pages bend; PickableHighlight's inverted-hull copy would not,
+	# so a bowed or folded page would poke through its own flat outline shell.
+	# They sit inside the stack silhouette anyway, so the book still outlines
+	# completely from the stacks, covers and spine.
+	_left_stack_top.add_to_group("outline_exclude")
+	_right_stack_top.add_to_group("outline_exclude")
 	_create_loading_texture()
 	_create_hint_labels()
 	await get_tree().process_frame
@@ -525,12 +565,11 @@ func _configure_meshes() -> void:
 
 	# Spine initial setup: full closed-book depth, centered at Z=0
 	var total_thick := maxf(_leaf_count * LEAF_THICKNESS, LEAF_THICKNESS * 2)
-	var closed_spine_depth := total_thick + COVER_THICKNESS + ZFIGHT_MARGIN
-	var spine_mesh := _spine_node.get_node("SpineMesh") as MeshInstance3D
-	if spine_mesh and spine_mesh.mesh is BoxMesh:
-		spine_mesh.mesh = spine_mesh.mesh.duplicate()
-		(spine_mesh.mesh as BoxMesh).size = Vector3(SPINE_WIDTH, book_height + SPINE_HEIGHT_MARGIN, closed_spine_depth)
-	_spine_node.position.z = 0.0
+	if _spine_mesh and _spine_mesh.mesh is BoxMesh:
+		_spine_mesh.mesh = _spine_mesh.mesh.duplicate()
+		(_spine_mesh.mesh as BoxMesh).size = Vector3(SPINE_WIDTH, book_height + SPINE_HEIGHT_MARGIN, total_thick)
+	_ensure_spine_material()
+	_set_spine_closed(total_thick)
 
 	# Hint label positions — just outside the full book width
 	_next_label.position = Vector3(stack_x + half_w + HINT_LABEL_OFFSET, 0, 0)
@@ -538,29 +577,100 @@ func _configure_meshes() -> void:
 
 	# Collision shape will be sized per-state in _update_collision_shape()
 
-	# Create unique materials so textures don't bleed between meshes
-	_ensure_unique_material(_cover_mesh)
-	_ensure_unique_material(_back_cover_mesh)
-	_ensure_unique_material(_left_stack_top)
-	_ensure_unique_material(_right_stack_top)
+	# Per-instance materials: textures must not bleed between meshes, and each
+	# page surface carries its own size / spine_sign / fold uniforms.
+	_ensure_paper_material(_cover_mesh, true)
+	_ensure_paper_material(_back_cover_mesh, true)
+	_ensure_paper_material(_left_stack_top, false)
+	_ensure_paper_material(_right_stack_top, false)
+	_ensure_edge_material(_left_stack, _current_leaf + 1)
+	_ensure_edge_material(_right_stack, _leaf_count - _current_leaf - 1)
 
 
 func _set_mesh_size(mesh_node: MeshInstance3D, w: float, h: float) -> void:
 	if not mesh_node:
 		return
-	var mesh := mesh_node.mesh
-	if mesh is QuadMesh:
-		(mesh as QuadMesh).size = Vector2(w, h)
-	elif mesh is PlaneMesh:
-		(mesh as PlaneMesh).size = Vector2(w, h)
+	# QuadMesh derives from PlaneMesh, so both carry the subdivision properties.
+	var mesh := mesh_node.mesh as PlaneMesh
+	if mesh == null:
+		return
+	mesh.size = Vector2(w, h)
+	var subdiv := SPREAD_SUBDIV_DESKTOP if QualityManager.is_desktop() else SPREAD_SUBDIV_QUEST
+	mesh.subdivide_width = subdiv.x
+	mesh.subdivide_depth = subdiv.y
+	_set_paper_aabb(mesh_node, w, h)
 
 
-func _ensure_unique_material(mesh_node: MeshInstance3D) -> void:
+## Cover the worst-case curl envelope: a folded page reaches ~2 curl radii off
+## the plane and can lay itself across the far half of the book.
+func _set_paper_aabb(mesh_node: MeshInstance3D, w: float, h: float) -> void:
+	var m := PAPER_AABB_MARGIN
+	mesh_node.custom_aabb = AABB(
+		Vector3(-w - m, -h * 0.5 - m, -PAPER_AABB_DEPTH * 0.5),
+		Vector3(w * 2.0 + m * 2.0, h + m * 2.0, PAPER_AABB_DEPTH))
+
+
+## Give a page surface its own ShaderMaterial running paper.gdshader, and push
+## the size-dependent uniforms into it. Covers are stiffer and opaque: no bow,
+## no gutter dive, no light bleeding through.
+func _ensure_paper_material(mesh_node: MeshInstance3D, is_cover: bool) -> ShaderMaterial:
+	if not mesh_node:
+		return null
+	var mat := mesh_node.get_surface_override_material(0) as ShaderMaterial
+	if mat == null or mat.shader != PAPER_SHADER:
+		mat = ShaderMaterial.new()
+		mat.shader = PAPER_SHADER
+		mesh_node.set_surface_override_material(0, mat)
+	mat.set_shader_parameter("page_size", Vector2(_book_width, book_height))
+	if is_cover:
+		mat.set_shader_parameter("gutter_dive", 0.0)
+		mat.set_shader_parameter("bow_amount", 0.0)
+		mat.set_shader_parameter("fore_droop", 0.0)
+		mat.set_shader_parameter("edge_curl", 0.0)
+		mat.set_shader_parameter("gutter_ao", 0.25)
+		mat.set_shader_parameter("backlight_amount", 0.0)
+		mat.set_shader_parameter("roughness", 0.55)
+		mat.set_shader_parameter("sheen", 0.35)
+		mat.set_shader_parameter("fibre_strength", 0.12)
+	return mat
+
+
+## Fore-edge material for a page stack. leaf_count drives the stripe pitch, and
+## the box is authored at STACK_BASE_DEPTH before the book scales it on Z.
+func _ensure_edge_material(mesh_node: MeshInstance3D, leaves: int) -> void:
 	if not mesh_node:
 		return
-	var mat := mesh_node.get_active_material(0)
-	if mat:
-		mesh_node.set_surface_override_material(0, mat.duplicate())
+	var mat := mesh_node.get_surface_override_material(0) as ShaderMaterial
+	if mat == null or mat.shader != EDGE_SHADER:
+		mat = ShaderMaterial.new()
+		mat.shader = EDGE_SHADER
+		mesh_node.set_surface_override_material(0, mat)
+	mat.set_shader_parameter("stack_depth", STACK_BASE_DEPTH)
+	mat.set_shader_parameter("leaf_count", float(maxi(leaves, 1)))
+
+
+## Which way u runs on this page: the gutter is at book-local x = 0, so work out
+## which of the mesh's own local X directions points at it. The covers flip 180
+## degrees about Y between states, so this cannot be a constant per node.
+func _page_spine_sign(mesh_node: MeshInstance3D) -> float:
+	if not mesh_node or not is_inside_tree():
+		return 1.0
+	var xf := global_transform.affine_inverse() * mesh_node.global_transform
+	if is_zero_approx(xf.origin.x):
+		return 1.0
+	var to_gutter: Vector3 = xf.basis.inverse() * Vector3(-signf(xf.origin.x), 0.0, 0.0)
+	if is_zero_approx(to_gutter.x):
+		return 1.0
+	return -signf(to_gutter.x)
+
+
+## Refresh spine_sign on every page surface. Called after any state change that
+## moves or rotates a page.
+func _update_page_frames() -> void:
+	for mesh_node: MeshInstance3D in [_cover_mesh, _back_cover_mesh, _left_stack_top, _right_stack_top]:
+		var mat := mesh_node.get_surface_override_material(0) as ShaderMaterial
+		if mat:
+			mat.set_shader_parameter("spine_sign", _page_spine_sign(mesh_node))
 
 
 ## Apply a texture to a MeshInstance3D's material albedo.
@@ -606,6 +716,7 @@ func _set_state(new_state: BookState) -> void:
 			_right_stack_top.visible = false
 			_left_stack.visible = false
 			_set_spine_closed(total_thick)
+			_ensure_edge_material(_right_stack, _leaf_count)
 			_update_cover_texture()
 			_update_back_cover_texture()
 			_prefetch_nearby_pages()
@@ -642,10 +753,13 @@ func _set_state(new_state: BookState) -> void:
 			_left_stack_top.visible = false
 			_right_stack.visible = false
 			_set_spine_closed(total_thick)
+			_ensure_edge_material(_left_stack, _leaf_count)
 			_update_cover_texture()
 			_update_back_cover_texture()
 			_prefetch_nearby_pages()
 			_update_collision_shape()
+
+	_update_page_frames()
 
 
 ## Update the CollisionShape3D so the grab/highlight area matches the visible book.
@@ -672,17 +786,81 @@ func _update_collision_shape() -> void:
 			col_shape.position = Vector3(-half_w, 0, 0)
 
 
-## Set spine to full closed-book depth, centered at Z=0.
+## Closed book: the spine is the outward binding, flush with the two covers.
+## The covers are zero-thickness quads sitting at +/-(total_thick/2 + COVER_GAP),
+## so that — not COVER_THICKNESS, which double-counted them and left the spine
+## standing proud of the cover as a visible lip — is the span to match.
 func _set_spine_closed(total_thick: float) -> void:
-	var spine_mesh := _spine_node.get_node("SpineMesh") as MeshInstance3D
-	if spine_mesh and spine_mesh.mesh is BoxMesh:
-		(spine_mesh.mesh as BoxMesh).size.z = total_thick + COVER_THICKNESS + ZFIGHT_MARGIN
+	if _spine_mesh and _spine_mesh.mesh is BoxMesh:
+		(_spine_mesh.mesh as BoxMesh).size.z = total_thick + COVER_GAP * 2.0 + ZFIGHT_MARGIN
 	_spine_node.position.z = 0.0
+	var mat := _spine_mesh.get_surface_override_material(0) as ShaderMaterial
+	if mat:
+		mat.set_shader_parameter("gutter_shade", 0.0)
+		mat.set_shader_parameter("spine_depth", total_thick + COVER_GAP * 2.0)
+
+
+## How deep the gutter valley runs on a stack of this thickness.
+func _gutter_dive_for(thick: float) -> float:
+	return minf(thick * GUTTER_DIVE_RATIO, GUTTER_DIVE_MAX)
+
+
+## Push the per-side valley depth into the two spread page materials. The two
+## halves of an open book are rarely the same thickness, so each page dives by
+## its own amount.
+func _update_gutter_depth(left_thick: float, right_thick: float) -> void:
+	var pairs := [[_left_stack_top, left_thick], [_right_stack_top, right_thick]]
+	for pair: Array in pairs:
+		var mat := (pair[0] as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+		if mat:
+			mat.set_shader_parameter("gutter_dive", _gutter_dive_for(float(pair[1])))
+
+
+## The binding material. The cover's own inner edge is wrapped around the spine
+## so the book's spine matches its artwork instead of a fixed colour.
+func _ensure_spine_material() -> void:
+	if not _spine_mesh:
+		return
+	var mat := _spine_mesh.get_surface_override_material(0) as ShaderMaterial
+	if mat == null or mat.shader != SPINE_SHADER:
+		mat = ShaderMaterial.new()
+		mat.shader = SPINE_SHADER
+		_spine_mesh.set_surface_override_material(0, mat)
+	mat.set_shader_parameter("spine_height", book_height + SPINE_HEIGHT_MARGIN)
+	mat.set_shader_parameter("spine_width", SPINE_WIDTH)
 
 
 func _update_cover_texture() -> void:
 	var tex := _get_page_texture(0)
 	_apply_texture(_cover_mesh, tex)
+	_update_spine_strip(tex)
+
+
+## Wrap the cover around the binding. Sampling the cover texture directly in the
+## spine shader smeared one column of pixels down the whole spine; averaging a
+## band of the cover's inner edge into a 1-pixel-wide strip keeps the colour
+## banding that makes the spine match the artwork without the streaking.
+func _update_spine_strip(tex: Texture2D) -> void:
+	if _spine_mesh == null or tex == null or tex == _loading_texture or _spine_strip != null:
+		return
+	var mat := _spine_mesh.get_surface_override_material(0) as ShaderMaterial
+	if mat == null:
+		return
+	var src := tex.get_image()
+	if src == null or src.get_width() == 0:
+		return
+	var rows := mini(src.get_height(), 256)
+	var band := maxi(1, src.get_width() / 32)
+	var strip := Image.create(1, rows, false, Image.FORMAT_RGBA8)
+	for y in rows:
+		var sy := y * src.get_height() / rows
+		var acc := Color(0.0, 0.0, 0.0)
+		for x in band:
+			acc += src.get_pixel(x, sy)
+		strip.set_pixel(0, y, acc / float(band))
+	_spine_strip = ImageTexture.create_from_image(strip)
+	mat.set_shader_parameter("cover_texture", _spine_strip)
+	mat.set_shader_parameter("has_cover", true)
 
 
 func _update_back_cover_texture() -> void:
@@ -713,16 +891,29 @@ func _update_stack_thickness() -> void:
 
 	if _left_stack:
 		_left_stack.scale.z = left_thick / STACK_BASE_DEPTH
+		_ensure_edge_material(_left_stack, left_count)
 	if _right_stack:
 		_right_stack.scale.z = right_thick / STACK_BASE_DEPTH
+		_ensure_edge_material(_right_stack, right_count)
 
-	# Spine spans the full book thickness in OPEN state, same as closed — centered at Z=0.
+	_update_gutter_depth(left_thick, right_thick)
+
+	# Open book: the binding is the FLOOR of the gutter valley, not a wall
+	# between the pages. Its top has to finish below where each page bottoms out
+	# diving into the gutter — centred at Z=0 with the full book depth it stood
+	# proud of both stacks as a bright slab down the middle of the spread.
 	var max_thick := maxf(left_thick, right_thick)
-	var open_spine_depth := max_thick + COVER_THICKNESS + ZFIGHT_MARGIN
-	var spine_mesh := _spine_node.get_node("SpineMesh") as MeshInstance3D
-	if spine_mesh and spine_mesh.mesh is BoxMesh:
-		(spine_mesh.mesh as BoxMesh).size.z = open_spine_depth
-	_spine_node.position.z = 0.0
+	var valley_top := minf(left_thick * 0.5 - _gutter_dive_for(left_thick),
+		right_thick * 0.5 - _gutter_dive_for(right_thick)) - ZFIGHT_MARGIN
+	var spine_bottom := -(max_thick * 0.5 + COVER_GAP)
+	var open_spine_depth := maxf(valley_top - spine_bottom, LEAF_THICKNESS * 4.0)
+	if _spine_mesh and _spine_mesh.mesh is BoxMesh:
+		(_spine_mesh.mesh as BoxMesh).size.z = open_spine_depth
+	_spine_node.position.z = spine_bottom + open_spine_depth * 0.5
+	var spine_mat := _spine_mesh.get_surface_override_material(0) as ShaderMaterial
+	if spine_mat:
+		spine_mat.set_shader_parameter("gutter_shade", 1.0)
+		spine_mat.set_shader_parameter("spine_depth", open_spine_depth)
 
 	# Position covers just behind their respective stacks
 	var half_w := _book_width / 2.0
@@ -1028,6 +1219,7 @@ func _cleanup() -> void:
 	_render_mutex.unlock()
 	_cbz_entries.clear()
 	_cbz_path = ""
+	_spine_strip = null
 	_texture_cache.clear()
 	_pending_renders.clear()
 	_despawn_active_leaf()
