@@ -236,9 +236,6 @@ func _worker(args: Dictionary) -> void:
 	var actual_size := _file_size(dest)
 	_register.call_deferred(systemid, fs_name, rom_id, actual_size, expected_md5)
 
-	# Sidecars: cover art into media/label/ so the cart/disc picks it up with no
-	# code change, and metadata into gamelist.json.
-	_fetch_cover(args, entry, systemid, fs_name)
 	_merge_gamelist.call_deferred(systemid, entry, fs_name)
 
 	_emit_finished.call_deferred(rom_id, true, launch_path, "")
@@ -375,55 +372,6 @@ func _extract_multi(zip_path: String, systemid: String) -> String:
 	DirAccess.remove_absolute(zip_path)
 
 	return launch if not launch.is_empty() else first_playable
-
-
-## Cover art → media/label/<basename>.<ext>. MediaDimensions.load_label_texture
-## then paints it on the cartridge/disc with no changes anywhere else.
-## Art is served by nginx off /assets with NO auth gate, so no headers here.
-func _fetch_cover(args: Dictionary, entry: Dictionary, systemid: String, fs_name: String) -> void:
-	var cover := str(entry.get("cover_large", ""))
-	if cover.is_empty():
-		cover = str(entry.get("cover_small", ""))
-	if cover.is_empty():
-		return
-
-	var http := RommHttp.new()
-	if http.open(args["base_url"]) != RommHttp.Result.OK:
-		return
-
-	# The path already carries /assets/romm/resources and a ?ts= buster —
-	# never rebuild it, and encode the query (ts is a raw datetime with spaces).
-	var ext := cover.get_extension()
-	if ext.contains("?"):
-		ext = ext.split("?")[0]
-	if ext.is_empty():
-		ext = "png"
-
-	var dir := RomLibrary.rom_dir_for_system(systemid).path_join("media/label")
-	DirAccess.make_dir_recursive_absolute(dir)
-	var out_path := dir.path_join("%s.%s" % [fs_name.get_basename(), ext])
-
-	var f := FileAccess.open(out_path, FileAccess.WRITE)
-	if f == null:
-		http.close()
-		return
-
-	var resp := http.download_to_file(_encode_asset_path(cover), PackedStringArray(), f,
-		Callable(), func() -> bool: return _abort)
-	f.close()
-	http.close()
-
-	if int(resp["result"]) != RommHttp.Result.OK or int(resp["received"]) < 256:
-		if FileAccess.file_exists(out_path):
-			DirAccess.remove_absolute(out_path)
-
-
-## Percent-encode only the query, leaving the path separators intact.
-static func _encode_asset_path(path: String) -> String:
-	var q := path.find("?")
-	if q < 0:
-		return path
-	return path.substr(0, q) + "?" + path.substr(q + 1).uri_encode()
 
 
 # ---------------------------------------------------------------------------
