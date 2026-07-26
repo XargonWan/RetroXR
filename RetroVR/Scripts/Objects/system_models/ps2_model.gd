@@ -184,7 +184,10 @@ func _wire_button(btn: VRButton, mesh_name: String, anchor: Vector3) -> void:
 		btn.set_button_mesh(mesh)
 	btn.global_position = anchor
 	btn.depress_depth = 0.0022
-	btn.set_depress_axis_world(Vector3.DOWN)
+	# POWER and OPEN are thin strips on the console's FRONT face (z +0.067 on a
+	# body that ends at +0.069), so they sink INTO that face. Pressing them DOWN
+	# just slid them along the outside of it.
+	btn.set_depress_axis_world(Vector3.FORWARD)
 	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 	if lbl != null:
 		lbl.hide()
@@ -204,6 +207,7 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 
 
 func configure_controller_ports(port_zones: Array) -> void:
+	RetroSystemModel.hide_port_placeholders(port_zones)
 	var p := _anchor("Playstation Controller Plug")
 	for i in range(port_zones.size()):
 		# An authored "PortSeat1"/"PortSeat2" marker (baked into ps2.tscn /

@@ -547,3 +547,22 @@ func _fix_front_band(root: Node3D) -> void:
 	var fixed := (band as BaseMaterial3D).duplicate() as BaseMaterial3D
 	fixed.albedo_color = (shell as BaseMaterial3D).albedo_color
 	deck.set_surface_override_material(_BAND_SURFACE, fixed)
+
+
+## Rest the console ON the surface it is placed on.
+##
+## Without this the NES kept system.tscn's generic box, which is centred on the
+## model origin — so half of it hung BELOW the shell, and every table and floor
+## contact held the console 5 cm up in the air. Every other console overrides
+## this; the front-loader was the one that never did. Sized to NesDeck (the body
+## shell, 0.252 x 0.092 x 0.200) rather than the whole model, so the AV lead
+## trailing off +X doesn't inflate the box.
+func configure_collision(host: Node3D) -> void:
+	var box := Vector3(0.26, 0.094, 0.206)
+	var pos := Vector3(0.0, 0.047, 0.0)
+	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
+		var col := host.get_node_or_null(path) as CollisionShape3D
+		if col != null and col.shape is BoxShape3D:
+			col.shape = col.shape.duplicate()
+			(col.shape as BoxShape3D).size = box
+			col.position = pos

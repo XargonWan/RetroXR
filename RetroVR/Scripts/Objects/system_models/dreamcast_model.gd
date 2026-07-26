@@ -121,6 +121,7 @@ func _on_lid_swung(_deg: float) -> void:
 ## zones sit. Absent → leave the zones at that same generic default
 ## (unchanged from before this existed).
 func configure_controller_ports(port_zones: Array) -> void:
+	RetroSystemModel.hide_port_placeholders(port_zones)
 	for i in range(port_zones.size()):
 		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
 		if seat != null:
@@ -128,9 +129,16 @@ func configure_controller_ports(port_zones: Array) -> void:
 
 
 # --- buttons (power + open; Dreamcast has no reset button) ---
-func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, eject_btn: VRButton) -> void:
+func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
 	_wire_button(power_btn, "Power Button")
 	_wire_button(eject_btn, "Eject Button")
+	# The Dreamcast has no reset button, and this shell models none — so the
+	# cabinet's generic one had nothing to adopt and sat on the case as a grey
+	# box with a floating label. Hide the widget rather than leave a control
+	# that never existed.
+	if reset_btn != null:
+		reset_btn.visible = false
+		reset_btn.set_deferred("monitoring", false)
 
 
 func _wire_button(btn: VRButton, mesh_name: String) -> void:

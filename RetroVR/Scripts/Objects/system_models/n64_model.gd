@@ -59,6 +59,13 @@ func _ready() -> void:
 		if m:
 			_led.append(m)
 	_set_led(false)
+	# The shell ships controller plugs already seated in ports 1 and 2. RetroVR
+	# spawns its own plug on a cable, so those are two plug ends permanently
+	# stuck in the console.
+	for nm in ["Plug1", "Plug12"]:
+		var plug := _glb.find_child(nm, true, false) as MeshInstance3D
+		if plug != null:
+			plug.visible = false
 	# The cart-seat preview box is an editor aid only — hide it at runtime.
 	var preview := find_child("SeatPreview", true, false)
 	if preview is Node3D:
@@ -159,6 +166,7 @@ func configure_controller_ports(port_zones: Array) -> void:
 	# "Port1"/"Port2" below are the shell's OWN native marker names (from the
 	# GLB itself, like Famicom's "prisemanette1_low") — not this convention —
 	# so they stay as the computed fallback, not something to rename.
+	RetroSystemModel.hide_port_placeholders(port_zones)
 	var any_seat := false
 	for i in range(port_zones.size()):
 		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D

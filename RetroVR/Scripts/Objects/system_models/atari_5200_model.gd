@@ -123,11 +123,16 @@ func _wire_switch(btn: VRButton, anchor_name: String, has_mesh: bool) -> void:
 		btn.global_position = _mesh_center(anchor_name)
 	else:
 		btn.global_position = _anchor(anchor_name)
+		# No cap mesh to adopt — hide the generic placeholder square instead of
+		# leaving a grey box sitting on the shell's own moulded switch.
+		var ph := btn.get_node_or_null("ButtonMesh") as MeshInstance3D
+		if ph != null:
+			ph.visible = false
 	btn.depress_depth = _SWITCH_THROW
-	# FORWARD is -Z: the AV/power jack (Cable Plug (Y)) sits at the shell's -Z
-	# extreme (the back), so +Z is the front — same convention as the 2600 —
-	# and these switches push toward -Z (into the shell) to engage.
-	btn.set_depress_axis_world(Vector3.FORWARD)
+	# These sit on the console's TOP deck, so they sink straight DOWN. They used
+	# to travel along -Z, which slid them forward across the deck instead of
+	# into it.
+	btn.set_depress_axis_world(Vector3.DOWN)
 	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 	if lbl != null:
 		lbl.hide()

@@ -89,6 +89,22 @@ func has_start_stop_button() -> bool:
 	return not is_handheld()
 
 
+## Hide the generic grey port box and its number on every controller port.
+##
+## system.tscn ships those as stand-ins for the procedural default shell, which
+## has no port geometry of its own. Any console whose GLB moulds real ports wants
+## them gone — otherwise a grey cube and a floating "1" sit on top of the moulded
+## socket. Call from configure_controller_ports.
+static func hide_port_placeholders(port_zones: Array) -> void:
+	for z: Node in port_zones:
+		var recess := z.get_node_or_null("PortRecess") as MeshInstance3D
+		if recess != null:
+			recess.hide()
+		var lbl := z.get_node_or_null("PortLabel") as Label3D
+		if lbl != null:
+			lbl.hide()
+
+
 ## Handhelds: create and wire the on-device controls (volume slider, power
 ## switch) against the owning RetroSystem. Called after the model loads.
 func configure_handheld_controls(host: Node3D) -> void:
