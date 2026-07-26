@@ -36,7 +36,7 @@
 // multiplies are light-transport operations and belong exactly here.
 
 // ── Geometry ────────────────────────────────────────────────────────────────
-// The tube face is real curved GEOMETRY now (Scenes/Objects/tv_screen_curved.tres),
+// The tube face is real curved GEOMETRY now (Scenes/Objects/tv_screen_curved.res),
 // so this barrel warp defaults to off. A UV warp is monoscopic — it has no parallax
 // and no binocular depth, so in a headset it reads as a flat sticker. Kept only as
 // an extra stylistic knob.
@@ -50,8 +50,8 @@ uniform float crt_mask_strength : hint_range(0.0, 1.0) = 0.55;
 // Triads across the tube's width and phosphor rows down its height. Both are set
 // from tv.gd out of a physical pitch in mm times the screen's world size, so
 // scaling the TV up adds triads instead of growing them.
-uniform float crt_mask_triads = 320.0;
-uniform float crt_mask_rows = 152.0;
+uniform float crt_mask_triads = 175.0;
+uniform float crt_mask_rows = 83.0;
 
 // ── Electron beam ───────────────────────────────────────────────────────────
 uniform float crt_scanline_strength : hint_range(0.0, 1.0) = 0.6;
@@ -93,15 +93,26 @@ float crt_hash(vec2 p) {
 	return fract((q.x + q.y) * q.z);
 }
 
-// sin(pi x) / (pi x).
+// How much of a cosine harmonic survives being sampled at a footprint of `f`
+// cycles per pixel — the term that makes the mask and the raster antialias
+// themselves, with no mip chain, no LUT and no hand-tuned fade.
 //
-// This is the exact box-filter response of a cosine harmonic over a footprint of
-// x periods, and it is what makes the mask below antialias itself: attenuate each
-// harmonic by its own sinc and you get the mathematically correct reconstruction
-// at every distance, with no mip chain, no LUT and no hand-tuned fade.
-float crt_sinc(float x) {
-	float a = PI * x;
-	return (abs(a) < 1e-4) ? 1.0 : sin(a) / a;
+// Two factors, and BOTH are needed:
+//
+//   sin(pi f)/(pi f)   the exact box-filter (pixel-area) response.
+//   1 - smoothstep     a Nyquist guard.
+//
+// The box filter alone is not enough, and assuming it was is a real trap: it only
+// ATTENUATES at Nyquist rather than removing anything. At 2 samples per cycle it
+// still passes 64% of the harmonic, which then beats against the pixel grid into
+// broad low-frequency bands — far uglier than the detail it was trying to keep.
+// A box filter is the right pre-filter only if you then reconstruct continuously;
+// we point-sample, so anything left above Nyquist aliases. Hence the guard, which
+// takes each harmonic to zero shortly before its own Nyquist limit.
+float crt_band(float f) {
+	float a = PI * f;
+	float box = (abs(a) < 1e-4) ? 1.0 : sin(a) / a;
+	return max(box, 0.0) * (1.0 - smoothstep(0.25, 0.45, f));
 }
 
 // erf, approximated: max abs error ~2.8e-3 for 1 exp2 + 1 sqrt.
@@ -221,9 +232,9 @@ vec3 crt_glow(sampler2D tex, vec2 uv) {
 //   * Every harmonic has zero mean, so each channel averages EXACTLY 1.0 at every
 //     distance. The mask costs no light — which is why crt_brightness is 1.0 and
 //     why the tube's brightness doesn't drift as you walk toward it.
-//   * Attenuating each harmonic by its own sinc antialiases it exactly. The
-//     harmonics die off in order — sharp bars up close, soft stripes mid-range,
-//     perfectly flat vec3(1.0) far away — so there is no moire and nothing to crawl.
+//   * Attenuating each harmonic by its own crt_band() antialiases it. The harmonics
+//     die off in order — sharp bars up close, soft stripes mid-range, perfectly
+//     flat vec3(1.0) far away — so there is no moire and nothing to crawl.
 vec3 crt_mask(vec2 wuv) {
 	if (crt_mask_mode == 0 || crt_mask_strength <= 0.0) {
 		return vec3(1.0);
@@ -231,8 +242,8 @@ vec3 crt_mask(vec2 wuv) {
 
 	float tx = wuv.x * crt_mask_triads;    // horizontal position, in triads
 	float fw = fwidth(tx);                 // triads covered by this pixel
-	float a1 = max(crt_sinc(fw), 0.0);
-	float a2 = max(crt_sinc(2.0 * fw), 0.0);
+	float a1 = crt_band(fw);
+	float a2 = crt_band(2.0 * fw);
 
 	float ty = wuv.y * crt_mask_rows;      // vertical position, in phosphor rows
 	float fy = fwidth(ty);
@@ -242,9 +253,8 @@ vec3 crt_mask(vec2 wuv) {
 	// (a harmless global phase shift) once the rows stop resolving.
 	float stagger = 0.0;
 	if (crt_mask_mode >= 2) {
-		float b1 = max(crt_sinc(fy), 0.0);
-		float b3 = max(crt_sinc(3.0 * fy), 0.0);
-		float sq = 0.5 + 0.63662 * (b1 * sin(TAU * ty) + b3 * sin(3.0 * TAU * ty) / 3.0);
+		float sq = 0.5 + 0.63662 * (crt_band(fy) * sin(TAU * ty)
+			+ crt_band(3.0 * fy) * sin(3.0 * TAU * ty) / 3.0);
 		stagger = 0.5 * sq;
 	}
 
@@ -254,9 +264,8 @@ vec3 crt_mask(vec2 wuv) {
 	// Dark band between phosphor rows. Zero mean too, and independent of the
 	// horizontal term, so the product still averages exactly 1.0.
 	if (crt_mask_mode >= 2) {
-		float ay = max(crt_sinc(fy), 0.0);
 		float depth = (crt_mask_mode == 3) ? 0.8 : 0.45;
-		m *= 1.0 + depth * ay * cos(TAU * ty);
+		m *= 1.0 + depth * crt_band(fy) * cos(TAU * ty);
 	}
 
 	return mix(vec3(1.0), max(m, vec3(0.0)), crt_mask_strength);
@@ -295,9 +304,11 @@ float crt_beam(vec2 wuv, float lum) {
 	}
 	w /= ph;
 
-	// Past that the truncated sum under-counts, so hand over to the flat average
-	// it is converging on anyway.
-	w = mix(w, 1.0, smoothstep(2.0, 3.5, ph));
+	// Same Nyquist argument as the mask: the raster is one cycle per scanline, so
+	// below ~2 pixels per scanline it cannot be sampled without beating, however
+	// exactly the beam was integrated. Hand over to the flat average it is
+	// converging on rather than let it alias.
+	w = mix(w, 1.0, smoothstep(0.4, 0.8, ph));
 	return mix(1.0, w, crt_scanline_strength);
 }
 

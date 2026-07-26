@@ -183,8 +183,10 @@ func _build_crt_tab(tabs: TabContainer) -> void:
 	#
 	# "Phosphor pitch" is in millimetres on the glass, not pixels: the mask is
 	# locked to the tube, so the triad count follows from the pitch and the TV's
-	# world size. ~0.6 mm is a real arcade tube (too fine to resolve until you're
-	# ~30 cm away); 1.1 mm is the headset-resolution compromise.
+	# world size. Measured on a 0.35 m tube at Quest 3 density, triads start
+	# resolving at ~2.5 px and are solid by ~4 px, which puts the default 2.0 mm
+	# at "visible from 0.8 m, obvious by 0.5 m". 0.6 mm is a physically real
+	# arcade tube and stays invisible until you are almost touching the glass.
 	var specs := [
 		["crt_mask_strength",     "Mask strength",    0.0, 1.0,  0.05, "%.2f"],
 		["crt_mask_pitch_mm",     "Phosphor pitch",   0.4, 3.0,  0.1,  "%.1f mm"],

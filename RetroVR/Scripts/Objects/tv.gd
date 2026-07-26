@@ -64,7 +64,7 @@ var _crt_params := {
 	"crt_corner_radius": 0.04,
 	"crt_mask_mode": 1,
 	"crt_mask_strength": 0.55,
-	"crt_mask_pitch_mm": 1.1,
+	"crt_mask_pitch_mm": 2.0,
 	"crt_scanline_strength": 0.6,
 	"crt_beam_min": 0.18,
 	"crt_beam_max": 0.35,
@@ -479,7 +479,7 @@ func _apply_derived_crt_params(mat: ShaderMaterial) -> void:
 	# Phosphor pitch is a property of the glass, so the triad count follows the
 	# screen's WORLD width: scaling the TV up adds triads instead of stretching
 	# them, exactly as a physically bigger tube would.
-	var pitch_m: float = maxf(float(_crt_params.get("crt_mask_pitch_mm", 1.1)), 0.05) * 0.001
+	var pitch_m: float = maxf(float(_crt_params.get("crt_mask_pitch_mm", 2.0)), 0.05) * 0.001
 	var triads: float = (_screen_size_m.x * scale_factor) / pitch_m
 	mat.set_shader_parameter("crt_mask_triads", triads)
 	# Slot/shadow phosphor cells run about 1.5x taller than they are wide.
@@ -525,7 +525,7 @@ func _refresh_crt_derived() -> void:
 	var tex := _extract_texture(mat)
 	var key := "%s|%.4f|%.4f|%s" % [
 		mat.get_instance_id(), scale_factor,
-		float(_crt_params.get("crt_mask_pitch_mm", 1.1)),
+		float(_crt_params.get("crt_mask_pitch_mm", 2.0)),
 		"null" if tex == null else str(tex.get_size()),
 	]
 	if key == _crt_derived_key:

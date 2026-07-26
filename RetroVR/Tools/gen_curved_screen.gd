@@ -23,15 +23,21 @@ const OUT_PATH := "res://Scenes/Objects/tv_screen_curved.res"
 const SIZE := Vector2(0.35, 0.25)
 const SEGMENTS := 24
 
-# Bulge toward the viewer at the centre, in metres.
+# Bulge toward the viewer at the centre, in metres. Parabolic rather than
+# spherical: indistinguishable at this sagitta and free of sqrt domain issues.
 #
-# Real tubes are around 2.5% of their width: solving r = (s^2 + w^2) / 2s for a
-# 10 mm sagitta over a 175 mm half-width gives r ~= 1.75 m, i.e. ~10x half-width.
-# (crt-geom's R = 2.0 half-widths would give a 47 mm bulge on a 35 cm screen —
-# wildly overcurved.) Parabolic rather than spherical: indistinguishable at this
-# sagitta, and free of sqrt domain issues.
-const SAGITTA_X := 0.010
-const SAGITTA_Y := 0.006
+# The hard constraint is the BEZEL, not realism. The TV body is a BoxMesh whose
+# front face is at z = 0.15 and the screen node sits at 0.151, so the glass RIM
+# has to stay at the node's own plane — the whole bulge protrudes forward from
+# there. An earlier 10/6 mm pair (16 mm at the centre) was recessed to keep the
+# centre flush, which buried the rim inside the box and left only the tip of the
+# parabola poking out: the screen rendered as an ellipse.
+#
+# 9 mm total still reads clearly as depth in a headset — at 0.6 m it is about
+# 9 arcmin of binocular disparity between centre and edge, ~4 Quest 3 pixels —
+# while protruding little enough to look like glass in a bezel.
+const SAGITTA_X := 0.006
+const SAGITTA_Y := 0.003
 
 
 func _initialize() -> void:

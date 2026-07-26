@@ -85,12 +85,14 @@ mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_tvbody")
 
 ; Curved tube face (Tools/gen_curved_screen.gd) rather than a flat QuadMesh — a
-; UV barrel warp is monoscopic, so in a headset it reads as a flat sticker. The
-; mesh bulges 16 mm toward the viewer at its centre (10 mm horizontal sagitta +
-; 6 mm vertical), so it sits 16 mm further back than the old flat quad's 0.151 to
-; keep the glass centre roughly flush with the bezel instead of protruding past it.
+; UV barrel warp is monoscopic, so in a headset it reads as a flat sticker.
+;
+; z stays at the flat quad's 0.151 and the 9 mm bulge protrudes FORWARD from
+; there. It must not be recessed to centre the bulge: TVBody's front face is at
+; 0.15, so recessing buries the glass rim inside the box and only the tip of the
+; parabola shows — the screen renders as an ellipse.
 [node name="ScreenMesh" type="MeshInstance3D" parent="." unique_id=1026455476]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.135)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
 mesh = ExtResource("7_screencurved")
 surface_material_override/0 = SubResource("Mat_screen")
 
@@ -139,8 +141,10 @@ transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
 mesh = SubResource("CylMesh_plug_ghost")
 surface_material_override/0 = SubResource("Mat_plug_ghost")
 
+; Sits just clear of the glass centre (0.151 + 9 mm bulge) so the now-curved
+; screen can't occlude its cone into the room.
 [node name="Ambilight" type="SpotLight3D" parent="." unique_id=603587175]
-transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.05, 0.151)
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.05, 0.162)
 light_color = Color(0.5, 0.5, 0.5, 1)
 light_energy = 0.6
 spot_range = 2.5
