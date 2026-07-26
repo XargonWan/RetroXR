@@ -1216,6 +1216,7 @@ const _ICON_RETRY     := 0xF021    # fa-refresh
 const _ICON_ERROR     := 0xF071    # fa-warning
 const _ICON_GAMEPAD   := 0xF11B    # fa-gamepad
 const _ICON_BOOK      := 0xF05DA   # md-book_open_page_variant
+const _ICON_SCRAPE    := 0xF0866   # md-database_search
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 const _TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
@@ -1274,7 +1275,7 @@ func _build_blank_rom_row() -> Control:
 	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(main)
 
-	for n: String in ["Detail", "Manual"]:
+	for n: String in ["Detail", "Manual", "Scrape"]:
 		var b := Button.new()
 		b.name = n
 		b.custom_minimum_size = Vector2(66, 100)
@@ -1304,11 +1305,13 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	var main := row.get_node("Main") as MarqueeButton
 	var detail := row.get_node("Detail") as Button
 	var manual := row.get_node("Manual") as Button
+	var scrape := row.get_node("Scrape") as Button
 
 	_disconnect_all(state.pressed)
 	_disconnect_all(main.pressed)
 	_disconnect_all(detail.pressed)
 	_disconnect_all(manual.pressed)
+	_disconnect_all(scrape.pressed)
 
 	# MarqueeButton keeps its own `text` empty and draws via an internal label —
 	# setting `text` directly would fight its width clipping.
@@ -1379,6 +1382,16 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	if has_manual:
 		manual.pressed.connect(spawn_manual_requested.emit.bind(manual_path))
 
+	# Scraping hashes the local file, so it needs one on disk.
+	# disabled is reset here or a mid-scrape scroll leaves it stuck on whichever
+	# row later reuses this pooled button.
+	scrape.text = String.chr(_ICON_SCRAPE)
+	scrape.disabled = false
+	scrape.visible = not local_path.is_empty()
+	scrape.tooltip_text = "Scrape artwork and details from ScreenScraper"
+	if not local_path.is_empty():
+		scrape.pressed.connect(_on_scrape_pressed.bind(local_path, systemid, scrape))
+
 
 ## Two-stage delete: the first press arms it, the second within 3 s commits.
 ## A single mis-tap must never delete a 4 GB download, and every
@@ -1423,68 +1436,6 @@ static func _disconnect_all(sig: Signal) -> void:
 		sig.disconnect(c["callable"])
 
 
-## One ROM row: spawn button (+ wheel icon) plus scrape/detail/manual buttons.
-func _build_rom_row(systemid: String, rom: Dictionary, game: Dictionary, is_scraped: bool) -> Control:
-	var pref_rom: Dictionary = GamelistManager.get_preferred_rom(game) if is_scraped else {}
-	var wheel_tex: Texture2D = _load_wheel_texture(systemid, pref_rom.get("romname", "")) if is_scraped else null
-	var row_h: int = 100 if wheel_tex else 72
-
-	var row := HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	# A wheel image fills the button; a text title uses a MarqueeButton so a long
-	# name scrolls within the button instead of expanding the row and shoving the
-	# detail/manual/scrape buttons off the right edge.
-	var game_name: String = game.get("name", rom["label"]) if is_scraped else rom["label"]
-	var use_wheel := is_scraped and wheel_tex != null
-	var btn: Button
-	if use_wheel:
-		btn = Button.new()
-		btn.icon = wheel_tex
-		btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		btn.expand_icon = true
-	else:
-		btn = MarqueeButton.create("  +  " + game_name, 22)
-	btn.custom_minimum_size = Vector2(0, row_h)
-	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn.add_theme_font_size_override("font_size", 22)
-
-	if is_scraped:
-		var spawn_path: String = GamelistManager.to_absolute_path(systemid, pref_rom.get("path", rom["path"]))
-		btn.pressed.connect(spawn_cartridge_requested.emit.bind(spawn_path, game_name, systemid))
-	else:
-		btn.pressed.connect(spawn_cartridge_requested.emit.bind(rom["path"], rom["label"], systemid))
-
-	row.add_child(btn)
-
-	if is_scraped:
-		var detail_btn := Button.new()
-		detail_btn.text = "🎮"
-		detail_btn.custom_minimum_size = Vector2(72, row_h)
-		detail_btn.tooltip_text = "Game info"
-		detail_btn.add_theme_font_size_override("font_size", 26)
-		detail_btn.pressed.connect(_show_game_detail_panel.bind(game, systemid))
-		row.add_child(detail_btn)
-
-	if is_scraped and _has_scraped_manual(systemid, pref_rom.get("romname", "")):
-		var manual_btn := Button.new()
-		manual_btn.text = "📖"
-		manual_btn.custom_minimum_size = Vector2(72, row_h)
-		manual_btn.tooltip_text = "Spawn manual"
-		manual_btn.add_theme_font_size_override("font_size", 26)
-		var pdf_path := _scraped_manual_path(systemid, pref_rom.get("romname", ""))
-		manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
-		row.add_child(manual_btn)
-
-	var scrape_btn := Button.new()
-	scrape_btn.text = "✂️"
-	scrape_btn.custom_minimum_size = Vector2(72, row_h)
-	scrape_btn.tooltip_text = "Scrape ROM"
-	scrape_btn.add_theme_font_size_override("font_size", 26)
-	scrape_btn.pressed.connect(_on_scrape_pressed.bind(rom["path"], systemid, scrape_btn))
-	row.add_child(scrape_btn)
-
-	return row
 
 
 func _populate_books_tab() -> void:
@@ -3113,7 +3064,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 
 	if checksums.is_empty():
 		_scrape_in_progress = false
-		btn.text = "✂️"
+		btn.text = String.chr(_ICON_SCRAPE)
 		btn.disabled = false
 		_hide_scrape_status()
 		push_warning("[SpawnMenu] Failed to compute checksums for: %s" % rom_path)
@@ -3128,7 +3079,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		scraper_client.scrape_failed.disconnect(failed_cb)
 		_scrape_in_progress = false
 		if is_instance_valid(btn):
-			btn.text = "✂️"
+			btn.text = String.chr(_ICON_SCRAPE)
 			btn.disabled = false
 		_hide_scrape_status()
 		print("[SpawnMenu] Scrape completed for: %s" % rom_path.get_file())
@@ -3139,7 +3090,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		scraper_client.scrape_failed.disconnect(failed_cb)
 		_scrape_in_progress = false
 		if is_instance_valid(btn):
-			btn.text = "✂️"
+			btn.text = String.chr(_ICON_SCRAPE)
 			btn.disabled = false
 		_hide_scrape_status()
 		push_warning("[SpawnMenu] Scrape failed: %s" % error)
