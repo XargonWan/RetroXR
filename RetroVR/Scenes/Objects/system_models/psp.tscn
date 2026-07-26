@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="2_6e2pq"]
+[ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/vr_spring_return_slider.gd" id="12_pwrsw"]
 [ext_resource type="Texture2D" uid="uid://bfpl0jslsog8g" path="res://imported-assets/psp_1000_psp_1.png" id="4_qmcsd"]
 [ext_resource type="Texture2D" uid="uid://ci4t65wioxaas" path="res://imported-assets/psp_1000_normal.png" id="5_0tid2"]
 [ext_resource type="Texture2D" uid="uid://b81hadhhxbh8g" path="res://imported-assets/psp_1000_psp_1_screen.png" id="6_qjy2c"]
@@ -1691,10 +1692,9 @@ shape = SubResource("BoxShape3D_ehrgs")
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=1464879413]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0019636303, 0.0050297156, -0.00071423873)
 collision_layer = 1048577
-script = ExtResource("2_6e2pq")
+script = ExtResource("12_pwrsw")
 axis_local = Vector3(0.320634, 0, -0.947203)
 travel = 0.004
-steps = 2
 engage_radius = 0.028
 
 [node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=4784567]

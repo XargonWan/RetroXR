@@ -513,7 +513,16 @@ func configure_handheld_controls(host: Node3D) -> void:
 		_volume_slider.value_changed.connect(func(v: float) -> void:
 			if _host and _host.has_method("set_audio_volume"):
 				_host.set_audio_volume(v))
-	if _power_switch:
+	if _power_switch is VRSpringReturnSlider:
+		# A MOMENTARY switch reports an intent, not a position: it springs back on
+		# release, so its value crosses the midpoint twice per push and means
+		# nothing either time. Wire the completed hold instead.
+		var momentary := _power_switch as VRSpringReturnSlider
+		momentary.system_on = bool(_host.get("is_powered_on"))
+		momentary.toggle_requested.connect(func() -> void:
+			if _host != null and _host.has_method("toggle_power"):
+				_host.toggle_power())
+	elif _power_switch:
 		_power_switch.value_changed.connect(func(v: float) -> void:
 			if _host == null or not _host.has_method("toggle_power"):
 				return
@@ -526,14 +535,20 @@ func configure_handheld_controls(host: Node3D) -> void:
 ## multiplayer event) back onto the switch position, and apply the volume
 ## slider's current position to the freshly-created audio player.
 func on_power_on() -> void:
-	if _power_switch:
+	if _power_switch is VRSpringReturnSlider:
+		# Nothing to park — the cap lives at rest and springs back after each
+		# push. It only needs to know which dwell applies from here on.
+		(_power_switch as VRSpringReturnSlider).system_on = true
+	elif _power_switch:
 		_power_switch.set_value_no_signal(1.0)
 	if _volume_slider and _host and _host.has_method("set_audio_volume"):
 		_host.set_audio_volume(_volume_slider.value)
 
 
 func on_power_off() -> void:
-	if _power_switch:
+	if _power_switch is VRSpringReturnSlider:
+		(_power_switch as VRSpringReturnSlider).system_on = false
+	elif _power_switch:
 		_power_switch.set_value_no_signal(0.0)
 	# Unlit LCD look returns automatically when the core releases the material.
 
