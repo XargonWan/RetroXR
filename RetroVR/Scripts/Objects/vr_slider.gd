@@ -70,18 +70,20 @@ var _armed: bool = false
 # last latched this knob — stops one held trigger grabbing knob after knob.
 var _rearmed: Dictionary = {}
 
-# Knob rest position and travel direction, both in the KNOB'S PARENT space.
-# Defaults reproduce the original behaviour exactly (rest at the Area origin,
-# travel along axis_local); set_knob_mesh remaps them when a GLB knob is adopted.
-var _knob_origin: Vector3 = Vector3.ZERO
+# Travel direction in the KNOB'S PARENT space, and the pose everything is
+# measured from: the knob's transform at _knob_anchor_value, which is the value
+# the geometry is actually MODELLED at. Anchoring on that rather than on
+# mid-travel means value == anchor reproduces the modelled pose exactly, by
+# construction — which matters once the knob turns as well as slides.
 var _knob_axis: Vector3 = Vector3.RIGHT
-# Turn axis (knob parent space), the knob's basis at mid-travel, and the point it
-# turns about — its own centre, NOT its origin. An adopted GLB cap often has an
-# identity node transform with the offset baked into the vertices, so spinning
-# the node about its origin swings the cap on an arc tens of mm wide.
 var _knob_turn_axis: Vector3 = Vector3.UP
-var _knob_rest_basis: Basis = Basis()
-var _knob_pivot: Vector3 = Vector3.ZERO
+var _knob_anchor: Transform3D = Transform3D()
+var _knob_anchor_value: float = 0.5
+# Cap centre in the knob's own MESH space — the point it turns about. An adopted
+# GLB cap often has an identity node transform with its offset baked into the
+# vertex data, so its centre is tens of mm from its origin and turning about the
+# origin would fling it across the shell.
+var _knob_centre: Vector3 = Vector3.ZERO
 
 var _outline: WidgetOutline = null
 var _outline_amber: bool = false
@@ -93,7 +95,9 @@ func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
 	_knob_axis = axis_local.normalized()
 	_knob_turn_axis = knob_turn_axis.normalized()
-	_cache_knob_rest()
+	# The authored placeholder is driven from the Area origin at mid-travel, which
+	# is what this class did before knobs could be adopted or turn.
+	_anchor_knob(Transform3D(_knob.basis, Vector3.ZERO) if _knob != null else Transform3D(), 0.5)
 	_update_knob()
 	_outline = WidgetOutline.attach(self)
 	# The knob is a hidden placeholder on every baked handheld — outline it anyway
@@ -139,16 +143,13 @@ func set_knob_mesh(mesh: MeshInstance3D) -> void:
 		_knob_axis = parent.global_transform.basis.inverse() * world_axis
 	else:
 		_knob_axis = world_axis
-	# Anchor so the CURRENT value maps to where the GLB actually models the cap —
-	# adopting must not visibly jerk it. (A naive origin = mesh.position would
-	# displace it by half the travel the instant we took over, because value 0
-	# sits at -travel/2.) GLBs model switches in the off position, which is
-	# value 0, so this lines up.
-	_knob_origin = mesh.position - _knob_axis * (value - 0.5) * travel
 	if parent:
 		_knob_turn_axis = (parent.global_transform.basis.inverse()
 			* (global_transform.basis * knob_turn_axis.normalized())).normalized()
-	_cache_knob_rest()
+	# Anchor on where the GLB actually models the cap, at whatever value is current
+	# — adopting must not visibly jerk it. GLBs model switches in the off position,
+	# which is value 0, so this lines up.
+	_anchor_knob(mesh.transform, value)
 	if _outline:
 		_outline.set_source(_knob)
 	_update_knob()
@@ -279,31 +280,29 @@ func _set_from_raw(raw: float) -> void:
 ## in the knob's parent frame. An adopted GLB cap frequently has an identity node
 ## transform with its offset baked into the vertex data, so `position` is nowhere
 ## near the cap and turning about it would fling the cap across the shell.
-func _cache_knob_rest() -> void:
-	if _knob == null:
-		return
-	# Back-project to MID-TRAVEL, the anchor _knob_origin already uses: a GLB models
-	# its cap at the CURRENT value (switches are modelled off, i.e. 0), not halfway
-	# through the throw. Skip this and the cap sits visibly cocked at rest.
-	var r := Basis(_knob_turn_axis.normalized(), deg_to_rad(knob_turn_deg) * (value - 0.5))
-	_knob_rest_basis = r.inverse() * _knob.basis
-	var centre := Vector3.ZERO
-	if _knob.mesh != null:
-		centre = _knob.mesh.get_aabb().get_center()
-	_knob_pivot = Transform3D(_knob_rest_basis, _knob_origin) * centre
+## Record the pose the knob is modelled in, and the value that pose represents.
+func _anchor_knob(pose: Transform3D, at_value: float) -> void:
+	_knob_anchor = pose
+	_knob_anchor_value = at_value
+	_knob_centre = Vector3.ZERO
+	if _knob != null and _knob.mesh != null:
+		_knob_centre = _knob.mesh.get_aabb().get_center()
 
 
 func _update_knob() -> void:
 	if _knob == null:
 		return
-	var slide: Vector3 = _knob_origin + _knob_axis * (value - 0.5) * travel
+	# Everything is measured from the anchor, so at value == anchor this is exactly
+	# the modelled pose: zero slide, zero turn, no drift to correct for.
+	var d: float = value - _knob_anchor_value
+	var slide: Vector3 = _knob_axis * d * travel
 	if is_zero_approx(knob_turn_deg):
-		_knob.position = slide
+		_knob.position = _knob_anchor.origin + slide
 		return
-	# Turn about the cap's own centre, then carry the whole thing along the slide.
-	var r := Basis(_knob_turn_axis.normalized(), deg_to_rad(knob_turn_deg) * (value - 0.5))
-	_knob.transform = Transform3D(r * _knob_rest_basis,
-		slide + r * _knob_origin + _knob_pivot - r * _knob_pivot - _knob_origin)
+	# Turn about the cap's own centre where it currently sits, then slide.
+	var r := Basis(_knob_turn_axis.normalized(), deg_to_rad(knob_turn_deg) * d)
+	var pivot: Vector3 = _knob_anchor * _knob_centre
+	_knob.transform = Transform3D(Basis.IDENTITY, slide) 		* Transform3D(r, pivot - r * pivot) * _knob_anchor
 
 
 ## Green while armed, amber while the trigger holds the knob.

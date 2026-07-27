@@ -1709,7 +1709,7 @@ script = ExtResource("12_pwrsw")
 axis_local = Vector3(0.320634, 0, -0.947203)
 travel = 0.004
 engage_radius = 0.028
-knob_turn_deg = 6.0
+knob_turn_deg = 2.5
 
 [node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=4784567]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
