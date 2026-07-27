@@ -50,6 +50,10 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 @export var icon_size: float = 0.028
 
 var _trigger_ctrl: XRController3D = null   # latched controller (trigger held)
+# Drag bookkeeping: how far the lid sat from the angle the hand implied when it
+# took hold, and the last raw hand angle (the unwrap reference).
+var _grab_offset_deg: float = 0.0
+var _grab_raw_prev: float = 0.0
 # Controller instance ids whose trigger has dropped since they last latched.
 var _rearmed: Dictionary = {}
 var _pointer_held := false               # desktop pointer latched
@@ -106,7 +110,7 @@ func _process(delta: float) -> void:
 					and ctrl.get_float(TRIGGER_ACTION) > TRIGGER_ON:
 				_rearmed[ctrl.get_instance_id()] = false
 				_trigger_ctrl = ctrl
-				_track_world_point(PokeTip.tip_of(ctrl))
+				_begin_track(PokeTip.tip_of(ctrl))
 				break
 	var held := _trigger_ctrl != null or _pointer_held
 	if was_held and not held:
@@ -133,7 +137,7 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			if _can_engage():
 				_pointer_held = true
 				if vr:
-					_track_world_point(event.position)
+					_begin_track(event.position)
 		XRToolsPointerEvent.Type.MOVED:
 			if _pointer_held and vr:
 				_track_world_point(event.position)
@@ -172,29 +176,59 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
-## Convert an engaged world point to an angle about the hinge axis (the target's
-## local X) and drive the target. The point is measured in the target's PARENT
-## frame relative to the pivot origin; the panel points -Z at rotation 0 and
-## folds toward +Z as the angle grows (theta = atan2(y, -z)).
-func _track_world_point(world_pos: Vector3) -> void:
+## Angle about the hinge axis implied by a world point, or NAN where it is
+## undefined. The point is measured in the target's PARENT frame relative to the
+## pivot origin; the panel points -Z at rotation 0 and folds toward +Z as the
+## angle grows (theta = atan2(y, -z)).
+##
+## atan2 wraps at ±180°, so near a limit a tiny cross-axis jitter can flip the
+## sign (e.g. +179° → -179°) and snap the hinge to the opposite end. `near_deg`
+## unwraps the result onto the branch nearest a reference angle, keeping the
+## drag continuous end-to-end.
+func _angle_at(world_pos: Vector3, near_deg: float) -> float:
 	if target == null:
-		return
+		return NAN
 	var parent := target.get_parent() as Node3D
 	if parent == null:
-		return
+		return NAN
 	var rel := parent.to_local(world_pos) - target.position
 	if Vector2(rel.y, rel.z).length() < 0.001:
-		return   # hand at the pivot — angle undefined, ignore
-	# atan2 wraps at ±180°, so near a limit a tiny cross-axis jitter can flip the
-	# sign (e.g. +179° → -179°) and snap the hinge to the opposite end. Unwrap
-	# onto the branch nearest the current angle to keep it continuous end-to-end.
+		return NAN   # hand at the pivot — angle undefined
 	var deg := rad_to_deg(atan2(rel.y, -rel.z))
-	var cur := rad_to_deg(target.rotation.x)
-	while deg - cur > 180.0:
+	while deg - near_deg > 180.0:
 		deg -= 360.0
-	while deg - cur < -180.0:
+	while deg - near_deg < -180.0:
 		deg += 360.0
-	_apply(deg, true)
+	return deg
+
+
+## Take hold WITHOUT moving the lid. The grab box sits on the hinge, so the angle
+## a hand implies at the moment it grabs is whatever direction it happens to be
+## off the pivot — near a limit, and nothing to do with where the lid is. Driving
+## the lid straight to it teleported the lid on contact: a trigger tap near a disc
+## door slammed it shut and _on_released then latched it there, so a click read as
+## "close" and you could never drag one.
+##
+## Remember the difference instead, and carry it through the drag. The lid then
+## stays put until the hand actually moves, and moves with it one-for-one.
+func _begin_track(world_pos: Vector3) -> void:
+	if target == null:
+		return
+	var cur := rad_to_deg(target.rotation.x)
+	var raw := _angle_at(world_pos, cur)
+	_grab_offset_deg = 0.0 if is_nan(raw) else cur - raw
+	_grab_raw_prev = cur if is_nan(raw) else raw
+
+
+func _track_world_point(world_pos: Vector3) -> void:
+	# Unwrap against the PREVIOUS raw angle, not the lid's: once an offset is in
+	# play the two are no longer near each other, and unwrapping against the lid
+	# would fold a large offset into a 360° jump.
+	var raw := _angle_at(world_pos, _grab_raw_prev)
+	if is_nan(raw):
+		return
+	_grab_raw_prev = raw
+	_apply(raw + _grab_offset_deg, true)
 
 
 func _apply(deg: float, emit: bool) -> void:
