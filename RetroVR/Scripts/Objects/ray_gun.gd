@@ -86,6 +86,30 @@ var _blocking_right: bool = false
 @onready var _barrel_tip: Node3D = $BarrelTip
 @onready var _laser_dot: MeshInstance3D = $LaserDot
 
+# ── Physical control animation ────────────────────────────────────────────────
+# The shell's trigger and buttons are display-only: the gun is aimed and fired
+# from the VR controller (or the keyboard on desktop), so these show what the
+# hand is doing. Driven from _pressed_now(), the same read that goes to the core,
+# so the shell can never disagree with what the game is being told.
+
+## Buttons that press into the barrel's top face, by the lightgun id they show.
+const ANIM_BUTTONS: Dictionary = {
+	ControllerBindings.LIGHTGUN_AUX_A: "AuxAButton",
+	ControllerBindings.LIGHTGUN_AUX_B: "AuxBButton",
+	ControllerBindings.LIGHTGUN_START: "StartButton",
+}
+## Kept well under how far the caps stand proud of the barrel (3 mm) — press
+## them further and they read as vanishing into it rather than being pushed.
+const BUTTON_PRESS := 0.001
+## Trigger swing. Negative about +X so the blade's tip sweeps BACK toward the
+## grip — a positive angle would push it forward, out of the hand.
+const TRIGGER_PULL_DEG := -14.0
+const ANIM_WEIGHT := 0.4
+
+var _anim_btns: Array[Dictionary] = []   # {node, rest, lid}
+var _trigger_pivot: Node3D = null
+var _trigger_rest := Transform3D()
+
 
 func _ready() -> void:
 	super._ready()
@@ -95,6 +119,7 @@ func _ready() -> void:
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	_laser_dot.visible = false
+	_cache_controls()
 	_spawn_cable()
 	call_deferred("_find_vr_nodes")
 
@@ -254,6 +279,56 @@ func _add_cable_to_scene() -> void:
 			sys.restore_controller_plug(idx, _cable_plug)
 
 
+## Cache the control meshes. Absent on an older scene, in which case the gun just
+## has nothing to animate.
+func _cache_controls() -> void:
+	for lid: int in ANIM_BUTTONS:
+		var m := get_node_or_null(String(ANIM_BUTTONS[lid])) as MeshInstance3D
+		if m != null:
+			_anim_btns.append({"node": m, "rest": m.transform, "lid": lid})
+	_trigger_pivot = get_node_or_null("TriggerPivot") as Node3D
+	if _trigger_pivot != null:
+		_trigger_rest = _trigger_pivot.transform
+
+
+## Which lightgun buttons are down this frame, keyed by LIGHTGUN_* id. One read
+## of the input, shared by the core and the shell animation. Every mapped id is
+## present, so an unheld gun reports them all false rather than reporting nothing.
+func _pressed_now() -> Dictionary:
+	var out: Dictionary = {}
+	if _desktop_held:
+		for action: String in DESKTOP_LIGHTGUN_BUTTONS:
+			var lid: int = DESKTOP_LIGHTGUN_BUTTONS[action]
+			if lid >= 0:
+				out[lid] = Input.is_action_pressed(action)
+		return out
+	var vr: bool = is_instance_valid(_holding_ctrl)
+	for vr_source: String in _lightgun_map:
+		if vr_source == "stick":
+			continue
+		var lid: int = _lightgun_map[vr_source]
+		if lid < 0:
+			continue
+		out[lid] = vr and _holding_ctrl.get_float(vr_source) 			> float(INPUT_THRESHOLDS.get(vr_source, 0.5))
+	return out
+
+
+func _animate_controls(pressed: Dictionary) -> void:
+	for e: Dictionary in _anim_btns:
+		var node: MeshInstance3D = e["node"]
+		var rest: Transform3D = e["rest"]
+		var down := 1.0 if pressed.get(int(e["lid"]), false) else 0.0
+		var tgt := Transform3D(rest.basis, rest.origin + Vector3.DOWN * (BUTTON_PRESS * down))
+		node.transform = node.transform.interpolate_with(tgt, ANIM_WEIGHT)
+	if _trigger_pivot == null:
+		return
+	var pull := 1.0 if pressed.get(ControllerBindings.LIGHTGUN_TRIGGER, false) else 0.0
+	var tgt_x := Transform3D(
+		_trigger_rest.basis * Basis(Vector3.RIGHT, deg_to_rad(TRIGGER_PULL_DEG * pull)),
+		_trigger_rest.origin)
+	_trigger_pivot.transform = _trigger_pivot.transform.interpolate_with(tgt_x, ANIM_WEIGHT)
+
+
 func _physics_process(_delta: float) -> void:
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
@@ -333,6 +408,11 @@ func _process(_delta: float) -> void:
 		_drop_all()
 		return
 
+	# The shell moves whether or not it is plugged into anything — an unplugged
+	# gun still has a trigger you can squeeze.
+	var pressed := _pressed_now()
+	_animate_controls(pressed)
+
 	if _connected_system == null or _port_index < 0:
 		return
 
@@ -340,17 +420,14 @@ func _process(_delta: float) -> void:
 
 	# Desktop mode: aim from camera centre, read keyboard/mouse for buttons
 	if _desktop_held:
-		_process_desktop_lightgun(libretro)
+		_process_desktop_lightgun(libretro, pressed)
 		return
 
 	# VR mode: no controller held → report offscreen and clear buttons
 	if not is_instance_valid(_holding_ctrl):
 		libretro.SetLightgunIsOffscreen(_port_index, true)
-		for vr_source: String in _lightgun_map:
-			if vr_source == "stick": continue
-			var lid: int = _lightgun_map[vr_source]
-			if lid >= 0:
-				libretro.SetLightgunButton(_port_index, lid, false)
+		for lid: int in pressed:
+			libretro.SetLightgunButton(_port_index, lid, false)
 		if _lightgun_map.get("stick", "none") == "dpad":
 			libretro.SetLightgunButton(_port_index, 8,  false)
 			libretro.SetLightgunButton(_port_index, 9,  false)
@@ -361,14 +438,9 @@ func _process(_delta: float) -> void:
 
 	var ctrl := _holding_ctrl
 
-	# Set lightgun buttons via data-driven map ("stick" key handled separately).
-	for vr_source: String in _lightgun_map:
-		if vr_source == "stick": continue
-		var lid: int = _lightgun_map[vr_source]
-		if lid < 0:
-			continue
-		var threshold: float = INPUT_THRESHOLDS.get(vr_source, 0.5)
-		libretro.SetLightgunButton(_port_index, lid, ctrl.get_float(vr_source) > threshold)
+	# Buttons come from the map via _pressed_now(); "stick" is handled separately.
+	for lid: int in pressed:
+		libretro.SetLightgunButton(_port_index, lid, pressed[lid])
 
 	# Thumbstick → lightgun d-pad (thresholded).
 	if _lightgun_map.get("stick", "none") == "dpad":
@@ -382,12 +454,9 @@ func _process(_delta: float) -> void:
 
 
 ## Desktop: read keyboard+mouse, aim from camera centre ray.
-func _process_desktop_lightgun(libretro: Libretro) -> void:
-	# Buttons
-	for action: String in DESKTOP_LIGHTGUN_BUTTONS:
-		var lid: int = DESKTOP_LIGHTGUN_BUTTONS[action]
-		if lid >= 0:
-			libretro.SetLightgunButton(_port_index, lid, Input.is_action_pressed(action))
+func _process_desktop_lightgun(libretro: Libretro, pressed: Dictionary) -> void:
+	for lid: int in pressed:
+		libretro.SetLightgunButton(_port_index, lid, pressed[lid])
 
 	# D-pad from WASD/retro joypad actions
 	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_UP,

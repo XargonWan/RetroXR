@@ -32,6 +32,25 @@ emission_enabled = true
 emission = Color(1.0, 0.0, 0.0, 1.0)
 emission_energy_multiplier = 2.0
 
+[sub_resource type="BoxMesh" id="BoxMesh_trigger"]
+size = Vector3(0.01, 0.022, 0.007)
+
+[sub_resource type="CylinderMesh" id="Cyl_aux"]
+top_radius = 0.005
+bottom_radius = 0.005
+height = 0.004
+radial_segments = 12
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_start"]
+size = Vector3(0.012, 0.003, 0.006)
+
+[sub_resource type="StandardMaterial3D" id="Mat_aux"]
+albedo_color = Color(0.58, 0.14, 0.14, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ctrl"]
+albedo_color = Color(0.22, 0.23, 0.27, 1)
+
 [sub_resource type="PhysicsMaterial" id="PhysMat_gun"]
 bounce = 0.0
 friction = 0.8
@@ -58,6 +77,34 @@ surface_material_override/0 = SubResource("Mat_gun")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, 0.04)
 mesh = SubResource("BoxMesh_grip")
 surface_material_override/0 = SubResource("Mat_gun")
+
+; Controls. Display-only: the gun is aimed and fired from the VR controller (or
+; the keyboard on desktop), so these show what the hand is doing rather than
+; being poked themselves — ray_gun.gd animates them off the same button read it
+; sends to the core. The trigger swings on TriggerPivot, a pin under the barrel
+; at the front of the grip; the rest press into the barrel's top face (y 0.045).
+[node name="TriggerPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.014, 0.016)
+
+[node name="Trigger" type="MeshInstance3D" parent="TriggerPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.012, 0)
+mesh = SubResource("BoxMesh_trigger")
+surface_material_override/0 = SubResource("Mat_ctrl")
+
+[node name="AuxAButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.008, 0.046, 0.004)
+mesh = SubResource("Cyl_aux")
+surface_material_override/0 = SubResource("Mat_aux")
+
+[node name="AuxBButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.008, 0.046, 0.004)
+mesh = SubResource("Cyl_aux")
+surface_material_override/0 = SubResource("Mat_aux")
+
+[node name="StartButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0465, 0.022)
+mesh = SubResource("BoxMesh_start")
+surface_material_override/0 = SubResource("Mat_ctrl")
 
 [node name="BarrelTip" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, -0.11)

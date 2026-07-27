@@ -65,6 +65,23 @@ var _last_buttons := 0
 @onready var _ray: RayCast3D = $SurfaceRay
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 
+# ── Button animation ──────────────────────────────────────────────────────────
+# The shell already models both buttons and the wheel; they just never moved.
+# Driven from _poll_buttons(), the same read that goes to the core, so the shell
+# cannot disagree with what the game is being told. Wheel-click depresses the
+# wheel, which is what the hardware does — there is no scroll axis to roll it.
+
+## Mesh under MouseVisual for each button bit.
+const ANIM_BUTTONS: Dictionary = {
+	MOUSE_BTN_LEFT:   "LeftButton",
+	MOUSE_BTN_RIGHT:  "RightButton",
+	MOUSE_BTN_MIDDLE: "WheelMesh",
+}
+const BUTTON_PRESS := 0.0012
+const ANIM_WEIGHT := 0.45
+
+var _anim_btns: Array[Dictionary] = []   # {node, rest, bit}
+
 
 func _ready() -> void:
 	super._ready()
@@ -72,6 +89,7 @@ func _ready() -> void:
 	add_to_group("spawned")
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
+	_cache_buttons()
 	_spawn_cable()
 
 
@@ -236,6 +254,11 @@ func _apply_stick_visual() -> void:
 # ── Input reporting ───────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
+	# The shell moves whether or not it is plugged into anything — an unplugged
+	# mouse still has buttons you can click.
+	var buttons := _poll_buttons()
+	_animate_buttons(buttons)
+
 	if _connected_system == null or _port_index < 0:
 		return
 
@@ -244,7 +267,6 @@ func _process(_delta: float) -> void:
 	var dx := int(move.x)
 	var dy := int(move.y)
 	_carry = move - Vector2(dx, dy)
-	var buttons := _poll_buttons()
 
 	# Netplay: mouse deltas ride the deterministic schedule through the same
 	# seam as joypads — dx/dy packed into the analog-left slots. "drain": the
@@ -260,6 +282,24 @@ func _process(_delta: float) -> void:
 	if dx != 0 or dy != 0 or buttons != _last_buttons:
 		_connected_system.get_libretro_node().SetMouseState(_port_index, dx, dy, buttons)
 		_last_buttons = buttons
+
+
+## Cache the button meshes. Absent on an older scene, in which case the mouse
+## simply has nothing to animate.
+func _cache_buttons() -> void:
+	for bit: int in ANIM_BUTTONS:
+		var m := _visual.get_node_or_null(String(ANIM_BUTTONS[bit])) as MeshInstance3D
+		if m != null:
+			_anim_btns.append({"node": m, "rest": m.transform, "bit": bit})
+
+
+func _animate_buttons(buttons: int) -> void:
+	for e: Dictionary in _anim_btns:
+		var node: MeshInstance3D = e["node"]
+		var rest: Transform3D = e["rest"]
+		var down := 1.0 if (buttons & int(e["bit"])) != 0 else 0.0
+		var tgt := Transform3D(rest.basis, rest.origin + Vector3.DOWN * (BUTTON_PRESS * down))
+		node.transform = node.transform.interpolate_with(tgt, ANIM_WEIGHT)
 
 
 func _poll_buttons() -> int:
