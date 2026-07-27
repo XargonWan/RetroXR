@@ -105,6 +105,14 @@ func _ready() -> void:
 		_controllers.append(node as XRController3D)
 
 
+## Set the value AND report it, for an owner driving the slider from something
+## other than a hand on the knob — the PSP's volume +/- buttons step it this way.
+## The plain `value` export has no setter, so assigning it moves nothing and tells
+## nobody; set_value_no_signal moves the knob but stays silent.
+func set_value(v: float) -> void:
+	_set_from_raw(v)
+
+
 ## Set the value without emitting (panel/populate use).
 func set_value_no_signal(v: float) -> void:
 	_suppress_signal = true

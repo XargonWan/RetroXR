@@ -70,6 +70,7 @@ func _on_glb_ready() -> void:
 	_cache_anim_meshes()
 	_configure_power_slide()
 	_configure_open_slide()
+	_configure_volume_buttons()
 	_configure_umd_door()
 	_configure_power_led()
 
@@ -182,6 +183,52 @@ func _configure_power_slide() -> void:
 	# the travel axis from the slider's global transform, so it has to run after.
 	_power_switch.global_position = _mesh_center(_power_mesh)
 	_power_switch.set_knob_mesh(_power_mesh)
+
+
+# --- volume ------------------------------------------------------------------
+
+## The PSP has no volume SLIDER — it has two buttons, and the shell models them:
+## "Button Minus" and "Button Plus", 4.7 x 3.4 mm each, side by side on the face
+## just above the bottom lip. The inherited VolumeSlider was authored at
+## x = +0.087 against a shell that ends at +0.0815, so it floated a few mm off
+## the right edge, nowhere near either button, driving nothing you could see.
+##
+## The slider stays as the VALUE HOLDER — handheld_model already connects its
+## value_changed to the host and re-applies its position on power-on — but it
+## stops being touchable, and the buttons step it instead.
+const _VOLUME_STEP := 0.1
+
+
+func _configure_volume_buttons() -> void:
+	for spec: Array in [["VolumeDown", "Button Minus", -1.0], ["VolumeUp", "Button Plus", 1.0]]:
+		var btn := get_node_or_null(String(spec[0])) as VRButton
+		var mesh := find_child(String(spec[1]), true, false) as MeshInstance3D
+		if btn == null or mesh == null:
+			continue
+		btn.global_position = _mesh_center(mesh)
+		btn.set_button_mesh(mesh)   # the shell's own key IS the button
+		# Face-mounted, so they press INTO the face: _press_dir already points that
+		# way in the meshes' own parent frame (Shell), which is the frame
+		# depress_axis is read in.
+		btn.depress_axis = _press_dir
+		var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
+		if lbl != null:
+			lbl.visible = false
+		var step := float(spec[2]) * _VOLUME_STEP
+		btn.button_pressed.connect(func() -> void: _step_volume(step))
+	# Retire the floating slider as an INPUT without unhooking it as state: zero
+	# its layer so the pointer can't hit it and stop _process so a passing
+	# fingertip can't engage it either.
+	if _volume_slider != null:
+		_volume_slider.collision_layer = 0
+		_volume_slider.set_process(false)
+		_volume_slider.set_deferred("monitoring", false)
+
+
+func _step_volume(delta: float) -> void:
+	if _volume_slider == null:
+		return
+	_volume_slider.set_value(clampf(_volume_slider.value + delta, 0.0, 1.0))
 
 
 # --- UMD door latch ----------------------------------------------------------
