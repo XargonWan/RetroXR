@@ -3,7 +3,7 @@
 ## the four face buttons, L1/L2/R1/R2, Select/Start and a D-pad — and no analog
 ## sticks (so no stick meshes are cached and no stick ever tilts).
 ##
-## Model: imported "PSX Classic Controller (HighPoly)" bundle — separated named meshes
+## Model: "PSX Classic Controller (HighPoly)" bundle — separated named meshes
 ## FireButtonTop/Right/Left/Bottom (△ ○ □ ✕), LShoulderButton/RShoulderButton
 ## (L1/R1), LIndexTriggerButton/RIndexTriggerButton (L2/R2), SelectButton,
 ## StartButton and StickLeft22 (the D-pad, rocking about the "StickLeft" pivot).

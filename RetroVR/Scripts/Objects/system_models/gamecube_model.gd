@@ -1,6 +1,6 @@
 ## RetroSystemModelGameCube — Nintendo GameCube (mini-DVD disc, top-loading lid).
 ##
-## Loads necro's imported GameCube GLB and wires POWER, RESET and the disc-lid
+## Loads necro's GameCube GLB and wires POWER, RESET and the disc-lid
 ## OPEN button, plus 4 controller ports and 1 memory card slot. The lid is a
 ## real hinged mesh ("LID") mounted on a VRSpringLatchedHinge (the same rig
 ## Dreamcast/PS2/Saturn use) rather than the GLB's own Open/Close animation
@@ -11,7 +11,7 @@
 class_name RetroSystemModelGameCube
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/gamecube.glb"
+const _MODEL_PATH := "res://unbundled-models/consoles/gamecube.glb"
 ## The GLB's own Open animation swings the wrong way / doesn't restore on
 ## Close — same story as every other disc console in this library.
 const LID_OPEN_DEG := 50.0

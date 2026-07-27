@@ -15,16 +15,16 @@ extends RetroSystemModelHandheld
 
 func _init() -> void:
 	cart_size = Vector3(0.058, 0.036, 0.007)   # GBA cart
-	# Base half of a real SP (AGS-001): 82 x 82 mm, ~12 mm thick. In a licensed
-	# build _upgrade_to_glb overwrites this from the shell's own AABB, so it only
-	# matters on a placeholder build — where, left at the inherited Game Boy
+	# Base half of a real SP (AGS-001): 82 x 82 mm, ~12 mm thick. With the
+	# unbundled shell in, _upgrade_to_glb overwrites this from that shell's own
+	# AABB, so it only matters on a default build — where, left at the Game Boy
 	# default (90 x 32 x 148), it sized the stand-in slab like a DMG and left the
 	# authored POWER/VOLUME switches (x = +/-0.0395) floating off its edges.
 	body_size = Vector3(0.082, 0.0145, 0.080)
 
 
 func _glb_path() -> String:
-	return "res://imported-assets/game_boy_advance_sp.glb"
+	return "res://unbundled-models/handhelds/game_boy_advance_sp.glb"
 
 
 ## This GLB is authored LYING FLAT (base on the XZ plane, Y up, lid already swung
@@ -150,7 +150,7 @@ func _cache_anim_meshes() -> void:
 			if m != null:
 				_anim_btns.append({"node": m, "rest": m.transform, "bit": bit, "depth": float(spec[1])})
 	# The D-pad rocks about its own centre — this bundle ships no pivot empty for
-	# it, unlike the imported pads whose "Dpad" marker the controllers use.
+	# it, unlike the other pads whose "Dpad" marker the controllers use.
 	var dpad := _glb.find_child("D_PAD", true, false) as MeshInstance3D
 	if dpad != null:
 		_anim_dpad = {"node": dpad, "rest": dpad.transform,

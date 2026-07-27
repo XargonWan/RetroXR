@@ -2,7 +2,7 @@ extends Node
 
 # Placeholder-model validation probe.
 #   Spawns every system that has a bespoke model, in whatever mode the command
-#   line selected, and for each one reports the model class, whether a licensed
+#   line selected, and for each one reports the model class, whether an unbundled
 #   "Shell" subtree survived, whether a "Primitive" stand-in is present, and
 #   whether the generic grey box (SystemBody) is showing. Renders each into a
 #   SubViewport and writes a PNG.
@@ -146,11 +146,11 @@ func _run_case(systemid: String, variant: String) -> void:
 	var greybox := body != null and body.visible
 	var meshes := _count_meshes(sys)
 	# The invariant a placeholder build has to hold: imported GLB geometry always
-	# bakes down to an ArrayMesh, so ANY that still renders is licensed trade
+	# bakes down to an ArrayMesh, so ANY that still renders is unbundled trade
 	# dress that leaked through.
 	var imported := _imported_meshes(sys)
 	var verdict := "OK" if imported.is_empty() else "LEAK"
-	if RetroModelPolicy.licensed_models():
+	if RetroModelPolicy.unbundled_models():
 		verdict = "-"
 
 	print("[probe] %-26s %-4s model=%-32s handheld=%-5s shell=%d primitive=%d greybox=%-5s meshes=%d imported=%d" % [
@@ -184,7 +184,7 @@ func _count_named(root: Node, want: String) -> int:
 
 
 ## Paths of every VISIBLE MeshInstance3D still carrying imported (ArrayMesh)
-## geometry — i.e. licensed trade dress that survived into a placeholder build.
+## geometry — i.e. unbundled trade dress that survived into a placeholder build.
 func _imported_meshes(root: Node) -> Array[String]:
 	var out: Array[String] = []
 	var stack: Array[Node] = [root]

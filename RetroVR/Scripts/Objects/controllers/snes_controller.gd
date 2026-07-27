@@ -3,7 +3,7 @@
 ## bit map differ. SNES layout: a diamond of B/A/Y/X, L/R shoulders,
 ## Select/Start and a D-pad (no analog sticks).
 ##
-## Model: an author's imported "SNES GamePad" bundle — PAL/Super Famicom styling with the
+## Model: an author's "SNES GamePad" bundle — PAL/Super Famicom styling with the
 ## coloured convex buttons. Every control is already its own mesh
 ## (FireButton*, LShoulderButton, RShoulderButton, Select/StartButton and
 ## StickLeft22 for the D-pad), so no mesh splitting was needed.

@@ -40,10 +40,10 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # 3DS Game Card
 
 
-## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds wear
+## Detailed New 3DS XL shell (an author). Export-excluded — store builds wear
 ## the stand-in clamshell from _primitive_path() below.
 func _glb_path() -> String:
-	return "res://imported-assets/new_3ds_xl.glb"
+	return "res://unbundled-models/handhelds/new_3ds_xl.glb"
 
 
 ## The 3DS XL has no stand-in scene of its own; it borrows the DS's, which is the
@@ -231,7 +231,7 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 	var marker := find_child("Power", true, false) as Node3D
 	if mesh == null and marker == null:
 		# Placeholder build: both the real button mesh and the "Power" empty were
-		# part of the licensed shell and are gone. Without them nothing hid the
+		# part of the unbundled shell and are gone. Without them nothing hid the
 		# cabinet's own full-size green nub or moved it off the default pose, so a
 		# stand-in 3DS wore a 40 mm button bigger than its card slot. Fall back to
 		# the dual-screen base, which shrinks the nub and mounts it on the front

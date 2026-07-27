@@ -5,7 +5,7 @@
 class_name GameCubeMemoryCard
 extends MemoryCard
 
-const _MODEL_PATH := "res://imported-assets/gamecube_memory_card.glb"
+const _MODEL_PATH := "res://unbundled-models/media/gamecube_memory_card.glb"
 
 
 func _ready() -> void:

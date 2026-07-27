@@ -1,6 +1,6 @@
 ## RetroSystemModelPlaystationOne — PS1 (PSone) disc-tray console model.
 ##
-## Loads an author's imported PSone GLB and wires the power/open buttons, the CD lid,
+## Loads an author's PSone GLB and wires the power/open buttons, the CD lid,
 ## the disc seat, memory-card slot, controller ports and cable. LOADER_TRAY:
 ## RetroSystem calls play_open()/play_close() to swing the lid.
 ##
@@ -18,7 +18,7 @@ extends RetroSystemModel
 ## original) subclasses this model and swaps these out; everything else — the
 ## lid rig, the hinge/tray sync, the disc seat — is shared.
 func _model_path() -> String:
-	return "res://imported-assets/playstation_one.glb"
+	return "res://unbundled-models/consoles/playstation_one.glb"
 
 ## Yaw applied to the GLB so the shell's FRONT faces +Z, the frame every
 ## placement below assumes. 0 when the model is already authored that way.

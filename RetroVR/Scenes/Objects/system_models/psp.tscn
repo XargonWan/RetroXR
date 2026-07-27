@@ -1,13 +1,13 @@
 [gd_scene format=4 uid="uid://pde10amlgs0b"]
 
 [ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
-[ext_resource type="Texture2D" uid="uid://bfpl0jslsog8g" path="res://imported-assets/psp_1000_psp_1.png" id="4_qmcsd"]
-[ext_resource type="Texture2D" uid="uid://ci4t65wioxaas" path="res://imported-assets/psp_1000_normal.png" id="5_0tid2"]
-[ext_resource type="Texture2D" uid="uid://b81hadhhxbh8g" path="res://imported-assets/psp_1000_psp_1_screen.png" id="6_qjy2c"]
-[ext_resource type="Texture2D" uid="uid://qsk4kjhm7d2d" path="res://imported-assets/psp_1000_LBUttons.png" id="7_xgjj8"]
-[ext_resource type="Texture2D" uid="uid://bpx8l3bsvl3ol" path="res://imported-assets/psp_1000_orm.png" id="8_xwq76"]
+[ext_resource type="Texture2D" uid="uid://bfpl0jslsog8g" path="res://unbundled-models/handhelds/psp_1000_psp_1.png" id="4_qmcsd"]
+[ext_resource type="Texture2D" uid="uid://ci4t65wioxaas" path="res://unbundled-models/handhelds/psp_1000_normal.png" id="5_0tid2"]
+[ext_resource type="Texture2D" uid="uid://b81hadhhxbh8g" path="res://unbundled-models/handhelds/psp_1000_psp_1_screen.png" id="6_qjy2c"]
+[ext_resource type="Texture2D" uid="uid://qsk4kjhm7d2d" path="res://unbundled-models/handhelds/psp_1000_LBUttons.png" id="7_xgjj8"]
+[ext_resource type="Texture2D" uid="uid://bpx8l3bsvl3ol" path="res://unbundled-models/handhelds/psp_1000_orm.png" id="8_xwq76"]
 [ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="9_qmcsd"]
-[ext_resource type="Texture2D" uid="uid://bhyewi4p624eb" path="res://imported-assets/psp_1000_grüüüüüüüüüü.png" id="9_vbvja"]
+[ext_resource type="Texture2D" uid="uid://bhyewi4p624eb" path="res://unbundled-models/handhelds/psp_1000_grüüüüüüüüüü.png" id="9_vbvja"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="10_0tid2"]
 [ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/vr_spring_return_slider.gd" id="12_pwrsw"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="13_volbt"]
@@ -27,17 +27,17 @@ albedo_color = Color(0.2, 0.2, 0.22, 1)
 [sub_resource type="BoxShape3D" id="BoxShape3D_du4qc"]
 size = Vector3(0.03, 0.015, 0.03)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
-size = Vector3(0.009, 0.007, 0.008)
-
-[sub_resource type="BoxMesh" id="BoxMesh_vol"]
-size = Vector3(0.0047, 0.0011, 0.0034)
-
 [sub_resource type="BoxMesh" id="BoxMesh_open"]
 size = Vector3(0.0103, 0.003, 0.0008)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_open"]
 size = Vector3(0.016, 0.009, 0.009)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
+size = Vector3(0.009, 0.007, 0.008)
+
+[sub_resource type="BoxMesh" id="BoxMesh_vol"]
+size = Vector3(0.0047, 0.0011, 0.0034)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ina7k"]
 resource_name = "psp_1_buttons"
@@ -1679,9 +1679,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0019636303, 0.0050297156, -
 collision_layer = 1048577
 script = ExtResource("12_pwrsw")
 axis_local = Vector3(0.320634, 0, -0.947203)
+knob_turn_deg = 3.3
 travel = 0.00315
 engage_radius = 0.028
-knob_turn_deg = 3.3
 
 [node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=4784567]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
@@ -1696,12 +1696,11 @@ shape = SubResource("BoxShape3D_du4qc")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.033198, 0.00063, -0.035721)
 collision_layer = 1048577
 script = ExtResource("12_pwrsw")
-axis_local = Vector3(1, 0, 0)
-travel = 0.003
-engage_radius = 0.02
 on_hold_sec = 0.0
 off_hold_sec = 0.0
 active_threshold = 0.98
+travel = 0.003
+engage_radius = 0.02
 
 [node name="KnobMesh" type="MeshInstance3D" parent="OpenSlider" unique_id=1122336678]
 visible = false

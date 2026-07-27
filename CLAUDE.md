@@ -321,59 +321,83 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 - All static libretro callbacks resolve their `Wrapper*` via `Wrapper::GetCurrentThreadWrapper()` — never store a raw global pointer
 - `call_deferred` used when Wrapper needs to signal back to the `Libretro` node on the main thread (e.g. `NotifyOptionsReady`)
 
-## Licensed Models vs Placeholder Builds
+## unbundled Models vs Placeholder Builds
 
-The detailed console/handheld shells are imported-derived and replicate real hardware trade
-dress. They cannot ship until the licence lands, so every build is one of two shapes,
-selected by **`RetroModelPolicy`** (`RetroVR/Scripts/Data/model_policy.gd`):
+The detailed console/handheld/controller models replicate real hardware trade dress and we
+have **no licence for them**, so they cannot ship. Every build is one of two shapes,
+selected by **`RetroModelPolicy`** (`RetroVR/Scripts/Data/model_policy.gd`), and **the safe
+one is the default** — nothing has to be set or remembered to get a shippable build:
 
-- **licensed** (default, dev) — every bespoke model as authored. Unchanged day to day.
-- **placeholder** (store) — consoles fall back to the generic grey box (`default_model.gd`
+- **placeholder** (DEFAULT) — consoles fall back to the generic grey box (`default_model.gd`
   + `system.tscn`'s `SystemBody`); handhelds KEEP their device scene, because it also owns
   the live screen and the on-device controls, and swap only the shell for their
   `*_primitive.tscn` stand-in; every bespoke controller/joystick spawns the procedural
   `retro_controller.tscn` RetroPad; carts, memory cards and controller-plug connectors keep
   the procedural stand-ins they already had.
+- **unbundled** (opt-in) — the detailed models as authored. **Development and testing
+  only.** Never ship a build in this shape.
 
-Anything reaching into `imported-assets/` gates on **`RetroModelPolicy.may_use(path)`**, not
-a bare `ResourceLoader.exists()`. Those two used to be conflated, so the props' stand-ins
-were only reachable on a build where the GLB was genuinely missing — in the editor
-`--placeholder-models` still loaded the licensed model and never exercised them.
+**Layout is the first line of defence.** Everything we lack a licence for lives under
+`RetroVR/unbundled-models/` (`consoles/`, `handhelds/`, `controllers/`, `media/`, and
+`scenes/` for the device/controller `.tscn`s that bake that geometry in). `imported-assets/`
+holds only what we may ship — e.g. `den/`, the Kenney furniture with its own licence file.
+So the export filter is one rule, `unbundled-models/*`, and the licence boundary is visible
+in the file tree instead of encoded in a list of filenames.
 
-Selecting placeholder mode, highest priority first:
-1. `--placeholder-models` on the command line (`--licensed-models` forces the other way).
-   Works in a plain editor run with every GLB still on disk — this is what the probe uses.
-2. The `placeholder_models` custom feature tag on the export preset (how a store build
-   picks it, since there is no command line there).
-3. The `retrovr/models/placeholder_models` project setting.
+Anything reaching into `unbundled-models/` gates on **`RetroModelPolicy.may_use(path)`**,
+not a bare `ResourceLoader.exists()`. Those two used to be conflated, so the props' stand-ins
+were only reachable on a build where the asset was genuinely missing — in the editor the
+files are still on disk, so a placeholder run loaded the real model anyway and never
+exercised them.
+
+Asking for the unbundled models (highest priority first) — always an explicit act:
+1. `--unbundled-models` on the command line. The everyday one: works in a plain editor run,
+   so a dev sees the real hardware without changing any project state.
+   (`--placeholder-models` forces the default back, e.g. over the project setting.)
+2. The `unbundled_models` custom feature tag on an export preset — how a dev/test BUILD gets
+   them, since there is no command line there. Only `Quest (Dev - unbundled models)` sets it.
+3. The `retrovr/models/unbundled_models` project setting, to keep the editor in that mode
+   without passing a flag each time.
+
+**When properly licensed models arrive** they do not belong behind this switch: drop them
+into `imported-assets/` as the normal, default-loaded models. The placeholder path stays
+useful as the fallback for any system with no model yet.
 
 **The invariant**: imported GLB geometry always bakes down to an `ArrayMesh`, while every
 stand-in, bezel, button cap and live screen quad is a `PrimitiveMesh`. So a placeholder
-build renders **no ArrayMesh at all**, enforced by `RetroSystemModel.drop_licensed_geometry()`
-and asserted per-system by the probe. Freeing the authored `"Shell"` node is NOT enough on
-its own — the clamshells bake lid meshes straight onto `LidPivot` (`n3ds.tscn`'s
-`top`/`GlasTop`/`TopScreen`, the GBA SP's `TopScreen`), outside any Shell subtree.
+build renders **no ArrayMesh at all**, enforced by
+`RetroSystemModel.drop_unbundled_geometry()` and asserted per-system by the probe. Freeing
+the authored `"Shell"` node is NOT enough on its own — the clamshells bake lid meshes
+straight onto `LidPivot` (`n3ds.tscn`'s `top`/`GlasTop`/`TopScreen`, the GBA SP's
+`TopScreen`), outside any Shell subtree.
 
 Run the gate after adding or re-baking any hardware model:
 ```bash
-"$godot" --path "$proj" res://Tools/model_placeholder_probe.tscn -- --placeholder-models 2>&1 \
+"$godot" --path "$proj" res://Tools/model_placeholder_probe.tscn 2>&1 \
   | grep -a "\[probe\]"      # every row must read OK / imported=0; PNGs land in user://
 ```
-41 rows: 29 system/variant combos + the 12 peripherals.
-Drop `-- --placeholder-models` to render the licensed side for comparison.
+41 rows: 29 system/variant combos + the 12 peripherals. No flag needed — placeholder is the
+default. Add `-- --unbundled-models` to render the other side for comparison (35 of the 41
+have a detailed model; the rest were always primitive).
 
-The spawn menu dispatches licence-pending peripherals through
+The spawn menu dispatches the bespoke peripherals through
 `SpawnMenuController.PERIPHERAL_MODELS` (token → `[GLB, bespoke scene]`) rather than a dozen
 near-identical `match` arms, so the probe walks the same table the menu does instead of a
-copy of it. `_instantiate_peripheral` never returns null — it used to, which meant a store
-build answered "give me a DualShock" by silently spawning nothing.
+copy of it. `_instantiate_peripheral` never returns null — it used to, which meant a build
+without the models answered "give me a DualShock" by silently spawning nothing.
 
-**Export**: the `Quest (Store)` preset sets the feature tag and excludes `imported-assets/*`,
-the console device scenes and the bespoke controller scenes (674 MB → 53 MB pack). One thing
-it does **not** yet solve, needing a refactor rather than a filter: the **handheld** device
-scenes still carry their baked licensed shells in the .pck. They can't be excluded (they own
-the screen + controls); the fix is to split each baked `"Shell"` out into its own excludable
-resource loaded only in licensed mode.
+**Export presets**:
+- `Quest` — the default, and store-safe. No feature tag; excludes `unbundled-models/*`
+  (674 MB → 54 MB pack).
+- `Quest (Dev - unbundled models)` — sets the `unbundled_models` tag and excludes none of
+  it. On-device development only.
+- `Windows Desktop` — left unfiltered: it keeps the assets so a desktop dev run can flip
+  between the two with `--unbundled-models` at runtime.
+
+One thing the layout does **not** yet solve, needing a refactor: the **handheld** device
+scenes still carry their baked shells in the .pck. They can't move into `unbundled-models/`
+(they own the live screen + on-device controls, so they must ship); the fix is to split each
+baked `"Shell"` out into its own excludable resource loaded only in unbundled mode.
 
 ## Tools
 

@@ -1,6 +1,6 @@
 ## RetroSystemModelGameBoy — original DMG Game Boy (portrait, 160×144 LCD).
 ## The primitive stand-in shell lives in game_boy.tscn (store-safe fallback); when
-## the detailed imported DMG GLB is present it's swapped in by the base (dev-only).
+## the detailed DMG GLB is present it's swapped in by the base (dev-only).
 class_name RetroSystemModelGameBoy
 extends RetroSystemModelHandheld
 
@@ -13,10 +13,10 @@ func _init() -> void:
 	_lcd_shader = LCD_SHADER
 
 
-## Detailed DMG shell (an author imported). Export-excluded — store builds fall back to
+## Detailed DMG shell (an author). Export-excluded — store builds fall back to
 ## the primitive shell authored in game_boy.tscn.
 func _glb_path() -> String:
-	return "res://imported-assets/game_boy_dmg.glb"
+	return "res://unbundled-models/handhelds/game_boy_dmg.glb"
 
 
 ## Store-safe primitive stand-in (spawned only when the detailed DMG GLB is absent).

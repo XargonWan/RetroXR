@@ -33,24 +33,24 @@ const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/cartridge_options_panel.ts
 var _options_panel: Node3D = null
 
 
-## Real per-system cartridge models (imported). Export-excluded, so a store build
+## Real per-system cartridge models. Export-excluded, so a store build
 ## silently falls back to the procedural box.
 const _CART_MODELS := {
-	"nds": "res://imported-assets/nds_cart.glb",
-	"3ds": "res://imported-assets/n3ds_cart.glb",
+	"nds": "res://unbundled-models/media/nds_cart.glb",
+	"3ds": "res://unbundled-models/media/n3ds_cart.glb",
 	# Grey Game Boy / Game Boy Color cart (GBC games group under game_boy).
-	"game_boy": "res://imported-assets/game_boy_cart.glb",
-	"game_boy_advance": "res://imported-assets/game_boy_advance_cart.glb",
-	"atari_2600": "res://imported-assets/atari_2600_cart.glb",
-	"atari_5200": "res://imported-assets/atari_5200_cart.glb",
-	"virtual_boy": "res://imported-assets/virtual_boy_cart.glb",
+	"game_boy": "res://unbundled-models/media/game_boy_cart.glb",
+	"game_boy_advance": "res://unbundled-models/media/game_boy_advance_cart.glb",
+	"atari_2600": "res://unbundled-models/media/atari_2600_cart.glb",
+	"atari_5200": "res://unbundled-models/media/atari_5200_cart.glb",
+	"virtual_boy": "res://unbundled-models/media/virtual_boy_cart.glb",
 	# One EU-styled cart serves Genesis and Mega Drive alike (the shells differ,
 	# the cartridge does not).
-	"mega_drive": "res://imported-assets/genesis_cart.glb",
-	"playstation_portable": "res://imported-assets/psp_umd.glb",
+	"mega_drive": "res://unbundled-models/media/genesis_cart.glb",
+	"playstation_portable": "res://unbundled-models/media/psp_umd.glb",
 }
 
-## Name of the model's swappable label face. Almost every imported media model calls
+## Name of the model's swappable label face. Almost every one of these media models calls
 ## it "media_label"; the PSP UMD prints its disc-face art on "vetro" (Italian for
 ## glass) instead, with a separate "media_label" quad buried behind it — so the
 ## game art has to land on vetro or it hides under the caddy's placeholder print.

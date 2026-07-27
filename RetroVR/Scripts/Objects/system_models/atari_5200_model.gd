@@ -1,6 +1,6 @@
 ## RetroSystemModelAtari5200 — Atari 5200 (2-port revision, top-loading cartridge).
 ##
-## Loads an author's imported Atari 5200 GLB and wires the POWER + RESET
+## Loads an author's Atari 5200 GLB and wires the POWER + RESET
 ## switches and the top cartridge slot (cart drops in). No eject button (carts
 ## pull straight out, like the 2600) and no removable memory cards.
 ##
@@ -9,7 +9,7 @@
 class_name RetroSystemModelAtari5200
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/atari_5200.glb"
+const _MODEL_PATH := "res://unbundled-models/consoles/atari_5200.glb"
 
 var _glb: Node3D = null
 

@@ -2,7 +2,7 @@
 ## Same animation engine (inherited); only the mesh names and button→RETRO_JOYPAD
 ## bit map differ. NES layout: A / B + Select / Start + a D-pad (no analog sticks).
 ##
-## Model: an author's imported "NES Controller (Anim)" bundle — separated named meshes
+## Model: an author's "NES Controller (Anim)" bundle — separated named meshes
 ## FireButtonRight (A), FireButtonBottom (B), SelectButton, StartButton and
 ## StickLeft22 (the D-pad, rocking about the "StickLeft" pivot empty).
 class_name NesController

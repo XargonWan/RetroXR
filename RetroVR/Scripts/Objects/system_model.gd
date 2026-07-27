@@ -110,7 +110,7 @@ func is_handheld() -> bool:
 	return false
 
 
-## True when this model can stand itself up WITHOUT the licensed hardware shell,
+## True when this model can stand itself up WITHOUT the unbundled hardware shell,
 ## i.e. it owns a store-safe primitive stand-in and drops the shell by itself.
 ##
 ## A placeholder build (see RetroModelPolicy) keeps such a model and lets it swap
@@ -124,7 +124,7 @@ func has_placeholder_shell() -> bool:
 	return false
 
 
-## Strip every piece of licensed hardware geometry from this model, for a
+## Strip every piece of unbundled hardware geometry from this model, for a
 ## placeholder build. Safe to call on a model that has none.
 ##
 ## Freeing the authored "Shell" child is NOT sufficient on its own. The
@@ -140,7 +140,7 @@ func has_placeholder_shell() -> bool:
 ## screen quad in this project is a PrimitiveMesh (Box/Quad/Cylinder/Sphere).
 ## A placeholder build therefore renders NO ArrayMesh, and that invariant is
 ## cheap to assert — which is exactly what the validation probe does.
-func drop_licensed_geometry() -> void:
+func drop_unbundled_geometry() -> void:
 	var shell := get_node_or_null("Shell")
 	if shell != null:
 		remove_child(shell)
@@ -262,7 +262,7 @@ func set_controller_port_occupied(port_index: int, occupied: bool) -> void:
 ## World point where a shell's bundled A/V plug prop's lead leaves it: the far end
 ## of the plug mesh along the console's BACK (-Z), on the plug's own axis.
 ##
-## The imported shells model the A/V lead already plugged in, so those plug props are
+## The shells model the A/V lead already plugged in, so those plug props are
 ## SHOWN (they are the visible connector the spawned rope hangs off — without them
 ## the cable sprouts from thin air a few cm behind the console). The rope therefore
 ## has to start at the plug's TIP: anchored at the socket instead it would run

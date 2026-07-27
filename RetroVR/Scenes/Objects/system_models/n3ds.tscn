@@ -4,9 +4,9 @@
 [ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_aybqj"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
-[ext_resource type="Texture2D" uid="uid://bhuh5ye5tni37" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
-[ext_resource type="Texture2D" uid="uid://xd1gsici3404" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
-[ext_resource type="Texture2D" uid="uid://clu825a2xvww6" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
+[ext_resource type="Texture2D" uid="uid://bhuh5ye5tni37" path="res://unbundled-models/handhelds/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
+[ext_resource type="Texture2D" uid="uid://xd1gsici3404" path="res://unbundled-models/handhelds/new_3ds_xl_normal.png" id="5_jmku2"]
+[ext_resource type="Texture2D" uid="uid://clu825a2xvww6" path="res://unbundled-models/handhelds/new_3ds_xl_bluemoon.png" id="7_ag6as"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
 size = Vector3(0.134, 0.0105, 0.074)

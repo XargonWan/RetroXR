@@ -1,6 +1,6 @@
 ## RetroSystemModelDreamcast — Sega Dreamcast disc console model.
 ##
-## Loads an author's imported Dreamcast GLB and wires power/open buttons, the GD-ROM
+## Loads an author's Dreamcast GLB and wires power/open buttons, the GD-ROM
 ## lid (GLB Open_PAN forward; Close_PAN is broken so close = reverse + snap, same
 ## quirk as PSone/Saturn), disc seat, cable and collision. 4 controller ports,
 ## no console memory-card slot (Dreamcast saves to the VMU in the controller).
@@ -8,7 +8,7 @@
 class_name RetroSystemModelDreamcast
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/dreamcast_console.glb"
+const _MODEL_PATH := "res://unbundled-models/consoles/dreamcast_console.glb"
 ## The GLB Open clip rotates about the model origin (converter bakes transforms to
 ## identity) → wrong direction. Drive a real back-edge hinge instead.
 const LID_OPEN_DEG := 70.0

@@ -2,7 +2,7 @@
 ## Same animation engine as every other pad; only the mesh names and the
 ## button→RETRO_JOYPAD map differ. Layout: a D-pad, one row of A/B/C, and START.
 ##
-## Model: an author's imported "Genesis Controller" bundle. Its meshes are named for the
+## Model: an author's "Genesis Controller" bundle. Its meshes are named for the
 ## Blender object they were duplicated from, so every one is prefixed
 ## `Controler_001|` (the author's spelling) and suffixed `|Dupli|<n>` — matching
 ## is on the normalised prefix, and the D-pad target has to carry its `|Dupli`

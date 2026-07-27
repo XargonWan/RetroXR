@@ -1,13 +1,13 @@
 ## RetroSystemModelSegaSaturn — Sega Saturn disc console model.
 ##
-## Loads an author's imported Saturn GLB and wires the power/reset/open buttons, the
+## Loads an author's Saturn GLB and wires the power/reset/open buttons, the
 ## CD lid (GLB "..._Open_PAN" animation; "..._Close_PAN" is broken so close =
 ## reverse + snap, same quirk as the PSone), disc seat, cable and collision.
 ## Dev-only: GLB is export-excluded; _ready() self-guards to the placeholder box.
 class_name RetroSystemModelSegaSaturn
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/sega_saturn.glb"
+const _MODEL_PATH := "res://unbundled-models/consoles/sega_saturn.glb"
 ## The GLB's own Open clip rotates about the model origin (converter bakes node
 ## transforms to identity), so it swung the lid the WRONG way. Drive a real
 ## back-edge hinge instead — a spring-loaded, button-opened VRSpringLatchedHinge.

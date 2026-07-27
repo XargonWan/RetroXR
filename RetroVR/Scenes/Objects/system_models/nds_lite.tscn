@@ -4,10 +4,10 @@
 [ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_0o7mw"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_s8ri4"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_sss83"]
-[ext_resource type="PackedScene" uid="uid://c52qptv555ig1" path="res://imported-assets/ds_lite.glb" id="4_uxbae"]
-[ext_resource type="Texture2D" uid="uid://dn7vecunnqrre" path="res://imported-assets/ds_lite_Plugs_Albedo.png" id="5_dy5q1"]
-[ext_resource type="Texture2D" uid="uid://4ug81lrvjpj6" path="res://imported-assets/ds_lite_orm.png" id="6_loftr"]
-[ext_resource type="Texture2D" uid="uid://bw0axba4ift17" path="res://imported-assets/ds_lite_normal.png" id="7_4nau3"]
+[ext_resource type="PackedScene" uid="uid://c52qptv555ig1" path="res://unbundled-models/handhelds/ds_lite.glb" id="4_uxbae"]
+[ext_resource type="Texture2D" uid="uid://dn7vecunnqrre" path="res://unbundled-models/handhelds/ds_lite_Plugs_Albedo.png" id="5_dy5q1"]
+[ext_resource type="Texture2D" uid="uid://4ug81lrvjpj6" path="res://unbundled-models/handhelds/ds_lite_orm.png" id="6_loftr"]
+[ext_resource type="Texture2D" uid="uid://bw0axba4ift17" path="res://unbundled-models/handhelds/ds_lite_normal.png" id="7_4nau3"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_2kkqg"]
 size = Vector2(0.062476054, 0.049789213)

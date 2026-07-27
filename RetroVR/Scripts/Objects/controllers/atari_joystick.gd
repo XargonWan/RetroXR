@@ -2,7 +2,7 @@
 ## AnimatedController engine. One fire button and a digital 4-way
 ## stick, so only two moving parts.
 ##
-## Model: imported "Atari Joystick (Antony)". Its meshes are named generically
+## Model: "Atari Joystick (Antony)". Its meshes are named generically
 ## (object_001_low … object_007_low) rather than by function, so unlike the
 ## NES/SNES/PSX pads the mapping can't be read off the names — it was measured:
 ##

@@ -1,6 +1,6 @@
 ## RetroSystemModelAtari2600 — Atari 2600 VCS (woodgrain, cartridge, top-loading).
 ##
-## Loads an author's imported Atari 2600 GLB and wires the POWER + RESET switches and
+## Loads an author's Atari 2600 GLB and wires the POWER + RESET switches and
 ## the top cartridge slot (cart drops in). The 2600 has no eject button (carts pull
 ## straight out) and no removable memory cards. Two joystick ports on the back.
 ##
@@ -10,7 +10,7 @@
 class_name RetroSystemModelAtari2600
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/atari_2600.glb"
+const _MODEL_PATH := "res://unbundled-models/consoles/atari_2600.glb"
 
 var _glb: Node3D = null
 

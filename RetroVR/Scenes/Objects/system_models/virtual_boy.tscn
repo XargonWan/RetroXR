@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_dweg0"]
 [ext_resource type="Shader" uid="uid://bwfu7ewask6e" path="res://Shaders/vb_stereo.gdshader" id="2_rbfnt"]
-[ext_resource type="PackedScene" uid="uid://dmdm5hld5kp52" path="res://imported-assets/virtual_boy.glb" id="3_n6osu"]
+[ext_resource type="PackedScene" uid="uid://dmdm5hld5kp52" path="res://unbundled-models/handhelds/virtual_boy.glb" id="3_n6osu"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="9_vbvol"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_x7yte"]

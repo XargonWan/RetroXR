@@ -34,26 +34,26 @@ const AUDIO_CASSETTE_SCENE  := preload("res://Scenes/Objects/audio_cassette.tscn
 
 ## Licence-pending peripherals: spawn token → [GLB, bespoke scene].
 ##
-## Every one is imported-derived, so its GLB lives in imported-assets/ — which a
-## store build excludes. A licensed build spawns the bespoke scene; a placeholder
-## build spawns the procedural RetroController in its place. See
-## _instantiate_peripheral, and RetroModelPolicy for the switch.
+## Each GLB lives in imported-assets/, which a default (placeholder) build
+## excludes. Only a build that explicitly asked for the unbundled models spawns
+## the bespoke scene; every other build spawns the procedural RetroController in
+## its place. See _instantiate_peripheral, and RetroModelPolicy for the switch.
 ##
-## Kept as a table rather than twelve near-identical match arms so the licensing
+## Kept as a table rather than twelve near-identical match arms so the licence
 ## probe can walk the same list the spawn menu uses, instead of a copy of it.
 const PERIPHERAL_MODELS: Dictionary = {
-	"dualshock":           ["res://imported-assets/dualshock.glb",           "res://Scenes/Objects/controllers/dualshock.tscn"],
-	"dualshock2":          ["res://imported-assets/dualshock2.glb",          "res://Scenes/Objects/controllers/dualshock2.tscn"],
-	"gamecube_controller": ["res://imported-assets/gamecube_controller.glb", "res://Scenes/Objects/controllers/gamecube_controller.tscn"],
-	"dreamcast_controller":["res://imported-assets/dreamcast_controller.glb","res://Scenes/Objects/controllers/dreamcast_controller.tscn"],
-	"nes_controller":      ["res://imported-assets/nes_controller.glb",      "res://Scenes/Objects/controllers/nes_controller.tscn"],
-	"genesis_controller":  ["res://imported-assets/genesis_controller.glb",  "res://Scenes/Objects/controllers/genesis_controller.tscn"],
-	"megadrive_controller":["res://imported-assets/megadrive_controller.glb","res://Scenes/Objects/controllers/megadrive_controller.tscn"],
-	"saturn_controller":   ["res://imported-assets/saturn_controller.glb",   "res://Scenes/Objects/controllers/saturn_controller.tscn"],
-	"snes_controller":     ["res://imported-assets/snes_controller.glb",     "res://Scenes/Objects/controllers/snes_controller.tscn"],
-	"atari_joystick":      ["res://imported-assets/atari_joystick.glb",      "res://Scenes/Objects/controllers/atari_joystick.tscn"],
-	"n64_controller":      ["res://imported-assets/n64_controller.glb",      "res://Scenes/Objects/controllers/n64_controller.tscn"],
-	"psx_controller":      ["res://imported-assets/psx_controller.glb",      "res://Scenes/Objects/controllers/psx_controller.tscn"],
+	"dualshock":           ["res://unbundled-models/controllers/dualshock.glb",           "res://unbundled-models/scenes/dualshock.tscn"],
+	"dualshock2":          ["res://unbundled-models/controllers/dualshock2.glb",          "res://unbundled-models/scenes/dualshock2.tscn"],
+	"gamecube_controller": ["res://unbundled-models/controllers/gamecube_controller.glb", "res://unbundled-models/scenes/gamecube_controller.tscn"],
+	"dreamcast_controller":["res://unbundled-models/controllers/dreamcast_controller.glb","res://unbundled-models/scenes/dreamcast_controller.tscn"],
+	"nes_controller":      ["res://unbundled-models/controllers/nes_controller.glb",      "res://unbundled-models/scenes/nes_controller.tscn"],
+	"genesis_controller":  ["res://unbundled-models/controllers/genesis_controller.glb",  "res://unbundled-models/scenes/genesis_controller.tscn"],
+	"megadrive_controller":["res://unbundled-models/controllers/megadrive_controller.glb","res://unbundled-models/scenes/megadrive_controller.tscn"],
+	"saturn_controller":   ["res://unbundled-models/controllers/saturn_controller.glb",   "res://unbundled-models/scenes/saturn_controller.tscn"],
+	"snes_controller":     ["res://unbundled-models/controllers/snes_controller.glb",     "res://unbundled-models/scenes/snes_controller.tscn"],
+	"atari_joystick":      ["res://unbundled-models/controllers/atari_joystick.glb",      "res://unbundled-models/scenes/atari_joystick.tscn"],
+	"n64_controller":      ["res://unbundled-models/controllers/n64_controller.glb",      "res://unbundled-models/scenes/n64_controller.tscn"],
+	"psx_controller":      ["res://unbundled-models/controllers/psx_controller.glb",      "res://unbundled-models/scenes/psx_controller.tscn"],
 }
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
@@ -854,7 +854,7 @@ func _on_spawn_requested(type: String) -> void:
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		# Every bespoke peripheral below is licence-pending: its GLB lives in
 		# imported-assets/, which a store build excludes. _instantiate_peripheral
-		# loads it at runtime on a licensed build and hands back the procedural
+		# loads it at runtime when they were asked for, and hands back the procedural
 		# RetroController otherwise, so the menu item always spawns SOMETHING.
 		"dualshock":
 			obj = _instantiate_peripheral("dualshock")

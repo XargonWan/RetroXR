@@ -74,7 +74,7 @@ func _find_mesh(base: String) -> MeshInstance3D:
 	return null
 
 
-# Find a non-mesh marker node by exact normalised name (the imported pivot empties).
+# Find a non-mesh marker node by exact normalised name (the bundled pivot empties).
 func _find_pivot(mesh: MeshInstance3D, empty_name: String) -> Vector3:
 	if mesh == null:
 		return Vector3.ZERO

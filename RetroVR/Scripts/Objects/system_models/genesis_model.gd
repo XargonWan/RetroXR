@@ -1,6 +1,6 @@
 ## RetroSystemModelGenesis — Sega Genesis / Mega Drive (Model 1) cartridge console.
 ##
-## Loads an author's imported Genesis GLB; wires power/reset buttons, the top cartridge
+## Loads an author's Genesis GLB; wires power/reset buttons, the top cartridge
 ## slot (cart drops straight down), AV cable, power LED and collision. Dev-only:
 ## GLB export-excluded; _ready() self-guards to the placeholder box.
 class_name RetroSystemModelGenesis
@@ -13,7 +13,7 @@ var _led: MeshInstance3D = null
 ## Overridable so regional badges (Mega Drive) can reuse all this wiring — the
 ## Genesis and Mega Drive Model 1 GLBs share node names, only the shell differs.
 func _model_path() -> String:
-	return "res://imported-assets/sega_genesis.glb"
+	return "res://unbundled-models/consoles/sega_genesis.glb"
 
 
 func _ready() -> void:
@@ -47,7 +47,7 @@ func _ready() -> void:
 	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if ap != null:
 		ap.autoplay = ""
-	# Hide imported's invisible "Finger Button" trigger proxies (they import as
+	# Hide the bundle's invisible "Finger Button" trigger proxies (they import as
 	# untextured white meshes). RetroVR drives the buttons itself.
 	var stack: Array[Node] = [_glb]
 	while not stack.is_empty():

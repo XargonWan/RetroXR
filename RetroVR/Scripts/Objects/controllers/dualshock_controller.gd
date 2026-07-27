@@ -2,10 +2,10 @@
 ## AnimatedController engine. Four face buttons, L1/L2/R1/R2, Select/Start, a
 ## D-pad and two clickable analog sticks.
 ##
-## The model is an author's imported "PlayStation Controller" bundle — separated named
+## The model is an author's "PlayStation Controller" bundle — separated named
 ## meshes: button_x/circle/square/triangle, button_l1/l2/r1/r2, button_select/
 ## start/analog, dpad, stick_left/right, Main, controller_screws. The D-pad and
-## sticks rock about the imported pivot empties shipped inside the .glb (Dpad /
+## sticks rock about the bundled pivot empties shipped inside the .glb (Dpad /
 ## StickLeft / StickRight).
 class_name DualShockController
 extends AnimatedController

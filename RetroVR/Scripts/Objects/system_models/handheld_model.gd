@@ -54,7 +54,7 @@ var _lcd_shader: Shader = PIXEL_AA_SHADER
 var _lcd_material: ShaderMaterial = null
 
 ## When a subclass returns a GLB path from _glb_path(), the handheld swaps its
-## primitive stand-in shell for that detailed imported model (dev-only — the GLB lives
+## primitive stand-in shell for that detailed model (dev-only — the GLB lives
 ## in export-excluded imported-assets/). Store builds (GLB absent) keep the authored
 ## primitive shell, so on-device controls + screen still work everywhere.
 var _glb: Node3D = null
@@ -93,15 +93,14 @@ func has_placeholder_shell() -> bool:
 	return true
 
 
-## Force the stand-in shell even on a build that has the licensed one. The
-## fallback path is otherwise never exercised in development (imported-assets/
-## is always there and the shells are baked into the device scenes), so this is
-## what a probe flips to keep it honest.
+## Force the stand-in shell even on a run that asked for the unbundled models.
+## Lets a probe check the store-safe path without restarting under a different
+## flag; the default build takes that path anyway.
 @export var force_primitive_shell: bool = false
 
 
 ## True when this device must wear its primitive stand-in rather than the
-## licensed shell — because the build says so, or because a probe forced it.
+## unbundled shell — because the build says so, or because a probe forced it.
 func use_placeholder_shell() -> bool:
 	return force_primitive_shell or RetroModelPolicy.placeholder_models()
 
@@ -109,10 +108,10 @@ func use_placeholder_shell() -> bool:
 ## Device scenes that merely REFERENCE the GLB (an [ext_resource] instance) lose
 ## it on their own once imported-assets/ is export-excluded; the ones carrying a
 ## baked copy of the geometry — psp, n3ds, gamecube, nds, nes, … — only lose it
-## via drop_licensed_geometry(), which is why a placeholder build cannot rely on
+## via drop_unbundled_geometry(), which is why a placeholder build cannot rely on
 ## the export filter alone.
-func _drop_licensed_shell() -> void:
-	drop_licensed_geometry()
+func _drop_unbundled_shell() -> void:
+	drop_unbundled_geometry()
 
 
 ## Override to return a detailed shell GLB (else "" = keep the primitive shell).
@@ -120,7 +119,7 @@ func _glb_path() -> String:
 	return ""
 
 
-## Name of the GLB's screen-lens mesh. Most imported handhelds call it "screen_mesh";
+## Name of the GLB's screen-lens mesh. Most of these handhelds call it "screen_mesh";
 ## some (the PSP-1000) suffix it "screen_mesh_0". Override to match.
 func _glb_screen_name() -> String:
 	return "screen_mesh"
@@ -131,7 +130,7 @@ func _glb_screen_name() -> String:
 func _on_glb_ready() -> void:
 	pass
 
-## imported handheld GLBs are modelled upright (screen on +Z); RetroVR's frame is
+## These handheld GLBs are modelled upright (screen on +Z); RetroVR's frame is
 ## lying flat with the screen on +Y, so the default lays it back. Override if a
 ## particular GLB is authored differently.
 func _glb_rotation_degrees() -> Vector3:
@@ -139,12 +138,12 @@ func _glb_rotation_degrees() -> Vector3:
 
 
 func _ready() -> void:
-	# Drop the baked licensed shell FIRST on a placeholder build, so everything
+	# Drop the baked unbundled shell FIRST on a placeholder build, so everything
 	# below (dimension read-back, collision, cart slot) sees exactly what a
 	# shipped store build sees rather than measuring a shell that isn't there.
 	var placeholder := use_placeholder_shell()
 	if placeholder:
-		_drop_licensed_shell()
+		_drop_unbundled_shell()
 	_cache_shell_nodes()
 	var gp := _glb_path()
 	if not placeholder and (get_node_or_null("Shell") != null or (not gp.is_empty() and ResourceLoader.exists(gp))):
@@ -198,7 +197,7 @@ func _spawn_primitive() -> void:
 ## This exists so that a placeholder build ALWAYS has something to hold. Without
 ## it a handheld whose primitive was never authored ships as a screen and a set
 ## of buttons floating in mid-air — and, worse, it does so silently, because
-## nothing in a licensed dev build ever takes this path. A new handheld is now
+## nothing in an unbundled dev build ever takes this path. A new handheld is now
 ## store-safe on the day it is added, and authoring its *_primitive.tscn is a
 ## looks-better change rather than a prerequisite.
 func _spawn_generic_primitive() -> void:
@@ -212,9 +211,9 @@ func _spawn_generic_primitive() -> void:
 		# its own (the DS family reparents nds_primitive's LidParts here) —
 		# adding a second slab would just bury it.
 		return
-	# The whole lid half was licensed geometry and is now gone (the GBA SP), so
+	# The whole lid half was unbundled geometry and is now gone (the GBA SP), so
 	# build a slab for it. Everything below is expressed in the PIVOT's frame, not
-	# the screen's: the screen's authored pose belongs to the licensed shell, and
+	# the screen's: the screen's authored pose belongs to the unbundled shell, and
 	# hanging the lid off it left the lid floating in space with a gap where the
 	# hinge should be. Anchored to the pivot, the lid meets the base by
 	# construction, and the picture is then moved onto it.
@@ -418,7 +417,7 @@ func _hide_glb_clutter(root: Node3D) -> void:
 		var mi := n as MeshInstance3D
 		if mi != null:
 			var nm := String(mi.name).to_lower()
-			# "kabel" catches a few imported shells (e.g. the PSP-1000's an author
+			# "kabel" catches a few of these shells (e.g. the PSP-1000's an author
 			# model) authored with German node names ("AVKabel", "PowerKabel1/2").
 			if nm.contains("rca") or nm.contains("cable") or nm.contains("kabel") or nm.contains("plug"):
 				mi.visible = false

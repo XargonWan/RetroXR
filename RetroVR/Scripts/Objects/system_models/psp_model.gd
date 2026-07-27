@@ -1,13 +1,12 @@
 ## RetroSystemModelPSP — Sony PlayStation Portable (PSP-1000, 480×272 widescreen).
 ##
-## Uses an author's detailed imported shell (psp_1000.glb), which — unlike the
-## older bare shell — models every control as its own mesh: the ✕○□△ face
-## buttons, the d-pad, the analog nub, the L/R shoulders, Start/Select/Home, the
-## volume ± and sound/display keys, the slide POWER switch, the EJECT latch and
-## the UMD door. That is what lets the pad animate and the tray open.
+## an author's shell (psp_1000.glb) models every control as its own
+## mesh: the ✕○□△ face buttons, the d-pad, the analog nub, the L/R shoulders,
+## Start/Select/Home, the volume ± and sound/display keys, the slide POWER
+## switch, the EJECT latch and the UMD door.
 ##
-## Media is the UMD (psp_umd.glb, systemid "playstation_portable"), which loads
-## through the back-edge UMD door rather than a top slot.
+## Media is the UMD (psp_umd.glb, systemid "playstation_portable"), loaded
+## through the back-edge UMD door.
 class_name RetroSystemModelPSP
 extends RetroSystemModelHandheld
 
@@ -18,7 +17,7 @@ func _glb_screen_name() -> String:
 
 
 func _glb_path() -> String:
-	return "res://imported-assets/psp_1000.glb"
+	return "res://unbundled-models/handhelds/psp_1000.glb"
 
 
 ## Store-safe primitive stand-in (spawned only when the GLB shell is absent

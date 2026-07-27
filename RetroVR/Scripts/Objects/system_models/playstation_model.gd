@@ -2,7 +2,7 @@
 class_name RetroSystemModelPlaystation
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://imported-assets/King PSX.glb"
+const _MODEL_PATH := "res://unbundled-models/consoles/King PSX.glb"
 
 ## Disc-lid open angle (degrees) about the console's left-right axis. Negative
 ## lifts the front edge up; the hinge is the lid node's own origin (rear-top edge).
