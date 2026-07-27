@@ -145,6 +145,14 @@ func has_start_stop_button() -> bool:
 	return not is_handheld()
 
 
+## Whether the cabinet's generic OPEN/EJECT button should appear on a system that
+## has a disc loader. Override to false when the shell models its own release
+## control and mounts a widget on it (the PSP's sprung OPEN latch), so the two
+## don't both claim the same job — and the same mesh.
+func has_eject_button() -> bool:
+	return true
+
+
 ## Hide the generic grey port box and its number on every controller port.
 ##
 ## system.tscn ships those as stand-ins for the procedural default shell, which

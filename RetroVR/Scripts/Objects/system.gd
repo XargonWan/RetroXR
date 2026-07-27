@@ -529,9 +529,12 @@ func _load_system_model() -> void:
 	# an EJECT button. Cartridge systems hide the button entirely.
 	_disc_loader = MediaDimensions.disc_loader(systemid)
 	var has_loader := _disc_loader != MediaDimensions.LOADER_NONE
-	_eject_button.visible = has_loader
-	_eject_button.set_deferred("monitoring", has_loader)
-	_eject_button.set_process(has_loader)   # also stops touch-proximity checks
+	# A shell that models its own release control (the PSP's sprung OPEN latch)
+	# opts out — it drives request_tray_state directly.
+	var want_eject := has_loader and _model.has_eject_button()
+	_eject_button.visible = want_eject
+	_eject_button.set_deferred("monitoring", want_eject)
+	_eject_button.set_process(want_eject)   # also stops touch-proximity checks
 	if has_loader:
 		var eject_label := _eject_button.get_node_or_null("ButtonLabel") as Label3D
 		if eject_label:

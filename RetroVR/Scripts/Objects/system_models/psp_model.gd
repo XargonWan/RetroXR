@@ -69,6 +69,7 @@ var _anim_dpad: Dictionary = {}          # {node, rest, pivot}
 func _on_glb_ready() -> void:
 	_cache_anim_meshes()
 	_configure_power_slide()
+	_configure_open_slide()
 	_configure_umd_door()
 	_configure_power_led()
 
@@ -181,6 +182,43 @@ func _configure_power_slide() -> void:
 	# the travel axis from the slider's global transform, so it has to run after.
 	_power_switch.global_position = _mesh_center(_power_mesh)
 	_power_switch.set_knob_mesh(_power_mesh)
+
+
+# --- UMD door latch ----------------------------------------------------------
+
+## The UMD door is released by a SPRUNG LATCH on the back edge, not a button: you
+## push it along the edge and the door pops, and it springs straight back. That is
+## the same mechanism as the power switch, so it is the same class
+## (VRSpringReturnSlider) — but with no dwell. The power switch has to be HELD to
+## mean it; the latch fires the moment it reaches the end of its throw, which is
+## what on_hold_sec = 0 with a 0.98 threshold buys.
+##
+## It travels along +X, toward the R shoulder. The shell prints "OPEN ———▷" beside
+## it with the arrow pointing that way, and the strip's own principal axis is pure
+## X (10.3 mm long, 0.7 mm thick) — a slide, not a press. It used to be mounted as
+## the cabinet's generic eject VRButton with depress_axis = -_press_dir, i.e.
+## driven along the FACE normal, so pressing it shoved the latch through the edge
+## sideways-on.
+##
+## Reports intent, not position, so the door OPENS every time — it never toggles.
+## Pushing it shut again is the door's own job (see _configure_umd_door, which
+## calls request_tray_state(false) when the hinge is pushed to the closed stop).
+var _open_slider: VRSpringReturnSlider = null
+
+
+func _configure_open_slide() -> void:
+	_open_slider = get_node_or_null("OpenSlider") as VRSpringReturnSlider
+	var latch := find_child("EjectButton", true, false) as MeshInstance3D
+	if _open_slider == null or latch == null:
+		return
+	# Position before set_knob_mesh: it derives the travel axis from the slider's
+	# global transform, so it has to run after. Same order as the power slide.
+	_open_slider.global_position = _mesh_center(latch)
+	_open_slider.set_knob_mesh(latch)
+	_open_slider.toggle_requested.connect(func() -> void:
+		var host := get_parent()
+		if host != null and host.has_method("request_tray_state"):
+			host.request_tray_state(true))
 
 
 # --- power LED ---------------------------------------------------------------
@@ -299,23 +337,15 @@ func _on_umd_door_swung(_deg: float) -> void:
 			host.request_tray_state(false)
 
 
-func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, eject_btn: VRButton) -> void:
-	# Mount the eject latch ON the GLB's own EjectButton mesh — set_button_mesh,
-	# not just a position. Every other console adopts its real cap this way; the
-	# PSP used to place the zone off the mesh and then hide the placeholder by
-	# hand, which left the latch as the one button in the room that never lit up
-	# under the pointer (WidgetOutline can't source from a hidden placeholder)
-	# and never depressed when pressed.
-	var em := find_child("EjectButton", true, false) as MeshInstance3D
-	if em != null:
-		eject_btn.global_position = _mesh_center(em)
-		eject_btn.set_button_mesh(em)   # hides the placeholder itself
-	eject_btn.trigger_radius = 0.015
-	eject_btn.depress_depth = 0.002
-	eject_btn.depress_axis = -_press_dir
-	var lbl := eject_btn.get_node_or_null("ButtonLabel") as Label3D
-	if lbl != null:
-		lbl.visible = false
+## The PSP has no cabinet-style OPEN button: the shell's own sprung latch does the
+## job (see _configure_open_slide), so the generic one stays hidden rather than
+## floating beside it claiming the same mesh.
+func has_eject_button() -> bool:
+	return false
+
+
+func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VRButton) -> void:
+	pass
 
 
 ## UMD loads through the back-edge door. The MediaSlot ride travels the zone's

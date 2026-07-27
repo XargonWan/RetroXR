@@ -222,10 +222,20 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 		power_btn.set_button_mesh(mesh)   # depress the real button; hides the console ButtonMesh
 	if marker != null:
 		power_btn.global_position = marker.global_position
-		power_btn.set_depress_axis_from_node(marker)
 	elif mesh != null:
 		power_btn.global_position = mesh.global_transform * mesh.get_aabb().get_center()
-		power_btn.set_depress_axis_world(Vector3(0, 0, 1))   # press inward from the front face
+	# The New 3DS XL moved the power button off the face and onto the FRONT LIP,
+	# right of the stylus — so it presses horizontally back into the body, not
+	# down. The button mesh confirms it: a 4.8 mm disc only 1.1 mm thick, lying at
+	# z = +0.0517 against a shell that ends at +0.0523.
+	#
+	# Do NOT take the axis from the "Power" empty. set_depress_axis_from_node reads
+	# an empty's local -Z as the travel direction, which holds for the GLB's
+	# "Finger Button" empties but not this one: its -Z comes out (0, -1, 0), so the
+	# button sank straight down out of the lip. The lip faces the model's +Z, so
+	# inward is -Z, taken from this node's own basis to survive the layback.
+	if mesh != null or marker != null:
+		power_btn.set_depress_axis_world(-global_transform.basis.z.normalized())
 	var col := power_btn.get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if col != null and col.shape is BoxShape3D:
 		col.shape = col.shape.duplicate()

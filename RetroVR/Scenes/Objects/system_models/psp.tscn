@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="2_6e2pq"]
-[ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/vr_spring_return_slider.gd" id="12_pwrsw"]
 [ext_resource type="Texture2D" uid="uid://bfpl0jslsog8g" path="res://imported-assets/psp_1000_psp_1.png" id="4_qmcsd"]
 [ext_resource type="Texture2D" uid="uid://ci4t65wioxaas" path="res://imported-assets/psp_1000_normal.png" id="5_0tid2"]
 [ext_resource type="Texture2D" uid="uid://b81hadhhxbh8g" path="res://imported-assets/psp_1000_psp_1_screen.png" id="6_qjy2c"]
@@ -11,6 +10,7 @@
 [ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="9_qmcsd"]
 [ext_resource type="Texture2D" uid="uid://bhyewi4p624eb" path="res://imported-assets/psp_1000_grüüüüüüüüüü.png" id="9_vbvja"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="10_0tid2"]
+[ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/vr_spring_return_slider.gd" id="12_pwrsw"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_6vy4r"]
 size = Vector2(0.083904006, 0.047486406)
@@ -35,6 +35,12 @@ albedo_color = Color(0.2, 0.2, 0.22, 1)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_du4qc"]
 size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxMesh" id="BoxMesh_open"]
+size = Vector3(0.0103, 0.003, 0.0008)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_open"]
+size = Vector3(0.016, 0.009, 0.009)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ina7k"]
 resource_name = "psp_1_buttons"
@@ -1706,6 +1712,25 @@ surface_material_override/0 = SubResource("StandardMaterial3D_ixh04")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=1401093770]
 shape = SubResource("BoxShape3D_du4qc")
 
+[node name="OpenSlider" type="Area3D" parent="." unique_id=1122336677]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.033198, 0.00063, -0.035721)
+collision_layer = 1048577
+script = ExtResource("12_pwrsw")
+axis_local = Vector3(1, 0, 0)
+travel = 0.003
+engage_radius = 0.02
+on_hold_sec = 0.0
+off_hold_sec = 0.0
+active_threshold = 0.98
+
+[node name="KnobMesh" type="MeshInstance3D" parent="OpenSlider" unique_id=1122336678]
+visible = false
+mesh = SubResource("BoxMesh_open")
+surface_material_override/0 = SubResource("StandardMaterial3D_ixh04")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="OpenSlider" unique_id=1122336679]
+shape = SubResource("BoxShape3D_open")
+
 [node name="Shell" type="Node3D" parent="." unique_id=1413173937]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.0019636303, 0.0050297156, -0.00071423873)
 
@@ -1942,7 +1967,7 @@ max_deg = 40.0
 engage_radius = 0.03
 
 [node name="HingeHint" type="Label3D" parent="UMDDoorPivot/UMDDoorHinge" unique_id=467265124]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, 0.031735)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.031735)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1
