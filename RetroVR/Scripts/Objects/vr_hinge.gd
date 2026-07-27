@@ -191,7 +191,17 @@ func _angle_at(world_pos: Vector3, near_deg: float) -> float:
 	var parent := target.get_parent() as Node3D
 	if parent == null:
 		return NAN
-	var rel := parent.to_local(world_pos) - target.position
+	# Measure in the PIVOT'S OWN rest frame, not the parent's. A pivot built by
+	# VRSpringLatchedHinge.mount carries Basis(Vector3.UP, PI) — a 180° yaw, so
+	# that +rotation lifts the lid's front — which points its local X the opposite
+	# way to the parent's. Reading the angle in the parent frame then gives it the
+	# opposite SIGN to target.rotation.x, and the lid tracks the hand backwards:
+	# you have to move away from the console to shut the door.
+	#
+	# Rest frame = the pivot's basis with the hinge rotation taken out. Node3D
+	# Euler order is YXZ, so dropping the X term leaves Ry * Rz.
+	var rest := Basis.from_euler(Vector3(0.0, target.rotation.y, target.rotation.z))
+	var rel: Vector3 = rest.inverse() * (parent.to_local(world_pos) - target.position)
 	if Vector2(rel.y, rel.z).length() < 0.001:
 		return NAN   # hand at the pivot — angle undefined
 	var deg := rad_to_deg(atan2(rel.y, -rel.z))
