@@ -18,7 +18,6 @@ config/name="RetroVR"
 run/main_scene="uid://bh8x3sbal8nds"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://Textures/app_icon.png"
-run/main_scene.spatialprobe="res://Tools/spatial_probe.tscn"
 
 [audio]
 
@@ -270,14 +269,6 @@ renderer/rendering_method.android="mobile"
 openxr/enabled=true
 openxr/startup_alert=false
 openxr/extensions/hand_tracking=true
-openxr/extensions/spatial_entity/enabled.spatialprobe=true
-openxr/extensions/spatial_entity/enable_spatial_anchors.spatialprobe=true
-openxr/extensions/spatial_entity/enable_persistent_anchors.spatialprobe=true
-openxr/extensions/spatial_entity/enable_builtin_anchor_detection.spatialprobe=true
-openxr/extensions/spatial_entity/enable_plane_tracking.spatialprobe=true
-openxr/extensions/spatial_entity/enable_builtin_plane_detection.spatialprobe=true
 shaders/enabled=true
 openxr/extensions/meta/passthrough=true
 openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/sharpening_mode=1
-openxr/extensions/meta/scene_api.spatialprobe=true
-openxr/extensions/meta/anchor_api.spatialprobe=true
