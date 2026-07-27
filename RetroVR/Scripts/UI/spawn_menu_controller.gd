@@ -32,6 +32,30 @@ const CASSETTE_PLAYER_SCENE := preload("res://Scenes/Objects/cassette_player.tsc
 const AUDIO_DISC_SCENE      := preload("res://Scenes/Objects/audio_disc.tscn")
 const AUDIO_CASSETTE_SCENE  := preload("res://Scenes/Objects/audio_cassette.tscn")
 
+## Licence-pending peripherals: spawn token → [GLB, bespoke scene].
+##
+## Every one is imported-derived, so its GLB lives in imported-assets/ — which a
+## store build excludes. A licensed build spawns the bespoke scene; a placeholder
+## build spawns the procedural RetroController in its place. See
+## _instantiate_peripheral, and RetroModelPolicy for the switch.
+##
+## Kept as a table rather than twelve near-identical match arms so the licensing
+## probe can walk the same list the spawn menu uses, instead of a copy of it.
+const PERIPHERAL_MODELS: Dictionary = {
+	"dualshock":           ["res://imported-assets/dualshock.glb",           "res://Scenes/Objects/controllers/dualshock.tscn"],
+	"dualshock2":          ["res://imported-assets/dualshock2.glb",          "res://Scenes/Objects/controllers/dualshock2.tscn"],
+	"gamecube_controller": ["res://imported-assets/gamecube_controller.glb", "res://Scenes/Objects/controllers/gamecube_controller.tscn"],
+	"dreamcast_controller":["res://imported-assets/dreamcast_controller.glb","res://Scenes/Objects/controllers/dreamcast_controller.tscn"],
+	"nes_controller":      ["res://imported-assets/nes_controller.glb",      "res://Scenes/Objects/controllers/nes_controller.tscn"],
+	"genesis_controller":  ["res://imported-assets/genesis_controller.glb",  "res://Scenes/Objects/controllers/genesis_controller.tscn"],
+	"megadrive_controller":["res://imported-assets/megadrive_controller.glb","res://Scenes/Objects/controllers/megadrive_controller.tscn"],
+	"saturn_controller":   ["res://imported-assets/saturn_controller.glb",   "res://Scenes/Objects/controllers/saturn_controller.tscn"],
+	"snes_controller":     ["res://imported-assets/snes_controller.glb",     "res://Scenes/Objects/controllers/snes_controller.tscn"],
+	"atari_joystick":      ["res://imported-assets/atari_joystick.glb",      "res://Scenes/Objects/controllers/atari_joystick.tscn"],
+	"n64_controller":      ["res://imported-assets/n64_controller.glb",      "res://Scenes/Objects/controllers/n64_controller.tscn"],
+	"psx_controller":      ["res://imported-assets/psx_controller.glb",      "res://Scenes/Objects/controllers/psx_controller.tscn"],
+}
+
 @onready var _viewport_node: XRToolsViewport2DIn3D = $SpawnMenuViewport
 
 ## Action name waiting for a key/mouse press during desktop rebinding ("" = none).
@@ -828,58 +852,36 @@ func _on_spawn_requested(type: String) -> void:
 			obj = GAMECUBE_MEMCARD_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
+		# Every bespoke peripheral below is licence-pending: its GLB lives in
+		# imported-assets/, which a store build excludes. _instantiate_peripheral
+		# loads it at runtime on a licensed build and hands back the procedural
+		# RetroController otherwise, so the menu item always spawns SOMETHING.
 		"dualshock":
-			# GLB lives in export-excluded imported-assets/ while its licence is
-			# pending, so load at runtime and skip gracefully if absent (e.g. Quest).
-			obj = _instantiate_optional("res://imported-assets/dualshock.glb", "res://Scenes/Objects/controllers/dualshock.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("dualshock")
 		"dualshock2":
-			obj = _instantiate_optional("res://imported-assets/dualshock2.glb", "res://Scenes/Objects/controllers/dualshock2.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("dualshock2")
 		"gamecube_controller":
-			obj = _instantiate_optional("res://imported-assets/gamecube_controller.glb", "res://Scenes/Objects/controllers/gamecube_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("gamecube_controller")
 		"dreamcast_controller":
-			obj = _instantiate_optional("res://imported-assets/dreamcast_controller.glb", "res://Scenes/Objects/controllers/dreamcast_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("dreamcast_controller")
 		"nes_controller":
-			obj = _instantiate_optional("res://imported-assets/nes_controller.glb", "res://Scenes/Objects/controllers/nes_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("nes_controller")
 		"genesis_controller":
-			obj = _instantiate_optional("res://imported-assets/genesis_controller.glb", "res://Scenes/Objects/controllers/genesis_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("genesis_controller")
 		"megadrive_controller":
-			obj = _instantiate_optional("res://imported-assets/megadrive_controller.glb", "res://Scenes/Objects/controllers/megadrive_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("megadrive_controller")
 		"saturn_controller":
-			obj = _instantiate_optional("res://imported-assets/saturn_controller.glb", "res://Scenes/Objects/controllers/saturn_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("saturn_controller")
 		"snes_controller":
-			obj = _instantiate_optional("res://imported-assets/snes_controller.glb", "res://Scenes/Objects/controllers/snes_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("snes_controller")
 		"atari_joystick":
-			obj = _instantiate_optional("res://imported-assets/atari_joystick.glb", "res://Scenes/Objects/controllers/atari_joystick.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("atari_joystick")
 		"vb_controller":
 			obj = VB_CONTROLLER_SCENE.instantiate() as Node3D
 		"n64_controller":
-			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/controllers/n64_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("n64_controller")
 		"psx_controller":
-			obj = _instantiate_optional("res://imported-assets/psx_controller.glb", "res://Scenes/Objects/controllers/psx_controller.tscn")
-			if obj == null:
-				return
+			obj = _instantiate_peripheral("psx_controller")
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
 		"retro_keyboard":
@@ -899,15 +901,26 @@ func _on_spawn_requested(type: String) -> void:
 		_place_spawned(obj, type)
 
 
-## Runtime-load a licence-pending prop whose GLB lives in the export-excluded
-## imported-assets/ dir. Preloading would break any build that omits it, so we
-## load at runtime and return null gracefully when the asset isn't present.
-func _instantiate_optional(glb_path: String, scene_path: String) -> Node3D:
-	if not ResourceLoader.exists(glb_path) or not ResourceLoader.exists(scene_path):
-		push_warning("[spawn] asset not available in this build; skipping: " + scene_path)
-		return null
-	var ps := load(scene_path) as PackedScene
-	return ps.instantiate() as Node3D if ps else null
+## Spawn a licence-pending peripheral, or the procedural RetroPad standing in for
+## it. Preloading the bespoke scene would break any build that omits its GLB, so
+## it is loaded at runtime.
+##
+## This used to return null and spawn NOTHING when the model was unavailable, so
+## a store build answered "give me a DualShock" by silently doing nothing. The
+## generic RetroController is the peripheral-side equivalent of the console grey
+## box — a fully procedural pad, no imported geometry — so hand that back instead
+## and the menu keeps working everywhere.
+func _instantiate_peripheral(token: String) -> Node3D:
+	var spec: Array = PERIPHERAL_MODELS.get(token, [])
+	if spec.size() == 2:
+		var glb_path: String = spec[0]
+		var scene_path: String = spec[1]
+		if RetroModelPolicy.may_use(glb_path) and ResourceLoader.exists(scene_path):
+			var ps := load(scene_path) as PackedScene
+			if ps != null:
+				return ps.instantiate() as Node3D
+			push_warning("[spawn] failed to load %s — using the generic pad" % scene_path)
+	return RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 
 
 func _on_spawn_cartridge_requested(rom_path: String, game_label: String, systemid := "") -> void:

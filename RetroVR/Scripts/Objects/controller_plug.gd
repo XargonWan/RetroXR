@@ -35,7 +35,7 @@ func get_controller() -> Node3D:
 ## quietly. The mesh is authored in this node's own frame (connector on +Z,
 ## cable trailing -Z), so it needs no transform here.
 func set_plug_mesh(path: String) -> void:
-	if path.is_empty() or has_node("PlugModel") or not ResourceLoader.exists(path):
+	if has_node("PlugModel") or not RetroModelPolicy.may_use(path):
 		return
 	var mesh := load(path) as Mesh
 	if mesh == null:
