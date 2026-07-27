@@ -111,23 +111,21 @@ func get_forced_core_options() -> Dictionary:
 func configure_handheld_controls(host: Node3D) -> void:
 	super(host)
 
-	# The GLB carries a real, separated knob for each slider (split out of the
-	# shell in Blender). Travel them with their slider so the physical cap rides
-	# its groove; the authored primitive stand-in knobs stay hidden.
-	_knob_3d = _cache_knob("Slider3DKnob")
-	_knob_vol = _cache_knob("VolumeKnob")
-	if _volume_slider != null:
-		_set_knob(_knob_vol, _volume_slider.value)
-		_volume_slider.value_changed.connect(func(v: float) -> void: _set_knob(_knob_vol, v))
+	# Both grooves are on the LID, so their zones have to ride it. The volume
+	# slider is authored on the model root, which is where the base looks it up —
+	# move it across now that _cache_dual_nodes holds the reference.
+	var lid := get_node_or_null("LidPivot") as Node3D
+	if _volume_slider != null and lid != null and _volume_slider.get_parent() != lid:
+		_volume_slider.reparent(lid, true)
+	_adopt_slider(_volume_slider, "VolumeKnob")
 
 	_slider_3d = get_node_or_null("LidPivot/Slider3D") as VRSlider
 	if _slider_3d == null:
 		return
+	_adopt_slider(_slider_3d, "Slider3DKnob")
 	_depth_3d = _slider_3d.value
-	_set_knob(_knob_3d, _depth_3d)
 	_slider_3d.value_changed.connect(func(v: float) -> void:
 		_depth_3d = v
-		_set_knob(_knob_3d, v)
 		# Live while running (azahar applies option changes mid-game); the
 		# forced options carry the value into the next boot otherwise.
 		if _host and _host.get("is_powered_on") and _host.has_method("set_core_option"):
@@ -156,30 +154,34 @@ func configure_handheld_controls(host: Node3D) -> void:
 const _KNOB_TRAVEL := 0.0128
 const _KNOB_AXIS := Vector3(0.0, 0.384, -0.923)
 
-var _knob_3d: Dictionary = {}
-var _knob_vol: Dictionary = {}
-
-
-func _cache_knob(mesh_name: String) -> Dictionary:
-	var m := find_child(mesh_name, true, false) as MeshInstance3D
-	if m == null:
-		return {}
-	# Express the travel axis in the knob's PARENT space, so it stays correct
-	# after the base reparents the knob onto the folding LidPivot.
-	var axis := _KNOB_AXIS
-	var parent := m.get_parent() as Node3D
-	if parent != null:
-		axis = parent.global_transform.basis.inverse() * (global_transform.basis * _KNOB_AXIS)
-	return {"node": m, "rest": m.position, "axis": axis.normalized()}
-
-
-func _set_knob(e: Dictionary, value: float) -> void:
-	if e.is_empty():
+## Hand a slider the shell's REAL knob, so the cap you can see IS the control: it
+## takes the pointer highlight and travels with the value.
+##
+## Both used to drive a hidden placeholder while a bespoke _set_knob slid the real
+## cap off value_changed — two mechanisms for one control, with the interaction
+## zone placed by hand instead of derived from the knob. The zones drifted badly:
+## 26 mm from the 3D knob against a 20 mm engage radius, and 171 mm from the
+## volume one, which sits on the lid's LEFT rim while its zone sat on the base
+## half's right. Neither was reachable where you could see it.
+func _adopt_slider(slider: VRSlider, mesh_name: String) -> void:
+	if slider == null:
 		return
-	var node: MeshInstance3D = e["node"]
-	var rest: Vector3 = e["rest"]
-	var axis: Vector3 = e["axis"]
-	node.position = rest + axis * (clampf(value, 0.0, 1.0) * _KNOB_TRAVEL)
+	var knob := find_child(mesh_name, true, false) as MeshInstance3D
+	if knob == null or knob.mesh == null:
+		return
+	var authored := slider.value
+	var world_axis := (global_transform.basis * _KNOB_AXIS).normalized()
+	slider.travel = _KNOB_TRAVEL
+	# Zone at the MIDDLE of the throw: _track_world_point maps the slider's own
+	# origin to value 0.5, so anywhere else skews the hand-to-value mapping.
+	slider.global_position = (knob.global_transform * knob.get_aabb().get_center()) 		+ world_axis * (_KNOB_TRAVEL * 0.5)
+	slider.axis_local = (slider.global_transform.basis.inverse() * world_axis).normalized()
+	# The GLB models both knobs at the quiet / 2D end of the groove, which is
+	# value 0 — anchor there, then restore the authored value so taking the knob
+	# over does not jump it.
+	slider.set_value_no_signal(0.0)
+	slider.set_knob_mesh(knob)
+	slider.set_value_no_signal(authored)
 
 
 ## The 3DS Game Card slot is on the FRONT edge, left of centre — not the generic
