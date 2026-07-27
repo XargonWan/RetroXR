@@ -31,6 +31,16 @@ const TRIGGER_OFF := 0.4
 
 ## Travel axis in this node's local space.
 @export var axis_local: Vector3 = Vector3(1, 0, 0)
+## Degrees the knob TURNS across the full travel, for a cap that rides a curved
+## edge rather than a straight slot. A long cap on a shallow arc cannot stay on
+## the surface by translating alone — its middle sinks in while its tips break
+## out — so it has to turn as it goes. Zero (the default) is a plain straight
+## slide, which is what a flat slot wants.
+@export var knob_turn_deg: float = 0.0
+## Axis the knob turns about, in THIS node's local space. The default suits an
+## edge that curves in the horizontal plane, i.e. a switch on a device's side.
+@export var knob_turn_axis: Vector3 = Vector3.UP
+
 ## Total knob travel in metres (value 0 → -travel/2, value 1 → +travel/2).
 @export var travel: float = 0.03
 ## 0 = continuous; >= 2 = snap to this many detent positions.
@@ -65,6 +75,13 @@ var _rearmed: Dictionary = {}
 # travel along axis_local); set_knob_mesh remaps them when a GLB knob is adopted.
 var _knob_origin: Vector3 = Vector3.ZERO
 var _knob_axis: Vector3 = Vector3.RIGHT
+# Turn axis (knob parent space), the knob's basis at mid-travel, and the point it
+# turns about — its own centre, NOT its origin. An adopted GLB cap often has an
+# identity node transform with the offset baked into the vertices, so spinning
+# the node about its origin swings the cap on an arc tens of mm wide.
+var _knob_turn_axis: Vector3 = Vector3.UP
+var _knob_rest_basis: Basis = Basis()
+var _knob_pivot: Vector3 = Vector3.ZERO
 
 var _outline: WidgetOutline = null
 var _outline_amber: bool = false
@@ -75,6 +92,8 @@ var _outline_amber: bool = false
 func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
 	_knob_axis = axis_local.normalized()
+	_knob_turn_axis = knob_turn_axis.normalized()
+	_cache_knob_rest()
 	_update_knob()
 	_outline = WidgetOutline.attach(self)
 	# The knob is a hidden placeholder on every baked handheld — outline it anyway
@@ -118,6 +137,10 @@ func set_knob_mesh(mesh: MeshInstance3D) -> void:
 	# sits at -travel/2.) GLBs model switches in the off position, which is
 	# value 0, so this lines up.
 	_knob_origin = mesh.position - _knob_axis * (value - 0.5) * travel
+	if parent:
+		_knob_turn_axis = (parent.global_transform.basis.inverse()
+			* (global_transform.basis * knob_turn_axis.normalized())).normalized()
+	_cache_knob_rest()
 	if _outline:
 		_outline.set_source(_knob)
 	_update_knob()
@@ -244,9 +267,35 @@ func _set_from_raw(raw: float) -> void:
 		value_changed.emit(value)
 
 
+## Knob pose at mid-travel, plus the point it turns about: the cap's own CENTRE
+## in the knob's parent frame. An adopted GLB cap frequently has an identity node
+## transform with its offset baked into the vertex data, so `position` is nowhere
+## near the cap and turning about it would fling the cap across the shell.
+func _cache_knob_rest() -> void:
+	if _knob == null:
+		return
+	# Back-project to MID-TRAVEL, the anchor _knob_origin already uses: a GLB models
+	# its cap at the CURRENT value (switches are modelled off, i.e. 0), not halfway
+	# through the throw. Skip this and the cap sits visibly cocked at rest.
+	var r := Basis(_knob_turn_axis.normalized(), deg_to_rad(knob_turn_deg) * (value - 0.5))
+	_knob_rest_basis = r.inverse() * _knob.basis
+	var centre := Vector3.ZERO
+	if _knob.mesh != null:
+		centre = _knob.mesh.get_aabb().get_center()
+	_knob_pivot = Transform3D(_knob_rest_basis, _knob_origin) * centre
+
+
 func _update_knob() -> void:
-	if _knob:
-		_knob.position = _knob_origin + _knob_axis * (value - 0.5) * travel
+	if _knob == null:
+		return
+	var slide: Vector3 = _knob_origin + _knob_axis * (value - 0.5) * travel
+	if is_zero_approx(knob_turn_deg):
+		_knob.position = slide
+		return
+	# Turn about the cap's own centre, then carry the whole thing along the slide.
+	var r := Basis(_knob_turn_axis.normalized(), deg_to_rad(knob_turn_deg) * (value - 0.5))
+	_knob.transform = Transform3D(r * _knob_rest_basis,
+		slide + r * _knob_origin + _knob_pivot - r * _knob_pivot - _knob_origin)
 
 
 ## Green while armed, amber while the trigger holds the knob.
