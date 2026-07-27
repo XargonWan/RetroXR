@@ -119,6 +119,7 @@ func _ready() -> void:
 	press_to_hold = false
 	second_hand_grab = SecondHandGrab.SECOND
 	add_to_group("spawned")
+	add_to_group(ControllerBindings.CONSUMER_GROUP)
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	released.connect(_on_released_signal)

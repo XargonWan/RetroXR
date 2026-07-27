@@ -1013,9 +1013,8 @@ func _on_controller_hands_changed(enabled: bool) -> void:
 
 
 func _on_controller_bindings_changed() -> void:
-	for node in get_tree().get_nodes_in_group("spawned"):
-		if node.has_method("reload_bindings"):
-			node.call("reload_bindings")
+	for node in get_tree().get_nodes_in_group(ControllerBindings.CONSUMER_GROUP):
+		node.call("reload_bindings")
 
 
 func _on_show_fps_changed(enabled: bool) -> void:

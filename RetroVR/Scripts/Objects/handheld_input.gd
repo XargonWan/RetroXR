@@ -81,7 +81,13 @@ func setup(host: Node3D) -> void:
 
 
 func _ready() -> void:
+	add_to_group(ControllerBindings.CONSUMER_GROUP)
 	call_deferred("_find_vr_nodes")
+
+
+## Reload bindings from disk (called after the user saves new bindings).
+func reload_bindings() -> void:
+	_load_bindings()
 
 
 func _find_vr_nodes() -> void:

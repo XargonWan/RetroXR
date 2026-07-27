@@ -6,6 +6,12 @@ extends RefCounted
 
 const SAVE_PATH := "user://controller_bindings.json"
 
+## Every node that caches a binding map joins this group and exposes
+## `reload_bindings()`. SpawnMenuController fans the save out over it, so a
+## consumer is reached wherever it sits in the tree (HandheldInput is a child of
+## its RetroSystem, not a spawned node in its own right).
+const CONSUMER_GROUP := &"binding_consumers"
+
 # ── Joypad button bit indices (RETRO_JOYPAD_*) ───────────────────────────────
 const JOYPAD_NONE   := -1
 const JOYPAD_B      := 0

@@ -91,6 +91,7 @@ func _ready() -> void:
 	super._ready()
 	press_to_hold = false
 	add_to_group("spawned")
+	add_to_group(ControllerBindings.CONSUMER_GROUP)
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	_laser_dot.visible = false
