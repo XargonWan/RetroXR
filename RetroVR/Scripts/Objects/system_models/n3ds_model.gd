@@ -103,6 +103,17 @@ func name_label_placement() -> Dictionary:
 	return cfg
 
 
+## Both grooves are on the LID on this hardware, so the volume slider is authored
+## under LidPivot and rides it. The base looks for it as a direct child, which is
+## where every other handheld puts it, so point it at the real one. (Only
+## _cache_dual_nodes runs for a dual-screen model — its _ready deliberately skips
+## the single-screen base's — so this is the one place that needs it.)
+func _cache_dual_nodes() -> void:
+	super()
+	if _volume_slider == null:
+		_volume_slider = get_node_or_null("LidPivot/VolumeSlider") as VRSlider
+
+
 ## Force the stereo output mode every boot; depth follows the physical slider.
 func get_forced_core_options() -> Dictionary:
 	return {
@@ -118,12 +129,6 @@ func get_forced_core_options() -> Dictionary:
 func configure_handheld_controls(host: Node3D) -> void:
 	super(host)
 
-	# Both grooves are on the LID, so their zones have to ride it. The volume
-	# slider is authored on the model root, which is where the base looks it up —
-	# move it across now that _cache_dual_nodes holds the reference.
-	var lid := get_node_or_null("LidPivot") as Node3D
-	if _volume_slider != null and lid != null and _volume_slider.get_parent() != lid:
-		_volume_slider.reparent(lid, true)
 	_adopt_slider(_volume_slider, "VolumeKnob")
 
 	_slider_3d = get_node_or_null("LidPivot/Slider3D") as VRSlider

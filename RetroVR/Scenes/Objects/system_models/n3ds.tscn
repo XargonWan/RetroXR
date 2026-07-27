@@ -1,12 +1,12 @@
-[gd_scene format=4]
+[gd_scene format=4 uid="uid://cbeqhb2fdurqy"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/system_models/n3ds_model.gd" id="1_hqvy2"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
-[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_aybqj"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
-[ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
-[ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
-[ext_resource type="Texture2D" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
+[ext_resource type="Script" uid="uid://d3o3y54a3v0d3" path="res://Scripts/Objects/system_models/n3ds_model.gd" id="1_hqvy2"]
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_aybqj"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
+[ext_resource type="Texture2D" uid="uid://bhuh5ye5tni37" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
+[ext_resource type="Texture2D" uid="uid://xd1gsici3404" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
+[ext_resource type="Texture2D" uid="uid://clu825a2xvww6" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
 size = Vector3(0.134, 0.0105, 0.074)
@@ -1382,7 +1382,7 @@ engage_radius = 0.06656741946935654
 shape = SubResource("BoxShape3D_jmku2")
 
 [node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge" unique_id=2091990181]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0321, 0.000971)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0321, 0.000971)
 visible = false
 pixel_size = 0.00029166666
 billboard = 1
@@ -1404,7 +1404,6 @@ value = 1.0
 
 [node name="KnobMesh" type="MeshInstance3D" parent="LidPivot/Slider3D" unique_id=2063133580]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
-visible = false
 mesh = SubResource("BoxMesh_j8vu0")
 surface_material_override/0 = SubResource("StandardMaterial3D_1ijud")
 
@@ -1507,22 +1506,21 @@ text = "BOTTOM"
 font_size = 16
 outline_size = 4
 
-[node name="VolumeSlider" type="Area3D" parent="." unique_id=153663295]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.069, 0, -0.01028)
+[node name="VolumeSlider" type="Area3D" parent="LidPivot" unique_id=153663295]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.062, 0.0135, -0.037)
 collision_layer = 1048577
 script = ExtResource("3_kgfsk")
 axis_local = Vector3(0, 0, -1)
-travel = 0.02072000026702881
+travel = 0.022
 engage_radius = 0.028
 value = 1.0
 
-[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=559146097]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01036)
-visible = false
+[node name="KnobMesh" type="MeshInstance3D" parent="LidPivot/VolumeSlider" unique_id=559146097]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
 mesh = SubResource("BoxMesh_akkew")
 surface_material_override/0 = SubResource("StandardMaterial3D_bhlsk")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=163260176]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/VolumeSlider" unique_id=163260176]
 shape = SubResource("BoxShape3D_argpl")
 
 [node name="Shell" type="Node3D" parent="." unique_id=1412885968]
@@ -1668,6 +1666,5 @@ transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -0.0
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=1133338033]
-visible = false
 mesh = SubResource("BoxMesh_1ijud")
 surface_material_override/0 = SubResource("StandardMaterial3D_v38ai")
