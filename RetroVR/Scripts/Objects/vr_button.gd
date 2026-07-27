@@ -260,6 +260,16 @@ func set_depress_axis_world(world_dir: Vector3) -> void:
 		depress_axis = world_dir.normalized()
 
 
+## Keep drawing the hover outline even though the source mesh is hidden — for a
+## control the shell PAINTS into its texture rather than modelling, so there is
+## no geometry to adopt and the source is a hidden box the size of the print.
+## Same escape hatch VRSlider uses for its hidden KnobMesh placeholder; see
+## WidgetOutline.outline_hidden_source for why it is off by default.
+func set_outline_hidden_source(hidden_ok: bool) -> void:
+	if _outline:
+		_outline.outline_hidden_source = hidden_ok
+
+
 ## Set the button's visual color by changing its material albedo
 func set_color(color: Color) -> void:
 	if not _mesh:
