@@ -6,11 +6,11 @@ extends XRToolsPickable
 ## Maps systemid → GDScript path for the hardware model subclass. Used for
 ## systems whose model is NOT an authored scene (see _MODEL_SCENES).
 const _MODEL_SCRIPTS: Dictionary = {
-	# Disabled for now — the N64 / PlayStation (and NES) console models are
-	# imported-derived and replicate real hardware trade dress, an IP risk for
-	# store distribution (e.g. SideQuest). These systems fall back to the
-	# procedural default_model. To re-enable: restore the entry AND drop
-	# "imported-assets/*" from the export preset's exclude_filter.
+	# These console models are imported-derived and replicate real hardware trade
+	# dress, an IP risk for store distribution (e.g. SideQuest) until the licence
+	# lands. They are no longer commented out one at a time: RetroModelPolicy is
+	# the switch, and a placeholder build sends EVERY bespoke console here to
+	# default_model (the grey box) without editing this table.
 	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
 	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
 	# NOTE: "playstation" now has an authored scene — see _MODEL_SCENES below.
@@ -56,9 +56,10 @@ const _MODEL_SCENES: Dictionary = {
 	"dreamcast": "res://Scenes/Objects/system_models/dreamcast.tscn",
 	# PlayStation 2 Slim (DVD disc): same DiscSeat bake (base = black slim).
 	"playstation2": "res://Scenes/Objects/system_models/ps2.tscn",
-	# Dev-only (per user direction): an author's imported PSone. Its GLB is
-	# export-excluded (imported-assets/*), and the model self-guards to re-show
-	# the placeholder box on any build that lacks the GLB. Licence still pending.
+	# Dev-only (per user direction): an author's imported PSone. Licence still
+	# pending, so a placeholder build takes the grey box instead — see
+	# RetroModelPolicy and the has_placeholder_shell() check in
+	# _load_system_model.
 	# The scene owns the CD lid's hinge pivot + VRHinge, so the lid is hand-openable.
 	"playstation": "res://Scenes/Objects/system_models/playstation_one.tscn",
 	# Nintendo GameCube (mini-DVD disc): same DiscSeat bake as the Sony disc
@@ -432,21 +433,41 @@ func _load_system_model() -> void:
 	# Authored .tscn model (handhelds): instantiate the editable scene. Its root
 	# carries the RetroSystemModel* script, so every configure_* call below is
 	# unchanged. A per-variant script override (rare) still wins over the scene.
+	# Store builds ship no licensed hardware shells (see RetroModelPolicy). Every
+	# bespoke model below is either dropped for the generic grey box, or — when
+	# it owns a store-safe stand-in — kept and left to swap its own shell.
+	var placeholder := RetroModelPolicy.placeholder_models()
 	var scene_path: String = ""
 	if _MODEL_SCENE_VARIANTS.has(vkey):
 		scene_path = _MODEL_SCENE_VARIANTS[vkey]
 	elif _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
 		scene_path = _MODEL_SCENES[systemid]
+	# In a real store build the licensed scene was excluded from the .pck, so
+	# load() would fail anyway; check first and take the grey box quietly rather
+	# than warning about a file we deliberately left out.
+	if placeholder and not scene_path.is_empty() and not ResourceLoader.exists(scene_path):
+		scene_path = ""
 	if not scene_path.is_empty():
 		var packed := load(scene_path) as PackedScene
 		if packed:
 			_model = packed.instantiate() as RetroSystemModel
+			# A bespoke console shell with no stand-in of its own has nothing
+			# store-safe left once the shell goes — drop it and take the grey box.
+			# Handhelds (and the Virtual Boy) keep their scene: it carries the live
+			# screen and the on-device controls, and the model swaps the shell.
+			if placeholder and _model != null and not _model.has_placeholder_shell():
+				_model.free()
+				_model = null
+				scene_path = ""
 		else:
 			push_warning("RetroSystem: failed to load model scene: %s" % scene_path)
-		is_bespoke = true
-	else:
+	if scene_path.is_empty():
+		# A placeholder build never reaches for a bespoke SCRIPT model: unlike the
+		# scene models none of them own a stand-in, they all just load a GLB.
 		var script_path: String = DEFAULT
-		if not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
+		if placeholder:
+			pass
+		elif not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
 			script_path = _MODEL_VARIANTS[vkey]
 		elif _MODEL_SCRIPTS.has(systemid):
 			script_path = _MODEL_SCRIPTS[systemid]
@@ -456,6 +477,8 @@ func _load_system_model() -> void:
 		else:
 			push_warning("RetroSystem: failed to load model script: %s" % script_path)
 		is_bespoke = script_path != DEFAULT
+	else:
+		is_bespoke = true
 	# Whatever went wrong above (missing scene, missing script, or the loaded
 	# root not actually being a RetroSystemModel) — never leave _model null.
 	# Every configure_*/on_*/play_* call below and everywhere else in this

@@ -88,15 +88,18 @@ func name_label_placement() -> Dictionary:
 	return {"upright": true, "v_center": 0.5, "h_frac": 0.72}
 
 
-## Force the stand-in shell even when the detailed GLB is present. The fallback
-## path is otherwise never exercised in development (imported-assets/ is always
-## there), so this is what a probe flips to keep it honest.
-@export var force_primitive_shell: bool = false
-
-
 func _ready() -> void:
+	# force_primitive_shell (and the placeholder-build switch behind
+	# use_placeholder_shell) now live on the single-screen base, so both handheld
+	# families answer the same question the same way.
+	var placeholder := use_placeholder_shell()
+	# The clamshells bake their licensed shell into the device .tscn as a "Shell"
+	# child, and _upgrade_dual_to_glb reuses it via the "dual_glb_baked" meta —
+	# so on a placeholder build it has to be removed outright, not merely skipped.
+	if placeholder:
+		_drop_licensed_shell()
 	var gp := _glb_path()
-	var detailed := not force_primitive_shell and not gp.is_empty() and ResourceLoader.exists(gp)
+	var detailed := not placeholder and not gp.is_empty() and ResourceLoader.exists(gp)
 	# The stand-in is a SEPARATE scene, added only when there's no detailed shell,
 	# instead of living in the device scene permanently and being hidden. Nothing
 	# invisible is left behind to be measured by mistake — which is exactly how
@@ -106,6 +109,8 @@ func _ready() -> void:
 	_cache_dual_nodes()
 	if detailed:
 		_upgrade_dual_to_glb(gp)
+	else:
+		_align_screens_to_primitive()
 	# Screen-cast lights: both screens glow into the room (base _ready — which sets
 	# up the single-screen light — is not called here, so create both explicitly).
 	_screen_light = _make_screen_light(_screen)
@@ -169,15 +174,65 @@ func _primitive_path() -> String:
 	return ""
 
 
+## Snap the two live picture quads into the stand-in shell's screen wells.
+##
+## The device .tscn authors both screens at the poses the LICENSED shell needs,
+## and _upgrade_dual_to_glb re-places them onto that shell's own lenses. On a
+## placeholder build neither holds: the stand-in's bezels sit somewhere else
+## entirely, so the pictures hung skewed across the shell instead of sitting in
+## its wells. Re-place them against the stand-in's bezel boxes, the same way the
+## GLB path re-places them against the real lenses.
+func _align_screens_to_primitive() -> void:
+	if get_node_or_null("Primitive") == null:
+		return
+	# TopBezel rides LidParts, which _spawn_primitive_shell has already reparented
+	# onto LidPivot — so search from self, not from the Primitive subtree.
+	var top := find_child("TopBezel", true, false) as MeshInstance3D
+	var bottom := find_child("BottomBezel", true, false) as MeshInstance3D
+	var s := _place_screen_on_bezel(_screen, top)
+	if s != Vector2.ZERO:
+		screen_size = s
+	s = _place_screen_on_bezel(_bottom_screen, bottom)
+	if s != Vector2.ZERO:
+		bottom_screen_size = s
+
+
+## Lay `screen` on `bezel`'s outward face, inset a little inside its lip. Returns
+## the size given to the quad, or Vector2.ZERO if nothing was placed.
+func _place_screen_on_bezel(screen: MeshInstance3D, bezel: MeshInstance3D) -> Vector2:
+	if screen == null or bezel == null or not (bezel.mesh is BoxMesh):
+		return Vector2.ZERO
+	var size := (bezel.mesh as BoxMesh).size
+	var b := bezel.global_transform.basis.orthonormalized()
+	# A QuadMesh faces its own local +Z; a bezel box faces its local +Y. Map one
+	# onto the other (x stays x, so the picture keeps its handedness).
+	screen.global_transform = Transform3D(
+		Basis(b.x, -b.z, b.y),
+		bezel.global_position + b.y * (size.y * 0.5 + 0.0006))
+	if not (screen.mesh is QuadMesh):
+		return Vector2.ZERO
+	var q := (screen.mesh as QuadMesh).duplicate() as QuadMesh
+	# Small inset so the picture sits inside the bezel lip rather than over it.
+	q.size = Vector2(size.x, size.z) * 0.92
+	screen.mesh = q
+	return q.size
+
+
 ## Add the stand-in shell. Its root holds the base-half meshes directly and its
 ## lid parts under a "LidParts" child, which is reparented onto LidPivot so the
 ## stand-in folds with the hinge exactly like the detailed shell's lid does.
 func _spawn_primitive_shell() -> void:
+	if has_node("Primitive"):
+		return
 	var pp := _primitive_path()
-	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
+	if pp.is_empty() or not ResourceLoader.exists(pp):
+		# No authored clamshell stand-in — take the base's generic grey slab +
+		# lid rather than leaving two screens hanging in mid-air.
+		_spawn_generic_primitive()
 		return
 	var scene := load(pp) as PackedScene
 	if scene == null:
+		_spawn_generic_primitive()
 		return
 	var prim := scene.instantiate() as Node3D
 	prim.name = "Primitive"

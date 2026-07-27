@@ -78,6 +78,15 @@ func get_builtin_screen() -> MeshInstance3D:
 	return _proxy   # hidden — VideoHandler renders here, the eyepiece samples it
 
 
+## Keeps its scene on a placeholder build: virtual_boy.tscn owns the hidden
+## ProxyScreen the VideoHandler renders into and the live stereo Eyepiece, and
+## the shell it drops is replaced by the authored bipod stand-in
+## (virtual_boy_primitive.tscn). The grey box has no eyepiece, so falling back to
+## it would leave the Virtual Boy unplayable rather than merely undecorated.
+func has_placeholder_shell() -> bool:
+	return true
+
+
 func is_stereo_side_by_side() -> bool:
 	return true
 
@@ -107,7 +116,12 @@ func _ready() -> void:
 	_stereo_mat.shader = STEREO_SHADER
 	if _eyepiece:
 		_eyepiece.set_surface_override_material(0, _stereo_mat)
-	_upgrade_to_glb()
+	# virtual_boy.tscn bakes the licensed shell in as a "Shell" instance, so a
+	# placeholder build has to remove it rather than just decline to load the GLB.
+	if RetroModelPolicy.placeholder_models():
+		drop_licensed_geometry()
+	else:
+		_upgrade_to_glb()
 	if _glb == null:
 		_spawn_primitive()   # store-safe fallback bipod when the GLB shell is absent
 	# Red visor glow: a spot just outside the eye-shade shining out along the panes'

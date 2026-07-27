@@ -110,6 +110,57 @@ func is_handheld() -> bool:
 	return false
 
 
+## True when this model can stand itself up WITHOUT the licensed hardware shell,
+## i.e. it owns a store-safe primitive stand-in and drops the shell by itself.
+##
+## A placeholder build (see RetroModelPolicy) keeps such a model and lets it swap
+## its own shell; every other bespoke model is replaced wholesale by the generic
+## grey box, because there is nothing store-safe left of it once the shell goes.
+##
+## The handhelds return true — their device scene is not just a shell, it also
+## carries the live screen quad and the on-device controls (power switch, volume
+## slider, cartridge slot), none of which the grey box has an equivalent for.
+func has_placeholder_shell() -> bool:
+	return false
+
+
+## Strip every piece of licensed hardware geometry from this model, for a
+## placeholder build. Safe to call on a model that has none.
+##
+## Freeing the authored "Shell" child is NOT sufficient on its own. The
+## clamshells bake their LID meshes straight onto LidPivot, outside any Shell
+## subtree — n3ds.tscn's "top" / "GlasTop" / "TopScreen", the GBA SP's
+## "TopScreen", and even nds_primitive.tscn (a file named "primitive"!) shipped a
+## 4348-vertex lid cover. Dropping only the Shell left a placeholder 3DS still
+## rendering a photo-accurate 3DS XL.
+##
+## So the rule is stated on the mesh TYPE instead, which no amount of scene
+## re-authoring can quietly get wrong: imported GLB geometry always lands as a
+## baked ArrayMesh, while every store-safe stand-in, bezel, button cap and live
+## screen quad in this project is a PrimitiveMesh (Box/Quad/Cylinder/Sphere).
+## A placeholder build therefore renders NO ArrayMesh, and that invariant is
+## cheap to assert — which is exactly what the validation probe does.
+func drop_licensed_geometry() -> void:
+	var shell := get_node_or_null("Shell")
+	if shell != null:
+		remove_child(shell)
+		shell.queue_free()
+	# Collect first, then free — freeing mid-walk would drop children we still
+	# have to descend into.
+	var doomed: Array[Node] = []
+	var stack: Array[Node] = [self]
+	while not stack.is_empty():
+		var cur: Node = stack.pop_back()
+		if cur is MeshInstance3D and (cur as MeshInstance3D).mesh is ArrayMesh:
+			doomed.append(cur)
+			continue
+		for ch in cur.get_children():
+			stack.append(ch)
+	for n in doomed:
+		n.get_parent().remove_child(n)
+		n.queue_free()
+
+
 ## The device's built-in display mesh (handhelds), or null. When no TV is
 ## connected the core renders here; plugging the video-out cable into a TV
 ## moves the picture there and unplugging brings it back.

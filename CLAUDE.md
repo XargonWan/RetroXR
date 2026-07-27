@@ -321,10 +321,52 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 - All static libretro callbacks resolve their `Wrapper*` via `Wrapper::GetCurrentThreadWrapper()` — never store a raw global pointer
 - `call_deferred` used when Wrapper needs to signal back to the `Libretro` node on the main thread (e.g. `NotifyOptionsReady`)
 
+## Licensed Models vs Placeholder Builds
+
+The detailed console/handheld shells are imported-derived and replicate real hardware trade
+dress. They cannot ship until the licence lands, so every build is one of two shapes,
+selected by **`RetroModelPolicy`** (`RetroVR/Scripts/Data/model_policy.gd`):
+
+- **licensed** (default, dev) — every bespoke model as authored. Unchanged day to day.
+- **placeholder** (store) — consoles fall back to the generic grey box (`default_model.gd`
+  + `system.tscn`'s `SystemBody`); handhelds KEEP their device scene, because it also owns
+  the live screen and the on-device controls, and swap only the shell for their
+  `*_primitive.tscn` stand-in.
+
+Selecting placeholder mode, highest priority first:
+1. `--placeholder-models` on the command line (`--licensed-models` forces the other way).
+   Works in a plain editor run with every GLB still on disk — this is what the probe uses.
+2. The `placeholder_models` custom feature tag on the export preset (how a store build
+   picks it, since there is no command line there).
+3. The `retrovr/models/placeholder_models` project setting.
+
+**The invariant**: imported GLB geometry always bakes down to an `ArrayMesh`, while every
+stand-in, bezel, button cap and live screen quad is a `PrimitiveMesh`. So a placeholder
+build renders **no ArrayMesh at all**, enforced by `RetroSystemModel.drop_licensed_geometry()`
+and asserted per-system by the probe. Freeing the authored `"Shell"` node is NOT enough on
+its own — the clamshells bake lid meshes straight onto `LidPivot` (`n3ds.tscn`'s
+`top`/`GlasTop`/`TopScreen`, the GBA SP's `TopScreen`), outside any Shell subtree.
+
+Run the gate after adding or re-baking any hardware model:
+```bash
+"$godot" --path "$proj" res://Tools/model_placeholder_probe.tscn -- --placeholder-models 2>&1 \
+  | grep -a "\[probe\]"      # every row must read OK / imported=0; PNGs land in user://
+```
+Drop `-- --placeholder-models` to render the licensed side for comparison.
+
+**Export**: the `Quest (Store)` preset sets the feature tag and excludes `imported-assets/*`
+plus the console device scenes (674 MB → 54 MB pack). Two things it does **not** yet solve,
+both needing a refactor rather than a filter:
+- The **handheld** device scenes still carry their baked licensed shells in the .pck. They
+  can't be excluded (they own the screen + controls); the fix is to split each baked
+  `"Shell"` out into its own excludable resource loaded only in licensed mode.
+- The retro **peripherals** (`psx_controller.glb`, `nes_controller.glb`, the pads/joysticks)
+  have no stand-in — `_instantiate_optional` just declines to spawn them in a store build.
+
 ## Tools
 
 Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroVR/Tools/`,
-which holds in-editor probe scenes like `netplay_spike`).
+which holds in-editor probe scenes like `netplay_spike` and `model_placeholder_probe`).
 
 - **`Tools/bundle_convert.py`** — headless converter for `.bundle` models (each is a Unity
   AssetBundle, magic `UnityFS`) → `.glb`, with no Unity editor. Deps: `pip install --user UnityPy

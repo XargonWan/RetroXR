@@ -85,6 +85,36 @@ func is_handheld() -> bool:
 	return true
 
 
+## Handhelds survive a placeholder build: the device scene carries the live
+## screen and the on-device controls as well as the shell, so RetroSystem keeps
+## it and only the shell is swapped below. (See RetroSystemModel for the
+## contract, and RetroModelPolicy for the switch.)
+func has_placeholder_shell() -> bool:
+	return true
+
+
+## Force the stand-in shell even on a build that has the licensed one. The
+## fallback path is otherwise never exercised in development (imported-assets/
+## is always there and the shells are baked into the device scenes), so this is
+## what a probe flips to keep it honest.
+@export var force_primitive_shell: bool = false
+
+
+## True when this device must wear its primitive stand-in rather than the
+## licensed shell — because the build says so, or because a probe forced it.
+func use_placeholder_shell() -> bool:
+	return force_primitive_shell or RetroModelPolicy.placeholder_models()
+
+
+## Device scenes that merely REFERENCE the GLB (an [ext_resource] instance) lose
+## it on their own once imported-assets/ is export-excluded; the ones carrying a
+## baked copy of the geometry — psp, n3ds, gamecube, nds, nes, … — only lose it
+## via drop_licensed_geometry(), which is why a placeholder build cannot rely on
+## the export filter alone.
+func _drop_licensed_shell() -> void:
+	drop_licensed_geometry()
+
+
 ## Override to return a detailed shell GLB (else "" = keep the primitive shell).
 func _glb_path() -> String:
 	return ""
@@ -109,9 +139,15 @@ func _glb_rotation_degrees() -> Vector3:
 
 
 func _ready() -> void:
+	# Drop the baked licensed shell FIRST on a placeholder build, so everything
+	# below (dimension read-back, collision, cart slot) sees exactly what a
+	# shipped store build sees rather than measuring a shell that isn't there.
+	var placeholder := use_placeholder_shell()
+	if placeholder:
+		_drop_licensed_shell()
 	_cache_shell_nodes()
 	var gp := _glb_path()
-	if get_node_or_null("Shell") != null or (not gp.is_empty() and ResourceLoader.exists(gp)):
+	if not placeholder and (get_node_or_null("Shell") != null or (not gp.is_empty() and ResourceLoader.exists(gp))):
 		_upgrade_to_glb(gp)
 	if _glb == null:
 		# No detailed shell (e.g. store build with the GLB export-excluded) — spawn
@@ -137,11 +173,15 @@ func _primitive_path() -> String:
 ## device .tscn free of hidden clutter. Re-reads body_size from the spawned
 ## HandheldBody so collision / cart slot / cable placement stay correct.
 func _spawn_primitive() -> void:
+	if has_node("Primitive"):
+		return
 	var pp := _primitive_path()
-	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
+	if pp.is_empty() or not ResourceLoader.exists(pp):
+		_spawn_generic_primitive()
 		return
 	var scene := load(pp) as PackedScene
 	if scene == null:
+		_spawn_generic_primitive()
 		return
 	var prim := scene.instantiate() as Node3D
 	prim.name = "Primitive"
@@ -149,6 +189,87 @@ func _spawn_primitive() -> void:
 	var body := prim.find_child("HandheldBody", true, false) as MeshInstance3D
 	if body and body.mesh is BoxMesh:
 		body_size = (body.mesh as BoxMesh).size
+
+
+## Last-resort stand-in for a handheld with no authored *_primitive.tscn: a plain
+## grey slab at the device's own body_size, plus a matching lid half hung off
+## LidPivot when the device folds.
+##
+## This exists so that a placeholder build ALWAYS has something to hold. Without
+## it a handheld whose primitive was never authored ships as a screen and a set
+## of buttons floating in mid-air — and, worse, it does so silently, because
+## nothing in a licensed dev build ever takes this path. A new handheld is now
+## store-safe on the day it is added, and authoring its *_primitive.tscn is a
+## looks-better change rather than a prerequisite.
+func _spawn_generic_primitive() -> void:
+	var prim := Node3D.new()
+	prim.name = "Primitive"
+	add_child(prim)
+	prim.add_child(_placeholder_box("HandheldBody", body_size))
+	var pivot := get_node_or_null("LidPivot") as Node3D
+	if pivot == null or _has_shell_mesh(pivot):
+		# Not a clamshell, or the lid half already has stand-in shell geometry of
+		# its own (the DS family reparents nds_primitive's LidParts here) —
+		# adding a second slab would just bury it.
+		return
+	# The whole lid half was licensed geometry and is now gone (the GBA SP), so
+	# build a slab for it. Everything below is expressed in the PIVOT's frame, not
+	# the screen's: the screen's authored pose belongs to the licensed shell, and
+	# hanging the lid off it left the lid floating in space with a gap where the
+	# hinge should be. Anchored to the pivot, the lid meets the base by
+	# construction, and the picture is then moved onto it.
+	#
+	# Lid frame convention matches the base: the device lies flat, the screen
+	# faces local +Y, and the lid extends from the hinge along local -Z.
+	var t := body_size.y * 0.55
+	var scr := pivot.find_child("HandheldScreen", true, false) as MeshInstance3D
+	var q := Vector2.ZERO
+	if scr != null and scr.mesh is QuadMesh:
+		q = (scr.mesh as QuadMesh).size
+	var lid_len := maxf(q.y * 1.30, body_size.z * 0.92)
+	var lid := _placeholder_box("HandheldLid", Vector3(maxf(q.x * 1.18, body_size.x), t, lid_len))
+	pivot.add_child(lid)
+	lid.position = Vector3(0.0, 0.0, -lid_len * 0.5)
+	if scr == null:
+		return
+	# Keep the quad's authored BASIS (already oriented to face +Y) and move it
+	# onto the new slab's face.
+	scr.position = Vector3(0.0, t * 0.5 + 0.0006, -lid_len * 0.5)
+	# Dark bezel under the picture, so the lid reads as a screen well rather than
+	# a blank white slab — the same idiom the authored *_primitive scenes use.
+	var bezel := _placeholder_box("ScreenBezel", Vector3(q.x * 1.10, 0.002, q.y * 1.16))
+	(bezel.get_surface_override_material(0) as StandardMaterial3D).albedo_color = Color(0.12, 0.12, 0.14)
+	pivot.add_child(bezel)
+	bezel.position = Vector3(0.0, t * 0.5 + 0.0002, -lid_len * 0.5)
+
+
+## True when `root` holds stand-in SHELL geometry. Live picture quads don't
+## count: they are always QuadMesh, and a lid that is nothing but a floating
+## screen still needs a slab built for it.
+func _has_shell_mesh(root: Node) -> bool:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var cur: Node = stack.pop_back()
+		if cur is MeshInstance3D:
+			var mi := cur as MeshInstance3D
+			if mi.visible and mi.mesh != null and not (mi.mesh is QuadMesh):
+				return true
+		for ch in cur.get_children():
+			stack.append(ch)
+	return false
+
+
+## A grey box mesh for the generic stand-in above.
+func _placeholder_box(mesh_name: String, size: Vector3) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = mesh_name
+	var box := BoxMesh.new()
+	box.size = size
+	mi.mesh = box
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.75, 0.73, 0.7)
+	mi.set_surface_override_material(0, mat)
+	return mi
 
 
 func _setup_screen_light() -> void:

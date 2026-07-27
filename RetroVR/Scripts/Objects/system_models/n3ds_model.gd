@@ -40,10 +40,17 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # 3DS Game Card
 
 
-## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds keep
-## the primitive clamshell authored in n3ds.tscn.
+## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds wear
+## the stand-in clamshell from _primitive_path() below.
 func _glb_path() -> String:
 	return "res://imported-assets/new_3ds_xl.glb"
+
+
+## The 3DS XL has no stand-in scene of its own; it borrows the DS's, which is the
+## same clamshell shape class (base half + a LidParts subtree the hinge adopts).
+## Without this a placeholder 3DS fell through to the generic grey slab.
+func _primitive_path() -> String:
+	return "res://Scenes/Objects/system_models/nds_primitive.tscn"
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens is
@@ -217,6 +224,15 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 	_set_leds(false)   # console starts off — indicators dark until power_on
 	var mesh := find_child("PowerButton3ds", true, false) as MeshInstance3D
 	var marker := find_child("Power", true, false) as Node3D
+	if mesh == null and marker == null:
+		# Placeholder build: both the real button mesh and the "Power" empty were
+		# part of the licensed shell and are gone. Without them nothing hid the
+		# cabinet's own full-size green nub or moved it off the default pose, so a
+		# stand-in 3DS wore a 40 mm button bigger than its card slot. Fall back to
+		# the dual-screen base, which shrinks the nub and mounts it on the front
+		# edge — exactly what the DS stand-in already does.
+		super.configure_buttons(power_btn, _reset_btn, _eject_btn)
+		return
 	power_btn.trigger_radius = 0.013
 	power_btn.depress_depth = 0.0014
 	power_btn.set_latched_pressed(false)
