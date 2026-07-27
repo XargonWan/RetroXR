@@ -193,10 +193,15 @@ func _configure_power_slide() -> void:
 ## x = +0.087 against a shell that ends at +0.0815, so it floated a few mm off
 ## the right edge, nowhere near either button, driving nothing you could see.
 ##
-## The slider stays as the VALUE HOLDER — handheld_model already connects its
-## value_changed to the host and re-applies its position on power-on — but it
-## stops being touchable, and the buttons step it instead.
+## With the buttons doing the job the slider is gone from psp.tscn entirely, so
+## this owns the level itself. That is the whole of what the slider was still
+## providing: handheld_model wires _volume_slider.value_changed to the host and
+## re-applies its position on power-on, and both of those are null-guarded, so
+## deleting the node just means doing the two calls here.
 const _VOLUME_STEP := 0.1
+
+## 0..1, matching the level the removed slider was authored at (value = 1.0).
+var _volume: float = 1.0
 
 
 func _configure_volume_buttons() -> void:
@@ -216,19 +221,22 @@ func _configure_volume_buttons() -> void:
 			lbl.visible = false
 		var step := float(spec[2]) * _VOLUME_STEP
 		btn.button_pressed.connect(func() -> void: _step_volume(step))
-	# Retire the floating slider as an INPUT without unhooking it as state: zero
-	# its layer so the pointer can't hit it and stop _process so a passing
-	# fingertip can't engage it either.
-	if _volume_slider != null:
-		_volume_slider.collision_layer = 0
-		_volume_slider.set_process(false)
-		_volume_slider.set_deferred("monitoring", false)
 
 
 func _step_volume(delta: float) -> void:
-	if _volume_slider == null:
-		return
-	_volume_slider.set_value(clampf(_volume_slider.value + delta, 0.0, 1.0))
+	var was := _volume
+	_volume = clampf(_volume + delta, 0.0, 1.0)
+	if not is_equal_approx(_volume, was):
+		_push_volume()
+
+
+## Only reaches the host once it has an audio player, which is why on_power_on
+## re-sends it — presses while the system is off still count, they just have
+## nowhere to land until it comes up.
+func _push_volume() -> void:
+	var host := get_parent()
+	if host != null and host.has_method("set_audio_volume"):
+		host.set_audio_volume(_volume)
 
 
 # --- UMD door latch ----------------------------------------------------------
@@ -291,6 +299,8 @@ func _configure_power_led() -> void:
 func on_power_on() -> void:
 	super.on_power_on()
 	_set_power_led(true)
+	# The base does this off _volume_slider, which this shell no longer has.
+	_push_volume()
 
 
 func on_power_off() -> void:

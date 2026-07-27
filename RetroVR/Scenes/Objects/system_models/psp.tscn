@@ -1,7 +1,6 @@
 [gd_scene format=4 uid="uid://pde10amlgs0b"]
 
 [ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_oixvq"]
-[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="2_6e2pq"]
 [ext_resource type="Texture2D" uid="uid://bfpl0jslsog8g" path="res://imported-assets/psp_1000_psp_1.png" id="4_qmcsd"]
 [ext_resource type="Texture2D" uid="uid://ci4t65wioxaas" path="res://imported-assets/psp_1000_normal.png" id="5_0tid2"]
 [ext_resource type="Texture2D" uid="uid://b81hadhhxbh8g" path="res://imported-assets/psp_1000_psp_1_screen.png" id="6_qjy2c"]
@@ -18,15 +17,6 @@ size = Vector2(0.083904006, 0.047486406)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_n6adx"]
 albedo_color = Color(0.35, 0.4, 0.33, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_fanjx"]
-size = Vector3(0.008, 0.006, 0.008)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_31348"]
-albedo_color = Color(0.2, 0.2, 0.22, 1)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_ehrgs"]
-size = Vector3(0.03, 0.015, 0.03)
 
 [sub_resource type="BoxMesh" id="BoxMesh_3equ1"]
 size = Vector3(0.008, 0.006, 0.008)
@@ -1683,24 +1673,6 @@ script = ExtResource("1_oixvq")
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 6.363168e-05, 0.011234712, -0.0022742394)
 mesh = SubResource("QuadMesh_6vy4r")
 surface_material_override/0 = SubResource("StandardMaterial3D_n6adx")
-
-[node name="VolumeSlider" type="Area3D" parent="." unique_id=68107867]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.087, 0, -0.01028)
-collision_layer = 1048577
-script = ExtResource("2_6e2pq")
-axis_local = Vector3(0, 0, -1)
-travel = 0.02072000026702881
-engage_radius = 0.028
-value = 1.0
-
-[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=13869205]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01036)
-visible = false
-mesh = SubResource("BoxMesh_fanjx")
-surface_material_override/0 = SubResource("StandardMaterial3D_31348")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=1310344486]
-shape = SubResource("BoxShape3D_ehrgs")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=1464879413]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0019636303, 0.0050297156, -0.00071423873)
