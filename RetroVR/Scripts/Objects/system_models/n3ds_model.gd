@@ -277,8 +277,17 @@ const _SHOULDER_MESH := {
 	ControllerBindings.JOYPAD_L2: "LIndexTriggerButton",   # ZL
 	ControllerBindings.JOYPAD_R2: "RIndexTriggerButton",   # ZR
 }
-const _FACE_PRESS := 0.0026
-const _SHOULDER_PRESS := 0.0040
+## Also measured: the A/B/X caps stand 1.64 mm proud of the face, so the old
+## 2.6 mm sank them about a millimetre into it. (Y, Start and Select ring-sample
+## against taller neighbouring geometry and give no clean reading, but a shallower
+## press cannot hurt them.)
+const _FACE_PRESS := 0.0010
+## Measured, not guessed: all four shoulder/trigger caps stand only 1.40 mm proud
+## of the back edge they emerge from (ray-cast against the shell with the buttons
+## excluded, ring-sampled around each footprint and confirmed by a centre ray).
+## The old 4.0 mm drove them 2.6 mm THROUGH the shell. 0.9 mm reads as a press
+## and still leaves half a millimetre showing.
+const _SHOULDER_PRESS := 0.0009
 const _PAD_SLIDE := 0.0032
 ## The New 3DS's C-Stick is a stiff nub, not a gimbal - on real hardware it
 ## barely visibly moves. A small tilt reads without looking like a thumbstick.
