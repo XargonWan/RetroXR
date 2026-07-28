@@ -41,6 +41,12 @@ enum MediaType { CARTRIDGE = 0, DISC_TRAY = 1, DISC_INSERT = 2 }
 ## this false: their mouse peripherals stay on the port they're plugged into.
 @export var computer: bool = false
 
+## One game is a FOLDER, not a file (ScummVM). The content the core is handed is a
+## small marker file sitting inside the game's data folder, so a flat scan of the
+## system's rom dir sees only directories and reports an empty library. When true
+## RomLibrary.scan_roms() descends one level and the folder name becomes the label.
+@export var folder_content: bool = false
+
 ## Custom hardware model scene for this console. Empty for now — this is the
 ## slot the bespoke per-console models get dropped into later.
 @export var console_model: PackedScene = null

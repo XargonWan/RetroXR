@@ -65,10 +65,13 @@ static func scan_roms(systemid: String, extensions: Array[String]) -> Array[Dict
 	# the value — the real path must preserve case (Linux is case-sensitive, so a
 	# lowercased path fails to open; that broke ROM loading + scraper hashing).
 	var all_files: Dictionary = {}  # lowercase filename -> original filename
+	var subdirs: Array[String] = []
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
-		if not dir.current_is_dir():
+		if dir.current_is_dir():
+			subdirs.append(fname)
+		else:
 			all_files[fname.to_lower()] = fname
 		fname = dir.get_next()
 	dir.list_dir_end()
@@ -90,10 +93,45 @@ static func scan_roms(systemid: String, extensions: Array[String]) -> Array[Dict
 		var full_path := dir_path.path_join(file)   # original case preserved
 		results.append({"path": full_path, "label": file.get_basename()})
 
+	var info := SystemInfo.for_system(systemid)
+	if info != null and info.folder_content:
+		results.append_array(_scan_content_folders(dir_path, subdirs, extensions))
+
 	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
 	)
 	return results
+
+
+## One game per subfolder: find the marker file the core is handed inside each.
+##
+## The folder name is the label, not the marker's basename — markers are named by
+## ScummVM target id ("monkey", "atlantis-amiga"), while the folder carries the
+## human title. An empty `extensions` (the RomM path scans unfiltered) takes the
+## first non-hidden file, which is wrong for a data folder, so the marker is only
+## looked for when the caller supplied extensions to match.
+static func _scan_content_folders(dir_path: String, subdirs: Array[String],
+		extensions: Array[String]) -> Array[Dictionary]:
+	var found: Array[Dictionary] = []
+	if extensions.is_empty():
+		return found
+	for sub: String in subdirs:
+		if sub.begins_with("."):
+			continue
+		var sub_path := dir_path.path_join(sub)
+		var inner := DirAccess.open(sub_path)
+		if not inner:
+			continue
+		inner.list_dir_begin()
+		var f := inner.get_next()
+		while f != "":
+			if not inner.current_is_dir() and not f.begins_with(".") \
+					and f.get_extension().to_lower() in extensions:
+				found.append({"path": sub_path.path_join(f), "label": sub})
+				break
+			f = inner.get_next()
+		inner.list_dir_end()
+	return found
 
 
 ## Return the scraped manual path (in media/manual/ directory).

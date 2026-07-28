@@ -11,3 +11,4 @@ media_type = 0
 supports_multitap = false
 multitap_ports = 0
 computer = true
+folder_content = true
