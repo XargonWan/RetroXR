@@ -69,6 +69,23 @@ const SILHOUETTE_CULL_DIST := 34.0
 ## [systemid, model_variant, plaque name]. Systems with no bespoke hardware model
 ## come up as the grey placeholder box — deliberately kept in, so the scene also
 ## reads as a checklist of which shells still need building.
+## Show every station as its STAND-IN model rather than the licensed shell.
+##
+## The hall is the survey of the room's hardware, and the stand-ins are the part
+## that has to hold up unaided — a build shipped without imported-assets/ is all
+## a player would ever see, and until now that line-up had never been looked at
+## end to end. GENERATIONS below still names the real hardware, so flipping this
+## off gives the licensed line-up back unchanged.
+##
+## Two consequences worth expecting when it is on:
+##   * rows differing only by a colour/regional badge (Famicom, Mega Drive,
+##     PSone, PS2 Silver, DS Lite, GBA SP) collapse onto their system's single
+##     stand-in and show the same shell twice — the plaques still tell them apart
+##   * hardware with no stand-in of its own comes up as the grey placeholder box,
+##     which is the same signal the scene already used for "shell still to build"
+const SPAWN_PRIMITIVES := true
+
+
 const GENERATIONS: Array = [
 	{
 		"title": "2ND GENERATION", "years": "1976 – 1983",
@@ -214,7 +231,7 @@ func _build_station(systemid: String, variant: String, plaque: String,
 	var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 	sys.name = "Sys_%s" % name_stem
 	sys.systemid = systemid
-	sys.model_variant = variant
+	sys.model_variant = RetroSystemModel.PRIMITIVE_VARIANT if SPAWN_PRIMITIVES else variant
 	sys.system_label = plaque
 	# Handhelds default their video out OFF and read this save field for the
 	# remembered choice; consoles ignore it (their cable is always live).
