@@ -6,6 +6,18 @@
 class_name RetroSystemModel
 extends Node3D
 
+## model_variant value that selects the store-safe stand-in model instead of the
+## licensed one. It is its own row in the system's spawn-menu page and its own
+## scene — a model never probes for the detailed shell and falls back to a
+## stand-in, it IS one or the other from the moment it is spawned.
+const PRIMITIVE_VARIANT := "primitive"
+
+## True on a stand-in model scene: the shell is the plain geometry authored in
+## this very scene, so there is no detailed shell to load. Declared on the scene
+## rather than inferred from the spawn variant, so a stand-in still knows what it
+## is when instanced directly (test scenes, probes, the editor).
+@export var primitive_shell: bool = false
+
 
 ## Called when the system is powered on (e.g. light up power LED, play boot animation).
 func on_power_on() -> void:
@@ -298,31 +310,16 @@ func get_disc_lid_pivot() -> Node3D:
 
 
 ## An editor-authored seat marker ("CartSeat" / "DiscSeat" / "UMDSeat"), whose
-## global transform poses the seated media — preferring the STAND-IN's own.
-##
-## A device scene's marker is dialled in against its detailed shell, and that
-## shell is not in the tree when the stand-in is up: taking it there seats the
-## media against geometry the player cannot see. plain find_child picks it
-## regardless, since the authored marker is a root child and the stand-in is
-## added last, so the stand-in's has to be asked for explicitly.
+## global transform poses the seated media.
 func _seat_marker(seat_name: String) -> Node3D:
-	var prim := get_node_or_null("Primitive") as Node3D
-	if prim != null:
-		var own := prim.find_child(seat_name, true, false) as Node3D
-		if own != null:
-			return own
 	return find_child(seat_name, true, false) as Node3D
 
 
-## True when the store-safe stand-in is the shell on screen.
-##
-## Lookups that resolve against the DETAILED shell — socket markers, control
-## meshes — have nothing to say on this path, and on a BAKED device scene they
-## answer anyway, because the authored Shell stays in the tree whether or not the
-## stand-in was spawned over it. So they have to be skipped explicitly rather
-## than left to come back null.
+## True when the shell on screen is the plain stand-in. Lookups that resolve
+## against the DETAILED shell — socket markers, control meshes — have nothing to
+## say on a stand-in and must be skipped rather than left to come back null.
 func _on_stand_in_shell() -> bool:
-	return has_node("Primitive")
+	return primitive_shell
 
 
 ## Hide every editor-only seat preview box in the tree. There can be more than

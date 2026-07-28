@@ -74,8 +74,9 @@ const _CATALOG: Dictionary = {
 		{"kind": "system", "label": "Game Boy Advance SP", "variant": "sp"},
 	],
 	"virtual_boy": [
-		{"kind": "system",     "label": "Console",    "variant": ""},
-		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
+		{"kind": "system",     "label": "Virtual Boy",        "variant": ""},
+		{"kind": "system",     "label": "Primitive Handheld", "variant": "primitive"},
+		{"kind": "peripheral", "label": "Controller",         "spawn": "vb_controller"},
 	],
 	"atari_2600": [
 		{"kind": "system",     "label": "Console",    "variant": ""},

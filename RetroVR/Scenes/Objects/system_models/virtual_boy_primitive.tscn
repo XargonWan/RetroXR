@@ -1,8 +1,13 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene format=3]
 
-; Store-safe primitive stand-in for the Virtual Boy — a plain bipod + visor.
-; Spawned by virtual_boy_model only when the detailed GLB shell is absent
-; (mirrors the dual-screen nds_primitive pattern). Keeps the device scene clean.
+; Virtual Boy stand-in — a plain bipod + visor carrying NO licensed geometry.
+; A complete model in its own right, not a shell bolted onto virtual_boy.tscn:
+; spawned by its own "Primitive Handheld" row in the spawn menu (model_variant
+; "primitive"), so a build can ship this and drop virtual_boy.tscn entirely.
+
+[ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_model"]
+[ext_resource type="Shader" uid="uid://bwfu7ewask6e" path="res://Shaders/vb_stereo.gdshader" id="2_stereo"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_slider"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_base"]
 size = Vector3(0.16, 0.012, 0.14)
@@ -24,6 +29,26 @@ albedo_color = Color(0.55, 0.08, 0.1, 1)
 [sub_resource type="BoxMesh" id="BoxMesh_shade"]
 size = Vector3(0.2024, 0.0902, 0.006)
 
+[sub_resource type="QuadMesh" id="QuadMesh_eye"]
+size = Vector2(0.132, 0.077)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_eye"]
+render_priority = 0
+shader = ExtResource("2_stereo")
+shader_parameter/powered = 0.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_proxy"]
+size = Vector2(0.01, 0.01)
+
+[sub_resource type="BoxMesh" id="BoxMesh_knob"]
+size = Vector3(0.005, 0.024, 0.016)
+
+[sub_resource type="StandardMaterial3D" id="Mat_knob"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
+size = Vector3(0.026, 0.024, 0.024)
+
 [sub_resource type="BoxMesh" id="BoxMesh_seat"]
 size = Vector3(0.065, 0.054, 0.006)
 
@@ -35,6 +60,8 @@ emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
 
 [node name="VirtualBoyPrimitive" type="Node3D"]
+script = ExtResource("1_model")
+primitive_shell = true
 
 [node name="StandBase" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.006, 0)
@@ -55,6 +82,32 @@ surface_material_override/0 = SubResource("Mat_red")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.050499998)
 mesh = SubResource("BoxMesh_shade")
 surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Eyepiece" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.055)
+mesh = SubResource("QuadMesh_eye")
+surface_material_override/0 = SubResource("ShaderMaterial_eye")
+
+[node name="ProxyScreen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
+visible = false
+mesh = SubResource("QuadMesh_proxy")
+
+[node name="VolumeSlider" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1125, 0.305, 0.012)
+collision_layer = 1048577
+script = ExtResource("3_slider")
+axis_local = Vector3(0, 0, -1)
+travel = 0.01
+engage_radius = 0.022
+value = 0.8
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider"]
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("Mat_knob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+shape = SubResource("BoxShape3D_vol")
 
 [node name="CartSeat" type="Marker3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.305, -0.0305)

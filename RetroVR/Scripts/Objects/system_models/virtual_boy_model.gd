@@ -107,9 +107,10 @@ func _ready() -> void:
 	_stereo_mat.shader = STEREO_SHADER
 	if _eyepiece:
 		_eyepiece.set_surface_override_material(0, _stereo_mat)
-	_upgrade_to_glb()
-	if _glb == null:
-		_spawn_primitive()   # store-safe fallback bipod when the GLB shell is absent
+	if primitive_shell:
+		_place_volume_wheel()   # the stand-in's own knob; nothing to adopt
+	else:
+		_upgrade_to_glb()
 	# Red visor glow: a spot just outside the eye-shade shining out along the panes'
 	# normal (+Z, where the player stands). Off until a picture is present.
 	_vb_light = SpotLight3D.new()
@@ -162,21 +163,6 @@ func _upgrade_to_glb() -> void:
 	_place_volume_wheel()
 
 
-## Store-safe fallback: the detailed shell is export-excluded, so when it's absent
-## spawn the plain bipod primitive (kept in its own scene, like nds_primitive)
-## instead of baking it into virtual_boy.tscn.
-func _spawn_primitive() -> void:
-	var pp := "res://Scenes/Objects/system_models/virtual_boy_primitive.tscn"
-	if has_node("Primitive") or not ResourceLoader.exists(pp):
-		return
-	var scene := load(pp) as PackedScene
-	if scene == null:
-		return
-	var prim := scene.instantiate() as Node3D
-	prim.name = "Primitive"
-	add_child(prim)
-
-
 func _glb_aabb() -> AABB:
 	var acc := AABB()
 	var first := true
@@ -208,18 +194,19 @@ var _vol_slider: VRSlider = null
 
 
 func _place_volume_wheel() -> void:
-	if _glb == null:
-		return
-	_vol_wheel = _glb.find_child("VolumeWheel", true, false) as MeshInstance3D
 	_vol_slider = get_node_or_null("VolumeSlider") as VRSlider
-	if _vol_wheel == null or _vol_slider == null:
+	if _vol_slider == null:
 		return
-	_vol_rest = _vol_wheel.transform
-	var ab: AABB = (global_transform.affine_inverse() * _vol_wheel.global_transform) * _vol_wheel.get_aabb()
-	_vol_slider.global_position = to_global(ab.get_center())
-	var knob := _vol_slider.get_node_or_null("KnobMesh") as MeshInstance3D
-	if knob != null:
-		knob.hide()
+	# Only the detailed shell models a wheel to take over; the stand-in authors
+	# its own knob on the visor's right rim and keeps it.
+	_vol_wheel = _glb.find_child("VolumeWheel", true, false) as MeshInstance3D if _glb != null else null
+	if _vol_wheel != null:
+		_vol_rest = _vol_wheel.transform
+		var ab: AABB = (global_transform.affine_inverse() * _vol_wheel.global_transform) * _vol_wheel.get_aabb()
+		_vol_slider.global_position = to_global(ab.get_center())
+		var knob := _vol_slider.get_node_or_null("KnobMesh") as MeshInstance3D
+		if knob != null:
+			knob.hide()
 	_vol_slider.value_changed.connect(_on_volume)
 	_apply_volume(_vol_slider.value)
 

@@ -101,6 +101,11 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	# GBA SP: clamshell revision of the GBA — its own model class (the fold
 	# hinge), own shell GLB.
 	"game_boy_advance:sp": "res://Scenes/Objects/system_models/game_boy_advance_sp.tscn",
+	# Stand-ins. Each is a COMPLETE model — plain shell plus its own screens,
+	# controls and seats — so a build can ship these and drop the licensed device
+	# scenes entirely. Hardware with no entry here falls to the procedural
+	# default_model, which is what its "Primitive System" row spawns.
+	"virtual_boy:primitive": "res://Scenes/Objects/system_models/virtual_boy_primitive.tscn",
 }
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -435,6 +440,13 @@ func _load_system_model() -> void:
 	var scene_path: String = ""
 	if _MODEL_SCENE_VARIANTS.has(vkey):
 		scene_path = _MODEL_SCENE_VARIANTS[vkey]
+	elif model_variant == RetroSystemModel.PRIMITIVE_VARIANT:
+		# The stand-in was asked for by name (its own spawn-menu row). Hardware
+		# with an authored stand-in scene matched above; everything else means the
+		# procedural placeholder, which is what the ~60 systems with no bespoke
+		# model already show. Deliberately NOT falling through to _MODEL_SCENES —
+		# that is the licensed shell, the one thing this variant exists to avoid.
+		scene_path = ""
 	elif _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
 		scene_path = _MODEL_SCENES[systemid]
 	if not scene_path.is_empty():
@@ -446,7 +458,12 @@ func _load_system_model() -> void:
 		is_bespoke = true
 	else:
 		var script_path: String = DEFAULT
-		if not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
+		if model_variant == RetroSystemModel.PRIMITIVE_VARIANT:
+			# DEFAULT — the procedural placeholder. _MODEL_SCRIPTS is skipped for
+			# the same reason as _MODEL_SCENES above: those models expect their
+			# hardware's baked Shell, which this variant deliberately has not got.
+			pass
+		elif not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
 			script_path = _MODEL_VARIANTS[vkey]
 		elif _MODEL_SCRIPTS.has(systemid):
 			script_path = _MODEL_SCRIPTS[systemid]
