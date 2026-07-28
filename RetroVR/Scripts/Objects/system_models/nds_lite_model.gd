@@ -11,7 +11,7 @@ class_name RetroSystemModelNDSLite
 extends RetroSystemModelNDS
 
 
-## Detailed DS Lite shell (an author). Export-excluded — store builds keep
+## Detailed DS Lite shell (an author imported). Export-excluded — store builds keep
 ## the primitive clamshell authored in nds_lite.tscn.
 func _glb_path() -> String:
-	return "res://unbundled-models/handhelds/ds_lite.glb"
+	return "res://imported-assets/ds_lite.glb"

@@ -16,8 +16,8 @@
 ## the way it does in the source scene.
 extends Node
 
-const SRC := "res://unbundled-models/consoles/playstation_one.glb"
-const DST := "res://unbundled-models/controllers/psx_controller_plug.res"
+const SRC := "res://imported-assets/playstation_one.glb"
+const DST := "res://imported-assets/psx_controller_plug.res"
 const MESH_NAME := "controller_plug_002"
 ## Matches RetroSystemModelPlaystationOne._PORT_INSET — the port zone sits half a
 ## recess-depth inside the console's front face.

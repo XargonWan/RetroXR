@@ -8,4 +8,4 @@ extends RetroSystemModelGenesis
 
 
 func _model_path() -> String:
-	return "res://unbundled-models/consoles/sega_megadrive.glb"
+	return "res://imported-assets/sega_megadrive.glb"

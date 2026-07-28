@@ -1,6 +1,6 @@
 ## RetroSystemModelPS2 — PlayStation 2 Slim (top-loading disc console).
 ##
-## Loads an author's PS2 Slim GLB. The Slim is TOP-LOADING (a hinged disc
+## Loads an author's imported PS2 Slim GLB. The Slim is TOP-LOADING (a hinged disc
 ## cover, PS2SlimOpen/Close), so `playstation2` is reclassified LOADER_TRAY in
 ## media_dimensions.gd (it was slot-load, which suits the fat PS2 front slot but
 ## not this Slim) — RetroSystem then drives play_open()/play_close() on the lid.
@@ -24,7 +24,7 @@ var _led: MeshInstance3D = null
 ## Overridable so the Silver recolour can reuse all this wiring — the black and
 ## silver PS2 Slim GLBs share node names and animations, only the shell differs.
 func _model_path() -> String:
-	return "res://unbundled-models/consoles/ps2_slim.glb"
+	return "res://imported-assets/ps2_slim.glb"
 
 
 func _ready() -> void:

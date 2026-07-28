@@ -1,6 +1,6 @@
 ## RetroSystemModelNES — the American front-loading NES (NES-001).
 ##
-## Loads an author's "NES System" GLB and wires POWER / RESET, the power LED,
+## Loads an author's imported "NES System" GLB and wires POWER / RESET, the power LED,
 ## the two controller sockets, the RF video-out and the front-loading cartridge
 ## bay. The bay sits behind a hinged front flap (the "NesLid"): the GLB ships an
 ## authored Open/Close animation that swings the flap on its real hinge, so a
@@ -13,7 +13,7 @@
 class_name RetroSystemModelNES
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://unbundled-models/consoles/nes_system.glb"
+const _MODEL_PATH := "res://imported-assets/nes_system.glb"
 const BUTTON_DEPRESS_DEPTH := 0.0022
 const INSERT_SLIDE := 0.07        # metres the cart slides in from the flap mouth
 const LID_OPEN_DEG := -105.0      # flap swing about its top-rear hinge edge
@@ -418,7 +418,7 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRB
 ## z = 0.0978) and dropped to the socket mouths below them.
 ##
 ## The GLB's "Cable Plug Port1" marker is NOT the socket: like the PSone's, it is
-## where the bundle parks the plug prop, 2.1 cm proud of the face. And there is no
+## where imported parks the plug prop, 2.1 cm proud of the face. And there is no
 ## Port2 marker at all, so the old lookup left port 2 wherever the scene had put
 ## it — down at floor level, off to the left of the console.
 const _PORT_X := [0.0645, 0.0824]

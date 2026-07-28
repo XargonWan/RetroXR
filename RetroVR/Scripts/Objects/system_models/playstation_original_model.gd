@@ -5,7 +5,7 @@
 ## hand-swing → tray sync, the disc seat and the swing tween are all shared, and
 ## only the shell description and the front-panel placements differ.
 ##
-## This shell (the "PSX (Mod)" variant) is in much better shape than the PSone
+## This shell (imported's "PSX imported (Mod)") is in much better shape than the PSone
 ## GLB — POWER, RESET and OPEN are three separate meshes with their own
 ## "Finger Button *" markers, the lid has a "DeckelPSX" hinge marker, and the
 ## power LED is its own mesh. So almost nothing here has to be inferred from
@@ -33,7 +33,7 @@ var _led_mat: StandardMaterial3D = null
 
 
 func _model_path() -> String:
-	return "res://unbundled-models/consoles/playstation_original.glb"
+	return "res://imported-assets/playstation_original.glb"
 
 
 func _shell_yaw() -> float:

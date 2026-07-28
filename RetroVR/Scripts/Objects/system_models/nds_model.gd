@@ -236,14 +236,14 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # DS Game Card
 
 
-## Detailed DS Phat shell (an author). Export-excluded — store builds keep
+## Detailed DS Phat shell (an author imported). Export-excluded — store builds keep
 ## the primitive clamshell authored in nds.tscn.
 ##
 ## Unlike nds_lite.tscn, this scene is NOT baked (no dual_glb_baked meta and no
 ## authored Shell child), so the dual-screen base instantiates the GLB and does
 ## the lid split / screen placement / collision fit at runtime.
 func _glb_path() -> String:
-	return "res://unbundled-models/handhelds/ds_phat.glb"
+	return "res://imported-assets/ds_phat.glb"
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens + its

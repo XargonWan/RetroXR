@@ -1,6 +1,6 @@
 ## RetroSystemModelN64 — Nintendo 64 console (cartridge; POWER + RESET, no eject).
 ##
-## Uses the N64 GLB. Its front already faces +Z (controller ports, power/reset,
+## Uses the imported N64 GLB. Its front already faces +Z (controller ports, power/reset,
 ## power LED) so — unlike the PlayStation — it needs no rotation, just a recentre and
 ## a rest-on-the-ground. The console's real buttons, four controller ports, AV port,
 ## cartridge slot and power LED are mapped onto the RetroSystem's interaction nodes,
@@ -8,12 +8,12 @@
 class_name RetroSystemModelN64
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://unbundled-models/consoles/N64 imported.glb"
+const _MODEL_PATH := "res://imported-assets/N64 imported.glb"
 
 ## The GLB's body material uses an embedded GREEN diffuse variant. Swap it for the
 ## classic grey N64 diffuse (shipped alongside, same UV layout). Point this at
 ## "..._GoildN64_System_diffuse_Recolors.png" instead for the gold variant.
-const _BODY_DIFFUSE := "res://unbundled-models/consoles/N64 imported_diffuddddddddddddddse.png"
+const _BODY_DIFFUSE := "res://imported-assets/N64 imported_diffuddddddddddddddse.png"
 
 var _led: Array[MeshInstance3D] = []
 var _glb: Node3D = null

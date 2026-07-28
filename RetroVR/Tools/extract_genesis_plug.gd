@@ -13,7 +13,7 @@
 ## own material references survive (they keep their `mega_drive_32x_` prefix, which
 ## is the provenance). To re-run this, convert the bundle back first:
 ##
-##   python Tools/bundle_convert.py ##     "~/<bundle-library>/Retro bundle Collection/Retro bundle Collection/Custom/bundle/Consoles and Media/Sega/Sega Genesis/Sega_Mega_Drive_System_(SMS_32X)_e8f88480.bundle" ##     RetroVR/imported-assets/mega_drive_32x.glb
+##   python Tools/bundle_convert.py ##     "~/model-library/Retro bundle Collection/Retro bundle Collection/Custom/bundle/Consoles and Media/Sega/Sega Genesis/Sega_Mega_Drive_System_(SMS_32X)_e8f88480.bundle" ##     RetroVR/imported-assets/mega_drive_32x.glb
 ##   godot --headless --path RetroVR --editor --quit    # import it
 ##   godot --headless --path RetroVR res://Tools/extract_genesis_plug.tscn
 ##
@@ -22,8 +22,8 @@
 ## cable trailing -Z.
 extends Node
 
-const SRC := "res://unbundled-models/consoles/mega_drive_32x.glb"
-const DST := "res://unbundled-models/controllers/genesis_controller_plug.res"
+const SRC := "res://imported-assets/mega_drive_32x.glb"
+const DST := "res://imported-assets/genesis_controller_plug.res"
 const MESH_NAME := "Port1 Connect"
 const PORT_MARKER := "Port1"
 const SHELL_MESH := "megadrive_console"

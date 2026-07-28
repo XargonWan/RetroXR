@@ -6,8 +6,8 @@
 ## and START. No analog sticks — this is the digital pad, so _stick_l/_stick_r
 ## stay empty and the base class simply skips them.
 ##
-## Model: an author's "Sega Saturn Controller" bundle. Its meshes carry the
-## generic bundled slot names rather than the Saturn's own legend, and the slots do
+## Model: an author's imported "Sega Saturn Controller" bundle. Its meshes carry the
+## generic imported slot names rather than the Saturn's own legend, and the slots do
 ## not line up with the letters at all — C is "RShoulderButton", Z is
 ## "LShoulderButton", and the real shoulder triggers are the "…IndexTrigger…"
 ## pair. The letters below were read off the albedo by sampling each button's

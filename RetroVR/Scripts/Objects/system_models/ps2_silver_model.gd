@@ -8,4 +8,4 @@ extends RetroSystemModelPS2
 
 
 func _model_path() -> String:
-	return "res://unbundled-models/consoles/ps2_slim_silver.glb"
+	return "res://imported-assets/ps2_slim_silver.glb"

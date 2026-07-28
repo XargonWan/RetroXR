@@ -104,11 +104,11 @@ func _ready() -> void:
 	# use_placeholder_shell) now live on the single-screen base, so both handheld
 	# families answer the same question the same way.
 	var placeholder := use_placeholder_shell()
-	# The clamshells bake their unbundled shell into the device .tscn as a "Shell"
+	# The clamshells bake their licensed shell into the device .tscn as a "Shell"
 	# child, and _upgrade_dual_to_glb reuses it via the "dual_glb_baked" meta —
 	# so on a placeholder build it has to be removed outright, not merely skipped.
 	if placeholder:
-		_drop_unbundled_shell()
+		_drop_licensed_shell()
 	var gp := _glb_path()
 	var detailed := not placeholder and not gp.is_empty() and ResourceLoader.exists(gp)
 	# The stand-in is a SEPARATE scene, added only when there's no detailed shell,
@@ -142,7 +142,7 @@ func _ready() -> void:
 		_touch_controllers.append(node as XRController3D)
 
 
-## Override to return a detailed clamshell GLB; "" keeps the primitive
+## Override to return a detailed clamshell GLB (imported); "" keeps the primitive
 ## shell (store builds — imported-assets/* is export-excluded).
 func _glb_path() -> String:
 	return ""

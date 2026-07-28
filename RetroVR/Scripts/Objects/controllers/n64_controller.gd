@@ -5,7 +5,7 @@
 ## RetroPad bits, so they borrow X / Y / SELECT / R2 — the whole map is the
 ## implementer's choice (tune in-headset), same as the GameCube variant.
 ##
-## Model: an author's "N64 Controller (Anim)" bundle — separated named meshes:
+## Model: an author's imported "N64 Controller (Anim)" bundle — separated named meshes:
 ## FireButtonBottom (A), FireButtonLeft (B), StartButton, YellowUp/Down/Left/Right
 ## (C-buttons), LIndexTriggerButton (L), RShoulderButton (R), RIndexTriggerButton
 ## (Z), StickDpad2 (D-pad, pivot "Dpad") and StickLeft1 (analog, pivot "StickLeft").

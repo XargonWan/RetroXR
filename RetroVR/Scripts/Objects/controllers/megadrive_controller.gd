@@ -22,7 +22,7 @@ const FACE_ROW_MESHES: Array[String] = [
 	"FireButtonRight",    # C
 ]
 const MD_START := "StartButton"
-## The D-pad. Named for the generic "StickLeft" slot it was duplicated
+## The D-pad. Named for the generic imported "StickLeft" slot it was duplicated
 ## into; the trailing digits are the author's duplicate counter.
 const MD_DPAD := "StickLeft223"
 ## Sibling empty marking the D-pad's rocker pivot.

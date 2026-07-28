@@ -1,7 +1,7 @@
 ## RetroSystemModelFamicom — Nintendo Family Computer (Famicom), the JP regional
 ## variant of the NES. Cartridge console, top-loading under the red flap.
 ##
-## Loads an author's Famicom GLB and wires POWER / RESET / EJECT, the top
+## Loads an author's imported Famicom GLB and wires POWER / RESET / EJECT, the top
 ## cartridge slot (cart drops in from above), the RF cable and the two DIN
 ## controller sockets. The GLB ships the Famicom's two hardwired pads + coiled
 ## leads; RetroVR spawns its own controllers, so those (and the loose plug) are
@@ -12,7 +12,7 @@
 class_name RetroSystemModelFamicom
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://unbundled-models/consoles/famicom.glb"
+const _MODEL_PATH := "res://imported-assets/famicom.glb"
 
 var _glb: Node3D = null
 

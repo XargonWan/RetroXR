@@ -1,6 +1,6 @@
 ## RetroSystemModelDesktopTower — a beige PC tower, used as the MS-DOS "console".
 ##
-## Loads an author's Desktop Tower GLB and wires the POWER button + power LED
+## Loads an author's imported Desktop Tower GLB and wires the POWER button + power LED
 ## and the front optical-drive bay. DOS is a home-computer system (media_type
 ## CARTRIDGE / no lidded tray in RetroVR), so the CD tray stays closed at rest and
 ## the model reads as a static tower; games load from the menu.
@@ -10,7 +10,7 @@
 class_name RetroSystemModelDesktopTower
 extends RetroSystemModel
 
-const _MODEL_PATH := "res://unbundled-models/consoles/desktop_tower.glb"
+const _MODEL_PATH := "res://imported-assets/desktop_tower.glb"
 
 var _glb: Node3D = null
 var _led: MeshInstance3D = null

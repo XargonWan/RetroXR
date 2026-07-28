@@ -16,14 +16,14 @@
 ## connected TV comes out in stereo as well. Same mechanism the 3DS top screen
 ## uses; the console is stereo end to end.
 ##
-## Detailed shell (an author) when imported-assets/virtual_boy.glb ships;
+## Detailed shell (an author imported) when imported-assets/virtual_boy.glb ships;
 ## the primitive bipod authored in virtual_boy.tscn is the store-safe fallback.
 class_name RetroSystemModelVirtualBoy
 extends RetroSystemModel
 
 const STEREO_SHADER := preload("res://Shaders/vb_stereo.gdshader")
 const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
-const _MODEL_PATH := "res://unbundled-models/handhelds/virtual_boy.glb"
+const _MODEL_PATH := "res://imported-assets/virtual_boy.glb"
 
 ## The shell is authored with its EYEPIECES on -Z and its cart slot / A/V out on
 ## +Z — backwards from the framework's "front is +Z". Yaw it so the lenses face
@@ -116,10 +116,10 @@ func _ready() -> void:
 	_stereo_mat.shader = STEREO_SHADER
 	if _eyepiece:
 		_eyepiece.set_surface_override_material(0, _stereo_mat)
-	# virtual_boy.tscn bakes the unbundled shell in as a "Shell" instance, so a
+	# virtual_boy.tscn bakes the licensed shell in as a "Shell" instance, so a
 	# placeholder build has to remove it rather than just decline to load the GLB.
 	if RetroModelPolicy.placeholder_models():
-		drop_unbundled_geometry()
+		drop_licensed_geometry()
 	else:
 		_upgrade_to_glb()
 	if _glb == null:

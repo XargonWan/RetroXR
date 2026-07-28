@@ -6,7 +6,7 @@ extends XRToolsPickable
 ## Maps systemid → GDScript path for the hardware model subclass. Used for
 ## systems whose model is NOT an authored scene (see _MODEL_SCENES).
 const _MODEL_SCRIPTS: Dictionary = {
-	# These console models are licence-pending and replicate real hardware trade
+	# These console models are imported-derived and replicate real hardware trade
 	# dress, an IP risk for store distribution (e.g. SideQuest) until the licence
 	# lands. They are no longer commented out one at a time: RetroModelPolicy is
 	# the switch, and a placeholder build sends EVERY bespoke console here to
@@ -39,37 +39,37 @@ const _MODEL_SCENES: Dictionary = {
 	# NES front-loader: authored scene bakes the recentred shell + an editable
 	# "CartSeat" marker (with a translucent preview box) so the cartridge seat can
 	# be positioned in the Godot editor. nes_model reuses the baked "Shell" instance.
-	"nes": "res://unbundled-models/scenes/nes.tscn",
+	"nes": "res://Scenes/Objects/system_models/nes.tscn",
 	# Atari 2600 VCS: same bake as the NES — recentred shell + editor-authorable
 	# "CartSeat" marker. atari_2600_model reuses the baked "Shell" instance.
-	"atari_2600": "res://unbundled-models/scenes/atari_2600.tscn",
+	"atari_2600": "res://Scenes/Objects/system_models/atari_2600.tscn",
 	# Atari 5200: same bake — recentred shell + editor-authorable "CartSeat"
 	# marker. atari_5200_model reuses the baked "Shell" instance.
-	"atari_5200": "res://unbundled-models/scenes/atari_5200.tscn",
+	"atari_5200": "res://Scenes/Objects/system_models/atari_5200.tscn",
 	# Sega Genesis / Mega Drive Model 1 (base = Genesis shell). CartSeat rides the
 	# Shell so it survives genesis_model's runtime recentre.
-	"mega_drive": "res://unbundled-models/scenes/genesis.tscn",
+	"mega_drive": "res://Scenes/Objects/system_models/genesis.tscn",
 	# Sega Saturn (disc): shell instance + an editor-authorable "DiscSeat" marker
 	# (cylinder preview) riding the Shell through the model's recentre.
-	"sega_saturn": "res://unbundled-models/scenes/sega_saturn.tscn",
+	"sega_saturn": "res://Scenes/Objects/system_models/sega_saturn.tscn",
 	# Sega Dreamcast (GD-ROM disc): same DiscSeat bake.
-	"dreamcast": "res://unbundled-models/scenes/dreamcast.tscn",
+	"dreamcast": "res://Scenes/Objects/system_models/dreamcast.tscn",
 	# PlayStation 2 Slim (DVD disc): same DiscSeat bake (base = black slim).
-	"playstation2": "res://unbundled-models/scenes/ps2.tscn",
-	# Dev-only (per user direction): an author's PSone. Licence still
+	"playstation2": "res://Scenes/Objects/system_models/ps2.tscn",
+	# Dev-only (per user direction): an author's imported PSone. Licence still
 	# pending, so a placeholder build takes the grey box instead — see
 	# RetroModelPolicy and the has_placeholder_shell() check in
 	# _load_system_model.
 	# The scene owns the CD lid's hinge pivot + VRHinge, so the lid is hand-openable.
-	"playstation": "res://unbundled-models/scenes/playstation_one.tscn",
+	"playstation": "res://Scenes/Objects/system_models/playstation_one.tscn",
 	# Nintendo GameCube (mini-DVD disc): same DiscSeat bake as the Sony disc
 	# consoles. gamecube_model reuses the baked "Shell" instance.
-	"gamecube": "res://unbundled-models/scenes/gamecube.tscn",
+	"gamecube": "res://Scenes/Objects/system_models/gamecube.tscn",
 	# Nintendo 64 (cartridge): recentred shell + editor-authorable "CartSeat"
 	# and "PortSeat1".."PortSeat4" markers. The GLB only anchors two of the four
 	# ports, so the other two were mirrored across the console centre at runtime
 	# — now four authored markers instead. n64_model reuses the baked "Shell".
-	"nintendo_64": "res://unbundled-models/scenes/n64.tscn",
+	"nintendo_64": "res://Scenes/Objects/system_models/n64.tscn",
 }
 
 ## Optional per-variant model overrides, keyed "<systemid>:<variant>".
@@ -90,15 +90,15 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	# "nds" is the original DS (Phat); the DS Lite is the later revision.
 	"nds:lite": "res://Scenes/Objects/system_models/nds_lite.tscn",
 	# "playstation" is the PSone; the full-size grey SCPH-100x is the original.
-	"playstation:original": "res://unbundled-models/scenes/playstation_original.tscn",
+	"playstation:original": "res://Scenes/Objects/system_models/playstation_original.tscn",
 	# Famicom (JP variant of the NES): same bake as the others — shell instance +
 	# an editor-authorable "CartSeat" marker riding the shell. Wins over the
 	# nes:famicom script entry in _MODEL_VARIANTS.
-	"nes:famicom": "res://unbundled-models/scenes/famicom.tscn",
+	"nes:famicom": "res://Scenes/Objects/system_models/famicom.tscn",
 	# Mega Drive (JP/EU badge of the Genesis): its own shell GLB, same wiring.
-	"mega_drive:megadrive": "res://unbundled-models/scenes/megadrive.tscn",
+	"mega_drive:megadrive": "res://Scenes/Objects/system_models/megadrive.tscn",
 	# PS2 Slim silver badge: its own shell GLB, shares ps2_model wiring.
-	"playstation2:silver": "res://unbundled-models/scenes/ps2_silver.tscn",
+	"playstation2:silver": "res://Scenes/Objects/system_models/ps2_silver.tscn",
 	# GBA SP: clamshell revision of the GBA — its own model class (the fold
 	# hinge), own shell GLB.
 	"game_boy_advance:sp": "res://Scenes/Objects/system_models/game_boy_advance_sp.tscn",
@@ -433,7 +433,7 @@ func _load_system_model() -> void:
 	# Authored .tscn model (handhelds): instantiate the editable scene. Its root
 	# carries the RetroSystemModel* script, so every configure_* call below is
 	# unchanged. A per-variant script override (rare) still wins over the scene.
-	# The default build ships no unbundled hardware shells (see RetroModelPolicy). Every
+	# Store builds ship no licensed hardware shells (see RetroModelPolicy). Every
 	# bespoke model below is either dropped for the generic grey box, or — when
 	# it owns a store-safe stand-in — kept and left to swap its own shell.
 	var placeholder := RetroModelPolicy.placeholder_models()
@@ -442,7 +442,7 @@ func _load_system_model() -> void:
 		scene_path = _MODEL_SCENE_VARIANTS[vkey]
 	elif _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
 		scene_path = _MODEL_SCENES[systemid]
-	# In a default build the unbundled scene was excluded from the .pck, so
+	# In a real store build the licensed scene was excluded from the .pck, so
 	# load() would fail anyway; check first and take the grey box quietly rather
 	# than warning about a file we deliberately left out.
 	if placeholder and not scene_path.is_empty() and not ResourceLoader.exists(scene_path):
