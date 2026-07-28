@@ -66,12 +66,28 @@ const TRIGGER_OFF := 0.4
 ## either way — these only decide how long it waits to be re-touched.
 const RELEASE_SCALE := 1.8
 const CONTACT_GRACE := 0.05
+## How far the fingertip may drift OFF the groove, measured from wherever it was
+## when contact was made, and still be driving the knob.
+##
+## Lift-off has to be judged perpendicular to the travel axis, because that is
+## the only direction that means "I have stopped touching it". Judging it on the
+## distance from the slider ORIGIN cannot work: sliding along the groove inflates
+## that same number, so engage_radius has to exceed half the throw just to let you
+## slide, and a radius that generous then lets a withdrawing hand drag the knob
+## most of its range on the way out. Measured on the 3DS depth slider (12.8 mm
+## throw, 20 mm radius): pulling away moved it 0.500 -> 0.893 before freezing.
+##
+## Relative to the grab, so it needs no per-scene tuning and does not care how
+## far off the surface you happened to take hold.
+const TRACK_SLACK := 0.005
 
 var _engaged_ctrl: XRController3D = null
 var _lost: float = 0.0
 ## value minus the value the tip projected to at the moment of contact. Keeps
 ## taking hold from jumping the knob to the fingertip. Fingertip path only.
 var _grab_offset: float = 0.0
+## Perpendicular distance from the travel axis at the moment of contact.
+var _grab_perp: float = 0.0
 var _pointer_engaged := false
 var _pointer_hovered := false
 var _controllers: Array[XRController3D] = []
@@ -199,11 +215,16 @@ func _process_touch_mode(delta: float) -> void:
 		if not _qualified(_engaged_ctrl):
 			_engaged_ctrl = null
 		else:
-			var d: float = global_position.distance_to(PokeTip.tip_of(_engaged_ctrl))
-			if d <= engage_radius:
+			var tip: Vector3 = PokeTip.tip_of(_engaged_ctrl)
+			var d: float = global_position.distance_to(tip)
+			# Track only while the fingertip is still ON the groove. Sliding along
+			# it is free; drifting off it freezes the value where it stood.
+			if d <= engage_radius and _perp_of(tip) <= _grab_perp + TRACK_SLACK:
 				_lost = 0.0
-				_track_world_point(PokeTip.tip_of(_engaged_ctrl))
+				_track_world_point(tip)
 				return
+			if d <= engage_radius:
+				return   # off the groove but still in reach: bound, frozen
 			_lost += delta
 			if _lost < CONTACT_GRACE and d <= engage_radius * RELEASE_SCALE:
 				return   # still bound, deliberately NOT tracking
@@ -218,6 +239,15 @@ func _process_touch_mode(delta: float) -> void:
 			return
 
 
+## How far a world point sits OFF the travel axis. Sliding along the groove does
+## not change this; lifting away from it does, which is exactly the distinction
+## the freeze band needs.
+func _perp_of(world_pos: Vector3) -> float:
+	var rel: Vector3 = world_pos - global_position
+	var ax: Vector3 = (global_transform.basis * axis_local.normalized()).normalized()
+	return (rel - ax * rel.dot(ax)).length()
+
+
 func _qualified(ctrl: XRController3D) -> bool:
 	return is_instance_valid(ctrl) and ctrl.get_is_active() and PokeTip.is_poking(ctrl)
 
@@ -228,6 +258,7 @@ func _qualified(ctrl: XRController3D) -> bool:
 ## thing VRHinge._begin_track does for lids, for the same reason.
 func _begin_track(world_pos: Vector3) -> void:
 	_grab_offset = value - _raw_value_at(world_pos)
+	_grab_perp = _perp_of(world_pos)
 
 
 ## Hand the fingertip nib to the real knob so it lands ON the cap rather than

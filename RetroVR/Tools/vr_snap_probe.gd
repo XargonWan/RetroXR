@@ -176,6 +176,29 @@ func _run() -> void:
 	await _frames(10)
 	_check(absf(sl.value - held) < 0.001,
 		"withdrawing does not drag the value (%.3f -> %.3f)" % [held, sl.value])
+	# Lifting OFF the groove freezes it, while sliding ALONG it still drives the
+	# full range. The old test used one distance for both, so the radius had to
+	# exceed half the throw to allow sliding -- and a withdrawing hand then
+	# dragged the knob most of its range before anything froze.
+	sl.set_value_no_signal(0.5)
+	_put_tip(Vector3(0.0, 3.0, 0.0))
+	await _frames(4)
+	var base: float = sl.value
+	_put_tip(Vector3(0.0, 3.0, 0.0) + Vector3(0.012, 0.0, 0.030))   # 30 mm off the axis
+	await _frames(6)
+	_check(absf(sl.value - base) < 0.02,
+		"lifting off the groove freezes it (%.3f -> %.3f)" % [base, sl.value])
+	_put_tip(Vector3(0.0, 3.0, 0.0))
+	await _frames(6)
+	var lo := 1.0
+	var hi := 0.0
+	for st in 15:
+		_put_tip(Vector3(0.0, 3.0, 0.0) + Vector3((float(st) / 14.0 - 0.5) * 0.11, 0.0, 0.0))
+		await _frames(2)
+		lo = minf(lo, sl.value)
+		hi = maxf(hi, sl.value)
+	_check(lo < 0.05 and hi > 0.95,
+		"sliding along it still reaches both ends (%.2f .. %.2f)" % [lo, hi])
 	sl.queue_free()
 
 	# ── 6. TouchSmoother, pure ───────────────────────────────────────────────
