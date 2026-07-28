@@ -45,6 +45,8 @@ enum MediaType { CARTRIDGE = 0, DISC_TRAY = 1, DISC_INSERT = 2 }
 ## small marker file sitting inside the game's data folder, so a flat scan of the
 ## system's rom dir sees only directories and reports an empty library. When true
 ## RomLibrary.scan_roms() descends one level and the folder name becomes the label.
+## When true the marker is identified by the system's own core-declared
+## supported_extensions, so no extension is recorded here.
 @export var folder_content: bool = false
 
 ## Custom hardware model scene for this console. Empty for now — this is the

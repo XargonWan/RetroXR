@@ -21,6 +21,30 @@ var cores: Array[Dictionary] = []
 var _by_core_name: Dictionary  = {}  # core_name -> Dictionary
 var _by_systemid:  Dictionary  = {}  # systemid  -> Array[Dictionary]
 
+static var _shared: CoreInfoDatabase = null
+
+
+## Lazily-loaded process-wide instance, for callers that want a single lookup and
+## should not pay to re-parse all 306 .info files to get it. Safe to cache: the
+## directory ships inside the pck and cannot change at runtime.
+static func shared() -> CoreInfoDatabase:
+	if _shared == null:
+		_shared = CoreInfoDatabase.new()
+		_shared.load_from_project()
+	return _shared
+
+
+## Union of supported_extensions (lowercase, no dots) across every core that
+## serves this systemid.
+static func extensions_for_systemid(systemid: String) -> Array[String]:
+	var exts: Array[String] = []
+	for entry: Dictionary in shared().get_by_systemid(systemid):
+		for e: String in str(entry.get("supported_extensions", "")).split("|"):
+			var s := e.strip_edges().to_lower()
+			if not s.is_empty() and s not in exts:
+				exts.append(s)
+	return exts
+
 
 # ---------------------------------------------------------------------------
 # Loading
