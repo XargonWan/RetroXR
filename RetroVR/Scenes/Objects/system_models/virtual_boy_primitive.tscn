@@ -57,7 +57,7 @@ mesh = SubResource("BoxMesh_shade")
 surface_material_override/0 = SubResource("Mat_dark")
 
 [node name="CartSeat" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.37, 0)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.305, -0.0305)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
