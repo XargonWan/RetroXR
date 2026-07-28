@@ -82,6 +82,12 @@ const DEFAULT_LAYER := 0b0000_0000_0000_0001_0000_0000_0000_0000
 ## Speed for ranged grab
 @export var ranged_grab_speed : float = 20.0
 
+## LOCAL PATCH (RetroVR): how fast an object with NO authored grab point flies to
+## the hand on a near grab, in metres per second. A typical reach of 0.2 m lands
+## in about 0.08 s at this speed — quick enough to feel like it snapped, slow
+## enough to see where it came from.
+@export var near_grab_speed : float = 2.5
+
 ## Refuse pick-by when in the specified group
 @export var picked_by_exclude : String = ""
 
@@ -317,6 +323,23 @@ func pick_up(by: Node3D) -> void:
 		else:
 			var grab := Grab.new(grabber, self, by_grab_point, false)
 			_grab_driver = XRToolsGrabDriver.create_snap(self, grab)
+	elif by_grab_point == null:
+		# LOCAL PATCH (RetroVR): an object with no authored grab point used to be
+		# held PRECISELY — left exactly where it sat when you closed your hand — so
+		# a TV or a cartridge grabbed at arm's length stayed out at arm's length,
+		# hanging off the controller. Bring it IN to the hand instead, over a short
+		# lerp so it flies in rather than teleporting.
+		#
+		# Only the POSITION is pulled in. Snapping the orientation too would spin a
+		# TV to match your wrist, which is far worse than the offset being fixed;
+		# the object keeps whatever angle you grabbed it at.
+		#
+		# Objects that DO author a grab point are untouched: that pose is
+		# deliberate, and they already sit correctly in the hand.
+		var grab := Grab.new(grabber, self, null, true)
+		var want := Transform3D(global_transform.basis, grab.by.global_transform.origin)
+		grab.transform = want.affine_inverse() * grab.by.global_transform
+		_grab_driver = XRToolsGrabDriver.create_lerp(self, grab, near_grab_speed)
 	else:
 		var grab := Grab.new(grabber, self, by_grab_point, true)
 		_grab_driver = XRToolsGrabDriver.create_snap(self, grab)

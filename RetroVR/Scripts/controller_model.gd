@@ -77,8 +77,14 @@ func _ready():
 	if _pickup:
 		_pickup.has_picked_up.connect(_on_held_grabbed)
 		_pickup.has_dropped.connect(_on_held_dropped)
+		# Fade on ANY grab, not just the device peripherals that author their own
+		# hand pose. A cartridge or a TV left the controller art sitting inside
+		# whatever you were holding.
+		_pickup.has_picked_up.connect(func(_w: Node) -> void: _fade_to(0.0))
+		_pickup.has_dropped.connect(func() -> void: _fade_to(1.0))
 
-func _process(_delta):
+func _process(delta):
+	_drive_fade(delta)
 	if _model_loaded:
 		return
 	var xr_tracker = XRServer.get_tracker(tracker)
@@ -207,6 +213,8 @@ func _apply_touch_plus_material():
 			battery_mesh.set_surface_override_material(i, battery_mat)
 
 	_apply_material_recursive(_model_root, mat, battery_mesh)
+	# Every mesh shares these two, so the fade only has to touch them.
+	_fade_mats = [mat, battery_mat]
 
 func _apply_material_recursive(node: Node, mat: Material, exclude: Node = null):
 	if node != exclude and node is MeshInstance3D:
@@ -216,12 +224,49 @@ func _apply_material_recursive(node: Node, mat: Material, exclude: Node = null):
 		_apply_material_recursive(child, mat, exclude)
 
 
-## Show or hide the loaded controller model (called by VRInputMapper)
+# ── Fading the controller art ────────────────────────────────────────────
+#
+# Grabbing something used to snap the controller out of existence, and only for
+# devices that author a hand pose; everything else kept a controller drawn inside
+# the object you were holding. It now fades, on every grab.
+
+## Seconds for a full fade. Short enough to read as "the controller got out of
+## the way" rather than as an animation.
+const FADE_TIME := 0.08
+
+var _fade := 1.0
+var _fade_target := 1.0
+## Materials the whole model shares (see _apply_touch_plus_material), so the fade
+## is two writes rather than a walk of the tree every frame.
+var _fade_mats: Array[StandardMaterial3D] = []
+
+
+## Show or hide the loaded controller model (called by VRInputMapper). Kept as a
+## bool for its callers; it now sets a fade target rather than toggling.
 func set_model_visible(v: bool) -> void:
-	if _model_root:
-		# With hands disabled the controller art always stays visible — a held
-		# peripheral shows the controller, never a hand — so ignore hide requests.
-		_model_root.visible = v or not draw_hands
+	_fade_to(1.0 if v else 0.0)
+
+
+func _fade_to(target: float) -> void:
+	# With hands disabled the controller art always stays visible — a held
+	# peripheral shows the controller, never a hand — so ignore hide requests.
+	_fade_target = target if draw_hands else 1.0
+
+
+func _drive_fade(delta: float) -> void:
+	if is_equal_approx(_fade, _fade_target):
+		return
+	_fade = move_toward(_fade, _fade_target, delta / FADE_TIME)
+	if _model_root == null:
+		return
+	# Skip drawing entirely once invisible, and go back to opaque rendering at
+	# full alpha so the model keeps its normal depth behaviour when in use.
+	_model_root.visible = _fade > 0.001
+	for m in _fade_mats:
+		m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if _fade >= 0.999 \
+			else BaseMaterial3D.TRANSPARENCY_ALPHA
+		var c: Color = m.albedo_color
+		m.albedo_color = Color(c.r, c.g, c.b, _fade)
 
 
 ## This controller grabbed a device peripheral — hide the controller art and
@@ -240,7 +285,7 @@ func _on_held_grabbed(what: Node) -> void:
 	var hand := what.get_node_or_null(NodePath(hand_name)) as Node3D
 	if hand == null:
 		return
-	set_model_visible(false)
+	_fade_to(0.0)
 	hand.visible = true
 	_shown_hand = hand
 
@@ -250,4 +295,4 @@ func _on_held_dropped() -> void:
 	if is_instance_valid(_shown_hand):
 		_shown_hand.visible = false
 	_shown_hand = null
-	set_model_visible(true)
+	_fade_to(1.0)
