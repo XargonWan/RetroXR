@@ -364,6 +364,11 @@ func _update_name_label() -> void:
 ## toward the player), handhelds their +Y top face (readable from above). Runs
 ## deferred so the model meshes + the label's own text mesh have been built.
 func _place_name_label() -> void:
+	# The nameplate is a printed legend like any other: a detailed shell has the
+	# real thing moulded or printed on it, so ours only ever sat on top of it.
+	if _model != null and not _model.primitive_shell:
+		_system_name_label.visible = false
+		return
 	var body := _body_aabb()
 	if body.size.x <= 0.0 or body.size.y <= 0.0 or body.size.z <= 0.0:
 		return
@@ -505,6 +510,7 @@ func _load_system_model() -> void:
 		_model = default_script.new() as RetroSystemModel
 		is_bespoke = false
 	add_child(_model)
+	_model.hide_printed_labels()
 	if is_bespoke:
 		_system_body.hide()
 	_model.configure_buttons(_power_button, _reset_button, _eject_button)

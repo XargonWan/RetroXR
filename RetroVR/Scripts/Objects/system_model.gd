@@ -309,6 +309,26 @@ func get_disc_lid_pivot() -> Node3D:
 	return null
 
 
+## Group for a PRINTED LEGEND — the "POWER" / "3D" / "TOP" / "BOTTOM" text a
+## device has silk-screened on its case, plus the system nameplate.
+##
+## A detailed shell already carries that printing in its own texture, so drawing
+## ours over the top double-prints it; on the stand-ins, which have no texture at
+## all, the legends are the only thing saying what a control does. Tag a label
+## with this group and it appears on stand-ins only.
+const PRINTED_LABEL_GROUP := "printed_label"
+
+
+## Hide the printed legends on a detailed shell. No-op on a stand-in, which is
+## the one place they earn their keep.
+func hide_printed_labels() -> void:
+	if primitive_shell:
+		return
+	for n in get_tree().get_nodes_in_group(PRINTED_LABEL_GROUP):
+		if n is Node3D and is_ancestor_of(n):
+			(n as Node3D).visible = false
+
+
 ## An editor-authored seat marker ("CartSeat" / "DiscSeat" / "UMDSeat"), whose
 ## global transform poses the seated media.
 func _seat_marker(seat_name: String) -> Node3D:

@@ -390,6 +390,12 @@ const _PORT_Z := -0.0334
 func configure_controller_ports(port_zones: Array) -> void:
 	if port_zones.size() > 0:
 		var zone: Node3D = port_zones[0]
+		# The grey barrel and its printed "1" are stand-ins for hardware with no
+		# moulded socket; the detailed shell has a real one, so they only ever sat
+		# on top of it. (The seat branch below returns early, which is how the "1"
+		# survived on the detailed shell after every other legend was dropped.)
+		if not primitive_shell:
+			hide_port_placeholders([zone])
 		# An authored "PortSeat1" marker (baked into virtual_boy.tscn) wins
 		# over the computed pose below, same idiom as CartSeat/DiscSeat/UMDSeat.
 		var seat := find_child("PortSeat1", true, false) as Node3D

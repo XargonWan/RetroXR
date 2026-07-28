@@ -142,7 +142,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_j5sa3")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=974223879]
 shape = SubResource("BoxShape3D_qm4ub")
 
-[node name="PowerLabel" type="Label3D" parent="." unique_id=726585071]
+[node name="PowerLabel" type="Label3D" parent="." unique_id=726585071 groups=["printed_label"]]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.023400001, 0.0039999997, -0.0815)
 pixel_size = 0.00016
 modulate = Color(0.1, 0.1, 0.12, 1)

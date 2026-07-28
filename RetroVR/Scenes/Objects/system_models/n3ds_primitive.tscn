@@ -284,7 +284,7 @@ value = 1.0
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/Slider3D"]
 shape = SubResource("BoxShape3D_slider")
 
-[node name="Slider3DLabel" type="Label3D" parent="LidPivot"]
+[node name="Slider3DLabel" type="Label3D" parent="LidPivot" groups=["printed_label"]]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0.0605, 0.0009, -0.024)
 pixel_size = 0.00016
 modulate = Color(0.35, 0.35, 0.4, 1)

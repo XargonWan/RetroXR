@@ -668,6 +668,9 @@ func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
 
 
 func _add_port_label(text: String, x: float) -> void:
+	# Printed legend — the detailed shells mould their own port markings.
+	if not primitive_shell:
+		return
 	var lbl := Label3D.new()
 	lbl.text = text
 	lbl.pixel_size = 0.00018

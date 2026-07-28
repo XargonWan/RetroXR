@@ -1348,7 +1348,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_1ijud")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/Slider3D" unique_id=1028090692]
 shape = SubResource("BoxShape3D_v38ai")
 
-[node name="Slider3DLabel" type="Label3D" parent="LidPivot" unique_id=1879433474]
+[node name="Slider3DLabel" type="Label3D" parent="LidPivot" unique_id=1879433474 groups=["printed_label"]]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.062000003, 0.0139999995, -0.053000003)
 pixel_size = 0.00022
 modulate = Color(0.1, 0.1, 0.12, 1)
@@ -1392,7 +1392,7 @@ collision_layer = 1048577
 [node name="CollisionShape3D" type="CollisionShape3D" parent="TouchScreen" unique_id=1977633638]
 shape = SubResource("BoxShape3D_j8vu0")
 
-[node name="PortLabelTop" type="Label3D" parent="." unique_id=1525452769]
+[node name="PortLabelTop" type="Label3D" parent="." unique_id=1525452769 groups=["printed_label"]]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.040200002, 0.00168, -0.0385)
 pixel_size = 0.00018
 modulate = Color(0.92, 0.92, 0.94, 1)
@@ -1400,7 +1400,7 @@ text = "TOP"
 font_size = 16
 outline_size = 4
 
-[node name="PortLabelBottom" type="Label3D" parent="." unique_id=1531672921]
+[node name="PortLabelBottom" type="Label3D" parent="." unique_id=1531672921 groups=["printed_label"]]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.040200002, 0.00168, -0.0385)
 pixel_size = 0.00018
 modulate = Color(0.92, 0.92, 0.94, 1)
