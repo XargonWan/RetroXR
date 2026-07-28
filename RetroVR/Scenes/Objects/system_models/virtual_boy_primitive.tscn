@@ -24,6 +24,16 @@ albedo_color = Color(0.55, 0.08, 0.1, 1)
 [sub_resource type="BoxMesh" id="BoxMesh_shade"]
 size = Vector3(0.2024, 0.0902, 0.006)
 
+[sub_resource type="BoxMesh" id="BoxMesh_seat"]
+size = Vector3(0.065, 0.054, 0.006)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_seat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [node name="VirtualBoyPrimitive" type="Node3D"]
 
 [node name="StandBase" type="MeshInstance3D" parent="."]
@@ -45,3 +55,11 @@ surface_material_override/0 = SubResource("Mat_red")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.050499998)
 mesh = SubResource("BoxMesh_shade")
 surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="CartSeat" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.37, 0)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
+mesh = SubResource("BoxMesh_seat")
+surface_material_override/0 = SubResource("StandardMaterial3D_seat")

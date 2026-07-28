@@ -38,6 +38,10 @@ func _primitive_path() -> String:
 ## Falls back to the base placement when the detailed GLB is absent.
 func configure_cartridge_slot(slot: Node3D) -> void:
 	super(slot)
+	# On the stand-in, super()'s CartSeat is the last word — socket_media marks
+	# the DETAILED shell's connector.
+	if _on_stand_in_shell():
+		return
 	var sock := find_child("socket_media", true, false) as Node3D
 	if sock == null:
 		return

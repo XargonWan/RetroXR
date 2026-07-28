@@ -80,6 +80,16 @@ top_radius = 0.003
 bottom_radius = 0.003
 height = 0.003
 
+[sub_resource type="BoxMesh" id="BoxMesh_seat"]
+size = Vector3(0.033, 0.035, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_seat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [node name="Primitive" type="Node3D"]
 
 [node name="HandheldBody" type="MeshInstance3D" parent="."]
@@ -115,7 +125,7 @@ mesh = SubResource("BoxMesh_f21ab")
 surface_material_override/0 = SubResource("StandardMaterial3D_ag6as")
 
 [node name="CardSlotMouth" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0, 0.037)
 mesh = SubResource("BoxMesh_2mi0k")
 surface_material_override/0 = SubResource("StandardMaterial3D_myfa0")
 
@@ -198,3 +208,11 @@ surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, 0, 0.0375)
 mesh = SubResource("BoxMesh_power")
 surface_material_override/0 = SubResource("StandardMaterial3D_power")
+
+[node name="CartSeat" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.03, 0, 0.0293)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
+mesh = SubResource("BoxMesh_seat")
+surface_material_override/0 = SubResource("StandardMaterial3D_seat")

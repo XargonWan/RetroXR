@@ -47,6 +47,16 @@ size = Vector3(0.008, 0.003, 0.0045)
 [sub_resource type="BoxMesh" id="BoxMesh_shoulder"]
 size = Vector3(0.018, 0.005, 0.007)
 
+[sub_resource type="BoxMesh" id="BoxMesh_seat"]
+size = Vector3(0.033, 0.035, 0.004)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_seat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [node name="Primitive" type="Node3D" unique_id=1319826210]
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1395190702]
@@ -125,3 +135,11 @@ surface_material_override/0 = SubResource("StandardMaterial3D_qscha")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0505, 0.002, -0.04)
 mesh = SubResource("BoxMesh_shoulder")
 surface_material_override/0 = SubResource("StandardMaterial3D_qscha")
+
+[node name="CartSeat" type="Marker3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, -0.02925)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
+mesh = SubResource("BoxMesh_seat")
+surface_material_override/0 = SubResource("StandardMaterial3D_seat")

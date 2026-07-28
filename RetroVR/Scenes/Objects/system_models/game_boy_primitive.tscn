@@ -40,6 +40,16 @@ size = Vector3(0.062, 0.011, 0.004)
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2fuq1"]
 albedo_color = Color(0.03, 0.03, 0.04, 1)
 
+[sub_resource type="BoxMesh" id="BoxMesh_seat"]
+size = Vector3(0.057, 0.065, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_seat"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.1, 0.35)
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 0.4
+
 [node name="GameBoyPrimitive" type="Node3D" unique_id=316016257]
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=2002393583]
@@ -75,3 +85,11 @@ surface_material_override/0 = SubResource("StandardMaterial3D_8ynro")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.074)
 mesh = SubResource("BoxMesh_ju0ty")
 surface_material_override/0 = SubResource("StandardMaterial3D_2fuq1")
+
+[node name="CartSeat" type="Marker3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, -0.0547307)
+gizmo_extents = 0.03
+
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
+mesh = SubResource("BoxMesh_seat")
+surface_material_override/0 = SubResource("StandardMaterial3D_seat")

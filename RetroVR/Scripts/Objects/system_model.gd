@@ -297,6 +297,42 @@ func get_disc_lid_pivot() -> Node3D:
 	return null
 
 
+## An editor-authored seat marker ("CartSeat" / "DiscSeat" / "UMDSeat"), whose
+## global transform poses the seated media — preferring the STAND-IN's own.
+##
+## A device scene's marker is dialled in against its detailed shell, and that
+## shell is not in the tree when the stand-in is up: taking it there seats the
+## media against geometry the player cannot see. plain find_child picks it
+## regardless, since the authored marker is a root child and the stand-in is
+## added last, so the stand-in's has to be asked for explicitly.
+func _seat_marker(seat_name: String) -> Node3D:
+	var prim := get_node_or_null("Primitive") as Node3D
+	if prim != null:
+		var own := prim.find_child(seat_name, true, false) as Node3D
+		if own != null:
+			return own
+	return find_child(seat_name, true, false) as Node3D
+
+
+## True when the store-safe stand-in is the shell on screen.
+##
+## Lookups that resolve against the DETAILED shell — socket markers, control
+## meshes — have nothing to say on this path, and on a BAKED device scene they
+## answer anyway, because the authored Shell stays in the tree whether or not the
+## stand-in was spawned over it. So they have to be skipped explicitly rather
+## than left to come back null.
+func _on_stand_in_shell() -> bool:
+	return has_node("Primitive")
+
+
+## Hide every editor-only seat preview box in the tree. There can be more than
+## one — the device scene's and the stand-in's — and leaving either visible puts
+## a translucent block through the shell at runtime.
+func _hide_seat_previews() -> void:
+	for n in find_children("SeatPreview", "Node3D", true, false):
+		(n as Node3D).visible = false
+
+
 ## Reposition the cartridge snap zone to the model's physical slot location.
 ## Also returns the insertion offset — the vector the cartridge travels from its
 ## pre-animation position to the snapped position (in world space).

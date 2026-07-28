@@ -120,9 +120,7 @@ func _ready() -> void:
 	# An authored "CartSeat" marker (see configure_cartridge_slot) may carry a
 	# visible "SeatPreview" box so the seated-cart pose can be dialled in inside
 	# the Godot 3D editor. It's an editor aid only — hide it at runtime.
-	var preview := find_child("SeatPreview", true, false)
-	if preview is Node3D:
-		(preview as Node3D).visible = false
+	_hide_seat_previews()
 	_setup_screen_light()
 
 
@@ -436,7 +434,7 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	# above, so the exact seated-cart transform can be placed visually in the Godot
 	# 3D editor (drag/rotate CartSeat; its SeatPreview box shows the cart footprint).
 	# Devices without the marker keep the generic pose — nothing else changes.
-	var seat := find_child("CartSeat", true, false) as Node3D
+	var seat := _seat_marker("CartSeat")
 	if seat != null:
 		slot.global_transform = seat.global_transform
 

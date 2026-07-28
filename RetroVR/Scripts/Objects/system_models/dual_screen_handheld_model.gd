@@ -122,9 +122,7 @@ func _ready() -> void:
 	_bottom_screen_light = _make_screen_light(_bottom_screen)
 	# Editor-only cart-seat preview box — hide at runtime (base _ready, which does
 	# this for single-screen handhelds, is not called here).
-	var seat_preview := find_child("SeatPreview", true, false)
-	if seat_preview is Node3D:
-		(seat_preview as Node3D).visible = false
+	_hide_seat_previews()
 	# Window materials, ready before the first frame of core output.
 	_top_mat = ShaderMaterial.new()
 	_top_mat.shader = SCREEN_WINDOW_SHADER

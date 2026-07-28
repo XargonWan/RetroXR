@@ -430,7 +430,7 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	# over the socket-derived pose above, so the UMD rest can be dialled in
 	# visually in the editor — same idiom as the disc systems' "DiscSeat"
 	# (see playstation_one_model.gd). Absent → keep the socket-derived pose.
-	var seat := find_child("UMDSeat", true, false) as Node3D
+	var seat := _seat_marker("UMDSeat")
 	if seat != null:
 		slot.global_transform = seat.global_transform
 
