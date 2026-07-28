@@ -23,6 +23,16 @@ func _glb_path() -> String:
 
 ## Store-safe primitive stand-in (spawned only when the GLB shell is absent
 ## and the .tscn hasn't baked a "Shell" instance — see handheld_model.gd).
+##
+## Its controls carry the GLB's node names (PowerButton, EjectButton, Button
+## Minus/Plus, FaceButton*, LShoulderButton, RShoulderButton, AnalogNub) so the
+## adoption code below would take them as-is. It does NOT run on this path today:
+## every _configure_* is reached from _on_glb_ready, which only fires at the end
+## of _upgrade_to_glb. So the stand-in's power slide, eject latch and volume keys
+## are cosmetic — psp.tscn's own PowerSwitch / OpenSlider / Volume± placeholders
+## are all saved visible = false, so a fallback build has no visible control at
+## all without them. Wiring the fallback means calling the same _configure_*
+## pass after _spawn_primitive.
 func _primitive_path() -> String:
 	return "res://Scenes/Objects/system_models/psp_primitive.tscn"
 

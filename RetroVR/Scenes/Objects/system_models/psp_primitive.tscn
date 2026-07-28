@@ -13,26 +13,49 @@ size = Vector3(0.1073, 0.002, 0.066)
 albedo_color = Color(0.12, 0.12, 0.14, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_qmcsd"]
-size = Vector3(0.024, 0.004, 0.008)
+size = Vector3(0.022, 0.004, 0.0075)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0tid2"]
 albedo_color = Color(0.15, 0.15, 0.17, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_qjy2c"]
-size = Vector3(0.008, 0.004, 0.024)
+size = Vector3(0.0075, 0.004, 0.022)
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_xgjj8"]
-top_radius = 0.006
-bottom_radius = 0.006
+[sub_resource type="CylinderMesh" id="CylinderMesh_face"]
+top_radius = 0.004
+bottom_radius = 0.004
 height = 0.004
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xwq76"]
 albedo_color = Color(0.16, 0.16, 0.2, 1)
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_vbvja"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_nub"]
 top_radius = 0.006
 bottom_radius = 0.006
-height = 0.004
+height = 0.0035
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nub"]
+albedo_color = Color(0.1, 0.1, 0.12, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pill"]
+size = Vector3(0.008, 0.0026, 0.0045)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_home"]
+top_radius = 0.0035
+bottom_radius = 0.0035
+height = 0.0026
+
+[sub_resource type="BoxMesh" id="BoxMesh_shoulder"]
+size = Vector3(0.022, 0.01, 0.008)
+
+[sub_resource type="BoxMesh" id="BoxMesh_powertab"]
+size = Vector3(0.003, 0.006, 0.012)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tab"]
+albedo_color = Color(0.22, 0.22, 0.25, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_latch"]
+size = Vector3(0.011, 0.005, 0.004)
 
 [sub_resource type="BoxMesh" id="BoxMesh_6vy4r"]
 size = Vector3(0.07, 0.007, 0.004)
@@ -40,38 +63,98 @@ size = Vector3(0.07, 0.007, 0.004)
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tdojy"]
 albedo_color = Color(0.03, 0.03, 0.04, 1)
 
-[node name="PSPPrimitive" type="Node3D" unique_id=676703148]
+[node name="PSPPrimitive" type="Node3D"]
 
-[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=890343114]
+[node name="HandheldBody" type="MeshInstance3D" parent="."]
 mesh = SubResource("BoxMesh_31348")
 surface_material_override/0 = SubResource("StandardMaterial3D_3enqv")
 
-[node name="ScreenBezel" type="MeshInstance3D" parent="." unique_id=1675919206]
+[node name="ScreenBezel" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0125, 0)
 mesh = SubResource("BoxMesh_6vp4s")
 surface_material_override/0 = SubResource("StandardMaterial3D_ishpy")
 
-[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=200688380]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.069325, 0.0135, 0)
+[node name="DpadBar1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0655, 0.0135, -0.008)
 mesh = SubResource("BoxMesh_qmcsd")
 surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
 
-[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=434421476]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.069325, 0.0135, 0)
+[node name="DpadBar2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0655, 0.0135, -0.008)
 mesh = SubResource("BoxMesh_qjy2c")
 surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
 
-[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=2002345741]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.075325, 0.0135, -0.006)
-mesh = SubResource("CylinderMesh_xgjj8")
+[node name="AnalogNub" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0655, 0.0135, 0.0105)
+mesh = SubResource("CylinderMesh_nub")
+surface_material_override/0 = SubResource("StandardMaterial3D_nub")
+
+[node name="FaceButton1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.074, 0.0135, -0.008)
+mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
 
-[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=1647338631]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.063325, 0.0135, 0.006)
-mesh = SubResource("CylinderMesh_vbvja")
+[node name="FaceButton2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0665, 0.0135, -0.0005)
+mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
 
-[node name="UMDSlit" type="MeshInstance3D" parent="." unique_id=746941152]
+[node name="FaceButton3" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0665, 0.0135, -0.0155)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
+
+[node name="FaceButton4" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.059, 0.0135, -0.008)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("StandardMaterial3D_xwq76")
+
+[node name="SelectButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0605, 0.0132, 0.0235)
+mesh = SubResource("BoxMesh_pill")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="StartButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0715, 0.0132, 0.0235)
+mesh = SubResource("BoxMesh_pill")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="Button Minus" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0715, 0.0132, 0.0235)
+mesh = SubResource("BoxMesh_pill")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="Button Plus" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0605, 0.0132, 0.0235)
+mesh = SubResource("BoxMesh_pill")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="HomeButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0655, 0.0132, 0.0318)
+mesh = SubResource("CylinderMesh_home")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="LShoulderButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.062, 0.006, -0.0392)
+mesh = SubResource("BoxMesh_shoulder")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="RShoulderButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.062, 0.006, -0.0392)
+mesh = SubResource("BoxMesh_shoulder")
+surface_material_override/0 = SubResource("StandardMaterial3D_0tid2")
+
+[node name="PowerButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0797, 0.004, 0.01)
+mesh = SubResource("BoxMesh_powertab")
+surface_material_override/0 = SubResource("StandardMaterial3D_tab")
+
+[node name="EjectButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.042, 0.004, -0.0372)
+mesh = SubResource("BoxMesh_latch")
+surface_material_override/0 = SubResource("StandardMaterial3D_tab")
+
+[node name="UMDSlit" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
 mesh = SubResource("BoxMesh_6vy4r")
 surface_material_override/0 = SubResource("StandardMaterial3D_tdojy")
