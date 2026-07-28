@@ -113,6 +113,21 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	"virtual_boy:primitive": "res://Scenes/Objects/system_models/virtual_boy_primitive.tscn",
 }
 
+## True when this hardware has a bespoke model — an authored scene or a model
+## script — rather than the procedural placeholder every other system shows.
+## The spawn menu uses it to decide whether a system's hardware row is the real
+## thing (named after it) or already the stand-in.
+static func has_bespoke_model(systemid: String) -> bool:
+	return _MODEL_SCENES.has(systemid) or _MODEL_SCRIPTS.has(systemid)
+
+
+## True when this hardware has an authored stand-in model scene, i.e. spawning it
+## with variant "primitive" gives plain geometry shaped like the device rather
+## than the generic console box.
+static func has_primitive_model(systemid: String) -> bool:
+	return _MODEL_SCENE_VARIANTS.has("%s:%s" % [systemid, RetroSystemModel.PRIMITIVE_VARIANT])
+
+
 ## The libretro core filename (without extension), e.g. "fceumm".
 ## If empty at power_on(), looked up from CoreDefaults using systemid.
 @export var core_name: String = ""

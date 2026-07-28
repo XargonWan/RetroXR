@@ -947,7 +947,7 @@ func _build_spawn_view() -> Control:
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [
-		["Regular Controller", "retro_controller"],
+		["Primitive Controller", "retro_controller"],
 		["Ray Gun",            "ray_gun"],
 		["Mouse",              "retro_mouse"],
 		["Keyboard",           "retro_keyboard"],
@@ -987,8 +987,9 @@ func _populate_systems_tab() -> void:
 		return
 	var systems: Array = []
 	for systemid: String in core_defaults.all_defaults():
-		var entry := {"systemid": systemid, "name": core_db.get_systemname_for_id(systemid)}
-		var n := SpawnCatalog.items_for(systemid).size()
+		var sysname: String = core_db.get_systemname_for_id(systemid)
+		var entry := {"systemid": systemid, "name": sysname}
+		var n := SpawnCatalog.items_for(systemid, sysname).size()
 		if n > 1:
 			entry["badge"] = "%d items" % n
 		systems.append(entry)
@@ -1002,7 +1003,7 @@ func _populate_systems_tab() -> void:
 ## several items can be spawned in a row.
 func _populate_systems_detail(systemid: String, vbox: VBoxContainer) -> void:
 	vbox.add_child(_spacer(4))
-	for item: Dictionary in SpawnCatalog.items_for(systemid):
+	for item: Dictionary in SpawnCatalog.items_for(systemid, core_db.get_systemname_for_id(systemid)):
 		var btn := Button.new()
 		btn.text = "  +  " + str(item.get("label", "Console"))
 		btn.custom_minimum_size = Vector2(0, 80)
