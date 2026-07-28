@@ -188,6 +188,20 @@ func _run() -> void:
 	await _frames(6)
 	_check(absf(sl.value - base) < 0.02,
 		"lifting off the groove freezes it (%.3f -> %.3f)" % [base, sl.value])
+	# PULLING AWAY must barely move it, even with the along-axis drift a real
+	# withdrawal has. The reference is the DEEPEST press, so pressing in first
+	# (as you would to take hold) must not buy the withdrawal any extra slack.
+	_put_tip(Vector3(0.0, 3.0, 0.0) + Vector3(0.0, 0.0, 0.004))
+	await _frames(4)
+	_put_tip(Vector3(0.0, 3.0, 0.0))            # press in
+	await _frames(4)
+	base = sl.value
+	for st in 17:
+		var pull: float = float(st) * 0.001
+		_put_tip(Vector3(0.0, 3.0, 0.0) + Vector3(pull * 0.35, 0.0, pull))
+		await _frames(2)
+	_check(absf(sl.value - base) < 0.10,
+		"a 16 mm withdrawal drags it under 0.10 (%+.3f)" % (sl.value - base))
 	_put_tip(Vector3(0.0, 3.0, 0.0))
 	await _frames(6)
 	var lo := 1.0

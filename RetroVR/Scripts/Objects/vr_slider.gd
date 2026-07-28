@@ -66,8 +66,8 @@ const TRIGGER_OFF := 0.4
 ## either way — these only decide how long it waits to be re-touched.
 const RELEASE_SCALE := 1.8
 const CONTACT_GRACE := 0.05
-## How far the fingertip may drift OFF the groove, measured from wherever it was
-## when contact was made, and still be driving the knob.
+## How far the fingertip may back OFF the groove, measured from the DEEPEST it
+## has pressed, and still be driving the knob.
 ##
 ## Lift-off has to be judged perpendicular to the travel axis, because that is
 ## the only direction that means "I have stopped touching it". Judging it on the
@@ -77,17 +77,21 @@ const CONTACT_GRACE := 0.05
 ## most of its range on the way out. Measured on the 3DS depth slider (12.8 mm
 ## throw, 20 mm radius): pulling away moved it 0.500 -> 0.893 before freezing.
 ##
-## Relative to the grab, so it needs no per-scene tuning and does not care how
-## far off the surface you happened to take hold.
-const TRACK_SLACK := 0.005
+## Relative to the deepest press rather than to the grab, which is what makes
+## PUSHING free and PULLING immediate: pressing further in always tracks and
+## tightens the reference, so backing out is judged against how hard you were
+## actually holding it, not against however tentatively you first touched it.
+## 3 mm is above hand tremor and below a deliberate withdrawal.
+const TRACK_SLACK := 0.003
 
 var _engaged_ctrl: XRController3D = null
 var _lost: float = 0.0
 ## value minus the value the tip projected to at the moment of contact. Keeps
 ## taking hold from jumping the knob to the fingertip. Fingertip path only.
 var _grab_offset: float = 0.0
-## Perpendicular distance from the travel axis at the moment of contact.
-var _grab_perp: float = 0.0
+## Least perpendicular distance from the travel axis seen during this drag, i.e.
+## how deep the fingertip has pressed. Only ever falls while engaged.
+var _min_perp: float = 0.0
 var _pointer_engaged := false
 var _pointer_hovered := false
 var _controllers: Array[XRController3D] = []
@@ -217,9 +221,12 @@ func _process_touch_mode(delta: float) -> void:
 		else:
 			var tip: Vector3 = PokeTip.tip_of(_engaged_ctrl)
 			var d: float = global_position.distance_to(tip)
-			# Track only while the fingertip is still ON the groove. Sliding along
-			# it is free; drifting off it freezes the value where it stood.
-			if d <= engage_radius and _perp_of(tip) <= _grab_perp + TRACK_SLACK:
+			# Track only while the fingertip is still pressing ON the groove.
+			# Sliding along is free and pressing in is free; backing away from
+			# the deepest press freezes the value where it stood.
+			var perp: float = _perp_of(tip)
+			if d <= engage_radius and perp <= _min_perp + TRACK_SLACK:
+				_min_perp = minf(_min_perp, perp)
 				_lost = 0.0
 				_track_world_point(tip)
 				return
@@ -258,7 +265,7 @@ func _qualified(ctrl: XRController3D) -> bool:
 ## thing VRHinge._begin_track does for lids, for the same reason.
 func _begin_track(world_pos: Vector3) -> void:
 	_grab_offset = value - _raw_value_at(world_pos)
-	_grab_perp = _perp_of(world_pos)
+	_min_perp = _perp_of(world_pos)
 
 
 ## Hand the fingertip nib to the real knob so it lands ON the cap rather than
