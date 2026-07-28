@@ -57,8 +57,19 @@ var _bottom_mat: ShaderMaterial = null
 # Unlit-LCD materials shown while no core picture exists (authored on the quads).
 var _top_off_mat: StandardMaterial3D = null
 var _bottom_off_mat: StandardMaterial3D = null
+## Half-thickness of the TouchScreen collision box (see _place_screen, which
+## sizes it 0.012 deep). The engage window is derived from it so the two cannot
+## drift apart, and because _place_screen parks the Area3D on the bottom lens the
+## box is CENTRED on the picture: local y = 0 is the glass.
+const HALF_THICKNESS := 0.006
+## Slack past the box before a touch counts, and the multiple of that at which it
+## lets go. 6 + 4 mm reproduces the engage distance this has always used.
+const GLASS_TOLERANCE := 0.004
+const RELEASE_SCALE := 1.6
+
 # VR fingertip touch state (per engaged controller).
 var _touch_ctrl: XRController3D = null
+var _touch_smoother := TouchSmoother.new()
 var _touch_pointer_down := false
 var _touch_controllers: Array[XRController3D] = []
 
@@ -675,7 +686,7 @@ func _proxy_texture() -> Texture2D:
 	return null
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# This override replaces the base's _process entirely (the base wraps its ONE
 	# screen with _lcd_shader, which does not apply here — both panels carry their
 	# own screen_window material below). The base's screen-cast lights still have to
@@ -697,7 +708,7 @@ func _process(_delta: float) -> void:
 			_screen.set_surface_override_material(0, _top_off_mat)
 			_bottom_screen.set_surface_override_material(0, _bottom_off_mat)
 
-	_process_fingertip_touch()
+	_process_fingertip_touch(delta)
 
 
 ## Shrink the cabinet power button to handheld scale and mount it on the front
@@ -784,26 +795,53 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 ## never count — a gripping hand's tip hovers near the pad permanently and
 ## would otherwise lock the touch (streaming a stuck press and blocking the
 ## free hand from poking).
-func _process_fingertip_touch() -> void:
+func _process_fingertip_touch(delta: float) -> void:
 	if _touch == null or _touch_pointer_down:
 		return
 	if _touch_ctrl != null:
 		if not is_instance_valid(_touch_ctrl) or not _touch_ctrl.get_is_active() \
 				or _is_holding_hand(_touch_ctrl) \
-				or not _tip_on_screen(PokeTip.tip_of(_touch_ctrl), 1.6):
+				or not _tip_on_screen(PokeTip.tip_of(_touch_ctrl), RELEASE_SCALE):
 			var last := _touch_ctrl
 			_touch_ctrl = null
 			if is_instance_valid(last):
-				_send_touch(PokeTip.tip_of(last), false)
+				# The FROZEN last in-window point, not wherever the finger is now
+				# — that is outside the pad by definition, and clamping it
+				# pinned every lift-off to the border as a small swipe.
+				_send_touch_local(_touch_smoother.current(), false)
+			_touch_smoother.reset()
 		else:
-			_send_touch(PokeTip.tip_of(_touch_ctrl), true)
+			var tip: Vector3 = PokeTip.tip_of(_touch_ctrl)
+			var local: Vector3 = _touch.to_local(tip)
+			var p: Vector2 = _touch_smoother.point(Vector2(local.x, local.z),
+				_tip_on_screen(tip, 1.0), delta)
+			_send_touch_local(p, true)
+			_claim_pad_contact(_touch_ctrl, p, local.y)
 			return
 	for ctrl in _touch_controllers:
 		if ctrl and ctrl.get_is_active() and not _is_holding_hand(ctrl) \
 				and _tip_on_screen(PokeTip.tip_of(ctrl), 1.0):
 			_touch_ctrl = ctrl
-			_send_touch(PokeTip.tip_of(ctrl), true)
+			var local: Vector3 = _touch.to_local(PokeTip.tip_of(ctrl))
+			var p := Vector2(local.x, local.z)
+			_touch_smoother.begin(p)
+			_send_touch_local(p, true)
+			_claim_pad_contact(ctrl, p, local.y)
 			return
+
+
+## Put the visible fingertip ON THE GLASS, at the point the core is being told
+## about. Local y = 0 is the screen mesh: _place_screen parks this Area3D at the
+## bottom lens'' own position, so the box is CENTRED on the picture and its
+## mid-plane is the glass. Clamped with the same half-extents the UV mapping
+## clamps to, so what you see and what the game gets cannot disagree.
+func _claim_pad_contact(ctrl: XRController3D, p: Vector2, local_y: float) -> void:
+	var half: Vector2 = bottom_screen_size * 0.5
+	var q := Vector3(clampf(p.x, -half.x, half.x), 0.0, clampf(p.y, -half.y, half.y))
+	var n: Vector3 = _touch.global_transform.basis.y.normalized()
+	if local_y < 0.0:
+		n = -n
+	PokeTip.set_contact(ctrl, _touch.global_transform * q, n, PokeTip.CONTACT_ENGAGED)
 
 
 ## True when this controller's hand is currently gripping the device.
@@ -822,18 +860,26 @@ func _is_holding_hand(ctrl: XRController3D) -> bool:
 
 func _tip_on_screen(world_pos: Vector3, slack: float) -> bool:
 	var local := _touch.to_local(world_pos)
-	return absf(local.y) <= 0.01 * slack \
+	return absf(local.y) <= (HALF_THICKNESS + GLASS_TOLERANCE) * slack \
 		and absf(local.x) <= bottom_screen_size.x / 2.0 + 0.005 * slack \
 		and absf(local.z) <= bottom_screen_size.y / 2.0 + 0.005 * slack
 
 
 ## World point on/over the bottom screen → composite-framebuffer UV → host.
 func _send_touch(world_pos: Vector3, pressed: bool) -> void:
-	if _host == null or not _host.has_method("feed_touch"):
+	if _touch == null:
 		return
 	var local := _touch.to_local(world_pos)
-	var fx := clampf(local.x / bottom_screen_size.x + 0.5, 0.0, 1.0)
-	var fy := clampf(local.z / bottom_screen_size.y + 0.5, 0.0, 1.0)
+	_send_touch_local(Vector2(local.x, local.z), pressed)
+
+
+## In-plane surface-local point (metres) → UV. The pad's local frame has +Y as
+## the screen normal, X across and Z down the picture.
+func _send_touch_local(p: Vector2, pressed: bool) -> void:
+	if _host == null or not _host.has_method("feed_touch"):
+		return
+	var fx := clampf(p.x / bottom_screen_size.x + 0.5, 0.0, 1.0)
+	var fy := clampf(p.y / bottom_screen_size.y + 0.5, 0.0, 1.0)
 	_host.feed_touch(bottom_uv_rect.position + Vector2(fx, fy) * bottom_uv_rect.size, pressed)
 
 

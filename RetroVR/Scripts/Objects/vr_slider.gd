@@ -55,10 +55,23 @@ const TRIGGER_OFF := 0.4
 ## How far (metres) the interaction box extends past the knob mesh's own AABB,
 ## on every side. TRIGGER mode only.
 @export var interact_margin: float = 0.02
+## How far past the knob the visible fingertip starts snapping to its face
+## (metres). Purely visual; it does not change when the knob engages.
+@export var contact_margin: float = 0.015
 ## Current value 0..1.
 @export var value: float = 0.0
 
+## Release distance as a multiple of engage_radius, and how long the binding
+## survives outside engage_radius. The knob stops tracking at engage_radius
+## either way — these only decide how long it waits to be re-touched.
+const RELEASE_SCALE := 1.8
+const CONTACT_GRACE := 0.05
+
 var _engaged_ctrl: XRController3D = null
+var _lost: float = 0.0
+## value minus the value the tip projected to at the moment of contact. Keeps
+## taking hold from jumping the knob to the fingertip. Fingertip path only.
+var _grab_offset: float = 0.0
 var _pointer_engaged := false
 var _pointer_hovered := false
 var _controllers: Array[XRController3D] = []
@@ -155,7 +168,7 @@ func set_knob_mesh(mesh: MeshInstance3D) -> void:
 	_update_knob()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _pointer_engaged:
 		_sync_outline()
 		return   # pointer drag owns the knob (handled in pointer_event)
@@ -163,30 +176,76 @@ func _process(_delta: float) -> void:
 		if require_trigger:
 			_process_trigger_mode()
 		else:
-			_process_touch_mode()
+			_process_touch_mode(delta)
+	_claim_contact()
 	_sync_outline()
 
 
-## TOUCH mode — the original behaviour: proximity engages, 1.8x radius releases.
-func _process_touch_mode() -> void:
-	# Engage: nearest active controller tip within radius. Disengage with
-	# hysteresis so a jittery hand doesn't flicker on the boundary.
+## TOUCH mode — proximity engages, and the value FREEZES the moment
+## contact is lost rather than following the hand out.
+##
+## The freeze band is the point of this. The value reads only the component of the
+## tip along the travel axis, so pulling straight off a knob already changed
+## nothing — but real withdrawals are not perpendicular, and tracking all the
+## way out to the release radius let the last frames drag the value along with the
+## departing hand. So grace holds the BINDING (riding out a dropped tracking
+## frame) and never the TRACKING: past engage_radius the knob stops following.
+## Dip back in and it resumes from where it stopped.
+##
+## A DEFINITE loss — invalid, inactive, or the hand grabbed something — drops
+## at once; only a distance loss is graced.
+func _process_touch_mode(delta: float) -> void:
 	if _engaged_ctrl != null:
-		# Also let go if the engaged hand grabs something mid-slide.
-		if not is_instance_valid(_engaged_ctrl) or not _engaged_ctrl.get_is_active() \
-				or not PokeTip.is_poking(_engaged_ctrl) \
-				or global_position.distance_to(PokeTip.tip_of(_engaged_ctrl)) > engage_radius * 1.8:
+		if not _qualified(_engaged_ctrl):
 			_engaged_ctrl = null
 		else:
-			_track_world_point(PokeTip.tip_of(_engaged_ctrl))
-			return
+			var d: float = global_position.distance_to(PokeTip.tip_of(_engaged_ctrl))
+			if d <= engage_radius:
+				_lost = 0.0
+				_track_world_point(PokeTip.tip_of(_engaged_ctrl))
+				return
+			_lost += delta
+			if _lost < CONTACT_GRACE and d <= engage_radius * RELEASE_SCALE:
+				return   # still bound, deliberately NOT tracking
+			_engaged_ctrl = null
 	for ctrl in _controllers:
 		# Skip a hand that's holding something so it can't grab the knob by bumping it.
-		if ctrl and ctrl.get_is_active() and PokeTip.is_poking(ctrl) \
+		if _qualified(ctrl) \
 				and global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius:
 			_engaged_ctrl = ctrl
-			_track_world_point(PokeTip.tip_of(ctrl))
+			_lost = 0.0
+			_begin_track(PokeTip.tip_of(ctrl))
 			return
+
+
+func _qualified(ctrl: XRController3D) -> bool:
+	return is_instance_valid(ctrl) and ctrl.get_is_active() and PokeTip.is_poking(ctrl)
+
+
+## Take hold WITHOUT moving the knob: remember how far the value sits from the one
+## the fingertip projects to, and carry that through the drag. Touching a knob
+## off-centre used to snap it to your finger before you had moved at all. Same
+## thing VRHinge._begin_track does for lids, for the same reason.
+func _begin_track(world_pos: Vector3) -> void:
+	_grab_offset = value - _raw_value_at(world_pos)
+
+
+## Hand the fingertip nib to the real knob so it lands ON the cap rather than
+## floating over it. Visual only. Vector3.ZERO picks whichever face the tip is
+## nearest — a knob is grabbable from any side, unlike a button's press face.
+func _claim_contact() -> void:
+	if not is_instance_valid(_knob) or _knob.mesh == null:
+		return
+	var box: AABB = _knob.mesh.get_aabb().grow(contact_margin)
+	var inv: Transform3D = _knob.global_transform.affine_inverse()
+	for ctrl in _controllers:
+		if not _qualified(ctrl):
+			continue
+		var tip: Vector3 = PokeTip.tip_of(ctrl)
+		if not box.has_point(inv * tip):
+			continue
+		PokeTip.claim_box_face(ctrl, _knob, tip, Vector3.ZERO,
+			PokeTip.CONTACT_ENGAGED if ctrl == _engaged_ctrl else PokeTip.CONTACT_HOVER)
 
 
 ## TRIGGER mode — arm on proximity, latch on the trigger's rising edge, and hold
@@ -244,10 +303,10 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 		XRToolsPointerEvent.Type.PRESSED:
 			_pointer_hovered = true
 			_pointer_engaged = true
-			_track_world_point(event.position)
+			_track_pointer_point(event.position)
 		XRToolsPointerEvent.Type.MOVED:
 			if _pointer_engaged:
-				_track_world_point(event.position)
+				_track_pointer_point(event.position)
 		XRToolsPointerEvent.Type.RELEASED:
 			_pointer_engaged = false
 		XRToolsPointerEvent.Type.EXITED:
@@ -255,13 +314,26 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			_pointer_hovered = false
 
 
-## Project a world-space point onto the travel axis → value.
+## Value the travel axis projects a world point to, unclamped and unsnapped.
+func _raw_value_at(world_pos: Vector3) -> float:
+	if travel <= 0.0:
+		return value
+	return to_local(world_pos).dot(axis_local.normalized()) / travel + 0.5
+
+
+## Fingertip drag: RELATIVE to where contact was made (see _begin_track).
 func _track_world_point(world_pos: Vector3) -> void:
-	var local := to_local(world_pos)
-	var axis := axis_local.normalized()
 	if travel <= 0.0:
 		return
-	_set_from_raw(local.dot(axis) / travel + 0.5)
+	_set_from_raw(_raw_value_at(world_pos) + _grab_offset)
+
+
+## Pointer / desktop drag: absolute, unchanged. The reticle has no contact point
+## to be relative to, and press-drag there has always jumped straight to the ray.
+func _track_pointer_point(world_pos: Vector3) -> void:
+	if travel <= 0.0:
+		return
+	_set_from_raw(_raw_value_at(world_pos))
 
 
 func _set_from_raw(raw: float) -> void:

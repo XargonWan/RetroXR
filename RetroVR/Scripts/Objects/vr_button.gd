@@ -41,6 +41,12 @@ const TRIGGER_OFF := 0.4
 ## How far (metres) the interaction box extends past the button mesh's own AABB,
 ## on every side. TRIGGER mode only.
 @export var interact_margin: float = 0.02
+## How far past the cap the visible fingertip starts snapping to its face
+## (metres). Purely visual: it does not change when the button fires. Tighter
+## than interact_margin so hovering between two adjacent console buttons
+## (~20-25 mm pitch) does not ping-pong; PokeTip breaks any remaining tie by
+## nearest.
+@export var contact_margin: float = 0.015
 
 ## How much the mesh travels when pressed (metres)
 @export var depress_depth: float = 0.008
@@ -55,7 +61,17 @@ var _mesh_local_origin: Vector3
 # Parent node of the active mesh — used for direction-space conversion
 var _mesh_depress_parent: Node3D = null
 
+## Release distance as a multiple of trigger_radius. Matches the factor VRSlider
+## already uses, so a button and a slider let go at the same relative slack.
+const RELEASE_SCALE := 1.8
+## Seconds a fingertip may be outside the release radius before the press drops.
+## Sized to ride out a dropped tracking frame — it is a tail on how long every
+## press lasts, so it stays short. See PokeTip.CONTACT_GRACE.
+const CONTACT_GRACE := 0.05
+
 # Visual state
+var _touch_ctrl: XRController3D = null         # hand holding this button down
+var _touch_lost: float = 0.0                   # seconds outside the release radius
 var _touch_pressed: bool = false
 var _pointer_pressed: bool = false
 var _pointer_hovered: bool = false
@@ -92,36 +108,110 @@ func _ready() -> void:
 		_controllers.append(node as XRController3D)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not _controllers.is_empty():
 		if require_trigger:
 			_process_trigger_mode()
 		else:
-			_process_touch_mode()
+			_process_touch_mode(delta)
+	_claim_contact()
 	_sync_outline()
 
 
-## TOUCH mode — the original behaviour: crossing trigger_radius fires immediately.
-func _process_touch_mode() -> void:
-	# Check whether any controller tip is inside our trigger radius
-	var touching := false
-	for controller in _controllers:
-		# Skip a hand that's holding something — otherwise the poke tip of the
-		# hand gripping a handheld fires this button by drifting near it.
-		if not controller.get_is_active() or not PokeTip.is_poking(controller):
-			continue
-		var dist: float = global_position.distance_to(PokeTip.tip_of(controller))
-		if dist <= trigger_radius:
-			touching = true
-			break
+## TOUCH mode — crossing trigger_radius fires immediately, and then HOLDS.
+##
+## This used to test every controller against one radius with no hysteresis at
+## all: the same distance engaged and released, so a millimetre of tremor at the
+## boundary dropped the press. Bind the hand that made contact and give it an
+## asymmetric release (the factor VRSlider already uses) plus a short grace.
+##
+## The two kinds of loss are deliberately NOT treated alike. A DEFINITE loss —
+## the controller went invalid, inactive, or grabbed something — releases at once,
+## because gracing it would leave a stuck press on a hand that has walked off with
+## a console. Only a DISTANCE loss is graced.
+func _process_touch_mode(delta: float) -> void:
+	if _touch_ctrl != null:
+		if not _qualified(_touch_ctrl):
+			_release_touch()
+		elif global_position.distance_to(PokeTip.tip_of(_touch_ctrl)) 				<= trigger_radius * RELEASE_SCALE:
+			_touch_lost = 0.0
+			return
+		else:
+			_touch_lost += delta
+			if _touch_lost < CONTACT_GRACE:
+				return
+			# Either hand keeps this button pressed, so hand over to the other one
+			# rather than releasing if it is already on the cap.
+			var relay := _nearest_touching()
+			if relay != null:
+				_touch_ctrl = relay
+				_touch_lost = 0.0
+				return
+			_release_touch()
 
-	if touching and not _touch_pressed:
+	var ctrl := _nearest_touching()
+	if ctrl != null:
+		_touch_ctrl = ctrl
+		_touch_lost = 0.0
 		_touch_pressed = true
 		_update_visual_state()
 		_activate()
-	elif not touching and _touch_pressed:
+
+
+## Nearest qualifying hand inside trigger_radius, or null.
+func _nearest_touching() -> XRController3D:
+	var best: XRController3D = null
+	var best_d := INF
+	for controller in _controllers:
+		# Skip a hand that's holding something — otherwise the poke tip of the
+		# hand gripping a handheld fires this button by drifting near it.
+		if not _qualified(controller):
+			continue
+		var dist: float = global_position.distance_to(PokeTip.tip_of(controller))
+		if dist <= trigger_radius and dist < best_d:
+			best_d = dist
+			best = controller
+	return best
+
+
+func _qualified(ctrl: XRController3D) -> bool:
+	return is_instance_valid(ctrl) and ctrl.get_is_active() and PokeTip.is_poking(ctrl)
+
+
+func _release_touch() -> void:
+	_touch_ctrl = null
+	_touch_lost = 0.0
+	if _touch_pressed:
 		_touch_pressed = false
 		_update_visual_state()
+
+
+## Hand the fingertip nib to this button's cap so it lands ON the face you press
+## rather than floating over it or sinking through. Purely visual — the gate is
+## contact_margin, not trigger_radius, and it fires nothing.
+##
+## Gated on the tip being inside the contact box, which matters in TRIGGER mode:
+## that latch deliberately survives the hand roaming away, and without the gate
+## the nib would stretch after it.
+func _claim_contact() -> void:
+	if not is_instance_valid(_mesh) or _mesh.mesh == null:
+		return
+	# depress_axis lives in the MESH PARENT's frame (it can carry inverse parent
+	# scale), so it has to go through that basis, not the mesh's own.
+	var out: Vector3 = -depress_axis.normalized()
+	if _mesh_depress_parent != null:
+		out = -(_mesh_depress_parent.global_transform.basis * depress_axis).normalized()
+	var box: AABB = _mesh.mesh.get_aabb().grow(contact_margin)
+	var inv: Transform3D = _mesh.global_transform.affine_inverse()
+	for ctrl in _controllers:
+		if not _qualified(ctrl):
+			continue
+		var tip: Vector3 = PokeTip.tip_of(ctrl)
+		if not box.has_point(inv * tip):
+			continue
+		var held: bool = (_touch_pressed and ctrl == _touch_ctrl) 			or (_trigger_pressed and ctrl == _engaged_ctrl)
+		PokeTip.claim_box_face(ctrl, _mesh, tip, out,
+			PokeTip.CONTACT_ENGAGED if held else PokeTip.CONTACT_HOVER)
 
 
 ## TRIGGER mode — arm on proximity, fire on the trigger's rising edge.

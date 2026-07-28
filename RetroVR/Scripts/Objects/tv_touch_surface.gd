@@ -13,6 +13,16 @@
 class_name TVTouchSurface
 extends Area3D
 
+## Half-thickness of the collision box, i.e. how far the glass plane sits from
+## either face. The engage window is derived from it (see _tip_on_screen) so the
+## two cannot drift apart — this one used to engage at 30 mm against a box only
+## 4 mm thick, which is why a tap on a TV registered a good 3 cm off the picture.
+const HALF_THICKNESS := 0.004
+## Slack past the box before a touch counts, and the multiple of that at which it
+## lets go. Same shape as VRSlider's engage/release pair.
+const GLASS_TOLERANCE := 0.004
+const RELEASE_SCALE := 1.6
+
 ## The RetroSystem receiving the touches.
 var host: Node3D = null
 ## The channel's UV window of the composite framebuffer (what this TV shows).
@@ -22,6 +32,7 @@ var _size := Vector2(0.35, 0.25)
 var _pointer_down := false
 var _touch_ctrl: XRController3D = null
 var _controllers: Array[XRController3D] = []
+var _smoother := TouchSmoother.new()
 
 
 ## Build collision to match the screen quad it is attached to.
@@ -34,7 +45,7 @@ func setup(system: Node3D, rect: Rect2, screen_mesh: MeshInstance3D) -> void:
 	collision_layer |= VRSlider.POINTABLE_LAYER
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(_size.x, _size.y, 0.008)
+	shape.size = Vector3(_size.x, _size.y, HALF_THICKNESS * 2.0)
 	col.shape = shape
 	add_child(col)
 
@@ -60,40 +71,77 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 				_send_touch(event.position, false)
 
 
-## VR fingertip pressed against the glass (hysteresis like the handheld pad).
-func _process(_delta: float) -> void:
+## VR fingertip pressed against the glass.
+##
+## Between the engage and release windows the reported point FREEZES (see
+## TouchSmoother), so lifting off — or sliding out past an edge — reports where
+## you last actually were instead of the clamped border.
+func _process(delta: float) -> void:
 	if _pointer_down:
 		return
 	if _touch_ctrl != null:
-		if not is_instance_valid(_touch_ctrl) or not _touch_ctrl.get_is_active() \
-				or not _tip_on_screen(PokeTip.tip_of(_touch_ctrl), 1.6):
+		if not _qualified(_touch_ctrl) or not _tip_on_screen(PokeTip.tip_of(_touch_ctrl), RELEASE_SCALE):
 			var last := _touch_ctrl
 			_touch_ctrl = null
 			if is_instance_valid(last):
-				_send_touch(PokeTip.tip_of(last), false)
+				_send_touch_local(_smoother.current(), false)
+			_smoother.reset()
 		else:
-			_send_touch(PokeTip.tip_of(_touch_ctrl), true)
+			var tip: Vector3 = PokeTip.tip_of(_touch_ctrl)
+			var local: Vector3 = to_local(tip)
+			var p: Vector2 = _smoother.point(Vector2(local.x, local.y),
+				_tip_on_screen(tip, 1.0), delta)
+			_send_touch_local(p, true)
+			_claim_contact(_touch_ctrl, p, local.z)
 			return
 	for ctrl in _controllers:
-		if ctrl and ctrl.get_is_active() and _tip_on_screen(PokeTip.tip_of(ctrl), 1.0):
+		# A hand holding something is not a stylus — without this a hand carrying
+		# a cartridge past the TV drove the DS's touch screen.
+		if _qualified(ctrl) and _tip_on_screen(PokeTip.tip_of(ctrl), 1.0):
 			_touch_ctrl = ctrl
-			_send_touch(PokeTip.tip_of(ctrl), true)
+			var local: Vector3 = to_local(PokeTip.tip_of(ctrl))
+			var p := Vector2(local.x, local.y)
+			_smoother.begin(p)
+			_send_touch_local(p, true)
+			_claim_contact(ctrl, p, local.z)
 			return
+
+
+func _qualified(ctrl: XRController3D) -> bool:
+	return is_instance_valid(ctrl) and ctrl.get_is_active() and PokeTip.is_poking(ctrl)
 
 
 func _tip_on_screen(world_pos: Vector3, slack: float) -> bool:
 	var local := to_local(world_pos)
-	return absf(local.z) <= 0.03 * slack \
+	return absf(local.z) <= (HALF_THICKNESS + GLASS_TOLERANCE) * slack \
 		and absf(local.x) <= _size.x / 2.0 + 0.005 * slack \
 		and absf(local.y) <= _size.y / 2.0 + 0.005 * slack
 
 
+## Put the visible fingertip ON THE GLASS, at the point the core is being told
+## about — local z = 0 is the screen mesh, since this Area3D sits on it at
+## identity. Clamped with the same half-extents the UV mapping clamps to, so what
+## you see and what the game gets cannot disagree.
+func _claim_contact(ctrl: XRController3D, p: Vector2, local_z: float) -> void:
+	var half: Vector2 = _size * 0.5
+	var q := Vector3(clampf(p.x, -half.x, half.x), clampf(p.y, -half.y, half.y), 0.0)
+	var n: Vector3 = global_transform.basis.z.normalized()
+	if local_z < 0.0:
+		n = -n
+	PokeTip.set_contact(ctrl, global_transform * q, n, PokeTip.CONTACT_ENGAGED)
+
+
 ## World point on the glass → screen fraction → composite-framebuffer UV.
-## The quad faces +Z: local x right, y up; UV y runs top-down.
 func _send_touch(world_pos: Vector3, pressed: bool) -> void:
+	var local := to_local(world_pos)
+	_send_touch_local(Vector2(local.x, local.y), pressed)
+
+
+## In-plane surface-local point (metres) → UV. The quad faces +Z: local x right,
+## y up; UV y runs top-down.
+func _send_touch_local(p: Vector2, pressed: bool) -> void:
 	if host == null or not host.has_method("feed_touch"):
 		return
-	var local := to_local(world_pos)
-	var fx := clampf(local.x / _size.x + 0.5, 0.0, 1.0)
-	var fy := clampf(0.5 - local.y / _size.y, 0.0, 1.0)
+	var fx := clampf(p.x / _size.x + 0.5, 0.0, 1.0)
+	var fy := clampf(0.5 - p.y / _size.y, 0.0, 1.0)
 	host.feed_touch(uv_rect.position + Vector2(fx, fy) * uv_rect.size, pressed)
