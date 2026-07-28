@@ -91,7 +91,7 @@ var _vram_label: Label3D = null
 # World scale (below 1.0 = player feels smaller / room feels bigger). Applied at
 # startup and tunable from the menu's Controls section. Not persisted — resets to
 # the default each launch (like the other comfort settings).
-const DEFAULT_WORLD_SCALE := 0.7
+const DEFAULT_WORLD_SCALE := 0.8
 var _world_scale := 1.0
 var _base_eye_height := 1.65   # desktop XRCamera3D rest eye height; cached at setup
 

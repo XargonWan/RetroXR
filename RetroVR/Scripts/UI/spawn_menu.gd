@@ -2160,7 +2160,7 @@ func _build_options_view() -> Control:
 	# Default matches DEFAULT_WORLD_SCALE in spawn_menu_controller.gd (applied at
 	# startup). Hardcoded rather than read from XRServer.world_scale because this
 	# view is built before the controller's deferred setup applies the default.
-	ws_slider.value = 0.7
+	ws_slider.value = 0.8
 	ws_val.text = "%.2f×" % ws_slider.value
 	ws_slider.custom_minimum_size = Vector2(0, 48)
 	ws_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
