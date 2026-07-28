@@ -40,10 +40,16 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # 3DS Game Card
 
 
-## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds keep
-## the primitive clamshell authored in n3ds.tscn.
+## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds get
+## the stand-in clamshell instead (_primitive_path).
 func _glb_path() -> String:
 	return "res://imported-assets/new_3ds_xl.glb"
+
+
+## Store-safe stand-in, added ONLY when the detailed shell is absent, so with it
+## present the model carries no hidden geometry (the DS pattern — nds_model.gd).
+func _primitive_path() -> String:
+	return "res://Scenes/Objects/system_models/n3ds_primitive.tscn"
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens is

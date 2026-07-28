@@ -8,21 +8,6 @@
 [ext_resource type="Texture2D" uid="uid://xd1gsici3404" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
 [ext_resource type="Texture2D" uid="uid://clu825a2xvww6" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]
 
-[sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
-size = Vector3(0.134, 0.0105, 0.074)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aybqj"]
-albedo_color = Color(0.12, 0.35, 0.65, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_jmku2"]
-size = Vector3(0.134, 0.0105, 0.074)
-
-[sub_resource type="BoxMesh" id="BoxMesh_v64ki"]
-size = Vector3(0.084800005, 0.0015, 0.054100003)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ag6as"]
-albedo_color = Color(0.1, 0.1, 0.12, 1)
-
 [sub_resource type="QuadMesh" id="QuadMesh_kcwc5"]
 size = Vector2(0.12103167, 0.071283124)
 
@@ -317,48 +302,17 @@ _surfaces = [{
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_hbonl")
 
-[sub_resource type="BoxMesh" id="BoxMesh_f21ab"]
-size = Vector3(0.0694, 0.0015, 0.054100003)
-
 [sub_resource type="QuadMesh" id="QuadMesh_exibq"]
 size = Vector2(0.09715468, 0.07400769)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2ikgk"]
 albedo_color = Color(0.05, 0.05, 0.06, 1)
 
-[sub_resource type="BoxMesh" id="BoxMesh_2mi0k"]
-size = Vector3(0.038, 0.007, 0.004)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_myfa0"]
-albedo_color = Color(0.03, 0.03, 0.04, 1)
-
 [sub_resource type="QuadMesh" id="QuadMesh_152ug"]
 size = Vector2(0.01, 0.01)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_j8vu0"]
 size = Vector3(0.09715468, 0.012, 0.07400769)
-
-[sub_resource type="BoxMesh" id="BoxMesh_wssto"]
-size = Vector3(0.02, 0.004, 0.007)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rx5pe"]
-albedo_color = Color(0.15, 0.15, 0.17, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_ne7l1"]
-size = Vector3(0.007, 0.004, 0.02)
-
-[sub_resource type="CylinderMesh" id="CylinderMesh_ih43k"]
-top_radius = 0.005
-bottom_radius = 0.005
-height = 0.004
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_01ai6"]
-albedo_color = Color(0.85, 0.85, 0.88, 1)
-
-[sub_resource type="CylinderMesh" id="CylinderMesh_ba1fl"]
-top_radius = 0.005
-bottom_radius = 0.005
-height = 0.004
 
 [sub_resource type="BoxMesh" id="BoxMesh_akkew"]
 size = Vector3(0.008, 0.006, 0.008)
@@ -1346,25 +1300,8 @@ emission_energy_multiplier = 0.4
 script = ExtResource("1_hqvy2")
 metadata/dual_glb_baked = true
 
-[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1394850341]
-visible = false
-mesh = SubResource("BoxMesh_jq3we")
-surface_material_override/0 = SubResource("StandardMaterial3D_aybqj")
-
 [node name="LidPivot" type="Node3D" parent="." unique_id=706293294]
 transform = Transform3D(1, 0, 0, 0, 0.90906733, -0.41664928, 0, 0.41664928, 0.90906733, 0, 0.006499523, -0.043343637)
-
-[node name="Lid" type="MeshInstance3D" parent="LidPivot" unique_id=1068743946]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.00525, -0.037)
-visible = false
-mesh = SubResource("BoxMesh_jmku2")
-surface_material_override/0 = SubResource("StandardMaterial3D_aybqj")
-
-[node name="TopBezel" type="MeshInstance3D" parent="LidPivot" unique_id=1316755277]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0008, -0.037)
-visible = false
-mesh = SubResource("BoxMesh_v64ki")
-surface_material_override/0 = SubResource("StandardMaterial3D_ag6as")
 
 [node name="TopScreen" type="MeshInstance3D" parent="LidPivot" unique_id=1325079555]
 transform = Transform3D(1, 0, 0, 0, 2.9802322e-08, 1.0000001, 0, -1.0000001, 2.9802322e-08, -2.5317073e-05, 0.0019908454, -0.048011642)
@@ -1437,22 +1374,10 @@ transform = Transform3D(1, 0, 0, 0, 0.90906733, 0.41664928, 0, -0.41664928, 0.90
 mesh = SubResource("ArrayMesh_ey21l")
 skeleton = NodePath("")
 
-[node name="BottomBezel" type="MeshInstance3D" parent="." unique_id=485884573]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00605, 0)
-visible = false
-mesh = SubResource("BoxMesh_f21ab")
-surface_material_override/0 = SubResource("StandardMaterial3D_ag6as")
-
 [node name="BottomScreen" type="MeshInstance3D" parent="." unique_id=1210555464]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -0.00012585148, 0.0033988669, 0.0037936606)
 mesh = SubResource("QuadMesh_exibq")
 surface_material_override/0 = SubResource("StandardMaterial3D_2ikgk")
-
-[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=224702925]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
-visible = false
-mesh = SubResource("BoxMesh_2mi0k")
-surface_material_override/0 = SubResource("StandardMaterial3D_myfa0")
 
 [node name="ProxyScreen" type="MeshInstance3D" parent="." unique_id=405648502]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00012585148, 0.0033988669, 0.0037936606)
@@ -1465,30 +1390,6 @@ collision_layer = 1048577
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="TouchScreen" unique_id=1977633638]
 shape = SubResource("BoxShape3D_j8vu0")
-
-[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=607953927]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0)
-visible = false
-mesh = SubResource("BoxMesh_wssto")
-surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
-
-[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=620091300]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0)
-visible = false
-mesh = SubResource("BoxMesh_ne7l1")
-surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
-
-[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=868029758]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05785, 0.00725, -0.006)
-visible = false
-mesh = SubResource("CylinderMesh_ih43k")
-surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
-
-[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=783560170]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04585, 0.00725, 0.006)
-visible = false
-mesh = SubResource("CylinderMesh_ba1fl")
-surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
 
 [node name="PortLabelTop" type="Label3D" parent="." unique_id=1525452769]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0.040200002, 0.00168, -0.0385)

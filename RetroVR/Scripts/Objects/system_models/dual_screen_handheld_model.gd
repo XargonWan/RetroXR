@@ -82,11 +82,10 @@ func name_label_body() -> Node3D:
 	# The stand-in body only exists on the fallback path; with the detailed shell
 	# in, the base half IS the Shell subtree (its lid rides LidPivot).
 	#
-	# It has to be VISIBLE to count. n3ds.tscn still carries a hidden HandheldBody
-	# box from before the stand-in moved into its own *_primitive.tscn, and merely
-	# finding it handed the label an empty AABB (RetroSystem._body_aabb skips
-	# invisible meshes) — so _place_name_label bailed and the 3DS kept its label
-	# at the default scene pose, floating instead of sitting on the front.
+	# It has to be VISIBLE to count: an invisible HandheldBody hands the label an
+	# empty AABB (RetroSystem._body_aabb skips invisible meshes), so
+	# _place_name_label bails and the label stays at its default scene pose,
+	# floating instead of sitting on the front.
 	var body := find_child("HandheldBody", true, false) as Node3D
 	if body != null and body.is_visible_in_tree():
 		return body
@@ -183,6 +182,11 @@ func _primitive_path() -> String:
 ## Add the stand-in shell. Its root holds the base-half meshes directly and its
 ## lid parts under a "LidParts" child, which is reparented onto LidPivot so the
 ## stand-in folds with the hinge exactly like the detailed shell's lid does.
+##
+## The lid meshes under LidParts are authored in HINGE space — their origin is the
+## hinge line, not the device centre — so LidParts itself carries an open-clamshell
+## pose purely so the stand-in scene reads correctly when opened on its own in the
+## editor. LidPivot supplies the real pose here, so that authored one is cleared.
 func _spawn_primitive_shell() -> void:
 	var pp := _primitive_path()
 	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
@@ -197,6 +201,7 @@ func _spawn_primitive_shell() -> void:
 	var pivot := get_node_or_null("LidPivot") as Node3D
 	if lid_parts != null and pivot != null:
 		lid_parts.reparent(pivot, false)
+		lid_parts.transform = Transform3D.IDENTITY
 
 
 ## Swap the primitive clamshell for the detailed GLB. The base script's runtime
