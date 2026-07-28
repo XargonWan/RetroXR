@@ -15,12 +15,6 @@ extends RetroSystemModelHandheld
 
 func _init() -> void:
 	cart_size = Vector3(0.058, 0.036, 0.007)   # GBA cart
-	# Base half of a real SP (AGS-001): 82 x 82 mm, ~12 mm thick. In a licensed
-	# build _upgrade_to_glb overwrites this from the shell's own AABB, so it only
-	# matters on a placeholder build — where, left at the inherited Game Boy
-	# default (90 x 32 x 148), it sized the stand-in slab like a DMG and left the
-	# authored POWER/VOLUME switches (x = +/-0.0395) floating off its edges.
-	body_size = Vector3(0.082, 0.0145, 0.080)
 
 
 func _glb_path() -> String:
@@ -195,11 +189,6 @@ func animate_controls(btn: int, _lstick: Vector2, _rstick: Vector2) -> void:
 
 func configure_cable_attach(attach_point: Node3D) -> void:
 	if _glb == null:
-		# Placeholder build: no shell to hang the port off. Bailing here left the
-		# attach point (and its visible PortVisual blob) parked at the scene
-		# default, floating beside the device — take the base class's body_size
-		# placement instead.
-		super.configure_cable_attach(attach_point)
 		return
 	var mk := _glb.find_child("RCA_White", true, false) as MeshInstance3D
 	attach_point.global_position = mk.global_transform * mk.get_aabb().get_center() if mk else global_position
