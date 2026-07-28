@@ -33,18 +33,33 @@ albedo_color = Color(0.15, 0.15, 0.17, 1)
 [sub_resource type="BoxMesh" id="BoxMesh_ne7l1"]
 size = Vector3(0.007, 0.004, 0.02)
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_ih43k"]
-top_radius = 0.005
-bottom_radius = 0.005
+[sub_resource type="CylinderMesh" id="CylinderMesh_face"]
+top_radius = 0.0035
+bottom_radius = 0.0035
 height = 0.004
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_01ai6"]
 albedo_color = Color(0.85, 0.85, 0.88, 1)
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_ba1fl"]
-top_radius = 0.005
-bottom_radius = 0.005
+[sub_resource type="CylinderMesh" id="CylinderMesh_pad"]
+top_radius = 0.0065
+bottom_radius = 0.0065
 height = 0.004
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pad"]
+albedo_color = Color(0.72, 0.72, 0.75, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_power"]
+size = Vector3(0.006, 0.005, 0.002)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_power"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_knob"]
+size = Vector3(0.003, 0.004, 0.01)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_knob"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
 
 [node name="Primitive" type="Node3D"]
 
@@ -65,6 +80,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0008, -0.037)
 mesh = SubResource("BoxMesh_v64ki")
 surface_material_override/0 = SubResource("StandardMaterial3D_ag6as")
 
+[node name="VolumeKnob" type="MeshInstance3D" parent="LidParts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0675, -0.005, -0.024)
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("StandardMaterial3D_knob")
+
+[node name="Slider3DKnob" type="MeshInstance3D" parent="LidParts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0675, -0.005, -0.024)
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("StandardMaterial3D_knob")
+
 [node name="BottomBezel" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00605, 0)
 mesh = SubResource("BoxMesh_f21ab")
@@ -75,22 +100,42 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.037)
 mesh = SubResource("BoxMesh_2mi0k")
 surface_material_override/0 = SubResource("StandardMaterial3D_myfa0")
 
+[node name="CirclePad" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0515, 0.00725, -0.017)
+mesh = SubResource("CylinderMesh_pad")
+surface_material_override/0 = SubResource("StandardMaterial3D_pad")
+
 [node name="DpadBar1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0.004)
 mesh = SubResource("BoxMesh_wssto")
 surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
 
 [node name="DpadBar2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.051850002, 0.00725, 0.004)
 mesh = SubResource("BoxMesh_ne7l1")
 surface_material_override/0 = SubResource("StandardMaterial3D_rx5pe")
 
 [node name="FaceButton1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05785, 0.00725, -0.006)
-mesh = SubResource("CylinderMesh_ih43k")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0585, 0.00725, 0)
+mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
 
 [node name="FaceButton2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04585, 0.00725, 0.006)
-mesh = SubResource("CylinderMesh_ba1fl")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.052, 0.00725, 0.0065)
+mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
+
+[node name="FaceButton3" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.052, 0.00725, -0.0065)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
+
+[node name="FaceButton4" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0455, 0.00725, 0)
+mesh = SubResource("CylinderMesh_face")
+surface_material_override/0 = SubResource("StandardMaterial3D_01ai6")
+
+[node name="PowerButton3ds" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, 0, 0.0375)
+mesh = SubResource("BoxMesh_power")
+surface_material_override/0 = SubResource("StandardMaterial3D_power")

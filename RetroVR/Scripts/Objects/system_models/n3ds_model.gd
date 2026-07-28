@@ -48,6 +48,11 @@ func _glb_path() -> String:
 
 ## Store-safe stand-in, added ONLY when the detailed shell is absent, so with it
 ## present the model carries no hidden geometry (the DS pattern — nds_model.gd).
+##
+## It answers to the same node names the GLB does — PowerButton3ds, VolumeKnob,
+## Slider3DKnob — so configure_buttons and _adopt_slider adopt the stand-in's
+## controls by exactly the code that adopts the real ones. Everything below is
+## therefore path-agnostic; only the geometry it finds differs.
 func _primitive_path() -> String:
 	return "res://Scenes/Objects/system_models/n3ds_primitive.tscn"
 

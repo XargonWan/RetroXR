@@ -1341,6 +1341,7 @@ value = 1.0
 
 [node name="KnobMesh" type="MeshInstance3D" parent="LidPivot/Slider3D" unique_id=2063133580]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+visible = false
 mesh = SubResource("BoxMesh_j8vu0")
 surface_material_override/0 = SubResource("StandardMaterial3D_1ijud")
 
@@ -1418,6 +1419,7 @@ value = 1.0
 
 [node name="KnobMesh" type="MeshInstance3D" parent="LidPivot/VolumeSlider" unique_id=559146097]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+visible = false
 mesh = SubResource("BoxMesh_akkew")
 surface_material_override/0 = SubResource("StandardMaterial3D_bhlsk")
 
