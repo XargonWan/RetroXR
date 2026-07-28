@@ -105,6 +105,11 @@ const _MODEL_SCENE_VARIANTS: Dictionary = {
 	# controls and seats — so a build can ship these and drop the licensed device
 	# scenes entirely. Hardware with no entry here falls to the procedural
 	# default_model, which is what its "Primitive System" row spawns.
+	"game_boy:primitive": "res://Scenes/Objects/system_models/game_boy_primitive.tscn",
+	"game_boy_advance:primitive": "res://Scenes/Objects/system_models/game_boy_advance_primitive.tscn",
+	"nds:primitive": "res://Scenes/Objects/system_models/nds_primitive.tscn",
+	"3ds:primitive": "res://Scenes/Objects/system_models/n3ds_primitive.tscn",
+	"playstation_portable:primitive": "res://Scenes/Objects/system_models/psp_primitive.tscn",
 	"virtual_boy:primitive": "res://Scenes/Objects/system_models/virtual_boy_primitive.tscn",
 }
 

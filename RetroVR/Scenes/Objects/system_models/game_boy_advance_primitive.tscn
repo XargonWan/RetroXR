@@ -1,5 +1,23 @@
 [gd_scene format=3]
 
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/game_boy_advance_model.gd" id="1_model"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_slider"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(0.054043405, 0.034436256)
+
+[sub_resource type="StandardMaterial3D" id="Mat_screen"]
+albedo_color = Color(0.35, 0.4, 0.33, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_knob"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="StandardMaterial3D" id="Mat_knob"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ctl"]
+size = Vector3(0.03, 0.015, 0.03)
+
 [sub_resource type="BoxMesh" id="BoxMesh_vufj4"]
 size = Vector3(0.13337943, 0.025836494, 0.07409274)
 
@@ -51,6 +69,8 @@ emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
 
 [node name="GameBoyAdvancePrimitive" type="Node3D" unique_id=660899921]
+script = ExtResource("1_model")
+primitive_shell = true
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=768079112]
 mesh = SubResource("BoxMesh_vufj4")
@@ -93,3 +113,46 @@ gizmo_extents = 0.03
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
+
+[node name="HandheldScreen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.01435, 0)
+mesh = SubResource("QuadMesh_screen")
+surface_material_override/0 = SubResource("Mat_screen")
+
+[node name="VolumeSlider" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0677, 0.004, 0.01)
+collision_layer = 1048577
+script = ExtResource("2_slider")
+axis_local = Vector3(0, 0, -1)
+travel = 0.012
+engage_radius = 0.025
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider"]
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("Mat_knob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+shape = SubResource("BoxShape3D_ctl")
+
+[node name="PowerSwitch" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.045, 0.004, 0.0385)
+collision_layer = 1048577
+script = ExtResource("2_slider")
+travel = 0.010
+steps = 2
+engage_radius = 0.025
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch"]
+mesh = SubResource("BoxMesh_knob")
+surface_material_override/0 = SubResource("Mat_knob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch"]
+shape = SubResource("BoxShape3D_ctl")
+
+[node name="PowerLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -0.045, 0.0132, 0.03)
+pixel_size = 0.00016
+modulate = Color(0.1, 0.1, 0.12, 1)
+text = "POWER"
+font_size = 16

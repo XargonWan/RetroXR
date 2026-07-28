@@ -1,5 +1,34 @@
 [gd_scene format=4 uid="uid://btgjq6thrjbvr"]
 
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/nds_model.gd" id="1_model"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_hinge.gd" id="2_hinge"]
+[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="3_slider"]
+[ext_resource type="FontFile" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="4_font"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(0.0615, 0.0461)
+
+[sub_resource type="StandardMaterial3D" id="Mat_screen"]
+albedo_color = Color(0.05, 0.05, 0.06, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_proxy"]
+size = Vector2(0.01, 0.01)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hinge"]
+size = Vector3(0.0615, 0.023, 0.02)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_touch"]
+size = Vector3(0.0615, 0.012, 0.0461)
+
+[sub_resource type="BoxMesh" id="BoxMesh_volknob"]
+size = Vector3(0.004, 0.005, 0.012)
+
+[sub_resource type="StandardMaterial3D" id="Mat_volknob"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
+size = Vector3(0.02, 0.014, 0.024)
+
 [sub_resource type="BoxMesh" id="BoxMesh_dor51"]
 size = Vector3(0.133, 0.011, 0.0739)
 
@@ -58,20 +87,22 @@ emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
 
 [node name="Primitive" type="Node3D" unique_id=1319826210]
+script = ExtResource("1_model")
+primitive_shell = true
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1395190702]
 mesh = SubResource("BoxMesh_dor51")
 surface_material_override/0 = SubResource("StandardMaterial3D_uxbae")
 
-[node name="LidParts" type="Node3D" parent="." unique_id=1113905301]
+[node name="LidPivot" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.70710678, -0.70710678, 0, 0.70710678, 0.70710678, 0, 0.0055, -0.03695)
 
-[node name="Lid" type="MeshInstance3D" parent="LidParts" unique_id=103022698]
+[node name="Lid" type="MeshInstance3D" parent="LidPivot" unique_id=103022698]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0055, -0.03695)
 mesh = SubResource("BoxMesh_dy5q1")
 surface_material_override/0 = SubResource("StandardMaterial3D_uxbae")
 
-[node name="TopBezel" type="MeshInstance3D" parent="LidParts" unique_id=2005238177]
+[node name="TopBezel" type="MeshInstance3D" parent="LidPivot" unique_id=2005238177]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0008, -0.03695)
 mesh = SubResource("BoxMesh_loftr")
 surface_material_override/0 = SubResource("StandardMaterial3D_4nau3")
@@ -143,3 +174,67 @@ gizmo_extents = 0.03
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
+
+[node name="TopScreen" type="MeshInstance3D" parent="LidPivot"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0019, -0.03695)
+mesh = SubResource("QuadMesh_screen")
+surface_material_override/0 = SubResource("Mat_screen")
+
+[node name="LidHinge" type="Area3D" parent="LidPivot" node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0019, -0.048)
+collision_layer = 1048577
+script = ExtResource("2_hinge")
+target = NodePath("..")
+engage_radius = 0.035
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge"]
+shape = SubResource("BoxShape3D_hinge")
+
+[node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.027078, 0.004114)
+visible = false
+pixel_size = 0.00029166666
+billboard = 1
+no_depth_test = true
+render_priority = 2
+outline_modulate = Color(0, 0, 0, 0.7)
+font = ExtResource("4_font")
+font_size = 96
+outline_size = 18
+
+[node name="BottomScreen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0072, 0)
+mesh = SubResource("QuadMesh_screen")
+surface_material_override/0 = SubResource("Mat_screen")
+
+[node name="ProxyScreen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0072, 0)
+visible = false
+mesh = SubResource("QuadMesh_proxy")
+
+[node name="TouchScreen" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0072, 0)
+collision_layer = 1048577
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TouchScreen"]
+shape = SubResource("BoxShape3D_touch")
+
+[node name="VolumeSlider" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0675, 0, 0.017)
+collision_layer = 1048577
+script = ExtResource("3_slider")
+axis_local = Vector3(0, 0, -1)
+travel = 0.01
+engage_radius = 0.024
+value = 1.0
+
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider"]
+mesh = SubResource("BoxMesh_volknob")
+surface_material_override/0 = SubResource("Mat_volknob")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+shape = SubResource("BoxShape3D_vol")
+
+[node name="Power Light" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0555, 0.0058, 0.033)
+gizmo_extents = 0.01

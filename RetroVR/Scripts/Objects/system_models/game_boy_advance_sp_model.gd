@@ -46,7 +46,7 @@ func _cache_shell_nodes() -> void:
 ## 45 (135° interior) and clamps the hinge to 30…180: a real SP stops a little
 ## past straight rather than laying flat, and 30 is also the angle the GLB itself
 ## ships the lid at, so the open stop IS the modelled pose.
-func _on_glb_ready() -> void:
+func _on_shell_ready() -> void:
 	# The live LCD quad is normally rebuilt by _upgrade_to_glb; on this baked
 	# scene it is authored under LidPivot already. Reparent defensively so the
 	# picture folds with the lid either way.

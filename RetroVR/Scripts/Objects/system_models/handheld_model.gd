@@ -96,9 +96,11 @@ func _glb_screen_name() -> String:
 	return "screen_mesh"
 
 
-## Called at the end of _upgrade_to_glb once the shell is in place, laid back and
-## recentred. Subclasses cache their control meshes here for animate_controls().
-func _on_glb_ready() -> void:
+## Called once the shell is in place — EITHER shell. Subclasses cache their
+## control meshes here for animate_controls() and mount their sliders/buttons on
+## them. A stand-in scene authors its controls under the same names the detailed
+## shell uses, so the same pass wires both and neither needs a special case.
+func _on_shell_ready() -> void:
 	pass
 
 ## imported handheld GLBs are modelled upright (screen on +Z); RetroVR's frame is
@@ -110,43 +112,18 @@ func _glb_rotation_degrees() -> Vector3:
 
 func _ready() -> void:
 	_cache_shell_nodes()
-	var gp := _glb_path()
-	if get_node_or_null("Shell") != null or (not gp.is_empty() and ResourceLoader.exists(gp)):
-		_upgrade_to_glb(gp)
-	if _glb == null:
-		# No detailed shell (e.g. store build with the GLB export-excluded) — spawn
-		# the plain primitive stand-in kept in its own scene (see _primitive_path).
-		_spawn_primitive()
+	# A stand-in scene IS its shell — plain geometry authored alongside these
+	# functional nodes — so there is nothing to upgrade to and nothing to probe
+	# for. The licensed scenes take the other branch, unconditionally.
+	if primitive_shell:
+		_on_shell_ready()          # the stand-in's own controls, already in place
+	else:
+		_upgrade_to_glb(_glb_path())
 	# An authored "CartSeat" marker (see configure_cartridge_slot) may carry a
 	# visible "SeatPreview" box so the seated-cart pose can be dialled in inside
 	# the Godot 3D editor. It's an editor aid only — hide it at runtime.
 	_hide_seat_previews()
 	_setup_screen_light()
-
-
-## Override to return a store-safe primitive stand-in scene, spawned only when the
-## detailed GLB shell is absent. Default "" = no separate primitive (older
-## handhelds keep their stand-in inline in the device scene).
-func _primitive_path() -> String:
-	return ""
-
-
-## Spawn the primitive stand-in from its own scene, so baked handhelds keep their
-## device .tscn free of hidden clutter. Re-reads body_size from the spawned
-## HandheldBody so collision / cart slot / cable placement stay correct.
-func _spawn_primitive() -> void:
-	var pp := _primitive_path()
-	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
-		return
-	var scene := load(pp) as PackedScene
-	if scene == null:
-		return
-	var prim := scene.instantiate() as Node3D
-	prim.name = "Primitive"
-	add_child(prim)
-	var body := prim.find_child("HandheldBody", true, false) as MeshInstance3D
-	if body and body.mesh is BoxMesh:
-		body_size = (body.mesh as BoxMesh).size
 
 
 func _setup_screen_light() -> void:
@@ -215,7 +192,7 @@ func _upgrade_to_glb(path: String) -> void:
 		if bb.size.length() > 0.0:
 			body_size = bb.size
 		_fix_shell_materials()
-		_on_glb_ready()
+		_on_shell_ready()
 		return
 	var scene := load(path) as PackedScene
 	if scene == null:
@@ -263,7 +240,7 @@ func _upgrade_to_glb(path: String) -> void:
 		_power_switch.position = to_local(pm.global_position)
 	_adopt_knob(_volume_slider, "Volume")
 	_adopt_knob(_power_switch, "Power")
-	_on_glb_ready()
+	_on_shell_ready()
 
 
 ## Point a slider at the GLB's real switch cap so its interaction box and green

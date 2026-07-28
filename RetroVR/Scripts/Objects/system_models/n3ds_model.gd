@@ -41,32 +41,9 @@ func _init() -> void:
 
 
 ## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds get
-## the stand-in clamshell instead (_primitive_path).
+## the stand-in clamshell instead (n3ds_primitive.tscn, its own spawn row).
 func _glb_path() -> String:
 	return "res://imported-assets/new_3ds_xl.glb"
-
-
-## Store-safe stand-in, added ONLY when the detailed shell is absent, so with it
-## present the model carries no hidden geometry (the DS pattern — nds_model.gd).
-##
-## It answers to the same node names the GLB does, so configure_buttons,
-## _adopt_slider and animate_controls drive the stand-in's controls through
-## exactly the code that drives the real ones — everything below is path-agnostic
-## and only the geometry it finds differs:
-##
-##   PowerButton3ds                          configure_buttons
-##   VolumeKnob, Slider3DKnob                _adopt_slider
-##   FireButton{Right,Bottom,Top,Left}       _FACE_MESH      (A, B, X, Y)
-##   StartButton, SelectButton               _FACE_MESH
-##   L/RShoulderButton, L/RIndexTriggerButton  _SHOULDER_MESH (L, R, ZL, ZR)
-##   StickLeft22                             circle pad slide
-##   PSButton                                C-stick rock (the GLB's misnomer)
-##
-## Not matched, so inert on the stand-in: the d-pad (_anim_dpad wants ONE mesh,
-## Dpad22, and the stand-in draws the cross as two bars) and HomeButton (not a
-## RetroPad button).
-func _primitive_path() -> String:
-	return "res://Scenes/Objects/system_models/n3ds_primitive.tscn"
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens is

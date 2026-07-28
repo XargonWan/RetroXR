@@ -12,8 +12,3 @@ func _init() -> void:
 ## Detailed GBA shell (an author imported, Arctic White). Export-excluded.
 func _glb_path() -> String:
 	return "res://imported-assets/game_boy_advance.glb"
-
-
-## Store-safe primitive stand-in (spawned only when the GLB shell is absent).
-func _primitive_path() -> String:
-	return "res://Scenes/Objects/system_models/game_boy_advance_primitive.tscn"

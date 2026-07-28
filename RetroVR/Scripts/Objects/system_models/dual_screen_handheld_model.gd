@@ -98,24 +98,15 @@ func name_label_placement() -> Dictionary:
 	return {"upright": true, "v_center": 0.5, "h_frac": 0.72}
 
 
-## Force the stand-in shell even when the detailed GLB is present. The fallback
-## path is otherwise never exercised in development (imported-assets/ is always
-## there), so this is what a probe flips to keep it honest.
-@export var force_primitive_shell: bool = false
-
-
 func _ready() -> void:
-	var gp := _glb_path()
-	var detailed := not force_primitive_shell and not gp.is_empty() and ResourceLoader.exists(gp)
-	# The stand-in is a SEPARATE scene, added only when there's no detailed shell,
-	# instead of living in the device scene permanently and being hidden. Nothing
-	# invisible is left behind to be measured by mistake — which is exactly how
-	# body_size used to come from a 133x11x74 box the player never sees.
-	if not detailed:
-		_spawn_primitive_shell()
 	_cache_dual_nodes()
-	if detailed:
-		_upgrade_dual_to_glb(gp)
+	if primitive_shell:
+		# The stand-in clamshell IS this scene: its lid meshes already ride
+		# LidPivot, so there is no shell to compose — only the lid's grab box,
+		# which _upgrade_dual_to_glb would otherwise have sized at the end.
+		_setup_lid_grab()
+	else:
+		_upgrade_dual_to_glb(_glb_path())
 	# Screen-cast lights: both screens glow into the room (base _ready — which sets
 	# up the single-screen light — is not called here, so create both explicitly).
 	_screen_light = _make_screen_light(_screen)
@@ -169,37 +160,6 @@ func _hinge_z_offset() -> float:
 ## can't see any more than the Z case above can — see n3ds_model.gd.
 func _hinge_y_offset() -> float:
 	return 0.0
-
-
-## Override to return the store-safe stand-in shell scene; "" = no fallback
-## geometry (the device scene carries its own, the old arrangement).
-func _primitive_path() -> String:
-	return ""
-
-
-## Add the stand-in shell. Its root holds the base-half meshes directly and its
-## lid parts under a "LidParts" child, which is reparented onto LidPivot so the
-## stand-in folds with the hinge exactly like the detailed shell's lid does.
-##
-## The lid meshes under LidParts are authored in HINGE space — their origin is the
-## hinge line, not the device centre — so LidParts itself carries an open-clamshell
-## pose purely so the stand-in scene reads correctly when opened on its own in the
-## editor. LidPivot supplies the real pose here, so that authored one is cleared.
-func _spawn_primitive_shell() -> void:
-	var pp := _primitive_path()
-	if pp.is_empty() or has_node("Primitive") or not ResourceLoader.exists(pp):
-		return
-	var scene := load(pp) as PackedScene
-	if scene == null:
-		return
-	var prim := scene.instantiate() as Node3D
-	prim.name = "Primitive"
-	add_child(prim)
-	var lid_parts := prim.get_node_or_null("LidParts") as Node3D
-	var pivot := get_node_or_null("LidPivot") as Node3D
-	if lid_parts != null and pivot != null:
-		lid_parts.reparent(pivot, false)
-		lid_parts.transform = Transform3D.IDENTITY
 
 
 ## Swap the primitive clamshell for the detailed GLB. The base script's runtime

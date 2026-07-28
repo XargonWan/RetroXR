@@ -21,22 +21,6 @@ func _glb_path() -> String:
 	return "res://imported-assets/psp_1000.glb"
 
 
-## Store-safe primitive stand-in (spawned only when the GLB shell is absent
-## and the .tscn hasn't baked a "Shell" instance — see handheld_model.gd).
-##
-## Its controls carry the GLB's node names (PowerButton, EjectButton, Button
-## Minus/Plus, FaceButton*, LShoulderButton, RShoulderButton, AnalogNub) so the
-## adoption code below would take them as-is. It does NOT run on this path today:
-## every _configure_* is reached from _on_glb_ready, which only fires at the end
-## of _upgrade_to_glb. So the stand-in's power slide, eject latch and volume keys
-## are cosmetic — psp.tscn's own PowerSwitch / OpenSlider / Volume± placeholders
-## are all saved visible = false, so a fallback build has no visible control at
-## all without them. Wiring the fallback means calling the same _configure_*
-## pass after _spawn_primitive.
-func _primitive_path() -> String:
-	return "res://Scenes/Objects/system_models/psp_primitive.tscn"
-
-
 # --- button animation -------------------------------------------------------
 
 ## PSP face diamond → RetroPad. ✕ is the confirm/B button, ○ back/A, □ Y, △ X —
@@ -76,7 +60,7 @@ var _anim_nub: Dictionary = {}           # analog nub: {node, rest, pivot}
 var _anim_dpad: Dictionary = {}          # {node, rest, pivot}
 
 
-func _on_glb_ready() -> void:
+func _on_shell_ready() -> void:
 	_cache_anim_meshes()
 	_configure_power_slide()
 	_configure_open_slide()

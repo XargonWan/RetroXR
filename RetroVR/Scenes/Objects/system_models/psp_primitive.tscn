@@ -1,5 +1,43 @@
 [gd_scene format=3]
 
+[ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_model"]
+[ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/vr_spring_return_slider.gd" id="2_slider"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="3_button"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="4_hinge"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(0.083904006, 0.047486406)
+
+[sub_resource type="StandardMaterial3D" id="Mat_screen"]
+albedo_color = Color(0.35, 0.4, 0.33, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_placeholder"]
+size = Vector3(0.008, 0.006, 0.008)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pwr"]
+size = Vector3(0.03, 0.015, 0.03)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_open"]
+size = Vector3(0.016, 0.009, 0.009)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
+size = Vector3(0.009, 0.007, 0.008)
+
+[sub_resource type="BoxMesh" id="BoxMesh_volph"]
+size = Vector3(0.0047, 0.0011, 0.0034)
+
+[sub_resource type="BoxMesh" id="BoxMesh_door"]
+size = Vector3(0.09, 0.003, 0.044)
+
+[sub_resource type="BoxMesh" id="BoxMesh_led"]
+size = Vector3(0.004, 0.0015, 0.003)
+
+[sub_resource type="StandardMaterial3D" id="Mat_led"]
+albedo_color = Color(0.05, 0.06, 0.05, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_doorhinge"]
+size = Vector3(0.07, 0.012, 0.022)
+
 [sub_resource type="BoxMesh" id="BoxMesh_31348"]
 size = Vector3(0.15739954, 0.024476781, 0.0715083)
 
@@ -74,6 +112,8 @@ emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
 
 [node name="PSPPrimitive" type="Node3D"]
+script = ExtResource("1_model")
+primitive_shell = true
 
 [node name="HandheldBody" type="MeshInstance3D" parent="."]
 mesh = SubResource("BoxMesh_31348")
@@ -176,3 +216,93 @@ gizmo_extents = 0.03
 [node name="SeatPreview" type="MeshInstance3D" parent="UMDSeat"]
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
+
+[node name="HandheldScreen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0136, 0)
+mesh = SubResource("QuadMesh_screen")
+surface_material_override/0 = SubResource("Mat_screen")
+
+[node name="PowerSwitch" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0797, 0.004, 0.01)
+collision_layer = 1048577
+script = ExtResource("2_slider")
+axis_local = Vector3(0, 0, -1)
+travel = 0.006
+engage_radius = 0.024
+
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch"]
+visible = false
+mesh = SubResource("BoxMesh_placeholder")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch"]
+shape = SubResource("BoxShape3D_pwr")
+
+[node name="OpenSlider" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.042, 0.004, -0.0372)
+collision_layer = 1048577
+script = ExtResource("2_slider")
+axis_local = Vector3(1, 0, 0)
+travel = 0.003
+engage_radius = 0.02
+on_hold_sec = 0.0
+off_hold_sec = 0.0
+active_threshold = 0.98
+
+[node name="KnobMesh" type="MeshInstance3D" parent="OpenSlider"]
+visible = false
+mesh = SubResource("BoxMesh_placeholder")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="OpenSlider"]
+shape = SubResource("BoxShape3D_open")
+
+[node name="VolumeDown" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0715, 0.0132, 0.0235)
+collision_layer = 1048577
+script = ExtResource("3_button")
+trigger_radius = 0.008
+depress_depth = 0.0008
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeDown"]
+shape = SubResource("BoxShape3D_vol")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeDown"]
+visible = false
+mesh = SubResource("BoxMesh_volph")
+
+[node name="VolumeUp" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0605, 0.0132, 0.0235)
+collision_layer = 1048577
+script = ExtResource("3_button")
+trigger_radius = 0.008
+depress_depth = 0.0008
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeUp"]
+shape = SubResource("BoxShape3D_vol")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="VolumeUp"]
+visible = false
+mesh = SubResource("BoxMesh_volph")
+
+[node name="PowerLED" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0745, 0.0128, -0.0255)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+[node name="UMDDoorPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0122, -0.0358)
+
+[node name="UMDDoor" type="MeshInstance3D" parent="UMDDoorPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0015, 0.022)
+mesh = SubResource("BoxMesh_door")
+surface_material_override/0 = SubResource("StandardMaterial3D_3enqv")
+
+[node name="UMDDoorHinge" type="Area3D" parent="UMDDoorPivot" node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0015, 0.036)
+collision_layer = 1048577
+script = ExtResource("4_hinge")
+target = NodePath("..")
+max_deg = 40.0
+engage_radius = 0.03
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="UMDDoorPivot/UMDDoorHinge"]
+shape = SubResource("BoxShape3D_doorhinge")
