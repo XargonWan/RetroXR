@@ -96,6 +96,8 @@ var romm_art: RommArtCache = null
 ## systemid -> platform dict from /api/platforms (with "systemid" added).
 var _romm_platforms: Dictionary = {}
 var _romm_unmapped: Array = []
+## Slug signature of the last unmapped set announced, so it is reported once.
+var _romm_unmapped_announced: String = ""
 ## Terminal outcomes that happened while the menu was closed, flushed on open.
 var _romm_pending_notices: Array[Dictionary] = []
 var _romm_status_label: Label = null
@@ -1061,11 +1063,17 @@ func _romm_fetch_platforms() -> void:
 			_romm_platforms[str(p["systemid"])] = p
 		_romm_unmapped = part["unmapped"]
 
-		if not _romm_unmapped.is_empty():
-			# Don't drop these silently — the user can add an override.
+		# Only announce when the set actually changes. Most unmapped platforms
+		# stay unmapped forever (no systemid or 3D model exists for them), so
+		# re-reporting the same list on every menu open is pure noise.
+		var signature := ""
+		for p: Dictionary in _romm_unmapped:
+			signature += str(p.get("slug", "")) + ","
+		if not _romm_unmapped.is_empty() and signature != _romm_unmapped_announced:
 			notify("romm:map", "⚠", "%d RomM platform%s unmapped — see OPTIONS"
 				% [_romm_unmapped.size(), "" if _romm_unmapped.size() == 1 else "s"],
 				-1.0, 4.0)
+		_romm_unmapped_announced = signature
 
 		_populate_cartridges_tab()
 		_update_romm_status_label()
@@ -2524,10 +2532,19 @@ func _update_romm_status_label() -> void:
 		else "Not connected."
 
 	if not _romm_unmapped.is_empty():
+		# Biggest first, capped — a full list runs to dozens of engine cores and
+		# one-ROM oddities that will never have a systemid.
+		var sorted_un := _romm_unmapped.duplicate()
+		sorted_un.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return int(a.get("rom_count", 0)) > int(b.get("rom_count", 0))
+		)
 		var names: Array[String] = []
-		for p: Dictionary in _romm_unmapped:
-			names.append("%s (%s)" % [RommPlatforms.display_name(p), str(p.get("slug", "?"))])
-		text += "\nUnmapped: " + ", ".join(PackedStringArray(names))
+		for i in mini(sorted_un.size(), 6):
+			var p: Dictionary = sorted_un[i]
+			names.append("%s (%d)" % [RommPlatforms.display_name(p), int(p.get("rom_count", 0))])
+		text += "\n%d unmapped: " % _romm_unmapped.size() + ", ".join(PackedStringArray(names))
+		if sorted_un.size() > 6:
+			text += " and %d more" % (sorted_un.size() - 6)
 
 	_romm_status_label.text = text
 
