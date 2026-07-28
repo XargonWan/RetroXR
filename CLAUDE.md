@@ -331,14 +331,7 @@ selected by **`RetroModelPolicy`** (`RetroVR/Scripts/Data/model_policy.gd`):
 - **placeholder** (store) — consoles fall back to the generic grey box (`default_model.gd`
   + `system.tscn`'s `SystemBody`); handhelds KEEP their device scene, because it also owns
   the live screen and the on-device controls, and swap only the shell for their
-  `*_primitive.tscn` stand-in; every bespoke controller/joystick spawns the procedural
-  `retro_controller.tscn` RetroPad; carts, memory cards and controller-plug connectors keep
-  the procedural stand-ins they already had.
-
-Anything reaching into `imported-assets/` gates on **`RetroModelPolicy.may_use(path)`**, not
-a bare `ResourceLoader.exists()`. Those two used to be conflated, so the props' stand-ins
-were only reachable on a build where the GLB was genuinely missing — in the editor
-`--placeholder-models` still loaded the licensed model and never exercised them.
+  `*_primitive.tscn` stand-in.
 
 Selecting placeholder mode, highest priority first:
 1. `--placeholder-models` on the command line (`--licensed-models` forces the other way).
@@ -359,21 +352,16 @@ Run the gate after adding or re-baking any hardware model:
 "$godot" --path "$proj" res://Tools/model_placeholder_probe.tscn -- --placeholder-models 2>&1 \
   | grep -a "\[probe\]"      # every row must read OK / imported=0; PNGs land in user://
 ```
-41 rows: 29 system/variant combos + the 12 peripherals.
 Drop `-- --placeholder-models` to render the licensed side for comparison.
 
-The spawn menu dispatches licence-pending peripherals through
-`SpawnMenuController.PERIPHERAL_MODELS` (token → `[GLB, bespoke scene]`) rather than a dozen
-near-identical `match` arms, so the probe walks the same table the menu does instead of a
-copy of it. `_instantiate_peripheral` never returns null — it used to, which meant a store
-build answered "give me a DualShock" by silently spawning nothing.
-
-**Export**: the `Quest (Store)` preset sets the feature tag and excludes `imported-assets/*`,
-the console device scenes and the bespoke controller scenes (674 MB → 53 MB pack). One thing
-it does **not** yet solve, needing a refactor rather than a filter: the **handheld** device
-scenes still carry their baked licensed shells in the .pck. They can't be excluded (they own
-the screen + controls); the fix is to split each baked `"Shell"` out into its own excludable
-resource loaded only in licensed mode.
+**Export**: the `Quest (Store)` preset sets the feature tag and excludes `imported-assets/*`
+plus the console device scenes (674 MB → 54 MB pack). Two things it does **not** yet solve,
+both needing a refactor rather than a filter:
+- The **handheld** device scenes still carry their baked licensed shells in the .pck. They
+  can't be excluded (they own the screen + controls); the fix is to split each baked
+  `"Shell"` out into its own excludable resource loaded only in licensed mode.
+- The retro **peripherals** (`psx_controller.glb`, `nes_controller.glb`, the pads/joysticks)
+  have no stand-in — `_instantiate_optional` just declines to spawn them in a store build.
 
 ## Tools
 

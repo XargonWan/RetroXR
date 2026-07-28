@@ -80,10 +80,7 @@ func _apply_cart_model() -> void:
 	if _model_label != null or has_node("CartModel"):
 		return
 	var path: String = _CART_MODELS.get(systemid, "")
-	# Licence-pending model — a placeholder build keeps the procedural cart body
-	# built above. may_use(), not a bare exists(): the assets are still on disk in
-	# the editor, so exists() alone made --placeholder-models load them anyway.
-	if not RetroModelPolicy.may_use(path):
+	if path.is_empty() or not ResourceLoader.exists(path):
 		return
 	var scene := load(path) as PackedScene
 	if scene == null:

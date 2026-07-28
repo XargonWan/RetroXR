@@ -39,49 +39,8 @@ func _ready() -> void:
 	await get_tree().process_frame
 	for c in CASES:
 		await _run_case(c[0] as String, c[1] as String)
-	await _run_peripherals()
 	print("[probe] DONE")
 	get_tree().quit(0)
-
-
-## The licence-pending controllers/joysticks. Walks the SAME table the spawn menu
-## dispatches from (SpawnMenuController.PERIPHERAL_MODELS), so this can't drift
-## into testing a stale copy of the list.
-func _run_peripherals() -> void:
-	var menu_script: GDScript = load("res://Scripts/UI/spawn_menu_controller.gd")
-	var models: Dictionary = menu_script.PERIPHERAL_MODELS
-	var generic: PackedScene = load("res://Scenes/Objects/controllers/retro_controller.tscn")
-	for token: String in models:
-		var spec: Array = models[token]
-		var placeholder := RetroModelPolicy.placeholder_models()
-		var use_bespoke: bool = RetroModelPolicy.may_use(spec[0]) and ResourceLoader.exists(spec[1])
-		var obj: Node3D = null
-		if use_bespoke:
-			obj = (load(spec[1]) as PackedScene).instantiate() as Node3D
-		else:
-			obj = generic.instantiate() as Node3D
-		if obj is RigidBody3D:
-			(obj as RigidBody3D).freeze = true
-		_sv.add_child(obj)
-		for i in range(4):
-			await get_tree().process_frame
-
-		var imported := _imported_meshes(obj)
-		var verdict := "-"
-		if placeholder:
-			verdict = "OK" if imported.is_empty() and not use_bespoke else "LEAK"
-		print("[probe] %-26s %-4s spawned=%-24s imported=%d" % [
-			token, verdict, obj.name, imported.size()])
-		for leak in imported:
-			print("[probe]      LEAK %s -> %s" % [token, leak])
-
-		_frame_camera(obj)
-		await get_tree().process_frame
-		await RenderingServer.frame_post_draw
-		await get_tree().process_frame
-		_sv.get_texture().get_image().save_png("%s/pad_%s.png" % [_out_dir, token])
-		obj.queue_free()
-		await get_tree().process_frame
 
 
 func _build_viewport() -> void:

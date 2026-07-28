@@ -11,8 +11,8 @@ const _MODEL_PATH := "res://imported-assets/gamecube_memory_card.glb"
 func _ready() -> void:
 	super._ready()
 	card_label = "GAMECUBE"
-	if not RetroModelPolicy.may_use(_MODEL_PATH):
-		return   # placeholder build — keep the procedural stand-in
+	if not ResourceLoader.exists(_MODEL_PATH):
+		return   # store build (GLB export-excluded) — keep the procedural stand-in
 	var scene := load(_MODEL_PATH) as PackedScene
 	if scene == null:
 		return

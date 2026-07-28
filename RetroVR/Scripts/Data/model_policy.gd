@@ -61,19 +61,6 @@ static func licensed_models() -> bool:
 	return not placeholder_models()
 
 
-## True when a licensed model at `path` may be used by this build — i.e. this is
-## a licensed build AND the asset actually shipped.
-##
-## Use this instead of a bare ResourceLoader.exists() at every point that reaches
-## into imported-assets/. Those two conditions used to be conflated: the props
-## (cartridges, memory cards, controller plugs) all had perfectly good procedural
-## stand-ins, but they were only reachable on a build where the GLB was missing,
-## so `--placeholder-models` in the editor still loaded the licensed model and
-## quietly failed to exercise them.
-static func may_use(path: String) -> bool:
-	return licensed_models() and not path.is_empty() and ResourceLoader.exists(path)
-
-
 ## One-line summary for logs and probe output.
 static func describe() -> String:
 	return "placeholder (store-safe stand-ins)" if placeholder_models() else "licensed (detailed shells)"
