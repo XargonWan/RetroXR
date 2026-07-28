@@ -7,8 +7,8 @@ extends Control
 
 ## Scale factor applied to the entire UI.  Increase this when viewport_size
 ## is higher than the logical design resolution so content stays the same
-## apparent physical size in VR.  Default 2.0 matches viewport_size 1800×1500
-## against the original 900×750 design resolution.
+## apparent physical size in VR.  Default 2.0 matches viewport_size 2200×1500
+## against the 1100×750 design resolution.
 @export var ui_scale: float = 2.0
 
 signal spawn_requested(type: String)
@@ -130,6 +130,7 @@ var _spawn_view:    Control = null
 var _cores_view:    Control = null
 var _controls_view: Control = null
 var _options_view:  Control = null
+var _graphics_view: Control = null
 var _scene_view:    Control = null
 var _about_view:    Control = null
 var _net_view:      Control = null
@@ -146,6 +147,7 @@ var _nav_spawn_btn:    Button = null
 var _nav_cores_btn:    Button = null
 var _nav_controls_btn: Button = null
 var _nav_options_btn:  Button = null
+var _nav_graphics_btn: Button = null
 var _nav_scene_btn:    Button = null
 var _nav_about_btn:    Button = null
 var _nav_buttons: Array[Button] = []
@@ -166,6 +168,7 @@ var _cores_tabs: TabContainer = null
 var _active_scroll:        ScrollContainer = null
 var _controls_scroll:      ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
+var _graphics_scroll:      ScrollContainer = null
 var _about_scroll:         ScrollContainer = null
 
 # Spawn view tab ScrollContainers (indexed by tab index)
@@ -416,28 +419,26 @@ func _build_ui() -> void:
 	var nav_bar := HBoxContainer.new()
 	nav_bar.add_theme_constant_override("separation", 6)
 	root_vbox.add_child(nav_bar)
-	_nav_spawn_btn    = _make_nav_button("  SPAWN  ")
-	_nav_cores_btn    = _make_nav_button("  CORES  ")
-	_nav_controls_btn = _make_nav_button(" CONTROLS ")
-	_nav_options_btn  = _make_nav_button(" OPTIONS ")
-	_nav_scene_btn    = _make_nav_button("  SCENE  ")
-	_nav_net_btn      = _make_nav_button("  NET  ")
-	_nav_about_btn    = _make_nav_button("  ABOUT  ")
+	_nav_spawn_btn    = _make_nav_button("SPAWN")
+	_nav_cores_btn    = _make_nav_button("CORES")
+	_nav_controls_btn = _make_nav_button("CONTROLS")
+	_nav_options_btn  = _make_nav_button("OPTIONS")
+	_nav_graphics_btn = _make_nav_button("GRAPHICS")
+	_nav_scene_btn    = _make_nav_button("SCENE")
+	_nav_net_btn      = _make_nav_button("NET")
+	_nav_about_btn    = _make_nav_button("ABOUT")
 	_nav_spawn_btn.pressed.connect(_show_spawn_view)
 	_nav_cores_btn.pressed.connect(_show_cores_view)
 	_nav_controls_btn.pressed.connect(_show_controls_view)
 	_nav_options_btn.pressed.connect(_show_options_view)
+	_nav_graphics_btn.pressed.connect(_show_graphics_view)
 	_nav_scene_btn.pressed.connect(_show_scene_view)
 	_nav_net_btn.pressed.connect(_show_net_view)
 	_nav_about_btn.pressed.connect(_show_about_view)
-	nav_bar.add_child(_nav_spawn_btn)
-	nav_bar.add_child(_nav_cores_btn)
-	nav_bar.add_child(_nav_controls_btn)
-	nav_bar.add_child(_nav_options_btn)
-	nav_bar.add_child(_nav_scene_btn)
-	nav_bar.add_child(_nav_net_btn)
-	nav_bar.add_child(_nav_about_btn)
-	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_controls_btn, _nav_options_btn, _nav_scene_btn, _nav_net_btn, _nav_about_btn]
+	_nav_buttons = [_nav_spawn_btn, _nav_cores_btn, _nav_controls_btn, _nav_options_btn,
+		_nav_graphics_btn, _nav_scene_btn, _nav_net_btn, _nav_about_btn]
+	for btn in _nav_buttons:
+		nav_bar.add_child(btn)
 
 	root_vbox.add_child(HSeparator.new())
 
@@ -461,6 +462,10 @@ func _build_ui() -> void:
 	_options_view = _build_options_view()
 	_options_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_options_view)
+
+	_graphics_view = _build_graphics_view()
+	_graphics_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_child(_graphics_view)
 
 	_scene_view = _build_scene_view()
 	_scene_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -501,7 +506,7 @@ func _make_nav_button(lbl: String) -> Button:
 
 
 func _show_view(view: Control, scroll: ScrollContainer, nav_btn: Button) -> void:
-	for v: Control in [_spawn_view, _cores_view, _controls_view, _options_view, _scene_view, _net_view, _about_view]:
+	for v: Control in [_spawn_view, _cores_view, _controls_view, _options_view, _graphics_view, _scene_view, _net_view, _about_view]:
 		v.visible = v == view
 	_active_scroll = scroll
 	_set_nav_active(nav_btn)
@@ -543,6 +548,10 @@ func _show_controls_view() -> void:
 
 func _show_options_view() -> void:
 	_show_view(_options_view, _options_scroll, _nav_options_btn)
+
+
+func _show_graphics_view() -> void:
+	_show_view(_graphics_view, _graphics_scroll, _nav_graphics_btn)
 
 
 func _show_scene_view() -> void:
@@ -1995,7 +2004,7 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 	)
 
 
-# ── Options view ──────────────────────────────────────────────────────────────
+# ── Graphics view ─────────────────────────────────────────────────────────────
 
 ## --- Desktop window mode / resolution ------------------------------------------
 ## The menu runs in a Viewport2Din3D, so these drive the real OS window through
@@ -2038,6 +2047,91 @@ func _apply_resolution(key: String) -> void:
 	var usable := DisplayServer.screen_get_size(screen)
 	DisplayServer.window_set_position(origin + (usable - size) / 2)
 
+
+func _build_graphics_view() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_graphics_scroll = scroll
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 14)
+	scroll.add_child(vbox)
+
+	vbox.add_child(_spacer(10))
+
+	if not _is_vr_mode():
+		var display_hdr := Label.new()
+		display_hdr.text = "DISPLAY"
+		display_hdr.add_theme_font_size_override("font_size", 22)
+		display_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+		vbox.add_child(display_hdr)
+
+		# Window mode (desktop only). VRDropdown, not OptionButton — the menu is a
+		# Viewport2Din3D and OptionButton double-fires there.
+		var win_opt := VRDropdown.create("Window Mode",
+			[["Windowed", "windowed"], ["Borderless", "borderless"], ["Fullscreen", "fullscreen"]],
+			_current_window_mode(), 3, Vector2(170, 52), 20)
+		win_opt.item_selected.connect(func(id: Variant) -> void:
+			_apply_window_mode(str(id)))
+		vbox.add_child(win_opt)
+
+		# Resolution (applies while windowed/borderless; ignored in fullscreen).
+		var res_opt := VRDropdown.create("Resolution",
+			[["1280×720", "1280x720"], ["1600×900", "1600x900"],
+			 ["1920×1080", "1920x1080"], ["2560×1440", "2560x1440"]],
+			_current_resolution_key(), 2, Vector2(150, 52), 20)
+		res_opt.item_selected.connect(func(id: Variant) -> void:
+			_apply_resolution(str(id)))
+		vbox.add_child(res_opt)
+
+		vbox.add_child(HSeparator.new())
+
+	var quality_hdr := Label.new()
+	quality_hdr.text = "QUALITY"
+	quality_hdr.add_theme_font_size_override("font_size", 22)
+	quality_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(quality_hdr)
+
+	var msaa_opt := VRDropdown.create("Anti-Aliasing",
+		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
+		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
+		QualityManager.msaa_3d, 4, Vector2(110, 52), 20)
+	msaa_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_msaa(int(id)))
+	vbox.add_child(msaa_opt)
+
+	_add_graphics_hint(vbox, "Multisampling on the 3D view. Costs fill rate, not CPU.")
+
+	var shadow_opt := VRDropdown.create("Shadows",
+		[["Off", QualityManager.ShadowQuality.OFF],
+		 ["Low", QualityManager.ShadowQuality.LOW],
+		 ["Medium", QualityManager.ShadowQuality.MEDIUM],
+		 ["High", QualityManager.ShadowQuality.HIGH]],
+		int(QualityManager.shadow_quality), 4, Vector2(110, 52), 20)
+	shadow_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_shadow_quality(int(id)))
+	vbox.add_child(shadow_opt)
+
+	_add_graphics_hint(vbox, "Off is the original look — lights still glow, nothing casts. "
+		+ "Every room light, TV and handheld screen casts from Low up.")
+
+	vbox.add_child(HSeparator.new())
+
+	return scroll
+
+
+func _add_graphics_hint(vbox: VBoxContainer, text: String) -> void:
+	var hint := Label.new()
+	hint.text = text
+	hint.add_theme_font_size_override("font_size", 16)
+	hint.add_theme_color_override("font_color", COLOR_DESC)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(hint)
+
+
+# ── Options view ──────────────────────────────────────────────────────────────
 
 func _build_options_view() -> Control:
 	var scroll := ScrollContainer.new()
@@ -2106,24 +2200,6 @@ func _build_options_view() -> Control:
 			fov_val.text = "%d°" % int(v)
 			fov_changed.emit(v)
 		)
-
-		# Window mode (desktop only). VRDropdown, not OptionButton — the menu is a
-		# Viewport2Din3D and OptionButton double-fires there.
-		var win_opt := VRDropdown.create("Window Mode",
-			[["Windowed", "windowed"], ["Borderless", "borderless"], ["Fullscreen", "fullscreen"]],
-			_current_window_mode(), 3, Vector2(170, 52), 20)
-		win_opt.item_selected.connect(func(id: Variant) -> void:
-			_apply_window_mode(str(id)))
-		vbox.add_child(win_opt)
-
-		# Resolution (applies while windowed/borderless; ignored in fullscreen).
-		var res_opt := VRDropdown.create("Resolution",
-			[["1280×720", "1280x720"], ["1600×900", "1600x900"],
-			 ["1920×1080", "1920x1080"], ["2560×1440", "2560x1440"]],
-			_current_resolution_key(), 2, Vector2(150, 52), 20)
-		res_opt.item_selected.connect(func(id: Variant) -> void:
-			_apply_resolution(str(id)))
-		vbox.add_child(res_opt)
 
 		vbox.add_child(HSeparator.new())
 
