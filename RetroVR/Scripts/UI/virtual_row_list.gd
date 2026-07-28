@@ -125,6 +125,19 @@ func rebind_visible() -> void:
 	_relayout(true)
 
 
+## Re-bind one row, if it is on screen. Binding is not cheap, so anything that
+## changes a single row (download progress) must not rebind the whole window.
+func rebind_index(index: int) -> void:
+	if _first_bound < 0 or _binder.is_null():
+		return
+	var slot := index - _first_bound
+	if slot < 0 or slot >= _pool.size():
+		return
+	if not _pool[slot].visible:
+		return
+	_binder.call(_pool[slot], index)
+
+
 ## Bring a row to the top of the viewport (used by the A–Z jump strip).
 func scroll_to_index(index: int) -> void:
 	if _scroll == null:

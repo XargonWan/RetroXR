@@ -112,6 +112,10 @@ var _romm_empty_label: Label = null
 ## rom_id -> percent, so a recycled row can show live progress when it scrolls
 ## back into view mid-download.
 var _romm_progress_pct: Dictionary = {}
+## Row index of the in-flight download, resolved once when it starts.
+var _romm_dl_row_index: int = -1
+## local_path -> {game, manual_path, has_manual}; binding hits the disk otherwise.
+var _romm_meta_cache: Dictionary = {}
 ## Row index whose delete button is armed for its second confirming tap.
 var _romm_delete_armed: int = -1
 ## Remaining systemids for an explicit "Sync all now".
@@ -1402,17 +1406,15 @@ func _bind_rom_row(row: Control, index: int) -> void:
 		main.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
 
 	# ── Trailing cluster ────────────────────────────────────────────────────
-	var game := gamelist_manager.get_game_for_rom(systemid, local_path) if not local_path.is_empty() else {}
+	var meta := _romm_row_meta(systemid, local_path)
+	var game: Dictionary = meta["game"]
 	detail.text = String.chr(_ICON_GAMEPAD)
 	detail.visible = not game.is_empty()
 	if not game.is_empty():
 		detail.pressed.connect(_show_game_detail_panel.bind(game, systemid))
 
-	var has_manual := false
-	var manual_path := ""
-	if not local_path.is_empty():
-		manual_path = _scraped_manual_path(systemid, local_path.get_file())
-		has_manual = FileAccess.file_exists(manual_path)
+	var has_manual: bool = meta["has_manual"]
+	var manual_path: String = meta["manual_path"]
 	manual.text = String.chr(_ICON_BOOK)
 	manual.visible = has_manual
 	if has_manual:
@@ -1463,7 +1465,27 @@ func _on_rom_delete_pressed(index: int, state: Button) -> void:
 		romm_cache.forget(systemid, fname)
 
 	show_notice("Deleted %s" % fname, 2.5)
+	_romm_meta_cache.clear()
 	_rebuild_romm_rows()
+
+
+## Gamelist entry and manual path for a row. Memoized because the raw form is a
+## linear scan of gamelist.json plus two file_exists calls, run per row on every
+## bind — which is every scroll step and, previously, every download progress tick.
+func _romm_row_meta(systemid: String, local_path: String) -> Dictionary:
+	if local_path.is_empty():
+		return {"game": {}, "manual_path": "", "has_manual": false}
+	if _romm_meta_cache.has(local_path):
+		return _romm_meta_cache[local_path]
+
+	var manual_path := _scraped_manual_path(systemid, local_path.get_file())
+	var meta := {
+		"game": gamelist_manager.get_game_for_rom(systemid, local_path),
+		"manual_path": manual_path,
+		"has_manual": FileAccess.file_exists(manual_path),
+	}
+	_romm_meta_cache[local_path] = meta
+	return meta
 
 
 ## Memoized _load_wheel_texture. Binding is per-row per-scroll, and the raw
@@ -3731,16 +3753,29 @@ func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int
 
 func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
 	notify("romm:dl:%d" % rom_id, "⬇", "%s · %s" % [label, _human_bytes(total_bytes)], 0.0)
+	# Resolved once; a scan per progress tick would be O(rows) on an 11k list.
+	_romm_dl_row_index = -1
+	for i in _romm_rows.size():
+		if int((_romm_rows[i]["entry"] as Dictionary).get("id", 0)) == rom_id:
+			_romm_dl_row_index = i
+			break
 
 
+## Progress arrives every 256 KB — ~700 times for a 178 MB ROM, ~16,000 for a
+## 4 GB one. Rebinding the whole visible window each time meant thousands of
+## row binds, each doing a gamelist scan and several file_exists calls on the
+## main thread; with an emulator running that reads as a hard freeze. Only act
+## when the displayed percentage actually changes, and touch one row.
 func _on_romm_dl_progress(rom_id: int, received: int, total: int) -> void:
 	var frac := (float(received) / float(total)) if total > 0 else -1.0
 	var pct := int(frac * 100.0) if frac >= 0.0 else 0
+	if int(_romm_progress_pct.get(rom_id, -1)) == pct:
+		return
 	_romm_progress_pct[rom_id] = pct
 	notify("romm:dl:%d" % rom_id, "⬇",
 		"%d%% · %s / %s" % [pct, _human_bytes(received), _human_bytes(total)], frac)
 	if _romm_list != null and is_instance_valid(_romm_list):
-		_romm_list.rebind_visible()
+		_romm_list.rebind_index(_romm_dl_row_index)
 
 
 func _on_romm_dl_retrying(rom_id: int, attempt: int, max_attempts: int, reason: String) -> void:
@@ -3754,6 +3789,8 @@ func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) ->
 		_romm_notify_or_queue(key, "✅", "%s ready" % path.get_file().get_basename(), _ROMM_DWELL_OK)
 	else:
 		_romm_notify_or_queue(key, "❌", error, _ROMM_DWELL_FAIL)
+	_romm_dl_row_index = -1
+	_romm_meta_cache.clear()
 	_rebuild_romm_rows()
 
 
@@ -3771,6 +3808,7 @@ func _on_romm_cache_evicted(freed_bytes: int, count: int) -> void:
 ## Eviction can remove a file behind a visible row, so re-bind rather than let
 ## the row icon lie about what is on disk.
 func _on_romm_cache_changed() -> void:
+	_romm_meta_cache.clear()
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.rebind_visible()
 
@@ -3841,6 +3879,7 @@ func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary)
 			# The memo cached a miss for this ROM before the art existed.
 			_wheel_cache.clear()
 			_wheel_cache_order.clear()
+			_romm_meta_cache.clear()
 			_populate_cartridges_tab()
 			_rebuild_romm_rows()
 	scraper_client.media_download_completed.connect(_media_dl_refresh_cb)
