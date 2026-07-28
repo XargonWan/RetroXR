@@ -2712,7 +2712,9 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 		var captured_src := src
 		vbox.add_child(_make_vr_dropdown_row(
 			"btn:" + src, label, _JOYPAD_OPTIONS, current_bit,
-			func(v: Variant) -> void: _edit_button_map[captured_src] = v as int,
+			func(v: Variant) -> void:
+				_edit_button_map[captured_src] = v as int
+				_apply_xr_bindings(),
 			4
 		))
 
@@ -2731,7 +2733,9 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 		var captured_stick := stick
 		vbox.add_child(_make_vr_dropdown_row(
 			"stick:" + stick, s_label, _STICK_OPTIONS, current_target,
-			func(v: Variant) -> void: _edit_stick_map[captured_stick] = v as String,
+			func(v: Variant) -> void:
+				_edit_stick_map[captured_stick] = v as String
+				_apply_xr_bindings(),
 			3
 		))
 
@@ -2749,7 +2753,9 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 		var captured_src := src
 		vbox.add_child(_make_vr_dropdown_row(
 			"gun:" + src, label, _LIGHTGUN_OPTIONS, current_id,
-			func(v: Variant) -> void: _edit_lightgun_map[captured_src] = v as int,
+			func(v: Variant) -> void:
+				_edit_lightgun_map[captured_src] = v as int
+				_apply_xr_bindings(),
 			4
 		))
 
@@ -2760,7 +2766,9 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 		"gun:stick", stick_label,
 		[["None", "none"], ["D-pad", "dpad"]],
 		cur_stick_mode,
-		func(v: Variant) -> void: _edit_lightgun_map["stick"] = v as String,
+		func(v: Variant) -> void:
+			_edit_lightgun_map["stick"] = v as String
+			_apply_xr_bindings(),
 		2
 	))
 
@@ -2779,13 +2787,9 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 	reset_btn.pressed.connect(_on_controls_reset)
 	action_row.add_child(reset_btn)
 
-	var save_btn := Button.new()
-	save_btn.text = "Save as Global"
-	save_btn.custom_minimum_size = Vector2(220, 52)
-	save_btn.add_theme_font_size_override("font_size", 18)
-	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save_btn.pressed.connect(_on_controls_save_global)
-	action_row.add_child(save_btn)
+	# No Save button any more: every dropdown above applies itself. It used to sit
+	# here, at the bottom of a scroll, below the joypad, stick AND lightgun
+	# sections — so a rebind looked like it had taken and silently had not.
 
 
 func _build_desktop_controls(vbox: VBoxContainer) -> void:
@@ -2891,6 +2895,14 @@ func _on_desktop_controls_reset() -> void:
 			btn.text = DesktopBindings.event_display_name(action)
 
 
+## Write the XR bindings and push them to everything holding a copy. Called from
+## every dropdown, so a change is live the moment it is made — which is what a
+## dropdown implies, and what the missing Save button used to gate.
+func _apply_xr_bindings() -> void:
+	ControllerBindings.save_global(_edit_button_map, _edit_stick_map, _edit_lightgun_map)
+	controller_bindings_changed.emit()
+
+
 func _on_controls_reset() -> void:
 	_edit_button_map   = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
 	_edit_stick_map    = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
@@ -2903,11 +2915,7 @@ func _on_controls_reset() -> void:
 	for src: String in _LIGHTGUN_SOURCE_ORDER:
 		_reset_vr_dropdown("gun:" + src, _edit_lightgun_map.get(src, -1))
 	_reset_vr_dropdown("gun:stick", str(_edit_lightgun_map.get("stick", "dpad")))
-
-
-func _on_controls_save_global() -> void:
-	ControllerBindings.save_global(_edit_button_map, _edit_stick_map, _edit_lightgun_map)
-	controller_bindings_changed.emit()
+	_apply_xr_bindings()
 
 
 # ── Physical gamepad remapping ────────────────────────────────────────────────
@@ -2961,7 +2969,9 @@ func _build_gamepad_controls(vbox: VBoxContainer) -> void:
 		var captured_stick := stick
 		vbox.add_child(_make_vr_dropdown_row(
 			"padstick:" + stick, s_label, _STICK_OPTIONS, current_target,
-			func(v: Variant) -> void: _edit_pad_stick_map[captured_stick] = v as String,
+			func(v: Variant) -> void:
+				_edit_pad_stick_map[captured_stick] = v as String
+				_on_pad_controls_save(),
 			3
 		))
 
@@ -3037,6 +3047,7 @@ func on_pad_rebind_complete(target: String, binding: String) -> void:
 	_pad_rebinding_target = ""
 	if binding != "":
 		_edit_pad_button_map[target] = binding
+		_on_pad_controls_save()
 	var btn: Button = _pad_rebind_buttons.get(target) as Button
 	if is_instance_valid(btn):
 		var cur: String = _edit_pad_button_map.get(target, "none")
