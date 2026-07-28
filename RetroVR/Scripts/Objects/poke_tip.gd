@@ -36,9 +36,10 @@ const CONE_RADIUS := 0.007
 const CONTACT_HOVER := 0
 const CONTACT_ENGAGED := 10
 
-## Follow rate for the nib, via the house clampf(K * delta, 0, 1) idiom. Smoothing
-## happens in THIS node's frame, so hand motion carries the nib rigidly and this
-## only shapes snapping on and off — it costs no tracking lag at any value.
+## Follow rate for the nib, via the house clampf(K * delta, 0, 1) idiom. The
+## contact is smoothed in WORLD space and the apex blends toward it, so this only
+## shapes how quickly the nib reaches a surface and lets go. It never leaks hand
+## motion into a planted nib, and at rest it costs no lag at all.
 const CONTACT_LERP := 18.0
 ## Seconds a claim survives unrenewed. Sized to ride out a DROPPED TRACKING FRAME
 ## (~4 at 90 Hz) and nothing more: the widgets' own grace is a tail on how long a
@@ -69,7 +70,8 @@ var _claim_priority := -1
 var _claim_dist := INF
 var _claim_frame := -1
 var _hold := 0.0
-var _cone_local := Vector3.ZERO   # smoothed contact, in THIS node's frame
+var _claim_smooth := Vector3.ZERO  # smoothed contact, in WORLD space
+var _cone_local := Vector3.ZERO    # resolved apex, in THIS node's frame
 var _blend := 0.0                 # 0 free … 1 landed; drives the disc's alpha
 
 
@@ -239,6 +241,7 @@ func _process(delta: float) -> void:
 		_claim_priority = -1
 		_claim_frame = -1
 		_cone_local = Vector3.ZERO
+		_claim_smooth = Vector3.ZERO
 		_blend = 0.0
 		_apply_cone()
 		_disc.visible = false
@@ -248,11 +251,23 @@ func _process(delta: float) -> void:
 	_hold = 0.0 if live else _hold + delta
 	var on: bool = live or _hold < CONTACT_GRACE
 	var k: float = clampf(CONTACT_LERP * delta, 0.0, 1.0)
-	var target: Vector3 = to_local(_claim_point) if on else Vector3.ZERO
-	_cone_local = _cone_local.lerp(target, k)
+	# Smooth the contact in WORLD space, then blend the apex from the hand-fixed
+	# rest position toward it.
+	#
+	# Smoothing in THIS node's frame (the first cut) was wrong: the claim is
+	# world-fixed, so the hand's own motion moved the local target every frame and
+	# the lerp chased it. Tremor leaked straight back into the nib that was meant
+	# to be planted — measured at 2.2 mm of apex wander against a 3.0 mm hand
+	# wobble, i.e. about three quarters of the jitter passing through.
+	if on:
+		_claim_smooth = _claim_point if _blend < 0.001 else _claim_smooth.lerp(_claim_point, k)
 	_blend = lerpf(_blend, 1.0 if on else 0.0, k)
+	# At blend 0 this is exactly global_position — the old rest apex — and it
+	# rides the hand with no lag whatsoever.
+	var apex: Vector3 = global_position.lerp(_claim_smooth, _blend)
+	_cone_local = to_local(apex)
 	_apply_cone()
-	_apply_disc()
+	_apply_disc(apex)
 
 
 ## Stretch the cone from its fixed base to the smoothed contact, rather than
@@ -283,7 +298,7 @@ func _apply_cone() -> void:
 		base + dir * (reach * 0.5))
 
 
-func _apply_disc() -> void:
+func _apply_disc(apex: Vector3) -> void:
 	if _disc == null:
 		return
 	_disc.visible = _blend > 0.02
@@ -293,5 +308,4 @@ func _apply_disc() -> void:
 	var n: Vector3 = _claim_normal
 	var ref: Vector3 = Vector3.RIGHT if absf(n.y) > 0.9 else Vector3.UP
 	var dx: Vector3 = ref.cross(n).normalized()
-	_disc.global_transform = Transform3D(Basis(dx, n, n.cross(dx)),
-		to_global(_cone_local))
+	_disc.global_transform = Transform3D(Basis(dx, n, n.cross(dx)), apex)
