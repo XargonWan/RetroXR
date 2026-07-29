@@ -1,4 +1,4 @@
-[gd_scene load_steps=103 format=3]
+[gd_scene load_steps=105 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -11,9 +11,9 @@
 [ext_resource type="Script" path="res://Scripts/bedroom_exterior.gd" id="10_exterior"]
 [ext_resource type="Script" path="res://Scripts/mesh_filter.gd" id="11_meshfilter"]
 [ext_resource type="PackedScene" uid="uid://mft7vy78rjrv" path="res://Scenes/Objects/tv.tscn" id="30_tv"]
-[ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/PaintedPlaster017_1K-JPG_Color.jpg" id="20_wall_col"]
-[ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/PaintedPlaster017_1K-JPG_NormalGL.jpg" id="21_wall_nrm"]
-[ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/PaintedPlaster017_1K-JPG_Roughness.jpg" id="22_wall_rgh"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Plaster001_1K-JPG_Color.jpg" id="20_wall_col"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Plaster001_1K-JPG_NormalGL.jpg" id="21_wall_nrm"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Plaster001_1K-JPG_Roughness.jpg" id="22_wall_rgh"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Carpet016_1K-JPG_Color.jpg" id="23_rug_col"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Carpet016_1K-JPG_NormalGL.jpg" id="24_rug_nrm"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Carpet016_1K-JPG_Roughness.jpg" id="25_rug_rgh"]
@@ -126,15 +126,29 @@ normal_scale = 1.0
 normal_texture = ExtResource("24_rug_nrm")
 uv1_scale = Vector3(4, 4, 1)
 
-; Orange-peel drywall (ambientCG PaintedPlaster017, surface photogrammetry).
+; Painted drywall (ambientCG Plaster001, surface photogrammetry).
+;
+; Replaced PaintedPlaster017, which was tagged only "painted/plaster/white" but
+; has a branching crack running through it — and the crack is carved into its
+; NORMAL map as well as its albedo, so raking lamplight picked it out and the
+; wall read as damaged rather than painted. Nearly the whole PaintedPlaster
+; series is tagged "broken", "old" or "cracks"; the Plaster series is where the
+; clean ones are. Plaster001 is tagged "clean", has fine even relief with no
+; cracks anywhere, and is the most-downloaded plaster on the site.
 ; The source is white, so albedo_color tints it cream — one texture set can
 ; re-skin every wall in the project at any colour.
 ;
 ; The normal map is the reason this beats a flat colour: shadows are OFF on Quest,
 ; so per-pixel normals are the only thing giving the walls form. It only shows
 ; under directional light, which is what the bedside and desk lamps are for.
+; The tint is near-NEUTRAL on purpose. It used to be Color(0.78, 0.71, 0.58) —
+; strongly warm — against a texture whose base is 0.745/0.747/0.734, i.e. grey.
+; Plaster001's base is 0.843/0.828/0.815: brighter and slightly warm already, so
+; the same tint compounded into orange and the walls read as adobe. The room's
+; ambient is Color(1, 0.84, 0.70) and both lamps are warm, so the warmth wants to
+; come from the light, not from the paint as well.
 [sub_resource type="StandardMaterial3D" id="Mat_wall"]
-albedo_color = Color(0.78, 0.71, 0.58, 1)
+albedo_color = Color(0.72, 0.7, 0.67, 1)
 albedo_texture = ExtResource("20_wall_col")
 roughness_texture = ExtResource("22_wall_rgh")
 normal_enabled = true
@@ -346,6 +360,28 @@ roughness = 0.35
 
 [sub_resource type="BoxShape3D" id="Shape_wardrobe"]
 size = Vector3(1.28, 2.04, 0.66)
+
+[sub_resource type="Animation" id="Anim_fan_spin"]
+resource_name = "spin"
+length = 2.0
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("FanPivot:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 2),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Vector3(0, 0, 0), Vector3(0, 6.28319, 0)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimLib_fan"]
+_data = {
+&"spin": SubResource("Anim_fan_spin")
+}
 
 [node name="Root" type="Node3D"]
 script = ExtResource("1_xrinit")
@@ -731,6 +767,22 @@ glow_energy = 2.2
 
 [node name="Fan" parent="Furniture/FanPivot" instance=ExtResource("14_fan")]
 transform = Transform3D(0.00283, 0, 0, 0, 0.00283, 0, 0, 0, 0.00283, 0.2181, 0.4982, -0.5128)
+
+; 2 s per revolution, half the den's 4 s. Four seconds is 15 rpm, slower than any
+; real fan and it reads as coasting to a stop rather than running. At 30 rpm a
+; four-blade fan passes a blade every 0.5 s, nowhere near the 72 Hz refresh, so
+; there is no strobing.
+;
+; The pivot is at the world origin and the hub sits at (0, 2.39, 0), so rotating
+; about Y already turns the blades about their own axis — no offset to correct,
+; unlike the den's 3-blade fan whose asymmetric AABB put the pivot 0.111 m off
+; centre. FanGlobeLight is parented to the scene root, not to the pivot, so the
+; light does not swing round the room with the blades.
+[node name="FanSpin" type="AnimationPlayer" parent="Furniture"]
+libraries = {
+&"": SubResource("AnimLib_fan")
+}
+autoplay = "spin"
 
 ; Baseboard. Runs are unit meshes scaled along the wall direction; the cap sits
 ; 4 mm prouder than the base.

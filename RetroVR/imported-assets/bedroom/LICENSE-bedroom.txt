@@ -88,13 +88,18 @@ furniture/table_lamp.glb
     seating it on a surface is one half-height lift. Used twice — bedside and
     desk.
 
-materials/PaintedPlaster017_*
-    "Painted Plaster 017" — ambientCG, surface photogrammetry
-    https://ambientcg.com/a/PaintedPlaster017
-    Orange-peel drywall. Only Color, NormalGL and Roughness are kept: the pack
-    also ships NormalDX (wrong convention for Godot — every bump would read as a
-    dent) and Displacement (nothing here uses parallax, and it is expensive on
-    the mobile backend).
+materials/Plaster001_*
+    "Plaster 001" — ambientCG, surface photogrammetry
+    https://ambientcg.com/a/Plaster001
+    Painted drywall, tagged "clean". Only Color, NormalGL and Roughness are kept:
+    the pack also ships NormalDX (wrong convention for Godot — every bump would
+    read as a dent) and Displacement (nothing here uses parallax, and it is
+    expensive on the mobile backend).
+
+    Replaced PaintedPlaster017, which had a branching crack carved into its
+    normal map as well as its albedo — raking lamplight picked it out and the
+    walls read as damaged. Almost the entire PaintedPlaster series is tagged
+    "broken", "old" or "cracks"; the Plaster series is where the clean ones are.
 
 materials/Carpet012_*
     "Carpet 012" — ambientCG
