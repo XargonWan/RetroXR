@@ -1,4 +1,4 @@
-[gd_scene load_steps=58 format=3]
+[gd_scene load_steps=60 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -23,6 +23,7 @@
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/ceiling_fan.glb" id="14_fan"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/tv_stand_corner.glb" id="15_tvstand"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/trash_can.glb" id="16_trash"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/door.glb" id="19_door"]
 
 ; Late evening: warm ambient, dark warm background, filmic tonemap and the den's
 ; glow settings so the CRT and the lamps bloom the same way across both rooms.
@@ -195,6 +196,9 @@ size = Vector3(5.2, 0.15, 4.4)
 ; overhang is the whole point: it throws its own shadow line under the bedside
 ; lamp, which a single flat strip (the arcade's approach) cannot. Unit-length in
 ; the run direction so each wall scales one mesh.
+[sub_resource type="BoxShape3D" id="Shape_door"]
+size = Vector3(0.16, 2.07, 0.96)
+
 [sub_resource type="BoxShape3D" id="Shape_desk"]
 size = Vector3(1.35, 0.75, 0.62)
 
@@ -531,7 +535,7 @@ transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.345, 0, -0.55)
 ; Yaw 225 deg, not 45: the model faces +Z, so 45 pointed the doors and the open
 ; AV bay INTO the corner and presented its back to the room.
 [node name="TVStand" parent="Furniture" instance=ExtResource("15_tvstand")]
-transform = Transform3D(0.66629, 0, -0.66629, 0, 0.94228, 0, 0.66629, 0, 0.66629, 2.0415, 0.0392, 1.4818)
+transform = Transform3D(0.66629, 0, -0.66629, 0, 0.94228, 0, 0.66629, 0, 0.66629, 1.8215, 0.0392, 1.2618)
 
 [node name="TrashCan" parent="Furniture" instance=ExtResource("16_trash")]
 transform = Transform3D(0.0012, 0, 0, 0, 0.0012, 0, 0, 0, 0.0012, -2.2574, -0.0017, 0.45)
@@ -559,7 +563,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.375, -1.78)
 shape = SubResource("Shape_desk")
 
 [node name="TVStandCol" type="CollisionShape3D" parent="FurnitureCollision"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.98, 0.485, 1.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.83, 0.485, 1.39)
 shape = SubResource("Shape_tvstand")
 
 [node name="BedCol" type="CollisionShape3D" parent="FurnitureCollision"]
@@ -574,12 +578,22 @@ shape = SubResource("Shape_bookcase")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.345, 0.9, -0.55)
 shape = SubResource("Shape_bookcase")
 
+[node name="DoorCol" type="CollisionShape3D" parent="FurnitureCollision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 1.035, 1.2)
+shape = SubResource("Shape_door")
+
+; Six-panel door with its jambs, knob and hinges, from the Interior Trim Assets
+; kit. Yawed 90 deg so its width runs along the west wall's opening. Closed and
+; collidered — the opening was a hole straight through to the sky before this.
+[node name="Door" parent="Furniture" instance=ExtResource("19_door")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.6, -2.018, 0.89)
+
 ; --- Displays -----------------------------------------------------------------
 ; Both are RetroTV instances wearing a shell variant, so both carry a working
 ; composite port, CRT/phosphor stages and the options panel. Consoles plug into
 ; the television; a desktop_tower into the monitor.
 [node name="TV90s" parent="." instance=ExtResource("30_tv")]
-transform = Transform3D(-0.70711, 0, -0.70711, 0, 1, 0, 0.70711, 0, -0.70711, 2.02, 1.175, 1.67)
+transform = Transform3D(-0.70711, 0, -0.70711, 0, 1, 0, 0.70711, 0, -0.70711, 1.86, 1.175, 1.42)
 tv_model = "crt_90s"
 
 [node name="Monitor" parent="." instance=ExtResource("30_tv")]
