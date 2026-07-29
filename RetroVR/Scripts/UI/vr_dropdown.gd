@@ -183,6 +183,16 @@ func set_label(text: String) -> void:
 	_label.text = text
 
 
+## Label the dropdown with a font glyph rather than words. The label stops
+## expanding, so the toggle sits next to the glyph instead of across the row.
+func set_label_glyph(codepoint: int, font: Font, px: int = 22) -> void:
+	_label.text = String.chr(codepoint)
+	_label.add_theme_font_override("font", font)
+	_label.add_theme_font_size_override("font_size", px)
+	_label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+
 ## Show a glyph to the left of the label, e.g. a Kenney input prompt. Pass null
 ## to remove it. Optional — a dropdown without one is unchanged.
 func set_icon(tex: Texture2D, px: float = 40.0) -> void:

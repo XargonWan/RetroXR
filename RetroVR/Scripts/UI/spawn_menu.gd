@@ -1165,6 +1165,7 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 		["Local only", "local"],
 	], "all", 1, Vector2(210, 52), 18)
 	source_drop.float_panel = true
+	source_drop.set_label_glyph(_ICON_FILTER, _symbols())
 	source_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_source_filter = str(id)
 		_rebuild_romm_rows()
@@ -1173,6 +1174,7 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 
 	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], "", 1, Vector2(210, 52), 18)
 	_romm_region_drop.float_panel = true
+	_romm_region_drop.set_label_glyph(_ICON_REGION, _symbols())
 	_romm_region_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_region_filter = str(id)
 		_rebuild_romm_rows()
@@ -1372,6 +1374,8 @@ const _ICON_ERROR     := 0xF071    # fa-warning
 const _ICON_GAMEPAD   := 0xF11B    # fa-gamepad
 const _ICON_BOOK      := 0xF05DA   # md-book_open_page_variant
 const _ICON_SCRAPE    := 0xF0866   # md-database_search
+const _ICON_FILTER    := 0xF0B0    # fa-filter
+const _ICON_REGION    := 0xF01E7   # md-earth
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 const _TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
