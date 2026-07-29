@@ -233,7 +233,7 @@ size = Vector3(0.16, 2.07, 0.96)
 size = Vector3(1.35, 0.75, 0.62)
 
 [sub_resource type="BoxShape3D" id="Shape_tvstand"]
-size = Vector3(1.1, 0.97, 1.1)
+size = Vector3(0.928, 0.8, 0.929)
 
 [sub_resource type="BoxShape3D" id="Shape_bed"]
 size = Vector3(1.5, 0.62, 1.94)
@@ -675,6 +675,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.64, -0.29)
 mesh = SubResource("Mesh_desk_rail")
 surface_material_override/0 = SubResource("Mat_desk")
 
+; Dropped 0.12 on Y. The GLB is not zeroed to its base — its geometry starts at
+; y +0.12 in local space — so at y 0 both cases hovered 12 cm above the carpet
+; with daylight under the plinths. Their colliders were already floor-to-1.8 and
+; now agree with the meshes.
+;
 ; Yaw 90, so the shelves face EAST into the room. The model's open face is +Z
 ; and its solid back -Z (checked by rendering it from all four sides); the first
 ; pass had them turned into the west wall showing their backs.
@@ -694,15 +699,25 @@ transform = Transform3D(-1.1746, 0, -0.4275, 0, 1.25, 0, 0.4275, 0, -1.1746, -0.
 ; Two of the tall bookcase rather than the set's small one, which carries a
 ; corner return that defeats the same straightening pass.
 [node name="BookcaseA" parent="Furniture" instance=ExtResource("17_bctall")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.345, 0, -1.55)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.345, -0.12, -1.55)
 
 [node name="BookcaseB" parent="Furniture" instance=ExtResource("17_bctall")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.345, 0, -0.55)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.345, -0.12, -0.55)
 
 ; Yaw 225 deg, not 45: the model faces +Z, so 45 pointed the doors and the open
 ; AV bay INTO the corner and presented its back to the room.
 [node name="TVStand" parent="Furniture" instance=ExtResource("15_tvstand")]
-transform = Transform3D(-0.66629, 0, -0.66629, 0, 0.94228, 0, 0.66629, 0, -0.66629, 2.041, 0.0392, 1.664)
+; Scaled 0.77877, down from 0.94228. True vertex extents put it at
+; 1.12 x 0.97 x 1.12: the footprint is right for a corner unit but 0.97 m tall
+; is a sideboard, and a 14 in set on top looked lost. Uniform 0.826 brings it to
+; 0.93 x 0.80 x 0.93. Height is the only thing wrong, but the mouldings and the
+; arched door panels will not take a non-uniform squash, so the footprint comes
+; down with it.
+;
+; Position re-solved from TRUE VERTEX extents, not the AABB: at 45 deg the AABB
+; of a rotated AABB inflates by up to sqrt(2), which reads as a 0.55 m gap that
+; is not there. Back faces land exactly on x 2.525 and z 2.125.
+transform = Transform3D(-0.55068, 0, -0.55068, 0, 0.77877, 0, 0.55068, 0, -0.55068, 2.1248, 0.0324, 1.7441)
 
 ; The functional TrashCan scene, not the bare model — it is an XRToolsPickable,
 ; so it can be picked up and it deletes what you drop in it. y = 0.18 puts the
@@ -800,7 +815,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.375, -1.78)
 shape = SubResource("Shape_desk")
 
 [node name="TVStandCol" type="CollisionShape3D" parent="FurnitureCollision"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.964, 0.485, 1.563)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.0612, 0.4, 1.6607)
 shape = SubResource("Shape_tvstand")
 
 [node name="BedCol" type="CollisionShape3D" parent="FurnitureCollision"]
@@ -842,7 +857,7 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.6, -2.018, 0.89)
 ; composite port, CRT/phosphor stages and the options panel. Consoles plug into
 ; the television; a desktop_tower into the monitor.
 [node name="TV90s" parent="." instance=ExtResource("30_tv")]
-transform = Transform3D(-0.70711, 0, -0.70711, 0, 1, 0, 0.70711, 0, -0.70711, 1.96, 1.175, 1.56)
+transform = Transform3D(-0.70711, 0, -0.70711, 0, 1, 0, 0.70711, 0, -0.70711, 2.0612, 1.007, 1.6607)
 tv_model = "crt_90s"
 
 [node name="Monitor" parent="." instance=ExtResource("30_tv")]
