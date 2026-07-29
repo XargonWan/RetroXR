@@ -4,8 +4,10 @@ GDExtension to run libretro cores inside of Godot 4
 
 ## Video player (VCR)
 
-Besides emulator systems, the arcade room can play video files on the same TVs, driven
-by the [EIRTeam.FFmpeg](https://github.com/EIRTeam/EIRTeam.FFmpeg) addon (FFmpeg 6.0).
+Besides emulator systems, the arcade room can play video files on the same TVs, driven by
+the in-tree `vlc-godot` GDExtension — a [libVLC](https://www.videolan.org/vlc/libvlc.html)
+backed `VlcPlayer`. It is the single video backend for both the VCR and the DVD player,
+and it handles x265/HEVC.
 
 1. Drop video files into the `videos/` folder (next to `roms/` and `books/`):
    - Windows: `%USERPROFILE%\retrovr\videos`
