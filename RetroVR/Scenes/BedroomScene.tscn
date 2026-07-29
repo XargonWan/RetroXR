@@ -1,4 +1,4 @@
-[gd_scene load_steps=82 format=3]
+[gd_scene load_steps=83 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -198,12 +198,15 @@ size = Vector3(0.15, 0.5, 1)
 [sub_resource type="BoxMesh" id="Mesh_ceiling"]
 size = Vector3(5.2, 0.15, 4.4)
 
+[sub_resource type="BoxShape3D" id="Shape_ceiling"]
+size = Vector3(5.2, 0.15, 4.4)
+
 ; Two-part baseboard profile. The cap is 4 mm prouder than the base, and that
 ; overhang is the whole point: it throws its own shadow line under the bedside
 ; lamp, which a single flat strip (the arcade's approach) cannot. Unit-length in
 ; the run direction so each wall scales one mesh.
 [sub_resource type="BoxShape3D" id="Shape_chair"]
-size = Vector3(0.6, 0.83, 0.58)
+size = Vector3(0.62, 0.83, 0.62)
 
 [sub_resource type="BoxShape3D" id="Shape_door"]
 size = Vector3(0.16, 2.07, 0.96)
@@ -378,9 +381,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.675, 0)
 mesh = SubResource("Mesh_ceiling")
 surface_material_override/0 = SubResource("Mat_ceiling")
 
+; Shape_ceiling, NOT Shape_wall_ns. The wall shape is 5.2 x 2.6 x 0.15 — laid
+; flat it is a slab standing on edge across the middle of the room from y 1.375
+; upward, which the player's head walks into. It blocked z = 0 across the full
+; width of the room.
 [node name="CeilingCol" type="CollisionShape3D" parent="Room"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.675, 0)
-shape = SubResource("Shape_wall_ns")
+shape = SubResource("Shape_ceiling")
 
 ; The view sits just behind the wall's outer face, so the opening frames it. A
 ; QuadMesh already faces +Z, which is into the room from the north wall — no
@@ -551,11 +558,18 @@ surface_material_override/0 = SubResource("Mat_desk")
 ; Yaw 90, so the shelves face EAST into the room. The model's open face is +Z
 ; and its solid back -Z (checked by rendering it from all four sides); the first
 ; pass had them turned into the west wall showing their backs.
-; Swivel desk chair, yaw 180 so it faces the desk (its own front is +Z, checked
-; by rendering the model from all four sides before placing it). Scaled 1.25 —
-; the download is only 0.66 m to the top of the backrest.
+; Swivel desk chair, its own front is +Z (checked by rendering the model from all
+; four sides before placing it). Scaled 1.25 — the download is only 0.66 m to the
+; top of the backrest.
+;
+; Pushed out to the desk's EAST end and angled, rather than squared up in the
+; middle. Centred it walled off the desk: the chair plus the player capsule's own
+; 0.2 m radius blocked x -1.45..-0.45 for a metre of depth, which is the entire
+; desk frontage, so the monitor could not be reached from the front at all. The
+; player body is a full-height capsule and can never pass under a desk, so there
+; is no arrangement where a chair squared up to a desk leaves it usable.
 [node name="Chair" parent="Furniture" instance=ExtResource("20_chair")]
-transform = Transform3D(-1.25, 0, 0, 0, 1.25, 0, 0, 0, -1.25, -0.95, 0, -1.05)
+transform = Transform3D(-1.1746, 0, -0.4275, 0, 1.25, 0, 0.4275, 0, -1.1746, -0.3, 0, -1.2)
 
 ; Two of the tall bookcase rather than the set's small one, which carries a
 ; corner return that defeats the same straightening pass.
@@ -666,7 +680,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.755, 0.31, -1.948)
 shape = SubResource("Shape_nightstand")
 
 [node name="ChairCol" type="CollisionShape3D" parent="FurnitureCollision"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.415, -1.05)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 0.415, -1.2)
 shape = SubResource("Shape_chair")
 
 [node name="DoorCol" type="CollisionShape3D" parent="FurnitureCollision"]
