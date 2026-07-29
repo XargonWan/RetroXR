@@ -45,6 +45,22 @@ furniture/door.glb
     Extracted from "Interior Trim Assets" by Roman (@janwama) — see above.
     The door leaf, jambs, knob and hinges joined into one object.
 
+furniture/nightstand.glb
+    "nightstand" by ilyafom1
+    https://sketchfab.com/3d-models/nightstand-ac166ce0807345a385b051b06f7960f1
+    864 tris. Drawer over a cupboard, and the drawer is modelled pulled OPEN —
+    it is one mesh with the carcass, so it cannot be closed. That stretches the
+    AABB 0.16 m past the carcass in +X, which is why the scene's footprint comes
+    off the top slab instead. Front is +X.
+
+furniture/light_switch.glb
+    "Simple Light Switch" by BillieBones
+    https://sketchfab.com/3d-models/simple-light-switch-32d02fa06d474f4db5a433aa134be612
+    792 tris. Ships BOTH plate variants side by side, as Object_3 and Object_5 —
+    the author supplies a plain white texture and a grungy one. The scene keeps
+    the grungy Object_5, whose toggle actually reads at arm's length, and hides
+    the other. Front is +Z, and the plate leans ~13 deg off vertical as modelled.
+
 furniture/trash_can.glb
     "Trash Can" by Yury Misiyuk (@Tim0)
     https://sketchfab.com/3d-models/trash-can-0ad3407cd8104ba58f71885c0e58ca9a
@@ -64,6 +80,13 @@ displays/television_02.*  (+ displays/textures/)
     "Television 02" by Benny Weimer — Poly Haven
     https://polyhaven.com/a/television_02
     2.3k tris, 1K textures. A 14" set; the hero TV.
+
+furniture/table_lamp.glb
+    "CC0 - Table Lamp 7" by plaggy
+    https://sketchfab.com/3d-models/cc0-table-lamp-7-2de8c76c71504ab9add386fce27204c8
+    4.7k tris. Arrives at real-world scale and centred on its own origin, so
+    seating it on a surface is one half-height lift. Used twice — bedside and
+    desk.
 
 materials/PaintedPlaster017_*
     "Painted Plaster 017" — ambientCG, surface photogrammetry

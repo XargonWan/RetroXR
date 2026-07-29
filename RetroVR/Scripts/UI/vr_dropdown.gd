@@ -38,6 +38,12 @@ static var _open_dropdown: VRDropdown = null
 var _label: Label
 var _icon: TextureRect = null
 var _toggle: Button
+## Open the list as a quad in front of the host panel. Falls back to the
+## in-panel list wherever there is no Viewport2Din3D to pop out of.
+var popout_3d := true
+## The panel's own visibility no longer tracks this: a popout leaves it hidden.
+var _is_open := false
+var _popout: DropdownPanel = null
 ## Overlay the option list instead of growing this control. Set before use.
 var float_panel := false
 ## With float_panel on, a value > 0 makes the list open upward rather than
@@ -221,7 +227,7 @@ func close() -> void:
 
 
 func is_open() -> bool:
-	return _panel.visible
+	return _is_open
 
 
 # ── Internals ──────────────────────────────────────────────────────────────────
@@ -275,7 +281,7 @@ func _accept_activation() -> bool:
 func _on_toggle_pressed() -> void:
 	if not _accept_activation():
 		return
-	var opening := not _panel.visible
+	var opening := not _is_open
 	if _open_dropdown != null and _open_dropdown != self \
 			and is_instance_valid(_open_dropdown):
 		_open_dropdown.close()
@@ -292,6 +298,9 @@ func _on_toggle_pressed() -> void:
 ## and the row it sits in. Floating takes it out of layout and reparents it to
 ## the top-most Control so it also draws above later siblings.
 func _open_panel() -> void:
+	_is_open = true
+	if popout_3d and _open_popout():
+		return
 	if not float_panel:
 		_panel.visible = true
 		return
@@ -315,6 +324,9 @@ func _open_panel() -> void:
 
 
 func _stow_panel() -> void:
+	_is_open = false
+	if _popout != null and is_instance_valid(_popout):
+		_popout.hide_panel()
 	_panel.visible = false
 	if not float_panel or _floated_to == null:
 		return
@@ -324,6 +336,45 @@ func _stow_panel() -> void:
 			_panel_home.add_child(_panel)
 	_panel.top_level = false
 	_floated_to = null
+
+
+## Open the list as its own quad in front of the host panel. Returns false when
+## there is no 3D host (flat/desktop mode, or a plain 2D scene), so the caller
+## falls back to the in-panel list.
+func _open_popout() -> bool:
+	var host := _host_viewport()
+	if host == null:
+		return false
+
+	if _popout == null or not is_instance_valid(_popout):
+		_popout = DropdownPanel.new()
+		_popout.name = "DropdownPopout"
+		host.add_child(_popout)
+		_popout.option_chosen.connect(_on_popout_chosen)
+
+	var rect := Rect2(_toggle.global_position, _toggle.size)
+	_popout.show_for(host, rect, _options, _current_id,
+		_label.get_theme_font("font"), _grid_cols)
+	_panel.visible = false
+	return true
+
+
+func _on_popout_chosen(id: Variant) -> void:
+	_current_id = id
+	_refresh_labels()
+	close()
+	item_selected.emit(id)
+
+
+## The Viewport2Din3D this control is rendering inside, if any. xr-tools parents
+## the SubViewport directly under it, so one hop out of our own viewport lands
+## on the 3D node.
+func _host_viewport() -> XRToolsViewport2DIn3D:
+	var vp := get_viewport()
+	if vp == null:
+		return null
+	var parent := vp.get_parent()
+	return parent as XRToolsViewport2DIn3D
 
 
 ## Outermost Control ancestor — children added there draw over everything else.
