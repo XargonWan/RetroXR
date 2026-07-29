@@ -3,6 +3,9 @@
 [ext_resource type="Script" path="res://Scripts/Objects/tv_shell.gd" id="1_shell"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/displays/crt_monitor.glb" id="2_mon"]
 
+; EDITOR NOTE: see crt_90s.tscn — the shell is a runtime swap, so the editor shows
+; RetroTV's stock box body rather than this cabinet.
+;
 ; Beige 90s computer monitor (Sketchfab, fizyman, CC-BY). Its own glass pane is a
 ; separate mesh and is hidden — the live picture goes on RetroTV's ScreenMesh, and
 ; two panes in the same place would z-fight.

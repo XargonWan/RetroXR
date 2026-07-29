@@ -69,17 +69,17 @@
     {
       "mimeType": "image/jpeg",
       "name": "television_02_nor_gl",
-      "uri": "textures/television_02_nor_gl_1k.jpg"
+      "uri": "textures/television_02_nor_gl_2k.jpg"
     },
     {
       "mimeType": "image/jpeg",
       "name": "television_02_diff",
-      "uri": "textures/television_02_diff_1k.jpg"
+      "uri": "textures/television_02_diff_2k.jpg"
     },
     {
       "mimeType": "image/jpeg",
       "name": "television_02_metal-television_02_rough",
-      "uri": "textures/television_02_arm_1k.jpg"
+      "uri": "textures/television_02_arm_2k.jpg"
     }
   ],
   "accessors": [
