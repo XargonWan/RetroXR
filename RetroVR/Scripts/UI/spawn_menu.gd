@@ -2097,6 +2097,18 @@ func _build_graphics_view() -> Control:
 	quality_hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(quality_hdr)
 
+	var scale_opt := VRDropdown.create("Render Scale",
+		[["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
+		 ["100%", 1.0], ["125%", 1.25], ["150%", 1.5]],
+		QualityManager.render_scale, 6, Vector2(95, 52), 20)
+	scale_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_render_scale(float(id)))
+	vbox.add_child(scale_opt)
+
+	_add_graphics_hint(vbox, "Resolution the 3D world is drawn at before it is scaled to "
+		+ "the display. Below 100% FSR upscales it — the cheapest frame time on Quest. "
+		+ "Above 100% supersamples.")
+
 	var msaa_opt := VRDropdown.create("Anti-Aliasing",
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
 		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
@@ -2119,6 +2131,22 @@ func _build_graphics_view() -> Control:
 
 	_add_graphics_hint(vbox, "Off is the original look — lights still glow, nothing casts. "
 		+ "Every room light, TV and handheld screen casts from Low up.")
+
+	# Screen-space AO is a no-op on the mobile backend Quest renders with, so the
+	# row is not offered there rather than sitting dead in the list.
+	if QualityManager.supports_post_effects():
+		var ao_opt := VRDropdown.create("Ambient Occlusion",
+			[["Off", QualityManager.AOQuality.OFF],
+			 ["Low", QualityManager.AOQuality.LOW],
+			 ["High", QualityManager.AOQuality.HIGH]],
+			int(QualityManager.ao_quality), 3, Vector2(110, 52), 20)
+		ao_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_ao_quality(int(id)))
+		vbox.add_child(ao_opt)
+
+		_add_graphics_hint(vbox, "Contact shading where surfaces meet, so furniture and "
+			+ "cabinets sit in the room instead of floating. Low draws it at half "
+			+ "resolution.")
 
 	vbox.add_child(HSeparator.new())
 
@@ -2354,6 +2382,37 @@ func _build_options_view() -> Control:
 
 	hands_row.add_child(_make_toggle(ControllerModel.draw_hands, func(on: bool) -> void:
 		controller_hands_changed.emit(on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
+	# System Filter option — off shows the media players, test core and
+	# single-game cores that SystemFilter keeps out of the Download grid.
+	var sf_row := HBoxContainer.new()
+	sf_row.add_theme_constant_override("separation", 10)
+	sf_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(sf_row)
+
+	var sf_col := VBoxContainer.new()
+	sf_col.add_theme_constant_override("separation", 0)
+	sf_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sf_row.add_child(sf_col)
+
+	var sf_lbl := Label.new()
+	sf_lbl.text = "System Filter"
+	sf_lbl.add_theme_font_size_override("font_size", 22)
+	sf_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	sf_col.add_child(sf_lbl)
+
+	var sf_sub := Label.new()
+	sf_sub.text = "Hide %d non-console systems" % SystemFilter.hidden_ids().size()
+	sf_sub.add_theme_font_size_override("font_size", 16)
+	sf_sub.add_theme_color_override("font_color", COLOR_LICENSE)
+	sf_col.add_child(sf_sub)
+
+	sf_row.add_child(_make_toggle(SystemFilter.enabled, func(on: bool) -> void:
+		SystemFilter.enabled = on
+		_refresh_download_systems()
 	))
 
 	vbox.add_child(HSeparator.new())

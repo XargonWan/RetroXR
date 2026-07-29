@@ -10,7 +10,8 @@
 ##   var visible := SystemFilter.filter_ids(core_db.get_unique_systemids())
 ##   var visible := SystemFilter.filter_systems(systems)   # Array of Dictionary
 ##
-## Set `SystemFilter.show_hidden = true` to disable filtering process-wide.
+## Set `SystemFilter.enabled = false` to show all 132 systemids again; the
+## Options view exposes this as the "System Filter" switch.
 class_name SystemFilter
 extends RefCounted
 
@@ -59,13 +60,13 @@ const FPS_ENGINES: PackedStringArray = [
 	"wolfenstein3d",
 ]
 
-## When true, is_hidden() always reports false and every systemid is browsable.
-static var show_hidden: bool = false
+## When false, is_hidden() always reports false and every systemid is browsable.
+static var enabled: bool = true
 
 
 ## True when this systemid should be kept out of system-browsing UI.
 static func is_hidden(systemid: String) -> bool:
-	if show_hidden:
+	if not enabled:
 		return false
 	return systemid in NOT_A_SYSTEM \
 		or systemid in SINGLE_GAME \
