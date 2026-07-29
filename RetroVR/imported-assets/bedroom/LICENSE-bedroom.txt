@@ -36,6 +36,15 @@ furniture/tv_stand_corner.glb
     25.4k tris — the heaviest single object in the room. Decimate if the scene
     comes in over budget.
 
+furniture/chair.glb
+    "Old Computer Chair" by Slava Izvekov (@guantanamera)
+    https://sketchfab.com/3d-models/old-computer-chair-a311529b1ec349c48f789bf4e1f99e89
+    3.9k tris. Wooden seat and back on a chrome 5-star pedestal. Faces +Z.
+
+furniture/door.glb
+    Extracted from "Interior Trim Assets" by Roman (@janwama) — see above.
+    The door leaf, jambs, knob and hinges joined into one object.
+
 furniture/trash_can.glb
     "Trash Can" by Yury Misiyuk (@Tim0)
     https://sketchfab.com/3d-models/trash-can-0ad3407cd8104ba58f71885c0e58ca9a

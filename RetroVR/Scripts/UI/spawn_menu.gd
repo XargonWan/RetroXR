@@ -357,6 +357,12 @@ func _init_romm() -> void:
 	romm_downloader.download_cancelled.connect(_on_romm_dl_cancelled)
 	romm_downloader.cache_evicted.connect(_on_romm_cache_evicted)
 
+	# Show last run's platforms immediately; the refresh below only corrects it.
+	for sid: String in romm_config.cached_platforms:
+		var p: Variant = romm_config.cached_platforms[sid]
+		if p is Dictionary:
+			_romm_platforms[sid] = p
+
 	romm_art = RommArtCache.new()
 	romm_art.name = "RommArtCache"
 	romm_art.setup(romm_config.base_url)
@@ -1105,6 +1111,9 @@ func _romm_fetch_platforms() -> void:
 				-1.0, 4.0)
 		_romm_unmapped_announced = signature
 
+		romm_config.cached_platforms = _romm_platforms.duplicate()
+		romm_config.save_config()
+
 		_populate_cartridges_tab()
 		_update_romm_status_label()
 	)
@@ -1155,6 +1164,7 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 		["Not downloaded", "server"],
 		["Local only", "local"],
 	], "all", 1, Vector2(210, 52), 18)
+	source_drop.float_panel = true
 	source_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_source_filter = str(id)
 		_rebuild_romm_rows()
@@ -1162,6 +1172,7 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	toolbar.add_child(source_drop)
 
 	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], "", 1, Vector2(210, 52), 18)
+	_romm_region_drop.float_panel = true
 	_romm_region_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_region_filter = str(id)
 		_rebuild_romm_rows()
@@ -3955,16 +3966,12 @@ func _romm_check_for_changes() -> void:
 	romm_client.stats(func(ok: bool, stats: Dictionary) -> void:
 		if not ok or stats.is_empty():
 			return
-		var changed := not romm_config.stats_unchanged(stats)
-		if changed:
+		if not romm_config.stats_unchanged(stats):
 			romm_config.last_stats = stats
 			romm_config.save_config()
-		# last_stats persists but the platform list does not, so a run that
-		# starts with an unchanged library still has to fetch it once. Gating
-		# purely on the fingerprint left RomM permanently absent until something
-		# on the server happened to change.
-		if changed or _romm_platforms.is_empty():
-			_romm_fetch_platforms()
+		# The cached list is already on screen; this corrects it in the
+		# background and costs nothing visible.
+		_romm_fetch_platforms()
 	)
 
 
@@ -4599,6 +4606,7 @@ func _build_about_view() -> Control:
 		["Ceiling fan", "lucaboechat", "CC BY 4.0"],
 		["Corner TV stand", "Manix3D — @manix3d", "CC BY 4.0"],
 		["CRT computer monitor", "fizyman", "CC BY 4.0"],
+		["Desk chair", "Slava Izvekov — @guantanamera", "CC BY 4.0"],
 		["Interior door and trim", "Roman — @janwama", "CC BY 4.0"],
 		["Trash can", "Yury Misiyuk — @Tim0", "CC BY 4.0"],
 		["Television 02", "Benny Weimer — Poly Haven", "CC0 1.0"],
