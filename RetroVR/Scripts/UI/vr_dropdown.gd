@@ -36,7 +36,16 @@ const COLOR_TITLE := Color(0.9, 0.9, 1.0)
 static var _open_dropdown: VRDropdown = null
 
 var _label: Label
+var _icon: TextureRect = null
 var _toggle: Button
+## Overlay the option list instead of growing this control. Set before use.
+var float_panel := false
+## With float_panel on, a value > 0 makes the list open upward rather than
+## cross this global Y. Lets a fixed-height host keep the list in its band.
+var float_max_bottom := 0.0
+var _panel_home: Node = null
+var _floated_to: Control = null
+
 var _panel: PanelContainer
 var _list: GridContainer
 var _opt_btns: Array[Button] = []
@@ -51,7 +60,9 @@ var _placeholder := ""
 var _last_activate_frame := -1
 
 
-## options: Array of [display_name: String, id: Variant].
+## options: Array of [display_name: String, id: Variant] — with an optional
+## third element, a Texture2D glyph shown on that option and on the toggle when
+## it is the current value. Entries without one behave exactly as before.
 static func create(
 		label_text: String,
 		options: Array,
@@ -131,6 +142,13 @@ func set_options(options: Array, current_id: Variant) -> void:
 
 		var btn := Button.new()
 		btn.text = _tick(opt_id) + opt_label
+		var glyph := _icon_for(entry)
+		if glyph:
+			btn.icon = glyph
+			# icon_max_width, not expand_icon: expand_icon fights the label for
+			# space, so glyphs came out at wildly different sizes across a grid
+			# of varying text widths. This caps width and keeps aspect.
+			btn.add_theme_constant_override("icon_max_width", 26 if _grid_cols > 1 else 32)
 		btn.custom_minimum_size = Vector2(0, 40 if _grid_cols > 1 else 48)
 		btn.add_theme_font_size_override("font_size", 16 if _grid_cols > 1 else _font_size)
 		btn.focus_mode = Control.FOCUS_NONE
@@ -165,8 +183,28 @@ func set_label(text: String) -> void:
 	_label.text = text
 
 
+## Show a glyph to the left of the label, e.g. a Kenney input prompt. Pass null
+## to remove it. Optional — a dropdown without one is unchanged.
+func set_icon(tex: Texture2D, px: float = 40.0) -> void:
+	if tex == null:
+		if _icon:
+			_icon.queue_free()
+			_icon = null
+		return
+	if _icon == null:
+		_icon = TextureRect.new()
+		_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var row := _label.get_parent() as HBoxContainer
+		row.add_child(_icon)
+		row.move_child(_icon, 0)
+	_icon.texture = tex
+	_icon.custom_minimum_size = Vector2(px, px)
+
+
 func close() -> void:
-	_panel.visible = false
+	_stow_panel()
 	if _open_dropdown == self:
 		_open_dropdown = null
 	_refresh_toggle_arrow()
@@ -189,6 +227,18 @@ func _current_label() -> String:
 	return _placeholder
 
 
+## Optional third element of an options entry: the glyph for that value.
+func _icon_for(entry: Array) -> Texture2D:
+	return (entry[2] as Texture2D) if entry.size() > 2 else null
+
+
+func _current_icon() -> Texture2D:
+	for entry: Array in _options:
+		if entry[1] == _current_id:
+			return _icon_for(entry)
+	return null
+
+
 func _refresh_labels() -> void:
 	for i in range(_opt_btns.size()):
 		_opt_btns[i].text = _tick(_ids[i]) + (_options[i][0] as String)
@@ -197,6 +247,10 @@ func _refresh_labels() -> void:
 
 func _refresh_toggle_arrow() -> void:
 	_toggle.text = _current_label() + (" ▴" if _panel.visible else " ▾")
+	var glyph := _current_icon()
+	_toggle.icon = glyph
+	if glyph:
+		_toggle.add_theme_constant_override("icon_max_width", 34)
 
 
 ## True for the first activation in a frame; false for xr-tools' duplicate.
@@ -215,9 +269,62 @@ func _on_toggle_pressed() -> void:
 	if _open_dropdown != null and _open_dropdown != self \
 			and is_instance_valid(_open_dropdown):
 		_open_dropdown.close()
-	_panel.visible = opening
+	if opening:
+		_open_panel()
+	else:
+		_stow_panel()
 	_open_dropdown = self if opening else null
 	_refresh_toggle_arrow()
+
+
+## In a fixed-height row the panel must overlay what follows, not push it: the
+## list is a sibling below the toggle, so simply showing it grows this control
+## and the row it sits in. Floating takes it out of layout and reparents it to
+## the top-most Control so it also draws above later siblings.
+func _open_panel() -> void:
+	if not float_panel:
+		_panel.visible = true
+		return
+
+	var host := _float_host_for(self)
+	if host != null and _panel.get_parent() != host:
+		_panel_home = _panel.get_parent()
+		_panel_home.remove_child(_panel)
+		host.add_child(_panel)
+		_floated_to = host
+
+	_panel.top_level = true
+	_panel.visible = true
+	_panel.custom_minimum_size.x = _toggle.size.x
+	_panel.reset_size()
+	var below := _toggle.global_position.y + _toggle.size.y + 2.0
+	var flip := float_max_bottom > 0.0 and below + _panel.size.y > float_max_bottom
+	_panel.global_position = Vector2(
+		_toggle.global_position.x,
+		(_toggle.global_position.y - _panel.size.y - 2.0) if flip else below)
+
+
+func _stow_panel() -> void:
+	_panel.visible = false
+	if not float_panel or _floated_to == null:
+		return
+	if is_instance_valid(_floated_to) and _panel.get_parent() == _floated_to:
+		_floated_to.remove_child(_panel)
+		if is_instance_valid(_panel_home):
+			_panel_home.add_child(_panel)
+	_panel.top_level = false
+	_floated_to = null
+
+
+## Outermost Control ancestor — children added there draw over everything else.
+static func _float_host_for(node: Node) -> Control:
+	var host: Control = null
+	var n: Node = node.get_parent()
+	while n != null:
+		if n is Control:
+			host = n
+		n = n.get_parent()
+	return host
 
 
 func _on_item_pressed(id: Variant) -> void:

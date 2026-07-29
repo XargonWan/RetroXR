@@ -39,6 +39,11 @@ var sync_state: Dictionary = {}
 ## call is needed at all.
 var last_stats: Dictionary = {}
 
+## Last mapped platform list, so a restart shows RomM content immediately
+## instead of waiting on /api/platforms — 131 KB and ~4 s on a busy server.
+## systemid -> platform dict (as returned by RommPlatforms.partition).
+var cached_platforms: Dictionary = {}
+
 
 ## True when there is enough configured to attempt a request.
 func is_configured() -> bool:
@@ -142,6 +147,8 @@ func load_config() -> void:
 		sync_state = data["sync_state"]
 	if data.get("last_stats") is Dictionary:
 		last_stats = data["last_stats"]
+	if data.get("cached_platforms") is Dictionary:
+		cached_platforms = data["cached_platforms"]
 
 	print("[RommConfig] Loaded config (server=%s enabled=%s)" % [base_url, enabled])
 
@@ -167,6 +174,7 @@ func save_config() -> void:
 		"platform_overrides": platform_overrides,
 		"sync_state": sync_state,
 		"last_stats": last_stats,
+		"cached_platforms": cached_platforms,
 	}
 	file.store_string(JSON.stringify(data, "\t"))
 
