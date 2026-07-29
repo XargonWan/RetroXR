@@ -4411,6 +4411,28 @@ func _build_about_view() -> Control:
 	art_note.add_theme_color_override("font_color", COLOR_LICENSE)
 	vbox.add_child(art_note)
 
+	vbox.add_child(_spacer(6))
+
+	# Game data sources
+	var data_hdr := Label.new()
+	data_hdr.text = "GAME DATA"
+	data_hdr.add_theme_font_size_override("font_size", 20)
+	data_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(data_hdr)
+
+	const DATA: Array = [
+		["ScreenScraper", "screenscraper.fr contributors", "CC BY-NC-SA 4.0"],
+	]
+	for entry: Array in DATA:
+		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
+
+	var data_note := Label.new()
+	data_note.text = "Box art, screenshots and game details are scraped from screenscraper.fr."
+	data_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	data_note.add_theme_font_size_override("font_size", 14)
+	data_note.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(data_note)
+
 	vbox.add_child(_spacer(12))
 	return scroll
 
@@ -4445,6 +4467,12 @@ func _add_credit_row(vbox: VBoxContainer, title: String, author: String, license
 	lic_lbl.add_theme_color_override("font_color", COLOR_DESC)
 	lic_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(lic_lbl)
+
+	# The scroll bar is drawn over the content, so the licence needs a gutter or
+	# a long one ("CC BY-NC-SA 4.0") loses its last character behind it.
+	var gutter := Control.new()
+	gutter.custom_minimum_size = Vector2(18, 0)
+	row.add_child(gutter)
 
 	vbox.add_child(HSeparator.new())
 
