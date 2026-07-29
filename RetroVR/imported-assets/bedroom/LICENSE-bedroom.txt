@@ -1,0 +1,77 @@
+Bedroom scene assets — attribution and licences.
+
+ATTRIBUTION IS REQUIRED for everything under furniture/ and displays/crt_monitor.
+Those are Creative Commons Attribution (CC BY 4.0): free for commercial use, but
+the author must be credited. The credits below must also appear on the in-app
+About screen, alongside the existing screenscraper.fr and Systematic icon-set
+credits.
+
+  CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+  CC0 1.0    — https://creativecommons.org/publicdomain/zero/1.0/
+
+
+=== CC BY 4.0 — attribution REQUIRED ============================================
+
+furniture/bed_desk_chair.glb
+    "Bedroom Furniture Set - Game Ready" by General of Thailand (@Melonpolygons)
+    https://sketchfab.com/3d-models/bedroom-furniture-set-game-ready-c30a07d2f8bc4f0a843f1629c5ef78c4
+    14.5k tris. Bed, desk and chair are ONE mesh — they cannot be placed
+    separately. Its second mesh, "Plane_2_0", is the Sketchfab viewer's backdrop
+    grid baked into the download; the scene hides it.
+
+furniture/bookcases.glb
+    "Wooden Bookcases with Books" by Matthew Collings (@mtcollings)
+    https://sketchfab.com/3d-models/wooden-bookcases-with-books-d0618ac16b2a4a87b9b6c7d5e6765626
+    7.1k tris, two bookcases with books already shelved.
+
+furniture/ceiling_fan.glb
+    "Ceiling Fan" by lucaboechat
+    https://sketchfab.com/3d-models/ceiling-fan-7fe2a7dd27b2467da79c935a32de0eb2
+    3.9k tris. Cherry blades, bronze housing, amber glass shade — fan and
+    ceiling fixture in one asset.
+
+furniture/tv_stand_corner.glb
+    "3D Corner TV Stand - Wood (Free .fbx)" by Manix3D (@manix3d)
+    https://sketchfab.com/3d-models/3d-corner-tv-stand-wood-free-fbx-d515f335c3b84ab98d0a39131d2f4a34
+    25.4k tris — the heaviest single object in the room. Decimate if the scene
+    comes in over budget.
+
+furniture/trash_can.glb
+    "Trash Can" by Yury Misiyuk (@Tim0)
+    https://sketchfab.com/3d-models/trash-can-0ad3407cd8104ba58f71885c0e58ca9a
+    1.1k tris. Open-top with a bin liner — the open top is required, TrashArea
+    has to sit in free space over the mouth for the drop-to-delete to fire.
+
+displays/crt_monitor.glb
+    "CRT Computer Monitor" by fizyman
+    https://sketchfab.com/3d-models/crt-computer-monitor-f2ff0013f86e4cd0a2aee183a23bdfee
+    3.7k tris. Separate monitor_glass and monitor_plastic meshes, so the glass
+    can be hidden and RetroTV's own ScreenMesh put in its place.
+
+
+=== CC0 — no attribution required, given anyway =================================
+
+displays/television_02.*  (+ displays/textures/)
+    "Television 02" by Benny Weimer — Poly Haven
+    https://polyhaven.com/a/television_02
+    2.3k tris, 1K textures. A 14" set; the hero TV.
+
+materials/PaintedPlaster017_*
+    "Painted Plaster 017" — ambientCG, surface photogrammetry
+    https://ambientcg.com/a/PaintedPlaster017
+    Orange-peel drywall. Only Color, NormalGL and Roughness are kept: the pack
+    also ships NormalDX (wrong convention for Godot — every bump would read as a
+    dent) and Displacement (nothing here uses parallax, and it is expensive on
+    the mobile backend).
+
+materials/Carpet012_*
+    "Carpet 012" — ambientCG
+    https://ambientcg.com/a/Carpet012
+    Same three maps kept, same reasons.
+
+exterior/  — see exterior/LICENSE-exterior.txt (Kenney + Quaternius, both CC0).
+
+
+All models downloaded 2026-07-28 at 1K texture resolution. Sketchfab offers up
+to 4K and the original FBX; those are 20-50x larger for no visible gain at the
+distances involved here.

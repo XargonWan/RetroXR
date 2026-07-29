@@ -1,4 +1,4 @@
-[gd_scene load_steps=40 format=3]
+[gd_scene load_steps=46 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -9,6 +9,12 @@
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_two_e.glb" id="8_house2e"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/trees.glb" id="9_trees"]
 [ext_resource type="Script" path="res://Scripts/bedroom_exterior.gd" id="10_exterior"]
+[ext_resource type="Script" path="res://Scripts/mesh_filter.gd" id="11_meshfilter"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/bed_desk_chair.glb" id="12_bedset"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/bookcases.glb" id="13_bookcases"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/ceiling_fan.glb" id="14_fan"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/tv_stand_corner.glb" id="15_tvstand"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/trash_can.glb" id="16_trash"]
 
 ; Late evening: warm ambient, dark warm background, filmic tonemap and the den's
 ; glow settings so the CRT and the lamps bloom the same way across both rooms.
@@ -436,6 +442,40 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.8, 0)
 light_color = Color(1, 0.82, 0.52, 1)
 light_energy = 3.0
 omni_range = 14.0
+
+; --- Furniture ----------------------------------------------------------------
+; Transforms below were solved once by a throwaway fit probe (target size +
+; target world position + yaw) and baked here, per the project's "author in the
+; .tscn" convention. The downloads arrive at wildly different scales — the fan
+; and trash can are ~450 units across and offset hundreds of units from their
+; own origin — so none of these numbers are guessable by hand.
+[node name="Furniture" type="Node3D" parent="."]
+
+; Bed, desk and chair arrive as ONE mesh, so they are placed as a single group
+; in the arrangement the artist authored — they cannot be separated without a
+; Blender pass. The set's second mesh, "Plane_2_0", is a 2 x 2 zero-thickness
+; quad: the Sketchfab viewer's backdrop grid, baked into the download. Hiding it
+; is not optional, it renders as a blue grid across the floor.
+[node name="BedGroup" parent="Furniture" instance=ExtResource("12_bedset")]
+transform = Transform3D(0.83619, 0, 0, 0, 0.83619, 0, 0, 0, 0.83619, 0.5501, 0.001, -0.9961)
+script = ExtResource("11_meshfilter")
+hide_meshes = PackedStringArray("Plane_2_0")
+
+[node name="Bookcases" parent="Furniture" instance=ExtResource("13_bookcases")]
+transform = Transform3D(0, 0, -0.99781, 0, 0.99781, 0, 0.99781, 0, 0, -2.30, 0, -0.7927)
+
+[node name="TVStand" parent="Furniture" instance=ExtResource("15_tvstand")]
+transform = Transform3D(0.66629, 0, 0.66629, 0, 0.94228, 0, -0.66629, 0, 0.66629, 2.0415, 0.0392, 1.4818)
+
+[node name="TrashCan" parent="Furniture" instance=ExtResource("16_trash")]
+transform = Transform3D(0.0012, 0, 0, 0, 0.0012, 0, 0, 0, 0.0012, -2.2574, -0.0017, -0.8495)
+
+; Fan blades spin about the hub; the glass shade must ride the STATIC mount or
+; the light swings round the room with them (the den learned this the hard way).
+[node name="FanPivot" type="Node3D" parent="Furniture"]
+
+[node name="Fan" parent="Furniture/FanPivot" instance=ExtResource("14_fan")]
+transform = Transform3D(0.00283, 0, 0, 0, 0.00283, 0, 0, 0, 0.00283, 0.2181, 0.4982, -0.5128)
 
 ; Baseboard. Runs are unit meshes scaled along the wall direction; the cap sits
 ; 4 mm prouder than the base.
