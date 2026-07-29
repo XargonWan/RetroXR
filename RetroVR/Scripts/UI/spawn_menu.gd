@@ -2419,7 +2419,7 @@ func _build_options_view() -> Control:
 	sf_row.add_child(sf_col)
 
 	var sf_lbl := Label.new()
-	sf_lbl.text = "System Filter"
+	sf_lbl.text = "Libretro System Filter"
 	sf_lbl.add_theme_font_size_override("font_size", 22)
 	sf_lbl.add_theme_color_override("font_color", COLOR_TITLE)
 	sf_col.add_child(sf_lbl)
