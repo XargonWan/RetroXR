@@ -2097,17 +2097,29 @@ func _build_graphics_view() -> Control:
 	quality_hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(quality_hdr)
 
-	var scale_opt := VRDropdown.create("Render Scale",
-		[["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
-		 ["100%", 1.0], ["125%", 1.25], ["150%", 1.5]],
-		QualityManager.render_scale, 6, Vector2(95, 52), 20)
+	# Below 100% is left out entirely where it is broken rather than offered and
+	# then clamped, so the list never shows a value that will not stick.
+	var scale_min: float = QualityManager.min_render_scale()
+	var scale_options: Array = []
+	for pair: Array in [["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
+			["100%", 1.0], ["125%", 1.25], ["150%", 1.5]]:
+		if float(pair[1]) >= scale_min:
+			scale_options.append(pair)
+
+	var scale_opt := VRDropdown.create("Render Scale", scale_options,
+		QualityManager.render_scale, scale_options.size(), Vector2(95, 52), 20)
 	scale_opt.item_selected.connect(func(id: Variant) -> void:
 		QualityManager.set_render_scale(float(id)))
 	vbox.add_child(scale_opt)
 
-	_add_graphics_hint(vbox, "Resolution the 3D world is drawn at before it is scaled to "
-		+ "the display. Below 100% FSR upscales it — the cheapest frame time on Quest. "
-		+ "Above 100% supersamples.")
+	var scale_hint := "Resolution the 3D world is drawn at before it is scaled to the display. "
+	if scale_min < 1.0:
+		scale_hint += "Below 100% FSR upscales it for cheaper frames; above 100% supersamples."
+	else:
+		scale_hint += "Above 100% supersamples, which is the useful direction here — the " \
+			+ "headset's eye buffer sits below its panel. Downscaling is not offered on " \
+			+ "this renderer: it breaks the XR viewport."
+	_add_graphics_hint(vbox, scale_hint)
 
 	var msaa_opt := VRDropdown.create("Anti-Aliasing",
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
