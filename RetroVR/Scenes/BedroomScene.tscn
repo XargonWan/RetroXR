@@ -524,13 +524,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.64, -0.29)
 mesh = SubResource("Mesh_desk_rail")
 surface_material_override/0 = SubResource("Mat_desk")
 
+; Yaw 90, so the shelves face EAST into the room. The model's open face is +Z
+; and its solid back -Z (checked by rendering it from all four sides); the first
+; pass had them turned into the west wall showing their backs.
 ; Two of the tall bookcase rather than the set's small one, which carries a
 ; corner return that defeats the same straightening pass.
 [node name="BookcaseA" parent="Furniture" instance=ExtResource("17_bctall")]
-transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.345, 0, -1.55)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.345, 0, -1.55)
 
 [node name="BookcaseB" parent="Furniture" instance=ExtResource("17_bctall")]
-transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.345, 0, -0.55)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.345, 0, -0.55)
 
 ; Yaw 225 deg, not 45: the model faces +Z, so 45 pointed the doors and the open
 ; AV bay INTO the corner and presented its back to the room.
