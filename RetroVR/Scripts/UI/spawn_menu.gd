@@ -2121,7 +2121,40 @@ func _build_graphics_view() -> Control:
 		QualityManager.set_msaa(int(id)))
 	vbox.add_child(msaa_opt)
 
-	_add_graphics_hint(vbox, "Multisampling on the 3D view. Costs fill rate, not CPU.")
+	_add_graphics_hint(vbox, "Multisampling on the 3D view. Smooths geometry edges only, "
+		+ "and is nearly free on the headset's tiled GPU.")
+
+	var post_aa_opt := VRDropdown.create("Edge Smoothing",
+		[["Off", QualityManager.PostAA.OFF],
+		 ["FXAA", QualityManager.PostAA.FXAA],
+		 ["SMAA", QualityManager.PostAA.SMAA]],
+		int(QualityManager.post_aa), 3, Vector2(110, 52), 20)
+	post_aa_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_post_aa(int(id)))
+	vbox.add_child(post_aa_opt)
+
+	_add_graphics_hint(vbox, "Catches what MSAA cannot — the carpet, wood and neon are drawn "
+		+ "by shaders, whose aliasing is inside the surface rather than on its edge. "
+		+ "SMAA keeps detail; FXAA is cheaper but softens the whole picture.")
+
+	var deband_row := HBoxContainer.new()
+	deband_row.add_theme_constant_override("separation", 10)
+	deband_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(deband_row)
+
+	var deband_lbl := Label.new()
+	deband_lbl.text = "Debanding"
+	deband_lbl.add_theme_font_size_override("font_size", 22)
+	deband_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	deband_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	deband_row.add_child(deband_lbl)
+
+	deband_row.add_child(_make_toggle(QualityManager.debanding, func(on: bool) -> void:
+		QualityManager.set_debanding(on)
+	))
+
+	_add_graphics_hint(vbox, "Breaks up the stepped rings that show in dark gradients, "
+		+ "which the arcade is mostly made of. Costs essentially nothing.")
 
 	var shadow_opt := VRDropdown.create("Shadows",
 		[["Off", QualityManager.ShadowQuality.OFF],

@@ -17,6 +17,13 @@ enum ShadowQuality { OFF, LOW, MEDIUM, HIGH }
 ## Screen-space ambient occlusion tiers. Forward+ only — see supports_post_effects().
 enum AOQuality { OFF, LOW, HIGH }
 
+## Post-process edge smoothing, which catches what MSAA cannot: MSAA only samples
+## geometry edges, so the procedural carpet, wood and neon shaders alias straight
+## through it. TAA would cover the same ground but is not offered — it is inert on
+## the mobile backend (measured: 0.004 mean pixel change against 0.493 for SMAA)
+## and its history buffer smears under head motion.
+enum PostAA { OFF, FXAA, SMAA }
+
 ## Positional shadow atlas edge, soft-shadow filter and depth precision per tier.
 ## The directional atlas gets twice the edge — it covers the whole room in one
 ## map where the positional atlas is subdivided between lights.
@@ -62,6 +69,8 @@ var ambilight_interval: int = 10
 
 ## Viewport.MSAA_* level applied to the root (XR) viewport.
 var msaa_3d: int = Viewport.MSAA_2X
+var post_aa: PostAA = PostAA.OFF
+var debanding: bool = false
 var shadow_quality: ShadowQuality = ShadowQuality.OFF
 var ao_quality: AOQuality = AOQuality.OFF
 var render_scale: float = 1.0
@@ -81,6 +90,8 @@ func _ready() -> void:
 	_adjust_lights()
 	apply_render_scale()
 	apply_msaa()
+	apply_post_aa()
+	apply_debanding()
 	apply_shadow_quality()
 	apply_ao_quality()
 	# Lights and each room's WorldEnvironment arrive with every scene load, and
@@ -95,10 +106,11 @@ func _ready() -> void:
 ## reason xr_init logs its eye buffer.
 func _log_state() -> void:
 	var root := get_tree().root
-	print("QualityManager: renderer '%s', scale %.2f (mode %d), msaa %d, shadows %d, ao %d, atlas %d" % [
+	print(("QualityManager: renderer '%s', scale %.2f (mode %d), msaa %d, post_aa %d, "
+		+ "deband %s, shadows %d, ao %d, atlas %d") % [
 		RenderingServer.get_current_rendering_method(), root.scaling_3d_scale,
-		root.scaling_3d_mode, root.msaa_3d, shadow_quality, ao_quality,
-		root.positional_shadow_atlas_size])
+		root.scaling_3d_mode, root.msaa_3d, root.screen_space_aa, root.use_debanding,
+		shadow_quality, ao_quality, root.positional_shadow_atlas_size])
 
 
 ## Screen-space effects (SSAO here, plus SSIL/SSR/volumetric fog if they are
@@ -169,6 +181,33 @@ func set_msaa(mode: int) -> void:
 
 func apply_msaa() -> void:
 	get_tree().root.msaa_3d = msaa_3d as Viewport.MSAA
+
+
+func set_post_aa(mode: int) -> void:
+	post_aa = clampi(mode, PostAA.OFF, PostAA.SMAA) as PostAA
+	apply_post_aa()
+	save_prefs()
+
+
+func apply_post_aa() -> void:
+	var root := get_tree().root
+	match post_aa:
+		PostAA.FXAA:
+			root.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+		PostAA.SMAA:
+			root.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA
+		_:
+			root.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+
+
+func set_debanding(enabled: bool) -> void:
+	debanding = enabled
+	apply_debanding()
+	save_prefs()
+
+
+func apply_debanding() -> void:
+	get_tree().root.use_debanding = debanding
 
 
 func shadows_enabled() -> bool:
@@ -267,6 +306,8 @@ func _load_prefs() -> void:
 	var data: Dictionary = parsed
 	msaa_3d = clampi(_prefs_int(data, "msaa_3d", msaa_3d),
 		Viewport.MSAA_DISABLED, Viewport.MSAA_8X)
+	post_aa = clampi(_prefs_int(data, "post_aa", post_aa), PostAA.OFF, PostAA.SMAA) as PostAA
+	debanding = bool(data.get("debanding", debanding))
 	shadow_quality = clampi(_prefs_int(data, "shadow_quality", shadow_quality),
 		ShadowQuality.OFF, ShadowQuality.HIGH) as ShadowQuality
 	ao_quality = clampi(_prefs_int(data, "ao_quality", ao_quality),
@@ -284,6 +325,8 @@ func save_prefs() -> void:
 		return
 	file.store_string(JSON.stringify({
 		"msaa_3d": msaa_3d,
+		"post_aa": int(post_aa),
+		"debanding": debanding,
 		"shadow_quality": int(shadow_quality),
 		"ao_quality": int(ao_quality),
 		"render_scale": render_scale,
