@@ -11,6 +11,7 @@ signal active_slot_changed(slot_id: String)
 const SCENE_PATHS := {
 	"arcade":      "res://Scenes/MainScene.tscn",
 	"den":         "res://Scenes/DenScene.tscn",
+	"bedroom":     "res://Scenes/BedroomScene.tscn",
 	"passthrough": "res://Scenes/PassthroughScene.tscn",
 	"test":        "res://Scenes/TestScene.tscn",
 }
@@ -18,6 +19,7 @@ const SCENE_PATHS := {
 const SCENE_TITLES := {
 	"arcade":      "ARCADE ROOM",
 	"den":         "COZY DEN",
+	"bedroom":     "90s BEDROOM",
 	"passthrough": "PASSTHROUGH",
 	"test":        "TEST HALLWAY",
 }

@@ -20,6 +20,20 @@ const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 ## whatever source is showing — a system's game or the VCR's video.
 @export var crt_enabled: bool = true
 
+## Which cabinet to wear. Empty = the original box body authored in tv.tscn, and
+## _load_shell() is then a strict no-op — the arcade and den TVs must render
+## bit-identically to before this system existed.
+@export var tv_model: String = ""
+
+## Cabinet variants. A shell supplies geometry plus Marker3D seats; every
+## functional node stays on this TV. See Scripts/Objects/tv_shell.gd.
+const _SHELL_SCENES := {
+	"crt_90s":     "res://Scenes/Objects/tv_models/crt_90s.tscn",
+	"crt_monitor": "res://Scenes/Objects/tv_models/crt_monitor.tscn",
+}
+
+var _shell: RetroTVShell = null
+
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
 @onready var _ambilight: SpotLight3D = $Ambilight
@@ -142,6 +156,9 @@ const BLUE_SCREEN_COLOR := Color(0.0, 0.05, 0.65)
 
 func _ready() -> void:
 	super._ready()
+	# Before anything reads the screen mesh or the buttons — _screen_size_m below
+	# is derived from ScreenMesh, and a shell may have moved and rescaled it.
+	_load_shell()
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
@@ -181,14 +198,94 @@ func _ready() -> void:
 	_dark_material = _screen_mesh.get_surface_override_material(0)
 	if _screen_mesh.mesh != null:
 		var aabb := _screen_mesh.mesh.get_aabb()
+		# get_aabb() is the MESH's own extent and ignores the node scale, which a
+		# shell uses to size its tube (ScreenSeat carries the scale). Without this
+		# a 90s cabinet reports the stock 0.35 x 0.25 screen and every consumer of
+		# _screen_size_m — aspect fitting, OSD sizing — is wrong by that factor.
+		var screen_scale := _screen_mesh.scale
 		if aabb.size.x > 0.0 and aabb.size.y > 0.0:
-			_screen_size_m = Vector2(aabb.size.x, aabb.size.y)
+			_screen_size_m = Vector2(aabb.size.x * screen_scale.x, aabb.size.y * screen_scale.y)
 
 	var blue_img := Image.create(2, 2, false, Image.FORMAT_RGB8)
 	blue_img.fill(BLUE_SCREEN_COLOR)
 	_blue_material = StandardMaterial3D.new()
 	_blue_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_blue_material.albedo_texture = ImageTexture.create_from_image(blue_img)
+
+
+## Wear a cabinet variant. Strict no-op when tv_model is empty — that is the
+## acceptance test for this whole mechanism, since the arcade and den TVs must
+## look and behave exactly as they did before.
+##
+## Only nodes the shell actually names a seat for are moved; everything else keeps
+## its tv.tscn pose, so a shell describes differences rather than the whole layout.
+func _load_shell() -> void:
+	if tv_model.is_empty():
+		return
+	var path: String = _SHELL_SCENES.get(tv_model, "")
+	if path.is_empty():
+		push_warning("RetroTV: unknown tv_model '%s' — falling back to the stock body" % tv_model)
+		return
+	var packed := load(path) as PackedScene
+	if packed == null:
+		push_warning("RetroTV: failed to load shell scene: %s" % path)
+		return
+	_shell = packed.instantiate() as RetroTVShell
+	if _shell == null:
+		push_warning("RetroTV: shell scene root is not a RetroTVShell: %s" % path)
+		return
+	add_child(_shell)
+	$TVBody.hide()
+
+	_seat_node(_screen_mesh, _shell.screen_seat())
+	_seat_node(_composite_port, _shell.port_seat())
+	_seat_node(_ambilight, _shell.ambilight_seat())
+	_seat_node(_volume_label, _shell.volume_label_seat())
+
+	# Bezel buttons march along the row marker's local +X from the first cap.
+	var row: Variant = _shell.button_row_seat()
+	var buttons: Array[Node3D] = [
+		_vol_down_btn, _vol_up_btn, _tv_toggle_btn, _crt_btn, _stereo_btn,
+	]
+	if not _shell.show_button_row:
+		for btn in buttons:
+			btn.visible = false
+			btn.set_deferred("collision_layer", 0)
+	elif row is Transform3D:
+		var base: Transform3D = row
+		for i in buttons.size():
+			var b: Node3D = buttons[i]
+			# Keep each cap's authored basis (they are rotated to face outward);
+			# only the origin walks the row.
+			b.transform = Transform3D(b.transform.basis,
+				base * Vector3(float(i) * _shell.button_pitch, 0.0, 0.0))
+
+	_resize_body_collision(_shell.body_size)
+
+
+func _seat_node(node: Node3D, seat: Variant) -> void:
+	if node != null and seat is Transform3D:
+		node.transform = seat
+
+
+## Resize the pickup collider and the pointer box to the cabinet.
+##
+## BoxShape3D_body and BoxShape3D_pointer are plain sub_resources in tv.tscn, i.e.
+## SHARED between every TV in the scene — writing a size straight onto them would
+## resize the den's TV too. Duplicate first. (Same trap the resource_local_to_scene
+## note on Mat_phosphor_a already documents for the phosphor materials.)
+func _resize_body_collision(size: Vector3) -> void:
+	var body_col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if body_col and body_col.shape is BoxShape3D:
+		var s := (body_col.shape as BoxShape3D).duplicate() as BoxShape3D
+		s.size = size
+		body_col.shape = s
+	var ptr_col := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if ptr_col and ptr_col.shape is BoxShape3D:
+		var p := (ptr_col.shape as BoxShape3D).duplicate() as BoxShape3D
+		# The stock pointer box is 20 mm proud of the body on each axis.
+		p.size = size + Vector3(0.02, 0.02, 0.02)
+		ptr_col.shape = p
 
 
 func _process(_delta: float) -> void:

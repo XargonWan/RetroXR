@@ -1,0 +1,516 @@
+[gd_scene load_steps=40 format=3]
+
+[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
+[ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_a.glb" id="4_house_a"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_b.glb" id="5_house_b"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_two_a.glb" id="6_house2a"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_two_d.glb" id="7_house2d"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_two_e.glb" id="8_house2e"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/trees.glb" id="9_trees"]
+[ext_resource type="Script" path="res://Scripts/bedroom_exterior.gd" id="10_exterior"]
+
+; Late evening: warm ambient, dark warm background, filmic tonemap and the den's
+; glow settings so the CRT and the lamps bloom the same way across both rooms.
+; Authored here on purpose — QualityManager only LAYERS AO onto whatever
+; Environment a scene brings, it never replaces it.
+; Dusk sky, because the window looks onto real geometry now rather than a painted
+; quad — a flat background colour would show as a dead band above the rooftops.
+; ambient stays AMBIENT_SOURCE_COLOR (warm, low) so the sky does not wash the
+; room's own lamplight out.
+[sub_resource type="ProceduralSkyMaterial" id="Sky_dusk"]
+sky_top_color = Color(0.06, 0.11, 0.3, 1)
+sky_horizon_color = Color(0.78, 0.45, 0.28, 1)
+sky_curve = 0.12
+ground_bottom_color = Color(0.05, 0.05, 0.06, 1)
+ground_horizon_color = Color(0.55, 0.35, 0.24, 1)
+sun_angle_max = 24.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_bedroom"]
+sky_material = SubResource("Sky_dusk")
+
+[sub_resource type="Environment" id="Env_bedroom"]
+background_mode = 2
+sky = SubResource("Sky_bedroom")
+ambient_light_source = 2
+ambient_light_color = Color(1, 0.84, 0.7, 1)
+ambient_light_energy = 0.25
+tonemap_mode = 2
+glow_enabled = true
+glow_levels/2 = 0.3
+glow_levels/4 = 0.2
+glow_intensity = 0.5
+glow_strength = 0.7
+
+; --- Exterior ---------------------------------------------------------------
+[sub_resource type="PlaneMesh" id="Mesh_ground"]
+size = Vector2(140, 140)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.11, 0.14, 0.09, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="Mesh_road"]
+size = Vector3(90, 0.04, 6.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_road"]
+albedo_color = Color(0.06, 0.06, 0.07, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_kerb"]
+size = Vector3(90, 0.09, 1.4)
+
+[sub_resource type="StandardMaterial3D" id="Mat_kerb"]
+albedo_color = Color(0.3, 0.29, 0.27, 1)
+roughness = 0.95
+
+[sub_resource type="CylinderMesh" id="Mesh_lamp_pole"]
+top_radius = 0.07
+bottom_radius = 0.09
+height = 6.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_lamp_pole"]
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+roughness = 0.8
+
+[sub_resource type="SphereMesh" id="Mesh_lamp_head"]
+radius = 0.26
+height = 0.42
+
+[sub_resource type="StandardMaterial3D" id="Mat_lamp_head"]
+albedo_color = Color(1, 0.86, 0.62, 1)
+emission_enabled = true
+emission = Color(1, 0.82, 0.5, 1)
+emission_energy_multiplier = 6.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(5.2, 4.4)
+
+[sub_resource type="BoxShape3D" id="Shape_floor"]
+size = Vector3(5.2, 0.2, 4.4)
+
+; TODO(assets): swap for the ambientCG CC0 carpet — albedo + normal + roughness,
+; 1K. Flat beige berber stands in until then so the room can be rendered.
+[sub_resource type="StandardMaterial3D" id="Mat_carpet"]
+albedo_color = Color(0.42, 0.36, 0.28, 1)
+roughness = 0.95
+uv1_scale = Vector3(6, 6, 1)
+
+; TODO(assets): swap for ambientCG PaintedPlaster017 (orange-peel drywall) —
+; albedo + NormalGL + roughness, tinted cream via albedo_color. The FastNoiseLite
+; normal below is the den's cheap stand-in and goes away with the real texture.
+[sub_resource type="FastNoiseLite" id="FNL_wall"]
+noise_type = 5
+seed = 9042
+frequency = 1.1
+fractal_octaves = 4
+fractal_gain = 0.45
+
+[sub_resource type="NoiseTexture2D" id="NoiseTex_wall"]
+noise = SubResource("FNL_wall")
+seamless = true
+as_normal_map = true
+bump_strength = 2.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_wall"]
+albedo_color = Color(0.72, 0.66, 0.56, 1)
+roughness = 0.92
+normal_enabled = true
+normal_scale = 0.5
+normal_texture = SubResource("NoiseTex_wall")
+uv1_scale = Vector3(4, 4, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ceiling"]
+albedo_color = Color(0.78, 0.75, 0.7, 1)
+roughness = 0.95
+
+; One shared trim material for baseboard, door casing and window casing, so the
+; room's woodwork all matches. Slightly glossier than the wall so it reads as
+; painted trim rather than more drywall.
+[sub_resource type="StandardMaterial3D" id="Mat_trim"]
+albedo_color = Color(0.88, 0.86, 0.81, 1)
+roughness = 0.55
+
+[sub_resource type="BoxMesh" id="Mesh_wall_ns"]
+size = Vector3(5.2, 2.6, 0.15)
+
+[sub_resource type="BoxShape3D" id="Shape_wall_ns"]
+size = Vector3(5.2, 2.6, 0.15)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_e"]
+size = Vector3(0.15, 2.6, 4.4)
+
+[sub_resource type="BoxShape3D" id="Shape_wall_e"]
+size = Vector3(0.15, 2.6, 4.4)
+
+; North wall is split around the window opening: 1.5 wide x 1.2 high, centred
+; x = -0.9, y in [0.85, 2.05]. A bedroom window, not a picture window — the first
+; pass at 2.2 m wide read as a letterbox TV rather than something you open.
+[sub_resource type="BoxMesh" id="Mesh_wall_n_w"]
+size = Vector3(0.95, 2.6, 0.15)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_n_e"]
+size = Vector3(2.75, 2.6, 0.15)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_n_sill"]
+size = Vector3(1.5, 0.85, 0.15)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_n_head"]
+size = Vector3(1.5, 0.55, 0.15)
+
+[sub_resource type="BoxMesh" id="Mesh_casing_v"]
+size = Vector3(0.07, 1.34, 0.02)
+
+[sub_resource type="BoxMesh" id="Mesh_casing_h"]
+size = Vector3(1.64, 0.07, 0.02)
+
+[sub_resource type="BoxMesh" id="Mesh_sill"]
+size = Vector3(1.7, 0.045, 0.1)
+
+; West wall is split around the door opening: 1.0 wide x 2.1 high, centred z = 1.2.
+[sub_resource type="BoxMesh" id="Mesh_wall_w_n"]
+size = Vector3(0.15, 2.6, 2.9)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_w_s"]
+size = Vector3(0.15, 2.6, 0.5)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_w_head"]
+size = Vector3(0.15, 0.5, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_ceiling"]
+size = Vector3(5.2, 0.15, 4.4)
+
+; Two-part baseboard profile. The cap is 4 mm prouder than the base, and that
+; overhang is the whole point: it throws its own shadow line under the bedside
+; lamp, which a single flat strip (the arcade's approach) cannot. Unit-length in
+; the run direction so each wall scales one mesh.
+[sub_resource type="BoxMesh" id="Mesh_base_ns"]
+size = Vector3(1, 0.11, 0.018)
+
+[sub_resource type="BoxMesh" id="Mesh_cap_ns"]
+size = Vector3(1, 0.022, 0.026)
+
+[sub_resource type="BoxMesh" id="Mesh_base_ew"]
+size = Vector3(0.018, 0.11, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_cap_ew"]
+size = Vector3(0.026, 0.022, 1)
+
+[node name="Root" type="Node3D"]
+script = ExtResource("1_xrinit")
+scene_id = "bedroom"
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_bedroom")
+
+; Two suns, split by cull mask, because shadows are OFF on Quest and an
+; unshadowed DirectionalLight3D lights a room's interior as if the walls were not
+; there. Indoors that means the light has to stay very dim; outdoors it needs to
+; be a real golden hour. One light cannot be both.
+;
+;   Dusk        -> layer 1 only (the room)      energy 0.15
+;   ExteriorSun -> layer 2 only (the street)    energy 1.5
+;
+; Scripts/bedroom_exterior.gd puts every renderable under Exterior on layer 2.
+[node name="Dusk" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.94, -0.24, 0.24, 0, 0.7, 0.71, -0.34, -0.67, 0.66, 0, 2.2, -2.2)
+light_color = Color(1, 0.72, 0.5, 1)
+light_energy = 0.15
+light_cull_mask = 1
+
+[node name="ExteriorSun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.87, -0.32, 0.37, 0, 0.76, 0.65, -0.49, -0.57, 0.66, 0, 8, -14)
+light_color = Color(1, 0.74, 0.48, 1)
+light_energy = 1.5
+light_cull_mask = 2
+
+; Sky fill for the street, so the shaded sides of the houses are not black.
+[node name="ExteriorFill" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.87, 0.28, -0.4, 0, 0.82, 0.57, 0.49, 0.5, -0.71, 0, 8, -20)
+light_color = Color(0.45, 0.55, 0.85, 1)
+light_energy = 0.5
+light_cull_mask = 2
+
+[node name="PlayerRig" parent="." instance=ExtResource("2_playerrig")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 0, 0.55)
+
+[node name="Floor" type="StaticBody3D" parent="."]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+shape = SubResource("Shape_floor")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Floor"]
+mesh = SubResource("PlaneMesh_floor")
+surface_material_override/0 = SubResource("Mat_carpet")
+
+[node name="Room" type="StaticBody3D" parent="."]
+collision_mask = 0
+
+[node name="NorthWallW" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.125, 1.3, -2.2)
+mesh = SubResource("Mesh_wall_n_w")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="NorthWallE" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.225, 1.3, -2.2)
+mesh = SubResource("Mesh_wall_n_e")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="NorthWallSill" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, 0.425, -2.2)
+mesh = SubResource("Mesh_wall_n_sill")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="NorthWallHead" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, 2.325, -2.2)
+mesh = SubResource("Mesh_wall_n_head")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="NorthWallCol" type="CollisionShape3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, -2.2)
+shape = SubResource("Shape_wall_ns")
+
+[node name="SouthWall" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 2.2)
+mesh = SubResource("Mesh_wall_ns")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="SouthWallCol" type="CollisionShape3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 2.2)
+shape = SubResource("Shape_wall_ns")
+
+[node name="EastWall" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6, 1.3, 0)
+mesh = SubResource("Mesh_wall_e")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="EastWallCol" type="CollisionShape3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6, 1.3, 0)
+shape = SubResource("Shape_wall_e")
+
+[node name="WestWallN" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 1.3, -0.75)
+mesh = SubResource("Mesh_wall_w_n")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="WestWallS" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 1.3, 1.95)
+mesh = SubResource("Mesh_wall_w_s")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="WestWallHead" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 2.35, 1.2)
+mesh = SubResource("Mesh_wall_w_head")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="WestWallCol" type="CollisionShape3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.6, 1.3, 0)
+shape = SubResource("Shape_wall_e")
+
+[node name="Ceiling" type="MeshInstance3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.675, 0)
+mesh = SubResource("Mesh_ceiling")
+surface_material_override/0 = SubResource("Mat_ceiling")
+
+[node name="CeilingCol" type="CollisionShape3D" parent="Room"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.675, 0)
+shape = SubResource("Shape_wall_ns")
+
+; The view sits just behind the wall's outer face, so the opening frames it. A
+; QuadMesh already faces +Z, which is into the room from the north wall — no
+; rotation, unlike the den's west-facing window.
+[node name="Window" type="Node3D" parent="."]
+
+[node name="CasingLeft" type="MeshInstance3D" parent="Window"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.685, 1.45, -2.115)
+mesh = SubResource("Mesh_casing_v")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="CasingRight" type="MeshInstance3D" parent="Window"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.115, 1.45, -2.115)
+mesh = SubResource("Mesh_casing_v")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="CasingHead" type="MeshInstance3D" parent="Window"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, 2.085, -2.115)
+mesh = SubResource("Mesh_casing_h")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="Sill" type="MeshInstance3D" parent="Window"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, 0.828, -2.075)
+mesh = SubResource("Mesh_sill")
+surface_material_override/0 = SubResource("Mat_trim")
+
+; --- Exterior -----------------------------------------------------------------
+; Real geometry beyond the north wall rather than an emissive quad. A painted
+; backdrop has no parallax, so in a headset it reads as a sticker on the wall the
+; moment the player leans — which is exactly what the first pass did.
+;
+; Everything here is low-poly and single-material: the houses are 298-776 tris
+; each with ONE mesh apiece, seen from 15-25 m through a 1.5 x 1.2 m opening.
+; Kenney's houses are centre-pivoted with their base at y=0, so placement is the
+; plain world position — unlike the Furniture Kit's corner pivots.
+;
+; The window's sightline is narrow (~15 deg either side from a metre back), but
+; the player can walk the room, so the street is built wide enough to survive
+; looking out from an angle.
+; The whole street sits one storey down: this is an upstairs bedroom, which is
+; where a teenager's room actually is, and it fixes the composition. Looking
+; level across a ground-floor street fills the lower half of the window with
+; empty tarmac; looking DOWN on it puts rooftops, tree canopies and the road at
+; readable angles and gives the view somewhere to recede to.
+[node name="Exterior" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3.2, 0)
+script = ExtResource("10_exterior")
+
+[node name="Ground" type="MeshInstance3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, -40)
+mesh = SubResource("Mesh_ground")
+surface_material_override/0 = SubResource("Mat_ground")
+
+[node name="Road" type="MeshInstance3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.04, -20)
+mesh = SubResource("Mesh_road")
+surface_material_override/0 = SubResource("Mat_road")
+
+[node name="KerbNear" type="MeshInstance3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, -16.2)
+mesh = SubResource("Mesh_kerb")
+surface_material_override/0 = SubResource("Mat_kerb")
+
+[node name="KerbFar" type="MeshInstance3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, -23.8)
+mesh = SubResource("Mesh_kerb")
+surface_material_override/0 = SubResource("Mat_kerb")
+
+; Houses across the road, scale 7 (a 1.3-unit model becomes a 9 m frontage,
+; 8 m to the ridge for the two-storey ones). Spaced 12 m so they read as separate
+; plots rather than a terrace.
+[node name="HouseA" parent="Exterior" instance=ExtResource("6_house2a")]
+transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, -21, -0.05, -32)
+
+[node name="HouseB" parent="Exterior" instance=ExtResource("4_house_a")]
+transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, -8, -0.05, -33)
+
+[node name="HouseC" parent="Exterior" instance=ExtResource("7_house2d")]
+transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, 5, -0.05, -32)
+
+[node name="HouseD" parent="Exterior" instance=ExtResource("5_house_b")]
+transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, 18, -0.05, -33)
+
+; A second row further back, smaller in frame, so the street has depth instead of
+; ending in a flat wall of facades.
+[node name="HouseFarA" parent="Exterior" instance=ExtResource("8_house2e")]
+transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, -14, -0.05, -52)
+
+[node name="HouseFarB" parent="Exterior" instance=ExtResource("6_house2a")]
+transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, 12, -0.05, -53)
+
+; The tree row is one instance of a 5-tree mesh that lives at x 198..223 in its
+; own space, so the origin below carries a -253 offset to bring it back. Scale
+; 1.2 makes them ~8 m tall and ~6 m apart, which is about right for street trees.
+[node name="TreeRow" parent="Exterior" instance=ExtResource("9_trees")]
+transform = Transform3D(1.2, 0, 0, 0, 1.2, 0, 0, 0, 1.2, -256.9, -0.04, -26)
+
+[node name="TreeRowFar" parent="Exterior" instance=ExtResource("9_trees")]
+transform = Transform3D(-1.4, 0, 0, 0, 1.4, 0, 0, 0, -1.4, 289, -0.04, -45)
+
+[node name="StreetLamp" type="Node3D" parent="Exterior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.5, 0, -16.4)
+
+[node name="Pole" type="MeshInstance3D" parent="Exterior/StreetLamp"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 0)
+mesh = SubResource("Mesh_lamp_pole")
+surface_material_override/0 = SubResource("Mat_lamp_pole")
+
+[node name="Head" type="MeshInstance3D" parent="Exterior/StreetLamp"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.05, 0)
+mesh = SubResource("Mesh_lamp_head")
+surface_material_override/0 = SubResource("Mat_lamp_head")
+
+[node name="Light" type="OmniLight3D" parent="Exterior/StreetLamp"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.8, 0)
+light_color = Color(1, 0.82, 0.52, 1)
+light_energy = 3.0
+omni_range = 14.0
+
+; Baseboard. Runs are unit meshes scaled along the wall direction; the cap sits
+; 4 mm prouder than the base.
+[node name="Baseboard" type="Node3D" parent="."]
+
+[node name="NorthBase" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(5.2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.055, -2.116)
+mesh = SubResource("Mesh_base_ns")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="NorthCap" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(5.2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.121, -2.112)
+mesh = SubResource("Mesh_cap_ns")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="SouthBase" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(5.2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.055, 2.116)
+mesh = SubResource("Mesh_base_ns")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="SouthCap" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(5.2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.121, 2.112)
+mesh = SubResource("Mesh_cap_ns")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="EastBase" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 4.4, 2.516, 0.055, 0)
+mesh = SubResource("Mesh_base_ew")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="EastCap" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 4.4, 2.512, 0.121, 0)
+mesh = SubResource("Mesh_cap_ew")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="WestNBase" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 2.9, -2.516, 0.055, -0.75)
+mesh = SubResource("Mesh_base_ew")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="WestNCap" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 2.9, -2.512, 0.121, -0.75)
+mesh = SubResource("Mesh_cap_ew")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="WestSBase" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.5, -2.516, 0.055, 1.95)
+mesh = SubResource("Mesh_base_ew")
+surface_material_override/0 = SubResource("Mat_trim")
+
+[node name="WestSCap" type="MeshInstance3D" parent="Baseboard"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.5, -2.512, 0.121, 1.95)
+mesh = SubResource("Mesh_cap_ew")
+surface_material_override/0 = SubResource("Mat_trim")
+
+; Ceiling fan globe. Grouped "ceiling_light", so QualityManager overwrites the
+; energy to 0.8 desktop / 0.6 Quest — the authored value here is only what shows
+; before it runs.
+[node name="FanGlobeLight" type="OmniLight3D" parent="." groups=["ceiling_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.35, 0)
+light_color = Color(1, 0.85, 0.62, 1)
+light_energy = 1.2
+omni_range = 7.0
+
+; Bedside and desk lamps stay OUT of the ceiling_light group so they keep the
+; energy authored here — they are the two lights that actually rake the walls and
+; make the orange-peel normal map read.
+[node name="BedsideLampLight" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.72, -1.95)
+light_color = Color(1, 0.78, 0.5, 1)
+light_energy = 1.0
+omni_range = 3.0
+
+[node name="DeskLampLight" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 1.05, -1.95)
+light_color = Color(1, 0.82, 0.58, 1)
+light_energy = 1.0
+omni_range = 3.0

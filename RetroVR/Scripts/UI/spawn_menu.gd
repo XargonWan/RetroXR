@@ -4538,6 +4538,10 @@ func _build_scene_view() -> Control:
 	grid.add_child(_make_room_card("Cozy Den", Color(0.4, 0.25, 0.12),
 		func(): scene_change_requested.emit("den")))
 
+	# 90s Bedroom card → direct scene switch
+	grid.add_child(_make_room_card("90s Bedroom", Color(0.30, 0.16, 0.36),
+		func(): scene_change_requested.emit("bedroom")))
+
 	# Test Hallway card → direct scene switch
 	grid.add_child(_make_room_card("Test Hallway", Color(0.12, 0.32, 0.30),
 		func(): scene_change_requested.emit("test")))

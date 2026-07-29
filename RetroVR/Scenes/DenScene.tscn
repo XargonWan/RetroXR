@@ -212,6 +212,7 @@ _data = {
 
 [node name="Root" type="Node3D"]
 script = ExtResource("1_xrinit")
+scene_id = "den"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Env_den")

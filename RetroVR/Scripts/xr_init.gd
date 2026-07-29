@@ -1,5 +1,23 @@
 extends Node3D
 
+## Scene id this room registers as in SceneManager.SCENE_PATHS. Leave empty for
+## the arcade, which is the default.
+@export var scene_id: String = ""
+
+
+## Claim the scene id before any _ready() runs. SpawnMenuController auto-loads the
+## last arcade save on startup whenever SceneManager still reads "arcade", and that
+## load begins by freeing every node in the "spawned" group — cables included.
+## Arriving through SceneManager.change_scene() sets the id already; running a
+## scene directly (F6, or a headless probe) does not.
+func _enter_tree() -> void:
+	if scene_id.is_empty():
+		return
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm != null:
+		sm.current_scene_id = scene_id
+
+
 func _ready():
 	DesktopBindings.load_and_apply()
 	var xr_interface = XRServer.find_interface("OpenXR")

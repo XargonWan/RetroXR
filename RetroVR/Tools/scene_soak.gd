@@ -42,6 +42,7 @@ func _drive() -> void:
 		return
 	await _switch("test")
 	await _switch("den")
+	await _switch("bedroom")
 	print("[soak] RESULT: SURVIVED both transitions with a core running")
 	get_tree().quit(0)
 
