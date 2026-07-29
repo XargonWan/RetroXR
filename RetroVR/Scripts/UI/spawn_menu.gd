@@ -2907,27 +2907,9 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 	edit.add_theme_font_size_override("font_size", 16)
 	edit.secret = secret
 
-	# Meta XR overlay keyboard bounce fix: after the keyboard is dismissed
-	# (via Enter or its close button), the Meta runtime fires a pointer-up
-	# event that re-focuses the LineEdit and re-opens the keyboard.
-	# A short cooldown on focus_entered prevents this loop.
-	edit.focus_entered.connect(func() -> void:
-		if edit.get_meta("kb_cooling", false):
-			edit.release_focus.call_deferred()
-	)
-	edit.text_submitted.connect(func(text: String) -> void:
-		on_changed.call(text)
-		edit.release_focus()
-		edit.set_meta("kb_cooling", true)
-		get_tree().create_timer(0.5).timeout.connect(
-			func() -> void: edit.set_meta("kb_cooling", false), CONNECT_ONE_SHOT)
-	)
-	edit.focus_exited.connect(func() -> void:
-		on_changed.call(edit.text)
-		edit.set_meta("kb_cooling", true)
-		get_tree().create_timer(0.5).timeout.connect(
-			func() -> void: edit.set_meta("kb_cooling", false), CONNECT_ONE_SHOT)
-	)
+	# Keyboard dismissal is handled globally by the VRKeyboard autoload.
+	edit.text_submitted.connect(func(text: String) -> void: on_changed.call(text))
+	edit.focus_exited.connect(func() -> void: on_changed.call(edit.text))
 
 	row.add_child(edit)
 
@@ -4937,11 +4919,6 @@ func _make_state_card(slot: Dictionary, active_slot_id: String) -> Control:
 		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		edit.add_theme_font_size_override("font_size", 20)
 		_scene_rename_edit = edit
-		# Meta XR overlay keyboard bounce fix (same pattern as options fields)
-		edit.focus_entered.connect(func() -> void:
-			if is_instance_valid(edit) and edit.get_meta("kb_cooling", false):
-				edit.release_focus.call_deferred()
-		)
 		edit.text_submitted.connect(func(_t: String) -> void:
 			_finish_rename()
 		)

@@ -32,6 +32,7 @@ QualityManager="*res://Scripts/quality_manager.gd"
 SceneManager="*res://Scripts/Data/scene_manager.gd"
 NetworkManager="*res://Scripts/Net/network_manager.gd"
 SpatialAudioListener="*res://Scripts/Audio/spatial_audio_listener.gd"
+VRKeyboard="*res://Scripts/UI/vr_keyboard_fix.gd"
 
 [display]
 
