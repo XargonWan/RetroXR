@@ -535,7 +535,7 @@ transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.345, 0, -0.55)
 ; Yaw 225 deg, not 45: the model faces +Z, so 45 pointed the doors and the open
 ; AV bay INTO the corner and presented its back to the room.
 [node name="TVStand" parent="Furniture" instance=ExtResource("15_tvstand")]
-transform = Transform3D(0.66629, 0, -0.66629, 0, 0.94228, 0, 0.66629, 0, 0.66629, 1.8215, 0.0392, 1.2618)
+transform = Transform3D(-0.66629, 0, -0.66629, 0, 0.94228, 0, 0.66629, 0, -0.66629, 1.495, 0.0392, 1.115)
 
 [node name="TrashCan" parent="Furniture" instance=ExtResource("16_trash")]
 transform = Transform3D(0.0012, 0, 0, 0, 0.0012, 0, 0, 0, 0.0012, -2.2574, -0.0017, 0.45)
@@ -563,7 +563,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.375, -1.78)
 shape = SubResource("Shape_desk")
 
 [node name="TVStandCol" type="CollisionShape3D" parent="FurnitureCollision"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.83, 0.485, 1.39)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65, 0.485, 1.245)
 shape = SubResource("Shape_tvstand")
 
 [node name="BedCol" type="CollisionShape3D" parent="FurnitureCollision"]
@@ -593,7 +593,7 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -2.6, -2.018, 0.89)
 ; composite port, CRT/phosphor stages and the options panel. Consoles plug into
 ; the television; a desktop_tower into the monitor.
 [node name="TV90s" parent="." instance=ExtResource("30_tv")]
-transform = Transform3D(-0.70711, 0, -0.70711, 0, 1, 0, 0.70711, 0, -0.70711, 1.86, 1.175, 1.42)
+transform = Transform3D(-0.70711, 0, -0.70711, 0, 1, 0, 0.70711, 0, -0.70711, 1.78, 1.175, 1.37)
 tv_model = "crt_90s"
 
 [node name="Monitor" parent="." instance=ExtResource("30_tv")]

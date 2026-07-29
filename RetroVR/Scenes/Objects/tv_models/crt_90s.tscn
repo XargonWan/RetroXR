@@ -19,7 +19,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.002, -0.2055, 0.053)
 ; this cabinet's picture area is ~0.30 x 0.225. The OSD labels are children of
 ; ScreenMesh and ride the same scale, so they stay proportional.
 [node name="ScreenSeat" type="Marker3D" parent="."]
-transform = Transform3D(0.857, 0, 0, 0, 0.9, 0, 0, 0, 0.9, 0, 0.035, 0.165)
+transform = Transform3D(0.857, 0, 0, 0, 0.9, 0, 0, 0, 0.9, 0, 0.035, 0.174)
 
 ; Composite in on the back panel, right side. Rotation matches the stock port so
 ; the plug still arrives nose-first.
