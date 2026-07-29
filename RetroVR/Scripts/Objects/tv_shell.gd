@@ -35,6 +35,20 @@ extends Node3D
 ## becomes the only control surface for this shell.
 @export var show_button_row: bool = true
 
+## Mesh nodes inside the shell GLB to hide. Chiefly the cabinet's own glass: the
+## live picture has to land on RetroTV's ScreenMesh, and a modelled pane sitting
+## in front of it would either z-fight or hide it outright.
+@export var hide_meshes: PackedStringArray = []
+
+
+func _ready() -> void:
+	if hide_meshes.is_empty():
+		return
+	for node in find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if hide_meshes.has(mi.name):
+			mi.visible = false
+
 
 func screen_seat() -> Variant:      return _seat("ScreenSeat")
 func port_seat() -> Variant:        return _seat("PortSeat")
