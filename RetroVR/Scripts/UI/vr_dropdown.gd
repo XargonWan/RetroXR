@@ -61,6 +61,7 @@ var _current_id: Variant = null
 var _grid_cols := 1
 var _font_size := 18
 var _placeholder := ""
+var _toggle_glyph := 0
 # Frame of the last accepted activation, to swallow the duplicate press that
 # xr-tools delivers in the same frame.
 var _last_activate_frame := -1
@@ -189,14 +190,16 @@ func set_label(text: String) -> void:
 	_label.text = text
 
 
-## Label the dropdown with a font glyph rather than words. The label stops
-## expanding, so the toggle sits next to the glyph instead of across the row.
-func set_label_glyph(codepoint: int, font: Font, px: int = 22) -> void:
-	_label.text = String.chr(codepoint)
-	_label.add_theme_font_override("font", font)
-	_label.add_theme_font_size_override("font_size", px)
-	_label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+## Put a font glyph on the toggle itself and drop the separate label, so the
+## control reads as one unit. `font` must resolve both the glyph and ordinary
+## text — a FontVariation with the symbols font as a fallback does.
+func set_toggle_glyph(codepoint: int, font: Font) -> void:
+	_toggle_glyph = codepoint
+	_toggle.add_theme_font_override("font", font)
+	_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_label.visible = false
+	_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_refresh_toggle_arrow()
 
 
 ## Show a glyph to the left of the label, e.g. a Kenney input prompt. Pass null
@@ -262,7 +265,8 @@ func _refresh_labels() -> void:
 
 
 func _refresh_toggle_arrow() -> void:
-	_toggle.text = _current_label() + (" ▴" if _panel.visible else " ▾")
+	var prefix := (String.chr(_toggle_glyph) + "   ") if _toggle_glyph != 0 else ""
+	_toggle.text = prefix + _current_label() + (" ▴" if _is_open else " ▾")
 	var glyph := _current_icon()
 	_toggle.icon = glyph
 	if glyph:

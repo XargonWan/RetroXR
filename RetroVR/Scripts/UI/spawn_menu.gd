@@ -1155,6 +1155,10 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	search.text_changed.connect(_on_romm_search_changed)
 	toolbar.add_child(search)
 
+	var sep := VSeparator.new()
+	sep.add_theme_constant_override("separation", 16)
+	toolbar.add_child(sep)
+
 	_romm_source_filter = "all"
 	_romm_region_filter = ""
 
@@ -1164,8 +1168,9 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 		["Not downloaded", "server"],
 		["Local only", "local"],
 	], "all", 1, Vector2(210, 52), 18)
+	source_drop.size_flags_horizontal = Control.SIZE_SHRINK_END
 	source_drop.float_panel = true
-	source_drop.set_label_glyph(_ICON_FILTER, _symbols())
+	source_drop.set_toggle_glyph(_ICON_FILTER, _symbols())
 	source_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_source_filter = str(id)
 		_rebuild_romm_rows()
@@ -1173,8 +1178,9 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	toolbar.add_child(source_drop)
 
 	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], "", 1, Vector2(210, 52), 18)
+	_romm_region_drop.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_romm_region_drop.float_panel = true
-	_romm_region_drop.set_label_glyph(_ICON_REGION, _symbols())
+	_romm_region_drop.set_toggle_glyph(_ICON_REGION, _symbols())
 	_romm_region_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_region_filter = str(id)
 		_rebuild_romm_rows()
