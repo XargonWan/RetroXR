@@ -1048,18 +1048,30 @@ func _populate_cartridges_tab() -> void:
 		if not seen.has(systemid):
 			systems.append({"systemid": systemid, "name": _system_label(systemid)})
 
-	# Badge each tile with what's local vs on the server.
+	# Mark tiles backed by the server with the RomM isotipo and its ROM count.
+	var mark: Texture2D = _romm_mark()
 	for s: Dictionary in systems:
 		var sid: String = s["systemid"]
 		var remote := 0
 		if _romm_platforms.has(sid):
 			remote = int((_romm_platforms[sid] as Dictionary).get("rom_count", 0))
-		if remote > 0:
-			s["badge"] = "%d on RomM" % remote
+		if remote > 0 and mark != null:
+			s["badge_icon"] = mark
+			s["badge_count"] = remote
 
 	_cartridges_browser.set_systems(systems)
 	# If a system detail is open, re-run it so newly-added ROMs appear.
 	_cartridges_browser.refresh()
+
+
+const _ROMM_MARK_PATH := "res://Textures/RomM/romm_logo.svg"
+var _romm_mark_tex: Texture2D = null
+
+
+func _romm_mark() -> Texture2D:
+	if _romm_mark_tex == null and ResourceLoader.exists(_ROMM_MARK_PATH):
+		_romm_mark_tex = load(_ROMM_MARK_PATH)
+	return _romm_mark_tex
 
 
 ## One /api/platforms call, cached. Local systems are already on screen by the
@@ -4418,6 +4430,7 @@ func _build_about_view() -> Control:
 		["ReaderWriterQueue","Cameron Desrochers","BSD"],
 		["libVLC",           "VideoLAN",        "LGPL v2.1"],
 		["Nerd Fonts",       "Ryan L McIntyre", "MIT"],
+		["RomM",             "RomM contributors", "AGPL v3"],
 	]
 	for entry: Array in LIBS:
 		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)

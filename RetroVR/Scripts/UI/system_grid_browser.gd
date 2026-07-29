@@ -40,6 +40,10 @@ var tile_min_size: Vector2 = Vector2(250, 96)
 
 ## Edge of the square the console art is fitted into, inside a tile.
 const ICON_PX := 60.0
+## Source-badge mark in the tile's bottom-right corner.
+const BADGE_MARK_PX := 26.0
+## Right margin the name column gives up so it cannot run under that badge.
+const BADGE_RESERVE_PX := 52.0
 
 # ── State ──────────────────────────────────────────────────────────────────────
 # Each entry: { "systemid": String, "name": String, "badge": String (optional) }
@@ -239,11 +243,17 @@ func _make_tile(s: Dictionary) -> Button:
 	# Console art on the left, name (and badge) on the right. Laid out as child
 	# controls rather than Button.icon + Button.text: Button draws its icon at
 	# the texture's own size, and these SVGs import ~165 px on the long edge.
+	var mark: Texture2D = s.get("badge_icon")
+	var mark_count := int(s.get("badge_count", 0))
+	var has_mark := mark != null and mark_count > 0
+
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
 	row.offset_left = 12
-	row.offset_right = -12
+	# Keep the name clear of the corner badge, which is an overlay and so does
+	# not take part in this layout.
+	row.offset_right = -BADGE_RESERVE_PX if has_mark else -12
 	row.add_theme_constant_override("separation", 10)
 	btn.add_child(row)
 
@@ -286,6 +296,36 @@ func _make_tile(s: Dictionary) -> Button:
 		badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.add_child(badge_lbl)
 
+	# Source badge, pinned to the bottom-right corner: a small mark plus a count,
+	# outside the name column so a long name cannot push it around.
+	if has_mark:
+		var corner := VBoxContainer.new()
+		corner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		corner.alignment = BoxContainer.ALIGNMENT_CENTER
+		corner.add_theme_constant_override("separation", 0)
+		corner.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		corner.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		corner.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		corner.offset_right = -8
+		corner.offset_bottom = -6
+		btn.add_child(corner)
+
+		var mark_rect := TextureRect.new()
+		mark_rect.texture = mark
+		mark_rect.custom_minimum_size = Vector2(BADGE_MARK_PX, BADGE_MARK_PX)
+		mark_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		mark_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mark_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		corner.add_child(mark_rect)
+
+		var count_lbl := Label.new()
+		count_lbl.text = _compact_count(mark_count)
+		count_lbl.add_theme_font_size_override("font_size", 14)
+		count_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+		count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		corner.add_child(count_lbl)
+
 	var base := StyleBoxFlat.new()
 	base.bg_color = COLOR_TILE
 	var hover := StyleBoxFlat.new()
@@ -302,6 +342,17 @@ func _make_tile(s: Dictionary) -> Button:
 
 	btn.pressed.connect(open_system.bind(sid))
 	return btn
+
+
+## 78911 in a 26 px corner is unreadable — 78.9k is not.
+static func _compact_count(n: int) -> String:
+	if n >= 1000000:
+		return "%.1fM" % (float(n) / 1000000.0)
+	if n >= 10000:
+		return "%dk" % int(round(float(n) / 1000.0))
+	if n >= 1000:
+		return "%.1fk" % (float(n) / 1000.0)
+	return str(n)
 
 
 func _on_filter_changed(text: String) -> void:
