@@ -4582,6 +4582,42 @@ func _build_about_view() -> Control:
 	data_note.add_theme_color_override("font_color", COLOR_LICENSE)
 	vbox.add_child(data_note)
 
+	vbox.add_child(_spacer(6))
+
+	# 3D models. The CC BY entries below are the reason this section exists:
+	# attribution is a licence condition for them, not a courtesy. The CC0 ones
+	# are credited anyway.
+	var mdl_hdr := Label.new()
+	mdl_hdr.text = "3D MODELS"
+	mdl_hdr.add_theme_font_size_override("font_size", 20)
+	mdl_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(mdl_hdr)
+
+	const MODELS: Array = [
+		["Bedroom furniture", "General of Thailand — @Melonpolygons", "CC BY 4.0"],
+		["Bookcases with books", "Matthew Collings — @mtcollings", "CC BY 4.0"],
+		["Ceiling fan", "lucaboechat", "CC BY 4.0"],
+		["Corner TV stand", "Manix3D — @manix3d", "CC BY 4.0"],
+		["CRT computer monitor", "fizyman", "CC BY 4.0"],
+		["Interior door and trim", "Roman — @janwama", "CC BY 4.0"],
+		["Trash can", "Yury Misiyuk — @Tim0", "CC BY 4.0"],
+		["Television 02", "Benny Weimer — Poly Haven", "CC0 1.0"],
+		["Suburban houses", "Kenney — kenney.nl", "CC0 1.0"],
+		["Trees", "Quaternius", "CC0 1.0"],
+		["Furniture Kit", "Kenney — kenney.nl", "CC0 1.0"],
+		["Surfaces", "ambientCG", "CC0 1.0"],
+	]
+	for entry: Array in MODELS:
+		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
+
+	var mdl_note := Label.new()
+	mdl_note.text = "Room and prop models. CC BY entries require attribution; "\
+		+ "wall and floor surfaces are ambientCG photogrammetry."
+	mdl_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mdl_note.add_theme_font_size_override("font_size", 14)
+	mdl_note.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(mdl_note)
+
 	vbox.add_child(_spacer(12))
 	return scroll
 
