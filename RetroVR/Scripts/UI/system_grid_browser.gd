@@ -62,6 +62,7 @@ var _home_empty:   Label           = null
 var _detail_scroll: ScrollContainer = null
 var _detail_vbox:  VBoxContainer   = null
 var _detail_title: Label           = null
+var _detail_toolbar: HBoxContainer = null
 
 
 func _ready() -> void:
@@ -87,11 +88,22 @@ func set_detail_populator(cb: Callable) -> void:
 
 
 ## Open a system's detail page and (re)run the populator for it.
+## Pinned row above the detail scroll area, for search and filters. Cleared on
+## every open_system; add children from the detail populator.
+func detail_toolbar() -> HBoxContainer:
+	_ensure_built()
+	return _detail_toolbar
+
+
 func open_system(systemid: String) -> void:
 	_ensure_built()
 	_current_systemid = systemid
 	for c in _detail_vbox.get_children():
 		c.queue_free()
+	for c in _detail_toolbar.get_children():
+		_detail_toolbar.remove_child(c)
+		c.queue_free()
+	_detail_toolbar.visible = false
 	var name := systemid
 	for s: Dictionary in _systems:
 		if s.get("systemid", "") == systemid:
@@ -205,6 +217,14 @@ func _ensure_built() -> void:
 	header.add_child(_detail_title)
 
 	_detail_page.add_child(HSeparator.new())
+
+	# Sits outside the scroll area, so search and filters stay put while the
+	# list scrolls under them. Filled by the host's detail populator.
+	_detail_toolbar = HBoxContainer.new()
+	_detail_toolbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_toolbar.add_theme_constant_override("separation", 8)
+	_detail_toolbar.visible = false
+	_detail_page.add_child(_detail_toolbar)
 
 	_detail_scroll = ScrollContainer.new()
 	_detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -107,6 +107,11 @@ var _romm_rows: Array[Dictionary] = []
 var _romm_detail_systemid: String = ""
 var _romm_detail_exts: Array[String] = []
 var _romm_filter: String = ""
+## "all" | "downloaded" | "server" | "local", and a region name or "" for any.
+var _romm_source_filter: String = "all"
+var _romm_region_filter: String = ""
+var _romm_region_drop: VRDropdown = null
+var _romm_region_options: Array[String] = []
 var _romm_list: VirtualRowList = null
 var _romm_empty_label: Label = null
 ## rom_id -> percent, so a recycled row can show live progress when it scrolls
@@ -1126,15 +1131,42 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 				exts.append(e)
 	_romm_detail_exts = exts
 
-	# Search box — filters locally over the cached names, so it stays instant
-	# even at 100k rows and works with the server offline.
+	# Search and filters live in the browser's pinned toolbar, not in the scroll
+	# area — they must stay reachable however far down the list you are.
+	var toolbar := _cartridges_browser.detail_toolbar()
+	toolbar.visible = true
+
+	# Local filter over the cached names: instant at 100k rows, works offline.
 	var search := LineEdit.new()
 	search.placeholder_text = "Search %s…" % _system_label(systemid)
 	search.clear_button_enabled = true
 	search.custom_minimum_size = Vector2(0, 52)
+	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	search.add_theme_font_size_override("font_size", 20)
 	search.text_changed.connect(_on_romm_search_changed)
-	vbox.add_child(search)
+	toolbar.add_child(search)
+
+	_romm_source_filter = "all"
+	_romm_region_filter = ""
+
+	var source_drop := VRDropdown.create("", [
+		["All", "all"],
+		["Downloaded", "downloaded"],
+		["Not downloaded", "server"],
+		["Local only", "local"],
+	], "all", 1, Vector2(210, 52), 18)
+	source_drop.item_selected.connect(func(id: Variant) -> void:
+		_romm_source_filter = str(id)
+		_rebuild_romm_rows()
+	)
+	toolbar.add_child(source_drop)
+
+	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], "", 1, Vector2(210, 52), 18)
+	_romm_region_drop.item_selected.connect(func(id: Variant) -> void:
+		_romm_region_filter = str(id)
+		_rebuild_romm_rows()
+	)
+	toolbar.add_child(_romm_region_drop)
 
 	_romm_empty_label = Label.new()
 	_romm_empty_label.add_theme_font_size_override("font_size", 18)
@@ -1171,6 +1203,7 @@ func _rebuild_romm_rows() -> void:
 		return
 
 	_romm_rows.clear()
+	var regions_seen: Dictionary = {}
 
 	# 1. Local files, keyed by lowercase basename.
 	#
@@ -1205,8 +1238,18 @@ func _rebuild_romm_rows() -> void:
 			var local: Dictionary = local_by_name.get(key, {})
 			if not local.is_empty():
 				matched[key] = true
+
+			# Region options come from the data, so a platform only ever offers
+			# regions it actually has.
+			var regions: Array = entry.get("regions", []) if entry.get("regions") is Array else []
+			for r: Variant in regions:
+				regions_seen[str(r)] = true
+
+			var src := "both" if not local.is_empty() else "server"
+			if not _romm_row_passes(src, regions):
+				continue
 			_romm_rows.append({
-				"source": "both" if not local.is_empty() else "server",
+				"source": src,
 				"entry": entry,
 				"path": str(local.get("path", "")),
 				"label": str(entry.get("name", fs_name.get_basename())),
@@ -1224,12 +1267,17 @@ func _rebuild_romm_rows() -> void:
 		var label := str(rom["label"])
 		if not _romm_filter.is_empty() and not label.to_lower().contains(_romm_filter):
 			continue
+		# A local-only file has no server metadata, so it has no region to match.
+		if not _romm_row_passes("local", []):
+			continue
 		_romm_rows.append({
 			"source": "local",
 			"entry": {},
 			"path": str(rom["path"]),
 			"label": label,
 		})
+
+	_romm_refresh_region_options(regions_seen)
 
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.set_row_count(_romm_rows.size())
@@ -1244,6 +1292,54 @@ func _rebuild_romm_rows() -> void:
 			else:
 				_romm_empty_label.text = "Add ROMs to %s/ to see them here." \
 					% RomLibrary.rom_dir_for_system(systemid)
+
+
+func _romm_row_passes(source: String, regions: Array) -> bool:
+	match _romm_source_filter:
+		"downloaded":
+			if source == "server":
+				return false
+		"server":
+			if source != "server":
+				return false
+		"local":
+			if source != "local":
+				return false
+
+	if not _romm_region_filter.is_empty():
+		var hit := false
+		for r: Variant in regions:
+			if str(r) == _romm_region_filter:
+				hit = true
+				break
+		if not hit:
+			return false
+	return true
+
+
+## Rebuild the region list from what the platform actually contains, keeping the
+## current selection if it survives.
+func _romm_refresh_region_options(seen: Dictionary) -> void:
+	var names: Array[String] = []
+	for r: String in seen:
+		if not r.is_empty():
+			names.append(r)
+	names.sort()
+	if names == _romm_region_options:
+		return
+	_romm_region_options = names
+
+	# A selection that no longer exists on this platform would silently empty
+	# the list.
+	if not _romm_region_filter.is_empty() and _romm_region_filter not in names:
+		_romm_region_filter = ""
+
+	if _romm_region_drop == null or not is_instance_valid(_romm_region_drop):
+		return
+	var opts: Array = [["All regions", ""]]
+	for r: String in names:
+		opts.append([r, r])
+	_romm_region_drop.set_options(opts, _romm_region_filter)
 
 
 func _on_romm_search_changed(text: String) -> void:
@@ -3859,13 +3955,16 @@ func _romm_check_for_changes() -> void:
 	romm_client.stats(func(ok: bool, stats: Dictionary) -> void:
 		if not ok or stats.is_empty():
 			return
-		if romm_config.stats_unchanged(stats):
-			return
-		romm_config.last_stats = stats
-		romm_config.save_config()
-		# Refresh the platform list; per-platform ROM sync still happens lazily
-		# when the user actually opens that system.
-		_romm_fetch_platforms()
+		var changed := not romm_config.stats_unchanged(stats)
+		if changed:
+			romm_config.last_stats = stats
+			romm_config.save_config()
+		# last_stats persists but the platform list does not, so a run that
+		# starts with an unchanged library still has to fetch it once. Gating
+		# purely on the fingerprint left RomM permanently absent until something
+		# on the server happened to change.
+		if changed or _romm_platforms.is_empty():
+			_romm_fetch_platforms()
 	)
 
 
@@ -4446,12 +4545,16 @@ func _build_about_view() -> Control:
 
 	const ART: Array = [
 		["Systematic icon set", "BAXY Square — github.com/baxysquare", "MIT"],
+		["Input Prompts", "Kenney — kenney.nl", "CC0 1.0"],
+		["Touch controller model", "immersive-web/webxr-input-profiles", "MIT"],
 	]
 	for entry: Array in ART:
 		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
 
 	var art_note := Label.new()
-	art_note.text = "Console art from the Systematic theme for RetroArch / Lakka."
+	art_note.text = "Console art from the Systematic theme for RetroArch / Lakka. "\
+		+ "Controller line art is rendered from the WebXR input profile model; "\
+		+ "button glyphs are Kenney's Input Prompts."
 	art_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	art_note.add_theme_font_size_override("font_size", 14)
 	art_note.add_theme_color_override("font_color", COLOR_LICENSE)
