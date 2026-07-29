@@ -68,3 +68,11 @@ mono_crash.*.json
 /audio/
 /videos/
 /music/
+
+# metaxr-audio build artifacts (same convention as libretro-godot / godot-pdfium)
+RetroVR/metaxr-audio/~*
+RetroVR/metaxr-audio/*.exp
+RetroVR/metaxr-audio/*.ilk
+RetroVR/metaxr-audio/*.lib
+RetroVR/metaxr-audio/*.pdb
+metaxr-audio-godot/Temp/

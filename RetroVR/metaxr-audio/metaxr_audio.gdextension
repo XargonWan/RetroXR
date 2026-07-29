@@ -1,0 +1,17 @@
+[configuration]
+
+entry_symbol = "metaxr_audio_library_init"
+compatibility_minimum = "4.4.1"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "metaxr-audio.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "metaxr-audio.windows.template_release.x86_64.dll"
+android.debug.arm64 = "libmetaxr-audio.android.template_debug.arm64.so"
+android.release.arm64 = "libmetaxr-audio.android.template_release.arm64.so"
+
+[dependencies]
+
+android.debug.arm64 = {"libMetaXRAudioUnity.so": ""}
+android.release.arm64 = {"libMetaXRAudioUnity.so": ""}
