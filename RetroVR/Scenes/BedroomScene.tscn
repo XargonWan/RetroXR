@@ -287,8 +287,10 @@ size = Vector3(0.026, 0.022, 1)
 [sub_resource type="PlaneMesh" id="Mesh_rug"]
 size = Vector2(2.4, 1.7)
 
+; No albedo tint. The red rug needed 0.66 to stop it shouting; the taupe
+; colourway carries its own muted values, and tinting a muted texture again only
+; darkens it — the same double-application that turned the walls orange.
 [sub_resource type="StandardMaterial3D" id="Mat_rug"]
-albedo_color = Color(0.66, 0.63, 0.6, 1)
 albedo_texture = ExtResource("32_rug")
 roughness = 0.95
 

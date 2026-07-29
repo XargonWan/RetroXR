@@ -136,11 +136,22 @@ def poster_grid(w=640, h=854, seed=11):
 # Rug — a geometric medallion carpet, drawn as one quadrant and mirrored so
 # it is exactly symmetric the way a woven rug is.
 # --------------------------------------------------------------------------
-def rug(w=1024, h=683, seed=3):
-    FIELD = (138, 30, 28)
-    NAVY = (24, 38, 74)
-    CREAM = (226, 210, 174)
-    GOLD = (198, 150, 60)
+# Rug colourways. The first version was a saturated Persian red — measured
+# against the room it was 0.60 saturation and 0.32 value, where the walls are
+# 0.10/0.61 and the carpet 0.29/0.70. It contrasted on BOTH axes at once, which
+# is why it dominated every shot. These sit inside the room's own range.
+RUG_PALETTES = {
+    "red":        ((138, 30, 28), (24, 38, 74), (226, 210, 174), (198, 150, 60)),
+    "taupe":      ((152, 136, 118), (112, 100, 88), (224, 214, 196), (176, 158, 132)),
+    "sage":       ((138, 146, 128), (100, 108, 94), (222, 222, 206), (166, 172, 150)),
+    "slate":      ((130, 138, 146), (94, 102, 112), (214, 218, 220), (158, 166, 174)),
+    "terracotta": ((158, 130, 116), (114, 92, 84), (226, 214, 198), (182, 154, 130)),
+    "greige":     ((156, 148, 140), (116, 108, 100), (226, 220, 212), (180, 170, 158)),
+}
+
+
+def rug(w=1024, h=683, seed=3, palette="taupe"):
+    FIELD, NAVY, CREAM, GOLD = RUG_PALETTES[palette]
 
     img = Image.new("RGB", (w, h), FIELD)
     d = ImageDraw.Draw(img)
@@ -216,9 +227,29 @@ def rug(w=1024, h=683, seed=3):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "rugs":
+        # Colourway audition: emit every palette, plus its measured saturation
+        # and value so a candidate can be rejected before a render is spent.
+        import colorsys
+        out_dir = sys.argv[2] if len(sys.argv) > 2 else OUT
+        os.makedirs(out_dir, exist_ok=True)
+        for pal in RUG_PALETTES:
+            im = rug(palette=pal)
+            path = os.path.join(out_dir, "rug_%s.png" % pal)
+            im.save(path)
+            px = list(im.getdata())
+            n = float(len(px))
+            mr = sum(q[0] for q in px) / n / 255.0
+            mg = sum(q[1] for q in px) / n / 255.0
+            mb = sum(q[2] for q in px) / n / 255.0
+            _, sat, val = colorsys.rgb_to_hsv(mr, mg, mb)
+            print("wrote rug_%-11s sat %.3f  val %.3f" % (pal + ".png", sat, val))
+        raise SystemExit(0)
+
     for name, im in (("poster_memphis", poster_memphis()),
                      ("poster_grid", poster_grid()),
-                     ("rug_persian", rug())):
+                     ("rug_persian", rug(palette="taupe"))):
         path = os.path.join(OUT, name + ".png")
         im.save(path)
         print("wrote %s  %dx%d" % (path, im.size[0], im.size[1]))
