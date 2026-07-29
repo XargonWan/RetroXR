@@ -4387,39 +4387,66 @@ func _build_about_view() -> Control:
 		["Nerd Fonts",       "Ryan L McIntyre", "MIT"],
 	]
 	for entry: Array in LIBS:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		row.custom_minimum_size = Vector2(0, 52)
-		vbox.add_child(row)
+		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
 
-		var left := VBoxContainer.new()
-		left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		left.add_theme_constant_override("separation", 2)
-		row.add_child(left)
+	vbox.add_child(_spacer(6))
 
-		var name_lbl := Label.new()
-		name_lbl.text = entry[0] as String
-		name_lbl.add_theme_font_size_override("font_size", 18)
-		name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		left.add_child(name_lbl)
+	# Artwork header
+	var art_hdr := Label.new()
+	art_hdr.text = "ARTWORK"
+	art_hdr.add_theme_font_size_override("font_size", 20)
+	art_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(art_hdr)
 
-		var author_sub := Label.new()
-		author_sub.text = entry[1] as String
-		author_sub.add_theme_font_size_override("font_size", 14)
-		author_sub.add_theme_color_override("font_color", COLOR_LICENSE)
-		left.add_child(author_sub)
+	const ART: Array = [
+		["Systematic icon set", "BAXY Square — github.com/baxysquare", "MIT"],
+	]
+	for entry: Array in ART:
+		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
 
-		var lic_lbl := Label.new()
-		lic_lbl.text = entry[2] as String
-		lic_lbl.add_theme_font_size_override("font_size", 16)
-		lic_lbl.add_theme_color_override("font_color", COLOR_DESC)
-		lic_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(lic_lbl)
-
-		vbox.add_child(HSeparator.new())
+	var art_note := Label.new()
+	art_note.text = "Console art from the Systematic theme for RetroArch / Lakka."
+	art_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	art_note.add_theme_font_size_override("font_size", 14)
+	art_note.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(art_note)
 
 	vbox.add_child(_spacer(12))
 	return scroll
+
+
+## One credit line: title over author on the left, licence on the right.
+func _add_credit_row(vbox: VBoxContainer, title: String, author: String, license: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0, 52)
+	vbox.add_child(row)
+
+	var left := VBoxContainer.new()
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.add_theme_constant_override("separation", 2)
+	row.add_child(left)
+
+	var title_lbl := Label.new()
+	title_lbl.text = title
+	title_lbl.add_theme_font_size_override("font_size", 18)
+	title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	left.add_child(title_lbl)
+
+	var author_sub := Label.new()
+	author_sub.text = author
+	author_sub.add_theme_font_size_override("font_size", 14)
+	author_sub.add_theme_color_override("font_color", COLOR_LICENSE)
+	left.add_child(author_sub)
+
+	var lic_lbl := Label.new()
+	lic_lbl.text = license
+	lic_lbl.add_theme_font_size_override("font_size", 16)
+	lic_lbl.add_theme_color_override("font_color", COLOR_DESC)
+	lic_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(lic_lbl)
+
+	vbox.add_child(HSeparator.new())
 
 
 func _spacer(height: int) -> Control:
