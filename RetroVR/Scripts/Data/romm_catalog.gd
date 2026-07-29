@@ -229,6 +229,11 @@ func sync_platform(systemid: String, platform_id: int, full: bool = false) -> bo
 		_thread = null
 		_syncing_systemid = ""
 		return false
+
+	# Announce before the first request goes out. `total` is only known once
+	# page one lands, and on a large platform that is several seconds of a ~3 MB
+	# body — long enough to look like nothing is happening.
+	sync_started.emit(systemid, 0)
 	return true
 
 

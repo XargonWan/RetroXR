@@ -1195,13 +1195,14 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	_romm_list.set_row_binder(_bind_rom_row)
 	vbox.add_child(_romm_list)
 
-	_rebuild_romm_rows()
-
-	# Kick off a sync if this platform has server content we've never indexed.
+	# Start before the first rebuild, or the empty list reads "add ROMs here"
+	# while a sync is in fact already running.
 	if _romm_platforms.has(systemid) and not RommCatalog.has_index(systemid):
 		var pid := int((_romm_platforms[systemid] as Dictionary).get("id", 0))
 		if pid > 0:
 			romm_catalog.sync_platform(systemid, pid, true)
+
+	_rebuild_romm_rows()
 
 
 ## Build the merged row model: every local file, plus every server entry, with
@@ -4026,9 +4027,15 @@ func _on_romm_reachability_changed(reachable: bool) -> void:
 	notify("romm:conn", "❌", "RomM unreachable", -1.0, _ROMM_DWELL_FAIL)
 
 
+## Fires twice: once before the first request, then again with the real total
+## once page one lands. The toast updates in place.
 func _on_romm_sync_started(systemid: String, total: int) -> void:
-	notify("romm:sync:" + systemid, "⏳",
-		"Syncing %s from RomM…" % _system_label(systemid), 0.0 if total <= 0 else 0.0)
+	var label := _system_label(systemid)
+	if total <= 0:
+		notify("romm:sync:" + systemid, "⏳", "Fetching the %s list from RomM…" % label, -1.0)
+	else:
+		notify("romm:sync:" + systemid, "⏳",
+			"Syncing %s · 0 / %s" % [label, _commas(total)], 0.0)
 
 
 func _on_romm_sync_progress(systemid: String, done: int, total: int) -> void:
