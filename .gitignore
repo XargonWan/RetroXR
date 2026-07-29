@@ -34,6 +34,12 @@ RetroVR/vlc-godot/*.pdb
 # reimports them at full size for no visual gain.
 !RetroVR/Textures/SystemIcons/*.svg.import
 
+# The bedroom's NormalGL maps need compress/normal_map=1 so they import as linear
+# normal data rather than sRGB colour. Godot only sets that when the editor
+# prompts on assignment, which never happens for a hand-authored .tscn — without
+# these a fresh clone renders the walls and carpet nearly flat.
+!RetroVR/imported-assets/bedroom/materials/*.import
+
 *.apk
 
 # Godot-specific ignores
