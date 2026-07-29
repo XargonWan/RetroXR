@@ -132,18 +132,21 @@ func _adjust_lights() -> void:
 
 # ── Graphics settings ─────────────────────────────────────────────────────────
 
-## Downscaling the 3D pass breaks the mobile backend's XR viewport: it logs
-## `!draw_list.active` about 177 times per frame. Measured on a Quest 3 — 0 errors
-## at 1.0x and at 1.5x, 510,724 in 40 s at 0.5x, all three running bilinear, so
-## the upscaler is not the trigger and only the direction matters. Supersampling
-## is the useful direction on that headset anyway: the eye buffer sits below the
-## panel, which is what the multiplier in xr_init.gd exists to claw back.
-func min_render_scale() -> float:
-	return RENDER_SCALE_MIN if _is_forward_plus() else 1.0
+## Scaling the 3D pass at all breaks the mobile backend's XR viewport, in both
+## directions and for both upscalers. Measured on a Quest 3: 0.5x logs
+## `!draw_list.active` ~177 times a frame (510,724 in 40 s, against 0 at 1.0x),
+## and 1.5x renders the scene into a corner of the eye buffer with stale frame
+## data filling the rest. Neither shows up on a desktop SubViewport under the
+## same backend, so only the headset catches it. The knob is therefore not
+## offered there — 1.0 is the only safe value, and the way to spend resolution
+## on that headset is the eye-buffer multiplier in xr_init.gd instead.
+func supports_render_scale() -> bool:
+	return _is_forward_plus()
 
 
 func set_render_scale(scale: float) -> void:
-	render_scale = clampf(scale, min_render_scale(), RENDER_SCALE_MAX)
+	render_scale = clampf(scale, RENDER_SCALE_MIN, RENDER_SCALE_MAX) \
+		if supports_render_scale() else 1.0
 	apply_render_scale()
 	save_prefs()
 
@@ -268,10 +271,10 @@ func _load_prefs() -> void:
 		ShadowQuality.OFF, ShadowQuality.HIGH) as ShadowQuality
 	ao_quality = clampi(_prefs_int(data, "ao_quality", ao_quality),
 		AOQuality.OFF, AOQuality.HIGH) as AOQuality
-	# min_render_scale(), not the constant — a 0.5 saved on desktop and synced to a
-	# headset must not bring the broken path back with it.
+	# Forced to 1.0 where scaling is unsupported, so a value saved on desktop and
+	# synced to a headset cannot bring the broken path back with it.
 	render_scale = clampf(_prefs_float(data, "render_scale", render_scale),
-		min_render_scale(), RENDER_SCALE_MAX)
+		RENDER_SCALE_MIN, RENDER_SCALE_MAX) if supports_render_scale() else 1.0
 
 
 func save_prefs() -> void:

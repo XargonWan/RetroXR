@@ -2097,29 +2097,21 @@ func _build_graphics_view() -> Control:
 	quality_hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(quality_hdr)
 
-	# Below 100% is left out entirely where it is broken rather than offered and
-	# then clamped, so the list never shows a value that will not stick.
-	var scale_min: float = QualityManager.min_render_scale()
-	var scale_options: Array = []
-	for pair: Array in [["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
-			["100%", 1.0], ["125%", 1.25], ["150%", 1.5]]:
-		if float(pair[1]) >= scale_min:
-			scale_options.append(pair)
+	# Scaling the 3D pass corrupts the XR viewport on the mobile backend in both
+	# directions, so the row is not offered there at all rather than shown with
+	# values that would break the view.
+	if QualityManager.supports_render_scale():
+		var scale_opt := VRDropdown.create("Render Scale",
+			[["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
+			 ["100%", 1.0], ["125%", 1.25], ["150%", 1.5]],
+			QualityManager.render_scale, 6, Vector2(95, 52), 20)
+		scale_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_render_scale(float(id)))
+		vbox.add_child(scale_opt)
 
-	var scale_opt := VRDropdown.create("Render Scale", scale_options,
-		QualityManager.render_scale, scale_options.size(), Vector2(95, 52), 20)
-	scale_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_render_scale(float(id)))
-	vbox.add_child(scale_opt)
-
-	var scale_hint := "Resolution the 3D world is drawn at before it is scaled to the display. "
-	if scale_min < 1.0:
-		scale_hint += "Below 100% FSR upscales it for cheaper frames; above 100% supersamples."
-	else:
-		scale_hint += "Above 100% supersamples, which is the useful direction here — the " \
-			+ "headset's eye buffer sits below its panel. Downscaling is not offered on " \
-			+ "this renderer: it breaks the XR viewport."
-	_add_graphics_hint(vbox, scale_hint)
+		_add_graphics_hint(vbox, "Resolution the 3D world is drawn at before it is scaled "
+			+ "to the display. Below 100% FSR upscales it for cheaper frames; above 100% "
+			+ "supersamples.")
 
 	var msaa_opt := VRDropdown.create("Anti-Aliasing",
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
@@ -2864,6 +2856,10 @@ const _BUTTON_SOURCE_ORDER: Array = [
 	"left_ax_button",  "left_by_button",  "left_grip",  "left_trigger",  "left_primary_click",
 ]
 
+## Height reserved for the ControllerDiagram: five 56 px rows plus their gaps,
+## with room for the art between the columns.
+const _CONTROLS_DIAGRAM_H := 520.0
+
 ## Order in which lightgun sources appear in the Controls UI.
 const _LIGHTGUN_SOURCE_ORDER: Array = [
 	"trigger", "grip", "ax_button", "by_button", "primary_click",
@@ -2905,17 +2901,21 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
 	vbox.add_child(btn_hdr)
 
+	# Picture of both controllers with a leader line from each input to its own
+	# dropdown, instead of ten unillustrated "Left Grip"-style rows. Its
+	# dropdowns register under the same "btn:<src>" keys, so reset still drives
+	# them through _reset_vr_dropdown.
+	var diagram := ControllerDiagram.new()
+	diagram.custom_minimum_size = Vector2(0, _CONTROLS_DIAGRAM_H)
+	diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	diagram.setup(_edit_button_map, _JOYPAD_OPTIONS)
+	diagram.binding_changed.connect(func(src: String, bit: int) -> void:
+		_edit_button_map[src] = bit
+		_apply_xr_bindings())
+	vbox.add_child(diagram)
+
 	for src: String in _BUTTON_SOURCE_ORDER:
-		var label: String = ControllerBindings.BUTTON_SOURCE_LABELS.get(src, src)
-		var current_bit: int = _edit_button_map.get(src, -1)
-		var captured_src := src
-		vbox.add_child(_make_vr_dropdown_row(
-			"btn:" + src, label, _JOYPAD_OPTIONS, current_bit,
-			func(v: Variant) -> void:
-				_edit_button_map[captured_src] = v as int
-				_apply_xr_bindings(),
-			4
-		))
+		_controls_opts["btn:" + src] = diagram.get_dropdown(src)
 
 	# ── Analog Sticks ─────────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
