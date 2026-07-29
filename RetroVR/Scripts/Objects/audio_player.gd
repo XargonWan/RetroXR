@@ -42,8 +42,7 @@ const SCAN_SEEK_INTERVAL := 0.08
 const PREV_RESTART_SEC := 3.0
 
 var _vlc: Object = null                 # VlcPlayer (GDExtension)
-var _audio_player: AudioStreamPlayer3D = null
-var _audio_playback: AudioStreamGeneratorPlayback = null
+var _emitter: SpatialAudioEmitter = null
 var _volume_linear: float = 1.0
 
 var _snapped_media: Node3D = null
@@ -108,15 +107,14 @@ func is_paused() -> bool:
 ## Build the spatialised audio player fed by VlcPlayer's PCM ring buffer. As a
 ## child of the (pickable) unit it follows the device around automatically.
 func _setup_audio() -> void:
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
-	gen.buffer_length = 0.25
-	_audio_player = AudioStreamPlayer3D.new()
-	_audio_player.name = "AudioStreamPlayer3D"
-	_audio_player.stream = gen
-	_audio_player.unit_size = 2.0
-	_audio_player.max_distance = 12.0
-	add_child(_audio_player)
+	_emitter = SpatialAudioEmitter.new()
+	_emitter.name = "SpatialAudioEmitter"
+	_emitter.unit_size = 2.0
+	_emitter.max_distance = 12.0
+	# A hi-fi has two speakers a little way apart; hearing them separately is
+	# most of what makes it feel like an object in the room.
+	_emitter.speaker_separation = 0.18
+	add_child(_emitter)
 
 
 func _process(delta: float) -> void:
@@ -128,14 +126,15 @@ func _process(delta: float) -> void:
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
 func _pump_audio() -> void:
-	if _audio_playback == null:
+	if _emitter == null:
 		return
-	var avail := _audio_playback.get_frames_available()
-	if avail <= 0:
+	# frames_wanted, not "all free space": queue depth is latency.
+	var want := _emitter.frames_wanted()
+	if want <= 0:
 		return
-	var frames: PackedVector2Array = _vlc.read_audio(avail)
+	var frames: PackedVector2Array = _vlc.read_audio(want)
 	if frames.size() > 0:
-		_audio_playback.push_buffer(frames)
+		_emitter.push_stereo(frames)
 
 
 # --- Position helpers (VlcPlayer reports ms / 0..1) ---
@@ -373,9 +372,8 @@ func play() -> void:
 	is_playing = true
 	_paused = false
 	_scan_dir = 0
-	if _audio_player:
-		_audio_player.play()
-		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	if _emitter:
+		_emitter.flush()
 		_apply_volume()
 	_update_status()
 	_net_push_state()
@@ -389,9 +387,8 @@ func stop() -> void:
 		_vlc.stop()
 	is_playing = false
 	_paused = false
-	if _audio_player:
-		_audio_player.stop()
-	_audio_playback = null
+	if _emitter:
+		_emitter.flush()
 	_update_status()
 	_net_push_state()
 
@@ -407,22 +404,17 @@ func _on_track_finished() -> void:
 	else:
 		is_playing = false
 		_paused = false
-		if _audio_player:
-			_audio_player.stop()
-		_audio_playback = null
+		if _emitter:
+			_emitter.flush()
 		_update_status()
 		_net_push_state()
 
 
 # --- Volume / status ---
 
-func _volume_db() -> float:
-	return linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
-
-
 func _apply_volume() -> void:
-	if _audio_player:
-		_audio_player.volume_db = -80.0 if _scan_dir != 0 else _volume_db()
+	if _emitter:
+		_emitter.set_volume(0.0 if _scan_dir != 0 else _volume_linear)
 
 
 func _apply_scan_mute() -> void:

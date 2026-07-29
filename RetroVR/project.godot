@@ -31,6 +31,7 @@ AppPrefs="*res://Scripts/Data/app_prefs.gd"
 QualityManager="*res://Scripts/quality_manager.gd"
 SceneManager="*res://Scripts/Data/scene_manager.gd"
 NetworkManager="*res://Scripts/Net/network_manager.gd"
+SpatialAudioListener="*res://Scripts/Audio/spatial_audio_listener.gd"
 
 [display]
 
@@ -258,19 +259,16 @@ common/physics_ticks_per_second=90
 3d/solver/contact_recycle_radius=0.005
 common/physics_interpolation=true
 
-[retrovr]
-
-; Load the detailed hardware models we have no licence for. DEVELOPMENT AND
-; TESTING ONLY - leave this off for anything you intend to ship. Equivalent to
-; passing --unbundled-models on the command line. See RetroModelPolicy.
-models/unbundled_models=false
-
 [rendering]
 
 textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_3d=1
 openxr/multiview=true
 renderer/rendering_method.android="mobile"
+
+[retrovr]
+
+models/unbundled_models=false
 
 [xr]
 

@@ -36,8 +36,7 @@ var _slot: MediaSlot = null
 # Spatial audio: libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into
 # an AudioStreamGenerator on a 3D player positioned at the connected TV, so DVD
 # sound is spatialised (and the TV volume knob scales it) like the console audio.
-var _audio_player: AudioStreamPlayer3D = null
-var _audio_playback: AudioStreamGeneratorPlayback = null
+var _emitter: SpatialAudioEmitter = null
 var _volume_linear: float = 1.0
 var _paused: bool = false
 
@@ -122,15 +121,14 @@ func _ready() -> void:
 
 ## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
 func _setup_audio() -> void:
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
-	gen.buffer_length = 0.25
-	_audio_player = AudioStreamPlayer3D.new()
-	_audio_player.name = "AudioStreamPlayer3D"
-	_audio_player.stream = gen
-	_audio_player.unit_size = 3.0
-	_audio_player.max_distance = 15.0
-	add_child(_audio_player)
+	_emitter = SpatialAudioEmitter.new()
+	_emitter.name = "SpatialAudioEmitter"
+	_emitter.unit_size = 3.0
+	_emitter.max_distance = 15.0
+	# The picture and the sound both come from the TV, so the emitter is given
+	# the TV's two speaker positions once a set is connected.
+	_emitter.speaker_separation = 0.25
+	add_child(_emitter)
 
 
 func _update_name_label() -> void:
@@ -155,20 +153,21 @@ func _process(delta: float) -> void:
 			_track_refresh_accum = 0.0
 			_refresh_track_counts()
 	# Emanate the sound from the connected TV so it's spatialised there.
-	if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
-		_audio_player.global_position = connected_tv.global_position
+	if _emitter and connected_tv != null and is_instance_valid(connected_tv):
+		_emitter.set_emit_position(connected_tv.global_position)
 
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
 func _pump_audio() -> void:
-	if _audio_playback == null:
+	if _emitter == null:
 		return
-	var avail := _audio_playback.get_frames_available()
-	if avail <= 0:
+	# frames_wanted, not "all free space": queue depth is latency.
+	var want := _emitter.frames_wanted()
+	if want <= 0:
 		return
-	var frames: PackedVector2Array = _vlc.read_audio(avail)
+	var frames: PackedVector2Array = _vlc.read_audio(want)
 	if frames.size() > 0:
-		_audio_playback.push_buffer(frames)
+		_emitter.push_stereo(frames)
 
 
 ## Toggle the disc menu-control routing is done via the remote; the front Menu
@@ -279,12 +278,8 @@ func _set_scan(dir: int) -> void:
 	if _vlc:
 		_vlc.set_paused(false)
 	_paused = false
-	if _audio_player:
-		_audio_player.volume_db = -80.0 if dir != 0 else _dvd_volume_db()
-
-
-func _dvd_volume_db() -> float:
-	return linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
+	if _emitter:
+		_emitter.set_volume(0.0 if dir != 0 else _volume_linear)
 
 
 ## While scanning, jump the (still-playing) position forward/back in throttled
@@ -348,10 +343,9 @@ func play() -> void:
 	_scan_dir = 0
 	_n_audio = -1        # unknown until libVLC parses the new disc
 	_n_sub = -1
-	if _audio_player:
-		_audio_player.play()
-		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
-		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
+	if _emitter:
+		_emitter.flush()
+		_emitter.set_volume(_volume_linear)
 	_osd("DVD")
 	_net_push_state()
 
@@ -366,9 +360,8 @@ func stop() -> void:
 	_paused = false
 	_n_audio = -1
 	_n_sub = -1
-	if _audio_player:
-		_audio_player.stop()
-	_audio_playback = null
+	if _emitter:
+		_emitter.flush()
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
@@ -686,8 +679,8 @@ func on_tv_disconnected() -> void:
 func set_audio_volume(volume: float) -> void:
 	_volume_linear = clampf(volume, 0.0, 1.0)
 	# Don't fight an active scan mute; it restores on scan exit.
-	if _audio_player and _scan_dir == 0:
-		_audio_player.volume_db = linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
+	if _emitter and _scan_dir == 0:
+		_emitter.set_volume(_volume_linear)
 
 
 func set_screen_enabled(enabled: bool) -> void:

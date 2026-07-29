@@ -62,8 +62,7 @@ const SCAN_SEEK_INTERVAL := 0.08
 # AudioStreamGenerator on a 3D player at the connected TV, so VHS sound is
 # spatialised (and the TV volume knob scales it) like the console/DVD audio.
 var _vlc: Object = null                 # VlcPlayer (GDExtension)
-var _audio_player: AudioStreamPlayer3D = null
-var _audio_playback: AudioStreamGeneratorPlayback = null
+var _emitter: SpatialAudioEmitter = null
 var _volume_linear: float = 1.0
 var _paused: bool = false
 
@@ -141,15 +140,14 @@ func _ready() -> void:
 
 ## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
 func _setup_audio() -> void:
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = float(_vlc.get_audio_rate()) if _vlc else 48000.0
-	gen.buffer_length = 0.25
-	_audio_player = AudioStreamPlayer3D.new()
-	_audio_player.name = "AudioStreamPlayer3D"
-	_audio_player.stream = gen
-	_audio_player.unit_size = 3.0
-	_audio_player.max_distance = 15.0
-	add_child(_audio_player)
+	_emitter = SpatialAudioEmitter.new()
+	_emitter.name = "SpatialAudioEmitter"
+	_emitter.unit_size = 3.0
+	_emitter.max_distance = 15.0
+	# The picture and the sound both come from the TV, so the emitter is given
+	# the TV's two speaker positions once a set is connected.
+	_emitter.speaker_separation = 0.25
+	add_child(_emitter)
 
 
 func _update_name_label() -> void:
@@ -165,8 +163,8 @@ func _process(delta: float) -> void:
 			_bind_screen_to_tv()
 		_pump_audio()
 		# Emanate the sound from the connected TV so it's spatialised there.
-		if _audio_player and connected_tv != null and is_instance_valid(connected_tv):
-			_audio_player.global_position = connected_tv.global_position
+		if _emitter and connected_tv != null and is_instance_valid(connected_tv):
+			_emitter.set_emit_position(connected_tv.global_position)
 	_update_scan(delta)
 	if _clock == null:
 		return
@@ -184,14 +182,15 @@ func _process(delta: float) -> void:
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
 func _pump_audio() -> void:
-	if _audio_playback == null:
+	if _emitter == null:
 		return
-	var avail := _audio_playback.get_frames_available()
-	if avail <= 0:
+	# frames_wanted, not "all free space": queue depth is latency.
+	var want := _emitter.frames_wanted()
+	if want <= 0:
 		return
-	var frames: PackedVector2Array = _vlc.read_audio(avail)
+	var frames: PackedVector2Array = _vlc.read_audio(want)
 	if frames.size() > 0:
-		_audio_playback.push_buffer(frames)
+		_emitter.push_stereo(frames)
 
 
 # --- Position helpers (VlcPlayer reports ms / 0..1; the VCR works in seconds) ---
@@ -465,19 +464,14 @@ func _set_scan(dir: int) -> void:
 	if _vlc:
 		_vlc.set_paused(false)
 	_paused = false
-	if _audio_player:
-		_audio_player.volume_db = -80.0 if dir != 0 else _volume_db()
+	if _emitter:
+		_emitter.set_volume(0.0 if dir != 0 else _volume_linear)
 	_net_push_state()
 
 
-## Set the audio-player level from the current linear volume (or silence).
-func _volume_db() -> float:
-	return linear_to_db(_volume_linear) if _volume_linear > 0.001 else -80.0
-
-
 func _apply_volume() -> void:
-	if _audio_player:
-		_audio_player.volume_db = _volume_db()
+	if _emitter:
+		_emitter.set_volume(_volume_linear)
 
 
 func play() -> void:
@@ -499,9 +493,8 @@ func play() -> void:
 	is_playing = true
 	_paused = false
 	_scan_dir = 0
-	if _audio_player:
-		_audio_player.play()
-		_audio_playback = _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	if _emitter:
+		_emitter.flush()
 		_apply_volume()
 	_bind_screen_to_tv()
 	_osd("PLAY", false)
@@ -516,9 +509,8 @@ func stop() -> void:
 		_vlc.stop()
 	is_playing = false
 	_paused = false
-	if _audio_player:
-		_audio_player.stop()
-	_audio_playback = null
+	if _emitter:
+		_emitter.flush()
 	_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
@@ -646,9 +638,8 @@ func _on_video_finished() -> void:
 	# Leave the last frame; mark as not playing so Play restarts from the top.
 	is_playing = false
 	_paused = false
-	if _audio_player:
-		_audio_player.stop()
-	_audio_playback = null
+	if _emitter:
+		_emitter.flush()
 
 
 # --- Cable management (mirrors RetroSystem) ---

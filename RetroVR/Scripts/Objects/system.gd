@@ -184,6 +184,12 @@ var _controller_info: Array = []
 # The core's AudioStreamPlayer3D (created in C++ under the Libretro node),
 # cached at power-on so _process can steer it without a per-frame node lookup.
 var _audio_player: AudioStreamPlayer3D = null
+# Meta XR Audio voice ids, when the core is being spatialised through the SDK.
+# The C++ AudioHandler owns their lifetime; this script only places them.
+var _audio_voices: PackedInt32Array = PackedInt32Array()
+var _mx: Object = null
+## Half the gap between a TV's left and right speakers, in metres.
+@export var audio_speaker_separation: float = 0.25
 
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
@@ -704,14 +710,29 @@ func set_input_enabled(enabled: bool) -> void:
 
 ## Set the audio volume for the running libretro instance (0.0 = silent, 1.0 = 100%).
 func set_audio_volume(volume: float) -> void:
-	if not is_powered_on or _audio_player == null or not is_instance_valid(_audio_player):
+	if not is_powered_on:
+		return
+	if not _audio_voices.is_empty() and _mx != null:
+		for v in _audio_voices:
+			_mx.set_voice_gain(v, clampf(volume, 0.0, 1.0))
+		return
+	if _audio_player == null or not is_instance_valid(_audio_player):
 		return
 	_audio_player.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
 
 
-## Take hold of the AudioStreamPlayer3D the core just created (a child of the
-## Libretro node) and apply this system's spatial tuning.
+## Bind whichever audio backend the core came up on. With Meta XR Audio the
+## handler has already created a pair of voices and only needs them placed;
+## otherwise it made an AudioStreamPlayer3D that needs this system's tuning.
 func _bind_audio_player() -> void:
+	_audio_voices = _libretro.GetAudioVoiceIds()
+	if not _audio_voices.is_empty():
+		if Engine.has_singleton("MetaXRAudio"):
+			_mx = Engine.get_singleton("MetaXRAudio")
+		_audio_player = null
+		_update_audio_position()
+		return
+
 	_audio_player = _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
 	if _audio_player == null:
 		return
@@ -735,9 +756,27 @@ func _audio_tv() -> RetroTV:
 ## audio, and the hardware takes it back when the cable is pulled. Driven every
 ## frame because both the system and the TV can be picked up and carried.
 func _update_audio_position() -> void:
+	var tv := _audio_tv()
+
+	if not _audio_voices.is_empty():
+		if _mx == null:
+			return
+		# A TV radiates from two speakers; spacing them is most of what makes a
+		# set feel like an object rather than a point. Falls back to the
+		# hardware's own position when nothing is plugged in.
+		var src: Node3D = tv if tv != null else self
+		var origin := src.global_position
+		var right := src.global_transform.basis.x.normalized() * audio_speaker_separation
+		# The mixer skips the SDK call when a position has not changed, so
+		# writing every frame is safe -- and that guard is load bearing on
+		# Quest, see meta-xr-audio-known-issues.md.
+		_mx.set_voice_position(_audio_voices[0], origin - right)
+		if _audio_voices.size() > 1:
+			_mx.set_voice_position(_audio_voices[1], origin + right)
+		return
+
 	if _audio_player == null or not is_instance_valid(_audio_player):
 		return
-	var tv := _audio_tv()
 	if tv != null:
 		_audio_player.global_position = tv.global_position
 	elif not _audio_player.position.is_zero_approx():
@@ -1184,6 +1223,7 @@ func power_off() -> void:
 			ctrl.set_rumble(0.0, 0.0)
 	_libretro.StopContent()
 	_audio_player = null
+	_audio_voices = PackedInt32Array()
 	is_powered_on = false
 	_has_disk_control = false
 	_disc_index = 0
@@ -1331,6 +1371,7 @@ func net_stop_core() -> void:
 	if is_powered_on:
 		_libretro.StopContent()
 		_audio_player = null
+		_audio_voices = PackedInt32Array()
 		is_powered_on = false
 		_options_panel.hide_panel()
 		_model.on_power_off()
