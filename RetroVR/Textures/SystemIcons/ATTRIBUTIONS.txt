@@ -1,0 +1,128 @@
+Systematic icon set — attribution
+=================================
+
+Every .svg in this directory is from the "Systematic" theme by BAXY Square
+(github.com/baxysquare), created for the Libretro project and shipped with
+RetroArch and Lakka.
+
+  Source repo : https://github.com/baxysquare/baxy-retroarch-themes
+  Path        : Systematic/src/svg/
+  Author      : BAXY Square  <https://github.com/baxysquare>
+  Licence     : MIT — stated in that repository's README.md ("BAXY Themes are
+                licensed under the MIT License"). The repo carries no LICENSE
+                file; the README text is the grant.
+  Also at     : https://github.com/libretro/retroarch-assets (xmb/systematic,
+                PNG renders only — that theme's README points back to the repo
+                above for the SVG sources)
+
+Files were renamed from "Manufacturer - System.svg" to "<systemid>.svg" to match
+this project's systemids. Contents are unmodified.
+
+Retrieved 2026-07-28.
+
+systemid                 original filename
+-------------------------------------------------------------------------------
+2048                     2048.svg
+3do                      The 3DO Company - 3DO.svg
+3ds                      Nintendo - Nintendo 3DS.svg
+J2ME                     Mobile - J2ME.svg
+_default                 default.svg
+amiga                    Commodore - Amiga.svg
+apple_ii                 Apple - II.svg
+arcadia                  Emerson - Arcadia 2001.svg
+arduboy                  Arduboy Inc - Arduboy.svg
+atari_2600               Atari - 2600.svg
+atari_5200               Atari - 5200.svg
+atari_7800               Atari - 7800.svg
+atari_jaguar             Atari - Jaguar.svg
+atari_lynx               Atari - Lynx.svg
+atari_st                 Atari - ST.svg
+bbcmicro                 Acorn - BBC Micro.svg
+cdi                      Philips - CD-i.svg
+cdi2015                  Philips - CD-i.svg
+chailove                 ChaiLove.svg
+chip_8                   CHIP-8.svg
+colecovision             Coleco - ColecoVision.svg
+commodore_64             Commodore - 64.svg
+commodore_amiga          Commodore - Amiga.svg
+commodore_c128           Commodore - 128.svg
+commodore_c64            Commodore - 64.svg
+commodore_c64_supercpu   Commodore - 64.svg
+commodore_c64dtv         Commodore - 64.svg
+commodore_pet            Commodore - PET.svg
+commodore_plus4          Commodore - Plus-4.svg
+commodore_vic20          Commodore - VIC-20.svg
+cpc                      Amstrad - CPC.svg
+craft                    Minecraft.svg
+daphne                   MAME.svg
+dice                     MAME.svg
+dinothawr                Dinothawr.svg
+doom                     DOOM.svg
+doom_3                   DOOM.svg
+dos                      DOS.svg
+doukutsu-rs              Cave Story.svg
+dreamcast                Sega - Dreamcast.svg
+ep128                    Enterprise - 128.svg
+epochcv                  Epoch - Cassette Vision.svg
+fb_alpha                 FBNeo - Arcade Games.svg
+game_boy                 Nintendo - Game Boy.svg
+game_boy_advance         Nintendo - Game Boy Advance.svg
+gamecube                 Nintendo - GameCube.svg
+hbmame                   MAME.svg
+intellivision            Mattel - Intellivision.svg
+intv                     Mattel - Intellivision.svg
+jollycv                  Coleco - ColecoVision.svg
+jumpnbump                Jump 'n Bump.svg
+laserdisc                MAME.svg
+lowresnx                 LowRes NX.svg
+mac68k                   Apple - Macintosh.svg
+mame                     MAME.svg
+master_system            Sega - Master System - Mark III.svg
+mega_drive               Sega - Mega Drive - Genesis.svg
+mega_duck                Welback - Mega Duck.svg
+model3                   MAME.svg
+msx                      Microsoft - MSX.svg
+nds                      Nintendo - Nintendo DS.svg
+neo_geo_pocket           SNK - Neo Geo Pocket.svg
+neogeo                   SNK - Neo Geo.svg
+nes                      Nintendo - Nintendo Entertainment System.svg
+nintendo_64              Nintendo - Nintendo 64.svg
+nuon                     VM Labs - NUON.svg
+nxengine                 Cave Story.svg
+odyssey2                 Magnavox - Odyssey2.svg
+openlara                 Tomb Raider.svg
+pc_88                    NEC - PC-8001 - PC-8801.svg
+pc_98                    NEC - PC-98.svg
+pc_engine                NEC - PC Engine - TurboGrafx 16.svg
+pc_fx                    NEC - PC-FX.svg
+pcxt                     DOS.svg
+piece                    Aquaplus - PIECE.svg
+playstation              Sony - PlayStation.svg
+playstation2             Sony - PlayStation 2.svg
+playstation_portable     Sony - PlayStation Portable.svg
+pokemon_mini             Nintendo - Pokemon Mini.svg
+puzzlescript             PuzzleScript.svg
+quake_1                  Quake.svg
+quake_2                  Quake II.svg
+quake_3                  Quake III.svg
+scummvm                  ScummVM.svg
+sega_saturn              Sega - Saturn.svg
+sharp_x1                 Sharp - X1.svg
+sharp_x68000             Sharp - X68000.svg
+super_nes                Nintendo - Super Nintendo Entertainment System.svg
+supervision              Watara - Supervision.svg
+ti_83                    Texas Instruments - TI-83.svg
+tic80                    TIC-80.svg
+uw8                      MicroW8.svg
+uzebox                   Uzebox.svg
+vectrex                  GCE - Vectrex.svg
+vircon32                 Vircon32.svg
+virtual_boy              Nintendo - Virtual Boy.svg
+wasm4                    WASM-4.svg
+wolfenstein3d            Wolfenstein 3D.svg
+wonderswan               Bandai - WonderSwan.svg
+xbox                     Microsoft - Xbox.svg
+xrick                    Rick Dangerous.svg
+zmachine                 Infocom - Z-Machine.svg
+zx81                     Sinclair - ZX 81.svg
+zx_spectrum              Sinclair - ZX Spectrum.svg

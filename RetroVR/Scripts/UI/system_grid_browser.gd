@@ -36,7 +36,10 @@ var filter_placeholder: String = "Filter systems…"
 ## Message shown when there are no systems.
 var empty_text: String = "Nothing here yet."
 ## Minimum size of each system tile.
-var tile_min_size: Vector2 = Vector2(230, 96)
+var tile_min_size: Vector2 = Vector2(250, 96)
+
+## Edge of the square the console art is fitted into, inside a tile.
+const ICON_PX := 60.0
 
 # ── State ──────────────────────────────────────────────────────────────────────
 # Each entry: { "systemid": String, "name": String, "badge": String (optional) }
@@ -231,12 +234,57 @@ func _make_tile(s: Dictionary) -> Button:
 
 	var btn := Button.new()
 	btn.custom_minimum_size = tile_min_size
-	btn.text = name if badge.is_empty() else "%s\n%s" % [name, badge]
-	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	btn.clip_text = true
-	btn.add_theme_font_size_override("font_size", 22)
-	btn.add_theme_color_override("font_color", COLOR_TITLE)
 	btn.set_meta("filter_name", name.to_lower())
+
+	# Console art on the left, name (and badge) on the right. Laid out as child
+	# controls rather than Button.icon + Button.text: Button draws its icon at
+	# the texture's own size, and these SVGs import ~165 px on the long edge.
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 12
+	row.offset_right = -12
+	row.add_theme_constant_override("separation", 10)
+	btn.add_child(row)
+
+	var art := SystemIcons.for_system(sid)
+	if art:
+		var ico := TextureRect.new()
+		ico.texture = art
+		ico.custom_minimum_size = Vector2(ICON_PX, ICON_PX)
+		ico.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ico.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ico.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		ico.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(ico)
+
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col.add_theme_constant_override("separation", 2)
+	row.add_child(col)
+
+	var name_lbl := Label.new()
+	name_lbl.text = name
+	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# "Super Nintendo Entertainment System" is three lines in the space left
+	# beside the art — cap it and ellipsize so a long name can't push the badge
+	# out of the tile. The detail page header shows the name in full.
+	name_lbl.max_lines_visible = 2
+	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_lbl.add_theme_font_size_override("font_size", 20)
+	name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(name_lbl)
+
+	if not badge.is_empty():
+		var badge_lbl := Label.new()
+		badge_lbl.text = badge
+		badge_lbl.add_theme_font_size_override("font_size", 16)
+		badge_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+		badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(badge_lbl)
 
 	var base := StyleBoxFlat.new()
 	base.bg_color = COLOR_TILE
