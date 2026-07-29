@@ -50,5 +50,11 @@ func _apply() -> void:
 		var light := node as Light3D
 		if light != null:
 			light.visible = lights_on
+	# Darken the fixture's own glass along with its light, or the switch leaves a
+	# glowing shade hanging over an unlit room.
+	for node in get_tree().get_nodes_in_group("light_glow"):
+		var glow := node as GlowMesh
+		if glow != null:
+			glow.set_lit(lights_on)
 	if _lever != null:
 		_lever.rotation.x = LEVER_TILT if lights_on else -LEVER_TILT

@@ -1,4 +1,4 @@
-[gd_scene load_steps=102 format=3]
+[gd_scene load_steps=103 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -29,6 +29,7 @@
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/table_lamp.glb" id="27_lamp"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/light_switch.glb" id="28_switch"]
 [ext_resource type="Script" path="res://Scripts/Objects/light_switch.gd" id="29_switchscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/glow_mesh.gd" id="35_glow"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="31_vrbutton"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/rug_persian.png" id="32_rug"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_memphis.png" id="33_poster_a"]
@@ -723,6 +724,10 @@ surface_material_override/0 = SubResource("Mat_lever")
 ; Fan blades spin about the hub; the glass shade must ride the STATIC mount or
 ; the light swings round the room with them (the den learned this the hard way).
 [node name="FanPivot" type="Node3D" parent="Furniture"]
+script = ExtResource("35_glow")
+glow_meshes = PackedStringArray("defaultMaterial4")
+glow_color = Color(1, 0.82, 0.55, 1)
+glow_energy = 2.2
 
 [node name="Fan" parent="Furniture/FanPivot" instance=ExtResource("14_fan")]
 transform = Transform3D(0.00283, 0, 0, 0, 0.00283, 0, 0, 0, 0.00283, 0.2181, 0.4982, -0.5128)
@@ -934,10 +939,23 @@ surface_material_override/0 = SubResource("Mat_trim")
 ; Ceiling fan globe. Grouped "ceiling_light", so QualityManager overwrites the
 ; energy to 0.8 desktop / 0.6 Quest — the authored value here is only what shows
 ; before it runs.
+;
+; It sits at y 2.29, the centre of the glass globe (which spans 2.227..2.357),
+; and casts NO shadow. At 2.35 it was up against the motor housing and, with
+; shadows on, the shade boxed it in completely: the fan lit nothing at all.
+; Frosted glass is translucent and Godot's shadow map is not, so the shade has to
+; be taken out of the equation rather than worked around. Shadows are off on
+; Quest anyway, so this also makes the desktop view match the headset.
+;
+; The cull mask is the price of that: with no shadow to stop it, a 7 m light
+; would reach straight through the walls and into the suburb outside, so it is
+; masked to layer 1 the way Dusk already is.
 [node name="FanGlobeLight" type="OmniLight3D" parent="." groups=["ceiling_light"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.35, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.29, 0)
 light_color = Color(1, 0.85, 0.62, 1)
 light_energy = 1.2
+light_cull_mask = 1
+shadow_enabled = false
 omni_range = 7.0
 
 ; Bedside and desk lamps stay OUT of the ceiling_light group so they keep the
