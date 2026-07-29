@@ -1836,7 +1836,8 @@ func _on_cores_fetched(cores: Array) -> void:
 		_download_loading_label.visible = true
 		return
 	# Group the flat buildbot list by system; cores unknown to the DB go in a
-	# single "Other" bucket so nothing is hidden.
+	# single "Other" bucket. SystemFilter keeps non-console systems out of the
+	# grid — see _refresh_download_systems.
 	_download_cores_by_system.clear()
 	for entry: Dictionary in cores:
 		var core_name: String   = entry["core_name"]
@@ -1858,6 +1859,8 @@ func _refresh_download_systems() -> void:
 		return
 	var systems: Array = []
 	for sid: String in _download_cores_by_system:
+		if SystemFilter.is_hidden(sid):
+			continue
 		var arr: Array = _download_cores_by_system[sid] as Array
 		var name := "Other / Uncategorized" if sid == "__other__" else core_db.get_systemname_for_id(sid)
 		var n := arr.size()
