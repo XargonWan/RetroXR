@@ -196,6 +196,12 @@ func _connect_menu_signals() -> void:
 	menu.pad_rebind_started.connect(_on_pad_rebind_started)
 	_menu_connected = true
 
+	# Persisted OPTIONS switches that need the rig or the scene tree, so they
+	# can't be applied in AppPrefs._ready() the way the static-backed ones are.
+	_on_auto_save_changed(AppPrefs.auto_save_scene)
+	_on_show_fps_changed(AppPrefs.show_fps)
+	_on_aim_crosshair_changed(AppPrefs.aim_crosshair)
+
 	# Auto-load last active slot on startup (arcade only)
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm and sm.current_scene_id == "arcade":

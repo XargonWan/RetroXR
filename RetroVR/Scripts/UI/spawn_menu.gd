@@ -2323,7 +2323,9 @@ func _build_options_view() -> Control:
 	as_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	as_row.add_child(as_lbl)
 
-	as_row.add_child(_make_toggle(true, func(on: bool) -> void:
+	as_row.add_child(_make_toggle(AppPrefs.auto_save_scene, func(on: bool) -> void:
+		AppPrefs.auto_save_scene = on
+		AppPrefs.save_prefs()
 		auto_save_changed.emit(on)
 	))
 
@@ -2342,7 +2344,9 @@ func _build_options_view() -> Control:
 	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fps_row.add_child(fps_lbl)
 
-	fps_row.add_child(_make_toggle(false, func(on: bool) -> void:
+	fps_row.add_child(_make_toggle(AppPrefs.show_fps, func(on: bool) -> void:
+		AppPrefs.show_fps = on
+		AppPrefs.save_prefs()
 		show_fps_changed.emit(on)
 	))
 
@@ -2361,7 +2365,9 @@ func _build_options_view() -> Control:
 	xhair_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	xhair_row.add_child(xhair_lbl)
 
-	xhair_row.add_child(_make_toggle(true, func(on: bool) -> void:
+	xhair_row.add_child(_make_toggle(AppPrefs.aim_crosshair, func(on: bool) -> void:
+		AppPrefs.aim_crosshair = on
+		AppPrefs.save_prefs()
 		aim_crosshair_changed.emit(on)
 	))
 
@@ -2380,7 +2386,9 @@ func _build_options_view() -> Control:
 	hands_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hands_row.add_child(hands_lbl)
 
-	hands_row.add_child(_make_toggle(ControllerModel.draw_hands, func(on: bool) -> void:
+	hands_row.add_child(_make_toggle(AppPrefs.controller_hands, func(on: bool) -> void:
+		AppPrefs.controller_hands = on
+		AppPrefs.save_prefs()
 		controller_hands_changed.emit(on)
 	))
 
@@ -2410,7 +2418,9 @@ func _build_options_view() -> Control:
 	sf_sub.add_theme_color_override("font_color", COLOR_LICENSE)
 	sf_col.add_child(sf_sub)
 
-	sf_row.add_child(_make_toggle(SystemFilter.enabled, func(on: bool) -> void:
+	sf_row.add_child(_make_toggle(AppPrefs.system_filter, func(on: bool) -> void:
+		AppPrefs.system_filter = on
+		AppPrefs.save_prefs()
 		SystemFilter.enabled = on
 		_refresh_download_systems()
 	))
