@@ -944,18 +944,20 @@ surface_material_override/0 = SubResource("Mat_trim")
 ; and casts NO shadow. At 2.35 it was up against the motor housing and, with
 ; shadows on, the shade boxed it in completely: the fan lit nothing at all.
 ; Frosted glass is translucent and Godot's shadow map is not, so the shade has to
-; be taken out of the equation rather than worked around. Shadows are off on
+; be taken out of the equation rather than worked around. It opts out via the
+; "no_shadow" group, not a shadow_enabled property: QualityManager.configure_light
+; writes shadow_enabled on every Light3D in the tree, so an authored false here
+; was silently overwritten every run. Shadows are off on
 ; Quest anyway, so this also makes the desktop view match the headset.
 ;
 ; The cull mask is the price of that: with no shadow to stop it, a 7 m light
 ; would reach straight through the walls and into the suburb outside, so it is
 ; masked to layer 1 the way Dusk already is.
-[node name="FanGlobeLight" type="OmniLight3D" parent="." groups=["ceiling_light"]]
+[node name="FanGlobeLight" type="OmniLight3D" parent="." groups=["ceiling_light", "no_shadow"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.29, 0)
 light_color = Color(1, 0.85, 0.62, 1)
 light_energy = 1.2
 light_cull_mask = 1
-shadow_enabled = false
 omni_range = 7.0
 
 ; Bedside and desk lamps stay OUT of the ceiling_light group so they keep the

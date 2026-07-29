@@ -240,8 +240,19 @@ func apply_shadow_quality() -> void:
 
 ## Apply the current shadow tier to one light, so a spawned TV or handheld
 ## matches the room it was spawned into.
+##
+## Lights in the "no_shadow" group opt out and never cast. That is for a light
+## sealed inside a fixture: the shade is opaque to the shadow map but translucent
+## in reality, so shadows absorb the whole output. The bedroom's ceiling-fan globe
+## is the case that found this — sat inside its closed glass dome it lit nothing
+## at all, and the room was running on its two table lamps alone. Shades that are
+## open top and bottom, like those same lamps' drums, still want shadows: the
+## blocked middle is exactly what makes their double cone.
 func configure_light(light: Light3D) -> void:
 	if light == null:
+		return
+	if light.is_in_group("no_shadow"):
+		light.shadow_enabled = false
 		return
 	light.shadow_enabled = shadows_enabled()
 	if light is DirectionalLight3D and light.shadow_enabled:
