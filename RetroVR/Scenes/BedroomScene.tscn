@@ -10,8 +10,9 @@
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/trees.glb" id="9_trees"]
 [ext_resource type="Script" path="res://Scripts/bedroom_exterior.gd" id="10_exterior"]
 [ext_resource type="Script" path="res://Scripts/mesh_filter.gd" id="11_meshfilter"]
-[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/bed_desk_chair.glb" id="12_bedset"]
-[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/bookcases.glb" id="13_bookcases"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/bed.glb" id="12_bed"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/bookcase_tall.glb" id="17_bctall"]
+
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/ceiling_fan.glb" id="14_fan"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/tv_stand_corner.glb" id="15_tvstand"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/trash_can.glb" id="16_trash"]
@@ -191,6 +192,19 @@ size = Vector3(5.2, 0.15, 4.4)
 ; overhang is the whole point: it throws its own shadow line under the bedside
 ; lamp, which a single flat strip (the arcade's approach) cannot. Unit-length in
 ; the run direction so each wall scales one mesh.
+[sub_resource type="StandardMaterial3D" id="Mat_desk"]
+albedo_color = Color(0.29, 0.18, 0.11, 1)
+roughness = 0.55
+
+[sub_resource type="BoxMesh" id="Mesh_desk_top"]
+size = Vector3(1.35, 0.04, 0.62)
+
+[sub_resource type="BoxMesh" id="Mesh_desk_side"]
+size = Vector3(0.04, 0.71, 0.56)
+
+[sub_resource type="BoxMesh" id="Mesh_desk_rail"]
+size = Vector3(1.27, 0.12, 0.03)
+
 [sub_resource type="BoxMesh" id="Mesh_base_ns"]
 size = Vector3(1, 0.11, 0.018)
 
@@ -451,24 +465,59 @@ omni_range = 14.0
 ; own origin — so none of these numbers are guessable by hand.
 [node name="Furniture" type="Node3D" parent="."]
 
-; Bed, desk and chair arrive as ONE mesh, so they are placed as a single group
-; in the arrangement the artist authored — they cannot be separated without a
-; Blender pass. The set's second mesh, "Plane_2_0", is a 2 x 2 zero-thickness
-; quad: the Sketchfab viewer's backdrop grid, baked into the download. Hiding it
-; is not optional, it renders as a blue grid across the floor.
-[node name="BedGroup" parent="Furniture" instance=ExtResource("12_bedset")]
-transform = Transform3D(0.83619, 0, 0, 0, 0.83619, 0, 0, 0, 0.83619, 0.5501, 0.001, -0.9961)
-script = ExtResource("11_meshfilter")
-hide_meshes = PackedStringArray("Plane_2_0")
+; Every piece below was split out and squared up in Blender
+; (Tools note: /tmp straighten pass, 2026-07-28). The downloads are staged
+; product shots — the bed, desk and chair were one inseparable mesh, and the two
+; bookcases sat at ~30 deg to each other — so nothing could be aligned to a wall
+; as shipped. Each is now its own GLB, axis-aligned, origin at base-centre, which
+; is why the transforms here are plain position + scale with no stray rotations.
 
-[node name="Bookcases" parent="Furniture" instance=ExtResource("13_bookcases")]
-transform = Transform3D(0, 0, -0.99781, 0, 0.99781, 0, 0.99781, 0, 0, -2.30, 0, -0.7927)
+; Head to the north wall, east side. Model is 2.25 m across including the duvet
+; overhang; 0.667 brings that to a 1.5 m double.
+[node name="Bed" parent="Furniture" instance=ExtResource("12_bed")]
+transform = Transform3D(0.667, 0, 0, 0, 0.667, 0, 0, 0, 0.667, 1.65, 0, -1.11)
+
+; Desk built from primitives rather than downloaded. The set's desk could not be
+; separated from its chair — every split left the two joined, so min-area
+; bounding-box straightening aligned to the pair's L-shape instead of the desk,
+; and it stayed ~20 deg off no matter what. Boxes are square by construction,
+; cost nothing, and follow test_scene_builder.gd's _build_table() idiom.
+[node name="Desk" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0, -1.78)
+
+[node name="Top" type="MeshInstance3D" parent="Furniture/Desk"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.73, 0)
+mesh = SubResource("Mesh_desk_top")
+surface_material_override/0 = SubResource("Mat_desk")
+
+[node name="SideL" type="MeshInstance3D" parent="Furniture/Desk"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.655, 0.355, 0)
+mesh = SubResource("Mesh_desk_side")
+surface_material_override/0 = SubResource("Mat_desk")
+
+[node name="SideR" type="MeshInstance3D" parent="Furniture/Desk"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.655, 0.355, 0)
+mesh = SubResource("Mesh_desk_side")
+surface_material_override/0 = SubResource("Mat_desk")
+
+[node name="BackRail" type="MeshInstance3D" parent="Furniture/Desk"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.64, -0.29)
+mesh = SubResource("Mesh_desk_rail")
+surface_material_override/0 = SubResource("Mat_desk")
+
+; Two of the tall bookcase rather than the set's small one, which carries a
+; corner return that defeats the same straightening pass.
+[node name="BookcaseA" parent="Furniture" instance=ExtResource("17_bctall")]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.345, 0, -1.55)
+
+[node name="BookcaseB" parent="Furniture" instance=ExtResource("17_bctall")]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -2.345, 0, -0.55)
 
 [node name="TVStand" parent="Furniture" instance=ExtResource("15_tvstand")]
 transform = Transform3D(0.66629, 0, 0.66629, 0, 0.94228, 0, -0.66629, 0, 0.66629, 2.0415, 0.0392, 1.4818)
 
 [node name="TrashCan" parent="Furniture" instance=ExtResource("16_trash")]
-transform = Transform3D(0.0012, 0, 0, 0, 0.0012, 0, 0, 0, 0.0012, -2.2574, -0.0017, -0.8495)
+transform = Transform3D(0.0012, 0, 0, 0, 0.0012, 0, 0, 0, 0.0012, -2.2574, -0.0017, 0.45)
 
 ; Fan blades spin about the hub; the glass shade must ride the STATIC mount or
 ; the light swings round the room with them (the den learned this the hard way).
