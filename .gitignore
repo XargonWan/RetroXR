@@ -29,6 +29,11 @@ RetroVR/vlc-godot/*.pdb
 
 **/*.import
 
+# The system icons carry a deliberate svg/scale=0.5 — the source art is ~331 px
+# on the long edge and the tiles draw it at 60. Without these, a fresh clone
+# reimports them at full size for no visual gain.
+!RetroVR/Textures/SystemIcons/*.svg.import
+
 *.apk
 
 # Godot-specific ignores
