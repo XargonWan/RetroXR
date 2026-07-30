@@ -157,8 +157,8 @@ func _rebuild() -> void:
 		var b := a + 1
 		var c := a + 2
 		var d := a + 3
-		idx.append_array([a, b, c, c, b, d])
-		tris.append_array([verts[a], verts[b], verts[c], verts[c], verts[b], verts[d]])
+		idx.append_array([a, c, b, c, d, b])
+		tris.append_array([verts[a], verts[c], verts[b], verts[c], verts[d], verts[b]])
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -178,6 +178,11 @@ func _rebuild() -> void:
 
 	var shape := ConcavePolygonShape3D.new()
 	shape.set_faces(tris)
+	# A trimesh is single-sided by default, so a ray from the wrong side passes
+	# straight through and the panel silently stops taking clicks — which is
+	# exactly what happened when this replaced the BoxShape. The winding above is
+	# correct now, but this makes a future slip cosmetic instead of fatal.
+	shape.backface_collision = true
 	_collision.shape = shape
 
 	_place_buttons()
