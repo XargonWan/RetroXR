@@ -1,0 +1,64 @@
+## CoreRecommendations — the one core we suggest per system, badged in the Cores
+## downloader and manager and sorted to the top of that system's list.
+##
+## Keyed by systemid rather than a flat set of core names: the same core can be
+## the right pick for one machine and a poor one for another (the Mednafen family
+## serves a dozen systems at very different quality), so a global "good cores"
+## list would badge them everywhere.
+##
+## These are opinions formed by running the cores on this hardware — add an entry
+## only after testing it, and put the reason in `why` so it can be shown or
+## argued with later.
+class_name CoreRecommendations
+extends RefCounted
+
+const RECOMMENDED := {
+	"3ds": {
+		"core": "azahar",
+		"why":  "The only 3DS core that emits side-by-side stereo, which the n3ds model's screen rects rely on",
+	},
+	"playstation": {
+		"core": "pcsx_rearmed",
+		"why":  "Best speed-to-accuracy balance on Quest hardware",
+	},
+	"super_nes": {
+		"core": "bsnes",
+		"why":  "Handles the SNES Mouse over libretro",
+	},
+}
+
+
+## The recommended core_name for a system, or "" when we have no opinion.
+static func core_for(systemid: String) -> String:
+	if not RECOMMENDED.has(systemid):
+		return ""
+	return str((RECOMMENDED[systemid] as Dictionary).get("core", ""))
+
+
+static func is_recommended(systemid: String, core_name: String) -> bool:
+	return not core_name.is_empty() and core_for(systemid) == core_name
+
+
+## Why this system's core is the pick, or "" when there is no recommendation.
+static func reason_for(systemid: String) -> String:
+	if not RECOMMENDED.has(systemid):
+		return ""
+	return str((RECOMMENDED[systemid] as Dictionary).get("why", ""))
+
+
+## Move the recommended entry to the front of a list of Dictionaries, leaving
+## every other entry in the order it arrived. A partition rather than a
+## sort_custom: Array.sort_custom is not stable, so ranking only by
+## recommended-ness would shuffle the rest of the list arbitrarily.
+static func first(systemid: String, entries: Array, key: String = "core_name") -> Array:
+	var pick := core_for(systemid)
+	if pick.is_empty():
+		return entries
+	var head: Array = []
+	var tail: Array = []
+	for e: Dictionary in entries:
+		if str(e.get(key, "")) == pick:
+			head.append(e)
+		else:
+			tail.append(e)
+	return head + tail

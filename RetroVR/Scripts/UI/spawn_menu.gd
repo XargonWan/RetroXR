@@ -267,6 +267,8 @@ const COLOR_TITLE        := Color(0.9,  0.9,  1.0)
 const COLOR_LICENSE      := Color(0.65, 0.65, 0.80)
 const COLOR_DESC         := Color(0.55, 0.55, 0.68)
 const COLOR_BTN_DL       := Color(0.15, 0.45, 0.15)
+## Lighter than COLOR_BTN_DL, which is a button fill and unreadable as text here.
+const COLOR_RECOMMENDED  := Color(0.45, 0.85, 0.45)
 const COLOR_BTN_UPD      := Color(0.45, 0.30, 0.10)
 const COLOR_BTN_REUP     := Color(0.18, 0.18, 0.35)
 const COLOR_BTN_BUSY     := Color(0.25, 0.20, 0.10)
@@ -1395,6 +1397,7 @@ const _ICON_BOOK      := 0xF05DA   # md-book_open_page_variant
 const _ICON_SCRAPE    := 0xF0866   # md-database_search
 const _ICON_FILTER    := 0xF0B0    # fa-filter
 const _ICON_REGION    := 0xF01E7   # md-earth
+const _ICON_RECOMMENDED := 0xF0124 # md-certificate     — the pick for this system
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 const _TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
@@ -1866,7 +1869,11 @@ func _populate_manager_tab() -> void:
 
 	var systems: Array = []
 	for sid: String in _manager_cores_by_system:
-		var cores_list: Array = _manager_cores_by_system[sid] as Array
+		# Recommended first, so it heads the detail list AND is what the
+		# no-default-yet branch below picks up.
+		var cores_list: Array = CoreRecommendations.first(
+			sid, _manager_cores_by_system[sid] as Array)
+		_manager_cores_by_system[sid] = cores_list
 		# If no default was saved yet, persist the first available core.
 		var current_default: String = core_defaults.get_default_core(sid)
 		if current_default.is_empty() and not cores_list.is_empty():
@@ -1903,6 +1910,12 @@ func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
 		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(lbl)
+
+		# Its own element rather than a recolour of the name: the name's ✓ and
+		# colour already mean "this is your default", and the two states are
+		# independent — a core can be recommended without being selected.
+		if CoreRecommendations.is_recommended(systemid, cn):
+			row.add_child(_recommended_badge(16))
 
 		var btn := Button.new()
 		btn.text = "Default" if is_def else "Set default"
@@ -2022,6 +2035,7 @@ func _populate_download_detail(systemid: String, vbox: VBoxContainer) -> void:
 		var bn: String = b["info"].get("display_name", b["core_name"]) if not (b["info"] as Dictionary).is_empty() else b["core_name"]
 		return an.naturalnocasecmp_to(bn) < 0
 	)
+	arr = CoreRecommendations.first(systemid, arr)
 	for e: Dictionary in arr:
 		vbox.add_child(_build_core_entry(e["core_name"], e["remote_date"], e["info"]))
 	vbox.add_child(_spacer(20))
@@ -2049,6 +2063,9 @@ func _build_core_entry(core_name: String, remote_date: String, info: Dictionary)
 	name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
 	name_lbl.clip_contents = true
 	left.add_child(name_lbl)
+
+	if CoreRecommendations.is_recommended(str(info.get("systemid", "")), core_name):
+		left.add_child(_recommended_badge(13))
 
 	if not info.is_empty():
 		var lic_lbl := Label.new()
@@ -4741,6 +4758,19 @@ func _spacer(height: int) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(0, height)
 	return c
+
+
+## The "Recommended" badge shown against a system's suggested core. Uses
+## _symbols() because the menu's theme font has no Nerd Font glyphs — the
+## codepoint renders as tofu in a plain Label.
+func _recommended_badge(font_size: int) -> Label:
+	var lbl := Label.new()
+	lbl.text = "%s  Recommended" % String.chr(_ICON_RECOMMENDED)
+	lbl.add_theme_font_override("font", _symbols())
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", COLOR_RECOMMENDED)
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return lbl
 
 
 # ── Scene View ─────────────────────────────────────────────────────────────────
