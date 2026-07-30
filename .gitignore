@@ -76,3 +76,7 @@ RetroVR/metaxr-audio/*.ilk
 RetroVR/metaxr-audio/*.lib
 RetroVR/metaxr-audio/*.pdb
 metaxr-audio-godot/Temp/
+
+# Output of RetroVR/Tools/bedroom_probe.tscn — renders, never source.
+RetroVR/probe_out/
+*.mp4
