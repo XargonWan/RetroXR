@@ -7,6 +7,7 @@ RetroArch and Lakka.
 
   Source repo : https://github.com/baxysquare/baxy-retroarch-themes
   Path        : Systematic/src/svg/
+  Commit      : 3798875e3a592b2b5d737212be3a2d4bc9454629 (2026-07-28)
   Author      : BAXY Square  <https://github.com/baxysquare>
   Licence     : MIT — stated in that repository's README.md ("BAXY Themes are
                 licensed under the MIT License"). The repo carries no LICENSE
@@ -16,113 +17,247 @@ RetroArch and Lakka.
                 above for the SVG sources)
 
 Files were renamed from "Manufacturer - System.svg" to "<systemid>.svg" to match
-this project's systemids. Contents are unmodified.
+this project's systemids. Contents are unmodified: every row of the map below
+was checked by git blob SHA against the commit above. Fourteen of our files are
+byte-identical to more than one upstream name (several systems share one piece
+of art — the MAME-derived ones especially); those rows name the file the copy
+was taken from.
 
-Retrieved 2026-07-28.
+Each system also has a "-content" variant: the media you put in the machine
+rather than the machine itself — cartridge, disc, tape, card. Those are here as
+"<systemid>-content.svg" and are what the Cartridges browser draws. Two systems
+have no content art upstream and fall back to their console: piece and ti_83.
 
-systemid                 original filename
+Where art exists in several regional variants the North American one was taken,
+verified by opening the file rather than trusting the suffix:
+
+  super_nes      console: "SNS-001", the boxy North American machine, not
+                 "SNSP-001" (the rounded cream PAL one, which is what this
+                 directory shipped until 2026-07-30).
+                 content: "-content (2) (U)". Both "(U)" files draw the US
+                 SNS-006 cartridge body; (2) also has the top-edge notches and
+                 the wide lower recess, where (1) has only a thin grip pill.
+  dreamcast      content: the untagged file, not "(U)". "(U)" carries no swirl
+                 at all, only greys; the untagged one has the orange #d05627
+                 swirl worn by NTSC discs, against #4b5da7 blue for "(E)".
+  master_system  content: the untagged file — the black SMS cartridge. "(J)" is
+                 the white Mark III card.
+  mega_drive     content: "(U)" — red, against blue for "(E)".
+  nes            content: the untagged file — the grey 72-pin NES cartridge.
+                 "(J)" is the red-and-white Famicom cartridge.
+  pc_engine      content: "(U)" — orange, against blue for "(E)" and red for
+                 untagged.
+  playstation2   content: the untagged file — the silver DVD underside. "CD" is
+                 the same disc with a blue #4b5da7 underside.
+
+Retrieved 2026-07-28; -content art and the SNES console correction 2026-07-30.
+
+file map
 -------------------------------------------------------------------------------
-2048                     2048.svg
-3do                      The 3DO Company - 3DO.svg
-3ds                      Nintendo - Nintendo 3DS.svg
-J2ME                     Mobile - J2ME.svg
-_default                 default.svg
-amiga                    Commodore - Amiga.svg
-apple_ii                 Apple - II.svg
-arcadia                  Emerson - Arcadia 2001.svg
-arduboy                  Arduboy Inc - Arduboy.svg
-atari_2600               Atari - 2600.svg
-atari_5200               Atari - 5200.svg
-atari_7800               Atari - 7800.svg
-atari_jaguar             Atari - Jaguar.svg
-atari_lynx               Atari - Lynx.svg
-atari_st                 Atari - ST.svg
-bbcmicro                 Acorn - BBC Micro.svg
-cdi                      Philips - CD-i.svg
-cdi2015                  Philips - CD-i.svg
-chailove                 ChaiLove.svg
-chip_8                   CHIP-8.svg
-colecovision             Coleco - ColecoVision.svg
-commodore_64             Commodore - 64.svg
-commodore_amiga          Commodore - Amiga.svg
-commodore_c128           Commodore - 128.svg
-commodore_c64            Commodore - 64.svg
-commodore_c64_supercpu   Commodore - 64.svg
-commodore_c64dtv         Commodore - 64.svg
-commodore_pet            Commodore - PET.svg
-commodore_plus4          Commodore - Plus-4.svg
-commodore_vic20          Commodore - VIC-20.svg
-cpc                      Amstrad - CPC.svg
-craft                    Minecraft.svg
-daphne                   MAME.svg
-dice                     MAME.svg
-dinothawr                Dinothawr.svg
-doom                     DOOM.svg
-doom_3                   DOOM.svg
-dos                      DOS.svg
-doukutsu-rs              Cave Story.svg
-dreamcast                Sega - Dreamcast.svg
-ep128                    Enterprise - 128.svg
-epochcv                  Epoch - Cassette Vision.svg
-fb_alpha                 FBNeo - Arcade Games.svg
-game_boy                 Nintendo - Game Boy.svg
-game_boy_advance         Nintendo - Game Boy Advance.svg
-gamecube                 Nintendo - GameCube.svg
-hbmame                   MAME.svg
-intellivision            Mattel - Intellivision.svg
-intv                     Mattel - Intellivision.svg
-jollycv                  Coleco - ColecoVision.svg
-jumpnbump                Jump 'n Bump.svg
-laserdisc                MAME.svg
-lowresnx                 LowRes NX.svg
-mac68k                   Apple - Macintosh.svg
-mame                     MAME.svg
-master_system            Sega - Master System - Mark III.svg
-mega_drive               Sega - Mega Drive - Genesis.svg
-mega_duck                Welback - Mega Duck.svg
-model3                   MAME.svg
-msx                      Microsoft - MSX.svg
-nds                      Nintendo - Nintendo DS.svg
-neo_geo_pocket           SNK - Neo Geo Pocket.svg
-neogeo                   SNK - Neo Geo.svg
-nes                      Nintendo - Nintendo Entertainment System.svg
-nintendo_64              Nintendo - Nintendo 64.svg
-nuon                     VM Labs - NUON.svg
-nxengine                 Cave Story.svg
-odyssey2                 Magnavox - Odyssey2.svg
-openlara                 Tomb Raider.svg
-pc_88                    NEC - PC-8001 - PC-8801.svg
-pc_98                    NEC - PC-98.svg
-pc_engine                NEC - PC Engine - TurboGrafx 16.svg
-pc_fx                    NEC - PC-FX.svg
-pcxt                     DOS.svg
-piece                    Aquaplus - PIECE.svg
-playstation              Sony - PlayStation.svg
-playstation2             Sony - PlayStation 2.svg
-playstation_portable     Sony - PlayStation Portable.svg
-pokemon_mini             Nintendo - Pokemon Mini.svg
-puzzlescript             PuzzleScript.svg
-quake_1                  Quake.svg
-quake_2                  Quake II.svg
-quake_3                  Quake III.svg
-scummvm                  ScummVM.svg
-sega_saturn              Sega - Saturn.svg
-sharp_x1                 Sharp - X1.svg
-sharp_x68000             Sharp - X68000.svg
-super_nes                Nintendo - Super Nintendo Entertainment System.svg
-supervision              Watara - Supervision.svg
-ti_83                    Texas Instruments - TI-83.svg
-tic80                    TIC-80.svg
-uw8                      MicroW8.svg
-uzebox                   Uzebox.svg
-vectrex                  GCE - Vectrex.svg
-vircon32                 Vircon32.svg
-virtual_boy              Nintendo - Virtual Boy.svg
-wasm4                    WASM-4.svg
-wolfenstein3d            Wolfenstein 3D.svg
-wonderswan               Bandai - WonderSwan.svg
-xbox                     Microsoft - Xbox.svg
-xrick                    Rick Dangerous.svg
-zmachine                 Infocom - Z-Machine.svg
-zx81                     Sinclair - ZX 81.svg
-zx_spectrum              Sinclair - ZX Spectrum.svg
+local file                          upstream file
+-------------------------------------------------------------------------------
+2048-content.svg                    2048-content.svg
+2048.svg                            2048.svg
+3do-content.svg                     The 3DO Company - 3DO-content.svg
+3do.svg                             The 3DO Company - 3DO.svg
+3ds-content.svg                     Nintendo - Nintendo 3DS-content.svg
+3ds.svg                             Nintendo - Nintendo 3DS.svg
+_default.svg                        default.svg
+amiga-content.svg                   Commodore - Amiga-content.svg
+amiga.svg                           Commodore - Amiga.svg
+apple_ii-content.svg                Apple - II Plus-content.svg
+apple_ii.svg                        Apple - II.svg
+arcadia-content.svg                 Emerson - Arcadia 2001-content.svg
+arcadia.svg                         Emerson - Arcadia 2001.svg
+arduboy-content.svg                 Arduboy Inc - Arduboy-content.svg
+arduboy.svg                         Arduboy Inc - Arduboy.svg
+atari_2600-content.svg              Atari - 2600-content.svg
+atari_2600.svg                      Atari - 2600.svg
+atari_5200-content.svg              Atari - 5200-content.svg
+atari_5200.svg                      Atari - 5200.svg
+atari_7800-content.svg              Atari - 7800-content.svg
+atari_7800.svg                      Atari - 7800.svg
+atari_jaguar-content.svg            Atari - Jaguar-content.svg
+atari_jaguar.svg                    Atari - Jaguar.svg
+atari_lynx-content.svg              Atari - Lynx-content.svg
+atari_lynx.svg                      Atari - Lynx.svg
+atari_st-content.svg                Atari - ST-content.svg
+atari_st.svg                        Atari - ST.svg
+bbcmicro-content.svg                Acorn - BBC Micro-content.svg
+bbcmicro.svg                        Acorn - BBC Micro.svg
+cdi-content.svg                     Philips - CD-i-content.svg
+cdi.svg                             Philips - CD-i.svg
+cdi2015-content.svg                 Philips - CD-i-content.svg
+cdi2015.svg                         Philips - CD-i.svg
+chailove-content.svg                ChaiLove-content.svg
+chailove.svg                        ChaiLove.svg
+chip_8-content.svg                  CHIP-8-content.svg
+chip_8.svg                          CHIP-8.svg
+colecovision-content.svg            Coleco - ColecoVision-content.svg
+colecovision.svg                    Coleco - ColecoVision.svg
+commodore_64-content.svg            Commodore - 64-content.svg
+commodore_64.svg                    Commodore - 64.svg
+commodore_amiga-content.svg         Commodore - Amiga-content.svg
+commodore_amiga.svg                 Commodore - Amiga.svg
+commodore_c128-content.svg          Commodore - 128-content.svg
+commodore_c128.svg                  Commodore - 128.svg
+commodore_c64-content.svg           Commodore - 64-content.svg
+commodore_c64.svg                   Commodore - 64.svg
+commodore_c64_supercpu-content.svg  Commodore - 64-content.svg
+commodore_c64_supercpu.svg          Commodore - 64.svg
+commodore_c64dtv-content.svg        Commodore - 64-content.svg
+commodore_c64dtv.svg                Commodore - 64.svg
+commodore_pet-content.svg           Commodore - PET-content.svg
+commodore_pet.svg                   Commodore - PET.svg
+commodore_plus4-content.svg         Commodore - Plus-4-content.svg
+commodore_plus4.svg                 Commodore - Plus-4.svg
+commodore_vic20-content.svg         Commodore - VIC-20-content.svg
+commodore_vic20.svg                 Commodore - VIC-20.svg
+cpc-content.svg                     Amstrad - CPC-content.svg
+cpc.svg                             Amstrad - CPC.svg
+craft-content.svg                   Minecraft-content.svg
+craft.svg                           Minecraft.svg
+daphne-content.svg                  MAME-content.svg
+daphne.svg                          MAME.svg
+dice-content.svg                    MAME-content.svg
+dice.svg                            MAME.svg
+dinothawr-content.svg               Dinothawr-content.svg
+dinothawr.svg                       Dinothawr.svg
+doom-content.svg                    DOOM-content.svg
+doom.svg                            DOOM.svg
+doom_3-content.svg                  DOOM-content.svg
+doom_3.svg                          DOOM.svg
+dos-content.svg                     DOS-content.svg
+dos.svg                             DOS.svg
+doukutsu-rs-content.svg             Cave Story-content.svg
+doukutsu-rs.svg                     Cave Story.svg
+dreamcast-content.svg               Sega - Dreamcast-content.svg
+dreamcast.svg                       Sega - Dreamcast.svg
+ep128-content.svg                   Intelligent Software - Enterprise-content.svg
+ep128.svg                           Enterprise - 128.svg
+epochcv-content.svg                 Epoch - Cassette Vision-content.svg
+epochcv.svg                         Epoch - Cassette Vision.svg
+fb_alpha-content.svg                FBNeo - Arcade Games-content.svg
+fb_alpha.svg                        FBNeo - Arcade Games.svg
+game_boy-content.svg                Nintendo - Game Boy-content.svg
+game_boy.svg                        Nintendo - Game Boy.svg
+game_boy_advance-content.svg        Nintendo - Game Boy Advance-content.svg
+game_boy_advance.svg                Nintendo - Game Boy Advance.svg
+gamecube-content.svg                Nintendo - GameCube-content.svg
+gamecube.svg                        Nintendo - GameCube.svg
+hbmame-content.svg                  MAME-content.svg
+hbmame.svg                          MAME.svg
+intellivision-content.svg           Mattel - Intellivision-content.svg
+intellivision.svg                   Mattel - Intellivision.svg
+intv-content.svg                    Mattel - Intellivision-content.svg
+intv.svg                            Mattel - Intellivision.svg
+J2ME-content.svg                    Mobile - J2ME-content.svg
+J2ME.svg                            Mobile - J2ME.svg
+jollycv-content.svg                 Coleco - ColecoVision-content.svg
+jollycv.svg                         Coleco - ColecoVision.svg
+jumpnbump-content.svg               Jump 'n Bump-content.svg
+jumpnbump.svg                       Jump 'n Bump.svg
+laserdisc-content.svg               MAME-content.svg
+laserdisc.svg                       MAME.svg
+lowresnx-content.svg                LowRes NX-content.svg
+lowresnx.svg                        LowRes NX.svg
+mac68k-content.svg                  Apple - Macintosh-content.svg
+mac68k.svg                          Apple - Macintosh.svg
+mame-content.svg                    MAME-content.svg
+mame.svg                            MAME.svg
+master_system-content.svg           Sega - Master System - Mark III-content.svg
+master_system.svg                   Sega - Master System - Mark III.svg
+mega_drive-content.svg              Sega - Mega Drive - Genesis-content (U).svg
+mega_drive.svg                      Sega - Mega Drive - Genesis.svg
+mega_duck-content.svg               Welback - Mega Duck-content.svg
+mega_duck.svg                       Welback - Mega Duck.svg
+model3-content.svg                  MAME-content.svg
+model3.svg                          MAME.svg
+msx-content.svg                     Microsoft - MSX-content.svg
+msx.svg                             Microsoft - MSX.svg
+nds-content.svg                     Nintendo - Nintendo DS-content.svg
+nds.svg                             Nintendo - Nintendo DS.svg
+neo_geo_pocket-content.svg          SNK - Neo Geo Pocket-content.svg
+neo_geo_pocket.svg                  SNK - Neo Geo Pocket.svg
+neogeo-content.svg                  SNK - Neo Geo-content.svg
+neogeo.svg                          SNK - Neo Geo.svg
+nes-content.svg                     Nintendo - Nintendo Entertainment System-content.svg
+nes.svg                             Nintendo - Nintendo Entertainment System.svg
+nintendo_64-content.svg             Nintendo - Nintendo 64-content.svg
+nintendo_64.svg                     Nintendo - Nintendo 64.svg
+nuon-content.svg                    VM Labs - NUON-content.svg
+nuon.svg                            VM Labs - NUON.svg
+nxengine-content.svg                Cave Story-content.svg
+nxengine.svg                        Cave Story.svg
+odyssey2-content.svg                Magnavox - Odyssey2-content.svg
+odyssey2.svg                        Magnavox - Odyssey2.svg
+openlara-content.svg                Tomb Raider-content.svg
+openlara.svg                        Tomb Raider.svg
+pc_88-content.svg                   NEC - PC-8001 - PC-8801-content.svg
+pc_88.svg                           NEC - PC-8001 - PC-8801.svg
+pc_98-content.svg                   NEC - PC-98-content.svg
+pc_98.svg                           NEC - PC-98.svg
+pc_engine-content.svg               NEC - PC Engine - TurboGrafx 16-content (U).svg
+pc_engine.svg                       NEC - PC Engine - TurboGrafx 16.svg
+pc_fx-content.svg                   NEC - PC-FX-content.svg
+pc_fx.svg                           NEC - PC-FX.svg
+pcxt-content.svg                    DOS-content.svg
+pcxt.svg                            DOS.svg
+piece.svg                           Aquaplus - PIECE.svg
+playstation-content.svg             Sony - PlayStation-content.svg
+playstation.svg                     Sony - PlayStation.svg
+playstation2-content.svg            Sony - PlayStation 2-content.svg
+playstation2.svg                    Sony - PlayStation 2.svg
+playstation_portable-content.svg    Sony - PlayStation Portable-content.svg
+playstation_portable.svg            Sony - PlayStation Portable.svg
+pokemon_mini-content.svg            Nintendo - Pokemon Mini-content.svg
+pokemon_mini.svg                    Nintendo - Pokemon Mini.svg
+puzzlescript-content.svg            PuzzleScript-content.svg
+puzzlescript.svg                    PuzzleScript.svg
+quake_1-content.svg                 Quake-content.svg
+quake_1.svg                         Quake.svg
+quake_2-content.svg                 Quake II-content.svg
+quake_2.svg                         Quake II.svg
+quake_3-content.svg                 Quake III-content.svg
+quake_3.svg                         Quake III.svg
+scummvm-content.svg                 ScummVM-content.svg
+scummvm.svg                         ScummVM.svg
+sega_saturn-content.svg             Sega - Saturn-content.svg
+sega_saturn.svg                     Sega - Saturn.svg
+sharp_x1-content.svg                Sharp - X1-content.svg
+sharp_x1.svg                        Sharp - X1.svg
+sharp_x68000-content.svg            Sharp - X68000-content.svg
+sharp_x68000.svg                    Sharp - X68000.svg
+super_nes-content.svg               Nintendo - Super Nintendo Entertainment System-content (2) (U).svg
+super_nes.svg                       Nintendo - Super Nintendo Entertainment System SNS-001.svg
+supervision-content.svg             Watara - Supervision-content.svg
+supervision.svg                     Watara - Supervision.svg
+ti_83.svg                           Texas Instruments - TI-83.svg
+tic80-content.svg                   TIC-80-content.svg
+tic80.svg                           TIC-80.svg
+uw8-content.svg                     MicroW8-content.svg
+uw8.svg                             MicroW8.svg
+uzebox-content.svg                  Uzebox-content.svg
+uzebox.svg                          Uzebox.svg
+vectrex-content.svg                 GCE - Vectrex-content.svg
+vectrex.svg                         GCE - Vectrex.svg
+vircon32-content.svg                Vircon32-content.svg
+vircon32.svg                        Vircon32.svg
+virtual_boy-content.svg             Nintendo - Virtual Boy-content.svg
+virtual_boy.svg                     Nintendo - Virtual Boy.svg
+wasm4-content.svg                   WASM-4-content.svg
+wasm4.svg                           WASM-4.svg
+wolfenstein3d-content.svg           Wolfenstein 3D-content.svg
+wolfenstein3d.svg                   Wolfenstein 3D.svg
+wonderswan-content.svg              Bandai - WonderSwan-content.svg
+wonderswan.svg                      Bandai - WonderSwan.svg
+xbox-content.svg                    Microsoft - Xbox-content.svg
+xbox.svg                            Microsoft - Xbox.svg
+xrick-content.svg                   Rick Dangerous-content.svg
+xrick.svg                           Rick Dangerous.svg
+zmachine-content.svg                Infocom - Z-Machine-content.svg
+zmachine.svg                        Infocom - Z-Machine.svg
+zx81-content.svg                    Sinclair - ZX 81-content.svg
+zx81.svg                            Sinclair - ZX 81.svg
+zx_spectrum-content.svg             Sinclair - ZX Spectrum-content.svg
+zx_spectrum.svg                     Sinclair - ZX Spectrum.svg

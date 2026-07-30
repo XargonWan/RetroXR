@@ -908,6 +908,8 @@ func _build_spawn_view() -> Control:
 	_cartridges_browser = SystemGridBrowser.new()
 	_cartridges_browser.name = "Cartridges"
 	_cartridges_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# These tiles stand for the media, not the machine, so show the cartridge.
+	_cartridges_browser.use_content_art = true
 	_cartridges_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
 	_cartridges_browser.set_detail_populator(_populate_cartridges_detail)
 	_cartridges_browser.active_scroll_changed.connect(func(_s: ScrollContainer):

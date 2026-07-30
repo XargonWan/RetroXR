@@ -37,6 +37,9 @@ var filter_placeholder: String = "Filter systems…"
 var empty_text: String = "Nothing here yet."
 ## Minimum size of each system tile.
 var tile_min_size: Vector2 = Vector2(250, 96)
+## Draw each tile with the system's media art — its cartridge, disc or tape —
+## instead of the console itself. For grids whose tiles stand for a game.
+var use_content_art: bool = false
 
 ## Edge of the square the console art is fitted into, inside a tile.
 const ICON_PX := 60.0
@@ -277,7 +280,7 @@ func _make_tile(s: Dictionary) -> Button:
 	row.add_theme_constant_override("separation", 10)
 	btn.add_child(row)
 
-	var art := SystemIcons.for_system(sid)
+	var art := SystemIcons.for_content(sid) if use_content_art else SystemIcons.for_system(sid)
 	if art:
 		var ico := TextureRect.new()
 		ico.texture = art

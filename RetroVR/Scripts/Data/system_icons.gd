@@ -7,11 +7,18 @@
 ## grid; has_icon() reports whether the art is genuinely that system's.
 ##
 ##   var tex := SystemIcons.for_system("nes")
+##
+## Each system also has a media form — the cartridge, disc or tape you actually
+## put in it — at <systemid>-content.svg, for tiles that stand for a game rather
+## than a machine. Use for_content() there; it falls back to the console.
+##
+##   var tex := SystemIcons.for_content("nes")
 class_name SystemIcons
 extends RefCounted
 
 const ICON_DIR := "res://Textures/SystemIcons"
 const DEFAULT_ID := "_default"
+const CONTENT_SUFFIX := "-content"
 
 # systemid -> Texture2D, or null when that systemid has no art. Null results are
 # cached too, so a miss costs one ResourceLoader.exists() for the whole session.
@@ -25,9 +32,22 @@ static func for_system(systemid: String) -> Texture2D:
 	return tex if tex else _load(DEFAULT_ID)
 
 
+## Media art for a systemid — its cartridge, disc, tape or card. Falls back to
+## the console when that system has none, and then to the generic device.
+static func for_content(systemid: String) -> Texture2D:
+	var tex := _load(systemid + CONTENT_SUFFIX)
+	return tex if tex else for_system(systemid)
+
+
 ## True when this systemid has art of its own, rather than the generic fallback.
 static func has_icon(systemid: String) -> bool:
 	return _load(systemid) != null
+
+
+## True when this systemid has media art of its own, rather than falling back to
+## the console.
+static func has_content_icon(systemid: String) -> bool:
+	return _load(systemid + CONTENT_SUFFIX) != null
 
 
 static func _load(systemid: String) -> Texture2D:
