@@ -127,6 +127,8 @@ var _romm_delete_armed: int = -1
 var _romm_sync_queue: Array[String] = []
 ## "<systemid>/<filename>" -> Texture2D or null.
 const MAX_WHEEL_TEXTURES := 200
+## Wheel logos are scaled into this box so they cannot inflate the row height.
+const WHEEL_BOX := Vector2i(300, 76)
 var _wheel_cache: Dictionary = {}
 var _wheel_cache_order: Array[String] = []
 
@@ -1237,10 +1239,14 @@ func _rebuild_romm_rows() -> void:
 		var fname := str(rom["path"]).get_file()
 		local_by_name[fname.get_basename().to_lower()] = rom
 
-	# 2. Server entries; mark the ones already on disk.
+	# 2. Server entries. Everything here comes from sidecars already in RAM —
+	# no seek and no JSON parse per row, or opening a 3k-ROM platform stalls the
+	# frame for a second building rows nobody is looking at yet. The row's real
+	# data is read on demand in _bind_rom_row, for the dozen rows on screen.
 	var have_index := romm_catalog.load_index(systemid)
 	var matched: Dictionary = {}
 	if have_index:
+		var fast := romm_catalog.has_fast_sidecars()
 		var indices := PackedInt32Array()
 		if _romm_filter.is_empty():
 			indices.resize(romm_catalog.count())
@@ -1250,29 +1256,40 @@ func _rebuild_romm_rows() -> void:
 			indices = romm_catalog.search(_romm_filter)
 
 		for i: int in indices:
-			var entry := romm_catalog.row(i)
-			if entry.is_empty():
-				continue
-			var fs_name := str(entry.get("fs_name", ""))
-			var key := fs_name.get_basename().to_lower()
+			var key := ""
+			var label := ""
+			var regions := PackedStringArray()
+			if fast:
+				key = romm_catalog.fs_basename_at(i)
+				label = romm_catalog.name_at(i)
+				regions = romm_catalog.regions_at(i)
+			else:
+				# Index predates the sidecars; fall back to the slow path so an
+				# un-resynced platform still works.
+				var entry := romm_catalog.row(i)
+				if entry.is_empty():
+					continue
+				key = str(entry.get("fs_name", "")).get_basename().to_lower()
+				label = str(entry.get("name", key))
+				var rl: Array = entry.get("regions", []) if entry.get("regions") is Array else []
+				for r: Variant in rl:
+					regions.append(str(r))
+
 			var local: Dictionary = local_by_name.get(key, {})
 			if not local.is_empty():
 				matched[key] = true
 
-			# Region options come from the data, so a platform only ever offers
-			# regions it actually has.
-			var regions: Array = entry.get("regions", []) if entry.get("regions") is Array else []
-			for r: Variant in regions:
-				regions_seen[str(r)] = true
+			for r: String in regions:
+				regions_seen[r] = true
 
 			var src := "both" if not local.is_empty() else "server"
 			if not _romm_row_passes(src, regions):
 				continue
 			_romm_rows.append({
 				"source": src,
-				"entry": entry,
+				"index": i,
 				"path": str(local.get("path", "")),
-				"label": str(entry.get("name", fs_name.get_basename())),
+				"label": label,
 			})
 
 	# 3. Local-only files the server doesn't know about. The extension filter
@@ -1285,14 +1302,14 @@ func _rebuild_romm_rows() -> void:
 		if not _romm_detail_exts.is_empty() and ext not in _romm_detail_exts:
 			continue
 		var label := str(rom["label"])
-		if not _romm_filter.is_empty() and not label.to_lower().contains(_romm_filter):
+		if not _romm_filter.is_empty() and not label.containsn(_romm_filter):
 			continue
 		# A local-only file has no server metadata, so it has no region to match.
-		if not _romm_row_passes("local", []):
+		if not _romm_row_passes("local", PackedStringArray()):
 			continue
 		_romm_rows.append({
 			"source": "local",
-			"entry": {},
+			"index": -1,
 			"path": str(rom["path"]),
 			"label": label,
 		})
@@ -1314,7 +1331,7 @@ func _rebuild_romm_rows() -> void:
 					% RomLibrary.rom_dir_for_system(systemid)
 
 
-func _romm_row_passes(source: String, regions: Array) -> bool:
+func _romm_row_passes(source: String, regions: PackedStringArray) -> bool:
 	match _romm_source_filter:
 		"downloaded":
 			if source == "server":
@@ -1327,12 +1344,7 @@ func _romm_row_passes(source: String, regions: Array) -> bool:
 				return false
 
 	if not _romm_region_filter.is_empty():
-		var hit := false
-		for r: Variant in regions:
-			if str(r) == _romm_region_filter:
-				hit = true
-				break
-		if not hit:
+		if _romm_region_filter not in regions:
 			return false
 	return true
 
@@ -1459,7 +1471,9 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	if index < 0 or index >= _romm_rows.size():
 		return
 	var model: Dictionary = _romm_rows[index]
-	var entry: Dictionary = model["entry"]
+	# Read on demand: this is the only place a row's JSON is parsed.
+	var cat_index := int(model.get("index", -1))
+	var entry: Dictionary = romm_catalog.row(cat_index) if cat_index >= 0 else {}
 	var systemid := _romm_detail_systemid
 	var source := str(model["source"])
 	var label := str(model["label"])
@@ -1487,7 +1501,8 @@ func _bind_rom_row(row: Control, index: int) -> void:
 		wheel = _cached_wheel_texture(systemid, local_path.get_file())
 	if wheel != null:
 		main.icon = wheel
-		main.expand_icon = true
+		main.expand_icon = false
+		main.add_theme_constant_override("icon_max_width", WHEEL_BOX.x)
 		main.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		main.set_marquee_text("")
 	else:
@@ -4066,7 +4081,7 @@ func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
 	# Resolved once; a scan per progress tick would be O(rows) on an 11k list.
 	_romm_dl_row_index = -1
 	for i in _romm_rows.size():
-		if int((_romm_rows[i]["entry"] as Dictionary).get("id", 0)) == rom_id:
+		if romm_catalog.rom_id_at(int(_romm_rows[i].get("index", -1))) == rom_id:
 			_romm_dl_row_index = i
 			break
 
@@ -4438,8 +4453,28 @@ func _load_wheel_texture(systemid: String, romname: String) -> Texture2D:
 		if FileAccess.file_exists(path):
 			var img := Image.load_from_file(path)
 			if img:
+				_fit_within(img, WHEEL_BOX)
 				return ImageTexture.create_from_image(img)
 	return null
+
+
+## Scale an image down to fit a box, preserving aspect.
+##
+## Wheel logos are full-res (600x300 is typical) and were drawn via expand_icon,
+## which scales them to a button far wider than it is tall — so the logo rendered
+## much larger than its 100 px row and spilled across the boundary into the rows
+## either side. Bounding the texture keeps it inside the row whatever its aspect;
+## icon_max_width alone caps width only, which cannot bound a square-ish logo.
+## (Measured: expand_icon does NOT inflate the button's minimum height, so this
+## was a drawing-size problem, not a layout one.)
+static func _fit_within(img: Image, box: Vector2i) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	if w <= 0 or h <= 0 or (w <= box.x and h <= box.y):
+		return
+	var scale: float = minf(float(box.x) / float(w), float(box.y) / float(h))
+	img.resize(maxi(1, int(round(w * scale))), maxi(1, int(round(h * scale))),
+		Image.INTERPOLATE_LANCZOS)
 
 
 func _has_scraped_manual(systemid: String, romname: String) -> bool:

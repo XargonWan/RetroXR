@@ -37,6 +37,9 @@ var _loaded_systemid: String = ""
 var _offsets := PackedInt64Array()
 var _ids := PackedInt32Array()
 var _names := PackedStringArray()
+## Parallel sidecars, so filtering and dedupe never parse JSON.
+var _fs_names := PackedStringArray()
+var _regions := PackedStringArray()
 var _index_file: FileAccess = null
 
 # ── Sync thread ──────────────────────────────────────────────────────────────
@@ -138,9 +141,22 @@ func load_index(systemid: String) -> bool:
 		_names = PackedStringArray(text.split("\n", false))
 	else:
 		_names = PackedStringArray()
+		_fs_names = PackedStringArray()
+		_regions = PackedStringArray()
+
+	_fs_names = _read_lines(dir.path_join("index.fsnames"))
+	_regions = _read_lines(dir.path_join("index.regions"))
 
 	_index_file = FileAccess.open(jsonl, FileAccess.READ)
 	if _index_file == null:
+		return false
+
+	# A half-swapped index (offsets from one write, jsonl from another) produces
+	# seeks into the middle of lines and rows that silently parse to nothing.
+	if _names.size() != _offsets.size() or _ids.size() != _offsets.size():
+		push_warning("[RommCatalog] %s index is inconsistent (%d offsets, %d names, %d ids) — needs a re-sync"
+			% [systemid, _offsets.size(), _names.size(), _ids.size()])
+		unload_index()
 		return false
 
 	_loaded_systemid = systemid
@@ -177,6 +193,27 @@ func row(i: int) -> Dictionary:
 	return parsed if parsed is Dictionary else {}
 
 
+## Display name, lowercase fs_name basename and regions for row i, all
+## from sidecars already in RAM: a full rebuild costs no seeks, no parses.
+func name_at(i: int) -> String:
+	return _names[i] if i >= 0 and i < _names.size() else ""
+
+
+func fs_basename_at(i: int) -> String:
+	return _fs_names[i] if i >= 0 and i < _fs_names.size() else ""
+
+
+func regions_at(i: int) -> PackedStringArray:
+	if i < 0 or i >= _regions.size() or _regions[i].is_empty():
+		return PackedStringArray()
+	return _regions[i].split("", false)
+
+
+## False for an index synced before these sidecars existed.
+func has_fast_sidecars() -> bool:
+	return _fs_names.size() == _offsets.size() and _regions.size() == _offsets.size()
+
+
 func rom_id_at(i: int) -> int:
 	if i < 0 or i >= _ids.size():
 		return 0
@@ -188,11 +225,11 @@ func rom_id_at(i: int) -> int:
 ## `limit` caps the result so a one-letter query can't build a huge array.
 func search(term: String, limit: int = 5000) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	var needle := term.strip_edges().to_lower()
+	var needle := term.strip_edges()
 	if needle.is_empty():
 		return out
 	for i in _names.size():
-		if _names[i].contains(needle):
+		if _names[i].containsn(needle):
 			out.append(i)
 			if out.size() >= limit:
 				break
@@ -212,6 +249,12 @@ func sync_platform(systemid: String, platform_id: int, full: bool = false) -> bo
 		return false
 
 	abort_sync()  # joins any finished-but-unjoined thread
+
+	# The worker replaces index.jsonl by rename. Windows will not rename over a
+	# file we still hold open, and the failure is silent — leaving new sidecars
+	# describing the old index, so every offset points at the wrong line.
+	if _loaded_systemid == systemid:
+		unload_index()
 
 	_syncing_systemid = systemid
 	_thread = Thread.new()
@@ -358,7 +401,18 @@ func _sync_worker(args: Dictionary) -> void:
 		if parsed is Dictionary:
 			sort_key = str((parsed as Dictionary).get("sort_name", ""))
 			display = str((parsed as Dictionary).get("name", ""))
-		rows.append({"sort": sort_key, "display": display.to_lower(), "line": line, "id": id})
+		var fs_base := ""
+		var regions_joined := ""
+		if parsed is Dictionary:
+			var pd := parsed as Dictionary
+			fs_base = str(pd.get("fs_name", "")).get_basename().to_lower()
+			var rl: Array = pd.get("regions", []) if pd.get("regions") is Array else []
+			var parts := PackedStringArray()
+			for r: Variant in rl:
+				parts.append(str(r))
+			regions_joined = "".join(parts)
+		rows.append({"sort": sort_key, "display": display, "line": line, "id": id,
+			"fs_base": fs_base, "regions": regions_joined})
 	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return (a["sort"] as String).naturalnocasecmp_to(b["sort"] as String) < 0
 	)
@@ -367,6 +421,8 @@ func _sync_worker(args: Dictionary) -> void:
 	var offsets := PackedInt64Array()
 	var ids := PackedInt32Array()
 	var names_text := ""
+	var fsnames_text := ""
+	var regions_text := ""
 	var pos := 0
 	for r: Dictionary in rows:
 		var line: String = r["line"]
@@ -376,6 +432,10 @@ func _sync_worker(args: Dictionary) -> void:
 		# RomM's sort key zero-pads every number ("2in1" -> "000000000002in
 		# 000000000001"), which sorts correctly but is unsearchable as text.
 		names_text += str(r["display"]) + "\n"
+		fsnames_text += str(r["fs_base"]) + "
+"
+		regions_text += str(r["regions"]) + "
+"
 		var bytes := (line + "\n").to_utf8_buffer()
 		out.store_buffer(bytes)
 		pos += bytes.size()
@@ -384,12 +444,18 @@ func _sync_worker(args: Dictionary) -> void:
 	_write_bytes(dir.path_join("index.off"), _int64_bytes(offsets))
 	_write_bytes(dir.path_join("index.ids"), _int32_bytes(ids))
 	_write_text(dir.path_join("index.names"), names_text)
+	_write_text(dir.path_join("index.fsnames"), fsnames_text)
+	_write_text(dir.path_join("index.regions"), regions_text)
 
 	# Atomic swap — readers never see a half-written index.
 	var final_path := index_path(systemid)
 	if FileAccess.file_exists(final_path):
 		DirAccess.remove_absolute(final_path)
-	DirAccess.rename_absolute(tmp_jsonl, final_path)
+	if DirAccess.rename_absolute(tmp_jsonl, final_path) != OK:
+		DirAccess.remove_absolute(tmp_jsonl)
+		_finish.call_deferred(systemid, false, 0, 0,
+			"Could not replace the index (is it open?)")
+		return
 
 	_write_text(meta_path(systemid), JSON.stringify({
 		"total": rows.size(),
@@ -523,6 +589,21 @@ func _finish(systemid: String, ok: bool, added: int, removed: int, error: String
 
 
 # --- small file helpers -----------------------------------------------------
+
+static func _read_lines(path: String) -> PackedStringArray:
+	if not FileAccess.file_exists(path):
+		return PackedStringArray()
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return PackedStringArray()
+	# Keep empty entries: a row with no regions writes a blank line, and dropping
+	# it would shift every later row. Only the trailing newline is discarded.
+	var parts := f.get_as_text().split("
+")
+	if parts.size() > 0 and parts[parts.size() - 1] == "":
+		parts.remove_at(parts.size() - 1)
+	return PackedStringArray(parts)
+
 
 static func _read_file_bytes(path: String) -> PackedByteArray:
 	if not FileAccess.file_exists(path):
