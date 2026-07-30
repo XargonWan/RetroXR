@@ -125,8 +125,12 @@ func _process(delta: float) -> void:
 
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
+##
+## Stops dead while paused. Pausing the source does not stop the sound on its
+## own: libVLC has handed over a second or more of PCM by then, and it keeps
+## playing out of the ring until the drain stops as well.
 func _pump_audio() -> void:
-	if _emitter == null:
+	if _emitter == null or _paused:
 		return
 	# frames_wanted, not "all free space": queue depth is latency.
 	var want := _emitter.frames_wanted()
