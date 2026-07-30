@@ -96,8 +96,8 @@ func _process(_delta: float) -> void:
 	var origin := _emit_origin if _emit_override else global_position
 	if _use_sdk:
 		# The mixer skips the underlying SDK call when the position has not
-		# changed, so writing this every frame is safe. That guard is load
-		# bearing on Quest, not an optimisation -- see meta-xr-audio-known-issues.md.
+		# changed, so writing this every frame is safe -- it saves a lock, and
+		# most emitters here rewrite a position that never moved.
 		_mx.set_voice_position(_voice_l, origin + _speaker_offset(-1.0))
 		if _voice_r >= 0:
 			_mx.set_voice_position(_voice_r, origin + _speaker_offset(1.0))
