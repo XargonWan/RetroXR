@@ -192,6 +192,10 @@ var _audio_player: AudioStreamPlayer3D = null
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
 var _mx: Object = null
+# Last level pushed by the connected TV. Re-applied on every rebind: a fresh
+# voice starts at full gain, so a core restart would otherwise come back at full
+# volume with the set switched off.
+var _last_audio_volume: float = 1.0
 ## Half the gap between the emitters when no TV is connected, in metres. A
 ## connected set reports its own speaker positions instead.
 @export var audio_speaker_separation: float = 0.09
@@ -715,6 +719,7 @@ func set_input_enabled(enabled: bool) -> void:
 
 ## Set the audio volume for the running libretro instance (0.0 = silent, 1.0 = 100%).
 func set_audio_volume(volume: float) -> void:
+	_last_audio_volume = clampf(volume, 0.0, 1.0)
 	if not is_powered_on:
 		return
 	if not _audio_voices.is_empty() and _mx != null:
@@ -736,6 +741,7 @@ func _bind_audio_player() -> void:
 			_mx = Engine.get_singleton("MetaXRAudio")
 		_audio_player = null
 		_update_audio_position()
+		_apply_bound_volume()
 		return
 
 	_audio_player = _libretro.get_node_or_null("AudioStreamPlayer3D") as AudioStreamPlayer3D
@@ -745,6 +751,18 @@ func _bind_audio_player() -> void:
 	_audio_player.max_distance     = audio_max_distance
 	_audio_player.panning_strength = audio_panning_strength
 	_update_audio_position()
+	_apply_bound_volume()
+
+
+## Push the remembered level onto whichever backend was just bound. A voice is
+## created at gain 1.0 and a fresh AudioStreamPlayer3D at 0 dB, so without this
+## a restart resurrects the sound at full volume regardless of the TV.
+func _apply_bound_volume() -> void:
+	if not _audio_voices.is_empty() and _mx != null:
+		for v in _audio_voices:
+			_mx.set_voice_gain(v, _last_audio_volume)
+	elif _audio_player != null and is_instance_valid(_audio_player):
+		_audio_player.volume_db = linear_to_db(_last_audio_volume) if _last_audio_volume > 0.001 else -80.0
 
 
 ## The TV this system's sound should come out of: whichever channel is plugged
@@ -1425,6 +1443,10 @@ func reset() -> void:
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	_libretro.StopContent()
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
+	# StopContent destroyed the old voices and StartContent made fresh ones, so
+	# the ids held here are stale. Without this the TV's volume and power would
+	# be writing gain to dead slots while the new voices played at full tilt.
+	_bind_audio_player()
 
 
 ## Merge the model's REQUIRED core options into <dir>/core_options/<core>.opt
