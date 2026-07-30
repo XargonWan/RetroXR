@@ -918,6 +918,8 @@ width = 1.44
 height = 1.18
 sun_path = NodePath("../../WindowSun")
 sun_energy = 3.6
+daylight_path = NodePath("../../Dusk")
+env_path = NodePath("../../WorldEnvironment")
 drop = 0.25
 
 ; The blind cord. Same BeadPullCord as the lamps, but beads off — a blind cord is
@@ -930,7 +932,7 @@ beads = false
 cord_radius = 0.0026
 cord_length = 0.46
 segments = 12
-yank = 0.07
+yank = 0.22
 bead_color = Color(0.9, 0.88, 0.82, 1)
 
 [node name="FanPivot" type="Node3D" parent="Furniture"]

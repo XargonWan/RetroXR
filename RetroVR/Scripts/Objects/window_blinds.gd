@@ -50,13 +50,31 @@ signal drop_changed(drop: float)
 
 @export var animate_time: float = 0.45
 
-## The sun spot coming through this window, dimmed as the blinds close. Owning
-## its energy here is safe: QualityManager writes shadow_enabled on every light
-## but only touches energy for the "ceiling_light" group, which this is not in.
+## Everything the window's daylight drives, dimmed together as the blinds close.
+## Scaling only the sun SPOT was not enough: that removed the sun patch but left
+## the room's general daylight untouched, so closing the blinds barely changed the
+## room. A covered window has to take the ambient down with it.
+##
+## Owning these energies is safe. QualityManager rewrites shadow_enabled on every
+## light, but only touches light_energy for the "ceiling_light" group, and none of
+## these is in it.
 @export var sun_path: NodePath
 @export var sun_energy: float = 3.0
 
+## The warm directional fill standing in for sky light through the window.
+@export var daylight_path: NodePath
+@export var daylight_open: float = 0.15
+## Not zero when shut — a vinyl blind leaks, and the room still has its lamps.
+@export var daylight_shut: float = 0.035
+
+## The room Environment's ambient, which is the rest of the daylight.
+@export var env_path: NodePath
+@export var ambient_open: float = 0.25
+@export var ambient_shut: float = 0.10
+
 var _sun: Light3D = null
+var _daylight: Light3D = null
+var _env: Environment = null
 
 var _slats: MultiMeshInstance3D = null
 var _bottom: MeshInstance3D = null
@@ -66,6 +84,16 @@ var _tween: Tween = null
 func _ready() -> void:
 	if not sun_path.is_empty():
 		_sun = get_node_or_null(sun_path) as Light3D
+	if not daylight_path.is_empty():
+		_daylight = get_node_or_null(daylight_path) as Light3D
+	if not env_path.is_empty():
+		var we := get_node_or_null(env_path) as WorldEnvironment
+		if we != null and we.environment != null:
+			# Duplicated because a .tscn sub_resource is SHARED between instances
+			# of that scene; writing ambient on the shared copy would have every
+			# bedroom in a session dimming together.
+			we.environment = we.environment.duplicate()
+			_env = we.environment
 	_build()
 	_apply()
 
@@ -134,8 +162,13 @@ func _apply() -> void:
 		mm.set_instance_transform(i, Transform3D(Basis(), Vector3(0.0, y, 0.0)))
 	if _bottom != null:
 		_bottom.position = Vector3(0.0, y - 0.012, 0.0)
+	var open := openness()
 	if _sun != null:
-		_sun.light_energy = sun_energy * openness()
+		_sun.light_energy = sun_energy * open
+	if _daylight != null:
+		_daylight.light_energy = lerpf(daylight_shut, daylight_open, open)
+	if _env != null:
+		_env.ambient_light_energy = lerpf(ambient_shut, ambient_open, open)
 
 
 ## Signal target for BeadPullCord.pulled, which carries a bool that means nothing
