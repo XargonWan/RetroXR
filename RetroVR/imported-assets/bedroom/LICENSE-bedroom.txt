@@ -19,6 +19,11 @@ furniture/bed_desk_chair.glb
     separately. Its second mesh, "Plane_2_0", is the Sketchfab viewer's backdrop
     grid baked into the download; the scene hides it.
 
+    The bedding was green. bed_Image_1.png is MODIFIED: Tools/recolour_texture.py
+    rewrites just its green hue band to a warm oatmeal. The untouched download is
+    kept beside it as bed_Image_1_source.png, which is what the tool reads, so the
+    colour can be redone without fetching the asset again.
+
 furniture/bookcases.glb
     "Wooden Bookcases with Books" by Matthew Collings (@mtcollings)
     https://sketchfab.com/3d-models/wooden-bookcases-with-books-d0618ac16b2a4a87b9b6c7d5e6765626
