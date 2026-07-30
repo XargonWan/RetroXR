@@ -10,6 +10,7 @@ extends Node
 
 const PREFS_PATH := "user://graphics_prefs.json"
 
+
 ## Shadow tiers offered in the GRAPHICS tab. OFF is the original look: no light
 ## in the room casts a shadow at all.
 enum ShadowQuality { OFF, LOW, MEDIUM, HIGH }
@@ -23,6 +24,27 @@ enum AOQuality { OFF, LOW, HIGH }
 ## the mobile backend (measured: 0.004 mean pixel change against 0.493 for SMAA)
 ## and its history buffer smears under head motion.
 enum PostAA { OFF, FXAA, SMAA }
+
+## The one control most people will ever touch. CUSTOM is not selectable — it is
+## what the preset becomes once an individual row is moved away from it.
+enum Preset { LOW, MEDIUM, HIGH, CUSTOM }
+
+## Render scale is deliberately absent: it is desktop-only and a taste call
+## (supersampling), not a quality tier, so a preset never moves it.
+const PRESETS := {
+	Preset.LOW: {
+		"msaa": Viewport.MSAA_4X, "post_aa": PostAA.OFF,
+		"shadows": ShadowQuality.OFF, "ao": AOQuality.OFF,
+	},
+	Preset.MEDIUM: {
+		"msaa": Viewport.MSAA_4X, "post_aa": PostAA.SMAA,
+		"shadows": ShadowQuality.MEDIUM, "ao": AOQuality.LOW,
+	},
+	Preset.HIGH: {
+		"msaa": Viewport.MSAA_4X, "post_aa": PostAA.SMAA,
+		"shadows": ShadowQuality.HIGH, "ao": AOQuality.HIGH,
+	},
+}
 
 ## Positional shadow atlas edge, soft-shadow filter and depth precision per tier.
 ## The directional atlas gets twice the edge — it covers the whole room in one
@@ -70,10 +92,13 @@ var ambilight_interval: int = 10
 ## Viewport.MSAA_* level applied to the root (XR) viewport.
 var msaa_3d: int = Viewport.MSAA_2X
 var post_aa: PostAA = PostAA.OFF
-var debanding: bool = false
+var preset: Preset = Preset.CUSTOM
 var shadow_quality: ShadowQuality = ShadowQuality.OFF
 var ao_quality: AOQuality = AOQuality.OFF
 var render_scale: float = 1.0
+## Desktop window state. Empty resolution means "leave the window where it is".
+var window_mode: String = ""
+var resolution: String = ""
 
 var _desktop: bool
 
@@ -81,17 +106,15 @@ var _desktop: bool
 func _ready() -> void:
 	_desktop = OS.get_name() != "Android"
 	ambilight_interval = 10 if _desktop else 30
-	msaa_3d = get_tree().root.msaa_3d
-	# Quest is CPU-bound before shadows are even in the picture, so it starts
-	# where it was; desktop gets the shadows this setting exists to provide.
-	shadow_quality = ShadowQuality.MEDIUM if _desktop else ShadowQuality.OFF
-	ao_quality = AOQuality.LOW if supports_post_effects() else AOQuality.OFF
+	# Quest starts where it always was; desktop takes the tier these settings exist
+	# to provide. Applied before _load_prefs so a saved preset wins.
+	apply_preset(Preset.LOW if not _desktop else Preset.MEDIUM, false)
 	_load_prefs()
 	_adjust_lights()
 	apply_render_scale()
 	apply_msaa()
 	apply_post_aa()
-	apply_debanding()
+	apply_forced_quality()
 	apply_shadow_quality()
 	apply_ao_quality()
 	# Lights and each room's WorldEnvironment arrive with every scene load, and
@@ -107,9 +130,9 @@ func _ready() -> void:
 func _log_state() -> void:
 	var root := get_tree().root
 	print(("QualityManager: renderer '%s', scale %.2f (mode %d), msaa %d, post_aa %d, "
-		+ "deband %s, shadows %d, ao %d, atlas %d") % [
+		+ "preset %d, shadows %d, ao %d, atlas %d") % [
 		RenderingServer.get_current_rendering_method(), root.scaling_3d_scale,
-		root.scaling_3d_mode, root.msaa_3d, root.screen_space_aa, root.use_debanding,
+		root.scaling_3d_mode, root.msaa_3d, root.screen_space_aa, preset,
 		shadow_quality, ao_quality, root.positional_shadow_atlas_size])
 
 
@@ -173,9 +196,21 @@ func apply_render_scale() -> void:
 		else Viewport.SCALING_3D_MODE_BILINEAR
 
 
+## Window mode and resolution were the only GRAPHICS rows that reset every launch,
+## which read as a bug sitting next to rows that do persist. Headsets have no
+## desktop window to restore, so this is desktop-only.
+func set_window_state(mode: String, res: String) -> void:
+	if not mode.is_empty():
+		window_mode = mode
+	if not res.is_empty():
+		resolution = res
+	save_prefs()
+
+
 func set_msaa(mode: int) -> void:
 	msaa_3d = clampi(mode, Viewport.MSAA_DISABLED, Viewport.MSAA_8X)
 	apply_msaa()
+	_mark_custom()
 	save_prefs()
 
 
@@ -186,6 +221,7 @@ func apply_msaa() -> void:
 func set_post_aa(mode: int) -> void:
 	post_aa = clampi(mode, PostAA.OFF, PostAA.SMAA) as PostAA
 	apply_post_aa()
+	_mark_custom()
 	save_prefs()
 
 
@@ -200,14 +236,40 @@ func apply_post_aa() -> void:
 			root.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 
 
-func set_debanding(enabled: bool) -> void:
-	debanding = enabled
-	apply_debanding()
-	save_prefs()
+## Settings with a strictly correct answer, so they are applied rather than asked
+## about. Debanding is a dither pass costing almost nothing, and this room is
+## mostly the dark gradients that band; anisotropic filtering sharpens floors at
+## grazing angles, which is most of what a room-scale scene is looked at through.
+func apply_forced_quality() -> void:
+	var root := get_tree().root
+	root.use_debanding = true
+	root.anisotropic_filtering_level = Viewport.ANISOTROPY_8X
 
 
-func apply_debanding() -> void:
-	get_tree().root.use_debanding = debanding
+## Drive every tiered setting at once. `persist` is false only for the boot-time
+## default, which must not write a prefs file before one has been read.
+func apply_preset(level: Preset, persist: bool = true) -> void:
+	preset = level
+	var tier: Dictionary = PRESETS.get(level, {})
+	if tier.is_empty():
+		return
+	msaa_3d = tier["msaa"]
+	post_aa = tier["post_aa"]
+	shadow_quality = tier["shadows"]
+	# AO is Forward+ only; a preset must not switch on what the backend ignores.
+	ao_quality = tier["ao"] if supports_post_effects() else AOQuality.OFF
+	if is_inside_tree():
+		apply_msaa()
+		apply_post_aa()
+		apply_shadow_quality()
+		apply_ao_quality()
+	if persist:
+		save_prefs()
+
+
+## Any individual row moving off the preset makes the preset Custom.
+func _mark_custom() -> void:
+	preset = Preset.CUSTOM
 
 
 func shadows_enabled() -> bool:
@@ -217,6 +279,7 @@ func shadows_enabled() -> bool:
 func set_shadow_quality(level: int) -> void:
 	shadow_quality = clampi(level, ShadowQuality.OFF, ShadowQuality.HIGH) as ShadowQuality
 	apply_shadow_quality()
+	_mark_custom()
 	save_prefs()
 
 
@@ -268,6 +331,7 @@ func configure_light(light: Light3D) -> void:
 func set_ao_quality(level: int) -> void:
 	ao_quality = clampi(level, AOQuality.OFF, AOQuality.HIGH) as AOQuality
 	apply_ao_quality()
+	_mark_custom()
 	save_prefs()
 
 
@@ -318,13 +382,15 @@ func _load_prefs() -> void:
 	msaa_3d = clampi(_prefs_int(data, "msaa_3d", msaa_3d),
 		Viewport.MSAA_DISABLED, Viewport.MSAA_8X)
 	post_aa = clampi(_prefs_int(data, "post_aa", post_aa), PostAA.OFF, PostAA.SMAA) as PostAA
-	debanding = bool(data.get("debanding", debanding))
+	preset = clampi(_prefs_int(data, "preset", preset), Preset.LOW, Preset.CUSTOM) as Preset
 	shadow_quality = clampi(_prefs_int(data, "shadow_quality", shadow_quality),
 		ShadowQuality.OFF, ShadowQuality.HIGH) as ShadowQuality
 	ao_quality = clampi(_prefs_int(data, "ao_quality", ao_quality),
 		AOQuality.OFF, AOQuality.HIGH) as AOQuality
 	# Forced to 1.0 where scaling is unsupported, so a value saved on desktop and
 	# synced to a headset cannot bring the broken path back with it.
+	window_mode = str(data.get("window_mode", window_mode))
+	resolution = str(data.get("resolution", resolution))
 	render_scale = clampf(_prefs_float(data, "render_scale", render_scale),
 		RENDER_SCALE_MIN, RENDER_SCALE_MAX) if supports_render_scale() else 1.0
 
@@ -337,7 +403,9 @@ func save_prefs() -> void:
 	file.store_string(JSON.stringify({
 		"msaa_3d": msaa_3d,
 		"post_aa": int(post_aa),
-		"debanding": debanding,
+		"preset": int(preset),
+		"window_mode": window_mode,
+		"resolution": resolution,
 		"shadow_quality": int(shadow_quality),
 		"ao_quality": int(ao_quality),
 		"render_scale": render_scale,

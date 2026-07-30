@@ -176,6 +176,12 @@ var _active_scroll:        ScrollContainer = null
 var _controls_scroll:      ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
 var _graphics_scroll:      ScrollContainer = null
+# GRAPHICS rows kept so the preset can push its values back into them.
+var _graphics_preset_opt:  VRDropdown = null
+var _graphics_msaa_opt:    VRDropdown = null
+var _graphics_post_aa_opt: VRDropdown = null
+var _graphics_shadow_opt:  VRDropdown = null
+var _graphics_ao_opt:      VRDropdown = null
 var _about_scroll:         ScrollContainer = null
 
 # Spawn view tab ScrollContainers (indexed by tab index)
@@ -275,6 +281,7 @@ const COLOR_BTN_BUSY     := Color(0.25, 0.20, 0.10)
 
 
 func _ready() -> void:
+	_restore_window_state()
 	_init_core_db()
 	_init_core_defaults()
 	_init_download_manager()
@@ -2213,6 +2220,45 @@ func _apply_resolution(key: String) -> void:
 	DisplayServer.window_set_position(origin + (usable - size) / 2)
 
 
+## Sizes the display can actually take, rather than a fixed list that capped out
+## below the monitor. Godot exposes the native size but no mode enumeration, so
+## the standard sizes are filtered against it and the native one always ends the
+## list — on a 4K panel that is where 3840x2160 comes from. The current window
+## size is folded in too, so the dropdown never opens on a blank value.
+func _resolution_options() -> Array:
+	var native := DisplayServer.screen_get_size(DisplayServer.window_get_current_screen())
+	var sizes: Array[Vector2i] = []
+	for candidate in [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080),
+			Vector2i(1920, 1200), Vector2i(2560, 1440), Vector2i(2560, 1600),
+			Vector2i(3440, 1440), Vector2i(3840, 2160)]:
+		if candidate.x <= native.x and candidate.y <= native.y:
+			sizes.append(candidate)
+	for extra in [DisplayServer.window_get_size(), native]:
+		if extra.x > 0 and extra.y > 0 and not sizes.has(extra):
+			sizes.append(extra)
+	sizes.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x * a.y < b.x * b.y)
+
+	var options: Array = []
+	for size in sizes:
+		var label := "%d×%d" % [size.x, size.y]
+		if size == native:
+			label += "  (native)"
+		options.append([label, "%dx%d" % [size.x, size.y]])
+	return options
+
+
+## QualityManager persists the desktop window state; the DisplayServer calls stay
+## here where they already live, so the stored values are pulled rather than
+## pushed — an autoload's _ready runs long before this menu exists to hear a signal.
+func _restore_window_state() -> void:
+	if _is_vr_mode():
+		return
+	if not QualityManager.window_mode.is_empty():
+		_apply_window_mode(QualityManager.window_mode)
+	if not QualityManager.resolution.is_empty():
+		_apply_resolution(QualityManager.resolution)
+
+
 func _build_graphics_view() -> Control:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -2239,16 +2285,16 @@ func _build_graphics_view() -> Control:
 			[["Windowed", "windowed"], ["Borderless", "borderless"], ["Fullscreen", "fullscreen"]],
 			_current_window_mode(), 3, Vector2(170, 52), 20)
 		win_opt.item_selected.connect(func(id: Variant) -> void:
-			_apply_window_mode(str(id)))
+			_apply_window_mode(str(id))
+			QualityManager.set_window_state(str(id), ""))
 		vbox.add_child(win_opt)
 
 		# Resolution (applies while windowed/borderless; ignored in fullscreen).
-		var res_opt := VRDropdown.create("Resolution",
-			[["1280×720", "1280x720"], ["1600×900", "1600x900"],
-			 ["1920×1080", "1920x1080"], ["2560×1440", "2560x1440"]],
-			_current_resolution_key(), 2, Vector2(150, 52), 20)
+		var res_opt := VRDropdown.create("Resolution", _resolution_options(),
+			_current_resolution_key(), 2, Vector2(190, 52), 20)
 		res_opt.item_selected.connect(func(id: Variant) -> void:
-			_apply_resolution(str(id)))
+			_apply_resolution(str(id))
+			QualityManager.set_window_state("", str(id)))
 		vbox.add_child(res_opt)
 
 		vbox.add_child(HSeparator.new())
@@ -2258,6 +2304,25 @@ func _build_graphics_view() -> Control:
 	quality_hdr.add_theme_font_size_override("font_size", 22)
 	quality_hdr.add_theme_color_override("font_color", COLOR_TITLE)
 	vbox.add_child(quality_hdr)
+
+	# Custom is listed so the dropdown can display it, but picking it does nothing
+	# — it is the state the rows below put the preset into, not a tier to select.
+	_graphics_preset_opt = VRDropdown.create("Preset",
+		[["Low", QualityManager.Preset.LOW],
+		 ["Medium", QualityManager.Preset.MEDIUM],
+		 ["High", QualityManager.Preset.HIGH],
+		 ["Custom", QualityManager.Preset.CUSTOM]],
+		int(QualityManager.preset), 4, Vector2(110, 52), 20)
+	_graphics_preset_opt.item_selected.connect(func(id: Variant) -> void:
+		if int(id) == QualityManager.Preset.CUSTOM:
+			return
+		QualityManager.apply_preset(int(id))
+		_sync_graphics_rows()
+	)
+	vbox.add_child(_graphics_preset_opt)
+
+	_add_graphics_hint(vbox, "Sets everything below at once. Moving any single row "
+		+ "afterwards turns this to Custom.")
 
 	# Scaling the 3D pass corrupts the XR viewport on the mobile backend in both
 	# directions, so the row is not offered there at all rather than shown with
@@ -2279,8 +2344,10 @@ func _build_graphics_view() -> Control:
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
 		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
 		QualityManager.msaa_3d, 4, Vector2(110, 52), 20)
+	_graphics_msaa_opt = msaa_opt
 	msaa_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_msaa(int(id)))
+		QualityManager.set_msaa(int(id))
+		_sync_graphics_rows())
 	vbox.add_child(msaa_opt)
 
 	_add_graphics_hint(vbox, "Multisampling on the 3D view. Smooths geometry edges only, "
@@ -2291,32 +2358,16 @@ func _build_graphics_view() -> Control:
 		 ["FXAA", QualityManager.PostAA.FXAA],
 		 ["SMAA", QualityManager.PostAA.SMAA]],
 		int(QualityManager.post_aa), 3, Vector2(110, 52), 20)
+	_graphics_post_aa_opt = post_aa_opt
 	post_aa_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_post_aa(int(id)))
+		QualityManager.set_post_aa(int(id))
+		_sync_graphics_rows())
 	vbox.add_child(post_aa_opt)
 
 	_add_graphics_hint(vbox, "Catches what MSAA cannot — the carpet, wood and neon are drawn "
 		+ "by shaders, whose aliasing is inside the surface rather than on its edge. "
 		+ "SMAA keeps detail; FXAA is cheaper but softens the whole picture.")
 
-	var deband_row := HBoxContainer.new()
-	deband_row.add_theme_constant_override("separation", 10)
-	deband_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(deband_row)
-
-	var deband_lbl := Label.new()
-	deband_lbl.text = "Debanding"
-	deband_lbl.add_theme_font_size_override("font_size", 22)
-	deband_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	deband_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	deband_row.add_child(deband_lbl)
-
-	deband_row.add_child(_make_toggle(QualityManager.debanding, func(on: bool) -> void:
-		QualityManager.set_debanding(on)
-	))
-
-	_add_graphics_hint(vbox, "Breaks up the stepped rings that show in dark gradients, "
-		+ "which the arcade is mostly made of. Costs essentially nothing.")
 
 	var shadow_opt := VRDropdown.create("Shadows",
 		[["Off", QualityManager.ShadowQuality.OFF],
@@ -2324,8 +2375,10 @@ func _build_graphics_view() -> Control:
 		 ["Medium", QualityManager.ShadowQuality.MEDIUM],
 		 ["High", QualityManager.ShadowQuality.HIGH]],
 		int(QualityManager.shadow_quality), 4, Vector2(110, 52), 20)
+	_graphics_shadow_opt = shadow_opt
 	shadow_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_shadow_quality(int(id)))
+		QualityManager.set_shadow_quality(int(id))
+		_sync_graphics_rows())
 	vbox.add_child(shadow_opt)
 
 	_add_graphics_hint(vbox, "Off is the original look — lights still glow, nothing casts. "
@@ -2339,8 +2392,10 @@ func _build_graphics_view() -> Control:
 			 ["Low", QualityManager.AOQuality.LOW],
 			 ["High", QualityManager.AOQuality.HIGH]],
 			int(QualityManager.ao_quality), 3, Vector2(110, 52), 20)
+		_graphics_ao_opt = ao_opt
 		ao_opt.item_selected.connect(func(id: Variant) -> void:
-			QualityManager.set_ao_quality(int(id)))
+			QualityManager.set_ao_quality(int(id))
+			_sync_graphics_rows())
 		vbox.add_child(ao_opt)
 
 		_add_graphics_hint(vbox, "Contact shading where surfaces meet, so furniture and "
@@ -2350,6 +2405,22 @@ func _build_graphics_view() -> Control:
 	vbox.add_child(HSeparator.new())
 
 	return scroll
+
+
+## Push QualityManager's current values back into the rows, so choosing a preset
+## moves them and moving one of them shows Custom. select_id() does not re-emit,
+## so this cannot loop back into the handlers that call it.
+func _sync_graphics_rows() -> void:
+	if _graphics_preset_opt:
+		_graphics_preset_opt.select_id(int(QualityManager.preset))
+	if _graphics_msaa_opt:
+		_graphics_msaa_opt.select_id(QualityManager.msaa_3d)
+	if _graphics_post_aa_opt:
+		_graphics_post_aa_opt.select_id(int(QualityManager.post_aa))
+	if _graphics_shadow_opt:
+		_graphics_shadow_opt.select_id(int(QualityManager.shadow_quality))
+	if _graphics_ao_opt:
+		_graphics_ao_opt.select_id(int(QualityManager.ao_quality))
 
 
 func _add_graphics_hint(vbox: VBoxContainer, text: String) -> void:
