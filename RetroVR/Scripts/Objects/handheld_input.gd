@@ -56,6 +56,13 @@ var _allow_drop := false
 var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null
 var _desktop_held := false
+## Scroll Lock capture: while on, keyboard-bound RETRO_JOYPAD_* actions drive this
+## handheld instead of the player. A physical pad is never gated by it.
+var _capture: ScrollLockCapture = null
+## Nerd Font: gamepad — floats over the handheld while capture is on.
+const ICON_CAPTURE := 0xEC17
+const ICON_SIZE := 0.030
+const ICON_HEIGHT := 0.11
 var _blocking_left := false
 var _blocking_right := false
 
@@ -78,6 +85,8 @@ func setup(host: Node3D) -> void:
 	host.grabbed.connect(_on_grabbed_signal)
 	host.dropped.connect(_on_dropped_signal)
 	host.released.connect(_on_released_signal)
+	_capture = ScrollLockCapture.attach(host, _can_capture,
+		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
 
 
 func _ready() -> void:
@@ -264,8 +273,8 @@ func _exit_tree() -> void:
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_LEFT, false)
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_RIGHT, false)
-		_locomotion_manager.set_block(_desktop_block_owner(),
-			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
+	if _capture:
+		_capture.release()
 
 
 func _update_locomotion_block() -> void:
@@ -274,15 +283,13 @@ func _update_locomotion_block() -> void:
 				  or (is_instance_valid(secondary) and secondary.tracker == &"left_hand")
 	var right_held := (is_instance_valid(_holding_ctrl) and _holding_ctrl.tracker == &"right_hand") \
 				   or (is_instance_valid(secondary) and secondary.tracker == &"right_hand")
-	var desktop_claim := _desktop_held and _host != null and bool(_host.get("is_powered_on"))
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_LEFT, left_held)
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
-	# Desktop has no hands, so the tracker tests above never fire there. The
-	# desktop providers poll the InputMap, so blocking them is the only way to
-	# stop WASD reaching the player while this device is claiming it.
-		_locomotion_manager.set_block(_desktop_block_owner(),
-			LocomotionManager.CHANNEL_DESKTOP_MOVE, desktop_claim)
+	# The desktop side is ScrollLockCapture's: it blocks WASD only while captured,
+	# and losing the grip here makes it ineligible, which drops both.
+	if _capture:
+		_capture.refresh()
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
 
@@ -402,8 +409,28 @@ func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
 	return bits
 
 
+## Capture is only meaningful on desktop: in VR the handheld reads the hand
+## controllers, never the keyboard-bound actions.
+func _can_capture() -> bool:
+	return _desktop_held and _host != null and bool(_host.get("is_powered_on"))
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or key.is_echo() or _capture == null:
+		return
+	if _capture.handle_key(key):
+		get_viewport().set_input_as_handled()
+
+
 func _process_desktop_joypad() -> void:
 	var btn: int = 0
+	# Keyboard-bound buttons only while captured — otherwise WASD and friends
+	# still belong to the player. The physical pad is merged in regardless.
+	if _capture == null or not _capture.is_active():
+		var idle := _merge_pad_state(0, 0, 0, 0, 0)
+		_send_joypad(idle["btn"], idle["alx"], idle["aly"], idle["arx"], idle["ary"])
+		return
 	for action: String in DESKTOP_BUTTON_MAP:
 		if Input.is_action_pressed(action):
 			btn |= (1 << int(DESKTOP_BUTTON_MAP[action]))
@@ -494,10 +521,3 @@ func _apply_rumble() -> void:
 		for device in Input.get_connected_joypads():
 			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
 		_pad_rumble_active = true
-
-
-## Per-instance owner for the desktop channel. Several objects share the
-## "handheld_hold" key on the VR channels, so whichever updated last would otherwise
-## clear a block another object still wants.
-func _desktop_block_owner() -> StringName:
-	return StringName("desktop_hold_%d" % get_instance_id())

@@ -106,11 +106,9 @@ var _held := false
 # Scroll Lock capture: while on, real keys go to the core instead of the game.
 # Opt-in (holding alone no longer hijacks the keyboard) and always a subset of
 # _held, so it can never outlive the grip and strand the player with WASD blocked.
-var _capture_active := false
+var _capture: ScrollLockCapture = null
 # Key index the desktop pointer / VR laser is currently holding down, or -1.
 var _pointer_key := -1
-var _capture_icon: Label3D = null
-var _locomotion_manager: LocomotionManager = null
 # Whether the caps currently show their shifted glyphs, and whether a real
 # keyboard's Shift is down (so passthrough typing relabels the caps too).
 var _labels_shifted := false
@@ -136,9 +134,9 @@ func _ready() -> void:
 	_spawn_cable()
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
-	_build_capture_icon()
+	_capture = ScrollLockCapture.attach(self, _can_capture,
+		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
 	call_deferred("_find_controllers")
-	call_deferred("_find_locomotion_manager")
 
 
 func _find_controllers() -> void:
@@ -343,7 +341,8 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_port_index = port_index
 	print("[RetroKeyboard] plugged into system port %d" % port_index)
 	# Plugging in only makes capture *possible*; the player still opts in.
-	_update_capture_icon()
+	if _capture:
+		_capture.refresh()
 
 
 func on_unplugged() -> void:
@@ -356,7 +355,8 @@ func on_unplugged() -> void:
 
 func _on_grabbed_signal(_pickable: Node3D, _by: Node3D) -> void:
 	_held = true
-	_update_capture_icon()
+	if _capture:
+		_capture.refresh()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
@@ -364,6 +364,8 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 	# Capture never outlives the grip — otherwise WASD stays blocked with no way
 	# to walk back to the board and press Scroll Lock again.
 	_set_capture(false)
+	if _capture:
+		_capture.refresh()
 
 
 ## True while this board owns the real keyboard: Scroll Lock capture is on, a
@@ -371,7 +373,7 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 ## or a Bluetooth keyboard paired to the Quest) then route through here, netplay
 ## schedule included. There is no longer a raw C++ keyboard path to suppress.
 func _os_capture_active() -> bool:
-	return _capture_active and _can_capture()
+	return _capture != null and _capture.is_active()
 
 
 ## Whether capture could be turned on right now — held and plugged into a port.
@@ -379,16 +381,13 @@ func _can_capture() -> bool:
 	return _held and _connected_system != null and _port_index >= 0
 
 
-## Flip capture, refresh the indicator, and hand locomotion back or take it away.
 func _set_capture(active: bool) -> void:
-	var want := active and _can_capture()
-	if want == _capture_active:
+	if _capture == null:
 		return
-	_capture_active = want
-	if not _capture_active:
+	var was := _capture.is_active()
+	_capture.set_active(active)
+	if was and not _capture.is_active():
 		_release_all()
-	_update_capture_icon()
-	_update_locomotion_block()
 
 
 func restore_port_connection(system: RetroSystem, port_index: int) -> void:
@@ -555,10 +554,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	# Scroll Lock toggles capture. Tested BEFORE the capture gate below —
 	# behind it, the toggle could only ever switch capture off, never on.
-	if key.keycode == KEY_SCROLLLOCK:
-		if key.is_pressed() and _can_capture():
-			_set_capture(not _capture_active)
-			get_viewport().set_input_as_handled()
+	if _capture != null and _capture.handle_key(key):
+		get_viewport().set_input_as_handled()
 		return
 
 	if not _os_capture_active():
@@ -594,70 +591,9 @@ func _handle_os_key(event: InputEventKey, pressed: bool) -> bool:
 	_connected_system.get_libretro_node().SetKeyState(0, keycode, pressed, character)
 	return true
 
-
-# ── Capture indicator + locomotion arbitration ────────────────────────────────
-
-## Billboarded glyph floating over the board while capture is on. Same recipe as
-## vr_hinge.gd's _build_icon: a Label3D with the Symbols Nerd Font as a fallback,
-## sized in metres via pixel_size, and drawn over geometry so it reads from any
-## angle.
-func _build_capture_icon() -> void:
-	var existing := get_node_or_null("CaptureHint") as Label3D
-	if existing != null:
-		_capture_icon = existing
-	else:
-		_capture_icon = Label3D.new()
-		_capture_icon.name = "CaptureHint"
-		add_child(_capture_icon)
-	var fv := FontVariation.new()
-	fv.base_font = ThemeDB.fallback_font
-	var symbols: Font = load(SYMBOL_FONT_PATH)
-	if symbols:
-		fv.fallbacks = [symbols]
-	_capture_icon.font = fv
-	_capture_icon.font_size = 96
-	_capture_icon.pixel_size = ICON_SIZE / 96.0
-	_capture_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_capture_icon.no_depth_test = true
-	_capture_icon.render_priority = 2
-	_capture_icon.outline_size = 18
-	_capture_icon.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
-	_capture_icon.text = String.chr(ICON_CAPTURE)
-	_capture_icon.modulate = Color(1.0, 0.82, 0.28)
-	_capture_icon.position = Vector3(0.0, ICON_HEIGHT, 0.0)
-	_capture_icon.visible = false
-
-
-func _update_capture_icon() -> void:
-	if _capture_icon != null:
-		_capture_icon.visible = _capture_active
-
-
-func _find_locomotion_manager() -> void:
-	_locomotion_manager = get_tree().root.find_child(
-		"LocomotionManager", true, false) as LocomotionManager
-	_update_locomotion_block()
-
-
-## While captured the board owns WASD, so the desktop movement providers must
-## stand down — they poll the InputMap, which no amount of event consumption can
-## suppress. Blocking them is the only thing that actually stops the player
-## walking while typing.
-func _update_locomotion_block() -> void:
-	if _locomotion_manager != null:
-		_locomotion_manager.set_block(_desktop_block_owner(),
-			LocomotionManager.CHANNEL_DESKTOP_MOVE, _capture_active)
-
+# ── Capture teardown ──────────────────────────────────────────────────────────
 
 func _exit_tree() -> void:
-	if _locomotion_manager != null:
-		_locomotion_manager.set_block(_desktop_block_owner(),
-			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
+	if _capture:
+		_capture.release()
 	super._exit_tree()
-
-
-## Per-instance owner for the desktop channel. Several objects share the
-## "keyboard_capture" key on the VR channels, so whichever updated last would otherwise
-## clear a block another object still wants.
-func _desktop_block_owner() -> StringName:
-	return StringName("desktop_hold_%d" % get_instance_id())

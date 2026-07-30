@@ -73,6 +73,13 @@ var _allow_drop := false
 var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null    # primary holder
 var _desktop_held: bool = false
+## Scroll Lock capture: while on, keyboard-bound RETRO_JOYPAD_* actions drive this
+## pad instead of the player. A physical USB/Bluetooth pad is never gated by it.
+var _capture: ScrollLockCapture = null
+## Nerd Font: gamepad — floats over the pad while capture is on.
+const ICON_CAPTURE := 0xEC17
+const ICON_SIZE := 0.030
+const ICON_HEIGHT := 0.11
 
 # Reference-counted pointer blocking — prevents multi-instance conflicts.
 var _blocking_left: bool = false
@@ -124,6 +131,8 @@ func _ready() -> void:
 	dropped.connect(_on_dropped_signal)
 	released.connect(_on_released_signal)
 	_spawn_cable()
+	_capture = ScrollLockCapture.attach(self, _can_capture,
+		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
 	call_deferred("_find_vr_nodes")
 
 
@@ -333,15 +342,13 @@ func _update_locomotion_block() -> void:
 				  or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"left_hand")
 	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
 				   or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"right_hand")
-	var desktop_claim := _desktop_held and _connected_system != null and _port_index >= 0
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
-	# Desktop has no hands, so the tracker tests above never fire there. The
-	# desktop providers poll the InputMap, so blocking them is the only way to
-	# stop WASD reaching the player while this device is claiming it.
-		_locomotion_manager.set_block(_desktop_block_owner(),
-			LocomotionManager.CHANNEL_DESKTOP_MOVE, desktop_claim)
+	# The desktop side is ScrollLockCapture's: it blocks WASD only while captured,
+	# and losing the grip here makes it ineligible, which drops both.
+	if _capture:
+		_capture.refresh()
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
 
@@ -426,8 +433,8 @@ func _exit_tree() -> void:
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
-		_locomotion_manager.set_block(_desktop_block_owner(),
-			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
+	if _capture:
+		_capture.release()
 	_allow_drop = true
 	super._exit_tree()
 
@@ -639,22 +646,45 @@ func _process(_delta: float) -> void:
 	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
 
 
+## Capture is only meaningful on desktop: in VR the pad reads the hand
+## controllers, never the keyboard-bound actions.
+func _can_capture() -> bool:
+	return _desktop_held and _connected_system != null and _port_index >= 0
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or key.is_echo() or _capture == null:
+		return
+	if _capture.handle_key(key):
+		get_viewport().set_input_as_handled()
+
+
 func _process_desktop_joypad() -> void:
 	var btn: int = 0
-	for action: String in DESKTOP_BUTTON_MAP:
-		var bit: int = DESKTOP_BUTTON_MAP[action]
-		if Input.is_action_pressed(action):
-			btn |= (1 << bit)
+	var alx := 0
+	var aly := 0
+	var arx := 0
+	var ary := 0
 
-	# Left stick from RETRO_ANALOG_LEFT_* actions; Y negated to match VR convention.
-	var lx := Input.get_axis("RETRO_ANALOG_LEFT_X_NEGATIVE",  "RETRO_ANALOG_LEFT_X_POSITIVE")
-	var ly := Input.get_axis("RETRO_ANALOG_LEFT_Y_NEGATIVE",  "RETRO_ANALOG_LEFT_Y_POSITIVE")
-	var rx := Input.get_axis("RETRO_ANALOG_RIGHT_X_NEGATIVE", "RETRO_ANALOG_RIGHT_X_POSITIVE")
-	var ry := Input.get_axis("RETRO_ANALOG_RIGHT_Y_NEGATIVE", "RETRO_ANALOG_RIGHT_Y_POSITIVE")
-	var alx := int(lx * ANALOG_SCALE)
-	var aly := int(-ly * ANALOG_SCALE)
-	var arx := int(rx * ANALOG_SCALE)
-	var ary := int(-ry * ANALOG_SCALE)
+	# Keyboard-bound buttons and sticks only while captured — otherwise WASD and
+	# friends still belong to the player. The physical pad is merged in below
+	# either way: it has no second meaning, so holding this pad is consent enough.
+	if _capture != null and _capture.is_active():
+		for action: String in DESKTOP_BUTTON_MAP:
+			var bit: int = DESKTOP_BUTTON_MAP[action]
+			if Input.is_action_pressed(action):
+				btn |= (1 << bit)
+
+		# Left stick from RETRO_ANALOG_LEFT_* actions; Y negated to match VR.
+		var lx := Input.get_axis("RETRO_ANALOG_LEFT_X_NEGATIVE",  "RETRO_ANALOG_LEFT_X_POSITIVE")
+		var ly := Input.get_axis("RETRO_ANALOG_LEFT_Y_NEGATIVE",  "RETRO_ANALOG_LEFT_Y_POSITIVE")
+		var rx := Input.get_axis("RETRO_ANALOG_RIGHT_X_NEGATIVE", "RETRO_ANALOG_RIGHT_X_POSITIVE")
+		var ry := Input.get_axis("RETRO_ANALOG_RIGHT_Y_NEGATIVE", "RETRO_ANALOG_RIGHT_Y_POSITIVE")
+		alx = int(lx * ANALOG_SCALE)
+		aly = int(-ly * ANALOG_SCALE)
+		arx = int(rx * ANALOG_SCALE)
+		ary = int(-ry * ANALOG_SCALE)
 
 	var m := _merge_pad_state(btn, alx, aly, arx, ary)
 	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
@@ -693,10 +723,3 @@ static func _threshold_to_dpad(stick: Vector2) -> int:
 	if stick.x < -DPAD_THRESHOLD: bits |= (1 << 6)
 	if stick.x >  DPAD_THRESHOLD: bits |= (1 << 7)
 	return bits
-
-
-## Per-instance owner for the desktop channel. Several objects share the
-## "retro_hold" key on the VR channels, so whichever updated last would otherwise
-## clear a block another object still wants.
-func _desktop_block_owner() -> StringName:
-	return StringName("desktop_hold_%d" % get_instance_id())
