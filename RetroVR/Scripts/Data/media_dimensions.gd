@@ -48,6 +48,11 @@ const DISC_DIAMETERS: Dictionary = {
 	"pc_fx":                 0.12,
 	"gamecube":              0.08,   # mini-DVD
 	"playstation_portable":  0.064,  # UMD (bare disc, no caddy)
+	# ScummVM is not console hardware — it stands in for a 90s PC, whose adventure
+	# games shipped on CD-ROM. Listing it here is what makes the spawn menu hand
+	# out a disc and RetroSystem take the tray path; the PC tower model then slides
+	# that tray instead of hinging a lid.
+	"scummvm":               0.12,
 }
 
 ## Default disc diameter (standard CD/DVD) for a disc systemid without an entry.

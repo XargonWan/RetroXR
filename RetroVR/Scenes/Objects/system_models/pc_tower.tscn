@@ -1,0 +1,135 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
+
+; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
+; footprint. Origin at the base centre, so the system sits on the floor at y 0.
+[sub_resource type="BoxMesh" id="Mesh_case"]
+size = Vector3(0.19, 0.42, 0.44)
+
+; The front bezel stands 6 mm proud of the case so its edge catches light, the same
+; trick the wardrobe's door panels use.
+[sub_resource type="BoxMesh" id="Mesh_bezel"]
+size = Vector3(0.192, 0.42, 0.012)
+
+[sub_resource type="BoxMesh" id="Mesh_bay"]
+size = Vector3(0.116, 0.035, 0.008)
+
+[sub_resource type="BoxMesh" id="Mesh_floppy"]
+size = Vector3(0.104, 0.012, 0.008)
+
+; The tray: a thin shelf with a recessed disc well, 12 cm disc plus clearance.
+[sub_resource type="BoxMesh" id="Mesh_tray"]
+size = Vector3(0.112, 0.007, 0.16)
+
+[sub_resource type="CylinderMesh" id="Mesh_well"]
+top_radius = 0.054
+bottom_radius = 0.054
+height = 0.004
+
+[sub_resource type="CylinderMesh" id="Mesh_spindle"]
+top_radius = 0.008
+bottom_radius = 0.008
+height = 0.007
+
+[sub_resource type="BoxMesh" id="Mesh_led"]
+size = Vector3(0.008, 0.004, 0.004)
+
+; Beige, and grubby-warm rather than clean grey — a 90s case yellowed.
+[sub_resource type="StandardMaterial3D" id="Mat_beige"]
+albedo_color = Color(0.77, 0.73, 0.63, 1)
+roughness = 0.62
+
+[sub_resource type="StandardMaterial3D" id="Mat_bezel"]
+albedo_color = Color(0.81, 0.77, 0.67, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.07, 0.07, 0.08, 1)
+roughness = 0.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_tray"]
+albedo_color = Color(0.13, 0.13, 0.14, 1)
+roughness = 0.6
+
+[node name="PCTowerModel" type="Node3D"]
+script = ExtResource("1_pctower")
+primitive_shell = true
+
+[node name="Case" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.21, 0)
+mesh = SubResource("Mesh_case")
+surface_material_override/0 = SubResource("Mat_beige")
+
+; --- front face, at z +0.22 ---------------------------------------------------
+[node name="Front" type="Node3D" parent="."]
+
+[node name="Bezel" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.21, 0.223)
+mesh = SubResource("Mesh_bezel")
+surface_material_override/0 = SubResource("Mat_bezel")
+
+; 5.25 in optical bay, upper front. The tray emerges from this slot.
+[node name="Bay" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.012, 0.335, 0.2305)
+mesh = SubResource("Mesh_bay")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; 3.5 in floppy slot below it, because a tower without one is not a 90s tower.
+[node name="Floppy" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.268, 0.2305)
+mesh = SubResource("Mesh_floppy")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="PowerLed" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.058, 0.126, 0.2305)
+mesh = SubResource("Mesh_led")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="DriveLed" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.058, 0.108, 0.2305)
+mesh = SubResource("Mesh_led")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; Anchors, not geometry — RetroSystem's own VRButtons are moved onto these, so the
+; button meshes it already carries are the visible caps.
+[node name="PowerButtonAnchor" type="Marker3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.042, 0.122, 0.234)
+
+; On the drive faceplate to the RIGHT of the slit, not inside it — at x 0.058 with
+; a 0.152-wide slit the button floated in the opening.
+[node name="EjectButtonAnchor" type="Marker3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.064, 0.331, 0.234)
+
+; --- the sliding tray --------------------------------------------------------
+; TrayPivot is what pc_tower_model.gd translates along +Z, and what RetroSystem
+; reparents a seated disc to, so the disc rides out of the bay with it. At rest the
+; tray is INSIDE the case; only its front lip shows in the bay slot.
+[node name="TrayPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.012, 0.335, 0.144)
+
+[node name="Shelf" type="MeshInstance3D" parent="TrayPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.018, 0)
+mesh = SubResource("Mesh_tray")
+surface_material_override/0 = SubResource("Mat_tray")
+
+[node name="Well" type="MeshInstance3D" parent="TrayPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0125, 0)
+mesh = SubResource("Mesh_well")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Spindle" type="MeshInstance3D" parent="TrayPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.009, 0)
+mesh = SubResource("Mesh_spindle")
+surface_material_override/0 = SubResource("Mat_tray")
+
+; Where the disc rests. configure_cartridge_slot copies this pose to the snap zone
+; while the tray is at REST, which is what RetroSystem expects.
+[node name="DiscSeat" type="Marker3D" parent="TrayPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.006, 0)
+
+; --- back face ---------------------------------------------------------------
+[node name="Back" type="Node3D" parent="."]
+
+[node name="AvAnchor" type="Marker3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0.13, -0.222)

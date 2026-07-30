@@ -1,4 +1,4 @@
-[gd_scene load_steps=125 format=3]
+[gd_scene load_steps=127 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -36,6 +36,7 @@
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_rough_1k.jpg" id="43_cu_rgh"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="31_vrbutton"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/system.tscn" id="47_system"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/rug_persian.png" id="32_rug"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_memphis.png" id="33_poster_a"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_grid.png" id="34_poster_b"]
@@ -237,8 +238,16 @@ size = Vector3(0.62, 0.83, 0.62)
 [sub_resource type="BoxShape3D" id="Shape_door"]
 size = Vector3(0.16, 2.07, 0.96)
 
-[sub_resource type="BoxShape3D" id="Shape_desk"]
-size = Vector3(1.35, 0.75, 0.62)
+; The desk is three colliders, not one solid box. The box filled the knee hole,
+; which was harmless for the player (a full-height capsule can never go under a
+; desk anyway) but made the space unusable for a RIGID BODY — and the PC tower is
+; one. Top slab is 0.20 thick rather than the mesh's 0.04 so the monitor cannot
+; tunnel through it, while still leaving everything below 0.55 clear.
+[sub_resource type="BoxShape3D" id="Shape_desk_top"]
+size = Vector3(1.35, 0.2, 0.62)
+
+[sub_resource type="BoxShape3D" id="Shape_desk_side"]
+size = Vector3(0.04, 0.71, 0.56)
 
 [sub_resource type="BoxShape3D" id="Shape_tvstand"]
 size = Vector3(0.928, 0.8, 0.929)
@@ -907,9 +916,17 @@ autoplay = "spin"
 [node name="FurnitureCollision" type="StaticBody3D" parent="."]
 collision_mask = 0
 
-[node name="DeskCol" type="CollisionShape3D" parent="FurnitureCollision"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.375, -1.78)
-shape = SubResource("Shape_desk")
+[node name="DeskTopCol" type="CollisionShape3D" parent="FurnitureCollision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.95, 0.65, -1.78)
+shape = SubResource("Shape_desk_top")
+
+[node name="DeskSideLCol" type="CollisionShape3D" parent="FurnitureCollision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.605, 0.355, -1.78)
+shape = SubResource("Shape_desk_side")
+
+[node name="DeskSideRCol" type="CollisionShape3D" parent="FurnitureCollision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.295, 0.355, -1.78)
+shape = SubResource("Shape_desk_side")
 
 [node name="TVStandCol" type="CollisionShape3D" parent="FurnitureCollision"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.0612, 0.4, 1.6607)
@@ -1214,6 +1231,20 @@ surface_material_override/0 = SubResource("Mat_poster_frame")
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 1.88, 1.68, 2.093)
 mesh = SubResource("Quad_sq")
 surface_material_override/0 = SubResource("Mat_poster_half")
+
+; --- PC tower ----------------------------------------------------------------
+; A RetroSystem running ScummVM, standing in the desk's knee hole. systemid
+; "scummvm" is registered in MediaDimensions as a 12 cm disc system, so the spawn
+; menu hands out a disc for it and RetroSystem takes the tray path; pc_tower.tscn
+; then SLIDES that tray rather than hinging a lid, which is what a PC CD-ROM does.
+;
+; Sited so the bay clears the desk. The tower front is at z -1.58 and the desk
+; front at -1.47, so the 0.135 m tray travel brings the tray 0.025 m past the desk
+; edge — it emerges into the room instead of grinding into the underside.
+[node name="PCTower" parent="." instance=ExtResource("47_system")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.35, 0, -1.8)
+systemid = "scummvm"
+core_name = "scummvm"
 
 [node name="Baseboard" type="Node3D" parent="."]
 

@@ -25,6 +25,10 @@ const _MODEL_SCRIPTS: Dictionary = {
 ## Scenes win over _MODEL_SCRIPTS when both exist. To add or restyle a handheld,
 ## edit its .tscn — no procedural geometry code involved.
 const _MODEL_SCENES: Dictionary = {
+	# Primitive geometry on purpose: it exists to prove the sliding optical tray,
+	# and a painted steel case is flat panels and square corners, so it takes boxes
+	# the way the bedroom's desk and wardrobe do.
+	"scummvm": "res://Scenes/Objects/system_models/pc_tower.tscn",
 	"game_boy": "res://Scenes/Objects/system_models/game_boy.tscn",
 	"game_boy_advance": "res://Scenes/Objects/system_models/game_boy_advance.tscn",
 	"atari_lynx": "res://Scenes/Objects/system_models/atari_lynx.tscn",
