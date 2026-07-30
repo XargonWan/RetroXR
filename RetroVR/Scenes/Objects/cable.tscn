@@ -1,28 +1,13 @@
-[gd_scene load_steps=11 format=3 uid="uid://cable_001"]
+[gd_scene load_steps=8 format=3 uid="uid://cable_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/cable_plug.gd" id="1_plugscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/verlet_rope.gd" id="2_ropescript"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rca_plug_yellow.res" id="5_rcaplug"]
 [ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="3_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
 radius = 0.035
-
-[sub_resource type="CylinderMesh" id="CylMesh_plug"]
-top_radius = 0.01
-bottom_radius = 0.006
-height = 0.04
-
-[sub_resource type="StandardMaterial3D" id="Mat_plug"]
-albedo_color = Color(0.9, 0.9, 0.0, 1.0)
-
-[sub_resource type="CylinderMesh" id="CylMesh_strain"]
-top_radius = 0.008
-bottom_radius = 0.008
-height = 0.02
-
-[sub_resource type="StandardMaterial3D" id="Mat_strain"]
-albedo_color = Color(0.15, 0.15, 0.15, 1.0)
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
 bounce = 0.0
@@ -45,15 +30,15 @@ script = ExtResource("1_plugscript")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="CablePlug"]
 shape = SubResource("SphereShape3D_plug")
 
+; Baked RCA plug (Tools/gen_rca_plug.gd). No transform: the mesh is authored
+; connector-on-+Z, unlike a CylinderMesh which is Y-up and needed rotating. No
+; surface_material_override either — the materials are baked into the mesh, and
+; surface 0 is deliberately the yellow plastic so system.gd's
+; _decorate_channel_plug tints the BODY blue for a dual-screen host's BOTTOM
+; channel rather than the metal. The mesh carries its own ribbed strain relief,
+; so the separate StrainRelief node is gone.
 [node name="PlugTip" type="MeshInstance3D" parent="CablePlug"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_plug")
-surface_material_override/0 = SubResource("Mat_plug")
-
-[node name="StrainRelief" type="MeshInstance3D" parent="CablePlug"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.03)
-mesh = SubResource("CylMesh_strain")
-surface_material_override/0 = SubResource("Mat_strain")
+mesh = ExtResource("5_rcaplug")
 
 [node name="PickableHighlight" type="Node3D" parent="CablePlug"]
 script = ExtResource("3_pickhigh")

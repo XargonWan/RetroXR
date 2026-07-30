@@ -36,6 +36,8 @@
 ## the caps, rim and box faces each had to be checked against it individually.
 extends SceneTree
 
+const PlugMats := preload("res://Tools/plug_materials.gd")
+
 const OUT_DIR := "res://Scenes/Objects/"
 
 const SHROUD_OD := 0.0095
@@ -80,9 +82,7 @@ func _build(file_name: String, barrel_tint: Color) -> void:
 	_box(st, KEY_W, KEY_H, SHROUD_LEN * 0.62,
 		Vector3(0.0, -(r_in - KEY_H * 0.5), SHROUD_LEN * 0.31))
 	st.generate_normals()
-	var m_barrel := StandardMaterial3D.new()
-	m_barrel.albedo_color = barrel_tint
-	m_barrel.roughness = 0.55
+	var m_barrel := PlugMats.plastic(barrel_tint)
 	st.set_material(m_barrel)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(0, m_barrel)
@@ -94,10 +94,7 @@ func _build(file_name: String, barrel_tint: Color) -> void:
 	_tube(st, r_in, r_in, SHROUD_LEN, 0.0, false)        # inside wall, wound inward
 	_annulus(st, r_in, r_out, SHROUD_LEN)                # rim at the open end
 	st.generate_normals()
-	var m_metal := StandardMaterial3D.new()
-	m_metal.albedo_color = Color(0.62, 0.63, 0.66)
-	m_metal.metallic = 0.9
-	m_metal.roughness = 0.32
+	var m_metal := PlugMats.chrome()
 	st.set_material(m_metal)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(1, m_metal)
@@ -111,10 +108,7 @@ func _build(file_name: String, barrel_tint: Color) -> void:
 		var c := Vector3(cos(a) * PIN_CIRCLE * 0.5, sin(a) * PIN_CIRCLE * 0.5, 0.0)
 		_tube(st, PIN_DIA * 0.5, PIN_DIA * 0.5, 0.0, PIN_LEN, true, c)
 	st.generate_normals()
-	var m_pin := StandardMaterial3D.new()
-	m_pin.albedo_color = Color(0.78, 0.72, 0.45)        # brass
-	m_pin.metallic = 1.0
-	m_pin.roughness = 0.25
+	var m_pin := PlugMats.brass()
 	st.set_material(m_pin)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(2, m_pin)
