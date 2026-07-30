@@ -18,11 +18,34 @@ var channel: int = 0
 ## Cable tag shown on the plug ("TOP"/"BOTTOM"); "" on single-cable hosts.
 var channel_label: String = ""
 
+## Where the cord meets this plug, in plug-local space — for
+## VerletRope.end_anchor_offset.
+##
+## The plug's ORIGIN is its SEATING reference, the point the snap zone lines up
+## with the port, and on a real connector body that sits at the collar some 40 mm
+## forward of where the cable actually enters. Ending the rope at the origin runs
+## the tube straight out through the barrel.
+##
+## Derived from the mesh rather than hardcoded, so reshaping the connector cannot
+## silently desync this. Mirrors ControllerPlug.cable_anchor.
+var cable_anchor: Vector3 = Vector3.ZERO
+
 
 func _ready() -> void:
 	super._ready()
 	# Add to the snap group so TV's CompositePort (snap_require = "composite_plug") accepts us
 	add_to_group("composite_plug")
+	_derive_cable_anchor()
+
+
+func _derive_cable_anchor() -> void:
+	var tip := get_node_or_null("PlugTip") as MeshInstance3D
+	if tip == null or tip.mesh == null:
+		return
+	var ab: AABB = tip.mesh.get_aabb()
+	# Cable trails -Z, matching VerletRope.plug_exit_axis, so the boss is at min Z.
+	cable_anchor = tip.transform * Vector3(
+		ab.get_center().x, ab.get_center().y, ab.position.z)
 
 
 ## Returns the host this cable belongs to

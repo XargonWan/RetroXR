@@ -1005,6 +1005,10 @@ func _add_cables_to_scene() -> void:
 		# Wire rope anchors: start = system's attach point, end = plug
 		rope.start_node = _attach_points[i]
 		rope.end_node = plug
+		# End the cord AT the RCA plug's cable boss. The plug's origin is its
+		# SEATING reference, up at the collar, so a zero offset runs the tube out
+		# through the barrel.
+		rope.end_anchor_offset = plug.cable_anchor
 		rope._init_points()
 		_max_rope_lengths[i] = rope.segment_count * rope.segment_length
 

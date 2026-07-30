@@ -663,6 +663,10 @@ func _add_cable_to_scene() -> void:
 	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.1)
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
+	# End the cord AT the connector's cable boss. The plug's origin is its
+	# SEATING reference, buried up at the collar, so a zero offset runs the tube
+	# out through the barrel.
+	_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
 	_cable_rope._init_points()
 	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
 	if _pending_tv_restore != null:
