@@ -1,4 +1,4 @@
-[gd_scene load_steps=127 format=3]
+[gd_scene load_steps=128 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -31,6 +31,7 @@
 [ext_resource type="Script" path="res://Scripts/Objects/light_switch.gd" id="29_switchscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/glow_mesh.gd" id="35_glow"]
 [ext_resource type="Script" path="res://Scripts/Objects/string_lights.gd" id="36_strlights"]
+[ext_resource type="Script" path="res://Scripts/Objects/bead_pull_cord.gd" id="48_pullcord"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
@@ -880,6 +881,28 @@ surface_material_override/0 = SubResource("Mat_lever")
 
 ; Fan blades spin about the hub; the glass shade must ride the STATIC mount or
 ; the light swings round the room with them (the den learned this the hard way).
+; --- Lamp pull cords ---------------------------------------------------------
+; Ball-chain pulls on both lamps. The simulation is VerletRope's free-end case
+; (head pinned, end_node null); BeadPullCord threads beads along its curve with a
+; MultiMesh — one draw call, no per-frame mesh rebuild, which is cheaper than the
+; tube it replaces. That matters: GDScript verlet cables are what saturated the
+; main thread in the 20 fps Quest diagnosis, and this rope sleeps when it settles.
+;
+; The pull is proximity + TRIGGER (VRButton.require_trigger), the project's
+; interaction model for contextual actions. A touch button would toggle the lamp
+; every time a hand drifted past a cord hanging at desk height.
+[node name="BedsideLampCord" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.832, 0.905, -1.925)
+script = ExtResource("48_pullcord")
+cord_length = 0.16
+light_path = NodePath("../../BedsideLampLight")
+
+[node name="DeskLampCord" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.372, 1.035, -1.78)
+script = ExtResource("48_pullcord")
+cord_length = 0.16
+light_path = NodePath("../../DeskLampLight")
+
 [node name="FanPivot" type="Node3D" parent="Furniture"]
 script = ExtResource("35_glow")
 glow_meshes = PackedStringArray("defaultMaterial4")

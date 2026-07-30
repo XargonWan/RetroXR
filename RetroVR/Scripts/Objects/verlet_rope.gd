@@ -328,6 +328,22 @@ func rest_length() -> float:
 	return segment_count * segment_length
 
 
+## Simulated particle positions, in GLOBAL space. For renderers that want the
+## curve without the tube — BeadPullCord threads beads along it.
+func get_points() -> PackedVector3Array:
+	return _points
+
+
+## Shove a particle, waking the rope. Used to yank a pull cord: the tail is
+## displaced and the solver takes it from there, so the swing afterwards is the
+## simulation's, not an animation.
+func nudge_point(index: int, delta: Vector3) -> void:
+	if index < 0 or index >= _points.size() or _inv_mass[index] == 0.0:
+		return
+	_points[index] += delta
+	wake()
+
+
 ## Resize the rope at runtime by redistributing rest length across the fixed
 ## particle count (Obi "cursor"-lite).
 func set_rope_length(length: float) -> void:
