@@ -165,6 +165,24 @@ var _sin_table: PackedFloat32Array
 var _ring_points: PackedVector3Array
 var _vertex_array: PackedVector3Array
 var _index_array: PackedInt32Array
+## Render-time copies of the last two physics states, and the lerp between them.
+##
+## The whole rope has to be interpolated, not just its ends. Overriding only the
+## two end points put them on render time while every interior point stayed on
+## physics time, and that discontinuity pulsed the final segment every frame —
+## which read as the cord jittering, and pinched the tube whenever the last two
+## rings closed up enough for the tangent to collapse into its fallback.
+##
+## Lerping all points by Engine.get_physics_interpolation_fraction() is exactly
+## what Godot does for the RigidBody3D plug, so the cord end and the plug agree
+## by construction. Costs one lerp per SIM point (~25), not per vertex.
+var _render_points: PackedVector3Array = []
+var _prev_render: PackedVector3Array = []
+var _curr_render: PackedVector3Array = []
+## False when the last two physics states match — a settled rope then re-meshes
+## only when something actually marks it dirty.
+var _interpolating: bool = false
+
 ## Per-vertex normal, shipped as a CUSTOM0 attribute.
 ##
 ## The tube cannot use ARRAY_NORMAL: positions are re-uploaded every frame through
@@ -335,6 +353,10 @@ func _init_points() -> void:
 	_sleep_anchor_start = _anchor_point(start_node, start_anchor_offset, start_pos)
 	_sleep_anchor_end = _anchor_point(end_node, end_anchor_offset, end_pos)
 	_refresh_exclusions()
+	# Resize-and-seed: _snapshot_render_state detects the length change and fills
+	# both history buffers from the fresh points.
+	_curr_render.resize(0)
+	_snapshot_render_state()
 
 
 ## Exclude the plug body and the host machine's body from rope collision —
@@ -403,16 +425,6 @@ func _anchor_point(node: Node3D, offset: Vector3, fallback: Vector3) -> Vector3:
 	return (node.global_transform * offset) if node else fallback
 
 
-## Same point, but where the anchor is actually being DRAWN this frame.
-##
-## project.godot has physics_interpolation on, so a RigidBody3D plug renders at a
-## transform lerped between its last two physics states — not at global_transform.
-## Building the tube from global_transform therefore puts the cord end somewhere
-## the plug visibly is not. Returns global_transform unchanged when interpolation
-## is off, so this is safe either way.
-func _anchor_point_rendered(node: Node3D, offset: Vector3, fallback: Vector3) -> Vector3:
-	return (node.get_global_transform_interpolated() * offset) if node else fallback
-
 
 ## True when either anchor has moved since the rope went to sleep.
 func _anchors_moved() -> bool:
@@ -433,6 +445,9 @@ func _physics_process(delta: float) -> void:
 		if _anchors_moved():
 			wake()
 		else:
+			# Nothing moved, so there is nothing to interpolate between; leaving
+			# this true would re-mesh a settled cable every frame forever.
+			_interpolating = false
 			return
 	_mesh_dirty = true
 
@@ -776,6 +791,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		_still_frames = 0
 
+	# Last thing in the tick, after the anchors are pinned: roll the render
+	# history forward so _process has two states to interpolate between.
+	_snapshot_render_state()
+
 
 ## Positional constraint between points a/b toward rest distance, split by
 ## inverse mass. one_sided = only correct when closer than rest.
@@ -950,60 +969,58 @@ func _align_anchor_plug(node: Node3D, target_dir: Vector3, k: float) -> void:
 # ── Rendering ───────────────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
-	var count := _points.size()
-	if count < 2:
+	if _points.size() < 2:
 		return
-
-	# Follow the anchors at RENDER rate, not physics rate.
-	#
-	# The tube is only marked dirty by a physics tick, so between ticks it held
-	# perfectly still while the plug — a RigidBody3D, drawn interpolated between
-	# physics states — kept moving. Carrying a plug therefore left the cord
-	# visibly trailing it, worst at hand speed and on a 72 Hz headset against
-	# 60 Hz physics.
-	#
-	# Only the two END points are overridden, and they are restored immediately
-	# after meshing, so the simulation state is untouched and no drift can
-	# accumulate. Stretching the last segment by a sub-tick's worth of motion is
-	# invisible; the whole cord lagging was not.
-	var last := count - 1
-	var saved_start := _points[0]
-	var saved_end := _points[last]
-	var moved := false
-	if start_node:
-		var ps := _anchor_point_rendered(start_node, start_anchor_offset, saved_start)
-		if ps.distance_squared_to(saved_start) > RENDER_FOLLOW_EPS_SQ:
-			_points[0] = ps
-			moved = true
-	if end_node:
-		var pe := _anchor_point_rendered(end_node, end_anchor_offset, saved_end)
-		if pe.distance_squared_to(saved_end) > RENDER_FOLLOW_EPS_SQ:
-			_points[last] = pe
-			moved = true
-
-	if _mesh_dirty or moved:
+	if _interpolating and _render_points.size() == _curr_render.size():
+		# Same fraction Godot uses to draw the plug, so the two cannot disagree.
+		var f := clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0)
+		for i in _render_points.size():
+			_render_points[i] = _prev_render[i].lerp(_curr_render[i], f)
+		_mesh_dirty = true
+	if _mesh_dirty:
 		_render_tube()
 		_mesh_dirty = false
 
-	_points[0] = saved_start
-	_points[last] = saved_end
+
+## Roll the render history forward one physics tick. Called at the end of every
+## simulated tick, after the anchors are pinned.
+func _snapshot_render_state() -> void:
+	var n := _points.size()
+	if _curr_render.size() != n:
+		_prev_render.resize(n)
+		_curr_render.resize(n)
+		_render_points.resize(n)
+		for i in n:
+			_prev_render[i] = _points[i]
+			_curr_render[i] = _points[i]
+			_render_points[i] = _points[i]
+		_interpolating = false
+		return
+	var moved := false
+	for i in n:
+		_prev_render[i] = _curr_render[i]
+		_curr_render[i] = _points[i]
+		_render_points[i] = _points[i]
+		if not moved and _prev_render[i].distance_squared_to(_curr_render[i]) > RENDER_FOLLOW_EPS_SQ:
+			moved = true
+	_interpolating = moved
 
 
 ## Fill _ring_points from the sim points — straight copy, or Catmull-Rom
 ## subdivision when smoothing > 0.
 func _fill_ring_points() -> void:
-	var count := _points.size()
+	var count := _render_points.size()
 	var sub := _subdiv()
 	if sub == 1:
 		for i in count:
-			_ring_points[i] = _points[i]
+			_ring_points[i] = _render_points[i]
 		return
 	var r := 0
 	for i in range(count - 1):
-		var p0 := _points[maxi(i - 1, 0)]
-		var p1 := _points[i]
-		var p2 := _points[i + 1]
-		var p3 := _points[mini(i + 2, count - 1)]
+		var p0 := _render_points[maxi(i - 1, 0)]
+		var p1 := _render_points[i]
+		var p2 := _render_points[i + 1]
+		var p3 := _render_points[mini(i + 2, count - 1)]
 		for s in sub:
 			var t := float(s) / float(sub)
 			var t2 := t * t
@@ -1013,7 +1030,7 @@ func _fill_ring_points() -> void:
 				+ (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
 				+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
 			r += 1
-	_ring_points[r] = _points[count - 1]
+	_ring_points[r] = _render_points[count - 1]
 
 
 func _render_tube() -> void:
@@ -1078,7 +1095,7 @@ func _render_tube() -> void:
 	# recompute the mesh AABB (it stays a zero-size box at the origin), and this
 	# node is top_level at the world origin, so without this the rope gets
 	# frustum-culled (goes invisible) whenever the origin is off-screen.
-	var aabb := AABB(_points[0], Vector3.ZERO)
-	for i in range(1, _points.size()):
-		aabb = aabb.expand(_points[i])
+	var aabb := AABB(_render_points[0], Vector3.ZERO)
+	for i in range(1, _render_points.size()):
+		aabb = aabb.expand(_render_points[i])
 	custom_aabb = aabb.grow(collision_radius * 2.0)
