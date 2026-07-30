@@ -33,7 +33,8 @@ extends Node3D
 ## Segments across the arc. 24 is smooth at this width and still a trivial mesh.
 @export var segments: int = 24
 @export var animate_seconds: float = 0.22
-## Start curved.
+## Start curved. AppPrefs.menu_curved overrides this at runtime — the export is
+## only the fallback for a panel built outside the app (probes, tests).
 @export var curved: bool = true
 
 ## 0 = flat, 1 = fully wrapped. Animated between the two.
@@ -78,6 +79,7 @@ func _ready() -> void:
 	# QuadMesh and the shape to a box. Deferring puts this after both.
 	call_deferred("_intercept_pointer")
 	call_deferred("_build_toggle")
+	curved = AppPrefs.menu_curved
 	_curve = 1.0 if curved else 0.0
 	call_deferred("_rebuild")
 
@@ -186,6 +188,14 @@ func _flatten(at: Vector3) -> Vector3:
 
 # ── Flat / curved toggle ──────────────────────────────────────────────────────
 
+## A press: apply it and remember it. Kept apart from set_curved so nothing
+## internal can write the prefs file as a side effect.
+func _choose(on: bool) -> void:
+	set_curved(on)
+	AppPrefs.menu_curved = on
+	AppPrefs.save_prefs()
+
+
 func set_curved(on: bool, animate := true) -> void:
 	curved = on
 	_refresh_buttons()
@@ -227,8 +237,8 @@ func _build_toggle() -> void:
 		Vector3(hw + gap, -hh + 0.015, 0.0), false)
 	_btn_curved = _make_button("CurveToggleCurved",
 		Vector3(hw + gap, -hh + 0.015 + pitch, 0.0), true)
-	_btn_flat.button_pressed.connect(func() -> void: set_curved(false))
-	_btn_curved.button_pressed.connect(func() -> void: set_curved(true))
+	_btn_flat.button_pressed.connect(func() -> void: _choose(false))
+	_btn_curved.button_pressed.connect(func() -> void: _choose(true))
 	_refresh_buttons()
 
 

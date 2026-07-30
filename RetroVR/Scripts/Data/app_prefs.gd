@@ -17,6 +17,9 @@ var show_fps:         bool = false
 var aim_crosshair:    bool = true
 var controller_hands: bool = false
 var system_filter:    bool = true
+## Whether the spawn menu wraps onto a cylinder. Unlike the rest, this one is not
+## an OPTIONS switch — it is the toggle on the menu's own lower-right corner.
+var menu_curved:      bool = true
 
 
 func _ready() -> void:
@@ -43,6 +46,7 @@ func _load_prefs() -> void:
 	aim_crosshair    = _prefs_bool(data, "aim_crosshair",    aim_crosshair)
 	controller_hands = _prefs_bool(data, "controller_hands", controller_hands)
 	system_filter    = _prefs_bool(data, "system_filter",    system_filter)
+	menu_curved      = _prefs_bool(data, "menu_curved",      menu_curved)
 
 
 func save_prefs() -> void:
@@ -56,6 +60,7 @@ func save_prefs() -> void:
 		"aim_crosshair":    aim_crosshair,
 		"controller_hands": controller_hands,
 		"system_filter":    system_filter,
+		"menu_curved":      menu_curved,
 	}, "\t"))
 	file.close()
 
