@@ -758,6 +758,31 @@ func get_screen_mesh() -> MeshInstance3D:
 	return _screen_mesh
 
 
+## World positions of the set's left and right speakers, in that order.
+##
+## Derived from ScreenMesh rather than the cabinet, because a shell can move and
+## rescale the screen (see _load_shell) and hardcoded cabinet offsets would drift
+## away from whatever model is actually fitted.
+##
+## The set faces +Z: the screen sits proud of the front face and the composite
+## port is on the back at -Z. Speakers go on the front baffle, flanking the tube
+## and slightly below its centre, which is where a CRT of this vintage puts them.
+## Emitting from the cabinet centre instead makes the sound appear to come from
+## inside the box -- inaudible with amplitude panning, obvious with HRTF.
+func get_speaker_positions() -> PackedVector3Array:
+	var half_w: float = _screen_size_m.x * 0.5 + 0.055
+	var drop: float = _screen_size_m.y * 0.35
+	var basis := global_transform.basis
+	# Front of the screen, not the cabinet centre.
+	var face: Vector3 = _screen_mesh.global_position + basis.z.normalized() * 0.005
+	var right: Vector3 = basis.x.normalized() * half_w
+	var down: Vector3 = -basis.y.normalized() * drop
+	var out := PackedVector3Array()
+	out.push_back(face - right + down)
+	out.push_back(face + right + down)
+	return out
+
+
 # ── On-screen display (top-right corner) ────────────────────────────────────────
 # The text lives in two places: a 2D Label rendered into OSDViewport (composited
 # INSIDE the CRT/VHS shaders so the OSD curves and scanlines with the picture)

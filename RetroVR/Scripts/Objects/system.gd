@@ -192,8 +192,9 @@ var _audio_player: AudioStreamPlayer3D = null
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
 var _mx: Object = null
-## Half the gap between a TV's left and right speakers, in metres.
-@export var audio_speaker_separation: float = 0.25
+## Half the gap between the emitters when no TV is connected, in metres. A
+## connected set reports its own speaker positions instead.
+@export var audio_speaker_separation: float = 0.09
 
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
@@ -765,18 +766,30 @@ func _update_audio_position() -> void:
 	if not _audio_voices.is_empty():
 		if _mx == null:
 			return
-		# A TV radiates from two speakers; spacing them is most of what makes a
-		# set feel like an object rather than a point. Falls back to the
-		# hardware's own position when nothing is plugged in.
-		var src: Node3D = tv if tv != null else self
-		var origin := src.global_position
-		var right := src.global_transform.basis.x.normalized() * audio_speaker_separation
+		# A TV radiates from two speakers on its front baffle, so ask the set
+		# where they are -- it knows its own geometry, and a shell can move or
+		# rescale the screen. Emitting from the TV's node origin instead puts
+		# the sound inside the cabinet, which amplitude panning hides but HRTF
+		# makes obvious.
+		var left_pos: Vector3
+		var right_pos: Vector3
+		if tv != null and tv.has_method("get_speaker_positions"):
+			var sp: PackedVector3Array = tv.get_speaker_positions()
+			left_pos = sp[0]
+			right_pos = sp[1]
+		else:
+			# Unplugged, or a set that predates get_speaker_positions: fall back
+			# to the hardware itself, spread across its own local X.
+			var src: Node3D = tv if tv != null else self
+			var right := src.global_transform.basis.x.normalized() * audio_speaker_separation
+			left_pos = src.global_position - right
+			right_pos = src.global_position + right
 		# The mixer skips the SDK call when a position has not changed, so
 		# writing every frame is safe -- and that guard is load bearing on
 		# Quest, see meta-xr-audio-known-issues.md.
-		_mx.set_voice_position(_audio_voices[0], origin - right)
+		_mx.set_voice_position(_audio_voices[0], left_pos)
 		if _audio_voices.size() > 1:
-			_mx.set_voice_position(_audio_voices[1], origin + right)
+			_mx.set_voice_position(_audio_voices[1], right_pos)
 		return
 
 	if _audio_player == null or not is_instance_valid(_audio_player):
