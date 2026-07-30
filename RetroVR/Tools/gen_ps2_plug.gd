@@ -1,0 +1,175 @@
+## Bakes to-scale PS/2 (mini-DIN 6) plugs to Scenes/Objects/ps2_plug_*.res.
+##
+## Run once, out of band — a connector's dimensions are a physical fact, not
+## something to rebuild every load:
+##
+##   godot --headless --path RetroVR --script res://Tools/gen_ps2_plug.gd
+##
+## Replaces the generic cylinder plug on the keyboard and mouse, which was a
+## 20 mm-diameter, 40 mm-long cone — twice the diameter of a real PS/2 connector
+## and four times the shroud length. At arm's length in VR that reads as a garden
+## hose rather than a keyboard lead.
+##
+## Dimensions are the mini-DIN 6 spec:
+##   * metal shroud 9.5 mm outside diameter, 9.5 mm long, 0.4 mm wall
+##   * 6 pins at 0.9 mm diameter, 7 mm long, on a 5.6 mm pitch circle, recessed
+##     inside the shroud
+##   * a plastic alignment key against the shroud's inner wall, which is what stops
+##     the plug going in the wrong way round
+##   * a 13 mm plastic barrel behind, 22 mm long, tapering to a strain relief
+##
+## The PIN LAYOUT is approximated — fanned across the top arc rather than the exact
+## mini-DIN two-row pattern, with the key at the bottom clear of them. At 9.5 mm
+## across, individual pin placement is below what resolves in a headset; the shroud
+## diameter, pin count and gauge are what read, and those are to spec.
+##
+## Two colourways, per PC99 (1999, so period-legal for this room): purple for the
+## keyboard, green for the mouse. That colour coding is also the only thing that
+## tells the two leads apart at a glance once both are plugged in.
+##
+## Authored in the plug's own frame — connector on +Z, cable trailing -Z — which is
+## the contract ControllerPlug.set_plug_mesh expects, so it needs no transform.
+##
+## Winding matters here: nothing is a primitive, and SurfaceTool.generate_normals()
+## derives facing from vertex order alone. Godot's convention is the one Plane(a,b,c)
+## uses — normal = (a-c).cross(a-b) — so every helper below emits in that order and
+## the caps, rim and box faces each had to be checked against it individually.
+extends SceneTree
+
+const OUT_DIR := "res://Scenes/Objects/"
+
+const SHROUD_OD := 0.0095
+const SHROUD_WALL := 0.0004
+const SHROUD_LEN := 0.0095
+const PIN_DIA := 0.0009
+const PIN_LEN := 0.007
+const PIN_CIRCLE := 0.0056
+const BARREL_DIA := 0.013
+const BARREL_LEN := 0.022
+const RELIEF_LEN := 0.012
+## Matched to the cable it meets, not to a real PS/2 lead. VerletRope in
+## controller_cable.tscn draws a 0.005 tube_radius, i.e. a 10 mm cord — fat for a
+## keyboard lead, but it is shared with the console controllers and not this
+## change's to alter. A relief that tapered to a true 5 mm would leave the cable
+## visibly wider than the plug it enters.
+const RELIEF_DIA := 0.0105
+const KEY_W := 0.0025
+const KEY_H := 0.0012
+
+const RING := 16          # radial segments; these are ~1 cm parts, 16 is plenty
+
+
+func _init() -> void:
+	_build("ps2_plug_keyboard.res", Color(0.42, 0.24, 0.58))   # PC99 purple
+	_build("ps2_plug_mouse.res", Color(0.24, 0.52, 0.30))      # PC99 green
+	quit()
+
+
+func _build(file_name: String, barrel_tint: Color) -> void:
+	var mesh := ArrayMesh.new()
+	var r_out := SHROUD_OD * 0.5
+	var r_in := r_out - SHROUD_WALL
+
+	# --- surface 0: plastic barrel, strain relief, alignment key -------------
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# The shroud occupies z 0..SHROUD_LEN, so the barrel runs from 0 back to
+	# -BARREL_LEN and the relief tapers back from there to the cable.
+	_tube(st, BARREL_DIA * 0.5, BARREL_DIA * 0.5, -BARREL_LEN, 0.0, true)
+	_tube(st, RELIEF_DIA * 0.5, BARREL_DIA * 0.5, -BARREL_LEN - RELIEF_LEN, -BARREL_LEN, true)
+	# Key sits flush against the shroud's inner wall at the bottom, not floating
+	# mid-bore — that is where the real one is, and it is what the pins clear.
+	_box(st, KEY_W, KEY_H, SHROUD_LEN * 0.62,
+		Vector3(0.0, -(r_in - KEY_H * 0.5), SHROUD_LEN * 0.31))
+	st.generate_normals()
+	var m_barrel := StandardMaterial3D.new()
+	m_barrel.albedo_color = barrel_tint
+	m_barrel.roughness = 0.55
+	st.set_material(m_barrel)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
+	mesh.surface_set_material(0, m_barrel)
+
+	# --- surface 1: metal shroud --------------------------------------------
+	st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_tube(st, r_out, r_out, 0.0, SHROUD_LEN, false)      # outside wall
+	_tube(st, r_in, r_in, SHROUD_LEN, 0.0, false)        # inside wall, wound inward
+	_annulus(st, r_in, r_out, SHROUD_LEN)                # rim at the open end
+	st.generate_normals()
+	var m_metal := StandardMaterial3D.new()
+	m_metal.albedo_color = Color(0.62, 0.63, 0.66)
+	m_metal.metallic = 0.9
+	m_metal.roughness = 0.32
+	st.set_material(m_metal)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
+	mesh.surface_set_material(1, m_metal)
+
+	# --- surface 2: pins -----------------------------------------------------
+	st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in 6:
+		# Fanned across the TOP arc, clear of the key at the bottom.
+		var a: float = deg_to_rad(20.0 + 28.0 * float(i))
+		var c := Vector3(cos(a) * PIN_CIRCLE * 0.5, sin(a) * PIN_CIRCLE * 0.5, 0.0)
+		_tube(st, PIN_DIA * 0.5, PIN_DIA * 0.5, 0.0, PIN_LEN, true, c)
+	st.generate_normals()
+	var m_pin := StandardMaterial3D.new()
+	m_pin.albedo_color = Color(0.78, 0.72, 0.45)        # brass
+	m_pin.metallic = 1.0
+	m_pin.roughness = 0.25
+	st.set_material(m_pin)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
+	mesh.surface_set_material(2, m_pin)
+
+	var path := OUT_DIR + file_name
+	var err := ResourceSaver.save(mesh, path)
+	var ab: AABB = mesh.get_aabb()
+	print("[gen] %s  err=%d  size %.4f x %.4f x %.4f m  z %.4f..%.4f" % [
+		path, err, ab.size.x, ab.size.y, ab.size.z, ab.position.z, ab.end.z])
+
+
+## Tube along +Z between z0 and z1, radius r0 at z0 tapering to r1 at z1.
+## Wound so the outside faces out when z1 > z0 — pass them reversed for a bore.
+func _tube(st: SurfaceTool, r0: float, r1: float, z0: float, z1: float,
+		capped: bool, offset := Vector3.ZERO) -> void:
+	for i in RING:
+		var a0: float = TAU * float(i) / float(RING)
+		var a1: float = TAU * float(i + 1) / float(RING)
+		var p00 := offset + Vector3(cos(a0) * r0, sin(a0) * r0, z0)
+		var p10 := offset + Vector3(cos(a1) * r0, sin(a1) * r0, z0)
+		var p01 := offset + Vector3(cos(a0) * r1, sin(a0) * r1, z1)
+		var p11 := offset + Vector3(cos(a1) * r1, sin(a1) * r1, z1)
+		st.add_vertex(p00); st.add_vertex(p01); st.add_vertex(p11)
+		st.add_vertex(p00); st.add_vertex(p11); st.add_vertex(p10)
+		if capped:
+			var c0 := offset + Vector3(0, 0, z0)
+			var c1 := offset + Vector3(0, 0, z1)
+			st.add_vertex(c0); st.add_vertex(p00); st.add_vertex(p10)
+			st.add_vertex(c1); st.add_vertex(p11); st.add_vertex(p01)
+
+
+## Flat ring at z facing +Z, from r_in to r_out — the shroud's front rim.
+func _annulus(st: SurfaceTool, r_in: float, r_out: float, z: float) -> void:
+	for i in RING:
+		var a0: float = TAU * float(i) / float(RING)
+		var a1: float = TAU * float(i + 1) / float(RING)
+		var i0 := Vector3(cos(a0) * r_in, sin(a0) * r_in, z)
+		var i1 := Vector3(cos(a1) * r_in, sin(a1) * r_in, z)
+		var o0 := Vector3(cos(a0) * r_out, sin(a0) * r_out, z)
+		var o1 := Vector3(cos(a1) * r_out, sin(a1) * r_out, z)
+		st.add_vertex(i0); st.add_vertex(o1); st.add_vertex(o0)
+		st.add_vertex(i0); st.add_vertex(i1); st.add_vertex(o1)
+
+
+func _box(st: SurfaceTool, sx: float, sy: float, sz: float, at: Vector3) -> void:
+	var h := Vector3(sx, sy, sz) * 0.5
+	var v: Array[Vector3] = []
+	for i in 8:
+		v.append(at + Vector3(
+			h.x if (i & 1) else -h.x,
+			h.y if (i & 2) else -h.y,
+			h.z if (i & 4) else -h.z))
+	var faces := [[0,2,3,1], [4,5,7,6], [0,1,5,4], [2,6,7,3], [0,4,6,2], [1,3,7,5]]
+	for f in faces:
+		st.add_vertex(v[f[0]]); st.add_vertex(v[f[3]]); st.add_vertex(v[f[2]])
+		st.add_vertex(v[f[0]]); st.add_vertex(v[f[2]]); st.add_vertex(v[f[1]])

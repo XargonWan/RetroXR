@@ -13,6 +13,10 @@ extends XRToolsPickable
 
 
 const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+## PC99 green, the mouse half of the colour code — the only thing that tells this
+## lead from the keyboard's once both are plugged in. Swapped in over the cable
+## scene's generic 20 mm cone, which is twice life size for a mini-DIN.
+const PLUG_MESH := "res://Scenes/Objects/ps2_plug_mouse.res"
 const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/mouse_options_panel.tscn")
 const RETRO_DEVICE_MOUSE := 2
 
@@ -105,6 +109,7 @@ func _add_cable_to_scene() -> void:
 	_cable_instance.add_to_group("spawned")
 	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+	_cable_plug.set_plug_mesh(PLUG_MESH)
 	_cable_plug.set_controller(self)
 	_cable_plug.add_collision_exception_with(self)
 	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)

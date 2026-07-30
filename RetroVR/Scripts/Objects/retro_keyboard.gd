@@ -17,6 +17,11 @@ extends XRToolsPickable
 
 
 const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+## PC99 purple, the keyboard half of the colour code. Swapped in over the cable
+## scene's generic tapered cylinder, which is a 20 mm cone standing in for any
+## plug at all — fine for the console controllers that share this cable, twice
+## life size for a mini-DIN.
+const PLUG_MESH := "res://Scenes/Objects/ps2_plug_keyboard.res"
 const RETRO_DEVICE_KEYBOARD := 3
 
 # Key grid geometry (board-local metres). X = right, Z = toward the user.
@@ -318,6 +323,7 @@ func _add_cable_to_scene() -> void:
 	_cable_instance.add_to_group("spawned")
 	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+	_cable_plug.set_plug_mesh(PLUG_MESH)
 	_cable_plug.set_controller(self)
 	_cable_plug.add_collision_exception_with(self)
 	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
