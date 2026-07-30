@@ -14,11 +14,20 @@ extends Node3D
 ## Mesh node names to hide. Matched exactly against MeshInstance3D.name.
 @export var hide_meshes: PackedStringArray = []
 
+## Material applied to every mesh that SURVIVES the filter. Downloaded props tend
+## to ship a single colourway — Poly Haven's throw pillows are saturated rust —
+## and this re-skins them per instance without touching the GLB, so one download
+## supplies a whole scatter of cushions in different colours.
+@export var skin: Material = null
+
 
 func _ready() -> void:
-	if hide_meshes.is_empty():
+	if hide_meshes.is_empty() and skin == null:
 		return
 	for node in find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		if hide_meshes.has(mi.name):
 			mi.visible = false
+		elif skin != null:
+			for si in mi.get_surface_override_material_count():
+				mi.set_surface_override_material(si, skin)

@@ -4612,6 +4612,8 @@ func _build_about_view() -> Control:
 		["Trash can", "Yury Misiyuk — @Tim0", "CC BY 4.0"],
 		["Table lamp", "plaggy", "CC0 1.0"],
 		["Television 02", "Benny Weimer — Poly Haven", "CC0 1.0"],
+		["Throw pillows", "Serhii Khromov — Poly Haven", "CC0 1.0"],
+		["Potted plant", "James Ray Cock — Poly Haven", "CC0 1.0"],
 		["Suburban houses", "Kenney — kenney.nl", "CC0 1.0"],
 		["Trees", "Quaternius", "CC0 1.0"],
 		["Furniture Kit", "Kenney — kenney.nl", "CC0 1.0"],

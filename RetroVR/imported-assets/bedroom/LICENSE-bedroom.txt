@@ -88,6 +88,23 @@ furniture/table_lamp.glb
     seating it on a surface is one half-height lift. Used twice — bedside and
     desk.
 
+props/throw_pillows_01_*  (+ props/textures/)
+    "Throw Pillows 01" by Serhii Khromov — Poly Haven
+    https://polyhaven.com/a/throw_pillows_01
+    6.4k tris across TWO separate pillow meshes, so one download scatters as
+    several cushions: each scene instance hides one and re-skins the other.
+    Its diffuse is dropped — the bold chevron print lives only there, at 0.772
+    mean saturation, while the normal map carries just folds and the roughness
+    just weave. Flat albedo plus those two gives plain fabric.
+
+props/potted_plant_04_*  (+ props/textures/)
+    "Potted Plant 04" by James Ray Cock — Poly Haven
+    https://polyhaven.com/a/potted_plant_04
+    8.9k tris, 0.27 m tall. Chosen over Potted Plant 01 and 02 on cost, not
+    looks: those are 96k and 70k triangles, either of them more than every other
+    object in this room put together, and both are floor plants rather than the
+    desk-sized one wanted here.
+
 materials/Plaster001_*
     "Plaster 001" — ambientCG, surface photogrammetry
     https://ambientcg.com/a/Plaster001

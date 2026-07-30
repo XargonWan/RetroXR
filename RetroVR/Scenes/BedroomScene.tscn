@@ -1,4 +1,4 @@
-[gd_scene load_steps=106 format=3]
+[gd_scene load_steps=113 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -31,6 +31,10 @@
 [ext_resource type="Script" path="res://Scripts/Objects/light_switch.gd" id="29_switchscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/glow_mesh.gd" id="35_glow"]
 [ext_resource type="Script" path="res://Scripts/Objects/string_lights.gd" id="36_strlights"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
+[ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_rough_1k.jpg" id="43_cu_rgh"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="31_vrbutton"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/rug_persian.png" id="32_rug"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_memphis.png" id="33_poster_a"]
@@ -385,6 +389,36 @@ tracks/0/keys = {
 _data = {
 &"spin": SubResource("Anim_fan_spin")
 }
+
+; Floor cushions. Poly Haven's throw_pillows_01 ships ONE colourway: a bold
+; red/black/yellow CHEVRON print at 0.772 mean saturation, busier and louder than
+; the red rug that had to go for dominating the room.
+;
+; The albedo texture is dropped entirely. Inspecting the three maps settled it —
+; the chevron exists only in the diffuse, while the normal map carries nothing but
+; folds and wrinkles and the roughness nothing but weave. So a flat albedo colour
+; plus the original normal and roughness gives plain cushions that still crease
+; and catch light like fabric. Recolouring the diffuse was tried first and failed
+; for the obvious reason in hindsight: preserving its luminance preserved the
+; print. A material tint cannot help either, since albedo_color multiplies —
+; orange times green is mud, not sage.
+[sub_resource type="StandardMaterial3D" id="Mat_cushion_cream"]
+albedo_color = Color(0.86, 0.82, 0.74, 1)
+roughness_texture = ExtResource("43_cu_rgh")
+normal_enabled = true
+normal_texture = ExtResource("42_cu_nrm")
+
+[sub_resource type="StandardMaterial3D" id="Mat_cushion_sage"]
+albedo_color = Color(0.61, 0.66, 0.56, 1)
+roughness_texture = ExtResource("43_cu_rgh")
+normal_enabled = true
+normal_texture = ExtResource("42_cu_nrm")
+
+[sub_resource type="StandardMaterial3D" id="Mat_cushion_tan"]
+albedo_color = Color(0.76, 0.66, 0.52, 1)
+roughness_texture = ExtResource("43_cu_rgh")
+normal_enabled = true
+normal_texture = ExtResource("42_cu_nrm")
 
 [node name="Root" type="Node3D"]
 script = ExtResource("1_xrinit")
@@ -990,6 +1024,63 @@ bulb_color = Color(1, 0.8, 0.5, 1)
 emission_energy = 1.7
 wash_energy = 0.26
 wash_range = 1.8
+
+; --- Soft props -------------------------------------------------------------
+; Five floor cushions scattered round the rug, per the reference. Each instance
+; hides one of the GLB's two pillows and re-skins the other, so one 6.4k-tri
+; download gives a varied scatter — the pattern mesh_filter.gd exists for.
+;
+; NO COLLIDERS, deliberately. XRToolsPlayerBody is a full-height capsule, so a
+; 0.45 m cushion would block it outright and these sit in the open floor where
+; the player walks. Walking through a cushion is the lesser wrong, and nothing
+; rests on them, which is what the FurnitureCollision colliders are actually for.
+[node name="SoftProps" type="Node3D" parent="."]
+[node name="CushionA" type="Node3D" parent="SoftProps"]
+transform = Transform3D(0.9063, 0, 0.4226, 0, 1, 0, -0.4226, 0, 0.9063, -1.72, 0, -0.5)
+script = ExtResource("11_meshfilter")
+hide_meshes = PackedStringArray("throw_pillows_01_pillow01")
+skin = SubResource("Mat_cushion_cream")
+
+[node name="Pillows" parent="SoftProps/CushionA" instance=ExtResource("37_pillows")]
+
+[node name="CushionB" type="Node3D" parent="SoftProps"]
+transform = Transform3D(0.766, 0, -0.6428, 0, 1, 0, 0.6428, 0, 0.766, -1.5, 0, 0.35)
+script = ExtResource("11_meshfilter")
+hide_meshes = PackedStringArray("throw_pillows_01_pillow02")
+skin = SubResource("Mat_cushion_sage")
+
+[node name="Pillows" parent="SoftProps/CushionB" instance=ExtResource("37_pillows")]
+
+[node name="CushionC" type="Node3D" parent="SoftProps"]
+transform = Transform3D(0.9781, 0, 0.2079, 0, 1, 0, -0.2079, 0, 0.9781, 0.25, 0, 0.95)
+script = ExtResource("11_meshfilter")
+hide_meshes = PackedStringArray("throw_pillows_01_pillow01")
+skin = SubResource("Mat_cushion_tan")
+
+[node name="Pillows" parent="SoftProps/CushionC" instance=ExtResource("37_pillows")]
+
+[node name="CushionD" type="Node3D" parent="SoftProps"]
+transform = Transform3D(0.9272, 0, -0.3746, 0, 1, 0, 0.3746, 0, 0.9272, 1.18, 0, 0.6)
+script = ExtResource("11_meshfilter")
+hide_meshes = PackedStringArray("throw_pillows_01_pillow02")
+skin = SubResource("Mat_cushion_cream")
+
+[node name="Pillows" parent="SoftProps/CushionD" instance=ExtResource("37_pillows")]
+
+[node name="CushionE" type="Node3D" parent="SoftProps"]
+transform = Transform3D(0.6691, 0, 0.7431, 0, 1, 0, -0.7431, 0, 0.6691, -0.6, 0, 0.95)
+script = ExtResource("11_meshfilter")
+hide_meshes = PackedStringArray("throw_pillows_01_pillow01")
+skin = SubResource("Mat_cushion_sage")
+
+[node name="Pillows" parent="SoftProps/CushionE" instance=ExtResource("37_pillows")]
+
+; Potted succulent on the desk's free west end. potted_plant_04 at 8.9k tris
+; against 70k and 96k for Poly Haven's other two potted plants, which are floor
+; plants — either would have cost more than every other object in the room put
+; together. At 0.27 m tall this is the windowsill-sized one the reference shows.
+[node name="DeskPlant" parent="SoftProps" instance=ExtResource("38_plant")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.45, 0.75, -1.78)
 
 [node name="Baseboard" type="Node3D" parent="."]
 
