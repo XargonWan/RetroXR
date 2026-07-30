@@ -88,15 +88,18 @@ public:
     // Pop up to max_frames stereo frames (L,R in -1..1); returns what was ready.
     godot::PackedVector2Array read_audio(int max_frames);
 
-    // How far behind the decoder the playback currently is, in milliseconds --
-    // i.e. the audio latency this ring is contributing. Diagnostic.
+    // PCM libVLC has handed over and we have not served yet, in milliseconds.
+    // This is occupancy, not latency: libVLC decodes audio far ahead of the play
+    // dates it stamps on it, so a healthy stream sits near that run-ahead.
     int get_audio_backlog_ms() const;
-    // Backlog the ring holds to, in milliseconds. Playback primes to this before
-    // the first frame is served and is trimmed back to it if it ever exceeds it,
-    // which is what keeps the latency fixed instead of drifting; see read_audio.
-    // Raise it to hold the audio back against a slower video path.
-    int get_audio_target_latency_ms() const;
-    void set_audio_target_latency_ms(int ms);
+
+    // How far ahead of its own play date the next sample we would serve is, in
+    // milliseconds, and the figure read_audio steers that to. Setting it is how
+    // the audio is dialled against the video path's own latency; see read_audio
+    // for what the number means physically.
+    int get_audio_lead_ms() const;
+    int get_audio_lead_target_ms() const;
+    void set_audio_lead_ms(int ms);
 
     // Audio-track + subtitle (spu) selection for the options panel. Each entry is
     // { "id": int, "name": String }; id -1 disables (subtitles off).
@@ -150,9 +153,18 @@ private:
     size_t m_audio_count = 0;
     int m_audio_rate = 48000;
     int m_audio_channels = 2;
-    // Target steady-state backlog, and whether we have reached it since the last
-    // flush. Both are read under m_audio_mutex.
-    int m_audio_target_ms = 60;
-    bool m_audio_primed = false;
+
+    // Play-date bookkeeping, all read under m_audio_mutex. libVLC stamps every
+    // PCM block with the time it should be heard, on the same clock the video
+    // output schedules pictures against, so the two are directly comparable --
+    // but only if we keep track of which sample is which. m_frames_out counts
+    // frames that have left the head; the anchor is the newest block's play date
+    // and the frame index it started at, so the play date of the sample now at
+    // the head is one subtraction away no matter how much has been served.
+    int64_t m_frames_out = 0;
+    int64_t m_anchor_index = 0;
+    int64_t m_anchor_pts = 0;
+    bool m_pts_anchored = false;
+    int m_audio_lead_ms = 40;
 };
 } // namespace Xenu
