@@ -61,17 +61,22 @@ script = ExtResource("3_pickhigh")
 [node name="SnapGrabPoint" parent="ControllerPlug" instance=ExtResource("4_snapgp")]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 
+; 4.5 mm cord (tube_radius 0.00225). collision_radius has to come down with it:
+; it is the standoff the solver holds each particle at from a contact plane, so
+; leaving it at the class default 0.008 would float a 4.5 mm cable 5.75 mm clear
+; of every desk and floor it lies on.
 [node name="VerletRope" type="MeshInstance3D" parent="."]
 script = ExtResource("2_ropescript")
 segment_count = 24
 segment_length = 0.035
 constraint_iterations = 8
 bend_stiffness = 0.05
-tube_radius = 0.005
+tube_radius = 0.00225
 tube_sides = 6
 smoothing = 1
 rope_color = Color(0.15, 0.15, 0.15, 1.0)
 surface_collision_mask = 7
+collision_radius = 0.0036
 self_collision = true
 end_align_stiffness = 0.7
 end_stiffness = 0.6

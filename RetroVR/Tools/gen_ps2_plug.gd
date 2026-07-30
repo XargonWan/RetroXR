@@ -47,12 +47,10 @@ const PIN_CIRCLE := 0.0056
 const BARREL_DIA := 0.013
 const BARREL_LEN := 0.022
 const RELIEF_LEN := 0.012
-## Matched to the cable it meets, not to a real PS/2 lead. VerletRope in
-## controller_cable.tscn draws a 0.005 tube_radius, i.e. a 10 mm cord — fat for a
-## keyboard lead, but it is shared with the console controllers and not this
-## change's to alter. A relief that tapered to a true 5 mm would leave the cable
-## visibly wider than the plug it enters.
-const RELIEF_DIA := 0.0105
+## Just proud of the 4.5 mm cord controller_cable.tscn draws, which is also what a
+## real PS/2 lead measures — so this is both the true dimension and a clean meeting
+## with the rope.
+const RELIEF_DIA := 0.005
 const KEY_W := 0.0025
 const KEY_H := 0.0012
 
