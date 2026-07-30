@@ -12,6 +12,7 @@
 [ext_resource type="Script" uid="uid://0abdj5fqidtk" path="res://Scripts/UI/spawn_menu_controller.gd" id="9_menuctl"]
 [ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="10_viewport2d3d"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/spawn_menu.tscn" id="11_spawnmenu"]
+[ext_resource type="Script" path="res://Scripts/UI/curved_panel.gd" id="30_curvedpanel"]
 [ext_resource type="Script" uid="uid://5bj8has6wapn" path="res://Scripts/vr_input_mapper.gd" id="12_inputmapper"]
 [ext_resource type="Script" uid="uid://cwwam004ra1i" path="res://Scripts/locomotion_manager.gd" id="13_locomotionmgr"]
 [ext_resource type="Script" path="res://Scripts/xr_staging_shim.gd" id="14_stagingshim"]
@@ -118,6 +119,9 @@ scene = ExtResource("11_spawnmenu")
 viewport_size = Vector2(2200, 1500)
 transparent = 1
 scene_properties_keys = PackedStringArray("spawn_menu.gd")
+
+[node name="CurvedPanel" type="Node3D" parent="SpawnMenuController/SpawnMenuViewport"]
+script = ExtResource("30_curvedpanel")
 
 [node name="DesktopReticle" parent="." instance=ExtResource("22_reticle")]
 
