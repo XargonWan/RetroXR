@@ -126,6 +126,14 @@ func clear_emit_position() -> void:
 ## How many frames the producer should hand over right now. Deliberately not
 ## "all the free space": queue depth is latency, and filling a large buffer to
 ## the brim is what makes the existing generator path carry ~250 ms.
+##
+## Capping the ask only bounds latency for a producer that WAITS. A libretro core
+## does: Wrapper stalls instead of calling retro_run() while this is saturated, so
+## the core cannot run ahead and audio and video stay locked, both being produced
+## by that same call. libVLC does not: it decodes on the media clock whether or
+## not we collect, so a small ask leaves the remainder in its ring, where it
+## becomes permanent delay against a picture that has its own separate path.
+## What bounds the video side is the backlog trim in VlcPlayer::read_audio.
 func frames_wanted() -> int:
 	if _use_sdk:
 		return _mx.voice_frames_wanted(_voice_l)
