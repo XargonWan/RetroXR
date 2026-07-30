@@ -5,11 +5,13 @@
 ##
 ## VR typing: the key grid is built procedurally; each hand presses at most the
 ## single nearest key under its controller tip (so a palm can't mash a row).
-## Real-keyboard passthrough: while the board is PICKED UP and plugged, a
-## physical keyboard (desktop OS, or a Bluetooth keyboard paired to the Quest)
-## drives it — offline straight to the core, in netplay through the
-## deterministic schedule — and the matching virtual keycaps sink. The raw C++
-## OS-keyboard path is suppressed while this is active (no double feed).
+## Real-keyboard passthrough is OPT-IN: hold the board and press Scroll Lock to
+## capture, which floats a keyboard glyph over it and suspends WASD locomotion so
+## the keys reach the core instead of the player. Scroll Lock again — or simply
+## dropping the board — releases it. Keys route from here, offline straight to the
+## core and in netplay through the deterministic schedule, sinking the matching
+## virtual keycap on the way. This is the only OS-keyboard path; the extension no
+## longer feeds keys on its own.
 class_name RetroKeyboard
 extends XRToolsPickable
 
@@ -21,7 +23,9 @@ const RETRO_DEVICE_KEYBOARD := 3
 const KEY_PITCH := 0.021       # 1u - full-size 104-key board is ~50 cm wide
 const KEY_GAP := 0.0025        # spacing between caps
 const KEY_TOP_Y := 0.014       # resting key-cap top
-const PRESS_TRAVEL := 0.005    # cap sink when pressed
+const PRESS_TRAVEL := 0.0015   # cap sink when pressed: rests 2 mm proud of
+                               # the 0.012 plate top, so this leaves it just
+                               # barely above rather than buried under it
 const TOUCH_MAX_Y := 0.06      # controller tip must be within this above caps
 const PRESS_Y := 0.010         # tip below this (board-local) = pressed
 
@@ -99,10 +103,25 @@ var _controllers: Array = []
 var _key_index_by_code: Dictionary = {}
 # True while any hand (VR or desktop) holds the board.
 var _held := false
+# Scroll Lock capture: while on, real keys go to the core instead of the game.
+# Opt-in (holding alone no longer hijacks the keyboard) and always a subset of
+# _held, so it can never outlive the grip and strand the player with WASD blocked.
+var _capture_active := false
+# Key index the desktop pointer / VR laser is currently holding down, or -1.
+var _pointer_key := -1
+var _capture_icon: Label3D = null
+var _locomotion_manager: LocomotionManager = null
 # Whether the caps currently show their shifted glyphs, and whether a real
 # keyboard's Shift is down (so passthrough typing relabels the caps too).
 var _labels_shifted := false
 var _os_shift_held := false
+
+## Nerd Font: keyboard — shown above the board while Scroll Lock capture is on.
+const ICON_CAPTURE := 0xF11C
+const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
+## Height of the capture glyph, in metres, and how far above the board it floats.
+const ICON_SIZE := 0.035
+const ICON_HEIGHT := 0.10
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _key_root: Node3D = $Keys
@@ -117,7 +136,9 @@ func _ready() -> void:
 	_spawn_cable()
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
+	_build_capture_icon()
 	call_deferred("_find_controllers")
+	call_deferred("_find_locomotion_manager")
 
 
 func _find_controllers() -> void:
@@ -183,9 +204,9 @@ func _build_layout() -> void:
 	_layout.append({"z": 4.4, "keys": zrow})
 
 	var space_row: Array = [
-		["CTRL", RK.lctrl, 1.25], ["WIN", RK.lsuper, 1.25], ["ALT", RK.lalt, 1.25],
+		["CTRL", RK.lctrl, 1.25], ["SUPER", RK.lsuper, 1.25], ["ALT", RK.lalt, 1.25],
 		["SPACE", RK.space, 6.25],
-		["ALT", RK.ralt, 1.25], ["WIN", RK.rsuper, 1.25], ["MENU", RK.menu, 1.25],
+		["ALT", RK.ralt, 1.25], ["SUPER", RK.rsuper, 1.25], ["MENU", RK.menu, 1.25],
 		["CTRL", RK.rctrl, 1.25],
 		[null, 0, 0.5],
 		["←", RK.left, 1.0], ["↓", RK.down, 1.0], ["→", RK.right, 1.0],
@@ -253,6 +274,7 @@ func _build_keys() -> void:
 				"base_text": base_text,
 				"shift_text": shift_text,
 				"base_y": mesh.position.y,
+				"label_base_y": lbl.position.y,
 			})
 			# First physical key wins the visual-feedback slot (left modifiers).
 			if not _key_index_by_code.has(int(k[1])):
@@ -276,6 +298,14 @@ func _build_keys() -> void:
 	var attach := get_node_or_null("CableAttachPoint") as Node3D
 	if attach:
 		attach.position = Vector3(0, 0.008, -bd / 2.0)
+
+	# Pointer-clickable key field. One thin box over the whole grid — the caps
+	# are bare meshes with no colliders, so _key_at() resolves which one was hit.
+	if get_node_or_null("KeyPointerField") == null:
+		var field := KeyboardKeyField.create(self,
+			Vector3(0.0, KEY_TOP_Y + 0.002, 0.0),
+			Vector3(max_xu * KEY_PITCH, 0.006, max_zu * KEY_PITCH))
+		add_child(field)
 
 
 # ── Cable (mirrors RetroController) ──────────────────────────────────────────
@@ -312,41 +342,53 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_connected_system = system
 	_port_index = port_index
 	print("[RetroKeyboard] plugged into system port %d" % port_index)
-	_update_os_capture()
+	# Plugging in only makes capture *possible*; the player still opts in.
+	_update_capture_icon()
 
 
 func on_unplugged() -> void:
 	print("[RetroKeyboard] unplugged from port %d" % _port_index)
 	_release_all()
-	_update_os_capture(true)
+	_set_capture(false)
 	_connected_system = null
 	_port_index = -1
 
 
 func _on_grabbed_signal(_pickable: Node3D, _by: Node3D) -> void:
 	_held = true
-	_update_os_capture()
+	_update_capture_icon()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
 	_held = false
-	_update_os_capture()
+	# Capture never outlives the grip — otherwise WASD stays blocked with no way
+	# to walk back to the board and press Scroll Lock again.
+	_set_capture(false)
 
 
-## While held AND plugged, this object owns the OS-keyboard feed for its
-## system: real keys (desktop OS keyboard, or a Bluetooth keyboard paired to
-## the Quest) route through here — including into the netplay schedule — and
-## the raw C++ path is suppressed so events aren't double-fed.
+## True while this board owns the real keyboard: Scroll Lock capture is on, a
+## hand holds it, and it is plugged into a system. Real keys (desktop OS keyboard,
+## or a Bluetooth keyboard paired to the Quest) then route through here, netplay
+## schedule included. There is no longer a raw C++ keyboard path to suppress.
 func _os_capture_active() -> bool:
+	return _capture_active and _can_capture()
+
+
+## Whether capture could be turned on right now — held and plugged into a port.
+func _can_capture() -> bool:
 	return _held and _connected_system != null and _port_index >= 0
 
 
-func _update_os_capture(force_off := false) -> void:
-	if _connected_system == null or not is_instance_valid(_connected_system):
+## Flip capture, refresh the indicator, and hand locomotion back or take it away.
+func _set_capture(active: bool) -> void:
+	var want := active and _can_capture()
+	if want == _capture_active:
 		return
-	var lib: Libretro = _connected_system.get_libretro_node()
-	if lib and lib.has_method("SetOsKeyboardCapture"):
-		lib.SetOsKeyboardCapture(false if force_off else _os_capture_active())
+	_capture_active = want
+	if not _capture_active:
+		_release_all()
+	_update_capture_icon()
+	_update_locomotion_block()
 
 
 func restore_port_connection(system: RetroSystem, port_index: int) -> void:
@@ -395,6 +437,29 @@ func _scan_hands() -> void:
 	_refresh_shift_labels()
 
 
+## Pointer (desktop reticle / VR laser) pressed or dragged onto the key field.
+## `at` is a global point; KeyboardKeyField routes it here. Independent of Scroll
+## Lock capture — clicking a specific cap is unambiguous intent and cannot
+## collide with WASD the way raw keyboard input does.
+func pointer_press_at(at: Vector3) -> void:
+	var local := to_local(at)
+	var hit := _key_at(Vector2(local.x, local.z))
+	if hit == _pointer_key:
+		return
+	if _pointer_key >= 0:
+		_set_key(_pointer_key, false)
+	if hit >= 0:
+		_set_key(hit, true)
+	_pointer_key = hit
+
+
+## Pointer released or left the field — let go of whatever it was holding.
+func pointer_release() -> void:
+	if _pointer_key >= 0:
+		_set_key(_pointer_key, false)
+		_pointer_key = -1
+
+
 func _key_at(p: Vector2) -> int:
 	for i in range(_keys.size()):
 		if (_keys[i]["rect"] as Rect2).has_point(p):
@@ -404,12 +469,24 @@ func _key_at(p: Vector2) -> int:
 
 func _set_key(index: int, down: bool) -> void:
 	var k: Dictionary = _keys[index]
-	var mesh := k["mesh"] as MeshInstance3D
-	mesh.position.y = float(k["base_y"]) - (PRESS_TRAVEL if down else 0.0)
+	_set_cap_pressed(k, down)
 	_send_key(int(k["keycode"]), down)
 
 
+## Sink or raise one cap. The legend is a separate Label3D floating just above the
+## cap, so it has to travel with it or a pressed key keeps its lettering hovering
+## at rest height. Single place for the move: the real-keyboard path used to
+## duplicate it and could only ever drift.
+func _set_cap_pressed(k: Dictionary, down: bool) -> void:
+	var drop := PRESS_TRAVEL if down else 0.0
+	(k["mesh"] as MeshInstance3D).position.y = float(k["base_y"]) - drop
+	var lbl := k["label"] as Label3D
+	if lbl != null:
+		lbl.position.y = float(k["label_base_y"]) - drop
+
+
 func _release_all() -> void:
+	pointer_release()
 	for name_key: String in _hand_pressed:
 		var idx: int = _hand_pressed[name_key]
 		if idx >= 0:
@@ -472,20 +549,35 @@ func _send_key(keycode: int, down: bool) -> void:
 ## deterministic schedule. The matching virtual keycap sinks for feedback.
 ## (The C++ raw OS path is suppressed via SetOsKeyboardCapture while active.)
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not _os_capture_active():
-		return
 	var key := event as InputEventKey
 	if key == null or key.is_echo():
 		return
-	if _handle_os_key(key.keycode, key.is_pressed(), int(key.unicode)):
+
+	# Scroll Lock toggles capture. Tested BEFORE the capture gate below —
+	# behind it, the toggle could only ever switch capture off, never on.
+	if key.keycode == KEY_SCROLLLOCK:
+		if key.is_pressed() and _can_capture():
+			_set_capture(not _capture_active)
+			get_viewport().set_input_as_handled()
+		return
+
+	if not _os_capture_active():
+		return
+	if _handle_os_key(key, key.is_pressed()):
 		get_viewport().set_input_as_handled()
 
 
 ## Route one real-keyboard transition. Returns true when consumed.
-func _handle_os_key(gd_keycode: int, pressed: bool, unicode: int) -> bool:
-	var keycode := _godot_to_retrok(gd_keycode)
+## Takes the whole event: GodotKeyToRetroKey reads its `location` to tell the
+## left and right Shift/Ctrl/Alt/Super apart, which a bare keycode cannot.
+func _handle_os_key(event: InputEventKey, pressed: bool) -> bool:
+	var lib: Libretro = _connected_system.get_libretro_node()
+	if lib == null:
+		return false
+	var keycode: int = lib.GodotKeyToRetroKey(event)
 	if keycode == 0:
 		return false
+	var unicode := int(event.unicode)
 	# A real Shift relabels the caps just like an on-board SHIFT does.
 	if keycode in [RK.lshift, RK.rshift]:
 		_os_shift_held = pressed
@@ -493,8 +585,7 @@ func _handle_os_key(gd_keycode: int, pressed: bool, unicode: int) -> bool:
 	# Visual: sink the matching virtual keycap.
 	var idx: int = _key_index_by_code.get(keycode, -1)
 	if idx >= 0:
-		var k: Dictionary = _keys[idx]
-		(k["mesh"] as MeshInstance3D).position.y = float(k["base_y"]) - (PRESS_TRAVEL if pressed else 0.0)
+		_set_cap_pressed(_keys[idx], pressed)
 	var character := unicode
 	if character == 0 and keycode >= 32 and keycode <= 126:
 		character = keycode
@@ -504,45 +595,69 @@ func _handle_os_key(gd_keycode: int, pressed: bool, unicode: int) -> bool:
 	return true
 
 
-## Minimal Godot -> RETROK map for desktop netplay typing (letters, digits,
-## and the keys on the virtual board).
-static func _godot_to_retrok(gd: int) -> int:
-	if gd >= KEY_A and gd <= KEY_Z:
-		return 97 + (gd - KEY_A)
-	if gd >= KEY_0 and gd <= KEY_9:
-		return 48 + (gd - KEY_0)
-	match gd:
-		KEY_SPACE: return 32
-		KEY_ENTER: return 13
-		KEY_BACKSPACE: return 8
-		KEY_TAB: return 9
-		KEY_ESCAPE: return 27
-		KEY_SHIFT: return 304
-		KEY_MINUS: return 45
-		KEY_EQUAL: return 61
-		KEY_BRACKETLEFT: return 91
-		KEY_BRACKETRIGHT: return 93
-		KEY_SEMICOLON: return 59
-		KEY_APOSTROPHE: return 39
-		KEY_COMMA: return 44
-		KEY_PERIOD: return 46
-		KEY_SLASH: return 47
-		KEY_UP: return 273
-		KEY_DOWN: return 274
-		KEY_RIGHT: return 275
-		KEY_LEFT: return 276
-		KEY_CTRL: return 306      # LCTRL
-		KEY_ALT: return 308       # LALT
-		KEY_META: return 311      # LSUPER
-		KEY_CAPSLOCK: return 301
-		KEY_INSERT: return 277
-		KEY_DELETE: return 127
-		KEY_HOME: return 278
-		KEY_END: return 279
-		KEY_PAGEUP: return 280
-		KEY_PAGEDOWN: return 281
-		KEY_BACKSLASH: return 92
-		KEY_QUOTELEFT: return 96  # backtick
-	if gd >= KEY_F1 and gd <= KEY_F12:
-		return 282 + (gd - KEY_F1)   # RETROK_F1..F12
-	return 0
+# ── Capture indicator + locomotion arbitration ────────────────────────────────
+
+## Billboarded glyph floating over the board while capture is on. Same recipe as
+## vr_hinge.gd's _build_icon: a Label3D with the Symbols Nerd Font as a fallback,
+## sized in metres via pixel_size, and drawn over geometry so it reads from any
+## angle.
+func _build_capture_icon() -> void:
+	var existing := get_node_or_null("CaptureHint") as Label3D
+	if existing != null:
+		_capture_icon = existing
+	else:
+		_capture_icon = Label3D.new()
+		_capture_icon.name = "CaptureHint"
+		add_child(_capture_icon)
+	var fv := FontVariation.new()
+	fv.base_font = ThemeDB.fallback_font
+	var symbols: Font = load(SYMBOL_FONT_PATH)
+	if symbols:
+		fv.fallbacks = [symbols]
+	_capture_icon.font = fv
+	_capture_icon.font_size = 96
+	_capture_icon.pixel_size = ICON_SIZE / 96.0
+	_capture_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_capture_icon.no_depth_test = true
+	_capture_icon.render_priority = 2
+	_capture_icon.outline_size = 18
+	_capture_icon.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
+	_capture_icon.text = String.chr(ICON_CAPTURE)
+	_capture_icon.modulate = Color(1.0, 0.82, 0.28)
+	_capture_icon.position = Vector3(0.0, ICON_HEIGHT, 0.0)
+	_capture_icon.visible = false
+
+
+func _update_capture_icon() -> void:
+	if _capture_icon != null:
+		_capture_icon.visible = _capture_active
+
+
+func _find_locomotion_manager() -> void:
+	_locomotion_manager = get_tree().root.find_child(
+		"LocomotionManager", true, false) as LocomotionManager
+	_update_locomotion_block()
+
+
+## While captured the board owns WASD, so the desktop movement providers must
+## stand down — they poll the InputMap, which no amount of event consumption can
+## suppress. Blocking them is the only thing that actually stops the player
+## walking while typing.
+func _update_locomotion_block() -> void:
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(_desktop_block_owner(),
+			LocomotionManager.CHANNEL_DESKTOP_MOVE, _capture_active)
+
+
+func _exit_tree() -> void:
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(_desktop_block_owner(),
+			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
+	super._exit_tree()
+
+
+## Per-instance owner for the desktop channel. Several objects share the
+## "keyboard_capture" key on the VR channels, so whichever updated last would otherwise
+## clear a block another object still wants.
+func _desktop_block_owner() -> StringName:
+	return StringName("desktop_hold_%d" % get_instance_id())

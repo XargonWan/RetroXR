@@ -261,6 +261,8 @@ func _exit_tree() -> void:
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_LEFT, false)
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_RIGHT, false)
+		_locomotion_manager.set_block(_desktop_block_owner(),
+			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
 
 
 func _update_locomotion_block() -> void:
@@ -269,9 +271,15 @@ func _update_locomotion_block() -> void:
 				  or (is_instance_valid(secondary) and secondary.tracker == &"left_hand")
 	var right_held := (is_instance_valid(_holding_ctrl) and _holding_ctrl.tracker == &"right_hand") \
 				   or (is_instance_valid(secondary) and secondary.tracker == &"right_hand")
+	var desktop_claim := _desktop_held and _host != null and bool(_host.get("is_powered_on"))
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_LEFT, left_held)
 		_locomotion_manager.set_block(&"handheld_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
+	# Desktop has no hands, so the tracker tests above never fire there. The
+	# desktop providers poll the InputMap, so blocking them is the only way to
+	# stop WASD reaching the player while this device is claiming it.
+		_locomotion_manager.set_block(_desktop_block_owner(),
+			LocomotionManager.CHANNEL_DESKTOP_MOVE, desktop_claim)
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
 
@@ -483,3 +491,10 @@ func _apply_rumble() -> void:
 		for device in Input.get_connected_joypads():
 			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
 		_pad_rumble_active = true
+
+
+## Per-instance owner for the desktop channel. Several objects share the
+## "handheld_hold" key on the VR channels, so whichever updated last would otherwise
+## clear a block another object still wants.
+func _desktop_block_owner() -> StringName:
+	return StringName("desktop_hold_%d" % get_instance_id())

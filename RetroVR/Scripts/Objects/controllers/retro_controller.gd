@@ -330,9 +330,15 @@ func _update_locomotion_block() -> void:
 				  or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"left_hand")
 	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
 				   or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"right_hand")
+	var desktop_claim := _desktop_held and _connected_system != null and _port_index >= 0
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
+	# Desktop has no hands, so the tracker tests above never fire there. The
+	# desktop providers poll the InputMap, so blocking them is the only way to
+	# stop WASD reaching the player while this device is claiming it.
+		_locomotion_manager.set_block(_desktop_block_owner(),
+			LocomotionManager.CHANNEL_DESKTOP_MOVE, desktop_claim)
 	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
 		_spawn_menu_ctrl.set("disabled", left_held)
 
@@ -417,6 +423,8 @@ func _exit_tree() -> void:
 	if _locomotion_manager != null:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
+		_locomotion_manager.set_block(_desktop_block_owner(),
+			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
 	_allow_drop = true
 	super._exit_tree()
 
@@ -682,3 +690,10 @@ static func _threshold_to_dpad(stick: Vector2) -> int:
 	if stick.x < -DPAD_THRESHOLD: bits |= (1 << 6)
 	if stick.x >  DPAD_THRESHOLD: bits |= (1 << 7)
 	return bits
+
+
+## Per-instance owner for the desktop channel. Several objects share the
+## "retro_hold" key on the VR channels, so whichever updated last would otherwise
+## clear a block another object still wants.
+func _desktop_block_owner() -> StringName:
+	return StringName("desktop_hold_%d" % get_instance_id())
