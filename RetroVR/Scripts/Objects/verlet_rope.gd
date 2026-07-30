@@ -52,14 +52,25 @@ extends MeshInstance3D
 ## Tube radius for rendering
 @export var tube_radius: float = 0.005
 
-## Number of radial segments for the tube cross-section
-@export var tube_sides: int = 4
+## Number of radial segments for the tube cross-section.
+##
+## Lighting here is FLAT per facet — cable.gdshader derives its normal from
+## screen-space derivatives, because the tube has no normal array to interpolate
+## and adding one would cost the per-frame surface_update_vertex_region fast path.
+## Flat shading makes every facet a constant-shaded band, so a low count reads as
+## a visibly pixellated prism rather than a cord. Sides are cheap (verts only, no
+## extra draw call), so spend them here.
+@export var tube_sides: int = 8
 
 ## Extra Catmull-Rom-interpolated rings per segment (0 = render sim points only).
 @export_range(0, 3) var smoothing: int = 0
 
 ## Rope color
-@export var rope_color: Color = Color(0.15, 0.15, 0.15, 1.0)
+@export var rope_color: Color = Color(0.15, 0.15, 0.15, 1.0):
+	set(v):
+		rope_color = v
+		if _material != null:
+			_material.set_shader_parameter("cable_color", v)
 
 @export_group("Collision")
 ## Collision mask for rope-vs-world collision (1+2 = floor/room/table, 4 = pickables like TVs)
@@ -144,7 +155,7 @@ var _stuck_passes: PackedByteArray = []
 var start_node: Node3D = null
 var end_node: Node3D = null
 
-var _material: StandardMaterial3D
+var _material: ShaderMaterial
 
 # Pre-cached trig tables (rebuilt when tube_sides changes)
 var _cos_table: PackedFloat32Array
@@ -154,6 +165,17 @@ var _sin_table: PackedFloat32Array
 var _ring_points: PackedVector3Array
 var _vertex_array: PackedVector3Array
 var _index_array: PackedInt32Array
+## Per-vertex normal, shipped as a CUSTOM0 attribute.
+##
+## The tube cannot use ARRAY_NORMAL: positions are re-uploaded every frame through
+## surface_update_vertex_region, and normals share that same vertex buffer, so
+## adding them means rebuilding the whole surface each frame — a GPU buffer
+## reallocation per rope per frame, which is exactly what this design avoids.
+## Custom attributes live in the ATTRIBUTE buffer instead, which has its own
+## region-update call, so the normal rides along for one extra bulk upload.
+##
+## RGBA_FLOAT rather than RGB_FLOAT: 16-byte alignment, w unused.
+var _normal_array: PackedFloat32Array
 
 # Raycast throttle counter
 var _raycast_frame: int = 0
@@ -166,7 +188,13 @@ var _raycast_frame: int = 0
 # sleeping rope won't wake it (anchors drive every real interaction here).
 const SLEEP_FRAMES := 30
 const SLEEP_POINT_EPS_SQ := 0.0015 * 0.0015   # per-tick particle movement²
+const CABLE_SHADER := preload("res://Shaders/cable.gdshader")
+
 const WAKE_ANCHOR_EPS_SQ := 0.0005 * 0.0005   # anchor movement² that wakes
+## Render-time anchor movement² that forces a re-mesh between physics ticks.
+## Tighter than the wake threshold: this only costs a tube rebuild, whereas
+## waking costs a full solve, so it can afford to notice smaller motion.
+const RENDER_FOLLOW_EPS_SQ := 0.0001 * 0.0001
 var _asleep: bool = false
 var _still_frames: int = 0
 var _sleep_anchor_start: Vector3 = Vector3.ZERO
@@ -186,9 +214,13 @@ var _end_body: RigidBody3D = null
 
 
 func _ready() -> void:
-	_material = StandardMaterial3D.new()
-	_material.albedo_color = rope_color
-	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	# Lit PVC jacket. Was SHADING_MODE_UNSHADED, which is why a cable read as a
+	# flat silhouette — it took no light at all. cable.gdshader derives its normal
+	# from screen-space derivatives because this mesh has no normal array, and
+	# adding one would cost the per-frame surface_update_vertex_region fast path.
+	_material = ShaderMaterial.new()
+	_material.shader = CABLE_SHADER
+	_material.set_shader_parameter("cable_color", rope_color)
 	top_level = true
 	global_transform = Transform3D.IDENTITY
 
@@ -233,6 +265,8 @@ func _build_mesh_topology() -> void:
 	_ring_points.resize(ring_count)
 	_vertex_array = PackedVector3Array()
 	_vertex_array.resize(ring_count * tube_sides)
+	_normal_array = PackedFloat32Array()
+	_normal_array.resize(ring_count * tube_sides * 4)
 
 	# Index buffer — topology never changes, built once
 	_index_array = PackedInt32Array()
@@ -252,9 +286,15 @@ func _build_mesh_topology() -> void:
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = _vertex_array
 	arrays[Mesh.ARRAY_INDEX]  = _index_array
+	# PackedFloat32Array, NOT bytes: the *_FLOAT custom formats are validated as
+	# PACKED_FLOAT32_ARRAY here and the surface silently fails to build otherwise.
+	# (surface_update_attribute_region below does want bytes.)
+	arrays[Mesh.ARRAY_CUSTOM0] = _normal_array
 
 	mesh = ArrayMesh.new()
-	(mesh as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var fmt: int = Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	(mesh as ArrayMesh).add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, fmt)
 	(mesh as ArrayMesh).surface_set_material(0, _material)
 
 
@@ -361,6 +401,17 @@ func wake() -> void:
 ## anchor's local exit offset (see start_anchor_offset / end_anchor_offset).
 func _anchor_point(node: Node3D, offset: Vector3, fallback: Vector3) -> Vector3:
 	return (node.global_transform * offset) if node else fallback
+
+
+## Same point, but where the anchor is actually being DRAWN this frame.
+##
+## project.godot has physics_interpolation on, so a RigidBody3D plug renders at a
+## transform lerped between its last two physics states — not at global_transform.
+## Building the tube from global_transform therefore puts the cord end somewhere
+## the plug visibly is not. Returns global_transform unchanged when interpolation
+## is off, so this is safe either way.
+func _anchor_point_rendered(node: Node3D, offset: Vector3, fallback: Vector3) -> Vector3:
+	return (node.get_global_transform_interpolated() * offset) if node else fallback
 
 
 ## True when either anchor has moved since the rope went to sleep.
@@ -899,9 +950,43 @@ func _align_anchor_plug(node: Node3D, target_dir: Vector3, k: float) -> void:
 # ── Rendering ───────────────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
-	if _points.size() >= 2 and _mesh_dirty:
+	var count := _points.size()
+	if count < 2:
+		return
+
+	# Follow the anchors at RENDER rate, not physics rate.
+	#
+	# The tube is only marked dirty by a physics tick, so between ticks it held
+	# perfectly still while the plug — a RigidBody3D, drawn interpolated between
+	# physics states — kept moving. Carrying a plug therefore left the cord
+	# visibly trailing it, worst at hand speed and on a 72 Hz headset against
+	# 60 Hz physics.
+	#
+	# Only the two END points are overridden, and they are restored immediately
+	# after meshing, so the simulation state is untouched and no drift can
+	# accumulate. Stretching the last segment by a sub-tick's worth of motion is
+	# invisible; the whole cord lagging was not.
+	var last := count - 1
+	var saved_start := _points[0]
+	var saved_end := _points[last]
+	var moved := false
+	if start_node:
+		var ps := _anchor_point_rendered(start_node, start_anchor_offset, saved_start)
+		if ps.distance_squared_to(saved_start) > RENDER_FOLLOW_EPS_SQ:
+			_points[0] = ps
+			moved = true
+	if end_node:
+		var pe := _anchor_point_rendered(end_node, end_anchor_offset, saved_end)
+		if pe.distance_squared_to(saved_end) > RENDER_FOLLOW_EPS_SQ:
+			_points[last] = pe
+			moved = true
+
+	if _mesh_dirty or moved:
 		_render_tube()
 		_mesh_dirty = false
+
+	_points[0] = saved_start
+	_points[last] = saved_end
 
 
 ## Fill _ring_points from the sim points — straight copy, or Catmull-Rom
@@ -975,10 +1060,19 @@ func _render_tube() -> void:
 		var side := sides[i]
 		var up   := ups[i]
 		for j in tube_sides:
-			_vertex_array[base + j] = _ring_points[i] + (side * _cos_table[j] + up * _sin_table[j]) * tube_radius
+			var radial := side * _cos_table[j] + up * _sin_table[j]
+			_vertex_array[base + j] = _ring_points[i] + radial * tube_radius
+			var n4 := (base + j) * 4
+			_normal_array[n4]     = radial.x
+			_normal_array[n4 + 1] = radial.y
+			_normal_array[n4 + 2] = radial.z
 
-	# Single bulk upload to GPU
+	# Two bulk uploads: positions to the vertex buffer, smooth normals to the
+	# attribute buffer. Without the second the shader had to fall back on
+	# screen-space derivatives, which shade each facet FLAT — a 12-sided tube then
+	# reads as a visibly banded prism rather than a cord.
 	(mesh as ArrayMesh).surface_update_vertex_region(0, 0, _vertex_array.to_byte_array())
+	(mesh as ArrayMesh).surface_update_attribute_region(0, 0, _normal_array.to_byte_array())
 
 	# Keep culling bounds in sync — surface_update_vertex_region() does NOT
 	# recompute the mesh AABB (it stays a zero-size box at the origin), and this
