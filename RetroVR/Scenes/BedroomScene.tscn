@@ -1,4 +1,4 @@
-[gd_scene load_steps=128 format=3]
+[gd_scene load_steps=129 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -32,6 +32,7 @@
 [ext_resource type="Script" path="res://Scripts/Objects/glow_mesh.gd" id="35_glow"]
 [ext_resource type="Script" path="res://Scripts/Objects/string_lights.gd" id="36_strlights"]
 [ext_resource type="Script" path="res://Scripts/Objects/bead_pull_cord.gd" id="48_pullcord"]
+[ext_resource type="Script" path="res://Scripts/Objects/window_blinds.gd" id="49_blinds"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
@@ -903,6 +904,35 @@ script = ExtResource("48_pullcord")
 cord_length = 0.16
 light_path = NodePath("../../DeskLampLight")
 
+; Vinyl mini blinds in the window opening (x -1.65..-0.15, y 0.85..2.05). 1.44
+; wide leaves 3 cm clearance each side; 1.18 drop covers the 1.2 m opening.
+; z -2.06 sits them inside the casing, which stands proud to -2.025.
+;
+; 48 slats in ONE MultiMesh. They STACK as they rise — the pitch between them
+; collapses rather than the assembly sliding — which is what a cord-and-ladder
+; blind actually does.
+[node name="Blinds" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, 2.05, -2.06)
+script = ExtResource("49_blinds")
+width = 1.44
+height = 1.18
+sun_path = NodePath("../../WindowSun")
+sun_energy = 3.6
+drop = 0.25
+
+; The blind cord. Same BeadPullCord as the lamps, but beads off — a blind cord is
+; a flat string, not a ball chain — and no light_path, so it drives only the
+; blinds. Longer than the lamp cords because a blind cord hangs to reach.
+[node name="BlindCord" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.235, 2.02, -2.055)
+script = ExtResource("48_pullcord")
+beads = false
+cord_radius = 0.0026
+cord_length = 0.46
+segments = 12
+yank = 0.07
+bead_color = Color(0.9, 0.88, 0.82, 1)
+
 [node name="FanPivot" type="Node3D" parent="Furniture"]
 script = ExtResource("35_glow")
 glow_meshes = PackedStringArray("defaultMaterial4")
@@ -1349,6 +1379,23 @@ omni_range = 7.0
 ; energy authored here — they are the two lights that actually rake the walls and
 ; make the orange-peel normal map read. Each sits inside its lamp's shade: the
 ; lamp is 0.415 m tall from whatever it stands on, and the shade is its top third.
+; Golden-hour sun through the window. See the note in this file's history: this is
+; a SpotLight3D rather than a DirectionalLight because shadows are OFF on Quest,
+; so a directional sun lights the room through its walls. The cone does the
+; occluding a shadow map would normally do — at the window plane it is 1.27 m
+; across against a 1.5 x 1.2 m opening, so nothing spills onto the wall around it.
+;
+; Energy is owned by the blinds, which scale it by how far they are open. The
+; authored 3.0 is what shows with them fully raised.
+[node name="WindowSun" type="SpotLight3D" parent="." groups=["no_shadow"]]
+transform = Transform3D(-0.991, -0.057, 0.116, 0, 0.895, 0.444, -0.129, 0.44, -0.888, -0.6, 2.6, -4.5)
+light_color = Color(1, 0.83, 0.62, 1)
+light_energy = 3.6
+light_cull_mask = 1
+spot_range = 12.0
+spot_angle = 11.0
+spot_angle_attenuation = 0.55
+
 [node name="BedsideLampLight" type="OmniLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.754, 0.95, -1.925)
 light_color = Color(1, 0.78, 0.5, 1)
@@ -1360,3 +1407,5 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 1.08, -1.78)
 light_color = Color(1, 0.82, 0.58, 1)
 light_energy = 1.0
 omni_range = 3.0
+
+[connection signal="pulled" from="Furniture/BlindCord" to="Furniture/Blinds" method="_on_cord_pulled"]

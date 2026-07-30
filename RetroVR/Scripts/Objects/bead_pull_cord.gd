@@ -41,6 +41,12 @@ signal pulled(on: bool)
 
 @export var cord_length: float = 0.2
 @export var segments: int = 9
+## Draw beads, or leave the rope's own tube as a plain cord. A lamp switch is a
+## ball chain; a blind cord is a flat string, and drawing beads on one reads wrong.
+@export var beads: bool = true
+## Tube radius used when `beads` is false.
+@export var cord_radius: float = 0.0022
+
 @export var bead_count: int = 26
 @export var bead_radius: float = 0.0055
 @export var bead_color: Color = Color(0.72, 0.68, 0.44)
@@ -73,7 +79,8 @@ func _ready() -> void:
 	if not light_path.is_empty():
 		light = get_node_or_null(light_path) as Light3D
 	_build_rope()
-	_build_beads()
+	if beads:
+		_build_beads()
 	_build_button()
 	_build_sfx()
 	_apply()
@@ -104,7 +111,7 @@ func _build_rope() -> void:
 	_rope.bend_stiffness = 0.0
 	_rope.constraint_iterations = 6
 	_rope.damping = 0.06
-	_rope.tube_radius = 0.0016
+	_rope.tube_radius = 0.0016 if beads else cord_radius
 	_rope.tube_sides = 3
 	# start_node pins the head to this node; end_node stays NULL so the tail is
 	# free, which is what makes it a pull cord rather than a slung cable.
@@ -187,7 +194,8 @@ func _process(_delta: float) -> void:
 	if pts.size() < 2:
 		return
 	_tail = pts[pts.size() - 1]
-	_place_beads(pts)
+	if _beads != null:
+		_place_beads(pts)
 	# The grab zone rides the tail, so it is always where the handle actually is.
 	_button.global_position = _tail
 
