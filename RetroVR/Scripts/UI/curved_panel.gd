@@ -70,6 +70,11 @@ var _drag_size := Vector2.ZERO
 ## Scratch resources so the addon's setter has something it can write to.
 var _scratch_mesh := QuadMesh.new()
 var _scratch_shape := BoxShape3D.new()
+## The real geometry, reused across rebuilds. A curve step runs every frame of
+## the tween, and allocating a fresh ArrayMesh and re-cooking a trimesh each time
+## is what made the toggle stutter.
+var _arc_mesh := ArrayMesh.new()
+var _arc_shape := ConcavePolygonShape3D.new()
 
 ## Arc length past the screen edge, and the spacing between the two buttons.
 const BTN_GAP := 0.035
@@ -133,7 +138,11 @@ func _arc_point(s: float, y: float) -> Vector3:
 	return Vector3(r * sin(theta), y, r * (1.0 - cos(theta)))
 
 
-func _rebuild() -> void:
+## `update_collision` off skips re-cooking the trimesh — the expensive half. Used
+## for the frames of the curve tween, where nothing can be clicked anyway; the
+## tween's finished callback does one full rebuild to put the collider back in
+## step with the mesh.
+func _rebuild(update_collision := true) -> void:
 	if _screen == null:
 		return
 	var hw := _screen_size.x * 0.5
@@ -180,23 +189,28 @@ func _rebuild() -> void:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = idx
 
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	# Refill the same ArrayMesh rather than making a new one: the material
+	# override and the MeshInstance's own RID then survive untouched, so a curve
+	# step costs a buffer upload instead of a resource swap.
 	var mat := _screen.get_surface_override_material(0)
-	if mat == null and _screen.mesh != null:
+	if mat == null and _screen.mesh != null and _screen.mesh != _arc_mesh:
 		mat = _screen.mesh.surface_get_material(0)
-	_screen.mesh = mesh
+	_arc_mesh.clear_surfaces()
+	_arc_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	if _screen.mesh != _arc_mesh:
+		_screen.mesh = _arc_mesh
 	if mat:
 		_screen.set_surface_override_material(0, mat)
 
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(tris)
-	# A trimesh is single-sided by default, so a ray from the wrong side passes
-	# straight through and the panel silently stops taking clicks — which is
-	# exactly what happened when this replaced the BoxShape. The winding above is
-	# correct now, but this makes a future slip cosmetic instead of fatal.
-	shape.backface_collision = true
-	_collision.shape = shape
+	if update_collision:
+		_arc_shape.set_faces(tris)
+		# A trimesh is single-sided by default, so a ray from the wrong side
+		# passes straight through and the panel silently stops taking clicks —
+		# exactly what happened when this replaced the BoxShape. The winding above
+		# is correct now, but this makes a future slip cosmetic, not fatal.
+		_arc_shape.backface_collision = true
+		if _collision.shape != _arc_shape:
+			_collision.shape = _arc_shape
 
 	_place_buttons()
 	_place_grip()
@@ -229,6 +243,28 @@ func is_curved() -> bool:
 ## as one surface rather than two — takes this minus its own standoff.
 func axis_radius() -> float:
 	return 0.0 if _curve <= 0.001 else curve_radius / _curve
+
+
+## Run `mutate` — anything that writes the panel's screen_size or viewport_size —
+## with plain QuadMesh/BoxShape geometry in place, then restore the arc.
+##
+## Not optional. viewport_2d_in_3d._update_screen_size does, in order:
+##     $Screen.mesh.size = screen_size
+##     $StaticBody3D.screen_size = screen_size
+##     $StaticBody3D/CollisionShape3D.shape.size = ...
+## An ArrayMesh has no `size`, so against live geometry the first line raises
+## "Invalid assignment of property 'size' ... on ArrayMesh" and GDScript abandons
+## the function — leaving the body's screen_size stale, which is what the addon's
+## hit mapping reads. The visible symptom is an error storm; the quiet one is a
+## panel whose clicks land in the wrong place.
+func with_flat_geometry(mutate: Callable) -> void:
+	if _screen == null or _collision == null:
+		mutate.call()
+		return
+	_screen.mesh = _scratch_mesh
+	_collision.shape = _scratch_shape
+	mutate.call()
+	resync()
 
 
 ## Re-read the panel's screen_size and rebuild. Needed after anything that goes
@@ -298,11 +334,12 @@ func set_curved(on: bool, animate := true) -> void:
 	_tween = create_tween()
 	_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_tween.tween_method(_set_curve_step, _curve, target, animate_seconds)
+	_tween.finished.connect(_rebuild.bind(true))
 
 
 func _set_curve_step(v: float) -> void:
 	_curve = v
-	_rebuild()
+	_rebuild(false)
 
 
 func _refresh_buttons() -> void:
@@ -506,16 +543,9 @@ func _pointer_on_plane(pointer: Node3D) -> Vector3:
 	return origin + dir * t
 
 
-## Resize without tripping the addon's setter, which writes mesh.size and
-## shape.size — neither of which exists on the arc mesh or its trimesh. Hand it a
-## QuadMesh and a BoxShape to scribble on, let it update its own bookkeeping
-## (including the body's screen_size, which the pointer mapping reads), then put
-## the real geometry back.
+## Resize, via with_flat_geometry so the addon's setter has a QuadMesh and a
+## BoxShape to write through.
 func _apply_screen_size(new_size: Vector2) -> void:
 	if new_size.is_equal_approx(_screen_size):
 		return
-	_screen_size = new_size
-	_screen.mesh = _scratch_mesh
-	_collision.shape = _scratch_shape
-	_panel.set("screen_size", new_size)
-	_rebuild()
+	with_flat_geometry(func() -> void: _panel.set("screen_size", new_size))

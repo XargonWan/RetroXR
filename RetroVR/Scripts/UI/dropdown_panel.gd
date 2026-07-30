@@ -55,8 +55,17 @@ func show_for(host: XRToolsViewport2DIn3D, toggle_rect: Rect2, options: Array,
 	var px_w := maxf(maxf(toggle_rect.size.x, MIN_PANEL_PX_W), want.x)
 	var px_h := minf(want.y, MAX_PANEL_PX_H)
 
-	_viewport.viewport_size = Vector2(px_w, px_h)
-	_viewport.screen_size = Vector2(px_w * _m_per_px, px_h * _m_per_px)
+	# Through with_flat_geometry: writing screen_size runs the addon's setter,
+	# which assigns mesh.size — a property the arc's ArrayMesh does not have. Done
+	# directly it throws on every open and, worse, aborts the setter before it
+	# reaches the body's own screen_size, which is what maps a hit to a pixel.
+	var resize := func() -> void:
+		_viewport.viewport_size = Vector2(px_w, px_h)
+		_viewport.screen_size = Vector2(px_w * _m_per_px, px_h * _m_per_px)
+	if _curve != null:
+		_curve.with_flat_geometry(resize)
+	else:
+		resize.call()
 
 	ui.set_options(options, current_id, font, 22, columns)
 
@@ -66,11 +75,6 @@ func show_for(host: XRToolsViewport2DIn3D, toggle_rect: Rect2, options: Array,
 		_host_curve.curve_changed.connect(_follow_host)
 	visible = true
 	_follow_host()
-	# After _follow_host, which rebuilt against the previous size: the
-	# viewport_size/screen_size writes above went through the addon's setter,
-	# which swaps the arc back out for a QuadMesh.
-	if _curve != null:
-		_curve.resync()
 
 
 ## Sit on the host's cylinder and bend to match it. Connected to the host's
