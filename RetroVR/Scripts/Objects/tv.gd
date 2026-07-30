@@ -134,6 +134,12 @@ var _snapped_plug: CablePlug = null
 var _connected_system: Node3D = null
 var _volume: float = 1.0       # 0.0–1.0, default 100%
 var _tv_enabled: bool = true
+
+## The set's own mechanical noise — flyback whine plus switch transients, through
+## SpatialAudioEmitter. Deliberately NOT routed through _effective_volume(): the
+## whine is radiated by the transformer, not the speaker, so the volume knob and
+## MUTE do not touch it. Only power does, which is how a real set behaves.
+var _crt_hum: CrtHum = null
 # Mute: silences the connected device's audio without changing _volume. A sticky
 # "MUTE" OSD stays up until mute is toggled off or a volume key is pressed.
 var _muted: bool = false
@@ -159,6 +165,7 @@ func _ready() -> void:
 	# Before anything reads the screen mesh or the buttons — _screen_size_m below
 	# is derived from ScreenMesh, and a shell may have moved and rescaled it.
 	_load_shell()
+	_build_crt_hum()
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
@@ -1134,6 +1141,16 @@ func is_muted() -> bool:
 	return _muted
 
 
+## Give the set its idle hum. Starts WITHOUT the power-on transient — the TV is
+## authored on, and a scene that thunked a degauss at the player as they walked in
+## would be announcing something nobody did.
+func _build_crt_hum() -> void:
+	_crt_hum = CrtHum.new()
+	_crt_hum.name = "CrtHum"
+	add_child(_crt_hum)
+	_crt_hum.set_powered(_tv_enabled, false)
+
+
 ## The volume actually sent to the connected device: silence while off or muted.
 func _effective_volume() -> float:
 	return 0.0 if (not _tv_enabled or _muted) else _volume
@@ -1192,6 +1209,8 @@ func _on_mute_toggle() -> void:
 
 func _on_tv_toggle() -> void:
 	_tv_enabled = not _tv_enabled
+	if _crt_hum != null:
+		_crt_hum.set_powered(_tv_enabled)
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0) if _tv_enabled else Color(1.0, 0.1, 0.1))
 	if _tv_enabled:
 		_play_power_on_anim()

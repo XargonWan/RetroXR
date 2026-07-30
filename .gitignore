@@ -80,3 +80,7 @@ metaxr-audio-godot/Temp/
 # Output of RetroVR/Tools/bedroom_probe.tscn — renders, never source.
 RetroVR/probe_out/
 *.mp4
+
+# Audio .import files carry compress/mode=0 — QOA-compressed clips cannot be
+# decoded to PCM frames for the Meta XR emitter, so the setting must ship.
+!RetroVR/Audio/**/*.import
