@@ -4633,6 +4633,7 @@ func _build_about_view() -> Control:
 		["Systematic icon set", "BAXY Square — github.com/baxysquare", "MIT"],
 		["Input Prompts", "Kenney — kenney.nl", "CC0 1.0"],
 		["Touch controller model", "immersive-web/webxr-input-profiles", "MIT"],
+		["Lamp chain switch (audio)", "ftpalad — freesound.org", "CC0 1.0"],
 	]
 	for entry: Array in ART:
 		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)

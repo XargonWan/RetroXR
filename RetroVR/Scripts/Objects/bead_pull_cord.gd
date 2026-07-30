@@ -53,6 +53,13 @@ signal pulled(on: bool)
 
 const _SIM_SEGMENTS_MIN := 4
 
+## The switch click. ONE clip for both directions on purpose: a pull-chain switch
+## is the same detent going over centre either way, so it genuinely sounds the
+## same turning on as off.
+const PULL_CLIP := "res://Audio/lamp/chain_pull.wav"
+
+var _sfx: PcmOneShot = null
+var _pull_frames: PackedVector2Array = []
 var _rope: VerletRope = null
 var _beads: MultiMeshInstance3D = null
 var _button: VRButton = null
@@ -68,7 +75,20 @@ func _ready() -> void:
 	_build_rope()
 	_build_beads()
 	_build_button()
+	_build_sfx()
 	_apply()
+
+
+func _build_sfx() -> void:
+	_pull_frames = PcmClip.load_frames(PULL_CLIP)
+	_sfx = PcmOneShot.new()
+	_sfx.name = "PullSfx"
+	# Closer and quieter than the CRT hum: a click is a small, local event, and
+	# the cord is something you have to be within arm's reach of to pull anyway.
+	_sfx.unit_size = 0.6
+	_sfx.max_distance = 3.0
+	_sfx.volume = 0.5
+	add_child(_sfx)
 
 
 func _build_rope() -> void:
@@ -191,6 +211,8 @@ func _on_pulled() -> void:
 	# simulated, not keyframed.
 	if _rope != null:
 		_rope.nudge_point(_rope.get_points().size() - 1, Vector3(0.0, -yank, 0.0))
+	if _sfx != null:
+		_sfx.play(_pull_frames)
 	lit = not lit
 	_apply()
 	pulled.emit(lit)

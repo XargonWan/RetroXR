@@ -1,0 +1,50 @@
+Audio assets — provenance and licences.
+
+
+=== CC0 — no attribution required, given anyway =================================
+
+lamp/chain_pull.wav
+    Cut from "Light Switch Chain.aif" by ftpalad — Freesound
+    https://freesound.org/people/ftpalad/sounds/119924/
+    CC0 1.0 (public domain). Original is 3.90 s, 48 kHz, 24-bit stereo — though
+    the two channels are identical (L/R correlation 1.000), so it is flattened to
+    mono with no loss.
+
+    The 0.44-1.05 s region: the switch snapping over centre plus the chain
+    recoiling afterwards. ONE clip serves both directions, because a pull-chain
+    switch is the same detent going over centre either way and genuinely sounds
+    the same on as off.
+
+    Normalised x5.1 to peak 0.600 — the source peaks at only 0.118. That lifts
+    the noise floor with it, from -62 dBFS to roughly 44 dB below the clip's own
+    peak, which is inaudible at the level this plays at. A 3 ms fade at each end
+    stops the cut boundary clicking.
+
+    Rejected from the same take: the 2.36-2.98 s region, cut as a separate,
+    softer "off". It needed x12.9 to match level, which would have lifted its
+    hiss 8 dB more than the on's, and the mechanism does not actually sound
+    different in the two directions anyway.
+
+
+=== Generated — no licence attaches =============================================
+
+crt/crt_idle.wav, crt/crt_power_on.wav, crt/crt_power_off.wav
+    Synthesised by Tools/gen_crt_hum.py from the physics of a CRT set: flyback
+    whine at the 15734.264 Hz NTSC line rate, transformer buzz at twice mains,
+    broadband hiss, and a degauss thunk at switch-on. Not sampled — every "CRT
+    hum" recording found was unbundled, personal-use-only (BBC RemArc), or
+    behind a login with per-file terms.
+
+    The idle loop is exactly periodic by construction, so it wraps seamlessly
+    with no crossfade. The transients are built from the same recipe as the loop
+    they hand off to, so the tail of the power-on matches the loop's RMS to
+    within 0.2%.
+
+
+=== Import settings are load-bearing ============================================
+
+Every .wav here MUST import with compress/mode=0 (uncompressed PCM). The
+importer defaults to QOA, and SpatialAudioEmitter is PCM-push only — PcmClip
+decodes to raw frames and refuses anything compressed, so a QOA clip loads as
+ZERO frames and plays silence. .gitignore carries an exception so these .import
+files ship.
