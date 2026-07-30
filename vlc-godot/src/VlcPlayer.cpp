@@ -466,6 +466,29 @@ void VlcPlayer::cb_audio_flush(void *data, int64_t pts)
     self->m_audio_head = 0;
     self->m_audio_tail = 0;
     self->m_audio_count = 0;
+    // A seek or track change restarts the fill, so re-prime rather than serving
+    // the first trickle immediately and running the backlog up from empty.
+    self->m_audio_primed = false;
+}
+
+int VlcPlayer::get_audio_backlog_ms() const
+{
+    std::lock_guard<std::mutex> lock(m_audio_mutex);
+    if (m_audio_channels < 1 || m_audio_rate < 1)
+        return 0;
+    return (int)((m_audio_count / (size_t)m_audio_channels) * 1000 / (size_t)m_audio_rate);
+}
+
+int VlcPlayer::get_audio_target_latency_ms() const
+{
+    std::lock_guard<std::mutex> lock(m_audio_mutex);
+    return m_audio_target_ms;
+}
+
+void VlcPlayer::set_audio_target_latency_ms(int ms)
+{
+    std::lock_guard<std::mutex> lock(m_audio_mutex);
+    m_audio_target_ms = std::clamp(ms, 0, 1000);
 }
 
 PackedVector2Array VlcPlayer::read_audio(int max_frames)
@@ -479,6 +502,36 @@ PackedVector2Array VlcPlayer::read_audio(int max_frames)
     if (cap == 0)
         return out;
     int frames_avail = (int)(m_audio_count / (size_t)ch);
+
+    // Hold the backlog at a known depth.
+    //
+    // Nothing here reads libVLC's presentation timestamps, so this ring's
+    // occupancy IS the audio latency. VLC decodes at the media's own rate and the
+    // consumer can never take more than realtime, which makes the depth a one-way
+    // ratchet: every hitch -- startup, a scene load, a long frame -- pushes audio
+    // further behind picture and nothing ever gives it back. Left alone it settles
+    // wherever the worst stall of the session left it, which is why the same build
+    // can run audio late on one device and early on another.
+    //
+    // So prime to the target before serving anything, and discard the oldest
+    // excess whenever we drift past it. The result is a fixed offset instead of an
+    // accumulating one -- and being fixed, it can then be dialled against the
+    // video path's own latency via set_audio_target_latency_ms().
+    const int target = std::max(0, m_audio_target_ms) * m_audio_rate / 1000;
+    if (!m_audio_primed)
+    {
+        if (frames_avail < target)
+            return out;
+        m_audio_primed = true;
+    }
+    else if (frames_avail > target + (m_audio_rate / 20))   // 50 ms of slack
+    {
+        const size_t drop = (size_t)(frames_avail - target) * (size_t)ch;
+        m_audio_head = (m_audio_head + drop) % cap;
+        m_audio_count -= drop;
+        frames_avail = target;
+    }
+
     int frames = std::min(max_frames, frames_avail);
     if (frames <= 0)
         return out;
@@ -608,6 +661,9 @@ void VlcPlayer::_bind_methods()
     ClassDB::bind_method(D_METHOD("get_audio_rate"), &VlcPlayer::get_audio_rate);
     ClassDB::bind_method(D_METHOD("get_audio_channels"), &VlcPlayer::get_audio_channels);
     ClassDB::bind_method(D_METHOD("read_audio", "max_frames"), &VlcPlayer::read_audio);
+    ClassDB::bind_method(D_METHOD("get_audio_backlog_ms"), &VlcPlayer::get_audio_backlog_ms);
+    ClassDB::bind_method(D_METHOD("get_audio_target_latency_ms"), &VlcPlayer::get_audio_target_latency_ms);
+    ClassDB::bind_method(D_METHOD("set_audio_target_latency_ms", "ms"), &VlcPlayer::set_audio_target_latency_ms);
 
     ClassDB::bind_method(D_METHOD("get_audio_tracks"), &VlcPlayer::get_audio_tracks);
     ClassDB::bind_method(D_METHOD("get_audio_track"), &VlcPlayer::get_audio_track);

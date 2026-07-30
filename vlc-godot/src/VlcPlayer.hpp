@@ -88,6 +88,16 @@ public:
     // Pop up to max_frames stereo frames (L,R in -1..1); returns what was ready.
     godot::PackedVector2Array read_audio(int max_frames);
 
+    // How far behind the decoder the playback currently is, in milliseconds --
+    // i.e. the audio latency this ring is contributing. Diagnostic.
+    int get_audio_backlog_ms() const;
+    // Backlog the ring holds to, in milliseconds. Playback primes to this before
+    // the first frame is served and is trimmed back to it if it ever exceeds it,
+    // which is what keeps the latency fixed instead of drifting; see read_audio.
+    // Raise it to hold the audio back against a slower video path.
+    int get_audio_target_latency_ms() const;
+    void set_audio_target_latency_ms(int ms);
+
     // Audio-track + subtitle (spu) selection for the options panel. Each entry is
     // { "id": int, "name": String }; id -1 disables (subtitles off).
     godot::Array get_audio_tracks() const;
@@ -140,5 +150,9 @@ private:
     size_t m_audio_count = 0;
     int m_audio_rate = 48000;
     int m_audio_channels = 2;
+    // Target steady-state backlog, and whether we have reached it since the last
+    // flush. Both are read under m_audio_mutex.
+    int m_audio_target_ms = 60;
+    bool m_audio_primed = false;
 };
 } // namespace Xenu
