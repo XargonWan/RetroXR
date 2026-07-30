@@ -54,7 +54,15 @@ func show_for(host: XRToolsViewport2DIn3D, toggle_rect: Rect2, options: Array,
 
 	ui.set_options(options, current_id, font, 22, columns)
 
-	position = _local_for(host, toggle_rect, px_w, px_h)
+	# On a curved host the screen bows toward the viewer — up to ~11 cm at the
+	# edges, far more than Z_OFFSET — so a flat offset leaves the card buried in
+	# the menu it is meant to float over. Ride the arc instead, and face along it.
+	var flat := _local_for(host, toggle_rect, px_w, px_h)
+	var curved := host.get_node_or_null("CurvedPanel")
+	if curved != null and curved.has_method("surface_pose"):
+		transform = curved.surface_pose(flat.x, flat.y, Z_OFFSET)
+	else:
+		position = flat
 	visible = true
 
 

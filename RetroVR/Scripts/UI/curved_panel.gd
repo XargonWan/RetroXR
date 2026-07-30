@@ -189,6 +189,27 @@ func _rebuild() -> void:
 	_place_grip()
 
 
+## Where something sitting `out` metres off the screen should go, for a point
+## given in FLAT panel-local coordinates (x measured along the surface, y up).
+## Anything parented to the panel that is not part of its texture — the toggle
+## icons, the resize grip, a DropdownPanel popout — has to be placed through this
+## or it ends up buried in the screen wherever the arc bows toward the viewer.
+func surface_pose(flat_x: float, y: float, out: float) -> Transform3D:
+	if _curve <= 0.001:
+		return Transform3D(Basis.IDENTITY, Vector3(flat_x, y, out))
+	var r := curve_radius / _curve
+	var theta := flat_x / r
+	# Outward normal at this point on the arc, i.e. back toward the viewer.
+	var n := Vector3(-sin(theta), 0.0, cos(theta))
+	var basis := Basis(Vector3.UP, -theta)
+	return Transform3D(basis, _arc_point(flat_x, y) + n * out)
+
+
+## True while the screen is bent enough for surface_pose to matter.
+func is_curved() -> bool:
+	return _curve > 0.001
+
+
 # ── Pointer remap ─────────────────────────────────────────────────────────────
 
 func _intercept_pointer() -> void:
