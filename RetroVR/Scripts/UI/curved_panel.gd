@@ -49,6 +49,10 @@ var _screen_size := Vector2(1.1, 0.75)
 var _btn_flat: VRButton = null
 var _btn_curved: VRButton = null
 
+## Arc length past the screen edge, and the spacing between the two buttons.
+const BTN_GAP := 0.035
+const BTN_PITCH := 0.055
+
 const HL_ON := Color(1.0, 0.78, 0.30)
 const HL_OFF := Color(0.42, 0.45, 0.55)
 
@@ -116,11 +120,14 @@ func _rebuild() -> void:
 		verts.append(bot)
 		uvs.append(Vector2(t, 0.0))
 		uvs.append(Vector2(t, 1.0))
-		# Outward normal: away from the centre of curvature, which sits at +Z.
+		# Outward normal: FROM the surface TOWARD the centre of curvature at +Z,
+		# i.e. back at the viewer. The other way round leaves the screen's lit
+		# material shaded from behind (cull_mode is disabled, so it still draws —
+		# the error shows only as wrong shading).
 		var n := Vector3(0, 0, 1)
 		if _curve > 0.001:
 			var r := curve_radius / _curve
-			n = (Vector3(top.x, 0.0, top.z) - Vector3(0.0, 0.0, r)).normalized()
+			n = (Vector3(0.0, 0.0, r) - Vector3(top.x, 0.0, top.z)).normalized()
 		normals.append(n)
 		normals.append(n)
 
@@ -152,6 +159,8 @@ func _rebuild() -> void:
 	var shape := ConcavePolygonShape3D.new()
 	shape.set_faces(tris)
 	_collision.shape = shape
+
+	_place_buttons()
 
 
 # ── Pointer remap ─────────────────────────────────────────────────────────────
@@ -228,24 +237,35 @@ func _refresh_buttons() -> void:
 ## Two buttons just outside the lower-right corner. The icons are the shapes
 ## themselves — a straight bar and an arced one — so they need no legend.
 func _build_toggle() -> void:
-	var hw := _screen_size.x * 0.5
-	var hh := _screen_size.y * 0.5
-	var gap := 0.035
-	var pitch := 0.055
-
-	_btn_flat = _make_button("CurveToggleFlat",
-		Vector3(hw + gap, -hh + 0.015, 0.0), false)
-	_btn_curved = _make_button("CurveToggleCurved",
-		Vector3(hw + gap, -hh + 0.015 + pitch, 0.0), true)
+	_btn_flat = _make_button("CurveToggleFlat", false)
+	_btn_curved = _make_button("CurveToggleCurved", true)
 	_btn_flat.button_pressed.connect(func() -> void: _choose(false))
 	_btn_curved.button_pressed.connect(func() -> void: _choose(true))
+	_place_buttons()
 	_refresh_buttons()
 
 
-func _make_button(node_name: String, pos: Vector3, arced: bool) -> VRButton:
+## Seat the buttons ON the arc, continuing it past the screen's edge, and turn
+## them to face along it. Left at z = 0 they would sit ~11 cm behind the edge
+## once the panel wrapped, floating off the corner they belong to.
+func _place_buttons() -> void:
+	if _btn_flat == null or _btn_curved == null:
+		return
+	var hw := _screen_size.x * 0.5
+	var hh := _screen_size.y * 0.5
+	var s := hw + BTN_GAP
+	var yaw := 0.0
+	if _curve > 0.001:
+		yaw = -s / (curve_radius / _curve)
+	for pair: Array in [[_btn_flat, -hh + 0.015], [_btn_curved, -hh + 0.015 + BTN_PITCH]]:
+		var btn: VRButton = pair[0]
+		btn.position = _arc_point(s, pair[1])
+		btn.rotation = Vector3(0.0, yaw, 0.0)
+
+
+func _make_button(node_name: String, arced: bool) -> VRButton:
 	var btn := VRButton.new()
 	btn.name = node_name
-	btn.position = pos
 	btn.depress_axis = Vector3(0, 0, -1)
 	btn.depress_depth = 0.004
 
