@@ -30,6 +30,10 @@ const GAP          := 0.006
 const GRID_COLS    := 3
 const PANEL_PAD    := 0.012
 const FLOAT_HEIGHT := 0.16
+## VR only: the grid is authored at desktop size, where it sits in a corner of a
+## ~70° screen. Filling that much of a headset's view is overbearing, so shrink it
+## for the floating panel.
+const VR_MENU_SCALE := 0.6
 ## Desktop: camera-local menu anchor (right, up, forward) — just above the
 ## FPS-snapped remote, fixed in screen space so looking around doesn't move it.
 const DESKTOP_MENU_OFFSET := Vector3(0.22, -0.03, -0.55)
@@ -140,6 +144,11 @@ func _find_vr_nodes() -> void:
 			_left_vr_ctrl = ctrl
 		elif ctrl.tracker == &"right_hand":
 			_right_vr_ctrl = ctrl
+	# The spawn menu hands a fresh object straight to the hand that spawned it, so
+	# the grab can land BEFORE this deferred lookup runs — with no manager yet, that
+	# grab's block was dropped on the floor and the holding hand kept driving
+	# locomotion. Re-apply now that the manager is known.
+	_update_locomotion_block()
 
 
 # ── Toggle-hold (mirrors RayGun) ──────────────────────────────────────────────
@@ -726,13 +735,16 @@ func _move_grid(dcol: int, drow: int) -> void:
 		if drow > 0 and ddr <= 0.0: continue
 		if dcol < 0 and ddc >= 0.0: continue
 		if dcol > 0 and ddc <= 0.0: continue
-		var primary := 0.0
-		var secondary := 0.0
+		# Left/right never leaves the row. A cell spanning the full width (Menu,
+		# Eject) therefore has no horizontal neighbour at all — reach the row below
+		# it with down, not by sliding sideways into it.
+		if dcol != 0 and not is_zero_approx(ddr):
+			continue
+		var score := 0.0
 		if drow != 0:
-			primary = absf(ddr); secondary = absf(ddc)
+			score = absf(ddr) * 10.0 + absf(ddc)   # nearest row, then nearest column
 		else:
-			primary = absf(ddc); secondary = absf(ddr)
-		var score := primary * 10.0 + secondary
+			score = absf(ddc)
 		if score < best_score:
 			best_score = score
 			best = i
@@ -844,6 +856,7 @@ func _update_menu_transform() -> void:
 		return
 
 	_menu.global_position = global_position + Vector3(0, FLOAT_HEIGHT, 0)
+	_menu.scale = Vector3.ONE * VR_MENU_SCALE
 	if is_instance_valid(cam):
 		var to_cam := cam.global_position - _menu.global_position
 		to_cam.y = 0.0

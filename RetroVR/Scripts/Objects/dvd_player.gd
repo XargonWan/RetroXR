@@ -78,6 +78,19 @@ var _pending_tv_restore: RetroTV = null
 @onready var _name_label: Label3D = $NameLabel
 @onready var _options_panel: DVDOptionsPanel = $DVDOptionsPanel
 
+# The box's copy of the remote's menu cluster + track cycling: same ids, same
+# enable rules, same actions. Lit colour per id; greyed to COLOR_BTN_OFF whenever
+# the remote would grey the matching cell.
+const BOX_BTN_COLOR := {
+	"up": Color(0.35, 0.45, 0.62), "down": Color(0.35, 0.45, 0.62),
+	"left": Color(0.35, 0.45, 0.62), "right": Color(0.35, 0.45, 0.62),
+	"ok": Color(0.2, 0.7, 0.95),
+	"audio": Color(0.6, 0.35, 0.8), "subtitle": Color(0.85, 0.55, 0.15),
+}
+const COLOR_BTN_OFF := Color(0.22, 0.22, 0.24)
+var _box_buttons: Dictionary = {}      # id -> VRButton
+var _box_button_lit: Dictionary = {}   # id -> bool, last colour applied
+
 
 func _ready() -> void:
 	super._ready()
@@ -107,6 +120,7 @@ func _ready() -> void:
 	_rewind_button.set_color(Color(0.1, 0.4, 0.9))   # blue
 	_ff_button.set_color(Color(0.1, 0.4, 0.9))       # blue
 	_eject_button.set_color(Color(0.8, 0.8, 0.85))
+	_setup_box_buttons()
 
 	if ClassDB.class_exists("VlcPlayer"):
 		_vlc = ClassDB.instantiate("VlcPlayer")
@@ -117,6 +131,57 @@ func _ready() -> void:
 	_setup_audio()
 	_spawn_cable()
 	_update_name_label()
+
+
+## Wire the D-pad / select / language / subtitle caps on the box. They exist so the
+## deck is usable without hunting for the remote; every one of them lands on the
+## same method the remote's matching cell calls.
+func _setup_box_buttons() -> void:
+	_box_buttons = {
+		"up": $UpButton, "down": $DownButton,
+		"left": $LeftButton, "right": $RightButton,
+		"ok": $SelectButton,
+		"audio": $LanguageButton, "subtitle": $SubtitleButton,
+	}
+	for id: String in _box_buttons:
+		var button := _box_buttons[id] as VRButton
+		button.button_pressed.connect(_on_box_button.bind(id))
+	_refresh_box_buttons()
+
+
+func _on_box_button(id: String) -> void:
+	if not _box_button_enabled(id, is_in_menu()):
+		return
+	match id:
+		"up": dvd_menu_up()
+		"down": dvd_menu_down()
+		"left": dvd_menu_left()
+		"right": dvd_menu_right()
+		"ok": dvd_ok()
+		"audio": dvd_cycle_audio()
+		"subtitle": dvd_cycle_subtitle()
+
+
+## Same rules the remote applies to its equivalent cells: the nav cluster only
+## does anything inside a disc menu, the two track buttons only outside one.
+func _box_button_enabled(id: String, in_menu: bool) -> bool:
+	match id:
+		"audio":
+			return not in_menu and has_audio_options()
+		"subtitle":
+			return not in_menu and has_subtitle_options()
+	return in_menu
+
+
+func _refresh_box_buttons() -> void:
+	var in_menu := is_in_menu()
+	for id: String in _box_buttons:
+		var lit := _box_button_enabled(id, in_menu)
+		if _box_button_lit.get(id) == lit:
+			continue
+		_box_button_lit[id] = lit
+		var col: Color = BOX_BTN_COLOR[id] if lit else COLOR_BTN_OFF
+		(_box_buttons[id] as VRButton).set_color(col)
 
 
 ## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
@@ -137,6 +202,7 @@ func _update_name_label() -> void:
 
 
 func _process(delta: float) -> void:
+	_refresh_box_buttons()
 	if _vlc == null:
 		return
 	# Pump the latest decoded frame into the VLC texture every frame.

@@ -116,7 +116,14 @@ func sync(show: bool) -> void:
 			or not (outline_hidden_source or _source.is_visible_in_tree()):
 		visible = false
 		return
+	var was_hidden := not visible
 	global_transform = _source.global_transform
+	if was_hidden:
+		# The overlay is top_level, so while hidden it holds whatever transform it
+		# was last given — the world origin until the first hover. Physics
+		# interpolation would spend a couple of frames sliding it in from there, so
+		# the first frame of a highlight lands somewhere else entirely.
+		reset_physics_interpolation()
 	visible = true
 
 

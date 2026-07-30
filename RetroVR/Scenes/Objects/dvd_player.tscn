@@ -268,8 +268,141 @@ pixel_size = 0.001
 text = ">>"
 font_size = 9
 
+[node name="LanguageButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0.03, 0.04)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LanguageButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="LanguageButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="LanguageButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "LANG"
+font_size = 9
+
+[node name="SubtitleButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08, 0.03, 0.04)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SubtitleButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="SubtitleButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="SubtitleButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "SUB"
+font_size = 9
+
+[node name="UpButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, -0.02)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="UpButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="UpButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="UpButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "UP"
+font_size = 9
+
+[node name="LeftButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.04, 0.03, 0.01)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LeftButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="LeftButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="LeftButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "LEFT"
+font_size = 9
+
+[node name="SelectButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0.01)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SelectButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="SelectButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="SelectButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "SEL"
+font_size = 9
+
+[node name="RightButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04, 0.03, 0.01)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="RightButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="RightButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="RightButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "RIGHT"
+font_size = 9
+
+[node name="DownButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0.04)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DownButton"]
+shape = SubResource("BoxShape3D_btn")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="DownButton"]
+mesh = SubResource("BoxMesh_btn")
+surface_material_override/0 = SubResource("Mat_btn")
+
+[node name="ButtonLabel" type="Label3D" parent="DownButton"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.012, 0)
+pixel_size = 0.001
+text = "DOWN"
+font_size = 9
+
 [node name="NameLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0.05)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, -0.09)
 pixel_size = 0.001
 billboard = 2
 font_size = 20

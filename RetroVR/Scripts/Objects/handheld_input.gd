@@ -101,6 +101,9 @@ func _find_vr_nodes() -> void:
 			_left_vr_ctrl = ctrl
 		elif ctrl.tracker == &"right_hand":
 			_right_vr_ctrl = ctrl
+	# A spawn-menu spawn is handed to the grabbing hand before this deferred lookup
+	# runs, so that grab found no manager and never blocked locomotion. Re-apply.
+	_update_locomotion_block()
 
 
 func _load_bindings() -> void:
