@@ -4542,6 +4542,34 @@ func _build_about_view() -> Control:
 
 	vbox.add_child(_spacer(6))
 
+	# Proprietary SDKs. Deliberately not folded into the list above: the Meta XR
+	# Audio SDK is not open source, and its licence requires the copyright notice
+	# be reproduced wherever the library ships — so this credit is an obligation,
+	# not a courtesy.
+	var sdk_hdr := Label.new()
+	sdk_hdr.text = "THIRD-PARTY SDKS"
+	sdk_hdr.add_theme_font_size_override("font_size", 20)
+	sdk_hdr.add_theme_color_override("font_color", COLOR_TITLE)
+	vbox.add_child(sdk_hdr)
+
+	const SDKS: Array = [
+		["Meta XR Audio SDK", "Meta Platforms, Inc.", "Oculus SDK License"],
+	]
+	for entry: Array in SDKS:
+		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
+
+	var sdk_note := Label.new()
+	sdk_note.text = "Spatial audio on Quest is HRTF-rendered by the Meta XR Audio SDK, "\
+		+ "which places each sound in three dimensions rather than simply panning it "\
+		+ "left and right. Where the SDK is unavailable the room falls back to Godot's "\
+		+ "built-in 3D audio."
+	sdk_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sdk_note.add_theme_font_size_override("font_size", 14)
+	sdk_note.add_theme_color_override("font_color", COLOR_LICENSE)
+	vbox.add_child(sdk_note)
+
+	vbox.add_child(_spacer(6))
+
 	# Artwork header
 	var art_hdr := Label.new()
 	art_hdr.text = "ARTWORK"
