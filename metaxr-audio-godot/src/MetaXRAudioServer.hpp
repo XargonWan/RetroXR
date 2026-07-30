@@ -41,12 +41,16 @@ struct Voice
 
     std::atomic<float>    gain{1.0f};
 
-    /// Last position actually handed to the SDK. Meta's arm64 build degrades
-    /// audibly when mxra_source_set_position is called repeatedly, even with a
-    /// bit-identical value (see meta-xr-audio-known-issues.md, issue 1), so the
-    /// mixer compares against this and skips redundant calls. This is not an
-    /// optimisation — without it a stationary emitter that rewrites its position
-    /// every frame measurably degrades on Quest.
+    /// Last position actually handed to the SDK, so the mixer can skip redundant
+    /// calls. Purely an optimisation: mxra_source_set_position takes a recursive
+    /// mutex like the rest of the context API, and most emitters here rewrite a
+    /// position that has not moved every single frame.
+    ///
+    /// It was originally added as a correctness workaround for what looked like an
+    /// arm64 defect. That turned out to be our own ABI error (the position is
+    /// passed by value, so it goes in s0/s1/s2 on AArch64, not behind a pointer);
+    /// redundant calls are harmless once the signature is right. Kept because the
+    /// saved lock is still worth having.
     float                 last_sent[3] = { 1e30f, 1e30f, 1e30f };
     bool                  ever_sent = false;
 

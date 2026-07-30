@@ -52,16 +52,32 @@ enum mxra_result : uint32_t
     MXRA_INVALID_CONTEXT  = 2005,
 };
 
+/// A 3-component vector, passed BY VALUE wherever the API takes one.
+///
+/// This matters more than it looks. It is a 3-member homogeneous float aggregate,
+/// and the two ABIs disagree about how such a thing is passed: Windows x64 hands
+/// it over by hidden pointer, while AAPCS64 puts it in s0/s1/s2. Declaring it by
+/// value lets each compiler apply its own rule. Hard-coding a pointer is correct
+/// on Windows and silently spatialises garbage on arm64.
+struct mxra_vector_3f
+{
+    float x, y, z;
+};
+
 /// Listener/source pose. mxra_listener_set_pose validates exactly nine floats at
 /// offsets 0x00..0x20 and rejects any non-finite component, which fixes both the
 /// layout and the element count. Maps onto a Godot Transform3D as
 /// { origin, -basis.z, basis.y } — Godot looks down -Z, this API wants +forward.
+///
+/// Also passed by value, but at 36 bytes it exceeds both ABIs' register
+/// thresholds, so both pass it indirectly and a pointer happened to work.
 struct mxra_pose
 {
-    float position[3];
-    float forward[3];
-    float up[3];
+    mxra_vector_3f position;
+    mxra_vector_3f forward;
+    mxra_vector_3f up;
 };
+static_assert(sizeof(mxra_pose) == 36, "mxra_listener_set_pose validates nine floats");
 
 /// Context parameters. Accepted by both mxra_context_create (as an optional
 /// second argument — passing null creates an uninitialised context) and
@@ -142,15 +158,16 @@ extern "C"
     typedef mxra_result (*PFN_mxra_context_set_feature)(mxra_context* ctx, mxra_feature feature, int32_t enabled);
     typedef mxra_result (*PFN_mxra_context_set_param)(mxra_context* ctx, int32_t param, float value);
 
-    typedef mxra_result (*PFN_mxra_listener_set_pose)(mxra_context* ctx, const mxra_pose* pose);
+    typedef mxra_result (*PFN_mxra_listener_set_pose)(mxra_context* ctx, mxra_pose pose);
 
-    typedef mxra_result (*PFN_mxra_source_set_pose)(mxra_context* ctx, int32_t index, const mxra_pose* pose);
+    typedef mxra_result (*PFN_mxra_source_set_pose)(mxra_context* ctx, int32_t index, mxra_pose pose);
 
-    /// Takes a POINTER to three floats, not three float arguments. The Windows
-    /// build reads it with `movsd (%r8)` + `movl 0x8(%r8)` immediately after the
-    /// index bounds check, so passing loose floats leaves r8 holding garbage and
-    /// faults inside the DLL rather than returning an error.
-    typedef mxra_result (*PFN_mxra_source_set_position)(mxra_context* ctx, int32_t index, const float position[3]);
+    /// By value — see mxra_vector_3f. Passing a pointer here is correct on
+    /// Windows and wrong on arm64, where the callee reads s0/s1/s2 (visible in
+    /// the shipped .so as `fabs s3, s0` / `fabs s3, s2` right after the index
+    /// bounds check) and would otherwise spatialise whatever those registers
+    /// happened to hold.
+    typedef mxra_result (*PFN_mxra_source_set_position)(mxra_context* ctx, int32_t index, mxra_vector_3f position);
     typedef mxra_result (*PFN_mxra_source_set_param)(mxra_context* ctx, int32_t index, int32_t param, float value);
     typedef mxra_result (*PFN_mxra_source_set_feature)(mxra_context* ctx, int32_t index, int32_t feature, int32_t enabled);
     typedef mxra_result (*PFN_mxra_source_set_attenuation)(mxra_context* ctx, int32_t index, int32_t mode, float min_range, float max_range);

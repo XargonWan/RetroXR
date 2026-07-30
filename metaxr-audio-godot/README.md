@@ -78,7 +78,8 @@ shipped binaries:
 Everything uncertain lives in that one header, and the loader fails soft.
 
 See `meta-xr-audio-known-issues.md` for the defects found, with confidence
-levels — including a reproducible arm64 bug (`tools/repro_redundant_setposition.cpp`).
+levels. The headline item is the by-value vector ABI, which differs between x64 and
+AArch64 and silently mis-positions every source on arm64 if you get it wrong.
 
 ## Building
 
@@ -102,6 +103,8 @@ loading.
 
 - `tools/smoke.cpp` — standalone ABI gate (no Godot). Orbits a 440 Hz sine and
   writes a wav; the check that the reconstructed ABI is actually callable.
-- `tools/repro_redundant_setposition.cpp` — minimal reproducer for the arm64
-  `set_position` defect, for reporting upstream.
+- `tools/repro_redundant_setposition.cpp` — ABI regression test: renders the same
+  static source while varying how often `mxra_source_set_position` is called. All
+  segments must come out identical. They do not if the position argument is declared
+  as a pointer on arm64, which is the bug this once mistook for an SDK defect.
 - `tools/scene_demo.cpp` — renders positional scenarios to wav for listening.

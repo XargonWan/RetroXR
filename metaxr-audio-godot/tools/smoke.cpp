@@ -179,10 +179,10 @@ int main(int argc, char** argv)
     // 3. Listener at the origin, looking down -Z the way Godot's camera does,
     //    expressed in this API's +forward convention.
     mxra_pose listener = {};
-    listener.position[0] = 0.0f; listener.position[1] = 0.0f; listener.position[2] = 0.0f;
-    listener.forward[0]  = 0.0f; listener.forward[1]  = 0.0f; listener.forward[2]  = -1.0f;
-    listener.up[0]       = 0.0f; listener.up[1]       = 1.0f; listener.up[2]       =  0.0f;
-    if (!Check(abi.listener_set_pose(ctx, &listener), "mxra_listener_set_pose"))
+    listener.position.x = 0.0f; listener.position.y = 0.0f; listener.position.z = 0.0f;
+    listener.forward.x  = 0.0f; listener.forward.y  = 0.0f; listener.forward.z  = -1.0f;
+    listener.up.x       = 0.0f; listener.up.y       = 1.0f; listener.up.z       =  0.0f;
+    if (!Check(abi.listener_set_pose(ctx, listener), "mxra_listener_set_pose"))
     {
         std::printf("\nFAILED: mxra_pose layout is wrong.\n");
         Unload(abi);
@@ -192,7 +192,7 @@ int main(int argc, char** argv)
     // 4. One source, placed to the right, to prove positioning is accepted before
     //    the render loop starts moving it.
     const float start_pos[3] = { kOrbitRadius, 0.0f, 0.0f };
-    Check(abi.source_set_position(ctx, 0, start_pos), "mxra_source_set_position");
+    Check(abi.source_set_position(ctx, 0, mxra_vector_3f{ start_pos[0], start_pos[1], start_pos[2] }), "mxra_source_set_position");
 
     // 5. Render the orbit.
     const uint32_t total_frames = static_cast<uint32_t>(kDurationSec * kSampleRate);
@@ -222,7 +222,7 @@ int main(int argc, char** argv)
         const float  pos[3] = { static_cast<float>(kOrbitRadius * std::cos(angle)),
                                 0.0f,
                                 static_cast<float>(kOrbitRadius * std::sin(angle)) };
-        abi.source_set_position(ctx, 0, pos);
+        abi.source_set_position(ctx, 0, mxra_vector_3f{ pos[0], pos[1], pos[2] });
 
         uint32_t status = 0;
         std::fill(block_out.begin(), block_out.end(), 0.0f);

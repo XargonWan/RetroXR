@@ -1,12 +1,29 @@
 # Meta XR Audio SDK v85 — findings from a native (non-Unity/Unreal) integration
 
 Compiled 2026-07-29 while binding the SDK's native C API into a Godot 4.7 GDExtension
-for a Quest 3 title. Reported in case any of it is useful; several items cost real
-debugging time and at least one looks like a genuine arm64 defect.
+for a Quest 3 title, and **substantially revised 2026-07-30**. Reported in case any of
+it is useful.
 
-Each item is tagged with how confident I am, because I got three intermediate
+Each item is tagged with how confident I am, because I got several intermediate
 conclusions wrong during this investigation before isolating the real causes. Anything
 not marked **Confirmed** should be treated as a lead, not a bug report.
+
+> ### Retraction — please disregard the 2026-07-29 revision
+>
+> That version led with an apparent **arm64 rendering defect**: redundant
+> `mxra_source_set_position` calls injecting sidebands (80.8 % / 73.4 % / 96.0 % of
+> in-band energy retained), plus a secondary report of off-axis renders landing in the
+> opposite ear on arm64 versus x64.
+>
+> **Both were our bug, not the SDK's.** We had declared the position argument as a
+> pointer, which is right on Windows x64 and wrong on AArch64 — see issue 1 below. Every
+> call was therefore spatialising whatever happened to be in `s0`/`s1`/`s2`, so each
+> redundant call moved the source somewhere random. That is precisely why the artefact
+> scaled with call frequency and why x64 was immune.
+>
+> With the signature corrected, all four call-frequency cases measure **100.000 %**
+> in-band on a Quest 3 with identical peak amplitude, and the orbit envelope is
+> byte-identical to Windows. There is no arm64 rendering defect here.
 
 ---
 
@@ -27,44 +44,57 @@ same numpy script** — never from measuring inside the code under test.
 
 ---
 
-## 1. Redundant `mxra_source_set_position` calls degrade audio on arm64 — **Confirmed**
+## 1. Vector/pose arguments are passed **by value**, so their ABI differs per platform — **Confirmed, and the single most expensive item here**
 
-**Severity: high for any engine integration.** Most engines push transforms every frame
-regardless of whether they changed; that is the failing pattern.
+This is a documentation issue, not a code defect, but it cost more debugging time than
+everything else combined and it fails *silently*: audio keeps playing, sources are simply
+in the wrong places, and only on arm64.
 
-Calling `mxra_source_set_position` repeatedly injects sidebands on arm64 **even when the
-position passed is bit-identical every time**. The source never moves. Windows x64 is
-unaffected.
+`mxra_source_set_position` takes its position **by value**, as a 3-float aggregate — not
+as a pointer. That distinction is invisible on Windows and fatal on Android:
 
-Method: one context, one source, static listener, a pure 440 Hz sine in. Position is the
-same `const float[3]` in every case; only the *call frequency* varies. Measured as the
-fraction of output energy remaining within 430–450 Hz.
-
-| `mxra_source_set_position` called… | Windows x64 | Quest arm64 |
+| | Windows x64 | AArch64 (AAPCS64) |
 |---|---|---|
-| once, before the render loop | 100.000 % | **100.000 %** |
-| every block (256 frames) | 100.000 % | **80.769 %** |
-| every 4th block | 100.000 % | **73.365 %** |
-| every 16th block | 100.000 % | **95.976 %** |
+| 3-float aggregate | hidden pointer in `r8` | **`s0`/`s1`/`s2`** (homogeneous float aggregate ≤ 4 members) |
 
-The displaced energy lands in sidebands within roughly ±40 Hz of the carrier. There is no
-harmonic distortion (all harmonics ≤ −86 dB, same as Windows) and no broadband noise
-(2–20 kHz sits at −117 dB vs −122 dB on Windows). Perceptually it is a roughness or warble
-on sustained tones.
+So a single `const float*` declaration is correct on x64 and wrong on arm64, where the
+callee reads the FP argument registers and the pointer is never dereferenced. The arm64
+disassembly is unambiguous — the context and index checks, then straight to `s0`:
 
-Note the non-monotonicity — every 4th block is worse than every block — which suggests an
-interpolation or crossfade being retriggered rather than a simple accumulation.
+```
+mxra_source_set_position:
+    cbz     x0, <err>          ; context null check
+    ...
+    tbnz    w1, #0x1f, <err>   ; source index sign check
+    fabs    s3, s0             ; <-- reads the coordinate from s0; x2 is never touched
+```
 
-**Reproducer: `tools/repro_redundant_setposition.cpp`** — self-contained, depends only on
-`external/metaxraudio/MetaXRAudioABI.hpp`, build and run instructions in its header comment.
-Verified 2026-07-29 from a clean build on both platforms; it reproduces the four percentages
-above exactly.
+Compare Windows x64, which dereferences the pointer (`movsd (%r8)` / `movl 0x8(%r8)`)
+immediately after the same index check.
 
-**Workaround for integrators:** cache the last position per source and skip the call when
-unchanged (exact float compare is sufficient — the failing case is a bit-identical repeat).
+What makes this nasty is that **the obvious smoke test passes anyway.** A test that builds
+`float pos[3]` from constants tends to leave those very values in `s0`–`s2` as a side
+effect of materialising the array, so a pointer-declared binding renders correctly. Ours
+did — including a Windows-vs-arm64 comparison that came out MD5-identical. The failure only
+appeared once real code supplied positions from memory, where the FP registers hold
+unrelated data.
 
-**Not yet characterised:** whether the effect scales with active source count, and whether
-`mxra_source_set_pose` (the transform variant) behaves the same. Both worth checking.
+`mxra_listener_set_pose` and `mxra_source_set_pose` are also by-value, but at 36 bytes the
+pose exceeds both ABIs' register thresholds and is passed indirectly on each, so a pointer
+declaration happens to work there. That inconsistency is itself a trap.
+
+**Ask:** publishing the header (see the closing section) would eliminate this entire class
+of problem. Failing that, stating the by-value convention in any native-API note would.
+
+---
+
+## 1b. `mxra_source_set_position` does not null-check its position argument — **Minor**
+
+On x64, where the argument does arrive as a pointer, the function validates the context
+pointer, the source index (sign *and* upper bound) and the finiteness of the components,
+but dereferences the pointer without a null check — so a bad pointer faults inside the
+library instead of returning `2001` like every neighbouring error path. Given how thorough
+the rest of the validation is, this reads as an oversight. Low severity for correct callers.
 
 ---
 
@@ -128,6 +158,10 @@ future native documentation.
 
 ## 5. No distance attenuation by default; only one of four modes attenuates — **Confirmed behaviour**
 
+Measured on **Windows x64**, where the position ABI in issue 1 was correct; the clean
+monotonic curve for mode 2 below is itself evidence the positions were being applied. Not
+re-measured on arm64 since the correction, so treat the platform scope as x64-only.
+
 A newly created context applies **no distance law at all** — a source at 4 m measures the
 same level as at 1 m. Of the modes accepted by `mxra_source_set_attenuation` (validated
 `<= 2`, and 3 is accepted too), only **mode 2** attenuates:
@@ -149,32 +183,15 @@ no-ops are hard to distinguish from a wiring mistake.
 
 ---
 
-## 6. Inconsistent argument validation in `mxra_source_set_position` — **Minor**
+## 6. ~~Cross-platform render divergence for off-axis sources~~ — **RETRACTED**
 
-`mxra_source_set_position(ctx, index, const float pos[3])` validates the context pointer,
-the source index (sign and upper bound) and the finiteness of the position components — but
-dereferences the position pointer without a null check, so a bad pointer faults inside the
-library rather than returning `2001` like every neighbouring error path.
+Previously reported as an unconfirmed lead: off-axis sources rendering to the opposite ear
+on arm64 (ILD −4.31 dB on Windows, +4.11 dB on arm64) while static on-axis sources matched
+bit-for-bit.
 
-Given the rest of the function is unusually thorough about validation, the omission reads as
-an oversight. Low severity for correct callers.
-
----
-
-## 7. Cross-platform render divergence for off-axis sources — **UNCONFIRMED, do not action yet**
-
-Flagging as a lead only. I could not root-cause this and it may still be my harness.
-
-- With a **static, on-axis** source, Windows x64 and Quest arm64 produce **MD5-identical**
-  output — 576,000 samples, zero difference. So the two builds *can* agree bit-for-bit.
-- With sources **off-axis and elevated**, the two platforms diverge, and not just in the low
-  bits: in one scenario the interaural level difference was −4.31 dB on Windows and +4.11 dB
-  on arm64 — i.e. the opposite ear.
-
-I eliminated the obvious harness causes (identical listener yaw values printed on both
-platforms; test-signal generator hashed identical after the fix in the note below), but not
-all of them. **Treat this as unverified.** If item 1 is investigated, this is worth a glance
-at the same time, since both concern the arm64 rendering path.
+Root-caused to issue 1 — our pointer-vs-by-value error. The static on-axis case matched
+because the position happened to survive in the FP registers; off-axis cases did not.
+Nothing here for Meta to action.
 
 ---
 
@@ -188,11 +205,12 @@ our test *signal* differ between platforms and looked exactly like an SDK defect
 the NDK side with `-ffp-contract=off` made the generator hash match Windows exactly
 (`0x5a14a1bc97ae400f` on both).
 
-It also explains why the static case above was bit-identical while moving cases were not:
-the static render had no multiply-add to fuse.
-
 Any cross-platform comparison of this SDK should disable FP contraction first, or it will
 generate phantom bugs.
+
+(An earlier revision used this to explain why static renders matched across platforms while
+moving ones diverged. That explanation was wrong — the real cause was issue 1. The FMA
+observation itself still holds and still needs disabling.)
 
 ---
 

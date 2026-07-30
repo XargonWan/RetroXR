@@ -51,8 +51,8 @@ MetaXRAudioServer::MetaXRAudioServer()
     for (int i = 0; i < kMaxVoices; ++i)
         m_voices[i] = std::make_unique<Voice>();
 
-    m_listener.forward[2] = -1.0f;
-    m_listener.up[1]      =  1.0f;
+    m_listener.forward.z = -1.0f;
+    m_listener.up.y      =  1.0f;
     // No Initialise() here on purpose -- see IsAvailable().
 }
 
@@ -200,15 +200,15 @@ void MetaXRAudioServer::SetListenerTransform(const Transform3D& xform)
 
     const uint32_t seq = m_listener_seq.load(std::memory_order_relaxed);
     m_listener_seq.store(seq + 1, std::memory_order_release);   // odd: write in progress
-    m_listener.position[0] = static_cast<float>(origin.x);
-    m_listener.position[1] = static_cast<float>(origin.y);
-    m_listener.position[2] = static_cast<float>(origin.z);
-    m_listener.forward[0]  = static_cast<float>(forward.x);
-    m_listener.forward[1]  = static_cast<float>(forward.y);
-    m_listener.forward[2]  = static_cast<float>(forward.z);
-    m_listener.up[0]       = static_cast<float>(up.x);
-    m_listener.up[1]       = static_cast<float>(up.y);
-    m_listener.up[2]       = static_cast<float>(up.z);
+    m_listener.position.x = static_cast<float>(origin.x);
+    m_listener.position.y = static_cast<float>(origin.y);
+    m_listener.position.z = static_cast<float>(origin.z);
+    m_listener.forward.x  = static_cast<float>(forward.x);
+    m_listener.forward.y  = static_cast<float>(forward.y);
+    m_listener.forward.z  = static_cast<float>(forward.z);
+    m_listener.up.x       = static_cast<float>(up.x);
+    m_listener.up.y       = static_cast<float>(up.y);
+    m_listener.up.z       = static_cast<float>(up.z);
     m_listener_seq.store(seq + 2, std::memory_order_release);   // even: settled
 }
 
@@ -506,7 +506,7 @@ void MetaXRAudioServer::ProcessBlock(float* out_interleaved)
         if (m_listener_seq.load(std::memory_order_acquire) == s0)
             break;
     }
-    m_abi.listener_set_pose(m_ctx, &listener);
+    m_abi.listener_set_pose(m_ctx, listener);
 
     for (int i = 0; i < kMaxVoices; ++i)
     {
@@ -552,7 +552,7 @@ void MetaXRAudioServer::ProcessBlock(float* out_interleaved)
         // on Voice::last_sent.
         if (!v.ever_sent || pos[0] != v.last_sent[0] || pos[1] != v.last_sent[1] || pos[2] != v.last_sent[2])
         {
-            m_abi.source_set_position(m_ctx, i, pos);
+            m_abi.source_set_position(m_ctx, i, mxra_vector_3f{ pos[0], pos[1], pos[2] });
             v.last_sent[0] = pos[0]; v.last_sent[1] = pos[1]; v.last_sent[2] = pos[2];
             v.ever_sent = true;
         }

@@ -1,12 +1,22 @@
-// Minimal reproducer for issue 1 in meta-xr-audio-known-issues.md:
+// ABI regression test for mxra_source_set_position.
 //
-//   Calling mxra_source_set_position repeatedly degrades the output on arm64,
-//   even when the position passed is bit-identical on every call. The source
-//   never moves. Windows x64 is unaffected.
+// Renders the same static source four times, varying only how often
+// set_position is called. All four segments must come out identical -- the
+// source never moves, so the call count cannot matter.
 //
-// The position is the same const float[3] in all four cases below; only the
-// number of set_position calls varies. Everything else -- context, listener,
-// source, input signal -- is held constant.
+// It does matter if the position argument is declared as a pointer. That is
+// correct on Windows x64 and wrong on AArch64, where a 3-float aggregate is
+// passed by value in s0/s1/s2; a pointer declaration leaves the callee reading
+// whatever those registers held, so every redundant call flings the source
+// somewhere random and the segments diverge. This test once looked like an SDK
+// defect on arm64 for exactly that reason -- see issue 1 in
+// meta-xr-audio-known-issues.md.
+//
+// Note it passes on x64 either way, so run it on the device.
+//
+// The position is the same value in all four cases below; only the number of
+// set_position calls varies. Everything else -- context, listener, source,
+// input signal -- is held constant.
 //
 // Build and run on BOTH platforms and compare:
 //
@@ -96,12 +106,12 @@ int main(int argc, char** argv)
         }
 
         mxra_pose listener{};
-        listener.forward[2] = -1.0f;
-        listener.up[1]      =  1.0f;
-        abi.listener_set_pose(ctx, &listener);
+        listener.forward.z = -1.0f;
+        listener.up.y      =  1.0f;
+        abi.listener_set_pose(ctx, listener);
 
         const float pos[3] = { 2.0f, 0.0f, 0.0f };   // never changes
-        abi.source_set_position(ctx, 0, pos);        // always set once up front
+        abi.source_set_position(ctx, 0, mxra_vector_3f{ pos[0], pos[1], pos[2] });        // always set once up front
 
         const uint32_t blocks = RATE * SECS / BLK;
         std::vector<float> tone(BLK), out(BLK * 2), acc;
@@ -116,7 +126,7 @@ int main(int argc, char** argv)
 
             const int every = modes[m];
             if (every > 0 && (b % every) == 0)
-                abi.source_set_position(ctx, 0, pos);   // redundant: identical bits
+                abi.source_set_position(ctx, 0, mxra_vector_3f{ pos[0], pos[1], pos[2] });   // redundant: identical bits
 
             uint32_t status = 0;
             abi.source_process(ctx, 0, &status, tone.data(), out.data(), MXRA_OUTPUT_INTERLEAVED);

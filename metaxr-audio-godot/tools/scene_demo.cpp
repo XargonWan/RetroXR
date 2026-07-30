@@ -155,11 +155,11 @@ void SetListener(ABI& abi, mxra_context* ctx, const Pose& p)
 {
     const double y = p.yaw_deg * PI / 180.0;
     mxra_pose lp{};
-    lp.position[0] = p.px; lp.position[1] = p.py; lp.position[2] = p.pz;
+    lp.position.x = p.px; lp.position.y = p.py; lp.position.z = p.pz;
     // yaw 0 looks down -Z (Godot's convention), +yaw turns to the right.
-    lp.forward[0] = (float)std::sin(y); lp.forward[1] = 0.0f; lp.forward[2] = (float)-std::cos(y);
-    lp.up[0] = 0.0f; lp.up[1] = 1.0f; lp.up[2] = 0.0f;
-    abi.listener_set_pose(ctx, &lp);
+    lp.forward.x = (float)std::sin(y); lp.forward.y = 0.0f; lp.forward.z = (float)-std::cos(y);
+    lp.up.x = 0.0f; lp.up.y = 1.0f; lp.up.z = 0.0f;
+    abi.listener_set_pose(ctx, lp);
 }
 
 void WriteWav(const std::string& path, const std::vector<float>& stereo)
@@ -272,7 +272,7 @@ int main(int argc, char** argv)
         // Copy to a local: the SDK reads three floats straight off this pointer,
         // so it must be a real, writable-lifetime array in this frame.
         const float src[3] = { kGameBoy[0], kGameBoy[1], kGameBoy[2] };
-        abi.source_set_position(ctx, 0, src);   // set once: repeated calls degrade the arm64 path
+        abi.source_set_position(ctx, 0, mxra_vector_3f{ src[0], src[1], src[2] });   // set once: repeated calls degrade the arm64 path
         // The SDK applies no distance law by default (4 m measured the same as
         // 1 m). Of its own modes only 2 attenuates, and far too steeply for a
         // room -- 4.8 m came out at -44 dB, inaudible. So drive distance with
@@ -315,7 +315,7 @@ int main(int argc, char** argv)
         mxra_context* ctx = nullptr;
         abi.context_create(&ctx, &p);
         const float src2[3] = { kGameBoy[0], kGameBoy[1], kGameBoy[2] };
-        abi.source_set_position(ctx, 0, src2);
+        abi.source_set_position(ctx, 0, mxra_vector_3f{ src2[0], src2[1], src2[2] });
         abi.source_set_attenuation(ctx, 0, 1, 0.4f, 25.0f);
 
         GameBoy gb; WallOcclusion wall;
