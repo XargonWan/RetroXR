@@ -17,6 +17,7 @@ import math
 import os
 import random
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "RetroVR",
@@ -225,6 +226,34 @@ def rug(w=1024, h=683, seed=3, palette="taupe"):
     return _grain(img, 7, seed)
 
 
+def print_look(img, sat=0.6, black_lift=0.16, white_cap=0.92):
+    """Make flat-drawn artwork behave like ink on paper in a dim warm room.
+
+    Drawn straight, both posters were far outside the room: the grid one measured
+    0.825 per-pixel saturation and 0.256 luminance SD, against 0.033/0.020 for the
+    walls and 0.215/0.030 for the carpet — four times the saturation and eight
+    times the contrast of anything near it.
+
+    Three corrections, each physical rather than arbitrary:
+      * Lift the blacks. Printed ink is never 0,0,0, and the darkest part of a
+        poster on a dim wall reads as a warm dark grey.
+      * Cap the whites. Paper is not a light source; unlike a screen it cannot
+        exceed the light falling on it.
+      * Desaturate. Pigment under low warm light is duller than the same colour
+        on a backlit display, which is what the drawing code effectively assumes.
+
+    A poster is still meant to be the brightest thing on a wall, so this pulls it
+    toward the room rather than into it.
+    """
+    a = np.asarray(img.convert("RGB"), dtype=float) / 255.0
+    mx = a.max(axis=2, keepdims=True)
+    mn = a.min(axis=2, keepdims=True)
+    grey = (mx + mn) * 0.5
+    a = grey + (a - grey) * sat                       # desaturate about mid-grey
+    a = a * (white_cap - black_lift) + black_lift     # compress into the print range
+    return Image.fromarray((np.clip(a, 0.0, 1.0) * 255.0).astype("uint8"))
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     import sys
@@ -247,8 +276,8 @@ if __name__ == "__main__":
             print("wrote rug_%-11s sat %.3f  val %.3f" % (pal + ".png", sat, val))
         raise SystemExit(0)
 
-    for name, im in (("poster_memphis", poster_memphis()),
-                     ("poster_grid", poster_grid()),
+    for name, im in (("poster_memphis", print_look(poster_memphis(), sat=0.66)),
+                     ("poster_grid", print_look(poster_grid(), sat=0.52)),
                      ("rug_persian", rug(palette="taupe"))):
         path = os.path.join(OUT, name + ".png")
         im.save(path)

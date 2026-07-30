@@ -309,21 +309,24 @@ roughness = 0.6
 [sub_resource type="QuadMesh" id="Quad_poster"]
 size = Vector2(0.6, 0.8)
 
-; A little emission on both posters. Print has no light of its own, but this room
-; is lit by two table lamps and a globe, and without it the art goes muddy at the
-; distance it is actually seen from.
+; A trace of emission on both posters — 0.10, down from 0.30. Print has no light
+; of its own, and at 0.30 the glow was adding apparent contrast to art that was
+; already four times the room's saturation and eight times its luminance spread.
+; Tools/gen_bedroom_art.py now runs both through print_look(), which lifts the
+; blacks, caps the whites and desaturates, so they no longer need the glow to read
+; at the distance they are actually seen from.
 [sub_resource type="StandardMaterial3D" id="Mat_poster_a"]
 albedo_texture = ExtResource("33_poster_a")
 roughness = 0.9
 emission_enabled = true
-emission_energy_multiplier = 0.3
+emission_energy_multiplier = 0.1
 emission_texture = ExtResource("33_poster_a")
 
 [sub_resource type="StandardMaterial3D" id="Mat_poster_b"]
 albedo_texture = ExtResource("34_poster_b")
 roughness = 0.9
 emission_enabled = true
-emission_energy_multiplier = 0.3
+emission_energy_multiplier = 0.1
 emission_texture = ExtResource("34_poster_b")
 
 ; Wardrobe, built from boxes in the room's own trim material. A painted wardrobe
