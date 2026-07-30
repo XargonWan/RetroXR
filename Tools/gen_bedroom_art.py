@@ -134,6 +134,92 @@ def poster_grid(w=640, h=854, seed=11):
 
 
 # --------------------------------------------------------------------------
+# Poster 3 — test card. Colour bars over a staircase, the thing a CRT showed
+# when nothing else was on. No text and no station identity: an invented card,
+# not a copy of a real broadcaster's.
+# --------------------------------------------------------------------------
+def poster_testcard(w=640, h=480, seed=21):
+    img = Image.new("RGB", (w, h), (18, 18, 20))
+    d = ImageDraw.Draw(img)
+    bars = [(235, 235, 235), (225, 220, 60), (60, 210, 220), (60, 200, 90),
+            (215, 70, 175), (220, 65, 60), (60, 80, 200)]
+    top = int(h * 0.62)
+    bw = w / float(len(bars))
+    for i, c in enumerate(bars):
+        d.rectangle([i * bw, 0, (i + 1) * bw, top], fill=c)
+    # Reversed narrow band, the way a real card inverts the order below the bars.
+    mid = int(h * 0.72)
+    for i, c in enumerate(reversed(bars)):
+        d.rectangle([i * bw, top, (i + 1) * bw, mid], fill=tuple(int(v * 0.55) for v in c))
+    # Luminance staircase.
+    steps = 8
+    sw = w / float(steps)
+    for i in range(steps):
+        g = int(20 + 215 * i / float(steps - 1))
+        d.rectangle([i * sw, mid, (i + 1) * sw, h], fill=(g, g, g))
+    # A centring circle, drawn as an outline so it reads as a card not a target.
+    r = int(h * 0.30)
+    d.ellipse([w // 2 - r, top // 2 - r, w // 2 + r, top // 2 + r],
+              outline=(20, 20, 22), width=4)
+    return _grain(img, 4, seed)
+
+
+# --------------------------------------------------------------------------
+# Poster 4 — ray burst. Wedges from a low corner with a hard horizon, the
+# poster-shop geometry of the period.
+# --------------------------------------------------------------------------
+def poster_burst(w=560, h=760, seed=23):
+    img = Image.new("RGB", (w, h), (26, 22, 40))
+    d = ImageDraw.Draw(img)
+    for y in range(h):                                  # graded field
+        t = y / float(h)
+        d.line([0, y, w, y], fill=(int(26 + 60 * t), int(22 + 30 * t), int(40 + 40 * t)))
+    ox, oy = w * 0.5, h * 0.78
+    palette = [(235, 120, 60), (240, 180, 70), (90, 190, 180), (215, 90, 130)]
+    n = 13
+    for i in range(n):
+        a0 = math.pi + (i / float(n)) * math.pi
+        a1 = math.pi + ((i + 0.62) / float(n)) * math.pi
+        far = h * 1.3
+        d.polygon([(ox, oy),
+                   (ox + far * math.cos(a0), oy + far * math.sin(a0)),
+                   (ox + far * math.cos(a1), oy + far * math.sin(a1))],
+                  fill=palette[i % len(palette)])
+    d.rectangle([0, oy, w, h], fill=(24, 20, 34))       # hard horizon
+    for i in range(6):                                  # receding floor lines
+        yy = oy + (h - oy) * ((i + 1) / 6.0) ** 1.7
+        d.line([0, yy, w, yy], fill=(90, 190, 180), width=2)
+    m = int(w * 0.05)
+    d.rectangle([m, m, w - m, h - m], outline=(238, 226, 200), width=3)
+    return _grain(img, 3, seed)
+
+
+# --------------------------------------------------------------------------
+# Poster 5 — halftone arc. A dot screen whose dots grow along a sweep, which is
+# what a cheap two-colour print of the era actually looked like up close.
+# --------------------------------------------------------------------------
+def poster_halftone(w=520, h=520, seed=27):
+    img = Image.new("RGB", (w, h), (240, 234, 220))
+    d = ImageDraw.Draw(img)
+    ink = (40, 70, 150)
+    step = 13
+    cx, cy = w * 0.34, h * 0.66
+    maxd = math.hypot(w, h) * 0.78
+    for gy in range(0, h + step, step):
+        for gx in range(0, w + step, step):
+            t = 1.0 - min(1.0, math.hypot(gx - cx, gy - cy) / maxd)
+            r = (step * 0.5) * (t ** 1.6)
+            if r > 0.6:
+                d.ellipse([gx - r, gy - r, gx + r, gy + r], fill=ink)
+    # One solid form over the screen, so it is a composition and not a texture.
+    d.polygon([(w * 0.60, h * 0.16), (w * 0.88, h * 0.62), (w * 0.32, h * 0.62)],
+              fill=(225, 120, 55))
+    m = int(w * 0.055)
+    d.rectangle([m, m, w - m, h - m], outline=(40, 70, 150), width=3)
+    return _grain(img, 3, seed)
+
+
+# --------------------------------------------------------------------------
 # Rug — a geometric medallion carpet, drawn as one quadrant and mirrored so
 # it is exactly symmetric the way a woven rug is.
 # --------------------------------------------------------------------------
@@ -278,6 +364,9 @@ if __name__ == "__main__":
 
     for name, im in (("poster_memphis", print_look(poster_memphis(), sat=0.66)),
                      ("poster_grid", print_look(poster_grid(), sat=0.52)),
+                     ("poster_testcard", print_look(poster_testcard(), sat=0.44)),
+                     ("poster_burst", print_look(poster_burst(), sat=0.50)),
+                     ("poster_halftone", print_look(poster_halftone(), sat=0.58)),
                      ("rug_persian", rug(palette="taupe"))):
         path = os.path.join(OUT, name + ".png")
         im.save(path)

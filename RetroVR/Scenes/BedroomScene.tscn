@@ -1,4 +1,4 @@
-[gd_scene load_steps=113 format=3]
+[gd_scene load_steps=125 format=3]
 
 [ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
@@ -39,6 +39,9 @@
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/rug_persian.png" id="32_rug"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_memphis.png" id="33_poster_a"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_grid.png" id="34_poster_b"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_testcard.png" id="44_p_test"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_burst.png" id="45_p_burst"]
+[ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_halftone.png" id="46_p_half"]
 
 ; Late evening: warm ambient, dark warm background, filmic tonemap and the den's
 ; glow settings so the CRT and the lamps bloom the same way across both rooms.
@@ -422,6 +425,51 @@ albedo_color = Color(0.76, 0.66, 0.52, 1)
 roughness_texture = ExtResource("43_cu_rgh")
 normal_enabled = true
 normal_texture = ExtResource("42_cu_nrm")
+
+; --- TV-corner gallery -------------------------------------------------------
+; Three more frames bracketing the corner stand. Deliberately three DIFFERENT
+; designs and three different sizes — repeating one poster round a corner reads
+; as wallpaper, and a matched set reads as a shop display rather than a bedroom.
+; All run through print_look() like the other two, so they sit at the room's
+; contrast rather than four times it.
+[sub_resource type="BoxMesh" id="Mesh_frame_land"]
+size = Vector3(0.6, 0.46, 0.03)
+
+[sub_resource type="QuadMesh" id="Quad_land"]
+size = Vector2(0.54, 0.4)
+
+[sub_resource type="BoxMesh" id="Mesh_frame_tall"]
+size = Vector3(0.46, 0.605, 0.03)
+
+[sub_resource type="QuadMesh" id="Quad_tall"]
+size = Vector2(0.4, 0.545)
+
+[sub_resource type="BoxMesh" id="Mesh_frame_sq"]
+size = Vector3(0.4, 0.4, 0.03)
+
+[sub_resource type="QuadMesh" id="Quad_sq"]
+size = Vector2(0.34, 0.34)
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_test"]
+albedo_texture = ExtResource("44_p_test")
+roughness = 0.9
+emission_enabled = true
+emission_energy_multiplier = 0.1
+emission_texture = ExtResource("44_p_test")
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_burst"]
+albedo_texture = ExtResource("45_p_burst")
+roughness = 0.9
+emission_enabled = true
+emission_energy_multiplier = 0.1
+emission_texture = ExtResource("45_p_burst")
+
+[sub_resource type="StandardMaterial3D" id="Mat_poster_half"]
+albedo_texture = ExtResource("46_p_half")
+roughness = 0.9
+emission_enabled = true
+emission_energy_multiplier = 0.1
+emission_texture = ExtResource("46_p_half")
 
 [node name="Root" type="Node3D"]
 script = ExtResource("1_xrinit")
@@ -1124,6 +1172,48 @@ skin = SubResource("Mat_cushion_sage")
 ; together. At 0.27 m tall this is the windowsill-sized one the reference shows.
 [node name="DeskPlant" parent="SoftProps" instance=ExtResource("38_plant")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.45, 0.75, -1.78)
+
+; Test card directly above the set, at the TV's own z. The stand tops out at 0.80
+; and the television at 1.21, so a frame centred on 1.60 clears both.
+[node name="PosterTestcard" type="Node3D" parent="."]
+
+[node name="Frame" type="MeshInstance3D" parent="PosterTestcard"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 2.51, 1.6, 1.66)
+mesh = SubResource("Mesh_frame_land")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="PosterTestcard"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 2.493, 1.6, 1.66)
+mesh = SubResource("Quad_land")
+surface_material_override/0 = SubResource("Mat_poster_test")
+
+; Ray burst on the same wall but north of the corner, clear of PosterGrid, which
+; ends at z -0.72.
+[node name="PosterBurst" type="Node3D" parent="."]
+
+[node name="Frame" type="MeshInstance3D" parent="PosterBurst"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 2.51, 1.5, 1.02)
+mesh = SubResource("Mesh_frame_tall")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="PosterBurst"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 2.493, 1.5, 1.02)
+mesh = SubResource("Quad_tall")
+surface_material_override/0 = SubResource("Mat_poster_burst")
+
+; Halftone round the corner onto the south wall, east of PosterMemphis, which
+; ends at x 1.28.
+[node name="PosterHalftone" type="Node3D" parent="."]
+
+[node name="Frame" type="MeshInstance3D" parent="PosterHalftone"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 1.88, 1.68, 2.11)
+mesh = SubResource("Mesh_frame_sq")
+surface_material_override/0 = SubResource("Mat_poster_frame")
+
+[node name="Face" type="MeshInstance3D" parent="PosterHalftone"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 1.88, 1.68, 2.093)
+mesh = SubResource("Quad_sq")
+surface_material_override/0 = SubResource("Mat_poster_half")
 
 [node name="Baseboard" type="Node3D" parent="."]
 
