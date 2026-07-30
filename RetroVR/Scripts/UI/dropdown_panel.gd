@@ -27,6 +27,12 @@ var _ui: DropdownOptions2D = null
 var _host: XRToolsViewport2DIn3D = null
 ## Metres per host viewport pixel, so the popout matches the menu's scale.
 var _m_per_px := 0.0005
+## The popout's own curve, and the host's, which drives it.
+var _curve: CurvedPanel = null
+var _host_curve: CurvedPanel = null
+## Last placement, in flat host-panel coordinates, so a curve step can re-place
+## the card without recomputing the layout.
+var _flat_at := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -54,16 +60,46 @@ func show_for(host: XRToolsViewport2DIn3D, toggle_rect: Rect2, options: Array,
 
 	ui.set_options(options, current_id, font, 22, columns)
 
-	# On a curved host the screen bows toward the viewer — up to ~11 cm at the
-	# edges, far more than Z_OFFSET — so a flat offset leaves the card buried in
-	# the menu it is meant to float over. Ride the arc instead, and face along it.
-	var flat := _local_for(host, toggle_rect, px_w, px_h)
-	var curved := host.get_node_or_null("CurvedPanel")
-	if curved != null and curved.has_method("surface_pose"):
-		transform = curved.surface_pose(flat.x, flat.y, Z_OFFSET)
-	else:
-		position = flat
+	_flat_at = _local_for(host, toggle_rect, px_w, px_h)
+	_host_curve = host.get_node_or_null("CurvedPanel") as CurvedPanel
+	if _host_curve != null and not _host_curve.curve_changed.is_connected(_follow_host):
+		_host_curve.curve_changed.connect(_follow_host)
 	visible = true
+	_follow_host()
+	# After _follow_host, which rebuilt against the previous size: the
+	# viewport_size/screen_size writes above went through the addon's setter,
+	# which swaps the arc back out for a QuadMesh.
+	if _curve != null:
+		_curve.resync()
+
+
+## Sit on the host's cylinder and bend to match it. Connected to the host's
+## curve_changed, so this tracks the flat/curved animation frame by frame instead
+## of snapping once it finishes.
+func _follow_host() -> void:
+	# The connection outlives the popout being dismissed, and rebuilding a mesh
+	# nobody can see for every step of the host's tween is pure waste.
+	if not visible:
+		return
+	if _host_curve == null or not is_instance_valid(_host_curve):
+		position = _flat_at
+		if _curve != null:
+			_curve.set_curved(false, false)
+		return
+
+	transform = _host_curve.surface_pose(_flat_at.x, _flat_at.y, Z_OFFSET)
+	if _curve == null:
+		return
+
+	# Concentric with the host, not merely bent by the same amount. The card
+	# floats Z_OFFSET nearer the cylinder's axis than the screen does, so it needs
+	# the smaller radius; give it the host's and its edges splay off the menu.
+	var r := _host_curve.axis_radius()
+	if r <= 0.0:
+		_curve.set_curved(false, false)
+	else:
+		_curve.curve_radius = maxf(r - Z_OFFSET, 0.05)
+		_curve.set_curved(true, false)
 
 
 func hide_panel() -> void:
@@ -106,10 +142,25 @@ func _ensure_ui() -> DropdownOptions2D:
 		# only lets the list behind bleed through, and scene lighting would make
 		# it read dimmer than the panel it sits on.
 		_viewport.transparent = XRToolsViewport2DIn3D.TransparancyMode.OPAQUE
-		_viewport.unshaded = true
+		# Opaque, but lit: the host menu is lit, and an unshaded card reads as a
+		# brighter cut-out floating over it rather than part of the same surface.
+		_viewport.unshaded = false
 		if _host != null:
 			_viewport.collision_layer = _host.collision_layer
 		add_child(_viewport)
+
+		# Its own arc, so the card bends with the menu instead of hanging off it
+		# as a flat rectangle turned to the tangent. No toggle and no resize grip:
+		# it follows the host's, and a second set of controls on a popout would be
+		# both meaningless and in the way.
+		_curve = CurvedPanel.new()
+		_curve.name = "CurvedPanel"
+		_curve.show_controls = false
+		_curve.follow_prefs = false
+		# Driven by the host's tween, one step at a time — a tween of its own would
+		# race that one and lag behind it.
+		_curve.animate_seconds = 0.0
+		_viewport.add_child(_curve)
 
 	# Must go through the `scene` property: that is what instantiates the UI
 	# into the SubViewport and binds its texture to the quad's material.

@@ -26,6 +26,11 @@
 class_name CurvedPanel
 extends Node3D
 
+## Emitted whenever the geometry is rebuilt — a curve step, or a resize. Anything
+## parented to the panel that has to ride the arc listens to this and re-places
+## itself; a DropdownPanel popout also re-curves to stay concentric.
+signal curve_changed
+
 ## Cylinder radius at full curve, in metres. Not the 0.9 m spawn distance: the
 ## panel is grabbable between 0.3 m and 2.5 m, so a curve tuned to one distance
 ## looks wrong at every other. This reads as a gentle wrap across that range.
@@ -36,6 +41,12 @@ extends Node3D
 ## Start curved. AppPrefs.menu_curved overrides this at runtime — the export is
 ## only the fallback for a panel built outside the app (probes, tests).
 @export var curved: bool = true
+## Build the flat/curved toggle and the resize grip. Off for a panel that is not
+## the one the player is steering — a dropdown popout curves to match its host
+## and must not offer a second set of controls.
+@export var show_controls: bool = true
+## Take the initial state from AppPrefs. Off for a panel driven by another one.
+@export var follow_prefs: bool = true
 
 ## 0 = flat, 1 = fully wrapped. Animated between the two.
 var _curve: float = 0.0
@@ -101,9 +112,11 @@ func _ready() -> void:
 	# pointer handler and calls _update_screen_size(), resetting the mesh to a
 	# QuadMesh and the shape to a box. Deferring puts this after both.
 	call_deferred("_intercept_pointer")
-	call_deferred("_build_toggle")
-	call_deferred("_build_grip")
-	curved = AppPrefs.menu_curved
+	if show_controls:
+		call_deferred("_build_toggle")
+		call_deferred("_build_grip")
+	if follow_prefs:
+		curved = AppPrefs.menu_curved
 	_curve = 1.0 if curved else 0.0
 	call_deferred("_rebuild")
 
@@ -187,6 +200,7 @@ func _rebuild() -> void:
 
 	_place_buttons()
 	_place_grip()
+	curve_changed.emit()
 
 
 ## Where something sitting `out` metres off the screen should go, for a point
@@ -208,6 +222,25 @@ func surface_pose(flat_x: float, y: float, out: float) -> Transform3D:
 ## True while the screen is bent enough for surface_pose to matter.
 func is_curved() -> bool:
 	return _curve > 0.001
+
+
+## Distance from the cylinder axis out to the screen, in metres, or 0 when flat.
+## A panel that wants to sit on the SAME cylinder — concentric, so the two read
+## as one surface rather than two — takes this minus its own standoff.
+func axis_radius() -> float:
+	return 0.0 if _curve <= 0.001 else curve_radius / _curve
+
+
+## Re-read the panel's screen_size and rebuild. Needed after anything that goes
+## through the addon's own screen_size setter, which replaces the arc mesh with a
+## QuadMesh and the trimesh with a BoxShape as a side effect of its bookkeeping.
+func resync() -> void:
+	if _screen == null or _panel == null:
+		return
+	var size: Variant = _panel.get("screen_size")
+	if size is Vector2:
+		_screen_size = size
+	_rebuild()
 
 
 # ── Pointer remap ─────────────────────────────────────────────────────────────
