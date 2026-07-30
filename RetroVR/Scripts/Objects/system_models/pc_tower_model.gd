@@ -38,6 +38,24 @@ func _ready() -> void:
 	_set_led(_drive_led, false, Color(1.0, 0.7, 0.2))
 
 
+# --- ports ------------------------------------------------------------------
+
+func configure_controller_ports(port_zones: Array) -> void:
+	# Authored PortSeat markers win over any computed pose — the same
+	# "authored beats computed" idiom as DiscSeat.
+	for i in range(port_zones.size()):
+		var zone := port_zones[i] as Node3D
+		if zone == null:
+			continue
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			zone.global_transform = seat.global_transform
+	# system.tscn's grey port box and floating number are stand-ins for the default
+	# procedural shell. This tower moulds its own colour-coded sockets, so leaving
+	# them on would park a grey cube and a "1" over the purple one.
+	hide_port_placeholders(port_zones)
+
+
 # --- the sliding tray -------------------------------------------------------
 
 ## Where a seated disc should be parented so it rides out with the tray.
@@ -66,6 +84,11 @@ func _slide_to(target: Vector3) -> void:
 
 ## A PC takes keyboard and mouse rather than joypads, but RetroSystem's ports are
 ## how any input reaches the core, so two are kept.
+##
+## They stay ORDINARY controller ports: RetroKeyboard and RetroMouse already
+## implement the port contract (on_plugged_in / on_unplugged) and spawn the same
+## cable a gamepad does. Only the socket geometry and its PC99 colour coding —
+## purple keyboard, green mouse, matching the plug meshes — say otherwise.
 func get_controller_port_count() -> int:
 	return 2
 
@@ -111,14 +134,6 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 ## Ports onto the BACK panel, where a PC's keyboard and mouse actually plug in.
 ## Left at their defaults they sat at the tower's base and dipped 6 mm below the
 ## floor, since the default layout assumes a console lying flat.
-func configure_controller_ports(port_zones: Array) -> void:
-	for i in port_zones.size():
-		var zone := port_zones[i] as Node3D
-		if zone == null:
-			continue
-		zone.position = Vector3(-0.045 + 0.09 * float(i % 2), 0.1, -0.223)
-
-
 func configure_cable_attach(attach_point: Node3D) -> void:
 	attach_point.position = $Back/AvAnchor.position
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
