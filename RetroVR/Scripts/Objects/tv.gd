@@ -184,6 +184,7 @@ func _ready() -> void:
 	# disable its scale copy on grab and reassert our scale on drop.
 	grabbed.connect(_on_tv_grabbed)
 	dropped.connect(_on_tv_dropped)
+	sleeping_state_changed.connect(_on_sleeping_state_changed)
 	_apply_scale()
 
 	if _ambilight:
@@ -769,14 +770,19 @@ func get_screen_mesh() -> MeshInstance3D:
 ## and slightly below its centre, which is where a CRT of this vintage puts them.
 ## Emitting from the cabinet centre instead makes the sound appear to come from
 ## inside the box -- inaudible with amplitude panning, obvious with HRTF.
+##
+## The offsets are in the set's own local metres, so they are applied with the
+## UNNORMALISED basis: its columns are scale_factor long, which converts to world
+## and tracks the display scale (and any parent's) for free. Normalising here
+## would pin the speakers to 1x while the picture around them grew.
 func get_speaker_positions() -> PackedVector3Array:
 	var half_w: float = _screen_size_m.x * 0.5 + 0.055
 	var drop: float = _screen_size_m.y * 0.35
 	var basis := global_transform.basis
 	# Front of the screen, not the cabinet centre.
-	var face: Vector3 = _screen_mesh.global_position + basis.z.normalized() * 0.005
-	var right: Vector3 = basis.x.normalized() * half_w
-	var down: Vector3 = -basis.y.normalized() * drop
+	var face: Vector3 = _screen_mesh.global_position + basis.z * 0.005
+	var right: Vector3 = basis.x * half_w
+	var down: Vector3 = -basis.y * drop
 	var out := PackedVector3Array()
 	out.push_back(face - right + down)
 	out.push_back(face + right + down)
@@ -983,22 +989,70 @@ func set_tv_scale(factor: float) -> void:
 
 
 func _apply_scale() -> void:
-	# Grow/shrink away from whatever the TV is resting on rather than about its
-	# own origin. Scaling about the origin drives the bottom of the TV down into
-	# the table it is sitting on, and the solver resolves that penetration by
-	# ejecting it downward — the TV drops through the surface and falls out of
-	# the world. Pinning the lowest point keeps the contact intact, so the extra
-	# size grows upward instead.
+	# Grow/shrink away from the surfaces the TV is up against rather than about
+	# its own origin. A set is placed base-down and back-to-wall, so scaling about
+	# the centre drives its bottom into the table and its back into the wall. The
+	# solver resolves both penetrations by ejecting the body, and because the size
+	# slider re-applies every tick the ejections accumulate: the TV sinks a little,
+	# tips, and walks across the furniture. Pinning the bottom and the back face
+	# keeps both contacts intact, so the extra size grows upward and forward.
 	#
-	# The bottom is derived from cached unscaled local bounds rather than
-	# re-measured in world space each time: a child's global_transform is still
-	# stale in the frame its parent's scale changes, so measuring after the
-	# write reads back pre-scale values and the correction cancels to nothing.
-	var previous := scale.y
+	# The offsets are unscaled local constants rather than world measurements taken
+	# after the write: a child's global_transform is still stale in the frame its
+	# parent's scale changes, so re-measuring reads back pre-scale values and the
+	# correction cancels to nothing.
+	#
+	# previous is tracked here, not read back off scale.y, because the authored or
+	# restored position already sits where the anchoring puts it. Correcting a
+	# scale the node has never actually worn would shift a persisted 2.1x set up
+	# and forward again on every load.
+	var previous := _anchored_scale
+	_anchored_scale = scale_factor
+	# Measured before the scale write, which is what leaves the children stale —
+	# and unconditionally, so the very first call, from _ready, is the one that
+	# fills the cache while every transform is still coherent.
+	var bottom := _local_bottom_y()
+	var back := _local_back_z()
 	scale = Vector3.ONE * scale_factor
+	if is_nan(previous):
+		return
 	# bottom_world = origin_y + s * local_bottom, so holding it fixed means
-	# shifting the origin by (old_s - new_s) * local_bottom.
-	global_position.y += (previous - scale_factor) * _local_bottom_y()
+	# shifting the origin by (old_s - new_s) * local_bottom; likewise for the back
+	# face along the TV's own -Z.
+	var delta := previous - scale_factor
+	if is_zero_approx(delta):
+		return
+	global_position += Vector3(0.0, delta * bottom, 0.0) \
+		+ global_basis.orthonormalized().z * (delta * back)
+	# Whatever the enlarged cabinet still overlaps — a corner wall, the front edge
+	# of the desk it now overhangs — is a penetration the solver would spend the
+	# next frames evicting, and the slider re-applies every tick, so the evictions
+	# compound into a slide and a slow topple that the set never recovers from.
+	# Resizing a set that is standing somewhere is a placement, not a collision:
+	# hand it straight back asleep.
+	#
+	# force_update_transform first: the writes above only queue a transform
+	# notification, and the flush at the end of the frame is what pushes the pose
+	# to the physics server — and wakes the body. Sleeping it before that flush
+	# does nothing at all.
+	if _rested_in_place and not freeze:
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		force_update_transform()
+		sleeping = true
+
+
+## Scale the anchor correction was last applied at. NAN until the first
+## _apply_scale, whose job is only to put the authored/restored scale on the node.
+var _anchored_scale: float = NAN
+
+## True once the set has settled somewhere and stayed there, so a resize can be
+## treated as a placement. Only ever set from the sleep edge, never cleared on
+## waking: _apply_scale's own teleport wakes the body, and mid-drag the sleep
+## timer never gets to expire, so a body that reads awake here is usually one we
+## woke ourselves. Pickup is the clearing event — after a drop, the set has to
+## come to rest again before another resize will pin it.
+var _rested_in_place: bool = false
 
 
 ## Lowest point of the TV's mesh geometry along Y, in local space at scale 1.
@@ -1026,6 +1080,19 @@ func _local_bottom_y() -> float:
 	return _local_bottom_y_cache
 
 
+## Rear face of the TV along local -Z, at scale 1.
+##
+## Read off the body collider, not the meshes: what must not enter the wall is
+## the shape the solver tests, and the port stub and its snap highlight hang
+## behind the cabinet, so a mesh sweep would anchor 20 mm too far back. The
+## shape is per-instance already — _resize_body_collision duplicates it.
+func _local_back_z() -> float:
+	var body_col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if body_col and body_col.shape is BoxShape3D:
+		return body_col.position.z - (body_col.shape as BoxShape3D).size.z * 0.5
+	return 0.0
+
+
 func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
 	var found: Array[MeshInstance3D] = []
 	if node is MeshInstance3D and (node as MeshInstance3D).visible:
@@ -1035,7 +1102,13 @@ func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
 	return found
 
 
+func _on_sleeping_state_changed() -> void:
+	if sleeping:
+		_rested_in_place = true
+
+
 func _on_tv_grabbed(_pickable: Node3D, _by: Node3D) -> void:
+	_rested_in_place = false
 	# The grab driver is created during the grab; stop it copying scale so the
 	# TV keeps its size while held (deferred so the driver exists first).
 	call_deferred("_lock_grab_scale")
