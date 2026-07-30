@@ -937,9 +937,18 @@ bead_color = Color(0.9, 0.88, 0.82, 1)
 
 [node name="FanPivot" type="Node3D" parent="Furniture"]
 script = ExtResource("35_glow")
-glow_meshes = PackedStringArray("defaultMaterial4")
+; defaultMaterial5 is the spiral CFL pigtail modelled inside the shade;
+; defaultMaterial4 is the glass globe around it. The globe used to be the emissive
+; one, which lit the GLASS and left the bulb dark — the fixture read as a glowing
+; ball. Now the bulb glows and the globe is translucent so you see it through the
+; frosting.
+;
+; 4.5 rather than the globe's old 2.2: the bulb is a fraction of the globe's
+; surface area, so the same energy over less area reads far dimmer.
+glow_meshes = PackedStringArray("defaultMaterial5")
+glass_meshes = PackedStringArray("defaultMaterial4")
 glow_color = Color(1, 0.82, 0.55, 1)
-glow_energy = 2.2
+glow_energy = 4.5
 
 [node name="Fan" parent="Furniture/FanPivot" instance=ExtResource("14_fan")]
 transform = Transform3D(0.00283, 0, 0, 0, 0.00283, 0, 0, 0, 0.00283, 0.2181, 0.4982, -0.5128)
