@@ -12,16 +12,26 @@
 ##
 ## Dimensions are the mini-DIN 6 spec:
 ##   * metal shroud 9.5 mm outside diameter, 9.5 mm long, 0.4 mm wall
-##   * 6 pins at 0.9 mm diameter, 7 mm long, on a 5.6 mm pitch circle, recessed
-##     inside the shroud
+##   * 6 pins at 0.9 mm diameter, 7 mm long, recessed inside the shroud
 ##   * a plastic alignment key against the shroud's inner wall, which is what stops
 ##     the plug going in the wrong way round
 ##   * a 13 mm plastic barrel behind, 22 mm long, tapering to a strain relief
 ##
-## The PIN LAYOUT is approximated — fanned across the top arc rather than the exact
-## mini-DIN two-row pattern, with the key at the bottom clear of them. At 9.5 mm
-## across, individual pin placement is below what resolves in a headset; the shroud
-## diameter, pin count and gauge are what read, and those are to spec.
+## PIN LAYOUT and KEY follow the mini-DIN 6 pinout drawing. The six pins ring a
+## rectangular plastic key that stands in the CENTRE of the bore — 5 and 6 above
+## it, 3 and 4 out at the sides, 1 and 2 below:
+##
+##       6   5
+##     4  |K|  3
+##       2   1
+##
+## Two earlier passes had this wrong: pins fanned evenly across the top arc, and
+## the key laid flat against the inner wall like a DIN notch. On the real part the
+## key is central and stands tall, and it is what the pins are arranged around.
+##
+## Numbering is the FEMALE socket's, so a male plug mirrors it left-to-right. The
+## mirror is invisible here — every pin is the same brass cylinder — but it would
+## matter if anything were ever labelled.
 ##
 ## Two colourways, per PC99 (1999, so period-legal for this room): purple for the
 ## keyboard, green for the mouse. That colour coding is also the only thing that
@@ -45,7 +55,6 @@ const SHROUD_WALL := 0.0004
 const SHROUD_LEN := 0.0095
 const PIN_DIA := 0.0009
 const PIN_LEN := 0.007
-const PIN_CIRCLE := 0.0056
 const BARREL_DIA := 0.013
 const BARREL_LEN := 0.022
 const RELIEF_LEN := 0.012
@@ -53,8 +62,24 @@ const RELIEF_LEN := 0.012
 ## real PS/2 lead measures — so this is both the true dimension and a clean meeting
 ## with the rope.
 const RELIEF_DIA := 0.005
-const KEY_W := 0.0025
-const KEY_H := 0.0012
+## Central key: tall and narrow, standing in the middle of the bore.
+const KEY_W := 0.0013
+const KEY_H := 0.0033
+
+## Pin centres in the connector face, metres, in PS/2 numbering order.
+##
+## Clearances, all checked against a 4.35 mm bore wall and the central key's
+## 0.65 x 1.65 mm half-extents, with a 0.45 mm pin radius: the outermost pins
+## (3, 4) reach 3.21 mm from the axis, and the nearest pin edge to the key is
+## 0.15 mm clear of it.
+const PIN_XY: Array[Vector2] = [
+	Vector2( 0.00125, -0.00185),   # 1  +DATA   below, right
+	Vector2(-0.00125, -0.00185),   # 2  n/c     below, left
+	Vector2( 0.00270,  0.00056),   # 3  GND     side, right
+	Vector2(-0.00270,  0.00056),   # 4  Vcc     side, left
+	Vector2( 0.00136,  0.00218),   # 5  +CLK    above, right
+	Vector2(-0.00136,  0.00218),   # 6  n/c     above, left
+]
 
 const RING := 16          # radial segments; these are ~1 cm parts, 16 is plenty
 
@@ -77,10 +102,10 @@ func _build(file_name: String, barrel_tint: Color) -> void:
 	# -BARREL_LEN and the relief tapers back from there to the cable.
 	_tube(st, BARREL_DIA * 0.5, BARREL_DIA * 0.5, -BARREL_LEN, 0.0, true)
 	_tube(st, RELIEF_DIA * 0.5, BARREL_DIA * 0.5, -BARREL_LEN - RELIEF_LEN, -BARREL_LEN, true)
-	# Key sits flush against the shroud's inner wall at the bottom, not floating
-	# mid-bore — that is where the real one is, and it is what the pins clear.
+	# Key stands in the CENTRE of the bore, tall and narrow, with the pins ringing
+	# it. Not a notch in the wall.
 	_box(st, KEY_W, KEY_H, SHROUD_LEN * 0.62,
-		Vector3(0.0, -(r_in - KEY_H * 0.5), SHROUD_LEN * 0.31))
+		Vector3(0.0, 0.0, SHROUD_LEN * 0.31))
 	st.generate_normals()
 	var m_barrel := PlugMats.plastic(barrel_tint)
 	st.set_material(m_barrel)
@@ -102,11 +127,9 @@ func _build(file_name: String, barrel_tint: Color) -> void:
 	# --- surface 2: pins -----------------------------------------------------
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in 6:
-		# Fanned across the TOP arc, clear of the key at the bottom.
-		var a: float = deg_to_rad(20.0 + 28.0 * float(i))
-		var c := Vector3(cos(a) * PIN_CIRCLE * 0.5, sin(a) * PIN_CIRCLE * 0.5, 0.0)
-		_tube(st, PIN_DIA * 0.5, PIN_DIA * 0.5, 0.0, PIN_LEN, true, c)
+	for xy in PIN_XY:
+		_tube(st, PIN_DIA * 0.5, PIN_DIA * 0.5, 0.0, PIN_LEN, true,
+			Vector3(xy.x, xy.y, 0.0))
 	st.generate_normals()
 	var m_pin := PlugMats.brass()
 	st.set_material(m_pin)
