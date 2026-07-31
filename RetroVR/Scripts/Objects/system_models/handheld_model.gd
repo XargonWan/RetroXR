@@ -43,7 +43,7 @@ var _host: Node3D = null
 #
 # The DEFAULT is screen_pixel_aa: no device look, purely to get the core frame
 # sampled properly. A handheld's screen sits near 1:1 with the headset's pixels
-# (a 54 mm GBA panel at arm's length is ~0.94x — see Scripts/xr_init.gd), and at
+# (a 54 mm GBA panel at arm's length is ~0.94x — see Scripts/XR/xr_init.gd), and at
 # non-integer ratios neither hardware filter works: linear is uniformly soft, and
 # nearest drops source rows and crawls as the head moves. pixel_aa.gdshaderinc
 # explains the fix; gameboy_lcd samples the same way, so a device look does not

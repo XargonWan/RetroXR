@@ -69,15 +69,15 @@ Add a video player system that follows the same physical metaphor as game consol
    - Restore: re-spawn VCR player, reconnect cable, reinsert tape
 
 ## Key Files to Modify
-- `RetroVR/Scripts/Data/rom_library.gd` — Add `scan_videos()` and `ensure_videos_root()`
-- `RetroVR/Scripts/UI/spawn_menu_controller.gd` — Add Videos tab, spawn VCR tapes
-- `RetroVR/Scripts/Objects/tv.gd` — Generalize plug source (system OR VCR player)
-- `RetroVR/Scripts/Objects/cable_plug.gd` — `get_source()` instead of `get_system()`
+- `RetroVR/Scripts/Data/library/rom_library.gd` — Add `scan_videos()` and `ensure_videos_root()`
+- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Add Videos tab, spawn VCR tapes
+- `RetroVR/Scripts/Objects/tv/tv.gd` — Generalize plug source (system OR VCR player)
+- `RetroVR/Scripts/Objects/cables/cable_plug.gd` — `get_source()` instead of `get_system()`
 - `RetroVR/Scripts/Data/scene_persistence.gd` — Add VCR types
 
 ## New Files
-- `RetroVR/Scripts/Objects/vcr_player.gd` — VCR player controller
-- `RetroVR/Scripts/Objects/vcr_tape.gd` — VCR tape (video cartridge)
+- `RetroVR/Scripts/Objects/media/vcr_player.gd` — VCR player controller
+- `RetroVR/Scripts/Objects/media/vcr_tape.gd` — VCR tape (video cartridge)
 - `RetroVR/Scenes/Objects/vcr_player.tscn` — VCR player scene
 - `RetroVR/Scenes/Objects/vcr_tape.tscn` — VCR tape scene
 - `RetroVR/Scripts/Data/video_library.gd` — Video folder scanning (or add to rom_library)

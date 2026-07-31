@@ -1,7 +1,7 @@
 [gd_scene load_steps=9 format=3 uid="uid://audiocassette_0001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/audio_cassette.gd" id="1_casscript"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/audio_cassette.gd" id="1_casscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_tape"]
 size = Vector3(0.1, 0.064, 0.012)

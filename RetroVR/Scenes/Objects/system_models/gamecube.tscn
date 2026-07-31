@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://cvxpo1pfij5h5" path="res://imported-assets/gamecube_normal.png" id="4_lj8hf"]
 [ext_resource type="Texture2D" uid="uid://bsj5bykbx4rgu" path="res://imported-assets/gamecube_orm.png" id="5_ru2yl"]
 [ext_resource type="Texture2D" uid="uid://csrmvn6yl5lwn" path="res://imported-assets/gamecube_normal_2.png" id="6_vwbam"]
-[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="7_imrcj"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/widgets/vr_spring_latched_hinge.gd" id="7_imrcj"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="8_veirt"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d7t4c"]

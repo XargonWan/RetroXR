@@ -1,6 +1,6 @@
 [gd_scene load_steps=68 format=3]
 
-[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
+[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/XR/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
 [ext_resource type="PackedScene" uid="uid://mft7vy78rjrv" path="res://Scenes/Objects/tv.tscn" id="3_tv"]
 [ext_resource type="Shader" path="res://Shaders/wood_planks.gdshader" id="4_wood"]

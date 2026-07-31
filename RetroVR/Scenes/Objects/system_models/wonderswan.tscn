@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/wonderswan_model.gd" id="1_kigqs"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_m1dcs"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_m1dcs"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_vrkyx"]
 size = Vector3(0.0743, 0.024, 0.121)

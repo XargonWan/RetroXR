@@ -1,9 +1,9 @@
 [gd_scene format=4 uid="uid://cbeqhb2fdurqy"]
 
 [ext_resource type="Script" uid="uid://d3o3y54a3v0d3" path="res://Scripts/Objects/system_models/n3ds_model.gd" id="1_hqvy2"]
-[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="2_j3ekd"]
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="2_j3ekd"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="3_aybqj"]
-[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="3_kgfsk"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="3_kgfsk"]
 [ext_resource type="Texture2D" uid="uid://bhuh5ye5tni37" path="res://imported-assets/new_3ds_xl_n_new_3ds_xl.png" id="4_aybqj"]
 [ext_resource type="Texture2D" uid="uid://xd1gsici3404" path="res://imported-assets/new_3ds_xl_normal.png" id="5_jmku2"]
 [ext_resource type="Texture2D" uid="uid://clu825a2xvww6" path="res://imported-assets/new_3ds_xl_bluemoon.png" id="7_ag6as"]

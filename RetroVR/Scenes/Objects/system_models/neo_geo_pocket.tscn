@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/neo_geo_pocket_model.gd" id="1_xgyca"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_u51h8"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_u51h8"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_ugpba"]
 size = Vector3(0.1295, 0.0245, 0.0745)

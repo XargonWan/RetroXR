@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://d2j13s54qivwh"]
 
 [ext_resource type="Script" uid="uid://dsp6hppf34lfg" path="res://Scripts/Objects/controllers/dualshock_controller.gd" id="1_dsscript"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
 [ext_resource type="PackedScene" path="res://imported-assets/dualshock2.glb" id="5_model"]

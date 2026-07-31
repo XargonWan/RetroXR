@@ -7,9 +7,9 @@
 [ext_resource type="Texture2D" uid="uid://qpfmtkgqitlv" path="res://imported-assets/game_boy_advance_sp_Plugs_Albedo.png" id="6_1g4de"]
 [ext_resource type="Texture2D" uid="uid://d3mmajfla4c2u" path="res://imported-assets/game_boy_advance_sp_orm_5.png" id="7_4fuwo"]
 [ext_resource type="Texture2D" uid="uid://du5uphu86sxcq" path="res://imported-assets/game_boy_advance_sp_normal_4.png" id="8_gwgvc"]
-[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/vr_hinge.gd" id="9_rjw3p"]
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="9_rjw3p"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="10_se2sk"]
-[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="11_vrsld"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="11_vrsld"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_g2k1q"]
 resource_name = "lambert1"

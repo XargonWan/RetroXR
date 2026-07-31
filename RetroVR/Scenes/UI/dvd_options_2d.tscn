@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://dvd_opts_2d_001"]
 
-[ext_resource type="Script" path="res://Scripts/UI/dvd_options_2d.gd" id="1"]
+[ext_resource type="Script" path="res://Scripts/UI/panels/dvd_options_2d.gd" id="1"]
 
 [node name="DVDOptions2D" type="Control"]
 layout_mode = 3

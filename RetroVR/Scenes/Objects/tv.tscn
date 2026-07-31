@@ -1,19 +1,16 @@
 [gd_scene format=3 uid="uid://mft7vy78rjrv"]
 
-[ext_resource type="Script" uid="uid://c3b5c470fc0pa" path="res://Scripts/Objects/tv.gd" id="1_tvscript"]
+[ext_resource type="Script" uid="uid://c3b5c470fc0pa" path="res://Scripts/Objects/tv/tv.gd" id="1_tvscript"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
-[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/snap_highlight.gd" id="3_snaphis"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="4_pickhigh"]
-[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="5_vrbutton"]
-[ext_resource type="PackedScene" uid="uid://tv_opts_panel_001" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
+[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="3_snaphis"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="4_pickhigh"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="5_vrbutton"]
+[ext_resource type="PackedScene" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_screen_curved.res" id="7_screencurved"]
-[ext_resource type="Shader" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
+[ext_resource type="Shader" uid="uid://dp0ojf0bxhg8y" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
-
-[sub_resource type="SystemFont" id="Font_mono"]
-font_names = PackedStringArray("Consolas", "Courier New", "Droid Sans Mono", "monospace")
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.5, 0.4, 0.3)
@@ -24,24 +21,15 @@ size = Vector3(0.5, 0.4, 0.3)
 [sub_resource type="StandardMaterial3D" id="Mat_tvbody"]
 albedo_color = Color(0.1, 0.1, 0.1, 1)
 
-; local_to_scene: every TV drives its OWN phosphor pair through these materials
-; each frame (_update_phosphor sets src/prev/decay, then arms the viewport). A
-; shared sub-resource makes the last writer in the frame win for every viewport
-; rendered that frame — with more than one TV in the room, an idle "no signal"
-; set overwrites a running core's picture and the game's TV goes blue.
-[sub_resource type="ShaderMaterial" id="Mat_phosphor_a"]
-resource_local_to_scene = true
-shader = ExtResource("8_phosphor")
-
-[sub_resource type="ShaderMaterial" id="Mat_phosphor_b"]
-resource_local_to_scene = true
-shader = ExtResource("8_phosphor")
-
 [sub_resource type="StandardMaterial3D" id="Mat_screen"]
 albedo_color = Color(0, 0, 0, 1)
 emission_enabled = true
 emission = Color(0.02, 0.02, 0.02, 1)
 emission_energy_multiplier = 2.0
+
+[sub_resource type="SystemFont" id="Font_mono"]
+font_names = PackedStringArray("Consolas", "Courier New", "Droid Sans Mono", "monospace")
+subpixel_positioning = 0
 
 [sub_resource type="CylinderMesh" id="CylMesh_port"]
 top_radius = 0.012
@@ -69,6 +57,16 @@ size = Vector3(0.025, 0.015, 0.025)
 [sub_resource type="BoxMesh" id="BoxMesh_btn"]
 size = Vector3(0.025, 0.01, 0.025)
 
+[sub_resource type="ShaderMaterial" id="Mat_phosphor_a"]
+resource_local_to_scene = true
+shader = ExtResource("8_phosphor")
+shader_parameter/decay = Vector3(0.3, 0.26, 0.21)
+
+[sub_resource type="ShaderMaterial" id="Mat_phosphor_b"]
+resource_local_to_scene = true
+shader = ExtResource("8_phosphor")
+shader_parameter/decay = Vector3(0.3, 0.26, 0.21)
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.52, 0.42, 0.32)
 
@@ -91,13 +89,6 @@ shape = SubResource("BoxShape3D_body")
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_tvbody")
 
-; Curved tube face (Tools/gen_curved_screen.gd) rather than a flat QuadMesh — a
-; UV barrel warp is monoscopic, so in a headset it reads as a flat sticker.
-;
-; z stays at the flat quad's 0.151 and the 9 mm bulge protrudes FORWARD from
-; there. It must not be recessed to centre the bulge: TVBody's front face is at
-; 0.15, so recessing buries the glass rim inside the box and only the tip of the
-; parabola shows — the screen renders as an ellipse.
 [node name="ScreenMesh" type="MeshInstance3D" parent="." unique_id=1026455476]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0.151)
 mesh = ExtResource("7_screencurved")
@@ -107,27 +98,23 @@ surface_material_override/0 = SubResource("Mat_screen")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.155, 0.095, 0.006)
 visible = false
 pixel_size = 0.0006
-modulate = Color(0.25, 1, 0.35, 1)
-render_priority = 2
 no_depth_test = true
-text = ""
+render_priority = 2
+modulate = Color(0.25, 1, 0.35, 1)
 font_size = 64
 outline_size = 16
-outline_modulate = Color(0, 0, 0, 1)
 horizontal_alignment = 2
 
 [node name="VolumeOSDLabel" type="Label3D" parent="ScreenMesh" unique_id=1026455478]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.155, -0.095, 0.006)
 visible = false
 pixel_size = 0.0006
-modulate = Color(0.25, 1, 0.35, 1)
-render_priority = 2
 no_depth_test = true
-text = ""
+render_priority = 2
+modulate = Color(0.25, 1, 0.35, 1)
 font = SubResource("Font_mono")
 font_size = 64
 outline_size = 16
-outline_modulate = Color(0, 0, 0, 1)
 horizontal_alignment = 0
 
 [node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("2_snapzone")]
@@ -148,8 +135,6 @@ transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
 mesh = SubResource("CylMesh_plug_ghost")
 surface_material_override/0 = SubResource("Mat_plug_ghost")
 
-; Sits just clear of the glass centre (0.151 + 9 mm bulge) so the now-curved
-; screen can't occlude its cone into the room.
 [node name="Ambilight" type="SpotLight3D" parent="." unique_id=603587175]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.05, 0.162)
 light_color = Color(0.5, 0.5, 0.5, 1)
@@ -239,7 +224,6 @@ theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 10
 theme_override_font_sizes/font_size = 44
 horizontal_alignment = 2
-text = ""
 
 [node name="VolOSDText" type="Label" parent="OSDViewport" unique_id=555230852]
 anchors_preset = 15
@@ -257,13 +241,7 @@ theme_override_constants/outline_size = 10
 theme_override_fonts/font = SubResource("Font_mono")
 theme_override_font_sizes/font_size = 44
 vertical_alignment = 2
-text = ""
 
-; Phosphor persistence accumulator — a ping-pong pair, because a viewport can't
-; sample itself. tv.gd resizes both to the core's own resolution, renders one over
-; (live frame, other viewport) each frame, and hands the result to the CRT stage as
-; its picture source. Both are UPDATE_ONCE driven per frame from _process, never
-; UPDATE_ALWAYS: an ALWAYS render target hangs headless runs (see CLAUDE.md).
 [node name="PhosphorA" type="SubViewport" parent="." unique_id=555230860]
 disable_3d = true
 size = Vector2i(320, 240)
@@ -334,4 +312,4 @@ collision_mask = 0
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=2105383358]
 shape = SubResource("BoxShape3D_pointer")
 
-[node name="TVOptionsPanel" parent="." instance=ExtResource("6_tvoptspanel")]
+[node name="TVOptionsPanel" parent="." unique_id=1162448050 instance=ExtResource("6_tvoptspanel")]

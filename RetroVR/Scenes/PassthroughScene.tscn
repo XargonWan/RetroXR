@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://Scripts/passthrough_init.gd" id="1_ptinit"]
+[ext_resource type="Script" path="res://Scripts/XR/passthrough_init.gd" id="1_ptinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_pt_floor"]

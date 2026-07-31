@@ -58,12 +58,12 @@ Allow the project to run without a VR headset using mouse+WASD controls, with a 
 
 ## Key Files to Modify
 - `RetroVR/Scenes/player_rig.tscn` — Add desktop support nodes
-- `RetroVR/Scripts/xr_init.gd` — Mode detection, enable/disable desktop nodes
-- `RetroVR/Scripts/vr_input_mapper.gd` — Desktop attach/detach alternative
-- `RetroVR/Scripts/UI/spawn_menu_controller.gd` — Desktop menu interaction
+- `RetroVR/Scripts/XR/xr_init.gd` — Mode detection, enable/disable desktop nodes
+- `RetroVR/Scripts/XR/vr_input_mapper.gd` — Desktop attach/detach alternative
+- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Desktop menu interaction
 
 ## New Files
-- `RetroVR/Scripts/desktop_reticle.gd` — Crosshair overlay script
+- `RetroVR/Scripts/Desktop/desktop_reticle.gd` — Crosshair overlay script
 - `RetroVR/Scenes/UI/desktop_reticle.tscn` — Crosshair scene
 
 ## Interaction Limitations (from wish list)

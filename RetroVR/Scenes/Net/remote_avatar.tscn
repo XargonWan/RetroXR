@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3 uid="uid://net_avatar_001"]
 
-[ext_resource type="Script" path="res://Scripts/Net/remote_avatar.gd" id="1_avatarscript"]
+[ext_resource type="Script" path="res://Scripts/Net/netplay/remote_avatar.gd" id="1_avatarscript"]
 
 [sub_resource type="SphereMesh" id="SphereMesh_head"]
 radius = 0.12

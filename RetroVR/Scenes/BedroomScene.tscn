@@ -1,6 +1,6 @@
 [gd_scene load_steps=129 format=3]
 
-[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="1_xrinit"]
+[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/XR/xr_init.gd" id="1_xrinit"]
 [ext_resource type="PackedScene" path="res://Scenes/player_rig.tscn" id="2_playerrig"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_a.glb" id="4_house_a"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_b.glb" id="5_house_b"]
@@ -8,8 +8,8 @@
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_two_d.glb" id="7_house2d"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/house_two_e.glb" id="8_house2e"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/exterior/trees.glb" id="9_trees"]
-[ext_resource type="Script" path="res://Scripts/bedroom_exterior.gd" id="10_exterior"]
-[ext_resource type="Script" path="res://Scripts/mesh_filter.gd" id="11_meshfilter"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/bedroom_exterior.gd" id="10_exterior"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/mesh_filter.gd" id="11_meshfilter"]
 [ext_resource type="PackedScene" uid="uid://mft7vy78rjrv" path="res://Scenes/Objects/tv.tscn" id="30_tv"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Plaster001_1K-JPG_Color.jpg" id="20_wall_col"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/materials/Plaster001_1K-JPG_NormalGL.jpg" id="21_wall_nrm"]
@@ -28,16 +28,16 @@
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/nightstand.glb" id="26_nightstand"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/table_lamp.glb" id="27_lamp"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/light_switch.glb" id="28_switch"]
-[ext_resource type="Script" path="res://Scripts/Objects/light_switch.gd" id="29_switchscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/glow_mesh.gd" id="35_glow"]
-[ext_resource type="Script" path="res://Scripts/Objects/string_lights.gd" id="36_strlights"]
-[ext_resource type="Script" path="res://Scripts/Objects/bead_pull_cord.gd" id="48_pullcord"]
-[ext_resource type="Script" path="res://Scripts/Objects/window_blinds.gd" id="49_blinds"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/light_switch.gd" id="29_switchscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/glow_mesh.gd" id="35_glow"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/string_lights.gd" id="36_strlights"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/bead_pull_cord.gd" id="48_pullcord"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/window_blinds.gd" id="49_blinds"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_rough_1k.jpg" id="43_cu_rgh"]
-[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="31_vrbutton"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="31_vrbutton"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/system.tscn" id="47_system"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/rug_persian.png" id="32_rug"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/generated/poster_memphis.png" id="33_poster_a"]
@@ -497,7 +497,7 @@ environment = SubResource("Env_bedroom")
 ;   Dusk        -> layer 1 only (the room)      energy 0.15
 ;   ExteriorSun -> layer 2 only (the street)    energy 1.5
 ;
-; Scripts/bedroom_exterior.gd puts every renderable under Exterior on layer 2.
+; Scripts/Objects/room/bedroom_exterior.gd puts every renderable under Exterior on layer 2.
 [node name="Dusk" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.94, -0.24, 0.24, 0, 0.7, 0.71, -0.34, -0.67, 0.66, 0, 2.2, -2.2)
 light_color = Color(1, 0.72, 0.5, 1)

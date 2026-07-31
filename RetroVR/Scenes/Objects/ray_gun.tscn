@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://c4t1vrhcvr83p"]
 
-[ext_resource type="Script" uid="uid://cl6rvec4e02r5" path="res://Scripts/Objects/ray_gun.gd" id="1_gunscript"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://cl6rvec4e02r5" path="res://Scripts/Objects/peripherals/ray_gun.gd" id="1_gunscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_pistol_right.tscn" id="4_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_pistol_left.tscn" id="5_lhand"]

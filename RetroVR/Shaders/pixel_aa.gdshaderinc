@@ -24,7 +24,7 @@
 //
 // Beyond about 2x MINIFICATION a single tap can no longer represent what is under
 // it and this degrades toward aliasing like anything else without mipmaps; RetroVR
-// screens live near 1:1 (see Scripts/xr_init.gd for the measured budgets), which is
+// screens live near 1:1 (see Scripts/XR/xr_init.gd for the measured budgets), which is
 // the range this is for.
 
 // Sample position for `uv`, snapped to the texel grid with a one-screen-pixel ramp.

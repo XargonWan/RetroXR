@@ -1,7 +1,7 @@
 [gd_scene format=4 uid="uid://bxj38flgyab1e"]
 
 [ext_resource type="Script" uid="uid://bln7q1cifl2tc" path="res://Scripts/Objects/system_models/playstation_one_model.gd" id="1_psone"]
-[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="2_hinge"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/widgets/vr_spring_latched_hinge.gd" id="2_hinge"]
 [ext_resource type="PackedScene" uid="uid://btutsuwtqxmsk" path="res://imported-assets/playstation_one.glb" id="3_psoneglb"]
 [ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="4_7x0jt"]
 

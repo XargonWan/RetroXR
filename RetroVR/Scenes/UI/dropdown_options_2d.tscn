@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://dropdown_opts_2d_01"]
 
-[ext_resource type="Script" path="res://Scripts/UI/dropdown_options_2d.gd" id="1_dropopts"]
+[ext_resource type="Script" path="res://Scripts/UI/panels/dropdown_options_2d.gd" id="1_dropopts"]
 
 [node name="DropdownOptions2D" type="Control"]
 layout_mode = 3

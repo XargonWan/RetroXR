@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://vcr_opts_2d_001"]
 
-[ext_resource type="Script" path="res://Scripts/UI/vcr_options_2d.gd" id="1_vcropts2d"]
+[ext_resource type="Script" path="res://Scripts/UI/panels/vcr_options_2d.gd" id="1_vcropts2d"]
 
 [node name="VCROptions2D" type="Control"]
 anchor_right = 1.0

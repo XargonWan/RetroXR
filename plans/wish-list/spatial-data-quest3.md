@@ -127,7 +127,7 @@ Modify:
 - `RetroVR/Scenes/PassthroughScene.tscn` — scene manager / plane visualiser
 - `RetroVR/Scripts/Data/scene_persistence.gd` — per-room save dirs
 - `RetroVR/Scripts/Data/scene_manager.gd` — persistence gate
-- `RetroVR/Scripts/UI/spawn_menu_controller.gd` — persistence gate
+- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — persistence gate
 
 New (paths follow the current foldered `Scripts/` layout):
 - `RetroVR/Scripts/Data/spatial_manager.gd` — capability detection + plane bookkeeping

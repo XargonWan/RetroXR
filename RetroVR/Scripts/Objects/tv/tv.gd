@@ -26,7 +26,7 @@ const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 @export var tv_model: String = ""
 
 ## Cabinet variants. A shell supplies geometry plus Marker3D seats; every
-## functional node stays on this TV. See Scripts/Objects/tv_shell.gd.
+## functional node stays on this TV. See Scripts/Objects/tv/tv_shell.gd.
 const _SHELL_SCENES := {
 	"crt_90s":     "res://Scenes/Objects/tv_models/crt_90s.tscn",
 	"crt_monitor": "res://Scenes/Objects/tv_models/crt_monitor.tscn",

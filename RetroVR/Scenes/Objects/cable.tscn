@@ -1,9 +1,9 @@
 [gd_scene load_steps=8 format=3 uid="uid://cable_001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/cable_plug.gd" id="1_plugscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/verlet_rope.gd" id="2_ropescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/cable_plug.gd" id="1_plugscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/verlet_rope.gd" id="2_ropescript"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/rca_plug_yellow.res" id="5_rcaplug"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="3_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]

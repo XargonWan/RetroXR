@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/supervision_model.gd" id="1_p2wsw"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_2c4sv"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_2c4sv"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_ijuq4"]
 size = Vector3(0.09, 0.03, 0.16)

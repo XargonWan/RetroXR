@@ -1,9 +1,9 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" uid="uid://cponhaj4xkepm" path="res://Scripts/Objects/system_models/psp_model.gd" id="1_model"]
-[ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/vr_spring_return_slider.gd" id="2_slider"]
-[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="3_button"]
-[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/vr_spring_latched_hinge.gd" id="4_hinge"]
+[ext_resource type="Script" uid="uid://bsx5exdw5i5bt" path="res://Scripts/Objects/widgets/vr_spring_return_slider.gd" id="2_slider"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="3_button"]
+[ext_resource type="Script" uid="uid://bijuot0d83b44" path="res://Scripts/Objects/widgets/vr_spring_latched_hinge.gd" id="4_hinge"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(0.083904006, 0.047486406)

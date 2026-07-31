@@ -68,7 +68,7 @@ func _ready() -> void:
 	# (picked_up_ranged property + drop_object() callback).
 	# Placed in the "desktop_hand" group so ray_gun.gd / retro_controller.gd
 	# can detect desktop-grab in their _on_grabbed_signal handlers.
-	var pivot_script := load("res://Scripts/desktop_hand_pivot.gd")
+	var pivot_script := load("res://Scripts/Desktop/desktop_hand_pivot.gd")
 	_hand_pivot = Node3D.new()
 	_hand_pivot.set_script(pivot_script)
 	_hand_pivot.name = "DesktopHand"

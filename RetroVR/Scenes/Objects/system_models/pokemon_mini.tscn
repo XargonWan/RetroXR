@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pokemon_mini_model.gd" id="1_hop4r"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_0kfpa"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_0kfpa"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_lqker"]
 size = Vector3(0.058, 0.023, 0.074)

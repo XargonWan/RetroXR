@@ -1,7 +1,7 @@
 [gd_scene load_steps=15 format=3]
 
-[ext_resource type="Script" path="res://Scripts/Objects/pdf_book.gd" id="1_bookscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/books/pdf_book.gd" id="1_bookscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://book_opts_panel_001" path="res://Scenes/UI/book_options_panel.tscn" id="3_bookopts"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]

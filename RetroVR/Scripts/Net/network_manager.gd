@@ -24,10 +24,10 @@ const CH_NPINPUT := 2   # unreliable: netplay per-frame inputs (self-redundant)
 const CH_FILE := 3      # reliable: file/state chunks
 
 const AVATAR_SCENE := preload("res://Scenes/Net/remote_avatar.tscn")
-const POSE_BROADCASTER := preload("res://Scripts/Net/pose_broadcaster.gd")
-const OBJECT_SYNC := preload("res://Scripts/Net/object_sync.gd")
-const NETPLAY := preload("res://Scripts/Net/netplay_session.gd")
-const FILE_TRANSFER := preload("res://Scripts/Net/file_transfer.gd")
+const POSE_BROADCASTER := preload("res://Scripts/Net/netplay/pose_broadcaster.gd")
+const OBJECT_SYNC := preload("res://Scripts/Net/netplay/object_sync.gd")
+const NETPLAY := preload("res://Scripts/Net/netplay/netplay_session.gd")
+const FILE_TRANSFER := preload("res://Scripts/Net/netplay/file_transfer.gd")
 
 ## Avatar palette — color_idx assigned by the host at registration.
 const PLAYER_COLORS: Array[Color] = [
@@ -98,6 +98,14 @@ func _parse_cmdline() -> void:
 			and ResourceLoader.exists("res://Tools/netplay_spike.tscn"):
 		print("[NetworkManager] spike.cfg found — launching netplay spike")
 		get_tree().change_scene_to_file("res://Tools/netplay_spike.tscn")
+		return
+	# Same hook for menu timings. Deleted on sight, so a crash mid-run cannot
+	# wedge the app into the probe.
+	if FileAccess.file_exists("user://perfprobe.cfg") \
+			and ResourceLoader.exists("res://Tools/menu_perf_probe.tscn"):
+		print("[NetworkManager] perfprobe.cfg found — launching menu perf probe")
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://perfprobe.cfg"))
+		get_tree().change_scene_to_file("res://Tools/menu_perf_probe.tscn")
 		return
 	var args := OS.get_cmdline_user_args()
 	var do_host := false

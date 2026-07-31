@@ -79,10 +79,10 @@ When a remote player joins, the system highlights their assigned port slot (glow
 2. **Audio**: Spatial audio from the TV node — remote players hear it spatially based on their head position relative to the TV
 
 ## Key Files to Modify
-- `RetroVR/Scripts/Objects/system.gd` — Port highlight RPC, authoritative port-snap handling
+- `RetroVR/Scripts/Objects/systems/system.gd` — Port highlight RPC, authoritative port-snap handling
 - `RetroVR/Scripts/Objects/retro_controller.gd` — Send input RPC when remote player
-- `RetroVR/Scripts/Objects/ray_gun.gd` — Send lightgun RPC when remote player
-- `RetroVR/Scripts/UI/spawn_menu_controller.gd` — Multiplayer UI tab
+- `RetroVR/Scripts/Objects/peripherals/ray_gun.gd` — Send lightgun RPC when remote player
+- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Multiplayer UI tab
 - `RetroVR/project.godot` — Network config, multiplayer spawner setup
 
 ## New Files

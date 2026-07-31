@@ -1,7 +1,7 @@
 [gd_scene load_steps=10 format=3 uid="uid://vcrtape_001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/vcr_tape.gd" id="1_tapescript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/vcr_tape.gd" id="1_tapescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="3_snapgp"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_tape"]

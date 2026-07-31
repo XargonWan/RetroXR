@@ -54,7 +54,7 @@ any op whose frame == the frame about to run, right where `m_np_inputs` is consu
 `ADD_SIGNAL("disk_control_ready", has_control: BOOL, count: INT, current_index: INT,
 ejected: BOOL)` beside the existing signals (`Libretro.cpp:249-258`). Rebuild all 4 targets.
 
-## Layer 2 — GDScript: physical eject/swap (RetroVR/Scripts/Objects/system.gd)
+## Layer 2 — GDScript: physical eject/swap (RetroVR/Scripts/Objects/systems/system.gd)
 
 Each PSX disc is an ordinary `RetroCartridge` spawned from the menu — **no cartridge changes,
 no `.m3u`, no `disc_index`.** The whole feature is in the system's insert/remove handlers,

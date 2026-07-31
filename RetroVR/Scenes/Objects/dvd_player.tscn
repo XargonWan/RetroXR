@@ -1,10 +1,10 @@
 [gd_scene load_steps=18 format=3 uid="uid://dvdplayer_001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/dvd_player.gd" id="1_dvdscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/dvd_player.gd" id="1_dvdscript"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
-[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/vr_button.gd" id="3_vrbtn"]
-[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/snap_highlight.gd" id="4_snaphis"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="5_pickhigh"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="3_vrbtn"]
+[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphis"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="5_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dvd_opts_panel_001" path="res://Scenes/UI/dvd_options_panel.tscn" id="6_dvdopts"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_dvd"]

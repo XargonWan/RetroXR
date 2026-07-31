@@ -1,7 +1,7 @@
 [gd_scene format=4]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/game_boy_advance_model.gd" id="1_tvfqd"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_ncn8l"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_ncn8l"]
 [ext_resource type="PackedScene" path="res://imported-assets/game_boy_advance.glb" id="3_3320q"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_advance_gbawhiteoff.png" id="4_auqda"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_advance_normal.png" id="5_46oqj"]

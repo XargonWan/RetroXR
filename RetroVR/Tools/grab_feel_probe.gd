@@ -24,7 +24,7 @@ func _run() -> void:
 	var origin := XROrigin3D.new()
 	add_child(origin)
 	var ctrl := XRController3D.new()
-	ctrl.set_script(load("res://Scripts/controller_model.gd"))
+	ctrl.set_script(load("res://Scripts/XR/controller_model.gd"))
 	ctrl.set("draw_hands", true)
 	ctrl.tracker = &"left_hand"
 	# The pickup has to exist BEFORE the controller enters the tree: its _ready is

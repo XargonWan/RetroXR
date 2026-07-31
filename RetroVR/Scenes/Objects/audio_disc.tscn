@@ -1,7 +1,7 @@
 [gd_scene load_steps=9 format=3 uid="uid://audiodisc_0001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/audio_disc.gd" id="1"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/audio_disc.gd" id="1"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_disc"]
 friction = 0.6

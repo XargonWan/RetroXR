@@ -10,11 +10,11 @@ Parse all `.info` files from the `libretro-core-info/` submodule into a queryabl
 
 ### Steps
 
-1. Create `RetroVR/Scripts/Data/core_info_parser.gd` — `class_name CoreInfoParser` (static utility)
+1. Create `RetroVR/Scripts/Data/cores/core_info_parser.gd` — `class_name CoreInfoParser` (static utility)
    - `static func parse_info_file(path: String) -> Dictionary` — reads a single `.info` file line-by-line, splits on ` = `, strips quotes, returns a dict with keys: `display_name`, `corename`, `systemname`, `systemid`, `license`, `description`, `supported_extensions`, `manufacturer`, etc.
    - `static func parse_all(directory: String) -> Array[Dictionary]` — iterates all `*.info` files in `libretro-core-info/` using `DirAccess`, calls `parse_info_file` on each, returns array of dicts.
 
-2. Create `RetroVR/Scripts/Data/core_info_database.gd` — `class_name CoreInfoDatabase` (runtime singleton-like object, owned by spawn menu)
+2. Create `RetroVR/Scripts/Data/cores/core_info_database.gd` — `class_name CoreInfoDatabase` (runtime singleton-like object, owned by spawn menu)
    - Holds `var cores: Array[Dictionary]` — all parsed core info entries
    - `func get_by_core_name(name: String) -> Dictionary` — lookup by filename stem (e.g. `"fceumm"`)
    - `func get_by_systemid(id: String) -> Array[Dictionary]` — all cores for a given system
@@ -36,14 +36,14 @@ HTTP fetching, zip extraction, and download state tracking.
 
 ### Steps
 
-1. Create `RetroVR/Scripts/Data/core_download_manager.gd` — `class_name CoreDownloadManager extends Node` (needs to be in the tree for `HTTPRequest` children)
+1. Create `RetroVR/Scripts/Data/cores/core_download_manager.gd` — `class_name CoreDownloadManager extends Node` (needs to be in the tree for `HTTPRequest` children)
    - **Constants:** `DEFAULT_CORE_DIR` = `OS.get_environment("USERPROFILE") + "/retrovr/libretro"`, `CORES_SUBDIR` = `"cores"`, `BUILDBOT_URL` = `"https://buildbot.libretro.com/nightly/windows/x86_64/latest/"`
    - `func ensure_directories()` — creates `DEFAULT_CORE_DIR/cores/` via `DirAccess.make_dir_recursive_absolute()` if not present
    - `func fetch_available_cores(callback: Callable)` — adds an `HTTPRequest` child, fetches the buildbot HTML page, parses the directory listing to extract `.dll.zip` filenames and last-modified dates. The buildbot page is an Apache autoindex — parse `<a href="...">` tags with regex, extract the date from the adjacent `<td>` text. Returns an `Array[Dictionary]` with keys `filename`, `core_name` (stem without `_libretro.dll.zip`), `remote_date`.
    - `func download_core(core_name: String, progress_callback: Callable, done_callback: Callable)` — downloads `{BUILDBOT_URL}/{core_name}_libretro.dll.zip` via `HTTPRequest`, reports progress via callback, on completion extracts with `ZIPReader` to `{CORE_DIR}/cores/`, deletes the zip, updates the manifest
    - `func get_core_state(core_name: String, remote_date: String) -> String` — returns `"Download"`, `"Re-Download"`, or `"UPDATE"` by comparing manifest entry vs remote date
 
-2. Create `RetroVR/Scripts/Data/download_manifest.gd` — `class_name DownloadManifest`
+2. Create `RetroVR/Scripts/Data/cores/download_manifest.gd` — `class_name DownloadManifest`
    - Reads/writes `{CORE_DIR}/cores_manifest.json`
    - Schema: `{ "cores": { "fceumm": { "downloaded_at": "2026-03-05T...", "remote_date": "...", "filename": "fceumm_libretro.dll" }, ... } }`
    - `func is_downloaded(core_name: String) -> bool`
@@ -65,7 +65,7 @@ The "Cores > Download" tab in the spawn menu.
 
 ### Steps
 
-1. Refactor `RetroVR/Scripts/UI/spawn_menu.gd` — restructure `_build_ui()`:
+1. Refactor `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd` — restructure `_build_ui()`:
    - After the title bar/separator, add an `HBoxContainer` as a **top navigation bar** with two toggle `Button` nodes: **"Spawn"** and **"Cores"**
    - Below the nav bar, add a content area (a `Control` or `VBoxContainer`) that swaps its children based on which nav button is active
    - **"Spawn" view:** contains the existing `TabContainer` (Systems/TVs/Cartridges) — extract current tab logic into `_build_spawn_view() -> Control`
@@ -102,7 +102,7 @@ The "Cores > Manager" tab for selecting default cores per system.
 
 ### Steps
 
-1. Create `RetroVR/Scripts/Data/core_defaults.gd` — `class_name CoreDefaults`
+1. Create `RetroVR/Scripts/Data/cores/core_defaults.gd` — `class_name CoreDefaults`
    - Reads/writes `{CORE_DIR}/core_defaults.json`
    - Schema: `{ "defaults": { "nes": "fceumm", "super_nes": "snes9x", ... } }`
    - `func get_default_core(systemid: String) -> String` — returns core_name or empty
@@ -137,7 +137,7 @@ Wire the Manager's defaults into the Spawn tab and existing system scenes.
    - Instead of the hardcoded `[["NES System", "nes"]]` array, dynamically build the list from `CoreDefaults` — for each systemid that has a default core set, add a spawn button labeled with the `systemname`
    - Pass the `systemid` as the spawn type string
 
-2. Update `RetroVR/Scripts/UI/spawn_menu_controller.gd`:
+2. Update `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd`:
    - Remove hardcoded `NES_SCENE` constant (keep `TV_SCENE` and `CART_SCENE`)
    - Load the base `system.tscn` for system spawns: `const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")`
    - In `_on_spawn_requested(type)`: if type matches a known systemid, instantiate `SYSTEM_SCENE`, set `core_name` from `CoreDefaults.get_default_core(systemid)`, set `core_directory` to the configured core path, set `system_label` from `CoreInfoDatabase`
@@ -146,7 +146,7 @@ Wire the Manager's defaults into the Spawn tab and existing system scenes.
    - Change `core_directory` exports from `"C:/Users/user/libretro"` to the new default path (`OS.get_environment("USERPROFILE") + "/retrovr/libretro"`)
    - Keep these scenes for backward compatibility / pre-configured setups
 
-4. Handle **live default changes**: already-spawned `RetroSystem` nodes should reference the live default rather than a snapshot. In `RetroVR/Scripts/Objects/system.gd`, in `power_on()`, if `core_name` is empty, look up the default from `CoreDefaults` for the system's `systemid`. This means adding a `systemid` export to `RetroSystem` (or deriving it from the spawn type).
+4. Handle **live default changes**: already-spawned `RetroSystem` nodes should reference the live default rather than a snapshot. In `RetroVR/Scripts/Objects/systems/system.gd`, in `power_on()`, if `core_name` is empty, look up the default from `CoreDefaults` for the system's `systemid`. This means adding a `systemid` export to `RetroSystem` (or deriving it from the spawn type).
 
 5. Add a `systemid` export to `RetroSystem` alongside the existing `core_name`. When `power_on()` is called:
    - If `core_name` is set, use it directly (backward compat with existing .tscn files)
@@ -173,11 +173,11 @@ Download NES and SNES cores. Set defaults in Manager. Open Spawn tab — verify 
 
 | File | Class | Purpose |
 |---|---|---|
-| `RetroVR/Scripts/Data/core_info_parser.gd` | `CoreInfoParser` | Parse `.info` files |
-| `RetroVR/Scripts/Data/core_info_database.gd` | `CoreInfoDatabase` | Query parsed core info |
-| `RetroVR/Scripts/Data/core_download_manager.gd` | `CoreDownloadManager` | HTTP fetch, zip extract, download orchestration |
-| `RetroVR/Scripts/Data/download_manifest.gd` | `DownloadManifest` | Track downloaded cores (JSON persistence) |
-| `RetroVR/Scripts/Data/core_defaults.gd` | `CoreDefaults` | Track default core per systemid (JSON persistence) |
+| `RetroVR/Scripts/Data/cores/core_info_parser.gd` | `CoreInfoParser` | Parse `.info` files |
+| `RetroVR/Scripts/Data/cores/core_info_database.gd` | `CoreInfoDatabase` | Query parsed core info |
+| `RetroVR/Scripts/Data/cores/core_download_manager.gd` | `CoreDownloadManager` | HTTP fetch, zip extract, download orchestration |
+| `RetroVR/Scripts/Data/cores/download_manifest.gd` | `DownloadManifest` | Track downloaded cores (JSON persistence) |
+| `RetroVR/Scripts/Data/cores/core_defaults.gd` | `CoreDefaults` | Track default core per systemid (JSON persistence) |
 | `RetroVR/Scripts/UI/core_download_tab.gd` | (optional) | Download tab UI builder |
 | `RetroVR/Scripts/UI/core_manager_tab.gd` | (optional) | Manager tab UI builder |
 
@@ -185,9 +185,9 @@ Download NES and SNES cores. Set defaults in Manager. Open Spawn tab — verify 
 
 | File | Changes |
 |---|---|
-| `RetroVR/Scripts/UI/spawn_menu.gd` | Add top nav bar, restructure into Spawn/Cores views |
-| `RetroVR/Scripts/UI/spawn_menu_controller.gd` | Dynamic system spawning, remove hardcoded NES_SCENE |
-| `RetroVR/Scripts/Objects/system.gd` | Add `systemid` export, look up default core in `power_on()` |
+| `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd` | Add top nav bar, restructure into Spawn/Cores views |
+| `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` | Dynamic system spawning, remove hardcoded NES_SCENE |
+| `RetroVR/Scripts/Objects/systems/system.gd` | Add `systemid` export, look up default core in `power_on()` |
 | `RetroVR/Scenes/Objects/system_nes.tscn` | Update `core_directory` to new default path |
 | `RetroVR/Scenes/Objects/system_snes.tscn` | Update `core_directory` to new default path |
 | `RetroVR/Scenes/Objects/system_n64.tscn` | Update `core_directory` to new default path |

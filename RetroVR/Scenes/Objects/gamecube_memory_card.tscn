@@ -1,7 +1,7 @@
 [gd_scene load_steps=9 format=3]
 
-[ext_resource type="Script" path="res://Scripts/Objects/gamecube_memory_card.gd" id="1_gcmemcard"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/gamecube_memory_card.gd" id="1_gcmemcard"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_card"]
 size = Vector3(0.055, 0.017, 0.075)

@@ -119,15 +119,15 @@ This system is shared by both regular joypad controllers and light guns (and any
 - `libretro-godot/src/Libretro.hpp/.cpp` — Bind lightgun + per-port joypad methods
 - `libretro-godot/src/Wrapper.hpp/.cpp` — Forward calls, replace port-0-only polling
 - `RetroVR/Scenes/Objects/system.tscn` — Add 4 controller port snap zones to front
-- `RetroVR/Scripts/Objects/system.gd` — Port snap/unsnap handlers, remove button-combo attach
-- `RetroVR/Scripts/vr_input_mapper.gd` — Remove or disable old attach-combo logic
-- `RetroVR/Scripts/UI/spawn_menu_controller.gd` — Controllers spawn section
+- `RetroVR/Scripts/Objects/systems/system.gd` — Port snap/unsnap handlers, remove button-combo attach
+- `RetroVR/Scripts/XR/vr_input_mapper.gd` — Remove or disable old attach-combo logic
+- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Controllers spawn section
 - `RetroVR/Scripts/Data/scene_persistence.gd` — Controller serialization
 
 ## New Files
 - `RetroVR/Scripts/Objects/retro_controller.gd` — Regular joypad object
 - `RetroVR/Scenes/Objects/retro_controller.tscn` — Joypad scene with cable
-- `RetroVR/Scripts/Objects/ray_gun.gd` — Light gun object
+- `RetroVR/Scripts/Objects/peripherals/ray_gun.gd` — Light gun object
 - `RetroVR/Scenes/Objects/ray_gun.tscn` — Gun scene with cable and raycast
 
 ## Lightgun Button IDs (libretro API)

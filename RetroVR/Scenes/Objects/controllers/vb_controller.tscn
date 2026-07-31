@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://bfpamwbk5xev5"]
 
 [ext_resource type="Script" uid="uid://dqjf0yegqsjnr" path="res://Scripts/Objects/controllers/vb_controller.gd" id="1_vbctrl"]
-[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
-[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/vr_slider.gd" id="5_slider"]
+[ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="5_slider"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_vb"]
 friction = 0.8

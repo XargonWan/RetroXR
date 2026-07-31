@@ -1,7 +1,7 @@
 [gd_scene load_steps=9 format=3 uid="uid://cartridge_001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/cartridge.gd" id="1_cartscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/cartridge.gd" id="1_cartscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cart"]
 size = Vector3(0.1, 0.08, 0.04)

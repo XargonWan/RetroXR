@@ -1,7 +1,7 @@
 [gd_scene load_steps=12 format=3 uid="uid://trashcan_001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/trash_can.gd" id="1_trashscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/trash_can.gd" id="1_trashscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/trash_can.glb" id="3_shell"]
 
 [sub_resource type="CylinderShape3D" id="CylShape_body"]

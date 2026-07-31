@@ -1,7 +1,7 @@
 [gd_scene load_steps=8 format=3 uid="uid://retrokeyboard_01"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/retro_keyboard.gd" id="1_kbscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/retro_keyboard.gd" id="1_kbscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
 

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bh8x3sbal8nds"]
 
-[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/xr_init.gd" id="3_xrinit"]
+[ext_resource type="Script" uid="uid://btn0gji8qtw2l" path="res://Scripts/XR/xr_init.gd" id="3_xrinit"]
 [ext_resource type="PackedScene" uid="uid://mft7vy78rjrv" path="res://Scenes/Objects/tv.tscn" id="13_tv"]
 [ext_resource type="Shader" uid="uid://ctwkb7jcoma01" path="res://Shaders/arcade_carpet.gdshader" id="20_carpet"]
 [ext_resource type="Shader" uid="uid://ck7deycag7kku" path="res://Shaders/ceiling_tiles.gdshader" id="21_ceiltiles"]

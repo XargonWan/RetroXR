@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/game_boy_model.gd" id="1_model"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_slider"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_slider"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(0.039496627, 0.036040675)

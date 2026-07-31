@@ -1,7 +1,7 @@
 [gd_scene load_steps=13 format=3 uid="uid://retromouse_0001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/retro_mouse.gd" id="1_mousescript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/retro_mouse.gd" id="1_mousescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_rounded_right.tscn" id="3_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_rounded_left.tscn" id="4_lhand"]
 

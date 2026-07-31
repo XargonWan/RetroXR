@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://Scripts/UI/spawn_menu.gd" id="1_menu"]
+[ext_resource type="Script" path="res://Scripts/UI/spawn_menu/spawn_menu.gd" id="1_menu"]
 
 [node name="SpawnMenu" type="Control"]
 script = ExtResource("1_menu")

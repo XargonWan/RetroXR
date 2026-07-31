@@ -8,9 +8,9 @@
 ## Context
 
 Today RetroVR only sees ROMs that were physically copied into
-`<roms_root>/<systemid>/` (`RomLibrary.scan_roms`, `Scripts/Data/rom_library.gd:54`), and
+`<roms_root>/<systemid>/` (`RomLibrary.scan_roms`, `Scripts/Data/library/rom_library.gd:54`), and
 metadata/art comes exclusively from ScreenScraper into a per-system `gamelist.json` +
-`media/{wheel,box,label,manual}/` (`Scripts/Data/screenscraper_client.gd`,
+`media/{wheel,box,label,manual}/` (`Scripts/Data/library/screenscraper_client.gd`,
 `gamelist_manager.gd`). That means: manual file shuffling onto the Quest, per-ROM scraping,
 and no shared library between devices.
 
@@ -148,14 +148,14 @@ Rules that make this safe:
 
 | File | Class | Role |
 |---|---|---|
-| `Scripts/Data/romm_config.gd` | `RommConfig` | `roms/romm_config.json`; mirrors `scraper_config.gd` load/save shape exactly |
-| `Scripts/Data/romm_platforms.gd` | `RommPlatforms` | RomM slug/fs_slug ↔ project systemid map; mirrors `screenscraper_systems.gd:8` |
-| `Scripts/Net/romm_client.gd` | `RommClient` (Node) | auth headers, `/heartbeat`, `/token`, device pairing, `/platforms`, `/roms/{id}`, `/roms/by-hash` |
-| `Scripts/Data/romm_catalog.gd` | `RommCatalog` | per-platform on-disk index, threaded sync, windowed random access, local search |
-| `Scripts/Data/romm_downloader.gd` | `RommDownloader` (Node) | resumable ROM download, multi-file zip, art + manual sidecars, cache manifest, LRU eviction |
-| `Scripts/Data/romm_cache_manifest.gd` | `RommCacheManifest` | `roms/romm_cache.json`; mirrors `download_manifest.gd` |
-| `Scripts/UI/virtual_row_list.gd` | `VirtualRowList` (Control) | reusable recycling virtual list |
-| `Scripts/UI/romm_art_cache.gd` | `RommArtCache` | async cover fetch + on-disk cache + LRU `ImageTexture` map |
+| `Scripts/Data/romm/romm_config.gd` | `RommConfig` | `roms/romm_config.json`; mirrors `scraper_config.gd` load/save shape exactly |
+| `Scripts/Data/romm/romm_platforms.gd` | `RommPlatforms` | RomM slug/fs_slug ↔ project systemid map; mirrors `screenscraper_systems.gd:8` |
+| `Scripts/Net/romm/romm_client.gd` | `RommClient` (Node) | auth headers, `/heartbeat`, `/token`, device pairing, `/platforms`, `/roms/{id}`, `/roms/by-hash` |
+| `Scripts/Data/romm/romm_catalog.gd` | `RommCatalog` | per-platform on-disk index, threaded sync, windowed random access, local search |
+| `Scripts/Data/romm/romm_downloader.gd` | `RommDownloader` (Node) | resumable ROM download, multi-file zip, art + manual sidecars, cache manifest, LRU eviction |
+| `Scripts/Data/romm/romm_cache_manifest.gd` | `RommCacheManifest` | `roms/romm_cache.json`; mirrors `download_manifest.gd` |
+| `Scripts/UI/spawn_menu/virtual_row_list.gd` | `VirtualRowList` (Control) | reusable recycling virtual list |
+| `Scripts/UI/spawn_menu/romm_art_cache.gd` | `RommArtCache` | async cover fetch + on-disk cache + LRU `ImageTexture` map |
 
 ### Modified files
 
@@ -163,9 +163,9 @@ Rules that make this safe:
 |---|---|
 | `libretro-godot/src/Core.{hpp,cpp}` | cache `retro_get_system_info().need_fullpath`, expose `GetNeedFullpath()` |
 | `libretro-godot/src/Wrapper.cpp:1505-1541` | skip the whole-file RAM read when `need_fullpath` |
-| `Scripts/UI/spawn_menu.gd` | Cartridges tab → merged model + `VirtualRowList`; OPTIONS → "ROMM SERVER" section; toast stack gains dwell/progress/cap + a public `notify()` (Phase 6) |
-| `Scripts/UI/spawn_menu_controller.gd:895` | `_on_spawn_cartridge_requested` gains a "not downloaded yet" path |
-| `Scripts/Data/rom_library.gd` | add `scan_roms_map(systemid, exts) -> Dictionary` (lowercase filename → entry) for O(1) local/server dedupe |
+| `Scripts/UI/spawn_menu/spawn_menu.gd` | Cartridges tab → merged model + `VirtualRowList`; OPTIONS → "ROMM SERVER" section; toast stack gains dwell/progress/cap + a public `notify()` (Phase 6) |
+| `Scripts/UI/spawn_menu/spawn_menu_controller.gd:895` | `_on_spawn_cartridge_requested` gains a "not downloaded yet" path |
+| `Scripts/Data/library/rom_library.gd` | add `scan_roms_map(systemid, exts) -> Dictionary` (lowercase filename → entry) for O(1) local/server dedupe |
 
 ---
 
@@ -217,7 +217,7 @@ isn't RomM-specific either; RomM only makes it unavoidable, because that library
 
 ## Phase 1 — Config, auth, connectivity
 
-`Scripts/Data/romm_config.gd`, file `roms/romm_config.json` (sibling of `scraper_config.json`;
+`Scripts/Data/romm/romm_config.gd`, file `roms/romm_config.json` (sibling of `scraper_config.json`;
 same hand-rolled JSON load/save as `scraper_config.gd:38-95` — the repo uses no `ConfigFile`):
 
 ```gdscript
@@ -234,7 +234,7 @@ var sync_state: Dictionary = {}        # systemid -> {updated_after, total, sync
 var last_stats: Dictionary = {}        # {ROMS, TOTAL_FILESIZE_BYTES} for cheap change detection
 ```
 
-`RommClient` (`Scripts/Net/romm_client.gd`, `extends Node` so it can own `HTTPRequest` children —
+`RommClient` (`Scripts/Net/romm/romm_client.gd`, `extends Node` so it can own `HTTPRequest` children —
 same shape as `CoreDownloadManager`):
 
 - `auth_headers() -> PackedStringArray` — `["Authorization: Bearer rmm_…"]` or
@@ -268,7 +268,7 @@ carries the Meta overlay-keyboard bounce workaround:
 
 ## Phase 2 — Platform mapping
 
-`Scripts/Data/romm_platforms.gd`, a literal mirror of `screenscraper_systems.gd:8`'s `SYSTEM_MAP`
+`Scripts/Data/romm/romm_platforms.gd`, a literal mirror of `screenscraper_systems.gd:8`'s `SYSTEM_MAP`
 shape. RomM platform slugs are IGDB-style (`nes`, `snes`, `n64`, `gb`, `gba`, `gbc`, `nds`,
 `ps`, `ps2`, `psp`, `dc`, `saturn`, `genesis-slash-megadrive`, `atari2600`, `virtualboy`, …);
 project systemids come from libretro core-info (`nes`, `super_nes`, `nintendo_64`, `game_boy`,
@@ -403,7 +403,7 @@ virtual list. Merge rule (cheap first, hashes only opportunistically):
    (`NetFileTransfer.cached_hash_of`, `file_transfer.gd:80`) — never hash 361 GiB to build a list.
    `GET /api/roms/by-hash?md5_hash=…` stays available for one-off "what is this local file?" lookups.
 
-**`VirtualRowList`** (`Scripts/UI/virtual_row_list.gd`, `extends Control`) — the reusable piece:
+**`VirtualRowList`** (`Scripts/UI/spawn_menu/virtual_row_list.gd`, `extends Control`) — the reusable piece:
 
 ```gdscript
 func set_row_count(n: int) -> void
@@ -498,7 +498,7 @@ Detail page header gains a debounced search `LineEdit` and the A–Z jump strip 
 `char_index`. Note `SystemGridBrowser._on_filter_changed` (`:259`) only filters *system tiles* —
 ROM-level search is new.
 
-**`RommArtCache`** (`Scripts/UI/romm_art_cache.gd`):
+**`RommArtCache`** (`Scripts/UI/spawn_menu/romm_art_cache.gd`):
 
 - URL = `base_url + rom.path_cover_small` — **verbatim**, never reconstructed. The path already
   contains `/assets/romm/resources` and a `?ts=<updated_at>` buster; prepending the prefix

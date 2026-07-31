@@ -1,7 +1,7 @@
 [gd_scene load_steps=10 format=3 uid="uid://retrodisc_001"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/disc.gd" id="1_discscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/disc.gd" id="1_discscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 
 [sub_resource type="CylinderShape3D" id="CylShape_disc"]
 radius = 0.065

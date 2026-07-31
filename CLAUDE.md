@@ -320,7 +320,7 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 
 ### GDScript Side
 - `RetroVR/Scripts/libretro.gd` — Main controller script. Uses `@export var libretro_node: Libretro` to reference the `Libretro` node; falls back to `find_child("Libretro")` if unset.
-- `RetroVR/Scripts/Objects/system.gd` — Per-arcade-cabinet controller. Has `@onready var _libretro: Libretro = $Libretro` wired to a child `Libretro` node in the scene tree.
+- `RetroVR/Scripts/Objects/systems/system.gd` — Per-arcade-cabinet controller. Has `@onready var _libretro: Libretro = $Libretro` wired to a child `Libretro` node in the scene tree.
 - `RetroVR/Scenes/Objects/system.tscn` — Cabinet scene. Contains a `Libretro` child node (unique_id `4000000010`).
 - GDExtension registration at `MODULE_INITIALIZATION_LEVEL_SCENE`.
 

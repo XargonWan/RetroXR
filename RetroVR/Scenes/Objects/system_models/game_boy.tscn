@@ -1,7 +1,7 @@
 [gd_scene format=4]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/game_boy_model.gd" id="1_gu2ye"]
-[ext_resource type="Script" path="res://Scripts/Objects/vr_slider.gd" id="2_mi0jy"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_mi0jy"]
 [ext_resource type="PackedScene" path="res://imported-assets/game_boy_dmg.glb" id="3_ouria"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_dmg_Body_lambert1_Diffuse.png" id="4_ncas5"]
 [ext_resource type="Texture2D" path="res://imported-assets/game_boy_dmg_orm.png" id="5_omjup"]

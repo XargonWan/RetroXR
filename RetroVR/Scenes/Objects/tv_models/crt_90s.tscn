@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://Scripts/Objects/tv_shell.gd" id="1_shell"]
+[ext_resource type="Script" path="res://Scripts/Objects/tv/tv_shell.gd" id="1_shell"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/displays/television_02.gltf" id="2_tv"]
 
 ; EDITOR NOTE: the cabinet only appears at RUN time. tv.gd swaps the shell in from

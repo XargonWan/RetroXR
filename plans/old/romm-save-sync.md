@@ -137,23 +137,23 @@ Timestamps are deliberately not the discriminator: device clocks disagree and Ro
 - **Rebuild all targets** — Windows x86_64 *and* Android arm64. A stale `.so` makes the Quest
   silently exercise the old code.
 
-**`RetroVR/Scripts/Data/romm_save_sync.gd`** — `RommSaveSync extends Node`. The whole policy
+**`RetroVR/Scripts/Data/romm/romm_save_sync.gd`** — `RommSaveSync extends Node`. The whole policy
 layer: owns `romm_sync.json`, resolves `rom_id`, runs the three-way comparison, and drives
 push/pull/fork. One worker thread, mirroring `FirmwareInstaller`'s `_pump` → thread →
 `call_deferred` shape. Debounce: coalesce periodic flushes to at most one upload a minute per
 save; a `final` flush bypasses the debounce.
 
-**`RetroVR/Scripts/Net/romm_saves.gd`** — `RommSaves extends Node`, thin API wrapper:
+**`RetroVR/Scripts/Net/romm/romm_saves.gd`** — `RommSaves extends Node`, thin API wrapper:
 - `list(rom_id, cb)` → `GET /api/saves?rom_id=N`
 - `download(save_id, dest, cb)` → `GET /api/saves/{id}/content`
 - `upload(rom_id, core, slot, path, cb)` → `POST /api/saves?rom_id&emulator&slot&overwrite=true`
 - `update(server_id, path, cb)` → `PUT /api/saves/{id}` once the server id is known
 
-**`RetroVR/Scripts/Net/romm_http.gd`** — add `upload_multipart(path, headers, field, filename,
+**`RetroVR/Scripts/Net/romm/romm_http.gd`** — add `upload_multipart(path, headers, field, filename,
 bytes)`. Everything there today is download-shaped; this is the one genuinely new primitive.
 Keep it on the same blocking-HTTPClient model so it stays worker-thread-only.
 
-**`RetroVR/Scripts/UI/cartridge_options_2d.gd`** — rows gain a trailing sync control, and a
+**`RetroVR/Scripts/UI/panels/cartridge_options_2d.gd`** — rows gain a trailing sync control, and a
 second section lists server slots with no local copy:
 
 ```
@@ -173,10 +173,10 @@ Glyphs reuse the Nerd Font set already in `spawn_menu.gd` (`_ICON_DOWNLOAD` `U+F
 `_ICON_BUSY` `U+F019`, `_ICON_ERROR` `U+F071`) — note this panel has its own colour constants
 and no `_symbols()` helper yet, so the shared `FontVariation` recipe comes with it.
 
-**`RetroVR/Scripts/UI/cartridge_options_panel.gd`** — feed the server list in, forward the
+**`RetroVR/Scripts/UI/panels/cartridge_options_panel.gd`** — feed the server list in, forward the
 toggle, and fetch `/api/saves` when the panel opens.
 
-**`RetroVR/Scripts/Objects/system.gd`** — connect `sram_flushed` and hand it to `RommSaveSync`
+**`RetroVR/Scripts/Objects/systems/system.gd`** — connect `sram_flushed` and hand it to `RommSaveSync`
 with the seated cart's identity. Pull-on-power-on happens here too, before
 `SetSramPath` (`:1242`), reusing the `net_set_sram` precedent for injecting bytes.
 

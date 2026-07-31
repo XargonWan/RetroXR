@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" uid="uid://desktop_reticle" path="res://Scripts/desktop_reticle.gd" id="1_reticle"]
+[ext_resource type="Script" uid="uid://c6vsim4gmes61" path="res://Scripts/Desktop/desktop_reticle.gd" id="1_reticle"]
 
 [node name="DesktopReticle" type="CanvasLayer"]
 layer = 128

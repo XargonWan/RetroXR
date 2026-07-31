@@ -86,7 +86,7 @@ RightController (XRController3D, controller_model.gd)
 
 **Create**:
 - `RetroVR/Scenes/Objects/tv.tscn`
-- `RetroVR/Scripts/Objects/tv.gd`
+- `RetroVR/Scripts/Objects/tv/tv.gd`
 
 **Node tree**:
 ```
@@ -108,7 +108,7 @@ TV (XRToolsPickable / RigidBody3D) — tv.gd
 
 **Create**:
 - `RetroVR/Scenes/Objects/system.tscn` (base scene)
-- `RetroVR/Scripts/Objects/system.gd`
+- `RetroVR/Scripts/Objects/systems/system.gd`
 - `RetroVR/Scripts/system_manager.gd` (autoload singleton)
 - System variants: `system_nes.tscn`, `system_snes.tscn`, `system_n64.tscn`, `system_ps1.tscn` (inherit base, set `core_name`)
 
@@ -137,7 +137,7 @@ System (XRToolsPickable / RigidBody3D) — system.gd
 
 **Create**:
 - `RetroVR/Scenes/Objects/cartridge.tscn`
-- `RetroVR/Scripts/Objects/cartridge.gd`
+- `RetroVR/Scripts/Objects/media/cartridge.gd`
 
 **Node tree**:
 ```
@@ -155,7 +155,7 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Physical press buttons (Power/Reset) on systems respond to controller touch.
 
 **Create**:
-- `RetroVR/Scripts/Objects/vr_button.gd`
+- `RetroVR/Scripts/Objects/widgets/vr_button.gd`
 
 **vr_button.gd**: Extends `Area3D`. Emits `button_pressed` signal. On `body_entered` (controller collision layer), visually depresses the button mesh and emits signal. On `body_exited`, resets position.
 
@@ -184,8 +184,8 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Each system has a dangling video cable. User grabs the plug end and drags it to a TV's composite port.
 
 **Create**:
-- `RetroVR/Scripts/Objects/verlet_rope.gd`
-- `RetroVR/Scripts/Objects/cable_plug.gd`
+- `RetroVR/Scripts/Objects/cables/verlet_rope.gd`
+- `RetroVR/Scripts/Objects/cables/cable_plug.gd`
 - `RetroVR/Scenes/Objects/cable.tscn`
 
 **verlet_rope.gd**: 15 segments, verlet integration in `_physics_process`. Point 0 pinned to system's `CableAttachPoint`. Last point follows plug position. 5 constraint iterations per frame. Rendered via `ImmediateMesh` tube geometry.
@@ -202,7 +202,7 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 
 **Create**:
 - `RetroVR/Scenes/UI/spawn_menu.tscn`
-- `RetroVR/Scripts/UI/spawn_menu.gd`
+- `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd`
 
 **Approach**: `SubViewport` rendered on a QuadMesh that appears in front of the player. 3 tabs (Systems, Cartridges, TVs) with GridContainer of items. `XRToolsFunctionPointer` ray interacts with the SubViewport. Clicking spawns the selected object.
 
@@ -215,7 +215,7 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Map XR controller buttons/sticks to libretro joypad so games are playable.
 
 **Create**:
-- `RetroVR/Scripts/vr_input_mapper.gd`
+- `RetroVR/Scripts/XR/vr_input_mapper.gd`
 
 **Approach**: Reads XR controller input signals and injects synthetic `Input.action_press()` / `Input.action_release()` calls for the existing `RETRO_JOYPAD_*` actions. Has `mapping_active` flag — only active when a system is powered on and player is not holding an object.
 
@@ -257,14 +257,14 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 |---|---|
 | `RetroVR/Scripts/locomotion.gd` | Smooth locomotion + teleport arc (if custom, not XR Tools built-in) |
 | `RetroVR/Scripts/system_manager.gd` | Autoload: enforces singleton libretro constraint |
-| `RetroVR/Scripts/Objects/tv.gd` | TV: screen mesh, composite port |
-| `RetroVR/Scripts/Objects/system.gd` | System: power/reset, core binding, connections |
-| `RetroVR/Scripts/Objects/cartridge.gd` | Cartridge: ROM path carrier |
-| `RetroVR/Scripts/Objects/vr_button.gd` | Reusable VR pressable button |
-| `RetroVR/Scripts/Objects/verlet_rope.gd` | Verlet rope physics |
-| `RetroVR/Scripts/Objects/cable_plug.gd` | Grabbable cable plug |
-| `RetroVR/Scripts/UI/spawn_menu.gd` | Spawn menu controller |
-| `RetroVR/Scripts/vr_input_mapper.gd` | XR → libretro input mapping |
+| `RetroVR/Scripts/Objects/tv/tv.gd` | TV: screen mesh, composite port |
+| `RetroVR/Scripts/Objects/systems/system.gd` | System: power/reset, core binding, connections |
+| `RetroVR/Scripts/Objects/media/cartridge.gd` | Cartridge: ROM path carrier |
+| `RetroVR/Scripts/Objects/widgets/vr_button.gd` | Reusable VR pressable button |
+| `RetroVR/Scripts/Objects/cables/verlet_rope.gd` | Verlet rope physics |
+| `RetroVR/Scripts/Objects/cables/cable_plug.gd` | Grabbable cable plug |
+| `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd` | Spawn menu controller |
+| `RetroVR/Scripts/XR/vr_input_mapper.gd` | XR → libretro input mapping |
 | `RetroVR/Scenes/Objects/tv.tscn` | TV scene |
 | `RetroVR/Scenes/Objects/system.tscn` | Base system scene |
 | `RetroVR/Scenes/Objects/system_nes.tscn` | NES variant |
