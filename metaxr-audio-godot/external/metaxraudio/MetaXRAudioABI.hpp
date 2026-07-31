@@ -140,6 +140,28 @@ enum mxra_feature : int32_t
     MXRA_FEATURE_PERFORMANCE_COUNTERS = 5,
 };
 
+/// Per-source feature bits, for mxra_source_set_feature. A bit mask rather than
+/// an index, unlike mxra_feature above.
+///
+/// Sources are omnidirectional until directivity is switched on: with the bit
+/// clear, turning a source to face away from the listener changes the rendered
+/// output by 0.000 dB. With it set, the same turn measures 17.7 dB down at full
+/// intensity, so the facing in mxra_source_set_pose is only consulted once this
+/// is on. Both figures measured against the shipped library.
+enum mxra_source_feature : int32_t
+{
+    MXRA_SOURCE_ENABLE_DIRECTIVITY = 0x0400,
+};
+
+/// Per-source float parameters, for mxra_source_set_param. 0..1; scales how
+/// sharply the directivity pattern above cuts as a source turns away.
+/// mxra_source_set_directivity_pattern is NOT exported by the shipped library,
+/// so the pattern itself cannot be chosen -- this is the only control over it.
+enum mxra_source_param : int32_t
+{
+    MXRA_SOURCE_PARAM_DIRECTIVITY_INTENSITY = 8,
+};
+
 // ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------

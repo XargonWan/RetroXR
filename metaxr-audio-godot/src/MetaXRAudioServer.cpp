@@ -1,6 +1,8 @@
 #include "MetaXRAudioServer.hpp"
 #include "MetaXRAudioStream.hpp"
 
+#include <algorithm>
+
 #include <godot_cpp/classes/audio_server.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/os.hpp>
@@ -286,6 +288,11 @@ int MetaXRAudioServer::CreateVoice()
         v.gain.store(1.0f, std::memory_order_relaxed);
         v.ever_sent = false;
         v.last_sent[0] = v.last_sent[1] = v.last_sent[2] = 1e30f;
+        v.last_forward[0] = v.last_forward[1] = v.last_forward[2] = 1e30f;
+        v.last_directivity = -1.0f;
+        v.directivity.store(0.0f, std::memory_order_relaxed);
+        v.forward[0] = 0.0f; v.forward[1] = 0.0f; v.forward[2] = -1.0f;
+        v.up[0] = 0.0f; v.up[1] = 1.0f; v.up[2] = 0.0f;
         if (m_abi.source_reset)
             m_abi.source_reset(m_ctx, i);
         return i;
@@ -314,6 +321,37 @@ void MetaXRAudioServer::SetVoicePosition(int id, const Vector3& pos)
     v.pose[1] = static_cast<float>(pos.y);
     v.pose[2] = static_cast<float>(pos.z);
     v.pose_seq.store(seq + 2, std::memory_order_release);
+}
+
+void MetaXRAudioServer::SetVoicePose(int id, const Vector3& pos, const Vector3& forward,
+                                     const Vector3& up)
+{
+    if (!m_available || id < 0 || id >= kMaxVoices)
+        return;
+    Voice& v = *m_voices[id];
+
+    const Vector3 f = forward.length_squared() > 0.0 ? forward.normalized() : Vector3(0, 0, -1);
+    const Vector3 u = up.length_squared() > 0.0 ? up.normalized() : Vector3(0, 1, 0);
+
+    const uint32_t seq = v.pose_seq.load(std::memory_order_relaxed);
+    v.pose_seq.store(seq + 1, std::memory_order_release);
+    v.pose[0] = static_cast<float>(pos.x);
+    v.pose[1] = static_cast<float>(pos.y);
+    v.pose[2] = static_cast<float>(pos.z);
+    v.forward[0] = static_cast<float>(f.x);
+    v.forward[1] = static_cast<float>(f.y);
+    v.forward[2] = static_cast<float>(f.z);
+    v.up[0] = static_cast<float>(u.x);
+    v.up[1] = static_cast<float>(u.y);
+    v.up[2] = static_cast<float>(u.z);
+    v.pose_seq.store(seq + 2, std::memory_order_release);
+}
+
+void MetaXRAudioServer::SetVoiceDirectivity(int id, float intensity)
+{
+    if (!m_available || id < 0 || id >= kMaxVoices)
+        return;
+    m_voices[id]->directivity.store(std::clamp(intensity, 0.0f, 1.0f), std::memory_order_relaxed);
 }
 
 void MetaXRAudioServer::SetVoiceGain(int id, float gain)
@@ -549,22 +587,56 @@ void MetaXRAudioServer::ProcessBlock(float* out_interleaved)
             m_scratch_mono[f] = 0.0f;      // underrun: pad rather than stall
         v.read_pos.store(r + take, std::memory_order_release);
 
-        float pos[3];
+        float pos[3], fwd[3], upv[3];
         for (;;)
         {
             const uint32_t s0 = v.pose_seq.load(std::memory_order_acquire);
             if (s0 & 1u) continue;
             pos[0] = v.pose[0]; pos[1] = v.pose[1]; pos[2] = v.pose[2];
+            fwd[0] = v.forward[0]; fwd[1] = v.forward[1]; fwd[2] = v.forward[2];
+            upv[0] = v.up[0]; upv[1] = v.up[1]; upv[2] = v.up[2];
             if (v.pose_seq.load(std::memory_order_acquire) == s0)
                 break;
         }
 
-        // Only touch the SDK when the position actually moved — see the comment
-        // on Voice::last_sent.
-        if (!v.ever_sent || pos[0] != v.last_sent[0] || pos[1] != v.last_sent[1] || pos[2] != v.last_sent[2])
+        // Switch directivity on or off only when the setting itself changes. A
+        // voice that never asks for it stays omnidirectional, which is how the
+        // SDK starts every source, so nothing that does not want this pays for it.
+        const float dir = v.directivity.load(std::memory_order_relaxed);
+        if (dir != v.last_directivity)
         {
-            m_abi.source_set_position(m_ctx, i, mxra_vector_3f{ pos[0], pos[1], pos[2] });
+            if (m_abi.source_set_feature)
+                m_abi.source_set_feature(m_ctx, i, MXRA_SOURCE_ENABLE_DIRECTIVITY,
+                                         dir > 0.0f ? 1 : 0);
+            if (dir > 0.0f && m_abi.source_set_param)
+                m_abi.source_set_param(m_ctx, i, MXRA_SOURCE_PARAM_DIRECTIVITY_INTENSITY, dir);
+            v.last_directivity = dir;
+        }
+
+        // Only touch the SDK when something actually changed — see the comment
+        // on Voice::last_sent. A turn counts only while directivity is on,
+        // because otherwise the facing is not consulted.
+        const bool moved = !v.ever_sent
+                        || pos[0] != v.last_sent[0] || pos[1] != v.last_sent[1] || pos[2] != v.last_sent[2];
+        const bool turned = dir > 0.0f
+                        && (fwd[0] != v.last_forward[0] || fwd[1] != v.last_forward[1]
+                         || fwd[2] != v.last_forward[2]);
+        if (moved || turned)
+        {
+            if (dir > 0.0f && m_abi.source_set_pose)
+            {
+                mxra_pose p{};
+                p.position = mxra_vector_3f{ pos[0], pos[1], pos[2] };
+                p.forward  = mxra_vector_3f{ fwd[0], fwd[1], fwd[2] };
+                p.up       = mxra_vector_3f{ upv[0], upv[1], upv[2] };
+                m_abi.source_set_pose(m_ctx, i, p);
+            }
+            else
+            {
+                m_abi.source_set_position(m_ctx, i, mxra_vector_3f{ pos[0], pos[1], pos[2] });
+            }
             v.last_sent[0] = pos[0]; v.last_sent[1] = pos[1]; v.last_sent[2] = pos[2];
+            v.last_forward[0] = fwd[0]; v.last_forward[1] = fwd[1]; v.last_forward[2] = fwd[2];
             v.ever_sent = true;
         }
 
@@ -624,6 +696,8 @@ void MetaXRAudioServer::_bind_methods()
     ClassDB::bind_method(D_METHOD("voice_frames_available", "id"), &MetaXRAudioServer::VoiceFramesAvailable);
     ClassDB::bind_method(D_METHOD("voice_space", "id"), &MetaXRAudioServer::VoiceSpace);
     ClassDB::bind_method(D_METHOD("voice_frames_wanted", "id"), &MetaXRAudioServer::VoiceFramesWanted);
+    ClassDB::bind_method(D_METHOD("set_voice_pose", "id", "position", "forward", "up"), &MetaXRAudioServer::SetVoicePose);
+    ClassDB::bind_method(D_METHOD("set_voice_directivity", "id", "intensity"), &MetaXRAudioServer::SetVoiceDirectivity);
     ClassDB::bind_method(D_METHOD("push_voice_frames", "id", "frames"), &MetaXRAudioServer::PushVoiceFrames);
     ClassDB::bind_method(D_METHOD("push_stereo_frames", "left_id", "right_id", "frames"), &MetaXRAudioServer::PushStereoFrames);
     ClassDB::bind_method(D_METHOD("set_target_latency_ms", "ms"), &MetaXRAudioServer::SetTargetLatencyMs);

@@ -35,11 +35,19 @@ struct Voice
     std::atomic<uint32_t> write_pos{0};
     std::atomic<uint32_t> read_pos{0};
 
-    // Seqlock-published pose. Odd sequence = a write is in progress.
+    // Seqlock-published pose. Odd sequence = a write is in progress. Facing is
+    // carried alongside the position because the SDK takes them together, and
+    // only matters once directivity is on.
     std::atomic<uint32_t> pose_seq{0};
     float                 pose[3] = { 0.0f, 0.0f, 0.0f };
+    float                 forward[3] = { 0.0f, 0.0f, -1.0f };
+    float                 up[3] = { 0.0f, 1.0f, 0.0f };
 
     std::atomic<float>    gain{1.0f};
+
+    /// 0 disables directivity and makes the source omnidirectional, which is how
+    /// the SDK starts every source. Above 0 the facing above starts to matter.
+    std::atomic<float>    directivity{0.0f};
 
     /// Last position actually handed to the SDK, so the mixer can skip redundant
     /// calls. Purely an optimisation: mxra_source_set_position takes a recursive
@@ -52,6 +60,8 @@ struct Voice
     /// redundant calls are harmless once the signature is right. Kept because the
     /// saved lock is still worth having.
     float                 last_sent[3] = { 1e30f, 1e30f, 1e30f };
+    float                 last_forward[3] = { 1e30f, 1e30f, 1e30f };
+    float                 last_directivity = -1.0f;
     bool                  ever_sent = false;
 
     Voice() : ring(kRingFrames, 0.0f) {}
@@ -120,6 +130,17 @@ public:
     int  CreateVoice();
     void DestroyVoice(int id);
     void SetVoicePosition(int id, const godot::Vector3& pos);
+    /// Position and facing together, for a source that has been given
+    /// directivity. `forward` is the direction the thing radiates towards.
+    void SetVoicePose(int id, const godot::Vector3& pos, const godot::Vector3& forward,
+                      const godot::Vector3& up);
+    /// 0 leaves the source omnidirectional, which is how the SDK starts it and
+    /// what every source here was until now. Above 0 the facing given to
+    /// SetVoicePose starts to attenuate the source as it turns away: at 1.0 the
+    /// difference between facing the listener and facing away measures 17.7 dB,
+    /// which is far more than a small speaker in a plastic shell manages, so
+    /// callers should expect to want a fraction of it.
+    void SetVoiceDirectivity(int id, float intensity);
     void SetVoiceGain(int id, float gain);
     int  VoiceFramesAvailable(int id) const;
     int  VoiceSpace(int id) const;

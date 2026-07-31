@@ -202,6 +202,18 @@ var _last_audio_volume: float = 1.0
 ## something console-sized; see _refresh_hardware_audio_geometry.
 @export var audio_speaker_separation: float = 0.09
 
+## How directional the hardware's own speaker is, 0 (omnidirectional) to 1.
+##
+## Only applied when the hardware emits for itself -- a handheld you can turn in
+## your hand. Measured difference between facing the listener and facing away:
+##
+##     0.0  0.00 dB      0.3  -3.7 dB      0.6  -8.6 dB      1.0  -17.5 dB
+##
+## 1.0 is far more than a small speaker behind a plastic grille manages; the
+## default is set where a real handheld sits, a few dB down when turned away
+## rather than gone.
+@export var audio_directivity: float = 0.45
+
 # Where the hardware's own sound comes from, in this system's local space, and
 # cached: _body_aabb walks every mesh in the model and this is wanted per frame.
 # Keyed on the model instance so a variant swap recomputes it.
@@ -756,6 +768,7 @@ func _bind_audio_player() -> void:
 		if Engine.has_singleton("MetaXRAudio"):
 			_mx = Engine.get_singleton("MetaXRAudio")
 		_audio_player = null
+		_apply_voice_directivity()
 		_update_audio_position()
 		_apply_bound_volume()
 		return
@@ -848,6 +861,19 @@ func _audio_listener_node() -> Node:
 	return _audio_listener
 
 
+## Give a handheld's voices a facing to be judged against. Hardware playing
+## through a TV keeps the SDK's default omnidirectional behaviour: a set does not
+## turn in your hand, and making one directional would only make the room harder
+## to listen to.
+func _apply_voice_directivity() -> void:
+	if _mx == null or _audio_voices.is_empty():
+		return
+	var handheld := _model != null and _model.is_handheld()
+	var k: float = audio_directivity if handheld else 0.0
+	for v in _audio_voices:
+		_mx.set_voice_directivity(v, k)
+
+
 func _apply_voice_distance_gain(centre: Vector3) -> void:
 	if _mx == null or _audio_voices.is_empty():
 		return
@@ -880,6 +906,11 @@ func _update_audio_position() -> void:
 		# makes obvious.
 		var left_pos: Vector3
 		var right_pos: Vector3
+		# Which way the sound radiates. ZERO leaves the source omnidirectional,
+		# which is right for anything playing through a TV -- only hardware
+		# carried in the hand has a facing worth tracking.
+		var emit_forward := Vector3.ZERO
+		var emit_up := Vector3.UP
 		if tv != null and tv.has_method("get_speaker_positions"):
 			var sp: PackedVector3Array = tv.get_speaker_positions()
 			left_pos = sp[0]
@@ -902,6 +933,12 @@ func _update_audio_position() -> void:
 			var right := global_transform.basis.x.normalized() * _audio_half_sep
 			left_pos = centre - right
 			right_pos = centre + right
+			# A handheld radiates out of its face, and its face is the shell's
+			# local +Y -- the same axis the tilt sensor above calls the screen
+			# normal. Sending that lets the SDK quieten it as you turn it away.
+			if _model != null and _model.is_handheld():
+				emit_forward = global_transform.basis.y.normalized()
+				emit_up = -global_transform.basis.z.normalized()
 		# The mixer skips the SDK call when a position has not changed, so
 		# writing every frame is safe -- it saves a lock on a position that
 		# usually has not moved.
@@ -915,9 +952,14 @@ func _update_audio_position() -> void:
 			var lp: Vector3 = ln.get_listener_position()
 			left_pos = SpatialAudioEmitter.hold_off_head(left_pos, lp)
 			right_pos = SpatialAudioEmitter.hold_off_head(right_pos, lp)
-		_mx.set_voice_position(_audio_voices[0], left_pos)
-		if _audio_voices.size() > 1:
-			_mx.set_voice_position(_audio_voices[1], right_pos)
+		if emit_forward == Vector3.ZERO:
+			_mx.set_voice_position(_audio_voices[0], left_pos)
+			if _audio_voices.size() > 1:
+				_mx.set_voice_position(_audio_voices[1], right_pos)
+		else:
+			_mx.set_voice_pose(_audio_voices[0], left_pos, emit_forward, emit_up)
+			if _audio_voices.size() > 1:
+				_mx.set_voice_pose(_audio_voices[1], right_pos, emit_forward, emit_up)
 		_apply_voice_distance_gain(centre_true)
 		return
 
