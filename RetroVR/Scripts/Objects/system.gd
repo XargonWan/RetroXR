@@ -196,9 +196,18 @@ var _mx: Object = null
 # voice starts at full gain, so a core restart would otherwise come back at full
 # volume with the set switched off.
 var _last_audio_volume: float = 1.0
-## Half the gap between the emitters when no TV is connected, in metres. A
-## connected set reports its own speaker positions instead.
+## Upper bound on half the gap between the emitters when no TV is connected, in
+## metres. A connected set reports its own speaker positions instead. The gap
+## actually used is a fifth of the hardware's own width, so this only binds for
+## something console-sized; see _refresh_hardware_audio_geometry.
 @export var audio_speaker_separation: float = 0.09
+
+# Where the hardware's own sound comes from, in this system's local space, and
+# cached: _body_aabb walks every mesh in the model and this is wanted per frame.
+# Keyed on the model instance so a variant swap recomputes it.
+var _audio_geom_model_id: int = 0
+var _audio_centre_local: Vector3 = Vector3.ZERO
+var _audio_half_sep: float = 0.0
 
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
@@ -776,6 +785,27 @@ func _audio_tv() -> RetroTV:
 	return null
 
 
+## Measure where this hardware's own sound should come from: the middle of its
+## body, and a stereo gap of a fifth of its width, never wider than
+## audio_speaker_separation. A fifth keeps a handheld's two voices well inside
+## the shell while still reading as stereo, and leaves anything console-sized on
+## the old figure.
+##
+## The body centre matters as much as the gap. A model's origin is not
+## necessarily in the middle of it — the GBA's sits 1.6 cm off in Z — and at the
+## distance a handheld is held that is an audible angle.
+func _refresh_hardware_audio_geometry() -> void:
+	var mid := _model.get_instance_id() if _model != null else 0
+	if mid == _audio_geom_model_id:
+		return
+	var aabb := _body_aabb()
+	if aabb.size.x <= 0.0:
+		return          # meshes not up yet; try again next frame
+	_audio_geom_model_id = mid
+	_audio_centre_local = aabb.get_center()
+	_audio_half_sep = minf(audio_speaker_separation, aabb.size.x * 0.2)
+
+
 ## Sound comes from whatever is showing the picture: a connected TV takes the
 ## audio, and the hardware takes it back when the cable is pulled. Driven every
 ## frame because both the system and the TV can be picked up and carried.
@@ -796,13 +826,24 @@ func _update_audio_position() -> void:
 			var sp: PackedVector3Array = tv.get_speaker_positions()
 			left_pos = sp[0]
 			right_pos = sp[1]
+		elif tv != null:
+			# A set that predates get_speaker_positions: spread across its own
+			# local X, which for something TV-sized the default already suits.
+			var right := tv.global_transform.basis.x.normalized() * audio_speaker_separation
+			left_pos = tv.global_position - right
+			right_pos = tv.global_position + right
 		else:
-			# Unplugged, or a set that predates get_speaker_positions: fall back
-			# to the hardware itself, spread across its own local X.
-			var src: Node3D = tv if tv != null else self
-			var right := src.global_transform.basis.x.normalized() * audio_speaker_separation
-			left_pos = src.global_position - right
-			right_pos = src.global_position + right
+			# Unplugged, so the hardware radiates for itself -- and then the gap
+			# has to come from the hardware's own size. A flat 9 cm is a console
+			# figure: on a 14.5 cm GBA it puts both voices outside the shell you
+			# are holding, 18 cm apart and subtending 33 degrees at arm's length,
+			# which is a sound far wider than the object making it. Amplitude
+			# panning hides that; HRTF in a headset does not.
+			_refresh_hardware_audio_geometry()
+			var centre := global_transform * _audio_centre_local
+			var right := global_transform.basis.x.normalized() * _audio_half_sep
+			left_pos = centre - right
+			right_pos = centre + right
 		# The mixer skips the SDK call when a position has not changed, so
 		# writing every frame is safe -- and that guard is load bearing on
 		# Quest, see meta-xr-audio-known-issues.md.
