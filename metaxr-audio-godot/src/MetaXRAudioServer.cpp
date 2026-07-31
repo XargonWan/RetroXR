@@ -148,9 +148,11 @@ bool MetaXRAudioServer::Initialise()
 
 void MetaXRAudioServer::Shutdown()
 {
-    if (m_player && m_player->is_inside_tree())
+    if (m_player)
     {
-        m_player->stop();
+        // May still be waiting on its deferred add, so free it either way.
+        if (m_player->is_inside_tree())
+            m_player->stop();
         m_player->queue_free();
     }
     m_player = nullptr;
@@ -180,8 +182,17 @@ void MetaXRAudioServer::EnsurePlayer()
     m_player = memnew(AudioStreamPlayer);
     m_player->set_name("MetaXRAudioMixer");
     m_player->set_stream(m_stream);
-    tree->get_root()->add_child(m_player);
-    m_player->play();
+
+    // Deferred, because the first voice is usually created from some device's
+    // _ready, and a node cannot be parented to the root while the root is still
+    // setting up its own children -- add_child() refuses, play() then refuses
+    // for a node outside the tree, and m_player is left non-null so this
+    // function never tries again. One mixer feeds every source, so that silences
+    // the whole application for the session. Whether the first voice lands
+    // inside that window depends on scene composition, which is why it can start
+    // happening after an unrelated change.
+    tree->get_root()->call_deferred("add_child", m_player);
+    m_player->call_deferred("play", 0.0);
 }
 
 // ---------------------------------------------------------------------------
