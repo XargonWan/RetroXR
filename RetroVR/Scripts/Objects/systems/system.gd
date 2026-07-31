@@ -227,6 +227,9 @@ var _audio_half_sep: float = 0.0
 var _audio_listener: Node = null
 var _sent_audio_gain: float = -1.0
 var _sent_directivity: float = -1.0
+# Last distance term measured, so a volume change can be applied against it
+# without waiting for the next frame.
+var _audio_dist_factor: float = 1.0
 
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
@@ -752,10 +755,10 @@ func set_audio_volume(volume: float) -> void:
 	if not is_powered_on:
 		return
 	if not _audio_voices.is_empty() and _mx != null:
-		# Not written straight through: _apply_voice_distance_gain owns the voice
-		# gain, since the SDK applies no distance law and it has to be folded in
-		# here. Invalidating its cache makes it reapply at the new level.
-		_sent_audio_gain = -1.0
+		# Applied here and now against the distance factor already measured, not
+		# left for the next _process. A set being switched off has to go quiet at
+		# once, and must not depend on this node being processed to do it.
+		_send_voice_gain(_last_audio_volume * _audio_dist_factor)
 		return
 	if _audio_player == null or not is_instance_valid(_audio_player):
 		return
@@ -886,9 +889,13 @@ func _apply_voice_distance_gain(centre: Vector3) -> void:
 	var ln := _audio_listener_node()
 	if ln == null:
 		return
-	var g := _last_audio_volume * SpatialAudioEmitter.distance_gain(
+	_audio_dist_factor = SpatialAudioEmitter.distance_gain(
 		centre, ln.get_listener_position(),
 		audio_unit_size, audio_max_distance)
+	_send_voice_gain(_last_audio_volume * _audio_dist_factor)
+
+
+func _send_voice_gain(g: float) -> void:
 	if is_equal_approx(g, _sent_audio_gain):
 		return
 	_sent_audio_gain = g

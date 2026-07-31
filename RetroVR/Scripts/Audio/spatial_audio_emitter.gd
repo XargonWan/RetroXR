@@ -49,6 +49,9 @@ var _emit_override := false
 # last gain handed over so an unchanged one costs nothing.
 var _listener: Node = null
 var _sent_gain := -1.0
+# Last distance term measured, so a volume change can be applied against it
+# without waiting for the next frame.
+var _dist_factor := 1.0
 
 ## How directional this source is, 0 (omnidirectional) to 1. Only consulted once
 ## a direction has been given; see set_emit_direction.
@@ -157,10 +160,13 @@ func _process(_delta: float) -> void:
 ## handheld ends up centimetres from the head and the unclamped law runs away
 ## there.
 func _apply_distance_gain(origin: Vector3) -> void:
-	var g := _volume
 	if _listener != null and is_instance_valid(_listener):
-		g = _volume * distance_gain(origin, _listener.get_listener_position(),
+		_dist_factor = distance_gain(origin, _listener.get_listener_position(),
 			unit_size, max_distance)
+	_send_gain(_volume * _dist_factor)
+
+
+func _send_gain(g: float) -> void:
 	if is_equal_approx(g, _sent_gain):
 		return
 	_sent_gain = g
@@ -300,10 +306,12 @@ func flush() -> void:
 func set_volume(volume: float) -> void:
 	_volume = clampf(volume, 0.0, 1.0)
 	if _use_sdk:
-		# Not written straight through: _apply_distance_gain owns the voice gain
-		# now, and would undo it on the next frame anyway. Invalidating its cache
-		# makes it reapply with the new level.
-		_sent_gain = -1.0
+		# Applied here and now against the distance factor already measured, not
+		# left for the next _process. A mute has to be immediate and must not
+		# depend on this node being processed -- silencing something is the one
+		# volume change nobody can afford to have arrive a frame late, or not at
+		# all. _process keeps the distance term up to date from here on.
+		_send_gain(_volume * _dist_factor)
 	elif _player != null:
 		_player.volume_db = _MUTE_DB if _volume <= 0.0 else linear_to_db(_volume)
 
