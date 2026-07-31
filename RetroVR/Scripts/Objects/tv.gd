@@ -302,6 +302,7 @@ func _process(_delta: float) -> void:
 	_update_phosphor()
 	_update_stereo_button()
 	_route_osd()
+	_release_park_if_unsupported()
 
 	# Grab-driver churn (second-hand grab, hand swap, desktop re-hold) recreates
 	# the RemoteTransform3D with scale copying re-enabled, which stomps the TV
@@ -1039,15 +1040,32 @@ func _apply_scale() -> void:
 	if is_zero_approx(delta):
 		return
 	global_position.y += delta * bottom
-	# force_update_transform first: the write above only queues a transform
+	# Held: the grab driver owns the pose, so there is nothing to park.
+	if freeze and not _parked_by_resize:
+		return
+	# Only a set that is BOTH standing on something and jammed into something needs
+	# parking. On open floor the enlarged cabinet touches nothing, there is no
+	# penetration to evict, and the body is left as ordinary physics — which is the
+	# common case, and the one where a stuck freeze would be most obvious.
+	#
+	# The park is released again the moment it is not needed, so shrinking a set
+	# back down hands it straight to physics. Parking on the way up and never
+	# undoing it leaves a set frozen at 1.0x with nothing holding it there.
+	#
+	# force_update_transform either way: the write above only queues a transform
 	# notification, and the flush at the end of the frame is what hands the pose to
-	# the physics server. Freezing before that flush parks the body at its old pose.
-	if not freeze and _is_standing_on_something():
+	# the physics server. Freezing before that flush parks the body at its old pose,
+	# and unfreezing before it resumes gravity from a stale one.
+	if _is_standing_on_something() and _is_jammed():
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		force_update_transform()
 		freeze = true
 		_parked_by_resize = true
+	elif _parked_by_resize:
+		force_update_transform()
+		freeze = false
+		_parked_by_resize = false
 
 
 ## Scale the anchor correction was last applied at. NAN until the first
@@ -1058,23 +1076,88 @@ var _anchored_scale: float = NAN
 ## XRToolsPickable puts on while the set is held.
 var _parked_by_resize: bool = false
 
+## How close the base has to be to a surface to count as standing on it, and how
+## far the cabinet has to be inside something else to count as jammed.
+const _STANDING_GAP := 0.04
+const _JAM_DEPTH := 0.01
+
+## Frames between park revalidations. A parked body is frozen, so it has no
+## gravity to notice with — nothing else would ever tell it the floor is gone.
+const _PARK_CHECK_FRAMES := 12
+var _park_check_frame: int = 0
+
+
+## A park only holds while the set is still standing on something. Re-checked a
+## few times a second rather than at the next resize, because what it stands on can
+## go away — carried off, deleted with the scene, or scaled out from under it — and
+## a frozen set left over an empty floor just hangs there. This is the invariant
+## that keeps the freeze from ever reading as a bug: frozen implies supported.
+func _release_park_if_unsupported() -> void:
+	if not _parked_by_resize:
+		return
+	_park_check_frame += 1
+	if _park_check_frame < _PARK_CHECK_FRAMES:
+		return
+	_park_check_frame = 0
+	if _is_standing_on_something():
+		return
+	force_update_transform()
+	freeze = false
+	_parked_by_resize = false
+
 
 ## Whether the set is resting on a surface rather than in flight. Asked fresh per
-## resize rather than tracked off the sleep signal: a set put down and resized
-## straight away — the usual way anyone uses the size slider — has not had time to
-## fall asleep yet, and gating on sleep left exactly that case unpinned.
+## resize rather than tracked off the sleep state: a set put down and resized
+## straight away — the usual way anyone reaches for the size slider — has not had
+## time to fall asleep, and gating on sleep left exactly that case unprotected.
+##
+## Cast from the base, over a fixed gap. Casting from the origin over a reach that
+## grows with the set instead means a big cabinet reads as standing while it is
+## still a metre up, so resizing one on the way down parks it in the air.
 func _is_standing_on_something() -> bool:
 	var world := get_world_3d()
 	if world == null:
 		return false
-	# Reaches barely past the pinned base, so a set resized while it is still
-	# falling is only caught in the last few centimetres rather than left hanging.
-	var reach: float = absf(_local_bottom_y()) * scale_factor + 0.03
+	var base: Vector3 = global_position + Vector3.UP * (_local_bottom_y() * scale_factor)
 	var query := PhysicsRayQueryParameters3D.create(
-		global_position, global_position + Vector3.DOWN * reach)
+		base + Vector3.UP * _STANDING_GAP, base + Vector3.DOWN * _STANDING_GAP)
 	query.exclude = [get_rid()]
 	query.collision_mask = collision_mask
 	return not world.direct_space_state.intersect_ray(query).is_empty()
+
+
+## Whether the cabinet at its new size is inside the world — the wall behind it,
+## the table it now overhangs. The box is shrunk by _JAM_DEPTH so the surface the
+## set merely rests on does not read as a jam, and the base is lifted clear of it.
+##
+## Static bodies only. A prop that has come to rest against the cabinet also shows
+## up in the query, and counting it would leave the set parked for as long as
+## anything is lying on it. A loose prop is also not the problem being solved: the
+## solver pushes it out of the way, which is fine. It is immovable world geometry
+## that turns an overlap into an eviction the set can never win.
+func _is_jammed() -> bool:
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col == null or not (col.shape is BoxShape3D) or get_world_3d() == null:
+		return false
+	var full: Vector3 = (col.shape as BoxShape3D).size * scale_factor
+	var box := BoxShape3D.new()
+	box.size = Vector3(
+		maxf(full.x - 2.0 * _JAM_DEPTH, 0.01),
+		maxf(full.y - 2.0 * _JAM_DEPTH, 0.01),
+		maxf(full.z - 2.0 * _JAM_DEPTH, 0.01))
+	var axes := global_basis.orthonormalized()
+	# Nudged up off the supporting surface, which sits exactly at the pinned base.
+	var centre: Vector3 = global_position + axes * (col.position * scale_factor) \
+		+ Vector3.UP * _JAM_DEPTH
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = box
+	query.transform = Transform3D(axes, centre)
+	query.exclude = [get_rid()]
+	query.collision_mask = collision_mask
+	for hit: Dictionary in get_world_3d().direct_space_state.intersect_shape(query, 8):
+		if hit.get("collider") is StaticBody3D:
+			return true
+	return false
 
 
 ## Lowest point of the TV's mesh geometry along Y, in local space at scale 1.
