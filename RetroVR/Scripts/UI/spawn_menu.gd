@@ -194,6 +194,13 @@ var _vscrollbar: VScrollBar = null
 # Cores > Manager tab state — drill-down browser + installed cores grouped by
 # systemid: sid -> Array[{ "core_name", "display_name" }]
 var _manager_browser: SystemGridBrowser = null
+
+## BIOS / Extras tab. `_bios_row_cache` is per-rebuild: the home grid and the
+## detail page both need a system's resolved rows, and re-deriving them means
+## re-stat'ing (and possibly re-hashing) every declared file.
+var _bios_browser: SystemGridBrowser = null
+var _bios_cores_by_system: Dictionary = {}
+var _bios_row_cache: Dictionary = {}
 var _manager_cores_by_system: Dictionary = {}
 
 # Spawn > Systems tab — drill-down browser, one title card per system
@@ -552,6 +559,8 @@ func _update_cores_active_scroll() -> void:
 	var idx := _cores_tabs.current_tab if _cores_tabs else 0
 	if idx == 1 and _manager_browser:
 		_active_scroll = _manager_browser.get_active_scroll()
+	elif idx == 2 and _bios_browser:
+		_active_scroll = _bios_browser.get_active_scroll()
 	elif _download_browser:
 		_active_scroll = _download_browser.get_active_scroll()
 	else:
@@ -1407,11 +1416,17 @@ const _ICON_SCRAPE    := 0xF0866   # md-database_search
 const _ICON_FILTER    := 0xF0B0    # fa-filter
 const _ICON_REGION    := 0xF01E7   # md-earth
 const _ICON_RECOMMENDED := 0xF0124 # md-certificate     — the pick for this system
+const _ICON_CHECK     := 0xF012C   # md-check           — firmware present
+const _ICON_CROSS     := 0xF0159   # md-close_thick     — required firmware absent
+const _ICON_DASH      := 0xF0374   # md-minus           — optional firmware absent
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 const _TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
 const _TINT_BUSY     := Color(1.00, 0.75, 0.25)
 const _TINT_DELETE   := Color(0.95, 0.40, 0.40)
+const _TINT_OK       := Color(0.40, 0.85, 0.45)
+const _TINT_WARN     := Color(1.00, 0.72, 0.20)
+const _TINT_MUTED    := Color(0.45, 0.45, 0.58)
 
 ## Built once and shared — the list recycles rows, so a FontVariation per row
 ## (or per bind) would churn resources on every scroll.
@@ -1810,11 +1825,21 @@ func _build_cores_view() -> Control:
 	mgr_container.name = "Manager"
 	tabs.add_child(mgr_container)
 
-	# Refresh Manager list each time the user switches to it, and keep the VR
-	# scroll target pointed at the newly-visible tab's browser.
+	var bios_container := _build_bios_tab()
+	# The node name cannot hold the "/" — Godot rejects it in node names and
+	# TabContainer titles each tab after its child, so it would read "BIOS _
+	# Extras". The title has to be set separately, after the add.
+	bios_container.name = "BIOSExtras"
+	tabs.add_child(bios_container)
+	tabs.set_tab_title(tabs.get_tab_count() - 1, "BIOS / Extras")
+
+	# Both the Manager and BIOS lists are derived from what is on disk, so each
+	# is rebuilt on entry rather than cached — installing a core changes both.
 	tabs.tab_changed.connect(func(idx: int):
 		if idx == 1:
 			_populate_manager_tab()
+		elif idx == 2:
+			_populate_bios_tab()
 		_update_cores_active_scroll()
 	)
 
@@ -1944,6 +1969,217 @@ func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
 
 		vbox.add_child(row)
 		vbox.add_child(HSeparator.new())
+
+
+# ── BIOS / Extras tab ─────────────────────────────────────────────────────────
+#
+# Every installed core declares, in its .info, the files it wants in its system
+# directory. Nothing surfaced them before, so a core that cannot boot without a
+# BIOS just failed silently. This lists them per system, marks what is there,
+# and (Phase 2/3) fetches what is not.
+#
+# Required and optional are shown very differently on purpose: of the ~149
+# entries a typical install declares, only about 6 are actually required. A red
+# cross on every missing optional would paint every system as broken.
+
+func _build_bios_tab() -> Control:
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 6)
+
+	var hdr := Label.new()
+	hdr.text = "Files each core needs in its system folder. Only missing required files stop a game from running."
+	hdr.add_theme_font_size_override("font_size", 15)
+	hdr.add_theme_color_override("font_color", COLOR_LICENSE)
+	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	outer.add_child(hdr)
+
+	outer.add_child(HSeparator.new())
+
+	_bios_browser = SystemGridBrowser.new()
+	_bios_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_bios_browser.empty_text = "No cores downloaded yet.\nUse the Download tab to install cores."
+	_bios_browser.filter_placeholder = "Filter systems…"
+	_bios_browser.set_detail_populator(_populate_bios_detail)
+	_bios_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
+	outer.add_child(_bios_browser)
+
+	return outer
+
+
+## Rebuild the home grid: one tile per system that has an installed core, badged
+## with what that system is still missing. Rescans the cores dir and the system
+## dirs on every call, so installing a core or dropping a BIOS in by hand shows
+## up without a restart.
+func _populate_bios_tab() -> void:
+	if not _bios_browser:
+		return
+
+	# Dropped in by hand or by the web uploader since the last look — the whole
+	# point of the tab is that it reflects the disk, so nothing survives a rebuild.
+	_bios_row_cache.clear()
+	_bios_cores_by_system = FirmwareRequirements.installed_cores_by_system()
+
+	var systems: Array = []
+	for sid: String in _bios_cores_by_system:
+		var rows: Array[Dictionary] = []
+		for c: Dictionary in _bios_cores_by_system[sid]:
+			rows.append_array(_bios_rows_for_core(str(c["core_name"])))
+		# A core with nothing to declare is not "complete", it is silent — no
+		# tile, so the grid only shows systems where there is something to know.
+		if rows.is_empty():
+			continue
+		systems.append({
+			"systemid": sid,
+			"name": core_db.get_systemname_for_id(sid) if sid != "unknown" else "Other",
+			"badge": str(FirmwareState.summarise(rows)["badge"]),
+		})
+
+	_bios_browser.set_systems(systems)
+
+
+## Resolved status rows for one core, memoised for the life of this rebuild.
+func _bios_rows_for_core(core_name: String) -> Array[Dictionary]:
+	if _bios_row_cache.has(core_name):
+		return _bios_row_cache[core_name]
+	var rows := FirmwareState.shared().evaluate(
+		core_name, FirmwareRequirements.for_core(core_name))
+	_bios_row_cache[core_name] = rows
+	return rows
+
+
+## Detail page: every declared file for every installed core of this system.
+## Grouped by core, with the heading shown only when there is more than one —
+## the requirements genuinely differ between cores for the same machine.
+func _populate_bios_detail(systemid: String, vbox: VBoxContainer) -> void:
+	var cores: Array = _bios_cores_by_system.get(systemid, [])
+	var multi := cores.size() > 1
+
+	var path_row := HBoxContainer.new()
+	var path_lbl := Label.new()
+	path_lbl.text = "Files go in:  %s" % CoreDownloadManager.default_system_dir("<core>")
+	path_lbl.add_theme_font_size_override("font_size", 14)
+	path_lbl.add_theme_color_override("font_color", COLOR_DESC)
+	path_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	path_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	path_row.add_child(path_lbl)
+	vbox.add_child(path_row)
+	vbox.add_child(HSeparator.new())
+
+	for entry: Dictionary in cores:
+		var cn: String = entry["core_name"]
+		var rows := _bios_rows_for_core(cn)
+		if rows.is_empty():
+			continue
+
+		if multi:
+			var head := Label.new()
+			head.text = str(entry["display_name"])
+			head.add_theme_font_size_override("font_size", 20)
+			head.add_theme_color_override("font_color", COLOR_TITLE)
+			vbox.add_child(head)
+
+		for r: Dictionary in rows:
+			vbox.add_child(_build_bios_row(r))
+
+		vbox.add_child(HSeparator.new())
+
+
+## One firmware row: status glyph, path, description, and an Optional tag.
+func _build_bios_row(r: Dictionary) -> Control:
+	var status := int(r.get("status", FirmwareState.Status.PRESENT))
+	var optional: bool = bool(r.get("optional", true))
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 56)
+
+	var glyph := Label.new()
+	glyph.add_theme_font_override("font", _symbols())
+	glyph.add_theme_font_size_override("font_size", 26)
+	glyph.custom_minimum_size = Vector2(40, 0)
+	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	match status:
+		FirmwareState.Status.PRESENT:
+			glyph.text = String.chr(_ICON_CHECK)
+			glyph.add_theme_color_override("font_color", _TINT_OK)
+		FirmwareState.Status.MISMATCH:
+			glyph.text = String.chr(_ICON_ERROR)
+			glyph.add_theme_color_override("font_color", _TINT_WARN)
+		FirmwareState.Status.MISSING_REQUIRED:
+			glyph.text = String.chr(_ICON_CROSS)
+			glyph.add_theme_color_override("font_color", _TINT_DELETE)
+		_:
+			glyph.text = String.chr(_ICON_DASH)
+			glyph.add_theme_color_override("font_color", _TINT_MUTED)
+	row.add_child(glyph)
+
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col.add_theme_constant_override("separation", 0)
+	row.add_child(col)
+
+	var name_lbl := Label.new()
+	name_lbl.text = str(r.get("path", ""))
+	name_lbl.add_theme_font_size_override("font_size", 19)
+	name_lbl.add_theme_color_override("font_color",
+		COLOR_TITLE if status != FirmwareState.Status.MISSING_OPTIONAL else COLOR_LICENSE)
+	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	col.add_child(name_lbl)
+
+	var desc := _bios_desc_for(str(r.get("path", "")), str(r.get("desc", "")))
+	if not desc.is_empty():
+		var desc_lbl := Label.new()
+		desc_lbl.text = desc
+		desc_lbl.add_theme_font_size_override("font_size", 15)
+		desc_lbl.add_theme_color_override("font_color", COLOR_DESC)
+		desc_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		col.add_child(desc_lbl)
+
+	var tag := Label.new()
+	tag.add_theme_font_size_override("font_size", 15)
+	tag.custom_minimum_size = Vector2(170, 0)
+	tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	if status == FirmwareState.Status.MISMATCH:
+		tag.text = "Wrong file"
+		tag.add_theme_color_override("font_color", _TINT_WARN)
+	elif optional:
+		tag.text = "Optional"
+		tag.add_theme_color_override("font_color", _TINT_MUTED)
+	else:
+		tag.text = "Required"
+		tag.add_theme_color_override("font_color",
+			_TINT_DELETE if status == FirmwareState.Status.MISSING_REQUIRED else COLOR_LICENSE)
+	row.add_child(tag)
+
+	# The detail list scrolls, and its scrollbar is 40 px wide and drawn over the
+	# content — without this the tag sits underneath it.
+	var gutter := Control.new()
+	gutter.custom_minimum_size = Vector2(44, 0)
+	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gutter)
+
+	return row
+
+
+## The .info `desc` almost always restates the filename before adding anything
+## useful ("scph5500.bin (PS1 JP BIOS)"), which reads as a stutter under a label
+## that is already the path. Drop the repeated part and keep the rest.
+static func _bios_desc_for(path: String, desc: String) -> String:
+	if desc.is_empty():
+		return ""
+	var rest := desc
+	for prefix: String in [path, path.get_file()]:
+		if not prefix.is_empty() and rest.begins_with(prefix):
+			rest = rest.substr(prefix.length())
+			break
+	rest = rest.strip_edges().lstrip("-–—:").strip_edges()
+	if rest.begins_with("(") and rest.ends_with(")"):
+		rest = rest.substr(1, rest.length() - 2).strip_edges()
+	# Nothing left means the desc was only ever the filename.
+	return "" if rest == path or rest == path.get_file() else rest
 
 
 # ── Download tab ──────────────────────────────────────────────────────────────

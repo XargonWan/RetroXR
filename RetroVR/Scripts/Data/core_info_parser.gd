@@ -46,7 +46,16 @@ static func parse_info_file(path: String) -> Dictionary:
 		if raw_val.begins_with('"') and raw_val.ends_with('"') and raw_val.length() >= 2:
 			raw_val = raw_val.substr(1, raw_val.length() - 2)
 
-		if not key.is_empty():
+		if key.is_empty():
+			continue
+
+		# "notes" may be split across several lines (bk_libretro.info does it).
+		# Its own separator is "|", so joining on that reconstructs one value —
+		# last-wins would drop the firmware checksum table. Every other key is
+		# single-valued.
+		if key == "notes" and result.has(key):
+			result[key] = str(result[key]) + "|" + raw_val
+		else:
 			result[key] = raw_val
 
 	file.close()

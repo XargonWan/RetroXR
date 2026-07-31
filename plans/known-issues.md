@@ -45,3 +45,32 @@ a label because several systemids share it verbatim.
 
 Worth fixing locally in `CoreInfoDatabase._NAME_OVERRIDES` before upstreaming, since
 the display name is what the browser tiles key off.
+
+## Malformed firmware blocks
+
+Found while building the BIOS / Extras tab (2026-07-30). Both are upstream data bugs,
+not parser bugs.
+
+* **`bk_libretro.info` has TWO `notes` lines** (61 and 62). A last-wins key/value
+  parser — which is the obvious way to read this format, and what `CoreInfoParser`
+  did — silently keeps only the second (`"(!) Homepage: …"`) and discards the first,
+  which is the entire md5 checksum table for all 8 firmware files. Worked around in
+  `CoreInfoParser.parse_info_file()` by joining duplicate `notes` on `"|"`, which is
+  the format's own line separator. It is the only file in the 306 that does this;
+  every other duplicated key (`supports_no_game`, `categories`, `display_version`)
+  is genuinely single-valued and last-wins is correct for those.
+
+* **`FreeIntvTSOverlay_libretro.info` misnumbers its second firmware entry.** It
+  declares `firmware_count = 2`, then writes `firmware1_desc` followed by
+  `firmware0_path` and `firmware0_opt` — so `grom.bin` overwrites `exec.bin`'s path
+  and entry 1 has a description but no path at all. Both files are required
+  Intellivision BIOSes, so the core is unlaunchable on the declared metadata.
+  We skip pathless entries rather than guess, which costs this core one row.
+
+* **`notes` checksum keys are not consistently the firmware path.** 182 entries key
+  on the full `firmware*_path` (`bk/B11M_BOS.ROM`), but 53 key on the basename alone
+  — `ppsspp` publishes `ppge_atlas.zim` for the path `PPSSPP/ppge_atlas.zim`. Any
+  consumer has to try the path, then its basename. Not malformed exactly, but
+  undocumented and easy to get wrong: keying on the path alone silently finds zero
+  hashes for a third of the corpus, and the failure looks like "no checksums
+  published" rather than a bug.

@@ -75,7 +75,8 @@ static func _core_lib_ext() -> String:
 	return ".dll"
 
 ## Default root directory for libretro data.
-## On Android: same parent dir as ROMs (/sdcard/Android/data/com.xenu.retrovr/files/libretro).
+## On Android this is INTERNAL storage (/data/user/0/com.xenu.retrovr/files/libretro),
+## a different filesystem from the ROM tree on /sdcard — `adb push` cannot reach it.
 ## On Linux: $HOME/retrovr/libretro. On Windows: %USERPROFILE%/retrovr/libretro.
 static func default_core_root() -> String:
 	if OS.get_name() == "Android":
@@ -93,6 +94,15 @@ static func default_cores_dir() -> String:
 ## The manifest lives in the root (not cores/) so it isn't confused for a DLL.
 static func default_manifest_dir() -> String:
 	return default_core_root()
+
+
+## Where a core looks for its BIOS/firmware — the dir handed to
+## RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY. Per-core, not the shared RetroArch
+## `system/`, so two cores serving one system each need their own copy of a BIOS.
+## Mirrors Wrapper.cpp, which builds <root>/system/<core_name> and creates it on
+## the core's first request.
+static func default_system_dir(core_name: String) -> String:
+	return default_core_root().path_join("system").path_join(core_name)
 
 
 # ---------------------------------------------------------------------------
