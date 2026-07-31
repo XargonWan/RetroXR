@@ -1415,8 +1415,11 @@ func _prewarm_top_platforms(systems: Array) -> void:
 		if int(s.get("badge_count", 0)) > 0:
 			sized.append([int(s["badge_count"]), sid])
 	sized.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
-	for i in mini(sized.size(), 3):
-		romm_catalog.prewarm_index(str((sized[i] as Array)[1]))
+	# Every synced platform, not just the first few: the worker also backfills
+	# missing sidecars, which is a one-time repair worth doing for all of them
+	# rather than only the ones that happen to be biggest.
+	for e: Array in sized:
+		romm_catalog.prewarm_index(str(e[1]))
 
 
 ## Local ROM files for one system, keyed by lowercase basename.

@@ -157,11 +157,67 @@ func _warm_pump() -> void:
 
 
 func _warm_worker(dir: String) -> void:
+	# An index synced before the fsnames/regions sidecars existed still works,
+	# but only through a fallback that parses one JSON line per row. Measured on
+	# Quest that is 543 ms to open a 3.1k platform against ~10 ms with them —
+	# the single biggest stutter in the menu, and invisible on a dev machine
+	# whose indexes have all been re-synced. Everything needed is already in
+	# index.jsonl, so rebuild them here rather than making the user re-sync.
+	_backfill_sidecars(dir)
+
 	for f: String in ["index.off", "index.ids", "index.names",
 					  "index.fsnames", "index.regions"]:
 		# Read and discarded: the file cache is the whole product.
 		var _b := FileAccess.get_file_as_bytes(dir.path_join(f))
 	_warm_done.call_deferred()
+
+
+## Regenerate index.fsnames and index.regions from index.jsonl. One pass, no
+## network. Worker-thread only.
+static func _backfill_sidecars(dir: String) -> void:
+	var fs_path := dir.path_join("index.fsnames")
+	var rg_path := dir.path_join("index.regions")
+	if FileAccess.file_exists(fs_path) and FileAccess.file_exists(rg_path):
+		return
+
+	var offsets := _read_offsets(dir)
+	if offsets.is_empty():
+		return
+	var jsonl := FileAccess.open(dir.path_join("index.jsonl"), FileAccess.READ)
+	if jsonl == null:
+		return
+
+	var fsnames := ""
+	var regions := ""
+	for off: int in offsets:
+		jsonl.seek(off)
+		var parsed: Variant = JSON.parse_string(jsonl.get_line())
+		var fs_base := ""
+		var joined := ""
+		if parsed is Dictionary:
+			var pd := parsed as Dictionary
+			fs_base = str(pd.get("fs_name", "")).get_basename().to_lower()
+			var rl: Array = pd.get("regions", []) if pd.get("regions") is Array else []
+			var parts := PackedStringArray()
+			for r: Variant in rl:
+				parts.append(str(r))
+			joined = "".join(parts)
+		fsnames += fs_base + "\n"
+		regions += joined + "\n"
+	jsonl.close()
+
+	# Written only once both are built: a half-backfilled index would report
+	# fast sidecars it does not have. Through a temp file and a rename, because
+	# two catalog instances can each decide to backfill the same platform and a
+	# reader must never see one of them mid-write.
+	_write_text_atomic(fs_path, fsnames)
+	_write_text_atomic(rg_path, regions)
+	print("[RommCatalog] backfilled sidecars for %d rows in %s" % [offsets.size(), dir])
+
+
+static func _read_offsets(dir: String) -> PackedInt64Array:
+	var b := FileAccess.get_file_as_bytes(dir.path_join("index.off"))
+	return b.to_int64_array() if not b.is_empty() else PackedInt64Array()
 
 
 func _warm_done() -> void:
@@ -681,6 +737,26 @@ static func _write_bytes(path: String, data: PackedByteArray) -> void:
 		push_error("[RommCatalog] cannot write %s" % path)
 		return
 	f.store_buffer(data)
+
+
+## Write via a per-thread temp file and rename, so a concurrent writer of the
+## same path can never be observed half-done.
+static func _write_text_atomic(path: String, text: String) -> void:
+	var tmp := "%s.%d.part" % [path, OS.get_thread_caller_id()]
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		push_error("[RommCatalog] cannot write %s" % tmp)
+		return
+	f.store_string(text)
+	var err := f.get_error()
+	f.close()
+	if err != OK:
+		DirAccess.remove_absolute(tmp)
+		return
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+	if DirAccess.rename_absolute(tmp, path) != OK:
+		DirAccess.remove_absolute(tmp)
 
 
 static func _write_text(path: String, text: String) -> void:

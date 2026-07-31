@@ -132,6 +132,53 @@ func _run() -> void:
 				_say("  rebuild filter=%-6s        %8.2f ms   %d rows",
 					['"' + term + '"', _ms(t), (menu.get("_romm_rows") as Array).size()])
 
+	# ---- 4b. What the per-row loop actually costs ---------------------------
+	# open_system is ~0.13 ms/row on device; this splits that between the parts
+	# so the fix targets the right one instead of the plausible one.
+	if not synced.is_empty():
+		var sid: String = BIG if BIG in synced else synced[0]
+		var c3 := RommCatalog.new()
+		c3.setup(cfg)
+		add_child(c3)
+		c3.load_index(sid)
+		var n := c3.count()
+
+		t = _t()
+		for i in n:
+			var _l := c3.name_at(i)
+		_say("loop: name_at only            %8.2f ms   (%d rows)", [_ms(t), n])
+
+		t = _t()
+		for i in n:
+			var _k := c3.fs_basename_at(i)
+		_say("loop: fs_basename_at only     %8.2f ms", [_ms(t)])
+
+		t = _t()
+		for i in n:
+			var _r := c3.regions_at(i)
+		_say("loop: regions_at only         %8.2f ms   <-- a split() per row", [_ms(t)])
+
+		t = _t()
+		var sink: Array = []
+		for i in n:
+			sink.append({"source": "server", "index": i, "path": "", "label": ""})
+		_say("loop: one Dictionary per row  %8.2f ms", [_ms(t)])
+
+		t = _t()
+		var sink2 := PackedInt32Array()
+		sink2.resize(n)
+		for i in n:
+			sink2[i] = i
+		_say("loop: PackedInt32Array fill   %8.2f ms   <-- the slim alternative", [_ms(t)])
+
+		t = _t()
+		var seen: Dictionary = {}
+		for i in n:
+			for r: String in c3.regions_at(i):
+				seen[r] = true
+		_say("loop: regions_at + set build  %8.2f ms   %d distinct", [_ms(t), seen.size()])
+		c3.queue_free()
+
 	# ---- 5. Dropdown first build -------------------------------------------
 	t = _t()
 	menu.call("_prewarm_dropdowns")
