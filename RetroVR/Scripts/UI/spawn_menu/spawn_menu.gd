@@ -869,10 +869,16 @@ func _save_net_prefs() -> void:
 		}))
 
 
+## Systems and Cartridges are SystemGridBrowsers that own their own scroll, and
+## their slot in _spawn_tab_scrolls is null; every other tab is a plain
+## ScrollContainer at the matching index. Keyed on title rather than position for
+## the same reason the populate dispatch is.
 func _update_spawn_active_scroll(tab_idx: int) -> void:
-	if tab_idx == 0:
+	var title := _spawn_tabs.get_tab_title(tab_idx) if _spawn_tabs != null \
+		and tab_idx >= 0 and tab_idx < _spawn_tabs.get_tab_count() else ""
+	if title == "Systems":
 		_update_systems_inner_scroll()
-	elif tab_idx == 2:
+	elif title == "Cartridges":
 		_update_cartridges_inner_scroll()
 	elif tab_idx >= 0 and tab_idx < _spawn_tab_scrolls.size():
 		_active_scroll = _spawn_tab_scrolls[tab_idx]
@@ -939,8 +945,6 @@ func _build_spawn_view() -> Control:
 	default_core_changed.connect(func(_sid: String, _cn: String): _populate_systems_tab())
 	default_core_changed.connect(func(_sid: String, _cn: String): _populate_cartridges_tab())
 
-	_add_spawn_tab(tabs, "TVs", [["TV", "tv"]])
-
 	# Cartridges tab — drill-down browser, one tile per system
 	_cartridges_browser = SystemGridBrowser.new()
 	_cartridges_browser.name = "Cartridges"
@@ -953,8 +957,12 @@ func _build_spawn_view() -> Control:
 		_update_cartridges_inner_scroll()
 	)
 	tabs.add_child(_cartridges_browser)
-	_spawn_tab_scrolls.append(null)  # index 2 handled via _update_cartridges_inner_scroll
+	# Its own browser owns the scroll, so this slot stays empty — see
+	# _update_spawn_active_scroll.
+	_spawn_tab_scrolls.append(null)
 	_populate_cartridges_tab()
+
+	_add_spawn_tab(tabs, "TVs", [["TV", "tv"]])
 
 	# Books tab — lists PDFs from the books root directory
 	var books_scroll := ScrollContainer.new()
@@ -1031,19 +1039,18 @@ func _build_spawn_view() -> Control:
 
 	# Refresh on tab switch — picks up files added to disk since last open
 	# Also update _active_scroll to the current tab's ScrollContainer
+	# Dispatched on the tab's title, not its index. These were index compares, and
+	# reordering two tabs then meant finding every hardcoded position — four of
+	# them, spread over three functions — with nothing to catch a miss but the
+	# wrong list quietly refreshing.
 	tabs.tab_changed.connect(func(idx: int):
-		if idx == 2:
-			_populate_cartridges_tab()
-		elif idx == 3:
-			_populate_books_tab()
-		elif idx == 4:
-			_populate_videos_tab()
-		elif idx == 5:
-			_populate_dvds_tab()
-		elif idx == 6:
-			_populate_cds_tab()
-		elif idx == 7:
-			_populate_tapes_tab()
+		match tabs.get_tab_title(idx):
+			"Cartridges": _populate_cartridges_tab()
+			"Books": _populate_books_tab()
+			"Videos": _populate_videos_tab()
+			"DVDs": _populate_dvds_tab()
+			"CDs": _populate_cds_tab()
+			"Tapes": _populate_tapes_tab()
 		_update_spawn_active_scroll(idx)
 	)
 
