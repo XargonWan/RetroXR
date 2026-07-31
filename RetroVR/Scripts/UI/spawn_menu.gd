@@ -4267,6 +4267,7 @@ func _show_scrape_status(msg: String) -> void:
 	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
 		if _scrape_status_label != null:
 			_scrape_status_label.text = msg
+			_refresh_toast_panel()
 		return
 
 	_scrape_status_bar = PanelContainer.new()
@@ -4277,6 +4278,7 @@ func _show_scrape_status(msg: String) -> void:
 		bg.set(k, 8)
 	_scrape_status_bar.add_theme_stylebox_override("panel", bg)
 	_scrape_status_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scrape_status_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 
 	var margin := MarginContainer.new()
 	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
@@ -4311,6 +4313,7 @@ func _show_scrape_status(msg: String) -> void:
 func _update_scrape_status(msg: String) -> void:
 	if _scrape_status_label != null and is_instance_valid(_scrape_status_label):
 		_scrape_status_label.text = msg
+		_refresh_toast_panel()
 
 
 # Bumped per notice so a stale auto-hide can't clear a newer message.
@@ -4425,6 +4428,8 @@ func _update_media_toast(key: String, icon_text: String, msg: String,
 	if bar != null and is_instance_valid(bar):
 		bar.visible = progress >= 0.0
 		bar.value = clampf(progress, 0.0, 1.0) * 100.0
+	# The quad is sized to the widest bar, and the text just changed.
+	_refresh_toast_panel()
 
 
 func _make_media_toast(media_type: String, icon_text: String, msg: String,
@@ -4439,6 +4444,9 @@ func _make_media_toast(media_type: String, icon_text: String, msg: String,
 		bg.set(k, 8)
 	bar.add_theme_stylebox_override("panel", bg)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Hug the text rather than filling the stack — the quad is sized to the widest
+	# bar, so a filling bar would stretch every one of them to that width.
+	bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 
 	var margin := MarginContainer.new()
 	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
@@ -4574,6 +4582,7 @@ func _enforce_toast_cap() -> void:
 			bg.set(k, 8)
 		_toast_overflow_bar.add_theme_stylebox_override("panel", bg)
 		_toast_overflow_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_toast_overflow_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 
 		var m := MarginContainer.new()
 		for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:

@@ -24,8 +24,12 @@ const Z_OFFSET := 0.040
 ## Gap between the stack's bottom and the panel's bottom edge, in host pixels.
 ## Matches the offset_bottom the stack used while it lived in the page.
 const BOTTOM_INSET := 62.0
-## Fraction of the host's width the stack spans, measured in host pixels.
-const WIDTH_FRACTION := 0.5
+## Ceiling on the quad's width, as a fraction of the host in host pixels. The
+## quad is sized to the widest bar; this only stops one very long message from
+## running wider than the menu it floats over.
+const MAX_WIDTH_FRACTION := 0.5
+## Floor, so a two-word notice is still a bar rather than a chip.
+const MIN_W := 300.0
 ## Metres per pixel relative to the page. In the page the bars had to share the
 ## menu's scale; on their own quad they do not, and at page scale an 18 pt line
 ## is ~9 mm tall — too small to read across the room, which is the one thing a
@@ -118,8 +122,11 @@ func refresh() -> void:
 		return
 
 	var vp := _host.viewport_size
-	var px_w := maxf(64.0, vp.x * WIDTH_FRACTION)
-	var px_h := maxf(MIN_H, _stack.get_combined_minimum_size().y)
+	# Sized to the content, both ways: the bars shrink to their text, so the
+	# stack's minimum width is the widest bar's.
+	var want := _stack.get_combined_minimum_size()
+	var px_w := clampf(want.x, MIN_W, vp.x * MAX_WIDTH_FRACTION)
+	var px_h := maxf(MIN_H, want.y)
 
 	if _viewport.viewport_size.x != px_w or _viewport.viewport_size.y != px_h:
 		# Through with_flat_geometry: writing screen_size runs the addon's setter,
