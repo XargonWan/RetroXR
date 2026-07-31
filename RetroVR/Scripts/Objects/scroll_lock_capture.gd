@@ -37,8 +37,20 @@ static func attach(host: Node3D, eligible: Callable, glyph: int,
 	return cap
 
 
+## Set while the player is typing into a text field — see TypingGuard. Global
+## rather than per-instance: the keyboard is one device, so if it is composing
+## text it is not driving any held device.
+static var _suspended := false
+
+
+## Suspend every capture without clearing it, so the Scroll Lock state the player
+## chose survives whatever interrupted it.
+static func set_suspended(on: bool) -> void:
+	_suspended = on
+
+
 func is_active() -> bool:
-	return _active and _can_capture()
+	return _active and not _suspended and _can_capture()
 
 
 func _can_capture() -> bool:
@@ -50,7 +62,9 @@ func _can_capture() -> bool:
 ## whichever device happens to be first in the tree would swallow it and the one
 ## actually in your hand would never toggle.
 func handle_key(event: InputEventKey) -> bool:
-	if event.keycode != KEY_SCROLLLOCK or not _can_capture():
+	# Not while typing: Scroll Lock pressed inside a text field should neither
+	# toggle capture nor be swallowed here.
+	if event.keycode != KEY_SCROLLLOCK or _suspended or not _can_capture():
 		return false
 	if event.is_pressed():
 		set_active(not _active)
