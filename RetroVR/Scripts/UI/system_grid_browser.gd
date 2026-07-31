@@ -139,6 +139,11 @@ func refresh() -> void:
 		open_system(_current_systemid)
 
 
+## The system whose detail page is open, or "" on the home grid.
+func current_systemid() -> String:
+	return _current_systemid
+
+
 ## The ScrollContainer of the currently-visible page (for _active_scroll wiring).
 func get_active_scroll() -> ScrollContainer:
 	_ensure_built()

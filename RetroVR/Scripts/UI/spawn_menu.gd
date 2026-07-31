@@ -93,6 +93,7 @@ var romm_catalog: RommCatalog = null
 var romm_downloader: RommDownloader = null
 var romm_cache: RommCacheManifest = null
 var romm_art: RommArtCache = null
+var romm_firmware: RommFirmware = null
 ## systemid -> platform dict from /api/platforms (with "systemid" added).
 var _romm_platforms: Dictionary = {}
 var _romm_unmapped: Array = []
@@ -201,6 +202,11 @@ var _manager_browser: SystemGridBrowser = null
 var _bios_browser: SystemGridBrowser = null
 var _bios_cores_by_system: Dictionary = {}
 var _bios_row_cache: Dictionary = {}
+var _firmware_installer: FirmwareInstaller = null
+## job key -> the Button that started it, so progress can be shown in place.
+## Rebuilt pages drop their buttons, so entries are validity-checked on use.
+var _bios_job_buttons: Dictionary = {}
+var _bios_refreshing := false
 var _manager_cores_by_system: Dictionary = {}
 
 # Spawn > Systems tab — drill-down browser, one title card per system
@@ -386,6 +392,17 @@ func _init_romm() -> void:
 	romm_art.setup(romm_config.base_url)
 	add_child(romm_art)
 	romm_art.art_ready.connect(_on_romm_art_ready)
+
+	romm_firmware = RommFirmware.new()
+	romm_firmware.name = "RommFirmware"
+	romm_firmware.setup(romm_config)
+	add_child(romm_firmware)
+	# Redraw once the list lands: rows built before it arrives carry no cloud
+	# button, and the tab should not block on a request to show what is on disk.
+	romm_firmware.listed.connect(func(ok: bool, _n: int) -> void:
+		if ok and _cores_tabs != null and _cores_tabs.current_tab == 2:
+			_refresh_bios_view()
+	)
 
 
 func _init_web_server() -> void:
@@ -2003,7 +2020,68 @@ func _build_bios_tab() -> Control:
 	_bios_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
 	outer.add_child(_bios_browser)
 
+	_firmware_installer = FirmwareInstaller.new()
+	_firmware_installer.name = "FirmwareInstaller"
+	_firmware_installer.job_started.connect(_on_firmware_started)
+	_firmware_installer.job_progress.connect(_on_firmware_progress)
+	_firmware_installer.job_retrying.connect(_on_firmware_retrying)
+	_firmware_installer.job_finished.connect(_on_firmware_finished)
+	_firmware_installer.job_cancelled.connect(_on_firmware_cancelled)
+	add_child(_firmware_installer)
+
 	return outer
+
+
+# ── Install progress ──────────────────────────────────────────────────────────
+
+func _on_firmware_started(key: String, label: String, total: int) -> void:
+	var size_text := "" if total <= 0 else "  (%s)" % String.humanize_size(total)
+	_romm_notify_or_queue(key, String.chr(_ICON_BUSY),
+		"Downloading %s%s" % [label, size_text], 0.0, 0.0)
+
+
+func _on_firmware_progress(key: String, received: int, total: int) -> void:
+	var frac := 0.0 if total <= 0 else clampf(float(received) / float(total), 0.0, 1.0)
+	var btn := _bios_job_buttons.get(key) as Button
+	if btn != null and is_instance_valid(btn):
+		btn.text = "%d%%" % int(frac * 100.0)
+	_romm_notify_or_queue(key, String.chr(_ICON_BUSY),
+		"Downloading %s" % String.humanize_size(total), 0.0, frac)
+
+
+func _on_firmware_retrying(key: String, attempt: int, total: int, reason: String) -> void:
+	_romm_notify_or_queue(key, String.chr(_ICON_RETRY),
+		"%s — retry %d of %d" % [reason, attempt, total], 0.0)
+
+
+func _on_firmware_finished(key: String, ok: bool, error: String) -> void:
+	_bios_job_buttons.erase(key)
+	if ok:
+		_romm_notify_or_queue(key, String.chr(_ICON_CHECK), "Installed", _ROMM_DWELL_OK)
+	else:
+		_romm_notify_or_queue(key, String.chr(_ICON_ERROR),
+			error if not error.is_empty() else "Install failed", _ROMM_DWELL_FAIL)
+	_refresh_bios_view()
+
+
+func _on_firmware_cancelled(key: String) -> void:
+	_bios_job_buttons.erase(key)
+	notify_clear(key)
+	_refresh_bios_view()
+
+
+## Re-derive status and redraw, keeping the user where they were.
+## Guarded: a rebuild touches the RomM list and the installer, either of which
+## can call back into here.
+func _refresh_bios_view() -> void:
+	if _bios_browser == null or _bios_refreshing:
+		return
+	_bios_refreshing = true
+	var open_sid := _bios_browser.current_systemid()
+	_populate_bios_tab()
+	if not open_sid.is_empty():
+		_bios_browser.open_system(open_sid)
+	_bios_refreshing = false
 
 
 ## Rebuild the home grid: one tile per system that has an installed core, badged
@@ -2018,6 +2096,11 @@ func _populate_bios_tab() -> void:
 	# point of the tab is that it reflects the disk, so nothing survives a rebuild.
 	_bios_row_cache.clear()
 	_bios_cores_by_system = FirmwareRequirements.installed_cores_by_system()
+
+	# One request per session, and the grid does not wait for it — `listed`
+	# redraws when it lands.
+	if romm_firmware != null and romm_config != null and romm_config.is_configured():
+		romm_firmware.refresh()
 
 	var systems: Array = []
 	for sid: String in _bios_cores_by_system:
@@ -2043,6 +2126,10 @@ func _bios_rows_for_core(core_name: String) -> Array[Dictionary]:
 		return _bios_row_cache[core_name]
 	var rows := FirmwareState.shared().evaluate(
 		core_name, FirmwareRequirements.for_core(core_name))
+	# Carried on the row so a detail row knows which core's system dir it is
+	# talking about without the builder having to be told separately.
+	for r: Dictionary in rows:
+		r["core_name"] = core_name
 	_bios_row_cache[core_name] = rows
 	return rows
 
@@ -2078,10 +2165,70 @@ func _populate_bios_detail(systemid: String, vbox: VBoxContainer) -> void:
 			head.add_theme_color_override("font_color", COLOR_TITLE)
 			vbox.add_child(head)
 
+		if SystemAssetCatalog.has_archive(cn):
+			vbox.add_child(_build_bios_archive_row(cn, rows))
+
 		for r: Dictionary in rows:
 			vbox.add_child(_build_bios_row(r))
 
 		vbox.add_child(HSeparator.new())
+
+
+## The one-tap route for cores whose support files libretro redistributes.
+## An archive unpacks straight over the declared paths, so it fills in every row
+## it covers at once — for ScummVM that is all 39.
+func _build_bios_archive_row(core_name: String, rows: Array[Dictionary]) -> Control:
+	var key := "bios:zip:%s" % core_name
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 60)
+
+	var lbl := Label.new()
+	lbl.text = SystemAssetCatalog.button_label(core_name)
+	lbl.add_theme_font_size_override("font_size", 17)
+	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(lbl)
+
+	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
+	var outstanding := 0
+	for r: Dictionary in rows:
+		if int(r.get("status", 0)) != FirmwareState.Status.PRESENT:
+			outstanding += 1
+
+	var btn := Button.new()
+	btn.add_theme_font_override("font", _symbols())
+	btn.add_theme_font_size_override("font_size", 22)
+	btn.custom_minimum_size = Vector2(120, 52)
+	btn.text = String.chr(_ICON_BUSY if running else _ICON_DOWNLOAD)
+	btn.add_theme_color_override("font_color", _TINT_BUSY if running else _TINT_DOWNLOAD)
+	btn.tooltip_text = "Download and unpack into this core's system folder"
+	# Nothing outstanding means the archive is already unpacked; still allow it,
+	# since it is also how you repair a file that went bad.
+	if outstanding == 0 and not running:
+		btn.add_theme_color_override("font_color", _TINT_MUTED)
+	btn.pressed.connect(func() -> void:
+		if _firmware_installer == null:
+			return
+		if _firmware_installer.is_queued(key):
+			_firmware_installer.cancel_current()
+			return
+		_bios_job_buttons[key] = btn
+		_firmware_installer.enqueue_archive(key, core_name)
+		btn.text = "0%"
+		btn.add_theme_color_override("font_color", _TINT_BUSY)
+	)
+	row.add_child(btn)
+
+	var gutter := Control.new()
+	gutter.custom_minimum_size = Vector2(44, 0)
+	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gutter)
+
+	return row
 
 
 ## One firmware row: status glyph, path, description, and an Optional tag.
@@ -2154,6 +2301,8 @@ func _build_bios_row(r: Dictionary) -> Control:
 			_TINT_DELETE if status == FirmwareState.Status.MISSING_REQUIRED else COLOR_LICENSE)
 	row.add_child(tag)
 
+	row.add_child(_build_bios_action(r))
+
 	# The detail list scrolls, and its scrollbar is 40 px wide and drawn over the
 	# content — without this the tag sits underneath it.
 	var gutter := Control.new()
@@ -2162,6 +2311,84 @@ func _build_bios_row(r: Dictionary) -> Control:
 	row.add_child(gutter)
 
 	return row
+
+
+## The right-hand cell of a firmware row.
+##
+## A cloud button when RomM is holding this file, and otherwise a plain note
+## saying so — most declared BIOSes are console dumps no server redistributes,
+## and a dead button on every one of them would read as broken.
+func _build_bios_action(r: Dictionary) -> Control:
+	var status := int(r.get("status", FirmwareState.Status.PRESENT))
+	var path := str(r.get("path", ""))
+
+	var cell := HBoxContainer.new()
+	cell.custom_minimum_size = Vector2(230, 0)
+	cell.alignment = BoxContainer.ALIGNMENT_END
+
+	if status == FirmwareState.Status.PRESENT or bool(r.get("is_dir", false)):
+		return cell
+
+	var hit: Dictionary = romm_firmware.find(path) if romm_firmware != null else {}
+	if hit.is_empty():
+		var note := Label.new()
+		note.text = "Not on RomM" if _romm_ready() else ""
+		note.add_theme_font_size_override("font_size", 14)
+		note.add_theme_color_override("font_color", _TINT_MUTED)
+		note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cell.add_child(note)
+		return cell
+
+	var core_name := str(r.get("core_name", ""))
+	var key := "bios:file:%s:%s" % [core_name, path]
+	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
+
+	var btn := Button.new()
+	btn.add_theme_font_override("font", _symbols())
+	btn.add_theme_font_size_override("font_size", 22)
+	btn.custom_minimum_size = Vector2(110, 48)
+	btn.text = String.chr(_ICON_BUSY if running else _ICON_DOWNLOAD)
+	btn.add_theme_color_override("font_color", _TINT_BUSY if running else _TINT_DOWNLOAD)
+	btn.tooltip_text = "Download %s from RomM (%s)" % [
+		str(hit["file_name"]), String.humanize_size(int(hit["size"]))]
+	btn.pressed.connect(func() -> void:
+		if _firmware_installer == null:
+			return
+		if _firmware_installer.is_queued(key):
+			_firmware_installer.cancel_current()
+			return
+		_bios_job_buttons[key] = btn
+		# One download, written to every installed core that declares this same
+		# file — the system dir is per-core, so they each need their own copy.
+		var dests := _bios_destinations_for(path)
+		_firmware_installer.enqueue_file(
+			key, path.get_file(), romm_config.base_url,
+			RommFirmware.content_path(int(hit["id"]), str(hit["file_name"])),
+			romm_config.auth_headers(), dests,
+			int(hit["size"]), str(hit["md5"]))
+		btn.text = "0%"
+		btn.add_theme_color_override("font_color", _TINT_BUSY)
+	)
+	cell.add_child(btn)
+	return cell
+
+
+## Every installed core that declares this exact firmware path wants its own
+## copy, so one fetch fills them all.
+func _bios_destinations_for(path: String) -> Array[String]:
+	var dests: Array[String] = []
+	for sid: String in _bios_cores_by_system:
+		for c: Dictionary in _bios_cores_by_system[sid]:
+			var cn := str(c["core_name"])
+			for req: Dictionary in FirmwareRequirements.for_core(cn):
+				if str(req["path"]) == path:
+					dests.append(FirmwareRequirements.destination(cn, path))
+					break
+	return dests
+
+
+func _romm_ready() -> bool:
+	return romm_firmware != null and romm_firmware.is_loaded()
 
 
 ## The .info `desc` almost always restates the filename before adding anything
@@ -4337,10 +4564,13 @@ func _romm_check_for_changes() -> void:
 ## Toasts can only be seen while the menu panel is open. A 4 GB download keeps
 ## running while the user plays, so terminal outcomes are queued and flushed
 ## (coalesced) the next time the menu opens, rather than vanishing unseen.
-func _romm_notify_or_queue(key: String, icon: String, msg: String, dwell: float) -> void:
+func _romm_notify_or_queue(key: String, icon: String, msg: String, dwell: float,
+						   progress: float = -1.0) -> void:
 	if _menu_shown:
-		notify(key, icon, msg, -1.0, dwell)
-	else:
+		notify(key, icon, msg, progress, dwell)
+	elif progress < 0.0:
+		# Only outcomes are worth keeping for later. Queueing progress ticks
+		# would bank hundreds of them and then replay a finished download.
 		_romm_pending_notices.append({"ok": icon == "✅", "msg": msg})
 
 
