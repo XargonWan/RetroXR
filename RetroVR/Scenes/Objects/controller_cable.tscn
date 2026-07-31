@@ -80,4 +80,4 @@ collision_radius = 0.0036
 self_collision = true
 end_align_stiffness = 0.7
 end_stiffness = 0.6
-end_stiff_segments = 2
+end_stiff_segments = 5

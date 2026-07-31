@@ -531,14 +531,14 @@ func _physics_process(delta: float) -> void:
 			var n_end := mini(end_stiff_segments, (count - 1) / 2)
 			if iter_i % 2 == 0:
 				for i in range(1, n_end + 1):
-					_solve_bend(i, 1, 0.0, ke)
+					_solve_bend(i, 1, 0.0, _stub_weight(ke, i, n_end))
 				for i in range(count - 2, count - 2 - n_end, -1):
-					_solve_bend(i, 1, 0.0, ke)
+					_solve_bend(i, 1, 0.0, _stub_weight(ke, count - 1 - i, n_end))
 			else:
 				for i in range(n_end, 0, -1):
-					_solve_bend(i, 1, 0.0, ke)
+					_solve_bend(i, 1, 0.0, _stub_weight(ke, i, n_end))
 				for i in range(count - 1 - n_end, count - 1):
-					_solve_bend(i, 1, 0.0, ke)
+					_solve_bend(i, 1, 0.0, _stub_weight(ke, count - 1 - i, n_end))
 		# Directional stub for a FIXED end: pull the first/last few particles onto
 		# the line leaving the plug along its exit axis, so a held/socketed cable
 		# emerges stiffly in the direction it plugs in (then bends past the stub).
@@ -551,12 +551,16 @@ func _physics_process(delta: float) -> void:
 				for j in range(1, nd + 1):
 					var idx := count - 1 - j
 					if _inv_mass[idx] != 0.0:
-						_points[idx] = _points[idx].lerp(base_e + end_exit * (segment_length * float(j)), ked)
+						_points[idx] = _points[idx].lerp(
+							base_e + end_exit * (segment_length * float(j)),
+							_stub_weight(ked, j, nd))
 			if start_fixed:
 				var base_s := _points[0]
 				for j in range(1, nd + 1):
 					if _inv_mass[j] != 0.0:
-						_points[j] = _points[j].lerp(base_s + start_exit * (segment_length * float(j)), ked)
+						_points[j] = _points[j].lerp(
+							base_s + start_exit * (segment_length * float(j)),
+							_stub_weight(ked, j, nd))
 		# Cached contact planes (refreshed on the throttled rest pass below) —
 		# solved together with the other constraints so contacts, including
 		# edge wraps, are part of the equilibrium instead of oscillating.
@@ -794,6 +798,21 @@ func _physics_process(delta: float) -> void:
 	# Last thing in the tick, after the anchors are pinned: roll the render
 	# history forward so _process has two states to interpolate between.
 	_snapshot_render_state()
+
+
+## Stub stiffness at the k-th particle from an end (k = 1 nearest), over n stub
+## particles. Full strength at the plug, easing to nothing at the far end.
+##
+## Applying the SAME strength across the whole stub is what made the cable look
+## like sausage links near a plug: every stub particle was held hard on the exit
+## line and the very next one was completely free, so a rigid run met a floppy run
+## at a hard boundary. The centreline turned up to 26 degrees in a single render
+## ring there, and a constant-radius tube around a corner that tight necks in on
+## the inside of the bend. Tapering spreads that turn over the whole stub.
+func _stub_weight(base: float, k: int, n: int) -> float:
+	if n <= 1:
+		return base
+	return base * (1.0 - float(k - 1) / float(n))
 
 
 ## Positional constraint between points a/b toward rest distance, split by
