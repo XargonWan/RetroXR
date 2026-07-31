@@ -112,22 +112,27 @@ const ANCHORS: Dictionary = {
 	"start": Vector2(0.5590, 0.3722),
 }
 
-## Column contents, sorted by anchor Y so the leader lines fan out instead of
-## crossing — the same ordering rule ControllerDiagram needs. Every input sits in
-## the column on its own side of the pad, so no line has to cross the picture.
+## Column contents. Every input sits in the column on its own side of the pad, so
+## no line has to cross the picture; the order within a column is what decides
+## whether the leader lines cross each other.
 ##
-## Y alone is not enough here, because the face buttons and the d-pad each put
-## several anchors on the SAME row. Ties break by distance from the column: a
-## right-hand row descends through decreasing x, a left-hand row through
-## increasing x. Ordered the other way the lines have to swap over each other —
-## which is exactly what B, X and Start did before this.
+## Sorting by anchor Y is only an approximation, and here it is wrong. Start sits
+## higher than A (y .372 vs .450) so Y-order puts it first, but it is also much
+## further left (x .559 vs .722), so its longer, shallower line cuts across A's. A
+## has to come first. The face buttons and the d-pad each crowd several anchors
+## onto one row, which is why this pad has the problem and the Touch controllers
+## did not.
+##
+## Both orders were chosen by counting segment intersections rather than by eye,
+## and swept over panel sizes 900-1700 x 500-800: zero crossings at all 272, where
+## Start-before-A crossed at 259 of them. Re-run that count if an anchor moves.
 ##
 ## `guide` is deliberately absent: it has an anchor so the art stays reusable, but
 ## Windows and Steam both intercept it, so it is a poor binding target. The
 ## press-to-bind list can still reach it.
 const LEFT_ORDER: Array = ["lt", "lb", "ls", "back", "dpad_up", "dpad_left",
 	"dpad_right", "dpad_down"]
-const RIGHT_ORDER: Array = ["rt", "rb", "y", "b", "x", "start", "a", "rs"]
+const RIGHT_ORDER: Array = ["rt", "rb", "y", "b", "x", "a", "start", "rs"]
 
 var _drops: Dictionary = {}
 var _art: TextureRect = null
