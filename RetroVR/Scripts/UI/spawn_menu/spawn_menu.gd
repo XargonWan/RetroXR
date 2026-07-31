@@ -279,6 +279,8 @@ var _controls_opts: Dictionary = {}
 
 # Working copies of physical-gamepad bindings edited in the GAME CONTROLLER section.
 var _edit_pad_button_map: Dictionary = {}
+var _pad_diagram: GamepadDiagram = null
+var _pad_list_box: VBoxContainer = null
 var _edit_pad_stick_map:  Dictionary = {}
 # Gamepad rebinding state: target waiting for a joypad press, target → Button node.
 var _pad_rebinding_target: String = ""
@@ -4008,15 +4010,43 @@ func _build_gamepad_controls(vbox: VBoxContainer) -> void:
 	if not Input.joy_connection_changed.is_connected(_on_pad_connection_changed):
 		Input.joy_connection_changed.connect(_on_pad_connection_changed)
 
+	# ── Diagram ───────────────────────────────────────────────────────────────
+	_pad_diagram = GamepadDiagram.new()
+	_pad_diagram.custom_minimum_size = Vector2(0, 580)
+	_pad_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_pad_diagram)
+	_pad_diagram.setup(_edit_pad_button_map)
+	_pad_diagram.binding_changed.connect(_on_pad_diagram_changed)
+
 	# ── Buttons (press-to-rebind; joypad presses reach us in VR and desktop) ──
+	# Behind a switch, because the diagram covers it for an Xbox-layout pad. It
+	# stays reachable for the ones it cannot: a pad with paddles or extra buttons
+	# reports indices the picture has nowhere to point at, and Guide is left off
+	# the diagram on purpose.
+	var list_row := HBoxContainer.new()
+	list_row.add_theme_constant_override("separation", 10)
+	list_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(list_row)
+
 	var btn_hdr := Label.new()
-	btn_hdr.text = "Buttons"
+	btn_hdr.text = "Button list (for pads the diagram can't show)"
 	btn_hdr.add_theme_font_size_override("font_size", 18)
 	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(btn_hdr)
+	btn_hdr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_row.add_child(btn_hdr)
+
+	var list_box := VBoxContainer.new()
+	list_box.visible = false
+	vbox.add_child(list_box)
+	_pad_list_box = list_box
+
+	list_row.add_child(_make_toggle(false, func(on: bool) -> void:
+		if is_instance_valid(_pad_list_box):
+			_pad_list_box.visible = on
+	))
 
 	for target: String in GamepadBindings.TARGET_ORDER:
-		vbox.add_child(_make_pad_rebind_row(target))
+		list_box.add_child(_make_pad_rebind_row(target))
 
 	# ── Analog Sticks ─────────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
@@ -4112,15 +4142,51 @@ func on_pad_rebind_complete(target: String, binding: String) -> void:
 	if binding != "":
 		_edit_pad_button_map[target] = binding
 		_on_pad_controls_save()
+		# The same binding is shown in both places; a capture must move the
+		# diagram too or the two disagree until the tab is rebuilt.
+		_refresh_pad_diagram()
 	var btn: Button = _pad_rebind_buttons.get(target) as Button
 	if is_instance_valid(btn):
 		var cur: String = _edit_pad_button_map.get(target, "none")
 		btn.text = GamepadBindings.binding_display_name(cur)
 
 
+## The diagram edits input -> target; the stored map is target -> binding. One
+## input drives one target, so assigning a target that another input already held
+## takes it away from that one, and the diagram is refreshed to show it released.
+func _on_pad_diagram_changed(input: String, target: String) -> void:
+	var by_input := GamepadDiagram.invert(_edit_pad_button_map)
+	if target != "":
+		for other: String in by_input.keys():
+			if other != input and String(by_input[other]) == target:
+				by_input.erase(other)
+	by_input[input] = target
+	_edit_pad_button_map = GamepadDiagram.to_button_map(by_input)
+	_on_pad_controls_save()
+	_refresh_pad_diagram()
+	_refresh_pad_list()
+
+
+func _refresh_pad_diagram() -> void:
+	if not is_instance_valid(_pad_diagram):
+		return
+	var by_input := GamepadDiagram.invert(_edit_pad_button_map)
+	for key: String in GamepadDiagram.INPUTS:
+		_pad_diagram.set_binding(key, String(by_input.get(key, "")))
+
+
+func _refresh_pad_list() -> void:
+	for target: String in GamepadBindings.TARGET_ORDER:
+		var btn: Button = _pad_rebind_buttons.get(target) as Button
+		if is_instance_valid(btn):
+			btn.text = GamepadBindings.binding_display_name(
+				_edit_pad_button_map.get(target, "none"))
+
+
 func _on_pad_controls_reset() -> void:
 	_edit_pad_button_map = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
 	_edit_pad_stick_map  = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
+	_refresh_pad_diagram()
 	for target: String in GamepadBindings.TARGET_ORDER:
 		var btn: Button = _pad_rebind_buttons.get(target) as Button
 		if is_instance_valid(btn):

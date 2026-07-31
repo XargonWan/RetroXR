@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" width="1000" height="720">
+<rect x="250.0" y="65.0" width="100.0" height="34.0" rx="17.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="230.0" y="113.0" width="140.0" height="30.0" rx="15.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="650.0" y="65.0" width="100.0" height="34.0" rx="17.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="630.0" y="113.0" width="140.0" height="30.0" rx="15.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 250 185 C 330 152 400 150 460 160 C 480 164 520 164 540 160 C 600 150 670 152 750 185 C 830 218 878 272 876 340 C 874 415 850 480 822 558 C 802 612 764 646 720 638 C 682 630 656 586 636 530 C 616 476 574 458 500 458 C 426 458 384 476 364 530 C 344 586 318 630 280 638 C 236 646 198 612 178 558 C 150 480 126 415 124 340 C 122 272 170 218 250 185 Z" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-width="5.0" stroke-linejoin="round"/>
+<circle cx="268.0" cy="262.0" r="62.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="268.0" cy="262.0" r="38.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="605.0" cy="408.0" r="62.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="605.0" cy="408.0" r="38.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 383.0 362.0 L 413.0 362.0 L 413.0 393.0 L 444.0 393.0 L 444.0 423.0 L 413.0 423.0 L 413.0 454.0 L 383.0 454.0 L 383.0 423.0 L 352.0 423.0 L 352.0 393.0 L 383.0 393.0 Z" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="722.0" cy="212.0" r="30.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="778.0" cy="268.0" r="30.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="722.0" cy="324.0" r="30.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="666.0" cy="268.0" r="30.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="500.0" cy="208.0" r="32.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="441.0" cy="268.0" r="19.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="559.0" cy="268.0" r="19.0" fill="none" stroke="#ffffff" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
