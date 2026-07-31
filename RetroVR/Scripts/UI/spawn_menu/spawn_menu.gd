@@ -1047,7 +1047,7 @@ func _build_spawn_view() -> Control:
 		_update_spawn_active_scroll(idx)
 	)
 
-	return tabs
+	return TabStrip.wrap(tabs)
 
 
 func _clear_vbox(vbox: VBoxContainer) -> void:
@@ -1951,7 +1951,7 @@ func _build_cores_view() -> Control:
 		_update_cores_active_scroll()
 	)
 
-	return tabs
+	return TabStrip.wrap(tabs)
 
 
 # ── Manager tab ───────────────────────────────────────────────────────────────────
