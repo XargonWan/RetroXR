@@ -193,6 +193,8 @@ func _setup_audio() -> void:
 	# The picture and the sound both come from the TV, so the emitter is given
 	# the TV's two speaker positions once a set is connected.
 	_emitter.speaker_separation = 0.25
+	# Aimed at whatever set it is plugged into; see _process.
+	_emitter.directivity = SpatialAudioEmitter.SPEAKER_DIRECTIVITY
 	add_child(_emitter)
 
 
@@ -218,9 +220,16 @@ func _process(delta: float) -> void:
 		if _track_refresh_accum >= 0.5:
 			_track_refresh_accum = 0.0
 			_refresh_track_counts()
-	# Emanate the sound from the connected TV so it's spatialised there.
+	# Emanate the sound from the connected TV so it's spatialised there, aimed the
+	# way its picture points -- a set heard from behind should be muted by its own
+	# cabinet.
 	if _emitter and connected_tv != null and is_instance_valid(connected_tv):
 		_emitter.set_emit_position(connected_tv.global_position)
+		if connected_tv.has_method("get_screen_normal"):
+			_emitter.set_emit_direction(connected_tv.get_screen_normal(),
+				connected_tv.get_screen_up())
+	elif _emitter:
+		_emitter.clear_emit_direction()
 
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).

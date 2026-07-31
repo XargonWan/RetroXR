@@ -50,6 +50,21 @@ var _emit_override := false
 var _listener: Node = null
 var _sent_gain := -1.0
 
+## How directional this source is, 0 (omnidirectional) to 1. Only consulted once
+## a direction has been given; see set_emit_direction.
+@export var directivity: float = 0.0
+
+## Directivity that suits a speaker firing out of a box -- a television, a deck.
+## A few dB down when turned away rather than gone. The measured curve is on
+## RetroSystem.audio_directivity.
+const SPEAKER_DIRECTIVITY := 0.45
+
+# Which way the sound radiates. ZERO leaves it omnidirectional, which is what a
+# source with no meaningful facing wants.
+var _emit_forward := Vector3.ZERO
+var _emit_up := Vector3.UP
+var _sent_directivity := -1.0
+
 
 func _ready() -> void:
 	_use_sdk = _sdk_available()
@@ -111,9 +126,15 @@ func _process(_delta: float) -> void:
 			var lp: Vector3 = _listener.get_listener_position()
 			l_pos = hold_off_head(l_pos, lp)
 			r_pos = hold_off_head(r_pos, lp)
-		_mx.set_voice_position(_voice_l, l_pos)
-		if _voice_r >= 0:
-			_mx.set_voice_position(_voice_r, r_pos)
+		_apply_directivity()
+		if _emit_forward == Vector3.ZERO:
+			_mx.set_voice_position(_voice_l, l_pos)
+			if _voice_r >= 0:
+				_mx.set_voice_position(_voice_r, r_pos)
+		else:
+			_mx.set_voice_pose(_voice_l, l_pos, _emit_forward, _emit_up)
+			if _voice_r >= 0:
+				_mx.set_voice_pose(_voice_r, r_pos, _emit_forward, _emit_up)
 		# Gain from the TRUE origin, not the held-off one: the hold-off exists to
 		# keep the HRTF usable, and should not also make a source quieter.
 		_apply_distance_gain(origin)
@@ -201,6 +222,28 @@ func set_emit_position(pos: Vector3) -> void:
 ## Go back to emitting from this node.
 func clear_emit_position() -> void:
 	_emit_override = false
+
+
+## Point the sound somewhere -- the screen normal of the set it is playing
+## through, say. Until this is called the source stays omnidirectional however
+## `directivity` is set, since there is nothing to be directional about.
+func set_emit_direction(forward: Vector3, up: Vector3 = Vector3.UP) -> void:
+	_emit_forward = forward
+	_emit_up = up
+
+
+func clear_emit_direction() -> void:
+	_emit_forward = Vector3.ZERO
+
+
+func _apply_directivity() -> void:
+	var k: float = directivity if _emit_forward != Vector3.ZERO else 0.0
+	if is_equal_approx(k, _sent_directivity):
+		return
+	_sent_directivity = k
+	_mx.set_voice_directivity(_voice_l, k)
+	if _voice_r >= 0:
+		_mx.set_voice_directivity(_voice_r, k)
 
 
 ## How many frames the producer should hand over right now. Deliberately not

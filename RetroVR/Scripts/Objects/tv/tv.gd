@@ -796,6 +796,18 @@ func get_speaker_positions() -> PackedVector3Array:
 	return out
 
 
+## Which way the picture faces. Sound leaves a set the same way it does, so
+## anything giving these speakers a directivity aims them along this. Normalised,
+## unlike the offsets above, because it is a direction rather than a distance.
+func get_screen_normal() -> Vector3:
+	return global_transform.basis.z.normalized()
+
+
+## The set's own up, to go with get_screen_normal when a pose is wanted.
+func get_screen_up() -> Vector3:
+	return global_transform.basis.y.normalized()
+
+
 # ── On-screen display (top-right corner) ────────────────────────────────────────
 # The text lives in two places: a 2D Label rendered into OSDViewport (composited
 # INSIDE the CRT/VHS shaders so the OSD curves and scanlines with the picture)

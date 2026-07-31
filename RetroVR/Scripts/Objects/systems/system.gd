@@ -202,10 +202,12 @@ var _last_audio_volume: float = 1.0
 ## something console-sized; see _refresh_hardware_audio_geometry.
 @export var audio_speaker_separation: float = 0.09
 
-## How directional the hardware's own speaker is, 0 (omnidirectional) to 1.
+## How directional the speaker the sound comes out of is, 0 (omnidirectional)
+## to 1.
 ##
-## Only applied when the hardware emits for itself -- a handheld you can turn in
-## your hand. Measured difference between facing the listener and facing away:
+## Applied wherever there is a facing worth tracking: a handheld radiates from
+## its face, and a connected set radiates the way its picture points. Measured
+## difference between facing the listener and facing away:
 ##
 ##     0.0  0.00 dB      0.3  -3.7 dB      0.6  -8.6 dB      1.0  -17.5 dB
 ##
@@ -224,6 +226,7 @@ var _audio_half_sep: float = 0.0
 # Head position, for the distance law, and the last gain handed to the voices.
 var _audio_listener: Node = null
 var _sent_audio_gain: float = -1.0
+var _sent_directivity: float = -1.0
 
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
@@ -768,7 +771,7 @@ func _bind_audio_player() -> void:
 		if Engine.has_singleton("MetaXRAudio"):
 			_mx = Engine.get_singleton("MetaXRAudio")
 		_audio_player = null
-		_apply_voice_directivity()
+		_sent_directivity = -1.0     # fresh voices start omni; force a re-send
 		_update_audio_position()
 		_apply_bound_volume()
 		return
@@ -861,15 +864,18 @@ func _audio_listener_node() -> Node:
 	return _audio_listener
 
 
-## Give a handheld's voices a facing to be judged against. Hardware playing
-## through a TV keeps the SDK's default omnidirectional behaviour: a set does not
-## turn in your hand, and making one directional would only make the room harder
-## to listen to.
-func _apply_voice_directivity() -> void:
+## Switch the voices between directional and omnidirectional, following whether
+## this frame found a facing to give them. Decided per frame rather than once,
+## because a system's sound moves between its own shell and a connected set as
+## cables come and go, and those point different ways. Cached, since the answer
+## almost never changes.
+func _apply_voice_directivity(forward: Vector3) -> void:
 	if _mx == null or _audio_voices.is_empty():
 		return
-	var handheld := _model != null and _model.is_handheld()
-	var k: float = audio_directivity if handheld else 0.0
+	var k: float = audio_directivity if forward != Vector3.ZERO else 0.0
+	if is_equal_approx(k, _sent_directivity):
+		return
+	_sent_directivity = k
 	for v in _audio_voices:
 		_mx.set_voice_directivity(v, k)
 
@@ -915,6 +921,10 @@ func _update_audio_position() -> void:
 			var sp: PackedVector3Array = tv.get_speaker_positions()
 			left_pos = sp[0]
 			right_pos = sp[1]
+			# Sound leaves a set the way the picture does.
+			if tv.has_method("get_screen_normal"):
+				emit_forward = tv.get_screen_normal()
+				emit_up = tv.get_screen_up()
 		elif tv != null:
 			# A set that predates get_speaker_positions: spread across its own
 			# local X, which for something TV-sized the default already suits.
@@ -952,6 +962,7 @@ func _update_audio_position() -> void:
 			var lp: Vector3 = ln.get_listener_position()
 			left_pos = SpatialAudioEmitter.hold_off_head(left_pos, lp)
 			right_pos = SpatialAudioEmitter.hold_off_head(right_pos, lp)
+		_apply_voice_directivity(emit_forward)
 		if emit_forward == Vector3.ZERO:
 			_mx.set_voice_position(_audio_voices[0], left_pos)
 			if _audio_voices.size() > 1:
