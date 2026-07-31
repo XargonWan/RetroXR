@@ -105,9 +105,17 @@ func _process(_delta: float) -> void:
 		# The mixer skips the underlying SDK call when the position has not
 		# changed, so writing this every frame is safe -- it saves a lock, and
 		# most emitters here rewrite a position that never moved.
-		_mx.set_voice_position(_voice_l, origin + _speaker_offset(-1.0))
+		var l_pos := origin + _speaker_offset(-1.0)
+		var r_pos := origin + _speaker_offset(1.0)
+		if _listener != null and is_instance_valid(_listener):
+			var lp: Vector3 = _listener.get_listener_position()
+			l_pos = hold_off_head(l_pos, lp)
+			r_pos = hold_off_head(r_pos, lp)
+		_mx.set_voice_position(_voice_l, l_pos)
 		if _voice_r >= 0:
-			_mx.set_voice_position(_voice_r, origin + _speaker_offset(1.0))
+			_mx.set_voice_position(_voice_r, r_pos)
+		# Gain from the TRUE origin, not the held-off one: the hold-off exists to
+		# keep the HRTF usable, and should not also make a source quieter.
 		_apply_distance_gain(origin)
 	elif _player != null and is_instance_valid(_player):
 		_player.global_position = origin
@@ -138,6 +146,30 @@ func _apply_distance_gain(origin: Vector3) -> void:
 	_mx.set_voice_gain(_voice_l, g)
 	if _voice_r >= 0:
 		_mx.set_voice_gain(_voice_r, g)
+
+
+## Closest a source is allowed to sit to the head, in metres.
+##
+## Measured against the shipped SDK: inside about 0.2 m it loses treble and
+## level together. At 5 cm the 4-16 kHz band sits 3.3 dB down on 100-1000 Hz and
+## the whole source is 5.9 dB quieter than the same source at 2 m -- audibly
+## muffled, and getting fainter the closer it comes, which is backwards. HRTF
+## sets are measured at a metre or more, so this is the model running out rather
+## than anything being done wrong; a handheld raised to the face lands well
+## inside it.
+const MIN_LISTENER_DISTANCE := 0.25
+
+
+## Push a source out to MIN_LISTENER_DISTANCE if it is nearer than that, along
+## the line it already sits on so the direction is untouched.
+static func hold_off_head(pos: Vector3, listener: Vector3) -> Vector3:
+	var v := pos - listener
+	var d := v.length()
+	if d >= MIN_LISTENER_DISTANCE:
+		return pos
+	if d < 0.0001:
+		return listener + Vector3(0.0, 0.0, -MIN_LISTENER_DISTANCE)   # dead ahead
+	return listener + v * (MIN_LISTENER_DISTANCE / d)
 
 
 ## Godot's ATTENUATION_INVERSE_DISTANCE as a plain number, 0.0 .. 1.0. Static

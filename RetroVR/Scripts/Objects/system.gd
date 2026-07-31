@@ -841,15 +841,21 @@ func _refresh_hardware_audio_geometry() -> void:
 ## Shared with SpatialAudioEmitter so that hardware and everything else fall off
 ## identically. RetroSystem cannot simply use an emitter here: the libretro
 ## AudioHandler owns these voices and only hands back their ids.
+## The listener autoload, resolved once. Null before it exists.
+func _audio_listener_node() -> Node:
+	if _audio_listener == null or not is_instance_valid(_audio_listener):
+		_audio_listener = get_node_or_null("/root/SpatialAudioListener")
+	return _audio_listener
+
+
 func _apply_voice_distance_gain(centre: Vector3) -> void:
 	if _mx == null or _audio_voices.is_empty():
 		return
-	if _audio_listener == null or not is_instance_valid(_audio_listener):
-		_audio_listener = get_node_or_null("/root/SpatialAudioListener")
-		if _audio_listener == null:
-			return
+	var ln := _audio_listener_node()
+	if ln == null:
+		return
 	var g := _last_audio_volume * SpatialAudioEmitter.distance_gain(
-		centre, _audio_listener.get_listener_position(),
+		centre, ln.get_listener_position(),
 		audio_unit_size, audio_max_distance)
 	if is_equal_approx(g, _sent_audio_gain):
 		return
@@ -899,10 +905,20 @@ func _update_audio_position() -> void:
 		# The mixer skips the SDK call when a position has not changed, so
 		# writing every frame is safe -- it saves a lock on a position that
 		# usually has not moved.
+		# Hold a handheld off the face: the SDK's HRTF goes dull and quiet inside
+		# a quarter metre, and a handheld raised to look at lands well inside it.
+		# The gain still uses the true centre, since holding off is about keeping
+		# the model usable, not about making a close source quieter.
+		var centre_true := (left_pos + right_pos) * 0.5
+		var ln := _audio_listener_node()
+		if ln != null:
+			var lp: Vector3 = ln.get_listener_position()
+			left_pos = SpatialAudioEmitter.hold_off_head(left_pos, lp)
+			right_pos = SpatialAudioEmitter.hold_off_head(right_pos, lp)
 		_mx.set_voice_position(_audio_voices[0], left_pos)
 		if _audio_voices.size() > 1:
 			_mx.set_voice_position(_audio_voices[1], right_pos)
-		_apply_voice_distance_gain((left_pos + right_pos) * 0.5)
+		_apply_voice_distance_gain(centre_true)
 		return
 
 	if _audio_player == null or not is_instance_valid(_audio_player):
