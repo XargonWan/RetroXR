@@ -24,8 +24,13 @@ const Z_OFFSET := 0.040
 ## Gap between the stack's bottom and the panel's bottom edge, in host pixels.
 ## Matches the offset_bottom the stack used while it lived in the page.
 const BOTTOM_INSET := 62.0
-## Fraction of the host's width the stack spans — the 0.1/0.9 anchors it had.
-const WIDTH_FRACTION := 0.8
+## Fraction of the host's width the stack spans, measured in host pixels.
+const WIDTH_FRACTION := 0.5
+## Metres per pixel relative to the page. In the page the bars had to share the
+## menu's scale; on their own quad they do not, and at page scale an 18 pt line
+## is ~9 mm tall — too small to read across the room, which is the one thing a
+## notification has to do.
+const SCALE := 1.7
 const MIN_H := 48.0
 
 var _host: XRToolsViewport2DIn3D = null
@@ -146,11 +151,16 @@ func _rebind_albedo() -> void:
 		mat.albedo_texture = sub.get_texture()
 
 
-## Metres per host viewport pixel, so the bars keep the size they had in the page.
-func _m_per_px() -> float:
+## Metres per host viewport pixel — the page's own scale, used for placement.
+func _base_m_per_px() -> float:
 	if _host.screen_size.x > 0.0 and _host.viewport_size.x > 0.0:
 		return _host.screen_size.x / _host.viewport_size.x
 	return 0.0005
+
+
+## Metres per pixel for the quad itself, blown up for legibility.
+func _m_per_px() -> float:
+	return _base_m_per_px() * SCALE
 
 
 ## Bottom-centre of the host, floating forward, riding the arc when it is curved.
@@ -158,11 +168,10 @@ func _place() -> void:
 	if not visible or not is_instance_valid(_host) or not is_instance_valid(_viewport):
 		return
 
-	var vp := _host.viewport_size
-	var h_px := _viewport.viewport_size.y
-	# Viewport pixels run +Y down from the top-left; the quad is centred, +Y up.
-	var y_px := vp.y - BOTTOM_INSET - h_px * 0.5
-	var y := -(y_px / vp.y - 0.5) * _host.screen_size.y
+	# Worked in metres, not host pixels: the quad is drawn at SCALE, so half its
+	# height is not half its height in the page's pixel grid.
+	var inset := BOTTOM_INSET * _base_m_per_px()
+	var y := -_host.screen_size.y * 0.5 + inset + _viewport.screen_size.y * 0.5
 
 	if _host_curve != null and is_instance_valid(_host_curve):
 		# flat_x 0 — the stack is centred, so this only pushes it along the

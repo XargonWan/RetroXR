@@ -4276,14 +4276,7 @@ func _show_scrape_status(msg: String) -> void:
 			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
 		bg.set(k, 8)
 	_scrape_status_bar.add_theme_stylebox_override("panel", bg)
-
-	# Anchor horizontally centered at the very bottom of the menu viewport.
-	_scrape_status_bar.anchor_left   = 0.1
-	_scrape_status_bar.anchor_right  = 0.9
-	_scrape_status_bar.anchor_top    = 1.0
-	_scrape_status_bar.anchor_bottom = 1.0
-	_scrape_status_bar.offset_top    = -54.0
-	_scrape_status_bar.offset_bottom = -8.0
+	_scrape_status_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var margin := MarginContainer.new()
 	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
@@ -4306,7 +4299,13 @@ func _show_scrape_status(msg: String) -> void:
 	_scrape_status_label.add_theme_color_override("font_color", COLOR_TITLE)
 	hbox.add_child(_scrape_status_label)
 
-	add_child(_scrape_status_bar)
+	# Into the same stack as the media toasts, so this rides the 3D quad too —
+	# it used to be anchored straight onto the page and stayed flat there. Last
+	# child, because it always sat below them, and the stack grows upward.
+	_ensure_media_toast_stack()
+	_media_toast_stack.add_child(_scrape_status_bar)
+	_media_toast_stack.move_child(_scrape_status_bar, -1)
+	_refresh_toast_panel()
 
 
 func _update_scrape_status(msg: String) -> void:
@@ -4334,9 +4333,12 @@ func show_notice(msg: String, seconds := 2.5) -> void:
 
 func _hide_scrape_status() -> void:
 	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
+		if _scrape_status_bar.get_parent() != null:
+			_scrape_status_bar.get_parent().remove_child(_scrape_status_bar)
 		_scrape_status_bar.queue_free()
 	_scrape_status_bar = null
 	_scrape_status_label = null
+	_refresh_toast_panel()
 
 
 # ── Stacking media-download toasts ───────────────────────────────────────────
@@ -4537,9 +4539,16 @@ func _enforce_toast_cap() -> void:
 	if _media_toast_stack == null or not is_instance_valid(_media_toast_stack):
 		return
 
+	# The scrape/notice bar shares the stack but is not a media toast: it must
+	# never be hidden by the cap nor counted toward it, and it stays at the
+	# bottom because that is where it sat when it was anchored to the page.
+	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar) \
+			and _scrape_status_bar.get_parent() == _media_toast_stack:
+		_media_toast_stack.move_child(_scrape_status_bar, -1)
+
 	var bars: Array[Control] = []
 	for c: Node in _media_toast_stack.get_children():
-		if c == _toast_overflow_bar:
+		if c == _toast_overflow_bar or c == _scrape_status_bar:
 			continue
 		if c is Control:
 			bars.append(c)
