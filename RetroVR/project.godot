@@ -35,6 +35,7 @@ SpatialAudioListener="*res://Scripts/Audio/spatial_audio_listener.gd"
 VRKeyboard="*res://Scripts/UI/widgets/vr_keyboard_fix.gd"
 Typing="*res://Scripts/UI/widgets/typing_guard.gd"
 SaveSync="*res://Scripts/Data/romm/romm_save_sync.gd"
+HeldPhysics="*res://Scripts/Interaction/held_object_physics.gd"
 
 [display]
 
