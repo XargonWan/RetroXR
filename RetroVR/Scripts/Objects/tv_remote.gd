@@ -69,6 +69,11 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 ## Shift+click while snapped.
 var desktop_fps_snap: bool = true
 
+## Height of the drop hint above the remote, in metres. Clear of the button
+## grid, which floats at FLOAT_HEIGHT.
+const HINT_HEIGHT := 0.26
+var _hint: HeldHint = null
+
 # Toggle-hold state (mirrors RayGun)
 var _allow_drop := false
 var _saved_by: Node3D = null
@@ -115,6 +120,7 @@ func _ready() -> void:
 	add_to_group("spawned")
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
+	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
 	for k: String in GLYPH_CODES:
 		_glyphs[k] = String.chr(int(GLYPH_CODES[k]))
 	_build_font()
@@ -154,6 +160,8 @@ func _find_vr_nodes() -> void:
 # ── Toggle-hold (mirrors RayGun) ──────────────────────────────────────────────
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
+	if _hint:
+		_hint.on_grabbed(by)
 	var pickup := by as XRToolsFunctionPickup
 	var ctrl := pickup.get_controller() if pickup else null as XRController3D
 	if ctrl == null:
@@ -171,6 +179,8 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 	if not _allow_drop and is_instance_valid(_saved_by):
 		call_deferred("_rehold")
 	else:
+		if _hint:
+			_hint.on_dropped()
 		_set_model_visible(_holding_ctrl, true)
 		_update_pointer_block(_holding_ctrl, false)
 		_allow_drop = false
@@ -200,11 +210,17 @@ func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
 		ctrl.call("set_model_visible", show)
 
 
+## The combo test itself lives on HeldHint so the check and the row advertising
+## it cannot disagree. Counting the use here rather than at the drop branch is
+## deliberate: a predicate every drop passes through cannot be missed when
+## another is added. HeldHint counts once per hold, so testing every frame does
+## not inflate it.
 func _is_combo_pressed(ctrl: XRController3D) -> bool:
-	return is_instance_valid(ctrl) \
-		and ctrl.get_float("grip") > 0.5 \
-		and ctrl.get_float("trigger") > 0.5 \
-		and ctrl.get_float("primary_click") > 0.5
+	if not HeldHint.is_combo_pressed(ctrl):
+		return false
+	if _hint:
+		_hint.note_used(&"drop_vr")
+	return true
 
 
 func _drop_all() -> void:

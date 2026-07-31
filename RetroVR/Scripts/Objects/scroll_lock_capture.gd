@@ -62,6 +62,10 @@ func set_active(active: bool) -> void:
 	if want == _active:
 		return
 	_active = want
+	if _active:
+		# The one place a capture actually turns on, so the one place the hint
+		# advertising it can count as learned.
+		HeldHint.note_on(_host, &"capture")
 	_apply()
 
 

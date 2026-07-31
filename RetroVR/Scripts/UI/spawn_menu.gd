@@ -2645,6 +2645,31 @@ func _build_options_view() -> Control:
 
 	vbox.add_child(HSeparator.new())
 
+	# Hint popups over held devices (drop combo, Scroll Lock capture)
+	var hints_row := HBoxContainer.new()
+	hints_row.add_theme_constant_override("separation", 10)
+	hints_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(hints_row)
+
+	var hints_lbl := Label.new()
+	hints_lbl.text = "Held Device Hints"
+	hints_lbl.add_theme_font_size_override("font_size", 22)
+	hints_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	hints_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hints_row.add_child(hints_lbl)
+
+	# No signal: HeldHint reads AppPrefs when the object is picked up, so nothing
+	# has to be told. Clearing the counts is what makes re-enabling visible —
+	# without it anyone already past HeldHint.LEARNED_AFTER sees no change.
+	hints_row.add_child(_make_toggle(AppPrefs.show_hints, func(on: bool) -> void:
+		AppPrefs.show_hints = on
+		if on:
+			AppPrefs.hint_uses.clear()
+		AppPrefs.save_prefs()
+	))
+
+	vbox.add_child(HSeparator.new())
+
 	# Draw hands on held controllers option (default off)
 	var hands_row := HBoxContainer.new()
 	hands_row.add_theme_constant_override("separation", 10)

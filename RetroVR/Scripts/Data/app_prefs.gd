@@ -20,6 +20,12 @@ var system_filter:    bool = true
 ## Whether the spawn menu wraps onto a cylinder. Unlike the rest, this one is not
 ## an OPTIONS switch — it is the toggle on the menu's own lower-right corner.
 var menu_curved:      bool = true
+## Whether HeldHint pops its tooltip over a picked-up device.
+var show_hints:       bool = true
+## HeldHint row id -> times the player has used that verb. A row stops appearing
+## past HeldHint.LEARNED_AFTER. A dictionary rather than a key per row so a new
+## hint needs no change here.
+var hint_uses:        Dictionary = {}
 
 
 func _ready() -> void:
@@ -47,6 +53,8 @@ func _load_prefs() -> void:
 	controller_hands = _prefs_bool(data, "controller_hands", controller_hands)
 	system_filter    = _prefs_bool(data, "system_filter",    system_filter)
 	menu_curved      = _prefs_bool(data, "menu_curved",      menu_curved)
+	show_hints       = _prefs_bool(data, "show_hints",       show_hints)
+	hint_uses        = _prefs_dict(data, "hint_uses",        hint_uses)
 
 
 func save_prefs() -> void:
@@ -61,6 +69,8 @@ func save_prefs() -> void:
 		"controller_hands": controller_hands,
 		"system_filter":    system_filter,
 		"menu_curved":      menu_curved,
+		"show_hints":       show_hints,
+		"hint_uses":        hint_uses,
 	}, "\t"))
 	file.close()
 
@@ -69,5 +79,14 @@ func save_prefs() -> void:
 func _prefs_bool(data: Dictionary, key: String, fallback: bool) -> bool:
 	var value: Variant = data.get(key)
 	if typeof(value) == TYPE_BOOL:
+		return value
+	return fallback
+
+
+## Same contract as _prefs_bool. JSON gives back numbers as floats, so callers
+## reading a count out of this must int() it.
+func _prefs_dict(data: Dictionary, key: String, fallback: Dictionary) -> Dictionary:
+	var value: Variant = data.get(key)
+	if typeof(value) == TYPE_DICTIONARY:
 		return value
 	return fallback

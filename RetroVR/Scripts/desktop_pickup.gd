@@ -192,6 +192,10 @@ func _try_grab() -> void:
 ## Drop the currently held object.
 func _drop() -> void:
 	if _held_object:
+		# Only when the modifier was actually required — a plain-click drop taught
+		# the player nothing.
+		if _is_fps_snap() or _needs_shift_drop():
+			HeldHint.note_on(_held_object, &"drop_desktop")
 		var obj := _held_object
 		_held_object = null
 		if obj.is_picked_up() and obj.get_picked_up_by() == _hand_pivot:

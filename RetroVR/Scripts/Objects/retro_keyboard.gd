@@ -112,6 +112,7 @@ var _held := false
 # Opt-in (holding alone no longer hijacks the keyboard) and always a subset of
 # _held, so it can never outlive the grip and strand the player with WASD blocked.
 var _capture: ScrollLockCapture = null
+var _hint: HeldHint = null
 # Key index the desktop pointer / VR laser is currently holding down, or -1.
 var _pointer_key := -1
 # Whether the caps currently show their shifted glyphs, and whether a real
@@ -125,6 +126,8 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 ## Height of the capture glyph, in metres, and how far above the board it floats.
 const ICON_SIZE := 0.035
 const ICON_HEIGHT := 0.10
+## Above ICON_HEIGHT so the capture glyph and the hint popup do not overlap.
+const HINT_HEIGHT := 0.20
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _key_root: Node3D = $Keys
@@ -141,6 +144,10 @@ func _ready() -> void:
 	dropped.connect(_on_dropped_signal)
 	_capture = ScrollLockCapture.attach(self, _can_capture,
 		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+	# No drop row: the board lets go on a plain release on both platforms.
+	_hint = HeldHint.attach(self, false, HINT_HEIGHT)
+	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
+		["keyboard_scroll_lock_outline"], "Send keys here")
 	call_deferred("_find_controllers")
 
 
@@ -363,14 +370,18 @@ func on_unplugged() -> void:
 	_port_index = -1
 
 
-func _on_grabbed_signal(_pickable: Node3D, _by: Node3D) -> void:
+func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_held = true
+	if _hint:
+		_hint.on_grabbed(by)
 	if _capture:
 		_capture.refresh()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
 	_held = false
+	if _hint:
+		_hint.on_dropped()
 	# Capture never outlives the grip — otherwise WASD stays blocked with no way
 	# to walk back to the board and press Scroll Lock again.
 	_set_capture(false)

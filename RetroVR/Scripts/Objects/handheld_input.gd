@@ -59,10 +59,13 @@ var _desktop_held := false
 ## Scroll Lock capture: while on, keyboard-bound RETRO_JOYPAD_* actions drive this
 ## handheld instead of the player. A physical pad is never gated by it.
 var _capture: ScrollLockCapture = null
+var _hint: HeldHint = null
 ## Nerd Font: gamepad — floats over the handheld while capture is on.
 const ICON_CAPTURE := 0xEC17
 const ICON_SIZE := 0.030
 const ICON_HEIGHT := 0.11
+## Above ICON_HEIGHT so the capture glyph and the hint popup do not overlap.
+const HINT_HEIGHT := 0.20
 var _blocking_left := false
 var _blocking_right := false
 
@@ -87,6 +90,9 @@ func setup(host: Node3D) -> void:
 	host.released.connect(_on_released_signal)
 	_capture = ScrollLockCapture.attach(host, _can_capture,
 		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+	_hint = HeldHint.attach(host, true, HINT_HEIGHT)
+	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
+		["keyboard_scroll_lock_outline"], "Send keys here")
 
 
 func _ready() -> void:
@@ -135,6 +141,8 @@ func _get_secondary_ctrl() -> XRController3D:
 # ── Toggle-hold (adapted from retro_controller.gd) ────────────────────────────
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
+	if _hint:
+		_hint.on_grabbed(by)
 	var pickup := by as XRToolsFunctionPickup
 	var ctrl := pickup.get_controller() if pickup else null as XRController3D
 	if ctrl == null:
@@ -195,6 +203,8 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 	if not _allow_drop and is_instance_valid(_saved_by):
 		call_deferred("_rehold")
 	else:
+		if _hint:
+			_hint.on_dropped()
 		_allow_drop = false
 		_update_pointer_block(_holding_ctrl, false)
 		_saved_by = null
@@ -224,11 +234,17 @@ func _rehold_hand(by: Node3D) -> void:
 	by.call("_pick_up_object", _host)
 
 
+## The combo test itself lives on HeldHint so the check and the row advertising
+## it cannot disagree. Counting the use here rather than at each drop branch is
+## deliberate: every one of them drops, and a predicate they all pass through
+## cannot be missed when another is added. HeldHint counts once per hold, so
+## testing every frame does not inflate it.
 func _is_combo_pressed(ctrl: XRController3D) -> bool:
-	return is_instance_valid(ctrl) \
-		and ctrl.get_float("grip") > 0.5 \
-		and ctrl.get_float("trigger") > 0.5 \
-		and ctrl.get_float("primary_click") > 0.5
+	if not HeldHint.is_combo_pressed(ctrl):
+		return false
+	if _hint:
+		_hint.note_used(&"drop_vr")
+	return true
 
 
 # Diagnostic for the "drop combo doesn't fire" report: log the three combo

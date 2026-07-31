@@ -40,6 +40,10 @@ var device_type: int = RETRO_DEVICE_MOUSE
 ## dropping requires Shift+click (same rule as the ray gun's trigger).
 var desktop_shift_drop := true
 
+## Height of the drop hint above the mouse, in metres.
+const HINT_HEIGHT := 0.14
+var _hint: HeldHint = null
+
 var _options_panel: MouseOptionsPanel = null
 
 # Port connection state
@@ -93,6 +97,9 @@ func _ready() -> void:
 	add_to_group("spawned")
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
+	# No VR drop row: in VR the mouse lets go on a plain grip release. The
+	# desktop Shift rule is read off desktop_shift_drop by HeldHint itself.
+	_hint = HeldHint.attach(self, false, HINT_HEIGHT)
 	_cache_buttons()
 	_spawn_cable()
 
@@ -166,6 +173,8 @@ func toggle_options_ui(camera: Node3D) -> void:
 # ── Hold tracking ─────────────────────────────────────────────────────────────
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
+	if _hint:
+		_hint.on_grabbed(by)
 	var pickup := by as XRToolsFunctionPickup
 	var ctrl := pickup.get_controller() if pickup else null as XRController3D
 	if ctrl:
@@ -175,6 +184,8 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
+	if _hint:
+		_hint.on_dropped()
 	_holding_ctrl = null
 	_desktop_held = false
 	_unstick()
