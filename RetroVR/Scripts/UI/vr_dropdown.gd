@@ -342,19 +342,33 @@ func _stow_panel() -> void:
 	_floated_to = null
 
 
-## Open the list as its own quad in front of the host panel. Returns false when
-## there is no 3D host (flat/desktop mode, or a plain 2D scene), so the caller
-## falls back to the in-panel list.
-func _open_popout() -> bool:
+## Build the popout ahead of the first tap. Everything it does — instancing the
+## viewport scene, the arc mesh, the option list — otherwise lands in the frame
+## where the user opens a dropdown for the first time.
+func prewarm() -> void:
+	if _ensure_popout() != null:
+		_popout.prewarm()
+
+
+func _ensure_popout() -> DropdownPanel:
 	var host := _host_viewport()
 	if host == null:
-		return false
-
+		return null
 	if _popout == null or not is_instance_valid(_popout):
 		_popout = DropdownPanel.new()
 		_popout.name = "DropdownPopout"
 		host.add_child(_popout)
 		_popout.option_chosen.connect(_on_popout_chosen)
+	return _popout
+
+
+## Open the list as its own quad in front of the host panel. Returns false when
+## there is no 3D host (flat/desktop mode, or a plain 2D scene), so the caller
+## falls back to the in-panel list.
+func _open_popout() -> bool:
+	var host := _host_viewport()
+	if _ensure_popout() == null:
+		return false
 
 	var rect := Rect2(_toggle.global_position, _toggle.size)
 	_popout.show_for(host, rect, _options, _current_id,

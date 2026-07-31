@@ -51,6 +51,9 @@ func show_for(host: XRToolsViewport2DIn3D, toggle_rect: Rect2, options: Array,
 	var ui := _ensure_ui()
 	if ui == null:
 		return
+	# Set here rather than in _ensure_ui: prewarm() builds the viewport before
+	# any host is known, so doing it there would leave the layer at its default.
+	_viewport.collision_layer = host.collision_layer
 	var want := DropdownOptions2D.wanted_size(options.size(), columns)
 	var px_w := maxf(maxf(toggle_rect.size.x, MIN_PANEL_PX_W), want.x)
 	var px_h := minf(want.y, MAX_PANEL_PX_H)
@@ -106,6 +109,14 @@ func _follow_host() -> void:
 		_curve.set_curved(true, false)
 
 
+## Build the quad, its SubViewport, the arc mesh and the option scene now,
+## while nothing is waiting on them. All of that otherwise happens inside the
+## first show_for(), which is one frame's worth of scene instantiation on the
+## first tap of any dropdown.
+func prewarm() -> void:
+	_ensure_ui()
+
+
 func hide_panel() -> void:
 	visible = false
 
@@ -149,8 +160,6 @@ func _ensure_ui() -> DropdownOptions2D:
 		# Opaque, but lit: the host menu is lit, and an unshaded card reads as a
 		# brighter cut-out floating over it rather than part of the same surface.
 		_viewport.unshaded = false
-		if _host != null:
-			_viewport.collision_layer = _host.collision_layer
 		add_child(_viewport)
 
 		# Its own arc, so the card bends with the menu instead of hanging off it

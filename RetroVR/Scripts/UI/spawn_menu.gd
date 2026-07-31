@@ -207,6 +207,13 @@ var _firmware_installer: FirmwareInstaller = null
 ## Rebuilt pages drop their buttons, so entries are validity-checked on use.
 var _bios_job_buttons: Dictionary = {}
 var _bios_refreshing := false
+
+## Typing is bursty; one rebuild after the keys stop instead of one per key.
+const SEARCH_DEBOUNCE_SEC := 0.18
+var _romm_search_timer: Timer = null
+## systemid -> {lowercase basename: rom}. A directory listing, so it is cached
+## and dropped whenever something writes to a ROM dir.
+var _local_scan_cache: Dictionary = {}
 var _manager_cores_by_system: Dictionary = {}
 
 # Spawn > Systems tab — drill-down browser, one title card per system
@@ -1115,6 +1122,12 @@ func _populate_cartridges_tab() -> void:
 	# If a system detail is open, re-run it so newly-added ROMs appear.
 	_cartridges_browser.refresh()
 
+	# Pull the largest synced platforms' sidecars into the file cache while the
+	# user is still looking at the grid. Opening one is disk-bound the first
+	# time — 25-37 ms on desktop, considerably worse on Quest storage — and this
+	# spends that on a worker thread before the tap rather than during it.
+	_prewarm_top_platforms(systems)
+
 
 const _ROMM_MARK_PATH := "res://Textures/RomM/romm_logo.svg"
 var _romm_mark_tex: Texture2D = null
@@ -1152,10 +1165,26 @@ func _romm_fetch_platforms() -> void:
 				-1.0, 4.0)
 		_romm_unmapped_announced = signature
 
-		romm_config.cached_platforms = _romm_platforms.duplicate()
-		romm_config.save_config()
+		# Rebuilding the tab means re-deriving every tile. The platform set
+		# almost never changes between launches — it is already persisted and
+		# used to draw the grid at startup — so only rebuild when it actually
+		# moved. This ran on the same frame as a 70 KB JSON parse, which is
+		# what made opening the menu hitch.
+		var changed := _romm_platforms.size() != romm_config.cached_platforms.size()
+		if not changed:
+			for sid: String in _romm_platforms:
+				if not romm_config.cached_platforms.has(sid):
+					changed = true
+					break
+				var was: Dictionary = romm_config.cached_platforms[sid]
+				if int(was.get("rom_count", -1)) != int((_romm_platforms[sid] as Dictionary).get("rom_count", -2)):
+					changed = true
+					break
 
-		_populate_cartridges_tab()
+		if changed:
+			romm_config.cached_platforms = _romm_platforms.duplicate()
+			romm_config.save_config()
+			_populate_cartridges_tab()
 		_update_romm_status_label()
 	)
 
@@ -1171,6 +1200,8 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	_romm_detail_systemid = systemid
 	_romm_rows.clear()
 	_romm_filter = ""
+	# Opening a platform must see the disk as it is now, not as it was.
+	_invalidate_local_scan(systemid)
 
 	# Collect all supported extensions for this system across all its cores.
 	var exts: Array[String] = []
@@ -1273,10 +1304,10 @@ func _rebuild_romm_rows() -> void:
 	# freshly downloaded file and every row stays stuck on "download me".
 	# Keying on the basename also survives the archive being unpacked, where
 	# X.zip becomes X.3ds.
-	var local_by_name: Dictionary = {}
-	for rom: Dictionary in RomLibrary.scan_roms(systemid, [] as Array[String]):
-		var fname := str(rom["path"]).get_file()
-		local_by_name[fname.get_basename().to_lower()] = rom
+	# Cached: this is a directory listing, and a rebuild happens on every filter
+	# change. Invalidated whenever something writes to the ROM dir — see
+	# _invalidate_local_scan.
+	var local_by_name: Dictionary = _local_by_name(systemid)
 
 	# 2. Server entries. Everything here comes from sidecars already in RAM —
 	# no seek and no JSON parse per row, or opening a 3k-ROM platform stalls the
@@ -1370,6 +1401,49 @@ func _rebuild_romm_rows() -> void:
 					% RomLibrary.rom_dir_for_system(systemid)
 
 
+## Warm the sidecars for the platforms most likely to be opened next.
+##
+## Biggest first, because cost scales with row count and those are the ones that
+## stutter. Capped: the warm worker handles one platform at a time and a long
+## queue would still be running when the user taps.
+func _prewarm_top_platforms(systems: Array) -> void:
+	if romm_catalog == null:
+		return
+	var sized: Array = []
+	for s: Dictionary in systems:
+		var sid: String = s["systemid"]
+		if int(s.get("badge_count", 0)) > 0:
+			sized.append([int(s["badge_count"]), sid])
+	sized.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
+	for i in mini(sized.size(), 3):
+		romm_catalog.prewarm_index(str((sized[i] as Array)[1]))
+
+
+## Local ROM files for one system, keyed by lowercase basename.
+##
+## Scanned WITHOUT the extension filter: RomM stores ROMs as .zip, which is not
+## in any core's supported_extensions, so a filtered scan cannot see a freshly
+## downloaded file and every row stays stuck on "download me". Keying on the
+## basename also survives the archive being unpacked, where X.zip becomes X.3ds.
+func _local_by_name(systemid: String) -> Dictionary:
+	if _local_scan_cache.has(systemid):
+		return _local_scan_cache[systemid]
+	var by_name: Dictionary = {}
+	for rom: Dictionary in RomLibrary.scan_roms(systemid, [] as Array[String]):
+		by_name[str(rom["path"]).get_file().get_basename().to_lower()] = rom
+	_local_scan_cache[systemid] = by_name
+	return by_name
+
+
+## Drop the cached listing after anything that writes to a ROM directory —
+## a download landing, an eviction, a scrape, a manual refresh.
+func _invalidate_local_scan(systemid: String = "") -> void:
+	if systemid.is_empty():
+		_local_scan_cache.clear()
+	else:
+		_local_scan_cache.erase(systemid)
+
+
 func _romm_row_passes(source: String, regions: PackedStringArray) -> bool:
 	match _romm_source_filter:
 		"downloaded":
@@ -1413,9 +1487,19 @@ func _romm_refresh_region_options(seen: Dictionary) -> void:
 	_romm_region_drop.set_options(opts, _romm_region_filter)
 
 
+## Debounced: a rebuild scans the ROM dir, runs the filter over every server
+## row and rebuilds the model, which is tens of milliseconds on a 3k platform
+## on Quest. Doing that per keystroke made typing stutter; typing is bursty, so
+## coalescing to one rebuild once the keys stop costs nothing in responsiveness.
 func _on_romm_search_changed(text: String) -> void:
 	_romm_filter = text.strip_edges().to_lower()
-	_rebuild_romm_rows()
+	if _romm_search_timer == null:
+		_romm_search_timer = Timer.new()
+		_romm_search_timer.one_shot = true
+		_romm_search_timer.wait_time = SEARCH_DEBOUNCE_SEC
+		_romm_search_timer.timeout.connect(_rebuild_romm_rows)
+		add_child(_romm_search_timer)
+	_romm_search_timer.start(SEARCH_DEBOUNCE_SEC)
 
 
 # ── Virtualized ROM rows ──────────────────────────────────────────────────────
@@ -4620,6 +4704,26 @@ func on_menu_shown() -> void:
 	_menu_shown = true
 	_flush_romm_notices()
 	_romm_check_for_changes()
+	# Deferred so it lands after the menu has finished appearing rather than in
+	# the same frame: the first dropdown opened otherwise pays for instancing
+	# its quad, SubViewport and option scene right when it is tapped.
+	_prewarm_dropdowns.call_deferred()
+
+
+## Every VRDropdown currently in the menu builds its popout now. Cheap after the
+## first time — each one guards on already having built it.
+func _prewarm_dropdowns() -> void:
+	for d: Node in _find_dropdowns(self):
+		d.call("prewarm")
+
+
+func _find_dropdowns(node: Node) -> Array[Node]:
+	var out: Array[Node] = []
+	for c: Node in node.get_children():
+		if c is VRDropdown:
+			out.append(c)
+		out.append_array(_find_dropdowns(c))
+	return out
 
 
 func on_menu_hidden() -> void:
@@ -4780,6 +4884,7 @@ func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) ->
 		_romm_notify_or_queue(key, "❌", error, _ROMM_DWELL_FAIL)
 	_romm_dl_row_index = -1
 	_romm_meta_cache.clear()
+	_invalidate_local_scan()
 	_rebuild_romm_rows()
 
 
@@ -4798,6 +4903,7 @@ func _on_romm_cache_evicted(freed_bytes: int, count: int) -> void:
 ## the row icon lie about what is on disk.
 func _on_romm_cache_changed() -> void:
 	_romm_meta_cache.clear()
+	_invalidate_local_scan()
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.rebind_visible()
 
