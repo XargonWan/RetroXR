@@ -45,6 +45,11 @@ const GRIP_PRESS    = 0.6
 var _model_loaded := false
 var _model_root: Node3D
 var _skeleton: Skeleton3D
+## Interaction profile the last load attempt was made for. With hand tracking on,
+## a Quest reports a hand or simple-controller profile while the Touch controllers
+## sit idle and only swaps to the touch profile once they wake, so a profile with
+## no model has to be retried when it changes — never latched.
+var _tried_profile := ""
 
 # Bone indices (-1 = not found)
 var _bone_trigger_front  := -1
@@ -77,23 +82,24 @@ func _ready():
 	if _pickup:
 		_pickup.has_picked_up.connect(_on_held_grabbed)
 		_pickup.has_dropped.connect(_on_held_dropped)
-		# Fade on ANY grab, not just the device peripherals that author their own
-		# hand pose. A cartridge or a TV left the controller art sitting inside
-		# whatever you were holding.
-		_pickup.has_picked_up.connect(func(_w: Node) -> void: _fade_to(0.0))
-		_pickup.has_dropped.connect(func() -> void: _fade_to(1.0))
 
 func _process(delta):
 	_drive_fade(delta)
+	_check_hold_state()
 	if _model_loaded:
 		return
-	var xr_tracker = XRServer.get_tracker(tracker)
-	if xr_tracker == null or xr_tracker.profile.is_empty() or "none" in xr_tracker.profile:
+	var xr_tracker := XRServer.get_tracker(tracker) as XRPositionalTracker
+	if xr_tracker == null:
 		return
-	_load_model(xr_tracker.profile)
-	_model_loaded = true
+	var profile := xr_tracker.profile
+	if profile.is_empty() or "none" in profile or profile == _tried_profile:
+		return
+	_tried_profile = profile
+	_model_loaded = _load_model(profile)
 
-func _load_model(profile: String):
+## Returns whether a model was actually built. A false result leaves the poll in
+## _process running so a later profile can still supply one.
+func _load_model(profile: String) -> bool:
 	var model_key: String
 	var path: String
 	if "touch_plus" in profile or "oculus/touch_controller" in profile:
@@ -101,12 +107,12 @@ func _load_model(profile: String):
 		path = MODELS["touch_plus"][tracker]
 	else:
 		push_warning("No model for profile: " + profile)
-		return
+		return false
 
 	var scene = load(path)
 	if not scene:
 		push_warning("Failed to load controller model: " + path)
-		return
+		return false
 
 	_model_root = scene.instantiate()
 	_model_root.rotation_degrees.y = 180.0
@@ -117,6 +123,8 @@ func _load_model(profile: String):
 
 	_setup_skeleton()
 	_setup_input()
+	_apply_fade()
+	return true
 
 func _setup_skeleton():
 	_skeleton = _model_root.find_child("Skeleton3D", true, false) as Skeleton3D
@@ -257,6 +265,14 @@ func _drive_fade(delta: float) -> void:
 	if is_equal_approx(_fade, _fade_target):
 		return
 	_fade = move_toward(_fade, _fade_target, delta / FADE_TIME)
+	_apply_fade()
+
+
+## Push the current fade level onto the model. Also called once the model loads:
+## a grab during the load runs the fade to its target against a null _model_root,
+## after which _drive_fade short-circuits and the fresh materials would stay
+## opaque over whatever is being held.
+func _apply_fade() -> void:
 	if _model_root == null:
 		return
 	# Skip drawing entirely once invisible, and go back to opaque rendering at
@@ -269,23 +285,39 @@ func _drive_fade(delta: float) -> void:
 		m.albedo_color = Color(c.r, c.g, c.b, _fade)
 
 
-## This controller grabbed a device peripheral — hide the controller art and
-## show the device's own hand for this tracker (authored in the device scene).
-func _on_held_grabbed(what: Node) -> void:
-	if what == null or not what.is_in_group(HAND_HELD_GROUP):
+## XRToolsFunctionPickup.drop_object() returns before emitting has_dropped when
+## the held object was freed under it, which strands the art faded out with
+## nothing in hand. Restore whenever this hand is hidden but holding nothing.
+func _check_hold_state() -> void:
+	if _pickup == null or _fade_target > 0.0:
 		return
+	if is_instance_valid(_pickup.picked_up_object) or _pickup.is_ray_grabbing():
+		return
+	_on_held_dropped()
+
+
+## This controller grabbed something — fade the controller art out, and when the
+## object is a device peripheral show its own hand for this tracker (authored in
+## the device scene).
+func _on_held_grabbed(what: Node) -> void:
+	# A ray-pointer (telekinesis) grab holds the object at a distance, not in the
+	# hand — its has_picked_up still fires, but the controller has nothing to get
+	# out of the way of and no hand belongs on the object.
+	if _pickup and _pickup.is_ray_grabbing_target(what as XRToolsPickable):
+		return
+	# Fade on ANY grab, not just the device peripherals that author their own
+	# hand pose. A cartridge or a TV left the controller art sitting inside
+	# whatever you were holding.
+	_fade_to(0.0)
 	# Hands turned off in the options menu — keep the controller art, no hand.
 	if not draw_hands:
 		return
-	# A ray-pointer (telekinesis) grab holds the object at a distance, not in the
-	# hand — its has_picked_up still fires, but no hand should be drawn on it.
-	if _pickup and _pickup.is_ray_grabbing_target(what as XRToolsPickable):
+	if what == null or not what.is_in_group(HAND_HELD_GROUP):
 		return
 	var hand_name := "HandLeft" if tracker == "left_hand" else "HandRight"
 	var hand := what.get_node_or_null(NodePath(hand_name)) as Node3D
 	if hand == null:
 		return
-	_fade_to(0.0)
 	hand.visible = true
 	_shown_hand = hand
 
