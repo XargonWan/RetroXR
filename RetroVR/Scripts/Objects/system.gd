@@ -764,6 +764,24 @@ func _bind_audio_player() -> void:
 	_apply_bound_volume()
 
 
+## Keep trying to bind until it takes. StartContent only ENQUEUES the audio
+## init — Wrapper posts a ThreadCommandInitAudio that the Libretro node drains in
+## a later _process — so neither the voices nor the AudioStreamPlayer3D exist yet
+## when _power_on calls _bind_audio_player on the very next line.
+##
+## Binding once therefore left BOTH backends unset, and _update_audio_position
+## returned early for the rest of the session. The voices still played, from the
+## SDK's default position: the world origin. Hardware that sits near the middle
+## of the room sounds about right like that, which is why this went unnoticed
+## until a handheld was carried around and its sound stayed behind.
+func _ensure_audio_bound() -> void:
+	if not is_powered_on or not _audio_voices.is_empty():
+		return
+	if _audio_player != null and is_instance_valid(_audio_player):
+		return
+	_bind_audio_player()
+
+
 ## Push the remembered level onto whichever backend was just bound. A voice is
 ## created at gain 1.0 and a fresh AudioStreamPlayer3D at 0 dB, so without this
 ## a restart resurrects the sound at full volume regardless of the TV.
@@ -1181,6 +1199,7 @@ func _process(_delta: float) -> void:
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
 	_update_tv_mirrors()
 	_update_disc_spin(_delta)
+	_ensure_audio_bound()
 	_update_audio_position()
 
 
