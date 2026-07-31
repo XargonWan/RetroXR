@@ -49,7 +49,7 @@ active_button_action = "trigger_left"
 player_calibrate_height = false
 
 [node name="MovementDesktopDirect" parent="Staging/XROrigin3D" instance=ExtResource("16_desktopdirect")]
-max_speed = 2.0
+max_speed = 1.4
 strafe = true
 input_forward = "desktop_move_forward"
 input_backward = "desktop_move_backward"
@@ -80,7 +80,7 @@ ranged_enable = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
 
 [node name="MovementDirect" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("5_movdirect")]
-max_speed = 2.0
+max_speed = 1.4
 strafe = true
 
 [node name="PokeTip" type="Node3D" parent="Staging/XROrigin3D/LeftController"]

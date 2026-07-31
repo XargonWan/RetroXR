@@ -29,7 +29,7 @@ const InteractionTargetType := preload("res://Scripts/Interaction/interaction_ta
 const PICKABLE_MASK := 4
 
 ## Scroll step in metres
-const SCROLL_STEP := 0.15
+const SCROLL_STEP := 0.075
 const MIN_DIST    := 0.15
 const MAX_DIST    := 5.0
 
