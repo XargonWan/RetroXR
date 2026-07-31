@@ -191,7 +191,6 @@ func _ready() -> void:
 	# disable its scale copy on grab and reassert our scale on drop.
 	grabbed.connect(_on_tv_grabbed)
 	dropped.connect(_on_tv_dropped)
-	sleeping_state_changed.connect(_on_sleeping_state_changed)
 	_apply_scale()
 
 	if _ambilight:
@@ -996,70 +995,86 @@ func set_tv_scale(factor: float) -> void:
 
 
 func _apply_scale() -> void:
-	# Grow/shrink away from the surfaces the TV is up against rather than about
-	# its own origin. A set is placed base-down and back-to-wall, so scaling about
-	# the centre drives its bottom into the table and its back into the wall. The
-	# solver resolves both penetrations by ejecting the body, and because the size
-	# slider re-applies every tick the ejections accumulate: the TV sinks a little,
-	# tips, and walks across the furniture. Pinning the bottom and the back face
-	# keeps both contacts intact, so the extra size grows upward and forward.
+	# A set grows in place: same spot on the floor, same footprint centre, the
+	# extra size going straight up. Two things have to be true for that to hold.
 	#
-	# The offsets are unscaled local constants rather than world measurements taken
+	# One, the bottom is pinned rather than the origin. Scaling about the centre
+	# drives the base into whatever the set is standing on, and the solver answers
+	# a penetration by ejecting the body downward — the TV sinks through the
+	# surface. Holding the lowest point fixed keeps the contact intact.
+	#
+	# Two, nothing may push it sideways. Nothing here does, and the freeze below
+	# stops the solver doing it: enlarging a set against a wall, or over the edge of
+	# the table it stands on, leaves an overlap the solver evicts, which walks the
+	# set across the room. Resizing something that is standing somewhere is a
+	# placement, not a collision, so the body is parked and the overlap is simply
+	# allowed. A big set can clip the wall behind it; that beats it walking away.
+	#
+	# Parked means frozen, not asleep. Sleeping looks like it works and does not
+	# last: anything that disturbs the body's island wakes it — a footstep away,
+	# an object landing nearby — and it is evicted then instead, so the set sits
+	# still through the whole drag and lurches half a metre once you let go.
+	#
+	# The offset is an unscaled local constant rather than a world measurement taken
 	# after the write: a child's global_transform is still stale in the frame its
 	# parent's scale changes, so re-measuring reads back pre-scale values and the
 	# correction cancels to nothing.
 	#
 	# previous is tracked here, not read back off scale.y, because the authored or
 	# restored position already sits where the anchoring puts it. Correcting a
-	# scale the node has never actually worn would shift a persisted 2.1x set up
-	# and forward again on every load.
+	# scale the node has never actually worn would lift a persisted 2.1x set again
+	# on every load.
 	var previous := _anchored_scale
 	_anchored_scale = scale_factor
 	# Measured before the scale write, which is what leaves the children stale —
 	# and unconditionally, so the very first call, from _ready, is the one that
 	# fills the cache while every transform is still coherent.
 	var bottom := _local_bottom_y()
-	var back := _local_back_z()
 	scale = Vector3.ONE * scale_factor
 	if is_nan(previous):
 		return
 	# bottom_world = origin_y + s * local_bottom, so holding it fixed means
-	# shifting the origin by (old_s - new_s) * local_bottom; likewise for the back
-	# face along the TV's own -Z.
+	# shifting the origin by (old_s - new_s) * local_bottom.
 	var delta := previous - scale_factor
 	if is_zero_approx(delta):
 		return
-	global_position += Vector3(0.0, delta * bottom, 0.0) \
-		+ global_basis.orthonormalized().z * (delta * back)
-	# Whatever the enlarged cabinet still overlaps — a corner wall, the front edge
-	# of the desk it now overhangs — is a penetration the solver would spend the
-	# next frames evicting, and the slider re-applies every tick, so the evictions
-	# compound into a slide and a slow topple that the set never recovers from.
-	# Resizing a set that is standing somewhere is a placement, not a collision:
-	# hand it straight back asleep.
-	#
-	# force_update_transform first: the writes above only queue a transform
-	# notification, and the flush at the end of the frame is what pushes the pose
-	# to the physics server — and wakes the body. Sleeping it before that flush
-	# does nothing at all.
-	if _rested_in_place and not freeze:
+	global_position.y += delta * bottom
+	# force_update_transform first: the write above only queues a transform
+	# notification, and the flush at the end of the frame is what hands the pose to
+	# the physics server. Freezing before that flush parks the body at its old pose.
+	if not freeze and _is_standing_on_something():
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		force_update_transform()
-		sleeping = true
+		freeze = true
+		_parked_by_resize = true
 
 
 ## Scale the anchor correction was last applied at. NAN until the first
 ## _apply_scale, whose job is only to put the authored/restored scale on the node.
 var _anchored_scale: float = NAN
 
-## True once the set has settled somewhere and stayed there, so a resize can be
-## treated as a placement. Only ever set from the sleep edge, never cleared on
-## waking: _apply_scale's own teleport wakes the body, and mid-drag the sleep
-## timer never gets to expire, so a body that reads awake here is usually one we
-## woke ourselves. Pickup is the clearing event — after a drop, the set has to
-## come to rest again before another resize will pin it.
-var _rested_in_place: bool = false
+## Whether the freeze on this body is ours, from a resize, rather than the one
+## XRToolsPickable puts on while the set is held.
+var _parked_by_resize: bool = false
+
+
+## Whether the set is resting on a surface rather than in flight. Asked fresh per
+## resize rather than tracked off the sleep signal: a set put down and resized
+## straight away — the usual way anyone uses the size slider — has not had time to
+## fall asleep yet, and gating on sleep left exactly that case unpinned.
+func _is_standing_on_something() -> bool:
+	var world := get_world_3d()
+	if world == null:
+		return false
+	# Reaches barely past the pinned base, so a set resized while it is still
+	# falling is only caught in the last few centimetres rather than left hanging.
+	var reach: float = absf(_local_bottom_y()) * scale_factor + 0.03
+	var query := PhysicsRayQueryParameters3D.create(
+		global_position, global_position + Vector3.DOWN * reach)
+	query.exclude = [get_rid()]
+	query.collision_mask = collision_mask
+	return not world.direct_space_state.intersect_ray(query).is_empty()
 
 
 ## Lowest point of the TV's mesh geometry along Y, in local space at scale 1.
@@ -1087,19 +1102,6 @@ func _local_bottom_y() -> float:
 	return _local_bottom_y_cache
 
 
-## Rear face of the TV along local -Z, at scale 1.
-##
-## Read off the body collider, not the meshes: what must not enter the wall is
-## the shape the solver tests, and the port stub and its snap highlight hang
-## behind the cabinet, so a mesh sweep would anchor 20 mm too far back. The
-## shape is per-instance already — _resize_body_collision duplicates it.
-func _local_back_z() -> float:
-	var body_col := get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if body_col and body_col.shape is BoxShape3D:
-		return body_col.position.z - (body_col.shape as BoxShape3D).size.z * 0.5
-	return 0.0
-
-
 func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
 	var found: Array[MeshInstance3D] = []
 	if node is MeshInstance3D and (node as MeshInstance3D).visible:
@@ -1109,13 +1111,14 @@ func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
 	return found
 
 
-func _on_sleeping_state_changed() -> void:
-	if sleeping:
-		_rested_in_place = true
-
-
 func _on_tv_grabbed(_pickable: Node3D, _by: Node3D) -> void:
-	_rested_in_place = false
+	# Picking the set up ends the park. XRToolsPickable has already snapshotted
+	# freeze into restore_freeze by the time `grabbed` fires and its release_mode is
+	# ORIGINAL, so it would restore OUR freeze on release and leave the set hanging
+	# wherever it was let go — correct the snapshot, not just the flag.
+	if _parked_by_resize:
+		_parked_by_resize = false
+		restore_freeze = false
 	# The grab driver is created during the grab; stop it copying scale so the
 	# TV keeps its size while held (deferred so the driver exists first).
 	call_deferred("_lock_grab_scale")
