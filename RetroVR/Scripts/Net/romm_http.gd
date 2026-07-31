@@ -158,6 +158,67 @@ func get_json(path: String, headers: PackedStringArray, abort: Callable = Callab
 	return {"result": Result.OK, "code": code, "data": json.data}
 
 
+## POST/PUT a file as multipart/form-data and read the JSON reply.
+##
+## The only upload primitive here — everything else in this class is
+## download-shaped. Battery saves are the whole use case and they are KB-sized
+## (128 KB for a PS1 card, 16 MB for the largest GameCube one), so the body is
+## composed in memory rather than streamed.
+##
+## Returns {result: Result, code: int, data: Variant}.
+func upload_multipart(method: int, path: String, headers: PackedStringArray,
+					  field: String, filename: String, bytes: PackedByteArray,
+					  mime: String = "application/octet-stream") -> Dictionary:
+	if _client == null:
+		return {"result": Result.CONNECT_FAILED, "code": 0, "data": null}
+
+	# Must not occur in the payload. Random rather than fixed: a save file is
+	# arbitrary binary and a constant boundary could appear inside one.
+	var boundary := "----RetroVR%016x%016x" % [randi(), randi()]
+
+	var head := PackedByteArray()
+	head.append_array(("--%s\r\n" % boundary).to_utf8_buffer())
+	head.append_array(('Content-Disposition: form-data; name="%s"; filename="%s"\r\n'
+		% [field, filename]).to_utf8_buffer())
+	head.append_array(("Content-Type: %s\r\n\r\n" % mime).to_utf8_buffer())
+
+	var tail := ("\r\n--%s--\r\n" % boundary).to_utf8_buffer()
+
+	var body := PackedByteArray()
+	body.append_array(head)
+	body.append_array(bytes)
+	body.append_array(tail)
+
+	var all := PackedStringArray(headers)
+	all.append("Content-Type: multipart/form-data; boundary=%s" % boundary)
+	all.append("Content-Length: %d" % body.size())
+
+	if _client.request_raw(method, path, all, body) != OK:
+		return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
+
+	var deadline := Time.get_ticks_msec() + int(RESPONSE_TIMEOUT_SEC * 1000.0)
+	while _client.get_status() == HTTPClient.STATUS_REQUESTING:
+		_client.poll()
+		if Time.get_ticks_msec() > deadline:
+			return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
+		OS.delay_msec(POLL_SLEEP_MS)
+
+	if not _client.has_response():
+		return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
+
+	var code := _client.get_response_code()
+	var raw := _read_body()
+	if int(raw["result"]) != Result.OK:
+		return {"result": raw["result"], "code": code, "data": null}
+	if code < 200 or code >= 300:
+		return {"result": Result.HTTP_ERROR, "code": code, "data": null}
+
+	# A 2xx with an unparseable body still means the upload landed, so the
+	# result stays OK and `data` is simply null.
+	return {"result": Result.OK, "code": code,
+		"data": JSON.parse_string((raw["body"] as PackedByteArray).get_string_from_utf8())}
+
+
 ## Stream a response body straight into an open FileAccess, never holding it in
 ## memory. `file` must already be positioned (append for a resume).
 ##
