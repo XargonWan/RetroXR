@@ -38,14 +38,18 @@ const SPLICE_FADE := 0.02
 ## Distance at which the hum plays at full gain. Small on purpose: this is a
 ## faint mechanical noise, not room-filling audio like the console feed
 ## (unit_size 3.0). page_sfx.gd is the precedent for a close-range sound.
-@export var unit_size: float = 0.8
-## Beyond this the hum is silent. Inverse-distance attenuation only loses 6 dB per
-## doubling, so without a hard cut the whine would still be faintly present across
-## a 5 m room.
-@export var max_distance: float = 4.0
+@export var unit_size: float = 0.3
+## Beyond this the hum is silent. Close enough that the set has to be within
+## reach to be heard at all, which is how a real one behaves — the flyback is
+## quiet enough to vanish under room noise a couple of steps away.
+##
+## Keep this around 4-5x unit_size. Inverse-distance attenuation still has gain
+## unit_size/max_distance left when the hard cut lands, so a narrower ratio makes
+## the cut audible as a click when you walk away.
+@export var max_distance: float = 1.5
 ## Level. Expect to retune on device: the whine sits at 15.7 kHz where the Quest's
 ## off-ear speakers are weakest, so the headset may want MORE than the desktop.
-@export var volume: float = 0.22
+@export var volume: float = 0.1
 
 var _emitter: SpatialAudioEmitter = null
 var _idle: PackedVector2Array = []
