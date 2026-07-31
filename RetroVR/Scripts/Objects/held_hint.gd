@@ -201,7 +201,10 @@ func _drop_row(platform: int) -> Array:
 func _needs_desktop_modifier() -> bool:
 	if not is_instance_valid(_host):
 		return false
-	return bool(_host.get("desktop_fps_snap")) or _host.get("desktop_shift_drop") == true
+	# Compared against true rather than coerced: a host that has neither property
+	# — every handheld and controller — returns null from get(), and null is not
+	# something bool() will take.
+	return _host.get("desktop_fps_snap") == true or _host.get("desktop_shift_drop") == true
 
 
 # ── Presentation ──────────────────────────────────────────────────────────────
