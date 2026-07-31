@@ -242,6 +242,8 @@ var _scrape_status_label: Label = null
 # media_type -> { "bar": PanelContainer, "label": Label, "icon": Label }
 var _media_toasts: Dictionary = {}
 var _media_toast_stack: VBoxContainer = null
+## The quad the stack floats on, once adopted. Null in a plain 2D scene.
+var _toast_panel: ToastPanel = null
 ## The toast stack is anchored 300 px tall, so it holds ~5 bars before spilling
 ## off the panel. Beyond this many, the oldest collapse into a "+N more" bar.
 const MAX_VISIBLE_TOASTS := 4
@@ -4359,6 +4361,29 @@ func _ensure_media_toast_stack() -> void:
 	_media_toast_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_media_toast_stack)
 
+	# Lift the stack onto its own quad in front of the menu, like a dropdown's
+	# option list. It takes the stack as-is — everything that builds, updates or
+	# removes a toast below is unchanged. Falls back to the anchors above when
+	# there is no 3D host (a plain 2D scene, or a probe).
+	_toast_panel = ToastPanel.adopt(_host_viewport(), _media_toast_stack)
+
+
+## The Viewport2Din3D this menu renders inside, if any. xr-tools parents the
+## SubViewport directly under it, so one hop out lands on the 3D node.
+func _host_viewport() -> XRToolsViewport2DIn3D:
+	var vp := get_viewport()
+	if vp == null:
+		return null
+	return vp.get_parent() as XRToolsViewport2DIn3D
+
+
+## Re-measure the toast quad. Deferred so it lands after _enforce_toast_cap's
+## visibility pass and after any other toasts raised in the same frame;
+## refresh() is idempotent, so extra calls cost nothing.
+func _refresh_toast_panel() -> void:
+	if _toast_panel != null and is_instance_valid(_toast_panel):
+		_toast_panel.refresh.call_deferred()
+
 
 ## Public notification entry point for background services (RomM sync/downloads,
 ## cache eviction, …). Keyed so each concurrent operation owns one bar and
@@ -4462,6 +4487,7 @@ func _make_media_toast(media_type: String, icon_text: String, msg: String,
 	_media_toast_stack.add_child(bar)
 	_media_toasts[media_type] = {"bar": bar, "label": label, "icon": icon, "progress": prog}
 	_enforce_toast_cap()
+	_refresh_toast_panel()
 
 
 func _on_media_download_started(media_type: String) -> void:
@@ -4501,6 +4527,7 @@ func _remove_media_toast(media_type: String) -> void:
 			bar.queue_free()
 		_media_toasts.erase(media_type)
 		_enforce_toast_cap()
+		_refresh_toast_panel()
 
 
 ## Keep at most MAX_VISIBLE_TOASTS bars on screen; older ones collapse into a
