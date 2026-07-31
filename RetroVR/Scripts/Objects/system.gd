@@ -783,7 +783,11 @@ func _bind_audio_player() -> void:
 func _ensure_audio_bound() -> void:
 	if not is_powered_on or not _audio_voices.is_empty():
 		return
-	if _audio_player != null and is_instance_valid(_audio_player):
+	# Only the voice ids say which backend came up. A non-null _audio_player says
+	# nothing: Wrapper creates that AudioStreamPlayer3D node unconditionally,
+	# before the handler has chosen anything, so it is already sitting there on
+	# the first attempt -- and keying the retry off it stopped the retry dead.
+	if _libretro.GetAudioVoiceIds().is_empty():
 		return
 	_bind_audio_player()
 
