@@ -330,6 +330,7 @@ func _ready() -> void:
 	_libretro.options_ready.connect(_on_options_ready)
 	_libretro.rumble_state_changed.connect(_on_rumble_state_changed)
 	_libretro.disk_control_ready.connect(_on_disk_control_ready)
+	_libretro.sram_flushed.connect(_on_sram_flushed)
 	# Wire controller port snap signals
 	for i in range(4):
 		var idx := i
@@ -2121,6 +2122,49 @@ func restore_memory_card(card: Node3D) -> void:
 
 ## Where this run's .srm lives. Card systems: the seated card's folder, or ""
 ## (no card = authentic no-persistence). Cartridge systems: the cartridge's
+## The core just wrote SAVE_RAM to disk. Fires only on a real change (the
+## dirty check lives in C++), so this is "the game saved", not a timer tick.
+## `final` is the last flush for this file — shutdown, or a card/cart swap.
+func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
+	if path.is_empty() or not SaveSync.is_enabled(path):
+		return
+	var sid := _resolve_systemid()
+	var rom_id := SaveSync.rom_id_for(sid, rom_path)
+	if rom_id <= 0:
+		return
+	SaveSync.on_sram_flushed(path, rom_id, _resolve_core(), _sram_slot(),
+		_content_label(), final)
+
+
+## The slot this save occupies on the server. A cartridge's own save_id, so a
+## round trip is stable; memory cards are namespaced because their id is a card
+## rather than a save, and one card holds a file per game.
+func _sram_slot() -> String:
+	if _model.uses_memory_cards():
+		if _snapped_memcard and "card_id" in _snapped_memcard:
+			return "card:%s" % str(_snapped_memcard.get("card_id"))
+		return ""
+	if _snapped_cartridge and "save_id" in _snapped_cartridge:
+		return str(_snapped_cartridge.get("save_id"))
+	return ""
+
+
+func _content_label() -> String:
+	if _snapped_cartridge and "game_label" in _snapped_cartridge:
+		var lbl := str(_snapped_cartridge.get("game_label"))
+		if not lbl.is_empty():
+			return lbl
+	return rom_path.get_file().get_basename()
+
+
+func _resolve_systemid() -> String:
+	if _snapped_cartridge and "systemid" in _snapped_cartridge:
+		var sid := str(_snapped_cartridge.get("systemid"))
+		if not sid.is_empty():
+			return sid
+	return systemid
+
+
 ## own save_id file — each physical cart holds its own save.
 func _compose_sram_path(resolved_core: String) -> String:
 	if resolved_core.is_empty() or rom_path.is_empty():

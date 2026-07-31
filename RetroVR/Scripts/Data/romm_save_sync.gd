@@ -41,13 +41,62 @@ var _state: Dictionary = {}
 var _thread: Thread = null
 var _queue: Array[Dictionary] = []
 var _busy := false
+var _current_key := ""
+## Separate from the sync queue: opening the cartridge menu must not wait
+## behind a save being uploaded.
+var _list_thread: Thread = null
+var _list_busy := false
 ## Local save path -> unix seconds of the last upload, for MIN_UPLOAD_GAP_SEC.
 var _last_upload: Dictionary = {}
+## rom_path -> RomM rom_id (0 = not on the server). Resolved once per path;
+## the flush path must not re-read gamelist.json every save.
+var _rom_ids: Dictionary = {}
 
 
+## Autoloaded as `SaveSync`: both the console (which sees sram_flushed) and the
+## cartridge menu (which offers the toggle) need this, and they are unrelated
+## nodes with no shared parent to hang it off.
+func _ready() -> void:
+	config = RommConfig.new()
+	config.load_config()
+	load_state()
+
+
+## Re-read the config after the OPTIONS panel changes it.
 func setup(cfg: RommConfig) -> void:
 	config = cfg
 	load_state()
+
+
+func is_available() -> bool:
+	return config != null and config.is_configured()
+
+
+# ── ROM identity ──────────────────────────────────────────────────────────────
+
+## RomM's id for a local ROM, or 0.
+##
+## ROMs pulled from RomM carry it in gamelist.json as "romm:<id>", written by
+## RommDownloader. A ROM that arrived some other way has none, and resolving it
+## would mean hashing the file against /api/roms/by-hash — deliberately not done
+## here, because this is called from the flush path and hashing a 4 GB ISO
+## there would stall the emulation thread's listener. The cartridge menu can
+## offer that lookup explicitly instead.
+func rom_id_for(systemid: String, rom_path: String) -> int:
+	if systemid.is_empty() or rom_path.is_empty():
+		return 0
+	var cached := int(_rom_ids.get(rom_path, -1))
+	if cached >= 0:
+		return cached
+
+	var resolved := 0
+	var gl := GamelistManager.new()
+	var game: Dictionary = gl.get_game_for_rom(systemid, rom_path)
+	var gid := str(game.get("game_id", ""))
+	if gid.begins_with("romm:"):
+		resolved = int(gid.substr(5))
+	_rom_ids[rom_path] = resolved
+	return resolved
 
 
 func _exit_tree() -> void:
@@ -55,6 +104,9 @@ func _exit_tree() -> void:
 	if _thread != null and _thread.is_started():
 		_thread.wait_to_finish()
 		_thread = null
+	if _list_thread != null and _list_thread.is_started():
+		_list_thread.wait_to_finish()
+		_list_thread = null
 
 
 # ── Per-save opt-in ───────────────────────────────────────────────────────────
@@ -81,6 +133,47 @@ func set_enabled(sram_path: String, on: bool, rom_id: int = 0) -> void:
 
 func record_for(sram_path: String) -> Dictionary:
 	return _record(sram_path)
+
+
+## The save currently being reconciled, or "" — lets a row show "syncing".
+func current_key() -> String:
+	return _current_key
+
+
+# ── Listing ───────────────────────────────────────────────────────────────────
+
+## What the server holds for one ROM, delivered to `callback(ok, saves)` on the
+## main thread. Its own short-lived thread rather than the sync queue: opening
+## the cartridge menu must not wait behind a save being uploaded.
+func list_server_saves(rom_id: int, callback: Callable) -> void:
+	if config == null or not config.is_configured() or rom_id <= 0:
+		callback.call(false, [])
+		return
+	if _list_thread != null and _list_thread.is_started():
+		if _list_busy:
+			return
+		_list_thread.wait_to_finish()
+	_list_busy = true
+	_list_thread = Thread.new()
+	_list_thread.start(_list_worker.bind(rom_id, callback,
+		config.base_url, config.auth_headers()))
+
+
+func _list_worker(rom_id: int, callback: Callable, base_url: String,
+				  headers: PackedStringArray) -> void:
+	var http := RommHttp.new()
+	if http.open(base_url) != RommHttp.Result.OK:
+		_list_done.call_deferred(callback, false, [])
+		return
+	var out := RommSaves.list(http, headers, rom_id)
+	http.close()
+	_list_done.call_deferred(callback, bool(out["ok"]), out["saves"])
+
+
+func _list_done(callback: Callable, ok: bool, saves: Array) -> void:
+	_list_busy = false
+	if callback.is_valid():
+		callback.call(ok, saves)
 
 
 func _record(sram_path: String) -> Dictionary:
@@ -156,6 +249,7 @@ func _pump() -> void:
 		_thread = null
 	var job: Dictionary = _queue.pop_front()
 	_busy = true
+	_current_key = str(job["key"])
 	sync_started.emit(str(job["key"]), str(job["label"]))
 	_thread = Thread.new()
 	_thread.start(_worker.bind(job))
@@ -298,6 +392,7 @@ func _forked(job: Dictionary, fork_id: String) -> void:
 func _done(job: Dictionary, action: String, ok: bool, detail: String,
 		   record: Dictionary) -> void:
 	_busy = false
+	_current_key = ""
 	if ok and not record.is_empty():
 		var k := str(job["key"])
 		var rec: Dictionary = _state.get(k, {})
