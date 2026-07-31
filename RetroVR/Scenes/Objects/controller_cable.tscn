@@ -67,13 +67,19 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; of every desk and floor it lies on.
 ;
 ; Same strain-relief reasoning as cable.tscn, scaled to a thinner cord: 2
-; segments of boot is 70 mm here (segment_length 0.035), and bend_stiffness sits
+; segments of boot is 72 mm here (segment_length 0.036), and bend_stiffness sits
 ; below the A/V lead's 0.2 because a 4.5 mm cord really does take a tighter bend
 ; radius before it kinks.
+;
+; 50 x 36 mm = 1.80 m, matching an SNES/N64-era controller cord (the NES ran
+; longer still at ~2.4 m). Same trade as cable.tscn — the count carries the
+; length so the millimetre tuning holds, at roughly double the solver cost
+; (measured 0.41 -> 0.88 ms per cord per physics tick). The 1 mm change to
+; segment_length is only there to land on exactly 1.80 m.
 [node name="VerletRope" type="MeshInstance3D" parent="."]
 script = ExtResource("2_ropescript")
-segment_count = 24
-segment_length = 0.035
+segment_count = 50
+segment_length = 0.036
 constraint_iterations = 8
 bend_stiffness = 0.15
 tube_radius = 0.00225

@@ -60,9 +60,18 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; 0.2 holds it near 90 mm and spreads slack into a belly instead of a kinked
 ; loop. Do not push it past ~0.3: bend_stiffness sets the long-range constraint
 ; depth (1 + round(k*3)), and 0.6 costs +24% CPU per cable for a hose look.
+;
+; 60 x 30 mm = 1.80 m, the length a real composite lead shipped at. The rest
+; length is also the tether: every host clamps its plug to segment_count x
+; segment_length from the attach point. Length is bought with segment COUNT, not
+; a longer segment, so the boot and the minimum bend radius above stay where
+; they were tuned in millimetres — but the solver is per-particle, so it costs
+; about double (measured 0.56 -> 1.05 ms per cable per physics tick, 8 cables on
+; a floor with collision on). 45 x 40 mm is the same 1.80 m for ~0.8 ms if a
+; Quest frame budget ever needs it back.
 [node name="VerletRope" type="MeshInstance3D" parent="."]
 script = ExtResource("2_ropescript")
-segment_count = 30
+segment_count = 60
 segment_length = 0.03
 constraint_iterations = 8
 bend_stiffness = 0.2
