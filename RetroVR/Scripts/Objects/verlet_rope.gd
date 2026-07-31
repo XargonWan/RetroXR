@@ -1069,6 +1069,7 @@ func _render_tube() -> void:
 	# against each other whenever the tangent nears that reference (e.g. a
 	# vertically hanging cable), which pinches the tube like sausage links.
 	var prev_side := Vector3.ZERO
+	var prev_tangent := Vector3.UP
 	for i in count:
 		var tangent: Vector3
 		if i == 0:
@@ -1077,10 +1078,20 @@ func _render_tube() -> void:
 			tangent = _ring_points[i] - _ring_points[i - 1]
 		else:
 			tangent = _ring_points[i + 1] - _ring_points[i - 1]
-		if tangent.length_squared() < 0.0001:
-			tangent = Vector3.UP
+		# Degeneracy guard, so it has to sit far below the ring spacing
+		# (segment_length / (smoothing + 1)) — this is metres SQUARED. At 0.0001
+		# it meant 10 mm and fired on both END rings every frame: their tangent is
+		# one-sided, and Catmull-Rom compresses the first and last sub-step to
+		# ~8 mm. The ring then got built around Vector3.UP, putting its plane
+		# ALONG the cable instead of across it, and the tube ended in a flat
+		# sliver at every plug. Falling back to the previous ring's tangent also
+		# beats a fixed axis: a real degeneracy is two coincident points, where
+		# carrying the frame forward is what the parallel transport wants anyway.
+		if tangent.length_squared() < 1e-12:
+			tangent = prev_tangent
 		else:
 			tangent = tangent.normalized()
+		prev_tangent = tangent
 		var side := prev_side - tangent * prev_side.dot(tangent)
 		if side.length_squared() < 0.000001:
 			var ref := Vector3.UP if absf(tangent.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
