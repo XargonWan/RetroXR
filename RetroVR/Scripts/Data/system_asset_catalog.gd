@@ -18,28 +18,49 @@ class_name SystemAssetCatalog
 const BASE_URL := "https://buildbot.libretro.com"
 const BASE_PATH := "/assets/system/"
 
-## core_name -> { zip, label, bytes }. `bytes` is the size measured from the
-## live listing; it is only used to warn before a large download, so being
-## slightly stale is harmless.
+## core_name -> { zip, label, bytes, marker }.
+##
+## `bytes` is the size measured from the live listing; it only sizes the button
+## label, so being slightly stale is harmless.
+##
+## `marker` is a shallow file the archive always carries, relative to the system
+## dir. Its presence is what tells us the archive has been unpacked — that is
+## not derivable from the firmware rows, because several archives can never
+## satisfy all of them (Dolphin.zip has one of dolphin's four declared files and
+## never the three GameCube IPL dumps). Reading it off disk also recognises an
+## archive unpacked by hand, or before this tab existed.
+## Read from each archive's listing 2026-07-30.
 const ARCHIVES := {
-	"ppsspp":          {"zip": "PPSSPP.zip",                     "label": "PPSSPP assets",        "bytes": 10863516},
-	"scummvm":         {"zip": "ScummVM.zip",                    "label": "ScummVM themes + extras", "bytes": 79563252},
-	"dolphin":         {"zip": "Dolphin.zip",                    "label": "Dolphin Sys folder",   "bytes": 3191036},
-	"dolphin_launcher":{"zip": "Dolphin.zip",                    "label": "Dolphin Sys folder",   "bytes": 3191036},
-	"pcsx2":           {"zip": "LRPS2.zip",                      "label": "PCSX2 resources",      "bytes": 319638},
-	"bluemsx":         {"zip": "blueMSX.zip",                    "label": "blueMSX machines",     "bytes": 4465709},
-	"mame2003":        {"zip": "MAME 2003.zip",                  "label": "MAME 2003 support",    "bytes": 994060},
-	"mame2003_plus":   {"zip": "MAME 2003-Plus.zip",             "label": "MAME 2003-Plus support", "bytes": 2628894},
-	"fbneo":           {"zip": "FinalBurn Neo (hiscore).zip",    "label": "FinalBurn Neo hiscore", "bytes": 81898},
-	"prboom":          {"zip": "PrBoom.zip",                     "label": "PrBoom data",          "bytes": 45018},
-	"nxengine":        {"zip": "NXEngine (Cave Story).zip",      "label": "Cave Story data",      "bytes": 1101902},
-	"ecwolf":          {"zip": "ECWolf.zip",                     "label": "ECWolf data",          "bytes": 173151},
-	"dinothawr":       {"zip": "Dinothawr.zip",                  "label": "Dinothawr game data",  "bytes": 5763199},
-	"qemu":            {"zip": "QEMU.zip",                       "label": "QEMU firmware",        "bytes": 18089404},
-	"dirksimple":      {"zip": "DirkSimple.zip",                 "label": "DirkSimple data",      "bytes": 175384},
-	"cannonball":      {"zip": "Cannonball (ROMs Required).zip", "label": "Cannonball data",      "bytes": 3741},
-	"xrick":           {"zip": "XRick (Rick Dangerous).zip",     "label": "XRick data",           "bytes": 1456338},
+	"ppsspp":          {"zip": "PPSSPP.zip",                     "label": "PPSSPP assets",           "bytes": 10863516, "marker": "PPSSPP/compat.ini"},
+	"scummvm":         {"zip": "ScummVM.zip",                    "label": "ScummVM themes + extras", "bytes": 79563252, "marker": "scummvm/extra/mm.dat"},
+	"dolphin":         {"zip": "Dolphin.zip",                    "label": "Dolphin Sys folder",      "bytes": 3191036,  "marker": "dolphin-emu/license.txt"},
+	"dolphin_launcher":{"zip": "Dolphin.zip",                    "label": "Dolphin Sys folder",      "bytes": 3191036,  "marker": "dolphin-emu/license.txt"},
+	"pcsx2":           {"zip": "LRPS2.zip",                      "label": "PCSX2 resources",         "bytes": 319638,   "marker": "pcsx2/resources/GameIndex.yaml"},
+	"bluemsx":         {"zip": "blueMSX.zip",                    "label": "blueMSX machines",        "bytes": 4465709,  "marker": "Databases/svidb.xml"},
+	"mame2003":        {"zip": "MAME 2003.zip",                  "label": "MAME 2003 support",       "bytes": 994060,   "marker": "mame2003/cheat.dat"},
+	"mame2003_plus":   {"zip": "MAME 2003-Plus.zip",             "label": "MAME 2003-Plus support",  "bytes": 2628894,  "marker": "mame2003-plus/cheat.dat"},
+	"fbneo":           {"zip": "FinalBurn Neo (hiscore).zip",    "label": "FinalBurn Neo hiscore",   "bytes": 81898,    "marker": "fbneo/hiscore.dat"},
+	"prboom":          {"zip": "PrBoom.zip",                     "label": "PrBoom data",             "bytes": 45018,    "marker": "prboom.wad"},
+	"nxengine":        {"zip": "NXEngine (Cave Story).zip",      "label": "Cave Story data",         "bytes": 1101902,  "marker": "nxengine/Readme.txt"},
+	"ecwolf":          {"zip": "ECWolf.zip",                     "label": "ECWolf data",             "bytes": 173151,   "marker": "ecwolf.pk3"},
+	"dinothawr":       {"zip": "Dinothawr.zip",                  "label": "Dinothawr game data",     "bytes": 5763199,  "marker": "dinothawr/LICENSE"},
+	"qemu":            {"zip": "QEMU.zip",                       "label": "QEMU firmware",           "bytes": 18089404, "marker": "qemu/README"},
+	"dirksimple":      {"zip": "DirkSimple.zip",                 "label": "DirkSimple data",         "bytes": 175384,   "marker": "DirkSimple/LICENSE.txt"},
+	"cannonball":      {"zip": "Cannonball (ROMs Required).zip", "label": "Cannonball data",         "bytes": 3741,     "marker": "cannonball/roms.txt"},
+	"xrick":           {"zip": "XRick (Rick Dangerous).zip",     "label": "XRick data",              "bytes": 1456338,  "marker": "xrick/data.zip"},
 }
+
+
+## Has this core's support archive already been unpacked into its system dir?
+static func is_installed(core_name: String) -> bool:
+	var a := archive_for(core_name)
+	if a.is_empty():
+		return false
+	var marker := str(a.get("marker", ""))
+	if marker.is_empty():
+		return false
+	return FileAccess.file_exists(
+		CoreDownloadManager.default_system_dir(core_name).path_join(marker))
 
 
 static func has_archive(core_name: String) -> bool:

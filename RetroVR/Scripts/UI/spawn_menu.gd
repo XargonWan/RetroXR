@@ -2194,22 +2194,44 @@ func _build_bios_archive_row(core_name: String, rows: Array[Dictionary]) -> Cont
 	row.add_child(lbl)
 
 	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
+
+	# "Every row present" is not a usable test for whether the archive ran:
+	# Dolphin.zip carries one of the four files dolphin declares and never the
+	# three GameCube IPL dumps, so it can never reach zero outstanding. The
+	# recorded install is what makes those cases readable; the zero-outstanding
+	# case still counts, so a tree that predates this feature reads correctly.
 	var outstanding := 0
 	for r: Dictionary in rows:
 		if int(r.get("status", 0)) != FirmwareState.Status.PRESENT:
 			outstanding += 1
+	var installed := SystemAssetCatalog.is_installed(core_name) or outstanding == 0
+
+	if installed and not running:
+		var done := Label.new()
+		done.text = "Installed"
+		done.add_theme_font_size_override("font_size", 15)
+		done.add_theme_color_override("font_color", _TINT_OK)
+		done.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(done)
 
 	var btn := Button.new()
 	btn.add_theme_font_override("font", _symbols())
 	btn.add_theme_font_size_override("font_size", 22)
 	btn.custom_minimum_size = Vector2(120, 52)
-	btn.text = String.chr(_ICON_BUSY if running else _ICON_DOWNLOAD)
-	btn.add_theme_color_override("font_color", _TINT_BUSY if running else _TINT_DOWNLOAD)
-	btn.tooltip_text = "Download and unpack into this core's system folder"
-	# Nothing outstanding means the archive is already unpacked; still allow it,
-	# since it is also how you repair a file that went bad.
-	if outstanding == 0 and not running:
+	if running:
+		btn.text = String.chr(_ICON_BUSY)
+		btn.add_theme_color_override("font_color", _TINT_BUSY)
+		btn.tooltip_text = "Downloading — press to cancel"
+	elif installed:
+		# Still pressable: re-running the archive is how you repair a file that
+		# went bad, so the affordance stays and only its reading changes.
+		btn.text = String.chr(_ICON_RETRY)
 		btn.add_theme_color_override("font_color", _TINT_MUTED)
+		btn.tooltip_text = "Already installed — download again to replace these files"
+	else:
+		btn.text = String.chr(_ICON_DOWNLOAD)
+		btn.add_theme_color_override("font_color", _TINT_DOWNLOAD)
+		btn.tooltip_text = "Download and unpack into this core's system folder"
 	btn.pressed.connect(func() -> void:
 		if _firmware_installer == null:
 			return
@@ -2325,6 +2347,7 @@ func _build_bios_action(r: Dictionary) -> Control:
 	var cell := HBoxContainer.new()
 	cell.custom_minimum_size = Vector2(230, 0)
 	cell.alignment = BoxContainer.ALIGNMENT_END
+	cell.add_theme_constant_override("separation", 10)
 
 	if status == FirmwareState.Status.PRESENT or bool(r.get("is_dir", false)):
 		return cell
@@ -2342,6 +2365,21 @@ func _build_bios_action(r: Dictionary) -> Control:
 	var core_name := str(r.get("core_name", ""))
 	var key := "bios:file:%s:%s" % [core_name, path]
 	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
+
+	# The mark says WHERE the file is coming from; the cloud says what pressing
+	# it does. The rows beside it read "Not on RomM" as words, so the source
+	# needs to be as legible as the absence of one.
+	var mark := _romm_mark()
+	if mark != null:
+		var mark_rect := TextureRect.new()
+		mark_rect.texture = mark
+		mark_rect.custom_minimum_size = Vector2(30, 30)
+		mark_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		mark_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mark_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		mark_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mark_rect.tooltip_text = "On your RomM server"
+		cell.add_child(mark_rect)
 
 	var btn := Button.new()
 	btn.add_theme_font_override("font", _symbols())

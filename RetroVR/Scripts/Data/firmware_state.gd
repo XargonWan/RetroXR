@@ -27,6 +27,7 @@ static var _shared: FirmwareState = null
 ## "<core_name>/<firmware path>" -> {size, mtime, md5}. Keyed on size+mtime so
 ## a re-open never re-hashes an unchanged file.
 var _cache: Dictionary = {}
+
 var _dirty := false
 
 
