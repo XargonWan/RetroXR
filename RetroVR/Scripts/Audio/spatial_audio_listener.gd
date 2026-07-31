@@ -13,6 +13,13 @@ extends Node
 
 var _active := false
 var _mx: Object = null
+var _listener_pos := Vector3.ZERO
+
+
+## Where the head is this frame. Emitters need it because the SDK applies no
+## distance law of its own, so the falloff has to be computed against this.
+func get_listener_position() -> Vector3:
+	return _listener_pos
 
 
 func _ready() -> void:
@@ -42,6 +49,7 @@ func _process(_delta: float) -> void:
 	var cam := vp.get_camera_3d()
 	if cam == null:
 		return
+	_listener_pos = cam.global_position
 	_mx.set_listener_transform(cam.global_transform)
 
 

@@ -209,6 +209,10 @@ var _audio_geom_model_id: int = 0
 var _audio_centre_local: Vector3 = Vector3.ZERO
 var _audio_half_sep: float = 0.0
 
+# Head position, for the distance law, and the last gain handed to the voices.
+var _audio_listener: Node = null
+var _sent_audio_gain: float = -1.0
+
 # Active system model — always set (falls back to RetroSystemModelDefault)
 var _model: RetroSystemModel = null
 
@@ -733,8 +737,10 @@ func set_audio_volume(volume: float) -> void:
 	if not is_powered_on:
 		return
 	if not _audio_voices.is_empty() and _mx != null:
-		for v in _audio_voices:
-			_mx.set_voice_gain(v, clampf(volume, 0.0, 1.0))
+		# Not written straight through: _apply_voice_distance_gain owns the voice
+		# gain, since the SDK applies no distance law and it has to be folded in
+		# here. Invalidating its cache makes it reapply at the new level.
+		_sent_audio_gain = -1.0
 		return
 	if _audio_player == null or not is_instance_valid(_audio_player):
 		return
@@ -787,8 +793,7 @@ func _ensure_audio_bound() -> void:
 ## a restart resurrects the sound at full volume regardless of the TV.
 func _apply_bound_volume() -> void:
 	if not _audio_voices.is_empty() and _mx != null:
-		for v in _audio_voices:
-			_mx.set_voice_gain(v, _last_audio_volume)
+		_sent_audio_gain = -1.0   # see set_audio_volume
 	elif _audio_player != null and is_instance_valid(_audio_player):
 		_audio_player.volume_db = linear_to_db(_last_audio_volume) if _last_audio_volume > 0.001 else -80.0
 
@@ -822,6 +827,31 @@ func _refresh_hardware_audio_geometry() -> void:
 	_audio_geom_model_id = mid
 	_audio_centre_local = aabb.get_center()
 	_audio_half_sep = minf(audio_speaker_separation, aabb.size.x * 0.2)
+
+
+## Fold the distance law into the voice gain. The SDK applies none of its own --
+## a source four metres away measures the same level as one a metre away -- so
+## without this a running game is exactly as loud from across the room as from
+## in front of the set, and audio_max_distance means nothing.
+##
+## Shared with SpatialAudioEmitter so that hardware and everything else fall off
+## identically. RetroSystem cannot simply use an emitter here: the libretro
+## AudioHandler owns these voices and only hands back their ids.
+func _apply_voice_distance_gain(centre: Vector3) -> void:
+	if _mx == null or _audio_voices.is_empty():
+		return
+	if _audio_listener == null or not is_instance_valid(_audio_listener):
+		_audio_listener = get_node_or_null("/root/SpatialAudioListener")
+		if _audio_listener == null:
+			return
+	var g := _last_audio_volume * SpatialAudioEmitter.distance_gain(
+		centre, _audio_listener.get_listener_position(),
+		audio_unit_size, audio_max_distance)
+	if is_equal_approx(g, _sent_audio_gain):
+		return
+	_sent_audio_gain = g
+	for v in _audio_voices:
+		_mx.set_voice_gain(v, g)
 
 
 ## Sound comes from whatever is showing the picture: a connected TV takes the
@@ -863,11 +893,12 @@ func _update_audio_position() -> void:
 			left_pos = centre - right
 			right_pos = centre + right
 		# The mixer skips the SDK call when a position has not changed, so
-		# writing every frame is safe -- and that guard is load bearing on
-		# Quest, see meta-xr-audio-known-issues.md.
+		# writing every frame is safe -- it saves a lock on a position that
+		# usually has not moved.
 		_mx.set_voice_position(_audio_voices[0], left_pos)
 		if _audio_voices.size() > 1:
 			_mx.set_voice_position(_audio_voices[1], right_pos)
+		_apply_voice_distance_gain((left_pos + right_pos) * 0.5)
 		return
 
 	if _audio_player == null or not is_instance_valid(_audio_player):

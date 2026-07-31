@@ -45,6 +45,11 @@ var _playback: AudioStreamGeneratorPlayback = null
 var _emit_origin := Vector3.ZERO
 var _emit_override := false
 
+# Head position, for the distance law applied in _apply_distance_gain, and the
+# last gain handed over so an unchanged one costs nothing.
+var _listener: Node = null
+var _sent_gain := -1.0
+
 
 func _ready() -> void:
 	_use_sdk = _sdk_available()
@@ -55,6 +60,8 @@ func _ready() -> void:
 		# Out of voices: fall back rather than run silent.
 		if _voice_l < 0:
 			_use_sdk = false
+		else:
+			_listener = get_node_or_null("/root/SpatialAudioListener")
 	if not _use_sdk:
 		_setup_fallback()
 	set_process(true)
@@ -101,8 +108,49 @@ func _process(_delta: float) -> void:
 		_mx.set_voice_position(_voice_l, origin + _speaker_offset(-1.0))
 		if _voice_r >= 0:
 			_mx.set_voice_position(_voice_r, origin + _speaker_offset(1.0))
+		_apply_distance_gain(origin)
 	elif _player != null and is_instance_valid(_player):
 		_player.global_position = origin
+
+
+## Distance attenuation, which the SDK will not do for us.
+##
+## A freshly created context applies no distance law at all: a source four
+## metres away measures the same level as one a metre away. Of the modes
+## mxra_source_set_attenuation accepts, only one attenuates and it falls off far
+## steeper than inverse-distance, so the law is applied here instead, through the
+## gain, from the same unit_size / max_distance the fallback hands to
+## AudioStreamPlayer3D. The two backends then behave alike, which is what this
+## class promises. Without it every emitter plays at full level everywhere and
+## max_distance means nothing at all.
+##
+## Clamped to 1.0 inside unit_size, where Godot's own curve keeps climbing. A
+## handheld ends up centimetres from the head and the unclamped law runs away
+## there.
+func _apply_distance_gain(origin: Vector3) -> void:
+	var g := _volume
+	if _listener != null and is_instance_valid(_listener):
+		g = _volume * distance_gain(origin, _listener.get_listener_position(),
+			unit_size, max_distance)
+	if is_equal_approx(g, _sent_gain):
+		return
+	_sent_gain = g
+	_mx.set_voice_gain(_voice_l, g)
+	if _voice_r >= 0:
+		_mx.set_voice_gain(_voice_r, g)
+
+
+## Godot's ATTENUATION_INVERSE_DISTANCE as a plain number, 0.0 .. 1.0. Static
+## because RetroSystem drives its libretro voices through the singleton rather
+## than through an emitter, and both have to fall off identically.
+static func distance_gain(origin: Vector3, listener: Vector3,
+		p_unit_size: float, p_max_distance: float) -> float:
+	var d := origin.distance_to(listener)
+	if p_max_distance > 0.0 and d >= p_max_distance:
+		return 0.0
+	if d <= p_unit_size:
+		return 1.0
+	return p_unit_size / d
 
 
 func _speaker_offset(sign_x: float) -> Vector3:
@@ -177,9 +225,10 @@ func flush() -> void:
 func set_volume(volume: float) -> void:
 	_volume = clampf(volume, 0.0, 1.0)
 	if _use_sdk:
-		_mx.set_voice_gain(_voice_l, _volume)
-		if _voice_r >= 0:
-			_mx.set_voice_gain(_voice_r, _volume)
+		# Not written straight through: _apply_distance_gain owns the voice gain
+		# now, and would undo it on the next frame anyway. Invalidating its cache
+		# makes it reapply with the new level.
+		_sent_gain = -1.0
 	elif _player != null:
 		_player.volume_db = _MUTE_DB if _volume <= 0.0 else linear_to_db(_volume)
 
