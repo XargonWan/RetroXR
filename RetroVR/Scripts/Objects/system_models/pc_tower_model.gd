@@ -124,8 +124,14 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 ## The disc seats in the tray's well. Its pose is read back by RetroSystem and
 ## re-expressed relative to get_disc_lid_pivot(), so this must be positioned with
 ## the tray at its REST pose — which it is, since _ready has not moved it.
+##
+## DiscSeat's position is local to TrayPivot, NOT to the model root, and `slot`
+## lives in the model root's frame. Assigning it raw put the well at the tower's
+## base 6 mm under the floor — 36 cm from the tray — so a disc had nothing to snap
+## to however far the tray slid out. Compose the pivot's own transform in.
 func configure_cartridge_slot(slot: Node3D) -> void:
-	slot.position = $TrayPivot/DiscSeat.position
+	var pivot: Node3D = $TrayPivot
+	slot.position = pivot.transform * (pivot.get_node("DiscSeat") as Node3D).position
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
@@ -134,6 +140,9 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 ## Ports onto the BACK panel, where a PC's keyboard and mouse actually plug in.
 ## Left at their defaults they sat at the tower's base and dipped 6 mm below the
 ## floor, since the default layout assumes a console lying flat.
+## Safe to read the marker's position raw, unlike DiscSeat above: Front and Back
+## are bare Node3Ds at the model root, so their children's local positions ARE
+## model-root-relative. Give either of them a transform and this silently breaks.
 func configure_cable_attach(attach_point: Node3D) -> void:
 	attach_point.position = $Back/AvAnchor.position
 	var v := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
