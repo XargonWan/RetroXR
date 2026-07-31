@@ -43,10 +43,50 @@ timer over a running core, and nothing to keep in sync with power/eject handling
   deleted.
 - **Sync is per-save, off by default.** A cart can hold both synced and local-only saves;
   nothing touches the network unless asked.
-- **Cartridge saves only.** Memory cards (`SramPaths.card_save_path`) are keyed by `card_id`
-  and shared across games — RomM's model is per-`rom_id`, so a card does not map onto it.
+- **Cartridge saves first; memory cards fit too.** See below — an earlier draft of this plan
+  excluded them for the wrong reason.
 - **Saves, not save states.** `/api/states` exists and so does `RequestSaveState` in C++, but
   it is wired only to netplay; there is no user-facing save-state feature to sync yet.
+
+### Memory cards
+
+RetroVR does **not** model a memory card the way the hardware does. `MemoryCard` is a pickable
+object with a random `card_id`, and its doc comment is precise about the model: *"a card is a
+persistent folder of battery saves"*. Each game played with a card seated gets its own file:
+
+```
+save/<core>/memcards/<card_id>/<game_stem>.srm
+```
+
+Real PS1/PS2/GameCube/Dreamcast cards are the opposite — **one fixed-capacity image shared by
+every game**. A PS1 card is a single 128 KB, 15-block file; saves from a dozen games live side
+by side inside it, and it fills up.
+
+Because the core is handed this path for `RETRO_MEMORY_SAVE_RAM` — which for a PS1 core *is*
+the 128 KB card image — every one of those per-game files is a complete, valid card image that
+happens to hold one game's saves. That has an upside (each file is individually portable to a
+real card manager, and a card can never fill up) and four consequences:
+
+1. **Cross-game saves are invisible to each other.** PS1 titles that unlock bonuses by finding
+   another game's save on the card will never find one.
+2. **The BIOS card manager sees nothing.** Booting a console with no disc leaves `rom_path`
+   empty, so `_compose_sram_path` returns `""` and no card is presented at all.
+3. **Copy/delete between cards inside a game** does not do what it appears to.
+4. **Capacity is per-game**, so the 15-block limit that shapes real PS1 save design never bites.
+
+Whether to move to authentic whole-card images is a separate question from sync, but it
+decides whether cards can sync at all:
+
+- **As implemented today**, memcard saves are per-game files and map onto RomM cleanly — the
+  only change needed is the slot key: `slot = "card:<card_id>"` in place of the cartridge's
+  `save_id`. Everything else in this plan applies unchanged.
+- **If cards become one image per card**, they stop mapping. `POST /api/saves` requires a
+  `rom_id`, and a cross-game card belongs to no single ROM. `GET /api/saves` accepts a
+  `platform_id`, but there is no way to *upload* against a platform, so a whole-card image
+  would have to be parented to an arbitrary ROM.
+
+So: include memory cards, using the card-scoped slot key. Revisit only if the card model
+changes.
 
 ---
 
@@ -55,6 +95,7 @@ timer over a running core, and nothing to keep in sync with power/eject handling
 | RetroVR | RomM | How |
 |---|---|---|
 | cartridge `save_id` | `slot` | used verbatim, so a round trip is stable and idempotent |
+| memory card | `slot` | `"card:<card_id>"` — the file is already per-game, so it is one save per (card, ROM) pair |
 | core name | `emulator` | e.g. `mgba` |
 | ROM | `rom_id` | `gamelist.json` `game_id` `"romm:<id>"`; falls back to `RommClient.rom_by_hash(md5)` and caches the result |
 
