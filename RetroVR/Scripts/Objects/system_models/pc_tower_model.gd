@@ -21,7 +21,11 @@ extends RetroSystemModel
 
 
 ## How far the tray travels out of the bay, along the tower's local +Z (the front).
-@export var tray_travel: float = 0.135
+##
+## 145 mm, not 135: at 135 the disc's REAR edge still sat 15 mm inside the case
+## front once the tray was out, so a disc laid on the tray clipped through the
+## bezel. It now clears by 9.5 mm.
+@export var tray_travel: float = 0.145
 @export var tray_time: float = 0.9
 
 @onready var _tray_pivot: Node3D = $TrayPivot

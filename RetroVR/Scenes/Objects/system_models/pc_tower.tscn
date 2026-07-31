@@ -12,19 +12,26 @@ size = Vector3(0.19, 0.42, 0.44)
 [sub_resource type="BoxMesh" id="Mesh_bezel"]
 size = Vector3(0.192, 0.42, 0.012)
 
+; 136 mm slit — a 5.25 in bay has to swallow a 130 mm tray. Was 116 mm, narrower
+; than the 120 mm disc it is supposed to pass.
 [sub_resource type="BoxMesh" id="Mesh_bay"]
-size = Vector3(0.116, 0.035, 0.008)
+size = Vector3(0.136, 0.035, 0.008)
 
 [sub_resource type="BoxMesh" id="Mesh_floppy"]
 size = Vector3(0.104, 0.012, 0.008)
 
-; The tray: a thin shelf with a recessed disc well, 12 cm disc plus clearance.
+; The tray, sized against the 120 mm disc it carries: 5 mm margin at the sides,
+; 7 mm front and back. It used to be 112 x 160 — NARROWER than the disc, so the
+; disc overhung the shelf by 4 mm a side, and 40 mm longer than it, which is the
+; gap that showed between the disc edge and the tray edge.
 [sub_resource type="BoxMesh" id="Mesh_tray"]
-size = Vector3(0.112, 0.007, 0.16)
+size = Vector3(0.130, 0.007, 0.134)
 
+; 124 mm well: 2 mm clearance round the disc. At 108 mm the disc overhung its own
+; recess by 6 mm a side and sat on the rim rather than in it.
 [sub_resource type="CylinderMesh" id="Mesh_well"]
-top_radius = 0.054
-bottom_radius = 0.054
+top_radius = 0.062
+bottom_radius = 0.062
 height = 0.004
 
 [sub_resource type="CylinderMesh" id="Mesh_spindle"]
@@ -125,9 +132,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.064, 0.331, 0.234)
 ; --- the sliding tray --------------------------------------------------------
 ; TrayPivot is what pc_tower_model.gd translates along +Z, and what RetroSystem
 ; reparents a seated disc to, so the disc rides out of the bay with it. At rest the
-; tray is INSIDE the case; only its front lip shows in the bay slot.
+; tray is INSIDE the case; only its front lip shows in the bay slot — z 0.159 puts
+; that lip 8.5 mm behind the slit face.
 [node name="TrayPivot" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.012, 0.335, 0.144)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.012, 0.335, 0.159)
 
 [node name="Shelf" type="MeshInstance3D" parent="TrayPivot"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.018, 0)
