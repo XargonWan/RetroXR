@@ -51,8 +51,11 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; plane, so it has to track the tube or the cord floats; 0.0055 leaves the same
 ; 1.35 mm resting gap the controller cable uses.
 ;
-; end_stiff_segments counts SEGMENTS, so the strain-relief boot is 2 x 30 mm =
-; 60 mm — a moulded boot on a plug this size, not a rod. bend_stiffness then has
+; end_stiff_segments counts SEGMENTS, so the boot constraint spans 2 x 30 mm,
+; but end_stiffness decides how much of that reads as held. 0.45 tapers it to
+; about one segment straight out of the plug, ~30 mm, or 3.6x the 8.3 mm OD —
+; a moulded strain relief rather than a rod. Values near 0.8 hold the full
+; 60 mm dead straight, which reads as wired in place. bend_stiffness then has
 ; to carry the curve past it: at 0.05 the body is string, so every degree of a
 ; 90 deg pull collects into one corner where the boot's taper ends and the
 ; minimum radius lands at 27 mm, under what an 8.3 mm jacket can take (4-6x OD).
@@ -81,5 +84,5 @@ surface_collision_mask = 7
 collision_radius = 0.0055
 self_collision = true
 end_align_stiffness = 0.7
-end_stiffness = 0.8
+end_stiffness = 0.45
 end_stiff_segments = 2

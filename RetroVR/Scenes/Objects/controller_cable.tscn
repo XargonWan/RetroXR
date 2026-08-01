@@ -65,10 +65,13 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; leaving it at the class default 0.008 would float a 4.5 mm cable 5.75 mm clear
 ; of every desk and floor it lies on.
 ;
-; Same strain-relief reasoning as cable.tscn, scaled to a thinner cord: 2
-; segments of boot is 72 mm here (segment_length 0.036), and bend_stiffness sits
-; below the A/V lead's 0.2 because a 4.5 mm cord really does take a tighter bend
-; radius before it kinks.
+; Same strain-relief reasoning as cable.tscn, scaled to a thinner cord. The boot
+; constraint spans 2 segments (72 mm here, segment_length 0.036) but end_stiffness
+; 0.3 tapers it to about one segment held straight, ~36 mm. It is lower than the
+; A/V lead's 0.45 because this cord is half the diameter and holds a given
+; stiffness over a longer run: at 0.45 it kept both segments straight. Likewise
+; bend_stiffness sits below the A/V lead's 0.2, because a 4.5 mm cord really does
+; take a tighter bend radius before it kinks.
 ;
 ; 50 x 36 mm = 1.80 m, matching an SNES/N64-era controller cord (the NES ran
 ; longer still at ~2.4 m). Same trade as cable.tscn — the count carries the
@@ -88,5 +91,5 @@ surface_collision_mask = 7
 collision_radius = 0.0036
 self_collision = true
 end_align_stiffness = 0.7
-end_stiffness = 0.8
+end_stiffness = 0.3
 end_stiff_segments = 2
