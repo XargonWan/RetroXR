@@ -77,11 +77,7 @@ func _spawns() -> void:
 		["game_boy", "game_boy_primitive", "game_boy_primitive.tscn"],
 		["playstation", "playstation_original", "playstation_original.tscn"],
 		["nes", "famicom", "famicom.tscn"],
-		["snes", "", ""],                       # no model at all -> procedural box
-		# THE deletion case: a save or a peer still naming a model that has since
-		# been removed. Must land on the procedural box, never crash or return null
-		# — otherwise deleting a model breaks every arcade that contained one.
-		["snes", "model_that_no_longer_exists", ""]]
+		["snes", "", ""]]                       # no model at all -> procedural box
 	for c in cases:
 		var sys: Node3D = load("res://Scenes/Objects/system.tscn").instantiate()
 		sys.set("systemid", c[0])

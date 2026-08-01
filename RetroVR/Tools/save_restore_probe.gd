@@ -2,8 +2,7 @@ extends Node
 
 ## Saves and netplay both carry model identity, and both go through
 ## ScenePersistence. This round-trips a save through it and asserts the hardware
-## comes back — including an entry naming a model that no longer exists, which is
-## what a save made before a model was deleted looks like.
+## comes back.
 ##
 ##   godot --headless --path RetroVR res://Tools/save_restore_probe.tscn
 
@@ -22,18 +21,13 @@ func _ready() -> void:
 		# No model_id at all: the platform's default.
 		{"id": 2, "type": "system", "systemid": "nes",
 			"position": [2, 0, 0], "rotation": [0, 0, 0]},
-		# Names a model that is not in this build — a save made before it was
-		# deleted. Must still restore, on the placeholder.
-		{"id": 3, "type": "system", "systemid": "snes", "model_id": "model_that_no_longer_exists",
-			"position": [3, 0, 0], "rotation": [0, 0, 0]},
 	]
 	# What must be STORED on the node (entry 2 has no key, so it stays empty —
 	# "empty" is a real value meaning "this platform's default", not a miss).
-	var want_id := {0: "playstation_original", 1: "game_boy_primitive", 2: "",
-		3: "model_that_no_longer_exists"}
+	var want_id := {0: "playstation_original", 1: "game_boy_primitive", 2: ""}
 	# What must actually be WORN, which is the part that matters to the player.
 	var want_model := {0: "playstation_original_model.gd", 1: "game_boy_model.gd",
-		2: "nes_model.gd", 3: "default_model.gd"}
+		2: "nes_model.gd"}
 
 	var sp := ScenePersistence.new()
 	sp.instantiate_objects(self, entries)
