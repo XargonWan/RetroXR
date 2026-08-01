@@ -690,7 +690,7 @@ func _process_grab_resize(delta: float, stick_x: float) -> void:
 	var new_w := clampf(current_size.x + change * _SCREEN_ASPECT, _SIZE_MIN.x, _SIZE_MAX.x)
 	var new_h := new_w / _SCREEN_ASPECT
 	new_h = clampf(new_h, _SIZE_MIN.y, _SIZE_MAX.y)
-	_viewport_node.screen_size = Vector2(new_w, new_h)
+	CurvedPanel.set_screen_size(_viewport_node, Vector2(new_w, new_h))
 
 
 # ── Spawning ──────────────────────────────────────────────────────────────────

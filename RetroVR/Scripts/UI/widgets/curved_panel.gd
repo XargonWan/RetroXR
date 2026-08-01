@@ -267,6 +267,25 @@ func with_flat_geometry(mutate: Callable) -> void:
 	resync()
 
 
+## Resize a Viewport2DIn3D from outside, curved or not. Anything that assigns
+## screen_size must come through here or through with_flat_geometry on a panel it
+## already holds — a plain assignment throws the moment the panel is curved, and
+## the throw is silent until someone is actually dragging.
+static func set_screen_size(panel: Node3D, size: Vector2) -> void:
+	if panel == null:
+		return
+	# A rebuild re-cooks the trimesh, and a caller holding the stick against a
+	# clamp asks for the same size every frame.
+	var now: Variant = panel.get("screen_size")
+	if now is Vector2 and (now as Vector2).is_equal_approx(size):
+		return
+	var curve := panel.get_node_or_null("CurvedPanel") as CurvedPanel
+	if curve != null:
+		curve.with_flat_geometry(func() -> void: panel.set("screen_size", size))
+	else:
+		panel.set("screen_size", size)
+
+
 ## Re-read the panel's screen_size and rebuild. Needed after anything that goes
 ## through the addon's own screen_size setter, which replaces the arc mesh with a
 ## QuadMesh and the trimesh with a BoxShape as a side effect of its bookkeeping.
