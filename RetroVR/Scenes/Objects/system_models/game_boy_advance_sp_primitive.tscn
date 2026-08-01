@@ -12,13 +12,20 @@
 ; past straight as a real SP opens.
 ;
 ; 82 x 84.6 x 12 mm per half — the real shell's 24.3 mm closed depth, split.
+;
+; Control positions and cap sizes are the imported shell's, measured off it in the
+; model's own frame rather than eyeballed: the deck sits further back than it
+; looks, and a first pass had the pad and the A/B pair 1-2 cm toward the player.
+;
+; The hinge barrel spans the middle 52 mm, not the full width: L and R sit at the
+; back CORNERS, outboard of it, and a full-width barrel swallows them.
 
 [ext_resource type="Script" uid="uid://1mgrac1nixul" path="res://Scripts/Objects/system_models/game_boy_advance_sp_model.gd" id="1_model"]
 [ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="2_hinge"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="3_slider"]
 
 [sub_resource type="StandardMaterial3D" id="Mat_shell"]
-albedo_color = Color(0.58, 0.59, 0.63, 1)
+albedo_color = Color(0.13, 0.24, 0.55, 1)
 
 [sub_resource type="StandardMaterial3D" id="Mat_dark"]
 albedo_color = Color(0.09, 0.09, 0.11, 1)
@@ -44,7 +51,7 @@ size = Vector3(0.082, 0.012, 0.0846)
 [sub_resource type="CylinderMesh" id="CylinderMesh_barrel"]
 top_radius = 0.004
 bottom_radius = 0.004
-height = 0.082
+height = 0.052
 
 [sub_resource type="BoxMesh" id="BoxMesh_bezel"]
 size = Vector3(0.066, 0.0015, 0.046)
@@ -53,21 +60,28 @@ size = Vector3(0.066, 0.0015, 0.046)
 size = Vector2(0.055809394, 0.037206262)
 
 [sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
-size = Vector3(0.02, 0.004, 0.007)
+size = Vector3(0.0178, 0.002, 0.0062)
 
 [sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
-size = Vector3(0.007, 0.004, 0.02)
+size = Vector3(0.0062, 0.002, 0.0178)
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_face"]
-top_radius = 0.005
-bottom_radius = 0.005
-height = 0.004
+top_radius = 0.0039
+bottom_radius = 0.0039
+height = 0.002
 
-[sub_resource type="BoxMesh" id="BoxMesh_pill"]
-size = Vector3(0.008, 0.003, 0.0045)
+[sub_resource type="CylinderMesh" id="CylinderMesh_pill"]
+top_radius = 0.0027
+bottom_radius = 0.0027
+height = 0.0008
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_bright"]
+top_radius = 0.0024
+bottom_radius = 0.0024
+height = 0.0014
 
 [sub_resource type="BoxMesh" id="BoxMesh_shoulder"]
-size = Vector3(0.016, 0.005, 0.006)
+size = Vector3(0.011, 0.008, 0.01)
 
 [sub_resource type="BoxMesh" id="BoxMesh_slotmouth"]
 size = Vector3(0.058, 0.0075, 0.004)
@@ -138,43 +152,48 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.028, 0.004)
 visible = false
 
 [node name="DpadBar1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0.008, 0.012)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0207, 0.007, -0.0039)
 mesh = SubResource("BoxMesh_dpad_h")
 surface_material_override/0 = SubResource("Mat_button")
 
 [node name="DpadBar2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0.008, 0.012)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0207, 0.007, -0.0039)
 mesh = SubResource("BoxMesh_dpad_v")
 surface_material_override/0 = SubResource("Mat_button")
 
 [node name="FaceButton1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.032, 0.008, 0.006)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0267, 0.007, -0.0067)
 mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("Mat_face")
 
 [node name="FaceButton2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.022, 0.008, 0.016)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0131, 0.007, -0.002)
 mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("Mat_face")
 
 [node name="SelectButton" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0.0075, 0.031)
-mesh = SubResource("BoxMesh_pill")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0076, 0.0064, 0.0319)
+mesh = SubResource("CylinderMesh_pill")
 surface_material_override/0 = SubResource("Mat_button")
 
 [node name="StartButton" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, 0.0075, 0.031)
-mesh = SubResource("BoxMesh_pill")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0076, 0.0064, 0.0319)
+mesh = SubResource("CylinderMesh_pill")
 surface_material_override/0 = SubResource("Mat_button")
 
 [node name="ShoulderL" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0.003, -0.0433)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0359, -0.001, -0.0395)
 mesh = SubResource("BoxMesh_shoulder")
 surface_material_override/0 = SubResource("Mat_button")
 
 [node name="ShoulderR" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, 0.003, -0.0433)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0359, -0.001, -0.0395)
 mesh = SubResource("BoxMesh_shoulder")
+surface_material_override/0 = SubResource("Mat_button")
+
+[node name="BrightnessButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0067, -0.022)
+mesh = SubResource("CylinderMesh_bright")
 surface_material_override/0 = SubResource("Mat_button")
 
 [node name="CardSlotMouth" type="MeshInstance3D" parent="."]
@@ -183,7 +202,7 @@ mesh = SubResource("BoxMesh_slotmouth")
 surface_material_override/0 = SubResource("Mat_dark")
 
 [node name="VolumeSlider" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.041, 0, -0.019)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.041, 0, -0.0212)
 collision_layer = 1048577
 script = ExtResource("3_slider")
 axis_local = Vector3(0, 0, -1)
@@ -199,7 +218,7 @@ surface_material_override/0 = SubResource("Mat_knob")
 shape = SubResource("BoxShape3D_ctl")
 
 [node name="PowerSwitch" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.041, 0, 0.017)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.041, 0, 0.0167)
 collision_layer = 1048577
 script = ExtResource("3_slider")
 axis_local = Vector3(0, 0, -1)
