@@ -19,9 +19,15 @@ const COLOR_INACTIVE := Color(0.12, 0.12, 0.25)
 const COLOR_TEXT := Color(0.9, 0.9, 1.0)
 
 const FONT_SIZE := 32
-const HEIGHT := 76
+const HEIGHT := 56
 const SEPARATION := 10
-const PAD := 14
+const ROW_SEPARATION := 6
+## Padding is not square: the horizontal figure sets the width floor and so the
+## point at which the flow wraps, while the vertical one only adds height. The
+## 32 pt font is 45 px tall, so PAD_Y must stay under 5 for HEIGHT to be what
+## actually decides the row height rather than the stylebox.
+const PAD_X := 14
+const PAD_Y := 4
 
 var _tabs: TabContainer = null
 var _buttons: Array[Button] = []
@@ -47,7 +53,7 @@ static func wrap(tabs: TabContainer) -> VBoxContainer:
 func _build(tabs: TabContainer) -> void:
 	_tabs = tabs
 	add_theme_constant_override("h_separation", SEPARATION)
-	add_theme_constant_override("v_separation", SEPARATION)
+	add_theme_constant_override("v_separation", ROW_SEPARATION)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	for i in tabs.get_tab_count():
@@ -92,7 +98,7 @@ func _apply_min_width() -> void:
 	for t: String in _titles:
 		widest = maxf(widest, font.get_string_size(
 			t, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
-	var w := widest + PAD * 2.0 + 6.0
+	var w := widest + PAD_X * 2.0 + 6.0
 	for b: Button in _buttons:
 		b.custom_minimum_size = Vector2(w, HEIGHT)
 
@@ -104,6 +110,9 @@ func _refresh() -> void:
 		var s := StyleBoxFlat.new()
 		s.bg_color = COLOR_ACTIVE if i == _tabs.current_tab else COLOR_INACTIVE
 		s.set_corner_radius_all(6)
-		s.set_content_margin_all(PAD)
+		s.content_margin_left = PAD_X
+		s.content_margin_right = PAD_X
+		s.content_margin_top = PAD_Y
+		s.content_margin_bottom = PAD_Y
 		for state in ["normal", "hover", "pressed", "focus"]:
 			_buttons[i].add_theme_stylebox_override(state, s)
