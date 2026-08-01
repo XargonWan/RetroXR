@@ -22,7 +22,7 @@ func _ready() -> void:
 	add_to_group("cassette_player")
 
 
-## Front-loading tape bay via the shared MediaSlot (replaces the base plain-snap).
+## Front-loading tape bay via the shared MediaSlot.
 func _setup_loader() -> void:
 	_slot = MediaSlot.new()
 	_slot.host = self

@@ -194,23 +194,10 @@ func _end_scan_hold() -> void:
 
 # --- Media load/unload (called by the subclass's loader) ---
 
-## Install the physical media loader. Overridden per subclass (MediaSlot for the
-## cassette, MediaTray for the CD). Default: the legacy plain-snap deck — the media
-## snaps onto the $MediaSlot zone and is lifted straight back off.
+## Install the physical media loader — MediaSlot for the cassette, MediaTray for
+## the CD. Every deck supplies its own; there is no default.
 func _setup_loader() -> void:
-	_media_slot.has_picked_up.connect(_legacy_snap_loaded)
-	_media_slot.has_dropped.connect(_legacy_snap_unloaded)
-
-
-func _legacy_snap_loaded(media: Node3D) -> void:
-	add_collision_exception_with(media)
-	_media_loaded(media)
-
-
-func _legacy_snap_unloaded() -> void:
-	if _snapped_media:
-		remove_collision_exception_with(_snapped_media)
-	_media_unloaded()
+	pass
 
 
 ## Media accepted into the deck (loader owns the physical ride + collision). Reads
@@ -253,11 +240,10 @@ func get_snapped_media() -> Node3D:
 	return _snapped_media
 
 
-## Seat a media item programmatically (event / save restore). Overridden per
-## subclass to seat it through that deck's loader (MediaSlot / MediaTray). Default:
-## snap it onto the legacy zone.
-func restore_media(media: Node3D) -> void:
-	_media_slot.pick_up_object(media)
+## Seat a media item programmatically (event / save restore). Each deck seats it
+## through its own loader (MediaSlot / MediaTray).
+func restore_media(_media: Node3D) -> void:
+	pass
 
 
 # --- Transport (front-panel buttons + remote entry points) ---
