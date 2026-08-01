@@ -231,7 +231,10 @@ func _build_station(systemid: String, variant: String, plaque: String,
 	var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 	sys.name = "Sys_%s" % name_stem
 	sys.systemid = systemid
-	sys.model_variant = RetroSystemModel.PRIMITIVE_VARIANT if SPAWN_PRIMITIVES else variant
+	# store_safe_id is "the cheapest row this platform has" — the primitive model
+	# where one exists, else the procedural box. It keeps meaning that after the
+	# imported rows are deleted, which a hardcoded id would not.
+	sys.model_id = SystemModelRegistry.store_safe_id(systemid) if SPAWN_PRIMITIVES 		else SystemModelRegistry.migrate_legacy(systemid, variant)
 	sys.system_label = plaque
 	# Handhelds default their video out OFF and read this save field for the
 	# remembered choice; consoles ignore it (their cable is always live).

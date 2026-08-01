@@ -6,12 +6,6 @@
 class_name RetroSystemModel
 extends Node3D
 
-## model_variant value that selects the store-safe stand-in model instead of the
-## licensed one. It is its own row in the system's spawn-menu page and its own
-## scene — a model never probes for the detailed shell and falls back to a
-## stand-in, it IS one or the other from the moment it is spawned.
-const PRIMITIVE_VARIANT := "primitive"
-
 ## Cache for has_baked_shell(). Lazy rather than resolved in _ready(): subclasses
 ## ask this DURING their own _ready(), and not all of them chain to a base one.
 var _baked_shell: Node3D = null

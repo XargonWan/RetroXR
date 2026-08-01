@@ -1,9 +1,12 @@
 ## SystemModelRegistry — every hardware model RetroVR can wear, in one flat table.
 ##
 ## A model is a first-class thing with an id, not a "variant" of another model. Two
-## models for the same platform — a plain one and a detailed one — are two rows that
-## know nothing about each other, so either can be added or deleted without touching
-## the other. Deleting a model is deleting its row and its files.
+## models for the same platform — a primitive one and an imported one — are two rows
+## that know nothing about each other, so either can be added or deleted without
+## touching the other. Deleting a model is deleting its row and its files.
+##
+## "Primitive" here is only a NAME for a kind of model. It is not a mode, a flag, or
+## a branch: nothing anywhere asks "am I primitive?" to decide what to load.
 ##
 ## This replaced four dictionaries in system.gd with precedence rules between them
 ## (`_MODEL_SCENES`, `_MODEL_SCENE_VARIANTS`, `_MODEL_VARIANTS`, `_MODEL_SCRIPTS`),
@@ -58,13 +61,13 @@ const _ROWS: Dictionary = {
 	"atari_5200":           {"platform": "atari_5200", "label": "Atari 5200",
 		"scene": _SCENES + "atari_5200.tscn",
 		"requires": ["res://imported-assets/atari_5200.glb"]},
-	"genesis":              {"platform": "mega_drive", "label": "Sega Genesis",
+	"genesis":              {"platform": "mega_drive", "label": "Genesis",
 		"scene": _SCENES + "genesis.tscn",
 		"requires": ["res://imported-assets/sega_genesis.glb"]},
-	"megadrive":            {"platform": "mega_drive", "label": "Sega Mega Drive",
+	"megadrive":            {"platform": "mega_drive", "label": "Mega Drive",
 		"scene": _SCENES + "megadrive.tscn",
 		"requires": ["res://imported-assets/sega_megadrive.glb"]},
-	"sega_saturn":          {"platform": "sega_saturn", "label": "Sega Saturn",
+	"sega_saturn":          {"platform": "sega_saturn", "label": "Saturn",
 		"scene": _SCENES + "sega_saturn.tscn",
 		"requires": ["res://imported-assets/sega_saturn.glb"]},
 	"dreamcast":            {"platform": "dreamcast", "label": "Dreamcast",
@@ -79,7 +82,7 @@ const _ROWS: Dictionary = {
 	"ps2":                  {"platform": "playstation2", "label": "PlayStation 2 Slim",
 		"scene": _SCENES + "ps2.tscn",
 		"requires": ["res://imported-assets/ps2_slim.glb"]},
-	"ps2_silver":           {"platform": "playstation2", "label": "PlayStation 2 (Silver)",
+	"ps2_silver":           {"platform": "playstation2", "label": "PlayStation 2 Slim (Silver)",
 		"scene": _SCENES + "ps2_silver.tscn",
 		"requires": ["res://imported-assets/ps2_slim_silver.glb"]},
 	"n64":                  {"platform": "nintendo_64", "label": "Nintendo 64",
@@ -100,7 +103,7 @@ const _ROWS: Dictionary = {
 	"game_boy":             {"platform": "game_boy", "label": "Game Boy", "handheld": true,
 		"scene": _SCENES + "game_boy.tscn",
 		"requires": ["res://imported-assets/game_boy_dmg.glb"]},
-	"game_boy_primitive":   {"platform": "game_boy", "label": "Game Boy (plain)", "handheld": true,
+	"game_boy_primitive":   {"platform": "game_boy", "label": "Game Boy (primitive)", "handheld": true,
 		"scene": _SCENES + "game_boy_primitive.tscn"},
 	"game_boy_advance":     {"platform": "game_boy_advance", "label": "Game Boy Advance", "handheld": true,
 		"scene": _SCENES + "game_boy_advance.tscn",
@@ -108,32 +111,32 @@ const _ROWS: Dictionary = {
 	"game_boy_advance_sp":  {"platform": "game_boy_advance", "label": "Game Boy Advance SP", "handheld": true,
 		"scene": _SCENES + "game_boy_advance_sp.tscn",
 		"requires": ["res://imported-assets/game_boy_advance_sp_GameboyAdvanceSP_OFF_BaseColor.png"]},
-	"game_boy_advance_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance (plain)", "handheld": true,
+	"game_boy_advance_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance (primitive)", "handheld": true,
 		"scene": _SCENES + "game_boy_advance_primitive.tscn"},
-	"nds":                  {"platform": "nds", "label": "Nintendo DS", "handheld": true,
+	"nds":                  {"platform": "nds", "label": "DS Phat", "handheld": true,
 		"scene": _SCENES + "nds.tscn",
 		"requires": ["res://imported-assets/ds_phat_nds_diffuse.png"]},
-	"nds_lite":             {"platform": "nds", "label": "Nintendo DS Lite", "handheld": true,
+	"nds_lite":             {"platform": "nds", "label": "DS Lite", "handheld": true,
 		"scene": _SCENES + "nds_lite.tscn",
 		"requires": ["res://imported-assets/ds_lite.glb"]},
-	"nds_primitive":        {"platform": "nds", "label": "Nintendo DS (plain)", "handheld": true,
+	"nds_primitive":        {"platform": "nds", "label": "DS (primitive)", "handheld": true,
 		"scene": _SCENES + "nds_primitive.tscn"},
-	"n3ds":                 {"platform": "3ds", "label": "New Nintendo 3DS XL", "handheld": true,
+	"n3ds":                 {"platform": "3ds", "label": "New 3DS XL", "handheld": true,
 		"scene": _SCENES + "n3ds.tscn",
 		"requires": ["res://imported-assets/new_3ds_xl_n_new_3ds_xl.png"]},
-	"n3ds_primitive":       {"platform": "3ds", "label": "Nintendo 3DS (plain)", "handheld": true,
+	"n3ds_primitive":       {"platform": "3ds", "label": "3DS (primitive)", "handheld": true,
 		"scene": _SCENES + "n3ds_primitive.tscn"},
 	"psp":                  {"platform": "playstation_portable", "label": "PSP-1000", "handheld": true,
 		"scene": _SCENES + "psp.tscn",
 		"requires": ["res://imported-assets/psp_1000_psp_1.png"]},
-	"psp_primitive":        {"platform": "playstation_portable", "label": "PSP (plain)", "handheld": true,
+	"psp_primitive":        {"platform": "playstation_portable", "label": "PSP (primitive)", "handheld": true,
 		"scene": _SCENES + "psp_primitive.tscn"},
-	"virtual_boy":          {"platform": "virtual_boy", "label": "Virtual Boy", "handheld": true,
+	"virtual_boy":          {"platform": "virtual_boy", "label": "Virtual Boy",
 		"scene": _SCENES + "virtual_boy.tscn",
 		"requires": ["res://imported-assets/virtual_boy.glb"]},
-	"virtual_boy_primitive": {"platform": "virtual_boy", "label": "Virtual Boy (plain)", "handheld": true,
+	"virtual_boy_primitive": {"platform": "virtual_boy", "label": "Virtual Boy (primitive)",
 		"scene": _SCENES + "virtual_boy_primitive.tscn"},
-	# Plain models that are the only model for their platform — nothing imported.
+	# Primitive models that are the only model for their platform — nothing imported.
 	"atari_lynx":           {"platform": "atari_lynx", "label": "Atari Lynx", "handheld": true,
 		"scene": _SCENES + "atari_lynx.tscn"},
 	"wonderswan":           {"platform": "wonderswan", "label": "WonderSwan", "handheld": true,
@@ -280,6 +283,16 @@ static func has_plain_alternative(platform: String) -> bool:
 		if (_ROWS[id].get("requires", []) as Array).is_empty():
 			plain += 1
 	return total > 1 and plain > 0
+
+
+## The row for this platform that needs no imported assets, or the placeholder.
+## Survives deletion of the imported rows by construction.
+static func store_safe_id(platform: String) -> String:
+	for id: String in _ROWS:
+		var r: Dictionary = _ROWS[id]
+		if r.get("platform", "") == platform and (r.get("requires", []) as Array).is_empty():
+			return id
+	return PLACEHOLDER_ID
 
 
 static func all_ids() -> Array:

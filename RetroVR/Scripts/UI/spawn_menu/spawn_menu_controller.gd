@@ -798,17 +798,22 @@ func _place_spawned(obj: Node3D, _type: String) -> void:
 
 func _on_spawn_requested(type: String) -> void:
 	var obj: Node3D
-	# Variant token "system:<systemid>:<variant>" (from SpawnCatalog) — checked
-	# BEFORE the match below, since `match` only does literal string equality and
-	# would never hit a "system" case against a string that starts with "system:".
-	# It silently fell to the `_:` default, spawning the default model with the
-	# whole token as a garbage systemid (e.g. "Mega Drive", "DS Lite" and
-	# "Console (Original)" all landed on their default shell instead of the variant).
-	if type.begins_with("system:"):
+	# Model token "model:<systemid>:<model_id>" (from SpawnCatalog) — checked BEFORE
+	# the match below, since `match` only does literal string equality and would
+	# never hit a case against a string that merely starts with "model:". The
+	# predecessor of this branch silently fell to the `_:` default, spawning the
+	# default model with the whole token as a garbage systemid (e.g. "Mega Drive",
+	# "DS Lite" and "Console (Original)" all landed on their default shell).
+	if type.begins_with("model:"):
 		var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 		var parts := type.split(":")
-		sys.systemid = parts[1] if parts.size() > 1 else ""
-		sys.model_variant = parts[2] if parts.size() > 2 else ""
+		var model_id: String = parts[2] if parts.size() > 2 else ""
+		# The row is the authority on which platform it belongs to, so the model and
+		# the core cannot disagree. Only the placeholder — which belongs to no
+		# platform — falls back to the systemid carried in the token.
+		var platform := SystemModelRegistry.platform_of(model_id)
+		sys.systemid = platform if not platform.is_empty() else (parts[1] if parts.size() > 1 else "")
+		sys.model_id = model_id
 		_place_spawned(sys, type)
 		return
 	match type:
