@@ -254,6 +254,16 @@ func _set_player_body_enabled(player: Node3D, value: bool) -> void:
 	if value:
 		body.velocity = Vector3.ZERO
 		body.ground_velocity = Vector3.ZERO
+		# The head-distance fade is a countdown that the body ticks down itself,
+		# so switching the body off froze it mid-count. Left alone it is re-applied
+		# the instant the body wakes in the new room: you see the room, and then it
+		# goes black for whatever the stale count had left — and the count has no
+		# upper bound, so leaning on a cabinet for five seconds before switching
+		# rooms buys five seconds of black. Whether the new room's geometry
+		# deserves a fade is decided from scratch on the next tick anyway.
+		body._fade_value = 0.0
+		if body._fade != null:
+			body._fade.set_fade_level(body, Color(0, 0, 0, 0))
 	body.enabled = value
 
 
