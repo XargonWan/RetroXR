@@ -68,8 +68,15 @@ void MetaXRAudioServer::EnsureInitialised()
 
 bool MetaXRAudioServer::IsAvailable()
 {
+    if (!m_enabled)
+        return false;
     EnsureInitialised();
     return m_available;
+}
+
+void MetaXRAudioServer::SetEnabled(bool enabled)
+{
+    m_enabled = enabled;
 }
 
 godot::String MetaXRAudioServer::GetVersion()
@@ -696,6 +703,8 @@ void MetaXRAudioServer::_bind_methods()
     ClassDB::bind_method(D_METHOD("voice_frames_available", "id"), &MetaXRAudioServer::VoiceFramesAvailable);
     ClassDB::bind_method(D_METHOD("voice_space", "id"), &MetaXRAudioServer::VoiceSpace);
     ClassDB::bind_method(D_METHOD("voice_frames_wanted", "id"), &MetaXRAudioServer::VoiceFramesWanted);
+    ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &MetaXRAudioServer::SetEnabled);
+    ClassDB::bind_method(D_METHOD("is_enabled"), &MetaXRAudioServer::IsEnabled);
     ClassDB::bind_method(D_METHOD("set_voice_pose", "id", "position", "forward", "up"), &MetaXRAudioServer::SetVoicePose);
     ClassDB::bind_method(D_METHOD("set_voice_directivity", "id", "intensity"), &MetaXRAudioServer::SetVoiceDirectivity);
     ClassDB::bind_method(D_METHOD("push_voice_frames", "id", "frames"), &MetaXRAudioServer::PushVoiceFrames);

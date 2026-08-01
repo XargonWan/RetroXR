@@ -16,7 +16,7 @@ int32_t MetaXRAudioPlayback::_mix(AudioFrame* p_buffer, float /*p_rate_scale*/, 
         return 0;
 
     MetaXRAudioServer* server = MetaXRAudioServer::GetSingleton();
-    if (server == nullptr || !server->IsAvailable())
+    if (server == nullptr || !server->IsRunning())
     {
         std::memset(p_buffer, 0, sizeof(AudioFrame) * static_cast<size_t>(p_frames));
         return p_frames;

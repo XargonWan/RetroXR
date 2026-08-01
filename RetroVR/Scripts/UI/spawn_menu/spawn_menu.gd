@@ -3227,6 +3227,35 @@ func _build_options_view() -> Control:
 
 	vbox.add_child(HSeparator.new())
 
+	# Spatial audio backend. Desktop only: in a headset the SDK's binaural
+	# rendering is simply right, and offering the swap there would only be a way
+	# to make it worse. On a desk it is a real choice -- over speakers the HRTF
+	# fights the room, and a surround rig gets no centre channel from a renderer
+	# that produces two channels by design.
+	if QualityManager.is_desktop():
+		var spatial_row := HBoxContainer.new()
+		spatial_row.add_theme_constant_override("separation", 10)
+		spatial_row.custom_minimum_size = Vector2(0, 68)
+		vbox.add_child(spatial_row)
+
+		var spatial_lbl := Label.new()
+		spatial_lbl.text = "Meta XR Spatial Audio"
+		spatial_lbl.add_theme_font_size_override("font_size", 22)
+		spatial_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+		spatial_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spatial_row.add_child(spatial_lbl)
+
+		# Applied straight away for everything in the room. A system that is
+		# already switched on keeps the backend it booted with; see
+		# SpatialAudioListener.set_sdk_enabled.
+		spatial_row.add_child(_make_toggle(AppPrefs.spatial_audio_sdk, func(on: bool) -> void:
+			AppPrefs.spatial_audio_sdk = on
+			AppPrefs.save_prefs()
+			SpatialAudioListener.set_sdk_enabled(on)
+		))
+
+		vbox.add_child(HSeparator.new())
+
 	# Ray Gun crosshair option
 	var xhair_row := HBoxContainer.new()
 	xhair_row.add_theme_constant_override("separation", 10)

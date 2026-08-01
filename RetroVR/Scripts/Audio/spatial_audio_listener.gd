@@ -22,6 +22,24 @@ func get_listener_position() -> Vector3:
 	return _listener_pos
 
 
+## Switch the whole application between Meta XR Audio and Godot's own panning.
+##
+## Everything already in the room rebuilds at once. A RUNNING EMULATOR does not:
+## its voices belong to the libretro audio handler, which chooses a backend when
+## the core boots, so a system already switched on keeps what it started with and
+## picks up the change the next time it is powered on. Nothing else has that
+## constraint.
+func set_sdk_enabled(enabled: bool) -> void:
+	if _mx == null:
+		return
+	_mx.set_enabled(enabled)
+	_active = _mx.is_available()
+	set_process(_active)
+	for e in get_tree().get_nodes_in_group(SpatialAudioEmitter.GROUP):
+		e.rebuild_backend()
+	print("[MetaXRAudio] spatialisation %s" % ("on" if _active else "off — Godot panning"))
+
+
 func _ready() -> void:
 	if not Engine.has_singleton("MetaXRAudio"):
 		set_process(false)

@@ -69,7 +69,18 @@ var _emit_up := Vector3.UP
 var _sent_directivity := -1.0
 
 
+## Every live emitter, so the desktop switch between the two backends can reach
+## the ones already in the room rather than only the next one built.
+const GROUP := "spatial_audio_emitter"
+
+
 func _ready() -> void:
+	add_to_group(GROUP)
+	_choose_backend()
+	set_process(true)
+
+
+func _choose_backend() -> void:
 	_use_sdk = _sdk_available()
 	if _use_sdk:
 		_voice_l = _mx.create_voice()
@@ -82,7 +93,32 @@ func _ready() -> void:
 			_listener = get_node_or_null("/root/SpatialAudioListener")
 	if not _use_sdk:
 		_setup_fallback()
-	set_process(true)
+
+
+## Drop the current backend and choose again. The backend is normally settled at
+## _ready and never revisited; this exists for the desktop switch between Meta XR
+## Audio and Godot's own panning, which has to take effect on sources that are
+## already playing. Whatever was queued is lost -- the two backends do not share
+## a buffer -- so expect a click, once, at the switch.
+func rebuild_backend() -> void:
+	var volume := _volume
+	if _use_sdk:
+		if _voice_l >= 0:
+			_mx.destroy_voice(_voice_l)
+		if _voice_r >= 0:
+			_mx.destroy_voice(_voice_r)
+		_voice_l = -1
+		_voice_r = -1
+	elif _player != null and is_instance_valid(_player):
+		_player.stop()
+		_player.queue_free()
+		_player = null
+		_playback = null
+	_sent_gain = -1.0
+	_sent_directivity = -1.0
+	_dist_factor = 1.0
+	_choose_backend()
+	set_volume(volume)
 
 
 func _exit_tree() -> void:

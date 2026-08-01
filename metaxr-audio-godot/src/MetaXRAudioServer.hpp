@@ -115,6 +115,24 @@ public:
     /// reading the mix rate from the constructor dereferences null and takes the
     /// whole engine down before any script runs.
     bool IsAvailable();
+
+    /// Whether anything CHOOSING a backend should pick this one. Turning it off
+    /// makes IsAvailable report false, so the next thing to choose takes Godot's
+    /// own panning instead -- which is what the desktop switch between the two
+    /// is built on.
+    ///
+    /// Deliberately not a shutdown. Voices already bound keep playing, because
+    /// the libretro audio handler owns its pair and picks its backend when a
+    /// core boots; pulling them mid-game would silence it. So a running emulator
+    /// keeps what it started with and everything else swaps over at once.
+    void SetEnabled(bool enabled);
+    bool IsEnabled() const { return m_enabled; }
+
+    /// Ignores the enable flag: the mixer has to keep serving voices that are
+    /// still playing through it. Only reached once initialisation has happened,
+    /// so unlike IsAvailable it does not trigger any.
+    bool IsRunning() const { return m_available; }
+
     godot::String GetVersion();
     godot::String GetLastError();
 
@@ -199,6 +217,7 @@ private:
     MetaXRAudio::ABI          m_abi;
     MetaXRAudio::mxra_context* m_ctx = nullptr;
     bool                      m_available = false;
+    bool                      m_enabled = true;
     bool                      m_init_done = false;
     godot::String             m_version;
     godot::String             m_last_error;

@@ -26,12 +26,31 @@ var show_hints:       bool = true
 ## past HeldHint.LEARNED_AFTER. A dictionary rather than a key per row so a new
 ## hint needs no change here.
 var hint_uses:        Dictionary = {}
+## Whether sound is spatialised by Meta XR Audio rather than Godot's own panning.
+## Desktop only, and only offered there: on the Quest the SDK is the entire point,
+## and its binaural rendering is right for a headset. On a desk it is not always —
+## over speakers the HRTF is working against the room, and a surround rig gets no
+## centre channel out of it, because the SDK renders two channels by design.
+var spatial_audio_sdk: bool = true
 
 
 func _ready() -> void:
 	_load_prefs()
 	ControllerModel.draw_hands = controller_hands
 	SystemFilter.enabled = system_filter
+	_apply_spatial_audio()
+
+
+## Push the audio backend choice before anything builds an emitter. Ignored on
+## Android, where the option is not offered and the pref could only be stale.
+func _apply_spatial_audio() -> void:
+	if OS.get_name() == "Android":
+		return
+	var listener := get_node_or_null("/root/SpatialAudioListener")
+	if listener != null:
+		listener.set_sdk_enabled(spatial_audio_sdk)
+	elif Engine.has_singleton("MetaXRAudio"):
+		Engine.get_singleton("MetaXRAudio").call("set_enabled", spatial_audio_sdk)
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -55,6 +74,7 @@ func _load_prefs() -> void:
 	menu_curved      = _prefs_bool(data, "menu_curved",      menu_curved)
 	show_hints       = _prefs_bool(data, "show_hints",       show_hints)
 	hint_uses        = _prefs_dict(data, "hint_uses",        hint_uses)
+	spatial_audio_sdk = _prefs_bool(data, "spatial_audio_sdk", spatial_audio_sdk)
 
 
 func save_prefs() -> void:
@@ -71,6 +91,7 @@ func save_prefs() -> void:
 		"menu_curved":      menu_curved,
 		"show_hints":       show_hints,
 		"hint_uses":        hint_uses,
+		"spatial_audio_sdk": spatial_audio_sdk,
 	}, "\t"))
 	file.close()
 
