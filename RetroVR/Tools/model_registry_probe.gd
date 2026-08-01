@@ -11,6 +11,7 @@ func _ready() -> void:
 	get_tree().create_timer(120.0).timeout.connect(func(): get_tree().quit(1))
 	get_tree().current_scene = self
 	_well_formed()
+	_placeholder_is_honoured()
 	_invariant()
 	await _spawns()
 	print("[reg] %s" % ("ALL CHECKS PASSED" if _fail == 0 else "%d FAILURE(S)" % _fail))
@@ -47,6 +48,20 @@ func _well_formed() -> void:
 			if not ResourceLoader.exists(p):
 				_bad("%s requires missing asset: %s" % [id, p])
 	print("[reg] well-formed: %d rows" % n)
+
+
+## Asking for the placeholder by name must GIVE the placeholder, on every platform
+## — including ones that have real models. Getting this wrong silently served the
+## imported model to the hallway and to the menu's "Primitive System" row.
+func _placeholder_is_honoured() -> void:
+	var checked := 0
+	for id: String in SystemModelRegistry.all_ids():
+		var p: String = SystemModelRegistry.platform_of(id)
+		var row := SystemModelRegistry.resolve(SystemModelRegistry.PLACEHOLDER_ID, p)
+		if row.get("id", "") != SystemModelRegistry.PLACEHOLDER_ID:
+			_bad("placeholder on '%s' resolved to '%s'" % [p, row.get("id", "")])
+		checked += 1
+	print("[reg] placeholder honoured on %d platforms" % checked)
 
 
 ## Every platform must yield at least one spawnable row — asserted twice, the
