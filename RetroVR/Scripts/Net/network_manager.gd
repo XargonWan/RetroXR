@@ -14,7 +14,11 @@ extends Node
 
 const DEFAULT_PORT := 42777
 const MAX_PLAYERS := 8
-const PROTOCOL_VERSION := 1
+## 2: systems are replicated by model_id rather than by a (systemid, variant)
+## pair. A v1 peer sends no model_id, so a v2 host would silently give it default
+## hardware at the right position — visual divergence with no error, which is a
+## worse outcome than being turned away at the door.
+const PROTOCOL_VERSION := 2
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels

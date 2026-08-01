@@ -85,7 +85,7 @@ func _legacy() -> void:
 	print("[reg] legacy: %d pairs map to live rows" % pairs.size())
 
 
-## Real spawns through RetroSystem, driven the way old callers still drive it.
+## Real spawns through RetroSystem, driven the way a legacy save is restored.
 func _spawns() -> void:
 	var cases := [["game_boy", "", "game_boy.tscn"],
 		["game_boy", "primitive", "game_boy_primitive.tscn"],
@@ -96,7 +96,10 @@ func _spawns() -> void:
 	for c in cases:
 		var sys: Node3D = load("res://Scenes/Objects/system.tscn").instantiate()
 		sys.set("systemid", c[0])
-		sys.set("model_variant", c[1])
+		# Driven the way ScenePersistence drives a legacy save: translate the old
+		# (systemid, variant) pair to an id, then set the id. model_variant no
+		# longer exists on RetroSystem.
+		sys.set("model_id", SystemModelRegistry.migrate_legacy(c[0], c[1]))
 		add_child(sys)
 		if sys is RigidBody3D:
 			(sys as RigidBody3D).freeze = true

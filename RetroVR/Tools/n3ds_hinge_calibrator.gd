@@ -66,7 +66,11 @@ var _glastop_mesh: MeshInstance3D
 
 
 func _ready() -> void:
-	var scene := load("res://Scenes/Objects/system_models/n3ds.tscn") as PackedScene
+	# Via the registry so this tool is not a reference that blocks deleting n3ds.
+	if not SystemModelRegistry.is_available("n3ds"):
+		push_warning("[calibrator] the n3ds model is not in this build")
+		return
+	var scene := load(SystemModelRegistry.resolve("n3ds", "").get("scene", "")) as PackedScene
 	_model = scene.instantiate()
 	add_child(_model)
 

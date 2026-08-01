@@ -34,6 +34,14 @@ func _window(mat: ShaderMaterial) -> Rect2:
 	return Rect2(r.x, r.y, r.z, r.w)
 
 
+## Look the model up by id and skip cleanly if this build has not got it.
+func _check_id(model_id: String, top: Rect2, bottom: Rect2) -> void:
+	if not SystemModelRegistry.is_available(model_id):
+		print("[probe] %s not in this build — skipped" % model_id)
+		return
+	await _check_model(SystemModelRegistry.resolve(model_id, "").get("scene", ""), top, bottom)
+
+
 func _check_model(path: String, want_top: Rect2, want_bottom: Rect2) -> void:
 	var nm := path.get_file()
 	var model: RetroSystemModelDualScreen = (load(path) as PackedScene).instantiate()
@@ -104,9 +112,11 @@ func _check_model(path: String, want_top: Rect2, want_bottom: Rect2) -> void:
 
 
 func _ready() -> void:
-	await _check_model("res://Scenes/Objects/system_models/nds_lite.tscn",
-		Rect2(0, 0, 1, 0.5), Rect2(0, 0.5, 1, 0.5))
-	await _check_model("res://Scenes/Objects/system_models/n3ds.tscn",
-		Rect2(0, 0, 0.5, 0.5), Rect2(0.05, 0.5, 0.4, 0.5))
+	# Resolved through the registry, not hardcoded: a hardcoded scene path is a
+	# reference outside the registry, and it made these the only two models that
+	# could not be deleted without editing another file. Skipped rather than failed
+	# when the model is not in this build.
+	await _check_id("nds_lite", Rect2(0, 0, 1, 0.5), Rect2(0, 0.5, 1, 0.5))
+	await _check_id("n3ds", Rect2(0, 0, 0.5, 0.5), Rect2(0.05, 0.5, 0.4, 0.5))
 	print("[probe] RESULT=%s" % ("FAIL" if _fail else "PASS"))
 	get_tree().quit(1 if _fail else 0)

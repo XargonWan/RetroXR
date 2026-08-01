@@ -374,7 +374,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"id": id,
 			"type": "system",
 			"systemid": sys.systemid,
-			"model_variant": sys.model_variant,
+			"model_id": sys.model_id,
 			"connected_tv_id": tv_id,
 			"snapped_cartridge_id": cart_id,
 			"snapped_memcard_id": memcard_id,
@@ -596,7 +596,16 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 		"system":
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 			sys.systemid = data.get("systemid", "")
-			sys.model_variant = data.get("model_variant", "")
+			# Presence of "model_id" is the version signal, deliberately — not the
+			# "version" field, which is written but never read, and which netplay
+			# entries do not carry at all (object_sync passes bare _serialize_node
+			# dicts with no envelope). Key-presence is the only scheme that works
+			# identically on disk and on the wire.
+			if data.has("model_id"):
+				sys.model_id = str(data["model_id"])
+			else:
+				sys.model_id = SystemModelRegistry.migrate_legacy(
+					str(data.get("systemid", "")), str(data.get("model_variant", "")))
 			if data.has("video_out"):
 				sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
 			sys._lid_angle_from_save = float(data.get("lid_angle", -1.0))

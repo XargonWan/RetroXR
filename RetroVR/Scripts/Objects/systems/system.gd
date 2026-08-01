@@ -33,13 +33,9 @@ static func has_primitive_model(systemid: String) -> bool:
 @export var systemid: String = ""
 
 ## Which model in SystemModelRegistry this system wears. Empty means "this
-## platform's default".
+## platform's default". Saves written before models had ids are translated on the
+## way in by ScenePersistence, so nothing here needs to know about variants.
 @export var model_id: String = ""
-
-## LEGACY. Superseded by model_id; read only when model_id is empty, so saves and
-## netplay entries written before models had ids still resolve. Producers are
-## migrated off it in a later phase, after which this goes.
-@export var model_variant: String = ""
 
 ## Spatial audio settings for the AudioStreamPlayer3D created at runtime.
 @export_group("Spatial Audio")
@@ -391,13 +387,9 @@ func _collect_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
 
 
 func _load_system_model() -> void:
-	# One lookup. `model_id` names a row in SystemModelRegistry; an empty one — an
-	# old save, a netplay peer, or a system spawned by systemid alone — is migrated
-	# from the legacy (systemid, model_variant) pair.
-	var id := model_id
-	if id.is_empty():
-		id = SystemModelRegistry.migrate_legacy(systemid, model_variant)
-	var row := SystemModelRegistry.resolve(id, systemid)
+	# One lookup. `model_id` names a row in SystemModelRegistry; empty means "this
+	# platform's default", which resolve() handles.
+	var row := SystemModelRegistry.resolve(model_id, systemid)
 	_model = SystemModelRegistry.instantiate(row)
 	# Never leave _model null. Every configure_*/on_*/play_* call below assumes it
 	# is valid once _ready() returns, and a null here does not fail at the point of
