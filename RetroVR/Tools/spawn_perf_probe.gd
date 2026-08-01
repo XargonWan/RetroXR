@@ -51,8 +51,82 @@ func _ready() -> void:
 	get_tree().quit(0)
 
 
+## Does warming a model somewhere OTHER than the main pass actually pre-compile
+## the pipelines the main pass needs? On Quest the main pass is MULTIVIEW stereo,
+## so a variant compiled for a plain SubViewport may not be the one it wants — in
+## which case the 2 s is paid again at real spawn time and pre-warming buys
+## nothing. Mode comes from user://warmmode.cfg so the same build can be run cold
+## and warm in FRESH processes; comparing within one process is useless because
+## the first spawn warms everything the second would have measured.
+const WARM_MODEL := "n3ds_primitive"
+const WARM_SYSTEM := "3ds"
+
+
+func _warm_mode() -> String:
+	var f := FileAccess.open("user://warmmode.cfg", FileAccess.READ)
+	if f == null:
+		return "none"
+	return f.get_as_text().strip_edges()
+
+
 func _run() -> void:
 	print("[perf] device=%s renderer=%s" % [OS.get_name(), RenderingServer.get_video_adapter_name()])
+	var mode := _warm_mode()
+	print("[perf] warm mode = %s" % mode)
+	if mode == "sweep":
+		await _full_sweep()
+		return
+	if mode != "none":
+		await _warm(mode)
+	# The measurement: the SAME model, now spawned into the real (stereo) view.
+	print("[perf] %-22s %-5s %8s %8s %8s %8s %9s" %
+		["case", "pass", "load", "inst", "ready", "draw", "TOTAL"])
+	for pass_i in 2:
+		await _one([WARM_MODEL, WARM_SYSTEM], pass_i)
+	print("[perf] DONE")
+
+
+## Instantiate the model and get it drawn once, then throw it away. "sv" draws it
+## in an offscreen SubViewport; "main" draws it in the real world behind the
+## camera, which is the fallback if the SubViewport variant does not transfer.
+func _warm(mode: String) -> void:
+	var t := _us()
+	var row := SystemModelRegistry._row(WARM_MODEL)
+	var model: RetroSystemModel = SystemModelRegistry.instantiate(row)
+	if model == null:
+		print("[perf] warm FAILED to instantiate")
+		return
+	var host: Node = self
+	var sv: SubViewport = null
+	if mode == "sv":
+		sv = SubViewport.new()
+		sv.size = Vector2i(256, 256)
+		sv.own_world_3d = true
+		sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(sv)
+		var wcam := Camera3D.new()
+		wcam.position = Vector3(0, 0.1, 0.35)
+		sv.add_child(wcam)
+		wcam.current = true
+		sv.add_child(DirectionalLight3D.new())
+		host = sv
+	host.add_child(model)
+	if mode == "main":
+		model.position = Vector3(0, 0, 4.0)      # behind the camera, still drawn
+	for i in 12:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	model.queue_free()
+	if sv != null:
+		await get_tree().process_frame
+		sv.queue_free()
+	for i in 5:
+		await get_tree().process_frame
+	print("[perf] warm(%s) took %.1f ms" % [mode, _ms(t)])
+
+
+## Every model, three passes each — the survey that found the first-spawn cliff.
+func _full_sweep() -> void:
 	print("[perf] %-22s %-5s %8s %8s %8s %8s %9s" %
 		["case", "pass", "load", "inst", "ready", "draw", "TOTAL"])
 	for c: Array in CASES:
