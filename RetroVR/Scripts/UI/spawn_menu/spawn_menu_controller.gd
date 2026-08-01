@@ -1015,12 +1015,11 @@ func _on_aim_crosshair_changed(enabled: bool) -> void:
 
 func _on_controller_hands_changed(enabled: bool) -> void:
 	ControllerModel.draw_hands = enabled
-	# Reflect the change on the rig controllers now: turning hands off brings the
-	# controller art straight back; turning them on re-hides it (and shows the
-	# device hand) the next time a peripheral is grabbed.
+	# Only the device hand follows this switch — the controller art fades on any
+	# grab either way, so forcing it visible here would pop it back mid-hold.
 	for ctrl in get_tree().root.find_children("*", "XRController3D", true, false):
 		if ctrl is ControllerModel:
-			ctrl.set_model_visible(true)
+			ctrl.refresh_device_hand()
 
 
 func _on_controller_bindings_changed() -> void:

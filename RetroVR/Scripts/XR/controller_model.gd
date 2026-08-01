@@ -2,8 +2,8 @@ class_name ControllerModel
 extends XRController3D
 
 ## Global toggle for the wrap-around hand shown on held peripherals (mouse, retro
-## controller, ray gun…). When false the device hand is never drawn and the
-## controller art stays visible while holding. Default off; flipped by the
+## controller, ray gun…). When false the device hand is never drawn; the
+## controller art fades out on a grab either way. Default off; flipped by the
 ## OPTIONS menu via SpawnMenuController. Static so the two rig controllers and
 ## the menu all share one value.
 static var draw_hands: bool = false
@@ -250,15 +250,16 @@ var _fade_mats: Array[StandardMaterial3D] = []
 
 
 ## Show or hide the loaded controller model (called by VRInputMapper). Kept as a
-## bool for its callers; it now sets a fade target rather than toggling.
+## bool for its callers; it sets a fade target rather than toggling.
 func set_model_visible(v: bool) -> void:
 	_fade_to(1.0 if v else 0.0)
 
 
+## The fade is independent of `draw_hands`: the art gets out of the way because
+## it would otherwise be drawn inside whatever is in your hand, which is true
+## whether or not a hand is drawn over the device.
 func _fade_to(target: float) -> void:
-	# With hands disabled the controller art always stays visible — a held
-	# peripheral shows the controller, never a hand — so ignore hide requests.
-	_fade_target = target if draw_hands else 1.0
+	_fade_target = target
 
 
 func _drive_fade(delta: float) -> void:
@@ -309,7 +310,18 @@ func _on_held_grabbed(what: Node) -> void:
 	# hand pose. A cartridge or a TV left the controller art sitting inside
 	# whatever you were holding.
 	_fade_to(0.0)
-	# Hands turned off in the options menu — keep the controller art, no hand.
+	_show_device_hand(what)
+
+
+## This controller released whatever it held — hide the hand, restore the art.
+func _on_held_dropped() -> void:
+	_hide_device_hand()
+	_fade_to(1.0)
+
+
+## Draw the device's own hand for this tracker, if it authors one and the option
+## is on. Only the hand answers to `draw_hands` — the fade above does not.
+func _show_device_hand(what: Node) -> void:
 	if not draw_hands:
 		return
 	if what == null or not what.is_in_group(HAND_HELD_GROUP):
@@ -322,9 +334,19 @@ func _on_held_grabbed(what: Node) -> void:
 	_shown_hand = hand
 
 
-## This controller released whatever it held — hide the hand, restore the art.
-func _on_held_dropped() -> void:
+func _hide_device_hand() -> void:
 	if is_instance_valid(_shown_hand):
 		_shown_hand.visible = false
 	_shown_hand = null
-	_fade_to(1.0)
+
+
+## Re-evaluate the device hand after the OPTIONS switch flipped mid-hold, so
+## turning hands off drops the hand off whatever is already held and turning
+## them on puts one there without waiting for a re-grab.
+func refresh_device_hand() -> void:
+	_hide_device_hand()
+	if _pickup == null or _pickup.is_ray_grabbing():
+		return
+	var held: Node3D = _pickup.picked_up_object
+	if is_instance_valid(held):
+		_show_device_hand(held)

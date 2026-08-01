@@ -25,7 +25,9 @@ func _run() -> void:
 	add_child(origin)
 	var ctrl := XRController3D.new()
 	ctrl.set_script(load("res://Scripts/XR/controller_model.gd"))
-	ctrl.set("draw_hands", true)
+	# The shipped default, and the case that matters: the fade must not depend on
+	# the OPTIONS hands switch. Forcing it on here hid the fade being gated on it.
+	ctrl.set("draw_hands", false)
 	ctrl.tracker = &"left_hand"
 	# The pickup has to exist BEFORE the controller enters the tree: its _ready is
 	# where controller_model looks the child up and connects the grab signals.
@@ -84,7 +86,10 @@ func _run() -> void:
 	# loads headless (no XR profile), so this checks the fade state machine and
 	# its wiring to the pickup signals, not the pixels.
 	# pick_up was called directly above, so FunctionPickup never announced it.
-	# Drive its signal: the wiring is what this is testing.
+	# Drive its signal: the wiring is what this is testing. picked_up_object has
+	# to be set the way _pick_up_object sets it — controller_model polls it to
+	# catch a held object freed under the hand, and reads null as "not holding".
+	pickup.set("picked_up_object", obj)
 	pickup.emit_signal("has_picked_up", obj)
 	await get_tree().process_frame
 	_check(float(ctrl.get("_fade_target")) < 0.01, "grabbing targets the art at 0 alpha")
@@ -93,6 +98,7 @@ func _run() -> void:
 	_check(float(ctrl.get("_fade")) < 0.01,
 		"and it gets there (%.2f)" % float(ctrl.get("_fade")))
 	obj.let_go(pickup, Vector3.ZERO, Vector3.ZERO)
+	pickup.set("picked_up_object", null)
 	pickup.emit_signal("has_dropped")
 	await get_tree().process_frame
 	_check(float(ctrl.get("_fade_target")) > 0.99, "releasing targets it back at 1")
