@@ -302,6 +302,12 @@ var _anim_dpad: Dictionary = {}          # {node, rest, pivot}
 var _anim_cstick: Dictionary = {}        # C-Stick nub: {node, rest, pivot}
 
 
+## Both shells spell the pill switches this way, so this claims them on both paths
+## and the shared stand-in pass skips them.
+func _own_animated_meshes() -> PackedStringArray:
+	return PackedStringArray(["StartButton", "SelectButton"])
+
+
 func _cache_anim_meshes() -> void:
 	_anim_cached = true
 	for map: Dictionary in [_FACE_MESH, _SHOULDER_MESH]:
@@ -337,6 +343,9 @@ func _cache_anim_meshes() -> void:
 ## btn = RETRO_JOYPAD bitmask; lstick/rstick are the analog values (−1..1) as sent
 ## to the core (y already screen-negated). Lerps the meshes toward that state.
 func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
+	# The stand-in shares this shell's names for everything except its pad, which
+	# it authors as the two-bar DpadBar1/DpadBar2 the base pass knows.
+	super.animate_controls(btn, lstick, rstick)
 	if not _anim_cached:
 		_cache_anim_meshes()
 

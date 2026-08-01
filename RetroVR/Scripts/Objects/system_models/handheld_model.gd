@@ -468,6 +468,137 @@ func on_power_off() -> void:
 	# Unlit LCD look returns automatically when the core releases the material.
 
 
+# --- stand-in control animation ----------------------------------------------
+#
+# The stand-in scenes share one control vocabulary — DpadBar1 + DpadBar2 for the
+# pad, then FaceButton1..4, StartButton, SelectButton and the shoulder pairs — so
+# one binding pass covers every one of them. The animation itself is
+# ControlAnimator, the same engine the pads in Scenes/Objects/controllers/ run
+# on: per-entry press direction and depth, rockers about a pivot, sticks that
+# tilt and click.
+#
+# A detailed shell names its meshes whatever its bundle called them and its own
+# model script binds those, so this pass finds nothing on the GLB path. Where a
+# subclass claims one of these names for its shell — the 3DS and PSP both call
+# their Start/Select caps exactly this — it says so in _own_animated_meshes() and
+# keeps them.
+#
+# Devices with more than a pad and buttons still need their own animate_controls
+# for the extras (the 3DS circle pad and C-stick, the PSP nub); those call super()
+# for this pass and add their own on top.
+
+## [mesh name, joypad bit, press direction]. Face buttons and the pill switches
+## sit on the +Y face and sink; the shoulders sit on the back (-Z) edge and push
+## in. Every stand-in authors its controls as direct children of the model, so
+## these directions are already in the meshes' parent frame.
+##
+## Travel is NOT in this table: it is per device, and a single figure either sinks
+## a short cap through the shell or leaves a tall one barely moving. See
+## _standin_press_depth().
+const _STANDIN_BUTTONS: Array = [
+	["FaceButton1",  ControllerBindings.JOYPAD_A,      Vector3(0, -1, 0)],
+	["FaceButton2",  ControllerBindings.JOYPAD_B,      Vector3(0, -1, 0)],
+	["FaceButton3",  ControllerBindings.JOYPAD_X,      Vector3(0, -1, 0)],
+	["FaceButton4",  ControllerBindings.JOYPAD_Y,      Vector3(0, -1, 0)],
+	["StartButton",  ControllerBindings.JOYPAD_START,  Vector3(0, -1, 0)],
+	["SelectButton", ControllerBindings.JOYPAD_SELECT, Vector3(0, -1, 0)],
+	["ShoulderL",    ControllerBindings.JOYPAD_L,      Vector3(0, 0, 1)],
+	["ShoulderR",    ControllerBindings.JOYPAD_R,      Vector3(0, 0, 1)],
+	["ShoulderL2",   ControllerBindings.JOYPAD_L2,     Vector3(0, 0, 1)],
+	["ShoulderR2",   ControllerBindings.JOYPAD_R2,     Vector3(0, 0, 1)],
+]
+## Fraction of a cap's proud height it sinks when pressed. Not all of it: a cap
+## driven flush reads as a hole, and the shells these sit in are 1-2 mm thick.
+const _STANDIN_PRESS_FRACTION := 0.55
+const _STANDIN_PRESS_MIN := 0.0004
+const _STANDIN_PRESS_MAX := 0.0025
+const _STANDIN_ANIM_W := 0.35
+
+var _standin: ControlAnimator = null
+
+
+## Mesh names this model's own animate_controls already drives, so the shared
+## pass leaves them alone rather than lerping the same node twice.
+func _own_animated_meshes() -> PackedStringArray:
+	return PackedStringArray()
+
+
+func _bind_standin_controls() -> void:
+	_standin = ControlAnimator.new()
+	# A stand-in authors UP as the pad's -Z arm, and a positive pitch about X
+	# LIFTS what lies on -Z — so the sign flips for UP to depress it. Same reason
+	# RetroPadController overrides it.
+	_standin.dpad_pitch_sign = -1.0
+	var claimed := _own_animated_meshes()
+	for spec: Array in _STANDIN_BUTTONS:
+		var mesh_name: String = spec[0]
+		if claimed.has(mesh_name):
+			continue
+		var m := find_child(mesh_name, true, false) as MeshInstance3D
+		if m == null:
+			continue
+		var dir: Vector3 = spec[2]
+		_standin.buttons.append({"node": m, "rest": m.transform, "bit": int(spec[1]),
+			"depth": _standin_press_depth(mesh_name, m, dir), "dir": dir})
+	# The pad is two bars crossed on one centre. The engine turns one entry, so the
+	# second bar rides dpad2 — which reads the same four bits by default and so
+	# moves with it as one piece.
+	var bar1 := find_child("DpadBar1", true, false) as MeshInstance3D
+	if bar1 != null:
+		_standin.dpad = _standin_rocker(bar1)
+	var bar2 := find_child("DpadBar2", true, false) as MeshInstance3D
+	if bar2 != null:
+		_standin.dpad2 = _standin_rocker(bar2)
+	# Analog nubs, for the stand-ins that grow one.
+	var sl := find_child("StickLeft", true, false) as MeshInstance3D
+	if sl != null:
+		_standin.stick_l = _standin_rocker(sl)
+	var sr := find_child("StickRight", true, false) as MeshInstance3D
+	if sr != null:
+		_standin.stick_r = _standin_rocker(sr)
+
+
+## How far a stand-in's cap travels when pressed, in metres.
+##
+## Measured off the scene rather than tabled: a cap sinks a fraction of the height
+## it actually stands proud of the face it sits in, so a 4 mm Game Boy button and
+## a 1.5 mm Pokemon mini one both read as a press instead of one of them punching
+## through its shell. A device that wants a specific figure names it in
+## _standin_press_travel().
+func _standin_press_depth(mesh_name: String, m: MeshInstance3D, dir: Vector3) -> float:
+	var named: Dictionary = _standin_press_travel()
+	if named.has(mesh_name):
+		return float(named[mesh_name])
+	# Outward normal of the face this control sits in, and where that face is: the
+	# body box is centred on the model origin, so its surface is half the body.
+	var n := -dir
+	var face: float = absf(body_size.dot(n)) * 0.5
+	var ab: AABB = m.transform * m.get_aabb()
+	var proud: float = maxf(ab.position.dot(n), ab.end.dot(n)) - face
+	if proud <= 0.0:
+		return _STANDIN_PRESS_MIN
+	return clampf(proud * _STANDIN_PRESS_FRACTION, _STANDIN_PRESS_MIN, _STANDIN_PRESS_MAX)
+
+
+## Per-device press travel in metres, by mesh name, for anything the measurement
+## above gets wrong. Empty means every control is measured.
+func _standin_press_travel() -> Dictionary:
+	return {}
+
+
+## A rocker turns about its own authored centre, not the model origin.
+func _standin_rocker(m: MeshInstance3D) -> Dictionary:
+	return {"node": m, "rest": m.transform, "pivot": m.transform.origin}
+
+
+## btn = RETRO_JOYPAD bitmask; lstick/rstick are the analog values (-1..1) as sent
+## to the core (y already screen-negated).
+func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
+	if _standin == null:
+		_bind_standin_controls()
+	_standin.animate(btn, lstick, rstick, _STANDIN_ANIM_W)
+
+
 ## Some converted shells ship emissiveFactor 1,1,1 with no emissive texture,
 ## which Godot takes literally — the Arctic White GBA glowed like a lightbulb.
 ## The live picture is drawn on our own quad, so nothing on the shell itself

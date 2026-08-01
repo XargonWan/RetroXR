@@ -23,17 +23,32 @@ const STICK_TILT_DEG: float = 16.0
 const PRESS_DIR: Vector3   = Vector3(0, -1, 0)   # "into the shell" in model space
 const ANIM_LERP: float     = 20.0
 
+# The animation engine, shared with the handheld models — a handheld's built-in
+# face is the same problem as a pad's. The bindings below are views onto it, so a
+# subclass's _cache_meshes() fills them exactly as it always did.
+var _anim := ControlAnimator.new()
+
 # Cached animated meshes. Each button entry: {node, rest, bit, depth}.
-var _buttons: Array[Dictionary] = []
+var _buttons: Array[Dictionary]:
+	get: return _anim.buttons
+	set(v): _anim.buttons = v
 # D-pad / sticks: {node, rest, pivot} (pivot in the mesh's parent space).
-var _dpad: Dictionary = {}
+var _dpad: Dictionary:
+	get: return _anim.dpad
+	set(v): _anim.dpad = v
 # A second rocker, for pads with two D-pads (the Virtual Boy). Same shape as
 # _dpad plus "bits" [up, down, left, right] and an optional "axis" ("left" /
 # "right") folding that analog stick in — a second D-pad has no RetroPad bits of
 # its own, so which ones it borrows is the core's choice.
-var _dpad2: Dictionary = {}
-var _stick_l: Dictionary = {}
-var _stick_r: Dictionary = {}
+var _dpad2: Dictionary:
+	get: return _anim.dpad2
+	set(v): _anim.dpad2 = v
+var _stick_l: Dictionary:
+	get: return _anim.stick_l
+	set(v): _anim.stick_l = v
+var _stick_r: Dictionary:
+	get: return _anim.stick_r
+	set(v): _anim.stick_r = v
 
 # Latest joypad state captured from _send_joypad; zeroed when no input this frame.
 var _cur_btn: int = 0
@@ -126,67 +141,6 @@ func _process(delta: float) -> void:
 
 
 func _animate(delta: float) -> void:
-	var w: float = clampf(ANIM_LERP * delta, 0.0, 1.0)
-
-	for e: Dictionary in _buttons:
-		var node: MeshInstance3D = e["node"]
-		var rest: Transform3D = e["rest"]
-		# "mask" lets one mesh answer to several buttons. Some pads mould their
-		# face buttons as a single piece — the Genesis pad's A, B and C are one
-		# mesh — so there is nothing to press individually. Defaults to just this
-		# entry's own bit.
-		var mask: int = int(e.get("mask", 1 << int(e["bit"])))
-		var pressed: float = 1.0 if (_cur_btn & mask) != 0 else 0.0
-		# Per-button press direction, defaulting to PRESS_DIR. Face buttons sink
-		# into the top surface, but a control mounted on another face travels
-		# into THAT face — a shoulder button on the back edge pressed along
-		# PRESS_DIR just slides down the outside of the shell.
-		var dir: Vector3 = e.get("dir", PRESS_DIR)
-		var target: Transform3D = Transform3D(rest.basis, rest.origin + dir * (float(e["depth"]) * pressed))
-		node.transform = node.transform.interpolate_with(target, w)
-
-	if not _dpad.is_empty():
-		_rock(_dpad, w)
-	if not _dpad2.is_empty():
-		_rock(_dpad2, w)
-
-	if not _stick_l.is_empty():
-		var click_l: float = 1.0 if (_cur_btn & (1 << ControllerBindings.JOYPAD_L3)) != 0 else 0.0
-		_apply_pivot(_stick_l, _stick_basis(_cur_lstick), click_l, w)
-	if not _stick_r.is_empty():
-		var click_r: float = 1.0 if (_cur_btn & (1 << ControllerBindings.JOYPAD_R3)) != 0 else 0.0
-		_apply_pivot(_stick_r, _stick_basis(_cur_rstick), click_r, w)
-
-
-# Rock one D-pad about its pivot from the four bits it answers to, plus the
-# analog stick named by "axis" if it has one.
-func _rock(entry: Dictionary, w: float) -> void:
-	var bits: Array = entry.get("bits", [ControllerBindings.JOYPAD_UP, ControllerBindings.JOYPAD_DOWN,
-		ControllerBindings.JOYPAD_LEFT, ControllerBindings.JOYPAD_RIGHT])
-	var pitch: float = float((_cur_btn >> int(bits[0])) & 1) - float((_cur_btn >> int(bits[1])) & 1)
-	var roll: float  = float((_cur_btn >> int(bits[2])) & 1) - float((_cur_btn >> int(bits[3])) & 1)
-	var axis: String = entry.get("axis", "")
-	if not axis.is_empty():
-		# Analog Y is positive DOWN and X positive RIGHT — the opposite sense to
-		# the up-minus-down / left-minus-right sums above.
-		var stick: Vector2 = _cur_rstick if axis == "right" else _cur_lstick
-		pitch = clampf(pitch - stick.y, -1.0, 1.0)
-		roll = clampf(roll - stick.x, -1.0, 1.0)
-	var tilt := _dpad_tilt_deg()
-	var r: Basis = Basis.from_euler(Vector3(deg_to_rad(pitch * tilt * _dpad_pitch_sign()), 0.0, deg_to_rad(roll * tilt)))
-	_apply_pivot(entry, r, 0.0, w)
-
-
-func _stick_basis(stick: Vector2) -> Basis:
-	return Basis.from_euler(Vector3(deg_to_rad(stick.y * STICK_TILT_DEG), 0.0, deg_to_rad(-stick.x * STICK_TILT_DEG)))
-
-
-# Rotate a mesh about a world-space pivot (in parent space), plus an optional
-# click push along PRESS_DIR, lerping from its current transform toward target.
-func _apply_pivot(entry: Dictionary, r: Basis, click: float, w: float) -> void:
-	var node: MeshInstance3D = entry["node"]
-	var rest: Transform3D = entry["rest"]
-	var pivot: Vector3 = entry["pivot"]
-	var about: Transform3D = Transform3D(r, pivot - r * pivot + PRESS_DIR * (STICK_CLICK * click))
-	var target: Transform3D = about * rest
-	node.transform = node.transform.interpolate_with(target, w)
+	_anim.dpad_tilt_deg = _dpad_tilt_deg()
+	_anim.dpad_pitch_sign = _dpad_pitch_sign()
+	_anim.animate(_cur_btn, _cur_lstick, _cur_rstick, clampf(ANIM_LERP * delta, 0.0, 1.0))

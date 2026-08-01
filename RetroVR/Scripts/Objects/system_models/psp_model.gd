@@ -67,6 +67,12 @@ func _on_shell_ready() -> void:
 	_configure_power_led()
 
 
+## Both shells spell the pill switches this way, so this claims them on both paths
+## and the shared stand-in pass skips them.
+func _own_animated_meshes() -> PackedStringArray:
+	return PackedStringArray(["StartButton", "SelectButton"])
+
+
 func _cache_anim_meshes() -> void:
 	if _anim_cached:
 		return
@@ -83,6 +89,12 @@ func _cache_anim_meshes() -> void:
 		if shell != null:
 			_press_dir = -_axis_normal(probe, shell)
 			_shell_up = shell.global_transform.basis.inverse() * Vector3.UP
+	elif _glb == null:
+		# The stand-in has no Shell to measure off and no lay-back to correct for:
+		# its controls are direct children of this model, lying flat with the
+		# screen up. The GLB-frame default pushes them out of the back edge.
+		_press_dir = Vector3.DOWN
+		_shell_up = Vector3.UP
 	for map: Dictionary in [_FACE_MESH, _SHOULDER_MESH]:
 		var depth: float = _FACE_PRESS if map == _FACE_MESH else _SHOULDER_PRESS
 		for bit: int in map:
@@ -101,7 +113,10 @@ func _cache_anim_meshes() -> void:
 
 ## btn = RETRO_JOYPAD bitmask; lstick/rstick are the analog values (−1..1) as sent
 ## to the core (y already screen-negated). Lerps the meshes toward that state.
-func animate_controls(btn: int, lstick: Vector2, _rstick: Vector2) -> void:
+func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
+	# The stand-in authors its face diamond and pad in the shared stand-in
+	# vocabulary, which the base pass drives; this shell's own names are below.
+	super.animate_controls(btn, lstick, rstick)
 	if not _anim_cached:
 		_cache_anim_meshes()
 

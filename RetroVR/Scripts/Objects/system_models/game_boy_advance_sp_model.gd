@@ -153,7 +153,12 @@ func _cache_anim_meshes() -> void:
 
 
 ## btn = RETRO_JOYPAD bitmask; the sticks are unused (the SP has no analog).
-func animate_controls(btn: int, _lstick: Vector2, _rstick: Vector2) -> void:
+##
+## The stand-in's controls are named for the shared stand-in vocabulary, which the
+## base pass drives; the names below are this GLB's own and appear in neither the
+## other model nor that pass.
+func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
+	super.animate_controls(btn, lstick, rstick)
 	if not _anim_cached:
 		_cache_anim_meshes()
 

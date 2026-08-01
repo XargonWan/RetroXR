@@ -211,6 +211,26 @@ var _raycast_frame: int = 0
 # sleeping rope won't wake it (anchors drive every real interaction here).
 const SLEEP_FRAMES := 30
 const SLEEP_POINT_EPS_SQ := 0.0015 * 0.0015   # per-tick particle movement²
+
+## Second, slower way to be finished: the rope is oscillating rather than
+## stopping, and getting nowhere.
+##
+## A segment resting near the reach of the rest-info sphere drops in and out of
+## detection between throttled passes, so its cached contact plane vanishes, the
+## segment falls for an interval, is re-detected, and is pushed back. That is a
+## stable cycle — measured at period 6 with a 10 mm snap, locked to
+## raycast_interval — and per-tick motion inside it never drops under
+## SLEEP_POINT_EPS_SQ, so the test above can never fire and the cable simulates
+## for ever while visibly jittering.
+##
+## The cycle's signature is that it goes nowhere: over a window, no particle ever
+## gets far from where it started. So track the furthest any particle strays from
+## a reference pose and sleep when the whole window fits inside a small envelope.
+## A rope genuinely still settling leaves it in a few ticks — even 1 mm a tick is
+## 90 mm over the window — so this only catches motion that is not progressing.
+const SLEEP_REF_FRAMES := 90
+const SLEEP_EXCURSION_EPS_SQ := 0.012 * 0.012
+
 const CABLE_SHADER := preload("res://Shaders/cable.gdshader")
 
 const WAKE_ANCHOR_EPS_SQ := 0.0005 * 0.0005   # anchor movement² that wakes
@@ -220,6 +240,11 @@ const WAKE_ANCHOR_EPS_SQ := 0.0005 * 0.0005   # anchor movement² that wakes
 const RENDER_FOLLOW_EPS_SQ := 0.0001 * 0.0001
 var _asleep: bool = false
 var _still_frames: int = 0
+## Reference pose for the excursion window, and the furthest any particle has
+## strayed from it since the window opened.
+var _sleep_ref: PackedVector3Array = []
+var _ref_frames: int = 0
+var _max_excursion_sq: float = 0.0
 var _sleep_anchor_start: Vector3 = Vector3.ZERO
 var _sleep_anchor_end: Vector3 = Vector3.ZERO
 # Set by every simulated tick; cleared by _process after re-meshing, so a
@@ -422,6 +447,28 @@ func set_rope_length(length: float) -> void:
 func wake() -> void:
 	_asleep = false
 	_still_frames = 0
+	_open_excursion_window()
+
+
+## Restart the excursion window from the current pose. Writes into the existing
+## buffer rather than duplicating: wake() reopens the window, and a pull cord
+## being yanked calls that every tick.
+func _open_excursion_window() -> void:
+	var n := _points.size()
+	if _sleep_ref.size() != n:
+		_sleep_ref.resize(n)
+	for i in n:
+		_sleep_ref[i] = _points[i]
+	_ref_frames = 0
+	_max_excursion_sq = 0.0
+
+
+## Park the rope. Implied velocities are zeroed so waking doesn't inherit stale
+## motion — and so a rope stopped mid-oscillation doesn't resume it.
+func _sleep_now(count: int) -> void:
+	_asleep = true
+	for i in count:
+		_prev_points[i] = _points[i]
 
 
 ## World point where the cable meets an anchor: its origin shifted by that
@@ -855,28 +902,40 @@ func _physics_process(delta: float) -> void:
 
 	# --- Sleep detection ---
 	# Still = every particle moved less than SLEEP_POINT_EPS_SQ this tick AND
-	# the anchors sit where we last saw them.
+	# the anchors sit where we last saw them. The same pass tracks how far the
+	# rope has strayed from the excursion window's reference pose, which is what
+	# catches a cable that oscillates instead of stopping (see SLEEP_REF_FRAMES).
 	var still := true
+	if _sleep_ref.size() != count:
+		_open_excursion_window()
 	for i in count:
 		if _points[i].distance_squared_to(_prev_points[i]) > SLEEP_POINT_EPS_SQ:
 			still = false
-			break
+		var e := _points[i].distance_squared_to(_sleep_ref[i])
+		if e > _max_excursion_sq:
+			_max_excursion_sq = e
 	var a_start := _anchor_point(start_node, start_anchor_offset, _sleep_anchor_start)
 	var a_end := _anchor_point(end_node, end_anchor_offset, _sleep_anchor_end)
-	if a_start.distance_squared_to(_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ \
-			or a_end.distance_squared_to(_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ:
+	var anchors_still := \
+		a_start.distance_squared_to(_sleep_anchor_start) <= WAKE_ANCHOR_EPS_SQ \
+		and a_end.distance_squared_to(_sleep_anchor_end) <= WAKE_ANCHOR_EPS_SQ
+	if not anchors_still:
 		still = false
 	_sleep_anchor_start = a_start
 	_sleep_anchor_end = a_end
 	if still:
 		_still_frames += 1
 		if _still_frames >= SLEEP_FRAMES:
-			_asleep = true
-			# Zero implied velocities so waking doesn't inherit stale motion.
-			for i in count:
-				_prev_points[i] = _points[i]
+			_sleep_now(count)
 	else:
 		_still_frames = 0
+
+	_ref_frames += 1
+	if _ref_frames >= SLEEP_REF_FRAMES:
+		if anchors_still and _max_excursion_sq < SLEEP_EXCURSION_EPS_SQ:
+			_sleep_now(count)
+		else:
+			_open_excursion_window()
 
 	# Last thing in the tick, after the anchors are pinned: roll the render
 	# history forward so _process has two states to interpolate between.
