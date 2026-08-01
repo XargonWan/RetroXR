@@ -49,6 +49,7 @@ var _shot := ""
 var _tick := 0
 var _settled_at := -1
 var _cpu_usec := 0
+var _mesh_usec := 0
 
 
 func _ready() -> void:
@@ -69,8 +70,7 @@ func _ready() -> void:
 		_build_rope(float(i) * ROPE_PITCH)
 	for r in _ropes:
 		r.set_physics_process(false)
-		if _nomesh:
-			r.set_process(false)
+		r.set_process(false)
 	print("[bench] ropes=%d warmup=%d measure=%d mode=%s%s" % [
 		_rope_count, _warmup_ticks, _measure_ticks,
 		"settle" if _settle else "awake", " nomesh" if _nomesh else ""])
@@ -130,18 +130,31 @@ func _physics_process(delta: float) -> void:
 		r._physics_process(delta)
 	var spent := Time.get_ticks_usec() - t0
 
+	# Tube re-mesh, timed apart from the solve: it is a per-RENDERED-frame cost
+	# rather than a per-tick one, but it is the same GDScript budget and it is
+	# worth knowing which of the two dominates a moving cable.
+	var t1 := Time.get_ticks_usec()
+	if not _nomesh:
+		for r in _ropes:
+			r._process(delta)
+	var mesh_spent := Time.get_ticks_usec() - t1
+
 	_tick += 1
 	if _tick <= _warmup_ticks:
 		return
 	_cpu_usec += spent
+	_mesh_usec += mesh_spent
 	if _settle and _settled_at < 0 and _awake() == 0:
 		_settled_at = _tick - _warmup_ticks
 	if _tick < _warmup_ticks + _measure_ticks:
 		return
 
-	print("[bench] ms_per_tick=%.3f us_per_rope_tick=%.1f" % [
+	print("[bench] solve: ms_per_tick=%.3f us_per_rope_tick=%.1f" % [
 		float(_cpu_usec) / float(_measure_ticks) / 1000.0,
 		float(_cpu_usec) / float(_measure_ticks) / float(_rope_count)])
+	print("[bench] remesh: ms_per_tick=%.3f us_per_rope_tick=%.1f" % [
+		float(_mesh_usec) / float(_measure_ticks) / 1000.0,
+		float(_mesh_usec) / float(_measure_ticks) / float(_rope_count)])
 	if _settle:
 		print("[bench] settled_at_tick=%d still_awake=%d" % [_settled_at, _awake()])
 	if _shot.is_empty():
