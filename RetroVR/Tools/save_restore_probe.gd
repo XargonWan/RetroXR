@@ -24,13 +24,13 @@ func _ready() -> void:
 			"position": [2, 0, 0], "rotation": [0, 0, 0]},
 		# Names a model that is not in this build — a save made before it was
 		# deleted. Must still restore, on the placeholder.
-		{"id": 3, "type": "system", "systemid": "snes", "model_id": "deleted_model",
+		{"id": 3, "type": "system", "systemid": "snes", "model_id": "model_that_no_longer_exists",
 			"position": [3, 0, 0], "rotation": [0, 0, 0]},
 	]
 	# What must be STORED on the node (entry 2 has no key, so it stays empty —
 	# "empty" is a real value meaning "this platform's default", not a miss).
 	var want_id := {0: "playstation_original", 1: "game_boy_primitive", 2: "",
-		3: "deleted_model"}
+		3: "model_that_no_longer_exists"}
 	# What must actually be WORN, which is the part that matters to the player.
 	var want_model := {0: "playstation_original_model.gd", 1: "game_boy_model.gd",
 		2: "nes_model.gd", 3: "default_model.gd"}
