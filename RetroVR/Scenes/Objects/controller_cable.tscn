@@ -1,7 +1,6 @@
-[gd_scene load_steps=10 format=3 uid="uid://controller_cable_001"]
+[gd_scene load_steps=9 format=3 uid="uid://controller_cable_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/cables/controller_plug.gd" id="1_plugscript"]
-[ext_resource type="Script" path="res://Scripts/Objects/cables/verlet_rope.gd" id="2_ropescript"]
 [ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 
@@ -76,8 +75,7 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; length so the millimetre tuning holds, at roughly double the solver cost
 ; (measured 0.41 -> 0.88 ms per cord per physics tick). The 1 mm change to
 ; segment_length is only there to land on exactly 1.80 m.
-[node name="VerletRope" type="MeshInstance3D" parent="."]
-script = ExtResource("2_ropescript")
+[node name="VerletRope" type="VerletRope" parent="."]
 segment_count = 50
 segment_length = 0.036
 constraint_iterations = 8

@@ -21,8 +21,8 @@
 ## decides the real frame cost. --nomesh stops the ropes re-meshing their tubes,
 ## leaving the solver on its own.
 ##
-## The bench takes the ropes off the engine's physics callback and steps them
-## itself inside a timer, so the number is CPU time actually spent in the solver.
+## The bench takes the ropes off the engine's callbacks and drives step() and
+## remesh() itself inside a timer, so the number is CPU time actually spent.
 ## Measuring elapsed wall time per tick instead does NOT work: the main loop
 ## paces fixed-step ticks in real time, so any version that keeps up reports
 ## exactly 1/physics_ticks_per_second and every change looks free.
@@ -127,7 +127,7 @@ func _physics_process(delta: float) -> void:
 
 	var t0 := Time.get_ticks_usec()
 	for r in _ropes:
-		r._physics_process(delta)
+		r.step(delta)
 	var spent := Time.get_ticks_usec() - t0
 
 	# Tube re-mesh, timed apart from the solve: it is a per-RENDERED-frame cost
@@ -136,7 +136,7 @@ func _physics_process(delta: float) -> void:
 	var t1 := Time.get_ticks_usec()
 	if not _nomesh:
 		for r in _ropes:
-			r._process(delta)
+			r.remesh()
 	var mesh_spent := Time.get_ticks_usec() - t1
 
 	_tick += 1
@@ -217,6 +217,6 @@ func _capture() -> void:
 func _awake() -> int:
 	var n := 0
 	for r in _ropes:
-		if not r._asleep:
+		if not r.is_sleeping():
 			n += 1
 	return n
