@@ -81,6 +81,14 @@ func _run() -> void:
 		return
 	if mode != "none":
 		await _warm(mode)
+	# Let the startup warm finish first. Without this the probe races it and times
+	# a half-warmed process — which is exactly what happened the first time.
+	var waited := 0
+	while not ModelWarmer.is_warmed() and waited < 900:
+		await get_tree().process_frame
+		waited += 1
+	print("[perf] startup warm complete = %s (waited %d frames)"
+		% [ModelWarmer.is_warmed(), waited])
 	# The measurement: the SAME model, now spawned into the real (stereo) view.
 	print("[perf] %-22s %-5s %8s %8s %8s %8s %9s" %
 		["case", "pass", "load", "inst", "ready", "draw", "TOTAL"])

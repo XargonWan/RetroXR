@@ -300,6 +300,24 @@ static func has_plain_alternative(platform: String) -> bool:
 	return total > 1 and plain > 0
 
 
+## A row by id, with "id" filled in. Empty for an unknown id.
+static func row_for(model_id: String) -> Dictionary:
+	return _row(model_id) if _ROWS.has(model_id) else {}
+
+
+## The models that carry no imported assets — the stand-ins.
+##
+## Worth naming because they are the cheap half by a wide margin. Measured on a
+## Quest 3: warming all thirteen costs ~1.1 s and almost no texture memory, where
+## warming the imported shells costs 31 s and 1.1 GiB. See ModelWarmer.
+static func stand_in_ids() -> Array:
+	var out: Array = []
+	for id: String in _ROWS:
+		if (_ROWS[id].get("requires", []) as Array).is_empty():
+			out.append(id)
+	return out
+
+
 static func all_ids() -> Array:
 	return _ROWS.keys()
 

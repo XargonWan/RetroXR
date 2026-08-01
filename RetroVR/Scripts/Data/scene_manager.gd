@@ -40,6 +40,7 @@ var _transitioning: bool = false
 
 
 func _ready() -> void:
+	_warm_models.call_deferred()
 	load_prefs()
 
 
@@ -241,3 +242,17 @@ func _settle_player_rig(player: Node3D) -> void:
 func _find_origin(player: Node3D) -> Node3D:
 	var found := player.find_children("*", "XROrigin3D", true, false)
 	return found[0] as Node3D if not found.is_empty() else null
+
+
+## Pay every stand-in model's first-spawn cost once, at startup, instead of the
+## first time a player reaches for one. Measured on a Quest 3: 0.88 s for all
+## thirteen, against 3.9 s for a single cold spawn of the 3DS stand-in alone.
+## See ModelWarmer for why only the stand-ins.
+##
+## Deferred past the first frames so the room is up and drawing first: the warm
+## blocks the main thread in ~85 ms slices, which is invisible while the view is
+## still black or the loading rig is up, and would be a stutter mid-play.
+func _warm_models() -> void:
+	for i in 4:
+		await get_tree().process_frame
+	await ModelWarmer.warm_stand_ins(self)
