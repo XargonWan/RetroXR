@@ -56,6 +56,8 @@ static func warm_stand_ins(host: Node) -> void:
 	sv.add_child(DirectionalLight3D.new())
 
 	var t := Time.get_ticks_usec()
+	var mem0: float = Performance.get_monitor(Performance.MEMORY_STATIC)
+	var tex0: float = Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED)
 	var n := 0
 	for id: String in SystemModelRegistry.stand_in_ids():
 		if not SystemModelRegistry.is_available(id):
@@ -72,6 +74,11 @@ static func warm_stand_ins(host: Node) -> void:
 		n += 1
 
 	sv.queue_free()
+	await tree.process_frame
 	_finished = true
-	print("[ModelWarmer] %d stand-ins warmed in %.2f s"
-		% [n, float(Time.get_ticks_usec() - t) / 1000000.0])
+	# Reported, not assumed: what this costs to KEEP is the reason it is limited to
+	# the stand-ins, so the figure belongs in the log next to the time.
+	print("[ModelWarmer] %d stand-ins warmed in %.2f s  (+%.1f MiB static, +%.1f MiB texture)"
+		% [n, float(Time.get_ticks_usec() - t) / 1000000.0,
+			(Performance.get_monitor(Performance.MEMORY_STATIC) - mem0) / 1048576.0,
+			(Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) - tex0) / 1048576.0])
