@@ -1,9 +1,9 @@
 extends Node
 
 ## Saves and netplay both carry model identity, and both go through
-## ScenePersistence. This feeds an OLD-format entry — the shape every arcade saved
-## before models had ids — and proves it still restores to the right hardware, then
-## proves what gets written back is the new shape.
+## ScenePersistence. This round-trips a save through it and asserts the hardware
+## comes back — including an entry naming a model that no longer exists, which is
+## what a save made before a model was deleted looks like.
 ##
 ##   godot --headless --path RetroVR res://Tools/save_restore_probe.tscn
 
@@ -14,23 +14,29 @@ func _ready() -> void:
 	get_tree().create_timer(90.0).timeout.connect(func(): get_tree().quit(1))
 	get_tree().current_scene = self
 
-	# Exactly what a pre-model_id save file holds: systemid + model_variant, no
-	# model_id key anywhere.
-	var legacy := [
-		{"id": 0, "type": "system", "systemid": "playstation", "model_variant": "original",
+	var entries := [
+		{"id": 0, "type": "system", "systemid": "playstation", "model_id": "playstation_original",
 			"position": [0, 0, 0], "rotation": [0, 0, 0]},
-		{"id": 1, "type": "system", "systemid": "game_boy", "model_variant": "primitive",
+		{"id": 1, "type": "system", "systemid": "game_boy", "model_id": "game_boy_primitive",
 			"position": [1, 0, 0], "rotation": [0, 0, 0]},
-		{"id": 2, "type": "system", "systemid": "nes", "model_variant": "",
+		# No model_id at all: the platform's default.
+		{"id": 2, "type": "system", "systemid": "nes",
 			"position": [2, 0, 0], "rotation": [0, 0, 0]},
-		{"id": 3, "type": "system", "systemid": "snes", "model_variant": "primitive",
+		# Names a model that is not in this build — a save made before it was
+		# deleted. Must still restore, on the placeholder.
+		{"id": 3, "type": "system", "systemid": "snes", "model_id": "deleted_model",
 			"position": [3, 0, 0], "rotation": [0, 0, 0]},
 	]
-	var want := {0: "playstation_original", 1: "game_boy_primitive", 2: "nes",
-		3: SystemModelRegistry.PLACEHOLDER_ID}
+	# What must be STORED on the node (entry 2 has no key, so it stays empty —
+	# "empty" is a real value meaning "this platform's default", not a miss).
+	var want_id := {0: "playstation_original", 1: "game_boy_primitive", 2: "",
+		3: "deleted_model"}
+	# What must actually be WORN, which is the part that matters to the player.
+	var want_model := {0: "playstation_original_model.gd", 1: "game_boy_model.gd",
+		2: "nes_model.gd", 3: "default_model.gd"}
 
 	var sp := ScenePersistence.new()
-	sp.instantiate_objects(self, legacy)
+	sp.instantiate_objects(self, entries)
 	for i in range(40):
 		await get_tree().physics_frame
 
@@ -38,29 +44,29 @@ func _ready() -> void:
 	for n in get_children():
 		if n is RetroSystem:
 			systems.append(n)
-	if systems.size() != legacy.size():
-		_bad("restored %d systems, expected %d" % [systems.size(), legacy.size()])
+	if systems.size() != entries.size():
+		_bad("restored %d systems, expected %d" % [systems.size(), entries.size()])
 
 	for idx in range(systems.size()):
 		var sys: RetroSystem = systems[idx]
-		var expect: String = want[idx]
+		var expect: String = want_id[idx]
 		if sys.model_id != expect:
 			_bad("entry %d: model_id '%s', expected '%s'" % [idx, sys.model_id, expect])
 		if sys.get("_model") == null:
 			_bad("entry %d: no model instantiated" % idx)
 		else:
-			print("[save] %-14s variant '%s' -> model_id '%s'  (%s)" % [
-				sys.systemid, legacy[idx]["model_variant"], sys.model_id,
+			var got_model: String = (sys.get("_model") as Node).get_script().resource_path.get_file()
+			if got_model != want_model[idx]:
+				_bad("entry %d: wearing %s, expected %s" % [idx, got_model, want_model[idx]])
+			print("[save] %-14s model_id '%s' -> %s" % [
+				sys.systemid, sys.model_id,
 				(sys.get("_model") as Node).get_script().resource_path.get_file()])
 
 	# And what goes back out must be the NEW shape.
 	var out: Dictionary = sp._serialize_node(systems[0], 0, {})
 	if not out.has("model_id"):
 		_bad("re-serialized entry has no model_id")
-	if out.has("model_variant"):
-		_bad("re-serialized entry still carries model_variant")
-	print("[save] re-serialized keys: model_id=%s model_variant_present=%s" % [
-		out.get("model_id", "<none>"), str(out.has("model_variant"))])
+	print("[save] re-serialized model_id=%s" % out.get("model_id", "<none>"))
 
 	print("[save] %s" % ("PASS" if _fail == 0 else "%d FAILURE(S)" % _fail))
 	get_tree().quit(0 if _fail == 0 else 1)

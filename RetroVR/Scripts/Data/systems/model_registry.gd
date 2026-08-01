@@ -150,26 +150,6 @@ const _ROWS: Dictionary = {
 }
 
 
-## Old (systemid, model_variant) pairs -> model id, for saves and netplay entries
-## written before models had ids. Non-empty variants only; an empty variant is just
-## "this platform's default row", which resolve() already does.
-##
-## Dated 2026-07-31. Keep indefinitely — it is 12 lines against silently losing the
-## hardware in every arcade saved before the change.
-const _LEGACY_VARIANTS: Dictionary = {
-	"nds:lite": "nds_lite",
-	"playstation:original": "playstation_original",
-	"nes:famicom": "famicom",
-	"mega_drive:megadrive": "megadrive",
-	"playstation2:silver": "ps2_silver",
-	"game_boy_advance:sp": "game_boy_advance_sp",
-	"game_boy:primitive": "game_boy_primitive",
-	"game_boy_advance:primitive": "game_boy_advance_primitive",
-	"nds:primitive": "nds_primitive",
-	"3ds:primitive": "n3ds_primitive",
-	"playstation_portable:primitive": "psp_primitive",
-	"virtual_boy:primitive": "virtual_boy_primitive",
-}
 
 ## Set by tests to prove a stripped build still resolves every platform to
 ## something spawnable. Never set at runtime.
@@ -297,21 +277,6 @@ static func store_safe_id(platform: String) -> String:
 
 static func all_ids() -> Array:
 	return _ROWS.keys()
-
-
-static func migrate_legacy(systemid: String, variant: String) -> String:
-	if variant.is_empty():
-		return _default_id_for(systemid)
-	var key := "%s:%s" % [systemid, variant]
-	if _LEGACY_VARIANTS.has(key):
-		return _LEGACY_VARIANTS[key]
-	if variant == "primitive":
-		# A platform with no plain model showed the procedural placeholder, which is
-		# exactly what the old PRIMITIVE_VARIANT branch forced.
-		return PLACEHOLDER_ID
-	# An unrecognised variant fell through to the platform's base model.
-	return _default_id_for(systemid)
-
 
 static func _default_id_for(platform: String) -> String:
 	for id: String in _ROWS:

@@ -1,9 +1,9 @@
-## Phase A equivalence probe — instantiate every system model scene and dump the
-## properties that removing `primitive_shell` could plausibly disturb.
+## Instantiate every system model scene and dump the geometry a change could
+## plausibly disturb — shell presence, node count, body_size, screen pose.
 ##
-## Run BEFORE the change to capture a baseline, then again AFTER and diff the two
-## files. Phase A rewrites how every handheld decides which shell it is wearing,
-## so "it still compiles" is not evidence; this is.
+## Capture a baseline before touching model code, then diff after. Written for the
+## primitive_shell removal, where "it still compiles" was not evidence, and kept
+## because any change to how a model builds itself wants the same check.
 ##
 ##   godot --headless --path RetroVR --script res://Tools/model_equiv_probe.gd -- --out=res://probe_out/models_before.txt
 extends Node
@@ -53,7 +53,6 @@ func _probe(path: String, id: String) -> String:
 	get_tree().root.add_child(m)
 
 	var shell := m.get_node_or_null("Shell")
-	var prim: Variant = m.get("primitive_shell")
 	var body: Variant = m.get("body_size")
 	# Screen pose is the thing _upgrade_to_glb repositions, so it is the most
 	# sensitive single number here.
@@ -61,10 +60,9 @@ func _probe(path: String, id: String) -> String:
 	if screen == null:
 		screen = m.find_child("ScreenMesh", true, false) as Node3D
 
-	var line := "%-28s shell=%s prim=%s children=%d body=%s screen=%s" % [
+	var line := "%-28s shell=%s children=%d body=%s screen=%s" % [
 		id,
 		"Y" if shell != null else "n",
-		str(prim),
 		_count(m),
 		_v(body),
 		_xf(screen, m),

@@ -12,7 +12,6 @@ func _ready() -> void:
 	get_tree().current_scene = self
 	_well_formed()
 	_invariant()
-	_legacy()
 	await _spawns()
 	print("[reg] %s" % ("ALL CHECKS PASSED" if _fail == 0 else "%d FAILURE(S)" % _fail))
 	get_tree().quit(0 if _fail == 0 else 1)
@@ -71,35 +70,19 @@ func _invariant() -> void:
 	SystemModelRegistry.simulate_missing_assets = false
 
 
-## Every legacy (systemid, variant) pair must land on a real row.
-func _legacy() -> void:
-	var pairs := [["nds", "lite"], ["playstation", "original"], ["nes", "famicom"],
-		["mega_drive", "megadrive"], ["playstation2", "silver"],
-		["game_boy_advance", "sp"], ["game_boy", "primitive"],
-		["game_boy_advance", "primitive"], ["nds", "primitive"], ["3ds", "primitive"],
-		["playstation_portable", "primitive"], ["virtual_boy", "primitive"]]
-	for pr in pairs:
-		var id: String = SystemModelRegistry.migrate_legacy(pr[0], pr[1])
-		if id.is_empty() or not SystemModelRegistry.all_ids().has(id):
-			_bad("legacy %s:%s -> '%s' is not a row" % [pr[0], pr[1], id])
-	print("[reg] legacy: %d pairs map to live rows" % pairs.size())
-
-
-## Real spawns through RetroSystem, driven the way a legacy save is restored.
+## Real spawns through RetroSystem, driven by model_id as everything now does.
 func _spawns() -> void:
-	var cases := [["game_boy", "", "game_boy.tscn"],
-		["game_boy", "primitive", "game_boy_primitive.tscn"],
-		["playstation", "original", "playstation_original.tscn"],
+	# [systemid, model_id, expected scene file]
+	var cases := [["game_boy", "", "game_boy.tscn"],                   # "" = platform default
+		["game_boy", "game_boy_primitive", "game_boy_primitive.tscn"],
+		["playstation", "playstation_original", "playstation_original.tscn"],
 		["nes", "famicom", "famicom.tscn"],
-		["snes", "", ""],                       # no model -> procedural placeholder
-		["snes", "primitive", ""]]
+		["snes", "", ""],                       # no model at all -> procedural box
+		["snes", "bogus_deleted_model", ""]]    # a row that no longer exists
 	for c in cases:
 		var sys: Node3D = load("res://Scenes/Objects/system.tscn").instantiate()
 		sys.set("systemid", c[0])
-		# Driven the way ScenePersistence drives a legacy save: translate the old
-		# (systemid, variant) pair to an id, then set the id. model_variant no
-		# longer exists on RetroSystem.
-		sys.set("model_id", SystemModelRegistry.migrate_legacy(c[0], c[1]))
+		sys.set("model_id", c[1])
 		add_child(sys)
 		if sys is RigidBody3D:
 			(sys as RigidBody3D).freeze = true

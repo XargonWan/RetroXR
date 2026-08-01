@@ -1,9 +1,9 @@
 [gd_scene format=3]
 
-; Virtual Boy stand-in — a plain bipod + visor carrying NO licensed geometry.
+; Virtual Boy primitive — a plain bipod + visor carrying NO licensed geometry.
 ; A complete model in its own right, not a shell bolted onto virtual_boy.tscn:
-; spawned by its own "Primitive Handheld" row in the spawn menu (model_variant
-; "primitive"), so a build can ship this and drop virtual_boy.tscn entirely.
+; its own row in SystemModelRegistry ("virtual_boy_primitive"), so a build can
+; ship this and drop virtual_boy.tscn entirely.
 
 [ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_model"]
 [ext_resource type="Shader" uid="uid://bwfu7ewask6e" path="res://Shaders/vb_stereo.gdshader" id="2_stereo"]

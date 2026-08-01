@@ -66,7 +66,7 @@ const SILHOUETTE_CULL_DIST := 34.0
 # --- Exhibit --------------------------------------------------------------------
 
 ## Console generations, in order down the hallway. Each system is
-## [systemid, model_variant, plaque name]. Systems with no bespoke hardware model
+## [systemid, model_id, plaque name]. Systems with no bespoke hardware model
 ## come up as the grey placeholder box — deliberately kept in, so the scene also
 ## reads as a checklist of which shells still need building.
 ## Show every station as its STAND-IN model rather than the licensed shell.
@@ -119,7 +119,7 @@ const GENERATIONS: Array = [
 	{
 		"title": "5TH GENERATION", "years": "1993 – 1998",
 		"systems": [
-			["playstation", "original", "PlayStation"],
+			["playstation", "playstation_original", "PlayStation"],
 			["playstation", "", "PSone"],
 			["nintendo_64", "", "Nintendo 64"],
 			["sega_saturn", "", "Sega Saturn"],
@@ -135,10 +135,10 @@ const GENERATIONS: Array = [
 		"systems": [
 			["dreamcast", "", "Sega Dreamcast"],
 			["playstation2", "", "PlayStation 2"],
-			["playstation2", "silver", "PlayStation 2 (Silver)"],
+			["playstation2", "ps2_silver", "PlayStation 2 (Silver)"],
 			["gamecube", "", "Nintendo GameCube"],
 			["game_boy_advance", "", "Game Boy Advance"],
-			["game_boy_advance", "sp", "Game Boy Advance SP"],
+			["game_boy_advance", "game_boy_advance_sp", "Game Boy Advance SP"],
 			["pokemon_mini", "", "Pokémon mini"],
 		],
 	},
@@ -146,7 +146,7 @@ const GENERATIONS: Array = [
 		"title": "7TH GENERATION", "years": "2004 – 2012",
 		"systems": [
 			["nds", "", "Nintendo DS"],
-			["nds", "lite", "Nintendo DS Lite"],
+			["nds", "nds_lite", "Nintendo DS Lite"],
 			["playstation_portable", "", "PlayStation Portable"],
 		],
 	},
@@ -234,7 +234,7 @@ func _build_station(systemid: String, variant: String, plaque: String,
 	# store_safe_id is "the cheapest row this platform has" — the primitive model
 	# where one exists, else the procedural box. It keeps meaning that after the
 	# imported rows are deleted, which a hardcoded id would not.
-	sys.model_id = SystemModelRegistry.store_safe_id(systemid) if SPAWN_PRIMITIVES 		else SystemModelRegistry.migrate_legacy(systemid, variant)
+	sys.model_id = SystemModelRegistry.store_safe_id(systemid) if SPAWN_PRIMITIVES else variant
 	sys.system_label = plaque
 	# Handhelds default their video out OFF and read this save field for the
 	# remembered choice; consoles ignore it (their cable is always live).

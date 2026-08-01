@@ -117,22 +117,6 @@ func create_new_slot(root: Node, name: String) -> String:
 	return slot_id
 
 
-# ── Legacy stubs (kept so any surviving callers still compile) ─────────────────
-
-func has_save() -> bool:
-	# New system: "has saves" means there is at least one user slot.
-	var slots := get_slots()
-	return slots.size() > 1   # > 1 because "clean" is always present
-
-
-func save_scene(_root: Node) -> void:
-	push_warning("ScenePersistence.save_scene() is deprecated — use save_slot() instead")
-
-
-func load_scene(_root: Node) -> void:
-	push_warning("ScenePersistence.load_scene() is deprecated — use load_slot() instead")
-
-
 ## Free all dynamically-spawned objects.
 func clear_scene(root: Node) -> void:
 	var spawned := root.get_tree().get_nodes_in_group("spawned")
@@ -596,16 +580,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 		"system":
 			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 			sys.systemid = data.get("systemid", "")
-			# Presence of "model_id" is the version signal, deliberately — not the
-			# "version" field, which is written but never read, and which netplay
-			# entries do not carry at all (object_sync passes bare _serialize_node
-			# dicts with no envelope). Key-presence is the only scheme that works
-			# identically on disk and on the wire.
-			if data.has("model_id"):
-				sys.model_id = str(data["model_id"])
-			else:
-				sys.model_id = SystemModelRegistry.migrate_legacy(
-					str(data.get("systemid", "")), str(data.get("model_variant", "")))
+			sys.model_id = str(data.get("model_id", ""))
 			if data.has("video_out"):
 				sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
 			sys._lid_angle_from_save = float(data.get("lid_angle", -1.0))
