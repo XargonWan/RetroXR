@@ -26,10 +26,10 @@ class_name SystemModelRegistry
 extends RefCounted
 
 
-## The procedural box shown for hardware that has no model of its own. This is NOT
-## a "primitive" — the primitives are authored models with their own rows, as
-## selectable as any other. This is the generic box, and it belongs to no platform,
-## which is why it is not in _ROWS.
+## The procedural box, labelled "Primitive System" in the menu. It is the stand-in
+## for hardware with no primitive model of its own. Unlike the authored primitives,
+## which are ordinary rows under their platform, this box fits any console and so
+## belongs to no platform — which is why it is not in _ROWS.
 const PLACEHOLDER_ID := "placeholder"
 const PLACEHOLDER_SCRIPT := "res://Scripts/Objects/system_models/default_model.gd"
 
@@ -210,7 +210,7 @@ static func is_bespoke(row: Dictionary) -> bool:
 
 
 static func placeholder_row() -> Dictionary:
-	return {"id": PLACEHOLDER_ID, "platform": "", "label": "Generic Console",
+	return {"id": PLACEHOLDER_ID, "platform": "", "label": "Primitive System",
 		"script": PLACEHOLDER_SCRIPT, "requires": []}
 
 

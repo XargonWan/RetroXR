@@ -70,27 +70,40 @@ const _PERIPHERALS: Dictionary = {
 }
 
 
-## The spawnable items for a system: every model the registry has for it, then its
-## peripherals, then the generic stand-ins.
+## The spawnable items for a system: its stand-in hardware, then the models that
+## need imported assets, then its peripherals.
+##
+## The stand-ins lead the list — the platform's authored primitive models where it
+## has any, then the Primitive System box, which is the only stand-in a platform
+## without one has.
 ##
 ## `system_name` is unused now — a hardware row is labelled by its registry row
 ## rather than by the system's name, so a platform with two models says which is
 ## which. Kept in the signature because the menu passes it.
 static func items_for(systemid: String, _system_name: String = "") -> Array:
-	var items: Array = []
+	var primitive: Array = []
+	var imported: Array = []
 	for row: Dictionary in SystemModelRegistry.rows_for(systemid):
-		items.append({"kind": "system", "model_id": row.get("id", ""),
-			"label": row.get("label", "Console")})
-	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
-	# Anything not played in the hand can also take the generic box and the generic
-	# pad. A handheld gets neither: a console box is shaped nothing like the device,
-	# and its controls are its own buttons.
-	#
-	# This box is NOT one of the "primitive" models — those are authored per device
-	# and appear above as ordinary rows.
-	if not SystemModelRegistry.platform_is_handheld(systemid):
-		items.append({"kind": "system", "label": "Generic Console",
+		var item := {"kind": "system", "model_id": row.get("id", ""),
+			"label": row.get("label", "Console")}
+		if (row.get("requires", []) as Array).is_empty():
+			primitive.append(item)
+		else:
+			imported.append(item)
+
+	# Anything not played in the hand can also take the primitive box and the
+	# primitive pad. A handheld gets neither: a console box is shaped nothing like
+	# the device, and its controls are its own buttons.
+	var handheld := SystemModelRegistry.platform_is_handheld(systemid)
+
+	var items: Array = []
+	items.append_array(primitive)
+	if not handheld:
+		items.append({"kind": "system", "label": "Primitive System",
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
+	items.append_array(imported)
+	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
+	if not handheld:
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})
 	return items
