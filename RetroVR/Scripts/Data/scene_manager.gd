@@ -202,6 +202,7 @@ func _take_player_rig(outgoing: Node) -> Node3D:
 			pickup.drop_object()
 	outgoing.remove_child(player)
 	get_tree().root.add_child(player)
+	_set_player_body_enabled(player, false)
 	return player
 
 
@@ -232,11 +233,28 @@ func _seat_player_rig(incoming: Node, player: Node3D) -> void:
 
 ## Re-apply the rig settings that depend on which room we are in. Runs once the
 ## incoming scene is the current one, because the arcade's slot auto-load builds
-## into it.
+## into it and the player body needs a floor to stand on.
 func _settle_player_rig(player: Node3D) -> void:
+	_set_player_body_enabled(player, true)
 	var menu := player.get_node_or_null("SpawnMenuController")
 	if menu != null and menu.has_method("refresh_for_scene"):
 		menu.refresh_for_scene()
+
+
+## The floor is freed with the room, and the rig now outlives it. Left running,
+## the player body spends the whole crossing in free fall — you watch the loading
+## screen rise past you — and then arrives in the new room carrying a second of
+## downward velocity, which puts you straight through its floor. So the body is
+## switched off for the crossing and switched back on once there is ground again.
+func _set_player_body_enabled(player: Node3D, value: bool) -> void:
+	var found := player.find_children("*", "XRToolsPlayerBody", true, false)
+	if found.is_empty():
+		return
+	var body := found[0] as XRToolsPlayerBody
+	if value:
+		body.velocity = Vector3.ZERO
+		body.ground_velocity = Vector3.ZERO
+	body.enabled = value
 
 
 func _find_origin(player: Node3D) -> Node3D:

@@ -17,6 +17,8 @@ extends Node3D
 @onready var _label: Label3D = $LoadingScreen/TitleLabel
 
 var _player: Node3D = null
+var _track: Node3D = null
+var _origin_node: Node3D = null
 
 
 ## Hand over the player's rig, which the caller is keeping alive across the
@@ -37,19 +39,31 @@ func prepare_for_player(player: Node3D) -> void:
 func _ready() -> void:
 	var cam := _find_player_camera()
 	if cam != null:
-		# Stand the screen where the player is standing: it is authored around a
-		# rig at the world origin, and the player is wherever the old room left
-		# them.
-		var here := cam.global_position
-		var origin := _first_of_type(_player, "XROrigin3D")
-		here.y = origin.global_position.y if origin != null else 0.0
-		global_position = here
+		# The screen is authored around a rig at the world origin, and the player
+		# is wherever the old room left them. Track them every frame rather than
+		# place it once: a loading screen you can walk out of is worse than none.
+		_track = cam
+		_origin_node = _first_of_type(_player, "XROrigin3D")
+		set_process(true)
+		_follow_player()
 	else:
 		_origin.current = true
 		_camera.current = true
 		cam = _camera
 	_screen.set_camera(cam)
 	_screen.progress = 0.0
+
+
+func _process(_delta: float) -> void:
+	_follow_player()
+
+
+func _follow_player() -> void:
+	if _track == null or not is_instance_valid(_track):
+		return
+	var here := _track.global_position
+	here.y = _origin_node.global_position.y if is_instance_valid(_origin_node) else 0.0
+	global_position = here
 
 
 ## Name of the room being loaded, shown above the bar.
