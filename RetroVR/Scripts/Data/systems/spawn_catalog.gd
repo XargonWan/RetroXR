@@ -82,11 +82,14 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 		items.append({"kind": "system", "model_id": row.get("id", ""),
 			"label": row.get("label", "Console")})
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
-	# Anything not played in the hand can also take the procedural box and the
-	# generic pad. A handheld gets neither: a console box is shaped nothing like the
-	# device, and its controls are its own buttons.
+	# Anything not played in the hand can also take the generic box and the generic
+	# pad. A handheld gets neither: a console box is shaped nothing like the device,
+	# and its controls are its own buttons.
+	#
+	# This box is NOT one of the "primitive" models — those are authored per device
+	# and appear above as ordinary rows.
 	if not SystemModelRegistry.platform_is_handheld(systemid):
-		items.append({"kind": "system", "label": "Primitive System",
+		items.append({"kind": "system", "label": "Generic Console",
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})

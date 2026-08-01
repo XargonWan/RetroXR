@@ -26,8 +26,10 @@ class_name SystemModelRegistry
 extends RefCounted
 
 
-## The procedural grey box every platform falls back to. Not in _ROWS — it belongs
-## to no platform, and appending it per-platform means it cannot drift out of step.
+## The procedural box shown for hardware that has no model of its own. This is NOT
+## a "primitive" — the primitives are authored models with their own rows, as
+## selectable as any other. This is the generic box, and it belongs to no platform,
+## which is why it is not in _ROWS.
 const PLACEHOLDER_ID := "placeholder"
 const PLACEHOLDER_SCRIPT := "res://Scripts/Objects/system_models/default_model.gd"
 
@@ -166,7 +168,13 @@ static var simulate_missing_assets: bool = false
 ## Rules 2 and 3 are what make deleting a model safe across old saves and peers on
 ## a different build.
 static func resolve(model_id: String, platform: String) -> Dictionary:
-	if not model_id.is_empty() and model_id != PLACEHOLDER_ID:
+	# An explicit placeholder request is an ANSWER, not a miss. Falling through to
+	# the platform's first row here meant asking for the procedural box handed back
+	# the imported model instead — which is what the test hallway and the menu's
+	# "Primitive System" row were both doing.
+	if model_id == PLACEHOLDER_ID:
+		return placeholder_row()
+	if not model_id.is_empty():
 		if _ROWS.has(model_id):
 			if is_available(model_id):
 				return _row(model_id)
@@ -202,7 +210,7 @@ static func is_bespoke(row: Dictionary) -> bool:
 
 
 static func placeholder_row() -> Dictionary:
-	return {"id": PLACEHOLDER_ID, "platform": "", "label": "Primitive System",
+	return {"id": PLACEHOLDER_ID, "platform": "", "label": "Generic Console",
 		"script": PLACEHOLDER_SCRIPT, "requires": []}
 
 
@@ -263,16 +271,6 @@ static func has_plain_alternative(platform: String) -> bool:
 		if (_ROWS[id].get("requires", []) as Array).is_empty():
 			plain += 1
 	return total > 1 and plain > 0
-
-
-## The row for this platform that needs no imported assets, or the placeholder.
-## Survives deletion of the imported rows by construction.
-static func store_safe_id(platform: String) -> String:
-	for id: String in _ROWS:
-		var r: Dictionary = _ROWS[id]
-		if r.get("platform", "") == platform and (r.get("requires", []) as Array).is_empty():
-			return id
-	return PLACEHOLDER_ID
 
 
 static func all_ids() -> Array:

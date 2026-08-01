@@ -65,25 +65,6 @@ const SILHOUETTE_CULL_DIST := 34.0
 
 # --- Exhibit --------------------------------------------------------------------
 
-## Console generations, in order down the hallway. Each system is
-## [systemid, model_id, plaque name]. Systems with no bespoke hardware model
-## come up as the grey placeholder box — deliberately kept in, so the scene also
-## reads as a checklist of which shells still need building.
-## Show every station as its STAND-IN model rather than the licensed shell.
-##
-## The hall is the survey of the room's hardware, and the stand-ins are the part
-## that has to hold up unaided — a build shipped without imported-assets/ is all
-## a player would ever see, and until now that line-up had never been looked at
-## end to end. GENERATIONS below still names the real hardware, so flipping this
-## off gives the licensed line-up back unchanged.
-##
-## Two consequences worth expecting when it is on:
-##   * rows differing only by a colour/regional badge (Famicom, Mega Drive,
-##     PSone, PS2 Silver, DS Lite, GBA SP) collapse onto their system's single
-##     stand-in and show the same shell twice — the plaques still tell them apart
-##   * hardware with no stand-in of its own comes up as the grey placeholder box,
-##     which is the same signal the scene already used for "shell still to build"
-const SPAWN_PRIMITIVES := true
 
 
 const GENERATIONS: Array = [
@@ -109,7 +90,7 @@ const GENERATIONS: Array = [
 			["mega_drive", "", "Sega Genesis"],
 			["neogeo", "", "Neo Geo AES"],
 			["pc_engine", "", "PC Engine / TurboGrafx-16"],
-			["game_boy", "", "Game Boy"],
+			["game_boy", "game_boy_primitive", "Game Boy"],
 			["atari_lynx", "", "Atari Lynx"],
 			["supervision", "", "Watara Supervision"],
 		],
@@ -122,7 +103,7 @@ const GENERATIONS: Array = [
 			["sega_saturn", "", "Sega Saturn"],
 			["3do", "", "Panasonic 3DO"],
 			["atari_jaguar", "", "Atari Jaguar"],
-			["virtual_boy", "", "Virtual Boy"],
+			["virtual_boy", "virtual_boy_primitive", "Virtual Boy"],
 			["neo_geo_pocket", "", "Neo Geo Pocket"],
 			["wonderswan", "", "Bandai WonderSwan"],
 		],
@@ -133,7 +114,7 @@ const GENERATIONS: Array = [
 			["dreamcast", "", "Sega Dreamcast"],
 			["playstation2", "", "PlayStation 2"],
 			["gamecube", "", "Nintendo GameCube"],
-			["game_boy_advance", "", "Game Boy Advance"],
+			["game_boy_advance", "game_boy_advance_primitive", "Game Boy Advance"],
 			["game_boy_advance", "game_boy_advance_sp", "Game Boy Advance SP"],
 			["pokemon_mini", "", "Pokémon mini"],
 		],
@@ -141,14 +122,14 @@ const GENERATIONS: Array = [
 	{
 		"title": "7TH GENERATION", "years": "2004 – 2012",
 		"systems": [
-			["nds", "", "Nintendo DS"],
-			["playstation_portable", "", "PlayStation Portable"],
+			["nds", "nds_primitive", "Nintendo DS"],
+			["playstation_portable", "psp_primitive", "PlayStation Portable"],
 		],
 	},
 	{
 		"title": "8TH GENERATION", "years": "2011 – 2017",
 		"systems": [
-			["3ds", "", "Nintendo 3DS"],
+			["3ds", "n3ds_primitive", "Nintendo 3DS"],
 		],
 	},
 ]
@@ -213,23 +194,20 @@ func _build_stations() -> float:
 
 
 ## One table + system + TV(s), fully cabled.
-func _build_station(systemid: String, variant: String, plaque: String,
+func _build_station(systemid: String, model_id: String, plaque: String,
 		side: float, z: float) -> void:
 	# Bay frame: origin at the table centre on the floor, local +Z facing the aisle.
 	var yaw := PI * 0.5 if side < 0.0 else -PI * 0.5
 	var bay := Transform3D(Basis(Vector3.UP, yaw), Vector3(side * BAY_X, 0.0, z))
 
-	var name_stem := systemid if variant.is_empty() else "%s_%s" % [systemid, variant]
+	var name_stem := systemid if model_id.is_empty() else model_id
 	_build_table(bay, name_stem, plaque)
 
 	# System first — its channel count decides how many TVs the station needs.
 	var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 	sys.name = "Sys_%s" % name_stem
 	sys.systemid = systemid
-	# store_safe_id is "the cheapest row this platform has" — the primitive model
-	# where one exists, else the procedural box. It keeps meaning that after the
-	# imported rows are deleted, which a hardcoded id would not.
-	sys.model_id = SystemModelRegistry.store_safe_id(systemid) if SPAWN_PRIMITIVES else variant
+	sys.model_id = model_id
 	sys.system_label = plaque
 	# Handhelds default their video out OFF and read this save field for the
 	# remembered choice; consoles ignore it (their cable is always live).
