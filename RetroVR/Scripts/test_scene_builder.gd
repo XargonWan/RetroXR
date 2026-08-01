@@ -65,58 +65,65 @@ const SILHOUETTE_CULL_DIST := 34.0
 
 # --- Exhibit --------------------------------------------------------------------
 
+## The procedural box, for hardware with no primitive model of its own.
+const BOX := SystemModelRegistry.PLACEHOLDER_ID
 
-
+## Console generations, in order down the hallway. Each system is
+## [systemid, model_id, plaque name].
+##
+## Every station names a primitive — the platform's own stand-in model where it
+## has one, else BOX. Nothing here resolves to an imported shell, so the hall is
+## the line-up a build shipped without imported-assets/ comes up with.
 const GENERATIONS: Array = [
 	{
 		"title": "2ND GENERATION", "years": "1976 – 1983",
 		"systems": [
-			["atari_2600", "", "Atari 2600"],
-			["atari_5200", "", "Atari 5200"],
+			["atari_2600", BOX, "Atari 2600"],
+			["atari_5200", BOX, "Atari 5200"],
 		],
 	},
 	{
 		"title": "3RD GENERATION", "years": "1983 – 1987",
 		"systems": [
-			["nes", "", "Nintendo Entertainment System"],
-			["master_system", "", "Sega Master System"],
-			["atari_7800", "", "Atari 7800"],
+			["nes", BOX, "Nintendo Entertainment System"],
+			["master_system", BOX, "Sega Master System"],
+			["atari_7800", BOX, "Atari 7800"],
 		],
 	},
 	{
 		"title": "4TH GENERATION", "years": "1987 – 1993",
 		"systems": [
-			["super_nes", "", "Super Nintendo"],
-			["mega_drive", "", "Sega Genesis"],
-			["neogeo", "", "Neo Geo AES"],
-			["pc_engine", "", "PC Engine / TurboGrafx-16"],
+			["super_nes", BOX, "Super Nintendo"],
+			["mega_drive", BOX, "Sega Genesis"],
+			["neogeo", BOX, "Neo Geo AES"],
+			["pc_engine", BOX, "PC Engine / TurboGrafx-16"],
 			["game_boy", "game_boy_primitive", "Game Boy"],
-			["atari_lynx", "", "Atari Lynx"],
-			["supervision", "", "Watara Supervision"],
+			["atari_lynx", "atari_lynx", "Atari Lynx"],
+			["supervision", "supervision", "Watara Supervision"],
 		],
 	},
 	{
 		"title": "5TH GENERATION", "years": "1993 – 1998",
 		"systems": [
-			["playstation", "playstation_original", "PlayStation"],
-			["nintendo_64", "", "Nintendo 64"],
-			["sega_saturn", "", "Sega Saturn"],
-			["3do", "", "Panasonic 3DO"],
-			["atari_jaguar", "", "Atari Jaguar"],
+			["playstation", BOX, "PlayStation"],
+			["nintendo_64", BOX, "Nintendo 64"],
+			["sega_saturn", BOX, "Sega Saturn"],
+			["3do", BOX, "Panasonic 3DO"],
+			["atari_jaguar", BOX, "Atari Jaguar"],
 			["virtual_boy", "virtual_boy_primitive", "Virtual Boy"],
-			["neo_geo_pocket", "", "Neo Geo Pocket"],
-			["wonderswan", "", "Bandai WonderSwan"],
+			["neo_geo_pocket", "neo_geo_pocket", "Neo Geo Pocket"],
+			["wonderswan", "wonderswan", "Bandai WonderSwan"],
 		],
 	},
 	{
 		"title": "6TH GENERATION", "years": "1998 – 2005",
 		"systems": [
-			["dreamcast", "", "Sega Dreamcast"],
-			["playstation2", "", "PlayStation 2"],
-			["gamecube", "", "Nintendo GameCube"],
+			["dreamcast", BOX, "Sega Dreamcast"],
+			["playstation2", BOX, "PlayStation 2"],
+			["gamecube", BOX, "Nintendo GameCube"],
 			["game_boy_advance", "game_boy_advance_primitive", "Game Boy Advance"],
-			["game_boy_advance", "game_boy_advance_sp", "Game Boy Advance SP"],
-			["pokemon_mini", "", "Pokémon mini"],
+			["game_boy_advance", "game_boy_advance_primitive", "Game Boy Advance SP"],
+			["pokemon_mini", "pokemon_mini", "Pokémon mini"],
 		],
 	},
 	{
@@ -200,7 +207,9 @@ func _build_station(systemid: String, model_id: String, plaque: String,
 	var yaw := PI * 0.5 if side < 0.0 else -PI * 0.5
 	var bay := Transform3D(Basis(Vector3.UP, yaw), Vector3(side * BAY_X, 0.0, z))
 
-	var name_stem := systemid if model_id.is_empty() else model_id
+	# Named for the plaque, which is what tells two stations apart when they share
+	# a platform AND a model — as the two Game Boy Advance stations now do.
+	var name_stem := plaque.replace(" ", "_").validate_node_name()
 	_build_table(bay, name_stem, plaque)
 
 	# System first — its channel count decides how many TVs the station needs.
@@ -406,14 +415,24 @@ func _cull_detail(root: Node) -> void:
 		g.visibility_range_end_margin = dist * 0.12
 
 
-## The y a body must sit at for the bottom of its collision box to rest on
-## `surface_y`. Every system model resizes this one BoxShape3D to its shell, so
-## reading it back beats hardcoding a per-console drop height.
+## The y a body must sit at for the bottom of its collision to rest on
+## `surface_y`. Every system model resizes its shapes to its shell, so reading
+## them back beats hardcoding a per-console drop height.
+##
+## All of the body's own shapes, not just the one named "CollisionShape3D": the
+## Virtual Boy keeps that one on the visor alone, for hand-grab feel, and carries
+## its stand on two more. Measuring the named shape by itself rested the VISOR on
+## the table and buried the stand inside it.
 func _rest_y(body: PhysicsBody3D, surface_y: float) -> float:
-	var col := body.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if col != null and col.shape is BoxShape3D:
-		return surface_y - (col.position.y - (col.shape as BoxShape3D).size.y * 0.5)
-	return surface_y + 0.05
+	var bottom := INF
+	for child in body.get_children():
+		var col := child as CollisionShape3D
+		if col == null or not (col.shape is BoxShape3D):
+			continue
+		bottom = minf(bottom, col.position.y - (col.shape as BoxShape3D).size.y * 0.5)
+	if is_inf(bottom):
+		return surface_y + 0.05
+	return surface_y - bottom
 
 
 func _shape_height(body: PhysicsBody3D) -> float:
