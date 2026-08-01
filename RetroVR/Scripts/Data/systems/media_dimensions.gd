@@ -71,6 +71,23 @@ const LOADER_SLOT := 2   # slot-load: disc injects on insert, EJECT slides it ou
 ## PSP is a tray: its UMD sits behind a hinged door you flick open, not a slot.
 const SLOT_LOAD_SYSTEMS: Dictionary = {}
 
+## Lid/tray systems whose tray SLIDES OUT THE FRONT instead of hinging open — the
+## fat PS2, and any PC-style optical drive.
+##
+## Still LOADER_TRAY: MediaTray owns the gating, seating, spin and collision either
+## way, and only the geometry and the button's word change. This is the same split
+## RetroSystemModelPCTower already runs on with authored geometry — it keeps
+## LOADER_TRAY and makes play_open/play_close a slide — so a system opting in here
+## gets that motion built procedurally on the placeholder box instead.
+const FRONT_TRAY_SYSTEMS: Dictionary = {
+	"playstation2": true,
+}
+
+
+## True when this system's tray slides out of the front face rather than hinging.
+static func has_front_tray(systemid: String) -> bool:
+	return FRONT_TRAY_SYSTEMS.has(systemid)
+
 
 ## True when the systemid's games ship on discs (spawn a RetroDisc).
 static func is_disc_system(systemid: String) -> bool:

@@ -153,6 +153,11 @@ const DISC_SPIN_MAX := 25.0    # rad/s (~240 RPM) — seated disc at full speed
 const DISC_SPIN_UP := 18.0     # rad/s² ramp-up (power on / tray closed)
 const DISC_SPIN_DOWN := 10.0   # rad/s² ramp-down (power off / tray opened)
 const TRAY_LID_OPEN_DEG := -75.0   # lid hinge angle when the tray is open
+## Front-sliding tray: how far the shelf travels out of the box, and how long it
+## takes. 190 mm puts a 12 cm disc's REAR edge 15 mm clear of the front face —
+## less and the disc is still half inside the case with the tray "open".
+const TRAY_SLIDE_TRAVEL := 0.19
+const TRAY_SLIDE_TIME := 0.9
 const SLOT_INSET := 0.10       # slot-load: how far inside the console a disc rides
 
 # How this system loads discs (MediaDimensions.LOADER_*), cached at model load.
@@ -170,6 +175,12 @@ var _tray: MediaTray = null
 # Procedural disc well + hinged lid (default-model tray consoles only); the lid
 # pivot is handed to _tray so MediaTray animates it.
 var _tray_lid_pivot: Node3D = null
+# Front-sliding tray shelf (LOADER_TRAY + MediaDimensions.has_front_tray), null on
+# a hinged-lid console. The seated disc rides it out; MediaTray still gates.
+var _front_tray := false
+var _tray_slide_pivot: Node3D = null
+var _tray_slide_rest := Vector3.ZERO
+var _tray_slide_tween: Tween = null
 
 # --- Disk control (multi-disc games: FF7 "insert disc 2") ---
 # Mirrors the core's libretro disk-control state (disk_control_ready signal).
@@ -472,10 +483,17 @@ func _load_system_model() -> void:
 	_eject_button.visible = want_eject
 	_eject_button.set_deferred("monitoring", want_eject)
 	_eject_button.set_process(want_eject)   # also stops touch-proximity checks
+	# A front-sliding tray is a property of the PROCEDURAL box. A bespoke shell
+	# brings its own mechanism — the PS2 Slim's hinged cover is a lid whatever the
+	# platform row says the family does — so it keeps the lid wording and geometry.
+	_front_tray = _disc_loader == MediaDimensions.LOADER_TRAY 		and MediaDimensions.has_front_tray(systemid) and not is_bespoke
 	if has_loader:
 		var eject_label := _eject_button.get_node_or_null("ButtonLabel") as Label3D
 		if eject_label:
-			eject_label.text = "OPEN" if _disc_loader == MediaDimensions.LOADER_TRAY else "EJECT"
+			# A sliding tray EJECTS, like the drive it imitates; only a hinged lid
+			# is something you OPEN.
+			var is_lid: bool = _disc_loader == MediaDimensions.LOADER_TRAY and not _front_tray
+			eject_label.text = "OPEN" if is_lid else "EJECT"
 		if _disc_loader == MediaDimensions.LOADER_TRAY:
 			_cartridge_slot.enabled = false   # tray starts closed
 		# The cartridge recess would look wrong on disc hardware — the disc
@@ -516,7 +534,11 @@ func _load_system_model() -> void:
 			# with the pivot at its baked rest orientation; re-express it as a
 			# LOCAL offset from that pivot so MediaTray can reparent the disc
 			# under it and have it swing rigidly with the door.
-			var disc_pivot: Node3D = _model.get_disc_lid_pivot() if _model != null else null
+			# The procedural slide when we built one, else whatever moving part the
+			# model nominates (the PC tower's authored shelf, the PSP's UMD door).
+			var disc_pivot: Node3D = _tray_slide_pivot
+			if disc_pivot == null and _model != null:
+				disc_pivot = _model.get_disc_lid_pivot()
 			if disc_pivot != null:
 				_tray.disc_lid_pivot = disc_pivot
 				var rel := disc_pivot.global_transform.affine_inverse() * _cartridge_slot.global_transform
@@ -1982,6 +2004,7 @@ func _set_tray_open(open: bool) -> void:
 	# button is a momentary latch release (holding it down would advertise a second
 	# press that deliberately does nothing).
 	_eject_button.set_latched_pressed(open and not _has_spring_lid())
+	_slide_tray(open)
 	# Bespoke GLB tray models animate their own lid here.
 	if open:
 		_model.play_open()
@@ -1994,7 +2017,97 @@ func _set_tray_open(open: bool) -> void:
 ## (y=0.07), a dark recessed bed the disc rests in, and a lid hinged at the
 ## pod's back edge. The lid doubles as a touch button — physically pushing an
 ## open lid shuts it (same replicated path as the OPEN button).
+## Run the front-sliding shelf out of the bay and back. No-op on a hinged lid,
+## which MediaTray swings instead. Eased rather than linear — a real tray coasts
+## out and thumps home (same motion as RetroSystemModelPCTower._slide_to).
+func _slide_tray(open: bool) -> void:
+	if _tray_slide_pivot == null:
+		return
+	if _tray_slide_tween != null and _tray_slide_tween.is_valid():
+		_tray_slide_tween.kill()
+	var target: Vector3 = _tray_slide_rest
+	if open:
+		target += Vector3(0.0, 0.0, TRAY_SLIDE_TRAVEL)
+	_tray_slide_tween = create_tween()
+	_tray_slide_tween.tween_property(_tray_slide_pivot, "position", target, TRAY_SLIDE_TIME) 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+## The front-loading shelf: a bay mouth in the front face and a tray that carries
+## the disc out through it. The placeholder box is 0.3 x 0.1 x 0.25, so the front
+## face is z = 0.125 and the shelf hides inside at rest.
+func _build_front_disc_tray() -> void:
+	var d := MediaDimensions.disc_diameter(systemid)
+	# Up the front face, not centred on it: the box carries its nameplate across the
+	# middle and the shelf slid straight through the lettering.
+	var deck_y := 0.024
+
+	var bay_mat := StandardMaterial3D.new()
+	bay_mat.albedo_color = Color(0.08, 0.08, 0.1)
+	var shelf_mat := StandardMaterial3D.new()
+	shelf_mat.albedo_color = Color(0.16, 0.16, 0.18)
+	var well_mat := StandardMaterial3D.new()
+	well_mat.albedo_color = Color(0.10, 0.10, 0.12)
+
+	# Bay mouth on the front face, the slot the shelf emerges from.
+	var bay := MeshInstance3D.new()
+	bay.name = "DiscBayMouth"
+	var bay_mesh := BoxMesh.new()
+	bay_mesh.size = Vector3(d + 0.020, 0.010, 0.003)
+	bay.mesh = bay_mesh
+	bay.set_surface_override_material(0, bay_mat)
+	bay.position = Vector3(0, deck_y, 0.1255)
+	add_child(bay)
+
+	_tray_slide_pivot = Node3D.new()
+	_tray_slide_pivot.name = "DiscTraySlide"
+	_tray_slide_pivot.position = Vector3(0, deck_y, 0.010)
+	add_child(_tray_slide_pivot)
+	_tray_slide_rest = _tray_slide_pivot.position
+
+	var shelf := MeshInstance3D.new()
+	shelf.name = "DiscTrayShelf"
+	var shelf_mesh := BoxMesh.new()
+	shelf_mesh.size = Vector3(d + 0.014, 0.005, d + 0.018)
+	shelf.mesh = shelf_mesh
+	shelf.set_surface_override_material(0, shelf_mat)
+	shelf.position = Vector3(0, -0.004, 0)
+	_tray_slide_pivot.add_child(shelf)
+
+	# Recessed well the disc lies in, plus the hub it centres on.
+	var well := MeshInstance3D.new()
+	well.name = "DiscTrayWell"
+	var well_mesh := CylinderMesh.new()
+	well_mesh.top_radius = d / 2.0 + 0.004
+	well_mesh.bottom_radius = d / 2.0 + 0.004
+	well_mesh.height = 0.003
+	well.mesh = well_mesh
+	well.set_surface_override_material(0, well_mat)
+	well.position = Vector3(0, -0.0005, 0)
+	_tray_slide_pivot.add_child(well)
+
+	var spindle := MeshInstance3D.new()
+	spindle.name = "DiscTraySpindle"
+	var spindle_mesh := CylinderMesh.new()
+	spindle_mesh.top_radius = 0.0075
+	spindle_mesh.bottom_radius = 0.0075
+	spindle_mesh.height = 0.004
+	spindle.mesh = spindle_mesh
+	spindle.set_surface_override_material(0, shelf_mat)
+	spindle.position = Vector3(0, 0.0015, 0)
+	_tray_slide_pivot.add_child(spindle)
+
+	# Seat the snap zone on the well. MediaTray re-expresses this relative to the
+	# shelf, so it must be set with the tray at REST — which it is.
+	_cartridge_slot.position = _tray_slide_rest + Vector3(0, 0.0025, 0)
+	var visual := _cartridge_slot.get_node_or_null("SlotVisual") as MeshInstance3D
+	if visual != null:
+		visual.visible = false
+
+
 func _build_disc_tray() -> void:
+	if _front_tray:
+		_build_front_disc_tray()
+		return
 	var d := MediaDimensions.disc_diameter(systemid)
 	var pod_r := d / 2.0 + 0.024
 	var lid_r := d / 2.0 + 0.028
