@@ -135,7 +135,6 @@ const GENERATIONS: Array = [
 		"systems": [
 			["dreamcast", "", "Sega Dreamcast"],
 			["playstation2", "", "PlayStation 2"],
-			["playstation2", "ps2_silver", "PlayStation 2 (Silver)"],
 			["gamecube", "", "Nintendo GameCube"],
 			["game_boy_advance", "", "Game Boy Advance"],
 			["game_boy_advance", "game_boy_advance_sp", "Game Boy Advance SP"],
