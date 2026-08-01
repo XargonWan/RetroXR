@@ -189,10 +189,35 @@ static func resolve(model_id: String, platform: String) -> Dictionary:
 	return placeholder_row()
 
 
+## Every model scene we have loaded, kept referenced.
+##
+## Godot's resource cache holds a WEAK reference, so freeing the last instance of
+## a model drops its PackedScene and the next spawn re-reads and re-parses the
+## whole thing. Measured on desktop 2026-08-01: loading the baked NES cost 442 ms
+## cold and 395 ms again after its instance was freed, against 0.0 ms with a
+## reference held. Quest storage is far slower than that, and this is paid on
+## EVERY spawn.
+##
+## The cost of holding them is the scenes themselves — meshes and textures for
+## models the player has already spawned once. If that becomes a problem on
+## device, bound this rather than removing it.
+static var _packed_scenes: Dictionary = {}
+
+
+static func packed_scene(scene_path: String) -> PackedScene:
+	var cached: PackedScene = _packed_scenes.get(scene_path)
+	if cached != null:
+		return cached
+	var packed := load(scene_path) as PackedScene
+	if packed != null:
+		_packed_scenes[scene_path] = packed
+	return packed
+
+
 static func instantiate(row: Dictionary) -> RetroSystemModel:
 	var scene_path: String = row.get("scene", "")
 	if not scene_path.is_empty():
-		var packed := load(scene_path) as PackedScene
+		var packed := packed_scene(scene_path)
 		if packed == null:
 			push_warning("[models] failed to load scene: " + scene_path)
 			return null
