@@ -10,6 +10,9 @@ extends Node3D
 ## Height above the TV's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.55
 
+## Built on first open, not with the panel — see CoreOptionsPanel.UI_SCENE.
+const UI_SCENE := preload("res://Scenes/UI/tv_options_2d.tscn")
+
 var _tv: RetroTV = null
 var _camera: Node3D = null
 # Guard so we only wire the 2D UI signals once (the SubViewport persists).
@@ -42,6 +45,8 @@ func show_for(tv: RetroTV, camera: Node3D) -> void:
 	if _tv:
 		global_position = _tv.global_position + Vector3(0, FLOAT_HEIGHT, 0)
 	visible = true
+	if _viewport_node.scene == null:
+		_viewport_node.scene = UI_SCENE
 	_ensure_ui_connected()
 	_populate()
 

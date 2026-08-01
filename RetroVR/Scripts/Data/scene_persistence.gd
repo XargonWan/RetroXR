@@ -12,6 +12,8 @@ const SAVE_DIR      := "user://scenes"
 const ARCADE_DIR    := "user://scenes/arcade"
 const MANIFEST_FILE := "user://scenes/arcade/manifest.json"
 const VERSION       := 1
+## How long the async restore may hold the main thread before yielding a frame.
+const FRAME_BUDGET_USEC := 4000
 
 const SYSTEM_SCENE           := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE               := preload("res://Scenes/Objects/tv.tscn")
@@ -68,6 +70,26 @@ func load_slot(root: Node, slot_id: String) -> bool:
 		return false
 	clear_scene(root)
 	return _read_scene_from_file(root, path)
+
+
+## Coroutine form of load_slot(), spread over frames — see
+## instantiate_objects_async(). Prefer it anywhere the player is wearing a
+## headset while it runs.
+func load_slot_async(root: Node, slot_id: String) -> bool:
+	if slot_id == "clean":
+		clear_scene(root)
+		return true
+	var path := _slot_file(slot_id)
+	if not FileAccess.file_exists(path):
+		push_warning("ScenePersistence: slot file not found '%s'" % path)
+		return false
+	clear_scene(root)
+	var objects: Variant = _read_objects(path)
+	if objects == null:
+		return false
+	var spawned: Dictionary = await instantiate_objects_async(root, objects)
+	print("[ScenePersistence] loaded %d objects from '%s'" % [spawned.size(), path])
+	return true
 
 
 ## Remove a slot from the manifest and delete its file.
@@ -195,20 +217,23 @@ func _write_scene_to_file(root: Node, path: String) -> bool:
 	return true
 
 
-func _read_scene_from_file(root: Node, path: String) -> bool:
+## The object entries of a slot file, or null if it cannot be read.
+func _read_objects(path: String) -> Variant:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if not f:
-		return false
+		return null
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
 	if not parsed is Dictionary:
 		push_error("ScenePersistence: invalid slot file '%s'" % path)
-		return false
+		return null
+	var objects: Variant = (parsed as Dictionary).get("objects", [])
+	return objects if objects is Array else null
 
-	var data := parsed as Dictionary
-	var objects: Variant = data.get("objects", [])
-	if not objects is Array:
-		return false
 
+func _read_scene_from_file(root: Node, path: String) -> bool:
+	var objects: Variant = _read_objects(path)
+	if objects == null:
+		return false
 	var spawned := instantiate_objects(root, objects as Array)
 	print("[ScenePersistence] loaded %d objects from '%s'" % [spawned.size(), path])
 	return true
@@ -218,119 +243,171 @@ func _read_scene_from_file(root: Node, path: String) -> bool:
 ## cross-connections (two passes). Returns {id: Node3D} for the spawned set.
 ## Shared by slot loading and multiplayer world snapshots (ObjectSync).
 func instantiate_objects(root: Node, objects: Array) -> Dictionary:
-	# Pass 1: spawn all objects.
 	var spawned: Dictionary = {}
 	var entries: Dictionary = {}
-	var count := 0
-	for entry: Variant in objects as Array:
-		if not entry is Dictionary:
-			continue
-		var d := entry as Dictionary
-		var id: int = d.get("id", -1)
-		if id < 0:
-			continue
-		var obj := _deserialize_object(d)
-		if obj:
-			root.add_child(obj)
-			obj.add_to_group("spawned")
-			spawned[id] = obj
-			entries[id] = d
-			count += 1
-
-	# Pass 2: restore connections.
-	for id: int in spawned:
-		var d: Dictionary = entries[id]
-		if spawned[id] is RetroSystem:
-			var sys := spawned[id] as RetroSystem
-			var tv_id: int = d.get("connected_tv_id", -1)
-			var tv_path: String = d.get("connected_tv_path", "")
-			print("[ScenePersistence] system id=%d connected_tv_id=%d tv_path=%s" % [id, tv_id, tv_path])
-			if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-				print("[ScenePersistence] restoring cable connection system→spawned tv")
-				sys.restore_cable_connection(spawned[tv_id] as RetroTV)
-			elif not tv_path.is_empty():
-				var tv_node := root.get_node_or_null(tv_path) as RetroTV
-				if tv_node:
-					print("[ScenePersistence] restoring cable connection system→scene tv '%s'" % tv_path)
-					sys.restore_cable_connection(tv_node)
-				else:
-					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-			# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
-			for ch in range(1, sys.get_channel_count()):
-				var ch_tv_id: int = d.get("connected_tv%d_id" % ch, -1)
-				var ch_tv_path: String = d.get("connected_tv%d_path" % ch, "")
-				if spawned.has(ch_tv_id) and spawned[ch_tv_id] is RetroTV:
-					sys.restore_cable_connection(spawned[ch_tv_id] as RetroTV, ch)
-				elif not ch_tv_path.is_empty():
-					var ch_tv_node := root.get_node_or_null(ch_tv_path) as RetroTV
-					if ch_tv_node:
-						sys.restore_cable_connection(ch_tv_node, ch)
-					else:
-						push_warning("[ScenePersistence] could not find scene TV at '%s'" % ch_tv_path)
-			var cart_id: int = d.get("snapped_cartridge_id", -1)
-			if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
-				print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
-				sys.restore_cartridge(spawned[cart_id])
-			var memcard_id: int = d.get("snapped_memcard_id", -1)
-			if spawned.has(memcard_id) and spawned[memcard_id] is MemoryCard:
-				print("[ScenePersistence] restoring memory card id=%d" % memcard_id)
-				sys.restore_memory_card(spawned[memcard_id])
-		elif spawned[id] is VCRPlayer:
-			var vcr := spawned[id] as VCRPlayer
-			var tv_id: int = d.get("connected_tv_id", -1)
-			var tv_path: String = d.get("connected_tv_path", "")
-			if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-				vcr.restore_cable_connection(spawned[tv_id] as RetroTV)
-			elif not tv_path.is_empty():
-				var tv_node := root.get_node_or_null(tv_path) as RetroTV
-				if tv_node:
-					vcr.restore_cable_connection(tv_node)
-				else:
-					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-			var tape_id: int = d.get("snapped_tape_id", -1)
-			if spawned.has(tape_id) and spawned[tape_id] is VCRTape:
-				vcr.restore_tape(spawned[tape_id])
-		elif spawned[id] is DVDPlayer:
-			var dvd := spawned[id] as DVDPlayer
-			var tv_id: int = d.get("connected_tv_id", -1)
-			var tv_path: String = d.get("connected_tv_path", "")
-			if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-				dvd.restore_cable_connection(spawned[tv_id] as RetroTV)
-			elif not tv_path.is_empty():
-				var tv_node := root.get_node_or_null(tv_path) as RetroTV
-				if tv_node:
-					dvd.restore_cable_connection(tv_node)
-				else:
-					push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-			var disc_id: int = d.get("snapped_disc_id", -1)
-			if spawned.has(disc_id) and spawned[disc_id] is DVDDisc:
-				dvd.restore_disc(spawned[disc_id])
-		elif spawned[id] is RetroAudioPlayer:
-			var ap := spawned[id] as RetroAudioPlayer
-			var media_id: int = d.get("snapped_media_id", -1)
-			if spawned.has(media_id) and (spawned[media_id] is AudioDisc or spawned[media_id] is AudioCassette):
-				ap.restore_media(spawned[media_id])
-		elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
-			var ctrl: Node3D = spawned[id]
-			var port_idx: int = d.get("port_index", -1)
-			if port_idx < 0:
-				continue
-			var sys_id: int = d.get("connected_system_id", -1)
-			var sys_path: String = d.get("connected_system_path", "")
-			var sys: RetroSystem = null
-			if spawned.has(sys_id) and spawned[sys_id] is RetroSystem:
-				sys = spawned[sys_id] as RetroSystem
-			elif not sys_path.is_empty():
-				sys = root.get_node_or_null(sys_path) as RetroSystem
-			if sys == null:
-				push_warning("[ScenePersistence] controller id=%d: system not found" % id)
-				continue
-			print("[ScenePersistence] restoring controller id=%d → system port %d" % [id, port_idx])
-			ctrl.call("restore_port_connection", sys, port_idx)
-
-	if count > 0:
-		print("[ScenePersistence] instantiated %d objects" % count)
+	for entry: Variant in objects:
+		_spawn_entry(root, entry, spawned, entries)
+	_restore_connections(root, spawned, entries)
 	return spawned
+
+
+## Same, but hands a frame back once it has held the main thread for
+## FRAME_BUDGET_USEC. A slot restored as part of a room change is built at the
+## exact moment the headset has nothing new to draw: a save with a dozen systems
+## in it blocks for a second, and a blocked main thread in VR is a frozen image,
+## not a slow one. Callers that need every object within the frame — netplay
+## snapshots — use instantiate_objects().
+func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
+	var spawned: Dictionary = {}
+	var entries: Dictionary = {}
+	var tree := root.get_tree()
+	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	for entry: Variant in objects:
+		_spawn_entry(root, entry, spawned, entries)
+		if Time.get_ticks_usec() < deadline:
+			continue
+		await tree.process_frame
+		# Another scene change can tear the room down while we are yielding.
+		if not is_instance_valid(root) or not root.is_inside_tree():
+			return spawned
+		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	await _restore_connections_async(root, spawned, entries)
+	return spawned
+
+
+func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dictionary) -> void:
+	if not entry is Dictionary:
+		return
+	var d := entry as Dictionary
+	var id: int = d.get("id", -1)
+	if id < 0:
+		return
+	var obj := _deserialize_object(d)
+	if obj == null:
+		return
+	root.add_child(obj)
+	obj.add_to_group("spawned")
+	spawned[id] = obj
+	entries[id] = d
+
+
+## Pass 2: wire the spawned objects to each other. Has to run after every object
+## exists, because a connection can point either way through the set.
+func _restore_connections(root: Node, spawned: Dictionary, entries: Dictionary) -> void:
+	for id: int in spawned:
+		_restore_entry(root, id, spawned, entries)
+	_report_restored(spawned)
+
+
+## Same, yielding a frame whenever it has held the main thread too long.
+func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictionary) -> void:
+	var tree := root.get_tree()
+	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	for id: int in spawned:
+		_restore_entry(root, id, spawned, entries)
+		if Time.get_ticks_usec() < deadline:
+			continue
+		await tree.process_frame
+		if not is_instance_valid(root) or not root.is_inside_tree():
+			return
+		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	_report_restored(spawned)
+
+
+func _report_restored(spawned: Dictionary) -> void:
+	if spawned.size() > 0:
+		print("[ScenePersistence] instantiated %d objects" % spawned.size())
+
+
+func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionary) -> void:
+	var d: Dictionary = entries[id]
+	if spawned[id] is RetroSystem:
+		var sys := spawned[id] as RetroSystem
+		var tv_id: int = d.get("connected_tv_id", -1)
+		var tv_path: String = d.get("connected_tv_path", "")
+		print("[ScenePersistence] system id=%d connected_tv_id=%d tv_path=%s" % [id, tv_id, tv_path])
+		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+			print("[ScenePersistence] restoring cable connection system→spawned tv")
+			sys.restore_cable_connection(spawned[tv_id] as RetroTV)
+		elif not tv_path.is_empty():
+			var tv_node := root.get_node_or_null(tv_path) as RetroTV
+			if tv_node:
+				print("[ScenePersistence] restoring cable connection system→scene tv '%s'" % tv_path)
+				sys.restore_cable_connection(tv_node)
+			else:
+				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
+		for ch in range(1, sys.get_channel_count()):
+			var ch_tv_id: int = d.get("connected_tv%d_id" % ch, -1)
+			var ch_tv_path: String = d.get("connected_tv%d_path" % ch, "")
+			if spawned.has(ch_tv_id) and spawned[ch_tv_id] is RetroTV:
+				sys.restore_cable_connection(spawned[ch_tv_id] as RetroTV, ch)
+			elif not ch_tv_path.is_empty():
+				var ch_tv_node := root.get_node_or_null(ch_tv_path) as RetroTV
+				if ch_tv_node:
+					sys.restore_cable_connection(ch_tv_node, ch)
+				else:
+					push_warning("[ScenePersistence] could not find scene TV at '%s'" % ch_tv_path)
+		var cart_id: int = d.get("snapped_cartridge_id", -1)
+		if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
+			print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
+			sys.restore_cartridge(spawned[cart_id])
+		var memcard_id: int = d.get("snapped_memcard_id", -1)
+		if spawned.has(memcard_id) and spawned[memcard_id] is MemoryCard:
+			print("[ScenePersistence] restoring memory card id=%d" % memcard_id)
+			sys.restore_memory_card(spawned[memcard_id])
+	elif spawned[id] is VCRPlayer:
+		var vcr := spawned[id] as VCRPlayer
+		var tv_id: int = d.get("connected_tv_id", -1)
+		var tv_path: String = d.get("connected_tv_path", "")
+		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+			vcr.restore_cable_connection(spawned[tv_id] as RetroTV)
+		elif not tv_path.is_empty():
+			var tv_node := root.get_node_or_null(tv_path) as RetroTV
+			if tv_node:
+				vcr.restore_cable_connection(tv_node)
+			else:
+				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+		var tape_id: int = d.get("snapped_tape_id", -1)
+		if spawned.has(tape_id) and spawned[tape_id] is VCRTape:
+			vcr.restore_tape(spawned[tape_id])
+	elif spawned[id] is DVDPlayer:
+		var dvd := spawned[id] as DVDPlayer
+		var tv_id: int = d.get("connected_tv_id", -1)
+		var tv_path: String = d.get("connected_tv_path", "")
+		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
+			dvd.restore_cable_connection(spawned[tv_id] as RetroTV)
+		elif not tv_path.is_empty():
+			var tv_node := root.get_node_or_null(tv_path) as RetroTV
+			if tv_node:
+				dvd.restore_cable_connection(tv_node)
+			else:
+				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
+		var disc_id: int = d.get("snapped_disc_id", -1)
+		if spawned.has(disc_id) and spawned[disc_id] is DVDDisc:
+			dvd.restore_disc(spawned[disc_id])
+	elif spawned[id] is RetroAudioPlayer:
+		var ap := spawned[id] as RetroAudioPlayer
+		var media_id: int = d.get("snapped_media_id", -1)
+		if spawned.has(media_id) and (spawned[media_id] is AudioDisc or spawned[media_id] is AudioCassette):
+			ap.restore_media(spawned[media_id])
+	elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
+		var ctrl: Node3D = spawned[id]
+		var port_idx: int = d.get("port_index", -1)
+		if port_idx < 0:
+			return
+		var sys_id: int = d.get("connected_system_id", -1)
+		var sys_path: String = d.get("connected_system_path", "")
+		var sys: RetroSystem = null
+		if spawned.has(sys_id) and spawned[sys_id] is RetroSystem:
+			sys = spawned[sys_id] as RetroSystem
+		elif not sys_path.is_empty():
+			sys = root.get_node_or_null(sys_path) as RetroSystem
+		if sys == null:
+			push_warning("[ScenePersistence] controller id=%d: system not found" % id)
+			return
+		print("[ScenePersistence] restoring controller id=%d → system port %d" % [id, port_idx])
+		ctrl.call("restore_port_connection", sys, port_idx)
 
 
 # ── Serialization ──────────────────────────────────────────────────────────────

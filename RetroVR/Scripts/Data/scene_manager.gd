@@ -25,6 +25,8 @@ const SCENE_TITLES := {
 }
 const PREFS_FILE := "user://scenes/prefs.json"
 const LOADING_RIG_SCENE := preload("res://Scenes/UI/loading_rig.tscn")
+## Every room instances res://Scenes/player_rig.tscn under this name.
+const PLAYER_RIG_NAME := "PlayerRig"
 
 var current_scene_id: String = "arcade"
 var auto_save_on_switch: bool = true
@@ -110,23 +112,36 @@ func change_scene(scene_id: String) -> void:
 ## reference are resident at once. Going from the arcade into a heavy room that
 ## way peaks at the sum of both, which is what the Quest cannot afford. Tearing
 ## down first costs a black gap, which is what the loading rig is for.
+##
+## The player's rig is carried across rather than rebuilt. Building one costs
+## ~380 ms of blocked main thread on a desktop — most of it the spawn menu's
+## viewport UI — and several times that on a Quest, and it is spent inside the
+## single add_child() that brings the new room in, with no frame drawn until it
+## returns. In VR a blocked main thread is a frozen headset: the compositor
+## re-projects the last frame it was handed, which is the loading screen. So the
+## rig steps out of the old room, waits on the root, and is spliced into the new
+## one before it enters the tree. The viewport also never loses its camera that
+## way, so nothing has to hand XR tracking over mid-swap.
 func _run_transition(path: String, title: String) -> void:
 	if _transitioning:
 		return
 	_transitioning = true
 	var tree := get_tree()
 
-	# Up first, so the headset keeps a tracked camera and something to look at.
-	var rig: LoadingRig = LOADING_RIG_SCENE.instantiate()
-	tree.root.add_child(rig)
-	rig.set_title("LOADING  %s" % title if not title.is_empty() else "LOADING")
-	await tree.process_frame
-
+	# All of this runs in one deferred call: the room leaves and the loading
+	# screen arrives without a frame drawn in between.
 	var outgoing := tree.current_scene
+	var player := _take_player_rig(outgoing)
 	if outgoing != null:
 		tree.current_scene = null
 		tree.root.remove_child(outgoing)
 		outgoing.queue_free()
+
+	var rig: LoadingRig = LOADING_RIG_SCENE.instantiate()
+	rig.prepare_for_player(player)
+	tree.root.add_child(rig)
+	rig.set_title("LOADING  %s" % title if not title.is_empty() else "LOADING")
+
 	# Two frames: one for queue_free to run, one for the freed resources to drop
 	# out of the cache before the next scene starts pulling its own in.
 	await tree.process_frame
@@ -139,6 +154,9 @@ func _run_transition(path: String, title: String) -> void:
 		if status == ResourceLoader.THREAD_LOAD_LOADED:
 			break
 		if status != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			# Nothing to go back to — the old room is already gone. Leave the
+			# player parked on the root: they keep head tracking and the menu
+			# (a child of the rig) still works, so another room can be picked.
 			push_error("SceneManager: failed to load '%s' (status %d)" % [path, status])
 			rig.queue_free()
 			_transitioning = false
@@ -150,14 +168,76 @@ func _run_transition(path: String, title: String) -> void:
 
 	var packed: PackedScene = ResourceLoader.load_threaded_get(path)
 	var incoming: Node = packed.instantiate()
+	if player != null:
+		_seat_player_rig(incoming, player)
 	# The rig has to be out of the tree BEFORE the incoming scene enters, not just
-	# switched off. A Camera3D claims the viewport on entry only while the viewport
-	# has no camera registered at all, so a rig camera still sitting there — even
-	# with current = false — leaves the new scene's XRCamera3D unclaimed and the
-	# view grey. Leaving the tree also releases the XROrigin3D, of which only one
-	# may be current, and the rig's WorldEnvironment.
+	# switched off. Its WorldEnvironment would otherwise be the one the new room
+	# has to displace, and in the no-player fallback its camera holds the viewport:
+	# a Camera3D claims the viewport on entry only while none is registered at all,
+	# so a rig camera still sitting there — even with current = false — leaves the
+	# new scene's XRCamera3D unclaimed and the view grey.
 	tree.root.remove_child(rig)
 	rig.queue_free()
 	tree.root.add_child(incoming)
 	tree.current_scene = incoming
+	if player != null:
+		_settle_player_rig(player)
 	_transitioning = false
+
+
+## Detach the player's rig from the outgoing room and park it on the root so it
+## survives the teardown. Null if the room has no rig — a probe scene, or one
+## that never had one — in which case the loading rig brings its own camera.
+func _take_player_rig(outgoing: Node) -> Node3D:
+	if outgoing == null:
+		return null
+	var player := outgoing.get_node_or_null(PLAYER_RIG_NAME) as Node3D
+	if player == null:
+		return null
+	# Whatever is in the player's hands belongs to the room about to be freed.
+	for node: Node in player.find_children("*", "XRToolsFunctionPickup", true, false):
+		var pickup := node as XRToolsFunctionPickup
+		if pickup.picked_up_object != null:
+			pickup.drop_object()
+	outgoing.remove_child(player)
+	get_tree().root.add_child(player)
+	return player
+
+
+## Splice the carried rig into the incoming room in place of the one the room
+## authored, before any of it enters the tree — so the room's own rig never runs
+## a single _ready().
+func _seat_player_rig(incoming: Node, player: Node3D) -> void:
+	var index := -1
+	var authored := incoming.get_node_or_null(PLAYER_RIG_NAME) as Node3D
+	if authored != null:
+		index = authored.get_index()
+		player.transform = authored.transform
+		# Locomotion walks the origin, not the rig root, so the origin has to go
+		# back to the value the room's own rig was authored with. Otherwise the
+		# player arrives at the new spawn point plus wherever they wandered in
+		# the last room.
+		var authored_origin := _find_origin(authored)
+		var origin := _find_origin(player)
+		if authored_origin != null and origin != null:
+			origin.transform = authored_origin.transform
+		incoming.remove_child(authored)
+		authored.free()
+	player.get_parent().remove_child(player)
+	incoming.add_child(player)
+	if index >= 0:
+		incoming.move_child(player, index)
+
+
+## Re-apply the rig settings that depend on which room we are in. Runs once the
+## incoming scene is the current one, because the arcade's slot auto-load builds
+## into it.
+func _settle_player_rig(player: Node3D) -> void:
+	var menu := player.get_node_or_null("SpawnMenuController")
+	if menu != null and menu.has_method("refresh_for_scene"):
+		menu.refresh_for_scene()
+
+
+func _find_origin(player: Node3D) -> Node3D:
+	var found := player.find_children("*", "XROrigin3D", true, false)
+	return found[0] as Node3D if not found.is_empty() else null

@@ -203,10 +203,23 @@ func _connect_menu_signals() -> void:
 	_on_aim_crosshair_changed(AppPrefs.aim_crosshair)
 
 	# Auto-load last active slot on startup (arcade only)
+	_autoload_slot()
+
+
+## Re-apply what depends on which room we are in. SceneManager calls this after
+## carrying this rig into a new scene: the rig is not rebuilt, so _deferred_setup
+## and _connect_menu_signals do not run again and the room-dependent settings
+## would otherwise still be the last room's.
+func refresh_for_scene() -> void:
+	_apply_world_scale(_world_scale)
+	_autoload_slot()
+
+
+func _autoload_slot() -> void:
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm and sm.current_scene_id == "arcade":
 		if sm.active_slot_id != "clean":
-			ScenePersistence.new().load_slot(get_tree().current_scene, sm.active_slot_id)
+			await ScenePersistence.new().load_slot_async(get_tree().current_scene, sm.active_slot_id)
 
 
 # ── Rebinding ─────────────────────────────────────────────────────────────────
@@ -1085,7 +1098,7 @@ func _on_scene_change_requested(scene_id: String) -> void:
 
 func _on_slot_load(slot_id: String) -> void:
 	var persistence := ScenePersistence.new()
-	persistence.load_slot(get_tree().current_scene, slot_id)
+	await persistence.load_slot_async(get_tree().current_scene, slot_id)
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm:
 		sm.set_active_slot(slot_id)

@@ -9,6 +9,12 @@ extends Node3D
 ## Height above the system's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.42
 
+## Built on first open, not with the panel. A SubViewport and the whole control
+## tree inside it is the most expensive part of a system, and a room pays it once
+## per system while it is being built — main-thread time spent on a UI nobody has
+## asked for yet, at the one moment the headset has nothing new to draw.
+const UI_SCENE := preload("res://Scenes/UI/core_options_2d.tscn")
+
 var _system: RetroSystem = null
 var _camera: Node3D = null
 # Guard so we only wire the 2D UI signals once (the SubViewport persists).
@@ -49,6 +55,8 @@ func show_for(system: RetroSystem, camera: Node3D) -> void:
 		global_position = _system.global_position + Vector3(0, FLOAT_HEIGHT, 0)
 	visible = true
 	print("[CoreOptionsPanel] showing for system '%s'" % system.name)
+	if _viewport_node.scene == null:
+		_viewport_node.scene = UI_SCENE
 	_ensure_ui_connected()
 	_populate()
 
