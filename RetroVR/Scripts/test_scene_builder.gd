@@ -122,7 +122,7 @@ const GENERATIONS: Array = [
 			["playstation2", BOX, "PlayStation 2"],
 			["gamecube", BOX, "Nintendo GameCube"],
 			["game_boy_advance", "game_boy_advance_primitive", "Game Boy Advance"],
-			["game_boy_advance", "game_boy_advance_primitive", "Game Boy Advance SP"],
+			["game_boy_advance", "game_boy_advance_sp_primitive", "Game Boy Advance SP"],
 			["pokemon_mini", "pokemon_mini", "Pokémon mini"],
 		],
 	},
@@ -207,8 +207,9 @@ func _build_station(systemid: String, model_id: String, plaque: String,
 	var yaw := PI * 0.5 if side < 0.0 else -PI * 0.5
 	var bay := Transform3D(Basis(Vector3.UP, yaw), Vector3(side * BAY_X, 0.0, z))
 
-	# Named for the plaque, which is what tells two stations apart when they share
-	# a platform AND a model — as the two Game Boy Advance stations now do.
+	# Named for the plaque: a station is one exhibit, and two of them can sit under
+	# the same platform — the two Game Boy Advance stations — which a systemid stem
+	# cannot tell apart.
 	var name_stem := plaque.replace(" ", "_").validate_node_name()
 	_build_table(bay, name_stem, plaque)
 

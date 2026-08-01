@@ -115,6 +115,8 @@ const _ROWS: Dictionary = {
 		"requires": ["res://imported-assets/game_boy_advance_sp_GameboyAdvanceSP_OFF_BaseColor.png"]},
 	"game_boy_advance_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance (primitive)", "handheld": true,
 		"scene": _SCENES + "game_boy_advance_primitive.tscn"},
+	"game_boy_advance_sp_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance SP (primitive)", "handheld": true,
+		"scene": _SCENES + "game_boy_advance_sp_primitive.tscn"},
 	"nds":                  {"platform": "nds", "label": "DS Phat", "handheld": true,
 		"scene": _SCENES + "nds.tscn",
 		"requires": ["res://imported-assets/ds_phat_nds_diffuse.png"]},

@@ -6,10 +6,14 @@
 ## ("TopScreen") and the live LCD quad both ride a LidPivot so the picture
 ## folds with the shell.
 ##
-## The whole fold rig is AUTHORED in game_boy_advance_sp.tscn — pivot on the
-## hinge axis, lid + picture quad parented onto it, and the VRHinge's own limits,
-## grab box and hint icon. Nothing here computes geometry; the scene is the
-## source of truth, as it is for every other handheld.
+## The whole fold rig is AUTHORED in the scene — pivot on the hinge axis, lid +
+## picture quad parented onto it, and the VRHinge's own limits, grab box and hint
+## icon. Nothing here computes geometry; the scene is the source of truth, as it
+## is for every other handheld.
+##
+## Serves two separate models: game_boy_advance_sp.tscn (detailed shell, baked as
+## "Shell") and game_boy_advance_sp_primitive.tscn (the clamshell authored in the
+## scene itself). Neither is a fallback for the other.
 class_name RetroSystemModelGameBoyAdvanceSP
 extends RetroSystemModelHandheld
 
@@ -184,8 +188,32 @@ func animate_controls(btn: int, _lstick: Vector2, _rstick: Vector2) -> void:
 # cabinet button at the POWER cap, which both did nothing and double-claimed it.
 
 
+## Interior open angle in degrees: 0 = shut, 180 = folded flat back — the same
+## convention as the NDS/3DS (RetroSystemModelDualScreen.get_lid_angle_deg), so
+## ScenePersistence saves and restores this lid like theirs.
+func get_lid_angle_deg() -> float:
+	var pivot := get_node_or_null("LidPivot") as Node3D
+	return 180.0 - rad_to_deg(pivot.rotation.x) if pivot != null else -1.0
+
+
+func set_lid_angle_deg(open_deg: float) -> void:
+	var rot := clampf(180.0 - open_deg, 0.0, 180.0)
+	# Through the hinge where there is one: it owns the limits, and driving the
+	# pivot behind its back leaves its own tracking state stale.
+	var hinge := get_node_or_null("LidPivot/LidHinge") as VRHinge
+	if hinge != null:
+		hinge.set_rotation_deg_no_signal(rot)
+		return
+	var pivot := get_node_or_null("LidPivot") as Node3D
+	if pivot != null:
+		pivot.rotation.x = deg_to_rad(rot)
+
+
+## The stand-in has no bundled AV lead to hang the port on, so it takes the
+## handheld default (rear edge, clear of the cart slot).
 func configure_cable_attach(attach_point: Node3D) -> void:
 	if _glb == null:
+		super.configure_cable_attach(attach_point)
 		return
 	var mk := _glb.find_child("RCA_White", true, false) as MeshInstance3D
 	attach_point.global_position = mk.global_transform * mk.get_aabb().get_center() if mk else global_position
