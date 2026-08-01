@@ -151,6 +151,11 @@ var _c_n2: PackedVector3Array = []
 # slab (see the wrong-side recovery block) — recovery fires at 2.
 var _stuck_passes: PackedByteArray = []
 
+# Indices carrying a cached contact plane this tick, gathered once per tick and
+# walked on every solver iteration (see the constraint solve).
+var _active_mid: PackedInt32Array = []
+var _active_contact: PackedInt32Array = []
+
 # Anchors
 var start_node: Node3D = null
 var end_node: Node3D = null
@@ -492,11 +497,38 @@ func _physics_process(delta: float) -> void:
 	var start_exit := _plug_exit_dir(start_node) if start_fixed else Vector3.ZERO
 	var end_exit := _plug_exit_dir(end_node) if end_fixed else Vector3.ZERO
 
+	# Contact flags are only rewritten by the throttled rest pass further down,
+	# never inside the solve, so the active planes are gathered once here rather
+	# than re-tested on all eight iterations.
+	_active_mid.clear()
+	for i in range(count - 1):
+		if _mid_contact[i] != 0:
+			_active_mid.append(i)
+	_active_contact.clear()
+	for i in count:
+		if _inv_mass[i] != 0.0 and _c_flags[i] != 0:
+			_active_contact.append(i)
+
 	# --- Constraint solve ---
 	for iter_i in iters:
-		# Stretch (distance) constraints
+		# Stretch (distance) constraints, inlined: 60 pairs on each of 8
+		# iterations is 480 calls per rope per tick, and at that rate GDScript's
+		# call overhead costs more than the arithmetic inside.
 		for i in range(count - 1):
-			_solve_pair(i, i + 1, segment_length, k_stretch, false)
+			var w_a := _inv_mass[i]
+			var w_b := _inv_mass[i + 1]
+			var w_sum := w_a + w_b
+			if w_sum == 0.0:
+				continue
+			var p_a := _points[i]
+			var p_b := _points[i + 1]
+			var diff := p_b - p_a
+			var dist := diff.length()
+			if dist < 0.0001:
+				continue
+			var corr := diff * ((dist - segment_length) / dist * k_stretch / w_sum)
+			_points[i] = p_a + corr * w_a
+			_points[i + 1] = p_b - corr * w_b
 		# Bend constraints, hierarchical: besides adjacent triples (spacing 1),
 		# also constrain toward midpoints at spacing 2/4/8… — plain PBD bending
 		# saturates with chain length (corrections propagate one particle per
@@ -512,12 +544,40 @@ func _physics_process(delta: float) -> void:
 			var s := 1
 			while s * 2 <= count - 1 and levels > 0:
 				var allowed := allowed_dev * float(s * s)
-				if iter_i % 2 == 0:
-					for i in range(s, count - s):
-						_solve_bend(i, s, allowed, k_bend)
-				else:
-					for i in range(count - s - 1, s - 1, -1):
-						_solve_bend(i, s, allowed, k_bend)
+				var allowed_sq := allowed * allowed
+				var lo := s
+				var span := count - s - lo
+				var forward := iter_i % 2 == 0
+				# _solve_bend inlined. Two hierarchy levels over ~59 particles on
+				# each of 8 iterations is ~900 calls per rope per tick — the
+				# hottest thing the solver does, where GDScript's call overhead
+				# outweighs the body. The sweep direction is folded into the
+				# index rather than duplicating the body into two loops.
+				for n in span:
+					var i := (lo + n) if forward else (count - s - 1 - n)
+					var a := i - s
+					var c := i + s
+					var w_a := _inv_mass[a]
+					var w_b := _inv_mass[i]
+					var w_c := _inv_mass[c]
+					var w_total := w_b + 0.5 * (w_a + w_c)
+					if w_total == 0.0:
+						continue
+					var off := (_points[a] + _points[c]) * 0.5 - _points[i]
+					var dev_sq := off.length_squared()
+					if dev_sq < 1e-8:
+						continue
+					var v: Vector3
+					if allowed > 0.0:
+						if dev_sq <= allowed_sq:
+							continue
+						var dev := sqrt(dev_sq)
+						v = off * ((dev - allowed) / dev * k_bend)
+					else:
+						v = off * k_bend
+					_points[i] += v * (w_b / w_total)
+					_points[a] -= v * (0.5 * w_a / w_total)
+					_points[c] -= v * (0.5 * w_c / w_total)
 				s *= 2
 				levels -= 1
 		# End stiffness (strain-relief boot): hold the first/last few segments
@@ -564,16 +624,24 @@ func _physics_process(delta: float) -> void:
 		# Cached contact planes (refreshed on the throttled rest pass below) —
 		# solved together with the other constraints so contacts, including
 		# edge wraps, are part of the equilibrium instead of oscillating.
-		for i in range(count - 1):
-			if _mid_contact[i] != 0:
-				_solve_mid_contact(i)
-		for i in count:
-			if _inv_mass[i] == 0.0 or _c_flags[i] == 0:
-				continue
-			if (_c_flags[i] & 1) != 0:
-				_project_plane(i, _c_p1[i], _c_n1[i])
-			if (_c_flags[i] & 2) != 0:
-				_project_plane(i, _c_p2[i], _c_n2[i])
+		for i in _active_mid:
+			_solve_mid_contact(i)
+		# Cached contact planes, inlined for the same reason as the bend: this
+		# runs for every contacting particle on every iteration.
+		for i in _active_contact:
+			var flags := _c_flags[i]
+			var p := _points[i]
+			if (flags & 1) != 0:
+				var n1 := _c_n1[i]
+				var d1 := (p - _c_p1[i]).dot(n1)
+				if d1 < collision_radius:
+					p += n1 * (collision_radius - d1)
+			if (flags & 2) != 0:
+				var n2 := _c_n2[i]
+				var d2 := (p - _c_p2[i]).dot(n2)
+				if d2 < collision_radius:
+					p += n2 * (collision_radius - d2)
+			_points[i] = p
 		_pin_anchors()
 
 	# Friction for cached resting contacts (once per frame, not per iteration):
@@ -593,28 +661,43 @@ func _physics_process(delta: float) -> void:
 			var tangential := vel - n * vel.dot(n)
 			_prev_points[i] = _points[i] - tangential * (1.0 - surface_friction)
 
+	# Cadence shared by the two heavy passes below.
+	_raycast_frame += 1
+	var do_rest := _raycast_frame >= raycast_interval
+	if do_rest:
+		_raycast_frame = 0
+
 	# --- Self collision ---
+	# Runs every tick, not on the cadence above, despite being the only
+	# O(n²) pass here. Tried it at raycast_interval and a slack cable settles
+	# visibly differently: with the pushout applied on one tick in three, gravity
+	# and the stretch constraints close the coils unopposed in between, and a
+	# cord that should drape off a table collapses into a flat pile on it.
 	if self_collision:
 		var min_d := collision_radius * 2.0
+		var min_d_sq := min_d * min_d
 		for i in range(count):
+			var w_i := _inv_mass[i]
+			var p_i := _points[i]
 			for j in range(i + 2, count):
-				var w_sum := _inv_mass[i] + _inv_mass[j]
+				var w_j := _inv_mass[j]
+				var w_sum := w_i + w_j
 				if w_sum == 0.0:
 					continue
-				var diff := _points[j] - _points[i]
-				var dist := diff.length()
-				if dist >= min_d or dist < 0.0001:
+				var diff := _points[j] - p_i
+				# Squared reject: this pass is O(n²) — ~1800 pairs a tick — and
+				# all but a handful are nowhere near touching.
+				var d_sq := diff.length_squared()
+				if d_sq >= min_d_sq or d_sq < 1e-8:
 					continue
+				var dist := sqrt(d_sq)
 				var push := diff * ((dist - min_d) / dist)
-				_points[i] += push * (_inv_mass[i] / w_sum)
-				_points[j] -= push * (_inv_mass[j] / w_sum)
+				p_i += push * (w_i / w_sum)
+				_points[j] -= push * (w_j / w_sum)
+			_points[i] = p_i
 
 	# --- Surface collision ---
 	if surface_collision_mask != 0 and _ray_query:
-		_raycast_frame += 1
-		var do_rest := _raycast_frame >= raycast_interval
-		if do_rest:
-			_raycast_frame = 0
 		var space_state := get_world_3d().direct_space_state
 		for i in range(count):
 			if _inv_mass[i] == 0.0:
@@ -815,25 +898,6 @@ func _stub_weight(base: float, k: int, n: int) -> float:
 	return base * (1.0 - float(k - 1) / float(n))
 
 
-## Positional constraint between points a/b toward rest distance, split by
-## inverse mass. one_sided = only correct when closer than rest.
-func _solve_pair(a: int, b: int, rest: float, k: float, one_sided: bool) -> void:
-	var w_a := _inv_mass[a]
-	var w_b := _inv_mass[b]
-	var w_sum := w_a + w_b
-	if w_sum == 0.0:
-		return
-	var diff := _points[b] - _points[a]
-	var dist := diff.length()
-	if dist < 0.0001:
-		return
-	if one_sided and dist >= rest:
-		return
-	var correction := diff * ((dist - rest) / dist) * k
-	_points[a] += correction * (w_a / w_sum)
-	_points[b] -= correction * (w_b / w_sum)
-
-
 ## Angular bend constraint: pull particle b toward the midpoint of its
 ## neighbours at ±spacing (momentum-balanced: neighbours get half the opposite
 ## correction), ignoring deviation below allowed_dev (max_bend_degrees).
@@ -847,10 +911,25 @@ func _solve_bend(b: int, spacing: int, allowed_dev: float, k: float) -> void:
 	if w_total == 0.0:
 		return
 	var delta := (_points[a] + _points[c]) * 0.5 - _points[b]
-	var dev := delta.length()
-	if dev <= allowed_dev or dev < 0.0001:
-		return
-	var v := delta * ((dev - allowed_dev) / dev) * k
+	var v: Vector3
+	if allowed_dev > 0.0:
+		# Squared test first: this is the solver's hottest call, and a particle
+		# inside its allowance needs no root.
+		var dev_sq := delta.length_squared()
+		if dev_sq <= allowed_dev * allowed_dev or dev_sq < 1e-8:
+			return
+		var dev := sqrt(dev_sq)
+		v = delta * ((dev - allowed_dev) / dev) * k
+	else:
+		# No free-bend allowance makes the (dev - allowed) / dev scale exactly 1,
+		# so the correction is delta * k and the length is never needed. This is
+		# the default path: max_bend_degrees is 0 unless a rope opts in, and the
+		# strain-relief stub always passes 0. The degenerate case still has to be
+		# dropped rather than scaled — nudging an already-straight triple by a
+		# fraction of a micrometre is what stops a settled rope going to sleep.
+		if delta.length_squared() < 1e-8:
+			return
+		v = delta * k
 	_points[b] += v * (w_b / w_total)
 	_points[a] -= v * (0.5 * w_a / w_total)
 	_points[c] -= v * (0.5 * w_c / w_total)
@@ -885,14 +964,6 @@ func _plane_valid(i: int, cp: Vector3, n: Vector3) -> bool:
 	if p.distance_squared_to(cp) > segment_length * segment_length * 4.0:
 		return false
 	return absf((p - cp).dot(n)) < collision_radius * 3.0
-
-
-## Positional projection: keep particle i at least collision_radius outside
-## the cached plane (runs every solver iteration).
-func _project_plane(i: int, cp: Vector3, n: Vector3) -> void:
-	var d := (_points[i] - cp).dot(n)
-	if d < collision_radius:
-		_points[i] += n * (collision_radius - d)
 
 
 func _pin_anchors() -> void:
