@@ -3,133 +3,19 @@ class_name RetroSystem
 extends XRToolsPickable
 
 
-## Maps systemid → GDScript path for the hardware model subclass. Used for
-## systems whose model is NOT an authored scene (see _MODEL_SCENES).
-const _MODEL_SCRIPTS: Dictionary = {
-	# Disabled for now — the N64 / PlayStation (and NES) console models are
-	# imported-derived and replicate real hardware trade dress, an IP risk for
-	# store distribution (e.g. SideQuest). These systems fall back to the
-	# procedural default_model. To re-enable: restore the entry AND drop
-	# "imported-assets/*" from the export preset's exclude_filter.
-	#"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
-	#"playstation": "res://Scripts/Objects/system_models/playstation_model.gd",
-	# NOTE: "playstation" now has an authored scene — see _MODEL_SCENES below.
-	"nintendo_64": "res://Scripts/Objects/system_models/n64_model.gd",
-	"nes": "res://Scripts/Objects/system_models/nes_model.gd",
-	"dos": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
-}
-
-## Maps systemid → authored model .tscn. The handheld shells (body, screen,
-## bezel, cosmetics, on-device controls) live in editable scenes; the scene's
-## root node still carries the RetroSystemModel* script that wires behaviour.
-## Scenes win over _MODEL_SCRIPTS when both exist. To add or restyle a handheld,
-## edit its .tscn — no procedural geometry code involved.
-const _MODEL_SCENES: Dictionary = {
-	# Primitive geometry on purpose: it exists to prove the sliding optical tray,
-	# and a painted steel case is flat panels and square corners, so it takes boxes
-	# the way the bedroom's desk and wardrobe do.
-	"scummvm": "res://Scenes/Objects/system_models/pc_tower.tscn",
-	"game_boy": "res://Scenes/Objects/system_models/game_boy.tscn",
-	"game_boy_advance": "res://Scenes/Objects/system_models/game_boy_advance.tscn",
-	"atari_lynx": "res://Scenes/Objects/system_models/atari_lynx.tscn",
-	"wonderswan": "res://Scenes/Objects/system_models/wonderswan.tscn",
-	"neo_geo_pocket": "res://Scenes/Objects/system_models/neo_geo_pocket.tscn",
-	"pokemon_mini": "res://Scenes/Objects/system_models/pokemon_mini.tscn",
-	"supervision": "res://Scenes/Objects/system_models/supervision.tscn",
-	"playstation_portable": "res://Scenes/Objects/system_models/psp.tscn",
-	"nds": "res://Scenes/Objects/system_models/nds.tscn",
-	"3ds": "res://Scenes/Objects/system_models/n3ds.tscn",
-	"virtual_boy": "res://Scenes/Objects/system_models/virtual_boy.tscn",
-	# NES front-loader: authored scene bakes the recentred shell + an editable
-	# "CartSeat" marker (with a translucent preview box) so the cartridge seat can
-	# be positioned in the Godot editor. nes_model reuses the baked "Shell" instance.
-	"nes": "res://Scenes/Objects/system_models/nes.tscn",
-	# Atari 2600 VCS: same bake as the NES — recentred shell + editor-authorable
-	# "CartSeat" marker. atari_2600_model reuses the baked "Shell" instance.
-	"atari_2600": "res://Scenes/Objects/system_models/atari_2600.tscn",
-	# Atari 5200: same bake — recentred shell + editor-authorable "CartSeat"
-	# marker. atari_5200_model reuses the baked "Shell" instance.
-	"atari_5200": "res://Scenes/Objects/system_models/atari_5200.tscn",
-	# Sega Genesis / Mega Drive Model 1 (base = Genesis shell). CartSeat rides the
-	# Shell so it survives genesis_model's runtime recentre.
-	"mega_drive": "res://Scenes/Objects/system_models/genesis.tscn",
-	# Sega Saturn (disc): shell instance + an editor-authorable "DiscSeat" marker
-	# (cylinder preview) riding the Shell through the model's recentre.
-	"sega_saturn": "res://Scenes/Objects/system_models/sega_saturn.tscn",
-	# Sega Dreamcast (GD-ROM disc): same DiscSeat bake.
-	"dreamcast": "res://Scenes/Objects/system_models/dreamcast.tscn",
-	# PlayStation 2 Slim (DVD disc): same DiscSeat bake (base = black slim).
-	"playstation2": "res://Scenes/Objects/system_models/ps2.tscn",
-	# Dev-only (per user direction): an author's imported PSone. Its GLB is
-	# export-excluded (imported-assets/*), and the model self-guards to re-show
-	# the placeholder box on any build that lacks the GLB. Licence still pending.
-	# The scene owns the CD lid's hinge pivot + VRHinge, so the lid is hand-openable.
-	"playstation": "res://Scenes/Objects/system_models/playstation_one.tscn",
-	# Nintendo GameCube (mini-DVD disc): same DiscSeat bake as the Sony disc
-	# consoles. gamecube_model reuses the baked "Shell" instance.
-	"gamecube": "res://Scenes/Objects/system_models/gamecube.tscn",
-	# Nintendo 64 (cartridge): recentred shell + editor-authorable "CartSeat"
-	# and "PortSeat1".."PortSeat4" markers. The GLB only anchors two of the four
-	# ports, so the other two were mirrored across the console centre at runtime
-	# — now four authored markers instead. n64_model reuses the baked "Shell".
-	"nintendo_64": "res://Scenes/Objects/system_models/n64.tscn",
-}
-
-## Optional per-variant model overrides, keyed "<systemid>:<variant>".
-## Empty for now — the framework is in place so a new model variant is added by
-## dropping a "<systemid>:<variant>" → script entry here (plus a SpawnCatalog item).
-const _MODEL_VARIANTS: Dictionary = {
-	# Regional/colour badges reusing a base model (see SpawnCatalog for the menu item).
-	"mega_drive:megadrive": "res://Scripts/Objects/system_models/megadrive_model.gd",
-	"playstation2:silver": "res://Scripts/Objects/system_models/ps2_silver_model.gd",
-	# NES defaults to the US front-loader (nes_model); the Famicom is the JP variant.
-	"nes:famicom": "res://Scripts/Objects/system_models/famicom_model.gd",
-}
-
-## Per-variant authored .tscn models — the scene-level twin of _MODEL_VARIANTS,
-## for variants whose shell is an editable scene rather than a bare script.
-## Checked FIRST, so a variant can override a system's default scene.
-const _MODEL_SCENE_VARIANTS: Dictionary = {
-	# "nds" is the original DS (Phat); the DS Lite is the later revision.
-	"nds:lite": "res://Scenes/Objects/system_models/nds_lite.tscn",
-	# "playstation" is the PSone; the full-size grey SCPH-100x is the original.
-	"playstation:original": "res://Scenes/Objects/system_models/playstation_original.tscn",
-	# Famicom (JP variant of the NES): same bake as the others — shell instance +
-	# an editor-authorable "CartSeat" marker riding the shell. Wins over the
-	# nes:famicom script entry in _MODEL_VARIANTS.
-	"nes:famicom": "res://Scenes/Objects/system_models/famicom.tscn",
-	# Mega Drive (JP/EU badge of the Genesis): its own shell GLB, same wiring.
-	"mega_drive:megadrive": "res://Scenes/Objects/system_models/megadrive.tscn",
-	# PS2 Slim silver badge: its own shell GLB, shares ps2_model wiring.
-	"playstation2:silver": "res://Scenes/Objects/system_models/ps2_silver.tscn",
-	# GBA SP: clamshell revision of the GBA — its own model class (the fold
-	# hinge), own shell GLB.
-	"game_boy_advance:sp": "res://Scenes/Objects/system_models/game_boy_advance_sp.tscn",
-	# Stand-ins. Each is a COMPLETE model — plain shell plus its own screens,
-	# controls and seats — so a build can ship these and drop the licensed device
-	# scenes entirely. Hardware with no entry here falls to the procedural
-	# default_model, which is what its "Primitive System" row spawns.
-	"game_boy:primitive": "res://Scenes/Objects/system_models/game_boy_primitive.tscn",
-	"game_boy_advance:primitive": "res://Scenes/Objects/system_models/game_boy_advance_primitive.tscn",
-	"nds:primitive": "res://Scenes/Objects/system_models/nds_primitive.tscn",
-	"3ds:primitive": "res://Scenes/Objects/system_models/n3ds_primitive.tscn",
-	"playstation_portable:primitive": "res://Scenes/Objects/system_models/psp_primitive.tscn",
-	"virtual_boy:primitive": "res://Scenes/Objects/system_models/virtual_boy_primitive.tscn",
-}
-
 ## True when this hardware has a bespoke model — an authored scene or a model
 ## script — rather than the procedural placeholder every other system shows.
 ## The spawn menu uses it to decide whether a system's hardware row is the real
 ## thing (named after it) or already the stand-in.
 static func has_bespoke_model(systemid: String) -> bool:
-	return _MODEL_SCENES.has(systemid) or _MODEL_SCRIPTS.has(systemid)
+	return SystemModelRegistry.has_any_model(systemid)
 
 
 ## True when this hardware has an authored stand-in model scene, i.e. spawning it
 ## with variant "primitive" gives plain geometry shaped like the device rather
 ## than the generic console box.
 static func has_primitive_model(systemid: String) -> bool:
-	return _MODEL_SCENE_VARIANTS.has("%s:%s" % [systemid, RetroSystemModel.PRIMITIVE_VARIANT])
+	return SystemModelRegistry.has_plain_alternative(systemid)
 
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -146,8 +32,13 @@ static func has_primitive_model(systemid: String) -> bool:
 ## libretro systemid (e.g. "nes", "super_nes"). Used for dynamic core lookup.
 @export var systemid: String = ""
 
-## Selects an alternate hardware model for this system (see _MODEL_VARIANTS and
-## SpawnCatalog). "" = the system's default model — today's behavior.
+## Which model in SystemModelRegistry this system wears. Empty means "this
+## platform's default".
+@export var model_id: String = ""
+
+## LEGACY. Superseded by model_id; read only when model_id is empty, so saves and
+## netplay entries written before models had ids still resolve. Producers are
+## migrated off it in a later phase, after which this goes.
 @export var model_variant: String = ""
 
 ## Spatial audio settings for the AudioStreamPlayer3D created at runtime.
@@ -500,62 +391,26 @@ func _collect_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
 
 
 func _load_system_model() -> void:
-	const DEFAULT := "res://Scripts/Objects/system_models/default_model.gd"
-	# Prefer a variant-specific model, then the system's default model, then the
-	# generic placeholder. With model_variant=="" this collapses to the old
-	# _MODEL_SCRIPTS.get(systemid, DEFAULT) and is_bespoke == (systemid in _MODEL_SCRIPTS).
-	var vkey := "%s:%s" % [systemid, model_variant]
-	var is_bespoke := false
-	# Authored .tscn model (handhelds): instantiate the editable scene. Its root
-	# carries the RetroSystemModel* script, so every configure_* call below is
-	# unchanged. A per-variant script override (rare) still wins over the scene.
-	var scene_path: String = ""
-	if _MODEL_SCENE_VARIANTS.has(vkey):
-		scene_path = _MODEL_SCENE_VARIANTS[vkey]
-	elif model_variant == RetroSystemModel.PRIMITIVE_VARIANT:
-		# The stand-in was asked for by name (its own spawn-menu row). Hardware
-		# with an authored stand-in scene matched above; everything else means the
-		# procedural placeholder, which is what the ~60 systems with no bespoke
-		# model already show. Deliberately NOT falling through to _MODEL_SCENES —
-		# that is the licensed shell, the one thing this variant exists to avoid.
-		scene_path = ""
-	elif _MODEL_SCENES.has(systemid) and not _MODEL_VARIANTS.has(vkey):
-		scene_path = _MODEL_SCENES[systemid]
-	if not scene_path.is_empty():
-		var packed := load(scene_path) as PackedScene
-		if packed:
-			_model = packed.instantiate() as RetroSystemModel
-		else:
-			push_warning("RetroSystem: failed to load model scene: %s" % scene_path)
-		is_bespoke = true
-	else:
-		var script_path: String = DEFAULT
-		if model_variant == RetroSystemModel.PRIMITIVE_VARIANT:
-			# DEFAULT — the procedural placeholder. _MODEL_SCRIPTS is skipped for
-			# the same reason as _MODEL_SCENES above: those models expect their
-			# hardware's baked Shell, which this variant deliberately has not got.
-			pass
-		elif not model_variant.is_empty() and _MODEL_VARIANTS.has(vkey):
-			script_path = _MODEL_VARIANTS[vkey]
-		elif _MODEL_SCRIPTS.has(systemid):
-			script_path = _MODEL_SCRIPTS[systemid]
-		var script := load(script_path) as GDScript
-		if script:
-			_model = script.new() as RetroSystemModel
-		else:
-			push_warning("RetroSystem: failed to load model script: %s" % script_path)
-		is_bespoke = script_path != DEFAULT
-	# Whatever went wrong above (missing scene, missing script, or the loaded
-	# root not actually being a RetroSystemModel) — never leave _model null.
-	# Every configure_*/on_*/play_* call below and everywhere else in this
-	# file assumes _model is valid once _ready() returns; a null here doesn't
-	# fail loudly at the point of failure, it silently crashes some unrelated
-	# caller much later (e.g. cartridge-insert during a save restore).
+	# One lookup. `model_id` names a row in SystemModelRegistry; an empty one — an
+	# old save, a netplay peer, or a system spawned by systemid alone — is migrated
+	# from the legacy (systemid, model_variant) pair.
+	var id := model_id
+	if id.is_empty():
+		id = SystemModelRegistry.migrate_legacy(systemid, model_variant)
+	var row := SystemModelRegistry.resolve(id, systemid)
+	_model = SystemModelRegistry.instantiate(row)
+	# Never leave _model null. Every configure_*/on_*/play_* call below assumes it
+	# is valid once _ready() returns, and a null here does not fail at the point of
+	# failure — it crashes some unrelated caller much later (e.g. a cartridge insert
+	# during a save restore).
 	if _model == null:
-		push_warning("RetroSystem: model instantiation failed for systemid='%s' variant='%s' — falling back to the generic placeholder" % [systemid, model_variant])
-		var default_script := load(DEFAULT) as GDScript
-		_model = default_script.new() as RetroSystemModel
-		is_bespoke = false
+		push_warning("RetroSystem: model '%s' failed for systemid='%s' — using the placeholder"
+			% [row.get("id", ""), systemid])
+		row = SystemModelRegistry.placeholder_row()
+		_model = SystemModelRegistry.instantiate(row)
+	# False only on the procedural placeholder: the cabinet then keeps its own body
+	# box and builds a procedural disc tray/slit, because no real model brought one.
+	var is_bespoke := SystemModelRegistry.is_bespoke(row)
 	add_child(_model)
 	_model.hide_printed_labels()
 	if is_bespoke:
