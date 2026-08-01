@@ -16,14 +16,14 @@
 ## connected TV comes out in stereo as well. Same mechanism the 3DS top screen
 ## uses; the console is stereo end to end.
 ##
-## Detailed shell (an author imported) when imported-assets/virtual_boy.glb ships;
-## the primitive bipod authored in virtual_boy.tscn is the store-safe fallback.
+## Serves two separate models: virtual_boy.tscn (detailed shell, baked as "Shell")
+## and virtual_boy_primitive.tscn (the bipod authored in the scene itself). Neither
+## is a fallback for the other.
 class_name RetroSystemModelVirtualBoy
 extends RetroSystemModel
 
 const STEREO_SHADER := preload("res://Shaders/vb_stereo.gdshader")
 const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
-const _MODEL_PATH := "res://imported-assets/virtual_boy.glb"
 
 ## The shell is authored with its EYEPIECES on -Z and its cart slot / A/V out on
 ## +Z — backwards from the framework's "front is +Z". Yaw it so the lenses face
@@ -107,10 +107,10 @@ func _ready() -> void:
 	_stereo_mat.shader = STEREO_SHADER
 	if _eyepiece:
 		_eyepiece.set_surface_override_material(0, _stereo_mat)
-	if primitive_shell:
-		_place_volume_wheel()   # the stand-in's own knob; nothing to adopt
+	if not has_baked_shell():
+		_place_volume_wheel()   # this model's own knob; nothing to adopt
 	else:
-		_upgrade_to_glb()
+		_adopt_baked_shell()
 	# Red visor glow: a spot just outside the eye-shade shining out along the panes'
 	# normal (+Z, where the player stands). Off until a picture is present.
 	_vb_light = SpotLight3D.new()
@@ -131,34 +131,19 @@ func _ready() -> void:
 ## authoritative — the hidden proxy the VideoHandler renders into, and the live
 ## stereo eyepiece — but the eyepiece is moved onto the real lens aperture and
 ## the GLB's own opaque panes are hidden behind it.
-func _upgrade_to_glb() -> void:
-	# Baked scene: virtual_boy.tscn ships the yawed + recentred shell as a "Shell"
-	# instance (so a CartSeat marker can be placed against it in the editor). Reuse
-	# it and skip the load / yaw / recentre — those are baked into Shell.transform.
-	var baked := get_node_or_null("Shell") as Node3D
-	if baked != null:
-		_glb = baked
-	else:
-		if not ResourceLoader.exists(_MODEL_PATH):
-			return
-		var ps := load(_MODEL_PATH) as PackedScene
-		if ps == null:
-			return
-		_glb = ps.instantiate() as Node3D
-		_glb.name = "Shell"
-		var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		if ap != null:
-			ap.autoplay = ""
-		_glb.basis = Basis(Vector3.UP, _SHELL_YAW)
-		add_child(_glb)
+## Adopt the detailed shell virtual_boy.tscn bakes as a "Shell" instance — already
+## yawed and recentred, so there is nothing to place.
+##
+## The load / yaw / recentre branch this replaced was dead (the scene always bakes
+## Shell) and was the last thing making a SHARED model script name an imported
+## asset: this one script serves both virtual_boy.tscn and virtual_boy_primitive.tscn,
+## so a path to a deleted GLB would have outlived the model that needed it.
+func _adopt_baked_shell() -> void:
+	_glb = _baked_shell
 	for nm in _HIDE:
 		var e := _glb.find_child(nm, true, false) as Node3D
 		if e != null:
 			e.visible = false
-	if baked == null:
-		# Rest the shell on the floor and centre it in X/Z, measured AFTER the yaw.
-		var ab := _glb_aabb()
-		_glb.position = Vector3(-ab.get_center().x, -ab.position.y, -ab.get_center().z)
 	_place_eyepiece()
 	_place_volume_wheel()
 
@@ -394,7 +379,7 @@ func configure_controller_ports(port_zones: Array) -> void:
 		# moulded socket; the detailed shell has a real one, so they only ever sat
 		# on top of it. (The seat branch below returns early, which is how the "1"
 		# survived on the detailed shell after every other legend was dropped.)
-		if not primitive_shell:
+		if has_baked_shell():
 			hide_port_placeholders([zone])
 		# An authored "PortSeat1" marker (baked into virtual_boy.tscn) wins
 		# over the computed pose below, same idiom as CartSeat/DiscSeat/UMDSeat.

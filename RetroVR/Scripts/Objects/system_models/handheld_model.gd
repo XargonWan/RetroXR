@@ -53,10 +53,9 @@ const PIXEL_AA_SHADER: Shader = preload("res://Shaders/screen_pixel_aa.gdshader"
 var _lcd_shader: Shader = PIXEL_AA_SHADER
 var _lcd_material: ShaderMaterial = null
 
-## When a subclass returns a GLB path from _glb_path(), the handheld swaps its
-## primitive stand-in shell for that detailed imported model (dev-only — the GLB lives
-## in export-excluded imported-assets/). Store builds (GLB absent) keep the authored
-## primitive shell, so on-device controls + screen still work everywhere.
+## The detailed shell, when this scene bakes one as a child named "Shell". Null on
+## a plain model, whose geometry is authored directly in the scene — the two are
+## separate models, not two modes of one.
 var _glb: Node3D = null
 
 ## Screen-cast light: the built-in LCD tints a SpotLight3D aimed OUT of the glass,
@@ -85,9 +84,6 @@ func is_handheld() -> bool:
 	return true
 
 
-## Override to return a detailed shell GLB (else "" = keep the primitive shell).
-func _glb_path() -> String:
-	return ""
 
 
 ## Name of the GLB's screen-lens mesh. Most imported handhelds call it "screen_mesh";
@@ -112,13 +108,13 @@ func _glb_rotation_degrees() -> Vector3:
 
 func _ready() -> void:
 	_cache_shell_nodes()
-	# A stand-in scene IS its shell — plain geometry authored alongside these
-	# functional nodes — so there is nothing to upgrade to and nothing to probe
-	# for. The licensed scenes take the other branch, unconditionally.
-	if primitive_shell:
-		_on_shell_ready()          # the stand-in's own controls, already in place
+	# A plain model IS its shell — geometry authored alongside these functional
+	# nodes — so there is nothing to adopt. A detailed scene instances its GLB as
+	# a child named "Shell" and adopts that.
+	if has_baked_shell():
+		_adopt_baked_shell()
 	else:
-		_upgrade_to_glb(_glb_path())
+		_on_shell_ready()          # this model's own controls, already in place
 	# An authored "CartSeat" marker (see configure_cartridge_slot) may carry a
 	# visible "SeatPreview" box so the seated-cart pose can be dialled in inside
 	# the Godot 3D editor. It's an editor aid only — hide it at runtime.
@@ -174,82 +170,26 @@ func _cache_shell_nodes() -> void:
 		screen_size = (_screen.mesh as QuadMesh).size
 
 
-## Swap the primitive stand-in shell for the detailed GLB: lay it flat, recentre,
-## hide the GLB's bundled AV lead, adopt its flat screen quad as the live-picture
-## surface, hide the primitive shell meshes + control knobs (the GLB shows the real
-## ones), and move the power switch onto the GLB's switch marker. body_size is
-## re-read from the GLB so collision / cart slot / cable placement track it.
-func _upgrade_to_glb(path: String) -> void:
-	# Already baked into the scene (authored "Shell" GLB instance + repositioned
-	# screen/controls)? Then the .tscn is self-contained — just keep the reference.
-	var baked := get_node_or_null("Shell") as Node3D
-	if baked != null:
-		_glb = baked
-		# body_size used to come from the primitive HandheldBody; on baked scenes
-		# that box is split out to a *_primitive.tscn, so measure the real shell
-		# instead (collision / cart slot / cable placement track it).
-		var bb := _glb_local_aabb(_glb)
-		if bb.size.length() > 0.0:
-			body_size = bb.size
-		_fix_shell_materials()
-		_on_shell_ready()
-		return
-	var scene := load(path) as PackedScene
-	if scene == null:
-		return
-	_glb = scene.instantiate() as Node3D
-	_glb.name = "Shell"
-	var ap := _glb.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	if ap != null:
-		ap.autoplay = ""
-	_glb.rotation_degrees = _glb_rotation_degrees()
-	add_child(_glb)
-	_hide_glb_clutter(_glb)
-	# Centre the GLB on the model origin (handheld frame is centred; y=0 = mid-thickness).
-	var b := _glb_local_aabb(_glb)
-	_glb.position -= b.position + b.size * 0.5
-	b = _glb_local_aabb(_glb)
-	body_size = b.size
-	# The live picture keeps rendering on the KNOWN-GOOD primitive screen quad (proven
-	# UVs, the C++ video handler already targets it) — repositioned + resized onto the
-	# GLB's screen, raised a hair so it sits IN FRONT of the plastic lens. The GLB's
-	# own screen_mesh sits behind that opaque lens, so it's hidden.
+## Adopt the detailed shell this scene already instances as a child named "Shell":
+## measure the real geometry (collision / cart slot / cable placement track it) and
+## fix its materials.
+##
+## This used to be _upgrade_to_glb(), which ALSO carried a ~55-line path that
+## runtime-loaded a GLB, reparented it, recentred it and re-derived the screen quad
+## from the shell's own screen mesh. That path was dead: every detailed scene bakes
+## its Shell, so the function always took its early return. It was also the only
+## caller of _glb_path(), which was the only reason seven model scripts named an
+## imported-assets file — so deleting it is what lets an imported model be removed
+## by deleting its scene and its GLB, with no script left pointing at a missing file.
+func _adopt_baked_shell() -> void:
+	_glb = _baked_shell
+	var bb := _glb_local_aabb(_glb)
+	if bb.size.length() > 0.0:
+		body_size = bb.size
 	_fix_shell_materials()
-	var glb_screen := _glb.find_child(_glb_screen_name(), true, false) as MeshInstance3D
-	if glb_screen != null and _screen != null:
-		var sab: AABB = glb_screen.global_transform * glb_screen.get_aabb()
-		var sctr := sab.position + sab.size * 0.5
-		_screen.global_position = sctr + Vector3(0.0, 0.0016, 0.0)
-		if _screen.mesh is QuadMesh:
-			var q := (_screen.mesh as QuadMesh).duplicate() as QuadMesh
-			# Small inset so the picture sits inside the bezel lip, not over it.
-			q.size = Vector2(sab.size.x, sab.size.z) * 0.92
-			_screen.mesh = q
-			screen_size = q.size
-		glb_screen.visible = false
-	# Hide the primitive stand-in shell meshes (keep the repositioned screen) + slider
-	# knobs — the GLB carries the real body, buttons and switch caps.
-	for child in get_children():
-		if child is MeshInstance3D and child != _screen:
-			(child as MeshInstance3D).visible = false
-	# Move the power switch's interaction zone onto the GLB's real switch FIRST —
-	# _adopt_knob derives the travel axis from the slider's global transform, so
-	# it has to run after the move.
-	var pm := _glb.find_child("Power", true, false) as Node3D
-	if _power_switch != null and pm != null:
-		_power_switch.position = to_local(pm.global_position)
-	_adopt_knob(_volume_slider, "Volume")
-	_adopt_knob(_power_switch, "Power")
 	_on_shell_ready()
 
 
-## Point a slider at the GLB's real switch cap so its interaction box and green
-## highlight trace the geometry you can actually see. Without this a handheld
-## whose GLB has loaded would size both to the hidden primitive knob.
-##
-## Only a node that IS a MeshInstance3D is adopted — the slider moves whatever it
-## is handed, and grabbing a parent group would drag half the shell along with it.
-## Otherwise fall back to the old behaviour of just hiding the primitive.
 func _adopt_knob(slider: VRSlider, glb_node_name: String) -> void:
 	if slider == null:
 		return

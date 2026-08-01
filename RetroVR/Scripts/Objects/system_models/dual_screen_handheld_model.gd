@@ -100,13 +100,13 @@ func name_label_placement() -> Dictionary:
 
 func _ready() -> void:
 	_cache_dual_nodes()
-	if primitive_shell:
-		# The stand-in clamshell IS this scene: its lid meshes already ride
+	if not has_baked_shell():
+		# A plain clamshell IS this scene: its lid meshes already ride
 		# LidPivot, so there is no shell to compose — only the lid's grab box,
-		# which _upgrade_dual_to_glb would otherwise have sized at the end.
+		# which _adopt_baked_shell would otherwise have sized at the end.
 		_setup_lid_grab()
 	else:
-		_upgrade_dual_to_glb(_glb_path())
+		_adopt_baked_shell()
 	# Screen-cast lights: both screens glow into the room (base _ready — which sets
 	# up the single-screen light — is not called here, so create both explicitly).
 	_screen_light = _make_screen_light(_screen)
@@ -125,10 +125,6 @@ func _ready() -> void:
 		_touch_controllers.append(node as XRController3D)
 
 
-## Override to return a detailed clamshell GLB (imported); "" keeps the primitive
-## shell (store builds — imported-assets/* is export-excluded).
-func _glb_path() -> String:
-	return ""
 
 
 ## Both screens cast light (base drives only the top via _screen).
@@ -193,191 +189,29 @@ func _hide_baked_shell_dupes() -> void:
 			(n as MeshInstance3D).visible = false
 
 
-func _upgrade_dual_to_glb(path: String) -> void:
+## Adopt the detailed shell this scene already bakes: hide the duplicate primitive
+## meshes it ships alongside, take body_size from the real base half, and size the
+## lid's grab box.
+##
+## body_size matters more than it looks: _cache_dual_nodes seeds it from the
+## primitive HandheldBody box, so without this, collision, the pointer area, the
+## cart slot depth, the cable attach point and the power button are all sized to a
+## stand-in the player cannot even see.
+##
+## This used to be _upgrade_dual_to_glb(path), whose remaining ~168 lines
+## runtime-loaded a GLB and split its meshes into lid vs base to place the two
+## screens. All three detailed clamshells (nds, nds_lite, n3ds) bake that result
+## into the .tscn and set the dual_glb_baked meta, so that path never ran.
+func _adopt_baked_shell() -> void:
 	if _lid_pivot == null or _screen == null or _bottom_screen == null:
 		return
-	# Fully baked into the .tscn already (Shell + reparented lid + placed screens
-	# + hidden primitives authored in the scene) — no placement to redo. body_size
-	# still has to be adopted from the real shell: _cache_dual_nodes seeds it from
-	# the primitive HandheldBody box, and on this path nothing ever overwrote it,
-	# so collision, the pointer area, the cart slot depth, the cable attach point
-	# and the power button were all sized to a stand-in the player can't even see.
-	if has_meta("dual_glb_baked"):
-		_hide_baked_shell_dupes()
-		var baked := _base_half_size()
-		if baked.length() > 0.0:
-			body_size = baked
-		_setup_lid_grab()
-		return
-	var shell := get_node_or_null("Shell") as Node3D
-	if shell == null:
-		var scene := load(path) as PackedScene
-		if scene == null:
-			return
-		shell = scene.instantiate() as Node3D
-		shell.name = "Shell"
-		var ap := shell.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		if ap != null:
-			ap.autoplay = ""
-		add_child(shell)
-	_hide_glb_clutter(shell)
-
-	# Split GLB meshes into lid vs base, and grab the two GLB screen lenses.
-	var lidnames := _lid_mesh_names()
-	var lid_meshes: Array[MeshInstance3D] = []
-	var glb_top: MeshInstance3D = null
-	var glb_bottom: MeshInstance3D = null
-	var base_aabb := AABB()
-	var base_first := true
-	var stack: Array[Node] = [shell]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		var mi := n as MeshInstance3D
-		if mi != null:
-			var nm := String(mi.name)
-			if nm == "screen_mesh Top":
-				glb_top = mi
-			elif nm == "screen_mesh Bottom":
-				glb_bottom = mi
-			elif nm.to_lower().contains("backface"):
-				mi.visible = false   # dark LCD backing — the live picture quad replaces it
-			elif mi.visible:
-				if lidnames.has(nm):
-					# Drop any rotation the lid mesh carries in its own right. The
-					# New 3DS XL's `top` (and its two slider knobs) ship a -65.7
-					# degree quaternion about X — an authored open pose whose PIVOT
-					# the .bundle conversion lost, so it swings about the model origin
-					# instead of the hinge and throws the lid below and behind the
-					# console. The giveaway is that `screen_mesh Top`, the lid's own
-					# lens, carries no rotation: unrotate the lid and the two land in
-					# the same place. The fold belongs to LidPivot, not to the mesh.
-					mi.transform.basis = Basis()
-					lid_meshes.append(mi)
-				else:
-					var ab := _local_aabb(mi)
-					base_aabb = ab if base_first else base_aabb.merge(ab)
-					base_first = false
-		for c in n.get_children():
-			stack.append(c)
-	if glb_top == null or glb_bottom == null or base_first:
-		return
-
-	# Centre the base half on the model origin (base mid-thickness → y=0) — unless
-	# it's already centred (a baked scene where the Shell was authored pre-centred).
-	var base_ctr := base_aabb.position + base_aabb.size * 0.5
-	if base_ctr.length() > 0.001:
-		shell.position -= base_ctr
-	body_size = base_aabb.size
-	var base_top_y := base_aabb.size.y * 0.5
-
-	var top_ab := _local_aabb(glb_top)
-	var top_ctr := top_ab.position + top_ab.size * 0.5
-	var bot_ab := _local_aabb(glb_bottom)
-	var bot_ctr := bot_ab.position + bot_ab.size * 0.5
-
-	# Hinge at the base's back-top edge (the clamshell pivot). The lid's open angle
-	# is the direction hinge → top-lens centre; the top screen's outward normal is
-	# perpendicular to that, facing up-and-forward. Derive orientation from the
-	# FOLD, not the GLB lens-mesh normals — on some devices `screen_mesh Top` is a
-	# small angled trim strip whose normal doesn't match the lid's screen plane.
-	# _hinge_y_offset / _hinge_z_offset let a device nudge the pivot off the
-	# base's raw bounding-box top-back corner — see n3ds_model.gd, where the
-	# real hinge barrel sits measurably forward AND below that corner (interactively
-	# calibrated in Tools/n3ds_hinge_calibrator.tscn) and the naive corner
-	# overshot the lid's swept closed position (overhanging the back, short of
-	# the front, and rotating around the wrong height).
-	var hinge := Vector3(0.0, base_top_y + _hinge_y_offset(), -base_aabb.size.z * 0.5 + _hinge_z_offset())
-	var lid_dir := top_ctr - hinge
-	lid_dir.x = 0.0
-	lid_dir = lid_dir.normalized()
-	var top_n := Vector3(0.0, -lid_dir.z, lid_dir.y).normalized()
-	# ...but prefer the lens's OWN normal when the mesh really is one flat plane.
-	# The fold is only an estimate of the lid angle: it assumes the lens centre
-	# sits on the line the lid folds along, and on the DS Phat it does not — the
-	# fold says the lid is open 123 degrees while its glass is a clean 45 degree
-	# plane, so the picture sat 12 degrees off the panel it is meant to be lying
-	# on. The planarity test is what keeps this safe on shells where the lens is a
-	# little angled trim strip rather than the screen surface.
-	var flat := _planar_normal(glb_top)
-	if flat != Vector3.ZERO:
-		flat.x = 0.0
-		if flat.length() > 0.001:
-			top_n = flat.normalized()
-	if top_n.y < 0.0:
-		top_n = -top_n
-	var rest_rot := top_n.angle_to(Vector3.UP)
-	_lid_pivot.transform = Transform3D(Basis(Vector3.RIGHT, rest_rot), hinge)
-
-	# Split the lid meshes onto LidPivot so they fold with the hinge; the live
-	# TopScreen quad already rides there (authored under LidPivot).
-	for mi in lid_meshes:
-		mi.reparent(_lid_pivot, true)
-
-	# Live picture quads onto the GLB lenses (a hair proud of the opaque lens so
-	# the picture wins the depth test), sized to the lens, facing its normal.
-	var top_size := Vector2(maxf(top_ab.size.x, 0.001),
-		maxf(sqrt(top_ab.size.y * top_ab.size.y + top_ab.size.z * top_ab.size.z), 0.001))
-	# Raise each live quad clear of the lid/base outer glass (part of the shell
-	# meshes, which render opaque here) so the picture wins the depth test — the
-	# offset scales with how deep the lid's own screen surface sits over the lens.
-	var top_clear := _lens_clearance(top_ctr, top_n, top_size)
-	_place_screen(_screen, top_ctr + top_n * top_clear, top_n, top_size)
-	var bot_size := Vector2(maxf(bot_ab.size.x, 0.001), maxf(bot_ab.size.z, 0.001))
-	var bot_clear := _lens_clearance(bot_ctr, Vector3.UP, bot_size)
-	_place_screen(_bottom_screen, bot_ctr + Vector3.UP * bot_clear, Vector3.UP, bot_size)
-	bottom_screen_size = bot_size
-	if _screen.mesh is QuadMesh:
-		var qt := (_screen.mesh as QuadMesh).duplicate() as QuadMesh
-		qt.size = top_size
-		_screen.mesh = qt
-	if _bottom_screen.mesh is QuadMesh:
-		var qb := (_bottom_screen.mesh as QuadMesh).duplicate() as QuadMesh
-		qb.size = bot_size
-		_bottom_screen.mesh = qb
-
-	# ProxyScreen + TouchScreen ride the bottom lens.
-	if _proxy != null:
-		_proxy.position = to_local(_bottom_screen.global_position)
-	if _touch != null:
-		_touch.global_position = _bottom_screen.global_position
-		var tcol := _touch.get_node_or_null("CollisionShape3D") as CollisionShape3D
-		if tcol != null and tcol.shape is BoxShape3D:
-			tcol.shape = tcol.shape.duplicate()
-			(tcol.shape as BoxShape3D).size = Vector3(bot_size.x, 0.012, bot_size.y)
-
-	# Hide the GLB's opaque lenses (the live quads replace them) and every
-	# authored primitive stand-in (body, lid, bezels, buttons, knobs — anywhere in
-	# the tree, incl. under LidPivot) — the GLB shell carries the real ones. Keep
-	# the live picture quads and the reparented GLB lid meshes.
-	glb_top.visible = false
-	glb_bottom.visible = false
-	var keep: Array = [_screen, _bottom_screen, _proxy]
-	for lm in lid_meshes:
-		keep.append(lm)
-	var hstack: Array[Node] = [self]
-	while not hstack.is_empty():
-		var hn: Node = hstack.pop_back()
-		var hmi := hn as MeshInstance3D
-		if hmi != null and not keep.has(hmi) and not shell.is_ancestor_of(hmi):
-			hmi.visible = false
-		for hc in hn.get_children():
-			hstack.append(hc)
-
-	# This pass is NOT re-runnable, so claim the same flag the authored-baked
-	# scenes use. It measures the base half from the visible meshes and then hides
-	# the lid's lens — so a second call measures a DIFFERENT base, moves the hinge,
-	# and drags the already-reparented lid with it. That is what threw the 3DS lid
-	# off the back of the console: `top` ended up 13.6 cm out on Z carrying a 91
-	# degree roll it never should have had.
-	set_meta("dual_glb_baked", true)
+	_hide_baked_shell_dupes()
+	var baked := _base_half_size()
+	if baked.length() > 0.0:
+		body_size = baked
 	_setup_lid_grab()
 
 
-## Size the lid's grab hinge to the TOP (free) HALF of the lid face — the part
-## farther from the hinge, which ends up on top when the lid is raised. The grab
-## box, the VR proximity sphere and the floating hint icon are all placed off the
-## live TopScreen quad (both it and LidHinge are LidPivot children, so this is one
-## local frame), so it tracks whatever pose the lid was calibrated into.
 func _setup_lid_grab() -> void:
 	if _hinge == null or _screen == null or _lid_pivot == null:
 		return
@@ -669,7 +503,7 @@ func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
 
 func _add_port_label(text: String, x: float) -> void:
 	# Printed legend — the detailed shells mould their own port markings.
-	if not primitive_shell:
+	if has_baked_shell():
 		return
 	var lbl := Label3D.new()
 	lbl.text = text

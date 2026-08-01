@@ -70,7 +70,6 @@ size = Vector3(0.03, 0.015, 0.03)
 
 [node name="GameBoyAdvancePrimitive" type="Node3D" unique_id=660899921]
 script = ExtResource("1_model")
-primitive_shell = true
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=768079112]
 mesh = SubResource("BoxMesh_vufj4")

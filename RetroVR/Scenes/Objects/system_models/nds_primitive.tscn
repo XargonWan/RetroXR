@@ -88,7 +88,6 @@ emission_energy_multiplier = 0.4
 
 [node name="Primitive" type="Node3D" unique_id=1319826210]
 script = ExtResource("1_model")
-primitive_shell = true
 
 [node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1395190702]
 mesh = SubResource("BoxMesh_dor51")

@@ -7,8 +7,3 @@ extends RetroSystemModelHandheld
 
 func _init() -> void:
 	cart_size = Vector3(0.058, 0.036, 0.007)   # GBA cart
-
-
-## Detailed GBA shell (an author imported, Arctic White). Export-excluded.
-func _glb_path() -> String:
-	return "res://imported-assets/game_boy_advance.glb"

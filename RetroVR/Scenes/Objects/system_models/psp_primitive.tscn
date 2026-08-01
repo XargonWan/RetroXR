@@ -113,7 +113,6 @@ emission_energy_multiplier = 0.4
 
 [node name="PSPPrimitive" type="Node3D"]
 script = ExtResource("1_model")
-primitive_shell = true
 
 [node name="HandheldBody" type="MeshInstance3D" parent="."]
 mesh = SubResource("BoxMesh_31348")

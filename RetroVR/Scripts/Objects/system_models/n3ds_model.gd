@@ -40,10 +40,6 @@ func _init() -> void:
 	cart_size = Vector3(0.033, 0.035, 0.004)   # 3DS Game Card
 
 
-## Detailed New 3DS XL shell (an author imported). Export-excluded — store builds get
-## the stand-in clamshell instead (n3ds_primitive.tscn, its own spawn row).
-func _glb_path() -> String:
-	return "res://imported-assets/new_3ds_xl.glb"
 
 
 ## The upper clamshell half (folds with the hinge); the top screen lens is
@@ -198,7 +194,7 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	super(slot)
 	# On the stand-in, super()'s CartSeat is the last word — socket_media marks
 	# the DETAILED shell's connector.
-	if _on_stand_in_shell():
+	if _has_no_baked_shell():
 		return
 	var sock := find_child("socket_media", true, false) as Node3D
 	if sock == null:

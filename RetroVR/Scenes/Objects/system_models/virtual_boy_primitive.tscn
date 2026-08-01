@@ -61,7 +61,6 @@ emission_energy_multiplier = 0.4
 
 [node name="VirtualBoyPrimitive" type="Node3D"]
 script = ExtResource("1_model")
-primitive_shell = true
 
 [node name="StandBase" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.006, 0)

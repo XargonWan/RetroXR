@@ -413,7 +413,7 @@ func _update_name_label() -> void:
 func _place_name_label() -> void:
 	# The nameplate is a printed legend like any other: a detailed shell has the
 	# real thing moulded or printed on it, so ours only ever sat on top of it.
-	if _model != null and not _model.primitive_shell:
+	if _model != null and _model.has_baked_shell():
 		_system_name_label.visible = false
 		return
 	var body := _body_aabb()

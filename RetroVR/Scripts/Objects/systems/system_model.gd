@@ -12,11 +12,26 @@ extends Node3D
 ## stand-in, it IS one or the other from the moment it is spawned.
 const PRIMITIVE_VARIANT := "primitive"
 
-## True on a stand-in model scene: the shell is the plain geometry authored in
-## this very scene, so there is no detailed shell to load. Declared on the scene
-## rather than inferred from the spawn variant, so a stand-in still knows what it
-## is when instanced directly (test scenes, probes, the editor).
-@export var primitive_shell: bool = false
+## Cache for has_baked_shell(). Lazy rather than resolved in _ready(): subclasses
+## ask this DURING their own _ready(), and not all of them chain to a base one.
+var _baked_shell: Node3D = null
+var _baked_shell_checked: bool = false
+
+
+## True when this model wears a detailed shell — a GLB instanced into the scene as
+## a child named "Shell".
+##
+## This replaced an authored `primitive_shell` bool, which said the same thing and
+## could disagree with the scene. It did: atari_lynx, neo_geo_pocket, pokemon_mini,
+## supervision and wonderswan are plain authored models that never set it, so they
+## were treated as detailed shells — their own printed legends were hidden and they
+## got no nameplate, despite having no moulding to carry either. Asking the scene
+## cannot drift.
+func has_baked_shell() -> bool:
+	if not _baked_shell_checked:
+		_baked_shell_checked = true
+		_baked_shell = get_node_or_null("Shell") as Node3D
+	return _baked_shell != null
 
 
 ## Called when the system is powered on (e.g. light up power LED, play boot animation).
@@ -322,7 +337,7 @@ const PRINTED_LABEL_GROUP := "printed_label"
 ## Hide the printed legends on a detailed shell. No-op on a stand-in, which is
 ## the one place they earn their keep.
 func hide_printed_labels() -> void:
-	if primitive_shell:
+	if not has_baked_shell():
 		return
 	for n in get_tree().get_nodes_in_group(PRINTED_LABEL_GROUP):
 		if n is Node3D and is_ancestor_of(n):
@@ -335,11 +350,11 @@ func _seat_marker(seat_name: String) -> Node3D:
 	return find_child(seat_name, true, false) as Node3D
 
 
-## True when the shell on screen is the plain stand-in. Lookups that resolve
-## against the DETAILED shell — socket markers, control meshes — have nothing to
-## say on a stand-in and must be skipped rather than left to come back null.
-func _on_stand_in_shell() -> bool:
-	return primitive_shell
+## Lookups that resolve against a DETAILED shell — socket markers, control meshes
+## — have nothing to say on a plain model and must be skipped rather than left to
+## come back null.
+func _has_no_baked_shell() -> bool:
+	return not has_baked_shell()
 
 
 ## Hide every editor-only seat preview box in the tree. There can be more than

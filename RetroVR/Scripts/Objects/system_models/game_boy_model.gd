@@ -13,10 +13,6 @@ func _init() -> void:
 	_lcd_shader = LCD_SHADER
 
 
-## Detailed DMG shell (an author imported). Export-excluded — store builds fall back to
-## the primitive shell authored in game_boy.tscn.
-func _glb_path() -> String:
-	return "res://imported-assets/game_boy_dmg.glb"
 
 
 ## Align the cart with the shell's own slot marker ACROSS the body — the base
@@ -35,7 +31,7 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	super(slot)
 	# On the stand-in, super()'s CartSeat is the last word — socket_media marks
 	# the DETAILED shell's connector.
-	if _on_stand_in_shell():
+	if _has_no_baked_shell():
 		return
 	var sock := find_child("socket_media", true, false) as Node3D
 	if sock == null:

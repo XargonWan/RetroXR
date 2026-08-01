@@ -17,8 +17,6 @@ func _glb_screen_name() -> String:
 	return "screen_mesh_0"
 
 
-func _glb_path() -> String:
-	return "res://imported-assets/psp_1000.glb"
 
 
 # --- button animation -------------------------------------------------------
