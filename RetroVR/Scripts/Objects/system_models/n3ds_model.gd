@@ -171,6 +171,14 @@ func _adopt_slider(slider: VRSlider, mesh_name: String) -> void:
 	if knob == null or knob.mesh == null:
 		return
 	var authored := slider.value
+	# _KNOB_AXIS is the DETAILED shell's groove: it climbs out of the lid face
+	# because that shell rounds its side rims. The stand-in has no rim — flat lid,
+	# flat cap — and its scene already authors the axis, travel and zone that suit
+	# it, so applying the measured one slid the knob 23 degrees out of the surface
+	# it sits on. Take the cap over and leave the rest alone.
+	if not has_baked_shell():
+		slider.set_knob_mesh(knob)
+		return
 	var world_axis := (global_transform.basis * _KNOB_AXIS).normalized()
 	slider.travel = _KNOB_TRAVEL
 	# Zone at the MIDDLE of the throw: _track_world_point maps the slider's own

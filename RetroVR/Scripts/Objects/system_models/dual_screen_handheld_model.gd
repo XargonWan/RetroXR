@@ -235,7 +235,30 @@ func _setup_lid_grab() -> void:
 		(col.shape as BoxShape3D).size = Vector3(w, h * 0.5, 0.02)
 	# VR proximity sphere covers the free half; icon floats off the face normal
 	# (quad local +Z) a touch toward the free edge.
-	_hinge.engage_radius = clampf(maxf(w, h * 0.5) * 0.55, 0.03, 0.07)
+	#
+	# Capped so it cannot reach back into the console's OWN grabbable body. The
+	# sphere is centred on the grab box, so a radius larger than the gap to the
+	# body means one hand position satisfies both this hinge and
+	# XRToolsFunctionPickup — you reach for the lid and lift the whole machine.
+	# Measured 2026-08-01: of the six clamshells only the two 3DS models crossed
+	# that line (reach 41.9 mm against a 41.4 mm gap, and 66.6 against 48.5); the
+	# DS and GBA SP sat 8-20 mm clear, which is why only the 3DS misbehaved.
+	var reach: float = maxf(w, h * 0.5) * 0.55
+	_hinge.engage_radius = clampf(minf(reach, _body_clearance() - HINGE_BODY_MARGIN), 0.02, 0.07)
+
+
+## Gap from the lid's grab box to the console's grabbable body, in metres. The
+## body is the box configure_handheld_body() gives the host: body_size, padded.
+const HINGE_BODY_MARGIN := 0.004
+
+func _body_clearance() -> float:
+	if _hinge == null or _lid_pivot == null:
+		return INF
+	var p: Vector3 = _lid_pivot.transform * _hinge.transform.origin
+	var half: Vector3 = (body_size + Vector3(0.01, 0.01, 0.01)) * 0.5
+	var q := Vector3(absf(p.x) - half.x, absf(p.y) - half.y, absf(p.z) - half.z)
+	var outside := Vector3(maxf(q.x, 0.0), maxf(q.y, 0.0), maxf(q.z, 0.0)).length()
+	return outside + minf(maxf(q.x, maxf(q.y, q.z)), 0.0)
 	# The hint's position is authored on the HingeHint node in each device scene,
 	# not set here. Driving it from code used to stand these three lids' hints out
 	# in front of the screen while every other lid sat edge-on.
