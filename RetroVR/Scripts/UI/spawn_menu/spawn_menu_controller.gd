@@ -998,11 +998,26 @@ func _on_world_scale_changed(scale: float) -> void:
 ## has a fixed camera that world_scale does NOT move, so scale its rest eye height
 ## directly — in VR the HMD overwrites the camera transform each frame, so setting
 ## it there is harmless.
+##
+## Passthrough is the exception and is pinned to 1.0. world_scale multiplies the
+## tracked head position, so at 0.8 one real metre of walking advances the virtual
+## viewpoint only 0.8 m while the real room slides past at a full metre. The two
+## disagree by 20% of every step, which reads as the objects on the floor
+## drifting along with you. Registration with a room you can see is only possible
+## at 1:1.
 func _apply_world_scale(scale: float) -> void:
 	_world_scale = scale
-	XRServer.world_scale = scale
+	XRServer.world_scale = 1.0 if _in_passthrough() else scale
 	if _camera:
-		_camera.transform.origin.y = _base_eye_height * scale
+		_camera.transform.origin.y = _base_eye_height * XRServer.world_scale
+
+
+## The scene id is claimed before the transition starts, so this is already true
+## by the time the rig's deferred setup runs — unlike the interface's blend mode,
+## which PassthroughInit only sets afterwards.
+func _in_passthrough() -> bool:
+	var sm := get_node_or_null("/root/SceneManager")
+	return sm != null and sm.current_scene_id == "passthrough"
 
 
 func _on_aim_crosshair_changed(enabled: bool) -> void:

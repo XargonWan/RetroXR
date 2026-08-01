@@ -3182,6 +3182,14 @@ func _build_options_view() -> Control:
 			world_scale_changed.emit(v)
 		)
 
+		# Passthrough pins the scale to 1.0 so the virtual room stays registered
+		# with the real one. Shown as such rather than left live and inert.
+		var sm_ws := _get_scene_manager()
+		if sm_ws and sm_ws.current_scene_id == "passthrough":
+			ws_slider.value = 1.0
+			ws_slider.editable = false
+			ws_val.text = "1.00× (passthrough)"
+
 		# Inside the guard too, or hiding the slider leaves two rules stacked.
 		vbox.add_child(HSeparator.new())
 
