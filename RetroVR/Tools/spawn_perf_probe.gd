@@ -76,6 +76,9 @@ func _run() -> void:
 	if mode == "sweep":
 		await _full_sweep()
 		return
+	if mode == "all":
+		await _preload_all()
+		return
 	if mode != "none":
 		await _warm(mode)
 	# The measurement: the SAME model, now spawned into the real (stereo) view.
@@ -170,3 +173,60 @@ func _one(c: Array, pass_i: int) -> void:
 	sys.queue_free()
 	for i in 5:
 		await get_tree().process_frame
+
+
+## What warming EVERY model costs, in seconds and in bytes. Both matter: the time
+## has to fit behind a loading screen, and the memory has to fit on a Quest, which
+## is the reason to scope a pre-warm rather than just doing all of it.
+func _preload_all() -> void:
+	var mem0: float = Performance.get_monitor(Performance.MEMORY_STATIC)
+	var tex0: float = Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED)
+	var t_all := _us()
+
+	var sv := SubViewport.new()
+	sv.size = Vector2i(256, 256)
+	sv.own_world_3d = true
+	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(sv)
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 0.1, 0.35)
+	sv.add_child(cam)
+	cam.current = true
+	sv.add_child(DirectionalLight3D.new())
+
+	var n := 0
+	var slowest := 0.0
+	var slowest_id := ""
+	for id: String in SystemModelRegistry.all_ids():
+		if not SystemModelRegistry.is_available(id):
+			print("[perf] skip %s (assets absent)" % id)
+			continue
+		var t := _us()
+		var model: RetroSystemModel = SystemModelRegistry.instantiate(
+			SystemModelRegistry._row(id))
+		if model == null:
+			continue
+		sv.add_child(model)
+		for i in 4:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		model.queue_free()
+		await get_tree().process_frame
+		var dt := _ms(t)
+		n += 1
+		if dt > slowest:
+			slowest = dt
+			slowest_id = id
+		print("[perf] warm %-32s %7.1f ms" % [id, dt])
+
+	sv.queue_free()
+	await get_tree().process_frame
+	var mem1: float = Performance.get_monitor(Performance.MEMORY_STATIC)
+	var tex1: float = Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED)
+	print("[perf] ---- %d models warmed in %.2f s ----" % [n, _ms(t_all) / 1000.0])
+	print("[perf] slowest: %s at %.1f ms" % [slowest_id, slowest])
+	print("[perf] static memory  %.1f -> %.1f MiB  (+%.1f)"
+		% [mem0 / 1048576.0, mem1 / 1048576.0, (mem1 - mem0) / 1048576.0])
+	print("[perf] texture memory %.1f -> %.1f MiB  (+%.1f)"
+		% [tex0 / 1048576.0, tex1 / 1048576.0, (tex1 - tex0) / 1048576.0])
+	print("[perf] DONE")
