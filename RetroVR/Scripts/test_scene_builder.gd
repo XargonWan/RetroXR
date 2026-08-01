@@ -98,7 +98,6 @@ const GENERATIONS: Array = [
 		"title": "3RD GENERATION", "years": "1983 – 1987",
 		"systems": [
 			["nes", "", "Nintendo Entertainment System"],
-			["nes", "famicom", "Famicom"],
 			["master_system", "", "Sega Master System"],
 			["atari_7800", "", "Atari 7800"],
 		],
@@ -108,7 +107,6 @@ const GENERATIONS: Array = [
 		"systems": [
 			["super_nes", "", "Super Nintendo"],
 			["mega_drive", "", "Sega Genesis"],
-			["mega_drive", "megadrive", "Sega Mega Drive"],
 			["neogeo", "", "Neo Geo AES"],
 			["pc_engine", "", "PC Engine / TurboGrafx-16"],
 			["game_boy", "", "Game Boy"],
@@ -120,7 +118,6 @@ const GENERATIONS: Array = [
 		"title": "5TH GENERATION", "years": "1993 – 1998",
 		"systems": [
 			["playstation", "playstation_original", "PlayStation"],
-			["playstation", "", "PSone"],
 			["nintendo_64", "", "Nintendo 64"],
 			["sega_saturn", "", "Sega Saturn"],
 			["3do", "", "Panasonic 3DO"],
@@ -145,7 +142,6 @@ const GENERATIONS: Array = [
 		"title": "7TH GENERATION", "years": "2004 – 2012",
 		"systems": [
 			["nds", "", "Nintendo DS"],
-			["nds", "nds_lite", "Nintendo DS Lite"],
 			["playstation_portable", "", "PlayStation Portable"],
 		],
 	},
