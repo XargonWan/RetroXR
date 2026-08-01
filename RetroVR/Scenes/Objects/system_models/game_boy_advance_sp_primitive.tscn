@@ -1,57 +1,25 @@
-[gd_scene format=3]
-
-; Game Boy Advance SP primitive — a plain clamshell carrying NO licensed geometry.
-; A complete model in its own right, not a shell bolted onto game_boy_advance_sp.tscn:
-; its own row in SystemModelRegistry ("game_boy_advance_sp_primitive"), so a build
-; can ship this and drop game_boy_advance_sp.tscn entirely.
-;
-; Fold rig, same convention as the NDS/3DS stand-ins: LidPivot sits on the hinge
-; axis at the base half's back-top edge, the lid box and the live screen quad ride
-; it, and LidPivot.rotation.x reads 0 = folded flat backwards … 180 = shut. The
-; rest pose is 45 (135 deg interior) and the hinge stops at 30, which is as far
-; past straight as a real SP opens.
-;
-; 82 x 84.6 x 12 mm per half — the real shell's 24.3 mm closed depth, split.
-;
-; Control positions and cap sizes are the imported shell's, measured off it in the
-; model's own frame rather than eyeballed: the deck sits further back than it
-; looks, and a first pass had the pad and the A/B pair 1-2 cm toward the player.
-;
-; The hinge barrel spans the middle 52 mm, not the full width: L and R sit at the
-; back CORNERS, outboard of it, and a full-width barrel swallows them.
+[gd_scene format=3 uid="uid://cyd2sbw7t0r03"]
 
 [ext_resource type="Script" uid="uid://1mgrac1nixul" path="res://Scripts/Objects/system_models/game_boy_advance_sp_model.gd" id="1_model"]
 [ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="2_hinge"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="3_slider"]
 
-[sub_resource type="StandardMaterial3D" id="Mat_shell"]
-albedo_color = Color(0.13, 0.24, 0.55, 1)
-
-[sub_resource type="StandardMaterial3D" id="Mat_dark"]
-albedo_color = Color(0.09, 0.09, 0.11, 1)
-
-[sub_resource type="StandardMaterial3D" id="Mat_button"]
-albedo_color = Color(0.15, 0.15, 0.17, 1)
-
-[sub_resource type="StandardMaterial3D" id="Mat_face"]
-albedo_color = Color(0.82, 0.82, 0.86, 1)
-
-[sub_resource type="StandardMaterial3D" id="Mat_knob"]
-albedo_color = Color(0.2, 0.2, 0.22, 1)
-
-[sub_resource type="StandardMaterial3D" id="Mat_screen"]
-albedo_color = Color(0.1, 0.12, 0.11, 1)
-
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
 size = Vector3(0.082, 0.012, 0.0846)
 
-[sub_resource type="BoxMesh" id="BoxMesh_lid"]
-size = Vector3(0.082, 0.012, 0.0846)
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.13, 0.24, 0.55, 1)
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_barrel"]
 top_radius = 0.004
 bottom_radius = 0.004
 height = 0.052
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.09, 0.09, 0.11, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_lid"]
+size = Vector3(0.082, 0.012, 0.0846)
 
 [sub_resource type="BoxMesh" id="BoxMesh_bezel"]
 size = Vector3(0.066, 0.0015, 0.046)
@@ -59,8 +27,17 @@ size = Vector3(0.066, 0.0015, 0.046)
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(0.055809394, 0.037206262)
 
+[sub_resource type="StandardMaterial3D" id="Mat_screen"]
+albedo_color = Color(0.1, 0.12, 0.11, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hinge"]
+size = Vector3(0.06, 0.023, 0.02)
+
 [sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
 size = Vector3(0.0178, 0.002, 0.0062)
+
+[sub_resource type="StandardMaterial3D" id="Mat_button"]
+albedo_color = Color(0.15, 0.15, 0.17, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
 size = Vector3(0.0062, 0.002, 0.0178)
@@ -70,18 +47,21 @@ top_radius = 0.0039
 bottom_radius = 0.0039
 height = 0.002
 
+[sub_resource type="StandardMaterial3D" id="Mat_face"]
+albedo_color = Color(0.82, 0.82, 0.86, 1)
+
 [sub_resource type="CylinderMesh" id="CylinderMesh_pill"]
 top_radius = 0.0027
 bottom_radius = 0.0027
 height = 0.0008
 
+[sub_resource type="BoxMesh" id="BoxMesh_shoulder"]
+size = Vector3(0.011, 0.008, 0.01)
+
 [sub_resource type="CylinderMesh" id="CylinderMesh_bright"]
 top_radius = 0.0024
 bottom_radius = 0.0024
 height = 0.0014
-
-[sub_resource type="BoxMesh" id="BoxMesh_shoulder"]
-size = Vector3(0.011, 0.008, 0.01)
 
 [sub_resource type="BoxMesh" id="BoxMesh_slotmouth"]
 size = Vector3(0.058, 0.0075, 0.004)
@@ -89,11 +69,11 @@ size = Vector3(0.058, 0.0075, 0.004)
 [sub_resource type="BoxMesh" id="BoxMesh_knob"]
 size = Vector3(0.008, 0.006, 0.008)
 
+[sub_resource type="StandardMaterial3D" id="Mat_knob"]
+albedo_color = Color(0.2, 0.2, 0.22, 1)
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_ctl"]
 size = Vector3(0.03, 0.015, 0.03)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_hinge"]
-size = Vector3(0.06, 0.023, 0.02)
 
 [sub_resource type="BoxMesh" id="BoxMesh_seat"]
 size = Vector3(0.058, 0.036, 0.007)
@@ -105,103 +85,102 @@ emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
 
-[node name="GameBoyAdvanceSPPrimitive" type="Node3D"]
+[node name="GameBoyAdvanceSPPrimitive" type="Node3D" unique_id=2054180836]
 script = ExtResource("1_model")
 
-[node name="HandheldBody" type="MeshInstance3D" parent="."]
+[node name="HandheldBody" type="MeshInstance3D" parent="." unique_id=1182105325]
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_shell")
 
-[node name="HingeBarrel" type="MeshInstance3D" parent="."]
+[node name="HingeBarrel" type="MeshInstance3D" parent="." unique_id=1759503723]
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0.006, -0.0423)
 mesh = SubResource("CylinderMesh_barrel")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="LidPivot" type="Node3D" parent="."]
+[node name="LidPivot" type="Node3D" parent="." unique_id=2018091870]
 transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0.006, -0.0423)
 
-[node name="Lid" type="MeshInstance3D" parent="LidPivot"]
+[node name="Lid" type="MeshInstance3D" parent="LidPivot" unique_id=1865159718]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.006, -0.0423)
 mesh = SubResource("BoxMesh_lid")
 surface_material_override/0 = SubResource("Mat_shell")
 
-[node name="TopBezel" type="MeshInstance3D" parent="LidPivot"]
+[node name="TopBezel" type="MeshInstance3D" parent="LidPivot" unique_id=872758683]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0008, -0.0423)
 mesh = SubResource("BoxMesh_bezel")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="HandheldScreen" type="MeshInstance3D" parent="LidPivot"]
+[node name="HandheldScreen" type="MeshInstance3D" parent="LidPivot" unique_id=1801244051]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0019, -0.0423)
 mesh = SubResource("QuadMesh_screen")
 surface_material_override/0 = SubResource("Mat_screen")
 
-[node name="LidHinge" type="Area3D" parent="LidPivot" node_paths=PackedStringArray("target")]
+[node name="LidHinge" type="Area3D" parent="LidPivot" unique_id=328742951 node_paths=PackedStringArray("target")]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.004, -0.062)
 collision_layer = 1048577
 script = ExtResource("2_hinge")
 target = NodePath("..")
 min_deg = 30.0
-max_deg = 180.0
 engage_radius = 0.035
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/LidHinge" unique_id=1386658467]
 shape = SubResource("BoxShape3D_hinge")
 
-[node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge"]
+[node name="HingeHint" type="Label3D" parent="LidPivot/LidHinge" unique_id=652006236]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.028, 0.004)
 visible = false
 
-[node name="DpadBar1" type="MeshInstance3D" parent="."]
+[node name="DpadBar1" type="MeshInstance3D" parent="." unique_id=1326063463]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0207, 0.007, -0.0039)
 mesh = SubResource("BoxMesh_dpad_h")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="DpadBar2" type="MeshInstance3D" parent="."]
+[node name="DpadBar2" type="MeshInstance3D" parent="." unique_id=245315102]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0207, 0.007, -0.0039)
 mesh = SubResource("BoxMesh_dpad_v")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="FaceButton1" type="MeshInstance3D" parent="."]
+[node name="FaceButton1" type="MeshInstance3D" parent="." unique_id=755080068]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0267, 0.007, -0.0067)
 mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("Mat_face")
 
-[node name="FaceButton2" type="MeshInstance3D" parent="."]
+[node name="FaceButton2" type="MeshInstance3D" parent="." unique_id=613694415]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0131, 0.007, -0.002)
 mesh = SubResource("CylinderMesh_face")
 surface_material_override/0 = SubResource("Mat_face")
 
-[node name="SelectButton" type="MeshInstance3D" parent="."]
+[node name="SelectButton" type="MeshInstance3D" parent="." unique_id=631670857]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0076, 0.0064, 0.0319)
 mesh = SubResource("CylinderMesh_pill")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="StartButton" type="MeshInstance3D" parent="."]
+[node name="StartButton" type="MeshInstance3D" parent="." unique_id=594873726]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0076, 0.0064, 0.0319)
 mesh = SubResource("CylinderMesh_pill")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="ShoulderL" type="MeshInstance3D" parent="."]
+[node name="ShoulderL" type="MeshInstance3D" parent="." unique_id=1391792596]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0359, -0.001, -0.0395)
 mesh = SubResource("BoxMesh_shoulder")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="ShoulderR" type="MeshInstance3D" parent="."]
+[node name="ShoulderR" type="MeshInstance3D" parent="." unique_id=865634215]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0359, -0.001, -0.0395)
 mesh = SubResource("BoxMesh_shoulder")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="BrightnessButton" type="MeshInstance3D" parent="."]
+[node name="BrightnessButton" type="MeshInstance3D" parent="." unique_id=2003914773]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0067, -0.022)
 mesh = SubResource("CylinderMesh_bright")
 surface_material_override/0 = SubResource("Mat_button")
 
-[node name="CardSlotMouth" type="MeshInstance3D" parent="."]
+[node name="CardSlotMouth" type="MeshInstance3D" parent="." unique_id=1506599857]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0005, 0.0423)
 mesh = SubResource("BoxMesh_slotmouth")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="VolumeSlider" type="Area3D" parent="."]
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=68640470]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.041, 0, -0.0212)
 collision_layer = 1048577
 script = ExtResource("3_slider")
@@ -210,14 +189,14 @@ travel = 0.01
 engage_radius = 0.022
 value = 1.0
 
-[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider"]
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=1049290328]
 mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=175771562]
 shape = SubResource("BoxShape3D_ctl")
 
-[node name="PowerSwitch" type="Area3D" parent="."]
+[node name="PowerSwitch" type="Area3D" parent="." unique_id=97010705]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.041, 0, 0.0167)
 collision_layer = 1048577
 script = ExtResource("3_slider")
@@ -226,17 +205,17 @@ travel = 0.01
 steps = 2
 engage_radius = 0.022
 
-[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch"]
+[node name="KnobMesh" type="MeshInstance3D" parent="PowerSwitch" unique_id=90114996]
 mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=528260853]
 shape = SubResource("BoxShape3D_ctl")
 
-[node name="CartSeat" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, -0.0005, 0.026)
+[node name="CartSeat" type="Marker3D" parent="." unique_id=202477110]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, -0.0005, 0.033530362)
 gizmo_extents = 0.03
 
-[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=1664212621]
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("Mat_seat")
