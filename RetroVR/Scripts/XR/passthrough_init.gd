@@ -6,9 +6,15 @@
 ## See: https://docs.godotengine.org/en/4.6/tutorials/xr/ar_passthrough.html
 extends Node3D
 
+## Locomotion is suspended for as long as passthrough is on. You are standing in
+## your actual room and can see it, so sliding the world past you puts the two
+## out of register — walk instead.
+const LOCO_OWNER := &"passthrough"
 
 @onready var _viewport: Viewport = get_viewport()
 @onready var _environment: Environment = $WorldEnvironment.environment
+
+var _loco: LocomotionManager = null
 
 
 func _ready() -> void:
@@ -44,10 +50,20 @@ func _enable_passthrough() -> void:
 	_environment.background_color = Color(0.0, 0.0, 0.0, 0.0)
 	_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 
+	# Tied to passthrough actually being on, not merely to this scene loading —
+	# every path above returns early when it is not available (no OpenXR, no
+	# blend mode), and blocking movement in a bare scene would strand the player.
+	_block_locomotion(true)
+
 	print("PassthroughInit: passthrough enabled (blend_mode=%d)" % xr_interface.environment_blend_mode)
 
 
 func _disable_passthrough() -> void:
+	# Released first and unconditionally: the returns below are all reasons the
+	# blend mode cannot be restored, none of them a reason to leave the player
+	# unable to move.
+	_block_locomotion(false)
+
 	var xr_interface: XRInterface = XRServer.primary_interface
 	if not xr_interface:
 		return
@@ -61,3 +77,21 @@ func _disable_passthrough() -> void:
 
 func _exit_tree() -> void:
 	_disable_passthrough()
+
+
+## CHANNEL_ALL covers direct movement, snap turn and teleport; CHANNEL_DESKTOP_MOVE
+## covers the keyboard providers, which are inert in a headset but cost nothing to
+## include and keep this correct if passthrough is ever reachable outside one.
+func _block_locomotion(on: bool) -> void:
+	if _loco == null or not is_instance_valid(_loco):
+		# The manager lives on the player rig, which outlives the room scene, so
+		# it is found rather than held.
+		if not is_inside_tree():
+			return
+		_loco = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
+	if _loco == null:
+		if on:
+			push_warning("PassthroughInit: no LocomotionManager — movement stays enabled")
+		return
+	_loco.set_block(LOCO_OWNER, LocomotionManager.CHANNEL_ALL, on)
+	_loco.set_block(LOCO_OWNER, LocomotionManager.CHANNEL_DESKTOP_MOVE, on)
