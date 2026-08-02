@@ -886,10 +886,12 @@ func _show_menu_hint() -> void:
 		_menu_hint.add_row(&"menu_open", HeldHint.PLATFORM_BOTH,
 			["quest_stick_l_press"] if vr else ["keyboard_tab_outline"], "Menu",
 			HeldHint.WHEN_PLACED)
-		# Just above and ahead of the hand; on desktop, right and low enough to
-		# stay out of the way of whatever is being aimed at.
+		# Just above and ahead of the hand. On desktop, the lower-right corner of
+		# the view: measured at 78% across and 80% down at the default 75 deg
+		# FOV, where the first guess sat at 63/65 — in view, but the middle of
+		# the screen rather than out of the way.
 		_menu_hint.pin_to_host(
-			Vector3(0.0, 0.10, -0.06) if vr else Vector3(0.34, -0.22, -0.95))
+			Vector3(0.0, 0.10, -0.06) if vr else Vector3(0.72, -0.44, -0.95))
 	_menu_hint.show_unheld()
 
 

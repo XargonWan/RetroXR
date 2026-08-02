@@ -97,6 +97,9 @@ var _time_left := 0.0
 ## frame the combo is held, so an uncounted note_used would burn through
 ## LEARNED_AFTER in three frames instead of three drops.
 var _used_this_hold: Dictionary = {}
+## Row ids this popup has actually put on screen. note_used refuses to count a
+## verb the player was never taught.
+var _ever_shown: Dictionary = {}
 
 
 static func attach(host: Node3D, vr_combo_drop: bool, height := 0.18) -> HeldHint:
@@ -230,6 +233,12 @@ func on_dropped() -> void:
 ## that row stops showing.
 func note_used(id: StringName) -> void:
 	var key := String(id)
+	# Only a row that has actually been shown can be learned. The menu row is the
+	# case that forced this: its use was counted on every menu toggle, but you
+	# have to open the menu to spawn anything and spawning is what shows the row
+	# — so three spawns retired it, quite possibly without it ever being seen.
+	if not _ever_shown.has(key):
+		return
 	if _used_this_hold.has(key):
 		return
 	_used_this_hold[key] = true
@@ -332,6 +341,7 @@ func _build(rows: Array, right_hand: bool) -> void:
 	var font: Font = ThemeDB.fallback_font
 	var widest := 0
 	for row: Array in rows:
+		_ever_shown[String(row[0])] = true
 		var line := HBoxContainer.new()
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
 		line.add_theme_constant_override("separation", SEP)
