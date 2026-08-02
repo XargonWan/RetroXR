@@ -438,11 +438,18 @@ func _make_button(node_name: String, arced: bool) -> VRButton:
 	btn.depress_axis = Vector3(0, 0, -1)
 	btn.depress_depth = 0.004
 
+	var hit := Vector3(0.044, 0.044, 0.012)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(0.044, 0.044, 0.012)
+	box.size = hit
 	shape.shape = box
 	btn.add_child(shape)
+
+	# VRButton is an Area3D and the laser ignores areas, so these would only ever
+	# respond to a fingertip — and they sit at the edge of a panel that floats
+	# out of reach. The proxy opts these two in without making every VRButton in
+	# the project pressable from across the room.
+	PointerProxy.wrap(btn, hit)
 
 	# Named ButtonMesh and parented BEFORE the button enters the tree:
 	# VRButton._ready resolves `@onready _mesh = $ButtonMesh` and immediately
