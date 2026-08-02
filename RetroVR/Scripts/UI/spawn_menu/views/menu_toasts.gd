@@ -22,6 +22,12 @@ extends VBoxContainer
 ## Bars visible before the rest collapse into "+N more".
 const MAX_VISIBLE := 4
 
+## How long an auto-dismissing bar stays up. A failure gets far longer than a
+## success: 2.5 s is not enough to read a failure reason through a headset.
+const DWELL_OK   := 2.5
+const DWELL_INFO := 3.0
+const DWELL_FAIL := 6.0
+
 const BAR_BG := Color(0.05, 0.10, 0.28, 0.96)
 const OVERFLOW_BG := Color(0.05, 0.10, 0.28, 0.80)
 const PROGRESS_FILL := Color(0.45, 0.70, 1.0)

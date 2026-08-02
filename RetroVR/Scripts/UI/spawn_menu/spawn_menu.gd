@@ -137,7 +137,7 @@ var _wheel_cache_order: Array[String] = []
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
 var _controls_view: SpawnMenuControlsView = null
-var _options_view:  Control = null
+var _options_view:  SpawnMenuOptionsView = null
 # Extracted into their own files — see Scripts/UI/spawn_menu/views/. Each owns
 # its widgets and its state; this class only shows and hides them.
 var _graphics_view: SpawnMenuGraphicsView = null
@@ -168,7 +168,6 @@ var _cores_tabs: TabContainer = null
 
 # The ScrollContainer currently in view
 var _active_scroll:        ScrollContainer = null
-var _options_scroll:       ScrollContainer = null
 
 # Spawn view tab ScrollContainers (indexed by tab index)
 var _spawn_tab_scrolls: Array[ScrollContainer] = []
@@ -461,8 +460,22 @@ func _build_ui() -> void:
 		func() -> void: controller_bindings_changed.emit())
 	content.add_child(_controls_view)
 
-	_options_view = _build_options_view()
+	_options_view = SpawnMenuOptionsView.create(self)
 	_options_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for relay: Array in [
+			[_options_view.turn_style_changed, turn_style_changed],
+			[_options_view.snap_angle_changed, snap_angle_changed],
+			[_options_view.height_offset_changed, height_offset_changed],
+			[_options_view.fov_changed, fov_changed],
+			[_options_view.world_scale_changed, world_scale_changed],
+			[_options_view.auto_save_changed, auto_save_changed],
+			[_options_view.show_fps_changed, show_fps_changed],
+			[_options_view.aim_crosshair_changed, aim_crosshair_changed],
+			[_options_view.controller_hands_changed, controller_hands_changed]]:
+		var out: Signal = relay[1]
+		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))
+	_options_view.system_filter_changed.connect(_refresh_download_systems)
+	_options_view.romm_platforms_requested.connect(_romm_fetch_platforms)
 	content.add_child(_options_view)
 
 	_graphics_view = SpawnMenuGraphicsView.create(_is_vr_mode())
@@ -567,7 +580,7 @@ func _show_controls_view() -> void:
 
 
 func _show_options_view() -> void:
-	_show_view(_options_view, _options_scroll, _nav_options_btn)
+	_show_view(_options_view, _options_view, _nav_options_btn)
 
 
 func _show_graphics_view() -> void:
@@ -588,6 +601,16 @@ func _show_about_view() -> void:
 func _show_net_view() -> void:
 	_show_view(_net_view, _net_view, _nav_net_btn)
 	_net_view.refresh()
+
+
+## The RomM platform map and the systems RomM reports that we cannot map. Owned
+## here because both the OPTIONS tab and the cartridge browser read them.
+func romm_platforms() -> Dictionary:
+	return _romm_platforms
+
+
+func romm_unmapped() -> Array:
+	return _romm_unmapped
 
 
 # ── Notifications ─────────────────────────────────────────────────────────────
@@ -986,7 +1009,8 @@ func _romm_fetch_platforms() -> void:
 			romm_config.cached_platforms = _romm_platforms.duplicate()
 			romm_config.save_config()
 			_populate_cartridges_tab()
-		_update_romm_status_label()
+		if _options_view:
+			_options_view.update_romm_status_label()
 	)
 
 
@@ -2569,657 +2593,6 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 	)
 
 
-# ── Options view ──────────────────────────────────────────────────────────────
-
-func _build_options_view() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_options_scroll = scroll
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 14)
-	scroll.add_child(vbox)
-
-	vbox.add_child(_spacer(10))
-
-	if _is_vr_mode():
-		# Turn Style option (XR only)
-		var turn_opt := VRDropdown.create("Turn Style",
-			[["SNAP", "SNAP"], ["SMOOTH", "SMOOTH"]], "SNAP",
-			1, Vector2(220, 56), 22)
-		turn_opt.item_selected.connect(func(id: Variant) -> void:
-			turn_style_changed.emit(str(id))
-		)
-		vbox.add_child(turn_opt)
-
-		# Snap Turn Angle option (XR only)
-		var sa_opt := VRDropdown.create("Snap Angle",
-			[["30°", 30.0], ["45°", 45.0], ["60°", 60.0]], 45.0,
-			1, Vector2(140, 56), 22)
-		sa_opt.item_selected.connect(func(id: Variant) -> void:
-			snap_angle_changed.emit(float(id))
-		)
-		vbox.add_child(sa_opt)
-
-		vbox.add_child(HSeparator.new())
-	else:
-		# FOV slider (desktop only)
-		var fov_header := HBoxContainer.new()
-		fov_header.add_theme_constant_override("separation", 10)
-		vbox.add_child(fov_header)
-
-		var fov_lbl := Label.new()
-		fov_lbl.text = "Field of View"
-		fov_lbl.add_theme_font_size_override("font_size", 22)
-		fov_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		fov_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		fov_header.add_child(fov_lbl)
-
-		var fov_val := Label.new()
-		fov_val.text = "75°"
-		fov_val.add_theme_font_size_override("font_size", 20)
-		fov_val.add_theme_color_override("font_color", COLOR_LICENSE)
-		fov_val.custom_minimum_size = Vector2(60, 0)
-		fov_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		fov_header.add_child(fov_val)
-
-		var fov_slider := HSlider.new()
-		fov_slider.min_value = 60.0
-		fov_slider.max_value = 110.0
-		fov_slider.step = 1.0
-		fov_slider.value = 75.0
-		fov_slider.custom_minimum_size = Vector2(0, 48)
-		fov_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		vbox.add_child(fov_slider)
-
-		fov_slider.value_changed.connect(func(v: float) -> void:
-			fov_val.text = "%d°" % int(v)
-			fov_changed.emit(v)
-		)
-
-		vbox.add_child(HSeparator.new())
-
-	# Height Offset slider
-	var ho_header := HBoxContainer.new()
-	ho_header.add_theme_constant_override("separation", 10)
-	vbox.add_child(ho_header)
-
-	var ho_lbl := Label.new()
-	ho_lbl.text = "Height Offset"
-	ho_lbl.add_theme_font_size_override("font_size", 22)
-	ho_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	ho_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ho_header.add_child(ho_lbl)
-
-	var ho_val := Label.new()
-	ho_val.text = "0.00 m"
-	ho_val.add_theme_font_size_override("font_size", 20)
-	ho_val.add_theme_color_override("font_color", COLOR_LICENSE)
-	ho_val.custom_minimum_size = Vector2(80, 0)
-	ho_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ho_header.add_child(ho_val)
-
-	var ho_slider := HSlider.new()
-	ho_slider.min_value = -1.0
-	ho_slider.max_value = 1.0
-	ho_slider.step = 0.01
-	ho_slider.value = 0.0
-	ho_slider.custom_minimum_size = Vector2(0, 48)
-	ho_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ho_slider.add_theme_constant_override("grabber_offset", 0)
-	vbox.add_child(ho_slider)
-
-	ho_slider.value_changed.connect(func(v: float) -> void:
-		ho_val.text = "%+.2f m" % v
-		height_offset_changed.emit(v)
-	)
-
-	vbox.add_child(HSeparator.new())
-
-	# World Scale slider — below 1.0 makes you feel smaller and the room bigger.
-	# XR only, like Turn Style above: on desktop it only moves the eye height,
-	# which is what the Height Offset slider already does more directly.
-	if _is_vr_mode():
-		var ws_header := HBoxContainer.new()
-		ws_header.add_theme_constant_override("separation", 10)
-		vbox.add_child(ws_header)
-
-		var ws_lbl := Label.new()
-		ws_lbl.text = "World Scale"
-		ws_lbl.add_theme_font_size_override("font_size", 22)
-		ws_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		ws_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		ws_header.add_child(ws_lbl)
-
-		var ws_val := Label.new()
-		ws_val.add_theme_font_size_override("font_size", 20)
-		ws_val.add_theme_color_override("font_color", COLOR_LICENSE)
-		ws_val.custom_minimum_size = Vector2(80, 0)
-		ws_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		ws_header.add_child(ws_val)
-
-		var ws_slider := HSlider.new()
-		ws_slider.min_value = 0.4
-		ws_slider.max_value = 1.5
-		ws_slider.step = 0.05
-		# Default matches DEFAULT_WORLD_SCALE in spawn_menu_controller.gd (applied
-		# at startup). Hardcoded rather than read from XRServer.world_scale because
-		# this view is built before the controller's deferred setup applies it.
-		ws_slider.value = 0.8
-		ws_val.text = "%.2f×" % ws_slider.value
-		ws_slider.custom_minimum_size = Vector2(0, 48)
-		ws_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		vbox.add_child(ws_slider)
-
-		ws_slider.value_changed.connect(func(v: float) -> void:
-			ws_val.text = "%.2f×" % v
-			world_scale_changed.emit(v)
-		)
-
-		# Passthrough pins the scale to 1.0 so the virtual room stays registered
-		# with the real one. Shown as such rather than left live and inert.
-		var sm_ws := _get_scene_manager()
-		if sm_ws and sm_ws.current_scene_id == "passthrough":
-			ws_slider.value = 1.0
-			ws_slider.editable = false
-			ws_val.text = "1.00× (passthrough)"
-
-		# Inside the guard too, or hiding the slider leaves two rules stacked.
-		vbox.add_child(HSeparator.new())
-
-	# Auto-save scene on switch option
-	var as_row := HBoxContainer.new()
-	as_row.add_theme_constant_override("separation", 10)
-	as_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(as_row)
-
-	var as_lbl := Label.new()
-	as_lbl.text = "Auto-save Scene"
-	as_lbl.add_theme_font_size_override("font_size", 22)
-	as_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	as_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	as_row.add_child(as_lbl)
-
-	as_row.add_child(_make_toggle(AppPrefs.auto_save_scene, func(on: bool) -> void:
-		AppPrefs.auto_save_scene = on
-		AppPrefs.save_prefs()
-		auto_save_changed.emit(on)
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# Show FPS option
-	var fps_row := HBoxContainer.new()
-	fps_row.add_theme_constant_override("separation", 10)
-	fps_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(fps_row)
-
-	var fps_lbl := Label.new()
-	fps_lbl.text = "Show FPS"
-	fps_lbl.add_theme_font_size_override("font_size", 22)
-	fps_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	fps_row.add_child(fps_lbl)
-
-	fps_row.add_child(_make_toggle(AppPrefs.show_fps, func(on: bool) -> void:
-		AppPrefs.show_fps = on
-		AppPrefs.save_prefs()
-		show_fps_changed.emit(on)
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# Spatial audio backend. Desktop only: in a headset the SDK's binaural
-	# rendering is simply right, and offering the swap there would only be a way
-	# to make it worse. On a desk it is a real choice -- over speakers the HRTF
-	# fights the room, and a surround rig gets no centre channel from a renderer
-	# that produces two channels by design.
-	if QualityManager.is_desktop():
-		var spatial_row := HBoxContainer.new()
-		spatial_row.add_theme_constant_override("separation", 10)
-		spatial_row.custom_minimum_size = Vector2(0, 68)
-		vbox.add_child(spatial_row)
-
-		var spatial_lbl := Label.new()
-		spatial_lbl.text = "Meta XR Spatial Audio"
-		spatial_lbl.add_theme_font_size_override("font_size", 22)
-		spatial_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		spatial_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		spatial_row.add_child(spatial_lbl)
-
-		# Applied straight away for everything in the room. A system that is
-		# already switched on keeps the backend it booted with; see
-		# SpatialAudioListener.set_sdk_enabled.
-		spatial_row.add_child(_make_toggle(AppPrefs.spatial_audio_sdk, func(on: bool) -> void:
-			AppPrefs.spatial_audio_sdk = on
-			AppPrefs.save_prefs()
-			SpatialAudioListener.set_sdk_enabled(on)
-		))
-
-		vbox.add_child(HSeparator.new())
-
-	# Ray Gun crosshair option
-	var xhair_row := HBoxContainer.new()
-	xhair_row.add_theme_constant_override("separation", 10)
-	xhair_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(xhair_row)
-
-	var xhair_lbl := Label.new()
-	xhair_lbl.text = "Ray Gun Crosshair"
-	xhair_lbl.add_theme_font_size_override("font_size", 22)
-	xhair_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	xhair_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	xhair_row.add_child(xhair_lbl)
-
-	xhair_row.add_child(_make_toggle(AppPrefs.aim_crosshair, func(on: bool) -> void:
-		AppPrefs.aim_crosshair = on
-		AppPrefs.save_prefs()
-		aim_crosshair_changed.emit(on)
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# Hint popups over held devices (drop combo, Scroll Lock capture)
-	var hints_row := HBoxContainer.new()
-	hints_row.add_theme_constant_override("separation", 10)
-	hints_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(hints_row)
-
-	var hints_lbl := Label.new()
-	hints_lbl.text = "Held Device Hints"
-	hints_lbl.add_theme_font_size_override("font_size", 22)
-	hints_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	hints_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hints_row.add_child(hints_lbl)
-
-	# No signal: HeldHint reads AppPrefs when the object is picked up, so nothing
-	# has to be told. Clearing the counts is what makes re-enabling visible —
-	# without it anyone already past HeldHint.LEARNED_AFTER sees no change.
-	hints_row.add_child(_make_toggle(AppPrefs.show_hints, func(on: bool) -> void:
-		AppPrefs.show_hints = on
-		if on:
-			AppPrefs.hint_uses.clear()
-		AppPrefs.save_prefs()
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# Draw hands on held controllers option (default off)
-	var hands_row := HBoxContainer.new()
-	hands_row.add_theme_constant_override("separation", 10)
-	hands_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(hands_row)
-
-	var hands_lbl := Label.new()
-	hands_lbl.text = "Controller Hands"
-	hands_lbl.add_theme_font_size_override("font_size", 22)
-	hands_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	hands_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hands_row.add_child(hands_lbl)
-
-	hands_row.add_child(_make_toggle(AppPrefs.controller_hands, func(on: bool) -> void:
-		AppPrefs.controller_hands = on
-		AppPrefs.save_prefs()
-		controller_hands_changed.emit(on)
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# System Filter option — off shows the media players, test core and
-	# single-game cores that SystemFilter keeps out of the Download grid.
-	var sf_row := HBoxContainer.new()
-	sf_row.add_theme_constant_override("separation", 10)
-	sf_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(sf_row)
-
-	var sf_col := VBoxContainer.new()
-	sf_col.add_theme_constant_override("separation", 0)
-	sf_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sf_row.add_child(sf_col)
-
-	var sf_lbl := Label.new()
-	sf_lbl.text = "Libretro System Filter"
-	sf_lbl.add_theme_font_size_override("font_size", 22)
-	sf_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	sf_col.add_child(sf_lbl)
-
-	var sf_sub := Label.new()
-	sf_sub.text = "Hide %d non-console systems" % SystemFilter.hidden_ids().size()
-	sf_sub.add_theme_font_size_override("font_size", 16)
-	sf_sub.add_theme_color_override("font_color", COLOR_LICENSE)
-	sf_col.add_child(sf_sub)
-
-	sf_row.add_child(_make_toggle(AppPrefs.system_filter, func(on: bool) -> void:
-		AppPrefs.system_filter = on
-		AppPrefs.save_prefs()
-		SystemFilter.enabled = on
-		_refresh_download_systems()
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# ── File Server (Android / Quest only) ───────────────────────────────────
-	if OS.get_name() == "Android":
-		var fs_hdr := Label.new()
-		fs_hdr.text = "FILE SERVER"
-		fs_hdr.add_theme_font_size_override("font_size", 22)
-		fs_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-		vbox.add_child(fs_hdr)
-
-		var fs_row := HBoxContainer.new()
-		fs_row.add_theme_constant_override("separation", 10)
-		fs_row.custom_minimum_size = Vector2(0, 68)
-		vbox.add_child(fs_row)
-
-		var fs_lbl := Label.new()
-		fs_lbl.text = "Web File Manager"
-		fs_lbl.add_theme_font_size_override("font_size", 20)
-		fs_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-		fs_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		fs_row.add_child(fs_lbl)
-
-		var fs_toggle := _make_toggle(scraper_config.web_server_enabled, func(on: bool) -> void:
-			if on:
-				web_server.start()
-			else:
-				web_server.stop()
-			scraper_config.web_server_enabled = on
-			scraper_config.save_config()
-			_server_address_label.visible = on
-		)
-		fs_row.add_child(fs_toggle)
-
-		_server_address_label = Label.new()
-		_server_address_label.add_theme_font_size_override("font_size", 16)
-		_server_address_label.add_theme_color_override("font_color", COLOR_DESC)
-		_server_address_label.text = "http://%s:8080   PIN: %s" % \
-			[WebFileServer.local_ip(), scraper_config.ensure_web_server_pin()]
-		_server_address_label.visible = scraper_config.web_server_enabled
-		vbox.add_child(_server_address_label)
-
-		vbox.add_child(HSeparator.new())
-
-	# ── RomM server ──────────────────────────────────────────────────────────
-	_build_romm_options(vbox)
-
-	# ── Scraper settings ─────────────────────────────────────────────────────
-	var scraper_hdr := Label.new()
-	scraper_hdr.text = "SCREENSCRAPER.FR"
-	scraper_hdr.add_theme_font_size_override("font_size", 22)
-	scraper_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(scraper_hdr)
-
-	# User credentials
-	_add_options_text_field(vbox, "Username (ssid)", scraper_config.ssid, func(text: String):
-		scraper_config.ssid = text
-		scraper_config.save_config()
-	)
-	_add_options_text_field(vbox, "Password", scraper_config.sspassword, func(text: String):
-		scraper_config.sspassword = text
-		scraper_config.save_config()
-	, true)
-
-	# Region priorities
-	_add_options_text_field(vbox, "Region Priority", ", ".join(scraper_config.region_priorities), func(text: String):
-		var parts: Array[String] = []
-		for p in text.split(","):
-			var trimmed := p.strip_edges().to_lower()
-			if not trimmed.is_empty():
-				parts.append(trimmed)
-		if not parts.is_empty():
-			scraper_config.region_priorities = parts
-			scraper_config.save_config()
-	)
-
-	# Language priorities
-	_add_options_text_field(vbox, "Language Priority", ", ".join(scraper_config.language_priorities), func(text: String):
-		var parts: Array[String] = []
-		for p in text.split(","):
-			var trimmed := p.strip_edges().to_lower()
-			if not trimmed.is_empty():
-				parts.append(trimmed)
-		if not parts.is_empty():
-			scraper_config.language_priorities = parts
-			scraper_config.save_config()
-	)
-
-	vbox.add_child(HSeparator.new())
-
-	return scroll
-
-
-## ROMM SERVER section of the OPTIONS view.
-func _build_romm_options(vbox: VBoxContainer) -> void:
-	var hdr := Label.new()
-	hdr.text = "ROMM SERVER"
-	hdr.add_theme_font_size_override("font_size", 22)
-	hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(hdr)
-
-	var enable_row := HBoxContainer.new()
-	enable_row.custom_minimum_size = Vector2(0, 68)
-	enable_row.add_theme_constant_override("separation", 10)
-	vbox.add_child(enable_row)
-
-	var enable_lbl := Label.new()
-	enable_lbl.text = "Enable RomM library"
-	enable_lbl.add_theme_font_size_override("font_size", 20)
-	enable_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	enable_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	enable_row.add_child(enable_lbl)
-
-	enable_row.add_child(_make_toggle(romm_config.enabled, func(on: bool) -> void:
-		romm_config.enabled = on
-		romm_config.save_config()
-		if on:
-			_romm_fetch_platforms()
-	))
-
-	_add_options_text_field(vbox, "Server URL", romm_config.base_url, func(text: String) -> void:
-		romm_config.base_url = RommConfig.normalize_url(text)
-		romm_config.save_config()
-		if romm_art != null:
-			romm_art.setup(romm_config.base_url)
-	)
-
-	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
-	var mode_drop := VRDropdown.create("Sign in with",
-		[["API token", RommConfig.AUTH_TOKEN],
-		 ["Username + password", RommConfig.AUTH_BASIC]],
-		romm_config.auth_mode, 1, Vector2(300, 56), 18)
-	mode_drop.item_selected.connect(func(id: Variant) -> void:
-		romm_config.auth_mode = str(id)
-		romm_config.save_config()
-	)
-	vbox.add_child(mode_drop)
-
-	_add_options_text_field(vbox, "API token", romm_config.token, func(text: String) -> void:
-		romm_config.token = text.strip_edges()
-		romm_config.save_config()
-	, true)
-
-	_add_options_text_field(vbox, "Username", romm_config.username, func(text: String) -> void:
-		romm_config.username = text.strip_edges()
-		romm_config.save_config()
-	)
-
-	_add_options_text_field(vbox, "Password", romm_config.password, func(text: String) -> void:
-		romm_config.password = text
-		romm_config.save_config()
-	, true)
-
-	# Device pairing: type 8 digits instead of a 68-character token in VR.
-	_add_options_text_field(vbox, "Pair code (8 digits)", "", func(text: String) -> void:
-		var code := text.strip_edges()
-		if code.length() != 8:
-			return
-		romm_client.pair_with_code(code, func(ok: bool, token: String, err: String) -> void:
-			if ok:
-				romm_config.auth_mode = RommConfig.AUTH_TOKEN
-				romm_config.token = token
-				romm_config.enabled = true
-				romm_config.save_config()
-				notify("romm:conn", "✅", "Paired with RomM", -1.0, _ROMM_DWELL_OK)
-				_romm_fetch_platforms()
-			else:
-				notify("romm:conn", "❌", err, -1.0, _ROMM_DWELL_FAIL)
-		)
-	)
-
-	_add_options_text_field(vbox, "Cache budget (GB)", str(romm_config.cache_budget_gb),
-		func(text: String) -> void:
-			var v := text.strip_edges().to_float()
-			if v > 0.0:
-				romm_config.cache_budget_gb = v
-				romm_config.save_config()
-				_update_romm_status_label()
-	)
-
-	var group_row := HBoxContainer.new()
-	group_row.custom_minimum_size = Vector2(0, 68)
-	group_row.add_theme_constant_override("separation", 10)
-	vbox.add_child(group_row)
-	var group_lbl := Label.new()
-	group_lbl.text = "Group multi-region duplicates"
-	group_lbl.add_theme_font_size_override("font_size", 20)
-	group_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	group_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	group_row.add_child(group_lbl)
-	group_row.add_child(_make_toggle(romm_config.group_by_meta_id, func(on: bool) -> void:
-		romm_config.group_by_meta_id = on
-		romm_config.save_config()
-	))
-
-	# Actions
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 10)
-	vbox.add_child(actions)
-
-	var test_btn := Button.new()
-	test_btn.text = "  Test connection  "
-	test_btn.custom_minimum_size = Vector2(0, 56)
-	test_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	test_btn.add_theme_font_size_override("font_size", 18)
-	test_btn.pressed.connect(func() -> void:
-		notify("romm:conn", "⏳", "Contacting RomM…", -1.0)
-		romm_client.test_connection(func(ok: bool, summary: String) -> void:
-			notify("romm:conn", "✅" if ok else "❌", summary, -1.0,
-				_ROMM_DWELL_OK if ok else _ROMM_DWELL_FAIL)
-			if ok:
-				_romm_fetch_platforms()
-		)
-	)
-	actions.add_child(test_btn)
-
-	var sync_btn := Button.new()
-	sync_btn.text = "  Sync all now  "
-	sync_btn.custom_minimum_size = Vector2(0, 56)
-	sync_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sync_btn.add_theme_font_size_override("font_size", 18)
-	sync_btn.pressed.connect(_on_romm_sync_all_pressed)
-	actions.add_child(sync_btn)
-
-	_romm_status_label = Label.new()
-	_romm_status_label.add_theme_font_size_override("font_size", 16)
-	_romm_status_label.add_theme_color_override("font_color", COLOR_DESC)
-	_romm_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_romm_status_label)
-	_update_romm_status_label()
-
-	vbox.add_child(HSeparator.new())
-
-
-## Sync every mapped platform, one after another — for deliberate offline
-## browsing. Normal use never needs this; platforms sync when you open them.
-func _on_romm_sync_all_pressed() -> void:
-	if not romm_config.is_configured():
-		notify("romm:conn", "❌", "Set a server URL and sign-in first", -1.0, _ROMM_DWELL_FAIL)
-		return
-	if _romm_platforms.is_empty():
-		_romm_fetch_platforms()
-		return
-	_romm_sync_queue.clear()
-	for systemid: String in _romm_platforms:
-		_romm_sync_queue.append(systemid)
-	_pump_romm_sync_queue()
-
-
-func _pump_romm_sync_queue() -> void:
-	if _romm_sync_queue.is_empty() or romm_catalog.is_syncing():
-		return
-	var systemid: String = _romm_sync_queue.pop_front()
-	var pid := int((_romm_platforms.get(systemid, {}) as Dictionary).get("id", 0))
-	if pid > 0:
-		romm_catalog.sync_platform(systemid, pid, true)
-
-
-func _update_romm_status_label() -> void:
-	if _romm_status_label == null or not is_instance_valid(_romm_status_label):
-		return
-
-	var parts: Array[String] = []
-	if not romm_client.server_version.is_empty():
-		parts.append("RomM %s" % romm_client.server_version)
-	if not _romm_platforms.is_empty():
-		var total := 0
-		for sid: String in _romm_platforms:
-			total += int((_romm_platforms[sid] as Dictionary).get("rom_count", 0))
-		parts.append("%d games across %d platforms" % [total, _romm_platforms.size()])
-	if romm_cache != null:
-		parts.append("%s cached / %.0f GB budget"
-			% [_human_bytes(romm_cache.total_bytes()), romm_config.cache_budget_gb])
-
-	var text := " · ".join(PackedStringArray(parts)) if not parts.is_empty() \
-		else "Not connected."
-
-	if not _romm_unmapped.is_empty():
-		# Biggest first, capped — a full list runs to dozens of engine cores and
-		# one-ROM oddities that will never have a systemid.
-		var sorted_un := _romm_unmapped.duplicate()
-		sorted_un.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			return int(a.get("rom_count", 0)) > int(b.get("rom_count", 0))
-		)
-		var names: Array[String] = []
-		for i in mini(sorted_un.size(), 6):
-			var p: Dictionary = sorted_un[i]
-			names.append("%s (%d)" % [RommPlatforms.display_name(p), int(p.get("rom_count", 0))])
-		text += "\n%d unmapped: " % _romm_unmapped.size() + ", ".join(PackedStringArray(names))
-		if sorted_un.size() > 6:
-			text += " and %d more" % (sorted_un.size() - 6)
-
-	_romm_status_label.text = text
-
-
-func _add_options_text_field(parent: VBoxContainer, label_text: String,
-							 initial_value: String, on_changed: Callable,
-							 secret: bool = false) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 56)
-	parent.add_child(row)
-
-	var lbl := Label.new()
-	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 18)
-	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(lbl)
-
-	var edit := LineEdit.new()
-	edit.text = initial_value
-	edit.custom_minimum_size = Vector2(260, 48)
-	edit.add_theme_font_size_override("font_size", 16)
-	edit.secret = secret
-
-	# Keyboard dismissal is handled globally by the VRKeyboard autoload.
-	edit.text_submitted.connect(func(text: String) -> void: on_changed.call(text))
-	edit.focus_exited.connect(func() -> void: on_changed.call(edit.text))
-
-	row.add_child(edit)
-
-
 # ── Scraper ──────────────────────────────────────────────────────────────────
 
 func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void:
@@ -3422,9 +2795,9 @@ func _close_scrape_popup() -> void:
 # Keys are namespaced "romm:" so they cannot collide with the scraper's
 # box/wheel/label/manual keys.
 
-const _ROMM_DWELL_OK   := 2.5
-const _ROMM_DWELL_INFO := 3.0
-const _ROMM_DWELL_FAIL := 6.0   # 2.5 s is not long enough to read a failure
+const _ROMM_DWELL_OK   := MenuToasts.DWELL_OK
+const _ROMM_DWELL_INFO := MenuToasts.DWELL_INFO
+const _ROMM_DWELL_FAIL := MenuToasts.DWELL_FAIL
 
 ## Driven by the controller's _show_menu/_hide_menu — the Control is always
 ## visible, it's the Viewport2Din3D node in the world that gets toggled.
@@ -3572,8 +2945,9 @@ func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int
 	# The open detail page is showing a stale list — rebuild it against the new index.
 	if systemid == _romm_detail_systemid:
 		_rebuild_romm_rows()
-	_update_romm_status_label()
-	_pump_romm_sync_queue()
+	if _options_view:
+		_options_view.update_romm_status_label()
+		_options_view.pump_romm_sync_queue()
 
 
 func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
@@ -3663,13 +3037,7 @@ static func _commas(n: int) -> String:
 
 
 static func _human_bytes(bytes: int) -> String:
-	if bytes >= 1073741824:
-		return "%.1f GB" % (float(bytes) / 1073741824.0)
-	if bytes >= 1048576:
-		return "%.0f MB" % (float(bytes) / 1048576.0)
-	if bytes >= 1024:
-		return "%.0f KB" % (float(bytes) / 1024.0)
-	return "%d B" % bytes
+	return MenuStyle.human_bytes(bytes)
 
 
 func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary) -> void:

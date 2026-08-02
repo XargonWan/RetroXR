@@ -112,3 +112,16 @@ static func hbox(separation: int) -> HBoxContainer:
 static func is_vr_mode() -> bool:
 	var xr := XRServer.find_interface("OpenXR")
 	return xr != null and xr.is_initialized()
+
+
+## Byte counts as the menu shows them — download sizes, cache budgets. Here
+## rather than in a view because both OPTIONS and the RomM toasts print them,
+## and the two must agree on the rounding.
+static func human_bytes(bytes: int) -> String:
+	if bytes >= 1073741824:
+		return "%.1f GB" % (float(bytes) / 1073741824.0)
+	if bytes >= 1048576:
+		return "%.0f MB" % (float(bytes) / 1048576.0)
+	if bytes >= 1024:
+		return "%.0f KB" % (float(bytes) / 1024.0)
+	return "%d B" % bytes
