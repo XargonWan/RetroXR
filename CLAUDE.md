@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SK.Libretro.Godot is a GDExtension (C++) that runs libretro emulator cores inside Godot 4.5+. It bridges Godot's scene system with the libretro API, enabling retro game emulation within Godot projects.
+retroXR is a VR retro-gaming room in Godot 4.7. Its core is `libretro-godot`, a GDExtension (C++, submodule, forked from SKurdt's SK.Libretro.Godot) that runs libretro emulator cores inside Godot and bridges Godot's scene system to the libretro API.
+
+The workspace directory on this machine is still named `SK.Libretro.Godot` and the Android
+package is still `com.xenu.retrovr` — neither was renamed with the repo, so paths and adb
+commands below use the old names deliberately.
 
 The Godot project in this repo:
 - `RetroVR/` — VR arcade room (primary development target, godot-xr-tools based)

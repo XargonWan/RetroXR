@@ -13,7 +13,9 @@ extends ScrollContainer
 ## [header, [[title, author, licence], ...], note] — note "" for no note.
 const SECTIONS: Array = [
 	["OPEN SOURCE LIBRARIES", [
-		["SK.Libretro.Godot", "SKurdt", "MIT"],
+		# Our own fork, but SKurdt's copyright notice rides with it — that is the
+		# MIT condition, and it is the reason this row names an author at all.
+		["libretro-godot",    "SKurdt", "MIT"],
 		["pdfium",            "The Chromium Authors", "BSD 3-Clause"],
 		["godot-xr-tools",   "Bastiaan Olij",   "MIT"],
 		["godot-cpp",        "Godot Engine contributors", "MIT"],
@@ -23,7 +25,7 @@ const SECTIONS: Array = [
 		["libVLC",           "VideoLAN",        "LGPL v2.1"],
 		["Nerd Fonts",       "Ryan L McIntyre", "MIT"],
 		["RomM",             "RomM contributors", "AGPL v3"],
-	], ""],
+	], "libretro-godot is retroXR's fork of SKurdt's SK.Libretro.Godot."],
 
 	# Deliberately not folded into the list above: the Meta XR Audio SDK is not
 	# open source, and its licence requires the copyright notice be reproduced

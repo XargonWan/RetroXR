@@ -1,6 +1,15 @@
-# SK.Libretro.Godot
+# retroXR
 
-GDExtension to run libretro cores inside of Godot 4
+A VR retro-gaming room in Godot 4: real emulated hardware you pick up, plug in and
+play with, driven by libretro cores.
+
+Five C++ GDExtensions do the heavy lifting — `libretro-godot` (the cores),
+`verlet-rope` (the cables), `vlc-godot` (video), `godot-pdfium` (manuals) and
+`metaxr-audio` (spatial audio on Quest). Build them all for one platform with:
+
+```bash
+python Tools/build.py windows      # or: linux, android
+```
 
 ## Video player (VCR)
 
