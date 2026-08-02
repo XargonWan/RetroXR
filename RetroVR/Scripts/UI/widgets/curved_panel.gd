@@ -394,22 +394,32 @@ func _build_toggle() -> void:
 	_refresh_buttons()
 
 
+## The corner furniture — resize grip, then the flat and curved toggles — sits
+## in one row just outside the panel's lower-right corner, running rightwards.
+## This is the line they share; the grip is nearest the corner.
+func _corner_baseline() -> float:
+	return -_screen_size.y * 0.5 - GRIP_OUT
+
+
+## Yaw that keeps a piece of furniture facing along the arc at arc-length `s`.
+## Left at zero they read as flat tabs stuck on a curved panel.
+func _yaw_at(s: float) -> float:
+	return 0.0 if _curve <= 0.001 else -s / (curve_radius / _curve)
+
+
 ## Seat the buttons ON the arc, continuing it past the screen's edge, and turn
 ## them to face along it. Left at z = 0 they would sit ~11 cm behind the edge
 ## once the panel wrapped, floating off the corner they belong to.
 func _place_buttons() -> void:
 	if _btn_flat == null or _btn_curved == null:
 		return
-	var hw := _screen_size.x * 0.5
-	var hh := _screen_size.y * 0.5
-	var s := hw + BTN_GAP
-	var yaw := 0.0
-	if _curve > 0.001:
-		yaw = -s / (curve_radius / _curve)
-	for pair: Array in [[_btn_flat, -hh + 0.015], [_btn_curved, -hh + 0.015 + BTN_PITCH]]:
-		var btn: VRButton = pair[0]
-		btn.position = _arc_point(s, pair[1])
-		btn.rotation = Vector3(0.0, yaw, 0.0)
+	var y := _corner_baseline()
+	var first := _screen_size.x * 0.5 + GRIP_OUT + BTN_GAP + BTN_PITCH * 0.5
+	for i in 2:
+		var btn: VRButton = [_btn_flat, _btn_curved][i]
+		var s := first + BTN_PITCH * i
+		btn.position = _arc_point(s, y)
+		btn.rotation = Vector3(0.0, _yaw_at(s), 0.0)
 
 
 func _make_button(node_name: String, arced: bool) -> VRButton:
@@ -524,16 +534,12 @@ func _grip_corner_mesh() -> ArrayMesh:
 func _place_grip() -> void:
 	if _grip == null:
 		return
-	var hw := _screen_size.x * 0.5
-	var hh := _screen_size.y * 0.5
-	# Out along the arc past the edge, and below the bottom — clear of the
-	# screen in both axes rather than sitting on the corner it marks.
-	var s := hw + GRIP_OUT
-	var yaw := 0.0
-	if _curve > 0.001:
-		yaw = -s / (curve_radius / _curve)
-	_grip.position = _arc_point(s, -hh - GRIP_OUT)
-	_grip.rotation = Vector3(0.0, yaw, 0.0)
+	# Just past the corner, out along the arc and below the bottom — clear of
+	# the screen in both axes rather than sitting under the corner it marks.
+	# First in the row; the curve toggles follow to its right.
+	var s := _screen_size.x * 0.5 + GRIP_OUT
+	_grip.position = _arc_point(s, _corner_baseline())
+	_grip.rotation = Vector3(0.0, _yaw_at(s), 0.0)
 
 
 ## Called by the grip on PRESSED. Remembers which pointer owns the drag.
