@@ -1102,7 +1102,18 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 				var dl_sid: String = dl_entry.get("systemid", "")
 				if not dl_sid.is_empty():
 					RomLibrary.ensure_rom_dir(dl_sid)
-				call_deferred("_populate_cartridges_tab")
+					# The Cartridges and Systems tabs live on SpawnView, not here.
+					# This used to call_deferred("_populate_cartridges_tab") on
+					# self, which failed every time with "Method not found" —
+					# a deferred call by name is not checked at parse time, so it
+					# went unnoticed: the core downloaded fine and the spawn menu
+					# simply never noticed a new system had become playable.
+					# default_core_changed is the signal SpawnView already listens
+					# to for exactly this (it repopulates both tabs and ignores the
+					# arguments). The default itself is adopted by the deferred
+					# _populate_manager_tab above when this is the system's first
+					# core, so read it back rather than assuming it is this one.
+					default_core_changed.emit(dl_sid, core_defaults.get_default_core(dl_sid))
 			if is_instance_valid(btn):
 				btn.text = new_state
 				_style_dl_button(btn, new_state)
