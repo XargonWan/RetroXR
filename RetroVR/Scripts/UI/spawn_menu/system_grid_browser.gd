@@ -60,7 +60,7 @@ var _home_page:    VBoxContainer   = null
 var _detail_page:  VBoxContainer   = null
 var _filter_edit:  LineEdit        = null
 var _home_scroll:  ScrollContainer = null
-var _tiles_flow:   HFlowContainer  = null
+var _tiles_grid:   GridContainer   = null
 var _home_empty:   Label           = null
 var _detail_scroll: ScrollContainer = null
 var _detail_vbox:  VBoxContainer   = null
@@ -199,13 +199,19 @@ func _ensure_built() -> void:
 	_home_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_home_scroll.vertical_scroll_mode   = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
 	_home_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	_home_scroll.resized.connect(_update_tile_columns)
 	_home_page.add_child(_home_scroll)
 
-	_tiles_flow = HFlowContainer.new()
-	_tiles_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_tiles_flow.add_theme_constant_override("h_separation", 10)
-	_tiles_flow.add_theme_constant_override("v_separation", 10)
-	_home_scroll.add_child(_tiles_flow)
+	# A GridContainer, not an HFlowContainer. A flow packs its children at their
+	# minimum width and leaves whatever is left over as a gutter down the right
+	# edge; a grid whose children EXPAND_FILL shares each row out evenly, so
+	# widening the panel stretches the tiles until another whole one fits.
+	_tiles_grid = GridContainer.new()
+	_tiles_grid.columns = 1
+	_tiles_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tiles_grid.add_theme_constant_override("h_separation", 10)
+	_tiles_grid.add_theme_constant_override("v_separation", 10)
+	_home_scroll.add_child(_tiles_grid)
 
 	_home_empty = Label.new()
 	_home_empty.text = empty_text
@@ -266,13 +272,40 @@ func _ensure_built() -> void:
 	_detail_scroll.add_child(_detail_vbox)
 
 
+## As many whole tiles across as fit at their minimum width; the row then shares
+## out what is left over, so there is no ragged gutter down the right.
+##
+## Measured from the SCROLL, never from the grid. A grid's minimum width is
+## columns * tile_min_size.x, so reading its own size to choose the column count
+## is a feedback loop: too many columns inflates the minimum, the grid overflows
+## the scroll instead of shrinking, and the inflated width justifies the column
+## count that caused it. It latches on the first wide measurement and never
+## recovers — the Cartridges grid sat at 6 columns / 1550 px at every panel size
+## while Systems, which happened to be measured narrow first, tracked correctly.
+func _update_tile_columns() -> void:
+	if _tiles_grid == null or _home_scroll == null:
+		return
+	var avail := _home_scroll.size.x
+	var bar := _home_scroll.get_v_scroll_bar()
+	if bar != null and bar.visible:
+		avail -= bar.size.x
+	if avail <= 0.0:
+		return
+	var sep := float(_tiles_grid.get_theme_constant("h_separation"))
+	var per := maxf(tile_min_size.x, 1.0) + sep
+	var n := maxi(1, int(floor((avail + sep) / per)))
+	if _tiles_grid.columns != n:
+		_tiles_grid.columns = n
+
+
 func _rebuild_tiles() -> void:
-	for c in _tiles_flow.get_children():
+	for c in _tiles_grid.get_children():
 		c.queue_free()
 	_home_empty.visible = _systems.is_empty()
 	_home_scroll.visible = not _systems.is_empty()
 	for s: Dictionary in _systems:
-		_tiles_flow.add_child(_make_tile(s))
+		_tiles_grid.add_child(_make_tile(s))
+	_update_tile_columns()
 	if _filter_edit and not _filter_edit.text.is_empty():
 		_on_filter_changed(_filter_edit.text)
 
@@ -283,7 +316,15 @@ func _make_tile(s: Dictionary) -> Button:
 	var badge: String = s.get("badge", "")
 
 	var btn := Button.new()
-	btn.custom_minimum_size = tile_min_size
+	# Height only. A width minimum here would become the grid's minimum, and
+	# with horizontal scrolling disabled the ScrollContainer inherits that as
+	# ITS minimum — so a wide grid widens the very container the column count is
+	# measured against, and the count can never come back down. tile_min_size.x
+	# is honoured by _update_tile_columns deciding how many fit instead.
+	btn.custom_minimum_size = Vector2(0, tile_min_size.y)
+	# EXPAND_FILL is what makes the grid divide each row between its tiles
+	# rather than leaving every one at its minimum with the slack on the right.
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.set_meta("filter_name", name.to_lower())
 
 	# Console art on the left, name (and badge) on the right. Laid out as child
@@ -403,7 +444,7 @@ static func _compact_count(n: int) -> String:
 
 func _on_filter_changed(text: String) -> void:
 	var needle := text.strip_edges().to_lower()
-	for tile: Node in _tiles_flow.get_children():
+	for tile: Node in _tiles_grid.get_children():
 		if tile is Button:
 			var hay: String = tile.get_meta("filter_name", "")
 			tile.visible = needle.is_empty() or hay.contains(needle)
