@@ -8,6 +8,7 @@
 
 As this is a submodule, we need to somehow upstream the issues we found
 
+* Playstation Portable is just named "playstation_portable", this isn't visually appearling with the underscore and lack of captailizations
 * There is an insconsistency with the `systemname` "C64" where the corrisponding `systemid` is called either "commodore_c64" or "commodore_64"
 * Same inconsistency for the Amiga — `systemid` is either "commodore_amiga" or "amiga" depending on the core
 * Cost of both: `SystemInfo.for_system()` resolves `res://SystemInfo/<systemid>.tres`, so each of these machines needs TWO identical `.tres` files or half the cores get the fallback descriptor (2 ports, cartridge) instead of the authored one. `RetroVR/SystemInfo/` is 60 files for 58 real systems because of it. Anything that counts or lists systems from that directory double-counts the C64 and the Amiga.
