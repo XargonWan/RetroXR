@@ -29,7 +29,13 @@ func _ready() -> void:
 func _drive() -> void:
 	get_tree().create_timer(420.0).timeout.connect(func() -> void:
 		print("[soak] TIMEOUT — hung rather than crashed"); get_tree().quit(2))
+	# Both, because the first one does not hold: SpawnMenuController's deferred
+	# setup calls _on_auto_save_changed(AppPrefs.auto_save_scene) once the room is
+	# up and turns auto-save back on from the player's prefs. A soak then writes
+	# its own idea of the room over their arcade save on every switch. Pointing
+	# the active slot at one nothing else reads makes that harmless.
 	SceneManager.auto_save_on_switch = false
+	SceneManager.active_slot_id = "zz_soak_scratch"
 
 	var arcade: Node = (load("res://Scenes/MainScene.tscn") as PackedScene).instantiate()
 	get_tree().root.add_child(arcade)

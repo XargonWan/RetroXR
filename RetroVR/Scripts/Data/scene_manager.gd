@@ -254,6 +254,16 @@ func _set_player_body_enabled(player: Node3D, value: bool) -> void:
 	if value:
 		body.velocity = Vector3.ZERO
 		body.ground_velocity = Vector3.ZERO
+		# The body is top_level — its transform is world space and does NOT come
+		# along when the rig is re-seated. Left where it was, the first physics
+		# tick in the new room tries to WALK it across from the old one, and a
+		# walk that long crosses walls: the head-distance check blocks and fades
+		# the view to black. Reproduced every time coming out of the test hall,
+		# which is long enough to guarantee it. PlayerBody._ready() does exactly
+		# this when it first goes top-level.
+		var parent := body.get_parent() as Node3D
+		if parent != null:
+			body.global_transform = parent.global_transform
 		# The head-distance fade is a countdown that the body ticks down itself,
 		# so switching the body off froze it mid-count. Left alone it is re-applied
 		# the instant the body wakes in the new room: you see the room, and then it
