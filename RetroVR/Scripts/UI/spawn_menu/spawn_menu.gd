@@ -135,7 +135,7 @@ var _wheel_cache_order: Array[String] = []
 
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
-var _cores_view:    Control = null
+var _cores_view:    SpawnMenuCoresView = null
 var _controls_view: SpawnMenuControlsView = null
 var _options_view:  SpawnMenuOptionsView = null
 # Extracted into their own files — see Scripts/UI/spawn_menu/views/. Each owns
@@ -155,16 +155,10 @@ var _nav_about_btn:    Button = null
 var _nav_buttons: Array[Button] = []
 
 # Cores > Download tab state
-var _download_loading_label: Label        = null
-var _download_fetched:       bool         = false
 # core_name -> { "button": Button, "bar": ProgressBar }
-var _download_widgets: Dictionary = {}
 # Drill-down browser + fetched cores grouped by systemid ("__other__" = unknown):
 #   sid -> Array[{ "core_name", "remote_date", "info" }]
-var _download_browser: SystemGridBrowser = null
-var _download_cores_by_system: Dictionary = {}
 # Outer Download/Manager TabContainer of the Cores view.
-var _cores_tabs: TabContainer = null
 
 # The ScrollContainer currently in view
 var _active_scroll:        ScrollContainer = null
@@ -175,19 +169,12 @@ var _spawn_tabs: TabContainer = null
 
 # Cores > Manager tab state — drill-down browser + installed cores grouped by
 # systemid: sid -> Array[{ "core_name", "display_name" }]
-var _manager_browser: SystemGridBrowser = null
 
 ## BIOS / Extras tab. `_bios_row_cache` is per-rebuild: the home grid and the
 ## detail page both need a system's resolved rows, and re-deriving them means
 ## re-stat'ing (and possibly re-hashing) every declared file.
-var _bios_browser: SystemGridBrowser = null
-var _bios_cores_by_system: Dictionary = {}
-var _bios_row_cache: Dictionary = {}
-var _firmware_installer: FirmwareInstaller = null
 ## job key -> the Button that started it, so progress can be shown in place.
 ## Rebuilt pages drop their buttons, so entries are validity-checked on use.
-var _bios_job_buttons: Dictionary = {}
-var _bios_refreshing := false
 
 ## Typing is bursty; one rebuild after the keys stop instead of one per key.
 const SEARCH_DEBOUNCE_SEC := 0.18
@@ -195,7 +182,6 @@ var _romm_search_timer: Timer = null
 ## systemid -> {lowercase basename: rom}. A directory listing, so it is cached
 ## and dropped whenever something writes to a ROM dir.
 var _local_scan_cache: Dictionary = {}
-var _manager_cores_by_system: Dictionary = {}
 
 # Spawn > Systems tab — drill-down browser, one title card per system
 var _systems_browser: SystemGridBrowser = null
@@ -349,8 +335,8 @@ func _init_romm() -> void:
 	# Redraw once the list lands: rows built before it arrives carry no cloud
 	# button, and the tab should not block on a request to show what is on disk.
 	romm_firmware.listed.connect(func(ok: bool, _n: int) -> void:
-		if ok and _cores_tabs != null and _cores_tabs.current_tab == 2:
-			_refresh_bios_view()
+		if ok and _cores_view != null and _cores_view.showing_bios_tab():
+			_cores_view.refresh_bios_view()
 	)
 
 
@@ -446,8 +432,13 @@ func _build_ui() -> void:
 	_spawn_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_spawn_view)
 
-	_cores_view = _build_cores_view()
+	_cores_view = SpawnMenuCoresView.create(self)
 	_cores_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_cores_view.scroll_changed.connect(func(s: ScrollContainer) -> void:
+		if _cores_view.visible:
+			_active_scroll = s)
+	_cores_view.default_core_changed.connect(
+		func(sid: String, cn: String) -> void: default_core_changed.emit(sid, cn))
 	content.add_child(_cores_view)
 
 	_controls_view = SpawnMenuControlsView.create()
@@ -474,7 +465,7 @@ func _build_ui() -> void:
 			[_options_view.controller_hands_changed, controller_hands_changed]]:
 		var out: Signal = relay[1]
 		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))
-	_options_view.system_filter_changed.connect(_refresh_download_systems)
+	_options_view.system_filter_changed.connect(_cores_view.refresh_download_systems)
 	_options_view.romm_platforms_requested.connect(_romm_fetch_platforms)
 	content.add_child(_options_view)
 
@@ -550,29 +541,8 @@ func _show_spawn_view() -> void:
 
 func _show_cores_view() -> void:
 	_show_view(_cores_view, null, _nav_cores_btn)
-	_update_cores_active_scroll()
-	if not _download_fetched:
-		_download_fetched = true
-		_start_fetch()
-
-
-## Point _active_scroll at the visible browser's current page.
-func _update_cores_active_scroll() -> void:
-	var idx := _cores_tabs.current_tab if _cores_tabs else 0
-	if idx == 1 and _manager_browser:
-		_active_scroll = _manager_browser.get_active_scroll()
-	elif idx == 2 and _bios_browser:
-		_active_scroll = _bios_browser.get_active_scroll()
-	elif _download_browser:
-		_active_scroll = _download_browser.get_active_scroll()
-	else:
-		_active_scroll = null
-
-
-## Connected to both cores browsers; updates _active_scroll on page switches.
-func _on_cores_browser_scroll_changed(s: ScrollContainer) -> void:
-	if _cores_view and _cores_view.visible:
-		_active_scroll = s
+	_active_scroll = _cores_view.active_scroll()
+	_cores_view.ensure_fetched()
 
 
 func _show_controls_view() -> void:
@@ -953,14 +923,8 @@ func _populate_cartridges_tab() -> void:
 	_prewarm_top_platforms(systems)
 
 
-const _ROMM_MARK_PATH := "res://Textures/RomM/romm_logo.svg"
-var _romm_mark_tex: Texture2D = null
-
-
 func _romm_mark() -> Texture2D:
-	if _romm_mark_tex == null and ResourceLoader.exists(_ROMM_MARK_PATH):
-		_romm_mark_tex = load(_ROMM_MARK_PATH)
-	return _romm_mark_tex
+	return MenuIcons.romm_mark()
 
 
 ## One /api/platforms call, cached. Local systems are already on screen by the
@@ -1067,7 +1031,7 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	], "all", 1, Vector2(210, 52), 18)
 	source_drop.size_flags_horizontal = Control.SIZE_SHRINK_END
 	source_drop.float_panel = true
-	source_drop.set_toggle_glyph(_ICON_FILTER, _symbols())
+	source_drop.set_toggle_glyph(MenuIcons.FILTER, _symbols())
 	source_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_source_filter = str(id)
 		_rebuild_romm_rows()
@@ -1077,7 +1041,7 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], "", 1, Vector2(210, 52), 18)
 	_romm_region_drop.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_romm_region_drop.float_panel = true
-	_romm_region_drop.set_toggle_glyph(_ICON_REGION, _symbols())
+	_romm_region_drop.set_toggle_glyph(MenuIcons.REGION, _symbols())
 	_romm_region_drop.item_selected.connect(func(id: Variant) -> void:
 		_romm_region_filter = str(id)
 		_rebuild_romm_rows()
@@ -1335,44 +1299,10 @@ func _on_romm_search_changed(text: String) -> void:
 # Two different delete glyphs is deliberate: the pictogram encodes whether the
 # file can be got back. (At row size the two trash cans look near-identical, so
 # the confirm text carries the real distinction — the glyph is a support cue.)
-const _ICON_DOWNLOAD  := 0xF0ED    # fa-cloud_download  — on the server, not here
-const _ICON_BUSY      := 0xF019    # fa-download        — transferring now
-const _ICON_DELETE    := 0xF01B4   # md-delete          — reversible (still on server)
-const _ICON_DELETE_FOREVER := 0xF05E8  # md-delete_forever — local only, gone for good
-const _ICON_RETRY     := 0xF021    # fa-refresh
-const _ICON_ERROR     := 0xF071    # fa-warning
-const _ICON_GAMEPAD   := 0xF11B    # fa-gamepad
-const _ICON_BOOK      := 0xF05DA   # md-book_open_page_variant
-const _ICON_SCRAPE    := 0xF0866   # md-database_search
-const _ICON_FILTER    := 0xF0B0    # fa-filter
-const _ICON_REGION    := 0xF01E7   # md-earth
-const _ICON_RECOMMENDED := 0xF0124 # md-certificate     — the pick for this system
-const _ICON_CHECK     := 0xF012C   # md-check           — firmware present
-const _ICON_CROSS     := 0xF0159   # md-close_thick     — required firmware absent
-const _ICON_DASH      := 0xF0374   # md-minus           — optional firmware absent
-const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
-
-const _TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
-const _TINT_BUSY     := Color(1.00, 0.75, 0.25)
-const _TINT_DELETE   := Color(0.95, 0.40, 0.40)
-const _TINT_OK       := Color(0.40, 0.85, 0.45)
-const _TINT_WARN     := Color(1.00, 0.72, 0.20)
-const _TINT_MUTED    := Color(0.45, 0.45, 0.58)
-
-## Built once and shared — the list recycles rows, so a FontVariation per row
-## (or per bind) would churn resources on every scroll.
-var _symbol_font: FontVariation = null
 
 
 func _symbols() -> FontVariation:
-	if _symbol_font != null:
-		return _symbol_font
-	_symbol_font = FontVariation.new()
-	_symbol_font.base_font = ThemeDB.fallback_font
-	var symbols: Font = load(_SYMBOL_FONT_PATH)
-	if symbols != null:
-		_symbol_font.fallbacks = [symbols]
-	return _symbol_font
+	return MenuIcons.symbols()
 
 
 ## Allocate one blank recyclable row. Called ~12 times total, not once per ROM.
@@ -1475,26 +1405,26 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	pct.visible = false
 
 	if downloading:
-		state.text = String.chr(_ICON_BUSY)
-		state.add_theme_color_override("font_color", _TINT_BUSY)
+		state.text = String.chr(MenuIcons.BUSY)
+		state.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
 		state.tooltip_text = "Cancel download"
 		pct.visible = true
-		pct.add_theme_color_override("font_color", _TINT_BUSY)
+		pct.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
 		pct.text = "%d%%" % _romm_progress_pct.get(rom_id, 0)
 		state.pressed.connect(func() -> void: romm_downloader.cancel_current())
 	elif source == "server":
-		state.text = String.chr(_ICON_DOWNLOAD)
+		state.text = String.chr(MenuIcons.DOWNLOAD)
 		# The cloud glyph is visually lighter than the trash glyphs at the same
 		# size — a small bump evens the weight out.
 		state.add_theme_font_size_override("font_size", 44)
-		state.add_theme_color_override("font_color", _TINT_DOWNLOAD)
+		state.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
 		state.tooltip_text = "Download from RomM (%s)" % _human_bytes(int(entry.get("fs_size_bytes", 0)))
 		state.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
 	else:
 		state.add_theme_font_size_override("font_size", 40)
 		var forever := source == "local"
-		state.text = String.chr(_ICON_DELETE_FOREVER if forever else _ICON_DELETE)
-		state.add_theme_color_override("font_color", _TINT_DELETE)
+		state.text = String.chr(MenuIcons.DELETE_FOREVER if forever else MenuIcons.DELETE)
+		state.add_theme_color_override("font_color", MenuIcons.TINT_DELETE)
 		state.tooltip_text = "Delete permanently" if forever else "Delete local copy"
 		state.pressed.connect(_on_rom_delete_pressed.bind(index, state))
 
@@ -1520,14 +1450,14 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	# ── Trailing cluster ────────────────────────────────────────────────────
 	var meta := _romm_row_meta(systemid, local_path)
 	var game: Dictionary = meta["game"]
-	detail.text = String.chr(_ICON_GAMEPAD)
+	detail.text = String.chr(MenuIcons.GAMEPAD)
 	detail.visible = not game.is_empty()
 	if not game.is_empty():
 		detail.pressed.connect(_show_game_detail_panel.bind(game, systemid))
 
 	var has_manual: bool = meta["has_manual"]
 	var manual_path: String = meta["manual_path"]
-	manual.text = String.chr(_ICON_BOOK)
+	manual.text = String.chr(MenuIcons.BOOK)
 	manual.visible = has_manual
 	if has_manual:
 		manual.pressed.connect(spawn_manual_requested.emit.bind(manual_path))
@@ -1535,7 +1465,7 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	# Scraping hashes the local file, so it needs one on disk.
 	# disabled is reset here or a mid-scrape scroll leaves it stuck on whichever
 	# row later reuses this pooled button.
-	scrape.text = String.chr(_ICON_SCRAPE)
+	scrape.text = String.chr(MenuIcons.SCRAPE)
 	scrape.disabled = false
 	scrape.visible = not local_path.is_empty()
 	scrape.tooltip_text = "Scrape artwork and details from ScreenScraper"
@@ -1556,7 +1486,7 @@ func _on_rom_delete_pressed(index: int, state: Button) -> void:
 
 	if _romm_delete_armed != index:
 		_romm_delete_armed = index
-		state.text = String.chr(_ICON_ERROR)
+		state.text = String.chr(MenuIcons.ERROR)
 		var forever := str(model["source"]) == "local"
 		show_notice("Tap again to %s" % ("delete permanently" if forever else "delete local copy"), 3.0)
 		get_tree().create_timer(3.0).timeout.connect(func() -> void:
@@ -1620,8 +1550,6 @@ func _cached_wheel_texture(systemid: String, filename: String) -> Texture2D:
 static func _disconnect_all(sig: Signal) -> void:
 	for c: Dictionary in sig.get_connections():
 		sig.disconnect(c["callable"])
-
-
 
 
 func _populate_books_tab() -> void:
@@ -1741,858 +1669,6 @@ func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void
 		vbox.add_child(btn)
 
 
-# ── Cores view ────────────────────────────────────────────────────────────────
-
-func _build_cores_view() -> Control:
-	var tabs := TabContainer.new()
-	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_cores_tabs = tabs
-
-	var dl_container := _build_download_tab()
-	dl_container.name = "Download"
-	tabs.add_child(dl_container)
-
-	var mgr_container := _build_manager_tab()
-	mgr_container.name = "Manager"
-	tabs.add_child(mgr_container)
-
-	var bios_container := _build_bios_tab()
-	# The node name cannot hold the "/" — Godot rejects it in node names and
-	# TabContainer titles each tab after its child, so it would read "BIOS _
-	# Extras". The title has to be set separately, after the add.
-	bios_container.name = "BIOSExtras"
-	tabs.add_child(bios_container)
-	tabs.set_tab_title(tabs.get_tab_count() - 1, "BIOS / Extras")
-
-	# Both the Manager and BIOS lists are derived from what is on disk, so each
-	# is rebuilt on entry rather than cached — installing a core changes both.
-	tabs.tab_changed.connect(func(idx: int):
-		if idx == 1:
-			_populate_manager_tab()
-		elif idx == 2:
-			_populate_bios_tab()
-		_update_cores_active_scroll()
-	)
-
-	return TabStrip.wrap(tabs)
-
-
-# ── Manager tab ───────────────────────────────────────────────────────────────────
-
-func _build_manager_tab() -> Control:
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 6)
-
-	var hdr := Label.new()
-	hdr.text = "Pick a system to set the default core it launches with."
-	hdr.add_theme_font_size_override("font_size", 15)
-	hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	outer.add_child(hdr)
-
-	outer.add_child(HSeparator.new())
-
-	_manager_browser = SystemGridBrowser.new()
-	_manager_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_manager_browser.empty_text = "No cores downloaded yet.\nUse the Download tab to install cores."
-	_manager_browser.set_detail_populator(_populate_manager_detail)
-	_manager_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
-	outer.add_child(_manager_browser)
-
-	return outer
-
-
-## Rebuild the Manager home grid: one tile per system with installed cores,
-## badge = its current default core. Rescans the cores dir each call.
-func _populate_manager_tab() -> void:
-	if not _manager_browser:
-		return
-
-	_manager_cores_by_system.clear()
-	var system_labels: Dictionary = {}   # systemid -> human label
-
-	var cores_dir := CoreDownloadManager.default_cores_dir()
-	var dir := DirAccess.open(cores_dir)
-	if dir:
-		var seen: Dictionary = {}   # a core can sit there under two naming conventions
-		dir.list_dir_begin()
-		var fname := dir.get_next()
-		while fname != "":
-			var cn := "" if dir.current_is_dir() else CoreDownloadManager.core_name_from_lib_filename(fname)
-			if not cn.is_empty() and not seen.has(cn):
-				seen[cn] = true
-				var info: Dictionary = core_db.get_by_core_name(cn)
-				var sid: String  = info.get("systemid",   "unknown") if not info.is_empty() else "unknown"
-				var sname: String = info.get("systemname", cn)       if not info.is_empty() else cn
-				if not _manager_cores_by_system.has(sid):
-					_manager_cores_by_system[sid] = []
-					system_labels[sid]  = sname
-				(_manager_cores_by_system[sid] as Array).append({"core_name": cn,
-					"display_name": info.get("corename", cn) if not info.is_empty() else cn})
-			fname = dir.get_next()
-		dir.list_dir_end()
-
-	var systems: Array = []
-	for sid: String in _manager_cores_by_system:
-		# Recommended first, so it heads the detail list AND is what the
-		# no-default-yet branch below picks up.
-		var cores_list: Array = CoreRecommendations.first(
-			sid, _manager_cores_by_system[sid] as Array)
-		_manager_cores_by_system[sid] = cores_list
-		# If no default was saved yet, persist the first available core.
-		var current_default: String = core_defaults.get_default_core(sid)
-		if current_default.is_empty() and not cores_list.is_empty():
-			current_default = (cores_list[0] as Dictionary)["core_name"] as String
-			core_defaults.set_default_core(sid, current_default)
-			core_defaults.save()
-			RomLibrary.ensure_rom_dir(sid)
-			default_core_changed.emit(sid, current_default)
-		var badge := ""
-		for e: Dictionary in cores_list:
-			if e["core_name"] == current_default:
-				badge = e["display_name"] as String
-		systems.append({"systemid": sid, "name": system_labels[sid] as String, "badge": badge})
-
-	_manager_browser.set_systems(systems)
-
-
-## Detail page for one system: its installed cores, tap to set the default.
-func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
-	var cores: Array = _manager_cores_by_system.get(systemid, [])
-	var current: String = core_defaults.get_default_core(systemid)
-	for entry: Dictionary in cores:
-		var cn: String = entry["core_name"] as String
-		var is_def := cn == current
-
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		row.custom_minimum_size = Vector2(0, 64)
-
-		var lbl := Label.new()
-		lbl.text = ("✓  " if is_def else "     ") + (entry["display_name"] as String)
-		lbl.add_theme_font_size_override("font_size", 20)
-		lbl.add_theme_color_override("font_color", COLOR_TITLE if is_def else COLOR_LICENSE)
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		row.add_child(lbl)
-
-		# Its own element rather than a recolour of the name: the name's ✓ and
-		# colour already mean "this is your default", and the two states are
-		# independent — a core can be recommended without being selected.
-		if CoreRecommendations.is_recommended(systemid, cn):
-			row.add_child(_recommended_badge(16))
-
-		var btn := Button.new()
-		btn.text = "Default" if is_def else "Set default"
-		btn.disabled = is_def
-		btn.custom_minimum_size = Vector2(180, 52)
-		btn.add_theme_font_size_override("font_size", 17)
-		btn.pressed.connect(func() -> void:
-			core_defaults.set_default_core(systemid, cn)
-			core_defaults.save()
-			RomLibrary.ensure_rom_dir(systemid)
-			default_core_changed.emit(systemid, cn)
-			# Rebuild tiles (badge) then re-render this detail (checkmarks).
-			_populate_manager_tab()
-			_manager_browser.open_system(systemid)
-		)
-		row.add_child(btn)
-
-		vbox.add_child(row)
-		vbox.add_child(HSeparator.new())
-
-
-# ── BIOS / Extras tab ─────────────────────────────────────────────────────────
-#
-# Every installed core declares, in its .info, the files it wants in its system
-# directory. Nothing surfaced them before, so a core that cannot boot without a
-# BIOS just failed silently. This lists them per system, marks what is there,
-# and (Phase 2/3) fetches what is not.
-#
-# Required and optional are shown very differently on purpose: of the ~149
-# entries a typical install declares, only about 6 are actually required. A red
-# cross on every missing optional would paint every system as broken.
-
-func _build_bios_tab() -> Control:
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 6)
-
-	var hdr := Label.new()
-	hdr.text = "Files each core needs in its system folder. Only missing required files stop a game from running."
-	hdr.add_theme_font_size_override("font_size", 15)
-	hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	outer.add_child(hdr)
-
-	outer.add_child(HSeparator.new())
-
-	_bios_browser = SystemGridBrowser.new()
-	_bios_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_bios_browser.empty_text = "No cores downloaded yet.\nUse the Download tab to install cores."
-	_bios_browser.filter_placeholder = "Filter systems…"
-	_bios_browser.set_detail_populator(_populate_bios_detail)
-	_bios_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
-	outer.add_child(_bios_browser)
-
-	_firmware_installer = FirmwareInstaller.new()
-	_firmware_installer.name = "FirmwareInstaller"
-	_firmware_installer.job_started.connect(_on_firmware_started)
-	_firmware_installer.job_progress.connect(_on_firmware_progress)
-	_firmware_installer.job_retrying.connect(_on_firmware_retrying)
-	_firmware_installer.job_finished.connect(_on_firmware_finished)
-	_firmware_installer.job_cancelled.connect(_on_firmware_cancelled)
-	add_child(_firmware_installer)
-
-	return outer
-
-
-# ── Install progress ──────────────────────────────────────────────────────────
-
-func _on_firmware_started(key: String, label: String, total: int) -> void:
-	var size_text := "" if total <= 0 else "  (%s)" % String.humanize_size(total)
-	_romm_notify_or_queue(key, String.chr(_ICON_BUSY),
-		"Downloading %s%s" % [label, size_text], 0.0, 0.0)
-
-
-func _on_firmware_progress(key: String, received: int, total: int) -> void:
-	var frac := 0.0 if total <= 0 else clampf(float(received) / float(total), 0.0, 1.0)
-	var btn := _bios_job_buttons.get(key) as Button
-	if btn != null and is_instance_valid(btn):
-		btn.text = "%d%%" % int(frac * 100.0)
-	_romm_notify_or_queue(key, String.chr(_ICON_BUSY),
-		"Downloading %s" % String.humanize_size(total), 0.0, frac)
-
-
-func _on_firmware_retrying(key: String, attempt: int, total: int, reason: String) -> void:
-	_romm_notify_or_queue(key, String.chr(_ICON_RETRY),
-		"%s — retry %d of %d" % [reason, attempt, total], 0.0)
-
-
-func _on_firmware_finished(key: String, ok: bool, error: String) -> void:
-	_bios_job_buttons.erase(key)
-	if ok:
-		_romm_notify_or_queue(key, String.chr(_ICON_CHECK), "Installed", _ROMM_DWELL_OK)
-	else:
-		_romm_notify_or_queue(key, String.chr(_ICON_ERROR),
-			error if not error.is_empty() else "Install failed", _ROMM_DWELL_FAIL)
-	_refresh_bios_view()
-
-
-func _on_firmware_cancelled(key: String) -> void:
-	_bios_job_buttons.erase(key)
-	notify_clear(key)
-	_refresh_bios_view()
-
-
-## Re-derive status and redraw, keeping the user where they were.
-## Guarded: a rebuild touches the RomM list and the installer, either of which
-## can call back into here.
-func _refresh_bios_view() -> void:
-	if _bios_browser == null or _bios_refreshing:
-		return
-	_bios_refreshing = true
-	var open_sid := _bios_browser.current_systemid()
-	_populate_bios_tab()
-	if not open_sid.is_empty():
-		_bios_browser.open_system(open_sid)
-	_bios_refreshing = false
-
-
-## Rebuild the home grid: one tile per system that has an installed core, badged
-## with what that system is still missing. Rescans the cores dir and the system
-## dirs on every call, so installing a core or dropping a BIOS in by hand shows
-## up without a restart.
-func _populate_bios_tab() -> void:
-	if not _bios_browser:
-		return
-
-	# Dropped in by hand or by the web uploader since the last look — the whole
-	# point of the tab is that it reflects the disk, so nothing survives a rebuild.
-	_bios_row_cache.clear()
-	_bios_cores_by_system = FirmwareRequirements.installed_cores_by_system()
-
-	# One request per session, and the grid does not wait for it — `listed`
-	# redraws when it lands.
-	if romm_firmware != null and romm_config != null and romm_config.is_configured():
-		romm_firmware.refresh()
-
-	var systems: Array = []
-	for sid: String in _bios_cores_by_system:
-		var rows: Array[Dictionary] = []
-		for c: Dictionary in _bios_cores_by_system[sid]:
-			rows.append_array(_bios_rows_for_core(str(c["core_name"])))
-		# A core with nothing to declare is not "complete", it is silent — no
-		# tile, so the grid only shows systems where there is something to know.
-		if rows.is_empty():
-			continue
-		systems.append({
-			"systemid": sid,
-			"name": core_db.get_systemname_for_id(sid) if sid != "unknown" else "Other",
-			"badge": str(FirmwareState.summarise(rows)["badge"]),
-		})
-
-	_bios_browser.set_systems(systems)
-
-
-## Resolved status rows for one core, memoised for the life of this rebuild.
-func _bios_rows_for_core(core_name: String) -> Array[Dictionary]:
-	if _bios_row_cache.has(core_name):
-		return _bios_row_cache[core_name]
-	var rows := FirmwareState.shared().evaluate(
-		core_name, FirmwareRequirements.for_core(core_name))
-	# Carried on the row so a detail row knows which core's system dir it is
-	# talking about without the builder having to be told separately.
-	for r: Dictionary in rows:
-		r["core_name"] = core_name
-	_bios_row_cache[core_name] = rows
-	return rows
-
-
-## Detail page: every declared file for every installed core of this system.
-## Grouped by core, with the heading shown only when there is more than one —
-## the requirements genuinely differ between cores for the same machine.
-func _populate_bios_detail(systemid: String, vbox: VBoxContainer) -> void:
-	var cores: Array = _bios_cores_by_system.get(systemid, [])
-	var multi := cores.size() > 1
-
-	var path_row := HBoxContainer.new()
-	var path_lbl := Label.new()
-	path_lbl.text = "Files go in:  %s" % CoreDownloadManager.default_system_dir("<core>")
-	path_lbl.add_theme_font_size_override("font_size", 14)
-	path_lbl.add_theme_color_override("font_color", COLOR_DESC)
-	path_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	path_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	path_row.add_child(path_lbl)
-	vbox.add_child(path_row)
-	vbox.add_child(HSeparator.new())
-
-	for entry: Dictionary in cores:
-		var cn: String = entry["core_name"]
-		var rows := _bios_rows_for_core(cn)
-		if rows.is_empty():
-			continue
-
-		if multi:
-			var head := Label.new()
-			head.text = str(entry["display_name"])
-			head.add_theme_font_size_override("font_size", 20)
-			head.add_theme_color_override("font_color", COLOR_TITLE)
-			vbox.add_child(head)
-
-		if SystemAssetCatalog.has_archive(cn):
-			vbox.add_child(_build_bios_archive_row(cn, rows))
-
-		for r: Dictionary in rows:
-			vbox.add_child(_build_bios_row(r))
-
-		vbox.add_child(HSeparator.new())
-
-
-## The one-tap route for cores whose support files libretro redistributes.
-## An archive unpacks straight over the declared paths, so it fills in every row
-## it covers at once — for ScummVM that is all 39.
-func _build_bios_archive_row(core_name: String, rows: Array[Dictionary]) -> Control:
-	var key := "bios:zip:%s" % core_name
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 60)
-
-	var lbl := Label.new()
-	lbl.text = SystemAssetCatalog.button_label(core_name)
-	lbl.add_theme_font_size_override("font_size", 17)
-	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	row.add_child(lbl)
-
-	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
-
-	# "Every row present" is not a usable test for whether the archive ran:
-	# Dolphin.zip carries one of the four files dolphin declares and never the
-	# three GameCube IPL dumps, so it can never reach zero outstanding. The
-	# recorded install is what makes those cases readable; the zero-outstanding
-	# case still counts, so a tree that predates this feature reads correctly.
-	var outstanding := 0
-	for r: Dictionary in rows:
-		if int(r.get("status", 0)) != FirmwareState.Status.PRESENT:
-			outstanding += 1
-	var installed := SystemAssetCatalog.is_installed(core_name) or outstanding == 0
-
-	if installed and not running:
-		var done := Label.new()
-		done.text = "Installed"
-		done.add_theme_font_size_override("font_size", 15)
-		done.add_theme_color_override("font_color", _TINT_OK)
-		done.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(done)
-
-	var btn := Button.new()
-	btn.add_theme_font_override("font", _symbols())
-	btn.add_theme_font_size_override("font_size", 22)
-	btn.custom_minimum_size = Vector2(120, 52)
-	if running:
-		btn.text = String.chr(_ICON_BUSY)
-		btn.add_theme_color_override("font_color", _TINT_BUSY)
-		btn.tooltip_text = "Downloading — press to cancel"
-	elif installed:
-		# Still pressable: re-running the archive is how you repair a file that
-		# went bad, so the affordance stays and only its reading changes.
-		btn.text = String.chr(_ICON_RETRY)
-		btn.add_theme_color_override("font_color", _TINT_MUTED)
-		btn.tooltip_text = "Already installed — download again to replace these files"
-	else:
-		btn.text = String.chr(_ICON_DOWNLOAD)
-		btn.add_theme_color_override("font_color", _TINT_DOWNLOAD)
-		btn.tooltip_text = "Download and unpack into this core's system folder"
-	btn.pressed.connect(func() -> void:
-		if _firmware_installer == null:
-			return
-		if _firmware_installer.is_queued(key):
-			_firmware_installer.cancel_current()
-			return
-		_bios_job_buttons[key] = btn
-		_firmware_installer.enqueue_archive(key, core_name)
-		btn.text = "0%"
-		btn.add_theme_color_override("font_color", _TINT_BUSY)
-	)
-	row.add_child(btn)
-
-	var gutter := Control.new()
-	gutter.custom_minimum_size = Vector2(44, 0)
-	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(gutter)
-
-	return row
-
-
-## One firmware row: status glyph, path, description, and an Optional tag.
-func _build_bios_row(r: Dictionary) -> Control:
-	var status := int(r.get("status", FirmwareState.Status.PRESENT))
-	var optional: bool = bool(r.get("optional", true))
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 56)
-
-	var glyph := Label.new()
-	glyph.add_theme_font_override("font", _symbols())
-	glyph.add_theme_font_size_override("font_size", 26)
-	glyph.custom_minimum_size = Vector2(40, 0)
-	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	match status:
-		FirmwareState.Status.PRESENT:
-			glyph.text = String.chr(_ICON_CHECK)
-			glyph.add_theme_color_override("font_color", _TINT_OK)
-		FirmwareState.Status.MISMATCH:
-			glyph.text = String.chr(_ICON_ERROR)
-			glyph.add_theme_color_override("font_color", _TINT_WARN)
-		FirmwareState.Status.MISSING_REQUIRED:
-			glyph.text = String.chr(_ICON_CROSS)
-			glyph.add_theme_color_override("font_color", _TINT_DELETE)
-		_:
-			glyph.text = String.chr(_ICON_DASH)
-			glyph.add_theme_color_override("font_color", _TINT_MUTED)
-	row.add_child(glyph)
-
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	col.add_theme_constant_override("separation", 0)
-	row.add_child(col)
-
-	var name_lbl := Label.new()
-	name_lbl.text = str(r.get("path", ""))
-	name_lbl.add_theme_font_size_override("font_size", 19)
-	name_lbl.add_theme_color_override("font_color",
-		COLOR_TITLE if status != FirmwareState.Status.MISSING_OPTIONAL else COLOR_LICENSE)
-	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	col.add_child(name_lbl)
-
-	var desc := _bios_desc_for(str(r.get("path", "")), str(r.get("desc", "")))
-	if not desc.is_empty():
-		var desc_lbl := Label.new()
-		desc_lbl.text = desc
-		desc_lbl.add_theme_font_size_override("font_size", 15)
-		desc_lbl.add_theme_color_override("font_color", COLOR_DESC)
-		desc_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		col.add_child(desc_lbl)
-
-	var tag := Label.new()
-	tag.add_theme_font_size_override("font_size", 15)
-	tag.custom_minimum_size = Vector2(170, 0)
-	tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	if status == FirmwareState.Status.MISMATCH:
-		tag.text = "Wrong file"
-		tag.add_theme_color_override("font_color", _TINT_WARN)
-	elif optional:
-		tag.text = "Optional"
-		tag.add_theme_color_override("font_color", _TINT_MUTED)
-	else:
-		tag.text = "Required"
-		tag.add_theme_color_override("font_color",
-			_TINT_DELETE if status == FirmwareState.Status.MISSING_REQUIRED else COLOR_LICENSE)
-	row.add_child(tag)
-
-	row.add_child(_build_bios_action(r))
-
-	# The detail list scrolls, and its scrollbar is 40 px wide and drawn over the
-	# content — without this the tag sits underneath it.
-	var gutter := Control.new()
-	gutter.custom_minimum_size = Vector2(44, 0)
-	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(gutter)
-
-	return row
-
-
-## The right-hand cell of a firmware row.
-##
-## A cloud button when RomM is holding this file, and otherwise a plain note
-## saying so — most declared BIOSes are console dumps no server redistributes,
-## and a dead button on every one of them would read as broken.
-func _build_bios_action(r: Dictionary) -> Control:
-	var status := int(r.get("status", FirmwareState.Status.PRESENT))
-	var path := str(r.get("path", ""))
-
-	var cell := HBoxContainer.new()
-	cell.custom_minimum_size = Vector2(230, 0)
-	cell.alignment = BoxContainer.ALIGNMENT_END
-	cell.add_theme_constant_override("separation", 10)
-
-	if status == FirmwareState.Status.PRESENT or bool(r.get("is_dir", false)):
-		return cell
-
-	var hit: Dictionary = romm_firmware.find(path) if romm_firmware != null else {}
-	if hit.is_empty():
-		var note := Label.new()
-		note.text = "Not on RomM" if _romm_ready() else ""
-		note.add_theme_font_size_override("font_size", 14)
-		note.add_theme_color_override("font_color", _TINT_MUTED)
-		note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		cell.add_child(note)
-		return cell
-
-	var core_name := str(r.get("core_name", ""))
-	var key := "bios:file:%s:%s" % [core_name, path]
-	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
-
-	# The mark says WHERE the file is coming from; the cloud says what pressing
-	# it does. The rows beside it read "Not on RomM" as words, so the source
-	# needs to be as legible as the absence of one.
-	var mark := _romm_mark()
-	if mark != null:
-		var mark_rect := TextureRect.new()
-		mark_rect.texture = mark
-		mark_rect.custom_minimum_size = Vector2(30, 30)
-		mark_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		mark_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		mark_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		mark_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		mark_rect.tooltip_text = "On your RomM server"
-		cell.add_child(mark_rect)
-
-	var btn := Button.new()
-	btn.add_theme_font_override("font", _symbols())
-	btn.add_theme_font_size_override("font_size", 22)
-	btn.custom_minimum_size = Vector2(110, 48)
-	btn.text = String.chr(_ICON_BUSY if running else _ICON_DOWNLOAD)
-	btn.add_theme_color_override("font_color", _TINT_BUSY if running else _TINT_DOWNLOAD)
-	btn.tooltip_text = "Download %s from RomM (%s)" % [
-		str(hit["file_name"]), String.humanize_size(int(hit["size"]))]
-	btn.pressed.connect(func() -> void:
-		if _firmware_installer == null:
-			return
-		if _firmware_installer.is_queued(key):
-			_firmware_installer.cancel_current()
-			return
-		_bios_job_buttons[key] = btn
-		# One download, written to every installed core that declares this same
-		# file — the system dir is per-core, so they each need their own copy.
-		var dests := _bios_destinations_for(path)
-		_firmware_installer.enqueue_file(
-			key, path.get_file(), romm_config.base_url,
-			RommFirmware.content_path(int(hit["id"]), str(hit["file_name"])),
-			romm_config.auth_headers(), dests,
-			int(hit["size"]), str(hit["md5"]))
-		btn.text = "0%"
-		btn.add_theme_color_override("font_color", _TINT_BUSY)
-	)
-	cell.add_child(btn)
-	return cell
-
-
-## Every installed core that declares this exact firmware path wants its own
-## copy, so one fetch fills them all.
-func _bios_destinations_for(path: String) -> Array[String]:
-	var dests: Array[String] = []
-	for sid: String in _bios_cores_by_system:
-		for c: Dictionary in _bios_cores_by_system[sid]:
-			var cn := str(c["core_name"])
-			for req: Dictionary in FirmwareRequirements.for_core(cn):
-				if str(req["path"]) == path:
-					dests.append(FirmwareRequirements.destination(cn, path))
-					break
-	return dests
-
-
-func _romm_ready() -> bool:
-	return romm_firmware != null and romm_firmware.is_loaded()
-
-
-## The .info `desc` almost always restates the filename before adding anything
-## useful ("scph5500.bin (PS1 JP BIOS)"), which reads as a stutter under a label
-## that is already the path. Drop the repeated part and keep the rest.
-static func _bios_desc_for(path: String, desc: String) -> String:
-	if desc.is_empty():
-		return ""
-	var rest := desc
-	for prefix: String in [path, path.get_file()]:
-		if not prefix.is_empty() and rest.begins_with(prefix):
-			rest = rest.substr(prefix.length())
-			break
-	rest = rest.strip_edges().lstrip("-–—:").strip_edges()
-	if rest.begins_with("(") and rest.ends_with(")"):
-		rest = rest.substr(1, rest.length() - 2).strip_edges()
-	# Nothing left means the desc was only ever the filename.
-	return "" if rest == path or rest == path.get_file() else rest
-
-
-# ── Download tab ──────────────────────────────────────────────────────────────
-
-func _build_download_tab() -> Control:
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 6)
-
-	# Cores directory path display
-	var path_row := HBoxContainer.new()
-	outer.add_child(path_row)
-	var path_prefix := Label.new()
-	path_prefix.text = "Cores dir:  "
-	path_prefix.add_theme_font_size_override("font_size", 14)
-	path_prefix.add_theme_color_override("font_color", COLOR_LICENSE)
-	path_row.add_child(path_prefix)
-	var path_val := Label.new()
-	path_val.text = CoreDownloadManager.default_cores_dir()
-	path_val.add_theme_font_size_override("font_size", 14)
-	path_val.add_theme_color_override("font_color", COLOR_DESC)
-	path_val.clip_contents = true
-	path_val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	path_row.add_child(path_val)
-
-	outer.add_child(HSeparator.new())
-
-	# Loading indicator
-	_download_loading_label = Label.new()
-	_download_loading_label.text = "Fetching core list from buildbot..."
-	_download_loading_label.add_theme_font_size_override("font_size", 18)
-	_download_loading_label.add_theme_color_override("font_color", COLOR_LICENSE)
-	_download_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	outer.add_child(_download_loading_label)
-
-	# Drill-down browser: pick a system, then see its cores.
-	_download_browser = SystemGridBrowser.new()
-	_download_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_download_browser.empty_text = "No cores available."
-	_download_browser.set_detail_populator(_populate_download_detail)
-	_download_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
-	outer.add_child(_download_browser)
-
-	return outer
-
-
-func _start_fetch() -> void:
-	_download_loading_label.text = "Fetching core list from buildbot..."
-	_download_loading_label.visible = true
-	_download_widgets.clear()
-	download_manager.fetch_available_cores(_on_cores_fetched)
-
-
-func _on_cores_fetched(cores: Array) -> void:
-	_download_loading_label.visible = false
-	if cores.is_empty():
-		_download_loading_label.text = "Failed to fetch core list. Check your connection."
-		_download_loading_label.visible = true
-		return
-	# Group the flat buildbot list by system; cores unknown to the DB go in a
-	# single "Other" bucket. SystemFilter keeps non-console systems out of the
-	# grid — see _refresh_download_systems.
-	_download_cores_by_system.clear()
-	for entry: Dictionary in cores:
-		var core_name: String   = entry["core_name"]
-		var remote_date: String = entry["remote_date"]
-		var info: Dictionary    = core_db.get_by_core_name(core_name)
-		var sid: String = info.get("systemid", "") if not info.is_empty() else ""
-		if sid.is_empty():
-			sid = "__other__"
-		if not _download_cores_by_system.has(sid):
-			_download_cores_by_system[sid] = []
-		(_download_cores_by_system[sid] as Array).append(
-			{"core_name": core_name, "remote_date": remote_date, "info": info})
-	_refresh_download_systems()
-
-
-## Build the Download home grid from the grouped fetch results.
-func _refresh_download_systems() -> void:
-	if not _download_browser:
-		return
-	var systems: Array = []
-	for sid: String in _download_cores_by_system:
-		if SystemFilter.is_hidden(sid):
-			continue
-		var arr: Array = _download_cores_by_system[sid] as Array
-		var name := "Other / Uncategorized" if sid == "__other__" else core_db.get_systemname_for_id(sid)
-		var n := arr.size()
-		systems.append({"systemid": sid, "name": name,
-			"badge": "%d core%s" % [n, "" if n == 1 else "s"]})
-	_download_browser.set_systems(systems)
-
-
-## Detail page for one system: its downloadable cores (built lazily on open).
-func _populate_download_detail(systemid: String, vbox: VBoxContainer) -> void:
-	var arr: Array = _download_cores_by_system.get(systemid, [])
-	arr.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		var an: String = a["info"].get("display_name", a["core_name"]) if not (a["info"] as Dictionary).is_empty() else a["core_name"]
-		var bn: String = b["info"].get("display_name", b["core_name"]) if not (b["info"] as Dictionary).is_empty() else b["core_name"]
-		return an.naturalnocasecmp_to(bn) < 0
-	)
-	arr = CoreRecommendations.first(systemid, arr)
-	for e: Dictionary in arr:
-		vbox.add_child(_build_core_entry(e["core_name"], e["remote_date"], e["info"]))
-	vbox.add_child(_spacer(20))
-
-
-func _build_core_entry(core_name: String, remote_date: String, info: Dictionary) -> Control:
-	var wrap := VBoxContainer.new()
-	wrap.add_theme_constant_override("separation", 0)
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 76)
-	wrap.add_child(row)
-
-	# Left: display name, license, description
-	var left := VBoxContainer.new()
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_theme_constant_override("separation", 2)
-	row.add_child(left)
-
-	var display_name: String = info.get("display_name", core_name + "  [CORE UNKNOWN]")
-	var name_lbl := Label.new()
-	name_lbl.text = display_name
-	name_lbl.add_theme_font_size_override("font_size", 18)
-	name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	name_lbl.clip_contents = true
-	left.add_child(name_lbl)
-
-	if CoreRecommendations.is_recommended(str(info.get("systemid", "")), core_name):
-		left.add_child(_recommended_badge(13))
-
-	if not info.is_empty():
-		var lic_lbl := Label.new()
-		lic_lbl.text = info.get("license", "")
-		lic_lbl.add_theme_font_size_override("font_size", 13)
-		lic_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-		left.add_child(lic_lbl)
-
-		var desc: String = info.get("description", "")
-		if desc != "":
-			var desc_lbl := Label.new()
-			desc_lbl.text = desc
-			desc_lbl.add_theme_font_size_override("font_size", 12)
-			desc_lbl.add_theme_color_override("font_color", COLOR_DESC)
-			desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			left.add_child(desc_lbl)
-
-	# Right: action button + progress bar
-	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(148, 0)
-	right.add_theme_constant_override("separation", 4)
-	right.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(right)
-
-	var state: String = download_manager.get_core_state(core_name, remote_date)
-	var dl_btn := Button.new()
-	dl_btn.text = state
-	dl_btn.custom_minimum_size = Vector2(140, 46)
-	dl_btn.add_theme_font_size_override("font_size", 16)
-	_style_dl_button(dl_btn, state)
-	dl_btn.pressed.connect(_on_download_pressed.bind(core_name, remote_date))
-	right.add_child(dl_btn)
-
-	var prog_bar := ProgressBar.new()
-	prog_bar.custom_minimum_size = Vector2(140, 12)
-	prog_bar.min_value = 0.0
-	prog_bar.max_value = 1.0
-	prog_bar.value    = 0.0
-	prog_bar.visible  = false
-	right.add_child(prog_bar)
-
-	_download_widgets[core_name] = {"button": dl_btn, "bar": prog_bar}
-
-	wrap.add_child(HSeparator.new())
-	return wrap
-
-
-func _style_dl_button(btn: Button, state: String) -> void:
-	var color: Color
-	match state:
-		"Download":    color = COLOR_BTN_DL
-		"UPDATE":      color = COLOR_BTN_UPD
-		"Re-Download": color = COLOR_BTN_REUP
-		_:             color = COLOR_BTN_BUSY   # BUSY or unknown
-	var s := StyleBoxFlat.new()
-	s.bg_color = color
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		s.set(k, 5)
-	for state_key in ["normal", "hover", "pressed"]:
-		btn.add_theme_stylebox_override(state_key, s)
-	btn.disabled = (state == "BUSY")
-
-
-func _on_download_pressed(core_name: String, remote_date: String) -> void:
-	var widgets: Dictionary = _download_widgets.get(core_name, {})
-	if widgets.is_empty():
-		return
-	var btn: Button      = widgets["button"]
-	var bar: ProgressBar = widgets["bar"]
-
-	btn.text = "BUSY"
-	_style_dl_button(btn, "BUSY")
-	bar.value   = 0.0
-	bar.visible = true
-
-	download_manager.download_core(
-		core_name,
-		remote_date,
-		# The row can be freed if the user navigates away mid-download (detail
-		# pages are built lazily), so guard the captured widgets.
-		func(fraction: float):
-			if is_instance_valid(bar):
-				bar.value = fraction,
-		func(success: bool, err_msg: String):
-			if is_instance_valid(bar):
-				bar.visible = false
-			var new_state := "Re-Download" if success else "Download"
-			if not success:
-				push_warning("CoreDownload '%s' failed: %s" % [core_name, err_msg])
-			else:
-				call_deferred("_populate_manager_tab")
-				var dl_entry := core_db.get_by_core_name(core_name)
-				var dl_sid: String = dl_entry.get("systemid", "")
-				if not dl_sid.is_empty():
-					RomLibrary.ensure_rom_dir(dl_sid)
-				call_deferred("_populate_cartridges_tab")
-			if is_instance_valid(btn):
-				btn.text = new_state
-				_style_dl_button(btn, new_state)
-	)
-
-
 # ── Scraper ──────────────────────────────────────────────────────────────────
 
 func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void:
@@ -2617,7 +1693,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 
 	if checksums.is_empty():
 		_scrape_in_progress = false
-		btn.text = String.chr(_ICON_SCRAPE)
+		btn.text = String.chr(MenuIcons.SCRAPE)
 		btn.disabled = false
 		_hide_scrape_status()
 		push_warning("[SpawnMenu] Failed to compute checksums for: %s" % rom_path)
@@ -2632,7 +1708,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		scraper_client.scrape_failed.disconnect(failed_cb)
 		_scrape_in_progress = false
 		if is_instance_valid(btn):
-			btn.text = String.chr(_ICON_SCRAPE)
+			btn.text = String.chr(MenuIcons.SCRAPE)
 			btn.disabled = false
 		_hide_scrape_status()
 		print("[SpawnMenu] Scrape completed for: %s" % rom_path.get_file())
@@ -2643,7 +1719,7 @@ func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void
 		scraper_client.scrape_failed.disconnect(failed_cb)
 		_scrape_in_progress = false
 		if is_instance_valid(btn):
-			btn.text = String.chr(_ICON_SCRAPE)
+			btn.text = String.chr(MenuIcons.SCRAPE)
 			btn.disabled = false
 		_hide_scrape_status()
 		push_warning("[SpawnMenu] Scrape failed: %s" % error)
@@ -3388,12 +2464,6 @@ func _spacer(height: int) -> Control:
 ## _symbols() because the menu's theme font has no Nerd Font glyphs — the
 ## codepoint renders as tofu in a plain Label.
 func _recommended_badge(font_size: int) -> Label:
-	var lbl := Label.new()
-	lbl.text = "%s  Recommended" % String.chr(_ICON_RECOMMENDED)
-	lbl.add_theme_font_override("font", _symbols())
-	lbl.add_theme_font_size_override("font_size", font_size)
-	lbl.add_theme_color_override("font_color", COLOR_RECOMMENDED)
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	return lbl
+	return MenuIcons.recommended_badge(font_size)
 
 
