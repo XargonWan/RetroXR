@@ -26,6 +26,11 @@ const PLATFORM_BOTH := 3
 
 const GLYPH_DIR := "res://Textures/InputPrompts"
 
+## Marker in a caption where the glyphs belong, for a row that reads as a
+## sentence — "Point and press {g} for options" — rather than leading with the
+## art. Absent, the glyphs come first, which is what every other row wants.
+const GLYPH_TOKEN := "{g}"
+
 ## Rows stop appearing once the player has used that verb this many times.
 const LEARNED_AFTER := 3
 
@@ -297,24 +302,35 @@ func _build(rows: Array, right_hand: bool) -> void:
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
 		line.add_theme_constant_override("separation", SEP)
 		var glyphs: Array = row[2]
+		# A caption may put the glyphs inside the sentence with {g} — "Point and
+		# press {g} for options" — rather than leading with them. Without the
+		# token the glyphs come first, which is what every existing row expects.
+		var text := String(row[3])
+		var before := ""
+		var after := text
+		if text.contains(GLYPH_TOKEN):
+			var parts := text.split(GLYPH_TOKEN, true, 1)
+			before = parts[0].strip_edges()
+			after = parts[1].strip_edges() if parts.size() > 1 else ""
+
+		if not before.is_empty():
+			line.add_child(_caption(before))
 		for i in glyphs.size():
 			if i > 0:
 				line.add_child(_plus())
 			line.add_child(_glyph(String(glyphs[i]), right_hand))
-		var text := String(row[3])
-		var caption := Label.new()
-		caption.text = text
-		caption.add_theme_font_size_override("font_size", CAPTION_PT)
-		caption.add_theme_color_override("font_color", Color(0.93, 0.94, 1.0))
-		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		line.add_child(caption)
+		if not after.is_empty():
+			line.add_child(_caption(after))
 		_rows_box.add_child(line)
 
 		# Measured rather than left to a fixed panel width: a one-glyph row in a
 		# box sized for a three-glyph one is mostly empty border.
 		var n := glyphs.size()
 		var w := n * GLYPH_PX + (n - 1) * PLUS_W + (2 * n) * SEP
-		w += int(font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, CAPTION_PT).x)
+		for part: String in [before, after]:
+			if not part.is_empty():
+				w += int(font.get_string_size(
+					part, HORIZONTAL_ALIGNMENT_LEFT, -1, CAPTION_PT).x) + SEP
 		widest = maxi(widest, w)
 
 	_viewport.size = Vector2i(widest + PAD * 2, PAD * 2 + ROW_H * rows.size())
@@ -322,6 +338,15 @@ func _build(rows: Array, right_hand: bool) -> void:
 	# UPDATE_ONCE, never UPDATE_ALWAYS: an always-updating SubViewport hangs a
 	# headless run, and this content only changes when the rows do.
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+func _caption(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", CAPTION_PT)
+	label.add_theme_color_override("font_color", Color(0.93, 0.94, 1.0))
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return label
 
 
 func _glyph(pattern: String, right_hand: bool) -> TextureRect:

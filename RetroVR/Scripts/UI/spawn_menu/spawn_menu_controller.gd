@@ -848,7 +848,7 @@ func _teach_verbs(obj: Node3D) -> void:
 	if has_options:
 		hint.add_row(&"options_point", HeldHint.PLATFORM_BOTH,
 			["quest_stick_l_press"] if vr else ["keyboard_tab_outline"],
-			"Point at it for its options")
+			"Point and press {g} for options")
 
 	# Over the object itself, clear of its own geometry — a TV or a console is
 	# far taller than the hand-sized default offset, and the popup would open
