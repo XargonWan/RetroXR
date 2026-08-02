@@ -1,0 +1,14 @@
+[configuration]
+
+entry_symbol = "verlet_rope_library_init"
+compatibility_minimum = "4.4.1"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "verlet_rope.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "verlet_rope.windows.template_release.x86_64.dll"
+android.debug.arm64 = "libverlet_rope.android.template_debug.arm64.so"
+android.release.arm64 = "libverlet_rope.android.template_release.arm64.so"
+linux.debug.x86_64 = "libverlet_rope.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "libverlet_rope.linux.template_release.x86_64.so"

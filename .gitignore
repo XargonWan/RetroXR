@@ -84,3 +84,11 @@ RetroVR/probe_out/
 # Audio .import files carry compress/mode=0 — QOA-compressed clips cannot be
 # decoded to PCM frames for the Meta XR emitter, so the setting must ship.
 !RetroVR/Audio/**/*.import
+
+# verlet-rope build artifacts (same convention as libretro-godot / vlc-godot)
+RetroVR/verlet-rope/~*
+RetroVR/verlet-rope/*.exp
+RetroVR/verlet-rope/*.ilk
+RetroVR/verlet-rope/*.lib
+RetroVR/verlet-rope/*.pdb
+verlet-rope/Temp/

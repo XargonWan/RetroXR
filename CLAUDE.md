@@ -22,6 +22,29 @@ Requires SCons and MSVC (Windows), GCC/Clang (Linux), or Android NDK (Android). 
 git submodule update --init --recursive
 ```
 
+### One command for every extension
+
+`Tools/build.py` builds all five GDExtensions for one platform, sequentially (they
+cannot share a scons invocation — see below). Prefer it over the per-extension
+recipes further down, which are kept because they document each build's quirks.
+
+```bash
+python Tools/build.py windows              # both template_debug and template_release
+python Tools/build.py android --target release
+python Tools/build.py linux --only vlc-godot
+python Tools/build.py windows --jobs 8 -- verbose=yes    # extra args go to scons
+```
+
+Asking for `linux` **from Windows** re-invokes the script inside WSL (`--distro`,
+default `Ubuntu`), resetting HOME and PATH — WSL inherits the Windows environment,
+whose PATH contains spaces and breaks a bare `export PATH="$HOME/.local/bin:$PATH"`.
+Asking for it from Linux just builds. This replaced `Tools/build_linux.sh`.
+It reports a per-extension pass/fail table and exits non-zero if anything failed.
+
+**scons is not currently installed in either WSL distro** (`Ubuntu` has g++ but no
+scons; `FedoraLinux-44` has neither on PATH). `pip install --user scons` inside the
+distro before the Linux path will work.
+
 Build from the **workspace root** (not `-C Temp`):
 ```bash
 # Windows (PowerShell)
@@ -57,11 +80,21 @@ Linux/Windows/Android each need their own trampoline. GDScript platform logic us
 `nightly/linux/x86_64/latest/`, `.so` ext, `$HOME/retrovr/...` roots). Runtime emulation of a
 real core on Linux is only lightly verified — build + extension-load + type-resolution are proven.
 
-### Sibling GDExtensions (vlc-godot, godot-pdfium)
+### Sibling GDExtensions (verlet-rope, vlc-godot, godot-pdfium, metaxr-audio)
 
-Two other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
+Four other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
 `<name>/` with `SConstruct` + `src/`, reusing `../libretro-godot/godot-cpp`, deploying to
-`RetroVR/<name>/`). Build each **from its own directory** (each has its own `VariantDir('Temp')`):
+`RetroVR/<name>/`). Build each **from its own directory** (each has its own `VariantDir('Temp')`),
+or all at once with `Tools/build.py`:
+
+- **verlet-rope** — `Xenu::VerletRope`, the simulated cable hanging off every controller and
+  A/V plug. Lived inside `libretro-godot` until 2026-08-02 and was moved out (and purged from
+  that submodule's history) because it never belonged there: it includes nothing from libretro
+  and libretro includes nothing from it. Pure godot-cpp, no third-party dependency, so it is
+  the simplest of the five to build.
+  ```bash
+  cd verlet-rope && scons platform=windows arch=x86_64 target=template_debug
+  ```
 
 - **vlc-godot** — libVLC-backed `VlcPlayer`, used by both the DVD player **and** the VHS/VCR
   (the old `eirteam.ffmpeg` addon was dropped 2026-07-14 — libVLC is the single video backend;

@@ -1,0 +1,25 @@
+# type: ignore
+#
+# Standalone GDExtension: verlet_rope (Xenu::VerletRope, the simulated cable that
+# hangs off every controller and A/V plug in RetroVR).
+#
+# Lived in libretro-godot until 2026-08-02. It never belonged there — it includes
+# nothing from that library and libretro includes nothing from it; it was only
+# ever in the same .dll because that was the .dll that existed. Now it is its own
+# extension, built like vlc-godot / godot-pdfium / metaxr-audio: its own SCons
+# invocation (two extensions cannot share one, since godot-cpp's SConstruct runs
+# once per process), reusing the godot-cpp checked out under libretro-godot.
+#
+#   scons platform=windows arch=x86_64 target=template_debug
+#   scons platform=linux   arch=x86_64 target=template_release
+#   scons platform=android arch=arm64  target=template_debug ANDROID_HOME=
+#
+# Or, for every extension at once: python Tools/build.py <platform>
+
+VariantDir('Temp', '.', duplicate=0)
+env = Environment()
+
+import os
+output_dir = os.environ.get('VERLET_ROPE_OUTPUT_DIR', '#../RetroVR/verlet-rope')
+
+SConscript('Temp/SConscript', exports=['env', 'output_dir'])
