@@ -3,11 +3,9 @@
 ## subclass rather than a systemid check inside disc.gd since it's the only
 ## non-round case.
 ##
-## This used to be a thin adapter over an imported caddy mesh — it hid the
-## procedural disc meshes and let the GLB stand in for them. That mesh went with
-## the rest of the imported models on 2026-08-02, so the caddy is built here instead,
-## out of the same box-and-quad parts every other stand-in uses. It keeps its own
-## subclass because the SHAPE is the thing that differs, and that is still true.
+## The caddy is built here out of the same box-and-quad parts every other stand-in
+## uses; RetroDisc's round platter, hub and art quad are reshaped rather than
+## hidden. The subclass earns its keep because the SHAPE is what differs.
 class_name RetroUMD
 extends RetroDisc
 

@@ -145,7 +145,7 @@ func _cache_anim_meshes() -> void:
 			if m != null:
 				_anim_btns.append({"node": m, "rest": m.transform, "bit": bit, "depth": float(spec[1])})
 	# The D-pad rocks about its own centre — this bundle ships no pivot empty for
-	# it, unlike the imported pads whose "Dpad" marker the controllers use.
+	# it, unlike a pad shell whose "Dpad" marker the controllers use.
 	var dpad := _glb.find_child("D_PAD", true, false) as MeshInstance3D
 	if dpad != null:
 		_anim_dpad = {"node": dpad, "rest": dpad.transform,

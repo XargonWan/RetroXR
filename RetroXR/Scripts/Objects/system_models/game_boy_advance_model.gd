@@ -1,6 +1,5 @@
 ## RetroSystemModelGameBoyAdvance — GBA (landscape, 240×160 LCD).
-## Detailed imported GLB (dev-only) is baked into game_boy_advance.tscn; the plain
-## primitive stand-in lives in its own scene, spawned only as a store-safe fallback.
+## The stand-in shell lives in game_boy_advance_primitive.tscn.
 class_name RetroSystemModelGameBoyAdvance
 extends RetroSystemModelHandheld
 

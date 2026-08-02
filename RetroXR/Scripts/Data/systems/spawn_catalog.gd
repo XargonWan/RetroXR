@@ -29,12 +29,10 @@ const PRIMITIVE_CONTROLLER := "retro_controller"
 ## systemid → the peripherals that belong to that hardware. Systems with no entry
 ## just have none; their hardware rows still come from the registry.
 ##
-## This table used to name a bespoke pad per platform — a PSX controller, a Saturn
-## pad, a Mega Drive pad. Those all rode on imported imported meshes and went with
-## them on 2026-08-02. What is left is the hardware RetroXR modelled itself: the
-## memory card, and the Virtual Boy pad (which is here rather than dropped to the
-## generic row because it carries the console's POWER switch, so the platform is
-## unplayable without it).
+## What is listed is the hardware retroXR models itself: the memory card, and the
+## Virtual Boy pad — that one is here rather than dropped to the generic row
+## because it carries the console's POWER switch, so the platform is unplayable
+## without it.
 ##
 ## Every non-handheld gets the "Primitive Controller" row appended by items_for
 ## below, so a platform losing its entry here loses a name, not a way to play.

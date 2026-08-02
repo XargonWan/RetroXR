@@ -70,12 +70,9 @@ func _hinge_z_offset() -> float:
 
 
 ## The real hinge barrel also sits below the base shell's raw top face
-## (base_top_y ≈ 0.012877 on the imported New 3DS XL) — interactively pinned down
-## to an absolute Y of 0.0065, which is this offset added to base_top_y.
-##
-## The GLB it was measured against, and the calibrator scene used to measure it,
-## both went with the imported models on 2026-08-02. The number stays: it is a
-## proportion of the shell, and the stand-in is built to the same proportions.
+## (base_top_y ≈ 0.012877) — pinned down to an absolute Y of 0.0065, which is this
+## offset added to base_top_y. It is a proportion of the shell, so it holds for any
+## shell built to the same proportions.
 func _hinge_y_offset() -> float:
 	return 0.0065 - 0.012877
 
@@ -199,7 +196,7 @@ func _adopt_slider(slider: VRSlider, mesh_name: String) -> void:
 ## back-centre mouth the handheld base assumes. Re-seat the snap zone there so a
 ## grabbed card snaps to where the slot actually is: lying flat, label DOWN, and
 ## contacts leading in. Falls back to the base placement when there is no baked
-## shell — which, since the imported models were dropped, is always.
+## shell, which is the case for the stand-in.
 func configure_cartridge_slot(slot: Node3D) -> void:
 	super(slot)
 	# On the stand-in, super()'s CartSeat is the last word — socket_media marks
@@ -265,10 +262,9 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 # ── Physical control animation ────────────────────────────────────────────────
 # Driven each frame by HandheldInput from the exact joypad state it feeds the
 # core: face buttons and shoulders/triggers depress, the D-pad rocks, and the
-# Circle Pad SLIDES in its dish (it does not tilt like a thumbstick). These meshes
-# came from the detailed GLB, which is gone — the stand-in has nothing to cache,
-# so the whole block no-ops. Kept against a future shell that names its parts the
-# same way.
+# Circle Pad SLIDES in its dish (it does not tilt like a thumbstick). The stand-in
+# does not author these parts, so the block finds nothing and no-ops; it drives any
+# shell that names its meshes this way.
 
 const _FACE_MESH := {
 	ControllerBindings.JOYPAD_A: "FireButtonRight",   # A

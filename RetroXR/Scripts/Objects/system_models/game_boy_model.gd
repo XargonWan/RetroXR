@@ -1,6 +1,5 @@
 ## RetroSystemModelGameBoy — original DMG Game Boy (portrait, 160×144 LCD).
-## The primitive stand-in shell lives in game_boy.tscn (store-safe fallback); when
-## the detailed imported DMG GLB is present it's swapped in by the base (dev-only).
+## The stand-in shell lives in game_boy_primitive.tscn.
 class_name RetroSystemModelGameBoy
 extends RetroSystemModelHandheld
 

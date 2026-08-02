@@ -1,14 +1,13 @@
 ## RetroSystemModelPSP — Sony PlayStation Portable (PSP-1000, 480×272 widescreen).
 ##
-## Written against a detailed shell that modelled every control as its own mesh:
-## the ✕○□△ face buttons, the d-pad, the analog nub, the L/R shoulders,
-## Start/Select/Home, the volume ± and sound/display keys, the slide POWER
-## switch, the EJECT latch and the UMD door. That is what let the pad animate and
-## the tray open. No such shell ships now — the stand-in has none of those parts,
-## so the animation code below finds nothing and no-ops.
+## The animation code below drives a shell that models each control as its own
+## mesh — the ✕○□△ face buttons, the d-pad, the analog nub, the L/R shoulders,
+## Start/Select/Home, the volume ± and sound/display keys, the slide POWER switch,
+## the EJECT latch and the UMD door. The stand-in authors none of those, so those
+## passes find nothing and no-op.
 ##
-## Media is the UMD (psp_umd.glb, systemid "playstation_portable"), which loads
-## through the back-edge UMD door rather than a top slot.
+## Media is the UMD (systemid "playstation_portable"), which loads through the
+## back-edge UMD door rather than a top slot.
 class_name RetroSystemModelPSP
 extends RetroSystemModelHandheld
 
@@ -208,7 +207,7 @@ func _configure_power_slide() -> void:
 ## deleting the node just means doing the two calls here.
 const _VOLUME_STEP := 0.1
 
-## 0..1, matching the level the removed slider was authored at (value = 1.0).
+## 0..1, full volume by default.
 var _volume: float = 1.0
 
 

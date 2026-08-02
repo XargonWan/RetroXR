@@ -66,8 +66,8 @@ const LOADER_TRAY := 1   # lid/tray: OPEN button gates insert/remove (PS1, GameC
 const LOADER_SLOT := 2   # slot-load: disc injects on insert, EJECT slides it out (PS2)
 
 ## Systems that slot-load instead of using a lid/tray (PSP UMD).
-## NOTE: playstation2 was here (fat PS2 front slot) but our imported model is the PS2
-## SLIM, which is top-loading (hinged disc cover) — so it uses LOADER_TRAY instead.
+## NOTE: playstation2 was here (the fat PS2's front slot) but the console we model
+## is the PS2 SLIM, which is top-loading (hinged disc cover) — so LOADER_TRAY.
 ## Slot-load = the disc injects on insert and the EJECT button slides it out
 ## (PS2). Everything else with a disc is a lid/tray (OPEN reveals a well). The
 ## PSP is a tray: its UMD sits behind a hinged door you flick open, not a slot.

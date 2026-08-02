@@ -86,8 +86,8 @@ func is_handheld() -> bool:
 
 
 
-## Name of the GLB's screen-lens mesh. Most imported handhelds call it "screen_mesh";
-## some (the PSP-1000) suffix it "screen_mesh_0". Override to match.
+## Name of a shell's screen-lens mesh. The convention is "screen_mesh"; some
+## shells suffix it ("screen_mesh_0"). Override to match.
 func _glb_screen_name() -> String:
 	return "screen_mesh"
 
@@ -99,9 +99,9 @@ func _glb_screen_name() -> String:
 func _on_shell_ready() -> void:
 	pass
 
-## imported handheld GLBs are modelled upright (screen on +Z); RetroXR's frame is
-## lying flat with the screen on +Y, so the default lays it back. Override if a
-## particular GLB is authored differently.
+## Handheld shells are conventionally modelled upright (screen on +Z); retroXR's
+## frame is lying flat with the screen on +Y, so the default lays it back. Override
+## if a particular shell is authored differently.
 func _glb_rotation_degrees() -> Vector3:
 	return Vector3(-90, 0, 0)
 
@@ -179,8 +179,8 @@ func _cache_shell_nodes() -> void:
 ## from the shell's own screen mesh. That path was dead: every detailed scene bakes
 ## its Shell, so the function always took its early return. It was also the only
 ## caller of _glb_path(), which was the only reason seven model scripts named an
-## imported-assets file — so deleting it is what lets an imported model be removed
-## by deleting its scene and its GLB, with no script left pointing at a missing file.
+## asset path at all — so deleting it is what lets a model be removed by deleting
+## its scene and its files, with no script left pointing at something missing.
 func _adopt_baked_shell() -> void:
 	_glb = _baked_shell
 	var bb := _glb_local_aabb(_glb)

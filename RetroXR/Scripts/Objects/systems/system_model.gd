@@ -232,7 +232,7 @@ func set_controller_port_occupied(port_index: int, occupied: bool) -> void:
 ## World point where a shell's bundled A/V plug prop's lead leaves it: the far end
 ## of the plug mesh along the console's BACK (-Z), on the plug's own axis.
 ##
-## The imported shells model the A/V lead already plugged in, so those plug props are
+## Some shells model the A/V lead already plugged in, so those plug props are
 ## SHOWN (they are the visible connector the spawned rope hangs off — without them
 ## the cable sprouts from thin air a few cm behind the console). The rope therefore
 ## has to start at the plug's TIP: anchored at the socket instead it would run

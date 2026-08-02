@@ -387,16 +387,13 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroXR/Tools/`,
 which holds in-editor probe scenes like `netplay_spike`).
 
-**Third-party model conversion is not part of this repo**, and the models it once
-produced are gone — 22 consoles/handhelds, 12 controllers, 9 carts/discs and the
-GameCube memory card, removed on 2026-08-02 because none of it was licensed for
-redistribution.
+`RetroXR/imported-assets/` holds the CC BY / CC0 room and prop assets, which carry
+LICENSE files and are credited in the About panel. The hardware wears the procedural
+stand-ins in `RetroXR/Scenes/Objects/system_models/`.
 
-`RetroXR/imported-assets/` now holds only the CC BY / CC0 room and prop assets, which
-carry LICENSE files and are credited in the About panel. What the hardware wears is the
-procedural stand-ins in `RetroXR/Scenes/Objects/system_models/`. **Do not add converted
-third-party models to this repo** — converting a file format grants no rights over its
-contents, and whoever packaged a bundle is usually not the person who made the model.
+**Only add 3D assets this project has the right to ship.** Everything in the repo must
+be either our own work or licensed for redistribution, with its licence and attribution
+carried alongside it.
 - **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
   bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
   godot-pdfium build recipe above.

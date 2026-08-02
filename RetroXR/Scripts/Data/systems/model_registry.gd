@@ -5,18 +5,13 @@
 ## either can be added or deleted without touching the other. Deleting a model is
 ## deleting its row and its files.
 ##
-## That property got its trial by fire on 2026-08-02, when every model built on an
-## imported imported mesh — 23 of them, consoles and handhelds alike — came out in one
-## pass for licensing reasons. It cost exactly what this file promised: the rows,
-## the scenes, the files. What is left is the procedural stand-ins.
-##
 ## "Primitive" here is only a NAME for a kind of model. It is not a mode, a flag, or
 ## a branch: nothing anywhere asks "am I primitive?" to decide what to load.
 ##
-## `requires` and the availability check below now have no row to act on. They stay
-## because they are the contract a re-imported (or newly authored) model plugs back
-## into — and because `resolve()` leans on them to keep an old save naming a model
-## that no longer exists from ever landing on nothing.
+## `requires` and the availability check below have no row to act on today — every
+## model ships with the app. They stay because they are the contract a model with
+## external assets plugs into, and because `resolve()` leans on them to keep a save
+## naming a model this build does not have from ever landing on nothing.
 ##
 ## This replaced four dictionaries in system.gd with precedence rules between them
 ## (`_MODEL_SCENES`, `_MODEL_SCENE_VARIANTS`, `_MODEL_VARIANTS`, `_MODEL_SCRIPTS`),
@@ -112,7 +107,7 @@ static var simulate_missing_assets: bool = false
 static func resolve(model_id: String, platform: String) -> Dictionary:
 	# An explicit placeholder request is an ANSWER, not a miss. Falling through to
 	# the platform's first row here meant asking for the procedural box handed back
-	# the imported model instead — which is what the test hallway and the menu's
+	# a platform model instead — which is what the test hallway and the menu's
 	# "Primitive System" row were both doing.
 	if model_id == PLACEHOLDER_ID:
 		return placeholder_row()
@@ -224,14 +219,14 @@ static func has_any_model(platform: String) -> bool:
 
 
 ## True when this platform offers a plain model ALONGSIDE an asset-backed one, i.e.
-## there is something to fall back to if the imported model is dropped.
+## there is something to fall back to if the asset-backed one is unavailable.
 ##
 ## A platform whose only model happens to be plain (atari_lynx, wonderswan, …)
 ## returns false: nothing is being offered as an alternative to anything.
 ##
-## Since the imported models were dropped there is no asset-backed row left, so this
-## is false everywhere. Kept for the same reason `requires` is — it is how a
-## re-imported model would announce that the plain one is still there behind it.
+## No row carries external assets today, so this is false everywhere. Kept for the
+## same reason `requires` is — it is how such a model would announce that the plain
+## one is still there behind it.
 static func has_plain_alternative(platform: String) -> bool:
 	var total := 0
 	var plain := 0
@@ -249,12 +244,12 @@ static func row_for(model_id: String) -> Dictionary:
 	return _row(model_id) if _ROWS.has(model_id) else {}
 
 
-## The models that carry no imported assets — the stand-ins. Every row, now.
+## The models that carry no external assets — the stand-ins. Every row, now.
 ##
 ## Worth naming because they were the cheap half by a wide margin, which is why
 ## they are the half ModelWarmer warms. Measured on a Quest 3: warming all thirteen
-## costs ~1.1 s and almost no texture memory, where warming the imported shells
-## cost 31 s and 1.1 GiB. Warming is now the whole registry for free.
+## costs ~1.1 s and almost no texture memory. Warming is the whole registry, and
+## it is cheap because untextured primitives are cheap.
 static func stand_in_ids() -> Array:
 	var out: Array = []
 	for id: String in _ROWS:
