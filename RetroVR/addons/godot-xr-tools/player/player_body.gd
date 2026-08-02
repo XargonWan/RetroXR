@@ -748,7 +748,11 @@ func _update_body_under_camera(delta : float):
 				_fade = fade_scene.instantiate()
 				add_child(_fade, false, Node.INTERNAL_MODE_BACK)
 
-		_fade_value = max(_fade_value + delta * 3.0, 0.0)
+		# min, not max: this ramps UP. Upstream has max() here, which lets the
+		# value run away — the alpha is clamped when it is blended, so the extra
+		# is invisible going in, but it comes back out at 3.0/second. Half a
+		# minute leaning on a desk earns half a minute of black afterwards.
+		_fade_value = min(_fade_value + delta * 3.0, 1.0)
 
 		_fade.set_fade_level(self, Color(0, 0, 0, _fade_value))
 	elif _fade and _fade_value > 0.0:
