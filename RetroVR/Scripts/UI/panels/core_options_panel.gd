@@ -91,6 +91,7 @@ func _ensure_ui_connected() -> void:
 		push_warning("[CoreOptionsPanel] SubViewport child is not CoreOptions2D")
 		return
 	ui.option_changed.connect(_on_option_changed)
+	ui.options_reset_requested.connect(_on_options_reset_requested)
 	ui.port_device_changed.connect(_on_port_device_changed)
 	ui.video_out_toggled.connect(_on_video_out_toggled)
 	ui.ignore_gravity_toggled.connect(_on_ignore_gravity_toggled)
@@ -111,7 +112,8 @@ func _populate() -> void:
 	var ui := vp.get_child(0) as CoreOptions2D
 	if not ui:
 		return
-	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info)
+	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info,
+		_system.forced_core_options(), _system._options_unavailable)
 	ui.populate_system(_system.video_out_enabled, _system.supports_video_out_toggle(),
 		_system.ignore_gravity)
 
@@ -121,6 +123,14 @@ func _on_option_changed(key: String, value: String) -> void:
 	if _system and is_instance_valid(_system):
 		print("[CoreOptionsPanel] option changed: '%s' = '%s'" % [key, value])
 		_system.set_core_option(key, value)
+
+
+## Reset every non-forced option, then redraw so the new values show.
+func _on_options_reset_requested() -> void:
+	if _system and is_instance_valid(_system):
+		print("[CoreOptionsPanel] resetting core options to defaults")
+		_system.reset_core_options()
+		_populate()
 
 
 ## System-tab toggle: show/hide the console's video-out cables.

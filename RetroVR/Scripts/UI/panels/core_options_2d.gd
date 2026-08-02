@@ -14,6 +14,8 @@ class_name CoreOptions2D
 extends Control
 
 signal option_changed(key: String, value: String)
+## User pressed "Reset all to defaults" at the top of the Options tab.
+signal options_reset_requested
 signal port_device_changed(port: int, device_id: int)
 ## System-tab toggle: show/hide the console's video-out cables.
 signal video_out_toggled(enabled: bool)
@@ -43,6 +45,11 @@ var _suppress_signal := false
 
 var _definitions: Dictionary = {}
 var _values: Dictionary = {}
+# Options the system model pins; shown locked rather than hidden, so it is clear
+# why they cannot be changed instead of leaving them unexplained absences.
+var _forced: Dictionary = {}
+# Set when there are no options AND there is a reason worth stating.
+var _unavailable: String = ""
 # Array of Dictionaries: [{port, controllers: [{name, id}], current_id}]
 var _controller_info: Array = []
 
@@ -208,10 +215,13 @@ func _build_ui() -> void:
 
 ## Fill or refresh all tabs.
 ## controller_info: Array of Dicts [{port, controllers:[{name,id}], current_id}]
-func populate(definitions: Dictionary, current_values: Dictionary, controller_info: Array) -> void:
+func populate(definitions: Dictionary, current_values: Dictionary, controller_info: Array,
+		forced: Dictionary = {}, unavailable: String = "") -> void:
 	_definitions = definitions
 	_values = current_values
 	_controller_info = controller_info
+	_forced = forced
+	_unavailable = unavailable
 	print("[CoreOptions2D] populate() — %d options, %d ports" % [definitions.size(), controller_info.size()])
 	_refresh_options()
 	_refresh_controllers()
@@ -243,7 +253,8 @@ func _show_options_placeholder() -> void:
 	for c in _options_rows.get_children():
 		c.queue_free()
 	var lbl := Label.new()
-	lbl.text = "No options available.\n(Start emulation first.)"
+	lbl.text = _unavailable if not _unavailable.is_empty() \
+		else "No options available.\n(Start emulation first.)"
 	lbl.add_theme_font_size_override("font_size", 18)
 	lbl.add_theme_color_override("font_color", COLOR_ROW)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -260,12 +271,41 @@ func _refresh_options() -> void:
 		_show_options_placeholder()
 		return
 
+	_add_reset_row()
+
 	var keys: Array = _definitions.keys()
 	keys.sort()
 	for key in keys:
-		_add_option_row(key, _definitions[key], _values.get(key, ""))
+		_add_option_row(key, _definitions[key], String(_values.get(key, "")))
 
 	print("[CoreOptions2D] %d option rows built" % keys.size())
+
+
+## Sits above the list rather than at the bottom: it acts on everything below it,
+## and a list this long would otherwise bury it past the scroll.
+func _add_reset_row() -> void:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, 52)
+	row.add_theme_constant_override("separation", 4)
+	_options_rows.add_child(row)
+
+	var label := Label.new()
+	label.text = "Restore this core's defaults"
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", COLOR_TITLE)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.clip_text = true
+	row.add_child(label)
+
+	var btn := Button.new()
+	btn.text = "Reset all"
+	btn.custom_minimum_size = Vector2(120, 44)
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.pressed.connect(func() -> void: options_reset_requested.emit())
+	row.add_child(btn)
+
+	_options_rows.add_child(HSeparator.new())
 
 
 ## Build a single option row: [description label] [<] [current value] [>]
@@ -303,9 +343,17 @@ func _add_option_row(key: String, defn, current_val: String) -> void:
 			cur_idx = i
 			break
 
+	# A pinned option shows its value but no way to move it, and says so. The
+	# hardware depends on it (the 3DS's side-by-side framebuffer, the Virtual Boy's
+	# stereo split), so an editable control here would only offer a broken screen.
+	var is_forced := _forced.has(key)
+	if is_forced:
+		label.text = desc + "   (fixed by this system)"
+
 	var prev_btn := Button.new()
 	prev_btn.text = " < "
 	prev_btn.custom_minimum_size = Vector2(48, 48)
+	prev_btn.disabled = is_forced
 	row.add_child(prev_btn)
 
 	var val_lbl := Label.new()
@@ -322,6 +370,7 @@ func _add_option_row(key: String, defn, current_val: String) -> void:
 	var next_btn := Button.new()
 	next_btn.text = " > "
 	next_btn.custom_minimum_size = Vector2(48, 48)
+	next_btn.disabled = is_forced
 	row.add_child(next_btn)
 
 	var idx_ref := [cur_idx]

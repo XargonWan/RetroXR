@@ -67,6 +67,9 @@ var ignore_gravity: bool = false
 # Cached core options (populated when options_ready fires)
 var _options_definitions: Dictionary = {}
 var _options_values: Dictionary = {}
+# Why the options list is empty, when it is empty for a reason worth showing
+# (a core that publishes nothing until content is loaded, or none installed).
+var _options_unavailable: String = ""
 
 # Cached controller port info (populated alongside options_ready).
 # Array of Dictionaries: [{port, controllers: [{name, id}], current_id}]
@@ -1557,6 +1560,7 @@ func _on_options_ready(_categories: Dictionary, definitions: Dictionary, current
 	print("[RetroSystem] options_ready — %d definitions received" % definitions.size())
 	_options_definitions = definitions
 	_options_values = current_values
+	_options_unavailable = ""
 	# Controller info is set during retro_load_game, so it's ready by the time
 	# options_ready fires. Fetch it here so the panel can show both tabs.
 	_controller_info = _libretro.GetControllerInfo()
@@ -1575,17 +1579,73 @@ func toggle_options_ui(camera: Node3D) -> void:
 	if _options_panel.visible:
 		print("[RetroSystem] closing options panel")
 		_options_panel.hide_panel()
-	else:
-		print("[RetroSystem] opening options panel")
-		_options_panel.show_for(self, camera)
+		return
+	print("[RetroSystem] opening options panel")
+	# Powered off there is no core to ask, so read what the system's DEFAULT core
+	# declares. It writes to the same file the core loads at start, so a change
+	# made now is what the next launch runs with.
+	if not is_powered_on:
+		_load_prelaunch_options()
+	_options_panel.show_for(self, camera)
 
 
-## Apply a single core option change and forward it to the running libretro core.
-## Also updates the local cache so the panel stays in sync if reopened.
+## Fill the option cache from the default core's own declarations without starting
+## it. Some cores publish nothing until content is loaded; for those the cache
+## stays empty and the panel explains why instead of showing an empty list.
+func _load_prelaunch_options() -> void:
+	var core := _resolve_core()
+	var dir := _resolve_dir()
+	var peeked := CoreOptionsStore.peek(dir, core)
+	if peeked.is_empty():
+		_options_definitions = {}
+		_options_values = {}
+		_options_unavailable = CoreOptionsStore.peek_failure_reason(dir, core)
+		print("[RetroSystem] pre-launch options unavailable for '%s'" % core)
+		return
+	_options_unavailable = ""
+	_options_definitions = peeked["definitions"]
+	_options_values = CoreOptionsStore.effective_values(
+		peeked, CoreOptionsStore.load_values(dir, core))
+	print("[RetroSystem] pre-launch options for '%s' — %d definitions"
+		% [core, _options_definitions.size()])
+
+
+## Apply a single core option change. A running core is told directly; a powered
+## off one is edited through its option file, which it reads at start.
 func set_core_option(key: String, value: String) -> void:
 	print("[RetroSystem] set_core_option '%s' = '%s'" % [key, value])
 	_options_values[key] = value
-	_libretro.SetCoreOption(key, value)
+	if is_powered_on:
+		_libretro.SetCoreOption(key, value)
+	else:
+		CoreOptionsStore.set_value(_resolve_dir(), _resolve_core(), key, value)
+
+
+## Options this system's model pins so the hardware works at all — the 3DS's
+## side-by-side framebuffer, the Virtual Boy's stereo split. They are locked in
+## the UI and skipped by a reset, which would otherwise break the screen rather
+## than restore it.
+func forced_core_options() -> Dictionary:
+	return _model.get_forced_core_options() if _model != null else {}
+
+
+## Put every non-forced option back to the value the core itself declares as its
+## default.
+func reset_core_options() -> void:
+	if _options_definitions.is_empty():
+		return
+	var forced := forced_core_options()
+	var changed := 0
+	for key: String in _options_definitions:
+		if forced.has(key):
+			continue
+		var defn: Object = _options_definitions[key]
+		var default_val: String = defn.GetDefaultValue()
+		if default_val.is_empty() or String(_options_values.get(key, "")) == default_val:
+			continue
+		set_core_option(key, default_val)
+		changed += 1
+	print("[RetroSystem] reset %d core options (%d forced kept)" % [changed, forced.size()])
 
 
 ## Switch the input device type on a given controller port.

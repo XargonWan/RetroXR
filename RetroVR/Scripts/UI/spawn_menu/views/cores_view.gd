@@ -42,6 +42,11 @@ var _download_cores_by_system: Dictionary = {}
 # Manager tab — drill-down browser + installed cores grouped by systemid:
 # sid -> Array[{ "core_name", "display_name" }]
 var _manager_browser: SystemGridBrowser = null
+## Which core the manager detail is editing options for. Empty shows the core list.
+var _editing_options_core: String = ""
+## The system that editor was opened from — leaving for another system drops it,
+## or picking a different tile would land on the previous system's core.
+var _editing_options_system: String = ""
 var _manager_cores_by_system: Dictionary = {}
 
 # BIOS / Extras tab
@@ -221,7 +226,15 @@ func _populate_manager_tab() -> void:
 
 
 ## Detail page for one system: its installed cores, tap to set the default.
+## Doubles as the option editor for one of those cores — same page, because the
+## browser owns the detail area and the editor is reached from a row in this list.
 func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
+	if not _editing_options_core.is_empty() and _editing_options_system != systemid:
+		_editing_options_core = ""
+	if not _editing_options_core.is_empty():
+		_populate_core_options(systemid, _editing_options_core, vbox)
+		return
+
 	var cores: Array = _manager_cores_by_system.get(systemid, [])
 	var current: String = core_defaults.get_default_core(systemid)
 	for entry: Dictionary in cores:
@@ -262,8 +275,146 @@ func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
 		)
 		row.add_child(btn)
 
+		# Options are readable straight out of the core file, so this works for a
+		# core that has never been launched — which is the point: set it up before
+		# the first boot rather than after it goes wrong.
+		var opts_btn := Button.new()
+		opts_btn.text = String.chr(MenuIcons.SETTINGS)
+		opts_btn.add_theme_font_override("font", MenuIcons.symbols())
+		opts_btn.add_theme_font_size_override("font_size", 20)
+		opts_btn.custom_minimum_size = Vector2(64, 52)
+		opts_btn.tooltip_text = "Core options"
+		opts_btn.pressed.connect(func() -> void:
+			_editing_options_core = cn
+			_editing_options_system = systemid
+			_manager_browser.open_system(systemid)
+		)
+		row.add_child(opts_btn)
+
 		vbox.add_child(row)
 		vbox.add_child(HSeparator.new())
+
+
+## Option editor for one core, read out of the core file itself so it works before
+## that core has ever run. Cores that publish nothing until content is loaded say
+## so rather than showing an empty list.
+func _populate_core_options(systemid: String, core_name: String, vbox: VBoxContainer) -> void:
+	var root := CoreOptionsStore.default_root()
+
+	var back := Button.new()
+	back.text = "←  Back to cores"
+	back.custom_minimum_size = Vector2(0, 52)
+	back.add_theme_font_size_override("font_size", 17)
+	back.pressed.connect(func() -> void:
+		_editing_options_core = ""
+		_manager_browser.open_system(systemid)
+	)
+	vbox.add_child(back)
+
+	var peeked := CoreOptionsStore.peek(root, core_name)
+	if peeked.is_empty():
+		var msg := Label.new()
+		msg.text = CoreOptionsStore.peek_failure_reason(root, core_name)
+		msg.add_theme_font_size_override("font_size", 17)
+		msg.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+		msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		msg.custom_minimum_size = Vector2(0, 80)
+		vbox.add_child(msg)
+		return
+
+	var definitions: Dictionary = peeked["definitions"]
+	var values := CoreOptionsStore.effective_values(peeked,
+		CoreOptionsStore.load_values(root, core_name))
+
+	var reset := Button.new()
+	reset.text = "Reset all to defaults"
+	reset.custom_minimum_size = Vector2(0, 52)
+	reset.add_theme_font_size_override("font_size", 17)
+	reset.pressed.connect(func() -> void:
+		CoreOptionsStore.reset_to_defaults(root, core_name, peeked)
+		_manager_browser.open_system(systemid)
+	)
+	vbox.add_child(reset)
+	vbox.add_child(HSeparator.new())
+
+	var keys: Array = definitions.keys()
+	keys.sort()
+	for key: String in keys:
+		_add_core_option_row(root, core_name, systemid, key, definitions[key],
+			String(values.get(key, "")), vbox)
+
+
+## One option row: description, then < value > to cycle. Writes straight through
+## to the core's option file — there is no Apply, because the file IS the state
+## the next launch reads.
+func _add_core_option_row(root: String, core_name: String, systemid: String, key: String,
+		defn: Object, current_val: String, vbox: VBoxContainer) -> void:
+	var values_arr: Array = defn.GetValues()
+	if values_arr.is_empty():
+		return
+
+	var desc: String = defn.GetDescription()
+	if desc.is_empty():
+		desc = key
+	var pinned: bool = CoreOptionsStore.HARDWARE_PINNED.has(key)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0, 56)
+
+	var lbl := Label.new()
+	lbl.text = desc + ("   (fixed by the hardware)" if pinned else "")
+	lbl.add_theme_font_size_override("font_size", 17)
+	lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(lbl)
+
+	var idx := 0
+	for i in range(values_arr.size()):
+		if values_arr[i].GetValue() == current_val:
+			idx = i
+			break
+
+	var prev_btn := Button.new()
+	prev_btn.text = " < "
+	prev_btn.custom_minimum_size = Vector2(52, 48)
+	prev_btn.disabled = pinned
+	row.add_child(prev_btn)
+
+	var val_lbl := Label.new()
+	val_lbl.custom_minimum_size = Vector2(170, 0)
+	val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	val_lbl.add_theme_font_size_override("font_size", 16)
+	val_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+	val_lbl.clip_text = true
+	val_lbl.text = _option_value_label(values_arr[idx])
+	row.add_child(val_lbl)
+
+	var next_btn := Button.new()
+	next_btn.text = " > "
+	next_btn.custom_minimum_size = Vector2(52, 48)
+	next_btn.disabled = pinned
+	row.add_child(next_btn)
+
+	# Boxed so both lambdas share one cursor; a plain local is captured by value.
+	var idx_ref := [idx]
+	var step := func(delta: int) -> void:
+		idx_ref[0] = (idx_ref[0] + delta + values_arr.size()) % values_arr.size()
+		var v: Object = values_arr[idx_ref[0]]
+		val_lbl.text = _option_value_label(v)
+		CoreOptionsStore.set_value(root, core_name, key, v.GetValue())
+	prev_btn.pressed.connect(func() -> void: step.call(-1))
+	next_btn.pressed.connect(func() -> void: step.call(1))
+
+	vbox.add_child(row)
+	vbox.add_child(HSeparator.new())
+
+
+func _option_value_label(v: Object) -> String:
+	var lbl: String = v.GetLabel()
+	return lbl if not lbl.is_empty() else v.GetValue()
 
 
 # ── BIOS / Extras tab ─────────────────────────────────────────────────────────
