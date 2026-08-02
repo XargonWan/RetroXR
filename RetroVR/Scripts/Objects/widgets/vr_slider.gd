@@ -16,7 +16,8 @@
 ##     is free to roam past the knob mid-drag — strictly better than the radius
 ##     hysteresis it replaces. Same model as VRHinge.
 ##
-## Attach to an Area3D with a child MeshInstance3D named "KnobMesh".
+## Attach to an Area3D with a child MeshInstance3D named "KnobMesh", or hand it one
+## from anywhere with set_knob_mesh().
 class_name VRSlider
 extends Area3D
 
@@ -121,7 +122,12 @@ var _knob_centre: Vector3 = Vector3.ZERO
 var _outline: WidgetOutline = null
 var _outline_amber: bool = false
 
-@onready var _knob: MeshInstance3D = $KnobMesh
+## Optional. A slider whose cap is modelled elsewhere — the 3DS stand-in keeps its
+## two on the lid beside the sliders, and every GLB shell has its own — is handed
+## that mesh by set_knob_mesh() instead, so requiring a child here only produced
+## "Node not found" on the ones doing it the intended way. Everything downstream
+## already null-checks _knob; only this lookup was strict.
+@onready var _knob: MeshInstance3D = get_node_or_null("KnobMesh") as MeshInstance3D
 
 
 func _ready() -> void:
