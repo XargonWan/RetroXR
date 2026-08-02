@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" width="1600" height="520" role="img" aria-label="retroXR">
+  <title>retroXR</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141c33"/>
+      <stop offset="1" stop-color="#0b0f1c"/>
+    </linearGradient>
+
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#e4ebfa"/>
+      <stop offset="1"    stop-color="#b9c5e0"/>
+    </linearGradient>
+
+    <linearGradient id="strap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8090b3"/>
+      <stop offset="1" stop-color="#55628a"/>
+    </linearGradient>
+
+    <radialGradient id="phos" cx="0.5" cy="0.40" r="0.68">
+      <stop offset="0"    stop-color="#c9ffe9"/>
+      <stop offset="0.30" stop-color="#5cf0b8"/>
+      <stop offset="0.68" stop-color="#1cc98e"/>
+      <stop offset="1"    stop-color="#053b2c"/>
+    </radialGradient>
+
+    <pattern id="scan" width="14" height="14" patternUnits="userSpaceOnUse">
+      <rect width="14" height="6" fill="#02160f" opacity="0.34"/>
+    </pattern>
+
+    <filter id="bloom" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="22" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="drop" x="-30%" y="-40%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="520" fill="url(#bg)"/>
+  <ellipse cx="382" cy="260" rx="290" ry="180" fill="#1cc98e" opacity="0.15" filter="url(#bloom)"/>
+
+  <!-- ── mark, left — same 840:520 proportions as the square icon ────────── -->
+  <g filter="url(#drop)">
+    <rect x="34"  y="186" width="58" height="148" rx="28" fill="url(#strap)"/>
+    <rect x="672" y="186" width="58" height="148" rx="28" fill="url(#strap)"/>
+
+    <rect x="80" y="66" width="604" height="388" rx="112" ry="112"
+          fill="url(#shell)" stroke="#0b0f1c" stroke-width="9"/>
+    <path d="M80 178 A112 112 0 0 1 192 66 L572 66 A112 112 0 0 1 684 178 Z"
+          fill="#ffffff" opacity="0.5"/>
+
+    <circle cx="253" cy="260" r="121" fill="#0b0f1c"/>
+    <circle cx="511" cy="260" r="121" fill="#0b0f1c"/>
+    <circle cx="253" cy="260" r="108" fill="url(#phos)"/>
+    <circle cx="511" cy="260" r="108" fill="url(#phos)"/>
+    <circle cx="253" cy="260" r="108" fill="url(#scan)"/>
+    <circle cx="511" cy="260" r="108" fill="url(#scan)"/>
+
+    <rect x="218" y="226" width="30" height="30" fill="#f2fffa"/>
+
+    <circle cx="253" cy="260" r="108" fill="none" stroke="#0b0f1c" stroke-width="10"/>
+    <circle cx="511" cy="260" r="108" fill="none" stroke="#0b0f1c" stroke-width="10"/>
+  </g>
+
+  <!-- ── wordmark, right ─────────────────────────────────────────────────
+       "XR" picks up the phosphor green so type and lenses read as one brand.
+       One text element with a tspan, so the kerning across "o|X" is the
+       font's rather than a guess at two separate x positions. -->
+  <text x="800" y="330" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
+        font-size="200" font-weight="800" letter-spacing="-7" fill="#eef3ff">retro<tspan fill="#2de3a7">XR</tspan></text>
+</svg>
