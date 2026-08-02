@@ -25,8 +25,10 @@ const CART_SIZES: Dictionary = {
 	"neo_geo_pocket":   Vector3(0.048, 0.052, 0.008),
 	"pokemon_mini":     Vector3(0.022, 0.033, 0.007),
 	"supervision":      Vector3(0.066, 0.070, 0.009),
-	# UMD caddy — square footprint, thin. Without an entry here _apply_cart_model()
-	# falls back to CART_SIZE_DEFAULT (10x8cm) and scales the UMD up ~40% too big.
+	# UMD caddy — square footprint, thin. RetroUMD builds its shell straight off
+	# this; without an entry it would fall back to CART_SIZE_DEFAULT (10x8 cm) and
+	# hand out a caddy ~40% too big. Note the PSP appears in DISC_DIAMETERS too:
+	# that is the bare platter sealed inside, this is the caddy you actually hold.
 	"playstation_portable": Vector3(0.064, 0.064, 0.0042),
 }
 

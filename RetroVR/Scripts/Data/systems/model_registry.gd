@@ -1,12 +1,22 @@
 ## SystemModelRegistry — every hardware model RetroVR can wear, in one flat table.
 ##
 ## A model is a first-class thing with an id, not a "variant" of another model. Two
-## models for the same platform — a primitive one and an imported one — are two rows
-## that know nothing about each other, so either can be added or deleted without
-## touching the other. Deleting a model is deleting its row and its files.
+## models for the same platform are two rows that know nothing about each other, so
+## either can be added or deleted without touching the other. Deleting a model is
+## deleting its row and its files.
+##
+## That property got its trial by fire on 2026-08-02, when every model built on an
+## imported imported mesh — 23 of them, consoles and handhelds alike — came out in one
+## pass for licensing reasons. It cost exactly what this file promised: the rows,
+## the scenes, the files. What is left is the procedural stand-ins.
 ##
 ## "Primitive" here is only a NAME for a kind of model. It is not a mode, a flag, or
 ## a branch: nothing anywhere asks "am I primitive?" to decide what to load.
+##
+## `requires` and the availability check below now have no row to act on. They stay
+## because they are the contract a re-imported (or newly authored) model plugs back
+## into — and because `resolve()` leans on them to keep an old save naming a model
+## that no longer exists from ever landing on nothing.
 ##
 ## This replaced four dictionaries in system.gd with precedence rules between them
 ## (`_MODEL_SCENES`, `_MODEL_SCENE_VARIANTS`, `_MODEL_VARIANTS`, `_MODEL_SCRIPTS`),
@@ -51,96 +61,26 @@ const _SCENES := "res://Scenes/Objects/system_models/"
 ## what an empty model_id resolves to.
 const _ROWS: Dictionary = {
 	# --- consoles -------------------------------------------------------------
-	"nes":                  {"platform": "nes", "label": "NES",
-		"scene": _SCENES + "nes.tscn",
-		"requires": ["res://imported-assets/nes_system.glb"]},
-	"famicom":              {"platform": "nes", "label": "Famicom",
-		"scene": _SCENES + "famicom.tscn",
-		"requires": ["res://imported-assets/famicom.glb"]},
-	"atari_2600":           {"platform": "atari_2600", "label": "Atari 2600",
-		"scene": _SCENES + "atari_2600.tscn",
-		"requires": ["res://imported-assets/atari_2600.glb"]},
-	"atari_5200":           {"platform": "atari_5200", "label": "Atari 5200",
-		"scene": _SCENES + "atari_5200.tscn",
-		"requires": ["res://imported-assets/atari_5200.glb"]},
-	"genesis":              {"platform": "mega_drive", "label": "Genesis",
-		"scene": _SCENES + "genesis.tscn",
-		"requires": ["res://imported-assets/sega_genesis.glb"]},
-	"megadrive":            {"platform": "mega_drive", "label": "Mega Drive",
-		"scene": _SCENES + "megadrive.tscn",
-		"requires": ["res://imported-assets/sega_megadrive.glb"]},
-	"sega_saturn":          {"platform": "sega_saturn", "label": "Saturn",
-		"scene": _SCENES + "sega_saturn.tscn",
-		"requires": ["res://imported-assets/sega_saturn.glb"]},
-	"dreamcast":            {"platform": "dreamcast", "label": "Dreamcast",
-		"scene": _SCENES + "dreamcast.tscn",
-		"requires": ["res://imported-assets/dreamcast_console.glb"]},
-	"playstation_one":      {"platform": "playstation", "label": "PSone",
-		"scene": _SCENES + "playstation_one.tscn",
-		"requires": ["res://imported-assets/playstation_one.glb"]},
-	"playstation_original": {"platform": "playstation", "label": "PlayStation",
-		"scene": _SCENES + "playstation_original.tscn",
-		"requires": ["res://imported-assets/playstation_original.glb"]},
-	"ps2":                  {"platform": "playstation2", "label": "PlayStation 2 Slim",
-		"scene": _SCENES + "ps2.tscn",
-		"requires": ["res://imported-assets/ps2_slim.glb"]},
-	"ps2_silver":           {"platform": "playstation2", "label": "PlayStation 2 Slim (Silver)",
-		"scene": _SCENES + "ps2_silver.tscn",
-		"requires": ["res://imported-assets/ps2_slim_silver.glb"]},
-	"n64":                  {"platform": "nintendo_64", "label": "Nintendo 64",
-		"scene": _SCENES + "n64.tscn",
-		"requires": ["res://imported-assets/N64 imported.glb"]},
-	# Mesh baked into the scene; only its maps are external.
-	"gamecube":             {"platform": "gamecube", "label": "GameCube",
-		"scene": _SCENES + "gamecube.tscn",
-		"requires": ["res://imported-assets/gamecube_gamecube_console_color.png"]},
 	"pc_tower":             {"platform": "scummvm", "label": "PC Tower",
 		"scene": _SCENES + "pc_tower.tscn"},
-	# The one script-only row. Its geometry is built procedurally around a GLB.
-	"desktop_tower":        {"platform": "dos", "label": "PC Tower",
-		"script": "res://Scripts/Objects/system_models/desktop_tower_model.gd",
-		"requires": ["res://imported-assets/desktop_tower.glb"]},
 
 	# --- handhelds ------------------------------------------------------------
-	"game_boy":             {"platform": "game_boy", "label": "Game Boy", "handheld": true,
-		"scene": _SCENES + "game_boy.tscn",
-		"requires": ["res://imported-assets/game_boy_dmg.glb"]},
-	"game_boy_primitive":   {"platform": "game_boy", "label": "Game Boy (primitive)", "handheld": true,
+	# The "(primitive)" suffix is now redundant — these are the only models their
+	# platforms have — but the ids are what saves and peers name, so they stay.
+	"game_boy_primitive":   {"platform": "game_boy", "label": "Game Boy", "handheld": true,
 		"scene": _SCENES + "game_boy_primitive.tscn"},
-	"game_boy_advance":     {"platform": "game_boy_advance", "label": "Game Boy Advance", "handheld": true,
-		"scene": _SCENES + "game_boy_advance.tscn",
-		"requires": ["res://imported-assets/game_boy_advance.glb"]},
-	"game_boy_advance_sp":  {"platform": "game_boy_advance", "label": "Game Boy Advance SP", "handheld": true,
-		"scene": _SCENES + "game_boy_advance_sp.tscn",
-		"requires": ["res://imported-assets/game_boy_advance_sp_GameboyAdvanceSP_OFF_BaseColor.png"]},
-	"game_boy_advance_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance (primitive)", "handheld": true,
+	"game_boy_advance_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance", "handheld": true,
 		"scene": _SCENES + "game_boy_advance_primitive.tscn"},
-	"game_boy_advance_sp_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance SP (primitive)", "handheld": true,
+	"game_boy_advance_sp_primitive": {"platform": "game_boy_advance", "label": "Game Boy Advance SP", "handheld": true,
 		"scene": _SCENES + "game_boy_advance_sp_primitive.tscn"},
-	"nds":                  {"platform": "nds", "label": "DS Phat", "handheld": true,
-		"scene": _SCENES + "nds.tscn",
-		"requires": ["res://imported-assets/ds_phat_nds_diffuse.png"]},
-	"nds_lite":             {"platform": "nds", "label": "DS Lite", "handheld": true,
-		"scene": _SCENES + "nds_lite.tscn",
-		"requires": ["res://imported-assets/ds_lite.glb"]},
-	"nds_primitive":        {"platform": "nds", "label": "DS (primitive)", "handheld": true,
+	"nds_primitive":        {"platform": "nds", "label": "DS", "handheld": true,
 		"scene": _SCENES + "nds_primitive.tscn"},
-	"n3ds":                 {"platform": "3ds", "label": "New 3DS XL", "handheld": true,
-		"scene": _SCENES + "n3ds.tscn",
-		"requires": ["res://imported-assets/new_3ds_xl_n_new_3ds_xl.png"]},
-	"n3ds_primitive":       {"platform": "3ds", "label": "3DS (primitive)", "handheld": true,
+	"n3ds_primitive":       {"platform": "3ds", "label": "3DS", "handheld": true,
 		"scene": _SCENES + "n3ds_primitive.tscn"},
-	"psp":                  {"platform": "playstation_portable", "label": "PSP-1000", "handheld": true,
-		"scene": _SCENES + "psp.tscn",
-		"requires": ["res://imported-assets/psp_1000_psp_1.png"]},
-	"psp_primitive":        {"platform": "playstation_portable", "label": "PSP (primitive)", "handheld": true,
+	"psp_primitive":        {"platform": "playstation_portable", "label": "PSP", "handheld": true,
 		"scene": _SCENES + "psp_primitive.tscn"},
-	"virtual_boy":          {"platform": "virtual_boy", "label": "Virtual Boy",
-		"scene": _SCENES + "virtual_boy.tscn",
-		"requires": ["res://imported-assets/virtual_boy.glb"]},
-	"virtual_boy_primitive": {"platform": "virtual_boy", "label": "Virtual Boy (primitive)",
+	"virtual_boy_primitive": {"platform": "virtual_boy", "label": "Virtual Boy",
 		"scene": _SCENES + "virtual_boy_primitive.tscn"},
-	# Primitive models that are the only model for their platform — nothing imported.
 	"atari_lynx":           {"platform": "atari_lynx", "label": "Atari Lynx", "handheld": true,
 		"scene": _SCENES + "atari_lynx.tscn"},
 	"wonderswan":           {"platform": "wonderswan", "label": "WonderSwan", "handheld": true,
@@ -288,6 +228,10 @@ static func has_any_model(platform: String) -> bool:
 ##
 ## A platform whose only model happens to be plain (atari_lynx, wonderswan, …)
 ## returns false: nothing is being offered as an alternative to anything.
+##
+## Since the imported models were dropped there is no asset-backed row left, so this
+## is false everywhere. Kept for the same reason `requires` is — it is how a
+## re-imported model would announce that the plain one is still there behind it.
 static func has_plain_alternative(platform: String) -> bool:
 	var total := 0
 	var plain := 0
@@ -305,11 +249,12 @@ static func row_for(model_id: String) -> Dictionary:
 	return _row(model_id) if _ROWS.has(model_id) else {}
 
 
-## The models that carry no imported assets — the stand-ins.
+## The models that carry no imported assets — the stand-ins. Every row, now.
 ##
-## Worth naming because they are the cheap half by a wide margin. Measured on a
-## Quest 3: warming all thirteen costs ~1.1 s and almost no texture memory, where
-## warming the imported shells costs 31 s and 1.1 GiB. See ModelWarmer.
+## Worth naming because they were the cheap half by a wide margin, which is why
+## they are the half ModelWarmer warms. Measured on a Quest 3: warming all thirteen
+## costs ~1.1 s and almost no texture memory, where warming the imported shells
+## cost 31 s and 1.1 GiB. Warming is now the whole registry for free.
 static func stand_in_ids() -> Array:
 	var out: Array = []
 	for id: String in _ROWS:
@@ -320,12 +265,6 @@ static func stand_in_ids() -> Array:
 
 static func all_ids() -> Array:
 	return _ROWS.keys()
-
-static func _default_id_for(platform: String) -> String:
-	for id: String in _ROWS:
-		if _ROWS[id].get("platform", "") == platform:
-			return id
-	return ""
 
 
 static func _row(model_id: String) -> Dictionary:

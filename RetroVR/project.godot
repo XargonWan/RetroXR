@@ -270,10 +270,6 @@ anti_aliasing/quality/msaa_3d=1
 openxr/multiview=true
 renderer/rendering_method.android="mobile"
 
-[retrovr]
-
-models/unbundled_models=false
-
 [xr]
 
 openxr/enabled=true

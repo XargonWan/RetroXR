@@ -116,7 +116,7 @@ func _ready() -> void:
 	# reference outside the registry, and it made these the only two models that
 	# could not be deleted without editing another file. Skipped rather than failed
 	# when the model is not in this build.
-	await _check_id("nds_lite", Rect2(0, 0, 1, 0.5), Rect2(0, 0.5, 1, 0.5))
-	await _check_id("n3ds", Rect2(0, 0, 0.5, 0.5), Rect2(0.05, 0.5, 0.4, 0.5))
+	await _check_id("nds_primitive", Rect2(0, 0, 1, 0.5), Rect2(0, 0.5, 1, 0.5))
+	await _check_id("n3ds_primitive", Rect2(0, 0, 0.5, 0.5), Rect2(0.05, 0.5, 0.4, 0.5))
 	print("[probe] RESULT=%s" % ("FAIL" if _fail else "PASS"))
 	get_tree().quit(1 if _fail else 0)

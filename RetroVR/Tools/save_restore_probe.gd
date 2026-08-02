@@ -14,20 +14,22 @@ func _ready() -> void:
 	get_tree().current_scene = self
 
 	var entries := [
-		{"id": 0, "type": "system", "systemid": "playstation", "model_id": "playstation_original",
+		{"id": 0, "type": "system", "systemid": "3ds", "model_id": "n3ds_primitive",
 			"position": [0, 0, 0], "rotation": [0, 0, 0]},
 		{"id": 1, "type": "system", "systemid": "game_boy", "model_id": "game_boy_primitive",
 			"position": [1, 0, 0], "rotation": [0, 0, 0]},
-		# No model_id at all: the platform's default.
+		# No model_id at all: the platform's default. The NES has no model since
+		# the imported shells were dropped, so its default is the procedural box —
+		# which is exactly the case a save written on an older build restores into.
 		{"id": 2, "type": "system", "systemid": "nes",
 			"position": [2, 0, 0], "rotation": [0, 0, 0]},
 	]
 	# What must be STORED on the node (entry 2 has no key, so it stays empty —
 	# "empty" is a real value meaning "this platform's default", not a miss).
-	var want_id := {0: "playstation_original", 1: "game_boy_primitive", 2: ""}
+	var want_id := {0: "n3ds_primitive", 1: "game_boy_primitive", 2: ""}
 	# What must actually be WORN, which is the part that matters to the player.
-	var want_model := {0: "playstation_original_model.gd", 1: "game_boy_model.gd",
-		2: "nes_model.gd"}
+	var want_model := {0: "n3ds_model.gd", 1: "game_boy_model.gd",
+		2: "default_model.gd"}
 
 	var sp := ScenePersistence.new()
 	sp.instantiate_objects(self, entries)

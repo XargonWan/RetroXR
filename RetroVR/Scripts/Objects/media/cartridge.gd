@@ -33,136 +33,12 @@ const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/cartridge_options_panel.ts
 var _options_panel: Node3D = null
 
 
-## Real per-system cartridge models (imported). Export-excluded, so a store build
-## silently falls back to the procedural box.
-const _CART_MODELS := {
-	"nds": "res://imported-assets/nds_cart.glb",
-	"3ds": "res://imported-assets/n3ds_cart.glb",
-	# Grey Game Boy / Game Boy Color cart (GBC games group under game_boy).
-	"game_boy": "res://imported-assets/game_boy_cart.glb",
-	"game_boy_advance": "res://imported-assets/game_boy_advance_cart.glb",
-	"atari_2600": "res://imported-assets/atari_2600_cart.glb",
-	"atari_5200": "res://imported-assets/atari_5200_cart.glb",
-	"virtual_boy": "res://imported-assets/virtual_boy_cart.glb",
-	# One EU-styled cart serves Genesis and Mega Drive alike (the shells differ,
-	# the cartridge does not).
-	"mega_drive": "res://imported-assets/genesis_cart.glb",
-	"playstation_portable": "res://imported-assets/psp_umd.glb",
-}
-
-## Name of the model's swappable label face. Almost every imported media model calls
-## it "media_label"; the PSP UMD prints its disc-face art on "vetro" (Italian for
-## glass) instead, with a separate "media_label" quad buried behind it — so the
-## game art has to land on vetro or it hides under the caddy's placeholder print.
-const _LABEL_MESH := {
-	"playstation_portable": "vetro",
-}
-
-## The model's own swappable label face, when a real cart model is in use.
-var _model_label: MeshInstance3D = null
-
-
 func _ready() -> void:
 	if save_id.is_empty():
 		save_id = "%08x%08x" % [randi(), randi()]
 	_update_label()
 	_apply_system_size()
-	_apply_cart_model()
 	_apply_label_art()
-
-
-## Swap the procedural box for this system's real cartridge model when one ships.
-## The GLB's body runs +Y from its connector at the origin with the label on +Z —
-## the same frame the framework uses — so centring its AABB lands it correctly
-## (connector -Y, grip +Y, label +Z) and everything downstream (snap pose, seated
-## grab stub, insert animation) keeps working unchanged.
-func _apply_cart_model() -> void:
-	if _model_label != null or has_node("CartModel"):
-		return
-	var path: String = _CART_MODELS.get(systemid, "")
-	if path.is_empty() or not ResourceLoader.exists(path):
-		return
-	var scene := load(path) as PackedScene
-	if scene == null:
-		return
-	var glb := scene.instantiate() as Node3D
-	glb.name = "CartModel"
-	add_child(glb)
-	var ab := _cart_model_aabb(glb)
-	if ab.size.y <= 0.0001:
-		return
-	# Scale the (oversized) model down to the system's real card dimensions.
-	var s := MediaDimensions.cart_size(systemid)
-	var k: float = minf(s.x / maxf(ab.size.x, 0.0001), s.y / maxf(ab.size.y, 0.0001))
-	glb.scale = Vector3(k, k, k)
-	glb.position = -(ab.position + ab.size * 0.5) * k
-	var desync := glb.find_child("Desync", true, false) as MeshInstance3D
-	if desync != null:
-		desync.visible = false
-	_model_label = glb.find_child(_LABEL_MESH.get(systemid, "media_label"), true, false) as MeshInstance3D
-	# The procedural stand-ins are replaced by the real shell. Includes the disc
-	# body meshes (DiscMesh/HubMesh/ArtQuad) so a RetroDisc with a real media
-	# model — the PSP UMD caddy — doesn't show a generic CD poking through it.
-	for nm in ["CartridgeMesh", "LabelMesh", "GameLabel", "DiscMesh", "HubMesh", "ArtQuad"]:
-		var n := get_node_or_null(nm) as Node3D
-		if n != null:
-			n.visible = false
-
-
-## Bounds of the flat face of a model's label mesh, in cartridge space.
-##
-## A label mesh is not always the flat quad the art quad wants to cover. The
-## Atari 2600 and Mega Drive labels wrap over the top edge of the shell the way
-## the printed ones do, so the mesh AABB straddles the cart's whole depth and
-## its centre sits several millimetres inside the plastic — art placed there is
-## swallowed by the body. Keeping only the polygons that face along the label
-## normal leaves the flat front the sticker actually lives on. Either sign of
-## the normal counts: some models have the quad's winding inverted, and the
-## polygon lies in the label plane either way.
-func _label_face_bounds(mi: MeshInstance3D) -> AABB:
-	var xf := global_transform.affine_inverse() * mi.global_transform
-	var full: AABB = xf * mi.get_aabb()
-	var mesh := mi.mesh
-	if mesh == null:
-		return full
-	var acc := AABB()
-	var first := true
-	for s in mesh.get_surface_count():
-		var arrays := mesh.surface_get_arrays(s)
-		if arrays.size() <= Mesh.ARRAY_NORMAL:
-			continue
-		if arrays[Mesh.ARRAY_VERTEX] == null or arrays[Mesh.ARRAY_NORMAL] == null:
-			continue
-		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-		if norms.size() != verts.size():
-			continue
-		for i in verts.size():
-			if absf((xf.basis * norms[i]).normalized().z) < 0.95:
-				continue
-			var p := xf * verts[i]
-			if first:
-				acc = AABB(p, Vector3.ZERO)
-				first = false
-			else:
-				acc = acc.expand(p)
-	# No face-on geometry (the 3DS quad's normals point along +Y) — the mesh is
-	# flat enough that its own AABB is the label plane.
-	if first or acc.size.x < 0.0001 or acc.size.y < 0.0001:
-		return full
-	return acc
-
-
-func _cart_model_aabb(root: Node3D) -> AABB:
-	var acc := AABB(); var first := true
-	for n in root.find_children("*", "MeshInstance3D", true, false):
-		var mi := n as MeshInstance3D
-		if mi.mesh == null:
-			continue
-		var ab: AABB = mi.transform * mi.get_aabb()
-		acc = ab if first else acc.merge(ab)
-		first = false
-	return acc
 
 
 func _update_label() -> void:
@@ -260,50 +136,6 @@ func reset_grab_shapes() -> void:
 func _apply_label_art() -> void:
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
 	if tex == null:
-		return
-	# Real cart model: cover the model's own label face with a quad of our own
-	# rather than repainting theirs.
-	#
-	# Painting onto the author's quad means inheriting the author's UVs, and the
-	# models agree on no convention at all — normals point in or out, u runs
-	# across on one card and up the face on another. Every "detect it and mirror
-	# the UV" rule got some cart backwards (the Virtual Boy label read in
-	# reverse; the rule that fixed it flipped Super Mario 64 DS). The label plane
-	# is a flat quad in the cart's XY facing +Z on all of them, so building a
-	# fresh quad over it from its measured bounds is right by construction and
-	# stays right for models we haven't imported yet.
-	if _model_label != null:
-		var ab := _label_face_bounds(_model_label)
-		if ab.size.x > 0.0001 and ab.size.y > 0.0001:
-			_model_label.visible = false
-			var art := MeshInstance3D.new()
-			art.name = "ModelLabelArt"
-			add_child(art)
-			# Fit-within, so art of any aspect is never stretched to the recess.
-			var fitted := Vector2(ab.size.x, ab.size.y)
-			var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
-			if fitted.x / maxf(fitted.y, 0.0001) > aspect:
-				fitted.x = fitted.y * aspect
-			else:
-				fitted.y = fitted.x / aspect
-			var qm := QuadMesh.new()
-			qm.size = fitted
-			art.mesh = qm
-			var c := ab.get_center()
-			art.position = Vector3(c.x, c.y, ab.position.z + ab.size.z + 0.0003)
-			var lm := StandardMaterial3D.new()
-			lm.albedo_color = Color.WHITE
-			lm.albedo_texture = tex
-			# A disc's scraped label art is a round scan with transparent corners
-			# (see disc.gd's own ArtQuad path) — this quad is square, so without
-			# alpha the corners show as an opaque black box instead of the silver
-			# disc showing through. Harmless no-op on a cart's opaque rectangular
-			# label (alpha stays 1.0 throughout).
-			lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			art.set_surface_override_material(0, lm)
-		var glbl := get_node_or_null("GameLabel") as Label3D
-		if glbl != null:
-			glbl.visible = false
 		return
 	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
 	if label_mesh == null or not (label_mesh.mesh is BoxMesh):

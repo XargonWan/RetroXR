@@ -1,9 +1,9 @@
 ## SpawnCatalog — the per-system list of things the spawn menu can spawn.
 ##
 ## The Systems tab shows a title card per system; opening a card lists that
-## system's spawnable ITEMS — its hardware model(s) plus the controllers /
-## peripherals that go with it (e.g. PlayStation → PSone + PlayStation +
-## Controller + Dual Shock + Memory Card).
+## system's spawnable ITEMS — its hardware model(s) plus the peripherals that go
+## with it (e.g. PlayStation → Primitive System + Memory Card + Primitive
+## Controller).
 ##
 ## Hardware rows are NOT authored here. Every model is a row in
 ## SystemModelRegistry that already knows its own label and which platform it sits
@@ -28,44 +28,28 @@ const PRIMITIVE_CONTROLLER := "retro_controller"
 
 ## systemid → the peripherals that belong to that hardware. Systems with no entry
 ## just have none; their hardware rows still come from the registry.
+##
+## This table used to name a bespoke pad per platform — a PSX controller, a Saturn
+## pad, a Mega Drive pad. Those all rode on imported imported meshes and went with
+## them on 2026-08-02. What is left is the hardware RetroVR modelled itself: the
+## memory card, and the Virtual Boy pad (which is here rather than dropped to the
+## generic row because it carries the console's POWER switch, so the platform is
+## unplayable without it).
+##
+## Every non-handheld gets the "Primitive Controller" row appended by items_for
+## below, so a platform losing its entry here loses a name, not a way to play.
 const _PERIPHERALS: Dictionary = {
 	"playstation": [
-		{"kind": "peripheral", "label": "Controller",  "spawn": "psx_controller"},
-		{"kind": "peripheral", "label": "Dual Shock",  "spawn": "dualshock"},
 		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
 	"playstation2": [
-		{"kind": "peripheral", "label": "Dual Shock 2", "spawn": "dualshock2"},
-		{"kind": "peripheral", "label": "Memory Card",  "spawn": "memory_card"},
+		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
 	"gamecube": [
-		{"kind": "peripheral", "label": "Controller",  "spawn": "gamecube_controller"},
-		{"kind": "peripheral", "label": "Memory Card", "spawn": "gamecube_memory_card"},
-	],
-	"dreamcast": [
-		{"kind": "peripheral", "label": "Controller", "spawn": "dreamcast_controller"},
-	],
-	"mega_drive": [
-		{"kind": "peripheral", "label": "Genesis Pad",    "spawn": "genesis_controller"},
-		{"kind": "peripheral", "label": "Mega Drive Pad", "spawn": "megadrive_controller"},
-	],
-	"sega_saturn": [
-		{"kind": "peripheral", "label": "Controller", "spawn": "saturn_controller"},
-	],
-	"nes": [
-		{"kind": "peripheral", "label": "Controller", "spawn": "nes_controller"},
-	],
-	"nintendo_64": [
-		{"kind": "peripheral", "label": "Controller", "spawn": "n64_controller"},
+		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
 	"virtual_boy": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
-	],
-	"atari_2600": [
-		{"kind": "peripheral", "label": "Joystick", "spawn": "atari_joystick"},
-	],
-	"super_nes": [
-		{"kind": "peripheral", "label": "Controller", "spawn": "snes_controller"},
 	],
 }
 

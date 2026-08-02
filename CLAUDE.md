@@ -358,8 +358,19 @@ which holds in-editor probe scenes like `netplay_spike`).
   clip) + an `.anim.json` sidecar, MonoBehaviour metadata → `.meta.json`, and `--audio` extracts
   AudioClips to `audio/*.wav`. **Gotcha:** UnityPy's `Mesh.export()` is already glTF-oriented —
   do NOT apply any axis flip or you mirror the model. Source model libraries on this box live in
-  `~/Systems/` (consoles) and `~/Media/` (carts/tapes). Also need to note attrition and permission
-  from the authors of these ugcs if possible.
+  `~/model-library/`, `~/Systems/` (consoles) and `~/Media/` (carts/tapes) — all **outside** the
+  repo, and they stay that way.
+
+  **Converted output is not carried in-repo.** On 2026-08-02 every model built from a
+  `.bundle` — 22 consoles/handhelds, 12 controllers, 9 carts/discs, the GameCube memory
+  card — was deleted from the tree and purged from git history with `git filter-repo`,
+  because none of it is licensed for redistribution. `RetroVR/imported-assets/` now holds
+  only the CC BY / CC0 room and prop assets, which carry LICENSE files and are credited in
+  the About panel. What the hardware wears is the procedural stand-ins in
+  `Scenes/Objects/system_models/`. Do not re-add a converted `.bundle` to the repo without
+  attribution and permission from the model's actual author (note that the `.bundle`
+  packager is usually not the modeller — see `plans/hardware-coverage/README.md`, which
+  is kept as the provenance record and the re-import map).
 - **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
   bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
   godot-pdfium build recipe above.

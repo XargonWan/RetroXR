@@ -22,7 +22,6 @@ const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_m
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
-const GAMECUBE_MEMCARD_SCENE := preload("res://Scenes/Objects/gamecube_memory_card.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
 const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/tv_remote.tscn")
 const DVD_PLAYER_SCENE      := preload("res://Scenes/Objects/dvd_player.tscn")
@@ -963,62 +962,10 @@ func _on_spawn_requested(type: String) -> void:
 			obj = TV_REMOTE_SCENE.instantiate() as Node3D
 		"memory_card":
 			obj = MEMCARD_SCENE.instantiate() as Node3D
-		"gamecube_memory_card":
-			obj = GAMECUBE_MEMCARD_SCENE.instantiate() as Node3D
 		"retro_controller":
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
-		"dualshock":
-			# GLB lives in export-excluded imported-assets/ while its licence is
-			# pending, so load at runtime and skip gracefully if absent (e.g. Quest).
-			obj = _instantiate_optional("res://imported-assets/dualshock.glb", "res://Scenes/Objects/controllers/dualshock.tscn")
-			if obj == null:
-				return
-		"dualshock2":
-			obj = _instantiate_optional("res://imported-assets/dualshock2.glb", "res://Scenes/Objects/controllers/dualshock2.tscn")
-			if obj == null:
-				return
-		"gamecube_controller":
-			obj = _instantiate_optional("res://imported-assets/gamecube_controller.glb", "res://Scenes/Objects/controllers/gamecube_controller.tscn")
-			if obj == null:
-				return
-		"dreamcast_controller":
-			obj = _instantiate_optional("res://imported-assets/dreamcast_controller.glb", "res://Scenes/Objects/controllers/dreamcast_controller.tscn")
-			if obj == null:
-				return
-		"nes_controller":
-			obj = _instantiate_optional("res://imported-assets/nes_controller.glb", "res://Scenes/Objects/controllers/nes_controller.tscn")
-			if obj == null:
-				return
-		"genesis_controller":
-			obj = _instantiate_optional("res://imported-assets/genesis_controller.glb", "res://Scenes/Objects/controllers/genesis_controller.tscn")
-			if obj == null:
-				return
-		"megadrive_controller":
-			obj = _instantiate_optional("res://imported-assets/megadrive_controller.glb", "res://Scenes/Objects/controllers/megadrive_controller.tscn")
-			if obj == null:
-				return
-		"saturn_controller":
-			obj = _instantiate_optional("res://imported-assets/saturn_controller.glb", "res://Scenes/Objects/controllers/saturn_controller.tscn")
-			if obj == null:
-				return
-		"snes_controller":
-			obj = _instantiate_optional("res://imported-assets/snes_controller.glb", "res://Scenes/Objects/controllers/snes_controller.tscn")
-			if obj == null:
-				return
-		"atari_joystick":
-			obj = _instantiate_optional("res://imported-assets/atari_joystick.glb", "res://Scenes/Objects/controllers/atari_joystick.tscn")
-			if obj == null:
-				return
 		"vb_controller":
 			obj = VB_CONTROLLER_SCENE.instantiate() as Node3D
-		"n64_controller":
-			obj = _instantiate_optional("res://imported-assets/n64_controller.glb", "res://Scenes/Objects/controllers/n64_controller.tscn")
-			if obj == null:
-				return
-		"psx_controller":
-			obj = _instantiate_optional("res://imported-assets/psx_controller.glb", "res://Scenes/Objects/controllers/psx_controller.tscn")
-			if obj == null:
-				return
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
 		"retro_keyboard":
@@ -1036,17 +983,6 @@ func _on_spawn_requested(type: String) -> void:
 			obj = sys
 	if obj:
 		_place_spawned(obj, type)
-
-
-## Runtime-load a licence-pending prop whose GLB lives in the export-excluded
-## imported-assets/ dir. Preloading would break any build that omits it, so we
-## load at runtime and return null gracefully when the asset isn't present.
-func _instantiate_optional(glb_path: String, scene_path: String) -> Node3D:
-	if not ResourceLoader.exists(glb_path) or not ResourceLoader.exists(scene_path):
-		push_warning("[spawn] asset not available in this build; skipping: " + scene_path)
-		return null
-	var ps := load(scene_path) as PackedScene
-	return ps.instantiate() as Node3D if ps else null
 
 
 func _on_spawn_cartridge_requested(rom_path: String, game_label: String, systemid := "") -> void:

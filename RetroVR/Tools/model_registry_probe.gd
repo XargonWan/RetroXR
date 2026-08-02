@@ -24,7 +24,7 @@ func _bad(msg: String) -> void:
 
 
 ## Every row names a platform, exactly one of scene/script, and paths that exist.
-## Catches typos across 35 hand-authored rows — the likeliest defect here.
+## Catches typos across the hand-authored rows — the likeliest defect here.
 func _well_formed() -> void:
 	var n := 0
 	for id: String in SystemModelRegistry.all_ids():
@@ -88,10 +88,12 @@ func _invariant() -> void:
 ## Real spawns through RetroSystem, driven by model_id as everything now does.
 func _spawns() -> void:
 	# [systemid, model_id, expected scene file]
-	var cases := [["game_boy", "", "game_boy.tscn"],                   # "" = platform default
+	var cases := [["game_boy", "", "game_boy_primitive.tscn"],         # "" = platform default
 		["game_boy", "game_boy_primitive", "game_boy_primitive.tscn"],
-		["playstation", "playstation_original", "playstation_original.tscn"],
-		["nes", "famicom", "famicom.tscn"],
+		["3ds", "n3ds_primitive", "n3ds_primitive.tscn"],
+		# Rule 3: an id from a save written before the imported models were
+		# deleted. The platform has no rows left, so it lands on the box.
+		["playstation", "playstation_original", ""],
 		["snes", "", ""]]                       # no model at all -> procedural box
 	for c in cases:
 		var sys: Node3D = load("res://Scenes/Objects/system.tscn").instantiate()

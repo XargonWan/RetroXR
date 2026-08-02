@@ -15,7 +15,7 @@ const CASES := [
 	["n3ds_primitive", "3ds"],
 	["game_boy_primitive", "game_boy"],
 	["placeholder", "playstation2"],
-	["nes", "nes"],
+	["virtual_boy_primitive", "virtual_boy"],
 ]
 const REPEATS := 3
 
