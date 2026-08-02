@@ -213,20 +213,9 @@ var _tapes_vbox: VBoxContainer = null
 # Scrape popup overlay
 var _scrape_popup: PanelContainer = null
 var _scrape_in_progress: bool = false
-# Scrape status bar (shows hashing / request / retry state below the menu)
-var _scrape_status_bar: PanelContainer = null
-var _scrape_status_label: Label = null
-# Stacking media-download toasts (screenscraper box/manual/wheel/label).
-# media_type -> { "bar": PanelContainer, "label": Label, "icon": Label }
-var _media_toasts: Dictionary = {}
-var _media_toast_stack: VBoxContainer = null
-## The quad the stack floats on, once adopted. Null in a plain 2D scene.
-var _toast_panel: ToastPanel = null
-## The toast stack is anchored 300 px tall, so it holds ~5 bars before spilling
-## off the panel. Beyond this many, the oldest collapse into a "+N more" bar.
-const MAX_VISIBLE_TOASTS := 4
-var _toast_overflow_bar: PanelContainer = null
-var _toast_overflow_label: Label = null
+## Status bars along the bottom: scrape/notice state, and one toast per
+## in-flight download or sync. Owns its own 3D quad — see MenuToasts.
+var _toasts: MenuToasts = null
 # Game detail side panel
 var _game_detail_panel: PanelContainer = null
 # ROM variants side panel
@@ -508,6 +497,11 @@ func _build_ui() -> void:
 	_about_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_about_view)
 
+	# Over the views, not inside one: a download raised on the SPAWN tab must stay
+	# up when the player switches to CORES.
+	_toasts = MenuToasts.create()
+	add_child(_toasts)
+
 	_show_spawn_view()
 
 
@@ -594,6 +588,56 @@ func _show_about_view() -> void:
 func _show_net_view() -> void:
 	_show_view(_net_view, _net_view, _nav_net_btn)
 	_net_view.refresh()
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+# Thin forwarders onto MenuToasts. Public because background services (RomM
+# sync and downloads, cache eviction) and the controller all raise notices
+# through the menu rather than reaching for the stack themselves.
+
+func notify(key: String, icon_text: String, msg: String,
+			progress: float = -1.0, seconds: float = 0.0) -> void:
+	if _toasts:
+		_toasts.notify(key, icon_text, msg, progress, seconds)
+
+
+func notify_clear(key: String) -> void:
+	if _toasts:
+		_toasts.clear(key)
+
+
+func show_notice(msg: String, seconds := 2.5) -> void:
+	if _toasts:
+		_toasts.notice(msg, seconds)
+
+
+func _show_scrape_status(msg: String) -> void:
+	if _toasts:
+		_toasts.status(msg)
+
+
+func _update_scrape_status(msg: String) -> void:
+	if _toasts:
+		_toasts.status_update(msg)
+
+
+func _hide_scrape_status() -> void:
+	if _toasts:
+		_toasts.status_clear()
+
+
+func _on_media_download_started(media_type: String) -> void:
+	notify(media_type, "⏳", "Downloading %s…" % media_type.capitalize())
+
+
+func _on_media_download_notice(media_type: String, _path: String) -> void:
+	if _toasts:
+		_toasts.finish(media_type, "✅", "%s downloaded" % media_type.capitalize())
+
+
+func _on_media_download_notice_failed(media_type: String, _error: String) -> void:
+	if _toasts:
+		_toasts.finish(media_type, "❌", "%s failed" % media_type.capitalize())
 
 
 ## Answers to rebind_started / pad_rebind_started. The capture happens in
@@ -3371,344 +3415,6 @@ func _close_scrape_popup() -> void:
 	if _scrape_popup and is_instance_valid(_scrape_popup):
 		_scrape_popup.queue_free()
 	_scrape_popup = null
-
-
-func _show_scrape_status(msg: String) -> void:
-	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
-		if _scrape_status_label != null:
-			_scrape_status_label.text = msg
-			_refresh_toast_panel()
-		return
-
-	_scrape_status_bar = PanelContainer.new()
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.05, 0.10, 0.28, 0.96)
-	for k in ["corner_radius_top_left", "corner_radius_top_right",
-			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		bg.set(k, 8)
-	_scrape_status_bar.add_theme_stylebox_override("panel", bg)
-	_scrape_status_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scrape_status_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-
-	var margin := MarginContainer.new()
-	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
-		margin.add_theme_constant_override(side, 8)
-	_scrape_status_bar.add_child(margin)
-
-	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 10)
-	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	margin.add_child(hbox)
-
-	var icon := Label.new()
-	icon.text = "⏳"
-	icon.add_theme_font_size_override("font_size", 18)
-	hbox.add_child(icon)
-
-	_scrape_status_label = Label.new()
-	_scrape_status_label.text = msg
-	_scrape_status_label.add_theme_font_size_override("font_size", 18)
-	_scrape_status_label.add_theme_color_override("font_color", COLOR_TITLE)
-	hbox.add_child(_scrape_status_label)
-
-	# Into the same stack as the media toasts, so this rides the 3D quad too —
-	# it used to be anchored straight onto the page and stayed flat there. Last
-	# child, because it always sat below them, and the stack grows upward.
-	_ensure_media_toast_stack()
-	_media_toast_stack.add_child(_scrape_status_bar)
-	_media_toast_stack.move_child(_scrape_status_bar, -1)
-	_refresh_toast_panel()
-
-
-func _update_scrape_status(msg: String) -> void:
-	if _scrape_status_label != null and is_instance_valid(_scrape_status_label):
-		_scrape_status_label.text = msg
-		_refresh_toast_panel()
-
-
-# Bumped per notice so a stale auto-hide can't clear a newer message.
-var _notice_token := 0
-
-
-## Transient notice in the bottom status bar slot (same look as the scraper's
-## "Hashing rom…" bar) — e.g. "Drop Item From Hand First". Auto-hides.
-func show_notice(msg: String, seconds := 2.5) -> void:
-	_show_scrape_status(msg)
-	_notice_token += 1
-	var tok := _notice_token
-	get_tree().create_timer(seconds).timeout.connect(func() -> void:
-		# Only clear if nothing (newer notice / live scrape) replaced our text.
-		if tok == _notice_token and _scrape_status_label != null \
-				and is_instance_valid(_scrape_status_label) \
-				and _scrape_status_label.text == msg:
-			_hide_scrape_status())
-
-
-func _hide_scrape_status() -> void:
-	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar):
-		if _scrape_status_bar.get_parent() != null:
-			_scrape_status_bar.get_parent().remove_child(_scrape_status_bar)
-		_scrape_status_bar.queue_free()
-	_scrape_status_bar = null
-	_scrape_status_label = null
-	_refresh_toast_panel()
-
-
-# ── Stacking media-download toasts ───────────────────────────────────────────
-# Same look as the "Hashing ROM…" bar, but one bar per in-flight media file so
-# simultaneous box/manual/wheel/label downloads stack up instead of clobbering
-# a single status line. Bars sit just above the scrape status bar.
-
-func _ensure_media_toast_stack() -> void:
-	if _media_toast_stack != null and is_instance_valid(_media_toast_stack):
-		return
-	_media_toast_stack = VBoxContainer.new()
-	_media_toast_stack.add_theme_constant_override("separation", 6)
-	_media_toast_stack.alignment = BoxContainer.ALIGNMENT_END
-	# Anchor to the bottom, sitting above the scrape status bar's slot.
-	_media_toast_stack.anchor_left   = 0.1
-	_media_toast_stack.anchor_right  = 0.9
-	_media_toast_stack.anchor_top    = 1.0
-	_media_toast_stack.anchor_bottom = 1.0
-	_media_toast_stack.offset_top    = -300.0
-	_media_toast_stack.offset_bottom = -62.0
-	_media_toast_stack.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_media_toast_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_media_toast_stack)
-
-	# Lift the stack onto its own quad in front of the menu, like a dropdown's
-	# option list. It takes the stack as-is — everything that builds, updates or
-	# removes a toast below is unchanged. Falls back to the anchors above when
-	# there is no 3D host (a plain 2D scene, or a probe).
-	_toast_panel = ToastPanel.adopt(_host_viewport(), _media_toast_stack)
-
-
-## The Viewport2Din3D this menu renders inside, if any. xr-tools parents the
-## SubViewport directly under it, so one hop out lands on the 3D node.
-func _host_viewport() -> XRToolsViewport2DIn3D:
-	var vp := get_viewport()
-	if vp == null:
-		return null
-	return vp.get_parent() as XRToolsViewport2DIn3D
-
-
-## Re-measure the toast quad. Deferred so it lands after _enforce_toast_cap's
-## visibility pass and after any other toasts raised in the same frame;
-## refresh() is idempotent, so extra calls cost nothing.
-func _refresh_toast_panel() -> void:
-	if _toast_panel != null and is_instance_valid(_toast_panel):
-		_toast_panel.refresh.call_deferred()
-
-
-## Public notification entry point for background services (RomM sync/downloads,
-## cache eviction, …). Keyed so each concurrent operation owns one bar and
-## updates it in place — never one bar per progress tick or per retry.
-##
-## key      : stable per operation, e.g. "romm:dl:1289". Use a namespace prefix
-##            so it can't collide with the scraper's "box"/"wheel"/… keys.
-## progress : 0.0-1.0 to show a bar, or <0 for none.
-## seconds  : >0 auto-dismisses after that long; <=0 keeps it until replaced.
-func notify(key: String, icon_text: String, msg: String,
-			progress: float = -1.0, seconds: float = 0.0) -> void:
-	if _media_toasts.has(key):
-		_update_media_toast(key, icon_text, msg, progress)
-	else:
-		_make_media_toast(key, icon_text, msg, progress)
-	if seconds > 0.0:
-		get_tree().create_timer(seconds).timeout.connect(_remove_media_toast.bind(key))
-
-
-## Drop a notification immediately (e.g. an operation was cancelled).
-func notify_clear(key: String) -> void:
-	_remove_media_toast(key)
-
-
-func _update_media_toast(key: String, icon_text: String, msg: String,
-						 progress: float = -1.0) -> void:
-	if not _media_toasts.has(key):
-		return
-	var toast: Dictionary = _media_toasts[key]
-	var lbl: Label = toast.get("label")
-	var icn: Label = toast.get("icon")
-	var bar: ProgressBar = toast.get("progress")
-	if lbl != null and is_instance_valid(lbl):
-		lbl.text = msg
-	if icn != null and is_instance_valid(icn):
-		icn.text = icon_text
-	if bar != null and is_instance_valid(bar):
-		bar.visible = progress >= 0.0
-		bar.value = clampf(progress, 0.0, 1.0) * 100.0
-	# The quad is sized to the widest bar, and the text just changed.
-	_refresh_toast_panel()
-
-
-func _make_media_toast(media_type: String, icon_text: String, msg: String,
-					   progress: float = -1.0) -> void:
-	_ensure_media_toast_stack()
-
-	var bar := PanelContainer.new()
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.05, 0.10, 0.28, 0.96)
-	for k in ["corner_radius_top_left", "corner_radius_top_right",
-			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		bg.set(k, 8)
-	bar.add_theme_stylebox_override("panel", bg)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Hug the text rather than filling the stack — the quad is sized to the widest
-	# bar, so a filling bar would stretch every one of them to that width.
-	bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-
-	var margin := MarginContainer.new()
-	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
-		margin.add_theme_constant_override(side, 8)
-	bar.add_child(margin)
-
-	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 10)
-	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	margin.add_child(hbox)
-
-	var icon := Label.new()
-	icon.text = icon_text
-	icon.add_theme_font_size_override("font_size", 18)
-	hbox.add_child(icon)
-
-	var label := Label.new()
-	label.text = msg
-	label.add_theme_font_size_override("font_size", 18)
-	label.add_theme_color_override("font_color", COLOR_TITLE)
-	hbox.add_child(label)
-
-	# Optional progress bar, stacked under the icon+text line.
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	margin.remove_child(hbox)
-	vbox.add_child(hbox)
-	margin.add_child(vbox)
-
-	var prog := ProgressBar.new()
-	prog.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	prog.show_percentage = false
-	prog.custom_minimum_size = Vector2(0, 5)
-	prog.value = maxf(progress, 0.0) * 100.0
-	prog.visible = progress >= 0.0
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.45, 0.70, 1.0)
-	var track := StyleBoxFlat.new()
-	track.bg_color = Color(0.25, 0.25, 0.38)
-	for st: StyleBoxFlat in [fill, track]:
-		for k in ["corner_radius_top_left", "corner_radius_top_right",
-				  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-			st.set(k, 3)
-	prog.add_theme_stylebox_override("fill", fill)
-	prog.add_theme_stylebox_override("background", track)
-	vbox.add_child(prog)
-
-	_media_toast_stack.add_child(bar)
-	_media_toasts[media_type] = {"bar": bar, "label": label, "icon": icon, "progress": prog}
-	_enforce_toast_cap()
-	_refresh_toast_panel()
-
-
-func _on_media_download_started(media_type: String) -> void:
-	_make_media_toast(media_type, "⏳", "Downloading %s…" % media_type.capitalize())
-
-
-func _on_media_download_notice(media_type: String, _path: String) -> void:
-	_finish_media_toast(media_type, "✅", "%s downloaded" % media_type.capitalize())
-
-
-func _on_media_download_notice_failed(media_type: String, _error: String) -> void:
-	_finish_media_toast(media_type, "❌", "%s failed" % media_type.capitalize())
-
-
-## `seconds` defaults to the old 2.5 s; failures pass a longer dwell, because
-## 2.5 s is not enough to read a failure reason through a headset.
-func _finish_media_toast(media_type: String, icon_text: String, msg: String,
-						 seconds: float = 2.5) -> void:
-	if not _media_toasts.has(media_type):
-		# No "started" toast (e.g. failed before request began) — make one so
-		# the outcome is still surfaced.
-		_make_media_toast(media_type, icon_text, msg)
-	else:
-		_update_media_toast(media_type, icon_text, msg, -1.0)
-
-	# Auto-dismiss this toast after a short delay.
-	get_tree().create_timer(seconds).timeout.connect(
-		_remove_media_toast.bind(media_type))
-
-
-func _remove_media_toast(media_type: String) -> void:
-	if _media_toasts.has(media_type):
-		var toast: Dictionary = _media_toasts[media_type]
-		var bar: PanelContainer = toast.get("bar")
-		if bar != null and is_instance_valid(bar):
-			_media_toast_stack.remove_child(bar)
-			bar.queue_free()
-		_media_toasts.erase(media_type)
-		_enforce_toast_cap()
-		_refresh_toast_panel()
-
-
-## Keep at most MAX_VISIBLE_TOASTS bars on screen; older ones collapse into a
-## single "+N more" row at the top of the stack. Without this, a queue of
-## downloads pushes bars off the top of the menu panel.
-func _enforce_toast_cap() -> void:
-	if _media_toast_stack == null or not is_instance_valid(_media_toast_stack):
-		return
-
-	# The scrape/notice bar shares the stack but is not a media toast: it must
-	# never be hidden by the cap nor counted toward it, and it stays at the
-	# bottom because that is where it sat when it was anchored to the page.
-	if _scrape_status_bar != null and is_instance_valid(_scrape_status_bar) \
-			and _scrape_status_bar.get_parent() == _media_toast_stack:
-		_media_toast_stack.move_child(_scrape_status_bar, -1)
-
-	var bars: Array[Control] = []
-	for c: Node in _media_toast_stack.get_children():
-		if c == _toast_overflow_bar or c == _scrape_status_bar:
-			continue
-		if c is Control:
-			bars.append(c)
-
-	var overflow := maxi(0, bars.size() - MAX_VISIBLE_TOASTS)
-	# Newest are appended last, so hide from the front.
-	for i in bars.size():
-		bars[i].visible = i >= overflow
-
-	if overflow <= 0:
-		if _toast_overflow_bar != null and is_instance_valid(_toast_overflow_bar):
-			_toast_overflow_bar.queue_free()
-		_toast_overflow_bar = null
-		_toast_overflow_label = null
-		return
-
-	if _toast_overflow_bar == null or not is_instance_valid(_toast_overflow_bar):
-		_toast_overflow_bar = PanelContainer.new()
-		var bg := StyleBoxFlat.new()
-		bg.bg_color = Color(0.05, 0.10, 0.28, 0.80)
-		for k in ["corner_radius_top_left", "corner_radius_top_right",
-				  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
-			bg.set(k, 8)
-		_toast_overflow_bar.add_theme_stylebox_override("panel", bg)
-		_toast_overflow_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_toast_overflow_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-
-		var m := MarginContainer.new()
-		for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
-			m.add_theme_constant_override(side, 6)
-		_toast_overflow_bar.add_child(m)
-
-		_toast_overflow_label = Label.new()
-		_toast_overflow_label.add_theme_font_size_override("font_size", 15)
-		_toast_overflow_label.add_theme_color_override("font_color", COLOR_DESC)
-		_toast_overflow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		m.add_child(_toast_overflow_label)
-
-		_media_toast_stack.add_child(_toast_overflow_bar)
-
-	_media_toast_stack.move_child(_toast_overflow_bar, 0)
-	_toast_overflow_label.text = "+%d more" % overflow
 
 
 # ── RomM notifications ────────────────────────────────────────────────────────
