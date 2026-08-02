@@ -27,6 +27,9 @@ signal close_requested
 const COLOR_BG    := Color(0.08, 0.08, 0.16, 0.96)
 const COLOR_TITLE := Color(0.9,  0.9,  1.0)
 const COLOR_ROW   := Color(0.65, 0.65, 0.80)
+## Matches MenuIcons.TINT_WARN so the "you can't change this" cue reads the same
+## here as it does everywhere else in the menus.
+const COLOR_LOCKED := Color(1.00, 0.72, 0.20)
 
 # ── State ──────────────────────────────────────────────────────────────────────
 var _options_scroll: ScrollContainer
@@ -346,9 +349,16 @@ func _add_option_row(key: String, defn, current_val: String) -> void:
 	# A pinned option shows its value but no way to move it, and says so. The
 	# hardware depends on it (the 3DS's side-by-side framebuffer, the Virtual Boy's
 	# stereo split), so an editable control here would only offer a broken screen.
+	# Its own Label rather than appended to the description: the note is the part
+	# that needs to stand out, and a single Label can only carry one colour.
 	var is_forced := _forced.has(key)
 	if is_forced:
-		label.text = desc + "   (fixed by this system)"
+		var note := Label.new()
+		note.text = "(fixed by this system)"
+		note.add_theme_font_size_override("font_size", 13)
+		note.add_theme_color_override("font_color", COLOR_LOCKED)
+		note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(note)
 
 	var prev_btn := Button.new()
 	prev_btn.text = " < "

@@ -363,12 +363,22 @@ func _add_core_option_row(root: String, core_name: String, systemid: String, key
 	row.custom_minimum_size = Vector2(0, 56)
 
 	var lbl := Label.new()
-	lbl.text = desc + ("   (fixed by the hardware)" if pinned else "")
+	lbl.text = desc
 	lbl.add_theme_font_size_override("font_size", 17)
 	lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	row.add_child(lbl)
+
+	# Its own Label rather than appended to the description: the note is the part
+	# that needs to stand out, and a single Label can only carry one colour.
+	if pinned:
+		var note := Label.new()
+		note.text = "(fixed by the hardware)"
+		note.add_theme_font_size_override("font_size", 15)
+		note.add_theme_color_override("font_color", MenuIcons.TINT_WARN)
+		note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(note)
 
 	var idx := 0
 	for i in range(values_arr.size()):
