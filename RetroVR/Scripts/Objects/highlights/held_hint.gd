@@ -24,6 +24,13 @@ const PLATFORM_VR := 1
 const PLATFORM_DESKTOP := 2
 const PLATFORM_BOTH := 3
 
+## When a row applies. A verb about turning the thing you are holding is noise
+## once it is on the floor, and "point at it" is noise while it is in your hand.
+## Showing every row at both moments was exactly that bug.
+const WHEN_HELD := 1
+const WHEN_PLACED := 2
+const WHEN_ANY := 3
+
 const GLYPH_DIR := "res://Textures/InputPrompts"
 
 ## Marker in a caption where the glyphs belong, for a row that reads as a
@@ -68,6 +75,10 @@ const DESKTOP_DROP_GLYPHS: Array[String] = [
 ]
 
 var _host: Node3D = null
+## Set by pin_to_host: an offset in the host's own space, used instead of the
+## default "straight up, in world space".
+var _local_offset := Vector3.ZERO
+var _pinned := false
 var _height := 0.18
 ## Whether the host uses the VR drop combo. The DESKTOP drop rule is not declared
 ## here — it is read off the host, see _needs_desktop_modifier.
@@ -116,11 +127,12 @@ static func for_node(host: Node3D, vr_combo_drop := false, height := 0.18) -> He
 ## Ignores a repeat of an id already declared, so a caller that cannot know
 ## whether it is first — the spawner, adding the same row to every object it
 ## makes — does not have to check.
-func add_row(id: StringName, platform: int, glyphs: Array, caption: String) -> void:
+func add_row(id: StringName, platform: int, glyphs: Array, caption: String,
+			 when := WHEN_ANY, once := false) -> void:
 	for r: Array in _rows:
 		if r[0] == id:
 			return
-	_rows.append([id, platform, glyphs, caption])
+	_rows.append([id, platform, glyphs, caption, when, once])
 
 
 ## Show whatever applies, with no grab behind it: a hint about an object sitting
@@ -130,12 +142,13 @@ func add_row(id: StringName, platform: int, glyphs: Array, caption: String) -> v
 ## both of these verbs are on.
 func show_unheld() -> void:
 	_used_this_hold.clear()
-	var due := _due_rows(PLATFORM_DESKTOP if not _is_vr() else PLATFORM_VR)
+	var due := _due_rows(PLATFORM_DESKTOP if not _is_vr() else PLATFORM_VR, WHEN_PLACED)
 	if due.is_empty():
 		hide_now()
 		return
 	_build(due, false)
 	_show()
+	_consume_once(due)
 
 
 static func _is_vr() -> bool:
@@ -200,12 +213,13 @@ func on_grabbed(by: Node3D) -> void:
 		if is_instance_valid(ctrl):
 			right = ctrl.tracker != &"left_hand"
 
-	var due := _due_rows(PLATFORM_DESKTOP if desktop else PLATFORM_VR)
+	var due := _due_rows(PLATFORM_DESKTOP if desktop else PLATFORM_VR, WHEN_HELD)
 	if due.is_empty():
 		hide_now()
 		return
 	_build(due, right)
 	_show()
+	_consume_once(due)
 
 
 func on_dropped() -> void:
@@ -246,16 +260,35 @@ func hide_now() -> void:
 
 ## Declared rows that apply on this platform and are not yet learned, plus the
 ## drop row when this platform actually requires one.
-func _due_rows(platform: int) -> Array:
+func _due_rows(platform: int, when: int) -> Array:
 	var out: Array = []
 	if AppPrefs.show_hints:
+		# How to let go of it is a held-object verb like any other: it has no
+		# business appearing over something already on the floor.
 		var drop := _drop_row(platform)
-		if not drop.is_empty() and _unlearned(drop[0]):
+		if not drop.is_empty() and (WHEN_HELD & when) != 0 and _unlearned(drop[0]):
 			out.append(drop)
 		for row: Array in _rows:
-			if (int(row[1]) & platform) != 0 and _unlearned(row[0]):
+			if (int(row[1]) & platform) != 0 and (int(row[4]) & when) != 0 \
+					and _unlearned(row[0]):
 				out.append(row)
 	return out
+
+
+## Drop the rows that were only ever meant to be seen once. Called after they
+## have been shown, so "the first time you put it down" really is only the first.
+func _consume_once(shown: Array) -> void:
+	var spent: Array = []
+	for row: Array in shown:
+		if bool(row[5]):
+			spent.append(row[0])
+	if spent.is_empty():
+		return
+	var kept: Array = []
+	for row: Array in _rows:
+		if not spent.has(row[0]):
+			kept.append(row)
+	_rows = kept
 
 
 func _unlearned(id: StringName) -> bool:
@@ -269,10 +302,11 @@ func _drop_row(platform: int) -> Array:
 	if platform == PLATFORM_VR:
 		if not _vr_combo_drop:
 			return []
-		return [&"drop_vr", PLATFORM_VR, VR_DROP_GLYPHS, "Drop"]
+		return [&"drop_vr", PLATFORM_VR, VR_DROP_GLYPHS, "Drop", WHEN_HELD, false]
 	if not _needs_desktop_modifier():
 		return []
-	return [&"drop_desktop", PLATFORM_DESKTOP, DESKTOP_DROP_GLYPHS, "Drop"]
+	return [&"drop_desktop", PLATFORM_DESKTOP, DESKTOP_DROP_GLYPHS, "Drop",
+		WHEN_HELD, false]
 
 
 ## Read from the host, not declared: these are the same two properties
@@ -430,9 +464,23 @@ func _show() -> void:
 
 # ── Trailing ──────────────────────────────────────────────────────────────────
 
+## Ride the host's own orientation at `offset` instead of hovering above it.
+##
+## For a hint that belongs to the player rather than to a thing: pinned by the
+## left hand, or parked in the corner of the view. Those hosts turn with you and
+## the popup has to turn with them, which the default cannot do — it is
+## deliberately world-up so a controller rolling in the hand does not send the
+## popup orbiting.
+func pin_to_host(offset: Vector3) -> void:
+	_local_offset = offset
+	_pinned = true
+
+
 func _anchor() -> Vector3:
 	if not is_instance_valid(_host):
 		return global_position
+	if _pinned:
+		return _host.global_transform * _local_offset
 	# World up, not host-local: a controller rolls around in the hand and the
 	# popup should stay above it rather than orbit it.
 	return _host.global_position + Vector3.UP * _height

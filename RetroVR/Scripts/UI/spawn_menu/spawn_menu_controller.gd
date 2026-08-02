@@ -82,6 +82,11 @@ var _grab_distance: float = 0.0  # distance along pointer ray
 
 var _last_fps: int = -1
 
+## The "press this for the menu" popup. Lives on the player — by the left hand
+## in VR, in the corner of the view on desktop — not on any spawned object.
+## One instance, so its use count accumulates instead of resetting per spawn.
+var _menu_hint: HeldHint = null
+
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
 var _player_body: XRToolsPlayerBody = null
@@ -348,15 +353,10 @@ func _on_controller_button(action_name: String) -> void:
 			_toggle_menu()
 
 
-## The menu verb is not about any one object, but the count that retires its
-## hint row is global — so tell whichever spawned object still carries the row.
-## Counting once is enough; note_used caps at LEARNED_AFTER anyway.
+## Count one use of the menu verb, so its row eventually retires.
 func _note_menu_verb_used() -> void:
-	for node: Node in get_tree().get_nodes_in_group("spawned"):
-		var hint := node.get_node_or_null("HeldHint") as HeldHint
-		if hint != null:
-			hint.note_used(&"menu_open")
-			return
+	if _menu_hint != null and is_instance_valid(_menu_hint):
+		_menu_hint.note_used(&"menu_open")
 
 
 # ── Scroll driving ────────────────────────────────────────────────────────────
@@ -837,18 +837,17 @@ func _place_spawned(obj: Node3D, _type: String) -> void:
 ## stops showing a row once it is learned, so this is not a permanent tax on
 ## every spawn.
 func _teach_verbs(obj: Node3D) -> void:
+	_show_menu_hint()
+
+	var has_options: bool = obj.has_method("toggle_options_ui")
+	if not has_options:
+		return
 	var hint := HeldHint.for_node(obj)
 	if hint == null:
 		return
-	var vr := _is_vr_runtime()
-	hint.add_row(&"menu_open", HeldHint.PLATFORM_BOTH,
-		["quest_stick_l_press"] if vr else ["keyboard_tab_outline"],
-		"Menu")
-	var has_options: bool = obj.has_method("toggle_options_ui")
-	if has_options:
-		hint.add_row(&"options_point", HeldHint.PLATFORM_BOTH,
-			["quest_stick_l_press"] if vr else ["keyboard_tab_outline"],
-			"Point and press {g} for options")
+	hint.add_row(&"options_point", HeldHint.PLATFORM_BOTH,
+		["quest_stick_l_press"] if _is_vr_runtime() else ["keyboard_tab_outline"],
+		"Point and press {g} for options", HeldHint.WHEN_PLACED, true)
 
 	# Over the object itself, clear of its own geometry — a TV or a console is
 	# far taller than the hand-sized default offset, and the popup would open
@@ -866,6 +865,32 @@ func _teach_verbs(obj: Node3D) -> void:
 			hint.show_unheld()
 	else:
 		hint.show_unheld()
+
+
+## Where the menu is, taught on the player rather than on the thing they just
+## made — it is not that object's verb, and following the object put it on a
+## console across the room. Pinned by the left hand in VR, which is the hand the
+## button is on, and parked in the lower right of the view on desktop.
+##
+## One instance, reused: the row retires after HeldHint.LEARNED_AFTER uses, and
+## a fresh popup per spawn would never accumulate the count.
+func _show_menu_hint() -> void:
+	var vr := _is_vr_runtime()
+	var host: Node3D = _left_ctrl if vr else _camera
+	if not is_instance_valid(host):
+		return
+	if _menu_hint == null or not is_instance_valid(_menu_hint):
+		_menu_hint = HeldHint.for_node(host)
+		if _menu_hint == null:
+			return
+		_menu_hint.add_row(&"menu_open", HeldHint.PLATFORM_BOTH,
+			["quest_stick_l_press"] if vr else ["keyboard_tab_outline"], "Menu",
+			HeldHint.WHEN_PLACED)
+		# Just above and ahead of the hand; on desktop, right and low enough to
+		# stay out of the way of whatever is being aimed at.
+		_menu_hint.pin_to_host(
+			Vector3(0.0, 0.10, -0.06) if vr else Vector3(0.34, -0.22, -0.95))
+	_menu_hint.show_unheld()
 
 
 ## Re-measure on every drop, not just at spawn: a console's lid can be open, a
