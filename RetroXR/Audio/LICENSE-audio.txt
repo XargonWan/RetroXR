@@ -32,7 +32,7 @@ crt/crt_idle.wav, crt/crt_power_on.wav, crt/crt_power_off.wav
     Synthesised by Tools/gen_crt_hum.py from the physics of a CRT set: flyback
     whine at the 15734.264 Hz NTSC line rate, transformer buzz at twice mains,
     broadband hiss, and a degauss thunk at switch-on. Not sampled — every "CRT
-    hum" recording found was unbundled, personal-use-only (BBC RemArc), or
+    hum" recording found was unlicensed, personal-use-only (BBC RemArc), or
     behind a login with per-file terms.
 
     The idle loop is exactly periodic by construction, so it wraps seamlessly

@@ -3,7 +3,7 @@
 
 Synthesised from the actual physics of a CRT set rather than sampled, for two
 reasons. Every "CRT hum" recording that turns up in a search is either
-unbundled, licensed for personal use only (the BBC RemArc library), or behind a
+unlicensed, licensed for personal use only (the BBC RemArc library), or behind a
 login with per-file terms that vary — and this app ships. Second, the components
 are individually meaningful, so a note like "more hiss, less whine" is a number
 change here rather than another hunt.
