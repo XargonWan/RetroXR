@@ -10,6 +10,12 @@
 ## next pad button" has to happen where raw input arrives, not in a UI panel. So
 ## this asks by signal (rebind_started / pad_rebind_started) and the controller
 ## calls back into on_rebind_complete / on_pad_rebind_complete.
+##
+## Nothing here may set ACTION_MODE_BUTTON_PRESS. One pointer press on a
+## Viewport2Din3D reaches a Button as two clicks — see the longer note in
+## net_view.gd, where it was entering two digits per keypad tap. It did no harm
+## on this tab, because every handler here is an assignment or an idempotent
+## write, but that is luck rather than design and it should not be relied on.
 class_name SpawnMenuControlsView
 extends ScrollContainer
 
@@ -304,7 +310,6 @@ func _make_rebind_row(action: String) -> HBoxContainer:
 	btn.text = DesktopBindings.event_display_name(action)
 	btn.custom_minimum_size = Vector2(140, 44)
 	btn.add_theme_font_size_override("font_size", 18)
-	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	_rebind_buttons[action] = btn
 
 	var captured_action := action
@@ -453,7 +458,6 @@ func _build_gamepad_controls(vbox: VBoxContainer) -> void:
 	reset_btn.text = "Reset to Default"
 	reset_btn.custom_minimum_size = Vector2(220, 52)
 	reset_btn.add_theme_font_size_override("font_size", 18)
-	reset_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	reset_btn.focus_mode = Control.FOCUS_NONE
 	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	reset_btn.pressed.connect(_on_pad_controls_reset)
@@ -463,7 +467,6 @@ func _build_gamepad_controls(vbox: VBoxContainer) -> void:
 	save_btn.text = "Save"
 	save_btn.custom_minimum_size = Vector2(220, 52)
 	save_btn.add_theme_font_size_override("font_size", 18)
-	save_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	save_btn.focus_mode = Control.FOCUS_NONE
 	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	save_btn.pressed.connect(_on_pad_controls_save)
@@ -488,7 +491,6 @@ func _make_pad_rebind_row(target: String) -> HBoxContainer:
 	btn.text = GamepadBindings.binding_display_name(binding)
 	btn.custom_minimum_size = Vector2(160, 44)
 	btn.add_theme_font_size_override("font_size", 18)
-	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	btn.focus_mode = Control.FOCUS_NONE
 	_pad_rebind_buttons[target] = btn
 
