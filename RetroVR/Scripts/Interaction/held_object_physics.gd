@@ -61,6 +61,59 @@ func _patch(node: Node) -> void:
 	var pickable := node as XRToolsPickable
 	if pickable != null and not pickable.dropped.is_connected(_on_dropped):
 		pickable.dropped.connect(_on_dropped)
+	if pickable != null and not pickable.picked_up.is_connected(_on_picked_up):
+		pickable.picked_up.connect(_on_picked_up)
+
+
+# ── Teaching the rotate verbs ─────────────────────────────────────────────────
+# Every pickable can be turned while you hold it, and nothing says so. Taught
+# here rather than in each object's script for the same reason the collision
+# fix is: this autoload already sees every pickable as it enters the tree.
+
+## Desktop: middle-mouse drag rotates (Kenney names the middle button by its
+## wheel, hence mouse_scroll_outline), and Shift swaps its horizontal axis from
+## yaw to roll. Vertical pitches either way — hence "pitch and yaw" / "pitch and
+## roll" rather than one axis each. See desktop_pickup.gd.
+const DESKTOP_ROTATE_GLYPHS: Array[String] = ["mouse_scroll_outline"]
+const DESKTOP_ROLL_GLYPHS: Array[String] = ["keyboard_shift_outline", "mouse_scroll_outline"]
+## VR: the FREE hand's thumbstick, and grip on that same hand for roll. Only
+## while ray-grabbing — a direct hand grab is turned with your wrist, so the
+## rows would be advertising a control that does nothing. See
+## function_pickup._compute_ray_grab_rotation.
+const VR_ROTATE_GLYPHS: Array[String] = ["quest_stick_l_press"]
+const VR_ROLL_GLYPHS: Array[String] = ["quest_grip_left_outline", "quest_stick_l_press"]
+
+
+func _on_picked_up(pickable: Variant) -> void:
+	var obj := pickable as XRToolsPickable
+	if obj == null or not is_instance_valid(obj):
+		return
+	var by := obj.get_picked_up_by()
+	var desktop := is_instance_valid(by) and by.is_in_group("desktop_hand")
+	if not desktop and not _is_ray_grab(by, obj):
+		return
+
+	var hint := HeldHint.for_node(obj)
+	if hint == null:
+		return
+	hint.add_row(&"rotate_yaw", HeldHint.PLATFORM_BOTH,
+		DESKTOP_ROTATE_GLYPHS if desktop else VR_ROTATE_GLYPHS,
+		"Use {g} to pitch and yaw")
+	hint.add_row(&"rotate_roll", HeldHint.PLATFORM_BOTH,
+		DESKTOP_ROLL_GLYPHS if desktop else VR_ROLL_GLYPHS,
+		"Use {g} to pitch and roll")
+
+	# Objects with a hint of their own call this from their own grab handler, and
+	# a second call only rebuilds the same panel. Objects without one — a
+	# cartridge, a disc — have nobody to call it, and these rows would never show.
+	hint.on_grabbed(by)
+
+
+## True when `by` is holding `obj` at the end of a laser rather than in the hand.
+func _is_ray_grab(by: Node3D, obj: XRToolsPickable) -> bool:
+	return is_instance_valid(by) \
+		and by.has_method("is_ray_grabbing_target") \
+		and by.call("is_ray_grabbing_target", obj)
 
 
 # ── Escaping on release ───────────────────────────────────────────────────────
