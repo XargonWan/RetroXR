@@ -92,3 +92,29 @@ RetroVR/verlet-rope/*.ilk
 RetroVR/verlet-rope/*.lib
 RetroVR/verlet-rope/*.pdb
 verlet-rope/Temp/
+
+# ── Compiled GDExtensions ─────────────────────────────────────────────────────
+# Our own five libraries are BUILD OUTPUT and are not carried in the repo — run
+# `python Tools/build.py <platform>` to produce them. They were tracked until
+# 2026-08-02 and cost ~267 MB of history between them, most of it the same debug
+# binary recommitted on every rebuild (the Android debug .so alone had 37
+# versions). See the Building section of the README.
+#
+# Matched by our own naming only. Everything else in those directories is
+# third-party runtime that MUST stay tracked: SDL3.dll, libvlc/libvlccore and the
+# VLC plugin tree, pdfium, and the Meta XR Audio blob. libvlc.so in particular is
+# not just shipped — vlc-godot's Android build LINKS against it out of that
+# directory, so dropping it would break the build outright.
+# The leading `*` is load-bearing: the Linux libretro build emits a bare
+# `libretro_godot.linux…so` with no lib prefix, where every other target emits
+# `lib<name>…so`. `*name.` matches both, since `*` also matches nothing.
+RetroVR/libretro-godot/*libretro_godot.*.dll
+RetroVR/libretro-godot/*libretro_godot.*.so
+RetroVR/verlet-rope/*verlet_rope.*.dll
+RetroVR/verlet-rope/*verlet_rope.*.so
+RetroVR/vlc-godot/*vlc_godot.*.dll
+RetroVR/vlc-godot/*vlc_godot.*.so
+RetroVR/godot-pdfium/*godot-pdfium.*.dll
+RetroVR/godot-pdfium/*godot-pdfium.*.so
+RetroVR/metaxr-audio/*metaxr-audio.*.dll
+RetroVR/metaxr-audio/*metaxr-audio.*.so
