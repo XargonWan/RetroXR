@@ -6,7 +6,7 @@
 // clean, this proves it actually sounds like a place.
 //
 // Occlusion note: Meta's geometric occlusion needs scene meshes uploaded to the
-// SDK plus an offline acoustic-map bake, with no Godot-side tooling. RetroVR
+// SDK plus an offline acoustic-map bake, with no Godot-side tooling. RetroXR
 // would not use that; it would do what games normally do -- raycast from the
 // listener to the source and, when blocked, attenuate and low-pass. That is
 // what is modelled here (see ApplyWallOcclusion), so the wall you hear is our
@@ -181,7 +181,7 @@ void WriteWav(const std::string& path, const std::vector<float>& stereo)
 constexpr float kGameBoy[3] = { -2.2f, 0.95f, -0.4f };
 bool Blocked(const Pose& l) { return (l.px > 0.0f); }
 
-// Godot's ATTENUATION_INVERSE_DISTANCE, matching what RetroVR already sets on
+// Godot's ATTENUATION_INVERSE_DISTANCE, matching what RetroXR already sets on
 // its emitters. A Game Boy speaker is small, so unit_size is well under a metre.
 constexpr float kUnitSize = 1.2f;
 float DistanceGain(const Pose& l)
@@ -278,7 +278,7 @@ int main(int argc, char** argv)
         // room -- 4.8 m came out at -44 dB, inaudible. So drive distance with
         // Godot's own inverse-distance law via the gain param, which is what
         // the real integration would do anyway: AudioStreamPlayer3D's
-        // unit_size/max_distance model, matching RetroVR's existing values.
+        // unit_size/max_distance model, matching RetroXR's existing values.
         abi.source_set_param(ctx, 0, 0, DistanceGain(sc.pose));
 
         WallOcclusion wall;

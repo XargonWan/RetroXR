@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 retroXR is a VR retro-gaming room in Godot 4.7. Its core is `libretro-godot`, a GDExtension (C++, submodule, forked from SKurdt's SK.Libretro.Godot) that runs libretro emulator cores inside Godot and bridges Godot's scene system to the libretro API.
 
-The workspace directory on this machine is still named `SK.Libretro.Godot` and the Android
-package is still `com.xenu.retrovr` — neither was renamed with the repo, so paths and adb
-commands below use the old names deliberately.
+The app is `retroXR`, package `com.xenu.retroxr`. The Godot project folder is `RetroXR/`,
+and the desktop data root stays `~/retroxr/{roms,books,videos,…}` — it holds user ROMs, so
+it is deliberately not renamed.
 
 The Godot project in this repo:
-- `RetroVR/` — VR arcade room (primary development target, godot-xr-tools based)
+- `RetroXR/` — VR arcade room (primary development target, godot-xr-tools based)
 
 ## Git Workflow
 
@@ -66,7 +66,7 @@ scons platform=linux arch=x86_64 target=template_release
 ```
 
 The `SConstruct` is at the workspace root; `Temp/SConscript` does the actual build logic.
-Output libraries go to `RetroVR/libretro-godot/`.
+Output libraries go to `RetroXR/libretro-godot/`.
 
 The Linux build links `libvulkan.so.1`, `libSDL3.so.0`, and `libGL.so.1` by soname (no
 `-dev`/`-devel` packages needed). All three render paths work on Linux: software, Vulkan
@@ -81,14 +81,14 @@ RDI/RSI/RDX/RCX/R8/R9 + XMM0-7 + AL) — the Windows `EmitTrampolineX64` uses th
 Linux/Windows/Android each need their own trampoline. GDScript platform logic used to be
 "Android-vs-else(=Windows)"; several files (`core_download_manager.gd`, `download_manifest.gd`,
 `spawn_menu.gd`, `rom_library.gd`) were made explicitly Linux-aware (buildbot URL
-`nightly/linux/x86_64/latest/`, `.so` ext, `$HOME/retrovr/...` roots). Runtime emulation of a
+`nightly/linux/x86_64/latest/`, `.so` ext, `$HOME/retroxr/...` roots). Runtime emulation of a
 real core on Linux is only lightly verified — build + extension-load + type-resolution are proven.
 
 ### Sibling GDExtensions (verlet-rope, vlc-godot, godot-pdfium, metaxr-audio)
 
 Four other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
 `<name>/` with `SConstruct` + `src/`, reusing `../libretro-godot/godot-cpp`, deploying to
-`RetroVR/<name>/`). Build each **from its own directory** (each has its own `VariantDir('Temp')`),
+`RetroXR/<name>/`). Build each **from its own directory** (each has its own `VariantDir('Temp')`),
 or all at once with `Tools/build.py`:
 
 - **verlet-rope** — `Xenu::VerletRope`, the simulated cable hanging off every controller and
@@ -110,7 +110,7 @@ or all at once with `Tools/build.py`:
   ```
   Linux links the system `libvlc` (Fedora `vlc-devel` provides `/lib64/libvlc.so` + headers;
   runtime needs `vlc-libs`). HEVC works out of the box via VLC's system plugin dir — no plugin
-  bundling on Linux. Output: `RetroVR/vlc-godot/libvlc_godot.linux.template_{debug,release}.x86_64.so`.
+  bundling on Linux. Output: `RetroXR/vlc-godot/libvlc_godot.linux.template_{debug,release}.x86_64.so`.
 
 - **godot-pdfium** — `PDFRenderer` (opens a PDF, renders a page to a Godot `Image`), backed by
   the bblanchon/pdfium-binaries `libpdfium`. Fetch the Linux prebuilt first (headers are already
@@ -154,11 +154,11 @@ Godot binary (Windows) — use **Godot 4.7** (the project targets 4.7):
 C:\Program Files\Godot\Godot_v4.7-stable_win64\Godot_v4.7-stable_win64_console.exe
 ```
 Use the `_console.exe` variant so stdout/stderr is captured. `$proj` below is
-`C:\Users\user\SK.Libretro.Godot\RetroVR`.
+`C:\Users\user\SK.Libretro.Godot\RetroXR`.
 
 Godot binary (Linux): `/home/user/Godot/Godot_v4.7-stable_linux.x86_64`
 (the project targets Godot 4.7 — see `project.godot config/features`; `Godot_v4.6.3` also
-sits in that dir). `$proj` on Linux is `/home/user/retrovr/RetroVR`. Note Godot
+sits in that dir). `$proj` on Linux is `/home/user/retroxr/RetroXR`. Note Godot
 4.7 promoted "Not all code paths return a value" to a hard parse error for `Variant`-returning
 virtual overrides (bit two `_property_get_revert` overrides in godot-xr-tools — fixed with a
 trailing `return null`).
@@ -205,13 +205,13 @@ No compiled C++ test harness exists; GDExtension changes are validated by rebuil
 
 ### 2b. The bedroom's saved visual probe
 
-`RetroVR/Tools/bedroom_probe.tscn` — do NOT hand-roll another one. It carries the
+`RetroXR/Tools/bedroom_probe.tscn` — do NOT hand-roll another one. It carries the
 still framings for that room (overview, bed, desk, window, TV corner, bookcases,
 wardrobe, light switch) plus a flythrough: 360 deg in place at the room centre,
 then a lap walking forward round a circle sized to clear the furniture.
 
 ```bash
-"$godot" --path RetroVR --resolution 320x240 --position 20,20     res://Tools/bedroom_probe.tscn -- --mode=stills      # or flythrough, both
+"$godot" --path RetroXR --resolution 320x240 --position 20,20     res://Tools/bedroom_probe.tscn -- --mode=stills      # or flythrough, both
 ```
 
 Windowed, not `--headless` — the dummy renderer returns a blank image. PNGs land
@@ -230,7 +230,7 @@ nothing at all. Run `--editor --quit` between the overwrite and the render.
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
 `RenderingServer.frame_post_draw` just hangs; `get_image()` is blank). To actually render a
-RetroVR scene on this box, run Godot **on the real display** (`DISPLAY=:0`, NVIDIA RTX 3080,
+RetroXR scene on this box, run Godot **on the real display** (`DISPLAY=:0`, NVIDIA RTX 3080,
 Vulkan Forward+ — a window briefly appears on the desktop, ok'd for validation) and draw into a
 **`SubViewport`**, not the window viewport (the uncomposited window swapchain reads back as
 clear-colour only). Xvfb does not work here (bwrap/glycin abort in the sandbox). Recipe:
@@ -253,7 +253,7 @@ terminal itself doesn't paint it). Don't save renders to a folder; delete the pr
 ## On-Device Testing (Quest over adb, nobody wearing the headset)
 
 The Quest 3 usually sits on the desk on USB (`adb devices` → authorized; USB keeps it
-charged). RetroVR can be exported, installed, launched, and probed on it fully
+charged). RetroXR can be exported, installed, launched, and probed on it fully
 unattended. Verified end-to-end 2026-07-06 (x64↔arm64 netplay determinism run).
 
 In Git Bash, `export MSYS_NO_PATHCONV=1` first or `/sdcard/...` args get mangled into
@@ -265,9 +265,9 @@ In Git Bash, `export MSYS_NO_PATHCONV=1` first or `/sdcard/...` args get mangled
 adb install -r out.apk        # -r keeps app data
 ```
 - **Stale-script trap**: the gradle export can silently ship an old compiled script —
-  `RetroVR/android/build/src/main/assets/**.gdc` is not always re-staged after a source
-  edit. If an on-device change doesn't take: `rm -rf RetroVR/android/build/src/main/assets
-  RetroVR/android/build/build/intermediates/assets` and re-export. To verify before
+  `RetroXR/android/build/src/main/assets/**.gdc` is not always re-staged after a source
+  edit. If an on-device change doesn't take: `rm -rf RetroXR/android/build/src/main/assets
+  RetroXR/android/build/build/intermediates/assets` and re-export. To verify before
   installing: a `.gdc` is a 12-byte `GDSC` header + zstd; decompress with Python 3.14's
   `compression.zstd` and grep the payload for a string you just added.
 - `FileAccess.file_exists("res://….tscn")` is **false in exported builds** (paths are
@@ -277,7 +277,7 @@ adb install -r out.apk        # -r keeps app data
 ```bash
 adb shell am broadcast -a com.oculus.vrpowermanager.prox_close   # fake "worn"
 adb shell setprop debug.oculus.guardian_pause 1                  # else a Guardian dialog blocks
-adb shell monkey -p com.xenu.retrovr 1                           # GodotApp isn't exported; am start = Permission Denial
+adb shell monkey -p com.xenu.retroxr 1                           # GodotApp isn't exported; am start = Permission Denial
 ```
 - The manifest must declare `oculus.software.handtracking` or the shell blocks with a
   controllers-required dialog (controllers are off/dead). That needs BOTH the export
@@ -289,10 +289,10 @@ adb shell monkey -p com.xenu.retrovr 1                           # GodotApp isn'
 - Cleanup when done: `guardian_pause 0`, broadcast `prox_open`, `am force-stop`.
 
 ### Paths on device
-- `user://` = **internal** `/data/user/0/com.xenu.retrovr/files/` — readable/writable via
-  `run-as com.xenu.retrovr` (debug builds). Cores + system dirs live there
+- `user://` = **internal** `/data/user/0/com.xenu.retroxr/files/` — readable/writable via
+  `run-as com.xenu.retroxr` (debug builds). Cores + system dirs live there
   (`files/libretro/…`, populated by the in-app CoreDownloadManager).
-- ROMs/books/videos live on the **external** dir `/sdcard/Android/data/com.xenu.retrovr/files/`
+- ROMs/books/videos live on the **external** dir `/sdcard/Android/data/com.xenu.retroxr/files/`
   (plain `adb push`/`ls` works there).
 - Extra cores: same source the app uses (core_download_manager.gd) —
   `buildbot.libretro.com/nightly/android/latest/arm64-v8a/<core>_libretro_android.so.zip`.
@@ -301,9 +301,9 @@ adb shell monkey -p com.xenu.retrovr 1                           # GodotApp isn'
 NetworkManager boots `Tools/netplay_spike.tscn` at startup when `user://spike.cfg`
 exists (the spike deletes the cfg immediately, so a crash can't wedge the app):
 ```bash
-printf -- '--spike-core=fceumm\n--spike-rom=/sdcard/Android/data/com.xenu.retrovr/files/roms/nes/ROM.nes\n--spike-root=/data/user/0/com.xenu.retrovr/files/libretro\n' > spike.cfg
+printf -- '--spike-core=fceumm\n--spike-rom=/sdcard/Android/data/com.xenu.retroxr/files/roms/nes/ROM.nes\n--spike-root=/data/user/0/com.xenu.retroxr/files/libretro\n' > spike.cfg
 adb push spike.cfg /data/local/tmp/
-adb shell "cat /data/local/tmp/spike.cfg | run-as com.xenu.retrovr sh -c 'cat > files/spike.cfg'"
+adb shell "cat /data/local/tmp/spike.cfg | run-as com.xenu.retroxr sh -c 'cat > files/spike.cfg'"
 ```
 Then launch (above) and compare the `[crc]` lines against a Windows spike run.
 
@@ -356,9 +356,9 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 ```
 
 ### GDScript Side
-- `RetroVR/Scripts/libretro.gd` — Main controller script. Uses `@export var libretro_node: Libretro` to reference the `Libretro` node; falls back to `find_child("Libretro")` if unset.
-- `RetroVR/Scripts/Objects/systems/system.gd` — Per-arcade-cabinet controller. Has `@onready var _libretro: Libretro = $Libretro` wired to a child `Libretro` node in the scene tree.
-- `RetroVR/Scenes/Objects/system.tscn` — Cabinet scene. Contains a `Libretro` child node (unique_id `4000000010`).
+- `RetroXR/Scripts/libretro.gd` — Main controller script. Uses `@export var libretro_node: Libretro` to reference the `Libretro` node; falls back to `find_child("Libretro")` if unset.
+- `RetroXR/Scripts/Objects/systems/system.gd` — Per-arcade-cabinet controller. Has `@onready var _libretro: Libretro = $Libretro` wired to a child `Libretro` node in the scene tree.
+- `RetroXR/Scenes/Objects/system.tscn` — Cabinet scene. Contains a `Libretro` child node (unique_id `4000000010`).
 - GDExtension registration at `MODULE_INITIALIZATION_LEVEL_SCENE`.
 
 ## Dependencies
@@ -367,7 +367,7 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 - **SDL3** — On Windows: core DLL loading (`DynLib.hpp`) + the OpenGL HW-render window. On Linux: the OpenGL HW-render window only (core loading uses `dlopen`); linked against the system `libSDL3.so.0` by soname, headers from `libretro-godot/external/SDL3/`. Not used on Android (`dlopen` + EGL via `DynLib.hpp`).
 - **libretro-common** — Reference implementations for VFS, audio conversion, etc. (`libretro-godot/external/libretro-common/`)
 - **moodycamel::ReaderWriterQueue** — Lock-free SPSC queue for cross-thread communication
-- **godot-xr-tools v4.5.1** — VR locomotion, interactions, finger poses (`RetroVR/addons/godot-xr-tools/`)
+- **godot-xr-tools v4.5.1** — VR locomotion, interactions, finger poses (`RetroXR/addons/godot-xr-tools/`)
 - **vlc-godot** (libVLC) — the `VlcPlayer` GDExtension; single video backend for both the DVD
   player and the VHS/VCR. Replaced `eirteam.ffmpeg` (dropped 2026-07-14; libVLC also does x265).
 - **godot-pdfium** (PDFium) — the `PDFRenderer` GDExtension for rendering PDF pages (books) to
@@ -384,7 +384,7 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 
 ## Tools
 
-Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroVR/Tools/`,
+Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroXR/Tools/`,
 which holds in-editor probe scenes like `netplay_spike`).
 
 - **`Tools/bundle_convert.py`** — headless converter for `.bundle` models (each is a Unity
@@ -401,7 +401,7 @@ which holds in-editor probe scenes like `netplay_spike`).
   **Converted output is not carried in-repo.** On 2026-08-02 every model built from a
   `.bundle` — 22 consoles/handhelds, 12 controllers, 9 carts/discs, the GameCube memory
   card — was deleted from the tree and purged from git history with `git filter-repo`,
-  because none of it is licensed for redistribution. `RetroVR/imported-assets/` now holds
+  because none of it is licensed for redistribution. `RetroXR/imported-assets/` now holds
   only the CC BY / CC0 room and prop assets, which carry LICENSE files and are credited in
   the About panel. What the hardware wears is the procedural stand-ins in
   `Scenes/Objects/system_models/`. Do not re-add a converted `.bundle` to the repo without

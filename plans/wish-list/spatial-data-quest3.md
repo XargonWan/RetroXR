@@ -123,15 +123,15 @@ origin doesn't move.
 ## Files
 
 Modify:
-- `RetroVR/project.godot` — the enabling settings above
-- `RetroVR/Scenes/PassthroughScene.tscn` — scene manager / plane visualiser
-- `RetroVR/Scripts/Data/scene_persistence.gd` — per-room save dirs
-- `RetroVR/Scripts/Data/scene_manager.gd` — persistence gate
-- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — persistence gate
+- `RetroXR/project.godot` — the enabling settings above
+- `RetroXR/Scenes/PassthroughScene.tscn` — scene manager / plane visualiser
+- `RetroXR/Scripts/Data/scene_persistence.gd` — per-room save dirs
+- `RetroXR/Scripts/Data/scene_manager.gd` — persistence gate
+- `RetroXR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — persistence gate
 
 New (paths follow the current foldered `Scripts/` layout):
-- `RetroVR/Scripts/Data/spatial_manager.gd` — capability detection + plane bookkeeping
-- `RetroVR/Scripts/Objects/spatial_plane.gd` — plane visual + collider + snap target
+- `RetroXR/Scripts/Data/spatial_manager.gd` — capability detection + plane bookkeeping
+- `RetroXR/Scripts/Objects/spatial_plane.gd` — plane visual + collider + snap target
 
 ## Risks
 - ~~Runtime support for the core path is unverified~~ — settled in Phase 0: supported.
@@ -151,8 +151,8 @@ New (paths follow the current foldered `Scripts/` layout):
 - Plane quality varies with lighting and surface type; expect coarse rectangles, not furniture.
 
 ## Probe harness (how to re-run Phase 0)
-`Tools/spatial_probe.tscn` ships as its own app so it never disturbs an installed RetroVR:
-export preset **QuestSpatialProbe** (`com.xenu.retrovr.spatialprobe`) declares the custom
+`Tools/spatial_probe.tscn` ships as its own app so it never disturbs an installed RetroXR:
+export preset **QuestSpatialProbe** (`com.xenu.retroxr.spatialprobe`) declares the custom
 feature `spatialprobe`, which selects `run/main_scene.spatialprobe` and the gated `[xr]`
 settings. The spatial permissions ride on the preset's `permissions/custom_permissions`
 rather than on a global setting, because the vendors plugin's manifest injection reads
@@ -163,11 +163,11 @@ Quest build changes.
 ```bash
 "$godot" --headless --path "$proj" --export-debug "QuestSpatialProbe" probe.apk
 adb install -r probe.apk
-adb shell pm grant com.xenu.retrovr.spatialprobe com.oculus.permission.USE_SCENE
-adb shell pm grant com.xenu.retrovr.spatialprobe horizonos.permission.USE_SCENE
+adb shell pm grant com.xenu.retroxr.spatialprobe com.oculus.permission.USE_SCENE
+adb shell pm grant com.xenu.retroxr.spatialprobe horizonos.permission.USE_SCENE
 adb shell am broadcast -a com.oculus.vrpowermanager.prox_close
 adb shell setprop debug.oculus.guardian_pause 1
-adb shell monkey -p com.xenu.retrovr.spatialprobe 1
+adb shell monkey -p com.xenu.retroxr.spatialprobe 1
 adb logcat -s 'godot:*' | grep '\[spatial\]'
 ```
 

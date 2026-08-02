@@ -1,7 +1,7 @@
-# Plan: RetroVR — VR Retro Gaming Room
+# Plan: RetroXR — VR Retro Gaming Room
 
 ## Context
-RetroVR already has working OpenXR VR with animated Quest 3 controllers and a single arcade cabinet running libretro. The goal is to create a new project **RetroVR** (copied from RetroVR) and build a full VR retro gaming room where the user spawns TVs, retro console Systems, and Cartridges, physically connects them with cables, and plays games — all in VR.
+RetroXR already has working OpenXR VR with animated Quest 3 controllers and a single arcade cabinet running libretro. The goal is to create a new project **RetroXR** (copied from RetroXR) and build a full VR retro gaming room where the user spawns TVs, retro console Systems, and Cartridges, physically connects them with cables, and plays games — all in VR.
 
 **Key constraint**: The `Libretro` C++ class is a singleton — only one core can run at a time. A `SystemManager` autoload will enforce this.
 
@@ -11,11 +11,11 @@ RetroVR already has working OpenXR VR with animated Quest 3 controllers and a si
 - **Verlet rope physics** for cables
 - Core manager/downloader and ROM scraper **deferred** to later
 
-## Step 0: Copy RetroVR → RetroVR
+## Step 0: Copy RetroXR → RetroXR
 
-Copy `RetroVR/` to `RetroVR/` at the repo root (excluding `.godot/`). Update `RetroVR/project.godot`:
-- Change `config/name` to `"RetroVR"`
-- All subsequent work happens in `RetroVR/` only — RetroVR stays untouched
+Copy `RetroXR/` to `RetroXR/` at the repo root (excluding `.godot/`). Update `RetroXR/project.godot`:
+- Change `config/name` to `"RetroXR"`
+- All subsequent work happens in `RetroXR/` only — RetroXR stays untouched
 
 ---
 
@@ -24,9 +24,9 @@ Copy `RetroVR/` to `RetroVR/` at the repo root (excluding `.godot/`). Update `Re
 **Goal**: Add godot-xr-tools addon and verify grip pickup works.
 
 **Files**:
-- Add `RetroVR/addons/godot-xr-tools/` (addon install)
-- Modify `RetroVR/project.godot` — enable addon
-- Modify `RetroVR/Scenes/MainScene.tscn` — add `XRToolsFunctionPickup` + `XRToolsFunctionPointer` as children of each controller
+- Add `RetroXR/addons/godot-xr-tools/` (addon install)
+- Modify `RetroXR/project.godot` — enable addon
+- Modify `RetroXR/Scenes/MainScene.tscn` — add `XRToolsFunctionPickup` + `XRToolsFunctionPointer` as children of each controller
 
 **Controller hierarchy becomes**:
 ```
@@ -65,16 +65,16 @@ RightController (XRController3D, controller_model.gd)
 - XR Tools handles the arc rendering and collision
 
 **Option B — Custom script**:
-- `RetroVR/Scripts/locomotion.gd` attached to XROrigin3D
+- `RetroXR/Scripts/locomotion.gd` attached to XROrigin3D
 - Reads left controller `primary` Vector2 → translates XROrigin3D
 - Reads right controller `primary` Vector2 → raycasts parabolic arc, renders with ImmediateMesh, teleports on release
 
 **Create**:
-- `RetroVR/Scripts/locomotion.gd` (if custom) or configure XR Tools movement nodes
+- `RetroXR/Scripts/locomotion.gd` (if custom) or configure XR Tools movement nodes
 - Add floor `StaticBody3D` with collision for teleport ray to hit
 
 **Modify**:
-- `RetroVR/Scenes/MainScene.tscn` — add movement provider nodes + floor with collision
+- `RetroXR/Scenes/MainScene.tscn` — add movement provider nodes + floor with collision
 
 **Test**: Use left stick to walk around the room. Push right stick forward to see teleport arc. Release to teleport to the circle.
 
@@ -85,8 +85,8 @@ RightController (XRController3D, controller_model.gd)
 **Goal**: Pickable TV with a screen mesh and a composite video snap zone.
 
 **Create**:
-- `RetroVR/Scenes/Objects/tv.tscn`
-- `RetroVR/Scripts/Objects/tv/tv.gd`
+- `RetroXR/Scenes/Objects/tv.tscn`
+- `RetroXR/Scripts/Objects/tv/tv.gd`
 
 **Node tree**:
 ```
@@ -107,9 +107,9 @@ TV (XRToolsPickable / RigidBody3D) — tv.gd
 **Goal**: Pickable retro console with firm-coded libretro core, power/reset buttons, cartridge slot, cable attach point.
 
 **Create**:
-- `RetroVR/Scenes/Objects/system.tscn` (base scene)
-- `RetroVR/Scripts/Objects/systems/system.gd`
-- `RetroVR/Scripts/system_manager.gd` (autoload singleton)
+- `RetroXR/Scenes/Objects/system.tscn` (base scene)
+- `RetroXR/Scripts/Objects/systems/system.gd`
+- `RetroXR/Scripts/system_manager.gd` (autoload singleton)
 - System variants: `system_nes.tscn`, `system_snes.tscn`, `system_n64.tscn`, `system_ps1.tscn` (inherit base, set `core_name`)
 
 **Node tree**:
@@ -127,7 +127,7 @@ System (XRToolsPickable / RigidBody3D) — system.gd
 
 **system_manager.gd** (autoload): Tracks `active_system`, exposes `stop_active_system()`, `set_active_system()`, `clear_active_system()`.
 
-**Modify**: `RetroVR/project.godot` — add SystemManager autoload.
+**Modify**: `RetroXR/project.godot` — add SystemManager autoload.
 
 ---
 
@@ -136,8 +136,8 @@ System (XRToolsPickable / RigidBody3D) — system.gd
 **Goal**: Pickable cartridge carrying a ROM path that snaps into system slots.
 
 **Create**:
-- `RetroVR/Scenes/Objects/cartridge.tscn`
-- `RetroVR/Scripts/Objects/media/cartridge.gd`
+- `RetroXR/Scenes/Objects/cartridge.tscn`
+- `RetroXR/Scripts/Objects/media/cartridge.gd`
 
 **Node tree**:
 ```
@@ -155,7 +155,7 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Physical press buttons (Power/Reset) on systems respond to controller touch.
 
 **Create**:
-- `RetroVR/Scripts/Objects/widgets/vr_button.gd`
+- `RetroXR/Scripts/Objects/widgets/vr_button.gd`
 
 **vr_button.gd**: Extends `Area3D`. Emits `button_pressed` signal. On `body_entered` (controller collision layer), visually depresses the button mesh and emits signal. On `body_exited`, resets position.
 
@@ -184,9 +184,9 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Each system has a dangling video cable. User grabs the plug end and drags it to a TV's composite port.
 
 **Create**:
-- `RetroVR/Scripts/Objects/cables/verlet_rope.gd`
-- `RetroVR/Scripts/Objects/cables/cable_plug.gd`
-- `RetroVR/Scenes/Objects/cable.tscn`
+- `RetroXR/Scripts/Objects/cables/verlet_rope.gd`
+- `RetroXR/Scripts/Objects/cables/cable_plug.gd`
+- `RetroXR/Scenes/Objects/cable.tscn`
 
 **verlet_rope.gd**: 15 segments, verlet integration in `_physics_process`. Point 0 pinned to system's `CableAttachPoint`. Last point follows plug position. 5 constraint iterations per frame. Rendered via `ImmediateMesh` tube geometry.
 
@@ -201,8 +201,8 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: VR menu to spawn TVs, Systems, and Cartridges.
 
 **Create**:
-- `RetroVR/Scenes/UI/spawn_menu.tscn`
-- `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd`
+- `RetroXR/Scenes/UI/spawn_menu.tscn`
+- `RetroXR/Scripts/UI/spawn_menu/spawn_menu.gd`
 
 **Approach**: `SubViewport` rendered on a QuadMesh that appears in front of the player. 3 tabs (Systems, Cartridges, TVs) with GridContainer of items. `XRToolsFunctionPointer` ray interacts with the SubViewport. Clicking spawns the selected object.
 
@@ -215,7 +215,7 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Map XR controller buttons/sticks to libretro joypad so games are playable.
 
 **Create**:
-- `RetroVR/Scripts/XR/vr_input_mapper.gd`
+- `RetroXR/Scripts/XR/vr_input_mapper.gd`
 
 **Approach**: Reads XR controller input signals and injects synthetic `Input.action_press()` / `Input.action_release()` calls for the existing `RETRO_JOYPAD_*` actions. Has `mapping_active` flag — only active when a system is powered on and player is not holding an object.
 
@@ -233,15 +233,15 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 **Goal**: Remove old arcade cabinet, build a VR room.
 
 **Modify**:
-- `RetroVR/Scenes/MainScene.tscn` — remove `magic-deniro-80-hor`, remove old `libretro.gd` attachment, add floor (StaticBody3D + PlaneMesh), WorldEnvironment, pre-place one TV + NES System + cartridge for immediate testing
+- `RetroXR/Scenes/MainScene.tscn` — remove `magic-deniro-80-hor`, remove old `libretro.gd` attachment, add floor (StaticBody3D + PlaneMesh), WorldEnvironment, pre-place one TV + NES System + cartridge for immediate testing
 
 **Remove** (no longer needed):
-- `RetroVR/Scripts/libretro.gd` — logic moved to `system.gd` + `system_manager.gd`
+- `RetroXR/Scripts/libretro.gd` — logic moved to `system.gd` + `system_manager.gd`
 
 ---
 
 ## Verification (End-to-End)
-1. Run RetroVR with headset connected
+1. Run RetroXR with headset connected
 2. Press menu button → spawn menu appears
 3. Spawn a TV, an NES System, and a cartridge
 4. Pick up cartridge → insert into system's slot
@@ -255,19 +255,19 @@ Cartridge (XRToolsPickable / RigidBody3D) — cartridge.gd
 ## New Files Summary
 | File | Purpose |
 |---|---|
-| `RetroVR/Scripts/locomotion.gd` | Smooth locomotion + teleport arc (if custom, not XR Tools built-in) |
-| `RetroVR/Scripts/system_manager.gd` | Autoload: enforces singleton libretro constraint |
-| `RetroVR/Scripts/Objects/tv/tv.gd` | TV: screen mesh, composite port |
-| `RetroVR/Scripts/Objects/systems/system.gd` | System: power/reset, core binding, connections |
-| `RetroVR/Scripts/Objects/media/cartridge.gd` | Cartridge: ROM path carrier |
-| `RetroVR/Scripts/Objects/widgets/vr_button.gd` | Reusable VR pressable button |
-| `RetroVR/Scripts/Objects/cables/verlet_rope.gd` | Verlet rope physics |
-| `RetroVR/Scripts/Objects/cables/cable_plug.gd` | Grabbable cable plug |
-| `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd` | Spawn menu controller |
-| `RetroVR/Scripts/XR/vr_input_mapper.gd` | XR → libretro input mapping |
-| `RetroVR/Scenes/Objects/tv.tscn` | TV scene |
-| `RetroVR/Scenes/Objects/system.tscn` | Base system scene |
-| `RetroVR/Scenes/Objects/system_nes.tscn` | NES variant |
-| `RetroVR/Scenes/Objects/cartridge.tscn` | Cartridge scene |
-| `RetroVR/Scenes/Objects/cable.tscn` | Cable + plug assembly |
-| `RetroVR/Scenes/UI/spawn_menu.tscn` | Spawn menu |
+| `RetroXR/Scripts/locomotion.gd` | Smooth locomotion + teleport arc (if custom, not XR Tools built-in) |
+| `RetroXR/Scripts/system_manager.gd` | Autoload: enforces singleton libretro constraint |
+| `RetroXR/Scripts/Objects/tv/tv.gd` | TV: screen mesh, composite port |
+| `RetroXR/Scripts/Objects/systems/system.gd` | System: power/reset, core binding, connections |
+| `RetroXR/Scripts/Objects/media/cartridge.gd` | Cartridge: ROM path carrier |
+| `RetroXR/Scripts/Objects/widgets/vr_button.gd` | Reusable VR pressable button |
+| `RetroXR/Scripts/Objects/cables/verlet_rope.gd` | Verlet rope physics |
+| `RetroXR/Scripts/Objects/cables/cable_plug.gd` | Grabbable cable plug |
+| `RetroXR/Scripts/UI/spawn_menu/spawn_menu.gd` | Spawn menu controller |
+| `RetroXR/Scripts/XR/vr_input_mapper.gd` | XR → libretro input mapping |
+| `RetroXR/Scenes/Objects/tv.tscn` | TV scene |
+| `RetroXR/Scenes/Objects/system.tscn` | Base system scene |
+| `RetroXR/Scenes/Objects/system_nes.tscn` | NES variant |
+| `RetroXR/Scenes/Objects/cartridge.tscn` | Cartridge scene |
+| `RetroXR/Scenes/Objects/cable.tscn` | Cable + plug assembly |
+| `RetroXR/Scenes/UI/spawn_menu.tscn` | Spawn menu |

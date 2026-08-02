@@ -57,14 +57,14 @@ Allow the project to run without a VR headset using mouse+WASD controls, with a 
    - In desktop mode, click on a system to attach, Escape to detach
 
 ## Key Files to Modify
-- `RetroVR/Scenes/player_rig.tscn` — Add desktop support nodes
-- `RetroVR/Scripts/XR/xr_init.gd` — Mode detection, enable/disable desktop nodes
-- `RetroVR/Scripts/XR/vr_input_mapper.gd` — Desktop attach/detach alternative
-- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Desktop menu interaction
+- `RetroXR/Scenes/player_rig.tscn` — Add desktop support nodes
+- `RetroXR/Scripts/XR/xr_init.gd` — Mode detection, enable/disable desktop nodes
+- `RetroXR/Scripts/XR/vr_input_mapper.gd` — Desktop attach/detach alternative
+- `RetroXR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Desktop menu interaction
 
 ## New Files
-- `RetroVR/Scripts/Desktop/desktop_reticle.gd` — Crosshair overlay script
-- `RetroVR/Scenes/UI/desktop_reticle.tscn` — Crosshair scene
+- `RetroXR/Scripts/Desktop/desktop_reticle.gd` — Crosshair overlay script
+- `RetroXR/Scenes/UI/desktop_reticle.tscn` — Crosshair scene
 
 ## Interaction Limitations (from wish list)
 - Picking up and placing objects with mouse is less intuitive than VR grab

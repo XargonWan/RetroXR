@@ -79,16 +79,16 @@ When a remote player joins, the system highlights their assigned port slot (glow
 2. **Audio**: Spatial audio from the TV node — remote players hear it spatially based on their head position relative to the TV
 
 ## Key Files to Modify
-- `RetroVR/Scripts/Objects/systems/system.gd` — Port highlight RPC, authoritative port-snap handling
-- `RetroVR/Scripts/Objects/retro_controller.gd` — Send input RPC when remote player
-- `RetroVR/Scripts/Objects/peripherals/ray_gun.gd` — Send lightgun RPC when remote player
-- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Multiplayer UI tab
-- `RetroVR/project.godot` — Network config, multiplayer spawner setup
+- `RetroXR/Scripts/Objects/systems/system.gd` — Port highlight RPC, authoritative port-snap handling
+- `RetroXR/Scripts/Objects/retro_controller.gd` — Send input RPC when remote player
+- `RetroXR/Scripts/Objects/peripherals/ray_gun.gd` — Send lightgun RPC when remote player
+- `RetroXR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Multiplayer UI tab
+- `RetroXR/project.godot` — Network config, multiplayer spawner setup
 
 ## New Files
-- `RetroVR/Scripts/Net/network_manager.gd` — Host/join, player ID assignment
-- `RetroVR/Scripts/Net/remote_player.gd` — Remote player avatar + sync
-- `RetroVR/Scenes/Net/remote_player.tscn` — Floating head + hands scene
+- `RetroXR/Scripts/Net/network_manager.gd` — Host/join, player ID assignment
+- `RetroXR/Scripts/Net/remote_player.gd` — Remote player avatar + sync
+- `RetroXR/Scenes/Net/remote_player.tscn` — Floating head + hands scene
 
 ## Risks
 - Latency: RPC input adds lag; fine for local network, noticeable online

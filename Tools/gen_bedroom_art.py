@@ -8,7 +8,7 @@ by editing numbers rather than by re-downloading.
 
     python3 Tools/gen_bedroom_art.py
 
-Writes into RetroVR/imported-assets/bedroom/generated/. Godot imports these with
+Writes into RetroXR/imported-assets/bedroom/generated/. Godot imports these with
 default settings; none of them is a normal map, so no .import fixups are needed
 (unlike the ambientCG material set, which has to be told compress/normal_map=1).
 """
@@ -20,7 +20,7 @@ import random
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "RetroVR",
+OUT = os.path.join(os.path.dirname(__file__), "..", "RetroXR",
                    "imported-assets", "bedroom", "generated")
 
 

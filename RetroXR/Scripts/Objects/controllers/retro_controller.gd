@@ -1,0 +1,733 @@
+## RetroController — pickable joypad that plugs into a RetroSystem controller port.
+## Grip once to toggle-hold; grip+trigger+thumbstick-click to drop.
+## While held and plugged in, VR controller input routes to the assigned port.
+## Button and analog mappings are data-driven via ControllerBindings.
+class_name RetroController
+extends XRToolsPickable
+
+
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+const RETRO_DEVICE_JOYPAD := 1
+
+const DPAD_THRESHOLD      := 0.35
+const ANALOG_SCALE        := 0x7fff
+
+## Input thresholds per XRController float input name.
+const INPUT_THRESHOLDS: Dictionary = {
+	"ax_button":     0.5,
+	"by_button":     0.5,
+	"primary_click": 0.5,
+	"grip":          0.3,
+	"trigger":       0.3,
+}
+
+## libretro device type reported to the system when plugged in.
+var device_type: int = RETRO_DEVICE_JOYPAD
+
+## Preferred per-port "pad type" core-option value. When this controller is
+## plugged into a system whose core exposes a per-port pad-type option (e.g.
+## PCSX-ReARMed's `pcsx_rearmed_padNtype`), RetroSystem auto-selects this value.
+## Digital pads leave it at "standard"; the analog DualShock scenes set
+## "dualshock". No-ops on cores without such an option.
+@export var pad_type_pref: String = "standard"
+
+## The systemid this controller physically belongs to, e.g. "super_nes". A port
+## only accepts a plug whose controller matches (see RetroSystem._accepts_plug),
+## the same way the cartridge slot only accepts media for its own system.
+##
+## Empty means UNIVERSAL and fits anything — that is deliberate for RetroXR's own
+## props (the generic pad, keyboard, mouse, multitap, ray gun), which stand in for
+## hardware we have no model of and must keep working on every system.
+@export var systemid: String = ""
+
+# Port connection state
+var _connected_system: RetroSystem = null
+var _port_index: int = -1
+
+# Active bindings (loaded from ControllerBindings on plug-in)
+var _button_map: Dictionary = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
+var _stick_map:  Dictionary = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
+
+# Physical gamepad bindings (loaded from GamepadBindings, merged into held input)
+var _pad_button_map: Dictionary = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
+var _pad_stick_map:  Dictionary = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
+
+# Cable
+var _cable_instance: Node3D = null
+var _cable_plug: ControllerPlug = null
+var _cable_rope: VerletRope = null
+var _max_rope_length: float = 0.0
+
+# Pending port restore (set before cable is ready)
+var _pending_port_restore: Dictionary = {}
+
+# Toggle-hold state
+var _allow_drop := false
+var _saved_by: Node3D = null
+var _holding_ctrl: XRController3D = null    # primary holder
+var _desktop_held: bool = false
+## Scroll Lock capture: while on, keyboard-bound RETRO_JOYPAD_* actions drive this
+## pad instead of the player. A physical USB/Bluetooth pad is never gated by it.
+var _capture: ScrollLockCapture = null
+var _hint: HeldHint = null
+## Nerd Font: gamepad — floats over the pad while capture is on.
+const ICON_CAPTURE := 0xEC17
+const ICON_SIZE := 0.030
+const ICON_HEIGHT := 0.11
+## Above ICON_HEIGHT so the capture glyph and the hint popup do not overlap.
+const HINT_HEIGHT := 0.20
+
+# Reference-counted pointer blocking — prevents multi-instance conflicts.
+var _blocking_left: bool = false
+var _blocking_right: bool = false
+
+## Keyboard action → RETRO_JOYPAD bit index for desktop mode.
+const DESKTOP_BUTTON_MAP: Dictionary = {
+	"RETRO_JOYPAD_B":      ControllerBindings.JOYPAD_B,
+	"RETRO_JOYPAD_Y":      ControllerBindings.JOYPAD_Y,
+	"RETRO_JOYPAD_SELECT": ControllerBindings.JOYPAD_SELECT,
+	"RETRO_JOYPAD_START":  ControllerBindings.JOYPAD_START,
+	"RETRO_JOYPAD_UP":     ControllerBindings.JOYPAD_UP,
+	"RETRO_JOYPAD_DOWN":   ControllerBindings.JOYPAD_DOWN,
+	"RETRO_JOYPAD_LEFT":   ControllerBindings.JOYPAD_LEFT,
+	"RETRO_JOYPAD_RIGHT":  ControllerBindings.JOYPAD_RIGHT,
+	"RETRO_JOYPAD_A":      ControllerBindings.JOYPAD_A,
+	"RETRO_JOYPAD_X":      ControllerBindings.JOYPAD_X,
+	"RETRO_JOYPAD_L":      ControllerBindings.JOYPAD_L,
+	"RETRO_JOYPAD_R":      ControllerBindings.JOYPAD_R,
+	"RETRO_JOYPAD_L2":     ControllerBindings.JOYPAD_L2,
+	"RETRO_JOYPAD_R2":     ControllerBindings.JOYPAD_R2,
+	"RETRO_JOYPAD_L3":     ControllerBindings.JOYPAD_L3,
+	"RETRO_JOYPAD_R3":     ControllerBindings.JOYPAD_R3,
+}
+
+var _locomotion_manager: LocomotionManager = null
+var _spawn_menu_ctrl: Node = null
+var _left_vr_ctrl: XRController3D = null
+var _right_vr_ctrl: XRController3D = null
+
+# Rumble state pushed from RetroSystem._on_rumble_state_changed.
+# Normalized 0.0..1.0; _apply_rumble() translates to XR haptics or joy vibration.
+var _rumble_weak: float = 0.0
+var _rumble_strong: float = 0.0
+var _rumble_event: XRToolsRumbleEvent = null
+# Track joy devices currently vibrating so we can stop them exactly when state goes to zero.
+var _pad_rumble_active: bool = false
+
+@onready var _cable_attach_point: Node3D = $CableAttachPoint
+
+
+func _ready() -> void:
+	super._ready()
+	press_to_hold = false
+	second_hand_grab = SecondHandGrab.SECOND
+	add_to_group("spawned")
+	add_to_group(ControllerBindings.CONSUMER_GROUP)
+	grabbed.connect(_on_grabbed_signal)
+	dropped.connect(_on_dropped_signal)
+	released.connect(_on_released_signal)
+	_spawn_cable()
+	_capture = ScrollLockCapture.attach(self, _can_capture,
+		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
+	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
+		["keyboard_scroll_lock_outline"], "Send keys here")
+	call_deferred("_find_vr_nodes")
+
+
+func _find_vr_nodes() -> void:
+	_locomotion_manager = get_tree().root.find_child("LocomotionManager", true, false) as LocomotionManager
+	_spawn_menu_ctrl = get_tree().root.find_child("SpawnMenuController", true, false)
+	for node: Node in get_tree().root.find_children("*", "XRController3D", true, false):
+		var ctrl := node as XRController3D
+		if ctrl == null:
+			continue
+		if ctrl.tracker == &"left_hand":
+			_left_vr_ctrl = ctrl
+		elif ctrl.tracker == &"right_hand":
+			_right_vr_ctrl = ctrl
+	# A spawn-menu spawn is handed to the grabbing hand before this deferred lookup
+	# runs, so that grab found no manager and never blocked locomotion. Re-apply.
+	_update_locomotion_block()
+
+
+## Returns the XRController3D of the secondary (two-hand) grab, or null.
+func _get_secondary_ctrl() -> XRController3D:
+	if _grab_driver and _grab_driver.secondary:
+		return _grab_driver.secondary.controller
+	return null
+
+
+## RetroController drops only via the grip+trigger+stick combo, so a plain grip
+## press on a hand already holding it must be ignored — otherwise XRToolsFunctionPickup
+## would toggle-drop and the custom re-grab would pop the pose. Queried by the
+## LOCAL PATCH in function_pickup._on_grip_pressed.
+func wants_grip_toggle_drop() -> bool:
+	return false
+
+
+## Anchor each holding hand onto its own grip: one hand takes the controller by
+## that side, two hands centre it between them. See GripAnchor.
+func _refresh_grip() -> void:
+	GripAnchor.refresh(self, self)
+
+
+## Where a hand grips this controller, in controller-local space. The authored
+## HandLeft/HandRight nodes are the source — the same transform that places the
+## wrap-around hand mesh (controller_model.gd), so the drawn hand sits on the
+## real one. Null when the scene carries no such node.
+func grip_anchor(is_left: bool) -> Variant:
+	var hand := get_node_or_null(^"HandLeft" if is_left else ^"HandRight") as Node3D
+	return hand.transform if hand != null else null
+
+
+# ── Cable ─────────────────────────────────────────────────────────────────────
+
+func _spawn_cable() -> void:
+	_cable_instance = CONTROLLER_CABLE_SCENE.instantiate()
+	call_deferred("_add_cable_to_scene")
+
+
+func _add_cable_to_scene() -> void:
+	get_tree().current_scene.add_child(_cable_instance)
+	_cable_instance.add_to_group("spawned")
+	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
+	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+	_cable_plug.set_controller(self)
+	_cable_plug.add_collision_exception_with(self)
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
+	_cable_rope.start_node = _cable_attach_point
+	_cable_rope.end_node = _cable_plug
+	# End the cable AT the connector's cable boss. A bespoke plug model's origin
+	# is its seating reference, which sits inside the shell, so without this the
+	# rope terminates in the middle of the plug and the tube runs through it.
+	_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
+	_cable_rope._init_points()
+	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
+
+	if not _pending_port_restore.is_empty():
+		var sys: RetroSystem = _pending_port_restore.get("system")
+		var idx: int = _pending_port_restore.get("port_index", -1)
+		_pending_port_restore = {}
+		if is_instance_valid(sys) and idx >= 0:
+			sys.restore_controller_plug(idx, _cable_plug)
+
+
+func _physics_process(_delta: float) -> void:
+	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
+		return
+	if _cable_plug.is_picked_up() or _connected_system != null:
+		return
+
+	var attach_pos := _cable_attach_point.global_position
+	var diff := _cable_plug.global_position - attach_pos
+	var dist := diff.length()
+
+	if dist > _max_rope_length:
+		var dir := diff / dist
+		_cable_plug.global_position = attach_pos + dir * _max_rope_length
+		var outward_vel := dir.dot(_cable_plug.linear_velocity)
+		if outward_vel > 0.0:
+			_cable_plug.linear_velocity -= dir * outward_vel
+
+
+# ── Toggle-hold ───────────────────────────────────────────────────────────────
+
+func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
+	if _hint:
+		_hint.on_grabbed(by)
+	var pickup := by as XRToolsFunctionPickup
+	var ctrl := pickup.get_controller() if pickup else null as XRController3D
+	if ctrl == null:
+		if by.is_in_group("desktop_hand"):
+			_desktop_held = true
+		return
+
+	# Only set _holding_ctrl for the first (primary) grab.
+	if not is_instance_valid(_holding_ctrl):
+		_saved_by = by
+		_holding_ctrl = ctrl
+
+	_set_model_visible(ctrl, false)
+	_update_pointer_block(ctrl, true)
+	_update_locomotion_block()
+	_apply_rumble()
+	_refresh_grip()
+
+
+## Fires for any individual grab release (primary or secondary).
+func _on_released_signal(_pickable: Node3D, by: Node3D) -> void:
+	var pickup := by as XRToolsFunctionPickup
+	if not is_instance_valid(pickup):
+		return
+	var ctrl: XRController3D = pickup.get_controller()
+	if ctrl == null:
+		return
+
+	if _allow_drop:
+		# Intentional drop — clean up this hand.
+		_set_model_visible(ctrl, true)
+		_update_pointer_block(ctrl, false)
+		if ctrl == _holding_ctrl:
+			if _grab_driver and _grab_driver.primary:
+				_holding_ctrl = _grab_driver.primary.controller
+				_saved_by = _grab_driver.primary.by
+			else:
+				_holding_ctrl = null
+				_saved_by = null
+		_update_locomotion_block()
+		_apply_rumble()
+		# Back to one hand after an intentional/combo drop → the survivor takes the
+		# controller by its own grip.
+		_refresh_grip()
+		return
+
+	# Toggle grip — rehold the released hand.
+	if ctrl == _holding_ctrl:
+		if _grab_driver and _grab_driver.primary:
+			# Secondary was promoted to primary. Update our tracking.
+			_holding_ctrl = _grab_driver.primary.controller
+			_saved_by = _grab_driver.primary.by
+			call_deferred("_rehold_hand", by)
+		# else: no secondary, full drop follows — _on_dropped_signal handles rehold.
+	else:
+		# Secondary hand toggle — rehold it.
+		call_deferred("_rehold_hand", by)
+	_refresh_grip()
+
+
+func _on_dropped_signal(_pickable: Node3D) -> void:
+	if not _allow_drop and is_instance_valid(_saved_by):
+		call_deferred("_rehold")
+	else:
+		if _hint:
+			_hint.on_dropped()
+		_allow_drop = false
+		_set_model_visible(_holding_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
+		_saved_by = null
+		_holding_ctrl = null
+		_desktop_held = false
+		_update_locomotion_block()
+		_apply_rumble()
+
+
+func _rehold() -> void:
+	if _allow_drop:
+		_allow_drop = false
+		return
+	if not is_instance_valid(_saved_by):
+		_set_model_visible(_holding_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
+		_saved_by = null
+		_holding_ctrl = null
+		_update_locomotion_block()
+		return
+	_saved_by.call("_pick_up_object", self)
+
+
+## Re-grab a hand that was released by toggle (not combo).
+func _rehold_hand(by: Node3D) -> void:
+	if _allow_drop or not is_instance_valid(by):
+		return
+	by.call("_pick_up_object", self)
+
+
+func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
+	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
+		ctrl.call("set_model_visible", show)
+
+
+func _update_locomotion_block() -> void:
+	var secondary_ctrl := _get_secondary_ctrl()
+	var left_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"left_hand") \
+				  or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"left_hand")
+	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
+				   or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"right_hand")
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
+	# The desktop side is ScrollLockCapture's: it blocks WASD only while captured,
+	# and losing the grip here makes it ineligible, which drops both.
+	if _capture:
+		_capture.refresh()
+	if is_instance_valid(_spawn_menu_ctrl) and "disabled" in _spawn_menu_ctrl:
+		_spawn_menu_ctrl.set("disabled", left_held)
+
+
+## Reference-counted pointer blocking. Multiple pickables can independently
+## block the same pointer without conflicting. The pointer is re-enabled only
+## when ALL blockers release.
+func _update_pointer_block(ctrl: XRController3D, should_block: bool) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var is_left := ctrl.tracker == &"left_hand"
+	var currently_blocking: bool = _blocking_left if is_left else _blocking_right
+	if should_block == currently_blocking:
+		return
+	if is_left:
+		_blocking_left = should_block
+	else:
+		_blocking_right = should_block
+	var pointer: Node3D = ctrl.get_node_or_null("FunctionPointer")
+	if not pointer:
+		return
+	var delta_count := 1 if should_block else -1
+	var count: int = maxi(0, pointer.get_meta("block_count", 0) + delta_count)
+	pointer.set_meta("block_count", count)
+	pointer.visible = count == 0
+	# FunctionPickup._process_pointer_highlight queries the RayCast directly,
+	# bypassing pointer.enabled. Disable it too so ray-grab is fully blocked.
+	var ray: RayCast3D = pointer.get_node_or_null("RayCast") as RayCast3D
+	if ray:
+		ray.enabled = count == 0
+
+
+## The combo test itself lives on HeldHint so the check and the row advertising
+## it cannot disagree. Counting the use here rather than in the three branches
+## below is deliberate: every one of them drops, and a predicate they all pass
+## through cannot be missed when a fourth is added. HeldHint counts once per
+## hold, so testing every frame does not inflate it.
+func _is_combo_pressed(ctrl: XRController3D) -> bool:
+	if not HeldHint.is_combo_pressed(ctrl):
+		return false
+	if _hint:
+		_hint.note_used(&"drop_vr")
+	return true
+
+
+# Diagnostic for the "drop combo doesn't fire" report: log the three combo
+# inputs whenever their combined state changes, so a logcat/console trace shows
+# whether detection (e.g. primary_click never reading pressed) or the drop
+# handling is at fault. State-change gated — silent while idle.
+var _combo_dbg_state := -1
+
+func _combo_debug(ctrl: XRController3D) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var state := (1 if ctrl.get_float("grip") > 0.5 else 0) \
+		| (2 if ctrl.get_float("trigger") > 0.5 else 0) \
+		| (4 if ctrl.get_float("primary_click") > 0.5 else 0)
+	if state != _combo_dbg_state:
+		_combo_dbg_state = state
+		print("[drop-combo] %s grip=%d trigger=%d stick_click=%d" % [name,
+			state & 1, (state >> 1) & 1, (state >> 2) & 1])
+
+
+func _drop_all() -> void:
+	_set_model_visible(_holding_ctrl, true)
+	_update_pointer_block(_holding_ctrl, false)
+	var secondary_ctrl := _get_secondary_ctrl()
+	if is_instance_valid(secondary_ctrl):
+		_set_model_visible(secondary_ctrl, true)
+		_update_pointer_block(secondary_ctrl, false)
+	_allow_drop = true
+	_holding_ctrl = null
+	_update_locomotion_block()
+	drop()
+
+
+func _exit_tree() -> void:
+	# Release any active pointer blocks so other objects aren't stuck.
+	if _blocking_left and is_instance_valid(_left_vr_ctrl):
+		_update_pointer_block(_left_vr_ctrl, false)
+	if _blocking_right and is_instance_valid(_right_vr_ctrl):
+		_update_pointer_block(_right_vr_ctrl, false)
+	XRToolsRumbleManager.clear(self)
+	if _pad_rumble_active:
+		for device in Input.get_connected_joypads():
+			Input.stop_joy_vibration(device)
+		_pad_rumble_active = false
+	if _locomotion_manager != null:
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
+		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
+	if _capture:
+		_capture.release()
+	_allow_drop = true
+	super._exit_tree()
+
+
+# ── Port events ───────────────────────────────────────────────────────────────
+
+func on_plugged_in(system: RetroSystem, port_index: int) -> void:
+	_connected_system = system
+	_port_index = port_index
+	_load_bindings()
+	print("[RetroController] plugged into system port %d" % port_index)
+
+
+func on_unplugged() -> void:
+	print("[RetroController] unplugged from port %d" % _port_index)
+	_connected_system = null
+	_port_index = -1
+	# Stop any lingering rumble when the cable is yanked. Usually already
+	# cleared by RetroSystem._on_port_released, but idempotent and safer.
+	_rumble_weak = 0.0
+	_rumble_strong = 0.0
+	_apply_rumble()
+
+
+# ── Rumble ────────────────────────────────────────────────────────────────────
+
+## Push a new rumble state from the system (ultimately from the libretro core).
+## weak / strong are normalized 0.0..1.0.
+func set_rumble(weak: float, strong: float) -> void:
+	_rumble_weak = weak
+	_rumble_strong = strong
+	_apply_rumble()
+
+
+## Translate the current rumble state into real haptics. Called on any state
+## change and whenever the physical holder changes (grab/drop) so the new
+## hand picks up ongoing rumble.
+func _apply_rumble() -> void:
+	var combined: float = XRToolsRumbleManager.combine_magnitudes(_rumble_weak, _rumble_strong)
+
+	# Always drop any previously-queued XR event keyed on self before re-adding
+	# so transferring hands mid-rumble doesn't leave the old hand buzzing.
+	XRToolsRumbleManager.clear(self)
+
+	var secondary_ctrl := _get_secondary_ctrl()
+	var is_held: bool = is_instance_valid(_holding_ctrl) or is_instance_valid(secondary_ctrl) or _desktop_held
+
+	# No physical holder → stop desktop vibration if active, nothing else to do.
+	if not is_held or combined <= 0.0:
+		if _pad_rumble_active:
+			for device in Input.get_connected_joypads():
+				Input.stop_joy_vibration(device)
+			_pad_rumble_active = false
+		return
+
+	# VR path: queue an indefinite event on whichever tracker(s) are holding.
+	# XRToolsRumbleManager re-pulses each tick until cleared.
+	if is_instance_valid(_holding_ctrl) or is_instance_valid(secondary_ctrl):
+		if _rumble_event == null:
+			_rumble_event = XRToolsRumbleEvent.new()
+			_rumble_event.indefinite = true
+		_rumble_event.magnitude = combined
+		var trackers: Array = []
+		if is_instance_valid(_holding_ctrl):
+			trackers.append(_holding_ctrl.tracker)
+		if is_instance_valid(secondary_ctrl):
+			trackers.append(secondary_ctrl.tracker)
+		if not trackers.is_empty():
+			XRToolsRumbleManager.add(self, _rumble_event, trackers)
+
+	# Physical-pad path: vibrate every connected pad whenever this controller is
+	# held (VR or desktop). All pads merge into the one held controller's port,
+	# so rumbling all of them is the faithful mirror. Single-pad (the common
+	# case) works perfectly; multi-pad rumbles uniformly. Runs alongside the VR
+	# haptics above, so a hand and a pad can buzz together.
+	if is_held:
+		for device in Input.get_connected_joypads():
+			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
+		_pad_rumble_active = true
+
+
+func restore_port_connection(system: RetroSystem, port_index: int) -> void:
+	if _cable_plug != null:
+		system.restore_controller_plug(port_index, _cable_plug)
+	else:
+		_pending_port_restore = {"system": system, "port_index": port_index}
+
+
+# ── Bindings ──────────────────────────────────────────────────────────────────
+
+## Reload bindings from disk for the currently-connected system (or global if unplugged).
+func reload_bindings() -> void:
+	_load_bindings()
+
+
+func _load_bindings() -> void:
+	var systemid := ""
+	if is_instance_valid(_connected_system):
+		systemid = _connected_system.systemid
+	var bindings := ControllerBindings.get_for_system(systemid)
+	_button_map = bindings["buttons"]
+	_stick_map  = bindings["sticks"]
+	var pad := GamepadBindings.get_global()
+	_pad_button_map = pad["buttons"]
+	_pad_stick_map  = pad["sticks"]
+
+
+# Returns the joypad button bitmask contributed by one controller.
+# Only processes sources prefixed for the given hand.
+func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
+	var bits: int = 0
+	for full_source: String in _button_map:
+		var bit: int = _button_map[full_source]
+		if bit < 0:
+			continue
+		var vr_input: String
+		if full_source.begins_with("right_"):
+			if left_hand:
+				continue
+			vr_input = full_source.substr(6)
+		elif full_source.begins_with("left_"):
+			if not left_hand:
+				continue
+			vr_input = full_source.substr(5)
+		else:
+			vr_input = full_source
+		var threshold: float = INPUT_THRESHOLDS.get(vr_input, 0.5)
+		if ctrl.get_float(vr_input) > threshold:
+			bits |= (1 << bit)
+	return bits
+
+
+# ── Input forwarding ──────────────────────────────────────────────────────────
+
+func _process(_delta: float) -> void:
+	var secondary_ctrl := _get_secondary_ctrl()
+	_combo_debug(_holding_ctrl)
+
+	# Drop combo: each hand only releases itself.
+	if _is_combo_pressed(secondary_ctrl):
+		_allow_drop = true
+		_set_model_visible(secondary_ctrl, true)
+		_update_pointer_block(secondary_ctrl, false)
+		if _grab_driver and _grab_driver.secondary:
+			_grab_driver.secondary.pickup.drop_object()
+		_allow_drop = false
+		_update_locomotion_block()
+		_apply_rumble()
+	elif _is_combo_pressed(_holding_ctrl):
+		if is_instance_valid(secondary_ctrl):
+			# Drop primary only; XRTools promotes secondary to primary.
+			_allow_drop = true
+			_set_model_visible(_holding_ctrl, true)
+			_update_pointer_block(_holding_ctrl, false)
+			if is_instance_valid(_saved_by):
+				_saved_by.call("drop_object")
+			# _on_released_signal already updated _holding_ctrl to promoted hand.
+			_allow_drop = false
+			_update_locomotion_block()
+			_apply_rumble()
+		else:
+			_drop_all()
+			return
+
+	if _connected_system == null or _port_index < 0:
+		return
+
+	if _desktop_held:
+		_process_desktop_joypad()
+		return
+
+	if not is_instance_valid(_holding_ctrl):
+		_send_joypad(0, 0, 0, 0, 0)
+		return
+
+	var ctrl := _holding_ctrl
+	var left_hand := ctrl.tracker == &"left_hand"
+
+	var btn: int = 0
+
+	# Face / grip / trigger buttons via button_map.
+	btn |= _apply_buttons_for_ctrl(ctrl, left_hand)
+	if is_instance_valid(secondary_ctrl):
+		btn |= _apply_buttons_for_ctrl(secondary_ctrl, secondary_ctrl.tracker == &"left_hand")
+
+	# lstick = left hand's primary stick; rstick = right hand's primary stick.
+	var left_ctrl  := ctrl if left_hand else secondary_ctrl
+	var right_ctrl := ctrl if not left_hand else secondary_ctrl
+	var lstick: Vector2 = left_ctrl.get_vector2("primary") if is_instance_valid(left_ctrl) else Vector2.ZERO
+	var rstick: Vector2 = right_ctrl.get_vector2("primary") if is_instance_valid(right_ctrl) else Vector2.ZERO
+
+	var alx := 0; var aly := 0
+	var arx := 0; var ary := 0
+
+	# Target strings: "left", "right", "dpad", "left+dpad", "right+dpad"
+	# Substring checks handle combined targets ("dpad" in "left+dpad" → true).
+	var lt: String = _stick_map.get("stick_left",  "left+dpad")
+	var rt: String = _stick_map.get("stick_right", "right")
+
+	if "left"  in lt: alx = int(lstick.x * ANALOG_SCALE); aly = int(-lstick.y * ANALOG_SCALE)
+	elif "right" in lt: arx = int(lstick.x * ANALOG_SCALE); ary = int(-lstick.y * ANALOG_SCALE)
+	if "dpad" in lt: btn |= _threshold_to_dpad(lstick)
+
+	if "right" in rt: arx = int(rstick.x * ANALOG_SCALE); ary = int(-rstick.y * ANALOG_SCALE)
+	elif "left" in rt: alx = int(rstick.x * ANALOG_SCALE); aly = int(-rstick.y * ANALOG_SCALE)
+	if "dpad" in rt: btn |= _threshold_to_dpad(rstick)
+
+	var m := _merge_pad_state(btn, alx, aly, arx, ary)
+	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+
+
+## Capture is only meaningful on desktop: in VR the pad reads the hand
+## controllers, never the keyboard-bound actions.
+func _can_capture() -> bool:
+	return _desktop_held and _connected_system != null and _port_index >= 0
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or key.is_echo() or _capture == null:
+		return
+	if _capture.handle_key(key):
+		get_viewport().set_input_as_handled()
+
+
+func _process_desktop_joypad() -> void:
+	var btn: int = 0
+	var alx := 0
+	var aly := 0
+	var arx := 0
+	var ary := 0
+
+	# Keyboard-bound buttons and sticks only while captured — otherwise WASD and
+	# friends still belong to the player. The physical pad is merged in below
+	# either way: it has no second meaning, so holding this pad is consent enough.
+	if _capture != null and _capture.is_active():
+		for action: String in DESKTOP_BUTTON_MAP:
+			var bit: int = DESKTOP_BUTTON_MAP[action]
+			if Input.is_action_pressed(action):
+				btn |= (1 << bit)
+
+		# Left stick from RETRO_ANALOG_LEFT_* actions; Y negated to match VR.
+		var lx := Input.get_axis("RETRO_ANALOG_LEFT_X_NEGATIVE",  "RETRO_ANALOG_LEFT_X_POSITIVE")
+		var ly := Input.get_axis("RETRO_ANALOG_LEFT_Y_NEGATIVE",  "RETRO_ANALOG_LEFT_Y_POSITIVE")
+		var rx := Input.get_axis("RETRO_ANALOG_RIGHT_X_NEGATIVE", "RETRO_ANALOG_RIGHT_X_POSITIVE")
+		var ry := Input.get_axis("RETRO_ANALOG_RIGHT_Y_NEGATIVE", "RETRO_ANALOG_RIGHT_Y_POSITIVE")
+		alx = int(lx * ANALOG_SCALE)
+		aly = int(-ly * ANALOG_SCALE)
+		arx = int(rx * ANALOG_SCALE)
+		ary = int(-ry * ANALOG_SCALE)
+
+	var m := _merge_pad_state(btn, alx, aly, arx, ary)
+	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+
+
+## Route input to the connected system's core, via netplay when a lockstep game
+## is running (the gate applies the agreed frame on every peer), else directly.
+func _send_joypad(btn: int, alx: int, aly: int, arx: int, ary: int) -> void:
+	if NetworkManager.netplay_route(_connected_system, _port_index,
+			{"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}):
+		return
+	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
+
+
+## Merge physical-gamepad state into the current (VR or keyboard) state.
+## Buttons OR together; each analog stick takes whichever source has the larger
+## magnitude, so a real pad and the VR thumbstick don't fight.
+func _merge_pad_state(btn: int, alx: int, aly: int, arx: int, ary: int) -> Dictionary:
+	var pad := GamepadBindings.poll(_pad_button_map, _pad_stick_map)
+	btn |= int(pad["btn"])
+	var plx: int = pad["alx"]
+	var ply: int = pad["aly"]
+	var prx: int = pad["arx"]
+	var pry: int = pad["ary"]
+	if plx * plx + ply * ply > alx * alx + aly * aly:
+		alx = plx; aly = ply
+	if prx * prx + pry * pry > arx * arx + ary * ary:
+		arx = prx; ary = pry
+	return {"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}
+
+
+static func _threshold_to_dpad(stick: Vector2) -> int:
+	var bits := 0
+	if stick.y >  DPAD_THRESHOLD: bits |= (1 << 4)
+	if stick.y < -DPAD_THRESHOLD: bits |= (1 << 5)
+	if stick.x < -DPAD_THRESHOLD: bits |= (1 << 6)
+	if stick.x >  DPAD_THRESHOLD: bits |= (1 << 7)
+	return bits

@@ -1,9 +1,9 @@
 # metaxr-audio-godot
 
-A GDExtension wrapping the **Meta XR Audio SDK** native C API, giving RetroVR
+A GDExtension wrapping the **Meta XR Audio SDK** native C API, giving RetroXR
 HRTF spatialisation on Quest. Sibling to `libretro-godot` and `godot-pdfium`:
 same layout, reuses `../libretro-godot/godot-cpp`, deploys to
-`RetroVR/metaxr-audio/`.
+`RetroXR/metaxr-audio/`.
 
 ---
 

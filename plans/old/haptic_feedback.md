@@ -66,7 +66,7 @@ Key design points:
   ```
 - No GDScript-callable method is needed — the signal is the API.
 
-### GDScript (RetroVR/Scripts/Objects/)
+### GDScript (RetroXR/Scripts/Objects/)
 
 **`system.gd`**
 - Add `var _port_controllers: Array = [null, null, null, null]` alongside `_port_zones` (line 70).
@@ -111,7 +111,7 @@ Key design points:
 ## Verification
 
 1. **Build**: from workspace root, `& $scons platform=windows arch=x86_64 target=template_debug dev_build=yes`. Expect no new warnings.
-2. **Code path smoke test (log only)**: temporarily add a `print` in `_on_rumble_state_changed` showing `port / weak / strong`, launch `RetroVR`, power on an N64 system with Mario 64 (or any rumble-capable rom), perform an action that rumbles (fall damage, cartridge blow). Confirm prints.
+2. **Code path smoke test (log only)**: temporarily add a `print` in `_on_rumble_state_changed` showing `port / weak / strong`, launch `RetroXR`, power on an N64 system with Mario 64 (or any rumble-capable rom), perform an action that rumbles (fall damage, cartridge blow). Confirm prints.
 3. **VR haptics**: with an XR controller physically holding the `RetroController` plugged into port 0 of that system, trigger the same rumble event. The holding hand should vibrate; releasing the controller while rumble is active should stop the vibration; re-grabbing mid-rumble should resume it. Test two-handed hold — both hands should vibrate.
 4. **Unplug-during-rumble**: trigger rumble, yank the `ControllerPlug` from the port while still held. Vibration should stop immediately (handled by `_on_port_released` → `set_rumble(0,0)`).
 5. **Power-off-during-rumble**: trigger rumble, press power button. Vibration should stop (handled by `power_off` clearing all ports).

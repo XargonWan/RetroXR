@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build every RetroVR GDExtension for one platform, in one command.
+"""Build every retroXR GDExtension for one platform, in one command.
 
     python Tools/build.py windows
     python Tools/build.py android --target release
@@ -31,11 +31,11 @@ REPO = Path(__file__).resolve().parent.parent
 # name, directory scons runs in (relative to REPO), where the artifacts land.
 # Order matters only for readability of the log; there are no interdependencies.
 EXTENSIONS = [
-    ("libretro-godot", ".", "RetroVR/libretro-godot"),
-    ("verlet-rope", "verlet-rope", "RetroVR/verlet-rope"),
-    ("vlc-godot", "vlc-godot", "RetroVR/vlc-godot"),
-    ("godot-pdfium", "godot-pdfium", "RetroVR/godot-pdfium"),
-    ("metaxr-audio", "metaxr-audio-godot", "RetroVR/metaxr-audio"),
+    ("libretro-godot", ".", "RetroXR/libretro-godot"),
+    ("verlet-rope", "verlet-rope", "RetroXR/verlet-rope"),
+    ("vlc-godot", "vlc-godot", "RetroXR/vlc-godot"),
+    ("godot-pdfium", "godot-pdfium", "RetroXR/godot-pdfium"),
+    ("metaxr-audio", "metaxr-audio-godot", "RetroXR/metaxr-audio"),
 ]
 
 ARCH = {"windows": "x86_64", "linux": "x86_64", "android": "arm64"}
@@ -177,7 +177,7 @@ def main() -> int:
     if failed:
         print(f"\n{len(failed)} of {len(results)} builds FAILED: {', '.join(failed)}")
         return 1
-    print(f"\nall {len(results)} builds OK -> RetroVR/")
+    print(f"\nall {len(results)} builds OK -> RetroXR/")
     return 0
 
 

@@ -1,5 +1,5 @@
 [submodule "libretro-core-info"]
-	path = RetroVR/libretro-core-info
+	path = RetroXR/libretro-core-info
 	url = https://github.com/libretro/libretro-core-info
 [submodule "libretro-godot"]
 	path = libretro-godot

@@ -3,7 +3,7 @@
 ## Context
 
 Adding a spawnable object today requires touching THREE registration points in
-`RetroVR/Scripts/Data/scene_persistence.gd` — a `const *_SCENE` preload, an
+`RetroXR/Scripts/Data/scene_persistence.gd` — a `const *_SCENE` preload, an
 `elif node is X:` branch in `_serialize_node`, and a `"type"` case in
 `_deserialize_object` — a file unrelated to the object being added. Forgetting
 is **silent**: `_serialize_node` returns `{}` and the object simply vanishes

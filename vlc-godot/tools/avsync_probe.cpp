@@ -22,8 +22,8 @@
 //      vlc-godot\vendor\lib\libvlc.lib
 //
 // Run from beside libvlc.dll and the plugin tree:
-//   cd RetroVR\vlc-godot
-//   avsync_probe.exe C:/Users/me/retrovr/dvd/SHREK.ISO dvd 20
+//   cd RetroXR\vlc-godot
+//   avsync_probe.exe C:/Users/me/retroxr/dvd/SHREK.ISO dvd 20
 
 #include <vlc/vlc.h>
 

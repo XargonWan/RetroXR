@@ -7,7 +7,7 @@
 
 ## Context
 
-Today RetroVR only sees ROMs that were physically copied into
+Today RetroXR only sees ROMs that were physically copied into
 `<roms_root>/<systemid>/` (`RomLibrary.scan_roms`, `Scripts/Data/library/rom_library.gd:54`), and
 metadata/art comes exclusively from ScreenScraper into a per-system `gamelist.json` +
 `media/{wheel,box,label,manual}/` (`Scripts/Data/library/screenscraper_client.gd`,
@@ -15,7 +15,7 @@ metadata/art comes exclusively from ScreenScraper into a per-system `gamelist.js
 and no shared library between devices.
 
 The user runs a RomM server that already holds the library **and** its metadata and cover art.
-Wiring RetroVR to it removes the file-shuffling and the scraping step in one move: browse the
+Wiring RetroXR to it removes the file-shuffling and the scraping step in one move: browse the
 whole server library in VR, tap a game, it downloads and spawns as a cartridge/disc with its
 cover art on the label.
 
@@ -428,7 +428,7 @@ titles, 🎮 detail, 📖 manual, ✂️ scrape — plus:
 
 ### Leading state icon (Nerd Font)
 
-`RetroVR/fonts/SymbolsNerdFont-Regular.ttf` is already a bundled project resource — so it works
+`RetroXR/fonts/SymbolsNerdFont-Regular.ttf` is already a bundled project resource — so it works
 on Quest with no system-font dependency — and the recipe is established at `vr_hinge.gd:214-219`
 and `tv_remote.gd:124-128`:
 
@@ -727,7 +727,7 @@ be regenerated or probes fail to resolve the new types:
 "$godot" --headless --path "$proj" --editor --quit     # filter: SCRIPT ERROR|Parse Error|Failed to
 ```
 
-**Probes** (throwaway `probe.gd` + `probe.tscn` in `RetroVR/`, deleted afterwards, each with a
+**Probes** (throwaway `probe.gd` + `probe.tscn` in `RetroXR/`, deleted afterwards, each with a
 `create_timer(...)` quit safety net), printing `[probe] …`:
 
 1. `RommClient.heartbeat` against `192.168.0.106:8080` → assert version `5.0.0`; assert an
@@ -774,10 +774,10 @@ animation, capture an **mp4** (`imageio` + `imageio-ffmpeg`, 15 fps, libx264/yuv
 
 **On-device (Quest, unattended over adb).** Export, `adb install -r`, then all three of:
 `am broadcast -a com.oculus.vrpowermanager.prox_close`, `setprop debug.oculus.guardian_pause 1`,
-`monkey -p com.xenu.retrovr 1`. Stream `adb logcat -s godot:*` from *before* launch (the ring
+`monkey -p com.xenu.retroxr 1`. Stream `adb logcat -s godot:*` from *before* launch (the ring
 buffer rotates in under a minute). Specifically measure: scroll frame time over a 1000+ row list,
 RAM after opening the largest platform, and a large-ISO launch to confirm the Phase 0 fix.
-Watch for the stale-`.gdc` export trap — `rm -rf RetroVR/android/build/src/main/assets` if an
+Watch for the stale-`.gdc` export trap — `rm -rf RetroXR/android/build/src/main/assets` if an
 on-device change doesn't take.
 
 ---

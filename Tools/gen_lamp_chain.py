@@ -171,7 +171,7 @@ VARIANTS = {
 
 if __name__ == "__main__":
     out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(__file__), "..", "RetroVR", "Audio", "lamp")
+        os.path.dirname(__file__), "..", "RetroXR", "Audio", "lamp")
     os.makedirs(out_dir, exist_ok=True)
     for name, kw in VARIANTS.items():
         secs = write(os.path.join(out_dir, "pull_%s.wav" % name), pull(**kw))

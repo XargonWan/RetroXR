@@ -1,6 +1,6 @@
 # type: ignore
 #
-# Standalone GDExtension: vlc_godot (libVLC-backed DVD/video player for RetroVR).
+# Standalone GDExtension: vlc_godot (libVLC-backed DVD/video player for retroXR).
 # Builds separately from libretro-godot (two extensions can't share one SCons
 # invocation), but reuses the same godot-cpp submodule checked out under
 # libretro-godot/godot-cpp. Modeled on libretro-godot/Temp/SConscript and the
@@ -9,11 +9,11 @@
 # Windows:  scons platform=windows arch=x86_64 target=template_debug
 # Android:  scons platform=android arch=arm64 target=template_debug (Phase 3)
 #
-# Output goes to RetroVR/vlc-godot/ alongside the vendored libvlc.dll runtime.
+# Output goes to RetroXR/vlc-godot/ alongside the vendored libvlc.dll runtime.
 
 import os
 
-output_dir = '#../RetroVR/vlc-godot'
+output_dir = '#../RetroXR/vlc-godot'
 godot_cpp = '../libretro-godot/godot-cpp'
 
 # godot-cpp defaults debug_symbols to dev_build, so a plain target=template_debug

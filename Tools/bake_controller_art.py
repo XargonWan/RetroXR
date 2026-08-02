@@ -1,7 +1,7 @@
 """Bake Quest Touch Plus line art for the Controls remap diagram.
 
 Consumes the normal + part-ID passes written by a throwaway Godot probe (see
-CLAUDE.md "Headless Testing") and emits, into RetroVR/Textures/Controllers/:
+CLAUDE.md "Headless Testing") and emits, into RetroXR/Textures/Controllers/:
 
     quest_touch_plus_left.png    white RGB; alpha = 1.0 stroke, 0.10 body
     quest_touch_plus_right.png
@@ -114,7 +114,7 @@ def main():
         return 1
     pass_dir = Path(sys.argv[1])
     out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else \
-        Path(__file__).resolve().parent.parent / "RetroVR" / "Textures" / "Controllers"
+        Path(__file__).resolve().parent.parent / "RetroXR" / "Textures" / "Controllers"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     table = {}

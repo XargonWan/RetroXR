@@ -1,7 +1,7 @@
 # type: ignore
 #
 # Standalone GDExtension: verlet_rope (Xenu::VerletRope, the simulated cable that
-# hangs off every controller and A/V plug in RetroVR).
+# hangs off every controller and A/V plug in retroXR).
 #
 # Lived in libretro-godot until 2026-08-02. It never belonged there — it includes
 # nothing from that library and libretro includes nothing from it; it was only
@@ -20,6 +20,6 @@ VariantDir('Temp', '.', duplicate=0)
 env = Environment()
 
 import os
-output_dir = os.environ.get('VERLET_ROPE_OUTPUT_DIR', '#../RetroVR/verlet-rope')
+output_dir = os.environ.get('VERLET_ROPE_OUTPUT_DIR', '#../RetroXR/verlet-rope')
 
 SConscript('Temp/SConscript', exports=['env', 'output_dir'])

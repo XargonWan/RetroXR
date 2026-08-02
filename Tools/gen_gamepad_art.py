@@ -10,7 +10,7 @@ It is deliberately an Xbox *layout* — offset sticks, ABXY diamond, bumpers and
 triggers — and deliberately not an Xbox. No logo, no trade dress, nothing traced
 from a photo, so there is nothing to license and nobody's mark to borrow.
 
-Emits, into RetroVR/Textures/Controllers/:
+Emits, into RetroXR/Textures/Controllers/:
 
     gamepad_line.svg    white stroke, faint white body; alpha carries the drawing
 
@@ -172,7 +172,7 @@ def anchors() -> dict:
 
 def main() -> None:
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else \
-        Path(__file__).resolve().parent.parent / "RetroVR" / "Textures" / "Controllers"
+        Path(__file__).resolve().parent.parent / "RetroXR" / "Textures" / "Controllers"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "gamepad_line.svg"
     path.write_text(build(), encoding="utf-8")

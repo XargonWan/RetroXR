@@ -41,7 +41,7 @@ SR = 48000
 LOOP = 4.0                      # seconds; 240 whole cycles of 60 Hz
 NTSC_LINE = 15734.264
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "RetroVR", "Audio", "crt")
+OUT = os.path.join(os.path.dirname(__file__), "..", "RetroXR", "Audio", "crt")
 if len(__import__("sys").argv) > 1:
     OUT = __import__("sys").argv[1]
 

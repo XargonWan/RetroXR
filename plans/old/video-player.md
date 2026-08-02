@@ -17,7 +17,7 @@ Add a video player system that follows the same physical metaphor as game consol
 
 ### Phase 1: Video Content Discovery
 1. **Add video scanning to `rom_library.gd`** (or new `video_library.gd`):
-   - Scan `%USERPROFILE%/retrovr/videos/` (Windows) or equivalent Android path
+   - Scan `%USERPROFILE%/retroxr/videos/` (Windows) or equivalent Android path
    - Supported extensions: `.ogv` (native Godot), `.mp4` (if GDExtension available)
    - Return `{path: String, label: String}` array (same pattern as ROMs/books)
 2. **Add "Videos" tab to spawn menu**:
@@ -69,18 +69,18 @@ Add a video player system that follows the same physical metaphor as game consol
    - Restore: re-spawn VCR player, reconnect cable, reinsert tape
 
 ## Key Files to Modify
-- `RetroVR/Scripts/Data/library/rom_library.gd` — Add `scan_videos()` and `ensure_videos_root()`
-- `RetroVR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Add Videos tab, spawn VCR tapes
-- `RetroVR/Scripts/Objects/tv/tv.gd` — Generalize plug source (system OR VCR player)
-- `RetroVR/Scripts/Objects/cables/cable_plug.gd` — `get_source()` instead of `get_system()`
-- `RetroVR/Scripts/Data/scene_persistence.gd` — Add VCR types
+- `RetroXR/Scripts/Data/library/rom_library.gd` — Add `scan_videos()` and `ensure_videos_root()`
+- `RetroXR/Scripts/UI/spawn_menu/spawn_menu_controller.gd` — Add Videos tab, spawn VCR tapes
+- `RetroXR/Scripts/Objects/tv/tv.gd` — Generalize plug source (system OR VCR player)
+- `RetroXR/Scripts/Objects/cables/cable_plug.gd` — `get_source()` instead of `get_system()`
+- `RetroXR/Scripts/Data/scene_persistence.gd` — Add VCR types
 
 ## New Files
-- `RetroVR/Scripts/Objects/media/vcr_player.gd` — VCR player controller
-- `RetroVR/Scripts/Objects/media/vcr_tape.gd` — VCR tape (video cartridge)
-- `RetroVR/Scenes/Objects/vcr_player.tscn` — VCR player scene
-- `RetroVR/Scenes/Objects/vcr_tape.tscn` — VCR tape scene
-- `RetroVR/Scripts/Data/video_library.gd` — Video folder scanning (or add to rom_library)
+- `RetroXR/Scripts/Objects/media/vcr_player.gd` — VCR player controller
+- `RetroXR/Scripts/Objects/media/vcr_tape.gd` — VCR tape (video cartridge)
+- `RetroXR/Scenes/Objects/vcr_player.tscn` — VCR player scene
+- `RetroXR/Scenes/Objects/vcr_tape.tscn` — VCR tape scene
+- `RetroXR/Scripts/Data/video_library.gd` — Video folder scanning (or add to rom_library)
 
 ## Dependencies
 - **OGV/Theora**: Native Godot support, no extra dependencies
@@ -88,7 +88,7 @@ Add a video player system that follows the same physical metaphor as game consol
 - Consider starting with OGV only, add MP4 later
 
 ## Verification
-1. Place `.ogv` files in `retrovr/videos/`
+1. Place `.ogv` files in `retroxr/videos/`
 2. Open spawn menu → Videos tab → see listed videos
 3. Spawn a VCR tape, spawn a VCR player
 4. Insert tape into VCR player's slot

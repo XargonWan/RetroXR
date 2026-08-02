@@ -17,11 +17,11 @@ SCRIPT ERROR: Parse Error: Could not find type "VerletRope" in the current scope
 
 | Extension | Provides | Built from | Deploys to |
 |---|---|---|---|
-| `libretro-godot` | `Libretro` — runs the emulator cores (submodule) | repo root | `RetroVR/libretro-godot/` |
-| `verlet-rope` | `VerletRope` — the simulated cables | `verlet-rope/` | `RetroVR/verlet-rope/` |
-| `vlc-godot` | `VlcPlayer` — video for the VCR and DVD player | `vlc-godot/` | `RetroVR/vlc-godot/` |
-| `godot-pdfium` | `PDFRenderer` — renders manual pages | `godot-pdfium/` | `RetroVR/godot-pdfium/` |
-| `metaxr-audio` | HRTF spatial audio on Quest | `metaxr-audio-godot/` | `RetroVR/metaxr-audio/` |
+| `libretro-godot` | `Libretro` — runs the emulator cores (submodule) | repo root | `RetroXR/libretro-godot/` |
+| `verlet-rope` | `VerletRope` — the simulated cables | `verlet-rope/` | `RetroXR/verlet-rope/` |
+| `vlc-godot` | `VlcPlayer` — video for the VCR and DVD player | `vlc-godot/` | `RetroXR/vlc-godot/` |
+| `godot-pdfium` | `PDFRenderer` — renders manual pages | `godot-pdfium/` | `RetroXR/godot-pdfium/` |
+| `metaxr-audio` | HRTF spatial audio on Quest | `metaxr-audio-godot/` | `RetroXR/metaxr-audio/` |
 
 **Each needs its own `scons` invocation.** They share the `godot-cpp` submodule, and
 godot-cpp's `SConstruct` can only run once per process, so a single scons run can never
@@ -82,8 +82,8 @@ backed `VlcPlayer`. It is the single video backend for both the VCR and the DVD 
 and it handles x265/HEVC.
 
 1. Drop video files into the `videos/` folder (next to `roms/` and `books/`):
-   - Windows: `%USERPROFILE%\retrovr\videos`
-   - Quest/Android: `/sdcard/Android/data/com.xenu.retrovr/files/videos`
+   - Windows: `%USERPROFILE%\retroxr\videos`
+   - Quest/Android: `/sdcard/Android/data/com.xenu.retroxr/files/videos`
    - Supported: `.mp4`, `.mkv`, `.avi`, `.webm`, `.mov`
 2. Open the spawn menu (`Tab`), go to the **Videos** tab, and click a video to spawn a
    **VHS tape** carrying that file's path (like a cartridge carries a ROM path).
@@ -112,7 +112,7 @@ it is FPS-snapped — dropping it requires **`Ctrl` + Left-click** (plain click 
 
 ## Desktop mode controls
 
-When no VR headset is detected, RetroVR falls back to a desktop mode with mouse/keyboard controls.
+When no VR headset is detected, retroXR falls back to a desktop mode with mouse/keyboard controls.
 
 **Movement / camera**
 - `WASD` — move

@@ -121,13 +121,13 @@ Allow users to remap Quest controller buttons, d-pad, and analog sticks to libre
 2. **Export/import**: Optional, copy JSON to clipboard
 
 ## Key Files to Modify
-- `RetroVR/Scripts/XR/vr_input_mapper.gd` — Two-dictionary data-driven mapping, load bindings on port-plug
-- `RetroVR/Scripts/UI/spawn_menu/spawn_menu.gd` — Add Controls section to Options tab
-- `RetroVR/Scripts/Objects/systems/system.gd` — Pass `systemid` to controller on port snap
+- `RetroXR/Scripts/XR/vr_input_mapper.gd` — Two-dictionary data-driven mapping, load bindings on port-plug
+- `RetroXR/Scripts/UI/spawn_menu/spawn_menu.gd` — Add Controls section to Options tab
+- `RetroXR/Scripts/Objects/systems/system.gd` — Pass `systemid` to controller on port snap
 
 ## New Files
-- `RetroVR/Scripts/Data/bindings/controller_bindings.gd` — Load/save/query binding profiles
-- `RetroVR/Scripts/UI/controls_remap_panel.gd` — Remapping UI logic
+- `RetroXR/Scripts/Data/bindings/controller_bindings.gd` — Load/save/query binding profiles
+- `RetroXR/Scripts/UI/controls_remap_panel.gd` — Remapping UI logic
 
 ## Verification
 1. Open spawn menu → Options → Controls

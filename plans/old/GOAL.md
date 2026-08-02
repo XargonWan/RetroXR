@@ -1,4 +1,4 @@
-# RetroVR
+# RetroXR
 
 This is a libretro core manager/downloader, rom datamanager, rom scraper, in VR
 
