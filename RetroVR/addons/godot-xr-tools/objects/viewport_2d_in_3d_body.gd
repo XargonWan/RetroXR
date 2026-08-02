@@ -95,16 +95,23 @@ func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 		_:
 			pressed = _presses.has(pointer)
 
-	# Dispatch touch events
-	match type:
-		XRToolsPointerEvent.Type.PRESSED:
-			_report_touch_down(index, at)
-
-		XRToolsPointerEvent.Type.RELEASED:
-			_report_touch_up(index, at)
-
-		XRToolsPointerEvent.Type.MOVED:
-			_report_touch_move(index, pressed, last, at)
+	# LOCAL MODIFICATION (RetroVR) — reapply if this addon is updated.
+	#
+	# Upstream dispatched touch events for EVERY pointer and then mouse events
+	# for the mouse pointer as well, so the mouse pointer sent BOTH. A Control
+	# accepts either as a click, so one press arrived at a Button twice:
+	#
+	#   ScreenTouch pressed=true -> Button.pressed (#1)
+	#   MouseButton pressed=true -> Button.pressed (#2)
+	#
+	# Every panel in this project is single-pointer, and the mouse path is the
+	# one that carries hover and focus, so the mouse pointer now sends mouse
+	# events only. Other pointers are unchanged and still get a touch index, so
+	# a second simultaneous pointer keeps working.
+	#
+	# Selecting the mouse moved ABOVE the dispatch — it used to run between the
+	# two, so a pointer becoming the mouse on this very event had already sent
+	# its touch.
 
 	# If the current mouse isn't pressed then consider switching to a new one
 	if not _presses.has(_mouse):
@@ -118,8 +125,8 @@ func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 			# No mouse, pick the dominant
 			_mouse = _dominant
 
-	# Fire mouse events
 	if pointer == _mouse:
+		# Fire mouse events
 		match type:
 			XRToolsPointerEvent.Type.PRESSED:
 				_report_mouse_down(at)
@@ -129,6 +136,17 @@ func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 
 			XRToolsPointerEvent.Type.MOVED:
 				_report_mouse_move(pressed, last, at)
+	else:
+		# Dispatch touch events
+		match type:
+			XRToolsPointerEvent.Type.PRESSED:
+				_report_touch_down(index, at)
+
+			XRToolsPointerEvent.Type.RELEASED:
+				_report_touch_up(index, at)
+
+			XRToolsPointerEvent.Type.MOVED:
+				_report_touch_move(index, pressed, last, at)
 
 	# Clear pointer information on exit
 	if type == XRToolsPointerEvent.Type.EXITED:

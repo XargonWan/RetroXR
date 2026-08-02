@@ -9,13 +9,12 @@
 ## It IS its own scroll container — the menu's _show_view wants a Control and a
 ## ScrollContainer, and for this tab they were always the same node.
 ##
-## Nothing here may set ACTION_MODE_BUTTON_PRESS. A single pointer press on a
-## Viewport2Din3D pushes BOTH an InputEventScreenTouch and an
-## InputEventMouseButton into the SubViewport (viewport_2d_in_3d_body.gd
-## _report_touch_down + _report_mouse_down), and emulate_mouse_from_touch turns
-## the first into a second mouse click — so a press-mode Button fires twice per
-## tap. The keypad below was entering two digits per key. Release mode fires
-## once; see vr_dropdown.gd, which documents the same trap.
+## The keypad below was entering two digits per tap: a Viewport2Din3D delivered
+## one pointer press to a Button as BOTH an InputEventScreenTouch and an
+## InputEventMouseButton, and a press-mode Button fires on each. Fixed at the
+## source in viewport_2d_in_3d_body.gd, which now sends the mouse pointer mouse
+## events only. Release mode was never affected — the second event finds the
+## button already released — which is why the rest of the menu was fine.
 class_name SpawnMenuNetView
 extends ScrollContainer
 

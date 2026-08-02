@@ -11,11 +11,10 @@
 ## this asks by signal (rebind_started / pad_rebind_started) and the controller
 ## calls back into on_rebind_complete / on_pad_rebind_complete.
 ##
-## Nothing here may set ACTION_MODE_BUTTON_PRESS. One pointer press on a
-## Viewport2Din3D reaches a Button as two clicks — see the longer note in
-## net_view.gd, where it was entering two digits per keypad tap. It did no harm
-## on this tab, because every handler here is an assignment or an idempotent
-## write, but that is luck rather than design and it should not be relied on.
+## The rebind buttons used to be in ACTION_MODE_BUTTON_PRESS, which a
+## Viewport2Din3D turned into two presses per tap — see the note in net_view.gd.
+## It did no harm here, because every handler on this tab is an assignment or an
+## idempotent write, but that was luck rather than design.
 class_name SpawnMenuControlsView
 extends ScrollContainer
 

@@ -3,8 +3,8 @@
 ##
 ## Why this exists instead of OptionButton — two separate hazards, both caused
 ## by viewport_2d_in_3d_body.gd pushing BOTH an InputEventScreenTouch AND an
-## InputEventMouseButton for every pointer press (touch is then emulated into a
-## second mouse press), so one VR click arrives as TWO presses:
+## InputEventMouseButton for the same pointer press, so one VR click arrived as
+## TWO presses:
 ##
 ##  1. OptionButton opens a PopupMenu — a separate embedded Window. The first
 ##     press opens it; the second lands outside the popup's rect and reads as
@@ -12,13 +12,17 @@
 ##  2. ACTION_MODE_BUTTON_PRESS makes a Button fire `pressed` TWICE per click
 ##     (measured), so any toggle built that way opens and closes instantly.
 ##
+## The duplicate itself is fixed now — the body sends the mouse pointer mouse
+## events only — but everything below stays. The addon is vendored, so an update
+## can silently take the fix away, and hazard 1 is a reason to keep the list
+## inline regardless of how many presses arrive.
+##
 ## So this control keeps the list inline (an ordinary PanelContainer in the
 ## Control tree — no Window), leaves every button on the default
 ## ACTION_MODE_BUTTON_RELEASE, and drops any second activation that lands in the
-## SAME process frame. Both duplicate presses are measured to arrive in one
-## frame, and a user cannot physically click twice in a single frame, so the
-## guard is exact. Do NOT set ACTION_MODE_BUTTON_PRESS on these buttons — it
-## makes the duplicate fire `pressed` twice instead of once.
+## SAME process frame. A user cannot physically click twice in one frame, so the
+## guard costs nothing now that it never fires. Do NOT set
+## ACTION_MODE_BUTTON_PRESS on these buttons.
 ##
 ## Usage:
 ##   var d := VRDropdown.create("Port 1", [["Gamepad", 1], ["Zapper", 258]], 1)
