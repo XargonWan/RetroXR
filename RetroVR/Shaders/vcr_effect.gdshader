@@ -1,6 +1,6 @@
 // VCR / VHS screen effect for the RetroVR video player.
 // Applied as a ShaderMaterial on the TV screen mesh; samples the live video
-// texture produced by an FFmpegVideoStream and adds the classic tape look:
+// texture produced by VlcPlayer and adds the classic tape look:
 // chromatic aberration, scanlines, tape grain, a scrolling tracking band,
 // horizontal wobble, color washout and a vignette.
 //
