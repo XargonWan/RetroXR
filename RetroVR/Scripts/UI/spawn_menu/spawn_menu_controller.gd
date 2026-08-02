@@ -296,10 +296,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			# raycast the pointable layer straight down the camera's aim instead.
 			var host := _raycast_options_host()
 			if host:
+				HeldHint.note_on(host, &"options_point")
 				host.toggle_options_ui(_camera)
 				get_viewport().set_input_as_handled()
 				return
 		if not disabled:
+			_note_menu_verb_used()
 			_toggle_menu()
 		get_viewport().set_input_as_handled()
 		return
@@ -338,10 +340,23 @@ func _on_controller_button(action_name: String) -> void:
 	if action_name == "primary_click":
 		var host := _get_pointed_options_host(_left_pointer)
 		if host:
+			HeldHint.note_on(host, &"options_point")
 			host.toggle_options_ui(_camera)
 			return
 		if not disabled:
+			_note_menu_verb_used()
 			_toggle_menu()
+
+
+## The menu verb is not about any one object, but the count that retires its
+## hint row is global — so tell whichever spawned object still carries the row.
+## Counting once is enough; note_used caps at LEARNED_AFTER anyway.
+func _note_menu_verb_used() -> void:
+	for node: Node in get_tree().get_nodes_in_group("spawned"):
+		var hint := node.get_node_or_null("HeldHint") as HeldHint
+		if hint != null:
+			hint.note_used(&"menu_open")
+			return
 
 
 # ── Scroll driving ────────────────────────────────────────────────────────────
@@ -808,6 +823,68 @@ func _place_spawned(obj: Node3D, _type: String) -> void:
 	if grabber != null and not NetworkManager.is_client() \
 			and is_instance_valid(obj) and obj is XRToolsPickable:
 		_give_to_grabber(grabber, obj as XRToolsPickable)
+
+	if is_instance_valid(obj):
+		_teach_verbs(obj)
+
+
+## Both verbs on the left thumbstick (Tab on desktop), taught on the object the
+## player just made: how to get the menu back, and — for anything with an
+## options panel — that pointing at it opens that panel.
+##
+## Declared here rather than in each object's own script because it is one
+## funnel and they are the same two rows every time. HeldHint counts uses and
+## stops showing a row once it is learned, so this is not a permanent tax on
+## every spawn.
+func _teach_verbs(obj: Node3D) -> void:
+	var hint := HeldHint.for_node(obj)
+	if hint == null:
+		return
+	var vr := _is_vr_runtime()
+	hint.add_row(&"menu_open", HeldHint.PLATFORM_BOTH,
+		["quest_stick_l_press"] if vr else ["keyboard_tab_outline"],
+		"Menu")
+	var has_options: bool = obj.has_method("toggle_options_ui")
+	if has_options:
+		hint.add_row(&"options_point", HeldHint.PLATFORM_BOTH,
+			["quest_stick_l_press"] if vr else ["keyboard_tab_outline"],
+			"Point at it for its options")
+
+	# Over the object itself, clear of its own geometry — a TV or a console is
+	# far taller than the hand-sized default offset, and the popup would open
+	# inside it.
+	hint.fit_above()
+
+	# In hand: its own hint shows on the grab, and these rows ride along. Left
+	# standing: show now, and again each time it is put down, which is when
+	# "point at it" first means anything.
+	if obj is XRToolsPickable:
+		var pickable := obj as XRToolsPickable
+		if not pickable.dropped.is_connected(_on_taught_object_dropped):
+			pickable.dropped.connect(_on_taught_object_dropped)
+		if not pickable.is_picked_up():
+			hint.show_unheld()
+	else:
+		hint.show_unheld()
+
+
+## Re-measure on every drop, not just at spawn: a console's lid can be open, a
+## cartridge can be seated in a slot, and the silhouette that the popup has to
+## clear is whatever it is now.
+func _on_taught_object_dropped(pickable: Variant) -> void:
+	var node := pickable as Node3D
+	if not is_instance_valid(node):
+		return
+	var hint := node.get_node_or_null("HeldHint") as HeldHint
+	if hint == null:
+		return
+	hint.fit_above()
+	hint.show_unheld.call_deferred()
+
+
+func _is_vr_runtime() -> bool:
+	var xr := XRServer.find_interface("OpenXR")
+	return xr != null and xr.is_initialized()
 
 
 func _on_spawn_requested(type: String) -> void:

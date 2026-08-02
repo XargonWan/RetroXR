@@ -93,10 +93,85 @@ static func attach(host: Node3D, vr_combo_drop: bool, height := 0.18) -> HeldHin
 	return hint
 
 
+## The hint on `host`, made if it has none. Several things now teach verbs about
+## the same object — the object's own script, and the spawner — and they must
+## share one popup: two floating over one console would be worse than neither.
+static func for_node(host: Node3D, vr_combo_drop := false, height := 0.18) -> HeldHint:
+	if not is_instance_valid(host):
+		return null
+	var existing := host.get_node_or_null("HeldHint") as HeldHint
+	if existing != null:
+		return existing
+	return attach(host, vr_combo_drop, height)
+
+
 ## Declare a hint row. `glyphs` are InputPrompts texture basenames, optionally
 ## carrying {side}/{s} tokens for per-hand art.
+##
+## Ignores a repeat of an id already declared, so a caller that cannot know
+## whether it is first — the spawner, adding the same row to every object it
+## makes — does not have to check.
 func add_row(id: StringName, platform: int, glyphs: Array, caption: String) -> void:
+	for r: Array in _rows:
+		if r[0] == id:
+			return
 	_rows.append([id, platform, glyphs, caption])
+
+
+## Show whatever applies, with no grab behind it: a hint about an object sitting
+## in the room, or about the world. on_grabbed reads the platform and the hand
+## off the grabber, and here there is nobody holding it — so the platform comes
+## from the runtime, and the art defaults to the left hand, which is the one
+## both of these verbs are on.
+func show_unheld() -> void:
+	_used_this_hold.clear()
+	var due := _due_rows(PLATFORM_DESKTOP if not _is_vr() else PLATFORM_VR)
+	if due.is_empty():
+		hide_now()
+		return
+	_build(due, false)
+	_show()
+
+
+static func _is_vr() -> bool:
+	var xr := XRServer.find_interface("OpenXR")
+	return xr != null and xr.is_initialized()
+
+
+## Lift the popup clear of the host's own geometry.
+##
+## The 0.18 m default is a hand measurement — it suits a controller or a
+## handheld held up in front of you. A TV, a console or a cartridge standing on
+## a surface is taller than that about its own origin, so the popup opens inside
+## the object and reads as belonging to the hand that spawned it rather than to
+## the thing itself.
+func fit_above(margin := 0.10) -> void:
+	if not is_instance_valid(_host):
+		return
+	_height = maxf(_visual_top(_host), 0.0) + margin
+
+
+## Highest point of the host's visible geometry, in host-local metres. Measured
+## from the meshes rather than a collision shape: several of these objects carry
+## a coarse box collider that is nothing like the silhouette.
+static func _visual_top(root: Node3D) -> float:
+	var inv := root.global_transform.affine_inverse()
+	var top := 0.0
+	var found := false
+	for node: Node in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi == null or mi.mesh == null or not mi.is_visible_in_tree():
+			continue
+		var ab := mi.get_aabb()
+		var to_root := inv * mi.global_transform
+		for i in 8:
+			var corner := ab.position + ab.size * Vector3(
+				float(i & 1), float((i >> 1) & 1), float((i >> 2) & 1))
+			var y := (to_root * corner).y
+			if not found or y > top:
+				top = y
+				found = true
+	return top if found else 0.0
 
 
 ## The grip+trigger+stick-click drop combo. Lives here so the four hosts that
