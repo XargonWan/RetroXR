@@ -13,9 +13,10 @@ extends ScrollContainer
 ## [header, [[title, author, licence], ...], note] — note "" for no note.
 const SECTIONS: Array = [
 	["OPEN SOURCE LIBRARIES", [
-		# Our own fork, but SKurdt's copyright notice rides with it — that is the
-		# MIT condition, and it is the reason this row names an author at all.
-		["libretro-godot",    "SKurdt", "MIT"],
+		# Ours now — the 2026-03-07 import has been rewritten and outgrown many
+		# times over. The upstream it started from is credited in the note below,
+		# which is where the MIT obligation is discharged.
+		["libretro-godot",    "XenuIsWatching", "MIT"],
 		["pdfium",            "The Chromium Authors", "BSD 3-Clause"],
 		["godot-xr-tools",   "Bastiaan Olij",   "MIT"],
 		["godot-cpp",        "Godot Engine contributors", "MIT"],
@@ -25,7 +26,7 @@ const SECTIONS: Array = [
 		["libVLC",           "VideoLAN",        "LGPL v2.1"],
 		["Nerd Fonts",       "Ryan L McIntyre", "MIT"],
 		["RomM",             "RomM contributors", "AGPL v3"],
-	], "libretro-godot is retroXR's fork of SKurdt's SK.Libretro.Godot."],
+	], "libretro-godot began as a fork of SK.Libretro.Godot by SKurdt (MIT)."],
 
 	# Deliberately not folded into the list above: the Meta XR Audio SDK is not
 	# open source, and its licence requires the copyright notice be reproduced
