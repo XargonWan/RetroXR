@@ -136,14 +136,14 @@ var _wheel_cache_order: Array[String] = []
 # ── UI state ──────────────────────────────────────────────────────────────────
 var _spawn_view:    Control = null
 var _cores_view:    Control = null
-var _controls_view: Control = null
+var _controls_view: SpawnMenuControlsView = null
 var _options_view:  Control = null
 # Extracted into their own files — see Scripts/UI/spawn_menu/views/. Each owns
 # its widgets and its state; this class only shows and hides them.
 var _graphics_view: SpawnMenuGraphicsView = null
 var _scene_view:    SpawnMenuSceneView = null
 var _net_view:      SpawnMenuNetView = null
-var _about_view:    Control = null
+var _about_view:    SpawnMenuAboutView = null
 var _nav_net_btn:      Button = null
 var _nav_spawn_btn:    Button = null
 var _nav_cores_btn:    Button = null
@@ -168,9 +168,7 @@ var _cores_tabs: TabContainer = null
 
 # The ScrollContainer currently in view
 var _active_scroll:        ScrollContainer = null
-var _controls_scroll:      ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
-var _about_scroll:         ScrollContainer = null
 
 # Spawn view tab ScrollContainers (indexed by tab index)
 var _spawn_tab_scrolls: Array[ScrollContainer] = []
@@ -236,30 +234,6 @@ var _rom_variants_panel: PanelContainer = null
 # Callback connected to scraper_client.media_download_completed so the tab
 # refreshes when a wheel image or manual PDF finishes downloading.
 var _media_dl_refresh_cb: Callable = Callable()
-
-# Working copies of controller bindings being edited in the Controls section.
-var _edit_button_map:  Dictionary = {}
-var _edit_stick_map:   Dictionary = {}
-var _edit_lightgun_map: Dictionary = {}
-
-# Desktop rebinding state: action currently waiting for a key press, and a
-# map from action_name → Button node so on_rebind_complete() can update labels.
-var _rebinding_action: String = ""
-var _rebind_buttons: Dictionary = {}
-# Inline dropdowns in the Controls section (source_key → VRDropdown).
-# Mutual exclusion (only one expanded at a time) is owned by VRDropdown itself.
-var _controls_opts: Dictionary = {}
-
-# Working copies of physical-gamepad bindings edited in the GAME CONTROLLER section.
-var _edit_pad_button_map: Dictionary = {}
-var _pad_diagram: GamepadDiagram = null
-var _pad_list_box: VBoxContainer = null
-var _edit_pad_stick_map:  Dictionary = {}
-# Gamepad rebinding state: target waiting for a joypad press, target → Button node.
-var _pad_rebinding_target: String = ""
-var _pad_rebind_buttons: Dictionary = {}
-# Live "connected pads" status label in the GAME CONTROLLER section.
-var _pad_status_label: Label = null
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -488,8 +462,14 @@ func _build_ui() -> void:
 	_cores_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_cores_view)
 
-	_controls_view = _build_controls_view()
+	_controls_view = SpawnMenuControlsView.create()
 	_controls_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_controls_view.rebind_started.connect(
+		func(action: String) -> void: rebind_started.emit(action))
+	_controls_view.pad_rebind_started.connect(
+		func(target: String) -> void: pad_rebind_started.emit(target))
+	_controls_view.controller_bindings_changed.connect(
+		func() -> void: controller_bindings_changed.emit())
 	content.add_child(_controls_view)
 
 	_options_view = _build_options_view()
@@ -524,7 +504,7 @@ func _build_ui() -> void:
 	_net_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_net_view)
 
-	_about_view = _build_about_view()
+	_about_view = SpawnMenuAboutView.create()
 	_about_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_about_view)
 
@@ -589,7 +569,7 @@ func _on_cores_browser_scroll_changed(s: ScrollContainer) -> void:
 
 
 func _show_controls_view() -> void:
-	_show_view(_controls_view, _controls_scroll, _nav_controls_btn)
+	_show_view(_controls_view, _controls_view, _nav_controls_btn)
 
 
 func _show_options_view() -> void:
@@ -608,12 +588,25 @@ func _show_scene_view() -> void:
 
 
 func _show_about_view() -> void:
-	_show_view(_about_view, _about_scroll, _nav_about_btn)
+	_show_view(_about_view, _about_view, _nav_about_btn)
 
 
 func _show_net_view() -> void:
 	_show_view(_net_view, _net_view, _nav_net_btn)
 	_net_view.refresh()
+
+
+## Answers to rebind_started / pad_rebind_started. The capture happens in
+## spawn_menu_controller, where raw input arrives; these hand the result to the
+## view that asked. `event` is null, and `binding` "", when the user cancelled.
+func on_rebind_complete(action: String, event: InputEvent) -> void:
+	if _controls_view:
+		_controls_view.on_rebind_complete(action, event)
+
+
+func on_pad_rebind_complete(target: String, binding: String) -> void:
+	if _controls_view:
+		_controls_view.on_pad_rebind_complete(target, binding)
 
 
 ## The arcade's save slots, repainted after the controller has actually saved,
@@ -3183,589 +3176,6 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 	row.add_child(edit)
 
 
-# ── Controls remapping view ───────────────────────────────────────────────────
-
-## Close the named inline dropdown.
-func _close_dropdown(k: String) -> void:
-	var drop := _controls_opts.get(k) as VRDropdown
-	if drop:
-		drop.close()
-
-
-## Update an inline dropdown to reflect a new selection without reopening it.
-func _reset_vr_dropdown(k: String, new_id: Variant) -> void:
-	var drop := _controls_opts.get(k) as VRDropdown
-	if drop:
-		drop.select_id(new_id)
-
-
-## Build a label + inline-expandable dropdown row. Thin wrapper over VRDropdown,
-## which is shared with the core/TV/DVD panels — see vr_dropdown.gd for why an
-## OptionButton cannot be used inside a VR viewport panel.
-## options: Array of [display_name, id] where id is int or String.
-func _make_vr_dropdown_row(
-		key: String,
-		label_text: String,
-		options: Array,
-		current_id: Variant,
-		on_changed: Callable,
-		grid_cols: int = 1
-) -> VBoxContainer:
-	var drop := VRDropdown.create(label_text, options, current_id,
-		grid_cols, Vector2(220, 52), 20)
-	drop.item_selected.connect(func(id: Variant) -> void: on_changed.call(id))
-	_controls_opts[key] = drop
-	return drop
-
-
-func _build_controls_view() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_controls_scroll = scroll
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 14)
-	scroll.add_child(vbox)
-
-	vbox.add_child(_spacer(10))
-	_build_controls_section(vbox)
-	vbox.add_child(_spacer(10))
-
-	return scroll
-
-
-# ── Controls remapping ────────────────────────────────────────────────────────
-
-## Joypad button target choices: [display_name, bit_index].
-const _JOYPAD_OPTIONS: Array = [
-	["None",    -1],
-	["B",        0], ["Y",       1], ["SELECT",  2], ["START",   3],
-	["D-Up",     4], ["D-Down",  5], ["D-Left",  6], ["D-Right", 7],
-	["A",        8], ["X",       9], ["L",       10], ["R",      11],
-	["L2",      12], ["R2",     13], ["L3",      14], ["R3",     15],
-]
-
-## Analog stick target choices: [display_name, target_string].
-const _STICK_OPTIONS: Array = [
-	["Left Analog + D-pad",  "left+dpad"],
-	["Left Analog",   "left"],
-	["Right Analog + D-pad", "right+dpad"],
-	["Right Analog",  "right"],
-	["D-pad only",    "dpad"],
-]
-
-## Lightgun button target choices: [display_name, button_id].
-const _LIGHTGUN_OPTIONS: Array = [
-	["None",    -1],
-	["Trigger",  2], ["Aux A",   3], ["Aux B",    4], ["Aux C",    5],
-	["Start",    6], ["Select",  7],
-	["D-Up",     8], ["D-Down",  9], ["D-Left",  10], ["D-Right", 11],
-]
-
-## Order in which joypad button sources appear in the Controls UI.
-const _BUTTON_SOURCE_ORDER: Array = [
-	"right_ax_button", "right_by_button", "right_grip", "right_trigger", "right_primary_click",
-	"left_ax_button",  "left_by_button",  "left_grip",  "left_trigger",  "left_primary_click",
-]
-
-## Height reserved for the ControllerDiagram: five 56 px rows plus their gaps,
-## with room for the art between the columns.
-const _CONTROLS_DIAGRAM_H := 520.0
-
-## Order in which lightgun sources appear in the Controls UI.
-const _LIGHTGUN_SOURCE_ORDER: Array = [
-	"trigger", "grip", "ax_button", "by_button", "primary_click",
-]
-
-
-
-func _build_controls_section(vbox: VBoxContainer) -> void:
-	# ── Header ────────────────────────────────────────────────────────────────
-	var hdr := Label.new()
-	hdr.text = "CONTROLS"
-	hdr.add_theme_font_size_override("font_size", 22)
-	hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(hdr)
-
-	if _is_vr_mode():
-		_build_xr_controls(vbox)
-	else:
-		_build_desktop_controls(vbox)
-
-	# Physical gamepad section — shown in both modes (a real pad works whether
-	# the player is in VR or at the desktop). Added unconditionally because it
-	# applies regardless of headset/desktop.
-	vbox.add_child(HSeparator.new())
-	_build_gamepad_controls(vbox)
-
-
-func _build_xr_controls(vbox: VBoxContainer) -> void:
-	# Load current global bindings as the working copy.
-	var global := ControllerBindings.get_global()
-	_edit_button_map  = global["buttons"].duplicate()
-	_edit_stick_map   = global["sticks"].duplicate()
-	_edit_lightgun_map = global["lightgun"].duplicate()
-
-	# ── Joypad Buttons ────────────────────────────────────────────────────────
-	var btn_hdr := Label.new()
-	btn_hdr.text = "XR Joypad Buttons"
-	btn_hdr.add_theme_font_size_override("font_size", 18)
-	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(btn_hdr)
-
-	# Picture of both controllers with a leader line from each input to its own
-	# dropdown, instead of ten unillustrated "Left Grip"-style rows. Its
-	# dropdowns register under the same "btn:<src>" keys, so reset still drives
-	# them through _reset_vr_dropdown.
-	var diagram := ControllerDiagram.new()
-	diagram.custom_minimum_size = Vector2(0, _CONTROLS_DIAGRAM_H)
-	diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	diagram.setup(_edit_button_map, _JOYPAD_OPTIONS)
-	diagram.binding_changed.connect(func(src: String, bit: int) -> void:
-		_edit_button_map[src] = bit
-		_apply_xr_bindings())
-	vbox.add_child(diagram)
-
-	for src: String in _BUTTON_SOURCE_ORDER:
-		_controls_opts["btn:" + src] = diagram.get_dropdown(src)
-
-	# ── Analog Sticks ─────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var stick_hdr := Label.new()
-	stick_hdr.text = "Analog Sticks"
-	stick_hdr.add_theme_font_size_override("font_size", 18)
-	stick_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(stick_hdr)
-
-	for stick: String in ["stick_left", "stick_right"]:
-		var s_label := "Left Stick" if stick == "stick_left" else "Right Stick"
-		var def_target := "left+dpad" if stick == "stick_left" else "right"
-		var current_target: String = _edit_stick_map.get(stick, def_target)
-		var captured_stick := stick
-		vbox.add_child(_make_vr_dropdown_row(
-			"stick:" + stick, s_label, _STICK_OPTIONS, current_target,
-			func(v: Variant) -> void:
-				_edit_stick_map[captured_stick] = v as String
-				_apply_xr_bindings(),
-			3
-		))
-
-	# ── Light Gun Buttons ─────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var gun_hdr := Label.new()
-	gun_hdr.text = "Light Gun Buttons"
-	gun_hdr.add_theme_font_size_override("font_size", 18)
-	gun_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(gun_hdr)
-
-	for src: String in _LIGHTGUN_SOURCE_ORDER:
-		var label: String = ControllerBindings.LIGHTGUN_SOURCE_LABELS.get(src, src)
-		var current_id: int = _edit_lightgun_map.get(src, -1)
-		var captured_src := src
-		vbox.add_child(_make_vr_dropdown_row(
-			"gun:" + src, label, _LIGHTGUN_OPTIONS, current_id,
-			func(v: Variant) -> void:
-				_edit_lightgun_map[captured_src] = v as int
-				_apply_xr_bindings(),
-			4
-		))
-
-	# Thumbstick mode row
-	var stick_label: String = ControllerBindings.LIGHTGUN_SOURCE_LABELS.get("stick", "Thumbstick")
-	var cur_stick_mode: String = str(_edit_lightgun_map.get("stick", "dpad"))
-	vbox.add_child(_make_vr_dropdown_row(
-		"gun:stick", stick_label,
-		[["None", "none"], ["D-pad", "dpad"]],
-		cur_stick_mode,
-		func(v: Variant) -> void:
-			_edit_lightgun_map["stick"] = v as String
-			_apply_xr_bindings(),
-		2
-	))
-
-	# ── Action buttons ────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var action_row := HBoxContainer.new()
-	action_row.add_theme_constant_override("separation", 10)
-	action_row.custom_minimum_size = Vector2(0, 60)
-	vbox.add_child(action_row)
-
-	var reset_btn := Button.new()
-	reset_btn.text = "Reset to Default"
-	reset_btn.custom_minimum_size = Vector2(220, 52)
-	reset_btn.add_theme_font_size_override("font_size", 18)
-	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reset_btn.pressed.connect(_on_controls_reset)
-	action_row.add_child(reset_btn)
-
-	# No Save button any more: every dropdown above applies itself. It used to sit
-	# here, at the bottom of a scroll, below the joypad, stick AND lightgun
-	# sections — so a rebind looked like it had taken and silently had not.
-
-
-func _build_desktop_controls(vbox: VBoxContainer) -> void:
-	_rebind_buttons.clear()
-
-	# ── Gamepad Buttons ───────────────────────────────────────────────────────
-	var btn_hdr := Label.new()
-	btn_hdr.text = "Gamepad Buttons"
-	btn_hdr.add_theme_font_size_override("font_size", 18)
-	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(btn_hdr)
-
-	for action: String in DesktopBindings.JOYPAD_ACTIONS:
-		vbox.add_child(_make_rebind_row(action))
-
-	# ── Analog Sticks ─────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var stick_hdr := Label.new()
-	stick_hdr.text = "Analog Sticks"
-	stick_hdr.add_theme_font_size_override("font_size", 18)
-	stick_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(stick_hdr)
-
-	for action: String in DesktopBindings.ANALOG_ACTIONS:
-		vbox.add_child(_make_rebind_row(action))
-
-	# ── Save / Reset ──────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var action_row := HBoxContainer.new()
-	action_row.add_theme_constant_override("separation", 10)
-	action_row.custom_minimum_size = Vector2(0, 60)
-	vbox.add_child(action_row)
-
-	var reset_btn := Button.new()
-	reset_btn.text = "Reset to Default"
-	reset_btn.custom_minimum_size = Vector2(220, 52)
-	reset_btn.add_theme_font_size_override("font_size", 18)
-	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reset_btn.pressed.connect(_on_desktop_controls_reset)
-	action_row.add_child(reset_btn)
-
-	var save_btn := Button.new()
-	save_btn.text = "Save"
-	save_btn.custom_minimum_size = Vector2(220, 52)
-	save_btn.add_theme_font_size_override("font_size", 18)
-	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save_btn.pressed.connect(DesktopBindings.save)
-	action_row.add_child(save_btn)
-
-
-## Creates a single rebind row: [Label: action display name] [Button: current key]
-func _make_rebind_row(action: String) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 48)
-
-	var lbl := Label.new()
-	lbl.text = DesktopBindings.ACTION_LABELS.get(action, action)
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(lbl)
-
-	var btn := Button.new()
-	btn.text = DesktopBindings.event_display_name(action)
-	btn.custom_minimum_size = Vector2(140, 44)
-	btn.add_theme_font_size_override("font_size", 18)
-	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	_rebind_buttons[action] = btn
-
-	var captured_action := action
-	btn.pressed.connect(func() -> void:
-		# Cancel any in-progress rebind first.
-		if _rebinding_action != "" and _rebinding_action != captured_action:
-			var old_btn: Button = _rebind_buttons.get(_rebinding_action) as Button
-			if is_instance_valid(old_btn):
-				old_btn.text = DesktopBindings.event_display_name(_rebinding_action)
-		_rebinding_action = captured_action
-		btn.text = "[ Press a key… ]"
-		rebind_started.emit(captured_action)
-	)
-	row.add_child(btn)
-	return row
-
-
-## Called by spawn_menu_controller after a key/mouse press is captured.
-## event is null when the user cancelled with Escape.
-func on_rebind_complete(action: String, event: InputEvent) -> void:
-	_rebinding_action = ""
-	var btn: Button = _rebind_buttons.get(action) as Button
-	if not is_instance_valid(btn):
-		return
-	btn.text = DesktopBindings.event_display_name(action)
-
-
-func _on_desktop_controls_reset() -> void:
-	# Reload project defaults by restoring from project settings.
-	InputMap.load_from_project_settings()
-	# Refresh all button labels.
-	for action: String in _rebind_buttons:
-		var btn: Button = _rebind_buttons[action] as Button
-		if is_instance_valid(btn):
-			btn.text = DesktopBindings.event_display_name(action)
-
-
-## Write the XR bindings and push them to everything holding a copy. Called from
-## every dropdown, so a change is live the moment it is made — which is what a
-## dropdown implies, and what the missing Save button used to gate.
-func _apply_xr_bindings() -> void:
-	ControllerBindings.save_global(_edit_button_map, _edit_stick_map, _edit_lightgun_map)
-	controller_bindings_changed.emit()
-
-
-func _on_controls_reset() -> void:
-	_edit_button_map   = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
-	_edit_stick_map    = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
-	_edit_lightgun_map = ControllerBindings.DEFAULT_LIGHTGUN_MAP.duplicate()
-	for src: String in _BUTTON_SOURCE_ORDER:
-		_reset_vr_dropdown("btn:" + src, _edit_button_map.get(src, -1))
-	for stick: String in ["stick_left", "stick_right"]:
-		var def := "left+dpad" if stick == "stick_left" else "right"
-		_reset_vr_dropdown("stick:" + stick, _edit_stick_map.get(stick, def))
-	for src: String in _LIGHTGUN_SOURCE_ORDER:
-		_reset_vr_dropdown("gun:" + src, _edit_lightgun_map.get(src, -1))
-	_reset_vr_dropdown("gun:stick", str(_edit_lightgun_map.get("stick", "dpad")))
-	_apply_xr_bindings()
-
-
-# ── Physical gamepad remapping ────────────────────────────────────────────────
-
-func _build_gamepad_controls(vbox: VBoxContainer) -> void:
-	_pad_rebind_buttons.clear()
-	var pad := GamepadBindings.get_global()
-	_edit_pad_button_map = pad["buttons"].duplicate()
-	_edit_pad_stick_map  = pad["sticks"].duplicate()
-
-	# ── Header ────────────────────────────────────────────────────────────────
-	var hdr := Label.new()
-	hdr.text = "GAME CONTROLLER"
-	hdr.add_theme_font_size_override("font_size", 22)
-	hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(hdr)
-
-	# ── Connected-pad status line ─────────────────────────────────────────────
-	var status := Label.new()
-	status.add_theme_font_size_override("font_size", 16)
-	status.add_theme_color_override("font_color", COLOR_LICENSE)
-	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(status)
-	_pad_status_label = status
-	_refresh_pad_status()
-	if not Input.joy_connection_changed.is_connected(_on_pad_connection_changed):
-		Input.joy_connection_changed.connect(_on_pad_connection_changed)
-
-	# ── Diagram ───────────────────────────────────────────────────────────────
-	_pad_diagram = GamepadDiagram.new()
-	_pad_diagram.custom_minimum_size = Vector2(0, 580)
-	_pad_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_child(_pad_diagram)
-	_pad_diagram.setup(_edit_pad_button_map)
-	_pad_diagram.binding_changed.connect(_on_pad_diagram_changed)
-
-	# ── Buttons (press-to-rebind; joypad presses reach us in VR and desktop) ──
-	# Behind a switch, because the diagram covers it for an Xbox-layout pad. It
-	# stays reachable for the ones it cannot: a pad with paddles or extra buttons
-	# reports indices the picture has nowhere to point at, and Guide is left off
-	# the diagram on purpose.
-	var list_row := HBoxContainer.new()
-	list_row.add_theme_constant_override("separation", 10)
-	list_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(list_row)
-
-	var btn_hdr := Label.new()
-	btn_hdr.text = "Button list (for pads the diagram can't show)"
-	btn_hdr.add_theme_font_size_override("font_size", 18)
-	btn_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	btn_hdr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list_row.add_child(btn_hdr)
-
-	var list_box := VBoxContainer.new()
-	list_box.visible = false
-	vbox.add_child(list_box)
-	_pad_list_box = list_box
-
-	list_row.add_child(_make_toggle(false, func(on: bool) -> void:
-		if is_instance_valid(_pad_list_box):
-			_pad_list_box.visible = on
-	))
-
-	for target: String in GamepadBindings.TARGET_ORDER:
-		list_box.add_child(_make_pad_rebind_row(target))
-
-	# ── Analog Sticks ─────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var stick_hdr := Label.new()
-	stick_hdr.text = "Analog Sticks"
-	stick_hdr.add_theme_font_size_override("font_size", 18)
-	stick_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(stick_hdr)
-
-	for stick: String in ["stick_left", "stick_right"]:
-		var s_label := "Left Stick" if stick == "stick_left" else "Right Stick"
-		var def_target := "left+dpad" if stick == "stick_left" else "right"
-		var current_target: String = _edit_pad_stick_map.get(stick, def_target)
-		var captured_stick := stick
-		vbox.add_child(_make_vr_dropdown_row(
-			"padstick:" + stick, s_label, _STICK_OPTIONS, current_target,
-			func(v: Variant) -> void:
-				_edit_pad_stick_map[captured_stick] = v as String
-				_on_pad_controls_save(),
-			3
-		))
-
-	# ── Action buttons ────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var action_row := HBoxContainer.new()
-	action_row.add_theme_constant_override("separation", 10)
-	action_row.custom_minimum_size = Vector2(0, 60)
-	vbox.add_child(action_row)
-
-	var reset_btn := Button.new()
-	reset_btn.text = "Reset to Default"
-	reset_btn.custom_minimum_size = Vector2(220, 52)
-	reset_btn.add_theme_font_size_override("font_size", 18)
-	reset_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	reset_btn.focus_mode = Control.FOCUS_NONE
-	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reset_btn.pressed.connect(_on_pad_controls_reset)
-	action_row.add_child(reset_btn)
-
-	var save_btn := Button.new()
-	save_btn.text = "Save"
-	save_btn.custom_minimum_size = Vector2(220, 52)
-	save_btn.add_theme_font_size_override("font_size", 18)
-	save_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	save_btn.focus_mode = Control.FOCUS_NONE
-	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save_btn.pressed.connect(_on_pad_controls_save)
-	action_row.add_child(save_btn)
-
-
-## Creates a single gamepad rebind row: [Label: RetroPad target] [Button: binding].
-func _make_pad_rebind_row(target: String) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 48)
-
-	var lbl := Label.new()
-	lbl.text = GamepadBindings.TARGET_LABELS.get(target, target)
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(lbl)
-
-	var binding: String = _edit_pad_button_map.get(target, "none")
-	var btn := Button.new()
-	btn.text = GamepadBindings.binding_display_name(binding)
-	btn.custom_minimum_size = Vector2(160, 44)
-	btn.add_theme_font_size_override("font_size", 18)
-	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	btn.focus_mode = Control.FOCUS_NONE
-	_pad_rebind_buttons[target] = btn
-
-	var captured_target := target
-	btn.pressed.connect(func() -> void:
-		# Cancel any in-progress pad rebind first.
-		if _pad_rebinding_target != "" and _pad_rebinding_target != captured_target:
-			var old_btn: Button = _pad_rebind_buttons.get(_pad_rebinding_target) as Button
-			if is_instance_valid(old_btn):
-				var prev: String = _edit_pad_button_map.get(_pad_rebinding_target, "none")
-				old_btn.text = GamepadBindings.binding_display_name(prev)
-		_pad_rebinding_target = captured_target
-		btn.text = "[ Press gamepad… ]"
-		pad_rebind_started.emit(captured_target)
-	)
-	row.add_child(btn)
-	return row
-
-
-## Called by spawn_menu_controller after a joypad press is captured.
-## binding is "" when the user cancelled.
-func on_pad_rebind_complete(target: String, binding: String) -> void:
-	_pad_rebinding_target = ""
-	if binding != "":
-		_edit_pad_button_map[target] = binding
-		_on_pad_controls_save()
-		# The same binding is shown in both places; a capture must move the
-		# diagram too or the two disagree until the tab is rebuilt.
-		_refresh_pad_diagram()
-	var btn: Button = _pad_rebind_buttons.get(target) as Button
-	if is_instance_valid(btn):
-		var cur: String = _edit_pad_button_map.get(target, "none")
-		btn.text = GamepadBindings.binding_display_name(cur)
-
-
-## The diagram edits input -> target; the stored map is target -> binding. One
-## input drives one target, so assigning a target that another input already held
-## takes it away from that one, and the diagram is refreshed to show it released.
-func _on_pad_diagram_changed(input: String, target: String) -> void:
-	var by_input := GamepadDiagram.invert(_edit_pad_button_map)
-	if target != "":
-		for other: String in by_input.keys():
-			if other != input and String(by_input[other]) == target:
-				by_input.erase(other)
-	by_input[input] = target
-	_edit_pad_button_map = GamepadDiagram.to_button_map(by_input)
-	_on_pad_controls_save()
-	_refresh_pad_diagram()
-	_refresh_pad_list()
-
-
-func _refresh_pad_diagram() -> void:
-	if not is_instance_valid(_pad_diagram):
-		return
-	var by_input := GamepadDiagram.invert(_edit_pad_button_map)
-	for key: String in GamepadDiagram.INPUTS:
-		_pad_diagram.set_binding(key, String(by_input.get(key, "")))
-
-
-func _refresh_pad_list() -> void:
-	for target: String in GamepadBindings.TARGET_ORDER:
-		var btn: Button = _pad_rebind_buttons.get(target) as Button
-		if is_instance_valid(btn):
-			btn.text = GamepadBindings.binding_display_name(
-				_edit_pad_button_map.get(target, "none"))
-
-
-func _on_pad_controls_reset() -> void:
-	_edit_pad_button_map = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
-	_edit_pad_stick_map  = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
-	_refresh_pad_diagram()
-	for target: String in GamepadBindings.TARGET_ORDER:
-		var btn: Button = _pad_rebind_buttons.get(target) as Button
-		if is_instance_valid(btn):
-			var cur: String = _edit_pad_button_map.get(target, "none")
-			btn.text = GamepadBindings.binding_display_name(cur)
-	for stick: String in ["stick_left", "stick_right"]:
-		var def := "left+dpad" if stick == "stick_left" else "right"
-		_reset_vr_dropdown("padstick:" + stick, _edit_pad_stick_map.get(stick, def))
-
-
-func _on_pad_controls_save() -> void:
-	GamepadBindings.save_global(_edit_pad_button_map, _edit_pad_stick_map)
-	controller_bindings_changed.emit()
-
-
-func _refresh_pad_status() -> void:
-	if not is_instance_valid(_pad_status_label):
-		return
-	var pads := Input.get_connected_joypads()
-	if pads.is_empty():
-		_pad_status_label.text = "No gamepad detected — connect one via USB or Bluetooth."
-		return
-	var names: Array[String] = []
-	for device: int in pads:
-		names.append(Input.get_joy_name(device))
-	_pad_status_label.text = "%d pad(s): %s" % [pads.size(), ", ".join(names)]
-
-
-func _on_pad_connection_changed(_device: int, _connected: bool) -> void:
-	_refresh_pad_status()
-
-
 # ── Scraper ──────────────────────────────────────────────────────────────────
 
 func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void:
@@ -4894,237 +4304,6 @@ func _find_game_by_id(systemid: String, game_id: String) -> Dictionary:
 ## OPTIONS view reads it; it moves out with that view.
 func _get_scene_manager() -> Node:
 	return Engine.get_main_loop().root.get_node_or_null("SceneManager")
-
-
-func _build_about_view() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_about_scroll = scroll
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 14)
-	scroll.add_child(vbox)
-	vbox.add_child(_spacer(16))
-
-	# Author credit
-	var author_lbl := Label.new()
-	author_lbl.text = "Ryan McClelland"
-	author_lbl.add_theme_font_size_override("font_size", 32)
-	author_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	author_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(author_lbl)
-
-	var role_lbl := Label.new()
-	role_lbl.text = "Author"
-	role_lbl.add_theme_font_size_override("font_size", 18)
-	role_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	role_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(role_lbl)
-
-	vbox.add_child(_spacer(8))
-
-	# Donate button
-	var donate_btn := Button.new()
-	donate_btn.text = "  ❤  DONATE  "
-	donate_btn.custom_minimum_size = Vector2(0, 64)
-	donate_btn.add_theme_font_size_override("font_size", 24)
-	var donate_style := StyleBoxFlat.new()
-	donate_style.bg_color = COLOR_BTN_DL
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		donate_style.set(k, 8)
-	for state in ["normal", "hover", "pressed"]:
-		donate_btn.add_theme_stylebox_override(state, donate_style)
-	donate_btn.pressed.connect(func(): OS.shell_open("https://placeholder"))
-	vbox.add_child(donate_btn)
-
-	vbox.add_child(HSeparator.new())
-
-	# OSS libraries header
-	var libs_hdr := Label.new()
-	libs_hdr.text = "OPEN SOURCE LIBRARIES"
-	libs_hdr.add_theme_font_size_override("font_size", 20)
-	libs_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(libs_hdr)
-
-	const LIBS: Array = [
-		["SK.Libretro.Godot", "SKurdt", "MIT"],
-		["pdfium",            "The Chromium Authors", "BSD 3-Clause"],
-		["godot-xr-tools",   "Bastiaan Olij",   "MIT"],
-		["godot-cpp",        "Godot Engine contributors", "MIT"],
-		["SDL3",             "Sam Lantinga / SDL contributors", "zlib"],
-		["libretro-common",  "libretro team",   "MIT"],
-		["ReaderWriterQueue","Cameron Desrochers","BSD"],
-		["libVLC",           "VideoLAN",        "LGPL v2.1"],
-		["Nerd Fonts",       "Ryan L McIntyre", "MIT"],
-		["RomM",             "RomM contributors", "AGPL v3"],
-	]
-	for entry: Array in LIBS:
-		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
-
-	vbox.add_child(_spacer(6))
-
-	# Proprietary SDKs. Deliberately not folded into the list above: the Meta XR
-	# Audio SDK is not open source, and its licence requires the copyright notice
-	# be reproduced wherever the library ships — so this credit is an obligation,
-	# not a courtesy.
-	var sdk_hdr := Label.new()
-	sdk_hdr.text = "THIRD-PARTY SDKS"
-	sdk_hdr.add_theme_font_size_override("font_size", 20)
-	sdk_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(sdk_hdr)
-
-	const SDKS: Array = [
-		["Meta XR Audio SDK", "Meta Platforms, Inc.", "Oculus SDK License"],
-	]
-	for entry: Array in SDKS:
-		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
-
-	var sdk_note := Label.new()
-	sdk_note.text = "Spatial audio on Quest is HRTF-rendered by the Meta XR Audio SDK, "\
-		+ "which places each sound in three dimensions rather than simply panning it "\
-		+ "left and right. Where the SDK is unavailable the room falls back to Godot's "\
-		+ "built-in 3D audio."
-	sdk_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	sdk_note.add_theme_font_size_override("font_size", 14)
-	sdk_note.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(sdk_note)
-
-	vbox.add_child(_spacer(6))
-
-	# Artwork header
-	var art_hdr := Label.new()
-	art_hdr.text = "ARTWORK"
-	art_hdr.add_theme_font_size_override("font_size", 20)
-	art_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(art_hdr)
-
-	const ART: Array = [
-		["Systematic icon set", "BAXY Square — github.com/baxysquare", "MIT"],
-		["Input Prompts", "Kenney — kenney.nl", "CC0 1.0"],
-		["Touch controller model", "immersive-web/webxr-input-profiles", "MIT"],
-		["Lamp chain switch (audio)", "ftpalad — freesound.org", "CC0 1.0"],
-	]
-	for entry: Array in ART:
-		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
-
-	var art_note := Label.new()
-	art_note.text = "Console art from the Systematic theme for RetroArch / Lakka. "\
-		+ "Controller line art is rendered from the WebXR input profile model; "\
-		+ "button glyphs are Kenney's Input Prompts."
-	art_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	art_note.add_theme_font_size_override("font_size", 14)
-	art_note.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(art_note)
-
-	vbox.add_child(_spacer(6))
-
-	# Game data sources
-	var data_hdr := Label.new()
-	data_hdr.text = "GAME DATA"
-	data_hdr.add_theme_font_size_override("font_size", 20)
-	data_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(data_hdr)
-
-	const DATA: Array = [
-		["ScreenScraper", "screenscraper.fr contributors", "CC BY-NC-SA 4.0"],
-	]
-	for entry: Array in DATA:
-		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
-
-	var data_note := Label.new()
-	data_note.text = "Box art, screenshots and game details are scraped from screenscraper.fr."
-	data_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	data_note.add_theme_font_size_override("font_size", 14)
-	data_note.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(data_note)
-
-	vbox.add_child(_spacer(6))
-
-	# 3D models. The CC BY entries below are the reason this section exists:
-	# attribution is a licence condition for them, not a courtesy. The CC0 ones
-	# are credited anyway.
-	var mdl_hdr := Label.new()
-	mdl_hdr.text = "3D MODELS"
-	mdl_hdr.add_theme_font_size_override("font_size", 20)
-	mdl_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(mdl_hdr)
-
-	const MODELS: Array = [
-		["Bedroom furniture", "General of Thailand — @Melonpolygons", "CC BY 4.0"],
-		["Bookcases with books", "Matthew Collings — @mtcollings", "CC BY 4.0"],
-		["Ceiling fan", "lucaboechat", "CC BY 4.0"],
-		["Corner TV stand", "Manix3D — @manix3d", "CC BY 4.0"],
-		["CRT computer monitor", "fizyman", "CC BY 4.0"],
-		["Desk chair", "Slava Izvekov — @guantanamera", "CC BY 4.0"],
-		["Interior door and trim", "Roman — @janwama", "CC BY 4.0"],
-		["Light switch", "BillieBones", "CC BY 4.0"],
-		["Nightstand", "ilyafom1", "CC BY 4.0"],
-		["Trash can", "Yury Misiyuk — @Tim0", "CC BY 4.0"],
-		["Table lamp", "plaggy", "CC0 1.0"],
-		["Television 02", "Benny Weimer — Poly Haven", "CC0 1.0"],
-		["Throw pillows", "Serhii Khromov — Poly Haven", "CC0 1.0"],
-		["Potted plant", "James Ray Cock — Poly Haven", "CC0 1.0"],
-		["Suburban houses", "Kenney — kenney.nl", "CC0 1.0"],
-		["Trees", "Quaternius", "CC0 1.0"],
-		["Furniture Kit", "Kenney — kenney.nl", "CC0 1.0"],
-		["Surfaces", "ambientCG", "CC0 1.0"],
-	]
-	for entry: Array in MODELS:
-		_add_credit_row(vbox, entry[0] as String, entry[1] as String, entry[2] as String)
-
-	var mdl_note := Label.new()
-	mdl_note.text = "Room and prop models. CC BY entries require attribution; "\
-		+ "wall and floor surfaces are ambientCG photogrammetry."
-	mdl_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	mdl_note.add_theme_font_size_override("font_size", 14)
-	mdl_note.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(mdl_note)
-
-	vbox.add_child(_spacer(12))
-	return scroll
-
-
-## One credit line: title over author on the left, licence on the right.
-func _add_credit_row(vbox: VBoxContainer, title: String, author: String, license: String) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	row.custom_minimum_size = Vector2(0, 52)
-	vbox.add_child(row)
-
-	var left := VBoxContainer.new()
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_theme_constant_override("separation", 2)
-	row.add_child(left)
-
-	var title_lbl := Label.new()
-	title_lbl.text = title
-	title_lbl.add_theme_font_size_override("font_size", 18)
-	title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	left.add_child(title_lbl)
-
-	var author_sub := Label.new()
-	author_sub.text = author
-	author_sub.add_theme_font_size_override("font_size", 14)
-	author_sub.add_theme_color_override("font_color", COLOR_LICENSE)
-	left.add_child(author_sub)
-
-	var lic_lbl := Label.new()
-	lic_lbl.text = license
-	lic_lbl.add_theme_font_size_override("font_size", 16)
-	lic_lbl.add_theme_color_override("font_color", COLOR_DESC)
-	lic_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(lic_lbl)
-
-	# The scroll bar is drawn over the content, so the licence needs a gutter or
-	# a long one ("CC BY-NC-SA 4.0") loses its last character behind it.
-	var gutter := Control.new()
-	gutter.custom_minimum_size = Vector2(18, 0)
-	row.add_child(gutter)
-
-	vbox.add_child(HSeparator.new())
 
 
 func _spacer(height: int) -> Control:
