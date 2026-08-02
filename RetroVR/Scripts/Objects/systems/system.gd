@@ -1016,6 +1016,11 @@ func _spawn_cables() -> void:
 
 
 func _add_cables_to_scene() -> void:
+	# Deferred from _spawn_cables(), so a room change can land in between: during
+	# a transition there is no current scene to hang the cables on, and this
+	# system is on its way out with it.
+	if not is_inside_tree() or get_tree().current_scene == null:
+		return
 	for i in _channels.size():
 		var inst: Node3D = _cable_instances[i]
 		get_tree().current_scene.add_child(inst)
@@ -1108,10 +1113,13 @@ func set_video_out_enabled(on: bool) -> void:
 
 func _apply_video_out() -> void:
 	for i in _channels.size():
-		var inst: Node3D = _cable_instances[i]
-		var plug: CablePlug = _cable_plugs[i]
-		if inst == null or plug == null or not is_instance_valid(plug):
+		# Untyped (Variant) reads — see _exit_tree().
+		var inst_obj = _cable_instances[i]
+		var plug_obj = _cable_plugs[i]
+		if not is_instance_valid(inst_obj) or not is_instance_valid(plug_obj):
 			continue
+		var inst: Node3D = inst_obj
+		var plug: CablePlug = plug_obj
 		var tv_obj = _channel_tvs[i]
 		if not video_out_enabled and tv_obj != null and is_instance_valid(tv_obj):
 			var tv := tv_obj as RetroTV
@@ -1228,15 +1236,22 @@ func _physics_process(_delta: float) -> void:
 	if not video_out_enabled:
 		return   # cables hidden and frozen — nothing to clamp
 	for i in _channels.size():
-		var plug: CablePlug = _cable_plugs[i]
+		# Untyped (Variant) reads — see _exit_tree(). A slot restore runs across
+		# frames, so this can tick while the cable set is half rebuilt and the
+		# array still points at plugs that have been freed.
+		var plug_obj = _cable_plugs[i]
+		var attach_obj = _attach_points[i]
+		if not is_instance_valid(plug_obj) or not is_instance_valid(attach_obj):
+			continue
+		var plug: CablePlug = plug_obj
 		var max_len: float = _max_rope_lengths[i]
-		if plug == null or _attach_points[i] == null or max_len <= 0.0:
+		if max_len <= 0.0:
 			continue
 		# Snapped to TV or actively held by the user — don't fight whoever owns the plug
-		if _channel_tvs[i] != null or plug.is_picked_up():
+		if is_instance_valid(_channel_tvs[i]) or plug.is_picked_up():
 			continue
 
-		var attach_pos: Vector3 = _attach_points[i].global_position
+		var attach_pos: Vector3 = (attach_obj as Node3D).global_position
 		var diff := plug.global_position - attach_pos
 		var dist := diff.length()
 

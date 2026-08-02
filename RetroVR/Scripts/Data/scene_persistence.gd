@@ -15,6 +15,13 @@ const VERSION       := 1
 ## How long the async restore may hold the main thread before yielding a frame.
 const FRAME_BUDGET_USEC := 4000
 
+## Bumped by every async restore as it starts. Because those yield frames, a
+## second one can begin — a room change auto-loading a slot on top of a slot the
+## player picked from the menu — and the two then build into the same room while
+## clear_scene() frees what the other just spawned, leaving live systems holding
+## freed cable plugs. The older run checks this after each yield and stands down.
+static var _restore_generation := 0
+
 const SYSTEM_SCENE           := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE               := preload("res://Scenes/Objects/tv.tscn")
 const CART_SCENE             := preload("res://Scenes/Objects/cartridge.tscn")
@@ -261,17 +268,18 @@ func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
 	var spawned: Dictionary = {}
 	var entries: Dictionary = {}
 	var tree := root.get_tree()
+	_restore_generation += 1
+	var generation := _restore_generation
 	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	for entry: Variant in objects:
 		_spawn_entry(root, entry, spawned, entries)
 		if Time.get_ticks_usec() < deadline:
 			continue
 		await tree.process_frame
-		# Another scene change can tear the room down while we are yielding.
-		if not is_instance_valid(root) or not root.is_inside_tree():
+		if not _still_ours(root, generation):
 			return spawned
 		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
-	await _restore_connections_async(root, spawned, entries)
+	await _restore_connections_async(root, spawned, entries, generation)
 	return spawned
 
 
@@ -300,18 +308,29 @@ func _restore_connections(root: Node, spawned: Dictionary, entries: Dictionary) 
 
 
 ## Same, yielding a frame whenever it has held the main thread too long.
-func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictionary) -> void:
+func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictionary,
+		generation: int) -> void:
 	var tree := root.get_tree()
 	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	for id: int in spawned:
+		if not is_instance_valid(spawned[id]):
+			continue
 		_restore_entry(root, id, spawned, entries)
 		if Time.get_ticks_usec() < deadline:
 			continue
 		await tree.process_frame
-		if not is_instance_valid(root) or not root.is_inside_tree():
+		if not _still_ours(root, generation):
 			return
 		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	_report_restored(spawned)
+
+
+## False once the room we are building into has gone, or once a newer restore
+## has taken over — either way this run must not touch the scene again.
+func _still_ours(root: Node, generation: int) -> bool:
+	if generation != _restore_generation:
+		return false
+	return is_instance_valid(root) and root.is_inside_tree()
 
 
 func _report_restored(spawned: Dictionary) -> void:
