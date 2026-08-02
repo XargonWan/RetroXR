@@ -3,13 +3,76 @@
 A VR retro-gaming room in Godot 4: real emulated hardware you pick up, plug in and
 play with, driven by libretro cores.
 
-Five C++ GDExtensions do the heavy lifting — `libretro-godot` (the cores),
-`verlet-rope` (the cables), `vlc-godot` (video), `godot-pdfium` (manuals) and
-`metaxr-audio` (spatial audio on Quest). Build them all for one platform with:
+## Building
+
+Almost everything interesting here is C++. Five GDExtensions have to be compiled
+before the Godot project will run — a fresh clone has the sources but not the
+libraries. Miss one and Godot says so on startup, then every scene using its types
+fails to parse:
+
+```
+ERROR: GDExtension dynamic library not found: 'res://verlet-rope/verlet_rope.gdextension'.
+SCRIPT ERROR: Parse Error: Could not find type "VerletRope" in the current scope.
+```
+
+| Extension | Provides | Built from | Deploys to |
+|---|---|---|---|
+| `libretro-godot` | `Libretro` — runs the emulator cores (submodule) | repo root | `RetroVR/libretro-godot/` |
+| `verlet-rope` | `VerletRope` — the simulated cables | `verlet-rope/` | `RetroVR/verlet-rope/` |
+| `vlc-godot` | `VlcPlayer` — video for the VCR and DVD player | `vlc-godot/` | `RetroVR/vlc-godot/` |
+| `godot-pdfium` | `PDFRenderer` — renders manual pages | `godot-pdfium/` | `RetroVR/godot-pdfium/` |
+| `metaxr-audio` | HRTF spatial audio on Quest | `metaxr-audio-godot/` | `RetroVR/metaxr-audio/` |
+
+**Each needs its own `scons` invocation.** They share the `godot-cpp` submodule, and
+godot-cpp's `SConstruct` can only run once per process, so a single scons run can never
+cover two of them. Each also has its own `VariantDir('Temp')`, which is why each builds
+from its own directory — except `libretro-godot`, whose SConstruct is the repo root's.
+
+### Prerequisites
 
 ```bash
-python Tools/build.py windows      # or: linux, android
+git submodule update --init --recursive     # godot-cpp, libretro-common, vulkan-headers
+pip install --user scons                    # ensure the Scripts/bin dir is on PATH
 ```
+
+Plus a compiler: **MSVC** on Windows, **GCC/Clang** on Linux, the **Android NDK** for
+Quest (set `ANDROID_NDK_ROOT`; `ANDROID_HOME` must be *empty*, not unset, or godot-cpp
+looks for a full SDK).
+
+Every third-party binary these link against is already committed — PDFium for all three
+platforms, the libVLC import libraries and Android `libvlc.so`, the Meta XR Audio blob.
+The one exception is **libVLC on Linux**, which links the system library (Fedora:
+`vlc-devel` to build, `vlc-libs` to run).
+
+### One command
+
+```bash
+python Tools/build.py windows                 # all five, debug + release
+python Tools/build.py android --target release
+python Tools/build.py linux --only vlc-godot
+python Tools/build.py windows --jobs 8 -- verbose=yes    # extra args go to scons
+```
+
+It runs the five builds in sequence, prints a pass/fail table, and exits non-zero if any
+failed. Architecture follows the platform: `x86_64` for windows and linux, `arm64` for
+android.
+
+Asking for `linux` **from Windows** re-invokes the script inside WSL (`--distro`, default
+`Ubuntu`) with `HOME` and `PATH` reset — WSL inherits the Windows environment, whose PATH
+contains spaces and breaks a bare `export PATH="$HOME/.local/bin:$PATH"`. From Linux it
+just builds. *(scons is not currently installed in either WSL distro here; `pip install
+--user scons` inside the distro first.)*
+
+### Or one at a time
+
+```bash
+scons platform=windows arch=x86_64 target=template_debug          # libretro-godot, from the root
+cd verlet-rope && scons platform=linux arch=x86_64 target=template_release
+cd godot-pdfium && scons platform=android arch=arm64 target=template_debug ANDROID_HOME=
+```
+
+Each writes a `lib<name>.<platform>.<target>.<arch>.so` (or `.dll`) next to the
+`.gdextension` file that points at it.
 
 ## Video player (VCR)
 
