@@ -387,27 +387,16 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 Reusable, out-of-band scripts live in the repo-root `Tools/` (distinct from `RetroXR/Tools/`,
 which holds in-editor probe scenes like `netplay_spike`).
 
-- **`Tools/bundle_convert.py`** — headless converter for `.bundle` models (each is a Unity
-  AssetBundle, magic `UnityFS`) → `.glb`, with no Unity editor. Deps: `pip install --user UnityPy
-  numpy pygltflib Pillow`. Usage: `python3 Tools/bundle_convert.py <file.bundle|dir> [out] [--audio]`.
-  Handles per-submesh PBR materials, full PBR maps (albedo/normal (DXT5nm)/ORM/emissive), Unity
-  built-in meshes, transparent proxy shells, embedded glTF animations (from the Unity generic
-  clip) + an `.anim.json` sidecar, MonoBehaviour metadata → `.meta.json`, and `--audio` extracts
-  AudioClips to `audio/*.wav`. **Gotcha:** UnityPy's `Mesh.export()` is already glTF-oriented —
-  do NOT apply any axis flip or you mirror the model. Source model libraries on this box live in
-  `~/model-library/`, `~/Systems/` (consoles) and `~/Media/` (carts/tapes) — all **outside** the
-  repo, and they stay that way.
+**Third-party model conversion is not part of this repo**, and the models it once
+produced are gone — 22 consoles/handhelds, 12 controllers, 9 carts/discs and the
+GameCube memory card, removed on 2026-08-02 because none of it was licensed for
+redistribution.
 
-  **Converted output is not carried in-repo.** On 2026-08-02 every model built from a
-  `.bundle` — 22 consoles/handhelds, 12 controllers, 9 carts/discs, the GameCube memory
-  card — was deleted from the tree and purged from git history with `git filter-repo`,
-  because none of it is licensed for redistribution. `RetroXR/imported-assets/` now holds
-  only the CC BY / CC0 room and prop assets, which carry LICENSE files and are credited in
-  the About panel. What the hardware wears is the procedural stand-ins in
-  `Scenes/Objects/system_models/`. Do not re-add a converted `.bundle` to the repo without
-  attribution and permission from the model's actual author (note that the `.bundle`
-  packager is usually not the modeller — see `plans/hardware-coverage/README.md`, which
-  is kept as the provenance record and the re-import map).
+`RetroXR/imported-assets/` now holds only the CC BY / CC0 room and prop assets, which
+carry LICENSE files and are credited in the About panel. What the hardware wears is the
+procedural stand-ins in `RetroXR/Scenes/Objects/system_models/`. **Do not add converted
+third-party models to this repo** — converting a file format grants no rights over its
+contents, and whoever packaged a bundle is usually not the person who made the model.
 - **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
   bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
   godot-pdfium build recipe above.
