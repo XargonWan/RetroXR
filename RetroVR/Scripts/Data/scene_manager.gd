@@ -6,6 +6,11 @@ extends Node
 
 
 signal scene_changed(scene_id: String)
+## A room is built, current, and standing on its own — the point at which things
+## that need the finished tree (the arcade's slot auto-load, anything reading
+## current_scene) can run. scene_changed fires much earlier, when the id is
+## claimed and the old room is still up.
+signal scene_ready(scene_id: String)
 signal active_slot_changed(slot_id: String)
 
 const SCENE_PATHS := {
@@ -27,6 +32,7 @@ const PREFS_FILE := "user://scenes/prefs.json"
 const LOADING_RIG_SCENE := preload("res://Scenes/UI/loading_rig.tscn")
 ## Every room instances res://Scenes/player_rig.tscn under this name.
 const PLAYER_RIG_NAME := "PlayerRig"
+const ORIGIN_PATH := "Staging/XROrigin3D"
 
 var current_scene_id: String = "arcade"
 var auto_save_on_switch: bool = true
@@ -114,15 +120,11 @@ func change_scene(scene_id: String) -> void:
 ## way peaks at the sum of both, which is what the Quest cannot afford. Tearing
 ## down first costs a black gap, which is what the loading rig is for.
 ##
-## The player's rig is carried across rather than rebuilt. Building one costs
-## ~380 ms of blocked main thread on a desktop — most of it the spawn menu's
-## viewport UI — and several times that on a Quest, and it is spent inside the
-## single add_child() that brings the new room in, with no frame drawn until it
-## returns. In VR a blocked main thread is a frozen headset: the compositor
-## re-projects the last frame it was handed, which is the loading screen. So the
-## rig steps out of the old room, waits on the root, and is spliced into the new
-## one before it enters the tree. The viewport also never loses its camera that
-## way, so nothing has to hand XR tracking over mid-swap.
+## The player's rig is carried across rather than rebuilt: building one costs
+## ~380 ms of blocked main thread, and a blocked main thread in VR is a frozen
+## headset. It steps out of the old room, waits on the root, and is spliced into
+## the new one before that enters the tree. PlayerRig owns what the crossing does
+## to it; this only decides when.
 func _run_transition(path: String, title: String) -> void:
 	if _transitioning:
 		return
@@ -182,104 +184,41 @@ func _run_transition(path: String, title: String) -> void:
 	tree.root.add_child(incoming)
 	tree.current_scene = incoming
 	if player != null:
-		_settle_player_rig(player)
+		player.enter_world()
 	_transitioning = false
+	scene_ready.emit(current_scene_id)
 
 
-## Detach the player's rig from the outgoing room and park it on the root so it
-## survives the teardown. Null if the room has no rig — a probe scene, or one
-## that never had one — in which case the loading rig brings its own camera.
-func _take_player_rig(outgoing: Node) -> Node3D:
+## Take the player out of the outgoing room and park them on the root so they
+## survive the teardown. Null if the room has no rig — a probe scene, or one that
+## never had one — in which case the loading rig brings its own camera.
+func _take_player_rig(outgoing: Node) -> PlayerRig:
 	if outgoing == null:
 		return null
-	var player := outgoing.get_node_or_null(PLAYER_RIG_NAME) as Node3D
+	var player := outgoing.get_node_or_null(PLAYER_RIG_NAME) as PlayerRig
 	if player == null:
 		return null
-	# Whatever is in the player's hands belongs to the room about to be freed.
-	for node: Node in player.find_children("*", "XRToolsFunctionPickup", true, false):
-		var pickup := node as XRToolsFunctionPickup
-		if pickup.picked_up_object != null:
-			pickup.drop_object()
+	player.leave_world()
 	outgoing.remove_child(player)
 	get_tree().root.add_child(player)
-	_set_player_body_enabled(player, false)
 	return player
 
 
 ## Splice the carried rig into the incoming room in place of the one the room
 ## authored, before any of it enters the tree — so the room's own rig never runs
 ## a single _ready().
-func _seat_player_rig(incoming: Node, player: Node3D) -> void:
+func _seat_player_rig(incoming: Node, player: PlayerRig) -> void:
 	var index := -1
-	var authored := incoming.get_node_or_null(PLAYER_RIG_NAME) as Node3D
+	var authored := incoming.get_node_or_null(PLAYER_RIG_NAME) as PlayerRig
 	if authored != null:
 		index = authored.get_index()
-		player.transform = authored.transform
-		# Locomotion walks the origin, not the rig root, so the origin has to go
-		# back to the value the room's own rig was authored with. Otherwise the
-		# player arrives at the new spawn point plus wherever they wandered in
-		# the last room.
-		var authored_origin := _find_origin(authored)
-		var origin := _find_origin(player)
-		if authored_origin != null and origin != null:
-			origin.transform = authored_origin.transform
+		player.place_at(authored.transform, authored.get_node(ORIGIN_PATH).transform)
 		incoming.remove_child(authored)
 		authored.free()
 	player.get_parent().remove_child(player)
 	incoming.add_child(player)
 	if index >= 0:
 		incoming.move_child(player, index)
-
-
-## Re-apply the rig settings that depend on which room we are in. Runs once the
-## incoming scene is the current one, because the arcade's slot auto-load builds
-## into it and the player body needs a floor to stand on.
-func _settle_player_rig(player: Node3D) -> void:
-	_set_player_body_enabled(player, true)
-	var menu := player.get_node_or_null("SpawnMenuController")
-	if menu != null and menu.has_method("refresh_for_scene"):
-		menu.refresh_for_scene()
-
-
-## The floor is freed with the room, and the rig now outlives it. Left running,
-## the player body spends the whole crossing in free fall — you watch the loading
-## screen rise past you — and then arrives in the new room carrying a second of
-## downward velocity, which puts you straight through its floor. So the body is
-## switched off for the crossing and switched back on once there is ground again.
-func _set_player_body_enabled(player: Node3D, value: bool) -> void:
-	var found := player.find_children("*", "XRToolsPlayerBody", true, false)
-	if found.is_empty():
-		return
-	var body := found[0] as XRToolsPlayerBody
-	if value:
-		body.velocity = Vector3.ZERO
-		body.ground_velocity = Vector3.ZERO
-		# The body is top_level — its transform is world space and does NOT come
-		# along when the rig is re-seated. Left where it was, the first physics
-		# tick in the new room tries to WALK it across from the old one, and a
-		# walk that long crosses walls: the head-distance check blocks and fades
-		# the view to black. Reproduced every time coming out of the test hall,
-		# which is long enough to guarantee it. PlayerBody._ready() does exactly
-		# this when it first goes top-level.
-		var parent := body.get_parent() as Node3D
-		if parent != null:
-			body.global_transform = parent.global_transform
-		# The head-distance fade is a countdown that the body ticks down itself,
-		# so switching the body off froze it mid-count. Left alone it is re-applied
-		# the instant the body wakes in the new room: you see the room, and then it
-		# goes black for whatever the stale count had left — and the count has no
-		# upper bound, so leaning on a cabinet for five seconds before switching
-		# rooms buys five seconds of black. Whether the new room's geometry
-		# deserves a fade is decided from scratch on the next tick anyway.
-		body._fade_value = 0.0
-		if body._fade != null:
-			body._fade.set_fade_level(body, Color(0, 0, 0, 0))
-	body.enabled = value
-
-
-func _find_origin(player: Node3D) -> Node3D:
-	var found := player.find_children("*", "XROrigin3D", true, false)
-	return found[0] as Node3D if not found.is_empty() else null
 
 
 ## Pay every stand-in model's first-spawn cost once, at startup, instead of the

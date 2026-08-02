@@ -14,12 +14,13 @@ const ROOMS := ["arcade", "den", "bedroom", "test"]
 
 ## With `-- --core`, every room gets a console powered on in it before we leave
 ## again, so each transition tears a running libretro core down rather than only
-## the three scene_soak.gd covers. Needs the core installed and the ROM staged
-## where SOAK_ROM points; without either, the run says so and carries on.
+## the three scene_soak.gd covers. Needs the core installed and a ROM at
+## user://roms/smb.nes; without either, the run says so and carries on.
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const TV_SCENE := preload("res://Scenes/Objects/tv.tscn")
-const SOAK_CORE := "fceumm"
-const SOAK_SYSTEMID := "nes"
+const CORE_NAME := "fceumm"
+const CORE_SYSTEMID := "nes"
+const CORE_ROM := "/roms/smb.nes"
 
 var _with_core := false
 var _rom := ""
@@ -36,12 +37,18 @@ func _ready() -> void:
 	_run.call_deferred()
 
 
+## Covers every exit, including the timeout and a failing run — not just the
+## happy path, which is all _run() reaches.
+func _exit_tree() -> void:
+	_release_scratch_slot()
+
+
 func _process(_d: float) -> void:
 	if not _watch:
 		return
-	var cam := _find("XRCamera3D")
-	if cam != null:
-		_min_y = minf(_min_y, cam.global_position.y)
+	var rig := _rig()
+	if rig != null:
+		_min_y = minf(_min_y, rig.camera.global_position.y)
 
 
 func _run() -> void:
@@ -51,7 +58,7 @@ func _run() -> void:
 	_claim_scratch_slot()
 	_with_core = "--core" in OS.get_cmdline_user_args()
 	if _with_core:
-		_rom = OS.get_user_data_dir() + "/roms/smb.nes"
+		_rom = OS.get_user_data_dir() + CORE_ROM
 		if not FileAccess.file_exists(_rom):
 			print("[matrix] no ROM at %s — running without a core" % _rom)
 			_with_core = false
@@ -67,7 +74,6 @@ func _run() -> void:
 	await _phase_adversarial()
 	await _phase_still_works()
 
-	_release_scratch_slot()
 	if _with_core:
 		print("[matrix] cores powered on and torn down: %d" % _powered)
 	print("[matrix] ===== %d step(s), %d invariant failure(s) =====" % [_step, _failures.size()])
@@ -121,18 +127,18 @@ func _phase_pairs() -> void:
 
 
 ## The same lap over and over, watching what does not get cleaned up.
+##
+## Read the counters on a run WITHOUT --core. With it, every room gets a console
+## added to the "spawned" group and the auto-save writes them into the scratch
+## slot, which restores more of them next lap — the growth is this probe's, not
+## the product's. A clean run holds nodes and orphans flat.
 func _phase_laps() -> void:
 	print("[matrix] ### phase: repeat laps (leak watch)")
 	await _go("arcade")
-	var first := ""
 	for lap in range(6):
 		await _go("bedroom")
 		await _go("arcade")
-		var c := _counts()
-		print("[matrix] lap %d: %s" % [lap + 1, c])
-		if lap == 0:
-			first = c
-	print("[matrix] lap 1 %s" % first)
+		print("[matrix] lap %d: %s" % [lap + 1, _counts()])
 
 
 ## The things a player does that the happy path never covers.
@@ -192,10 +198,10 @@ func _phase_still_works() -> void:
 	print("[matrix] ### phase: the carried rig still works")
 	await _mark("menu, pointers, locomotion and grabbing after all of that")
 
-	var menu_vp := _find_node("SpawnMenuController/SpawnMenuViewport/Viewport")
+	var menu_vp := _rig_node("SpawnMenuController/SpawnMenuViewport/Viewport")
 	if menu_vp == null or menu_vp.get_child_count() == 0:
 		_fail("still works", "spawn menu 2D scene is gone")
-	var ctl := _find_node("SpawnMenuController")
+	var ctl := _rig_node("SpawnMenuController")
 	if ctl == null:
 		_fail("still works", "no SpawnMenuController")
 	else:
@@ -214,7 +220,7 @@ func _phase_still_works() -> void:
 	if pointers.size() < 2:
 		_fail("still works", "%d pointers left on the rig" % pointers.size())
 
-	var loco := _find_node("LocomotionManager")
+	var loco := _rig_node("LocomotionManager")
 	if loco != null and loco.is_blocked(LocomotionManager.CHANNEL_ALL):
 		_fail("still works", "locomotion is stuck blocked")
 
@@ -268,8 +274,8 @@ func _power_on_a_console(room: String) -> void:
 	if scene == null:
 		return
 	var sys := SYSTEM_SCENE.instantiate() as RetroSystem
-	sys.systemid = SOAK_SYSTEMID
-	sys.core_name = SOAK_CORE
+	sys.systemid = CORE_SYSTEMID
+	sys.core_name = CORE_NAME
 	sys._video_out_from_save = 1
 	scene.add_child(sys)
 	sys.add_to_group("spawned")
@@ -319,16 +325,13 @@ func _settle(limit: float) -> void:
 func _check(where: String) -> void:
 	var tree := get_tree()
 	var scene := tree.current_scene
-	var origins := tree.root.find_children("*", "XROrigin3D", true, false)
-	var cams := tree.root.find_children("*", "XRCamera3D", true, false)
-	var vp_cam := tree.root.get_viewport().get_camera_3d()
-	var rig := scene.get_node_or_null("PlayerRig") if scene != null else null
-
 	if scene == null:
 		_fail(where, "no current_scene")
 		return
-	if rig == null:
-		_fail(where, "PlayerRig is not under the current scene")
+
+	var origins := tree.root.find_children("*", "XROrigin3D", true, false)
+	var cams := tree.root.find_children("*", "XRCamera3D", true, false)
+	var vp_cam := tree.root.get_viewport().get_camera_3d()
 	if origins.size() != 1:
 		_fail(where, "%d XROrigin3D in the tree" % origins.size())
 	if cams.size() != 1:
@@ -340,19 +343,19 @@ func _check(where: String) -> void:
 	if SceneManager._transitioning:
 		_fail(where, "still marked _transitioning")
 
-	var body := _find("XRToolsPlayerBody") as XRToolsPlayerBody
-	if body == null:
-		_fail(where, "no player body")
-	else:
-		if not body.enabled:
-			_fail(where, "player body left disabled")
-		if not body.on_ground:
-			_fail(where, "player is not on the ground")
-		if body._fade_value > 0.01:
-			_fail(where, "view faded (%.2f)" % body._fade_value)
-	var cam := _find("XRCamera3D")
-	if cam != null and (cam.global_position.y < 0.5 or cam.global_position.y > 2.5):
-		_fail(where, "camera y=%.2f" % cam.global_position.y)
+	var rig := scene.get_node_or_null("PlayerRig") as PlayerRig
+	if rig == null:
+		_fail(where, "PlayerRig is not under the current scene")
+		return
+	if not rig.body.enabled:
+		_fail(where, "player body left disabled")
+	if not rig.body.on_ground:
+		_fail(where, "player is not on the ground")
+	if rig.body._fade_value > 0.01:
+		_fail(where, "view faded (%.2f)" % rig.body._fade_value)
+	var y := rig.camera.global_position.y
+	if y < 0.5 or y > 2.5:
+		_fail(where, "camera y=%.2f" % y)
 
 
 func _fail(where: String, what: String) -> void:
@@ -383,15 +386,15 @@ func _grab_something() -> String:
 	return "<nothing pickable spawned>"
 
 
-func _find(type: String) -> Node3D:
-	var found := get_tree().root.find_children("*", type, true, false)
-	return found[0] as Node3D if not found.is_empty() else null
-
-
-## A node by path under whichever PlayerRig is currently seated.
-func _find_node(path: String) -> Node:
+## Whichever rig is currently seated, wherever it is mid-transition.
+func _rig() -> PlayerRig:
 	var scene := get_tree().current_scene
-	if scene == null:
-		return null
-	var rig := scene.get_node_or_null("PlayerRig")
+	var rig := scene.get_node_or_null("PlayerRig") if scene != null else null
+	if rig == null:
+		rig = get_tree().root.get_node_or_null("PlayerRig")
+	return rig as PlayerRig
+
+
+func _rig_node(path: String) -> Node:
+	var rig := _rig()
 	return rig.get_node_or_null(path) if rig != null else null

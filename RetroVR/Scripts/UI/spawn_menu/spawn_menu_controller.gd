@@ -105,6 +105,9 @@ func _ready() -> void:
 	# Remove layer 1 (default physics) so the menu doesn't collide with objects,
 	# but keep layers 21 and 23 for pointer interaction.
 	$SpawnMenuViewport/StaticBody3D.collision_layer = 5242880
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm != null:
+		sm.scene_ready.connect(_on_scene_ready)
 	call_deferred("_deferred_setup")
 
 
@@ -206,20 +209,18 @@ func _connect_menu_signals() -> void:
 	_autoload_slot()
 
 
-## Re-apply what depends on which room we are in. SceneManager calls this after
-## carrying this rig into a new scene: the rig is not rebuilt, so _deferred_setup
-## and _connect_menu_signals do not run again and the room-dependent settings
-## would otherwise still be the last room's.
-func refresh_for_scene() -> void:
+## The rig is carried from room to room, so _deferred_setup and
+## _connect_menu_signals never run a second time — everything here that depends
+## on WHICH room we are in has to be re-applied when a new one is ready.
+func _on_scene_ready(_scene_id: String) -> void:
 	_apply_world_scale(_world_scale)
 	_autoload_slot()
 
 
 func _autoload_slot() -> void:
 	var sm := get_node_or_null("/root/SceneManager")
-	if sm and sm.current_scene_id == "arcade":
-		if sm.active_slot_id != "clean":
-			await ScenePersistence.new().load_slot_async(get_tree().current_scene, sm.active_slot_id)
+	if sm and sm.current_scene_id == "arcade" and sm.active_slot_id != "clean":
+		await ScenePersistence.new().load_slot_async(get_tree().current_scene, sm.active_slot_id)
 
 
 # ── Rebinding ─────────────────────────────────────────────────────────────────

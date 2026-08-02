@@ -65,23 +65,11 @@ func save_slot(root: Node, slot_id: String) -> bool:
 	return _write_scene_to_file(root, _slot_file(slot_id))
 
 
-## Clear the scene then restore from the slot file.
-## Loading "clean" just clears the scene.
-func load_slot(root: Node, slot_id: String) -> bool:
-	if slot_id == "clean":
-		clear_scene(root)
-		return true
-	var path := _slot_file(slot_id)
-	if not FileAccess.file_exists(path):
-		push_warning("ScenePersistence: slot file not found '%s'" % path)
-		return false
-	clear_scene(root)
-	return _read_scene_from_file(root, path)
-
-
-## Coroutine form of load_slot(), spread over frames — see
-## instantiate_objects_async(). Prefer it anywhere the player is wearing a
-## headset while it runs.
+## Clear the scene then restore from the slot file, spread over frames — see
+## instantiate_objects_async(). Loading "clean" just clears the scene.
+##
+## A coroutine: callers must await it, or they get a Signal back and the room
+## fills in behind them.
 func load_slot_async(root: Node, slot_id: String) -> bool:
 	if slot_id == "clean":
 		clear_scene(root)
@@ -235,15 +223,6 @@ func _read_objects(path: String) -> Variant:
 		return null
 	var objects: Variant = (parsed as Dictionary).get("objects", [])
 	return objects if objects is Array else null
-
-
-func _read_scene_from_file(root: Node, path: String) -> bool:
-	var objects: Variant = _read_objects(path)
-	if objects == null:
-		return false
-	var spawned := instantiate_objects(root, objects as Array)
-	print("[ScenePersistence] loaded %d objects from '%s'" % [spawned.size(), path])
-	return true
 
 
 ## Instantiate serialized object entries under root and restore their

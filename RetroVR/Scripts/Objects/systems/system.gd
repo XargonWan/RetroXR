@@ -994,14 +994,23 @@ func _uninstall_tv_mirror(ch: int, tv: RetroTV) -> void:
 		mesh.set_surface_override_material(0, null)
 
 
+## Read a slot that may be holding a freed instance.
+##
+## The Variant argument and return are the point: assigning a previously freed
+## instance to ANY Object-typed variable — a local, or a function parameter —
+## throws before is_instance_valid() gets a chance to guard it. Cables and TVs
+## are freed out from under these arrays whenever a room is torn down or a slot
+## restore rebuilds the set across frames.
+static func _live(v: Variant) -> Object:
+	return v if is_instance_valid(v) else null
+
+
 ## A freed system must not leave its window materials / touch surfaces on TVs.
 func _exit_tree() -> void:
 	for i in _channels.size():
-		# Untyped (Variant) read: assigning a previously freed instance to any
-		# Object-typed variable throws before is_instance_valid() can guard it.
-		var tv_obj = _channel_tvs[i]
-		if tv_obj != null and is_instance_valid(tv_obj):
-			_uninstall_tv_mirror(i, tv_obj as RetroTV)
+		var tv := _live(_channel_tvs[i]) as RetroTV
+		if tv != null:
+			_uninstall_tv_mirror(i, tv)
 		_remove_touch_surface(i)
 	super._exit_tree()
 
@@ -1113,16 +1122,12 @@ func set_video_out_enabled(on: bool) -> void:
 
 func _apply_video_out() -> void:
 	for i in _channels.size():
-		# Untyped (Variant) reads — see _exit_tree().
-		var inst_obj = _cable_instances[i]
-		var plug_obj = _cable_plugs[i]
-		if not is_instance_valid(inst_obj) or not is_instance_valid(plug_obj):
+		var inst := _live(_cable_instances[i]) as Node3D
+		var plug := _live(_cable_plugs[i]) as CablePlug
+		if inst == null or plug == null:
 			continue
-		var inst: Node3D = inst_obj
-		var plug: CablePlug = plug_obj
-		var tv_obj = _channel_tvs[i]
-		if not video_out_enabled and tv_obj != null and is_instance_valid(tv_obj):
-			var tv := tv_obj as RetroTV
+		var tv := _live(_channel_tvs[i]) as RetroTV
+		if not video_out_enabled and tv != null:
 			var port := tv.get_node_or_null("CompositePort") as XRToolsSnapZone
 			if port and port.picked_up_object == plug:
 				# Disarm around the drop so the zone's stale grab list can't
@@ -1236,22 +1241,18 @@ func _physics_process(_delta: float) -> void:
 	if not video_out_enabled:
 		return   # cables hidden and frozen — nothing to clamp
 	for i in _channels.size():
-		# Untyped (Variant) reads — see _exit_tree(). A slot restore runs across
-		# frames, so this can tick while the cable set is half rebuilt and the
-		# array still points at plugs that have been freed.
-		var plug_obj = _cable_plugs[i]
-		var attach_obj = _attach_points[i]
-		if not is_instance_valid(plug_obj) or not is_instance_valid(attach_obj):
-			continue
-		var plug: CablePlug = plug_obj
 		var max_len: float = _max_rope_lengths[i]
 		if max_len <= 0.0:
+			continue   # cable not built yet
+		var plug := _live(_cable_plugs[i]) as CablePlug
+		var attach := _live(_attach_points[i]) as Node3D
+		if plug == null or attach == null:
 			continue
 		# Snapped to TV or actively held by the user — don't fight whoever owns the plug
-		if is_instance_valid(_channel_tvs[i]) or plug.is_picked_up():
+		if _live(_channel_tvs[i]) != null or plug.is_picked_up():
 			continue
 
-		var attach_pos: Vector3 = (attach_obj as Node3D).global_position
+		var attach_pos: Vector3 = attach.global_position
 		var diff := plug.global_position - attach_pos
 		var dist := diff.length()
 

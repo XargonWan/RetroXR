@@ -1,5 +1,6 @@
 [gd_scene format=3]
 
+[ext_resource type="Script" path="res://Scripts/XR/player_rig.gd" id="0_playerrig"]
 [ext_resource type="Script" uid="uid://uo8faq7roeey" path="res://Scripts/XR/controller_model.gd" id="1_ctrlmodel"]
 [ext_resource type="Script" path="res://Scripts/Objects/widgets/poke_tip.gd" id="1_poketip"]
 [ext_resource type="PackedScene" uid="uid://b4ysuy43poobf" path="res://addons/godot-xr-tools/functions/function_pickup.tscn" id="2_pickup"]
@@ -28,6 +29,7 @@
 [ext_resource type="PackedScene" uid="uid://dgm5op1hausw5" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_sprint.tscn" id="24_desktopwalk"]
 
 [node name="PlayerRig" type="Node3D"]
+script = ExtResource("0_playerrig")
 
 [node name="Staging" type="Node3D" parent="."]
 script = ExtResource("14_stagingshim")

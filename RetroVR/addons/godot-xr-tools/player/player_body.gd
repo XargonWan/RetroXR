@@ -377,6 +377,27 @@ func _physics_process(delta: float):
 	_in_physics_movement = false
 
 
+## Re-establish the state _ready() sets up, for a world this body has not stood
+## in before. The node is not being re-created — RetroVR carries one player rig
+## from room to room — so everything _ready() would have done has to be redone by
+## hand: the body is top_level, so its transform is world space and did not come
+## along when the rig was re-parented, and momentum and the head-distance fade
+## countdown both belong to the room that has just been torn down.
+##
+## Call it with the body disabled, then enable.
+func reset_for_new_world() -> void:
+	velocity = Vector3.ZERO
+	ground_velocity = Vector3.ZERO
+	ground_node = null
+	_previous_ground_node = null
+	_fade_value = 0.0
+	if _fade:
+		_fade.set_fade_level(self, Color(0, 0, 0, 0))
+	var parent := get_parent() as Node3D
+	if parent:
+		global_transform = parent.global_transform
+
+
 ## Teleport the player body.
 ## This moves the player without checking for collisions.
 func teleport(target : Transform3D) -> void:
