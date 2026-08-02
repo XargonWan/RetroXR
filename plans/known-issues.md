@@ -8,11 +8,62 @@
 
 As this is a submodule, we need to somehow upstream the issues we found
 
-* Playstation Portable is just named "playstation_portable", this isn't visually appearling with the underscore and lack of captailizations
 * There is an insconsistency with the `systemname` "C64" where the corrisponding `systemid` is called either "commodore_c64" or "commodore_64"
 * Same inconsistency for the Amiga — `systemid` is either "commodore_amiga" or "amiga" depending on the core
 * Cost of both: `SystemInfo.for_system()` resolves `res://SystemInfo/<systemid>.tres`, so each of these machines needs TWO identical `.tres` files or half the cores get the fallback descriptor (2 ports, cartridge) instead of the authored one. `RetroVR/SystemInfo/` is 60 files for 58 real systems because of it. Anything that counts or lists systems from that directory double-counts the C64 and the Amiga.
 * Some systemids carry no usable `systemname` at all ("playstation_portable" comes back as the raw id). `CoreInfoDatabase._NAME_OVERRIDES` patches that one locally rather than editing the submodule
+
+## Cores with no systemid at all
+
+Found while looking for a Fairchild Channel F system (2026-08-01). 46 of the 306
+`.info` files carry no `systemid` line; 13 of those are real emulators, the other 33
+are single-game cores and players where it matters less.
+
+`CoreInfoDatabase._rebuild_indices()` only indexes entries with a non-empty
+`systemid`, so these cores are absent from `_by_systemid` entirely — not hidden by
+`SystemFilter`, just never there. No tile, no `get_unique_systemids()` entry, no way
+to reach them from any system-browsing UI. The core still downloads and runs; only
+the discovery path is missing.
+
+The 13, with the `database` name that should have become the systemid:
+
+* `freechaf` — "Fairchild - Channel F"
+* `gw` — "Handheld Electronic Game"
+* `neocd` — "SNK - Neo Geo CD"
+* `emuscv` — "Epoch - Super Cassette Vision"
+* `freej2me` — "Mobile - J2ME"
+* `simcp` — "SAM coupe"
+* `theodore` — "Thomson - MOTO"
+* `skyemu` — three databases (DS / Game Boy / GBA), so no single id fits
+* `galaksija`, `mu`, `oberon`, `pcem`, `qemu` — no `database` either
+
+Fixable locally the same way `_NAME_OVERRIDES` handles the missing systemnames: a
+systemid override table keyed on `core_name`. Anything given an id also needs a
+`res://SystemInfo/<systemid>.tres` or it takes the fallback descriptor.
+
+## Sub-platforms are invisible — they exist only in `database`
+
+A core declares ONE `systemid`, which is the parent machine. Every other platform it
+emulates appears only in the `|`-separated `database` field, which nothing indexes.
+
+`genesis_plus_gx` is `systemid = "mega_drive"` and
+`database = "Sega - Game Gear|Sega - Master System - Mark III|Sega - Mega-CD - Sega
+CD|Sega - Mega Drive - Genesis|Sega - PICO|Sega - SG-1000"`. Six machines, one id.
+`picodrive` adds "Sega - 32X" on the same id.
+
+Game Gear is the clearest casualty: five cores emulate it (`genesis_plus_gx`,
+`genesis_plus_gx_wide`, `gearsystem`, `smsplus`, `picodrive`) and not one reports a
+`game_gear` systemid — they say `mega_drive` or `master_system`. So there is no Game
+Gear tile, no `SystemInfo/game_gear.tres`, and a GG cart can only be spawned wearing
+a Master System or Mega Drive shell.
+
+Across the corpus: **158 distinct `database` names against 132 distinct systemids**.
+
+Not a data bug — the format has no way to express "this core covers N platforms" —
+but it means `systemid` cannot be the whole story for what RetroVR can run. Giving a
+sub-platform its own systemid is not free: core lookup keys off systemid, so a new
+`game_gear` id would resolve to zero cores unless the lookup also learns that the
+GG-capable cores serve it.
 
 ## Duplicate systemids for one machine
 
