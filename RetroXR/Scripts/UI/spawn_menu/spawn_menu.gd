@@ -380,8 +380,17 @@ func _build_ui() -> void:
 	_cores_view.scroll_changed.connect(func(s: ScrollContainer) -> void:
 		if _cores_view.visible:
 			_active_scroll = s)
+	# Downloading a core in the Cores view makes a system playable, so the spawn
+	# view's Systems and Cartridges grids both have a new tile to show. SpawnView
+	# rebuilds them from ITS OWN default_core_changed, which nothing else emits —
+	# so relaying this only outward left both grids stale. Cartridges appeared to
+	# work because the tab-switch handler happens to repopulate it; Systems has no
+	# such case and so never refreshed at all.
 	_cores_view.default_core_changed.connect(
-		func(sid: String, cn: String) -> void: default_core_changed.emit(sid, cn))
+		func(sid: String, cn: String) -> void:
+			if is_instance_valid(_spawn_view):
+				_spawn_view.refresh_after_core_change()
+			default_core_changed.emit(sid, cn))
 	content.add_child(_cores_view)
 
 	_controls_view = SpawnMenuControlsView.create()

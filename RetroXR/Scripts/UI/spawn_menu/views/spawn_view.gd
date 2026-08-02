@@ -260,8 +260,7 @@ func _build() -> void:
 	_populate_systems_tab()
 
 	# Rebuild systems/cartridges lists whenever the user sets/changes a default
-	default_core_changed.connect(func(_sid: String, _cn: String): _populate_systems_tab())
-	default_core_changed.connect(func(_sid: String, _cn: String): _populate_cartridges_tab())
+	default_core_changed.connect(func(_sid: String, _cn: String): refresh_after_core_change())
 
 	# Cartridges tab — drill-down browser, one tile per system
 	_cartridges_browser = SystemGridBrowser.new()
@@ -363,6 +362,7 @@ func _build() -> void:
 	# wrong list quietly refreshing.
 	tabs.tab_changed.connect(func(idx: int):
 		match tabs.get_tab_title(idx):
+			"Systems": _populate_systems_tab()
 			"Cartridges": _populate_cartridges_tab()
 			"Books": _populate_books_tab()
 			"Videos": _populate_videos_tab()
@@ -383,6 +383,17 @@ func _clear_vbox(vbox: VBoxContainer) -> void:
 	for child in vbox.get_children():
 		child.queue_free()
 	vbox.add_child(MenuStyle.spacer(10))
+
+
+## A system gained (or changed) its default core, so both grids keyed off
+## CoreDefaults have a tile to add or relabel. The one entry point for that,
+## called from this view's own default_core_changed AND by SpawnMenu when the
+## Cores view reports a download — the two grids must never refresh
+## independently again, which is how Cartridges came to update while Systems
+## silently did not.
+func refresh_after_core_change() -> void:
+	_populate_systems_tab()
+	_populate_cartridges_tab()
 
 
 ## Rebuild the Systems home grid: one tile per system that has a default core.
