@@ -95,11 +95,17 @@ const VIEWPORT_STEP := 32.0
 const GRIP_ARM := 0.045
 const GRIP_BAR := 0.008
 const GRIP_HIT := 0.055
-## How far past the corner the mark sits, out along the surface and down. The
-## mesh's arms run back toward the panel from its origin, so anything less than
-## an arm length leaves them under the screen, which is where they were: drawn,
-## but hidden behind the menu they belong to.
-const GRIP_OUT := GRIP_ARM + 0.010
+## How far past the corner the mark sits, out along the surface and down.
+##
+## Only the bar thickness plus a hair, so the "_|" traces the outside of the
+## corner it marks. Its two arms run back along the edges from its origin — the
+## horizontal one under the bottom edge, the vertical one beside the right edge
+## — and each has to clear only the edge it is parallel to, not both. Offsetting
+## by a whole arm length (the first attempt) clears both and leaves the mark
+## floating in the diagonal, attached to nothing.
+const GRIP_OUT := GRIP_BAR + 0.003
+## Gap between the grip and the curve toggles that follow it along the row.
+const ROW_GAP := 0.008
 
 const HL_ON := Color(1.0, 0.78, 0.30)
 const HL_OFF := Color(0.42, 0.45, 0.55)
@@ -414,7 +420,9 @@ func _place_buttons() -> void:
 	if _btn_flat == null or _btn_curved == null:
 		return
 	var y := _corner_baseline()
-	var first := _screen_size.x * 0.5 + GRIP_OUT + BTN_GAP + BTN_PITCH * 0.5
+	# Clear of the grip's outer edge, then one pitch apart. They sit past the
+	# panel's right edge, so riding the corner's line does not overlap it.
+	var first := _screen_size.x * 0.5 + GRIP_OUT + ROW_GAP + BTN_PITCH * 0.5
 	for i in 2:
 		var btn: VRButton = [_btn_flat, _btn_curved][i]
 		var s := first + BTN_PITCH * i
