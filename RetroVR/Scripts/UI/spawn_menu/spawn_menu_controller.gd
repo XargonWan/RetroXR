@@ -86,6 +86,9 @@ var _last_fps: int = -1
 ## in VR, in the corner of the view on desktop — not on any spawned object.
 ## One instance, so its use count accumulates instead of resetting per spawn.
 var _menu_hint: HeldHint = null
+## Seconds after setup before it opens, so it lands on a settled room and a
+## tracked hand rather than during the fade-in.
+const STARTUP_HINT_DELAY := 2.0
 
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
@@ -159,6 +162,15 @@ func _deferred_setup() -> void:
 	# Give the SubViewport one frame to instantiate the 2D scene
 	await get_tree().process_frame
 	_connect_menu_signals()
+
+	# The bootstrap hint. Every other hint can wait to be provoked by something
+	# the player did, but this one cannot: opening the menu is how you spawn
+	# anything at all, so teaching it on a spawn is teaching it to somebody who
+	# has already worked it out. A beat first, so it does not open underneath
+	# the room's own fade-in — and, in VR, so the hand it pins to is being
+	# tracked rather than parked at the rig origin.
+	await get_tree().create_timer(STARTUP_HINT_DELAY).timeout
+	_show_menu_hint()
 
 
 func _connect_menu_signals() -> void:
@@ -837,8 +849,6 @@ func _place_spawned(obj: Node3D, _type: String) -> void:
 ## stops showing a row once it is learned, so this is not a permanent tax on
 ## every spawn.
 func _teach_verbs(obj: Node3D) -> void:
-	_show_menu_hint()
-
 	var has_options: bool = obj.has_method("toggle_options_ui")
 	if not has_options:
 		return
