@@ -1,0 +1,255 @@
+## SpawnMenuGraphicsView — the menu's GRAPHICS tab.
+##
+## Two halves: the desktop window mode / resolution rows, which drive the real OS
+## window through DisplayServer, and the quality rows, which are a thin face over
+## QualityManager. Nothing here reports back to the menu — every control writes
+## straight to the autoload — so this view has no signals.
+##
+## It IS its own scroll container: the menu's _show_view wants a Control and a
+## ScrollContainer, and for this tab they were always the same node.
+class_name SpawnMenuGraphicsView
+extends ScrollContainer
+
+var _preset_opt:  VRDropdown = null
+var _msaa_opt:    VRDropdown = null
+var _post_aa_opt: VRDropdown = null
+var _shadow_opt:  VRDropdown = null
+var _ao_opt:      VRDropdown = null
+
+
+## `vr_mode` is passed in rather than queried, so the caller decides once and
+## every row agrees with the rest of the menu.
+static func create(vr_mode: bool) -> SpawnMenuGraphicsView:
+	var v := SpawnMenuGraphicsView.new()
+	v._build(vr_mode)
+	return v
+
+
+# ── Desktop window mode / resolution ──────────────────────────────────────────
+
+static func current_window_mode() -> String:
+	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN \
+			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		return "fullscreen"
+	return "borderless" if DisplayServer.window_get_flag(DisplayServer.WINDOW_FLAG_BORDERLESS) else "windowed"
+
+
+static func current_resolution_key() -> String:
+	var sz := DisplayServer.window_get_size()
+	return "%dx%d" % [sz.x, sz.y]
+
+
+static func apply_window_mode(mode: String) -> void:
+	match mode:
+		"fullscreen":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		"borderless":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+		_:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+
+
+static func apply_resolution(key: String) -> void:
+	var parts := key.split("x")
+	if parts.size() != 2:
+		return
+	var size := Vector2i(int(parts[0]), int(parts[1]))
+	# Only meaningful in windowed/borderless; leave fullscreen alone.
+	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN \
+			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		return
+	DisplayServer.window_set_size(size)
+	# Re-centre on the current screen so a bigger window doesn't spill off-screen.
+	var screen := DisplayServer.window_get_current_screen()
+	var origin := DisplayServer.screen_get_position(screen)
+	var usable := DisplayServer.screen_get_size(screen)
+	DisplayServer.window_set_position(origin + (usable - size) / 2)
+
+
+## Sizes the display can actually take, rather than a fixed list that capped out
+## below the monitor. Godot exposes the native size but no mode enumeration, so
+## the standard sizes are filtered against it and the native one always ends the
+## list — on a 4K panel that is where 3840x2160 comes from. The current window
+## size is folded in too, so the dropdown never opens on a blank value.
+static func resolution_options() -> Array:
+	var native := DisplayServer.screen_get_size(DisplayServer.window_get_current_screen())
+	var sizes: Array[Vector2i] = []
+	for candidate in [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080),
+			Vector2i(1920, 1200), Vector2i(2560, 1440), Vector2i(2560, 1600),
+			Vector2i(3440, 1440), Vector2i(3840, 2160)]:
+		if candidate.x <= native.x and candidate.y <= native.y:
+			sizes.append(candidate)
+	for extra in [DisplayServer.window_get_size(), native]:
+		if extra.x > 0 and extra.y > 0 and not sizes.has(extra):
+			sizes.append(extra)
+	sizes.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x * a.y < b.x * b.y)
+
+	var options: Array = []
+	for size in sizes:
+		var label := "%d×%d" % [size.x, size.y]
+		if size == native:
+			label += "  (native)"
+		options.append([label, "%dx%d" % [size.x, size.y]])
+	return options
+
+
+## QualityManager persists the desktop window state; the DisplayServer calls stay
+## here where they already live, so the stored values are pulled rather than
+## pushed — an autoload's _ready runs long before this menu exists to hear a
+## signal. Static because the menu restores the window before it builds any view.
+static func restore_window_state() -> void:
+	if MenuStyle.is_vr_mode():
+		return
+	if not QualityManager.window_mode.is_empty():
+		apply_window_mode(QualityManager.window_mode)
+	if not QualityManager.resolution.is_empty():
+		apply_resolution(QualityManager.resolution)
+
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+
+func _build(vr_mode: bool) -> void:
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+
+	var vbox := MenuStyle.vbox(14)
+	add_child(vbox)
+
+	vbox.add_child(MenuStyle.spacer(10))
+
+	if not vr_mode:
+		vbox.add_child(MenuStyle.header("DISPLAY"))
+
+		# Window mode (desktop only). VRDropdown, not OptionButton — the menu is a
+		# Viewport2Din3D and OptionButton double-fires there.
+		var win_opt := VRDropdown.create("Window Mode",
+			[["Windowed", "windowed"], ["Borderless", "borderless"], ["Fullscreen", "fullscreen"]],
+			current_window_mode(), 3, Vector2(170, 52), 20)
+		win_opt.item_selected.connect(func(id: Variant) -> void:
+			apply_window_mode(str(id))
+			QualityManager.set_window_state(str(id), ""))
+		vbox.add_child(win_opt)
+
+		# Resolution (applies while windowed/borderless; ignored in fullscreen).
+		var res_opt := VRDropdown.create("Resolution", resolution_options(),
+			current_resolution_key(), 2, Vector2(190, 52), 20)
+		res_opt.item_selected.connect(func(id: Variant) -> void:
+			apply_resolution(str(id))
+			QualityManager.set_window_state("", str(id)))
+		vbox.add_child(res_opt)
+
+		vbox.add_child(HSeparator.new())
+
+	vbox.add_child(MenuStyle.header("QUALITY"))
+
+	# Custom is listed so the dropdown can display it, but picking it does nothing
+	# — it is the state the rows below put the preset into, not a tier to select.
+	_preset_opt = VRDropdown.create("Preset",
+		[["Low", QualityManager.Preset.LOW],
+		 ["Medium", QualityManager.Preset.MEDIUM],
+		 ["High", QualityManager.Preset.HIGH],
+		 ["Custom", QualityManager.Preset.CUSTOM]],
+		int(QualityManager.preset), 4, Vector2(110, 52), 20)
+	_preset_opt.item_selected.connect(func(id: Variant) -> void:
+		if int(id) == QualityManager.Preset.CUSTOM:
+			return
+		QualityManager.apply_preset(int(id))
+		_sync_rows()
+	)
+	vbox.add_child(_preset_opt)
+
+	vbox.add_child(MenuStyle.hint("Sets everything below at once. Moving any single row "
+		+ "afterwards turns this to Custom."))
+
+	# Scaling the 3D pass corrupts the XR viewport on the mobile backend in both
+	# directions, so the row is not offered there at all rather than shown with
+	# values that would break the view.
+	if QualityManager.supports_render_scale():
+		var scale_opt := VRDropdown.create("Render Scale",
+			[["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
+			 ["100%", 1.0], ["125%", 1.25], ["150%", 1.5]],
+			QualityManager.render_scale, 6, Vector2(95, 52), 20)
+		scale_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_render_scale(float(id)))
+		vbox.add_child(scale_opt)
+
+		vbox.add_child(MenuStyle.hint("Resolution the 3D world is drawn at before it is scaled "
+			+ "to the display. Below 100% FSR upscales it for cheaper frames; above 100% "
+			+ "supersamples."))
+
+	_msaa_opt = VRDropdown.create("Anti-Aliasing",
+		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
+		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
+		QualityManager.msaa_3d, 4, Vector2(110, 52), 20)
+	_msaa_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_msaa(int(id))
+		_sync_rows())
+	vbox.add_child(_msaa_opt)
+
+	vbox.add_child(MenuStyle.hint("Multisampling on the 3D view. Smooths geometry edges only, "
+		+ "and is nearly free on the headset's tiled GPU."))
+
+	_post_aa_opt = VRDropdown.create("Edge Smoothing",
+		[["Off", QualityManager.PostAA.OFF],
+		 ["FXAA", QualityManager.PostAA.FXAA],
+		 ["SMAA", QualityManager.PostAA.SMAA]],
+		int(QualityManager.post_aa), 3, Vector2(110, 52), 20)
+	_post_aa_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_post_aa(int(id))
+		_sync_rows())
+	vbox.add_child(_post_aa_opt)
+
+	vbox.add_child(MenuStyle.hint("Catches what MSAA cannot — the carpet, wood and neon are drawn "
+		+ "by shaders, whose aliasing is inside the surface rather than on its edge. "
+		+ "SMAA keeps detail; FXAA is cheaper but softens the whole picture."))
+
+	_shadow_opt = VRDropdown.create("Shadows",
+		[["Off", QualityManager.ShadowQuality.OFF],
+		 ["Low", QualityManager.ShadowQuality.LOW],
+		 ["Medium", QualityManager.ShadowQuality.MEDIUM],
+		 ["High", QualityManager.ShadowQuality.HIGH]],
+		int(QualityManager.shadow_quality), 4, Vector2(110, 52), 20)
+	_shadow_opt.item_selected.connect(func(id: Variant) -> void:
+		QualityManager.set_shadow_quality(int(id))
+		_sync_rows())
+	vbox.add_child(_shadow_opt)
+
+	vbox.add_child(MenuStyle.hint("Off is the original look — lights still glow, nothing casts. "
+		+ "Every room light, TV and handheld screen casts from Low up."))
+
+	# Screen-space AO is a no-op on the mobile backend Quest renders with, so the
+	# row is not offered there rather than sitting dead in the list.
+	if QualityManager.supports_post_effects():
+		_ao_opt = VRDropdown.create("Ambient Occlusion",
+			[["Off", QualityManager.AOQuality.OFF],
+			 ["Low", QualityManager.AOQuality.LOW],
+			 ["High", QualityManager.AOQuality.HIGH]],
+			int(QualityManager.ao_quality), 3, Vector2(110, 52), 20)
+		_ao_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_ao_quality(int(id))
+			_sync_rows())
+		vbox.add_child(_ao_opt)
+
+		vbox.add_child(MenuStyle.hint("Contact shading where surfaces meet, so furniture and "
+			+ "cabinets sit in the room instead of floating. Low draws it at half "
+			+ "resolution."))
+
+	vbox.add_child(HSeparator.new())
+
+
+## Push QualityManager's current values back into the rows, so choosing a preset
+## moves them and moving one of them shows Custom. select_id() does not re-emit,
+## so this cannot loop back into the handlers that call it.
+func _sync_rows() -> void:
+	if _preset_opt:
+		_preset_opt.select_id(int(QualityManager.preset))
+	if _msaa_opt:
+		_msaa_opt.select_id(QualityManager.msaa_3d)
+	if _post_aa_opt:
+		_post_aa_opt.select_id(int(QualityManager.post_aa))
+	if _shadow_opt:
+		_shadow_opt.select_id(int(QualityManager.shadow_quality))
+	if _ao_opt:
+		_ao_opt.select_id(int(QualityManager.ao_quality))

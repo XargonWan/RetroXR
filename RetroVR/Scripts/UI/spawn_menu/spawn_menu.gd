@@ -138,19 +138,13 @@ var _spawn_view:    Control = null
 var _cores_view:    Control = null
 var _controls_view: Control = null
 var _options_view:  Control = null
-var _graphics_view: Control = null
-var _scene_view:    Control = null
+# Extracted into their own files — see Scripts/UI/spawn_menu/views/. Each owns
+# its widgets and its state; this class only shows and hides them.
+var _graphics_view: SpawnMenuGraphicsView = null
+var _scene_view:    SpawnMenuSceneView = null
+var _net_view:      SpawnMenuNetView = null
 var _about_view:    Control = null
-var _net_view:      Control = null
-var _net_scroll:    ScrollContainer = null
 var _nav_net_btn:      Button = null
-var _net_status_lbl:   Label = null
-var _net_name_edit:    LineEdit = null
-var _net_ip_edit:      LineEdit = null
-var _net_players_box:  VBoxContainer = null
-var _net_host_btn:     Button = null
-var _net_join_btn:     Button = null
-var _net_leave_btn:    Button = null
 var _nav_spawn_btn:    Button = null
 var _nav_cores_btn:    Button = null
 var _nav_controls_btn: Button = null
@@ -176,21 +170,11 @@ var _cores_tabs: TabContainer = null
 var _active_scroll:        ScrollContainer = null
 var _controls_scroll:      ScrollContainer = null
 var _options_scroll:       ScrollContainer = null
-var _graphics_scroll:      ScrollContainer = null
-# GRAPHICS rows kept so the preset can push its values back into them.
-var _graphics_preset_opt:  VRDropdown = null
-var _graphics_msaa_opt:    VRDropdown = null
-var _graphics_post_aa_opt: VRDropdown = null
-var _graphics_shadow_opt:  VRDropdown = null
-var _graphics_ao_opt:      VRDropdown = null
 var _about_scroll:         ScrollContainer = null
 
 # Spawn view tab ScrollContainers (indexed by tab index)
 var _spawn_tab_scrolls: Array[ScrollContainer] = []
 var _spawn_tabs: TabContainer = null
-
-# Custom scroll indicator (replaces native scrollbar)
-var _vscrollbar: VScrollBar = null
 
 # Cores > Manager tab state — drill-down browser + installed cores grouped by
 # systemid: sid -> Array[{ "core_name", "display_name" }]
@@ -227,17 +211,6 @@ var _videos_vbox: VBoxContainer = null
 var _dvds_vbox: VBoxContainer = null
 var _cds_vbox: VBoxContainer = null
 var _tapes_vbox: VBoxContainer = null
-
-# Scene view state
-var _scene_scroll:        ScrollContainer = null   # rooms-level scroll
-var _scene_rooms_panel:   Control         = null   # Level 1: room picker
-var _scene_states_panel:  Control         = null   # Level 2: slot grid
-var _scene_states_scroll: ScrollContainer = null
-var _scene_states_vbox:   VBoxContainer   = null
-var _scene_hover_timer:   Dictionary      = {}     # slot_id -> bool (pending-hide)
-var _scene_rename_slot_id: String         = ""
-var _scene_rename_edit:   LineEdit        = null
-var _auto_save_btn: Button = null
 
 # Scrape popup overlay
 var _scrape_popup: PanelContainer = null
@@ -290,22 +263,25 @@ var _pad_status_label: Label = null
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-const COLOR_BG           := Color(0.08, 0.08, 0.16, 0.96)
-const COLOR_NAV_ACTIVE   := Color(0.25, 0.25, 0.55)
-const COLOR_NAV_INACTIVE := Color(0.12, 0.12, 0.25)
-const COLOR_TITLE        := Color(0.9,  0.9,  1.0)
-const COLOR_LICENSE      := Color(0.65, 0.65, 0.80)
-const COLOR_DESC         := Color(0.55, 0.55, 0.68)
-const COLOR_BTN_DL       := Color(0.15, 0.45, 0.15)
+## The colours themselves live in MenuStyle, so an extracted view uses the same
+## ones. Aliased rather than replaced at ~250 call sites, which would be a large
+## diff for no behavioural gain.
+const COLOR_BG           := MenuStyle.COLOR_BG
+const COLOR_NAV_ACTIVE   := MenuStyle.COLOR_NAV_ACTIVE
+const COLOR_NAV_INACTIVE := MenuStyle.COLOR_NAV_INACTIVE
+const COLOR_TITLE        := MenuStyle.COLOR_TITLE
+const COLOR_LICENSE      := MenuStyle.COLOR_LICENSE
+const COLOR_DESC         := MenuStyle.COLOR_DESC
+const COLOR_BTN_DL       := MenuStyle.COLOR_BTN_DL
 ## Lighter than COLOR_BTN_DL, which is a button fill and unreadable as text here.
-const COLOR_RECOMMENDED  := Color(0.45, 0.85, 0.45)
-const COLOR_BTN_UPD      := Color(0.45, 0.30, 0.10)
-const COLOR_BTN_REUP     := Color(0.18, 0.18, 0.35)
-const COLOR_BTN_BUSY     := Color(0.25, 0.20, 0.10)
+const COLOR_RECOMMENDED  := MenuStyle.COLOR_RECOMMENDED
+const COLOR_BTN_UPD      := MenuStyle.COLOR_BTN_UPD
+const COLOR_BTN_REUP     := MenuStyle.COLOR_BTN_REUP
+const COLOR_BTN_BUSY     := MenuStyle.COLOR_BTN_BUSY
 
 
 func _ready() -> void:
-	_restore_window_state()
+	SpawnMenuGraphicsView.restore_window_state()
 	_init_core_db()
 	_init_core_defaults()
 	_init_download_manager()
@@ -520,15 +496,31 @@ func _build_ui() -> void:
 	_options_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_options_view)
 
-	_graphics_view = _build_graphics_view()
+	_graphics_view = SpawnMenuGraphicsView.create(_is_vr_mode())
 	_graphics_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_graphics_view)
 
-	_scene_view = _build_scene_view()
+	_scene_view = SpawnMenuSceneView.create()
 	_scene_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Relayed rather than re-declared, so the controller's wiring is unchanged.
+	_scene_view.scene_change_requested.connect(
+		func(id: String) -> void: scene_change_requested.emit(id))
+	_scene_view.slot_load_requested.connect(
+		func(id: String) -> void: scene_slot_load_requested.emit(id))
+	_scene_view.slot_save_requested.connect(
+		func(id: String) -> void: scene_slot_save_requested.emit(id))
+	_scene_view.slot_delete_requested.connect(
+		func(id: String) -> void: scene_slot_delete_requested.emit(id))
+	_scene_view.slot_create_requested.connect(
+		func() -> void: scene_slot_create_requested.emit())
+	_scene_view.slot_rename_requested.connect(
+		func(id: String, n: String) -> void: scene_slot_rename_requested.emit(id, n))
+	_scene_view.scroll_changed.connect(func(s: ScrollContainer) -> void:
+		if _scene_view.visible:
+			_active_scroll = s)
 	content.add_child(_scene_view)
 
-	_net_view = _build_net_view()
+	_net_view = SpawnMenuNetView.create()
 	_net_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_net_view)
 
@@ -539,13 +531,8 @@ func _build_ui() -> void:
 	_show_spawn_view()
 
 
-## Reliable VR-mode check. get_viewport().use_xr is false inside this
-## SubViewport-hosted menu even when the headset is active (only the root window
-## viewport is flagged use_xr, by xr_init.gd), so query the OpenXR interface
-## directly — this is correct regardless of which viewport we live in.
 func _is_vr_mode() -> bool:
-	var xr := XRServer.find_interface("OpenXR")
-	return xr != null and xr.is_initialized()
+	return MenuStyle.is_vr_mode()
 
 
 ## Shared iOS-style switch (see VRToggle) so every toggle in the UI matches.
@@ -610,30 +597,14 @@ func _show_options_view() -> void:
 
 
 func _show_graphics_view() -> void:
-	_show_view(_graphics_view, _graphics_scroll, _nav_graphics_btn)
+	_show_view(_graphics_view, _graphics_view, _nav_graphics_btn)
 
 
 func _show_scene_view() -> void:
 	_show_view(_scene_view, null, _nav_scene_btn)
-	_show_rooms_view()
-
-
-func _show_rooms_view() -> void:
-	if _scene_rooms_panel:
-		_scene_rooms_panel.visible = true
-	if _scene_states_panel:
-		_scene_states_panel.visible = false
-	_active_scroll = _scene_scroll
-	_update_room_card_highlights()
-
-
-func _show_states_view() -> void:
-	if _scene_rooms_panel:
-		_scene_rooms_panel.visible = false
-	if _scene_states_panel:
-		_scene_states_panel.visible = true
-	_active_scroll = _scene_states_scroll
-	_rebuild_states_grid()
+	# The view owns which of its two panels is up, and reports the scroll back
+	# through scroll_changed — including when its own Back button switches them.
+	_scene_view.show_rooms()
 
 
 func _show_about_view() -> void:
@@ -641,232 +612,16 @@ func _show_about_view() -> void:
 
 
 func _show_net_view() -> void:
-	_show_view(_net_view, _net_scroll, _nav_net_btn)
-	_refresh_net_ui()
+	_show_view(_net_view, _net_view, _nav_net_btn)
+	_net_view.refresh()
 
 
-# ── Multiplayer (NET) view ────────────────────────────────────────────────────
-
-const NET_PREFS_PATH := "user://net_prefs.json"
-
-
-func _build_net_view() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_net_scroll = scroll
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 10)
-	scroll.add_child(vbox)
-
-	var prefs := _load_net_prefs()
-
-	var hdr := Label.new()
-	hdr.text = "MULTIPLAYER (LAN)"
-	hdr.add_theme_font_size_override("font_size", 22)
-	hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(hdr)
-
-	_net_status_lbl = Label.new()
-	_net_status_lbl.text = "Not connected"
-	_net_status_lbl.add_theme_font_size_override("font_size", 18)
-	_net_status_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-	_net_status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(_net_status_lbl)
-
-	# ── Player name ───────────────────────────────────────────────────────────
-	var name_row := HBoxContainer.new()
-	name_row.add_theme_constant_override("separation", 10)
-	name_row.custom_minimum_size = Vector2(0, 56)
-	vbox.add_child(name_row)
-	var name_lbl := Label.new()
-	name_lbl.text = "Name"
-	name_lbl.add_theme_font_size_override("font_size", 20)
-	name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	name_row.add_child(name_lbl)
-	_net_name_edit = LineEdit.new()
-	_net_name_edit.text = str(prefs.get("name", "Player"))
-	_net_name_edit.max_length = 24
-	_net_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_net_name_edit.add_theme_font_size_override("font_size", 20)
-	name_row.add_child(_net_name_edit)
-
-	# ── Host ──────────────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	_net_host_btn = Button.new()
-	_net_host_btn.text = "Host Game"
-	_net_host_btn.custom_minimum_size = Vector2(0, 56)
-	_net_host_btn.add_theme_font_size_override("font_size", 20)
-	_net_host_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	_net_host_btn.focus_mode = Control.FOCUS_NONE
-	_net_host_btn.pressed.connect(_on_net_host)
-	vbox.add_child(_net_host_btn)
-
-	# ── Join ──────────────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var join_row := HBoxContainer.new()
-	join_row.add_theme_constant_override("separation", 10)
-	join_row.custom_minimum_size = Vector2(0, 56)
-	vbox.add_child(join_row)
-	var ip_lbl := Label.new()
-	ip_lbl.text = "Host IP"
-	ip_lbl.add_theme_font_size_override("font_size", 20)
-	ip_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	join_row.add_child(ip_lbl)
-	_net_ip_edit = LineEdit.new()
-	_net_ip_edit.text = str(prefs.get("ip", ""))
-	_net_ip_edit.placeholder_text = "192.168.1.10"
-	_net_ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_net_ip_edit.add_theme_font_size_override("font_size", 20)
-	join_row.add_child(_net_ip_edit)
-	_net_join_btn = Button.new()
-	_net_join_btn.text = "  Join  "
-	_net_join_btn.custom_minimum_size = Vector2(120, 52)
-	_net_join_btn.add_theme_font_size_override("font_size", 20)
-	_net_join_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	_net_join_btn.focus_mode = Control.FOCUS_NONE
-	_net_join_btn.pressed.connect(_on_net_join)
-	join_row.add_child(_net_join_btn)
-
-	# On-menu keypad so the IP can be typed with the VR pointer.
-	var pad := GridContainer.new()
-	pad.columns = 6
-	pad.add_theme_constant_override("h_separation", 6)
-	pad.add_theme_constant_override("v_separation", 6)
-	vbox.add_child(pad)
-	for key: String in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", ".", "⌫"]:
-		var kb := Button.new()
-		kb.text = key
-		kb.custom_minimum_size = Vector2(0, 52)
-		kb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		kb.add_theme_font_size_override("font_size", 22)
-		kb.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-		kb.focus_mode = Control.FOCUS_NONE
-		var captured := key
-		kb.pressed.connect(func() -> void:
-			if captured == "⌫":
-				_net_ip_edit.text = _net_ip_edit.text.left(_net_ip_edit.text.length() - 1)
-			else:
-				_net_ip_edit.text += captured
-		)
-		pad.add_child(kb)
-
-	# ── Players ───────────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	var players_hdr := Label.new()
-	players_hdr.text = "Players"
-	players_hdr.add_theme_font_size_override("font_size", 18)
-	players_hdr.add_theme_color_override("font_color", COLOR_LICENSE)
-	vbox.add_child(players_hdr)
-	_net_players_box = VBoxContainer.new()
-	_net_players_box.add_theme_constant_override("separation", 4)
-	vbox.add_child(_net_players_box)
-
-	# ── Disconnect ────────────────────────────────────────────────────────────
-	_net_leave_btn = Button.new()
-	_net_leave_btn.text = "Disconnect"
-	_net_leave_btn.custom_minimum_size = Vector2(0, 56)
-	_net_leave_btn.add_theme_font_size_override("font_size", 20)
-	_net_leave_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
-	_net_leave_btn.focus_mode = Control.FOCUS_NONE
-	_net_leave_btn.pressed.connect(func() -> void: NetworkManager.leave_session())
-	vbox.add_child(_net_leave_btn)
-
-	# Live updates from the session.
-	NetworkManager.status_changed.connect(func(text: String) -> void:
-		if is_instance_valid(_net_status_lbl):
-			_net_status_lbl.text = text
-	)
-	NetworkManager.session_started.connect(func(_h: bool) -> void: _refresh_net_ui())
-	NetworkManager.session_ended.connect(func(_r: String) -> void: _refresh_net_ui())
-	NetworkManager.peer_registered.connect(func(_i: int, _d: Dictionary) -> void: _refresh_net_ui())
-	NetworkManager.peer_left.connect(func(_i: int) -> void: _refresh_net_ui())
-
-	# Keep ping readouts fresh while the NET view is on screen.
-	var ping_timer := Timer.new()
-	ping_timer.wait_time = 1.0
-	ping_timer.autostart = true
-	ping_timer.timeout.connect(func() -> void:
-		if NetworkManager.is_active() and is_instance_valid(_net_view) and _net_view.visible:
-			_refresh_net_ui()
-	)
-	vbox.add_child(ping_timer)
-
-	return scroll
-
-
-func _on_net_host() -> void:
-	NetworkManager.player_name = _net_name_edit.text.strip_edges()
-	_save_net_prefs()
-	NetworkManager.host_game()
-
-
-func _on_net_join() -> void:
-	var ip := _net_ip_edit.text.strip_edges()
-	if not ip.is_valid_ip_address():
-		if is_instance_valid(_net_status_lbl):
-			_net_status_lbl.text = "Invalid IP address: '%s'" % ip
-		return
-	NetworkManager.player_name = _net_name_edit.text.strip_edges()
-	_save_net_prefs()
-	NetworkManager.join_game(ip)
-
-
-func _refresh_net_ui() -> void:
-	if not is_instance_valid(_net_players_box):
-		return
-	var active: bool = NetworkManager.is_active()
-	_net_host_btn.disabled = active
-	_net_join_btn.disabled = active
-	_net_leave_btn.disabled = not active
-	_net_name_edit.editable = not active
-
-	for child in _net_players_box.get_children():
-		child.queue_free()
-	var self_id: int = NetworkManager.multiplayer.get_unique_id() if active else -1
-	for id: int in NetworkManager.peers:
-		var info: Dictionary = NetworkManager.peers[id]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		var swatch := ColorRect.new()
-		swatch.color = NetworkManager.PLAYER_COLORS[int(info.get("color_idx", 0)) % NetworkManager.PLAYER_COLORS.size()]
-		swatch.custom_minimum_size = Vector2(26, 26)
-		row.add_child(swatch)
-		var lbl := Label.new()
-		var suffix := ""
-		if id == 1:
-			suffix += "  (host)"
-		if id == self_id:
-			suffix += "  (you)"
-		var ping: int = NetworkManager.ping_ms(id)
-		if ping > 0:
-			suffix += "  %d ms" % ping
-		lbl.text = "%s%s" % [info.get("name", "?"), suffix]
-		lbl.add_theme_font_size_override("font_size", 18)
-		lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		row.add_child(lbl)
-		_net_players_box.add_child(row)
-
-
-func _load_net_prefs() -> Dictionary:
-	if not FileAccess.file_exists(NET_PREFS_PATH):
-		return {}
-	var f := FileAccess.open(NET_PREFS_PATH, FileAccess.READ)
-	if f == null:
-		return {}
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	return parsed if parsed is Dictionary else {}
-
-
-func _save_net_prefs() -> void:
-	var f := FileAccess.open(NET_PREFS_PATH, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify({
-			"name": _net_name_edit.text.strip_edges(),
-			"ip": _net_ip_edit.text.strip_edges(),
-		}))
+## The arcade's save slots, repainted after the controller has actually saved,
+## loaded or deleted one. Public because that lands on SceneManager rather than
+## in the menu, so nothing here knows it happened.
+func rebuild_states_grid() -> void:
+	if _scene_view:
+		_scene_view.rebuild_states_grid()
 
 
 ## Systems and Cartridges are SystemGridBrowsers that own their own scroll, and
@@ -2775,262 +2530,6 @@ func _on_download_pressed(core_name: String, remote_date: String) -> void:
 				btn.text = new_state
 				_style_dl_button(btn, new_state)
 	)
-
-
-# ── Graphics view ─────────────────────────────────────────────────────────────
-
-## --- Desktop window mode / resolution ------------------------------------------
-## The menu runs in a Viewport2Din3D, so these drive the real OS window through
-## DisplayServer. Resolution only bites in windowed/borderless.
-func _current_window_mode() -> String:
-	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN 			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
-		return "fullscreen"
-	return "borderless" if DisplayServer.window_get_flag(DisplayServer.WINDOW_FLAG_BORDERLESS) else "windowed"
-
-
-func _current_resolution_key() -> String:
-	var sz := DisplayServer.window_get_size()
-	return "%dx%d" % [sz.x, sz.y]
-
-
-func _apply_window_mode(mode: String) -> void:
-	match mode:
-		"fullscreen":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-		"borderless":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
-		_:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
-
-
-func _apply_resolution(key: String) -> void:
-	var parts := key.split("x")
-	if parts.size() != 2:
-		return
-	var size := Vector2i(int(parts[0]), int(parts[1]))
-	# Only meaningful in windowed/borderless; leave fullscreen alone.
-	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN 			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
-		return
-	DisplayServer.window_set_size(size)
-	# Re-centre on the current screen so a bigger window doesn't spill off-screen.
-	var screen := DisplayServer.window_get_current_screen()
-	var origin := DisplayServer.screen_get_position(screen)
-	var usable := DisplayServer.screen_get_size(screen)
-	DisplayServer.window_set_position(origin + (usable - size) / 2)
-
-
-## Sizes the display can actually take, rather than a fixed list that capped out
-## below the monitor. Godot exposes the native size but no mode enumeration, so
-## the standard sizes are filtered against it and the native one always ends the
-## list — on a 4K panel that is where 3840x2160 comes from. The current window
-## size is folded in too, so the dropdown never opens on a blank value.
-func _resolution_options() -> Array:
-	var native := DisplayServer.screen_get_size(DisplayServer.window_get_current_screen())
-	var sizes: Array[Vector2i] = []
-	for candidate in [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080),
-			Vector2i(1920, 1200), Vector2i(2560, 1440), Vector2i(2560, 1600),
-			Vector2i(3440, 1440), Vector2i(3840, 2160)]:
-		if candidate.x <= native.x and candidate.y <= native.y:
-			sizes.append(candidate)
-	for extra in [DisplayServer.window_get_size(), native]:
-		if extra.x > 0 and extra.y > 0 and not sizes.has(extra):
-			sizes.append(extra)
-	sizes.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x * a.y < b.x * b.y)
-
-	var options: Array = []
-	for size in sizes:
-		var label := "%d×%d" % [size.x, size.y]
-		if size == native:
-			label += "  (native)"
-		options.append([label, "%dx%d" % [size.x, size.y]])
-	return options
-
-
-## QualityManager persists the desktop window state; the DisplayServer calls stay
-## here where they already live, so the stored values are pulled rather than
-## pushed — an autoload's _ready runs long before this menu exists to hear a signal.
-func _restore_window_state() -> void:
-	if _is_vr_mode():
-		return
-	if not QualityManager.window_mode.is_empty():
-		_apply_window_mode(QualityManager.window_mode)
-	if not QualityManager.resolution.is_empty():
-		_apply_resolution(QualityManager.resolution)
-
-
-func _build_graphics_view() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_graphics_scroll = scroll
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 14)
-	scroll.add_child(vbox)
-
-	vbox.add_child(_spacer(10))
-
-	if not _is_vr_mode():
-		var display_hdr := Label.new()
-		display_hdr.text = "DISPLAY"
-		display_hdr.add_theme_font_size_override("font_size", 22)
-		display_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-		vbox.add_child(display_hdr)
-
-		# Window mode (desktop only). VRDropdown, not OptionButton — the menu is a
-		# Viewport2Din3D and OptionButton double-fires there.
-		var win_opt := VRDropdown.create("Window Mode",
-			[["Windowed", "windowed"], ["Borderless", "borderless"], ["Fullscreen", "fullscreen"]],
-			_current_window_mode(), 3, Vector2(170, 52), 20)
-		win_opt.item_selected.connect(func(id: Variant) -> void:
-			_apply_window_mode(str(id))
-			QualityManager.set_window_state(str(id), ""))
-		vbox.add_child(win_opt)
-
-		# Resolution (applies while windowed/borderless; ignored in fullscreen).
-		var res_opt := VRDropdown.create("Resolution", _resolution_options(),
-			_current_resolution_key(), 2, Vector2(190, 52), 20)
-		res_opt.item_selected.connect(func(id: Variant) -> void:
-			_apply_resolution(str(id))
-			QualityManager.set_window_state("", str(id)))
-		vbox.add_child(res_opt)
-
-		vbox.add_child(HSeparator.new())
-
-	var quality_hdr := Label.new()
-	quality_hdr.text = "QUALITY"
-	quality_hdr.add_theme_font_size_override("font_size", 22)
-	quality_hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	vbox.add_child(quality_hdr)
-
-	# Custom is listed so the dropdown can display it, but picking it does nothing
-	# — it is the state the rows below put the preset into, not a tier to select.
-	_graphics_preset_opt = VRDropdown.create("Preset",
-		[["Low", QualityManager.Preset.LOW],
-		 ["Medium", QualityManager.Preset.MEDIUM],
-		 ["High", QualityManager.Preset.HIGH],
-		 ["Custom", QualityManager.Preset.CUSTOM]],
-		int(QualityManager.preset), 4, Vector2(110, 52), 20)
-	_graphics_preset_opt.item_selected.connect(func(id: Variant) -> void:
-		if int(id) == QualityManager.Preset.CUSTOM:
-			return
-		QualityManager.apply_preset(int(id))
-		_sync_graphics_rows()
-	)
-	vbox.add_child(_graphics_preset_opt)
-
-	_add_graphics_hint(vbox, "Sets everything below at once. Moving any single row "
-		+ "afterwards turns this to Custom.")
-
-	# Scaling the 3D pass corrupts the XR viewport on the mobile backend in both
-	# directions, so the row is not offered there at all rather than shown with
-	# values that would break the view.
-	if QualityManager.supports_render_scale():
-		var scale_opt := VRDropdown.create("Render Scale",
-			[["50%", 0.5], ["70%", 0.7], ["85%", 0.85],
-			 ["100%", 1.0], ["125%", 1.25], ["150%", 1.5]],
-			QualityManager.render_scale, 6, Vector2(95, 52), 20)
-		scale_opt.item_selected.connect(func(id: Variant) -> void:
-			QualityManager.set_render_scale(float(id)))
-		vbox.add_child(scale_opt)
-
-		_add_graphics_hint(vbox, "Resolution the 3D world is drawn at before it is scaled "
-			+ "to the display. Below 100% FSR upscales it for cheaper frames; above 100% "
-			+ "supersamples.")
-
-	var msaa_opt := VRDropdown.create("Anti-Aliasing",
-		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
-		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
-		QualityManager.msaa_3d, 4, Vector2(110, 52), 20)
-	_graphics_msaa_opt = msaa_opt
-	msaa_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_msaa(int(id))
-		_sync_graphics_rows())
-	vbox.add_child(msaa_opt)
-
-	_add_graphics_hint(vbox, "Multisampling on the 3D view. Smooths geometry edges only, "
-		+ "and is nearly free on the headset's tiled GPU.")
-
-	var post_aa_opt := VRDropdown.create("Edge Smoothing",
-		[["Off", QualityManager.PostAA.OFF],
-		 ["FXAA", QualityManager.PostAA.FXAA],
-		 ["SMAA", QualityManager.PostAA.SMAA]],
-		int(QualityManager.post_aa), 3, Vector2(110, 52), 20)
-	_graphics_post_aa_opt = post_aa_opt
-	post_aa_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_post_aa(int(id))
-		_sync_graphics_rows())
-	vbox.add_child(post_aa_opt)
-
-	_add_graphics_hint(vbox, "Catches what MSAA cannot — the carpet, wood and neon are drawn "
-		+ "by shaders, whose aliasing is inside the surface rather than on its edge. "
-		+ "SMAA keeps detail; FXAA is cheaper but softens the whole picture.")
-
-
-	var shadow_opt := VRDropdown.create("Shadows",
-		[["Off", QualityManager.ShadowQuality.OFF],
-		 ["Low", QualityManager.ShadowQuality.LOW],
-		 ["Medium", QualityManager.ShadowQuality.MEDIUM],
-		 ["High", QualityManager.ShadowQuality.HIGH]],
-		int(QualityManager.shadow_quality), 4, Vector2(110, 52), 20)
-	_graphics_shadow_opt = shadow_opt
-	shadow_opt.item_selected.connect(func(id: Variant) -> void:
-		QualityManager.set_shadow_quality(int(id))
-		_sync_graphics_rows())
-	vbox.add_child(shadow_opt)
-
-	_add_graphics_hint(vbox, "Off is the original look — lights still glow, nothing casts. "
-		+ "Every room light, TV and handheld screen casts from Low up.")
-
-	# Screen-space AO is a no-op on the mobile backend Quest renders with, so the
-	# row is not offered there rather than sitting dead in the list.
-	if QualityManager.supports_post_effects():
-		var ao_opt := VRDropdown.create("Ambient Occlusion",
-			[["Off", QualityManager.AOQuality.OFF],
-			 ["Low", QualityManager.AOQuality.LOW],
-			 ["High", QualityManager.AOQuality.HIGH]],
-			int(QualityManager.ao_quality), 3, Vector2(110, 52), 20)
-		_graphics_ao_opt = ao_opt
-		ao_opt.item_selected.connect(func(id: Variant) -> void:
-			QualityManager.set_ao_quality(int(id))
-			_sync_graphics_rows())
-		vbox.add_child(ao_opt)
-
-		_add_graphics_hint(vbox, "Contact shading where surfaces meet, so furniture and "
-			+ "cabinets sit in the room instead of floating. Low draws it at half "
-			+ "resolution.")
-
-	vbox.add_child(HSeparator.new())
-
-	return scroll
-
-
-## Push QualityManager's current values back into the rows, so choosing a preset
-## moves them and moving one of them shows Custom. select_id() does not re-emit,
-## so this cannot loop back into the handlers that call it.
-func _sync_graphics_rows() -> void:
-	if _graphics_preset_opt:
-		_graphics_preset_opt.select_id(int(QualityManager.preset))
-	if _graphics_msaa_opt:
-		_graphics_msaa_opt.select_id(QualityManager.msaa_3d)
-	if _graphics_post_aa_opt:
-		_graphics_post_aa_opt.select_id(int(QualityManager.post_aa))
-	if _graphics_shadow_opt:
-		_graphics_shadow_opt.select_id(int(QualityManager.shadow_quality))
-	if _graphics_ao_opt:
-		_graphics_ao_opt.select_id(int(QualityManager.ao_quality))
-
-
-func _add_graphics_hint(vbox: VBoxContainer, text: String) -> void:
-	var hint := Label.new()
-	hint.text = text
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.add_theme_color_override("font_color", COLOR_DESC)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(hint)
 
 
 # ── Options view ──────────────────────────────────────────────────────────────
@@ -5390,8 +4889,11 @@ func _find_game_by_id(systemid: String, game_id: String) -> Dictionary:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-func _sync_vscrollbar() -> void:
-	pass # no longer used
+## SceneManager is an autoload, but every other caller in the project guards the
+## lookup rather than naming the global, so this does too. Still here because the
+## OPTIONS view reads it; it moves out with that view.
+func _get_scene_manager() -> Node:
+	return Engine.get_main_loop().root.get_node_or_null("SceneManager")
 
 
 func _build_about_view() -> Control:
@@ -5626,9 +5128,7 @@ func _add_credit_row(vbox: VBoxContainer, title: String, author: String, license
 
 
 func _spacer(height: int) -> Control:
-	var c := Control.new()
-	c.custom_minimum_size = Vector2(0, height)
-	return c
+	return MenuStyle.spacer(height)
 
 
 ## The "Recommended" badge shown against a system's suggested core. Uses
@@ -5644,366 +5144,3 @@ func _recommended_badge(font_size: int) -> Label:
 	return lbl
 
 
-# ── Scene View ─────────────────────────────────────────────────────────────────
-
-func _get_scene_manager() -> Node:
-	return Engine.get_main_loop().root.get_node_or_null("SceneManager")
-
-
-const COLOR_SCENE_ACTIVE   := Color(0.3, 0.5, 0.3)
-const COLOR_SCENE_INACTIVE := Color(0.15, 0.15, 0.30)
-const COLOR_BTN_SAVE       := Color(0.15, 0.45, 0.15)
-const COLOR_BTN_CLEAR      := Color(0.50, 0.15, 0.15)
-const COLOR_BTN_LOAD       := Color(0.15, 0.30, 0.55)
-const COLOR_SLOT_ACTIVE    := Color(0.20, 0.42, 0.20)
-const COLOR_SLOT_NORMAL    := Color(0.12, 0.12, 0.27)
-
-
-func _build_scene_view() -> Control:
-	# Root container — two panels stack here via PRESET_FULL_RECT.
-	var root := Control.new()
-	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	# ── Level 1: Rooms panel ──────────────────────────────────────────────────
-	var rooms_scroll := ScrollContainer.new()
-	rooms_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rooms_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	rooms_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_scene_scroll = rooms_scroll
-	_scene_rooms_panel = rooms_scroll
-	root.add_child(rooms_scroll)
-
-	var rooms_vbox := VBoxContainer.new()
-	rooms_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rooms_vbox.add_theme_constant_override("separation", 14)
-	rooms_scroll.add_child(rooms_vbox)
-
-	rooms_vbox.add_child(_spacer(10))
-
-	var hdr := Label.new()
-	hdr.text = "SCENES"
-	hdr.add_theme_font_size_override("font_size", 24)
-	hdr.add_theme_color_override("font_color", COLOR_TITLE)
-	rooms_vbox.add_child(hdr)
-
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 12)
-	rooms_vbox.add_child(grid)
-
-	# Arcade Room card → navigates to state grid
-	grid.add_child(_make_room_card("Arcade Room", Color(0.15, 0.13, 0.35), _show_states_view))
-
-	# Cozy Den card → direct scene switch
-	grid.add_child(_make_room_card("Cozy Den", Color(0.4, 0.25, 0.12),
-		func(): scene_change_requested.emit("den")))
-
-	# 90s Bedroom card → direct scene switch
-	grid.add_child(_make_room_card("90s Bedroom", Color(0.30, 0.16, 0.36),
-		func(): scene_change_requested.emit("bedroom")))
-
-	# Test Hallway card → direct scene switch
-	grid.add_child(_make_room_card("Test Hallway", Color(0.12, 0.32, 0.30),
-		func(): scene_change_requested.emit("test")))
-
-	# Passthrough card (only if supported) → direct scene switch
-	var sm := _get_scene_manager()
-	if sm and sm.is_passthrough_supported():
-		grid.add_child(_make_room_card("Passthrough AR", Color(0.85, 0.85, 0.9),
-			func(): scene_change_requested.emit("passthrough")))
-
-	# ── Level 2: States panel ─────────────────────────────────────────────────
-	var states_root := VBoxContainer.new()
-	states_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	states_root.add_theme_constant_override("separation", 0)
-	states_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	states_root.visible = false
-	_scene_states_panel = states_root
-	root.add_child(states_root)
-
-	# Back / title row
-	var back_row := HBoxContainer.new()
-	back_row.add_theme_constant_override("separation", 8)
-	back_row.custom_minimum_size = Vector2(0, 52)
-	states_root.add_child(back_row)
-
-	var back_btn := Button.new()
-	back_btn.text = "← Back"
-	back_btn.add_theme_font_size_override("font_size", 20)
-	back_btn.pressed.connect(_show_rooms_view)
-	back_row.add_child(back_btn)
-
-	var title_lbl := Label.new()
-	title_lbl.text = "Arcade Room"
-	title_lbl.add_theme_font_size_override("font_size", 22)
-	title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	back_row.add_child(title_lbl)
-
-	# Spacer so title stays centered despite back button width
-	var back_spacer := Control.new()
-	back_spacer.custom_minimum_size = back_btn.custom_minimum_size
-	back_spacer.size_flags_horizontal = Control.SIZE_SHRINK_END
-	back_row.add_child(back_spacer)
-
-	# Slot scroll
-	var states_scroll := ScrollContainer.new()
-	states_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	states_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scene_states_scroll = states_scroll
-	states_root.add_child(states_scroll)
-
-	var states_vbox := VBoxContainer.new()
-	states_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	states_vbox.add_theme_constant_override("separation", 10)
-	_scene_states_vbox = states_vbox
-	states_scroll.add_child(states_vbox)
-
-	# Bottom bar: Save New
-	var bottom_bar := HBoxContainer.new()
-	bottom_bar.custom_minimum_size = Vector2(0, 64)
-	bottom_bar.add_theme_constant_override("separation", 0)
-	states_root.add_child(bottom_bar)
-
-	var save_new_btn := Button.new()
-	save_new_btn.text = "  + Save New  "
-	save_new_btn.add_theme_font_size_override("font_size", 22)
-	save_new_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save_new_btn.custom_minimum_size = Vector2(0, 64)
-	var sn_style := StyleBoxFlat.new()
-	sn_style.bg_color = COLOR_BTN_SAVE
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		sn_style.set(k, 6)
-	save_new_btn.add_theme_stylebox_override("normal", sn_style)
-	save_new_btn.pressed.connect(func(): scene_slot_create_requested.emit())
-	bottom_bar.add_child(save_new_btn)
-
-	return root
-
-
-func _make_room_card(label_text: String, thumb_color: Color, on_press: Callable) -> Button:
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(0, 120)
-	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var card_vbox := VBoxContainer.new()
-	card_vbox.add_theme_constant_override("separation", 6)
-	card_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(card_vbox)
-
-	var thumb := PanelContainer.new()
-	thumb.custom_minimum_size = Vector2(0, 70)
-	thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var thumb_style := StyleBoxFlat.new()
-	thumb_style.bg_color = thumb_color
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		thumb_style.set(k, 4)
-	thumb.add_theme_stylebox_override("panel", thumb_style)
-	card_vbox.add_child(thumb)
-
-	var lbl := Label.new()
-	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 18)
-	lbl.add_theme_color_override("font_color", COLOR_TITLE)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card_vbox.add_child(lbl)
-
-	btn.pressed.connect(on_press)
-	return btn
-
-
-## Update arcade room card highlight (called when entering the rooms panel).
-func _update_room_card_highlights() -> void:
-	# Currently the room cards are plain buttons with no active-state tracking.
-	# Extend here if a visual active indicator for "Arcade Room" is desired.
-	pass
-
-
-## Rebuild the slot grid inside _scene_states_vbox.
-func _rebuild_states_grid() -> void:
-	if not _scene_states_vbox:
-		return
-	for child in _scene_states_vbox.get_children():
-		child.queue_free()
-	_scene_hover_timer.clear()
-
-	var persistence := ScenePersistence.new()
-	var slots := persistence.get_slots()
-	var sm := _get_scene_manager()
-	var active_id: String = sm.active_slot_id if sm else "clean"
-
-	for slot: Dictionary in slots:
-		var card := _make_state_card(slot, active_id)
-		_scene_states_vbox.add_child(card)
-
-	_scene_states_vbox.add_child(_spacer(8))
-
-
-func _make_state_card(slot: Dictionary, active_slot_id: String) -> Control:
-	var slot_id: String   = slot.get("id", "")
-	var slot_name: String = slot.get("name", "")
-	var readonly: bool    = slot.get("readonly", false)
-	var is_active: bool   = (slot_id == active_slot_id)
-	var is_renaming: bool = (slot_id == _scene_rename_slot_id)
-
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(0, 90)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var card_style := StyleBoxFlat.new()
-	card_style.bg_color = COLOR_SLOT_ACTIVE if is_active else COLOR_SLOT_NORMAL
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		card_style.set(k, 6)
-	if is_active:
-		card_style.border_width_top = 2
-		card_style.border_width_bottom = 2
-		card_style.border_width_left = 2
-		card_style.border_width_right = 2
-		card_style.border_color = Color(0.5, 0.8, 0.5)
-	panel.add_theme_stylebox_override("panel", card_style)
-
-	var inner := VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 4)
-	inner.mouse_filter = Control.MOUSE_FILTER_PASS
-	panel.add_child(inner)
-
-	# Name row
-	var name_row := HBoxContainer.new()
-	name_row.add_theme_constant_override("separation", 6)
-	name_row.mouse_filter = Control.MOUSE_FILTER_PASS
-	inner.add_child(name_row)
-
-	if is_renaming:
-		var edit := LineEdit.new()
-		edit.text = slot_name
-		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		edit.add_theme_font_size_override("font_size", 20)
-		_scene_rename_edit = edit
-		edit.text_submitted.connect(func(_t: String) -> void:
-			_finish_rename()
-		)
-		edit.focus_exited.connect(func() -> void:
-			_finish_rename()
-		)
-		name_row.add_child(edit)
-	elif readonly:
-		var name_lbl := Label.new()
-		name_lbl.text = slot_name
-		name_lbl.add_theme_font_size_override("font_size", 20)
-		name_lbl.add_theme_color_override("font_color", COLOR_TITLE)
-		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_row.add_child(name_lbl)
-	else:
-		var name_btn := Button.new()
-		name_btn.text = slot_name
-		name_btn.add_theme_font_size_override("font_size", 20)
-		name_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_btn.flat = true
-		name_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		name_btn.pressed.connect(_start_rename.bind(slot_id, slot_name))
-		name_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, null))
-		name_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, null))
-		name_row.add_child(name_btn)
-
-	if is_active:
-		var dot := Label.new()
-		dot.text = "●"
-		dot.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
-		dot.add_theme_font_size_override("font_size", 18)
-		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_row.add_child(dot)
-
-	# Action row (hidden until hover)
-	var action_row := HBoxContainer.new()
-	action_row.add_theme_constant_override("separation", 8)
-	action_row.visible = false
-	action_row.mouse_filter = Control.MOUSE_FILTER_PASS
-	inner.add_child(action_row)
-
-	var load_btn := _make_action_btn("Load", COLOR_BTN_LOAD)
-	load_btn.pressed.connect(func(): scene_slot_load_requested.emit(slot_id))
-	load_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
-	load_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
-	action_row.add_child(load_btn)
-
-	if not readonly:
-		var save_btn := _make_action_btn("Save", COLOR_BTN_SAVE)
-		save_btn.pressed.connect(func(): scene_slot_save_requested.emit(slot_id))
-		save_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
-		save_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
-		action_row.add_child(save_btn)
-
-		var del_btn := _make_action_btn("Delete", COLOR_BTN_CLEAR)
-		del_btn.pressed.connect(func(): scene_slot_delete_requested.emit(slot_id))
-		del_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
-		del_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
-		action_row.add_child(del_btn)
-
-	# Hover on the outer panel itself
-	panel.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
-	panel.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
-
-	return panel
-
-
-func _make_action_btn(label_text: String, bg_color: Color) -> Button:
-	var btn := Button.new()
-	btn.text = label_text
-	btn.add_theme_font_size_override("font_size", 18)
-	btn.custom_minimum_size = Vector2(80, 36)
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg_color
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		s.set(k, 4)
-	btn.add_theme_stylebox_override("normal", s)
-	return btn
-
-
-func _on_card_hover_enter(slot_id: String, action_row: HBoxContainer) -> void:
-	_scene_hover_timer[slot_id] = false
-	if action_row:
-		action_row.visible = true
-
-
-func _on_card_hover_exit(slot_id: String, action_row: HBoxContainer) -> void:
-	_scene_hover_timer[slot_id] = true
-	(func(): _deferred_card_hide(slot_id, action_row)).call_deferred()
-
-
-func _deferred_card_hide(slot_id: String, action_row: HBoxContainer) -> void:
-	if _scene_hover_timer.get(slot_id, false):
-		if is_instance_valid(action_row):
-			action_row.visible = false
-		_scene_hover_timer.erase(slot_id)
-
-
-func _start_rename(slot_id: String, current_name: String) -> void:
-	_scene_rename_slot_id = slot_id
-	_scene_rename_edit = null
-	_rebuild_states_grid()
-	# Don't programmatically grab_focus() — it causes Android EditText desync
-	# (Godot #72969). The user taps the LineEdit to focus it, which naturally
-	# opens the overlay keyboard via virtual_keyboard_enabled (default true).
-
-
-func _finish_rename() -> void:
-	# Guard: if already cleared (e.g. called twice), bail immediately.
-	if _scene_rename_slot_id.is_empty():
-		return
-	var edit := _scene_rename_edit
-	var slot_id := _scene_rename_slot_id
-	# Clear state first so any re-entrant calls are no-ops.
-	_scene_rename_slot_id = ""
-	_scene_rename_edit = null
-	var new_name := edit.text.strip_edges() if edit else ""
-	if not new_name.is_empty():
-		scene_slot_rename_requested.emit(slot_id, new_name)
-	_rebuild_states_grid()

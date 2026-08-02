@@ -1105,7 +1105,7 @@ func _on_slot_load(slot_id: String) -> void:
 		sm.set_active_slot(slot_id)
 	var menu := _get_menu()
 	if menu:
-		menu._rebuild_states_grid()
+		menu.rebuild_states_grid()
 
 
 func _on_slot_save(slot_id: String) -> void:
@@ -1124,7 +1124,7 @@ func _on_slot_delete(slot_id: String) -> void:
 		sm.set_active_slot("clean")
 	var menu := _get_menu()
 	if menu:
-		menu._rebuild_states_grid()
+		menu.rebuild_states_grid()
 
 
 func _on_slot_create() -> void:
@@ -1139,14 +1139,14 @@ func _on_slot_create() -> void:
 		sm.set_active_slot(new_id)
 	var menu := _get_menu()
 	if menu:
-		menu._rebuild_states_grid()
+		menu.rebuild_states_grid()
 
 
 func _on_slot_rename(slot_id: String, new_name: String) -> void:
 	ScenePersistence.new().rename_slot(slot_id, new_name)
 	var menu := _get_menu()
 	if menu:
-		menu._rebuild_states_grid()
+		menu.rebuild_states_grid()
 
 
 func _on_auto_save_changed(enabled: bool) -> void:
