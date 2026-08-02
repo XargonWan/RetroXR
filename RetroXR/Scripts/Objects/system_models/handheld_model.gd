@@ -212,8 +212,8 @@ func _hide_glb_clutter(root: Node3D) -> void:
 		var mi := n as MeshInstance3D
 		if mi != null:
 			var nm := String(mi.name).to_lower()
-			# "kabel" catches a few imported shells (e.g. the PSP-1000's an author
-			# model) authored with German node names ("AVKabel", "PowerKabel1/2").
+			# "kabel" is not a typo: some imported shells were authored with German
+			# node names ("AVKabel", "PowerKabel1/2"), and a future one may be too.
 			if nm.contains("rca") or nm.contains("cable") or nm.contains("kabel") or nm.contains("plug"):
 				mi.visible = false
 		for c in n.get_children():
