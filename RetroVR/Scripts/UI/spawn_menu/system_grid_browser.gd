@@ -132,11 +132,29 @@ func show_home() -> void:
 
 
 ## Rebuild home tiles; if a detail page is open, re-run its populator.
+## Keeps your place in the list. A refresh is not navigation — it fires when a
+## scrape finishes, when a wheel image finally downloads, when a sync lands — and
+## open_system() below rightly scrolls to the top, which threw you back to row
+## one of a thousand-ROM list because something completed in the background.
 func refresh() -> void:
 	_ensure_built()
 	_rebuild_tiles()
 	if _detail_page.visible and not _current_systemid.is_empty():
+		var at := _detail_scroll.scroll_vertical
 		open_system(_current_systemid)
+		_restore_detail_scroll(at)
+
+
+## The page was just rebuilt, so its height is not settled until the containers
+## have re-laid out; assigning scroll_vertical before that clamps it against the
+## old, shorter content and quietly lands short.
+func _restore_detail_scroll(at: int) -> void:
+	if at <= 0:
+		return
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if is_instance_valid(_detail_scroll):
+		_detail_scroll.scroll_vertical = at
 
 
 ## The system whose detail page is open, or "" on the home grid.

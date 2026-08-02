@@ -67,6 +67,8 @@ var _grip_mesh: MeshInstance3D = null
 var _drag_pointer: Node3D = null
 var _drag_from := Vector3.ZERO
 var _drag_size := Vector2.ZERO
+## Viewport pixels per metre at the moment the drag began.
+var _drag_density := Vector2(2000.0, 2000.0)
 ## Scratch resources so the addon's setter has something it can write to.
 var _scratch_mesh := QuadMesh.new()
 var _scratch_shape := BoxShape3D.new()
@@ -80,13 +82,24 @@ var _arc_shape := ConcavePolygonShape3D.new()
 const BTN_GAP := 0.035
 const BTN_PITCH := 0.055
 
-## Resize limits, in metres. Small enough to tuck away, big enough to fill view.
-const MIN_SIZE := Vector2(0.55, 0.38)
-const MAX_SIZE := Vector2(2.20, 1.50)
+## Resize limits, in VIEWPORT PIXELS — the grip resizes the page, not the
+## magnification. The horizontal floor is the binding one: the menu's tab strip
+## needs roughly 1100 logical pixels to keep its labels on two rows, and
+## ui_scale halves whatever is set here.
+const MIN_VIEWPORT := Vector2(1600, 1100)
+const MAX_VIEWPORT := Vector2(4000, 2600)
+## Every size change reallocates the SubViewport's render target, so a drag is
+## quantised to this rather than doing it every frame.
+const VIEWPORT_STEP := 32.0
 ## Arm length of the "_|" corner mark, its bar thickness, and its hit box.
 const GRIP_ARM := 0.045
 const GRIP_BAR := 0.008
 const GRIP_HIT := 0.055
+## How far past the corner the mark sits, out along the surface and down. The
+## mesh's arms run back toward the panel from its origin, so anything less than
+## an arm length leaves them under the screen, which is where they were: drawn,
+## but hidden behind the menu they belong to.
+const GRIP_OUT := GRIP_ARM + 0.010
 
 const HL_ON := Color(1.0, 0.78, 0.30)
 const HL_OFF := Color(0.42, 0.45, 0.55)
@@ -513,10 +526,13 @@ func _place_grip() -> void:
 		return
 	var hw := _screen_size.x * 0.5
 	var hh := _screen_size.y * 0.5
+	# Out along the arc past the edge, and below the bottom — clear of the
+	# screen in both axes rather than sitting on the corner it marks.
+	var s := hw + GRIP_OUT
 	var yaw := 0.0
 	if _curve > 0.001:
-		yaw = -hw / (curve_radius / _curve)
-	_grip.position = _arc_point(hw, -hh)
+		yaw = -s / (curve_radius / _curve)
+	_grip.position = _arc_point(s, -hh - GRIP_OUT)
 	_grip.rotation = Vector3(0.0, yaw, 0.0)
 
 
@@ -527,6 +543,13 @@ func resize_begin(pointer: Node3D) -> void:
 	_drag_pointer = pointer
 	_drag_size = _screen_size
 	_drag_from = _pointer_on_plane(pointer)
+	# Pixels per metre, fixed for the whole drag. Holding this constant is what
+	# makes the grip add page rather than magnification: the text keeps its
+	# physical size and the extra pixels become extra room.
+	var vp: Variant = _panel.get("viewport_size")
+	_drag_density = Vector2(2000.0, 2000.0)
+	if vp is Vector2 and _drag_size.x > 0.0 and _drag_size.y > 0.0:
+		_drag_density = (vp as Vector2) / _drag_size
 	if is_instance_valid(_grip_mesh):
 		(_grip_mesh.get_surface_override_material(0) as StandardMaterial3D).albedo_color = HL_ON
 
@@ -544,9 +567,8 @@ func _process(_delta: float) -> void:
 	var d := now - _drag_from
 	# The panel is centred on its origin, so a corner moved by d changes the
 	# half-extent by d and the full size by twice that. Down is -y.
-	_apply_screen_size(Vector2(
-		clampf(_drag_size.x + d.x * 2.0, MIN_SIZE.x, MAX_SIZE.x),
-		clampf(_drag_size.y - d.y * 2.0, MIN_SIZE.y, MAX_SIZE.y)))
+	_apply_page_size(Vector2(_drag_size.x + d.x * 2.0, _drag_size.y - d.y * 2.0)
+		* _drag_density)
 
 
 ## Where this pointer is aiming, on the panel's z = 0 plane, in panel-local
@@ -562,9 +584,29 @@ func _pointer_on_plane(pointer: Node3D) -> Vector3:
 	return origin + dir * t
 
 
-## Resize, via with_flat_geometry so the addon's setter has a QuadMesh and a
-## BoxShape to write through.
-func _apply_screen_size(new_size: Vector2) -> void:
-	if new_size.is_equal_approx(_screen_size):
+## Grow or shrink the PAGE: more viewport pixels, and the metres to draw them
+## at, so text keeps its physical size and the extra pixels become extra room.
+## Growing vertically therefore lands in the menu's content area, which is the
+## only part of its layout that expands — the title and nav rows keep their
+## natural height.
+##
+## This is the other half of a pair. The thumbstick (SpawnMenuController's
+## grab-resize) writes screen_size alone, which is pure magnification: same
+## pixels, larger metres, so everything just gets bigger. The grip writes both.
+##
+## Through with_flat_geometry because the screen_size half runs the addon's
+## setter, which assigns mesh.size — a property the arc's ArrayMesh has not got.
+func _apply_page_size(want_px: Vector2) -> void:
+	if _panel == null:
 		return
-	with_flat_geometry(func() -> void: _panel.set("screen_size", new_size))
+	var vp := Vector2(
+		clampf(want_px.x, MIN_VIEWPORT.x, MAX_VIEWPORT.x),
+		clampf(want_px.y, MIN_VIEWPORT.y, MAX_VIEWPORT.y))
+	vp = (vp / VIEWPORT_STEP).round() * VIEWPORT_STEP
+	var now: Variant = _panel.get("viewport_size")
+	if now is Vector2 and (now as Vector2).is_equal_approx(vp):
+		return
+	var screen := vp / _drag_density
+	with_flat_geometry(func() -> void:
+		_panel.set("viewport_size", vp)
+		_panel.set("screen_size", screen))
