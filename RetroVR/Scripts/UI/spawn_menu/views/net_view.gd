@@ -8,6 +8,14 @@
 ##
 ## It IS its own scroll container — the menu's _show_view wants a Control and a
 ## ScrollContainer, and for this tab they were always the same node.
+##
+## Nothing here may set ACTION_MODE_BUTTON_PRESS. A single pointer press on a
+## Viewport2Din3D pushes BOTH an InputEventScreenTouch and an
+## InputEventMouseButton into the SubViewport (viewport_2d_in_3d_body.gd
+## _report_touch_down + _report_mouse_down), and emulate_mouse_from_touch turns
+## the first into a second mouse click — so a press-mode Button fires twice per
+## tap. The keypad below was entering two digits per key. Release mode fires
+## once; see vr_dropdown.gd, which documents the same trap.
 class_name SpawnMenuNetView
 extends ScrollContainer
 
@@ -77,7 +85,6 @@ func _build() -> void:
 	_join_btn.text = "  Join  "
 	_join_btn.custom_minimum_size = Vector2(120, 52)
 	_join_btn.add_theme_font_size_override("font_size", 20)
-	_join_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	_join_btn.focus_mode = Control.FOCUS_NONE
 	_join_btn.pressed.connect(_on_join)
 	join_row.add_child(_join_btn)
@@ -94,7 +101,6 @@ func _build() -> void:
 		kb.custom_minimum_size = Vector2(0, 52)
 		kb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		kb.add_theme_font_size_override("font_size", 22)
-		kb.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 		kb.focus_mode = Control.FOCUS_NONE
 		var captured := key
 		kb.pressed.connect(func() -> void:
@@ -142,7 +148,6 @@ func _wide_button(text: String) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(0, 56)
 	b.add_theme_font_size_override("font_size", 20)
-	b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	b.focus_mode = Control.FOCUS_NONE
 	return b
 
