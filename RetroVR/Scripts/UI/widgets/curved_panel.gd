@@ -104,7 +104,7 @@ const GRIP_HIT := 0.055
 ## by a whole arm length (the first attempt) clears both and leaves the mark
 ## floating in the diagonal, attached to nothing.
 const GRIP_OUT := GRIP_BAR + 0.003
-## Gap between the grip and the curve toggles that follow it along the row.
+## Gap between the grip and the column of curve toggles beside it.
 const ROW_GAP := 0.008
 
 const HL_ON := Color(1.0, 0.78, 0.30)
@@ -400,9 +400,10 @@ func _build_toggle() -> void:
 	_refresh_buttons()
 
 
-## The corner furniture — resize grip, then the flat and curved toggles — sits
-## in one row just outside the panel's lower-right corner, running rightwards.
-## This is the line they share; the grip is nearest the corner.
+## The corner furniture sits just outside the panel's lower-right corner: the
+## resize grip hugging the corner itself, and the curve toggles stacked in a
+## column immediately to its right, curved above flat. This is the line they
+## start from.
 func _corner_baseline() -> float:
 	return -_screen_size.y * 0.5 - GRIP_OUT
 
@@ -419,15 +420,16 @@ func _yaw_at(s: float) -> float:
 func _place_buttons() -> void:
 	if _btn_flat == null or _btn_curved == null:
 		return
+	# One column just past the grip's outer edge, curved above flat. They sit
+	# right of the panel's edge, so starting on the corner's line does not
+	# overlap it.
+	var s := _screen_size.x * 0.5 + GRIP_OUT + ROW_GAP + BTN_PITCH * 0.5
 	var y := _corner_baseline()
-	# Clear of the grip's outer edge, then one pitch apart. They sit past the
-	# panel's right edge, so riding the corner's line does not overlap it.
-	var first := _screen_size.x * 0.5 + GRIP_OUT + ROW_GAP + BTN_PITCH * 0.5
+	var yaw := _yaw_at(s)
 	for i in 2:
 		var btn: VRButton = [_btn_flat, _btn_curved][i]
-		var s := first + BTN_PITCH * i
-		btn.position = _arc_point(s, y)
-		btn.rotation = Vector3(0.0, _yaw_at(s), 0.0)
+		btn.position = _arc_point(s, y + BTN_PITCH * i)
+		btn.rotation = Vector3(0.0, yaw, 0.0)
 
 
 func _make_button(node_name: String, arced: bool) -> VRButton:
