@@ -12,6 +12,19 @@ extends Node
 
 const ROOMS := ["arcade", "den", "bedroom", "test"]
 
+## With `-- --core`, every room gets a console powered on in it before we leave
+## again, so each transition tears a running libretro core down rather than only
+## the three scene_soak.gd covers. Needs the core installed and the ROM staged
+## where SOAK_ROM points; without either, the run says so and carries on.
+const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
+const TV_SCENE := preload("res://Scenes/Objects/tv.tscn")
+const SOAK_CORE := "fceumm"
+const SOAK_SYSTEMID := "nes"
+
+var _with_core := false
+var _rom := ""
+var _powered := 0
+
 var _step := 0
 var _failures: Array[String] = []
 var _min_y := 999.0
@@ -36,6 +49,12 @@ func _run() -> void:
 	tree.create_timer(1800.0).timeout.connect(func() -> void:
 		print("[matrix] TIMEOUT"); tree.quit(2))
 	_claim_scratch_slot()
+	_with_core = "--core" in OS.get_cmdline_user_args()
+	if _with_core:
+		_rom = OS.get_user_data_dir() + "/roms/smb.nes"
+		if not FileAccess.file_exists(_rom):
+			print("[matrix] no ROM at %s — running without a core" % _rom)
+			_with_core = false
 
 	var arcade: Node = (load("res://Scenes/MainScene.tscn") as PackedScene).instantiate()
 	tree.root.add_child(arcade)
@@ -49,6 +68,8 @@ func _run() -> void:
 	await _phase_still_works()
 
 	_release_scratch_slot()
+	if _with_core:
+		print("[matrix] cores powered on and torn down: %d" % _powered)
 	print("[matrix] ===== %d step(s), %d invariant failure(s) =====" % [_step, _failures.size()])
 	for f: String in _failures:
 		print("[matrix] FAIL %s" % f)
@@ -234,6 +255,47 @@ func _go(room: String) -> void:
 	if _min_y < 0.5:
 		_failures.append("step %d: fell to y=%.2f entering %s" % [_step, _min_y, room])
 	_check("in %s" % room)
+	if _with_core:
+		await _power_on_a_console(room)
+
+
+## Stand a console in this room with a core actually running, and leave it
+## running — the next room change is then a teardown of live emulation, which is
+## where the C++ side (thread join, texture lifetime) meets the scene swap.
+func _power_on_a_console(room: String) -> void:
+	var tree := get_tree()
+	var scene := tree.current_scene
+	if scene == null:
+		return
+	var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+	sys.systemid = SOAK_SYSTEMID
+	sys.core_name = SOAK_CORE
+	sys._video_out_from_save = 1
+	scene.add_child(sys)
+	sys.add_to_group("spawned")
+	sys.global_position = Vector3(0.6, 0.85, -0.4)
+	for ch in sys.get_channel_count():
+		var tv := TV_SCENE.instantiate() as RetroTV
+		scene.add_child(tv)
+		tv.add_to_group("spawned")
+		tv.global_position = Vector3(-0.5, 0.95 + 0.42 * float(ch), -0.5)
+		tv.freeze = true
+		sys.restore_cable_connection(tv, ch)
+	for i in 30:
+		await tree.process_frame
+
+	sys.rom_path = _rom
+	sys.power_on()
+	for i in 90:
+		await tree.process_frame
+	if not sys.is_powered_on:
+		_fail("core in %s" % room, "console would not power on")
+		return
+	_powered += 1
+	var tv0: RetroTV = sys.get_channel_tv(0)
+	if tv0 == null or tv0.get_screen_mesh() == null \
+			or tv0.get_screen_mesh().get_surface_override_material(0) == null:
+		_fail("core in %s" % room, "core is running but nothing is bound to a screen")
 
 
 func _mark(what: String) -> void:

@@ -22,8 +22,18 @@ const TV_SCENE := preload("res://Scenes/Objects/tv.tscn")
 var _sys: RetroSystem = null
 
 
+const SCRATCH_SLOT := "zz_soak_scratch"
+
+
 func _ready() -> void:
 	_drive.call_deferred()
+
+
+## Covers every exit the soak has, including the timeout and the early quits.
+func _exit_tree() -> void:
+	var scratch := "%s/%s.json" % [ScenePersistence.ARCADE_DIR, SCRATCH_SLOT]
+	if FileAccess.file_exists(scratch):
+		DirAccess.remove_absolute(scratch)
 
 
 func _drive() -> void:
@@ -35,7 +45,7 @@ func _drive() -> void:
 	# its own idea of the room over their arcade save on every switch. Pointing
 	# the active slot at one nothing else reads makes that harmless.
 	SceneManager.auto_save_on_switch = false
-	SceneManager.active_slot_id = "zz_soak_scratch"
+	SceneManager.active_slot_id = SCRATCH_SLOT
 
 	var arcade: Node = (load("res://Scenes/MainScene.tscn") as PackedScene).instantiate()
 	get_tree().root.add_child(arcade)

@@ -327,10 +327,14 @@ func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictio
 
 ## False once the room we are building into has gone, or once a newer restore
 ## has taken over — either way this run must not touch the scene again.
-func _still_ours(root: Node, generation: int) -> bool:
+##
+## root is Variant on purpose. Being handed a freed room is the whole reason this
+## exists, and binding a freed object to a Node-typed parameter throws before the
+## body can run — the same way assigning one to a typed local does.
+func _still_ours(root: Variant, generation: int) -> bool:
 	if generation != _restore_generation:
 		return false
-	return is_instance_valid(root) and root.is_inside_tree()
+	return is_instance_valid(root) and (root as Node).is_inside_tree()
 
 
 func _report_restored(spawned: Dictionary) -> void:
