@@ -159,5 +159,43 @@ def main():
     save_jpg(ban, "retroxr-banner.jpg")
 
 
+
+
+def meta_store_assets():
+    """Meta Horizon Store dashboard assets.
+
+    The Quest library icon is NOT read from the APK — it is uploaded to the
+    Developer Dashboard. Per Meta's asset guidelines: 512x512, 24-bit PNG,
+    squared corners, NO transparency. Optional spatialized layers are 180x180
+    with the foreground inside a safe area leaving 18dp padding.
+    """
+    icon = M.backdrop(M.U)
+    icon.alpha_composite(M.draw_headset(M.U))
+    # .convert("RGB") is the point: the guidelines forbid transparency here
+    p = os.path.join(OUT, "meta-store-icon-512.png")
+    icon.convert("RGB").resize((512, 512), Image.LANCZOS).save(p)
+    print(f"  {'meta-store-icon-512.png':32} 512x512  RGB, no alpha")
+
+    # spatialized pair: 180x180, foreground keeps 18dp of padding on every side
+    S, PAD = 180, 18
+    inner = S - 2 * PAD                       # 144 of 180
+    fg = Image.new("RGBA", (M.s(M.U), M.s(M.U)), (0, 0, 0, 0))
+    fg.alpha_composite(M.draw_headset(M.U, shadow=False))
+    scale = inner / (M.STRAP_R[2] - M.STRAP_L[0])   # fit the FULL mark, straps included
+    tgt = int(round(M.U * scale * M.SS))
+    fg = fg.resize((tgt, tgt), Image.LANCZOS)
+    canvas = Image.new("RGBA", (M.s(S), M.s(S)), (0, 0, 0, 0))
+    off = (M.s(S) - tgt) // 2
+    canvas.alpha_composite(fg, (off, off))
+    canvas.resize((S, S), Image.LANCZOS).save(os.path.join(OUT, "meta-spatial-foreground-180.png"))
+    print(f"  {'meta-spatial-foreground-180.png':32} {S}x{S}  RGBA, {PAD}dp padding")
+
+    bg = M.backdrop(M.U).convert("RGB").resize((S, S), Image.LANCZOS)
+    bg.save(os.path.join(OUT, "meta-spatial-background-180.png"))
+    print(f"  {'meta-spatial-background-180.png':32} {S}x{S}  RGB")
+
+
 if __name__ == "__main__":
     main()
+    if os.environ.get("META_ASSETS"):
+        meta_store_assets()
