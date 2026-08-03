@@ -1,0 +1,109 @@
+## RommPairUrl — reads RomM's pairing QR.
+##
+## The QR encodes a pairing link, which may or may not carry a scheme:
+##
+##     192.168.0.106:8080/pair?code=MXWT-SDZE
+##     http://192.168.0.106:8080/pair?code=MXWT-SDZE
+##
+## Both must parse identically. The server address is the half that matters most
+## — it is the field nobody wants to type through the overlay keyboard — but the
+## code alone is accepted too, in which case the configured server is used.
+##
+## The code is passed on exactly as written, dash included: RomM put that string
+## in its own pairing URL, so that is the form its exchange endpoint expects.
+class_name RommPairUrl
+extends RefCounted
+
+const MAX_CODE_LEN := 32
+
+static var _code_re: RegEx = null
+static var _bare_re: RegEx = null
+
+
+## Returns {url: String, code: String}. Both are empty when the payload is not a
+## RomM pairing link; `url` alone is empty when the payload was a bare code.
+static func parse(payload: String) -> Dictionary:
+	var raw := payload.strip_edges()
+	if raw.is_empty():
+		return _empty()
+
+	if _bare().search(raw) != null:
+		return {"url": "", "code": raw}
+
+	var code := _extract_code(raw)
+	if code.is_empty():
+		return _empty()
+
+	var authority := _authority(raw)
+	if authority.is_empty():
+		# Shaped like a URL but carrying no host. Treating that as a bare code
+		# would pair against whatever server happens to be configured and hide
+		# the malformed QR behind an unrelated failure.
+		if raw.contains("://") or raw.contains("/"):
+			return _empty()
+		return {"url": "", "code": code}
+
+	# normalize_url adds the scheme when the QR omitted it; parse_url is the
+	# gate, since it is the same splitter every RomM request goes through.
+	var url := RommConfig.normalize_url(authority)
+	if RommHttp.parse_url(url).is_empty():
+		return _empty()
+
+	return {"url": url, "code": code}
+
+
+static func _empty() -> Dictionary:
+	return {"url": "", "code": ""}
+
+
+## Everything up to the path: scheme (if given) plus host:port.
+static func _authority(raw: String) -> String:
+	var s := raw
+	var query := _first_of(s, "?", "#")
+	if query >= 0:
+		s = s.substr(0, query)
+
+	var scheme := ""
+	var mark := s.find("://")
+	if mark >= 0:
+		scheme = s.substr(0, mark + 3)
+		s = s.substr(mark + 3)
+
+	var slash := s.find("/")
+	if slash >= 0:
+		s = s.substr(0, slash)
+
+	return "" if s.is_empty() else scheme + s
+
+
+static func _extract_code(raw: String) -> String:
+	var m := _code().search(raw)
+	if m == null:
+		return ""
+	var code := m.get_string(1).uri_decode()
+	# Decoding can widen the string past what the pattern allowed.
+	return code if _bare().search(code) != null else ""
+
+
+static func _first_of(s: String, a: String, b: String) -> int:
+	var ia := s.find(a)
+	var ib := s.find(b)
+	if ia < 0:
+		return ib
+	if ib < 0:
+		return ia
+	return mini(ia, ib)
+
+
+static func _code() -> RegEx:
+	if _code_re == null:
+		_code_re = RegEx.new()
+		_code_re.compile("[?&#]code=([A-Za-z0-9\\-_%%]{1,%d})" % MAX_CODE_LEN)
+	return _code_re
+
+
+static func _bare() -> RegEx:
+	if _bare_re == null:
+		_bare_re = RegEx.new()
+		_bare_re.compile("^[A-Za-z0-9\\-_]{1,%d}$" % MAX_CODE_LEN)
+	return _bare_re

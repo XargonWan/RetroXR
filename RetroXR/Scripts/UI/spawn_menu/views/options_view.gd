@@ -43,6 +43,19 @@ var _server_address_label: Label = null
 var _romm_status_label: Label = null
 var _romm_sync_queue: Array[String] = []
 
+# Kept so a pairing (typed or scanned) can show its result in the fields the
+# player is looking at, rather than waiting for the view to be rebuilt.
+var _romm_url_edit: LineEdit = null
+var _romm_token_edit: LineEdit = null
+var _qr_overlay: QrScanOverlay = null
+var _last_scan_frame: int = -1
+
+# Only one sign-in method applies at a time, so the other one's rows are hidden
+# rather than left there to be filled in and quietly ignored.
+var _romm_mode_drop: VRDropdown = null
+var _romm_token_rows: Array[Control] = []
+var _romm_basic_rows: Array[Control] = []
+
 
 static func create(menu: Node) -> SpawnMenuOptionsView:
 	var v := SpawnMenuOptionsView.new()
@@ -499,56 +512,74 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 			romm_platforms_requested.emit()
 	))
 
-	_add_options_text_field(vbox, "Server URL", romm_config.base_url, func(text: String) -> void:
-		romm_config.base_url = RommConfig.normalize_url(text)
-		romm_config.save_config()
-		if romm_art != null:
-			romm_art.setup(romm_config.base_url)
+	_romm_url_edit = _add_options_text_field(vbox, "Server URL", romm_config.base_url,
+		func(text: String) -> void:
+			romm_config.base_url = RommConfig.normalize_url(text)
+			romm_config.save_config()
+			if romm_art != null:
+				romm_art.setup(romm_config.base_url)
 	)
 
 	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
-	var mode_drop := VRDropdown.create("Sign in with",
+	_romm_mode_drop = VRDropdown.create("Sign in with",
 		[["API token", RommConfig.AUTH_TOKEN],
 		 ["Username + password", RommConfig.AUTH_BASIC]],
 		romm_config.auth_mode, 1, Vector2(300, 56), 18)
-	mode_drop.item_selected.connect(func(id: Variant) -> void:
+	_romm_mode_drop.item_selected.connect(func(id: Variant) -> void:
 		romm_config.auth_mode = str(id)
 		romm_config.save_config()
+		_apply_romm_auth_rows()
 	)
-	vbox.add_child(mode_drop)
+	vbox.add_child(_romm_mode_drop)
 
-	_add_options_text_field(vbox, "API token", romm_config.token, func(text: String) -> void:
-		romm_config.token = text.strip_edges()
-		romm_config.save_config()
+	_romm_token_edit = _add_options_text_field(vbox, "API token", romm_config.token,
+		func(text: String) -> void:
+			romm_config.token = text.strip_edges()
+			romm_config.save_config()
 	, true)
 
-	_add_options_text_field(vbox, "Username", romm_config.username, func(text: String) -> void:
-		romm_config.username = text.strip_edges()
-		romm_config.save_config()
+	# Quest 3/3S only — everywhere else the row looks exactly as it always has.
+	if QrScanner.is_available():
+		var scan_btn := Button.new()
+		scan_btn.text = String.chr(MenuIcons.SCAN_QR)
+		scan_btn.add_theme_font_override("font", MenuIcons.symbols())
+		scan_btn.add_theme_font_size_override("font_size", 20)
+		scan_btn.custom_minimum_size = Vector2(64, 48)
+		scan_btn.focus_mode = Control.FOCUS_NONE
+		scan_btn.tooltip_text = "Scan RomM pairing QR"
+		scan_btn.pressed.connect(_on_scan_qr_pressed)
+		_romm_token_edit.get_parent().add_child(scan_btn)
+
+	var user_edit := _add_options_text_field(vbox, "Username", romm_config.username,
+		func(text: String) -> void:
+			romm_config.username = text.strip_edges()
+			romm_config.save_config()
 	)
 
-	_add_options_text_field(vbox, "Password", romm_config.password, func(text: String) -> void:
-		romm_config.password = text
-		romm_config.save_config()
+	var pass_edit := _add_options_text_field(vbox, "Password", romm_config.password,
+		func(text: String) -> void:
+			romm_config.password = text
+			romm_config.save_config()
 	, true)
 
-	# Device pairing: type 8 digits instead of a 68-character token in VR.
-	_add_options_text_field(vbox, "Pair code (8 digits)", "", func(text: String) -> void:
+	# Device pairing: type a short code instead of a 68-character token in VR.
+	# The code is alphanumeric and dashed (RomM issues e.g. MXWT-SDZE), so it is
+	# not length- or digit-checked here — the server is the authority on format.
+	var pair_edit := _add_options_text_field(vbox, "Pair code", "", func(text: String) -> void:
 		var code := text.strip_edges()
-		if code.length() != 8:
+		if code.is_empty():
 			return
-		romm_client.pair_with_code(code, func(ok: bool, token: String, err: String) -> void:
-			if ok:
-				romm_config.auth_mode = RommConfig.AUTH_TOKEN
-				romm_config.token = token
-				romm_config.enabled = true
-				romm_config.save_config()
-				notify("romm:conn", "✅", "Paired with RomM", -1.0, MenuToasts.DWELL_OK)
-				romm_platforms_requested.emit()
-			else:
-				notify("romm:conn", "❌", err, -1.0, MenuToasts.DWELL_FAIL)
-		)
+		if code.length() > RommPairUrl.MAX_CODE_LEN:
+			notify("romm:conn", "❌", "That doesn't look like a pair code",
+				-1.0, MenuToasts.DWELL_FAIL)
+			return
+		_apply_pair_code(code)
 	)
+
+	# Pairing yields a token, so it belongs with the token method.
+	_romm_token_rows = [_romm_token_edit.get_parent(), pair_edit.get_parent()]
+	_romm_basic_rows = [user_edit.get_parent(), pass_edit.get_parent()]
+	_apply_romm_auth_rows()
 
 	_add_options_text_field(vbox, "Cache budget (GB)", str(romm_config.cache_budget_gb),
 		func(text: String) -> void:
@@ -611,6 +642,112 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 	update_romm_status_label()
 
 	vbox.add_child(HSeparator.new())
+
+
+## Show only the rows the selected sign-in method uses.
+func _apply_romm_auth_rows() -> void:
+	var token_mode := romm_config.auth_mode == RommConfig.AUTH_TOKEN
+	for row in _romm_token_rows:
+		if is_instance_valid(row):
+			row.visible = token_mode
+	for row in _romm_basic_rows:
+		if is_instance_valid(row):
+			row.visible = not token_mode
+
+
+## Exchange a pairing code for a scoped token. Shared by the typed field and the
+## QR scanner, so both report the same way and both refresh the token field.
+func _apply_pair_code(code: String) -> void:
+	notify("romm:conn", "⏳", "Pairing with RomM…", -1.0)
+	romm_client.pair_with_code(code, func(ok: bool, token: String, err: String) -> void:
+		if not ok:
+			notify("romm:conn", "❌", err, -1.0, MenuToasts.DWELL_FAIL)
+			return
+		romm_config.auth_mode = RommConfig.AUTH_TOKEN
+		romm_config.token = token
+		romm_config.enabled = true
+		romm_config.save_config()
+		if _romm_token_edit != null:
+			_romm_token_edit.text = token
+		# Pairing switches the method, so the dropdown and rows follow it.
+		if is_instance_valid(_romm_mode_drop):
+			_romm_mode_drop.select_id(RommConfig.AUTH_TOKEN)
+		_apply_romm_auth_rows()
+		var where := romm_config.base_url.trim_prefix("http://").trim_prefix("https://")
+		notify("romm:conn", "✅",
+			"Paired with RomM" if where.is_empty() else "Paired with RomM at %s" % where,
+			-1.0, MenuToasts.DWELL_OK)
+		romm_platforms_requested.emit()
+	)
+
+
+func _on_scan_qr_pressed() -> void:
+	# Opening the overlay is not idempotent and every Viewport2Din3D click
+	# arrives twice.
+	var frame := Engine.get_process_frames()
+	if frame == _last_scan_frame:
+		return
+	_last_scan_frame = frame
+
+	if is_instance_valid(_qr_overlay):
+		return
+
+	if not QrScanner.has_permission():
+		QrScanner.request_permission()
+		notify("romm:qr", "⏳", "Allow camera access, then tap scan again",
+			-1.0, MenuToasts.DWELL_INFO)
+		return
+
+	var host: Control = get_parent()
+	if host == null:
+		return
+
+	_qr_overlay = QrScanOverlay.create(self)
+	_qr_overlay.scanned.connect(_on_qr_scanned)
+	host.add_child(_qr_overlay)
+
+
+func _on_qr_scanned(payload: String) -> void:
+	var parsed := RommPairUrl.parse(payload)
+	var url := str(parsed.get("url", ""))
+	var code := str(parsed.get("code", ""))
+
+	if code.is_empty():
+		notify("romm:qr", "❌", "That QR isn't a RomM pairing code",
+			-1.0, MenuToasts.DWELL_FAIL)
+		if is_instance_valid(_qr_overlay):
+			_qr_overlay.set_status("Not a RomM pairing code — still looking…")
+			_qr_overlay.resume()
+		return
+
+	var current := romm_config.base_url
+	if not url.is_empty() and not current.is_empty() and url != current:
+		if is_instance_valid(_qr_overlay):
+			_qr_overlay.ask("Switch to %s?" % url,
+				func() -> void: _commit_scan(url, code))
+			return
+
+	_commit_scan(url, code)
+
+
+## The URL must be committed before the exchange — RommClient builds the request
+## against the configured host. A failed exchange leaves the new URL in place so
+## it stays visible and editable; silently restoring a stale address would be
+## harder to recover from than a wrong one you can see.
+func _commit_scan(url: String, code: String) -> void:
+	if not url.is_empty():
+		romm_config.base_url = url
+		romm_config.save_config()
+		if _romm_url_edit != null:
+			_romm_url_edit.text = url
+		if romm_art != null:
+			romm_art.setup(url)
+
+	if is_instance_valid(_qr_overlay):
+		_qr_overlay.close()
+		_qr_overlay = null
+
+	_apply_pair_code(code)
 
 
 ## Sync every mapped platform, one after another — for deliberate offline
@@ -678,9 +815,11 @@ func update_romm_status_label() -> void:
 	_romm_status_label.text = text
 
 
+## Returns the LineEdit so a caller can hang a button off its row
+## (edit.get_parent()) or write a value back into it.
 func _add_options_text_field(parent: VBoxContainer, label_text: String,
 							 initial_value: String, on_changed: Callable,
-							 secret: bool = false) -> void:
+							 secret: bool = false) -> LineEdit:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	row.custom_minimum_size = Vector2(0, 56)
@@ -704,3 +843,4 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 	edit.focus_exited.connect(func() -> void: on_changed.call(edit.text))
 
 	row.add_child(edit)
+	return edit

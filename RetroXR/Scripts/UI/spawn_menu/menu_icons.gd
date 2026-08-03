@@ -32,6 +32,7 @@ const CHECK     := 0xF012C   # md-check           — firmware present
 const CROSS     := 0xF0159   # md-close_thick     — required firmware absent
 const DASH      := 0xF0374   # md-minus           — optional firmware absent
 const SETTINGS  := 0xF013    # fa-cog             — edit this core's options
+const SCAN_QR   := 0xF0433   # md-qrcode_scan     — pair by looking at RomM's code
 
 const TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
 const TINT_BUSY     := Color(1.00, 0.75, 0.25)

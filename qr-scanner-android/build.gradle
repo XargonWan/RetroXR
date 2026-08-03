@@ -1,0 +1,40 @@
+// Versions track RetroXR/android/build/config.gradle — the AAR is merged into
+// that build, so a mismatch shows up as a manifest or desugaring failure.
+plugins {
+    id 'com.android.library' version '8.6.1'
+    id 'org.jetbrains.kotlin.android' version '2.1.21'
+}
+
+android {
+    namespace 'com.xenu.retroxr.qr'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+dependencies {
+    // Both are provided by the app: Godot ships its own lib, and ZXing is added
+    // app-side by the retroxr_qr export plugin. Bundling either would duplicate
+    // classes in the APK.
+    compileOnly 'org.godotengine:godot:4.7.0.stable'
+    compileOnly 'com.google.zxing:core:3.5.3'
+}

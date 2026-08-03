@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Permissions are contributed app-side by RetroXR/addons/retroxr_qr, so they
+     stay greppable in the repo rather than buried in a binary. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <meta-data
+            android:name="org.godotengine.plugin.v2.RetroXRQr"
+            android:value="com.xenu.retroxr.qr.QrScannerPlugin" />
+    </application>
+
+</manifest>
