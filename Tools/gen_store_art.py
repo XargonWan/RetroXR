@@ -123,6 +123,41 @@ def main():
     draw_wordmark(cover, W / 2, H * 0.815, W * 0.50)
     save_jpg(cover, "retroxr-listing.jpg")
 
+    # ── banner ───────────────────────────────────────────────────────────────
+    # Measured off SideQuest's own Banner-Guidelines.png rather than the
+    # "16:9, 1280px" line in the page hints, which does not describe this slot:
+    #   full canvas  2048 x 512   (4:1 — the outer thirds get cropped)
+    #   mobile band  x  724..1323 (600 wide, all that survives on a phone)
+    #   safe space   x  752..1295, y 172..383  — logo/important content here
+    # So the artwork is CENTRED, not offset; an earlier pass put it at x~1340,
+    # outside both the safe box and the mobile band.
+    BW, BH = 2048, 512
+    SAFE = (752, 172, 1295, 383)
+    ban = wide_backdrop(BW, BH)
+
+    hot = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
+    ImageDraw.Draw(hot).ellipse((BW * 0.28, -BH * 0.30, BW * 0.72, BH * 1.30),
+                                fill=M.GLOW + (58,))
+    ban.alpha_composite(hot.filter(ImageFilter.GaussianBlur(BW * 0.045)))
+
+    # Lay the 1600x520 lockup out inside the safe box: mark left, word right.
+    s = 520.0 / 1600.0
+    ox, oy = (SAFE[0] + SAFE[2]) / 2 - 1600 * s / 2, (SAFE[1] + SAFE[3]) / 2 - 520 * s / 2
+    bmark, bscale = headset_at(604 * s)          # lockup shell is 604 wide
+    ban.paste(bmark,
+              (int(ox + 382 * s - (M.SHELL[0] + M.SHELL[2]) / 2 * bscale),
+               int(oy + 260 * s - (M.SHELL[1] + M.SHELL[3]) / 2 * bscale)), bmark)
+    draw_wordmark(ban, ox + 1180 * s, oy + 330 * s, 760 * s)
+
+    # a whole-field scanline wash, tying the banner to the lenses
+    scan = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(scan)
+    for yy in range(0, BH, 4):
+        sd.rectangle((0, yy, BW, yy + 1), fill=(0, 0, 0, 26))
+    ban.alpha_composite(scan)
+
+    save_jpg(ban, "retroxr-banner.jpg")
+
 
 if __name__ == "__main__":
     main()
