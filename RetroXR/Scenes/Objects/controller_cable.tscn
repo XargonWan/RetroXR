@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://controller_cable_001"]
+[gd_scene load_steps=10 format=3 uid="uid://controller_cable_001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/cables/controller_plug.gd" id="1_plugscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
@@ -27,6 +27,12 @@ albedo_color = Color(0.15, 0.15, 0.15, 1.0)
 bounce = 0.0
 friction = 0.8
 
+; Laser target. Deliberately wider than the 35 mm physics sphere: a plug is a
+; small thing to hit with a beam from across the room, and this shape only ever
+; answers the pointer (mask 0), so nothing else notices it is generous.
+[sub_resource type="SphereShape3D" id="SphereShape3D_pointer"]
+radius = 0.055
+
 [node name="ControllerCable" type="Node3D"]
 
 [node name="ControllerPlug" type="RigidBody3D" parent="."]
@@ -53,6 +59,17 @@ surface_material_override/0 = SubResource("Mat_plug")
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.03)
 mesh = SubResource("CylMesh_strain")
 surface_material_override/0 = SubResource("Mat_strain")
+
+; Layer 21 (pointable) is the only layer the FunctionPointer's RayCast masks, so
+; without this the beam passes straight through the plug — the plug body itself
+; sits on layer 3 (pickable). Same StaticBody-child pattern as system.tscn;
+; function_pickup._resolve_pickable maps the hit back to the parent pickable.
+[node name="PointerArea" type="StaticBody3D" parent="ControllerPlug"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug/PointerArea"]
+shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="ControllerPlug"]
 script = ExtResource("3_pickhigh")

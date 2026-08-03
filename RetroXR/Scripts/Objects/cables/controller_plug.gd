@@ -24,6 +24,23 @@ func _ready() -> void:
 	add_to_group("controller_plug")
 
 
+## How far this plug may stray, as {anchor: Vector3, length: float}, or {} when
+## the cable isn't built yet. Read by function_pickup so a ray grab reels the
+## plug along the beam only as far as the cord actually reaches.
+##
+## Derived from the sibling rope rather than the owning controller, for the same
+## reason CablePlug.get_tether is: every owner already sets `start_node` and
+## sizes the rope, and there are several of them.
+func get_tether() -> Dictionary:
+	var rope := get_parent().get_node_or_null("VerletRope")
+	if rope == null or not is_instance_valid(rope.start_node):
+		return {}
+	return {
+		"anchor": (rope.start_node as Node3D).global_position,
+		"length": float(rope.segment_count) * rope.segment_length,
+	}
+
+
 ## Returns the owning controller (RetroController or RayGun).
 func get_controller() -> Node3D:
 	return _controller

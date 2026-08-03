@@ -117,6 +117,10 @@ const CATCH_CHARGE_HZ := 20.0           # rumble magnitude update rate while cha
 const CATCH_CHARGE_MAG_MIN := 0.10
 const CATCH_CHARGE_MAG_MAX := 0.55
 
+# Slack left when a tethered object (a cable plug) is held at full stretch, so
+# the host's own position clamp never has to fire and fight this one.
+const TETHER_MARGIN := 0.02
+
 # Ray-pointer grab state
 var _ray_pointer : XRToolsFunctionPointer = null   # sibling FunctionPointer
 var _pointer_highlighted : XRToolsPickable = null  # object highlighted by the laser
@@ -783,6 +787,11 @@ func _process_ray_grab(delta: float) -> void:
 		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
 		if ray_cast:
 			var ray_dir := -ray_cast.global_transform.basis.z
+			# Written back, not just applied locally: otherwise the stick would
+			# keep winding the distance up behind a taut cable and the plug would
+			# spring outward the instant it was unplugged.
+			_ray_grab_distance = _clamp_distance_to_tether(
+					ray_cast.global_transform.origin, ray_dir, _ray_grab_distance)
 			var new_pos := ray_cast.global_transform.origin + ray_dir * _ray_grab_distance
 			var new_transform := _apply_handoff_blend(
 					Transform3D(new_basis, new_pos), delta)
@@ -1097,6 +1106,38 @@ func _apply_handoff_blend(target_xform: Transform3D, delta: float) -> Transform3
 	_handoff_blend = maxf(_handoff_blend - delta, 0.0)
 	var t := 1.0 - (_handoff_blend / HANDOFF_BLEND_TIME)
 	return _handoff_blend_from.interpolate_with(target_xform, smoothstep(0.0, 1.0, t))
+
+
+# Keep a tethered object — a cable plug — inside the reach of its own cord.
+#
+# The object has to stay ON the ray, so this solves for the furthest point along
+# the beam still inside the tether sphere instead of yanking it off-axis. The
+# host's per-frame clamp (retro_controller._physics_process and its five
+# siblings) skips only while is_picked_up(), which a ray grab never sets, so
+# without this the two would write the same transform in an order the scene tree
+# decides and the plug would jitter.
+func _clamp_distance_to_tether(origin: Vector3, dir: Vector3, distance: float) -> float:
+	if not is_instance_valid(_ray_grab_object) \
+			or not _ray_grab_object.has_method("get_tether"):
+		return distance
+	var tether: Dictionary = _ray_grab_object.get_tether()
+	if tether.is_empty():
+		return distance
+	var length: float = tether.get("length", 0.0) - TETHER_MARGIN
+	if length <= 0.0:
+		return distance
+
+	var m: Vector3 = origin - (tether.get("anchor", Vector3.ZERO) as Vector3)
+	var c := m.length_squared() - length * length
+	if c > 0.0:
+		# The hand is already further from the anchor than the cord is long. No
+		# point on the beam is reachable; leave it to the host's clamp, which
+		# pulls the plug taut toward the anchor — which is what a stretched cable
+		# should look like.
+		return distance
+	# Origin inside the sphere: exactly one intersection ahead of us.
+	var b := m.dot(dir)
+	return minf(distance, -b + sqrt(b * b - c))
 
 
 # Origin of the aiming ray, falling back to the pickup itself when the sibling

@@ -48,6 +48,23 @@ func _derive_cable_anchor() -> void:
 		ab.get_center().x, ab.get_center().y, ab.position.z)
 
 
+## How far this plug may stray, as {anchor: Vector3, length: float}, or {} when
+## the cable isn't built yet. Read by function_pickup so a ray grab reels the
+## plug along the beam only as far as the cord actually reaches.
+##
+## Derived from the sibling rope rather than the host: every host already sets
+## `start_node` and sizes the rope, and there are six of them (RetroSystem, VCR,
+## DVD player, ...) that would otherwise each need the same accessor.
+func get_tether() -> Dictionary:
+	var rope := get_parent().get_node_or_null("VerletRope")
+	if rope == null or not is_instance_valid(rope.start_node):
+		return {}
+	return {
+		"anchor": (rope.start_node as Node3D).global_position,
+		"length": float(rope.segment_count) * rope.segment_length,
+	}
+
+
 ## Returns the host this cable belongs to
 func get_system() -> Node3D:
 	return _system
