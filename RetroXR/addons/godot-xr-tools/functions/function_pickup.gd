@@ -121,6 +121,11 @@ const CATCH_CHARGE_MAG_MAX := 0.55
 # the host's own position clamp never has to fire and fight this one.
 const TETHER_MARGIN := 0.02
 
+# Socket preview while ray-holding. Matches XRToolsGrabDriver's hand-held
+# preview so a plug flown in on the beam behaves like one carried by hand.
+const RAY_PREVIEW_BLEND_SPEED := 8.0   # blend/sec (~0.12 s each way)
+const RAY_PREVIEW_HYSTERESIS := 1.25   # hold an engaged zone this far past range
+
 # Ray-pointer grab state
 var _ray_pointer : XRToolsFunctionPointer = null   # sibling FunctionPointer
 var _pointer_highlighted : XRToolsPickable = null  # object highlighted by the laser
@@ -143,6 +148,12 @@ var _handoff_blend_from : Transform3D = Transform3D.IDENTITY
 var _handoff_block_owner : StringName = &"ray_handoff"
 var _handoff_loco_blocked : bool = false
 var _pointer_muted : bool = false          # we disabled the sibling pointer's button dispatch
+
+# Socket preview while ray-holding
+var _ray_preview_zone : XRToolsSnapZone = null
+var _ray_preview_blend : float = 0.0
+var _ray_preview_radius : float = -1.0     # bounding radius of the held object
+var _ray_previewing : bool = false         # last state pushed to the outline
 
 ## Collision hand (if applicable)
 @onready var _collision_hand : XRToolsCollisionHand
@@ -223,6 +234,7 @@ func _exit_tree():
 		_controller.button_released.disconnect(_on_button_released)
 
 	_reset_charge()
+	_clear_socket_preview()
 
 	if _locomotion_manager:
 		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
@@ -729,6 +741,12 @@ func _start_ray_grab(target: XRToolsPickable) -> void:
 	# a second object while the other controller is already ray-holding something.
 	if _is_any_other_pickup_ray_grabbing():
 		return
+	# Refuse anything already held — most importantly an object seated in a snap
+	# zone, which would otherwise be flown out of its socket while the zone went
+	# on believing it still had it. _process_pointer_highlight applies the same
+	# test before offering a target, so this only bites a direct caller.
+	if not target.can_pick_up(self):
+		return
 
 	_start_ray_grab_at(target, global_transform.origin.distance_to(
 			target.global_transform.origin))
@@ -741,6 +759,7 @@ func _start_ray_grab(target: XRToolsPickable) -> void:
 # let the object go, so listeners must not see a fresh pickup.
 func _start_ray_grab_at(target: XRToolsPickable, distance: float,
 		transferred: bool = false) -> void:
+	_clear_socket_preview()   # never inherit the previous object's socket state
 	_ray_grab_distance = clampf(
 			distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
 	_ray_grab_object = target
@@ -793,8 +812,9 @@ func _process_ray_grab(delta: float) -> void:
 			_ray_grab_distance = _clamp_distance_to_tether(
 					ray_cast.global_transform.origin, ray_dir, _ray_grab_distance)
 			var new_pos := ray_cast.global_transform.origin + ray_dir * _ray_grab_distance
-			var new_transform := _apply_handoff_blend(
+			var new_transform := _apply_socket_preview(
 					Transform3D(new_basis, new_pos), delta)
+			new_transform = _apply_handoff_blend(new_transform, delta)
 			_ray_grab_object.global_transform = new_transform
 			# Explicitly sync to the physics server — frozen bodies can silently drop the
 			# node→physics update, causing _direct_state_changed to restore the stale
@@ -861,15 +881,31 @@ func _end_ray_grab() -> void:
 	_reset_charge()
 	_reel_gated = false
 	if not is_instance_valid(_ray_grab_object):
+		_clear_socket_preview()
 		_ray_grab_object = null
 		return
+
+	# Released while a socket was engaged: hand it over instead of dropping it.
+	# The zone's own capture path can't fire here — it waits on the object's
+	# `dropped` signal, which comes from let_go(), which a ray grab never calls.
+	var socket := _ray_preview_zone if _ray_previewing else null
+
 	_ray_grab_object.freeze = _ray_grab_object.restore_freeze
 	_ray_grab_object.collision_mask = _ray_grab_object.original_collision_mask
 	_ray_grab_object.collision_layer = _ray_grab_object.original_collision_layer
-	# Apply throw velocity so the object can be tossed
-	_ray_grab_object.linear_velocity = _velocity_averager.linear_velocity() * impulse_factor
-	_ray_grab_object.angular_velocity = _velocity_averager.angular_velocity()
+
+	var released := _ray_grab_object
+	_clear_socket_preview()
 	_ray_grab_object = null
+
+	if is_instance_valid(socket) and socket.can_preview(released) \
+			and released.can_pick_up(socket):
+		socket.pick_up_object(released)
+	else:
+		# Apply throw velocity so the object can be tossed
+		released.linear_velocity = _velocity_averager.linear_velocity() * impulse_factor
+		released.angular_velocity = _velocity_averager.angular_velocity()
+
 	if _locomotion_manager:
 		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
 	emit_signal("has_dropped")
@@ -1079,6 +1115,8 @@ func _release_hand_for_transfer() -> bool:
 # Release from the ray without the throw impulse or the has_dropped signal. The
 # locomotion block stays put — the caller is about to hold the object anyway.
 func _release_ray_for_transfer() -> void:
+	# Catching it into the hand abandons whatever socket it was lining up with.
+	_clear_socket_preview()
 	if not is_instance_valid(_ray_grab_object):
 		_ray_grab_object = null
 		return
@@ -1106,6 +1144,114 @@ func _apply_handoff_blend(target_xform: Transform3D, delta: float) -> Transform3
 	_handoff_blend = maxf(_handoff_blend - delta, 0.0)
 	var t := 1.0 - (_handoff_blend / HANDOFF_BLEND_TIME)
 	return _handoff_blend_from.interpolate_with(target_xform, smoothstep(0.0, 1.0, t))
+
+
+# ----------  Socket preview for a ray-held object  ----------
+#
+# Mirrors the hand-held preview in XRToolsGrabDriver (see its LOCAL PATCH block):
+# while the object the beam is carrying comes within a compatible socket's grab
+# range, it blends onto the pose it would seat at, wearing the orange preview
+# outline. Releasing there hands it to the zone instead of dropping it.
+#
+# A ray grab creates no GrabDriver, so none of that machinery runs for it — and
+# the zone's own capture path is no help either: it listens for the object's
+# `dropped` signal, which only fires from let_go(), which a ray grab never calls.
+# Hence an explicit hand-off in _end_ray_grab.
+#
+# Unlike the hand version this needs no collision exceptions: a ray-held object
+# already has collision_mask = 0, so it cannot shove the console it is aiming at.
+
+
+## Blend `want` (where the beam wants the object) toward the socket it is close
+## enough to seat in, and return the pose to actually use.
+func _apply_socket_preview(want: Transform3D, delta: float) -> Transform3D:
+	if not is_instance_valid(_ray_grab_object):
+		return want
+
+	# Test against where the BEAM wants the object, not where it currently is:
+	# while previewing it sits AT the zone, so its own position could never fall
+	# out of range and the preview would never disengage.
+	var radius := _get_ray_preview_radius()
+	var zone := XRToolsSnapZone.find_preview_zone(_ray_grab_object, want.origin, radius)
+	if zone == null and is_instance_valid(_ray_preview_zone) \
+			and _ray_preview_zone.can_preview(_ray_grab_object) \
+			and _ray_preview_zone.global_position.distance_to(want.origin) \
+				< (_ray_preview_zone.grab_distance + radius) * RAY_PREVIEW_HYSTERESIS:
+		zone = _ray_preview_zone
+	if zone:
+		_ray_preview_zone = zone
+
+	if (zone != null) != _ray_previewing:
+		_ray_previewing = zone != null
+		_notify_ray_snap_preview(_ray_previewing)
+
+	_ray_preview_blend = move_toward(
+		_ray_preview_blend, 1.0 if zone else 0.0, delta * RAY_PREVIEW_BLEND_SPEED)
+
+	if _ray_preview_blend <= 0.001 or not is_instance_valid(_ray_preview_zone):
+		if _ray_preview_blend <= 0.001:
+			_ray_preview_zone = null
+		return want
+
+	var w := smoothstep(0.0, 1.0, _ray_preview_blend)
+	var seated := _seated_transform(_ray_preview_zone)
+	return Transform3D(
+		Basis(want.basis.get_rotation_quaternion().slerp(
+			seated.basis.get_rotation_quaternion(), w)).scaled(want.basis.get_scale()),
+		want.origin.lerp(seated.origin, w))
+
+
+## Where the object will actually sit once `zone` captures it. An object with a
+## snap grab-point seats at the zone offset by that point's inverse (matching
+## pickable.pick_up -> create_snap); without this the preview would show the raw
+## socket orientation and a plug would appear to go in backwards.
+func _seated_transform(zone: XRToolsSnapZone) -> Transform3D:
+	var zt := zone.global_transform
+	if is_instance_valid(_ray_grab_object) \
+			and _ray_grab_object.has_method("_get_grab_point"):
+		var gp: XRToolsGrabPoint = _ray_grab_object._get_grab_point(zone, null)
+		if gp:
+			zt = zt * gp.transform.affine_inverse()
+	return zt
+
+
+func _get_ray_preview_radius() -> float:
+	if _ray_preview_radius >= 0.0:
+		return _ray_preview_radius
+	_ray_preview_radius = 0.0
+	# The body's OWN shapes only. A plug carries a wider PointerArea proxy so the
+	# beam can hit it, and measuring that would engage sockets far too early.
+	var body := _ray_grab_object as CollisionObject3D
+	if body:
+		for owner_id in body.get_shape_owners():
+			var off: float = body.shape_owner_get_transform(owner_id).origin.length()
+			for i in body.shape_owner_get_shape_count(owner_id):
+				var shape: Shape3D = body.shape_owner_get_shape(owner_id, i)
+				if shape:
+					_ray_preview_radius = maxf(_ray_preview_radius,
+						off + XRToolsGrabDriver._shape_extent(shape))
+	if _ray_preview_radius <= 0.0:
+		_ray_preview_radius = 0.03
+	return _ray_preview_radius
+
+
+func _notify_ray_snap_preview(on: bool) -> void:
+	if not is_instance_valid(_ray_grab_object):
+		return
+	for child in _ray_grab_object.get_children():
+		if child.has_method("set_snap_preview"):
+			child.set_snap_preview(on)
+			return
+
+
+## Forget any engaged socket. Safe to call when none is.
+func _clear_socket_preview() -> void:
+	if _ray_previewing:
+		_notify_ray_snap_preview(false)
+	_ray_previewing = false
+	_ray_preview_zone = null
+	_ray_preview_blend = 0.0
+	_ray_preview_radius = -1.0
 
 
 # Keep a tethered object — a cable plug — inside the reach of its own cord.
