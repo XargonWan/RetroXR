@@ -35,6 +35,31 @@ const STEP := 0.02
 const MAX_TRAVEL := 0.6
 const MAX_STEPS := int(MAX_TRAVEL / STEP)
 
+# ── Falling out of the world ──────────────────────────────────────────────────
+# Every room puts the top of its floor slab at y = 0, so anything this far under
+# it has left through the floor or over an edge and is never coming back.
+const FALL_LIMIT_Y := -2.0
+
+## Rate the fall check runs at. A falling object is recovered wherever it got to,
+## so this needs no precision — and at 60-120 Hz, per-frame checks on every
+## pickable in the room would be pure waste.
+const FALL_CHECK_HZ := 4.0
+
+## An object is "at rest" — and so worth remembering as a safe spot — below this
+## speed. Squared, to keep the check off sqrt.
+const AT_REST_SPEED2 := 0.01
+
+## Clear of the floor by this much before a pose counts as safe, so a body that
+## has already begun sinking into geometry is never recorded as somewhere to
+## return to.
+const SAFE_MIN_Y := 0.02
+
+var _fall_timer := 0.0
+## Every pickable in the tree, and the last pose each was seen resting at.
+## Keyed by instance id so a freed object cannot resurrect one.
+var _watched: Dictionary = {}
+var _safe_pose: Dictionary = {}
+
 
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node_added)
@@ -59,6 +84,14 @@ func _patch(node: Node) -> void:
 		body.collision_mask &= ~HELD_BIT
 
 	var pickable := node as XRToolsPickable
+	if pickable != null:
+		_watched[pickable.get_instance_id()] = pickable
+		# No pickable in this project had continuous collision detection, so a
+		# hard throw could step straight through the 0.2 m floor slab in one
+		# tick. A ray-thrown object is the worst case by far: swung at arm's
+		# length on a 3 m beam it leaves the hand several times faster than the
+		# hand ever moved.
+		pickable.continuous_cd = true
 	if pickable != null and not pickable.dropped.is_connected(_on_dropped):
 		pickable.dropped.connect(_on_dropped)
 	if pickable != null and not pickable.picked_up.is_connected(_on_picked_up):
@@ -240,6 +273,75 @@ func _escape(body: XRToolsPickable) -> void:
 	body.force_update_transform()
 	PhysicsServer3D.body_set_state(
 		body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+
+
+# ── Falling out of the world ──────────────────────────────────────────────────
+#
+# Objects still get under the floor: released inside it (the escape above only
+# moves horizontally, so it cannot lift one out), thrown through it, or simply
+# dropped past the edge of a floor slab that is only as big as the room. Rather
+# than chase each of those, this catches the outcome they share — the object is
+# below the world and falling forever — and puts it back.
+#
+# "Back" is where it was last sitting still, not straight up from where it fell:
+# an object that went over the edge has no floor above it to return to, and one
+# that dropped through has an owner who last saw it on a shelf, not on the
+# carpet beneath.
+
+func _physics_process(delta: float) -> void:
+	_fall_timer += delta
+	if _fall_timer < 1.0 / FALL_CHECK_HZ:
+		return
+	_fall_timer = 0.0
+
+	for id: int in _watched.keys():
+		var body: XRToolsPickable = _watched[id]
+		if not is_instance_valid(body) or not body.is_inside_tree():
+			_watched.erase(id)
+			_safe_pose.erase(id)
+			continue
+		# Held, socketed or flying on a beam: its position is somebody else's
+		# business, and mid-flight is not a pose worth remembering.
+		if body.is_picked_up() or body.freeze:
+			continue
+		if body.global_position.y < FALL_LIMIT_Y:
+			_recover(id, body)
+		elif body.global_position.y > SAFE_MIN_Y \
+				and body.linear_velocity.length_squared() < AT_REST_SPEED2:
+			_safe_pose[id] = body.global_transform
+
+
+func _recover(id: int, body: XRToolsPickable) -> void:
+	var to: Transform3D = _safe_pose.get(id, Transform3D.IDENTITY)
+	if not _safe_pose.has(id):
+		# Never seen at rest — it fell before it ever settled. Put it in front of
+		# the player instead, where they will actually notice it came back.
+		var cam := body.get_viewport().get_camera_3d()
+		if cam == null:
+			return          # no camera yet; try again on the next pass
+		to = Transform3D(body.global_transform.basis, _in_front_of(cam))
+
+	body.linear_velocity = Vector3.ZERO
+	body.angular_velocity = Vector3.ZERO
+	body.global_transform = to
+	body.force_update_transform()
+	# A teleported body keeps its old transform in the physics server until it is
+	# pushed explicitly, and would carry on falling from where it was.
+	PhysicsServer3D.body_set_state(
+		body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, to)
+	PhysicsServer3D.body_set_state(
+		body.get_rid(), PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, Vector3.ZERO)
+	PhysicsServer3D.body_set_state(
+		body.get_rid(), PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, Vector3.ZERO)
+
+
+## A spot at chest height an arm's length in front of the player.
+func _in_front_of(cam: Camera3D) -> Vector3:
+	var fwd := -cam.global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.0001:
+		fwd = Vector3.FORWARD
+	return cam.global_position + fwd.normalized() * 0.5 + Vector3(0.0, -0.2, 0.0)
 
 
 ## True while `shape`, placed at `xform`, is inside another body. Areas are
