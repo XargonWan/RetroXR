@@ -52,12 +52,10 @@ var _romm_token_edit: LineEdit = null
 var _qr_overlay: QrScanOverlay = null
 var _last_scan_frame: int = -1
 
-# Only one sign-in method applies at a time, so the other one's rows are hidden
-# rather than left there to be filled in and quietly ignored.
-## Matches the separation and field width _add_options_text_field lays out with.
-const ROW_SEPARATION := 10
 const SCAN_BTN_WIDTH := 64
 
+# Only one sign-in method applies at a time, so the other one's rows are hidden
+# rather than left there to be filled in and quietly ignored.
 var _romm_mode_drop: VRDropdown = null
 var _romm_token_rows: Array[Control] = []
 var _romm_basic_rows: Array[Control] = []
@@ -542,6 +540,27 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 				romm_art.setup(romm_config.base_url)
 	)
 
+	# On this row rather than the API token: the QR carries the server address
+	# too, and this row stays visible in both sign-in modes. Quest 3/3S only —
+	# everywhere else the row looks exactly as it always has.
+	if QrScanner.is_available():
+		var scan_btn := Button.new()
+		scan_btn.text = String.chr(MenuIcons.SCAN_QR)
+		scan_btn.add_theme_font_override("font", MenuIcons.symbols())
+		scan_btn.add_theme_font_size_override("font_size", 26)
+		scan_btn.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
+		scan_btn.custom_minimum_size = Vector2(SCAN_BTN_WIDTH, 48)
+		scan_btn.focus_mode = Control.FOCUS_NONE
+		scan_btn.tooltip_text = "Scan RomM pairing QR"
+		scan_btn.pressed.connect(_on_scan_qr_pressed)
+
+		var url_row := _romm_url_edit.get_parent()
+		url_row.add_child(scan_btn)
+		# Index 1: after the label, before the field. The label absorbs the
+		# slack, so the field keeps its width and its right edge still lines up
+		# with every other row.
+		url_row.move_child(scan_btn, 1)
+
 	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
 	_romm_mode_drop = VRDropdown.create("Sign in with",
 		[["API token", RommConfig.AUTH_TOKEN],
@@ -559,22 +578,6 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 			romm_config.token = text.strip_edges()
 			romm_config.save_config()
 	, true)
-
-	# Quest 3/3S only — everywhere else the row looks exactly as it always has.
-	if QrScanner.is_available():
-		var scan_btn := Button.new()
-		scan_btn.text = String.chr(MenuIcons.SCAN_QR)
-		scan_btn.add_theme_font_override("font", MenuIcons.symbols())
-		scan_btn.add_theme_font_size_override("font_size", 26)
-		scan_btn.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
-		scan_btn.custom_minimum_size = Vector2(SCAN_BTN_WIDTH, 48)
-		scan_btn.focus_mode = Control.FOCUS_NONE
-		scan_btn.tooltip_text = "Scan RomM pairing QR"
-		scan_btn.pressed.connect(_on_scan_qr_pressed)
-		# Narrow the field by exactly what the button costs, so the pair still
-		# fills the same column as every other row and the right edges line up.
-		_romm_token_edit.custom_minimum_size.x -= SCAN_BTN_WIDTH + ROW_SEPARATION
-		_romm_token_edit.get_parent().add_child(scan_btn)
 
 	var user_edit := _add_options_text_field(vbox, "Username", romm_config.username,
 		func(text: String) -> void:
