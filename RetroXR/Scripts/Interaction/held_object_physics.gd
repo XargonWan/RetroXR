@@ -64,6 +64,15 @@ func _patch(node: Node) -> void:
 	if pickable != null and not pickable.picked_up.is_connected(_on_picked_up):
 		pickable.picked_up.connect(_on_picked_up)
 
+	# A ray grab never creates a GrabDriver, so the pickable's own picked_up never
+	# fires for one — the ray-only rows have to come off the pickup instead.
+	var pickup := node as XRToolsFunctionPickup
+	if pickup != null:
+		if not pickup.has_picked_up.is_connected(_on_pickup_grabbed):
+			pickup.has_picked_up.connect(_on_pickup_grabbed.bind(pickup))
+		if not pickup.has_transferred.is_connected(_on_pickup_transferred):
+			pickup.has_transferred.connect(_on_pickup_transferred.bind(pickup))
+
 
 # ── Teaching the rotate verbs ─────────────────────────────────────────────────
 # Every pickable can be turned while you hold it, and nothing says so. Taught
@@ -89,18 +98,18 @@ func _on_picked_up(pickable: Variant) -> void:
 	if obj == null or not is_instance_valid(obj):
 		return
 	var by := obj.get_picked_up_by()
-	var desktop := is_instance_valid(by) and by.is_in_group("desktop_hand")
-	if not desktop and not _is_ray_grab(by, obj):
+	# VR is driven off the pickup's own signals instead (see _apply_mode_rows) —
+	# the rows differ between the hand hold and the ray hold, and only the pickup
+	# knows which one is live.
+	if not (is_instance_valid(by) and by.is_in_group("desktop_hand")):
 		return
 
 	var hint := HeldHint.for_node(obj)
 	if hint == null:
 		return
-	hint.add_row(&"rotate_yaw", HeldHint.PLATFORM_BOTH,
-		DESKTOP_ROTATE_GLYPHS if desktop else VR_ROTATE_GLYPHS,
+	hint.add_row(&"rotate_yaw", HeldHint.PLATFORM_DESKTOP, DESKTOP_ROTATE_GLYPHS,
 		"Use {g} to pitch and yaw", HeldHint.WHEN_HELD)
-	hint.add_row(&"rotate_roll", HeldHint.PLATFORM_BOTH,
-		DESKTOP_ROLL_GLYPHS if desktop else VR_ROLL_GLYPHS,
+	hint.add_row(&"rotate_roll", HeldHint.PLATFORM_DESKTOP, DESKTOP_ROLL_GLYPHS,
 		"Use {g} to pitch and roll", HeldHint.WHEN_HELD)
 
 	# Objects with a hint of their own call this from their own grab handler, and
@@ -114,6 +123,64 @@ func _is_ray_grab(by: Node3D, obj: XRToolsPickable) -> bool:
 	return is_instance_valid(by) \
 		and by.has_method("is_ray_grabbing_target") \
 		and by.call("is_ray_grabbing_target", obj)
+
+
+## The push-out verb: only offered on objects that accept it, and only in VR.
+## Unlike the rotate rows — which are the FREE hand and so hardcode left art —
+## these are on the hand doing the holding, so they take the {side}/{s} tokens.
+const VR_PUSH_GLYPHS: Array[String] = ["quest_trigger_{side}_outline", "quest_stick_{s}_press"]
+## The catch: pull the stick to its edge and hold. Without this row an object
+## parked at arm's length and refusing to come closer just reads as stuck.
+const VR_CATCH_GLYPHS: Array[String] = ["quest_stick_{s}_press"]
+
+
+func _on_pickup_grabbed(what: Variant, pickup: XRToolsFunctionPickup) -> void:
+	var obj := what as XRToolsPickable
+	if obj == null or not is_instance_valid(obj):
+		return
+	_apply_mode_rows(obj, pickup, _is_ray_grab(pickup, obj))
+
+
+func _on_pickup_transferred(what: Variant, to_ray: bool,
+		pickup: XRToolsFunctionPickup) -> void:
+	var obj := what as XRToolsPickable
+	if obj == null or not is_instance_valid(obj):
+		return
+	_apply_mode_rows(obj, pickup, to_ray)
+
+
+## Swap the rows that describe how the object is being held right now. Rotating
+## with the free hand's stick only works off the laser; pushing out only works
+## from the hand.
+func _apply_mode_rows(obj: XRToolsPickable, pickup: XRToolsFunctionPickup,
+		on_ray: bool) -> void:
+	var hint := HeldHint.for_node(obj)
+	if hint == null:
+		return
+
+	if on_ray:
+		hint.remove_row(&"push_to_ray")
+		hint.add_row(&"rotate_yaw", HeldHint.PLATFORM_VR, VR_ROTATE_GLYPHS,
+			"Use {g} to pitch and yaw", HeldHint.WHEN_HELD)
+		hint.add_row(&"rotate_roll", HeldHint.PLATFORM_VR, VR_ROLL_GLYPHS,
+			"Use {g} to pitch and roll", HeldHint.WHEN_HELD)
+		hint.add_row(&"catch_from_ray", HeldHint.PLATFORM_VR, VR_CATCH_GLYPHS,
+			"Pull {g} all the way back and hold to catch it", HeldHint.WHEN_HELD)
+	else:
+		hint.remove_row(&"rotate_yaw")
+		hint.remove_row(&"rotate_roll")
+		hint.remove_row(&"catch_from_ray")
+		if _accepts_push(obj):
+			hint.add_row(&"push_to_ray", HeldHint.PLATFORM_VR, VR_PUSH_GLYPHS,
+				"Hold {g} and push forward to send it to the beam", HeldHint.WHEN_HELD)
+
+	hint.on_grabbed(pickup)
+
+
+func _accepts_push(obj: XRToolsPickable) -> bool:
+	if obj.has_method("wants_ray_handoff"):
+		return obj.wants_ray_handoff()
+	return true
 
 
 # ── Escaping on release ───────────────────────────────────────────────────────

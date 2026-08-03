@@ -91,6 +91,13 @@ const ANIM_WEIGHT := 0.45
 var _anim_btns: Array[Dictionary] = []   # {node, rest, bit}
 
 
+## The trigger is this mouse's left button, so it can't double as the push-out
+## modifier. Catching one back off the laser still works. Queried by
+## function_pickup._handoff_eligible.
+func wants_ray_handoff() -> bool:
+	return false
+
+
 func _ready() -> void:
 	super._ready()
 	press_to_hold = false

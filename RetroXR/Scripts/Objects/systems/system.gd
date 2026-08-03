@@ -600,6 +600,14 @@ func _load_system_model() -> void:
 		_port_controllers[0] = _handheld_input
 
 
+## A handheld routes the trigger and thumbstick into the emulated pad, leaving
+## the push-out gesture nothing to bind to. Consoles keep it. Catching either
+## back off the laser works regardless. Queried by
+## function_pickup._handoff_eligible.
+func wants_ray_handoff() -> bool:
+	return _handheld_input == null
+
+
 ## Where a hand grips this system, in local space, or null when it has no
 ## authored grip and should stay where it was grabbed. Only handhelds define
 ## one — a console keeps the precise grab. Read by GripAnchor via HandheldInput.

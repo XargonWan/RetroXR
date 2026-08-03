@@ -166,6 +166,14 @@ func wants_grip_toggle_drop() -> bool:
 	return false
 
 
+## Both the trigger and the thumbstick are game inputs while this is held (L2/R2
+## and the analog stick + d-pad), so the push-out gesture has nothing to bind to.
+## Catching one back off the laser still works. Queried by
+## function_pickup._handoff_eligible.
+func wants_ray_handoff() -> bool:
+	return false
+
+
 ## Anchor each holding hand onto its own grip: one hand takes the controller by
 ## that side, two hands centre it between them. See GripAnchor.
 func _refresh_grip() -> void:

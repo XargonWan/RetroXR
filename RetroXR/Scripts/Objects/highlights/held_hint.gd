@@ -138,6 +138,15 @@ func add_row(id: StringName, platform: int, glyphs: Array, caption: String,
 	_rows.append([id, platform, glyphs, caption, when, once])
 
 
+## Withdraw a row declared earlier. Needed by verbs that only apply in one of an
+## object's hold modes — the rotate rows describe the ray hold, and go back to
+## being noise the moment the object is caught into the hand.
+func remove_row(id: StringName) -> void:
+	for i in range(_rows.size() - 1, -1, -1):
+		if _rows[i][0] == id:
+			_rows.remove_at(i)
+
+
 ## Show whatever applies, with no grab behind it: a hint about an object sitting
 ## in the room, or about the world. on_grabbed reads the platform and the hand
 ## off the grabber, and here there is nobody holding it — so the platform comes

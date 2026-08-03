@@ -20,6 +20,13 @@ signal has_picked_up(what)
 ## Signal emitted when the pickup drops something
 signal has_dropped
 
+## Signal emitted when a held object moves between the hand and the ray without
+## ever being let go. Neither has_dropped nor has_picked_up fires for a transfer:
+## the hand stays occupied throughout, so listeners that fade controller art or
+## track held state must not see a drop/pickup pair. [param to_ray] is true when
+## the object left the hand for the beam, false when it was caught back.
+signal has_transferred(what, to_ray)
+
 
 # Default pickup collision mask of 3:pickable and 19:handle
 const DEFAULT_GRAB_MASK := 0b0000_0000_0000_0100_0000_0000_0000_0100
@@ -93,6 +100,23 @@ const RAY_GRAB_DISTANCE_MAX := 10.0
 const RAY_GRAB_SPEED := 3.0  # metres per second at full stick deflection
 const RAY_GRAB_ROTATE_SPEED := 2.5  # radians per second at full stick deflection
 
+# Hand <-> ray handoff constants
+#
+# The reel already stops at RAY_GRAB_DISTANCE_MIN, so that stop doubles as the
+# gate: an object parked there is at arm's length and goes no further on its own.
+# Catching it costs a deliberate hold, which is what keeps a casual reel from
+# dumping the object into your hand.
+const HANDOFF_TRIGGER_THRESHOLD := 0.6  # trigger held this hard arms the push-out
+const HANDOFF_PUSH_STICK := 0.7         # ...then the stick past this launches
+const HANDOFF_PUSH_REARM := 0.4         # stick must fall below this to launch again
+const HANDOFF_BLEND_TIME := 0.15        # seconds to ease onto/off the ray axis
+const CATCH_HOLD_TIME := 1.0            # seconds of pull-back needed to catch
+const CATCH_STICK := 0.85               # pull must reach the stick's edge to charge
+const CATCH_RELEASE := 0.70             # ...and fall below this to reset
+const CATCH_CHARGE_HZ := 20.0           # rumble magnitude update rate while charging
+const CATCH_CHARGE_MAG_MIN := 0.10
+const CATCH_CHARGE_MAG_MAX := 0.55
+
 # Ray-pointer grab state
 var _ray_pointer : XRToolsFunctionPointer = null   # sibling FunctionPointer
 var _pointer_highlighted : XRToolsPickable = null  # object highlighted by the laser
@@ -104,6 +128,17 @@ var _ray_grab_block_owner: StringName = &"ray_grab"
 # Accumulated rotation tracked independently of the physics body — prevents
 # _direct_state_changed from corrupting our rotation between physics ticks.
 var _ray_grab_basis : Basis = Basis.IDENTITY
+
+# Hand <-> ray handoff state
+var _reel_charge : float = 0.0             # seconds of pull-back accumulated at the gate
+var _reel_gated : bool = false             # was the object parked at the gate last frame
+var _reel_charge_tick : float = 0.0        # throttles the charge rumble update
+var _push_armed : bool = true              # stick returned to neutral since the last launch
+var _handoff_blend : float = 0.0           # counts down while easing onto the ray axis
+var _handoff_blend_from : Transform3D = Transform3D.IDENTITY
+var _handoff_block_owner : StringName = &"ray_handoff"
+var _handoff_loco_blocked : bool = false
+var _pointer_muted : bool = false          # we disabled the sibling pointer's button dispatch
 
 ## Collision hand (if applicable)
 @onready var _collision_hand : XRToolsCollisionHand
@@ -183,8 +218,11 @@ func _exit_tree():
 		_controller.button_pressed.disconnect(_on_button_pressed)
 		_controller.button_released.disconnect(_on_button_released)
 
+	_reset_charge()
+
 	if _locomotion_manager:
 		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
+		_set_handoff_loco_block(false)
 
 	if _collision_hand:
 		_remove_copied_collisions()
@@ -239,6 +277,16 @@ func _process(delta):
 	# the physics tick between our write and the render.
 	if is_instance_valid(_ray_grab_object):
 		return
+
+	# Trigger + stick forward pushes a held object out onto the ray.
+	if is_instance_valid(picked_up_object):
+		_process_push_to_ray()
+		# The push may have just handed the object to the ray.
+		if is_instance_valid(_ray_grab_object):
+			return
+	else:
+		_set_pointer_muted(false)
+		_set_handoff_loco_block(false)
 
 	# Always update closest proximity object first — it takes priority over the laser.
 	_update_closest_object()
@@ -467,6 +515,11 @@ func drop_object() -> void:
 	if not is_instance_valid(picked_up_object):
 		return
 
+	# The push-out modifier can't outlive the object it applied to.
+	_set_pointer_muted(false)
+	_set_handoff_loco_block(false)
+	_push_armed = true
+
 	# Remove any copied collision objects
 	_remove_copied_collisions()
 
@@ -622,9 +675,11 @@ func _find_ray_pointer() -> void:
 	if _controller.tracker == &"left_hand":
 		_ray_grab_other_controller = XRHelpers.get_right_controller(self)
 		_ray_grab_block_owner = &"ray_grab_left"
+		_handoff_block_owner = &"ray_handoff_left"
 	else:
 		_ray_grab_other_controller = XRHelpers.get_left_controller(self)
 		_ray_grab_block_owner = &"ray_grab_right"
+		_handoff_block_owner = &"ray_handoff_right"
 
 
 # Resolve a raycast collider to the owning XRToolsPickable.
@@ -671,11 +726,21 @@ func _start_ray_grab(target: XRToolsPickable) -> void:
 	if _is_any_other_pickup_ray_grabbing():
 		return
 
-	_ray_grab_distance = global_transform.origin.distance_to(
-			target.global_transform.origin)
+	_start_ray_grab_at(target, global_transform.origin.distance_to(
+			target.global_transform.origin))
+
+
+# Begin holding the target at an explicit distance. Split out of _start_ray_grab
+# so the handoff can seed the distance from where the object already is.
+#
+# [param transferred] suppresses has_picked_up: a handoff from the hand never
+# let the object go, so listeners must not see a fresh pickup.
+func _start_ray_grab_at(target: XRToolsPickable, distance: float,
+		transferred: bool = false) -> void:
 	_ray_grab_distance = clampf(
-			_ray_grab_distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
+			distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
 	_ray_grab_object = target
+	_reel_gated = false
 	_ray_grab_basis = target.global_basis  # seed our independent rotation tracker
 	_set_pointer_highlight(null)  # object transitions from "highlighted" to "held"
 	# Freeze physics and move to the held layer (mirrors XRToolsPickable.pick_up)
@@ -685,7 +750,8 @@ func _start_ray_grab(target: XRToolsPickable) -> void:
 	target.collision_mask = 0
 	if _locomotion_manager:
 		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, true)
-	emit_signal("has_picked_up", target)
+	if not transferred:
+		emit_signal("has_picked_up", target)
 
 
 # Each frame: reposition the ray-held object and adjust distance via thumbstick.
@@ -694,6 +760,7 @@ func _process_ray_grab(delta: float) -> void:
 		if _locomotion_manager:
 			_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
 		_ray_grab_object = null
+		_reset_charge()
 		return
 	# Thumbstick Y — up moves away, down moves toward; 10 % dead-zone
 	if _controller:
@@ -702,6 +769,10 @@ func _process_ray_grab(delta: float) -> void:
 			_ray_grab_distance += stick_y * RAY_GRAB_SPEED * delta
 			_ray_grab_distance = clampf(
 					_ray_grab_distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
+		# The clamp above parks the object at arm's length; charge the catch there.
+		_process_catch_charge(delta, stick_y)
+		if not is_instance_valid(_ray_grab_object):
+			return  # the charge completed and handed the object to the hand
 	# Compute rotation and position together, then write in ONE transform assignment.
 	# Writing global_basis and global_position separately causes the physics server to
 	# receive two distinct body_set_state calls with an intermediate (new_basis, old_pos)
@@ -713,7 +784,8 @@ func _process_ray_grab(delta: float) -> void:
 		if ray_cast:
 			var ray_dir := -ray_cast.global_transform.basis.z
 			var new_pos := ray_cast.global_transform.origin + ray_dir * _ray_grab_distance
-			var new_transform := Transform3D(new_basis, new_pos)
+			var new_transform := _apply_handoff_blend(
+					Transform3D(new_basis, new_pos), delta)
 			_ray_grab_object.global_transform = new_transform
 			# Explicitly sync to the physics server — frozen bodies can silently drop the
 			# node→physics update, causing _direct_state_changed to restore the stale
@@ -777,6 +849,8 @@ func _compute_ray_grab_rotation(delta: float) -> Basis:
 
 # Release the ray-held object and restore its physics.
 func _end_ray_grab() -> void:
+	_reset_charge()
+	_reel_gated = false
 	if not is_instance_valid(_ray_grab_object):
 		_ray_grab_object = null
 		return
@@ -822,3 +896,232 @@ func _is_target_ray_grabbed_elsewhere(target: XRToolsPickable) -> bool:
 			return true
 
 	return false
+
+
+# ----------  LOCAL PATCH (RetroXR): hand <-> ray handoff  ----------
+#
+# Moves a held object between the hand and the end of the laser without ever
+# letting go of it.
+#
+#   hand -> ray   hold the trigger, push the stick forward. The trigger is the
+#                 modifier because the stick alone is locomotion (and, on the
+#                 right hand, teleport-aim at 0.6 — below our launch threshold),
+#                 so the gesture blocks that hand's locomotion while armed.
+#   ray -> hand   pull the stick back. The object reels in and stops at
+#                 RAY_GRAB_DISTANCE_MIN; holding the stick near its edge for
+#                 CATCH_HOLD_TIME there completes the catch, with rising rumble.
+#                 Easing off resets the charge.
+#
+# Objects that claim the trigger or the stick for themselves (emulator pads,
+# handhelds, the light gun, the TV remote, the mouse, books) opt out of the
+# push-out via wants_ray_handoff(). They can still be caught into the hand.
+
+
+## True when [param obj] can be pushed from the hand out onto the ray. Objects
+## answer for themselves; anything that doesn't implement the method is eligible.
+func _handoff_eligible(obj: Node3D) -> bool:
+	if not is_instance_valid(obj):
+		return false
+	if obj.has_method("wants_ray_handoff"):
+		return obj.wants_ray_handoff()
+	return true
+
+
+# Drive the push-out gesture. Called from _process while an object is in hand.
+func _process_push_to_ray() -> void:
+	var eligible := _handoff_eligible(picked_up_object)
+	var trigger_held := eligible \
+			and _controller.get_float("trigger") > HANDOFF_TRIGGER_THRESHOLD
+
+	# The sibling pointer fires UI presses on the same trigger. Mute its button
+	# dispatch while the modifier is live so aiming at a panel doesn't click it.
+	# _process_pointer_highlight and _process_ray_grab read $RayCast directly, so
+	# the ray itself keeps working — the same trick retro_controller uses.
+	_set_pointer_muted(trigger_held)
+	_set_handoff_loco_block(trigger_held)
+
+	if not trigger_held:
+		_push_armed = true
+		return
+
+	var stick_y := _controller.get_vector2("primary").y
+	if stick_y < HANDOFF_PUSH_REARM:
+		_push_armed = true
+	if not _push_armed or stick_y < HANDOFF_PUSH_STICK:
+		return
+
+	_push_armed = false
+	_push_to_ray()
+
+
+# Hand -> ray. Refuses (silently, no denial rumble) if the other hand already
+# owns the single allowed ray grab.
+func _push_to_ray() -> void:
+	var target := picked_up_object as XRToolsPickable
+	if not is_instance_valid(target):
+		return
+	# Check BEFORE releasing: otherwise the object is dropped with nowhere to go.
+	if _is_any_other_pickup_ray_grabbing() or _is_target_ray_grabbed_elsewhere(target):
+		return
+
+	var from := target.global_transform
+	var seed_distance := _ray_origin().distance_to(from.origin)
+
+	if not _release_hand_for_transfer():
+		return
+
+	_start_ray_grab_at(target, maxf(seed_distance, RAY_GRAB_DISTANCE_MIN), true)
+	_begin_handoff_blend(from)
+	Haptics.pulse(_controller, 0.45, 60, &"ray_handoff")
+	has_transferred.emit(target, true)
+
+
+# Ray -> hand. Runs once the charge completes.
+func _catch_from_ray() -> void:
+	var target := _ray_grab_object
+	if not is_instance_valid(target):
+		_reset_charge()
+		return
+
+	var from := target.global_transform
+	_reset_charge()
+	_release_ray_for_transfer()
+
+	# picked_up_ranged routes XRToolsPickable.pick_up through create_lerp, so the
+	# object flies into the palm instead of snapping there.
+	picked_up_ranged = true
+	picked_up_object = target
+	target.pick_up(self)
+
+	if not is_instance_valid(picked_up_object):
+		return
+
+	_copy_collisions()
+	picked_up_object.request_highlight(self, false)
+	_begin_handoff_blend(from)
+	Haptics.pulse(_controller, 0.60, 80, &"ray_handoff")
+	has_transferred.emit(target, false)
+
+
+# The dwell gate. Called from _process_ray_grab after the distance clamp.
+func _process_catch_charge(delta: float, stick_y: float) -> void:
+	var at_gate := _ray_grab_distance <= RAY_GRAB_DISTANCE_MIN + 0.001
+
+	# Arrival tick — without it, an object that stops dead looks like a bug.
+	if at_gate and not _reel_gated:
+		Haptics.pulse(_controller, 0.30, 30, &"ray_handoff")
+	_reel_gated = at_gate
+
+	# Hysteresis: pull past CATCH_STICK to start charging, ease past CATCH_RELEASE
+	# to abandon it. A gentle reel (over the 0.1 deadzone but short of the edge)
+	# moves the object without ever charging.
+	var charging := false
+	if _reel_charge > 0.0:
+		charging = stick_y < -CATCH_RELEASE
+	else:
+		charging = stick_y < -CATCH_STICK
+
+	if not at_gate or not charging:
+		_reset_charge()
+		return
+
+	_reel_charge += delta
+	if _reel_charge >= CATCH_HOLD_TIME:
+		_catch_from_ray()
+		return
+
+	_reel_charge_tick += delta
+	if _reel_charge_tick >= 1.0 / CATCH_CHARGE_HZ:
+		_reel_charge_tick = 0.0
+		var t := clampf(_reel_charge / CATCH_HOLD_TIME, 0.0, 1.0)
+		# Quiet early, swelling at the end, so the catch is anticipated.
+		var mag := lerpf(CATCH_CHARGE_MAG_MIN, CATCH_CHARGE_MAG_MAX, pow(t, 1.5))
+		Haptics.hold(_controller, mag, &"reel_charge")
+
+
+# Abandon any in-progress charge and silence its rumble. Must be reachable from
+# every path that can end the gesture — an indefinite rumble event that is never
+# cleared keeps the controller buzzing forever.
+func _reset_charge() -> void:
+	if _reel_charge > 0.0:
+		Haptics.stop(_controller, &"reel_charge")
+	_reel_charge = 0.0
+	_reel_charge_tick = 0.0
+
+
+# Release from the hand without the throw impulse or the has_dropped signal.
+# Returns false if the object went away mid-release.
+func _release_hand_for_transfer() -> bool:
+	if not is_instance_valid(picked_up_object):
+		return false
+
+	_remove_copied_collisions()
+	picked_up_object.let_go(self, Vector3.ZERO, Vector3.ZERO)
+	picked_up_object = null
+
+	if _collision_hand:
+		_collision_hand.set_held_weight(0.0)
+
+	# Hand-carry motion must not leak into a later throw off the ray.
+	_velocity_averager.clear()
+	return true
+
+
+# Release from the ray without the throw impulse or the has_dropped signal. The
+# locomotion block stays put — the caller is about to hold the object anyway.
+func _release_ray_for_transfer() -> void:
+	if not is_instance_valid(_ray_grab_object):
+		_ray_grab_object = null
+		return
+	_ray_grab_object.freeze = _ray_grab_object.restore_freeze
+	_ray_grab_object.collision_mask = _ray_grab_object.original_collision_mask
+	_ray_grab_object.collision_layer = _ray_grab_object.original_collision_layer
+	_ray_grab_object = null
+	_reel_gated = false
+	if _locomotion_manager:
+		_locomotion_manager.set_block(_ray_grab_block_owner, LocomotionManager.CHANNEL_ALL, false)
+	_velocity_averager.clear()
+
+
+# A transferred object is off the ray axis at the moment of handoff (the pointer
+# RayCast sits a few cm from the palm). Ease onto the computed pose instead of
+# snapping to it.
+func _begin_handoff_blend(from: Transform3D) -> void:
+	_handoff_blend = HANDOFF_BLEND_TIME
+	_handoff_blend_from = from
+
+
+func _apply_handoff_blend(target_xform: Transform3D, delta: float) -> Transform3D:
+	if _handoff_blend <= 0.0:
+		return target_xform
+	_handoff_blend = maxf(_handoff_blend - delta, 0.0)
+	var t := 1.0 - (_handoff_blend / HANDOFF_BLEND_TIME)
+	return _handoff_blend_from.interpolate_with(target_xform, smoothstep(0.0, 1.0, t))
+
+
+# Origin of the aiming ray, falling back to the pickup itself when the sibling
+# pointer hasn't resolved yet.
+func _ray_origin() -> Vector3:
+	if _ray_pointer:
+		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
+		if ray_cast:
+			return ray_cast.global_transform.origin
+	return global_transform.origin
+
+
+# Suppress the sibling pointer's button dispatch without disabling its RayCast.
+func _set_pointer_muted(muted: bool) -> void:
+	if muted == _pointer_muted or not _ray_pointer:
+		return
+	_pointer_muted = muted
+	_ray_pointer.enabled = not muted
+
+
+func _set_handoff_loco_block(blocked: bool) -> void:
+	if blocked == _handoff_loco_blocked or not _locomotion_manager:
+		return
+	_handoff_loco_blocked = blocked
+	var channel := LocomotionManager.CHANNEL_LEFT \
+			if _controller.tracker == &"left_hand" \
+			else LocomotionManager.CHANNEL_RIGHT
+	_locomotion_manager.set_block(_handoff_block_owner, channel, blocked)

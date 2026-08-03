@@ -114,6 +114,13 @@ var _font: Font = null
 @onready var _pointer_area: StaticBody3D = $PointerArea
 
 
+## The thumbstick drives the on-screen grid while the remote is aimed at a
+## device, so the push-out gesture would fight it. Catching one back off the
+## laser still works. Queried by function_pickup._handoff_eligible.
+func wants_ray_handoff() -> bool:
+	return false
+
+
 func _ready() -> void:
 	super._ready()
 	press_to_hold = false

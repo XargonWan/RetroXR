@@ -115,6 +115,13 @@ var _trigger_pivot: Node3D = null
 var _trigger_rest := Transform3D()
 
 
+## The trigger fires the gun and the thumbstick is the lightgun d-pad, so the
+## push-out gesture has nothing to bind to. Catching one back off the laser
+## still works. Queried by function_pickup._handoff_eligible.
+func wants_ray_handoff() -> bool:
+	return false
+
+
 func _ready() -> void:
 	super._ready()
 	press_to_hold = false

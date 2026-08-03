@@ -243,6 +243,13 @@ func net_set_download_status(text: String) -> void:
 	_net_status_label.visible = true
 
 
+## The trigger drags a page (see page_grab.gd), so it can't double as the
+## push-out modifier. Catching a book back off the laser still works. Queried by
+## function_pickup._handoff_eligible.
+func wants_ray_handoff() -> bool:
+	return false
+
+
 func _ready() -> void:
 	super._ready()
 	_export_height = book_height   # pristine value: the CBZ sizing base
