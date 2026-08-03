@@ -32,6 +32,11 @@ var hint_uses:        Dictionary = {}
 ## over speakers the HRTF is working against the room, and a surround rig gets no
 ## centre channel out of it, because the SDK renders two channels by design.
 var spatial_audio_sdk: bool = true
+## How the player gets around. Both verbs are on the LEFT stick and exactly one
+## is live at a time — pushing the stick forward cannot mean "walk" and "aim a
+## teleport" at once. False (smooth walking) is the default because it is the
+## one that needs no explaining; teleport is the comfort option.
+var locomotion_teleport: bool = false
 
 
 func _ready() -> void:
@@ -75,6 +80,7 @@ func _load_prefs() -> void:
 	show_hints       = _prefs_bool(data, "show_hints",       show_hints)
 	hint_uses        = _prefs_dict(data, "hint_uses",        hint_uses)
 	spatial_audio_sdk = _prefs_bool(data, "spatial_audio_sdk", spatial_audio_sdk)
+	locomotion_teleport = _prefs_bool(data, "locomotion_teleport", locomotion_teleport)
 
 
 func save_prefs() -> void:
@@ -92,6 +98,7 @@ func save_prefs() -> void:
 		"show_hints":       show_hints,
 		"hint_uses":        hint_uses,
 		"spatial_audio_sdk": spatial_audio_sdk,
+		"locomotion_teleport": locomotion_teleport,
 	}, "\t"))
 	file.close()
 

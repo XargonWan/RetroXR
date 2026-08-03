@@ -21,8 +21,31 @@ var _right_blocks := {}
 var _desktop_blocks := {}
 
 
+## True when the left stick aims a teleport instead of walking. Mirrors
+## AppPrefs.locomotion_teleport; set through set_teleport_mode so the change
+## takes effect immediately rather than at the next scene load.
+var _teleport_mode := false
+
+
 func _ready() -> void:
 	call_deferred("_deferred_setup")
+
+
+## Choose which of the two left-stick locomotion verbs is live. Exactly one is
+## ever enabled: with both on, pushing the stick forward would walk AND start
+## aiming a teleport.
+func set_teleport_mode(on: bool) -> void:
+	if on == _teleport_mode:
+		return
+	_teleport_mode = on
+	# No need to cancel an aim in progress: FunctionTeleport._physics_process
+	# clears is_teleporting and hides the arc and target on its first disabled
+	# tick, then stops itself.
+	_apply()
+
+
+func is_teleport_mode() -> bool:
+	return _teleport_mode
 
 
 func _deferred_setup() -> void:
@@ -38,6 +61,9 @@ func _deferred_setup() -> void:
 		var node := _require(provider_name)
 		if node != null:
 			_desktop_movers.append(node)
+	var prefs := get_node_or_null("/root/AppPrefs")
+	if prefs != null:
+		_teleport_mode = prefs.locomotion_teleport
 	_apply()
 
 
@@ -96,10 +122,13 @@ func _set_channel_block(blocks: Dictionary, owner: StringName, active: bool) -> 
 
 
 func _apply() -> void:
-	_set_node_enabled(_move_direct, _left_blocks.is_empty())
-	var right_enabled := _right_blocks.is_empty()
-	_set_node_enabled(_move_turn, right_enabled)
-	_set_node_enabled(_func_teleport, right_enabled)
+	# Walking and teleport are both LEFT-stick verbs and mutually exclusive, so
+	# the left channel gates them together and the mode picks which one it lets
+	# through. Turning stays on the right stick either way.
+	var left_enabled := _left_blocks.is_empty()
+	_set_node_enabled(_move_direct, left_enabled and not _teleport_mode)
+	_set_node_enabled(_func_teleport, left_enabled and _teleport_mode)
+	_set_node_enabled(_move_turn, _right_blocks.is_empty())
 	var desktop_enabled := _desktop_blocks.is_empty()
 	for mover: Node in _desktop_movers:
 		_set_node_enabled(mover, desktop_enabled)

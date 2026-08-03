@@ -16,6 +16,8 @@ signal world_scale_changed(scale: float)
 signal auto_save_changed(enabled: bool)
 signal show_fps_changed(enabled: bool)
 signal aim_crosshair_changed(enabled: bool)
+## True to aim a teleport with the left stick, false to slide with it.
+signal locomotion_mode_changed(teleport: bool)
 signal controller_hands_changed(enabled: bool)
 ## The system filter was toggled — the CORES download list is built from it.
 signal system_filter_changed
@@ -318,6 +320,22 @@ func _build() -> void:
 		))
 
 		vbox.add_child(HSeparator.new())
+
+	# Movement style. Both verbs are on the left stick and only one can be live,
+	# so this is a choice, not a switch — hence a dropdown rather than a toggle.
+	# VRDropdown, never OptionButton: every Viewport2Din3D click fires twice.
+	var move_drop := VRDropdown.create("Movement",
+		[["Slide", "slide"], ["Teleport", "teleport"]],
+		"teleport" if AppPrefs.locomotion_teleport else "slide",
+		2, Vector2(220, 52), 18)
+	move_drop.item_selected.connect(func(id: Variant) -> void:
+		AppPrefs.locomotion_teleport = str(id) == "teleport"
+		AppPrefs.save_prefs()
+		locomotion_mode_changed.emit(AppPrefs.locomotion_teleport)
+	)
+	vbox.add_child(move_drop)
+
+	vbox.add_child(HSeparator.new())
 
 	# Ray Gun crosshair option
 	var xhair_row := HBoxContainer.new()

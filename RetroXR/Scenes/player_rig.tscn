@@ -85,6 +85,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.02, 0.05, -0.1)
 max_speed = 1.4
 strafe = true
 
+; Both ways of getting around live on the LEFT stick, and LocomotionManager
+; keeps exactly one of them enabled (AppPrefs.locomotion_teleport chooses).
+; Teleport used to sit on the right controller, where pushing the stick forward
+; to aim fought snap-turn and read as an accidental jump.
+[node name="FunctionTeleport" parent="Staging/XROrigin3D/LeftController" instance=ExtResource("7_teleport")]
+script = ExtResource("8_stickteleport")
+stick_teleport_action = "primary"
+stick_teleport_threshold = 0.6
+teleport_button_action = ""
+
 [node name="PokeTip" type="Node3D" parent="Staging/XROrigin3D/LeftController"]
 script = ExtResource("1_poketip")
 
@@ -105,12 +115,6 @@ turn_mode = 1
 
 [node name="PokeTip" type="Node3D" parent="Staging/XROrigin3D/RightController"]
 script = ExtResource("1_poketip")
-
-[node name="FunctionTeleport" parent="Staging/XROrigin3D/RightController" instance=ExtResource("7_teleport")]
-script = ExtResource("8_stickteleport")
-stick_teleport_action = "primary"
-stick_teleport_threshold = 0.6
-teleport_button_action = ""
 
 [node name="SpawnMenuController" type="Node3D" parent="."]
 script = ExtResource("9_menuctl")

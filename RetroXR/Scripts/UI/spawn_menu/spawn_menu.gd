@@ -47,6 +47,8 @@ signal auto_save_changed(enabled: bool)
 signal show_fps_changed(enabled: bool)
 ## Emitted when the user toggles the ray gun aim crosshair.
 signal aim_crosshair_changed(enabled: bool)
+## True to aim a teleport with the left stick, false to slide with it.
+signal locomotion_mode_changed(teleport: bool)
 ## Emitted when the user toggles the wrap-around hands drawn on held controllers.
 signal controller_hands_changed(enabled: bool)
 ## Emitted when the user changes the snap turn angle.
@@ -414,6 +416,7 @@ func _build_ui() -> void:
 			[_options_view.auto_save_changed, auto_save_changed],
 			[_options_view.show_fps_changed, show_fps_changed],
 			[_options_view.aim_crosshair_changed, aim_crosshair_changed],
+			[_options_view.locomotion_mode_changed, locomotion_mode_changed],
 			[_options_view.controller_hands_changed, controller_hands_changed]]:
 		var out: Signal = relay[1]
 		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))

@@ -205,6 +205,7 @@ func _connect_menu_signals() -> void:
 	menu.auto_save_changed.connect(_on_auto_save_changed)
 	menu.show_fps_changed.connect(_on_show_fps_changed)
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
+	menu.locomotion_mode_changed.connect(_on_locomotion_mode_changed)
 	menu.controller_hands_changed.connect(_on_controller_hands_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
@@ -1082,6 +1083,13 @@ func _apply_world_scale(scale: float) -> void:
 func _in_passthrough() -> bool:
 	var sm := get_node_or_null("/root/SceneManager")
 	return sm != null and sm.current_scene_id == "passthrough"
+
+
+## Slide vs teleport. LocomotionManager owns the exclusivity — both verbs sit on
+## the left stick, so enabling one has to disable the other.
+func _on_locomotion_mode_changed(teleport: bool) -> void:
+	if _locomotion_manager:
+		_locomotion_manager.set_teleport_mode(teleport)
 
 
 func _on_aim_crosshair_changed(enabled: bool) -> void:
