@@ -28,6 +28,10 @@ const ROW_SEPARATION := 6
 ## actually decides the row height rather than the stylebox.
 const PAD_X := 14
 const PAD_Y := 4
+## Icon box beside the label, and the gap to it. expand_icon squares the icon to
+## the button's content height, so the width floor has to allow for both.
+const ICON_GAP := 8
+const ICON_W := 40
 
 var _tabs: TabContainer = null
 var _buttons: Array[Button] = []
@@ -61,6 +65,13 @@ func _build(tabs: TabContainer) -> void:
 		_titles.append(title)
 		var btn := Button.new()
 		btn.text = title
+		# Mirrors the TabContainer's own icon, so a caller sets it once with
+		# set_tab_icon() and both the hidden bar and this strip agree.
+		var icon := tabs.get_tab_icon(i)
+		if icon != null:
+			btn.icon = icon
+			btn.expand_icon = true
+			btn.add_theme_constant_override("h_separation", ICON_GAP)
 		btn.add_theme_color_override("font_color", COLOR_TEXT)
 		btn.add_theme_font_size_override("font_size", FONT_SIZE)
 		# A width floor per button, so the flow wraps to a second row rather than
@@ -95,9 +106,12 @@ func _apply_min_width() -> void:
 	if font == null:
 		font = ThemeDB.fallback_font
 	var widest := 0.0
-	for t: String in _titles:
-		widest = maxf(widest, font.get_string_size(
-			t, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
+	for i in _titles.size():
+		var tw := font.get_string_size(
+			_titles[i], HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
+		if i < _buttons.size() and _buttons[i].icon != null:
+			tw += ICON_W + ICON_GAP
+		widest = maxf(widest, tw)
 	var w := widest + PAD_X * 2.0 + 6.0
 	for b: Button in _buttons:
 		b.custom_minimum_size = Vector2(w, HEIGHT)

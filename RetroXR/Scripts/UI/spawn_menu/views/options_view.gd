@@ -6,7 +6,11 @@
 ## cannot do itself it asks for by signal; the comfort rows all report upward,
 ## because applying them means touching the XR rig.
 class_name SpawnMenuOptionsView
-extends ScrollContainer
+extends VBoxContainer
+
+## The active sub-tab's scroll changed — the menu drives thumbstick scrolling
+## from this, the same way the CORES view reports its own sub-tabs.
+signal scroll_changed(scroll: ScrollContainer)
 
 signal turn_style_changed(value: String)
 signal snap_angle_changed(degrees: float)
@@ -44,6 +48,9 @@ var _menu: Node = null
 var _server_address_label: Label = null
 var _romm_status_label: Label = null
 var _romm_sync_queue: Array[String] = []
+
+var _tabs: TabContainer = null
+var _pages: Array[ScrollContainer] = []
 
 # Kept so a pairing (typed or scanned) can show its result in the fields the
 # player is looking at, rather than waiting for the view to be rebuilt.
@@ -96,11 +103,43 @@ func notify(key: String, icon: String, msg: String,
 
 func _build() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
+	_tabs = TabContainer.new()
+	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	_build_general_options(_page("General"))
+	_build_system_filter_options(_page("Systems"))
+	if OS.get_name() == "Android":
+		_build_file_server_options(_page("File Server"))
+	_build_romm_options(_page("RomM", MenuIcons.romm_mark()))
+	_build_scraper_options(_page("Scraper"))
+
+	_tabs.tab_changed.connect(func(_i: int) -> void: scroll_changed.emit(active_scroll()))
+	add_child(TabStrip.wrap(_tabs))
+
+
+## A scrolling sub-tab. The TabContainer titles each tab after its child, so the
+## node name IS the tab label; the icon has to be set separately.
+func _page(title: String, icon: Texture2D = null) -> VBoxContainer:
+	var page := MenuStyle.vscroll()
+	page.name = title
 	var vbox := MenuStyle.vbox(14)
-	add_child(vbox)
+	page.add_child(vbox)
+	_tabs.add_child(page)
+	_pages.append(page)
+	if icon != null:
+		_tabs.set_tab_icon(_tabs.get_tab_count() - 1, icon)
+	return vbox
 
+
+## The scroll the thumbstick should drive, i.e. whichever sub-tab is showing.
+func active_scroll() -> ScrollContainer:
+	if _tabs == null or _pages.is_empty():
+		return null
+	return _pages[clampi(_tabs.current_tab, 0, _pages.size() - 1)]
+
+
+func _build_general_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(MenuStyle.spacer(10))
 
 	if MenuStyle.is_vr_mode():
@@ -400,10 +439,12 @@ func _build() -> void:
 		controller_hands_changed.emit(on)
 	))
 
-	vbox.add_child(HSeparator.new())
 
-	# System Filter option — off shows the media players, test core and
-	# single-game cores that SystemFilter keeps out of the Download grid.
+## System Filter option — off shows the media players, test core and
+## single-game cores that SystemFilter keeps out of the Download grid.
+func _build_system_filter_options(vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.spacer(10))
+
 	var sf_row := HBoxContainer.new()
 	sf_row.add_theme_constant_override("separation", 10)
 	sf_row.custom_minimum_size = Vector2(0, 68)
@@ -425,50 +466,46 @@ func _build() -> void:
 		system_filter_changed.emit()
 	))
 
-	vbox.add_child(HSeparator.new())
 
-	# ── File Server (Android / Quest only) ───────────────────────────────────
-	if OS.get_name() == "Android":
-		vbox.add_child(MenuStyle.label("FILE SERVER", 22, MenuStyle.COLOR_TITLE))
+## Android / Quest only — the tab is not built on desktop at all.
+func _build_file_server_options(vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.spacer(10))
 
-		var fs_row := HBoxContainer.new()
-		fs_row.add_theme_constant_override("separation", 10)
-		fs_row.custom_minimum_size = Vector2(0, 68)
-		vbox.add_child(fs_row)
+	var fs_row := HBoxContainer.new()
+	fs_row.add_theme_constant_override("separation", 10)
+	fs_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(fs_row)
 
-		var fs_lbl := Label.new()
-		fs_lbl.text = "Web File Manager"
-		fs_lbl.add_theme_font_size_override("font_size", 20)
-		fs_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
-		fs_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		fs_row.add_child(fs_lbl)
+	var fs_lbl := Label.new()
+	fs_lbl.text = "Web File Manager"
+	fs_lbl.add_theme_font_size_override("font_size", 20)
+	fs_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	fs_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fs_row.add_child(fs_lbl)
 
-		var fs_toggle := VRToggle.create(scraper_config.web_server_enabled, func(on: bool) -> void:
-			if on:
-				web_server.start()
-			else:
-				web_server.stop()
-			scraper_config.web_server_enabled = on
-			scraper_config.save_config()
-			_server_address_label.visible = on
-		)
-		fs_row.add_child(fs_toggle)
+	var fs_toggle := VRToggle.create(scraper_config.web_server_enabled, func(on: bool) -> void:
+		if on:
+			web_server.start()
+		else:
+			web_server.stop()
+		scraper_config.web_server_enabled = on
+		scraper_config.save_config()
+		_server_address_label.visible = on
+	)
+	fs_row.add_child(fs_toggle)
 
-		_server_address_label = Label.new()
-		_server_address_label.add_theme_font_size_override("font_size", 16)
-		_server_address_label.add_theme_color_override("font_color", MenuStyle.COLOR_DESC)
-		_server_address_label.text = "http://%s:8080   PIN: %s" % \
-			[WebFileServer.local_ip(), scraper_config.ensure_web_server_pin()]
-		_server_address_label.visible = scraper_config.web_server_enabled
-		vbox.add_child(_server_address_label)
+	_server_address_label = Label.new()
+	_server_address_label.add_theme_font_size_override("font_size", 16)
+	_server_address_label.add_theme_color_override("font_color", MenuStyle.COLOR_DESC)
+	_server_address_label.text = "http://%s:8080   PIN: %s" % \
+		[WebFileServer.local_ip(), scraper_config.ensure_web_server_pin()]
+	_server_address_label.visible = scraper_config.web_server_enabled
+	vbox.add_child(_server_address_label)
 
-		vbox.add_child(HSeparator.new())
 
-	# ── RomM server ──────────────────────────────────────────────────────────
-	_build_romm_options(vbox)
-
-	# ── Scraper settings ─────────────────────────────────────────────────────
-	vbox.add_child(MenuStyle.label("SCREENSCRAPER.FR", 22, MenuStyle.COLOR_TITLE))
+## ScreenScraper.fr credentials and scrape preferences.
+func _build_scraper_options(vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.spacer(10))
 
 	# User credentials
 	_add_options_text_field(vbox, "Username (ssid)", scraper_config.ssid, func(text: String):
@@ -504,14 +541,11 @@ func _build() -> void:
 			scraper_config.save_config()
 	)
 
-	vbox.add_child(HSeparator.new())
 
-
-
-
-## ROMM SERVER section of the OPTIONS view.
+## RomM server connection and sync settings. The sub-tab carries the name and
+## the logo, so there is no in-body header here.
 func _build_romm_options(vbox: VBoxContainer) -> void:
-	vbox.add_child(MenuStyle.label("ROMM SERVER", 22, MenuStyle.COLOR_TITLE))
+	vbox.add_child(MenuStyle.spacer(10))
 
 	var enable_row := HBoxContainer.new()
 	enable_row.custom_minimum_size = Vector2(0, 68)

@@ -422,6 +422,9 @@ func _build_ui() -> void:
 		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))
 	_options_view.system_filter_changed.connect(_cores_view.refresh_download_systems)
 	_options_view.romm_platforms_requested.connect(_spawn_view.romm_fetch_platforms)
+	_options_view.scroll_changed.connect(func(s: ScrollContainer) -> void:
+		if _options_view.visible:
+			_active_scroll = s)
 	content.add_child(_options_view)
 
 	_graphics_view = SpawnMenuGraphicsView.create(_is_vr_mode())
@@ -500,7 +503,10 @@ func _show_controls_view() -> void:
 
 
 func _show_options_view() -> void:
-	_show_view(_options_view, _options_view, _nav_options_btn)
+	# The view is a tab host now, not a scroll — the live scroll is whichever
+	# sub-tab is showing, exactly as the CORES view works.
+	_show_view(_options_view, null, _nav_options_btn)
+	_active_scroll = _options_view.active_scroll()
 
 
 func _show_graphics_view() -> void:
