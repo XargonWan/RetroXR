@@ -52,7 +52,7 @@ distro before the Linux path will work.
 Build from the **workspace root** (not `-C Temp`):
 ```bash
 # Windows (PowerShell)
-$scons = "C:\Users\user\AppData\Roaming\Python\Python314\Scripts\scons.exe"
+$scons = "$env:APPDATA\Python\Python314\Scripts\scons.exe"   # pip install --user scons
 & $scons platform=windows arch=x86_64 target=template_debug dev_build=yes
 & $scons platform=windows arch=x86_64 target=template_release
 
@@ -153,12 +153,12 @@ Godot binary (Windows) — use **Godot 4.7** (the project targets 4.7):
 ```
 C:\Program Files\Godot\Godot_v4.7-stable_win64\Godot_v4.7-stable_win64_console.exe
 ```
-Use the `_console.exe` variant so stdout/stderr is captured. `$proj` below is
-`C:\Users\user\SK.Libretro.Godot\RetroXR`.
+Use the `_console.exe` variant so stdout/stderr is captured. `$proj` below is the
+`RetroXR/` folder inside your checkout.
 
-Godot binary (Linux): `/home/user/Godot/Godot_v4.7-stable_linux.x86_64`
+Godot binary (Linux): `~/Godot/Godot_v4.7-stable_linux.x86_64`
 (the project targets Godot 4.7 — see `project.godot config/features`; `Godot_v4.6.3` also
-sits in that dir). `$proj` on Linux is `/home/user/retroxr/RetroXR`. Note Godot
+sits in that dir). `$proj` on Linux is `<checkout>/RetroXR`. Note Godot
 4.7 promoted "Not all code paths return a value" to a hard parse error for `Variant`-returning
 virtual overrides (bit two `_property_get_revert` overrides in godot-xr-tools — fixed with a
 trailing `return null`).

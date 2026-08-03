@@ -8,7 +8,10 @@ extends Node
 
 const MAIN := preload("res://Scenes/MainScene.tscn")
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
-const ROM := "C:/Users/user/retroxr/roms/nds/probe.nds"
+## Point this at any NDS cart with a "touch to start" title screen.
+static var ROM := (OS.get_environment("HOME") if OS.get_name() == "Linux" \
+		else OS.get_environment("USERPROFILE").replace("\\", "/")) \
+		+ "/retroxr/roms/nds/probe.nds"
 const OUT := "user://vr_poke_probe"
 
 var _fail := false

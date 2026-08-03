@@ -2,7 +2,7 @@
 
 ## ROM Scraper
 
-This shall scraper the ROM data by reading a checksum of the ROM. With this checksum it shall talk to screenscraper.fr which will return all the data back in a json. Examine how skyscraper does it with screen scraper fr and port that to godot. Examine how it is read within this repo here https://github.com/XenuIsWatching/skyscraper/blob/emulationstation2/src/screenscraper.cpp or locally in here `C:\Users\user\skyscraper`.
+This shall scraper the ROM data by reading a checksum of the ROM. With this checksum it shall talk to screenscraper.fr which will return all the data back in a json. Examine how skyscraper does it with screen scraper fr and port that to godot. Examine how it is read within this repo here https://github.com/XenuIsWatching/skyscraper/blob/emulationstation2/src/screenscraper.cpp or in a local checkout of it.
 An example of what the json can return is found in the file `banjo-kazooie-screenscraper-fr.json`.
 
 The only relevant data [metadata] we are interested are these (some may be in french from the API documents (why they don’t write in English… idk … french people >:( ):

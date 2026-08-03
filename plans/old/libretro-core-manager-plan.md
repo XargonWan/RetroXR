@@ -143,7 +143,7 @@ Wire the Manager's defaults into the Spawn tab and existing system scenes.
    - In `_on_spawn_requested(type)`: if type matches a known systemid, instantiate `SYSTEM_SCENE`, set `core_name` from `CoreDefaults.get_default_core(systemid)`, set `core_directory` to the configured core path, set `system_label` from `CoreInfoDatabase`
 
 3. Update existing `system_*.tscn` files:
-   - Change `core_directory` exports from `"C:/Users/user/libretro"` to the new default path (`OS.get_environment("USERPROFILE") + "/retroxr/libretro"`)
+   - Change `core_directory` exports from `"C:/Users/<you>/libretro"` to the new default path (`OS.get_environment("USERPROFILE") + "/retroxr/libretro"`)
    - Keep these scenes for backward compatibility / pre-configured setups
 
 4. Handle **live default changes**: already-spawned `RetroSystem` nodes should reference the live default rather than a snapshot. In `RetroXR/Scripts/Objects/systems/system.gd`, in `power_on()`, if `core_name` is empty, look up the default from `CoreDefaults` for the system's `systemid`. This means adding a `systemid` export to `RetroSystem` (or deriving it from the spawn type).

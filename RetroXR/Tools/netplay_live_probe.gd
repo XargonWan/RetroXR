@@ -15,9 +15,14 @@ extends Node3D
 
 const END_AT := 1800
 
-var root_dir := "C:/Users/user/retroxr/libretro"
+## Defaults assume the standard data root; override both with --spike-root=
+## and --spike-rom= (see _parse_args below).
+static var _home := OS.get_environment("HOME") if OS.get_name() == "Linux" \
+		else OS.get_environment("USERPROFILE").replace("\\", "/")
+
+var root_dir := _home + "/retroxr/libretro"
 var core := "fceumm"
-var rom := "C:/Users/user/retroxr/roms/nes/probe.nes"
+var rom := _home + "/retroxr/roms/nes/probe.nes"
 
 var _sys: LiveSys = null
 var _is_host := false

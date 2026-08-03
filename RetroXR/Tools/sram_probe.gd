@@ -13,9 +13,13 @@
 ##   res://Tools/sram_probe.tscn -- "--sram-rom=C:/path/to/battery-game.rom"
 extends Node3D
 
-var root_dir := "C:/Users/user/retroxr/libretro"
+## Needs a battery-backed cart to be meaningful; override with --sram-rom=.
+static var _home := OS.get_environment("HOME") if OS.get_name() == "Linux" \
+		else OS.get_environment("USERPROFILE").replace("\\", "/")
+
+var root_dir := _home + "/retroxr/libretro"
 var core := "fceumm"
-var rom := "C:/Users/user/retroxr/roms/nes/battery-game.nes"
+var rom := _home + "/retroxr/roms/nes/battery-game.nes"
 
 var _lib: Node = null
 var _mesh: MeshInstance3D = null

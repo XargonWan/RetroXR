@@ -17,9 +17,14 @@
 ## same timeline — diff the two runs to prove rollback correctness.
 extends Node3D
 
-var root_dir := "C:/Users/user/retroxr/libretro"
+## Defaults assume the standard data root; override both with --spike-root=
+## and --spike-rom=.
+static var _home := OS.get_environment("HOME") if OS.get_name() == "Linux" \
+		else OS.get_environment("USERPROFILE").replace("\\", "/")
+
+var root_dir := _home + "/retroxr/libretro"
 var core := "fceumm"
-var rom := "C:/Users/user/retroxr/roms/nes/probe.nes"
+var rom := _home + "/retroxr/roms/nes/probe.nes"
 var rollback := false
 const ROLLBACK_LAG := 3      # confirmations trail execution by this many frames
 const ROLLBACK_MAX_AHEAD := 8
