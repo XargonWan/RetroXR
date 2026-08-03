@@ -47,7 +47,18 @@ script = ExtResource("21_desktoppickup")
 [node name="FunctionDesktopPointer" parent="Staging/XROrigin3D/XRCamera3D" instance=ExtResource("20_deskpointer")]
 active_button_action = "trigger_left"
 
+; xr-tools ships mask 1023 (layers 1-10), which includes 3:Pickable — so the
+; player collided with every loose object in the room. Standing on something
+; small like an A/V plug wedged it between the capsule and the floor, and the
+; depenetration that followed fired the player into the ceiling.
+;
+; 1019 is the same mask minus bit 2, so the player still collides with 1:World —
+; the floor, the walls and the room's static furniture — and simply walks
+; through anything droppable. Pickables mask 1, 3, 17 and 18, none of which is
+; the player body's own layer (20), so clearing it here is enough to separate
+; them; Godot would otherwise still contact them from their side.
 [node name="PlayerBody" parent="Staging/XROrigin3D" instance=ExtResource("4_playerbody")]
+collision_mask = 1019
 player_calibrate_height = false
 
 [node name="MovementDesktopDirect" parent="Staging/XROrigin3D" instance=ExtResource("16_desktopdirect")]
