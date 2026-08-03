@@ -1,8 +1,6 @@
 package com.xenu.retroxr.qr
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -38,7 +36,6 @@ class QrScannerPlugin(godot: Godot) : GodotPlugin(godot) {
 
     private companion object {
         const val TAG = "RetroXRQr"
-        const val HEADSET_CAMERA = "horizonos.permission.HEADSET_CAMERA"
 
         const val CAPTURE_WIDTH = 1280
         const val CAPTURE_HEIGHT = 960
@@ -69,7 +66,6 @@ class QrScannerPlugin(godot: Godot) : GodotPlugin(godot) {
 
     @Volatile
     private var running = false
-    private var available: Boolean? = null
     private var lastDecodeMs = 0L
     private var lastPreviewMs = 0L
 
@@ -91,56 +87,68 @@ class QrScannerPlugin(godot: Godot) : GodotPlugin(godot) {
         get() = activity?.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
 
     /**
-     * Horizon OS does not expose the passthrough cameras until HEADSET_CAMERA is
-     * granted — before that, `cameraIdList` holds one camera with no vendor tags
-     * at all. Since the UI that asks for the permission is itself gated on this
-     * answer, enumerating first would hide the button forever. So the model
-     * answers until the permission exists, and enumeration takes over after.
+     * Answers from the model alone — deliberately no Camera2 call.
+     *
+     * Two reasons. This runs while the menu is being built on Godot's main
+     * thread, and `getCameraCharacteristics` is a blocking Binder call into the
+     * camera service; a slow or busy service would stall startup. And Horizon OS
+     * does not expose the passthrough cameras until HEADSET_CAMERA is granted
+     * (ungranted, `cameraIdList` holds one camera with no vendor tags at all),
+     * so enumerating here would hide the very button that requests it.
+     *
+     * Whether a camera can actually be opened is settled in startScan(), off the
+     * main thread, and reported through `qr_error`.
      */
     @UsedByGodot
     fun isAvailable(): Boolean {
-        available?.let { return it }
-
-        if (!hasCameraPermission()) {
-            val supported = isPassthroughCameraModel()
-            Log.i(TAG, "isAvailable=$supported (no permission yet, by model ${Build.MODEL})")
-            return supported   // deliberately not cached: the grant changes it
-        }
-
-        val id = findPassthroughCameraId()
-        if (id == null) logCameraKeys()
-        Log.i(TAG, "isAvailable=${id != null} (enumerated, camera=$id)")
-        available = id != null
-        return id != null
-    }
-
-    private fun hasCameraPermission(): Boolean {
-        val act = activity ?: return false
-        return act.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
-            act.checkSelfPermission(HEADSET_CAMERA) == PackageManager.PERMISSION_GRANTED
+        val supported = isPassthroughCameraModel()
+        Log.i(TAG, "isAvailable=$supported (model ${Build.MODEL})")
+        return supported
     }
 
     /** Quest 3 and 3S only; Quest 2 and Pro have no passthrough camera access. */
     private fun isPassthroughCameraModel(): Boolean =
         (Build.MODEL ?: "").startsWith("Quest 3", ignoreCase = true)
 
+    /**
+     * Returns true meaning "starting", not "started" — enumeration and the open
+     * both happen on the camera thread, because they are blocking Binder calls
+     * and this is invoked from Godot's main thread. Failures arrive on
+     * `qr_error`.
+     */
     @UsedByGodot
     fun startScan(): Boolean {
         if (running) return true
-
-        val manager = cameraManager
-        if (manager == null) {
+        if (cameraManager == null) {
             fail("No camera service")
             return false
         }
 
-        val id = findPassthroughCameraId()
-        if (id == null) {
-            fail("No passthrough camera on this device")
+        startThread()
+        running = true
+        lastDecodeMs = 0L
+        lastPreviewMs = 0L
+
+        val posted = handler?.post { openOnCameraThread() } ?: false
+        if (!posted) {
+            fail("Could not start the camera thread")
+            stopScan()
             return false
         }
+        return true
+    }
 
-        startThread()
+    private fun openOnCameraThread() {
+        if (!running) return
+        val manager = cameraManager ?: return
+
+        val id = findPassthroughCameraId()
+        if (id == null) {
+            logCameraKeys()
+            fail("No passthrough camera available")
+            stopScan()
+            return
+        }
 
         reader = ImageReader.newInstance(
             CAPTURE_WIDTH, CAPTURE_HEIGHT, ImageFormat.YUV_420_888, 3
@@ -148,23 +156,15 @@ class QrScannerPlugin(godot: Godot) : GodotPlugin(godot) {
             setOnImageAvailableListener({ r -> onImage(r) }, handler)
         }
 
-        running = true
-        lastDecodeMs = 0L
-        lastPreviewMs = 0L
-
         try {
             manager.openCamera(id, deviceCallback, handler)
         } catch (e: SecurityException) {
             fail("Camera permission was not granted")
             stopScan()
-            return false
         } catch (e: Exception) {
             fail("Could not open the camera: ${e.message}")
             stopScan()
-            return false
         }
-
-        return true
     }
 
     /** Safe from any thread and at any point in the open sequence. */
