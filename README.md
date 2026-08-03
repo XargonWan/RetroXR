@@ -24,6 +24,8 @@ and even scan the QR code to link it from your Quest with the external camera!
 This has the Meta XR Audio SDK integrated as well, so for any sound you hear you can
 always tell where it's coming from thanks to the HRTF processing.
 
+There is netplay as well with a roll-back netcode, but it is very untested!
+
 ## Libretro Cores
 
 ### Downloader
