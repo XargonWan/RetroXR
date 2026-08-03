@@ -117,11 +117,11 @@ func stop() -> void:
 	_plugin = null
 
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		stop()
-
-
+## No NOTIFICATION_PREDELETE hook here on purpose. On a RefCounted the refcount
+## has already reached zero by then, so calling stop() on self fails with
+## "call function 'stop' in base 'null instance'". The owner stops the scanner
+## explicitly instead — see QrScanOverlay.close(), which every teardown path
+## goes through.
 func _on_frame(luma: PackedByteArray) -> void:
 	frame_ready.emit(luma)
 

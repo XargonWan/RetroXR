@@ -158,7 +158,7 @@ func _exit_tree() -> void:
 
 
 func _on_watch_visibility_changed() -> void:
-	if _watch != null and not _watch.visible:
+	if is_instance_valid(_watch) and not _watch.visible:
 		close()
 
 
@@ -190,7 +190,9 @@ func close() -> void:
 	if _closed:
 		return
 	_closed = true
-	if _watch != null and _watch.visibility_changed.is_connected(_on_watch_visibility_changed):
+	# is_instance_valid, not != null: on a teardown that frees the whole menu the
+	# view can already be gone, and is_connected on a freed object errors.
+	if is_instance_valid(_watch) and _watch.visibility_changed.is_connected(_on_watch_visibility_changed):
 		_watch.visibility_changed.disconnect(_on_watch_visibility_changed)
 	if _idle != null:
 		_idle.stop()
