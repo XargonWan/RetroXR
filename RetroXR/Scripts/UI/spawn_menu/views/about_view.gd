@@ -76,10 +76,7 @@ const SECTIONS: Array = [
 		+ "wall and floor surfaces are ambientCG photogrammetry."],
 ]
 
-## The GitHub Pages redirect, not the payment processor itself. This string ships
-## inside the APK, so pointing it straight at Ko-fi would cost a release every
-## time the processor changed.
-const DONATE_URL := "https://xenuiswatching.github.io/retroXR/donate/"
+const DONATE_URL := "https://ko-fi.com/ryanmcclelland"
 
 
 static func create() -> SpawnMenuAboutView:
