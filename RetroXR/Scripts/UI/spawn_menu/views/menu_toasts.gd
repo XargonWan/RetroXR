@@ -233,6 +233,10 @@ func _make_bar(icon_text: String, msg: String, progress: float,
 	var icon := Label.new()
 	icon.text = icon_text
 	icon.add_theme_font_size_override("font_size", 18)
+	# symbols() keeps the theme font as its base and only chains the Nerd Font
+	# behind it, so emoji callers are unaffected while a MenuIcons codepoint
+	# resolves to a glyph instead of tofu. See the invariant in menu_icons.gd.
+	icon.add_theme_font_override("font", MenuIcons.symbols())
 	hbox.add_child(icon)
 
 	var label := MenuStyle.label(msg, 18, MenuStyle.COLOR_TITLE)
