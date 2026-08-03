@@ -17,6 +17,10 @@ const RECOMMENDED := {
 		"core": "azahar",
 		"why":  "The only 3DS core that emits side-by-side stereo, which the n3ds model's screen rects rely on",
 	},
+	"nintendo_64": {
+		"core": "mupen64plus_next_gles3",
+		"why":  "mupen64plus_next_gles2 runs at full speed on Quest but never draws a pixel — the gles3 build of the same core renders the same ROM correctly",
+	},
 	"playstation": {
 		"core": "pcsx_rearmed",
 		"why":  "Best speed-to-accuracy balance on Quest hardware",

@@ -103,6 +103,13 @@ func _parse_cmdline() -> void:
 		print("[NetworkManager] spike.cfg found — launching netplay spike")
 		get_tree().change_scene_to_file("res://Tools/netplay_spike.tscn")
 		return
+	# Same hook for the hardware-render video probe (GLES2/GLES3 black-screen
+	# hunt). The probe deletes the cfg itself, like the spike.
+	if FileAccess.file_exists("user://glprobe.cfg") \
+			and ResourceLoader.exists("res://Tools/gl_video_probe.tscn"):
+		print("[NetworkManager] glprobe.cfg found — launching GL video probe")
+		get_tree().change_scene_to_file("res://Tools/gl_video_probe.tscn")
+		return
 	# Same hook for menu timings. Deleted on sight, so a crash mid-run cannot
 	# wedge the app into the probe.
 	if FileAccess.file_exists("user://perfprobe.cfg") \
