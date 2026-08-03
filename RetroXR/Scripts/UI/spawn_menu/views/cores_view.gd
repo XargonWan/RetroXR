@@ -33,7 +33,6 @@ var _menu: Node = null
 var _cores_tabs: TabContainer = null
 
 # Download tab
-var _download_loading_label: Label = null
 var _download_fetched: bool = false
 var _download_widgets: Dictionary = {}
 var _download_browser: SystemGridBrowser = null
@@ -106,10 +105,18 @@ func notify_clear(key: String) -> void:
 		_menu.notify_clear(key)
 
 
+## Job reporting for the firmware installer, the core downloader and the
+## buildbot fetch. Named for RomM because the firmware jobs came first; every
+## job-shaped producer in this view goes through it.
+##
+## Note the argument flip: this takes (dwell, progress) and SpawnMenu2D.notify
+## takes (progress, seconds). It used to call a `romm_notify_or_queue` that the
+## menu has never had, so every toast raised here failed silently at runtime —
+## a call by name on an untyped Node is not checked at parse time.
 func _romm_notify_or_queue(key: String, icon: String, msg: String, dwell: float,
 						   progress: float = -1.0) -> void:
 	if _menu:
-		_menu.romm_notify_or_queue(key, icon, msg, dwell, progress)
+		_menu.notify(key, icon, msg, progress, dwell)
 
 func _build() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -904,13 +911,13 @@ func _build_download_tab() -> Control:
 
 	outer.add_child(HSeparator.new())
 
-	# Loading indicator
-	_download_loading_label = Label.new()
-	_download_loading_label.text = "Fetching core list from buildbot..."
-	_download_loading_label.add_theme_font_size_override("font_size", 18)
-	_download_loading_label.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
-	_download_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	outer.add_child(_download_loading_label)
+	# Job reporting is the same shape as the firmware installer's, so both
+	# report through toasts keyed on the job rather than through row widgets.
+	download_manager.job_started.connect(_on_core_job_started)
+	download_manager.job_progress.connect(_on_core_job_progress)
+	download_manager.job_retrying.connect(_on_core_job_retrying)
+	download_manager.job_finished.connect(_on_core_job_finished)
+	download_manager.job_cancelled.connect(_on_core_job_cancelled)
 
 	# Drill-down browser: pick a system, then see its cores.
 	_download_browser = SystemGridBrowser.new()
@@ -923,18 +930,23 @@ func _build_download_tab() -> Control:
 	return outer
 
 
+const FETCH_KEY := "cores:fetch"
+
+
 func _start_fetch() -> void:
-	_download_loading_label.text = "Fetching core list from buildbot..."
-	_download_loading_label.visible = true
+	_romm_notify_or_queue(FETCH_KEY, String.chr(MenuIcons.BUSY),
+		"Fetching the core list…", 0.0)
 	_download_widgets.clear()
 	download_manager.fetch_available_cores(_on_cores_fetched)
 
 
 func _on_cores_fetched(cores: Array) -> void:
-	_download_loading_label.visible = false
 	if cores.is_empty():
-		_download_loading_label.text = "Failed to fetch core list. Check your connection."
-		_download_loading_label.visible = true
+		_romm_notify_or_queue(FETCH_KEY, String.chr(MenuIcons.ERROR),
+			"Could not reach the buildbot", MenuToasts.DWELL_FAIL)
+	else:
+		notify_clear(FETCH_KEY)
+	if cores.is_empty():
 		return
 	# Group the flat buildbot list by system; cores unknown to the DB go in a
 	# single "Other" bucket. SystemFilter keeps non-console systems out of the
@@ -1023,101 +1035,129 @@ func _build_core_entry(core_name: String, remote_date: String, info: Dictionary)
 			desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			left.add_child(desc_lbl)
 
-	# Right: action button + progress bar
-	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(148, 0)
-	right.add_theme_constant_override("separation", 4)
-	right.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(right)
-
-	var state: String = download_manager.get_core_state(core_name, remote_date)
+	# Right: one icon button. Progress lives in the toast, not here — a bar on
+	# the row dies with the row, and detail pages are built lazily and freed.
 	var dl_btn := Button.new()
-	dl_btn.text = state
-	dl_btn.custom_minimum_size = Vector2(140, 46)
-	dl_btn.add_theme_font_size_override("font_size", 16)
-	_style_dl_button(dl_btn, state)
+	dl_btn.custom_minimum_size = Vector2(84, 52)
+	dl_btn.focus_mode = Control.FOCUS_NONE
 	dl_btn.pressed.connect(_on_download_pressed.bind(core_name, remote_date))
-	right.add_child(dl_btn)
+	row.add_child(dl_btn)
 
-	var prog_bar := ProgressBar.new()
-	prog_bar.custom_minimum_size = Vector2(140, 12)
-	prog_bar.min_value = 0.0
-	prog_bar.max_value = 1.0
-	prog_bar.value    = 0.0
-	prog_bar.visible  = false
-	right.add_child(prog_bar)
-
-	_download_widgets[core_name] = {"button": dl_btn, "bar": prog_bar}
+	_download_widgets[core_name] = {"button": dl_btn}
+	_style_dl_button(dl_btn, download_manager.get_core_state(core_name, remote_date))
 
 	wrap.add_child(HSeparator.new())
 	return wrap
 
 
+## The glyph says what pressing it does; "Re-Download" and "UPDATE" differ only
+## in whether the buildbot has something newer, so they get different icons
+## rather than different words.
 func _style_dl_button(btn: Button, state: String) -> void:
-	var color: Color
+	var glyph := MenuIcons.DOWNLOAD
+	var tint := MenuIcons.TINT_DOWNLOAD
+	var tip := "Download this core"
 	match state:
-		"Download":    color = MenuStyle.COLOR_BTN_DL
-		"UPDATE":      color = MenuStyle.COLOR_BTN_UPD
-		"Re-Download": color = MenuStyle.COLOR_BTN_REUP
-		_:             color = MenuStyle.COLOR_BTN_BUSY   # BUSY or unknown
-	var s := StyleBoxFlat.new()
-	s.bg_color = color
-	for k in ["corner_radius_top_left","corner_radius_top_right",
-			  "corner_radius_bottom_left","corner_radius_bottom_right"]:
-		s.set(k, 5)
-	for state_key in ["normal", "hover", "pressed"]:
-		btn.add_theme_stylebox_override(state_key, s)
+		"UPDATE":
+			glyph = MenuIcons.UPDATE
+			tint = MenuIcons.TINT_WARN
+			tip = "A newer build is available"
+		"Re-Download":
+			glyph = MenuIcons.CHECK
+			tint = MenuIcons.TINT_OK
+			tip = "Installed and up to date — download again"
+		"BUSY":
+			glyph = MenuIcons.BUSY
+			tint = MenuIcons.TINT_BUSY
+			tip = "Downloading…"
+
+	btn.text = String.chr(glyph)
+	btn.add_theme_font_override("font", MenuIcons.symbols())
+	btn.add_theme_font_size_override("font_size", 26)
+	btn.add_theme_color_override("font_color", tint)
+	btn.add_theme_color_override("font_disabled_color", tint)
+	btn.tooltip_text = tip
 	btn.disabled = (state == "BUSY")
 
 
+## is_queued() is the double-press guard: every Viewport2Din3D click arrives
+## twice, and enqueue_core ignores a core already in flight.
 func _on_download_pressed(core_name: String, remote_date: String) -> void:
+	if download_manager.is_queued(core_name):
+		return
+	var display := core_name
+	var entry := core_db.get_by_core_name(core_name)
+	if not entry.is_empty():
+		display = str(entry.get("display_name", core_name))
+	download_manager.enqueue_core(core_name, remote_date, display)
+	_refresh_download_button(core_name)
+
+
+func _refresh_download_button(core_name: String) -> void:
 	var widgets: Dictionary = _download_widgets.get(core_name, {})
 	if widgets.is_empty():
 		return
-	var btn: Button      = widgets["button"]
-	var bar: ProgressBar = widgets["bar"]
+	var btn: Button = widgets["button"]
+	if not is_instance_valid(btn):
+		return
+	var remote := ""
+	for e: Dictionary in download_manager.available_cores:
+		if e.get("core_name", "") == core_name:
+			remote = str(e.get("remote_date", ""))
+			break
+	_style_dl_button(btn, download_manager.get_core_state(core_name, remote))
 
-	btn.text = "BUSY"
-	_style_dl_button(btn, "BUSY")
-	bar.value   = 0.0
-	bar.visible = true
 
-	download_manager.download_core(
-		core_name,
-		remote_date,
-		# The row can be freed if the user navigates away mid-download (detail
-		# pages are built lazily), so guard the captured widgets.
-		func(fraction: float):
-			if is_instance_valid(bar):
-				bar.value = fraction,
-		func(success: bool, err_msg: String):
-			if is_instance_valid(bar):
-				bar.visible = false
-			var new_state := "Re-Download" if success else "Download"
-			if not success:
-				push_warning("CoreDownload '%s' failed: %s" % [core_name, err_msg])
-			else:
-				call_deferred("_populate_manager_tab")
-				var dl_entry := core_db.get_by_core_name(core_name)
-				var dl_sid: String = dl_entry.get("systemid", "")
-				if not dl_sid.is_empty():
-					RomLibrary.ensure_rom_dir(dl_sid)
-					# The Cartridges and Systems tabs live on SpawnView, not here.
-					# This used to call_deferred("_populate_cartridges_tab") on
-					# self, which failed every time with "Method not found" —
-					# a deferred call by name is not checked at parse time, so it
-					# went unnoticed: the core downloaded fine and the spawn menu
-					# simply never noticed a new system had become playable.
-					# default_core_changed is the signal SpawnView already listens
-					# to for exactly this (it repopulates both tabs and ignores the
-					# arguments). The default itself is adopted by the deferred
-					# _populate_manager_tab above when this is the system's first
-					# core, so read it back rather than assuming it is this one.
-					default_core_changed.emit(dl_sid, core_defaults.get_default_core(dl_sid))
-			if is_instance_valid(btn):
-				btn.text = new_state
-				_style_dl_button(btn, new_state)
-	)
+## core:<core_name> -> core_name, or "" for a key from another producer.
+func _core_from_key(key: String) -> String:
+	if not key.begins_with(CoreDownloadManager.JOB_PREFIX):
+		return ""
+	return key.substr(CoreDownloadManager.JOB_PREFIX.length())
+
+
+func _on_core_job_started(key: String, label: String, _total: int) -> void:
+	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY), "Downloading %s" % label, 0.0, 0.0)
+	_refresh_download_button(_core_from_key(key))
+
+
+func _on_core_job_progress(key: String, received: int, total: int) -> void:
+	var frac := 0.0 if total <= 0 else clampf(float(received) / float(total), 0.0, 1.0)
+	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY),
+		"Downloading %s" % String.humanize_size(total), 0.0, frac)
+
+
+func _on_core_job_retrying(key: String, attempt: int, total: int, reason: String) -> void:
+	_romm_notify_or_queue(key, String.chr(MenuIcons.RETRY),
+		"%s — retry %d of %d" % [reason, attempt, total], 0.0)
+
+
+func _on_core_job_cancelled(key: String) -> void:
+	notify_clear(key)
+	_refresh_download_button(_core_from_key(key))
+
+
+func _on_core_job_finished(key: String, ok: bool, error: String) -> void:
+	var core_name := _core_from_key(key)
+	if not ok:
+		_romm_notify_or_queue(key, String.chr(MenuIcons.ERROR),
+			error if not error.is_empty() else "Download failed", MenuToasts.DWELL_FAIL)
+		_refresh_download_button(core_name)
+		return
+
+	_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK), "Installed", MenuToasts.DWELL_OK)
+	_refresh_download_button(core_name)
+	call_deferred("_populate_manager_tab")
+
+	var dl_sid: String = core_db.get_by_core_name(core_name).get("systemid", "")
+	if dl_sid.is_empty():
+		return
+	RomLibrary.ensure_rom_dir(dl_sid)
+	# The Cartridges and Systems tabs live on SpawnView, not here, and
+	# default_core_changed is the signal it already listens to for exactly this.
+	# The default itself is adopted by the deferred _populate_manager_tab above
+	# when this is the system's first core, so read it back rather than assuming
+	# it is this one.
+	default_core_changed.emit(dl_sid, core_defaults.get_default_core(dl_sid))
 
 
 ## True while BIOS / Extras is the sub-tab on screen.

@@ -106,6 +106,32 @@ static func default_system_dir(core_name: String) -> String:
 
 
 # ---------------------------------------------------------------------------
+# Job signals
+# ---------------------------------------------------------------------------
+#
+# Deliberately the same shape as FirmwareInstaller's, so the UI can report core
+# downloads and BIOS installs through one set of handlers. `key` is stable for
+# the life of a job and namespaced, so a toast keyed on it updates in place.
+
+signal job_started(key: String, label: String, total_bytes: int)
+signal job_progress(key: String, received: int, total: int)
+signal job_retrying(key: String, attempt: int, max_attempts: int, reason: String)
+signal job_finished(key: String, ok: bool, error: String)
+signal job_cancelled(key: String)
+
+const JOB_PREFIX := "core:"
+## Network failures only. A 404 across every filename candidate is not retried:
+## the core is named something else or is not published, and asking again three
+## times just makes the player wait longer for the same answer.
+const MAX_ATTEMPTS := 3
+const RETRY_DELAY_SEC := 1.5
+
+
+static func job_key(core_name: String) -> String:
+	return JOB_PREFIX + core_name
+
+
+# ---------------------------------------------------------------------------
 # Public state
 # ---------------------------------------------------------------------------
 
@@ -115,9 +141,15 @@ var available_cores: Array[Dictionary] = []
 
 var manifest: DownloadManifest = null
 
-## core_name -> { "http": HTTPRequest, "progress_cb": Callable, "done_cb": Callable,
-##                "zip_path": String, "remote_date": String }
+## core_name -> { "http": HTTPRequest, "zip_path": String, "remote_date": String,
+##                "candidates": PackedStringArray, "attempt": int, "net_attempt": int }
+## Serialised by the queue below, so this holds at most one entry.
 var _active_downloads: Dictionary = {}
+
+## Pending { core_name, remote_date, label } in submission order.
+var _queue: Array[Dictionary] = []
+## The core being downloaded right now, or "" when idle.
+var _current: String = ""
 
 ## Single HTTPRequest used for the directory listing fetch.
 var _listing_request: HTTPRequest = null
@@ -246,7 +278,7 @@ func _parse_listing_html(html: String, suffixes := PackedStringArray(),
 
 ## Returns one of: "Download", "Re-Download", "UPDATE", "BUSY"
 func get_core_state(core_name: String, remote_date: String) -> String:
-	if _active_downloads.has(core_name):
+	if is_queued(core_name):
 		return "BUSY"
 	if not manifest.is_downloaded(core_name):
 		return "Download"
@@ -261,26 +293,93 @@ func get_core_state(core_name: String, remote_date: String) -> String:
 # Download a core
 # ---------------------------------------------------------------------------
 
-## Download core_name, extract the DLL, update the manifest.
+## Queue a core for download. Progress and the outcome arrive on the job_*
+## signals, keyed job_key(core_name) — nothing is reported through the caller's
+## widgets, so a download survives the row being freed.
 ##
-## progress_callback(fraction: float)  — called periodically with 0.0..1.0
-## done_callback(success: bool, error_msg: String) — called on completion
-func download_core(core_name: String, remote_date: String,
-				   progress_callback: Callable, done_callback: Callable) -> void:
-	if _active_downloads.has(core_name):
-		push_warning("CoreDownloadManager: already downloading '%s'" % core_name)
+## `label` is what the player should see; defaults to the core name.
+func enqueue_core(core_name: String, remote_date: String, label: String = "") -> void:
+	if is_queued(core_name):
 		return
+	_queue.append({
+		"core_name": core_name,
+		"remote_date": remote_date,
+		"label": label if not label.is_empty() else core_name,
+	})
+	_pump()
 
+
+func is_queued(core_name: String) -> bool:
+	if _current == core_name:
+		return true
+	for job: Dictionary in _queue:
+		if job["core_name"] == core_name:
+			return true
+	return false
+
+
+func is_busy() -> bool:
+	return not _current.is_empty()
+
+
+func queued_count() -> int:
+	return _queue.size() + (1 if is_busy() else 0)
+
+
+func current_key() -> String:
+	return "" if _current.is_empty() else job_key(_current)
+
+
+## Abandon the running download. The part-file is removed by _cleanup_download.
+func cancel_current() -> void:
+	if _current.is_empty():
+		return
+	var core_name := _current
+	var zip_path: String = _active_downloads.get(core_name, {}).get("zip_path", "")
+	_cleanup_download(core_name)
+	if not zip_path.is_empty() and FileAccess.file_exists(zip_path):
+		DirAccess.remove_absolute(zip_path)
+	_current = ""
+	job_cancelled.emit(job_key(core_name))
+	_pump()
+
+
+func cancel_all() -> void:
+	var pending := _queue.duplicate()
+	_queue.clear()
+	for job: Dictionary in pending:
+		job_cancelled.emit(job_key(str(job["core_name"])))
+	cancel_current()
+
+
+## One at a time: the buildbot is the same host for every core, and parallel
+## downloads only trade throughput for a progress readout nobody can follow.
+func _pump() -> void:
+	if is_busy() or _queue.is_empty():
+		return
+	var job: Dictionary = _queue.pop_front()
+	var core_name := str(job["core_name"])
+	_current = core_name
 	_active_downloads[core_name] = {
 		"http":        null,
-		"progress_cb": progress_callback,
-		"done_cb":     done_callback,
 		"zip_path":    "",
-		"remote_date": remote_date,
+		"remote_date": str(job["remote_date"]),
+		"label":       str(job["label"]),
 		"candidates":  _zip_candidates(core_name),
-		"attempt":     0
+		"attempt":     0,
+		"net_attempt": 0,
 	}
+	job_started.emit(job_key(core_name), str(job["label"]), 0)
 	_start_download_attempt(core_name)
+
+
+## Finish the running job and start the next one.
+func _finish(core_name: String, ok: bool, error: String) -> void:
+	_cleanup_download(core_name)
+	if _current == core_name:
+		_current = ""
+	job_finished.emit(job_key(core_name), ok, error)
+	_pump()
 
 
 ## Zip names to try for a core, best guess first: whatever the buildbot listing
@@ -321,23 +420,19 @@ func _start_download_attempt(core_name: String) -> void:
 
 	var err := http.request(_buildbot_url() + zip_filename)
 	if err != OK:
-		var done_cb: Callable = info["done_cb"]
 		push_error("CoreDownloadManager: failed to start download of '%s' (err %d)" % [core_name, err])
-		_cleanup_download(core_name)
-		done_cb.call(false, "Failed to start request (err %d)" % err)
+		_finish(core_name, false, "Could not start the request (err %d)" % err)
 
 
 func _process(_delta: float) -> void:
-	# Poll progress for each active download
 	for core_name: String in _active_downloads.keys():
 		var info: Dictionary = _active_downloads[core_name]
 		var http: HTTPRequest = info["http"]
 		if not is_instance_valid(http):
 			continue
-		var downloaded := http.get_downloaded_bytes()
 		var total := http.get_body_size()
-		if total > 0 and info["progress_cb"].is_valid():
-			info["progress_cb"].call(float(downloaded) / float(total))
+		if total > 0:
+			job_progress.emit(job_key(core_name), http.get_downloaded_bytes(), total)
 
 
 func _on_download_completed(core_name: String, result: int, response_code: int) -> void:
@@ -345,7 +440,6 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 	if info.is_empty():
 		return
 
-	var done_cb: Callable = info["done_cb"]
 	var zip_path: String  = info["zip_path"]
 	var remote_date: String = info["remote_date"]
 
@@ -353,6 +447,7 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 		# Remove incomplete zip if it exists
 		if FileAccess.file_exists(zip_path):
 			DirAccess.remove_absolute(zip_path)
+
 		# A 404 usually means this core doesn't follow the naming convention we
 		# guessed (azahar has no "_android" infix on Android) — try the next one.
 		var next_attempt: int = (info["attempt"] as int) + 1
@@ -361,11 +456,31 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 			_free_download_request(core_name)
 			_start_download_attempt(core_name)
 			return
-		_cleanup_download(core_name)
-		done_cb.call(false, "HTTP error result=%d code=%d" % [result, response_code])
+
+		# Every filename tried. If the transport itself failed, the name is
+		# probably fine and the network is not — that is worth another go from
+		# the top. A clean HTTP error code is an answer, not a glitch.
+		if result != HTTPRequest.RESULT_SUCCESS:
+			var net_attempt: int = (info["net_attempt"] as int) + 1
+			if net_attempt < MAX_ATTEMPTS:
+				info["net_attempt"] = net_attempt
+				info["attempt"] = 0
+				_free_download_request(core_name)
+				job_retrying.emit(job_key(core_name), net_attempt + 1, MAX_ATTEMPTS,
+					"Connection failed")
+				get_tree().create_timer(RETRY_DELAY_SEC).timeout.connect(
+					func() -> void:
+						# cancel_current() during the wait drops the entry.
+						if _active_downloads.has(core_name):
+							_start_download_attempt(core_name))
+				return
+			_finish(core_name, false, "Connection failed after %d attempts" % MAX_ATTEMPTS)
+			return
+
+		_finish(core_name, false, "Not available on the buildbot (HTTP %d)" % response_code)
 		return
 
-	_cleanup_download(core_name)
+	_free_download_request(core_name)
 
 	# Extract the zip
 	var extract_err := _extract_zip(zip_path, default_cores_dir())
@@ -374,13 +489,13 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 		DirAccess.remove_absolute(zip_path)
 
 	if extract_err != OK:
-		done_cb.call(false, "Zip extraction failed (err %d)" % extract_err)
+		_finish(core_name, false, "Could not unpack the download (err %d)" % extract_err)
 		return
 
 	# Update manifest with the name the core actually landed under
 	manifest.set_downloaded(core_name, remote_date, installed_core_lib(core_name))
 	print("[CoreDownloadManager] Downloaded and extracted: %s" % core_name)
-	done_cb.call(true, "")
+	_finish(core_name, true, "")
 
 
 ## Extract all files from zip_path into dest_dir.
