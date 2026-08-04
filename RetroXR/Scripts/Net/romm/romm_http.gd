@@ -20,7 +20,9 @@ enum Result {
 	WRITE_FAILED,     ## local disk write failed — terminal
 	## Request went out, server never answered in time. NOT a dead socket:
 	## /api/roms pages are database queries and a big one legitimately thinks for
-	## minutes. Retrying is usually pointless — it will think just as long again.
+	## minutes. Worth retrying — the same query can answer in a fraction of the
+	## time once the server is no longer under sustained load — but each attempt
+	## costs a full timeout to discover, so budget them separately.
 	TIMED_OUT,
 }
 

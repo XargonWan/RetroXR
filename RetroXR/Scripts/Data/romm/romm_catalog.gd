@@ -28,16 +28,6 @@ signal sync_finished(systemid: String, ok: bool, added: int, removed: int, error
 ## off-thread without a hitch.
 const PAGE_LIMIT := 1000
 
-## The server charges a large fixed cost per /api/roms request on a big platform,
-## independent of `limit`: a 59k-ROM PlayStation page measured ~5 s ungrouped and
-## ~75 s grouped whether it returned 250 rows or 5000. Past this size the only
-## lever is asking for fewer, bigger pages.
-const LARGE_PLATFORM_ROWS := 20000
-## Held well below the 10000 cap: the body is decoded to a Godot String (UTF-32
-## internally, so ~4x the wire size) before JSON.parse sees it, and that transient
-## is the binding constraint on Quest.
-const PAGE_LIMIT_LARGE := 2500
-
 ## A page is a database query, not a static file, and a grouped query over a very
 ## large platform measured 90-100 s of server think time before the first header
 ## byte. The 30 s default reported that as a lost connection, which is what made
@@ -45,12 +35,18 @@ const PAGE_LIMIT_LARGE := 2500
 ##
 ## The *final* page is far worse than the rest — 271 s measured against 94 s for
 ## the page before it, on a fresh connection, so it is the tail rows themselves
-## and not a deep OFFSET or a stale socket. This ceiling clears that with margin.
-const SYNC_RESPONSE_TIMEOUT_SEC := 480.0
+## and not a deep OFFSET or a stale socket. This ceiling clears that with margin
+## while staying low enough that two attempts at it are still a bounded wait.
+const SYNC_RESPONSE_TIMEOUT_SEC := 360.0
 
 ## Attempts per page, including the first. A large platform is ~20 pages over
 ## half an hour, and one failure used to discard the entire run.
 const PAGE_RETRIES := 3
+## Timeouts are retried too: a page that overran a 480 s ceiling mid-sync answered
+## in 86 s on its own moments later, so under sustained querying this server
+## degrades transiently rather than deterministically. But each attempt costs a
+## whole ceiling to discover, so they get fewer goes than a socket failure does.
+const PAGE_TIMEOUT_ATTEMPTS := 2
 ## Multiplied by the attempt number, so 2 s then 4 s.
 const PAGE_RETRY_BACKOFF_MS := 2000
 
@@ -461,7 +457,6 @@ func _sync_worker(args: Dictionary) -> void:
 	var max_updated := updated_after
 	var first_page := true
 	var error := ""
-	var page_limit := PAGE_LIMIT
 
 	while true:
 		if _abort:
@@ -470,11 +465,7 @@ func _sync_worker(args: Dictionary) -> void:
 			DirAccess.remove_absolute(tmp_jsonl)
 			return
 
-		# The limit this request actually asked for. page_limit can change below
-		# once `total` is known, and the short-page test must compare against what
-		# was requested or the switch itself looks like the last page.
-		var req_limit := page_limit
-		var path := _page_path(platform_id, offset, args["group"], updated_after, first_page, req_limit)
+		var path := _page_path(platform_id, offset, args["group"], updated_after, first_page, PAGE_LIMIT)
 		var resp := _fetch_page_with_retry(http, args["base_url"], path, headers)
 		var result := int(resp["result"])
 
@@ -505,8 +496,6 @@ func _sync_worker(args: Dictionary) -> void:
 			total = int(page.get("total", 0))
 			_started.call_deferred(systemid, total)
 			first_page = false
-			if total > LARGE_PLATFORM_ROWS:
-				page_limit = PAGE_LIMIT_LARGE
 
 		if items.is_empty():
 			break
@@ -529,7 +518,7 @@ func _sync_worker(args: Dictionary) -> void:
 		offset += items.size()
 		_progress.call_deferred(systemid, offset, total)
 
-		if offset >= total or items.size() < req_limit:
+		if offset >= total or items.size() < PAGE_LIMIT:
 			break
 
 	http.close()
@@ -640,6 +629,7 @@ func _sync_worker(args: Dictionary) -> void:
 func _fetch_page_with_retry(http: RommHttp, base_url: String, path: String,
 							headers: PackedStringArray) -> Dictionary:
 	var resp := {"result": RommHttp.Result.CONNECT_FAILED, "code": 0, "data": null}
+	var timeouts := 0
 
 	for attempt in PAGE_RETRIES:
 		if attempt > 0:
@@ -655,10 +645,11 @@ func _fetch_page_with_retry(http: RommHttp, base_url: String, path: String,
 		var result := int(resp["result"])
 		if result == RommHttp.Result.OK or result == RommHttp.Result.ABORTED:
 			return resp
-		# A timeout means the server is still chewing on the query, not that
-		# anything broke. Asking again buys another identical wait.
 		if result == RommHttp.Result.TIMED_OUT:
-			return resp
+			timeouts += 1
+			if timeouts >= PAGE_TIMEOUT_ATTEMPTS:
+				return resp
+			continue
 		var code := int(resp["code"])
 		if code == 401 or code == 403:
 			return resp
