@@ -1,0 +1,31 @@
+Model Information:
+* title:	NES Controller Free
+* source:	https://sketchfab.com/3d-models/nes-controller-free-5f85c2e259bd4ab5845d482ff4f1c039
+* author:	donnichols (https://sketchfab.com/donnichols)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "NES Controller Free" (https://sketchfab.com/3d-models/nes-controller-free-5f85c2e259bd4ab5845d482ff4f1c039) by donnichols (https://sketchfab.com/donnichols) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted for RetroXR as nes_controller.glb:
+
+  * Scaled to life size (x0.01122); the source measured 12.47 units across
+    against a real pad's 0.140 m. The scale is baked into the mesh data and
+    local translations, not left on an ancestor node.
+  * Flattened each part node's residual Z-up/Y-up rotation into its mesh data so
+    every control's local frame is axis-aligned with the root, which is what the
+    button-press and D-pad-rocker animation expects.
+
+Geometry, materials and textures are otherwise unchanged. Node and mesh names
+are unchanged from the original export.
+
+Nothing here is affiliated with, endorsed by, or sponsored by Nintendo. The
+model's texture carries only functional lettering (A, B, SELECT, START); no
+wordmark or logo is present.

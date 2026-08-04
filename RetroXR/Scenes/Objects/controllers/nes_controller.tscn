@@ -1,0 +1,55 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/controllers/nes_controller.gd" id="1_nesscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
+[ext_resource type="PackedScene" path="res://imported-assets/controllers/nes/nes_controller.glb" id="5_nesmodel"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_ctrl"]
+friction = 0.8
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.142, 0.024, 0.064)
+
+[node name="NesController" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.2
+physics_material_override = SubResource("PhysMat_ctrl")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_nesscript")
+plug_mesh_path = "res://imported-assets/controllers/nes/nes_controller_plug.res"
+systemid = "nes"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+; The .glb sits on its own origin — 140 x 22 x 61 mm spanning y 0.2..21.9 and
+; z -33.6..27.8 — so nudge it onto the body's centre of mass.
+[node name="Model" parent="." instance=ExtResource("5_nesmodel")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.01107, 0.00292)
+
+; The cable leaves the top edge (-Z), the far side from the holder's wrists.
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0307)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_body")
+
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0, 0)
+visible = false

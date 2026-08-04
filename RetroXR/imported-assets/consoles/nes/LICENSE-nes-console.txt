@@ -1,0 +1,37 @@
+Model Information:
+* title:	Nintendo Entertainment System
+* source:	https://sketchfab.com/3d-models/nintendo-entertainment-system-c2332d623b364132bd780720eb74bddf
+* author:	greenestbanana (https://sketchfab.com/greenestbanana)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Nintendo Entertainment System" (https://sketchfab.com/3d-models/nintendo-entertainment-system-c2332d623b364132bd780720eb74bddf) by greenestbanana (https://sketchfab.com/greenestbanana) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted for RetroXR as nes_console.glb and nes_plug.glb:
+
+  * Removed the bundled controller (Case_25) and its cord mesh. RetroXR uses a
+    separate controller model and drives its cable with VerletRope.
+  * Removed the backdrop ground plane (Plane.008_14).
+  * Removed the lid-front decal plane carrying the "Nintendo" wordmark and
+    "ENTERTAINMENT SYSTEM" lettering, and cleared the corresponding band of
+    NesLabels_baseColor.png. Only functional labels remain (POWER, RESET,
+    AUDIO VIDEO, CH3-CH4, RF SWITCH, AC-ADAPTER, 1, 2). The console shell is
+    otherwise unchanged geometry by the original author.
+  * Renamed shell and control nodes from Sketchfab's "Object_NN" to descriptive
+    names so the moving parts can be bound by name.
+  * Extracted the controller plug into nes_plug.glb: re-origined to the cable
+    end, oriented to insert along -Z, and decimated from 32,118 to 4,069
+    triangles.
+
+Nothing here is affiliated with, endorsed by, or sponsored by Nintendo.
+Trademarked wording and logos have been removed from the asset as shipped;
+"Nintendo", "NES" and "Nintendo Entertainment System" remain trademarks of
+Nintendo and are used, where unavoidable, only descriptively.

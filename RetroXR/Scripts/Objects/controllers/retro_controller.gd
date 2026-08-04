@@ -31,6 +31,14 @@ var device_type: int = RETRO_DEVICE_JOYPAD
 ## "dualshock". No-ops on cores without such an option.
 @export var pad_type_pref: String = "standard"
 
+## Mesh resource for this controller's cable connector, or "" for the generic
+## cylinder plug. Console pads point this at their real connector — see
+## Tools/extract_nes_plug.gd. The mesh must be authored in ControllerPlug's frame
+## (origin at the seated position, connector on +Z, cable trailing -Z), which is
+## what lets set_plug_mesh derive cable_anchor from it. A missing resource falls
+## back to the generic plug, so an export-excluded model never breaks a build.
+@export var plug_mesh_path: String = ""
+
 ## The systemid this controller physically belongs to, e.g. "super_nes". A port
 ## only accepts a plug whose controller matches (see RetroSystem._accepts_plug),
 ## the same way the cartridge slot only accepts media for its own system.
@@ -201,6 +209,7 @@ func _add_cable_to_scene() -> void:
 	_cable_instance.add_to_group("spawned")
 	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
+	_cable_plug.set_plug_mesh(plug_mesh_path)
 	_cable_plug.set_controller(self)
 	_cable_plug.add_collision_exception_with(self)
 	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
