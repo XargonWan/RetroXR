@@ -32,13 +32,125 @@ const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/cartridge_options_panel.ts
 
 var _options_panel: Node3D = null
 
+## Real per-system cartridge models. A system with no entry — or with its asset
+## stripped from the build — silently keeps the procedural box.
+const _CART_MODELS := {
+	"nes": "res://imported-assets/carts/nes/nes_cart.glb",
+}
+
+## Name of the model's swappable label face, which _apply_label_art covers with
+## the scraped art. Kept as a constant so a model that names it something else
+## can be special-cased without touching the lookup.
+const _LABEL_MESH := "media_label"
+
+## The model's own label face, when a real cart model is in use.
+var _model_label: MeshInstance3D = null
+
 
 func _ready() -> void:
 	if save_id.is_empty():
 		save_id = "%08x%08x" % [randi(), randi()]
 	_update_label()
 	_apply_system_size()
+	_apply_cart_model()
 	_apply_label_art()
+
+
+## Swap the procedural box for this system's real cartridge model when one ships.
+##
+## The GLB's body runs +Y from its connector with the label on +Z — the same
+## frame the framework uses — so centring its AABB lands it correctly (connector
+## -Y, grip +Y, label +Z) and everything downstream (snap pose, seated grab stub,
+## insert animation) keeps working unchanged.
+func _apply_cart_model() -> void:
+	if _model_label != null or has_node("CartModel"):
+		return
+	var path: String = _CART_MODELS.get(systemid, "")
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return
+	var scene := load(path) as PackedScene
+	if scene == null:
+		return
+	var glb := scene.instantiate() as Node3D
+	glb.name = "CartModel"
+	add_child(glb)
+	var ab := _cart_model_aabb(glb)
+	if ab.size.y <= 0.0001:
+		return
+	# Scale the (oversized) model down to the system's real card dimensions.
+	var s := MediaDimensions.cart_size(systemid)
+	var k: float = minf(s.x / maxf(ab.size.x, 0.0001), s.y / maxf(ab.size.y, 0.0001))
+	glb.scale = Vector3(k, k, k)
+	glb.position = -(ab.position + ab.size * 0.5) * k
+	# Moulded plastic exported with a high metallicFactor reads as a dark mirror
+	# rather than a grey shell — the NES cart ships metallic 0.76.
+	ModelMaterialFix.demetal(glb)
+	_model_label = glb.find_child(_LABEL_MESH, true, false) as MeshInstance3D
+	# The procedural stand-ins are replaced by the real shell.
+	for nm in ["CartridgeMesh", "LabelMesh", "GameLabel"]:
+		var n := get_node_or_null(nm) as Node3D
+		if n != null:
+			n.visible = false
+
+
+## Bounds of a cart model, in the GLB root's own space.
+##
+## Must compose the FULL chain to the root, not the mesh's own `transform`: a GLB
+## exported straight from Sketchfab nests its meshes several levels deep
+## (Sketchfab_model / *.fbx / RootNode / part / mesh), so reading one level gave a
+## fraction of the real size and scaled the cart to two metres across.
+func _cart_model_aabb(root: Node3D) -> AABB:
+	var to_root := root.global_transform.affine_inverse()
+	var acc := AABB()
+	var first := true
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var ab: AABB = (to_root * mi.global_transform) * mi.get_aabb()
+		acc = ab if first else acc.merge(ab)
+		first = false
+	return acc
+
+
+## Bounds of the flat face of a model's label mesh, in cartridge space.
+##
+## A label mesh is not always the flat quad the art wants to cover — a printed
+## label that wraps over the shell's top edge gives an AABB straddling the whole
+## depth, with its centre buried in the plastic. Keeping only the polygons facing
+## along the label normal leaves the flat front the sticker actually lives on.
+## Either sign counts: some models have the quad's winding inverted, and the
+## polygon lies in the label plane either way.
+func _label_face_bounds(mi: MeshInstance3D) -> AABB:
+	var xf := global_transform.affine_inverse() * mi.global_transform
+	var full: AABB = xf * mi.get_aabb()
+	var mesh := mi.mesh
+	if mesh == null:
+		return full
+	var acc := AABB()
+	var first := true
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		if arrays.size() <= Mesh.ARRAY_NORMAL:
+			continue
+		if arrays[Mesh.ARRAY_VERTEX] == null or arrays[Mesh.ARRAY_NORMAL] == null:
+			continue
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		if norms.size() != verts.size():
+			continue
+		for i in verts.size():
+			if absf((xf.basis * norms[i]).normalized().z) < 0.95:
+				continue
+			var p := xf * verts[i]
+			if first:
+				acc = AABB(p, Vector3.ZERO)
+				first = false
+			else:
+				acc = acc.expand(p)
+	if first or acc.size.x < 0.0001 or acc.size.y < 0.0001:
+		return full
+	return acc
 
 
 func _update_label() -> void:
@@ -136,6 +248,42 @@ func reset_grab_shapes() -> void:
 func _apply_label_art() -> void:
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
 	if tex == null:
+		return
+	# Real cart model: cover the model's own label face with a quad of our own
+	# rather than repainting theirs.
+	#
+	# Painting onto the author's quad means inheriting the author's UVs, and
+	# imported models agree on no convention at all — normals point in or out, u
+	# runs across the card on one and up the face on another. The label plane is
+	# a flat quad in the cart's XY facing +Z on all of them, so building a fresh
+	# quad over it from its measured bounds is right by construction and stays
+	# right for models not imported yet.
+	if _model_label != null:
+		var ab := _label_face_bounds(_model_label)
+		if ab.size.x > 0.0001 and ab.size.y > 0.0001:
+			_model_label.visible = false
+			var art := MeshInstance3D.new()
+			art.name = "ModelLabelArt"
+			add_child(art)
+			# Fit-within, so art of any aspect is never stretched to the recess.
+			var fitted := Vector2(ab.size.x, ab.size.y)
+			var ar := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
+			if fitted.x / maxf(fitted.y, 0.0001) > ar:
+				fitted.x = fitted.y * ar
+			else:
+				fitted.y = fitted.x / ar
+			var quad := QuadMesh.new()
+			quad.size = fitted
+			art.mesh = quad
+			var c := ab.get_center()
+			art.position = Vector3(c.x, c.y, ab.position.z + ab.size.z + 0.0003)
+			var lm := StandardMaterial3D.new()
+			lm.albedo_color = Color.WHITE
+			lm.albedo_texture = tex
+			art.set_surface_override_material(0, lm)
+		var glbl := get_node_or_null("GameLabel") as Label3D
+		if glbl != null:
+			glbl.visible = false
 		return
 	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
 	if label_mesh == null or not (label_mesh.mesh is BoxMesh):
