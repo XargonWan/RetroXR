@@ -51,14 +51,18 @@ const _PERIPHERALS: Dictionary = {
 	],
 	# The NES pad is named here rather than left to the generic row because the
 	# console moulds its own connector and the pad wears it (plug_mesh_path), so
-	# the two only look right together. The cartridge row spawns a BLANK shell;
-	# a cart with a game on it comes from the Games tab, which already spawns one
-	# per ROM keyed on systemid.
+	# the two only look right together. No cartridge row: a cart comes from the
+	# Games tab, which already spawns one per ROM keyed on systemid.
 	"nes": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "nes_controller"},
-		{"kind": "peripheral", "label": "Cartridge", "spawn": "cartridge"},
 	],
 }
+
+
+## Platforms that model their own console AND their own pad, so the generic
+## stand-ins are only clutter on their card. Everything else keeps them: for a
+## platform with no hardware of its own they are the whole way to play it.
+const _NO_STANDINS: Array[String] = ["nes"]
 
 
 ## The spawnable items for a system: its stand-in hardware, then the models that
@@ -84,17 +88,19 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 
 	# Anything not played in the hand can also take the primitive box and the
 	# primitive pad. A handheld gets neither: a console box is shaped nothing like
-	# the device, and its controls are its own buttons.
+	# the device, and its controls are its own buttons. Nor does a platform in
+	# _NO_STANDINS, which brings both of its own.
 	var handheld := SystemModelRegistry.platform_is_handheld(systemid)
+	var standins := not handheld and not _NO_STANDINS.has(systemid)
 
 	var items: Array = []
 	items.append_array(primitive)
-	if not handheld:
+	if standins:
 		items.append({"kind": "system", "label": "Primitive System",
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
 	items.append_array(imported)
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
-	if not handheld:
+	if standins:
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})
 	return items
