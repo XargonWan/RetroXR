@@ -96,7 +96,7 @@ func enqueue_archive(key: String, core_name: String) -> void:
 		"label": str(a["label"]), "core_name": core_name,
 		"base_url": SystemAssetCatalog.BASE_URL,
 		"path": SystemAssetCatalog.archive_path(core_name),
-		"headers": PackedStringArray(), "size": int(a["bytes"]),
+		"headers": PackedStringArray(), "size": 0,
 	})
 	_pump()
 
@@ -123,7 +123,6 @@ func _pump() -> void:
 	var job: Dictionary = _queue.pop_front()
 	_abort = false
 	_current_key = str(job["key"])
-	job_started.emit(_current_key, str(job["label"]), int(job.get("size", 0)))
 
 	_thread = Thread.new()
 	_thread.start(_worker.bind(job))
@@ -133,6 +132,12 @@ func _worker(job: Dictionary) -> void:
 	var key := str(job["key"])
 	var staging := _staging_path(key)
 	DirAccess.make_dir_recursive_absolute(staging.get_base_dir())
+
+	# Announced from here, not from _pump, because the size has to be asked for
+	# and asking blocks. A caller that already knows it (RomM states a firmware
+	# file's size in its API) is taken at its word; an archive costs one HEAD.
+	job["size"] = _probe_size(job)
+	_emit_started.call_deferred(key, str(job["label"]), int(job["size"]))
 
 	var attempt := 0
 	var last_error := ""
@@ -175,6 +180,26 @@ func _worker(job: Dictionary) -> void:
 	_emit_finished.call_deferred(key, false, last_error)
 
 
+## Ask the server how big the download is, for the toast and the progress bar.
+## Purely cosmetic: a probe that fails leaves the size unknown, which the UI
+## already renders as a bare label, and the transfer proceeds regardless.
+func _probe_size(job: Dictionary) -> int:
+	var declared := int(job.get("size", 0))
+	if declared > 0:
+		return declared
+
+	var http := RommHttp.new()
+	if http.open(str(job["base_url"])) != RommHttp.Result.OK:
+		return 0
+	var out := http.head(str(job["path"]), PackedStringArray(job["headers"]))
+	http.close()
+
+	var code := int(out.get("code", 0))
+	if int(out["result"]) != RommHttp.Result.OK or code < 200 or code >= 300:
+		return 0
+	return int(out["total"])
+
+
 ## One transfer into the staging file. Resumes when a partial is already there.
 func _attempt(job: Dictionary, staging: String) -> Dictionary:
 	var key := str(job["key"])
@@ -201,8 +226,9 @@ func _attempt(job: Dictionary, staging: String) -> Dictionary:
 	var headers := PackedStringArray(job["headers"])
 	headers.append("Range: bytes=%d-" % have)
 
-	var progress := func(received: int, _total: int) -> void:
-		_emit_progress.call_deferred(key, have + received, expected)
+	var progress := func(received: int, total: int) -> void:
+		_emit_progress.call_deferred(
+			key, have + received, have + total if total > 0 else expected)
 
 	var out: Dictionary = http.download_to_file(
 		str(job["path"]), headers, f, progress, func() -> bool: return _abort)
@@ -233,10 +259,20 @@ func _attempt(job: Dictionary, staging: String) -> Dictionary:
 			return {"status": "transient", "error": "Server error (%d)" % code}
 		return {"status": "terminal", "error": "Server refused the download (%d)" % code}
 
+	# Completeness is judged against this response's Content-Length and nothing
+	# else. HTTPClient leaves STATUS_BODY both when the body ends and when the
+	# socket dies mid-stream, so without this a truncated archive would install
+	# silently; and any size known ahead of the request would only be a guess.
+	if have > 0 and code == 200:
+		# Range ignored — the full body was appended onto the partial. Must be
+		# caught by status, since have + total then equals the corrupt length.
+		return {"status": "restart", "error": "The server did not resume the download"}
+
 	var got := _file_size(staging)
-	if expected > 0 and got != expected:
+	var whole := have + int(out.get("total", 0))
+	if whole > have and got != whole:
 		return {"status": "restart",
-			"error": "Incomplete download (%d of %d bytes)" % [got, expected]}
+			"error": "Incomplete download (%d of %d bytes)" % [got, whole]}
 
 	var want := str(job.get("md5", ""))
 	if not want.is_empty() and FileAccess.get_md5(staging).to_lower() != want:
@@ -321,6 +357,10 @@ static func _file_size(path: String) -> int:
 
 
 # ── Main-thread emitters ──────────────────────────────────────────────────────
+
+func _emit_started(key: String, label: String, total: int) -> void:
+	job_started.emit(key, label, total)
+
 
 func _emit_progress(key: String, received: int, total: int) -> void:
 	job_progress.emit(key, received, total)
