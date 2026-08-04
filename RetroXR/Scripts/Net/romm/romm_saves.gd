@@ -109,6 +109,8 @@ static func _describe(out: Dictionary) -> String:
 	match int(out["result"]):
 		RommHttp.Result.CONNECT_FAILED, RommHttp.Result.REQUEST_FAILED:
 			return "Connection lost"
+		RommHttp.Result.TIMED_OUT:
+			return "The server took too long to answer"
 		RommHttp.Result.WRITE_FAILED:
 			return "Not enough space, or the disk is unwritable"
 		RommHttp.Result.ABORTED:

@@ -218,6 +218,8 @@ func _attempt(job: Dictionary, staging: String) -> Dictionary:
 		return {"status": "terminal", "error": "Not enough space, or the disk is unwritable"}
 	if result == RommHttp.Result.CONNECT_FAILED or result == RommHttp.Result.REQUEST_FAILED:
 		return {"status": "transient", "error": "Connection lost"}
+	if result == RommHttp.Result.TIMED_OUT:
+		return {"status": "transient", "error": "The server took too long to answer"}
 	if result == RommHttp.Result.HTTP_ERROR:
 		if code == 401 or code == 403:
 			return {"status": "terminal", "error": "Sign in to RomM again"}

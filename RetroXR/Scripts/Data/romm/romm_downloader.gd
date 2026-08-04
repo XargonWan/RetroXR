@@ -290,6 +290,8 @@ func _attempt_download(args: Dictionary, dest: String, part: String, rom_id: int
 			return {"status": "terminal", "error": "Not enough space, or disk unwritable"}
 		RommHttp.Result.CONNECT_FAILED, RommHttp.Result.REQUEST_FAILED:
 			return {"status": "transient", "error": "Connection lost"}
+		RommHttp.Result.TIMED_OUT:
+			return {"status": "transient", "error": "The server took too long to answer"}
 		RommHttp.Result.HTTP_ERROR:
 			# 401/403 and 404 are terminal and need distinct messages — a revoked
 			# token looks identical to a network error at the transport layer.

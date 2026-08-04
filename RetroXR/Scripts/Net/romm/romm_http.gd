@@ -18,6 +18,10 @@ enum Result {
 	HTTP_ERROR,       ## got a response, but a bad status — see `code`
 	ABORTED,          ## caller set the abort flag
 	WRITE_FAILED,     ## local disk write failed — terminal
+	## Request went out, server never answered in time. NOT a dead socket:
+	## /api/roms pages are database queries and a big one legitimately thinks for
+	## minutes. Retrying is usually pointless — it will think just as long again.
+	TIMED_OUT,
 }
 
 const POLL_SLEEP_MS := 1
@@ -108,19 +112,28 @@ func is_open() -> bool:
 
 
 ## Send a request and wait for response headers (not the body).
+##
+## `timeout_sec` overrides RESPONSE_TIMEOUT_SEC for endpoints that legitimately
+## think for longer than a stalled socket would. `abort` is polled while waiting:
+## without it a long timeout would pin the calling thread for its full duration,
+## and RommCatalog joins that thread on quit.
+##
 ## Returns {result: Result, code: int, headers: Dictionary}.
-func _send(method: int, path: String, headers: PackedStringArray, body: String = "") -> Dictionary:
+func _send(method: int, path: String, headers: PackedStringArray, body: String = "",
+		   abort: Callable = Callable(), timeout_sec: float = RESPONSE_TIMEOUT_SEC) -> Dictionary:
 	if _client == null:
 		return {"result": Result.CONNECT_FAILED, "code": 0, "headers": {}}
 
 	if _client.request(method, path, headers, body) != OK:
 		return {"result": Result.REQUEST_FAILED, "code": 0, "headers": {}}
 
-	var deadline := Time.get_ticks_msec() + int(RESPONSE_TIMEOUT_SEC * 1000.0)
+	var deadline := Time.get_ticks_msec() + int(timeout_sec * 1000.0)
 	while _client.get_status() == HTTPClient.STATUS_REQUESTING:
+		if abort.is_valid() and abort.call():
+			return {"result": Result.ABORTED, "code": 0, "headers": {}}
 		_client.poll()
 		if Time.get_ticks_msec() > deadline:
-			return {"result": Result.REQUEST_FAILED, "code": 0, "headers": {}}
+			return {"result": Result.TIMED_OUT, "code": 0, "headers": {}}
 		OS.delay_msec(POLL_SLEEP_MS)
 
 	if not _client.has_response():
@@ -137,8 +150,9 @@ func _send(method: int, path: String, headers: PackedStringArray, body: String =
 ## Only for responses that comfortably fit — catalog pages at limit=1000 are
 ## ~3 MB, which is fine on a worker thread.
 ## Returns {result: Result, code: int, data: Variant}.
-func get_json(path: String, headers: PackedStringArray, abort: Callable = Callable()) -> Dictionary:
-	var sent := _send(HTTPClient.METHOD_GET, path, headers)
+func get_json(path: String, headers: PackedStringArray, abort: Callable = Callable(),
+			  timeout_sec: float = RESPONSE_TIMEOUT_SEC) -> Dictionary:
+	var sent := _send(HTTPClient.METHOD_GET, path, headers, "", abort, timeout_sec)
 	if int(sent["result"]) != Result.OK:
 		return {"result": sent["result"], "code": sent["code"], "data": null}
 
@@ -200,7 +214,7 @@ func upload_multipart(method: int, path: String, headers: PackedStringArray,
 	while _client.get_status() == HTTPClient.STATUS_REQUESTING:
 		_client.poll()
 		if Time.get_ticks_msec() > deadline:
-			return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
+			return {"result": Result.TIMED_OUT, "code": 0, "data": null}
 		OS.delay_msec(POLL_SLEEP_MS)
 
 	if not _client.has_response():

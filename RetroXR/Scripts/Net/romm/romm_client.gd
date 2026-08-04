@@ -109,9 +109,15 @@ func rom_identifiers(callback: Callable) -> void:
 
 ## Count only, without dragging down a page of items. `limit=0` is a 422 on
 ## RomM (minimum is 1), so ask for one row and read `total`.
+##
+## `with_rom_id_index=false` matters more here than anywhere: the server's index
+## covers the whole result set, not the page, so without it a limit=1 count of
+## PlayStation returns 349 KB for one row and takes ~94 s — parsed on the main
+## thread, since this goes through HTTPRequest.
 ## callback(ok: bool, total: int)
 func rom_count(platform_id: int, callback: Callable) -> void:
-	var path := "/api/roms?limit=1&with_char_index=false&with_filter_values=false&with_files=false"
+	var path := "/api/roms?limit=1&with_char_index=false&with_rom_id_index=false" \
+		+ "&with_filter_values=false&with_files=false"
 	if platform_id > 0:
 		path += "&platform_ids=%d" % platform_id
 	_get_json(path, true, func(ok: bool, data: Variant, _code: int) -> void:

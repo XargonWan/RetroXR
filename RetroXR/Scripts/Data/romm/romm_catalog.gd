@@ -24,11 +24,35 @@ signal sync_progress(systemid: String, done: int, total: int)
 ## sync_finished(systemid, ok, added, removed, error)
 signal sync_finished(systemid: String, ok: bool, added: int, removed: int, error: String)
 
-## RomM caps `limit` at 10000, but every /api/roms response also carries the full
-## ordered rom_id_index for the whole result set (~700 KB at 100k ROMs) with no
-## opt-out in 5.0.0. Per-item JSON dominates above ~300, so 1000 balances the two
-## and keeps each body around 3 MB — parseable off-thread without a hitch.
+## RomM caps `limit` at 10000. 1000 keeps each body around 3 MB — parseable
+## off-thread without a hitch.
 const PAGE_LIMIT := 1000
+
+## The server charges a large fixed cost per /api/roms request on a big platform,
+## independent of `limit`: a 59k-ROM PlayStation page measured ~5 s ungrouped and
+## ~75 s grouped whether it returned 250 rows or 5000. Past this size the only
+## lever is asking for fewer, bigger pages.
+const LARGE_PLATFORM_ROWS := 20000
+## Held well below the 10000 cap: the body is decoded to a Godot String (UTF-32
+## internally, so ~4x the wire size) before JSON.parse sees it, and that transient
+## is the binding constraint on Quest.
+const PAGE_LIMIT_LARGE := 2500
+
+## A page is a database query, not a static file, and a grouped query over a very
+## large platform measured 90-100 s of server think time before the first header
+## byte. The 30 s default reported that as a lost connection, which is what made
+## PlayStation impossible to sync at all.
+##
+## The *final* page is far worse than the rest — 271 s measured against 94 s for
+## the page before it, on a fresh connection, so it is the tail rows themselves
+## and not a deep OFFSET or a stale socket. This ceiling clears that with margin.
+const SYNC_RESPONSE_TIMEOUT_SEC := 480.0
+
+## Attempts per page, including the first. A large platform is ~20 pages over
+## half an hour, and one failure used to discard the entire run.
+const PAGE_RETRIES := 3
+## Multiplied by the attempt number, so 2 s then 4 s.
+const PAGE_RETRY_BACKOFF_MS := 2000
 
 var config: RommConfig = null
 
@@ -437,6 +461,7 @@ func _sync_worker(args: Dictionary) -> void:
 	var max_updated := updated_after
 	var first_page := true
 	var error := ""
+	var page_limit := PAGE_LIMIT
 
 	while true:
 		if _abort:
@@ -445,9 +470,20 @@ func _sync_worker(args: Dictionary) -> void:
 			DirAccess.remove_absolute(tmp_jsonl)
 			return
 
-		var path := _page_path(platform_id, offset, args["group"], updated_after, first_page)
-		var resp := http.get_json(path, headers, func() -> bool: return _abort)
+		# The limit this request actually asked for. page_limit can change below
+		# once `total` is known, and the short-page test must compare against what
+		# was requested or the switch itself looks like the last page.
+		var req_limit := page_limit
+		var path := _page_path(platform_id, offset, args["group"], updated_after, first_page, req_limit)
+		var resp := _fetch_page_with_retry(http, args["base_url"], path, headers)
 		var result := int(resp["result"])
+
+		# A cancelled sync is not a failure — leave without a toast.
+		if result == RommHttp.Result.ABORTED or _abort:
+			out.close()
+			http.close()
+			DirAccess.remove_absolute(tmp_jsonl)
+			return
 
 		if result != RommHttp.Result.OK:
 			var code := int(resp["code"])
@@ -455,6 +491,10 @@ func _sync_worker(args: Dictionary) -> void:
 				error = "Sign-in rejected by RomM"
 			elif code > 0:
 				error = "Server error (HTTP %d)" % code
+			elif result == RommHttp.Result.TIMED_OUT:
+				# Naming this "connection lost" sent a whole debugging session
+				# after the network when the server was simply still working.
+				error = "The server took too long on this list"
 			else:
 				error = "Connection lost during sync"
 			break
@@ -465,6 +505,8 @@ func _sync_worker(args: Dictionary) -> void:
 			total = int(page.get("total", 0))
 			_started.call_deferred(systemid, total)
 			first_page = false
+			if total > LARGE_PLATFORM_ROWS:
+				page_limit = PAGE_LIMIT_LARGE
 
 		if items.is_empty():
 			break
@@ -487,7 +529,7 @@ func _sync_worker(args: Dictionary) -> void:
 		offset += items.size()
 		_progress.call_deferred(systemid, offset, total)
 
-		if offset >= total or items.size() < PAGE_LIMIT:
+		if offset >= total or items.size() < req_limit:
 			break
 
 	http.close()
@@ -586,16 +628,70 @@ func _sync_worker(args: Dictionary) -> void:
 	_finish.call_deferred(systemid, true, added, removed, "")
 
 
+## One page, retried on a fresh connection.
+##
+## A large platform is ~20 requests over half an hour on one keep-alive socket,
+## and the whole sync is discarded if any single one of them fails. Reconnecting
+## costs a round trip and covers both halves of that: a socket that went stale
+## while held open, and a query that overran its deadline once.
+##
+## Auth rejections and aborts are returned immediately — neither improves by
+## asking again.
+func _fetch_page_with_retry(http: RommHttp, base_url: String, path: String,
+							headers: PackedStringArray) -> Dictionary:
+	var resp := {"result": RommHttp.Result.CONNECT_FAILED, "code": 0, "data": null}
+
+	for attempt in PAGE_RETRIES:
+		if attempt > 0:
+			http.close()
+			if not _sleep_abortable(PAGE_RETRY_BACKOFF_MS * attempt):
+				return {"result": RommHttp.Result.ABORTED, "code": 0, "data": null}
+			if http.open(base_url) != RommHttp.Result.OK:
+				continue
+
+		resp = http.get_json(path, headers, func() -> bool: return _abort,
+			SYNC_RESPONSE_TIMEOUT_SEC)
+
+		var result := int(resp["result"])
+		if result == RommHttp.Result.OK or result == RommHttp.Result.ABORTED:
+			return resp
+		# A timeout means the server is still chewing on the query, not that
+		# anything broke. Asking again buys another identical wait.
+		if result == RommHttp.Result.TIMED_OUT:
+			return resp
+		var code := int(resp["code"])
+		if code == 401 or code == 403:
+			return resp
+
+	return resp
+
+
+## Returns false if the sync was aborted while waiting.
+func _sleep_abortable(msec: int) -> bool:
+	var deadline := Time.get_ticks_msec() + msec
+	while Time.get_ticks_msec() < deadline:
+		if _abort:
+			return false
+		OS.delay_msec(100)
+	return not _abort
+
+
 ## Build one page request. `with_char_index` only on the first page — after that
 ## it's pure payload. `with_filter_values`/`with_files` are always off.
+##
+## `with_rom_id_index` defaults to TRUE server-side and returns every id in the
+## whole result set on every page — 475 KB per page on a 59k platform, 39% of the
+## body, and nothing here reads it. Turning it off took a PlayStation page from
+## 26.4 s to 2.5 s. It gained an opt-out in RomM 5.1.0; older servers ignore the
+## parameter and simply keep sending it.
 func _page_path(platform_id: int, offset: int, group: bool,
-				updated_after: String, first_page: bool) -> String:
-	var path := "/api/roms?limit=%d&offset=%d&order_by=name&order_dir=asc" % [PAGE_LIMIT, offset]
+				updated_after: String, first_page: bool, limit: int) -> String:
+	var path := "/api/roms?limit=%d&offset=%d&order_by=name&order_dir=asc" % [limit, offset]
 	if platform_id > 0:
 		path += "&platform_ids=%d" % platform_id
 	path += "&group_by_meta_id=%s" % ("true" if group else "false")
 	path += "&with_char_index=%s" % ("true" if first_page else "false")
-	path += "&with_filter_values=false&with_files=false"
+	path += "&with_rom_id_index=false&with_filter_values=false&with_files=false"
 	if not updated_after.is_empty():
 		path += "&updated_after=" + updated_after.uri_encode()
 	return path
