@@ -13,6 +13,9 @@
 ##   --glprobe-rom=/sdcard/Android/data/com.xenu.retroxr/files/roms/…/rom.z64
 ##   --glprobe-root=/data/user/0/com.xenu.retroxr/files/libretro   (optional)
 ##   --glprobe-out=/sdcard/Android/data/com.xenu.retroxr/files/glprobe   (optional)
+##   --glprobe-hwapi=vulkan|d3d11|d3d12   (optional; what GET_PREFERRED_HW_RENDER
+##                                         answers, so a multi-API core such as
+##                                         Dolphin picks that backend)
 ##
 ## Desktop: godot --path RetroXR res://Tools/gl_video_probe.tscn \
 ##   -- --glprobe-core=mupen64plus_next "--glprobe-rom=C:/…/rom.z64"
@@ -22,6 +25,10 @@ var core := ""
 var rom := ""
 var root_dir := ""
 var out_prefix := ""
+var hwapi := ""
+
+## retro_hw_context_type values, for SetPreferredHwRender.
+const HW_API := {"opengl": 1, "glcore": 3, "vulkan": 6, "d3d11": 7, "d3d12": 9}
 
 ## Sample points (seconds since StartContent). A N64 core spends the first
 ## seconds in the boot/IPL sequence, which is legitimately black — one late
@@ -51,6 +58,8 @@ func _ready() -> void:
 			root_dir = arg.trim_prefix("--glprobe-root=")
 		elif arg.begins_with("--glprobe-out="):
 			out_prefix = arg.trim_prefix("--glprobe-out=")
+		elif arg.begins_with("--glprobe-hwapi="):
+			hwapi = arg.trim_prefix("--glprobe-hwapi=").to_lower()
 	if root_dir.is_empty():
 		root_dir = CoreDownloadManager.default_core_root()
 	if out_prefix.is_empty():
@@ -88,6 +97,15 @@ func _run() -> void:
 	print("[glprobe] core=%s" % core)
 	print("[glprobe] rom=%s" % rom)
 	print("[glprobe] root=%s" % root_dir)
+	# Must precede StartContent: the core asks during its own init.
+	if not hwapi.is_empty():
+		if not HW_API.has(hwapi):
+			print("[glprobe] FAIL: unknown --glprobe-hwapi=%s" % hwapi)
+			get_tree().quit(1)
+			return
+		var api_id: int = HW_API[hwapi]
+		ClassDB.class_call_static("Libretro", "SetPreferredHwRender", api_id)
+		print("[glprobe] preferred hw render = %s (%d)" % [hwapi, api_id])
 	_lib.StartContent(_screen, root_dir, core, rom)
 
 	var t0 := Time.get_ticks_msec()
