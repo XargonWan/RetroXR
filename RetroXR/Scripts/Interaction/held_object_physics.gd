@@ -295,8 +295,15 @@ func _physics_process(delta: float) -> void:
 	_fall_timer = 0.0
 
 	for id: int in _watched.keys():
-		var body: XRToolsPickable = _watched[id]
-		if not is_instance_valid(body) or not body.is_inside_tree():
+		# Read it untyped first. A typed assignment type-checks its value, and on a
+		# freed instance that check IS the error ("Trying to assign invalid
+		# previously freed instance") — which aborts this function before the erase
+		# below can run, so the stale row survives to raise it again next pass. This
+		# autoload outlives every scene, so a room change leaves a stale row for
+		# every pickable that was in the old room.
+		var watched: Variant = _watched[id]
+		var body: XRToolsPickable = watched if is_instance_valid(watched) else null
+		if body == null or not body.is_inside_tree():
 			_watched.erase(id)
 			_safe_pose.erase(id)
 			continue
