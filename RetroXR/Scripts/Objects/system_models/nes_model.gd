@@ -81,6 +81,12 @@ func _ready() -> void:
 			push_warning("NESModel: failed to load %s" % _MODEL_PATH)
 			return
 		_glb = scene.instantiate() as Node3D
+		# MUST be "Shell": that is what RetroSystemModel.has_baked_shell() looks
+		# for, and it is how the framework knows this model brings its own printed
+		# legends. Left unnamed, the cabinet decided there was no detailed shell
+		# and laid its own SystemNameLabel — "NINTENDO ENTERTAINMENT SYSTEM" — flat
+		# across the console's front face.
+		_glb.name = "Shell"
 		add_child(_glb)
 
 	var preview := find_child("SeatPreview", true, false)
@@ -335,12 +341,15 @@ func configure_controller_ports(port_zones: Array) -> void:
 			zone.global_transform = seat.global_transform
 		elif i < _PORT_X.size():
 			zone.position = Vector3(_PORT_X[i], _PORT_Y, _PORT_Z)
-			# The sockets face front (+Z) and a ControllerPlug mesh is authored
-			# connector-on-+Z, so the plug has to be turned to face into the shell:
-			# a YAW of 180. RetroVR used a roll here instead, but a roll about Z
-			# leaves the Z axis alone and so never turns the connector inward — it
-			# only works for a plug authored the other way round.
-			zone.rotation_degrees = Vector3(0, 180, 0)
+			# Front-facing socket: ROLL 180 about Z so the plug seats connector-in
+			# and upright. A yaw lands it backwards and upside down.
+			#
+			# The turning is not done by this rotation alone. ControllerPlug's
+			# SnapGrabPoint is itself rotated 180 about X, and XRTools aligns that
+			# grab point — not the plug's origin — to the zone. Composed with it, a
+			# roll sends the plug's +Z connector to -Z (into the shell) and keeps +Y
+			# up; a yaw sends the connector back OUT and flips the plug over.
+			zone.rotation_degrees = Vector3(0, 0, 180)
 	hide_port_placeholders(port_zones)
 
 
