@@ -49,6 +49,15 @@ const _PERIPHERALS: Dictionary = {
 	"virtual_boy": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
 	],
+	# The NES pad is named here rather than left to the generic row because the
+	# console moulds its own connector and the pad wears it (plug_mesh_path), so
+	# the two only look right together. The cartridge row spawns a BLANK shell;
+	# a cart with a game on it comes from the Games tab, which already spawns one
+	# per ROM keyed on systemid.
+	"nes": [
+		{"kind": "peripheral", "label": "Controller", "spawn": "nes_controller"},
+		{"kind": "peripheral", "label": "Cartridge", "spawn": "cartridge"},
+	],
 }
 
 

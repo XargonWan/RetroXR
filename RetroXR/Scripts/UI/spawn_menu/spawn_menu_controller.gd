@@ -16,6 +16,8 @@ const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
 # Stand-in Virtual Boy pad: carries the console POWER switch, like the real one.
 const VB_CONTROLLER_SCENE   := preload("res://Scenes/Objects/controllers/vb_controller.tscn")
+# The NES pad: wears the console's own connector on its cable (plug_mesh_path).
+const NES_CONTROLLER_SCENE  := preload("res://Scenes/Objects/controllers/nes_controller.tscn")
 const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/retro_mouse.tscn")
 const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_multitap.tscn")
@@ -967,6 +969,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 		"vb_controller":
 			obj = VB_CONTROLLER_SCENE.instantiate() as Node3D
+		"nes_controller":
+			obj = NES_CONTROLLER_SCENE.instantiate() as Node3D
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
 		"retro_keyboard":

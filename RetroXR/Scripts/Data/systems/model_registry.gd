@@ -56,6 +56,12 @@ const _SCENES := "res://Scenes/Objects/system_models/"
 ## what an empty model_id resolves to.
 const _ROWS: Dictionary = {
 	# --- consoles -------------------------------------------------------------
+	# A script row, not a scene: the model loads its own GLB and needs nothing
+	# authored around it. `requires` names that GLB, so a build without the asset
+	# lists the platform's stand-in instead of a row that cannot spawn.
+	"nes":                  {"platform": "nes", "label": "Nintendo Entertainment System",
+		"script": "res://Scripts/Objects/system_models/nes_model.gd",
+		"requires": ["res://imported-assets/consoles/nes/nes_console.glb"]},
 	"pc_tower":             {"platform": "scummvm", "label": "PC Tower",
 		"scene": _SCENES + "pc_tower.tscn"},
 
