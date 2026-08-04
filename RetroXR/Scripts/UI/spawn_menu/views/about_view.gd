@@ -62,6 +62,8 @@ const SECTIONS: Array = [
 		["Desk chair", "Slava Izvekov — @guantanamera", "CC BY 4.0"],
 		["Interior door and trim", "Roman — @janwama", "CC BY 4.0"],
 		["Light switch", "BillieBones", "CC BY 4.0"],
+		["NES console", "greenestbanana", "CC BY 4.0"],
+		["NES controller", "donnichols", "CC BY 4.0"],
 		["Nightstand", "ilyafom1", "CC BY 4.0"],
 		["Trash can", "Yury Misiyuk — @Tim0", "CC BY 4.0"],
 		["Table lamp", "plaggy", "CC0 1.0"],
@@ -72,7 +74,7 @@ const SECTIONS: Array = [
 		["Trees", "Quaternius", "CC0 1.0"],
 		["Furniture Kit", "Kenney — kenney.nl", "CC0 1.0"],
 		["Surfaces", "ambientCG", "CC0 1.0"],
-	], "Room and prop models. CC BY entries require attribution; "
+	], "Room, prop and hardware models. CC BY entries require attribution; "
 		+ "wall and floor surfaces are ambientCG photogrammetry."],
 ]
 
