@@ -10,10 +10,10 @@ inflated the totals.
 
 | File | Rows | Implemented |
 |---|---|---|
-| `retroxr_systems.csv` | 59 | 0 |
-| `retroxr_controllers.csv` | 29 | 0 |
-| `retroxr_carts.csv` | 16 | 0 |
-| `retroxr_peripherals.csv` | 12 | 0 |
+| `retroxr_systems.csv` | 59 | 1 |
+| `retroxr_controllers.csv` | 29 | 1 |
+| `retroxr_carts.csv` | 16 | 1 |
+| `retroxr_peripherals.csv` | 13 | 1 |
 
 ## Columns
 
@@ -25,8 +25,14 @@ inflated the totals.
   primitive box, so they read `[ ]`. Otherwise the column would say "done" about
   five consoles nobody has modelled.
 
-Everything currently reads `[ ]`. What ships today is the procedural stand-ins in
-`RetroXR/Scenes/Objects/system_models/` — clean geometry rather than replicas.
+The NES is the first platform with real hardware in the room: the front-loading
+NES-001, its pad, its cart and the connector on the pad's lead. Everything else
+still reads `[ ]` — what ships for those is the procedural stand-ins in
+`RetroXR/Scenes/Objects/system_models/`, clean geometry rather than replicas.
+
+The NES rows are ticked only for what is actually modelled. The Famicom, the
+NTSC top loader, the Zapper, the Famicom cart and the FDS disk are all still `[ ]`
+even though the platform they sit under now has real hardware.
 
 ## Adding a model
 
