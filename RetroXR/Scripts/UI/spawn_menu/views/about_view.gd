@@ -62,6 +62,7 @@ const SECTIONS: Array = [
 		["Desk chair", "Slava Izvekov — @guantanamera", "CC BY 4.0"],
 		["Interior door and trim", "Roman — @janwama", "CC BY 4.0"],
 		["Light switch", "BillieBones", "CC BY 4.0"],
+		["NES cartridge", "cloud — @cloudstormchnl", "CC BY 4.0"],
 		["NES console", "greenestbanana", "CC BY 4.0"],
 		["NES controller", "donnichols", "CC BY 4.0"],
 		["Nightstand", "ilyafom1", "CC BY 4.0"],
