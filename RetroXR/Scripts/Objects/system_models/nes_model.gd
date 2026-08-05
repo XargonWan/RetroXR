@@ -207,6 +207,28 @@ func play_close() -> void:
 		_cartridge_slot.enabled = false
 
 
+## How far the flap has swung, in degrees from shut. The clamshell's
+## interior-angle convention does not apply to a front flap, but the save format
+## is the same field: a lid pose in degrees, or -1 for hardware without one.
+func get_lid_angle_deg() -> float:
+	return _lid_amount * absf(LID_OPEN_DEG)
+
+
+## Pose the flap at a saved angle, with no animation — a restore is a state the
+## room was already in, not something the player just did. Takes the bay gate and
+## the grab hinge with it, so the next grab resumes from the right pose.
+func set_lid_angle_deg(open_deg: float) -> void:
+	if _lid_tween != null and _lid_tween.is_valid():
+		_lid_tween.kill()
+	var amount := clampf(open_deg / absf(LID_OPEN_DEG), 0.0, 1.0)
+	_set_lid(amount)
+	_lid_open = amount > 0.5
+	if _flap_hinge != null:
+		_flap_hinge.set_rotation_deg_no_signal(_deg_open * amount)
+	if _cartridge_slot != null:
+		_cartridge_slot.enabled = _lid_open
+
+
 ## Build the grip-latched grab handle on the flap. A hidden angle-driver frame
 ## (origin at the real hinge, -Z along the shut flap, X along the hinge axis) is
 ## what the VRHinge reports into; the reported degrees are remapped onto the
@@ -417,10 +439,15 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 		if cradle:
 			# Lay the cart FLAT, label up, connector pointing into the machine. A
 			# cartridge is authored connector -Y / label +Z, so map its +Y (grip)
-			# onto +Z (out the front) and its +Z (label) onto world up; X inverts
-			# to keep it a rotation. Without this the cart stands on end in the bay.
+			# onto +Z (out the front) and its +Z (label) onto up; X inverts to keep
+			# it a rotation. Without this the cart stands on end in the bay.
+			#
+			# Composed onto the SHELL's basis, not written as a world one: a bare
+			# Basis here is an absolute orientation, so the cart faced the same
+			# compass direction whichever way the console was turned.
+			var b: Basis = _glb.global_transform.basis.orthonormalized()
 			slot.global_transform = Transform3D(
-				Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
+				b * Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
 				cradle.global_transform * cradle.get_aabb().get_center())
 		# This shell ships no "System Socket" marker, so the insert axis is the
 		# console's own front direction rather than read off the socket.

@@ -361,6 +361,12 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		if spawned.has(memcard_id) and spawned[memcard_id] is MemoryCard:
 			print("[ScenePersistence] restoring memory card id=%d" % memcard_id)
 			sys.restore_memory_card(spawned[memcard_id])
+		# After the media, and deferred: seating a cartridge swings the bay open (the
+		# NES flap) and tweens it there, either of which would otherwise win over the
+		# pose the system restored when its model loaded.
+		var lid_angle: float = float(d.get("lid_angle", -1.0))
+		if lid_angle >= 0.0:
+			sys.set_lid_angle_deg.call_deferred(lid_angle)
 	elif spawned[id] is VCRPlayer:
 		var vcr := spawned[id] as VCRPlayer
 		var tv_id: int = d.get("connected_tv_id", -1)
@@ -678,6 +684,11 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		}
 		if node is RetroMouse:
 			entry["sensitivity"] = (node as RetroMouse).sensitivity
+		if node is RetroController:
+			# Every real pad — NES, Virtual Boy, CX40 — is a RetroController with a
+			# scene of its own, so the type above maps the whole family back onto the
+			# generic grey pad. The scene is what tells them apart.
+			entry["scene"] = node.scene_file_path
 		return entry
 	elif node is CompositeCable:
 		# Six independent ends, so the lead is saved as six plugs rather than as one
@@ -718,6 +729,24 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"plugs": plugs,
 		}
 	return {}
+
+
+## The pad scene the entry names, or the generic pad when the save predates the
+## field, names a scene this build no longer ships, or names something that is
+## not a controller at all. ResourceLoader.exists, not FileAccess: paths are
+## remapped into the pck in an exported build.
+func _instantiate_controller(data: Dictionary) -> Node3D:
+	var path: String = str(data.get("scene", ""))
+	if not path.is_empty() and ResourceLoader.exists(path):
+		var packed := ResourceLoader.load(path) as PackedScene
+		if packed != null:
+			var inst := packed.instantiate() as Node3D
+			if inst is RetroController:
+				return inst
+			if inst != null:
+				push_warning("ScenePersistence: '%s' is not a controller" % path)
+				inst.queue_free()
+	return RETRO_CONTROLLER_SCENE.instantiate() as Node3D
 
 
 func _deserialize_object(data: Dictionary) -> Node3D:
@@ -777,7 +806,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			book.set_page(int(data.get("page_state", 0)), int(data.get("page_leaf", 0)))
 			obj = book
 		"retro_controller":
-			obj = RETRO_CONTROLLER_SCENE.instantiate() as Node3D
+			obj = _instantiate_controller(data)
 		"ray_gun":
 			obj = RAY_GUN_SCENE.instantiate() as Node3D
 		"retro_mouse":

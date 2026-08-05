@@ -599,9 +599,6 @@ func _load_system_model() -> void:
 		if _model.has_method("configure_handheld_body"):
 			_model.configure_handheld_body(self)
 		_model.configure_handheld_controls(self)
-		# Restore a saved clamshell lid angle (DS/3DS); else keep the model default.
-		if _lid_angle_from_save >= 0.0:
-			_model.set_lid_angle_deg(_lid_angle_from_save)
 		# Two-handed hold, like a game controller: HandheldInput already merges
 		# buttons/sticks from both hands (retro_controller pipeline) — the
 		# pickable just has to allow the second grab.
@@ -612,6 +609,12 @@ func _load_system_model() -> void:
 		_handheld_input.setup(self)
 		# Route port-0 rumble to the holding hands via the existing path.
 		_port_controllers[0] = _handheld_input
+	# Restore a saved lid pose — a clamshell's hinge (DS/3DS/GBA SP) or a console's
+	# cartridge-bay flap (the NES). Last, and for every model rather than only the
+	# handhelds, because a disc loader and configure_cartridge_slot both re-gate the
+	# bay above and either would win over the restored pose.
+	if _lid_angle_from_save >= 0.0:
+		_model.set_lid_angle_deg(_lid_angle_from_save)
 
 
 ## A handheld routes the trigger and thumbstick into the emulated pad, leaving
@@ -635,6 +638,13 @@ func grip_anchor(is_left: bool) -> Variant:
 ## -1 for systems without a lid. Used by ScenePersistence.
 func get_lid_angle_deg() -> float:
 	return _model.get_lid_angle_deg() if _model != null else -1.0
+
+
+## Pose a lid at a saved angle. Public because ScenePersistence has to re-apply it
+## after seating a cartridge: an insert swings the bay open on its own.
+func set_lid_angle_deg(open_deg: float) -> void:
+	if _model != null:
+		_model.set_lid_angle_deg(open_deg)
 
 
 ## Enable or disable libretro input polling for this system.
