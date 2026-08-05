@@ -19,6 +19,11 @@ const SHAFT_TILT_DEG: float = 18.0
 ## B. Binding A would leave the stick's button doing nothing in-game.
 const FIRE_BIT: int = ControllerBindings.JOYPAD_B
 
+## The button cap is only 2.3 mm thick, so the engine's 2.2 mm FACE_PRESS sank it
+## almost exactly its own depth and it disappeared into the shell. 1 mm leaves
+## 1.3 mm proud at full press, which is about the CX40's real throw.
+const FIRE_PRESS: float = 0.0010
+
 
 func _cache_meshes() -> void:
 	_buttons.clear()
@@ -27,7 +32,7 @@ func _cache_meshes() -> void:
 		push_warning("Atari2600CX40: Button mesh not found")
 	else:
 		_buttons.append({"node": m, "rest": m.transform,
-			"bit": FIRE_BIT, "depth": FACE_PRESS})
+			"bit": FIRE_BIT, "depth": FIRE_PRESS})
 	_dpad = _rocker("Stick")
 
 
