@@ -26,6 +26,7 @@ angular_damp = 8.0
 script = ExtResource("1_joyscript")
 plug_mesh_path = "res://Scenes/Objects/atari_2600_plug_cx40.res"
 systemid = "atari_2600"
+cable_length = 1.2192
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("BoxShape3D_body")

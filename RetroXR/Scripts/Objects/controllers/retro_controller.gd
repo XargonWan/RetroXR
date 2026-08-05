@@ -48,6 +48,18 @@ var device_type: int = RETRO_DEVICE_JOYPAD
 ## hardware we have no model of and must keep working on every system.
 @export var systemid: String = ""
 
+## Cord length in metres, or 0 to keep whatever controller_cable.tscn ships
+## (50 x 36 mm = 1.80 m). Real hardware varies a lot — a CX40's lead is far
+## shorter than an SNES pad's — and the cable scene is shared by every
+## controller, so the length belongs on the controller rather than in it.
+##
+## Applied by resizing the segment COUNT, not the segment length: the rope's
+## boot taper and minimum bend radius were tuned against a ~36 mm segment, and
+## stretching segments instead would quietly change how the whole cord hangs.
+## The segment length is then trimmed by under a percent to hit the asked-for
+## length exactly rather than landing on the nearest whole segment.
+@export var cable_length: float = 0.0
+
 # Port connection state
 var _connected_system: RetroSystem = null
 var _port_index: int = -1
@@ -204,6 +216,23 @@ func _spawn_cable() -> void:
 	call_deferred("_add_cable_to_scene")
 
 
+## Resize the cord to `cable_length`, before _init_points lays the particles out.
+##
+## Segment COUNT carries the length; the segment length is then nudged by well
+## under a percent so the total is exact instead of rounding to a whole segment.
+## Doing it the other way — same count, longer segments — would move the boot
+## taper and the minimum bend radius, which are tuned in millimetres.
+func _resize_cable() -> void:
+	if _cable_rope == null or cable_length <= 0.0:
+		return
+	var seg: float = _cable_rope.segment_length
+	if seg <= 0.0:
+		return
+	var count: int = maxi(2, int(round(cable_length / seg)))
+	_cable_rope.segment_count = count
+	_cable_rope.segment_length = cable_length / float(count)
+
+
 func _add_cable_to_scene() -> void:
 	get_tree().current_scene.add_child(_cable_instance)
 	_cable_instance.add_to_group("spawned")
@@ -219,6 +248,7 @@ func _add_cable_to_scene() -> void:
 	# is its seating reference, which sits inside the shell, so without this the
 	# rope terminates in the middle of the plug and the tube runs through it.
 	_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
+	_resize_cable()
 	_cable_rope._init_points()
 	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
 
