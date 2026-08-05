@@ -45,6 +45,12 @@ var _playback: AudioStreamGeneratorPlayback = null
 var _emit_origin := Vector3.ZERO
 var _emit_override := false
 
+# Explicit left/right points, when the source can name them outright rather than
+# leaving them to be spread around _emit_origin. See set_speaker_positions.
+var _speaker_l_pos := Vector3.ZERO
+var _speaker_r_pos := Vector3.ZERO
+var _speaker_override := false
+
 # Head position, for the distance law applied in _apply_distance_gain, and the
 # last gain handed over so an unchanged one costs nothing.
 var _listener: Node = null
@@ -154,13 +160,28 @@ func _setup_fallback() -> void:
 
 
 func _process(_delta: float) -> void:
-	var origin := _emit_origin if _emit_override else global_position
+	var origin: Vector3
+	var l_pos: Vector3
+	var r_pos: Vector3
+	if _speaker_override:
+		# Two points given outright, so nothing is derived: the source that owns
+		# the speakers knows where they are far better than a spread along this
+		# node's X does.
+		l_pos = _speaker_l_pos
+		r_pos = _speaker_r_pos
+		# Everything that wants one point -- the distance law, the fallback
+		# backend -- takes the middle of the pair.
+		origin = (l_pos + r_pos) * 0.5
+	else:
+		origin = _emit_origin if _emit_override else global_position
+		l_pos = origin + _speaker_offset(-1.0)
+		r_pos = origin + _speaker_offset(1.0)
 	if _use_sdk:
 		# The mixer skips the underlying SDK call when the position has not
 		# changed, so writing this every frame is safe -- it saves a lock, and
 		# most emitters here rewrite a position that never moved.
-		var l_pos := origin + _speaker_offset(-1.0)
-		var r_pos := origin + _speaker_offset(1.0)
+		if _voice_r < 0:
+			l_pos = origin      # one voice: the middle, not the left speaker
 		if _listener != null and is_instance_valid(_listener):
 			var lp: Vector3 = _listener.get_listener_position()
 			l_pos = hold_off_head(l_pos, lp)
@@ -264,6 +285,27 @@ func set_emit_position(pos: Vector3) -> void:
 ## Go back to emitting from this node.
 func clear_emit_position() -> void:
 	_emit_override = false
+
+
+## Radiate from two given points instead of a centre plus `speaker_separation`.
+##
+## For a deck playing through a TV: the set carries authored speaker markers, so
+## it can say where its two channels leave the cabinet, which beats spreading
+## them along the DECK's local X -- an axis that has nothing to do with the set
+## and swings whenever the deck is turned. Takes precedence over
+## set_emit_position, since the pair already says where the sound is.
+##
+## World space, and expected every frame: the caller reads them off a set that
+## can be picked up and carried.
+func set_speaker_positions(l: Vector3, r: Vector3) -> void:
+	_speaker_l_pos = l
+	_speaker_r_pos = r
+	_speaker_override = true
+
+
+## Go back to a centre plus the authored separation.
+func clear_speaker_positions() -> void:
+	_speaker_override = false
 
 
 ## Point the sound somewhere -- the screen normal of the set it is playing

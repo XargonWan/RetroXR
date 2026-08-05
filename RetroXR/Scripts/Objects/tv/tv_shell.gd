@@ -19,6 +19,12 @@
 ##   ButtonRow      — pose of the FIRST bezel button (volume-down). The rest step
 ##                    along the marker's local +X by `button_pitch`.
 ##   VolumeLabelSeat— pose for the VolumeLabel Label3D.
+##   SpeakerLSeat   — pose for the SpeakerL marker, the point the left channel
+##   SpeakerRSeat     radiates from, and the same for the right. Name BOTH or
+##                    neither: a shell that names one gets the computed pair for
+##                    its tube instead, since half an authored stereo image is
+##                    worse than none. Left is the listener's left, i.e. -X on a
+##                    set facing +Z.
 class_name RetroTVShell
 extends Node3D
 
@@ -55,6 +61,8 @@ func port_seat() -> Variant:        return _seat("PortSeat")
 func ambilight_seat() -> Variant:   return _seat("AmbilightSeat")
 func button_row_seat() -> Variant:  return _seat("ButtonRow")
 func volume_label_seat() -> Variant: return _seat("VolumeLabelSeat")
+func speaker_l_seat() -> Variant:   return _seat("SpeakerLSeat")
+func speaker_r_seat() -> Variant:   return _seat("SpeakerRSeat")
 
 
 ## Transform of a named marker relative to this shell's root, or null if absent.

@@ -190,8 +190,10 @@ func _setup_audio() -> void:
 	_emitter.name = "SpatialAudioEmitter"
 	_emitter.unit_size = 3.0
 	_emitter.max_distance = 15.0
-	# The picture and the sound both come from the TV, so the emitter is given
-	# the TV's two speaker positions once a set is connected.
+	# The picture and the sound both come from the TV, so the emitter is given the
+	# set's own speaker positions once one is connected (_emit_through). Non-zero
+	# here for the second voice that needs, and as the spread for a set too old to
+	# report them.
 	_emitter.speaker_separation = 0.25
 	# Aimed at whatever set it is plugged into; see _process.
 	_emitter.directivity = SpatialAudioEmitter.SPEAKER_DIRECTIVITY
@@ -224,12 +226,25 @@ func _process(delta: float) -> void:
 	# way its picture points -- a set heard from behind should be muted by its own
 	# cabinet.
 	if _emitter and connected_tv != null and is_instance_valid(connected_tv):
-		_emitter.set_emit_position(connected_tv.global_position)
-		if connected_tv.has_method("get_screen_normal"):
-			_emitter.set_emit_direction(connected_tv.get_screen_normal(),
-				connected_tv.get_screen_up())
+		_emit_through(connected_tv)
 	elif _emitter:
+		_emitter.clear_speaker_positions()
+		_emitter.clear_emit_position()
 		_emitter.clear_emit_direction()
+
+
+## Hand the emitter the set's own two speaker positions, so the disc's sound
+## leaves the cabinet where the set's sound does. Falling back to the TV's origin
+## puts it inside the box, which HRTF makes obvious, and spreads it along the
+## DECK's local X -- an axis that swings whenever the deck is turned.
+func _emit_through(tv: Node3D) -> void:
+	if tv.has_method("get_speaker_positions"):
+		var sp: PackedVector3Array = tv.get_speaker_positions()
+		_emitter.set_speaker_positions(sp[0], sp[1])
+	else:
+		_emitter.set_emit_position(tv.global_position)
+	if tv.has_method("get_screen_normal"):
+		_emitter.set_emit_direction(tv.get_screen_normal(), tv.get_screen_up())
 
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).

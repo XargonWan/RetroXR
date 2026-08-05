@@ -34,6 +34,10 @@ const _SHELL_SCENES := {
 
 var _shell: RetroTVShell = null
 
+# Whether the worn shell named speaker seats. False means the markers still hold
+# the stock body's positions and _ready recomputes them for the fitted tube.
+var _speakers_seated: bool = false
+
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
 @onready var _ambilight: SpotLight3D = $Ambilight
@@ -43,6 +47,8 @@ var _shell: RetroTVShell = null
 @onready var _crt_btn: VRButton = $CRTButton
 @onready var _stereo_btn: VRButton = $StereoButton
 @onready var _volume_label: Label3D = $VolumeLabel
+@onready var _speaker_l: Marker3D = get_node_or_null("SpeakerL")
+@onready var _speaker_r: Marker3D = get_node_or_null("SpeakerR")
 @onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
 @onready var _vol_osd_label: Label3D = $ScreenMesh/VolumeOSDLabel
 @onready var _osd_viewport: SubViewport = $OSDViewport
@@ -207,6 +213,12 @@ func _ready() -> void:
 		if aabb.size.x > 0.0 and aabb.size.y > 0.0:
 			_screen_size_m = Vector2(aabb.size.x * screen_scale.x, aabb.size.y * screen_scale.y)
 
+	# Now the fitted tube's size is known. A shell that moved it without saying
+	# where its speakers went gets them computed; everything else keeps the
+	# markers exactly as authored.
+	if _shell != null and not _speakers_seated:
+		_place_default_speakers()
+
 	var blue_img := Image.create(2, 2, false, Image.FORMAT_RGB8)
 	blue_img.fill(BLUE_SCREEN_COLOR)
 	_blue_material = StandardMaterial3D.new()
@@ -242,6 +254,16 @@ func _load_shell() -> void:
 	_seat_node(_composite_port, _shell.port_seat())
 	_seat_node(_ambilight, _shell.ambilight_seat())
 	_seat_node(_volume_label, _shell.volume_label_seat())
+
+	# Both or neither: one seated speaker and one still on the stock tube's edge
+	# would be a lopsided stereo image nobody authored. _ready falls back to the
+	# computed pair when this stays false.
+	var spk_l: Variant = _shell.speaker_l_seat()
+	var spk_r: Variant = _shell.speaker_r_seat()
+	_speakers_seated = spk_l is Transform3D and spk_r is Transform3D
+	if _speakers_seated:
+		_seat_node(_speaker_l, spk_l)
+		_seat_node(_speaker_r, spk_r)
 
 	# Bezel buttons march along the row marker's local +X from the first cap.
 	var row: Variant = _shell.button_row_seat()
@@ -762,32 +784,53 @@ func get_screen_mesh() -> MeshInstance3D:
 
 ## World positions of the set's left and right speakers, in that order.
 ##
-## Derived from ScreenMesh rather than the cabinet, because a shell can move and
-## rescale the screen (see _load_shell) and hardcoded cabinet offsets would drift
-## away from whatever model is actually fitted.
+## Read straight off the SpeakerL / SpeakerR markers, so where a set radiates
+## from is authored in the scene and can be dragged in the editor like any other
+## node. Being children of the root they ride scale_factor and any parent's
+## transform for free.
 ##
-## The set faces +Z: the screen sits proud of the front face and the composite
-## port is on the back at -Z. Speakers go on the front baffle, flanking the tube
-## and slightly below its centre, which is where a CRT of this vintage puts them.
+## Left and right are the LISTENER's. The set faces +Z (the screen sits proud of
+## the front face, the composite port is on the back at -Z), so someone watching
+## it has its +X on their right, and SpeakerR is the one at +X.
+##
 ## Emitting from the cabinet centre instead makes the sound appear to come from
 ## inside the box -- inaudible with amplitude panning, obvious with HRTF.
-##
-## The offsets are in the set's own local metres, so they are applied with the
-## UNNORMALISED basis: its columns are scale_factor long, which converts to world
-## and tracks the display scale (and any parent's) for free. Normalising here
-## would pin the speakers to 1x while the picture around them grew.
 func get_speaker_positions() -> PackedVector3Array:
-	var half_w: float = _screen_size_m.x * 0.5 + 0.055
-	var drop: float = _screen_size_m.y * 0.35
-	var basis := global_transform.basis
-	# Front of the screen, not the cabinet centre.
-	var face: Vector3 = _screen_mesh.global_position + basis.z * 0.005
-	var right: Vector3 = basis.x * half_w
-	var down: Vector3 = -basis.y * drop
 	var out := PackedVector3Array()
+	if _speaker_l != null and _speaker_r != null:
+		out.push_back(_speaker_l.global_position)
+		out.push_back(_speaker_r.global_position)
+		return out
+	# No markers (a scene predating them): the defaults, computed in place.
+	var basis := global_transform.basis
+	var face: Vector3 = _screen_mesh.global_position + basis.z * 0.005
+	var right: Vector3 = basis.x * (_screen_size_m.x * 0.5 + 0.055)
+	var down: Vector3 = -basis.y * (_screen_size_m.y * 0.35)
 	out.push_back(face - right + down)
 	out.push_back(face + right + down)
 	return out
+
+
+## Put the speaker markers where a set of this size wears them: flanking the tube
+## 5.5 cm outboard of its edges, a little below its centre, and just proud of the
+## glass -- which is where a CRT of this vintage puts them.
+##
+## Only for a shell that names no speaker seats. tv.tscn's own markers are already
+## these numbers for the stock 0.35 x 0.25 tube, so this exists for a cabinet that
+## moves and rescales the screen without saying where its speakers went; leaving
+## the stock markers there would strand them on the old tube's edges.
+##
+## Local metres throughout, since the markers are children of the root: no basis
+## juggling, and the scale that ScreenSeat gave the tube is already inside
+## _screen_size_m.
+func _place_default_speakers() -> void:
+	if _speaker_l == null or _speaker_r == null:
+		return
+	var half_w: float = _screen_size_m.x * 0.5 + 0.055
+	var drop: float = _screen_size_m.y * 0.35
+	var face: Vector3 = _screen_mesh.position + Vector3(0.0, 0.0, 0.005)
+	_speaker_l.position = face + Vector3(-half_w, -drop, 0.0)
+	_speaker_r.position = face + Vector3(half_w, -drop, 0.0)
 
 
 ## Which way the picture faces. Sound leaves a set the same way it does, so
