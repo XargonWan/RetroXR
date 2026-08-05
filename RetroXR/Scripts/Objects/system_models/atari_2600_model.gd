@@ -263,9 +263,11 @@ func get_cartridge_insert_direction() -> Vector3:
 ## +79 mm, 30 mm apart in magnitude. Placed independently for that reason, and
 ## confirmed twice: thresholding an orthographic rear render put them at -0.1091
 ## and +0.0783, within 0.2 mm of both hand placements.
+## Port 1 is the LEFT socket as the player faces the console's front (+Z), which
+## is -X. The two are listed in port order, not in X order.
 const _PORT_POS := [
-	Vector3(0.07854, 0.07007, -0.09521),    # port 1
-	Vector3(-0.10907, 0.07007, -0.09521),   # port 2
+	Vector3(-0.10907, 0.07007, -0.09521),   # port 1 — left
+	Vector3(0.07854, 0.07007, -0.09521),    # port 2 — right
 ]
 ## Rearward tilt, matching the sloped upper rear face the sockets sit in.
 const _PORT_PITCH_DEG := 17.499
