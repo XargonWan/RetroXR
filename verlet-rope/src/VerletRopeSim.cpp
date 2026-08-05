@@ -89,26 +89,29 @@ inline void VerletRope::SolveBend(int b, int spacing, double allowed_dev, double
     m_points[c] -= v * (0.5f * w_c / w_total);
 }
 
-// Keep segment i's midpoint outside its cached contact plane, splitting the
+// Keep segment s's midpoint outside its cached contact plane, splitting the
 // correction so the midpoint clears fully. The distance cap guards against stale
 // planes (refreshed only every raycast_interval frames, and infinite in extent).
-inline void VerletRope::SolveMidContact(int i)
+inline void VerletRope::SolveMidContact(int s)
 {
-    const float w_a = m_inv_mass[i];
-    const float w_b = m_inv_mass[i + 1];
+    const int ia = m_seg_a[s];
+    const int ib = m_seg_b[s];
+    const float w_a = m_inv_mass[ia];
+    const float w_b = m_inv_mass[ib];
     const float w_sum = w_a + w_b;
     if (w_sum == 0.0f)
         return;
-    const Vector3 mid = (m_points[i] + m_points[i + 1]) * 0.5f;
-    if (mid.distance_squared_to(m_mid_contact_point[i]) > m_segment_length * m_segment_length * 4.0)
+    const Vector3 mid = (m_points[ia] + m_points[ib]) * 0.5f;
+    const double rest = m_seg_rest[s];
+    if (mid.distance_squared_to(m_mid_contact_point[s]) > rest * rest * 4.0)
         return;
-    const Vector3 n = m_mid_contact_normal[i];
-    const double d = (mid - m_mid_contact_point[i]).dot(n);
+    const Vector3 n = m_mid_contact_normal[s];
+    const double d = (mid - m_mid_contact_point[s]).dot(n);
     if (d >= m_collision_radius)
         return;
     const Vector3 push = n * (m_collision_radius - d);
-    m_points[i] += push * (2.0f * w_a / w_sum);
-    m_points[i + 1] += push * (2.0f * w_b / w_sum);
+    m_points[ia] += push * (2.0f * w_a / w_sum);
+    m_points[ib] += push * (2.0f * w_b / w_sum);
 }
 
 // Keep particle i at least collision_radius outside the cached plane.
@@ -128,8 +131,16 @@ inline void VerletRope::PinAnchors()
     }
     if (m_end_cached)
     {
-        const int last = static_cast<int>(m_points.size()) - 1;
+        const int last = TrunkCount() - 1;
         m_points[last] = AnchorPoint(m_end_cached, m_end_anchor_offset, m_points[last]);
+        m_prev_points[last] = m_points[last];
+    }
+    for (const FrayChain &fc : m_fray)
+    {
+        if (fc.cached == nullptr)
+            continue;
+        const int last = fc.first + fc.count - 1;
+        m_points[last] = AnchorPoint(fc.cached, fc.offset, m_points[last]);
         m_prev_points[last] = m_points[last];
     }
 }
@@ -297,13 +308,20 @@ void VerletRope::Step(double p_delta)
     ApplyAnchorCoupling();
 
     // Plug end-direction alignment, FREE ends only.
-    const int count = static_cast<int>(m_points.size());
+    const int count = TrunkCount();
     if (m_end_align_stiffness > 0.0 && count >= 2)
     {
         if (!start_fixed)
             AlignAnchorPlug(m_start_cached, m_points[1] - m_points[0], m_end_align_stiffness);
         if (!end_fixed)
             AlignAnchorPlug(m_end_cached, m_points[count - 2] - m_points[count - 1], m_end_align_stiffness);
+        for (const FrayChain &fc : m_fray)
+        {
+            if (fc.cached == nullptr || fc.count < 2 || PlugIsFixed(fc.cached))
+                continue;
+            const int last = fc.first + fc.count - 1;
+            AlignAnchorPlug(fc.cached, m_points[last - 1] - m_points[last], m_end_align_stiffness);
+        }
     }
 
     UpdateSleepState();
@@ -332,7 +350,10 @@ void VerletRope::Integrate(double p_delta)
 void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
                                   const Vector3 &p_start_exit, const Vector3 &p_end_exit)
 {
-    const int count = static_cast<int>(m_points.size());
+    // The trunk's own particle range. Without a fray this is every particle, so
+    // all the loops below are exactly what they were.
+    const int count = TrunkCount();
+    const int seg_count = static_cast<int>(m_seg_a.size());
     const int iters = m_constraint_iterations > 1 ? m_constraint_iterations : 1;
 
     // Stretch stiffness is remapped so extensibility is independent of the
@@ -349,18 +370,20 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
     // the solve, so gather the active planes once instead of re-testing every
     // particle on all eight iterations.
     m_active_mid.clear();
-    for (int i = 0; i < count - 1; ++i)
-        if (m_mid_contact[i] != 0)
-            m_active_mid.push_back(i);
+    for (int s = 0; s < seg_count; ++s)
+        if (m_mid_contact[s] != 0)
+            m_active_mid.push_back(s);
     m_active_contact.clear();
-    for (int i = 0; i < count; ++i)
+    for (int i = 0, n = static_cast<int>(m_points.size()); i < n; ++i)
         if (m_inv_mass[i] != 0.0f && m_c_flags[i] != 0)
             m_active_contact.push_back(i);
 
     for (int iter_i = 0; iter_i < iters; ++iter_i)
     {
-        for (int i = 0; i < count - 1; ++i)
-            SolvePair(i, i + 1, m_segment_length, k_stretch);
+        // Stretch runs off the segment table, so a branch's link back to the
+        // junction is solved with the rest, at the branch's own rest length.
+        for (int s = 0; s < seg_count; ++s)
+            SolvePair(m_seg_a[s], m_seg_b[s], m_seg_rest[s], k_stretch);
 
         // Bend, hierarchical: besides adjacent triples (spacing 1), also
         // constrain toward midpoints at spacing 2/4/8… Plain PBD bending
@@ -440,11 +463,14 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
             }
         }
 
+        if (!m_fray.empty())
+            SolveFrayConstraints(iter_i, k_stretch, k_bend, allowed_dev);
+
         // Cached contact planes, solved together with the other constraints so
         // contacts — including edge wraps — are part of the equilibrium instead
         // of oscillating.
-        for (int i : m_active_mid)
-            SolveMidContact(i);
+        for (int s : m_active_mid)
+            SolveMidContact(s);
         for (int i : m_active_contact)
         {
             const uint8_t flags = m_c_flags[i];
@@ -454,6 +480,66 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
                 ProjectPlane(i, m_c_p2[i], m_c_n2[i]);
         }
         PinAnchors();
+    }
+}
+
+// Bend and stub constraints for the frayed branches. Stretch is not here — it
+// comes off the shared segment table with the trunk's.
+//
+// Nothing spans the junction: a branch's bend starts one particle in, so the
+// breakout is a free hinge. That is what a real fray is, and constraining across
+// it would need a "which branch" choice the geometry doesn't offer.
+void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, double p_allowed_dev)
+{
+    const double seg_len = FraySegLength();
+    for (const FrayChain &fc : m_fray)
+    {
+        const int first = fc.first;
+        const int last = fc.first + fc.count - 1;
+        if (fc.count < 3)
+            continue;
+
+        if (p_k_bend > 0.0)
+        {
+            int levels = 1 + static_cast<int>(std::lround(p_k_bend * 3.0));
+            int s = 1;
+            while (s * 2 <= fc.count - 1 && levels > 0)
+            {
+                const double allowed = p_allowed_dev * static_cast<double>(s * s);
+                if (p_iter % 2 == 0)
+                    for (int i = first + s; i <= last - s; ++i)
+                        SolveBend(i, s, allowed, p_k_bend);
+                else
+                    for (int i = last - s; i >= first + s; --i)
+                        SolveBend(i, s, allowed, p_k_bend);
+                s *= 2;
+                levels -= 1;
+            }
+        }
+
+        // Strain-relief boot at the plug, the same taper the trunk's ends get.
+        if (m_end_stiffness > 0.0 && m_end_stiff_segments > 0)
+        {
+            const double ke = CLAMP(m_end_stiffness, 0.0, 1.0);
+            const int n_end = std::min(m_end_stiff_segments, fc.count - 2);
+            for (int j = 1; j <= n_end; ++j)
+                SolveBend(last - j, 1, 0.0, StubWeight(ke, j, n_end));
+
+            // Directional stub: a branch whose plug is held or socketed leaves
+            // it along the plug's exit axis rather than hanging off it.
+            if (PlugIsFixed(fc.cached))
+            {
+                const Vector3 exit = PlugExitDir(fc.cached);
+                const Vector3 base = m_points[last];
+                for (int j = 1; j <= n_end; ++j)
+                {
+                    const int idx = last - j;
+                    if (m_inv_mass[idx] != 0.0f)
+                        m_points[idx] = m_points[idx].lerp(base + exit * (seg_len * j),
+                                                           StubWeight(ke, j, n_end));
+                }
+            }
+        }
     }
 }
 
@@ -489,12 +575,19 @@ void VerletRope::SolveSelfCollision()
     for (int i = 0; i < count; ++i)
     {
         const float w_i = m_inv_mass[i];
+        const uint8_t g_i = m_self_group[i];
         Vector3 p_i = m_points[i];
+        // j >= i+2 exempts chain neighbours by ARRAY distance, which stops being
+        // chain distance once branches are appended: a branch's head and the
+        // trunk's end are coincident but far apart in the array, as are the
+        // heads of two branches. m_self_group re-states that by construction.
         for (int j = i + 2; j < count; ++j)
         {
             const float w_j = m_inv_mass[j];
             const float w_sum = w_i + w_j;
             if (w_sum == 0.0f)
+                continue;
+            if (g_i != 0 && g_i == m_self_group[j])
                 continue;
             const Vector3 diff = m_points[j] - p_i;
             const double d_sq = diff.length_squared();
@@ -603,12 +696,15 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
     // constraint loop, so the corner contact is part of the solver's
     // equilibrium. Pushing directly from this throttled pass instead makes an
     // edge-wrapped rope visibly oscillate.
-    for (int i = 0; i < count - 1; ++i)
+    const int seg_count = static_cast<int>(m_seg_a.size());
+    for (int s = 0; s < seg_count; ++s)
     {
-        m_mid_contact[i] = 0;
-        if (m_inv_mass[i] + m_inv_mass[i + 1] == 0.0f)
+        const int ia = m_seg_a[s];
+        const int ib = m_seg_b[s];
+        m_mid_contact[s] = 0;
+        if (m_inv_mass[ia] + m_inv_mass[ib] == 0.0f)
             continue;
-        const Vector3 mid = (m_points[i] + m_points[i + 1]) * 0.5f;
+        const Vector3 mid = (m_points[ia] + m_points[ib]) * 0.5f;
         m_shape_query->set_transform(Transform3D(Basis(), mid));
         Dictionary rest = space_state->get_rest_info(m_shape_query);
         if (rest.is_empty())
@@ -631,9 +727,9 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
         const double behind = -(mid - rest["point"].operator Vector3()).dot(n);
         if (behind > m_collision_radius * 3.0)
             continue;
-        m_mid_contact[i] = 1;
-        m_mid_contact_point[i] = rest["point"];
-        m_mid_contact_normal[i] = n;
+        m_mid_contact[s] = 1;
+        m_mid_contact_point[s] = rest["point"];
+        m_mid_contact_normal[s] = n;
     }
 
     // Wrong-side recovery: a particle that tunnelled through a slab gets locked
@@ -645,18 +741,20 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
     // (normals antiparallel), while a legit drape over an edge crosses roughly
     // perpendicular faces. Require the state on two consecutive rest passes,
     // then teleport the particle back to the entry face.
-    for (int i = 1; i < count; ++i)
+    for (int s = 0; s < seg_count; ++s)
     {
+        const int prev = m_seg_a[s];
+        const int i = m_seg_b[s];
         if (m_inv_mass[i] == 0.0f)
             continue;
-        const Vector3 seg_vec = m_points[i] - m_points[i - 1];
+        const Vector3 seg_vec = m_points[i] - m_points[prev];
         const double seg_len = seg_vec.length();
         if (seg_len < 0.0001)
         {
             m_stuck_passes[i] = 0;
             continue;
         }
-        m_ray_query->set_from(m_points[i - 1]);
+        m_ray_query->set_from(m_points[prev]);
         m_ray_query->set_to(m_points[i] + seg_vec * (m_collision_radius / seg_len));
         Dictionary entry = space_state->intersect_ray(m_ray_query);
         const Vector3 entry_n = entry.is_empty() ? Vector3() : entry["normal"].operator Vector3();
@@ -669,7 +767,7 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
         }
         // …and the reverse ray must exit through an opposing face.
         m_ray_query->set_from(m_points[i]);
-        m_ray_query->set_to(m_points[i - 1]);
+        m_ray_query->set_to(m_points[prev]);
         Dictionary exit = space_state->intersect_ray(m_ray_query);
         if (exit.is_empty() || entry_n.dot(exit["normal"].operator Vector3()) > -0.7)
         {
@@ -683,9 +781,9 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
         m_points[i] = entry["position"].operator Vector3() + entry_n * m_collision_radius;
         m_prev_points[i] = m_points[i];
         m_c_flags[i] = 0;
-        m_mid_contact[i - 1] = 0;
-        if (i < m_segment_count)
-            m_mid_contact[i] = 0;
+        m_mid_contact[s] = 0;
+        if (m_next_seg[i] >= 0)
+            m_mid_contact[m_next_seg[i]] = 0;
     }
 }
 
@@ -724,13 +822,20 @@ void VerletRope::UpdateSleepState()
 
     const Vector3 a_start = AnchorPoint(m_start_cached, m_start_anchor_offset, m_sleep_anchor_start);
     const Vector3 a_end = AnchorPoint(m_end_cached, m_end_anchor_offset, m_sleep_anchor_end);
-    const bool anchors_still =
+    bool anchors_still =
         a_start.distance_squared_to(m_sleep_anchor_start) <= WAKE_ANCHOR_EPS_SQ &&
         a_end.distance_squared_to(m_sleep_anchor_end) <= WAKE_ANCHOR_EPS_SQ;
-    if (!anchors_still)
-        still = false;
     m_sleep_anchor_start = a_start;
     m_sleep_anchor_end = a_end;
+    for (FrayChain &fc : m_fray)
+    {
+        const Vector3 a = AnchorPoint(fc.cached, fc.offset, fc.sleep_pos);
+        if (a.distance_squared_to(fc.sleep_pos) > WAKE_ANCHOR_EPS_SQ)
+            anchors_still = false;
+        fc.sleep_pos = a;
+    }
+    if (!anchors_still)
+        still = false;
 
     if (still)
     {

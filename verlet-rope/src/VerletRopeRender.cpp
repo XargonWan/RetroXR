@@ -7,11 +7,19 @@
 // buffer reallocation per rope per frame, which is exactly what this avoids.
 // Custom attributes live in the ATTRIBUTE buffer instead, which has its own
 // region-update call, so the normal rides along for one extra bulk upload.
+//
+// A ribbon cable draws one SURFACE per cord, each with its own material, rather
+// than one surface carrying per-vertex colour: colour would have to live in the
+// attribute buffer next to CUSTOM0, and the per-frame region upload rewrites
+// that whole buffer. Every cord shares the trunk's simulated centreline and is
+// offset laterally in its transport frame, so the extra cost is meshing, never
+// solving.
 
 #include "VerletRope.hpp"
 
 #include <godot_cpp/classes/engine.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace godot;
@@ -22,6 +30,17 @@ namespace Xenu
 namespace
 {
 constexpr double RENDER_FOLLOW_EPS_SQ = 0.0001 * 0.0001;
+
+// Ease a cord from its trunk slot into its in-group slot. Smoothstep rather than
+// a straight lerp so the tube leaves the junction tangent to the ribbon instead
+// of kinking away from it.
+inline float FrayEase(int p_from_junction, int p_taper)
+{
+    if (p_taper <= 0)
+        return 1.0f;
+    const float t = std::min(1.0f, static_cast<float>(p_from_junction) / static_cast<float>(p_taper));
+    return t * t * (3.0f - 2.0f * t);
+}
 } // namespace
 
 void VerletRope::BuildTrigTables()
@@ -36,15 +55,32 @@ void VerletRope::BuildTrigTables()
     }
 }
 
+// Points on one cord's drawn centreline: its start branch, the trunk, its end
+// branch. Every cord has the same count, so every surface does too.
+int VerletRope::CordPointCount() const
+{
+    int n = TrunkCount();
+    if (m_fray_segments_start > 0)
+        n += m_fray_segments_start;
+    if (m_fray_segments_end > 0)
+        n += m_fray_segments_end;
+    return n;
+}
+
 void VerletRope::BuildMeshTopology()
 {
-    const int sub = Subdiv();
-    const int ring_count = m_segment_count * sub + 1;
+    if (static_cast<int>(m_cos_table.size()) != m_tube_sides)
+        BuildTrigTables();
+    RebuildMaterials();
+
+    const int cords = m_ribbon_count > 0 ? m_ribbon_count : 1;
+    const int ring_count = (CordPointCount() - 1) * Subdiv() + 1;
     const int seg_rings = ring_count - 1;
 
     m_ring_points.assign(ring_count, Vector3());
     m_ring_side.assign(ring_count, Vector3());
     m_ring_up.assign(ring_count, Vector3());
+    m_ring_lat.assign(ring_count, 0.0f);
 
     const int vertex_count = ring_count * m_tube_sides;
     PackedVector3Array vertex_array;
@@ -52,7 +88,8 @@ void VerletRope::BuildMeshTopology()
     PackedFloat32Array normal_array;
     normal_array.resize(vertex_count * 4);
 
-    // Index buffer — topology never changes, built once.
+    // Index buffer — topology never changes, built once and shared by every
+    // cord's surface, which all have identical geometry.
     PackedInt32Array index_array;
     index_array.resize(seg_rings * m_tube_sides * 6);
     {
@@ -90,35 +127,101 @@ void VerletRope::BuildMeshTopology()
     am.instantiate();
     const uint64_t fmt = static_cast<uint64_t>(Mesh::ARRAY_CUSTOM_RGBA_FLOAT)
                          << Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT;
-    am->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(),
-                                Dictionary(), fmt);
-    am->surface_set_material(0, m_material);
+    for (int c = 0; c < cords; ++c)
+    {
+        am->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(),
+                                    Dictionary(), fmt);
+        am->surface_set_material(c, m_materials[c]);
+    }
     set_mesh(am);
 
-    // Staging buffers for the per-frame region uploads, sized once.
-    m_vertex_bytes.resize(vertex_count * static_cast<int>(sizeof(float)) * 3);
-    m_normal_bytes.resize(vertex_count * static_cast<int>(sizeof(float)) * 4);
+    // Staging buffers for the per-frame region uploads, sized once. One pair per
+    // cord: the region update queues the array for the render thread, so writing
+    // through ptrw() on a buffer another surface still holds would fork it.
+    m_vertex_bytes.assign(cords, PackedByteArray());
+    m_normal_bytes.assign(cords, PackedByteArray());
+    for (int c = 0; c < cords; ++c)
+    {
+        m_vertex_bytes[c].resize(vertex_count * static_cast<int>(sizeof(float)) * 3);
+        m_normal_bytes[c].resize(vertex_count * static_cast<int>(sizeof(float)) * 4);
+    }
+
+    m_built_cords = cords;
+    m_built_rings = ring_count;
+    m_built_sides = m_tube_sides;
+    m_mesh_dirty = true;
 }
 
-// Fill m_ring_points from the sim points — straight copy, or Catmull-Rom
-// subdivision when smoothing > 0.
-void VerletRope::FillRingPoints()
+// Gather cord c's centreline out of the render points, plus the lateral slot it
+// occupies at each one. The branches are walked outward from the junction so the
+// ease reads the same at both ends; the start branch is emitted in reverse
+// because the drawn cord runs plug -> junction -> trunk -> junction -> plug.
+void VerletRope::BuildCordPath(int p_cord)
 {
-    const int count = static_cast<int>(m_render_points.size());
+    const int trunk_n = TrunkCount();
+    const float lat_trunk = m_lat_trunk.empty() ? 0.0f : m_lat_trunk[p_cord];
+    m_cord_points.clear();
+    m_cord_lat.clear();
+
+    const int sc = m_cord_start_chain.empty() ? -1 : m_cord_start_chain[p_cord];
+    if (sc >= 0)
+    {
+        const FrayChain &fc = m_fray[sc];
+        const float lat_group = m_lat_start[p_cord];
+        for (int k = fc.count - 1; k >= 0; --k)
+        {
+            m_cord_points.push_back(m_render_points[fc.first + k]);
+            const float e = FrayEase(k + 1, m_fray_taper_segments);
+            m_cord_lat.push_back(lat_trunk + (lat_group - lat_trunk) * e);
+        }
+    }
+
+    for (int i = 0; i < trunk_n; ++i)
+    {
+        m_cord_points.push_back(m_render_points[i]);
+        m_cord_lat.push_back(lat_trunk);
+    }
+
+    const int ec = m_cord_end_chain.empty() ? -1 : m_cord_end_chain[p_cord];
+    if (ec >= 0)
+    {
+        const FrayChain &fc = m_fray[ec];
+        const float lat_group = m_lat_end[p_cord];
+        for (int k = 0; k < fc.count; ++k)
+        {
+            m_cord_points.push_back(m_render_points[fc.first + k]);
+            const float e = FrayEase(k + 1, m_fray_taper_segments);
+            m_cord_lat.push_back(lat_trunk + (lat_group - lat_trunk) * e);
+        }
+    }
+}
+
+// Fill m_ring_points (and m_ring_lat for a ribbon) from a cord path — straight
+// copy, or Catmull-Rom subdivision when smoothing > 0. The lateral track
+// subdivides linearly: it is already a smooth ease, and splining it would
+// overshoot the in-group slot.
+void VerletRope::FillRingPoints(const std::vector<Vector3> &p_src, bool p_with_lat)
+{
+    const int count = static_cast<int>(p_src.size());
     const int sub = Subdiv();
     if (sub == 1)
     {
         for (int i = 0; i < count; ++i)
-            m_ring_points[i] = m_render_points[i];
+            m_ring_points[i] = p_src[i];
+        if (p_with_lat)
+            for (int i = 0; i < count; ++i)
+                m_ring_lat[i] = m_cord_lat[i];
         return;
     }
     int r = 0;
     for (int i = 0; i < count - 1; ++i)
     {
-        const Vector3 p0 = m_render_points[i - 1 > 0 ? i - 1 : 0];
-        const Vector3 p1 = m_render_points[i];
-        const Vector3 p2 = m_render_points[i + 1];
-        const Vector3 p3 = m_render_points[i + 2 < count - 1 ? i + 2 : count - 1];
+        const Vector3 p0 = p_src[i - 1 > 0 ? i - 1 : 0];
+        const Vector3 p1 = p_src[i];
+        const Vector3 p2 = p_src[i + 1];
+        const Vector3 p3 = p_src[i + 2 < count - 1 ? i + 2 : count - 1];
+        const float l1 = p_with_lat ? m_cord_lat[i] : 0.0f;
+        const float l2 = p_with_lat ? m_cord_lat[i + 1] : 0.0f;
         for (int s = 0; s < sub; ++s)
         {
             const double t = static_cast<double>(s) / static_cast<double>(sub);
@@ -127,16 +230,33 @@ void VerletRope::FillRingPoints()
             m_ring_points[r] = 0.5 * ((2.0 * p1) + (-p0 + p2) * t +
                                       (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
                                       (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3);
+            if (p_with_lat)
+                m_ring_lat[r] = l1 + (l2 - l1) * static_cast<float>(t);
             r += 1;
         }
     }
-    m_ring_points[r] = m_render_points[count - 1];
+    m_ring_points[r] = p_src[count - 1];
+    if (p_with_lat)
+        m_ring_lat[r] = m_cord_lat[count - 1];
 }
 
-void VerletRope::RenderTube()
+void VerletRope::RenderCord(int p_cord)
 {
-    FillRingPoints();
+    // A plain round cord's path IS the render points, so it skips the gather and
+    // meshes at exactly the cost it did before ribbons existed. m_ring_lat stays
+    // the zeroes BuildMeshTopology left, so the offset below falls out.
+    const bool plain = IsPlainCord();
+    if (plain)
+    {
+        FillRingPoints(m_render_points, false);
+    }
+    else
+    {
+        BuildCordPath(p_cord);
+        FillRingPoints(m_cord_points, true);
+    }
     const int count = static_cast<int>(m_ring_points.size());
+    const double pitch = CordPitch();
 
     // Parallel-transport (rotation-minimizing) frames: build the first ring's
     // basis from any perpendicular, then carry it along the tube by projecting
@@ -144,7 +264,14 @@ void VerletRope::RenderTube()
     // independently from a fixed reference vector twists neighbouring rings
     // against each other whenever the tangent nears that reference, which
     // pinches the tube like sausage links.
+    //
+    // The seed is not arbitrary for a ribbon: `side` is the direction the cords
+    // are laid out along, so it decides which way the flat "ooo" faces. Take it
+    // from the start anchor's basis, which is the connector the ribbon leaves.
+    // With a single round cord the roll was invisible and this changes nothing.
     Vector3 prev_side;
+    if (m_start_cached != nullptr)
+        prev_side = m_start_cached->get_global_transform().basis.orthonormalized().xform(m_ribbon_axis);
     Vector3 prev_tangent(0, 1, 0);
     for (int i = 0; i < count; ++i)
     {
@@ -173,7 +300,7 @@ void VerletRope::RenderTube()
         if (side.length_squared() < 0.000001)
         {
             const Vector3 ref = std::abs(tangent.dot(Vector3(0, 1, 0))) < 0.99 ? Vector3(0, 1, 0)
-                                                                              : Vector3(1, 0, 0);
+                                                                               : Vector3(1, 0, 0);
             side = tangent.cross(ref);
         }
         side = side.normalized();
@@ -183,14 +310,17 @@ void VerletRope::RenderTube()
     }
 
     // Fill the staging buffers directly — these go straight to the GPU.
-    float *vw = reinterpret_cast<float *>(m_vertex_bytes.ptrw());
-    float *nw = reinterpret_cast<float *>(m_normal_bytes.ptrw());
+    float *vw = reinterpret_cast<float *>(m_vertex_bytes[p_cord].ptrw());
+    float *nw = reinterpret_cast<float *>(m_normal_bytes[p_cord].ptrw());
     for (int i = 0; i < count; ++i)
     {
         const int base = i * m_tube_sides;
         const Vector3 side = m_ring_side[i];
         const Vector3 up = m_ring_up[i];
-        const Vector3 centre = m_ring_points[i];
+        // The lateral offset rides the transport frame, so the ribbon twists
+        // with the cable instead of staying pinned to a world axis.
+        const Vector3 centre =
+            plain ? m_ring_points[i] : m_ring_points[i] + side * (m_ring_lat[i] * pitch);
         for (int j = 0; j < m_tube_sides; ++j)
         {
             const Vector3 radial = side * m_cos_table[j] + up * m_sin_table[j];
@@ -210,17 +340,26 @@ void VerletRope::RenderTube()
     Ref<ArrayMesh> am = get_mesh();
     if (am.is_null())
         return;
-    am->surface_update_vertex_region(0, 0, m_vertex_bytes);
-    am->surface_update_attribute_region(0, 0, m_normal_bytes);
+    am->surface_update_vertex_region(p_cord, 0, m_vertex_bytes[p_cord]);
+    am->surface_update_attribute_region(p_cord, 0, m_normal_bytes[p_cord]);
+}
+
+void VerletRope::RenderTube()
+{
+    const int cords = std::min(m_ribbon_count > 0 ? m_ribbon_count : 1, m_built_cords);
+    for (int c = 0; c < cords; ++c)
+        RenderCord(c);
 
     // Keep culling bounds in sync — surface_update_vertex_region does NOT
     // recompute the mesh AABB (it stays a zero-size box at the origin), and this
     // node is top_level at the world origin, so without this the rope gets
-    // frustum-culled whenever the origin is off-screen.
+    // frustum-culled whenever the origin is off-screen. m_render_points covers
+    // the branches as well as the trunk; the growth covers the ribbon's width.
     AABB aabb(m_render_points[0], Vector3());
     for (size_t i = 1; i < m_render_points.size(); ++i)
         aabb = aabb.expand(m_render_points[i]);
-    set_custom_aabb(aabb.grow(m_collision_radius * 2.0));
+    const double half_width = CordPitch() * 0.5 * static_cast<double>(cords - 1);
+    set_custom_aabb(aabb.grow(m_collision_radius * 2.0 + half_width + m_tube_radius));
 }
 
 // Roll the render history forward one physics tick. Called at the end of every
@@ -255,7 +394,7 @@ void VerletRope::_process(double)
 
 void VerletRope::Remesh()
 {
-    if (m_points.size() < 2)
+    if (m_points.size() < 2 || m_built_cords == 0)
         return;
     // The whole rope has to be interpolated, not just its ends. Overriding only
     // the two end points put them on render time while every interior point

@@ -164,6 +164,56 @@ void VerletRope::_bind_methods()
     ADD_PROPERTY(PropertyInfo(Variant::INT, "end_stiff_segments", PROPERTY_HINT_RANGE, "0,8"),
                  "set_end_stiff_segments", "get_end_stiff_segments");
 
+    ADD_GROUP("Ribbon", "");
+    ClassDB::bind_method(D_METHOD("set_ribbon_count", "value"), &VerletRope::SetRibbonCount);
+    ClassDB::bind_method(D_METHOD("get_ribbon_count"), &VerletRope::GetRibbonCount);
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "ribbon_count", PROPERTY_HINT_RANGE, "1,8"),
+                 "set_ribbon_count", "get_ribbon_count");
+
+    ClassDB::bind_method(D_METHOD("set_ribbon_spacing", "value"), &VerletRope::SetRibbonSpacing);
+    ClassDB::bind_method(D_METHOD("get_ribbon_spacing"), &VerletRope::GetRibbonSpacing);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "ribbon_spacing"), "set_ribbon_spacing", "get_ribbon_spacing");
+
+    ClassDB::bind_method(D_METHOD("set_ribbon_colors", "value"), &VerletRope::SetRibbonColors);
+    ClassDB::bind_method(D_METHOD("get_ribbon_colors"), &VerletRope::GetRibbonColors);
+    ADD_PROPERTY(PropertyInfo(Variant::PACKED_COLOR_ARRAY, "ribbon_colors"),
+                 "set_ribbon_colors", "get_ribbon_colors");
+
+    ClassDB::bind_method(D_METHOD("set_ribbon_axis", "value"), &VerletRope::SetRibbonAxis);
+    ClassDB::bind_method(D_METHOD("get_ribbon_axis"), &VerletRope::GetRibbonAxis);
+    ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "ribbon_axis"), "set_ribbon_axis", "get_ribbon_axis");
+
+    ADD_GROUP("Fray", "fray_");
+    ClassDB::bind_method(D_METHOD("set_fray_segments_start", "value"), &VerletRope::SetFraySegmentsStart);
+    ClassDB::bind_method(D_METHOD("get_fray_segments_start"), &VerletRope::GetFraySegmentsStart);
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "fray_segments_start", PROPERTY_HINT_RANGE, "0,16"),
+                 "set_fray_segments_start", "get_fray_segments_start");
+
+    ClassDB::bind_method(D_METHOD("set_fray_segments_end", "value"), &VerletRope::SetFraySegmentsEnd);
+    ClassDB::bind_method(D_METHOD("get_fray_segments_end"), &VerletRope::GetFraySegmentsEnd);
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "fray_segments_end", PROPERTY_HINT_RANGE, "0,16"),
+                 "set_fray_segments_end", "get_fray_segments_end");
+
+    ClassDB::bind_method(D_METHOD("set_fray_start_groups", "value"), &VerletRope::SetFrayStartGroups);
+    ClassDB::bind_method(D_METHOD("get_fray_start_groups"), &VerletRope::GetFrayStartGroups);
+    ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "fray_start_groups"),
+                 "set_fray_start_groups", "get_fray_start_groups");
+
+    ClassDB::bind_method(D_METHOD("set_fray_end_groups", "value"), &VerletRope::SetFrayEndGroups);
+    ClassDB::bind_method(D_METHOD("get_fray_end_groups"), &VerletRope::GetFrayEndGroups);
+    ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "fray_end_groups"),
+                 "set_fray_end_groups", "get_fray_end_groups");
+
+    ClassDB::bind_method(D_METHOD("set_fray_segment_length", "value"), &VerletRope::SetFraySegmentLength);
+    ClassDB::bind_method(D_METHOD("get_fray_segment_length"), &VerletRope::GetFraySegmentLength);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fray_segment_length"),
+                 "set_fray_segment_length", "get_fray_segment_length");
+
+    ClassDB::bind_method(D_METHOD("set_fray_taper_segments", "value"), &VerletRope::SetFrayTaperSegments);
+    ClassDB::bind_method(D_METHOD("get_fray_taper_segments"), &VerletRope::GetFrayTaperSegments);
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "fray_taper_segments", PROPERTY_HINT_RANGE, "0,8"),
+                 "set_fray_taper_segments", "get_fray_taper_segments");
+
     // Anchors — plain properties, assigned from GDScript after instancing.
     ClassDB::bind_method(D_METHOD("set_start_node", "node"), &VerletRope::SetStartNode);
     ClassDB::bind_method(D_METHOD("get_start_node"), &VerletRope::GetStartNode);
@@ -188,6 +238,19 @@ void VerletRope::_bind_methods()
     ClassDB::bind_method(D_METHOD("step", "delta"), &VerletRope::Step);
     ClassDB::bind_method(D_METHOD("remesh"), &VerletRope::Remesh);
     ClassDB::bind_method(D_METHOD("is_sleeping"), &VerletRope::IsSleeping);
+
+    // Fray anchors are per group, so they take an index and cannot be plain
+    // properties the way start_node/end_node are.
+    ClassDB::bind_method(D_METHOD("set_fray_start_node", "group", "node"), &VerletRope::SetFrayStartNode);
+    ClassDB::bind_method(D_METHOD("get_fray_start_node", "group"), &VerletRope::GetFrayStartNode);
+    ClassDB::bind_method(D_METHOD("set_fray_end_node", "group", "node"), &VerletRope::SetFrayEndNode);
+    ClassDB::bind_method(D_METHOD("get_fray_end_node", "group"), &VerletRope::GetFrayEndNode);
+    ClassDB::bind_method(D_METHOD("set_fray_start_anchor_offset", "group", "offset"),
+                         &VerletRope::SetFrayStartAnchorOffset);
+    ClassDB::bind_method(D_METHOD("set_fray_end_anchor_offset", "group", "offset"),
+                         &VerletRope::SetFrayEndAnchorOffset);
+    ClassDB::bind_method(D_METHOD("get_fray_start_point", "group"), &VerletRope::GetFrayStartPoint);
+    ClassDB::bind_method(D_METHOD("get_fray_end_point", "group"), &VerletRope::GetFrayEndPoint);
 }
 
 // ── Anchors ─────────────────────────────────────────────────────────────────
@@ -222,6 +285,132 @@ void VerletRope::CacheAnchors()
 {
     m_start_cached = GetStartNode();
     m_end_cached = GetEndNode();
+    for (FrayChain &fc : m_fray)
+        fc.cached = fc.node_id == 0
+                        ? nullptr
+                        : Object::cast_to<Node3D>(ObjectDB::get_instance(fc.node_id));
+}
+
+// ── Fray anchors ────────────────────────────────────────────────────────────
+
+namespace
+{
+// The group arrays are written before _init_points knows how many groups there
+// are, so they grow on demand rather than being sized up front.
+template <typename T> void GrowTo(std::vector<T> &v, int index)
+{
+    if (index >= static_cast<int>(v.size()))
+        v.resize(static_cast<size_t>(index) + 1);
+}
+
+Node3D *ResolveId(uint64_t id)
+{
+    return id == 0 ? nullptr : Object::cast_to<Node3D>(ObjectDB::get_instance(id));
+}
+} // namespace
+
+void VerletRope::SetFrayStartNode(int p_group, Node3D *p_node)
+{
+    if (p_group < 0)
+        return;
+    GrowTo(m_fray_start_ids, p_group);
+    m_fray_start_ids[p_group] = p_node ? p_node->get_instance_id() : 0;
+    // A chain already built for this group picks the change up immediately.
+    int g = 0;
+    for (FrayChain &fc : m_fray)
+    {
+        if (!fc.at_start)
+            continue;
+        if (g++ == p_group)
+        {
+            fc.node_id = m_fray_start_ids[p_group];
+            fc.cached = p_node;
+            break;
+        }
+    }
+}
+
+Node3D *VerletRope::GetFrayStartNode(int p_group) const
+{
+    if (p_group < 0 || p_group >= static_cast<int>(m_fray_start_ids.size()))
+        return nullptr;
+    return ResolveId(m_fray_start_ids[p_group]);
+}
+
+void VerletRope::SetFrayEndNode(int p_group, Node3D *p_node)
+{
+    if (p_group < 0)
+        return;
+    GrowTo(m_fray_end_ids, p_group);
+    m_fray_end_ids[p_group] = p_node ? p_node->get_instance_id() : 0;
+    int g = 0;
+    for (FrayChain &fc : m_fray)
+    {
+        if (fc.at_start)
+            continue;
+        if (g++ == p_group)
+        {
+            fc.node_id = m_fray_end_ids[p_group];
+            fc.cached = p_node;
+            break;
+        }
+    }
+}
+
+Node3D *VerletRope::GetFrayEndNode(int p_group) const
+{
+    if (p_group < 0 || p_group >= static_cast<int>(m_fray_end_ids.size()))
+        return nullptr;
+    return ResolveId(m_fray_end_ids[p_group]);
+}
+
+void VerletRope::SetFrayStartAnchorOffset(int p_group, const Vector3 &p_offset)
+{
+    if (p_group < 0)
+        return;
+    GrowTo(m_fray_start_offsets, p_group);
+    m_fray_start_offsets[p_group] = p_offset;
+    int g = 0;
+    for (FrayChain &fc : m_fray)
+        if (fc.at_start && g++ == p_group)
+        {
+            fc.offset = p_offset;
+            break;
+        }
+}
+
+void VerletRope::SetFrayEndAnchorOffset(int p_group, const Vector3 &p_offset)
+{
+    if (p_group < 0)
+        return;
+    GrowTo(m_fray_end_offsets, p_group);
+    m_fray_end_offsets[p_group] = p_offset;
+    int g = 0;
+    for (FrayChain &fc : m_fray)
+        if (!fc.at_start && g++ == p_group)
+        {
+            fc.offset = p_offset;
+            break;
+        }
+}
+
+// World position of a fray group's terminal particle — where its plug sits.
+Vector3 VerletRope::GetFrayStartPoint(int p_group) const
+{
+    int g = 0;
+    for (const FrayChain &fc : m_fray)
+        if (fc.at_start && g++ == p_group)
+            return m_points[static_cast<size_t>(fc.first) + fc.count - 1];
+    return Vector3();
+}
+
+Vector3 VerletRope::GetFrayEndPoint(int p_group) const
+{
+    int g = 0;
+    for (const FrayChain &fc : m_fray)
+        if (!fc.at_start && g++ == p_group)
+            return m_points[static_cast<size_t>(fc.first) + fc.count - 1];
+    return Vector3();
 }
 
 Vector3 VerletRope::AnchorPoint(Node3D *node, const Vector3 &offset, const Vector3 &fallback) const
@@ -233,19 +422,12 @@ Vector3 VerletRope::AnchorPoint(Node3D *node, const Vector3 &offset, const Vecto
 
 void VerletRope::_ready()
 {
-    // Lit PVC jacket — cable.gdshader derives its normal from a CUSTOM0
-    // attribute, because the tube has no normal array (positions are re-uploaded
-    // every frame through surface_update_vertex_region, and normals would share
-    // that buffer).
-    Ref<Shader> shader = ResourceLoader::get_singleton()->load(CABLE_SHADER_PATH);
-    m_material.instantiate();
-    m_material->set_shader(shader);
-    m_material->set_shader_parameter("cable_color", m_rope_color);
     set_as_top_level(true);
     set_global_transform(Transform3D());
 
-    BuildTrigTables();
-    BuildMeshTopology();
+    // InitPoints lays out the particles the topology has to match, so it runs
+    // first and rebuilds the mesh itself — BuildMeshTopology sizes from the
+    // fray chains it produces.
     InitPoints();
 
     if (m_surface_collision_mask != 0)
@@ -264,16 +446,71 @@ void VerletRope::_ready()
     }
 }
 
+// A cord's jacket: its own entry in ribbon_colors, or rope_color when the array
+// is short or absent. A plain one-cord cable never touches ribbon_colors.
+Color VerletRope::CordColor(int p_cord) const
+{
+    if (p_cord >= 0 && p_cord < m_ribbon_colors.size())
+        return m_ribbon_colors[p_cord];
+    return m_rope_color;
+}
+
+// One ShaderMaterial per cord. They share the shader resource (ResourceLoader
+// caches it) but not the parameter, which is what lets a composite lead run
+// yellow/white/red down one node.
+void VerletRope::RebuildMaterials()
+{
+    const int cords = m_ribbon_count > 0 ? m_ribbon_count : 1;
+    if (static_cast<int>(m_materials.size()) != cords)
+    {
+        // Lit PVC jacket — cable.gdshader derives its normal from a CUSTOM0
+        // attribute, because the tube has no normal array (positions are
+        // re-uploaded every frame through surface_update_vertex_region, and
+        // normals would share that buffer).
+        Ref<Shader> shader = ResourceLoader::get_singleton()->load(CABLE_SHADER_PATH);
+        m_materials.clear();
+        m_materials.resize(cords);
+        for (int c = 0; c < cords; ++c)
+        {
+            m_materials[c].instantiate();
+            m_materials[c]->set_shader(shader);
+        }
+    }
+    for (int c = 0; c < cords; ++c)
+        m_materials[c]->set_shader_parameter("cable_color", CordColor(c));
+}
+
 void VerletRope::SetRopeColor(const Color &p_color)
 {
     m_rope_color = p_color;
-    if (m_material.is_valid())
-        m_material->set_shader_parameter("cable_color", p_color);
+    for (size_t c = 0; c < m_materials.size(); ++c)
+        m_materials[c]->set_shader_parameter("cable_color", CordColor(static_cast<int>(c)));
 }
 
+void VerletRope::SetRibbonColors(const PackedColorArray &p_colors)
+{
+    m_ribbon_colors = p_colors;
+    for (size_t c = 0; c < m_materials.size(); ++c)
+        m_materials[c]->set_shader_parameter("cable_color", CordColor(static_cast<int>(c)));
+}
+
+// Changing the cord count changes the surface count, so the mesh has to be
+// rebuilt; InitPoints notices and does it.
+void VerletRope::SetRibbonCount(int p_count)
+{
+    m_ribbon_count = CLAMP(p_count, 1, 8);
+}
+
+// Trunk plus one branch, which is how far the far plug can actually get from the
+// near one — not the sum of every branch.
 double VerletRope::RestLength() const
 {
-    return m_segment_count * m_segment_length;
+    double len = m_segment_count * m_segment_length;
+    if (m_fray_segments_start > 0)
+        len += m_fray_segments_start * FraySegLength();
+    if (m_fray_segments_end > 0)
+        len += m_fray_segments_end * FraySegLength();
+    return len;
 }
 
 PackedVector3Array VerletRope::GetPoints() const
@@ -294,9 +531,32 @@ void VerletRope::NudgePoint(int p_index, const Vector3 &p_delta)
     Wake();
 }
 
+// Rest distances only — the particle layout, the chains and the contact caches
+// are all unaffected by a length change, so this deliberately does not re-init.
+void VerletRope::RefreshSegmentRest()
+{
+    const int trunk_segs = TrunkCount() - 1;
+    const double fray_rest = FraySegLength();
+    for (size_t s = 0; s < m_seg_rest.size(); ++s)
+        m_seg_rest[s] = static_cast<int>(s) < trunk_segs ? m_segment_length : fray_rest;
+}
+
+void VerletRope::SetSegmentLength(double p_length)
+{
+    m_segment_length = p_length;
+    RefreshSegmentRest();
+}
+
+void VerletRope::SetFraySegmentLength(double p_length)
+{
+    m_fray_segment_length = p_length;
+    RefreshSegmentRest();
+}
+
 void VerletRope::SetRopeLength(double p_length)
 {
     m_segment_length = std::fmax(p_length, 0.01) / static_cast<double>(m_segment_count);
+    RefreshSegmentRest();
     Wake();
 }
 
@@ -322,23 +582,150 @@ void VerletRope::SleepNow()
     m_prev_points = m_points;
 }
 
+// Work out the fray chains at one end and append their particles to the layout.
+// Cords are grouped by destination, so `groups` ids are deduplicated in order of
+// first appearance; an empty array frays every cord separately. Fills the
+// per-cord lateral tracks: where a cord sits along the trunk, and the narrower
+// slot it eases into inside its own group.
+void VerletRope::BuildFrayChains(int &r_total)
+{
+    const int cords = m_ribbon_count > 0 ? m_ribbon_count : 1;
+    m_fray.clear();
+    m_cord_start_chain.assign(cords, -1);
+    m_cord_end_chain.assign(cords, -1);
+    m_lat_start.assign(cords, 0.0f);
+    m_lat_end.assign(cords, 0.0f);
+    m_lat_trunk.assign(cords, 0.0f);
+    for (int c = 0; c < cords; ++c)
+        m_lat_trunk[c] = static_cast<float>(c) - 0.5f * static_cast<float>(cords - 1);
+
+    struct End
+    {
+        bool at_start;
+        int tail;
+        const PackedInt32Array *ids;
+        int junction;
+        std::vector<int> *cord_chain;
+        std::vector<float> *lat;
+        const std::vector<uint64_t> *nodes;
+        const std::vector<Vector3> *offsets;
+    };
+    const End ends[2] = {
+        {true, m_fray_segments_start, &m_fray_start_groups, 0, &m_cord_start_chain, &m_lat_start,
+         &m_fray_start_ids, &m_fray_start_offsets},
+        {false, m_fray_segments_end, &m_fray_end_groups, TrunkCount() - 1, &m_cord_end_chain,
+         &m_lat_end, &m_fray_end_ids, &m_fray_end_offsets},
+    };
+
+    for (const End &e : ends)
+    {
+        if (e.tail <= 0)
+            continue;
+        int dense[8] = {0};
+        int raw_of_group[8] = {0};
+        int groups = 0;
+        for (int c = 0; c < cords; ++c)
+        {
+            const int raw = e.ids->size() == 0
+                                ? c
+                                : (c < e.ids->size() ? static_cast<int>((*e.ids)[c]) : 0);
+            int g = -1;
+            for (int k = 0; k < groups; ++k)
+                if (raw_of_group[k] == raw)
+                {
+                    g = k;
+                    break;
+                }
+            if (g < 0)
+            {
+                g = groups;
+                raw_of_group[groups++] = raw;
+            }
+            dense[c] = g;
+        }
+
+        int size_of[8] = {0};
+        int index_in[8] = {0};
+        for (int c = 0; c < cords; ++c)
+            index_in[c] = size_of[dense[c]]++;
+        for (int c = 0; c < cords; ++c)
+            (*e.lat)[c] = static_cast<float>(index_in[c]) -
+                          0.5f * static_cast<float>(size_of[dense[c]] - 1);
+
+        const int base = static_cast<int>(m_fray.size());
+        for (int g = 0; g < groups; ++g)
+        {
+            FrayChain fc;
+            fc.head = e.junction;
+            fc.first = r_total;
+            fc.count = e.tail;
+            fc.at_start = e.at_start;
+            fc.node_id = g < static_cast<int>(e.nodes->size()) ? (*e.nodes)[g] : 0;
+            fc.offset = g < static_cast<int>(e.offsets->size()) ? (*e.offsets)[g] : Vector3();
+            float lat_sum = 0.0f;
+            for (int c = 0; c < cords; ++c)
+                if (dense[c] == g)
+                    lat_sum += m_lat_trunk[c];
+            fc.lat_mean = lat_sum / static_cast<float>(size_of[g]);
+            m_fray.push_back(fc);
+            r_total += e.tail;
+        }
+        for (int c = 0; c < cords; ++c)
+            (*e.cord_chain)[c] = base + dense[c];
+    }
+}
+
 void VerletRope::InitPoints()
 {
-    const int count = m_segment_count + 1;
+    const int trunk_n = TrunkCount();
+    int count = trunk_n;
+    BuildFrayChains(count);
+
     m_points.assign(count, Vector3());
     m_prev_points.assign(count, Vector3());
     m_inv_mass.assign(count, 1.0f);
-    m_mid_contact.assign(m_segment_count, 0);
-    m_mid_contact_point.assign(m_segment_count, Vector3());
-    m_mid_contact_normal.assign(m_segment_count, Vector3());
     m_c_flags.assign(count, 0);
     m_c_p1.assign(count, Vector3());
     m_c_n1.assign(count, Vector3());
     m_c_p2.assign(count, Vector3());
     m_c_n2.assign(count, Vector3());
     m_stuck_passes.assign(count, 0);
-    m_active_mid.reserve(m_segment_count);
+    m_self_group.assign(count, 0);
+    m_next_seg.assign(count, -1);
     m_active_contact.reserve(count);
+
+    // Segment table. Without a fray this is exactly (i, i+1) over the trunk, so
+    // every adjacency-aware pass behaves as it always did.
+    m_seg_a.clear();
+    m_seg_b.clear();
+    m_seg_rest.clear();
+    for (int i = 0; i < trunk_n - 1; ++i)
+    {
+        m_seg_a.push_back(i);
+        m_seg_b.push_back(i + 1);
+        m_seg_rest.push_back(m_segment_length);
+    }
+    const double fray_rest = FraySegLength();
+    for (const FrayChain &fc : m_fray)
+    {
+        m_seg_a.push_back(fc.head);
+        m_seg_b.push_back(fc.first);
+        m_seg_rest.push_back(fray_rest);
+        for (int k = 0; k < fc.count - 1; ++k)
+        {
+            m_seg_a.push_back(fc.first + k);
+            m_seg_b.push_back(fc.first + k + 1);
+            m_seg_rest.push_back(fray_rest);
+        }
+    }
+    const int seg_count = static_cast<int>(m_seg_a.size());
+    for (int s = 0; s < seg_count; ++s)
+        if (m_next_seg[m_seg_a[s]] < 0)
+            m_next_seg[m_seg_a[s]] = s;
+    m_mid_contact.assign(seg_count, 0);
+    m_mid_contact_point.assign(seg_count, Vector3());
+    m_mid_contact_normal.assign(seg_count, Vector3());
+    m_active_mid.reserve(seg_count);
 
     CacheAnchors();
     const Vector3 start_pos = AnchorPoint(m_start_cached, m_start_anchor_offset, get_global_position());
@@ -346,19 +733,87 @@ void VerletRope::InitPoints()
         m_end_cached, m_end_anchor_offset,
         start_pos + Vector3(0, -m_segment_count * m_segment_length, 0));
 
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < trunk_n; ++i)
     {
-        const double t = count > 1 ? static_cast<double>(i) / static_cast<double>(count - 1) : 0.0;
+        const double t = trunk_n > 1 ? static_cast<double>(i) / static_cast<double>(trunk_n - 1) : 0.0;
         m_points[i] = start_pos.lerp(end_pos, t);
         m_prev_points[i] = m_points[i];
     }
+    // Each branch is seeded straight from the junction to its plug, or hanging
+    // if it has none — the same rule the trunk uses when end_node is null. An
+    // unanchored branch also starts out at its cords' place across the ribbon,
+    // so two of them don't begin life exactly on top of each other.
+    Vector3 ribbon_dir = m_ribbon_axis;
+    if (m_start_cached != nullptr)
+        ribbon_dir = m_start_cached->get_global_transform().basis.orthonormalized().xform(m_ribbon_axis);
+    ribbon_dir = ribbon_dir.length_squared() > 1e-12 ? ribbon_dir.normalized() : Vector3(1, 0, 0);
+    for (const FrayChain &fc : m_fray)
+    {
+        const Vector3 from = m_points[fc.head];
+        const Vector3 hang = from + Vector3(0, -fc.count * FraySegLength(), 0) +
+                             ribbon_dir * (fc.lat_mean * CordPitch());
+        const Vector3 to = AnchorPoint(fc.cached, fc.offset, hang);
+        for (int k = 0; k < fc.count; ++k)
+        {
+            const double t = static_cast<double>(k + 1) / static_cast<double>(fc.count);
+            m_points[fc.first + k] = from.lerp(to, t);
+            m_prev_points[fc.first + k] = m_points[fc.first + k];
+        }
+        if (fc.cached)
+            m_inv_mass[fc.first + fc.count - 1] = 0.0f;
+    }
+
     m_inv_mass[0] = 0.0f;
     if (m_end_cached)
-        m_inv_mass[count - 1] = 0.0f;
+        m_inv_mass[trunk_n - 1] = 0.0f;
+
+    // A junction takes one stretch constraint from the trunk and one from every
+    // branch, so at equal inverse mass the branches outvote the trunk and the
+    // joint chatters. Weighting it like the small moulded boot that is really
+    // there settles it. A pinned junction is left alone.
+    int at_start = 0;
+    int at_end = 0;
+    for (const FrayChain &fc : m_fray)
+        (fc.at_start ? at_start : at_end) += 1;
+    if (at_start > 0 && m_inv_mass[0] != 0.0f)
+        m_inv_mass[0] = 1.0f / static_cast<float>(1 + at_start);
+    if (at_end > 0 && m_inv_mass[trunk_n - 1] != 0.0f)
+        m_inv_mass[trunk_n - 1] = 1.0f / static_cast<float>(1 + at_end);
+
+    // Self-collision exemptions around each junction, where the branch heads and
+    // the trunk's end are coincident by construction rather than by collision.
+    if (at_start > 0)
+    {
+        m_self_group[0] = 1;
+        if (trunk_n > 1)
+            m_self_group[1] = 1;
+    }
+    if (at_end > 0)
+    {
+        m_self_group[trunk_n - 1] = 2;
+        if (trunk_n > 1)
+            m_self_group[trunk_n - 2] = 2;
+    }
+    for (const FrayChain &fc : m_fray)
+    {
+        const uint8_t id = fc.at_start ? 1 : 2;
+        for (int k = 0; k < fc.count && k < 2; ++k)
+            m_self_group[fc.first + k] = id;
+    }
+
+    // The surface count and the ring count both follow from the layout above, so
+    // a rope resized after _ready rebuilds its mesh here rather than meshing a
+    // stale ring buffer. retro_controller.gd::_resize_cable() does exactly that.
+    const int cords = m_ribbon_count > 0 ? m_ribbon_count : 1;
+    const int rings = (CordPointCount() - 1) * Subdiv() + 1;
+    if (cords != m_built_cords || rings != m_built_rings || m_tube_sides != m_built_sides)
+        BuildMeshTopology();
 
     Wake();
     m_sleep_anchor_start = AnchorPoint(m_start_cached, m_start_anchor_offset, start_pos);
     m_sleep_anchor_end = AnchorPoint(m_end_cached, m_end_anchor_offset, end_pos);
+    for (FrayChain &fc : m_fray)
+        fc.sleep_pos = AnchorPoint(fc.cached, fc.offset, m_points[fc.first + fc.count - 1]);
     RefreshExclusions();
     // Resize-and-seed: SnapshotRenderState detects the length change and fills
     // both history buffers from the fresh points.
@@ -374,8 +829,13 @@ void VerletRope::RefreshExclusions()
     TypedArray<RID> rids;
     m_start_body = nullptr;
     m_end_body = nullptr;
-    Node3D *anchors[2] = {GetStartNode(), GetEndNode()};
-    for (int a_idx = 0; a_idx < 2; ++a_idx)
+    std::vector<Node3D *> anchors;
+    anchors.reserve(2 + m_fray.size());
+    anchors.push_back(GetStartNode());
+    anchors.push_back(GetEndNode());
+    for (const FrayChain &fc : m_fray)
+        anchors.push_back(fc.cached);
+    for (size_t a_idx = 0; a_idx < anchors.size(); ++a_idx)
     {
         Node *n = anchors[a_idx];
         while (n != nullptr)
@@ -408,8 +868,14 @@ bool VerletRope::AnchorsMoved() const
     if (AnchorPoint(m_start_cached, m_start_anchor_offset, m_sleep_anchor_start)
             .distance_squared_to(m_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ)
         return true;
-    return AnchorPoint(m_end_cached, m_end_anchor_offset, m_sleep_anchor_end)
-               .distance_squared_to(m_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ;
+    if (AnchorPoint(m_end_cached, m_end_anchor_offset, m_sleep_anchor_end)
+            .distance_squared_to(m_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ)
+        return true;
+    for (const FrayChain &fc : m_fray)
+        if (AnchorPoint(fc.cached, fc.offset, fc.sleep_pos).distance_squared_to(fc.sleep_pos) >
+            WAKE_ANCHOR_EPS_SQ)
+            return true;
+    return false;
 }
 
 } // namespace Xenu

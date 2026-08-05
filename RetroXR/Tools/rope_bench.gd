@@ -8,7 +8,14 @@
 ##
 ## Run it headless so the number is the simulation and not the renderer:
 ##   godot --headless --path RetroXR res://Tools/rope_bench.tscn -- \
-##       [--ropes=16] [--ticks=300] [--settle] [--nomesh]
+##       [--ropes=16] [--ticks=300] [--settle] [--nomesh] \
+##       [--ribbon=3] [--fray=6] [--groups=0,0,1]
+##
+## --ribbon draws the cable as N cords moulded side by side; --fray splits it
+## into branches of N particles at the far end, one branch per destination.
+## --groups says which cords share a destination, so 0,0,1 sends the first two
+## into one plug as a 2-wide ribbon and the third into its own. The branch plugs
+## are plain Node3Ds spread across the table edge, same as the main anchors.
 ##
 ## --shot=res://x.png renders the settled cables instead of timing them, for
 ## checking that a change meant to be behaviour-preserving actually is. That one
@@ -46,6 +53,13 @@ var _warmup_ticks := 60
 var _settle := false
 var _nomesh := false
 var _shot := ""
+var _ribbon := 1
+var _fray := 0
+var _groups: PackedInt32Array = PackedInt32Array()
+var _taut := false
+var _taper := 0
+## Narrow it to zoom the ribbon portrait in on the breakout.
+var _fov := 45.0
 var _tick := 0
 var _settled_at := -1
 var _cpu_usec := 0
@@ -64,6 +78,19 @@ func _ready() -> void:
 			_nomesh = true
 		elif a.begins_with("--shot="):
 			_shot = a.get_slice("=", 1)
+		elif a.begins_with("--ribbon="):
+			_ribbon = clampi(int(a.get_slice("=", 1)), 1, 8)
+		elif a.begins_with("--fray="):
+			_fray = maxi(int(a.get_slice("=", 1)), 0)
+		elif a.begins_with("--groups="):
+			for s in a.get_slice("=", 1).split(",", false):
+				_groups.append(int(s))
+		elif a == "--taut":
+			_taut = true
+		elif a.begins_with("--taper="):
+			_taper = maxi(int(a.get_slice("=", 1)), 0)
+		elif a.begins_with("--fov="):
+			_fov = maxf(float(a.get_slice("=", 1)), 1.0)
 
 	_build_world()
 	for i in _rope_count:
@@ -71,9 +98,10 @@ func _ready() -> void:
 	for r in _ropes:
 		r.set_physics_process(false)
 		r.set_process(false)
-	print("[bench] ropes=%d warmup=%d measure=%d mode=%s%s" % [
+	print("[bench] ropes=%d warmup=%d measure=%d mode=%s%s ribbon=%d fray=%d groups=%s" % [
 		_rope_count, _warmup_ticks, _measure_ticks,
-		"settle" if _settle else "awake", " nomesh" if _nomesh else ""])
+		"settle" if _settle else "awake", " nomesh" if _nomesh else "",
+		_ribbon, _fray, str(Array(_groups)) if not _groups.is_empty() else "split"])
 
 
 ## Floor plus one table slab per rope — the surface-collision and rest passes
@@ -116,8 +144,73 @@ func _build_rope(x: float) -> void:
 	rope.start_node = a
 	rope.end_node = b
 	rope.end_anchor_offset = Vector3.ZERO
+
+	if _ribbon > 1:
+		rope.ribbon_count = _ribbon
+		# The cable runs along X, so the ribbon has to lie across Z to be a flat
+		# ribbon rather than a stack. ribbon_axis is read in the START anchor's
+		# local space and these mounts are at identity, so this is world Z.
+		rope.ribbon_axis = Vector3(0, 0, 1)
+		# Composite A/V colours, so the cords are told apart on sight.
+		rope.ribbon_colors = PackedColorArray([
+			Color(0.85, 0.68, 0.05), Color(0.88, 0.88, 0.85), Color(0.75, 0.10, 0.10),
+			Color(0.15, 0.15, 0.15), Color(0.15, 0.35, 0.75), Color(0.15, 0.55, 0.20),
+			Color(0.55, 0.35, 0.15), Color(0.55, 0.20, 0.60)])
+	# For a PORTRAIT rather than a measurement: the benched cable is a 1.8 m lead
+	# strung across a 0.45 m gap, so all but its ends is slack on the floor and a
+	# shot of the breakout can't frame the trunk too. Never use with a timing run
+	# — it changes the segment length the numbers are quoted against. It runs
+	# before the fray block because the branch mounts are placed off the segment
+	# length it rewrites.
+	if _taut:
+		rope.set_rope_length(ANCHOR_SPAN * 1.3)
+
+	if _fray > 0:
+		rope.fray_segments_end = _fray
+		rope.fray_end_groups = _groups
+		if _taper > 0:
+			rope.fray_taper_segments = _taper
+		# The trunk stops at the breakout, which nothing holds — the branches
+		# carry it. Each branch gets its own mount, spread across Z the way a
+		# row of RCA jacks is.
+		#
+		# Placed inside the branch's REACH, not at a fixed distance: a branch is
+		# fray x segment_length long, and a mount past that stretches it taut and
+		# renders as a jagged line rather than a cable.
+		rope.end_node = null
+		var reach: float = float(_fray) * rope.segment_length
+		var groups := _fray_group_count()
+		for g in groups:
+			var p := Node3D.new()
+			p.position = Vector3(
+				x + ANCHOR_SPAN * 0.5 + reach * 0.6,
+				ANCHOR_Y - 0.01,
+				(float(g) - 0.5 * float(groups - 1)) * reach * 0.5)
+			# A mount counts as a FIXED plug, so end_stiffness runs a directional
+			# stub down its plug_exit_axis — local -Z. Left at identity that is
+			# world -Z, across a cable running down +X, and every branch leaves
+			# its plug with a hairpin. Turn -Z back down the cable.
+			# (The main anchors a/b have the same quirk. Deliberately not fixed
+			# here: it would move the reference shot and the benched geometry.)
+			p.rotation = Vector3(0.0, PI * 0.5, 0.0)
+			add_child(p)
+			rope.set_fray_end_node(g, p)
+
 	rope._init_points()
 	_ropes.append(rope)
+
+
+## Distinct destinations at the frayed end: one per cord unless --groups pairs
+## some of them up.
+func _fray_group_count() -> int:
+	if _groups.is_empty():
+		return _ribbon
+	var seen: Array[int] = []
+	for i in _ribbon:
+		var g: int = _groups[i] if i < _groups.size() else 0
+		if not seen.has(g):
+			seen.append(g)
+	return seen.size()
 
 
 func _physics_process(delta: float) -> void:
@@ -200,8 +293,23 @@ func _capture() -> void:
 			sv.add_child(c)
 
 	var cam := Camera3D.new()
-	cam.position = Vector3(ROPE_PITCH, ANCHOR_Y - 0.02, 1.15)
-	cam.look_at_from_position(cam.position, Vector3(ROPE_PITCH, ANCHOR_Y - 0.10, 0.0))
+	if _ribbon > 1:
+		# Side-on is the wrong angle for a ribbon: the cords lie across Z, so a
+		# camera on the Z axis sees them stacked into one. Frame the breakout
+		# from a raised three-quarter view instead — that is where both things
+		# worth checking are, the flat "ooo" of the trunk and the fan of the
+		# branches. The rest of the cable is 1.8 m of slack hanging to the floor.
+		# Steeply down: the ribbon lies in the XZ plane, and anything under about
+		# 40 degrees of elevation foreshortens it back into a single cord.
+		var focus := Vector3(ROPE_PITCH + 0.05, ANCHOR_Y - 0.09, 0.0)
+		if _fov < 30.0:
+			focus = Vector3(ROPE_PITCH + ANCHOR_SPAN * 0.5, ANCHOR_Y - 0.05, 0.0)
+		cam.position = focus + Vector3(-0.06, 0.56, 0.40)
+		cam.fov = _fov
+		cam.look_at_from_position(cam.position, focus)
+	else:
+		cam.position = Vector3(ROPE_PITCH, ANCHOR_Y - 0.02, 1.15)
+		cam.look_at_from_position(cam.position, Vector3(ROPE_PITCH, ANCHOR_Y - 0.10, 0.0))
 	sv.add_child(cam)
 	cam.current = true
 
