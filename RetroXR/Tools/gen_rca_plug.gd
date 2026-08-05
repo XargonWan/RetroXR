@@ -44,6 +44,8 @@ const OUT_PATH := "res://Scenes/Objects/rca_plug_yellow.res"
 const RING := 16
 
 const CABLE_R := 0.00415        # the cord cable.tscn draws, so the relief meets it
+const CORD_MOUTH_R := 0.0012    # under any cord drawn here, so the cord covers it
+const CORD_SOCKET_DEPTH := 0.003
 const BARREL_R := 0.0072
 const COLLAR_OR := 0.00435
 const COLLAR_IR := 0.00340
@@ -73,10 +75,21 @@ func _init() -> void:
 
 	# --- surface 0: yellow plastic (relief ribs + barrel) --------------------
 	var prof := PackedVector2Array()
-	# Back face, left open at the centre so the cord enters a hole rather than
-	# butting against a disc.
-	prof.append(Vector2(Z_CABLE, 0.0026))
-	prof.append(Vector2(Z_CABLE, CABLE_R + 0.0003))
+	# Cord entry: a BLIND socket, not a hole. The centre is left open so the cord
+	# enters something rather than butting against a disc, but the plastic here is
+	# a single lathed shell with no interior, so an opening the cord does not cover
+	# looks straight into the hollow of the barrel -- the relief's ribs read from
+	# the inside as a striped tube around the cord.
+	#
+	# Two things keep that shut. The mouth is narrower than any cord the project
+	# draws (the A/V lead is 8.3 mm, the controller cord 4.5 mm) and than a 3 mm one
+	# it might, so the cord covers it. And the socket has a floor 3 mm in, so even a
+	# cord thinner than the mouth shows a blind hole rather than the inside of the
+	# plug. Cheap: 3 mm of bore is 48 triangles.
+	prof.append(Vector2(Z_CABLE + CORD_SOCKET_DEPTH, 0.0))
+	prof.append(Vector2(Z_CABLE + CORD_SOCKET_DEPTH, CORD_MOUTH_R))   # floor, faces -Z
+	prof.append(Vector2(Z_CABLE, CORD_MOUTH_R))                       # wall, faces inward
+	prof.append(Vector2(Z_CABLE, CABLE_R + 0.0003))                   # back face, faces -Z
 	# Ribbed strain relief, swelling slightly as it approaches the barrel.
 	var steps := RIBS * RIB_SAMPLES
 	for i in range(steps + 1):
