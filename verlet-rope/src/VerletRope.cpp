@@ -728,10 +728,44 @@ void VerletRope::InitPoints()
     m_active_mid.reserve(seg_count);
 
     CacheAnchors();
-    const Vector3 start_pos = AnchorPoint(m_start_cached, m_start_anchor_offset, get_global_position());
-    const Vector3 end_pos = AnchorPoint(
-        m_end_cached, m_end_anchor_offset,
-        start_pos + Vector3(0, -m_segment_count * m_segment_length, 0));
+    // How many branches each end has, and where their plugs are. Both decide the
+    // trunk's layout below: a frayed end has no anchor of its own, so its
+    // junction belongs among its plugs.
+    int at_start = 0;
+    int at_end = 0;
+    Vector3 plug_mid[2];
+    int plug_n[2] = {0, 0};
+    for (const FrayChain &fc : m_fray)
+    {
+        const int e = fc.at_start ? 0 : 1;
+        (fc.at_start ? at_start : at_end) += 1;
+        if (fc.cached != nullptr)
+        {
+            plug_mid[e] += AnchorPoint(fc.cached, fc.offset, Vector3());
+            plug_n[e] += 1;
+        }
+    }
+
+    // Without a fray these are the old fallbacks exactly. With one, falling back
+    // to get_global_position() would be the WORLD ORIGIN — the rope is top_level
+    // at identity — so a lead frayed at both ends spawned itself in the middle
+    // of the room and 1.5 m underground, on the wrong side of the floor where
+    // contact resolution cannot get it back out.
+    Vector3 start_pos;
+    if (m_start_cached != nullptr)
+        start_pos = AnchorPoint(m_start_cached, m_start_anchor_offset, Vector3());
+    else if (plug_n[0] > 0)
+        start_pos = plug_mid[0] / static_cast<real_t>(plug_n[0]);
+    else
+        start_pos = get_global_position();
+
+    Vector3 end_pos;
+    if (m_end_cached != nullptr)
+        end_pos = AnchorPoint(m_end_cached, m_end_anchor_offset, Vector3());
+    else if (plug_n[1] > 0)
+        end_pos = plug_mid[1] / static_cast<real_t>(plug_n[1]);
+    else
+        end_pos = start_pos + Vector3(0, -m_segment_count * m_segment_length, 0);
 
     for (int i = 0; i < trunk_n; ++i)
     {
@@ -763,7 +797,13 @@ void VerletRope::InitPoints()
             m_inv_mass[fc.first + fc.count - 1] = 0.0f;
     }
 
-    m_inv_mass[0] = 0.0f;
+    // Particle 0 has always been pinned unconditionally, because it was always a
+    // host attach point bolted to a device. It stops being one the moment the
+    // start end frays: then it is an unsupported breakout that the branches
+    // carry, and pinning it welds the cable to wherever start_pos landed. Left
+    // exactly as it was when there is no start fray.
+    if (m_start_cached != nullptr || at_start == 0)
+        m_inv_mass[0] = 0.0f;
     if (m_end_cached)
         m_inv_mass[trunk_n - 1] = 0.0f;
 
@@ -771,10 +811,6 @@ void VerletRope::InitPoints()
     // branch, so at equal inverse mass the branches outvote the trunk and the
     // joint chatters. Weighting it like the small moulded boot that is really
     // there settles it. A pinned junction is left alone.
-    int at_start = 0;
-    int at_end = 0;
-    for (const FrayChain &fc : m_fray)
-        (fc.at_start ? at_start : at_end) += 1;
     if (at_start > 0 && m_inv_mass[0] != 0.0f)
         m_inv_mass[0] = 1.0f / static_cast<float>(1 + at_start);
     if (at_end > 0 && m_inv_mass[trunk_n - 1] != 0.0f)
