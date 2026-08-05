@@ -367,9 +367,11 @@ func uses_av_ports() -> bool:
 ## are turned off, because the moulded pair underneath is the one that belongs to
 ## this console and two in the same place would z-fight.
 ##
-## Rotation matches the captive lead's old convention exactly (-90° about Y, local
-## -Z toward device +X): the RCA plug mesh is authored connector-on-+Z, so this
-## aims a seated plug's connector into the flank and trails its cord out +X.
+## Rotation is +90° about Y, which puts each socket's local +Z on device +X — out
+## of the flank. NOT the captive lead's -90°: that convention exists because
+## VerletRope leaves an attach point along its local -Z, so it aims the OPPOSITE
+## way. Used here it yaws every plug 180° and the connector points out of the
+## console while the body sits inside it.
 func configure_av_ports(ports: Array) -> void:
 	if _glb == null:
 		return
@@ -380,7 +382,7 @@ func configure_av_ports(ports: Array) -> void:
 		if centre == Vector3.ZERO:
 			continue
 		port.global_position = centre
-		port.rotation = Vector3(0.0, -PI / 2.0, 0.0)
+		port.rotation = Vector3(0.0, PI / 2.0, 0.0)
 		if port.has_method("set"):
 			port.set("show_jack", false)
 

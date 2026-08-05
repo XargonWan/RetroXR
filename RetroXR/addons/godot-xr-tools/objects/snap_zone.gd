@@ -71,6 +71,14 @@ var _object_in_grab_area = Array()
 # a nearby compatible socket for the snap PREVIEW (see grab_driver.gd).
 static var _live_zones: Array[XRToolsSnapZone] = []
 
+## LOCAL PATCH (RetroXR): the zone the preview ghost last lit, so releasing an
+## object puts it where the player was shown it would go. Distance alone cannot be
+## trusted to agree: the ghost is ranked from the HAND's desired position while the
+## drop is ranked from where the object actually IS when it lands, and a plug
+## released among sockets 18 mm apart moves far enough between those two moments to
+## change the winner.
+static var _preview_zone: XRToolsSnapZone = null
+
 
 # Add support for is_xr_class on XRTools classes
 func is_xr_class(xr_name:  String) -> bool:
@@ -127,10 +135,16 @@ static func find_preview_zone(obj: Node3D, at: Vector3, radius: float = 0.0) -> 
 	for z: XRToolsSnapZone in _live_zones:
 		if not is_instance_valid(z) or not z.can_preview(obj):
 			continue
-		var d := z.global_position.distance_to(at)
+		# Ranked by the pose the object would OCCUPY, the same measure
+		# _on_target_dropped uses. Ranking by zone origin here and by snapped pose
+		# there let the two disagree, which is the ghost lighting on one socket
+		# and the plug landing in its neighbour.
+		var d := z.snap_pose_for(obj).origin.distance_to(at)
 		if d < z.grab_distance + radius and d < best_d:
 			best_d = d
 			best = z
+	# Remembered so the release can honour it — see _on_target_dropped.
+	_preview_zone = best
 	return best
 
 
@@ -461,6 +475,12 @@ func _on_target_dropped(target: Node3D) -> void:
 	# in _on_snap_zone_body_entered, so a zone reached here will take the object.
 	# The comparison is strict, so the nearest zone never yields and a tie falls
 	# back to entry order.
+	# What the player was SHOWN wins, if that zone can still take it. Only when
+	# nothing previewed (an object dropped without ever lighting a ghost) does the
+	# distance tiebreak below decide.
+	if is_instance_valid(_preview_zone) and _preview_zone != self 			and _preview_zone.enabled 			and not is_instance_valid(_preview_zone.picked_up_object) 			and _preview_zone._object_in_grab_area.has(target):
+		return
+
 	var mine := snap_pose_for(target).origin.distance_squared_to(target.global_position)
 	for z: XRToolsSnapZone in _live_zones:
 		if z == self or not is_instance_valid(z):
