@@ -32,16 +32,6 @@ emission_energy_multiplier = 2.0
 font_names = PackedStringArray("Consolas", "Courier New", "Droid Sans Mono", "monospace")
 subpixel_positioning = 0
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yc03p"]
-albedo_color = Color(0.95, 0.74, 0.02, 1)
-roughness = 0.3
-rim_enabled = true
-rim = 0.3
-rim_tint = 0.25
-clearcoat_enabled = true
-clearcoat = 0.55
-clearcoat_roughness = 0.12
-
 [sub_resource type="CylinderMesh" id="CylMesh_plug_ghost"]
 top_radius = 0.015
 bottom_radius = 0.015
@@ -127,7 +117,6 @@ snap_require = "composite_plug"
 
 [node name="PortVisual" parent="CompositePort" unique_id=79237654 instance=ExtResource("9_rcajack")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01002)
-surface_material_override/0 = SubResource("StandardMaterial3D_yc03p")
 
 [node name="SnapHighlight" type="Node3D" parent="CompositePort" unique_id=733690447]
 script = ExtResource("3_snaphis")

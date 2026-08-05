@@ -37,11 +37,18 @@ func _ready() -> void:
 func _apply_color() -> void:
 	if mesh == null or mesh.get_surface_count() == 0:
 		return
+	var base := mesh.surface_get_material(0) as StandardMaterial3D
+	if base == null:
+		return
+	# The bake is already this colour, so an override would be nothing but a second
+	# copy of it — and because this is a @tool script, the editor serialises that
+	# copy into whichever scene holds the jack, where it then outlives any change to
+	# the bake. Composite yellow is the common case, so this covers most jacks.
+	if base.albedo_color.is_equal_approx(jack_color):
+		set_surface_override_material(0, null)
+		return
 	var mat := get_surface_override_material(0) as StandardMaterial3D
 	if mat == null:
-		var base := mesh.surface_get_material(0) as StandardMaterial3D
-		if base == null:
-			return
 		# The baked material belongs to the .res, which every jack in the room
 		# shares. Writing a colour straight into it would recolour all of them.
 		mat = base.duplicate() as StandardMaterial3D
