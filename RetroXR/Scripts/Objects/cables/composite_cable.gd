@@ -50,6 +50,10 @@ var _plugs: Array = []
 # last cord still gets a final update telling it so.
 var _last_devices: Array[Node3D] = []
 
+# The rope is built a frame after _ready (see there). Until it is, its particles
+# are a default cord around the origin and the tether must not read them.
+var _rope_built := false
+
 
 func _ready() -> void:
 	add_to_group("spawned")
@@ -66,7 +70,16 @@ func _ready() -> void:
 			plug.dropped.connect(_on_plug_moved.unbind(1))
 			_tint_plug(plug, CORD_COLORS[c])
 			_plugs[e].append(plug)
-	_build_rope()
+	# Deferred, NOT called straight through. VerletRope is top_level and its
+	# particles are world-space, so _init_points bakes them around wherever the
+	# plugs stand at the time. _ready runs inside add_child, and the spawn menu
+	# positions what it spawned on the line AFTER that
+	# (spawn_menu_controller.gd::_place_spawned) — so building here pins the cable
+	# to the world origin while the plugs travel on to the menu, and the tether
+	# below then hauls them back to the middle of the room. Every other cable
+	# owner dodges this by calling _init_points itself once it has placed its
+	# plug; a self-contained spawnable has to wait the frame out.
+	call_deferred("_build_rope")
 	# Ports fire on the frame the plug seats; resolve once the room is up so a
 	# cable restored into sockets reports what it is already carrying.
 	call_deferred("_resolve")
@@ -92,6 +105,8 @@ func _tint_plug(plug: RcaPlug, col: Color) -> void:
 ## Wire the ribbon to its six plugs. Both ends fray into one group per cord, so
 ## every cord gets its own tail and its own anchor.
 func _build_rope() -> void:
+	if not is_inside_tree():
+		return          # a netplay client's local copy is freed before we get here
 	_rope.ribbon_count = CORDS
 	_rope.ribbon_colors = PackedColorArray(CORD_COLORS)
 	# Read in the START anchor's local space. The lead has no start anchor once
@@ -113,6 +128,7 @@ func _build_rope() -> void:
 		_rope.set_fray_start_anchor_offset(c, _plugs[End.A][c].cable_anchor)
 		_rope.set_fray_end_anchor_offset(c, _plugs[End.B][c].cable_anchor)
 	_rope._init_points()
+	_rope_built = true
 
 
 ## Keep every loose plug within its branch's reach of the breakout it hangs off.
@@ -132,7 +148,7 @@ func _build_rope() -> void:
 ## Plugs held by a hand or seated in a socket are skipped — something else owns
 ## their transform, and fighting it either jitters the plug or pulls it out.
 func _physics_process(_delta: float) -> void:
-	if _rope == null or _plugs.is_empty():
+	if not _rope_built or _rope == null or _plugs.is_empty():
 		return
 	var pts: PackedVector3Array = _rope.get_points()
 	if pts.size() <= _rope.segment_count:
