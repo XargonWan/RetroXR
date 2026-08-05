@@ -280,18 +280,27 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 	pass
 
 
-## True when this hardware wears real A/V SOCKETS rather than a captive lead.
+## The A/V SOCKETS this hardware wears, as RcaPort.Channel values in build order,
+## or [] for hardware that keeps a captive lead.
 ##
-## A console that says yes gets no cable of its own: RetroSystem builds it a pair
-## of RcaPorts instead and the player runs a spawned lead to the set, which is what
-## the hardware actually made you do. Everything else keeps the lead it has always
-## had, permanently attached and already carrying video and stereo.
+## A console that lists sockets gets no cable of its own: RetroSystem builds these
+## instead and the player runs a spawned lead to the set, which is what the
+## hardware actually made you do. The list is what says whether it is stereo —
+## [VIDEO, AUDIO_L, AUDIO_R] for most consoles, [VIDEO, AUDIO_L] for mono hardware
+## like the NES, whose single audio cord then feeds both of the set's speakers.
+##
+## Handhelds are deliberately not in this world: their screen is their own, and the
+## video-out lead is an extra rather than the only way to see anything.
+func av_port_channels() -> Array:
+	return []
+
+
 func uses_av_ports() -> bool:
-	return false
+	return not av_port_channels().is_empty()
 
 
-## Place the sockets built for a `uses_av_ports` model, in the order
-## [video, audio]. Called once, with the ports already children of the system.
+## Place the sockets built from av_port_channels, in that same order. Called once,
+## with the ports already children of the system.
 func configure_av_ports(_ports: Array) -> void:
 	pass
 

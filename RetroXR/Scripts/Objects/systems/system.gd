@@ -115,7 +115,8 @@ var _audio_half_sep: float = 0.0
 
 # Head position, for the distance law, and the last gain handed to the voices.
 var _audio_listener: Node = null
-var _sent_audio_gain: float = -1.0
+var _sent_gain_l: float = -1.0
+var _sent_gain_r: float = -1.0
 var _sent_directivity: float = -1.0
 # Last distance term measured, so a volume change can be applied against it
 # without waiting for the next frame.
@@ -148,7 +149,11 @@ var _av_ports: Array = []
 var _av_tv: RetroTV = null
 var _av_video_tv: RetroTV = null
 var _av_control_tv: RetroTV = null
-var _av_speaker: int = -1
+# True once an AUDIO_R socket exists — stereo hardware. Mono hardware has one
+# audio socket, and its single cord drives BOTH voices to the same speaker.
+var _av_stereo: bool = false
+var _av_speaker_l: int = -1
+var _av_speaker_r: int = -1
 var _cable_ropes: Array = []
 var _attach_points: Array = []
 var _max_rope_lengths: Array = []
@@ -720,7 +725,8 @@ func _ensure_audio_bound() -> void:
 ## a restart resurrects the sound at full volume regardless of the TV.
 func _apply_bound_volume() -> void:
 	if not _audio_voices.is_empty() and _mx != null:
-		_sent_audio_gain = -1.0   # see set_audio_volume
+		_sent_gain_l = -1.0        # see set_audio_volume
+		_sent_gain_r = -1.0
 	elif _audio_player != null and is_instance_valid(_audio_player):
 		_audio_player.volume_db = linear_to_db(_last_audio_volume) if _last_audio_volume > 0.001 else -80.0
 
@@ -732,7 +738,8 @@ func _audio_tv() -> RetroTV:
 	# A ports console's sound goes wherever its audio cord went, which is not
 	# necessarily where its picture went — or anywhere at all.
 	if not _av_ports.is_empty():
-		return _av_tv if _av_speaker >= 0 and is_instance_valid(_av_tv) else null
+		var live: bool = _av_speaker_l >= 0 or _av_speaker_r >= 0
+		return _av_tv if live and is_instance_valid(_av_tv) else null
 	for tv_obj in _channel_tvs:
 		if tv_obj != null and is_instance_valid(tv_obj):
 			return tv_obj as RetroTV
@@ -803,12 +810,25 @@ func _apply_voice_distance_gain(centre: Vector3) -> void:
 	_send_voice_gain(_last_audio_volume * _audio_dist_factor)
 
 
+## Gain to the voices, silencing a channel whose cord is not plugged in.
+##
+## Only hardware with sockets can have half its sound connected; a captive lead
+## carries everything or nothing, so it keeps the single shared gain. The two
+## voices are separate sample streams, so silencing one is a gain of zero on it —
+## the same trick SpatialAudioEmitter.set_channel_gains uses on the decks.
 func _send_voice_gain(g: float) -> void:
-	if is_equal_approx(g, _sent_audio_gain):
+	var gl := g
+	var gr := g
+	if not _av_ports.is_empty():
+		gl = g if _av_speaker_l >= 0 else 0.0
+		gr = g if _av_speaker_r >= 0 else 0.0
+	if is_equal_approx(gl, _sent_gain_l) and is_equal_approx(gr, _sent_gain_r):
 		return
-	_sent_audio_gain = g
-	for v in _audio_voices:
-		_mx.set_voice_gain(v, g)
+	_sent_gain_l = gl
+	_sent_gain_r = gr
+	_mx.set_voice_gain(_audio_voices[0], gl)
+	for i in range(1, _audio_voices.size()):
+		_mx.set_voice_gain(_audio_voices[i], gr)
 
 
 ## Sound comes from whatever is showing the picture: a connected TV takes the
@@ -836,14 +856,15 @@ func _update_audio_position() -> void:
 			var sp: PackedVector3Array = tv.get_speaker_positions()
 			left_pos = sp[0]
 			right_pos = sp[1]
-			# Mono hardware down one cord: BOTH voices play at the single speaker
-			# that cord reaches, which is what one input fed from one wire sounds
-			# like. Two coincident sources sum acoustically, so this is a real
-			# downmix without touching a sample — and it moves to the other
-			# speaker if the cord is moved, exactly as it would.
-			if not _av_ports.is_empty() and _av_speaker >= 0:
-				left_pos = sp[_av_speaker]
-				right_pos = sp[_av_speaker]
+			# Each channel plays at the speaker its cord actually reaches, so a
+			# crossed pair swaps them and mono hardware — whose one cord sets both
+			# — puts both voices on the same speaker, where they sum. A real
+			# downmix without touching a sample.
+			if not _av_ports.is_empty():
+				if _av_speaker_l >= 0:
+					left_pos = sp[_av_speaker_l]
+				if _av_speaker_r >= 0:
+					right_pos = sp[_av_speaker_r]
 			# Sound leaves a set the way the picture does.
 			if tv.has_method("get_screen_normal"):
 				emit_forward = tv.get_screen_normal()
@@ -1074,14 +1095,23 @@ func _build_av_ports() -> void:
 	var scene: PackedScene = load("res://Scenes/Objects/rca_port.tscn")
 	if scene == null:
 		return
+	# Named for the channel, matching the decks, so a save file reads the same on
+	# either kind of hardware.
+	const PORT_NAMES := {
+		RcaPort.Channel.VIDEO: "VideoOut",
+		RcaPort.Channel.AUDIO_L: "AudioLOut",
+		RcaPort.Channel.AUDIO_R: "AudioROut",
+	}
 	var built: Array = []
-	for spec in [["VideoOut", RcaPort.Channel.VIDEO], ["AudioOut", RcaPort.Channel.AUDIO_L]]:
+	for ch: int in _model.av_port_channels():
 		var port := scene.instantiate() as RcaPort
-		port.name = str(spec[0])
-		port.channel = spec[1]
+		port.name = str(PORT_NAMES.get(ch, "AvOut"))
+		port.channel = ch
 		port.direction = RcaPort.Direction.OUT
 		add_child(port)
 		built.append(port)
+		if ch == RcaPort.Channel.AUDIO_R:
+			_av_stereo = true
 	_av_ports = built
 	# After add_child: the model places these in world space off its own meshes.
 	_model.configure_av_ports(built)
@@ -1105,7 +1135,8 @@ func _build_av_ports() -> void:
 func on_av_topology_changed(links: Array) -> void:
 	var tv: RetroTV = null
 	var video := false
-	var speaker := -1
+	var l := -1
+	var r := -1
 	for link in links:
 		var out_port: RcaPort = link["out"]
 		if out_port.get_device() != self:
@@ -1118,16 +1149,33 @@ func on_av_topology_changed(links: Array) -> void:
 			tv = target
 		elif target != tv:
 			continue
-		if out_port.channel == RcaPort.Channel.VIDEO:
-			video = video or in_port.channel == RcaPort.Channel.VIDEO
-		elif in_port.channel != RcaPort.Channel.VIDEO:
-			# VIDEO=0, L=1, R=2 -> speaker 0 or 1.
-			speaker = int(in_port.channel) - 1
-	_apply_av_feed(tv, video, speaker)
+		# Which of the set's speakers this cord lands on. VIDEO=0, L=1, R=2, so a
+		# cord into an audio input gives 0 (left) or 1 (right); into the video
+		# input it carries nothing an amplifier can use.
+		var dest := -1 if in_port.channel == RcaPort.Channel.VIDEO else int(in_port.channel) - 1
+		match out_port.channel:
+			RcaPort.Channel.VIDEO:
+				video = video or in_port.channel == RcaPort.Channel.VIDEO
+			RcaPort.Channel.AUDIO_L:
+				l = dest
+				# Mono hardware has this one audio socket and no other, so its
+				# cord carries the whole of the sound: both voices go wherever it
+				# lands, and two coincident sources sum to mono.
+				if not _av_stereo:
+					r = dest
+			RcaPort.Channel.AUDIO_R:
+				r = dest
+	_apply_av_feed(tv, video, l, r)
 
 
-func _apply_av_feed(tv: RetroTV, video: bool, speaker: int) -> void:
-	_av_speaker = speaker
+func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
+	_av_speaker_l = l
+	_av_speaker_r = r
+	# The cached pair is keyed on the gains last sent, not on the routing, so a
+	# cord moving between sockets has to invalidate it or the new silence (or the
+	# new sound) never reaches the mixer.
+	_sent_gain_l = -1.0
+	_sent_gain_r = -1.0
 	_av_tv = tv
 	# The PICTURE follows the video cord alone: a lead with only its audio end in
 	# leaves the set on its blue no-signal screen, as it would.

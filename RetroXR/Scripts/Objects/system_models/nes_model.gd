@@ -377,8 +377,10 @@ func configure_controller_ports(port_zones: Array) -> void:
 
 ## Sockets, not a captive lead: this shell moulds the two jacks the hardware has,
 ## so the player runs a mono composite lead from them to the set the way you did.
-func uses_av_ports() -> bool:
-	return true
+## Video and ONE audio channel — the NES is mono, and its single cord feeds
+## whichever speaker it reaches.
+func av_port_channels() -> Array:
+	return [RcaPort.Channel.VIDEO, RcaPort.Channel.AUDIO_L]
 
 
 ## Seat the two ports on the jacks the shell already moulds — JackYellow for video,
