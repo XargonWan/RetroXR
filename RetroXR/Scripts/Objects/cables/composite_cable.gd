@@ -28,15 +28,22 @@ extends Node3D
 ## Emitted whenever a plug is seated or pulled, after the devices have been told.
 signal topology_changed
 
-## Cord colours, in cord order. Yellow/white/red is the convention, and the plug
-## bodies are tinted to match so a cord can be told apart at both ends.
-const CORD_COLORS := [
+## Cord colours, in cord order — the plug bodies and the ribbon's tubes are both
+## tinted from this, so a cord can be recognised at either end.
+##
+## Set per scene rather than fixed here: the full lead is yellow/white/red, while
+## the mono lead a console like the NES uses is yellow and RED, video and the one
+## audio channel that hardware has.
+@export var cord_colors: PackedColorArray = PackedColorArray([
 	RcaJack.COMPOSITE_YELLOW,
 	RcaJack.AUDIO_WHITE,
 	RcaJack.AUDIO_RED,
-]
+])
 
-const CORDS := 3
+# How many cords this lead actually has, counted from the plugs the scene ships
+# rather than declared, so a two-cord lead is a scene with four plugs and no code
+# of its own.
+var _cords: int = 0
 
 ## How far a remotely-unplugged end is drawn out of its socket, in metres. Clear of
 ## the 60 mm grab distance every RcaPort uses, so it cannot be snapped straight back
@@ -66,9 +73,10 @@ var _rope_built := false
 
 func _ready() -> void:
 	add_to_group("spawned")
+	_cords = _count_cords()
 	_plugs = [[], []]
 	for e in [End.A, End.B]:
-		for c in CORDS:
+		for c in _cords:
 			var plug := get_node("Plug%s%d" % ["AB"[e], c]) as RcaPlug
 			plug.cord = c
 			plug.cable = self
@@ -77,7 +85,7 @@ func _ready() -> void:
 			# socket or a hand letting it go.
 			plug.grabbed.connect(_on_plug_moved.unbind(2))
 			plug.dropped.connect(_on_plug_moved.unbind(1))
-			_tint_plug(plug, CORD_COLORS[c])
+			_tint_plug(plug, _cord_color(c))
 			_plugs[e].append(plug)
 	# Deferred, NOT called straight through. VerletRope is top_level and its
 	# particles are world-space, so _init_points bakes them around wherever the
@@ -92,6 +100,24 @@ func _ready() -> void:
 	# Ports fire on the frame the plug seats; resolve once the room is up so a
 	# cable restored into sockets reports what it is already carrying.
 	call_deferred("_resolve")
+
+
+## How many cords the scene ships, counted as PlugA0, PlugA1, … until one is
+## missing. A lead is then defined entirely by its scene: four plugs make a mono
+## lead, six make the full one, and neither needs a script of its own.
+func _count_cords() -> int:
+	var n := 0
+	while get_node_or_null("PlugA%d" % n) != null and get_node_or_null("PlugB%d" % n) != null:
+		n += 1
+	return n
+
+
+## Colour for one cord, falling back to the palette's last entry if a scene ships
+## more cords than colours.
+func _cord_color(c: int) -> Color:
+	if cord_colors.is_empty():
+		return RcaJack.COMPOSITE_YELLOW
+	return cord_colors[mini(c, cord_colors.size() - 1)]
 
 
 ## Colour a plug body to its cord, so the same wire can be recognised at both ends.
@@ -116,20 +142,20 @@ func _tint_plug(plug: RcaPlug, col: Color) -> void:
 func _build_rope() -> void:
 	if not is_inside_tree():
 		return          # a netplay client's local copy is freed before we get here
-	_rope.ribbon_count = CORDS
-	_rope.ribbon_colors = PackedColorArray(CORD_COLORS)
+	_rope.ribbon_count = _cords
+	_rope.ribbon_colors = cord_colors
 	# Read in the START anchor's local space. The lead has no start anchor once
 	# both ends fray, so this is world: the ribbon lies flat across X.
 	_rope.ribbon_axis = Vector3(1, 0, 0)
 	var groups := PackedInt32Array()
-	for c in CORDS:
+	for c in _cords:
 		groups.append(c)
 	_rope.fray_start_groups = groups
 	_rope.fray_end_groups = groups
 	# The trunk ends at each breakout and nothing holds it there; the tails do.
 	_rope.start_node = null
 	_rope.end_node = null
-	for c in CORDS:
+	for c in _cords:
 		_rope.set_fray_start_node(c, _plugs[End.A][c])
 		_rope.set_fray_end_node(c, _plugs[End.B][c])
 		# End the tail at the connector's cable boss rather than at the plug's
@@ -170,7 +196,7 @@ func _physics_process(_delta: float) -> void:
 	# The breakouts are the trunk's own end particles.
 	var junction := [pts[0], pts[_rope.segment_count]]
 	for e in [End.A, End.B]:
-		for c in CORDS:
+		for c in _cords:
 			var plug: RcaPlug = _plugs[e][c]
 			if plug.is_picked_up():
 				continue
@@ -208,7 +234,7 @@ func _resolve() -> void:
 		return
 	var links: Array[Dictionary] = []
 	var devices: Array[Node3D] = []
-	for c in CORDS:
+	for c in _cords:
 		var pa: RcaPort = (_plugs[End.A][c] as RcaPlug).seated_port()
 		var pb: RcaPort = (_plugs[End.B][c] as RcaPlug).seated_port()
 		if pa == null or pb == null:
@@ -278,11 +304,18 @@ func _report_seating_changes() -> void:
 # the wire.
 
 
-## Where all six ends are right now, one record per plug.
+## How many cords this lead has — 3 for the full composite lead, 2 for the mono
+## one. Saved with the seating so a restore rebuilds the right lead: both are this
+## same class, told apart only by the plugs their scenes ship.
+func cord_count() -> int:
+	return _cords
+
+
+## Where every end is right now, one record per plug.
 func seating() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for e in [End.A, End.B]:
-		for c in CORDS:
+		for c in _cords:
 			var plug: RcaPlug = _plugs[e][c]
 			var port := plug.seated_port()
 			out.append({
@@ -309,7 +342,7 @@ func _apply_seating(seats: Array) -> void:
 	for seat: Dictionary in seats:
 		var e: int = int(seat.get("end", 0))
 		var c: int = int(seat.get("cord", 0))
-		if e < 0 or e > 1 or c < 0 or c >= CORDS:
+		if e < 0 or e > 1 or c < 0 or c >= _cords:
 			continue
 		var plug: RcaPlug = _plugs[e][c]
 		var pos: Array = seat.get("position", [])
@@ -332,7 +365,7 @@ func _apply_seating(seats: Array) -> void:
 ## Seat one end, named the way the wire and the save file name it. Used by netplay
 ## when another player plugs something in.
 func net_seat_plug(end: int, cord: int, device: Node3D, port_name: String) -> void:
-	if end < 0 or end > 1 or cord < 0 or cord >= CORDS or device == null:
+	if end < 0 or end > 1 or cord < 0 or cord >= _cords or device == null:
 		return
 	var port := device.get_node_or_null(port_name) as RcaPort
 	if port != null:
@@ -351,7 +384,7 @@ func net_seat_plug(end: int, cord: int, device: Node3D, port_name: String) -> vo
 ## live again the moment it is dropped, and a transform written only on the node is
 ## overwritten on the next tick, putting it back in the socket.
 func net_release_plug(end: int, cord: int) -> void:
-	if end < 0 or end > 1 or cord < 0 or cord >= CORDS:
+	if end < 0 or end > 1 or cord < 0 or cord >= _cords:
 		return
 	var plug: RcaPlug = _plugs[end][cord]
 	var port := plug.seated_port()
@@ -388,7 +421,7 @@ func _reopen_port(port: RcaPort) -> void:
 ## XRToolsPickable._exit_tree walks a dangling grab driver.
 func drop_and_free() -> void:
 	for e in [End.A, End.B]:
-		for c in CORDS:
+		for c in _cords:
 			var port := (_plugs[e][c] as RcaPlug).seated_port()
 			if port != null:
 				port.drop_object()
@@ -399,7 +432,7 @@ func drop_and_free() -> void:
 ## without waiting for a change (a deck coming out of standby, say).
 func links() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for c in CORDS:
+	for c in _cords:
 		var pa: RcaPort = (_plugs[End.A][c] as RcaPlug).seated_port()
 		var pb: RcaPort = (_plugs[End.B][c] as RcaPlug).seated_port()
 		if pa == null or pb == null:

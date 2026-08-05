@@ -55,6 +55,11 @@ const _PERIPHERALS: Dictionary = {
 	# Games tab, which already spawns one per ROM keyed on systemid.
 	"nes": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "nes_controller"},
+		# The console wears sockets rather than a captive lead, so the lead it
+		# shipped with is listed on its own card: video and ONE audio channel,
+		# which is all an NES puts out.
+		{"kind": "peripheral", "label": "Mono Composite Cable",
+			"spawn": "mono_composite_cable"},
 	],
 	# Same reasoning as the NES: the console moulds its own DE-9 sockets and the
 	# stick wears the matching plug, so the two only look right together. Named

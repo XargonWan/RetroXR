@@ -41,6 +41,7 @@ const AUDIO_DISC_SCENE       := preload("res://Scenes/Objects/audio_disc.tscn")
 const AUDIO_CASSETTE_SCENE   := preload("res://Scenes/Objects/audio_cassette.tscn")
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const COMPOSITE_CABLE_SCENE  := preload("res://Scenes/Objects/composite_cable.tscn")
+const MONO_CABLE_SCENE       := preload("res://Scenes/Objects/mono_composite_cable.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
 const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
@@ -709,6 +710,9 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		return {
 			"id": id,
 			"type": "composite_cable",
+			# 2 = the mono lead, 3 = the full one. Both are CompositeCable; only
+			# the scene differs, so the count is what picks it back up.
+			"cords": cable.cord_count(),
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
 			"plugs": plugs,
@@ -801,7 +805,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			disc.dvd_label = data.get("dvd_label", "")
 			obj = disc
 		"composite_cable":
-			obj = COMPOSITE_CABLE_SCENE.instantiate() as Node3D
+			obj = (MONO_CABLE_SCENE if int(data.get("cords", 3)) == 2
+				else COMPOSITE_CABLE_SCENE).instantiate() as Node3D
 		"cd_player":
 			obj = CD_PLAYER_SCENE.instantiate() as Node3D
 		"cassette_player":

@@ -96,7 +96,7 @@ surface_material_override/0 = SubResource("Mat_tape_ghost")
 ; back onto the panel. Same convention as the television's ports.
 
 [node name="VideoOut" parent="." instance=ExtResource("8_rcaport")]
-transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.064, 0, -0.135)
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.082, 0, -0.135)
 channel = 0
 direction = 0
 
@@ -106,7 +106,7 @@ channel = 1
 direction = 0
 
 [node name="AudioROut" parent="." instance=ExtResource("8_rcaport")]
-transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.136, 0, -0.135)
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.118, 0, -0.135)
 channel = 2
 direction = 0
 

@@ -27,6 +27,18 @@ enum Direction { OUT, IN }
 
 @export var direction: Direction = Direction.IN
 
+## Draw this port's own jack, or leave it to the model underneath.
+##
+## The NES moulds its own AV jacks into the shell (JackYellow / JackRed), so its
+## ports sit ON those and turn this off — two jacks in the same place z-fight, and
+## the moulded pair is the one that matches the console.
+@export var show_jack: bool = true:
+	set(value):
+		show_jack = value
+		var jack := get_node_or_null("RcaJack") as Node3D
+		if jack != null:
+			jack.visible = show_jack
+
 ## Short label for the OSD and for debugging — "VIDEO", "L", "R".
 const CHANNEL_NAMES := ["VIDEO", "L", "R"]
 
@@ -40,6 +52,9 @@ func _ready() -> void:
 	add_to_group(GROUP)
 	snap_require = "composite_plug"
 	_tint_jack()
+	var jack := get_node_or_null("RcaJack") as Node3D
+	if jack != null:
+		jack.visible = show_jack
 	# The SOCKET announces seating, not the plug. A snap zone's has_picked_up /
 	# has_dropped fire whenever the zone's own state changes, while the pickable's
 	# `dropped` needs the releasing zone to be the one actually holding the grab —

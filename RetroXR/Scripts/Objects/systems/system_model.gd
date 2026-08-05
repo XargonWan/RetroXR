@@ -280,6 +280,22 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 	pass
 
 
+## True when this hardware wears real A/V SOCKETS rather than a captive lead.
+##
+## A console that says yes gets no cable of its own: RetroSystem builds it a pair
+## of RcaPorts instead and the player runs a spawned lead to the set, which is what
+## the hardware actually made you do. Everything else keeps the lead it has always
+## had, permanently attached and already carrying video and stereo.
+func uses_av_ports() -> bool:
+	return false
+
+
+## Place the sockets built for a `uses_av_ports` model, in the order
+## [video, audio]. Called once, with the ports already children of the system.
+func configure_av_ports(_ports: Array) -> void:
+	pass
+
+
 ## Reposition the attach point for video-out channel `channel` (multi-output
 ## hardware). Channel 0 defaults to the classic single-port hook above; extra
 ## channels get a small sideways offset unless the model places them itself.

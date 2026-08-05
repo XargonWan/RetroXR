@@ -139,6 +139,16 @@ const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 var _channels: Array = []
 var _cable_instances: Array = []
 var _cable_plugs: Array = []
+
+# A/V sockets, for hardware that wears them instead of a captive lead (the NES).
+# _av_speaker is which of the set's speakers the one mono cord reaches — 0 left,
+# 1 right, -1 nowhere — and the picture, the sound and the set's controls each
+# follow a different one of these, because a lead can carry any of them alone.
+var _av_ports: Array = []
+var _av_tv: RetroTV = null
+var _av_video_tv: RetroTV = null
+var _av_control_tv: RetroTV = null
+var _av_speaker: int = -1
 var _cable_ropes: Array = []
 var _attach_points: Array = []
 var _max_rope_lengths: Array = []
@@ -273,8 +283,12 @@ func _ready() -> void:
 		_port_zones[i].snap_filter = _accepts_plug
 	# Load system-specific model (falls back to default placeholder model)
 	_load_system_model()
-	# Spawn one cable per video-out channel
-	_spawn_cables()
+	# Hardware with real sockets (the NES) gets those instead of a captive lead —
+	# nothing plays until a lead is run to the set, as it did on the real thing.
+	if _model.uses_av_ports():
+		_build_av_ports()
+	else:
+		_spawn_cables()
 	_update_name_label()
 	# Lay the name flat on the model's front face once meshes + text are built.
 	_place_name_label.call_deferred()
@@ -705,6 +719,10 @@ func _apply_bound_volume() -> void:
 ## in, channel 0 first (a dual-screen handheld can be wired up by its BOTTOM
 ## cable alone). Null when nothing is connected.
 func _audio_tv() -> RetroTV:
+	# A ports console's sound goes wherever its audio cord went, which is not
+	# necessarily where its picture went — or anywhere at all.
+	if not _av_ports.is_empty():
+		return _av_tv if _av_speaker >= 0 and is_instance_valid(_av_tv) else null
 	for tv_obj in _channel_tvs:
 		if tv_obj != null and is_instance_valid(tv_obj):
 			return tv_obj as RetroTV
@@ -808,6 +826,14 @@ func _update_audio_position() -> void:
 			var sp: PackedVector3Array = tv.get_speaker_positions()
 			left_pos = sp[0]
 			right_pos = sp[1]
+			# Mono hardware down one cord: BOTH voices play at the single speaker
+			# that cord reaches, which is what one input fed from one wire sounds
+			# like. Two coincident sources sum acoustically, so this is a real
+			# downmix without touching a sample — and it moves to the other
+			# speaker if the cord is moved, exactly as it would.
+			if not _av_ports.is_empty() and _av_speaker >= 0:
+				left_pos = sp[_av_speaker]
+				right_pos = sp[_av_speaker]
 			# Sound leaves a set the way the picture does.
 			if tv.has_method("get_screen_normal"):
 				emit_forward = tv.get_screen_normal()
@@ -1027,6 +1053,90 @@ func _exit_tree() -> void:
 
 
 # --- Cable management ---
+
+## Build the two sockets a `uses_av_ports` console wears, and let the model seat
+## them on its own moulded jacks.
+##
+## Video and ONE audio channel: this is mono hardware, and the second socket is the
+## whole of its sound. Where that cord lands decides which single speaker plays —
+## see on_av_topology_changed.
+func _build_av_ports() -> void:
+	var scene: PackedScene = load("res://Scenes/Objects/rca_port.tscn")
+	if scene == null:
+		return
+	var built: Array = []
+	for spec in [["VideoOut", RcaPort.Channel.VIDEO], ["AudioOut", RcaPort.Channel.AUDIO_L]]:
+		var port := scene.instantiate() as RcaPort
+		port.name = str(spec[0])
+		port.channel = spec[1]
+		port.direction = RcaPort.Direction.OUT
+		add_child(port)
+		built.append(port)
+	_av_ports = built
+	# After add_child: the model places these in world space off its own meshes.
+	_model.configure_av_ports(built)
+	# Hide the captive lead's own connector. CableAttachPoint carries a PortVisual —
+	# the yellow RCA plug that reads as the lead permanently seated in the console —
+	# and on a shell like the NES the model parks it right in the VIDEO jack. With
+	# sockets there is no captive lead, so leaving it there blocks the very jack the
+	# player has to plug into.
+	for pt: Node3D in _attach_points:
+		var visual := pt.get_node_or_null("PortVisual") as Node3D
+		if visual != null:
+			visual.hide()
+
+
+## Called by a CompositeCable whenever a plug is seated or pulled anywhere on it.
+##
+## Mono, so there is one audio answer rather than two: the single cord either
+## reaches one of the set's speakers or it reaches nothing. Both of this console's
+## voices are then played AT that one speaker, which is what a mono feed into one
+## input sounds like — two coincident sources sum, no downmix needed.
+func on_av_topology_changed(links: Array) -> void:
+	var tv: RetroTV = null
+	var video := false
+	var speaker := -1
+	for link in links:
+		var out_port: RcaPort = link["out"]
+		if out_port.get_device() != self:
+			continue
+		var in_port: RcaPort = link["in"]
+		var target := in_port.get_device() as RetroTV
+		if target == null:
+			continue
+		if tv == null:
+			tv = target
+		elif target != tv:
+			continue
+		if out_port.channel == RcaPort.Channel.VIDEO:
+			video = video or in_port.channel == RcaPort.Channel.VIDEO
+		elif in_port.channel != RcaPort.Channel.VIDEO:
+			# VIDEO=0, L=1, R=2 -> speaker 0 or 1.
+			speaker = int(in_port.channel) - 1
+	_apply_av_feed(tv, video, speaker)
+
+
+func _apply_av_feed(tv: RetroTV, video: bool, speaker: int) -> void:
+	_av_speaker = speaker
+	_av_tv = tv
+	# The PICTURE follows the video cord alone: a lead with only its audio end in
+	# leaves the set on its blue no-signal screen, as it would.
+	var showing: RetroTV = tv if video else null
+	if showing != _av_video_tv:
+		if _av_video_tv != null and is_instance_valid(_av_video_tv):
+			on_tv_disconnected(null)
+		_av_video_tv = showing
+		if showing != null:
+			on_tv_connected(showing, null)
+	# The set's own controls, though, should talk to whatever is wired to it at
+	# all — a console feeding only sound still answers its volume buttons.
+	if tv != _av_control_tv:
+		if _av_control_tv != null and is_instance_valid(_av_control_tv):
+			_av_control_tv.on_av_source_lost(self)
+		_av_control_tv = tv
+		if tv != null:
+			tv.on_av_source_found(self)
+
 
 func _spawn_cables() -> void:
 	for i in _channels.size():

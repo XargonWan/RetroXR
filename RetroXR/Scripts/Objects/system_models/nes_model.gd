@@ -353,6 +353,38 @@ func configure_controller_ports(port_zones: Array) -> void:
 	hide_port_placeholders(port_zones)
 
 
+## Sockets, not a captive lead: this shell moulds the two jacks the hardware has,
+## so the player runs a mono composite lead from them to the set the way you did.
+func uses_av_ports() -> bool:
+	return true
+
+
+## Seat the two ports on the jacks the shell already moulds — JackYellow for video,
+## JackRed for the one audio channel an NES puts out.
+##
+## Positions are read off those meshes rather than written down: the shell is a
+## downloaded asset and its jacks are where they are. The ports' own jack visuals
+## are turned off, because the moulded pair underneath is the one that belongs to
+## this console and two in the same place would z-fight.
+##
+## Rotation matches the captive lead's old convention exactly (-90° about Y, local
+## -Z toward device +X): the RCA plug mesh is authored connector-on-+Z, so this
+## aims a seated plug's connector into the flank and trails its cord out +X.
+func configure_av_ports(ports: Array) -> void:
+	if _glb == null:
+		return
+	var jacks := ["JackYellow", "JackRed"]
+	for i in mini(ports.size(), jacks.size()):
+		var port: Node3D = ports[i]
+		var centre := _mesh_center(jacks[i])
+		if centre == Vector3.ZERO:
+			continue
+		port.global_position = centre
+		port.rotation = Vector3(0.0, -PI / 2.0, 0.0)
+		if port.has_method("set"):
+			port.set("show_jack", false)
+
+
 ## The NES's AV jacks sit on the RIGHT (+X) flank — this shell moulds them there
 ## (JackRed / JackYellow at x = 0.12) — so the video cable trails out +X rather
 ## than straight back like a rear-panel console.
