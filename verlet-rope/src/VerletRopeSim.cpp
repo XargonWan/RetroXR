@@ -53,8 +53,15 @@ inline void VerletRope::SolvePair(int a, int b, double rest, double k)
 // allowed_dev.
 inline void VerletRope::SolveBend(int b, int spacing, double allowed_dev, double k)
 {
-    const int a = b - spacing;
-    const int c = b + spacing;
+    SolveBendTriple(b - spacing, b, b + spacing, allowed_dev, k);
+}
+
+// The same constraint over three arbitrary particles. A branch's link back to
+// the trunk is not evenly spaced in the array — the junction's neighbours are
+// the trunk's last particle and a branch's first, which live nowhere near each
+// other — so the spacing form above cannot express it.
+inline void VerletRope::SolveBendTriple(int a, int b, int c, double allowed_dev, double k)
+{
     const float w_a = m_inv_mass[a];
     const float w_b = m_inv_mass[b];
     const float w_c = m_inv_mass[c];
@@ -486,9 +493,13 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
 // Bend and stub constraints for the frayed branches. Stretch is not here — it
 // comes off the shared segment table with the trunk's.
 //
-// Nothing spans the junction: a branch's bend starts one particle in, so the
-// breakout is a free hinge. That is what a real fray is, and constraining across
-// it would need a "which branch" choice the geometry doesn't offer.
+// A branch gets a strain-relief boot at BOTH ends, the plug and the breakout.
+// The breakout one matters more than it sounds: a moulded fray is stiff where
+// the cords leave it, so they carry the trunk's direction out for a few
+// centimetres and curve away under their own weight. Left as a free hinge — which
+// this deliberately was, on the reasoning that a fray point is a hinge — gravity
+// turns every cord vertically downward the instant it separates, and the fray
+// reads as three wires dropped out of a hole rather than a moulded breakout.
 void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, double p_allowed_dev)
 {
     const double seg_len = FraySegLength();
@@ -524,6 +535,19 @@ void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, doubl
             const int n_end = std::min(m_end_stiff_segments, fc.count - 2);
             for (int j = 1; j <= n_end; ++j)
                 SolveBend(last - j, 1, 0.0, StubWeight(ke, j, n_end));
+
+            // …and at the breakout. The first triple spans the junction, holding
+            // the branch on the line the trunk arrives along; the rest taper it
+            // off into the branch exactly as the plug's boot does.
+            const int trunk_n = TrunkCount();
+            const int trunk_prev = fc.at_start ? 1 : trunk_n - 2;
+            const int n_head = std::min(m_end_stiff_segments, fc.count - 1);
+            if (trunk_n >= 2 && n_head > 0)
+            {
+                SolveBendTriple(trunk_prev, fc.head, first, 0.0, StubWeight(ke, 1, n_head));
+                for (int j = 1; j < n_head; ++j)
+                    SolveBend(first + j, 1, 0.0, StubWeight(ke, j + 1, n_head));
+            }
 
             // Directional stub: a branch whose plug is held or socketed leaves
             // it along the plug's exit axis rather than hanging off it.
