@@ -101,6 +101,20 @@ func can_preview(obj: Node3D) -> bool:
 	return true
 
 
+## LOCAL PATCH (RetroXR): the pose `obj` would occupy if snapped here — this
+## zone offset by the object's snap grab point, the same correction
+## pickable.pick_up -> create_snap applies and grab_driver's preview ghost draws.
+## Zones are compared by this pose, not by their own origin: a plug's grab point
+## carries a 180-degree flip and an offset, so zone origins alone rank wrongly.
+func snap_pose_for(obj: Node3D) -> Transform3D:
+	var t := global_transform
+	if is_instance_valid(obj) and obj.has_method("_get_grab_point"):
+		var gp: XRToolsGrabPoint = obj._get_grab_point(self, null)
+		if gp:
+			t = t * gp.transform.affine_inverse()
+	return t
+
+
 ## LOCAL PATCH (RetroXR): nearest zone that could capture `obj` if released at
 ## `at` (the HAND's desired object position — not the object's actual one,
 ## which sits at the zone while previewing). `radius` is the object's bounding
@@ -435,6 +449,28 @@ func _on_target_dropped(target: Node3D) -> void:
 	# Skip if the target is not valid
 	if not is_instance_valid(target):
 		return
+
+	# LOCAL PATCH (RetroXR): zones close enough to overlap — the NES's two
+	# controller ports sit 18 mm apart inside 30 mm grab spheres — both hold the
+	# object in their grab area, and this handler fires on both. Without a
+	# tiebreak the winner is whichever area the object entered FIRST, which is
+	# decided by approach direction rather than by aim, and disagrees with the
+	# preview ghost. Yield to any zone whose snapped pose is nearer.
+	#
+	# Membership of `_object_in_grab_area` already carries every acceptance test
+	# in _on_snap_zone_body_entered, so a zone reached here will take the object.
+	# The comparison is strict, so the nearest zone never yields and a tie falls
+	# back to entry order.
+	var mine := snap_pose_for(target).origin.distance_squared_to(target.global_position)
+	for z: XRToolsSnapZone in _live_zones:
+		if z == self or not is_instance_valid(z):
+			continue
+		if not z.enabled or is_instance_valid(z.picked_up_object):
+			continue
+		if not z._object_in_grab_area.has(target):
+			continue
+		if z.snap_pose_for(target).origin.distance_squared_to(target.global_position) < mine:
+			return
 
 	# Pick up the target if we can
 	if target.can_pick_up(self):
