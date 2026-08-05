@@ -259,7 +259,7 @@ func _grab_target(target: Node3D) -> void:
 	var pickable: XRToolsPickable = null
 	var snap_zone := target as XRToolsSnapZone
 	if snap_zone:
-		pickable = snap_zone.picked_up_object as XRToolsPickable
+		pickable = InteractionResolver.held_pickable(snap_zone)
 		if not pickable:
 			return
 		snap_zone.drop_object()

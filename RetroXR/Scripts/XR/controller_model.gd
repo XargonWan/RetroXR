@@ -347,6 +347,8 @@ func refresh_device_hand() -> void:
 	_hide_device_hand()
 	if _pickup == null or _pickup.is_ray_grabbing():
 		return
-	var held: Node3D = _pickup.picked_up_object
+	# Variant, not Node3D: the hand can still be pointing at an object that was
+	# freed while held, and binding that to a typed local throws.
+	var held: Variant = _pickup.picked_up_object
 	if is_instance_valid(held):
 		_show_device_hand(held)

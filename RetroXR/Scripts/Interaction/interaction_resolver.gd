@@ -106,6 +106,21 @@ static func _is_pointer_interactive(collider: Object) -> bool:
 	return false
 
 
+## What a snap zone is holding, or null — including when it is still pointing at
+## something that has been freed. A room teardown frees a cable while its plugs
+## are seated, and the socket keeps the dead reference: xr-tools guards every one
+## of its own reads with is_instance_valid for exactly that reason. The read has
+## to go through a Variant, because BOTH casting a freed object and assigning one
+## to a typed local throw "Trying to cast a freed object".
+static func held_pickable(zone: XRToolsSnapZone) -> XRToolsPickable:
+	if not is_instance_valid(zone):
+		return null
+	var held: Variant = zone.picked_up_object
+	if not is_instance_valid(held):
+		return null
+	return held as XRToolsPickable
+
+
 static func _classify_pointer_hit(
 		hit: Dictionary,
 		ray_from: Vector3,
@@ -176,10 +191,10 @@ static func _classify_pickup_hit(
 	while node:
 		if node is XRToolsSnapZone:
 			var snap_zone := node as XRToolsSnapZone
-			var snapped_pickable := snap_zone.picked_up_object as XRToolsPickable
+			var snapped_pickable := held_pickable(snap_zone)
 			if (
 				not is_instance_valid(grabber) or
-				not is_instance_valid(snapped_pickable) or
+				snapped_pickable == null or
 				not snap_zone.can_pick_up(grabber)
 			):
 				return InteractionTarget.none()

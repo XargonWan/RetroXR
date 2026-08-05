@@ -28,7 +28,8 @@ extends Node3D
 func leave_world() -> void:
 	for node: Node in find_children("*", "XRToolsFunctionPickup", true, false):
 		var pickup := node as XRToolsFunctionPickup
-		if pickup.picked_up_object != null:
+		# is_instance_valid, not != null: a freed object still reads as non-null.
+		if is_instance_valid(pickup.picked_up_object):
 			pickup.drop_object()
 	body.enabled = false
 
