@@ -304,11 +304,37 @@ func port_plug_transform(index: int) -> Transform3D:
 ## The yellow composite VIDEO jack on the rear panel, measured off the shell.
 ##
 ## The three RCA jacks sit in a row 25 mm up the back at 12.5 mm spacing —
-## right audio at -X, left audio centred, video at +X. Only the video one is
-## wired: RetroXR carries composite video and audio down the single A/V lead.
+## right audio at -X, left audio centred, video at +X.
 const _JACK_VIDEO := Vector3(0.01253, 0.02228, -0.10838)
 
+## Centre-to-centre along the row, from the same measurement.
+const _JACK_PITCH := 0.0125
 
+
+## All three jacks are wired, so the shell gets sockets and no captive lead — the
+## same as the NES. The real VCS is mono through an RF box; this shell moulds a
+## composite trio, and the trio is what the player sees, so all three work.
+func av_port_channels() -> Array:
+	return [RcaPort.Channel.VIDEO, RcaPort.Channel.AUDIO_L, RcaPort.Channel.AUDIO_R]
+
+
+## Seat the sockets on the moulded row: video at +X, left audio centred, right
+## audio at -X, which is the order the shell prints them in.
+##
+## Rotated 180 degrees about X, NOT left at identity like the cable attach point
+## below. The two want opposite things and it is the easy mistake to make: a rope
+## leaves an attach point along its local -Z, while a socket receives a plug along
+## its local +Z. Identity here would face every socket into the console and seat
+## every plug backwards.
+func configure_av_ports(ports: Array) -> void:
+	for i in ports.size():
+		var port: Node3D = ports[i]
+		port.position = _JACK_VIDEO - Vector3(_JACK_PITCH * float(i), 0.0, 0.0)
+		port.rotation = Vector3(PI, 0.0, 0.0)
+
+
+## Unused while this model wears sockets — RetroSystem builds no cable for it — but
+## kept because the attach point is still created and posed for every system.
 func configure_cable_attach(attach_point: Node3D) -> void:
 	attach_point.position = _JACK_VIDEO
 	# Identity is already right here, unlike the NES's flank-mounted jacks. The
