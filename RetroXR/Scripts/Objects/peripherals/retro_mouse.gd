@@ -13,10 +13,6 @@ extends XRToolsPickable
 
 
 const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
-## PC99 green, the mouse half of the colour code — the only thing that tells this
-## lead from the keyboard's once both are plugged in. Swapped in over the cable
-## scene's generic 20 mm cone, which is twice life size for a mini-DIN.
-const PLUG_MESH := "res://Scenes/Objects/ps2_plug_mouse.res"
 const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/mouse_options_panel.tscn")
 const RETRO_DEVICE_MOUSE := 2
 
@@ -27,6 +23,22 @@ const MOUSE_BTN_MIDDLE := 1 << 6
 
 ## Cursor units reported per metre of surface travel.
 @export var sensitivity: float = 2400.0
+
+## Mesh resource for this mouse's cable connector. The default is the PC99 green
+## PS/2 plug — the mouse half of the colour code, and the only thing that tells
+## this lead from the keyboard's once both are plugged in. A console mouse points
+## it at its own connector instead. Authored in ControllerPlug's frame (origin at
+## the seated position, connector on +Z, cable trailing -Z), which is what lets
+## set_plug_mesh derive cable_anchor from it.
+@export var plug_mesh_path: String = "res://Scenes/Objects/ps2_plug_mouse.res"
+
+## The systemid this mouse physically belongs to, e.g. "super_nes". A port only
+## accepts a plug whose systemid matches — the same filter RetroController uses.
+##
+## Empty means UNIVERSAL and fits anything, which is what the generic mouse wants:
+## it stands in for hardware we have no model of on every system that reads a
+## RETRO_DEVICE_MOUSE, from ScummVM to DOS.
+@export var systemid: String = ""
 
 ## Base-to-surface distance that engages the stick (metres).
 const STICK_ON := 0.035
@@ -123,7 +135,7 @@ func _add_cable_to_scene() -> void:
 	_cable_instance.add_to_group("spawned")
 	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
-	_cable_plug.set_plug_mesh(PLUG_MESH)
+	_cable_plug.set_plug_mesh(plug_mesh_path)
 	_cable_plug.set_controller(self)
 	_cable_plug.add_collision_exception_with(self)
 	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
@@ -311,22 +323,49 @@ func _process(_delta: float) -> void:
 		_last_buttons = buttons
 
 
-## Cache the button meshes. Absent on an older scene, in which case the mouse
-## simply has nothing to animate.
+## Cache the button meshes. A mesh a scene doesn't carry is simply one this mouse
+## cannot animate — the SNES mouse has no middle button, and an older scene has
+## none of the three.
 func _cache_buttons() -> void:
 	for bit: int in ANIM_BUTTONS:
-		var m := _visual.get_node_or_null(String(ANIM_BUTTONS[bit])) as MeshInstance3D
+		var m := _find_button(String(ANIM_BUTTONS[bit]))
 		if m != null:
 			_anim_btns.append({"node": m, "rest": m.transform, "bit": bit})
+
+
+## Find a button mesh anywhere under the visual, not just as a direct child: an
+## imported shell nests its meshes inside the .glb's own root. Matched on a
+## normalised name because Godot's glTF import rewrites punctuation.
+func _find_button(base: String) -> MeshInstance3D:
+	var target := _norm(base)
+	for n: Node in _visual.find_children("*", "MeshInstance3D", true, false):
+		if _norm(n.name) == target:
+			return n as MeshInstance3D
+	return null
+
+
+static func _norm(s: String) -> String:
+	var out := ""
+	for ch in s.to_lower():
+		if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9"):
+			out += ch
+	return out
 
 
 func _animate_buttons(buttons: int) -> void:
 	for e: Dictionary in _anim_btns:
 		var node: MeshInstance3D = e["node"]
-		var rest: Transform3D = e["rest"]
 		var down := 1.0 if (buttons & int(e["bit"])) != 0 else 0.0
-		var tgt := Transform3D(rest.basis, rest.origin + Vector3.DOWN * (BUTTON_PRESS * down))
-		node.transform = node.transform.interpolate_with(tgt, ANIM_WEIGHT)
+		node.transform = node.transform.interpolate_with(_button_pose(e, down), ANIM_WEIGHT)
+
+
+## Where a button sits at `down` (0 = rest, 1 = fully pressed). A moulded cap on
+## a primitive shell just sinks straight in; a shell whose buttons are its whole
+## front panel has to hinge instead, or the panel would part company with the
+## body along the hinge line. Overridden per model.
+func _button_pose(e: Dictionary, down: float) -> Transform3D:
+	var rest: Transform3D = e["rest"]
+	return Transform3D(rest.basis, rest.origin + Vector3.DOWN * (BUTTON_PRESS * down))
 
 
 func _poll_buttons() -> int:

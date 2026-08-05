@@ -1,0 +1,72 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/snes_mouse.gd" id="1_snesmouse"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_rounded_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_rounded_left.tscn" id="4_lhand"]
+[ext_resource type="PackedScene" path="res://imported-assets/controllers/snes-mouse/snes_mouse.glb" id="5_model"]
+
+; The shell, measured off the .glb: 61.0 x 36.6 x 96.0 mm. It rests ON its
+; origin, so the box is lifted half its height to wrap it.
+[sub_resource type="BoxShape3D" id="BoxShape3D_mouse"]
+size = Vector3(0.061, 0.0366, 0.096)
+
+; Deliberately larger than the shell — this is only what the laser has to hit to
+; select the mouse, and a pointer target the size of the object is fiddly.
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.1, 0.08, 0.14)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_mouse"]
+bounce = 0.0
+friction = 0.8
+
+[node name="SnesMouse" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_mouse")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_snesmouse")
+plug_mesh_path = "res://imported-assets/controllers/snes-mouse/snes_mouse_plug.res"
+systemid = "super_nes"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0183, 0)
+shape = SubResource("BoxShape3D_mouse")
+
+; RetroMouse glues THIS node to the surface plane while the mouse is in use, so
+; the model has to sit on the node's own origin — which is how the .glb was
+; exported (y 0 .. 0.0366), leaving the transform at identity.
+[node name="MouseVisual" type="Node3D" parent="."]
+
+[node name="Model" parent="MouseVisual" instance=ExtResource("5_model")]
+
+[node name="SurfaceRay" type="RayCast3D" parent="."]
+target_position = Vector3(0, -0.1, 0)
+collision_mask = 1
+
+; Where the cord leaves the nose, measured from the wire mesh before it was
+; dropped: dead centre, 7.3 mm off the desk.
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0073, -0.048)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
+
+; Held-hand indicators (Rounded pose = palm draped over). Shown at runtime by
+; controller_model.gd when the mouse is grabbed.
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0)
+visible = false

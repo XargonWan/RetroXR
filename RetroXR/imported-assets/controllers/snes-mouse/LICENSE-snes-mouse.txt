@@ -1,0 +1,66 @@
+Model Information:
+* title:	Super NES Mouse
+* source:	https://sketchfab.com/3d-models/super-nes-mouse-6bc2a4865b5e425bacb30cbfdfe7d59f
+* author:	Peardian (https://sketchfab.com/Peardian)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Super NES Mouse" (https://sketchfab.com/3d-models/super-nes-mouse-6bc2a4865b5e425bacb30cbfdfe7d59f) by Peardian (https://sketchfab.com/Peardian) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted for RetroXR as snes_mouse.glb and snes_mouse_plug.glb.
+
+  * Removed every Nintendo wordmark. Unlike the trademarks on other imported
+    hardware, none of these is a mesh — they live in the TEXTURES, and in three
+    different maps, so each had to be found and painted out separately:
+
+      - the shell's BASE COLOUR (snes_mouse.glb): the printed wordmark, a
+        139 x 34 px region of the atlas;
+      - the shell's OCCLUSION + metallicRoughness atlas: the underside label's
+        moulded pill logo and its "(c) 1992 NINTENDO" line, carried as relief;
+      - the plug's NORMAL map and its OCCLUSION + metallicRoughness map: the
+        pill logo moulded into the connector's grip.
+
+    Each region is filled with the median of a ring just outside it, so a normal
+    map gets its flat normal back and an AO plate its plate value. The rest of
+    the underside label is untouched, none of it being a mark: "MADE IN JAPAN",
+    "PAT. PENDING", "RATING: DC6V 45mA", "MODEL NO. SNS-016".
+
+    Verified by decoding the images out of each shipped .glb's own binary chunk,
+    resolving material -> texture -> image, and confirming every cleaned region
+    is flat. That check matters twice over: a base-colour render cannot show a
+    mark that only exists as relief, which is how the last four survived a pass
+    that reported the model clean.
+
+  * Removed the mouse pad entirely (not wanted, and it carried a second
+    Nintendo wordmark of its own).
+
+  * Removed the cable. The source builds it from a spline and it is 22,400 of
+    the model's 28,251 triangles; RetroXR simulates every cord with a VerletRope
+    instead. The plug on its end is kept and exported separately.
+
+  * Split the connector into snes_mouse_plug.glb, authored to RetroXR's plug
+    contract: D-shaped shroud on +Z, ribbed strain relief trailing -Z, origin on
+    the shoulder where the shroud meets the grip — the face that meets a
+    console's port cheek. Its frame comes from the plug's own principal axes;
+    aligning it to the cable's local direction instead put a roll and a tilt
+    into it (the tell was a 42.6 x 37.2 mm bounding box for a body whose true
+    section is 42.7 x 17.0 mm).
+
+  * Un-posed the mouse. The source is a "trophy pose" — the shell is rotated in
+    the scene — so it was axis-aligned into the shell's own frame and re-seated
+    flat, front (buttons and cord) on -Z per retro_mouse.tscn's convention.
+
+  * Parts named for RetroXR: BodyMesh, LeftButton, RightButton, Ball, Inner,
+    Underside. Transforms baked into the vertex data.
+
+NOT modified: the model is already at real-world scale (61 x 37 x 96 mm against
+a real SNES mouse's ~58 x 35 x 100 mm), so unlike other imports no scale
+normalisation was applied.

@@ -42,6 +42,7 @@ const AUDIO_CASSETTE_SCENE   := preload("res://Scenes/Objects/audio_cassette.tsc
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
+const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE   := preload("res://Scenes/Objects/retro_keyboard.tscn")
 
 
@@ -625,6 +626,11 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		var obj_type := "retro_controller"
 		if node is RayGun:
 			obj_type = "ray_gun"
+		elif node is SnesMouse:
+			# Before the RetroMouse arm, which it also satisfies — reaching that
+			# first would save the SNES mouse as the primitive one and hand the
+			# player a grey box back.
+			obj_type = "snes_mouse"
 		elif node is RetroMouse:
 			obj_type = "retro_mouse"
 		elif node is RetroKeyboard:
@@ -715,6 +721,10 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			var mouse := RETRO_MOUSE_SCENE.instantiate() as RetroMouse
 			mouse.sensitivity = data.get("sensitivity", 2400.0)
 			obj = mouse
+		"snes_mouse":
+			var snes := SNES_MOUSE_SCENE.instantiate() as SnesMouse
+			snes.sensitivity = data.get("sensitivity", 2400.0)
+			obj = snes
 		"retro_keyboard":
 			obj = RETRO_KEYBOARD_SCENE.instantiate() as Node3D
 		"vcr_player":

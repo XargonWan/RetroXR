@@ -20,6 +20,8 @@ const VB_CONTROLLER_SCENE   := preload("res://Scenes/Objects/controllers/vb_cont
 const NES_CONTROLLER_SCENE  := preload("res://Scenes/Objects/controllers/nes_controller.tscn")
 const A2600_JOYSTICK_SCENE  := preload("res://Scenes/Objects/controllers/atari_2600_cx40.tscn")
 const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/retro_mouse.tscn")
+# The Super NES Mouse: its own shell and connector, and it fits only a SNES.
+const SNES_MOUSE_SCENE      := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_multitap.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
@@ -976,6 +978,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = A2600_JOYSTICK_SCENE.instantiate() as Node3D
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
+		"snes_mouse":
+			obj = SNES_MOUSE_SCENE.instantiate() as Node3D
 		"retro_keyboard":
 			obj = RETRO_KEYBOARD_SCENE.instantiate() as Node3D
 		"retro_multitap":

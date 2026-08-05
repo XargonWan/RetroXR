@@ -26,8 +26,8 @@ const RECOMMENDED := {
 		"why":  "Best speed-to-accuracy balance on Quest hardware",
 	},
 	"super_nes": {
-		"core": "bsnes",
-		"why":  "Handles the SNES Mouse over libretro",
+		"core": "snes9x",
+		"why":  "Drives the SNES Mouse, and runs full speed on Quest where bsnes does not",
 	},
 }
 

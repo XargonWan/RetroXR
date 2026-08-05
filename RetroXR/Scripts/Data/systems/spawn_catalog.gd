@@ -63,6 +63,13 @@ const _PERIPHERALS: Dictionary = {
 	"atari_2600": [
 		{"kind": "peripheral", "label": "CX40 Joystick", "spawn": "atari_2600_cx40"},
 	],
+	# The SNES Mouse is here rather than left to the generic Controllers-tab mouse
+	# because it wears its own connector and only fits a Super NES; the generic one
+	# stays universal. The primitives are NOT dropped from this card — there is no
+	# SNES console model or pad yet, so they are still the way to play it.
+	"super_nes": [
+		{"kind": "peripheral", "label": "SNES Mouse", "spawn": "snes_mouse"},
+	],
 }
 
 
