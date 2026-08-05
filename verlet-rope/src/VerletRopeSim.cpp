@@ -211,9 +211,20 @@ Vector3 VerletRope::PlugExitDir(Node3D *node) const
 }
 
 // Rotate a free plug rigidbody so its cable-exit axis points along the rope's
-// tangent, easing by k per frame. Rotating the plug doesn't move its anchor
-// point, so this never perturbs the sim.
-void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &target_dir_in, double k)
+// tangent, easing by k per frame.
+//
+// The rotation is about the plug's CABLE ANCHOR, not its origin. That is what
+// makes this safe to run inside the tick: the rope reads the anchor as
+// transform * offset, and a real plug's offset is its cord boss some 40 mm back
+// from the origin, so spinning about the origin swings the anchor through a
+// 40 mm arc — it perturbs the very rope whose tangent it is chasing. This used
+// to claim it "never perturbs the sim", which held only for a zero offset.
+//
+// Six free plugs on a composite lead made that a standing wave: each anchor
+// moved ~0.7 mm a tick, over the 0.5 mm wake threshold, so the rope re-woke
+// every tick forever and a cable draped on a table never stopped shivering.
+void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &offset, const Vector3 &target_dir_in,
+                                 double k)
 {
     RigidBody3D *rb = Object::cast_to<RigidBody3D>(node);
     if (rb == nullptr || rb->is_freeze_enabled())
@@ -250,7 +261,11 @@ void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &target_dir_in, dou
     const Quaternion target_q = (arc * cur_q).normalized();
     const Quaternion new_q = cur_q.slerp(target_q, CLAMP(k, 0.0, 1.0));
     Transform3D xf = rb->get_global_transform();
+    // Pin the anchor: work out where it is now, re-basis, then put the origin
+    // back so the anchor lands in exactly the same place.
+    const Vector3 anchor_before = xf.xform(offset);
     xf.basis = Basis(new_q);
+    xf.origin += anchor_before - xf.xform(offset);
     rb->set_global_transform(xf);
 }
 
@@ -319,15 +334,18 @@ void VerletRope::Step(double p_delta)
     if (m_end_align_stiffness > 0.0 && count >= 2)
     {
         if (!start_fixed)
-            AlignAnchorPlug(m_start_cached, m_points[1] - m_points[0], m_end_align_stiffness);
+            AlignAnchorPlug(m_start_cached, m_start_anchor_offset,
+                            m_points[1] - m_points[0], m_end_align_stiffness);
         if (!end_fixed)
-            AlignAnchorPlug(m_end_cached, m_points[count - 2] - m_points[count - 1], m_end_align_stiffness);
+            AlignAnchorPlug(m_end_cached, m_end_anchor_offset,
+                            m_points[count - 2] - m_points[count - 1], m_end_align_stiffness);
         for (const FrayChain &fc : m_fray)
         {
             if (fc.cached == nullptr || fc.count < 2 || PlugIsFixed(fc.cached))
                 continue;
             const int last = fc.first + fc.count - 1;
-            AlignAnchorPlug(fc.cached, m_points[last - 1] - m_points[last], m_end_align_stiffness);
+            AlignAnchorPlug(fc.cached, fc.offset, m_points[last - 1] - m_points[last],
+                            m_end_align_stiffness);
         }
     }
 

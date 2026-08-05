@@ -221,7 +221,8 @@ private:
     bool AnchorsMoved() const;
     bool PlugIsFixed(godot::Node3D *node) const;
     godot::Vector3 PlugExitDir(godot::Node3D *node) const;
-    void AlignAnchorPlug(godot::Node3D *node, const godot::Vector3 &target_dir, double k);
+    void AlignAnchorPlug(godot::Node3D *node, const godot::Vector3 &offset,
+                         const godot::Vector3 &target_dir, double k);
     void RefreshExclusions();
     // Resolved once per tick so the hot paths don't repeat the ObjectDB lookup.
     void CacheAnchors();
