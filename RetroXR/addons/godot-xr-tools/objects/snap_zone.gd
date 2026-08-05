@@ -465,32 +465,43 @@ func _on_target_dropped(target: Node3D) -> void:
 		return
 
 	# LOCAL PATCH (RetroXR): zones close enough to overlap — the NES's two
-	# controller ports sit 18 mm apart inside 30 mm grab spheres — both hold the
-	# object in their grab area, and this handler fires on both. Without a
-	# tiebreak the winner is whichever area the object entered FIRST, which is
-	# decided by approach direction rather than by aim, and disagrees with the
-	# preview ghost. Yield to any zone whose snapped pose is nearer.
+	# controller ports sit 18 mm apart inside 30 mm grab spheres, and its A/V
+	# sockets the same — hold the object in several grab areas at once, and this
+	# handler fires on every one of them. Without a tiebreak the winner is whichever
+	# area the object entered FIRST, decided by approach direction rather than aim.
 	#
-	# Membership of `_object_in_grab_area` already carries every acceptance test
-	# in _on_snap_zone_body_entered, so a zone reached here will take the object.
-	# The comparison is strict, so the nearest zone never yields and a tie falls
-	# back to entry order.
-	# What the player was SHOWN wins, if that zone can still take it. Only when
-	# nothing previewed (an object dropped without ever lighting a ghost) does the
-	# distance tiebreak below decide.
-	if is_instance_valid(_preview_zone) and _preview_zone != self 			and _preview_zone.enabled 			and not is_instance_valid(_preview_zone.picked_up_object) 			and _preview_zone._object_in_grab_area.has(target):
-		return
-
-	var mine := snap_pose_for(target).origin.distance_squared_to(target.global_position)
-	for z: XRToolsSnapZone in _live_zones:
-		if z == self or not is_instance_valid(z):
-			continue
-		if not z.enabled or is_instance_valid(z.picked_up_object):
-			continue
-		if not z._object_in_grab_area.has(target):
-			continue
-		if z.snap_pose_for(target).origin.distance_squared_to(target.global_position) < mine:
+	# The preview ghost decides, and decides ALONE. It is what the player was shown,
+	# so it is the only answer that cannot surprise them. Every other zone stands
+	# down; the ghost skips the distance test entirely.
+	#
+	# It has to be the sole decider, not merely preferred: an earlier version had
+	# the others yield to the ghost while the ghost still ran the distance test
+	# below, so whenever the ghost was not ALSO the nearest by snapped pose it
+	# yielded to a zone that had already yielded to it, and the object fell through
+	# every zone onto the floor. That is the "sometimes it just drops" case.
+	#
+	# Membership of `_object_in_grab_area` carries every acceptance test in
+	# _on_snap_zone_body_entered, and is set in the same breath as the `dropped`
+	# connection, so a zone that has it will really receive this callback.
+	var ghost: XRToolsSnapZone = _preview_zone
+	var ghost_can_take: bool = is_instance_valid(ghost) and ghost.enabled 		and not is_instance_valid(ghost.picked_up_object) 		and ghost._object_in_grab_area.has(target)
+	if ghost_can_take:
+		if ghost != self:
 			return
+	else:
+		# Nothing previewed — an object let go without a ghost ever lighting. Fall
+		# back to the nearest snapped pose. Strict, so the nearest never yields and
+		# a tie falls back to entry order.
+		var mine := snap_pose_for(target).origin.distance_squared_to(target.global_position)
+		for z: XRToolsSnapZone in _live_zones:
+			if z == self or not is_instance_valid(z):
+				continue
+			if not z.enabled or is_instance_valid(z.picked_up_object):
+				continue
+			if not z._object_in_grab_area.has(target):
+				continue
+			if z.snap_pose_for(target).origin.distance_squared_to(target.global_position) < mine:
+				return
 
 	# Pick up the target if we can
 	if target.can_pick_up(self):
