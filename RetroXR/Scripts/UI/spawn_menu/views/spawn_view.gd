@@ -345,6 +345,7 @@ func _build() -> void:
 		["Cassette Player", "cassette_player"],
 		["TV Remote",       "tv_remote"],
 		["Memory Card",     "memory_card"],
+		["Composite Cable", "composite_cable"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [

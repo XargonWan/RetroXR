@@ -54,7 +54,13 @@ var _speaker_override := false
 # Head position, for the distance law applied in _apply_distance_gain, and the
 # last gain handed over so an unchanged one costs nothing.
 var _listener: Node = null
-var _sent_gain := -1.0
+var _sent_gain_l := -1.0
+var _sent_gain_r := -1.0
+
+# Per-channel trim, so one channel can be silenced without touching the other.
+# See set_channel_gains.
+var _ch_gain_l := 1.0
+var _ch_gain_r := 1.0
 # Last distance term measured, so a volume change can be applied against it
 # without waiting for the next frame.
 var _dist_factor := 1.0
@@ -120,7 +126,8 @@ func rebuild_backend() -> void:
 		_player.queue_free()
 		_player = null
 		_playback = null
-	_sent_gain = -1.0
+	_sent_gain_l = -1.0
+	_sent_gain_r = -1.0
 	_sent_directivity = -1.0
 	_dist_factor = 1.0
 	_choose_backend()
@@ -224,12 +231,38 @@ func _apply_distance_gain(origin: Vector3) -> void:
 
 
 func _send_gain(g: float) -> void:
-	if is_equal_approx(g, _sent_gain):
+	var gl: float = g * _ch_gain_l
+	var gr: float = g * _ch_gain_r
+	if is_equal_approx(gl, _sent_gain_l) and is_equal_approx(gr, _sent_gain_r):
 		return
-	_sent_gain = g
-	_mx.set_voice_gain(_voice_l, g)
+	_sent_gain_l = gl
+	_sent_gain_r = gr
+	_mx.set_voice_gain(_voice_l, gl)
 	if _voice_r >= 0:
-		_mx.set_voice_gain(_voice_r, g)
+		_mx.set_voice_gain(_voice_r, gr)
+
+
+## Per-channel trim on top of the volume, 0.0 .. 1.0 each.
+##
+## For a source whose two channels can be routed independently — a deck whose left
+## cord is plugged in and whose right is not. The channels are separate VOICES
+## carrying separate sample streams, so silencing one is a gain of zero on it and
+## costs nothing; doing it by editing the samples would mean per-sample GDScript at
+## 48 kHz, which cannot keep a ring fed.
+##
+## Godot's fallback backend has a single player fed interleaved stereo and cannot
+## split them. There, anything above zero on either channel plays both — a
+## half-connected lead is heard in full rather than not at all, which is the less
+## confusing failure.
+func set_channel_gains(l: float, r: float) -> void:
+	_ch_gain_l = clampf(l, 0.0, 1.0)
+	_ch_gain_r = clampf(r, 0.0, 1.0)
+	if _use_sdk:
+		_send_gain(_volume * _dist_factor)
+	elif _player != null and is_instance_valid(_player):
+		var live: float = maxf(_ch_gain_l, _ch_gain_r)
+		_player.volume_db = _MUTE_DB if _volume * live <= 0.0 \
+			else linear_to_db(_volume * live)
 
 
 ## Closest a source is allowed to sit to the head, in metres.

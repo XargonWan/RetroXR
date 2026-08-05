@@ -66,15 +66,13 @@ var _emitter: SpatialAudioEmitter = null
 var _volume_linear: float = 1.0
 var _paused: bool = false
 
-# Cable scene to instantiate (shared with RetroSystem)
-const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
-var _cable_instance: Node3D = null
-var _cable_plug: CablePlug = null
-var _cable_rope: VerletRope = null
-var _max_rope_length: float = 0.0
-
-# TV to connect to after the cable finishes spawning (used by save/load restore)
-var _pending_tv_restore: RetroTV = null
+# What the deck's own channels currently reach, worked out in
+# on_av_topology_changed: whether the picture has a path to the set, and which of
+# its speakers the left and right channels land on (-1 = nowhere, 0 = the set's
+# left, 1 = its right, so a crossed pair swaps them).
+var _feed_video: bool = false
+var _feed_left: int = -1
+var _feed_right: int = -1
 
 # Front-loading tape bay (insert ride, eject, grab hand-off, collision) — all owned
 # by the shared MediaSlot; see media_slot.gd. The tape rides in 10 cm and lies flat
@@ -87,7 +85,6 @@ var _screen_material: Material = null
 
 @onready var _vcr_body: MeshInstance3D = $VCRBody
 @onready var _tape_slot: XRToolsSnapZone = $TapeSlot
-@onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _play_button: VRButton = $PlayButton
 @onready var _pause_button: VRButton = $PauseButton
 @onready var _stop_button: VRButton = $StopButton
@@ -134,7 +131,6 @@ func _ready() -> void:
 		push_error("VCRPlayer: VlcPlayer extension not loaded — video playback unavailable")
 
 	_setup_audio()
-	_spawn_cable()
 	_update_name_label()
 
 
@@ -163,7 +159,7 @@ func _process(delta: float) -> void:
 	if _vlc:
 		# Pump the latest decoded frame + PCM every frame.
 		_vlc.update_frame()
-		if is_playing and connected_tv != null:
+		if is_playing and connected_tv != null and _feed_video:
 			_bind_screen_to_tv()
 		_pump_audio()
 		# Emanate the sound from the connected TV so it's spatialised there, aimed
@@ -197,7 +193,13 @@ func _process(delta: float) -> void:
 func _emit_through(tv: Node3D) -> void:
 	if tv.has_method("get_speaker_positions"):
 		var sp: PackedVector3Array = tv.get_speaker_positions()
-		_emitter.set_speaker_positions(sp[0], sp[1])
+		# The two voices carry the deck's own left and right, so a crossed pair is
+		# handled by writing each voice to the speaker its cord actually reaches --
+		# no per-sample work, just a position each. A channel routed nowhere keeps
+		# whichever position; it is silent (set_channel_gains) and cannot be heard.
+		_emitter.set_speaker_positions(
+			sp[_feed_left] if _feed_left >= 0 else sp[0],
+			sp[_feed_right] if _feed_right >= 0 else sp[1])
 	else:
 		_emitter.set_emit_position(tv.global_position)
 	if tv.has_method("get_screen_normal"):
@@ -545,20 +547,13 @@ func stop() -> void:
 	_net_push_state()
 
 
-# --- TV connection contract (identical to RetroSystem's) ---
-
-## Called by the TV's cable plug when it connects to a TV
-func on_tv_connected(tv: RetroTV) -> void:
-	connected_tv = tv
-	if is_playing:
-		_bind_screen_to_tv()
-
-
-## Called by the TV's cable plug when it disconnects
-func on_tv_disconnected() -> void:
-	if connected_tv:
-		connected_tv.hide_osd()
-	connected_tv = null
+# --- TV connection contract ---
+#
+# on_tv_connected/on_tv_disconnected are gone: they were the captive lead's, called
+# by the set when a CablePlug carrying a back-reference to its host arrived. A
+# composite cable's plugs belong to no device, so the deck works out its own
+# connection instead — see on_av_topology_changed. A console still uses the old
+# path, which is why the set still has it.
 
 
 ## Set the audio volume (0.0 = silent, 1.0 = 100%). Called by the TV volume buttons.
@@ -573,7 +568,7 @@ func set_audio_volume(volume: float) -> void:
 func set_screen_enabled(enabled: bool) -> void:
 	if not connected_tv:
 		return
-	if enabled and is_playing:
+	if enabled and is_playing and _feed_video:
 		_bind_screen_to_tv()
 	else:
 		_blank_screen()
@@ -670,48 +665,72 @@ func _on_video_finished() -> void:
 		_emitter.flush()
 
 
-# --- Cable management (mirrors RetroSystem) ---
-
-func _spawn_cable() -> void:
-	_cable_instance = CABLE_SCENE.instantiate()
-	call_deferred("_add_cable_to_scene")
-
-
-func _add_cable_to_scene() -> void:
-	get_tree().current_scene.add_child(_cable_instance)
-	_cable_instance.add_to_group("spawned")
-	_cable_plug = _cable_instance.get_node("CablePlug") as CablePlug
-	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
-	_cable_plug.set_system(self)
-	_cable_plug.add_collision_exception_with(self)
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.1)
-	_cable_rope.start_node = _cable_attach_point
-	_cable_rope.end_node = _cable_plug
-	# End the cord AT the connector's cable boss. The plug's origin is its
-	# SEATING reference, buried up at the collar, so a zero offset runs the tube
-	# out through the barrel.
-	_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
-	_cable_rope._init_points()
-	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
-	if _pending_tv_restore != null:
-		_snap_cable_to_tv(_pending_tv_restore)
-		_pending_tv_restore = null
+# --- A/V out ---
+#
+# The deck has three sockets and no lead of its own. A composite cable is spawned
+# and plugged in, and what plays depends entirely on which sockets its cords reach:
+# picture only when a cord joins this VideoOut to the set's video in, the left
+# channel only when one joins AudioLOut to an audio in — and if that one lands in
+# the set's RIGHT socket, the left channel comes out of the right-hand speaker.
+# CompositeCable works out the pairs; this only reads them.
 
 
-func _physics_process(_delta: float) -> void:
-	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
-		return
-	if connected_tv != null or _cable_plug.is_picked_up():
-		return
-	var attach_pos := _cable_attach_point.global_position
-	var diff := _cable_plug.global_position - attach_pos
-	var dist := diff.length()
-	if dist > _max_rope_length:
-		var dir := diff / dist
-		_cable_plug.global_position = attach_pos + dir * _max_rope_length
-		var outward_vel := dir.dot(_cable_plug.linear_velocity)
-		if outward_vel > 0.0:
-			_cable_plug.linear_velocity -= dir * outward_vel
+## Called by a CompositeCable whenever a plug is seated or pulled anywhere on it,
+## with every source-to-sink pair the lead currently carries.
+func on_av_topology_changed(links: Array) -> void:
+	var tv: RetroTV = null
+	var video := false
+	var l := -1
+	var r := -1
+	for link in links:
+		var out_port: RcaPort = link["out"]
+		if out_port.get_device() != self:
+			continue
+		var in_port: RcaPort = link["in"]
+		var target := in_port.get_device() as RetroTV
+		if target == null:
+			continue
+		if tv == null:
+			tv = target
+		elif target != tv:
+			continue        # cords into two different sets: the first one wins
+		match out_port.channel:
+			RcaPort.Channel.VIDEO:
+				# Picture into an audio input is just a buzz; nothing to show.
+				video = video or in_port.channel == RcaPort.Channel.VIDEO
+			RcaPort.Channel.AUDIO_L:
+				l = _speaker_for(in_port)
+			RcaPort.Channel.AUDIO_R:
+				r = _speaker_for(in_port)
+	_apply_av_feed(tv, video, l, r)
+
+
+## Which of the set's speakers an input socket drives: 0 left, 1 right, -1 for the
+## video socket, which does nothing with audio. Channel order is VIDEO, L, R.
+func _speaker_for(in_port: RcaPort) -> int:
+	return -1 if in_port.channel == RcaPort.Channel.VIDEO else int(in_port.channel) - 1
+
+
+func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
+	var previous := connected_tv
+	_feed_video = video
+	_feed_left = l
+	_feed_right = r
+	connected_tv = tv
+	if previous != tv:
+		if previous != null and is_instance_valid(previous):
+			previous.hide_osd()
+			previous.on_av_source_lost(self)
+		if tv != null:
+			tv.on_av_source_found(self)
+	if tv != null and video and is_playing:
+		_bind_screen_to_tv()
+	else:
+		_blank_screen()
+	# A channel with nowhere to go is silenced at its voice; the one still
+	# connected plays on. See SpatialAudioEmitter.set_channel_gains.
+	if _emitter:
+		_emitter.set_channel_gains(1.0 if l >= 0 else 0.0, 1.0 if r >= 0 else 0.0)
 
 
 # --- Save/load restore (mirrors RetroSystem) ---
@@ -720,15 +739,11 @@ func get_snapped_tape() -> Node3D:
 	return _slot.get_media()
 
 
-func restore_cable_connection(tv: RetroTV) -> void:
-	if _cable_plug != null:
-		_snap_cable_to_tv(tv)
-	else:
-		_pending_tv_restore = tv
-
-
-func _snap_cable_to_tv(tv: RetroTV) -> void:
-	tv.accept_plug_restore(_cable_plug)
+## Kept for scene_persistence, which still records which set a deck was playing
+## through. There is nothing to restore now that the lead is a separate object:
+## the connection lives in a spawned cable's six plugs, not in this deck.
+func restore_cable_connection(_tv: RetroTV) -> void:
+	pass
 
 
 ## Seat a tape programmatically (event/save restore) — no ride, bypasses the filter.

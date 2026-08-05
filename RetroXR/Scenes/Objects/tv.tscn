@@ -1,14 +1,12 @@
 [gd_scene format=3 uid="uid://mft7vy78rjrv"]
 
 [ext_resource type="Script" uid="uid://c3b5c470fc0pa" path="res://Scripts/Objects/tv/tv.gd" id="1_tvscript"]
-[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="2_snapzone"]
-[ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="3_snaphis"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="4_pickhigh"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="5_vrbutton"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_screen_curved.res" id="7_screencurved"]
 [ext_resource type="Shader" uid="uid://dp0ojf0bxhg8y" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/rca_jack.tscn" id="9_rcajack"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/rca_port.tscn" id="10_rcaport"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
@@ -31,18 +29,6 @@ emission_energy_multiplier = 2.0
 [sub_resource type="SystemFont" id="Font_mono"]
 font_names = PackedStringArray("Consolas", "Courier New", "Droid Sans Mono", "monospace")
 subpixel_positioning = 0
-
-[sub_resource type="CylinderMesh" id="CylMesh_plug_ghost"]
-top_radius = 0.015
-bottom_radius = 0.015
-height = 0.05
-
-[sub_resource type="StandardMaterial3D" id="Mat_plug_ghost"]
-transparency = 1
-albedo_color = Color(0.2, 0.5, 1, 0.45)
-emission_enabled = true
-emission = Color(0, 0.15, 0.5, 1)
-emission_energy_multiplier = 0.4
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_btn"]
 size = Vector3(0.025, 0.015, 0.025)
@@ -110,21 +96,27 @@ font_size = 64
 outline_size = 16
 horizontal_alignment = 0
 
-[node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("2_snapzone")]
+; A/V IN. CompositePort keeps its name and its place: a console's captive lead
+; still plugs in here, and tv.gd still reaches it as $CompositePort. The two audio
+; sockets beside it are new, and only a composite cable feeds them — a console
+; carries its stereo down the one video cord as it always did.
+[node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("10_rcaport")]
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.15, -0.15, -0.16002099)
-grab_distance = 0.06
-snap_require = "composite_plug"
+channel = 0
+direction = 1
 
-[node name="PortVisual" parent="CompositePort" unique_id=79237654 instance=ExtResource("9_rcajack")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01002)
+; L and R in, beside the video socket. Sound only reaches the set through these:
+; a cord from a deck's L to this one carries the left channel, and a cord from the
+; deck's L to the R socket puts the left channel out of the right-hand speaker.
+[node name="AudioLIn" parent="." instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.107, -0.15, -0.16002099)
+channel = 1
+direction = 1
 
-[node name="SnapHighlight" type="Node3D" parent="CompositePort" unique_id=733690447]
-script = ExtResource("3_snaphis")
-
-[node name="HighlightMesh" type="MeshInstance3D" parent="CompositePort/SnapHighlight" unique_id=1900781378]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_plug_ghost")
-surface_material_override/0 = SubResource("Mat_plug_ghost")
+[node name="AudioRIn" parent="." instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.064, -0.15, -0.16002099)
+channel = 2
+direction = 1
 
 [node name="Ambilight" type="SpotLight3D" parent="." unique_id=603587175]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.05, 0.162)

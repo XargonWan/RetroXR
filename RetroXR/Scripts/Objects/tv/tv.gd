@@ -976,10 +976,40 @@ func _on_plug_snapped(plug: Node3D) -> void:
 			# hosts (VCR/DVD) keep the plain single-arg contract.
 			if system is RetroSystem:
 				(system as RetroSystem).on_tv_connected(self, _snapped_plug)
-			else:
+			elif system.has_method("on_tv_connected"):
+				# Guarded: only a host with a captive lead implements this. The decks
+				# dropped it when they moved to sockets and a spawned cable, and an
+				# unguarded call errors on any plug that names one as its system.
 				system.on_tv_connected(self)
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
 				{"owner": system, "tv": self, "ch": _snapped_plug.channel})
+
+
+## Called by a deck that has worked out it is feeding this set through a composite
+## lead. Takes the place of _on_plug_snapped's host lookup, which only works for a
+## captive lead whose plug carries a back-reference to its owner; a composite
+## cable's plugs belong to no device, so the deck tells the set instead.
+func on_av_source_found(source: Node3D) -> void:
+	# Hand the incoming host a clean screen, exactly as the plug path does, so the
+	# video handler doesn't capture our CRT wrapper as the material to restore.
+	_unwrap_crt()
+	_connected_system = source
+	_connected_system.set_audio_volume(_effective_volume())
+
+
+## Called by that deck when the last cord between the two is pulled.
+func on_av_source_lost(source: Node3D) -> void:
+	if _connected_system != source:
+		return                  # already replaced by something else
+	_unwrap_crt()
+	_connected_system = null
+
+
+## Nothing to do here: a set is a sink, and every routing decision is the source's.
+## It exists so RcaPort.get_device() recognises a television as a device at all —
+## that is the whole of the interface.
+func on_av_topology_changed(_links: Array) -> void:
+	pass
 
 
 ## Called when the cable plug leaves the composite port
@@ -994,7 +1024,7 @@ func _on_plug_released() -> void:
 		if system:
 			if system is RetroSystem:
 				(system as RetroSystem).on_tv_disconnected(_snapped_plug)
-			else:
+			elif system.has_method("on_tv_disconnected"):
 				system.on_tv_disconnected()
 		_connected_system = null
 		_snapped_plug = null

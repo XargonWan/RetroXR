@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphis"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="5_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dvd_opts_panel_001" path="res://Scenes/UI/dvd_options_panel.tscn" id="6_dvdopts"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/rca_port.tscn" id="8_rcaport"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_dvd"]
 friction = 0.8
@@ -36,11 +37,6 @@ albedo_color = Color(0.2, 0.5, 1, 0.4)
 emission_enabled = true
 emission = Color(0, 0.15, 0.5, 1)
 emission_energy_multiplier = 0.4
-
-[sub_resource type="CylinderMesh" id="CylMesh_cable"]
-top_radius = 0.012
-bottom_radius = 0.012
-height = 0.02
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_btn"]
 size = Vector3(0.03, 0.02, 0.03)
@@ -90,12 +86,29 @@ script = ExtResource("4_snaphis")
 mesh = SubResource("Cyl_disc_ghost")
 surface_material_override/0 = SubResource("Mat_disc_ghost")
 
-[node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.125)
+; A/V out on the back panel. The deck no longer carries a captive lead — a
+; composite cable is spawned and plugged in, and what plays depends on which of
+; these three a cord reaches (see CompositeCable).
+;
+; Turned 180 degrees about X so each socket's local +Z points out of the back of
+; the deck, and standing 10 mm proud of the 0.25 m-deep body at z = -0.125, which
+; is where a seated plug's origin belongs; the jack inside each port is offset
+; back onto the panel. Same convention as the television's ports.
 
-[node name="PortVisual" type="MeshInstance3D" parent="CableAttachPoint"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_cable")
+[node name="VideoOut" parent="." instance=ExtResource("8_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.064, 0, -0.135)
+channel = 0
+direction = 0
+
+[node name="AudioLOut" parent="." instance=ExtResource("8_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.1, 0, -0.135)
+channel = 1
+direction = 0
+
+[node name="AudioROut" parent="." instance=ExtResource("8_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.136, 0, -0.135)
+channel = 2
+direction = 0
 
 [node name="PlayButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0.03, 0.1)

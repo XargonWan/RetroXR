@@ -1,0 +1,38 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="1_snapzone"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/rca_port.gd" id="2_portscript"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/rca_jack.tscn" id="3_rcajack"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphigh"]
+
+[sub_resource type="CylinderMesh" id="CylMesh_plug_ghost"]
+top_radius = 0.008
+bottom_radius = 0.008
+height = 0.03
+
+[sub_resource type="StandardMaterial3D" id="Mat_plug_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1, 0.45)
+emission_enabled = true
+emission = Color(0, 0.15, 0.5, 1)
+emission_energy_multiplier = 0.4
+
+; A socket, placed the way tv.tscn already places its composite port: the ZONE
+; sits where a seated plug's origin belongs, which is 10 mm proud of the panel,
+; and the jack is pushed back by that much so its flange lands on the panel.
+; Copy this node's transform from an existing port and the plug still seats right.
+[node name="RcaPort" instance=ExtResource("1_snapzone")]
+grab_distance = 0.06
+snap_require = "composite_plug"
+script = ExtResource("2_portscript")
+
+[node name="RcaJack" parent="." instance=ExtResource("3_rcajack")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01002)
+
+[node name="SnapHighlight" type="Node3D" parent="."]
+script = ExtResource("4_snaphigh")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="SnapHighlight"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.004)
+mesh = SubResource("CylMesh_plug_ghost")
+surface_material_override/0 = SubResource("Mat_plug_ghost")
