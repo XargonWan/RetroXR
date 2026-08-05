@@ -15,7 +15,18 @@ This work is based on "ATARI 2600" (https://sketchfab.com/3d-models/atari-2600-f
 
 MODIFICATIONS (CC-BY-4.0 requires these be indicated)
 
-Adapted for RetroXR as atari_2600_plug_joystick.glb and atari_2600_plug_paddle.glb
+Adapted for RetroXR as atari_2600_cx40.glb — the CX40 joystick body.
+
+  * Removed the Atari trademark moulded into its top face (a separate mesh).
+
+  * Scaled by 0.7881 to match the console, and rotation/scale baked into the
+    vertex data while each part's own origin was preserved: those origins are
+    the pivots the stick and fire button rotate and press about.
+
+  * The stick, its rubber boot and the fire button are kept as separate objects
+    so the pad can animate; the rest of the shell is joined into one mesh.
+
+Adapted for RetroXR as atari_2600_plug_cx40.glb and atari_2600_plug_paddle.glb
 — the two controller plug ends, taken from the loose cables in the source scene.
 
   * Removed the Atari trademark from both. The source moulds one onto each plug
@@ -38,5 +49,5 @@ Adapted for RetroXR as atari_2600_plug_joystick.glb and atari_2600_plug_paddle.g
 The two plugs are deliberately kept separate: the paddle plug is 3 mm longer and
 carries a small moulded text panel the joystick plug does not have.
 
-Scenes/Objects/atari_2600_plug_{joystick,paddle}.res are ArrayMesh resources
+Scenes/Objects/atari_2600_plug_{cx40,paddle}.res are ArrayMesh resources
 baked from these GLBs, for ControllerPlug.set_plug_mesh().

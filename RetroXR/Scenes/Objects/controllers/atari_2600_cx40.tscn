@@ -1,0 +1,60 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/controllers/atari_2600_cx40.gd" id="1_joyscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
+[ext_resource type="PackedScene" path="res://imported-assets/controllers/atari_2600/atari_2600_cx40.glb" id="5_joymodel"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_ctrl"]
+friction = 0.8
+
+; The BASE only, 76 x 35 x 79 mm. The stick stands 47 mm proud of it and is
+; deliberately outside the body: a collider that swallowed it would stop the
+; shaft ever being reachable, and it is the part you grab.
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.0760, 0.0346, 0.0792)
+
+[node name="Atari2600CX40" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.2
+physics_material_override = SubResource("PhysMat_ctrl")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_joyscript")
+plug_mesh_path = "res://Scenes/Objects/atari_2600_plug_cx40.res"
+systemid = "atari_2600"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+; The .glb rests ON its origin (y 0..0.0809), so drop it half the BASE height to
+; sit the case's middle on the centre of mass. Not half the total: that would
+; count the stick and hang the base below where it is held.
+[node name="Model" parent="." instance=ExtResource("5_joymodel")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.01732, 0)
+
+; The cord leaves the same edge the fire button sits on (-Z), which is the far
+; side from the holder's wrist when the stick is held upright.
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0396)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_body")
+
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.045, 0, 0)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.045, 0, 0)
+visible = false

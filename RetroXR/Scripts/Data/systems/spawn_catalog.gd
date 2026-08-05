@@ -56,13 +56,20 @@ const _PERIPHERALS: Dictionary = {
 	"nes": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "nes_controller"},
 	],
+	# Same reasoning as the NES: the console moulds its own DE-9 sockets and the
+	# stick wears the matching plug, so the two only look right together. Named
+	# CX40 because the 2600 shipped two quite different controllers and the
+	# paddle is still to come.
+	"atari_2600": [
+		{"kind": "peripheral", "label": "CX40 Joystick", "spawn": "atari_2600_cx40"},
+	],
 }
 
 
 ## Platforms that model their own console AND their own pad, so the generic
 ## stand-ins are only clutter on their card. Everything else keeps them: for a
 ## platform with no hardware of its own they are the whole way to play it.
-const _NO_STANDINS: Array[String] = ["nes"]
+const _NO_STANDINS: Array[String] = ["nes", "atari_2600"]
 
 
 ## The spawnable items for a system: its stand-in hardware, then the models that
