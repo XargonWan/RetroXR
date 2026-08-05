@@ -247,6 +247,27 @@ func get_cartridge_insert_direction() -> Vector3:
 	return (global_transform.basis * -_CART_SEAT_Y).normalized()
 
 
+# --- A/V lead ---------------------------------------------------------------------
+
+## The yellow composite VIDEO jack on the rear panel, measured off the shell.
+##
+## The three RCA jacks sit in a row 25 mm up the back at 12.5 mm spacing —
+## right audio at -X, left audio centred, video at +X. Only the video one is
+## wired: RetroXR carries composite video and audio down the single A/V lead.
+const _JACK_VIDEO := Vector3(0.01253, 0.02228, -0.10838)
+
+
+func configure_cable_attach(attach_point: Node3D) -> void:
+	attach_point.position = _JACK_VIDEO
+	# Identity is already right here, unlike the NES's flank-mounted jacks. The
+	# rear panel faces -Z and VerletRope leaves the attach point along its local
+	# -Z, so the cord trails straight out the back and the plug's +Z connector
+	# points into the jack.
+	attach_point.rotation = Vector3.ZERO
+	# PortVisual is deliberately left visible — it is the RCA plug seated in the
+	# jack, not a placeholder.
+
+
 # --- placement -------------------------------------------------------------------
 
 ## Rest the console on whatever it is placed on. Sized to the measured shell:

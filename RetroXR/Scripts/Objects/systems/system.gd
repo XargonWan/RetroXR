@@ -1074,6 +1074,11 @@ func _add_cables_to_scene() -> void:
 		# SEATING reference, up at the collar, so a zero offset runs the tube out
 		# through the barrel.
 		rope.end_anchor_offset = plug.cable_anchor
+		# Same correction at THIS end. The attach point sits at the console's jack,
+		# and the plug seated in it is modelled from its collar too — so without
+		# this the cord started inside the barrel and appeared to sprout from the
+		# middle of the connector rather than the strain relief behind it.
+		rope.start_anchor_offset = _port_cable_anchor(_attach_points[i])
 		rope._init_points()
 		_max_rope_lengths[i] = rope.segment_count * rope.segment_length
 
@@ -1083,6 +1088,22 @@ func _add_cables_to_scene() -> void:
 			_snap_cable_to_tv(_pending_tv_restores[i], i)
 			_pending_tv_restores[i] = null
 	_apply_video_out()
+
+
+## Where the cord meets the plug seated in the console's own jack, in the attach
+## point's local space — the mirror of CablePlug.cable_anchor at the far end of
+## the same lead, and derived the same way so reshaping the connector cannot
+## desync either end.
+##
+## Zero when the model hides PortVisual: with no plug modelled at this end the
+## cord should leave the jack itself, which is what the attach point already is.
+func _port_cable_anchor(attach: Node3D) -> Vector3:
+	var pv := attach.get_node_or_null("PortVisual") as MeshInstance3D
+	if pv == null or pv.mesh == null or not pv.visible:
+		return Vector3.ZERO
+	var ab: AABB = pv.mesh.get_aabb()
+	# Cable trails -Z (VerletRope.plug_exit_axis), so the boss is at min Z.
+	return pv.transform * Vector3(ab.get_center().x, ab.get_center().y, ab.position.z)
 
 
 ## True when this system offers the Enable Video Out toggle (handhelds only —

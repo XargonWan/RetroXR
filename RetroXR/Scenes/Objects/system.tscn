@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphis"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="5_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/core_options_panel.tscn" id="6_coreopts"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rca_plug_yellow.res" id="7_rcaplug"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_system"]
 friction = 0.8
@@ -119,10 +120,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.125)
 [node name="CableAttachPoint" type="Node3D" parent="." unique_id=1663596345]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.125)
 
+; The console end of the A/V lead, and the same baked RCA plug the TV end wears
+; (cable.tscn's PlugTip). It was a plain grey cylinder, which read as an unfinished
+; stub next to a proper yellow connector at the other end.
+;
+; No transform: the mesh is authored connector-on-+Z, so under an attach point
+; whose local -Z is the cable exit (the convention every configure_cable_attach
+; follows) the connector already points into the jack and the cord trails out.
+; No surface_material_override either — the materials are baked into the mesh.
 [node name="PortVisual" type="MeshInstance3D" parent="CableAttachPoint" unique_id=1368038536]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_cable")
-surface_material_override/0 = SubResource("Mat_cable")
+mesh = ExtResource("7_rcaplug")
 
 [node name="PowerButton" type="Area3D" parent="." unique_id=1201968380]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08, 0.06, 0.1)

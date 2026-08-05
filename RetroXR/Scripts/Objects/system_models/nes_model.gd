@@ -361,10 +361,13 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 		attach_point.global_position = _mesh_center("JackYellow")
 	# VerletRope leaves the attach point stiffly along its local -Z, so rotate
 	# -90° about Y (local -Z -> device +X) to steer the cable out of the flank.
+	# That also aims PortVisual's +Z connector into the jack, since the plug mesh
+	# is authored connector-on-+Z.
 	attach_point.rotation = Vector3(0.0, -PI / 2.0, 0.0)
-	var port_visual := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
-	if port_visual:
-		port_visual.hide()
+	# PortVisual stays VISIBLE. It used to be hidden because it was a grey
+	# cylinder stub that looked wrong against the shell's moulded jacks; now that
+	# it is the same yellow RCA plug the TV end wears, it is the connector seated
+	# in JackYellow, and hiding it left the cord emerging from nothing.
 
 
 func get_cable_spawn_offset(channel: int) -> Vector3:
