@@ -1,0 +1,45 @@
+Model Information:
+* title:	ATARI 2600
+* source:	https://sketchfab.com/3d-models/atari-2600-f9ec8aa8e4fa454cbbe821a23ca6e83d
+* author:	Rusty Hardy (https://sketchfab.com/rustificus)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "ATARI 2600" (https://sketchfab.com/3d-models/atari-2600-f9ec8aa8e4fa454cbbe821a23ca6e83d) by Rusty Hardy (https://sketchfab.com/rustificus) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted for RetroXR as atari_2600_console.glb:
+
+  * Split the original scene into per-part GLBs. This file is the console only;
+    the joystick, paddle, both plug ends and the cartridge ship separately.
+
+  * Removed every Atari trademark. The source carries four, all as separate
+    geometry: the front wordmark (a white decal plus its embossed relief), one
+    on the joystick top face, and one on each plug end.
+
+  * Removed the cartridge that was seated in the slot, along with its label art.
+    The slot ships empty so the game can seat a cart of its own.
+
+  * Split the six front-panel switches into individually named, individually
+    pivoted objects (Switch_Power, Switch_TVType, Switch_LeftDifficulty,
+    Switch_RightDifficulty, Switch_GameSelect, Switch_GameReset). Each keeps the
+    dark filler mesh that sits behind its lever, so no hole is exposed as it
+    travels.
+
+  * Normalised switch rest positions. The source modelled Left Difficulty and
+    Game Select thrown down and the other four up; all six now ship up, and the
+    7.07 mm gap between those two groups is used as the switch throw.
+
+  * Re-centred on the console's own footprint at real-world scale, resting on
+    y = 0 rather than centred on its middle.
+
+NOT modified: "video computer system" remains on the top control panel. Unlike
+the four logos it is painted into the face-plate texture rather than being
+separate geometry, and that same texture carries the functional switch legends.

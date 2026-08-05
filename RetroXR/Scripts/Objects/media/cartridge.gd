@@ -36,6 +36,7 @@ var _options_panel: Node3D = null
 ## stripped from the build — silently keeps the procedural box.
 const _CART_MODELS := {
 	"nes": "res://imported-assets/carts/nes/nes_cart.glb",
+	"atari_2600": "res://imported-assets/carts/atari_2600/atari_2600_cart.glb",
 }
 
 ## Name of the model's swappable label face, which _apply_label_art covers with

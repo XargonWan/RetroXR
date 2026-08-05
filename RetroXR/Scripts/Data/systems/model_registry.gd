@@ -59,6 +59,9 @@ const _ROWS: Dictionary = {
 	# A script row, not a scene: the model loads its own GLB and needs nothing
 	# authored around it. `requires` names that GLB, so a build without the asset
 	# lists the platform's stand-in instead of a row that cannot spawn.
+	"atari_2600":           {"platform": "atari_2600", "label": "Atari 2600",
+		"script": "res://Scripts/Objects/system_models/atari_2600_model.gd",
+		"requires": ["res://imported-assets/consoles/atari_2600/atari_2600_console.glb"]},
 	"nes":                  {"platform": "nes", "label": "Nintendo Entertainment System",
 		"script": "res://Scripts/Objects/system_models/nes_model.gd",
 		"requires": ["res://imported-assets/consoles/nes/nes_console.glb"]},

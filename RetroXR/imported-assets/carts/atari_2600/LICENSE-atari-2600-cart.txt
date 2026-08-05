@@ -1,0 +1,32 @@
+Model Information:
+* title:	ATARI 2600
+* source:	https://sketchfab.com/3d-models/atari-2600-f9ec8aa8e4fa454cbbe821a23ca6e83d
+* author:	Rusty Hardy (https://sketchfab.com/rustificus)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "ATARI 2600" (https://sketchfab.com/3d-models/atari-2600-f9ec8aa8e4fa454cbbe821a23ca6e83d) by Rusty Hardy (https://sketchfab.com/rustificus) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted for RetroXR as atari_2600_cart.glb — the cartridge only, taken from the
+loose carts in the source scene.
+
+  * ALL LABEL ARTWORK REMOVED. Every cartridge in the source wears a real game's
+    printed label, which is third-party copyrighted art and is not redistributable.
+    The spine label mesh was deleted outright. The front label mesh was kept as
+    geometry only, stripped of its texture, renamed to "media_label" and given a
+    blank material — RetroXR paints scraped art onto that face at runtime, the
+    same arrangement the NES cart uses. This GLB embeds no images at all.
+
+  * Reoriented to RetroXR's cartridge contract: connector at -Y, body running +Y,
+    label facing +Z. The source models the cart lying flat.
+
+  * Shell meshes joined into a single "Cartridge_Body" and re-centred on the
+    cart's own middle.
