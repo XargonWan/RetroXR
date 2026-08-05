@@ -247,6 +247,56 @@ func get_cartridge_insert_direction() -> Vector3:
 	return (global_transform.basis * -_CART_SEAT_Y).normalized()
 
 
+# --- controller ports -------------------------------------------------------------
+
+## The two joystick ports on the rear panel.
+##
+## Placed by hand in Tools/cart_seat_probe.tscn (--mode=port). The D-sub sockets
+## are moulded into the shell rather than being separate meshes, so nothing in
+## the geometry names them — locating them by mesh name, by vertex clustering and
+## by thresholding an orthographic render all failed.
+##
+## This is the PLUG's pose, not the snap zone's. XRTools aligns a plug's
+## SnapGrabPoint to the zone, and that grab point carries its own 180-degree flip
+## about X (controller_cable.tscn), so the zone is this composed with the flip.
+## The sockets are NOT symmetric about the centreline — they sit at -109 mm and
+## +79 mm, 30 mm apart in magnitude. Placed independently for that reason, and
+## confirmed twice: thresholding an orthographic rear render put them at -0.1091
+## and +0.0783, within 0.2 mm of both hand placements.
+const _PORT_POS := [
+	Vector3(0.07854, 0.07007, -0.09521),    # port 1
+	Vector3(-0.10907, 0.07007, -0.09521),   # port 2
+]
+## Rearward tilt, matching the sloped upper rear face the sockets sit in.
+const _PORT_PITCH_DEG := 17.499
+
+## The grab point's own flip, which the zone has to undo.
+const _GRAB_FLIP := PI
+
+
+func configure_controller_ports(port_zones: Array) -> void:
+	var basis := Basis.from_euler(Vector3(deg_to_rad(_PORT_PITCH_DEG), 0.0, 0.0)) \
+		* Basis(Vector3.RIGHT, _GRAB_FLIP)
+	for i in range(port_zones.size()):
+		var zone: Node3D = port_zones[i]
+		# An authored PortSeat marker still wins, same idiom as CartSeat.
+		var seat := find_child("PortSeat%d" % (i + 1), true, false) as Node3D
+		if seat != null:
+			zone.global_transform = seat.global_transform
+		elif i < _PORT_POS.size():
+			zone.transform = Transform3D(basis, _PORT_POS[i])
+	hide_port_placeholders(port_zones)
+
+
+## Where each controller plug should sit once seated — the pose that was actually
+## placed, before the grab-point flip. Used by the probe and by validation.
+func port_plug_transform(index: int) -> Transform3D:
+	var i: int = clampi(index, 0, _PORT_POS.size() - 1)
+	return Transform3D(
+		Basis.from_euler(Vector3(deg_to_rad(_PORT_PITCH_DEG), 0.0, 0.0)),
+		_PORT_POS[i])
+
+
 # --- A/V lead ---------------------------------------------------------------------
 
 ## The yellow composite VIDEO jack on the rear panel, measured off the shell.

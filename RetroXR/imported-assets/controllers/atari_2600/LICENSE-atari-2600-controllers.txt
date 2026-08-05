@@ -1,0 +1,42 @@
+Model Information:
+* title:	ATARI 2600
+* source:	https://sketchfab.com/3d-models/atari-2600-f9ec8aa8e4fa454cbbe821a23ca6e83d
+* author:	Rusty Hardy (https://sketchfab.com/rustificus)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "ATARI 2600" (https://sketchfab.com/3d-models/atari-2600-f9ec8aa8e4fa454cbbe821a23ca6e83d) by Rusty Hardy (https://sketchfab.com/rustificus) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted for RetroXR as atari_2600_plug_joystick.glb and atari_2600_plug_paddle.glb
+— the two controller plug ends, taken from the loose cables in the source scene.
+
+  * Removed the Atari trademark from both. The source moulds one onto each plug
+    body; they are separate meshes and were deleted outright.
+
+  * Scaled by 0.7881 to match the console, which is normalised to real-world
+    size. The source asset is uniformly ~1.27x oversized.
+
+  * Reoriented to RetroXR's plug contract: connector on +Z, cable trailing -Z,
+    with the origin at the mating tip so a port snap zone lines up with it.
+    Authored so the exporter's Z-up to Y-up conversion LANDS on that contract
+    rather than being applied before it.
+
+  * Transforms baked into the vertex data. Left on the node transforms, Godot
+    sizes the part from the bounding box of a ROTATED box, over-measures it and
+    shrinks the result.
+
+  * Shell meshes joined and re-centred. Neither file embeds any image.
+
+The two plugs are deliberately kept separate: the paddle plug is 3 mm longer and
+carries a small moulded text panel the joystick plug does not have.
+
+Scenes/Objects/atari_2600_plug_{joystick,paddle}.res are ArrayMesh resources
+baked from these GLBs, for ControllerPlug.set_plug_mesh().
