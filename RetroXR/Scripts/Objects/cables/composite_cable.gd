@@ -38,6 +38,11 @@ const CORD_COLORS := [
 
 const CORDS := 3
 
+## How far a remotely-unplugged end is drawn out of its socket, in metres. Clear of
+## the 60 mm grab distance every RcaPort uses, so it cannot be snapped straight back
+## up. See net_release_plug.
+const PULLED_CLEAR := 0.12
+
 ## Ends of the lead, used only to name things.
 enum End { A, B }
 
@@ -49,6 +54,10 @@ var _plugs: Array = []
 # Devices told about this cable last time round, so one that has just lost its
 # last cord still gets a final update telling it so.
 var _last_devices: Array[Node3D] = []
+
+# Where each end sat at the last resolve, keyed "end:cord" — the baseline the
+# netplay diff in _report_seating_changes works against.
+var _last_seating := {}
 
 # The rope is built a frame after _ready (see there). Until it is, its particles
 # are a default cord around the origin and the tether must not read them.
@@ -230,7 +239,160 @@ func _resolve() -> void:
 	for dev in devices:
 		if is_instance_valid(dev):
 			dev.on_av_topology_changed(links)
+	_report_seating_changes()
 	topology_changed.emit()
+
+
+## Tell the other players which ends moved.
+##
+## Diffed against the last seating rather than reported from the socket hook: the
+## hook fires for every take and release, including the pair a single re-patch
+## produces, while a diff sends one event per end that actually ended up somewhere
+## new. It is also self-correcting — a peer applying an event re-enters here with
+## report_event suppressed, so its own map lands on the same state either way.
+func _report_seating_changes() -> void:
+	var now := {}
+	for seat: Dictionary in seating():
+		var key: String = "%d:%d" % [seat["end"], seat["cord"]]
+		var dev: Node3D = seat["device"]
+		var where: String = "" if dev == null else "%s/%s" % [dev.get_path(), seat["port"]]
+		now[key] = where
+		if _last_seating.get(key, "") == where:
+			continue
+		if dev == null:
+			NetworkManager.report_event(NetObjectSync.EV_RCA_UNPLUG,
+				{"cable": self, "end": seat["end"], "cord": seat["cord"]})
+		else:
+			NetworkManager.report_event(NetObjectSync.EV_RCA_PLUG, {
+				"cable": self, "end": seat["end"], "cord": seat["cord"],
+				"dev": dev, "port": seat["port"],
+			})
+	_last_seating = now
+
+
+# ── Seating: save/restore and netplay ────────────────────────────────────────
+#
+# One description of where the six ends are, used by both. A seat names the socket
+# by its DEVICE and its node NAME ("AudioLIn") rather than by any index: the name
+# is stable across scene edits, readable in a save file, and short enough to put on
+# the wire.
+
+
+## Where all six ends are right now, one record per plug.
+func seating() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for e in [End.A, End.B]:
+		for c in CORDS:
+			var plug: RcaPlug = _plugs[e][c]
+			var port := plug.seated_port()
+			out.append({
+				"plug": plug,
+				"end": int(e),
+				"cord": c,
+				"device": port.get_device() if port != null else null,
+				"port": port.name if port != null else "",
+			})
+	return out
+
+
+## Put the six ends back: seat the ones that name a socket, and drop the rest where
+## they were saved.
+##
+## Deferred a frame, because the lead builds its rope deferred (see _ready) and
+## seating a plug before that happens would have _init_points bake the particles
+## around plugs that are about to be moved again.
+func restore_seating(seats: Array) -> void:
+	call_deferred("_apply_seating", seats)
+
+
+func _apply_seating(seats: Array) -> void:
+	for seat: Dictionary in seats:
+		var e: int = int(seat.get("end", 0))
+		var c: int = int(seat.get("cord", 0))
+		if e < 0 or e > 1 or c < 0 or c >= CORDS:
+			continue
+		var plug: RcaPlug = _plugs[e][c]
+		var pos: Array = seat.get("position", [])
+		var rot: Array = seat.get("rotation", [])
+		if pos.size() == 3:
+			plug.global_position = Vector3(pos[0], pos[1], pos[2])
+		if rot.size() == 3:
+			plug.global_rotation_degrees = Vector3(rot[0], rot[1], rot[2])
+		var dev: Node3D = seat.get("device")
+		var port_name: String = str(seat.get("port", ""))
+		if dev != null and is_instance_valid(dev) and not port_name.is_empty():
+			var port := dev.get_node_or_null(port_name) as RcaPort
+			if port != null:
+				port.pick_up_object(plug)
+	# The sockets fire as they take each plug, but a lead restored with nothing
+	# seated fires nothing at all — resolve once so the devices hear either way.
+	call_deferred("_resolve")
+
+
+## Seat one end, named the way the wire and the save file name it. Used by netplay
+## when another player plugs something in.
+func net_seat_plug(end: int, cord: int, device: Node3D, port_name: String) -> void:
+	if end < 0 or end > 1 or cord < 0 or cord >= CORDS or device == null:
+		return
+	var port := device.get_node_or_null(port_name) as RcaPort
+	if port != null:
+		port.pick_up_object(_plugs[end][cord])
+
+
+## Pull one end out, wherever it happens to be.
+##
+## Dropping is not enough. The player who pulled it has it in their hand; on every
+## other peer nothing is holding it, so it is released still standing in the
+## socket's grab area and the socket snaps it straight back up — the other player
+## would appear to unplug it and plug it in again in the same breath. So it is also
+## drawn clear along the socket's own axis, which is the way a hand takes it out.
+##
+## The transform goes through the physics server as well as the node: the body is
+## live again the moment it is dropped, and a transform written only on the node is
+## overwritten on the next tick, putting it back in the socket.
+func net_release_plug(end: int, cord: int) -> void:
+	if end < 0 or end > 1 or cord < 0 or cord >= CORDS:
+		return
+	var plug: RcaPlug = _plugs[end][cord]
+	var port := plug.seated_port()
+	if port == null:
+		return
+	# Shut the socket for the release. A snap zone in DROPPED mode listens for the
+	# pickable's `dropped` on a DEFERRED connection and takes back anything still
+	# listed in its grab area — which this plug is, and stays until a physics frame
+	# has run it out. Moving it first does not help; the handler fires afterwards.
+	port.enabled = false
+	port.drop_object()
+	plug.global_position = port.global_position \
+		+ port.global_transform.basis.z.normalized() * PULLED_CLEAR
+	PhysicsServer3D.body_set_state(plug.get_rid(),
+		PhysicsServer3D.BODY_STATE_TRANSFORM, plug.global_transform)
+	_reopen_port(port)
+
+
+## Let the deferred drop handler and the area's body_exited both run before the
+## socket is live again. Deliberately not awaited by the caller: the release has
+## already happened, and this only reopens the socket behind it.
+func _reopen_port(port: RcaPort) -> void:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	if is_instance_valid(port):
+		port.enabled = true
+
+
+## Drop every plug before the lead is freed.
+##
+## ScenePersistence.clear_scene looks for this by name, and its fallback pre-pass
+## only knows the child names "CablePlug" and "ControllerPlug" — neither of which
+## this lead has. Without it a socket is left holding a freed pickable and
+## XRToolsPickable._exit_tree walks a dangling grab driver.
+func drop_and_free() -> void:
+	for e in [End.A, End.B]:
+		for c in CORDS:
+			var port := (_plugs[e][c] as RcaPlug).seated_port()
+			if port != null:
+				port.drop_object()
+	queue_free()
 
 
 ## Every link this lead currently carries, for a device that wants to re-read them

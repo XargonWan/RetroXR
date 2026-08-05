@@ -59,6 +59,8 @@ enum {
 	EV_TV_STEREO,        # {tv, mode}    stereo presentation (0 stereo / 1 left / 2 right)
 	EV_SYS_VIDEO_OUT,    # {sys, on}     video-out cables shown/hidden
 	EV_SYS_GRAVITY,      # {sys, on}     ignore-gravity (float where dropped)
+	EV_RCA_PLUG,         # {cable, end, cord, dev, port}  composite lead end seated
+	EV_RCA_UNPLUG,       # {cable, end, cord}             ...and pulled out again
 }
 
 var _nm: Node = null
@@ -612,6 +614,15 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_UNPLUG:
 			if _valid(a, ["tv"]):
 				a["tv"].get_node("CompositePort").drop_object()
+		EV_RCA_PLUG:
+			# The lead names the socket by device + node name, so a peer needs no
+			# shared numbering of ports to put the same end in the same place.
+			if _valid(a, ["cable", "dev"]):
+				a["cable"].net_seat_plug(int(a.get("end", 0)), int(a.get("cord", 0)),
+					a["dev"], str(a.get("port", "")))
+		EV_RCA_UNPLUG:
+			if _valid(a, ["cable"]):
+				a["cable"].net_release_plug(int(a.get("end", 0)), int(a.get("cord", 0)))
 		EV_PORT_PLUG:
 			if _valid(a, ["sys", "ctrl"]):
 				a["ctrl"].restore_port_connection(a["sys"], int(a.get("port", 0)))

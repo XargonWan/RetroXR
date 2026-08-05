@@ -108,12 +108,12 @@ direction = 1
 ; L and R in, beside the video socket. Sound only reaches the set through these:
 ; a cord from a deck's L to this one carries the left channel, and a cord from the
 ; deck's L to the R socket puts the left channel out of the right-hand speaker.
-[node name="AudioLIn" parent="." instance=ExtResource("10_rcaport")]
+[node name="AudioLIn" parent="." unique_id=42071297 instance=ExtResource("10_rcaport")]
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.107, -0.15, -0.16002099)
 channel = 1
 direction = 1
 
-[node name="AudioRIn" parent="." instance=ExtResource("10_rcaport")]
+[node name="AudioRIn" parent="." unique_id=435405895 instance=ExtResource("10_rcaport")]
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.064, -0.15, -0.16002099)
 channel = 2
 direction = 1

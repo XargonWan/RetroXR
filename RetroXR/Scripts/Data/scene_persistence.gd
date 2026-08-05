@@ -40,6 +40,7 @@ const CASSETTE_PLAYER_SCENE  := preload("res://Scenes/Objects/cassette_player.ts
 const AUDIO_DISC_SCENE       := preload("res://Scenes/Objects/audio_disc.tscn")
 const AUDIO_CASSETTE_SCENE   := preload("res://Scenes/Objects/audio_cassette.tscn")
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
+const COMPOSITE_CABLE_SCENE  := preload("res://Scenes/Objects/composite_cable.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
 const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
@@ -394,6 +395,29 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		var media_id: int = d.get("snapped_media_id", -1)
 		if spawned.has(media_id) and (spawned[media_id] is AudioDisc or spawned[media_id] is AudioCassette):
 			ap.restore_media(spawned[media_id])
+	elif spawned[id] is CompositeCable:
+		# Pass 2, so every deck and set the plugs point at already exists. A plug
+		# whose socket cannot be found is simply left where it was saved — a loose
+		# end on the floor beats one seated in the wrong device.
+		var cable := spawned[id] as CompositeCable
+		var seats: Array = []
+		for rec: Dictionary in d.get("plugs", []):
+			var dev: Node3D = null
+			var dev_id: int = rec.get("device_id", -1)
+			var dev_path: String = rec.get("device_path", "")
+			if spawned.has(dev_id):
+				dev = spawned[dev_id] as Node3D
+			elif not dev_path.is_empty():
+				dev = root.get_node_or_null(dev_path) as Node3D
+			seats.append({
+				"end": int(rec.get("end", 0)),
+				"cord": int(rec.get("cord", 0)),
+				"position": rec.get("position", []),
+				"rotation": rec.get("rotation", []),
+				"device": dev,
+				"port": str(rec.get("port", "")),
+			})
+		cable.restore_seating(seats)
 	elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
 		var ctrl: Node3D = spawned[id]
 		var port_idx: int = d.get("port_index", -1)
@@ -654,6 +678,41 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		if node is RetroMouse:
 			entry["sensitivity"] = (node as RetroMouse).sensitivity
 		return entry
+	elif node is CompositeCable:
+		# Six independent ends, so the lead is saved as six plugs rather than as one
+		# object with a position: each carries its own pose and, if it is in a
+		# socket, the device and the socket's node name. The name is what makes this
+		# readable and stable — "AudioLIn" survives any renumbering of ports, which
+		# an index would not.
+		var cable := node as CompositeCable
+		var plugs: Array = []
+		for seat: Dictionary in cable.seating():
+			var plug := seat["plug"] as Node3D
+			var ppos := plug.global_position
+			var prot := plug.global_rotation_degrees
+			var rec := {
+				"end": seat["end"],
+				"cord": seat["cord"],
+				"position": [ppos.x, ppos.y, ppos.z],
+				"rotation": [prot.x, prot.y, prot.z],
+				"port": seat["port"],
+			}
+			var dev: Node = seat["device"]
+			if dev != null:
+				var dev_id: int = node_to_id.get(dev, -1)
+				rec["device_id"] = dev_id
+				# A set standing in the room is scene-placed, not spawned, so it has
+				# no id — fall back to its path, as the deck entries above do.
+				if dev_id == -1:
+					rec["device_path"] = str(dev.get_path())
+			plugs.append(rec)
+		return {
+			"id": id,
+			"type": "composite_cable",
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+			"plugs": plugs,
+		}
 	return {}
 
 
@@ -741,6 +800,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 			disc.dvd_path = data.get("dvd_path", "")
 			disc.dvd_label = data.get("dvd_label", "")
 			obj = disc
+		"composite_cable":
+			obj = COMPOSITE_CABLE_SCENE.instantiate() as Node3D
 		"cd_player":
 			obj = CD_PLAYER_SCENE.instantiate() as Node3D
 		"cassette_player":
