@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_screen_curved.res" id="7_screencurved"]
 [ext_resource type="Shader" uid="uid://dp0ojf0bxhg8y" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/rca_jack.tscn" id="9_rcajack"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
@@ -31,13 +32,15 @@ emission_energy_multiplier = 2.0
 font_names = PackedStringArray("Consolas", "Courier New", "Droid Sans Mono", "monospace")
 subpixel_positioning = 0
 
-[sub_resource type="CylinderMesh" id="CylMesh_port"]
-top_radius = 0.012
-bottom_radius = 0.012
-height = 0.02
-
-[sub_resource type="StandardMaterial3D" id="Mat_port"]
-albedo_color = Color(1, 0.85, 0, 1)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yc03p"]
+albedo_color = Color(0.95, 0.74, 0.02, 1)
+roughness = 0.3
+rim_enabled = true
+rim = 0.3
+rim_tint = 0.25
+clearcoat_enabled = true
+clearcoat = 0.55
+clearcoat_roughness = 0.12
 
 [sub_resource type="CylinderMesh" id="CylMesh_plug_ghost"]
 top_radius = 0.015
@@ -122,10 +125,9 @@ transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.15
 grab_distance = 0.06
 snap_require = "composite_plug"
 
-[node name="PortVisual" type="MeshInstance3D" parent="CompositePort" unique_id=79237654]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_port")
-surface_material_override/0 = SubResource("Mat_port")
+[node name="PortVisual" parent="CompositePort" unique_id=79237654 instance=ExtResource("9_rcajack")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01002)
+surface_material_override/0 = SubResource("StandardMaterial3D_yc03p")
 
 [node name="SnapHighlight" type="Node3D" parent="CompositePort" unique_id=733690447]
 script = ExtResource("3_snaphis")
@@ -150,8 +152,6 @@ font_size = 16
 outline_size = 4
 horizontal_alignment = 2
 
-; Where the set radiates from, flanking the tube and a little below its centre.
-; Move these to move the stereo image; see RetroTV.get_speaker_positions.
 [node name="SpeakerL" type="Marker3D" parent="." unique_id=501234568]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.23, -0.0375, 0.156)
 
