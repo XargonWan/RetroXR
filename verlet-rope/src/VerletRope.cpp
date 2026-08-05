@@ -865,12 +865,17 @@ void VerletRope::RefreshExclusions()
     TypedArray<RID> rids;
     m_start_body = nullptr;
     m_end_body = nullptr;
+    // Index 0 is the trunk's start, 1 its end, and 2+g fray chain g — the loop
+    // below maps a_idx back onto those slots when it caches the rigidbodies.
     std::vector<Node3D *> anchors;
     anchors.reserve(2 + m_fray.size());
     anchors.push_back(GetStartNode());
     anchors.push_back(GetEndNode());
-    for (const FrayChain &fc : m_fray)
+    for (FrayChain &fc : m_fray)
+    {
+        fc.body = nullptr;
         anchors.push_back(fc.cached);
+    }
     for (size_t a_idx = 0; a_idx < anchors.size(); ++a_idx)
     {
         Node *n = anchors[a_idx];
@@ -885,8 +890,10 @@ void VerletRope::RefreshExclusions()
                 {
                     if (a_idx == 0)
                         m_start_body = rb;
-                    else
+                    else if (a_idx == 1)
                         m_end_body = rb;
+                    else
+                        m_fray[a_idx - 2].body = rb;
                 }
                 break;
             }

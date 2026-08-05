@@ -115,6 +115,50 @@ func _build_rope() -> void:
 	_rope._init_points()
 
 
+## Keep every loose plug within its branch's reach of the breakout it hangs off.
+##
+## A pinned rope particle has inverse mass zero, so a plug drives the rope and the
+## rope can never drive a plug. Without this, picking up one plug and walking away
+## leaves the other five exactly where they were while the cable stretches without
+## limit — the trunk cannot pull them because there is nothing to pull with. Every
+## other cable owner in the project clamps its plug the same way (see
+## system.gd::_physics_process); a lead with six free ends just needs six of them,
+## measured against the breakout rather than against a host's attach point.
+##
+## A hard clamp rather than a force: over-extension here reaches a metre or more,
+## and a spring stiff enough to drag a 50 g plug off the floor at that distance
+## launches it. VerletRope.anchor_pull is the soft version and stays available.
+##
+## Plugs held by a hand or seated in a socket are skipped — something else owns
+## their transform, and fighting it either jitters the plug or pulls it out.
+func _physics_process(_delta: float) -> void:
+	if _rope == null or _plugs.is_empty():
+		return
+	var pts: PackedVector3Array = _rope.get_points()
+	if pts.size() <= _rope.segment_count:
+		return
+	var seg: float = _rope.fray_segment_length
+	if seg <= 0.0:
+		seg = _rope.segment_length
+	# Both ends fray by the same count, so one reach covers all six.
+	var reach: float = float(_rope.fray_segments_start) * seg
+	# The breakouts are the trunk's own end particles.
+	var junction := [pts[0], pts[_rope.segment_count]]
+	for e in [End.A, End.B]:
+		for c in CORDS:
+			var plug: RcaPlug = _plugs[e][c]
+			if plug.is_picked_up():
+				continue
+			# The branch ends at the cord boss, not at the plug's origin, which
+			# sits 40 mm forward at the collar.
+			var boss: Vector3 = plug.global_transform * plug.cable_anchor
+			var away: Vector3 = boss - junction[e]
+			var d: float = away.length()
+			if d <= reach or d < 0.0001:
+				continue
+			plug.global_position += away * ((reach - d) / d)
+
+
 func _on_plug_moved() -> void:
 	# A grab or a drop lands before the snap zone has taken or released the plug,
 	# so read the ports next frame.

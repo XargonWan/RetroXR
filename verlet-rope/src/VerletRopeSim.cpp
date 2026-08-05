@@ -787,21 +787,50 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
     }
 }
 
+// Pull back on an anchor's rigidbody when the cable it holds is stretched past
+// its rest length. This is the ONLY path by which the rope moves a plug: a
+// pinned particle has inverse mass 0, so the plug drives the rope and never the
+// other way about.
 void VerletRope::ApplyAnchorCoupling()
 {
-    if (m_anchor_pull <= 0.0 || !m_start_cached || !m_end_cached)
+    if (m_anchor_pull <= 0.0)
         return;
-    const Vector3 ps = AnchorPoint(m_start_cached, m_start_anchor_offset, Vector3());
-    const Vector3 pe = AnchorPoint(m_end_cached, m_end_anchor_offset, Vector3());
-    const double span = ps.distance_to(pe);
-    const double excess = span - RestLength();
-    if (excess <= 0.0)
-        return;
-    const double force = excess * m_anchor_pull;
-    if (m_start_body)
-        m_start_body->apply_force((pe - ps).normalized() * force, ps - m_start_body->get_global_position());
-    if (m_end_body)
-        m_end_body->apply_force((ps - pe).normalized() * force, pe - m_end_body->get_global_position());
+
+    // Trunk, between its own two anchors. Needs both: with a fray there is no
+    // trunk anchor at all and the branches below do the work instead.
+    if (m_start_cached && m_end_cached)
+    {
+        const Vector3 ps = AnchorPoint(m_start_cached, m_start_anchor_offset, Vector3());
+        const Vector3 pe = AnchorPoint(m_end_cached, m_end_anchor_offset, Vector3());
+        const double excess = ps.distance_to(pe) - RestLength();
+        if (excess > 0.0)
+        {
+            const double force = excess * m_anchor_pull;
+            if (m_start_body)
+                m_start_body->apply_force((pe - ps).normalized() * force,
+                                          ps - m_start_body->get_global_position());
+            if (m_end_body)
+                m_end_body->apply_force((ps - pe).normalized() * force,
+                                        pe - m_end_body->get_global_position());
+        }
+    }
+
+    // Each branch, between its plug and the breakout it hangs off. Without this
+    // a lead frayed at both ends has no coupling whatsoever — pick up one plug of
+    // a composite lead, walk away, and the other five sit exactly where they are
+    // while the cable stretches without limit.
+    for (const FrayChain &fc : m_fray)
+    {
+        if (fc.body == nullptr)
+            continue;
+        const Vector3 plug = AnchorPoint(fc.cached, fc.offset, Vector3());
+        const Vector3 junction = m_points[fc.head];
+        const double excess = plug.distance_to(junction) - fc.count * FraySegLength();
+        if (excess <= 0.0)
+            continue;
+        fc.body->apply_force((junction - plug).normalized() * (excess * m_anchor_pull),
+                             plug - fc.body->get_global_position());
+    }
 }
 
 void VerletRope::UpdateSleepState()

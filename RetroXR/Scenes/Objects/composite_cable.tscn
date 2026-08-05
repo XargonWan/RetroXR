@@ -222,7 +222,18 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; 4.4 mm cords rather than the single 8.3 mm jacket: three of those moulded side
 ; by side make a 13 mm ribbon, which is what a composite lead measures. The cords
 ; are drawn from ribbon_colors and the trunk needs no rope_color of its own.
-; collision_radius keeps cable.tscn's 1.35 mm standoff over the tube.
+; collision_radius is the ribbon's HALF-WIDTH, not the 1.35 mm standoff over the
+; tube that cable.tscn uses. The solver only ever collides the centreline, so on a
+; round cord the radius is the cord; on a ribbon it has to cover the outermost
+; cord or that one sinks through whatever the cable is lying on. 4.4 mm pitch x 2
+; gaps / 2 + 2.2 mm tube = 6.6 mm. At 3.55 mm the outer cord dipped 0.85 mm under
+; the floor whenever the ribbon happened to lie on edge.
+;
+; The cost is that a ribbon lying FLAT now floats 4.4 mm rather than resting on
+; its tube. Both cannot be right from one radius on one centreline; poke-through
+; reads worse than clearance. Fixing it properly means giving the solver the
+; ribbon frame so the standoff can follow |side . normal|, which is a
+; VerletRope change, not a scene value.
 [node name="VerletRope" type="VerletRope" parent="."]
 segment_count = 50
 segment_length = 0.03
@@ -232,7 +243,7 @@ tube_radius = 0.0022
 tube_sides = 6
 smoothing = 2
 surface_collision_mask = 7
-collision_radius = 0.00355
+collision_radius = 0.0066
 self_collision = true
 end_align_stiffness = 0.7
 end_stiffness = 0.45

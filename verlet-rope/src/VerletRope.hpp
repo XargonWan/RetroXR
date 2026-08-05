@@ -180,6 +180,9 @@ private:
         uint64_t node_id = 0;
         godot::Vector3 offset;
         godot::Node3D *cached = nullptr;
+        // The plug's rigidbody ancestor, if it has one — anchor_pull needs it to
+        // drag a loose plug when its branch runs out of slack.
+        godot::RigidBody3D *body = nullptr;
         godot::Vector3 sleep_pos;
         // Mean trunk slot of the cords in this group, in pitches. Only used to
         // seed an UNANCHORED branch off to the side: two anchorless branches
