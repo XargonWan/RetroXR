@@ -1182,9 +1182,18 @@ func _on_scene_change_requested(scene_id: String) -> void:
 
 
 func _on_slot_load(slot_id: String) -> void:
+	var sm := get_node_or_null("/root/SceneManager")
+	# A slot describes the arcade's contents, so loading one from another room
+	# means going to the arcade first — otherwise its objects are spawned into
+	# whatever room is standing, over the top of that room's own. The arrival
+	# runs the load itself: scene_ready fires _autoload_slot, which reads exactly
+	# the slot claimed here.
+	if sm != null and sm.current_scene_id != "arcade":
+		sm.set_active_slot(slot_id)
+		sm.change_scene("arcade")
+		return
 	var persistence := ScenePersistence.new()
 	await persistence.load_slot_async(get_tree().current_scene, slot_id)
-	var sm := get_node_or_null("/root/SceneManager")
 	if sm:
 		sm.set_active_slot(slot_id)
 	var menu := _get_menu()
