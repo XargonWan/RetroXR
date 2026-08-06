@@ -267,6 +267,7 @@ common/physics_interpolation=true
 
 textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_3d=1
+reflections/reflection_atlas/reflection_count=4
 openxr/multiview=true
 renderer/rendering_method.android="mobile"
 
