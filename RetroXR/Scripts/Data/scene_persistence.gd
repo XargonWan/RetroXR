@@ -8,10 +8,9 @@ class_name ScenePersistence
 extends RefCounted
 
 
-const SAVE_DIR      := "user://scenes"
 const ARCADE_DIR    := "user://scenes/arcade"
 const MANIFEST_FILE := "user://scenes/arcade/manifest.json"
-const VERSION       := 1
+const VERSION       := 2
 ## How long the async restore may hold the main thread before yielding a frame.
 const FRAME_BUDGET_USEC := 4000
 
@@ -46,6 +45,20 @@ const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
 const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE   := preload("res://Scenes/Objects/retro_keyboard.tscn")
+
+## Types whose entry carries nothing but a pose — instantiate and place, no
+## properties to apply. Types that need more are match arms in
+## _deserialize_object().
+const PLAIN_SCENES := {
+	"tv_remote": TV_REMOTE_SCENE,
+	"trash_can": TRASH_CAN_SCENE,
+	"ray_gun": RAY_GUN_SCENE,
+	"retro_keyboard": RETRO_KEYBOARD_SCENE,
+	"vcr_player": VCR_SCENE,
+	"dvd_player": DVD_SCENE,
+	"cd_player": CD_PLAYER_SCENE,
+	"cassette_player": CASSETTE_PLAYER_SCENE,
+}
 
 
 # ── Multi-slot public API ──────────────────────────────────────────────────────
@@ -95,9 +108,8 @@ func delete_slot(slot_id: String) -> bool:
 	if slot_id == "clean":
 		return false
 	var m := _load_manifest()
-	var slots: Array = m.get("slots", [])
 	var new_slots: Array = []
-	for s: Variant in slots:
+	for s: Variant in m.get("slots", []):
 		if (s as Dictionary).get("id", "") != slot_id:
 			new_slots.append(s)
 	m["slots"] = new_slots
@@ -174,16 +186,18 @@ func _generate_id() -> String:
 	return "%08x" % (randi() ^ Time.get_ticks_msec())
 
 
-func _load_manifest() -> Dictionary:
-	if not FileAccess.file_exists(MANIFEST_FILE):
-		return {"version": VERSION, "slots": []}
-	var f := FileAccess.open(MANIFEST_FILE, FileAccess.READ)
-	if not f:
-		return {"version": VERSION, "slots": []}
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if parsed is Dictionary:
-		return parsed as Dictionary
+func _empty_manifest() -> Dictionary:
 	return {"version": VERSION, "slots": []}
+
+
+func _load_manifest() -> Dictionary:
+	if FileAccess.file_exists(MANIFEST_FILE):
+		var f := FileAccess.open(MANIFEST_FILE, FileAccess.READ)
+		if f:
+			var parsed: Variant = JSON.parse_string(f.get_as_text())
+			if parsed is Dictionary:
+				return parsed as Dictionary
+	return _empty_manifest()
 
 
 func _save_manifest(m: Dictionary) -> bool:
@@ -198,6 +212,8 @@ func _save_manifest(m: Dictionary) -> bool:
 
 func _write_scene_to_file(root: Node, path: String) -> bool:
 	var nodes := root.get_tree().get_nodes_in_group("spawned")
+	# The whole map has to exist before anything serializes: a reference can point
+	# either way through the set.
 	var node_to_id: Dictionary = {}
 	for i in range(nodes.size()):
 		node_to_id[nodes[i]] = i
@@ -224,8 +240,54 @@ func _read_objects(path: String) -> Variant:
 	if not parsed is Dictionary:
 		push_error("ScenePersistence: invalid slot file '%s'" % path)
 		return null
-	var objects: Variant = (parsed as Dictionary).get("objects", [])
+	var d := parsed as Dictionary
+	# Refused rather than migrated. Every cross-reference changed shape in v2, so
+	# a v1 file still restores its objects — into a room where nothing is plugged
+	# into anything, which reads as a bug rather than as an old save.
+	var file_version := int(d.get("version", 1))
+	if file_version != VERSION:
+		push_warning("ScenePersistence: slot '%s' is version %d, this build reads %d"
+			% [path, file_version, VERSION])
+		return null
+	var objects: Variant = d.get("objects", [])
 	return objects if objects is Array else null
+
+
+# ── Cross-references ───────────────────────────────────────────────────────────
+#
+# One object pointing at another is the only thing in a slot file that isn't a
+# plain value, and it comes in two flavours: a peer inside this save, and a
+# fixture standing in the room that the save doesn't own. Both encode to a single
+# JSON value — an int id for the peer, a scene path for the fixture, null for
+# nothing — so every site that records or resolves a reference uses this pair
+# rather than its own _id/_path key couple.
+
+## Encode a reference to target. Returns int, String or null.
+func _ref(node_to_id: Dictionary, target: Node) -> Variant:
+	if target == null:
+		return null
+	if node_to_id.has(target):
+		return node_to_id[target]
+	# Not in the map. A scene-placed fixture has no id and never will, so name it
+	# by path. A "spawned" node missing from the map means a partial serialize
+	# (ObjectSync ships one object at a time) — its path is a dynamic name that
+	# means nothing to the peer receiving it, so drop the reference instead.
+	if target.is_in_group("spawned"):
+		return null
+	return str(target.get_path())
+
+
+## Resolve what _ref() wrote. Null when the reference was empty or has gone.
+func _resolve_ref(root: Node, spawned: Dictionary, ref: Variant) -> Node:
+	if ref == null:
+		return null
+	if ref is String:
+		var node := root.get_node_or_null(ref as String)
+		if node == null:
+			push_warning("[ScenePersistence] no node at '%s'" % ref)
+		return node
+	# JSON has no integer type, so an id parses back as a float.
+	return spawned.get(int(ref)) as Node
 
 
 ## Instantiate serialized object entries under root and restore their
@@ -245,7 +307,8 @@ func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 ## exact moment the headset has nothing new to draw: a save with a dozen systems
 ## in it blocks for a second, and a blocked main thread in VR is a frozen image,
 ## not a slow one. Callers that need every object within the frame — netplay
-## snapshots — use instantiate_objects().
+## snapshots — use instantiate_objects(), which stays a plain function because a
+## body containing await would hand them a Signal instead of the spawned set.
 func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
 	var spawned: Dictionary = {}
 	var entries: Dictionary = {}
@@ -314,8 +377,6 @@ func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictio
 	var tree := root.get_tree()
 	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	for id: int in spawned:
-		if not is_instance_valid(spawned[id]):
-			continue
 		_restore_entry(root, id, spawned, entries)
 		if Time.get_ticks_usec() < deadline:
 			continue
@@ -344,410 +405,264 @@ func _report_restored(spawned: Dictionary) -> void:
 
 
 func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionary) -> void:
+	# The async pass yields frames, so an object spawned earlier in this very run
+	# may already have been freed by the time we come to wire it up.
+	if not is_instance_valid(spawned[id]):
+		return
+	var obj: Node = spawned[id]
 	var d: Dictionary = entries[id]
-	if spawned[id] is RetroSystem:
-		var sys := spawned[id] as RetroSystem
-		var tv_id: int = d.get("connected_tv_id", -1)
-		var tv_path: String = d.get("connected_tv_path", "")
-		print("[ScenePersistence] system id=%d connected_tv_id=%d tv_path=%s" % [id, tv_id, tv_path])
-		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-			print("[ScenePersistence] restoring cable connection system→spawned tv")
-			sys.restore_cable_connection(spawned[tv_id] as RetroTV)
-		elif not tv_path.is_empty():
-			var tv_node := root.get_node_or_null(tv_path) as RetroTV
-			if tv_node:
-				print("[ScenePersistence] restoring cable connection system→scene tv '%s'" % tv_path)
-				sys.restore_cable_connection(tv_node)
-			else:
-				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
-		for ch in range(1, sys.get_channel_count()):
-			var ch_tv_id: int = d.get("connected_tv%d_id" % ch, -1)
-			var ch_tv_path: String = d.get("connected_tv%d_path" % ch, "")
-			if spawned.has(ch_tv_id) and spawned[ch_tv_id] is RetroTV:
-				sys.restore_cable_connection(spawned[ch_tv_id] as RetroTV, ch)
-			elif not ch_tv_path.is_empty():
-				var ch_tv_node := root.get_node_or_null(ch_tv_path) as RetroTV
-				if ch_tv_node:
-					sys.restore_cable_connection(ch_tv_node, ch)
-				else:
-					push_warning("[ScenePersistence] could not find scene TV at '%s'" % ch_tv_path)
-		var cart_id: int = d.get("snapped_cartridge_id", -1)
-		if spawned.has(cart_id) and spawned[cart_id] is RetroCartridge:
-			print("[ScenePersistence] restoring cartridge id=%d" % cart_id)
-			sys.restore_cartridge(spawned[cart_id])
-		var memcard_id: int = d.get("snapped_memcard_id", -1)
-		if spawned.has(memcard_id) and spawned[memcard_id] is MemoryCard:
-			print("[ScenePersistence] restoring memory card id=%d" % memcard_id)
-			sys.restore_memory_card(spawned[memcard_id])
+
+	if obj is RetroSystem:
+		var sys := obj as RetroSystem
+		var tv := _resolve_ref(root, spawned, d.get("tv")) as RetroTV
+		if tv:
+			sys.restore_cable_connection(tv)
+		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM). A save
+		# made against a model with more channels than this one has is truncated —
+		# restore_cable_connection would silently fold the overflow onto ch 0.
+		var extra: Array = d.get("extra_tvs", [])
+		for i in range(mini(extra.size(), sys.get_channel_count() - 1)):
+			var ch_tv := _resolve_ref(root, spawned, extra[i]) as RetroTV
+			if ch_tv:
+				sys.restore_cable_connection(ch_tv, i + 1)
+		var cart := _resolve_ref(root, spawned, d.get("cartridge")) as RetroCartridge
+		if cart:
+			sys.restore_cartridge(cart)
+		var memcard := _resolve_ref(root, spawned, d.get("memcard")) as MemoryCard
+		if memcard:
+			sys.restore_memory_card(memcard)
 		# After the media, and deferred: seating a cartridge swings the bay open (the
 		# NES flap) and tweens it there, either of which would otherwise win over the
 		# pose the system restored when its model loaded.
-		var lid_angle: float = float(d.get("lid_angle", -1.0))
+		var lid_angle := float(d.get("lid_angle", -1.0))
 		if lid_angle >= 0.0:
 			sys.set_lid_angle_deg.call_deferred(lid_angle)
-	elif spawned[id] is VCRPlayer:
-		var vcr := spawned[id] as VCRPlayer
-		var tv_id: int = d.get("connected_tv_id", -1)
-		var tv_path: String = d.get("connected_tv_path", "")
-		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-			vcr.restore_cable_connection(spawned[tv_id] as RetroTV)
-		elif not tv_path.is_empty():
-			var tv_node := root.get_node_or_null(tv_path) as RetroTV
-			if tv_node:
-				vcr.restore_cable_connection(tv_node)
-			else:
-				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-		var tape_id: int = d.get("snapped_tape_id", -1)
-		if spawned.has(tape_id) and spawned[tape_id] is VCRTape:
-			vcr.restore_tape(spawned[tape_id])
-	elif spawned[id] is DVDPlayer:
-		var dvd := spawned[id] as DVDPlayer
-		var tv_id: int = d.get("connected_tv_id", -1)
-		var tv_path: String = d.get("connected_tv_path", "")
-		if spawned.has(tv_id) and spawned[tv_id] is RetroTV:
-			dvd.restore_cable_connection(spawned[tv_id] as RetroTV)
-		elif not tv_path.is_empty():
-			var tv_node := root.get_node_or_null(tv_path) as RetroTV
-			if tv_node:
-				dvd.restore_cable_connection(tv_node)
-			else:
-				push_warning("[ScenePersistence] could not find scene TV at '%s'" % tv_path)
-		var disc_id: int = d.get("snapped_disc_id", -1)
-		if spawned.has(disc_id) and spawned[disc_id] is DVDDisc:
-			dvd.restore_disc(spawned[disc_id])
-	elif spawned[id] is RetroAudioPlayer:
-		var ap := spawned[id] as RetroAudioPlayer
-		var media_id: int = d.get("snapped_media_id", -1)
-		if spawned.has(media_id) and (spawned[media_id] is AudioDisc or spawned[media_id] is AudioCassette):
-			ap.restore_media(spawned[media_id])
-	elif spawned[id] is CompositeCable:
+	elif obj is VCRPlayer:
+		var tape := _resolve_ref(root, spawned, d.get("tape")) as VCRTape
+		if tape:
+			(obj as VCRPlayer).restore_tape(tape)
+	elif obj is DVDPlayer:
+		var disc := _resolve_ref(root, spawned, d.get("disc")) as DVDDisc
+		if disc:
+			(obj as DVDPlayer).restore_disc(disc)
+	elif obj is RetroAudioPlayer:
+		var media := _resolve_ref(root, spawned, d.get("media"))
+		if media is AudioDisc or media is AudioCassette:
+			(obj as RetroAudioPlayer).restore_media(media as Node3D)
+	elif obj is CompositeCable:
 		# Pass 2, so every deck and set the plugs point at already exists. A plug
 		# whose socket cannot be found is simply left where it was saved — a loose
 		# end on the floor beats one seated in the wrong device.
-		var cable := spawned[id] as CompositeCable
 		var seats: Array = []
 		for rec: Dictionary in d.get("plugs", []):
-			var dev: Node3D = null
-			var dev_id: int = rec.get("device_id", -1)
-			var dev_path: String = rec.get("device_path", "")
-			if spawned.has(dev_id):
-				dev = spawned[dev_id] as Node3D
-			elif not dev_path.is_empty():
-				dev = root.get_node_or_null(dev_path) as Node3D
 			seats.append({
 				"end": int(rec.get("end", 0)),
 				"cord": int(rec.get("cord", 0)),
 				"position": rec.get("position", []),
 				"rotation": rec.get("rotation", []),
-				"device": dev,
+				"device": _resolve_ref(root, spawned, rec.get("device")) as Node3D,
 				"port": str(rec.get("port", "")),
 			})
-		cable.restore_seating(seats)
-	elif spawned[id] is RetroController or spawned[id] is RayGun or spawned[id] is RetroMouse or spawned[id] is RetroKeyboard:
-		var ctrl: Node3D = spawned[id]
-		var port_idx: int = d.get("port_index", -1)
+		(obj as CompositeCable).restore_seating(seats)
+	elif obj is RetroController or obj is RayGun or obj is RetroMouse or obj is RetroKeyboard:
+		var port_idx := int(d.get("port_index", -1))
 		if port_idx < 0:
 			return
-		var sys_id: int = d.get("connected_system_id", -1)
-		var sys_path: String = d.get("connected_system_path", "")
-		var sys: RetroSystem = null
-		if spawned.has(sys_id) and spawned[sys_id] is RetroSystem:
-			sys = spawned[sys_id] as RetroSystem
-		elif not sys_path.is_empty():
-			sys = root.get_node_or_null(sys_path) as RetroSystem
+		var sys := _resolve_ref(root, spawned, d.get("system")) as RetroSystem
 		if sys == null:
 			push_warning("[ScenePersistence] controller id=%d: system not found" % id)
 			return
-		print("[ScenePersistence] restoring controller id=%d → system port %d" % [id, port_idx])
-		ctrl.call("restore_port_connection", sys, port_idx)
+		obj.call("restore_port_connection", sys, port_idx)
 
 
 # ── Serialization ──────────────────────────────────────────────────────────────
 
+## id, type and pose — the four fields every entry carries. Each branch of
+## _serialize_node() merges its own fields onto this.
+func _base(id: int, type_name: String, n3d: Node3D) -> Dictionary:
+	var pos := n3d.global_position
+	var rot := n3d.global_rotation_degrees
+	return {
+		"id": id,
+		"type": type_name,
+		"position": [pos.x, pos.y, pos.z],
+		"rotation": [rot.x, rot.y, rot.z],
+	}
+
+
+## An ordered chain, not a lookup table: `is` matches every ancestor, so a
+## subtype has to be tested before the type it extends. The two places that
+## matters are marked below.
 func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 	if not node is Node3D:
 		return {}
 	var n3d := node as Node3D
-	var pos := n3d.global_position
-	var rot := n3d.global_rotation_degrees
 
 	if node is RetroSystem:
 		var sys := node as RetroSystem
-		var tv_id: int = node_to_id.get(sys.connected_tv, -1) if sys.connected_tv != null else -1
-		# If the TV is a scene-placed node (not in spawned group), save its path instead.
-		var tv_path: String = ""
-		if sys.connected_tv != null and tv_id == -1:
-			tv_path = str(sys.connected_tv.get_path())
-		var cart := sys.get_snapped_cartridge()
-		var cart_id: int = node_to_id.get(cart, -1) if cart != null else -1
-		var memcard := sys.get_snapped_memcard()
-		var memcard_id: int = node_to_id.get(memcard, -1) if memcard != null else -1
-		print("[ScenePersistence] serialize system id=%d systemid=%s tv_id=%d tv_path=%s cart_id=%d" % [id, sys.systemid, tv_id, tv_path, cart_id])
-		var result := {
-			"id": id,
-			"type": "system",
+		var result := _base(id, "system", n3d).merged({
 			"systemid": sys.systemid,
 			"model_id": sys.model_id,
-			"connected_tv_id": tv_id,
-			"snapped_cartridge_id": cart_id,
-			"snapped_memcard_id": memcard_id,
+			"tv": _ref(node_to_id, sys.connected_tv),
+			"cartridge": _ref(node_to_id, sys.get_snapped_cartridge()),
+			"memcard": _ref(node_to_id, sys.get_snapped_memcard()),
 			"video_out": sys.video_out_enabled,
 			"ignore_gravity": sys.ignore_gravity,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
-		if not tv_path.is_empty():
-			result["connected_tv_path"] = tv_path
-		# Clamshell lid angle (DS/3DS); omitted (-1) for systems without a lid.
-		var lid_angle: float = sys.get_lid_angle_deg()
+		})
+		# Clamshell lid angle (DS/3DS); omitted for systems without a lid.
+		var lid_angle := sys.get_lid_angle_deg()
 		if lid_angle >= 0.0:
 			result["lid_angle"] = lid_angle
 		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM).
+		var extra: Array = []
 		for ch in range(1, sys.get_channel_count()):
-			var ch_tv := sys.get_channel_tv(ch)
-			if ch_tv == null:
-				continue
-			var ch_tv_id: int = node_to_id.get(ch_tv, -1)
-			result["connected_tv%d_id" % ch] = ch_tv_id
-			if ch_tv_id == -1:
-				result["connected_tv%d_path" % ch] = str(ch_tv.get_path())
+			extra.append(_ref(node_to_id, sys.get_channel_tv(ch)))
+		if not extra.is_empty():
+			result["extra_tvs"] = extra
 		return result
 	elif node is RetroTV:
-		return {
-			"id": id,
-			"type": "tv",
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-			"crt_enabled": (node as RetroTV).crt_enabled,
-			"crt_params": (node as RetroTV).get_crt_params(),
-			"scale_factor": (node as RetroTV).scale_factor,
-			"stereo_mode": (node as RetroTV).stereo_mode,
-		}
+		var tv := node as RetroTV
+		return _base(id, "tv", n3d).merged({
+			"crt_enabled": tv.crt_enabled,
+			"crt_params": tv.get_crt_params(),
+			"scale_factor": tv.scale_factor,
+			"stereo_mode": tv.stereo_mode,
+		})
 	elif node is TVRemote:
-		return {
-			"id": id,
-			"type": "tv_remote",
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		return _base(id, "tv_remote", n3d)
 	elif node is TrashCan:
-		return {
-			"id": id,
-			"type": "trash_can",
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		return _base(id, "trash_can", n3d)
 	elif node is RetroDisc:
 		# MUST precede the RetroCartridge branch — RetroDisc extends it.
-		var disc := node as RetroDisc
-		return {
-			"id": id,
-			"type": "disc",
-			"rom_path": disc.rom_path,
-			"game_label": disc.game_label,
-			"save_id": disc.save_id,
-			"cart_systemid": disc.systemid,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		return _base(id, "disc", n3d).merged(_media_fields(node as RetroCartridge))
 	elif node is RetroCartridge:
-		var cart := node as RetroCartridge
-		return {
-			"id": id,
-			"type": "cartridge",
-			"rom_path": cart.rom_path,
-			"game_label": cart.game_label,
-			"save_id": cart.save_id,
-			"cart_systemid": cart.systemid,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		return _base(id, "cartridge", n3d).merged(_media_fields(node as RetroCartridge))
 	elif node is MemoryCard:
 		var card := node as MemoryCard
-		return {
-			"id": id,
-			"type": "memory_card",
+		return _base(id, "memory_card", n3d).merged({
 			"card_id": card.card_id,
 			"card_label": card.card_label,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		})
 	elif node is PDFBook:
 		var book := node as PDFBook
 		var page := book.net_get_page()
-		return {
-			"id": id,
-			"type": "book",
+		return _base(id, "book", n3d).merged({
 			"pdf_path": book.pdf_path,
 			"half_pages": book.half_page_mode,
 			"size_scale": book.size_scale,
 			"page_state": int(page.get("state", 0)),
 			"page_leaf": int(page.get("leaf", 0)),
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		})
 	elif node is VCRPlayer:
-		var vcr := node as VCRPlayer
-		var tv_id: int = node_to_id.get(vcr.connected_tv, -1) if vcr.connected_tv != null else -1
-		var tv_path: String = ""
-		if vcr.connected_tv != null and tv_id == -1:
-			tv_path = str(vcr.connected_tv.get_path())
-		var tape := vcr.get_snapped_tape()
-		var tape_id: int = node_to_id.get(tape, -1) if tape != null else -1
-		var result := {
-			"id": id,
-			"type": "vcr_player",
-			"connected_tv_id": tv_id,
-			"snapped_tape_id": tape_id,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
-		if not tv_path.is_empty():
-			result["connected_tv_path"] = tv_path
-		return result
+		# The deck's own TV link is not saved: the lead is a separate object now, so
+		# the connection lives in a spawned cable's plugs. Same for the DVD player.
+		return _base(id, "vcr_player", n3d).merged({
+			"tape": _ref(node_to_id, (node as VCRPlayer).get_snapped_tape()),
+		})
 	elif node is VCRTape:
-		return {
-			"id": id,
-			"type": "vcr_tape",
-			"video_path": (node as VCRTape).video_path,
-			"video_label": (node as VCRTape).video_label,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		var tape := node as VCRTape
+		return _base(id, "vcr_tape", n3d).merged({
+			"video_path": tape.video_path,
+			"video_label": tape.video_label,
+		})
 	elif node is DVDPlayer:
-		var dvd := node as DVDPlayer
-		var tv_id: int = node_to_id.get(dvd.connected_tv, -1) if dvd.connected_tv != null else -1
-		var tv_path: String = ""
-		if dvd.connected_tv != null and tv_id == -1:
-			tv_path = str(dvd.connected_tv.get_path())
-		var disc := dvd.get_snapped_disc()
-		var disc_id: int = node_to_id.get(disc, -1) if disc != null else -1
-		var result := {
-			"id": id,
-			"type": "dvd_player",
-			"connected_tv_id": tv_id,
-			"snapped_disc_id": disc_id,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
-		if not tv_path.is_empty():
-			result["connected_tv_path"] = tv_path
-		return result
+		return _base(id, "dvd_player", n3d).merged({
+			"disc": _ref(node_to_id, (node as DVDPlayer).get_snapped_disc()),
+		})
 	elif node is DVDDisc:
-		return {
-			"id": id,
-			"type": "dvd_disc",
-			"dvd_path": (node as DVDDisc).dvd_path,
-			"dvd_label": (node as DVDDisc).dvd_label,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		var dvd := node as DVDDisc
+		return _base(id, "dvd_disc", n3d).merged({
+			"dvd_path": dvd.dvd_path,
+			"dvd_label": dvd.dvd_label,
+		})
 	elif node is RetroAudioPlayer:
 		var ap := node as RetroAudioPlayer
-		var media := ap.get_snapped_media()
-		var media_id: int = node_to_id.get(media, -1) if media != null else -1
-		return {
-			"id": id,
-			"type": "cd_player" if node is CDPlayer else "cassette_player",
-			"snapped_media_id": media_id,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		return _base(id, "cd_player" if node is CDPlayer else "cassette_player", n3d).merged({
+			"media": _ref(node_to_id, ap.get_snapped_media()),
+		})
 	elif node is AudioDisc:
-		return {
-			"id": id,
-			"type": "audio_disc",
-			"album_path": (node as AudioDisc).album_path,
-			"album_label": (node as AudioDisc).album_label,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		var adisc := node as AudioDisc
+		return _base(id, "audio_disc", n3d).merged({
+			"album_path": adisc.album_path,
+			"album_label": adisc.album_label,
+		})
 	elif node is AudioCassette:
-		return {
-			"id": id,
-			"type": "audio_cassette",
-			"album_path": (node as AudioCassette).album_path,
-			"album_label": (node as AudioCassette).album_label,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
+		var acass := node as AudioCassette
+		return _base(id, "audio_cassette", n3d).merged({
+			"album_path": acass.album_path,
+			"album_label": acass.album_label,
+		})
 	elif node is RetroController or node is RayGun or node is RetroMouse or node is RetroKeyboard:
-		var obj_type := "retro_controller"
-		if node is RayGun:
-			obj_type = "ray_gun"
-		elif node is SnesMouse:
-			# Before the RetroMouse arm, which it also satisfies — reaching that
-			# first would save the SNES mouse as the primitive one and hand the
-			# player a grey box back.
-			obj_type = "snes_mouse"
-		elif node is RetroMouse:
-			obj_type = "retro_mouse"
-		elif node is RetroKeyboard:
-			obj_type = "retro_keyboard"
-		var connected_sys = (node as Node).get("_connected_system")
-		var port_idx: int = (node as Node).get("_port_index") if connected_sys != null else -1
-		var sys_id: int = node_to_id.get(connected_sys, -1) if connected_sys != null else -1
-		var sys_path: String = ""
-		if connected_sys != null and sys_id == -1:
-			sys_path = str((connected_sys as Node).get_path())
-		var entry := {
-			"id": id,
-			"type": obj_type,
-			"device_type": (node as Node).get("device_type") as int,
-			"connected_system_id": sys_id,
-			"connected_system_path": sys_path,
-			"port_index": port_idx,
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-		}
-		if node is RetroMouse:
-			entry["sensitivity"] = (node as RetroMouse).sensitivity
-		if node is RetroController:
-			# Every real pad — NES, Virtual Boy, CX40 — is a RetroController with a
-			# scene of its own, so the type above maps the whole family back onto the
-			# generic grey pad. The scene is what tells them apart.
-			entry["scene"] = node.scene_file_path
-		return entry
+		return _serialize_peripheral(node, id, n3d, node_to_id)
 	elif node is CompositeCable:
-		# Six independent ends, so the lead is saved as six plugs rather than as one
-		# object with a position: each carries its own pose and, if it is in a
-		# socket, the device and the socket's node name. The name is what makes this
-		# readable and stable — "AudioLIn" survives any renumbering of ports, which
-		# an index would not.
-		var cable := node as CompositeCable
-		var plugs: Array = []
-		for seat: Dictionary in cable.seating():
-			var plug := seat["plug"] as Node3D
-			var ppos := plug.global_position
-			var prot := plug.global_rotation_degrees
-			var rec := {
-				"end": seat["end"],
-				"cord": seat["cord"],
-				"position": [ppos.x, ppos.y, ppos.z],
-				"rotation": [prot.x, prot.y, prot.z],
-				"port": seat["port"],
-			}
-			var dev: Node = seat["device"]
-			if dev != null:
-				var dev_id: int = node_to_id.get(dev, -1)
-				rec["device_id"] = dev_id
-				# A set standing in the room is scene-placed, not spawned, so it has
-				# no id — fall back to its path, as the deck entries above do.
-				if dev_id == -1:
-					rec["device_path"] = str(dev.get_path())
-			plugs.append(rec)
-		return {
-			"id": id,
-			"type": "composite_cable",
-			# 2 = the mono lead, 3 = the full one. Both are CompositeCable; only
-			# the scene differs, so the count is what picks it back up.
-			"cords": cable.cord_count(),
-			"position": [pos.x, pos.y, pos.z],
-			"rotation": [rot.x, rot.y, rot.z],
-			"plugs": plugs,
-		}
+		return _serialize_cable(node as CompositeCable, id, n3d, node_to_id)
 	return {}
+
+
+func _media_fields(cart: RetroCartridge) -> Dictionary:
+	return {
+		"rom_path": cart.rom_path,
+		"game_label": cart.game_label,
+		"save_id": cart.save_id,
+		"cart_systemid": cart.systemid,
+	}
+
+
+func _serialize_peripheral(node: Node, id: int, n3d: Node3D, node_to_id: Dictionary) -> Dictionary:
+	var obj_type := "retro_controller"
+	if node is RayGun:
+		obj_type = "ray_gun"
+	elif node is SnesMouse:
+		# Before the RetroMouse arm, which it also satisfies — reaching that
+		# first would save the SNES mouse as the primitive one and hand the
+		# player a grey box back.
+		obj_type = "snes_mouse"
+	elif node is RetroMouse:
+		obj_type = "retro_mouse"
+	elif node is RetroKeyboard:
+		obj_type = "retro_keyboard"
+	var connected_sys: Node = node.get("_connected_system")
+	var entry := _base(id, obj_type, n3d).merged({
+		"device_type": node.get("device_type") as int,
+		"system": _ref(node_to_id, connected_sys),
+		"port_index": node.get("_port_index") if connected_sys != null else -1,
+	})
+	if node is RetroMouse:
+		entry["sensitivity"] = (node as RetroMouse).sensitivity
+	if node is RetroController:
+		# Every real pad — NES, Virtual Boy, CX40 — is a RetroController with a
+		# scene of its own, so the type above maps the whole family back onto the
+		# generic grey pad. The scene is what tells them apart.
+		entry["scene"] = node.scene_file_path
+	return entry
+
+
+## Six independent ends, so the lead is saved as six plugs rather than as one
+## object with a position: each carries its own pose and, if it is in a socket,
+## the device and the socket's node name. The name is what makes this readable
+## and stable — "AudioLIn" survives any renumbering of ports, which an index
+## would not.
+func _serialize_cable(cable: CompositeCable, id: int, n3d: Node3D,
+		node_to_id: Dictionary) -> Dictionary:
+	var plugs: Array = []
+	for seat: Dictionary in cable.seating():
+		var plug := seat["plug"] as Node3D
+		var ppos := plug.global_position
+		var prot := plug.global_rotation_degrees
+		plugs.append({
+			"end": seat["end"],
+			"cord": seat["cord"],
+			"position": [ppos.x, ppos.y, ppos.z],
+			"rotation": [prot.x, prot.y, prot.z],
+			"port": seat["port"],
+			"device": _ref(node_to_id, seat["device"] as Node),
+		})
+	return _base(id, "composite_cable", n3d).merged({
+		# 2 = the mono lead, 3 = the full one. Both are CompositeCable; only
+		# the scene differs, so the count is what picks it back up.
+		"cords": cable.cord_count(),
+		"plugs": plugs,
+	})
 
 
 ## The pad scene the entry names, or the generic pad when the save predates the
@@ -772,106 +687,87 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 	var obj_type: String = data.get("type", "")
 	var obj: Node3D = null
 
-	match obj_type:
-		"system":
-			var sys := SYSTEM_SCENE.instantiate() as RetroSystem
-			sys.systemid = data.get("systemid", "")
-			sys.model_id = str(data.get("model_id", ""))
-			if data.has("video_out"):
-				sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
-			sys._lid_angle_from_save = float(data.get("lid_angle", -1.0))
-			sys.ignore_gravity = bool(data.get("ignore_gravity", false))
-			obj = sys
-		"tv":
-			var tv := TV_SCENE.instantiate() as RetroTV
-			tv.crt_enabled = data.get("crt_enabled", true)
-			var crt_params: Dictionary = data.get("crt_params", {})
-			if not crt_params.is_empty():
-				tv.set_crt_params(crt_params)
-			tv.scale_factor = data.get("scale_factor", 1.0)
-			tv.stereo_mode = int(data.get("stereo_mode", 0))
-			obj = tv
-		"tv_remote":
-			obj = TV_REMOTE_SCENE.instantiate() as Node3D
-		"trash_can":
-			obj = TRASH_CAN_SCENE.instantiate() as Node3D
-		"cartridge":
-			var cart := CART_SCENE.instantiate() as RetroCartridge
-			cart.rom_path = data.get("rom_path", "")
-			cart.game_label = data.get("game_label", "")
-			cart.save_id = data.get("save_id", "")
-			cart.systemid = data.get("cart_systemid", "")
-			obj = cart
-		"disc":
-			var disc_systemid: String = data.get("cart_systemid", "")
-			var disc_scene := UMD_DISC_SCENE if disc_systemid == "playstation_portable" else DISC_SCENE
-			var disc := disc_scene.instantiate() as RetroDisc
-			disc.rom_path = data.get("rom_path", "")
-			disc.game_label = data.get("game_label", "")
-			disc.save_id = data.get("save_id", "")
-			disc.systemid = disc_systemid
-			obj = disc
-		"memory_card":
-			var card := MEMCARD_SCENE.instantiate() as MemoryCard
-			card.card_id = data.get("card_id", "")
-			card.card_label = data.get("card_label", "MEMORY CARD")
-			obj = card
-		"book":
-			var book := BOOK_SCENE.instantiate() as PDFBook
-			book.half_page_mode = data.get("half_pages", false)
-			book.size_scale = data.get("size_scale", 1.0)
-			book.pdf_path = data.get("pdf_path", "")
-			# Applied after the PDF loads (stashed while _page_count == 0).
-			book.set_page(int(data.get("page_state", 0)), int(data.get("page_leaf", 0)))
-			obj = book
-		"retro_controller":
-			obj = _instantiate_controller(data)
-		"ray_gun":
-			obj = RAY_GUN_SCENE.instantiate() as Node3D
-		"retro_mouse":
-			var mouse := RETRO_MOUSE_SCENE.instantiate() as RetroMouse
-			mouse.sensitivity = data.get("sensitivity", 2400.0)
-			obj = mouse
-		"snes_mouse":
-			var snes := SNES_MOUSE_SCENE.instantiate() as SnesMouse
-			snes.sensitivity = data.get("sensitivity", 2400.0)
-			obj = snes
-		"retro_keyboard":
-			obj = RETRO_KEYBOARD_SCENE.instantiate() as Node3D
-		"vcr_player":
-			obj = VCR_SCENE.instantiate() as Node3D
-		"vcr_tape":
-			var tape := TAPE_SCENE.instantiate() as VCRTape
-			tape.video_path = data.get("video_path", "")
-			tape.video_label = data.get("video_label", "")
-			obj = tape
-		"dvd_player":
-			obj = DVD_SCENE.instantiate() as Node3D
-		"dvd_disc":
-			var disc := DVD_DISC_SCENE.instantiate() as DVDDisc
-			disc.dvd_path = data.get("dvd_path", "")
-			disc.dvd_label = data.get("dvd_label", "")
-			obj = disc
-		"composite_cable":
-			obj = (MONO_CABLE_SCENE if int(data.get("cords", 3)) == 2
-				else COMPOSITE_CABLE_SCENE).instantiate() as Node3D
-		"cd_player":
-			obj = CD_PLAYER_SCENE.instantiate() as Node3D
-		"cassette_player":
-			obj = CASSETTE_PLAYER_SCENE.instantiate() as Node3D
-		"audio_disc":
-			var adisc := AUDIO_DISC_SCENE.instantiate() as AudioDisc
-			adisc.album_path = data.get("album_path", "")
-			adisc.album_label = data.get("album_label", "")
-			obj = adisc
-		"audio_cassette":
-			var acass := AUDIO_CASSETTE_SCENE.instantiate() as AudioCassette
-			acass.album_path = data.get("album_path", "")
-			acass.album_label = data.get("album_label", "")
-			obj = acass
-		_:
-			push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
-			return null
+	if PLAIN_SCENES.has(obj_type):
+		obj = (PLAIN_SCENES[obj_type] as PackedScene).instantiate() as Node3D
+	else:
+		match obj_type:
+			"system":
+				var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+				sys.systemid = data.get("systemid", "")
+				sys.model_id = str(data.get("model_id", ""))
+				if data.has("video_out"):
+					sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
+				sys._lid_angle_from_save = float(data.get("lid_angle", -1.0))
+				sys.ignore_gravity = bool(data.get("ignore_gravity", false))
+				obj = sys
+			"tv":
+				var tv := TV_SCENE.instantiate() as RetroTV
+				tv.crt_enabled = data.get("crt_enabled", true)
+				var crt_params: Dictionary = data.get("crt_params", {})
+				if not crt_params.is_empty():
+					tv.set_crt_params(crt_params)
+				tv.scale_factor = data.get("scale_factor", 1.0)
+				tv.stereo_mode = int(data.get("stereo_mode", 0))
+				obj = tv
+			"cartridge":
+				var cart := CART_SCENE.instantiate() as RetroCartridge
+				_apply_media_fields(cart, data)
+				obj = cart
+			"disc":
+				var disc_systemid: String = data.get("cart_systemid", "")
+				var disc_scene := UMD_DISC_SCENE if disc_systemid == "playstation_portable" else DISC_SCENE
+				var disc := disc_scene.instantiate() as RetroDisc
+				_apply_media_fields(disc, data)
+				obj = disc
+			"memory_card":
+				var card := MEMCARD_SCENE.instantiate() as MemoryCard
+				card.card_id = data.get("card_id", "")
+				card.card_label = data.get("card_label", "MEMORY CARD")
+				obj = card
+			"book":
+				var book := BOOK_SCENE.instantiate() as PDFBook
+				book.half_page_mode = data.get("half_pages", false)
+				book.size_scale = data.get("size_scale", 1.0)
+				book.pdf_path = data.get("pdf_path", "")
+				# Applied after the PDF loads (stashed while _page_count == 0).
+				book.set_page(int(data.get("page_state", 0)), int(data.get("page_leaf", 0)))
+				obj = book
+			"retro_controller":
+				obj = _instantiate_controller(data)
+			"retro_mouse":
+				var mouse := RETRO_MOUSE_SCENE.instantiate() as RetroMouse
+				mouse.sensitivity = data.get("sensitivity", 2400.0)
+				obj = mouse
+			"snes_mouse":
+				var snes := SNES_MOUSE_SCENE.instantiate() as SnesMouse
+				snes.sensitivity = data.get("sensitivity", 2400.0)
+				obj = snes
+			"vcr_tape":
+				var tape := TAPE_SCENE.instantiate() as VCRTape
+				tape.video_path = data.get("video_path", "")
+				tape.video_label = data.get("video_label", "")
+				obj = tape
+			"dvd_disc":
+				var disc := DVD_DISC_SCENE.instantiate() as DVDDisc
+				disc.dvd_path = data.get("dvd_path", "")
+				disc.dvd_label = data.get("dvd_label", "")
+				obj = disc
+			"composite_cable":
+				obj = (MONO_CABLE_SCENE if int(data.get("cords", 3)) == 2
+					else COMPOSITE_CABLE_SCENE).instantiate() as Node3D
+			"audio_disc":
+				var adisc := AUDIO_DISC_SCENE.instantiate() as AudioDisc
+				adisc.album_path = data.get("album_path", "")
+				adisc.album_label = data.get("album_label", "")
+				obj = adisc
+			"audio_cassette":
+				var acass := AUDIO_CASSETTE_SCENE.instantiate() as AudioCassette
+				acass.album_path = data.get("album_path", "")
+				acass.album_label = data.get("album_label", "")
+				obj = acass
+			_:
+				push_warning("ScenePersistence: unknown object type '%s'" % obj_type)
+				return null
 
 	if not obj:
 		return null
@@ -881,3 +777,10 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 	obj.position = Vector3(pos[0], pos[1], pos[2])
 	obj.rotation_degrees = Vector3(rot[0], rot[1], rot[2])
 	return obj
+
+
+func _apply_media_fields(cart: RetroCartridge, data: Dictionary) -> void:
+	cart.rom_path = data.get("rom_path", "")
+	cart.game_label = data.get("game_label", "")
+	cart.save_id = data.get("save_id", "")
+	cart.systemid = data.get("cart_systemid", "")
