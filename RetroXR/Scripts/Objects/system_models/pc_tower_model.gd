@@ -122,7 +122,7 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 		if el != null:
 			el.hide()
 	if reset_btn != null:
-		reset_btn.visible = false
+		reset_btn.set_active(false)
 
 
 ## The disc seats in the tray's well. Its pose is read back by RetroSystem and

@@ -502,9 +502,7 @@ func _load_system_model() -> void:
 	# A shell that models its own release control (the PSP's sprung OPEN latch)
 	# opts out — it drives request_tray_state directly.
 	var want_eject := has_loader and _model.has_eject_button()
-	_eject_button.visible = want_eject
-	_eject_button.set_deferred("monitoring", want_eject)
-	_eject_button.set_process(want_eject)   # also stops touch-proximity checks
+	_eject_button.set_active(want_eject)
 	# A front-sliding tray is a property of the PROCEDURAL box. A bespoke shell
 	# brings its own mechanism — the PS2 Slim's hinged cover is a lid whatever the
 	# platform row says the family does — so it keeps the lid wording and geometry.
@@ -594,13 +592,9 @@ func _load_system_model() -> void:
 	# by their configure_buttons) — the back-edge power knob doesn't fit them.
 	if _model.is_handheld():
 		var keep_power_btn := _model.has_start_stop_button()
-		_power_button.visible = keep_power_btn
-		_power_button.set_deferred("monitoring", keep_power_btn)
-		_power_button.set_process(keep_power_btn)
+		_power_button.set_active(keep_power_btn)
 		_update_power_button_visual()
-		_reset_button.visible = false
-		_reset_button.set_deferred("monitoring", false)
-		_reset_button.set_process(false)
+		_reset_button.set_active(false)
 		if _model.has_method("configure_handheld_body"):
 			_model.configure_handheld_body(self)
 		_model.configure_handheld_controls(self)

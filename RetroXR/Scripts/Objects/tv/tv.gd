@@ -272,8 +272,7 @@ func _load_shell() -> void:
 	]
 	if not _shell.show_button_row:
 		for btn in buttons:
-			btn.visible = false
-			btn.set_deferred("collision_layer", 0)
+			(btn as VRButton).set_active(false)
 	elif row is Transform3D:
 		var base: Transform3D = row
 		for i in buttons.size():
@@ -579,9 +578,7 @@ func _update_stereo_button() -> void:
 		return
 	var active := _stereo_source_active()
 	if _stereo_btn.visible != active:
-		_stereo_btn.visible = active
-		_stereo_btn.set_process(active)
-		_stereo_btn.collision_layer = VRButton.POINTABLE_LAYER if active else 0
+		_stereo_btn.set_active(active)
 
 
 ## Push every tunable CRT uniform onto a material carrying the CRT display stage

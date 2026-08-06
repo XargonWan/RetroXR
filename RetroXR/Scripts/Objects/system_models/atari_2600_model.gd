@@ -96,8 +96,7 @@ func uses_memory_cards() -> bool:
 
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
 	if eject_btn != null:
-		eject_btn.visible = false
-		eject_btn.set_deferred("monitoring", false)
+		eject_btn.set_active(false)
 	if _glb == null:
 		return
 	_setup_power(power_btn)
@@ -139,8 +138,7 @@ func _setup_reset(reset_btn: VRButton) -> void:
 		push_warning("Atari2600Model: Switch_GameReset missing from the shell")
 		return
 	if reset_btn != null:
-		reset_btn.visible = false
-		reset_btn.set_deferred("monitoring", false)
+		reset_btn.set_active(false)
 
 	var slider := VRSpringReturnSlider.new()
 	slider.name = "ResetSwitch"

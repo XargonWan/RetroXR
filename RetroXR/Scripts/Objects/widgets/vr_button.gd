@@ -92,10 +92,14 @@ var _last_activate_frame: int = -1
 var _controllers: Array[XRController3D] = []
 var _outline: WidgetOutline = null
 var _outline_amber: bool = false
+# Pointable layer this button carries while active, captured before anything
+# switches it off so set_active(true) restores what the scene authored.
+var _active_layer: int = POINTABLE_LAYER
 
 
 func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
+	_active_layer = collision_layer
 	_mesh_local_origin = _mesh.position
 	_mesh_depress_parent = _mesh.get_parent() as Node3D
 	_outline = WidgetOutline.attach(self)
@@ -365,6 +369,30 @@ func set_color(color: Color) -> void:
 	if not _mesh:
 		return
 	_apply_mesh_color(color)
+
+
+## Put this button in or out of play. Hiding it is NOT enough: `visible` stops the
+## drawing and nothing else, so a hidden cap keeps polling fingertips in _process
+## — it fires, and PokeTip.claim_box_face bends the visible nib onto its contact
+## box. A console whose model replaced these with its own controls (the Atari
+## 2600's slide switches) grew a pair of invisible buttons on its front face,
+## where the generic cabinet had put START and RESET.
+##
+## Being off the pointable layer matters as much: `monitoring` only governs what
+## an Area3D DETECTS, never what a ray finds, so the laser went on clicking them.
+func set_active(active: bool) -> void:
+	visible = active
+	set_process(active)
+	set_deferred("monitoring", active)
+	collision_layer = _active_layer if active else 0
+	if not active:
+		_release_touch()
+		_armed = false
+		_trigger_pressed = false
+		_engaged_ctrl = null
+		_pointer_pressed = false
+		_pointer_hovered = false
+		_sync_outline()
 
 
 func set_latched_pressed(pressed: bool) -> void:

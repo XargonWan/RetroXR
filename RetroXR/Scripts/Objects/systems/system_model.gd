@@ -63,8 +63,7 @@ func build_power_slider(power_btn: VRButton, cap: MeshInstance3D,
 	if cap == null:
 		return null
 	if power_btn != null:
-		power_btn.visible = false
-		power_btn.set_deferred("monitoring", false)
+		power_btn.set_active(false)
 	var slider := VRSlider.new()
 	slider.name = "PowerSwitch"
 	slider.axis_local = axis.normalized()
