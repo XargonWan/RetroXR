@@ -31,6 +31,17 @@ struct Voice
     std::atomic<bool>     active{false};
     std::atomic<bool>     retiring{false};   ///< set by the main thread, cleared by the mixer once flushed
 
+    /// Whether the owner has described this voice yet. Claiming a slot and
+    /// entering the mix are separate events: CreateVoice hands back an id, and
+    /// the owner sets a position, a gain and a directivity afterwards — from
+    /// another thread, in the libretro case, a frame or more later. Every
+    /// default below is wrong for a voice nobody has described (full gain, the
+    /// world origin, omnidirectional), so the mixer must not render one until
+    /// its first pose lands. Set by SetVoicePosition / SetVoicePose: a source
+    /// with no position cannot be spatialised, which makes that the moment the
+    /// voice becomes renderable.
+    std::atomic<bool>     ready{false};
+
     std::vector<float>    ring;
     std::atomic<uint32_t> write_pos{0};
     std::atomic<uint32_t> read_pos{0};

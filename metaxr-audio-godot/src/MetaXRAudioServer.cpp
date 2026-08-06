@@ -292,6 +292,12 @@ int MetaXRAudioServer::CreateVoice()
         v.read_pos.store(0, std::memory_order_relaxed);
         v.write_pos.store(0, std::memory_order_relaxed);
         v.retiring.store(false, std::memory_order_relaxed);
+        // Claimed, not yet described. Slots are reused, so this has to be cleared
+        // rather than assumed: the previous owner left it set. Safe to publish
+        // relaxed here because the new owner cannot push a frame until CreateVoice
+        // has returned this id, and that push release-stores write_pos — which is
+        // the acquire the mixer synchronises with before it reads any of this.
+        v.ready.store(false, std::memory_order_relaxed);
         v.gain.store(1.0f, std::memory_order_relaxed);
         v.ever_sent = false;
         v.last_sent[0] = v.last_sent[1] = v.last_sent[2] = 1e30f;
@@ -306,6 +312,28 @@ int MetaXRAudioServer::CreateVoice()
     }
     return -1;
 }
+
+namespace {
+
+/// Admit a voice to the mix, on the first position its owner publishes.
+///
+/// Call AFTER the pose seqlock write has closed. The mixer spins on a torn read,
+/// but nothing stops it seeing the PREVIOUS pose if admission were published
+/// first, which is the very frame this exists to suppress.
+///
+/// The backlog goes with it. A voice that has been fed since it was created is
+/// holding audio its owner queued before it said where the voice was; playing
+/// that on admission would only move the burst later rather than remove it.
+/// Dropping the cursor is safe from this side for the same reason FlushVoice is:
+/// the mixer only ever advances read_pos.
+void AdmitOnFirstPose(Voice& v)
+{
+    if (!v.ready.exchange(true, std::memory_order_acq_rel))
+        v.read_pos.store(v.write_pos.load(std::memory_order_acquire),
+                         std::memory_order_release);
+}
+
+} // namespace
 
 void MetaXRAudioServer::DestroyVoice(int id)
 {
@@ -328,6 +356,8 @@ void MetaXRAudioServer::SetVoicePosition(int id, const Vector3& pos)
     v.pose[1] = static_cast<float>(pos.y);
     v.pose[2] = static_cast<float>(pos.z);
     v.pose_seq.store(seq + 2, std::memory_order_release);
+
+    AdmitOnFirstPose(v);
 }
 
 void MetaXRAudioServer::SetVoicePose(int id, const Vector3& pos, const Vector3& forward,
@@ -352,6 +382,8 @@ void MetaXRAudioServer::SetVoicePose(int id, const Vector3& pos, const Vector3& 
     v.up[1] = static_cast<float>(u.y);
     v.up[2] = static_cast<float>(u.z);
     v.pose_seq.store(seq + 2, std::memory_order_release);
+
+    AdmitOnFirstPose(v);
 }
 
 void MetaXRAudioServer::SetVoiceDirectivity(int id, float intensity)
@@ -570,15 +602,37 @@ void MetaXRAudioServer::ProcessBlock(float* out_interleaved)
         if (!v.active.load(std::memory_order_acquire))
             continue;
 
+        const bool retiring = v.retiring.load(std::memory_order_acquire);
+
+        // Claiming a slot is not the same as entering the mix. CreateVoice hands
+        // back an id; the owner sets a position, a gain and a directivity after
+        // that, from another thread and a frame or more later. Rendering in
+        // between plays whatever the defaults happen to be -- full gain, at the
+        // world origin -- so an undescribed voice is simply not mixed.
+        if (!v.ready.load(std::memory_order_acquire))
+        {
+            // Destroyed before it was ever described. The slot still has to come
+            // back, and the mixer is what releases it; since nothing here drains
+            // this voice, waiting for it to empty on its own would wedge the slot
+            // for good.
+            if (retiring)
+            {
+                v.read_pos.store(v.write_pos.load(std::memory_order_acquire),
+                                 std::memory_order_release);
+                v.active.store(false, std::memory_order_release);
+            }
+            continue;
+        }
+
         const uint32_t avail = v.Available();
         if (avail == 0)
         {
-            if (!v.retiring.load(std::memory_order_relaxed))
+            if (!retiring)
                 m_underruns.fetch_add(1, std::memory_order_relaxed);
             // A retiring voice with nothing left is safe to release. Doing it
             // here rather than in DestroyVoice means the slot is never reused
             // while the mixer is still reading it.
-            if (v.retiring.load(std::memory_order_acquire))
+            if (retiring)
                 v.active.store(false, std::memory_order_release);
             continue;
         }
