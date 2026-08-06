@@ -434,6 +434,10 @@ func _ensure_nodes() -> void:
 		return
 
 	top_level = true
+	# Moved every rendered frame in _process. Interpolating those writes against
+	# the 90 Hz physics tick redraws them a beat behind, which reads as judder
+	# up close. Inherited by the sprite and viewport below.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 
 	_viewport = SubViewport.new()
 	_viewport.name = "HintViewport"
@@ -475,10 +479,6 @@ func _show() -> void:
 		_sprite.modulate = Color.WHITE
 	global_position = _anchor()
 	visible = true
-	# The project runs with physics interpolation on, and a top_level node holds
-	# the world origin until its first sync — without this the popup streaks in
-	# from the origin for a frame or two on its first show.
-	reset_physics_interpolation()
 
 
 # ── Trailing ──────────────────────────────────────────────────────────────────
@@ -498,11 +498,14 @@ func pin_to_host(offset: Vector3) -> void:
 func _anchor() -> Vector3:
 	if not is_instance_valid(_host):
 		return global_position
+	# The interpolated transform is where the host is drawn this frame; the raw
+	# one leads it whenever the hand is moving.
+	var host_xf := _host.get_global_transform_interpolated()
 	if _pinned:
-		return _host.global_transform * _local_offset
+		return host_xf * _local_offset
 	# World up, not host-local: a controller rolls around in the hand and the
 	# popup should stay above it rather than orbit it.
-	return _host.global_position + Vector3.UP * _height
+	return host_xf.origin + Vector3.UP * _height
 
 
 func _process(delta: float) -> void:
