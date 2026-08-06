@@ -531,9 +531,15 @@ func romm_fetch_platforms() -> void:
 ## a 12-entry one.
 func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	RomLibrary.ensure_rom_dir(systemid)
+	# A rebuild of the page you are already on is not a fresh open: clearing the
+	# search here is what threw you back to row one of the whole library after
+	# accepting a scrape, because the 12 rows you were looking at were a filtered
+	# view and the restored scroll offset then indexed into all 2744.
+	var keep_filters := _cartridges_browser.is_refreshing() and systemid == _romm_detail_systemid
 	_romm_detail_systemid = systemid
 	_romm_rows.clear()
-	_romm_filter = ""
+	if not keep_filters:
+		_romm_filter = ""
 	# Opening a platform must see the disk as it is now, not as it was.
 	_invalidate_local_scan(systemid)
 
@@ -558,6 +564,9 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	search.custom_minimum_size = Vector2(0, 52)
 	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	search.add_theme_font_size_override("font_size", 20)
+	# Assigning text does not emit text_changed, so this cannot re-arm the
+	# debounce timer — the rows below are already built from _romm_filter.
+	search.text = _romm_filter
 	search.text_changed.connect(_on_romm_search_changed)
 	toolbar.add_child(search)
 
@@ -565,15 +574,20 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	sep.add_theme_constant_override("separation", 16)
 	toolbar.add_child(sep)
 
-	_romm_source_filter = "all"
-	_romm_region_filter = ""
+	if not keep_filters:
+		_romm_source_filter = "all"
+		_romm_region_filter = ""
+	# The options cache belongs to the widget, and this is a new one — a stale
+	# cache matches, returns early, and leaves the fresh dropdown holding nothing
+	# but "All regions".
+	_romm_region_options = []
 
 	var source_drop := VRDropdown.create("", [
 		["All", "all"],
 		["Downloaded", "downloaded"],
 		["Not downloaded", "server"],
 		["Local only", "local"],
-	], "all", 1, Vector2(210, 52), 18)
+	], _romm_source_filter, 1, Vector2(210, 52), 18)
 	source_drop.size_flags_horizontal = Control.SIZE_SHRINK_END
 	source_drop.float_panel = true
 	source_drop.set_toggle_glyph(MenuIcons.FILTER, MenuIcons.symbols())
@@ -583,7 +597,8 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	)
 	toolbar.add_child(source_drop)
 
-	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], "", 1, Vector2(210, 52), 18)
+	_romm_region_drop = VRDropdown.create("", [["All regions", ""]], _romm_region_filter,
+		1, Vector2(210, 52), 18)
 	_romm_region_drop.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_romm_region_drop.float_panel = true
 	_romm_region_drop.set_toggle_glyph(MenuIcons.REGION, MenuIcons.symbols())

@@ -54,6 +54,10 @@ var _systems: Array = []
 var _detail_populator: Callable = Callable()
 var _current_systemid: String = ""
 var _built: bool = false
+## Set only while refresh() re-runs the populator. A populator that owns filter
+## state reads this to tell a background rebuild from the user opening the page:
+## navigation clears filters, a rebuild must leave them alone.
+var _refreshing: bool = false
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 var _home_page:    VBoxContainer   = null
@@ -136,13 +140,24 @@ func show_home() -> void:
 ## scrape finishes, when a wheel image finally downloads, when a sync lands — and
 ## open_system() below rightly scrolls to the top, which threw you back to row
 ## one of a thousand-ROM list because something completed in the background.
+##
+## The scroll offset alone is not your place: a populator that filters its rows
+## must keep that filter too, or the offset is restored into a different list.
 func refresh() -> void:
 	_ensure_built()
 	_rebuild_tiles()
 	if _detail_page.visible and not _current_systemid.is_empty():
 		var at := _detail_scroll.scroll_vertical
+		_refreshing = true
 		open_system(_current_systemid)
+		_refreshing = false
 		_restore_detail_scroll(at)
+
+
+## True while the detail populator is being re-run by refresh() rather than by
+## the user opening a system.
+func is_refreshing() -> bool:
+	return _refreshing
 
 
 ## The page was just rebuilt, so its height is not settled until the containers
