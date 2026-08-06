@@ -70,6 +70,9 @@ func _build(stack: Control) -> void:
 	# with it on, same mesh, same texture, same position. Scissor keeps real holes
 	# between the bars while still drawing in the opaque pass.
 	_viewport.transparent = XRToolsViewport2DIn3D.TransparancyMode.SCISSOR
+	# Unshaded, like the menu it sits in front of — a lit bar over an unshaded
+	# page is a dim patch that follows the room's lighting, not the menu's.
+	_viewport.unshaded = true
 	# Nothing here is pointable — the bars are MOUSE_FILTER_IGNORE and there is
 	# nothing to click. Leaving it on the pointer layer would put an invisible
 	# wall across the bottom of the menu.

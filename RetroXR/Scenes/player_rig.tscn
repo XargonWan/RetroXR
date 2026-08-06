@@ -135,6 +135,7 @@ screen_size = Vector2(1.1, 0.75)
 scene = ExtResource("11_spawnmenu")
 viewport_size = Vector2(2200, 1500)
 transparent = 1
+unshaded = true
 scene_properties_keys = PackedStringArray("spawn_menu.gd")
 
 [node name="CurvedPanel" type="Node3D" parent="SpawnMenuController/SpawnMenuViewport"]

@@ -157,9 +157,9 @@ func _ensure_ui() -> DropdownOptions2D:
 		# only lets the list behind bleed through, and scene lighting would make
 		# it read dimmer than the panel it sits on.
 		_viewport.transparent = XRToolsViewport2DIn3D.TransparancyMode.OPAQUE
-		# Opaque, but lit: the host menu is lit, and an unshaded card reads as a
-		# brighter cut-out floating over it rather than part of the same surface.
-		_viewport.unshaded = false
+		# Unshaded, like the host: a lit card over an unshaded menu reads as a
+		# darker cut-out floating on it rather than part of the same surface.
+		_viewport.unshaded = true
 		add_child(_viewport)
 
 		# Its own arc, so the card bends with the menu instead of hanging off it
