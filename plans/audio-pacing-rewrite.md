@@ -141,16 +141,40 @@ there is no ratio to trim. Phase 3 must allocate it unconditionally at ratio 1.0
   (48000 Hz, 60.099827 fps) unchanged. None of them needed the frontend to know anything
   true about them, which is the point.
 
-- **Phase 3 — DRC trim. Re-scoped; no longer urgent.** *The azahar crackle went away in
-  Phase 2, on desktop and Quest alike.* It was a fill-level problem: nothing had ever
-  targeted a queue depth, so the depth was incidental and drifted into starving the mixer.
-  Simply aiming at the sink's target fixed it, without any rate trim.
+- **Phase 3 — DRC trim. DONE 2026-08-06, verified on device.** Phase 2 made azahar's crackle
+  **much less frequent but did not eliminate it** (an earlier revision of this file, and
+  `9abeafd`'s commit message, wrongly said "gone" — that came from a first impression which
+  was then refined). The rate trim closed the remainder.
 
-  That removes the symptom DRC was scoped to fix and leaves it addressing **long-run drift**
-  only — a core whose true rate differs slightly from the sink's will still walk toward one
-  end over minutes, and the brake corrects that by stalling or running free rather than by
-  gently re-rating. Worth doing eventually; no longer blocking anything. The unconditional
-  resampler blocker (`AudioHandler.cpp:202`) matters only when this is picked up.
+  Landed as: the resampler is now allocated even at 1:1, because a core already running at
+  the mixer's rate would otherwise have no ratio to turn — so ScummVM (44100→44100) pays a
+  sinc pass it did not before, which is real CPU on a device already flagged CPU-bound.
+  A failed allocation no longer tears down the Meta XR path when the rates match; it just
+  loses the trim, since matched rates still play correctly straight through. Per batch the
+  ratio is trimmed by ±0.5% (`k_drc_max_delta`, RetroArch's default bound) proportional to
+  `(target - queued) / target`, reusing the depth read the occupancy figure already made.
+
+  **Caveat on the history:** a concurrent session's commit `5365dbf` ("a channel mode routes
+  one source channel to both speakers") swept up this work uncommitted, so the DRC change is
+  recorded under a commit message about channel modes. It also carried a temporary sink-depth
+  probe into master, removed in `0fb40b2`.
+
+  What that pattern means: the gross fault was a fill level nothing aimed at, and aiming at
+  one fixed most of it. What is left is *occasional* starvation, which is the signature DRC
+  exists for. The brake is one-sided — it only ever holds the core *back* when the sink is
+  above target. Nothing pushes the other way, so when a heavy frame or a main-thread hitch
+  outruns the ~46 ms target fill (`kDefaultTargetFill` 2048 frames), the ring drains and the
+  mixer gets a gap. DRC handles exactly that by re-rating slightly instead of starving.
+
+  Two things to try before, or instead of, full DRC — both cheap:
+  1. **Raise the target fill.** `set_target_latency_ms` is already bound; nothing currently
+     calls it. More headroom trades latency for margin and would confirm the underrun
+     reading immediately.
+  2. **Measure the depth.** Log queued frames over a run. Sawtoothing down to zero is
+     underrun (DRC's case); slamming to full is overrun (a different fix).
+
+  The unconditional-resampler blocker (`AudioHandler.cpp:202`) does have to be solved for
+  real DRC: ScummVM at 44100→44100 gets no resampler and therefore no ratio to trim.
 - **Phase 4 — cleanup.** Drop the `implausible batch` probe in `AudioHandler.cpp` (it has
   answered its question); decide whether the one-shot warnings stay (recommend: yes, they
   are cheap and would have caught this in a day).
