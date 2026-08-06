@@ -208,6 +208,7 @@ private:
     inline void SolvePair(int a, int b, double rest, double k);
     inline void SolveBend(int b, int spacing, double allowed_dev, double k);
     inline void SolveBendTriple(int a, int b, int c, double allowed_dev, double k);
+    inline void SolveBendAnchored(int a, int b, int c, double k);
     inline void SolveMidContact(int s);
     inline void ProjectPlane(int i, const godot::Vector3 &cp, const godot::Vector3 &n);
     inline void PinAnchors();

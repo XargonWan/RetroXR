@@ -96,6 +96,28 @@ inline void VerletRope::SolveBendTriple(int a, int b, int c, double allowed_dev,
     m_points[c] -= v * (0.5f * w_c / w_total);
 }
 
+// Bend on (a, b, c) with `a` held immovable — the correction is shared by b and c
+// only.
+//
+// For a junction: it is one particle shared by the trunk and every branch, and
+// letting each branch push it turns a three-way fray into a tug of war. Each
+// branch straightening its own first particle is wanted; three of them elbowing
+// the breakout every iteration is what stopped a lead ever settling on a table.
+inline void VerletRope::SolveBendAnchored(int a, int b, int c, double k)
+{
+    const float w_b = m_inv_mass[b];
+    const float w_c = m_inv_mass[c];
+    const float w_total = w_b + 0.5f * w_c;
+    if (w_total == 0.0f)
+        return;
+    const Vector3 delta = (m_points[a] + m_points[c]) * 0.5f - m_points[b];
+    if (delta.length_squared() < 1e-8)
+        return;
+    const Vector3 v = delta * k;
+    m_points[b] += v * (w_b / w_total);
+    m_points[c] -= v * (0.5f * w_c / w_total);
+}
+
 // Keep segment s's midpoint outside its cached contact plane, splitting the
 // correction so the midpoint clears fully. The distance cap guards against stale
 // planes (refreshed only every raycast_interval frames, and infinite in extent).
@@ -541,6 +563,13 @@ void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, doubl
                 else
                     for (int i = last - s; i >= first + s; --i)
                         SolveBend(i, s, allowed, p_k_bend);
+                // `first` sits one short of that range at every spacing, and its
+                // low neighbour is the junction — a different chain, so the
+                // spacing form cannot reach it. It is picked up by the breakout
+                // boot below instead of here: adding it at every iteration piles
+                // a second constraint per branch onto the junction, and with
+                // three branches that fight was enough to stop a lead settling
+                // on a table edge (asleep 107/200 of the tail, down to 34).
                 s *= 2;
                 levels -= 1;
             }
@@ -562,7 +591,12 @@ void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, doubl
             const int n_head = std::min(m_end_stiff_segments, fc.count - 1);
             if (trunk_n >= 2 && n_head > 0)
             {
+                // Two triples, not one. The first holds the JUNCTION straight
+                // between the trunk and the branch; the second holds the
+                // branch's first particle, whose low neighbour is that junction
+                // and so is out of reach of the contiguous form below.
                 SolveBendTriple(trunk_prev, fc.head, first, 0.0, StubWeight(ke, 1, n_head));
+                SolveBendAnchored(fc.head, first, first + 1, StubWeight(ke, 1, n_head));
                 for (int j = 1; j < n_head; ++j)
                     SolveBend(first + j, 1, 0.0, StubWeight(ke, j + 1, n_head));
             }
