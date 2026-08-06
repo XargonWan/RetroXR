@@ -103,6 +103,10 @@ var _last_total: float = -1.0
 func _ready() -> void:
 	super._ready()
 	add_to_group("vcr_player")
+	TransportGlyphs.label_buttons(self, {
+		"PlayButton": "play", "PauseButton": "pause", "StopButton": "stop",
+		"RewindButton": "rew", "FastForwardButton": "ff", "EjectButton": "eject",
+	}, TransportGlyphs.DECK_SIZE)
 	_slot = MediaSlot.new()
 	_slot.host = self
 	_slot.slot = _tape_slot

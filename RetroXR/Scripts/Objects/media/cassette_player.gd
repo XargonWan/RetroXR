@@ -20,6 +20,10 @@ func _ready() -> void:
 	_media_group = "audio_cassette"
 	super._ready()
 	add_to_group("cassette_player")
+	TransportGlyphs.label_buttons(self, {
+		"RewindButton": "rew", "PlayButton": "play", "PauseButton": "pause",
+		"StopButton": "stop", "FastForwardButton": "ff", "EjectButton": "eject",
+	}, TransportGlyphs.DECK_SIZE)
 
 
 ## Front-loading tape bay via the shared MediaSlot.

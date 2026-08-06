@@ -52,17 +52,9 @@ const COLOR_GLYPH_ON        := Color(0.30, 1.0, 0.42)   # TV power = on
 const COLOR_GLYPH_MUTE      := Color(1.0, 0.35, 0.35)   # TV mute = active
 const COLOR_HILITE          := Color(0.62, 0.10, 0.22, 0.7)
 
-## Symbol codepoints (Font Awesome range in the Symbols Nerd Font). Built into the
-## _glyphs string map in _ready so layouts can name glyphs by key.
-const GLYPH_CODES := {
-	"play": 0xF04B, "pause": 0xF04C, "stop": 0xF28D,
-	"ff": 0xF04E, "rew": 0xF04A, "next": 0xF051, "prev": 0xF048,
-	"vol_up": 0xF028, "vol_down": 0xF027, "power": 0xF011, "menu": 0xF0C9,
-	"up": 0xF077, "down": 0xF078, "left": 0xF053, "right": 0xF054,
-	"ok": 0xF192, "mute": 0xF026, "eject": 0xF052,
-	"audio": 0xF1AB, "subtitle": 0xF0A16,
-}
-const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
+## Symbol codepoints live in TransportGlyphs, shared with the front panels of the
+## decks this drives. Built into the _glyphs string map in _ready so layouts can
+## name glyphs by key.
 
 ## Desktop mode: lock to the camera lower-right pointing straight ahead
 ## (FPS-style, same as the RayGun — read by desktop_pickup.gd). Drop with
@@ -128,22 +120,11 @@ func _ready() -> void:
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
-	for k: String in GLYPH_CODES:
-		_glyphs[k] = String.chr(int(GLYPH_CODES[k]))
-	_build_font()
+	for k: String in TransportGlyphs.CODES:
+		_glyphs[k] = TransportGlyphs.glyph(k)
+	_font = TransportGlyphs.font()
 	_build_menu()
 	call_deferred("_find_vr_nodes")
-
-
-## One shared font: the project default as base (for any text) with the Symbols
-## Nerd Font chained as a fallback so PUA icon codepoints resolve to glyphs.
-func _build_font() -> void:
-	var fv := FontVariation.new()
-	fv.base_font = ThemeDB.fallback_font
-	var symbols: Font = load(SYMBOL_FONT_PATH)
-	if symbols:
-		fv.fallbacks = [symbols]
-	_font = fv
 
 
 func _find_vr_nodes() -> void:

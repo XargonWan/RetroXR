@@ -21,6 +21,12 @@ func _ready() -> void:
 	_media_group = "audio_disc"
 	super._ready()
 	add_to_group("cd_player")
+	# OPEN lifts the lid, which is what eject means on a top loader.
+	TransportGlyphs.label_buttons(self, {
+		"OpenButton": "eject", "PrevButton": "prev", "RewindButton": "rew",
+		"PlayButton": "play", "PauseButton": "pause", "StopButton": "stop",
+		"FastForwardButton": "ff", "NextButton": "next",
+	}, TransportGlyphs.DECK_SIZE)
 
 
 ## Top-loading lid tray via the shared MediaTray (replaces the base plain-snap).

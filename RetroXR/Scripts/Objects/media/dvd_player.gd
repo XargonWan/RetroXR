@@ -93,6 +93,14 @@ var _box_button_lit: Dictionary = {}   # id -> bool, last colour applied
 func _ready() -> void:
 	super._ready()
 	add_to_group("dvd_player")
+	TransportGlyphs.label_buttons(self, {
+		"PlayButton": "play", "PauseButton": "pause", "StopButton": "stop",
+		"MenuButton": "menu", "PrevChapterButton": "prev", "NextChapterButton": "next",
+		"EjectButton": "eject", "RewindButton": "rew", "FastForwardButton": "ff",
+		"LanguageButton": "audio", "SubtitleButton": "subtitle",
+		"UpButton": "up", "DownButton": "down", "LeftButton": "left",
+		"RightButton": "right", "SelectButton": "ok",
+	}, TransportGlyphs.DECK_SIZE)
 	_slot = MediaSlot.new()
 	_slot.host = self
 	_slot.slot = _disc_slot

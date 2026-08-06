@@ -41,6 +41,7 @@ var _speakers_seated: bool = false
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
 @onready var _ambilight: SpotLight3D = $Ambilight
+@onready var _mute_btn: VRButton = $MuteButton
 @onready var _vol_down_btn: VRButton = $VolumeDownButton
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
@@ -166,8 +167,15 @@ func _ready() -> void:
 	# Before anything reads the screen mesh or the buttons — _screen_size_m below
 	# is derived from ScreenMesh, and a shell may have moved and rescaled it.
 	_load_shell()
+	# TV = power: it runs the power-on animation and flashes POWER on the OSD.
+	TransportGlyphs.label_buttons(self, {
+		"MuteButton": "mute",
+		"VolumeDownButton": "vol_down", "VolumeUpButton": "vol_up",
+		"TVToggleButton": "power", "CRTButton": "crt", "StereoButton": "stereo",
+	}, TransportGlyphs.TV_SIZE)
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
+	_mute_btn.button_pressed.connect(_on_mute_toggle)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
 	_vol_up_btn.button_pressed.connect(_on_volume_up)
 	_tv_toggle_btn.button_pressed.connect(_on_tv_toggle)
@@ -176,6 +184,7 @@ func _ready() -> void:
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
+	_update_mute_button_color()
 	# Hidden until a stereo source is connected (see _update_stereo_button).
 	# VRButton._ready adds the pointable layer — strip it while hidden so the
 	# invisible button can't eat pokes or laser clicks (deferred: our _ready
@@ -772,6 +781,16 @@ func _update_stereo_button_color() -> void:
 			0: _stereo_btn.set_color(Color(1.0, 0.2, 1.0))
 			1: _stereo_btn.set_color(Color(0.55, 0.35, 0.75))
 			2: _stereo_btn.set_color(Color(0.35, 0.35, 0.75))
+	_update_stereo_button_glyph()
+
+
+## Both eyes gets the 3D symbol; a single eye gets an eye leaning to the side it
+## is showing, so the cap says which one without a word on it.
+func _update_stereo_button_glyph() -> void:
+	match stereo_mode:
+		0: TransportGlyphs.set_glyph(self, "StereoButton", "stereo", TransportGlyphs.TV_SIZE)
+		1: TransportGlyphs.set_glyph(self, "StereoButton", "eye", TransportGlyphs.TV_SIZE, -1.0)
+		2: TransportGlyphs.set_glyph(self, "StereoButton", "eye", TransportGlyphs.TV_SIZE, 1.0)
 
 
 ## Returns the screen MeshInstance3D so Libretro can render onto it
@@ -1349,8 +1368,16 @@ func _on_volume_up() -> void:
 
 ## Toggle mute: silence (or restore) the connected device and show/clear a sticky
 ## "MUTE" OSD in the same corner "POWER" uses. No-op audibility change while off.
+## Red while muted, matching the remote's own mute tint. Driven from here rather
+## than the button so the remote's mute lands on the same cap.
+func _update_mute_button_color() -> void:
+	if _mute_btn:
+		_mute_btn.set_color(Color(1.0, 0.35, 0.35) if _muted else Color(0.35, 0.35, 0.35))
+
+
 func _on_mute_toggle() -> void:
 	_muted = not _muted
+	_update_mute_button_color()
 	_apply_audio_volume()
 	if _muted:
 		show_osd("MUTE")
