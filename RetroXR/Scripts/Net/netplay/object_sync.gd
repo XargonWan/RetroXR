@@ -61,6 +61,7 @@ enum {
 	EV_SYS_GRAVITY,      # {sys, on}     ignore-gravity (float where dropped)
 	EV_RCA_PLUG,         # {cable, end, cord, dev, port}  composite lead end seated
 	EV_RCA_UNPLUG,       # {cable, end, cord}             ...and pulled out again
+	EV_TV_AUDIO_MODE,    # {tv, mode}    speaker switch (0 stereo / 1 mono L / 2 mono R)
 }
 
 var _nm: Node = null
@@ -656,6 +657,9 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_STEREO:
 			if _valid(a, ["tv"]):
 				a["tv"].set_stereo_mode(int(a.get("mode", 0)))
+		EV_TV_AUDIO_MODE:
+			if _valid(a, ["tv"]):
+				a["tv"].set_audio_mode(int(a.get("mode", 0)))
 		EV_SYS_VIDEO_OUT:
 			if _valid(a, ["sys"]):
 				a["sys"].set_video_out_enabled(bool(a.get("on", true)))

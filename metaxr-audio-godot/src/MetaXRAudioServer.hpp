@@ -198,7 +198,8 @@ public:
     /// Deinterleaves a stereo buffer into two voices in one call, so the common
     /// "device with left and right speakers" case does not pay two Variant
     /// marshals per audio block.
-    void PushStereoFrames(int left_id, int right_id, const godot::PackedVector2Array& frames);
+    void PushStereoFrames(int left_id, int right_id, const godot::PackedVector2Array& frames,
+                          int src_mode = 0);
     void FlushVoice(int id);
 
     int  GetActiveVoiceCount() const;

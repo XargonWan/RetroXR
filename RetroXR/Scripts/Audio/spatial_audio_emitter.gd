@@ -61,6 +61,10 @@ var _sent_gain_r := -1.0
 # See set_channel_gains.
 var _ch_gain_l := 1.0
 var _ch_gain_r := 1.0
+
+## Which source channel feeds each speaker. See set_channel_mode.
+enum ChannelMode { STEREO = 0, MONO_LEFT = 1, MONO_RIGHT = 2 }
+var _channel_mode: int = ChannelMode.STEREO
 # Last distance term measured, so a volume change can be applied against it
 # without waiting for the next frame.
 var _dist_factor := 1.0
@@ -254,6 +258,25 @@ func _send_gain(g: float) -> void:
 ## split them. There, anything above zero on either channel plays both — a
 ## half-connected lead is heard in full rather than not at all, which is the less
 ## confusing failure.
+## Which source channel each speaker is fed from: STEREO leaves the pair alone,
+## MONO_LEFT sends the left channel to both, MONO_RIGHT the right.
+##
+## A duplication, not a downmix — both speakers still radiate, so the sound keeps
+## its place in the room instead of collapsing into one cabinet. Applied where the
+## interleaved buffer is split into the two voices (in C++), because rewriting a
+## frame buffer per push in GDScript cannot keep a 48 kHz ring fed.
+##
+## Godot's fallback backend has one player fed interleaved stereo and no separate
+## speaker voices to route between, so it keeps playing the pair as authored —
+## the same way set_channel_gains degrades there.
+func set_channel_mode(mode: int) -> void:
+	_channel_mode = clampi(mode, ChannelMode.STEREO, ChannelMode.MONO_RIGHT)
+
+
+func get_channel_mode() -> int:
+	return _channel_mode
+
+
 func set_channel_gains(l: float, r: float) -> void:
 	_ch_gain_l = clampf(l, 0.0, 1.0)
 	_ch_gain_r = clampf(r, 0.0, 1.0)
@@ -393,8 +416,9 @@ func push_stereo(frames: PackedVector2Array) -> void:
 	if _use_sdk:
 		# Passing -1 for the right voice downmixes in C++. Doing it here with a
 		# per-sample GDScript loop cannot keep a 48 kHz ring fed and starves the
-		# voice outright.
-		_mx.push_stereo_frames(_voice_l, _voice_r, frames)
+		# voice outright — which is why the channel mode is passed down too
+		# rather than the buffer being rewritten here.
+		_mx.push_stereo_frames(_voice_l, _voice_r, frames, _channel_mode)
 	elif _playback != null:
 		_playback.push_buffer(frames)
 

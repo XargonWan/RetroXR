@@ -85,6 +85,10 @@ var _right_vr_ctrl: XRController3D = null
 var _target: Node3D = null
 var _lost_time: float = 0.0
 
+## Whether the aimed set had 3D content at the last grid build, so the 3D key can
+## be added or dropped when that changes.
+var _tv_had_stereo: bool = false
+
 # Selection state
 var _selection: int = -1
 var _stick_latched := false
@@ -436,12 +440,23 @@ func _set_target_highlight(target: Node3D, active: bool) -> void:
 ## `enabled` is resolved separately each frame in _refresh_states().
 func _layout_for_target() -> Array:
 	if _target is RetroTV:
-		return [
+		var tv := _target as RetroTV
+		var cells: Array = [
 			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 3},
 			{"id": "vol_down", "glyph": "vol_down", "col": 0, "row": 1},
 			{"id": "mute", "glyph": "mute", "col": 1, "row": 1},
 			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 1},
 		]
+		# The speaker switch always; 3D only while there is something 3D to
+		# switch, which is how the set's own bezel key behaves. Both take their
+		# glyph from the mode they are currently in, so the key reads as a state
+		# rather than a label — see _tv_audio_glyph / _tv_stereo_glyph.
+		if tv.has_stereo_source():
+			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv), "col": 0, "row": 2})
+			cells.append({"id": "stereo3d", "glyph": _tv_stereo_glyph(tv), "col": 2, "row": 2})
+		else:
+			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv), "col": 1, "row": 2})
+		return cells
 	if _target is VCRPlayer:
 		# Eject on its own top row, then the transport grid.
 		return [
@@ -487,6 +502,33 @@ func _layout_for_target() -> Array:
 
 
 ## Whether a cell id is usable against the current target's state.
+## Both of the set's tri-state keys print the mode they are IN rather than a
+## label, the same way its bezel caps do.
+func _tv_audio_glyph(tv: RetroTV) -> String:
+	return "audio_stereo" if tv.audio_mode == 0 else "audio_mono"
+
+
+func _tv_stereo_glyph(tv: RetroTV) -> String:
+	return "stereo" if tv.stereo_mode == 0 else "eye"
+
+
+## -1 leans left, +1 right, 0 centred — which channel, or which eye.
+func _tv_side(mode: int) -> float:
+	if mode == 1:
+		return -1.0
+	return 1.0 if mode == 2 else 0.0
+
+
+## A cell is 50 mm wide against the set's 25 mm cap, so the lean is bigger here.
+const CELL_LEAN := 0.009
+
+
+func _lean(label: Label3D, side: float) -> void:
+	if not label.has_meta("home_x"):
+		label.set_meta("home_x", label.position.x)
+	label.position.x = float(label.get_meta("home_x")) + side * CELL_LEAN
+
+
 func _cell_enabled(id: String) -> bool:
 	if _target is DVDPlayer:
 		var in_menu: bool = (_target as DVDPlayer).is_in_menu()
@@ -632,6 +674,15 @@ func _rebuild_grid() -> void:
 func _refresh_states() -> void:
 	if not is_instance_valid(_target):
 		return
+	# 3D content can start or stop while the remote stays aimed at the same set,
+	# and the grid is otherwise only built on a target change — so the key would
+	# never appear. Rebuilding is cheap and only happens on the flip.
+	if _target is RetroTV:
+		var has_3d: bool = (_target as RetroTV).has_stereo_source()
+		if has_3d != _tv_had_stereo:
+			_tv_had_stereo = has_3d
+			_rebuild_grid()
+			return
 	for i in _cells.size():
 		var cell: Dictionary = _cells[i]
 		var id := str(cell["id"])
@@ -645,6 +696,14 @@ func _refresh_states() -> void:
 		if id == "playpause":
 			glyph_key = "pause" if _target_playing() else "play"
 			label.text = str(_glyphs.get(glyph_key, "?"))
+		elif id == "audio_mode" and _target is RetroTV:
+			var tv_a := _target as RetroTV
+			label.text = str(_glyphs.get(_tv_audio_glyph(tv_a), "?"))
+			_lean(label, _tv_side(tv_a.audio_mode))
+		elif id == "stereo3d" and _target is RetroTV:
+			var tv_s := _target as RetroTV
+			label.text = str(_glyphs.get(_tv_stereo_glyph(tv_s), "?"))
+			_lean(label, _tv_side(tv_s.stereo_mode))
 		# Colour: state tints first, then disabled/selected overrides.
 		var col := COLOR_GLYPH
 		if _target is RetroTV:
@@ -805,6 +864,8 @@ func _activate(id: String) -> void:
 			"vol_up": tv.remote_volume_up()
 			"vol_down": tv.remote_volume_down()
 			"mute": tv.remote_mute_toggle()
+			"audio_mode": tv.set_audio_mode((tv.audio_mode + 1) % 3)
+			"stereo3d": tv.set_stereo_mode((tv.stereo_mode + 1) % 3)
 	elif _target is VCRPlayer:
 		var vcr := _target as VCRPlayer
 		match id:

@@ -86,6 +86,9 @@ var _mx: Object = null
 # voice starts at full gain, so a core restart would otherwise come back at full
 # volume with the set switched off.
 var _last_audio_volume: float = 1.0
+## The TV's mono switch, kept so a core started after it was set still comes up
+## routed the way the set is. See set_audio_channel_mode.
+var _audio_channel_mode: int = 0
 ## Upper bound on half the gap between the emitters when no TV is connected, in
 ## metres. A connected set reports its own speaker positions instead. The gap
 ## actually used is a fifth of the hardware's own width, so this only binds for
@@ -666,10 +669,22 @@ func set_audio_volume(volume: float) -> void:
 	_apply_player_volume()
 
 
+## Part of the TV contract: the set's mono switch, applied to the core's own
+## sound. The core's samples are deinterleaved into its voices inside the
+## extension, so the mode is handed there rather than applied to a buffer here.
+## Remembered so a core started later comes up on the set's current setting.
+func set_audio_channel_mode(mode: int) -> void:
+	_audio_channel_mode = clampi(mode, 0, 2)
+	if _libretro != null:
+		_libretro.SetAudioChannelMode(_audio_channel_mode)
+
+
 ## Bind whichever audio backend the core came up on. With Meta XR Audio the
 ## handler has already created a pair of voices and only needs them placed;
 ## otherwise it made an AudioStreamPlayer3D that needs this system's tuning.
 func _bind_audio_player() -> void:
+	# A fresh handler starts on stereo, so a set left on mono has to say so again.
+	_libretro.SetAudioChannelMode(_audio_channel_mode)
 	_audio_voices = _libretro.GetAudioVoiceIds()
 	if not _audio_voices.is_empty():
 		if Engine.has_singleton("MetaXRAudio"):

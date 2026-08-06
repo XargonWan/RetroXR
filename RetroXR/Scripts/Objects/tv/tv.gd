@@ -42,6 +42,7 @@ var _speakers_seated: bool = false
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
 @onready var _ambilight: SpotLight3D = $Ambilight
 @onready var _mute_btn: VRButton = $MuteButton
+@onready var _audio_mode_btn: VRButton = $AudioModeButton
 @onready var _vol_down_btn: VRButton = $VolumeDownButton
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
@@ -72,6 +73,11 @@ var _stereo_material: ShaderMaterial = null
 # while one is connected): 0 = per-eye stereo, 1 = left eye, 2 = right eye.
 var stereo_mode: int = 0
 const STEREO_MODE_NAMES := ["3D: STEREO", "3D: LEFT EYE", "3D: RIGHT EYE"]
+
+## The set's speaker switch, in the OSD's own voice (it shouts).
+const AUDIO_MODE_NAMES := ["STEREO", "MONO LEFT", "MONO RIGHT"]
+## 0 stereo, 1 the left channel from both speakers, 2 the right from both.
+var audio_mode: int = 0
 
 # Tunable CRT display-stage uniforms (crt_filter.gdshaderinc). Adjustable from
 # the TV options panel; applied to whichever material carries the CRT stage (our
@@ -169,13 +175,14 @@ func _ready() -> void:
 	_load_shell()
 	# TV = power: it runs the power-on animation and flashes POWER on the OSD.
 	TransportGlyphs.label_buttons(self, {
-		"MuteButton": "mute",
+		"MuteButton": "mute", "AudioModeButton": "audio_stereo",
 		"VolumeDownButton": "vol_down", "VolumeUpButton": "vol_up",
 		"TVToggleButton": "power", "CRTButton": "crt", "StereoButton": "stereo",
 	}, TransportGlyphs.TV_SIZE)
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
 	_mute_btn.button_pressed.connect(_on_mute_toggle)
+	_audio_mode_btn.button_pressed.connect(_on_audio_mode_toggle)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
 	_vol_up_btn.button_pressed.connect(_on_volume_up)
 	_tv_toggle_btn.button_pressed.connect(_on_tv_toggle)
@@ -185,6 +192,7 @@ func _ready() -> void:
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
 	_update_mute_button_color()
+	_update_audio_mode_button()
 	# Hidden until a stereo source is connected (see _update_stereo_button).
 	# VRButton._ready adds the pointable layer — strip it while hidden so the
 	# invisible button can't eat pokes or laser clicks (deferred: our _ready
@@ -568,6 +576,12 @@ func _source_is_sbs() -> bool:
 
 ## True while what's showing is a stereo source: a full-frame SBS system (VB)
 ## or a dual-screen system's window channel with a per-eye shift (3DS top).
+## True while something 3D is playing — what both the bezel's 3D key and the
+## remote's hide themselves on.
+func has_stereo_source() -> bool:
+	return _stereo_source_active()
+
+
 func _stereo_source_active() -> bool:
 	if _source_is_sbs():
 		return true
@@ -782,6 +796,47 @@ func _update_stereo_button_color() -> void:
 			1: _stereo_btn.set_color(Color(0.55, 0.35, 0.75))
 			2: _stereo_btn.set_color(Color(0.35, 0.35, 0.75))
 	_update_stereo_button_glyph()
+
+
+## Cycle the speaker switch: stereo -> the left channel from both speakers -> the
+## right from both. Called by the front-panel key and by the remote.
+func set_audio_mode(mode: int) -> void:
+	audio_mode = clampi(mode, 0, 2)
+	_apply_audio_channel_mode()
+	_update_audio_mode_button()
+	show_osd_timed(AUDIO_MODE_NAMES[audio_mode], 2.0)
+	NetworkManager.report_event(NetObjectSync.EV_TV_AUDIO_MODE,
+		{"tv": self, "mode": audio_mode})
+
+
+func _on_audio_mode_toggle() -> void:
+	set_audio_mode((audio_mode + 1) % 3)
+
+
+## The routing itself belongs to whoever owns the samples, so it is handed to the
+## connected deck rather than done here — the set has no emitter of its own.
+func _apply_audio_channel_mode() -> void:
+	if _connected_system != null and is_instance_valid(_connected_system) \
+			and _connected_system.has_method("set_audio_channel_mode"):
+		_connected_system.set_audio_channel_mode(audio_mode)
+
+
+## Stereo gets the two-speaker symbol; a mono mode gets a single speaker leaning
+## to the channel it is carrying, matching how the 3D key shows its eye.
+func _update_audio_mode_button() -> void:
+	match audio_mode:
+		0:
+			TransportGlyphs.set_glyph(self, "AudioModeButton", "audio_stereo",
+				TransportGlyphs.TV_SIZE)
+		1:
+			TransportGlyphs.set_glyph(self, "AudioModeButton", "audio_mono",
+				TransportGlyphs.TV_SIZE, -1.0)
+		2:
+			TransportGlyphs.set_glyph(self, "AudioModeButton", "audio_mono",
+				TransportGlyphs.TV_SIZE, 1.0)
+	if _audio_mode_btn:
+		_audio_mode_btn.set_color(Color(0.35, 0.55, 0.9) if audio_mode == 0
+			else Color(0.9, 0.65, 0.25))
 
 
 ## Both eyes gets the 3D symbol; a single eye gets an eye leaning to the side it
@@ -1011,6 +1066,7 @@ func on_av_source_found(source: Node3D) -> void:
 	_unwrap_crt()
 	_connected_system = source
 	_connected_system.set_audio_volume(_effective_volume())
+	_apply_audio_channel_mode()
 
 
 ## Called by that deck when the last cord between the two is pulled.
@@ -1378,6 +1434,7 @@ func _update_mute_button_color() -> void:
 func _on_mute_toggle() -> void:
 	_muted = not _muted
 	_update_mute_button_color()
+	_update_audio_mode_button()
 	_apply_audio_volume()
 	if _muted:
 		show_osd("MUTE")

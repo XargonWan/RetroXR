@@ -785,6 +785,13 @@ func set_audio_volume(volume: float) -> void:
 		_emitter.set_volume(_volume_linear)
 
 
+## Part of the TV contract: the set's mono switch, applied to the disc's own
+## sound. See SpatialAudioEmitter.set_channel_mode.
+func set_audio_channel_mode(mode: int) -> void:
+	if _emitter:
+		_emitter.set_channel_mode(mode)
+
+
 func set_screen_enabled(enabled: bool) -> void:
 	if not connected_tv:
 		return

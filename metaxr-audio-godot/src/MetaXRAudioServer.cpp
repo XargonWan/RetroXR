@@ -446,7 +446,8 @@ void MetaXRAudioServer::PushVoiceFrames(int id, const PackedFloat32Array& frames
     v.write_pos.store(w + count, std::memory_order_release);
 }
 
-void MetaXRAudioServer::PushStereoFrames(int left_id, int right_id, const PackedVector2Array& frames)
+void MetaXRAudioServer::PushStereoFrames(int left_id, int right_id, const PackedVector2Array& frames,
+                                         int src_mode)
 {
     if (!m_available)
         return;
@@ -484,8 +485,28 @@ void MetaXRAudioServer::PushStereoFrames(int left_id, int right_id, const Packed
         push_channel(left_id, 2);
         return;
     }
-    push_channel(left_id, 0);
-    push_channel(right_id, 1);
+
+    // src_mode picks which source channel each speaker is fed from:
+    //   0 = stereo      left speaker <- L, right speaker <- R
+    //   1 = mono left   both speakers <- L
+    //   2 = mono right  both speakers <- R
+    // A mono mode is a duplication, not a downmix: the same samples reach both
+    // voices, so the sound still comes out of both speakers in the room rather
+    // than collapsing to one of them. Done here for the same reason the downmix
+    // above is -- rewriting a frame buffer per push in GDScript starves the ring.
+    const int from = (src_mode == 2) ? 1 : 0;
+    switch (src_mode)
+    {
+        case 1:
+        case 2:
+            push_channel(left_id, from);
+            push_channel(right_id, from);
+            break;
+        default:
+            push_channel(left_id, 0);
+            push_channel(right_id, 1);
+            break;
+    }
 }
 
 void MetaXRAudioServer::SetTargetLatencyMs(float ms)
@@ -762,7 +783,8 @@ void MetaXRAudioServer::_bind_methods()
     ClassDB::bind_method(D_METHOD("set_voice_pose", "id", "position", "forward", "up"), &MetaXRAudioServer::SetVoicePose);
     ClassDB::bind_method(D_METHOD("set_voice_directivity", "id", "intensity"), &MetaXRAudioServer::SetVoiceDirectivity);
     ClassDB::bind_method(D_METHOD("push_voice_frames", "id", "frames"), &MetaXRAudioServer::PushVoiceFrames);
-    ClassDB::bind_method(D_METHOD("push_stereo_frames", "left_id", "right_id", "frames"), &MetaXRAudioServer::PushStereoFrames);
+    ClassDB::bind_method(D_METHOD("push_stereo_frames", "left_id", "right_id", "frames", "src_mode"),
+                         &MetaXRAudioServer::PushStereoFrames, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("set_target_latency_ms", "ms"), &MetaXRAudioServer::SetTargetLatencyMs);
     ClassDB::bind_method(D_METHOD("get_target_latency_ms"), &MetaXRAudioServer::GetTargetLatencyMs);
     ClassDB::bind_method(D_METHOD("get_mix_stats"), &MetaXRAudioServer::GetMixStats);

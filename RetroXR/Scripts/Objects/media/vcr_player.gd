@@ -568,6 +568,13 @@ func set_audio_volume(volume: float) -> void:
 		_apply_volume()
 
 
+## Part of the TV contract: the set's mono switch, applied to the tape's own
+## sound. See SpatialAudioEmitter.set_channel_mode.
+func set_audio_channel_mode(mode: int) -> void:
+	if _emitter:
+		_emitter.set_channel_mode(mode)
+
+
 ## Show or hide the screen output. Called by the TV toggle button.
 func set_screen_enabled(enabled: bool) -> void:
 	if not connected_tv:
