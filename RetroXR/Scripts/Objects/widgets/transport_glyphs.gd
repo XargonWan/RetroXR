@@ -14,7 +14,7 @@ const CODES := {
 	"ff": 0xF04E, "rew": 0xF04A, "next": 0xF051, "prev": 0xF048,
 	"vol_up": 0xF028, "vol_down": 0xF027, "power": 0xF011, "menu": 0xF0C9,
 	"up": 0xF077, "down": 0xF078, "left": 0xF053, "right": 0xF054,
-	"ok": 0xF192, "mute": 0xF026, "eject": 0xF052,
+	"ok": 0xF192, "mute": 0xEEE8, "eject": 0xF052,
 	"audio": 0xF1AB, "subtitle": 0xF0A16,
 	# The TV's own switches.
 	"crt": 0xF26C,        # fa-tv            — the picture filter
