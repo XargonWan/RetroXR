@@ -233,3 +233,6 @@ func _warm_models() -> void:
 	for i in 4:
 		await get_tree().process_frame
 	await ModelWarmer.warm_stand_ins(self)
+	# Then the bespoke shells, which are the expensive half and are loaded on a
+	# background thread rather than instantiated here — see ModelWarmer.warm_shells.
+	await ModelWarmer.warm_shells(self)

@@ -267,6 +267,24 @@ static func stand_in_ids() -> Array:
 	return out
 
 
+## The external assets the bespoke shells load — the GLB each one names in
+## `requires`, deduplicated, and only for rows whose assets are actually present.
+##
+## These are the other half of stand_in_ids(), and the expensive half: a shell's
+## model loads its GLB synchronously in _ready(), which measured 6.9 s on a Quest 3
+## for the NES with the main thread blocked and not one frame drawn. ModelWarmer
+## pulls them in ahead of time so a spawn finds them in the resource cache.
+static func shell_assets() -> Array:
+	var out: Array = []
+	for id: String in _ROWS:
+		if not is_available(id):
+			continue
+		for path: String in _ROWS[id].get("requires", []):
+			if not out.has(path):
+				out.append(path)
+	return out
+
+
 static func all_ids() -> Array:
 	return _ROWS.keys()
 
