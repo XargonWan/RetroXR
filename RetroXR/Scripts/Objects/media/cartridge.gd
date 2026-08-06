@@ -243,12 +243,33 @@ func reset_grab_shapes() -> void:
 	_apply_system_size()
 
 
+## A shell's moulded label face is blank, so with no art to put on it the title
+## is all the cart has to say which game it is. The Label3D is authored against
+## the procedural box, and the shell replaced that, so it has to be moved onto
+## the shell's own label face — where the art would have gone.
+func _title_on_model_face() -> void:
+	if _model_label == null:
+		return
+	var lbl := get_node_or_null("GameLabel") as Label3D
+	if lbl == null:
+		return
+	var ab := _label_face_bounds(_model_label)
+	if ab.size.x <= 0.0001 or ab.size.y <= 0.0001:
+		return
+	var c := ab.get_center()
+	lbl.position = Vector3(c.x, c.y, ab.position.z + ab.size.z + 0.0006)
+	# Same 80%-of-the-face wrap width the procedural cart uses.
+	lbl.width = ab.size.x * 2000.0
+	lbl.visible = true
+
+
 ## Apply the scraped "support" label art onto the label face. Missing art keeps
 ## the existing generic label + title text fallback. Fresh material every time —
 ## never mutate the shared Mat_label sub_resource.
 func _apply_label_art() -> void:
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
 	if tex == null:
+		_title_on_model_face()
 		return
 	# Real cart model: cover the model's own label face with a quad of our own
 	# rather than repainting theirs.
