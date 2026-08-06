@@ -663,9 +663,7 @@ func set_audio_volume(volume: float) -> void:
 		# once, and must not depend on this node being processed to do it.
 		_send_voice_gain(_last_audio_volume * _audio_dist_factor)
 		return
-	if _audio_player == null or not is_instance_valid(_audio_player):
-		return
-	_audio_player.volume_db = linear_to_db(volume) if volume > 0.001 else -80.0
+	_apply_player_volume()
 
 
 ## Bind whichever audio backend the core came up on. With Meta XR Audio the
@@ -721,8 +719,8 @@ func _apply_bound_volume() -> void:
 	if not _audio_voices.is_empty() and _mx != null:
 		_sent_gain_l = -1.0        # see set_audio_volume
 		_sent_gain_r = -1.0
-	elif _audio_player != null and is_instance_valid(_audio_player):
-		_audio_player.volume_db = linear_to_db(_last_audio_volume) if _last_audio_volume > 0.001 else -80.0
+	else:
+		_apply_player_volume()
 
 
 ## The TV this system's sound should come out of: whichever channel is plugged
@@ -823,6 +821,33 @@ func _send_voice_gain(g: float) -> void:
 	_mx.set_voice_gain(_audio_voices[0], gl)
 	for i in range(1, _audio_voices.size()):
 		_mx.set_voice_gain(_audio_voices[i], gr)
+
+
+## Whether this hardware's sound can be heard at all as it is currently cabled.
+##
+## The single-answer form of the rule _send_voice_gain applies per channel, for a
+## backend that has one volume rather than two voices. Hardware with sockets is
+## silent until an audio cord reaches a set, exactly as the real thing is; hardware
+## on a captive lead carries its own speaker (the handhelds, the Virtual Boy) and
+## is always live.
+func _audio_is_live() -> bool:
+	if _av_ports.is_empty():
+		return true
+	return _av_speaker_l >= 0 or _av_speaker_r >= 0
+
+
+## Push the remembered level onto the AudioStreamPlayer3D backend, through the same
+## cabling gate the voices get.
+##
+## The only writer of volume_db, so the gate cannot be bypassed by a caller that
+## forgets it. Reached whenever the level changes, the backend is bound, or the
+## cabling moves — a socketed console left ungated here plays at full volume out of
+## its own shell with nothing plugged into it.
+func _apply_player_volume() -> void:
+	if _audio_player == null or not is_instance_valid(_audio_player):
+		return
+	var v: float = _last_audio_volume if _audio_is_live() else 0.0
+	_audio_player.volume_db = linear_to_db(v) if v > 0.001 else -80.0
 
 
 ## Sound comes from whatever is showing the picture: a connected TV takes the
@@ -1170,6 +1195,9 @@ func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
 	# new sound) never reaches the mixer.
 	_sent_gain_l = -1.0
 	_sent_gain_r = -1.0
+	# That cache belongs to the voices; the AudioStreamPlayer3D backend has its own
+	# level and is re-gated here, since nothing else re-reads the routing for it.
+	_apply_player_volume()
 	_av_tv = tv
 	# The PICTURE follows the video cord alone: a lead with only its audio end in
 	# leaves the set on its blue no-signal screen, as it would.
