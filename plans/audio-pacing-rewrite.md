@@ -127,12 +127,30 @@ there is no ratio to trim. Phase 3 must allocate it unconditionally at ratio 1.0
   redesign and needs the same per-core validation sweep. Phase 0 is meant to be safe and
   independently shippable; B1 is a pure memory-safety fix with no observable change. Fold B3
   into Phase 2, where the sink numbers are reworked wholesale and can be validated together.
-- **Phase 1 — fps becomes a ceiling.** Remove the declared-rate billing floor from the
-  credit loop; keep fps only to cap speed. Expect ScummVM to want a high call rate; that is
-  correct and must be harmless.
-- **Phase 2 — sink brake.** Replace the audio-produced clock with queued-depth
-  back-pressure against the target. Keep B4's clamps.
-- **Phase 3 — DRC trim.** Unconditional resampler + ratio adjustment.
+- **Phase 1 — fps becomes a ceiling. DONE 2026-08-06.** The declared rate no longer bills or
+  targets anything; it only caps how fast the loop may call, and is the sole brake for a core
+  that emits no audio at all.
+- **Phase 2 — sink brake. DONE 2026-08-06.** `AudioHandler::MsUntilSinkWantsFrames()` on top
+  of the server's existing `voice_frames_wanted`. Returns 0 when there is no sink (a missing
+  sink must never halt emulation), bounded at 250 ms (a stopped sink must never freeze the
+  game), and recomputed from current depth every pass so it cannot latch. `credit_ms` and
+  B4's clamps are gone with the arithmetic they guarded; the 250 ms bound is their successor.
+
+  Verified on Quest across three cores with three different rates — azahar (32728 Hz,
+  2 refreshes per call) at 1x, ScummVM (44100 Hz, claims 500 fps) correct, fceumm
+  (48000 Hz, 60.099827 fps) unchanged. None of them needed the frontend to know anything
+  true about them, which is the point.
+
+- **Phase 3 — DRC trim. Re-scoped; no longer urgent.** *The azahar crackle went away in
+  Phase 2, on desktop and Quest alike.* It was a fill-level problem: nothing had ever
+  targeted a queue depth, so the depth was incidental and drifted into starving the mixer.
+  Simply aiming at the sink's target fixed it, without any rate trim.
+
+  That removes the symptom DRC was scoped to fix and leaves it addressing **long-run drift**
+  only — a core whose true rate differs slightly from the sink's will still walk toward one
+  end over minutes, and the brake corrects that by stalling or running free rather than by
+  gently re-rating. Worth doing eventually; no longer blocking anything. The unconditional
+  resampler blocker (`AudioHandler.cpp:202`) matters only when this is picked up.
 - **Phase 4 — cleanup.** Drop the `implausible batch` probe in `AudioHandler.cpp` (it has
   answered its question); decide whether the one-shot warnings stay (recommend: yes, they
   are cheap and would have caught this in a day).
