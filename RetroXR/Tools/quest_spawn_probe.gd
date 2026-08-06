@@ -84,10 +84,12 @@ func _run() -> void:
 	# 2. The fix under test: warm the shells the way the real app now does at boot.
 	# The frame counter in the watchdog line is the whole point — it must keep
 	# climbing while this runs, or the warm is just the same stall moved earlier.
-	var f0 := _frames
+	# Usually a no-op by now: SceneManager warms during the room settle above, and
+	# the watchdog's frame counter across that window is the evidence that it does
+	# not block (26 -> 155 while the shells loaded, against a dead 179 when the
+	# spawn did the load itself).
 	_mark("WARM SHELLS (threaded)")
 	await ModelWarmer.warm_shells(self)
-	print("[qspawn] warm advanced %d frames (0 would mean it blocked)" % (_frames - f0))
 
 	# And the load the spawn will make, now that it is cached: was 6861 ms cold.
 	_mark("load NES glb (post-warm)")
