@@ -267,6 +267,18 @@ static func stand_in_ids() -> Array:
 	return out
 
 
+## The rows whose models carry external assets — the bespoke shells, the other
+## half of stand_in_ids(). Only rows whose assets are present: ModelWarmer draws
+## each of these once at boot, after their GLBs arrive, because first draw has
+## its own cost (266 ms of pipeline compile for the Atari on a Quest 3).
+static func bespoke_ids() -> Array:
+	var out: Array = []
+	for id: String in _ROWS:
+		if not (_ROWS[id].get("requires", []) as Array).is_empty() and is_available(id):
+			out.append(id)
+	return out
+
+
 ## The external assets the bespoke shells load — the GLB each one names in
 ## `requires`, deduplicated, and only for rows whose assets are actually present.
 ##

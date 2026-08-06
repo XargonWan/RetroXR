@@ -221,18 +221,19 @@ func _seat_player_rig(incoming: Node, player: PlayerRig) -> void:
 		incoming.move_child(player, index)
 
 
-## Pay every stand-in model's first-spawn cost once, at startup, instead of the
-## first time a player reaches for one. Measured on a Quest 3: 0.88 s for all
-## thirteen, against 3.9 s for a single cold spawn of the 3DS stand-in alone.
-## See ModelWarmer for why only the stand-ins.
+## Pay every model's first-spawn cost once, at startup, instead of the first
+## time a player reaches for one. Measured on a Quest 3: 3.9 s for a single cold
+## spawn of the 3DS stand-in, 6.9 s of blocked main thread for the NES shell.
 ##
-## Deferred past the first frames so the room is up and drawing first: the warm
-## blocks the main thread in ~85 ms slices, which is invisible while the view is
-## still black or the loading rig is up, and would be a stutter mid-play.
+## Deferred past the first frames so the room is up and drawing first. The order
+## matters: the shell GLBs' threaded requests fire before anything else, because
+## they are what a menu spawn or a slot restore has to wait for
+## (ModelWarmer.acquire) and starting them costs the main thread nothing. The
+## stand-in warm then runs on the main thread while those loads ride the loader
+## threads, and warm_shells finds its GLBs mostly arrived.
 func _warm_models() -> void:
 	for i in 4:
 		await get_tree().process_frame
+	ModelWarmer.request_shells()
 	await ModelWarmer.warm_stand_ins(self)
-	# Then the bespoke shells, which are the expensive half and are loaded on a
-	# background thread rather than instantiated here — see ModelWarmer.warm_shells.
 	await ModelWarmer.warm_shells(self)

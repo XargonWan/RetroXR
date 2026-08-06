@@ -940,14 +940,23 @@ func _on_spawn_requested(type: String) -> void:
 	# default model with the whole token as a garbage systemid (e.g. "Mega Drive",
 	# "DS Lite" and "Console (Original)" all landed on their default shell).
 	if type.begins_with("model:"):
-		var sys := SYSTEM_SCENE.instantiate() as RetroSystem
 		var parts := type.split(":")
 		var model_id: String = parts[2] if parts.size() > 2 else ""
 		# The row is the authority on which platform it belongs to, so the model and
 		# the core cannot disagree. Only the placeholder — which belongs to no
 		# platform — falls back to the systemid carried in the token.
 		var platform := SystemModelRegistry.platform_of(model_id)
-		sys.systemid = platform if not platform.is_empty() else (parts[1] if parts.size() > 1 else "")
+		var systemid := platform if not platform.is_empty() else (parts[1] if parts.size() > 1 else "")
+		# A bespoke shell's GLB may still be warming this early in the session. The
+		# model's _ready would load() it synchronously — the frame freezes until the
+		# whole threaded load lands. Await it into the cache first; once warm this
+		# never suspends.
+		for path: String in SystemModelRegistry.resolve(model_id, systemid).get("requires", []):
+			await ModelWarmer.acquire(path)
+		if not is_inside_tree():
+			return
+		var sys := SYSTEM_SCENE.instantiate() as RetroSystem
+		sys.systemid = systemid
 		sys.model_id = model_id
 		_place_spawned(sys, type)
 		return

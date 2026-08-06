@@ -254,6 +254,13 @@ func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
 	var generation := _restore_generation
 	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	for entry: Variant in objects:
+		# A saved bespoke console names a GLB that may still be warming at boot.
+		# Spawning it now would load() that GLB synchronously inside _ready —
+		# measured 6.9 s of frozen frame for the NES on a Quest 3. Await it into
+		# the cache instead; once warm this never suspends.
+		await _acquire_entry_assets(entry)
+		if not _still_ours(root, generation):
+			return spawned
 		_spawn_entry(root, entry, spawned, entries)
 		if Time.get_ticks_usec() < deadline:
 			continue
@@ -263,6 +270,18 @@ func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
 		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	await _restore_connections_async(root, spawned, entries, generation)
 	return spawned
+
+
+## No-op for everything but a system entry whose model carries external assets.
+func _acquire_entry_assets(entry: Variant) -> void:
+	if not entry is Dictionary:
+		return
+	var d := entry as Dictionary
+	if str(d.get("type", "")) != "system":
+		return
+	var row := SystemModelRegistry.resolve(str(d.get("model_id", "")), str(d.get("systemid", "")))
+	for path: String in row.get("requires", []):
+		await ModelWarmer.acquire(path)
 
 
 func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dictionary) -> void:
