@@ -20,6 +20,8 @@ signal scroll_changed(scroll: ScrollContainer)
 
 var _rooms_panel:   Control         = null
 var _states_panel:  Control         = null
+var _rooms_grid:    GridContainer   = null
+var _passthrough_card: Control      = null
 var _rooms_scroll:  ScrollContainer = null
 var _states_scroll: ScrollContainer = null
 var _states_vbox:   VBoxContainer   = null
@@ -66,6 +68,7 @@ func _build() -> void:
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 12)
 	rooms_vbox.add_child(grid)
+	_rooms_grid = grid
 
 	# Arcade Room card → navigates to state grid
 	grid.add_child(_make_room_card("Arcade Room", Color(0.15, 0.13, 0.35), show_states))
@@ -82,11 +85,9 @@ func _build() -> void:
 	grid.add_child(_make_room_card("Test Hallway", Color(0.12, 0.32, 0.30),
 		func(): scene_change_requested.emit("test")))
 
-	# Passthrough card (only if supported) → direct scene switch
-	var sm := _scene_manager()
-	if sm and sm.is_passthrough_supported():
-		grid.add_child(_make_room_card("Passthrough AR", Color(0.85, 0.85, 0.9),
-			func(): scene_change_requested.emit("passthrough")))
+	# Passthrough card (only if supported) → direct scene switch. Added late: see
+	# _sync_passthrough_card.
+	_sync_passthrough_card()
 
 	# ── Level 2: States panel ─────────────────────────────────────────────────
 	var states_root := VBoxContainer.new()
@@ -146,11 +147,28 @@ func _build() -> void:
 # ── Panel navigation ──────────────────────────────────────────────────────────
 
 func show_rooms() -> void:
+	_sync_passthrough_card()
 	if _rooms_panel:
 		_rooms_panel.visible = true
 	if _states_panel:
 		_states_panel.visible = false
 	scroll_changed.emit(_rooms_scroll)
+
+
+## Whether the runtime offers an alpha-blend mode is only knowable once the
+## OpenXR session is up, and this view is built from the player rig's _ready() —
+## early enough that a headset which does support passthrough still answers no.
+## So the question is re-asked every time the tab is opened, and the card appears
+## as soon as the answer changes.
+func _sync_passthrough_card() -> void:
+	if _passthrough_card != null or _rooms_grid == null:
+		return
+	var sm := _scene_manager()
+	if sm == null or not sm.is_passthrough_supported():
+		return
+	_passthrough_card = _make_room_card("Passthrough AR", Color(0.85, 0.85, 0.9),
+		func(): scene_change_requested.emit("passthrough"))
+	_rooms_grid.add_child(_passthrough_card)
 
 
 func show_states() -> void:
