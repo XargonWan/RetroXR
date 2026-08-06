@@ -419,12 +419,18 @@ func _reopen_port(port: RcaPort) -> void:
 ## only knows the child names "CablePlug" and "ControllerPlug" — neither of which
 ## this lead has. Without it a socket is left holding a freed pickable and
 ## XRToolsPickable._exit_tree walks a dangling grab driver.
+##
+## Also used when a lead is binned while the devices it joined stay in the room, so
+## the far end has to hear the unplug: the sockets do announce as they release, but
+## they announce DEFERRED, and this node is deleted at the end of the frame — ahead
+## of the next message flush — so that resolve never runs. Hence the direct call.
 func drop_and_free() -> void:
 	for e in [End.A, End.B]:
 		for c in _cords:
 			var port := (_plugs[e][c] as RcaPlug).seated_port()
 			if port != null:
 				port.drop_object()
+	_resolve()
 	queue_free()
 
 

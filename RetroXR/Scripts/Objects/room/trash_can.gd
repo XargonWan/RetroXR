@@ -62,11 +62,17 @@ func _process(_delta: float) -> void:
 ##   too — otherwise it stays frozen in mid-air where the slot was
 ## - foreign plugs snapped into its ports belong to OTHER devices' cables and
 ##   are only dropped, never freed
-## Bare plugs themselves are not deletable — freeing one would orphan its
-## owner's rope — so they just fall out of the can.
+## - a composite lead patched into its sockets goes with it, both ends — see
+##   _free_lead
+## A captive plug is not deletable — freeing one would orphan the rope of the
+## device that owns it — so it just falls out of the can.
 func _delete_with_dependents(pickable: XRToolsPickable) -> void:
 	if pickable is CablePlug or pickable is ControllerPlug:
 		print("[TrashCan] '%s' is a cable plug — not deletable" % pickable.name)
+		return
+
+	if pickable is RcaPlug:
+		_free_lead(pickable as RcaPlug)
 		return
 
 	if pickable is RetroSystem and (pickable as RetroSystem).is_powered_on:
@@ -82,7 +88,10 @@ func _delete_with_dependents(pickable: XRToolsPickable) -> void:
 		var held: Node3D = snapped
 		zone.drop_object()
 		if held is CablePlug or held is ControllerPlug or held.is_in_group("controller_plug"):
-			continue   # another device's cable end — released, not deleted
+			continue   # another device's captive cable end — released, not deleted
+		if held is RcaPlug:
+			_free_lead(held as RcaPlug)
+			continue
 		print("[TrashCan] deleting snapped '%s'" % held.name)
 		if held.has_method("drop_and_free"):
 			held.call("drop_and_free")
@@ -102,6 +111,31 @@ func _delete_with_dependents(pickable: XRToolsPickable) -> void:
 		pickable.call("drop_and_free")
 	else:
 		pickable.queue_free()
+
+
+## Free the whole composite lead one of its plugs belongs to.
+##
+## A lead is a free-standing object joining two devices rather than a tail either
+## of them owns, and it has no body of its own — six plugs and a rope — so a plug
+## is the only handle the can ever sees. Binning one end therefore bins the lead,
+## as does binning a device it is patched into. drop_and_free unseats every other
+## end first, so the deck or television at the far side hears the unplug and drops
+## the feed rather than being left holding a dead plug.
+##
+## The plug is never freed on its own: its lead would go on running the tether in
+## CompositeCable._physics_process over a freed end.
+func _free_lead(plug: RcaPlug) -> void:
+	# Variant first — a plug can outlive its lead, and binding a freed instance to
+	# a typed local throws before is_instance_valid() gets a chance to guard it.
+	var owner_cable: Variant = plug.cable
+	if not is_instance_valid(owner_cable):
+		return
+	var lead := owner_cable as CompositeCable
+	# A console wears two sockets and so hands the same lead over twice.
+	if lead == null or lead.is_queued_for_deletion():
+		return
+	print("[TrashCan] deleting lead '%s'" % lead.name)
+	lead.drop_and_free()
 
 
 func _set_trash_highlight(pickable: XRToolsPickable, in_trash: bool) -> void:
