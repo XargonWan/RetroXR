@@ -28,6 +28,11 @@ extends RetroSystemModel
 @export var tray_travel: float = 0.145
 @export var tray_time: float = 0.9
 
+## A/V socket spacing and how far their zones stand off the back panel — see
+## configure_av_ports().
+const AV_PORT_PITCH := 0.018
+const AV_PORT_PROUD := 0.010
+
 @onready var _tray_pivot: Node3D = $TrayPivot
 @onready var _led: MeshInstance3D = $Front/PowerLed
 @onready var _drive_led: MeshInstance3D = $Front/DriveLed
@@ -148,6 +153,42 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+
+
+## Composite out, the same three sockets the primitive system carries. A tower's
+## picture and sound leave on a card at the back, so the player runs a lead from
+## here to the set rather than the console arriving with one attached — declaring
+## the channels is all it takes, since RetroSystem builds sockets INSTEAD of a
+## captive cable for any model that answers this.
+func av_port_channels() -> Array:
+	return [RcaPort.Channel.VIDEO, RcaPort.Channel.AUDIO_L, RcaPort.Channel.AUDIO_R]
+
+
+## Laid across the back panel on 18 mm centres — the spacing the primitive, the NES
+## and the decks all use — centred on AvAnchor, which is where the captive lead
+## used to leave the case: low on the panel and well clear of the PS/2 stack above.
+##
+## Two conventions, both borrowed rather than derived:
+##   * 10 mm PROUD of the panel. rca_port.tscn puts the zone where a seated plug's
+##     origin belongs and pushes the jack back by that much so its flange lands on
+##     the panel — copy a port's transform and the plug still seats right.
+##   * Rotated 180 about X, so each socket's local +Z faces out of the back. That
+##     is the same correction PortSeat1/2 carry a few lines above in the scene, and
+##     for the same measured reason: a zone at identity yields a plug at
+##     diag(1,-1,-1), barrel buried in the case.
+##
+## Local, like the rest of this model's placement: Back is a bare Node3D at the
+## model root and the ports are children of the system, which share that frame.
+func configure_av_ports(ports: Array) -> void:
+	var anchor: Vector3 = ($Back/AvAnchor as Node3D).position
+	var span: float = AV_PORT_PITCH * float(ports.size() - 1)
+	for i in ports.size():
+		var port: Node3D = ports[i]
+		port.position = Vector3(
+			anchor.x - span * 0.5 + AV_PORT_PITCH * float(i),
+			anchor.y,
+			anchor.z - AV_PORT_PROUD)
+		port.rotation = Vector3(PI, 0.0, 0.0)
 
 
 ## Ports onto the BACK panel, where a PC's keyboard and mouse actually plug in.
