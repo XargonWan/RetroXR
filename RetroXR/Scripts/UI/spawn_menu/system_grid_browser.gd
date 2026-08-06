@@ -378,6 +378,11 @@ func _make_tile(s: Dictionary) -> Button:
 	if not badge.is_empty():
 		var badge_lbl := Label.new()
 		badge_lbl.text = badge
+		# Same treatment as the name: a Label's minimum width is its whole string
+		# unless it is allowed to trim, and that minimum wins over the column it
+		# sits in — so a long core name ("Mupen64Plus-Next") drew straight out
+		# past the right edge of the tile instead of shrinking to fit it.
+		badge_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		badge_lbl.add_theme_font_size_override("font_size", 16)
 		badge_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
 		badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
