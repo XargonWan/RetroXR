@@ -112,11 +112,19 @@ func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 	# Selecting the mouse moved ABOVE the dispatch — it used to run between the
 	# two, so a pointer becoming the mouse on this very event had already sent
 	# its touch.
+	#
+	# A press claims the mouse whatever the pointer is. Upstream let only an
+	# XRToolsFunctionPointer claim it, and neither XRToolsPoke nor
+	# XRToolsDesktopFunctionPointer is one — so with a laser merely hovering the
+	# panel, a fingertip poke went down the touch path. Buttons survived that;
+	# LineEdit ignores InputEventScreenTouch outright, so poking a text field
+	# neither focused it nor opened the overlay keyboard. The pointer that
+	# pressed is the one the user means.
 
 	# If the current mouse isn't pressed then consider switching to a new one
 	if not _presses.has(_mouse):
-		if type == XRToolsPointerEvent.Type.PRESSED and pointer is XRToolsFunctionPointer:
-			# Switch to pressed laser-pointer
+		if type == XRToolsPointerEvent.Type.PRESSED:
+			# Switch to the pressing pointer
 			_mouse = pointer
 		elif type == XRToolsPointerEvent.Type.EXITED and pointer == _mouse:
 			# Current mouse leaving, switch to dominant
