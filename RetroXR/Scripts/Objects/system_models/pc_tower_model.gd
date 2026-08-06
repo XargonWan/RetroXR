@@ -108,16 +108,25 @@ func is_handheld() -> bool:
 
 # POWER on the front bezel; the tray's own EJECT button beside the bay. No reset —
 # a 90s tower's reset was a recessed pinhole, not something to press in VR.
+#
+# Both sit in the bezel and so travel INTO it, along the tower's -Z. VRButton
+# defaults to -Y, which is right for a button on a top face and wrong for one
+# facing you: it sinks the cap down through the bezel instead of into it. The
+# axis is set in local space rather than from global_transform — every frame
+# between these buttons and the model is identity, and a local write does not
+# care whether the tower has been placed in the room yet.
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRButton) -> void:
 	if power_btn != null:
 		power_btn.position = $Front/PowerButtonAnchor.position
 		power_btn.depress_depth = 0.003
+		power_btn.depress_axis = Vector3(0, 0, -1)
 		var pl := power_btn.get_node_or_null("ButtonLabel") as Label3D
 		if pl != null:
 			pl.hide()
 	if eject_btn != null:
 		eject_btn.position = $Front/EjectButtonAnchor.position
 		eject_btn.depress_depth = 0.003
+		eject_btn.depress_axis = Vector3(0, 0, -1)
 		var el := eject_btn.get_node_or_null("ButtonLabel") as Label3D
 		if el != null:
 			el.hide()
