@@ -1272,6 +1272,15 @@ func _add_cables_to_scene() -> void:
 		plug.global_position = _attach_points[i].global_position \
 			+ _model.get_cable_spawn_offset(i)
 
+		# Per-channel wiring, when the model asks for something other than the
+		# cable scene's own composite pigtail. A channel carrying one signal wants
+		# one wire, in its own colour — the DS's bottom screen is a lone blue cord
+		# beside the top's yellow/white/red three.
+		var wires: PackedColorArray = _channels[i].get("wires", PackedColorArray())
+		if not wires.is_empty():
+			rope.ribbon_count = wires.size()
+			rope.ribbon_colors = wires
+
 		# Wire rope anchors: start = system's attach point, end = plug
 		rope.start_node = _attach_points[i]
 		rope.end_node = plug

@@ -28,8 +28,8 @@ extends Node3D
 ## Emitted whenever a plug is seated or pulled, after the devices have been told.
 signal topology_changed
 
-## Cord colours, in cord order — the plug bodies and the ribbon's tubes are both
-## tinted from this, so a cord can be recognised at either end.
+## Cord colours, in cord order — the PLUG BODIES are tinted from this, so a cord
+## can be recognised at either end.
 ##
 ## Set per scene rather than fixed here: the full lead is yellow/white/red, while
 ## the mono lead a console like the NES uses is yellow and RED, video and the one
@@ -39,6 +39,12 @@ signal topology_changed
 	RcaJack.AUDIO_WHITE,
 	RcaJack.AUDIO_RED,
 ])
+
+## The jacket every cord wears. Deliberately NOT cord_colors: a real composite
+## lead is black sheath with colour-coded CONNECTORS, and the connector is what a
+## player matches to a socket. Both used to be drawn from cord_colors, which made
+## the lead itself a yellow/white/red tricolour no such cable has ever been.
+@export var wire_color: Color = Color(0.05, 0.05, 0.06)
 
 # How many cords this lead actually has, counted from the plugs the scene ships
 # rather than declared, so a two-cord lead is a scene with four plugs and no code
@@ -143,7 +149,11 @@ func _build_rope() -> void:
 	if not is_inside_tree():
 		return          # a netplay client's local copy is freed before we get here
 	_rope.ribbon_count = _cords
-	_rope.ribbon_colors = cord_colors
+	# Every cord in the same jacket — see wire_color.
+	var jackets := PackedColorArray()
+	for c in _cords:
+		jackets.append(wire_color)
+	_rope.ribbon_colors = jackets
 	# Read in the START anchor's local space. The lead has no start anchor once
 	# both ends fray, so this is world: the ribbon lies flat across X.
 	_rope.ribbon_axis = Vector3(1, 0, 0)

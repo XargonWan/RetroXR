@@ -88,17 +88,28 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; about double (measured 0.56 -> 1.05 ms per cable per physics tick, 8 cables on
 ; a floor with collision on). 45 x 40 mm is the same 1.80 m for ~0.8 ms if a
 ; Quest frame budget ever needs it back.
+;
+; THREE 3 mm wires, not one 8 mm cord: this is the lead that leaves a handheld
+; when video out is switched on, and the real thing is a composite pigtail —
+; yellow video with white and red audio beside it. tube_radius is the wire's
+; RADIUS, so 3 mm across is 0.0015. collision_radius has to cover the whole
+; ribbon rather than one wire (3 x tube_radius, the ratio composite_cable.tscn
+; uses). A model can override the count and the colours per channel through its
+; video-channel descriptor — the DS's bottom screen comes out as a single blue
+; wire that way; see RetroSystemModel.get_video_channels.
 [node name="VerletRope" type="VerletRope" parent="."]
 segment_count = 60
 segment_length = 0.03
 constraint_iterations = 8
 bend_stiffness = 0.2
-tube_radius = 0.00415
+tube_radius = 0.0015
 tube_sides = 8
 smoothing = 2
 rope_color = Color(0.15, 0.15, 0.15, 1.0)
+ribbon_count = 3
+ribbon_colors = PackedColorArray(0.95, 0.74, 0.02, 1, 0.87, 0.87, 0.84, 1, 0.72, 0.08, 0.08, 1)
 surface_collision_mask = 7
-collision_radius = 0.0055
+collision_radius = 0.0045
 self_collision = true
 end_align_stiffness = 0.7
 end_stiffness = 0.45
