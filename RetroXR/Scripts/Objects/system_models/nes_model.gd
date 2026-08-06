@@ -268,6 +268,10 @@ func _setup_flap_hinge() -> void:
 	_deg_open = rad_to_deg(atan2(open_rel.y, -open_rel.z))
 	_flap_hinge = VRHinge.new()
 	_flap_hinge.name = "FlapGrab"
+	# Squeeze to swing it. Nobody picks a deck up off the desk by its cartridge
+	# flap, so the grip is free to mean "open this" here; the hinge mutes that
+	# hand's pickup while it is on the flap so the console stays put.
+	_flap_hinge.grip_engages = true
 	_flap_hinge.target = _flap_pivot
 	_flap_hinge.min_deg = minf(0.0, _deg_open)
 	_flap_hinge.max_deg = maxf(0.0, _deg_open)
@@ -334,14 +338,28 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRB
 			power_btn.set_button_mesh(power_mesh)   # also hides the placeholder box
 			power_btn.global_position = _mesh_center("ButtonPower")
 			power_btn.set_depress_axis_world(into_face)
+			_ride_cap(power_mesh, "ButtonPowerLabel")
 		if reset_mesh:
 			reset_btn.set_button_mesh(reset_mesh)
 			reset_btn.global_position = _mesh_center("ButtonReset")
 			reset_btn.set_depress_axis_world(into_face)
+			_ride_cap(reset_mesh, "ButtonResetLabel")
 	for btn in [power_btn, reset_btn]:
 		var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
 		if lbl:
 			lbl.hide()
+
+
+## Hang a printed legend on the cap it is printed on.
+##
+## The shell models POWER and RESET as decal planes 0.1 mm proud of their cap's
+## face, but parents them BESIDE the cap under the shared ButtonPowerPivot rather
+## than to it. VRButton travels the cap mesh alone, so a pressed button sank 2.2 mm
+## and left its word hanging in the air in front of the hole.
+func _ride_cap(cap: MeshInstance3D, legend_name: String) -> void:
+	var legend := _glb.find_child(legend_name, true, false) as Node3D
+	if legend != null and legend.get_parent() != cap:
+		legend.reparent(cap)
 
 
 ## The two front-panel sockets, measured off the shell's own "1" and "2" number

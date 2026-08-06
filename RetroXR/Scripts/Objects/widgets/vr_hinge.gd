@@ -16,6 +16,11 @@
 ## swung it and lifted the whole device off the table. On the trigger the two
 ## never compete: grip picks the device up, trigger works its lid.
 ##
+## `grip_engages` opts a hinge back into the grip for hardware you never lift (the
+## NES's cartridge flap). It does not reintroduce the clash: a hand inside the grab
+## BOX has its pickup muted for as long as it stays there, so the squeeze works the
+## lid INSTEAD of taking the console, not as well as.
+##
 ## Engagement also requires PokeTip.is_poking(), i.e. a hand NOT already holding
 ## something — the same gate VRButton and VRSlider use. Without it, pulling the
 ## trigger to fire a held object's action would swing any lid the hand was near.
@@ -33,6 +38,16 @@ const POINTABLE_LAYER := 1 << 20
 const TRIGGER_ACTION := "trigger"
 const TRIGGER_ON := 0.6   # trigger float that latches the hinge
 const TRIGGER_OFF := 0.4  # trigger float that releases it (hysteresis)
+## Analog grip, the same action XRToolsFunctionPickup takes hold with. Only read
+## when grip_engages is on.
+const GRIP_ACTION := "grip"
+const GRIP_ON := 0.6
+const GRIP_OFF := 0.4
+## Slack around the grab box for the grip test, in metres. The grip is deliberately
+## judged on the BOX and not on engage_radius: the sphere is sized to make the
+## trigger easy to hit and on the NES it swallows most of the console's front, which
+## is far too much of the machine to stop being able to pick up.
+const GRIP_BOX_MARGIN := 0.015
 const ICON_HOVER := 0xF256   # Nerd Font: open palm — "grab here"
 const ICON_HELD := 0xF255    # Nerd Font: closed fist — "holding"
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
@@ -44,18 +59,35 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 @export var max_deg: float = 180.0
 ## Controller tip distance (m) that engages the handle.
 @export var engage_radius: float = 0.04
+## Also take hold on the GRIP, for a lid on hardware the player never picks up.
+##
+## Reaching into a console and squeezing is what a player actually does, and on a
+## table-top console that squeeze lifted the whole machine. Left OFF for the
+## clamshell handhelds — a closed DS is picked up BY its lid, and that has to keep
+## working — so this is opt-in, one line in the model that wants it.
+@export var grip_engages: bool = false
 ## Desktop: degrees the mouse wheel rolls the hinge per notch while held.
 @export var wheel_step_deg: float = 10.0
 ## Icon glyph height, roughly, in metres.
 @export var icon_size: float = 0.028
 
-var _trigger_ctrl: XRController3D = null   # latched controller (trigger held)
+var _trigger_ctrl: XRController3D = null   # latched controller (trigger/grip held)
+# Which analog action the latched controller took hold with, so the release test
+# watches the one that is actually down.
+var _grab_action: String = TRIGGER_ACTION
 # Drag bookkeeping: how far the lid sat from the angle the hand implied when it
 # took hold, and the last raw hand angle (the unwrap reference).
 var _grab_offset_deg: float = 0.0
 var _grab_raw_prev: float = 0.0
 # Controller instance ids whose trigger has dropped since they last latched.
 var _rearmed: Dictionary = {}
+# The same, for the grip.
+var _rearmed_grip: Dictionary = {}
+# FunctionPickups this hinge has muted, so it can hand each one back.
+var _muted_pickups: Array[Node] = []
+# The grab box, resolved lazily: a runtime-built rig (NES) adds its
+# CollisionShape3D after the hinge has already entered the tree.
+var _grab_shape: CollisionShape3D = null
 var _pointer_held := false               # desktop pointer latched
 var _held_prev := false                  # held state at the END of last _process
 var _pointer_hover := false              # desktop reticle over the grab box
@@ -87,13 +119,19 @@ func _process(delta: float) -> void:
 	# console — it has to fall below TRIGGER_OFF first. Same re-arm guard VRSlider
 	# uses.
 	for ctrl in _controllers:
-		if ctrl != null and ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+		if ctrl == null:
+			continue
+		if ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
 			_rearmed[ctrl.get_instance_id()] = true
-	# VR: trigger-latched engagement. A latched controller drives the hinge until
-	# it releases the trigger — however far the hand roams from the grab box.
+		if ctrl.get_float(GRIP_ACTION) < GRIP_OFF:
+			_rearmed_grip[ctrl.get_instance_id()] = true
+	_sync_pickup_mutes()
+	# VR: button-latched engagement. A latched controller drives the hinge until
+	# it lets the button go — however far the hand roams from the grab box.
 	if _trigger_ctrl != null:
+		var off := TRIGGER_OFF if _grab_action == TRIGGER_ACTION else GRIP_OFF
 		if not is_instance_valid(_trigger_ctrl) or not _trigger_ctrl.get_is_active() \
-				or _trigger_ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+				or _trigger_ctrl.get_float(_grab_action) < off:
 			_trigger_ctrl = null
 		else:
 			_track_world_point(PokeTip.tip_of(_trigger_ctrl))
@@ -104,13 +142,19 @@ func _process(delta: float) -> void:
 		for ctrl in _controllers:
 			if ctrl == null or not ctrl.get_is_active() or not PokeTip.is_poking(ctrl):
 				continue
-			if not _rearmed.get(ctrl.get_instance_id(), false):
-				continue
-			if global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius \
+			var id := ctrl.get_instance_id()
+			var tip: Vector3 = PokeTip.tip_of(ctrl)
+			if _rearmed.get(id, false) \
+					and global_position.distance_to(tip) <= engage_radius \
 					and ctrl.get_float(TRIGGER_ACTION) > TRIGGER_ON:
-				_rearmed[ctrl.get_instance_id()] = false
-				_trigger_ctrl = ctrl
-				_begin_track(PokeTip.tip_of(ctrl))
+				_rearmed[id] = false
+				_latch(ctrl, TRIGGER_ACTION, tip)
+				break
+			# The grip is judged on the box, not the sphere — see GRIP_BOX_MARGIN.
+			if grip_engages and _rearmed_grip.get(id, false) and _tip_in_grab_box(tip) \
+					and ctrl.get_float(GRIP_ACTION) > GRIP_ON:
+				_rearmed_grip[id] = false
+				_latch(ctrl, GRIP_ACTION, tip)
 				break
 	var held := _trigger_ctrl != null or _pointer_held
 	if was_held and not held:
@@ -174,6 +218,72 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	_apply(rad_to_deg(target.rotation.x) + step, true)
 	get_viewport().set_input_as_handled()
+
+
+func _latch(ctrl: XRController3D, action: String, tip: Vector3) -> void:
+	_trigger_ctrl = ctrl
+	_grab_action = action
+	_begin_track(tip)
+
+
+# --- grip engagement -----------------------------------------------------------
+
+## The grab box, whichever child carries it. Resolved on demand because the NES
+## builds its rig in code and adds the shape after the hinge is already in the tree.
+func _grab_box() -> CollisionShape3D:
+	if _grab_shape != null and is_instance_valid(_grab_shape):
+		return _grab_shape
+	for child in get_children():
+		var cs := child as CollisionShape3D
+		if cs != null and cs.shape is BoxShape3D:
+			_grab_shape = cs
+			return cs
+	return null
+
+
+func _tip_in_grab_box(tip: Vector3) -> bool:
+	var cs := _grab_box()
+	if cs == null:
+		return false
+	var half: Vector3 = (cs.shape as BoxShape3D).size * 0.5 \
+		+ Vector3.ONE * GRIP_BOX_MARGIN
+	var p: Vector3 = cs.global_transform.affine_inverse() * tip
+	return absf(p.x) <= half.x and absf(p.y) <= half.y and absf(p.z) <= half.z
+
+
+## Mute the pickup of every free hand sitting in the grab box, and of the hand
+## currently holding the lid — that one keeps its mute even after it roams out of
+## the box, or letting go would hand a still-squeezed grip straight to the console.
+##
+## Only ever applied to a hand holding NOTHING (PokeTip.is_poking), so a mute can
+## never strand something already in a player's grasp.
+func _sync_pickup_mutes() -> void:
+	var want: Array[Node] = []
+	if grip_engages:
+		for ctrl in _controllers:
+			if ctrl == null or not is_instance_valid(ctrl) or not ctrl.get_is_active():
+				continue
+			if ctrl != _trigger_ctrl and not (PokeTip.is_poking(ctrl)
+					and _tip_in_grab_box(PokeTip.tip_of(ctrl))):
+				continue
+			var pickup := ctrl.get_node_or_null("FunctionPickup")
+			if pickup != null:
+				want.append(pickup)
+	for pickup in _muted_pickups:
+		if is_instance_valid(pickup) and not want.has(pickup):
+			pickup.set("enabled", true)
+	for pickup in want:
+		pickup.set("enabled", false)
+	_muted_pickups = want
+
+
+## Hand every muted pickup back — a lid that leaves with its console must not take
+## the player's grip with it.
+func _exit_tree() -> void:
+	for pickup in _muted_pickups:
+		if is_instance_valid(pickup):
+			pickup.set("enabled", true)
+	_muted_pickups.clear()
 
 
 ## Angle about the hinge axis implied by a world point, or NAN where it is
