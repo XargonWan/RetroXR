@@ -101,7 +101,7 @@ func _build_ui() -> void:
 	_options_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_options_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_options_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_options_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	MenuStyle.fat_vscroll_bar(_options_scroll)
 	opts_outer.add_child(_options_scroll)
 
 	_options_rows = VBoxContainer.new()
@@ -194,7 +194,7 @@ func _build_vhs_tab(tabs: TabContainer) -> void:
 	_vhs_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_vhs_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_vhs_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_vhs_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	MenuStyle.fat_vscroll_bar(_vhs_scroll)
 	outer.add_child(_vhs_scroll)
 
 	var rows := VBoxContainer.new()

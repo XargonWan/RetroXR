@@ -120,7 +120,7 @@ func _build_ui() -> void:
 	_options_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_options_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_options_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_options_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	MenuStyle.fat_vscroll_bar(_options_scroll)
 	opts_outer.add_child(_options_scroll)
 
 	_options_rows = VBoxContainer.new()
@@ -137,7 +137,7 @@ func _build_ui() -> void:
 	_controllers_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_controllers_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_controllers_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_controllers_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	MenuStyle.fat_vscroll_bar(_controllers_scroll)
 	ctrl_outer.add_child(_controllers_scroll)
 
 	_controllers_rows = VBoxContainer.new()
@@ -157,7 +157,7 @@ func _build_ui() -> void:
 	_system_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_system_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_system_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
-	_system_scroll.add_theme_constant_override("scrollbar_v_width", 40)
+	MenuStyle.fat_vscroll_bar(_system_scroll)
 	sys_outer.add_child(_system_scroll)
 
 	var sys_rows := VBoxContainer.new()

@@ -40,7 +40,7 @@ func _ready() -> void:
 
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.add_theme_constant_override("scrollbar_v_width", 24)
+	MenuStyle.fat_vscroll_bar(scroll, 24, 40)
 	margin.add_child(scroll)
 
 	_list = GridContainer.new()

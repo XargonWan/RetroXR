@@ -97,6 +97,7 @@ func _build_ui() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root_vbox.add_child(scroll)
+	MenuStyle.fat_vscroll_bar(scroll)
 	_active_scroll = scroll
 
 	_rows_box = VBoxContainer.new()

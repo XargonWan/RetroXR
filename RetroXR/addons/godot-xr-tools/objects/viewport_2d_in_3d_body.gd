@@ -158,6 +158,19 @@ func _on_pointer_event(event : XRToolsPointerEvent) -> void:
 
 	# Clear pointer information on exit
 	if type == XRToolsPointerEvent.Type.EXITED:
+		# LOCAL MODIFICATION (RetroXR) — reapply if this addon is updated.
+		#
+		# Upstream drops the press here without ever telling the viewport, so a
+		# Control holding a drag never learns the button came up. A VScrollBar
+		# keeps drag.active set, and re-entering the panel resumes the drag with
+		# the trigger long since released — the bar scrolls by itself. Release
+		# where the pointer left, so the drag ends the way a real mouse would.
+		if _presses.has(pointer):
+			if pointer == _mouse:
+				_report_mouse_up(at)
+			else:
+				_report_touch_up(index, at)
+
 		# Clear pointer information
 		_touches.erase(pointer)
 		_presses.erase(pointer)

@@ -286,6 +286,7 @@ func _build() -> void:
 	books_scroll.name = "Books"
 	tabs.add_child(books_scroll)
 	_spawn_tab_scrolls.append(books_scroll)
+	MenuStyle.fat_vscroll_bar(books_scroll)
 	_books_vbox = VBoxContainer.new()
 	_books_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_books_vbox.add_theme_constant_override("separation", 10)
@@ -297,6 +298,7 @@ func _build() -> void:
 	videos_scroll.name = "Videos"
 	tabs.add_child(videos_scroll)
 	_spawn_tab_scrolls.append(videos_scroll)
+	MenuStyle.fat_vscroll_bar(videos_scroll)
 	_videos_vbox = VBoxContainer.new()
 	_videos_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_videos_vbox.add_theme_constant_override("separation", 10)
@@ -308,6 +310,7 @@ func _build() -> void:
 	dvds_scroll.name = "DVDs"
 	tabs.add_child(dvds_scroll)
 	_spawn_tab_scrolls.append(dvds_scroll)
+	MenuStyle.fat_vscroll_bar(dvds_scroll)
 	_dvds_vbox = VBoxContainer.new()
 	_dvds_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_dvds_vbox.add_theme_constant_override("separation", 10)
@@ -320,6 +323,7 @@ func _build() -> void:
 	cds_scroll.name = "CDs"
 	tabs.add_child(cds_scroll)
 	_spawn_tab_scrolls.append(cds_scroll)
+	MenuStyle.fat_vscroll_bar(cds_scroll)
 	_cds_vbox = VBoxContainer.new()
 	_cds_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cds_vbox.add_theme_constant_override("separation", 10)
@@ -331,6 +335,7 @@ func _build() -> void:
 	tapes_scroll.name = "Tapes"
 	tabs.add_child(tapes_scroll)
 	_spawn_tab_scrolls.append(tapes_scroll)
+	MenuStyle.fat_vscroll_bar(tapes_scroll)
 	_tapes_vbox = VBoxContainer.new()
 	_tapes_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tapes_vbox.add_theme_constant_override("separation", 10)
@@ -1211,6 +1216,7 @@ func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void
 	scroll.name = tab_title
 	tabs.add_child(scroll)
 	_spawn_tab_scrolls.append(scroll)
+	MenuStyle.fat_vscroll_bar(scroll)
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 14)
@@ -1722,6 +1728,7 @@ func _show_game_detail_panel(game: Dictionary, systemid: String) -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	margin.add_child(scroll)
+	MenuStyle.fat_vscroll_bar(scroll)
 
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1804,6 +1811,7 @@ func _show_rom_variants_panel(game: Dictionary, systemid: String) -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	margin.add_child(scroll)
+	MenuStyle.fat_vscroll_bar(scroll)
 
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
