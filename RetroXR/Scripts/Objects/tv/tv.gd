@@ -977,8 +977,8 @@ func _set_osd_text(text: String) -> void:
 func show_volume_osd() -> void:
 	_vol_osd_token += 1
 	var tok := _vol_osd_token
-	var filled := roundi(_volume * 10.0)
-	var text := "VOL " + "|".repeat(filled) + "-".repeat(10 - filled)
+	var filled := roundi(_volume * VOL_OSD_SEGMENTS)
+	var text := "VOL " + "|".repeat(filled) + "-".repeat(VOL_OSD_SEGMENTS - filled)
 	_set_vol_osd_text(text)
 	get_tree().create_timer(2.0).timeout.connect(func():
 		if tok == _vol_osd_token:
@@ -987,10 +987,68 @@ func show_volume_osd() -> void:
 	)
 
 
+# One segment per volume step, so the bar has exactly the granularity the keys do.
+const VOL_OSD_SEGMENTS := 10
+# The margin the bar keeps at each end, as a fraction of the picture width. The
+# CRT stage samples the OSD through crt_warp, which pulls the outer few percent
+# of the texture off past the curved glass.
+const VOL_OSD_SIDE_MARGIN := 0.055
+# A ceiling only. The bar is a fixed cell count, so on a normal 4:3 picture the
+# solved size lands well under this; the clamp is there so a freak narrow
+# viewport can't ask for a 300 px font.
+const VOL_OSD_MAX_FONT_SIZE := 128
+
+
+## Solve the font size that makes `text` span `avail` units wide, measuring the
+## real font rather than assuming a cell width (the mono family resolves
+## differently per platform — Consolas on Windows, Droid Sans Mono on Quest).
+## `unit` is the world size of one font pixel (1.0 for a 2D label). Returns 0
+## when there is nothing to measure, meaning "leave the size as it is".
+func _fit_font_size_to_width(font: Font, text: String, avail: float, unit: float) -> int:
+	if font == null or text.is_empty() or avail <= 0.0 or unit <= 0.0:
+		return 0
+	const PROBE := 64
+	var probe_w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, PROBE).x
+	if probe_w <= 0.0:
+		return 0
+	return clampi(int(PROBE * (avail / unit) / probe_w), 8, VOL_OSD_MAX_FONT_SIZE)
+
+
+# The bar is as wide as the picture, the way a real set draws it. Both copies
+# size themselves from the space they actually have — the viewport's width for
+# the composited one, the screen quad's own extent for the Label3D fallback —
+# so a shell with a different tube gets a bar that still spans it.
 func _set_vol_osd_text(text: String) -> void:
 	_vol_osd_label.text = text
+	var size_3d := _fit_font_size_to_width(_vol_osd_label.font,
+			text, _vol_osd_label_width(), _vol_osd_label.pixel_size)
+	if size_3d > 0:
+		_vol_osd_label.font_size = size_3d
 	_vol_osd_text_2d.text = text
+	var size_2d := _fit_font_size_to_width(_vol_osd_text_2d.get_theme_font("font"),
+			text, _vol_osd_text_2d_width(), 1.0)
+	if size_2d > 0:
+		_vol_osd_text_2d.add_theme_font_size_override("font_size", size_2d)
 	_refresh_osd_texture(text)
+
+
+## The composited copy fills its own rect, which the tscn insets from the
+## viewport edge. Before the first layout pass that rect is still empty, so fall
+## back to the inset the constant describes.
+func _vol_osd_text_2d_width() -> float:
+	var w := _vol_osd_text_2d.size.x
+	if w > 0.0:
+		return w
+	return _osd_viewport.size.x * (1.0 - 2.0 * VOL_OSD_SIDE_MARGIN)
+
+
+## The Label3D runs rightward from its own origin, so its room is whatever lies
+## between that origin and the far margin of the screen quad it hangs on.
+func _vol_osd_label_width() -> float:
+	if _screen_mesh.mesh == null:
+		return 0.0
+	var quad_w := _screen_mesh.mesh.get_aabb().size.x
+	return quad_w * (0.5 - VOL_OSD_SIDE_MARGIN) - _vol_osd_label.position.x
 
 
 func _refresh_osd_texture(text: String) -> void:
