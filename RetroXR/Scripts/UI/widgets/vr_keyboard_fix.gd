@@ -51,14 +51,14 @@ static func patch(le: LineEdit) -> void:
 	le.virtual_keyboard_show_on_focus = false
 	le.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
-			_show_keyboard(le.text)
+			_show_keyboard(le)
 	)
 	le.text_submitted.connect(func(_t: String) -> void:
 		DisplayServer.virtual_keyboard_hide()
 		le.release_focus()
 	)
 	le.focus_exited.connect(func() -> void:
-		DisplayServer.virtual_keyboard_hide()
+		_hide_keyboard.call_deferred(le)
 	)
 
 
@@ -70,14 +70,39 @@ static func patch_text_edit(te: TextEdit) -> void:
 	te.virtual_keyboard_show_on_focus = false
 	te.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
-			_show_keyboard(te.text)
+			_show_keyboard(te)
 	)
 	te.focus_exited.connect(func() -> void:
-		DisplayServer.virtual_keyboard_hide()
+		_hide_keyboard.call_deferred(te)
 	)
 
 
+## The viewport moves focus before it dispatches the press, so the field already
+## owns focus here — and a press it did NOT end up owning must not raise a
+## keyboard for it.
+##
 ## No-op on desktop, where there is no virtual keyboard to show.
-static func _show_keyboard(existing: String) -> void:
-	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
-		DisplayServer.virtual_keyboard_show(existing)
+static func _show_keyboard(field: Control) -> void:
+	if not is_instance_valid(field) or not field.has_focus():
+		return
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		return
+	var existing := ""
+	if field is LineEdit:
+		existing = (field as LineEdit).text
+	elif field is TextEdit:
+		existing = (field as TextEdit).text
+	DisplayServer.virtual_keyboard_show(existing)
+
+
+## Losing focus is not on its own a reason to take the keyboard away: moving
+## between two text fields blurs the first one AFTER the second has asked for a
+## keyboard, so an immediate hide there closes the one the player just opened.
+## Deferred and re-checked, the question becomes "does any field still want it".
+static func _hide_keyboard(field: Control) -> void:
+	if is_instance_valid(field):
+		var vp := field.get_viewport()
+		var owner: Control = vp.gui_get_focus_owner() if vp != null else null
+		if owner is LineEdit or owner is TextEdit:
+			return
+	DisplayServer.virtual_keyboard_hide()
