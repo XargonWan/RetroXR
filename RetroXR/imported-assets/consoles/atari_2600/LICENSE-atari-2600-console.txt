@@ -43,3 +43,13 @@ Adapted for RetroXR as atari_2600_console.glb:
 NOT modified: "video computer system" remains on the top control panel. Unlike
 the four logos it is painted into the face-plate texture rather than being
 separate geometry, and that same texture carries the functional switch legends.
+
+  * Decimated for standalone VR (2026-08-05). The source ships 1,080,733
+    triangles for this shell — a render-quality subdivision that a Quest cannot
+    afford for one prop. Reduced to 25,037 (Blender Collapse via
+    Tools/glb/decimate_glb.py), and the shading re-derived from the new geometry
+    at a 35-degree angle threshold rather than carrying the original custom split
+    normals. Names, hierarchy, node transforms, materials, UVs and the embedded
+    textures are unchanged; every node's world bounding box moved by under 6
+    microns, which is why the measured constants in atari_2600_model.gd still
+    hold.

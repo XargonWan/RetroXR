@@ -51,3 +51,9 @@ carries a small moulded text panel the joystick plug does not have.
 
 Scenes/Objects/atari_2600_plug_{cx40,paddle}.res are ArrayMesh resources
 baked from these GLBs, for ControllerPlug.set_plug_mesh().
+
+  * Decimated for standalone VR (2026-08-05), by the same route as the console
+    (see LICENSE-atari-2600-console.txt): the CX40 joystick 34,307 triangles to
+    4,584, and each plug 79,168 / 88,824 to 4,000. The plugs are held in the hand
+    and get a bigger share than their size suggests — at 1,200 the DE-9 shell's
+    pin holes read as polygons.

@@ -397,3 +397,21 @@ carried alongside it.
 - **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
   bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
   godot-pdfium build recipe above.
+- **`Tools/glb/decimate_glb.py`** — Blender-headless triangle reduction for a downloaded shell.
+  Sketchfab assets arrive subdivided for renders: the Atari 2600 console shipped 1,080,733
+  triangles and 57.7 MB, against 27,893 for the NES. **Weld first** — these exports are
+  triangle soup (that console was 230,787 disconnected islands, median one triangle), and
+  Collapse cannot reduce an isolated triangle, so without the weld the body floors at 54 k
+  however low you aim. Also drop the custom split normals and re-derive shading by angle:
+  carried through a 98% cut they describe a surface that is gone, which showed up as a smeared
+  cartridge slot and starburst facets across flat panels.
+  ```bash
+  "/c/Program Files/Blender Foundation/Blender 5.1/blender.exe" --background \
+    --python Tools/glb/decimate_glb.py -- --in <src>.glb --out <dst>.glb --target 25000
+  ```
+  `Tools/glb/glb_report.py` dumps a GLB's node tree, world AABBs and triangle budget;
+  `Tools/glb/glb_diff.py` compares two and is the check that matters — every model's seat,
+  port and jack constant is a hand-measured position in the GLB's frame, so a round trip has
+  to preserve names, hierarchy, world placement and image names. Note the GLBs are **Git LFS**,
+  so `git show HEAD:<path>` yields a pointer: pipe it through `git lfs smudge` to get a
+  baseline to diff against.

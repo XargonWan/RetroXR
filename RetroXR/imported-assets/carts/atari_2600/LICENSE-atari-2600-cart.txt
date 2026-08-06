@@ -30,3 +30,7 @@ loose carts in the source scene.
 
   * Shell meshes joined into a single "Cartridge_Body" and re-centred on the
     cart's own middle.
+
+  * Decimated for standalone VR (2026-08-05): 190,822 triangles to 3,995, by the
+    same route as the console (see LICENSE-atari-2600-console.txt). "media_label"
+    keeps its name, its UVs and its place, so the runtime art still lands on it.
