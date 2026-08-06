@@ -33,6 +33,7 @@ func _ready() -> void:
 	# any further -- see RcaPort.
 	add_to_group("composite_plug")
 	_derive_cable_anchor()
+	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
 
 
 func _derive_cable_anchor() -> void:

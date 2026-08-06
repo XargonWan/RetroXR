@@ -22,6 +22,7 @@ var cable_anchor: Vector3 = Vector3.ZERO
 func _ready() -> void:
 	super._ready()
 	add_to_group("controller_plug")
+	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
 
 
 ## How far this plug may stray, as {anchor: Vector3, length: float}, or {} when

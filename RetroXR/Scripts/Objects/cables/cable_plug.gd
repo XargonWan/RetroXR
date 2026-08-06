@@ -36,6 +36,7 @@ func _ready() -> void:
 	# Add to the snap group so TV's CompositePort (snap_require = "composite_plug") accepts us
 	add_to_group("composite_plug")
 	_derive_cable_anchor()
+	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
 
 
 func _derive_cable_anchor() -> void:
