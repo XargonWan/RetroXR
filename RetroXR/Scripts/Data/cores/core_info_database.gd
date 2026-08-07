@@ -172,10 +172,14 @@ func get_systemname_for_id(systemid: String) -> String:
 		return info.display_name if info != null and not info.display_name.is_empty() \
 			else systemid
 
-	var entries := get_by_systemid(systemid)
-	if entries.is_empty():
-		return systemid
-	return entries[0].get("systemname", systemid)
+	# Only a core whose OWN systemid this is may name it. A secondary can be
+	# indexed first and is usually a multi-system core, so Super NES took
+	# mesen2's "Nintendo Entertainment System / Super Nintendo Entertainment
+	# System / Game Boy / ..." the moment mesen2 declared it.
+	for entry: Dictionary in get_by_systemid(systemid):
+		if str(entry.get("systemid", "")) == systemid:
+			return entry.get("systemname", systemid)
+	return systemid
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@
 `RetroXR/libretro-core-info/` is no longer the `libretro/libretro-core-info`
 submodule. It is a vendored copy of `dist/info/` from our own libretro-super
 fork, which carries the fixes below; see that directory's README for how to
-resync. 314 files, 139 distinct systemids.
+resync. 314 files, 151 distinct systemids.
 
 ## Fixed by the fork (2026-08-07)
 
@@ -53,20 +53,20 @@ switch: `boom3_xp` (deleted upstream) and `radio` (`internet_radio`, which
 to reach them from any system-browsing UI. The core still downloads and runs; only
 the discovery path is missing.
 
-37 of the 314 files still carry no `systemid`. Most are test harnesses, players and
+36 of the 314 files still carry no `systemid`. Most are test harnesses, players and
 single-game cores where it matters less. The real machines among them:
 
 * `bk` — BK-0010/BK-0011(M)
 * `oberon` — Ceres/Oberon workstation
 * `pcem`, `qemu` — PC
-* `skyemu` — three databases (DS / Game Boy / GBA), so no single id fits
 * `vemulator` — Dreamcast VMU
 
 Anything given an id also needs a `res://SystemInfo/<systemid>.tres` or it takes the
 fallback descriptor, and a `res://Textures/SystemIcons/<systemid>.svg` or it draws
-`_default.svg`. 38 of the 139 systemids have no console icon; 10 of those are ids the
-fork added (`bbk`, `dingoo-a320`, `galaksija`, `neo_geo_cd`, `palm_os`, `sam_coupe`,
-`spmp8000`, `super_cassette_vision`, `thomson_moto`, `wiiu`).
+`_default.svg`. 38 of the 151 systemids still have no console icon: the players and
+test cores, plus the ids the fork added that no core here reaches usefully yet —
+`bbk`, `dingoo-a320`, `galaksija`, `neo_geo_cd`, `palm_os`, `sam_coupe`, `spmp8000`,
+`super_cassette_vision`, `thomson_moto`, `wiiu`.
 
 ## Sub-platforms — the `secondary_systemids` key
 
@@ -78,7 +78,7 @@ appears only in the `|`-separated `database` field, which nothing indexes.
 CD|Sega - Mega Drive - Genesis|Sega - PICO|Sega - SG-1000"`. Six machines, one id.
 `picodrive` adds "Sega - 32X" on the same id.
 
-Across the corpus: **162 distinct `database` names against 144 distinct systemids**.
+Across the corpus: **162 distinct `database` names against 151 distinct systemids**.
 
 Not a data bug — the stock format has no way to express "this core covers N
 platforms". Our fork adds one (2026-08-07), documented in
@@ -98,7 +98,9 @@ Two deliberate omissions:
 * **No name in the key.** Five cores cover Game Gear; each repeating its name is how
   they come to disagree about it — which is exactly what `gearsystem` ("Sega 8-bit
   (MS/GG/SG-1000)") and `smsplus` ("Sega 8-bit") did. A secondary-only id is named by
-  `SystemInfo/<id>.tres` instead, via `get_systemname_for_id()`.
+  `SystemInfo/<id>.tres` instead, via `get_systemname_for_id()`. That function also
+  ignores secondaries when naming a PRIMARY id: mesen2 declared `super_nes` and, being
+  indexed first, relabelled it with its own twelve-platform display name.
 * **A primary id keeps its full extension union.** Narrowing `mega_drive` to drop
   `gg`/`cue` would be correct and would also orphan whatever users already keep in
   `roms/mega_drive/`. Sega CD images still list under Mega Drive as they always did;
@@ -110,13 +112,25 @@ which is what keeps this safe in the other direction too: the Mega Drive cores n
 have pulled `md`/`cue`/`chd`/`32x` into a Master System library. `extensions_for_systemid()`
 unions the cores whose OWN systemid it is, then adds only the declared subsets.
 
-The whole Sega line is wired this way now, each with its own tile, icons and
-descriptor: `game_gear`, `sega_cd`, `sega_32x`, `sg1000`, `sega_pico`. `master_system`
-gained the three Mega Drive cores without becoming a new tile — it already had one.
+Twelve platforms are wired this way, each with its own tile, icons and descriptor:
+`game_gear`, `sega_cd`, `sega_32x`, `sg1000`, `sega_pico`, `fds`, `wii`,
+`nintendo_64dd`, `supergrafx`, `pc_engine_cd`, `atari_8bit`, `svi`.
 
-Still only in `database`, same shape whenever you want it: ColecoVision and
-Spectravideo SVI under `bluemsx`, Famicom Disk System under the NES cores, and the
-Game Boy/GBA/DS split inside `skyemu`.
+Five ids that already had a tile simply gained cores: `master_system` (the three Mega
+Drive cores), `colecovision` (bluemsx), `game_boy` (mgba, vbam, the two higan builds,
+mesen-s, mesen2, skyemu), `game_boy_advance` (vbam, mesen2, skyemu) and `pc_engine`,
+`super_nes` and `wonderswan` (mesen2). `skyemu` had no systemid at all and is now
+`nds` plus Game Boy and GBA.
+
+Claims follow each core's own `database` field, never its extension list — picodrive
+reads `.sg` but does not declare SG-1000, so it is not claimed.
+
+Still only in `database`, same shape whenever you want it: Satellaview and Sufami
+Turbo under the bsnes family (both have distinct extensions, `bs` and `st`); Naomi,
+Naomi 2, Atomiswave and ST-V, which the RomM map already folds into `mame`; Amiga
+CD32 and CDTV; GX4000; Videopac+; ZX Spectrum +3. Colour and revision variants
+— Game Boy Color, WonderSwan Color, Neo Geo Pocket Color, MSX2, DSi — are left
+merged on purpose, matching the existing `gbc` → `game_boy` decision.
 
 ## Duplicate systemids for one machine
 

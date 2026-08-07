@@ -12,6 +12,7 @@ categories = "Emulator"
 manufacturer = "Nintendo"
 systemname = "Nintendo Entertainment System"
 systemid = "nes"
+secondary_systemids = "fds:fds"
 
 # Libretro Features
 supports_no_game = "false"

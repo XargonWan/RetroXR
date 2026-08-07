@@ -24,6 +24,7 @@ const CART_SIZES: Dictionary = {
 	"game_gear":        Vector3(0.068, 0.047, 0.012),
 	"wonderswan":       Vector3(0.048, 0.052, 0.008),
 	"neo_geo_pocket":   Vector3(0.048, 0.052, 0.008),
+	"nintendo_64dd":    Vector3(0.098, 0.079, 0.017),   # 64DD magnetic disk
 	"pokemon_mini":     Vector3(0.022, 0.033, 0.007),
 	"supervision":      Vector3(0.066, 0.070, 0.009),
 	# UMD caddy — square footprint, thin. RetroUMD builds its shell straight off
@@ -39,13 +40,15 @@ const CART_SIZE_DEFAULT := Vector3(0.10, 0.08, 0.015)
 
 ## Disc diameters: systemid -> diameter in metres. Doubles as the disc-system
 ## set — a systemid present here spawns a RetroDisc instead of a cartridge.
-## (pc_engine stays a cartridge: HuCard. neo_geo_cd and wii have no systemid in
-## ScreenscraperSystems.SYSTEM_MAP yet.)
+## (pc_engine stays a cartridge: its HuCard — the CD add-on is pc_engine_cd.
+## neo_geo_cd has a systemid now but no descriptor yet.)
 const DISC_DIAMETERS: Dictionary = {
 	"playstation":           0.12,
 	"playstation2":          0.12,
 	"sega_saturn":           0.12,
 	"sega_cd":               0.12,
+	"pc_engine_cd":          0.12,
+	"wii":                   0.12,
 	"dreamcast":             0.12,
 	"3do":                   0.12,
 	"cdi":                   0.12,
@@ -67,13 +70,17 @@ const LOADER_NONE := 0   # cartridge system — no disc loader
 const LOADER_TRAY := 1   # lid/tray: OPEN button gates insert/remove (PS1, GameCube…)
 const LOADER_SLOT := 2   # slot-load: disc injects on insert, EJECT slides it out (PS2)
 
-## Systems that slot-load instead of using a lid/tray (PSP UMD).
+## Systems that slot-load instead of using a lid/tray.
 ## NOTE: playstation2 was here (the fat PS2's front slot) but the console we model
 ## is the PS2 SLIM, which is top-loading (hinged disc cover) — so LOADER_TRAY.
 ## Slot-load = the disc injects on insert and the EJECT button slides it out
 ## (PS2). Everything else with a disc is a lid/tray (OPEN reveals a well). The
 ## PSP is a tray: its UMD sits behind a hinged door you flick open, not a slot.
-const SLOT_LOAD_SYSTEMS: Dictionary = {}
+const SLOT_LOAD_SYSTEMS: Dictionary = {
+	# The one true slot-loader we model: the disc is drawn in and the
+	# EJECT button spits it back out. No lid, no tray.
+	"wii": true,
+}
 
 ## Lid/tray systems whose tray SLIDES OUT THE FRONT instead of hinging open — the
 ## fat PS2, and any PC-style optical drive.

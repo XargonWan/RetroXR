@@ -12,6 +12,7 @@ display_version = "1.53.1"
 manufacturer = "Nintendo"
 systemname = "Nintendo Entertainment System"
 systemid = "nes"
+secondary_systemids = "fds:fds"
 
 # Libretro Features
 supports_no_game = "false"

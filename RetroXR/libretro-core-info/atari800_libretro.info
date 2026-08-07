@@ -11,6 +11,7 @@ permissions = ""
 manufacturer = "Atari"
 systemname = "Atari 8-bit Family"
 systemid = "atari_5200"
+secondary_systemids = "atari_8bit:xex,atr,xfd,dcm,atx,cas,com,car,rom"
 display_version = "7.0.0"
 
 # Libretro Features

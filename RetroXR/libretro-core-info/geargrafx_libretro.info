@@ -12,6 +12,7 @@ display_version = "1.6.0"
 manufacturer = "NEC"
 systemname = "PC Engine/SuperGrafx"
 systemid = "pc_engine"
+secondary_systemids = "pc_engine_cd:cue,chd|supergrafx:sgx"
 
 # Libretro Features
 supports_no_game = "false"

@@ -50,9 +50,10 @@ const _SCENES := "res://Scenes/Objects/system_models/"
 ## sense the procedural box was, just a far better one: it has the sockets their
 ## keyboard, mouse, monitor and speakers actually plug into.
 const _COMPUTER_PLATFORMS: Array[String] = [
-	"apple_ii", "atari_st", "commodore_amiga",
+	"apple_ii", "atari_8bit", "atari_st", "commodore_amiga",
 	"commodore_c128", "commodore_c64", "commodore_vic20", "cpc", "dos", "msx",
-	"pc_88", "pc_98", "scummvm", "sharp_x1", "sharp_x68000", "zx81", "zx_spectrum",
+	"pc_88", "pc_98", "scummvm", "sharp_x1", "sharp_x68000", "svi", "zx81",
+	"zx_spectrum",
 ]
 
 

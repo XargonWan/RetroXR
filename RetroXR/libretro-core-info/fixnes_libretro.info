@@ -12,6 +12,7 @@ display_version = "Alpha v1.3.1"
 manufacturer = "Nintendo"
 systemname = "Nintendo Entertainment System"
 systemid = "nes"
+secondary_systemids = "fds:fds,qd"
 
 # Libretro Features
 database = "Nintendo - Nintendo Entertainment System|Nintendo - Family Computer Disk System"

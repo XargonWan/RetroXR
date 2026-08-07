@@ -12,6 +12,7 @@ display_version = "0.10-dev"
 manufacturer = "Nintendo"
 systemname = "Game Boy/Game Boy Color/Game Boy Advance"
 systemid = "game_boy_advance"
+secondary_systemids = "game_boy:gb,gbc"
 
 # Libretro Features
 supports_no_game = "false"

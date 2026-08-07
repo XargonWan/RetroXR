@@ -82,6 +82,8 @@ atari_5200-content.svg              Atari - 5200-content.svg
 atari_5200.svg                      Atari - 5200.svg
 atari_7800-content.svg              Atari - 7800-content.svg
 atari_7800.svg                      Atari - 7800.svg
+atari_8bit-content.svg              Atari - 8-bit Family-content.svg
+atari_8bit.svg                      Atari - 8-bit Family.svg
 atari_jaguar-content.svg            Atari - Jaguar-content.svg
 atari_jaguar.svg                    Atari - Jaguar.svg
 atari_lynx-content.svg              Atari - Lynx-content.svg
@@ -142,6 +144,8 @@ epochcv-content.svg                 Epoch - Cassette Vision-content.svg
 epochcv.svg                         Epoch - Cassette Vision.svg
 fb_alpha-content.svg                FBNeo - Arcade Games-content.svg
 fb_alpha.svg                        FBNeo - Arcade Games.svg
+fds-content.svg                     Nintendo - Family Computer Disk System-content.svg
+fds.svg                             Nintendo - Family Computer Disk System.svg
 game_boy-content.svg                Nintendo - Game Boy-content.svg
 game_boy.svg                        Nintendo - Game Boy.svg
 game_boy_advance-content.svg        Nintendo - Game Boy Advance-content.svg
@@ -190,6 +194,8 @@ nes-content.svg                     Nintendo - Nintendo Entertainment System-con
 nes.svg                             Nintendo - Nintendo Entertainment System.svg
 nintendo_64-content.svg             Nintendo - Nintendo 64-content.svg
 nintendo_64.svg                     Nintendo - Nintendo 64.svg
+nintendo_64dd-content.svg           Nintendo - Nintendo 64DD-content.svg
+nintendo_64dd.svg                   Nintendo - Nintendo 64DD.svg
 nuon-content.svg                    VM Labs - NUON-content.svg
 nuon.svg                            VM Labs - NUON.svg
 nxengine-content.svg                Cave Story-content.svg
@@ -204,6 +210,8 @@ pc_98-content.svg                   NEC - PC-98-content.svg
 pc_98.svg                           NEC - PC-98.svg
 pc_engine-content.svg               NEC - PC Engine - TurboGrafx 16-content (U).svg
 pc_engine.svg                       NEC - PC Engine - TurboGrafx 16.svg
+pc_engine_cd-content.svg            NEC - PC Engine CD - TurboGrafx-CD-content.svg
+pc_engine_cd.svg                    NEC - PC Engine CD - TurboGrafx-CD.svg
 pc_fx-content.svg                   NEC - PC-FX-content.svg
 pc_fx.svg                           NEC - PC-FX.svg
 pcxt-content.svg                    DOS-content.svg
@@ -243,8 +251,12 @@ sharp_x68000-content.svg            Sharp - X68000-content.svg
 sharp_x68000.svg                    Sharp - X68000.svg
 super_nes-content.svg               Nintendo - Super Nintendo Entertainment System-content (2) (U).svg
 super_nes.svg                       Nintendo - Super Nintendo Entertainment System SNS-001.svg
+supergrafx-content.svg              NEC - PC Engine SuperGrafx-content.svg
+supergrafx.svg                      NEC - PC Engine SuperGrafx.svg
 supervision-content.svg             Watara - Supervision-content.svg
 supervision.svg                     Watara - Supervision.svg
+svi-content.svg                     Spectravideo - SV-content.svg
+svi.svg                             Spectravideo - SV.svg
 ti_83.svg                           Texas Instruments - TI-83.svg
 tic80-content.svg                   TIC-80-content.svg
 tic80.svg                           TIC-80.svg
@@ -260,6 +272,8 @@ virtual_boy-content.svg             Nintendo - Virtual Boy-content.svg
 virtual_boy.svg                     Nintendo - Virtual Boy.svg
 wasm4-content.svg                   WASM-4-content.svg
 wasm4.svg                           WASM-4.svg
+wii-content.svg                     Nintendo - Wii-content.svg
+wii.svg                             Nintendo - Wii.svg
 wolfenstein3d-content.svg           Wolfenstein 3D-content.svg
 wolfenstein3d.svg                   Wolfenstein 3D.svg
 wonderswan-content.svg              Bandai - WonderSwan-content.svg

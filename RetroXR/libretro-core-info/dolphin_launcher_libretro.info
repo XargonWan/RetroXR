@@ -12,6 +12,7 @@ categories = "Launcher"
 manufacturer = "Nintendo"
 systemname = "GameCube / Wii"
 systemid = "gamecube"
+secondary_systemids = "wii:wbfs,wad"
 
 # Libretro Features
 database = "Nintendo - GameCube|Nintendo - Wii|Nintendo - Wii (Digital)"

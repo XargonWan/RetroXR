@@ -12,6 +12,7 @@ categories = "Emulator"
 manufacturer = "NEC"
 systemname = "PC Engine/PCE-CD"
 systemid = "pc_engine"
+secondary_systemids = "pc_engine_cd:cue,ccd,chd,toc,m3u"
 
 # Libretro Features
 supports_no_game = "false"
