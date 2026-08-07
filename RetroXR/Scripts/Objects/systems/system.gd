@@ -177,6 +177,9 @@ const DISC_SPIN_MAX := 25.0    # rad/s (~240 RPM) — seated disc at full speed
 const DISC_SPIN_UP := 18.0     # rad/s² ramp-up (power on / tray closed)
 const DISC_SPIN_DOWN := 10.0   # rad/s² ramp-down (power off / tray opened)
 const TRAY_LID_OPEN_DEG := -75.0   # lid hinge angle when the tray is open
+## How far the hinged-lid console's disc well is sunk into its pod. Deep enough
+## that a 2.5 mm disc sits with its face below the rim.
+const TRAY_WELL_DEPTH := 0.006
 ## Front-sliding tray: how far the shelf travels out of the box, and how long it
 ## takes. 190 mm puts a 12 cm disc's REAR edge 15 mm clear of the front face —
 ## less and the disc is still half inside the case with the tray "open".
@@ -2504,35 +2507,48 @@ func _build_disc_tray() -> void:
 	var lid_mat := StandardMaterial3D.new()
 	lid_mat.albedo_color = Color(0.55, 0.55, 0.58)
 
-	# Raised pod (disc sits on its recessed top).
+	# The well the disc drops into: mouth at the pod's top face, floor
+	# TRAY_WELL_DEPTH below it, 6 mm of clearance round the disc's edge.
+	var well_r := d / 2.0 + 0.006
+	var rim_y := 0.0667
+	var floor_y := rim_y - TRAY_WELL_DEPTH
+
+	# Raised pod, open-topped: its top cap would roof the well over, so the ring
+	# between the well and the pod's edge is a separate rim face.
 	var pod := MeshInstance3D.new()
 	pod.name = "DiscTrayPod"
 	var pod_mesh := CylinderMesh.new()
 	pod_mesh.top_radius = pod_r
 	pod_mesh.bottom_radius = pod_r
 	pod_mesh.height = 0.0167
+	pod_mesh.cap_top = false
 	pod.mesh = pod_mesh
 	pod.set_surface_override_material(0, pod_mat)
-	pod.position = Vector3(0, 0.05 + 0.0167 / 2.0, 0)   # top at 0.0667
+	pod.position = Vector3(0, 0.05 + 0.0167 / 2.0, 0)   # top at rim_y
 	add_child(pod)
 
-	# Dark bed the disc rests in (just under the seated disc's underside).
-	var bed := MeshInstance3D.new()
-	bed.name = "DiscTrayBed"
-	var bed_mesh := CylinderMesh.new()
-	bed_mesh.top_radius = d / 2.0 + 0.006
-	bed_mesh.bottom_radius = d / 2.0 + 0.006
-	bed_mesh.height = 0.002
-	bed.mesh = bed_mesh
-	bed.set_surface_override_material(0, bed_mat)
-	bed.position = Vector3(0, 0.0677, 0)   # top at 0.0687, disc bottom 0.06875
-	add_child(bed)
+	var rim := MeshInstance3D.new()
+	rim.name = "DiscTrayRim"
+	rim.mesh = _ring_mesh(well_r, pod_r)
+	rim.set_surface_override_material(0, pod_mat)
+	rim.position = Vector3(0, rim_y, 0)
+	add_child(rim)
 
-	# Seat the snap zone on the bed, as the front-tray build does on its shelf.
-	# MediaTray seats the disc at the zone origin (seat_offset is only re-expressed
-	# for a disc that rides a moving pivot), so the zone's own height IS the disc's:
-	# left at the cabinet default it sits 1.4 cm down, buried inside the pod.
-	_cartridge_slot.position = Vector3(0, 0.06875 + 0.00125, 0)
+	# Floor and side wall of the well, one dark surface. Depth alone would not read
+	# as a recess — the rooms light with a flat ambient colour and no occlusion, so
+	# the inside of a hole is lit exactly as brightly as its mouth.
+	var well := MeshInstance3D.new()
+	well.name = "DiscTrayWell"
+	well.mesh = _well_mesh(well_r, TRAY_WELL_DEPTH)
+	well.set_surface_override_material(0, bed_mat)
+	well.position = Vector3(0, floor_y, 0)
+	add_child(well)
+
+	# Seat the snap zone on the well floor, as the front-tray build does on its
+	# shelf. MediaTray seats the disc at the zone origin (seat_offset is only
+	# re-expressed for a disc that rides a moving pivot), so the zone's own height
+	# IS the disc's: left at the cabinet default it sits inside the pod.
+	_cartridge_slot.position = Vector3(0, floor_y + 0.0005 + 0.00125, 0)
 
 	# Hinged lid: pivot at the pod's back edge, lid disc swings up/back.
 	_tray_lid_pivot = Node3D.new()
@@ -2562,6 +2578,60 @@ func _build_disc_tray() -> void:
 	lid_btn.add_child(lid_mesh_inst)
 	_tray_lid_pivot.add_child(lid_btn)
 	lid_btn.button_pressed.connect(_on_lid_pressed)
+
+
+## A flat ring in the XZ plane at y = 0, facing up. Godot has no annulus
+## primitive, and it is the one face a cylinder cannot give: the pod needs a top
+## with a hole in it.
+func _ring_mesh(inner_r: float, outer_r: float, segments: int = 48) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	for i in segments:
+		var a0 := TAU * i / float(segments)
+		var a1 := TAU * (i + 1) / float(segments)
+		var i0 := Vector3(cos(a0) * inner_r, 0.0, sin(a0) * inner_r)
+		var i1 := Vector3(cos(a1) * inner_r, 0.0, sin(a1) * inner_r)
+		var o0 := Vector3(cos(a0) * outer_r, 0.0, sin(a0) * outer_r)
+		var o1 := Vector3(cos(a1) * outer_r, 0.0, sin(a1) * outer_r)
+		for v: Vector3 in [i0, o0, o1, i0, o1, i1]:
+			verts.append(v)
+			norms.append(Vector3.UP)
+	return _surface_mesh(verts, norms)
+
+
+## The inside of the disc well, origin at the centre of its floor: a disc facing
+## up, and the side wall facing IN — it is only ever seen from within the well.
+func _well_mesh(r: float, depth: float, segments: int = 48) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	for i in segments:
+		var a0 := TAU * i / float(segments)
+		var a1 := TAU * (i + 1) / float(segments)
+		var c0 := Vector3(cos(a0), 0.0, sin(a0))
+		var c1 := Vector3(cos(a1), 0.0, sin(a1))
+		var b0 := c0 * r
+		var b1 := c1 * r
+		var t0 := b0 + Vector3(0.0, depth, 0.0)
+		var t1 := b1 + Vector3(0.0, depth, 0.0)
+		# Floor.
+		for v: Vector3 in [Vector3.ZERO, b0, b1]:
+			verts.append(v)
+			norms.append(Vector3.UP)
+		# Wall.
+		verts.append_array([b0, t0, t1, b0, t1, b1])
+		for n: Vector3 in [-c0, -c0, -c1, -c0, -c1, -c1]:
+			norms.append(n)
+	return _surface_mesh(verts, norms)
+
+
+func _surface_mesh(verts: PackedVector3Array, norms: PackedVector3Array) -> ArrayMesh:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 ## Physically pushing (or pointer-clicking) the lid while open shuts the tray.
