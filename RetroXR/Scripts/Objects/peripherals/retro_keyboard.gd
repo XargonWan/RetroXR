@@ -31,8 +31,9 @@ const KEY_TOP_Y := 0.014       # resting key-cap top
 const PRESS_TRAVEL := 0.0015   # cap sink when pressed: rests 2 mm proud of
                                # the 0.012 plate top, so this leaves it just
                                # barely above rather than buried under it
-const TOUCH_MAX_Y := 0.06      # controller tip must be within this above caps
 const PRESS_Y := 0.010         # tip below this (board-local) = pressed
+const RELEASE_Y := 0.0135      # tip must clear this to let go, and to re-arm
+const PRESS_FLOOR := -0.05     # driven below this, the tip has left the board
 
 # RETROK_* keycodes (libretro.h).
 const RK := {
@@ -103,6 +104,9 @@ var _pending_port_restore: Dictionary = {}
 var _keys: Array = []
 # Currently pressed keycode per hand tracker name ("" -> keycode or -1).
 var _hand_pressed: Dictionary = {}
+# Per hand: may it START a press? Set only by rising clear of the caps, so a tip
+# driven through the board cannot type again on its way back out.
+var _hand_armed: Dictionary = {}
 var _controllers: Array = []
 # keycode -> key index (visual feedback when a REAL keyboard drives us).
 var _key_index_by_code: Dictionary = {}
@@ -437,16 +441,32 @@ func _physics_process(_delta: float) -> void:
 	_scan_hands()
 
 
+## One key per hand, on a press-down / rise-to-release cycle. There is nothing
+## solid under a controller, so a hand pushing a key keeps going and ends up
+## BELOW the board; the press therefore has to survive that, and the way back up
+## must not read as a fresh keystroke. Hence the two rules: the band reaches well
+## past the underside (PRESS_FLOOR), and only a hand that has risen clear of the
+## caps is armed to begin a press at all.
 func _scan_hands() -> void:
 	for ctrl: Node in _controllers:
 		if not is_instance_valid(ctrl) or not (ctrl as XRController3D).get_is_active():
 			continue
 		var name_key := str((ctrl as XRController3D).tracker)
 		var tip: Vector3 = to_local(PokeTip.tip_of(ctrl as Node3D))
-		var hit := -1
-		if tip.y >= 0.0 and tip.y <= TOUCH_MAX_Y and tip.y < PRESS_Y:
-			hit = _key_at(Vector2(tip.x, tip.z))
 		var prev: int = _hand_pressed.get(name_key, -1)
+		if tip.y > RELEASE_Y:
+			_hand_armed[name_key] = true
+		# Hysteresis: a key goes down at PRESS_Y and only lets go at the higher
+		# RELEASE_Y, so a tip resting on the threshold cannot chatter.
+		var enter := RELEASE_Y if prev >= 0 else PRESS_Y
+		var hit := -1
+		if tip.y <= enter and tip.y >= PRESS_FLOOR:
+			var k := _key_at(Vector2(tip.x, tip.z))
+			# A hand already holding a key may slide onto its neighbour.
+			if k >= 0 and (prev >= 0 or bool(_hand_armed.get(name_key, false))):
+				hit = k
+		if hit >= 0:
+			_hand_armed[name_key] = false
 		if hit == prev:
 			continue
 		if prev >= 0:
