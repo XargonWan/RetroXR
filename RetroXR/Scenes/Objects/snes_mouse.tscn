@@ -42,14 +42,15 @@ shape = SubResource("BoxShape3D_mouse")
 
 [node name="Model" parent="MouseVisual" instance=ExtResource("5_model")]
 
+; Where the cord leaves the nose, measured from the wire mesh before it was
+; dropped: dead centre, 7.3 mm off the desk. Parented to MouseVisual, the node
+; glued to the surface, so the cord leaves the shell rather than the hand.
+[node name="CableAttachPoint" type="Node3D" parent="MouseVisual"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0073, -0.048)
+
 [node name="SurfaceRay" type="RayCast3D" parent="."]
 target_position = Vector3(0, -0.1, 0)
 collision_mask = 1
-
-; Where the cord leaves the nose, measured from the wire mesh before it was
-; dropped: dead centre, 7.3 mm off the desk.
-[node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0073, -0.048)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")

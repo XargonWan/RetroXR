@@ -83,7 +83,10 @@ var _last_buttons := 0
 
 @onready var _visual: Node3D = $MouseVisual
 @onready var _ray: RayCast3D = $SurfaceRay
-@onready var _cable_attach_point: Node3D = $CableAttachPoint
+## Child of the VISUAL, not of the body: while the mouse is stuck the visual is
+## top_level on the surface plane and the body stays with the hand, so a cord
+## anchored to the body would trail up into the air.
+@onready var _cable_attach_point: Node3D = $MouseVisual/CableAttachPoint
 
 # ── Button animation ──────────────────────────────────────────────────────────
 # The shell already models both buttons and the wheel; they just never moved.

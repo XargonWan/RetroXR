@@ -69,12 +69,14 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.031, -0.028)
 mesh = SubResource("BoxMesh_wheel")
 surface_material_override/0 = SubResource("Mat_wheel")
 
+; Under MouseVisual, which is the node RetroMouse glues to the surface — the cord
+; leaves the shell you can see, not the hand the body is still following.
+[node name="CableAttachPoint" type="Node3D" parent="MouseVisual"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.012, -0.048)
+
 [node name="SurfaceRay" type="RayCast3D" parent="."]
 target_position = Vector3(0, -0.1, 0)
 collision_mask = 1
-
-[node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.012, -0.048)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
