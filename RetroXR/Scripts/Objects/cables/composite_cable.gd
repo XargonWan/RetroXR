@@ -44,7 +44,7 @@ signal topology_changed
 ## lead is black sheath with colour-coded CONNECTORS, and the connector is what a
 ## player matches to a socket. Both used to be drawn from cord_colors, which made
 ## the lead itself a yellow/white/red tricolour no such cable has ever been.
-@export var wire_color: Color = Color(0.05, 0.05, 0.06)
+@export var wire_color: Color = RcaJack.WIRE_BLACK
 
 # How many cords this lead actually has, counted from the plugs the scene ships
 # rather than declared, so a two-cord lead is a scene with four plugs and no code

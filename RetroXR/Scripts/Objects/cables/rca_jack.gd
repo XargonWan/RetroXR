@@ -19,6 +19,13 @@ const COMPOSITE_YELLOW := Color(0.95, 0.74, 0.02)
 const AUDIO_WHITE := Color(0.87, 0.87, 0.84)
 const AUDIO_RED := Color(0.72, 0.08, 0.08)
 
+## The jacket every wire in the room wears. The colour code above belongs to
+## CONNECTORS; a lead is black whatever it carries, on the spawnable composite
+## leads and on the pigtail fixed to a handheld alike. Kept beside them so the two
+## cannot drift apart — cable.tscn writes the same value as a literal, since a
+## .tscn cannot reference a constant.
+const WIRE_BLACK := Color(0.05, 0.05, 0.06)
+
 ## Colour of the plastic insulator. The metal is not tintable on purpose: plated
 ## shells are the same on every jack, and letting a scene recolour one would only
 ## produce jacks that do not exist.

@@ -90,13 +90,17 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; Quest frame budget ever needs it back.
 ;
 ; THREE 3 mm wires, not one 8 mm cord: this is the lead that leaves a handheld
-; when video out is switched on, and the real thing is a composite pigtail —
-; yellow video with white and red audio beside it. tube_radius is the wire's
-; RADIUS, so 3 mm across is 0.0015. collision_radius has to cover the whole
-; ribbon rather than one wire (3 x tube_radius, the ratio composite_cable.tscn
-; uses). A model can override the count and the colours per channel through its
-; video-channel descriptor — the DS's bottom screen comes out as a single blue
-; wire that way; see RetroSystemModel.get_video_channels.
+; when video out is switched on, and the real thing is a composite pigtail — a
+; picture wire with the audio pair beside it. tube_radius is the wire's RADIUS,
+; so 3 mm across is 0.0015. collision_radius has to cover the whole ribbon rather
+; than one wire (3 x tube_radius, the ratio composite_cable.tscn uses).
+;
+; No ribbon_colors: with the array absent every cord falls back to rope_color, so
+; all three come out black — the colour code belongs to the connectors, not the
+; wire (RcaJack.WIRE_BLACK, written as a literal because a .tscn cannot reference
+; a constant). A model can still override count and colour per channel through
+; its video-channel descriptor; the DS's bottom screen is one wire that way. See
+; RetroSystemModel.get_video_channels.
 [node name="VerletRope" type="VerletRope" parent="."]
 segment_count = 60
 segment_length = 0.03
@@ -105,9 +109,8 @@ bend_stiffness = 0.2
 tube_radius = 0.0015
 tube_sides = 8
 smoothing = 2
-rope_color = Color(0.15, 0.15, 0.15, 1.0)
+rope_color = Color(0.05, 0.05, 0.06, 1.0)
 ribbon_count = 3
-ribbon_colors = PackedColorArray(0.95, 0.74, 0.02, 1, 0.87, 0.87, 0.84, 1, 0.72, 0.08, 0.08, 1)
 surface_collision_mask = 7
 collision_radius = 0.0045
 self_collision = true

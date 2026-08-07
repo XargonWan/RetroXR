@@ -27,11 +27,6 @@ extends RetroSystemModelHandheld
 
 const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
-## The bottom screen's lone video wire — see get_video_channels(). Blue because
-## the composite trio has no fourth colour to lend and the two leads must be
-## tellable apart at the set.
-const BOTTOM_WIRE_BLUE := Color(0.11, 0.36, 0.85)
-
 # Base local frame is the handheld convention: flat, top face +Y, hinge/back
 # edge -Z. The lid pivots at the back-top edge (LidPivot, authored in the scene).
 
@@ -436,16 +431,16 @@ func get_builtin_screen() -> MeshInstance3D:
 ## core — tapping the TV showing the bottom screen is tapping the touch screen).
 func get_video_channels() -> Array:
 	return [
-		# The top screen leaves on an ordinary composite pigtail: yellow picture,
-		# white and red audio. The bottom carries picture ALONE — this hardware has
-		# one set of speakers and they are already on the top lead — so it is a
-		# single wire, and blue rather than a second yellow so the two leads cannot
-		# be confused where they meet the sets.
+		# The top screen leaves on an ordinary composite pigtail — picture plus the
+		# audio pair, three wires. The bottom carries picture ALONE (this hardware
+		# has one set of speakers and they are already on the top lead), so it is a
+		# single wire. Both black, like every other lead in the room: what tells the
+		# two apart is that one is a trio and the other is not.
 		{"label": "TOP", "rect": top_uv_rect, "touch": false, "eye_shift": top_eye_shift,
-			"wires": PackedColorArray([RcaJack.COMPOSITE_YELLOW, RcaJack.AUDIO_WHITE,
-				RcaJack.AUDIO_RED])},
+			"wires": PackedColorArray([RcaJack.WIRE_BLACK, RcaJack.WIRE_BLACK,
+				RcaJack.WIRE_BLACK])},
 		{"label": "BOTTOM", "rect": bottom_uv_rect, "touch": true, "eye_shift": 0.0,
-			"wires": PackedColorArray([BOTTOM_WIRE_BLUE])},
+			"wires": PackedColorArray([RcaJack.WIRE_BLACK])},
 	]
 
 
