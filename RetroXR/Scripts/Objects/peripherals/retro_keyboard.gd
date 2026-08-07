@@ -31,6 +31,9 @@ const KEY_TOP_Y := 0.014       # resting key-cap top
 const PRESS_TRAVEL := 0.0015   # cap sink when pressed: rests 2 mm proud of
                                # the 0.012 plate top, so this leaves it just
                                # barely above rather than buried under it
+## Rumble queue slot for a keystroke. Per hand, so both may type at once.
+const HAPTIC_KEY := &"kb_key"
+
 const PRESS_Y := 0.010         # tip below this (board-local) = pressed
 const RELEASE_Y := 0.0135      # tip must clear this to let go, and to re-arm
 const PRESS_FLOOR := -0.05     # driven below this, the tip has left the board
@@ -117,8 +120,10 @@ var _held := false
 # _held, so it can never outlive the grip and strand the player with WASD blocked.
 var _capture: ScrollLockCapture = null
 var _hint: HeldHint = null
-# Key index the desktop pointer / VR laser is currently holding down, or -1.
+# Key index the desktop pointer / VR laser is currently holding down, or -1,
+# and the controller behind it when that pointer is a VR laser.
 var _pointer_key := -1
+var _pointer_ctrl: XRController3D = null
 # Whether the caps currently show their shifted glyphs, and whether a real
 # keyboard's Shift is down (so passthrough typing relabels the caps too).
 var _labels_shifted := false
@@ -473,6 +478,9 @@ func _scan_hands() -> void:
 			_set_key(prev, false)
 		if hit >= 0:
 			_set_key(hit, true)
+		# The cap has no travel you can feel, so the tick is the whole of the
+		# key's feedback. Sliding onto a neighbour reads as a fresh press.
+		Haptics.click(ctrl as XRController3D, hit >= 0, HAPTIC_KEY)
 		_hand_pressed[name_key] = hit
 	_refresh_shift_labels()
 
@@ -481,15 +489,20 @@ func _scan_hands() -> void:
 ## `at` is a global point; KeyboardKeyField routes it here. Independent of Scroll
 ## Lock capture — clicking a specific cap is unambiguous intent and cannot
 ## collide with WASD the way raw keyboard input does.
-func pointer_press_at(at: Vector3) -> void:
+## `by` is the pointer node behind the press; the laser's rumbles, the desktop
+## reticle's resolves to no controller and silently does not.
+func pointer_press_at(at: Vector3, by: Node3D = null) -> void:
 	var local := to_local(at)
 	var hit := _key_at(Vector2(local.x, local.z))
+	if by != null:
+		_pointer_ctrl = Haptics.controller_of(by)
 	if hit == _pointer_key:
 		return
 	if _pointer_key >= 0:
 		_set_key(_pointer_key, false)
 	if hit >= 0:
 		_set_key(hit, true)
+	Haptics.click(_pointer_ctrl, hit >= 0, HAPTIC_KEY)
 	_pointer_key = hit
 
 
@@ -498,6 +511,8 @@ func pointer_release() -> void:
 	if _pointer_key >= 0:
 		_set_key(_pointer_key, false)
 		_pointer_key = -1
+		Haptics.click(_pointer_ctrl, false, HAPTIC_KEY)
+	_pointer_ctrl = null
 
 
 func _key_at(p: Vector2) -> int:

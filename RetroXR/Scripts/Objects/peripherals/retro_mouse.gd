@@ -102,8 +102,12 @@ const ANIM_BUTTONS: Dictionary = {
 }
 const BUTTON_PRESS := 0.0012
 const ANIM_WEIGHT := 0.45
+## Rumble queue slot for a click on this mouse's own buttons.
+const HAPTIC_KEY := &"mouse_btn"
 
 var _anim_btns: Array[Dictionary] = []   # {node, rest, bit}
+# Button bits the haptics have already ticked for.
+var _haptic_buttons := 0
 
 
 ## The trigger is this mouse's left button, so it can't double as the push-out
@@ -299,6 +303,7 @@ func _process(_delta: float) -> void:
 	# The shell moves whether or not it is plugged into anything — an unplugged
 	# mouse still has buttons you can click.
 	var buttons := _poll_buttons()
+	_click_haptics(buttons)
 	_animate_buttons(buttons)
 
 	if _connected_system == null or _port_index < 0:
@@ -324,6 +329,20 @@ func _process(_delta: float) -> void:
 	if dx != 0 or dy != 0 or buttons != _last_buttons:
 		_connected_system.get_libretro_node().SetMouseState(_port_index, dx, dy, buttons)
 		_last_buttons = buttons
+
+
+## A tick on the hand holding the mouse for each button edge — the click a real
+## microswitch would give back through the shell.
+##
+## Tracked apart from _last_buttons, which only advances once a PLUGGED-IN mouse
+## reports; the buttons click whether or not anything is listening.
+func _click_haptics(buttons: int) -> void:
+	if buttons == _haptic_buttons:
+		return
+	var changed := buttons ^ _haptic_buttons
+	_haptic_buttons = buttons
+	# Down wins a frame that both presses and releases: it is the louder event.
+	Haptics.click(_holding_ctrl, (buttons & changed) != 0, HAPTIC_KEY)
 
 
 ## Cache the button meshes. A mesh a scene doesn't carry is simply one this mouse

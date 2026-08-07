@@ -19,6 +19,10 @@ signal button_pressed
 
 const POINTABLE_LAYER := 1 << 20
 
+## Rumble queue slot for a press. Shared across buttons: one hand can only be
+## pressing one of them, and a retrigger under the same key restarts the tick.
+const HAPTIC_KEY := &"vr_button"
+
 ## Analog trigger action, read as a float like the rest of the project
 ## (grip_click/trigger_click bools are only read by godot-xr-tools itself).
 const TRIGGER_ACTION := "trigger"
@@ -159,6 +163,7 @@ func _process_touch_mode(delta: float) -> void:
 		_touch_lost = 0.0
 		_touch_pressed = true
 		_update_visual_state()
+		Haptics.click(ctrl, true, HAPTIC_KEY)
 		_activate()
 
 
@@ -183,10 +188,12 @@ func _qualified(ctrl: XRController3D) -> bool:
 
 
 func _release_touch() -> void:
+	var was := _touch_ctrl
 	_touch_ctrl = null
 	_touch_lost = 0.0
 	if _touch_pressed:
 		_touch_pressed = false
+		Haptics.click(was, false, HAPTIC_KEY)
 		_update_visual_state()
 
 
@@ -232,6 +239,7 @@ func _process_trigger_mode() -> void:
 		# trigger lets go.
 		if not is_instance_valid(_engaged_ctrl) or not _engaged_ctrl.get_is_active() \
 				or _engaged_ctrl.get_float(TRIGGER_ACTION) < TRIGGER_OFF:
+			Haptics.click(_engaged_ctrl, false, HAPTIC_KEY)
 			_engaged_ctrl = null
 			_trigger_pressed = false
 			_update_visual_state()
@@ -248,6 +256,7 @@ func _process_trigger_mode() -> void:
 	_engaged_ctrl = ctrl
 	_trigger_pressed = true
 	_update_visual_state()
+	Haptics.click(ctrl, true, HAPTIC_KEY)
 	_activate()
 
 
@@ -299,9 +308,12 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			_pointer_hovered = true
 			_pointer_pressed = true
 			_update_visual_state()
+			# Null for the desktop reticle, which has no hand to rumble.
+			Haptics.click(Haptics.controller_of(event.pointer), true, HAPTIC_KEY)
 			_activate()
 		XRToolsPointerEvent.Type.RELEASED:
 			_pointer_pressed = false
+			Haptics.click(Haptics.controller_of(event.pointer), false, HAPTIC_KEY)
 			_update_visual_state()
 
 
