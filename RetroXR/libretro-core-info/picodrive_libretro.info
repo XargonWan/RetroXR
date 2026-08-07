@@ -12,7 +12,7 @@ categories = "Emulator"
 manufacturer = "Sega"
 systemname = "Sega 8/16-bit + 32X (Various)"
 systemid = "mega_drive"
-secondary_systemids = "game_gear:gg|sega_cd:cue,iso,chd,m3u"
+secondary_systemids = "game_gear:gg|master_system:sms|sega_32x:32x|sega_cd:cue,iso,chd,m3u|sega_pico:pco"
 
 # Libretro Features
 database = "Sega - Master System - Mark III|Sega - Game Gear|Sega - Mega-CD - Sega CD|Sega - Mega Drive - Genesis|Sega - PICO|Sega - 32X"

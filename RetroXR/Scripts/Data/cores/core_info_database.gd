@@ -41,25 +41,30 @@ static func shared() -> CoreInfoDatabase:
 	return _shared
 
 
-## Union of supported_extensions (lowercase, no dots) across every core that
-## serves this systemid.
+## Extensions (lowercase, no dots) that belong to this systemid: the union of
+## supported_extensions across the cores whose OWN systemid this is, plus what
+## any other core declared for it in `secondary_systemids`.
 ##
-## A secondary-only platform answers with the narrower list its cores declared
-## for it instead. Genesis Plus GX reads fifteen extensions and only "gg" is a
-## Game Gear one, so the union would file every .md in the Game Gear library.
+## A core reached only as a secondary contributes its declared subset and not its
+## whole list. Genesis Plus GX reads fifteen extensions and one of them is Game
+## Gear's; counting the rest would file every .md in the Game Gear library, and
+## would push md/cue/chd/32x into Master System's the moment those cores name it.
 static func extensions_for_systemid(systemid: String) -> Array[String]:
 	var db := shared()
-	if db.is_secondary_systemid(systemid):
-		var declared: Array[String] = []
-		declared.assign(db._secondary_exts[systemid])
-		return declared
-
 	var exts: Array[String] = []
+
 	for entry: Dictionary in db.get_by_systemid(systemid):
+		if str(entry.get("systemid", "")) != systemid:
+			continue
 		for e: String in str(entry.get("supported_extensions", "")).split("|"):
 			var s := e.strip_edges().to_lower()
 			if not s.is_empty() and s not in exts:
 				exts.append(s)
+
+	for e: String in db._secondary_exts.get(systemid, [] as Array[String]):
+		if e not in exts:
+			exts.append(e)
+
 	return exts
 
 

@@ -78,7 +78,7 @@ appears only in the `|`-separated `database` field, which nothing indexes.
 CD|Sega - Mega Drive - Genesis|Sega - PICO|Sega - SG-1000"`. Six machines, one id.
 `picodrive` adds "Sega - 32X" on the same id.
 
-Across the corpus: **162 distinct `database` names against 141 distinct systemids**.
+Across the corpus: **162 distinct `database` names against 144 distinct systemids**.
 
 Not a data bug — the stock format has no way to express "this core covers N
 platforms". Our fork adds one (2026-08-07), documented in
@@ -104,9 +104,19 @@ Two deliberate omissions:
   `roms/mega_drive/`. Sega CD images still list under Mega Drive as they always did;
   they now also have a home of their own.
 
-Game Gear and Sega CD are wired this way and have tiles, icons and descriptors.
-Still only in `database`, if you want them next: Sega 32X (`picodrive`), SG-1000 and
-Sega PICO (`genesis_plus_gx`), and Master System under the Mega Drive cores.
+A core reached only as a secondary contributes its declared subset and nothing else,
+which is what keeps this safe in the other direction too: the Mega Drive cores name
+`master_system`, and `master_system` is a primary id, so an unfiltered union would
+have pulled `md`/`cue`/`chd`/`32x` into a Master System library. `extensions_for_systemid()`
+unions the cores whose OWN systemid it is, then adds only the declared subsets.
+
+The whole Sega line is wired this way now, each with its own tile, icons and
+descriptor: `game_gear`, `sega_cd`, `sega_32x`, `sg1000`, `sega_pico`. `master_system`
+gained the three Mega Drive cores without becoming a new tile — it already had one.
+
+Still only in `database`, same shape whenever you want it: ColecoVision and
+Spectravideo SVI under `bluemsx`, Famicom Disk System under the NES cores, and the
+Game Boy/GBA/DS split inside `skyemu`.
 
 ## Duplicate systemids for one machine
 

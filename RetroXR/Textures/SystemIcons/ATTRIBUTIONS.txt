@@ -227,10 +227,16 @@ quake_3-content.svg                 Quake III-content.svg
 quake_3.svg                         Quake III.svg
 scummvm-content.svg                 ScummVM-content.svg
 scummvm.svg                         ScummVM.svg
+sega_32x-content.svg                Sega - 32X-content.svg
+sega_32x.svg                        Sega - 32X.svg
 sega_cd-content.svg                 Sega - Mega-CD - Sega CD-content.svg
 sega_cd.svg                         Sega - Mega-CD - Sega CD MK-1601-4102 (U).svg
+sega_pico-content.svg               Sega - PICO-content.svg
+sega_pico.svg                       Sega - PICO.svg
 sega_saturn-content.svg             Sega - Saturn-content.svg
 sega_saturn.svg                     Sega - Saturn.svg
+sg1000-content.svg                  Sega - SG-1000-content.svg
+sg1000.svg                          Sega - SG-1000.svg
 sharp_x1-content.svg                Sharp - X1-content.svg
 sharp_x1.svg                        Sharp - X1.svg
 sharp_x68000-content.svg            Sharp - X68000-content.svg

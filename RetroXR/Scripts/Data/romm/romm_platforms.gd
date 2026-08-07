@@ -69,6 +69,15 @@ const SLUG_MAP := {
 	"megacd": "sega_cd",
 	"mega-cd": "sega_cd",
 	"sega-cd": "sega_cd",
+	"sega32": "sega_32x",
+	"sega32x": "sega_32x",
+	"32x": "sega_32x",
+	"sg1000": "sg1000",
+	"sg-1000": "sg1000",
+	# No bare "pico": that is PICO-8's folder name as often as it is this
+	# machine's, and the two are unrelated.
+	"sega-pico": "sega_pico",
+	"segapico": "sega_pico",
 	"saturn": "sega_saturn",
 	"sega-saturn": "sega_saturn",
 	"dreamcast": "dreamcast",
