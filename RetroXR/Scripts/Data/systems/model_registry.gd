@@ -40,12 +40,27 @@ const PLACEHOLDER_SCRIPT := "res://Scripts/Objects/system_models/default_model.g
 
 const _SCENES := "res://Scenes/Objects/system_models/"
 
+## Every platform the PC tower is the hardware for — the systems SystemInfo marks
+## `computer = true`. They are listed rather than derived because _ROWS is a const
+## table and SystemInfo is a loaded resource; a new computer system therefore has to
+## be added HERE as well as given its .tres, or it falls back to the procedural box.
+##
+## Not all of these were towers — a C64, a Spectrum and an Amiga 500 are wedge
+## keyboards with the machine inside — so this is a stand-in for them in the same
+## sense the procedural box was, just a far better one: it has the sockets their
+## keyboard, mouse, monitor and speakers actually plug into.
+const _COMPUTER_PLATFORMS: Array[String] = [
+	"amiga", "apple_ii", "atari_st", "commodore_64", "commodore_amiga",
+	"commodore_c128", "commodore_c64", "commodore_vic20", "cpc", "dos", "msx",
+	"pc_88", "pc_98", "scummvm", "sharp_x1", "sharp_x68000", "zx81", "zx_spectrum",
+]
+
 
 ## Row fields:
-##   platform  systemid this model is hardware for. Does NOT replace
-##             RetroSystem.systemid — core lookup, MediaDimensions, SystemInfo,
-##             SystemIcons and ROM filtering all key off that. The row sits UNDER
-##             the platform.
+##   platform  systemid this model is hardware for, or an ARRAY of them where one
+##             model serves several machines. Does NOT replace RetroSystem.systemid
+##             — core lookup, MediaDimensions, SystemInfo, SystemIcons and ROM
+##             filtering all key off that. The row sits UNDER the platform.
 ##   label     spawn-menu row text.
 ##   scene     XOR script. Neither would mean the placeholder.
 ##   handheld  played in the hand; the menu labels those differently.
@@ -65,7 +80,11 @@ const _ROWS: Dictionary = {
 	"nes":                  {"platform": "nes", "label": "Nintendo Entertainment System",
 		"script": "res://Scripts/Objects/system_models/nes_model.gd",
 		"requires": ["res://imported-assets/consoles/nes/nes_console.glb"]},
-	"pc_tower":             {"platform": "scummvm", "label": "PC Tower",
+	# --- computers ------------------------------------------------------------
+	# One row across every computer platform rather than eighteen near-identical
+	# ones. The tower is a single model that happens to fit them all; copies would
+	# only be eighteen places for it to rot.
+	"pc_tower":             {"platform": _COMPUTER_PLATFORMS, "label": "PC Tower",
 		"scene": _SCENES + "pc_tower.tscn"},
 
 	# --- handhelds ------------------------------------------------------------
@@ -185,11 +204,21 @@ static func placeholder_row() -> Dictionary:
 		"script": PLACEHOLDER_SCRIPT, "requires": []}
 
 
+## Does this row provide hardware for `platform`? The field is a systemid or an
+## array of them, and every lookup below goes through here so the two spellings can
+## never diverge.
+static func _serves(row: Dictionary, platform: String) -> bool:
+	var field: Variant = row.get("platform", "")
+	if field is Array:
+		return (field as Array).has(platform)
+	return str(field) == platform
+
+
 ## Every available row for a platform, in author order. The first is its default.
 static func rows_for(platform: String) -> Array:
 	var out: Array = []
 	for id: String in _ROWS:
-		if _ROWS[id].get("platform", "") == platform and is_available(id):
+		if _serves(_ROWS[id], platform) and is_available(id):
 			out.append(_row(id))
 	return out
 
@@ -208,21 +237,32 @@ static func is_available(model_id: String) -> bool:
 	return true
 
 
+## The single platform a model belongs to, or "" when it does not belong to exactly
+## one.
+##
+## The spawn menu uses this to let the ROW override the systemid carried in a token,
+## so a model and the core it loads cannot disagree. A model serving several
+## machines has no single answer, and "" hands that decision back to the token —
+## which is the only thing that knows WHICH computer was asked for. Same path the
+## placeholder already took, and for the same reason.
 static func platform_of(model_id: String) -> String:
-	return _ROWS[model_id].get("platform", "") if _ROWS.has(model_id) else ""
+	if not _ROWS.has(model_id):
+		return ""
+	var field: Variant = _ROWS[model_id].get("platform", "")
+	return "" if field is Array else str(field)
 
 
 static func platform_is_handheld(platform: String) -> bool:
 	for id: String in _ROWS:
 		var r: Dictionary = _ROWS[id]
-		if r.get("platform", "") == platform and bool(r.get("handheld", false)):
+		if _serves(r, platform) and bool(r.get("handheld", false)):
 			return true
 	return false
 
 
 static func has_any_model(platform: String) -> bool:
 	for id: String in _ROWS:
-		if _ROWS[id].get("platform", "") == platform:
+		if _serves(_ROWS[id], platform):
 			return true
 	return false
 
@@ -240,7 +280,7 @@ static func has_plain_alternative(platform: String) -> bool:
 	var total := 0
 	var plain := 0
 	for id: String in _ROWS:
-		if _ROWS[id].get("platform", "") != platform:
+		if not _serves(_ROWS[id], platform):
 			continue
 		total += 1
 		if (_ROWS[id].get("requires", []) as Array).is_empty():
