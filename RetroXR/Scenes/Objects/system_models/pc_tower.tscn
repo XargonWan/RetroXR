@@ -190,6 +190,56 @@ transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.055, 0.372, -0.2225)
 mesh = SubResource("Mesh_ps2_bore")
 surface_material_override/0 = SubResource("Mat_dark")
 
+; Silkscreen above each socket, the way a real I/O panel names its ports.
+;
+; Turned 180 about Y so the words read the right way round from BEHIND the tower,
+; and set 0.5 mm proud of the case's back face at -0.22 so they do not z-fight it.
+;
+; 5 mm of line, which is what the tightest gap will take: keyboard socket to VGA
+; flange is 8.2 mm, leaving 1.6 mm each side. Each label is centred in the gap ABOVE
+; its own socket rather than spaced evenly — the ports are not evenly spaced either.
+;
+; font_size 48 with pixel_size 0.000104, NOT font_size 5 with pixel_size 0.001. Both
+; give a 5 mm line, but font_size is the size the glyphs are RASTERISED at: asking
+; for 5 builds a five-pixel-tall atlas and then magnifies it, and the words came out
+; as smears. Rasterise large and scale down — the recipe vr_hinge.gd uses for its
+; hint icons (font_size 96, pixel_size = size / 96).
+;
+; outline_size 0. Label3D outlines by default, and dark text with a dark outline on
+; a beige panel fuses into a blob at this size; the outline exists to lift floating
+; billboard text off a busy background, which is the opposite of silkscreen.
+[node name="MouseLabel" type="Label3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.3875, -0.2205)
+pixel_size = 0.000104
+text = "Mouse PS/2"
+font_size = 48
+outline_size = 0
+modulate = Color(0.16, 0.15, 0.12, 1)
+
+[node name="KeyboardLabel" type="Label3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.356, -0.2205)
+pixel_size = 0.000104
+text = "Keyboard PS/2"
+font_size = 48
+outline_size = 0
+modulate = Color(0.16, 0.15, 0.12, 1)
+
+[node name="VgaLabel" type="Label3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.3284, -0.2205)
+pixel_size = 0.000104
+text = "VGA"
+font_size = 48
+outline_size = 0
+modulate = Color(0.16, 0.15, 0.12, 1)
+
+[node name="SpeakerLabel" type="Label3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.3055, -0.2205)
+pixel_size = 0.000104
+text = "Speakers"
+font_size = 48
+outline_size = 0
+modulate = Color(0.16, 0.15, 0.12, 1)
+
 ; Where the plugs seat, rotated 180 about X.
 ;
 ; NOT identity, which was the first guess and put the plug in backwards — barrel
