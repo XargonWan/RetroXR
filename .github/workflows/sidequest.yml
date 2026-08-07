@@ -1,0 +1,72 @@
+name: SideQuest
+
+# The SideQuest listing updates itself from a GitHub release. Its integrations
+# page hands out a release-webhook URL, and that endpoint expects the same
+# payload a repository webhook would send — so this forwards one from Actions
+# instead of wiring the URL into Settings → Webhooks. Two reasons to do it here:
+# the token stays a repo secret rather than a setting nobody can see from the
+# code, and a release published with no APK on it fails a run you can look at
+# instead of silently updating nothing.
+#
+# SideQuest only accepts a build whose Android versionCode is HIGHER than the
+# one already listed. That lives in the gitignored RetroXR/export_presets.cfg
+# (`version/code`) and has to be bumped by hand alongside `version/name`.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing release to re-send (e.g. v0.2.0)
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect the release
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # Fetched rather than read off github.event, so a manual re-send of an
+          # older tag takes exactly the same path as an automatic one.
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
+          gh api "repos/$GITHUB_REPOSITORY" > repository.json
+
+          apk=$(jq -r '[.assets[] | select(.name | endswith(".apk"))] | first | .name // ""' release.json)
+          if [ -z "$apk" ]; then
+            echo "::error::release $TAG carries no .apk asset — nothing for SideQuest to pick up"
+            exit 1
+          fi
+          echo "$TAG → $apk"
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+
+          jq -n --slurpfile r release.json --slurpfile repo repository.json \
+            '{action: "published", release: $r[0], repository: $repo[0]}' > payload.json
+
+      - name: Send it to SideQuest
+        env:
+          WEBHOOK: ${{ secrets.SIDEQUEST_RELEASE_WEBHOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "::error::secret SIDEQUEST_RELEASE_WEBHOOK is unset — copy the release-webhook URL from the SideQuest app's integrations page"
+            exit 1
+          fi
+          code=$(curl -sS -o response.txt -w '%{http_code}' -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -H 'X-GitHub-Event: release' \
+            --data-binary @payload.json)
+          echo "HTTP $code"
+          cat response.txt
+          echo
+          # A 2xx only means SideQuest accepted the payload. Whether it takes the
+          # build still depends on the versionCode, which the listing decides.
+          case "$code" in
+            2*) echo "sent ${{ steps.rel.outputs.apk }}" ;;
+            *)  echo "::error::SideQuest webhook returned $code"; exit 1 ;;
+          esac
