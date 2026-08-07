@@ -30,6 +30,10 @@ const SYSTEM_MAP := {
 	"game_boy": 9,
 	"game_boy_advance": 12,
 	"gamecube": 13,
+	# Screenscraper has no generic handheld-electronic platform, only Nintendo's
+	# Game & Watch. A Tiger or Acclaim title reaches it as a name search and
+	# usually misses, which costs it art rather than giving it the wrong art.
+	"handheld_electronic": 52,
 	"intellivision": 115,
 	"mame": 75,
 	"master_system": 2,

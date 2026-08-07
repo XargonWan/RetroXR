@@ -64,9 +64,9 @@ single-game cores where it matters less. The real machines among them:
 
 Anything given an id also needs a `res://SystemInfo/<systemid>.tres` or it takes the
 fallback descriptor, and a `res://Textures/SystemIcons/<systemid>.svg` or it draws
-`_default.svg`. 39 of the 139 systemids have no console icon; 11 of those are ids the
-fork added (`bbk`, `dingoo-a320`, `galaksija`, `handheld_electronic`, `neo_geo_cd`,
-`palm_os`, `sam_coupe`, `spmp8000`, `super_cassette_vision`, `thomson_moto`, `wiiu`).
+`_default.svg`. 38 of the 139 systemids have no console icon; 10 of those are ids the
+fork added (`bbk`, `dingoo-a320`, `galaksija`, `neo_geo_cd`, `palm_os`, `sam_coupe`,
+`spmp8000`, `super_cassette_vision`, `thomson_moto`, `wiiu`).
 
 ## Sub-platforms are invisible — they exist only in `database`
 

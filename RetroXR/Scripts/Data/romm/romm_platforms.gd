@@ -100,6 +100,12 @@ const SLUG_MAP := {
 	"ngpc": "neo_geo_pocket",
 
 	# Bandai / Watara / other handhelds
+	#
+	# Game & Watch resolves to handheld_electronic, not an id of its own: `gw` is
+	# the only core that plays these, and it covers Tiger and Acclaim LCD games
+	# under the same id.
+	"g-and-w": "handheld_electronic",
+	"gameandwatch": "handheld_electronic",
 	"wonderswan": "wonderswan",
 	"wswan": "wonderswan",
 	"wonderswancolor": "wonderswan",

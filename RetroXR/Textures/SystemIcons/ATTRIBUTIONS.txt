@@ -141,6 +141,8 @@ game_boy_advance-content.svg        Nintendo - Game Boy Advance-content.svg
 game_boy_advance.svg                Nintendo - Game Boy Advance.svg
 gamecube-content.svg                Nintendo - GameCube-content.svg
 gamecube.svg                        Nintendo - GameCube.svg
+handheld_electronic-content.svg     Handheld Electronic Game-content.svg
+handheld_electronic.svg             Handheld Electronic Game.svg
 hbmame-content.svg                  MAME-content.svg
 hbmame.svg                          MAME.svg
 intellivision-content.svg           Mattel - Intellivision-content.svg
