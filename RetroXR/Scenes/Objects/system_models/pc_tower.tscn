@@ -1,8 +1,10 @@
-[gd_scene load_steps=20 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="2_vgaport"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/trs_port.tscn" id="3_trsport"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/ps2_jack_keyboard.res" id="4_ps2jackkb"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/ps2_jack_mouse.res" id="5_ps2jackms"]
 
 ; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
 ; footprint. Origin at the base centre, so the system sits on the floor at y 0.
@@ -56,27 +58,6 @@ roughness = 0.55
 [sub_resource type="StandardMaterial3D" id="Mat_dark"]
 albedo_color = Color(0.07, 0.07, 0.08, 1)
 roughness = 0.5
-
-; PS/2 sockets, PC99 colour-coded to match the plug meshes the keyboard and mouse
-; carry: purple = keyboard, green = mouse. On this tower that coding is the only
-; thing telling the two sockets apart.
-[sub_resource type="CylinderMesh" id="Mesh_ps2"]
-top_radius = 0.0075
-bottom_radius = 0.0075
-height = 0.004
-
-[sub_resource type="CylinderMesh" id="Mesh_ps2_bore"]
-top_radius = 0.0050
-bottom_radius = 0.0050
-height = 0.005
-
-[sub_resource type="StandardMaterial3D" id="Mat_ps2_kb"]
-albedo_color = Color(0.42, 0.24, 0.58, 1)
-roughness = 0.45
-
-[sub_resource type="StandardMaterial3D" id="Mat_ps2_ms"]
-albedo_color = Color(0.24, 0.52, 0.30, 1)
-roughness = 0.45
 
 [sub_resource type="StandardMaterial3D" id="Mat_tray"]
 albedo_color = Color(0.13, 0.13, 0.14, 1)
@@ -164,31 +145,30 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.006, 0)
 [node name="AvAnchor" type="Marker3D" parent="Back"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0.13, -0.222)
 
-; PS/2 keyboard + mouse sockets, on the I/O panel near the top of the back — where
-; an AT/ATX tower puts them. Stacked vertically, mouse above keyboard.
+; PS/2 keyboard + mouse receptacles, on the I/O panel near the top of the back —
+; where an AT/ATX tower puts them. Stacked vertically, mouse above keyboard. The
+; PC99 colour code is baked into each mesh (purple keyboard, green mouse) and is the
+; only thing telling the two apart.
 ;
-; CylinderMesh runs along its own Y, so the basis rotates +90 about X to lay it
-; along Z and face out of the back panel. Written transposed, as .tscn stores it:
-; args are [x.x, y.x, z.x, x.y, y.y, z.y, x.z, y.z, z.z], so y maps to +Z here.
+; Baked by Tools/gen_ps2.gd from the manufacturer's DETAIL D, so the six sockets and
+; the central key slot land where the male's contacts do. Replaced a flat coloured
+; ring with a dark disc in it, which had neither.
+;
+; Ry(180), NOT the Rx(180) every port SEAT on this panel carries. Both point the
+; mesh's +Z out of the back, but Rx negates Y as well — and the PS/2 contact field is
+; not symmetric about Y (5 and 6 up, 1 and 2 down), so it would come out upside down
+; and the keyway would sit at the bottom. Ry negates X instead, and the field IS
+; symmetric about X, so the set maps onto itself and up stays up.
+;
+; z -0.2215: 1.5 mm proud of the case's back face at -0.22. Everything the mesh draws
+; is at local z > 0, so nothing is left behind the panel for it to occlude.
 [node name="Ps2Keyboard" type="MeshInstance3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.055, 0.340, -0.221)
-mesh = SubResource("Mesh_ps2")
-surface_material_override/0 = SubResource("Mat_ps2_kb")
-
-[node name="Ps2KeyboardBore" type="MeshInstance3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.055, 0.340, -0.2225)
-mesh = SubResource("Mesh_ps2_bore")
-surface_material_override/0 = SubResource("Mat_dark")
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.340, -0.2215)
+mesh = ExtResource("4_ps2jackkb")
 
 [node name="Ps2Mouse" type="MeshInstance3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.055, 0.372, -0.221)
-mesh = SubResource("Mesh_ps2")
-surface_material_override/0 = SubResource("Mat_ps2_ms")
-
-[node name="Ps2MouseBore" type="MeshInstance3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.055, 0.372, -0.2225)
-mesh = SubResource("Mesh_ps2_bore")
-surface_material_override/0 = SubResource("Mat_dark")
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.372, -0.2215)
+mesh = ExtResource("5_ps2jackms")
 
 ; Silkscreen above each socket, the way a real I/O panel names its ports.
 ;
@@ -255,10 +235,10 @@ modulate = Color(0.16, 0.15, 0.12, 1)
 ;
 ; Port 1 = keyboard, matching the purple socket above it; port 2 = mouse.
 [node name="PortSeat1" type="Marker3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.340, -0.221)
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.340, -0.2235)
 
 [node name="PortSeat2" type="Marker3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.372, -0.221)
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.372, -0.2235)
 
 ; The video card's socket, on the I/O panel directly under the PS/2 stack — where a
 ; board with onboard video puts it. y 0.318 is 22 mm below the keyboard socket, so
