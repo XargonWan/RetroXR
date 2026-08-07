@@ -18,7 +18,6 @@ const SYSTEM_MAP := {
 	"atari_st": 42,
 	"cdi": 133,
 	"channel_f": 80,
-	"chip_8": 80,
 	"colecovision": 48,
 	"commodore_amiga": 64,
 	"commodore_c64": 66,
