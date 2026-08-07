@@ -198,13 +198,18 @@ func _populate_manager_tab() -> void:
 			if not cn.is_empty() and not seen.has(cn):
 				seen[cn] = true
 				var info: Dictionary = core_db.get_by_core_name(cn)
-				var sid: String  = info.get("systemid",   "unknown") if not info.is_empty() else "unknown"
-				var sname: String = info.get("systemname", cn)       if not info.is_empty() else cn
-				if not _manager_cores_by_system.has(sid):
-					_manager_cores_by_system[sid] = []
-					system_labels[sid]  = sname
-				(_manager_cores_by_system[sid] as Array).append({"core_name": cn,
-					"display_name": info.get("corename", cn) if not info.is_empty() else cn})
+				# Every platform the core serves, not only its own. A multi-system
+				# core is a real choice on each of them, and this loop is what adopts
+				# a first default and creates that platform's roms dir.
+				var sids := CoreInfoDatabase.systemids_of(info)
+				if sids.is_empty():
+					sids = ["unknown"] as Array[String]
+				for sid: String in sids:
+					if not _manager_cores_by_system.has(sid):
+						_manager_cores_by_system[sid] = []
+						system_labels[sid] = cn if sid == "unknown" else core_db.get_systemname_for_id(sid)
+					(_manager_cores_by_system[sid] as Array).append({"core_name": cn,
+						"display_name": info.get("corename", cn) if not info.is_empty() else cn})
 			fname = dir.get_next()
 		dir.list_dir_end()
 
@@ -956,13 +961,16 @@ func _on_cores_fetched(cores: Array) -> void:
 		var core_name: String   = entry["core_name"]
 		var remote_date: String = entry["remote_date"]
 		var info: Dictionary    = core_db.get_by_core_name(core_name)
-		var sid: String = info.get("systemid", "") if not info.is_empty() else ""
-		if sid.is_empty():
-			sid = "__other__"
-		if not _download_cores_by_system.has(sid):
-			_download_cores_by_system[sid] = []
-		(_download_cores_by_system[sid] as Array).append(
-			{"core_name": core_name, "remote_date": remote_date, "info": info})
+		# Listed under every platform it serves, so browsing to Game Gear offers
+		# the Mega Drive cores that emulate it rather than an empty tile.
+		var sids := CoreInfoDatabase.systemids_of(info)
+		if sids.is_empty():
+			sids = ["__other__"] as Array[String]
+		for sid: String in sids:
+			if not _download_cores_by_system.has(sid):
+				_download_cores_by_system[sid] = []
+			(_download_cores_by_system[sid] as Array).append(
+				{"core_name": core_name, "remote_date": remote_date, "info": info})
 	refresh_download_systems()
 
 
@@ -1148,16 +1156,18 @@ func _on_core_job_finished(key: String, ok: bool, error: String) -> void:
 	_refresh_download_button(core_name)
 	call_deferred("_populate_manager_tab")
 
-	var dl_sid: String = core_db.get_by_core_name(core_name).get("systemid", "")
-	if dl_sid.is_empty():
+	var dl_sids := CoreInfoDatabase.systemids_of(core_db.get_by_core_name(core_name))
+	if dl_sids.is_empty():
 		return
-	RomLibrary.ensure_rom_dir(dl_sid)
 	# The Cartridges and Systems tabs live on SpawnView, not here, and
 	# default_core_changed is the signal it already listens to for exactly this.
 	# The default itself is adopted by the deferred _populate_manager_tab above
 	# when this is the system's first core, so read it back rather than assuming
-	# it is this one.
-	default_core_changed.emit(dl_sid, core_defaults.get_default_core(dl_sid))
+	# it is this one. Once per platform the core serves: a multi-system core
+	# fills several roms dirs and lights up several tiles.
+	for dl_sid: String in dl_sids:
+		RomLibrary.ensure_rom_dir(dl_sid)
+		default_core_changed.emit(dl_sid, core_defaults.get_default_core(dl_sid))
 
 
 ## True while BIOS / Extras is the sub-tab on screen.

@@ -41,6 +41,43 @@ static func shared() -> CoreInfoDatabase:
 	return _shared
 
 
+## Parse a `secondary_systemids` value into [{id: String, exts: Array[String]}].
+## Format: "game_gear:gg|sega_cd:cue,iso,chd" — pipe between platforms, comma
+## between that platform's extensions. Malformed entries are skipped.
+static func parse_secondary_systemids(raw: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for pair: String in raw.split("|"):
+		var colon := pair.find(":")
+		if colon < 0:
+			continue
+		var id := pair.left(colon).strip_edges()
+		if id.is_empty():
+			continue
+		var exts: Array[String] = []
+		for e: String in pair.right(pair.length() - colon - 1).split(","):
+			var ext := e.strip_edges().to_lower()
+			if not ext.is_empty() and ext not in exts:
+				exts.append(ext)
+		out.append({"id": id, "exts": exts})
+	return out
+
+
+## Every systemid a core serves — its own first, then the platforms it named in
+## `secondary_systemids`. Anything grouping installed or downloadable cores by
+## platform must walk this, not `systemid` alone, or a multi-system core is only
+## ever offered under its parent machine.
+static func systemids_of(entry: Dictionary) -> Array[String]:
+	var ids: Array[String] = []
+	var primary := str(entry.get("systemid", "")).strip_edges()
+	if not primary.is_empty():
+		ids.append(primary)
+	for sub: Dictionary in parse_secondary_systemids(str(entry.get("secondary_systemids", ""))):
+		var id: String = sub["id"]
+		if id not in ids:
+			ids.append(id)
+	return ids
+
+
 ## Extensions (lowercase, no dots) that belong to this systemid: the union of
 ## supported_extensions across the cores whose OWN systemid this is, plus what
 ## any other core declared for it in `secondary_systemids`.
@@ -191,23 +228,18 @@ func _rebuild_indices() -> void:
 			_primary_ids[sid] = true
 			_index_under(sid, entry)
 
-		# `secondary_systemids = "game_gear:gg|sega_cd:cue,iso,chd"` — the other
-		# platforms this core covers, each with the subset of its extensions that
-		# belongs to that platform. A core is queryable under every one of them.
-		for pair: String in str(entry.get("secondary_systemids", "")).split("|"):
-			var colon := pair.find(":")
-			if colon < 0:
-				continue
-			var sub := pair.left(colon).strip_edges()
-			if sub.is_empty():
-				continue
-			_index_under(sub, entry)
-			if not _secondary_exts.has(sub):
-				_secondary_exts[sub] = [] as Array[String]
-			var list: Array[String] = _secondary_exts[sub]
-			for e: String in pair.right(pair.length() - colon - 1).split(","):
-				var ext := e.strip_edges().to_lower()
-				if not ext.is_empty() and ext not in list:
+		# The other platforms this core covers, each with the subset of its
+		# extensions that belongs to that platform. A core is queryable under
+		# every one of them.
+		for sub: Dictionary in parse_secondary_systemids(
+				str(entry.get("secondary_systemids", ""))):
+			var sub_id: String = sub["id"]
+			_index_under(sub_id, entry)
+			if not _secondary_exts.has(sub_id):
+				_secondary_exts[sub_id] = [] as Array[String]
+			var list: Array[String] = _secondary_exts[sub_id]
+			for ext: String in sub["exts"]:
+				if ext not in list:
 					list.append(ext)
 
 
