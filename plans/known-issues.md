@@ -9,7 +9,7 @@
 `RetroXR/libretro-core-info/` is no longer the `libretro/libretro-core-info`
 submodule. It is a vendored copy of `dist/info/` from our own libretro-super
 fork, which carries the fixes below; see that directory's README for how to
-resync. 314 files, 151 distinct systemids.
+resync. 314 files, 155 distinct systemids.
 
 ## Fixed by the fork (2026-08-07)
 
@@ -63,7 +63,7 @@ single-game cores where it matters less. The real machines among them:
 
 Anything given an id also needs a `res://SystemInfo/<systemid>.tres` or it takes the
 fallback descriptor, and a `res://Textures/SystemIcons/<systemid>.svg` or it draws
-`_default.svg`. 38 of the 151 systemids still have no console icon: the players and
+`_default.svg`. 38 of the 155 systemids still have no console icon: the players and
 test cores, plus the ids the fork added that no core here reaches usefully yet —
 `bbk`, `dingoo-a320`, `galaksija`, `neo_geo_cd`, `palm_os`, `sam_coupe`, `spmp8000`,
 `super_cassette_vision`, `thomson_moto`, `wiiu`.
@@ -78,7 +78,7 @@ appears only in the `|`-separated `database` field, which nothing indexes.
 CD|Sega - Mega Drive - Genesis|Sega - PICO|Sega - SG-1000"`. Six machines, one id.
 `picodrive` adds "Sega - 32X" on the same id.
 
-Across the corpus: **162 distinct `database` names against 151 distinct systemids**.
+Across the corpus: **162 distinct `database` names against 155 distinct systemids**.
 
 Not a data bug — the stock format has no way to express "this core covers N
 platforms". Our fork adds one (2026-08-07), documented in
@@ -112,9 +112,10 @@ which is what keeps this safe in the other direction too: the Mega Drive cores n
 have pulled `md`/`cue`/`chd`/`32x` into a Master System library. `extensions_for_systemid()`
 unions the cores whose OWN systemid it is, then adds only the declared subsets.
 
-Twelve platforms are wired this way, each with its own tile, icons and descriptor:
+Sixteen platforms are wired this way, each with its own tile, icons and descriptor:
 `game_gear`, `sega_cd`, `sega_32x`, `sg1000`, `sega_pico`, `fds`, `wii`,
-`nintendo_64dd`, `supergrafx`, `pc_engine_cd`, `atari_8bit`, `svi`.
+`nintendo_64dd`, `supergrafx`, `pc_engine_cd`, `atari_8bit`, `svi`, `satellaview`,
+`sufami_turbo`, `amiga_cd32`, `amiga_cdtv`.
 
 Five ids that already had a tile simply gained cores: `master_system` (the three Mega
 Drive cores), `colecovision` (bluemsx), `game_boy` (mgba, vbam, the two higan builds,
@@ -125,12 +126,21 @@ mesen-s, mesen2, skyemu), `game_boy_advance` (vbam, mesen2, skyemu) and `pc_engi
 Claims follow each core's own `database` field, never its extension list — picodrive
 reads `.sg` but does not declare SG-1000, so it is not claimed.
 
-Still only in `database`, same shape whenever you want it: Satellaview and Sufami
-Turbo under the bsnes family (both have distinct extensions, `bs` and `st`); Naomi,
-Naomi 2, Atomiswave and ST-V, which the RomM map already folds into `mame`; Amiga
-CD32 and CDTV; GX4000; Videopac+; ZX Spectrum +3. Colour and revision variants
-— Game Boy Color, WonderSwan Color, Neo Geo Pocket Color, MSX2, DSi — are left
-merged on purpose, matching the existing `gbc` → `game_boy` decision.
+CD32 and CDTV are the one pair no extension can tell apart — both are Amiga CD
+images. The per-system rom FOLDER separates them, which is all the scan needs; a
+`.cue` in either is that platform's.
+
+Still only in `database`: Naomi, Naomi 2, Atomiswave and ST-V, which the RomM map
+already folds into `mame`; Enterprise 128 and Videoton TV-Computer (ep128emu_core);
+Interton VC 4000 and Elektor TVGC (amiarcadia); GX4000; Videopac+; ZX Spectrum +3;
+GBA e-Cards. Colour and revision variants — Game Boy Color, WonderSwan Color, Neo
+Geo Pocket Color, MSX2, DSi — are left merged on purpose, matching the existing
+`gbc` → `game_boy` decision.
+
+Six cores name Sufami Turbo in `database` but read none of its extensions
+(`bsnes`, `bsnes_hd_beta`, the four snes9x200x builds), so they do not claim it —
+the same rule that kept SuperGrafx off mesen2. Fix those `supported_extensions`
+lines upstream and they can.
 
 ## Duplicate systemids for one machine
 

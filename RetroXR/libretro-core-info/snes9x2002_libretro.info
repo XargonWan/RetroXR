@@ -12,6 +12,7 @@ display_version = "7.2.0"
 manufacturer = "Nintendo"
 systemname = "Super Nintendo Entertainment System"
 systemid = "super_nes"
+secondary_systemids = "satellaview:bsx"
 
 # Libretro Features
 savestate = "true"

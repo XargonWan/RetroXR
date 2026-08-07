@@ -12,6 +12,7 @@ display_version = "5.3.1"
 manufacturer = "Commodore"
 systemname = "Amiga"
 systemid = "commodore_amiga"
+secondary_systemids = "amiga_cd32:cue,ccd,nrg,mds,iso,chd,m3u|amiga_cdtv:cue,ccd,nrg,mds,iso,chd,m3u"
 
 # Libretro Features
 database = "Commodore - Amiga|Commodore - CD32|Commodore - CDTV"

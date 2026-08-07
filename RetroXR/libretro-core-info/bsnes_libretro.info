@@ -12,6 +12,7 @@ display_version = "115"
 manufacturer = "Nintendo"
 systemname = "Super Nintendo Entertainment System"
 systemid = "super_nes"
+secondary_systemids = "satellaview:bs"
 
 # BIOS / Firmware
 firmware_count = 20

@@ -12,6 +12,7 @@ display_version = "v085 (Performance)"
 manufacturer = "Nintendo"
 systemname = "Super Nintendo Entertainment System"
 systemid = "super_nes"
+secondary_systemids = "satellaview:bs|sufami_turbo:st"
 
 # Libretro Features
 savestate = "true"

@@ -70,6 +70,10 @@ local file                          upstream file
 3ds-content.svg                     Nintendo - Nintendo 3DS-content.svg
 3ds.svg                             Nintendo - Nintendo 3DS.svg
 _default.svg                        default.svg
+amiga_cd32-content.svg              Commodore - CD32-content.svg
+amiga_cd32.svg                      Commodore - CD32.svg
+amiga_cdtv-content.svg              Commodore - CDTV-content.svg
+amiga_cdtv.svg                      Commodore - CDTV.svg
 apple_ii-content.svg                Apple - II Plus-content.svg
 apple_ii.svg                        Apple - II.svg
 arcadia-content.svg                 Emerson - Arcadia 2001-content.svg
@@ -233,6 +237,8 @@ quake_2-content.svg                 Quake II-content.svg
 quake_2.svg                         Quake II.svg
 quake_3-content.svg                 Quake III-content.svg
 quake_3.svg                         Quake III.svg
+satellaview-content.svg             Nintendo - Satellaview-content.svg
+satellaview.svg                     Nintendo - Satellaview.svg
 scummvm-content.svg                 ScummVM-content.svg
 scummvm.svg                         ScummVM.svg
 sega_32x-content.svg                Sega - 32X-content.svg
@@ -249,6 +255,8 @@ sharp_x1-content.svg                Sharp - X1-content.svg
 sharp_x1.svg                        Sharp - X1.svg
 sharp_x68000-content.svg            Sharp - X68000-content.svg
 sharp_x68000.svg                    Sharp - X68000.svg
+sufami_turbo-content.svg            Nintendo - Sufami Turbo-content.svg
+sufami_turbo.svg                    Nintendo - Sufami Turbo.svg
 super_nes-content.svg               Nintendo - Super Nintendo Entertainment System-content (2) (U).svg
 super_nes.svg                       Nintendo - Super Nintendo Entertainment System SNS-001.svg
 supergrafx-content.svg              NEC - PC Engine SuperGrafx-content.svg

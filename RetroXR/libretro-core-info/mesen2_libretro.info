@@ -12,7 +12,7 @@ categories = "Emulator"
 manufacturer = "Nintendo, Sega, Bandai, and NEC"
 systemname = "Nintendo Entertainment System / Super Nintendo Entertainment System / Game Boy / Game Boy Color / PC Engine SuperGrafx / PC Engine - TurboGrafx 16 / PC Engine CD - TurboGrafx-CD / WonderSwan / WonderSwan Color"
 systemid = "nes"
-secondary_systemids = "fds:fds|game_boy:gb,gbc|game_boy_advance:gba|pc_engine:pce|pc_engine_cd:cue|super_nes:sfc,smc,fig,swc,bs|wonderswan:ws,wsc,pc2,pcv2"
+secondary_systemids = "fds:fds|game_boy:gb,gbc|game_boy_advance:gba|pc_engine:pce|pc_engine_cd:cue|satellaview:bs|super_nes:sfc,smc,fig,swc,bs|wonderswan:ws,wsc,pc2,pcv2"
 
 # Libretro Features
 supports_no_game = "false"
