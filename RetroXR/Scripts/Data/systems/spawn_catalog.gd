@@ -3,7 +3,7 @@
 ## The Systems tab shows a title card per system; opening a card lists that
 ## system's spawnable ITEMS — its hardware model(s) plus the peripherals that go
 ## with it (e.g. PlayStation → Primitive System + Memory Card + Primitive
-## Controller).
+## Controller + Composite Cable).
 ##
 ## Hardware rows are NOT authored here. Every model is a row in
 ## SystemModelRegistry that already knows its own label and which platform it sits
@@ -29,7 +29,7 @@ const PRIMITIVE_CONTROLLER := "retro_controller"
 ## systemid → the peripherals that belong to that hardware. Systems with no entry
 ## just have none; their hardware rows still come from the registry.
 ##
-## What is listed is the hardware retroXR models itself: the memory card, and the
+## What is listed is the hardware RetroXR models itself: the memory card, and the
 ## Virtual Boy pad — that one is here rather than dropped to the generic row
 ## because it carries the console's POWER switch, so the platform is unplayable
 ## without it.
@@ -84,6 +84,27 @@ const _PERIPHERALS: Dictionary = {
 const _NO_STANDINS: Array[String] = ["nes", "atari_2600"]
 
 
+## Platforms that name their own A/V lead above, so the generic one would be a
+## second cable doing the same job. Only the NES, which puts out one audio
+## channel and lists the mono lead its console shipped with.
+const _OWN_AV_LEAD: Array[String] = ["nes"]
+
+## The lead every other platform reaches the TV with. Consoles spawn wearing a
+## captive one, so this row is a spare — for a lead thrown in the trash, or a
+## second TV.
+const _AV_CABLE: Dictionary = {"kind": "peripheral", "label": "Composite Cable",
+	"spawn": "composite_cable"}
+
+## How a home computer is actually played. SystemInfo.computer marks the systems
+## whose core reads the mouse on port 0 and takes keys globally — for those the
+## pad is the odd peripheral and these two are the hardware, so they are listed
+## on the card rather than left to the Controllers tab.
+const _COMPUTER_INPUT: Array = [
+	{"kind": "peripheral", "label": "Keyboard", "spawn": "retro_keyboard"},
+	{"kind": "peripheral", "label": "Mouse", "spawn": "retro_mouse"},
+]
+
+
 ## The spawnable items for a system: its stand-in hardware, then the models that
 ## need imported assets, then its peripherals.
 ##
@@ -114,14 +135,22 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 
 	var items: Array = []
 	items.append_array(primitive)
-	if standins:
+	# The generic box stands in for a platform with NO plain model of its own.
+	# Where the platform authored one — the PC tower, the Virtual Boy — it is a
+	# second and worse console on the same card.
+	if standins and primitive.is_empty():
 		items.append({"kind": "system", "label": "Primitive System",
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
 	items.append_array(imported)
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
+	var info := SystemInfo.for_system(systemid)
+	if info != null and info.computer:
+		items.append_array(_COMPUTER_INPUT.duplicate(true))
 	if standins:
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})
+	if not _OWN_AV_LEAD.has(systemid):
+		items.append(_AV_CABLE.duplicate())
 	return items
 
 
