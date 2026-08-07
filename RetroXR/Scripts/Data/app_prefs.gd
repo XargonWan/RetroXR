@@ -47,6 +47,10 @@ var hidden_systems: PackedStringArray = []
 ## as "off forever": a player who turns it on to unhide something and walks away
 ## should find the grid the way they left it.
 var show_hidden_systems: bool = false
+## Draw the Systems and Cartridges grids as squares of bare art — no name, no
+## core count, no source badge. One pref for both, like the hidden list: it is a
+## statement about how you want to read a grid, not about one tab.
+var compact_tiles: bool = false
 
 
 ## True when this systemid should be kept out of the grids.
@@ -109,6 +113,7 @@ func _load_prefs() -> void:
 	locomotion_teleport = _prefs_bool(data, "locomotion_teleport", locomotion_teleport)
 	hidden_systems      = _prefs_strings(data, "hidden_systems")
 	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
+	compact_tiles       = _prefs_bool(data, "compact_tiles",       compact_tiles)
 
 
 func save_prefs() -> void:
@@ -129,6 +134,7 @@ func save_prefs() -> void:
 		"locomotion_teleport": locomotion_teleport,
 		"hidden_systems":    hidden_systems,
 		"show_hidden_systems": show_hidden_systems,
+		"compact_tiles":     compact_tiles,
 	}, "\t"))
 	file.close()
 

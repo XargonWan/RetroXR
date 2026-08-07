@@ -20,9 +20,9 @@ extends VBoxContainer
 signal active_scroll_changed(scroll: ScrollContainer)
 ## Emitted after a system tile is opened.
 signal system_opened(systemid: String)
-## Emitted after a system is hidden or unhidden, so a host with more than one
-## grid can refresh the others.
-signal hidden_changed()
+## Emitted after a view preference the grids share is changed here — the hidden
+## list, or the compact switch. A host with more than one grid repaints the rest.
+signal grid_prefs_changed()
 
 # Palette — mirrors spawn_menu.gd so the widget matches the surrounding UI.
 const COLOR_TITLE      := Color(0.9,  0.9,  1.0)
@@ -48,9 +48,20 @@ var use_content_art: bool = false
 ## leaves this off: hiding a system there would hide the very tile you go to in
 ## order to install a core for it.
 var allow_hiding: bool = false
+## Offer the Compact switch, which drops every tile to a square of bare art.
+## Same two grids as allow_hiding; the Cores browser reads by core name and
+## would be unusable without its labels.
+var allow_compact: bool = false
 
 ## Edge of the square the console art is fitted into, inside a tile.
 const ICON_PX := 60.0
+## Minimum width of a COMPACT tile. Small, because the whole point is to get a
+## lot of them on screen; _update_tile_columns then squares them off against
+## whatever width the row actually shares out.
+const COMPACT_TILE_PX := 132.0
+## What the art gives up to the tile edge in compact mode, so neighbouring
+## machines do not read as one continuous strip.
+const COMPACT_INSET_PX := 10.0
 ## Source-badge mark in the tile's bottom-right corner.
 const BADGE_MARK_PX := 26.0
 ## Right margin the name column gives up so it cannot run under that badge.
@@ -68,6 +79,7 @@ var _built: bool = false
 var _refreshing: bool = false
 var _hide_btn: Button = null
 var _show_hidden_btn: Button = null
+var _compact_btn: Button = null
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 var _home_page:    VBoxContainer   = null
@@ -180,7 +192,7 @@ func _on_hide_pressed() -> void:
 	var now_hidden := not AppPrefs.is_system_hidden(_current_systemid)
 	AppPrefs.set_system_hidden(_current_systemid, now_hidden)
 	_rebuild_tiles()
-	hidden_changed.emit()
+	grid_prefs_changed.emit()
 	# Unhiding is done FROM the hidden list, so stay put and just relabel; the
 	# tile is already back behind you.
 	if now_hidden:
@@ -244,7 +256,7 @@ func _ensure_built() -> void:
 	_home_page.add_theme_constant_override("separation", 8)
 	add_child(_home_page)
 
-	if show_filter or allow_hiding:
+	if show_filter or allow_hiding or allow_compact:
 		var filter_row := HBoxContainer.new()
 		filter_row.add_theme_constant_override("separation", 8)
 		_home_page.add_child(filter_row)
@@ -275,9 +287,24 @@ func _ensure_built() -> void:
 				AppPrefs.show_hidden_systems = on
 				AppPrefs.save_prefs()
 				_rebuild_tiles()
-				hidden_changed.emit()
+				grid_prefs_changed.emit()
 			)
 			filter_row.add_child(_show_hidden_btn)
+
+		if allow_compact:
+			_compact_btn = Button.new()
+			_compact_btn.toggle_mode = true
+			_compact_btn.text = "Compact"
+			_compact_btn.custom_minimum_size = Vector2(150, 52)
+			_compact_btn.add_theme_font_size_override("font_size", 18)
+			_compact_btn.set_pressed_no_signal(AppPrefs.compact_tiles)
+			_compact_btn.toggled.connect(func(on: bool) -> void:
+				AppPrefs.compact_tiles = on
+				AppPrefs.save_prefs()
+				_rebuild_tiles()
+				grid_prefs_changed.emit()
+			)
+			filter_row.add_child(_compact_btn)
 
 	_home_scroll = ScrollContainer.new()
 	_home_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -388,10 +415,22 @@ func _update_tile_columns() -> void:
 	if avail <= 0.0:
 		return
 	var sep := float(_tiles_grid.get_theme_constant("h_separation"))
-	var per := maxf(tile_min_size.x, 1.0) + sep
+	var min_w := COMPACT_TILE_PX if _compact() else tile_min_size.x
+	var per := maxf(min_w, 1.0) + sep
 	var n := maxi(1, int(floor((avail + sep) / per)))
 	if _tiles_grid.columns != n:
 		_tiles_grid.columns = n
+
+	# A square tile cannot ask for its own height: the width is whatever the row
+	# shares out, which is known only here. Setting the HEIGHT is safe where
+	# setting a width would not be — height never feeds back into the width this
+	# count was measured from.
+	if _compact():
+		var w := (avail - sep * (n - 1)) / float(n)
+		for c in _tiles_grid.get_children():
+			var tile := c as Control
+			if tile != null:
+				tile.custom_minimum_size.y = maxf(w, COMPACT_TILE_PX)
 
 
 func _rebuild_tiles() -> void:
@@ -428,7 +467,9 @@ func _make_tile(s: Dictionary) -> Button:
 	# ITS minimum — so a wide grid widens the very container the column count is
 	# measured against, and the count can never come back down. tile_min_size.x
 	# is honoured by _update_tile_columns deciding how many fit instead.
-	btn.custom_minimum_size = Vector2(0, tile_min_size.y)
+	# Compact tiles are squared off by _update_tile_columns once it knows how
+	# wide a column actually came out; this is only the floor.
+	btn.custom_minimum_size = Vector2(0, COMPACT_TILE_PX if _compact() else tile_min_size.y)
 	# EXPAND_FILL is what makes the grid divide each row between its tiles
 	# rather than leaving every one at its minimum with the slack on the right.
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -439,6 +480,28 @@ func _make_tile(s: Dictionary) -> Button:
 	# the grid longer with no clue which rows are the hidden ones.
 	if allow_hiding and AppPrefs.is_system_hidden(sid):
 		btn.modulate = Color(1, 1, 1, 0.45)
+
+	var art_compact := SystemIcons.for_content(sid) if use_content_art 		else SystemIcons.for_system(sid)
+	if _compact():
+		# Nothing but the art. The name goes to the tooltip rather than nowhere:
+		# two Sega add-ons are hard to tell apart at this size, and the detail
+		# page is one press away either way.
+		btn.tooltip_text = name
+		if art_compact:
+			var big := TextureRect.new()
+			big.texture = art_compact
+			big.set_anchors_preset(Control.PRESET_FULL_RECT)
+			big.offset_left = COMPACT_INSET_PX
+			big.offset_top = COMPACT_INSET_PX
+			big.offset_right = -COMPACT_INSET_PX
+			big.offset_bottom = -COMPACT_INSET_PX
+			big.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			big.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			big.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			btn.add_child(big)
+		_style_tile(btn)
+		btn.pressed.connect(open_system.bind(sid))
+		return btn
 
 	# Console art on the left, name (and badge) on the right. Laid out as child
 	# controls rather than Button.icon + Button.text: Button draws its icon at
@@ -531,6 +594,14 @@ func _make_tile(s: Dictionary) -> Button:
 		count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		corner.add_child(count_lbl)
 
+	_style_tile(btn)
+	btn.pressed.connect(open_system.bind(sid))
+	return btn
+
+
+## The rounded plate a tile sits on. Shared by both tile shapes so the compact
+## grid is visibly the same furniture, only smaller.
+static func _style_tile(btn: Button) -> void:
 	var base := StyleBoxFlat.new()
 	base.bg_color = COLOR_TILE
 	var hover := StyleBoxFlat.new()
@@ -545,8 +616,10 @@ func _make_tile(s: Dictionary) -> Button:
 	btn.add_theme_stylebox_override("hover",   hover)
 	btn.add_theme_stylebox_override("pressed", hover)
 
-	btn.pressed.connect(open_system.bind(sid))
-	return btn
+
+## True when this grid is drawing bare squares rather than labelled rows.
+func _compact() -> bool:
+	return allow_compact and AppPrefs.compact_tiles
 
 
 ## 78911 in a 26 px corner is unreadable — 78.9k is not.

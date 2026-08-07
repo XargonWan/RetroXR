@@ -252,10 +252,12 @@ func _build() -> void:
 	_systems_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_systems_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
 	_systems_browser.allow_hiding = true
+	_systems_browser.allow_compact = true
 	_systems_browser.set_detail_populator(_populate_systems_detail)
-	# One hidden list serves both grids, so either one changing has to repaint
-	# the other or the two disagree until you switch tabs twice.
-	_systems_browser.hidden_changed.connect(func() -> void:
+	# The hidden list and the compact switch both serve BOTH grids, so either one
+	# changing has to repaint the other or the two disagree until you switch tabs
+	# twice.
+	_systems_browser.grid_prefs_changed.connect(func() -> void:
 		if _cartridges_browser:
 			_cartridges_browser.refresh()
 	)
@@ -277,8 +279,9 @@ func _build() -> void:
 	_cartridges_browser.use_content_art = true
 	_cartridges_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
 	_cartridges_browser.allow_hiding = true
+	_cartridges_browser.allow_compact = true
 	_cartridges_browser.set_detail_populator(_populate_cartridges_detail)
-	_cartridges_browser.hidden_changed.connect(func() -> void:
+	_cartridges_browser.grid_prefs_changed.connect(func() -> void:
 		if _systems_browser:
 			_systems_browser.refresh()
 	)
