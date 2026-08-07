@@ -13,19 +13,26 @@ extends RefCounted
 
 
 ## All parsed core info entries. Each is a Dictionary with keys from the .info
-## format (display_name, corename, systemname, systemid, license, description,
-## supported_extensions, manufacturer, core_name, info_path, ...).
+## format (display_name, corename, systemname, systemid, secondary_systemids,
+## license, description, supported_extensions, manufacturer, core_name,
+## info_path, ...).
 var cores: Array[Dictionary] = []
 
 # Internal fast-lookup indices built during load().
 var _by_core_name: Dictionary  = {}  # core_name -> Dictionary
 var _by_systemid:  Dictionary  = {}  # systemid  -> Array[Dictionary]
+# systemid -> Array[String]: the extensions cores declared for it as a SECONDARY
+# platform. Only ids that appear in some core's `secondary_systemids` are keys.
+var _secondary_exts: Dictionary = {}
+# Every systemid that is some core's own `systemid`. A key of _by_systemid that
+# is NOT in here was reached only through `secondary_systemids`.
+var _primary_ids: Dictionary = {}
 
 static var _shared: CoreInfoDatabase = null
 
 
 ## Lazily-loaded process-wide instance, for callers that want a single lookup and
-## should not pay to re-parse all 306 .info files to get it. Safe to cache: the
+## should not pay to re-parse every .info file to get it. Safe to cache: the
 ## directory ships inside the pck and cannot change at runtime.
 static func shared() -> CoreInfoDatabase:
 	if _shared == null:
@@ -36,9 +43,19 @@ static func shared() -> CoreInfoDatabase:
 
 ## Union of supported_extensions (lowercase, no dots) across every core that
 ## serves this systemid.
+##
+## A secondary-only platform answers with the narrower list its cores declared
+## for it instead. Genesis Plus GX reads fifteen extensions and only "gg" is a
+## Game Gear one, so the union would file every .md in the Game Gear library.
 static func extensions_for_systemid(systemid: String) -> Array[String]:
+	var db := shared()
+	if db.is_secondary_systemid(systemid):
+		var declared: Array[String] = []
+		declared.assign(db._secondary_exts[systemid])
+		return declared
+
 	var exts: Array[String] = []
-	for entry: Dictionary in shared().get_by_systemid(systemid):
+	for entry: Dictionary in db.get_by_systemid(systemid):
 		for e: String in str(entry.get("supported_extensions", "")).split("|"):
 			var s := e.strip_edges().to_lower()
 			if not s.is_empty() and s not in exts:
@@ -95,9 +112,24 @@ func get_unique_systemids() -> Array[String]:
 	return ids
 
 
+## True when no core claims this systemid as its own and it exists only because
+## one or more cores named it in `secondary_systemids`.
+func is_secondary_systemid(systemid: String) -> bool:
+	return _secondary_exts.has(systemid) and not _primary_ids.has(systemid)
+
+
 ## Return the human-readable systemname for a given systemid.
 ## Uses the first matching entry. Returns the systemid itself if not found.
+##
+## A secondary-only platform is named by SystemInfo, not by its cores: every
+## entry indexed under it belongs to the parent machine, so Game Gear would
+## otherwise be labelled "Sega 8/16-bit (Various)".
 func get_systemname_for_id(systemid: String) -> String:
+	if is_secondary_systemid(systemid):
+		var info := SystemInfo.for_system(systemid)
+		return info.display_name if info != null and not info.display_name.is_empty() \
+			else systemid
+
 	var entries := get_by_systemid(systemid)
 	if entries.is_empty():
 		return systemid
@@ -141,6 +173,8 @@ func debug_print_summary() -> void:
 func _rebuild_indices() -> void:
 	_by_core_name.clear()
 	_by_systemid.clear()
+	_secondary_exts.clear()
+	_primary_ids.clear()
 
 	for entry: Dictionary in cores:
 		var cn: String = entry.get("core_name", "")
@@ -149,6 +183,32 @@ func _rebuild_indices() -> void:
 
 		var sid: String = entry.get("systemid", "")
 		if sid != "":
-			if not _by_systemid.has(sid):
-				_by_systemid[sid] = []
-			(_by_systemid[sid] as Array).append(entry)
+			_primary_ids[sid] = true
+			_index_under(sid, entry)
+
+		# `secondary_systemids = "game_gear:gg|sega_cd:cue,iso,chd"` — the other
+		# platforms this core covers, each with the subset of its extensions that
+		# belongs to that platform. A core is queryable under every one of them.
+		for pair: String in str(entry.get("secondary_systemids", "")).split("|"):
+			var colon := pair.find(":")
+			if colon < 0:
+				continue
+			var sub := pair.left(colon).strip_edges()
+			if sub.is_empty():
+				continue
+			_index_under(sub, entry)
+			if not _secondary_exts.has(sub):
+				_secondary_exts[sub] = [] as Array[String]
+			var list: Array[String] = _secondary_exts[sub]
+			for e: String in pair.right(pair.length() - colon - 1).split(","):
+				var ext := e.strip_edges().to_lower()
+				if not ext.is_empty() and ext not in list:
+					list.append(ext)
+
+
+func _index_under(systemid: String, entry: Dictionary) -> void:
+	if not _by_systemid.has(systemid):
+		_by_systemid[systemid] = []
+	var bucket: Array = _by_systemid[systemid]
+	if entry not in bucket:
+		bucket.append(entry)

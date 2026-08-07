@@ -68,29 +68,45 @@ fallback descriptor, and a `res://Textures/SystemIcons/<systemid>.svg` or it dra
 fork added (`bbk`, `dingoo-a320`, `galaksija`, `neo_geo_cd`, `palm_os`, `sam_coupe`,
 `spmp8000`, `super_cassette_vision`, `thomson_moto`, `wiiu`).
 
-## Sub-platforms are invisible — they exist only in `database`
+## Sub-platforms — the `secondary_systemids` key
 
-A core declares ONE `systemid`, which is the parent machine. Every other platform it
-emulates appears only in the `|`-separated `database` field, which nothing indexes.
+A core declares ONE `systemid`, the parent machine. Every other platform it emulates
+appears only in the `|`-separated `database` field, which nothing indexes.
 
 `genesis_plus_gx` is `systemid = "mega_drive"` and
 `database = "Sega - Game Gear|Sega - Master System - Mark III|Sega - Mega-CD - Sega
 CD|Sega - Mega Drive - Genesis|Sega - PICO|Sega - SG-1000"`. Six machines, one id.
 `picodrive` adds "Sega - 32X" on the same id.
 
-Game Gear is the clearest casualty: five cores emulate it (`genesis_plus_gx`,
-`genesis_plus_gx_wide`, `gearsystem`, `smsplus`, `picodrive`) and not one reports a
-`game_gear` systemid — they say `mega_drive` or `master_system`. So there is no Game
-Gear tile, no `SystemInfo/game_gear.tres`, and a GG cart can only be spawned wearing
-a Master System or Mega Drive shell.
+Across the corpus: **162 distinct `database` names against 141 distinct systemids**.
 
-Across the corpus: **162 distinct `database` names against 139 distinct systemids**.
+Not a data bug — the stock format has no way to express "this core covers N
+platforms". Our fork adds one (2026-08-07), documented in
+`00_example_libretro.info`:
 
-Not a data bug — the format has no way to express "this core covers N platforms" —
-but it means `systemid` cannot be the whole story for what RetroXR can run. Giving a
-sub-platform its own systemid is not free: core lookup keys off systemid, so a new
-`game_gear` id would resolve to zero cores unless the lookup also learns that the
-GG-capable cores serve it.
+    secondary_systemids = "game_gear:gg|sega_cd:cue,iso,chd,m3u"
+
+Pipe-delimited `<systemid>:<ext>,<ext>`. `CoreInfoDatabase._rebuild_indices()` files
+the core under each id listed, so a sub-platform resolves to real cores instead of
+zero — which is what made a new id unusable before. The extension subset matters:
+`extensions_for_systemid()` unions the whole of `supported_extensions` for a primary
+id, and Genesis Plus GX reads fifteen of them, so without it every `.md` would land
+in the Game Gear library.
+
+Two deliberate omissions:
+
+* **No name in the key.** Five cores cover Game Gear; each repeating its name is how
+  they come to disagree about it — which is exactly what `gearsystem` ("Sega 8-bit
+  (MS/GG/SG-1000)") and `smsplus` ("Sega 8-bit") did. A secondary-only id is named by
+  `SystemInfo/<id>.tres` instead, via `get_systemname_for_id()`.
+* **A primary id keeps its full extension union.** Narrowing `mega_drive` to drop
+  `gg`/`cue` would be correct and would also orphan whatever users already keep in
+  `roms/mega_drive/`. Sega CD images still list under Mega Drive as they always did;
+  they now also have a home of their own.
+
+Game Gear and Sega CD are wired this way and have tiles, icons and descriptors.
+Still only in `database`, if you want them next: Sega 32X (`picodrive`), SG-1000 and
+Sega PICO (`genesis_plus_gx`), and Master System under the Mega Drive cores.
 
 ## Duplicate systemids for one machine
 

@@ -49,6 +49,13 @@ verified by opening the file rather than trusting the suffix:
                  untagged.
   playstation2   content: the untagged file — the silver DVD underside. "CD" is
                  the same disc with a blue #4b5da7 underside.
+  sega_cd        console: "MK-1601-4102 (U)", the North American Model 1 drawn
+                 with the Genesis it bolts to, framed landscape like the rest of
+                 the set. NOT the untagged file, which is the bare CD unit seen
+                 top-down and reads as an anonymous disc drive at tile size.
+                 "MK-1631-4102 (U)" is the Model 2, equally North American; the
+                 Model 1 is picked because its front-loading tray is the motion
+                 MediaDimensions.FRONT_TRAY_SYSTEMS gives this system.
 
 Retrieved 2026-07-28; -content art and the SNES console correction 2026-07-30.
 
@@ -139,6 +146,8 @@ game_boy-content.svg                Nintendo - Game Boy-content.svg
 game_boy.svg                        Nintendo - Game Boy.svg
 game_boy_advance-content.svg        Nintendo - Game Boy Advance-content.svg
 game_boy_advance.svg                Nintendo - Game Boy Advance.svg
+game_gear-content.svg               Sega - Game Gear-content.svg
+game_gear.svg                       Sega - Game Gear.svg
 gamecube-content.svg                Nintendo - GameCube-content.svg
 gamecube.svg                        Nintendo - GameCube.svg
 handheld_electronic-content.svg     Handheld Electronic Game-content.svg
@@ -218,6 +227,8 @@ quake_3-content.svg                 Quake III-content.svg
 quake_3.svg                         Quake III.svg
 scummvm-content.svg                 ScummVM-content.svg
 scummvm.svg                         ScummVM.svg
+sega_cd-content.svg                 Sega - Mega-CD - Sega CD-content.svg
+sega_cd.svg                         Sega - Mega-CD - Sega CD MK-1601-4102 (U).svg
 sega_saturn-content.svg             Sega - Saturn-content.svg
 sega_saturn.svg                     Sega - Saturn.svg
 sharp_x1-content.svg                Sharp - X1-content.svg

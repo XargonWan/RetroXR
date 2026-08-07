@@ -29,6 +29,7 @@ const SYSTEM_MAP := {
 	"fb_alpha": 75,
 	"game_boy": 9,
 	"game_boy_advance": 12,
+	"game_gear": 21,
 	"gamecube": 13,
 	# Screenscraper has no generic handheld-electronic platform, only Nintendo's
 	# Game & Watch. A Tiger or Acclaim title reaches it as a name search and
@@ -56,6 +57,7 @@ const SYSTEM_MAP := {
 	"playstation_portable": 61,
 	"pokemon_mini": 211,
 	"scummvm": 123,
+	"sega_cd": 20,
 	"sega_saturn": 22,
 	"sharp_x1": 220,
 	"sharp_x68000": 79,

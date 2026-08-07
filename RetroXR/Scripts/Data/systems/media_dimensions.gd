@@ -21,6 +21,7 @@ const CART_SIZES: Dictionary = {
 	"nds":              Vector3(0.033, 0.035, 0.004),
 	"3ds":              Vector3(0.033, 0.035, 0.004),   # 3DS Game Card = DS footprint
 	"atari_lynx":       Vector3(0.073, 0.086, 0.006),   # Lynx card
+	"game_gear":        Vector3(0.068, 0.047, 0.012),
 	"wonderswan":       Vector3(0.048, 0.052, 0.008),
 	"neo_geo_pocket":   Vector3(0.048, 0.052, 0.008),
 	"pokemon_mini":     Vector3(0.022, 0.033, 0.007),
@@ -38,12 +39,13 @@ const CART_SIZE_DEFAULT := Vector3(0.10, 0.08, 0.015)
 
 ## Disc diameters: systemid -> diameter in metres. Doubles as the disc-system
 ## set — a systemid present here spawns a RetroDisc instead of a cartridge.
-## (pc_engine stays a cartridge: HuCard. sega_cd/neo_geo_cd/wii have no
-## systemid in ScreenscraperSystems.SYSTEM_MAP yet.)
+## (pc_engine stays a cartridge: HuCard. neo_geo_cd and wii have no systemid in
+## ScreenscraperSystems.SYSTEM_MAP yet.)
 const DISC_DIAMETERS: Dictionary = {
 	"playstation":           0.12,
 	"playstation2":          0.12,
 	"sega_saturn":           0.12,
+	"sega_cd":               0.12,
 	"dreamcast":             0.12,
 	"3do":                   0.12,
 	"cdi":                   0.12,
@@ -83,6 +85,9 @@ const SLOT_LOAD_SYSTEMS: Dictionary = {}
 ## gets that motion built procedurally on the placeholder box instead.
 const FRONT_TRAY_SYSTEMS: Dictionary = {
 	"playstation2": true,
+	# Model 1, the machine our icon draws — a motorised tray out of the front.
+	# Model 2 is a hinged top lid, which is the other branch.
+	"sega_cd": true,
 }
 
 

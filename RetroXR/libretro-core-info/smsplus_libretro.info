@@ -12,6 +12,7 @@ categories = "Emulator"
 manufacturer = "Sega"
 systemname = "Sega Master System"
 systemid = "master_system"
+secondary_systemids = "game_gear:gg"
 
 # Libretro Features
 supports_no_game = "false"

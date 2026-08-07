@@ -12,6 +12,7 @@ display_version = "v1.7.4"
 manufacturer = "Sega"
 systemname = "Sega 8/16-bit (Various)"
 systemid = "mega_drive"
+secondary_systemids = "game_gear:gg|sega_cd:cue,iso,chd,m3u"
 
 # Libretro Features
 supports_no_game = "false"
