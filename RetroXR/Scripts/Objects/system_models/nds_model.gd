@@ -27,6 +27,18 @@ func get_forced_core_options() -> Dictionary:
 	}
 
 
+## The DS has L and R and nothing else on its shoulders — no triggers, no stick
+## clicks. Both cores bind hotkeys to the four buttons it lacks, and neither can
+## be turned off by a core option: melonDS puts "swap screens" on R2 and "close
+## lid" on L3, DeSmuME "lid close/open" on L2 (the screens go white) and "quick
+## screen switch" on R3. Silence all four.
+func get_unsupported_button_mask() -> int:
+	return (1 << ControllerBindings.JOYPAD_L2) \
+		| (1 << ControllerBindings.JOYPAD_R2) \
+		| (1 << ControllerBindings.JOYPAD_L3) \
+		| (1 << ControllerBindings.JOYPAD_R3)
+
+
 ## Insets from the base half's front-left corner, used only when the shell
 ## doesn't model the slider as its own mesh (the Phat bakes it into the body).
 const _VOL_EDGE_INSET := 0.004

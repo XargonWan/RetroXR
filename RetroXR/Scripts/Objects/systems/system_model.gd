@@ -222,6 +222,14 @@ func get_forced_core_options() -> Dictionary:
 	return {}
 
 
+## RETRO_JOYPAD bits this hardware has no physical control for, as a mask.
+## Cleared from the port state before it reaches the core, whatever bound them:
+## a core is free to hang a hotkey off a button the machine never had, and the
+## player has no way to know they are pressing it.
+func get_unsupported_button_mask() -> int:
+	return 0
+
+
 ## Show or hide the controller plug port visuals for a given port index.
 ## Called by RetroSystem when a controller is plugged in or removed.
 func set_controller_port_occupied(port_index: int, occupied: bool) -> void:

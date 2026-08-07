@@ -478,6 +478,12 @@ func _send_joypad(btn: int, alx: int, aly: int, arx: int, ary: int) -> void:
 	# Drive the model's own physical controls (a handheld animating its buttons /
 	# slide-pad from the same state it feeds the core). No-ops on models without it.
 	var model: Object = _host.get_model() if _host.has_method("get_model") else null
+	# Every source — VR controllers, a physical pad, the captured keyboard — lands
+	# on the same bits, so the buttons the hardware never had are dropped here
+	# rather than unbound in three separate maps.
+	var sys_model := model as RetroSystemModel
+	if sys_model != null:
+		btn &= ~sys_model.get_unsupported_button_mask()
 	if model != null and model.has_method("animate_controls"):
 		model.animate_controls(btn,
 			Vector2(float(alx) / ANALOG_SCALE, float(aly) / ANALOG_SCALE),
