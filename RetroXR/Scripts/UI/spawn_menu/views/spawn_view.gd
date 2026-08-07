@@ -251,7 +251,14 @@ func _build() -> void:
 	_systems_browser.name = "Systems"
 	_systems_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_systems_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
+	_systems_browser.allow_hiding = true
 	_systems_browser.set_detail_populator(_populate_systems_detail)
+	# One hidden list serves both grids, so either one changing has to repaint
+	# the other or the two disagree until you switch tabs twice.
+	_systems_browser.hidden_changed.connect(func() -> void:
+		if _cartridges_browser:
+			_cartridges_browser.refresh()
+	)
 	_systems_browser.active_scroll_changed.connect(func(_s: ScrollContainer):
 		_update_systems_inner_scroll()
 	)
@@ -269,7 +276,12 @@ func _build() -> void:
 	# These tiles stand for the media, not the machine, so show the cartridge.
 	_cartridges_browser.use_content_art = true
 	_cartridges_browser.empty_text = "No default cores set.\nGo to Cores ▸ Manager to configure systems."
+	_cartridges_browser.allow_hiding = true
 	_cartridges_browser.set_detail_populator(_populate_cartridges_detail)
+	_cartridges_browser.hidden_changed.connect(func() -> void:
+		if _systems_browser:
+			_systems_browser.refresh()
+	)
 	_cartridges_browser.active_scroll_changed.connect(func(_s: ScrollContainer):
 		_update_cartridges_inner_scroll()
 	)

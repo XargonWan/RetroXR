@@ -1,5 +1,5 @@
-## AppPrefs — Autoload singleton holding the boolean switches on the menu's
-## OPTIONS tab, persisted to user://app_prefs.json.
+## AppPrefs — Autoload singleton holding the switches on the menu's OPTIONS tab,
+## plus the player's hidden-systems list, persisted to user://app_prefs.json.
 ##
 ## Switches that back a global static (ControllerModel.draw_hands,
 ## SystemFilter.enabled) are pushed into it here at boot. The rest need the rig
@@ -37,6 +37,32 @@ var spatial_audio_sdk: bool = true
 ## teleport" at once. False (smooth walking) is the default because it is the
 ## one that needs no explaining; teleport is the comfort option.
 var locomotion_teleport: bool = false
+## Systemids the player has hidden from the Systems and Cartridges grids. One
+## list for both: hiding a machine means "I don't care about this", not "not in
+## this tab". Distinct from SystemFilter, which is our own opinion about which
+## systemids are not consoles — this is the player's, and it survives a core
+## being installed or removed.
+var hidden_systems: PackedStringArray = []
+## Show the hidden ones anyway, dimmed, so they can be unhidden. Not persisted
+## as "off forever": a player who turns it on to unhide something and walks away
+## should find the grid the way they left it.
+var show_hidden_systems: bool = false
+
+
+## True when this systemid should be kept out of the grids.
+func is_system_hidden(systemid: String) -> bool:
+	return systemid in hidden_systems
+
+
+## Hide or unhide a systemid and persist. No-op if already in that state.
+func set_system_hidden(systemid: String, hidden: bool) -> void:
+	if systemid.is_empty() or is_system_hidden(systemid) == hidden:
+		return
+	if hidden:
+		hidden_systems.append(systemid)
+	else:
+		hidden_systems.remove_at(hidden_systems.find(systemid))
+	save_prefs()
 
 
 func _ready() -> void:
@@ -81,6 +107,8 @@ func _load_prefs() -> void:
 	hint_uses        = _prefs_dict(data, "hint_uses",        hint_uses)
 	spatial_audio_sdk = _prefs_bool(data, "spatial_audio_sdk", spatial_audio_sdk)
 	locomotion_teleport = _prefs_bool(data, "locomotion_teleport", locomotion_teleport)
+	hidden_systems      = _prefs_strings(data, "hidden_systems")
+	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
 
 
 func save_prefs() -> void:
@@ -99,6 +127,8 @@ func save_prefs() -> void:
 		"hint_uses":        hint_uses,
 		"spatial_audio_sdk": spatial_audio_sdk,
 		"locomotion_teleport": locomotion_teleport,
+		"hidden_systems":    hidden_systems,
+		"show_hidden_systems": show_hidden_systems,
 	}, "\t"))
 	file.close()
 
@@ -109,6 +139,20 @@ func _prefs_bool(data: Dictionary, key: String, fallback: bool) -> bool:
 	if typeof(value) == TYPE_BOOL:
 		return value
 	return fallback
+
+
+## JSON has no packed-array type, so a saved PackedStringArray reads back as a
+## plain Array of whatever was in it. Rebuild it element by element and drop
+## anything that is not a string rather than trusting the file.
+func _prefs_strings(data: Dictionary, key: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var value: Variant = data.get(key)
+	if typeof(value) != TYPE_ARRAY:
+		return out
+	for v: Variant in value as Array:
+		if typeof(v) == TYPE_STRING and not (v as String).is_empty():
+			out.append(v)
+	return out
 
 
 ## Same contract as _prefs_bool. JSON gives back numbers as floats, so callers

@@ -20,6 +20,9 @@ extends VBoxContainer
 signal active_scroll_changed(scroll: ScrollContainer)
 ## Emitted after a system tile is opened.
 signal system_opened(systemid: String)
+## Emitted after a system is hidden or unhidden, so a host with more than one
+## grid can refresh the others.
+signal hidden_changed()
 
 # Palette — mirrors spawn_menu.gd so the widget matches the surrounding UI.
 const COLOR_TITLE      := Color(0.9,  0.9,  1.0)
@@ -40,6 +43,11 @@ var tile_min_size: Vector2 = Vector2(250, 96)
 ## Draw each tile with the system's media art — its cartridge, disc or tape —
 ## instead of the console itself. For grids whose tiles stand for a game.
 var use_content_art: bool = false
+## Offer the player a Hide button on each system's detail page, and a toggle
+## beside the filter box for bringing the hidden ones back. The Cores browser
+## leaves this off: hiding a system there would hide the very tile you go to in
+## order to install a core for it.
+var allow_hiding: bool = false
 
 ## Edge of the square the console art is fitted into, inside a tile.
 const ICON_PX := 60.0
@@ -58,6 +66,8 @@ var _built: bool = false
 ## state reads this to tell a background rebuild from the user opening the page:
 ## navigation clears filters, a rebuild must leave them alone.
 var _refreshing: bool = false
+var _hide_btn: Button = null
+var _show_hidden_btn: Button = null
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 var _home_page:    VBoxContainer   = null
@@ -117,6 +127,7 @@ func open_system(systemid: String) -> void:
 			name = s.get("name", systemid)
 			break
 	_detail_title.text = name
+	_sync_hide_button()
 	if _detail_populator.is_valid():
 		_detail_populator.call(systemid, _detail_vbox)
 	_home_page.visible = false
@@ -160,6 +171,42 @@ func is_refreshing() -> bool:
 	return _refreshing
 
 
+## Hide or unhide whichever system's detail page is open, then go back — the
+## page you are standing on is about to vanish from the grid behind it, and
+## staying there would leave you looking at a system the grid says is gone.
+func _on_hide_pressed() -> void:
+	if _current_systemid.is_empty():
+		return
+	var now_hidden := not AppPrefs.is_system_hidden(_current_systemid)
+	AppPrefs.set_system_hidden(_current_systemid, now_hidden)
+	_rebuild_tiles()
+	hidden_changed.emit()
+	# Unhiding is done FROM the hidden list, so stay put and just relabel; the
+	# tile is already back behind you.
+	if now_hidden:
+		show_home()
+	else:
+		_sync_hide_button()
+
+
+## Match the header button to the open system's state.
+func _sync_hide_button() -> void:
+	if _hide_btn == null:
+		return
+	_hide_btn.visible = allow_hiding and not _current_systemid.is_empty()
+	_hide_btn.text = "Unhide" if AppPrefs.is_system_hidden(_current_systemid) else "Hide"
+
+
+## Match the home toggle to how many systems are hidden. Hidden entirely at zero:
+## a button reading "Hidden (0)" is a control with nothing to control.
+func _sync_hidden_toggle(count: int) -> void:
+	if _show_hidden_btn == null:
+		return
+	_show_hidden_btn.visible = count > 0
+	_show_hidden_btn.set_pressed_no_signal(AppPrefs.show_hidden_systems)
+	_show_hidden_btn.text = "Hidden (%d)" % count
+
+
 ## The page was just rebuilt, so its height is not settled until the containers
 ## have re-laid out; assigning scroll_vertical before that clamps it against the
 ## old, shorter content and quietly lands short.
@@ -197,16 +244,40 @@ func _ensure_built() -> void:
 	_home_page.add_theme_constant_override("separation", 8)
 	add_child(_home_page)
 
-	if show_filter:
-		_filter_edit = LineEdit.new()
-		_filter_edit.placeholder_text = filter_placeholder
-		_filter_edit.clear_button_enabled = true
-		_filter_edit.custom_minimum_size = Vector2(0, 52)
-		_filter_edit.add_theme_font_size_override("font_size", 20)
-		# Do NOT grab_focus() programmatically — Android EditText desync
-		# (Godot #72969). Tap-to-focus opens the overlay keyboard naturally.
-		_filter_edit.text_changed.connect(_on_filter_changed)
-		_home_page.add_child(_filter_edit)
+	if show_filter or allow_hiding:
+		var filter_row := HBoxContainer.new()
+		filter_row.add_theme_constant_override("separation", 8)
+		_home_page.add_child(filter_row)
+
+		if show_filter:
+			_filter_edit = LineEdit.new()
+			_filter_edit.placeholder_text = filter_placeholder
+			_filter_edit.clear_button_enabled = true
+			_filter_edit.custom_minimum_size = Vector2(0, 52)
+			_filter_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_filter_edit.add_theme_font_size_override("font_size", 20)
+			# Do NOT grab_focus() programmatically — Android EditText desync
+			# (Godot #72969). Tap-to-focus opens the overlay keyboard naturally.
+			_filter_edit.text_changed.connect(_on_filter_changed)
+			filter_row.add_child(_filter_edit)
+
+		if allow_hiding:
+			# Here as well as in OPTIONS because this is where you are standing
+			# when you notice something missing; walking out to OPTIONS and back
+			# to unhide one system is a long trip in a headset. Same pref either
+			# way. Shown only when there IS something hidden — otherwise it is a
+			# control that does nothing.
+			_show_hidden_btn = Button.new()
+			_show_hidden_btn.toggle_mode = true
+			_show_hidden_btn.custom_minimum_size = Vector2(190, 52)
+			_show_hidden_btn.add_theme_font_size_override("font_size", 18)
+			_show_hidden_btn.toggled.connect(func(on: bool) -> void:
+				AppPrefs.show_hidden_systems = on
+				AppPrefs.save_prefs()
+				_rebuild_tiles()
+				hidden_changed.emit()
+			)
+			filter_row.add_child(_show_hidden_btn)
 
 	_home_scroll = ScrollContainer.new()
 	_home_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -263,6 +334,16 @@ func _ensure_built() -> void:
 	_detail_title.clip_text = true
 	header.add_child(_detail_title)
 
+	# In the header rather than _detail_toolbar: the toolbar is cleared and
+	# refilled by the host's populator on every open_system, and the Cartridges
+	# tab already fills it with search. Here it is built once and cannot collide.
+	_hide_btn = Button.new()
+	_hide_btn.custom_minimum_size = Vector2(150, 52)
+	_hide_btn.add_theme_font_size_override("font_size", 20)
+	_hide_btn.visible = allow_hiding
+	_hide_btn.pressed.connect(_on_hide_pressed)
+	header.add_child(_hide_btn)
+
 	_detail_page.add_child(HSeparator.new())
 
 	# Sits outside the scroll area, so search and filters stay put while the
@@ -316,9 +397,20 @@ func _update_tile_columns() -> void:
 func _rebuild_tiles() -> void:
 	for c in _tiles_grid.get_children():
 		c.queue_free()
-	_home_empty.visible = _systems.is_empty()
-	_home_scroll.visible = not _systems.is_empty()
+	# Filtered here rather than by the host, so set_systems() keeps the whole
+	# list and unhiding needs no round trip back to whoever built it.
+	var shown: Array = []
+	var hidden_count := 0
 	for s: Dictionary in _systems:
+		if allow_hiding and AppPrefs.is_system_hidden(str(s.get("systemid", ""))):
+			hidden_count += 1
+			if not AppPrefs.show_hidden_systems:
+				continue
+		shown.append(s)
+	_sync_hidden_toggle(hidden_count)
+	_home_empty.visible = shown.is_empty()
+	_home_scroll.visible = not shown.is_empty()
+	for s: Dictionary in shown:
 		_tiles_grid.add_child(_make_tile(s))
 	_update_tile_columns()
 	if _filter_edit and not _filter_edit.text.is_empty():
@@ -341,6 +433,12 @@ func _make_tile(s: Dictionary) -> Button:
 	# rather than leaving every one at its minimum with the slack on the right.
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.set_meta("filter_name", name.to_lower())
+
+	# A hidden tile only appears at all while the Hidden toggle is on, so it is
+	# dimmed to say why it is here — otherwise turning the toggle on just makes
+	# the grid longer with no clue which rows are the hidden ones.
+	if allow_hiding and AppPrefs.is_system_hidden(sid):
+		btn.modulate = Color(1, 1, 1, 0.45)
 
 	# Console art on the left, name (and badge) on the right. Laid out as child
 	# controls rather than Button.icon + Button.text: Button draws its icon at
