@@ -45,9 +45,18 @@ whose PATH contains spaces and breaks a bare `export PATH="$HOME/.local/bin:$PAT
 Asking for it from Linux just builds. This replaced `Tools/build_linux.sh`.
 It reports a per-extension pass/fail table and exits non-zero if anything failed.
 
-**scons is not currently installed in either WSL distro** (`Ubuntu` has g++ but no
-scons; `FedoraLinux-44` has neither on PATH). `pip install --user scons` inside the
-distro before the Linux path will work.
+**Not all five ship everywhere.** `metaxr-audio` is windows/android only — it wraps
+Meta's `MetaXRAudioUnity` blob, which Meta publishes for win-x64 and android-arm64
+alone, and `metaxr_audio.gdextension` has no `linux.*` entry. The C++ compiles for
+Linux perfectly well (the loader just finds nothing and `is_available()` returns
+false), so the skip is a shipping decision, not a compile failure. A whole-platform
+`build.py linux` run skips it with a note; `--only metaxr-audio` on linux is an error.
+
+**scons is not installed system-wide in either WSL distro** (`Ubuntu` has g++ but no
+scons; `FedoraLinux-44` has neither on PATH). Install it into the distro first.
+On the native CachyOS box there is no `pip` on PATH at all (Python 3.14, externally
+managed) — `uv tool install scons` is the one that works there, and it lands in
+`~/.local/bin` just the same.
 
 Build from the **workspace root** (not `-C Temp`):
 ```bash
@@ -60,7 +69,7 @@ $scons = "$env:APPDATA\Python\Python314\Scripts\scons.exe"   # pip install --use
 ANDROID_NDK_ROOT="C:/android/android-ndk-r27d" ANDROID_HOME="" \
   scons platform=android arch=arm64 target=template_debug ANDROID_HOME=""
 
-# Linux desktop x86_64 (bash — GCC/Clang; SCons via `pip install --user scons`)
+# Linux desktop x86_64 (bash — GCC/Clang; SCons via `uv tool install scons`)
 scons platform=linux arch=x86_64 target=template_debug
 scons platform=linux arch=x86_64 target=template_release
 ```
@@ -113,13 +122,11 @@ or all at once with `Tools/build.py`:
   bundling on Linux. Output: `RetroXR/vlc-godot/libvlc_godot.linux.template_{debug,release}.x86_64.so`.
 
 - **godot-pdfium** — `PDFRenderer` (opens a PDF, renders a page to a Godot `Image`), backed by
-  the bblanchon/pdfium-binaries `libpdfium`. Fetch the Linux prebuilt first (headers are already
-  committed and identical across platforms; `Tools/download_pdfium.ps1` only grabs win-x64 +
-  android-arm64, so the Linux fetch is manual):
+  the bblanchon/pdfium-binaries `libpdfium`. Every platform's prebuilt is committed, so a fresh
+  clone needs no fetch; `Tools/download_pdfium.sh` refreshes them when you do (it replaced the
+  PowerShell script, which only knew win-x64 + android-arm64):
   ```bash
-  curl -fL -o /tmp/p.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
-  mkdir -p godot-pdfium/external/pdfium/lib/linux-x64 && tar -xzf /tmp/p.tgz -C /tmp/pd
-  cp /tmp/pd/lib/libpdfium.so godot-pdfium/external/pdfium/lib/linux-x64/
+  Tools/download_pdfium.sh -p linux     # just this platform's lib; include/ untouched
   cd godot-pdfium
   PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_debug
   PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_release
@@ -394,9 +401,15 @@ stand-ins in `RetroXR/Scenes/Objects/system_models/`.
 **Only add 3D assets this project has the right to ship.** Everything in the repo must
 be either our own work or licensed for redistribution, with its licence and attribution
 carried alongside it.
-- **`Tools/download_pdfium.ps1`** — fetches prebuilt PDFium (win-x64 + android-arm64) from
-  bblanchon/pdfium-binaries. Linux (`pdfium-linux-x64.tgz`) is fetched manually — see the
-  godot-pdfium build recipe above.
+- **`Tools/download_pdfium.sh`** — fetches prebuilt PDFium from bblanchon/pdfium-binaries into
+  `godot-pdfium/external/pdfium/`. All three platforms by default (`-p linux|win|android` for
+  one, `-r <tag>` to pin a release, `-n` to dry-run). Bash, so it runs on Linux, WSL and Git
+  Bash alike; it replaced `download_pdfium.ps1`, which had no Linux platform at all. The
+  `include/` headers are shared by all three libs, so a **partial** run leaves them alone by
+  default (`--headers` to force) — new declarations against an unrefreshed binary is how you
+  get a link error on the platform you weren't building. Each `lib/<plat>/` carries a `VERSION`
+  stamp of the release it came from, and the top-level one belongs to `include/`; they are
+  allowed to differ, and the script prints them so you can see when they do.
 - **`Tools/glb/decimate_glb.py`** — Blender-headless triangle reduction for a downloaded shell.
   Sketchfab assets arrive subdivided for renders: the Atari 2600 console shipped 1,080,733
   triangles and 57.7 MB, against 27,893 for the NES. **Weld first** — these exports are

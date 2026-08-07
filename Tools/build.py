@@ -5,7 +5,7 @@
     python Tools/build.py android --target release
     python Tools/build.py linux --only vlc-godot
 
-Four extensions live in this workspace and each needs its OWN scons invocation:
+Five extensions live in this workspace and each needs its OWN scons invocation:
 they share the `godot-cpp` submodule, and godot-cpp's SConstruct can only be run
 once per process, so a single scons run cannot cover two of them. Each also has
 its own `VariantDir('Temp')`, which is why each builds from its own directory —
@@ -14,6 +14,9 @@ except libretro-godot, whose SConstruct is the workspace root's.
 Asking for `linux` from Windows re-invokes this script inside WSL. Asking for it
 from Linux just builds. (Replaces the old Tools/build_linux.sh, which did the
 WSL half by hand for one extension.)
+
+Not every extension ships everywhere — metaxr-audio is windows/android only. A
+whole-platform run skips those with a note; naming one via --only is an error.
 """
 
 from __future__ import annotations
@@ -28,14 +31,22 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-# name, directory scons runs in (relative to REPO), where the artifacts land.
+# name, directory scons runs in (relative to REPO), where the artifacts land, and
+# the platforms the extension actually ships on.
 # Order matters only for readability of the log; there are no interdependencies.
+ALL_PLATFORMS = ("windows", "linux", "android")
+
+# metaxr-audio wraps Meta's MetaXRAudioUnity blob, which Meta ships for win-x64 and
+# android-arm64 only, and metaxr_audio.gdextension has no linux entry to match. The
+# C++ does compile for linux — the loader just finds no library and is_available()
+# returns false — so building it there produces an .so nothing ever loads. Skip it
+# rather than bank a misleading OK in the results table.
 EXTENSIONS = [
-    ("libretro-godot", ".", "RetroXR/libretro-godot"),
-    ("verlet-rope", "verlet-rope", "RetroXR/verlet-rope"),
-    ("vlc-godot", "vlc-godot", "RetroXR/vlc-godot"),
-    ("godot-pdfium", "godot-pdfium", "RetroXR/godot-pdfium"),
-    ("metaxr-audio", "metaxr-audio-godot", "RetroXR/metaxr-audio"),
+    ("libretro-godot", ".", "RetroXR/libretro-godot", ALL_PLATFORMS),
+    ("verlet-rope", "verlet-rope", "RetroXR/verlet-rope", ALL_PLATFORMS),
+    ("vlc-godot", "vlc-godot", "RetroXR/vlc-godot", ALL_PLATFORMS),
+    ("godot-pdfium", "godot-pdfium", "RetroXR/godot-pdfium", ALL_PLATFORMS),
+    ("metaxr-audio", "metaxr-audio-godot", "RetroXR/metaxr-audio", ("windows", "android")),
 ]
 
 ARCH = {"windows": "x86_64", "linux": "x86_64", "android": "arm64"}
@@ -133,7 +144,7 @@ def main() -> int:
                     help="which build target(s) to produce (default: both)")
     ap.add_argument("--arch", help="override the per-platform default")
     ap.add_argument("--only", help="comma-separated subset of: "
-                                   + ", ".join(n for n, _, _ in EXTENSIONS))
+                                   + ", ".join(n for n, _, _, _ in EXTENSIONS))
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--ndk", default=os.environ.get("ANDROID_NDK_ROOT") or DEFAULT_NDK)
     ap.add_argument("--distro", default=DEFAULT_DISTRO, help="WSL distro for linux-from-Windows")
@@ -151,10 +162,21 @@ def main() -> int:
     exts = EXTENSIONS
     if args.only:
         wanted = {s.strip() for s in args.only.split(",")}
-        known = {n for n, _, _ in EXTENSIONS}
+        known = {n for n, _, _, _ in EXTENSIONS}
         if unknown := wanted - known:
             sys.exit(f"unknown extension(s): {', '.join(sorted(unknown))}")
         exts = [e for e in EXTENSIONS if e[0] in wanted]
+
+    # An extension that doesn't ship on this platform is skipped, loudly. Asking
+    # for it by name is an error instead — you meant something, and silently
+    # building nothing is the wrong answer to it.
+    skipped = [e for e in exts if args.platform not in e[3]]
+    exts = [e for e in exts if args.platform in e[3]]
+    if skipped and args.only:
+        sys.exit(f"not shipped on {args.platform}: "
+                 + ", ".join(f"{n} (only {'/'.join(p)})" for n, _, _, p in skipped))
+    if not exts:
+        sys.exit(f"nothing to build for {args.platform}")
 
     arch = args.arch or ARCH[args.platform]
     scons = find_scons()
@@ -162,10 +184,14 @@ def main() -> int:
 
     print(f"[build] {args.platform}/{arch}  targets={','.join(TARGETS[args.target])}  "
           f"jobs={args.jobs}\n[build] scons: {scons}")
+    print(f"[build] extensions: {', '.join(n for n, _, _, _ in exts)}")
+    for name, _s, _o, plats in skipped:
+        print(f"[build] skipping {name} — not shipped on {args.platform} "
+              f"(only {'/'.join(plats)})")
 
     results: list[tuple[str, str, bool, float]] = []
     for target in TARGETS[args.target]:
-        for name, subdir, _out in exts:
+        for name, subdir, _out, _plats in exts:
             ok, secs = run_one(name, subdir, args.platform, arch, target,
                                scons, env, args.jobs, args.scons_args)
             results.append((name, target, ok, secs))
