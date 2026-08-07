@@ -119,5 +119,16 @@ RetroXR/godot-pdfium/*godot-pdfium.*.so
 RetroXR/metaxr-audio/*metaxr-audio.*.dll
 RetroXR/metaxr-audio/*metaxr-audio.*.so
 
+# Windows ReplaceFile() backups. The Win32 call that swaps a file in place leaves
+# the old copy behind as `~<name>~RF<hex>.TMP`, and something re-writes the OpenXR
+# vendors DLL on most editor runs — four had piled up in .bin/windows/, each a
+# byte-identical 5 MB copy of libgodotopenxrvendors.dll.
+#
+# Deliberately narrow: the RF<hex> form is unmistakably that API's, where a blanket
+# *.TMP could hide a real artefact. The DLL these shadow must STAY tracked — a
+# missing Windows binary makes Godot drop the whole GDExtension, which once
+# shipped a Quest APK with no vendors .so and no passthrough.
+~*~RF*.TMP
+
 # Claude Code machine-local settings (absolute paths, per-machine allow-list)
 .claude/settings.local.json
