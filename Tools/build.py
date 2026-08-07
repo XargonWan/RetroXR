@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build every retroXR GDExtension for one platform, in one command.
+"""Build every RetroXR GDExtension for one platform, in one command.
 
     python Tools/build.py windows
     python Tools/build.py android --target release

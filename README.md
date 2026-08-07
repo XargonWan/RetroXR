@@ -1,4 +1,4 @@
-# retroXR
+# RetroXR
 
 A VR retro-gaming room in Godot 4: real emulated hardware you pick up, plug in and
 play with, driven by libretro cores.
@@ -250,7 +250,7 @@ Each writes a `lib<name>.<platform>.<target>.<arch>.so` (or `.dll`) next to the
 
 ## Desktop mode controls
 
-When no VR headset is detected, retroXR falls back to a desktop mode with mouse/keyboard controls.
+When no VR headset is detected, RetroXR falls back to a desktop mode with mouse/keyboard controls.
 
 **Movement / camera**
 - `WASD` — move

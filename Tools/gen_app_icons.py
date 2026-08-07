@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw retroXR's app icons from the vector mark's geometry.
+"""Draw RetroXR's app icons from the vector mark's geometry.
 
     python Tools/gen_app_icons.py
 

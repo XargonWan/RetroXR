@@ -99,7 +99,7 @@ func _glb_screen_name() -> String:
 func _on_shell_ready() -> void:
 	pass
 
-## Handheld shells are conventionally modelled upright (screen on +Z); retroXR's
+## Handheld shells are conventionally modelled upright (screen on +Z); RetroXR's
 ## frame is lying flat with the screen on +Y, so the default lays it back. Override
 ## if a particular shell is authored differently.
 func _glb_rotation_degrees() -> Vector3:

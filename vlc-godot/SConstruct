@@ -1,6 +1,6 @@
 # type: ignore
 #
-# Standalone GDExtension: vlc_godot (libVLC-backed DVD/video player for retroXR).
+# Standalone GDExtension: vlc_godot (libVLC-backed DVD/video player for RetroXR).
 # Builds separately from libretro-godot (two extensions can't share one SCons
 # invocation), but reuses the same godot-cpp submodule checked out under
 # libretro-godot/godot-cpp. Modeled on libretro-godot/Temp/SConscript and the

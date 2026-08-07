@@ -78,21 +78,21 @@ def fit_font(text, target_px):
 
 
 def draw_wordmark(img, cx, baseline, target_px):
-    """"retro" light + "XR" accent, centred on cx, sitting on `baseline`."""
-    font = fit_font("retroXR", target_px)
+    """"Retro" light + "XR" accent, centred on cx, sitting on `baseline`."""
+    font = fit_font("RetroXR", target_px)
     d = ImageDraw.Draw(img)
-    w_all = d.textlength("retroXR", font)
-    w_ret = d.textlength("retro", font)
+    w_all = d.textlength("RetroXR", font)
+    w_ret = d.textlength("Retro", font)
     x = cx - w_all / 2
 
     # drop shadow first, as one pass over the whole word, so the two colour
     # runs do not each cast their own edge into the other
     sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ds = ImageDraw.Draw(sh)
-    ds.text((x, baseline), "retroXR", font=font, fill=(0, 0, 0, 170), anchor="ls")
+    ds.text((x, baseline), "RetroXR", font=font, fill=(0, 0, 0, 170), anchor="ls")
     img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(img.width * 0.006)))
 
-    d.text((x, baseline), "retro", font=font, fill=WORD_LIGHT + (255,), anchor="ls")
+    d.text((x, baseline), "Retro", font=font, fill=WORD_LIGHT + (255,), anchor="ls")
     d.text((x + w_ret, baseline), "XR", font=font, fill=WORD_ACCENT + (255,), anchor="ls")
 
 

@@ -1,9 +1,9 @@
 # Hardware coverage
 
-Which real hardware retroXR models, and which it doesn't yet. Split by kind so
+Which real hardware RetroXR models, and which it doesn't yet. Split by kind so
 each file stays readable.
 
-Real hardware only. retroXR's own props — the generic pad, cartridge, disc,
+Real hardware only. RetroXR's own props — the generic pad, cartridge, disc,
 memory card, multitap, keyboard/mouse, ray gun and controller cable — are not
 listed: nothing here corresponds to them, and counting them as implemented only
 inflated the totals.
@@ -41,4 +41,4 @@ one place a model is declared: a row with an id, the platform it sits under, a
 label for the spawn menu, and either a scene or a script. The spawn menu follows
 from that, so landing a new model is a row plus its files — and tick the box here.
 
-Anything modelled for retroXR must be work you have the right to ship.
+Anything modelled for RetroXR must be work you have the right to ship.

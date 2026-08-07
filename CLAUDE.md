@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-retroXR is a VR retro-gaming room in Godot 4.7. Its core is `libretro-godot`, a GDExtension (C++, submodule, forked from SKurdt's SK.Libretro.Godot) that runs libretro emulator cores inside Godot and bridges Godot's scene system to the libretro API.
+RetroXR is a VR retro-gaming room in Godot 4.7. Its core is `libretro-godot`, a GDExtension (C++, submodule, forked from SKurdt's SK.Libretro.Godot) that runs libretro emulator cores inside Godot and bridges Godot's scene system to the libretro API.
 
-The app is `retroXR`, package `com.xenu.retroxr`. The Godot project folder is `RetroXR/`,
+The app is `RetroXR`, package `com.xenu.retroxr`. The Godot project folder is `RetroXR/`,
 and the desktop data root stays `~/retroxr/{roms,books,videos,…}` — it holds user ROMs, so
 it is deliberately not renamed.
 
