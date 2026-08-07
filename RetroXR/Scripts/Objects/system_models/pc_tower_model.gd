@@ -41,10 +41,49 @@ var _tray_rest: Vector3 = Vector3.ZERO
 var _tray_tween: Tween = null
 
 
+## Back-panel label node -> the TransportGlyphs key it prints.
+const PORT_GLYPHS := {
+	"MouseLabel": "mouse",
+	"KeyboardLabel": "keyboard",
+	"VgaLabel": "vga",
+	"SpeakerLabel": "speakers",
+}
+
+## 6 mm, against the 5 mm of text it replaces. A glyph carries a whole word in one
+## character and wants to be bigger than the word was — but only just: keyboard
+## socket to VGA flange is 8.2 mm and the icon has to sit between them.
+##
+## Rastered at 48 and scaled down, not asked for at 6. font_size is the size the
+## glyphs are BUILT at, so asking for 6 makes a six-pixel-tall atlas and magnifies
+## it into a smear; see the note in pc_tower.tscn.
+const PORT_GLYPH_M := 0.006
+const PORT_GLYPH_RASTER := 48
+
+
 func _ready() -> void:
 	_tray_rest = _tray_pivot.position
+	_label_ports()
 	_set_led(_led, false, Color(0.25, 0.85, 0.35))
 	_set_led(_drive_led, false, Color(1.0, 0.7, 0.2))
+
+
+## Print an icon over each socket instead of its name.
+##
+## Done here rather than in the scene because a .tscn cannot chain the symbol font,
+## and the Nerd Font codepoints are private-use: without TransportGlyphs.font()
+## putting that font behind the project default, every one renders as tofu. The
+## scene keeps the words it had, so the panel still reads in the editor and still
+## says something if this never runs — the same arrangement label_buttons() uses on
+## the decks' ButtonLabels.
+func _label_ports() -> void:
+	for node_name: String in PORT_GLYPHS:
+		var lbl := get_node_or_null("Back/%s" % node_name) as Label3D
+		if lbl == null:
+			continue
+		lbl.font = TransportGlyphs.font()
+		lbl.font_size = PORT_GLYPH_RASTER
+		lbl.pixel_size = PORT_GLYPH_M / float(PORT_GLYPH_RASTER)
+		lbl.text = TransportGlyphs.glyph(str(PORT_GLYPHS[node_name]))
 
 
 # --- ports ------------------------------------------------------------------

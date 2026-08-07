@@ -22,6 +22,14 @@ const CODES := {
 	"eye": 0xF1A1C,       # md-eye-outline   — one eye, biased to its own side
 	"audio_stereo": 0xF0D38,  # md-speaker-multiple — both channels
 	"audio_mono": 0xF04C3,    # md-speaker          — one channel, biased likewise
+	# The PC tower's back panel names its sockets with these rather than with words.
+	# "speakers" is the same codepoint as audio_stereo and kept separate anyway: one
+	# is a deck saying which channels it carries, the other is a socket saying what
+	# plugs into it, and they have no reason to move together.
+	"mouse": 0xEFBA,
+	"keyboard": 0xF11C,
+	"vga": 0xF0379,
+	"speakers": 0xF0D38,
 }
 
 ## How far a side-biased glyph leans off centre, in the button's local X. The cap

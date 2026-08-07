@@ -172,6 +172,12 @@ mesh = ExtResource("5_ps2jackms")
 
 ; Silkscreen above each socket, the way a real I/O panel names its ports.
 ;
+; The words below are what the EDITOR shows and what survives if the model script
+; never runs. At runtime RetroSystemModelPCTower._label_ports overwrites each with a
+; Nerd Font icon and re-sizes it — the font has to be chained on in code, because a
+; .tscn cannot put the symbol font behind the project default and the codepoints are
+; private-use, so authored here they would every one render as tofu.
+;
 ; Turned 180 about Y so the words read the right way round from BEHIND the tower,
 ; and set 0.5 mm proud of the case's back face at -0.22 so they do not z-fight it.
 ;
