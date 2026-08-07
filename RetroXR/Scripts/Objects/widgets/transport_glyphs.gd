@@ -27,7 +27,7 @@ const CODES := {
 	# is a deck saying which channels it carries, the other is a socket saying what
 	# plugs into it, and they have no reason to move together.
 	"mouse": 0xEFBA,
-	"keyboard": 0xF11C,
+	"keyboard": 0xF030C,
 	"vga": 0xF0379,
 	"speakers": 0xF0D38,
 }
