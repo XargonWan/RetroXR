@@ -352,6 +352,7 @@ func _build() -> void:
 		["Memory Card",     "memory_card"],
 		["Composite Cable", "composite_cable"],
 		["Mono Composite Cable", "mono_composite_cable"],
+		["VGA Cable",       "vga_cable"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [

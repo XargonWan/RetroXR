@@ -104,6 +104,14 @@ const _COMPUTER_INPUT: Array = [
 	{"kind": "peripheral", "label": "Mouse", "spawn": "retro_mouse"},
 ]
 
+## How a computer's picture reaches its monitor. Listed for computers only: the
+## sockets it fits are the PC tower's and the CRT monitor's, and a console has
+## neither. It does not replace the composite lead on those cards — VGA carries no
+## sound, so a tower wired this way still needs the phono pair for audio, which is
+## what the real machine needed too.
+const _VGA_CABLE: Dictionary = {"kind": "peripheral", "label": "VGA Cable",
+	"spawn": "vga_cable"}
+
 
 ## The spawnable items for a system: its stand-in hardware, then the models that
 ## need imported assets, then its peripherals.
@@ -146,6 +154,7 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 	var info := SystemInfo.for_system(systemid)
 	if info != null and info.computer:
 		items.append_array(_COMPUTER_INPUT.duplicate(true))
+		items.append(_VGA_CABLE.duplicate())
 	if standins:
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})

@@ -1,0 +1,43 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="1_snapzone"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/vga_port.gd" id="2_portscript"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/vga_jack.tscn" id="3_vgajack"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphigh"]
+
+; The hood's own block, so the ghost reads as "a VGA plug goes here" rather than as
+; a generic glowing box.
+[sub_resource type="BoxMesh" id="BoxMesh_plug_ghost"]
+size = Vector3(0.03, 0.016, 0.019)
+
+[sub_resource type="StandardMaterial3D" id="Mat_plug_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1, 0.45)
+emission_enabled = true
+emission = Color(0, 0.15, 0.5, 1)
+emission_energy_multiplier = 0.4
+
+; A socket, placed the way rca_port.tscn places its own: the ZONE sits where a
+; seated plug's ORIGIN belongs and the jack is pushed back by that much so its
+; flange lands on the panel. Copy this node's transform from an existing port and
+; the plug still seats right.
+;
+; 3 mm, not the RCA pair's 10 mm. A seated VGA plug's origin is its hood face, and
+; the hood face stops against the female shell's rim, which stands 3 mm proud of
+; the flange — see the MATING note in Tools/gen_vga.gd. Using 10 mm here floats the
+; plug 7 mm off the back panel with its shell in mid-air.
+[node name="VgaPort" instance=ExtResource("1_snapzone")]
+grab_distance = 0.06
+script = ExtResource("2_portscript")
+
+[node name="VgaJack" parent="." instance=ExtResource("3_vgajack")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0075)
+
+[node name="SnapHighlight" type="Node3D" parent="."]
+script = ExtResource("4_snaphigh")
+
+; Back along -Z from the mating face, which is where the hood actually sits.
+[node name="HighlightMesh" type="MeshInstance3D" parent="SnapHighlight"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0095)
+mesh = SubResource("BoxMesh_plug_ghost")
+surface_material_override/0 = SubResource("Mat_plug_ghost")

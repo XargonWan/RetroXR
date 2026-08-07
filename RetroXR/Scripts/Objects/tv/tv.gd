@@ -40,6 +40,8 @@ var _speakers_seated: bool = false
 
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
+## Off unless the fitted shell carries a VgaPortSeat — see _seat_vga_port.
+@onready var _vga_port: XRToolsSnapZone = $VgaPort
 @onready var _ambilight: SpotLight3D = $Ambilight
 @onready var _mute_btn: VRButton = $MuteButton
 @onready var _audio_mode_btn: VRButton = $AudioModeButton
@@ -181,6 +183,10 @@ func _ready() -> void:
 	}, TransportGlyphs.TV_SIZE)
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
+	# The VGA socket announces the same way. Connected whether or not this shell
+	# uses it — a disabled zone never fires, so there is nothing to gate.
+	_vga_port.has_picked_up.connect(_on_plug_snapped)
+	_vga_port.has_dropped.connect(_on_plug_released)
 	_mute_btn.button_pressed.connect(_on_mute_toggle)
 	_audio_mode_btn.button_pressed.connect(_on_audio_mode_toggle)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
@@ -269,6 +275,7 @@ func _load_shell() -> void:
 
 	_seat_node(_screen_mesh, _shell.screen_seat())
 	_seat_node(_composite_port, _shell.port_seat())
+	_seat_vga_port(_shell.vga_port_seat())
 	_seat_node(_ambilight, _shell.ambilight_seat())
 	_seat_node(_volume_label, _shell.volume_label_seat())
 
@@ -305,6 +312,26 @@ func _load_shell() -> void:
 func _seat_node(node: Node3D, seat: Variant) -> void:
 	if node != null and seat is Transform3D:
 		node.transform = seat
+
+
+## Turn the VGA input on, but only for a shell that asked for it.
+##
+## Opt-IN rather than opt-out: the socket is authored off in tv.tscn and a shell
+## claims it by carrying a VgaPortSeat marker. Only the computer monitor does — a
+## DE-15 on a wood-cabinet 70s set would be an anachronism, and the stock body has
+## nowhere sensible to put one.
+##
+## `enabled` as well as `visible`, and that is not belt and braces: hiding a snap
+## zone stops it drawing and nothing else, so an invisible socket left enabled goes
+## on catching plugs.
+func _seat_vga_port(seat: Variant) -> void:
+	if _vga_port == null:
+		return
+	var on: bool = seat is Transform3D
+	if on:
+		_vga_port.transform = seat
+	_vga_port.visible = on
+	_vga_port.enabled = on
 
 
 ## Resize the pickup collider and the pointer box to the cabinet.

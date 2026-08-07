@@ -27,11 +27,20 @@ var cable: Node3D = null
 var cable_anchor: Vector3 = Vector3.ZERO
 
 
+## The snap group this end answers to, and the ONLY thing deciding which sockets
+## will take it. RcaPort declares the matching side, so the two cannot drift.
+##
+## Overridable because a lead is not always an RCA lead: VgaPlug answers to
+## "vga_plug", which is what stops a DE-15 hood being pushed into a phono jack.
+## Within a family there is still no further filter — any RCA plug fits any RCA
+## socket, by design, see RcaPort.
+func plug_group() -> String:
+	return "composite_plug"
+
+
 func _ready() -> void:
 	super._ready()
-	# Every RCA socket in the project takes this group, and none of them filter
-	# any further -- see RcaPort.
-	add_to_group("composite_plug")
+	add_to_group(plug_group())
 	_derive_cable_anchor()
 	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
 

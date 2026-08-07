@@ -41,6 +41,7 @@ const AUDIO_CASSETTE_SCENE   := preload("res://Scenes/Objects/audio_cassette.tsc
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const COMPOSITE_CABLE_SCENE  := preload("res://Scenes/Objects/composite_cable.tscn")
 const MONO_CABLE_SCENE       := preload("res://Scenes/Objects/mono_composite_cable.tscn")
+const VGA_CABLE_SCENE        := preload("res://Scenes/Objects/vga_cable.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
 const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
@@ -661,6 +662,11 @@ func _serialize_cable(cable: CompositeCable, id: int, n3d: Node3D,
 		# 2 = the mono lead, 3 = the full one. Both are CompositeCable; only
 		# the scene differs, so the count is what picks it back up.
 		"cords": cable.cord_count(),
+		# ...except that a one-cord lead is NOT "the composite lead with a cord
+		# missing" — it is a different connector entirely. Named rather than
+		# inferred from the count, so the next single-cord lead to be added does not
+		# silently restore as a VGA one.
+		"kind": cable.scene_file_path.get_file().get_basename(),
 		"plugs": plugs,
 	})
 
@@ -753,8 +759,17 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				disc.dvd_label = data.get("dvd_label", "")
 				obj = disc
 			"composite_cable":
-				obj = (MONO_CABLE_SCENE if int(data.get("cords", 3)) == 2
-					else COMPOSITE_CABLE_SCENE).instantiate() as Node3D
+				# Every lead in the room is a CompositeCable; only the scene it was
+				# spawned from differs. "kind" names it outright — the cord count is
+				# the fallback for saves written before that field existed, and it
+				# cannot tell a VGA lead from any other one-cord lead.
+				var kind: String = str(data.get("kind", ""))
+				var lead: PackedScene = COMPOSITE_CABLE_SCENE
+				if kind == "vga_cable":
+					lead = VGA_CABLE_SCENE
+				elif kind == "mono_composite_cable" or int(data.get("cords", 3)) == 2:
+					lead = MONO_CABLE_SCENE
+				obj = lead.instantiate() as Node3D
 			"audio_disc":
 				var adisc := AUDIO_DISC_SCENE.instantiate() as AudioDisc
 				adisc.album_path = data.get("album_path", "")

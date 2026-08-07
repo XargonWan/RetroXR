@@ -58,6 +58,9 @@ func _ready() -> void:
 
 func screen_seat() -> Variant:      return _seat("ScreenSeat")
 func port_seat() -> Variant:        return _seat("PortSeat")
+## Absent on every shell but the computer monitor, and that absence is the switch:
+## RetroTV leaves its VgaPort disabled and hidden unless a shell asks for one.
+func vga_port_seat() -> Variant:    return _seat("VgaPortSeat")
 func ambilight_seat() -> Variant:   return _seat("AmbilightSeat")
 func button_row_seat() -> Variant:  return _seat("ButtonRow")
 func volume_label_seat() -> Variant: return _seat("VolumeLabelSeat")

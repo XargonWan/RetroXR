@@ -1,6 +1,7 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="2_vgaport"]
 
 ; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
 ; footprint. Origin at the base centre, so the system sits on the floor at y 0.
@@ -207,3 +208,28 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.340, -0.221)
 
 [node name="PortSeat2" type="Marker3D" parent="Back"]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.372, -0.221)
+
+; The video card's socket, on the I/O panel directly under the PS/2 stack — where a
+; board with onboard video puts it. y 0.318 is 22 mm below the keyboard socket, so
+; the 12.6 mm flange clears that 15 mm barrel by 8 mm; the 30.8 mm flange spans
+; x -0.070..-0.040, well inside the 190 mm case.
+;
+; Authored here rather than built by system.gd::_build_av_ports, which only knows
+; how to lay out a row of RCA channels. RcaPort.get_device() walks UP for
+; on_av_topology_changed, and this model is a child of the RetroSystem, so a socket
+; dropped into the model scene resolves its device with no wiring of its own.
+;
+; z -0.224, not -0.221: the zone sits where a seated plug's ORIGIN belongs, which
+; for this connector is 3 mm proud of the panel — the male hood face stops against
+; the female shell's rim. The jack child inside vga_port.tscn carries the matching
+; -3 mm so its flange lands on the panel at -0.221. NOT the RCA pair's 10 mm.
+;
+; Rotated 180 about X for the same measured reason PortSeat1/2 above are: a zone at
+; identity yields a plug at diag(1,-1,-1) with its hood buried in the case.
+;
+; direction = 0 is OUT. `channel` is not set here — VgaPort pins it to VIDEO, since
+; VGA has no other channel to carry. The tower keeps its three RCA sockets: sound
+; still has to leave on those, exactly as it did on the real machine.
+[node name="VgaPort" parent="Back" instance=ExtResource("2_vgaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.318, -0.2285)
+direction = 0

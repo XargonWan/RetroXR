@@ -148,6 +148,22 @@ func _tint_plug(plug: RcaPlug, col: Color) -> void:
 func _build_rope() -> void:
 	if not is_inside_tree():
 		return          # a netplay client's local copy is freed before we get here
+	# One cord is one rope. The ribbon path below would build a trunk plus a single
+	# fray tail meeting at a junction nothing holds — geometry a one-wire lead does
+	# not have, and a VGA lead is exactly that. Both ends anchor straight to their
+	# plugs instead, which is also what every captive lead in the project does.
+	if _cords == 1:
+		_rope.fray_segments_start = 0
+		_rope.fray_segments_end = 0
+		_rope.start_node = _plugs[End.A][0]
+		_rope.end_node = _plugs[End.B][0]
+		# End at the connector's cable boss rather than at the plug's origin, which
+		# sits at the mating face well forward of where the cord actually enters.
+		_rope.start_anchor_offset = (_plugs[End.A][0] as RcaPlug).cable_anchor
+		_rope.end_anchor_offset = (_plugs[End.B][0] as RcaPlug).cable_anchor
+		_rope._init_points()
+		_rope_built = true
+		return
 	_rope.ribbon_count = _cords
 	# Every cord in the same jacket — see wire_color.
 	var jackets := PackedColorArray()
@@ -195,6 +211,13 @@ func _build_rope() -> void:
 func _physics_process(_delta: float) -> void:
 	if not _rope_built or _rope == null or _plugs.is_empty():
 		return
+	# A one-cord lead has no breakouts to measure against — the two plugs ARE the
+	# rope's ends. So each loose end is clamped to the whole rest length from the
+	# other one, which is the same rule every host applies between its attach point
+	# and its plug (see system.gd::_physics_process).
+	if _cords == 1:
+		_clamp_pair()
+		return
 	var pts: PackedVector3Array = _rope.get_points()
 	if pts.size() <= _rope.segment_count:
 		return
@@ -218,6 +241,41 @@ func _physics_process(_delta: float) -> void:
 			if d <= reach or d < 0.0001:
 				continue
 			plug.global_position += away * ((reach - d) / d)
+
+
+## Keep the two ends of a one-cord lead within its rest length of each other.
+##
+## Only the LOOSE end moves: a plug in a hand or seated in a socket has something
+## else owning its transform, and fighting that either jitters it or pulls it out.
+## With both ends held there is nothing to do — the cord is simply stretched, which
+## is what happens if two people walk apart with one between them.
+func _clamp_pair() -> void:
+	var a: RcaPlug = _plugs[End.A][0]
+	var b: RcaPlug = _plugs[End.B][0]
+	if not is_instance_valid(a) or not is_instance_valid(b):
+		return
+	# With BOTH ends held — one in a socket, one in a hand — there is nothing to
+	# move: something else owns each transform, and the reach is the hand's problem
+	# rather than the cable's. Otherwise the held end is the anchor; with neither
+	# held, end A stands in as one, so a lead lying on the floor still cannot be
+	# dragged apart by its own physics.
+	if a.is_picked_up() and b.is_picked_up():
+		return
+	var fixed: RcaPlug = a
+	var loose: RcaPlug = b
+	if b.is_picked_up():
+		fixed = b
+		loose = a
+	var reach: float = float(_rope.segment_count) * _rope.segment_length
+	# Measured boss to boss, not origin to origin: the cord leaves each hood some
+	# 50 mm behind the mating face, and that is the span the rope actually has.
+	var from: Vector3 = fixed.global_transform * fixed.cable_anchor
+	var to: Vector3 = loose.global_transform * loose.cable_anchor
+	var away: Vector3 = to - from
+	var d: float = away.length()
+	if d <= reach or d < 0.0001:
+		return
+	loose.global_position += away * ((reach - d) / d)
 
 
 func _on_plug_moved() -> void:

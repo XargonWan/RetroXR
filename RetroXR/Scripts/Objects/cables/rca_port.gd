@@ -47,10 +47,17 @@ const CHANNEL_NAMES := ["VIDEO", "L", "R"]
 const GROUP := "rca_port"
 
 
+## The plug group this socket accepts — the other half of RcaPlug.plug_group().
+## VgaPort overrides both together, which is what keeps a DE-15 hood out of a
+## phono jack and a phono plug out of a DE-15 shell.
+func plug_group() -> String:
+	return "composite_plug"
+
+
 func _ready() -> void:
 	super._ready()
 	add_to_group(GROUP)
-	snap_require = "composite_plug"
+	snap_require = plug_group()
 	_tint_jack()
 	var jack := get_node_or_null("RcaJack") as Node3D
 	if jack != null:

@@ -1166,7 +1166,8 @@ func _build_av_ports() -> void:
 ## reaches one of the set's speakers or it reaches nothing. Both of this console's
 ## voices are then played AT that one speaker, which is what a mono feed into one
 ## input sounds like — two coincident sources sum, no downmix needed.
-func on_av_topology_changed(links: Array) -> void:
+func on_av_topology_changed(_reported: Array) -> void:
+	var links: Array = _all_links()
 	var tv: RetroTV = null
 	var video := false
 	var l := -1
@@ -1200,6 +1201,37 @@ func on_av_topology_changed(links: Array) -> void:
 			RcaPort.Channel.AUDIO_R:
 				r = dest
 	_apply_av_feed(tv, video, l, r)
+
+
+## Every link reaching this console, gathered from ITS OWN sockets rather than from
+## the lead that just reported.
+##
+## A cable reports only its own cords, and _apply_av_feed then overwrites the
+## picture and both speaker routings wholesale — so with two leads on one console
+## whichever moved last cancels the other. That was latent while every console wore
+## a single lead; the VGA lead makes it immediate, because the natural way to wire
+## the tower is VGA for the picture and the RCA pair for the sound, and touching
+## either one would have killed the other.
+##
+## Walked over RcaPort.GROUP rather than over _av_ports: a socket can be authored
+## into a model scene instead of built by _build_av_ports — the tower's VGA socket
+## is — and get_device() is what decides whose it is either way. This runs on a
+## plug or unplug, not per frame.
+func _all_links() -> Array:
+	var out: Array = []
+	var seen := {}
+	for node in get_tree().get_nodes_in_group(RcaPort.GROUP):
+		var port := node as RcaPort
+		if port == null or port.get_device() != self:
+			continue
+		var plug := port.seated_plug() as RcaPlug
+		if plug == null or plug.cable == null or not is_instance_valid(plug.cable):
+			continue
+		if seen.has(plug.cable):
+			continue
+		seen[plug.cable] = true
+		out.append_array((plug.cable as CompositeCable).links())
+	return out
 
 
 func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:

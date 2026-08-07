@@ -7,6 +7,7 @@
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_screen_curved.res" id="7_screencurved"]
 [ext_resource type="Shader" uid="uid://dp0ojf0bxhg8y" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/rca_port.tscn" id="10_rcaport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="11_vgaport"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
@@ -116,6 +117,21 @@ direction = 1
 [node name="AudioRIn" parent="." unique_id=435405895 instance=ExtResource("10_rcaport")]
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.114, -0.15, -0.16002099)
 channel = 2
+direction = 1
+
+; VGA in — a computer monitor's input, not a television's. OFF as authored: a shell
+; opts in by carrying a VgaPortSeat marker and only crt_monitor.tscn does, so the
+; wood-cabinet sets and the stock body never grow a DE-15 socket. tv.gd seats and
+; enables it when the marker is there (see _seat_vga_port).
+;
+; BOTH flags matter. Hiding a snap zone stops it drawing and nothing else, so a
+; socket left enabled behind visible=false goes on grabbing plugs out of the air.
+;
+; No `channel`: VgaPort pins it to VIDEO. direction = 1 is IN — a set is a sink.
+[node name="VgaPort" parent="." unique_id=778419001 instance=ExtResource("11_vgaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.075, -0.15, -0.16002099)
+visible = false
+enabled = false
 direction = 1
 
 [node name="Ambilight" type="SpotLight3D" parent="." unique_id=603587175]
