@@ -63,8 +63,6 @@ local file                          upstream file
 3ds-content.svg                     Nintendo - Nintendo 3DS-content.svg
 3ds.svg                             Nintendo - Nintendo 3DS.svg
 _default.svg                        default.svg
-amiga-content.svg                   Commodore - Amiga-content.svg
-amiga.svg                           Commodore - Amiga.svg
 apple_ii-content.svg                Apple - II Plus-content.svg
 apple_ii.svg                        Apple - II.svg
 arcadia-content.svg                 Emerson - Arcadia 2001-content.svg
@@ -87,16 +85,14 @@ bbcmicro-content.svg                Acorn - BBC Micro-content.svg
 bbcmicro.svg                        Acorn - BBC Micro.svg
 cdi-content.svg                     Philips - CD-i-content.svg
 cdi.svg                             Philips - CD-i.svg
-cdi2015-content.svg                 Philips - CD-i-content.svg
-cdi2015.svg                         Philips - CD-i.svg
 chailove-content.svg                ChaiLove-content.svg
 chailove.svg                        ChaiLove.svg
+channel_f-content.svg               Fairchild - Channel F-content.svg
+channel_f.svg                       Fairchild - Channel F.svg
 chip_8-content.svg                  CHIP-8-content.svg
 chip_8.svg                          CHIP-8.svg
 colecovision-content.svg            Coleco - ColecoVision-content.svg
 colecovision.svg                    Coleco - ColecoVision.svg
-commodore_64-content.svg            Commodore - 64-content.svg
-commodore_64.svg                    Commodore - 64.svg
 commodore_amiga-content.svg         Commodore - Amiga-content.svg
 commodore_amiga.svg                 Commodore - Amiga.svg
 commodore_c128-content.svg          Commodore - 128-content.svg
@@ -149,10 +145,8 @@ hbmame-content.svg                  MAME-content.svg
 hbmame.svg                          MAME.svg
 intellivision-content.svg           Mattel - Intellivision-content.svg
 intellivision.svg                   Mattel - Intellivision.svg
-intv-content.svg                    Mattel - Intellivision-content.svg
-intv.svg                            Mattel - Intellivision.svg
-J2ME-content.svg                    Mobile - J2ME-content.svg
-J2ME.svg                            Mobile - J2ME.svg
+j2me-content.svg                    Mobile - J2ME-content.svg
+j2me.svg                            Mobile - J2ME.svg
 jollycv-content.svg                 Coleco - ColecoVision-content.svg
 jollycv.svg                         Coleco - ColecoVision.svg
 jumpnbump-content.svg               Jump 'n Bump-content.svg

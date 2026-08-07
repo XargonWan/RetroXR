@@ -8,7 +8,6 @@ extends RefCounted
 const SYSTEM_MAP := {
 	"3do": 29,
 	"3ds": 17,
-	"amiga": 64,
 	"apple_ii": 86,
 	"arcadia": 94,
 	"atari_2600": 26,
@@ -18,9 +17,9 @@ const SYSTEM_MAP := {
 	"atari_lynx": 28,
 	"atari_st": 42,
 	"cdi": 133,
+	"channel_f": 80,
 	"chip_8": 80,
 	"colecovision": 48,
-	"commodore_64": 66,
 	"commodore_amiga": 64,
 	"commodore_c64": 66,
 	"commodore_c128": 263,

@@ -6,18 +6,46 @@
 
 # Core-Info Known Issues
 
-As this is a submodule, we need to somehow upstream the issues we found
+`RetroXR/libretro-core-info/` is no longer the `libretro/libretro-core-info`
+submodule. It is a vendored copy of `dist/info/` from our own libretro-super
+fork, which carries the fixes below; see that directory's README for how to
+resync. 314 files, 139 distinct systemids.
 
-* There is an insconsistency with the `systemname` "C64" where the corrisponding `systemid` is called either "commodore_c64" or "commodore_64"
-* Same inconsistency for the Amiga — `systemid` is either "commodore_amiga" or "amiga" depending on the core
-* Cost of both: `SystemInfo.for_system()` resolves `res://SystemInfo/<systemid>.tres`, so each of these machines needs TWO identical `.tres` files or half the cores get the fallback descriptor (2 ports, cartridge) instead of the authored one. `RetroXR/SystemInfo/` is 60 files for 58 real systems because of it. Anything that counts or lists systems from that directory double-counts the C64 and the Amiga.
-* Some systemids carry no usable `systemname` at all ("playstation_portable" comes back as the raw id). `CoreInfoDatabase._NAME_OVERRIDES` patches that one locally rather than editing the submodule
+## Fixed by the fork (2026-08-07)
+
+* **C64** — `frodo` and `x64sdl` said `commodore_64` where the four VICE cores said
+  `commodore_c64`. All four now agree on `commodore_c64`.
+* **Amiga** — `fsuae` said `amiga` where the other four said `commodore_amiga`. All
+  five now agree on `commodore_amiga`.
+* Cost of those two, now paid off: `SystemInfo.for_system()` resolves
+  `res://SystemInfo/<systemid>.tres`, so each machine needed TWO identical `.tres`
+  files or half its cores took the fallback descriptor (2 ports, cartridge).
+  `RetroXR/SystemInfo/` is 1:1 with the corpus again, and nothing counting systems
+  out of that directory double-counts.
+* **CD-i** — `cdi2015` took its own systemid; it now reports `cdi`.
+* **Intellivision** — `FreeIntvTSOverlay` took `intv`; it now reports `intellivision`.
+* **J2ME** — `squirreljme` said `J2ME` and `freej2me` said nothing; both now say
+  `j2me`.
+* **ScummVM** — systemname was the bare category "Game engine"; now
+  "ScummVM Game Engine".
+* **PSP** — `remotejoy` had an empty systemname, so whichever entry
+  `get_systemname_for_id("playstation_portable")` reached first decided whether the
+  label was "PSP" or blank. Both PSP cores now say "PSP".
+* **`FreeIntvTSOverlay_libretro.info` firmware numbering** — it declared
+  `firmware_count = 2` then wrote `firmware1_desc`, `firmware0_path`, `firmware0_opt`,
+  so `grom.bin` overwrote `exec.bin`'s path and entry 1 had a description but no path.
+  Both are required Intellivision BIOSes, so the core was unlaunchable on its own
+  declared metadata. Now correctly numbered `firmware0_*` / `firmware1_*`.
+* Nine cores gained a systemid: `emuscv` → `super_cassette_vision`, `freechaf` →
+  `channel_f`, `freej2me` → `j2me`, `galaksija`, `gw` → `handheld_electronic`, `mu` →
+  `palm_os`, `neocd` → `neo_geo_cd`, `simcp` → `sam_coupe`, `theodore` →
+  `thomson_moto`.
+
+Two files the old submodule had are not in libretro-super and were dropped with the
+switch: `boom3_xp` (deleted upstream) and `radio` (`internet_radio`, which
+`SystemFilter` hides — its entry there is now dead).
 
 ## Cores with no systemid at all
-
-Found while looking for a Fairchild Channel F system (2026-08-01). 46 of the 306
-`.info` files carry no `systemid` line; 13 of those are real emulators, the other 33
-are single-game cores and players where it matters less.
 
 `CoreInfoDatabase._rebuild_indices()` only indexes entries with a non-empty
 `systemid`, so these cores are absent from `_by_systemid` entirely — not hidden by
@@ -25,21 +53,20 @@ are single-game cores and players where it matters less.
 to reach them from any system-browsing UI. The core still downloads and runs; only
 the discovery path is missing.
 
-The 13, with the `database` name that should have become the systemid:
+37 of the 314 files still carry no `systemid`. Most are test harnesses, players and
+single-game cores where it matters less. The real machines among them:
 
-* `freechaf` — "Fairchild - Channel F"
-* `gw` — "Handheld Electronic Game"
-* `neocd` — "SNK - Neo Geo CD"
-* `emuscv` — "Epoch - Super Cassette Vision"
-* `freej2me` — "Mobile - J2ME"
-* `simcp` — "SAM coupe"
-* `theodore` — "Thomson - MOTO"
+* `bk` — BK-0010/BK-0011(M)
+* `oberon` — Ceres/Oberon workstation
+* `pcem`, `qemu` — PC
 * `skyemu` — three databases (DS / Game Boy / GBA), so no single id fits
-* `galaksija`, `mu`, `oberon`, `pcem`, `qemu` — no `database` either
+* `vemulator` — Dreamcast VMU
 
-Fixable locally the same way `_NAME_OVERRIDES` handles the missing systemnames: a
-systemid override table keyed on `core_name`. Anything given an id also needs a
-`res://SystemInfo/<systemid>.tres` or it takes the fallback descriptor.
+Anything given an id also needs a `res://SystemInfo/<systemid>.tres` or it takes the
+fallback descriptor, and a `res://Textures/SystemIcons/<systemid>.svg` or it draws
+`_default.svg`. 39 of the 139 systemids have no console icon; 11 of those are ids the
+fork added (`bbk`, `dingoo-a320`, `galaksija`, `handheld_electronic`, `neo_geo_cd`,
+`palm_os`, `sam_coupe`, `spmp8000`, `super_cassette_vision`, `thomson_moto`, `wiiu`).
 
 ## Sub-platforms are invisible — they exist only in `database`
 
@@ -57,7 +84,7 @@ Game Gear is the clearest casualty: five cores emulate it (`genesis_plus_gx`,
 Gear tile, no `SystemInfo/game_gear.tres`, and a GG cart can only be spawned wearing
 a Master System or Mega Drive shell.
 
-Across the corpus: **158 distinct `database` names against 132 distinct systemids**.
+Across the corpus: **162 distinct `database` names against 139 distinct systemids**.
 
 Not a data bug — the format has no way to express "this core covers N platforms" —
 but it means `systemid` cannot be the whole story for what RetroXR can run. Giving a
@@ -67,14 +94,11 @@ GG-capable cores serve it.
 
 ## Duplicate systemids for one machine
 
-Found by grouping all 132 systemids by normalised `systemname` (2026-07-28). Same
+Found by grouping every systemid by normalised `systemname` (2026-07-28). Same
 failure mode as the C64/Amiga pair above — each one needs a duplicate `.tres`, and
-each one shows up as two tiles in the Cores browser.
+each one shows up as two tiles in the Cores browser. CD-i and Intellivision are
+fixed; these two remain.
 
-* **Philips CD-i** — `cdi` ("CD-i") and `cdi2015` ("CDi"). The names differ only in
-  punctuation, so they don't even sort together
-* **Intellivision** — `intellivision` and `intv`, both with the systemname
-  "Intellivision". Two tiles with byte-identical labels
 * **Cave Story** — `doukutsu-rs` and `nxengine`, both "Cave Story Game Engine".
   Defensible (two independent reimplementations) but indistinguishable in a list
 * **ColecoVision** — `colecovision` vs `jollycv`
@@ -91,33 +115,30 @@ a label because several systemids share it verbatim.
   "Arcade (various)" with nothing to tell them apart but the core count
 * **"Music"** is shared by `game_music` (gme, chiptune/VGM) and `music` (pocketcdg,
   CD+G karaoke) — two unrelated players
-* **"Game engine"** is `scummvm`'s systemname — generic where every other engine
-  core names itself ("DOOM Game Engine", "Quake II Game Engine"). It reads as a
-  category, not a system
+* **"Multi (various)"** is shared by `mame` and `mess`
+* **"Neo Geo"** is shared by `fb_alpha` and `neogeo`
+* **The empty string** is the systemname of `jumpnbump` and `superbroswar`.
+  `get_systemname_for_id()` falls back to the systemid only when the key is absent,
+  not when it is present and empty, so these render as a blank label
 
-Worth fixing locally in `CoreInfoDatabase._NAME_OVERRIDES` before upstreaming, since
-the display name is what the browser tiles key off.
+`scummvm`'s "Game engine" is fixed. There is no local override table to patch these
+in — `CoreInfoDatabase.get_systemname_for_id()` returns the first indexed entry's
+`systemname` verbatim, so the fix has to be in the data.
 
 ## Malformed firmware blocks
 
-Found while building the BIOS / Extras tab (2026-07-30). Both are upstream data bugs,
-not parser bugs.
+Found while building the BIOS / Extras tab (2026-07-30). Upstream data bugs, not
+parser bugs. The `FreeIntvTSOverlay` misnumbering is fixed; the `bk` one is not.
 
 * **`bk_libretro.info` has TWO `notes` lines** (61 and 62). A last-wins key/value
   parser — which is the obvious way to read this format, and what `CoreInfoParser`
   did — silently keeps only the second (`"(!) Homepage: …"`) and discards the first,
   which is the entire md5 checksum table for all 8 firmware files. Worked around in
   `CoreInfoParser.parse_info_file()` by joining duplicate `notes` on `"|"`, which is
-  the format's own line separator. It is the only file in the 306 that does this;
+  the format's own line separator;
   every other duplicated key (`supports_no_game`, `categories`, `display_version`)
-  is genuinely single-valued and last-wins is correct for those.
-
-* **`FreeIntvTSOverlay_libretro.info` misnumbers its second firmware entry.** It
-  declares `firmware_count = 2`, then writes `firmware1_desc` followed by
-  `firmware0_path` and `firmware0_opt` — so `grom.bin` overwrites `exec.bin`'s path
-  and entry 1 has a description but no path at all. Both files are required
-  Intellivision BIOSes, so the core is unlaunchable on the declared metadata.
-  We skip pathless entries rather than guess, which costs this core one row.
+  is genuinely single-valued and last-wins is correct for those. Still the only file
+  in the corpus that does this.
 
 * **`notes` checksum keys are not consistently the firmware path.** 182 entries key
   on the full `firmware*_path` (`bk/B11M_BOS.ROM`), but 53 key on the basename alone

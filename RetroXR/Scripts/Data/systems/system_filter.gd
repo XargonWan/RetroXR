@@ -1,6 +1,6 @@
 ## SystemFilter — systemids hidden from system-browsing UI.
 ##
-## The bundled core-info database carries 132 distinct systemids, but a chunk of
+## The bundled core-info database carries 139 distinct systemids, but a chunk of
 ## those are not consoles: media players, libretro's test core, and cores that
 ## ship a single game rather than emulate a platform. They add tiles to the
 ## Download grid that nobody wants to browse.
@@ -10,7 +10,7 @@
 ##   var visible := SystemFilter.filter_ids(core_db.get_unique_systemids())
 ##   var visible := SystemFilter.filter_systems(systems)   # Array of Dictionary
 ##
-## Set `SystemFilter.enabled = false` to show all 132 systemids again; the
+## Set `SystemFilter.enabled = false` to show all 139 systemids again; the
 ## Options view exposes this as the "System Filter" switch.
 class_name SystemFilter
 extends RefCounted
