@@ -149,9 +149,12 @@ var _cable_plugs: Array = []
 # 1 right, -1 nowhere — and the picture, the sound and the set's controls each
 # follow a different one of these, because a lead can carry any of them alone.
 var _av_ports: Array = []
-var _av_tv: RetroTV = null
+# The sink carrying this console's SOUND, and the sink whose controls own its
+# volume. Node3D, not RetroTV: a pair of powered speakers is a sink with no
+# screen, and the picture can be going somewhere else entirely.
+var _av_tv: Node3D = null
 var _av_video_tv: RetroTV = null
-var _av_control_tv: RetroTV = null
+var _av_control_tv: Node3D = null
 # True once an AUDIO_R socket exists — stereo hardware. Mono hardware has one
 # audio socket, and its single cord drives BOTH voices to the same speaker.
 var _av_stereo: bool = false
@@ -741,7 +744,7 @@ func _apply_bound_volume() -> void:
 ## The TV this system's sound should come out of: whichever channel is plugged
 ## in, channel 0 first (a dual-screen handheld can be wired up by its BOTTOM
 ## cable alone). Null when nothing is connected.
-func _audio_tv() -> RetroTV:
+func _audio_tv() -> Node3D:
 	# A ports console's sound goes wherever its audio cord went, which is not
 	# necessarily where its picture went — or anywhere at all.
 	if not _av_ports.is_empty():
@@ -1168,8 +1171,13 @@ func _build_av_ports() -> void:
 ## input sounds like — two coincident sources sum, no downmix needed.
 func on_av_topology_changed(_reported: Array) -> void:
 	var links: Array = _all_links()
-	var tv: RetroTV = null
-	var video := false
+	# TWO sinks, not one. The picture and the sound do not have to land in the same
+	# box — the natural way to wire the tower is VGA to the monitor and the 3.5 mm
+	# lead to the speakers — and a single accumulator dropped whichever link named
+	# the second device. First wins WITHIN each role, which is the old behaviour for
+	# two cords into two sets.
+	var video_dev: RetroTV = null
+	var audio_dev: Node3D = null
 	var l := -1
 	var r := -1
 	for link in links:
@@ -1177,12 +1185,14 @@ func on_av_topology_changed(_reported: Array) -> void:
 		if out_port.get_device() != self:
 			continue
 		var in_port: RcaPort = link["in"]
-		var target := in_port.get_device() as RetroTV
-		if target == null:
-			continue
-		if tv == null:
-			tv = target
-		elif target != tv:
+		# Duck-typed, not `as RetroTV`. A television is not the only thing a console
+		# can be wired into — a pair of powered speakers is a sink with no screen at
+		# all — and the cast silently dropped every one of them. get_speaker_positions
+		# is the whole of what a sink has to offer: the source owns its voices and
+		# moves them onto whatever comes back, so a set and a speaker pair are the
+		# same thing from here.
+		var target := in_port.get_device()
+		if target == null or not target.has_method("get_speaker_positions"):
 			continue
 		# Which of the set's speakers this cord lands on. VIDEO=0, L=1, R=2, so a
 		# cord into an audio input gives 0 (left) or 1 (right); into the video
@@ -1190,8 +1200,14 @@ func on_av_topology_changed(_reported: Array) -> void:
 		var dest := -1 if in_port.channel == RcaPort.Channel.VIDEO else int(in_port.channel) - 1
 		match out_port.channel:
 			RcaPort.Channel.VIDEO:
-				video = video or in_port.channel == RcaPort.Channel.VIDEO
+				# A picture needs a screen, so this sink has to be a television —
+				# and only a VIDEO input carries one.
+				if in_port.channel == RcaPort.Channel.VIDEO and video_dev == null:
+					video_dev = target as RetroTV
 			RcaPort.Channel.AUDIO_L:
+				if audio_dev != null and audio_dev != target:
+					continue
+				audio_dev = target
 				l = dest
 				# Mono hardware has this one audio socket and no other, so its
 				# cord carries the whole of the sound: both voices go wherever it
@@ -1199,8 +1215,22 @@ func on_av_topology_changed(_reported: Array) -> void:
 				if not _av_stereo:
 					r = dest
 			RcaPort.Channel.AUDIO_R:
+				if audio_dev != null and audio_dev != target:
+					continue
+				audio_dev = target
 				r = dest
-	_apply_av_feed(tv, video, l, r)
+			RcaPort.Channel.AUDIO_STEREO:
+				# One cord, both channels — which is what a 3.5 mm TRS lead is. Left
+				# goes to the sink's left speaker and right to its right, and there
+				# is no crossed case to model: unlike a pair of phono cords, a
+				# stereo plug cannot be put in half way round.
+				if in_port.channel == RcaPort.Channel.AUDIO_STEREO:
+					if audio_dev != null and audio_dev != target:
+						continue
+					audio_dev = target
+					l = 0
+					r = 1
+	_apply_av_feed(video_dev, audio_dev, l, r)
 
 
 ## Every link reaching this console, gathered from ITS OWN sockets rather than from
@@ -1234,7 +1264,7 @@ func _all_links() -> Array:
 	return out
 
 
-func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
+func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> void:
 	_av_speaker_l = l
 	_av_speaker_r = r
 	# The cached pair is keyed on the gains last sent, not on the routing, so a
@@ -1245,24 +1275,27 @@ func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
 	# That cache belongs to the voices; the AudioStreamPlayer3D backend has its own
 	# level and is re-gated here, since nothing else re-reads the routing for it.
 	_apply_player_volume()
-	_av_tv = tv
+	_av_tv = audio_dev
 	# The PICTURE follows the video cord alone: a lead with only its audio end in
 	# leaves the set on its blue no-signal screen, as it would.
-	var showing: RetroTV = tv if video else null
+	var showing: RetroTV = video_dev
 	if showing != _av_video_tv:
 		if _av_video_tv != null and is_instance_valid(_av_video_tv):
 			on_tv_disconnected(null)
 		_av_video_tv = showing
 		if showing != null:
 			on_tv_connected(showing, null)
-	# The set's own controls, though, should talk to whatever is wired to it at
-	# all — a console feeding only sound still answers its volume buttons.
-	if tv != _av_control_tv:
+	# Volume belongs to whatever is actually carrying the sound — the speakers' knob
+	# when the lead goes there, the set's buttons when it does not. Falling back to
+	# the picture sink keeps a video-only connection answering its volume buttons,
+	# which is what it did before there was anywhere else for sound to go.
+	var ctrl: Node3D = audio_dev if audio_dev != null else video_dev
+	if ctrl != _av_control_tv:
 		if _av_control_tv != null and is_instance_valid(_av_control_tv):
 			_av_control_tv.on_av_source_lost(self)
-		_av_control_tv = tv
-		if tv != null:
-			tv.on_av_source_found(self)
+		_av_control_tv = ctrl
+		if ctrl != null:
+			ctrl.on_av_source_found(self)
 
 
 func _spawn_cables() -> void:

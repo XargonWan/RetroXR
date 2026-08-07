@@ -42,6 +42,8 @@ const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const COMPOSITE_CABLE_SCENE  := preload("res://Scenes/Objects/composite_cable.tscn")
 const MONO_CABLE_SCENE       := preload("res://Scenes/Objects/mono_composite_cable.tscn")
 const VGA_CABLE_SCENE        := preload("res://Scenes/Objects/vga_cable.tscn")
+const TRS_CABLE_SCENE        := preload("res://Scenes/Objects/trs_cable.tscn")
+const SPEAKER_PAIR_SCENE     := preload("res://Scenes/Objects/speaker_pair.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
 const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
@@ -450,6 +452,10 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		var media := _resolve_ref(root, spawned, d.get("media"))
 		if media is AudioDisc or media is AudioCassette:
 			(obj as RetroAudioPlayer).restore_media(media as Node3D)
+	elif obj is SpeakerPair:
+		var pair := obj as SpeakerPair
+		pair.set_volume(float(d.get("volume", 0.75)))
+		pair.restore_box_poses(d.get("boxes", []))
 	elif obj is CompositeCable:
 		# Pass 2, so every deck and set the plugs point at already exists. A plug
 		# whose socket cannot be found is simply left where it was saved — a loose
@@ -595,6 +601,15 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		})
 	elif node is RetroController or node is RayGun or node is RetroMouse or node is RetroKeyboard:
 		return _serialize_peripheral(node, id, n3d, node_to_id)
+	elif node is SpeakerPair:
+		# Deliberately not a PLAIN_SCENES pose-only object. The root never moves —
+		# the two cabinets are separate bodies the player carries around one at a
+		# time — so the root's transform says nothing about where either of them is.
+		var pair := node as SpeakerPair
+		return _base(id, "speaker_pair", n3d).merged({
+			"boxes": pair.box_poses(),
+			"volume": pair.get_volume(),
+		})
 	elif node is CompositeCable:
 		return _serialize_cable(node as CompositeCable, id, n3d, node_to_id)
 	return {}
@@ -767,6 +782,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				var lead: PackedScene = COMPOSITE_CABLE_SCENE
 				if kind == "vga_cable":
 					lead = VGA_CABLE_SCENE
+				elif kind == "trs_cable":
+					lead = TRS_CABLE_SCENE
 				elif kind == "mono_composite_cable" or int(data.get("cords", 3)) == 2:
 					lead = MONO_CABLE_SCENE
 				obj = lead.instantiate() as Node3D

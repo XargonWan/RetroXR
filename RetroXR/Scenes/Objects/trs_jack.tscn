@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/trs_jack.res" id="1_jackmesh"]
+
+; Socket-on-+Z with the origin on the PANEL face (see Tools/gen_trs.gd), so this
+; drops onto a port node whose local +Z points out of the cabinet and needs no
+; transform of its own — the same contract rca_jack.tscn and vga_jack.tscn carry.
+;
+; No script: RcaJack exists to recolour surface 0 for the white and red audio jacks,
+; and this socket's green is PC99's code for what it carries, not a per-scene choice.
+[node name="TrsJack" type="MeshInstance3D"]
+mesh = ExtResource("1_jackmesh")

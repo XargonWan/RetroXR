@@ -1,0 +1,313 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/media/speaker_pair.gd" id="1_pairscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" path="res://Scripts/Objects/media/speaker_box.gd" id="5_speakerbox"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/trs_port.tscn" id="3_trsport"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_knob.gd" id="4_vrknob"]
+
+; A small 90s multimedia speaker: 85 W x 145 H x 85 D mm. Origin at the base centre,
+; so a cabinet set on a desk stands on it rather than sinking in.
+[sub_resource type="BoxMesh" id="Mesh_cabinet"]
+size = Vector3(0.085, 0.145, 0.085)
+
+; The front baffle stands 2 mm proud so its edge catches light — the same trick the
+; tower's bezel and the wardrobe's door panels use.
+[sub_resource type="BoxMesh" id="Mesh_baffle"]
+size = Vector3(0.087, 0.147, 0.004)
+
+; CylinderMesh runs along its own Y, so every driver and port below rotates +90
+; about X to lie along Z and face out of the baffle. Written transposed, as .tscn
+; stores it: args are [x.x, y.x, z.x, x.y, y.y, z.y, x.z, y.z, z.z], so y maps to +Z.
+[sub_resource type="CylinderMesh" id="Mesh_cone"]
+top_radius = 0.026
+bottom_radius = 0.026
+height = 0.006
+
+[sub_resource type="CylinderMesh" id="Mesh_dustcap"]
+top_radius = 0.009
+bottom_radius = 0.009
+height = 0.005
+
+[sub_resource type="CylinderMesh" id="Mesh_port"]
+top_radius = 0.007
+bottom_radius = 0.007
+height = 0.006
+
+; The pointer bar on the cap face, sized in metres directly — reusing the cap mesh
+; with a scaled transform made a 0.03 mm speck, because those factors multiply an
+; already-11 mm cylinder rather than replacing its size.
+[sub_resource type="BoxMesh" id="Mesh_knobmark"]
+size = Vector3(0.0018, 0.006, 0.0012)
+
+[sub_resource type="CylinderMesh" id="Mesh_knobcap"]
+top_radius = 0.011
+bottom_radius = 0.012
+height = 0.009
+
+; Beige, and grubby-warm rather than clean grey — lifted from pc_tower.tscn so the
+; set reads as the one that came with the machine.
+[sub_resource type="StandardMaterial3D" id="Mat_beige"]
+albedo_color = Color(0.77, 0.73, 0.63, 1)
+roughness = 0.62
+
+[sub_resource type="StandardMaterial3D" id="Mat_baffle"]
+albedo_color = Color(0.72, 0.68, 0.59, 1)
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_cone"]
+albedo_color = Color(0.09, 0.09, 0.10, 1)
+roughness = 0.75
+
+; A bass port is a hole. Dark by MATERIAL, not by depth: these rooms light with a
+; flat ambient colour and no radiance map, so a recess given the cabinet's own
+; material renders exactly as bright as the panel around it.
+[sub_resource type="StandardMaterial3D" id="Mat_hole"]
+albedo_color = Color(0.03, 0.03, 0.035, 1)
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_knob"]
+albedo_color = Color(0.16, 0.16, 0.17, 1)
+roughness = 0.42
+
+[sub_resource type="StandardMaterial3D" id="Mat_knobmark"]
+albedo_color = Color(0.88, 0.86, 0.80, 1)
+roughness = 0.5
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_box"]
+bounce = 0.0
+friction = 0.8
+
+[sub_resource type="BoxShape3D" id="Shape_box"]
+size = Vector3(0.085, 0.145, 0.085)
+
+; Laser target, one size up from the body. Only the pointer answers this shape
+; (mask 0), so nothing else notices it is generous.
+[sub_resource type="BoxShape3D" id="Shape_pointer"]
+size = Vector3(0.105, 0.165, 0.105)
+
+[sub_resource type="BoxShape3D" id="Shape_knob"]
+size = Vector3(0.026, 0.026, 0.014)
+
+; Two cabinets and the wire between them. A plain Node3D holder, exactly as
+; composite_cable.tscn holds two independently grabbable plugs and a rope: each box
+; is its own RigidBody3D, so either can be picked up and set down on its own and the
+; wire simply limits how far apart they get.
+;
+; Only the RIGHT box is powered — it carries the line-in socket and the volume knob,
+; which is where a real pair puts them. The left is a passive cabinet.
+[node name="SpeakerPair" type="Node3D"]
+script = ExtResource("1_pairscript")
+
+; ── LEFT ─────────────────────────────────────────────────────────────────────
+[node name="SpeakerL" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0, 0)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_box")
+mass = 0.6
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("5_speakerbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0)
+shape = SubResource("Shape_box")
+
+[node name="Cabinet" type="MeshInstance3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0)
+mesh = SubResource("Mesh_cabinet")
+surface_material_override/0 = SubResource("Mat_beige")
+
+[node name="Baffle" type="MeshInstance3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0.0435)
+mesh = SubResource("Mesh_baffle")
+surface_material_override/0 = SubResource("Mat_baffle")
+
+[node name="Cone" type="MeshInstance3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.095, 0.0445)
+mesh = SubResource("Mesh_cone")
+surface_material_override/0 = SubResource("Mat_cone")
+
+[node name="DustCap" type="MeshInstance3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.095, 0.0465)
+mesh = SubResource("Mesh_dustcap")
+surface_material_override/0 = SubResource("Mat_knob")
+
+[node name="Port" type="MeshInstance3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.023, 0.030, 0.0435)
+mesh = SubResource("Mesh_port")
+surface_material_override/0 = SubResource("Mat_hole")
+
+; What get_speaker_positions() publishes — the cone face, not the box origin, so the
+; sound comes from where the driver is.
+[node name="ConeFront" type="Marker3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.095, 0.048)
+
+; Where the wire leaves the cabinet.
+[node name="CableBoss" type="Marker3D" parent="SpeakerL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.025, 0.028, -0.0425)
+
+; Turned 180 about Y so it reads the right way round from BEHIND the cabinet.
+; pixel_size 0.001 with font_size 8 is 8 mm of text, the project's size for a word
+; printed on a face (see cassette_player.tscn's button labels).
+;
+; outline_size 0 matters at this size. Label3D outlines by default, and dark text
+; with a dark outline on a beige panel fuses into an unreadable blob — the outline
+; is there to lift a floating billboard off a busy background, which is the opposite
+; of a word printed flat on a cabinet.
+[node name="BackLabel" type="Label3D" parent="SpeakerL"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.115, -0.0432)
+pixel_size = 0.001
+text = "LEFT"
+font_size = 8
+outline_size = 0
+modulate = Color(0.2, 0.18, 0.15, 1)
+
+[node name="PickableHighlight" type="Node3D" parent="SpeakerL"]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="SpeakerL"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SpeakerL/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0)
+shape = SubResource("Shape_pointer")
+
+; ── RIGHT ────────────────────────────────────────────────────────────────────
+[node name="SpeakerR" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0, 0)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_box")
+mass = 0.7
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("5_speakerbox")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0)
+shape = SubResource("Shape_box")
+
+[node name="Cabinet" type="MeshInstance3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0)
+mesh = SubResource("Mesh_cabinet")
+surface_material_override/0 = SubResource("Mat_beige")
+
+[node name="Baffle" type="MeshInstance3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0.0435)
+mesh = SubResource("Mesh_baffle")
+surface_material_override/0 = SubResource("Mat_baffle")
+
+[node name="Cone" type="MeshInstance3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.095, 0.0445)
+mesh = SubResource("Mesh_cone")
+surface_material_override/0 = SubResource("Mat_cone")
+
+[node name="DustCap" type="MeshInstance3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.095, 0.0465)
+mesh = SubResource("Mesh_dustcap")
+surface_material_override/0 = SubResource("Mat_knob")
+
+[node name="Port" type="MeshInstance3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.023, 0.030, 0.0435)
+mesh = SubResource("Mesh_port")
+surface_material_override/0 = SubResource("Mat_hole")
+
+[node name="ConeFront" type="Marker3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.095, 0.048)
+
+[node name="CableBoss" type="Marker3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.025, 0.028, -0.0425)
+
+[node name="BackLabel" type="Label3D" parent="SpeakerR"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.115, -0.0432)
+pixel_size = 0.001
+text = "RIGHT"
+font_size = 8
+outline_size = 0
+modulate = Color(0.2, 0.18, 0.15, 1)
+
+; Line in, on the back panel where a powered speaker puts it. Rotated 180 about X so
+; the zone's local +Z points out of the cabinet — the same measured correction every
+; back-facing socket in the project carries; a zone at identity yields a plug at
+; diag(1,-1,-1) with its handle buried in the box.
+;
+; z -0.0445: the zone sits where a seated plug's ORIGIN belongs, which for this
+; connector is 2 mm proud of the panel at -0.0425. Each connector has its own
+; number — the phono pair use 10 mm and the VGA socket 7.5 mm.
+[node name="LineIn" parent="SpeakerR" instance=ExtResource("3_trsport")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0.024, 0.060, -0.0445)
+direction = 1
+
+; The volume knob, on the FRONT baffle where a hand can reach it.
+;
+; KnobPivot's local Z already points out of the baffle, which is what VRKnob turns
+; about — only the innermost Euler term (Z) rotates a node about its own axis, so a
+; cap driven on Y would swing like a door instead of turning. The cap MESH is the
+; pivot's child and carries the +90-about-X that lays a Y-aligned CylinderMesh along
+; that axle.
+[node name="VolumeKnob" type="Area3D" parent="SpeakerR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.024, 0.030, 0.0475)
+collision_layer = 1048576
+collision_mask = 0
+script = ExtResource("4_vrknob")
+engage_radius = 0.03
+value = 0.75
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SpeakerR/VolumeKnob"]
+shape = SubResource("Shape_knob")
+
+[node name="KnobPivot" type="Node3D" parent="SpeakerR/VolumeKnob"]
+
+[node name="KnobCap" type="MeshInstance3D" parent="SpeakerR/VolumeKnob/KnobPivot"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("Mesh_knobcap")
+surface_material_override/0 = SubResource("Mat_knob")
+
+; A pointer on the cap so the turned position reads at a glance. Child of the PIVOT,
+; so it swings with the value; along the pivot's local +Y, which puts it straight up
+; at mid-travel. z 0.0048 sits it just proud of the 9 mm cap's front face.
+[node name="KnobPointer" type="MeshInstance3D" parent="SpeakerR/VolumeKnob/KnobPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.006, 0.0048)
+mesh = SubResource("Mesh_knobmark")
+surface_material_override/0 = SubResource("Mat_knobmark")
+
+[node name="PickableHighlight" type="Node3D" parent="SpeakerR"]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="SpeakerR"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SpeakerR/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0725, 0)
+shape = SubResource("Shape_pointer")
+
+; The wire between the cabinets: 40 x 30 mm = 1.20 m, enough to flank a monitor
+; generously without being a room-spanning lead. Its rest length is also the tether
+; — speaker_pair.gd clamps whichever box is not in a hand to this distance from the
+; other, because a pinned rope particle has inverse mass zero and the rope can never
+; pull a cabinet by itself.
+;
+; controller_cable.tscn's tuning: a thin 4.5 mm cord, not the A/V lead's 8.3 mm
+; shielded jacket. collision_radius is the standoff the solver holds each particle at
+; from a contact plane, so it has to track the tube or the wire sinks into the desk.
+[node name="VerletRope" type="VerletRope" parent="."]
+segment_count = 40
+segment_length = 0.03
+constraint_iterations = 8
+bend_stiffness = 0.15
+tube_radius = 0.00225
+tube_sides = 8
+smoothing = 2
+rope_color = Color(0.15, 0.15, 0.15, 1.0)
+surface_collision_mask = 7
+collision_radius = 0.0036
+self_collision = true
+end_align_stiffness = 0.7
+end_stiffness = 0.3
+end_stiff_segments = 2

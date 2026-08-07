@@ -353,6 +353,8 @@ func _build() -> void:
 		["Composite Cable", "composite_cable"],
 		["Mono Composite Cable", "mono_composite_cable"],
 		["VGA Cable",       "vga_cable"],
+		["3.5 mm Cable",   "trs_cable"],
+		["Speakers",       "speaker_pair"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [

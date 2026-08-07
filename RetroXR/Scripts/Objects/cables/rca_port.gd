@@ -13,7 +13,13 @@ extends XRToolsSnapZone
 
 ## What this socket carries. The order matches RcaJack's colour code and is used
 ## as an index into per-channel arrays, so do not reorder it.
-enum Channel { VIDEO, AUDIO_L, AUDIO_R }
+##
+## AUDIO_STEREO is APPENDED for that reason. It is what a 3.5 mm TRS socket carries —
+## both channels down one connector — which no phono socket can express, since a
+## phono lead needs a cord per channel. Nothing indexes an array with it: the two
+## places that turn a channel into a speaker number (`int(channel) - 1`) are only
+## ever reached from an AUDIO_L or AUDIO_R port, so appending leaves them alone.
+enum Channel { VIDEO, AUDIO_L, AUDIO_R, AUDIO_STEREO }
 
 ## Which way the signal flows through this socket. A deck's sockets are OUT, a
 ## television's are IN. A cord between two OUTs (or two INs) carries nothing,
@@ -40,7 +46,7 @@ enum Direction { OUT, IN }
 			jack.visible = show_jack
 
 ## Short label for the OSD and for debugging — "VIDEO", "L", "R".
-const CHANNEL_NAMES := ["VIDEO", "L", "R"]
+const CHANNEL_NAMES := ["VIDEO", "L", "R", "STEREO"]
 
 ## Every socket in the room, so a plug can find the one holding it and a cable can
 ## re-resolve without knowing what devices exist.

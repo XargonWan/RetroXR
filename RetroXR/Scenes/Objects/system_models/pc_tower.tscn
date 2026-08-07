@@ -1,7 +1,8 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=20 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="2_vgaport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/trs_port.tscn" id="3_trsport"]
 
 ; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
 ; footprint. Origin at the base centre, so the system sits on the floor at y 0.
@@ -232,4 +233,22 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.372, -0.221)
 ; still has to leave on those, exactly as it did on the real machine.
 [node name="VgaPort" parent="Back" instance=ExtResource("2_vgaport")]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.318, -0.2285)
+direction = 0
+
+; The sound card's LINE OUT, under the video socket. PC99 colour-codes this lime
+; green and the collar is baked that colour, so nothing here sets it — see
+; Tools/gen_trs.gd. y 0.294: the VGA flange's bottom edge is at 0.3117 and this
+; jack is 10.4 mm across, so the two clear each other by 12 mm.
+;
+; z -0.2235: the zone sits where a seated plug's ORIGIN belongs, 2 mm proud of the
+; panel at -0.2215. Every connector has its own standoff — the phono trio use 10 mm
+; and the VGA socket 7.5 mm — so this is not a number to copy from the neighbours.
+;
+; direction = 0 is OUT. `channel` is not set: TrsPort pins it to AUDIO_STEREO, which
+; is what one stereo connector carries and what no phono socket can express.
+;
+; The tower keeps its three phono sockets. Sound can still leave that way to a
+; television; this is the path to a pair of powered speakers.
+[node name="LineOut" parent="Back" instance=ExtResource("3_trsport")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.294, -0.2235)
 direction = 0

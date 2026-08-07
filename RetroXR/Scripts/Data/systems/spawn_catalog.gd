@@ -112,6 +112,15 @@ const _COMPUTER_INPUT: Array = [
 const _VGA_CABLE: Dictionary = {"kind": "peripheral", "label": "VGA Cable",
 	"spawn": "vga_cable"}
 
+## How a computer's sound reaches its speakers, and the speakers themselves. Listed
+## for computers only, for the same reason the VGA lead is: the sockets a 3.5 mm plug
+## fits are the tower's line out and the right speaker's line in, and a console has
+## neither.
+const _TRS_KIT: Array = [
+	{"kind": "peripheral", "label": "Speakers", "spawn": "speaker_pair"},
+	{"kind": "peripheral", "label": "3.5 mm Cable", "spawn": "trs_cable"},
+]
+
 
 ## The spawnable items for a system: its stand-in hardware, then the models that
 ## need imported assets, then its peripherals.
@@ -155,6 +164,7 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 	if info != null and info.computer:
 		items.append_array(_COMPUTER_INPUT.duplicate(true))
 		items.append(_VGA_CABLE.duplicate())
+		items.append_array(_TRS_KIT.duplicate(true))
 	if standins:
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})
