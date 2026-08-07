@@ -1,9 +1,4 @@
-[gd_scene format=3]
-
-; Virtual Boy primitive — a plain bipod + visor carrying NO licensed geometry.
-; A complete model in its own right, not a shell bolted onto virtual_boy.tscn:
-; its own row in SystemModelRegistry ("virtual_boy_primitive"), so a build can
-; ship this and drop virtual_boy.tscn entirely.
+[gd_scene format=3 uid="uid://7i14x643oy3o"]
 
 [ext_resource type="Script" uid="uid://bjm0qluv18cqv" path="res://Scripts/Objects/system_models/virtual_boy_model.gd" id="1_model"]
 [ext_resource type="Shader" uid="uid://bwfu7ewask6e" path="res://Shaders/vb_stereo.gdshader" id="2_stereo"]
@@ -59,40 +54,40 @@ emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
 
-[node name="VirtualBoyPrimitive" type="Node3D"]
+[node name="VirtualBoyPrimitive" type="Node3D" unique_id=793345474]
 script = ExtResource("1_model")
 
-[node name="StandBase" type="MeshInstance3D" parent="."]
+[node name="StandBase" type="MeshInstance3D" parent="." unique_id=2118957876]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.006, 0)
 mesh = SubResource("BoxMesh_base")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="StandColumn" type="MeshInstance3D" parent="."]
+[node name="StandColumn" type="MeshInstance3D" parent="." unique_id=1812038345]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.125, 0)
 mesh = SubResource("CylinderMesh_col")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="Visor" type="MeshInstance3D" parent="."]
+[node name="Visor" type="MeshInstance3D" parent="." unique_id=2114566344]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
 mesh = SubResource("BoxMesh_visor")
 surface_material_override/0 = SubResource("Mat_red")
 
-[node name="EyeShade" type="MeshInstance3D" parent="."]
+[node name="EyeShade" type="MeshInstance3D" parent="." unique_id=134032631]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.050499998)
 mesh = SubResource("BoxMesh_shade")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="Eyepiece" type="MeshInstance3D" parent="."]
+[node name="Eyepiece" type="MeshInstance3D" parent="." unique_id=349633777]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0.055)
 mesh = SubResource("QuadMesh_eye")
 surface_material_override/0 = SubResource("ShaderMaterial_eye")
 
-[node name="ProxyScreen" type="MeshInstance3D" parent="."]
+[node name="ProxyScreen" type="MeshInstance3D" parent="." unique_id=206489651]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.305, 0)
 visible = false
 mesh = SubResource("QuadMesh_proxy")
 
-[node name="VolumeSlider" type="Area3D" parent="."]
+[node name="VolumeSlider" type="Area3D" parent="." unique_id=1166910069]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1125, 0.305, 0.012)
 collision_layer = 1048577
 script = ExtResource("3_slider")
@@ -101,17 +96,17 @@ travel = 0.01
 engage_radius = 0.022
 value = 0.8
 
-[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider"]
+[node name="KnobMesh" type="MeshInstance3D" parent="VolumeSlider" unique_id=129911644]
 mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=383993867]
 shape = SubResource("BoxShape3D_vol")
 
-[node name="CartSeat" type="Marker3D" parent="."]
+[node name="CartSeat" type="Marker3D" parent="." unique_id=1126639319]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.305, -0.0305)
 gizmo_extents = 0.03
 
-[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat"]
+[node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=191005773]
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("StandardMaterial3D_seat")
