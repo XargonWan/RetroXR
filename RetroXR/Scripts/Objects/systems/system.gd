@@ -2528,6 +2528,12 @@ func _build_disc_tray() -> void:
 	bed.position = Vector3(0, 0.0677, 0)   # top at 0.0687, disc bottom 0.06875
 	add_child(bed)
 
+	# Seat the snap zone on the bed, as the front-tray build does on its shelf.
+	# MediaTray seats the disc at the zone origin (seat_offset is only re-expressed
+	# for a disc that rides a moving pivot), so the zone's own height IS the disc's:
+	# left at the cabinet default it sits 1.4 cm down, buried inside the pod.
+	_cartridge_slot.position = Vector3(0, 0.06875 + 0.00125, 0)
+
 	# Hinged lid: pivot at the pod's back edge, lid disc swings up/back.
 	_tray_lid_pivot = Node3D.new()
 	_tray_lid_pivot.name = "DiscTrayLidPivot"

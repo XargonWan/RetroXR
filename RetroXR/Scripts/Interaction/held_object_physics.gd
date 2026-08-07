@@ -231,6 +231,12 @@ func _escape(body: XRToolsPickable) -> void:
 	# the whole point of a slot, so nothing to escape from.
 	if body.is_picked_up():
 		return
+	# Frozen means an owner has claimed the pose. MediaTray and MediaSlot drop the
+	# zone's grab so they, not its grab driver, own the media, then seat it and
+	# freeze it — and being inside the deck IS the seated pose. No solver acts on a
+	# frozen body, so there is nothing to escape from. Same test the fall watch uses.
+	if body.freeze:
+		return
 
 	var cs := _first_shape(body)
 	# The shape's own transform, not the body's: a CollisionShape3D is usually
