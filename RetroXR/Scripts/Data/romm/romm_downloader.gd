@@ -171,21 +171,93 @@ func _worker(args: Dictionary) -> void:
 	var entry: Dictionary = args["entry"]
 	var systemid: String = args["systemid"]
 	var rom_id := int(entry.get("id", 0))
-	var fs_name := str(entry.get("fs_name", ""))
-	var expected_md5 := str(entry.get("md5_hash", "")).to_lower()
 	var is_multi := bool(entry.get("multi", false))
 
 	RomLibrary.ensure_rom_dir(systemid)
-	var dest := RommCacheManifest.local_path(systemid, fs_name)
-	var part := dest + ".part"
 
+	# A .cue/.gdi/.m3u names further files, and a library that keeps discs as
+	# loose files rather than one folder per game gives each of them its own ROM
+	# id on the server — `multi` is false and the download is a 98-byte manifest
+	# pointing at tracks nobody fetched. Those tracks are transferred as part of
+	# the same job, so the set keeps one rom_id, one progress total, and only
+	# reports ready once all of it is on disk.
+	var jobs: Array[Dictionary] = [entry]
+	# Lowercased, because a reference's spelling need not match the server's.
+	var claimed := {str(entry.get("fs_name", "")).to_lower(): true}
+	# The same set under the real spelling, which is what a cache key is built on.
+	var owned := PackedStringArray([str(entry.get("fs_name", ""))])
+	var grand_total := int(entry.get("fs_size_bytes", 0))
+	var done_bytes := 0
+	var launch_path := ""
+	var i := 0
+
+	while i < jobs.size():
+		var job: Dictionary = jobs[i]
+		var fs_name := str(job.get("fs_name", ""))
+		if fs_name.is_empty():
+			_emit_finished.call_deferred(rom_id, false, "", "Server entry has no filename")
+			return
+
+		var dest := RommCacheManifest.local_path(systemid, fs_name)
+		var outcome := _transfer(args, job, dest, rom_id, done_bytes, grand_total)
+
+		match str(outcome["status"]):
+			"ok":
+				pass
+			"cancelled":
+				_emit_cancelled.call_deferred(rom_id)
+				return
+			_:
+				_emit_finished.call_deferred(rom_id, false, "", str(outcome["error"]))
+				return
+
+		# ── Verified and in place ────────────────────────────────────────────
+		if i == 0 and is_multi:
+			var extracted := _extract_multi(dest, systemid)
+			if extracted.is_empty():
+				_emit_finished.call_deferred(rom_id, false, "", "Could not unpack multi-file ROM")
+				return
+			launch_path = extracted
+		else:
+			if i == 0:
+				launch_path = dest
+			var refs := _manifest_references(dest)
+			if not refs.is_empty():
+				var found := _resolve_companions(systemid, refs, claimed)
+				var rows: Array = found["rows"]
+				for extra: Dictionary in rows:
+					jobs.append(extra)
+					owned.append(str(extra.get("fs_name", "")))
+					grand_total += int(extra.get("fs_size_bytes", 0))
+				if not str(found["error"]).is_empty():
+					_emit_finished.call_deferred(rom_id, false, "", str(found["error"]))
+					return
+				if not rows.is_empty():
+					_make_room.call_deferred(systemid, grand_total - done_bytes, owned)
+
+		var actual_size := _file_size(dest)
+		_register.call_deferred(systemid, fs_name, int(job.get("id", 0)), actual_size,
+			str(job.get("md5_hash", "")).to_lower())
+
+		done_bytes += actual_size
+		i += 1
+
+	_merge_gamelist.call_deferred(systemid, entry, str(entry.get("fs_name", "")))
+
+	_emit_finished.call_deferred(rom_id, true, launch_path, "")
+
+
+## Retry wrapper around one file. Returns {status, error} with status
+## ok / terminal / cancelled.
+func _transfer(args: Dictionary, entry: Dictionary, dest: String, rom_id: int,
+			   base_done: int, grand_total: int) -> Dictionary:
+	var part := dest + ".part"
 	var attempt := 0
 	var last_error := ""
 
 	while attempt < MAX_RETRIES:
 		if _abort:
-			_emit_cancelled.call_deferred(rom_id)
-			return
+			return {"status": "cancelled", "error": ""}
 
 		if attempt > 0:
 			# 2 s, 4 s, 8 s — same backoff shape as the scraper client.
@@ -193,22 +265,18 @@ func _worker(args: Dictionary) -> void:
 			_emit_retrying.call_deferred(rom_id, attempt + 1, MAX_RETRIES, last_error)
 			for i in delay * 10:
 				if _abort:
-					_emit_cancelled.call_deferred(rom_id)
-					return
+					return {"status": "cancelled", "error": ""}
 				OS.delay_msec(100)
 
-		var outcome := _attempt_download(args, dest, part, rom_id)
-		var status := str(outcome["status"])
+		var outcome := _attempt_download(args, entry, dest, part, rom_id, base_done, grand_total)
 
-		match status:
+		match str(outcome["status"]):
 			"ok":
-				break
+				return {"status": "ok", "error": ""}
 			"cancelled":
-				_emit_cancelled.call_deferred(rom_id)
-				return
+				return {"status": "cancelled", "error": ""}
 			"terminal":
-				_emit_finished.call_deferred(rom_id, false, "", str(outcome["error"]))
-				return
+				return outcome
 			"restart":
 				# Known-bad bytes (416 / size / hash / bad zip): drop the .part so
 				# the next attempt starts clean rather than resuming garbage.
@@ -220,31 +288,13 @@ func _worker(args: Dictionary) -> void:
 				last_error = str(outcome["error"])
 				attempt += 1
 
-		if attempt >= MAX_RETRIES:
-			_emit_finished.call_deferred(rom_id, false, "", last_error)
-			return
-
-	# ── Verified and in place ────────────────────────────────────────────────
-	var launch_path := dest
-	if is_multi:
-		var extracted := _extract_multi(dest, systemid)
-		if extracted.is_empty():
-			_emit_finished.call_deferred(rom_id, false, "", "Could not unpack multi-file ROM")
-			return
-		launch_path = extracted
-
-	var actual_size := _file_size(dest)
-	_register.call_deferred(systemid, fs_name, rom_id, actual_size, expected_md5)
-
-	_merge_gamelist.call_deferred(systemid, entry, fs_name)
-
-	_emit_finished.call_deferred(rom_id, true, launch_path, "")
+	return {"status": "terminal", "error": last_error}
 
 
 ## One transfer attempt. Returns {status, error} where status is one of
 ## ok / transient / restart / terminal / cancelled.
-func _attempt_download(args: Dictionary, dest: String, part: String, rom_id: int) -> Dictionary:
-	var entry: Dictionary = args["entry"]
+func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: String,
+					   rom_id: int, base_done: int, grand_total: int) -> Dictionary:
 	var headers: PackedStringArray = args["headers"]
 	var fs_name := str(entry.get("fs_name", ""))
 	var expected_size := int(entry.get("fs_size_bytes", 0))
@@ -274,7 +324,7 @@ func _attempt_download(args: Dictionary, dest: String, part: String, rom_id: int
 	var path := "/api/roms/%d/content/%s" % [int(entry.get("id", 0)), fs_name.uri_encode()]
 	var resp := http.download_to_file(path, req_headers, file,
 		func(received: int, _total: int) -> void:
-			_emit_progress.call_deferred(rom_id, have + received, expected_size),
+			_emit_progress.call_deferred(rom_id, base_done + have + received, grand_total),
 		func() -> bool: return _abort)
 
 	file.close()
@@ -377,6 +427,149 @@ func _extract_multi(zip_path: String, systemid: String) -> String:
 
 
 # ---------------------------------------------------------------------------
+# Disc manifests
+# ---------------------------------------------------------------------------
+
+## Ceiling on a file worth parsing for references. A manifest is a few hundred
+## bytes; anything larger carrying one of these extensions is not one.
+const MANIFEST_MAX_BYTES := 1 << 20
+
+
+## File names a downloaded disc manifest points at, without directory parts.
+## Empty for anything that is not a manifest.
+static func _manifest_references(path: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var ext := path.get_extension().to_lower()
+
+	# A .ccd names nothing; its companions are fixed by convention.
+	if ext == "ccd":
+		var stem := path.get_file().get_basename()
+		out.append(stem + ".img")
+		out.append(stem + ".sub")
+		return out
+
+	if ext != "cue" and ext != "gdi" and ext != "m3u":
+		return out
+
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return out
+	if f.get_length() > MANIFEST_MAX_BYTES:
+		f.close()
+		return out
+	var text := f.get_as_text()
+	f.close()
+
+	for raw: String in text.split("\n", false):
+		var line := raw.strip_edges()
+		if line.is_empty():
+			continue
+		var name := ""
+		match ext:
+			"m3u":
+				if not line.begins_with("#"):
+					name = line
+			"cue":
+				if line.substr(0, 4).to_upper() == "FILE":
+					name = _cue_file_name(line)
+			"gdi":
+				name = _gdi_file_name(line)
+		if not name.is_empty():
+			out.append(name.get_file())
+
+	return out
+
+
+## `FILE "Game (Disc 1).bin" BINARY`. Unquoted names are legal and may contain
+## spaces, so the trailing format keyword is dropped rather than the name being
+## taken as the first token.
+static func _cue_file_name(line: String) -> String:
+	var first := line.find("\"")
+	if first >= 0:
+		var last := line.rfind("\"")
+		return line.substr(first + 1, last - first - 1) if last > first else ""
+	var rest := line.substr(4).strip_edges()
+	var cut := rest.rfind(" ")
+	return rest.substr(0, cut).strip_edges() if cut > 0 else rest
+
+
+## `1 0 4 2352 "track01.bin" 0`. The first line of a .gdi is a track count and
+## yields nothing.
+static func _gdi_file_name(line: String) -> String:
+	var first := line.find("\"")
+	if first >= 0:
+		var last := line.rfind("\"")
+		return line.substr(first + 1, last - first - 1) if last > first else ""
+	var parts := line.split(" ", false)
+	return parts[4] if parts.size() >= 6 else ""
+
+
+## Look referenced names up in the platform's synced catalog, skipping any
+## already on disk or already part of this job. Returns
+## {rows: Array[Dictionary], error: String} — rows found so far are returned
+## even alongside an error, so a partially resolvable set still transfers what
+## it can before reporting the gap.
+##
+## Scans index.jsonl directly rather than going through RommCatalog: this runs
+## on the download thread, the catalog holds whichever platform the user is
+## browsing, and a substring test rejects a line without parsing it.
+func _resolve_companions(systemid: String, refs: PackedStringArray,
+						 claimed: Dictionary) -> Dictionary:
+	var wanted := PackedStringArray()
+	for ref: String in refs:
+		var key := ref.to_lower()
+		if claimed.has(key):
+			continue
+		claimed[key] = true
+		if not FileAccess.file_exists(RommCacheManifest.local_path(systemid, ref)):
+			wanted.append(ref)
+
+	var rows: Array[Dictionary] = []
+	if wanted.is_empty():
+		return {"rows": rows, "error": ""}
+
+	var f := FileAccess.open(RommCatalog.index_path(systemid), FileAccess.READ)
+	if f == null:
+		return {"rows": rows,
+				"error": "%s is not in the catalog — sync this system first" % wanted[0]}
+
+	var needles := PackedStringArray()
+	for w: String in wanted:
+		needles.append(JSON.stringify(w))
+
+	var hit := {}
+	while not f.eof_reached() and hit.size() < wanted.size():
+		var line := f.get_line()
+		if line.is_empty():
+			continue
+		var candidate := false
+		for n in needles.size():
+			if not hit.has(n) and line.containsn(needles[n]):
+				candidate = true
+				break
+		if not candidate:
+			continue
+		var parsed: Variant = JSON.parse_string(line)
+		if not (parsed is Dictionary):
+			continue
+		var row: Dictionary = parsed
+		var fs_name := str(row.get("fs_name", ""))
+		for n in wanted.size():
+			if not hit.has(n) and fs_name.nocasecmp_to(wanted[n]) == 0:
+				hit[n] = true
+				rows.append(row)
+				break
+	f.close()
+
+	for n in wanted.size():
+		if not hit.has(n):
+			return {"rows": rows,
+					"error": "%s is not in the catalog — re-sync this system" % wanted[n]}
+
+	return {"rows": rows, "error": ""}
+
+
+# ---------------------------------------------------------------------------
 # Main-thread marshalling
 # ---------------------------------------------------------------------------
 
@@ -405,6 +598,23 @@ func _emit_finished(rom_id: int, ok: bool, path: String, error: String) -> void:
 func _register(systemid: String, fs_name: String, rom_id: int, size: int, md5: String) -> void:
 	if manifest != null:
 		manifest.add(systemid, fs_name, rom_id, size, md5)
+
+
+## _pump budgeted for the manifest alone — 98 bytes for a cue — so the tracks it
+## names arrive with no room made for them. Best-effort: eviction touches the
+## manifest file and reports through cache_evicted, both main-thread concerns,
+## and a genuinely full disk is still caught by WRITE_FAILED mid-transfer.
+## `keep` is this job's own files, which must survive the pass that makes room
+## for them.
+func _make_room(systemid: String, bytes: int, keep: PackedStringArray) -> void:
+	if manifest == null or config == null or bytes <= 0:
+		return
+	var prot := _protected_keys.duplicate()
+	for fs_name: String in keep:
+		prot.append(RommCacheManifest.make_key(systemid, fs_name))
+	var res := manifest.evict_to_fit(bytes, config.cache_budget_bytes(), prot)
+	if int(res["count"]) > 0:
+		cache_evicted.emit(int(res["freed"]), int(res["count"]))
 
 
 ## Merge RomM metadata into gamelist.json so the detail panel, wheel lookup and
