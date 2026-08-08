@@ -698,6 +698,12 @@ func _rebuild_romm_rows() -> void:
 			indices = romm_catalog.search(_romm_filter)
 
 		for i: int in indices:
+			# The tracks of a disc are rows in their own right when the library
+			# keeps them as loose files. They are not games and downloading one
+			# alone gets you nothing — RommDownloader pulls them in behind their
+			# cue — so they never reach the list.
+			if romm_catalog.is_track_at(i):
+				continue
 			var key := ""
 			var label := ""
 			var regions := PackedStringArray()
@@ -805,7 +811,16 @@ func _local_by_name(systemid: String) -> Dictionary:
 		return _local_scan_cache[systemid]
 	var by_name: Dictionary = {}
 	for rom: Dictionary in RomLibrary.scan_roms(systemid, [] as Array[String]):
-		by_name[str(rom["path"]).get_file().get_basename().to_lower()] = rom
+		var path := str(rom["path"])
+		var key := path.get_file().get_basename().to_lower()
+		# A cue and its bin share a basename, so one shadows the other and the
+		# row can end up pointing at a raw track. The manifest is what a core
+		# should be handed, so it always wins the key.
+		var held: Dictionary = by_name.get(key, {})
+		if not held.is_empty() \
+				and str(held["path"]).get_extension().to_lower() in RommCatalog.MANIFEST_EXTS:
+			continue
+		by_name[key] = rom
 	_local_scan_cache[systemid] = by_name
 	return by_name
 

@@ -8,6 +8,7 @@
 ##   roms/<systemid>/.romm/index.off     int64 byte offset of each line
 ##   roms/<systemid>/.romm/index.ids     int32 RomM rom id of each row
 ##   roms/<systemid>/.romm/index.names   lowercased name per line, for local search
+##   roms/<systemid>/.romm/index.exts    lowercased fs extension per line
 ##   roms/<systemid>/.romm/index.meta.json  {total, updated_after, synced_at, ...}
 ##
 ## At 100k rows the in-RAM cost is ~800 KB + 400 KB + a couple of MB of strings,
@@ -60,6 +61,10 @@ var _names := PackedStringArray()
 ## Parallel sidecars, so filtering and dedupe never parse JSON.
 var _fs_names := PackedStringArray()
 var _regions := PackedStringArray()
+var _exts := PackedStringArray()
+## 1 where the row is a track belonging to another row's disc manifest. Built on
+## first use because most platforms never ask.
+var _track_flags := PackedByteArray()
 var _index_file: FileAccess = null
 
 ## Platforms whose sidecars have been pulled into the file cache this session.
@@ -186,18 +191,20 @@ func _warm_worker(dir: String) -> void:
 	_backfill_sidecars(dir)
 
 	for f: String in ["index.off", "index.ids", "index.names",
-					  "index.fsnames", "index.regions"]:
+					  "index.fsnames", "index.regions", "index.exts"]:
 		# Read and discarded: the file cache is the whole product.
 		var _b := FileAccess.get_file_as_bytes(dir.path_join(f))
 	_warm_done.call_deferred()
 
 
-## Regenerate index.fsnames and index.regions from index.jsonl. One pass, no
-## network. Worker-thread only.
+## Regenerate index.fsnames, index.regions and index.exts from index.jsonl. One
+## pass, no network. Worker-thread only.
 static func _backfill_sidecars(dir: String) -> void:
 	var fs_path := dir.path_join("index.fsnames")
 	var rg_path := dir.path_join("index.regions")
-	if FileAccess.file_exists(fs_path) and FileAccess.file_exists(rg_path):
+	var ex_path := dir.path_join("index.exts")
+	if FileAccess.file_exists(fs_path) and FileAccess.file_exists(rg_path) \
+			and FileAccess.file_exists(ex_path):
 		return
 
 	var offsets := _read_offsets(dir)
@@ -209,14 +216,18 @@ static func _backfill_sidecars(dir: String) -> void:
 
 	var fsnames := ""
 	var regions := ""
+	var exts := ""
 	for off: int in offsets:
 		jsonl.seek(off)
 		var parsed: Variant = JSON.parse_string(jsonl.get_line())
 		var fs_base := ""
 		var joined := ""
+		var ext := ""
 		if parsed is Dictionary:
 			var pd := parsed as Dictionary
-			fs_base = str(pd.get("fs_name", "")).get_basename().to_lower()
+			var fs_name := str(pd.get("fs_name", ""))
+			fs_base = fs_name.get_basename().to_lower()
+			ext = fs_name.get_extension().to_lower()
 			var rl: Array = pd.get("regions", []) if pd.get("regions") is Array else []
 			var parts := PackedStringArray()
 			for r: Variant in rl:
@@ -224,14 +235,16 @@ static func _backfill_sidecars(dir: String) -> void:
 			joined = "".join(parts)
 		fsnames += fs_base + "\n"
 		regions += joined + "\n"
+		exts += ext + "\n"
 	jsonl.close()
 
-	# Written only once both are built: a half-backfilled index would report
+	# Written only once all three are built: a half-backfilled index would report
 	# fast sidecars it does not have. Through a temp file and a rename, because
 	# two catalog instances can each decide to backfill the same platform and a
 	# reader must never see one of them mid-write.
 	_write_text_atomic(fs_path, fsnames)
 	_write_text_atomic(rg_path, regions)
+	_write_text_atomic(ex_path, exts)
 	print("[RommCatalog] backfilled sidecars for %d rows in %s" % [offsets.size(), dir])
 
 
@@ -278,6 +291,7 @@ func load_index(systemid: String) -> bool:
 
 	_fs_names = _read_lines(dir.path_join("index.fsnames"))
 	_regions = _read_lines(dir.path_join("index.regions"))
+	_exts = _read_lines(dir.path_join("index.exts"))
 
 	_index_file = FileAccess.open(jsonl, FileAccess.READ)
 	if _index_file == null:
@@ -306,6 +320,8 @@ func unload_index() -> void:
 	# not there.
 	_fs_names = PackedStringArray()
 	_regions = PackedStringArray()
+	_exts = PackedStringArray()
+	_track_flags = PackedByteArray()
 
 
 func loaded_systemid() -> String:
@@ -346,9 +362,70 @@ func regions_at(i: int) -> PackedStringArray:
 	return _regions[i].split("", false)
 
 
+func fs_ext_at(i: int) -> String:
+	return _exts[i] if i >= 0 and i < _exts.size() else ""
+
+
 ## False for an index synced before these sidecars existed.
 func has_fast_sidecars() -> bool:
 	return _fs_names.size() == _offsets.size() and _regions.size() == _offsets.size()
+
+
+# ---------------------------------------------------------------------------
+# Disc tracks
+# ---------------------------------------------------------------------------
+
+## Extensions that name other files, and the extensions those files carry.
+const MANIFEST_EXTS := ["cue", "gdi", "m3u", "ccd"]
+const TRACK_EXTS := ["bin", "img", "sub", "raw", "iso", "wav", "ape", "flac", "mp3"]
+
+
+## True when row i is a track belonging to some other row's disc manifest — the
+## `.bin` half of a cue/bin pair, or one of the audio tracks a Neo Geo CD cue
+## lists. A library that stores discs as loose files gives each of those its own
+## ROM id, so they arrive as browsable rows that are not games: on this server
+## PlayStation is 39,603 tracks against 9,856 cues.
+##
+## Pairing is by name, never by extension alone. `.bin` is a legitimate ROM
+## format on Atari Jaguar, Intellivision and Odyssey², and those platforms carry
+## no matching manifest, so their rows stay visible. A track whose manifest names
+## it in some other way also stays visible — showing a spare row is the safe way
+## to be wrong.
+func is_track_at(i: int) -> bool:
+	if i < 0 or i >= _offsets.size():
+		return false
+	if _track_flags.size() != _offsets.size():
+		_build_track_flags()
+	return _track_flags[i] == 1
+
+
+## One pass over two sidecars already in RAM. Skipped entirely on a platform
+## with no manifest rows at all, which is most of them.
+func _build_track_flags() -> void:
+	_track_flags = PackedByteArray()
+	_track_flags.resize(_offsets.size())
+	if _exts.size() != _offsets.size() or _fs_names.size() != _offsets.size():
+		return
+
+	var stems := {}
+	for i in _exts.size():
+		if _exts[i] in MANIFEST_EXTS:
+			stems[_fs_names[i]] = true
+	if stems.is_empty():
+		return
+
+	var track_no := RegEx.create_from_string("\\s*\\(track\\s*\\d+\\)$")
+	for i in _exts.size():
+		if _exts[i] not in TRACK_EXTS:
+			continue
+		var stem := _fs_names[i]
+		if stems.has(stem):
+			_track_flags[i] = 1
+			continue
+		# Redump names the tracks of one disc "<game> (Track 07).bin".
+		var trimmed := track_no.sub(stem, "")
+		if trimmed != stem and stems.has(trimmed):
+			_track_flags[i] = 1
 
 
 func rom_id_at(i: int) -> int:
@@ -550,26 +627,30 @@ func _sync_worker(args: Dictionary) -> void:
 			sort_key = str((parsed as Dictionary).get("sort_name", ""))
 			display = str((parsed as Dictionary).get("name", ""))
 		var fs_base := ""
+		var fs_ext := ""
 		var regions_joined := ""
 		if parsed is Dictionary:
 			var pd := parsed as Dictionary
-			fs_base = str(pd.get("fs_name", "")).get_basename().to_lower()
+			var fs_name := str(pd.get("fs_name", ""))
+			fs_base = fs_name.get_basename().to_lower()
+			fs_ext = fs_name.get_extension().to_lower()
 			var rl: Array = pd.get("regions", []) if pd.get("regions") is Array else []
 			var parts := PackedStringArray()
 			for r: Variant in rl:
 				parts.append(str(r))
 			regions_joined = "".join(parts)
 		rows.append({"sort": sort_key, "display": display, "line": line, "id": id,
-			"fs_base": fs_base, "regions": regions_joined})
+			"fs_base": fs_base, "fs_ext": fs_ext, "regions": regions_joined})
 	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return (a["sort"] as String).naturalnocasecmp_to(b["sort"] as String) < 0
 	)
 
-	# Write the index plus its three sidecars in one pass.
+	# Write the index plus its four sidecars in one pass.
 	var offsets := PackedInt64Array()
 	var ids := PackedInt32Array()
 	var names_text := ""
 	var fsnames_text := ""
+	var exts_text := ""
 	var regions_text := ""
 	var pos := 0
 	for r: Dictionary in rows:
@@ -580,6 +661,7 @@ func _sync_worker(args: Dictionary) -> void:
 		# RomM's sort key zero-pads every number ("2in1" -> "000000000002in
 		# 000000000001"), which sorts correctly but is unsearchable as text.
 		names_text += str(r["display"]) + "\n"
+		exts_text += str(r["fs_ext"]) + "\n"
 		fsnames_text += str(r["fs_base"]) + "
 "
 		regions_text += str(r["regions"]) + "
@@ -593,6 +675,7 @@ func _sync_worker(args: Dictionary) -> void:
 	_write_bytes(dir.path_join("index.ids"), _int32_bytes(ids))
 	_write_text(dir.path_join("index.names"), names_text)
 	_write_text(dir.path_join("index.fsnames"), fsnames_text)
+	_write_text(dir.path_join("index.exts"), exts_text)
 	_write_text(dir.path_join("index.regions"), regions_text)
 
 	# Atomic swap — readers never see a half-written index.
