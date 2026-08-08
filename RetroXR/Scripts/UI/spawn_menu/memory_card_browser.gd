@@ -23,6 +23,9 @@ signal closed
 ## than asking which console was meant.
 const SYSTEMID := "playstation"
 
+## card_id of the row currently showing its rename field, or "".
+var _editing_id := ""
+
 
 ## Any card images on disk? With none there is nothing to choose between, and
 ## the caller should just spawn a blank one.
@@ -76,6 +79,21 @@ func _build_list() -> void:
 func _card_row(card: Dictionary) -> Control:
 	var row := MenuStyle.hbox(8)
 
+	# The row being renamed swaps its label for the field, so the name is edited
+	# where it is read instead of in a dialog over the top of it.
+	if str(card["card_id"]) == _editing_id:
+		var edit := LineEdit.new()
+		edit.text = str(card["label"])
+		edit.custom_minimum_size = Vector2(0, 80)
+		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		edit.add_theme_font_size_override("font_size", 26)
+		edit.text_submitted.connect(func(t: String) -> void: _commit_rename(card, t))
+		edit.focus_exited.connect(func() -> void: _commit_rename(card, edit.text))
+		row.add_child(edit)
+		edit.call_deferred("grab_focus")
+		edit.call_deferred("select_all")
+		return row
+
 	var saves := int(card["saves"])
 	var free := int(card["free"])
 	var spawn_btn := Button.new()
@@ -98,7 +116,51 @@ func _card_row(card: Dictionary) -> Control:
 	view_btn.tooltip_text = "View the saves on this card"
 	view_btn.pressed.connect(func() -> void: _build_saves(card))
 	row.add_child(view_btn)
+
+	var rename_btn := Button.new()
+	rename_btn.custom_minimum_size = Vector2(80, 80)
+	rename_btn.text = String.chr(MenuIcons.RENAME)
+	rename_btn.add_theme_font_override("font", MenuIcons.symbols())
+	rename_btn.add_theme_font_size_override("font_size", 34)
+	rename_btn.tooltip_text = "Rename this card"
+	rename_btn.pressed.connect(func() -> void:
+		_editing_id = str(card["card_id"])
+		_build_list())
+	row.add_child(rename_btn)
 	return row
+
+
+## Rename the card, which moves its image — see SramPaths.rename_card.
+func _commit_rename(card: Dictionary, text: String) -> void:
+	# focus_exited fires again as the rebuilt list tears the field down, so the
+	# first commit closes the edit and the second finds nothing to do.
+	if _editing_id.is_empty():
+		return
+	_editing_id = ""
+	var old_id := str(card["card_id"])
+	var new_id := SramPaths.rename_card(old_id, text)
+	if new_id.is_empty():
+		push_warning("[MemoryCardBrowser] a card named '%s' already exists" % text)
+	elif new_id != old_id:
+		_adopt_rename_in_room(old_id, new_id)
+	_build_list()
+
+
+## The renamed card may also be sitting in the room, and its object keys off the
+## filename — left alone it would point at an image that no longer exists, and
+## the next save would write a second card under the old name.
+func _adopt_rename_in_room(old_id: String, new_id: String) -> void:
+	for n: Node in get_tree().get_nodes_in_group("memory_card"):
+		var card := n as MemoryCard
+		if card == null or card.card_id != old_id:
+			continue
+		card.card_id = new_id
+		card.card_label = new_id
+		for sys: Node in get_tree().get_nodes_in_group("retro_system"):
+			if sys.has_method("get_snapped_memcard") and sys.get_snapped_memcard() == card \
+					and sys.has_method("refresh_memcard_path"):
+				sys.refresh_memcard_path()
+		return
 
 
 func _build_saves(card: Dictionary) -> void:
