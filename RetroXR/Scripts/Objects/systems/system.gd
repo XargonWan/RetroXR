@@ -184,7 +184,9 @@ var _snapped_cartridge: Node3D = null
 const DISC_SPIN_MAX := 25.0    # rad/s (~240 RPM) — seated disc at full speed
 const DISC_SPIN_UP := 18.0     # rad/s² ramp-up (power on / tray closed)
 const DISC_SPIN_DOWN := 10.0   # rad/s² ramp-down (power off / tray opened)
-const TRAY_LID_OPEN_DEG := -75.0   # lid hinge angle when the tray is open
+## How far the hinged lid springs up. Positive: the lid rig VRSpringLatchedHinge
+## builds carries a 180° yaw, so +rotation lifts the lid's FRONT edge.
+const TRAY_LID_OPEN_DEG := 75.0
 ## How far the hinged-lid console's disc well is sunk into its pod. Deep enough
 ## that a 2.5 mm disc sits with its face below the rim.
 const TRAY_WELL_DEPTH := 0.006
@@ -207,9 +209,10 @@ var _slot: MediaSlot = null
 # collision), owned by the shared MediaTray; created in _load_system_model for tray
 # consoles. Null for cartridge / slot / no-disc systems. See media_tray.gd.
 var _tray: MediaTray = null
-# Procedural disc well + hinged lid (default-model tray consoles only); the lid
-# pivot is handed to _tray so MediaTray animates it.
-var _tray_lid_pivot: Node3D = null
+# Procedural disc well + spring lid (default-model tray consoles only). The hinge
+# owns the lid's angle — MediaTray is NOT given a lid_pivot to tween, or the two
+# would fight over it — and reports a hand-close back through request_tray_state.
+var _lid_hinge: VRSpringLatchedHinge = null
 # Front-sliding tray shelf (LOADER_TRAY + MediaDimensions.has_front_tray), null on
 # a hinged-lid console. The seated disc rides it out; MediaTray still gates.
 var _front_tray := false
@@ -583,8 +586,8 @@ func _load_system_model() -> void:
 			_tray = MediaTray.new()
 			_tray.host = self
 			_tray.slot = _cartridge_slot
-			_tray.lid_pivot = _tray_lid_pivot          # null for bespoke models
-			_tray.lid_open_deg = TRAY_LID_OPEN_DEG
+			# No lid_pivot: a bespoke model swings its own lid from play_open/close,
+			# and the procedural one is driven by _lid_hinge's spring.
 			# A flip-open tray assembly (the PSP's UMD door) carries its disc with
 			# it — unlike a spindle console, where the disc stays fixed and only
 			# the lid mesh swings. _cartridge_slot's pose (already set above by
@@ -2395,6 +2398,8 @@ func _on_eject_pressed() -> void:
 ## True when the model's lid is spring-loaded + hand-closed (see
 ## RetroSystemModel.has_spring_latched_lid).
 func _has_spring_lid() -> bool:
+	if _lid_hinge != null:
+		return true          # the procedural box's own lid
 	return _model != null and _model.has_spring_latched_lid()
 
 
@@ -2426,6 +2431,13 @@ func _set_tray_open(open: bool) -> void:
 	# button is a momentary latch release (holding it down would advertise a second
 	# press that deliberately does nothing).
 	_eject_button.set_latched_pressed(open and not _has_spring_lid())
+	# The procedural spring lid: unlatch so it pops up, or snap it shut. A remote
+	# peer's toggle arrives here too, so both ends stay in the same physical state.
+	if _lid_hinge != null:
+		if open:
+			_lid_hinge.open()
+		else:
+			_lid_hinge.latch_closed()
 	_slide_tray(open)
 	# Bespoke GLB tray models animate their own lid here.
 	if open:
@@ -2533,7 +2545,6 @@ func _build_disc_tray() -> void:
 	var d := MediaDimensions.disc_diameter(systemid)
 	var pod_r := d / 2.0 + 0.024
 	var lid_r := d / 2.0 + 0.028
-	var hinge_z := -(d / 2.0 + 0.03)
 
 	var pod_mat := StandardMaterial3D.new()
 	pod_mat.albedo_color = Color(0.45, 0.45, 0.48)
@@ -2585,34 +2596,22 @@ func _build_disc_tray() -> void:
 	# IS the disc's: left at the cabinet default it sits inside the pod.
 	_cartridge_slot.position = Vector3(0, floor_y + 0.0005 + 0.00125, 0)
 
-	# Hinged lid: pivot at the pod's back edge, lid disc swings up/back.
-	_tray_lid_pivot = Node3D.new()
-	_tray_lid_pivot.name = "DiscTrayLidPivot"
-	_tray_lid_pivot.position = Vector3(0, 0.076, hinge_z)
-	add_child(_tray_lid_pivot)
-
-	var lid_btn := VRButton.new()
-	lid_btn.name = "DiscTrayLid"
-	lid_btn.position = Vector3(0, 0, -hinge_z)   # lid centre, forward of hinge
-	lid_btn.trigger_radius = lid_r + 0.01
-	lid_btn.depress_depth = 0.002
-	var lid_col := CollisionShape3D.new()
-	var lid_col_shape := CylinderShape3D.new()
-	lid_col_shape.radius = lid_r
-	lid_col_shape.height = 0.02
-	lid_col.shape = lid_col_shape
-	lid_btn.add_child(lid_col)
-	var lid_mesh_inst := MeshInstance3D.new()
-	lid_mesh_inst.name = "ButtonMesh"   # VRButton drives this mesh
+	# Spring-loaded lid, as on the hardware: OPEN is a latch release that pops it
+	# up, and it is pushed back down by hand until it clicks. mount() hinges it on
+	# the lid's own back-bottom edge, so placing the mesh is what sets the hinge.
+	var lid := MeshInstance3D.new()
+	lid.name = "DiscTrayLid"
 	var lid_mesh := CylinderMesh.new()
 	lid_mesh.top_radius = lid_r
 	lid_mesh.bottom_radius = lid_r
 	lid_mesh.height = 0.005
-	lid_mesh_inst.mesh = lid_mesh
-	lid_mesh_inst.set_surface_override_material(0, lid_mat)
-	lid_btn.add_child(lid_mesh_inst)
-	_tray_lid_pivot.add_child(lid_btn)
-	lid_btn.button_pressed.connect(_on_lid_pressed)
+	lid.mesh = lid_mesh
+	lid.set_surface_override_material(0, lid_mat)
+	lid.position = Vector3(0, 0.076, 0)
+	add_child(lid)
+	_lid_hinge = VRSpringLatchedHinge.mount(self, lid, TRAY_LID_OPEN_DEG)
+	if _lid_hinge != null:
+		_lid_hinge.rotation_changed.connect(_on_lid_swung)
 
 
 ## A flat ring in the XZ plane at y = 0, facing up. Godot has no annulus
@@ -2669,10 +2668,12 @@ func _surface_mesh(verts: PackedVector3Array, norms: PackedVector3Array) -> Arra
 	return mesh
 
 
-## Physically pushing (or pointer-clicking) the lid while open shuts the tray.
-func _on_lid_pressed() -> void:
-	if _disc_loader == MediaDimensions.LOADER_TRAY and _tray_open:
-		_request_tray_state(false)
+## The hand pushed the lid home — mark the tray shut, as the PSP's UMD door does.
+## request_tray_state is idempotent, so the echo from latch_closed() stops here
+## rather than bouncing back into the hinge.
+func _on_lid_swung(_deg: float) -> void:
+	if _lid_hinge != null and _lid_hinge.is_latched_closed():
+		request_tray_state(false)
 
 
 ## Netplay: another player toggled this console's tray.
