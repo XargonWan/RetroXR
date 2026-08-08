@@ -17,6 +17,13 @@ const CODES := {
 	"ok": 0xF192, "mute": 0xEEE8, "eject": 0xF052,
 	"audio": 0xF1AB, "subtitle": 0xF0A16,
 	# The TV's own switches.
+	"source": 0xF090,     # fa-sign_in       — which input the set is showing
+	# Channel up/down are deliberately NOT the "up"/"down" keys above: those are
+	# fa-chevron, the DVD's menu D-pad, and one arrow shared between "move the
+	# cursor" and "next channel" reads as one control. Codicon solid arrows are a
+	# different family, so the two separate at a glance.
+	"ch_up": 0xEAA1,      # cod-arrow_up
+	"ch_down": 0xEA9A,    # cod-arrow_down
 	"crt": 0xF26C,        # fa-tv            — the picture filter
 	"stereo": 0xF07FD,    # md-video_3d      — both eyes
 	"eye": 0xF1A1C,       # md-eye-outline   — one eye, biased to its own side

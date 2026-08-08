@@ -36,7 +36,11 @@ public:
     ~VlcPlayer();
 
     // Open a DVD image (VIDEO_TS folder or .iso) via dvd:// (menus), or a plain
-    // media path when is_dvd is false. Returns true on success.
+    // media path when is_dvd is false. A string that already carries a URI
+    // scheme ("http://", "rtsp://", "udp://", ...) is passed to libVLC verbatim
+    // and is_dvd is ignored. Returns true on success -- but note that for a URL
+    // that only means the MRL parsed: an unreachable host or a stream that never
+    // decodes reports itself later through the "error" signal, not here.
     bool open(const godot::String &path, bool is_dvd = true);
 
     void play();
@@ -50,6 +54,12 @@ public:
     void update_frame();
     godot::Ref<godot::Texture2D> get_texture() const;
     godot::Vector2i get_video_size() const;
+
+    // Pictures libVLC has delivered since this media was opened. Reset by
+    // open()/stop(). A live source makes this climb every frame; a source that
+    // has died mid-stream leaves it stuck while the last picture stays on the
+    // texture, which is otherwise indistinguishable from a working still frame.
+    int64_t get_frame_count() const;
 
     // DVD menu navigation (modes: activate=0,up=1,down=2,left=3,right=4,popup=5).
     void navigate(int mode);
@@ -141,6 +151,7 @@ private:
     unsigned m_height = 0;
     bool m_frame_dirty = false;
     bool m_size_dirty = false;
+    int64_t m_frame_count = 0;   // pictures delivered since open(); see get_frame_count
 
     godot::Ref<godot::Image> m_image;
     godot::Ref<godot::ImageTexture> m_texture;

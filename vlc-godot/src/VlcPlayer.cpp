@@ -119,6 +119,52 @@ void VlcPlayer::release_player()
         libvlc_media_player_release(static_cast<libvlc_media_player_t *>(m_mp));
         m_mp = nullptr;
     }
+    // Forget the old picture. Without this the previous media's dimensions
+    // survive into the next open(), so a stream that never decodes still
+    // reports a plausible get_video_size() and reads as live -- which is
+    // exactly how a caller distinguishes a working source from a dead one.
+    // The player is released above, so no VLC thread can be writing here.
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_width = 0;
+        m_height = 0;
+        m_frame_dirty = false;
+        m_size_dirty = false;
+        m_frame_count = 0;
+        m_shared.resize(0);
+        m_decode.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_audio_mutex);
+        m_audio_head = 0;
+        m_audio_tail = 0;
+        m_audio_count = 0;
+        m_frames_out = 0;
+        m_anchor_index = 0;
+        m_anchor_pts = 0;
+        m_pts_anchored = false;
+    }
+}
+
+// True when the string already carries a URI scheme -- "http://", "rtsp://",
+// "udp://" and so on. Deliberately strict about the shape (RFC 3986 scheme:
+// ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )) so a Windows path never matches:
+// "C:/x" has no "//", and a bare "//server/share" has no scheme before it.
+static bool has_uri_scheme(const String &p)
+{
+    int sep = p.find("://");
+    if (sep <= 0)
+        return false;
+    const String scheme = p.substr(0, sep);
+    for (int i = 0; i < scheme.length(); ++i)
+    {
+        const char32_t c = scheme[i];
+        const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        const bool rest = (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.';
+        if (i == 0 ? !alpha : !(alpha || rest))
+            return false;
+    }
+    return true;
 }
 
 bool VlcPlayer::open(const String &path, bool is_dvd)
@@ -130,13 +176,25 @@ bool VlcPlayer::open(const String &path, bool is_dvd)
 
     libvlc_instance_t *inst = static_cast<libvlc_instance_t *>(m_vlc);
     String p = path.replace("\\", "/");
-    // Build an MRL. dvd:// for a DVD image (VIDEO_TS folder / .iso, dvdnav menus);
-    // file:// for a plain media file (more robust on Windows than new_path).
-    // Unix-style absolute paths already start with '/': adding another slash
-    // makes VLC parse `//sdcard/...` as an authority and fail to stat it.
-    if (!p.begins_with("/"))
-        p = String("/") + p;
-    String mrl = (is_dvd ? String("dvd://") : String("file://")) + p;
+    // A URL is already an MRL -- pass it through untouched. Rewriting it the way
+    // a path is rewritten below would yield "file:///http://host/..." and open
+    // nothing. is_dvd is ignored here: a scheme names its own access module.
+    const bool is_url = has_uri_scheme(p);
+    String mrl;
+    if (is_url)
+    {
+        mrl = p;
+    }
+    else
+    {
+        // Build an MRL. dvd:// for a DVD image (VIDEO_TS folder / .iso, dvdnav menus);
+        // file:// for a plain media file (more robust on Windows than new_path).
+        // Unix-style absolute paths already start with '/': adding another slash
+        // makes VLC parse `//sdcard/...` as an authority and fail to stat it.
+        if (!p.begins_with("/"))
+            p = String("/") + p;
+        mrl = (is_dvd ? String("dvd://") : String("file://")) + p;
+    }
     libvlc_media_t *media = libvlc_media_new_location(inst, mrl.utf8().get_data());
     if (!media)
     {
@@ -144,6 +202,15 @@ bool VlcPlayer::open(const String &path, bool is_dvd)
         UtilityFunctions::push_error("VlcPlayer: could not create media for ", mrl,
                                      " — ", err ? err : "(no libvlc error)");
         return false;
+    }
+
+    if (is_url)
+    {
+        // A live stream has no seekable start to buffer against, so give the
+        // demuxer a jitter cushion before it starts handing over pictures.
+        // Broadcast MPEG-TS off an HDHomeRun arrives in bursts; the default
+        // (300 ms) underruns on the first GOP.
+        libvlc_media_add_option(media, ":network-caching=1500");
     }
 
     libvlc_media_player_t *mp = libvlc_media_player_new_from_media(media);
@@ -171,8 +238,20 @@ void VlcPlayer::attach_events()
     libvlc_event_manager_t *em = libvlc_media_player_event_manager(static_cast<libvlc_media_player_t *>(m_mp));
     // cb_event uses a VLC-free signature in the header; the pointer types are
     // ABI-compatible, so cast to libvlc_callback_t at the attach site.
-    libvlc_event_attach(em, libvlc_MediaPlayerEndReached,
-                        reinterpret_cast<libvlc_callback_t>(&VlcPlayer::cb_event), this);
+    const libvlc_callback_t cb = reinterpret_cast<libvlc_callback_t>(&VlcPlayer::cb_event);
+    // EndReached alone is enough for a file, which either opens or does not.
+    // A network stream fails long after open() returned true -- an unreachable
+    // host, a channel with no free tuner -- so the caller needs to hear about
+    // the states too, or a dead stream is indistinguishable from a slow one.
+    static const libvlc_event_e k_events[] = {
+        libvlc_MediaPlayerEndReached,
+        libvlc_MediaPlayerEncounteredError,
+        libvlc_MediaPlayerBuffering,
+        libvlc_MediaPlayerPlaying,
+        libvlc_MediaPlayerStopped,
+    };
+    for (libvlc_event_e ev : k_events)
+        libvlc_event_attach(em, ev, cb, this);
 }
 
 // ── transport ────────────────────────────────────────────────────────────────
@@ -236,6 +315,12 @@ Vector2i VlcPlayer::get_video_size() const
     return Vector2i((int)m_width, (int)m_height);
 }
 
+int64_t VlcPlayer::get_frame_count() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_frame_count;
+}
+
 unsigned VlcPlayer::cb_format(void **opaque, char *chroma, unsigned *width,
                               unsigned *height, unsigned *pitches, unsigned *lines)
 {
@@ -287,6 +372,7 @@ void VlcPlayer::cb_display(void *opaque, void *picture)
     {
         std::memcpy(self->m_shared.ptrw(), self->m_decode.data(), self->m_decode.size());
         self->m_frame_dirty = true;
+        ++self->m_frame_count;
     }
 }
 
@@ -294,8 +380,28 @@ void VlcPlayer::cb_event(const void *event, void *data)
 {
     const libvlc_event_t *ev = static_cast<const libvlc_event_t *>(event);
     VlcPlayer *self = static_cast<VlcPlayer *>(data);
-    if (ev->type == libvlc_MediaPlayerEndReached)
+    // Runs on a libVLC thread: never touch Godot objects here, only defer.
+    switch (ev->type)
+    {
+    case libvlc_MediaPlayerEndReached:
         self->call_deferred("emit_signal", "finished");
+        break;
+    case libvlc_MediaPlayerEncounteredError:
+        self->call_deferred("emit_signal", "error");
+        break;
+    case libvlc_MediaPlayerBuffering:
+        self->call_deferred("emit_signal", "buffering",
+                            ev->u.media_player_buffering.new_cache);
+        break;
+    case libvlc_MediaPlayerPlaying:
+        self->call_deferred("emit_signal", "playing");
+        break;
+    case libvlc_MediaPlayerStopped:
+        self->call_deferred("emit_signal", "stopped");
+        break;
+    default:
+        break;
+    }
 }
 
 // ── DVD navigation / chapters / titles ───────────────────────────────────────
@@ -690,6 +796,7 @@ void VlcPlayer::_bind_methods()
     ClassDB::bind_method(D_METHOD("stop"), &VlcPlayer::stop);
     ClassDB::bind_method(D_METHOD("set_paused", "paused"), &VlcPlayer::set_paused);
     ClassDB::bind_method(D_METHOD("is_playing"), &VlcPlayer::is_playing);
+    ClassDB::bind_method(D_METHOD("get_frame_count"), &VlcPlayer::get_frame_count);
 
     ClassDB::bind_method(D_METHOD("update_frame"), &VlcPlayer::update_frame);
     ClassDB::bind_method(D_METHOD("get_texture"), &VlcPlayer::get_texture);
@@ -737,6 +844,11 @@ void VlcPlayer::_bind_methods()
     ClassDB::bind_method(D_METHOD("set_subtitle", "id"), &VlcPlayer::set_subtitle);
 
     ADD_SIGNAL(MethodInfo("finished"));
+    ADD_SIGNAL(MethodInfo("error"));
+    ADD_SIGNAL(MethodInfo("playing"));
+    ADD_SIGNAL(MethodInfo("stopped"));
+    ADD_SIGNAL(MethodInfo("buffering",
+                          PropertyInfo(Variant::FLOAT, "percent")));
 }
 
 } // namespace Xenu

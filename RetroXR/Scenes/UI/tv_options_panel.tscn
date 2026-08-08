@@ -7,6 +7,6 @@
 script = ExtResource("1_panelscript")
 
 [node name="TVOptionsViewport" parent="." instance=ExtResource("2_viewport2d3d")]
-screen_size = Vector2(0.5, 0.4)
-viewport_size = Vector2(500, 400)
+screen_size = Vector2(0.55, 0.5)
+viewport_size = Vector2(550, 500)
 transparent = 1

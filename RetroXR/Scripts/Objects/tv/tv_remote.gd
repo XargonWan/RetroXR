@@ -443,19 +443,32 @@ func _layout_for_target() -> Array:
 		var tv := _target as RetroTV
 		var cells: Array = [
 			{"id": "power", "glyph": "power", "col": 0, "row": 0, "span": 3},
-			{"id": "vol_down", "glyph": "vol_down", "col": 0, "row": 1},
-			{"id": "mute", "glyph": "mute", "col": 1, "row": 1},
-			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 1},
+			# SOURCE sits directly under power, the way it does on a real handset:
+			# it is a whole-set control, not part of the volume cluster.
+			{"id": "source", "glyph": "source", "col": 0, "row": 1, "span": 3},
+			{"id": "vol_down", "glyph": "vol_down", "col": 0, "row": 2},
+			{"id": "mute", "glyph": "mute", "col": 1, "row": 2},
+			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 2},
 		]
+		# Channel keys only exist while the tuner is the selected input — on the
+		# component input there is nothing to change the channel of.
+		var next_row := 3
+		if tv.get_source() == RetroTV.Source.TV:
+			cells.append({"id": "ch_down", "glyph": "ch_down", "col": 0, "row": next_row})
+			cells.append({"id": "ch_up", "glyph": "ch_up", "col": 2, "row": next_row})
+			next_row += 1
 		# The speaker switch always; 3D only while there is something 3D to
 		# switch, which is how the set's own bezel key behaves. Both take their
 		# glyph from the mode they are currently in, so the key reads as a state
 		# rather than a label — see _tv_audio_glyph / _tv_stereo_glyph.
 		if tv.has_stereo_source():
-			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv), "col": 0, "row": 2})
-			cells.append({"id": "stereo3d", "glyph": _tv_stereo_glyph(tv), "col": 2, "row": 2})
+			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv),
+				"col": 0, "row": next_row})
+			cells.append({"id": "stereo3d", "glyph": _tv_stereo_glyph(tv),
+				"col": 2, "row": next_row})
 		else:
-			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv), "col": 1, "row": 2})
+			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv),
+				"col": 1, "row": next_row})
 		return cells
 	if _target is VCRPlayer:
 		# Eject on its own top row, then the transport grid.
@@ -553,7 +566,13 @@ func _cell_enabled(id: String) -> bool:
 		if id == "prev" or id == "next":
 			return (_target as RetroAudioPlayer).has_track_skip()
 		return true
-	return true   # TV: every cell always usable
+	if _target is RetroTV:
+		# The channel keys are the one TV cell that can be dead: the tuner may
+		# have no list yet (no channels.json, tuner still being found). Every
+		# other key on a set works whatever it is showing.
+		if id == "ch_up" or id == "ch_down":
+			return (_target as RetroTV).has_channels()
+	return true
 
 
 # ── Grid widget ───────────────────────────────────────────────────────────────
@@ -866,6 +885,9 @@ func _activate(id: String) -> void:
 			"mute": tv.remote_mute_toggle()
 			"audio_mode": tv.set_audio_mode((tv.audio_mode + 1) % 3)
 			"stereo3d": tv.set_stereo_mode((tv.stereo_mode + 1) % 3)
+			"source": tv.remote_source_cycle()
+			"ch_up": tv.remote_channel_up()
+			"ch_down": tv.remote_channel_down()
 	elif _target is VCRPlayer:
 		var vcr := _target as VCRPlayer
 		match id:

@@ -241,6 +241,26 @@ static func scan_videos() -> Array[Dictionary]:
 	return results
 
 
+## Path to the TV root — the set's channel list (channels.json) lives here, and
+## it is where a guide cache or channel logos would go later.
+static func default_tv_root() -> String:
+	if OS.get_name() == "Android":
+		return "/sdcard/Android/data/com.xenu.retroxr/files/tv"
+	if OS.get_name() == "Linux":
+		return OS.get_environment("HOME") + "/retroxr/tv"
+	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/tv"
+
+
+## Create the tv root if it doesn't already exist.
+static func ensure_tv_root() -> void:
+	var path := default_tv_root()
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err == OK:
+		print("[RomLibrary] Ensured tv root: ", path)
+	else:
+		push_warning("[RomLibrary] Failed to create tv root '%s' (err %d)" % [path, err])
+
+
 ## Path to the DVDs root — real DVD images (a VIDEO_TS/ folder, or an .iso/.img
 ## file) live here, played by the libVLC-backed DVDPlayer.
 static func default_dvd_root() -> String:

@@ -15,6 +15,23 @@ const VCR_SHADER := preload("res://Shaders/vcr_effect.gdshader")
 # Dual-screen handhelds mirror one channel of their composite framebuffer onto
 # the TV through this shader; the CRT stage chains inside it like the VCR's.
 const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
+# Analog snow, shown by the built-in tuner for every failure. Named here too
+# because _route_osd and _update_crt both have to recognise it on the screen.
+const STATIC_SHADER := preload("res://Shaders/tv_static.gdshader")
+
+## Which input the set is showing. COMPONENT is the physical port — a console,
+## VCR or DVD deck on the composite lead, which is all this TV had. TV is the
+## built-in tuner (see tv_tuner.gd) fed by channels.json.
+##
+## Named Source, not Input: `Input` is a native Godot singleton and an enum of
+## that name shadows it, which fails to parse.
+enum Source { COMPONENT, TV }
+
+## Names as they appear in the OSD when SOURCE cycles.
+const SOURCE_NAMES := ["COMPONENT", "TV"]
+
+## Emitted when the selected source changes, so panels can follow.
+signal source_changed(source: int)
 
 ## CRT display filter (curvature, scanlines, aperture mask). Applied to
 ## whatever source is showing — a system's game or the VCR's video.
@@ -49,6 +66,7 @@ var _speakers_seated: bool = false
 @onready var _vol_up_btn: VRButton = $VolumeUpButton
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
 @onready var _crt_btn: VRButton = $CRTButton
+@onready var _source_btn: VRButton = $SourceButton
 @onready var _stereo_btn: VRButton = $StereoButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _speaker_l: Marker3D = get_node_or_null("SpeakerL")
@@ -150,6 +168,12 @@ var _connected_system: Node3D = null
 var _volume: float = 1.0       # 0.0–1.0, default 100%
 var _tv_enabled: bool = true
 
+# Selected input and the built-in tuner behind Source.TV. The tuner is created on
+# first use rather than in _ready: most sets in a scene never leave COMPONENT,
+# and an idle one should cost nothing (no VlcPlayer, no discovery traffic).
+var current_source: int = Source.COMPONENT
+var _tuner: TVTuner = null
+
 # Mute: silences the connected device's audio without changing _volume. A sticky
 # "MUTE" OSD stays up until mute is toggled off or a volume key is pressed.
 var _muted: bool = false
@@ -180,6 +204,7 @@ func _ready() -> void:
 		"MuteButton": "mute", "AudioModeButton": "audio_stereo",
 		"VolumeDownButton": "vol_down", "VolumeUpButton": "vol_up",
 		"TVToggleButton": "power", "CRTButton": "crt", "StereoButton": "stereo",
+		"SourceButton": "source",
 	}, TransportGlyphs.TV_SIZE)
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
@@ -194,6 +219,7 @@ func _ready() -> void:
 	_tv_toggle_btn.button_pressed.connect(_on_tv_toggle)
 	_crt_btn.button_pressed.connect(_on_crt_toggle)
 	_stereo_btn.button_pressed.connect(_on_stereo_toggle)
+	_source_btn.button_pressed.connect(cycle_source)
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
@@ -292,7 +318,7 @@ func _load_shell() -> void:
 	# Bezel buttons march along the row marker's local +X from the first cap.
 	var row: Variant = _shell.button_row_seat()
 	var buttons: Array[Node3D] = [
-		_vol_down_btn, _vol_up_btn, _tv_toggle_btn, _crt_btn, _stereo_btn,
+		_vol_down_btn, _vol_up_btn, _tv_toggle_btn, _source_btn, _crt_btn, _stereo_btn,
 	]
 	if not _shell.show_button_row:
 		for btn in buttons:
@@ -363,6 +389,11 @@ func _process(_delta: float) -> void:
 	_route_osd()
 	_release_park_if_unsupported()
 
+	# The tuner's sound comes out of this cabinet's own speakers, aimed the way
+	# the tube points — a set heard from behind is muted by its own box.
+	if _tuner != null and _tuner.is_active():
+		_tuner.emit_through(self)
+
 	# Grab-driver churn (second-hand grab, hand swap, desktop re-hold) recreates
 	# the RemoteTransform3D with scale copying re-enabled, which stomps the TV
 	# back to 1x — e.g. rotating a held TV with the other hand. Keep our chosen
@@ -418,6 +449,22 @@ func _process(_delta: float) -> void:
 ## backs off automatically; when they blank/restore a textureless material we
 ## take over again next frame.
 func _update_screen_source() -> void:
+	# On the TV input the tuner owns the glass outright: it always has something
+	# to show (a picture, or static carrying the reason there isn't one), so the
+	# blue screen below must not get a look in. Nothing else is driving the mesh
+	# either -- the connected host was muted with set_screen_enabled(false) when
+	# the input changed.
+	if _tv_enabled and current_source == Source.TV and _tuner != null:
+		var wanted := _tuner.screen_material()
+		var current := _screen_mesh.get_surface_override_material(0)
+		var showing_ours := current == wanted
+		if current == _crt_material and _crt_wrapped == wanted:
+			showing_ours = true
+		if not showing_ours:
+			_unwrap_crt()
+			_screen_mesh.set_surface_override_material(0, wanted)
+		return
+
 	var override := _screen_mesh.get_surface_override_material(0)
 	var effective := _crt_wrapped \
 		if (override == _crt_material or override == _stereo_material) else override
@@ -479,7 +526,8 @@ func _update_crt() -> void:
 	if override is ShaderMaterial and override != _crt_material \
 			and override != _stereo_material:
 		var sm := override as ShaderMaterial
-		if sm.shader == VCR_SHADER or sm.shader == WINDOW_SHADER:
+		if sm.shader == VCR_SHADER or sm.shader == WINDOW_SHADER \
+				or sm.shader == STATIC_SHADER:
 			# Note: an unset uniform reads back as null, never bool — compare
 			# against the Variant directly.
 			var cur: Variant = sm.get_shader_parameter("crt_enabled")
@@ -846,6 +894,10 @@ func _apply_audio_channel_mode() -> void:
 	if _connected_system != null and is_instance_valid(_connected_system) \
 			and _connected_system.has_method("set_audio_channel_mode"):
 		_connected_system.set_audio_channel_mode(audio_mode)
+	# The tuner is the one source the set does own an emitter for, so it takes the
+	# same routing directly rather than being asked to do it.
+	if _tuner:
+		_tuner.set_channel_mode(audio_mode)
 
 
 ## Stereo gets the two-speaker symbol; a mono mode gets a single speaker leaning
@@ -1096,7 +1148,8 @@ func _route_osd() -> void:
 	if mat is ShaderMaterial:
 		var candidate := mat as ShaderMaterial
 		if candidate == _crt_material or candidate.shader == VCR_SHADER \
-				or candidate.shader == WINDOW_SHADER:
+				or candidate.shader == WINDOW_SHADER \
+				or candidate.shader == STATIC_SHADER:
 			sm = candidate
 	if sm != null:
 		sm.set_shader_parameter("osd_tex", _osd_viewport.get_texture())
@@ -1137,6 +1190,11 @@ func _on_plug_snapped(plug: Node3D) -> void:
 				# dropped it when they moved to sockets and a spawned cable, and an
 				# unguarded call errors on any plug that names one as its system.
 				system.on_tv_connected(self)
+			# A console plugged in while the set is on the tuner must stay off the
+			# glass until SOURCE selects it, or it repaints the screen from under
+			# the channel that is playing.
+			if current_source != Source.COMPONENT and system.has_method("set_screen_enabled"):
+				system.set_screen_enabled(false)
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
 				{"owner": system, "tv": self, "ch": _snapped_plug.channel})
 
@@ -1152,6 +1210,10 @@ func on_av_source_found(source: Node3D) -> void:
 	_connected_system = source
 	_connected_system.set_audio_volume(_effective_volume())
 	_apply_audio_channel_mode()
+	# Same rule as the captive-lead path: a deck cabled up while the tuner is on
+	# screen waits its turn rather than painting over it.
+	if current_source != Source.COMPONENT and source.has_method("set_screen_enabled"):
+		source.set_screen_enabled(false)
 
 
 ## Called by that deck when the last cord between the two is pulled.
@@ -1205,6 +1267,107 @@ func remote_volume_down() -> void:
 
 func remote_mute_toggle() -> void:
 	_on_mute_toggle()
+
+
+func remote_source_cycle() -> void:
+	cycle_source()
+
+
+func remote_channel_up() -> void:
+	if _tuner and current_source == Source.TV:
+		_tuner.channel_up()
+
+
+func remote_channel_down() -> void:
+	if _tuner and current_source == Source.TV:
+		_tuner.channel_down()
+
+
+# ── Input selection (SOURCE) ──────────────────────────────────────────────────
+
+## Step to the next input, wrapping. The SOURCE key on the bezel and the remote.
+func cycle_source() -> void:
+	set_source((current_source + 1) % SOURCE_NAMES.size())
+
+
+## Select an input. Idempotent, so panels can call it freely.
+func set_source(source: int) -> void:
+	source = clampi(source, 0, SOURCE_NAMES.size() - 1)
+	if source == current_source:
+		return
+	current_source = source
+
+	# Mute whichever source is not selected. set_screen_enabled is the contract
+	# every host already implements (RetroSystem, VCRPlayer, DVDPlayer) and the
+	# set already uses it for power -- without it the console keeps writing its
+	# own material onto the screen every frame and the two fight.
+	if _connected_system and is_instance_valid(_connected_system) \
+			and _connected_system.has_method("set_screen_enabled"):
+		_connected_system.set_screen_enabled(_tv_enabled and current_source == Source.COMPONENT)
+
+	if current_source == Source.TV:
+		_ensure_tuner()
+		_tuner.set_active(_tv_enabled)
+	elif _tuner:
+		_tuner.set_active(false)
+		# Hand the screen back: the host repaints it, and until it does
+		# _update_screen_source restores the blue no-signal state.
+		_unwrap_crt()
+		_screen_mesh.set_surface_override_material(0, _blue_material)
+
+	show_osd_timed(_source_banner(), 2.0)
+	source_changed.emit(current_source)
+
+
+func _source_banner() -> String:
+	if current_source == Source.TV and _tuner:
+		var banner := _tuner.status_banner()
+		if not banner.is_empty():
+			return "TV  %s" % banner
+	return SOURCE_NAMES[current_source]
+
+
+## The tuner is built on first use — a set that never leaves COMPONENT should not
+## pay for a VlcPlayer instance or send discovery traffic.
+func _ensure_tuner() -> TVTuner:
+	if _tuner == null:
+		_tuner = TVTuner.new()
+		_tuner.name = "TVTuner"
+		_tuner.status_changed.connect(_on_tuner_status)
+		add_child(_tuner)
+		_tuner.reload_channels()
+		_tuner.set_volume(_effective_volume())
+		_tuner.set_channel_mode(audio_mode)
+	return _tuner
+
+
+func _on_tuner_status(banner: String) -> void:
+	if current_source != Source.TV:
+		return
+	if banner.is_empty():
+		hide_osd()
+	elif _tuner and not _tuner.error_text().is_empty():
+		# A fault stays up: it is the only explanation for what is on the glass.
+		show_osd(banner)
+	else:
+		show_osd_timed(banner, 3.0)
+
+
+## The tuner, built if this is the first ask. Used by the options panel.
+func get_tuner() -> TVTuner:
+	return _ensure_tuner()
+
+
+## Whether the tuner exists AND has a channel list — without building one.
+## Callers that merely want to know (the remote, greying its channel keys) must
+## use this: get_tuner() would spin up a VlcPlayer and start discovery just
+## because somebody pointed a remote at the set.
+func has_channels() -> bool:
+	return _tuner != null and not _tuner.channels.is_empty()
+
+
+func get_source() -> int:
+	return current_source
 
 
 # ── Options panel / display scale ────────────────────────────────────────────────
@@ -1468,10 +1631,13 @@ func _effective_volume() -> float:
 	return 0.0 if (not _tv_enabled or _muted) else _volume
 
 
-## Push the current effective volume to the connected device (if any).
+## Push the current effective volume to the connected device (if any) and to the
+## built-in tuner, so one knob governs whichever input is showing.
 func _apply_audio_volume() -> void:
 	if _connected_system:
 		_connected_system.set_audio_volume(_effective_volume())
+	if _tuner:
+		_tuner.set_volume(_effective_volume())
 
 
 ## A volume key clears mute (like a real set) so the change is audible.
@@ -1545,6 +1711,11 @@ func _on_tv_toggle() -> void:
 		_vol_osd_token += 1
 		_set_vol_osd_text("")
 	if _connected_system:
-		_connected_system.set_screen_enabled(_tv_enabled)
+		# Powering back on must not un-mute the component input while the set is
+		# showing the tuner -- it would start repainting the screen underneath it.
+		_connected_system.set_screen_enabled(_tv_enabled and current_source == Source.COMPONENT)
 		_connected_system.set_audio_volume(_effective_volume())
+	if _tuner:
+		_tuner.set_active(_tv_enabled and current_source == Source.TV)
+		_tuner.set_volume(_effective_volume())
 	NetworkManager.report_event(NetObjectSync.EV_TV_POWER, {"tv": self})
