@@ -88,12 +88,18 @@ func _populate() -> void:
 	var free := 15
 	var path := SramPaths.find_card(_card.card_id)
 	if not path.is_empty():
-		var f := FileAccess.open(path, FileAccess.READ)
-		if f != null:
-			var data := f.get_buffer(f.get_length())
-			f.close()
-			saves = PS1Card.list_saves(data)
-			free = PS1Card.free_blocks(data)
+		var data := FileAccess.get_file_as_bytes(path)
+		saves = PS1Card.list_saves(data)
+		free = PS1Card.free_blocks(data)
+	# A card with no image yet cannot be opted in — there is nothing to back up,
+	# and the path it would be keyed by does not exist.
+	#
+	# "Missing" and "empty" are different things and must not read the same. A
+	# new card has no image yet and will get one; a card that HAD one and lost it
+	# has saves somewhere that this object can no longer find.
+	ui.missing = path.is_empty() and not _card.minted
+	# The card's own panel reads; backing individual saves up is done from the
+	# spawn menu, where the rest of card management lives.
 	ui.populate(_card.card_label, saves, free)
 
 

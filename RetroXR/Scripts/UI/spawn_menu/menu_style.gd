@@ -82,6 +82,28 @@ static func hint(text: String) -> Label:
 	return l
 
 
+## A menu row's button: a fixed height, a font size, and nothing else assumed.
+##
+## `width` 0 means "take the row" (the usual list row); a positive width is a
+## fixed-size button sitting beside one. `align_left` is what separates a row you
+## read from a control you press.
+##
+## Deliberately does not touch action_mode, focus_mode or `disabled` — same
+## reasoning as the rest of this file: the menu runs in a Viewport2Din3D where
+## those have consequences the caller owns.
+static func row_button(text: String, font_size := 26, width := 0,
+					   height := 80, align_left := true) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(width, height)
+	b.add_theme_font_size_override("font_size", font_size)
+	if width <= 0:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if align_left:
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	return b
+
+
 static func spacer(height: int) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(0, height)

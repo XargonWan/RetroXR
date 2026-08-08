@@ -27,6 +27,44 @@ static func from_schema(d: Dictionary) -> Dictionary:
 	}
 
 
+## Every save the server holds for this user on one platform.
+##
+## `platform_id` is RomM's NUMERIC id (PlayStation is 178 here) — passing a slug
+## is a 422, which is what made this look unfilterable at first. It genuinely
+## filters: asking for NES returns none of the PlayStation saves.
+##
+## Narrowing on the server matters. Picking memory-card saves out by their .mcs
+## extension alone would happily offer a save uploaded against some other
+## console, and the restore path writes into a card.
+##
+## platform_id <= 0 asks for everything, which is only useful for diagnostics.
+## Returns {ok: bool, saves: Array[Dictionary], error: String}.
+static func list_all(http: RommHttp, headers: PackedStringArray,
+					 platform_id: int = 0) -> Dictionary:
+	var path := "/api/saves"
+	if platform_id > 0:
+		path += "?platform_id=%d" % platform_id
+	var out: Dictionary = http.get_json(path, headers)
+	if int(out["result"]) != RommHttp.Result.OK:
+		return {"ok": false, "saves": [], "error": _describe(out)}
+	var saves: Array[Dictionary] = []
+	if out["data"] is Array:
+		for item: Variant in out["data"]:
+			if item is Dictionary:
+				var s := from_schema(item as Dictionary)
+				if not s["missing"]:
+					saves.append(s)
+	return {"ok": true, "saves": saves, "error": ""}
+
+
+## A ROM's display name, or "" — used to say which game a save belongs to.
+static func rom_name(http: RommHttp, headers: PackedStringArray, rom_id: int) -> String:
+	var out: Dictionary = http.get_json("/api/roms/%d" % rom_id, headers)
+	if int(out["result"]) != RommHttp.Result.OK or not (out["data"] is Dictionary):
+		return ""
+	return str((out["data"] as Dictionary).get("name", ""))
+
+
 ## Every save the server holds for one ROM, newest first.
 ## Returns {ok: bool, saves: Array[Dictionary], error: String}.
 static func list(http: RommHttp, headers: PackedStringArray, rom_id: int) -> Dictionary:

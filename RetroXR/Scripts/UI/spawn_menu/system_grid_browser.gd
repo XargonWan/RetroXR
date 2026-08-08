@@ -91,6 +91,9 @@ var _home_empty:   Label           = null
 var _detail_scroll: ScrollContainer = null
 var _detail_vbox:  VBoxContainer   = null
 var _detail_title: Label           = null
+## The nested page's back step, and the system title to restore when it ends.
+var _subpage_back: Callable = Callable()
+var _detail_home_title := ""
 var _detail_toolbar: HBoxContainer = null
 
 
@@ -139,6 +142,8 @@ func open_system(systemid: String) -> void:
 			name = s.get("name", systemid)
 			break
 	_detail_title.text = name
+	_subpage_back = Callable()
+	_detail_home_title = name
 	_sync_hide_button()
 	if _detail_populator.is_valid():
 		_detail_populator.call(systemid, _detail_vbox)
@@ -147,6 +152,39 @@ func open_system(systemid: String) -> void:
 	_detail_scroll.scroll_vertical = 0
 	system_opened.emit(systemid)
 	active_scroll_changed.emit(_detail_scroll)
+
+
+## A page opened INSIDE a system's detail page — the memory-card shelf, say.
+##
+## The detail page already has a Back button and a title, so a nested page that
+## draws its own leaves two stacked Back buttons and two titles. Instead it hands
+## its title and its own back action here, and the ONE header does the work:
+## Back walks the trail one step, and only returns to the grid once the trail is
+## empty. Each step re-declares the step behind it, so this holds a single level
+## rather than a stack.
+func push_subpage(title: String, on_back: Callable) -> void:
+	_ensure_built()
+	if _subpage_back.is_valid() == false:
+		_detail_home_title = _detail_title.text
+	_subpage_back = on_back
+	_detail_title.text = title
+
+
+## Drop back to the system's own page, restoring its title.
+func clear_subpage() -> void:
+	_ensure_built()
+	_subpage_back = Callable()
+	if not _detail_home_title.is_empty():
+		_detail_title.text = _detail_home_title
+
+
+func _on_detail_back() -> void:
+	if _subpage_back.is_valid():
+		var step := _subpage_back
+		_subpage_back = Callable()
+		step.call()
+		return
+	show_home()
 
 
 ## Return to the home grid.
@@ -350,7 +388,7 @@ func _ensure_built() -> void:
 	back.text = "◀  Back"
 	back.custom_minimum_size = Vector2(150, 52)
 	back.add_theme_font_size_override("font_size", 20)
-	back.pressed.connect(show_home)
+	back.pressed.connect(_on_detail_back)
 	header.add_child(back)
 
 	_detail_title = Label.new()

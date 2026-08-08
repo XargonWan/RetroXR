@@ -38,7 +38,18 @@ func _ready() -> void:
 	if card_id.is_empty():
 		card_id = SramPaths.unique_card_id(card_label)
 		card_label = card_id
+		minted = true
 	_update_label()
+
+
+## True only for a card this session invented — the id was not handed in.
+##
+## Which is the difference between a brand-new card, whose image is written the
+## first time it is used, and one restored from a saved room or spawned from the
+## shelf, whose image is supposed to exist already. Only the first may create an
+## image: making one for the second would answer a card whose saves have gone
+## missing with a silent blank, which reads exactly like the saves were wiped.
+var minted := false
 
 
 func _update_label() -> void:

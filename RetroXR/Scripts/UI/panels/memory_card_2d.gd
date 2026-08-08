@@ -13,6 +13,15 @@ class_name MemoryCard2D
 extends Control
 
 signal name_committed(text: String)
+## Move this save to a different card.
+signal save_move_requested(save: Dictionary)
+## Delete this save. The list only reports the press — arming and confirming
+## belong to the owner, which is what knows whether the card is safe to change.
+signal save_delete_requested(save: Dictionary)
+## Back one save up to RomM, or stop. Off by default — sending a save to a
+## server is the player's call, and it is made per save because a card is shared
+## between games.
+signal save_sync_toggled(save: Dictionary, on: bool)
 signal close_requested
 
 const COLOR_BG := Color(0.08, 0.08, 0.16, 0.96)
@@ -29,6 +38,22 @@ const ICON_PX := 48
 ## button, and the card being read may not even be in the room to rename.
 var show_name_field := true
 
+## This card had an image and it is gone, as opposed to never having had one.
+var missing := false
+
+## Offer move/delete on each save row. Off for the card's own 3D panel, which is
+## a reader; the spawn menu turns it on because that is where cards are managed.
+var show_save_actions := false
+## Slot whose delete is armed and awaiting a second press, or "".
+var armed_slot := ""
+## Save names already opted in to RomM backup, as a set, and whether a server
+## exists at all — set like the other view state, before populate().
+var synced_slots: Dictionary = {}
+var sync_available := false
+## Why the actions are unavailable, shown in place of the buttons. Empty when
+## they work — a card being played is the case that matters.
+var actions_blocked := ""
+
 var _list: VBoxContainer = null
 var _name_edit: LineEdit = null
 var _usage: Label = null
@@ -36,6 +61,7 @@ var _usage: Label = null
 # Each entry: {rect: TextureRect, frames: Array[ImageTexture]}
 var _animated: Array[Dictionary] = []
 var _clock := 0.0
+var _frame := -1
 
 
 func _ready() -> void:
@@ -48,6 +74,11 @@ func _process(delta: float) -> void:
 		return
 	_clock += delta
 	var f := int(_clock * ICON_FPS)
+	# 6 Hz of animation does not need 120 Hz of texture assignment; each one
+	# dirties the panel and forces its viewport to redraw.
+	if f == _frame:
+		return
+	_frame = f
 	for a in _animated:
 		var frames: Array = a["frames"]
 		var rect: TextureRect = a["rect"]
@@ -133,10 +164,25 @@ func populate(card_name: String, saves: Array, free: int) -> void:
 	_usage.text = "%d of 15 blocks used   ·   %d save%s" \
 		% [used, saves.size(), "" if saves.size() == 1 else "s"]
 
+	if show_save_actions and not actions_blocked.is_empty():
+		var why := Label.new()
+		why.text = actions_blocked
+		why.add_theme_font_size_override("font_size", 15)
+		why.add_theme_color_override("font_color", Color(0.85, 0.62, 0.4))
+		_list.add_child(why)
+
 	if saves.is_empty():
 		var empty := Label.new()
-		empty.text = "This card is formatted and empty."
-		empty.add_theme_color_override("font_color", COLOR_DIM)
+		# A card whose image is gone is NOT an empty card. Saying "empty" would
+		# invite formatting or overwriting it, when the saves are probably still
+		# on disk under whatever the card was renamed to.
+		if missing:
+			empty.text = "This card's saves are missing.\n\nIts image is not on disk — it may have been\n" \
+				+ "renamed, or moved out of the memory card folder.\nNothing has been created in its place."
+			empty.add_theme_color_override("font_color", Color(0.85, 0.62, 0.4))
+		else:
+			empty.text = "This card is formatted and empty."
+			empty.add_theme_color_override("font_color", COLOR_DIM)
 		_list.add_child(empty)
 		return
 
@@ -196,4 +242,42 @@ func _make_row(s: Dictionary) -> Control:
 	sub.add_theme_color_override("font_color", COLOR_DIM)
 	col.add_child(sub)
 
+	# actions_blocked is a fact about the card, said once above the list rather
+	# than repeated on every row.
+	if show_save_actions and actions_blocked.is_empty():
+		h.add_child(_action(MenuIcons.MOVE, "Move to another card",
+			Color(0.72, 0.76, 0.92),
+			func() -> void: save_move_requested.emit(s)))
+		if sync_available:
+			var on: bool = synced_slots.has(str(s.get("name", "")))
+			h.add_child(_action(
+				MenuIcons.SYNC_ON if on else MenuIcons.SYNC_OFF,
+				# Opted in is not the same as uploaded — a save whose game is
+				# not in the library stays on and waiting. Claiming "backed
+				# up" here would be a promise the button cannot keep.
+				"Backing this save up to RomM" if on
+					else "Back this save up to RomM",
+				Color(0.55, 0.78, 0.95) if on else Color(0.5, 0.5, 0.62),
+				func() -> void: save_sync_toggled.emit(s, not on)))
+		# Armed shows the warning glyph and says so, matching how a ROM row
+		# asks twice before deleting.
+		var armed: bool = armed_slot == str(s.get("name", ""))
+		h.add_child(_action(
+			MenuIcons.ERROR if armed else MenuIcons.DELETE_FOREVER,
+			"Press again to delete permanently" if armed else "Delete this save",
+			Color(0.95, 0.55, 0.35) if armed else Color(0.85, 0.5, 0.5),
+			func() -> void: save_delete_requested.emit(s)))
+
 	return row
+
+
+func _action(glyph: int, tip: String, tint: Color, on_press: Callable) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(56, 56)
+	b.text = String.chr(glyph)
+	b.add_theme_font_override("font", MenuIcons.symbols())
+	b.add_theme_font_size_override("font_size", 26)
+	b.add_theme_color_override("font_color", tint)
+	b.tooltip_text = tip
+	b.pressed.connect(on_press)
+	return b

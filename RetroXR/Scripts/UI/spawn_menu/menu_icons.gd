@@ -35,6 +35,9 @@ const SETTINGS  := 0xF013    # fa-cog             — edit this core's options
 const SCAN_QR   := 0xF0433   # md-qrcode_scan     — pair by looking at RomM's code
 const CARD_SAVES := 0xF0279  # md-format_list_bulleted — list what a card holds
 const RENAME    := 0xF03EB   # md-pencil          — rename in place
+const MOVE      := 0xF04E1   # md-swap_horizontal — move a save to another card
+const SYNC_ON   := 0xF063F   # md-cloud_sync      — kept in step with RomM
+const SYNC_OFF  := 0xF0164   # md-cloud_off_outline — local only
 const UPDATE    := 0xF01B    # fa-circle_up       — installed, but newer on the buildbot
 
 const TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)

@@ -51,6 +51,10 @@ var _last_upload: Dictionary = {}
 ## rom_path -> RomM rom_id (0 = not on the server). Resolved once per path;
 ## the flush path must not re-read gamelist.json every save.
 var _rom_ids: Dictionary = {}
+## "<systemid>/<serial>" -> rom_id, 0 meaning "looked and it is not here". Holds
+## the misses too, so a game that is not in the library costs one sweep, not one
+## per press.
+var _serial_ids: Dictionary = {}
 
 
 ## Autoloaded as `SaveSync`: both the console (which sees sram_flushed) and the
@@ -135,6 +139,120 @@ func record_for(sram_path: String) -> Dictionary:
 	return _record(sram_path)
 
 
+## The state key for one save INSIDE a memory card.
+##
+## A card is one file holding many games' saves, and each backs up as its own
+## server slot, so the opt-in has to name the save rather than the card it
+## happens to be sitting on.
+static func card_save_key(card_path: String, slot: String) -> String:
+	return "%s#%s" % [key_for(card_path), slot]
+
+
+func is_key_enabled(key: String) -> bool:
+	return bool((_state.get(key, {}) as Dictionary).get("enabled", false))
+
+
+## Remember which game wrote a card save, whether or not it is opted in.
+##
+## A save names its game only by product code, and nothing maps that to a RomM
+## id — the serial is not in gamelist.json and RomM does not index it either
+## (searching one returns nothing). The only moment the owner is known for
+## certain is while that game is running, so it is recorded then. Without this,
+## opting a save in later could not upload it until the game happened to run
+## again, which is a strange thing to ask of a button that says "back this up".
+func note_card_save_owner(key: String, rom_id: int) -> void:
+	if key.is_empty() or rom_id <= 0:
+		return
+	var rec: Dictionary = _state.get(key, {})
+	if int(rec.get("rom_id", 0)) == rom_id:
+		return
+	rec["rom_id"] = rom_id
+	_state[key] = rec
+	save_state()
+
+
+## The game a card save belongs to, as last observed, or 0 if never seen.
+func card_save_owner(key: String) -> int:
+	return int((_state.get(key, {}) as Dictionary).get("rom_id", 0))
+
+
+## The RomM id of the game whose product code is `serial`, or 0.
+##
+## Found by asking the discs themselves — each one carries its serial in its boot
+## line — which is the only mapping available: gamelist.json records no serial,
+## and RomM does not index one either. So a save can be attributed to its game
+## even on a device that has never watched that game write it, which is what a
+## save restored from the server, or a card copied in from elsewhere, looks like.
+##
+## Stops at the first match, reads each disc once, and remembers a miss.
+##
+## Cost is a ~2 MB read per disc — sub-millisecond warm, a few ms cold. A HIT
+## usually stops after a handful; a MISS is the expensive case because it has
+## looked at everything, so it is remembered: pressing the button again on a game
+## that is not in the library must not sweep the whole shelf a second time.
+func rom_id_for_serial(systemid: String, serial: String) -> int:
+	if systemid.is_empty() or serial.is_empty():
+		return 0
+	var memo := "%s/%s" % [systemid, serial]
+	if _serial_ids.has(memo):
+		return int(_serial_ids[memo])
+	var dir := RomLibrary.default_roms_root().path_join(systemid)
+	if not DirAccess.dir_exists_absolute(dir):
+		return 0
+
+	# A .cue and the .bin it names are the same disc. Scanning both reads every
+	# image twice, so the raw files a cue already speaks for are skipped.
+	var files := DirAccess.get_files_at(dir)
+	var order: Array[String] = []
+	var covered: Dictionary = {}
+	for fname: String in files:
+		if fname.get_extension().to_lower() == "cue":
+			order.append(fname)
+			covered[PS1Disc.data_track(dir.path_join(fname)).get_file()] = true
+	for fname: String in files:
+		var ext := fname.get_extension().to_lower()
+		if ext in ["bin", "img", "iso"] and not covered.has(fname):
+			order.append(fname)
+
+	var found := 0
+	for fname: String in order:
+		var path := dir.path_join(fname)
+		if PS1Disc.serial_of(path) != serial:
+			continue
+		found = rom_id_for(systemid, path)
+		if found > 0:
+			break
+	_serial_ids[memo] = found
+	return found
+
+
+func set_key_enabled(key: String, on: bool) -> void:
+	if key.is_empty():
+		return
+	var rec: Dictionary = _state.get(key, {})
+	rec["enabled"] = on
+	_state[key] = rec
+	save_state()
+
+
+## How many saves from one memory card the server is known to hold.
+##
+## Read from what the last sync recorded, not by asking RomM — this is for a menu
+## row, and a list that stalls on the network to say where something lives is
+## worse than one that answers from what it already knows. A card's saves are
+## keyed "<card>#<slot>", so they share a prefix.
+func card_backup_count(card_path: String) -> int:
+	if card_path.is_empty():
+		return 0
+	var prefix := key_for(card_path) + "#"
+	var n := 0
+	for k: String in _state:
+		if k.begins_with(prefix) \
+				and int((_state[k] as Dictionary).get("server_save_id", 0)) > 0:
+			n += 1
+	return n
+
+
 ## The save currently being reconciled, or "" — lets a row show "syncing".
 func current_key() -> String:
 	return _current_key
@@ -157,6 +275,100 @@ func list_server_saves(rom_id: int, callback: Callable) -> void:
 	_list_thread = Thread.new()
 	_list_thread.start(_list_worker.bind(rom_id, callback,
 		config.base_url, config.auth_headers()))
+
+
+## RomM's numeric platform id for one of our systemids, or 0. Read from the
+## platform list the config already caches, so this costs no request.
+func platform_id_for(systemid: String) -> int:
+	if config == null:
+		return 0
+	var p: Variant = config.cached_platforms.get(systemid)
+	return int((p as Dictionary).get("id", 0)) if p is Dictionary else 0
+
+
+## Every memory-card save the server holds FOR ONE PLATFORM, with the game each
+## belongs to, delivered to `callback(ok, saves)` on the main thread. Entries add
+## "rom_name" to the usual save fields.
+##
+## Narrowed on the server by platform, not just by the .mcs extension: an
+## extension is a naming convention, and a save uploaded against another console
+## could carry it. The restore path writes into a card, so what it offers has to
+## be the platform's own saves.
+func list_card_saves(systemid: String, callback: Callable) -> void:
+	if config == null or not config.is_configured():
+		callback.call(false, [])
+		return
+	var platform_id := platform_id_for(systemid)
+	if platform_id <= 0:
+		# Without a platform to narrow by, offering everything would be worse
+		# than offering nothing.
+		callback.call(false, [])
+		return
+	if _list_thread != null and _list_thread.is_started():
+		if _list_busy:
+			return
+		_list_thread.wait_to_finish()
+	_list_busy = true
+	_list_thread = Thread.new()
+	_list_thread.start(_card_list_worker.bind(platform_id, callback,
+		config.base_url, config.auth_headers()))
+
+
+func _card_list_worker(platform_id: int, callback: Callable, base_url: String,
+					   headers: PackedStringArray) -> void:
+	var http := RommHttp.new()
+	if http.open(base_url) != RommHttp.Result.OK:
+		_list_done.call_deferred(callback, false, [])
+		return
+	var out := RommSaves.list_all(http, headers, platform_id)
+	var rows: Array[Dictionary] = []
+	if bool(out["ok"]):
+		# One name lookup per distinct ROM, not per save: a card's worth of
+		# saves for one game would otherwise be a dozen round trips.
+		var names: Dictionary = {}
+		for s: Dictionary in out["saves"]:
+			if str(s["file_name"]).get_extension().to_lower() != "mcs":
+				continue
+			var rid := int(s["rom_id"])
+			if not names.has(rid):
+				names[rid] = RommSaves.rom_name(http, headers, rid)
+			var row := s.duplicate()
+			row["rom_name"] = str(names[rid])
+			rows.append(row)
+	http.close()
+	_list_done.call_deferred(callback, bool(out["ok"]), rows)
+
+
+## Fetch one save's bytes -> `callback(ok, bytes)` on the main thread.
+func fetch_card_save(save_id: int, callback: Callable) -> void:
+	if config == null or not config.is_configured() or save_id <= 0:
+		callback.call(false, PackedByteArray())
+		return
+	if _list_thread != null and _list_thread.is_started():
+		if _list_busy:
+			return
+		_list_thread.wait_to_finish()
+	_list_busy = true
+	_list_thread = Thread.new()
+	_list_thread.start(_fetch_worker.bind(save_id, callback,
+		config.base_url, config.auth_headers()))
+
+
+func _fetch_worker(save_id: int, callback: Callable, base_url: String,
+				   headers: PackedStringArray) -> void:
+	var http := RommHttp.new()
+	if http.open(base_url) != RommHttp.Result.OK:
+		_fetch_done.call_deferred(callback, false, PackedByteArray())
+		return
+	var got := RommSaves.download(http, headers, save_id)
+	http.close()
+	_fetch_done.call_deferred(callback, bool(got["ok"]), got["bytes"])
+
+
+func _fetch_done(callback: Callable, ok: bool, bytes: PackedByteArray) -> void:
+	_list_busy = false
+	if callback.is_valid():
+		callback.call(ok, bytes)
 
 
 func _list_worker(rom_id: int, callback: Callable, base_url: String,
@@ -255,7 +467,35 @@ func _pump() -> void:
 	_thread.start(_worker.bind(job))
 
 
+## Back up ONE save lifted out of a memory card, as its own server slot.
+##
+## A card is a single image many games write into, so it cannot sync as a file
+## the way a cartridge save does — one record per file holds one rom_id, and the
+## games would fight over it. Its individual saves can, because each belongs to
+## exactly one game, and RetroXR knows which game wrote it: the caller attributes
+## it at flush time rather than parsing the save's serial and looking it up.
+##
+## `bytes` is the save's .mcs. Deliberately upload-only — see _worker_push_only.
+func push_card_save(key: String, rom_id: int, core_name: String, slot: String,
+					label: String, bytes: PackedByteArray) -> void:
+	if config == null or not config.is_configured() or rom_id <= 0 or bytes.is_empty():
+		return
+	for j: Dictionary in _queue:
+		if str(j["key"]) == key:
+			return
+	_queue.append({
+		"key": key, "path": "", "bytes": bytes, "ext": "mcs",
+		"rom_id": rom_id, "core": core_name, "slot": slot, "label": label,
+		"base_url": config.base_url, "headers": config.auth_headers(),
+		"record": (_state.get(key, {}) as Dictionary).duplicate(),
+	})
+	_pump()
+
+
 func _worker(job: Dictionary) -> void:
+	if job.has("bytes"):
+		_worker_push_only(job)
+		return
 	var path := str(job["path"])
 	var headers := PackedStringArray(job["headers"])
 	var rec: Dictionary = job["record"]
@@ -296,7 +536,7 @@ func _worker(job: Dictionary) -> void:
 				{"last_hash": local_hash, "server_save_id": int(mine.get("id", 0))})
 
 		Action.PUSH:
-			var res := _push(http, headers, job, path, mine)
+			var res := _push(http, headers, job, FileAccess.get_file_as_bytes(path), mine)
 			http.close()
 			_done.call_deferred(job, "push", bool(res["ok"]), str(res["error"]),
 				res.get("record", {}))
@@ -311,7 +551,7 @@ func _worker(job: Dictionary) -> void:
 				_done.call_deferred(job, "pull", false, "Cannot write the save file", {})
 				return
 			_done.call_deferred(job, "pull", true, "",
-				{"last_hash": _md5_of(got["bytes"]), "server_save_id": int(mine["id"])})
+				{"last_hash": md5_of(got["bytes"]), "server_save_id": int(mine["id"])})
 
 		Action.CONFLICT:
 			var theirs := RommSaves.download(http, headers, int(mine["id"]))
@@ -327,20 +567,63 @@ func _worker(job: Dictionary) -> void:
 				http.close()
 				_done.call_deferred(job, "conflict", false, "Cannot write the forked save", {})
 				return
-			var pushed := _push(http, headers, job, path, mine)
+			var pushed := _push(http, headers, job, FileAccess.get_file_as_bytes(path), mine)
 			http.close()
 			_forked.call_deferred(job, fork_id)
 			_done.call_deferred(job, "conflict", bool(pushed["ok"]), str(pushed["error"]),
 				pushed.get("record", {}))
 
 
+## Reconcile a memory-card save one way only: up.
+##
+## It still asks the server what it holds, so an unchanged save is not uploaded
+## again — but it never downloads. Restoring a save INTO a card means splicing it
+## back into the block chain, and a wrong link or checksum there corrupts every
+## other save on that card. Until that is built and proven, the server is a
+## backup and never a source.
+func _worker_push_only(job: Dictionary) -> void:
+	var bytes: PackedByteArray = job["bytes"]
+	var headers := PackedStringArray(job["headers"])
+	var rec: Dictionary = job["record"]
+	var local_hash := md5_of(bytes)
+
+	var http := RommHttp.new()
+	if http.open(str(job["base_url"])) != RommHttp.Result.OK:
+		_done.call_deferred(job, "none", false, "Cannot reach RomM", {})
+		return
+	var listed := RommSaves.list(http, headers, int(job["rom_id"]))
+	if not bool(listed["ok"]):
+		http.close()
+		_done.call_deferred(job, "none", false, str(listed["error"]), {})
+		return
+
+	var mine: Dictionary = {}
+	for s: Dictionary in listed["saves"]:
+		if str(s["slot"]) == str(job["slot"]):
+			mine = s
+			break
+
+	# Skip only when the server demonstrably holds these exact bytes. Trusting
+	# our own last_hash alone would let a save deleted server-side stay missing.
+	if local_hash == str(rec.get("last_hash", "")) \
+			and local_hash == str(mine.get("content_hash", "")):
+		http.close()
+		_done.call_deferred(job, "nothing", true, "",
+			{"last_hash": local_hash, "server_save_id": int(mine.get("id", 0))})
+		return
+
+	var res := _push(http, headers, job, bytes, mine)
+	http.close()
+	_done.call_deferred(job, "push", bool(res["ok"]), str(res["error"]),
+		res.get("record", {}))
+
+
 func _push(http: RommHttp, headers: PackedStringArray, job: Dictionary,
-		   path: String, mine: Dictionary) -> Dictionary:
-	var bytes := FileAccess.get_file_as_bytes(path)
+		   bytes: PackedByteArray, mine: Dictionary) -> Dictionary:
 	if bytes.is_empty():
 		return {"ok": false, "error": "Nothing to upload"}
 
-	var filename := "%s.srm" % str(job["slot"])
+	var filename := "%s.%s" % [str(job["slot"]), str(job.get("ext", "srm"))]
 	var out: Dictionary
 	if int(mine.get("id", 0)) > 0:
 		out = RommSaves.update(http, headers, int(mine["id"]), filename, bytes)
@@ -355,10 +638,10 @@ func _push(http: RommHttp, headers: PackedStringArray, job: Dictionary,
 	# Record OUR hash, not the server's echo: only a 2xx means the bytes landed,
 	# and the echoed record may not carry content_hash on every RomM build.
 	return {"ok": true, "error": "",
-		"record": {"last_hash": _md5_of(bytes), "server_save_id": sid}}
+		"record": {"last_hash": md5_of(bytes), "server_save_id": sid}}
 
 
-static func _md5_of(bytes: PackedByteArray) -> String:
+static func md5_of(bytes: PackedByteArray) -> String:
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_MD5)
 	ctx.update(bytes)

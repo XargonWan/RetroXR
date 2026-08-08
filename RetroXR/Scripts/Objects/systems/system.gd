@@ -2738,6 +2738,11 @@ func _build_disc_slit() -> void:
 ## The MemoryCard currently seated, or null.
 var _snapped_memcard: Node3D = null
 
+## PS1 save filename -> md5 of its .mcs, as of the last time this console looked
+## at the seated card. Snapshotted at mount so the first flush can tell what this
+## game wrote from what was already on the card.
+var _card_save_hashes: Dictionary = {}
+
 # Netplay SRAM override (set by NetplaySession before net_start_core):
 # path "" on clients (no local persistence of someone else's game) and the
 # host's real bytes injected on every peer so all cores boot identically.
@@ -2801,15 +2806,21 @@ func restore_memory_card(card: Node3D) -> void:
 ## dirty check lives in C++), so this is "the game saved", not a timer tick.
 ## `final` is the last flush for this file — shutdown, or a card/cart swap.
 func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
-	if path.is_empty() or not SaveSync.is_enabled(path):
+	if path.is_empty():
 		return
-	# Memory cards never sync. SaveSync keys one record per FILE, holding a
-	# single last_hash and rom_id, and a card is one file that many games write
-	# into — so a flush under game B's rom_id, then a flush under game A's,
-	# resolves to PULL and overwrites the live card with A's stale image,
-	# destroying B's progress. Syncing a card means syncing the individual saves
-	# INSIDE it, which needs a parser this doesn't have yet.
+	# A card never syncs as a FILE: SaveSync keys one record per file holding one
+	# rom_id, and a card is one image many games write into, so they would fight
+	# over it and a pull would overwrite the live card with another game's stale
+	# copy. The saves INSIDE it sync individually.
+	#
+	# Taken BEFORE the per-file opt-in, which asks a question about cards that
+	# nothing answers: each save carries its own, and no code sets a record
+	# against a card's path. Gating on it left a card only ever backed up by
+	# hand from the menu.
 	if _uses_memory_cards():
+		_sync_card_saves(path)
+		return
+	if not SaveSync.is_enabled(path):
 		return
 	var sid := _resolve_systemid()
 	var rom_id := SaveSync.rom_id_for(sid, rom_path)
@@ -2817,6 +2828,71 @@ func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
 		return
 	SaveSync.on_sram_flushed(path, rom_id, _resolve_core(), _sram_slot(),
 		_content_label(), final)
+
+
+## Back up whichever saves on the seated card changed, each under the game that
+## wrote it.
+##
+## Attribution is the whole trick. A PS1 save names its game only by product code
+## (BASCUS-94163…), and nothing local maps that to a RomM id — gamelist.json has
+## no serial field. It does not need to: only the running game can have written
+## the block that just changed, so the diff against the snapshot taken when the
+## card was mounted says which saves are ours to claim.
+##
+## Without that snapshot the first flush would look like every save on the card
+## was new and hand another game's saves to this one.
+func _sync_card_saves(path: String) -> void:
+	if path.is_empty() or not SaveSync.is_available():
+		return
+	var rom_id := SaveSync.rom_id_for(_resolve_systemid(), rom_path)
+	if rom_id <= 0:
+		return
+	var core := _resolve_core()
+	var data := FileAccess.get_file_as_bytes(path)
+	for s: Dictionary in _changed_card_saves(data):
+		var slot := str(s["slot"])
+		# Opt-in per SAVE, not per card: a card is shared between games, and
+		# sending one game's progress to a server should not decide it for every
+		# other game that later writes to the same card.
+		var key := SaveSync.card_save_key(path, slot)
+		# Record the owner either way. This is the only moment it is knowable,
+		# and it is what lets the menu upload a save the moment it is opted in
+		# rather than waiting for this game to be played again.
+		SaveSync.note_card_save_owner(key, rom_id)
+		if not SaveSync.is_key_enabled(key):
+			continue
+		var title := str(s["title"])
+		SaveSync.push_card_save(key, rom_id, core, slot,
+			title if not title.is_empty() else slot, s["bytes"])
+
+
+## Which saves on this card differ from the snapshot, as
+## {slot, title, bytes}, updating the snapshot as it goes.
+##
+## Split out from the upload so the attribution rule can be tested without a
+## server: everything this returns is claimed by whatever game is running.
+func _changed_card_saves(data: PackedByteArray) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for s: Dictionary in PS1Card.list_saves(data, false):
+		var slot := str(s["name"])
+		var bytes := PS1Card.extract_save(data, int(s["block"]))
+		if bytes.is_empty():
+			continue
+		var digest := SaveSync.md5_of(bytes)
+		if str(_card_save_hashes.get(slot, "")) == digest:
+			continue
+		_card_save_hashes[slot] = digest
+		out.append({"slot": slot, "title": str(s["title"]), "bytes": bytes})
+	return out
+
+
+## Remember what was already on a card the moment it is mounted, so the first
+## flush can tell this game's writes from saves that were there before it.
+func _snapshot_card_saves(path: String) -> void:
+	_card_save_hashes.clear()
+	# Everything it finds counts as "already there", so the snapshot and the diff
+	# cannot disagree about how a save is hashed.
+	_changed_card_saves(FileAccess.get_file_as_bytes(path))
 
 
 ## Ask to track achievements for the game about to start. Silent on refusal —
@@ -2927,8 +3003,22 @@ func _sram_path_for_run(resolved_core: String) -> String:
 	_libretro.SetRemovableStorage(cards)
 	var path := _compose_sram_path(resolved_core)
 	if cards and not path.is_empty() and _snapped_memcard:
-		return SramPaths.ensure_card(systemid,
-			str(_snapped_memcard.get("card_id")))
+		var card_id := str(_snapped_memcard.get("card_id"))
+		# Only a card this session invented may have its image created. One that
+		# came from a saved room or the shelf is supposed to have an image
+		# already; if it has gone — renamed away, or deleted outside the app —
+		# writing a blank would look exactly like the saves were wiped, and the
+		# next flush would make that permanent. Run with nothing backing it
+		# instead, which the core reports as unformatted media, and leave the
+		# player somewhere to recover from.
+		var existing := SramPaths.find_card(card_id)
+		if existing.is_empty() and not bool(_snapped_memcard.get("minted")):
+			push_warning("[RetroSystem] memory card '%s' has no image on disk — "
+				% card_id + "running without it rather than creating a blank")
+			_card_save_hashes.clear()
+			return ""
+		path = SramPaths.ensure_card(systemid, card_id)
+		_snapshot_card_saves(path)
 	return path
 
 

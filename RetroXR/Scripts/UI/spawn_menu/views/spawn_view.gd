@@ -487,11 +487,19 @@ func _on_system_memcard_pressed(systemid: String, vbox: VBoxContainer) -> void:
 		_restore_system_detail.call_deferred(systemid, vbox))
 	b.closed.connect(func() -> void:
 		_restore_system_detail.call_deferred(systemid, vbox))
+	b.notice.connect(show_notice)
+	# One Back button for the whole trail: the shelf's pages announce themselves
+	# to the console page's header rather than stacking a second one under it.
+	b.page_changed.connect(func(title: String, on_back: Callable) -> void:
+		if _systems_browser != null:
+			_systems_browser.push_subpage(title, on_back))
 	vbox.add_child(b)
 	b.open()
 
 
 func _restore_system_detail(systemid: String, vbox: VBoxContainer) -> void:
+	if _systems_browser != null:
+		_systems_browser.clear_subpage()
 	_clear_children(vbox)
 	_populate_systems_detail(systemid, vbox)
 
