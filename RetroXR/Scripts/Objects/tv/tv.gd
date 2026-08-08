@@ -335,25 +335,47 @@ func _load_shell() -> void:
 		_seat_node(_speaker_l, spk_l)
 		_seat_node(_speaker_r, spk_r)
 
-	# Bezel buttons march along the row marker's local +X from the first cap.
+	# Bezel buttons march along the row marker's local +X from the first cap, and
+	# wrap onto a second row below it. Same order the stock cabinet authors, so a
+	# shelled set and the plain box read alike.
 	var row: Variant = _shell.button_row_seat()
-	var buttons: Array[Node3D] = [
-		_vol_down_btn, _vol_up_btn, _ch_down_btn, _ch_up_btn,
-		_tv_toggle_btn, _source_btn, _crt_btn, _stereo_btn, _aspect_btn,
-	]
+	var buttons: Array[Node3D] = _bezel_buttons()
 	if not _shell.show_button_row:
 		for btn in buttons:
 			(btn as VRButton).set_active(false)
 	elif row is Transform3D:
 		var base: Transform3D = row
+		var per_row: int = maxi(1, _shell.buttons_per_row)
 		for i in buttons.size():
 			var b: Node3D = buttons[i]
 			# Keep each cap's authored basis (they are rotated to face outward);
 			# only the origin walks the row.
-			b.transform = Transform3D(b.transform.basis,
-				base * Vector3(float(i) * _shell.button_pitch, 0.0, 0.0))
+			b.transform = Transform3D(b.transform.basis, base * Vector3(
+				float(i % per_row) * _shell.button_pitch,
+				float(i / per_row) * -_shell.button_row_drop,
+				0.0))
 
 	_resize_body_collision(_shell.body_size)
+
+
+## The bezel caps in the order they are laid out, reading left to right and then
+## down. The everyday controls of the set fill the first row; the picture and
+## sound MODES — the ones you set once and leave — go on the second.
+##
+## 3D comes LAST on purpose. It is the one cap that comes and goes (only a
+## stereo source has anything for it to switch), and a hidden button still owns
+## its slot — anywhere else in the order it leaves a hole in the middle of the
+## row that reads as a missing control. At the end it simply is not there.
+##
+## Mute and the speaker switch used to sit outside this list, so a shell moved
+## nine caps onto its marker and left those two wherever the stock cabinet had
+## put them. One list now, and both paths read it.
+func _bezel_buttons() -> Array[Node3D]:
+	return [
+		_tv_toggle_btn, _source_btn, _ch_down_btn, _ch_up_btn,
+		_vol_down_btn, _vol_up_btn, _mute_btn,
+		_audio_mode_btn, _crt_btn, _aspect_btn, _stereo_btn,
+	]
 
 
 func _seat_node(node: Node3D, seat: Variant) -> void:

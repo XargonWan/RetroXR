@@ -36,6 +36,15 @@ extends Node3D
 ## Spacing between bezel buttons along the ButtonRow marker's local +X.
 @export var button_pitch: float = 0.07
 
+## Caps per row before wrapping to the next one, and how far down the marker's
+## local -Y that next row sits.
+##
+## The row used to run until it ran out, which was fine at six caps and stopped
+## being fine at eleven — the last of them walked off the end of the cabinet.
+## Wrapping keeps every control on the bezel whatever a shell's width.
+@export var buttons_per_row: int = 7
+@export var button_row_drop: float = 0.055
+
 ## Small cabinets (a computer monitor) have no room for the 25 mm button caps on
 ## a 70 mm pitch. Turn the row off and TVOptionsPanel — already pointer-driven —
 ## becomes the only control surface for this shell.
