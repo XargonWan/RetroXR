@@ -42,6 +42,34 @@ const INPUT_THRESHOLDS: Dictionary = {
 ## Height of the drop hint above the remote, in metres.
 const HINT_HEIGHT := 0.10
 
+## Scroll Lock capture glyph, matching RetroController's.
+const ICON_CAPTURE := 0xEC17
+const ICON_SIZE := 0.030
+const ICON_HEIGHT := 0.075
+
+## Desktop keyboard map: Godot action -> the remote's own control name. The same
+## RETRO_JOYPAD_* actions every other device reads, so one set of keys drives
+## whatever is in hand. Only live while Scroll Lock capture is on — otherwise
+## these keys still belong to the player.
+const DESKTOP_BUTTON_MAP: Dictionary = {
+	"RETRO_JOYPAD_B":      "b",
+	"RETRO_JOYPAD_A":      "a",
+	"RETRO_JOYPAD_X":      "one",
+	"RETRO_JOYPAD_Y":      "two",
+	"RETRO_JOYPAD_START":  "plus",
+	"RETRO_JOYPAD_SELECT": "minus",
+	"RETRO_JOYPAD_R3":     "home",
+	"RETRO_JOYPAD_R2":     "shake",
+}
+
+## Desktop d-pad, read straight off the same actions.
+const DESKTOP_DPAD: Dictionary = {
+	"RETRO_JOYPAD_UP":    ControllerBindings.JOYPAD_UP,
+	"RETRO_JOYPAD_DOWN":  ControllerBindings.JOYPAD_DOWN,
+	"RETRO_JOYPAD_LEFT":  ControllerBindings.JOYPAD_LEFT,
+	"RETRO_JOYPAD_RIGHT": ControllerBindings.JOYPAD_RIGHT,
+}
+
 ## How far the battery cover must swing before SYNC is reachable, in degrees.
 const COVER_OPEN_DEG := 45.0
 
@@ -95,6 +123,7 @@ var _holding_ctrl: XRController3D = null
 var _desktop_held: bool = false
 
 var _hint: HeldHint = null
+var _capture: ScrollLockCapture = null
 var _locomotion_manager: LocomotionManager = null
 var _spawn_menu_ctrl: Node = null
 var _left_vr_ctrl: XRController3D = null
@@ -159,6 +188,10 @@ func _ready() -> void:
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
+	_capture = ScrollLockCapture.attach(self, _can_capture,
+		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
+		["keyboard_scroll_lock_outline"], "Send keys here")
 	_laser_dot.visible = false
 	_cache_controls()
 	_setup_leds()
@@ -377,6 +410,8 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 		if by.is_in_group("desktop_hand"):
 			_desktop_held = true
 			_laser_dot.visible = _connected_system != null and show_laser_dot
+			if _capture:
+				_capture.refresh()
 		return
 	_saved_by = by
 	_holding_ctrl = ctrl
@@ -399,6 +434,10 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 	_holding_ctrl = null
 	_desktop_held = false
 	_laser_dot.visible = false
+	# Capture is always a subset of "held", so letting go has to drop it or the
+	# player is left with their keyboard pointed at a remote on the floor.
+	if _capture:
+		_capture.release()
 	_update_locomotion_block()
 
 
@@ -491,6 +530,47 @@ func _update_pointer_block(ctrl: XRController3D, should_block: bool) -> void:
 
 func _desktop_block_owner() -> StringName:
 	return StringName("desktop_hold_%d" % get_instance_id())
+
+
+# ── Desktop keyboard (Scroll Lock capture) ────────────────────────────────────
+
+## May this remote take the keyboard right now? Same rule as RetroController's:
+## held on the desktop and actually driving a port, so capture can never outlive
+## the grip and strand the player with WASD blocked.
+func _can_capture() -> bool:
+	return _desktop_held and _connected_system != null and _port_index >= 0
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or key.is_echo() or _capture == null:
+		return
+	if _capture.handle_key(key):
+		get_viewport().set_input_as_handled()
+
+
+## The remote's controls as the keyboard sees them. Empty unless capture is on —
+## otherwise the RETRO_JOYPAD_* keys still belong to the player, which is the
+## whole point of the Scroll Lock gate.
+func _desktop_pressed() -> Dictionary:
+	var out: Dictionary = {}
+	if _capture == null or not _capture.is_active():
+		return out
+	for action: String in DESKTOP_BUTTON_MAP:
+		if Input.is_action_pressed(action):
+			out[String(DESKTOP_BUTTON_MAP[action])] = true
+	return out
+
+
+## Desktop d-pad bits, read off the same actions.
+func _desktop_dpad_mask() -> int:
+	if _capture == null or not _capture.is_active():
+		return 0
+	var mask := 0
+	for action: String in DESKTOP_DPAD:
+		if Input.is_action_pressed(action):
+			mask |= 1 << int(DESKTOP_DPAD[action])
+	return mask
 
 
 # ── Shell animation ───────────────────────────────────────────────────────────
@@ -610,10 +690,13 @@ func _pressed_now() -> Dictionary:
 		out[control] = vr and _holding_ctrl.get_float(source) \
 			> float(INPUT_THRESHOLDS.get(source, 0.5))
 	# A poke is an OR, not an override: pressing 1 on the shell while the bound
-	# hand input is also down must not cancel it.
+	# hand input is also down must not cancel it. The keyboard joins on the same
+	# terms, so a desktop player and a poking hand cannot cancel each other either.
 	for key: String in _face_buttons:
 		if (_face_buttons[key] as VRButton).is_held():
 			out[key] = true
+	for key: String in _desktop_pressed():
+		out[key] = true
 	return out
 
 
@@ -645,6 +728,7 @@ func _button_mask(pressed: Dictionary) -> int:
 	if stick.y < -DPAD_THRESHOLD: mask |= 1 << ControllerBindings.JOYPAD_DOWN
 	if stick.x < -DPAD_THRESHOLD: mask |= 1 << ControllerBindings.JOYPAD_LEFT
 	if stick.x >  DPAD_THRESHOLD: mask |= 1 << ControllerBindings.JOYPAD_RIGHT
+	mask |= _desktop_dpad_mask()
 	# Nunchuk: C and Z land on X/Y (freed by 1/2 moving), its shake on L2.
 	if nc and _nunchuk != null:
 		var nstate := _nunchuk.get_state()
@@ -693,7 +777,28 @@ func _process(delta: float) -> void:
 # ── Pointer (IR) ──────────────────────────────────────────────────────────────
 
 func _update_aim(libretro: Libretro) -> void:
-	if _screen_mesh == null or _screen_w == 0.0 or not is_instance_valid(_holding_ctrl):
+	if _screen_mesh == null or _screen_w == 0.0:
+		_laser_dot.visible = false
+		libretro.SetPointerState(_port_index, 0, 0, false)
+		return
+
+	# Held in VR the barrel does the aiming; on the desktop there is no hand to
+	# point with, so the view does — the camera centre ray, same substitution the
+	# ray gun makes, which keeps the crosshair honest about where it is pointing.
+	var ray_origin: Vector3
+	var ray_dir: Vector3
+	if _desktop_held:
+		var cam := get_viewport().get_camera_3d()
+		if not is_instance_valid(cam):
+			_laser_dot.visible = false
+			libretro.SetPointerState(_port_index, 0, 0, false)
+			return
+		ray_origin = cam.global_position
+		ray_dir = -cam.global_transform.basis.z
+	elif is_instance_valid(_holding_ctrl):
+		ray_origin = _barrel_tip.global_position
+		ray_dir = -_barrel_tip.global_transform.basis.z
+	else:
 		_laser_dot.visible = false
 		libretro.SetPointerState(_port_index, 0, 0, false)
 		return
@@ -701,8 +806,6 @@ func _update_aim(libretro: Libretro) -> void:
 	var screen_transform := _screen_mesh.global_transform
 	var screen_normal := screen_transform.basis.z.normalized()
 	var plane := Plane(screen_normal, screen_transform.origin)
-	var ray_origin := _barrel_tip.global_position
-	var ray_dir := -_barrel_tip.global_transform.basis.z
 
 	var hit: Variant = plane.intersects_ray(ray_origin, ray_dir)
 	if hit == null:

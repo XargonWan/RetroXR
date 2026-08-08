@@ -550,6 +550,13 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"scale_factor": tv.scale_factor,
 			"stereo_mode": tv.stereo_mode,
 		})
+	elif node is Nunchuk:
+		# Pose only. Which remote it is plugged into is saved on the REMOTE, which
+		# is the end of the cord that means something; this side is just where the
+		# thing is lying. Being in PLAIN_SCENES is not enough on its own — that map
+		# is only read when LOADING, so without a branch here it was never written
+		# and there was nothing to load back.
+		return _base(id, "nunchuk", n3d)
 	elif node is TVRemote:
 		return _base(id, "tv_remote", n3d)
 	elif node is TrashCan:
