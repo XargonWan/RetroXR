@@ -10,7 +10,7 @@ categories = "Emulator"
 
 # Hardware Information
 manufacturer = "NEC"
-systemname = "PC Engine/SuperGrafx/CD"
+systemname = "PC Engine"
 systemid = "pc_engine"
 secondary_systemids = "pc_engine_cd:cue,ccd,chd,toc,m3u|supergrafx:sgx"
 

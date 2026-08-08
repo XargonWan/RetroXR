@@ -167,6 +167,15 @@ a label because several systemids share it verbatim.
   CD+G karaoke) — two unrelated players
 * **"Multi (various)"** is shared by `mame` and `mess`
 * **"Neo Geo"** is shared by `fb_alpha` and `neogeo`
+* **A multi-system core naming the whole set.** Splitting a platform out into its
+  own systemid does not rename the parent, so the parent kept advertising it —
+  `gamecube` read "GameCube / Wii" beside a Nintendo Wii tile, and `nes` took
+  mesen2's twelve-platform name. Fixed for every id the split touched: the Dolphin
+  trio, the four PC Engine cores, `bluemsx`, `atari800` (which said "Atari 8-bit
+  Family" under `atari_5200`), `mgba`, `vbam`, both Genesis Plus GX builds,
+  `picodrive`, `mesen2` and `mesen-s`. Three disagreements remain and predate all
+  of it: `cpc` ("CPC" vs "CPC/GX4000"), and the `fb_alpha` and `mame` arcade
+  families below.
 * **The empty string** is the systemname of `jumpnbump` and `superbroswar`.
   `get_systemname_for_id()` falls back to the systemid only when the key is absent,
   not when it is present and empty, so these render as a blank label

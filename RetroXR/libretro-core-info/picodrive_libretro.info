@@ -10,7 +10,7 @@ categories = "Emulator"
 
 # Hardware Information
 manufacturer = "Sega"
-systemname = "Sega 8/16-bit + 32X (Various)"
+systemname = "Sega Genesis"
 systemid = "mega_drive"
 secondary_systemids = "game_gear:gg|master_system:sms|sega_32x:32x|sega_cd:cue,iso,chd,m3u|sega_pico:pco"
 

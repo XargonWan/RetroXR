@@ -10,7 +10,7 @@ display_version = "1.6.0"
 
 # Hardware Information
 manufacturer = "NEC"
-systemname = "PC Engine/SuperGrafx"
+systemname = "PC Engine"
 systemid = "pc_engine"
 secondary_systemids = "pc_engine_cd:cue,chd|supergrafx:sgx"
 

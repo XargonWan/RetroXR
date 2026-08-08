@@ -10,7 +10,7 @@ display_version = "SVN"
 
 # Hardware Information
 manufacturer = "Spectravideo|Philips|Al Alamiah|Sony|Sanyo|Mitsubishi|Toshiba|Hitachi|Panasonic|Canon|Casio|Pioneer|Fujitsu|Yamaha|JVC|Kyocera|GoldStar|Samsung|Daewoo|Gradiente|Sharp|Talent|NTT|ACVS/CIEL|DDX|AGE Labs"
-systemname = "MSX/SVI/ColecoVision/SG-1000"
+systemname = "MSX"
 systemid = "msx"
 secondary_systemids = "colecovision:col|sg1000:sg,sc|svi:sf"
 

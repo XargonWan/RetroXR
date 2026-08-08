@@ -7,7 +7,7 @@ corename = "Beetle SuperGrafx"
 # Hardware Information
 manufacturer = "NEC"
 categories = "Emulator"
-systemname = "PC Engine SuperGrafx"
+systemname = "PC Engine"
 systemid = "pc_engine"
 secondary_systemids = "pc_engine_cd:cue,ccd,chd|supergrafx:sgx"
 database = "NEC - PC Engine SuperGrafx|NEC - PC Engine - TurboGrafx 16|NEC - PC Engine CD - TurboGrafx-CD"
