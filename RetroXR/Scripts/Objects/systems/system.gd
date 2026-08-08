@@ -145,6 +145,9 @@ var _wii_link: WiiLink = null
 ## Last A/V routing reported to the log, so re-resolving the same wiring is quiet
 ## and only real changes are announced. See _apply_av_feed.
 var _last_av_routing: String = ""
+## Each cord as "OUT->IN", with (!) where its two ends sit on different channels.
+## Built by on_av_topology_changed, printed by _apply_av_feed.
+var _av_cord_summary: String = "none"
 
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
@@ -1250,11 +1253,19 @@ func on_av_topology_changed(_reported: Array) -> void:
 	var audio_dev: Node3D = null
 	var l := -1
 	var r := -1
+	# What each cord turned out to be joining, for the log. A phono plug fits any
+	# phono socket — that is the hardware, not an oversight — so the commonest
+	# wiring mistake in the room is a cord whose two ends sit on different
+	# channels. It is invisible: the lead looks seated at both ends and the colours
+	# match the SOCKETS either side, just not each other.
+	var cords: Array[String] = []
 	for link in links:
 		var out_port: RcaPort = link["out"]
 		if out_port.get_device() != self:
 			continue
 		var in_port: RcaPort = link["in"]
+		cords.append("%s->%s%s" % [out_port.channel_name(), in_port.channel_name(),
+			"" if out_port.channel == in_port.channel else "(!)"])
 		# Duck-typed, not `as RetroTV`. A television is not the only thing a console
 		# can be wired into — a pair of powered speakers is a sink with no screen at
 		# all — and the cast silently dropped every one of them. get_speaker_positions
@@ -1300,6 +1311,7 @@ func on_av_topology_changed(_reported: Array) -> void:
 					audio_dev = target
 					l = 0
 					r = 1
+	_av_cord_summary = ", ".join(cords) if not cords.is_empty() else "none"
 	_apply_av_feed(video_dev, audio_dev, l, r)
 
 
@@ -1343,12 +1355,19 @@ func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> vo
 	# Only on CHANGE. Seating one lead re-resolves the routing once per cord per
 	# end, so a plain three-cord hookup would otherwise print this eighteen times
 	# and bury the transition that matters.
-	var routing := "video=%s audio=%s" % [
+	var routing := "video=%s audio=%s  cords: %s" % [
 		video_dev.name if video_dev != null else "<none>",
-		audio_dev.name if audio_dev != null else "<none>"]
+		audio_dev.name if audio_dev != null else "<none>",
+		_av_cord_summary]
 	if routing != _last_av_routing:
 		_last_av_routing = routing
 		print("[RetroSystem] A/V feed: %s" % routing)
+		# A cord bridging two different channels conducts nothing either side can
+		# use — video out into an audio in is the classic one, and it leaves a set
+		# that plays sound perfectly while showing blue.
+		if _av_cord_summary.contains("(!)"):
+			push_warning("[RetroSystem] a cord has its ends on DIFFERENT channels "
+				+ "(marked !) — it carries nothing. Check the colours match end to end.")
 	_av_speaker_l = l
 	_av_speaker_r = r
 	# The cached pair is keyed on the gains last sent, not on the routing, so a
