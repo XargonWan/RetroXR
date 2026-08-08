@@ -25,6 +25,11 @@ const CODES := {
 	"ch_up": 0xEAA1,      # cod-arrow_up
 	"ch_down": 0xEA9A,    # cod-arrow_down
 	"crt": 0xF26C,        # fa-tv            — the picture filter
+	# Picture shape. Two glyphs, not one key with a label: the handset shows the
+	# shape you would switch TO, so the key reads as a state like the audio and
+	# 3D keys beside it rather than as a word.
+	"aspect_4_3": 0xF0381,    # md-crop-square    — the tube's own shape
+	"aspect_16_9": 0xF0382,   # md-crop-landscape — letterboxed wide
 	"stereo": 0xF07FD,    # md-video_3d      — both eyes
 	"eye": 0xF1A1C,       # md-eye-outline   — one eye, biased to its own side
 	"audio_stereo": 0xF0D38,  # md-speaker-multiple — both channels

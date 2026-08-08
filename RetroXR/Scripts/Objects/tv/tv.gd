@@ -70,6 +70,7 @@ var _speakers_seated: bool = false
 @onready var _ch_down_btn: VRButton = $ChannelDownButton
 @onready var _ch_up_btn: VRButton = $ChannelUpButton
 @onready var _stereo_btn: VRButton = $StereoButton
+@onready var _aspect_btn: VRButton = $AspectButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _speaker_l: Marker3D = get_node_or_null("SpeakerL")
 @onready var _speaker_r: Marker3D = get_node_or_null("SpeakerR")
@@ -94,6 +95,19 @@ var _stereo_material: ShaderMaterial = null
 # Stereo presentation for stereo sources (the 3D bezel button, visible only
 # while one is connected): 0 = per-eye stereo, 1 = left eye, 2 = right eye.
 var stereo_mode: int = 0
+
+## Picture shape. A CRT is a 4:3 tube, so that is the resting state and the one
+## every source used to get by default — the frame was simply stretched to the
+## glass, which squashed anything widescreen. Pressing the button shows the
+## picture at 16:9 instead, letterboxed into the same tube.
+##
+## Deliberately a toggle between two fixed shapes rather than a mode cycle
+## following what the core reports: which of the two a game wants is a thing the
+## player can see, and a set of this era had exactly this button.
+var widescreen: bool = false
+
+const ASPECT_4_3 := 4.0 / 3.0
+const ASPECT_16_9 := 16.0 / 9.0
 const STEREO_MODE_NAMES := ["3D: STEREO", "3D: LEFT EYE", "3D: RIGHT EYE"]
 
 ## The set's speaker switch, in the OSD's own voice (it shouts).
@@ -222,6 +236,7 @@ func _ready() -> void:
 	_tv_toggle_btn.button_pressed.connect(_on_tv_toggle)
 	_crt_btn.button_pressed.connect(_on_crt_toggle)
 	_stereo_btn.button_pressed.connect(_on_stereo_toggle)
+	_aspect_btn.button_pressed.connect(toggle_aspect)
 	_source_btn.button_pressed.connect(cycle_source)
 	_ch_down_btn.button_pressed.connect(_on_channel_down)
 	_ch_up_btn.button_pressed.connect(_on_channel_up)
@@ -324,7 +339,7 @@ func _load_shell() -> void:
 	var row: Variant = _shell.button_row_seat()
 	var buttons: Array[Node3D] = [
 		_vol_down_btn, _vol_up_btn, _ch_down_btn, _ch_up_btn,
-		_tv_toggle_btn, _source_btn, _crt_btn, _stereo_btn,
+		_tv_toggle_btn, _source_btn, _crt_btn, _stereo_btn, _aspect_btn,
 	]
 	if not _shell.show_button_row:
 		for btn in buttons:
@@ -561,7 +576,11 @@ func _update_crt() -> void:
 			_stereo_material.set_shader_parameter("stereo_mode", stereo_mode)
 		return
 
-	if not crt_enabled and not _source_is_sbs():
+	# The wrapper also carries the aspect fit, and the raw source material has no
+	# fit of its own — so a picture that needs shrinking keeps the wrapper on with
+	# the tube stage merely switched off. Without this, turning CRT off would
+	# quietly stretch a letterboxed picture back over the whole glass.
+	if not crt_enabled and not _source_is_sbs() and not _aspect_needs_fit():
 		if override == _crt_material and _crt_wrapped != null:
 			_screen_mesh.set_surface_override_material(0, _crt_wrapped)
 		_crt_wrapped = null
@@ -600,6 +619,8 @@ func _update_crt() -> void:
 	_crt_material.set_shader_parameter("source_tex", tex)
 	_crt_source_tex = tex
 	_apply_crt_params(_crt_material)
+	# The wrapper is new or its source changed; the fit does not survive that.
+	_apply_aspect()
 	_crt_wrapped = override
 	_screen_mesh.set_surface_override_material(0, _crt_material)
 
@@ -867,6 +888,66 @@ func set_stereo_mode(mode: int) -> void:
 
 func _on_stereo_toggle() -> void:
 	set_stereo_mode((stereo_mode + 1) % 3)
+
+
+# ── Picture shape (4:3 / 16:9) ────────────────────────────────────────────────
+
+## The bezel button and the remote's, and what a save restores through.
+func toggle_aspect() -> void:
+	set_widescreen(not widescreen)
+
+
+func set_widescreen(on: bool) -> void:
+	widescreen = on
+	_apply_aspect()
+	_update_aspect_button()
+	show_osd_timed("16:9" if widescreen else "4:3", 1.5)
+
+
+## How much of the glass the picture should cover, as a fraction per axis.
+##
+## The tube is whatever shape the shell gave it — not necessarily 4:3 — so the
+## fit is computed against the real glass rather than assumed. Whichever axis is
+## too generous gets shrunk about the centre and the rest becomes bar.
+func _aspect_fit() -> Vector2:
+	if _screen_size_m.x <= 0.0 or _screen_size_m.y <= 0.0:
+		return Vector2.ONE
+	var glass := _screen_size_m.x / _screen_size_m.y
+	var want := ASPECT_16_9 if widescreen else ASPECT_4_3
+	if is_equal_approx(glass, want):
+		return Vector2.ONE
+	if want > glass:
+		return Vector2(1.0, glass / want)   # wider than the glass -> bars above/below
+	return Vector2(want / glass, 1.0)       # taller -> bars either side
+
+
+## Push the fit onto whichever material is currently showing the picture. Called
+## on every material change as well as on the button, because the display path
+## swaps materials underneath us (raw source, CRT wrapper, window shader).
+func _apply_aspect() -> void:
+	var fit := _aspect_fit()
+	for mat in [_crt_material, _stereo_material]:
+		if mat != null:
+			(mat as ShaderMaterial).set_shader_parameter("fit_scale", fit)
+	var override := _screen_mesh.get_surface_override_material(0) as ShaderMaterial
+	if override != null and override.shader == CRT_SHADER:
+		override.set_shader_parameter("fit_scale", fit)
+
+
+## True when the picture needs shrinking to fit. The raw source material has no
+## fit of its own, so this is what decides the CRT wrapper has to go on even
+## with the tube effect switched off — otherwise turning CRT off would silently
+## stretch the picture back out again.
+func _aspect_needs_fit() -> bool:
+	return not _aspect_fit().is_equal_approx(Vector2.ONE)
+
+
+func _update_aspect_button() -> void:
+	if _aspect_btn == null:
+		return
+	var lbl := _aspect_btn.get_node_or_null("ButtonLabel") as Label3D
+	if lbl:
+		lbl.text = "16:9" if widescreen else "4:3"
 
 
 func _update_stereo_button_color() -> void:

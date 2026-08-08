@@ -31,13 +31,29 @@ uniform bool osd_enabled = false;
 // RetroTV wraps them with screen_window.gdshader instead (which chains this
 // CRT stage inside it), so the per-eye split works with the CRT off too.
 
+// Aspect fit: how much of the glass the picture occupies on each axis. (1,1)
+// fills it, which is what every source did before there was a choice. Below 1
+// on an axis, the picture shrinks about the centre and the remainder is black
+// bar — set by RetroTV from its 4:3 / 16:9 button.
+uniform vec2 fit_scale = vec2(1.0, 1.0);
+
 void fragment() {
 	vec2 wuv = crt_warp(UV);
-	vec2 suv = pixel_aa_uv(source_tex, wuv);
+	// Fit inside the glass, not around it: the bars are part of the picture the
+	// tube shows, so they go through the same stage and curve with it.
+	vec2 fuv = (wuv - 0.5) / fit_scale + 0.5;
+	vec2 suv = pixel_aa_uv(source_tex, fuv);
 
 	vec3 col = crt_smear_sample(source_tex, suv);
 	col = crt_notch_sample(source_tex, suv, col);
-	vec3 glow = crt_glow(source_tex, wuv);
+	vec3 glow = crt_glow(source_tex, fuv);
+
+	// Bars before the OSD, so the OSD still reads over them — a real set draws
+	// its menu on top of the letterbox rather than being clipped by it.
+	if (any(lessThan(fuv, vec2(0.0))) || any(greaterThan(fuv, vec2(1.0)))) {
+		col = vec3(0.0);
+		glow = vec3(0.0);
+	}
 
 	if (osd_enabled) {
 		vec4 osd = texture(osd_tex, wuv);

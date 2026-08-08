@@ -461,14 +461,19 @@ func _layout_for_target() -> Array:
 		# switch, which is how the set's own bezel key behaves. Both take their
 		# glyph from the mode they are currently in, so the key reads as a state
 		# rather than a label — see _tv_audio_glyph / _tv_stereo_glyph.
+		# Picture shape rides with them: also a state key, also always available.
 		if tv.has_stereo_source():
 			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv),
 				"col": 0, "row": next_row})
 			cells.append({"id": "stereo3d", "glyph": _tv_stereo_glyph(tv),
+				"col": 1, "row": next_row})
+			cells.append({"id": "aspect", "glyph": _tv_aspect_glyph(tv),
 				"col": 2, "row": next_row})
 		else:
 			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv),
-				"col": 1, "row": next_row})
+				"col": 0, "row": next_row})
+			cells.append({"id": "aspect", "glyph": _tv_aspect_glyph(tv),
+				"col": 2, "row": next_row})
 		return cells
 	if _target is VCRPlayer:
 		# Eject on its own top row, then the transport grid.
@@ -523,6 +528,12 @@ func _tv_audio_glyph(tv: RetroTV) -> String:
 
 func _tv_stereo_glyph(tv: RetroTV) -> String:
 	return "stereo" if tv.stereo_mode == 0 else "eye"
+
+
+## The shape the set is showing NOW, not the one the key would switch to — same
+## reading as the audio and 3D keys, where the glyph is the current state.
+func _tv_aspect_glyph(tv: RetroTV) -> String:
+	return "aspect_16_9" if tv.widescreen else "aspect_4_3"
 
 
 ## -1 leans left, +1 right, 0 centred — which channel, or which eye.
@@ -885,6 +896,7 @@ func _activate(id: String) -> void:
 			"mute": tv.remote_mute_toggle()
 			"audio_mode": tv.set_audio_mode((tv.audio_mode + 1) % 3)
 			"stereo3d": tv.set_stereo_mode((tv.stereo_mode + 1) % 3)
+			"aspect": tv.toggle_aspect()
 			"source": tv.remote_source_cycle()
 			"ch_up": tv.remote_channel_up()
 			"ch_down": tv.remote_channel_down()
