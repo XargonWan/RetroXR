@@ -26,10 +26,14 @@ const CODES := {
 	"ch_down": 0xEA9A,    # cod-arrow_down
 	"crt": 0xF26C,        # fa-tv            — the picture filter
 	# Picture shape. Two glyphs, not one key with a label: the handset shows the
-	# shape you would switch TO, so the key reads as a state like the audio and
-	# 3D keys beside it rather than as a word.
-	"aspect_4_3": 0xF0381,    # md-crop-square    — the tube's own shape
-	"aspect_16_9": 0xF0382,   # md-crop-landscape — letterboxed wide
+	# shape the set is IN, so the key reads as a state like the audio and 3D keys
+	# beside it rather than as a word.
+	#
+	# Codepoints verified against the shipped font's cmap, not guessed — the first
+	# pair here rendered a clapperboard and a multiplication sign, because in this
+	# build F0381/F0382 are md-movie and md-multiplication.
+	"aspect_4_3": 0xF01A2,    # md-crop_square    — the tube's own shape
+	"aspect_16_9": 0xF01A0,   # md-crop_landscape — letterboxed wide
 	"stereo": 0xF07FD,    # md-video_3d      — both eyes
 	"eye": 0xF1A1C,       # md-eye-outline   — one eye, biased to its own side
 	"audio_stereo": 0xF0D38,  # md-speaker-multiple — both channels
