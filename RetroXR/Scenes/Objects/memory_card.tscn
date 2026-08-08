@@ -55,6 +55,7 @@ font_size = 16
 outline_size = 0
 horizontal_alignment = 1
 vertical_alignment = 1
+autowrap_mode = 3
 max_lines_visible = 2
 width = 200.0
 

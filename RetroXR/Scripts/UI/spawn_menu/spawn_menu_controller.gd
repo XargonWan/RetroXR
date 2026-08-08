@@ -500,7 +500,7 @@ func _get_pointed_options_host(pointer: XRToolsFunctionPointer) -> Node3D:
 		# If the pointer is inside any viewport, it's a UI click — not an object click
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer or node is DVDPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV or node is RetroMouse:
+		if node is RetroSystem or node is VCRPlayer or node is DVDPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV or node is RetroMouse or node is MemoryCard:
 			return node as Node3D
 		node = node.get_parent()
 	return null
@@ -534,7 +534,7 @@ func _options_host_from_target(tgt: Node3D) -> Node3D:
 	while node:
 		if node is XRToolsViewport2DIn3D:
 			return null
-		if node is RetroSystem or node is VCRPlayer or node is DVDPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV or node is RetroMouse:
+		if node is RetroSystem or node is VCRPlayer or node is DVDPlayer or node is PDFBook or node is RetroCartridge or node is RetroTV or node is RetroMouse or node is MemoryCard:
 			return node as Node3D
 		node = node.get_parent()
 	return null
@@ -962,6 +962,16 @@ func _on_spawn_requested(type: String) -> void:
 		sys.systemid = systemid
 		sys.model_id = model_id
 		_place_spawned(sys, type)
+		return
+	# "memcard:<card_id>" — bring an EXISTING card back into the room rather than
+	# minting a blank one. The id is the card's filename, so the object lands
+	# already pointing at the saves it left behind. Same reason as the model token
+	# above: `match` is literal equality and would never catch a prefix.
+	if type.begins_with("memcard:"):
+		var card := MEMCARD_SCENE.instantiate() as MemoryCard
+		card.card_id = type.substr("memcard:".length())
+		card.card_label = card.card_id
+		_place_spawned(card, "memory_card")
 		return
 	match type:
 		"tv":

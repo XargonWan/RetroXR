@@ -26,6 +26,12 @@ enum MediaType { CARTRIDGE = 0, DISC_TRAY = 1, DISC_INSERT = 2 }
 ## How this system's games are loaded.
 @export var media_type: MediaType = MediaType.CARTRIDGE
 
+## True when this hardware saves to a removable memory card rather than to the
+## media itself. Shows the console's card slot, and makes the seated card — not
+## the disc — decide which save image is mounted. With no card in, nothing
+## persists, which is why the card slot and the save path are the same switch.
+@export var memory_cards: bool = false
+
 ## True when a multitap accessory extended the console past its native ports.
 @export var supports_multitap: bool = false
 

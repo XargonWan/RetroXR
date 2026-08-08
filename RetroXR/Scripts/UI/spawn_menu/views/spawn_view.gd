@@ -456,9 +456,50 @@ func _populate_systems_detail(systemid: String, vbox: VBoxContainer) -> void:
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 26)
-		btn.pressed.connect(spawn_requested.emit.bind(SpawnCatalog.spawn_token(systemid, item)))
+		var token := SpawnCatalog.spawn_token(systemid, item)
+		# Only the PlayStation's shelf is real. The PS2 and GameCube rows spawn a
+		# card their consoles have no slot for, so browsing a PlayStation card
+		# list from them would be a straight lie about what they can hold.
+		if token == "memory_card" and systemid == MemoryCardBrowser.SYSTEMID:
+			btn.pressed.connect(_on_system_memcard_pressed.bind(systemid, vbox))
+		else:
+			btn.pressed.connect(spawn_requested.emit.bind(token))
 		vbox.add_child(btn)
 	vbox.add_child(MenuStyle.spacer(8))
+
+
+## The PlayStation's card shelf, opened from the console's own page. It takes
+## that page over, so Back returns to the console you came from.
+##
+## Nothing saved yet means there is nothing to choose between, so the row keeps
+## its plain behaviour and spawns a blank card.
+func _on_system_memcard_pressed(systemid: String, vbox: VBoxContainer) -> void:
+	if not MemoryCardBrowser.has_cards():
+		spawn_requested.emit("memory_card")
+		return
+	_clear_children(vbox)
+	var b := MemoryCardBrowser.new()
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_constant_override("separation", 10)
+	# Deferred: both handlers tear down the browser that is emitting them.
+	b.spawn_requested.connect(func(t: String) -> void:
+		spawn_requested.emit(t)
+		_restore_system_detail.call_deferred(systemid, vbox))
+	b.closed.connect(func() -> void:
+		_restore_system_detail.call_deferred(systemid, vbox))
+	vbox.add_child(b)
+	b.open()
+
+
+func _restore_system_detail(systemid: String, vbox: VBoxContainer) -> void:
+	_clear_children(vbox)
+	_populate_systems_detail(systemid, vbox)
+
+
+func _clear_children(node: Node) -> void:
+	for c in node.get_children():
+		node.remove_child(c)
+		c.queue_free()
 
 
 ## Rebuild the Cartridges home grid: one tile per system that has a default core

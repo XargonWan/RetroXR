@@ -346,6 +346,14 @@ func _add_reset_row() -> void:
 ## Build a single option row: [description label] [<] [current value] [>]
 ## defn is a LibretroOptionDefinition (untyped to allow dynamic ClassDB dispatch).
 func _add_option_row(key: String, defn, current_val: String) -> void:
+	# A pinned option shows what the SYSTEM enforces, not what happens to be
+	# sitting in the .opt. The stored value can be stale — a core that renamed
+	# its values leaves one that matches nothing, and the index search below
+	# then falls back to entry 0, so the row would advertise a setting the
+	# system is actively overriding.
+	if _forced.has(key):
+		current_val = str(_forced[key])
+
 	var desc: String = defn.GetDescriptionCategorized()
 	if desc.is_empty():
 		desc = defn.GetDescription()

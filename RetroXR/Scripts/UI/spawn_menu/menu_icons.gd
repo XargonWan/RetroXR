@@ -33,6 +33,7 @@ const CROSS     := 0xF0159   # md-close_thick     — required firmware absent
 const DASH      := 0xF0374   # md-minus           — optional firmware absent
 const SETTINGS  := 0xF013    # fa-cog             — edit this core's options
 const SCAN_QR   := 0xF0433   # md-qrcode_scan     — pair by looking at RomM's code
+const CARD_SAVES := 0xF0279  # md-format_list_bulleted — list what a card holds
 const UPDATE    := 0xF01B    # fa-circle_up       — installed, but newer on the buildbot
 
 const TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)

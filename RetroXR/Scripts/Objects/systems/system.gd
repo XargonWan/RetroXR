@@ -530,9 +530,12 @@ func _load_system_model() -> void:
 		_port_zones[i].enabled = active
 	# Memory-card slot only on CD-era hardware (PSX); cartridge systems keep
 	# their battery save on the cartridge itself.
-	var cards := _model.uses_memory_cards()
+	var cards := _uses_memory_cards()
 	_memcard_slot.visible = cards
 	_memcard_slot.enabled = cards
+	var mouth := _system_body.get_node_or_null("MemCardMouth") as MeshInstance3D
+	if mouth != null:
+		mouth.visible = cards
 	if cards:
 		_model.configure_memory_card_slot(_memcard_slot)
 	# Disc loader: tray consoles (PS1/GameCube…) get an OPEN button gating a
@@ -1642,7 +1645,7 @@ func power_on() -> void:
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_apply_forced_core_options(resolved_dir, resolved_core)
-	_libretro.SetSramPath(_compose_sram_path(resolved_core))
+	_libretro.SetSramPath(_sram_path_for_run(resolved_core))
 	# Before StartContent: identification happens as the core comes up, so the
 	# claim has to be in place by then. Returns false when another cabinet already
 	# holds the session, nobody is signed in, or the system has no RA console —
@@ -1797,7 +1800,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 		_net_sram_override = false
 		_net_sram_data = PackedByteArray()
 	else:
-		_libretro.SetSramPath(_compose_sram_path(resolved_core))
+		_libretro.SetSramPath(_sram_path_for_run(resolved_core))
 	_apply_forced_core_options(_resolve_dir(), resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
@@ -1866,10 +1869,42 @@ func reset() -> void:
 ## before StartContent — the C++ OptionsHandler reads that file when the core
 ## boots. (SetCoreOption needs a running core, so pre-start forcing goes
 ## through the file; user-set values for other keys are preserved.)
+## Make the console report an EMPTY slot when no card is seated.
+##
+## The SAVE_RAM interface cannot express this: it always hands back a 128 KB
+## buffer, so an unbacked run still looks like a card — merely a blank one, and
+## the game offers to format it instead of saying no card is present.
+## pcsx_rearmed's own memcard1 option can, because "none" disables the slot down
+## at the SIO level (McdDisable -> no_device), which is what the hardware does.
+##
+## Read by the core at content load, so it is composed here with the other
+## start-time options rather than swapped mid-run. Cores built before the option
+## shipped ignore the key harmlessly, so this is safe on an older build.
+func _removable_media_options(core: String) -> Dictionary:
+	if not _uses_memory_cards() or not core.begins_with("pcsx_rearmed"):
+		return {}
+	return {
+		"pcsx_rearmed_memcard1": "libretro" if _snapped_memcard else "none",
+		# The cabinet has one card slot, so slot 2 is empty. Said out loud rather
+		# than left to the core's default, which is a shared card every game can
+		# see and no object in the room accounts for.
+		"pcsx_rearmed_memcard2": "none",
+	}
+
+
+## Everything pinned for a run: what the shell demands, plus what this system
+## composes per run. One place, so the .opt seam and the options panel can never
+## disagree about which keys the player is allowed to move.
+func _all_forced_options(core: String) -> Dictionary:
+	var out: Dictionary = _model.get_forced_core_options() if _model != null else {}
+	out.merge(_removable_media_options(core), true)
+	return out
+
+
 func _apply_forced_core_options(dir: String, core: String) -> void:
 	if _model == null:
 		return
-	var forced: Dictionary = _model.get_forced_core_options()
+	var forced := _all_forced_options(core)
 	if forced.is_empty():
 		return
 	var opt_dir := dir.path_join("core_options")
@@ -1970,12 +2005,13 @@ func set_core_option(key: String, value: String) -> void:
 		CoreOptionsStore.set_value(_resolve_dir(), _resolve_core(), key, value)
 
 
-## Options this system's model pins so the hardware works at all — the 3DS's
-## side-by-side framebuffer, the Virtual Boy's stereo split. They are locked in
-## the UI and skipped by a reset, which would otherwise break the screen rather
-## than restore it.
+## Options this system pins so the hardware works at all — the 3DS's
+## side-by-side framebuffer, the Virtual Boy's stereo split, and which memory
+## card slots the PlayStation has, which the physical cards decide rather than a
+## menu. They are locked in the UI and skipped by a reset, which would otherwise
+## break the screen (or silently detach a seated card) rather than restore it.
 func forced_core_options() -> Dictionary:
-	return _model.get_forced_core_options() if _model != null else {}
+	return _all_forced_options(_resolve_core())
 
 
 ## Put every non-forced option back to the value the core itself declares as its
@@ -2723,7 +2759,7 @@ func _on_memcard_inserted(card: Node3D) -> void:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 			push_warning("[RetroSystem] memory card ignored during netplay")
 		else:
-			_libretro.SetSramPath(_compose_sram_path(_resolve_core()))
+			_libretro.SetSramPath(_sram_path_for_run(_resolve_core()))
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_INSERT,
 		{"sys": self, "card": card})
 
@@ -2736,8 +2772,22 @@ func _on_memcard_removed() -> void:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 			push_warning("[RetroSystem] memory card removal ignored during netplay")
 		else:
-			_libretro.SetSramPath("")   # authentic: no card, no saving
+			# No card, no saving. The C++ side blanks SAVE_RAM to match, so the
+			# game reports unformatted media instead of accepting a save into
+			# the card the core keeps for itself.
+			_libretro.SetSramPath("")
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_REMOVE, {"sys": self})
+
+
+## The seated card's image moved (it was renamed), so re-point the running core
+## at the new path. Without this the core keeps writing to the old name and the
+## next flush recreates it, making one card look like two.
+func refresh_memcard_path() -> void:
+	if not is_powered_on or _snapped_memcard == null:
+		return
+	if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+		return
+	_libretro.SetSramPath(_sram_path_for_run(_resolve_core()))
 
 
 ## Restore a memory card into the slot after loading from a save file.
@@ -2747,13 +2797,19 @@ func restore_memory_card(card: Node3D) -> void:
 
 # --- Battery saves (SRAM) ---
 
-## Where this run's .srm lives. Card systems: the seated card's folder, or ""
-## (no card = authentic no-persistence). Cartridge systems: the cartridge's
 ## The core just wrote SAVE_RAM to disk. Fires only on a real change (the
 ## dirty check lives in C++), so this is "the game saved", not a timer tick.
 ## `final` is the last flush for this file — shutdown, or a card/cart swap.
 func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
 	if path.is_empty() or not SaveSync.is_enabled(path):
+		return
+	# Memory cards never sync. SaveSync keys one record per FILE, holding a
+	# single last_hash and rom_id, and a card is one file that many games write
+	# into — so a flush under game B's rom_id, then a flush under game A's,
+	# resolves to PULL and overwrites the live card with A's stale image,
+	# destroying B's progress. Syncing a card means syncing the individual saves
+	# INSIDE it, which needs a parser this doesn't have yet.
+	if _uses_memory_cards():
 		return
 	var sid := _resolve_systemid()
 	var rom_id := SaveSync.rom_id_for(sid, rom_path)
@@ -2798,7 +2854,7 @@ func _on_achievement_unlocked(_id: int, title: String, description: String,
 ## round trip is stable; memory cards are namespaced because their id is a card
 ## rather than a save, and one card holds a file per game.
 func _sram_slot() -> String:
-	if _model.uses_memory_cards():
+	if _uses_memory_cards():
 		if _snapped_memcard and "card_id" in _snapped_memcard:
 			return "card:%s" % str(_snapped_memcard.get("card_id"))
 		return ""
@@ -2823,19 +2879,57 @@ func _resolve_systemid() -> String:
 	return systemid
 
 
-## own save_id file — each physical cart holds its own save.
+## True when this console saves to a removable card. Keyed on the console's own
+## systemid rather than _resolve_systemid(), which reads the seated disc: a
+## PlayStation has a card slot whatever is in the drive, and the slot has to be
+## configured before any media is loaded.
+##
+## A bespoke shell can still opt in through its model; nothing does yet.
+func _uses_memory_cards() -> bool:
+	# Reachable from the options panel, which can ask before a model is loaded.
+	if _model == null:
+		return false
+	if _model.uses_memory_cards():
+		return true
+	var info := SystemInfo.for_system(systemid)
+	return info != null and info.memory_cards
+
+
+## Where this run's save image lives, or "" when nothing backs it. Pure — see
+## _sram_path_for_run() for the variant that creates a card before returning.
+##
+## Card systems resolve to the SEATED CARD, not the game: one image shared by
+## everything played with that card in, which is what lets a game read the saves
+## other games left. No card seated means no path at all.
+##
+## Cartridge systems resolve to the cart's own save_id file — each physical cart
+## holds its own save.
 func _compose_sram_path(resolved_core: String) -> String:
 	if resolved_core.is_empty() or rom_path.is_empty():
 		return ""
-	if _model.uses_memory_cards():
+	if _uses_memory_cards():
 		if _snapped_memcard and "card_id" in _snapped_memcard:
-			return SramPaths.card_save_path(resolved_core, rom_path,
+			return SramPaths.card_save_path(systemid,
 				str(_snapped_memcard.get("card_id")))
 		return ""
 	if _snapped_cartridge and "save_id" in _snapped_cartridge:
 		return SramPaths.cart_save_path(resolved_core, rom_path,
 			str(_snapped_cartridge.get("save_id")))
 	return ""
+
+
+## The path to hand the core for a run that is about to start, formatting a
+## brand-new card on the way. Also tells the core that empty means "nothing
+## plugged in" rather than "don't save": pcsx_rearmed otherwise presents a fully
+## formatted card of its own, which a game would write to and lose at power-off.
+func _sram_path_for_run(resolved_core: String) -> String:
+	var cards := _uses_memory_cards()
+	_libretro.SetRemovableStorage(cards)
+	var path := _compose_sram_path(resolved_core)
+	if cards and not path.is_empty() and _snapped_memcard:
+		return SramPaths.ensure_card(systemid,
+			str(_snapped_memcard.get("card_id")))
+	return path
 
 
 ## Netplay: override the SRAM source for the next net_start_core (see

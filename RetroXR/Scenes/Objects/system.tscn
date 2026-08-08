@@ -26,6 +26,12 @@ size = Vector3(0.12, 0.05, 0.038)
 [sub_resource type="StandardMaterial3D" id="Mat_cart_recess"]
 albedo_color = Color(0.03, 0.03, 0.04, 1)
 
+; The memory-card mouth, a shade wider and taller than the 0.055 x 0.017 card so
+; the seated card reads as sitting IN a socket rather than pushed into flat
+; plastic. Recessed into the front face, not proud of it.
+[sub_resource type="BoxMesh" id="BoxMesh_memcard_recess"]
+size = Vector3(0.061, 0.021, 0.012)
+
 [sub_resource type="CylinderMesh" id="CylMesh_cable"]
 top_radius = 0.012
 bottom_radius = 0.012
@@ -101,6 +107,15 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.026, 0)
 mesh = SubResource("BoxMesh_cart_recess")
 surface_material_override/0 = SubResource("Mat_cart_recess")
 
+; Sunk into the front face (z 0.114..0.126 against a face at 0.125) directly above
+; controller port 1, which is where a PlayStation puts it. Hidden unless the
+; console actually takes cards — RetroSystem shows it with the slot.
+[node name="MemCardMouth" type="MeshInstance3D" parent="SystemBody" unique_id=1806706226]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.038, 0.12)
+visible = false
+mesh = SubResource("BoxMesh_memcard_recess")
+surface_material_override/0 = SubResource("Mat_cart_recess")
+
 [node name="PickableHighlight" type="Node3D" parent="." unique_id=1748385500]
 script = ExtResource("5_pickhigh")
 
@@ -109,8 +124,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.055, 0)
 grab_distance = 0.07
 snap_require = "cartridge"
 
+; Above controller port 1, seating the card 50 mm into the shell and leaving a
+; 25 mm tab to grab. The old (-0.09, 0.02, 0.14) floated 15 mm clear of the front
+; face and its seated card swallowed the port's "1" label.
 [node name="MemoryCardSlot" parent="." unique_id=-294967294 instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.02, 0.14)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.038, 0.102)
 grab_distance = 0.05
 snap_require = "memory_card"
 
