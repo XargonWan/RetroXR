@@ -219,11 +219,14 @@ pixel_size = 0.001
 text = "OPEN"
 font_size = 12
 
-; Wii Remote pairing. Off to the side of the transport row and require_trigger,
-; because pressing it by brushing past would drop a paired remote's slot. Only a
-; Wii shows it at all — system.gd calls set_active().
+; Wii Remote pairing. On the FRONT face beside the controller ports rather than in
+; the START/EJECT/RESET row on top: that row is sized for three and a fourth
+; button ran off the corner of the box with its label over START's. It is also
+; where the real Wii keeps its sync button. require_trigger, because brushing past
+; it must not drop a paired remote's slot. Only a Wii shows it at all — system.gd
+; calls set_active().
 [node name="SyncButton" type="Area3D" parent="." unique_id=1919000101]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.14, 0.06, 0.1)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.126, 0.005, 0.127)
 visible = false
 collision_layer = 0
 collision_mask = 0
@@ -237,9 +240,10 @@ shape = SubResource("BoxShape3D_sync")
 mesh = SubResource("BoxMesh_sync")
 surface_material_override/0 = SubResource("Mat_sync")
 
+; Faces the player off the front panel, rather than lying flat like the top row's.
 [node name="ButtonLabel" type="Label3D" parent="SyncButton" unique_id=1919000104]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.016, 0)
-pixel_size = 0.001
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.016, 0.004)
+pixel_size = 0.0006
 text = "SYNC"
 font_size = 12
 

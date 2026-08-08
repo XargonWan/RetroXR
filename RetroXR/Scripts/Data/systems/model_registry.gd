@@ -199,12 +199,6 @@ static func instantiate(row: Dictionary) -> RetroSystemModel:
 	return script.new() as RetroSystemModel
 
 
-## False only for the procedural placeholder. The cabinet keeps its own body box and
-## builds a procedural disc tray/slit only when no real model brought its own.
-static func is_bespoke(row: Dictionary) -> bool:
-	return row.get("id", PLACEHOLDER_ID) != PLACEHOLDER_ID
-
-
 static func placeholder_row() -> Dictionary:
 	return {"id": PLACEHOLDER_ID, "platform": "", "label": "Primitive System",
 		"script": PLACEHOLDER_SCRIPT, "requires": []}

@@ -496,10 +496,11 @@ func _load_system_model() -> void:
 			% [row.get("id", ""), systemid])
 		row = SystemModelRegistry.placeholder_row()
 		_model = SystemModelRegistry.instantiate(row)
-	# False only on the procedural placeholder: the cabinet then keeps its own body
-	# box and builds a procedural disc tray/slit, because no real model brought one.
-	var is_bespoke := SystemModelRegistry.is_bespoke(row)
+	# Asked of the MODEL, not of its registry id: a row can exist for reasons that
+	# have nothing to do with geometry (the Wii's carries core options), and such a
+	# model still wears the procedural box. See RetroSystemModel.brings_own_body.
 	add_child(_model)
+	var is_bespoke := _model.brings_own_body()
 	_model.hide_printed_labels()
 	if is_bespoke:
 		_system_body.hide()

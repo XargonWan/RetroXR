@@ -8,6 +8,13 @@ var _power_btn: VRButton = null
 var _reset_btn: VRButton = null
 
 
+## Nothing here draws a console — this model dresses the box system.tscn already
+## carries. So the cabinet keeps that box, and builds the procedural disc tray or
+## slot to go with it.
+func brings_own_body() -> bool:
+	return false
+
+
 func get_controller_port_count() -> int:
 	return 4
 

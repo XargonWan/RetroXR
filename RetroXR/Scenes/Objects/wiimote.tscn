@@ -338,29 +338,37 @@ surface_material_override/0 = SubResource("Mat_cap")
 ; turns. It latches on the TRIGGER and requires a hand that is not already
 ; holding something — so the hand carrying the remote can never flip its own
 ; cover, which is exactly right. Use the other hand.
+; The grab box sits at the cover's FREE end, not over its middle. SYNC lives under
+; the same panel, and a hinge whose engage sphere reached it meant a trigger pull
+; aimed at the button swung the cover shut instead. Pulled back to the butt and
+; tightened to 22 mm, the two no longer overlap: 32 mm of cover separates them.
 [node name="BatteryCover" type="Area3D" parent="." node_paths=PackedStringArray("target")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.018, 0.042)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0215, 0.062)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("8_vrhinge")
 target = NodePath("../CoverPivot")
 min_deg = 0.0
 max_deg = 105.0
-engage_radius = 0.035
+engage_radius = 0.022
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="BatteryCover"]
 shape = SubResource("BoxShape3D_cover")
 
 [node name="CoverPivot" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0155, 0.014)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0185, 0.014)
 
 [node name="CoverMesh" type="MeshInstance3D" parent="CoverPivot"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.028)
 mesh = SubResource("BoxMesh_cover")
 surface_material_override/0 = SubResource("Mat_shell")
 
+; Its cap has to break the back FACE (y -0.015) to exist at all. At the shell's
+; own depth it was geometrically inside an opaque box: invisible with the cover
+; open, and with nothing standing proud for a fingertip to find. It now sits flush
+; at the top and 2 mm proud, with the cover clearing it by 1 mm when shut.
 [node name="SyncButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0135, 0.036)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.016, 0.03)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")

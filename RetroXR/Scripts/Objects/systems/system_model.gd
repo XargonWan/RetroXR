@@ -28,6 +28,23 @@ func has_baked_shell() -> bool:
 	return _baked_shell != null
 
 
+## True when this model supplies the console's body itself, so the cabinet should
+## drop its procedural box — and, with it, the procedural disc tray or slot that
+## box would otherwise grow.
+##
+## RetroSystem used to derive this from the model's REGISTRY ID: anything not
+## called "placeholder" was assumed to bring geometry. That is the same trap
+## has_baked_shell was written to escape, and it sprang the same way. A row can
+## exist for reasons that have nothing to do with geometry — the Wii's exists to
+## carry the core options its remote cannot work without — and such a model wears
+## the procedural box like any other. Under the id rule it lost the box and the
+## disc slot both, and spawned as a set of buttons and ports floating in mid-air.
+##
+## Asking the model cannot drift: a model that draws nothing says so.
+func brings_own_body() -> bool:
+	return true
+
+
 ## Called when the system is powered on (e.g. light up power LED, play boot animation).
 func on_power_on() -> void:
 	if _power_slider != null:

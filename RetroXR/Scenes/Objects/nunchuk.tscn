@@ -51,6 +51,14 @@ size = Vector3(0.012, 0.004, 0.008)
 [sub_resource type="BoxMesh" id="BoxMesh_z"]
 size = Vector3(0.014, 0.005, 0.016)
 
+; Tapered so the cord looks moulded into the base rather than butted onto it.
+[sub_resource type="CylinderMesh" id="CylMesh_boot"]
+top_radius = 0.007
+bottom_radius = 0.004
+height = 0.013
+radial_segments = 12
+rings = 1
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.06, 0.12, 0.06)
 
@@ -91,8 +99,25 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.017, -0.017)
 mesh = SubResource("BoxMesh_z")
 surface_material_override/0 = SubResource("Mat_cap")
 
+; Strain relief, and the reason the cord looks right at all.
+;
+; VerletRope excludes its anchor's CollisionObject3D from the rope's own surface
+; collision — it has to, or the cord would spend every frame fighting the body it
+; hangs off. The consequence is that an anchor sitting ON the shell lets the first
+; segments swing straight through it, and there is no start-side equivalent of
+; plug_exit_axis to hold them out (the boot properties govern the PLUG end only).
+;
+; So the cord is given something to emerge FROM: a short rigid stub, with the
+; anchor at its tip and clear of the body. Wherever the first segment then wanders,
+; it leaves the nunchuk pointing down out of a moulded boot, which is what the real
+; one does. Same idiom the plug end already uses at the other end of this cord.
+[node name="StrainRelief" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0555, 0)
+mesh = SubResource("CylMesh_boot")
+surface_material_override/0 = SubResource("Mat_shell")
+
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.062, 0)
 
 [node name="GrabPoint" type="Marker3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
