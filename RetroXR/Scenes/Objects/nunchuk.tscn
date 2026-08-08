@@ -1,0 +1,116 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/nunchuk.gd" id="1_ncscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="4_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="5_lhand"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_nc"]
+friction = 0.8
+
+; ~113 mm long and tapered, thick at the top where the stick is and narrowing
+; into the palm. A cylinder rather than a box because the real one has no flat
+; sides at all.
+[sub_resource type="CylinderShape3D" id="CylShape_body"]
+radius = 0.019
+height = 0.1
+
+[sub_resource type="CylinderMesh" id="CylMesh_body"]
+top_radius = 0.019
+bottom_radius = 0.0125
+height = 0.1
+radial_segments = 20
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.93, 0.93, 0.94, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_cap"]
+albedo_color = Color(0.62, 0.63, 0.66, 1)
+
+[sub_resource type="CylinderMesh" id="CylMesh_stick_shaft"]
+top_radius = 0.004
+bottom_radius = 0.005
+height = 0.008
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="CylMesh_stick_cap"]
+top_radius = 0.0095
+bottom_radius = 0.0095
+height = 0.004
+radial_segments = 16
+rings = 1
+
+; C is the small round one, Z the long blade below it — both on the back face,
+; under the index finger.
+[sub_resource type="BoxMesh" id="BoxMesh_c"]
+size = Vector3(0.012, 0.004, 0.008)
+
+[sub_resource type="BoxMesh" id="BoxMesh_z"]
+size = Vector3(0.014, 0.005, 0.016)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.06, 0.12, 0.06)
+
+[node name="Nunchuk" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.1
+physics_material_override = SubResource("PhysMat_nc")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_ncscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CylShape_body")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylMesh_body")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="StickShaft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.053, 0)
+mesh = SubResource("CylMesh_stick_shaft")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="StickCap" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.059, 0)
+mesh = SubResource("CylMesh_stick_cap")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="CButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.036, -0.0165)
+mesh = SubResource("BoxMesh_c")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="ZButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.017, -0.017)
+mesh = SubResource("BoxMesh_z")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+
+[node name="GrabPoint" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+visible = false
+script = ExtResource("3_grabpoint")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+visible = false

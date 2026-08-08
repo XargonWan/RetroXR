@@ -394,6 +394,17 @@ func set_color(color: Color) -> void:
 ## an Area3D DETECTS, never what a ray finds, so the laser went on clicking them.
 func set_active(active: bool) -> void:
 	visible = active
+	set_interactive(active)
+
+
+## Take the button in and out of play WITHOUT hiding it.
+##
+## set_active also drops `visible`, which is right for a cap a model has replaced
+## with its own geometry — it should leave nothing behind. It is wrong for a
+## control moulded into a device that is always on show: a Wii Remote's 1 and 2
+## are part of the shell whether or not anyone can currently press them, and
+## hiding them leaves a blank white slab.
+func set_interactive(active: bool) -> void:
 	set_process(active)
 	set_deferred("monitoring", active)
 	collision_layer = _active_layer if active else 0
@@ -410,6 +421,18 @@ func set_active(active: bool) -> void:
 func set_latched_pressed(pressed: bool) -> void:
 	_latched_pressed = pressed
 	_update_visual_state()
+
+
+## True while a hand or the pointer is actually holding this button down.
+##
+## button_pressed is an edge — it fires once per press, which is right for a
+## console's START or a transport key. A button wired to a GAME needs the LEVEL:
+## holding 1 on a Wii Remote has to keep reading as held for as long as the
+## finger is on it. Deliberately excludes _latched_pressed, which is the caller
+## telling this button it is already down by some other route; counting it would
+## feed that straight back out again.
+func is_held() -> bool:
+	return _touch_pressed or _pointer_pressed or _trigger_pressed
 
 
 func _update_visual_state() -> void:

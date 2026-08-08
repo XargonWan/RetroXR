@@ -82,7 +82,10 @@ func _build_ports() -> void:
 
 		var idx := i
 		zone.has_picked_up.connect(func(obj: Node3D) -> void: _on_sub_snapped(idx, obj))
-		zone.has_dropped.connect(func(obj: Node3D) -> void: _on_sub_released(idx, obj))
+		# has_dropped takes NO argument (see the same note in system.gd). Taking
+		# one aborted every unplug, so a pad pulled from a sub-port kept driving
+		# its console port. _sub_plugs already remembers what was seated.
+		zone.has_dropped.connect(func() -> void: _on_sub_released(idx))
 		_sub_zones.append(zone)
 
 
@@ -93,8 +96,11 @@ func _on_sub_snapped(i: int, plug: Node3D) -> void:
 		_connected_system.attach_expanded_controller(_base_port + i, plug)
 
 
-func _on_sub_released(i: int, plug: Node3D) -> void:
+func _on_sub_released(i: int) -> void:
+	var plug: Node3D = _sub_plugs[i]
 	_sub_plugs[i] = null
+	if not is_instance_valid(plug):
+		return
 	if _connected_system != null and _base_port >= 0:
 		_connected_system.detach_expanded_controller(_base_port + i, plug)
 

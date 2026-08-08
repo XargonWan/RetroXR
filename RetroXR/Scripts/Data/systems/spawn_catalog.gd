@@ -46,6 +46,14 @@ const _PERIPHERALS: Dictionary = {
 	"gamecube": [
 		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
+	# The remote is named here even though it fits no socket: it is the Wii's
+	# controller, and a player who spawns a Wii should be offered one without
+	# having to know it lives under Controllers. The Nunchuk comes with it because
+	# half the library needs one.
+	"wii": [
+		{"kind": "peripheral", "label": "Wii Remote", "spawn": "wiimote"},
+		{"kind": "peripheral", "label": "Nunchuk", "spawn": "nunchuk"},
+	],
 	"virtual_boy": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
 	],

@@ -81,6 +81,11 @@ const _ROWS: Dictionary = {
 	"nes":                  {"platform": "nes", "label": "Nintendo Entertainment System",
 		"script": "res://Scripts/Objects/system_models/nes_model.gd",
 		"requires": ["res://imported-assets/consoles/nes/nes_console.glb"]},
+	# No GLB and no authored scene — this row exists for the core options the Wii
+	# cannot run correctly without, which live on the model. It wears the
+	# procedural box until there is a shell to give it.
+	"wii":                  {"platform": "wii", "label": "Wii",
+		"script": "res://Scripts/Objects/system_models/wii_model.gd"},
 	# --- computers ------------------------------------------------------------
 	# One row across every computer platform rather than eighteen near-identical
 	# ones. The tower is a single model that happens to fit them all; copies would

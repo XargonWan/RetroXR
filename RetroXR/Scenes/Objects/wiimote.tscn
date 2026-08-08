@@ -1,0 +1,424 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/wiimote.gd" id="1_wmscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="4_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="5_lhand"]
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="6_snapzone"]
+[ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="7_vrbtn"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="8_vrhinge"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_wm"]
+friction = 0.8
+
+; 36 x 30 x 148 mm — the real remote's shell, long axis on Z with -Z forward
+; (the IR window end). Every child position below is measured off that.
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.036, 0.03, 0.148)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.036, 0.03, 0.148)
+
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.93, 0.93, 0.94, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.1, 0.1, 0.11, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_grey"]
+albedo_color = Color(0.72, 0.72, 0.74, 1)
+
+; The 1/2/-/+ caps and the trigger, a touch darker than the shell so they read
+; as separate parts under the room's light rather than as printed circles.
+[sub_resource type="StandardMaterial3D" id="Mat_cap"]
+albedo_color = Color(0.62, 0.63, 0.66, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ir"]
+size = Vector3(0.022, 0.01, 0.002)
+
+; D-pad: one cross built from two bars rather than four separate keys, which is
+; what the real one is — a single rocker.
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
+size = Vector3(0.019, 0.003, 0.0065)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
+size = Vector3(0.0065, 0.003, 0.019)
+
+[sub_resource type="CylinderMesh" id="Cyl_a"]
+top_radius = 0.0055
+bottom_radius = 0.0055
+height = 0.003
+radial_segments = 16
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Cyl_small"]
+top_radius = 0.0035
+bottom_radius = 0.0035
+height = 0.0025
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Cyl_home"]
+top_radius = 0.0045
+bottom_radius = 0.0045
+height = 0.0025
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Cyl_num"]
+top_radius = 0.0045
+bottom_radius = 0.0045
+height = 0.0025
+radial_segments = 12
+rings = 1
+
+; Poke volumes for the face buttons, a touch wider than the caps so a fingertip
+; that lands on the edge of one still counts as on it.
+[sub_resource type="CylinderShape3D" id="CylShape_a"]
+radius = 0.007
+height = 0.005
+
+[sub_resource type="CylinderShape3D" id="CylShape_small"]
+radius = 0.005
+height = 0.004
+
+[sub_resource type="CylinderShape3D" id="CylShape_home"]
+radius = 0.006
+height = 0.004
+
+[sub_resource type="CylinderShape3D" id="CylShape_num"]
+radius = 0.006
+height = 0.004
+
+[sub_resource type="CylinderMesh" id="Cyl_power"]
+top_radius = 0.003
+bottom_radius = 0.003
+height = 0.002
+radial_segments = 10
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_power"]
+albedo_color = Color(0.45, 0.12, 0.12, 1)
+
+; B trigger on the underside: a wedge the finger curls onto.
+[sub_resource type="BoxMesh" id="BoxMesh_trigger"]
+size = Vector3(0.014, 0.011, 0.018)
+
+; One player LED lens. Duplicated four times across the butt end; wiimote.gd
+; gives each its own material at _ready so they can light independently.
+[sub_resource type="BoxMesh" id="BoxMesh_led"]
+size = Vector3(0.004, 0.001, 0.002)
+
+[sub_resource type="StandardMaterial3D" id="Mat_led"]
+albedo_color = Color(0.06, 0.07, 0.12, 1)
+
+; Battery cover over the back half of the underside, hiding SYNC.
+[sub_resource type="BoxMesh" id="BoxMesh_cover"]
+size = Vector3(0.03, 0.002, 0.056)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cover"]
+size = Vector3(0.032, 0.008, 0.058)
+
+[sub_resource type="BoxMesh" id="BoxMesh_sync"]
+size = Vector3(0.008, 0.002, 0.008)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_sync"]
+size = Vector3(0.01, 0.006, 0.01)
+
+; The expansion socket at the butt, and the recess drawn inside it.
+[sub_resource type="BoxMesh" id="BoxMesh_expansion"]
+size = Vector3(0.014, 0.006, 0.004)
+
+[sub_resource type="SphereMesh" id="SphereMesh_dot"]
+radius = 0.004
+height = 0.008
+
+[sub_resource type="StandardMaterial3D" id="Mat_dot"]
+transparency = 1
+albedo_color = Color(1, 1, 1, 0.5)
+emission_enabled = true
+emission = Color(0.7, 0.85, 1, 1)
+emission_energy_multiplier = 2.0
+
+; Laser target, generous like the ray gun's — a remote is a slim thing to hit
+; with a beam from across the room, and this only ever answers the pointer.
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.06, 0.06, 0.17)
+
+[node name="Wiimote" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.15
+physics_material_override = SubResource("PhysMat_wm")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_wmscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="IRWindow" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0735)
+mesh = SubResource("BoxMesh_ir")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; -Z is the IR axis. Everything the pointer does is cast from here, not from the
+; hand: the remote is a pickable and the grab point can hold it at any angle.
+[node name="BarrelTip" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.078)
+
+[node name="PowerButton" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.016, -0.062)
+mesh = SubResource("Cyl_power")
+surface_material_override/0 = SubResource("Mat_power")
+
+[node name="DPad" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, -0.044)
+
+[node name="Horizontal" type="MeshInstance3D" parent="DPad"]
+mesh = SubResource("BoxMesh_dpad_h")
+surface_material_override/0 = SubResource("Mat_grey")
+
+[node name="Vertical" type="MeshInstance3D" parent="DPad"]
+mesh = SubResource("BoxMesh_dpad_v")
+surface_material_override/0 = SubResource("Mat_grey")
+
+; The six face buttons are VRButtons, not plain meshes. One VR hand carries five
+; usable inputs and this remote has seven buttons plus a d-pad, so the hand
+; binding alone can never reach all of them — 1, 2 and - had nothing to sit on.
+; Making the shell itself pokeable closes that the way the hardware does: hold
+; the remote in one hand, press the awkward ones with the other. PokeTip gates on
+; a hand that is NOT holding something, so a remote can never press its own
+; buttons with the hand carrying it.
+;
+; They press DOWN into the top face (-Y), and each is its own Area3D with the cap
+; as its ButtonMesh child so VRButton drives the depress animation itself.
+[node name="AButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, -0.018)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.011
+depress_depth = 0.0012
+contact_margin = 0.006
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="AButton"]
+shape = SubResource("CylShape_a")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="AButton"]
+mesh = SubResource("Cyl_a")
+surface_material_override/0 = SubResource("Mat_grey")
+
+[node name="MinusButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.011, 0.0155, 0.004)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.008
+depress_depth = 0.001
+contact_margin = 0.005
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MinusButton"]
+shape = SubResource("CylShape_small")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="MinusButton"]
+mesh = SubResource("Cyl_small")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="HomeButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.004)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.009
+depress_depth = 0.001
+contact_margin = 0.005
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HomeButton"]
+shape = SubResource("CylShape_home")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="HomeButton"]
+mesh = SubResource("Cyl_home")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="PlusButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.011, 0.0155, 0.004)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.008
+depress_depth = 0.001
+contact_margin = 0.005
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlusButton"]
+shape = SubResource("CylShape_small")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="PlusButton"]
+mesh = SubResource("Cyl_small")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="OneButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.026)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.009
+depress_depth = 0.001
+contact_margin = 0.005
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="OneButton"]
+shape = SubResource("CylShape_num")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="OneButton"]
+mesh = SubResource("Cyl_num")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="TwoButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.042)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.009
+depress_depth = 0.001
+contact_margin = 0.005
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TwoButton"]
+shape = SubResource("CylShape_num")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="TwoButton"]
+mesh = SubResource("Cyl_num")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="PlayerLEDs" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0.06)
+
+[node name="LED1" type="MeshInstance3D" parent="PlayerLEDs"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0105, 0, 0)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+[node name="LED2" type="MeshInstance3D" parent="PlayerLEDs"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0035, 0, 0)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+[node name="LED3" type="MeshInstance3D" parent="PlayerLEDs"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0035, 0, 0)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+[node name="LED4" type="MeshInstance3D" parent="PlayerLEDs"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0105, 0, 0)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+; Pivot sits at the trigger's TOP edge so the blade sweeps back toward the palm,
+; the same arrangement (and sign) as the ray gun's.
+[node name="TriggerPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0135, -0.03)
+
+[node name="Trigger" type="MeshInstance3D" parent="TriggerPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0055, -0.007)
+mesh = SubResource("BoxMesh_trigger")
+surface_material_override/0 = SubResource("Mat_cap")
+
+; Hinged at its FRONT edge so the cover swings down and away from the shell,
+; clearing the SYNC cap behind it rather than sweeping across it. A positive
+; angle about the pivot's local X carries the free (+Z) end to -Y, which on this
+; underside face is outward.
+;
+; VRHinge is an Area3D that ROTATES A SEPARATE TARGET, so the grab region and the
+; moving part are two nodes: the zone sits over the cover, CoverPivot is what
+; turns. It latches on the TRIGGER and requires a hand that is not already
+; holding something — so the hand carrying the remote can never flip its own
+; cover, which is exactly right. Use the other hand.
+[node name="BatteryCover" type="Area3D" parent="." node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.018, 0.042)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("8_vrhinge")
+target = NodePath("../CoverPivot")
+min_deg = 0.0
+max_deg = 105.0
+engage_radius = 0.035
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="BatteryCover"]
+shape = SubResource("BoxShape3D_cover")
+
+[node name="CoverPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0155, 0.014)
+
+[node name="CoverMesh" type="MeshInstance3D" parent="CoverPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.028)
+mesh = SubResource("BoxMesh_cover")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="SyncButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0135, 0.036)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+require_trigger = true
+depress_axis = Vector3(0, 1, 0)
+depress_depth = 0.0015
+trigger_radius = 0.012
+interact_margin = 0.012
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton"]
+shape = SubResource("BoxShape3D_sync")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="SyncButton"]
+mesh = SubResource("BoxMesh_sync")
+surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="ButtonLabel" type="Label3D" parent="SyncButton"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -0.004, 0)
+pixel_size = 0.0005
+text = "SYNC"
+font_size = 12
+
+; The Nunchuk's plug seats here. snap_filter is set from wiimote.gd so only the
+; nunchuk cord fits — snap_require alone would also accept a console pad's plug.
+[node name="ExpansionPort" parent="." instance=ExtResource("6_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.076)
+grab_distance = 0.03
+snap_require = "controller_plug"
+
+[node name="PortRecess" type="MeshInstance3D" parent="ExpansionPort"]
+mesh = SubResource("BoxMesh_expansion")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="LaserDot" type="MeshInstance3D" parent="."]
+top_level = true
+cast_shadow = 0
+mesh = SubResource("SphereMesh_dot")
+surface_material_override/0 = SubResource("Mat_dot")
+
+[node name="GrabPoint" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
+visible = false
+script = ExtResource("3_grabpoint")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
+visible = false

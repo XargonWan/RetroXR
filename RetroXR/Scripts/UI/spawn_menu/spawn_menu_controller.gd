@@ -25,6 +25,8 @@ const SNES_MOUSE_SCENE      := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_multitap.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
+const WIIMOTE_SCENE         := preload("res://Scenes/Objects/wiimote.tscn")
+const NUNCHUK_SCENE         := preload("res://Scenes/Objects/nunchuk.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/vcr_tape.tscn")
@@ -1018,6 +1020,12 @@ func _on_spawn_requested(type: String) -> void:
 			obj = RETRO_KEYBOARD_SCENE.instantiate() as Node3D
 		"retro_multitap":
 			obj = RETRO_MULTITAP_SCENE.instantiate() as Node3D
+		# No port to pick: a remote is wireless and pairs with SYNC, and a nunchuk
+		# plugs into a remote rather than into a console.
+		"wiimote":
+			obj = WIIMOTE_SCENE.instantiate() as Node3D
+		"nunchuk":
+			obj = NUNCHUK_SCENE.instantiate() as Node3D
 		"ray_gun":
 			var gun := RAY_GUN_SCENE.instantiate() as RayGun
 			gun.show_laser_dot = _aim_crosshair_enabled
@@ -1139,10 +1147,11 @@ func _on_locomotion_mode_changed(teleport: bool) -> void:
 
 func _on_aim_crosshair_changed(enabled: bool) -> void:
 	_aim_crosshair_enabled = enabled
+	# Anything that paints a dot where it is aiming follows this switch — the ray
+	# gun and the Wii Remote both do, and for the same reason.
 	for node in get_tree().get_nodes_in_group("spawned"):
-		var gun := node as RayGun
-		if gun:
-			gun.show_laser_dot = enabled
+		if "show_laser_dot" in node:
+			node.set("show_laser_dot", enabled)
 
 
 func _on_controller_hands_changed(enabled: bool) -> void:

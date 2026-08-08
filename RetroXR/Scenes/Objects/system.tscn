@@ -67,6 +67,18 @@ size = Vector3(0.03, 0.02, 0.03)
 [sub_resource type="StandardMaterial3D" id="Mat_eject"]
 albedo_color = Color(0.15, 0.45, 0.9, 1)
 
+; SYNC — smaller than the transport buttons and pale, like the real Wii's, which
+; sits under the SD-card flap rather than on the face. system.gd tints it while a
+; pairing window is open, so this is only the resting colour.
+[sub_resource type="BoxShape3D" id="BoxShape3D_sync"]
+size = Vector3(0.018, 0.016, 0.018)
+
+[sub_resource type="BoxMesh" id="BoxMesh_sync"]
+size = Vector3(0.018, 0.016, 0.018)
+
+[sub_resource type="StandardMaterial3D" id="Mat_sync"]
+albedo_color = Color(0.85, 0.85, 0.88, 1)
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.3, 0.1, 0.25)
 
@@ -205,6 +217,30 @@ surface_material_override/0 = SubResource("Mat_eject")
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.018, 0)
 pixel_size = 0.001
 text = "OPEN"
+font_size = 12
+
+; Wii Remote pairing. Off to the side of the transport row and require_trigger,
+; because pressing it by brushing past would drop a paired remote's slot. Only a
+; Wii shows it at all — system.gd calls set_active().
+[node name="SyncButton" type="Area3D" parent="." unique_id=1919000101]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.14, 0.06, 0.1)
+visible = false
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("3_vrbtn")
+require_trigger = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton" unique_id=1919000102]
+shape = SubResource("BoxShape3D_sync")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="SyncButton" unique_id=1919000103]
+mesh = SubResource("BoxMesh_sync")
+surface_material_override/0 = SubResource("Mat_sync")
+
+[node name="ButtonLabel" type="Label3D" parent="SyncButton" unique_id=1919000104]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.016, 0)
+pixel_size = 0.001
+text = "SYNC"
 font_size = 12
 
 [node name="SystemNameLabel" type="Label3D" parent="." unique_id=1897051898]

@@ -138,6 +138,9 @@ var _model: RetroSystemModel = null
 
 # Held-input component (handhelds only — the device itself is the controller)
 var _handheld_input: HandheldInput = null
+## Wireless-pad pairing, on the consoles that have it (the Wii). Null elsewhere,
+## and every call site is guarded on that — see _setup_wireless_pads.
+var _wii_link: WiiLink = null
 
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
@@ -237,6 +240,7 @@ var _disc_ejected := false
 @onready var _power_button: VRButton = $PowerButton
 @onready var _reset_button: VRButton = $ResetButton
 @onready var _eject_button: VRButton = $EjectButton
+@onready var _sync_button: VRButton = $SyncButton
 @onready var _options_panel: CoreOptionsPanel = $CoreOptionsPanel
 @onready var _system_name_label: Label3D = $SystemNameLabel
 @onready var _port_zones: Array = [
@@ -252,11 +256,22 @@ var _disc_ejected := false
 ## node tree scan on every core callback.
 var _port_controllers: Array = [null, null, null, null]
 
+## The ControllerPlug seated in each cabinet port. Kept alongside the controller
+## because the two are not interchangeable on the way out: has_dropped names
+## nothing, and the release path needs the PLUG (its device_type, its collision
+## exception, its on_unplugged) rather than the controller behind it.
+var _port_plugs: Array = [null, null, null, null]
+
 
 ## Real-world cross-compatibility: media of these systemids also fits.
 ## (The GBA plays original Game Boy carts — and mgba runs them.)
+##
+## The Wii row is not just cosmetic: with a GameCube disc in the tray the core's
+## IsWii() goes false, and that changes how the whole cabinet is wired — see
+## _wii_mode().
 const _MEDIA_COMPAT: Dictionary = {
 	"game_boy_advance": ["game_boy"],
+	"wii":              ["gamecube"],
 }
 
 ## The same idea for connectors: controllers of these systemids ALSO fit this
@@ -272,8 +287,10 @@ const _CONTROLLER_COMPAT: Dictionary = {}
 
 # RETRO_DEVICE_* types relevant to port routing (libretro.h).
 const RETRO_DEVICE_NONE := 0
+const RETRO_DEVICE_JOYPAD := 1
 const RETRO_DEVICE_MOUSE := 2
 const RETRO_DEVICE_KEYBOARD := 3
+
 
 
 func _ready() -> void:
@@ -302,7 +319,12 @@ func _ready() -> void:
 	for i in range(4):
 		var idx := i
 		_port_zones[i].has_picked_up.connect(func(obj: Node3D) -> void: _on_port_snapped(idx, obj))
-		_port_zones[i].has_dropped.connect(func(obj: Node3D) -> void: _on_port_released(idx, obj))
+		# has_dropped carries NO argument — it says the zone is empty, not what
+		# left, and it fires after the zone has already forgotten. Taking one here
+		# made every unplug abort with "expected 1 argument, called with 0", so a
+		# controller pulled out of a port never released it: the libretro device
+		# stayed set and the slot stayed occupied. _port_plugs is what remembers.
+		_port_zones[i].has_dropped.connect(func() -> void: _on_port_released(idx))
 		# A SNES pad does not fit a PlayStation. Same gate the cartridge slot
 		# uses for media, applied to the connector.
 		_port_zones[i].snap_filter = _accepts_plug
@@ -547,6 +569,11 @@ func _load_system_model() -> void:
 	# opts out — it drives request_tray_state directly.
 	var want_eject := has_loader and _model.has_eject_button()
 	_eject_button.set_active(want_eject)
+	# Consoles with wireless pads grow a SYNC button and the component behind it.
+	# Set up here rather than in _ready because `systemid` is an export the spawner
+	# may still be filling in when _ready runs; by the time a model is resolved it
+	# is definitely set.
+	_setup_wireless_pads()
 	# A front-sliding tray is a property of the PROCEDURAL box. A bespoke shell
 	# brings its own mechanism — the PS2 Slim's hinged cover is a lid whatever the
 	# platform row says the family does — so it keeps the lid wording and geometry.
@@ -2139,6 +2166,38 @@ func _claims_port_device(device_type: int) -> bool:
 	return not (device_type == RETRO_DEVICE_KEYBOARD and _is_computer())
 
 
+## Attach the wireless-pad component and reveal its button, on the consoles that
+## have one. Everything the Wii does differently — pairing, the slot arithmetic
+## it shares with wired pads, the GameCube-vs-Wii device ids — lives in WiiLink,
+## the same way a handheld's input pipeline lives in HandheldInput. Every other
+## console leaves `_wii_link` null and reads none of it.
+func _setup_wireless_pads() -> void:
+	var wants := WiiLink.handles(systemid)
+	_sync_button.set_active(wants)
+	if not wants or _wii_link != null:
+		return
+	_wii_link = WiiLink.new()
+	_wii_link.name = "WiiLink"
+	add_child(_wii_link)
+	_wii_link.setup(self, _sync_button)
+
+
+## The node holding a given libretro port, or null. A read-only window onto the
+## port cache for components that need to see what is where — WiiLink searches it
+## for a free remote slot — without every one of them reaching into the array.
+func port_holder(port: int) -> Node:
+	if port < 0 or port >= _port_controllers.size():
+		return null
+	var held: Node = _port_controllers[port]
+	return held if is_instance_valid(held) else null
+
+
+## The Wii pairing component, or null on every other console. Wii Remotes look it
+## up here after a save restore, when they have a system but not yet a link.
+func get_wii_link() -> WiiLink:
+	return _wii_link
+
+
 ## Returns the Libretro node so plugged-in controller objects can call input methods on it.
 ## The active hardware model (RetroSystemModel). Lets peripherals/held-input drive
 ## model-side visuals (e.g. a handheld animating its own buttons from input).
@@ -2159,12 +2218,21 @@ func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 	# computer systems the mouse is forced to port 0 (where those cores poll it),
 	# so a mouse + keyboard can share the cabinet. See _libretro_port_for().
 	var lib_port := _libretro_port_for(device_type, port_index)
-	print("[RetroSystem] port %d snapped: device_type=%d -> libretro port %d" %
-		[port_index, device_type, lib_port])
+	# On a Wii the slot may already hold a paired remote, and a wired pad may need
+	# announcing as a GameCube pad rather than a plain joypad. Both are Wii policy
+	# and both live in WiiLink; every other console skips them entirely.
+	var announce := device_type
+	if _wii_link != null:
+		_wii_link.evict_remote_from(lib_port)
+		announce = _wii_link.cabinet_device_id(device_type)
+	print("[RetroSystem] port %d snapped: device_type=%d -> libretro port %d (announced %d)" %
+		[port_index, device_type, lib_port, announce])
 	if _claims_port_device(device_type):
-		set_controller_port_device(lib_port, device_type)
+		set_controller_port_device(lib_port, announce)
 	# The snapped node is a ControllerPlug (cable end). Unwrap to the actual
-	# RetroController so rumble can be routed to its set_rumble() method.
+	# RetroController so rumble can be routed to its set_rumble() method, and keep
+	# the plug itself for the release path, which is handed nothing.
+	_port_plugs[port_index] = controller
 	_port_controllers[port_index] = controller.get_controller() \
 		if controller.has_method("get_controller") else controller
 	if controller.has_method("on_plugged_in"):
@@ -2176,7 +2244,11 @@ func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 		{"sys": self, "ctrl": _port_controllers[port_index], "port": port_index})
 
 
-func _on_port_released(port_index: int, controller: Node3D) -> void:
+func _on_port_released(port_index: int) -> void:
+	var controller: Node3D = _port_plugs[port_index]
+	_port_plugs[port_index] = null
+	if not is_instance_valid(controller):
+		return
 	print("[RetroSystem] port %d released" % port_index)
 	# Stop any active rumble on the controller being unplugged. The snapped
 	# node is a ControllerPlug, so unwrap to the real RetroController first.

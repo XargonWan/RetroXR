@@ -130,6 +130,50 @@ const DEFAULT_LIGHTGUN_MAP: Dictionary = {
     "stick":         "dpad", # thumbstick → lightgun d-pad
 }
 
+## Default Wii Remote map: XRController input name → the remote's own control
+## name. Named controls rather than joypad bit indices, because the bit a control
+## lands on MOVES: attaching a Nunchuk shifts 1/2 off X/Y onto START/SELECT to
+## free them for C/Z, which is how the core lays out its two descriptor tables.
+## Wiimote._button_mask does that translation; this map only says which finger
+## works which button. "stick" is special: "none" or "dpad".
+##
+## One hand carries five usable inputs and the remote has seven buttons, so this
+## CANNOT cover all of them and is not meant to. It takes the four you need with
+## a game running — A, B, 1 and 2 — plus shake. The rest (+, -, HOME) are the
+## ones you reach for between rounds, and those are poked on the shell itself
+## with the free hand, which every button on the remote also answers to.
+const DEFAULT_WIIMOTE_MAP: Dictionary = {
+    "trigger":       "b",       # index finger, on the underside — same as the real B
+    "ax_button":     "a",
+    "by_button":     "two",
+    "grip":          "one",
+    "primary_click": "shake",
+    "stick":         "dpad",
+}
+
+## Human-readable labels for each Wii Remote button source.
+const WIIMOTE_SOURCE_LABELS: Dictionary = {
+    "trigger":       "Trigger",
+    "grip":          "Grip",
+    "ax_button":     "A / X button",
+    "by_button":     "B / Y button",
+    "primary_click": "Stick Click",
+    "stick":         "Thumbstick",
+}
+
+## The controls a Wii Remote can be bound to. "shake" is not a button on the
+## hardware — the core takes a shake as one, so it is one here.
+const WIIMOTE_CONTROLS: Array[String] = [
+    "a", "b", "one", "two", "plus", "minus", "home", "shake",
+]
+
+## Default Nunchuk map, read by the OFF hand. Only C and Z are bindable; the
+## stick is always the stick and the shake is a real gesture, not an input.
+const DEFAULT_NUNCHUK_MAP: Dictionary = {
+    "c": "ax_button",
+    "z": "trigger",
+}
+
 ## Human-readable labels for each lightgun button source.
 const LIGHTGUN_SOURCE_LABELS: Dictionary = {
     "trigger":       "Trigger",
@@ -203,10 +247,15 @@ static func get_for_system(systemid: String) -> Dictionary:
         var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
         sys_data = per_sys.get(systemid, {}) as Dictionary
 
+    # The wiimote/nunchuk layers read the same file but have no save_* writer of
+    # their own yet, so today they always resolve to the defaults. Merging them
+    # here regardless means adding a remap tab later touches only the writer.
     return {
         "buttons":  _merge(DEFAULT_BUTTON_MAP,   global_data.get("buttons",  {}), sys_data.get("buttons",  {})),
         "sticks":   _merge(DEFAULT_STICK_MAP,     global_data.get("sticks",   {}), sys_data.get("sticks",   {})),
         "lightgun": _merge(DEFAULT_LIGHTGUN_MAP,  global_data.get("lightgun", {}), sys_data.get("lightgun", {})),
+        "wiimote":  _merge(DEFAULT_WIIMOTE_MAP,   global_data.get("wiimote",  {}), sys_data.get("wiimote",  {})),
+        "nunchuk":  _merge(DEFAULT_NUNCHUK_MAP,   global_data.get("nunchuk",  {}), sys_data.get("nunchuk",  {})),
     }
 
 

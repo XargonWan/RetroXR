@@ -382,6 +382,8 @@ func _build() -> void:
 		["Ray Gun",            "ray_gun"],
 		["Mouse",              "retro_mouse"],
 		["Keyboard",           "retro_keyboard"],
+		["Wii Remote",         "wiimote"],
+		["Nunchuk",            "nunchuk"],
 	])
 
 	# Refresh on tab switch — picks up files added to disk since last open

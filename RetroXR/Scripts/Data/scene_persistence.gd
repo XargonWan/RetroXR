@@ -48,6 +48,8 @@ const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/retro_mouse.tscn")
 const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE   := preload("res://Scenes/Objects/retro_keyboard.tscn")
+const WIIMOTE_SCENE          := preload("res://Scenes/Objects/wiimote.tscn")
+const NUNCHUK_SCENE          := preload("res://Scenes/Objects/nunchuk.tscn")
 
 ## Types whose entry carries nothing but a pose — instantiate and place, no
 ## properties to apply. Types that need more are match arms in
@@ -61,6 +63,13 @@ const PLAIN_SCENES := {
 	"dvd_player": DVD_SCENE,
 	"cd_player": CD_PLAYER_SCENE,
 	"cassette_player": CASSETTE_PLAYER_SCENE,
+	# Both Wii objects instantiate from here; the remote's pairing and its seated
+	# Nunchuk are applied afterwards by the peripheral arm of _apply_references,
+	# exactly as the ray gun's port connection is. The Nunchuk carries no port of
+	# its own — it is wired to a remote, and that seating is restored from the
+	# REMOTE's entry, not from this one.
+	"wiimote": WIIMOTE_SCENE,
+	"nunchuk": NUNCHUK_SCENE,
 }
 
 
@@ -471,7 +480,13 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 				"port": str(rec.get("port", "")),
 			})
 		(obj as CompositeCable).restore_seating(seats)
-	elif obj is RetroController or obj is RayGun or obj is RetroMouse or obj is RetroKeyboard:
+	elif obj is RetroController or obj is RayGun or obj is RetroMouse \
+			or obj is RetroKeyboard or obj is Wiimote:
+		# The remote's Nunchuk is restored whether or not it was paired to a
+		# console — an unpaired remote can still have one plugged into it.
+		if obj is Wiimote:
+			(obj as Wiimote).restore_nunchuk(
+				_resolve_ref(root, spawned, d.get("nunchuk")) as Nunchuk)
 		var port_idx := int(d.get("port_index", -1))
 		if port_idx < 0:
 			return
@@ -599,7 +614,8 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"album_path": acass.album_path,
 			"album_label": acass.album_label,
 		})
-	elif node is RetroController or node is RayGun or node is RetroMouse or node is RetroKeyboard:
+	elif node is RetroController or node is RayGun or node is RetroMouse \
+			or node is RetroKeyboard or node is Wiimote:
 		return _serialize_peripheral(node, id, n3d, node_to_id)
 	elif node is SpeakerPair:
 		# Deliberately not a PLAIN_SCENES pose-only object. The root never moves —
@@ -626,7 +642,9 @@ func _media_fields(cart: RetroCartridge) -> Dictionary:
 
 func _serialize_peripheral(node: Node, id: int, n3d: Node3D, node_to_id: Dictionary) -> Dictionary:
 	var obj_type := "retro_controller"
-	if node is RayGun:
+	if node is Wiimote:
+		obj_type = "wiimote"
+	elif node is RayGun:
 		obj_type = "ray_gun"
 	elif node is SnesMouse:
 		# Before the RetroMouse arm, which it also satisfies — reaching that
@@ -643,6 +661,11 @@ func _serialize_peripheral(node: Node, id: int, n3d: Node3D, node_to_id: Diction
 		"system": _ref(node_to_id, connected_sys),
 		"port_index": node.get("_port_index") if connected_sys != null else -1,
 	})
+	if node is Wiimote:
+		# Which Nunchuk is plugged into this remote, if any. Saved on the REMOTE
+		# because that is the end of the cord that means something — the nunchuk
+		# itself is just a pose.
+		entry["nunchuk"] = _ref(node_to_id, (node as Wiimote).get_nunchuk())
 	if node is RetroMouse:
 		entry["sensitivity"] = (node as RetroMouse).sensitivity
 	if node is RetroController:
