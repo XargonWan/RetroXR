@@ -345,10 +345,21 @@ func get_rom_path() -> String:
 ## Called by SpawnMenuController when the menu button is pressed while
 ## pointing at this cartridge.
 func toggle_options_ui(camera: Node3D) -> void:
+	var panel := ensure_options_panel()
+	if panel.visible:
+		panel.hide_panel()
+	else:
+		panel.show_for(self, camera)
+
+
+## The cartridge's options panel, created on first use.
+##
+## Public because the core options panel borrows it: while a cartridge is in a
+## machine, its Cartridge tab is driven by this same panel, so a save selected
+## from the console and one selected from the cartridge in your hand are the
+## same act on the same state rather than two copies that can disagree.
+func ensure_options_panel() -> CartridgeOptionsPanel:
 	if _options_panel == null:
 		_options_panel = OPTIONS_PANEL_SCENE.instantiate()
 		add_child(_options_panel)
-	if _options_panel.visible:
-		_options_panel.hide_panel()
-	else:
-		_options_panel.show_for(self, camera)
+	return _options_panel

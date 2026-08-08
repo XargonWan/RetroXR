@@ -1,0 +1,236 @@
+## AchievementToast — the RetroAchievements unlock popup, on the cabinet.
+##
+## The spawn menu's toast stack is parented to the menu panel, so it is invisible
+## while somebody is actually playing — which is exactly when an unlock happens.
+## This is its own quad, anchored to the machine that earned it, so with two
+## cabinets running you can see which one popped.
+##
+## Built the way ToastPanel builds its quad, and it inherits two settings from
+## there that were expensive to learn: SCISSOR rather than alpha blending (a
+## blended Viewport2DIn3D quad measured 57 drawn pixels against 14787 with
+## blending off), and a scale that makes an 18 pt line readable across the room
+## rather than 9 mm tall.
+class_name AchievementToast
+extends Node3D
+
+## Seconds a badge stays up. Long enough to read the title and look at the badge.
+const DWELL := 6.0
+## Metres above the screen's top edge.
+const ABOVE_SCREEN := 0.06
+## Pixels per metre. ToastPanel's 1.7x over page scale, for the same reason.
+const PIXELS_PER_METRE := 1400.0
+
+const PANEL_W := 520.0
+const PANEL_H := 132.0
+
+var _viewport: XRToolsViewport2DIn3D = null
+var _root: Control = null
+var _queue: Array[Dictionary] = []
+var _showing := false
+
+## The screen this toast belongs to. Held rather than read from get_parent(),
+## because the node is top_level and its parent is only a lifetime owner.
+var _anchor: MeshInstance3D = null
+## Placement is stale for one frame after a show; physics interpolation would
+## otherwise lerp the quad in from wherever it last sat.
+var _needs_interpolation_reset := false
+
+
+## Attach a toast host to a cabinet. `anchor` is the screen mesh it floats above,
+## so the popup tracks a handheld picked up and carried.
+static func attach(anchor: MeshInstance3D) -> AchievementToast:
+	if anchor == null:
+		return null
+	var toast := AchievementToast.new()
+	toast.name = "AchievementToast"
+	toast._anchor = anchor
+	# Parented to the screen for lifetime — it should die with the machine — but
+	# top_level, so none of the screen's transform reaches it. See _place().
+	anchor.add_child(toast)
+	toast._build()
+	return toast
+
+
+func _build() -> void:
+	# Instanced from the addon scene, not .new(): the SubViewport, mesh and
+	# collision body are scene children.
+	_viewport = load("res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn") \
+		.instantiate() as XRToolsViewport2DIn3D
+	_viewport.name = "AchievementViewport"
+	_viewport.update_mode = XRToolsViewport2DIn3D.UpdateMode.UPDATE_ALWAYS
+	_viewport.transparent = XRToolsViewport2DIn3D.TransparancyMode.SCISSOR
+	_viewport.unshaded = true
+	# Nothing here is clickable, and a pointer-layer body floating in front of a
+	# cabinet would block the controls behind it.
+	_viewport.collision_layer = 0
+	_viewport.viewport_size = Vector2(PANEL_W, PANEL_H)
+	_viewport.screen_size = Vector2(PANEL_W, PANEL_H) / PIXELS_PER_METRE
+	add_child(_viewport)
+
+	# The screen mesh is not a safe transform to inherit. Its scale is what a
+	# shell uses to size its tube (tv.gd:231), and tv.gd:445 tweens scale.y from
+	# 0.02 to 1 as the CRT warms up — a child rides both, so the toast would be
+	# sized by whatever cabinet it landed on and squashed during power-on.
+	# top_level ignores the parent transform entirely; _place() then rebuilds the
+	# world transform from the anchor with the scale stripped out.
+	top_level = true
+	set_process(false)
+	visible = false
+
+
+## Above the screen, centred on it, facing the same way, at a size that does not
+## depend on the screen's scale.
+##
+## Everything is computed in WORLD space from the anchor. Two details matter:
+## get_aabb() is the mesh resource's own extent and ignores node scale, so it has
+## to be pushed through global_transform rather than multiplied by scale; and the
+## basis is orthonormalized, which strips the scale so the quad keeps the physical
+## size screen_size asked for.
+func _place() -> void:
+	if not is_instance_valid(_anchor):
+		return
+
+	var xform := _anchor.global_transform
+	var basis := xform.basis.orthonormalized()
+
+	var top_centre := xform.origin
+	if _anchor.mesh != null:
+		var aabb := _anchor.get_aabb()
+		# Top edge, centred on the mesh's own extent — a screen quad is not always
+		# centred on its node origin.
+		top_centre = xform * Vector3(aabb.get_center().x, aabb.end.y, aabb.get_center().z)
+
+	# Clear of the bezel, then half the panel so the gap is to its bottom edge,
+	# then a little proud of the screen plane so it never z-fights the picture.
+	var offset := basis.y * (ABOVE_SCREEN + (PANEL_H / PIXELS_PER_METRE) * 0.5) \
+		+ basis.z * 0.01
+
+	global_transform = Transform3D(basis, top_centre + offset)
+
+
+## The screen this toast floats above. Callers compare it against their current
+## screen target — plugging a video-out cable into a TV moves the picture, and a
+## toast still hanging over the handheld's dark built-in panel is worse than none.
+func anchor() -> MeshInstance3D:
+	return _anchor if is_instance_valid(_anchor) else null
+
+
+## Queue an unlock. Several can land close together (a boss kill often trips two
+## or three), so they are shown one at a time rather than drawn over each other.
+func show_unlock(title: String, description: String, points: int, badge: Texture2D) -> void:
+	_queue.append({
+		"title": title,
+		"description": description,
+		"points": points,
+		"badge": badge,
+	})
+	if not _showing:
+		_next()
+
+
+func _next() -> void:
+	if _queue.is_empty():
+		_showing = false
+		visible = false
+		# top_level means nothing else moves this node, so tracking only has to
+		# run while something is on screen.
+		set_process(false)
+		return
+
+	_showing = true
+	var entry: Dictionary = _queue.pop_front()
+	_render(entry)
+	_place()
+	_needs_interpolation_reset = true
+	visible = true
+	set_process(true)
+
+	await get_tree().create_timer(DWELL).timeout
+	# The cabinet may have been powered off or freed while the toast was up.
+	if not is_inside_tree():
+		return
+	_next()
+
+
+## Follow the machine. A cabinet is furniture but a handheld gets picked up and
+## carried, and a top_level node does not inherit that movement for free.
+func _process(_delta: float) -> void:
+	if not is_instance_valid(_anchor):
+		visible = false
+		set_process(false)
+		return
+
+	_place()
+
+	if _needs_interpolation_reset:
+		# The node has been sitting somewhere stale (or nowhere) since the last
+		# toast. Without this the first frame lerps in from that pose.
+		_needs_interpolation_reset = false
+		reset_physics_interpolation()
+
+
+func _render(entry: Dictionary) -> void:
+	if is_instance_valid(_root):
+		_root.queue_free()
+
+	_root = PanelContainer.new()
+	_root.custom_minimum_size = Vector2(PANEL_W, PANEL_H)
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.06, 0.09, 1.0)
+	style.border_color = Color(1.0, 0.78, 0.24)
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(12)
+	_root.add_theme_stylebox_override("panel", style)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(row)
+
+	var badge: Texture2D = entry.get("badge")
+	if badge != null:
+		var icon := TextureRect.new()
+		icon.texture = badge
+		icon.custom_minimum_size = Vector2(96, 96)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(icon)
+
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(text)
+
+	var heading := Label.new()
+	heading.text = "Achievement unlocked  •  %d" % int(entry.get("points", 0))
+	heading.add_theme_font_size_override("font_size", 15)
+	heading.add_theme_color_override("font_color", Color(1.0, 0.78, 0.24))
+	text.add_child(heading)
+
+	var title := Label.new()
+	title.text = str(entry.get("title", ""))
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(1, 1, 1))
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_child(title)
+
+	var desc := Label.new()
+	desc.text = str(entry.get("description", ""))
+	desc.add_theme_font_size_override("font_size", 15)
+	desc.add_theme_color_override("font_color", Color(0.72, 0.75, 0.8))
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_child(desc)
+
+	# Into the addon's SubViewport child, which is what actually renders — the
+	# node itself is the Node3D holding the quad. This is the same place
+	# viewport_2d_in_3d.gd puts its own `scene` instance.
+	var sub := _viewport.get_node_or_null("Viewport") as SubViewport
+	if sub == null:
+		push_warning("AchievementToast: Viewport2DIn3D has no Viewport child")
+		return
+	sub.add_child(_root)

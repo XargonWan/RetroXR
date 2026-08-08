@@ -11,6 +11,9 @@ const FLOAT_HEIGHT := 0.25
 
 var _cart: RetroCartridge = null
 var _camera: Node3D = null
+## Set when another panel hosts the UI (the core options Cartridge tab). This
+## node then acts as the controller only and its own quad is never shown.
+var _external_ui: CartridgeOptions2D = null
 var _ui_connected := false
 ## Saves the server holds for this cartridge's ROM, fetched when the panel opens.
 var _server_saves: Array = []
@@ -24,6 +27,13 @@ var _conflicted: Dictionary = {}
 func _ready() -> void:
 	top_level = true
 	visible = false
+
+
+## Repopulate targets: this panel's own quad when it is up, and the embedded copy
+## in the core options Cartridge tab whenever that exists. Without the second the
+## embedded list never refreshes, because this node is never `visible`.
+func _showing() -> bool:
+	return visible or is_instance_valid(_external_ui)
 
 
 func _process(_delta: float) -> void:
@@ -51,7 +61,24 @@ func hide_panel() -> void:
 	visible = false
 
 
+## Drive a UI that lives somewhere else — the core options panel's Cartridge tab
+## hosts an embedded CartridgeOptions2D, and all the save management, RomM sync
+## and achievement lookup below should serve it rather than being written twice.
+##
+## The host owns the Control's lifetime; this node keeps only the reference and
+## its own quad stays hidden.
+func adopt_external_ui(ui: CartridgeOptions2D, cart: RetroCartridge) -> void:
+	_external_ui = ui
+	_cart = cart
+	_ui_connected = false
+	_ensure_ui_connected()
+	_populate()
+	_refresh_server_list()
+
+
 func _get_ui() -> CartridgeOptions2D:
+	if is_instance_valid(_external_ui):
+		return _external_ui
 	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
 	if not vp or vp.get_child_count() == 0:
 		return null
@@ -69,9 +96,16 @@ func _ensure_ui_connected() -> void:
 	ui.sync_toggled.connect(_on_sync_toggled)
 	ui.server_save_requested.connect(_on_server_save_requested)
 	ui.new_synced_save_requested.connect(_on_new_synced_save)
-	ui.close_requested.connect(hide_panel)
-	SaveSync.sync_finished.connect(_on_sync_finished)
-	SaveSync.conflict_forked.connect(_on_conflict_forked)
+	# The embedded copy has no ✕ of its own; its host closes it.
+	if not is_instance_valid(_external_ui):
+		ui.close_requested.connect(hide_panel)
+	# One-shot: these are global signals and the guard below is what stops a
+	# second adopt_external_ui() stacking another connection on every one.
+	if not SaveSync.sync_finished.is_connected(_on_sync_finished):
+		SaveSync.sync_finished.connect(_on_sync_finished)
+		SaveSync.conflict_forked.connect(_on_conflict_forked)
+		RA.game_loaded.connect(_on_ra_changed)
+		RA.achievement_unlocked.connect(_on_ra_unlocked)
 	_ui_connected = true
 
 
@@ -100,6 +134,56 @@ func _populate() -> void:
 
 	ui.populate(_cart.game_label, saves, _cart.save_id, not core.is_empty(),
 		states, _server_only(saves), _romm_ready())
+	_populate_achievements(ui)
+
+
+## The Achievements ribbon. rcheevos keeps one session for the whole app, so the
+## list it holds belongs to whichever machine claimed it — this cartridge only
+## gets to show it when it is the one in that machine. Every other case is an
+## empty state with the reason, because "no achievements" and "not this cart" and
+## "not signed in" are different problems and the player can only fix one of them.
+func _populate_achievements(ui: CartridgeOptions2D) -> void:
+	if not RA.is_available():
+		ui.populate_achievements([], {}, "Achievements are unavailable in this build.")
+		return
+	if not RaConsoles.is_supported(_cart.systemid):
+		var what := _cart.systemid if not _cart.systemid.is_empty() else "this system"
+		ui.populate_achievements([], {},
+			"RetroAchievements has no achievement sets for %s." % what)
+		return
+	if not RA.is_logged_in():
+		ui.populate_achievements([], {},
+			"Sign in to RetroAchievements in OPTIONS to track achievements.")
+		return
+	if not _is_live_cartridge():
+		ui.populate_achievements([], {},
+			"Insert this cartridge and power the console on to see its achievements.")
+		return
+
+	var entries := RA.achievements()
+	if entries.is_empty():
+		ui.populate_achievements([], {},
+			"RetroAchievements has no achievement set for this game.")
+		return
+	ui.populate_achievements(entries, RA.game_info(), "")
+
+
+## True when this cartridge is the one in the machine holding the RA session.
+func _is_live_cartridge() -> bool:
+	var owner_system := RA.session_owner()
+	if owner_system == null or not owner_system.has_method("get_snapped_cartridge"):
+		return false
+	return owner_system.get_snapped_cartridge() == _cart
+
+
+func _on_ra_changed(_ok: bool, _title: String, _n: int, _u: int, _err: String) -> void:
+	if _showing():
+		_populate()
+
+
+func _on_ra_unlocked(_id: int, _t: String, _d: String, _p: int, _b: Texture2D) -> void:
+	if _showing():
+		_populate()
 
 
 ## Server slots with no local .srm. The list is fetched on open, so this only
@@ -193,7 +277,7 @@ func _on_server_save_requested(slot: String) -> void:
 
 
 func _on_sync_finished(_key: String, _action: String, _ok: bool, _detail: String) -> void:
-	if visible:
+	if _showing():
 		_refresh_server_list()
 		_populate()
 
@@ -202,7 +286,7 @@ func _on_conflict_forked(_key: String, forked_save_id: String, _label: String) -
 	# Flag the fork, not the original: the fork is the copy the user has not
 	# seen, and it is the one that needs explaining.
 	_conflicted[forked_save_id] = true
-	if visible:
+	if _showing():
 		_populate()
 
 
@@ -217,6 +301,6 @@ func _refresh_server_list() -> void:
 		if not ok:
 			return
 		_server_saves = saves
-		if visible:
+		if _showing():
 			_populate()
 	)

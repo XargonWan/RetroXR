@@ -81,6 +81,9 @@ var _audio_player: AudioStreamPlayer3D = null
 # Meta XR Audio voice ids, when the core is being spatialised through the SDK.
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
+# The RetroAchievements unlock popup, made on the first unlock rather than at
+# power-on: most sessions never earn one, and it costs a SubViewport.
+var _achievement_toast: AchievementToast = null
 var _mx: Object = null
 # Last level pushed by the connected TV. Re-applied on every rebind: a fresh
 # voice starts at full gain, so a core restart would otherwise come back at full
@@ -115,6 +118,11 @@ var _audio_channel_mode: int = 0
 var _audio_geom_model_id: int = 0
 var _audio_centre_local: Vector3 = Vector3.ZERO
 var _audio_half_sep: float = 0.0
+
+# Top of the body in local space, for panels that float above the hardware.
+# Cached and model-keyed for the same reason as the audio geometry above.
+var _body_top_model_id: int = 0
+var _body_top_local: float = 0.0
 
 # Head position, for the distance law, and the last gain handed to the voices.
 var _audio_listener: Node = null
@@ -394,6 +402,27 @@ func _place_name_label() -> void:
 ## label, which are siblings of the body root. A model may narrow the measured
 ## body via name_label_body() — e.g. a clamshell returns just its base so the
 ## name lands on the base's front, not over the raised lid.
+## World-space Y of the top of the hardware body.
+##
+## Floating panels sit above this rather than at a fixed height off the origin.
+## The bodies differ by an order of magnitude — a PC tower is 0.42 m tall and a
+## flat console around 0.07 — so no single constant clears both, and one tuned
+## for a console lands inside the tower.
+##
+## Cached in local space and keyed on the model instance, the same way
+## _audio_centre_local is: _body_aabb walks every mesh in the model and a
+## floating panel wants this every frame.
+func body_top_y() -> float:
+	var model_id := _model.get_instance_id() if _model != null else 0
+	if model_id != _body_top_model_id:
+		_body_top_model_id = model_id
+		var aabb := _body_aabb()
+		_body_top_local = aabb.end.y if aabb.size.y > 0.0 else 0.0
+	# Through the transform, not added to it: the system may be scaled, and the
+	# cached figure is in local space.
+	return (global_transform * Vector3(0.0, _body_top_local, 0.0)).y
+
+
 func _body_aabb() -> AABB:
 	var meshes: Array[MeshInstance3D] = []
 	var src: Node = null
@@ -1611,6 +1640,11 @@ func power_on() -> void:
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	_libretro.SetSramPath(_compose_sram_path(resolved_core))
+	# Before StartContent: identification happens as the core comes up, so the
+	# claim has to be in place by then. Returns false when another cabinet already
+	# holds the session, nobody is signed in, or the system has no RA console —
+	# all of which just mean this machine runs without achievements.
+	_claim_achievements_session()
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
 	_bind_audio_player()
 	is_powered_on = true
@@ -1631,6 +1665,7 @@ func power_off() -> void:
 	for ctrl in _port_controllers:
 		if ctrl and is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
 			ctrl.set_rumble(0.0, 0.0)
+	RA.release_session(self)
 	_libretro.StopContent()
 	_audio_player = null
 	_audio_voices = PackedInt32Array()
@@ -2725,6 +2760,37 @@ func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
 		return
 	SaveSync.on_sram_flushed(path, rom_id, _resolve_core(), _sram_slot(),
 		_content_label(), final)
+
+
+## Ask to track achievements for the game about to start. Silent on refusal —
+## another cabinet holding the session, or a system RetroAchievements has no
+## console for, is an ordinary outcome and not worth a message.
+func _claim_achievements_session() -> void:
+	if not RA.claim_session(self, _resolve_systemid(), _libretro):
+		return
+	if not RA.achievement_unlocked.is_connected(_on_achievement_unlocked):
+		RA.achievement_unlocked.connect(_on_achievement_unlocked)
+
+
+func _on_achievement_unlocked(_id: int, title: String, description: String,
+							  points: int, badge: Texture2D) -> void:
+	# The signal is global, so a cabinet that lost the session to another machine
+	# must not raise a toast for its unlocks.
+	if RA.session_owner() != self:
+		return
+	var anchor := _screen_target()
+	if anchor == null:
+		return
+	# Rebuilt when the picture has moved — plugging a video-out cable into a TV
+	# changes _screen_target(), and the cached toast is parented to the old one.
+	if is_instance_valid(_achievement_toast) and _achievement_toast.anchor() != anchor:
+		_achievement_toast.queue_free()
+		_achievement_toast = null
+	if not is_instance_valid(_achievement_toast):
+		_achievement_toast = AchievementToast.attach(anchor)
+		if _achievement_toast == null:
+			return
+	_achievement_toast.show_unlock(title, description, points, badge)
 
 
 ## The slot this save occupies on the server. A cartridge's own save_id, so a

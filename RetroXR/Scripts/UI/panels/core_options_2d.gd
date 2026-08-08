@@ -41,6 +41,10 @@ var _video_out_row: HBoxContainer = null
 var _video_out_check: VRToggle = null
 var _ignore_grav_check: VRToggle = null
 var _tabs: TabContainer = null
+## The slotted cartridge's UI, embedded as a tab. Driven by the cartridge's own
+## CartridgeOptionsPanel, which owns all the save/sync/achievement logic.
+var _cart_ui: CartridgeOptions2D = null
+var _cart_tab_idx: int = -1
 var _system_tab_idx := -1
 var _active_scroll: ScrollContainer = null
 # Guard so populate_system() doesn't re-emit when it sets control values.
@@ -153,6 +157,21 @@ func _build_ui() -> void:
 	tabs.add_child(sys_outer)
 	_system_tab_idx = tabs.get_tab_count() - 1
 
+	# Cartridge tab — the slotted cartridge's own saves and achievements, so they
+	# are reachable without fishing the cartridge back out of the machine. The
+	# whole tab is hidden when the slot is empty (see set_cartridge_tab_visible).
+	#
+	# An embedded CartridgeOptions2D rather than a reimplementation: the save
+	# recovery, RomM sync and achievement list are already written there, and
+	# CartridgeOptionsPanel drives this copy through adopt_external_ui().
+	var cart_outer := VBoxContainer.new()
+	cart_outer.name = "Cartridge"
+	tabs.add_child(cart_outer)
+	_cart_tab_idx = tabs.get_tab_count() - 1
+
+	_cart_ui = CartridgeOptions2D.create_embedded()
+	cart_outer.add_child(_cart_ui)
+
 	_system_scroll = ScrollContainer.new()
 	_system_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_system_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -233,6 +252,19 @@ func populate(definitions: Dictionary, current_values: Dictionary, controller_in
 ## Sync the System tab to the device's current state (no signal re-emit).
 ## `show_video_out` false (consoles) hides just that row — their cable is
 ## always on; the tab stays for the other device toggles.
+## The embedded cartridge UI, for CartridgeOptionsPanel.adopt_external_ui().
+func cartridge_ui() -> CartridgeOptions2D:
+	return _cart_ui
+
+
+## Show the Cartridge tab only while something is in the slot. Hidden rather
+## than removed so the index stays put and the UI never has to be rebuilt.
+func set_cartridge_tab_visible(shown: bool) -> void:
+	if _tabs == null or _cart_tab_idx < 0:
+		return
+	_tabs.set_tab_hidden(_cart_tab_idx, not shown)
+
+
 func populate_system(video_out: bool, show_video_out: bool, ignore_grav: bool) -> void:
 	_suppress_signal = true
 	if _video_out_row:

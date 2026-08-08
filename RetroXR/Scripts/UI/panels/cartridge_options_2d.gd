@@ -49,37 +49,113 @@ var _title_lbl: Label = null
 var _rows_box: VBoxContainer = null
 var _active_scroll: ScrollContainer = null
 
+## Ribbons. The saves list was the whole panel until achievements arrived; both
+## are properties of the game in your hand, so both belong here rather than in
+## the app's settings.
+var _tabs: TabContainer = null
+var _saves_scroll: ScrollContainer = null
+var _ach_scroll: ScrollContainer = null
+var _ach_box: VBoxContainer = null
+var _ach_summary: Label = null
+
+
+## Set BEFORE the node enters the tree to drop the panel background, the title
+## and the ✕ — everything that only makes sense when this is a window of its own.
+## The core options panel hosts one of these inside its Cartridge tab, where it
+## already has all three from the panel around it.
+var embedded := false
+
+
+static func create_embedded() -> CartridgeOptions2D:
+	var ui := CartridgeOptions2D.new()
+	ui.embedded = true
+	ui.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ui.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	return ui
+
 
 func _ready() -> void:
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not embedded:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
 
 
 func _build_ui() -> void:
-	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = COLOR_BG
-	for corner in ["corner_radius_top_left", "corner_radius_top_right",
-			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		bg.set(corner, 10)
-	panel.add_theme_stylebox_override("panel", bg)
-	add_child(panel)
-
-	var margin := MarginContainer.new()
-	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
-		margin.add_theme_constant_override(side, 12)
-	panel.add_child(margin)
-
 	var root_vbox := VBoxContainer.new()
 	root_vbox.add_theme_constant_override("separation", 6)
-	margin.add_child(root_vbox)
 
+	if embedded:
+		root_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(root_vbox)
+	else:
+		var panel := PanelContainer.new()
+		panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = COLOR_BG
+		for corner in ["corner_radius_top_left", "corner_radius_top_right",
+				"corner_radius_bottom_left", "corner_radius_bottom_right"]:
+			bg.set(corner, 10)
+		panel.add_theme_stylebox_override("panel", bg)
+		add_child(panel)
+
+		var margin := MarginContainer.new()
+		for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+			margin.add_theme_constant_override(side, 12)
+		panel.add_child(margin)
+		margin.add_child(root_vbox)
+
+		_build_title(root_vbox)
+		root_vbox.add_child(HSeparator.new())
+
+	_tabs = TabContainer.new()
+	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	_saves_scroll = _ribbon("Saves")
+	_rows_box = VBoxContainer.new()
+	_rows_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rows_box.add_theme_constant_override("separation", 4)
+	_saves_scroll.add_child(_rows_box)
+
+	_ach_scroll = _ribbon("Achievements")
+	# The fat VR scrollbar is 40 px and overlays the content, so the points column
+	# needs to end before it — without this margin the score sits under the bar.
+	var ach_margin := MarginContainer.new()
+	ach_margin.add_theme_constant_override("margin_right", 48)
+	ach_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ach_scroll.add_child(ach_margin)
+
+	var ach_vbox := VBoxContainer.new()
+	ach_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ach_vbox.add_theme_constant_override("separation", 4)
+	ach_margin.add_child(ach_vbox)
+
+	_ach_summary = Label.new()
+	_ach_summary.add_theme_font_size_override("font_size", 16)
+	_ach_summary.add_theme_color_override("font_color", COLOR_MUTED)
+	_ach_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ach_vbox.add_child(_ach_summary)
+
+	_ach_box = VBoxContainer.new()
+	_ach_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ach_box.add_theme_constant_override("separation", 4)
+	ach_vbox.add_child(_ach_box)
+
+	# The thumbstick drives whichever ribbon is showing, the way the spawn menu's
+	# active_scroll() does — a stale reference scrolls the hidden page.
+	_tabs.tab_changed.connect(func(_i: int) -> void: _sync_active_scroll())
+	_active_scroll = _saves_scroll
+
+	root_vbox.add_child(TabStrip.wrap(_tabs))
+
+
+func _build_title(root_vbox: VBoxContainer) -> void:
 	var title_row := HBoxContainer.new()
 	root_vbox.add_child(title_row)
 
 	_title_lbl = Label.new()
-	_title_lbl.text = "Battery Save"
+	# Not "Battery Save" any more — the saves list is one ribbon of several, and
+	# the panel as a whole is about the cartridge.
+	_title_lbl.text = "Cartridge"
 	_title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title_lbl.add_theme_font_size_override("font_size", 24)
 	_title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
@@ -91,19 +167,21 @@ func _build_ui() -> void:
 	close_btn.pressed.connect(func(): close_requested.emit())
 	title_row.add_child(close_btn)
 
-	root_vbox.add_child(HSeparator.new())
 
+
+
+func _ribbon(title: String) -> ScrollContainer:
 	var scroll := ScrollContainer.new()
+	scroll.name = title
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root_vbox.add_child(scroll)
 	MenuStyle.fat_vscroll_bar(scroll)
-	_active_scroll = scroll
+	_tabs.add_child(scroll)
+	return scroll
 
-	_rows_box = VBoxContainer.new()
-	_rows_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_rows_box.add_theme_constant_override("separation", 4)
-	scroll.add_child(_rows_box)
+
+func _sync_active_scroll() -> void:
+	_active_scroll = _ach_scroll if _tabs.current_tab == 1 else _saves_scroll
 
 
 func _symbols() -> FontVariation:
@@ -126,7 +204,9 @@ func _symbols() -> FontVariation:
 func populate(game_label: String, saves: Array, current_id: String, core_known: bool,
 			  sync_states: Dictionary = {}, server_only: Array = [],
 			  romm_available: bool = false) -> void:
-	_title_lbl.text = "Battery Save — %s" % game_label if not game_label.is_empty() else "Battery Save"
+	# Absent when embedded — the host panel carries the title.
+	if _title_lbl != null:
+		_title_lbl.text = game_label if not game_label.is_empty() else "Cartridge"
 	for child in _rows_box.get_children():
 		child.queue_free()
 
@@ -277,6 +357,98 @@ func _add_server_row(e: Dictionary) -> void:
 	get_btn.tooltip_text = "Download this save and bind the cartridge to it"
 	get_btn.pressed.connect(func(): server_save_requested.emit(slot))
 	row.add_child(get_btn)
+
+
+## Fill the Achievements ribbon.
+##   entries : RA.achievements() rows, already in bucket order (locked first)
+##   summary : RA.game_info(), or {} when this cartridge is not the live session
+##   state   : a sentence for the empty case — why there is nothing to show
+func populate_achievements(entries: Array, summary: Dictionary, state: String) -> void:
+	for child in _ach_box.get_children():
+		child.queue_free()
+
+	if entries.is_empty():
+		_ach_summary.text = state
+		return
+
+	# Counted from the rows actually listed, not from get_user_game_summary. That
+	# summary covers the primary set only, while the list includes bonus subsets —
+	# Super Mario Bros. reports 76 there and returns 111 here, and a header that
+	# disagrees with the list beneath it reads as a bug whichever number is right.
+	var num_unlocked := 0
+	var points_total := 0
+	var points_unlocked := 0
+	for e: Variant in entries:
+		var row: Dictionary = e
+		var pts := int(row.get("points", 0))
+		points_total += pts
+		if bool(row.get("unlocked", false)):
+			num_unlocked += 1
+			points_unlocked += pts
+
+	_ach_summary.text = "%s — %d of %d unlocked, %d of %d points" % [
+		str(summary.get("title", "")),
+		num_unlocked, entries.size(), points_unlocked, points_total,
+	]
+
+	for entry_variant: Variant in entries:
+		var entry: Dictionary = entry_variant
+		var unlocked := bool(entry.get("unlocked", false))
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		row.custom_minimum_size = Vector2(0, 52)
+		_ach_box.add_child(row)
+
+		# The badge arrives late — RA caches it to disk on first sight, so the row
+		# is built without one and filled in when the fetch lands.
+		var icon := TextureRect.new()
+		icon.custom_minimum_size = Vector2(44, 44)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		row.add_child(icon)
+		var url := str(entry.get("badge_url" if unlocked else "badge_locked_url", ""))
+		RA.fetch_badge(url, func(badge: Texture2D) -> void:
+			if is_instance_valid(icon) and badge != null:
+				icon.texture = badge)
+
+		var text := VBoxContainer.new()
+		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text.add_theme_constant_override("separation", 0)
+		row.add_child(text)
+
+		var title := Label.new()
+		title.text = str(entry.get("title", ""))
+		title.add_theme_font_size_override("font_size", 17)
+		title.add_theme_color_override("font_color",
+			COLOR_CURRENT if unlocked else COLOR_ROW)
+		text.add_child(title)
+
+		var desc := Label.new()
+		desc.text = str(entry.get("description", ""))
+		desc.add_theme_font_size_override("font_size", 13)
+		desc.add_theme_color_override("font_color", COLOR_MUTED)
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		text.add_child(desc)
+
+		# Progress towards a measured achievement ("12/40"), when there is any.
+		var measured := str(entry.get("measured_progress", ""))
+		if not unlocked and not measured.is_empty():
+			var progress := Label.new()
+			progress.text = measured
+			progress.add_theme_font_size_override("font_size", 13)
+			progress.add_theme_color_override("font_color", COLOR_SYNC)
+			text.add_child(progress)
+
+		var points := Label.new()
+		points.text = "%d" % int(entry.get("points", 0))
+		points.add_theme_font_size_override("font_size", 17)
+		points.add_theme_color_override("font_color",
+			COLOR_CURRENT if unlocked else COLOR_MUTED)
+		points.custom_minimum_size = Vector2(40, 0)
+		points.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		points.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(points)
 
 
 ## Drive the active scroll container from an external stick input.

@@ -6,8 +6,13 @@
 class_name CoreOptionsPanel
 extends Node3D
 
-## Height above the system's origin at which the panel floats.
-const FLOAT_HEIGHT := 0.42
+## Gap between the top of the hardware and the BOTTOM edge of the panel.
+##
+## This replaced a fixed 0.42 m from the system's origin to the panel's centre.
+## That figure was tuned against a flat console, where it clears the machine
+## easily; the PC tower is 0.42 m tall, so the panel's centre landed exactly on
+## its crown and the lower half of the page was drawn inside the case.
+const CLEARANCE := 0.12
 
 ## Built on first open, not with the panel. A SubViewport and the whole control
 ## tree inside it is the most expensive part of a system, and a room pays it once
@@ -17,6 +22,8 @@ const UI_SCENE := preload("res://Scenes/UI/core_options_2d.tscn")
 
 var _system: RetroSystem = null
 var _camera: Node3D = null
+## The slotted cartridge's panel while it is driving our Cartridge tab.
+var _cart_panel: CartridgeOptionsPanel = null
 # Guard so we only wire the 2D UI signals once (the SubViewport persists).
 var _ui_connected := false
 
@@ -36,12 +43,23 @@ func _process(_delta: float) -> void:
 		return
 	# Keep panel hovering above the system even when the system moves or is picked up
 	if _system and is_instance_valid(_system):
-		global_position = _system.global_position + Vector3(0, FLOAT_HEIGHT, 0)
+		global_position = _hover_position()
 	# Face the camera: look_at points -Z toward target, then flip 180° so the
 	# UV/front face (+Z) faces the player — same trick used by spawn_menu_controller.
 	if _camera and is_instance_valid(_camera):
 		look_at(_camera.global_position, Vector3.UP)
 		rotate_object_local(Vector3.UP, PI)
+
+
+## Centred over the machine, its bottom edge CLEARANCE above the hardware's top.
+## Half the panel is added because global_position is its centre — placing the
+## centre at the clearance height is what put the lower half inside the tower.
+func _hover_position() -> Vector3:
+	var origin := _system.global_position
+	var half_height := _viewport_node.screen_size.y * 0.5
+	return Vector3(origin.x,
+		_system.body_top_y() + CLEARANCE + half_height,
+		origin.z)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -52,7 +70,7 @@ func show_for(system: RetroSystem, camera: Node3D) -> void:
 	_camera = camera
 	# Pre-position before making visible to avoid a one-frame flash at the wrong spot
 	if _system:
-		global_position = _system.global_position + Vector3(0, FLOAT_HEIGHT, 0)
+		global_position = _hover_position()
 	visible = true
 	print("[CoreOptionsPanel] showing for system '%s'" % system.name)
 	if _viewport_node.scene == null:
@@ -116,6 +134,28 @@ func _populate() -> void:
 		_system.forced_core_options(), _system._options_unavailable)
 	ui.populate_system(_system.video_out_enabled, _system.supports_video_out_toggle(),
 		_system.ignore_gravity)
+	_populate_cartridge_tab(ui)
+
+
+## Hand the Cartridge tab to the slotted cartridge's own options panel, which
+## owns the save recovery, RomM sync and achievement lookup. Nothing is
+## reimplemented here — this only decides whether the tab exists and who drives it.
+func _populate_cartridge_tab(ui: CoreOptions2D) -> void:
+	var cart := _system.get_snapped_cartridge() as RetroCartridge
+	ui.set_cartridge_tab_visible(cart != null)
+	if cart == null:
+		_cart_panel = null
+		return
+	# Same panel the cartridge shows on its own, so a save selected here and one
+	# selected there are the same act on the same state.
+	if not cart.has_method("ensure_options_panel"):
+		ui.set_cartridge_tab_visible(false)
+		return
+	_cart_panel = cart.ensure_options_panel()
+	if _cart_panel == null:
+		ui.set_cartridge_tab_visible(false)
+		return
+	_cart_panel.adopt_external_ui(ui.cartridge_ui(), cart)
 
 
 ## Relay the user's option change from the 2D UI back to the system.

@@ -67,6 +67,17 @@ var _romm_mode_drop: VRDropdown = null
 var _romm_token_rows: Array[Control] = []
 var _romm_basic_rows: Array[Control] = []
 
+# RetroAchievements. Same hide-the-unused-method idiom as RomM above.
+var _ra_mode_drop: VRDropdown = null
+var _ra_password_rows: Array[Control] = []
+var _ra_token_rows: Array[Control] = []
+var _ra_user_edit: LineEdit = null
+var _ra_password_edit: LineEdit = null
+var _ra_token_edit: LineEdit = null
+var _ra_status_label: Label = null
+var _ra_signin_btn: Button = null
+var _ra_last_signin_frame: int = -1
+
 
 static func create(menu: Node) -> SpawnMenuOptionsView:
 	var v := SpawnMenuOptionsView.new()
@@ -113,6 +124,7 @@ func _build() -> void:
 		_build_file_server_options(_page("File Server"))
 	_build_romm_options(_page("RomM", MenuIcons.romm_mark()))
 	_build_scraper_options(_page("Scraper"))
+	_build_retroachievements_options(_page("RetroAchievements"))
 
 	_tabs.tab_changed.connect(func(_i: int) -> void: scroll_changed.emit(active_scroll()))
 	add_child(TabStrip.wrap(_tabs))
@@ -907,3 +919,243 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 
 	row.add_child(edit)
 	return edit
+
+
+func _build_retroachievements_options(vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.spacer(10))
+
+	if not RA.is_available():
+		vbox.add_child(MenuStyle.hint(
+			"The libretro extension did not load, so achievements are unavailable."))
+		return
+
+	var enable_row := HBoxContainer.new()
+	enable_row.custom_minimum_size = Vector2(0, 68)
+	enable_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(enable_row)
+
+	var enable_lbl := Label.new()
+	enable_lbl.text = "Enable RetroAchievements"
+	enable_lbl.add_theme_font_size_override("font_size", 20)
+	enable_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	enable_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	enable_row.add_child(enable_lbl)
+
+	enable_row.add_child(VRToggle.create(RA.config.enabled, func(on: bool) -> void:
+		RA.set_enabled(on)
+		_update_ra_status()
+	))
+
+	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
+	_ra_mode_drop = VRDropdown.create("Sign in with",
+		[["Username + password", RaConfig.AUTH_PASSWORD],
+		 ["Connect token", RaConfig.AUTH_TOKEN]],
+		RA.config.auth_mode, 1, Vector2(300, 56), 18)
+	_ra_mode_drop.item_selected.connect(func(id: Variant) -> void:
+		RA.config.auth_mode = str(id)
+		RA.config.save_config()
+		_apply_ra_auth_rows()
+	)
+	vbox.add_child(_ra_mode_drop)
+
+	_ra_user_edit = _add_options_text_field(vbox, "Username", RA.config.username,
+		func(text: String) -> void:
+			RA.config.username = text.strip_edges()
+			RA.config.save_config()
+	)
+
+	# Never written to disk — RaConfig has no password field. It is passed to
+	# rcheevos once, exchanged for a connect token, and forgotten.
+	_ra_password_edit = _add_options_text_field(vbox, "Password", "",
+		func(_text: String) -> void: pass, true)
+
+	_ra_token_edit = _add_options_text_field(vbox, "Connect token", RA.config.token,
+		func(text: String) -> void:
+			RA.config.token = text.strip_edges()
+			RA.config.save_config()
+	, true)
+
+	# The single most common RetroAchievements support issue: the site's control
+	# panel shows a "Web API key", which is a different and longer value used for
+	# read-only queries. It cannot unlock anything. The token wanted here is the
+	# one RetroArch caches as cheevos_token.
+	vbox.add_child(MenuStyle.hint(
+		"The connect token is what RetroArch stores as cheevos_token — not the "
+		+ "Web API key from the website, which cannot unlock achievements. "
+		+ "Signing in with a password fetches the right token for you."))
+
+	_ra_password_rows = [_ra_user_edit.get_parent(), _ra_password_edit.get_parent()]
+	_ra_token_rows = [_ra_token_edit.get_parent()]
+	_apply_ra_auth_rows()
+
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 10)
+	vbox.add_child(actions)
+
+	_ra_signin_btn = Button.new()
+	_ra_signin_btn.text = "  Sign in  "
+	_ra_signin_btn.custom_minimum_size = Vector2(0, 56)
+	_ra_signin_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ra_signin_btn.add_theme_font_size_override("font_size", 18)
+	_ra_signin_btn.pressed.connect(_on_ra_signin_pressed)
+	actions.add_child(_ra_signin_btn)
+
+	var signout_btn := Button.new()
+	signout_btn.text = "  Sign out  "
+	signout_btn.custom_minimum_size = Vector2(0, 56)
+	signout_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	signout_btn.add_theme_font_size_override("font_size", 18)
+	signout_btn.pressed.connect(func() -> void:
+		RA.sign_out()
+		if _ra_token_edit != null:
+			_ra_token_edit.text = ""
+		notify("ra:auth", "✅", "Signed out of RetroAchievements", -1.0, MenuToasts.DWELL_OK)
+	)
+	actions.add_child(signout_btn)
+
+	_ra_status_label = Label.new()
+	_ra_status_label.add_theme_font_size_override("font_size", 16)
+	_ra_status_label.add_theme_color_override("font_color", MenuStyle.COLOR_DESC)
+	_ra_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_ra_status_label)
+
+	vbox.add_child(HSeparator.new())
+
+	var notify_row := HBoxContainer.new()
+	notify_row.custom_minimum_size = Vector2(0, 68)
+	notify_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(notify_row)
+	var notify_lbl := Label.new()
+	notify_lbl.text = "Show unlock notifications"
+	notify_lbl.add_theme_font_size_override("font_size", 20)
+	notify_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	notify_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	notify_row.add_child(notify_lbl)
+	notify_row.add_child(VRToggle.create(RA.config.show_notifications, func(on: bool) -> void:
+		RA.config.show_notifications = on
+		RA.config.save_config()
+	))
+
+	var presence_row := HBoxContainer.new()
+	presence_row.custom_minimum_size = Vector2(0, 68)
+	presence_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(presence_row)
+	var presence_lbl := Label.new()
+	presence_lbl.text = "Rich presence"
+	presence_lbl.add_theme_font_size_override("font_size", 20)
+	presence_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	presence_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	presence_row.add_child(presence_lbl)
+	presence_row.add_child(VRToggle.create(RA.config.rich_presence, func(on: bool) -> void:
+		RA.config.rich_presence = on
+		RA.config.save_config()
+	))
+
+	# No hardcore row. rc_client runs with hardcore off and there is nothing to
+	# expose: RetroAchievements only grants hardcore credit to clients it has
+	# approved, and until RetroXR is on that list the server records every unlock
+	# as softcore whatever the client claims. The switch goes in when the approval
+	# does, alongside the save-state and rollback gating the mode requires.
+
+	# The per-game achievement list lives on the cartridge menu, not here — it is
+	# a property of the game in your hand rather than of the app's settings.
+
+	# Resolves the "Signing in…" toast. The login result is what the player is
+	# waiting on, so it has to reuse the ra:auth key rather than only updating the
+	# status label further down the page.
+	RA.login_changed.connect(func(ok: bool, display_name: String, err: String) -> void:
+		_update_ra_status()
+		if ok:
+			notify("ra:auth", "✅", "Signed in as %s" % display_name,
+				-1.0, MenuToasts.DWELL_OK)
+		elif not err.is_empty():
+			notify("ra:auth", "❌", err, -1.0, MenuToasts.DWELL_FAIL)
+	)
+	RA.game_loaded.connect(func(_ok: bool, _t: String, _n: int, _u: int, _e: String) -> void:
+		_update_ra_status())
+	RA.achievement_unlocked.connect(func(_id: int, _t: String, _d: String,
+			_p: int, _b: Texture2D) -> void:
+		_update_ra_status())
+
+	_update_ra_status()
+
+
+## Show only the rows the selected sign-in method uses.
+func _apply_ra_auth_rows() -> void:
+	var password_mode := RA.config.auth_mode == RaConfig.AUTH_PASSWORD
+	# The username is needed by both methods, so it stays put; only the secret
+	# field swaps.
+	for row in _ra_password_rows:
+		if is_instance_valid(row):
+			row.visible = true
+	if is_instance_valid(_ra_password_edit) and _ra_password_edit.get_parent() != null:
+		_ra_password_edit.get_parent().visible = password_mode
+	for row in _ra_token_rows:
+		if is_instance_valid(row):
+			row.visible = not password_mode
+
+
+func _on_ra_signin_pressed() -> void:
+	# Signing in is not idempotent and every Viewport2Din3D click arrives twice.
+	var frame := Engine.get_process_frames()
+	if frame == _ra_last_signin_frame:
+		return
+	_ra_last_signin_frame = frame
+
+	var username := _ra_user_edit.text.strip_edges() if is_instance_valid(_ra_user_edit) else ""
+	if username.is_empty():
+		notify("ra:auth", "❌", "Enter your RetroAchievements username",
+			-1.0, MenuToasts.DWELL_FAIL)
+		return
+
+	notify("ra:auth", "⏳", "Signing in to RetroAchievements…", -1.0)
+
+	if RA.config.auth_mode == RaConfig.AUTH_TOKEN:
+		var token := _ra_token_edit.text.strip_edges() if is_instance_valid(_ra_token_edit) else ""
+		if token.is_empty():
+			notify("ra:auth", "❌", "Enter your connect token", -1.0, MenuToasts.DWELL_FAIL)
+			return
+		RA.sign_in_with_token(username, token)
+		return
+
+	var password := _ra_password_edit.text if is_instance_valid(_ra_password_edit) else ""
+	if password.is_empty():
+		notify("ra:auth", "❌", "Enter your password", -1.0, MenuToasts.DWELL_FAIL)
+		return
+	RA.sign_in_with_password(username, password)
+	# Cleared as soon as it is handed over; it is never stored and there is no
+	# reason for it to sit in a field afterwards.
+	_ra_password_edit.text = ""
+
+
+func _update_ra_status() -> void:
+	if not is_instance_valid(_ra_status_label):
+		return
+
+	if not RA.config.enabled:
+		_ra_status_label.text = "RetroAchievements is off."
+		return
+
+	if not RA.is_logged_in():
+		_ra_status_label.text = "Not signed in."
+		return
+
+	var user := RA.user_info()
+	var line := "Signed in as %s — %d points (softcore)" % [
+		str(user.get("display_name", RA.config.username)),
+		int(user.get("score_softcore", 0)),
+	]
+
+	var game := RA.game_info()
+	if not game.is_empty() and int(game.get("num_achievements", 0)) > 0:
+		line += "\n%s — %d of %d unlocked" % [
+			str(game.get("title", "")),
+			int(game.get("num_unlocked", 0)),
+			int(game.get("num_achievements", 0)),
+		]
+	# Refresh the token field: a password sign-in has just produced one, and this
+	# is the value the player would need to sign in on another device.
+	if is_instance_valid(_ra_token_edit) and _ra_token_edit.text != RA.config.token:
+		_ra_token_edit.text = RA.config.token
+
+	_ra_status_label.text = line
