@@ -100,7 +100,11 @@ func _add_cable_to_scene() -> void:
 	# set_controller copies device_type and systemid off this node; the sentinel
 	# below is what the remote's expansion port filters on.
 	_cable_plug.systemid = PLUG_SYSTEMID
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, -0.1, 0)
+	# Laid out along the BOOT's axis rather than straight down the world, so the
+	# first thing the cord does is continue the direction the moulding points. A
+	# world-down guess put a kink at the join on any nunchuk not stood upright.
+	_cable_plug.global_position = _cable_attach_point.global_position \
+		- _cable_attach_point.global_transform.basis.y * 0.1
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
 	_cable_rope._init_points()

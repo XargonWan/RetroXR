@@ -111,13 +111,20 @@ surface_material_override/0 = SubResource("Mat_cap")
 ; anchor at its tip and clear of the body. Wherever the first segment then wanders,
 ; it leaves the nunchuk pointing down out of a moulded boot, which is what the real
 ; one does. Same idiom the plug end already uses at the other end of this cord.
+; Bottom REAR corner, tilted 25 degrees back — not the centre of the base. On the
+; real Nunchuk the cord leaves beside the Z trigger and trails away behind the
+; hand; down the middle it reads as a tail hanging off a cone. -Z is the trigger
+; side here, and an identity grab point puts that away from the player, so this
+; is the "out the back" the hardware does.
 [node name="StrainRelief" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0555, 0)
+transform = Transform3D(1, 0, 0, 0, 0.9063, 0.4226, 0, -0.4226, 0.9063, 0, -0.05, -0.006)
 mesh = SubResource("CylMesh_boot")
 surface_material_override/0 = SubResource("Mat_shell")
 
+; Just past the boot's tip, on the boot's own axis, so the cord carries on the
+; line the moulding starts rather than kinking at the join.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.062, 0)
+transform = Transform3D(1, 0, 0, 0, 0.9063, 0.4226, 0, -0.4226, 0.9063, 0, -0.0586, -0.01)
 
 [node name="GrabPoint" type="Marker3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
