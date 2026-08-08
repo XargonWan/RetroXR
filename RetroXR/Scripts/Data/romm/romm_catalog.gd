@@ -24,6 +24,8 @@ signal sync_started(systemid: String, total: int)
 signal sync_progress(systemid: String, done: int, total: int)
 ## sync_finished(systemid, ok, added, removed, error)
 signal sync_finished(systemid: String, ok: bool, added: int, removed: int, error: String)
+## A platform's index gained stats it did not have — its badge is now wrong.
+signal index_stats_ready(systemid: String)
 
 ## RomM caps `limit` at 10000. 1000 keeps each body around 3 MB — parseable
 ## off-thread without a hitch.
@@ -144,6 +146,15 @@ static func read_meta(systemid: String) -> Dictionary:
 	return json.data if json.data is Dictionary else {}
 
 
+## Rows the list will show for a synced platform, or -1 when that is not known
+## yet — never synced, or synced before the count was recorded and not warmed
+## since. Callers fall back to the server's own count, which is every row it
+## holds including the disc tracks the list hides.
+static func shown_count(systemid: String) -> int:
+	var meta := read_meta(systemid)
+	return int(meta.get("shown", -1)) if meta.has("shown") else -1
+
+
 # ---------------------------------------------------------------------------
 # Reading a synced platform
 # ---------------------------------------------------------------------------
@@ -173,15 +184,21 @@ func _warm_pump() -> void:
 	if _warm_thread != null and _warm_thread.is_started():
 		_warm_thread.wait_to_finish()
 	var sid: String = _warm_queue.pop_front()
+	# Never the platform being synced: the shown-count backfill is a
+	# read-modify-write of index.meta.json, and the sync writes that file too —
+	# losing its updated_after would silently widen the next delta.
+	if sid == _syncing_systemid:
+		_warm_pump()
+		return
 	# Marked only once it is actually being read, so a platform dropped from a
 	# busy queue is not remembered as warmed.
 	_prewarmed[sid] = true
 	_warming = true
 	_warm_thread = Thread.new()
-	_warm_thread.start(_warm_worker.bind(index_dir(sid)))
+	_warm_thread.start(_warm_worker.bind(sid, index_dir(sid)))
 
 
-func _warm_worker(dir: String) -> void:
+func _warm_worker(sid: String, dir: String) -> void:
 	# An index synced before the fsnames/regions sidecars existed still works,
 	# but only through a fallback that parses one JSON line per row. Measured on
 	# Quest that is 543 ms to open a 3.1k platform against ~10 ms with them —
@@ -194,7 +211,12 @@ func _warm_worker(dir: String) -> void:
 					  "index.fsnames", "index.regions", "index.exts"]:
 		# Read and discarded: the file cache is the whole product.
 		var _b := FileAccess.get_file_as_bytes(dir.path_join(f))
-	_warm_done.call_deferred()
+
+	# The grid needs a shown count for its badge and cannot load an index to get
+	# one. Indexes synced before that count existed get it here, off the two
+	# sidecars just warmed rather than from index.jsonl.
+	var gained := _backfill_shown_count(sid, dir)
+	_warm_done.call_deferred(sid, gained)
 
 
 ## Regenerate index.fsnames, index.regions and index.exts from index.jsonl. One
@@ -248,13 +270,30 @@ static func _backfill_sidecars(dir: String) -> void:
 	print("[RommCatalog] backfilled sidecars for %d rows in %s" % [offsets.size(), dir])
 
 
+## Record the shown count in index.meta.json when it is not there yet. True when
+## it wrote, so the caller knows a badge changed. Worker-thread only.
+static func _backfill_shown_count(systemid: String, dir: String) -> bool:
+	var meta := read_meta(systemid)
+	if meta.is_empty() or meta.has("shown"):
+		return false
+	var fs_bases := _read_lines(dir.path_join("index.fsnames"))
+	var exts := _read_lines(dir.path_join("index.exts"))
+	if fs_bases.is_empty() or fs_bases.size() != exts.size():
+		return false
+	meta["shown"] = count_shown(fs_bases, exts)
+	_write_text_atomic(meta_path(systemid), JSON.stringify(meta, "\t"))
+	return true
+
+
 static func _read_offsets(dir: String) -> PackedInt64Array:
 	var b := FileAccess.get_file_as_bytes(dir.path_join("index.off"))
 	return b.to_int64_array() if not b.is_empty() else PackedInt64Array()
 
 
-func _warm_done() -> void:
+func _warm_done(systemid: String, stats_gained: bool) -> void:
 	_warming = false
+	if stats_gained:
+		index_stats_ready.emit(systemid)
 	_warm_pump()
 
 
@@ -399,33 +438,55 @@ func is_track_at(i: int) -> bool:
 	return _track_flags[i] == 1
 
 
-## One pass over two sidecars already in RAM. Skipped entirely on a platform
-## with no manifest rows at all, which is most of them.
 func _build_track_flags() -> void:
-	_track_flags = PackedByteArray()
-	_track_flags.resize(_offsets.size())
 	if _exts.size() != _offsets.size() or _fs_names.size() != _offsets.size():
+		_track_flags = PackedByteArray()
+		_track_flags.resize(_offsets.size())
 		return
+	_track_flags = compute_track_flags(_fs_names, _exts)
+
+
+## One pass over the two sidecars, which is all the pairing needs — no seeks and
+## no JSON. Skipped entirely on a platform with no manifest rows at all, which is
+## most of them. Static so the sync and the badge count reach the same verdict as
+## the list does; a second implementation would drift.
+static func compute_track_flags(fs_bases: PackedStringArray,
+								exts: PackedStringArray) -> PackedByteArray:
+	var flags := PackedByteArray()
+	flags.resize(exts.size())
+	if fs_bases.size() != exts.size():
+		return flags
 
 	var stems := {}
-	for i in _exts.size():
-		if _exts[i] in MANIFEST_EXTS:
-			stems[_fs_names[i]] = true
+	for i in exts.size():
+		if exts[i] in MANIFEST_EXTS:
+			stems[fs_bases[i]] = true
 	if stems.is_empty():
-		return
+		return flags
 
 	var track_no := RegEx.create_from_string("\\s*\\(track\\s*\\d+\\)$")
-	for i in _exts.size():
-		if _exts[i] not in TRACK_EXTS:
+	for i in exts.size():
+		if exts[i] not in TRACK_EXTS:
 			continue
-		var stem := _fs_names[i]
+		var stem := fs_bases[i]
 		if stems.has(stem):
-			_track_flags[i] = 1
+			flags[i] = 1
 			continue
 		# Redump names the tracks of one disc "<game> (Track 07).bin".
 		var trimmed := track_no.sub(stem, "")
 		if trimmed != stem and stems.has(trimmed):
-			_track_flags[i] = 1
+			flags[i] = 1
+	return flags
+
+
+## Rows the browse list will actually show: every row that is not a disc track.
+static func count_shown(fs_bases: PackedStringArray, exts: PackedStringArray) -> int:
+	var flags := compute_track_flags(fs_bases, exts)
+	var n := 0
+	for f: int in flags:
+		if f == 0:
+			n += 1
+	return n
 
 
 func rom_id_at(i: int) -> int:
@@ -652,6 +713,10 @@ func _sync_worker(args: Dictionary) -> void:
 	var fsnames_text := ""
 	var exts_text := ""
 	var regions_text := ""
+	# Kept as arrays too: the badge count needs them paired, and building it here
+	# costs one pass over data already in hand.
+	var fs_bases := PackedStringArray()
+	var fs_exts := PackedStringArray()
 	var pos := 0
 	for r: Dictionary in rows:
 		var line: String = r["line"]
@@ -662,6 +727,8 @@ func _sync_worker(args: Dictionary) -> void:
 		# 000000000001"), which sorts correctly but is unsearchable as text.
 		names_text += str(r["display"]) + "\n"
 		exts_text += str(r["fs_ext"]) + "\n"
+		fs_bases.append(str(r["fs_base"]))
+		fs_exts.append(str(r["fs_ext"]))
 		fsnames_text += str(r["fs_base"]) + "
 "
 		regions_text += str(r["regions"]) + "
@@ -690,6 +757,7 @@ func _sync_worker(args: Dictionary) -> void:
 
 	_write_text(meta_path(systemid), JSON.stringify({
 		"total": rows.size(),
+		"shown": count_shown(fs_bases, fs_exts),
 		"updated_after": max_updated,
 		"synced_at": Time.get_datetime_string_from_system(true),
 		"group_by_meta_id": args["group"],

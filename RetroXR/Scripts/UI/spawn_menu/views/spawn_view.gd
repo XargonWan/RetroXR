@@ -153,6 +153,11 @@ func _connect_romm() -> void:
 	romm_catalog.sync_started.connect(_on_romm_sync_started)
 	romm_catalog.sync_progress.connect(_on_romm_sync_progress)
 	romm_catalog.sync_finished.connect(_on_romm_sync_finished)
+	# The warm thread works out a platform's shown count after the grid is
+	# already up, so the tile it belongs to has to be redrawn.
+	romm_catalog.index_stats_ready.connect(func(_sid: String) -> void:
+		_populate_cartridges_tab()
+	)
 	romm_downloader.download_started.connect(_on_romm_dl_started)
 	romm_downloader.download_progress.connect(_on_romm_dl_progress)
 	romm_downloader.download_retrying.connect(_on_romm_dl_retrying)
@@ -475,12 +480,21 @@ func _populate_cartridges_tab() -> void:
 			systems.append({"systemid": systemid, "name": _system_label(systemid)})
 
 	# Mark tiles backed by the server with the RomM isotipo and its ROM count.
+	#
+	# The server's own rom_count counts every row it holds, disc tracks included
+	# — 59,346 for a PlayStation library whose list shows 9,927. Once a platform
+	# is synced its index knows what the list will show, so that wins; the server
+	# count is the fallback for a platform never synced, where a number that is
+	# too big still beats no number at all.
 	var mark: Texture2D = MenuIcons.romm_mark()
 	for s: Dictionary in systems:
 		var sid: String = s["systemid"]
 		var remote := 0
 		if _romm_platforms.has(sid):
 			remote = int((_romm_platforms[sid] as Dictionary).get("rom_count", 0))
+		var shown := RommCatalog.shown_count(sid)
+		if shown >= 0:
+			remote = shown
 		if remote > 0 and mark != null:
 			s["badge_icon"] = mark
 			s["badge_count"] = remote
