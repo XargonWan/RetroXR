@@ -119,15 +119,25 @@ def to_wsl_path(p: Path) -> str:
 def dispatch_to_wsl(argv: list[str], distro: str) -> int:
     """Re-run this script inside WSL.
 
-    WSL inherits the Windows environment, so HOME and PATH both arrive wrong —
-    the inherited PATH contains spaces and Windows directories, which breaks a
-    bare `export PATH="$HOME/.local/bin:$PATH"`. Reset both. HOME is read from
-    passwd rather than hardcoded so this doesn't assume a username.
+    WSL inherits the Windows environment, so PATH arrives wrong — it contains
+    spaces and Windows directories, which breaks a bare
+    `export PATH="$HOME/.local/bin:$PATH"`. Reset it.
+
+    HOME is only replaced when a better answer is actually found. On this
+    machine `getent passwd "$(id -u)"` returns NOTHING even with a correct PATH,
+    so the previous unconditional `export HOME="$(getent ...)"` set HOME to the
+    empty string. That put Python's user site-packages at "/.local/lib/..." and
+    made every pip --user install invisible, which is why scons was reported
+    missing while being installed and importable. WSL's own inherited HOME was
+    right all along, so it is the fallback.
     """
     if not shutil.which("wsl"):
         sys.exit("linux builds from Windows need WSL, which was not found on PATH.")
     inner = (
-        'export HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"; '
+        '_h="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"; '
+        '[ -d "$_h" ] || _h="$(eval echo ~"$(id -un)" 2>/dev/null)"; '
+        '[ -d "$_h" ] && export HOME="$_h"; '
+        '[ -d "$HOME" ] || { echo "cannot determine a home directory in WSL" >&2; exit 1; }; '
         'export PATH="$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; '
         f'cd "{to_wsl_path(REPO)}" || exit 1; '
         f'exec python3 Tools/build.py {" ".join(argv)}'
