@@ -142,6 +142,10 @@ var _handheld_input: HandheldInput = null
 ## and every call site is guarded on that — see _setup_wireless_pads.
 var _wii_link: WiiLink = null
 
+## Last A/V routing reported to the log, so re-resolving the same wiring is quiet
+## and only real changes are announced. See _apply_av_feed.
+var _last_av_routing: String = ""
+
 # Cable scene to instantiate
 const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
 # Window material for TVs on multi-output hardware (dual-screen handhelds).
@@ -1331,6 +1335,20 @@ func _all_links() -> Array:
 
 
 func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> void:
+	# The conclusion, not the wiring — RcaPort logs each cord as it lands, this
+	# says what they added up to. Picture and sound resolve independently below, so
+	# "video=<none> audio=TV" is a real and easily-missed state: the console is
+	# heard but never seen, which reads from the room as a dead console.
+	#
+	# Only on CHANGE. Seating one lead re-resolves the routing once per cord per
+	# end, so a plain three-cord hookup would otherwise print this eighteen times
+	# and bury the transition that matters.
+	var routing := "video=%s audio=%s" % [
+		video_dev.name if video_dev != null else "<none>",
+		audio_dev.name if audio_dev != null else "<none>"]
+	if routing != _last_av_routing:
+		_last_av_routing = routing
+		print("[RetroSystem] A/V feed: %s" % routing)
 	_av_speaker_l = l
 	_av_speaker_r = r
 	# The cached pair is keyed on the gains last sent, not on the routing, so a
@@ -1651,7 +1669,14 @@ func power_on() -> void:
 	# (SetScreenMesh), same as re-plugging a TV that was pulled mid-game. Handhelds
 	# always have a built-in screen so _screen_target() is non-null for them.
 	if _screen_target() == null:
-		print("[RetroSystem] Powering on with no display connected (connect a TV to see output)")
+		# Name the actual state. "No display" covers two very different faults and
+		# the loud one — audio cords in, video cord out — looks identical to a
+		# console that is simply broken, because you can hear it running.
+		if _av_tv != null and is_instance_valid(_av_tv):
+			print("[RetroSystem] Powering on with SOUND but no PICTURE: audio reaches %s, "
+				% _av_tv.name + "no video cord is linked. Check the yellow lead at BOTH ends.")
+		else:
+			print("[RetroSystem] Powering on with no display connected (connect a TV to see output)")
 	if rom_path.is_empty():
 		push_error("RetroSystem: Cannot power on - no cartridge inserted")
 		return

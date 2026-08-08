@@ -79,13 +79,48 @@ func _ready() -> void:
 
 func _on_seated(what: Node3D) -> void:
 	_last_plug = what as RcaPlug
+	_log_seating("seated", _last_plug)
 	_announce(_last_plug)
 
 
 func _on_unseated() -> void:
 	var plug := _last_plug
 	_last_plug = null
+	_log_seating("pulled", plug)
 	_announce(plug)
+
+
+## Every A/V connection in the room passes through here, so this is the one place
+## that can say what is actually wired to what.
+##
+## Worth the noise because the symptom it explains is silent and misleading: sound
+## and picture travel by different cords, so a console with its audio pair in and
+## its video cord out plays perfectly through a set showing nothing but blue. From
+## the outside that looks like a broken console, and there was no way to tell it
+## from a wrong input, an unseated plug, or a socket that belongs to nobody.
+func _log_seating(verb: String, plug: RcaPlug) -> void:
+	var dev := get_device()
+	print("[RcaPort] %s %s on %s%s" % [
+		verb,
+		channel_name(),
+		_device_label(dev),
+		"" if plug != null and is_instance_valid(plug) else "  (plug already gone)",
+	])
+	# A socket whose walk up the tree found no owner accepts plugs and routes
+	# nothing — the failure is invisible at the socket and only shows up as a
+	# device that never notices it was connected.
+	if dev == null:
+		push_warning("[RcaPort] %s socket belongs to no device — nothing will be routed"
+			% channel_name())
+
+
+static func _device_label(dev: Node) -> String:
+	if dev == null:
+		return "<no device>"
+	var name_prop: Variant = dev.get("display_name")
+	if name_prop is String and not (name_prop as String).is_empty():
+		return "%s (%s)" % [name_prop, dev.name]
+	return str(dev.name)
 
 
 ## Tell the lead that what it carries may have changed.
