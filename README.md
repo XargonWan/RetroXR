@@ -275,3 +275,27 @@ When no VR headset is detected, RetroXR falls back to a desktop mode with mouse/
 - `Shift`=Select, `Enter`=Start
 - Left stick: `T`/`G`/`F`/`H` (up/down/left/right)
 - Right stick: `I`/`K`/`J`/`L` (up/down/left/right)
+
+## Licensing
+
+Copyright (C) 2026 Ryan McClelland.
+
+RetroXR is licensed under the **GNU General Public License, version 3** — see
+[LICENSE](LICENSE) — with one additional permission, in
+[LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md), allowing the program to be linked
+against Meta's proprietary XR Audio SDK and the Oculus-SDK-licensed parts of the
+godot-openxr-vendors Meta plugin. Those components remain licensed to you by Meta
+under the [Oculus SDK License Agreement](https://developers.meta.com/horizon/licenses/oculussdk/),
+not under the GPL.
+
+The `libretro-godot` GDExtension is a separate submodule under the MIT licence.
+It began as a fork of SK.Libretro.Godot by SKurdt.
+
+Bundled third-party libraries and assets keep their own licences — MIT, BSD,
+Apache-2.0, zlib, LGPL-2.1 (libVLC), GPL-2.0+ (several VLC plugins), CC0 and
+CC BY 4.0. Several of the 3D models are CC BY and **attribution is a licence
+condition**: the full credit list is in the app under OPTIONS → ABOUT, and each
+asset directory carries its own `LICENSE-*` file.
+
+Meta's controller art in `RetroXR/Models/oculus-controller-art-v1.8/` is licensed
+by Meta for use in a VR experience only, and is not redistributable on its own.
