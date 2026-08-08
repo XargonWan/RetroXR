@@ -54,6 +54,7 @@ const SECTIONS: Array = [
 	# The CC BY entries are the reason this section exists: attribution is a
 	# licence condition for them. The CC0 ones are credited anyway.
 	["3D MODELS", [
+		["Atari 2600 hardware", "Rusty Hardy — @rustificus", "CC BY 4.0"],
 		["Bedroom furniture", "General of Thailand — @Melonpolygons", "CC BY 4.0"],
 		["Bookcases with books", "Matthew Collings — @mtcollings", "CC BY 4.0"],
 		["Ceiling fan", "lucaboechat", "CC BY 4.0"],
