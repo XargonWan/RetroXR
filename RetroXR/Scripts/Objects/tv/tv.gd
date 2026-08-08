@@ -67,6 +67,8 @@ var _speakers_seated: bool = false
 @onready var _tv_toggle_btn: VRButton = $TVToggleButton
 @onready var _crt_btn: VRButton = $CRTButton
 @onready var _source_btn: VRButton = $SourceButton
+@onready var _ch_down_btn: VRButton = $ChannelDownButton
+@onready var _ch_up_btn: VRButton = $ChannelUpButton
 @onready var _stereo_btn: VRButton = $StereoButton
 @onready var _volume_label: Label3D = $VolumeLabel
 @onready var _speaker_l: Marker3D = get_node_or_null("SpeakerL")
@@ -205,6 +207,7 @@ func _ready() -> void:
 		"VolumeDownButton": "vol_down", "VolumeUpButton": "vol_up",
 		"TVToggleButton": "power", "CRTButton": "crt", "StereoButton": "stereo",
 		"SourceButton": "source",
+		"ChannelDownButton": "ch_down", "ChannelUpButton": "ch_up",
 	}, TransportGlyphs.TV_SIZE)
 	_composite_port.has_picked_up.connect(_on_plug_snapped)
 	_composite_port.has_dropped.connect(_on_plug_released)
@@ -220,6 +223,8 @@ func _ready() -> void:
 	_crt_btn.button_pressed.connect(_on_crt_toggle)
 	_stereo_btn.button_pressed.connect(_on_stereo_toggle)
 	_source_btn.button_pressed.connect(cycle_source)
+	_ch_down_btn.button_pressed.connect(_on_channel_down)
+	_ch_up_btn.button_pressed.connect(_on_channel_up)
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
 	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
@@ -318,7 +323,8 @@ func _load_shell() -> void:
 	# Bezel buttons march along the row marker's local +X from the first cap.
 	var row: Variant = _shell.button_row_seat()
 	var buttons: Array[Node3D] = [
-		_vol_down_btn, _vol_up_btn, _tv_toggle_btn, _source_btn, _crt_btn, _stereo_btn,
+		_vol_down_btn, _vol_up_btn, _ch_down_btn, _ch_up_btn,
+		_tv_toggle_btn, _source_btn, _crt_btn, _stereo_btn,
 	]
 	if not _shell.show_button_row:
 		for btn in buttons:
@@ -1281,6 +1287,35 @@ func remote_channel_up() -> void:
 func remote_channel_down() -> void:
 	if _tuner and current_source == Source.TV:
 		_tuner.channel_down()
+
+
+# Bezel channel keys. Unlike the remote's — which only appear once the tuner is
+# the selected input, because the SOURCE key is right beside them — these are
+# moulded into the cabinet and are always there. A physical CH key that does
+# nothing on the wrong input would just read as broken, so pressing one selects
+# the tuner first, exactly as a real set does.
+
+func _on_channel_up() -> void:
+	_select_tv_then(true)
+
+
+func _on_channel_down() -> void:
+	_select_tv_then(false)
+
+
+func _select_tv_then(up: bool) -> void:
+	if not _tv_enabled:
+		return
+	if current_source != Source.TV:
+		set_source(Source.TV)
+		# set_source already tuned whatever channel was last on, so the press that
+		# switched inputs is not also a channel step -- pressing CH+ from the
+		# component input lands you on the tuner, not one past it.
+		return
+	if up:
+		_ensure_tuner().channel_up()
+	else:
+		_ensure_tuner().channel_down()
 
 
 # ── Input selection (SOURCE) ──────────────────────────────────────────────────
