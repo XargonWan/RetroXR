@@ -54,6 +54,9 @@ var _cfg: TVChannels = null
 # on the glass while a hand-written stream list is playing perfectly well.
 var _tuner_info: Dictionary = {}
 var _tuner_error := ""
+# Whether a look is actually in flight. Without it the status line cannot tell
+# "searching" from "never started", and reports the former for both.
+var _searching := false
 
 
 func _ready() -> void:
@@ -108,17 +111,19 @@ func reload_channels() -> void:
 	_sort_channels()
 	channels_changed.emit()
 
-	match _cfg.status:
-		TVChannels.Status.MISSING:
-			_set_error("NO CHANNELS\nADD channels.json TO\n%s"
-				% RomLibrary.default_tv_root())
-		TVChannels.Status.PARSE_ERROR:
-			_set_error("CHANNEL LIST ERROR\n%s" % _cfg.error_message)
-		_:
-			pass
+	# A broken file is worth saying out loud. A MISSING one is not: discovery
+	# needs no configuration at all, so the normal case for a fresh install is
+	# no file and a tuner found anyway.
+	if _cfg.status == TVChannels.Status.PARSE_ERROR:
+		_set_error("CHANNEL LIST ERROR\n%s" % _cfg.error_message)
 
-	if not _cfg.tuner_source().is_empty():
-		_hdhr.find_lineup(_cfg.tuner_host(), _cfg.tuner_auto())
+	# Always go looking. This used to be gated on the file naming a tuner, which
+	# dated from before broadcast discovery worked -- and meant a machine with no
+	# channels.json (every fresh install, and every headset) never even started
+	# looking, then sat on "Looking for a tuner..." forever because nothing ever
+	# reported success or failure.
+	_searching = true
+	_hdhr.find_lineup(_cfg.tuner_host(), _cfg.tuner_auto())
 
 
 # ── tuner configuration (the options panel's Tuner box) ───────────────────────
@@ -142,7 +147,7 @@ func tuner_status_line() -> String:
 	if not _tuner_error.is_empty():
 		return _tuner_error
 	if _tuner_info.is_empty():
-		return "Looking for a tuner…"
+		return "Looking for a tuner…" if _searching else "No tuner searched for yet"
 	return "%s — %s — %d tuner(s) — %d channels" % [
 		_tuner_info.get("name", "HDHomeRun"),
 		_tuner_info.get("host", "?"),
@@ -168,11 +173,13 @@ func set_tuner_config(auto: bool, host: String) -> void:
 	_cfg.set_tuner(auto, host)
 	_tuner_info = {}
 	_tuner_error = ""
+	_searching = true
 	_hdhr.find_lineup(_cfg.tuner_host(), _cfg.tuner_auto())
 	channels_changed.emit()
 
 
 func _on_lineup_ready(found: Array, info: Dictionary) -> void:
+	_searching = false
 	_tuner_info = info
 	_tuner_error = ""
 	# Replace the tuner's channels wholesale; hand-written streams are untouched.
@@ -191,6 +198,7 @@ func _on_lineup_ready(found: Array, info: Dictionary) -> void:
 
 
 func _on_discovery_failed(message: String) -> void:
+	_searching = false
 	_tuner_error = message
 	_tuner_info = {}
 	# Only complain on screen if there is nothing else to watch -- a hand-written
