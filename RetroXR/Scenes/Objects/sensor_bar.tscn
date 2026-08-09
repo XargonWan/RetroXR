@@ -90,15 +90,16 @@ surface_material_override/0 = SubResource("Mat_led")
 ; from the room, which is where the real one goes and the only direction that
 ; does not cross in front of the lights.
 ;
-; Turned so local +Y points FORWARD (-Z). _add_cable_to_scene lays the plug out
-; along MINUS the attach point's Y — the idiom the Nunchuk uses so a cord leaves
-; along the moulding instead of kinking at the join — so +Y forward puts the
-; plug behind the bar. The first attempt had this at the right-hand end with +Y
-; along +X, which placed the plug 4 mm from the bar's own centre, inside the
-; shell: the rope then squirted out wherever physics shoved it, reading as a wire
-; leaving the front left corner.
+; Turned 180 degrees about Y, so local -Z points BACKWARD in world terms.
+;
+; -Z is the axis that matters, and only that one: VerletRope::PlugExitDir feeds
+; the anchor's basis through plug_exit_axis, which defaults to (0,0,-1), and that
+; is the direction the cord actually leaves in. Getting the position right is not
+; enough — the first fix here aimed the attach point's +Y forward (which is what
+; the Nunchuk's spawn code reads) and left -Z pointing at the floor, so the plug
+; started in the right place and the wire still dropped straight down.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0.011)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0.011)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")

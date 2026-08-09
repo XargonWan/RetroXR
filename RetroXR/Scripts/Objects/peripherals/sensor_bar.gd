@@ -88,8 +88,14 @@ func _add_cable_to_scene() -> void:
 	_cable_plug.add_to_group(PLUG_GROUP)
 	# Laid out along the boss's own axis, so the cord continues the direction the
 	# moulding points instead of kinking at the join.
+	#
+	# -Z, not the Nunchuk's -Y. That is not a style choice: VerletRope takes the
+	# anchor's exit direction from plug_exit_axis, which is (0,0,-1), so -Z is the
+	# way the cord actually leaves. Spawning along a different axis than the rope
+	# pulls along puts the plug in one place and the wire in another, which reads
+	# as a lead coming out of the wrong face.
 	_cable_plug.global_position = _cable_attach_point.global_position \
-		- _cable_attach_point.global_transform.basis.y * 0.1
+		- _cable_attach_point.global_transform.basis.z * 0.1
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
 	_cable_rope._init_points()
