@@ -86,10 +86,19 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.0105)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
-; Where the lead leaves the shell: out of the right-hand end, pointing away from
-; the screen the bar sits on.
+; Where the lead leaves the shell: the middle of the BACK face, trailing away
+; from the room, which is where the real one goes and the only direction that
+; does not cross in front of the lights.
+;
+; Turned so local +Y points FORWARD (-Z). _add_cable_to_scene lays the plug out
+; along MINUS the attach point's Y — the idiom the Nunchuk uses so a cord leaves
+; along the moulding instead of kinking at the join — so +Y forward puts the
+; plug behind the bar. The first attempt had this at the right-hand end with +Y
+; along +X, which placed the plug 4 mm from the bar's own centre, inside the
+; shell: the rope then squirted out wherever physics shoved it, reading as a wire
+; leaving the front left corner.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.104, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0.011)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
