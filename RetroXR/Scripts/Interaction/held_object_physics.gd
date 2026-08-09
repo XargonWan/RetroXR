@@ -22,12 +22,37 @@
 ## fire it across the room as the solver resolves the overlap. Instead it steps
 ## out toward the player, still passing through, and only rejoins the simulation
 ## once it is clear — so the thing it was inside is never touched.
+##
+## The question that drives it is "is this buried in immovable world geometry?",
+## and both halves of that are load-bearing — measured, not assumed:
+##
+##   * WORLD ONLY. Every shelf, wall, table and cabinet is a StaticBody3D at the
+##     default layer 1. A pickable overlapping a pickable is never a wedge: it is
+##     either deliberate (media seated in a slot, a plug in its socket, both held
+##     open by a collision exception a shape query cannot see) or two loose bodies
+##     the solver separates by itself. Asking about everything instead shoved a Wii
+##     0.22 m at the player for the disc inside it.
+##   * BURIED, NOT TOUCHING. intersect_shape cannot tell the two apart — a console
+##     settled on a table and one released inside a shelf both come back as one
+##     hit. Their contact DEPTHS are 0.000 m and 0.053 m, so collide_shape can.
 class_name HeldObjectPhysics
 extends Node
 
 ## Bit 17, "XRHand_SnapZone" — XRToolsPickable.DEFAULT_LAYER, where a held object
 ## lives for as long as it is held.
 const HELD_BIT := 1 << 16
+
+## Bit 1, "World" — the room itself. See the header: the only thing worth
+## escaping from.
+const WORLD_BIT := 1
+
+## Contact shallower than this is resting ON something rather than buried IN it.
+## Measured: settled on a table 0.000 m, released inside a shelf 0.053 m.
+const BURIED_DEPTH := 0.005
+
+## Contact pairs sampled per query. A box has four corners in a face contact;
+## anything past this is already far past the depth test.
+const MAX_CONTACTS := 8
 
 ## Metres per step while escaping, how far it may travel, and the cap on steps so
 ## a bad query can never spin.
@@ -235,13 +260,21 @@ func _escape(body: XRToolsPickable) -> void:
 	# zone's grab so they, not its grab driver, own the media, then seat it and
 	# freeze it — and being inside the deck IS the seated pose. No solver acts on a
 	# frozen body, so there is nothing to escape from. Same test the fall watch uses.
+	# Still needed with the world-only query below: a disc seated in a console that
+	# is pushed up against a bookcase really does overlap the world, and without
+	# this the escape would drag it out of the machine.
 	if body.freeze:
 		return
 
 	var cs := _first_shape(body)
+	if cs == null:
+		return
+	# Sampled once, here: the loop below stomps the body's own mask to 0, and a
+	# query built from it in there would ask about nothing at all.
+	var world := body.collision_mask & WORLD_BIT
 	# The shape's own transform, not the body's: a CollisionShape3D is usually
 	# offset from its body's origin, and querying at the origin tests empty space.
-	if cs == null or not _overlapping(body, cs.shape, cs.global_transform):
+	if world == 0 or not _buried(body, cs.shape, cs.global_transform, world):
 		return
 
 	var cam := body.get_viewport().get_camera_3d()
@@ -267,7 +300,7 @@ func _escape(body: XRToolsPickable) -> void:
 	for i in MAX_STEPS:
 		probe.origin += dir * STEP
 		moved += STEP
-		if not _overlapping(body, cs.shape, probe):
+		if not _buried(body, cs.shape, probe, world):
 			break
 	var t := body.global_transform
 	t.origin += dir * moved
@@ -279,6 +312,9 @@ func _escape(body: XRToolsPickable) -> void:
 	body.force_update_transform()
 	PhysicsServer3D.body_set_state(
 		body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+	# physics_interpolation is on project-wide, so without this the step out is
+	# rendered as a glide from the old pose instead of the pop it actually is.
+	body.reset_physics_interpolation()
 
 
 # ── Falling out of the world ──────────────────────────────────────────────────
@@ -346,6 +382,9 @@ func _recover(id: int, body: XRToolsPickable) -> void:
 		body.get_rid(), PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, Vector3.ZERO)
 	PhysicsServer3D.body_set_state(
 		body.get_rid(), PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, Vector3.ZERO)
+	# As in _escape: a teleport under project-wide physics interpolation is
+	# otherwise drawn as a streak across the room it just came back from.
+	body.reset_physics_interpolation()
 
 
 ## A spot at chest height an arm's length in front of the player.
@@ -357,9 +396,16 @@ func _in_front_of(cam: Camera3D) -> Vector3:
 	return cam.global_position + fwd.normalized() * 0.5 + Vector3(0.0, -0.2, 0.0)
 
 
-## True while `shape`, placed at `xform`, is inside another body. Areas are
-## excluded: a snap zone or a trigger volume is not something to escape from.
-func _overlapping(body: PhysicsBody3D, shape: Shape3D, xform: Transform3D) -> bool:
+## True while `shape`, placed at `xform`, is buried in `mask` geometry by more
+## than a resting contact. Areas are excluded: a snap zone or a trigger volume is
+## not something to escape from.
+##
+## collide_shape rather than intersect_shape, because intersect_shape answers the
+## wrong question — it reports a single hit both for a console settled on a table
+## and for one released inside a shelf. The contact pairs carry the depth that
+## tells those apart (0.000 m against 0.053 m).
+func _buried(body: PhysicsBody3D, shape: Shape3D, xform: Transform3D,
+		mask: int) -> bool:
 	var space := body.get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
 	q.shape = shape
@@ -367,16 +413,12 @@ func _overlapping(body: PhysicsBody3D, shape: Shape3D, xform: Transform3D) -> bo
 	q.collide_with_areas = false
 	q.collide_with_bodies = true
 	q.exclude = [body.get_rid()]
-	# Its own mask is 0 while held, so query against what it will collide with
-	# once it is let go.
-	q.collision_mask = body.collision_mask if body.collision_mask != 0 \
-		else _restored_mask(body)
-	return not space.intersect_shape(q, 1).is_empty()
-
-
-func _restored_mask(body: PhysicsBody3D) -> int:
-	var v: Variant = body.get("original_collision_mask")
-	return int(v) if v != null else 1
+	q.collision_mask = mask
+	var pts := space.collide_shape(q, MAX_CONTACTS)
+	for i in range(0, pts.size() - 1, 2):
+		if pts[i].distance_to(pts[i + 1]) > BURIED_DEPTH:
+			return true
+	return false
 
 
 func _first_shape(body: PhysicsBody3D) -> CollisionShape3D:
