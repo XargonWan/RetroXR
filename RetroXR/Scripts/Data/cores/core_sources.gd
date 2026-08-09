@@ -41,6 +41,28 @@ const SOURCES := {
 			"Android": "dolphin_libretro_android.so.zip",
 		},
 	},
+	# Azahar, for the same shape of reason. The 3DS renders two eyes and always
+	# did — Settings::values.render_3d and factor_3d were honoured all the way
+	# down to the renderer — but the libretro glue was the one place that never
+	# surfaced them, so no frontend could ask for a side-by-side frame. Without
+	# that a 3DS in this room is flat, which is the one thing a 3DS is not.
+	#
+	# Upstream has the change as an open pull request (azahar-emu/azahar#2339).
+	# When it merges this entry can go, and the buildbot's build will do.
+	#
+	# Note the asset has no "_android" infix: azahar's CMake never set an Android
+	# OUTPUT_NAME, so its Android core is plain azahar_libretro.so and it is the
+	# only one on the buildbot like that. core_lib_suffixes() already accepts
+	# both spellings for exactly this core.
+	"azahar": {
+		"repo":  "XenuIsWatching/azahar",
+		"known_tag": "retroxr-azahar-libretro-v1",
+		"label": "Azahar (retroXR build)",
+		"assets": {
+			"Windows": "azahar_libretro.dll.zip",
+			"Android": "azahar_libretro.so.zip",
+		},
+	},
 }
 
 
