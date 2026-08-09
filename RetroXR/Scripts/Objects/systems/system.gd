@@ -1970,11 +1970,6 @@ func _removable_media_options(core: String) -> Dictionary:
 func _all_forced_options(core: String) -> Dictionary:
 	var out: Dictionary = _model.get_forced_core_options() if _model != null else {}
 	out.merge(_removable_media_options(core), true)
-	# A Wii adds one the model cannot know: which side of the screen its sensor
-	# bar ended up on. That is a SYSCONF value, and the real machine reads those
-	# at boot, so composing it here — at power-on — is the honest moment.
-	if _wii_link != null:
-		out.merge(_wii_link.forced_core_options(), true)
 	return out
 
 
