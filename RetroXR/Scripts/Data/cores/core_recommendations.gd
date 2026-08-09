@@ -17,6 +17,18 @@ const RECOMMENDED := {
 		"core": "azahar",
 		"why":  "The only 3DS core that emits side-by-side stereo, which the n3ds model's screen rects rely on",
 	},
+	# Both Dolphin systems point at the same core, and the recommendation is
+	# really about WHICH BUILD: CoreSources replaces the buildbot's Dolphin with
+	# our fork, which is the only one that can do Wiimote IR passthrough. On the
+	# stock build a Wii Remote still points, but by a constant fitted per game.
+	"gamecube": {
+		"core": "dolphin",
+		"why":  "The only GameCube core here, and the retroXR build adds the Wiimote IR passthrough a Wii disc in this cabinet needs",
+	},
+	"wii": {
+		"core": "dolphin",
+		"why":  "The retroXR build takes the Wii Remote's aim from the real sensor bar in the room rather than a cursor position, which is what makes pointing land where you point",
+	},
 	"nintendo_64": {
 		"core": "mupen64plus_next_gles3",
 		"why":  "mupen64plus_next_gles2 runs at full speed on Quest but never draws a pixel — the gles3 build of the same core renders the same ROM correctly",

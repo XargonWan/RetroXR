@@ -207,9 +207,33 @@ func _on_listing_completed(result: int, response_code: int,
 		return
 
 	var html := body.get_string_from_utf8()
-	available_cores = _parse_listing_html(html)
+	available_cores = _apply_own_sources(_parse_listing_html(html))
 	print("[CoreDownloadManager] Found %d downloadable cores on buildbot" % available_cores.size())
 	callback.call(available_cores)
+
+
+## Replace the buildbot's entry for any core we publish ourselves, so the row the
+## player sees offers OUR build.
+##
+## An override rather than a second row: CoreSources is deliberately keyed by the
+## same core_name as the buildbot's, because the frontend derives system/<core>
+## and save/<core> from it and a second name would strand the Sys folder and
+## every save. Two rows would also mean two cores fighting over one filename.
+##
+## Cores we publish but do not build for this platform are left exactly as the
+## buildbot listed them — CoreSources.has() is false there, so a Linux player
+## still gets the stock Dolphin instead of a row that cannot download.
+func _apply_own_sources(entries: Array[Dictionary]) -> Array[Dictionary]:
+	for entry: Dictionary in entries:
+		var core_name: String = entry.get("core_name", "")
+		if not CoreSources.has(core_name):
+			continue
+		entry["filename"] = CoreSources.asset_for(core_name)
+		# The tag stands in for the buildbot's timestamp. Anyone holding the stock
+		# build has a date stored, which differs, so the row reads UPDATE.
+		entry["remote_date"] = CoreSources.version_of(core_name)
+		entry["source"] = "retroxr"
+	return entries
 
 
 ## Parse the h5ai fallback table embedded in the raw HTML.
@@ -385,6 +409,11 @@ func _finish(core_name: String, ok: bool, error: String) -> void:
 ## Zip names to try for a core, best guess first: whatever the buildbot listing
 ## actually advertised, then each platform naming convention.
 func _zip_candidates(core_name: String) -> PackedStringArray:
+	# A core we publish ourselves has exactly one asset name, and guessing past it
+	# would silently fall through to the buildbot's build under a name that does
+	# happen to exist there. One candidate, so a miss is reported as a miss.
+	if CoreSources.has(core_name):
+		return PackedStringArray([CoreSources.asset_for(core_name)])
 	var candidates := PackedStringArray()
 	for entry: Dictionary in available_cores:
 		if entry.get("core_name", "") == core_name:
@@ -418,7 +447,10 @@ func _start_download_attempt(core_name: String) -> void:
 			_on_download_completed(core_name, result, response_code)
 	)
 
-	var err := http.request(_buildbot_url() + zip_filename)
+	# Our own release for the cores we publish, the buildbot for everything else.
+	# Both are a directory URL with a filename on the end, so only the stem moves.
+	var base := CoreSources.base_url(core_name) if CoreSources.has(core_name) else _buildbot_url()
+	var err := http.request(base + zip_filename)
 	if err != OK:
 		push_error("CoreDownloadManager: failed to start download of '%s' (err %d)" % [core_name, err])
 		_finish(core_name, false, "Could not start the request (err %d)" % err)
@@ -477,7 +509,11 @@ func _on_download_completed(core_name: String, result: int, response_code: int) 
 			_finish(core_name, false, "Connection failed after %d attempts" % MAX_ATTEMPTS)
 			return
 
-		_finish(core_name, false, "Not available on the buildbot (HTTP %d)" % response_code)
+		if CoreSources.has(core_name):
+			_finish(core_name, false, "Not in the %s release (HTTP %d)"
+				% [CoreSources.version_of(core_name), response_code])
+		else:
+			_finish(core_name, false, "Not available on the buildbot (HTTP %d)" % response_code)
 		return
 
 	_free_download_request(core_name)

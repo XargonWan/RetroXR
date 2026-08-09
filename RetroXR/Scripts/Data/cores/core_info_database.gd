@@ -117,11 +117,51 @@ func load_directory(info_dir: String) -> void:
 
 
 ## Convenience: load from the vendored core-info files at
-## res://libretro-core-info/ (see that directory's README for their provenance).
+## res://libretro-core-info/ (see that directory's README for their provenance),
+## then lay our own on top.
 func load_from_project() -> void:
 	var info_dir: String = "res://libretro-core-info"
 	print("[CoreInfoDatabase] Resolved info dir: %s" % info_dir)
 	load_directory(info_dir)
+	load_overlay(OVERLAY_DIR)
+
+
+## Where our own .info files live, laid over the vendored set.
+const OVERLAY_DIR := "res://libretro-core-info-retroxr"
+
+
+## Load .info files that REPLACE the vendored entry of the same core_name.
+##
+## A separate directory rather than edits in place: res://libretro-core-info is
+## vendored wholesale from libretro's repository, so anything written there is
+## lost the next time it is refreshed, silently and without a conflict to notice.
+## A core we ship our own build of usually needs its own description too — ours
+## describes the fork, not the upstream core — and this is where that goes.
+##
+## Missing directory is not an error; there simply is no overlay.
+func load_overlay(info_dir: String) -> void:
+	if not DirAccess.dir_exists_absolute(info_dir):
+		return
+	var overlay := CoreInfoParser.parse_all(info_dir)
+	if overlay.is_empty():
+		return
+	var by_name: Dictionary = {}
+	for entry: Dictionary in overlay:
+		by_name[entry.get("core_name", "")] = entry
+	var merged: Array[Dictionary] = []
+	for entry: Dictionary in cores:
+		var cn: String = entry.get("core_name", "")
+		if by_name.has(cn):
+			merged.append(by_name[cn])
+			by_name.erase(cn)
+		else:
+			merged.append(entry)
+	# Anything left described a core the vendored set does not carry at all.
+	for entry: Variant in by_name.values():
+		merged.append(entry as Dictionary)
+	cores = merged
+	_rebuild_indices()
+	print("[CoreInfoDatabase] Applied %d retroXR core-info overrides" % overlay.size())
 
 
 # ---------------------------------------------------------------------------
