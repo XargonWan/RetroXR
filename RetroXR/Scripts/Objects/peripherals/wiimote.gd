@@ -100,6 +100,15 @@ var device_type: int = RETRO_DEVICE_WIIMOTE
 ## Whether to show the aim dot on the screen.
 var show_laser_dot: bool = true
 
+## Desktop: park the remote in the lower-right of the view instead of floating it
+## on the grab ray, and aim from the camera centre — the same FPS-weapon handling
+## the ray gun uses (desktop_pickup._is_fps_snap reads this).
+##
+## Without it the remote hangs in the middle of the screen on the ray, directly in
+## front of the very thing it is pointing at. The aim was already working; the
+## hand cursor was simply behind the remote.
+var desktop_fps_snap: bool = true
+
 # Active bindings (loaded from ControllerBindings on pair)
 var _wiimote_map: Dictionary = ControllerBindings.DEFAULT_WIIMOTE_MAP.duplicate()
 
@@ -140,6 +149,18 @@ var _accel_smoothed := Vector3.ZERO
 # LED animation
 var _led_materials: Array[StandardMaterial3D] = []
 var _blink_clock := 0.0
+## Last aim state printed, so the log speaks only on change. See _log_aim.
+var _last_aim_log: String = ""
+var _last_aim_value_ms: int = 0
+
+## Print where the remote is aiming, twice a second.
+##
+## ON while the pointer's alignment is being chased. Exported so it can be ticked
+## per-remote later, but defaulted true because a remote is SPAWNED — there is no
+## authored node in the editor to tick, so a false default is a switch with
+## nothing to flip it. Turn this off (or delete it with the two _log_aim helpers)
+## once the aim is trusted.
+@export var aim_debug: bool = true
 
 ## The face buttons, by the control name each one is. These are VRButtons: they
 ## can be POKED with the free hand as well as driven from the held hand, which is
@@ -344,6 +365,16 @@ func _load_bindings() -> void:
 	_wiimote_map = ControllerBindings.get_for_system(systemid)["wiimote"]
 
 
+## Find the glass to aim at. Re-runnable, and re-run whenever it has nothing —
+## see _update_aim.
+##
+## This used to fire once, when the remote claimed its slot, and give up quietly
+## if the set was not cabled to the console at that instant. A remote pairs by
+## handshake, so that instant has nothing to do with when the A/V lead went in;
+## restore a saved room and the order is whatever the file happens to list. Miss
+## it and the pointer never worked again for that pairing, while every button
+## carried on working — they do not need the screen — which reads as "the
+## pointer is broken" rather than "it never found the television".
 func _cache_screen_geometry() -> void:
 	if _connected_system == null or _connected_system.connected_tv == null:
 		return
@@ -675,6 +706,35 @@ func _set_face_buttons_active(active: bool) -> void:
 		(_face_buttons[key] as VRButton).set_interactive(active)
 
 
+## What the aim is doing, printed only when the answer CHANGES.
+##
+## The pointer has three distinct ways of showing nothing — no screen found, a ray
+## pointing away from the glass, and a hit that lands outside it — and from the
+## room all three look identical: no hand. This says which, once, per transition,
+## so a single run tells you where to look instead of a guess.
+func _log_aim(state: String) -> void:
+	if state == _last_aim_log:
+		return
+	_last_aim_log = state
+	print("[Wiimote] aim: %s" % state)
+
+
+## Twice a second, what the remote thinks it is pointing at and what it sent.
+##
+## The state log above only speaks on transitions, which is right for "why is
+## there no pointer" and useless for "the pointer is in the wrong place". This is
+## the calibration read: point at a known edge and compare. u/v are 0..1 across
+## the glass (v=0 top), and lx/ly are what actually goes to the core.
+func _log_aim_values(u: float, v: float, lx: int, ly: int) -> void:
+	if not aim_debug:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_aim_value_ms < 500:
+		return
+	_last_aim_value_ms = now
+	print("[Wiimote] aim u=%.3f v=%.3f -> pointer %d,%d" % [u, v, lx, ly])
+
+
 ## The holding hand's thumbstick, or zero when nothing is holding the remote.
 func _dpad_stick() -> Vector2:
 	if _wiimote_map.get("stick", "dpad") != "dpad" or not is_instance_valid(_holding_ctrl):
@@ -792,7 +852,14 @@ func _process(delta: float) -> void:
 # ── Pointer (IR) ──────────────────────────────────────────────────────────────
 
 func _update_aim(libretro: Libretro) -> void:
+	# Look again if we have no glass, or the set we had went away (unplugged,
+	# swapped, deleted). Cheap: two null checks on the frames it succeeds, and
+	# only on those where it has nothing to aim at anyway.
+	if not is_instance_valid(_screen_mesh):
+		_screen_mesh = null
+		_cache_screen_geometry()
 	if _screen_mesh == null or _screen_w == 0.0:
+		_log_aim("no screen found — nothing to aim at")
 		_laser_dot.visible = false
 		libretro.SetPointerState(_port_index, 0, 0, false)
 		return
@@ -824,6 +891,8 @@ func _update_aim(libretro: Libretro) -> void:
 
 	var hit: Variant = plane.intersects_ray(ray_origin, ray_dir)
 	if hit == null:
+		# Pointing away from the glass entirely — the ray never reaches the plane.
+		_log_aim("ray misses the screen plane (pointing away from it)")
 		_laser_dot.visible = false
 		libretro.SetPointerState(_port_index, 0, 0, false)
 		return
@@ -831,21 +900,27 @@ func _update_aim(libretro: Libretro) -> void:
 	var local: Vector3 = screen_transform.affine_inverse() * (hit as Vector3)
 	var u := (local.x / _screen_w) + 0.5
 	var v := (-local.y / _screen_h) + 0.5
+	_log_aim("hit u=%.2f v=%.2f" % [u, v] if (u >= 0.0 and u <= 1.0 and v >= 0.0 and v <= 1.0)
+		else "OFF-SCREEN u=%.2f v=%.2f" % [u, v])
 
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
 		# Off screen. The core binds no "Hide" control in pointer IR mode, so the
 		# cursor cannot be sent away — it clamps at the edge instead, which is the
 		# closest thing to a remote pointed past the sensor bar. `pressed` still
 		# reports the miss, ready for a core that can act on it.
+		var cx := int((clampf(u, 0.0, 1.0) * 2.0 - 1.0) * POINTER_SCALE)
+		var cy := int((clampf(v, 0.0, 1.0) * 2.0 - 1.0) * POINTER_SCALE)
+		# Logged here too: aiming AT an edge is exactly where the reading matters,
+		# and the edge is the first place it goes off-screen.
+		_log_aim_values(u, v, cx, cy)
 		_laser_dot.visible = false
-		libretro.SetPointerState(_port_index,
-			int((clampf(u, 0.0, 1.0) * 2.0 - 1.0) * POINTER_SCALE),
-			int((clampf(v, 0.0, 1.0) * 2.0 - 1.0) * POINTER_SCALE), false)
+		libretro.SetPointerState(_port_index, cx, cy, false)
 		return
 
-	libretro.SetPointerState(_port_index,
-		int((u * 2.0 - 1.0) * POINTER_SCALE),
-		int((v * 2.0 - 1.0) * POINTER_SCALE), true)
+	var lx := int((u * 2.0 - 1.0) * POINTER_SCALE)
+	var ly := int((v * 2.0 - 1.0) * POINTER_SCALE)
+	_log_aim_values(u, v, lx, ly)
+	libretro.SetPointerState(_port_index, lx, ly, true)
 
 	_laser_dot.visible = show_laser_dot
 	_laser_dot.global_position = (hit as Vector3) + screen_normal * 0.002
