@@ -66,6 +66,7 @@ func _ensure_ui_connected() -> void:
 		return
 	ui.audio_track_selected.connect(_on_audio_selected)
 	ui.subtitle_selected.connect(_on_subtitle_selected)
+	ui.ignore_gravity_toggled.connect(_on_ignore_gravity_toggled)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
 
@@ -78,7 +79,12 @@ func _populate() -> void:
 		call_deferred("_populate")
 		return
 	ui.populate(_dvd.get_audio_tracks(), _dvd.get_audio_track(),
-		_dvd.get_subtitle_tracks(), _dvd.get_subtitle())
+		_dvd.get_subtitle_tracks(), _dvd.get_subtitle(), _dvd.get_ignore_gravity())
+
+
+func _on_ignore_gravity_toggled(enabled: bool) -> void:
+	if _dvd and is_instance_valid(_dvd):
+		_dvd.set_ignore_gravity(enabled)
 
 
 func _on_audio_selected(id: int) -> void:

@@ -103,6 +103,7 @@ var _last_total: float = -1.0
 func _ready() -> void:
 	super._ready()
 	add_to_group("vcr_player")
+	_float_lock = FloatLock.attach(self, ignore_gravity)
 	TransportGlyphs.label_buttons(self, {
 		"PlayButton": "play", "PauseButton": "pause", "StopButton": "stop",
 		"RewindButton": "rew", "FastForwardButton": "ff", "EjectButton": "eject",
@@ -760,3 +761,19 @@ func restore_cable_connection(_tv: RetroTV) -> void:
 ## Seat a tape programmatically (event/save restore) — no ride, bypasses the filter.
 func restore_tape(tape: Node3D) -> void:
 	_slot.restore(tape)
+
+
+## Ignore-gravity: the device floats where it is put instead of falling. Restored
+## from a save through this flag, which FloatLock reads once at _ready.
+var ignore_gravity: bool = false
+var _float_lock: FloatLock = null
+
+
+func get_ignore_gravity() -> bool:
+	return _float_lock != null and _float_lock.enabled
+
+
+func set_ignore_gravity(on: bool) -> void:
+	ignore_gravity = on
+	if _float_lock != null:
+		_float_lock.set_enabled(on)

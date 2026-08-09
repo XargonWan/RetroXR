@@ -511,12 +511,23 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 func _base(id: int, type_name: String, n3d: Node3D) -> Dictionary:
 	var pos := n3d.global_position
 	var rot := n3d.global_rotation_degrees
-	return {
+	var out := {
 		"id": id,
 		"type": type_name,
 		"position": [pos.x, pos.y, pos.z],
 		"rotation": [rot.x, rot.y, rot.z],
 	}
+	# Float-in-place, for the objects that have it (RetroSystem, and every device
+	# carrying a FloatLock). Only written when ON, so a room full of ordinary
+	# props saves exactly as it did before this field existed.
+	var floating := false
+	if n3d.has_method("get_ignore_gravity"):
+		floating = bool(n3d.call("get_ignore_gravity"))
+	elif "ignore_gravity" in n3d:
+		floating = bool(n3d.get("ignore_gravity"))
+	if floating:
+		out["ignore_gravity"] = true
+	return out
 
 
 ## An ordered chain, not a lookup table: `is` matches every ancestor, so a
@@ -852,6 +863,12 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 	var rot: Array = data.get("rotation", [0.0, 0.0, 0.0])
 	obj.position = Vector3(pos[0], pos[1], pos[2])
 	obj.rotation_degrees = Vector3(rot[0], rot[1], rot[2])
+	# Float-in-place is a property of the OBJECT rather than of any one kind of
+	# it, so it is applied once here instead of in a branch per device. Written
+	# before the caller adds the child, which is what FloatLock needs: it reads
+	# this flag in _ready and parks the body at the pose restored just above.
+	if "ignore_gravity" in obj:
+		obj.set("ignore_gravity", bool(data.get("ignore_gravity", false)))
 	return obj
 
 

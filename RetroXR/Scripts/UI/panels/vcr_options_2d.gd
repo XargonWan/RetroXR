@@ -12,6 +12,8 @@ class_name VCROptions2D
 extends Control
 
 signal effect_toggled(enabled: bool)
+## Float-in-place toggled.
+signal ignore_gravity_toggled(enabled: bool)
 signal scan_speed_changed(value: float)
 ## A VHS shader uniform was changed (pname, value). Applied live to the screen.
 signal vcr_param_changed(pname, value)
@@ -31,6 +33,7 @@ var _options_rows: VBoxContainer
 var _vhs_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
 var _effect_check: CheckBox = null
+var _float_check: CheckBox = null
 var _scan_idx: int = 2   # default 8×
 var _scan_val_lbl: Label = null
 # VHS shader controls, keyed by uniform name → {slider, val_label, fmt}.
@@ -145,6 +148,13 @@ func _build_option_rows() -> void:
 		effect_toggled.emit(pressed)
 	)
 	row.add_child(_effect_check)
+
+	_float_check = MenuStyle.float_toggle()
+	_float_check.toggled.connect(func(on: bool):
+		if not _suppress_signal:
+			ignore_gravity_toggled.emit(on)
+	)
+	_options_rows.add_child(_float_check)
 
 	# Scan speed stepper row: [label] [<] [value] [>]
 	var srow := HBoxContainer.new()
@@ -303,10 +313,12 @@ func _nearest_scan_idx(value: float) -> int:
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 ## Sync the UI to the VCR player's current state without re-emitting signals.
-func populate(effect_enabled: bool, scan_speed: float) -> void:
+func populate(effect_enabled: bool, scan_speed: float, ignore_gravity := false) -> void:
 	_suppress_signal = true
 	if _effect_check:
 		_effect_check.button_pressed = effect_enabled
+	if _float_check:
+		_float_check.button_pressed = ignore_gravity
 	_scan_idx = _nearest_scan_idx(scan_speed)
 	if _scan_val_lbl:
 		_scan_val_lbl.text = _scan_text()

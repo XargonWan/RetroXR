@@ -1,0 +1,14 @@
+[gd_scene load_steps=4 format=3 uid="uid://audio_opts_pnl_1"]
+
+[ext_resource type="Script" path="res://Scripts/UI/panels/audio_options_panel.gd" id="1_panelscript"]
+[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="2_viewport2d3d"]
+[ext_resource type="PackedScene" uid="uid://audio_opts_2d_01" path="res://Scenes/UI/audio_options_2d.tscn" id="3_audioopts2d"]
+
+[node name="AudioOptionsPanel" type="Node3D"]
+script = ExtResource("1_panelscript")
+
+[node name="AudioOptionsViewport" parent="." instance=ExtResource("2_viewport2d3d")]
+screen_size = Vector2(0.4, 0.14)
+scene = ExtResource("3_audioopts2d")
+viewport_size = Vector2(400, 140)
+transparent = 1

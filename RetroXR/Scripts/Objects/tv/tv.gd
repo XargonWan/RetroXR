@@ -253,6 +253,10 @@ func _ready() -> void:
 	_stereo_btn.set_deferred("collision_layer", 0)
 	_update_crt_button_color()
 	_update_stereo_button_color()
+	# The aspect cap prints its own state and tv.tscn authors it blank, so without
+	# this the picture-shape key on the bezel is an unlabelled button until the
+	# first press.
+	_update_aspect_button()
 	_update_volume_label()
 
 	# Keep the chosen display size across pickups: xr-tools' grab driver is a
@@ -261,6 +265,7 @@ func _ready() -> void:
 	grabbed.connect(_on_tv_grabbed)
 	dropped.connect(_on_tv_dropped)
 	_apply_scale()
+	_float_lock = FloatLock.attach(self, ignore_gravity)
 
 	if _ambilight:
 		_ambilight_energy = _ambilight.light_energy
@@ -522,7 +527,18 @@ func _update_screen_source() -> void:
 			_unwrap_crt()
 			_screen_mesh.set_surface_override_material(0, _blue_material)
 	else:
-		if effective == _blue_material or effective == null:
+		# Off. The blank states are ours to paint over; a live source's material is
+		# not, and is left until its host hands the glass back.
+		#
+		# The tuner's material is ours too, and neither of its two looks reads as
+		# blank: set_active(false) leaves the last decoded frame frozen on the
+		# picture material, and the static shader carries on animating whether or
+		# not anything is driving it. Nothing else is on the mesh by then — the
+		# tuner is inactive and the connected host was muted when the input
+		# changed — so on the TV input the screen goes dark whatever is left on it.
+		var reclaimable := effective == _blue_material or effective == null \
+			or (current_source == Source.TV and _tuner != null)
+		if reclaimable and effective != _dark_material:
 			_unwrap_crt()
 			_screen_mesh.set_surface_override_material(0, _dark_material)
 
@@ -1304,6 +1320,8 @@ func _on_plug_snapped(plug: Node3D) -> void:
 			# the channel that is playing.
 			if current_source != Source.COMPONENT and system.has_method("set_screen_enabled"):
 				system.set_screen_enabled(false)
+			# …and it must be silent too until SOURCE picks it, for the same reason.
+			_apply_audio_volume()
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
 				{"owner": system, "tv": self, "ch": _snapped_plug.channel})
 
@@ -1317,7 +1335,7 @@ func on_av_source_found(source: Node3D) -> void:
 	# video handler doesn't capture our CRT wrapper as the material to restore.
 	_unwrap_crt()
 	_connected_system = source
-	_connected_system.set_audio_volume(_effective_volume())
+	_connected_system.set_audio_volume(_volume_for(Source.COMPONENT))
 	_apply_audio_channel_mode()
 	# Same rule as the captive-lead path: a deck cabled up while the tuner is on
 	# screen waits its turn rather than painting over it.
@@ -1442,6 +1460,9 @@ func set_source(source: int) -> void:
 	if _connected_system and is_instance_valid(_connected_system) \
 			and _connected_system.has_method("set_screen_enabled"):
 		_connected_system.set_screen_enabled(_tv_enabled and current_source == Source.COMPONENT)
+	# Sound follows the same selection as the picture. Both halves, or the input
+	# you just left goes on being heard.
+	_apply_audio_volume()
 
 	if current_source == Source.TV:
 		_ensure_tuner()
@@ -1474,7 +1495,7 @@ func _ensure_tuner() -> TVTuner:
 		_tuner.status_changed.connect(_on_tuner_status)
 		add_child(_tuner)
 		_tuner.reload_channels()
-		_tuner.set_volume(_effective_volume())
+		_tuner.set_volume(_volume_for(Source.TV))
 		_tuner.set_channel_mode(audio_mode)
 	return _tuner
 
@@ -1568,15 +1589,23 @@ func _apply_scale() -> void:
 	# and unconditionally, so the very first call, from _ready, is the one that
 	# fills the cache while every transform is still coherent.
 	var bottom := _local_bottom_y()
-	scale = Vector3.ONE * scale_factor
-	if is_nan(previous):
-		return
 	# bottom_world = origin_y + s * local_bottom, so holding it fixed means
 	# shifting the origin by (old_s - new_s) * local_bottom.
 	var delta := previous - scale_factor
-	if is_zero_approx(delta):
+	# Whatever is standing on the set, found while the cabinet is still its old
+	# size — see _carry_riders for why they cannot be left to the solver. Skipped
+	# when the size is not actually moving: _on_tv_dropped reasserts the current
+	# scale on every release, and that must not cost a shape query.
+	var resizing := not is_nan(previous) and not is_zero_approx(delta)
+	var riders: Array[RigidBody3D] = []
+	if resizing:
+		riders = _riders(previous)
+	scale = Vector3.ONE * scale_factor
+	if not resizing:
 		return
 	global_position.y += delta * bottom
+	# The bottom is pinned, so the top moved by exactly the change in height.
+	_carry_riders(riders, _collider_height() * (scale_factor - previous))
 	# Held: the grab driver owns the pose, so there is nothing to park.
 	if freeze and not _parked_by_resize:
 		return
@@ -1603,6 +1632,78 @@ func _apply_scale() -> void:
 		force_update_transform()
 		freeze = false
 		_parked_by_resize = false
+
+
+## How thick a slab above the cabinet's top face counts as "standing on it".
+const _RIDER_SLAB := 0.03
+
+
+## Height of the pickup collider at scale 1.
+func _collider_height() -> float:
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col == null or not (col.shape is BoxShape3D):
+		return 0.0
+	return (col.shape as BoxShape3D).size.y
+
+
+## The bodies standing on top of the set, measured with the cabinet at `at_scale`.
+##
+## A thin slab just above the top face: a box resting on the cabinet is caught and
+## the cabinet itself is not. Dynamic bodies only — world geometry cannot ride
+## anything, and a frozen body is either held, parked, or seated in one of our own
+## sockets, none of which wants to be shoved.
+func _riders(at_scale: float) -> Array[RigidBody3D]:
+	var out: Array[RigidBody3D] = []
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col == null or not (col.shape is BoxShape3D) or get_world_3d() == null \
+			or is_nan(at_scale):
+		return out
+	var full: Vector3 = (col.shape as BoxShape3D).size * at_scale
+	var slab := BoxShape3D.new()
+	# Shy of the footprint on the horizontal axes so a set standing against a wall
+	# does not count the wall, which is static anyway but also not free.
+	slab.size = Vector3(maxf(full.x - 0.01, 0.01), _RIDER_SLAB, maxf(full.z - 0.01, 0.01))
+	var axes := global_basis.orthonormalized()
+	var centre: Vector3 = global_position + axes * (col.position * at_scale) \
+		+ Vector3.UP * (full.y * 0.5 + _RIDER_SLAB * 0.5)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = slab
+	query.transform = Transform3D(axes, centre)
+	query.exclude = [get_rid()]
+	query.collide_with_areas = false
+	for hit: Dictionary in get_world_3d().direct_space_state.intersect_shape(query, 16):
+		var rb := hit.get("collider") as RigidBody3D
+		if rb == null or rb == self or rb.freeze or is_ancestor_of(rb):
+			continue
+		if not out.has(rb):
+			out.append(rb)
+	return out
+
+
+## Move what was standing on the set by however far the top face just moved.
+##
+## Resizing is a PLACEMENT, and this is the half of that the solver cannot do for
+## you. Growing the cabinet in one step — a committed slider value, a size restored
+## from a save, a peer's resize — swallows whatever was on top, and Jolt answers a
+## body that is suddenly deep inside another by ejecting it through the nearest
+## face: it drops out of the bottom of the set and lands on the floor. Dragging the
+## slider hid this, because a 0.1 step only grows the box a couple of centimetres
+## and the solver pushes the object back UP each tick.
+##
+## Only lifted on the way up. Shrinking needs no move — the set slides out from
+## under whatever was on it and gravity does the rest — but it does need the WAKE
+## below, because a body that fell asleep resting on the cabinet is not disturbed
+## by the cabinet leaving, and it hangs in the air where the set used to be.
+func _carry_riders(riders: Array[RigidBody3D], lift: float) -> void:
+	for rb in riders:
+		if not is_instance_valid(rb):
+			continue
+		if lift > 0.0:
+			rb.global_position.y += lift
+			# Teleports and physics interpolation: without this the object renders
+			# sliding up from where it was rather than arriving with the cabinet.
+			rb.reset_physics_interpolation()
+		rb.sleeping = false
 
 
 ## Scale the anchor correction was last applied at. NAN until the first
@@ -1697,38 +1798,29 @@ func _is_jammed() -> bool:
 	return false
 
 
-## Lowest point of the TV's mesh geometry along Y, in local space at scale 1.
-## Cached: the meshes never move relative to the TV, so this is a constant.
+## Bottom of the pickup COLLIDER along Y, in local space at scale 1 — the point
+## the resize anchor holds still and the point the standing ray casts from.
 ##
-## Only MeshInstance3D counts. A VisualInstance3D sweep would also pick up the
-## Ambilight SpotLight3D, whose AABB is its light cone — that reaches far below
-## the cabinet, and anchoring to it would lift the TV clean off the table.
-var _local_bottom_y_cache: float = NAN
-
-
+## The collider, not the geometry: what a set rests on is its collision box, and
+## the two are not the same height. The 90s cabinet's lowest mesh sits 4.5 cm
+## under its box, which is enough to break both callers at once. The anchor lifts
+## further than the box actually grew, so the solver spends every slider tick
+## shoving the set back down into the table; and the standing ray starts INSIDE
+## that table, where Godot reports no hit at all, so `standing` reads false for
+## every set on furniture and the park never engages.
+##
+## Reading the shape also keeps this honest about WHEN it is asked. A sweep of the
+## meshes answers with whatever happened to be visible at the time, and
+## TVOptionsPanel's viewport quad — most of a metre below the origin — joins the
+## tree a frame or two after _ready.
+##
+## Cheap enough to leave uncached: two property reads, and _resize_body_collision
+## swaps the shape out from under any cache when a shell is fitted.
 func _local_bottom_y() -> float:
-	if not is_nan(_local_bottom_y_cache):
-		return _local_bottom_y_cache
-	var to_local := global_transform.affine_inverse()
-	var lowest := INF
-	for mi: MeshInstance3D in _mesh_instances(self):
-		var box := mi.get_aabb()
-		var xf := to_local * mi.global_transform
-		for i in range(8):
-			lowest = minf(lowest, (xf * box.get_endpoint(i)).y)
-	# to_local already divided out the current scale, so this is the scale-1
-	# offset and stays valid however the TV is resized later.
-	_local_bottom_y_cache = 0.0 if is_inf(lowest) else lowest
-	return _local_bottom_y_cache
-
-
-func _mesh_instances(node: Node) -> Array[MeshInstance3D]:
-	var found: Array[MeshInstance3D] = []
-	if node is MeshInstance3D and (node as MeshInstance3D).visible:
-		found.append(node as MeshInstance3D)
-	for child in node.get_children():
-		found.append_array(_mesh_instances(child))
-	return found
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col == null or not (col.shape is BoxShape3D):
+		return 0.0
+	return col.position.y - (col.shape as BoxShape3D).size.y * 0.5
 
 
 func _on_tv_grabbed(_pickable: Node3D, _by: Node3D) -> void:
@@ -1764,18 +1856,29 @@ func is_muted() -> bool:
 	return _muted
 
 
-## The volume actually sent to the connected device: silence while off or muted.
+## What the set's own amplifier is passing: silence while off or muted.
 func _effective_volume() -> float:
 	return 0.0 if (not _tv_enabled or _muted) else _volume
 
 
-## Push the current effective volume to the connected device (if any) and to the
-## built-in tuner, so one knob governs whichever input is showing.
+## …and what reaches one input, which is nothing at all unless that input is the
+## one SOURCE has selected.
+##
+## The set has two sound sources and only ever plays one. Deselecting an input
+## used to silence only its PICTURE (set_screen_enabled) and leave its sound
+## running, so switching a console to the tuner played the channel over the top
+## of the game you had just been playing.
+func _volume_for(source: int) -> float:
+	return _effective_volume() if current_source == source else 0.0
+
+
+## Push the current volume to the connected device (if any) and to the built-in
+## tuner, so one knob governs whichever input is showing and the other is quiet.
 func _apply_audio_volume() -> void:
-	if _connected_system:
-		_connected_system.set_audio_volume(_effective_volume())
+	if _connected_system and is_instance_valid(_connected_system):
+		_connected_system.set_audio_volume(_volume_for(Source.COMPONENT))
 	if _tuner:
-		_tuner.set_volume(_effective_volume())
+		_tuner.set_volume(_volume_for(Source.TV))
 
 
 ## A volume key clears mute (like a real set) so the change is audible.
@@ -1852,8 +1955,23 @@ func _on_tv_toggle() -> void:
 		# Powering back on must not un-mute the component input while the set is
 		# showing the tuner -- it would start repainting the screen underneath it.
 		_connected_system.set_screen_enabled(_tv_enabled and current_source == Source.COMPONENT)
-		_connected_system.set_audio_volume(_effective_volume())
 	if _tuner:
 		_tuner.set_active(_tv_enabled and current_source == Source.TV)
-		_tuner.set_volume(_effective_volume())
+	_apply_audio_volume()
 	NetworkManager.report_event(NetObjectSync.EV_TV_POWER, {"tv": self})
+
+
+## Ignore-gravity: the device floats where it is put instead of falling. Restored
+## from a save through this flag, which FloatLock reads once at _ready.
+var ignore_gravity: bool = false
+var _float_lock: FloatLock = null
+
+
+func get_ignore_gravity() -> bool:
+	return _float_lock != null and _float_lock.enabled
+
+
+func set_ignore_gravity(on: bool) -> void:
+	ignore_gravity = on
+	if _float_lock != null:
+		_float_lock.set_enabled(on)

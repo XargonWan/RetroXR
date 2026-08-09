@@ -30,6 +30,25 @@ const GAP          := 0.006
 const GRID_COLS    := 3
 const PANEL_PAD    := 0.012
 const FLOAT_HEIGHT := 0.16
+
+## Cell glyph sizing. The label is authored at CELL_FONT_MAX and then shrunk per
+## cell to fit — see _fit_font_size. A fixed size cannot work here: these icons
+## come from three different Nerd Font families and their ink boxes differ by 2x
+## at the same point size, so one size that suits the arrows spills the speaker
+## pair and the power ring off the tile.
+const LABEL_PIXEL_SIZE := 0.0011
+const CELL_FONT_MAX := 40
+const CELL_FONT_MIN := 8
+## Every glyph is normalised to this much of the tile's HEIGHT, which is what
+## makes a grid of icons read at one weight rather than at whatever weight each
+## font family happened to draw.
+const CELL_INK_FRACTION := 0.75
+## …and nothing may be wider than this much of its own cell.
+const CELL_WIDTH_FRACTION := 0.85
+## Outline thickness as a fraction of the font size, so a shrunk glyph doesn't
+## keep a halo sized for the big one. 0.15 x CELL_FONT_MAX reproduces the 6 px
+## outline these labels were authored with.
+const OUTLINE_RATIO := 0.15
 ## VR only: the grid is authored at desktop size, where it sits in a corner of a
 ## ~70° screen. Filling that much of a headset's view is overbearing, so shrink it
 ## for the floating panel.
@@ -436,7 +455,8 @@ func _set_target_highlight(target: Node3D, active: bool) -> void:
 
 # ── Layout (per-device cell grid) ─────────────────────────────────────────────
 
-## The static cell specs for the current target: {id, glyph(key), col, row, span}.
+## The static cell specs for the current target: {id, col, row, span} plus a face —
+## either `glyph` (a TransportGlyphs key) or `text` (printed literally).
 ## `enabled` is resolved separately each frame in _refresh_states().
 func _layout_for_target() -> Array:
 	if _target is RetroTV:
@@ -450,13 +470,15 @@ func _layout_for_target() -> Array:
 			{"id": "mute", "glyph": "mute", "col": 1, "row": 2},
 			{"id": "vol_up", "glyph": "vol_up", "col": 2, "row": 2},
 		]
-		# Channel keys only exist while the tuner is the selected input — on the
-		# component input there is nothing to change the channel of.
+		# The channel keys are always on the handset and grey out when the set is not
+		# on the tuner (see _cell_enabled). They used to be ADDED only while the tuner
+		# was selected, and the grid is rebuilt on a change of TARGET alone — so
+		# switching input with the remote still aimed at the same set left the keys
+		# missing until you looked away and back.
 		var next_row := 3
-		if tv.get_source() == RetroTV.Source.TV:
-			cells.append({"id": "ch_down", "glyph": "ch_down", "col": 0, "row": next_row})
-			cells.append({"id": "ch_up", "glyph": "ch_up", "col": 2, "row": next_row})
-			next_row += 1
+		cells.append({"id": "ch_down", "glyph": "ch_down", "col": 0, "row": next_row})
+		cells.append({"id": "ch_up", "glyph": "ch_up", "col": 2, "row": next_row})
+		next_row += 1
 		# The speaker switch always; 3D only while there is something 3D to
 		# switch, which is how the set's own bezel key behaves. Both take their
 		# glyph from the mode they are currently in, so the key reads as a state
@@ -467,12 +489,12 @@ func _layout_for_target() -> Array:
 				"col": 0, "row": next_row})
 			cells.append({"id": "stereo3d", "glyph": _tv_stereo_glyph(tv),
 				"col": 1, "row": next_row})
-			cells.append({"id": "aspect", "glyph": _tv_aspect_glyph(tv),
+			cells.append({"id": "aspect", "text": _tv_aspect_text(tv),
 				"col": 2, "row": next_row})
 		else:
 			cells.append({"id": "audio_mode", "glyph": _tv_audio_glyph(tv),
 				"col": 0, "row": next_row})
-			cells.append({"id": "aspect", "glyph": _tv_aspect_glyph(tv),
+			cells.append({"id": "aspect", "text": _tv_aspect_text(tv),
 				"col": 2, "row": next_row})
 		return cells
 	if _target is VCRPlayer:
@@ -531,9 +553,14 @@ func _tv_stereo_glyph(tv: RetroTV) -> String:
 
 
 ## The shape the set is showing NOW, not the one the key would switch to — same
-## reading as the audio and 3D keys, where the glyph is the current state.
-func _tv_aspect_glyph(tv: RetroTV) -> String:
-	return "aspect_16_9" if tv.widescreen else "aspect_4_3"
+## reading as the audio and 3D keys, where the cell prints the current state.
+##
+## The words, not the crop glyphs it used to carry: the set's own bezel cap prints
+## "16:9" / "4:3" (RetroTV._update_aspect_button) and the handset key for it should
+## say what the cap says. Two picture-shape controls with different faces is one
+## control too many to learn.
+func _tv_aspect_text(tv: RetroTV) -> String:
+	return "16:9" if tv.widescreen else "4:3"
 
 
 ## -1 leans left, +1 right, 0 centred — which channel, or which eye.
@@ -578,11 +605,13 @@ func _cell_enabled(id: String) -> bool:
 			return (_target as RetroAudioPlayer).has_track_skip()
 		return true
 	if _target is RetroTV:
-		# The channel keys are the one TV cell that can be dead: the tuner may
-		# have no list yet (no channels.json, tuner still being found). Every
-		# other key on a set works whatever it is showing.
+		# The channel keys are the one TV cell that can be dead: the set may be on
+		# the component input, where there is no channel to change, or the tuner may
+		# have no list yet (no channels.json, tuner still being found). Every other
+		# key on a set works whatever it is showing.
 		if id == "ch_up" or id == "ch_down":
-			return (_target as RetroTV).has_channels()
+			var tv := _target as RetroTV
+			return tv.get_source() == RetroTV.Source.TV and tv.has_channels()
 	return true
 
 
@@ -625,6 +654,123 @@ func _flat_mat(color: Color, priority: int) -> StandardMaterial3D:
 	return m
 
 
+## Width of a cell spanning `span` columns.
+func _cell_width(span: float) -> float:
+	return span * CELL_W + (span - 1.0) * GAP
+
+
+## What a layout spec prints: its own literal `text` when it carries one (the
+## picture-shape key says "16:9"), otherwise the glyph its `glyph` key names.
+func _spec_text(spec: Dictionary) -> String:
+	if spec.has("text"):
+		return str(spec["text"])
+	return _glyph(str(spec.get("glyph", "")))
+
+
+## The text a state key should be printing right now, or "" for a cell whose face
+## never changes. One list, so a key that reads as a state cannot be given a live
+## face in the layout and then left stale by the per-frame refresh — which is
+## exactly what happened to the picture-shape key.
+func _live_text(id: String) -> String:
+	if id == "playpause":
+		return _glyph("pause" if _target_playing() else "play")
+	if _target is RetroTV:
+		var tv := _target as RetroTV
+		match id:
+			"audio_mode": return _glyph(_tv_audio_glyph(tv))
+			"stereo3d":   return _glyph(_tv_stereo_glyph(tv))
+			"aspect":     return _tv_aspect_text(tv)
+	return ""
+
+
+## Print `text` on a cell and size it to that cell.
+func _set_cell_text(cell: Dictionary, text: String) -> void:
+	var label := cell["label"] as Label3D
+	if not is_instance_valid(label):
+		return
+	label.text = text
+	var w := float(cell["width"])
+	var size := CELL_FONT_MAX
+	for face: String in _sizing_faces(str(cell["id"]), text):
+		size = mini(size, _fit_font_size(face, w))
+	label.font_size = size
+	label.outline_size = maxi(1, roundi(float(size) * OUTLINE_RATIO))
+
+
+## Every face a key can wear. A state key is sized for the largest of them, so
+## toggling it changes what it says and not how big it says it — "4:3" alone fits
+## at 22 and "16:9" at 17, and a key that jumps a type size mid-press reads as a
+## different key.
+func _sizing_faces(id: String, text: String) -> Array:
+	match id:
+		"playpause":  return [_glyph("play"), _glyph("pause")]
+		"audio_mode": return [_glyph("audio_stereo"), _glyph("audio_mono")]
+		"stereo3d":   return [_glyph("stereo"), _glyph("eye")]
+		"aspect":     return ["16:9", "4:3"]
+	return [text]
+
+
+func _glyph(key: String) -> String:
+	return str(_glyphs.get(key, "?"))
+
+
+## Font size at which `text` fills CELL_INK_FRACTION of the tile's height without
+## exceeding CELL_WIDTH_FRACTION of `cell_w`, capped at CELL_FONT_MAX.
+##
+## Normalising on the INK box rather than the line box is the whole point. This
+## font's em box is 60 mm at CELL_FONT_MAX against a 36 mm tile, so on line
+## metrics every glyph "overflows" and a global shrink would be the only answer —
+## yet the ink of md-video_3d is barely half the height of md-speaker-multiple at
+## the same point size. Measure what is actually drawn and every icon lands at one
+## weight, which is what a row of keys is supposed to look like.
+##
+## Memoised: the answer depends on nothing but the string and the cell, and the
+## per-frame refresh asks for it whenever a state key changes face.
+static var _fit_cache: Dictionary = {}
+
+func _fit_font_size(text: String, cell_w: float) -> int:
+	var key := "%s|%.4f" % [text, cell_w]
+	if _fit_cache.has(key):
+		return int(_fit_cache[key])
+	var ink := _ink_extent(text, CELL_FONT_MAX)
+	var k := 1.0
+	if ink.y > 0.0:
+		k = CELL_H * CELL_INK_FRACTION / ink.y
+	if ink.x > 0.0:
+		k = minf(k, cell_w * CELL_WIDTH_FRACTION / ink.x)
+	var size := clampi(roundi(float(CELL_FONT_MAX) * k), CELL_FONT_MIN, CELL_FONT_MAX)
+	_fit_cache[key] = size
+	return size
+
+
+## Drawn extent of `text` at `size`, in METRES, outline included.
+##
+## Height is the tallest glyph's rasterised box — the only honest measure for an
+## icon, whose ink sits wherever its family chose to put it inside the em. Width
+## is the advance run (right for a word) or the glyph's own box, whichever is
+## wider: a single icon is routinely drawn wider than it advances.
+func _ink_extent(text: String, size: int) -> Vector2:
+	var ts := TextServerManager.get_primary_interface()
+	var ink := Vector2.ZERO
+	for i in text.length():
+		var c := text.unicode_at(i)
+		for rid: RID in _font.get_rids():
+			var gi := ts.font_get_glyph_index(rid, size, c, 0)
+			if gi == 0:
+				continue
+			var gs: Vector2 = ts.font_get_glyph_size(rid, Vector2i(size, 0), gi)
+			ink.x = maxf(ink.x, gs.x)
+			ink.y = maxf(ink.y, gs.y)
+			break
+	ink.x = maxf(ink.x, _font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, size).x)
+	if ink.y <= 0.0:
+		ink.y = _font.get_ascent(size)      # a face with no rasterised box yet
+	# The halo is part of what spills off the tile, and it scales with the size
+	# this is solving for (see OUTLINE_RATIO).
+	var outline := float(size) * OUTLINE_RATIO * 2.0
+	return (ink + Vector2(outline, outline)) * LABEL_PIXEL_SIZE
+
+
 ## Local position of a cell's centre (row 0 on top). col/span may be fractional
 ## (e.g. two 1.5-span cells filling a 3-wide row).
 func _cell_center(col: float, row: int, span: float) -> Vector3:
@@ -662,7 +808,7 @@ func _rebuild_grid() -> void:
 		var col := float(spec["col"])
 		var row := int(spec["row"])
 		var center := _cell_center(col, row, span)
-		var w := span * CELL_W + (span - 1.0) * GAP
+		var w := _cell_width(span)
 
 		var face := MeshInstance3D.new()
 		var qm := QuadMesh.new()
@@ -676,24 +822,23 @@ func _rebuild_grid() -> void:
 
 		var label := Label3D.new()
 		label.font = _font
-		label.pixel_size = 0.0011
-		label.font_size = 40
-		label.outline_size = 6
+		label.pixel_size = LABEL_PIXEL_SIZE
 		label.no_depth_test = true
 		label.render_priority = 13
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.text = str(_glyphs.get(str(spec["glyph"]), "?"))
 		label.position = center + Vector3(0, 0, 0.004)
 		_menu.add_child(label)
 
-		_cells.append({
+		var cell := {
 			"id": str(spec["id"]),
-			"glyph": str(spec["glyph"]),
-			"col": col, "row": row, "span": span,
+			"glyph": str(spec.get("glyph", "")),
+			"col": col, "row": row, "span": span, "width": w,
 			"cx": float(col) + float(span - 1) * 0.5,
 			"enabled": true, "face": face, "label": label,
-		})
+		}
+		_set_cell_text(cell, _spec_text(spec))
+		_cells.append(cell)
 
 	_selection = -1
 	_refresh_states()
@@ -721,19 +866,17 @@ func _refresh_states() -> void:
 		var label := cell["label"] as Label3D
 		if not is_instance_valid(label):
 			continue
-		# Dynamic play/pause glyph.
-		var glyph_key := str(cell["glyph"])
-		if id == "playpause":
-			glyph_key = "pause" if _target_playing() else "play"
-			label.text = str(_glyphs.get(glyph_key, "?"))
-		elif id == "audio_mode" and _target is RetroTV:
-			var tv_a := _target as RetroTV
-			label.text = str(_glyphs.get(_tv_audio_glyph(tv_a), "?"))
-			_lean(label, _tv_side(tv_a.audio_mode))
-		elif id == "stereo3d" and _target is RetroTV:
-			var tv_s := _target as RetroTV
-			label.text = str(_glyphs.get(_tv_stereo_glyph(tv_s), "?"))
-			_lean(label, _tv_side(tv_s.stereo_mode))
+		# Keys that print the state they are IN re-read it here; the rest keep what
+		# _rebuild_grid gave them. Only written on an actual change, because the fit
+		# that follows a write measures the font.
+		var live := _live_text(id)
+		if not live.is_empty() and live != label.text:
+			_set_cell_text(cell, live)
+		if _target is RetroTV:
+			if id == "audio_mode":
+				_lean(label, _tv_side((_target as RetroTV).audio_mode))
+			elif id == "stereo3d":
+				_lean(label, _tv_side((_target as RetroTV).stereo_mode))
 		# Colour: state tints first, then disabled/selected overrides.
 		var col := COLOR_GLYPH
 		if _target is RetroTV:
@@ -777,8 +920,7 @@ func _refresh_highlight() -> void:
 		return
 	var cell: Dictionary = _cells[_selection]
 	var span := float(cell["span"])
-	var w := span * CELL_W + (span - 1.0) * GAP
-	(_hilite.mesh as QuadMesh).size = Vector2(w + 0.005, CELL_H + 0.005)
+	(_hilite.mesh as QuadMesh).size = Vector2(_cell_width(span) + 0.005, CELL_H + 0.005)
 	_hilite.position = _cell_center(float(cell["col"]), int(cell["row"]), span) + Vector3(0, 0, 0.0016)
 	_hilite.visible = true
 

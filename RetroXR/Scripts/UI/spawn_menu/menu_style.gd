@@ -110,6 +110,29 @@ static func spacer(height: int) -> Control:
 	return c
 
 
+## A checkbox sized and wired for a panel that lives on a Viewport2DIn3D.
+##
+## ACTION_MODE_BUTTON_RELEASE, never PRESS: every click inside a Viewport2DIn3D
+## arrives as TWO presses, so a press-mode toggle flips twice and lands back where
+## it started. Every panel that hand-rolled a CheckBox had to rediscover that.
+static func check(text: String, font_size := 18, height := 38) -> CheckBox:
+	var cb := CheckBox.new()
+	cb.text = text
+	cb.add_theme_font_size_override("font_size", font_size)
+	cb.custom_minimum_size = Vector2(0, height)
+	cb.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	return cb
+
+
+## The "float in place" row every pickable device with an options panel carries.
+## One builder so the wording, and what the wording promises, is the same on all
+## of them — see FloatLock.
+static func float_toggle() -> CheckBox:
+	var cb := check("Float in place (ignore gravity)")
+	cb.tooltip_text = "Keep this where you put it instead of letting it fall"
+	return cb
+
+
 ## The vertical scroll every view's root uses. Horizontal is off throughout: the
 ## panel is a fixed width and a sideways scroll in VR is a way to lose the UI.
 static func vscroll() -> ScrollContainer:

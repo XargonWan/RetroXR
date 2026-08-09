@@ -61,6 +61,7 @@ var _snapped_media: Node3D = null
 func _ready() -> void:
 	super._ready()
 	add_to_group("audio_player")
+	_float_lock = FloatLock.attach(self, ignore_gravity)
 	# Physical media handling (how the disc/tape loads, ejects, rides, and collides)
 	# is provided by the subclass: the cassette front-loads through a MediaSlot like
 	# the VCR; the CD drops into a MediaTray (flip-up lid) like a PlayStation. Both
@@ -512,3 +513,34 @@ func net_set_download_status(status: String) -> void:
 			_update_status()
 		else:
 			_name_label.text = "%s  %s" % [player_label.to_upper(), status]
+
+
+## Ignore-gravity: the device floats where it is put instead of falling. Restored
+## from a save through this flag, which FloatLock reads once at _ready.
+var ignore_gravity: bool = false
+var _float_lock: FloatLock = null
+
+const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/audio_options_panel.tscn")
+var _options_panel: AudioOptionsPanel = null
+
+
+## Toggle the floating settings panel. Called by SpawnMenuController when the
+## menu button is pressed while pointing at this unit (mirrors RetroMouse).
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel == null:
+		_options_panel = OPTIONS_PANEL_SCENE.instantiate()
+		add_child(_options_panel)
+	if _options_panel.visible:
+		_options_panel.hide_panel()
+	else:
+		_options_panel.show_for(self, camera)
+
+
+func get_ignore_gravity() -> bool:
+	return _float_lock != null and _float_lock.enabled
+
+
+func set_ignore_gravity(on: bool) -> void:
+	ignore_gravity = on
+	if _float_lock != null:
+		_float_lock.set_enabled(on)

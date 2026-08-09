@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://audio_opts_2d_01"]
+
+[ext_resource type="Script" path="res://Scripts/UI/panels/audio_options_2d.gd" id="1_audioopts2d"]
+
+[node name="AudioOptions2D" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_audioopts2d")

@@ -93,6 +93,7 @@ var _box_button_lit: Dictionary = {}   # id -> bool, last colour applied
 func _ready() -> void:
 	super._ready()
 	add_to_group("dvd_player")
+	_float_lock = FloatLock.attach(self, ignore_gravity)
 	TransportGlyphs.label_buttons(self, {
 		"PlayButton": "play", "PauseButton": "pause", "StopButton": "stop",
 		"MenuButton": "menu", "PrevChapterButton": "prev", "NextChapterButton": "next",
@@ -907,3 +908,19 @@ func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
 	# connected plays on. See SpatialAudioEmitter.set_channel_gains.
 	if _emitter:
 		_emitter.set_channel_gains(1.0 if l >= 0 else 0.0, 1.0 if r >= 0 else 0.0)
+
+
+## Ignore-gravity: the device floats where it is put instead of falling. Restored
+## from a save through this flag, which FloatLock reads once at _ready.
+var ignore_gravity: bool = false
+var _float_lock: FloatLock = null
+
+
+func get_ignore_gravity() -> bool:
+	return _float_lock != null and _float_lock.enabled
+
+
+func set_ignore_gravity(on: bool) -> void:
+	ignore_gravity = on
+	if _float_lock != null:
+		_float_lock.set_enabled(on)

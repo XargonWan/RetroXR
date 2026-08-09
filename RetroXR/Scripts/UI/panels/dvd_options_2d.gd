@@ -11,6 +11,8 @@ extends Control
 
 signal audio_track_selected(id: int)
 signal subtitle_selected(id: int)
+## Float-in-place toggled.
+signal ignore_gravity_toggled(enabled: bool)
 signal close_requested
 
 # ── Palette (matches VCROptions2D) ──────────────────────────────────────────────
@@ -20,6 +22,7 @@ const COLOR_ROW   := Color(0.65, 0.65, 0.80)
 
 var _audio_opt: VRDropdown = null
 var _sub_opt: VRDropdown = null
+var _float_check: CheckBox = null
 var _suppress := false
 
 
@@ -75,6 +78,14 @@ func _build_ui() -> void:
 		if not _suppress:
 			subtitle_selected.emit(int(id)))
 
+	root.add_child(HSeparator.new())
+	_float_check = MenuStyle.float_toggle()
+	_float_check.toggled.connect(func(on: bool):
+		if not _suppress:
+			ignore_gravity_toggled.emit(on)
+	)
+	root.add_child(_float_check)
+
 
 ## VRDropdown, not OptionButton — a PopupMenu can't be clicked inside the VR
 ## panel (see vr_dropdown.gd).
@@ -89,8 +100,11 @@ func _add_dropdown_row(root: VBoxContainer, label_text: String) -> VRDropdown:
 
 ## Fill the dropdowns from VlcPlayer track lists (each entry {id:int, name:String})
 ## and select the current ids, without re-emitting selection signals.
-func populate(audio_tracks: Array, cur_audio: int, sub_tracks: Array, cur_sub: int) -> void:
+func populate(audio_tracks: Array, cur_audio: int, sub_tracks: Array, cur_sub: int,
+		ignore_gravity := false) -> void:
 	_suppress = true
+	if _float_check:
+		_float_check.button_pressed = ignore_gravity
 	_fill(_audio_opt, audio_tracks, cur_audio, "")
 	# libVLC's subtitle list already includes a "Disable" entry (id -1); add one
 	# as a fallback if the disc didn't provide it.

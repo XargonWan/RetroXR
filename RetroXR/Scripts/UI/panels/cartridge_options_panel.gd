@@ -11,10 +11,10 @@ const FLOAT_HEIGHT := 0.25
 
 var _cart: RetroCartridge = null
 var _camera: Node3D = null
-## Set when another panel hosts the UI (the core options Cartridge tab). This
-## node then acts as the controller only and its own quad is never shown.
+## Set when another panel hosts a COPY of the UI (the core options Cartridge tab).
+## This panel then drives that copy as well as its own quad — it does not stop
+## owning the quad, and the two are never on screen at the same moment.
 var _external_ui: CartridgeOptions2D = null
-var _ui_connected := false
 ## Saves the server holds for this cartridge's ROM, fetched when the panel opens.
 var _server_saves: Array = []
 ## save_ids whose last sync forked a conflict, so the row can say so until the
@@ -70,51 +70,76 @@ func hide_panel() -> void:
 func adopt_external_ui(ui: CartridgeOptions2D, cart: RetroCartridge) -> void:
 	_external_ui = ui
 	_cart = cart
-	_ui_connected = false
 	_ensure_ui_connected()
 	_populate()
 	_refresh_server_list()
 
 
-func _get_ui() -> CartridgeOptions2D:
-	if is_instance_valid(_external_ui):
-		return _external_ui
+## The Control inside this panel's own quad, or null before it is built.
+func _own_ui() -> CartridgeOptions2D:
 	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
 	if not vp or vp.get_child_count() == 0:
 		return null
 	return vp.get_child(0) as CartridgeOptions2D
 
 
+## Every UI this panel is driving right now: its own quad's while that is up, and
+## the embedded copy whenever a host has one.
+##
+## Both, not one of them. This used to answer with the embedded copy whenever it
+## existed — so once a console's Cartridge tab had borrowed this panel, opening
+## the cartridge's OWN panel populated the hidden copy instead: the quad floating
+## in front of you was the freshly built, never-populated one, with an empty saves
+## list (not even "New blank save") and a ✕ that had never been connected to
+## anything. Feeding both also keeps the tab in step while the panel is up.
+func _uis() -> Array[CartridgeOptions2D]:
+	var out: Array[CartridgeOptions2D] = []
+	if visible:
+		var own := _own_ui()
+		if own != null:
+			out.append(own)
+	if is_instance_valid(_external_ui) and not out.has(_external_ui):
+		out.append(_external_ui)
+	return out
+
+
+## True while a UI this panel should be driving has not been built yet, so the
+## caller knows to try again next frame rather than silently doing nothing.
+func _ui_pending() -> bool:
+	return visible and _own_ui() == null
+
+
 func _ensure_ui_connected() -> void:
-	if _ui_connected:
-		return
-	var ui := _get_ui()
-	if not ui:
+	if _ui_pending():
 		call_deferred("_ensure_ui_connected")
-		return
-	ui.save_selected.connect(_on_save_selected)
-	ui.sync_toggled.connect(_on_sync_toggled)
-	ui.server_save_requested.connect(_on_server_save_requested)
-	ui.new_synced_save_requested.connect(_on_new_synced_save)
-	# The embedded copy has no ✕ of its own; its host closes it.
-	if not is_instance_valid(_external_ui):
-		ui.close_requested.connect(hide_panel)
-	# One-shot: these are global signals and the guard below is what stops a
-	# second adopt_external_ui() stacking another connection on every one.
+	# Per UI rather than behind one flag: this panel drives two different Controls
+	# over its life and whichever it meets second needs connecting too.
+	for ui: CartridgeOptions2D in _uis():
+		if not ui.save_selected.is_connected(_on_save_selected):
+			ui.save_selected.connect(_on_save_selected)
+			ui.sync_toggled.connect(_on_sync_toggled)
+			ui.server_save_requested.connect(_on_server_save_requested)
+			ui.new_synced_save_requested.connect(_on_new_synced_save)
+		# The embedded copy has no ✕ of its own; its host closes it.
+		if ui != _external_ui and not ui.close_requested.is_connected(hide_panel):
+			ui.close_requested.connect(hide_panel)
+	# One-shot: these are global signals, and the guard is what stops a second
+	# adopt_external_ui() stacking another connection on every one.
 	if not SaveSync.sync_finished.is_connected(_on_sync_finished):
 		SaveSync.sync_finished.connect(_on_sync_finished)
 		SaveSync.conflict_forked.connect(_on_conflict_forked)
 		RA.game_loaded.connect(_on_ra_changed)
 		RA.achievement_unlocked.connect(_on_ra_unlocked)
-	_ui_connected = true
 
 
 func _populate() -> void:
 	if not _cart:
 		return
-	var ui := _get_ui()
-	if not ui:
+	if _ui_pending():
 		call_deferred("_populate")
+		return
+	var uis := _uis()
+	if uis.is_empty():
 		return
 	var core := SramPaths.core_for_systemid(_cart.systemid)
 	var saves: Array = SramPaths.list_saves(core, _cart.rom_path) if not core.is_empty() else []
@@ -132,9 +157,10 @@ func _populate() -> void:
 		else:
 			states[sid] = "off"
 
-	ui.populate(_cart.game_label, saves, _cart.save_id, not core.is_empty(),
-		states, _server_only(saves), _romm_ready())
-	_populate_achievements(ui)
+	for ui: CartridgeOptions2D in uis:
+		ui.populate(_cart.game_label, saves, _cart.save_id, not core.is_empty(),
+			states, _server_only(saves), _romm_ready())
+		_populate_achievements(ui)
 
 
 ## The Achievements ribbon. rcheevos keeps one session for the whole app, so the

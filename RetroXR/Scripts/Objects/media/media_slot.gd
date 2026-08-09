@@ -37,6 +37,10 @@ signal removed()
 @export var ride_time: float = 0.9
 
 
+## The layer a media item's PointerArea rides on (VRButton.POINTABLE_LAYER), used
+## to put it back after a spell inside the machine.
+const POINTABLE_LAYER := 1 << 20
+
 enum State { EMPTY, LOADED, PARKED }
 var _state: State = State.EMPTY
 var _media: Node3D = null
@@ -117,8 +121,7 @@ func _accept(media: Node3D, seated_now: bool) -> void:
 		rb.freeze = true
 	media.reparent(_holder)
 	# Not grabbable while it's inside the unit — only once ejected (see eject()).
-	if "enabled" in media:
-		media.enabled = false
+	_set_media_interactive(media, false)
 	if is_instance_valid(host):
 		host.add_collision_exception_with(media)
 	if not media.picked_up.is_connected(_on_media_taken):
@@ -141,10 +144,38 @@ func eject() -> void:
 		return
 	_state = State.PARKED
 	# Now grabbable — the disc/tape is coming out.
-	if "enabled" in _media:
-		_media.enabled = true
+	_set_media_interactive(_media, true)
 	removed.emit()
 	_ride_to(_mouth_pose())
+
+
+## Grabbable AND pointable, or neither.
+##
+## `enabled` alone only stops the GRAB. The media carries a separate PointerArea
+## body on the pointer layer, and that goes on catching laser hits aimed THROUGH
+## it — at the machine's own front-panel buttons behind it — while the media
+## itself, being disabled, does nothing with the click. A control you can see and
+## aim at that answers to nothing reads as a broken button, not as an obstruction.
+##
+## Same trap XRToolsSnapZone documents for `visible`, and VRButton for `monitoring`:
+## taking a thing out of play is two properties, not one.
+func _set_media_interactive(media: Node3D, on: bool) -> void:
+	if not is_instance_valid(media):
+		return
+	if "enabled" in media:
+		media.enabled = on
+	var pointer := media.get_node_or_null("PointerArea") as CollisionObject3D
+	if pointer == null:
+		return
+	if on:
+		pointer.collision_layer = int(pointer.get_meta("slot_pointer_layer", POINTABLE_LAYER))
+		pointer.remove_meta("slot_pointer_layer")
+	else:
+		# Remembered rather than assumed: the authored layer is what has to come
+		# back, and a second _accept must not record the zeroed one over it.
+		if not pointer.has_meta("slot_pointer_layer"):
+			pointer.set_meta("slot_pointer_layer", pointer.collision_layer)
+		pointer.collision_layer = 0
 
 
 # --- Grab hand-off ------------------------------------------------------------
@@ -167,6 +198,8 @@ func _on_media_taken(media: Node3D) -> void:
 	# but stays correct if it ever does) counts as removal.
 	if _state == State.LOADED:
 		removed.emit()
+	# In a hand it is an ordinary object again, whichever state it left from.
+	_set_media_interactive(media, true)
 	if _tween:
 		_tween.kill()
 		_tween = null

@@ -347,10 +347,34 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 		var ghost_mesh := BoxMesh.new()
 		ghost_mesh.size = cart_size
 		ghost.mesh = ghost_mesh
+	# The zone's grab sphere belongs on the slot MOUTH, not on the seat.
+	#
+	# function_pickup takes a seated object by grabbing its ZONE (see the snap-zone
+	# branch of _pick_up_object), so this sphere is what a hand has to reach to pull
+	# a cartridge back out. Left at the zone's origin it sits at the SEAT — most of
+	# a card-length inside the shell — and only the sliver of it past the back face
+	# can be reached. That sliver is 15-23 mm on the short-card handhelds and 7 mm
+	# on the Atari Lynx, whose 86 mm card is the longest here and whose protrusion
+	# is clamped: the difference between fiddly and impossible.
+	#
+	# Sliding it out to the mouth makes the reach uniform, and it is the truer place
+	# for it either way — a cartridge goes in at the mouth and comes out at the
+	# mouth, and nobody reaches into the middle of a shell for one. `grab_distance`
+	# is deliberately untouched: that is the range at which this zone claims a
+	# released cart and ranks against its neighbours (see find_preview_zone), and it
+	# is measured from the zone's origin whatever the shape does.
+	#
+	# Local +Y is the insert axis, so the mouth is half a card out along it, less
+	# the part that stays proud. snap_zone.tscn's sphere is resource_local_to_scene,
+	# so writing this touches only our own zone.
+	var grab_col := slot.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if grab_col != null:
+		grab_col.position = Vector3(0, cart_size.y * 0.5 - _cart_protrude(), 0)
 	# An authored "CartSeat" marker in the device .tscn wins over the computed pose
 	# above, so the exact seated-cart transform can be placed visually in the Godot
 	# 3D editor (drag/rotate CartSeat; its SeatPreview box shows the cart footprint).
 	# Devices without the marker keep the generic pose — nothing else changes.
+	# (The mouth offset above is LOCAL to the zone, so it rides an authored seat.)
 	var seat := _seat_marker("CartSeat")
 	if seat != null:
 		slot.global_transform = seat.global_transform

@@ -11,6 +11,8 @@ extends Control
 
 signal scale_changed(scale: float)
 signal scale_committed(scale: float)
+## Float-in-place toggled.
+signal ignore_gravity_toggled(enabled: bool)
 ## A CRT display-stage uniform was changed (pname, value). Applied live.
 signal crt_param_changed(pname, value)
 signal close_requested
@@ -31,6 +33,7 @@ const MAX_SCALE := 5.0
 
 var _size_slider: HSlider = null
 var _size_val: Label = null
+var _float_check: CheckBox = null
 var _options_scroll: ScrollContainer = null
 var _crt_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
@@ -160,6 +163,13 @@ func _build_ui() -> void:
 		if not _suppress_signal and value_changed_flag:
 			scale_committed.emit(_size_slider.value)
 	)
+
+	_float_check = MenuStyle.float_toggle()
+	_float_check.toggled.connect(func(on: bool):
+		if not _suppress_signal:
+			ignore_gravity_toggled.emit(on)
+	)
+	rows.add_child(_float_check)
 
 	_build_channels_tab(tabs)
 	_build_crt_tab(tabs)
@@ -389,11 +399,13 @@ func _add_crt_slider(rows: VBoxContainer, key: String, label: String,
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 ## Sync the UI to the TV's current state without re-emitting signals.
-func populate(scale_factor := 1.0) -> void:
+func populate(scale_factor := 1.0, ignore_gravity := false) -> void:
 	_suppress_signal = true
 	if _size_slider:
 		_size_slider.value = scale_factor
 		_size_val.text = "%.1f×" % scale_factor
+	if _float_check:
+		_float_check.button_pressed = ignore_gravity
 	_suppress_signal = false
 
 

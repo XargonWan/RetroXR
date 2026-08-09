@@ -79,6 +79,7 @@ func _ensure_ui_connected() -> void:
 	ui.channel_selected.connect(_on_channel_selected)
 	ui.tuner_settings_changed.connect(_on_tuner_settings_changed)
 	ui.channels_refresh_requested.connect(_on_channels_refresh)
+	ui.ignore_gravity_toggled.connect(_on_ignore_gravity_toggled)
 	_ui_connected = true
 
 
@@ -89,7 +90,7 @@ func _populate() -> void:
 	if not ui:
 		call_deferred("_populate")
 		return
-	ui.populate(_tv.get_scale_factor())
+	ui.populate(_tv.get_scale_factor(), _tv.get_ignore_gravity())
 	ui.populate_crt(_tv.get_crt_params())
 
 	# Opening the panel is the first thing that legitimately needs a tuner on a
@@ -143,6 +144,11 @@ func _on_crt_param_changed(pname, value) -> void:
 func _on_scale_changed(scale: float) -> void:
 	if _tv and is_instance_valid(_tv):
 		_tv.set_tv_scale(scale)
+
+
+func _on_ignore_gravity_toggled(enabled: bool) -> void:
+	if _tv and is_instance_valid(_tv):
+		_tv.set_ignore_gravity(enabled)
 
 
 ## Drag finished — apply locally and replicate the final size to other players.

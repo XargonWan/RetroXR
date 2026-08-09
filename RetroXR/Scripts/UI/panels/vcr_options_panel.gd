@@ -68,6 +68,7 @@ func _ensure_ui_connected() -> void:
 	ui.scan_speed_changed.connect(_on_scan_speed_changed)
 	ui.vcr_param_changed.connect(_on_vcr_param_changed)
 	ui.close_requested.connect(hide_panel)
+	ui.ignore_gravity_toggled.connect(_on_ignore_gravity_toggled)
 	_ui_connected = true
 
 
@@ -81,8 +82,13 @@ func _populate() -> void:
 	var ui := vp.get_child(0) as VCROptions2D
 	if not ui:
 		return
-	ui.populate(_vcr.vcr_effect_enabled, _vcr.scan_speed)
+	ui.populate(_vcr.vcr_effect_enabled, _vcr.scan_speed, _vcr.get_ignore_gravity())
 	ui.populate_vcr(_vcr.get_vcr_params())
+
+
+func _on_ignore_gravity_toggled(enabled: bool) -> void:
+	if _vcr and is_instance_valid(_vcr):
+		_vcr.set_ignore_gravity(enabled)
 
 
 func _on_effect_toggled(enabled: bool) -> void:
