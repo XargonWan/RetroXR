@@ -137,6 +137,12 @@ var _ray_grab_block_owner: StringName = &"ray_grab"
 # Accumulated rotation tracked independently of the physics body — prevents
 # _direct_state_changed from corrupting our rotation between physics ticks.
 var _ray_grab_basis : Basis = Basis.IDENTITY
+# LOCAL PATCH (RetroXR): scale of the ray-held object, carried alongside the
+# rotation tracker above rather than inside it. _compute_ray_grab_rotation
+# orthonormalizes, which is right for an accumulator that must not drift — and
+# which silently threw a resized object's scale away the first time it was spun,
+# snapping a 2.5x television back to 1x mid-hold.
+var _ray_grab_scale : Vector3 = Vector3.ONE
 
 # Hand <-> ray handoff state
 var _reel_charge : float = 0.0             # seconds of pull-back accumulated at the gate
@@ -764,7 +770,10 @@ func _start_ray_grab_at(target: XRToolsPickable, distance: float,
 			distance, RAY_GRAB_DISTANCE_MIN, RAY_GRAB_DISTANCE_MAX)
 	_ray_grab_object = target
 	_reel_gated = false
-	_ray_grab_basis = target.global_basis  # seed our independent rotation tracker
+	# Seed our independent rotation tracker. LOCAL PATCH (RetroXR): orthonormal,
+	# with the scale split off into _ray_grab_scale — see that declaration.
+	_ray_grab_basis = target.global_basis.orthonormalized()
+	_ray_grab_scale = target.global_basis.get_scale()
 	_set_pointer_highlight(null)  # object transitions from "highlighted" to "held"
 	# Freeze physics and move to the held layer (mirrors XRToolsPickable.pick_up)
 	target.restore_freeze = target.freeze
@@ -802,6 +811,14 @@ func _process_ray_grab(delta: float) -> void:
 	# state. At high frame rates this intermediate state gets rendered, producing a ghost
 	# at the original rotation that grows apart as total rotation accumulates.
 	var new_basis := _compute_ray_grab_rotation(delta)
+	# LOCAL PATCH (RetroXR): re-read the object's scale every frame rather than
+	# trusting the value cached at grab time, so a resize made WHILE it is held —
+	# the TV's size slider is pointer-driven and works mid-hold — is carried
+	# instead of being overwritten by a stale one. A degenerate read is ignored.
+	if is_instance_valid(_ray_grab_object):
+		var live_scale: Vector3 = _ray_grab_object.global_basis.get_scale()
+		if live_scale.x > 0.0001 and live_scale.y > 0.0001 and live_scale.z > 0.0001:
+			_ray_grab_scale = live_scale
 	if _ray_pointer:
 		var ray_cast := _ray_pointer.get_node_or_null("RayCast") as RayCast3D
 		if ray_cast:
@@ -815,6 +832,11 @@ func _process_ray_grab(delta: float) -> void:
 			var new_transform := _apply_socket_preview(
 					Transform3D(new_basis, new_pos), delta)
 			new_transform = _apply_handoff_blend(new_transform, delta)
+			# LOCAL PATCH (RetroXR): scale goes on LAST. Both blends above
+			# interpolate toward poses authored at 1x, and lerping a scaled basis
+			# against an unscaled one skews the object as it converges.
+			new_transform.basis = new_transform.basis.orthonormalized() \
+					.scaled_local(_ray_grab_scale)
 			_ray_grab_object.global_transform = new_transform
 			# Explicitly sync to the physics server — frozen bodies can silently drop the
 			# node→physics update, causing _direct_state_changed to restore the stale
@@ -824,7 +846,7 @@ func _process_ray_grab(delta: float) -> void:
 					PhysicsServer3D.BODY_STATE_TRANSFORM,
 					new_transform)
 			return
-	_ray_grab_object.global_basis = new_basis
+	_ray_grab_object.global_basis = new_basis.scaled_local(_ray_grab_scale)
 
 
 func _compute_ray_grab_rotation(delta: float) -> Basis:
