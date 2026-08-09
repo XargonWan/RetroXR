@@ -511,10 +511,15 @@ func _get_closest_grab() -> Node3D:
 
 
 # Find the rangedly-pickable object closest to our hand's pointing direction
+#
+# LOCAL PATCH (RetroXR): line of sight. This is a cone, not a ray — nothing in it
+# ever tested what stands between the hand and the object, so a cable coiled
+# behind a console lit up and grabbed straight through the shell.
 func _get_closest_ranged() -> Node3D:
 	var new_closest_obj: Node3D = null
 	var new_closest_angle_dp := cos(deg_to_rad(ranged_angle))
 	var hand_forwards := -global_transform.basis.z
+	var space_state := get_world_3d().direct_space_state if is_inside_tree() else null
 	for o in _object_in_ranged_area:
 		# skip objects that can not be picked up
 		if not o.can_pick_up(self):
@@ -524,9 +529,16 @@ func _get_closest_ranged() -> Node3D:
 		var object_direction: Vector3 = o.global_transform.origin - global_transform.origin
 		object_direction = object_direction.normalized()
 		var angle_dp := hand_forwards.dot(object_direction)
-		if angle_dp > new_closest_angle_dp:
-			new_closest_obj = o
-			new_closest_angle_dp = angle_dp
+		if angle_dp <= new_closest_angle_dp:
+			continue
+
+		# skip objects something solid is standing in front of
+		if not InteractionResolver.has_line_of_sight(
+				space_state, global_transform.origin, o.global_transform.origin, o):
+			continue
+
+		new_closest_obj = o
+		new_closest_angle_dp = angle_dp
 
 	# Return best object
 	return new_closest_obj

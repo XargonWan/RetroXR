@@ -8,6 +8,28 @@ const SNAP_PICKABLE_PRIORITY := 200
 const PICKABLE_PRIORITY := 100
 const DISTANCE_EPSILON := 0.000001
 
+## Layers a solid body has to be on to stand in the pointer's way.
+## 1:World, 3:Pickable, 19:XRPickable, 20:XRButton, 21:XRPointer.
+##
+## 17:XRHand_SnapZone is deliberately absent: that is the layer XRToolsPickable
+## moves an object to while it is held, and the thing in your hand must not
+## blind your own laser. Areas never occlude either — a snap zone's reach, a
+## button's touch volume and the pointer-suppress bubble are all invisible.
+const OCCLUDER_MASK := (1 << 0) | (1 << 2) | (1 << 18) | (1 << 19) | (1 << 20)
+
+## How far in front an occluder has to be before it counts. Interactive volumes
+## routinely sit flush with the shell they belong to, and a hit exactly on the
+## surface must not shadow itself.
+const OCCLUSION_SLACK := 0.01
+
+## Aim tolerance when testing the ray against an object's visible geometry.
+const VISUAL_MARGIN := 0.005
+
+## Hits discarded per ray before giving up. Each rejected candidate costs one
+## more query, and a stack of five interactive volumes along one ray is already
+## beyond anything the room builds.
+const MAX_PASSES := 6
+
 
 static func resolve_desktop(
 		space_state: PhysicsDirectSpaceState3D,
@@ -22,24 +44,187 @@ static func resolve_desktop(
 		pickup_collide_with_bodies: bool,
 		pickup_collide_with_areas: bool,
 		grabber: Node3D) -> InteractionTarget:
-	var pointer_hit := _get_front_hit(
+	var pointer_target := _resolve_ray(
 		space_state,
 		pointer_from,
 		pointer_to,
 		pointer_mask,
 		pointer_collide_with_bodies,
-		pointer_collide_with_areas)
-	var pickup_hit := _get_front_hit(
+		pointer_collide_with_areas,
+		grabber,
+		true)
+	var pickup_target := _resolve_ray(
 		space_state,
 		pickup_from,
 		pickup_to,
 		pickup_mask,
 		pickup_collide_with_bodies,
-		pickup_collide_with_areas)
-
-	var pointer_target := _classify_pointer_hit(pointer_hit, pointer_from, grabber)
-	var pickup_target := _classify_pickup_hit(pickup_hit, pickup_from, grabber)
+		pickup_collide_with_areas,
+		grabber,
+		false)
 	return _choose_target(pointer_target, pickup_target)
+
+
+## Walk this ray outwards until it reaches something the player can actually see
+## and is actually aiming at, discarding candidates that fail either test.
+##
+## Discarding rather than stopping matters: an unreachable candidate is a volume
+## floating in front of real geometry, so what is behind it is what the player
+## meant. Aiming at the top of a loaded NES steps past the cartridge bay's grab
+## sphere and lands on the console.
+static func _resolve_ray(
+		space_state: PhysicsDirectSpaceState3D,
+		from: Vector3,
+		to: Vector3,
+		mask: int,
+		collide_with_bodies: bool,
+		collide_with_areas: bool,
+		grabber: Node3D,
+		pointer: bool) -> InteractionTarget:
+	var exclude: Array[RID] = []
+	for _pass in MAX_PASSES:
+		var hit := _get_front_hit(
+			space_state, from, to, mask, collide_with_bodies, collide_with_areas, exclude)
+		if hit.is_empty():
+			return InteractionTarget.none()
+
+		var target: InteractionTarget = _classify_pointer_hit(hit, from, grabber) if pointer \
+			else _classify_pickup_hit(hit, from, grabber)
+		if not target.is_valid():
+			# A solid thing the player cannot use still blocks what is behind it.
+			return target
+
+		# A snap zone stands in for whatever it holds, and its grab sphere is far
+		# bigger than that object — the NES cartridge bay's reaches out through
+		# the top of the shell. Aim at the cartridge, not at the socket's reach.
+		var blocked: RID = hit.rid
+		if target.kind == InteractionTarget.KIND_SNAP_PICKABLE:
+			var entry: Variant = _visual_entry(target.highlight_node, from, to)
+			if entry == null:
+				exclude.append(blocked)
+				continue
+			var point: Vector3 = entry
+			target.position = point
+			target.distance = from.distance_to(point)
+
+		if has_line_of_sight(space_state, from, target.position, _sight_node(target)):
+			return target
+		exclude.append(blocked)
+
+	return InteractionTarget.none()
+
+
+## True when nothing solid stands between `from` and `at`.
+##
+## Interactive volumes live on their own thin layers, so the ray that finds them
+## passes straight through every wall, desk and console shell in the room. This
+## is the check that puts them back: a button on the far side of a cabinet, or a
+## plug buried inside it, is not something the player is pointing at.
+static func has_line_of_sight(
+		space_state: PhysicsDirectSpaceState3D,
+		from: Vector3,
+		at: Vector3,
+		target: Node) -> bool:
+	if space_state == null:
+		return true
+	var span := from.distance_to(at)
+	if span <= OCCLUSION_SLACK:
+		return true
+
+	var query := PhysicsRayQueryParameters3D.create(from, at, OCCLUDER_MASK)
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	var exclude: Array[RID] = []
+	for _pass in MAX_PASSES:
+		var hit := space_state.intersect_ray(query)
+		if hit.is_empty():
+			return true
+		if from.distance_to(hit.position) >= span - OCCLUSION_SLACK:
+			return true
+		if not _same_object(hit.collider as Node, target):
+			return false
+		# The target's own shell cannot hide it — look past this one and on.
+		var passed: RID = hit.rid
+		exclude.append(passed)
+		query.exclude = exclude
+
+	return true
+
+
+## True when these two nodes are parts of one object rather than two.
+##
+## A console's pointer box encloses its own recessed buttons, so judging by the
+## scene tree alone would make every console hide its own controls. An object
+## that is a pickable in its own right is its own answer even when it is parented
+## into another one: a seated cartridge is not part of the console holding it.
+static func _same_object(a: Node, b: Node) -> bool:
+	if not is_instance_valid(a) or not is_instance_valid(b):
+		return true
+	if a == b:
+		return true
+
+	var root_a := _pickable_root(a)
+	var root_b := _pickable_root(b)
+	if root_a != null or root_b != null:
+		return root_a == root_b
+
+	return a.is_ancestor_of(b) or b.is_ancestor_of(a)
+
+
+## Nearest XRToolsPickable at or above this node, or null.
+static func _pickable_root(node: Node) -> XRToolsPickable:
+	var n := node
+	while is_instance_valid(n):
+		if n is XRToolsPickable:
+			return n as XRToolsPickable
+		n = n.get_parent()
+	return null
+
+
+## The node whose own geometry is allowed to stand in front of this target.
+static func _sight_node(target: InteractionTarget) -> Node:
+	if target.kind == InteractionTarget.KIND_SNAP_PICKABLE:
+		return target.highlight_node
+	return target.hit_node
+
+
+## Where this ray first enters the visible geometry of `node`, or null when it
+## misses it entirely. Tested against each mesh's own AABB in that mesh's local
+## space, so a rotated part is judged in its own frame.
+static func _visual_entry(node: Node3D, from: Vector3, to: Vector3) -> Variant:
+	if not is_instance_valid(node):
+		return null
+	var span := from.distance_to(to)
+	if span <= 0.0:
+		return null
+	var dir := (to - from) / span
+
+	var best: Variant = null
+	var best_distance := INF
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for child in n.get_children():
+			stack.append(child)
+		var mesh_instance := n as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null \
+				or not mesh_instance.is_visible_in_tree():
+			continue
+		var to_local := mesh_instance.global_transform.affine_inverse()
+		var box := mesh_instance.mesh.get_aabb().grow(VISUAL_MARGIN)
+		var local_hit: Variant = box.intersects_ray(to_local * from, to_local.basis * dir)
+		if local_hit == null:
+			continue
+		var local_point: Vector3 = local_hit
+		var world: Vector3 = mesh_instance.global_transform * local_point
+		var along := (world - from).dot(dir)
+		if along < -VISUAL_MARGIN or along > span:
+			continue
+		if along < best_distance:
+			best_distance = along
+			best = world
+
+	return best
 
 
 static func _get_front_hit(
@@ -48,17 +233,18 @@ static func _get_front_hit(
 		to: Vector3,
 		mask: int,
 		collide_with_bodies: bool,
-		collide_with_areas: bool) -> Dictionary:
+		collide_with_areas: bool,
+		exclude: Array[RID]) -> Dictionary:
 	if mask == 0 or (not collide_with_bodies and not collide_with_areas):
 		return {}
 
 	if collide_with_bodies and collide_with_areas:
-		var area_query := PhysicsRayQueryParameters3D.create(from, to, mask)
+		var area_query := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
 		area_query.collide_with_bodies = false
 		area_query.collide_with_areas = true
 		var area_hit := space_state.intersect_ray(area_query)
 
-		var body_query := PhysicsRayQueryParameters3D.create(from, to, mask)
+		var body_query := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
 		body_query.collide_with_bodies = true
 		body_query.collide_with_areas = false
 		var body_hit := space_state.intersect_ray(body_query)
@@ -86,7 +272,7 @@ static func _get_front_hit(
 			return area_hit
 		return body_hit
 
-	var query := PhysicsRayQueryParameters3D.create(from, to, mask)
+	var query := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
 	query.collide_with_bodies = collide_with_bodies
 	query.collide_with_areas = collide_with_areas
 	return space_state.intersect_ray(query)
