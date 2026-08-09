@@ -230,16 +230,15 @@ func _process(delta):
 	var suppress_area := $SuppressArea
 	if (enabled and
 		not $SuppressArea.has_overlapping_bodies() and
-		not $SuppressArea.has_overlapping_areas()):
-		var sighted := _sighted_collider()
-		if sighted:
-			new_at = $RayCast.get_collision_point()
-			if target:
-				# Locked to 'target' even if we're colliding with something else
-				new_target = target
-			else:
-				# Target is whatever the raycast is colliding with
-				new_target = sighted
+		not $SuppressArea.has_overlapping_areas() and
+		$RayCast.is_colliding()):
+		new_at = $RayCast.get_collision_point()
+		if target:
+			# Locked to 'target' even if we're colliding with something else
+			new_target = target
+		else:
+			# Target is whatever the raycast is colliding with
+			new_target = $RayCast.get_collider()
 
 	# If no current or previous collisions then skip
 	if not new_target and not last_target:
@@ -447,33 +446,11 @@ func _update_pointer() -> void:
 
 # Pointer-activation button pressed handler
 func _button_pressed() -> void:
-	var sighted := _sighted_collider()
-	if sighted:
+	if $RayCast.is_colliding():
 		# Report pressed
-		target = sighted
+		target = $RayCast.get_collider()
 		last_collided_at = $RayCast.get_collision_point()
 		XRToolsPointerEvent.pressed(self, target, last_collided_at)
-
-
-# LOCAL PATCH (RetroXR): line of sight. $RayCast only collides with the pointable
-# layers, so every wall, desk and console shell in the room is transparent to it
-# — a button on the far side of a cabinet highlighted and clicked through it.
-# Return what the laser is on only when the player can actually see it.
-func _sighted_collider() -> Node3D:
-	if not $RayCast.is_colliding():
-		return null
-	var collider := $RayCast.get_collider() as Node3D
-	if collider == null:
-		return null
-	if not is_inside_tree() or get_world_3d() == null:
-		return collider
-	if not InteractionResolver.has_line_of_sight(
-			get_world_3d().direct_space_state,
-			$RayCast.global_position,
-			$RayCast.get_collision_point(),
-			collider):
-		return null
-	return collider
 
 
 # Pointer-activation button released handler
