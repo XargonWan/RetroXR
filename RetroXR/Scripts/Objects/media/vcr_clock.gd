@@ -36,4 +36,6 @@ func _fmt(t: float) -> String:
 	if t < 0.0:
 		return "--:--:--"
 	var s := int(round(t))
-	return "%02d:%02d:%02d" % [s / 3600, (s % 3600) / 60, s % 60]
+	@warning_ignore("integer_division")
+	var parts := [s / 3600, (s % 3600) / 60, s % 60]
+	return "%02d:%02d:%02d" % parts

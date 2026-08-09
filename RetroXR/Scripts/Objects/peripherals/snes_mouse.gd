@@ -55,8 +55,8 @@ func _button_pose(e: Dictionary, down: float) -> Transform3D:
 	var pivot: Vector3 = e["pivot"]
 	# Negative: a positive turn about +X lifts what lies on -Z, and the tip is
 	# the -Z end.
-	var basis := Basis(Vector3.RIGHT, -atan(TIP_DROP / arm) * down)
-	return Transform3D(basis * rest.basis, pivot + basis * (rest.origin - pivot))
+	var tilt := Basis(Vector3.RIGHT, -atan(TIP_DROP / arm) * down)
+	return Transform3D(tilt * rest.basis, pivot + tilt * (rest.origin - pivot))
 
 
 ## Two buttons. The libretro mouse device carries a middle button and RetroMouse

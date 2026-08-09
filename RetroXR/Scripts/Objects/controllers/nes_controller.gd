@@ -56,9 +56,9 @@ func _add_button(stem: String, bit: int, depth: float) -> void:
 	_buttons.append({"node": m, "rest": m.transform, "bit": bit, "depth": depth})
 
 
-func _rocker(stem: String, drop: float) -> Dictionary:
+func _rocker(stem: String, drop_dist: float) -> Dictionary:
 	var m := _find_mesh(stem)
 	if m == null:
 		push_warning("NesController: control mesh not found: " + stem)
 		return {}
-	return {"node": m, "rest": m.transform, "pivot": m.position - Vector3(0.0, drop, 0.0)}
+	return {"node": m, "rest": m.transform, "pivot": m.position - Vector3(0.0, drop_dist, 0.0)}

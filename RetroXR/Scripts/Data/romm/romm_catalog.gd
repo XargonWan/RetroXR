@@ -78,7 +78,6 @@ var _warming := false
 # ── Sync thread ──────────────────────────────────────────────────────────────
 var _thread: Thread = null
 var _abort := false
-var _mutex := Mutex.new()
 var _syncing_systemid: String = ""
 
 

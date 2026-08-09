@@ -147,12 +147,12 @@ static func _dict_to_event(d: Dictionary) -> InputEvent:
 	match d.get("type", ""):
 		"key":
 			var ev := InputEventKey.new()
-			ev.physical_keycode = int(d.get("physical_keycode", 0))
-			ev.keycode          = int(d.get("keycode", 0))
+			ev.physical_keycode = int(d.get("physical_keycode", 0)) as Key
+			ev.keycode          = int(d.get("keycode", 0)) as Key
 			return ev
 		"mouse":
 			var ev := InputEventMouseButton.new()
-			ev.button_index = int(d.get("button_index", MOUSE_BUTTON_LEFT))
+			ev.button_index = int(d.get("button_index", MOUSE_BUTTON_LEFT)) as MouseButton
 			ev.pressed = true
 			return ev
 	return null

@@ -202,9 +202,9 @@ func _rehold() -> void:
 	_saved_by.call("_pick_up_object", self)
 
 
-func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
+func _set_model_visible(ctrl: XRController3D, shown: bool) -> void:
 	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
-		ctrl.call("set_model_visible", show)
+		ctrl.call("set_model_visible", shown)
 
 
 ## The combo test itself lives on HeldHint so the check and the row advertising
@@ -330,10 +330,10 @@ func _cache_controls() -> void:
 func _pressed_now() -> Dictionary:
 	var out: Dictionary = {}
 	if _desktop_held:
-		for action: String in DESKTOP_LIGHTGUN_BUTTONS:
-			var lid: int = DESKTOP_LIGHTGUN_BUTTONS[action]
+		for action_name: String in DESKTOP_LIGHTGUN_BUTTONS:
+			var lid: int = DESKTOP_LIGHTGUN_BUTTONS[action_name]
 			if lid >= 0:
-				out[lid] = Input.is_action_pressed(action)
+				out[lid] = Input.is_action_pressed(action_name)
 		return out
 	var vr: bool = is_instance_valid(_holding_ctrl)
 	for vr_source: String in _lightgun_map:

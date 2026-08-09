@@ -793,10 +793,10 @@ func set_audio_channel_mode(mode: int) -> void:
 		_emitter.set_channel_mode(mode)
 
 
-func set_screen_enabled(enabled: bool) -> void:
+func set_screen_enabled(on: bool) -> void:
 	if not connected_tv:
 		return
-	if enabled and is_playing and _feed_video:
+	if on and is_playing and _feed_video:
 		_bind_screen_to_tv()
 	else:
 		_blank_screen()

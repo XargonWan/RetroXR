@@ -82,10 +82,10 @@ func _delete_with_dependents(pickable: XRToolsPickable) -> void:
 	for zone in pickable.find_children("*", "XRToolsSnapZone", true, false):
 		# Variant first: a zone can still point at a freed plug, and binding one to
 		# a typed local throws before the validity test below can run.
-		var snapped: Variant = zone.picked_up_object
-		if not is_instance_valid(snapped):
+		var occupant: Variant = zone.picked_up_object
+		if not is_instance_valid(occupant):
 			continue
-		var held: Node3D = snapped
+		var held: Node3D = occupant
 		zone.drop_object()
 		if held is CablePlug or held is ControllerPlug or held.is_in_group("controller_plug"):
 			continue   # another device's captive cable end — released, not deleted

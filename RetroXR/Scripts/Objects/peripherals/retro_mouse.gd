@@ -76,7 +76,6 @@ var _desktop_held := false
 # Sticky-surface state
 var _stuck := false
 var _plane := Plane()
-var _prev_plane_pos := Vector3.ZERO
 var _accum := Vector2.ZERO    # metres of surface travel, pending report
 var _carry := Vector2.ZERO    # fractional cursor units carried between frames
 var _last_buttons := 0

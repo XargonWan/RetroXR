@@ -83,7 +83,6 @@ var _slot: MediaSlot = null
 var _screen_material: Material = null
 
 
-@onready var _vcr_body: MeshInstance3D = $VCRBody
 @onready var _tape_slot: XRToolsSnapZone = $TapeSlot
 @onready var _play_button: VRButton = $PlayButton
 @onready var _pause_button: VRButton = $PauseButton
@@ -577,10 +576,10 @@ func set_audio_channel_mode(mode: int) -> void:
 
 
 ## Show or hide the screen output. Called by the TV toggle button.
-func set_screen_enabled(enabled: bool) -> void:
+func set_screen_enabled(on: bool) -> void:
 	if not connected_tv:
 		return
-	if enabled and is_playing and _feed_video:
+	if on and is_playing and _feed_video:
 		_bind_screen_to_tv()
 	else:
 		_blank_screen()
@@ -629,10 +628,10 @@ func _make_screen_material() -> Material:
 
 
 ## Toggle the VHS effect at runtime; rebinds the screen if currently playing.
-func set_vcr_effect_enabled(enabled: bool) -> void:
-	if vcr_effect_enabled == enabled:
+func set_vcr_effect_enabled(on: bool) -> void:
+	if vcr_effect_enabled == on:
 		return
-	vcr_effect_enabled = enabled
+	vcr_effect_enabled = on
 	if is_playing:
 		_bind_screen_to_tv()
 

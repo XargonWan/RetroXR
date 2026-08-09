@@ -222,7 +222,6 @@ const DPAD_THRESHOLD := 0.35
 @onready var _expansion_port: XRToolsSnapZone = $ExpansionPort
 @onready var _sync_button: VRButton = $SyncButton
 @onready var _battery_cover: VRHinge = $BatteryCover
-@onready var _cover_pivot: Node3D = $CoverPivot
 @onready var _trigger_pivot: Node3D = $TriggerPivot
 @onready var _dpad: Node3D = $DPad
 @onready var _leds: Node3D = $PlayerLEDs
@@ -532,9 +531,9 @@ func _rehold() -> void:
 	_saved_by.call("_pick_up_object", self)
 
 
-func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
+func _set_model_visible(ctrl: XRController3D, shown: bool) -> void:
 	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
-		ctrl.call("set_model_visible", show)
+		ctrl.call("set_model_visible", shown)
 
 
 func _is_combo_pressed(ctrl: XRController3D) -> bool:
@@ -633,9 +632,9 @@ func _desktop_pressed() -> Dictionary:
 	var out: Dictionary = {}
 	if _capture == null or not _capture.is_active():
 		return out
-	for action: String in DESKTOP_BUTTON_MAP:
-		if Input.is_action_pressed(action):
-			out[String(DESKTOP_BUTTON_MAP[action])] = true
+	for action_name: String in DESKTOP_BUTTON_MAP:
+		if Input.is_action_pressed(action_name):
+			out[String(DESKTOP_BUTTON_MAP[action_name])] = true
 	return out
 
 
@@ -644,9 +643,9 @@ func _desktop_dpad_mask() -> int:
 	if _capture == null or not _capture.is_active():
 		return 0
 	var mask := 0
-	for action: String in DESKTOP_DPAD:
-		if Input.is_action_pressed(action):
-			mask |= 1 << int(DESKTOP_DPAD[action])
+	for action_name: String in DESKTOP_DPAD:
+		if Input.is_action_pressed(action_name):
+			mask |= 1 << int(DESKTOP_DPAD[action_name])
 	return mask
 
 

@@ -107,19 +107,19 @@ func _thread_loop() -> void:
 		for c: Dictionary in _connections:
 			if c.has("us"):
 				# Streaming upload — feed incoming bytes directly to the state machine.
-				var peer := c["peer"] as StreamPeerTCP
-				peer.poll()
-				var st := peer.get_status()
-				if st == StreamPeerTCP.STATUS_NONE or st == StreamPeerTCP.STATUS_ERROR:
+				var up_peer := c["peer"] as StreamPeerTCP
+				up_peer.poll()
+				var up_st := up_peer.get_status()
+				if up_st == StreamPeerTCP.STATUS_NONE or up_st == StreamPeerTCP.STATUS_ERROR:
 					var us: Dictionary = c["us"]
 					if us["f"]:
 						(us["f"] as FileAccess).close()
 					to_remove.append(c)
 					continue
 				var new_bytes := PackedByteArray()
-				var avail := peer.get_available_bytes()
-				if avail > 0:
-					var result := peer.get_data(avail)
+				var up_avail := up_peer.get_available_bytes()
+				if up_avail > 0:
+					var result := up_peer.get_data(up_avail)
 					if result[0] == OK:
 						new_bytes = result[1]
 				if _feed_upload_stream(c, new_bytes):
@@ -186,8 +186,8 @@ func _try_handle(c: Dictionary) -> bool:
 			_send_text(c["peer"] as StreamPeerTCP, 401, "application/json",
 					   '{"error":"unauthorized"}')
 			return true
-		var body_start := sep + 4
-		_start_upload_stream(c, query.get("path", ""), hdrs, buf.slice(body_start))
+		var upload_body_start := sep + 4
+		_start_upload_stream(c, query.get("path", ""), hdrs, buf.slice(upload_body_start))
 		return true
 
 	var body_start := sep + 4
@@ -291,11 +291,11 @@ func _handle_list(peer: StreamPeerTCP, rel: String) -> void:
 		names.sort()
 		_send_text(peer, 200, "application/json", JSON.stringify({"dirs": names, "files": []}))
 		return
-	var abs := _resolve(rel)
-	if abs.is_empty():
+	var abs_path := _resolve(rel)
+	if abs_path.is_empty():
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
 		return
-	var dir := DirAccess.open(abs)
+	var dir := DirAccess.open(abs_path)
 	if not dir:
 		_send_text(peer, 404, "application/json", '{"error":"not found"}')
 		return
@@ -303,16 +303,16 @@ func _handle_list(peer: StreamPeerTCP, rel: String) -> void:
 	var dirs: Array[String] = []
 	var files: Array = []
 	dir.list_dir_begin()
-	var name := dir.get_next()
-	while name != "":
-		if not name.begins_with("."):
+	var entry_name := dir.get_next()
+	while entry_name != "":
+		if not entry_name.begins_with("."):
 			if dir.current_is_dir():
-				dirs.append(name)
+				dirs.append(entry_name)
 			else:
-				var fa := FileAccess.open(abs.path_join(name), FileAccess.READ)
+				var fa := FileAccess.open(abs_path.path_join(entry_name), FileAccess.READ)
 				var size := fa.get_length() if fa else 0
-				files.append({"name": name, "size": size})
-		name = dir.get_next()
+				files.append({"name": entry_name, "size": size})
+		entry_name = dir.get_next()
 	dir.list_dir_end()
 
 	dirs.sort()
@@ -325,8 +325,8 @@ func _handle_list(peer: StreamPeerTCP, rel: String) -> void:
 func _start_upload_stream(c: Dictionary, rel: String, headers: Dictionary,
 						   body_so_far: PackedByteArray) -> void:
 	var peer := c["peer"] as StreamPeerTCP
-	var abs := _resolve(rel)
-	if abs.is_empty():
+	var abs_path := _resolve(rel)
+	if abs_path.is_empty():
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
 		return
 	var ct: String = headers.get("content-type", "")
@@ -339,7 +339,7 @@ func _start_upload_stream(c: Dictionary, rel: String, headers: Dictionary,
 		boundary = boundary.trim_prefix('"').trim_suffix('"')
 	c["us"] = {
 		"phase":     "part_preamble",
-		"dest_dir":  abs,
+		"dest_dir":  abs_path,
 		"delim":     ("--" + boundary).to_utf8_buffer(),
 		"data_term": ("\r\n--" + boundary).to_utf8_buffer(),
 		"buf":       body_so_far.duplicate(),
@@ -471,17 +471,17 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 
 
 func _handle_download(peer: StreamPeerTCP, rel: String) -> void:
-	var abs := _resolve(rel)
-	if abs.is_empty() or _is_root_base(abs):
+	var abs_path := _resolve(rel)
+	if abs_path.is_empty() or _is_root_base(abs_path):
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
 		return
-	var f := FileAccess.open(abs, FileAccess.READ)
+	var f := FileAccess.open(abs_path, FileAccess.READ)
 	if not f:
 		_send_text(peer, 404, "text/plain", "Not Found")
 		return
 	var data := f.get_buffer(f.get_length())
 	f.close()
-	var filename := abs.get_file()
+	var filename := abs_path.get_file()
 	var hdr := "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"%s\"\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" \
 			   % [filename, data.size()]
 	peer.put_data(hdr.to_utf8_buffer())
@@ -489,11 +489,11 @@ func _handle_download(peer: StreamPeerTCP, rel: String) -> void:
 
 
 func _handle_delete(peer: StreamPeerTCP, rel: String) -> void:
-	var abs := _resolve(rel)
-	if abs.is_empty() or _is_root_base(abs):
+	var abs_path := _resolve(rel)
+	if abs_path.is_empty() or _is_root_base(abs_path):
 		_send_text(peer, 403, "application/json", '{"error":"forbidden"}')
 		return
-	var err := DirAccess.remove_absolute(abs)
+	var err := DirAccess.remove_absolute(abs_path)
 	if err == OK:
 		_send_text(peer, 200, "application/json", '{"ok":true}')
 	else:
@@ -519,14 +519,14 @@ func _resolve(rel: String) -> String:
 	var base: String = roots[root_name]
 	if remainder.is_empty():
 		return base
-	var abs := (base + "/" + remainder).simplify_path()
-	return abs if abs.begins_with(base) else ""
+	var abs_path := (base + "/" + remainder).simplify_path()
+	return abs_path if abs_path.begins_with(base) else ""
 
 
-## True if `abs` is one of the named-root base directories (never deletable/downloadable).
-func _is_root_base(abs: String) -> bool:
+## True if `abs_path` is one of the named-root base directories (never deletable/downloadable).
+func _is_root_base(abs_path: String) -> bool:
 	for base: String in _roots().values():
-		if abs == base:
+		if abs_path == base:
 			return true
 	return false
 
@@ -546,9 +546,9 @@ func _parse_query(s: String) -> Dictionary:
 ## dir. Backslashes become "/", and empty / "." / ".." segments are dropped so the
 ## result can never escape the destination or reference an absolute location.
 ## Returns "" when nothing usable remains.
-func _safe_subpath(name: String) -> String:
+func _safe_subpath(rel_name: String) -> String:
 	var out: Array[String] = []
-	for seg in name.replace("\\", "/").split("/"):
+	for seg in rel_name.replace("\\", "/").split("/"):
 		var s := seg.strip_edges()
 		if s.is_empty() or s == "." or s == "..":
 			continue
@@ -562,8 +562,8 @@ func _extract_filename(part_headers: String) -> String:
 		return ""
 	var rest := part_headers.substr(idx + 9)
 	if rest.begins_with('"'):
-		var end := rest.find('"', 1)
-		return rest.substr(1, end - 1) if end != -1 else ""
+		var quote_end := rest.find('"', 1)
+		return rest.substr(1, quote_end - 1) if quote_end != -1 else ""
 	var end := rest.find("\r")
 	if end == -1:
 		end = rest.find("\n")

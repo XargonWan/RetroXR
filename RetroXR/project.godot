@@ -40,6 +40,14 @@ SaveSync="*res://Scripts/Data/romm/romm_save_sync.gd"
 RA="*res://Scripts/Data/ra/ra_session.gd"
 HeldPhysics="*res://Scripts/Interaction/held_object_physics.gd"
 
+[debug]
+
+# XRToolsPickable and several other godot-xr-tools bases carry @tool so the editor
+# can draw their configuration warnings. Our gameplay subclasses deliberately do
+# not: their _ready/_process load GLBs, start VLC playback and reach for autoloads,
+# none of which should run in the editor. Nothing here is meant to be a tool script.
+gdscript/warnings/missing_tool=0
+
 [display]
 
 window/size/viewport_width=2560

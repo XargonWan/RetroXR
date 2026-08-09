@@ -22,6 +22,7 @@ extends XRToolsPickable
 @export var scan_speed: float = 8.0
 
 # The snap-zone group the media item must belong to (set by subclass _ready).
+@warning_ignore("unused_private_class_variable")
 var _media_group: String = ""
 
 # Runtime state
@@ -47,6 +48,7 @@ var _volume_linear: float = 1.0
 
 var _snapped_media: Node3D = null
 
+@warning_ignore("unused_private_class_variable")
 @onready var _media_slot: XRToolsSnapZone = $MediaSlot
 @onready var _name_label: Label3D = $NameLabel
 @onready var _play_button: VRButton = $PlayButton

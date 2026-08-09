@@ -216,9 +216,9 @@ func _rehold() -> void:
 	_saved_by.call("_pick_up_object", self)
 
 
-func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
+func _set_model_visible(ctrl: XRController3D, shown: bool) -> void:
 	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
-		ctrl.call("set_model_visible", show)
+		ctrl.call("set_model_visible", shown)
 
 
 ## The combo test itself lives on HeldHint so the check and the row advertising

@@ -788,9 +788,9 @@ func _check_stall() -> void:
 		var pm: Dictionary = _recv.get(f, {})
 		for port in _all_ports:
 			if not pm.has(port):
-				var owner := _owner_for_frame(port, f)
-				if owner != 1 and owner > 0 and not _spectators.has(owner):
-					_np_input_req.rpc_id(owner, f)
+				var owner_peer := _owner_for_frame(port, f)
+				if owner_peer != 1 and owner_peer > 0 and not _spectators.has(owner_peer):
+					_np_input_req.rpc_id(owner_peer, f)
 	else:
 		_np_frame_req.rpc_id(1, _next_post)
 

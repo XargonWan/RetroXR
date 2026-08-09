@@ -959,13 +959,13 @@ func _augment_file_fields(node: Node, entry: Dictionary) -> void:
 			_register_album_serve(album, manifest)
 			entry["tracks"] = manifest
 			return
-		var net_id := id_of(node)
-		if net_id < 0 or node.has_meta("net_hashing"):
+		var album_net_id := id_of(node)
+		if album_net_id < 0 or node.has_meta("net_hashing"):
 			return
 		node.set_meta("net_hashing", true)
 		WorkerThreadPool.add_task(func() -> void:
 			var m := _music_manifest_of(album, true)   # blocking hash on the worker
-			call_deferred("_on_music_hashed", net_id, album, m))
+			call_deferred("_on_music_hashed", album_net_id, album, m))
 		return
 	var path := str(node.get(d["prop"]))
 	if path.is_empty() or not FileAccess.file_exists(path):
@@ -1026,9 +1026,9 @@ func _resolve_file_fields(node: Node, entry: Dictionary) -> void:
 			return
 		# 2) verify-by-name: reuse our own album of the same name — no transfer.
 		var album_name := str(entry.get("album_name", path.get_file()))
-		var found := RomLibrary.find_music_album(album_name)
-		if not found.is_empty():
-			node.set(prop, found)
+		var local_album := RomLibrary.find_music_album(album_name)
+		if not local_album.is_empty():
+			node.set(prop, local_album)
 			return
 		# 3) transfer it track-by-track using the manifest. If the manifest isn't
 		# here yet (host still hashing), wait for the _album_manifest follow-up.
@@ -1050,10 +1050,10 @@ func _resolve_file_fields(node: Node, entry: Dictionary) -> void:
 		# Verify-only: find our own byte-identical copy, never transfer.
 		var dirs: Array = [RomLibrary.default_roms_root()] if kind == "rom" \
 			else [RomLibrary.default_dvd_root()]
-		var found := NetFileTransfer.resolve_by_md5(md5, kind, size, path, dirs)
-		if not found.is_empty():
-			node.set(prop, found)
-			print("[NetObjectSync] %s matched by hash: %s" % [kind, found])
+		var local_copy := NetFileTransfer.resolve_by_md5(md5, kind, size, path, dirs)
+		if not local_copy.is_empty():
+			node.set(prop, local_copy)
+			print("[NetObjectSync] %s matched by hash: %s" % [kind, local_copy])
 		else:
 			node.set(prop, "")
 			print("[NetObjectSync] %s %s… not in local library (verify-only, not transferred)" % [kind, md5.left(8)])

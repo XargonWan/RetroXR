@@ -33,6 +33,7 @@ var _buttons: Array[Dictionary]:
 	get: return _anim.buttons
 	set(v): _anim.buttons = v
 # D-pad / sticks: {node, rest, pivot} (pivot in the mesh's parent space).
+@warning_ignore("unused_private_class_variable")
 var _dpad: Dictionary:
 	get: return _anim.dpad
 	set(v): _anim.dpad = v
@@ -40,12 +41,15 @@ var _dpad: Dictionary:
 # _dpad plus "bits" [up, down, left, right] and an optional "axis" ("left" /
 # "right") folding that analog stick in — a second D-pad has no RetroPad bits of
 # its own, so which ones it borrows is the core's choice.
+@warning_ignore("unused_private_class_variable")
 var _dpad2: Dictionary:
 	get: return _anim.dpad2
 	set(v): _anim.dpad2 = v
+@warning_ignore("unused_private_class_variable")
 var _stick_l: Dictionary:
 	get: return _anim.stick_l
 	set(v): _anim.stick_l = v
+@warning_ignore("unused_private_class_variable")
 var _stick_r: Dictionary:
 	get: return _anim.stick_r
 	set(v): _anim.stick_r = v
