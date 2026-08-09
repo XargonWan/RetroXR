@@ -29,8 +29,8 @@ const KEY_PITCH := 0.021       # 1u - full-size 104-key board is ~50 cm wide
 const KEY_GAP := 0.0025        # spacing between caps
 const KEY_TOP_Y := 0.014       # resting key-cap top
 const PRESS_TRAVEL := 0.0015   # cap sink when pressed: rests 2 mm proud of
-                               # the 0.012 plate top, so this leaves it just
-                               # barely above rather than buried under it
+							   # the 0.012 plate top, so this leaves it just
+							   # barely above rather than buried under it
 ## Rumble queue slot for a keystroke. Per hand, so both may type at once.
 const HAPTIC_KEY := &"kb_key"
 
