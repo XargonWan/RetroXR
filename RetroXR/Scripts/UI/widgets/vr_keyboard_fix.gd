@@ -105,4 +105,6 @@ static func _hide_keyboard(field: Control) -> void:
 		var owner: Control = vp.gui_get_focus_owner() if vp != null else null
 		if owner is LineEdit or owner is TextEdit:
 			return
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		return
 	DisplayServer.virtual_keyboard_hide()

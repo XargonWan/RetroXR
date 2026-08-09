@@ -403,18 +403,18 @@ func _extract_multi(zip_path: String, systemid: String) -> String:
 	var launch := ""
 	var first_playable := ""
 
-	for name: String in reader.get_files():
-		if name.ends_with("/"):
+	for entry_name: String in reader.get_files():
+		if entry_name.ends_with("/"):
 			continue
-		var out_path := dest_dir.path_join(name)
+		var out_path := dest_dir.path_join(entry_name)
 		DirAccess.make_dir_recursive_absolute(out_path.get_base_dir())
 		var f := FileAccess.open(out_path, FileAccess.WRITE)
 		if f == null:
 			continue
-		f.store_buffer(reader.read_file(name))
+		f.store_buffer(reader.read_file(entry_name))
 		f.close()
 
-		var ext := name.get_extension().to_lower()
+		var ext := entry_name.get_extension().to_lower()
 		if ext == "m3u":
 			launch = out_path
 		elif first_playable.is_empty() and ext in ["cue", "ccd", "mds", "iso", "chd", "gdi"]:
@@ -464,18 +464,18 @@ static func _manifest_references(path: String) -> PackedStringArray:
 		var line := raw.strip_edges()
 		if line.is_empty():
 			continue
-		var name := ""
+		var ref_name := ""
 		match ext:
 			"m3u":
 				if not line.begins_with("#"):
-					name = line
+					ref_name = line
 			"cue":
 				if line.substr(0, 4).to_upper() == "FILE":
-					name = _cue_file_name(line)
+					ref_name = _cue_file_name(line)
 			"gdi":
-				name = _gdi_file_name(line)
-		if not name.is_empty():
-			out.append(name.get_file())
+				ref_name = _gdi_file_name(line)
+		if not ref_name.is_empty():
+			out.append(ref_name.get_file())
 
 	return out
 

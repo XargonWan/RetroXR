@@ -94,17 +94,17 @@ func _index(items: Array) -> void:
 		if not (item is Dictionary):
 			continue
 		var d := item as Dictionary
-		var name := str(d.get("file_name", ""))
-		if name.is_empty():
+		var file_name := str(d.get("file_name", ""))
+		if file_name.is_empty():
 			continue
 		# A file the server has a record of but no longer holds cannot be
 		# fetched; leaving it out means the row reads "not on the server",
 		# which is the truth, rather than offering a download that 404s.
 		if bool(d.get("missing_from_fs", false)):
 			continue
-		_by_name[name.to_lower()] = {
+		_by_name[file_name.to_lower()] = {
 			"id": int(d.get("id", 0)),
-			"file_name": name,
+			"file_name": file_name,
 			"size": int(d.get("file_size_bytes", 0)),
 			"md5": str(d.get("md5_hash", "")).to_lower(),
 		}

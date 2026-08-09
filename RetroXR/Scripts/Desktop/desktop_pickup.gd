@@ -160,13 +160,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			if flat_fwd.length_squared() > 0.0001:
 				roll_axis = flat_fwd.normalized()
 				pitch_axis = roll_axis.cross(Vector3.UP).normalized()
-			var basis := _hand_pivot.global_basis
+			var pivot_basis := _hand_pivot.global_basis
 			if (event as InputEventMouseMotion).shift_pressed:
-				basis = Basis(roll_axis, delta.x * ROT_SENSITIVITY) * basis
+				pivot_basis = Basis(roll_axis, delta.x * ROT_SENSITIVITY) * pivot_basis
 			else:
-				basis = Basis(Vector3.UP, -delta.x * ROT_SENSITIVITY) * basis
-			basis = Basis(pitch_axis, -delta.y * ROT_SENSITIVITY) * basis
-			_hand_pivot.global_basis = basis.orthonormalized()
+				pivot_basis = Basis(Vector3.UP, -delta.x * ROT_SENSITIVITY) * pivot_basis
+			pivot_basis = Basis(pitch_axis, -delta.y * ROT_SENSITIVITY) * pivot_basis
+			_hand_pivot.global_basis = pivot_basis.orthonormalized()
 		# Always consume mouse motion while MMB is held so MovementDesktopTurn
 		# doesn't also rotate the player.
 		get_viewport().set_input_as_handled()

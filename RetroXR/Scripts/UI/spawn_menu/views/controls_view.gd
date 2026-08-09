@@ -327,8 +327,9 @@ func _make_rebind_row(action: String) -> HBoxContainer:
 
 
 ## Called by spawn_menu_controller after a key/mouse press is captured.
-## event is null when the user cancelled with Escape.
-func on_rebind_complete(action: String, event: InputEvent) -> void:
+## The event is null when the user cancelled with Escape; the binding is read
+## back from DesktopBindings either way.
+func on_rebind_complete(action: String, _event: InputEvent) -> void:
 	_rebinding_action = ""
 	var btn: Button = _rebind_buttons.get(action) as Button
 	if not is_instance_valid(btn):

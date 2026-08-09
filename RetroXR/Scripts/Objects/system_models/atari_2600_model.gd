@@ -275,7 +275,7 @@ const _GRAB_FLIP := PI
 
 
 func configure_controller_ports(port_zones: Array) -> void:
-	var basis := Basis.from_euler(Vector3(deg_to_rad(_PORT_PITCH_DEG), 0.0, 0.0)) \
+	var port_basis := Basis.from_euler(Vector3(deg_to_rad(_PORT_PITCH_DEG), 0.0, 0.0)) \
 		* Basis(Vector3.RIGHT, _GRAB_FLIP)
 	for i in range(port_zones.size()):
 		var zone: Node3D = port_zones[i]
@@ -284,7 +284,7 @@ func configure_controller_ports(port_zones: Array) -> void:
 		if seat != null:
 			zone.global_transform = seat.global_transform
 		elif i < _PORT_POS.size():
-			zone.transform = Transform3D(basis, _PORT_POS[i])
+			zone.transform = Transform3D(port_basis, _PORT_POS[i])
 	hide_port_placeholders(port_zones)
 
 

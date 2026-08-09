@@ -227,8 +227,8 @@ func _setup_lid_grab() -> void:
 	var e_neg: Vector3 = st * Vector3(0.0, -h * 0.5, 0.0)
 	var free_sign: float = 1.0 if e_pos.length() >= e_neg.length() else -1.0
 	var center_local: Vector3 = st * Vector3(0.0, free_sign * h * 0.25, 0.0)
-	var basis: Basis = st.basis.orthonormalized()
-	_hinge.transform = Transform3D(basis, center_local)
+	var grab_basis: Basis = st.basis.orthonormalized()
+	_hinge.transform = Transform3D(grab_basis, center_local)
 	var col := _hinge.get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if col and col.shape is BoxShape3D:
 		col.shape = col.shape.duplicate()

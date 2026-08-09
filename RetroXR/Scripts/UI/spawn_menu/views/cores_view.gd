@@ -359,7 +359,7 @@ func _populate_core_options(systemid: String, core_name: String, vbox: VBoxConta
 ## One option row: description, then < value > to cycle. Writes straight through
 ## to the core's option file — there is no Apply, because the file IS the state
 ## the next launch reads.
-func _add_core_option_row(root: String, core_name: String, systemid: String, key: String,
+func _add_core_option_row(root: String, core_name: String, _systemid: String, key: String,
 		defn: Object, current_val: String, vbox: VBoxContainer) -> void:
 	var values_arr: Array = defn.GetValues()
 	if values_arr.is_empty():
@@ -984,9 +984,9 @@ func refresh_download_systems() -> void:
 		if SystemFilter.is_hidden(sid):
 			continue
 		var arr: Array = _download_cores_by_system[sid] as Array
-		var name := "Other / Uncategorized" if sid == "__other__" else core_db.get_systemname_for_id(sid)
+		var sysname := "Other / Uncategorized" if sid == "__other__" else core_db.get_systemname_for_id(sid)
 		var n := arr.size()
-		systems.append({"systemid": sid, "name": name,
+		systems.append({"systemid": sid, "name": sysname,
 			"badge": "%d core%s" % [n, "" if n == 1 else "s"]})
 	_download_browser.set_systems(systems)
 
@@ -1006,13 +1006,13 @@ func _populate_download_detail(systemid: String, vbox: VBoxContainer) -> void:
 
 
 func _build_core_entry(core_name: String, remote_date: String, info: Dictionary) -> Control:
-	var wrap := VBoxContainer.new()
-	wrap.add_theme_constant_override("separation", 0)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	row.custom_minimum_size = Vector2(0, 76)
-	wrap.add_child(row)
+	col.add_child(row)
 
 	# Left: display name, license, description
 	var left := VBoxContainer.new()
@@ -1054,8 +1054,8 @@ func _build_core_entry(core_name: String, remote_date: String, info: Dictionary)
 	_download_widgets[core_name] = {"button": dl_btn}
 	_style_dl_button(dl_btn, download_manager.get_core_state(core_name, remote_date))
 
-	wrap.add_child(HSeparator.new())
-	return wrap
+	col.add_child(HSeparator.new())
+	return col
 
 
 ## The glyph says what pressing it does; "Re-Download" and "UPDATE" differ only

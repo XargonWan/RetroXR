@@ -136,14 +136,14 @@ func open_system(systemid: String) -> void:
 		_detail_toolbar.remove_child(c)
 		c.queue_free()
 	_detail_toolbar.visible = false
-	var name := systemid
+	var display_name := systemid
 	for s: Dictionary in _systems:
 		if s.get("systemid", "") == systemid:
-			name = s.get("name", systemid)
+			display_name = s.get("name", systemid)
 			break
-	_detail_title.text = name
+	_detail_title.text = display_name
 	_subpage_back = Callable()
-	_detail_home_title = name
+	_detail_home_title = display_name
 	_sync_hide_button()
 	if _detail_populator.is_valid():
 		_detail_populator.call(systemid, _detail_vbox)
@@ -496,7 +496,7 @@ func _rebuild_tiles() -> void:
 
 func _make_tile(s: Dictionary) -> Button:
 	var sid: String   = s.get("systemid", "")
-	var name: String  = s.get("name", sid)
+	var display_name: String = s.get("name", sid)
 	var badge: String = s.get("badge", "")
 
 	var btn := Button.new()
@@ -511,7 +511,7 @@ func _make_tile(s: Dictionary) -> Button:
 	# EXPAND_FILL is what makes the grid divide each row between its tiles
 	# rather than leaving every one at its minimum with the slack on the right.
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn.set_meta("filter_name", name.to_lower())
+	btn.set_meta("filter_name", display_name.to_lower())
 
 	# A hidden tile only appears at all while the Hidden toggle is on, so it is
 	# dimmed to say why it is here — otherwise turning the toggle on just makes
@@ -524,7 +524,7 @@ func _make_tile(s: Dictionary) -> Button:
 		# Nothing but the art. The name goes to the tooltip rather than nowhere:
 		# two Sega add-ons are hard to tell apart at this size, and the detail
 		# page is one press away either way.
-		btn.tooltip_text = name
+		btn.tooltip_text = display_name
 		if art_compact:
 			var big := TextureRect.new()
 			big.texture = art_compact
@@ -554,7 +554,7 @@ func _make_tile(s: Dictionary) -> Button:
 	row.offset_left = 12
 	# Keep the name clear of the corner badge, which is an overlay and so does
 	# not take part in this layout.
-	row.offset_right = -BADGE_RESERVE_PX if has_mark else -12
+	row.offset_right = -BADGE_RESERVE_PX if has_mark else -12.0
 	row.add_theme_constant_override("separation", 10)
 	btn.add_child(row)
 
@@ -577,7 +577,7 @@ func _make_tile(s: Dictionary) -> Button:
 	row.add_child(col)
 
 	var name_lbl := Label.new()
-	name_lbl.text = name
+	name_lbl.text = display_name
 	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	# "Super Nintendo Entertainment System" is three lines in the space left
 	# beside the art — cap it and ellipsize so a long name can't push the badge

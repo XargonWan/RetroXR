@@ -178,11 +178,11 @@ func animate_controls(btn: int, lstick: Vector2, rstick: Vector2) -> void:
 	# rotating +X by a positive angle lifts the far edge rather than sinking it.
 	var r := Basis.from_euler(Vector3(deg_to_rad(-pitch * _DPAD_TILT_DEG), 0.0,
 		deg_to_rad(roll * _DPAD_TILT_DEG)))
-	var node: MeshInstance3D = _anim_dpad["node"]
-	var rest: Transform3D = _anim_dpad["rest"]
+	var dpad_node: MeshInstance3D = _anim_dpad["node"]
+	var dpad_rest: Transform3D = _anim_dpad["rest"]
 	var pivot: Vector3 = _anim_dpad["pivot"]
 	var about := Transform3D(r, pivot - r * pivot)
-	node.transform = node.transform.interpolate_with(about * rest, _ANIM_W)
+	dpad_node.transform = dpad_node.transform.interpolate_with(about * dpad_rest, _ANIM_W)
 
 
 # NB: no configure_buttons() override. A plain handheld hides the cabinet

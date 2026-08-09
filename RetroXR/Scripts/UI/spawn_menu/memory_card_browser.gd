@@ -246,6 +246,7 @@ func _restore_row(card: Dictionary, s: Dictionary, present: Dictionary, free: in
 	var row := MenuStyle.hbox(8)
 	var slot := str(s["slot"])
 	# .mcs is a 128-byte directory entry plus whole blocks.
+	@warning_ignore("integer_division")
 	var blocks: int = maxi(1, (int(s["size"]) - PS1Card.FRAME_SIZE) / PS1Card.BLOCK_SIZE)
 
 	var reason := ""
@@ -255,9 +256,9 @@ func _restore_row(card: Dictionary, s: Dictionary, present: Dictionary, free: in
 		reason = "needs %d blocks, %d free" % [blocks, free]
 
 	var btn := MenuStyle.row_button("", 24)
-	var name := str(s.get("rom_name", ""))
+	var rom_name := str(s.get("rom_name", ""))
 	btn.text = "    %s      %d block%s%s" % [
-		name if not name.is_empty() else slot,
+		rom_name if not rom_name.is_empty() else slot,
 		blocks, "" if blocks == 1 else "s",
 		"" if reason.is_empty() else "   ·   " + reason]
 	btn.disabled = not reason.is_empty()
@@ -303,7 +304,7 @@ func _restore(card: Dictionary, s: Dictionary) -> void:
 		# this device could not otherwise work out for a save it never watched
 		# being written — recorded now so a later local change uploads at once
 		# instead of falling back to sweeping the disc library for its serial.
-		var key := SaveSync.card_save_key(str(card["path"]), str(s["slot"]))
+		var key := RommSaveSync.card_save_key(str(card["path"]), str(s["slot"]))
 		SaveSync.set_key_enabled(key, true)
 		SaveSync.note_card_save_owner(key, int(s["rom_id"]))
 		notice.emit("Restored %s — kept backed up to RomM"
@@ -350,7 +351,7 @@ func _build_saves(card: Dictionary) -> void:
 	var synced: Dictionary = {}
 	for s: Dictionary in saves:
 		if SaveSync.is_key_enabled(
-				SaveSync.card_save_key(str(card["path"]), str(s["name"]))):
+				RommSaveSync.card_save_key(str(card["path"]), str(s["name"]))):
 			synced[str(s["name"])] = true
 	ui.synced_slots = synced
 	ui.sync_available = SaveSync.is_available()
@@ -367,7 +368,7 @@ func _build_saves(card: Dictionary) -> void:
 ## failing quietly.
 func _toggle_save_sync(card: Dictionary, s: Dictionary, on: bool) -> void:
 	var slot := str(s["name"])
-	var key := SaveSync.card_save_key(str(card["path"]), slot)
+	var key := RommSaveSync.card_save_key(str(card["path"]), slot)
 	SaveSync.set_key_enabled(key, on)
 	if not on:
 		notice.emit("Stopped backing up %s" % _title_of(s), 2.5)

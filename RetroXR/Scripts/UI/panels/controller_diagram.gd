@@ -234,9 +234,9 @@ func _relayout() -> void:
 	_anchor_px.clear()
 	for hand: String in ["left", "right"]:
 		var r: Rect2 = rects[hand]
-		var tr := _art[hand] as TextureRect
-		tr.position = r.position
-		tr.size = r.size
+		var art_rect := _art[hand] as TextureRect
+		art_rect.position = r.position
+		art_rect.size = r.size
 		var table: Dictionary = ANCHORS[hand]
 		for key: String in table:
 			var uv: Vector2 = table[key]

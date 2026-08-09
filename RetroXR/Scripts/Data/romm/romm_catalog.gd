@@ -589,7 +589,6 @@ func _sync_worker(args: Dictionary) -> void:
 		existing = _read_existing_rows(index_path(systemid))
 
 	var fetched: Dictionary = {}     # id -> slim row line
-	var order: Array[String] = []    # names in server order, for stable sorting
 	var offset := 0
 	var total := 0
 	var max_updated := updated_after
@@ -844,19 +843,19 @@ func _page_path(platform_id: int, offset: int, group: bool,
 ## rest are fetched on demand from /api/roms/{id} when a detail panel opens.
 static func _slim_row(item: Dictionary) -> Dictionary:
 	var meta: Dictionary = item.get("metadatum", {}) if item.get("metadatum") is Dictionary else {}
-	var name := _s(item, "name")
-	if name.is_empty():
-		name = _s(item, "fs_name_no_tags")
-	if name.is_empty():
-		name = _s(item, "fs_name")
+	var title := _s(item, "name")
+	if title.is_empty():
+		title = _s(item, "fs_name_no_tags")
+	if title.is_empty():
+		title = _s(item, "fs_name")
 
 	var sort_name := _s(item, "name_sort_key")
 	if sort_name.is_empty():
-		sort_name = name
+		sort_name = title
 
 	return {
 		"id": _i(item, "id"),
-		"name": name,
+		"name": title,
 		"sort_name": sort_name.to_lower(),
 		"fs_name": _s(item, "fs_name"),
 		"fs_extension": _s(item, "fs_extension"),

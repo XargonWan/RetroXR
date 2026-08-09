@@ -18,11 +18,11 @@ var _off := 0.0
 
 
 ## Factory mirroring VRDropdown/VRToggle: build a ready-to-use marquee button.
-static func create(text: String, font_size: int) -> MarqueeButton:
+static func create(label_text: String, font_size: int) -> MarqueeButton:
 	var b := MarqueeButton.new()
 	b.add_theme_font_size_override("font_size", font_size)
 	b._label.add_theme_font_size_override("font_size", font_size)
-	b.set_marquee_text(text)
+	b.set_marquee_text(label_text)
 	return b
 
 

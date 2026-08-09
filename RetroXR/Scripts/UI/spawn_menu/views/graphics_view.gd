@@ -55,17 +55,19 @@ static func apply_resolution(key: String) -> void:
 	var parts := key.split("x")
 	if parts.size() != 2:
 		return
-	var size := Vector2i(int(parts[0]), int(parts[1]))
+	var win_size := Vector2i(int(parts[0]), int(parts[1]))
 	# Only meaningful in windowed/borderless; leave fullscreen alone.
 	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN \
 			or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
 		return
-	DisplayServer.window_set_size(size)
+	DisplayServer.window_set_size(win_size)
 	# Re-centre on the current screen so a bigger window doesn't spill off-screen.
 	var screen := DisplayServer.window_get_current_screen()
 	var origin := DisplayServer.screen_get_position(screen)
 	var usable := DisplayServer.screen_get_size(screen)
-	DisplayServer.window_set_position(origin + (usable - size) / 2)
+	@warning_ignore("integer_division")
+	var centred := origin + (usable - win_size) / 2
+	DisplayServer.window_set_position(centred)
 
 
 ## Sizes the display can actually take, rather than a fixed list that capped out
@@ -87,11 +89,11 @@ static func resolution_options() -> Array:
 	sizes.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x * a.y < b.x * b.y)
 
 	var options: Array = []
-	for size in sizes:
-		var label := "%d×%d" % [size.x, size.y]
-		if size == native:
+	for candidate_size: Vector2i in sizes:
+		var label := "%d×%d" % [candidate_size.x, candidate_size.y]
+		if candidate_size == native:
 			label += "  (native)"
-		options.append([label, "%dx%d" % [size.x, size.y]])
+		options.append([label, "%dx%d" % [candidate_size.x, candidate_size.y]])
 	return options
 
 

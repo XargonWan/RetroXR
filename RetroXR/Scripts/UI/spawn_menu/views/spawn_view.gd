@@ -88,8 +88,6 @@ var _romm_dl_row_index: int = -1
 var _romm_meta_cache: Dictionary = {}
 ## Row index whose delete button is armed for its second confirming tap.
 var _romm_delete_armed: int = -1
-## Remaining systemids for an explicit "Sync all now".
-var _romm_sync_queue: Array[String] = []
 ## Typing is bursty; one rebuild after the keys stop instead of one per key.
 var _romm_search_timer: Timer = null
 ## "<systemid>/<filename>" -> Texture2D or null. Wheel logos are scaled into
@@ -1722,8 +1720,8 @@ func _on_romm_art_ready(_rom_id: int, _texture: Texture2D) -> void:
 
 
 func _system_label(systemid: String) -> String:
-	var name := core_db.get_systemname_for_id(systemid)
-	return name if not name.is_empty() else systemid
+	var sysname := core_db.get_systemname_for_id(systemid)
+	return sysname if not sysname.is_empty() else systemid
 
 
 static func _commas(n: int) -> String:
@@ -2038,8 +2036,8 @@ static func _fit_within(img: Image, box: Vector2i) -> void:
 	var h := img.get_height()
 	if w <= 0 or h <= 0 or (w <= box.x and h <= box.y):
 		return
-	var scale: float = minf(float(box.x) / float(w), float(box.y) / float(h))
-	img.resize(maxi(1, int(round(w * scale))), maxi(1, int(round(h * scale))),
+	var factor: float = minf(float(box.x) / float(w), float(box.y) / float(h))
+	img.resize(maxi(1, int(round(w * factor))), maxi(1, int(round(h * factor))),
 		Image.INTERPOLATE_LANCZOS)
 
 

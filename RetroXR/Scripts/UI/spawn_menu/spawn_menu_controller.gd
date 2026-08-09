@@ -387,7 +387,7 @@ func _note_menu_verb_used() -> void:
 
 func _process(delta: float) -> void:
 	if _fps_label:
-		var fps := Engine.get_frames_per_second()
+		var fps := int(Engine.get_frames_per_second())
 		if fps != _last_fps:
 			_fps_label.text = "FPS: %d" % fps
 			_last_fps = fps
@@ -898,7 +898,7 @@ func _teach_verbs(obj: Node3D) -> void:
 ## a fresh popup per spawn would never accumulate the count.
 func _show_menu_hint() -> void:
 	var vr := _is_vr_runtime()
-	var host: Node3D = _left_ctrl if vr else _camera
+	var host: Node3D = (_left_ctrl as Node3D) if vr else (_camera as Node3D)
 	if not is_instance_valid(host):
 		return
 	if _menu_hint == null or not is_instance_valid(_menu_hint):
@@ -1111,8 +1111,8 @@ func _on_fov_changed(degrees: float) -> void:
 		_camera.fov = degrees
 
 
-func _on_world_scale_changed(scale: float) -> void:
-	_apply_world_scale(scale)
+func _on_world_scale_changed(factor: float) -> void:
+	_apply_world_scale(factor)
 
 
 ## Apply the world scale to both play modes. VR scales the tracked eye height +
@@ -1127,9 +1127,9 @@ func _on_world_scale_changed(scale: float) -> void:
 ## disagree by 20% of every step, which reads as the objects on the floor
 ## drifting along with you. Registration with a room you can see is only possible
 ## at 1:1.
-func _apply_world_scale(scale: float) -> void:
-	_world_scale = scale
-	XRServer.world_scale = 1.0 if _in_passthrough() else scale
+func _apply_world_scale(factor: float) -> void:
+	_world_scale = factor
+	XRServer.world_scale = 1.0 if _in_passthrough() else factor
 	if _camera:
 		_camera.transform.origin.y = _base_eye_height * XRServer.world_scale
 
@@ -1257,8 +1257,8 @@ func _on_slot_create() -> void:
 	var user_count := persistence.get_slots().filter(func(s: Dictionary) -> bool:
 		return not s.get("readonly", false)
 	).size()
-	var name := "State %d" % (user_count + 1)
-	var new_id := persistence.create_new_slot(get_tree().current_scene, name)
+	var slot_name := "State %d" % (user_count + 1)
+	var new_id := persistence.create_new_slot(get_tree().current_scene, slot_name)
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm:
 		sm.set_active_slot(new_id)
