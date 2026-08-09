@@ -37,7 +37,7 @@ mesh = SubResource("1")
 surface_material_override/0 = SubResource("StandardMaterial3D_fvml0")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="."]
-collision_layer = 5242881
+collision_layer = 5242880
 collision_mask = 0
 script = ExtResource("2")
 viewport_size = Vector2(300, 200)

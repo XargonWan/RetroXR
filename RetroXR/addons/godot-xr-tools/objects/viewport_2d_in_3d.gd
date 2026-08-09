@@ -50,8 +50,20 @@ const _DIRTY_SURFACE		:= 0x0200	# Surface material needs update
 const _DIRTY_REDRAW			:= 0x0400	# Redraw required
 const _DIRTY_ALL			:= 0x07FF	# All dirty
 
-# Default layer of 1:static-world, 21:pointable, 23:ui-objects
-const DEFAULT_LAYER := 0b0000_0000_0101_0000_0000_0000_0000_0001
+# LOCAL PATCH (RetroXR): default layer of 21:pointable and 23:ui-objects, WITHOUT
+# 1:static-world.
+#
+# Stock xr-tools puts these panels on the world layer, and XRToolsPlayerBody masks
+# it (1019 here) — so every floating panel in the room was a solid slab the player
+# walked into. Nothing needs the world bit: viewport_2d_in_3d_body only ever
+# receives input through `pointer_event`, and XRToolsFunctionPointer's own mask is
+# 21+23. It also stopped a panel counting as scenery for anything else casting
+# against the world, e.g. the TV remote's line-of-sight test.
+#
+# SpawnMenuController used to clear this bit by hand for the main menu alone (the
+# only panel anyone had noticed walking into); every other one — core options,
+# cartridge, TV, VCR, DVD, book, memory card, mouse — still collided.
+const DEFAULT_LAYER := 0b0000_0000_0101_0000_0000_0000_0000_0000
 
 
 # Physics property group

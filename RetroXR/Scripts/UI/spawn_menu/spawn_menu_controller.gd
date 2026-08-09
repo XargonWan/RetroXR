@@ -122,9 +122,8 @@ var _right_pointer: XRToolsFunctionPointer = null
 
 func _ready() -> void:
 	_viewport_node.visible = false
-	# Remove layer 1 (default physics) so the menu doesn't collide with objects,
-	# but keep layers 21 and 23 for pointer interaction.
-	$SpawnMenuViewport/StaticBody3D.collision_layer = 5242880
+	# (The layer-1 strip that used to live here is now XRToolsViewport2DIn3D's
+	# DEFAULT_LAYER, so every panel gets it and not just this one.)
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm != null:
 		sm.scene_ready.connect(_on_scene_ready)
