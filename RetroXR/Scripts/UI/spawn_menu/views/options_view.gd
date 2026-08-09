@@ -341,6 +341,26 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 
 	vbox.add_child(HSeparator.new())
 
+	# Collision shapes. Deliberately NOT persisted: it is a look at the room, not
+	# a setting, and one left on across a restart reads as a rendering bug.
+	var col_row := HBoxContainer.new()
+	col_row.add_theme_constant_override("separation", 10)
+	col_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(col_row)
+
+	var col_lbl := Label.new()
+	col_lbl.text = "Collision Shapes"
+	col_lbl.add_theme_font_size_override("font_size", 22)
+	col_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+	col_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col_row.add_child(col_lbl)
+
+	col_row.add_child(VRToggle.create(CollisionDebug.is_enabled(), func(on: bool) -> void:
+		CollisionDebug.set_enabled(self, on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
 	# Spatial audio backend. Desktop only: in a headset the SDK's binaural
 	# rendering is simply right, and offering the swap there would only be a way
 	# to make it worse. On a desk it is a real choice -- over speakers the HRTF
