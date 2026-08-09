@@ -228,17 +228,7 @@ func _set_overlays_visible(show: bool) -> void:
 			continue
 		if show and i < _overlay_sources.size() and is_instance_valid(_overlay_sources[i]):
 			var src := _overlay_sources[i]
-			var was_hidden := not overlay.visible
 			overlay.transform = parent_inv * src.global_transform
-			if was_hidden:
-				# _process is off while hidden, so this offset has been frozen since
-				# the last time the outline was up — and a source that moved in the
-				# meantime (a TV re-seats every bezel button, speaker and port the
-				# moment its shell model lands) leaves it pointing somewhere else.
-				# Correcting it here is not enough on its own: physics interpolation
-				# then spends the first frame sliding the overlay in from the stale
-				# pose, which is the frame the player sees.
-				overlay.reset_physics_interpolation()
 			overlay.visible = src.is_visible_in_tree()
 		else:
 			overlay.visible = false
