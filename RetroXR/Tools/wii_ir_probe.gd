@@ -58,6 +58,7 @@ class Driver extends Node:
 	func _process(delta: float) -> void:
 		_t += delta
 		match _stage:
+			"perf":      _perf(delta)
 			"wait":      _wait()
 			"setup":     _setup()
 			"boot":      _boot(delta)
@@ -93,7 +94,18 @@ class Driver extends Node:
 		if _busy:
 			return
 		_busy = true
-		for arg: String in OS.get_cmdline_user_args():
+		# An exported Android build gets no user args at all, so on the headset the
+		# switches come from a file instead — one per line, pushed with
+		#   adb shell "run-as com.xenu.retroxr sh -c 'echo --mode=perf > files/probe_args.txt'"
+		var args: Array[String] = []
+		args.assign(OS.get_cmdline_user_args())
+		if FileAccess.file_exists("user://probe_args.txt"):
+			for line: String in FileAccess.open("user://probe_args.txt",
+					FileAccess.READ).get_as_text().split("\n"):
+				if not line.strip_edges().is_empty():
+					args.append(line.strip_edges())
+		_log("args: %s" % [args])
+		for arg: String in args:
 			if arg.begins_with("--dist="):
 				_dist = float(arg.trim_prefix("--dist="))
 			if arg.begins_with("--barscale="):
@@ -192,6 +204,10 @@ class Driver extends Node:
 		# Pulsed rather than held: Wii Sports wants presses, not a stuck button.
 		if _t > 12.0 and fmod(_t, 1.0) < 0.25:
 			lib.SetJoypadState(port, (1 << JOYPAD_A) | (1 << JOYPAD_B), 0, 0, 0, 0)
+		if _t > 45.0 and _mode == "perf":
+			_stage = "perf"
+			_t = 0.0
+			return
 		if _t > 45.0:
 			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 			var screen: MeshInstance3D = (_tv as RetroTV).get_screen_mesh()
@@ -219,7 +235,40 @@ class Driver extends Node:
 			_t = 0.0
 			_stage = "shoot"
 
-	# ── 4. sweep and photograph ───────────────────────────────────────────────
+	# ── 4a. how fast is it actually emulating? ────────────────────────────────
+	#
+	# GetFrameCount is one per retro_run, so frames per wall-clock second IS the
+	# emulation speed. Wii Sports is 60 Hz: 60 means full speed, and anything
+	# under it is where the audio crackle comes from — a starved buffer is just
+	# "below 100%" wearing a different hat.
+	var _perf_t := 0.0
+	var _perf_frames := -1
+	var _perf_window := 0
+
+	func _perf(delta: float) -> void:
+		var lib: Libretro = (_wii as RetroSystem).get_libretro_node()
+		if lib == null:
+			return
+		if _perf_frames < 0:
+			_perf_frames = int(lib.GetFrameCount())
+			_perf_t = 0.0
+			return
+		_perf_t += delta
+		if _perf_t < 5.0:
+			return
+		var now := int(lib.GetFrameCount())
+		var fps := float(now - _perf_frames) / _perf_t
+		_log("PERF emulated %5.1f fps (%3.0f%% of 60)  |  godot %4.1f fps"
+			% [fps, fps / 60.0 * 100.0, Engine.get_frames_per_second()])
+		_perf_frames = now
+		_perf_t = 0.0
+		_perf_window += 1
+		if _perf_window >= 6:
+			_log("done")
+			get_tree().quit(0)
+
+
+	# ── 4b. sweep and photograph ──────────────────────────────────────────────
 	func _shoot(delta: float) -> void:
 		_shot_t += delta
 		if _shot >= _shots.size():
