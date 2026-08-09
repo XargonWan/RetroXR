@@ -15,13 +15,19 @@ var picked_up_ranged: bool = false
 ## Set by desktop_pickup.gd immediately after creating the pivot.
 var _owner_pickup: WeakRef = null
 
+## Which of the owner's release handlers this pivot reports to. DesktopPickup runs
+## two pivots — the hand and the companion slot — and they must clear different
+## state: routing the companion's release through the hand's handler would let go
+## of the object the player is actually holding.
+var _drop_method: StringName = &"_on_pivot_drop_object"
+
 
 ## Called by XRToolsPickable.drop() to notify the grabber it was released.
-## Forward to DesktopPickup so it clears _held_object even if drop came from
+## Forward to DesktopPickup so it clears its held object even if drop came from
 ## outside (e.g. a snap zone or another script calling pickable.drop()).
 func drop_object() -> void:
 	if _owner_pickup == null:
 		return
 	var pickup = _owner_pickup.get_ref()
-	if pickup and pickup.has_method("_on_pivot_drop_object"):
-		pickup._on_pivot_drop_object()
+	if pickup and pickup.has_method(_drop_method):
+		pickup.call(_drop_method)

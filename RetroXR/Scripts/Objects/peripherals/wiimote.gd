@@ -363,6 +363,17 @@ func get_nunchuk() -> Nunchuk:
 	return _nunchuk
 
 
+## The object that rides the desktop's second FPS slot while this remote is held.
+##
+## A Nunchuk is a pickable in its own right on a metre of cord, so on the desktop
+## — where the remote is pinned to the corner of the view rather than carried by a
+## hand — it had nothing holding it and simply trailed along the floor behind the
+## player. This hands it the other hand. desktop_pickup polls it every frame, so
+## seating or pulling the cord mid-hold is all it takes.
+func desktop_companion() -> XRToolsPickable:
+	return _nunchuk
+
+
 ## Re-seat a Nunchuk after a load. Deferred because the nunchuk spawns its cord
 ## on its own deferred call — its plug does not exist on the frame the scene is
 ## rebuilt, and there is nothing to snap until it does.

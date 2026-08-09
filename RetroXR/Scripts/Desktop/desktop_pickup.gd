@@ -16,6 +16,14 @@
 ##   freely on the ray.  This gives an FPS-style weapon view.  The hand pivot's
 ##   orientation matches the camera so the weapon always aims where you look.
 ##
+##   An FPS-snap object may also name a COMPANION — a second object it arrives
+##   with, which gets the mirrored lower-LEFT slot, i.e. the player's other hand.
+##   The Wiimote's Nunchuk is the case this exists for: it is a separate pickable
+##   on a cord, so without a slot of its own it hung off the remote and dragged
+##   along the floor.  Declared by a desktop_companion() method returning the
+##   pickable or null, and re-read every frame — plug the cord in mid-hold and it
+##   comes to hand, pull it out and it drops.
+##
 ## Objects must have collision on layer 3 ("Pickable") to be grabbable.
 ##
 ## The "fake hand" (_hand_pivot, group "desktop_hand") is an invisible Node3D
@@ -41,12 +49,20 @@ const ROT_SENSITIVITY := 0.008
 ## in the same screen-space corner regardless of where the player looks.
 const FPS_SNAP_LOCAL := Transform3D(Basis.IDENTITY, Vector3(0.20, -0.22, -0.45))
 
+## The companion's slot: the same offset mirrored across the view, so the pair
+## reads as one in each hand. Same depth and drop as the weapon slot on purpose —
+## anything else and the two sit at visibly different distances.
+const FPS_SNAP_COMPANION_LOCAL := Transform3D(Basis.IDENTITY, Vector3(-0.20, -0.22, -0.45))
+
 var _held_object : XRToolsPickable = null
 var _grab_dist   : float = 1.5
 
 var _raycast     : RayCast3D = null
 var _hand_pivot  : Node3D    = null
 var _desktop_pointer : XRToolsDesktopFunctionPointer = null
+
+var _companion_object : XRToolsPickable = null
+var _companion_pivot  : Node3D = null
 
 var _middle_held : bool = false
 var _hovered_target : Node3D = null
@@ -75,6 +91,17 @@ func _ready() -> void:
 	_hand_pivot.add_to_group("desktop_hand")
 	_hand_pivot._owner_pickup = weakref(self)
 	add_child(_hand_pivot)
+
+	# The other hand. Same shim and the same group — HeldHint reads "desktop_hand"
+	# to decide which platform's hints an object shows, and a companion held by
+	# something outside the group would advertise the VR drop combo.
+	_companion_pivot = Node3D.new()
+	_companion_pivot.set_script(pivot_script)
+	_companion_pivot.name = "DesktopCompanionHand"
+	_companion_pivot.add_to_group("desktop_hand")
+	_companion_pivot._owner_pickup = weakref(self)
+	_companion_pivot._drop_method = &"_on_companion_drop_object"
+	add_child(_companion_pivot)
 
 	_desktop_pointer = get_node_or_null("FunctionDesktopPointer") as XRToolsDesktopFunctionPointer
 
@@ -158,10 +185,12 @@ func _physics_process(_delta: float) -> void:
 		# Lock weapon to camera-local FPS slot — orientation tracks camera exactly
 		# so the barrel always points straight ahead.
 		_hand_pivot.global_transform = global_transform * FPS_SNAP_LOCAL
+		_sync_companion()
 	else:
 		# Standard ray-hold: slide along camera forward at the stored distance
 		var fwd := -global_transform.basis.z.normalized()
 		_hand_pivot.global_position = global_position + fwd * _grab_dist
+		_release_companion()
 
 
 ## True while the desktop hand is holding something (spawn-into-hand gate).
@@ -189,8 +218,62 @@ func _try_grab() -> void:
 	_grab_target(interaction.action_node)
 
 
+## Park the companion slot and reconcile who is standing in it.
+##
+## The pivot is moved FIRST so a companion picked up on this frame lands in the
+## corner immediately rather than snapping there next frame from wherever the
+## cord had swung it.
+func _sync_companion() -> void:
+	_companion_pivot.global_transform = global_transform * FPS_SNAP_COMPANION_LOCAL
+
+	var want := _companion_wanted()
+	if want == _companion_object:
+		return
+	_release_companion()
+	if not is_instance_valid(want) or not want.can_pick_up(_companion_pivot):
+		return
+	want.pick_up(_companion_pivot)
+	_companion_object = want
+
+	# A companion was not grabbed, it arrived, so its hint panel is answering a
+	# question nobody asked — and answering it wrongly: the rotate rows
+	# HeldObjectPhysics adds to every desktop grab are dead in an FPS slot, and
+	# there is no gesture that puts this one down by itself. Both grab handlers
+	# have already run and built the panel by the time pick_up returns, so this
+	# takes it back down rather than preventing it. Looked up rather than
+	# for_node()'d: a companion with no hint should not be given one.
+	var hint := want.get_node_or_null("HeldHint") as HeldHint
+	if hint != null:
+		hint.hide_now()
+
+
+## What the held object says should ride the companion slot, if anything.
+func _companion_wanted() -> XRToolsPickable:
+	if _held_object == null or not _held_object.has_method("desktop_companion"):
+		return null
+	return _held_object.call("desktop_companion") as XRToolsPickable
+
+
+func _release_companion() -> void:
+	if _companion_object == null:
+		return
+	var obj := _companion_object
+	_companion_object = null
+	if is_instance_valid(obj) and obj.is_picked_up() \
+			and obj.get_picked_up_by() == _companion_pivot:
+		obj.let_go(_companion_pivot, Vector3.ZERO, Vector3.ZERO)
+		obj.sleeping = false
+
+
+## Called by DesktopCompanionHand.drop_object() when the companion is released
+## from the far end — a snap zone taking it, or its own script calling drop().
+func _on_companion_drop_object() -> void:
+	_release_companion()
+
+
 ## Drop the currently held object.
 func _drop() -> void:
+	_release_companion()
 	if _held_object:
 		# Only when the modifier was actually required — a plain-click drop taught
 		# the player nothing.
@@ -207,6 +290,7 @@ func _drop() -> void:
 ## Called by DesktopHandPivot.drop_object() when pickable.gd notifies the
 ## grabber of a drop (e.g. from a snap zone or external pickable.drop() call).
 func _on_pivot_drop_object() -> void:
+	_release_companion()
 	if _held_object and _held_object.is_picked_up() and _held_object.get_picked_up_by() == _hand_pivot:
 		var obj := _held_object
 		_held_object = null
