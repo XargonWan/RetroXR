@@ -329,6 +329,15 @@ func configure_av_ports(_ports: Array) -> void:
 	pass
 
 
+## Adjust — or switch off — the printed legend round those sockets. Called once,
+## straight after configure_av_ports, with the legend already laid out from the port
+## positions; change any of its exports and call rebuild(). Default: leave it alone.
+##
+## Never called on a model wearing a detailed shell, which prints its own.
+func configure_av_legend(_legend: AvLegend) -> void:
+	pass
+
+
 ## Reposition the attach point for video-out channel `channel` (multi-output
 ## hardware). Channel 0 defaults to the classic single-port hook above; extra
 ## channels get a small sideways offset unless the model places them itself.

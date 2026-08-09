@@ -93,6 +93,8 @@ var _box_button_lit: Dictionary = {}   # id -> bool, last colour applied
 func _ready() -> void:
 	super._ready()
 	add_to_group("dvd_player")
+	# Silkscreen round the A/V row. A deck is a source, so this one reads AV OUT.
+	AvLegend.attach(self, [$VideoOut, $AudioLOut, $AudioROut])
 	_float_lock = FloatLock.attach(self, ignore_gravity)
 	TransportGlyphs.label_buttons(self, {
 		"PlayButton": "play", "PauseButton": "pause", "StopButton": "stop",

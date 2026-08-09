@@ -55,6 +55,13 @@ extends Node3D
 ## in front of it would either z-fight or hide it outright.
 @export var hide_meshes: PackedStringArray = []
 
+## Whether the AV IN legend gets its printed backing plate. OFF by default because a
+## moulded CRT back is curved — both cabinets here taper 16 mm and 46 mm across the
+## plate's own footprint, so a flat rectangle floats off the curve or cuts into it,
+## and the legend falls back to outlined words. The stock body, being a flat box,
+## keeps its plate. A shell with a genuinely flat back panel turns this on.
+@export var av_legend_plate: bool = false
+
 
 func _ready() -> void:
 	if hide_meshes.is_empty():

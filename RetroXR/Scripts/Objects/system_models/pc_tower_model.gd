@@ -230,6 +230,16 @@ func configure_av_ports(ports: Array) -> void:
 		port.rotation = Vector3(PI, 0.0, 0.0)
 
 
+## AvAnchor sits at z = -0.222, 2 mm off the case's back face at -0.22 — it was
+## placed for a captive lead, which leaves from a point rather than seating on a
+## surface. The legend IS a surface, so it backs off by 11.5 mm instead of the
+## standard 9.5 and lands at -0.2205: half a millimetre proud of the panel, the same
+## standoff the PS/2 silkscreen above it carries.
+func configure_av_legend(legend: AvLegend) -> void:
+	legend.standoff = AV_PORT_PROUD + 0.0015
+	legend.rebuild()
+
+
 ## Ports onto the BACK panel, where a PC's keyboard and mouse actually plug in.
 ## Left at their defaults they sat at the tower's base and dipped 6 mm below the
 ## floor, since the default layout assumes a console lying flat.

@@ -57,6 +57,10 @@ var _speakers_seated: bool = false
 
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
+## The audio pair beside it. They are seated as a ROW with the video socket rather
+## than left where tv.tscn put them — see _seat_av_row.
+@onready var _audio_l_in: RcaPort = $AudioLIn
+@onready var _audio_r_in: RcaPort = $AudioRIn
 ## Off unless the fitted shell carries a VgaPortSeat — see _seat_vga_port.
 @onready var _vga_port: XRToolsSnapZone = $VgaPort
 @onready var _ambilight: SpotLight3D = $Ambilight
@@ -215,6 +219,12 @@ func _ready() -> void:
 	# Before anything reads the screen mesh or the buttons — _screen_size_m below
 	# is derived from ScreenMesh, and a shell may have moved and rescaled it.
 	_load_shell()
+	# After the shell, so the legend is printed round wherever the row ended up.
+	# A set is a sink, so this one reads AV IN.
+	var legend := AvLegend.attach(self, [_composite_port, _audio_l_in, _audio_r_in])
+	if legend != null and _shell != null and not _shell.av_legend_plate:
+		legend.show_plate = false
+		legend.rebuild()
 	# TV = power: it runs the power-on animation and flashes POWER on the OSD.
 	TransportGlyphs.label_buttons(self, {
 		"MuteButton": "mute", "AudioModeButton": "audio_stereo",
@@ -325,7 +335,7 @@ func _load_shell() -> void:
 	$TVBody.hide()
 
 	_seat_node(_screen_mesh, _shell.screen_seat())
-	_seat_node(_composite_port, _shell.port_seat())
+	_seat_av_row(_shell.port_seat())
 	_seat_vga_port(_shell.vga_port_seat())
 	_seat_node(_ambilight, _shell.ambilight_seat())
 	_seat_node(_volume_label, _shell.volume_label_seat())
@@ -386,6 +396,27 @@ func _bezel_buttons() -> Array[Node3D]:
 func _seat_node(node: Node3D, seat: Variant) -> void:
 	if node != null and seat is Transform3D:
 		node.transform = seat
+
+
+## Centre-to-centre along the A/V row. The pitch the primitive console, the NES, the
+## PC tower and both decks already use, so a lead reaches a set's sockets exactly as
+## it reaches a deck's.
+const AV_ROW_PITCH := 0.018
+
+
+## Seat all THREE input sockets off the shell's PortSeat, not just the video one.
+##
+## PortSeat names one point, and the audio pair steps along its local -X from there,
+## keeping the stock cabinet's VIDEO / L / R order. A shell that named only the video
+## socket used to leave the pair at tv.tscn's own coordinates while the body they were
+## mounted in was hidden, which put two live sockets in mid-air beside the cabinet.
+func _seat_av_row(seat: Variant) -> void:
+	if not seat is Transform3D:
+		return
+	var base: Transform3D = seat
+	_seat_node(_composite_port, base)
+	_seat_node(_audio_l_in, Transform3D(base.basis, base * Vector3(-AV_ROW_PITCH, 0.0, 0.0)))
+	_seat_node(_audio_r_in, Transform3D(base.basis, base * Vector3(-AV_ROW_PITCH * 2.0, 0.0, 0.0)))
 
 
 ## Turn the VGA input on, but only for a shell that asked for it.

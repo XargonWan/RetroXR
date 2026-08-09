@@ -1225,6 +1225,7 @@ func _build_av_ports() -> void:
 	_av_ports = built
 	# After add_child: the model places these in world space off its own meshes.
 	_model.configure_av_ports(built)
+	_print_av_legend(built)
 	# Hide the captive lead's own connector. CableAttachPoint carries a PortVisual —
 	# the yellow RCA plug that reads as the lead permanently seated in the console —
 	# and on a shell like the NES the model parks it right in the VIDEO jack. With
@@ -1234,6 +1235,23 @@ func _build_av_ports() -> void:
 		var visual := pt.get_node_or_null("PortVisual") as Node3D
 		if visual != null:
 			visual.hide()
+
+
+## Silkscreen the A/V row: the outlined box, the words under the jacks and the AV OUT
+## heading. Console hardware is a source, so every one of these reads OUT.
+##
+## Stand-ins only, the same rule _place_name_label follows: a detailed shell carries
+## its own printing in its texture, and ours would sit on top of it.
+##
+## Parented to the cabinet rather than to the model, which keeps it out of
+## _body_aabb() — that walks the body and the model, and a plate merged into it would
+## drag the nameplate off the front face.
+func _print_av_legend(ports: Array) -> void:
+	if _model == null or _model.has_baked_shell():
+		return
+	var legend := AvLegend.attach(self, ports)
+	if legend != null:
+		_model.configure_av_legend(legend)
 
 
 ## Called by a CompositeCable whenever a plug is seated or pulled anywhere on it.
