@@ -16,6 +16,11 @@
 ##     console. Which device id a wired pad is announced with depends on it.
 ##
 ## Four slots total across both kinds, which is every Wii game's player cap.
+##
+## It also owns the SENSOR BAR: which one is plugged into this console, and which
+## side of the screen it ended up on. The jack itself is hardware, so
+## RetroSystemModelWii builds it; what happens when something goes into it is
+## policy, so it happens here.
 class_name WiiLink
 extends Node
 
@@ -43,6 +48,12 @@ var host: RetroSystem = null
 
 var _sync_button: VRButton = null
 
+var _sensor_bar_port: XRToolsSnapZone = null
+## What is in that port. Held rather than read back off the zone for the same
+## reason system.gd holds _port_plugs: has_dropped says the socket is empty, not
+## what left it, so the thing that was there has to be remembered.
+var _sensor_bar: SensorBar = null
+
 
 ## Whether a given console gets one of these at all.
 static func handles(systemid: String) -> bool:
@@ -53,6 +64,7 @@ func setup(system: RetroSystem, sync_button: VRButton) -> void:
 	host = system
 	_sync_button = sync_button
 	_sync_button.button_pressed.connect(open_pairing)
+	_bind_sensor_bar_port()
 
 
 func _exit_tree() -> void:
@@ -60,6 +72,78 @@ func _exit_tree() -> void:
 	# answering remotes it is no longer near.
 	if is_in_group(PAIRING_GROUP):
 		remove_from_group(PAIRING_GROUP)
+
+
+# ── Sensor bar ────────────────────────────────────────────────────────────────
+
+func _bind_sensor_bar_port() -> void:
+	var model := host.get_model() as RetroSystemModelWii
+	if model == null:
+		return
+	_sensor_bar_port = model.get_sensor_bar_port()
+	if _sensor_bar_port == null:
+		return
+	_sensor_bar_port.has_picked_up.connect(_on_sensor_bar_seated)
+	# No argument, by design — see system.gd's port zones for the same shape.
+	_sensor_bar_port.has_dropped.connect(_on_sensor_bar_removed)
+
+
+func _on_sensor_bar_seated(plug: Node3D) -> void:
+	var owner_node: Node3D = plug.get_controller() if plug.has_method("get_controller") else plug
+	_sensor_bar = owner_node as SensorBar
+	if _sensor_bar == null:
+		return
+	_sensor_bar.set_system(host)
+
+
+func _on_sensor_bar_removed() -> void:
+	if _sensor_bar == null:
+		return
+	_sensor_bar.set_system(null)
+	_sensor_bar = null
+
+
+## The bar plugged into THIS console, or null.
+##
+## Deliberately not what a remote reads for its aim — a camera cannot tell whose
+## lights it is looking at, so wiimote.gd sweeps every lit bar in the room. This
+## is for the one question that really is per-console: which side of the screen
+## its own bar sits on, which is a SYSCONF value the machine keeps for itself.
+func get_sensor_bar() -> SensorBar:
+	return _sensor_bar
+
+
+## The jack itself, for a save restore putting a plug back into it.
+func get_sensor_bar_port() -> XRToolsSnapZone:
+	return _sensor_bar_port
+
+
+## Where the bar is sitting relative to the screen, as the SYSCONF value Dolphin
+## expects: "1" above, "0" below.
+##
+## This is not decoration. The Wii itself never sees the bar's position — it only
+## sees two dots — so the console's own setting is what tells the software which
+## way to shift the pointer off the dots' midpoint. Getting it wrong puts every
+## cursor in the machine a couple of inches out, vertically, and nothing on screen
+## explains why. With the bar as a physical object the answer is measurable, so it
+## is measured rather than asked of the player.
+##
+## Falls back to "1" (on top) when there is nothing to measure — no bar, or no
+## television — because that is where most people put it.
+func sensor_bar_position() -> String:
+	if _sensor_bar == null or not is_instance_valid(host.connected_tv):
+		return "1"
+	var screen: Node3D = host.connected_tv.get_screen_mesh()
+	if screen == null:
+		return "1"
+	return "1" if _sensor_bar.global_position.y >= screen.global_position.y else "0"
+
+
+## Core options this console composes per run, on top of the model's fixed ones.
+## Read at power-on, which is the right moment: the sensor bar's position is a
+## SYSCONF value and the real machine reads those when it boots.
+func forced_core_options() -> Dictionary:
+	return {"dolphin_sensor_bar_position": sensor_bar_position()}
 
 
 # ── Mode ──────────────────────────────────────────────────────────────────────

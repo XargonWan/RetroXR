@@ -2,13 +2,23 @@
 ## plugging into one, and drives Dolphin's emulated remote on the slot it claims.
 ##
 ## Three channels go to the core every frame, and each is a different mechanism:
-##   • POINTER  — the barrel is raycast at the TV and the hit reported as absolute
-##     libretro pointer coordinates. Dolphin's core binds its Point (IR) group to
-##     those under `dolphin_ir_mode = "2"`, which is why that option is forced.
+##   • IR       — every lit sensor bar LED in the room is projected into the
+##     camera in the nose of this remote, and the resulting pixel coordinates
+##     handed to the core on pointer indices 0-3. That is the whole of the aim: no
+##     cursor, no screen, no raycast. Dolphin feeds them to its emulated camera
+##     verbatim under `dolphin_ir_passthrough`, which is why that option is forced.
 ##   • JOYPAD   — buttons, plus the Nunchuk's stick when one is seated.
 ##   • SENSOR   — real accelerometer derived from the barrel's motion, in g, which
 ##     is what makes tilt and shake games work. Gyro is deliberately NOT sent; see
 ##     the note on _send_accel.
+##
+## The IR channel replaced a raycast at the television, which could not be made
+## right. That path sends a CURSOR — a point on the glass — and the core turns it
+## back into a camera view by rotating a notional remote parked two metres from
+## the bar, by a scale no geometry produces. Where the game then drew its hand
+## depended on a constant fitted per game, and it compressed vertically and
+## drifted. Projecting the real lights costs the same arithmetic and carries roll
+## and distance too, neither of which a point on a plane can express.
 ##
 ## Pairing mirrors the hardware: press SYNC on the console, then SYNC on the
 ## remote (under the battery cover). The four blue LEDs show the slot. Pressing
@@ -27,8 +37,25 @@ const RETRO_DEVICE_WIIMOTE_NC := 769
 
 ## Analog range libretro expects on a stick axis.
 const ANALOG_SCALE := 32767.0
-## Screen-space range for the pointer, matching the lightgun path.
+## Full-scale value on a libretro pointer axis. The IR path uses the positive half
+## only: the core's IRPassthrough controls read 0..1, so 0 is one edge of the
+## sensor and 32767 the other.
 const POINTER_SCALE := 32767.0
+
+# ── Emulated IR camera ────────────────────────────────────────────────────────
+#
+# Dolphin's numbers, from CameraLogic in Core/HW/WiimoteEmu/Camera.h, and they are
+# a description of the real hardware rather than a choice. They have to match: the
+# frontend now IS the camera, and a game reading the dots was calibrated against a
+# real one. Widen the field and every cursor in the machine travels too far.
+
+## IR objects the camera can report. Four exist; a sensor bar only ever lights two
+## of them, and Dolphin's own note says filling all four can cause stuttering.
+const IR_OBJECTS := 4
+const CAMERA_RES_X := 1024.0
+const CAMERA_RES_Y := 768.0
+const CAMERA_FOV_X_DEG := 42.0
+const CAMERA_AR := 4.0 / 3.0
 
 ## Input thresholds per XRController float input name (shared with RayGun).
 const INPUT_THRESHOLDS: Dictionary = {
@@ -153,6 +180,12 @@ var _blink_clock := 0.0
 var _last_aim_log: String = ""
 var _last_aim_value_ms: int = 0
 
+## Half-field tangents of the emulated camera, filled in _ready. Dolphin passes
+## the ratio of the FOV ANGLES as the projection's aspect, so the horizontal
+## tangent is the vertical one scaled by 4:3 rather than tan(fov_x / 2) — a
+## difference of most of a degree, and this is not the place to be almost right.
+var _tan_half_fov := Vector2.ONE
+
 ## Print where the remote is aiming, twice a second.
 ##
 ## ON while the pointer's alignment is being chased. Exported so it can be ticked
@@ -214,6 +247,8 @@ func _ready() -> void:
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
 		["keyboard_scroll_lock_outline"], "Send keys here")
 	_laser_dot.visible = false
+	var tan_y := tan(deg_to_rad(CAMERA_FOV_X_DEG / CAMERA_AR) * 0.5)
+	_tan_half_fov = Vector2(CAMERA_AR * tan_y, tan_y)
 	_cache_controls()
 	_setup_leds()
 	# snap_require alone would also take a console pad's plug — every ControllerPlug
@@ -719,20 +754,28 @@ func _log_aim(state: String) -> void:
 	print("[Wiimote] aim: %s" % state)
 
 
-## Twice a second, what the remote thinks it is pointing at and what it sent.
+## Twice a second, where the sensor bar's lights landed on the emulated sensor.
 ##
 ## The state log above only speaks on transitions, which is right for "why is
 ## there no pointer" and useless for "the pointer is in the wrong place". This is
-## the calibration read: point at a known edge and compare. u/v are 0..1 across
-## the glass (v=0 top), and lx/ly are what actually goes to the core.
-func _log_aim_values(u: float, v: float, lx: int, ly: int) -> void:
+## the calibration read, in the units the hardware works in: pixels on a
+## 1024 x 768 sensor, with the centre at 512,384 when the remote is aimed square
+## at the middle of the bar. Their SEPARATION is the distance to the bar, and it
+## should shrink as you back away — that is the reading no cursor could carry.
+func _log_aim_points(points: Array[Vector3]) -> void:
 	if not aim_debug:
 		return
 	var now := Time.get_ticks_msec()
 	if now - _last_aim_value_ms < 500:
 		return
 	_last_aim_value_ms = now
-	print("[Wiimote] aim u=%.3f v=%.3f -> pointer %d,%d" % [u, v, lx, ly])
+	var parts: Array[String] = []
+	for p: Vector3 in points:
+		parts.append("(%.0f,%.0f)" % [p.x, p.y])
+	var gap := 0.0
+	if points.size() >= 2:
+		gap = Vector2(points[0].x, points[0].y).distance_to(Vector2(points[1].x, points[1].y))
+	print("[Wiimote] IR %s  separation=%.0f px" % [" ".join(parts), gap])
 
 
 ## The holding hand's thumbstick, or zero when nothing is holding the remote.
@@ -851,78 +894,163 @@ func _process(delta: float) -> void:
 
 # ── Pointer (IR) ──────────────────────────────────────────────────────────────
 
+## Where the remote's camera is and which way it is looking, as a transform with
+## -Z forward.
+##
+## The barrel, whether or not anyone is holding it. A remote put down on the sofa
+## still has a lens, and if it happens to be facing the set it really does still
+## drive the cursor — that is a thing that happens in living rooms, and there is
+## nothing to gain by pretending otherwise. Pointed anywhere else it sees no
+## lights, which blanks the pointer on its own.
+##
+## The desktop is the exception: there the remote is snapped in front of the
+## camera rather than held, so its own barrel says nothing about where the player
+## is looking. The view aims instead — the same substitution the ray gun makes.
+func _camera_pose() -> Transform3D:
+	if _desktop_held:
+		var cam := get_viewport().get_camera_3d()
+		if is_instance_valid(cam):
+			return cam.global_transform
+	return _barrel_tip.global_transform
+
+
+## Project a world point into the emulated IR camera. Returns (px, py, distance),
+## with px/py in pixels on a 1024 x 768 sensor. A distance of zero means the
+## camera cannot see it — behind the lens, or past the edge of the sensor.
+##
+## This is Dolphin's CameraLogic::GetCameraPoints, rewritten in Godot's frame. It
+## has to be, exactly: the passthrough path takes sensor coordinates, and the game
+## on the other side was calibrated against real hardware, so anything but the
+## real optics puts the cursor in the wrong place by a fixed factor.
+##
+## Dolphin projects with Perspective(fov_y, fov_x/fov_y) — note the aspect is the
+## ratio of the ANGLES, not of their tangents — and then maps clip space to pixels
+## as (1 - ndc) * RES / 2 on both axes. Its pre-projection camera frame has +X
+## LEFT and +Y DOWN, so composing that flip with the (1 - ndc) flip cancels both:
+## in Godot's frame it comes out as (1 + ndc) * RES / 2 with ndc taken straight
+## off +X right and +Y up. The upshot is the convention a real Wii camera has —
+## an object to the RIGHT of the aim axis reads high in x, and one ABOVE it reads
+## high in y, because the lens inverts the image and the hardware never undoes it.
+func _project_to_camera(cam_inv: Transform3D, world_point: Vector3) -> Vector3:
+	var v := cam_inv * world_point
+	# Godot looks down -Z, so the forward distance is -z. Dolphin's own check is
+	# the same one: a point behind the camera is no point at all.
+	var w := -v.z
+	if w <= 0.0:
+		return Vector3.ZERO
+	var px := (1.0 + (v.x / w) / _tan_half_fov.x) * 0.5 * CAMERA_RES_X
+	var py := (1.0 + (v.y / w) / _tan_half_fov.y) * 0.5 * CAMERA_RES_Y
+	if px < 0.0 or py < 0.0 or px >= CAMERA_RES_X or py >= CAMERA_RES_Y:
+		return Vector3.ZERO
+	return Vector3(px, py, w)
+
+
+## Every lit LED in the room, in world space.
+##
+## Deliberately NOT scoped to the console this remote is paired with. A camera
+## cannot tell whose lights it is looking at — it sees infrared, and the sensor
+## bar is a dumb lamp with no identity to read. Two Wiis set up in one room really
+## do confuse each other on real hardware, and this is where that comes from.
+## Pairing decides which console HEARS the report, not what the camera can see.
+##
+## Only lit bars are here: an unplugged one, or one on a console nobody switched
+## on, has no power and emits nothing. See SensorBar.is_lit.
+func _visible_leds() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for node: Node in get_tree().get_nodes_in_group(SensorBar.BAR_GROUP):
+		var bar := node as SensorBar
+		if bar != null:
+			out.append_array(bar.led_positions())
+	return out
+
+
+## Report every IR object as unseen. Dolphin skips any object whose size is zero,
+## so an all-blank frame is a camera looking at nothing — which is what the Wii's
+## own software reads as "the remote is pointed away", and is how the cursor gets
+## hidden rather than clamped at the edge. The cursor path could never do that:
+## it binds no Hide control, so pointing at the ceiling left the hand stuck to the
+## border.
+func _blank_ir(libretro: Libretro) -> void:
+	for i in range(IR_OBJECTS):
+		libretro.SetPointerIndexState(_port_index, i, 0, 0, false)
+	_laser_dot.visible = false
+
+
 func _update_aim(libretro: Libretro) -> void:
+	var pose := _camera_pose()
+	var leds := _visible_leds()
+	if leds.is_empty():
+		# Both real reasons look the same from the room — no bar in a socket, or a
+		# console nobody switched on — so say so plainly.
+		_log_aim("no sensor bar lit anywhere — plug one into a Wii and power up")
+		_blank_ir(libretro)
+		return
+
+	var cam_inv := pose.affine_inverse()
+	var points: Array[Vector3] = []
+	for led: Vector3 in leds:
+		var p := _project_to_camera(cam_inv, led)
+		if p.z > 0.0:
+			points.append(p)
+
+	# More lights than slots is possible — two bars is four dots, and the camera
+	# has four. Keep the NEAREST, because that is how the real sensor picks: it
+	# tracks blobs by size, and a closer light is a bigger one.
+	points.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.z < b.z)
+	points.resize(mini(points.size(), IR_OBJECTS))
+	# Then into slot order: descending x, which is what Dolphin's own camera
+	# produces (its LED array starts at world -X, the end that lands HIGH in
+	# sensor x). Sorted rather than taken from the scene, because the bar is a
+	# pickable and a player can turn it round.
+	points.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.x > b.x)
+
+	for i in range(IR_OBJECTS):
+		var p: Vector3 = points[i] if i < points.size() else Vector3.ZERO
+		# Normalised over the sensor, because the core's IRPassthrough group scales
+		# a 0..1 control back up by (RES - 1). It reads the POSITIVE half of the
+		# pointer range only, so 0 is the left/top edge and 32767 the right/bottom.
+		libretro.SetPointerIndexState(_port_index, i,
+			int(p.x / (CAMERA_RES_X - 1.0) * POINTER_SCALE),
+			int(p.y / (CAMERA_RES_Y - 1.0) * POINTER_SCALE),
+			p.z > 0.0)
+
+	_log_aim("%d of %d lit LEDs in view" % [points.size(), leds.size()])
+	if not points.is_empty():
+		_log_aim_points(points)
+	_update_laser_dot(pose)
+
+
+## The dot on the glass. Purely a courtesy now — the aim above never touches the
+## screen — but it is the only feedback saying where the barrel is pointed, and on
+## the desktop it is the only way to see the aim at all.
+func _update_laser_dot(pose: Transform3D) -> void:
+	if not show_laser_dot:
+		_laser_dot.visible = false
+		return
 	# Look again if we have no glass, or the set we had went away (unplugged,
-	# swapped, deleted). Cheap: two null checks on the frames it succeeds, and
-	# only on those where it has nothing to aim at anyway.
+	# swapped, deleted). Cheap: two null checks on the frames it succeeds.
 	if not is_instance_valid(_screen_mesh):
 		_screen_mesh = null
 		_cache_screen_geometry()
 	if _screen_mesh == null or _screen_w == 0.0:
-		_log_aim("no screen found — nothing to aim at")
 		_laser_dot.visible = false
-		libretro.SetPointerState(_port_index, 0, 0, false)
-		return
-
-	# Held in VR the barrel does the aiming; on the desktop there is no hand to
-	# point with, so the view does — the camera centre ray, same substitution the
-	# ray gun makes, which keeps the crosshair honest about where it is pointing.
-	var ray_origin: Vector3
-	var ray_dir: Vector3
-	if _desktop_held:
-		var cam := get_viewport().get_camera_3d()
-		if not is_instance_valid(cam):
-			_laser_dot.visible = false
-			libretro.SetPointerState(_port_index, 0, 0, false)
-			return
-		ray_origin = cam.global_position
-		ray_dir = -cam.global_transform.basis.z
-	elif is_instance_valid(_holding_ctrl):
-		ray_origin = _barrel_tip.global_position
-		ray_dir = -_barrel_tip.global_transform.basis.z
-	else:
-		_laser_dot.visible = false
-		libretro.SetPointerState(_port_index, 0, 0, false)
 		return
 
 	var screen_transform := _screen_mesh.global_transform
 	var screen_normal := screen_transform.basis.z.normalized()
 	var plane := Plane(screen_normal, screen_transform.origin)
-
-	var hit: Variant = plane.intersects_ray(ray_origin, ray_dir)
+	var hit: Variant = plane.intersects_ray(pose.origin, -pose.basis.z)
 	if hit == null:
-		# Pointing away from the glass entirely — the ray never reaches the plane.
-		_log_aim("ray misses the screen plane (pointing away from it)")
 		_laser_dot.visible = false
-		libretro.SetPointerState(_port_index, 0, 0, false)
 		return
 
 	var local: Vector3 = screen_transform.affine_inverse() * (hit as Vector3)
 	var u := (local.x / _screen_w) + 0.5
 	var v := (-local.y / _screen_h) + 0.5
-	_log_aim("hit u=%.2f v=%.2f" % [u, v] if (u >= 0.0 and u <= 1.0 and v >= 0.0 and v <= 1.0)
-		else "OFF-SCREEN u=%.2f v=%.2f" % [u, v])
-
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
-		# Off screen. The core binds no "Hide" control in pointer IR mode, so the
-		# cursor cannot be sent away — it clamps at the edge instead, which is the
-		# closest thing to a remote pointed past the sensor bar. `pressed` still
-		# reports the miss, ready for a core that can act on it.
-		var cx := int((clampf(u, 0.0, 1.0) * 2.0 - 1.0) * POINTER_SCALE)
-		var cy := int((clampf(v, 0.0, 1.0) * 2.0 - 1.0) * POINTER_SCALE)
-		# Logged here too: aiming AT an edge is exactly where the reading matters,
-		# and the edge is the first place it goes off-screen.
-		_log_aim_values(u, v, cx, cy)
 		_laser_dot.visible = false
-		libretro.SetPointerState(_port_index, cx, cy, false)
 		return
-
-	var lx := int((u * 2.0 - 1.0) * POINTER_SCALE)
-	var ly := int((v * 2.0 - 1.0) * POINTER_SCALE)
-	_log_aim_values(u, v, lx, ly)
-	libretro.SetPointerState(_port_index, lx, ly, true)
-
-	_laser_dot.visible = show_laser_dot
+	_laser_dot.visible = true
 	_laser_dot.global_position = (hit as Vector3) + screen_normal * 0.002
 
 

@@ -50,6 +50,7 @@ const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE   := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const WIIMOTE_SCENE          := preload("res://Scenes/Objects/wiimote.tscn")
 const NUNCHUK_SCENE          := preload("res://Scenes/Objects/nunchuk.tscn")
+const SENSOR_BAR_SCENE       := preload("res://Scenes/Objects/sensor_bar.tscn")
 
 ## Types whose entry carries nothing but a pose — instantiate and place, no
 ## properties to apply. Types that need more are match arms in
@@ -70,6 +71,9 @@ const PLAIN_SCENES := {
 	# REMOTE's entry, not from this one.
 	"wiimote": WIIMOTE_SCENE,
 	"nunchuk": NUNCHUK_SCENE,
+	# The bar's own entry is a pose; which console it is plugged into is applied
+	# afterwards by _apply_references, like the remote's pairing.
+	"sensor_bar": SENSOR_BAR_SCENE,
 }
 
 
@@ -480,6 +484,9 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 				"port": str(rec.get("port", "")),
 			})
 		(obj as CompositeCable).restore_seating(seats)
+	elif obj is SensorBar:
+		(obj as SensorBar).restore_connection(
+			_resolve_ref(root, spawned, d.get("system")) as RetroSystem)
 	elif obj is RetroController or obj is RayGun or obj is RetroMouse \
 			or obj is RetroKeyboard or obj is Wiimote:
 		# The remote's Nunchuk is restored whether or not it was paired to a
@@ -549,6 +556,13 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"crt_params": tv.get_crt_params(),
 			"scale_factor": tv.scale_factor,
 			"stereo_mode": tv.stereo_mode,
+		})
+	elif node is SensorBar:
+		# Pose, plus which console is powering it. Unlike the Nunchuk this end DOES
+		# mean something: the bar is what a remote looks at, and a bar restored
+		# unplugged is a room where nothing points at anything.
+		return _base(id, "sensor_bar", n3d).merged({
+			"system": _ref(node_to_id, (node as SensorBar).get_system()),
 		})
 	elif node is Nunchuk:
 		# Pose only. Which remote it is plugged into is saved on the REMOTE, which

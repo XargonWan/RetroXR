@@ -1,0 +1,108 @@
+[gd_scene format=3]
+
+; The Wii Sensor Bar. Despite the name it senses nothing — it is two clusters of
+; infrared LEDs on a stick, and the camera in the nose of the Wii Remote is what
+; does the looking. That is why this object exists rather than the pointer being
+; computed from the television: with IR passthrough the frontend hands Dolphin the
+; camera's actual view of these two LEDs, so where they physically sit in the room
+; IS the aim. Move the bar and the pointing changes, exactly as it would at home.
+;
+; 205 mm overall with the clusters 200 mm apart, which is what Dolphin assumes
+; (CameraLogic::SENSOR_BAR_LED_SEPARATION = 0.2). The two Led markers are the
+; measurement that matters — sensor_bar.gd reads their world positions, so the
+; separation is whatever this scene says it is, not a constant repeated in code.
+;
+; -Z faces the player: the LEDs point back down the room at the remote, the same
+; way the real bar faces out from the television it sits on.
+
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/sensor_bar.gd" id="1_sbscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_sb"]
+friction = 0.9
+
+; 205 x 22 x 20 mm. Long and light: it topples if you knock it, which is true to
+; life and is why the real one ships with a stand.
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.205, 0.022, 0.02)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.205, 0.022, 0.02)
+
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.09, 0.09, 0.1, 1)
+roughness = 0.55
+
+; The dark red window each cluster sits behind. Real IR is invisible, so the
+; emission here is a courtesy to the player: without it there is nothing on the
+; bar to tell you which face is the front, or that it is powered at all.
+[sub_resource type="StandardMaterial3D" id="Mat_led"]
+albedo_color = Color(0.18, 0.03, 0.03, 1)
+emission_enabled = true
+emission = Color(0.9, 0.12, 0.1, 1)
+emission_energy_multiplier = 0.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_led"]
+size = Vector3(0.016, 0.008, 0.002)
+
+; A shallow foot, so the bar stands on a television instead of rolling off it.
+[sub_resource type="BoxMesh" id="BoxMesh_foot"]
+size = Vector3(0.06, 0.006, 0.045)
+
+[sub_resource type="StandardMaterial3D" id="Mat_foot"]
+albedo_color = Color(0.07, 0.07, 0.08, 1)
+
+[node name="SensorBar" type="RigidBody3D" groups=["wii_sensor_bar"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.12
+physics_material_override = SubResource("PhysMat_sb")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_sbscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="Foot" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014, 0)
+mesh = SubResource("BoxMesh_foot")
+surface_material_override/0 = SubResource("Mat_foot")
+
+; The two things the whole feature reads. 200 mm apart, on the front face.
+[node name="LedLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0, -0.0105)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+[node name="LedRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.0105)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+; Where the lead leaves the shell: out of the right-hand end, pointing away from
+; the screen the bar sits on.
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.104, 0, 0)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+; Marker3D, not Node3D: XRToolsGrabPoint extends Marker3D, and a script cannot
+; be attached to a node less derived than the type it inherits. Godot reports
+; that as an error rather than refusing to load, so on the desktop it scrolls
+; past in a wall of log — on the Quest's debug build it stops the app dead.
+;
+; One plain grab point with no hand pose, copying the Nunchuk: `hand_pose` lives
+; on XRToolsGrabPointHand, not on this script, and setting it here is the same
+; class of mistake as the node type.
+[node name="GrabPoint" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0)
+visible = false
+script = ExtResource("3_grabpoint")

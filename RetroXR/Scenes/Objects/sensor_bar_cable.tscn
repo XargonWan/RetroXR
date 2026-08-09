@@ -1,0 +1,99 @@
+[gd_scene format=3]
+
+; The sensor bar's lead. Same construction as controller_cable.tscn — see the
+; notes there for why the rope is tuned the way it is — with two differences:
+;
+;   * 50 x 0.036 = 1.80 m. The real lead is 3.5 m because it has to run round the
+;     back of a television set; here it only has to reach from the console to
+;     wherever the bar is standing, and a rope twice that length spends its life
+;     coiled on the floor eating constraint iterations.
+;   * A small barrel plug, because the Wii's sensor bar jack is a round hole and
+;     not one of the flat controller slots.
+
+[ext_resource type="Script" path="res://Scripts/Objects/cables/controller_plug.gd" id="1_plugscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
+[ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
+radius = 0.022
+
+[sub_resource type="CylinderMesh" id="CylMesh_plug"]
+top_radius = 0.005
+bottom_radius = 0.004
+height = 0.016
+
+[sub_resource type="StandardMaterial3D" id="Mat_plug"]
+albedo_color = Color(0.78, 0.78, 0.8, 1)
+
+[sub_resource type="CylinderMesh" id="CylMesh_strain"]
+top_radius = 0.0065
+bottom_radius = 0.0065
+height = 0.016
+
+[sub_resource type="StandardMaterial3D" id="Mat_strain"]
+albedo_color = Color(0.1, 0.1, 0.11, 1)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
+bounce = 0.0
+friction = 0.8
+
+; Wider than the physics shape because a plug is a small thing to hit with a
+; beam, and this only answers the pointer.
+[sub_resource type="SphereShape3D" id="SphereShape3D_pointer"]
+radius = 0.045
+
+[node name="SensorBarCable" type="Node3D"]
+
+[node name="ControllerPlug" type="RigidBody3D" parent="."]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.03
+linear_damp = 5.0
+angular_damp = 8.0
+gravity_scale = 1.0
+freeze = false
+freeze_mode = 1
+script = ExtResource("1_plugscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug"]
+shape = SubResource("SphereShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="ControllerPlug"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0.006)
+mesh = SubResource("CylMesh_plug")
+surface_material_override/0 = SubResource("Mat_plug")
+
+[node name="StrainRelief" type="MeshInstance3D" parent="ControllerPlug"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.011)
+mesh = SubResource("CylMesh_strain")
+surface_material_override/0 = SubResource("Mat_strain")
+
+[node name="PointerArea" type="StaticBody3D" parent="ControllerPlug"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug/PointerArea"]
+shape = SubResource("SphereShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="ControllerPlug"]
+script = ExtResource("3_pickhigh")
+
+[node name="SnapGrabPoint" parent="ControllerPlug" instance=ExtResource("4_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+[node name="VerletRope" type="VerletRope" parent="."]
+segment_count = 50
+segment_length = 0.036
+constraint_iterations = 8
+bend_stiffness = 0.15
+tube_radius = 0.0022
+tube_sides = 8
+smoothing = 2
+rope_color = Color(0.1, 0.1, 0.11, 1.0)
+surface_collision_mask = 7
+collision_radius = 0.0035
+self_collision = true
+end_align_stiffness = 0.7
+end_stiffness = 0.3
+end_stiff_segments = 2

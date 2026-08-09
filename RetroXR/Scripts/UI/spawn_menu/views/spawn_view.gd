@@ -375,6 +375,9 @@ func _build() -> void:
 		["VGA Cable",       "vga_cable"],
 		["3.5 mm Cable",   "trs_cable"],
 		["Speakers",       "speaker_pair"],
+		# Not under Controllers: nobody holds it, and it is no more a controller
+		# than the aerial is. It plugs into the Wii and stands on the television.
+		["Sensor Bar",     "sensor_bar"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [

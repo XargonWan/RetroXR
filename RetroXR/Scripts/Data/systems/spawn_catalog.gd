@@ -53,6 +53,9 @@ const _PERIPHERALS: Dictionary = {
 	"wii": [
 		{"kind": "peripheral", "label": "Wii Remote", "spawn": "wiimote"},
 		{"kind": "peripheral", "label": "Nunchuk", "spawn": "nunchuk"},
+		# Listed first among equals in spirit: without it the remote has nothing to
+		# look at, and no amount of pressing SYNC produces a pointer.
+		{"kind": "peripheral", "label": "Sensor Bar", "spawn": "sensor_bar"},
 	],
 	"virtual_boy": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
