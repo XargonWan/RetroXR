@@ -608,15 +608,25 @@ func _setup_leds() -> void:
 		_led_materials.append(mat)
 
 
-## Solid LED N while paired to slot N; all four blinking together while unpaired,
-## which is what a real remote does in discovery.
+## Three states, and the middle one is the point:
+##   * unpaired          — all four blinking together, as in discovery
+##   * paired, set OFF   — dark. A remote is not talking to a console that is not
+##                         running, and lighting a player number there claimed a
+##                         connection the game could not possibly see.
+##   * paired, set ON    — LED N solid for slot N
 func _update_leds(delta: float) -> void:
 	if _led_materials.is_empty():
 		return
 	_blink_clock += delta
 	var blink_on := fmod(_blink_clock, LED_BLINK_PERIOD * 2.0) < LED_BLINK_PERIOD
+	var live := _port_index >= 0 and is_instance_valid(_connected_system) \
+		and _connected_system.is_powered_on
 	for i in range(_led_materials.size()):
-		var lit := (i == _port_index) if _port_index >= 0 else blink_on
+		var lit := false
+		if _port_index < 0:
+			lit = blink_on
+		elif live:
+			lit = i == _port_index
 		var mat := _led_materials[i]
 		mat.albedo_color = LED_ON if lit else LED_OFF
 		mat.emission_energy_multiplier = 1.6 if lit else 0.0
@@ -644,10 +654,15 @@ func _animate_controls(pressed: Dictionary) -> void:
 	# bits, so it leans with the thumb instead of snapping between five poses.
 	if _dpad != null:
 		var s := _dpad_stick()
+		# Both axes are NEGATED, and it is the same reason twice: a rocker dips on
+		# the side you press. UP is the arm toward the front of the remote (-Z), so
+		# pushing up has to carry -Z downward — a positive turn about +X lifts it
+		# instead, which read as the pad answering the opposite direction. Likewise
+		# RIGHT (+X) must dip, not rise.
 		var tgt := Transform3D(
 			_dpad_rest.basis
-				* Basis(Vector3.RIGHT, deg_to_rad(DPAD_TILT_DEG * s.y))
-				* Basis(Vector3.BACK, deg_to_rad(DPAD_TILT_DEG * s.x)),
+				* Basis(Vector3.RIGHT, deg_to_rad(-DPAD_TILT_DEG * s.y))
+				* Basis(Vector3.BACK, deg_to_rad(-DPAD_TILT_DEG * s.x)),
 			_dpad_rest.origin)
 		_dpad.transform = _dpad.transform.interpolate_with(tgt, ANIM_WEIGHT)
 

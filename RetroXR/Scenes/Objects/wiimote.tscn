@@ -385,8 +385,13 @@ shape = SubResource("BoxShape3D_sync")
 mesh = SubResource("BoxMesh_sync")
 surface_material_override/0 = SubResource("Mat_cap")
 
+; Faces DOWN (-Y), because that is the side of the remote this button is on.
+; Copied from a top-face cap it faced +Y instead, and a Label3D is double-sided,
+; so it did not vanish — it showed its back and read mirrored. Text runs up
+; toward the remote's front, which is the way round it falls when you tilt the
+; underside toward you.
 [node name="ButtonLabel" type="Label3D" parent="SyncButton"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -0.004, 0)
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, -0.004, 0)
 pixel_size = 0.0005
 text = "SYNC"
 font_size = 12

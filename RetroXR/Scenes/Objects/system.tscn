@@ -232,6 +232,11 @@ collision_layer = 0
 collision_mask = 0
 script = ExtResource("3_vrbtn")
 require_trigger = true
+; Presses INTO the front panel, not downward. depress_axis defaults to (0,-1,0)
+; because every other cabinet button sits on the TOP face; this one moved to the
+; front and kept it, so the fingertip snapped to the cap's top edge and a poke
+; from where the button faces registered nothing.
+depress_axis = Vector3(0, 0, -1)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton" unique_id=1919000102]
 shape = SubResource("BoxShape3D_sync")

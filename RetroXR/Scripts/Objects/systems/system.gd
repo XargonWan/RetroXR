@@ -2022,7 +2022,10 @@ func _on_options_ready(_categories: Dictionary, definitions: Dictionary, current
 	_controller_info = _libretro.GetControllerInfo()
 	print("[RetroSystem] controller info fetched — %d ports" % _controller_info.size())
 	# A controller can be plugged before the core (and its options) exist. Now that
-	# the option set is known, (re)apply each plugged pad's preferred pad type.
+	# there is a core: tell it what is on each port, then apply each pad's
+	# preferred type. Devices first — the pad-type option is per-port and means
+	# nothing until the port has a device on it.
+	_reannounce_port_devices()
 	_reapply_pad_types()
 	if _options_panel.visible:
 		_options_panel.refresh()
@@ -2155,6 +2158,33 @@ static func _decide_pad_type(allowed: Array, desired: String, current: String) -
 		else:
 			return ""
 	return "" if pick == current else pick
+
+
+## Tell the core which device is on each occupied port, now that there is a core
+## to tell. set_controller_port_device is a no-op while the machine is off, and
+## everything that claims a port — a plug seating, a remote pairing, a save being
+## restored — can happen long before that.
+##
+## A plain joypad survived the gap by luck: libretro already defaults its ports to
+## JOYPAD, so a pad plugged in beforehand worked anyway. A Wii Remote does not.
+## The core zeroes every port during its own startup, so the remote was paired as
+## far as this room was concerned, showing its player light, and simply absent in
+## the game — no buttons, no pointer.
+func _reannounce_port_devices() -> void:
+	for i in range(_port_controllers.size()):
+		var ctrl: Node = _port_controllers[i]
+		if not is_instance_valid(ctrl):
+			continue
+		var dev: int = ctrl.get("device_type") if "device_type" in ctrl else 1
+		if not _claims_port_device(dev):
+			continue
+		# _port_plugs is what says WIRED: a cabinet socket records its plug, and a
+		# wireless remote or a multitap sub-port has none. Only the wired ones take
+		# the GameCube-on-Wii translation.
+		var announce := dev
+		if _wii_link != null and _port_plugs[i] != null:
+			announce = _wii_link.cabinet_device_id(dev)
+		set_controller_port_device(_libretro_port_for(dev, i), announce)
 
 
 ## Re-apply every plugged pad's preferred pad type. Called when the option set
