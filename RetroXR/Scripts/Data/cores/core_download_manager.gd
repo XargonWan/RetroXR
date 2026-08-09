@@ -209,7 +209,10 @@ func _on_listing_completed(result: int, response_code: int,
 	var html := body.get_string_from_utf8()
 	available_cores = _apply_own_sources(_parse_listing_html(html))
 	print("[CoreDownloadManager] Found %d downloadable cores on buildbot" % available_cores.size())
-	callback.call(available_cores)
+	# The listing is not complete until our own releases have been asked their
+	# version, so the callback waits. It fires either way — a failed probe leaves
+	# the shipped-with version in place rather than blocking the tab.
+	_probe_own_versions(func() -> void: callback.call(available_cores))
 
 
 ## Replace the buildbot's entry for any core we publish ourselves, so the row the
@@ -231,9 +234,64 @@ func _apply_own_sources(entries: Array[Dictionary]) -> Array[Dictionary]:
 		entry["filename"] = CoreSources.asset_for(core_name)
 		# The tag stands in for the buildbot's timestamp. Anyone holding the stock
 		# build has a date stored, which differs, so the row reads UPDATE.
+		# Replaced by the live tag if the probe below reaches GitHub.
 		entry["remote_date"] = CoreSources.version_of(core_name)
 		entry["source"] = "retroxr"
 	return entries
+
+
+## Ask GitHub what the newest release of each core we publish is called, and put
+## that in the entry the row reads.
+##
+## Needed because the download URL is the /releases/latest/ form, which is what
+## lets a new core build reach players without a new app build — but it means the
+## app cannot tell from the URL alone whether anything changed. Without this the
+## manager would happily fetch a newer core while reporting "Re-Download", and an
+## update would only ever arrive by accident.
+##
+## Every failure path still calls `done`. A player with no network, or a rate
+## limit hit, gets the version this app shipped knowing about and a working tab.
+func _probe_own_versions(done: Callable) -> void:
+	var names := CoreSources.active_core_names()
+	if names.is_empty():
+		done.call()
+		return
+	# A Dictionary, not an int: GDScript lambdas capture locals by value, so a
+	# plain counter would be decremented on copies and never reach zero.
+	var state := {"pending": names.size()}
+	for core_name: String in names:
+		var http := HTTPRequest.new()
+		http.use_threads = true
+		add_child(http)
+		var settle := func() -> void:
+			http.queue_free()
+			state["pending"] = int(state["pending"]) - 1
+			if int(state["pending"]) == 0:
+				done.call()
+		http.request_completed.connect(
+			func(result: int, code: int, _headers: PackedStringArray, rbody: PackedByteArray) -> void:
+				if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+					var parsed: Variant = JSON.parse_string(rbody.get_string_from_utf8())
+					if parsed is Dictionary:
+						var tag := str((parsed as Dictionary).get("tag_name", ""))
+						if not tag.is_empty():
+							for entry: Dictionary in available_cores:
+								if entry.get("core_name", "") == core_name:
+									entry["remote_date"] = tag
+							print("[CoreDownloadManager] %s: newest release is %s" % [core_name, tag])
+				else:
+					push_warning("CoreDownloadManager: version probe for '%s' failed (result %d, HTTP %d) — using %s"
+						% [core_name, result, code, CoreSources.version_of(core_name)])
+				settle.call())
+		# GitHub rejects API requests with no User-Agent.
+		var err := http.request(CoreSources.api_url(core_name), PackedStringArray([
+			"User-Agent: retroXR",
+			"Accept: application/vnd.github+json",
+		]))
+		if err != OK:
+			push_warning("CoreDownloadManager: could not start version probe for '%s' (err %d)"
+				% [core_name, err])
+			settle.call()
 
 
 ## Parse the h5ai fallback table embedded in the raw HTML.

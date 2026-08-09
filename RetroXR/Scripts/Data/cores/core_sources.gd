@@ -27,7 +27,11 @@ extends RefCounted
 const SOURCES := {
 	"dolphin": {
 		"repo":  "XenuIsWatching/dolphin",
-		"tag":   "retroxr-dolphin-libretro-v1",
+		# The release this app was built knowing about. NOT part of the download
+		# URL — see base_url. It is only the version to show when GitHub cannot be
+		# reached, so an offline player still sees something truthful rather than
+		# a blank.
+		"known_tag": "retroxr-dolphin-libretro-v1",
 		"label": "Dolphin (retroXR build)",
 		# Per platform, because we only publish what we build. A platform absent
 		# here is not an error — the manager falls back to the buildbot for it,
@@ -56,20 +60,43 @@ static func asset_for(core_name: String) -> String:
 
 ## Directory URL the asset hangs off, shaped like the buildbot's so the download
 ## manager can concatenate a filename onto either without caring which it has.
+##
+## Deliberately the /releases/latest/ form and NOT a tagged one. A tag in here
+## would mean every new core build needed a new app build to point at it, and an
+## installed copy of retroXR could never be given a fixed core — which is the
+## whole point of having a download manager. GitHub resolves `latest` to the
+## newest non-prerelease release, so publishing a build is enough to ship it.
+##
+## The consequence to know: `latest` is per REPOSITORY, not per product. A
+## release cut on that fork for anything other than a core build would capture
+## this URL. Mark such releases as pre-releases — GitHub's `latest` skips those.
 static func base_url(core_name: String) -> String:
 	var src: Dictionary = SOURCES.get(core_name, {})
 	if src.is_empty():
 		return ""
-	return "https://github.com/%s/releases/download/%s/" % [src.get("repo", ""), src.get("tag", "")]
+	return "https://github.com/%s/releases/latest/download/" % src.get("repo", "")
+
+
+## Where to ASK what the newest build is called. A stable download URL is only
+## half of shipping updates: the manager decides whether to offer one by
+## comparing versions, so without this the app would keep fetching whatever is
+## latest while insisting the player is already up to date.
+static func api_url(core_name: String) -> String:
+	var src: Dictionary = SOURCES.get(core_name, {})
+	if src.is_empty():
+		return ""
+	return "https://api.github.com/repos/%s/releases/latest" % src.get("repo", "")
 
 
 ## Stands in for the buildbot's timestamp. The download manager only ever tests
 ## it for INEQUALITY against what the manifest stored, to decide whether to offer
 ## an update — so a release tag serves as well as a date, and unlike a date it
 ## only changes when the build does.
+##
+## This is the fallback; the live value comes from api_url.
 static func version_of(core_name: String) -> String:
 	var src: Dictionary = SOURCES.get(core_name, {})
-	return str(src.get("tag", ""))
+	return str(src.get("known_tag", ""))
 
 
 static func label_for(core_name: String) -> String:
@@ -78,9 +105,19 @@ static func label_for(core_name: String) -> String:
 
 
 ## The human-readable page, for a player who wants to see what they are about to
-## install before they install it.
+## install before they install it. Also the `latest` form, for the same reason.
 static func release_page(core_name: String) -> String:
 	var src: Dictionary = SOURCES.get(core_name, {})
 	if src.is_empty():
 		return ""
-	return "https://github.com/%s/releases/tag/%s" % [src.get("repo", ""), src.get("tag", "")]
+	return "https://github.com/%s/releases/latest" % src.get("repo", "")
+
+
+## Core names we publish AND build for this platform, for callers that need to
+## walk them (the version probe).
+static func active_core_names() -> Array[String]:
+	var out: Array[String] = []
+	for core_name: Variant in SOURCES:
+		if has(str(core_name)):
+			out.append(str(core_name))
+	return out
