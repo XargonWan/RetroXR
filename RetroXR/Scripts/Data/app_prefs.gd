@@ -51,6 +51,13 @@ var show_hidden_systems: bool = false
 ## core count, no source badge. One pref for both, like the hidden list: it is a
 ## statement about how you want to read a grid, not about one tab.
 var compact_tiles: bool = false
+## Which graphics API GET_PREFERRED_HW_RENDER advertises to a core. Only cores
+## that can do several (Dolphin, Flycast, PPSSPP) act on it — the rest name
+## their own API and this is ignored. Stored by name rather than as a
+## retro_hw_context_type, because "OpenGL" is a different number on the Quest
+## than on a desktop and a prefs file copied between them must still mean the
+## same thing. Vulkan is the default the extension itself carries.
+var hw_render_api: String = "vulkan"
 
 
 ## True when this systemid should be kept out of the grids.
@@ -74,6 +81,40 @@ func _ready() -> void:
 	ControllerModel.draw_hands = controller_hands
 	SystemFilter.enabled = system_filter
 	_apply_spatial_audio()
+	apply_hw_render()
+
+
+## Which APIs this platform can hand a core, as [label, pref value,
+## retro_hw_context_type]. Mirrors the switch in VideoHandler::SetHwRender:
+## OpenGL is GLES3 on Android and the desktop core profile everywhere else, and
+## the two D3D contexts exist only on Windows. Offering one the extension would
+## reject is offering a black screen.
+func hw_render_choices() -> Array:
+	var out: Array = [["Vulkan", "vulkan", 6]]
+	if OS.get_name() == "Android":
+		out.append(["OpenGL ES 3", "opengl", 4])
+	else:
+		out.append(["OpenGL", "opengl", 3])
+	if OS.get_name() == "Windows":
+		out.append(["Direct3D 11", "d3d11", 7])
+		out.append(["Direct3D 12", "d3d12", 9])
+	return out
+
+
+## Push the API choice into the extension's static. The emulation thread reads
+## it while the core initialises, so this is set at boot and again when the
+## option changes — a machine already switched on keeps the API it booted with.
+##
+## A pref naming an API this platform does not offer (a prefs file carried over
+## from another one) applies nothing, leaving the extension's own Vulkan default
+## standing.
+func apply_hw_render() -> void:
+	if not ClassDB.class_exists("Libretro"):
+		return
+	for choice: Array in hw_render_choices():
+		if str(choice[1]) == hw_render_api:
+			ClassDB.class_call_static("Libretro", "SetPreferredHwRender", int(choice[2]))
+			return
 
 
 ## Push the audio backend choice before anything builds an emitter. Ignored on
@@ -114,6 +155,7 @@ func _load_prefs() -> void:
 	hidden_systems      = _prefs_strings(data, "hidden_systems")
 	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
 	compact_tiles       = _prefs_bool(data, "compact_tiles",       compact_tiles)
+	hw_render_api       = _prefs_string(data, "hw_render_api",     hw_render_api)
 
 
 func save_prefs() -> void:
@@ -135,6 +177,7 @@ func save_prefs() -> void:
 		"hidden_systems":    hidden_systems,
 		"show_hidden_systems": show_hidden_systems,
 		"compact_tiles":     compact_tiles,
+		"hw_render_api":     hw_render_api,
 	}, "\t"))
 	file.close()
 
@@ -143,6 +186,15 @@ func save_prefs() -> void:
 func _prefs_bool(data: Dictionary, key: String, fallback: bool) -> bool:
 	var value: Variant = data.get(key)
 	if typeof(value) == TYPE_BOOL:
+		return value
+	return fallback
+
+
+## Same contract as _prefs_bool: a missing key or a JSON null keeps the default
+## rather than collapsing to "".
+func _prefs_string(data: Dictionary, key: String, fallback: String) -> String:
+	var value: Variant = data.get(key)
+	if typeof(value) == TYPE_STRING and not (value as String).is_empty():
 		return value
 	return fallback
 

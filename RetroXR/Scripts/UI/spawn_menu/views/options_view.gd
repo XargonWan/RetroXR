@@ -61,6 +61,9 @@ var _last_scan_frame: int = -1
 
 const SCAN_BTN_WIDTH := 64
 
+## Width of the build plate's field-name column, so the values sit in a column.
+const PLATE_FIELD_W := 120
+
 # Only one sign-in method applies at a time, so the other one's rows are hidden
 # rather than left there to be filled in and quietly ignored.
 var _romm_mode_drop: VRDropdown = null
@@ -125,6 +128,7 @@ func _build() -> void:
 	_build_romm_options(_page("RomM", MenuIcons.romm_mark()))
 	_build_scraper_options(_page("Scraper"))
 	_build_retroachievements_options(_page("RetroAchievements"))
+	_build_debug_options(_page("Debug"))
 
 	_tabs.tab_changed.connect(func(_i: int) -> void: scroll_changed.emit(active_scroll()))
 	add_child(TabStrip.wrap(_tabs))
@@ -320,47 +324,6 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# Show FPS option
-	var fps_row := HBoxContainer.new()
-	fps_row.add_theme_constant_override("separation", 10)
-	fps_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(fps_row)
-
-	var fps_lbl := Label.new()
-	fps_lbl.text = "Show FPS"
-	fps_lbl.add_theme_font_size_override("font_size", 22)
-	fps_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
-	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	fps_row.add_child(fps_lbl)
-
-	fps_row.add_child(VRToggle.create(AppPrefs.show_fps, func(on: bool) -> void:
-		AppPrefs.show_fps = on
-		AppPrefs.save_prefs()
-		show_fps_changed.emit(on)
-	))
-
-	vbox.add_child(HSeparator.new())
-
-	# Collision shapes. Deliberately NOT persisted: it is a look at the room, not
-	# a setting, and one left on across a restart reads as a rendering bug.
-	var col_row := HBoxContainer.new()
-	col_row.add_theme_constant_override("separation", 10)
-	col_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(col_row)
-
-	var col_lbl := Label.new()
-	col_lbl.text = "Collision Shapes"
-	col_lbl.add_theme_font_size_override("font_size", 22)
-	col_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
-	col_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col_row.add_child(col_lbl)
-
-	col_row.add_child(VRToggle.create(CollisionDebug.is_enabled(), func(on: bool) -> void:
-		CollisionDebug.set_enabled(self, on)
-	))
-
-	vbox.add_child(HSeparator.new())
-
 	# Spatial audio backend. Desktop only: in a headset the SDK's binaural
 	# rendering is simply right, and offering the swap there would only be a way
 	# to make it worse. On a desk it is a real choice -- over speakers the HRTF
@@ -470,6 +433,180 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 		AppPrefs.save_prefs()
 		controller_hands_changed.emit(on)
 	))
+
+
+## The DEBUG sub-tab: which build this is, the overlays that draw over the room,
+## and the graphics API a core is offered.
+##
+## What separates these from General is that none of them change how the app
+## behaves for someone playing it — they are ways of looking at it, and two of
+## them are worth nothing without the build identity at the top of the page to
+## quote alongside what they showed.
+func _build_debug_options(vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.spacer(10))
+	_build_plate(vbox)
+	vbox.add_child(MenuStyle.spacer(4))
+
+	vbox.add_child(MenuStyle.header("OVERLAYS", 20))
+
+	# One switch for frame rate and video memory: SpawnMenuController draws both
+	# labels off show_fps, and there is no reason to want one without the other.
+	var fps_row := HBoxContainer.new()
+	fps_row.add_theme_constant_override("separation", 10)
+	fps_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(fps_row)
+
+	var fps_lbl := Label.new()
+	fps_lbl.text = "FPS / VRAM"
+	fps_lbl.add_theme_font_size_override("font_size", 22)
+	fps_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fps_row.add_child(fps_lbl)
+
+	fps_row.add_child(VRToggle.create(AppPrefs.show_fps, func(on: bool) -> void:
+		AppPrefs.show_fps = on
+		AppPrefs.save_prefs()
+		show_fps_changed.emit(on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
+	# Collision shapes. Deliberately NOT persisted: it is a look at the room, not
+	# a setting, and one left on across a restart reads as a rendering bug.
+	var col_row := HBoxContainer.new()
+	col_row.add_theme_constant_override("separation", 10)
+	col_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(col_row)
+
+	var col_lbl := Label.new()
+	col_lbl.text = "Collision Shapes"
+	col_lbl.add_theme_font_size_override("font_size", 22)
+	col_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+	col_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col_row.add_child(col_lbl)
+
+	col_row.add_child(VRToggle.create(CollisionDebug.is_enabled(), func(on: bool) -> void:
+		CollisionDebug.set_enabled(self, on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
+	vbox.add_child(MenuStyle.header("EMULATION", 20))
+
+	# Only the APIs VideoHandler::SetHwRender accepts on this platform are
+	# offered; AppPrefs owns that table because it is also what applies the
+	# choice at boot. A prefs file carried over from another platform can name
+	# one that is not here, so the dropdown opens on what will actually be used
+	# rather than on a value nothing would honour.
+	var hw_choices: Array = []
+	var hw_current := "vulkan"
+	for choice: Array in AppPrefs.hw_render_choices():
+		hw_choices.append([choice[0], choice[1]])
+		if str(choice[1]) == AppPrefs.hw_render_api:
+			hw_current = AppPrefs.hw_render_api
+
+	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
+	var hw_drop := VRDropdown.create("Preferred HW Render", hw_choices, hw_current,
+		1, Vector2(260, 56), 18)
+	hw_drop.item_selected.connect(func(id: Variant) -> void:
+		AppPrefs.hw_render_api = str(id)
+		AppPrefs.save_prefs()
+		AppPrefs.apply_hw_render()
+	)
+	vbox.add_child(hw_drop)
+
+	vbox.add_child(MenuStyle.hint(
+		"Which API a core is told this frontend would rather render with. Only "
+		+ "cores that can do more than one — Dolphin, Flycast, PPSSPP — act on "
+		+ "it; the rest name their own and ignore it. It is read while a core "
+		+ "starts, so a machine that is already switched on keeps the API it "
+		+ "booted with."))
+
+
+## The build plate at the top of DEBUG.
+##
+## The headline is `git describe` verbatim, because that one string answers all
+## three questions at once — nearest tag, distance past it, commit — and is the
+## thing worth reading out loud. The rows under it break the same value back
+## apart so a report can quote one field instead of a compound one, and add the
+## two things a description cannot carry: when the build was made and what it
+## was made for.
+func _build_plate(vbox: VBoxContainer) -> void:
+	var plate := PanelContainer.new()
+	var style := MenuStyle.rounded(MenuStyle.COLOR_NAV_INACTIVE, 8)
+	style.content_margin_left = 18
+	style.content_margin_right = 18
+	style.content_margin_top = 14
+	style.content_margin_bottom = 14
+	plate.add_theme_stylebox_override("panel", style)
+	vbox.add_child(plate)
+
+	var col := MenuStyle.vbox(8)
+	plate.add_child(col)
+
+	var head := MenuStyle.hbox(10)
+	col.add_child(head)
+
+	var desc := MenuStyle.label(BuildInfo.describe(), 28, MenuStyle.COLOR_TITLE)
+	desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	desc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	head.add_child(desc)
+
+	# A chip rather than a row: it is a warning about the line beside it, not
+	# another field. A dirty build's hash does not describe what is running.
+	if BuildInfo.is_dirty():
+		head.add_child(_plate_chip("UNCOMMITTED", MenuStyle.COLOR_BTN_UPD))
+
+	col.add_child(HSeparator.new())
+
+	var when := BuildInfo.commit_date()
+	_plate_row(col, "Commit", BuildInfo.commit_hash()
+		+ ("" if when.is_empty() else "   " + BuildInfo.short_date(when)))
+
+	var tag := BuildInfo.tag()
+	if tag.is_empty():
+		_plate_row(col, "Tag", "none in this repository")
+	else:
+		var since := BuildInfo.commits_since_tag()
+		var distance := "this commit" if since == 0 \
+			else "+%d commit%s" % [since, "" if since == 1 else "s"]
+		_plate_row(col, "Tag", "%s   %s" % [tag, distance])
+
+	var built := BuildInfo.built_at()
+	_plate_row(col, "Built", "%s UTC" % built if not built.is_empty()
+		else "not an export — running from source")
+
+	_plate_row(col, "Target", BuildInfo.target_line())
+
+
+## One field of the plate: a fixed-width name so the values line up into a
+## column, and a value that wraps rather than running under the scroll bar.
+func _plate_row(col: VBoxContainer, field: String, value: String) -> void:
+	var row := MenuStyle.hbox(12)
+	col.add_child(row)
+
+	var name_lbl := MenuStyle.label(field, 16, MenuStyle.COLOR_DESC)
+	name_lbl.custom_minimum_size = Vector2(PLATE_FIELD_W, 0)
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(name_lbl)
+
+	var value_lbl := MenuStyle.label(value, 18, MenuStyle.COLOR_LICENSE)
+	value_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	value_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(value_lbl)
+
+
+func _plate_chip(text: String, color: Color) -> Control:
+	var chip := PanelContainer.new()
+	var style := MenuStyle.rounded(color, 6)
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 4
+	style.content_margin_bottom = 4
+	chip.add_theme_stylebox_override("panel", style)
+	chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chip.add_child(MenuStyle.label(text, 16, MenuStyle.COLOR_TITLE))
+	return chip
 
 
 ## System Filter option — off shows the media players, test core and

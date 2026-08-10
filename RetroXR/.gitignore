@@ -1,3 +1,8 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# The build stamp exists only inside an exported pack — addons/retroxr_build_stamp
+# adds it there. One sitting in the checkout would be committed stale and would
+# collide with the one the export adds.
+/build_info.json
