@@ -1,0 +1,509 @@
+[gd_scene load_steps=29 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/wii_model.gd" id="1_wii"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_body.res" id="2_wiibody"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_key_power.res" id="3_keypwr"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_seam_power.res" id="4_seampwr"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_key_reset.res" id="5_keyrst"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_seam_reset.res" id="6_seamrst"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_key_eject.res" id="7_keyejc"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_seam_eject.res" id="8_seamejc"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_door.res" id="9_door"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_door_bay.res" id="10_doorbay"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_door_seam.res" id="11_doorseam"]
+
+; The console, standing on end the way the stand holds it: 44 x 215.4 x 157 mm is
+; the real machine's own footprint, read as W x H x D in THIS orientation. Origin at
+; the base of the stand, so the unit rests on a shelf at y 0 — the same convention
+; pc_tower.tscn uses, and not the centred box every placeholder console wears.
+;
+; The body spans y 0.020 .. 0.2354. Every position on the front face below was scaled
+; off a photograph of the real panel, quoted in the comments as millimetres UP FROM
+; THE FOOT of that face so the two can be compared directly: model y = 0.020 + mm/1000.
+;
+; The shell is NOT a box — its front-left vertical edge is chamfered 7 mm the whole
+; height of the case, which is why it is baked by Tools/gen_wii_body.gd rather than
+; being a BoxMesh here. That cut takes the flat front face from 44 mm down to 37 mm,
+; running x -0.015 .. +0.022, and everything printed on it below had to move right to
+; stay on it.
+
+
+; The disc slot, and it is LONG — 176 mm of surround down the right-hand side of the
+; face, running from 20 mm up to 196 mm. Far longer than the 120 mm disc that goes
+; through it, which is styling rather than mechanism, and the single feature that
+; most makes the front read as this machine.
+[sub_resource type="BoxMesh" id="Mesh_slot_recess"]
+size = Vector3(0.012, 0.128, 0.0015)
+
+[sub_resource type="BoxMesh" id="Mesh_slot_glow"]
+size = Vector3(0.006, 0.125, 0.001)
+
+[sub_resource type="BoxMesh" id="Mesh_slot"]
+size = Vector3(0.005, 0.125, 0.002)
+
+; The three keys and the seam plate behind each are BAKED by Tools/gen_wii_body.gd,
+; not boxes: each one runs ACROSS the corner and bends through the chamfer, so part
+; of every key lies on the 45 degree facet, the way the machine's do. Their meshes
+; carry the fold at their own origin, which is why each is placed here at the fold
+; line itself — x -0.015 — rather than at its centre.
+;
+; The seams exist because a key drawn in the case's own white vanishes into it —
+; these rooms light with a flat ambient and cast no shadow, so there is nothing to
+; draw the join. The real panel shows its keys by a fine dark seam all round; each
+; plate is the same shape a fraction larger, and that border IS the gap.
+; The standby light, which lives ON the power key at its left end — not the whole key
+; the way this model first drew it.
+[sub_resource type="CylinderMesh" id="Mesh_led"]
+top_radius = 0.0011
+bottom_radius = 0.0011
+height = 0.0008
+
+; The SD door and what it hides. 22 x 90 mm, which is most of the middle of the face:
+; it is a big flap on the real machine too. It really opens — see
+; RetroSystemModelWii._build_sd_door — so the card slot and the SYNC button behind it
+; only exist once it is swung.
+;
+; The card slot is VERTICAL: a card goes in on its edge, because the machine it goes
+; into is standing on its edge.
+[sub_resource type="BoxMesh" id="Mesh_sd_slot"]
+size = Vector3(0.004, 0.028, 0.0012)
+
+[sub_resource type="BoxMesh" id="Mesh_cap_sync"]
+size = Vector3(0.015, 0.0075, 0.0022)
+
+; The two GameCube bays, drawn as the open doors they have to be for anything to
+; plug in, and the cosmetic card slots in the smaller one.
+[sub_resource type="BoxMesh" id="Mesh_ctrl_bay"]
+size = Vector3(0.036, 0.0015, 0.123)
+
+[sub_resource type="BoxMesh" id="Mesh_mem_bay"]
+size = Vector3(0.036, 0.0015, 0.06434)
+
+[sub_resource type="BoxMesh" id="Mesh_mem_slot"]
+size = Vector3(0.0035, 0.0012, 0.026)
+
+; The two doors over those bays. Sized in the MOUNT's frame — length along the hinge
+; line first, then the 36 mm across the face, then the thickness.
+[sub_resource type="BoxMesh" id="Mesh_ctrl_flap"]
+size = Vector3(0.123, 0.036, 0.0018)
+
+[sub_resource type="BoxMesh" id="Mesh_mem_flap"]
+size = Vector3(0.06434, 0.036, 0.0018)
+
+; Glossy, the way the real shell is: this machine is lacquered white plastic, not the
+; matte grey every placeholder wears. Roughness 0.15 with a clearcoat over it, which
+; is what puts a tight bright highlight on the panel instead of a broad soft one.
+;
+; Gloss is the ONLY thing carrying the shape here. These rooms light with a flat
+; ambient and no radiance map, so a matte white slab renders as one even field with
+; no edge, no falloff and nothing to say it is a solid object; the specular from the
+; room's own lamps is the whole of the modelling.
+[sub_resource type="StandardMaterial3D" id="Mat_white"]
+albedo_color = Color(0.93, 0.93, 0.915, 1)
+metallic_specular = 0.6
+roughness = 0.15
+clearcoat_enabled = true
+clearcoat = 0.65
+clearcoat_roughness = 0.04
+
+; A shade off the body so a key or a door reads as a separate part in flat ambient,
+; where there is no shadow to draw the join. Same lacquer as the shell, a touch less
+; sharp — a moulded key is never quite as polished as the panel it sits in.
+[sub_resource type="StandardMaterial3D" id="Mat_offwhite"]
+albedo_color = Color(0.885, 0.885, 0.868, 1)
+metallic_specular = 0.6
+roughness = 0.17
+clearcoat_enabled = true
+clearcoat = 0.55
+clearcoat_roughness = 0.05
+
+[sub_resource type="StandardMaterial3D" id="Mat_seam"]
+albedo_color = Color(0.42, 0.42, 0.41, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_grey"]
+albedo_color = Color(0.40, 0.41, 0.43, 1)
+roughness = 0.52
+
+; The recess behind an open door: dark, but not as dark as the slit in it, or the one
+; vanishes into the other. UNSHADED for the same reason the slot is — lit, a dark
+; recess comes back mid-grey off its specular alone, and this one was reading as pale
+; as the shell it is cut into.
+[sub_resource type="StandardMaterial3D" id="Mat_bay"]
+shading_mode = 0
+albedo_color = Color(0.135, 0.135, 0.15, 1)
+
+; UNSHADED, which is the whole trick. Shaded, a near-black surface facing a lamp
+; comes back mid-GREY: 0.045 albedo contributes nothing but the specular lobe does,
+; and the disc slot rendered as a lit grey column with a gradient down it. A hole is
+; not a dark surface, it is an absence of one, so it makes its own black — the same
+; call gen_rca_jack.gd makes for a socket bore.
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+shading_mode = 0
+albedo_color = Color(0.035, 0.035, 0.042, 1)
+
+; SYNC is the one coloured control on the machine, and that is the point: it is the
+; button a player has to be told about, so it does not get to look like the keys.
+[sub_resource type="StandardMaterial3D" id="Mat_sync"]
+albedo_color = Color(0.85, 0.26, 0.14, 1)
+roughness = 0.45
+
+; Emissive, not lit: these rooms light with a flat ambient and no radiance map, so a
+; merely blue box reads as a blue box. The slot light has to make its own.
+;
+; Dim, and only half a millimetre proud of the slit each side. On the real machine
+; the slot is plain black and the blue only comes up when there is a message waiting,
+; so anything brighter than a hairline stops being a lit slot and starts being neon.
+[sub_resource type="StandardMaterial3D" id="Mat_glow"]
+albedo_color = Color(0.10, 0.38, 0.95, 1)
+emission_enabled = true
+emission = Color(0.12, 0.42, 1, 1)
+emission_energy_multiplier = 0.3
+
+; LAID DOWN. Everything under this node is still authored standing on end, because
+; that is the frame the front panel was measured in and the frame every baked mesh is
+; extruded in; the root simply turns the finished machine onto its side.
+;
+; Rz(+90) maps local (x, y) to (-y, x), so the 44 mm thin axis becomes the height
+; and the 157 mm upright height becomes the width, leaving the 215.4 mm depth alone —
+; 157 wide x 44 high x 215 deep, read from the front face. The disc
+; slot lands horizontal in the upper half of the front face and the key column lands
+; as a ROW in the lower half, POWER at the left end through to EJECT at the right.
+;
+; The offset then drops the machine onto y = 0 and centres it: the body ran y 0.020
+; .. 0.2354 standing up, so +0.022 in y seats it and +0.1277 in x centres it.
+;
+; Because this node is no longer identity, the model's own local coordinates are NOT
+; the cabinet's any more. Every hook in wii_model.gd that hands a pose to a node
+; owned by the RetroSystem — buttons, controller ports, phono sockets, the disc slot
+; — works in GLOBAL transforms for that reason. Reverting any of them to `.position`
+; puts that part back where the machine would be if it were still upright.
+;
+; Written as matrix ROWS, which is what the nine numbers in a .tscn are.
+[node name="WiiModel" type="Node3D"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.0785, 0.022, 0)
+script = ExtResource("1_wii")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0785, 0)
+mesh = ExtResource("2_wiibody")
+surface_material_override/0 = SubResource("Mat_white")
+
+; --- front face, at z +0.0785 -------------------------------------------------
+; The printed words are NOT counter-turned for the laid-down machine. They are
+; authored the way the real ones are silk-screened — for the upright orientation —
+; so on a console lying flat they read sideways, which is exactly what the hardware
+; does and what a photograph of it shows.
+; A bare Node3D at identity, so its children's local positions ARE model-root
+; positions — configure_buttons reads the caps' own `position` and hands it to
+; VRButtons that live on the RetroSystem. Give this node a transform and that
+; silently breaks, the same trap pc_tower.tscn's Front/Back carry.
+[node name="Front" type="Node3D" parent="."]
+
+; Slot on the RIGHT, centred 110 mm up the face and 14 mm right of its centreline.
+[node name="SlotRecess" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0148, 0.08018, 0.10800)
+mesh = SubResource("Mesh_slot_recess")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+[node name="SlotGlow" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0148, 0.08018, 0.10830)
+mesh = SubResource("Mesh_slot_glow")
+surface_material_override/0 = SubResource("Mat_glow")
+
+[node name="DiscSlot" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0148, 0.08018, 0.10860)
+mesh = SubResource("Mesh_slot")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; --- the control column, LEFT of the slot, on x -0.0094 -----------------------
+; Reading down the face: POWER at 192 mm, RESET at 173, the SD door centred on 110,
+; EJECT right at the foot on 22. Each key's WORD is printed on the case beside it —
+; below for POWER and RESET, above for EJECT — and stays on the case when the key
+; travels, which is where the machine prints them.
+[node name="SeamPower" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.13994, 0.10770)
+mesh = ExtResource("4_seampwr")
+surface_material_override/0 = SubResource("Mat_seam")
+
+[node name="PowerCap" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.13994, 0.10770)
+mesh = ExtResource("3_keypwr")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+; Children of the CAP, so they ride it when it is pressed. Parented beside it they
+; would stay put and the key would travel out from under its own light.
+[node name="PowerLed" type="MeshInstance3D" parent="Front/PowerCap"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0.005, 0, 0.0029)
+mesh = SubResource("Mesh_led")
+
+[node name="PowerGlyph" type="Label3D" parent="Front/PowerCap"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.011, 0, 0.0028)
+modulate = Color(0.32, 0.32, 0.31, 1)
+outline_size = 0
+font_size = 48
+pixel_size = 0.000115
+
+[node name="PowerLabel" type="Label3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0.13448, 0.10790)
+modulate = Color(0.45, 0.45, 0.44, 1)
+text = "POWER"
+outline_size = 0
+font_size = 48
+pixel_size = 0.0000625
+
+[node name="SeamReset" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.12610, 0.10770)
+mesh = ExtResource("6_seamrst")
+surface_material_override/0 = SubResource("Mat_seam")
+
+[node name="ResetCap" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.12610, 0.10770)
+mesh = ExtResource("5_keyrst")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+[node name="ResetLabel" type="Label3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0.12136, 0.10790)
+modulate = Color(0.45, 0.45, 0.44, 1)
+text = "RESET"
+outline_size = 0
+font_size = 48
+pixel_size = 0.0000625
+
+; Behind the door: the vertical card slot and the red SYNC button. Hidden while the
+; door is shut, which is the whole reason the door has to open.
+; The door's own seam, on the CASE and always drawn: shut, the door covers all but
+; its border; open, the bay recess behind does the same. Either way the outline is
+; what says a flap lives here.
+[node name="SeamSd" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.08018, 0.10770)
+mesh = ExtResource("11_doorseam")
+surface_material_override/0 = SubResource("Mat_seam")
+
+[node name="SdBay" type="Node3D" parent="Front"]
+visible = false
+
+[node name="Recess" type="MeshInstance3D" parent="Front/SdBay"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.08018, 0.10770)
+mesh = ExtResource("10_doorbay")
+surface_material_override/0 = SubResource("Mat_bay")
+
+; SYNC at the TOP of the bay and the card slot BELOW it, which is the way round the
+; machine has them.
+[node name="SyncCap" type="MeshInstance3D" parent="Front/SdBay"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0055, 0.10423, 0.10980)
+mesh = SubResource("Mesh_cap_sync")
+surface_material_override/0 = SubResource("Mat_sync")
+
+; On the tab, so it rides when the tab is pressed. Its font is set in code — a .tscn
+; cannot chain the symbol font, and this one only needs the project default.
+[node name="SyncLabel" type="Label3D" parent="Front/SdBay/SyncCap"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0014)
+modulate = Color(1, 1, 1, 1)
+text = "SYNC"
+outline_size = 0
+font_size = 48
+pixel_size = 0.0000521
+
+[node name="CardSlot" type="MeshInstance3D" parent="Front/SdBay"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0055, 0.07726, 0.10930)
+mesh = SubResource("Mesh_sd_slot")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; The door's hinge, in three nodes rather than one, and the split is forced.
+;
+; VRHinge swings a lid by writing target.rotation.x. `rotation` is EULER, composed as
+; Ry*Rx*Rz relative to the node's PARENT — so the axis it turns about is the parent
+; frame's X, and whatever basis the target itself was authored with is decomposed and
+; overwritten the first time that value is set. Standing the target's own basis up to
+; make a vertical hinge therefore does nothing: the door tilted about the machine's X
+; and dropped instead of swinging, and the geometry all looked correct while it did.
+;
+; So the turn is bought from the MOUNT, which is static and carries the basis; the
+; PIVOT under it stays at identity and is what VRHinge drives; and DoorAlign undoes
+; the mount's basis again so the door mesh — baked in the machine's axes like every
+; other bent plate — is not laid on its side by it.
+;
+; The mount sits on the door's LEFT edge, which since the door turns the corner is no
+; longer on the front face at all: it is the far end of the chamfer leg, 6 mm along
+; the facet from the fold. Its basis is x (0,-1,0), y (1,0,0), z (0,0,1) — X down the
+; face, so the hinge line stands vertical; Y across it to the right, so +theta walks
+; the door's free edge from the machine's +X round toward +Z, out of the front.
+;
+; Written as matrix ROWS, which is what the nine numbers in a .tscn are.
+[node name="SdDoorMount" type="Node3D" parent="Front"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, -0.019243, 0.08018, 0.10346)
+
+[node name="SdDoorPivot" type="Node3D" parent="Front/SdDoorMount"]
+
+[node name="DoorAlign" type="Node3D" parent="Front/SdDoorMount/SdDoorPivot"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+
+; Offset from the hinge line back to the door's own fold, which is where its mesh
+; carries the origin: 6 mm along the chamfer, so 4.243 mm in each of x and z. Read in
+; plain model axes, because the mount's basis and DoorAlign's compose to identity.
+[node name="Door" type="MeshInstance3D" parent="Front/SdDoorMount/SdDoorPivot/DoorAlign"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.004243, 0, 0.004243)
+mesh = ExtResource("9_door")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+; At the very foot of the face. The door swings sideways rather than down now, so it
+; no longer sweeps this space at all.
+[node name="EjectLabel" type="Label3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0.02187, 0.10790)
+modulate = Color(0.45, 0.45, 0.44, 1)
+text = "EJECT"
+outline_size = 0
+font_size = 48
+pixel_size = 0.0000625
+
+[node name="SeamEject" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.01604, 0.10770)
+mesh = ExtResource("8_seamejc")
+surface_material_override/0 = SubResource("Mat_seam")
+
+[node name="EjectCap" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015, 0.01604, 0.10770)
+mesh = ExtResource("7_keyejc")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+[node name="EjectGlyph" type="Label3D" parent="Front/EjectCap"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, 0, 0.0028)
+modulate = Color(0.32, 0.32, 0.31, 1)
+outline_size = 0
+font_size = 48
+pixel_size = 0.0000937
+
+; The machine's own name, low on the face and right of centre under the slot, small
+; and grey the way it is printed. RetroSystemModelWii.prints_own_name keeps the
+; cabinet from laying its full "NINTENDO WII" plate over the top of this.
+[node name="NameMark" type="Label3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0085, 0.00729, 0.10790)
+modulate = Color(0.55, 0.55, 0.54, 1)
+text = "Wii"
+outline_size = 0
+font_size = 48
+pixel_size = 0.000146
+
+; Where a disc enters, and the pose the seated disc inherits. Rz(-90), so the slot's
+; local -Z still points into the machine (the axis MediaSlot rides the disc along)
+; while its local +Y lands on the model's +X — which stands the disc on edge, in the
+; plane of the machine's own sides, the only way a 120 mm disc fits a 44 mm case.
+[node name="DiscSeat" type="Marker3D" parent="Front"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.0148, 0.08018, 0.10770)
+
+; --- the GameCube bay, on the +Y face ------------------------------------------
+; Laid down by the root's Rz(+90) this face becomes the machine's LEFT side. It is
+; 44 x 215.4, which is what finally lets the flaps sit at TRUE SIZE — read from the
+; front (+Z) edge:
+;   14.0  mm  plain case
+;   123.0 mm  controller flap
+;   64.34 mm  memory card flap
+;   12.5  mm  plain case
+; 213.84 against the face's 215.4, so the trailing band carries the 1.56 mm of slack.
+;
+;   controller flap  z  0.0937 .. -0.0293   centre  0.0322
+;   memory flap      z -0.0293 .. -0.0936   centre -0.0615
+;
+; Both 36 mm across the 44 mm face, which is a guess and the one number here that is.
+[node name="Top" type="Node3D" parent="."]
+
+[node name="CtrlGroup" type="Node3D" parent="Top"]
+visible = false
+
+[node name="CtrlBay" type="MeshInstance3D" parent="Top/CtrlGroup"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1575, 0.0322)
+mesh = SubResource("Mesh_ctrl_bay")
+surface_material_override/0 = SubResource("Mat_bay")
+
+[node name="MemGroup" type="Node3D" parent="Top"]
+visible = false
+
+[node name="MemBay" type="MeshInstance3D" parent="Top/MemGroup"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1575, -0.0615)
+mesh = SubResource("Mesh_mem_bay")
+surface_material_override/0 = SubResource("Mat_bay")
+
+; Two card slots, cosmetic only — nothing snaps into them, and the cabinet's own
+; MemoryCardSlot stays hidden because _uses_memory_cards() answers false for the Wii
+; through both the model and SystemInfo.
+[node name="MemSlot1" type="MeshInstance3D" parent="Top/MemGroup"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.010, 0.1580, -0.0615)
+mesh = SubResource("Mesh_mem_slot")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="MemSlot2" type="MeshInstance3D" parent="Top/MemGroup"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.010, 0.1580, -0.0615)
+mesh = SubResource("Mesh_mem_slot")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; The doors. Each hinges on the face's -X edge, which the root's Rz(+90) turns into
+; the BOTTOM edge of the machine's left side, so both drop open downward.
+;
+; Three nodes apiece for the same reason the SD door needs them: VRHinge writes
+; target.rotation.x and Euler rotation composes in the PARENT's frame, so the basis
+; has to sit on a static MOUNT and the pivot it drives has to stay at identity.
+;
+; Mount basis x (0,0,1), y (1,0,0), z (0,1,0) — local X along the hinge line, so
+; +theta walks the free edge from the machine's +X round toward +Y and out of the
+; face. Written as matrix ROWS, so the nine numbers read as the transpose.
+[node name="CtrlFlapMount" type="Node3D" parent="Top"]
+transform = Transform3D(0, 1, 0, 0, 0, 1, 1, 0, 0, -0.018, 0.157, 0.0322)
+
+[node name="CtrlFlapPivot" type="Node3D" parent="Top/CtrlFlapMount"]
+
+[node name="Door" type="MeshInstance3D" parent="Top/CtrlFlapMount/CtrlFlapPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0.0009)
+mesh = SubResource("Mesh_ctrl_flap")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+[node name="MemFlapMount" type="Node3D" parent="Top"]
+transform = Transform3D(0, 1, 0, 0, 0, 1, 1, 0, 0, -0.018, 0.157, -0.0615)
+
+[node name="MemFlapPivot" type="Node3D" parent="Top/MemFlapMount"]
+
+[node name="Door" type="MeshInstance3D" parent="Top/MemFlapMount/MemFlapPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0.0009)
+mesh = SubResource("Mesh_mem_flap")
+surface_material_override/0 = SubResource("Mat_offwhite")
+
+; Four sockets down the controller flap on 28 mm centres, spanning 84 mm of its 123,
+; port 1 at the FRONT.
+;
+; Rx(-90) — basis vectors x (1,0,0), y (0,0,-1), z (0,1,0) — pointing each socket's
+; local +Z out of this face and laying the 18 mm recess across the 44 mm width.
+; Written as matrix ROWS, so the nine numbers read as the transpose.
+[node name="PortSeat1" type="Marker3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.1570, 0.0742)
+
+[node name="PortSeat2" type="Marker3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.1570, 0.0462)
+
+[node name="PortSeat3" type="Marker3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.1570, 0.0182)
+
+[node name="PortSeat4" type="Marker3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.1570, -0.0098)
+
+; --- back panel, at z -0.0785 -------------------------------------------------
+[node name="Back" type="Node3D" parent="."]
+
+; Centre of the phono group, which on this machine is a COLUMN: the sockets stack up
+; the panel and their legend reads bottom to top, because that printing was laid out
+; for a machine lying down and this one is stood on end. See
+; RetroSystemModelWii.configure_av_ports and AvLegend.roll.
+;
+; Stacking is also what lets the group keep the project's 18 mm centres and the
+; legend its full-size type. Across a 44 mm back panel neither would have fitted.
+;
+; x +9 mm, not centred: a rolled legend is asymmetric about its sockets — the words
+; and the heading all sit to one side of them — so a column on the centreline puts
+; a 37.5 mm plate 6 mm off the edge of a 44 mm panel. Offsetting the column by half
+; that asymmetry centres the PLATE instead, which is the thing you see.
+[node name="AvAnchor" type="Marker3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.009, 0.08382, -0.10770)
+
+; The sensor bar socket, low on the panel and below the phono group. No other console
+; in the room has one.
+[node name="SensorAnchor" type="Marker3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02187, -0.10770)

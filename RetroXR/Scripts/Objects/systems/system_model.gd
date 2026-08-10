@@ -292,6 +292,18 @@ func configure_buttons(_power_btn: VRButton, _reset_btn: VRButton, _eject_btn: V
 	pass
 
 
+## Reposition the SYNC button, on the consoles that pair wireless pads. Called from
+## _setup_wireless_pads, after configure_buttons, and only when this hardware has
+## one — which today means the Wii alone.
+##
+## Separate from configure_buttons because the cabinet builds this button on a
+## different test (WiiLink.handles) and later in the sequence; a model that grows its
+## own geometry must place it or it stays wherever system.tscn parked it, which on
+## anything but the procedural box is mid-air.
+func configure_sync_button(_sync_btn: VRButton) -> void:
+	pass
+
+
 ## Reposition controller port snap zones to the model's physical port locations.
 ## port_zones is the system's Array of XRToolsSnapZone nodes (index 0 = port 1).
 ## Only move the zones the model has markers for; others keep their default positions.
@@ -366,6 +378,14 @@ func configure_collision(host: Node3D) -> void:
 	pass
 
 
+## How far past the slot mouth a slot-loaded disc rides, in metres, or 0 to take the
+## cabinet's own default. Override on a machine whose case is too shallow for that
+## default — a disc standing on edge in a 157 mm-deep Wii would otherwise finish 3 mm
+## out through the back panel.
+func slot_insert_depth() -> float:
+	return 0.0
+
+
 ## Optional pivot node the seated disc should physically ride along with,
 ## instead of staying fixed to the console body (see MediaTray.disc_lid_pivot)
 ## — a flip-open tray assembly (the PSP's UMD door) where the disc's resting
@@ -374,6 +394,17 @@ func configure_collision(host: Node3D) -> void:
 ## (default): disc stays in its normal fixed seat.
 func get_disc_lid_pivot() -> Node3D:
 	return null
+
+
+## True when this model draws the machine's name itself, so the cabinet should not
+## also lay its own nameplate on the front face.
+##
+## Separate from has_baked_shell(): a primitive can have every reason to print its
+## own. The cabinet's plate is the SYSTEM name sized to 85% of the body width, which
+## on a machine whose front reads "Wii" in a small grey mark puts "NINTENDO WII"
+## across the whole foot of it.
+func prints_own_name() -> bool:
+	return false
 
 
 ## Group for a PRINTED LEGEND — the "POWER" / "3D" / "TOP" / "BOTTOM" text a

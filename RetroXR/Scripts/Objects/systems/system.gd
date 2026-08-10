@@ -381,8 +381,9 @@ func _update_name_label() -> void:
 ## deferred so the model meshes + the label's own text mesh have been built.
 func _place_name_label() -> void:
 	# The nameplate is a printed legend like any other: a detailed shell has the
-	# real thing moulded or printed on it, so ours only ever sat on top of it.
-	if _model != null and _model.has_baked_shell():
+	# real thing moulded or printed on it, so ours only ever sat on top of it — and
+	# so does a primitive that authors its own (see prints_own_name).
+	if _model != null and (_model.has_baked_shell() or _model.prints_own_name()):
 		_system_name_label.visible = false
 		return
 	var body := _body_aabb()
@@ -661,7 +662,10 @@ func _load_system_model() -> void:
 			_slot = MediaSlot.new()
 			_slot.host = self
 			_slot.slot = _cartridge_slot
-			_slot.insert_depth = SLOT_INSET
+			# A model whose case is too shallow for the cabinet's default says so;
+			# 0 means "no opinion". See RetroSystemModel.slot_insert_depth.
+			var slot_depth: float = _model.slot_insert_depth()
+			_slot.insert_depth = slot_depth if slot_depth > 0.0 else SLOT_INSET
 			add_child(_slot)
 			_slot.inserted.connect(_on_cartridge_inserted)
 			_slot.removed.connect(_on_cartridge_removed)
@@ -2269,6 +2273,10 @@ func _setup_wireless_pads() -> void:
 	_sync_button.set_active(wants)
 	if not wants or _wii_link != null:
 		return
+	# system.tscn parks this on the procedural box's top face. A model with its own
+	# geometry has to say where it really lives, or it hangs in the air beside the
+	# console. See RetroSystemModel.configure_sync_button.
+	_model.configure_sync_button(_sync_button)
 	_wii_link = WiiLink.new()
 	_wii_link.name = "WiiLink"
 	add_child(_wii_link)

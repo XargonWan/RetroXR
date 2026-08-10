@@ -74,6 +74,16 @@ const Z_TEXT := 0.0006
 ## The words survive on their own — they pick up an outline in exchange.
 @export var show_plate: bool = true
 
+## Turn the whole legend within its panel, in radians, anticlockwise as seen from
+## outside. The row, the words and the heading all turn together, so the layout is
+## unchanged — only which way it is printed.
+##
+## PI/2 is the case that exists: a console stood on end carries a socket group whose
+## printing was laid out for the machine lying down, so on the vertical Wii the
+## phono trio stacks and its legend reads bottom-to-top. It also buys room — a
+## narrow back panel that could not take the row across it has 215 mm up it.
+@export var roll: float = 0.0
+
 
 var _ports: Array[RcaPort] = []
 
@@ -181,6 +191,10 @@ func _lay_out_words(row: Array[RcaPort], xs: PackedFloat32Array,
 ##      stays printed the same way up however the cabinet is carried or tipped
 ##   r  u x n, the panel's right; on a rear panel this works out to Ry(180), which is
 ##      exactly what pc_tower.tscn hand-authors so its words read from behind
+##
+## `roll` then turns that frame about n, which is why a rolled legend needs no other
+## special case: every offset below is measured in this frame, so they all turn with
+## it and the sorting still runs along whatever "across the group" now means.
 func _panel_frame() -> Transform3D:
 	var n := _ports[0].transform.basis.z.normalized()
 	var u := Vector3.UP - n * Vector3.UP.dot(n)
@@ -194,7 +208,12 @@ func _panel_frame() -> Transform3D:
 	for p in _ports:
 		centre += p.position
 	centre /= float(_ports.size())
-	return Transform3D(Basis(u.cross(n), u, n), centre - n * standoff)
+	var b := Basis(u.cross(n), u, n)
+	if not is_zero_approx(roll):
+		# Post-multiplied, so the turn happens in the panel's own plane about its
+		# normal — b.rotated() would turn it about a WORLD axis instead.
+		b = b * Basis(Vector3(0.0, 0.0, 1.0), roll)
+	return Transform3D(b, centre - n * standoff)
 
 
 func _add_label(text: String, x: float, y: float, height: float) -> void:
