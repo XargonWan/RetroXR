@@ -143,6 +143,24 @@ func supports_post_effects() -> bool:
 	return _is_forward_plus()
 
 
+## SMAA's pass is not multiview-aware. On a stereo viewport it asks for a
+## single-layer framebuffer against the two-layer eye buffer, `framebuffer_create`
+## returns null, and every bind and draw on that list is dropped — the headset
+## renders black at ~20 errors a frame ("Layers of our texture doesn't match view
+## count for this framebuffer"). Measured over Link (Oculus runtime 1.206.0,
+## Forward+): SMAA floods, FXAA and OFF are clean, and SMAA in the same build
+## under `--xr-mode off` is clean too, so the trigger is the view count and not
+## the runtime. Quest never showed it because the mobile backend ignores SMAA
+## and the Android preset is LOW, which asks for none.
+##
+## Asked of the interface rather than `get_viewport().use_xr`: this is an autoload,
+## so it runs before xr_init.gd sets that flag, while OpenXR is already initialised
+## by then (the engine brings it up during startup).
+func supports_smaa() -> bool:
+	var xr := XRServer.find_interface("OpenXR")
+	return xr == null or not xr.is_initialized()
+
+
 func _is_forward_plus() -> bool:
 	return RenderingServer.get_current_rendering_method() == "forward_plus"
 
@@ -225,9 +243,22 @@ func set_post_aa(mode: int) -> void:
 	save_prefs()
 
 
+## What `post_aa` resolves to in this session. SMAA stands down to FXAA rather
+## than to nothing where it cannot run: the carpet, wood and neon are shader
+## aliasing, which MSAA does not touch at all.
+##
+## The stored preference is left alone, deliberately. A desktop install runs both
+## flat and over PCVR out of the same user:// prefs file, so writing the fallback
+## back would let one headset session strip SMAA from flat play as well.
+func effective_post_aa() -> PostAA:
+	if post_aa == PostAA.SMAA and not supports_smaa():
+		return PostAA.FXAA
+	return post_aa
+
+
 func apply_post_aa() -> void:
 	var root := get_tree().root
-	match post_aa:
+	match effective_post_aa():
 		PostAA.FXAA:
 			root.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 		PostAA.SMAA:

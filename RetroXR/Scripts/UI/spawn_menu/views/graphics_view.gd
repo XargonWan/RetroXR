@@ -193,19 +193,24 @@ func _build(vr_mode: bool) -> void:
 	vbox.add_child(MenuStyle.hint("Multisampling on the 3D view. Smooths geometry edges only, "
 		+ "and is nearly free on the headset's tiled GPU."))
 
-	_post_aa_opt = VRDropdown.create("Edge Smoothing",
-		[["Off", QualityManager.PostAA.OFF],
-		 ["FXAA", QualityManager.PostAA.FXAA],
-		 ["SMAA", QualityManager.PostAA.SMAA]],
-		int(QualityManager.post_aa), 3, Vector2(110, 52), 20)
+	# SMAA renders a stereo viewport black, so a headset session is offered only
+	# what can actually run there rather than a row that breaks the view.
+	var post_aa_opts: Array = [["Off", QualityManager.PostAA.OFF],
+		["FXAA", QualityManager.PostAA.FXAA]]
+	if QualityManager.supports_smaa():
+		post_aa_opts.append(["SMAA", QualityManager.PostAA.SMAA])
+	_post_aa_opt = VRDropdown.create("Edge Smoothing", post_aa_opts,
+		int(QualityManager.effective_post_aa()), post_aa_opts.size(), Vector2(110, 52), 20)
 	_post_aa_opt.item_selected.connect(func(id: Variant) -> void:
 		QualityManager.set_post_aa(int(id))
 		_sync_rows())
 	vbox.add_child(_post_aa_opt)
 
-	vbox.add_child(MenuStyle.hint("Catches what MSAA cannot — the carpet, wood and neon are drawn "
+	var post_aa_hint := "Catches what MSAA cannot — the carpet, wood and neon are drawn " \
 		+ "by shaders, whose aliasing is inside the surface rather than on its edge. "
-		+ "SMAA keeps detail; FXAA is cheaper but softens the whole picture."))
+	post_aa_hint += "SMAA keeps detail; FXAA is cheaper but softens the whole picture." \
+		if QualityManager.supports_smaa() else "FXAA softens the whole picture a little."
+	vbox.add_child(MenuStyle.hint(post_aa_hint))
 
 	_shadow_opt = VRDropdown.create("Shadows",
 		[["Off", QualityManager.ShadowQuality.OFF],
@@ -250,7 +255,7 @@ func _sync_rows() -> void:
 	if _msaa_opt:
 		_msaa_opt.select_id(QualityManager.msaa_3d)
 	if _post_aa_opt:
-		_post_aa_opt.select_id(int(QualityManager.post_aa))
+		_post_aa_opt.select_id(int(QualityManager.effective_post_aa()))
 	if _shadow_opt:
 		_shadow_opt.select_id(int(QualityManager.shadow_quality))
 	if _ao_opt:
