@@ -20,6 +20,15 @@ extends Node
 ## boxes long after a scene starts, so the view has to keep looking.
 const RESCAN_SECONDS := 0.5
 
+## Draw the PLAYER's own volumes too — both hands' grab and pose areas, the pointer
+## and the body capsule.
+##
+## Off, because they ride the camera: they sit in the middle of the view wherever you
+## stand and travel with you, so they obscure the thing you turned the overlay on to
+## look at and never hold still long enough to read. The room's volumes are the ones
+## worth seeing. Flip it when the question is about the hands themselves.
+const SHOW_PLAYER := false
+
 ## Colour per layer NUMBER (1-based, as project.godot names them).
 const LAYER_COLORS := {
 	1: Color(0.45, 0.45, 0.50),   # World
@@ -109,6 +118,15 @@ func _scan() -> void:
 	var stack: Array[Node] = [get_tree().root]
 	while not stack.is_empty():
 		var node: Node = stack.pop_back()
+		# Prune the whole player rig at its origin — see SHOW_PLAYER. One test covers
+		# both hands, their grab, pose and pointer areas and the body capsule, because
+		# every one of them hangs off XROrigin3D.
+		#
+		# Anything a hand is HOLDING still draws: a pickable stays where it is in the
+		# tree and is driven by a grab driver rather than reparented under the
+		# controller, so it is never inside this subtree to begin with.
+		if not SHOW_PLAYER and node is XROrigin3D:
+			continue
 		for child in node.get_children():
 			stack.append(child)
 		var body := node as CollisionObject3D
