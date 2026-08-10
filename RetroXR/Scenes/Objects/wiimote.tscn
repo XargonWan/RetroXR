@@ -20,8 +20,17 @@ size = Vector3(0.036, 0.03, 0.148)
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
 size = Vector3(0.036, 0.03, 0.148)
 
+; The console's lacquer, to the number — Mat_white in wii_primitive.tscn. Same moulded
+; white plastic on the real hardware, and the gloss is what carries the shape: these
+; rooms light with a flat ambient and no radiance map, so a matte white slab renders as
+; one even field with nothing to say it is a solid object.
 [sub_resource type="StandardMaterial3D" id="Mat_shell"]
-albedo_color = Color(0.93, 0.93, 0.94, 1)
+albedo_color = Color(0.93, 0.93, 0.915, 1)
+metallic_specular = 0.6
+roughness = 0.15
+clearcoat_enabled = true
+clearcoat = 0.65
+clearcoat_roughness = 0.04
 
 [sub_resource type="StandardMaterial3D" id="Mat_dark"]
 albedo_color = Color(0.1, 0.1, 0.11, 1)
