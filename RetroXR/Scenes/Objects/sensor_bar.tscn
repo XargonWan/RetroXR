@@ -24,11 +24,25 @@ friction = 0.9
 
 ; 205 x 22 x 20 mm. Long and light: it topples if you knock it, which is true to
 ; life and is why the real one ships with a stand.
+; 238 x 23 x 9 mm, measured. Read as W x D x H on the real bar; here that is
+; x = 238 wide, y = 9 HIGH, z = 23 deep, because the thing stands across a
+; television and points at you.
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
-size = Vector3(0.205, 0.022, 0.02)
+size = Vector3(0.238, 0.009, 0.023)
 
+; TWO boxes, not one. The bar is silver for the 18 mm nearest the wire and black for
+; the 5 mm facing the player — the black strip is the window the LEDs shine through,
+; and it is the only part of this object anyone ever looks at head on.
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
-size = Vector3(0.205, 0.022, 0.02)
+size = Vector3(0.238, 0.009, 0.018)
+
+[sub_resource type="BoxMesh" id="BoxMesh_face"]
+size = Vector3(0.238, 0.009, 0.005)
+
+[sub_resource type="StandardMaterial3D" id="Mat_silver"]
+albedo_color = Color(0.6, 0.61, 0.63, 1)
+metallic = 0.35
+roughness = 0.35
 
 [sub_resource type="StandardMaterial3D" id="Mat_shell"]
 albedo_color = Color(0.09, 0.09, 0.1, 1)
@@ -43,16 +57,12 @@ emission_enabled = true
 emission = Color(0.9, 0.12, 0.1, 1)
 emission_energy_multiplier = 0.0
 
+; Sized to the 9 mm the bar now is — the old 8 mm window was most of a 22 mm face and
+; is nearly the whole of this one.
 [sub_resource type="BoxMesh" id="BoxMesh_led"]
-size = Vector3(0.016, 0.008, 0.002)
+size = Vector3(0.016, 0.005, 0.0015)
 
 ; A shallow foot, so the bar stands on a television instead of rolling off it.
-[sub_resource type="BoxMesh" id="BoxMesh_foot"]
-size = Vector3(0.06, 0.006, 0.045)
-
-[sub_resource type="StandardMaterial3D" id="Mat_foot"]
-albedo_color = Color(0.07, 0.07, 0.08, 1)
-
 [node name="SensorBar" type="RigidBody3D" groups=["wii_sensor_bar"]]
 collision_layer = 4
 collision_mask = 196613
@@ -66,23 +76,26 @@ script = ExtResource("1_sbscript")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("BoxShape3D_body")
 
+; The silver block, sitting BACK: 18 mm of the 23 mm depth, so its centre is 2.5 mm
+; behind the bar's own.
 [node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0025)
 mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_silver")
+
+; The black face the LEDs sit in, filling the front 5 mm.
+[node name="Face" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.009)
+mesh = SubResource("BoxMesh_face")
 surface_material_override/0 = SubResource("Mat_shell")
 
-[node name="Foot" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014, 0)
-mesh = SubResource("BoxMesh_foot")
-surface_material_override/0 = SubResource("Mat_foot")
-
-; The two things the whole feature reads. 200 mm apart, on the front face.
 [node name="LedLeft" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0, -0.0105)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0, -0.0118)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
 [node name="LedRight" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.0105)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0, -0.0118)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
@@ -99,7 +112,7 @@ surface_material_override/0 = SubResource("Mat_led")
 ; the Nunchuk's spawn code reads) and left -Z pointing at the floor, so the plug
 ; started in the right place and the wire still dropped straight down.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0.011)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0.0115)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
@@ -113,6 +126,6 @@ script = ExtResource("2_pickhigh")
 ; on XRToolsGrabPointHand, not on this script, and setting it here is the same
 ; class of mistake as the node type.
 [node name="GrabPoint" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, 0)
 visible = false
 script = ExtResource("3_grabpoint")
