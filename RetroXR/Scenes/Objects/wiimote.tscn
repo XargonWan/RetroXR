@@ -333,28 +333,6 @@ surface_material_override/0 = SubResource("Mat_cap")
 ; angle about the pivot's local X carries the free (+Z) end to -Y, which on this
 ; underside face is outward.
 ;
-; VRHinge is an Area3D that ROTATES A SEPARATE TARGET, so the grab region and the
-; moving part are two nodes: the zone sits over the cover, CoverPivot is what
-; turns. It latches on the TRIGGER and requires a hand that is not already
-; holding something — so the hand carrying the remote can never flip its own
-; cover, which is exactly right. Use the other hand.
-; The grab box sits at the cover's FREE end, not over its middle. SYNC lives under
-; the same panel, and a hinge whose engage sphere reached it meant a trigger pull
-; aimed at the button swung the cover shut instead. Pulled back to the butt and
-; tightened to 22 mm, the two no longer overlap: 32 mm of cover separates them.
-[node name="BatteryCover" type="Area3D" parent="." node_paths=PackedStringArray("target")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0215, 0.062)
-collision_layer = 0
-collision_mask = 0
-script = ExtResource("8_vrhinge")
-target = NodePath("../CoverPivot")
-min_deg = 0.0
-max_deg = 105.0
-engage_radius = 0.022
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="BatteryCover"]
-shape = SubResource("BoxShape3D_cover")
-
 [node name="CoverPivot" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0185, 0.014)
 
@@ -362,6 +340,43 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0185, 0.014)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.028)
 mesh = SubResource("BoxMesh_cover")
 surface_material_override/0 = SubResource("Mat_shell")
+
+; VRHinge is an Area3D that ROTATES A SEPARATE TARGET, so the grab region and the
+; moving part are two nodes. It latches on the TRIGGER and requires a hand that is
+; not already holding something — so the hand carrying the remote can never flip its
+; own cover, which is exactly right. Use the other hand.
+;
+; A CHILD of the pivot it drives, not a sibling of it. Two nodes does NOT mean two
+; frames: parented outside, the zone stayed nailed to the shut position while the
+; cover swung away from under it, so once the lid was open the grab box was over bare
+; shell and the lid's actual free end had nothing on it. Inside, the box rides the
+; cover and stays on the corner you reached for. Same shape RetroSystemModelWii's SD
+; door uses, and for the same reason.
+;
+; `target` is still the pivot — now this node's own parent. VRHinge writes
+; target.rotation.x and Euler rotation composes in the TARGET's parent frame, which is
+; the remote root either way, so moving the hinge inside changes the grab box's frame
+; and nothing about the axis it swings on.
+;
+; Offsets are the old ones less CoverPivot's own (0, -0.0185, 0.014), so the box has
+; not moved while the cover is shut.
+;
+; The grab box sits at the cover's FREE end, not over its middle. SYNC lives under
+; the same panel, and a hinge whose engage sphere reached it meant a trigger pull
+; aimed at the button swung the cover shut instead. Pulled back to the butt and
+; tightened to 22 mm, the two no longer overlap: 32 mm of cover separates them.
+[node name="BatteryCover" type="Area3D" parent="CoverPivot" node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.003, 0.048)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("8_vrhinge")
+target = NodePath("..")
+min_deg = 0.0
+max_deg = 105.0
+engage_radius = 0.022
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CoverPivot/BatteryCover"]
+shape = SubResource("BoxShape3D_cover")
 
 ; Its cap has to break the back FACE (y -0.015) to exist at all. At the shell's
 ; own depth it was geometrically inside an opaque box: invisible with the cover

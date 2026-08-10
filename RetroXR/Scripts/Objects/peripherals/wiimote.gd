@@ -221,7 +221,9 @@ const DPAD_THRESHOLD := 0.35
 @onready var _laser_dot: MeshInstance3D = $LaserDot
 @onready var _expansion_port: XRToolsSnapZone = $ExpansionPort
 @onready var _sync_button: VRButton = $SyncButton
-@onready var _battery_cover: VRHinge = $BatteryCover
+## Under CoverPivot, not beside it: the hinge's grab box has to ride the cover it
+## swings, or it stays over the shut position while the lid moves out from under it.
+@onready var _battery_cover: VRHinge = $CoverPivot/BatteryCover
 @onready var _trigger_pivot: Node3D = $TriggerPivot
 @onready var _dpad: Node3D = $DPad
 @onready var _leds: Node3D = $PlayerLEDs
