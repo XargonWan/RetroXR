@@ -1206,9 +1206,6 @@ func _exit_tree() -> void:
 ## whole of its sound. Where that cord lands decides which single speaker plays —
 ## see on_av_topology_changed.
 func _build_av_ports() -> void:
-	var scene: PackedScene = load("res://Scenes/Objects/rca_port.tscn")
-	if scene == null:
-		return
 	# Named for the channel, matching the decks, so a save file reads the same on
 	# either kind of hardware.
 	const PORT_NAMES := {
@@ -1216,16 +1213,34 @@ func _build_av_ports() -> void:
 		RcaPort.Channel.AUDIO_L: "AudioLOut",
 		RcaPort.Channel.AUDIO_R: "AudioROut",
 	}
-	var built: Array = []
-	for ch: int in _model.av_port_channels():
-		var port := scene.instantiate() as RcaPort
-		port.name = str(PORT_NAMES.get(ch, "AvOut"))
-		port.channel = ch
-		port.direction = RcaPort.Direction.OUT
-		add_child(port)
-		built.append(port)
+	var channels: Array = _model.av_port_channels()
+	# Read off the CHANNEL LIST rather than off the sockets built, because those two
+	# stopped being the same thing: a multi-way machine is as stereo as any other and
+	# has one hole. Without this the Wii's left cord also fed the right speaker.
+	for ch: int in channels:
 		if ch == RcaPort.Channel.AUDIO_R:
 			_av_stereo = true
+	var built: Array = []
+	if _model.av_ports_are_multi_way():
+		# One socket for the lot — the Wii's AV Multi Out. Which cord carries which
+		# signal is WiiAvPort.channel_for's business from here on.
+		var multi: PackedScene = load("res://Scenes/Objects/wii_av_port.tscn")
+		if multi != null:
+			var port := multi.instantiate() as RcaPort
+			port.name = "AvMultiOut"
+			add_child(port)
+			built.append(port)
+	else:
+		var scene: PackedScene = load("res://Scenes/Objects/rca_port.tscn")
+		if scene == null:
+			return
+		for ch: int in channels:
+			var port := scene.instantiate() as RcaPort
+			port.name = str(PORT_NAMES.get(ch, "AvOut"))
+			port.channel = ch
+			port.direction = RcaPort.Direction.OUT
+			add_child(port)
+			built.append(port)
 	_av_ports = built
 	# After add_child: the model places these in world space off its own meshes.
 	_model.configure_av_ports(built)
@@ -1252,6 +1267,11 @@ func _build_av_ports() -> void:
 ## drag the nameplate off the front face.
 func _print_av_legend(ports: Array) -> void:
 	if _model == null or _model.has_baked_shell():
+		return
+	# A multi-way socket gets no phono legend. AvLegend draws a bracket over an audio
+	# PAIR and a word under each jack, and a machine with one hole has neither — the
+	# Wii prints "AV MULTI OUT" beside its socket instead, from its own model.
+	if _model.av_ports_are_multi_way():
 		return
 	var legend := AvLegend.attach(self, ports)
 	if legend != null:
@@ -1286,8 +1306,15 @@ func on_av_topology_changed(_reported: Array) -> void:
 		if out_port.get_device() != self:
 			continue
 		var in_port: RcaPort = link["in"]
-		cords.append("%s->%s%s" % [out_port.channel_name(), in_port.channel_name(),
-			"" if out_port.channel == in_port.channel else "(!)"])
+		# Asked of the socket WITH THE CORD, never read off `channel` directly. A
+		# phono jack answers the same either way, but the Wii's AV Multi Out is one
+		# socket carrying all three signals and only the cord tells them apart — see
+		# RcaPort.channel_for.
+		var cord: int = int(link.get("cord", 0))
+		var out_ch: RcaPort.Channel = out_port.channel_for(cord)
+		var in_ch: RcaPort.Channel = in_port.channel_for(cord)
+		cords.append("%s->%s%s" % [out_port.channel_name_for(cord),
+			in_port.channel_name_for(cord), "" if out_ch == in_ch else "(!)"])
 		# Duck-typed, not `as RetroTV`. A television is not the only thing a console
 		# can be wired into — a pair of powered speakers is a sink with no screen at
 		# all — and the cast silently dropped every one of them. get_speaker_positions
@@ -1300,12 +1327,12 @@ func on_av_topology_changed(_reported: Array) -> void:
 		# Which of the set's speakers this cord lands on. VIDEO=0, L=1, R=2, so a
 		# cord into an audio input gives 0 (left) or 1 (right); into the video
 		# input it carries nothing an amplifier can use.
-		var dest := -1 if in_port.channel == RcaPort.Channel.VIDEO else int(in_port.channel) - 1
-		match out_port.channel:
+		var dest := -1 if in_ch == RcaPort.Channel.VIDEO else int(in_ch) - 1
+		match out_ch:
 			RcaPort.Channel.VIDEO:
 				# A picture needs a screen, so this sink has to be a television —
 				# and only a VIDEO input carries one.
-				if in_port.channel == RcaPort.Channel.VIDEO and video_dev == null:
+				if in_ch == RcaPort.Channel.VIDEO and video_dev == null:
 					video_dev = target as RetroTV
 			RcaPort.Channel.AUDIO_L:
 				if audio_dev != null and audio_dev != target:
@@ -1327,7 +1354,7 @@ func on_av_topology_changed(_reported: Array) -> void:
 				# goes to the sink's left speaker and right to its right, and there
 				# is no crossed case to model: unlike a pair of phono cords, a
 				# stereo plug cannot be put in half way round.
-				if in_port.channel == RcaPort.Channel.AUDIO_STEREO:
+				if in_ch == RcaPort.Channel.AUDIO_STEREO:
 					if audio_dev != null and audio_dev != target:
 						continue
 					audio_dev = target

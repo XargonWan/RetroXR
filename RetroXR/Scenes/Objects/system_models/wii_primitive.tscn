@@ -389,8 +389,15 @@ pixel_size = 0.000146
 ; local -Z still points into the machine (the axis MediaSlot rides the disc along)
 ; while its local +Y lands on the model's +X — which stands the disc on edge, in the
 ; plane of the machine's own sides, the only way a 120 mm disc fits a 44 mm case.
+; Turned a further 180 about its own local Z, which is the INSERTION axis — MediaSlot
+; rides the disc along local -Z and Rz leaves that alone, so the disc still goes in the
+; same way and only turns over. Rz(180) negates local Y, and local Y is the disc's face
+; normal, so this is what puts the printed side up: before it, a disc slid in label-down.
+;
+; Written as matrix ROWS, so the nine numbers read as the transpose of the basis
+; vectors x (0,-1,0), y (1,0,0), z (0,0,1).
 [node name="DiscSeat" type="Marker3D" parent="Front"]
-transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.0148, 0.08018, 0.10770)
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0.0148, 0.08018, 0.10770)
 
 ; --- the GameCube bay, on the +Y face ------------------------------------------
 ; Laid down by the root's Rz(+90) this face becomes the machine's LEFT side. It is
@@ -486,24 +493,85 @@ transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.1570, 0.0182)
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.1570, -0.0098)
 
 ; --- back panel, at z -0.0785 -------------------------------------------------
+;
+; Turned 180 IN THE PLANE OF THE PANEL, about the panel's own centre rather than the
+; model origin — hence the (0, 0.157, 0) offset, which is c - Rz(180)*c for a centre
+; at y 0.0785. Everything on this face goes with it: the A/V socket and its printed
+; word, the sensor bar hole, and the socket's own BASIS, so the keyed end of the Multi
+; Out swaps sides along with its position.
+;
+; The sockets were coming out on the wrong side of the machine. This is the blunt fix
+; asked for rather than a re-derivation, and it is a rotation and not a mirror, so it
+; moves them down the panel as well as across it.
 [node name="Back" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0.157, 0)
 
-; Centre of the phono group, which on this machine is a COLUMN: the sockets stack up
-; the panel and their legend reads bottom to top, because that printing was laid out
-; for a machine lying down and this one is stood on end. See
-; RetroSystemModelWii.configure_av_ports and AvLegend.roll.
+; The AV Multi Out, which is the whole of this machine's picture and sound: one
+; 30 x 18 mm socket in place of the phono trio every other console in the room wears.
+; WiiAvPort.channel_for is what tells the three cords in it apart.
 ;
-; Stacking is also what lets the group keep the project's 18 mm centres and the
-; legend its full-size type. Across a 44 mm back panel neither would have fitted.
+; POSITION is off the photograph of the real back panel, scaled to its 157 mm width.
+; Laid flat and read from behind, that panel runs USB pair, fan grille, AV Multi Out,
+; DC jack from left to right, which puts this 30 mm left of centre and 8 mm down from
+; the top edge. In the authored UPRIGHT frame those come out as +y and +x — see the
+; class comment in RetroSystemModelWii for why this file is still standing on end.
 ;
-; x +9 mm, not centred: a rolled legend is asymmetric about its sockets — the words
-; and the heading all sit to one side of them — so a column on the centreline puts
-; a 37.5 mm plate 6 mm off the edge of a 44 mm panel. Offsetting the column by half
-; that asymmetry centres the PLATE instead, which is the thing you see.
-[node name="AvAnchor" type="Marker3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.009, 0.08382, -0.10770)
+; BASIS is the part that cannot be eyeballed. Composed through the model root it has
+; to land on Ry(180): local +Z out of the back panel, the socket's 30 mm axis along
+; the room's X so it lies ACROSS the panel rather than up it, and local +Y up. Written
+; as matrix ROWS, so the nine numbers read as the transpose of the basis vectors
+; x (0,1,0), y (1,0,0), z (0,0,-1).
+;
+; That basis is also what puts the KEY on the correct end. The two 45-degree corner
+; cuts are on the mesh's -X, and local +X lands on world -X, so they come out on the
+; +X end of the panel — the same side as the EJECT key on the front, which is how the
+; real console is cut. A snap zone seats a plug by composing Rx(180) onto its own
+; basis, and Rx(180) leaves X alone, so plug and socket key together with no mirror.
+; See the header of Tools/gen_wii_av.gd; a connector keyed in Y would not be so lucky.
+[node name="AvSeat" type="Marker3D" parent="Back"]
+transform = Transform3D(0, 1, 0, 1, 0, 0, 0, 0, -1, 0.007, 0.10850, -0.10770)
+
+; Printed beside it, for the UPRIGHT machine — so it reads sideways once the console
+; is laid down, along with every other word on this case. The text runs along the
+; panel's 44 mm height, which is what the real silkscreen does.
+;
+; Ry(180) faces it out of the back panel and a further Rz(180) turns it the right way
+; up. That second half is NOT redundant: the Back node above carries a 180 of its own,
+; which the sockets survive — one is symmetric and the other's key is meant to swap —
+; and printing does not. Without it both words read bottom to top.
+; z BEYOND the panel, not short of it. The back face is at -0.1077 and outward is
+; more negative, so a label authored at -0.1076 is a tenth of a millimetre INSIDE the
+; case and renders as nothing at all — which looks exactly like a label that was never
+; added. The front-panel words have the opposite sign for the same reason.
+[node name="AvLabel" type="Label3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0.007, 0.09360, -0.10790)
+pixel_size = 0.00005
+text = "AV MULTI OUT"
+font_size = 48
+outline_size = 0
+modulate = Color(0.3, 0.3, 0.29, 1)
 
 ; The sensor bar socket, low on the panel and below the phono group. No other console
 ; in the room has one.
-[node name="SensorAnchor" type="Marker3D" parent="Back"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02187, -0.10770)
+; The SENSOR BAR socket, ABOVE the Multi Out and sharing its basis — same panel, same
+; facing, same keyed-end convention. Its mouth's bottom edge sits 4.25 mm clear of the
+; Multi Out bezel's top, which with a 7 mm mouth centres it 28.75 mm up the panel and
+; leaves 11.75 mm of white above it.
+;
+; Both heights are measured from the FACE rather than from each other: the Multi Out's
+; bezel starts 9 mm up, and the 4.25 mm gap stacks this one on top of it. Together they
+; bezel is 23.5 x 12 measured off the case, so its top edge is at 21 mm. Together they
+; are also what settled which way the back face wanted turning — taken against the
+; socket where a full 180 left it, this mouth's bottom edge came out below the bottom
+; of the machine, so the face wanted mirroring left to right and not turning end over
+; end. The x values here are what restore the height while keeping the swap.
+[node name="SensorSeat" type="Marker3D" parent="Back"]
+transform = Transform3D(0, 1, 0, 1, 0, 0, 0, 0, -1, -0.00675, 0.10850, -0.10770)
+
+[node name="SensorLabel" type="Label3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.00675, 0.10000, -0.10790)
+pixel_size = 0.00005
+text = "SENSOR BAR"
+font_size = 48
+outline_size = 0
+modulate = Color(0.3, 0.3, 0.29, 1)

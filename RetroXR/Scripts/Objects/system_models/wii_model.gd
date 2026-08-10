@@ -18,13 +18,13 @@
 ## sockets, the disc slot) works in GLOBAL transforms.
 ##
 ## Upright is what the layout was reasoned in, and it still shows: the 44 mm face
-## could not take three phono sockets side by side, so they are authored as a column
-## that lying down turns back into a row; and it could not swallow a 120 mm disc
-## flat, so the disc rides in on edge, which lying down becomes flat again.
+## could not swallow a 120 mm disc flat, so the disc rides in on edge, which lying
+## down becomes flat again.
 ##
 ## Two other things live here: the core options below, which are not cosmetic (the
-## Wii Remote does not work at all without them), and the one socket no other console
-## in the room has — the sensor bar jack.
+## Wii Remote does not work at all without them), and the two sockets no other console
+## in the room has — the sensor bar jack, and the AV Multi Out that replaces every
+## other machine's phono row.
 ##
 ## Everything else Wii-shaped — pairing, slot arbitration, the GameCube-vs-Wii
 ## device ids, what happens when a bar is plugged in — lives in WiiLink, the
@@ -36,15 +36,9 @@ extends RetroSystemModelDefault
 
 const SNAP_ZONE_SCENE := preload("res://addons/godot-xr-tools/objects/snap_zone.tscn")
 
-## Phono centres. The project's own 18 mm, which this machine can only keep because
-## its group runs UP the back panel instead of across it: three 9.6 mm flanges span
-## 45.6 mm and the panel is 44 mm wide, so laid across they would not have fitted at
-## any spacing worth using.
-const AV_PORT_PITCH := 0.018
-
-## How far a socket stands proud of the panel it seats on — the convention
-## rca_port.tscn is built around, and the one thing about the row that is NOT
-## special here.
+## How far the SENSOR BAR socket stands proud of the panel it seats on — the
+## convention rca_port.tscn is built around. The A/V socket does not use it: a Multi
+## Out seats 1 mm proud, not 10, and carries its own constant below.
 const AV_PORT_PROUD := 0.010
 
 ## Standby red / running green, on the small LED at the left end of the POWER key,
@@ -215,40 +209,36 @@ func _mark_port(zone: Node3D, count: int) -> void:
 		zone.add_child(dot)
 
 
-## The phono trio UP the back panel rather than across it, centred on AvAnchor.
+## ONE socket, not three. The Wii has no phono jacks at all: picture and both audio
+## channels leave through a single AV Multi Out shell, and the trio of phonos lives on
+## the far end of the lead, at the television.
 ##
-## Build order is VIDEO, L, R and they stack top-down in that order, so read the way
-## the legend prints them — bottom to top — the group runs R, L, VIDEO, which is the
-## order every deck and the primitive box lay out left to right. The same group,
-## turned on its side.
+## The channel LIST is still the stereo trio inherited from the default model, which
+## is what says this machine's sound is stereo and which speaker each cord feeds. Only
+## the packaging differs, which is the whole of what av_ports_are_multi_way says.
+func av_ports_are_multi_way() -> bool:
+	return true
+
+
+## Seat that socket on the marker the scene authored, which carries its basis as well
+## as its place — the key has to land on the EJECT side of the panel, and no basis
+## derived here could say so. See the AvSeat note in wii_primitive.tscn.
 ##
-## Turned 180 about X so each socket's local +Z faces out of the back, which is where
-## a plug arrives from. That is unaffected by the stacking: the row axis and the
-## socket axis are different things.
+## Pushed out along the seat's own +Z by the connector's proud offset, the way every
+## socket on this machine is: 2 mm for a Multi Out, against the phono row's 10 and the
+## DE-15's 7.5. wii_av_port.tscn carries the same number and says why.
+const AV_MULTI_PROUD := 0.002
+
+
 func configure_av_ports(ports: Array) -> void:
-	var anchor: Vector3 = ($Back/AvAnchor as Node3D).position
-	var span: float = AV_PORT_PITCH * float(ports.size() - 1)
-	var facing := Basis(Vector3(1.0, 0.0, 0.0), PI)
-	for i in ports.size():
-		var port: Node3D = ports[i]
-		var local := Vector3(
-			anchor.x,
-			anchor.y + span * 0.5 - AV_PORT_PITCH * float(i),
-			anchor.z - AV_PORT_PROUD)
-		# Composed through the model's own transform: the sockets belong to the
-		# cabinet, and the model is lying on its side relative to it.
-		port.global_transform = global_transform * Transform3D(facing, local)
-
-
-## Nothing to say. The phono group is authored as a COLUMN up the upright machine's
-## back panel, and laying the machine down turns that column into an ordinary row on
-## a 215 mm-wide panel — so the legend needs neither the quarter turn it wanted when
-## the group stood on end nor a trimmed margin to fit 44 mm.
-##
-## Left overridden rather than deleted because AvLegend derives its own frame from
-## the sockets, and this is the one place to say so if that ever stops being true.
-func configure_av_legend(_legend: AvLegend) -> void:
-	pass
+	if ports.is_empty():
+		return
+	var seat: Node3D = $Back/AvSeat
+	# GLOBAL, like every other hook here: the sockets belong to the cabinet and this
+	# model is lying on its side relative to it.
+	var t: Transform3D = seat.global_transform
+	(ports[0] as Node3D).global_transform = Transform3D(
+		t.basis, t.origin + t.basis.z.normalized() * AV_MULTI_PROUD)
 
 
 # --- front panel -------------------------------------------------------------
@@ -520,59 +510,47 @@ func get_sensor_bar_port() -> XRToolsSnapZone:
 	return _sensor_bar_port
 
 
-## A round hole on the back panel, above the phono row, exactly as the real machine
-## wears it.
+## The console's own SENSOR BAR connector, seated on the marker the scene authored.
 ##
-## Built here rather than authored into system.tscn because no other console has
-## one. The cabinet scene is shared by every machine in the room, and a jack that
-## only a Wii can use would sit dead on all of them — the same reason the disc
-## tray is grown by the model that needs it instead of shipped with the box.
+## Built here rather than in system.tscn because no other console has one. The cabinet
+## scene is shared by every machine in the room, and a jack only a Wii can use would
+## sit dead on all of them — the same reason the disc tray is grown by the model that
+## needs it instead of shipped with the box.
 ##
-## The zone accepts only SensorBar.PLUG_GROUP, which nothing else joins, so the
-## filter needs no callback: a controller plug bounces off it and its own plug
-## fits nothing else.
+## The zone accepts only SensorBar.PLUG_GROUP, which nothing else joins, so the filter
+## needs no callback: a controller plug bounces off it and its own plug fits nothing
+## else. The KEY does the rest — one corner of the mouth is cut and the plug's barrel
+## carries the matching cut on the OPPOSITE corner of its own section, because a snap
+## zone relates the two by a reflection rather than a rotation. See
+## Tools/gen_wii_sensor.gd.
+##
+## Under $Back like the A/V socket, and for the reason that one records: the seat is a
+## local position in the back panel's frame, so a zone parented to the model would
+## ignore whatever transform that panel carries.
+##
+## The printed word is authored in the scene beside the socket, not built here. It
+## belongs to the FACE — it has to read the way the rest of the case printing does —
+## and a label parented to a socket inherits that socket's frame instead.
 func _build_sensor_bar_port() -> void:
-	var anchor: Vector3 = ($Back/SensorAnchor as Node3D).position
+	var seat: Node3D = $Back/SensorSeat
 	_sensor_bar_port = SNAP_ZONE_SCENE.instantiate() as XRToolsSnapZone
 	_sensor_bar_port.name = "SensorBarPort"
-	_sensor_bar_port.position = anchor - Vector3(0.0, 0.0, AV_PORT_PROUD)
-	# Turned to face out of the BACK, the same 180-about-X the A/V sockets take —
-	# see configure_av_ports for why a roll and not a yaw.
-	_sensor_bar_port.rotation = Vector3(PI, 0.0, 0.0)
 	_sensor_bar_port.grab_distance = 0.03
 	_sensor_bar_port.snap_require = String(SensorBar.PLUG_GROUP)
-	add_child(_sensor_bar_port)
+	($Back as Node3D).add_child(_sensor_bar_port)
+	# Where a seated plug's ORIGIN belongs, which is its hood face: 1.5 mm proud, the
+	# red moulding's own thickness. Against the phono row's 10 and the Multi Out's 1.
+	_sensor_bar_port.transform = Transform3D(seat.transform.basis,
+		seat.position + seat.transform.basis.z.normalized() * SENSOR_PROUD)
+	# The jack pushed back by that much so its panel face lands on the case — the rule
+	# rca_port.tscn is built around, applied to a socket grown in code.
+	var jack := MeshInstance3D.new()
+	jack.name = "WiiSensorJack"
+	jack.mesh = load("res://Scenes/Objects/wii_sensor_jack.res")
+	jack.position = Vector3(0.0, 0.0, -SENSOR_PROUD)
+	_sensor_bar_port.add_child(jack)
 
-	var recess := MeshInstance3D.new()
-	recess.name = "PortRecess"
-	var hole := CylinderMesh.new()
-	hole.top_radius = 0.006
-	hole.bottom_radius = 0.006
-	hole.height = 0.004
-	recess.mesh = hole
-	# Lying on its side so the bore faces out of the socket rather than up.
-	recess.rotation = Vector3(PI / 2.0, 0.0, 0.0)
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.08, 0.08, 0.08)
-	recess.set_surface_override_material(0, dark)
-	_sensor_bar_port.add_child(recess)
 
-	# Counter-rolled out of the socket's frame: the zone is turned 180 about X, so
-	# a label parented straight to it reads upside down and sits under the jack
-	# instead of over it. RotZ(PI) inside RotX(PI) leaves the text the right way up
-	# for the UPRIGHT machine — which is how the real one is printed, so laid down it
-	# reads sideways along with every other word on the case.
-	#
-	# Rastered at 48 and scaled to a 3 mm line, not asked for at 14: font_size is the
-	# size the glyphs are BUILT at, and ten characters at a readable size do not fit
-	# a 44 mm panel anyway.
-	var label := Label3D.new()
-	label.name = "PortLabel"
-	label.text = "SENSOR BAR"
-	label.font_size = 48
-	label.pixel_size = 0.003 / 48.0
-	label.outline_size = 0
-	label.modulate = Color(0.30, 0.30, 0.29)
-	label.position = Vector3(0.0, -0.011, 0.004)
-	label.rotation = Vector3(0.0, 0.0, PI)
-	_sensor_bar_port.add_child(label)
+## The proud offset for this connector. Its own number, like every socket on this
+## machine — see the MATING note in Tools/gen_wii_sensor.gd.
+const SENSOR_PROUD := 0.0015

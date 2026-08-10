@@ -61,8 +61,16 @@ enum End { A, B }
 
 @onready var _rope: VerletRope = $VerletRope
 
-# Plugs, [end][cord]. Populated in _ready from the scene's fixed node names.
+# Plugs, [end][cord]. Populated in _ready from the scene's fixed node names. On a
+# SHARED end every entry is the same node — see _count_cords.
 var _plugs: Array = []
+
+# Ends whose cords all leave through ONE connector: the Wii's AV Multi Out is a
+# single shell carrying picture and both audio channels. Nothing about the ROUTING
+# changes — three cords still land in three sockets at the far end, and the Multi Out
+# answers each of them differently through RcaPort.channel_for — but everything that
+# iterates plugs has to stop counting the same node three times.
+var _shared := [false, false]
 
 # Devices told about this cable last time round, so one that has just lost its
 # last cord still gets a final update telling it so.
@@ -82,8 +90,12 @@ func _ready() -> void:
 	_cords = _count_cords()
 	_plugs = [[], []]
 	for e in [End.A, End.B]:
+		_shared[e] = _cords > 1 and get_node_or_null("Plug%s1" % "AB"[e]) == null
 		for c in _cords:
-			var plug := get_node("Plug%s%d" % ["AB"[e], c]) as RcaPlug
+			var plug := get_node("Plug%s%d" % ["AB"[e], 0 if _shared[e] else c]) as RcaPlug
+			_plugs[e].append(plug)
+			if _shared[e] and c > 0:
+				continue        # same node: wiring it again would double-connect
 			plug.cord = c
 			plug.cable = self
 			# A plug leaving or arriving anywhere changes what this lead carries.
@@ -91,8 +103,10 @@ func _ready() -> void:
 			# socket or a hand letting it go.
 			plug.grabbed.connect(_on_plug_moved.unbind(2))
 			plug.dropped.connect(_on_plug_moved.unbind(1))
-			_tint_plug(plug, _cord_color(c))
-			_plugs[e].append(plug)
+			# A shared connector belongs to no single cord, so it gets no cord colour.
+			# The Multi Out shell is grey on the real lead and stays grey here.
+			if not _shared[e]:
+				_tint_plug(plug, _cord_color(c))
 	# Deferred, NOT called straight through. VerletRope is top_level and its
 	# particles are world-space, so _init_points bakes them around wherever the
 	# plugs stand at the time. _ready runs inside add_child, and the spawn menu
@@ -108,14 +122,27 @@ func _ready() -> void:
 	call_deferred("_resolve")
 
 
-## How many cords the scene ships, counted as PlugA0, PlugA1, … until one is
-## missing. A lead is then defined entirely by its scene: four plugs make a mono
-## lead, six make the full one, and neither needs a script of its own.
+## How many cords the scene ships, counted as PlugA0, PlugA1, … until BOTH ends run
+## out. A lead is then defined entirely by its scene: four plugs make a mono lead, six
+## make the full one, and neither needs a script of its own.
+##
+## Counted from the LONGER end, not from both agreeing, because the two ends of a lead
+## do not have to have the same number of connectors on them. The Wii's lead is one
+## Multi Out shell against three phonos — three cords, four plugs — and requiring both
+## sides would have counted it as one. An end that runs out early is SHARED: all its
+## cords leave through its single PlugX0. See _shared.
 func _count_cords() -> int:
 	var n := 0
-	while get_node_or_null("PlugA%d" % n) != null and get_node_or_null("PlugB%d" % n) != null:
+	while get_node_or_null("PlugA%d" % n) != null or get_node_or_null("PlugB%d" % n) != null:
 		n += 1
 	return n
+
+
+## The distinct plugs on one end — three on an ordinary end, one on a shared one.
+## Anything that walks connectors rather than cords wants this: seating them, dropping
+## them, clamping them to the rope. Anything that walks CORDS still wants _plugs.
+func _end_plugs(e: int) -> Array:
+	return [_plugs[e][0]] if _shared[e] else _plugs[e]
 
 
 ## Colour for one cord, falling back to the palette's last entry if a scene ships
@@ -176,18 +203,38 @@ func _build_rope() -> void:
 	var groups := PackedInt32Array()
 	for c in _cords:
 		groups.append(c)
-	_rope.fray_start_groups = groups
-	_rope.fray_end_groups = groups
-	# The trunk ends at each breakout and nothing holds it there; the tails do.
-	_rope.start_node = null
-	_rope.end_node = null
-	for c in _cords:
-		_rope.set_fray_start_node(c, _plugs[End.A][c])
-		_rope.set_fray_end_node(c, _plugs[End.B][c])
-		# End the tail at the connector's cable boss rather than at the plug's
-		# origin, which sits 40 mm forward at the collar.
-		_rope.set_fray_start_anchor_offset(c, _plugs[End.A][c].cable_anchor)
-		_rope.set_fray_end_anchor_offset(c, _plugs[End.B][c].cable_anchor)
+	# A SHARED end does not fray. Its three cords are inside one shell, so there is no
+	# breakout to draw and the trunk anchors straight to the connector — which is
+	# exactly what the one-cord path above does, and for the same reason. Only the end
+	# with a connector per cord splits, and it splits by the same count any other lead
+	# uses. An ordinary end frays into one tail per cord and the trunk ends at a
+	# junction nothing holds.
+	#
+	# The zero fray count that leaves behind is REAL and _physics_process has to know
+	# it: that clamp reads a fray count as a reach, and reading the wrong end's turned
+	# the far end's reach to zero and dragged its plugs across the room.
+	if _shared[End.A]:
+		_rope.fray_segments_start = 0
+		_rope.start_node = _plugs[End.A][0]
+		_rope.start_anchor_offset = (_plugs[End.A][0] as RcaPlug).cable_anchor
+	else:
+		_rope.fray_start_groups = groups
+		_rope.start_node = null
+		for c in _cords:
+			_rope.set_fray_start_node(c, _plugs[End.A][c])
+			# End the tail at the connector's cable boss rather than at the plug's
+			# origin, which sits 40 mm forward at the collar.
+			_rope.set_fray_start_anchor_offset(c, _plugs[End.A][c].cable_anchor)
+	if _shared[End.B]:
+		_rope.fray_segments_end = 0
+		_rope.end_node = _plugs[End.B][0]
+		_rope.end_anchor_offset = (_plugs[End.B][0] as RcaPlug).cable_anchor
+	else:
+		_rope.fray_end_groups = groups
+		_rope.end_node = null
+		for c in _cords:
+			_rope.set_fray_end_node(c, _plugs[End.B][c])
+			_rope.set_fray_end_anchor_offset(c, _plugs[End.B][c].cable_anchor)
 	_rope._init_points()
 	_rope_built = true
 
@@ -224,13 +271,26 @@ func _physics_process(_delta: float) -> void:
 	var seg: float = _rope.fray_segment_length
 	if seg <= 0.0:
 		seg = _rope.segment_length
-	# Both ends fray by the same count, so one reach covers all six.
-	var reach: float = float(_rope.fray_segments_start) * seg
+	# PER END. This read fray_segments_start alone, on the reasoning that both ends
+	# fray by the same count — which stopped being true the moment a lead could have a
+	# shared end, since that end frays by none. The Wii lead then took its ZERO from
+	# the Multi Out and applied it to the phono end, and the clamp below — a hard
+	# positional clamp, not a spring — glued all three phonos onto the trunk's end
+	# particle and dragged them across the room with it.
+	var reach := [
+		float(_rope.fray_segments_start) * seg,
+		float(_rope.fray_segments_end) * seg,
+	]
 	# The breakouts are the trunk's own end particles.
 	var junction := [pts[0], pts[_rope.segment_count]]
 	for e in [End.A, End.B]:
-		for c in _cords:
-			var plug: RcaPlug = _plugs[e][c]
+		# A shared end IS the rope's own anchor rather than a branch hanging off a
+		# breakout, so the rope already follows it and there is nothing to clamp. Its
+		# reach above is zero for exactly that reason, and running the clamp on it
+		# would read that zero as "hold this plug on the junction".
+		if _shared[e]:
+			continue
+		for plug: RcaPlug in _end_plugs(e):
 			if plug.is_picked_up():
 				continue
 			# The branch ends at the cord boss, not at the plug's origin, which
@@ -238,9 +298,10 @@ func _physics_process(_delta: float) -> void:
 			var boss: Vector3 = plug.global_transform * plug.cable_anchor
 			var away: Vector3 = boss - junction[e]
 			var d: float = away.length()
-			if d <= reach or d < 0.0001:
+			var r: float = reach[e]
+			if d <= r or d < 0.0001:
 				continue
-			plug.global_position += away * ((reach - d) / d)
+			plug.global_position += away * ((r - d) / d)
 
 
 ## Keep the two ends of a one-cord lead within its rest length of each other.
@@ -383,7 +444,10 @@ func cord_count() -> int:
 func seating() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for e in [End.A, End.B]:
-		for c in _cords:
+		# One record per CONNECTOR, not per cord. A shared end has a single plug in a
+		# single socket, and three identical records would restore it three times and
+		# put three netplay events on the wire for one hand movement.
+		for c in (1 if _shared[e] else _cords):
 			var plug: RcaPlug = _plugs[e][c]
 			var port := plug.seated_port()
 			out.append({
@@ -494,8 +558,8 @@ func _reopen_port(port: RcaPort) -> void:
 ## of the next message flush — so that resolve never runs. Hence the direct call.
 func drop_and_free() -> void:
 	for e in [End.A, End.B]:
-		for c in _cords:
-			var port := (_plugs[e][c] as RcaPlug).seated_port()
+		for plug: RcaPlug in _end_plugs(e):
+			var port := plug.seated_port()
 			if port != null:
 				port.drop_object()
 	_resolve()

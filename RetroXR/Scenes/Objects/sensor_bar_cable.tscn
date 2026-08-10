@@ -7,31 +7,18 @@
 ;     back of a television set; here it only has to reach from the console to
 ;     wherever the bar is standing, and a rope twice that length spends its life
 ;     coiled on the floor eating constraint iterations.
-;   * A small barrel plug, because the Wii's sensor bar jack is a round hole and
-;     not one of the flat controller slots.
+;   * The console's own SENSOR BAR connector rather than one of the flat controller
+;     slots: a grey hood, a chrome barrel and the orange cap, baked to scale by
+;     Tools/gen_wii_sensor.gd. It carries its own strain relief, so the separate
+;     StrainRelief cylinder this scene used to draw is gone.
 
 [ext_resource type="Script" path="res://Scripts/Objects/cables/controller_plug.gd" id="1_plugscript"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_sensor_plug.res" id="5_sensorplug"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
 radius = 0.022
-
-[sub_resource type="CylinderMesh" id="CylMesh_plug"]
-top_radius = 0.005
-bottom_radius = 0.004
-height = 0.016
-
-[sub_resource type="StandardMaterial3D" id="Mat_plug"]
-albedo_color = Color(0.78, 0.78, 0.8, 1)
-
-[sub_resource type="CylinderMesh" id="CylMesh_strain"]
-top_radius = 0.0065
-bottom_radius = 0.0065
-height = 0.016
-
-[sub_resource type="StandardMaterial3D" id="Mat_strain"]
-albedo_color = Color(0.1, 0.1, 0.11, 1)
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
 bounce = 0.0
@@ -59,15 +46,11 @@ script = ExtResource("1_plugscript")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug"]
 shape = SubResource("SphereShape3D_plug")
 
+; No transform: the baked connector is authored on +Z with its origin ON the mating
+; face, which is the frame a snap zone seats to. The cylinder it replaced was a
+; Y-axis primitive and needed a quarter turn to point the right way.
 [node name="PlugTip" type="MeshInstance3D" parent="ControllerPlug"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0.006)
-mesh = SubResource("CylMesh_plug")
-surface_material_override/0 = SubResource("Mat_plug")
-
-[node name="StrainRelief" type="MeshInstance3D" parent="ControllerPlug"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.011)
-mesh = SubResource("CylMesh_strain")
-surface_material_override/0 = SubResource("Mat_strain")
+mesh = ExtResource("5_sensorplug")
 
 [node name="PointerArea" type="StaticBody3D" parent="ControllerPlug"]
 collision_layer = 1048576

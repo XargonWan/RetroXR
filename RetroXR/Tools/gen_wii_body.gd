@@ -44,6 +44,16 @@ const HALF_H := 0.0785     # 157 mm tall standing up
 const HALF_D := 0.1077     # 215.4 mm deep
 const BODY_CHAMFER := 0.007
 
+## The second chamfer, off the shell's BACK corner. Measured lying flat and read from
+## above with the front nearest you: the back edge runs straight for 139 mm from the
+## GameCube-flap side and the last 18 mm is a 45-degree diagonal, so an 18 x 18 mm
+## triangle comes off the corner at the eject end, through the full 44 mm height.
+##
+## 157 - 139. Kept as the difference rather than as the 139, because what the geometry
+## below needs is the size of the cut and deriving it here is one place for the two
+## numbers to disagree.
+const REAR_CHAMFER := HALF_H * 2.0 - 0.139
+
 ## Front keys: name, length on the FRONT face, length on the CHAMFER, height.
 ##
 ## Both legs are measured from the fold, which is where the mesh's origin sits — so a
@@ -85,7 +95,20 @@ func _init() -> void:
 		Vector2(HALF_W, -HALF_D),                  # back-right
 		Vector2(-HALF_W, -HALF_D),                 # back-left
 	])
-	_save(_solid(body, HALF_H, true), "res://Scenes/Objects/wii_body.res")
+	# The same section with its BACK edge brought forward by the rear chamfer, which
+	# is the shape at the very bottom of the standing machine. Same points in the same
+	# order — only P3 and P4 move — so the two loft together edge for edge.
+	var body_cut := body.duplicate()
+	body_cut[3] = Vector2(HALF_W, -HALF_D + REAR_CHAMFER)
+	body_cut[4] = Vector2(-HALF_W, -HALF_D + REAR_CHAMFER)
+	# A LOFT, not a sweep, and the shell is the only thing here that needs one. Its
+	# front chamfer is a corner of this XZ section and so cuts uniformly along Y; the
+	# rear chamfer runs the other way — uniform across the 44 mm thickness, dying out
+	# 18 mm along Y — so neither axis leaves the shell a prism. Equal steps in Y and Z
+	# are what make it 45 degrees.
+	_save(_solid_loft([body_cut, body, body],
+		[-HALF_H, -HALF_H + REAR_CHAMFER, HALF_H]),
+		"res://Scenes/Objects/wii_body.res")
 
 	# --- the keys ------------------------------------------------------------
 	for row in KEYS:
@@ -152,6 +175,80 @@ func _solid(sec: PackedVector2Array, half: float, up_axis_y: bool) -> ArrayMesh:
 			flipped.append(tris[i + 1])
 		mesh = _build(flipped)
 	return mesh
+
+
+## A solid lofted THROUGH a stack of cross-sections at given Y values, where _solid
+## sweeps one section between +half and -half.
+##
+## Only the shell needs it, and only because it is chamfered on two perpendicular
+## axes — see the note at the call site. Everything else here is a genuine prism and
+## goes on using _solid, which is the simpler thing and stays the default.
+##
+## Every section must carry the same points in the same order; only their positions
+## may differ, or the side quads have nothing to pair up. Winding is taken from the
+## FIRST section and applied to all of them: normalising each independently would
+## silently reverse one of a matched pair and turn that band of sides inside out,
+## which is the trap _emit records for a single section.
+func _solid_loft(secs: Array, ys: Array) -> ArrayMesh:
+	var tris := _emit_loft(secs, ys)
+	var mesh := _build(tris)
+	# Same oracle _solid uses, and for the same reason: measured against the normals
+	# Godot shades and culls with, not against a right-hand-rule cross product.
+	if _enclosed(mesh) < 0.0:
+		var flipped: Array[Vector3] = []
+		for i in range(0, tris.size(), 3):
+			flipped.append(tris[i])
+			flipped.append(tris[i + 2])
+			flipped.append(tris[i + 1])
+		mesh = _build(flipped)
+	return mesh
+
+
+func _emit_loft(secs_in: Array, ys: Array) -> Array[Vector3]:
+	var first: PackedVector2Array = secs_in[0]
+	var area := 0.0
+	for i in first.size():
+		var a: Vector2 = first[i]
+		var b: Vector2 = first[(i + 1) % first.size()]
+		area += a.x * b.y - b.x * a.y
+	var secs: Array = []
+	for s: PackedVector2Array in secs_in:
+		if area >= 0.0:
+			secs.append(s)
+			continue
+		var r := PackedVector2Array()
+		for i in range(s.size() - 1, -1, -1):
+			r.append(s[i])
+		secs.append(r)
+
+	var out: Array[Vector3] = []
+	var last: int = secs.size() - 1
+	# Caps. The far one is emitted reversed, exactly as _solid's pair of caps are.
+	for e in [0, last]:
+		var sec: PackedVector2Array = secs[e]
+		var y: float = ys[e]
+		var idx := Geometry2D.triangulate_polygon(sec)
+		for i in range(0, idx.size(), 3):
+			if e == last:
+				out.append_array([_at(sec[idx[i]], y, true),
+					_at(sec[idx[i + 1]], y, true), _at(sec[idx[i + 2]], y, true)])
+			else:
+				out.append_array([_at(sec[idx[i]], y, true),
+					_at(sec[idx[i + 2]], y, true), _at(sec[idx[i + 1]], y, true)])
+	# One quad per edge per band, emitted independently so every face gets a flat
+	# normal of its own rather than one averaged round the corner.
+	for k in last:
+		var lo: PackedVector2Array = secs[k]
+		var hi: PackedVector2Array = secs[k + 1]
+		var y0: float = ys[k]
+		var y1: float = ys[k + 1]
+		for i in lo.size():
+			var j := (i + 1) % lo.size()
+			out.append_array([_at(lo[i], y0, true), _at(lo[j], y0, true),
+				_at(hi[j], y1, true)])
+			out.append_array([_at(lo[i], y0, true), _at(hi[j], y1, true),
+				_at(hi[i], y1, true)])
+	return out
 
 
 func _build(tris: Array[Vector3]) -> ArrayMesh:

@@ -149,6 +149,31 @@ func channel_name() -> String:
 	return CHANNEL_NAMES[channel]
 
 
+## What this socket carries on a given CORD of the lead seated in it.
+##
+## A phono socket is one signal down one wire, so the cord is nothing to it and this
+## is just `channel`. The exception is a MULTI-WAY connector — the Wii's AV Multi Out
+## is one shell carrying picture and both audio channels — where a single socket is
+## the source for three cords at once and each has to answer differently. See
+## WiiAvPort.
+##
+## A reader of a CompositeCable link whose device could be on either side of a
+## multi-way connector must come through here rather than through `channel` directly:
+## the link already carries its cord, and a socket that reported one channel for all
+## three made a Multi Out lead put the picture down all of them. system.gd does.
+##
+## dvd_player.gd and vcr_player.gd still read `channel`, which is currently the same
+## answer — a deck wears a phono row and its sink is a set with phono sockets, so
+## neither side of one of their links can ever be multi-way. Give either of them a
+## multi-way socket and both need this.
+func channel_for(_cord: int) -> Channel:
+	return channel
+
+
+func channel_name_for(cord: int) -> String:
+	return CHANNEL_NAMES[channel_for(cord)]
+
+
 ## The plug currently seated here, or null.
 func seated_plug() -> Node3D:
 	return picked_up_object if is_instance_valid(picked_up_object) else null

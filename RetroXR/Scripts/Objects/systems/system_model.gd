@@ -335,6 +335,20 @@ func uses_av_ports() -> bool:
 	return not av_port_channels().is_empty()
 
 
+## True when every channel above leaves through ONE socket rather than one each.
+##
+## Orthogonal to av_port_channels on purpose: the Wii outputs the same three signals
+## as any other stereo console — which is what decides whether its sound is stereo and
+## which speaker each cord feeds — it just packages them in a single AV Multi Out
+## shell. Folding that into the channel list would have made "what this machine puts
+## out" and "how many holes it has" the same question, and they are not.
+##
+## The socket built is WiiAvPort, whose channel_for(cord) is what tells the three
+## cords apart once they are all in it.
+func av_ports_are_multi_way() -> bool:
+	return false
+
+
 ## Place the sockets built from av_port_channels, in that same order. Called once,
 ## with the ports already children of the system.
 func configure_av_ports(_ports: Array) -> void:

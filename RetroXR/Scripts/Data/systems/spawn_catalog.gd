@@ -56,6 +56,10 @@ const _PERIPHERALS: Dictionary = {
 		# Listed first among equals in spirit: without it the remote has nothing to
 		# look at, and no amount of pressing SYNC produces a pointer.
 		{"kind": "peripheral", "label": "Sensor Bar", "spawn": "sensor_bar"},
+		# The one console whose lead is not interchangeable with anybody else's: an
+		# AV Multi Out at the machine and three phonos at the set, so a plain
+		# composite lead fits the television and nothing at this end.
+		{"kind": "peripheral", "label": "RVL-009", "spawn": "wii_av_cable"},
 	],
 	"virtual_boy": [
 		{"kind": "peripheral", "label": "Controller", "spawn": "vb_controller"},
@@ -96,9 +100,10 @@ const _NO_STANDINS: Array[String] = ["nes", "atari_2600"]
 
 
 ## Platforms that name their own A/V lead above, so the generic one would be a
-## second cable doing the same job. Only the NES, which puts out one audio
-## channel and lists the mono lead its console shipped with.
-const _OWN_AV_LEAD: Array[String] = ["nes"]
+## second cable doing the same job. The NES puts out one audio channel and lists the
+## mono lead its console shipped with; the Wii has no phono sockets at all, so the
+## generic lead would fit its television and nothing on the console.
+const _OWN_AV_LEAD: Array[String] = ["nes", "wii"]
 
 ## The lead every other platform reaches the TV with. Consoles spawn wearing a
 ## captive one, so this row is a spare — for a lead thrown in the trash, or a

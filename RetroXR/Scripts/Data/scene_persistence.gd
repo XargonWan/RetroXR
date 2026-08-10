@@ -41,6 +41,7 @@ const AUDIO_CASSETTE_SCENE   := preload("res://Scenes/Objects/audio_cassette.tsc
 const TV_REMOTE_SCENE        := preload("res://Scenes/Objects/tv_remote.tscn")
 const COMPOSITE_CABLE_SCENE  := preload("res://Scenes/Objects/composite_cable.tscn")
 const MONO_CABLE_SCENE       := preload("res://Scenes/Objects/mono_composite_cable.tscn")
+const WII_AV_CABLE_SCENE     := preload("res://Scenes/Objects/wii_av_cable.tscn")
 const VGA_CABLE_SCENE        := preload("res://Scenes/Objects/vga_cable.tscn")
 const TRS_CABLE_SCENE        := preload("res://Scenes/Objects/trs_cable.tscn")
 const SPEAKER_PAIR_SCENE     := preload("res://Scenes/Objects/speaker_pair.tscn")
@@ -835,7 +836,12 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				# cannot tell a VGA lead from any other one-cord lead.
 				var kind: String = str(data.get("kind", ""))
 				var lead: PackedScene = COMPOSITE_CABLE_SCENE
-				if kind == "vga_cable":
+				# The Wii lead has to be named: it is three cords like the plain
+				# composite one, so the cord-count fallback cannot tell them apart and
+				# an old save has no reason to hold one anyway.
+				if kind == "wii_av_cable":
+					lead = WII_AV_CABLE_SCENE
+				elif kind == "vga_cable":
 					lead = VGA_CABLE_SCENE
 				elif kind == "trs_cable":
 					lead = TRS_CABLE_SCENE
