@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3]
+[gd_scene load_steps=30 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/wii_model.gd" id="1_wii"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_body.res" id="2_wiibody"]
@@ -11,6 +11,7 @@
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_door.res" id="9_door"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_door_bay.res" id="10_doorbay"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_door_seam.res" id="11_doorseam"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_vent.res" id="12_vent"]
 
 ; The console, standing on end the way the stand holds it: 44 x 215.4 x 157 mm is
 ; the real machine's own footprint, read as W x H x D in THIS orientation. Origin at
@@ -565,6 +566,22 @@ modulate = Color(0.3, 0.3, 0.29, 1)
 ; socket where a full 180 left it, this mouth's bottom edge came out below the bottom
 ; of the machine, so the face wanted mirroring left to right and not turning end over
 ; end. The x values here are what restore the height while keeping the swap.
+; The fan grille — 25 squares baked as one mesh by Tools/gen_wii_body.gd, wearing the
+; same Mat_dark the disc slot does. UNSHADED, and that is the whole trick: these rooms
+; light with a flat ambient and no radiance map, so a real hole would be lit exactly as
+; brightly as the panel and the vent would read as 25 pale squares. Darkness is a
+; material here, not a depth.
+;
+; POSITION is off the rear-panel photograph scaled to the 157 mm width, not calipered
+; like the two sockets — it lands the block centred on the panel's height and 38 mm
+; from the Multi Out's centre, which leaves 12 mm between the two. Ry(180) then Rz(180),
+; the same pair the printed words take, so it faces out of the back through the 180 the
+; Back node itself carries.
+[node name="Vent" type="MeshInstance3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.07050, -0.10790)
+mesh = ExtResource("12_vent")
+surface_material_override/0 = SubResource("Mat_dark")
+
 [node name="SensorSeat" type="Marker3D" parent="Back"]
 transform = Transform3D(0, 1, 0, 1, 0, 0, 0, 0, -1, -0.00675, 0.10850, -0.10770)
 

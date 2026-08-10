@@ -3,10 +3,11 @@
 ; The sensor bar's lead. Same construction as controller_cable.tscn — see the
 ; notes there for why the rope is tuned the way it is — with two differences:
 ;
-;   * 50 x 0.036 = 1.80 m. The real lead is 3.5 m because it has to run round the
-;     back of a television set; here it only has to reach from the console to
-;     wherever the bar is standing, and a rope twice that length spends its life
-;     coiled on the floor eating constraint iterations.
+;   * 68 x 0.036 = 2.448 m, measured. Length is bought with segment COUNT and not a
+;     longer segment, so the boot and the minimum bend radius stay where they were
+;     tuned in millimetres. It costs 18 more particles per bar than the 1.80 m this
+;     shipped with — worth watching if several are ever out at once, since the rope
+;     solver is the one thing on this console that scales with cable length.
 ;   * The console's own SENSOR BAR connector rather than one of the flat controller
 ;     slots: a grey hood, a chrome barrel and the orange cap, baked to scale by
 ;     Tools/gen_wii_sensor.gd. It carries its own strain relief, so the separate
@@ -18,7 +19,7 @@
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
-radius = 0.022
+radius = 0.014
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
 bounce = 0.0
@@ -43,7 +44,14 @@ freeze = false
 freeze_mode = 1
 script = ExtResource("1_plugscript")
 
+; The colliders sit on the BODY, not on the origin. This connector's origin is its
+; MATING face — the frame a snap zone seats to — and the whole moulding lies BEHIND
+; it, so a shape left at the origin ends up half buried in the console while the part
+; a hand reaches for carries nothing. That is exactly what happened when the stand-in
+; cylinder, which sat in FRONT of its origin, was swapped for the real mesh: the plug
+; became ungrabbable the moment it was plugged in.
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.009)
 shape = SubResource("SphereShape3D_plug")
 
 ; No transform: the baked connector is authored on +Z with its origin ON the mating
@@ -57,6 +65,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.009)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="ControllerPlug"]
@@ -66,14 +75,17 @@ script = ExtResource("3_pickhigh")
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 
 [node name="VerletRope" type="VerletRope" parent="."]
-segment_count = 50
+segment_count = 68
 segment_length = 0.036
 constraint_iterations = 8
 bend_stiffness = 0.15
 tube_radius = 0.0022
 tube_sides = 8
 smoothing = 2
-rope_color = Color(0.1, 0.1, 0.11, 1.0)
+; Dark GREY, not the near-black every other lead in the room wears. Nintendo moulded
+; this cord a shade off the console's own connectors rather than in cable black, and
+; at 0.10 it read as a black wire against a white case — which is a different part.
+rope_color = Color(0.26, 0.26, 0.25, 1.0)
 surface_collision_mask = 7
 collision_radius = 0.0035
 self_collision = true

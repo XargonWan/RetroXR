@@ -34,6 +34,27 @@ static func plastic(albedo: Color) -> StandardMaterial3D:
 	return m
 
 
+## Moulded connector plastic with no lacquer on it — a hood, a strain relief, a
+## panel-mount surround.
+##
+## The clearcoat is the whole difference from plastic() above, and it is why this
+## exists rather than a roughness argument: a clearcoat lobe reads as a WET surface at
+## any roughness, so an RVL-011 hood given the glossy recipe came back looking like
+## polished acrylic instead of the dry, slightly rubbery grey it is. Specular drops
+## with it, and the rim sheen goes — an edge highlight on a matte moulding is another
+## thing that says "varnished".
+##
+## Kept as a sibling rather than a flag so the two families cannot drift: every phono
+## and DE-15 connector in the room is glossy and stays that way.
+static func matte(albedo: Color, roughness: float = 0.72) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = albedo
+	m.roughness = roughness
+	m.metallic = 0.0
+	m.specular = 0.28
+	return m
+
+
 ## Plated metal — connector shells, collars, pins.
 ##
 ## NOT metallic 1.0, deliberately. A fully metallic surface takes essentially all

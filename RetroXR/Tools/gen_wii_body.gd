@@ -54,6 +54,13 @@ const BODY_CHAMFER := 0.007
 ## numbers to disagree.
 const REAR_CHAMFER := HALF_H * 2.0 - 0.139
 
+## The rear fan grille: 5 x 5 square vents on a 6 mm pitch, 4.4 mm across, so the
+## block spans 28.4 mm. Scaled off the rear-panel photograph against the 157 mm width
+## — NOT calipered, unlike the sockets either side of it.
+const VENT_N := 5
+const VENT_PITCH := 0.006
+const VENT_HOLE := 0.0044
+
 ## Front keys: name, length on the FRONT face, length on the CHAMFER, height.
 ##
 ## Both legs are measured from the fold, which is where the mesh's origin sits — so a
@@ -109,6 +116,7 @@ func _init() -> void:
 	_save(_solid_loft([body_cut, body, body],
 		[-HALF_H, -HALF_H + REAR_CHAMFER, HALF_H]),
 		"res://Scenes/Objects/wii_body.res")
+	_save(_vent(), "res://Scenes/Objects/wii_vent.res", false)
 
 	# --- the keys ------------------------------------------------------------
 	for row in KEYS:
@@ -251,6 +259,32 @@ func _emit_loft(secs_in: Array, ys: Array) -> Array[Vector3]:
 	return out
 
 
+## The rear fan grille as ONE flat mesh of 25 squares, in XY facing +Z.
+##
+## Squares, not holes. These rooms light with a flat ambient and no radiance map, so
+## the floor of a hole is lit exactly as brightly as the panel around it — the vent has
+## to be dark by MATERIAL, which is why the scene hands this Mat_dark and Mat_dark is
+## unshaded. Cut as real holes it would have rendered as 25 pale grey squares. Same
+## call the disc slot and every socket mouth on this machine already make.
+##
+## One mesh rather than 25 nodes: nothing in a grille moves independently, and 25
+## MeshInstance3Ds is 25 draw calls for something a player reads as one texture.
+func _vent() -> ArrayMesh:
+	var tris: Array[Vector3] = []
+	var span: float = VENT_PITCH * float(VENT_N - 1)
+	var h: float = VENT_HOLE * 0.5
+	for row in VENT_N:
+		for col in VENT_N:
+			var cx: float = -span * 0.5 + VENT_PITCH * float(col)
+			var cy: float = -span * 0.5 + VENT_PITCH * float(row)
+			tris.append_array([
+				Vector3(cx + h, cy + h, 0.0), Vector3(cx - h, cy - h, 0.0),
+				Vector3(cx - h, cy + h, 0.0),
+				Vector3(cx + h, cy + h, 0.0), Vector3(cx + h, cy - h, 0.0),
+				Vector3(cx - h, cy - h, 0.0)])
+	return _build(tris)
+
+
 func _build(tris: Array[Vector3]) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -332,10 +366,13 @@ static func _volume(tris: Array[Vector3]) -> float:
 	return v
 
 
-func _save(mesh: ArrayMesh, path: String) -> void:
+## `closed` false for a flat sheet: the enclosed-volume test below is an oracle for a
+## SOLID's winding and a sheet encloses nothing, so it would report every grille as
+## inside out.
+func _save(mesh: ArrayMesh, path: String, closed: bool = true) -> void:
 	var err := ResourceSaver.save(mesh, path)
 	var ab: AABB = mesh.get_aabb()
-	var vol := _enclosed(mesh)
+	var vol := _enclosed(mesh) if closed else 1.0
 	print("[gen] %-40s err=%d  %.4f x %.4f x %.4f m  vol %+.8f %s" % [path, err,
 		ab.size.x, ab.size.y, ab.size.z, vol, "" if vol > 0.0 else "  <-- INSIDE OUT"])
 

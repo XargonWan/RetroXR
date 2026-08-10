@@ -10,7 +10,8 @@
 ##
 ##   grey hood      18 long x 10.75 wide x 8 high
 ##   barrel         7 x 5, standing 5 mm proud of the hood face
-##   orange cap     the last 2 mm of that 5
+##   orange lip     the last 2 mm of that 5, and a 1.25 mm RIM rather than a face —
+##                  the cup behind it is orange too, and about as deep as the metal
 ##   key            a corner cut 2 mm into the barrel's 5 mm dimension, on the same
 ##                  side as the hood's ribbed face
 ##   cord           1.6 mm
@@ -75,6 +76,9 @@ const BARREL_H := 0.005
 const BARREL_PROUD := 0.005
 const CAP_L := 0.002             # the orange, part of BARREL_PROUD
 const KEY_CUT := 0.002           # 5 - 3, into the barrel's 5 mm dimension
+## The orange is a LIP round a hollow, not a solid nose: a 1.25 mm wall with an
+## orange-lined cup behind it, sunk as deep as the metal section is long. Calipered.
+const LIP_T := 0.00125
 const CORD_D := 0.0016
 const MOUTH_W := 0.0095
 const MOUTH_H := 0.007
@@ -102,6 +106,11 @@ const RING := 12
 # --- plug z ------------------------------------------------------------------
 const Z_TIP := BARREL_PROUD
 const Z_CAP := BARREL_PROUD - CAP_L
+## How far the cup is sunk: the length of the metal section, which is what "about as
+## deep as the metallic part" measures out as. Derived rather than written as 3 mm, so
+## shortening the orange cannot silently deepen the hole.
+const CUP_DEPTH := BARREL_PROUD - CAP_L
+const Z_CUP_FLOOR := Z_TIP - CUP_DEPTH
 const Z_FACE := 0.0
 const Z_HOOD_BACK := -HOOD_L
 const Z_CORD := -0.030
@@ -141,7 +150,7 @@ func _build_plug() -> void:
 	_cap(st, hood, Z_HOOD_BACK, false)
 	_lathe(st, _boot_profile())
 	st.generate_normals()
-	var m_hood := PlugMats.plastic(HOOD_GREY)
+	var m_hood := PlugMats.matte(HOOD_GREY)
 	st.set_material(m_hood)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(0, m_hood)
@@ -159,12 +168,19 @@ func _build_plug() -> void:
 	# --- surface 2: the orange cap -------------------------------------------
 	# The one part of this connector anybody can name from across the room, and the
 	# only reason the socket is findable at all: an orange nose against a white case.
+	# A RIM and not a face. The wall is 1.25 mm and everything inside it is orange too,
+	# sunk the length of the metal section — so what reads at arm's length is a bright
+	# ring round a dimmer bore rather than a solid orange block.
+	var cup := _key_loop(BARREL_W - 2.0 * LIP_T, BARREL_H - 2.0 * LIP_T,
+		KEY_CUT - LIP_T, BARREL_R, true)
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_loft(st, barrel, Z_CAP, barrel, Z_TIP)
-	_cap(st, barrel, Z_TIP, true)
+	_loft(st, barrel, Z_CAP, barrel, Z_TIP)        # the outside of the lip
+	_band(st, cup, barrel, Z_TIP, true)            # the 1.25 mm rim itself
+	_loft(st, cup, Z_TIP, cup, Z_CUP_FLOOR)        # wound inward: the cup's wall
+	_cap(st, cup, Z_CUP_FLOOR, true)               # and its floor
 	st.generate_normals()
-	var m_cap := PlugMats.plastic(CAP_ORANGE)
+	var m_cap := PlugMats.matte(CAP_ORANGE, 0.60)
 	st.set_material(m_cap)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(2, m_cap)
@@ -212,7 +228,7 @@ func _build_jack() -> void:
 	_loft(st, outer, Z_PANEL, outer, Z_RED)
 	_band(st, mouth, outer, Z_RED, true)
 	st.generate_normals()
-	var m_red := PlugMats.plastic(RED_MOULD)
+	var m_red := PlugMats.matte(RED_MOULD, 0.60)
 	st.set_material(m_red)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(0, m_red)

@@ -27,8 +27,18 @@ emission_energy_multiplier = 0.4
 ; cannot enter — it stops flat on the bezel's own 2 mm face. See the MATING note in
 ; Tools/gen_wii_av.gd. Use another connector's number and the plug floats off the back
 ; of the console or sinks into it.
+; grab_distance is the zone's REACH, and it is drawn as a sphere of that radius — the
+; green ball CollisionDebug puts on the back panel.
+;
+; 25 mm, not the 60 every phono socket uses. That number came off rca_port.tscn, where
+; it suits a jack on a full-size deck with nothing near it; on this panel it reached
+; 46 mm further out than the SENSOR BAR socket sitting 14 mm away, so a ray aimed at
+; anything down there hit THIS zone first. Being empty, it then swallowed the click
+; whole — the pickup classifier gives up when its front hit is a socket holding
+; nothing, rather than looking past it — and the sensor plug could not be grabbed at
+; all. Roughly a plug's width, which is as much catch as a 23.5 x 12 mm socket wants.
 [node name="WiiAvPort" instance=ExtResource("1_snapzone")]
-grab_distance = 0.06
+grab_distance = 0.025
 script = ExtResource("2_portscript")
 
 [node name="WiiAvJack" parent="." instance=ExtResource("3_wiiavjack")]

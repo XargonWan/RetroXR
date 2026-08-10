@@ -75,7 +75,14 @@ angular_damp = 8.0
 freeze_mode = 1
 script = ExtResource("6_wiiplugscript")
 
+; The colliders sit on the BODY, not on the origin. This connector's origin is its
+; MATING face — the frame a snap zone seats to — and the whole moulding lies BEHIND
+; it, so a shape left at the origin ends up half buried in the console while the part
+; a hand reaches for carries nothing. That is exactly what happened when the stand-in
+; cylinder, which sat in FRONT of its origin, was swapped for the real mesh: the plug
+; became ungrabbable the moment it was plugged in.
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.015)
 shape = SubResource("SphereShape3D_wiiplug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugA0"]
@@ -86,6 +93,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.015)
 shape = SubResource("SphereShape3D_wiipointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugA0"]

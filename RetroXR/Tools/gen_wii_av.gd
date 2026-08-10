@@ -84,7 +84,7 @@ const TONGUE_L := 0.013
 
 # --- derived -----------------------------------------------------------------
 const KEY_CUT := 0.0020          # 45 deg corner cut, both corners of the -X end
-const SHROUD_CUT := 0.0030       # the shroud follows the tongue's key
+const SHROUD_CUT := 0.0030       # ONE corner only, like the bezel it lands on
 const CLEAR := 0.0002            # sliding fit, per side
 
 ## 0.7 mm, not the 1.2 a hood this size invites. A moulded connector is a flat-faced
@@ -156,7 +156,7 @@ func _init() -> void:
 func _build_plug() -> void:
 	var mesh := ArrayMesh.new()
 
-	var shroud := _key_loop(SHROUD_W, SHROUD_H, SHROUD_CUT, SHROUD_R)
+	var shroud := _one_cut_loop(SHROUD_W, SHROUD_H, SHROUD_CUT, SHROUD_R, true)
 	var tongue := _key_loop(TONGUE_W, TONGUE_H, KEY_CUT, TONGUE_R)
 	var cavity := _key_loop(TONGUE_W - 2.0 * TONGUE_WALL, TONGUE_H - 2.0 * TONGUE_WALL,
 		KEY_CUT - TONGUE_WALL, TONGUE_R)
@@ -164,6 +164,12 @@ func _build_plug() -> void:
 	# --- surface 0: the grey shroud and its boot -----------------------------
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# -1 is the FLAT smooth group, and it is not optional here: generate_normals()
+	# averages every face meeting at a shared position, and this connector has plenty —
+	# the orange rim's inner edge sits exactly on the cup's mouth, the barrel's tip on
+	# the rim's outer edge. Averaged, those faces shade toward each other and whole
+	# panels read as holes. Same call gen_wii_body.gd makes and for the same reason.
+	st.set_smooth_group(-1)
 	_loft(st, shroud, Z_SHROUD_BACK, shroud, Z_FACE)
 	# Front face: a band from the shroud's edge in to where the tongue emerges.
 	_band(st, tongue, shroud, Z_FACE, true)
@@ -174,7 +180,7 @@ func _build_plug() -> void:
 	_cap(st, shroud, Z_SHROUD_BACK, false)
 	_lathe(st, _boot_profile())
 	st.generate_normals()
-	var m_shroud := PlugMats.plastic(SHROUD_GREY)
+	var m_shroud := PlugMats.matte(SHROUD_GREY)
 	st.set_material(m_shroud)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(0, m_shroud)
@@ -182,10 +188,11 @@ func _build_plug() -> void:
 	# --- surface 1: the black tongue -----------------------------------------
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(-1)
 	_loft(st, tongue, Z_FACE, tongue, Z_TIP)         # outside wall
 	_band(st, cavity, tongue, Z_TIP, true)           # the rim at the open end
 	st.generate_normals()
-	var m_tongue := PlugMats.plastic(TONGUE_BLACK)
+	var m_tongue := PlugMats.matte(TONGUE_BLACK, 0.62)
 	st.set_material(m_tongue)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(1, m_tongue)
@@ -193,6 +200,7 @@ func _build_plug() -> void:
 	# --- surface 2: the cavity the socket's blade enters ---------------------
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(-1)
 	_loft(st, cavity, Z_TIP, cavity, Z_CAVITY)       # wound inward: an inside wall
 	_cap(st, cavity, Z_CAVITY, true)
 	st.generate_normals()
@@ -244,17 +252,18 @@ func _boot_profile() -> PackedVector2Array:
 func _build_jack() -> void:
 	var mesh := ArrayMesh.new()
 
-	var bezel := _bezel_loop(BEZEL_W, BEZEL_H, BEZEL_CUT, BEZEL_R)
+	var bezel := _one_cut_loop(BEZEL_W, BEZEL_H, BEZEL_CUT, BEZEL_R, false)
 	var mouth := _key_loop(TONGUE_W + 2.0 * CLEAR, TONGUE_H + 2.0 * CLEAR,
 		KEY_CUT, TONGUE_R)
 
 	# --- surface 0: the black bezel ------------------------------------------
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(-1)
 	_loft(st, bezel, Z_PANEL, bezel, Z_BEZEL)            # the frame's outside
 	_band(st, mouth, bezel, Z_BEZEL, true)               # its face, straight to the mouth
 	st.generate_normals()
-	var m_bezel := PlugMats.plastic(TONGUE_BLACK)
+	var m_bezel := PlugMats.matte(TONGUE_BLACK, 0.62)
 	st.set_material(m_bezel)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(0, m_bezel)
@@ -262,6 +271,7 @@ func _build_jack() -> void:
 	# --- surface 1: the slot itself ------------------------------------------
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(-1)
 	_loft(st, mouth, Z_BEZEL, mouth, Z_MOUTH_FLOOR)      # wound inward
 	_cap(st, mouth, Z_MOUTH_FLOOR, true)
 	st.generate_normals()
@@ -276,11 +286,12 @@ func _build_jack() -> void:
 	# socket is a socket rather than a printed rectangle.
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(-1)
 	var bw: float = TONGUE_W - 2.0 * TONGUE_WALL - 0.0010
 	_box(st, -bw * 0.5, bw * 0.5, BLADE_Y - BLADE_T * 0.5, BLADE_Y + BLADE_T * 0.5,
 		Z_MOUTH_FLOOR, Z_BLADE)
 	st.generate_normals()
-	var m_blade := PlugMats.plastic(BLADE_GREY)
+	var m_blade := PlugMats.matte(BLADE_GREY, 0.55)
 	st.set_material(m_blade)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, st.commit_to_arrays())
 	mesh.surface_set_material(2, m_blade)
@@ -324,25 +335,46 @@ func _key_loop(w: float, h: float, cut: float, r: float) -> PackedVector2Array:
 	]), r, PackedInt32Array([ARC, ARC, ARC, ARC, ARC, ARC]))
 
 
-## The BEZEL's section, which is NOT the mouth's: only ONE corner of its -X end is
-## cut, measured off the case. The mouth keeps both, because the tongue that goes down
-## it has both.
+## A section with only ONE corner of its -X end cut. Both the socket's BEZEL and the
+## plug's grey SHROUD are this; only the tongue and the mouth it goes down carry both
+## cuts, because that pair is the actual key.
 ##
-## Five corners against the mouth's six, and yet the same 30 points, because _band
-## pairs its two loops index for index and these two have to band together. The square
-## corner is given a double-length arc — 2*ARC+1 segments where the others get ARC —
-## which is what buys back the five points the missing corner would have contributed.
-## Sampling a right angle twice as finely costs nothing and is invisible.
-func _bezel_loop(w: float, h: float, cut: float, r: float) -> PackedVector2Array:
+## `cut_pos_y` picks which corner survives, and the two callers take opposite answers.
+## A snap zone relates plug to socket by a Y negation, so a shroud cut on +Y lands on
+## the bezel's -Y cut when the two are mated — author them alike and the plug's chamfer
+## sits over the bezel's square corner. Same trap gen_wii_sensor.gd records at length;
+## the tongue escapes it only by being symmetric.
+##
+## Five corners against the tongue's six, and yet the same 30 points, because _band
+## pairs its loops index for index and these have to band together. The square corner
+## gets a double-length arc — 2*ARC+1 segments where the others get ARC — which buys
+## back the five points the missing corner would have contributed. Sampling a right
+## angle twice as finely costs nothing and is invisible.
+func _one_cut_loop(w: float, h: float, cut: float, r: float,
+		cut_pos_y: bool) -> PackedVector2Array:
 	var hw: float = w * 0.5
 	var hh: float = h * 0.5
-	return _fillet(PackedVector2Array([
-		Vector2(hw, hh),
-		Vector2(-hw, hh),                  # square: the corner the real case has sharp
-		Vector2(-hw, -hh + cut),
-		Vector2(-hw + cut, -hh),
-		Vector2(hw, -hh),
-	]), r, PackedInt32Array([ARC, 2 * ARC + 1, ARC, ARC, ARC]))
+	var pts: PackedVector2Array
+	var arcs: PackedInt32Array
+	if cut_pos_y:
+		pts = PackedVector2Array([
+			Vector2(hw, hh),
+			Vector2(-hw + cut, hh),
+			Vector2(-hw, hh - cut),
+			Vector2(-hw, -hh),             # square
+			Vector2(hw, -hh),
+		])
+		arcs = PackedInt32Array([ARC, ARC, ARC, 2 * ARC + 1, ARC])
+	else:
+		pts = PackedVector2Array([
+			Vector2(hw, hh),
+			Vector2(-hw, hh),              # square
+			Vector2(-hw, -hh + cut),
+			Vector2(-hw + cut, -hh),
+			Vector2(hw, -hh),
+		])
+		arcs = PackedInt32Array([ARC, 2 * ARC + 1, ARC, ARC, ARC])
+	return _fillet(pts, r, arcs)
 
 
 ## Round the corners of a convex loop, with a PER-CORNER arc count so loops with
