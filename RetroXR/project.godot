@@ -19,7 +19,6 @@ config/version="0.2.0"
 run/main_scene="uid://bh8x3sbal8nds"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://Textures/app_icon.png"
-run/main_scene.spawnprobe="res://Tools/quest_warm_probe.tscn"
 
 [audio]
 
@@ -42,11 +41,7 @@ HeldPhysics="*res://Scripts/Interaction/held_object_physics.gd"
 
 [debug]
 
-# XRToolsPickable and several other godot-xr-tools bases carry @tool so the editor
-# can draw their configuration warnings. Our gameplay subclasses deliberately do
-# not: their _ready/_process load GLBs, start VLC playback and reach for autoloads,
-# none of which should run in the editor. Nothing here is meant to be a tool script.
-gdscript/warnings/missing_tool=0
+#XRToolsPickableandseveralothergodot-xr-toolsbasescarry@toolsotheeditor#candrawtheirconfigurationwarnings.Ourgameplaysubclassesdeliberatelydo#not:their_ready/_processloadGLBs,startVLCplaybackandreachforautoloads,#noneofwhichshouldrunintheeditor.Nothinghereismeanttobeatoolscript.gdscript/warnings/missing_tool=0
 
 [display]
 
