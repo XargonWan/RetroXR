@@ -122,8 +122,25 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.003)
 mesh = SubResource("BoxMesh_recess")
 surface_material_override/0 = SubResource("Mat_dark")
 
+; IDENTITY, and that is load-bearing rather than lazy: a snap zone seats an object by
+; composing its GRAB POINT, not its origin, so this marker is what the whole z-table
+; above is measured against. It used to carry the body's own +0.02075 offset — copied
+; from the meshes and the colliders either side of it, where the offset is correct —
+; and the port then seated the BODY CENTRE on the zone instead of the mating face,
+; burying 20.75 mm of a 45.5 mm dongle inside the remote. The arithmetic in this file
+; was right the whole time; the point it was measured from was not.
+;
+; Moving it here also moves where a HAND holds the dongle, from the body centre to the
+; mating face. That is the lesser evil by a distance — 20 mm off on a 45 mm object you
+; hold for a second, against half of it vanishing into the remote for as long as it is
+; clipped on. A second grab point cannot fix that split: XRToolsGrabPointSnap would
+; take the snap zone cleanly, but the base XRToolsGrabPoint here accepts snap zones
+; too, and _get_grab_point picks whichever happens to be nearer — so the seat would
+; depend on which way round the dongle was offered. XRToolsGrabPointHand would refuse
+; the zone properly, but its get_palm_transform bakes in a 10 cm aim offset this
+; project does not use.
 [node name="GrabPoint" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.02075)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 visible = false
 script = ExtResource("3_grabpoint")
 
