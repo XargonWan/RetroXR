@@ -454,7 +454,15 @@ func _mount_cap(btn: VRButton, cap: MeshInstance3D) -> void:
 	if btn == null or cap == null:
 		return
 	btn.global_transform = Transform3D(cap.global_transform.basis, cap.global_position)
-	btn.depress_depth = 0.0015
+	# 0.8 mm, against the 2.5 mm these keys stand proud of the front face (the
+	# baked cap meshes reach z 0.1102, the body ends at 0.1077). It used to be
+	# 1.5 mm, which cleared the panel by a millimetre on paper but swallowed 60%
+	# of the key on every press, and with the dark seam plate drawn behind each
+	# one that reads as the cap sinking through the case rather than clicking.
+	#
+	# A real key on this machine barely moves. Travel is for feedback here, not
+	# for depth, so it wants to be a fraction of what stands proud.
+	btn.depress_depth = 0.0008
 	btn.depress_axis = Vector3(0, 0, -1)
 	btn.set_button_mesh(cap)
 	var lbl := btn.get_node_or_null("ButtonLabel") as Label3D
