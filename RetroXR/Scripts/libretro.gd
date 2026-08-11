@@ -32,6 +32,7 @@ func _on_controller_button_pressed(button_name: String):
 			print("monitor node not found")
 			return
 		clear_options()
+		AppPrefs.apply_hw_render_for(core_name)
 		libretro_node.StartContent(monitor_node, core_directory, core_name, rom_path)
 	elif button_name == "b_button":
 		libretro_node.StopContent()

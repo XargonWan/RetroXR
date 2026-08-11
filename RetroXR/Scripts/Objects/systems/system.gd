@@ -1766,6 +1766,7 @@ func power_on() -> void:
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_apply_forced_core_options(resolved_dir, resolved_core)
+	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetSramPath(_sram_path_for_run(resolved_core))
 	# Before StartContent: identification happens as the core comes up, so the
 	# claim has to be in place by then. Returns false when another cabinet already
@@ -1923,6 +1924,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	else:
 		_libretro.SetSramPath(_sram_path_for_run(resolved_core))
 	_apply_forced_core_options(_resolve_dir(), resolved_core)
+	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
 	_bind_audio_player()
@@ -1978,6 +1980,7 @@ func reset() -> void:
 		resolved_dir = CoreDownloadManager.default_core_root()
 	print("[RetroSystem] Resetting: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 	_apply_forced_core_options(resolved_dir, resolved_core)
+	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.StopContent()
 	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
 	# StopContent destroyed the old voices and StartContent made fresh ones, so

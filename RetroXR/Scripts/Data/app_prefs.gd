@@ -51,13 +51,18 @@ var show_hidden_systems: bool = false
 ## core count, no source badge. One pref for both, like the hidden list: it is a
 ## statement about how you want to read a grid, not about one tab.
 var compact_tiles: bool = false
-## Which graphics API GET_PREFERRED_HW_RENDER advertises to a core. Only cores
-## that can do several (Dolphin, Flycast, PPSSPP) act on it — the rest name
-## their own API and this is ignored. Stored by name rather than as a
-## retro_hw_context_type, because "OpenGL" is a different number on the Quest
-## than on a desktop and a prefs file copied between them must still mean the
-## same thing. Vulkan is the default the extension itself carries.
-var hw_render_api: String = "vulkan"
+## What GET_PREFERRED_HW_RENDER advertises to a core with no opinion of its own,
+## matching the default the extension itself carries. A constant rather than a
+## setting: there is no global switch for this, because the question is only
+## ever interesting per core, and pushing this back is what stops the core that
+## follows an overridden one from inheriting its API.
+const DEFAULT_HW_RENDER := "vulkan"
+## core_name -> a value from hw_render_choices(), for cores that need a
+## different answer from the rest. Dolphin is the case that earns this: its
+## Vulkan path hangs the Adreno GPU on Quest while GLES3 runs, and a single
+## global would drag every other multi-API core off Vulkan to work around it.
+## Set from CORES > Manager > (core) > FRONTEND; absent means the default above.
+var hw_render_overrides: Dictionary = {}
 
 
 ## True when this systemid should be kept out of the grids.
@@ -81,7 +86,6 @@ func _ready() -> void:
 	ControllerModel.draw_hands = controller_hands
 	SystemFilter.enabled = system_filter
 	_apply_spatial_audio()
-	apply_hw_render()
 
 
 ## Which APIs this platform can hand a core, as [label, pref value,
@@ -101,18 +105,43 @@ func hw_render_choices() -> Array:
 	return out
 
 
-## Push the API choice into the extension's static. The emulation thread reads
-## it while the core initialises, so this is set at boot and again when the
-## option changes — a machine already switched on keeps the API it booted with.
-##
-## A pref naming an API this platform does not offer (a prefs file carried over
-## from another one) applies nothing, leaving the extension's own Vulkan default
-## standing.
-func apply_hw_render() -> void:
+## The API this core will be offered: its own override, or the default.
+func hw_render_for(core_name: String) -> String:
+	var over := str(hw_render_overrides.get(core_name, ""))
+	return over if not over.is_empty() else DEFAULT_HW_RENDER
+
+
+## "" when this core has no override of its own.
+func hw_render_override(core_name: String) -> String:
+	return str(hw_render_overrides.get(core_name, ""))
+
+
+## Set or, with an empty api, clear one core's override.
+func set_hw_render_override(core_name: String, api: String) -> void:
+	if core_name.is_empty():
+		return
+	if api.is_empty():
+		hw_render_overrides.erase(core_name)
+	else:
+		hw_render_overrides[core_name] = api
+	save_prefs()
+
+
+## Push the answer for the core that is about to start. MUST run before
+## StartContent: the static is read on the emulation thread while the core
+## initialises, so a machine already switched on keeps the API it booted with.
+func apply_hw_render_for(core_name: String) -> void:
+	_push_hw_render(hw_render_for(core_name))
+
+
+## A value naming an API this platform does not offer (a prefs file carried over
+## from another one) pushes nothing, leaving whatever was set last standing —
+## the extension's own default at boot.
+func _push_hw_render(api: String) -> void:
 	if not ClassDB.class_exists("Libretro"):
 		return
 	for choice: Array in hw_render_choices():
-		if str(choice[1]) == hw_render_api:
+		if str(choice[1]) == api:
 			ClassDB.class_call_static("Libretro", "SetPreferredHwRender", int(choice[2]))
 			return
 
@@ -155,7 +184,7 @@ func _load_prefs() -> void:
 	hidden_systems      = _prefs_strings(data, "hidden_systems")
 	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
 	compact_tiles       = _prefs_bool(data, "compact_tiles",       compact_tiles)
-	hw_render_api       = _prefs_string(data, "hw_render_api",     hw_render_api)
+	hw_render_overrides = _prefs_dict(data, "hw_render_overrides", hw_render_overrides)
 
 
 func save_prefs() -> void:
@@ -177,7 +206,7 @@ func save_prefs() -> void:
 		"hidden_systems":    hidden_systems,
 		"show_hidden_systems": show_hidden_systems,
 		"compact_tiles":     compact_tiles,
-		"hw_render_api":     hw_render_api,
+		"hw_render_overrides": hw_render_overrides,
 	}, "\t"))
 	file.close()
 
@@ -186,15 +215,6 @@ func save_prefs() -> void:
 func _prefs_bool(data: Dictionary, key: String, fallback: bool) -> bool:
 	var value: Variant = data.get(key)
 	if typeof(value) == TYPE_BOOL:
-		return value
-	return fallback
-
-
-## Same contract as _prefs_bool: a missing key or a JSON null keeps the default
-## rather than collapsing to "".
-func _prefs_string(data: Dictionary, key: String, fallback: String) -> String:
-	var value: Variant = data.get(key)
-	if typeof(value) == TYPE_STRING and not (value as String).is_empty():
 		return value
 	return fallback
 

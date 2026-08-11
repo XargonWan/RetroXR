@@ -489,39 +489,6 @@ func _build_debug_options(vbox: VBoxContainer) -> void:
 		CollisionDebug.set_enabled(self, on)
 	))
 
-	vbox.add_child(HSeparator.new())
-
-	vbox.add_child(MenuStyle.header("EMULATION", 20))
-
-	# Only the APIs VideoHandler::SetHwRender accepts on this platform are
-	# offered; AppPrefs owns that table because it is also what applies the
-	# choice at boot. A prefs file carried over from another platform can name
-	# one that is not here, so the dropdown opens on what will actually be used
-	# rather than on a value nothing would honour.
-	var hw_choices: Array = []
-	var hw_current := "vulkan"
-	for choice: Array in AppPrefs.hw_render_choices():
-		hw_choices.append([choice[0], choice[1]])
-		if str(choice[1]) == AppPrefs.hw_render_api:
-			hw_current = AppPrefs.hw_render_api
-
-	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
-	var hw_drop := VRDropdown.create("Preferred HW Render", hw_choices, hw_current,
-		1, Vector2(260, 56), 18)
-	hw_drop.item_selected.connect(func(id: Variant) -> void:
-		AppPrefs.hw_render_api = str(id)
-		AppPrefs.save_prefs()
-		AppPrefs.apply_hw_render()
-	)
-	vbox.add_child(hw_drop)
-
-	vbox.add_child(MenuStyle.hint(
-		"Which API a core is told this frontend would rather render with. Only "
-		+ "cores that can do more than one — Dolphin, Flycast, PPSSPP — act on "
-		+ "it; the rest name their own and ignore it. It is read while a core "
-		+ "starts, so a machine that is already switched on keeps the API it "
-		+ "booted with."))
-
 
 ## The build plate at the top of DEBUG.
 ##

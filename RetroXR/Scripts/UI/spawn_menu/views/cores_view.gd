@@ -323,6 +323,8 @@ func _populate_core_options(systemid: String, core_name: String, vbox: VBoxConta
 	)
 	vbox.add_child(back)
 
+	_add_frontend_section(core_name, vbox)
+
 	var peeked := CoreOptionsStore.peek(root, core_name)
 	if peeked.is_empty():
 		var msg := Label.new()
@@ -338,6 +340,10 @@ func _populate_core_options(systemid: String, core_name: String, vbox: VBoxConta
 	var values := CoreOptionsStore.effective_values(peeked,
 		CoreOptionsStore.load_values(root, core_name))
 
+	vbox.add_child(MenuStyle.header("CORE OPTIONS", 20))
+
+	# Under the heading, not above it: it resets the core's own keys and not the
+	# FRONTEND row, and sitting between the two sections it read as covering both.
 	var reset := Button.new()
 	reset.text = "Reset all to defaults"
 	reset.custom_minimum_size = Vector2(0, 52)
@@ -354,6 +360,45 @@ func _populate_core_options(systemid: String, core_name: String, vbox: VBoxConta
 	for key: String in keys:
 		_add_core_option_row(root, core_name, systemid, key, definitions[key],
 			String(values.get(key, "")), vbox)
+
+
+## What this frontend hands the core, above the core's own options.
+##
+## Under its own heading rather than folded into the list below, because the
+## rows are not the same kind of thing: every CORE OPTIONS row is a key the core
+## publishes about itself, written to that core's option file. This one is our
+## answer to GET_PREFERRED_HW_RENDER, kept in AppPrefs, and a core that never
+## asks the question will never see it. Built before the option peek, so it is
+## still here for a core that publishes nothing until content is loaded.
+func _add_frontend_section(core_name: String, vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.header("FRONTEND", 20))
+
+	# "" is no override — the entry names the global so the page says what this
+	# core will actually get, not merely that it is following something.
+	var choices: Array = AppPrefs.hw_render_choices()
+	var default_label := "Default"
+	for choice: Array in choices:
+		if str(choice[1]) == AppPrefs.DEFAULT_HW_RENDER:
+			default_label = "Default (%s)" % str(choice[0])
+	var options: Array = [[default_label, ""]]
+	for choice: Array in choices:
+		options.append([str(choice[0]), str(choice[1])])
+
+	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
+	var drop := VRDropdown.create("Preferred HW Render", options,
+		AppPrefs.hw_render_override(core_name), 1, Vector2(260, 56), 18)
+	drop.item_selected.connect(func(id: Variant) -> void:
+		AppPrefs.set_hw_render_override(core_name, str(id))
+	)
+	vbox.add_child(drop)
+
+	vbox.add_child(MenuStyle.hint(
+		"Which API this core is told the frontend would rather render with. "
+		+ "Only cores that can do more than one — Dolphin, Flycast, PPSSPP — "
+		+ "act on it; the rest name their own and ignore it. Applied as the "
+		+ "core starts, so a machine already switched on keeps what it booted with."))
+
+	vbox.add_child(HSeparator.new())
 
 
 ## One option row: description, then < value > to cycle. Writes straight through
