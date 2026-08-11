@@ -60,6 +60,19 @@ func _init() -> void:
 	# top_level: the overlay is driven from the source's GLOBAL transform in
 	# sync(), so it must not inherit the widget Area3D's transform as well.
 	top_level = true
+	# …and for that same reason it must not be physics-interpolated either.
+	#
+	# The project runs with common/physics_interpolation on, which means a node's
+	# `global_transform` is its PHYSICS pose while what you see on screen is a blend
+	# between the last two physics ticks. sync() below hands this overlay the pose the
+	# source is being DRAWN at, already interpolated — so leaving interpolation on here
+	# would blend that a second time, from a value that is itself a frame old, and the
+	# outline would trail the widget by roughly a tick whenever the two moved together.
+	#
+	# Carried in a hand that reads as the outline sliding off the buttons and coming
+	# back when you stop; PickableHighlight never showed it because its overlays are
+	# ordinary CHILDREN and inherit their ancestors' interpolation for free.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	visible = false
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# The inflated hull can reach outside the source mesh's AABB; without this the
@@ -116,14 +129,17 @@ func sync(show: bool) -> void:
 			or not (outline_hidden_source or _source.is_visible_in_tree()):
 		visible = false
 		return
-	var was_hidden := not visible
-	global_transform = _source.global_transform
-	if was_hidden:
-		# The overlay is top_level, so while hidden it holds whatever transform it
-		# was last given — the world origin until the first hover. Physics
-		# interpolation would spend a couple of frames sliding it in from there, so
-		# the first frame of a highlight lands somewhere else entirely.
-		reset_physics_interpolation()
+	# The pose the source is being DRAWN at this frame, not the one it holds in the
+	# scene tree. Under physics interpolation those are different things whenever the
+	# widget is moving — `global_transform` is the last physics tick, the render is a
+	# blend on its way to it — and an overlay placed at the first while tracing the
+	# second trails it by up to a full tick of travel.
+	#
+	# This node's own interpolation is off (see _init), so what is assigned here is
+	# exactly what is drawn. That also retires the old first-show fix: a top_level
+	# overlay holds the world origin until its first hover, and interpolation used to
+	# spend a couple of frames sliding it in from there.
+	global_transform = _source.get_global_transform_interpolated()
 	visible = true
 
 
