@@ -1341,6 +1341,10 @@ func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void
 func _on_scrape_pressed(rom_path: String, systemid: String, btn: Button) -> void:
 	if _scrape_in_progress:
 		print("[SpawnMenu] Scrape already in progress, ignoring request for: %s" % rom_path.get_file())
+		# A toast, not a notice: the status slot is showing the running scrape's
+		# own progress, and a notice would replace that text.
+		notify("scrape:busy", "⚠️", "Scrape Already In Progress",
+			-1.0, MenuToasts.DWELL_INFO)
 		return
 	_scrape_in_progress = true
 	btn.text = "⏳"
