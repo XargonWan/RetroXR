@@ -33,7 +33,7 @@ var _options_rows: VBoxContainer
 var _vhs_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
 var _effect_check: CheckBox = null
-var _float_check: CheckBox = null
+var _float_check: VRToggle = null
 var _scan_idx: int = 2   # default 8×
 var _scan_val_lbl: Label = null
 # VHS shader controls, keyed by uniform name → {slider, val_label, fmt}.
@@ -149,12 +149,11 @@ func _build_option_rows() -> void:
 	)
 	row.add_child(_effect_check)
 
-	_float_check = MenuStyle.float_toggle()
+	_float_check = MenuStyle.float_toggle(_options_rows)
 	_float_check.toggled.connect(func(on: bool):
 		if not _suppress_signal:
 			ignore_gravity_toggled.emit(on)
 	)
-	_options_rows.add_child(_float_check)
 
 	# Scan speed stepper row: [label] [<] [value] [>]
 	var srow := HBoxContainer.new()

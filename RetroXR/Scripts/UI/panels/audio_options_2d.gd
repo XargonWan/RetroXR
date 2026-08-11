@@ -19,7 +19,7 @@ const COLOR_BG    := Color(0.08, 0.08, 0.16, 0.96)
 const COLOR_TITLE := Color(0.9,  0.9,  1.0)
 
 var _title_lbl: Label = null
-var _float_check: CheckBox = null
+var _float_check: VRToggle = null
 ## Guard so populate() doesn't re-emit while it sets the control.
 var _suppress := false
 
@@ -67,12 +67,11 @@ func _build_ui() -> void:
 
 	root.add_child(HSeparator.new())
 
-	_float_check = MenuStyle.float_toggle()
+	_float_check = MenuStyle.float_toggle(root)
 	_float_check.toggled.connect(func(on: bool):
 		if not _suppress:
 			ignore_gravity_toggled.emit(on)
 	)
-	root.add_child(_float_check)
 
 
 ## Sync to the player's current state without re-emitting signals.

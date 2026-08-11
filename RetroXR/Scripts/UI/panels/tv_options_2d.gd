@@ -33,7 +33,7 @@ const MAX_SCALE := 5.0
 
 var _size_slider: HSlider = null
 var _size_val: Label = null
-var _float_check: CheckBox = null
+var _float_check: VRToggle = null
 var _options_scroll: ScrollContainer = null
 var _crt_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
@@ -164,12 +164,11 @@ func _build_ui() -> void:
 			scale_committed.emit(_size_slider.value)
 	)
 
-	_float_check = MenuStyle.float_toggle()
+	_float_check = MenuStyle.float_toggle(rows)
 	_float_check.toggled.connect(func(on: bool):
 		if not _suppress_signal:
 			ignore_gravity_toggled.emit(on)
 	)
-	rows.add_child(_float_check)
 
 	_build_channels_tab(tabs)
 	_build_crt_tab(tabs)

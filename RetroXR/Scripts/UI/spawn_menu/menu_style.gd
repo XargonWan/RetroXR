@@ -124,13 +124,36 @@ static func check(text: String, font_size := 18, height := 38) -> CheckBox:
 	return cb
 
 
+## A caption on the left, a VRToggle switch on the right — the shape every
+## boolean row in OPTIONS has. Adds the row to `parent` and returns the switch,
+## since the row itself is never touched again.
+static func switch_row(parent: Container, text: String, initial_on := false,
+		font_size := 18, height := 56) -> VRToggle:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, height)
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", COLOR_LICENSE)
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(lbl)
+
+	var sw := VRToggle.create(initial_on)
+	row.add_child(sw)
+	return sw
+
+
 ## The "float in place" row every pickable device with an options panel carries.
 ## One builder so the wording, and what the wording promises, is the same on all
 ## of them — see FloatLock.
-static func float_toggle() -> CheckBox:
-	var cb := check("Float in place (ignore gravity)")
-	cb.tooltip_text = "Keep this where you put it instead of letting it fall"
-	return cb
+static func float_toggle(parent: Container) -> VRToggle:
+	var sw := switch_row(parent, "Float in place (ignore gravity)")
+	sw.tooltip_text = "Keep this where you put it instead of letting it fall"
+	return sw
 
 
 ## The vertical scroll every view's root uses. Horizontal is off throughout: the

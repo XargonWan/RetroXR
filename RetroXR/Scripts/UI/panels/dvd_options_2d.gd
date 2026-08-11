@@ -22,7 +22,7 @@ const COLOR_ROW   := Color(0.65, 0.65, 0.80)
 
 var _audio_opt: VRDropdown = null
 var _sub_opt: VRDropdown = null
-var _float_check: CheckBox = null
+var _float_check: VRToggle = null
 var _suppress := false
 
 
@@ -79,12 +79,11 @@ func _build_ui() -> void:
 			subtitle_selected.emit(int(id)))
 
 	root.add_child(HSeparator.new())
-	_float_check = MenuStyle.float_toggle()
+	_float_check = MenuStyle.float_toggle(root)
 	_float_check.toggled.connect(func(on: bool):
 		if not _suppress:
 			ignore_gravity_toggled.emit(on)
 	)
-	root.add_child(_float_check)
 
 
 ## VRDropdown, not OptionButton — a PopupMenu can't be clicked inside the VR
