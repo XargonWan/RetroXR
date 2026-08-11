@@ -257,8 +257,14 @@ func _init_romm() -> void:
 	add_child(romm_firmware)
 	# Redraw once the list lands: rows built before it arrives carry no cloud
 	# button, and the tab should not block on a request to show what is on disk.
-	romm_firmware.listed.connect(func(ok: bool, _n: int) -> void:
-		if ok and _cores_view != null and _cores_view.showing_bios_tab():
+	# A failure must NOT redraw: the rebuild asks for the listing again, and the
+	# toast is keyed so a server that stays down updates one bar in place.
+	romm_firmware.listed.connect(func(ok: bool, _n: int, error: String) -> void:
+		if not ok:
+			notify("romm:firmware", "⚠️", "BIOS List: %s" % error,
+				-1.0, MenuToasts.DWELL_FAIL)
+			return
+		if _cores_view != null and _cores_view.showing_bios_tab():
 			_cores_view.refresh_bios_view()
 	)
 

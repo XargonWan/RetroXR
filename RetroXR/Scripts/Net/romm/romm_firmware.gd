@@ -13,7 +13,8 @@ class_name RommFirmware
 extends Node
 
 
-signal listed(ok: bool, count: int)
+## `error` is set only when `ok` is false, and is phrased for a toast.
+signal listed(ok: bool, count: int, error: String)
 
 var config: RommConfig = null
 
@@ -67,25 +68,30 @@ func refresh(force: bool = false) -> void:
 	req.timeout = 20.0
 	add_child(req)
 	req.request_completed.connect(
-		func(_r: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+		func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
 			_in_flight = false
 			req.queue_free()
+			# A refused connection or a timeout never carries an HTTP code, so
+			# this is checked first — reporting the code here reads "HTTP 0".
+			if result != HTTPRequest.RESULT_SUCCESS:
+				listed.emit(false, 0, "Couldn't reach RomM")
+				return
 			if code != 200:
-				listed.emit(false, 0)
+				listed.emit(false, 0, "RomM returned HTTP %d" % code)
 				return
 			var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
 			if not (parsed is Array):
-				listed.emit(false, 0)
+				listed.emit(false, 0, "Unreadable reply from RomM")
 				return
 			_index(parsed as Array)
 			_loaded = true
-			listed.emit(true, _by_name.size())
+			listed.emit(true, _by_name.size(), "")
 	)
 	var url: String = config.base_url + "/api/firmware"
 	if req.request(url, config.auth_headers(), HTTPClient.METHOD_GET) != OK:
 		_in_flight = false
 		req.queue_free()
-		listed.emit(false, 0)
+		listed.emit(false, 0, "Bad RomM address")
 
 
 func _index(items: Array) -> void:
