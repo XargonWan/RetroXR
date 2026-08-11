@@ -1,7 +1,8 @@
 ## The printed legend around a device's composite sockets — the outlined box, the
-## words under the jacks, and the AV IN / AV OUT heading naming which way the signal
-## flows. What a real back panel silk-screens there, and the only thing on the
-## cabinet that says those three chrome rings are what you plug into.
+## words under the jacks, the AV IN / AV OUT heading naming which way the signal
+## flows, and an optional `title` above them naming the group itself. What a real
+## back panel silk-screens there, and the only thing on the cabinet that says those
+## three chrome rings are what you plug into.
 ##
 ## MEASURED off the sockets rather than authored per device, because devices do not
 ## agree on the row. Seen from outside the panel the decks read R, L, VIDEO while the
@@ -38,6 +39,11 @@ const INK := Color(0.90, 0.90, 0.87)
 const PLATE := Color(0.055, 0.055, 0.065)
 const BORDER := Color(0.72, 0.72, 0.69)
 
+## The rule between adjacent groups. Brighter than BORDER on purpose: the border
+## outlines the whole bank and should sit back, while this is the line that has to
+## say which three sockets belong together.
+const DIVIDER := Color(0.95, 0.95, 0.92)
+
 ## Worn only when the plate is off, where the cabinet behind the words could be any
 ## colour — a white monitor back or a black one. Light ink inside a dark outline
 ## reads on both. On the plate it is the plate that supplies the contrast, and an
@@ -61,6 +67,25 @@ const Z_TEXT := 0.0006
 ## to be read across a room-lit cabinet, not to be to scale.
 @export var word_height: float = 0.0045
 @export var heading_height: float = 0.007
+
+## Name printed ABOVE the jacks, naming this socket group among several — the
+## television's "Composite 1" … "Composite 4". Empty prints nothing and leaves the
+## layout exactly as it was, which is what every single-group device wants: a deck
+## with one A/V row has nothing to disambiguate and says so by saying nothing.
+##
+## Set in the group's own words rather than derived from an index, so a device that
+## numbers its inputs differently — or names them at all — needs no code here.
+@export var title: String = ""
+
+## Rule up the LEFT edge of the plate, dividing this group from the one printed
+## beside it. Set on every group but the first, so a bank of four gets three rules
+## and no line hangs off either end.
+##
+## Drawn by the group to its right rather than centred in the gap, because a legend
+## knows its own extent and nothing about its neighbour's — and the plates all but
+## touch (2.4 mm apart at the 60 mm group pitch, closer than their own borders), so
+## an edge rule lands where the seam reads anyway.
+@export var divider_left: bool = false
 
 ## Clear space between the outermost thing printed and the edge of the plate.
 @export var plate_margin: float = 0.006
@@ -137,16 +162,22 @@ func rebuild() -> void:
 
 	var word_y := -(JACK_RADIUS + word_height * 0.9)
 	var head_y := word_y - word_height * 0.6 - heading_height * 0.8
+	# Mirror of word_y about the row, so a titled group is printed symmetrically.
+	var title_y := JACK_RADIUS + heading_height * 0.9
 
 	# The plate is symmetric about the row centre, which is where the heading is
 	# centred; every printed thing has to fit inside it.
 	var half := _text_width(heading, heading_height) * 0.5
+	if not title.is_empty():
+		half = maxf(half, _text_width(title, heading_height) * 0.5)
 	for i in word_text.size():
 		half = maxf(half, absf(word_x[i]) + _text_width(word_text[i], word_height) * 0.5)
 	for x in xs:
 		half = maxf(half, absf(x) + JACK_RADIUS)
 	half += plate_margin
 	var top := JACK_RADIUS + plate_margin
+	if not title.is_empty():
+		top = title_y + heading_height * 0.8 + plate_margin
 	var bottom := head_y - heading_height * 0.8 - plate_margin
 
 	if show_plate:
@@ -154,7 +185,12 @@ func rebuild() -> void:
 		var mid := (top + bottom) * 0.5
 		_add_quad(size + Vector2(border_width, border_width) * 2.0, mid, Z_BORDER, BORDER)
 		_add_quad(size, mid, Z_PLATE, PLATE)
+		if divider_left:
+			# Above the plate in the stack, or the plate it divides covers it.
+			_add_quad(Vector2(border_width, size.y), mid, Z_TEXT, DIVIDER, -half)
 
+	if not title.is_empty():
+		_add_label(title, 0.0, title_y, heading_height)
 	for i in word_text.size():
 		_add_label(word_text[i], word_x[i], word_y, word_height)
 	_add_label(heading, 0.0, head_y, heading_height)
@@ -232,7 +268,7 @@ func _add_label(text: String, x: float, y: float, height: float) -> void:
 	add_child(lbl)
 
 
-func _add_quad(size: Vector2, y: float, z: float, colour: Color) -> void:
+func _add_quad(size: Vector2, y: float, z: float, colour: Color, x: float = 0.0) -> void:
 	var mesh := QuadMesh.new()
 	mesh.size = size
 	var mat := StandardMaterial3D.new()
@@ -241,7 +277,7 @@ func _add_quad(size: Vector2, y: float, z: float, colour: Color) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = mat
-	mi.position = Vector3(0.0, y, z)
+	mi.position = Vector3(x, y, z)
 	add_child(mi)
 
 

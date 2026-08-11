@@ -19,16 +19,30 @@ const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 # because _route_osd and _update_crt both have to recognise it on the screen.
 const STATIC_SHADER := preload("res://Shaders/tv_static.gdshader")
 
-## Which input the set is showing. COMPONENT is the physical port — a console,
-## VCR or DVD deck on the composite lead, which is all this TV had. TV is the
-## built-in tuner (see tv_tuner.gd) fed by channels.json.
+## Which input the set is showing. COMPOSITE_1..4 are the physical sockets on the
+## back — a console, VCR or DVD deck on a composite lead — and TV is the built-in
+## tuner (see tv_tuner.gd) fed by channels.json.
+##
+## The composite inputs come FIRST and are contiguous, so a composite input's index
+## is its own Source value and every per-input array is indexed by it directly. TV
+## is last for the same reason: appending leaves that identity alone.
 ##
 ## Named Source, not Input: `Input` is a native Godot singleton and an enum of
 ## that name shadows it, which fails to parse.
-enum Source { COMPONENT, TV }
+enum Source { COMPOSITE_1, COMPOSITE_2, COMPOSITE_3, COMPOSITE_4, TV }
 
-## Names as they appear in the OSD when SOURCE cycles.
-const SOURCE_NAMES := ["COMPONENT", "TV"]
+## How many composite inputs the set has. The back panel carries a socket trio per
+## input (see tv.tscn) and tv_shell.gd lays them out for a fitted cabinet.
+const COMPOSITE_INPUTS := 4
+
+## Names as they appear in the OSD when SOURCE cycles. The OSD shouts, the way it
+## does for POWER and MUTE; the back panel prints the same names in its own voice
+## (AV_INPUT_NAMES).
+const SOURCE_NAMES := ["COMPOSITE 1", "COMPOSITE 2", "COMPOSITE 3", "COMPOSITE 4", "TV"]
+
+## The same four inputs as SILK-SCREENED beside their sockets — title case, because
+## that is printing rather than shouting. Fed to AvLegend.title.
+const AV_INPUT_NAMES := ["Composite 1", "Composite 2", "Composite 3", "Composite 4"]
 
 ## Emitted when the selected source changes, so panels can follow.
 signal source_changed(source: int)
@@ -56,11 +70,14 @@ var _shell: RetroTVShell = null
 var _speakers_seated: bool = false
 
 @onready var _screen_mesh: MeshInstance3D = $ScreenMesh
+## Composite 1's video socket. Kept as a named handle because that one socket is
+## named from outside this script — a console's captive lead restores into it
+## (system.gd::_snap_cable_to_tv), netplay names it, and the save file names it.
 @onready var _composite_port: XRToolsSnapZone = $CompositePort
-## The audio pair beside it. They are seated as a ROW with the video socket rather
-## than left where tv.tscn put them — see _seat_av_row.
-@onready var _audio_l_in: RcaPort = $AudioLIn
-@onready var _audio_r_in: RcaPort = $AudioRIn
+## Every A/V input socket, [input][VIDEO, L, R]. Filled by _collect_av_ports from
+## the scene's fixed names, and seated as whole GROUPS rather than left where
+## tv.tscn put them — see _seat_av_row.
+var _av_ports: Array = []
 ## Off unless the fitted shell carries a VgaPortSeat — see _seat_vga_port.
 @onready var _vga_port: XRToolsSnapZone = $VgaPort
 @onready var _ambilight: SpotLight3D = $Ambilight
@@ -178,20 +195,27 @@ var _osd_token: int = 0
 # Same, for the independent volume-bars OSD at the bottom of the screen.
 var _vol_osd_token: int = 0
 
-# Track the last-snapped plug so we can disconnect properly
-var _snapped_plug: CablePlug = null
+# The captive lead seated in each input's video socket, so a disconnect knows
+# which host to tell. One entry per composite input, indexed by it.
+var _snapped_plugs: Array = []
 
-# Button state and volume control. The connected host is any node implementing
-# the TV contract (on_tv_connected/on_tv_disconnected/set_audio_volume/
-# set_screen_enabled) — a RetroSystem or a VCRPlayer — so it's typed loosely.
-var _connected_system: Node3D = null
+# What is feeding each composite input, indexed by it. A host is any node
+# implementing the TV contract (on_tv_connected/on_tv_disconnected/
+# set_audio_volume/set_screen_enabled) — a RetroSystem or a VCRPlayer — so the
+# entries are typed loosely.
+#
+# Four of them because the set has four sockets and a player can leave a console on
+# one while watching another: everything that used to be "the connected system" is
+# now "the system on the input SOURCE has selected" (_selected_system) or "every
+# system, told whether it is the one showing" (_apply_screen_enable).
+var _connected_systems: Array = []
 var _volume: float = 1.0       # 0.0–1.0, default 100%
 var _tv_enabled: bool = true
 
 # Selected input and the built-in tuner behind Source.TV. The tuner is created on
-# first use rather than in _ready: most sets in a scene never leave COMPONENT,
-# and an idle one should cost nothing (no VlcPlayer, no discovery traffic).
-var current_source: int = Source.COMPONENT
+# first use rather than in _ready: most sets in a scene never leave the composite
+# inputs, and an idle one should cost nothing (no VlcPlayer, no discovery traffic).
+var current_source: int = Source.COMPOSITE_1
 var _tuner: TVTuner = null
 
 # Mute: silences the connected device's audio without changing _volume. A sticky
@@ -216,15 +240,15 @@ const BLUE_SCREEN_COLOR := Color(0.0, 0.05, 0.65)
 
 func _ready() -> void:
 	super._ready()
+	# Before _load_shell, which re-seats every one of them.
+	_collect_av_ports()
 	# Before anything reads the screen mesh or the buttons — _screen_size_m below
 	# is derived from ScreenMesh, and a shell may have moved and rescaled it.
 	_load_shell()
-	# After the shell, so the legend is printed round wherever the row ended up.
-	# A set is a sink, so this one reads AV IN.
-	var legend := AvLegend.attach(self, [_composite_port, _audio_l_in, _audio_r_in])
-	if legend != null and _shell != null and not _shell.av_legend_plate:
-		legend.show_plate = false
-		legend.rebuild()
+	# After the shell, so each legend is printed round wherever its group ended up,
+	# and so a cabinet that carries fewer than four has already said so.
+	_disable_absent_inputs()
+	_print_av_legends()
 	# TV = power: it runs the power-on animation and flashes POWER on the OSD.
 	TransportGlyphs.label_buttons(self, {
 		"MuteButton": "mute", "AudioModeButton": "audio_stereo",
@@ -233,12 +257,18 @@ func _ready() -> void:
 		"SourceButton": "source",
 		"ChannelDownButton": "ch_down", "ChannelUpButton": "ch_up",
 	}, TransportGlyphs.TV_SIZE)
-	_composite_port.has_picked_up.connect(_on_plug_snapped)
-	_composite_port.has_dropped.connect(_on_plug_released)
-	# The VGA socket announces the same way. Connected whether or not this shell
-	# uses it — a disabled zone never fires, so there is nothing to gate.
-	_vga_port.has_picked_up.connect(_on_plug_snapped)
-	_vga_port.has_dropped.connect(_on_plug_released)
+	for i in COMPOSITE_INPUTS:
+		var video := _video_port(i)
+		if video == null:
+			continue
+		video.has_picked_up.connect(_on_plug_snapped.bind(i))
+		video.has_dropped.connect(_on_plug_released.bind(i))
+	# The VGA socket announces the same way, and answers for Composite 1: it is an
+	# alternative to that socket rather than a fifth input, and only the computer
+	# monitor carries one at all. Connected whether or not this shell uses it — a
+	# disabled zone never fires, so there is nothing to gate.
+	_vga_port.has_picked_up.connect(_on_plug_snapped.bind(Source.COMPOSITE_1))
+	_vga_port.has_dropped.connect(_on_plug_released.bind(Source.COMPOSITE_1))
 	_mute_btn.button_pressed.connect(_on_mute_toggle)
 	_audio_mode_btn.button_pressed.connect(_on_audio_mode_toggle)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
@@ -403,20 +433,109 @@ func _seat_node(node: Node3D, seat: Variant) -> void:
 ## it reaches a deck's.
 const AV_ROW_PITCH := 0.018
 
+## Centre-to-centre between one input group and the next. Wider than AV_ROW_PITCH by
+## more than the printed legend is wide (57.6 mm at the authored text sizes), so the
+## four plates stand clear of each other instead of overlapping — and wide enough
+## that no socket sits closer to its neighbour in the next group than to the ones in
+## its own, which is what makes the grouping readable at arm's length.
+const AV_GROUP_PITCH := 0.06
 
-## Seat all THREE input sockets off the shell's PortSeat, not just the video one.
+
+## The A/V sockets, gathered from the scene's fixed names into [input][VIDEO, L, R].
 ##
-## PortSeat names one point, and the audio pair steps along its local -X from there,
-## keeping the stock cabinet's VIDEO / L / R order. A shell that named only the video
-## socket used to leave the pair at tv.tscn's own coordinates while the body they were
-## mounted in was hidden, which put two live sockets in mid-air beside the cabinet.
+## Composite 1 keeps the unsuffixed names it has always had — a console's captive
+## lead, netplay and the save file all name "CompositePort" — and the rest count up
+## from 2, so the numbering on the wire matches the numbering printed on the panel.
+func _collect_av_ports() -> void:
+	_av_ports = []
+	_connected_systems = []
+	_snapped_plugs = []
+	for i in COMPOSITE_INPUTS:
+		var suffix := "" if i == 0 else str(i + 1)
+		var trio: Array[RcaPort] = []
+		for base in ["CompositePort", "AudioLIn", "AudioRIn"]:
+			var port := get_node_or_null(base + suffix) as RcaPort
+			if port == null:
+				push_warning("[RetroTV] missing A/V socket %s%s" % [base, suffix])
+				continue
+			trio.append(port)
+		_av_ports.append(trio)
+		_connected_systems.append(null)
+		_snapped_plugs.append(null)
+
+
+## How many composite inputs this cabinet actually carries sockets for. The stock
+## body and both televisions take all four; a shell with a smaller back panel says so.
+func _panel_inputs() -> int:
+	if _shell == null:
+		return COMPOSITE_INPUTS
+	return clampi(_shell.av_inputs, 1, COMPOSITE_INPUTS)
+
+
+## Turn off the inputs this cabinet has no room for: no socket, and nothing printed.
+##
+## `enabled` as well as `visible`, for the reason _seat_vga_port gives — hiding a
+## snap zone stops it drawing and nothing else, so an invisible socket left enabled
+## goes on catching plugs out of the air.
+func _disable_absent_inputs() -> void:
+	for i in range(_panel_inputs(), COMPOSITE_INPUTS):
+		for port: RcaPort in _av_ports[i]:
+			port.visible = false
+			port.enabled = false
+
+
+## The VIDEO socket of one input — the one that decides what is on the glass, and
+## the one a captive lead goes into.
+func _video_port(input: int) -> RcaPort:
+	if input < 0 or input >= _av_ports.size() or (_av_ports[input] as Array).is_empty():
+		return null
+	return _av_ports[input][0]
+
+
+## Print the four back-panel legends, one per input group.
+##
+## A set is a sink, so every one of them reads AV IN; what tells them apart is the
+## title above the jacks. The plate is the cabinet's call — a moulded CRT back is
+## curved, and a flat rectangle across it either floats off the curve or cuts in.
+func _print_av_legends() -> void:
+	var plate: bool = _shell == null or _shell.av_legend_plate
+	for i in _panel_inputs():
+		var legend := AvLegend.attach(self, _av_ports[i])
+		if legend == null:
+			continue
+		legend.name = "AvLegend%d" % (i + 1)
+		legend.title = AV_INPUT_NAMES[i]
+		legend.show_plate = plate
+		# Every group but the first rules off the one to its left, so four inputs get
+		# three lines and neither end of the bank carries a stray one.
+		legend.divider_left = i > 0
+		legend.rebuild()
+
+
+## Seat all TWELVE input sockets off the shell's PortSeat, not just the video one.
+##
+## PortSeat names one point — Composite 1's VIDEO socket — and everything else steps
+## off it: the audio pair by av_socket_step, the next input group by av_group_step,
+## both in the seat's own frame. A shell that named only the video socket used to
+## leave the rest at tv.tscn's own coordinates while the body they were mounted in
+## was hidden, which put live sockets in mid-air beside the cabinet.
+##
+## The two steps are the SHELL's because the room to lay them out is the cabinet's:
+## the stock box and the 90s set measure flat across the whole 240 mm row, while the
+## computer monitor runs out at 180 and stands its groups on end instead.
 func _seat_av_row(seat: Variant) -> void:
 	if not seat is Transform3D:
 		return
 	var base: Transform3D = seat
-	_seat_node(_composite_port, base)
-	_seat_node(_audio_l_in, Transform3D(base.basis, base * Vector3(-AV_ROW_PITCH, 0.0, 0.0)))
-	_seat_node(_audio_r_in, Transform3D(base.basis, base * Vector3(-AV_ROW_PITCH * 2.0, 0.0, 0.0)))
+	var socket_step := Vector3(-AV_ROW_PITCH, 0.0, 0.0)
+	var group_step := Vector3(-AV_GROUP_PITCH, 0.0, 0.0)
+	if _shell != null:
+		socket_step = _shell.av_socket_step
+		group_step = _shell.av_group_step
+	for i in COMPOSITE_INPUTS:
+		for j in (_av_ports[i] as Array).size():
+			var offset: Vector3 = group_step * float(i) + socket_step * float(j)
+			_seat_node(_av_ports[i][j], Transform3D(base.basis, base * offset))
 
 
 ## Turn the VGA input on, but only for a shell that asked for it.
@@ -738,11 +857,14 @@ func _update_phosphor() -> void:
 	_phosphor_write_a = not _phosphor_write_a
 
 
-## True when the connected source outputs a side-by-side stereo frame (Virtual Boy).
+## True when the source ON SCREEN outputs a side-by-side stereo frame (Virtual Boy).
+## The one showing, not merely one connected: a VB left plugged into an input nobody
+## has selected must not put the other input's picture through a per-eye split.
 func _source_is_sbs() -> bool:
-	return _connected_system != null \
-		and _connected_system.has_method("is_stereo_output") \
-		and _connected_system.is_stereo_output()
+	var system := _selected_system()
+	return system != null \
+		and system.has_method("is_stereo_output") \
+		and system.is_stereo_output()
 
 
 ## True while what's showing is a stereo source: a full-frame SBS system (VB)
@@ -1047,9 +1169,13 @@ func _on_audio_mode_toggle() -> void:
 ## The routing itself belongs to whoever owns the samples, so it is handed to the
 ## connected deck rather than done here — the set has no emitter of its own.
 func _apply_audio_channel_mode() -> void:
-	if _connected_system != null and is_instance_valid(_connected_system) \
-			and _connected_system.has_method("set_audio_channel_mode"):
-		_connected_system.set_audio_channel_mode(audio_mode)
+	# Every connected host, not just the one showing: the speaker switch is a
+	# property of the SET, so an input switched to later has to already be routed
+	# the way the switch says rather than reverting to stereo for one press.
+	for system in _connected_systems:
+		if system != null and is_instance_valid(system) \
+				and system.has_method("set_audio_channel_mode"):
+			system.set_audio_channel_mode(audio_mode)
 	# The tuner is the one source the set does own an emitter for, so it takes the
 	# same routing directly rather than being asked to do it.
 	if _tuner:
@@ -1317,44 +1443,83 @@ func _route_osd() -> void:
 		_vol_osd_label.visible = vol_active
 
 
-## Snaps a cable plug into this TV's composite port (used by save/load to restore connections).
-func accept_plug_restore(plug: CablePlug) -> void:
-	print("[RetroTV] accept_plug_restore: plug=%s port=%s" % [plug, _composite_port])
-	_composite_port.pick_up_object(plug)
-	print("[RetroTV] accept_plug_restore: done, port.picked_up=%s" % _composite_port.picked_up_object)
+## Snaps a captive cable plug into one of this TV's video sockets (used by save/load
+## and netplay to restore connections). Defaults to Composite 1, which is where a
+## caller that has no opinion — and every save written before there were four — means.
+func accept_plug_restore(plug: CablePlug, input: int = Source.COMPOSITE_1) -> void:
+	var port := _video_port(input)
+	if port == null:
+		port = _composite_port as RcaPort
+	print("[RetroTV] accept_plug_restore: plug=%s port=%s" % [plug, port])
+	port.pick_up_object(plug)
+	print("[RetroTV] accept_plug_restore: done, port.picked_up=%s" % port.picked_up_object)
 
 
-## Called when a cable plug snaps into the composite port
-func _on_plug_snapped(plug: Node3D) -> void:
+## Drop whatever captive lead is in one input's video socket. Used by netplay when
+## another player unplugs one; the input defaults to Composite 1 for an event from a
+## peer that predates there being four.
+func release_input(input: int = Source.COMPOSITE_1) -> void:
+	var port := _video_port(input)
+	if port != null:
+		port.drop_object()
+
+
+## Which video socket is holding `plug`, or null. Lets a host that seated a captive
+## lead find its way back to the right socket without knowing the numbering.
+func port_holding(plug: Node3D) -> XRToolsSnapZone:
+	for i in COMPOSITE_INPUTS:
+		var port := _video_port(i)
+		if port != null and port.picked_up_object == plug:
+			return port
+	if _vga_port != null and _vga_port.picked_up_object == plug:
+		return _vga_port
+	return null
+
+
+## Which INPUT is holding `plug`, for a host writing itself to a save file. Falls
+## back to Composite 1 for anything it cannot find, which is where a restore with no
+## opinion puts a lead anyway — including the VGA socket, that input's alternative.
+func input_holding(plug: Node3D) -> int:
+	for i in COMPOSITE_INPUTS:
+		var port := _video_port(i)
+		if port != null and port.picked_up_object == plug:
+			return i
+	return Source.COMPOSITE_1
+
+
+## Called when a cable plug snaps into one of the video sockets. `input` is bound
+## per socket at connect time, so the handler knows which one without asking.
+func _on_plug_snapped(plug: Node3D, input: int) -> void:
 	# Hand the incoming host a clean screen so the C++ video handler doesn't
 	# capture our CRT wrapper as the "original" material to restore later.
 	_unwrap_crt()
 	cable_connected.emit(plug)
 	if plug is CablePlug:
-		_snapped_plug = plug as CablePlug
+		var snapped := plug as CablePlug
+		_snapped_plugs[input] = snapped
 		# Prevent the frozen kinematic plug from physically pushing the TV
-		add_collision_exception_with(_snapped_plug)
-		var system := _snapped_plug.get_system()
+		add_collision_exception_with(snapped)
+		var system := snapped.get_system()
 		if system:
-			_connected_system = system
+			_connected_systems[input] = system
 			# Multi-output systems need to know WHICH cable landed; other
 			# hosts (VCR/DVD) keep the plain single-arg contract.
 			if system is RetroSystem:
-				(system as RetroSystem).on_tv_connected(self, _snapped_plug)
+				(system as RetroSystem).on_tv_connected(self, snapped)
 			elif system.has_method("on_tv_connected"):
 				# Guarded: only a host with a captive lead implements this. The decks
 				# dropped it when they moved to sockets and a spawned cable, and an
 				# unguarded call errors on any plug that names one as its system.
 				system.on_tv_connected(self)
-			# A console plugged in while the set is on the tuner must stay off the
-			# glass until SOURCE selects it, or it repaints the screen from under
-			# the channel that is playing.
-			if current_source != Source.COMPONENT and system.has_method("set_screen_enabled"):
+			# A console plugged in while the set is showing something else must stay
+			# off the glass until SOURCE selects it, or it repaints the screen from
+			# under whatever is playing.
+			if current_source != input and system.has_method("set_screen_enabled"):
 				system.set_screen_enabled(false)
 			# …and it must be silent too until SOURCE picks it, for the same reason.
 			_apply_audio_volume()
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
-				{"owner": system, "tv": self, "ch": _snapped_plug.channel})
+				{"owner": system, "tv": self, "ch": snapped.channel, "in": input})
 
 
 ## Called by a deck that has worked out it is feeding this set through a composite
@@ -1362,24 +1527,69 @@ func _on_plug_snapped(plug: Node3D) -> void:
 ## captive lead whose plug carries a back-reference to its owner; a composite
 ## cable's plugs belong to no device, so the deck tells the set instead.
 func on_av_source_found(source: Node3D) -> void:
+	var input := _input_for_device(source)
+	if input < 0:
+		return                  # nothing of ours is actually joined to it
 	# Hand the incoming host a clean screen, exactly as the plug path does, so the
 	# video handler doesn't capture our CRT wrapper as the material to restore.
 	_unwrap_crt()
-	_connected_system = source
-	_connected_system.set_audio_volume(_volume_for(Source.COMPONENT))
+	_connected_systems[input] = source
+	source.set_audio_volume(_volume_for(input))
 	_apply_audio_channel_mode()
-	# Same rule as the captive-lead path: a deck cabled up while the tuner is on
-	# screen waits its turn rather than painting over it.
-	if current_source != Source.COMPONENT and source.has_method("set_screen_enabled"):
+	# Same rule as the captive-lead path: a deck cabled up to an input nobody is
+	# watching waits its turn rather than painting over the one they are.
+	if current_source != input and source.has_method("set_screen_enabled"):
 		source.set_screen_enabled(false)
 
 
 ## Called by that deck when the last cord between the two is pulled.
 func on_av_source_lost(source: Node3D) -> void:
-	if _connected_system != source:
+	var found := false
+	for i in COMPOSITE_INPUTS:
+		if _connected_systems[i] == source:
+			_connected_systems[i] = null
+			found = true
+	if not found:
 		return                  # already replaced by something else
 	_unwrap_crt()
-	_connected_system = null
+
+
+## Which input a device's signal is arriving on, or -1 if none of ours reaches it.
+##
+## Worked out from the cable rather than passed in, because the caller does not know
+## it: a deck announces itself through on_av_source_found having resolved only that
+## this television is its sink, and CompositeCable._resolve tells the SOURCE end
+## first — so the set is told before its own on_av_topology_changed runs, and reading
+## the answer off a stored link list would be both a frame late and one ordering
+## assumption deep.
+##
+## VIDEO wins over audio when a device reaches more than one input, because the
+## picture is what the input is named for. But audio alone still counts: a deck with
+## its sound in Composite 2 and its video cord out is on Composite 2, and used to be
+## heard there — which is the whole reason the L/R sockets are separate.
+func _input_for_device(dev: Node3D) -> int:
+	if dev == null or not is_instance_valid(dev):
+		return -1
+	var audio_match := -1
+	for i in COMPOSITE_INPUTS:
+		# A captive lead names its own host and carries no CompositeCable at all.
+		var captive: CablePlug = _snapped_plugs[i]
+		if captive != null and is_instance_valid(captive) and captive.get_system() == dev:
+			return i
+		for port: RcaPort in _av_ports[i]:
+			var plug := port.seated_plug() as RcaPlug
+			if plug == null or plug.cable == null or not is_instance_valid(plug.cable):
+				continue
+			for link: Dictionary in plug.cable.links():
+				if link["in"] != port:
+					continue
+				if (link["out"] as RcaPort).get_device() != dev:
+					continue
+				if port.channel == RcaPort.Channel.VIDEO:
+					return i
+				if audio_match < 0:
+					audio_match = i
+	return audio_match
 
 
 ## Nothing to do here: a set is a sink, and every routing decision is the source's.
@@ -1389,23 +1599,24 @@ func on_av_topology_changed(_links: Array) -> void:
 	pass
 
 
-## Called when the cable plug leaves the composite port
-func _on_plug_released() -> void:
+## Called when a cable plug leaves one of the video sockets.
+func _on_plug_released(input: int) -> void:
 	# Unwrap before the host tears down so it restores over its own material,
 	# not our CRT wrapper.
 	_unwrap_crt()
 	cable_disconnected.emit()
-	if _snapped_plug:
-		remove_collision_exception_with(_snapped_plug)
-		var system := _snapped_plug.get_system()
+	var snapped: CablePlug = _snapped_plugs[input]
+	if snapped:
+		remove_collision_exception_with(snapped)
+		var system := snapped.get_system()
 		if system:
 			if system is RetroSystem:
-				(system as RetroSystem).on_tv_disconnected(_snapped_plug)
+				(system as RetroSystem).on_tv_disconnected(snapped)
 			elif system.has_method("on_tv_disconnected"):
 				system.on_tv_disconnected()
-		_connected_system = null
-		_snapped_plug = null
-		NetworkManager.report_event(NetObjectSync.EV_TV_UNPLUG, {"tv": self})
+		_connected_systems[input] = null
+		_snapped_plugs[input] = null
+		NetworkManager.report_event(NetObjectSync.EV_TV_UNPLUG, {"tv": self, "in": input})
 
 
 # Remote-control entry points (TVRemote): identical to pressing the bezel
@@ -1473,24 +1684,35 @@ func _select_tv_then(up: bool) -> void:
 # ── Input selection (SOURCE) ──────────────────────────────────────────────────
 
 ## Step to the next input, wrapping. The SOURCE key on the bezel and the remote.
+##
+## Composite inputs this cabinet has no sockets for are stepped straight past: the
+## cycle is a tour of what you can actually plug something into, and stopping on an
+## input with no socket would read as the key being broken.
 func cycle_source() -> void:
-	set_source((current_source + 1) % SOURCE_NAMES.size())
+	var next := current_source + 1
+	if next >= _panel_inputs() and next < COMPOSITE_INPUTS:
+		next = Source.TV
+	elif next > Source.TV:
+		next = Source.COMPOSITE_1
+	set_source(next)
 
 
 ## Select an input. Idempotent, so panels can call it freely.
 func set_source(source: int) -> void:
 	source = clampi(source, 0, SOURCE_NAMES.size() - 1)
+	# A cabinet without the socket cannot show that input; fall back to the first,
+	# which every one of them has.
+	if source < COMPOSITE_INPUTS and source >= _panel_inputs():
+		source = Source.COMPOSITE_1
 	if source == current_source:
 		return
 	current_source = source
 
-	# Mute whichever source is not selected. set_screen_enabled is the contract
+	# Mute every source that is not selected. set_screen_enabled is the contract
 	# every host already implements (RetroSystem, VCRPlayer, DVDPlayer) and the
-	# set already uses it for power -- without it the console keeps writing its
+	# set already uses it for power -- without it a console keeps writing its
 	# own material onto the screen every frame and the two fight.
-	if _connected_system and is_instance_valid(_connected_system) \
-			and _connected_system.has_method("set_screen_enabled"):
-		_connected_system.set_screen_enabled(_tv_enabled and current_source == Source.COMPONENT)
+	_apply_screen_enable()
 	# Sound follows the same selection as the picture. Both halves, or the input
 	# you just left goes on being heard.
 	_apply_audio_volume()
@@ -1498,10 +1720,17 @@ func set_source(source: int) -> void:
 	if current_source == Source.TV:
 		_ensure_tuner()
 		_tuner.set_active(_tv_enabled)
-	elif _tuner:
-		_tuner.set_active(false)
-		# Hand the screen back: the host repaints it, and until it does
-		# _update_screen_source restores the blue no-signal state.
+	else:
+		if _tuner:
+			_tuner.set_active(false)
+		# Hand the screen back: whichever host now owns it repaints, and until one
+		# does _update_screen_source restores the blue no-signal state.
+		#
+		# Unconditional, and that matters between two composite inputs as much as it
+		# does leaving the tuner: the input just left has its material still
+		# installed and still carrying its last frame, so the no-signal check would
+		# go on seeing a picture that nothing is driving any more, and switching to
+		# an empty socket would show the previous input frozen instead of blue.
 		_unwrap_crt()
 		_screen_mesh.set_surface_override_material(0, _blue_material)
 
@@ -1895,7 +2124,7 @@ func _effective_volume() -> float:
 ## …and what reaches one input, which is nothing at all unless that input is the
 ## one SOURCE has selected.
 ##
-## The set has two sound sources and only ever plays one. Deselecting an input
+## The set has five sound sources and only ever plays one. Deselecting an input
 ## used to silence only its PICTURE (set_screen_enabled) and leave its sound
 ## running, so switching a console to the tuner played the channel over the top
 ## of the game you had just been playing.
@@ -1903,13 +2132,42 @@ func _volume_for(source: int) -> float:
 	return _effective_volume() if current_source == source else 0.0
 
 
-## Push the current volume to the connected device (if any) and to the built-in
-## tuner, so one knob governs whichever input is showing and the other is quiet.
+## Push the current volume to every connected device and to the built-in tuner, so
+## one knob governs whichever input is showing and the other four are quiet.
 func _apply_audio_volume() -> void:
-	if _connected_system and is_instance_valid(_connected_system):
-		_connected_system.set_audio_volume(_volume_for(Source.COMPONENT))
+	for i in COMPOSITE_INPUTS:
+		var system: Node3D = _connected_systems[i]
+		if system != null and is_instance_valid(system):
+			system.set_audio_volume(_volume_for(i))
 	if _tuner:
 		_tuner.set_volume(_volume_for(Source.TV))
+
+
+## Hand the glass to the selected input and take it off every other one.
+##
+## The same call covers SOURCE and POWER, which want the identical rule: exactly one
+## host may paint, and only while the set is on. Without it a deselected console goes
+## on writing its material onto the screen every frame and the two fight.
+func _apply_screen_enable() -> void:
+	for i in COMPOSITE_INPUTS:
+		var system: Node3D = _connected_systems[i]
+		if system != null and is_instance_valid(system) \
+				and system.has_method("set_screen_enabled"):
+			system.set_screen_enabled(_tv_enabled and current_source == i)
+
+
+## Which composite input is selected, or -1 while the tuner is showing.
+func _selected_input() -> int:
+	return current_source if current_source < COMPOSITE_INPUTS else -1
+
+
+## The host feeding the selected input, if there is one and it is still alive.
+func _selected_system() -> Node3D:
+	var input := _selected_input()
+	if input < 0:
+		return null
+	var system: Node3D = _connected_systems[input]
+	return system if system != null and is_instance_valid(system) else null
 
 
 ## A volume key clears mute (like a real set) so the change is audible.
@@ -1982,10 +2240,9 @@ func _on_tv_toggle() -> void:
 		hide_osd()
 		_vol_osd_token += 1
 		_set_vol_osd_text("")
-	if _connected_system:
-		# Powering back on must not un-mute the component input while the set is
-		# showing the tuner -- it would start repainting the screen underneath it.
-		_connected_system.set_screen_enabled(_tv_enabled and current_source == Source.COMPONENT)
+	# Powering back on must not un-mute a composite input while the set is showing
+	# the tuner (or another input) -- it would start repainting the screen underneath.
+	_apply_screen_enable()
 	if _tuner:
 		_tuner.set_active(_tv_enabled and current_source == Source.TV)
 	_apply_audio_volume()

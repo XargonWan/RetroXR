@@ -14,7 +14,8 @@
 ## Marker names, all optional:
 ##   ScreenSeat     — pose for ScreenMesh. Its SCALE sizes the tube; the OSD labels
 ##                    are children of ScreenMesh and ride that scale for free.
-##   PortSeat       — pose for CompositePort (carries PortVisual + SnapHighlight).
+##   PortSeat       — pose for CompositePort, the VIDEO socket of Composite 1. The
+##                    other eleven step off it by av_socket_step / av_group_step.
 ##   AmbilightSeat  — pose for the Ambilight SpotLight3D.
 ##   ButtonRow      — pose of the FIRST bezel button (volume-down). The rest step
 ##                    along the marker's local +X by `button_pitch`.
@@ -54,6 +55,32 @@ extends Node3D
 ## live picture has to land on RetroTV's ScreenMesh, and a modelled pane sitting
 ## in front of it would either z-fight or hide it outright.
 @export var hide_meshes: PackedStringArray = []
+
+## How the four A/V input groups sit on this cabinet's back, measured in the
+## PortSeat's own frame. `av_socket_step` walks VIDEO → L → R inside one group,
+## `av_group_step` walks Composite 1 → 2 → 3 → 4.
+##
+## The defaults are the flat row the stock box and the 90s cabinet both take: a
+## raycast grid over both backs reads -10.0 mm — the exact standoff a port wants —
+## at every one of the twelve sockets, the whole 240 mm of it. A cabinet whose back
+## runs out sooner stands its groups on end instead, which is what the computer
+## monitor does: its panel measures flat for 180 mm and the row needs 216.
+@export var av_socket_step: Vector3 = Vector3(-0.018, 0.0, 0.0)
+@export var av_group_step: Vector3 = Vector3(-0.06, 0.0, 0.0)
+
+## How many of the set's composite inputs this cabinet physically carries sockets
+## for. Fewer than RetroTV.COMPOSITE_INPUTS turns the rest off — no sockets, no
+## printing — and SOURCE steps straight past them, because an input you can select
+## but cannot plug anything into is worse than one that isn't there.
+##
+## ONE by default, so the four-input bank belongs to the stock cabinet alone. That is
+## a modelling decision rather than a measured limit for the 90s television, whose
+## back does have the room; the computer monitor genuinely has not. A raycast grid
+## says that monitor's back is flat in DEPTH for 180 mm, which is misleading — the
+## moulding stays the same distance out while turning out of the plane — so the
+## facet printing can actually sit on is the 123 x 46 mm panel around the power
+## inlet, and four groups ran round the corner of the case.
+@export var av_inputs: int = 1
 
 ## Whether the AV IN legend gets its printed backing plate. OFF by default because a
 ## moulded CRT back is curved — both cabinets here taper 16 mm and 46 mm across the

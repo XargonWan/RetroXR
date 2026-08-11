@@ -13,6 +13,11 @@
 ; show_button_row is off: the five bezel caps are 25 mm on a 45-70 mm pitch and
 ; there is no lip on a monitor to carry them. TVOptionsPanel, which is already
 ; pointer-driven, is the control surface for this shell.
+; One composite input, the RetroTVShell default — the four-input bank is the stock
+; cabinet's. This back could not take it anyway: a raycast grid reads flat in DEPTH
+; for 180 mm, which is misleading, because the moulding holds its distance while
+; turning out of the plane. The facet printing can actually sit on is the 123 x 46 mm
+; panel around the power inlet, and four groups ran round the corner of the case.
 [node name="CrtMonitor" type="Node3D"]
 script = ExtResource("1_shell")
 body_size = Vector3(0.406, 0.433, 0.419)
@@ -27,8 +32,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0375, -0.0045)
 [node name="ScreenSeat" type="Marker3D" parent="."]
 transform = Transform3D(0.886, 0, 0, 0, 0.932, 0, 0, 0, 0.9, 0, 0.052, 0.203)
 
-; The audio pair steps along this marker's local -X on the standard 18 mm pitch;
-; see RetroTV._seat_av_row.
+; Composite 1's VIDEO socket. The other eleven step off it — the audio pair along
+; this marker's local -X on the standard 18 mm pitch, the next input group by
+; av_group_step above; see RetroTV._seat_av_row.
 ;
 ; z -0.1861, the 10 mm a port stands proud of the panel it seats on, measured off
 ; the cabinet: rays cast at the three socket columns land on the back at -0.1748,
@@ -42,8 +48,10 @@ transform = Transform3D(1, 0, 0, 0, -1, -8.7422784e-08, 0, 8.7422784e-08, -1, 0.
 ; what switches RetroTV's VgaPort on; see RetroTV._seat_vga_port.
 ;
 ; Beside the composite socket on the same back panel, 60 mm to its left so the
-; 30.8 mm flange clears the phono jack rather than growing through it. Same basis:
-; 180 about X, so the zone's local +Z points out of the back.
+; 30.8 mm flange clears the phono jack rather than growing through it. That clearance
+; is why this cabinet keeps one input group: a second one lands at exactly this x and
+; the DE-15 grows straight through its audio pair. Same basis: 180 about X, so the
+; zone's local +Z points out of the back.
 ;
 ; z -0.1836, not the composite row's -0.1861: this connector seats its plug 7.5 mm
 ; proud of the panel rather than the RCA pair's 10 mm, and the marker is where the

@@ -425,6 +425,15 @@ func _report_restored(spawned: Dictionary) -> void:
 		print("[ScenePersistence] instantiated %d objects" % spawned.size())
 
 
+## One entry of a saved "tv_inputs" list, or Composite 1 for a save that predates
+## the key, a channel it does not reach, or a value from a future set with more
+## inputs than this one has.
+static func _tv_input(inputs: Array, channel: int) -> int:
+	if channel < 0 or channel >= inputs.size():
+		return 0
+	return clampi(int(inputs[channel]), 0, RetroTV.COMPOSITE_INPUTS - 1)
+
+
 func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionary) -> void:
 	# The async pass yields frames, so an object spawned earlier in this very run
 	# may already have been freed by the time we come to wire it up.
@@ -435,9 +444,13 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 
 	if obj is RetroSystem:
 		var sys := obj as RetroSystem
+		# Which composite input each channel's lead goes back into. Absent on every
+		# save written before a set had four, and read through a helper that answers
+		# Composite 1 for anything it does not cover.
+		var tv_inputs: Array = d.get("tv_inputs", [])
 		var tv := _resolve_ref(root, spawned, d.get("tv")) as RetroTV
 		if tv:
-			sys.restore_cable_connection(tv)
+			sys.restore_cable_connection(tv, 0, _tv_input(tv_inputs, 0))
 		# Extra video-out channels (dual-screen handhelds: ch 1 = BOTTOM). A save
 		# made against a model with more channels than this one has is truncated —
 		# restore_cable_connection would silently fold the overflow onto ch 0.
@@ -445,7 +458,7 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		for i in range(mini(extra.size(), sys.get_channel_count() - 1)):
 			var ch_tv := _resolve_ref(root, spawned, extra[i]) as RetroTV
 			if ch_tv:
-				sys.restore_cable_connection(ch_tv, i + 1)
+				sys.restore_cable_connection(ch_tv, i + 1, _tv_input(tv_inputs, i + 1))
 		var cart := _resolve_ref(root, spawned, d.get("cartridge")) as RetroCartridge
 		if cart:
 			sys.restore_cartridge(cart)
@@ -569,6 +582,17 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			extra.append(_ref(node_to_id, sys.get_channel_tv(ch)))
 		if not extra.is_empty():
 			result["extra_tvs"] = extra
+		# Which composite input each lead is in, one per channel. Omitted while they
+		# are all in Composite 1, which is what a save without the key restores to —
+		# so the common case adds nothing to the file.
+		var tv_inputs: Array = []
+		var any_input := false
+		for ch in sys.get_channel_count():
+			var input := sys.get_channel_tv_input(ch)
+			any_input = any_input or input != 0
+			tv_inputs.append(input)
+		if any_input:
+			result["tv_inputs"] = tv_inputs
 		return result
 	elif node is RetroTV:
 		var tv := node as RetroTV

@@ -30,8 +30,9 @@ enum {
 	EV_CART_REMOVE,      # {sys}
 	EV_TAPE_INSERT,      # {vcr, tape}
 	EV_TAPE_REMOVE,      # {vcr}
-	EV_TV_PLUG,          # {owner, tv, ch}  owner = system or VCR; ch = video-out channel
-	EV_TV_UNPLUG,        # {tv}
+	EV_TV_PLUG,          # {owner, tv, ch, in}  owner = system or VCR; ch = video-out
+						 #                      channel; in = the TV's composite input
+	EV_TV_UNPLUG,        # {tv, in}
 	EV_PORT_PLUG,        # {sys, ctrl, port}
 	EV_PORT_UNPLUG,      # {sys, port}
 	EV_SYS_POWER,        # {sys}         client intent -> host toggles
@@ -607,14 +608,16 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_PLUG:
 			if _valid(a, ["owner", "tv"]):
 				# Multi-output systems carry the cable channel; VCR/DVD keep
-				# the single-arg contract.
+				# the single-arg contract. "in" is the television's own input
+				# (Composite 1-4), absent on events from before there were four.
 				if a["owner"] is RetroSystem:
-					a["owner"].restore_cable_connection(a["tv"], int(a.get("ch", 0)))
+					a["owner"].restore_cable_connection(a["tv"], int(a.get("ch", 0)),
+						int(a.get("in", 0)))
 				else:
 					a["owner"].restore_cable_connection(a["tv"])
 		EV_TV_UNPLUG:
 			if _valid(a, ["tv"]):
-				a["tv"].get_node("CompositePort").drop_object()
+				a["tv"].release_input(int(a.get("in", 0)))
 		EV_RCA_PLUG:
 			# The lead names the socket by device + node name, so a peer needs no
 			# shared numbering of ports to put the same end in the same place.

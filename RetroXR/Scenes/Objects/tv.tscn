@@ -97,10 +97,16 @@ font_size = 64
 outline_size = 16
 horizontal_alignment = 0
 
-; A/V IN. CompositePort keeps its name and its place: a console's captive lead
-; still plugs in here, and tv.gd still reaches it as $CompositePort. The two audio
-; sockets beside it are new, and only a composite cable feeds them — a console
-; carries its stereo down the one video cord as it always did.
+; A/V IN — four of them, printed Composite 1 to Composite 4 and selected by SOURCE.
+; CompositePort keeps its name and its place: a console's captive lead still plugs
+; in here, netplay and the save file name it, and tv.gd still reaches it as
+; $CompositePort. The rest are numbered from 2, and tv.gd walks all four by index.
+;
+; The row runs along -X at AV_ROW_PITCH within a group and AV_GROUP_PITCH between
+; them, y unchanged. The stock body is a plain box, so every socket lands on the
+; same flat panel; a fitted shell re-seats the whole bank off its PortSeat instead
+; (see tv_shell.gd's av_socket_step / av_group_step, which were chosen by raycasting
+; each cabinet's real back).
 [node name="CompositePort" parent="." unique_id=-1294967295 instance=ExtResource("10_rcaport")]
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.15, -0.15, -0.16002099)
 channel = 0
@@ -119,6 +125,51 @@ transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.11
 channel = 2
 direction = 1
 
+[node name="CompositePort2" parent="." unique_id=771000201 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.09, -0.15, -0.16002099)
+channel = 0
+direction = 1
+
+[node name="AudioLIn2" parent="." unique_id=771000202 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.072, -0.15, -0.16002099)
+channel = 1
+direction = 1
+
+[node name="AudioRIn2" parent="." unique_id=771000203 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.054, -0.15, -0.16002099)
+channel = 2
+direction = 1
+
+[node name="CompositePort3" parent="." unique_id=771000204 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.03, -0.15, -0.16002099)
+channel = 0
+direction = 1
+
+[node name="AudioLIn3" parent="." unique_id=771000205 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.012, -0.15, -0.16002099)
+channel = 1
+direction = 1
+
+[node name="AudioRIn3" parent="." unique_id=771000206 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.006, -0.15, -0.16002099)
+channel = 2
+direction = 1
+
+[node name="CompositePort4" parent="." unique_id=771000207 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.03, -0.15, -0.16002099)
+channel = 0
+direction = 1
+
+[node name="AudioLIn4" parent="." unique_id=771000208 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.048, -0.15, -0.16002099)
+channel = 1
+direction = 1
+
+[node name="AudioRIn4" parent="." unique_id=771000209 instance=ExtResource("10_rcaport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.066, -0.15, -0.16002099)
+channel = 2
+direction = 1
+
 ; VGA in — a computer monitor's input, not a television's. OFF as authored: a shell
 ; opts in by carrying a VgaPortSeat marker and only crt_monitor.tscn does, so the
 ; wood-cabinet sets and the stock body never grow a DE-15 socket. tv.gd seats and
@@ -129,7 +180,7 @@ direction = 1
 ;
 ; No `channel`: VgaPort pins it to VIDEO. direction = 1 is IN — a set is a sink.
 [node name="VgaPort" parent="." unique_id=778419001 instance=ExtResource("11_vgaport")]
-transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.075, -0.15, -0.16002099)
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.12, -0.15, -0.16002099)
 visible = false
 enabled = false
 direction = 1

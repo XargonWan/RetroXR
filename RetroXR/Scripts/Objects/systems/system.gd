@@ -184,6 +184,8 @@ var _max_rope_lengths: Array = []
 var _channel_tvs: Array = []
 # TVs to connect to after the cables finish spawning (save/load restore)
 var _pending_tv_restores: Array = []
+# Which of that TV's composite inputs each pending restore is bound for
+var _pending_tv_inputs: Array = []
 # screen_window ShaderMaterials mirrored onto connected TVs (multi-out only)
 var _tv_window_mats: Array = []
 # TVTouchSurface on the TV showing a touch channel (multi-out only)
@@ -532,6 +534,7 @@ func _load_system_model() -> void:
 		_max_rope_lengths.append(0.0)
 		_channel_tvs.append(null)
 		_pending_tv_restores.append(null)
+		_pending_tv_inputs.append(0)
 		_tv_window_mats.append(null)
 		_tv_touch_surfaces.append(null)
 		_model.configure_cable_attach_for(_attach_points[i], i)
@@ -1116,6 +1119,20 @@ func get_channel_tv(ch: int) -> RetroTV:
 	return _channel_tvs[ch]
 
 
+## Which of that TV's four composite inputs channel `ch`'s lead is sitting in
+## (persistence). Asked of the television rather than tracked here: the socket is
+## its property, and a player can move the plug from one input to another without
+## this system hearing anything about it.
+func get_channel_tv_input(ch: int) -> int:
+	if ch < 0 or ch >= _channel_tvs.size() or ch >= _cable_plugs.size():
+		return 0
+	var tv := _live(_channel_tvs[ch]) as RetroTV
+	var plug := _live(_cable_plugs[ch]) as CablePlug
+	if tv == null or plug == null:
+		return 0
+	return tv.input_holding(plug)
+
+
 ## How many video-out cables this system has (persistence).
 func get_channel_count() -> int:
 	return _channels.size()
@@ -1516,8 +1533,9 @@ func _add_cables_to_scene() -> void:
 		# Restore a pending TV connection requested before the cable was ready
 		if _pending_tv_restores[i] != null:
 			print("[RetroSystem] _add_cables_to_scene: restoring pending TV connection (ch %d)" % i)
-			_snap_cable_to_tv(_pending_tv_restores[i], i)
+			_snap_cable_to_tv(_pending_tv_restores[i], i, int(_pending_tv_inputs[i]))
 			_pending_tv_restores[i] = null
+			_pending_tv_inputs[i] = 0
 	_apply_video_out()
 
 
@@ -1591,8 +1609,12 @@ func _apply_video_out() -> void:
 			continue
 		var tv := _live(_channel_tvs[i]) as RetroTV
 		if not video_out_enabled and tv != null:
-			var port := tv.get_node_or_null("CompositePort") as XRToolsSnapZone
-			if port and port.picked_up_object == plug:
+			# Ask the set which socket is holding it rather than assuming the first:
+			# a television has four composite inputs and this lead may be in any of
+			# them, and naming CompositePort left a lead in Composite 2 seated while
+			# its video-out was switched off.
+			var port := tv.port_holding(plug)
+			if port:
 				# Disarm around the drop so the zone's stale grab list can't
 				# instantly re-snap the plug (same pattern as the disc slot).
 				port.enabled = false
@@ -2486,21 +2508,23 @@ func get_snapped_cartridge() -> Node3D:
 ## Restore a cable→TV connection after loading from a save file.
 ## Safe to call before the cables have finished spawning — the snap will be
 ## deferred until _add_cables_to_scene() runs if the plug isn't ready yet.
-## `channel` picks the video-out cable (0 on classic single-cable systems).
-func restore_cable_connection(tv: RetroTV, channel: int = 0) -> void:
+## `channel` picks the video-out cable (0 on classic single-cable systems);
+## `tv_input` picks which of the set's four composite inputs to land in.
+func restore_cable_connection(tv: RetroTV, channel: int = 0, tv_input: int = 0) -> void:
 	if channel < 0 or channel >= _channels.size():
 		channel = 0
-	print("[RetroSystem] restore_cable_connection: ch=%d plug=%s tv=%s" %
-		[channel, _cable_plugs[channel] if channel < _cable_plugs.size() else null, tv])
+	print("[RetroSystem] restore_cable_connection: ch=%d in=%d plug=%s tv=%s" %
+		[channel, tv_input, _cable_plugs[channel] if channel < _cable_plugs.size() else null, tv])
 	if channel < _cable_plugs.size() and _cable_plugs[channel] != null:
-		_snap_cable_to_tv(tv, channel)
+		_snap_cable_to_tv(tv, channel, tv_input)
 	else:
 		print("[RetroSystem] cable plug not ready yet, deferring restore")
 		_pending_tv_restores[channel] = tv
+		_pending_tv_inputs[channel] = tv_input
 
 
-func _snap_cable_to_tv(tv: RetroTV, channel: int = 0) -> void:
-	tv.accept_plug_restore(_cable_plugs[channel])
+func _snap_cable_to_tv(tv: RetroTV, channel: int = 0, tv_input: int = 0) -> void:
+	tv.accept_plug_restore(_cable_plugs[channel], tv_input)
 
 
 ## Restore a cartridge→slot insertion after loading from a save file. Slot/tray
