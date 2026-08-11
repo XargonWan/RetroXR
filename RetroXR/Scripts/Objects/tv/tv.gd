@@ -535,11 +535,12 @@ func _video_port(input: int) -> RcaPort:
 	return _av_ports[input][0]
 
 
-## Print the four back-panel legends, one per input group.
+## Print the back-panel legends: one per composite input group, plus the aerial
+## socket's own.
 ##
-## A set is a sink, so every one of them reads AV IN; what tells them apart is the
-## title above the jacks. The plate is the cabinet's call — a moulded CRT back is
-## curved, and a flat rectangle across it either floats off the curve or cuts in.
+## A set is a sink, so every A/V one reads AV IN; what tells them apart is the title
+## above the jacks. The plate is the cabinet's call — a moulded CRT back is curved,
+## and a flat rectangle across it either floats off the curve or cuts in.
 func _print_av_legends() -> void:
 	var plate: bool = _shell == null or _shell.av_legend_plate
 	for i in _panel_inputs():
@@ -553,6 +554,29 @@ func _print_av_legends() -> void:
 		# three lines and neither end of the bank carries a stray one.
 		legend.divider_left = i > 0
 		legend.rebuild()
+	_print_rf_legend(plate)
+
+
+## The aerial socket's legend — the same printing as a composite group so the one
+## hole on the panel that is not phono is not also the one standing on bare cabinet.
+##
+## Wordless: CoaxPort reports Channel.VIDEO because the routing needs somewhere to
+## send the picture, and printing VIDEO under an aerial hole would name the wrong
+## connector. The row that word would have occupied still takes its space, so this
+## plate comes out the same height as the four beside it.
+##
+## No divider, and that is the point of the gap it stands in: an aerial feed is not
+## one of the composite inputs, and a rule would file it as a fifth.
+func _print_rf_legend(plate: bool) -> void:
+	var legend := AvLegend.attach(self, _av_ports[Source.RF])
+	if legend == null:
+		return
+	legend.name = "AvLegendRf"
+	legend.title = "Antenna"
+	legend.heading_override = "RF IN"
+	legend.show_words = false
+	legend.show_plate = plate
+	legend.rebuild()
 
 
 ## Seat all TWELVE input sockets off the shell's PortSeat, not just the video one.
@@ -584,9 +608,15 @@ func _seat_av_row(seat: Variant) -> void:
 	# which, with the stock body hidden, is a live socket floating beside the set.
 	# One group clear of Composite 4 whether or not this cabinet fits four, since a
 	# shell with fewer still has the room the others use.
+	#
+	# Plus ONE socket step, which lands it on that slot's CENTRE rather than on the
+	# slot's first socket. A composite group centres its printing on the middle of
+	# its trio, so a lone socket sitting where a trio's VIDEO jack goes puts its plate
+	# 18 mm right of where the pattern wants it — close enough to overlap Composite
+	# 4's and z-fight with it, the two being coplanar and the same colour.
 	if _rf_port != null:
 		_seat_node(_rf_port, Transform3D(base.basis,
-			base * (group_step * float(COMPOSITE_INPUTS))))
+			base * (group_step * float(COMPOSITE_INPUTS) + socket_step)))
 
 
 ## Turn the VGA input on, but only for a shell that asked for it.

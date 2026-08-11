@@ -77,6 +77,20 @@ const Z_TEXT := 0.0006
 ## numbers its inputs differently — or names them at all — needs no code here.
 @export var title: String = ""
 
+## Print the per-socket words (VIDEO, L-AUDIO-R). Off for a group whose sockets are
+## not phono, where the channel names nothing a player would recognise: CoaxPort
+## reports Channel.VIDEO only because the routing needs somewhere to send the
+## picture, and an aerial hole labelled VIDEO is a lie about the connector.
+##
+## The LAYOUT is deliberately untouched by this — the words' row still takes up its
+## space — so a wordless plate comes out exactly as tall as the ones printed beside
+## it and a bank of them still lines up.
+@export var show_words: bool = true
+
+## Replaces the AV IN / AV OUT heading, for a socket that is an input but not an A/V
+## one. The aerial hole reads RF IN.
+@export var heading_override: String = ""
+
 ## Rule up the LEFT edge of the plate, dividing this group from the one printed
 ## beside it. Set on every group but the first, so a bank of four gets three rules
 ## and no line hangs off either end.
@@ -157,8 +171,11 @@ func rebuild() -> void:
 
 	var word_text := PackedStringArray()
 	var word_x := PackedFloat32Array()
-	_lay_out_words(row, xs, word_text, word_x)
-	var heading := "AV IN" if _ports[0].direction == RcaPort.Direction.IN else "AV OUT"
+	if show_words:
+		_lay_out_words(row, xs, word_text, word_x)
+	var heading := heading_override
+	if heading.is_empty():
+		heading = "AV IN" if _ports[0].direction == RcaPort.Direction.IN else "AV OUT"
 
 	var word_y := -(JACK_RADIUS + word_height * 0.9)
 	var head_y := word_y - word_height * 0.6 - heading_height * 0.8

@@ -171,39 +171,25 @@ transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.0
 channel = 2
 direction = 1
 
-; The aerial socket, Source.RF. One group pitch past Composite 4, and _seat_av_row
-; puts it in exactly that slot on a fitted cabinet so the two agree.
+; The aerial socket, Source.RF. One group pitch past Composite 4 and then one socket
+; pitch further, which puts it on that slot's CENTRE — where a composite group centres
+; its printing — rather than where a trio's VIDEO jack would go. Standing it on the
+; jack position instead laid its plate 18 mm right of the pattern, far enough to
+; overlap Composite 4's and z-fight with it. _seat_av_row applies the same two steps
+; on a fitted cabinet so the two agree.
 ;
 ; Unlike the VGA socket this is always on: every television has an aerial hole, and
 ; it is what an RF switch — the way an NES reaches a set — plugs into. Its 10 mm
 ; standoff happens to match the phono row's, so it shares the row's Z.
+;
+; Its printing is an AvLegend like every other socket group's — wordless, titled
+; Antenna, headed RF IN. See RetroTV._print_rf_legend, which also explains why the
+; label it used to carry as a child is gone: a legend measures its own plate around
+; its own text, and a hand-placed label the plate knows nothing about either hangs
+; off the top of one or forces it to be sized by hand.
 [node name="RfPort" parent="." unique_id=771000210 instance=ExtResource("12_coaxport")]
-transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.09, -0.15, -0.16002099)
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.108, -0.15, -0.16002099)
 direction = 1
-
-; Silk-screen, so the one hole on the panel that is not phono is not also the one
-; hole with nothing printed by it. A plain Label3D rather than an AvLegend: that
-; class derives each word from its port's CHANNEL and would print VIDEO / AV IN
-; over an aerial socket.
-;
-; A CHILD of the port, so _seat_av_row carries it onto a fitted cabinet without
-; having to know it exists. The port wears Rx(180), so local -Y is world UP and the
-; label sits 13 mm above the socket, 1 mm in front of the panel face at z = -0.010.
-;
-; Rolled 180 about its own Z to undo that Rx(180). The port's flip turns the label
-; upside down AND mirrors it — read from behind the set it came out as ANNETNA —
-; and a roll about Z is the one turn that rights both without moving which way the
-; text faces. Yawing it instead would point the glyphs into the cabinet.
-;
-; Outlined because the CRT shells print without a backing plate.
-[node name="RfLabel" type="Label3D" parent="RfPort"]
-transform = Transform3D(-1, 0, 0, 0, -1, 0, 0, 0, 1, 0, -0.013, -0.009)
-pixel_size = 0.00012
-modulate = Color(0.9, 0.9, 0.87, 1)
-outline_modulate = Color(0.03, 0.03, 0.04, 1)
-text = "ANTENNA"
-font_size = 48
-outline_size = 10
 
 ; VGA in — a computer monitor's input, not a television's. OFF as authored: a shell
 ; opts in by carrying a VgaPortSeat marker and only crt_monitor.tscn does, so the
@@ -215,7 +201,7 @@ outline_size = 10
 ;
 ; No `channel`: VgaPort pins it to VIDEO. direction = 1 is IN — a set is a sink.
 [node name="VgaPort" parent="." unique_id=778419001 instance=ExtResource("11_vgaport")]
-transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.12, -0.15, -0.16002099)
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.17, -0.15, -0.16002099)
 visible = false
 enabled = false
 direction = 1
