@@ -42,6 +42,8 @@ var _static_material: ShaderMaterial = null
 var _active := false
 var _error := ""
 var _tuning := false
+# A tune waiting on libVLC to finish coming up; see _start_current.
+var _pending_tune := false
 var _since_tune := 0.0
 var _last_frames := 0
 var _since_frame := 0.0
@@ -69,6 +71,10 @@ func _ready() -> void:
 		# frame timeout above catches what neither reports.
 		_vlc.error.connect(_on_vlc_error)
 		_vlc.stopped.connect(_on_vlc_stopped)
+		# This node is built by the first press of SOURCE, which activates it in
+		# the same call, so the thread has only the frames the tune spends on
+		# static to work in -- but that is the whole of the stall it removes.
+		_vlc.warm_up()
 	else:
 		push_error("TVTuner: VlcPlayer extension not loaded — TV input unavailable")
 
@@ -279,6 +285,23 @@ func _start_current() -> void:
 	_set_error("")
 	status_changed.emit(_banner())
 
+	# The first open() in the process builds the libVLC instance, and doing that
+	# walks the whole plugin tree -- long enough to drop frames, and it landed on
+	# the frame the viewer pressed SOURCE. warm_up() is already running it on its
+	# own thread, so hold the tune until it lands: the screen shows static and the
+	# channel banner for the stream's own buffering anyway, and this hides inside
+	# that.
+	if not _vlc.is_ready():
+		_pending_tune = true
+		return
+	_open_current()
+
+
+func _open_current() -> void:
+	_pending_tune = false
+	var ch := current_channel()
+	if ch.is_empty():
+		return
 	if not _vlc.open(str(ch["url"]), false):
 		_set_error("CANNOT TUNE\n%s" % str(ch.get("name", "")).to_upper())
 		return
@@ -322,6 +345,7 @@ func set_active(active: bool) -> void:
 			_vlc.stop()
 		_have_picture = false
 		_tuning = false
+		_pending_tune = false
 		if _emitter:
 			_emitter.flush()
 			_emitter.clear_speaker_positions()
@@ -335,6 +359,14 @@ func is_active() -> bool:
 
 func _process(delta: float) -> void:
 	if _vlc == null:
+		return
+	if _pending_tune:
+		if not _vlc.is_ready():
+			return
+		# The tune clock starts here: what came before it was libVLC coming up,
+		# and charging that to TUNE_TIMEOUT would report a fault on the channel.
+		_since_tune = 0.0
+		_open_current()
 		return
 	_vlc.update_frame()
 	_pump_audio()

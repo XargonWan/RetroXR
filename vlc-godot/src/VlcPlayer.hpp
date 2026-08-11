@@ -21,8 +21,11 @@
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/vector2i.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <string>
+#include <thread>
 #include <vector>
 
 namespace Xenu
@@ -42,6 +45,16 @@ public:
     // that only means the MRL parsed: an unreachable host or a stream that never
     // decodes reports itself later through the "error" signal, not here.
     bool open(const godot::String &path, bool is_dvd = true);
+
+    // Build the libVLC instance on a worker thread. The first open() in a process
+    // does it inline, and it walks the whole plugin tree to do it -- 55 ms with
+    // every plugin already in the OS file cache, seconds cold. Idempotent, and
+    // safe to leave uncalled: open() still builds one, it just blocks.
+    void warm_up();
+    // False while warm_up() is still working. A caller that can wait (a tuner
+    // showing static, say) should park its open() until this turns true; one that
+    // cannot may call open() regardless and take the wait.
+    bool is_ready() const;
 
     void play();
     void pause();
@@ -143,6 +156,17 @@ private:
 
     void *m_vlc = nullptr;   // libvlc_instance_t*
     void *m_mp = nullptr;    // libvlc_media_player_t*
+
+    // Instance construction, which warm_up() may be running on its own thread
+    // while the main thread calls open(). m_instance_ready reports that the
+    // attempt has finished, success or not -- a caller waiting on it must not be
+    // left waiting by a libvlc_new that failed.
+    std::thread m_warm_thread;
+    std::mutex m_instance_mutex;
+    std::atomic<bool> m_instance_ready{false};
+    // Resolved once at construction: globalize_path is a Godot call, and the
+    // warm thread must not make one.
+    std::string m_plugin_path;
 
     mutable std::mutex m_mutex;
     std::vector<uint8_t> m_decode;   // VLC writes here (single plane, RGBA)

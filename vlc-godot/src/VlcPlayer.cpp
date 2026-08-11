@@ -68,10 +68,18 @@ VlcPlayer::VlcPlayer()
     // play date. A two-second ring is exactly lapped by that, and the wrap
     // overwrites the very samples that are next to be served.
     m_audio_ring.assign((size_t)m_audio_rate * m_audio_channels * 4, 0);
+
+    // Here rather than in ensure_instance: this runs on Godot's thread, and
+    // ensure_instance may not.
+    const String plugins = ProjectSettings::get_singleton()->globalize_path("res://vlc-godot/plugins");
+    m_plugin_path = plugins.utf8().get_data();
 }
 
 VlcPlayer::~VlcPlayer()
 {
+    // A libvlc_new in flight owns members of this object.
+    if (m_warm_thread.joinable())
+        m_warm_thread.join();
     release_player();
     if (m_vlc)
     {
@@ -82,6 +90,10 @@ VlcPlayer::~VlcPlayer()
 
 void VlcPlayer::ensure_instance()
 {
+    // Held for the whole of libvlc_new: warm_up() and open() both come through
+    // here, from different threads, and the loser must wait rather than build a
+    // second instance.
+    std::lock_guard<std::mutex> lock(m_instance_mutex);
     if (m_vlc)
         return;
 #ifdef __ANDROID__
@@ -92,8 +104,8 @@ void VlcPlayer::ensure_instance()
     }
 #endif
     // Point libVLC at the plugin tree we ship next to the extension.
-    String plugins = ProjectSettings::get_singleton()->globalize_path("res://vlc-godot/plugins");
-    set_plugin_path_env(plugins.utf8().get_data());
+    const char *plugins = m_plugin_path.c_str();
+    set_plugin_path_env(plugins);
 
     const char *args[] = {
         "--no-video-title-show",
@@ -109,6 +121,36 @@ void VlcPlayer::ensure_instance()
     m_vlc = libvlc_new(sizeof(args) / sizeof(args[0]), args);
     if (!m_vlc)
         UtilityFunctions::push_error("VlcPlayer: libvlc_new failed (check VLC_PLUGIN_PATH: ", plugins, ")");
+    m_instance_ready.store(true, std::memory_order_release);
+}
+
+void VlcPlayer::warm_up()
+{
+    if (m_instance_ready.load(std::memory_order_acquire) || m_warm_thread.joinable())
+        return;
+#ifdef __ANDROID__
+    // The JavaVM handoff has to run on the thread Godot called us on: it resolves
+    // libvlc.so through the calling frame's classloader, and a worker thread has
+    // no Java frame to inherit one from. Cheap, and it only happens once per
+    // process; libvlc_new is the part worth moving.
+    if (!ensure_android_jvm())
+    {
+        UtilityFunctions::push_error("VlcPlayer: libVLC JavaVM handoff failed — DVD playback unavailable");
+        m_instance_ready.store(true, std::memory_order_release);
+        return;
+    }
+#endif
+    m_warm_thread = std::thread([this]() {
+        ensure_instance();
+        // Also on the failure paths above: a caller parked on is_ready() must not
+        // be left parked by a libvlc_new that never worked.
+        m_instance_ready.store(true, std::memory_order_release);
+    });
+}
+
+bool VlcPlayer::is_ready() const
+{
+    return m_instance_ready.load(std::memory_order_acquire);
 }
 
 void VlcPlayer::release_player()
@@ -791,6 +833,8 @@ void VlcPlayer::set_subtitle(int id)
 void VlcPlayer::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("open", "path", "is_dvd"), &VlcPlayer::open, DEFVAL(true));
+    ClassDB::bind_method(D_METHOD("warm_up"), &VlcPlayer::warm_up);
+    ClassDB::bind_method(D_METHOD("is_ready"), &VlcPlayer::is_ready);
     ClassDB::bind_method(D_METHOD("play"), &VlcPlayer::play);
     ClassDB::bind_method(D_METHOD("pause"), &VlcPlayer::pause);
     ClassDB::bind_method(D_METHOD("stop"), &VlcPlayer::stop);
