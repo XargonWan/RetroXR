@@ -704,6 +704,18 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	)
 	toolbar.add_child(_romm_region_drop)
 
+	# A platform syncs on its first open and never again on its own, so without
+	# this there is no way to pick up a game added to the server since.
+	var resync := Button.new()
+	resync.text = String.chr(MenuIcons.RETRY)
+	resync.add_theme_font_override("font", MenuIcons.symbols())
+	resync.add_theme_font_size_override("font_size", 22)
+	resync.custom_minimum_size = Vector2(64, 52)
+	resync.size_flags_horizontal = Control.SIZE_SHRINK_END
+	resync.tooltip_text = "Check RomM for changes to %s since the last sync" % _system_label(systemid)
+	resync.pressed.connect(_on_romm_resync_pressed.bind(systemid))
+	toolbar.add_child(resync)
+
 	_romm_empty_label = Label.new()
 	_romm_empty_label.add_theme_font_size_override("font_size", 18)
 	_romm_empty_label.add_theme_color_override("font_color", MenuStyle.COLOR_DESC)
@@ -1557,13 +1569,37 @@ func _romm_check_for_changes() -> void:
 	romm_client.stats(func(ok: bool, stats: Dictionary) -> void:
 		if not ok or stats.is_empty():
 			return
-		if not romm_config.stats_unchanged(stats):
+		var changed := not romm_config.stats_unchanged(stats)
+		if changed:
 			romm_config.last_stats = stats
 			romm_config.save_config()
 		# The cached list is already on screen; this corrects it in the
 		# background and costs nothing visible.
 		romm_fetch_platforms()
+		if changed:
+			_queue_delta_syncs()
 	)
+
+
+## The library moved since we last looked, so at least one synced platform is
+## stale. Delta, not full: the watermark turns "one game was added" into a single
+## small page instead of every page of the platform.
+##
+## Only platforms that already have an index are queued. One that has never been
+## opened has nothing to bring up to date, and syncing it here would fetch a
+## library the player has not asked to browse.
+##
+## Deletions are NOT reconciled by a delta — the merge only adds and updates, so
+## a game removed on the server survives until a full sync. OPTIONS > Sync All
+## remains the reconcile.
+func _queue_delta_syncs() -> void:
+	var stale: Array[String] = []
+	for sid: String in _romm_platforms:
+		if RommCatalog.has_index(sid):
+			stale.append(sid)
+	if stale.is_empty() or _menu == null:
+		return
+	_menu.queue_romm_sync(stale, false)
 
 
 ## Toasts can only be seen while the menu panel is open. A 4 GB download keeps
@@ -1639,6 +1675,9 @@ func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int
 
 	if not ok:
 		notify(key, "❌", "RomM sync failed — %s" % error, -1.0, MenuToasts.DWELL_FAIL)
+		# Still announced: this is what pumps the sync queue, so returning
+		# quietly strands every platform behind the one that failed.
+		romm_state_changed.emit()
 		return
 
 	# Record the watermark so the next open can skip the network entirely.
@@ -1659,6 +1698,15 @@ func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int
 	if systemid == _romm_detail_systemid:
 		_rebuild_romm_rows()
 	romm_state_changed.emit()
+
+
+## Delta by default — this is the "I just added a game" button, and a full
+## re-fetch of a large platform is ~20 pages. A platform with no index yet is
+## already having a full sync started for it by the open itself.
+func _on_romm_resync_pressed(systemid: String) -> void:
+	if _menu == null or not RommCatalog.has_index(systemid):
+		return
+	_menu.queue_romm_sync([systemid], false)
 
 
 func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:

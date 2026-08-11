@@ -47,7 +47,10 @@ var _menu: Node = null
 
 var _server_address_label: Label = null
 var _romm_status_label: Label = null
-var _romm_sync_queue: Array[String] = []
+## Entries are {sid: String, full: bool}. One queue for the whole app: a second
+## caller reaching straight for sync_platform while a sync runs would have its
+## request dropped, not deferred.
+var _romm_sync_queue: Array[Dictionary] = []
 
 var _tabs: TabContainer = null
 var _pages: Array[ScrollContainer] = []
@@ -960,19 +963,45 @@ func _on_romm_sync_all_pressed() -> void:
 		return
 	_romm_sync_queue.clear()
 	for systemid: String in _platforms():
-		_romm_sync_queue.append(systemid)
+		_romm_sync_queue.append({"sid": systemid, "full": true})
 	pump_romm_sync_queue()
+
+
+## Add platforms to the queue without disturbing what is already in it. `full`
+## re-fetches every page; otherwise only the rows changed since that platform's
+## recorded watermark.
+##
+## Public: the SPAWN tab queues deltas when the server's stats fingerprint moves,
+## and the per-platform re-sync button queues one.
+func queue_romm_sync(systemids: Array, full: bool) -> void:
+	for sid: String in systemids:
+		if not _is_queued(sid) and sid != romm_catalog.syncing_systemid():
+			_romm_sync_queue.append({"sid": sid, "full": full})
+	pump_romm_sync_queue()
+
+
+func _is_queued(sid: String) -> bool:
+	for e: Dictionary in _romm_sync_queue:
+		if str(e.get("sid", "")) == sid:
+			return true
+	return false
 
 
 ## Public for the same reason: the queue advances when a sync finishes, which
 ## the menu hears, not this view.
+##
+## Loops rather than returning on a dud entry. A platform with no server id
+## starts no sync, and nothing pumps the queue again except a sync FINISHING —
+## so one unmapped platform used to strand every entry behind it.
 func pump_romm_sync_queue() -> void:
-	if _romm_sync_queue.is_empty() or romm_catalog.is_syncing():
+	if romm_catalog.is_syncing():
 		return
-	var systemid: String = _romm_sync_queue.pop_front()
-	var pid := int((_platforms().get(systemid, {}) as Dictionary).get("id", 0))
-	if pid > 0:
-		romm_catalog.sync_platform(systemid, pid, true)
+	while not _romm_sync_queue.is_empty():
+		var entry: Dictionary = _romm_sync_queue.pop_front()
+		var systemid := str(entry.get("sid", ""))
+		var pid := int((_platforms().get(systemid, {}) as Dictionary).get("id", 0))
+		if pid > 0 and romm_catalog.sync_platform(systemid, pid, bool(entry.get("full", true))):
+			return
 
 
 ## Public: the menu owns the RomM sync signals, and a finished sync must move

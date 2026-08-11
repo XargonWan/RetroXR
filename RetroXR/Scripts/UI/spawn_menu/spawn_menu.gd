@@ -596,6 +596,12 @@ func notify_clear(key: String) -> void:
 		_toasts.clear(key)
 
 
+## Forwarded onto the OPTIONS tab, which owns the one sync queue.
+func queue_romm_sync(systemids: Array, full: bool) -> void:
+	if _options_view:
+		_options_view.queue_romm_sync(systemids, full)
+
+
 func show_notice(msg: String, seconds := 2.5) -> void:
 	if _toasts:
 		_toasts.notice(msg, seconds)
