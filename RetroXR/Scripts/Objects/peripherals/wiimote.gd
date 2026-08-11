@@ -2,15 +2,16 @@
 ## plugging into one, and drives Dolphin's emulated remote on the slot it claims.
 ##
 ## Three channels go to the core every frame, and each is a different mechanism:
-##   • IR       — every lit sensor bar LED in the room is projected into the
+##   • IR:       every lit sensor bar LED in the room is projected into the
 ##     camera in the nose of this remote, and the resulting pixel coordinates
 ##     handed to the core on pointer indices 0-3. That is the whole of the aim: no
 ##     cursor, no screen, no raycast. Dolphin feeds them to its emulated camera
 ##     verbatim under `dolphin_ir_passthrough`, which is why that option is forced.
-##   • JOYPAD   — buttons, plus the Nunchuk's stick when one is seated.
-##   • SENSOR   — real accelerometer derived from the barrel's motion, in g, which
-##     is what makes tilt and shake games work. Gyro is deliberately NOT sent; see
-##     the note on _send_accel.
+##   • JOYPAD:   buttons, plus the Nunchuk's stick when one is seated.
+##   • SENSOR:   a real accelerometer derived from the barrel's motion, in g,
+##     which is what makes tilt and shake games work, plus a gyroscope in rad/s
+##     derived from how fast the barrel is turning, which is what MotionPlus
+##     reports. See _send_accel and _send_gyro.
 ##
 ## The IR channel replaced a raycast at the television, which could not be made
 ## right. That path sends a CURSOR — a point on the glass — and the core turns it
@@ -28,12 +29,21 @@ extends XRToolsPickable
 
 
 const NUNCHUK_PLUG_SYSTEMID := "wii_nunchuk"
+const MOTION_PLUS_PLUG_SYSTEMID := "wii_motion_plus"
 
 # Dolphin libretro device ids (DolphinLibretro/Input.cpp). WIIMOTE is #defined to
-# RETRO_DEVICE_JOYPAD, so a bare remote and a plain pad share the value 1 — see
+# RETRO_DEVICE_JOYPAD, so a bare remote and a plain pad share the value 1. See
 # RetroSystem._cabinet_device_id for why that matters.
+#
+# The _MP pair is the same two remotes with the MotionPlus dongle fitted. They
+# double rather than adding one because the dongle passes the port through, so
+# every extension can still be plugged in behind it. What the id buys is the
+# emulated dongle: the core attaches MotionPlus for a _MP id and detaches it
+# otherwise, which is what makes the accessory in the room mean something.
 const RETRO_DEVICE_WIIMOTE := 1
 const RETRO_DEVICE_WIIMOTE_NC := 769
+const RETRO_DEVICE_WIIMOTE_MP := 1793
+const RETRO_DEVICE_WIIMOTE_MP_NC := 2305
 
 ## Analog range libretro expects on a stick axis.
 const ANALOG_SCALE := 32767.0
@@ -119,6 +129,17 @@ const G := 9.80665
 ## Low-pass weight on the derived acceleration. VR linear_velocity is noisy
 ## enough that raw differentiation reads as a permanent shake.
 const ACCEL_SMOOTHING := 0.25
+## Same idea for angular velocity. Looser than the accelerometer's because the
+## gyro is differentiated only once (orientation -> rate, not twice as with
+## position -> acceleration), so it starts out far less noisy, and MotionPlus
+## games are read as a direct measure of the wrist, so over-smoothing them feels
+## like lag rather than steadiness.
+const GYRO_SMOOTHING := 0.45
+## Rotations smaller than this over one frame are treated as no rotation at all.
+## Quaternion.get_axis() has no meaningful answer at zero angle (it returns a
+## fixed axis), so without a floor a motionless remote reports a steady spin
+## about whatever that happens to be.
+const GYRO_MIN_ANGLE := 0.00001
 
 ## libretro device type reported to the system. Flips to _NC while a Nunchuk is
 ## seated in the expansion port.
@@ -144,8 +165,11 @@ var _connected_system: RetroSystem = null
 var _port_index: int = -1
 var _pending_port_restore: Dictionary = {}
 
-# Nunchuk seated in the expansion port, or null
+# What is on the end of this remote. The Nunchuk may be seated directly in the
+# expansion port or one step further out, in the dongle's own pass-through, and
+# _nunchuk holds it either way so nothing downstream has to care which.
 var _nunchuk: Nunchuk = null
+var _motion_plus: MotionPlus = null
 
 # Cached screen geometry (set on pair, cleared on unpair)
 var _screen_mesh: MeshInstance3D = null
@@ -172,6 +196,13 @@ var _blocking_right: bool = false
 # Accelerometer derivation
 var _prev_velocity := Vector3.ZERO
 var _accel_smoothed := Vector3.ZERO
+
+# Gyroscope derivation. The previous orientation of the barrel, and whether one
+# has been recorded yet. The first frame after pairing has nothing to difference
+# against, and a stale basis from before would read as one enormous flick.
+var _prev_tip_basis := Basis()
+var _has_prev_tip_basis := false
+var _gyro_smoothed := Vector3.ZERO
 
 # LED animation
 var _led_materials: Array[StandardMaterial3D] = []
@@ -255,9 +286,9 @@ func _ready() -> void:
 	# snap_require alone would also take a console pad's plug — every ControllerPlug
 	# joins that group. The systemid sentinel is what makes this socket the
 	# Nunchuk's and nothing else's, the mirror of RetroSystem._accepts_plug.
-	_expansion_port.snap_filter = _accepts_nunchuk
-	_expansion_port.has_picked_up.connect(_on_nunchuk_seated)
-	_expansion_port.has_dropped.connect(_on_nunchuk_removed)
+	_expansion_port.snap_filter = _accepts_extension
+	_expansion_port.has_picked_up.connect(_on_extension_seated)
+	_expansion_port.has_dropped.connect(_on_extension_removed)
 	_sync_button.button_pressed.connect(_on_sync_pressed)
 	_sync_button.set_active(false)
 	_battery_cover.rotation_changed.connect(_on_cover_moved)
@@ -340,6 +371,10 @@ func on_unplugged() -> void:
 	print("[Wiimote] released slot %d" % _port_index)
 	_connected_system = null
 	_port_index = -1
+	# Drop the motion history with the slot. However far the remote is carried
+	# while unpaired, the next pairing must not read that as one frame's rotation.
+	_has_prev_tip_basis = false
+	_gyro_smoothed = Vector3.ZERO
 	_screen_mesh = null
 	_screen_w = 0.0
 	_screen_h = 0.0
@@ -359,9 +394,17 @@ func restore_port_connection(system: RetroSystem, port_index: int) -> void:
 		_pending_port_restore = {"system": system, "port_index": port_index}
 
 
-## The Nunchuk seated in the expansion port, or null. Read when saving.
+## The Nunchuk on the end of this remote, or null. Read when saving. It may be
+## seated in this remote's own port or in the dongle's pass-through; the save
+## records only that this remote has it, because reloading puts it back on
+## whichever of the two is there.
 func get_nunchuk() -> Nunchuk:
 	return _nunchuk
+
+
+## The MotionPlus dongle seated in the expansion port, or null. Read when saving.
+func get_motion_plus() -> MotionPlus:
+	return _motion_plus
 
 
 ## The object that rides the desktop's second FPS slot while this remote is held.
@@ -391,6 +434,12 @@ const RESEAT_RETRIES := 8
 func _reseat_nunchuk(nc: Nunchuk, tries_left: int) -> void:
 	if not is_instance_valid(nc):
 		return
+	# Into the DONGLE when one is fitted, because that is the port it came out
+	# of. Safe to decide here rather than at save time: restore_motion_plus runs
+	# first and seats synchronously, so _motion_plus is already right by now.
+	if _motion_plus != null:
+		_motion_plus.restore_nunchuk(nc)
+		return
 	var plug := nc.get_plug()
 	if plug != null:
 		_expansion_port.pick_up_object(plug)
@@ -399,6 +448,15 @@ func _reseat_nunchuk(nc: Nunchuk, tries_left: int) -> void:
 		push_warning("[Wiimote] nunchuk cord never appeared; left unseated")
 		return
 	_reseat_nunchuk.call_deferred(nc, tries_left - 1)
+
+
+## Re-seat a MotionPlus after a load. No deferral, unlike the Nunchuk: the dongle
+## is a plain pickable with no cord to wait on, and seating it straight away is
+## what lets _reseat_nunchuk find it on the deferred pass that follows.
+func restore_motion_plus(mp: MotionPlus) -> void:
+	if not is_instance_valid(mp):
+		return
+	_expansion_port.pick_up_object(mp)
 
 
 func reload_bindings() -> void:
@@ -445,22 +503,66 @@ func _on_cover_moved(degrees: float) -> void:
 
 # ── Nunchuk ───────────────────────────────────────────────────────────────────
 
-func _accepts_nunchuk(obj: Node3D) -> bool:
-	return "systemid" in obj and str(obj.get("systemid")) == NUNCHUK_PLUG_SYSTEMID
+## Two things fit this port: a Nunchuk's plug, or a MotionPlus dongle. The dongle
+## is not on a cord, so it presents ITSELF rather than a plug, which is why it
+## joins the controller_plug group the snap zone requires.
+func _accepts_extension(obj: Node3D) -> bool:
+	if not "systemid" in obj:
+		return false
+	var mid := str(obj.get("systemid"))
+	return mid == NUNCHUK_PLUG_SYSTEMID or mid == MOTION_PLUS_PLUG_SYSTEMID
 
 
-func _on_nunchuk_seated(plug: Node3D) -> void:
-	var owner_node: Node3D = plug.get_controller() if plug.has_method("get_controller") else plug
-	_nunchuk = owner_node as Nunchuk
-	_set_device_type(RETRO_DEVICE_WIIMOTE_NC)
+func _on_extension_seated(obj: Node3D) -> void:
+	var node: Node3D = obj.get_controller() if obj.has_method("get_controller") else obj
+	var mp := node as MotionPlus
+	if mp != null:
+		_motion_plus = mp
+		# The Nunchuk now belongs to the dongle's port, not this one, so the
+		# remote can no longer see it being seated or pulled. Follow the dongle's
+		# signal instead, and adopt whatever is already in it.
+		mp.nunchuk_changed.connect(_on_chained_nunchuk_changed)
+		_nunchuk = mp.get_nunchuk()
+	else:
+		_nunchuk = node as Nunchuk
+	_refresh_device_type()
 
 
-## XRToolsSnapZone.has_dropped carries no argument — it does not say what left,
-## only that the zone is empty. Which is enough: the zone holds one thing, and
-## _nunchuk is already that thing.
-func _on_nunchuk_removed() -> void:
+## XRToolsSnapZone.has_dropped carries no argument: it does not say what left,
+## only that the zone is empty. Which is enough, because the zone holds one thing
+## and this remote already knows what that was.
+func _on_extension_removed() -> void:
+	if _motion_plus != null:
+		if _motion_plus.nunchuk_changed.is_connected(_on_chained_nunchuk_changed):
+			_motion_plus.nunchuk_changed.disconnect(_on_chained_nunchuk_changed)
+		_motion_plus = null
 	_nunchuk = null
-	_set_device_type(RETRO_DEVICE_WIIMOTE)
+	_refresh_device_type()
+
+
+## A Nunchuk was seated in or pulled out of the seated dongle's pass-through.
+func _on_chained_nunchuk_changed(nc: Nunchuk) -> void:
+	_nunchuk = nc
+	_refresh_device_type()
+
+
+## Whether the announced id is one of the Nunchuk ones. Asked rather than compared
+## against a single id because there are two of them now, with and without the
+## dongle, and the button layout is the same for both.
+func _has_nunchuk() -> bool:
+	return device_type == RETRO_DEVICE_WIIMOTE_NC or device_type == RETRO_DEVICE_WIIMOTE_MP_NC
+
+
+## Announce whatever is currently hanging off this remote, as one of the four ids
+## the core understands. Called from every path that can change the chain, so the
+## mapping from hardware to id lives in exactly one place.
+func _refresh_device_type() -> void:
+	var dev := RETRO_DEVICE_WIIMOTE
+	if _motion_plus != null:
+		dev = RETRO_DEVICE_WIIMOTE_MP_NC if _nunchuk != null else RETRO_DEVICE_WIIMOTE_MP
+	elif _nunchuk != null:
+		dev = RETRO_DEVICE_WIIMOTE_NC
+	_set_device_type(dev)
 
 
 ## Re-announce the slot when the extension changes. The core rebuilds the whole
@@ -836,7 +938,7 @@ func _pressed_now() -> Dictionary:
 ## onto START/SELECT and puts C/Z where they were, because that is how the core
 ## lays out descWiimoteNunchuk. Reading the wrong one silently swaps four buttons.
 func _button_mask(pressed: Dictionary) -> int:
-	var nc := device_type == RETRO_DEVICE_WIIMOTE_NC
+	var nc := _has_nunchuk()
 	var bits: Dictionary = {
 		"b":     ControllerBindings.JOYPAD_B,
 		"a":     ControllerBindings.JOYPAD_A,
@@ -891,7 +993,7 @@ func _process(delta: float) -> void:
 		return
 
 	var nstick := Vector2.ZERO
-	if device_type == RETRO_DEVICE_WIIMOTE_NC and _nunchuk != null:
+	if _has_nunchuk() and _nunchuk != null:
 		nstick = _nunchuk.get_state().get("stick", Vector2.ZERO) as Vector2
 
 	# Right stick stays at zero on purpose: with a Nunchuk attached in pointer IR
@@ -902,6 +1004,7 @@ func _process(delta: float) -> void:
 
 	_update_aim(libretro)
 	_send_accel(libretro, delta)
+	_send_gyro(libretro, delta)
 
 
 # ── Pointer (IR) ──────────────────────────────────────────────────────────────
@@ -1069,12 +1172,6 @@ func _update_laser_dot(pose: Transform3D) -> void:
 # ── Accelerometer ─────────────────────────────────────────────────────────────
 
 ## Derive what the remote's accelerometer would read and hand it to the core in g.
-##
-## Gyro is deliberately absent. The frontend rejects RETRO_SENSOR_GYROSCOPE_ENABLE
-## today, and that is load-bearing rather than an oversight: Dolphin's IMU cursor
-## composes its rotation on TOP of the Point group's, so a remote that reported
-## gyro would have its aim counted twice. Dynamics.cpp bails out of that path
-## entirely while the gyro is unbound, which is what keeps the pointer honest.
 func _send_accel(libretro: Libretro, delta: float) -> void:
 	if delta <= 0.0:
 		return
@@ -1102,4 +1199,71 @@ func _send_accel(libretro: Libretro, delta: float) -> void:
 ## driving the sensor at all.
 func accel_in_wiimote_frame() -> Vector3:
 	var local := _barrel_tip.global_transform.basis.inverse() * (_accel_smoothed / G)
+	return Vector3(-local.x, local.z, local.y)
+
+
+# ── Gyroscope ─────────────────────────────────────────────────────────────────
+
+## Derive the remote's angular velocity and hand it to the core in radians/second.
+##
+## This is what MotionPlus reports, and without it Wii Sports Resort and Skyward
+## Sword have nothing to read. It is measured from how the BarrelTip's orientation
+## changed since last frame rather than from the RigidBody's angular_velocity,
+## because a held pickable is frozen (pickable.gd sets freeze = true on pickup) and
+## a frozen body's velocities are the physics server's business, not ours. The
+## barrel's own basis is true whatever the body is doing, and it is the frame the
+## answer is wanted in anyway.
+##
+## Note the core low-passes nothing and calibrates instead: IMUGyroscope averages a
+## few seconds of stable input and subtracts it, so a small constant bias from VR
+## tracking jitter is removed for free. What it cannot remove is a spike, which is
+## why GYRO_MIN_ANGLE and the smoothing below are here.
+func _send_gyro(libretro: Libretro, delta: float) -> void:
+	if delta <= 0.0:
+		return
+
+	var basis_now := _barrel_tip.global_transform.basis.orthonormalized()
+	if not _has_prev_tip_basis:
+		_prev_tip_basis = basis_now
+		_has_prev_tip_basis = true
+		return
+
+	var q_prev := _prev_tip_basis.get_rotation_quaternion()
+	var q_now := basis_now.get_rotation_quaternion()
+	_prev_tip_basis = basis_now
+
+	# q and -q name the same orientation, so the difference between two of them
+	# can describe either the short way round or the long way. Flip one to force
+	# the short arc, because otherwise a sign change reads as a near-360° flick.
+	if q_prev.dot(q_now) < 0.0:
+		q_prev = -q_prev
+
+	# The rotation that took the barrel from where it was to where it is, in world
+	# space. Its axis is the axis of rotation and its angle over dt is the rate.
+	var dq := (q_now * q_prev.inverse()).normalized()
+	var angle := dq.get_angle()
+	var w_world := Vector3.ZERO
+	if angle > GYRO_MIN_ANGLE:
+		w_world = dq.get_axis() * (angle / delta)
+
+	_gyro_smoothed = _gyro_smoothed.lerp(w_world, GYRO_SMOOTHING)
+
+	var rad := gyro_in_wiimote_frame()
+	libretro.SetSensorGyro(_port_index, rad.x, rad.y, rad.z)
+
+
+## The smoothed angular velocity on the emulated remote's own axes, in rad/s.
+##
+## The same change of basis the accelerometer uses, and for the same reason:
+## Godot has -Z forward/+Y up/+X right, Dolphin's remote has +X LEFT, +Y BACK,
+## +Z UP. That swap is a proper rotation (its determinant is +1), which is what
+## makes it legal to apply to an angular velocity at all: a mirrored basis would
+## need the sign flipped back, because rotation is a pseudovector and does not
+## survive a reflection the way a position does.
+##
+## Dolphin reads these right-handed about those axes, so +X is pitching the nose
+## DOWN, +Y is rolling the top to the LEFT, and +Z is swinging the nose LEFT
+## (Input.cpp binds each to the matching half of a GyroX/Y/Z± pair).
+func gyro_in_wiimote_frame() -> Vector3:
+	var local := _barrel_tip.global_transform.basis.orthonormalized().inverse() * _gyro_smoothed
 	return Vector3(-local.x, local.z, local.y)

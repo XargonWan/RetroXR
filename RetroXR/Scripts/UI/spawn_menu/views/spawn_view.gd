@@ -384,6 +384,7 @@ func _build() -> void:
 		["Keyboard",           "retro_keyboard"],
 		["Wii Remote",         "wiimote"],
 		["Nunchuk",            "nunchuk"],
+		["Wii MotionPlus",     "motion_plus"],
 	])
 
 	# Refresh on tab switch — picks up files added to disk since last open

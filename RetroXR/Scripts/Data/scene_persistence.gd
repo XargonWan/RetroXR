@@ -51,6 +51,7 @@ const SNES_MOUSE_SCENE       := preload("res://Scenes/Objects/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE   := preload("res://Scenes/Objects/retro_keyboard.tscn")
 const WIIMOTE_SCENE          := preload("res://Scenes/Objects/wiimote.tscn")
 const NUNCHUK_SCENE          := preload("res://Scenes/Objects/nunchuk.tscn")
+const MOTION_PLUS_SCENE      := preload("res://Scenes/Objects/motion_plus.tscn")
 const SENSOR_BAR_SCENE       := preload("res://Scenes/Objects/sensor_bar.tscn")
 
 ## Types whose entry carries nothing but a pose — instantiate and place, no
@@ -72,6 +73,9 @@ const PLAIN_SCENES := {
 	# REMOTE's entry, not from this one.
 	"wiimote": WIIMOTE_SCENE,
 	"nunchuk": NUNCHUK_SCENE,
+	# Same arrangement for the dongle: a pose here, and the fact that it is seated
+	# in a particular remote restored from the REMOTE's entry.
+	"motion_plus": MOTION_PLUS_SCENE,
 	# The bar's own entry is a pose; which console it is plugged into is applied
 	# afterwards by _apply_references, like the remote's pairing.
 	"sensor_bar": SENSOR_BAR_SCENE,
@@ -493,6 +497,11 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		# The remote's Nunchuk is restored whether or not it was paired to a
 		# console — an unpaired remote can still have one plugged into it.
 		if obj is Wiimote:
+			# Dongle FIRST. It seats synchronously, and the Nunchuk goes into its
+			# pass-through rather than into the remote whenever one is present, so
+			# restoring them the other way round puts the Nunchuk in the wrong port.
+			(obj as Wiimote).restore_motion_plus(
+				_resolve_ref(root, spawned, d.get("motion_plus")) as MotionPlus)
 			(obj as Wiimote).restore_nunchuk(
 				_resolve_ref(root, spawned, d.get("nunchuk")) as Nunchuk)
 		var port_idx := int(d.get("port_index", -1))
@@ -583,6 +592,11 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		# is only read when LOADING, so without a branch here it was never written
 		# and there was nothing to load back.
 		return _base(id, "nunchuk", n3d)
+	elif node is MotionPlus:
+		# Pose only, for the reason the Nunchuk above gives: which remote it is
+		# seated in is saved on that remote. It needs a branch here all the same,
+		# because PLAIN_SCENES is only read when loading.
+		return _base(id, "motion_plus", n3d)
 	elif node is TVRemote:
 		return _base(id, "tv_remote", n3d)
 	elif node is TrashCan:
@@ -699,6 +713,10 @@ func _serialize_peripheral(node: Node, id: int, n3d: Node3D, node_to_id: Diction
 		# because that is the end of the cord that means something — the nunchuk
 		# itself is just a pose.
 		entry["nunchuk"] = _ref(node_to_id, (node as Wiimote).get_nunchuk())
+		# And the dongle, if one is fitted. Saved beside the Nunchuk rather than
+		# derived from device_type, because the pair of them is what says which
+		# port the Nunchuk goes back into.
+		entry["motion_plus"] = _ref(node_to_id, (node as Wiimote).get_motion_plus())
 	if node is RetroMouse:
 		entry["sensitivity"] = (node as RetroMouse).sensitivity
 	if node is RetroController:

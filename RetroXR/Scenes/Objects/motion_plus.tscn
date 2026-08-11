@@ -1,0 +1,145 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/peripherals/motion_plus.gd" id="1_mpscript"]
+[ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="4_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="5_lhand"]
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="6_snapzone"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_mp"]
+friction = 0.8
+
+; 35.5 x 24.5 x 45.5 mm, on the remote's own axes, long axis on Z.
+;
+; The ORIGIN is 2 mm BEHIND the mating face, not on it. XRToolsSnapZone puts the
+; object's origin on the zone, and the remote's ExpansionPort zone sits at
+; z = 0.076 while its shell ends at z = 0.074, so the zone stands 2 mm proud of
+; the face it seats against. That is the same proud-offset convention the Wii
+; model uses for its sensor bar and A/V sockets.
+;
+; Getting this wrong is exactly as visible as it sounds: built with the origin ON
+; the face, the dongle floated 2 mm off the remote with only the tongue bridging
+; the gap, while that tongue buried 3 mm of itself inside the shell.
+;
+; So the whole block is offset by -0.002 and the arithmetic below is in the
+; DONGLE's frame, with the mating face at z = -0.002:
+;
+;   tongue   -0.0070 .. -0.0020   (hidden inside the remote once seated)
+;   face                 -0.0020
+;   body     -0.0020 ..  0.0435
+;   collar    0.0410 ..  0.0435   (the flange, at the FAR end)
+;   port zone            0.0455   (2 mm proud of the far face, mirroring above)
+;
+; Slightly narrower and a good deal shallower than the 36 x 30 remote, which is
+; what the real dongle is: it steps in a fraction all round so the joint reads as
+; two parts rather than one continuous block.
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.0355, 0.0245, 0.0455)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.0355, 0.0245, 0.0455)
+
+; The remote's lacquer, to the number, matching Mat_shell in wiimote.tscn. The dongle is
+; the same moulded white plastic and has to sit against the remote without a seam
+; of colour between them.
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.93, 0.93, 0.915, 1)
+metallic_specular = 0.6
+roughness = 0.15
+clearcoat_enabled = true
+clearcoat = 0.65
+clearcoat_roughness = 0.04
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.1, 0.1, 0.11, 1)
+
+; The male tongue that goes INTO the remote, and the recess of the pass-through
+; port that takes the Nunchuk. Same section, because on the real accessory they
+; are the same connector, one of each sex, which is the whole trick of it.
+[sub_resource type="BoxMesh" id="BoxMesh_tongue"]
+size = Vector3(0.014, 0.006, 0.005)
+
+[sub_resource type="BoxMesh" id="BoxMesh_recess"]
+size = Vector3(0.014, 0.006, 0.004)
+
+; The flange round the FAR end, where the Nunchuk plugs in. On the remote end it
+; read backwards: the real dongle carries its wider step at the bottom, not at
+; the joint, and a lip at the joint made the dongle look like it was resting on
+; the remote instead of clipped into it.
+[sub_resource type="BoxMesh" id="BoxMesh_collar"]
+size = Vector3(0.036, 0.0255, 0.0025)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.055, 0.045, 0.062)
+
+[node name="MotionPlus" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.05
+physics_material_override = SubResource("PhysMat_mp")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_mpscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.02075)
+shape = SubResource("BoxShape3D_body")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.02075)
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="Collar" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.04225)
+mesh = SubResource("BoxMesh_collar")
+surface_material_override/0 = SubResource("Mat_shell")
+
+; Sticks out the FRONT (-Z), into the remote. Buried once seated, which is right:
+; it is only visible while the dongle is loose in a hand or on a shelf.
+[node name="Tongue" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0045)
+mesh = SubResource("BoxMesh_tongue")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; The pass-through, on the far (+Z) end. Same grab_distance and snap_require as
+; the remote's own port, because it IS the remote's port as far as a Nunchuk is
+; concerned. motion_plus.gd narrows it to the Nunchuk's systemid.
+[node name="ExpansionPort" parent="." instance=ExtResource("6_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0455)
+grab_distance = 0.03
+snap_require = "controller_plug"
+
+; 1 mm proud of the far face, with the rest of it buried. A dark box set FLUSH
+; goes coplanar with the shell and z-fights down to a sliver, and one set fully
+; inside a solid body cannot be seen at all: the mouth of a port on a primitive
+; is a dark panel standing just off the face, which is what the remote's own
+; expansion port does too.
+[node name="PortRecess" type="MeshInstance3D" parent="ExpansionPort"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.003)
+mesh = SubResource("BoxMesh_recess")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="GrabPoint" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.02075)
+visible = false
+script = ExtResource("3_grabpoint")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.02075)
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+visible = false

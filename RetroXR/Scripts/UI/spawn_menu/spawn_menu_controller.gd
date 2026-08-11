@@ -27,6 +27,7 @@ const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_m
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/ray_gun.tscn")
 const WIIMOTE_SCENE         := preload("res://Scenes/Objects/wiimote.tscn")
 const NUNCHUK_SCENE         := preload("res://Scenes/Objects/nunchuk.tscn")
+const MOTION_PLUS_SCENE     := preload("res://Scenes/Objects/motion_plus.tscn")
 const SENSOR_BAR_SCENE      := preload("res://Scenes/Objects/sensor_bar.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/memory_card.tscn")
@@ -1029,6 +1030,10 @@ func _on_spawn_requested(type: String) -> void:
 			obj = WIIMOTE_SCENE.instantiate() as Node3D
 		"nunchuk":
 			obj = NUNCHUK_SCENE.instantiate() as Node3D
+		# Nor this: the dongle clips into a remote's expansion port, and the
+		# Nunchuk then clips into the dongle rather than into the remote.
+		"motion_plus":
+			obj = MOTION_PLUS_SCENE.instantiate() as Node3D
 		# Also no port to pick, for the opposite reason: its plug fits exactly one
 		# socket in the room, the Wii's own sensor bar jack.
 		"sensor_bar":

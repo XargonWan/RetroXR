@@ -53,6 +53,10 @@ const _PERIPHERALS: Dictionary = {
 	"wii": [
 		{"kind": "peripheral", "label": "Wii Remote", "spawn": "wiimote"},
 		{"kind": "peripheral", "label": "Nunchuk", "spawn": "nunchuk"},
+		# Offered here too, because the games that need it need it absolutely:
+		# without the dongle a remote reports no rotation and Wii Sports Resort
+		# will not start.
+		{"kind": "peripheral", "label": "Wii MotionPlus", "spawn": "motion_plus"},
 		# Listed first among equals in spirit: without it the remote has nothing to
 		# look at, and no amount of pressing SYNC produces a pointer.
 		{"kind": "peripheral", "label": "Sensor Bar", "spawn": "sensor_bar"},
