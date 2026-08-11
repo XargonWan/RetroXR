@@ -264,6 +264,9 @@ func _init_romm() -> void:
 			notify("romm:firmware", "⚠️", "BIOS List: %s" % error,
 				-1.0, MenuToasts.DWELL_FAIL)
 			return
+		# Takes down Re-check's sticky "Checking RomM…"; a no-op when the listing
+		# was the automatic one, which raises nothing.
+		notify_clear("romm:firmware")
 		if _cores_view != null and _cores_view.showing_bios_tab():
 			_cores_view.refresh_bios_view()
 	)

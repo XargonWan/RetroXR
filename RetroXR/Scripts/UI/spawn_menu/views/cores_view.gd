@@ -499,12 +499,30 @@ func _build_bios_tab() -> Control:
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 6)
 
+	var hdr_row := MenuStyle.hbox(10)
+
 	var hdr := Label.new()
 	hdr.text = "Files each core needs in its system folder. Only missing required files stop a game from running."
 	hdr.add_theme_font_size_override("font_size", 15)
 	hdr.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
 	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	outer.add_child(hdr)
+	hdr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hdr_row.add_child(hdr)
+
+	# The disk is rescanned on every entry to this tab, but the RomM listing is
+	# fetched once per session — firmware uploaded to the server after that first
+	# look is invisible until a restart without this.
+	var recheck := Button.new()
+	recheck.text = "%s  Re-check" % String.chr(MenuIcons.RETRY)
+	recheck.add_theme_font_override("font", MenuIcons.symbols())
+	recheck.add_theme_font_size_override("font_size", 16)
+	recheck.custom_minimum_size = Vector2(150, 44)
+	recheck.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	recheck.tooltip_text = "Rescan the system folders and ask RomM for its firmware list again"
+	recheck.pressed.connect(_on_bios_recheck_pressed)
+	hdr_row.add_child(recheck)
+
+	outer.add_child(hdr_row)
 
 	outer.add_child(HSeparator.new())
 
@@ -563,6 +581,23 @@ func _on_firmware_finished(key: String, ok: bool, error: String) -> void:
 func _on_firmware_cancelled(key: String) -> void:
 	_bios_job_buttons.erase(key)
 	notify_clear(key)
+	refresh_bios_view()
+
+
+## The only caller that forces a re-listing. `_populate_bios_tab` must not: it
+## also runs after every install and cancel, so forcing there would spend a
+## request per job.
+##
+## Ordered force-then-redraw — the redraw's own bare refresh() is swallowed by
+## `_in_flight`, so this is one request, not two. The repaint that shows the new
+## firmware comes from `listed`, which the menu already routes back here.
+func _on_bios_recheck_pressed() -> void:
+	if romm_firmware != null and romm_config != null and romm_config.is_configured():
+		# Sticky: cleared or replaced when `listed` lands. Only raised once the
+		# request is certain to be dispatched, or nothing would ever take it down.
+		_romm_notify_or_queue("romm:firmware", String.chr(MenuIcons.BUSY),
+			"Checking RomM…", 0.0)
+		romm_firmware.refresh(true)
 	refresh_bios_view()
 
 
