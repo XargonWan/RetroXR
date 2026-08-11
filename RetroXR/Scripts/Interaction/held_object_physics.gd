@@ -89,6 +89,16 @@ var _safe_pose: Dictionary = {}
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node_added)
 	_patch_tree(get_tree().root)
+	# This autoload is where the hint rows for every pickable are declared, so it
+	# is also where the panel's one-time cost is paid — otherwise the first grab of
+	# the session wears it. Deferred because it adds a node to the root, and the
+	# root is mid-setup while an autoload readies. See HeldHint.warm.
+	_warm_hint.call_deferred()
+
+
+func _warm_hint() -> void:
+	if AppPrefs.show_hints:
+		HeldHint.warm(get_tree().root)
 
 
 func _on_node_added(node: Node) -> void:

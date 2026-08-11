@@ -100,6 +100,9 @@ var _used_this_hold: Dictionary = {}
 ## Row ids this popup has actually put on screen. note_used refuses to count a
 ## verb the player was never taught.
 var _ever_shown: Dictionary = {}
+## What the panel is currently drawing, as _signature reports it. Empty until the
+## first build.
+var _built_sig := ""
 
 
 static func attach(host: Node3D, vr_combo_drop: bool, height := 0.18) -> HeldHint:
@@ -341,7 +344,25 @@ func _needs_desktop_modifier() -> bool:
 
 # ── Presentation ──────────────────────────────────────────────────────────────
 
+## Draw `rows`, unless that is already what is on screen.
+##
+## Everything below the early-out is the single largest cost of picking anything
+## up: the panel is torn down and rebuilt control by control, and the SubViewport
+## resize that ends it reallocates a render target. Measured at 1.5-2.0 ms a grab
+## against 0.15 ms for everything else a grab does, and 16-27 ms the first time in
+## a session — see warm(). The rows are the same on nearly every grab, so an
+## unchanged signature simply re-shows what is already there; UPDATE_ONCE leaves
+## the render target holding the last draw, so there is nothing to redraw.
 func _build(rows: Array, right_hand: bool) -> void:
+	# Ahead of the early-out: note_used refuses to count a verb this popup never
+	# put on screen, and a re-show is still it being on screen.
+	for row: Array in rows:
+		_ever_shown[String(row[0])] = true
+
+	var sig := _signature(rows, right_hand)
+	if _viewport != null and sig == _built_sig:
+		return
+
 	_ensure_nodes()
 	for child in _rows_box.get_children():
 		_rows_box.remove_child(child)
@@ -350,7 +371,6 @@ func _build(rows: Array, right_hand: bool) -> void:
 	var font: Font = ThemeDB.fallback_font
 	var widest := 0
 	for row: Array in rows:
-		_ever_shown[String(row[0])] = true
 		var line := HBoxContainer.new()
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
 		line.add_theme_constant_override("separation", SEP)
@@ -391,6 +411,48 @@ func _build(rows: Array, right_hand: bool) -> void:
 	# UPDATE_ONCE, never UPDATE_ALWAYS: an always-updating SubViewport hangs a
 	# headless run, and this content only changes when the rows do.
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_built_sig = sig
+
+
+## Everything the build above turns into pixels: the rows in order, with the
+## captions and the glyph names that produced them, and the hand that resolves
+## {side}/{s}.
+##
+## Content, not the row ids alone. An id outlives the thing it describes — the
+## rotate rows keep theirs across the hand/beam swap and change their glyphs and
+## captions underneath, and a signature of ids would leave the beam's panel up on
+## an object that had just been caught into the hand.
+func _signature(rows: Array, right_hand: bool) -> String:
+	var parts: Array[String] = ["r" if right_hand else "l"]
+	for row: Array in rows:
+		parts.append("%s|%s|%s" % [row[0], row[3], row[2]])
+	return "\n".join(parts)
+
+
+## Build a panel once, off-camera, so the first grab of a session does not.
+##
+## Cold, the first _build blocks for 16-27 ms — the fallback font rasterised at
+## CAPTION_PT, the InputPrompts textures decoded, the first render target and the
+## sprite's material — against 0.34 ms for an ordinary frame. It is one-time and
+## global rather than per-object: a second object's first grab costs the ordinary
+## amount. So one throwaway panel at load pays it for every object in the room.
+##
+## Both hands: {side}/{s} resolve to different textures and each is its own decode.
+static func warm(parent: Node) -> void:
+	var host := Node3D.new()
+	host.name = "HintWarmup"
+	parent.add_child(host)
+	var hint := attach(host, true)
+	var rows: Array = [
+		[&"warm_vr", PLATFORM_VR, VR_DROP_GLYPHS, "Drop", WHEN_HELD, false],
+		[&"warm_desktop", PLATFORM_DESKTOP, DESKTOP_DROP_GLYPHS, "Drop", WHEN_HELD, false],
+	]
+	for right in [true, false]:
+		hint._build(rows, right)
+	hint.hide_now()
+	# Freed on a timer rather than at once, so the viewport keeps its render target
+	# long enough to draw into it.
+	parent.get_tree().create_timer(1.0).timeout.connect(host.queue_free)
 
 
 func _caption(text: String) -> Label:
