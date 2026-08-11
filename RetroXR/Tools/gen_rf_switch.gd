@@ -6,10 +6,16 @@
 ## 90 x 20 x 50 mm of moulded grey plastic — X wide, Y tall, Z deep, sitting flat
 ## with its origin at the centre so the pickable's collision box needs no offset.
 ##
-## Two half shells, so there is a PARTING LINE round the middle and it is worth the
-## four extra rings: without it a rounded box of one colour reads as a soap bar, and
-## the seam is most of what says "moulded case" at arm's length. Same reason the top
-## and bottom edges are filleted rather than square.
+## Two half shells, so there is a PARTING LINE round the middle, and the top and
+## bottom edges are filleted rather than square — together they are most of what
+## keeps a one-colour box from reading as a soap bar.
+##
+## The seam is a HAIRLINE and had to become one. The first pass cut it 0.4 mm deep
+## over a 0.6 mm run, which on a 20 mm case is a canyon: it caught its own shadow and
+## read as the box having been sawn in half. It is now 0.12 mm over 0.8 mm — a shelf
+## rather than a trench, shallow enough that smoothing leaves a soft dark line and no
+## step. Sat 0.6 mm BELOW centre as well, which is where a real case's is: dead
+## centre reads as a design stripe, slightly low reads as two mouldings meeting.
 ##
 ## The lettering is NOT baked. rf_switch.tscn hangs Label3Ds on the top face — the
 ## AvLegend precedent — rather than embossing TextMesh glyphs into this mesh, so the
@@ -39,15 +45,17 @@ const HZ := 0.025               # 50 mm deep
 const CORNER_R := 0.004
 const CORNER_SEG := 4           # samples per corner; 4 reads round at 4 mm
 
-# (y, inset). The pair either side of y = 0 is the parting groove; the 1.6 mm
-# insets top and bottom are the edge fillets.
+# (y, inset). The 1.6 mm insets top and bottom are the edge fillets; the shallow
+# pair around y = -0.0006 is the parting seam.
+const SEAM_Y := -0.0006
+const SEAM_DEPTH := 0.00012
+const SEAM_HALF := 0.0004
 const LEVELS := [
 	[-0.0100, 0.0016],
 	[-0.0084, 0.0000],
-	[-0.0007, 0.0000],
-	[-0.0003, 0.0004],
-	[ 0.0003, 0.0004],
-	[ 0.0007, 0.0000],
+	[SEAM_Y - SEAM_HALF, 0.0000],
+	[SEAM_Y, SEAM_DEPTH],
+	[SEAM_Y + SEAM_HALF, 0.0000],
 	[ 0.0084, 0.0000],
 	[ 0.0100, 0.0016],
 ]
@@ -61,13 +69,24 @@ func _init() -> void:
 	for lv: Array in LEVELS:
 		rings.append(_outline(float(lv[0]), float(lv[1])))
 
-	# Walls.
+	# Walls, ONE SMOOTH GROUP PER BAND — which is what makes this read as a box.
+	#
+	# generate_normals() averages every vertex sharing a position, so a single group
+	# smooths the side wall into the edge fillets and the whole case comes out shaded
+	# like a tube: dark at the top and bottom, bright through the middle, with no
+	# edge anywhere. Per band, the corners still round (they are within a band) while
+	# the wall meets each fillet on a crease, and the parting seam becomes a line
+	# instead of a soft gradient.
 	for i in range(rings.size() - 1):
+		st.set_smooth_group(i)
 		_loft(st, rings[i], rings[i + 1])
 
 	# Caps. A constant-Y step whose outline shrinks to the centre faces +Y, which
-	# is the same rule _lathe states for a radius collapsing to the axis.
+	# is the same rule _lathe states for a radius collapsing to the axis. Groups of
+	# their own so the flat top does not bleed into the fillet under it.
+	st.set_smooth_group(100)
 	_cap(st, rings[0], -HY, false)
+	st.set_smooth_group(101)
 	_cap(st, rings[rings.size() - 1], HY, true)
 
 	st.generate_normals()

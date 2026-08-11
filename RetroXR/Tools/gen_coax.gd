@@ -307,6 +307,11 @@ func _report(path: String, mesh: ArrayMesh) -> void:
 ## Facing follows the profile's direction: increasing z faces outward, decreasing z
 ## faces into the bore, and a constant-z step faces +Z when the radius shrinks and
 ## -Z when it grows. Order the points and the normals take care of themselves.
+##
+## NOTE for the older generators: gen_rca_plug.gd, gen_vga.gd, gen_trs.gd,
+## gen_wii_av.gd and gen_ps2.gd all close their rings on TAU and carry the same seam.
+## Not touched here — every one of them means re-baking a committed .res that other
+## scenes already use.
 func _lathe_n(st: SurfaceTool, profile: PackedVector2Array, sides: int) -> void:
 	for s in range(profile.size() - 1):
 		var z0: float = profile[s].x
@@ -317,7 +322,14 @@ func _lathe_n(st: SurfaceTool, profile: PackedVector2Array, sides: int) -> void:
 			continue
 		for i in sides:
 			var a0: float = TAU * float(i) / float(sides)
-			var a1: float = TAU * float(i + 1) / float(sides)
+			# MODULO, and it is load-bearing. Closing the ring on TAU rather than on
+			# index 0 puts the last column's vertices at sin(TAU) = -2.4e-16 instead
+			# of at 0 — a hair off the first column's, but far enough that
+			# generate_normals() treats them as separate vertices and does not
+			# average across the join. The result is a hard shading line running the
+			# whole length of every lathed part, which is exactly what it looked
+			# like: a seam down the side of the aerial socket.
+			var a1: float = TAU * float((i + 1) % sides) / float(sides)
 			var p00 := Vector3(cos(a0) * r0, sin(a0) * r0, z0)
 			var p10 := Vector3(cos(a1) * r0, sin(a1) * r0, z0)
 			var p01 := Vector3(cos(a0) * r1, sin(a0) * r1, z1)
