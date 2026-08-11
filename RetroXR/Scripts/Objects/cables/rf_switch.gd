@@ -98,7 +98,7 @@ func _wire(rope: VerletRope, attach: Node3D, plug: RcaPlug) -> void:
 	rope._init_points()
 
 
-## Hold each loose plug within its OWN lead's reach of the box.
+## Keep each lead within its own reach, moving whichever end is NOT being held.
 ##
 ## The base's _clamp_pair holds the two plugs within one rest length of EACH OTHER,
 ## which is right for a lead whose two ends are the rope's two ends. Here they are
@@ -106,21 +106,39 @@ func _wire(rope: VerletRope, attach: Node3D, plug: RcaPlug) -> void:
 ## 25 cm would be measured against the deck lead's 1.8 m and the two would drag each
 ## other about.
 ##
-## Same rule and the same reasoning as system.gd::_physics_process and
-## sensor_bar.gd: a hard clamp rather than a spring, and plugs held by a hand, a
-## laser or a socket are skipped because something else owns their transform.
+## WHICH end moves is the part that matters, and the first version got it backwards:
+## it only ever pulled the plug back toward the box and skipped a held plug outright,
+## so walking away with a connector stretched the lead without limit and left the box
+## sitting where it was. _clamp_pair's rule is the right one — the held end is the
+## anchor and the loose end follows — and here the loose end is usually the BOX.
+##
+## So: plug held (a hand, a laser, or seated in a socket) and box free, the box is
+## dragged along behind. Box held and plug free, the plug is reeled in. Both held —
+## one in each hand, or one in a socket and one in a hand — nothing moves, because
+## something else owns each transform and the reach is the hands' problem. Same call
+## _clamp_pair makes.
+##
+## Both leads are resolved before the box is moved once. Applying them one at a time
+## would let two over-extended leads shove it back and forth every frame; summing
+## them means a box stretched between two anchors simply stays put, which is what a
+## real one does.
 func _physics_process(_delta: float) -> void:
 	if not _rope_built or _plugs.is_empty():
 		return
-	_tether(_plugs[End.A][0] as RcaPlug, _deck_attach, _deck_reach)
-	_tether(_plugs[End.B][0] as RcaPlug, _tv_attach, _tv_reach)
+	var pull := Vector3.ZERO
+	pull += _tether(_plugs[End.A][0] as RcaPlug, _deck_attach, _deck_reach)
+	pull += _tether(_plugs[End.B][0] as RcaPlug, _tv_attach, _tv_reach)
+	if pull != Vector3.ZERO and _body != null and is_instance_valid(_body):
+		_body.global_position += pull
 
 
-func _tether(plug: RcaPlug, attach: Node3D, reach: float) -> void:
-	if plug == null or not is_instance_valid(plug) or plug.is_held():
-		return
+## Resolve one lead. Returns how far the BOX has to move to take up the slack, or
+## zero when the plug was the end that moved.
+func _tether(plug: RcaPlug, attach: Node3D, reach: float) -> Vector3:
+	if plug == null or not is_instance_valid(plug):
+		return Vector3.ZERO
 	if attach == null or not is_instance_valid(attach):
-		return
+		return Vector3.ZERO
 	# Boss to boss, not origin to origin: the cord leaves the hood some 32 mm behind
 	# the mating face, and that is the span the rope actually has.
 	var from: Vector3 = attach.global_position
@@ -128,8 +146,23 @@ func _tether(plug: RcaPlug, attach: Node3D, reach: float) -> void:
 	var away: Vector3 = to - from
 	var d: float = away.length()
 	if d <= reach or d < 0.0001:
-		return
-	plug.global_position += away * ((reach - d) / d)
+		return Vector3.ZERO
+	var slack: Vector3 = away * ((d - reach) / d)
+	if not plug.is_held():
+		plug.global_position -= slack        # loose connector, reel it in
+		return Vector3.ZERO
+	if _body_is_held():
+		return Vector3.ZERO                  # both ends owned; nothing to do
+	return slack                             # drag the box after the connector
+
+
+## True while a hand, a laser or a snap zone owns the box's pose.
+##
+## `freeze`, for the reason RcaPlug.is_held gives: a ray grab never calls pick_up(),
+## so is_picked_up() reads false for the whole hold, while every path that takes an
+## object freezes the body.
+func _body_is_held() -> bool:
+	return _body != null and is_instance_valid(_body) and _body.freeze
 
 
 # ── save / restore ────────────────────────────────────────────────────────────
