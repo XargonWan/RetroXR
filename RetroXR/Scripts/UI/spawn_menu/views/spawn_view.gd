@@ -463,6 +463,13 @@ func _populate_systems_detail(systemid: String, vbox: VBoxContainer) -> void:
 		# card their consoles have no slot for, so browsing a PlayStation card
 		# list from them would be a straight lie about what they can hold.
 		if token == "memory_card" and systemid == MemoryCardBrowser.SYSTEMID:
+			# This row does one of two different things, so it says which. With
+			# cards saved it opens the shelf and drops the +, because every other
+			# + on this page puts something in the room on the first press.
+			var cards := MemoryCardBrowser.card_count()
+			if cards > 0:
+				btn.text = "     %s      %d card%s" \
+					% [str(item.get("label", "Memory Card")), cards, "" if cards == 1 else "s"]
 			btn.pressed.connect(_on_system_memcard_pressed.bind(systemid, vbox))
 		else:
 			btn.pressed.connect(spawn_requested.emit.bind(token))

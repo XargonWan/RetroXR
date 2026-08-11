@@ -42,18 +42,26 @@ var _pending_key := ""
 var _pending_card: Dictionary = {}
 
 
+## How many card images are on disk.
+##
+## A directory listing, not list_cards: that opens and parses every image to
+## count its saves and free blocks, and the callers here only want how many
+## there are — a number the console page asks for every time it is drawn.
+static func card_count() -> int:
+	var dir := SramPaths.cards_dir(SYSTEMID)
+	if not DirAccess.dir_exists_absolute(dir):
+		return 0
+	var n := 0
+	for f: String in DirAccess.get_files_at(dir):
+		if f.get_extension().to_lower() == "mcr":
+			n += 1
+	return n
+
+
 ## Any card images on disk? With none there is nothing to choose between, and
 ## the caller should just spawn a blank one.
 static func has_cards() -> bool:
-	# A directory listing, not list_cards: that reads and parses every image, and
-	# the answer here is only whether any file exists.
-	var dir := SramPaths.cards_dir(SYSTEMID)
-	if not DirAccess.dir_exists_absolute(dir):
-		return false
-	for f: String in DirAccess.get_files_at(dir):
-		if f.get_extension().to_lower() == "mcr":
-			return true
-	return false
+	return card_count() > 0
 
 
 ## Show the card list (rebuilt each time — cards are written as you play).
