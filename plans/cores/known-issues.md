@@ -103,6 +103,81 @@ are fixed value lists, so an index, not a free path) and, on
 `ChangeDevice`. The plumbing exists: `CheckForUpdatedVariables()` runs every frame
 from `retro_run`, and `EFB_SCALE` is the template.
 
+# Dolphin — the Vulkan backend trips the Adreno GPU watchdog on Quest
+
+Booting a Wii/GameCube game with Dolphin's **Vulkan** backend in the arcade room
+kills the GPU within seconds: the GMU reports `MISC: GPU hang detected`, the
+`VkDevice` is lost permanently, and every later submit returns
+`VK_ERROR_DEVICE_LOST`. Audio and input keep running, so it presents as a black
+(later white) screen rather than a crash.
+
+**Workaround: run Dolphin on GLES3** — `Libretro.SetPreferredHwRender(5)` before
+`StartContent`. Measured working; the OpenGL path has no equivalent contract and
+is unaffected.
+
+## It is GPU contention, not a bug in the frontend
+
+Same core, same ROM, same Vulkan path; the only variable is how much GPU work
+Godot is doing:
+
+| Condition | Result |
+|---|---|
+| Arcade room rendering | GPU hang in 2-3 s, every time |
+| `Tools/gl_video_probe` as main scene (no room) | 95 s clean; 0 hangs, `reset_count` unchanged |
+| Passthrough, room not drawn | ~25 minutes |
+
+Meta documents that the compositor **preempts the application's GPU workload**
+every frame to hit its cadence (the `Preempt` render stage in
+`documentation/native/android/ts-renderdoc-renderstage`), and kgsl's
+`ft_long_ib_detect` is on (`/sys/class/kgsl/kgsl-3d0/`), which times a submission
+in wall-clock — preemption gaps included. Godot renders 2064x2163 per eye at
+72 Hz on the same GPU.
+
+Ruled out by measurement, so do not re-investigate: the Android surface size, the
+`AImageReader` never being drained, the sync-index count, our readback entirely
+(built with `ReadbackToPixels` submitting nothing — still hangs), and Vulkan API
+misuse (validation is silent until ~10 s after the hang, and what it then reports
+is Dolphin's own code on an already-dead device). There are no page-fault lines
+anywhere in the logs, so it is a timeout and not a bad memory access.
+
+## What DolphinLibretro's Vulkan glue actually does
+
+Read this before theorising about the surface (`DolphinLibretro/Vulkan.cpp`):
+
+* It **fakes the whole swapchain**. `vkCreateSwapchainKHR` allocates plain
+  offscreen images — `popcount(get_sync_index_mask())` of them, so that mask
+  decides how many images the CORE allocates — and it never presents to our
+  surface. `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` is hooked to override
+  `currentExtent` with Dolphin's own size, so the surface's dimensions are never
+  read by anything.
+* `vkAcquireNextImageKHR` -> `wait_sync_index()` then `get_sync_index()`.
+* `vkQueuePresentKHR` -> `set_image(..., 0, nullptr, ...)` — zero semaphores.
+* `vkQueueSubmit` **strips every wait and signal semaphore**, then submits under
+  `lock_queue`. `set_command_buffers` and `set_signal_semaphore` are both `#if 0`.
+
+So `wait_sync_index()` is the only frontend/core synchronisation in the pipeline.
+
+## The frontend cannot reach Dolphin's device on Android
+
+`create_instance` and `create_device2` are both inside `#ifdef __APPLE__`
+(`DolphinLibretro/Video.cpp`), so on Android Dolphin offers **only v1
+`create_device`**. v1 passes a flat `VkPhysicalDeviceFeatures` with no `pNext`
+chain and the core builds its own `VkDeviceCreateInfo`. Consequences:
+
+* `VulkanContext::s_CreateDeviceWrapper` is dead code on Android (v2 only).
+* `VK_EXT_device_fault` can be forced in via `required_device_extensions` (a core
+  must honour those, and Dolphin merges them with `AddNameUnique`) but its
+  `VkPhysicalDeviceFaultFeaturesEXT` feature bit cannot. Tried: the driver accepts
+  `vkGetDeviceFaultInfoEXT` and returns an empty description with zero address and
+  zero vendor records.
+* `VK_EXT_global_priority` needs `VkDeviceQueueGlobalPriorityCreateInfoEXT`
+  chained into queue creation, inside Dolphin's create-info. Unreachable.
+
+Driver crash dumps are closed on retail hardware too: `/sys/class/kgsl/kgsl-3d0/snapshot/`
+is permission-denied, `setprop panel.gpuSnapshotPath` is refused, and
+`ft_long_ib_detect` is root-only so the watchdog cannot be extended to test the
+timeout directly. A real root cause needs a Dolphin patch — we ship our own build.
+
 # Reading a core's options without running RetroXR
 
 Both the option list and these behaviours were measured with a ~60-line ctypes
