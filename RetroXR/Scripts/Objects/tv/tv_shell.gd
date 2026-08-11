@@ -80,7 +80,19 @@ extends Node3D
 ## moulding stays the same distance out while turning out of the plane — so the
 ## facet printing can actually sit on is the 123 x 46 mm panel around the power
 ## inlet, and four groups ran round the corner of the case.
+##
+## ZERO is allowed and means what it says: a cabinet with no phono sockets at all.
+## The computer monitor is one — it takes its picture over VGA, and a row of phono
+## jacks on the back of a VGA monitor is an anachronism. SOURCE then steps straight
+## past every composite input, exactly as it does for the ones a smaller panel drops.
 @export var av_inputs: int = 1
+
+## Whether this cabinet carries the aerial socket, Source.RF.
+##
+## ON by default: every television has one, and it is what an RF switch plugs into.
+## The computer monitor is the exception and turns it off — a coax tuner input on a
+## VGA monitor is the same anachronism as the phono row.
+@export var has_aerial: bool = true
 
 ## Whether the AV IN legend gets its printed backing plate. OFF by default because a
 ## moulded CRT back is curved — both cabinets here taper 16 mm and 46 mm across the

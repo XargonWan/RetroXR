@@ -272,6 +272,11 @@ func _ready() -> void:
 	# and so a cabinet that carries fewer than four has already said so.
 	_disable_absent_inputs()
 	_print_av_legends()
+	# The set defaults to Composite 1 and a cabinet need not have it, so land on one
+	# it does before anything reads current_source. _seat_vga_port has already run
+	# inside _load_shell, which is what decides whether Composite 1 counts here.
+	if not _source_available(current_source):
+		current_source = _first_available_source()
 	# TV = power: it runs the power-on animation and flashes POWER on the OSD.
 	TransportGlyphs.label_buttons(self, {
 		"MuteButton": "mute", "AudioModeButton": "audio_stereo",
@@ -512,7 +517,15 @@ func _collect_av_ports() -> void:
 func _panel_inputs() -> int:
 	if _shell == null:
 		return COMPOSITE_INPUTS
-	return clampi(_shell.av_inputs, 1, COMPOSITE_INPUTS)
+	# Floored at ZERO, not at one: a cabinet is allowed to carry no phono sockets at
+	# all, and the computer monitor is one. See TVShell.av_inputs.
+	return clampi(_shell.av_inputs, 0, COMPOSITE_INPUTS)
+
+
+## Whether this cabinet carries the aerial socket. The stock body does; a fitted
+## shell says so itself.
+func _has_aerial() -> bool:
+	return _shell == null or _shell.has_aerial
 
 
 ## Turn off the inputs this cabinet has no room for: no socket, and nothing printed.
@@ -523,6 +536,10 @@ func _panel_inputs() -> int:
 func _disable_absent_inputs() -> void:
 	for i in range(_panel_inputs(), COMPOSITE_INPUTS):
 		for port: RcaPort in _av_ports[i]:
+			port.visible = false
+			port.enabled = false
+	if not _has_aerial():
+		for port: RcaPort in _av_ports[Source.RF]:
 			port.visible = false
 			port.enabled = false
 
@@ -554,7 +571,8 @@ func _print_av_legends() -> void:
 		# three lines and neither end of the bank carries a stray one.
 		legend.divider_left = i > 0
 		legend.rebuild()
-	_print_rf_legend(plate)
+	if _has_aerial():
+		_print_rf_legend(plate)
 
 
 ## The aerial socket's legend — the same printing as a composite group so the one
@@ -1800,21 +1818,53 @@ func _select_tv_then(up: bool) -> void:
 ## cycle is a tour of what you can actually plug something into, and stopping on an
 ## input with no socket would read as the key being broken.
 func cycle_source() -> void:
-	var next := current_source + 1
-	if next >= _panel_inputs() and next < COMPOSITE_INPUTS:
-		next = Source.TV
-	elif next > Source.RF:
-		next = Source.COMPOSITE_1
+	var next := current_source
+	# Step until something this cabinet actually has turns up. Bounded by the number
+	# of inputs, so a set that somehow had none cannot spin here.
+	for i in SOURCE_NAMES.size():
+		next = (next + 1) % SOURCE_NAMES.size()
+		if _source_available(next):
+			break
 	set_source(next)
+
+
+## Whether this cabinet can show a given input at all.
+##
+## A composite input needs a socket on the back panel; the aerial input needs the
+## coax hole. The tuner needs neither and is always there, which is what makes it
+## the safe fallback in set_source.
+func _source_available(source: int) -> bool:
+	if source < COMPOSITE_INPUTS:
+		if source < _panel_inputs():
+			return true
+		# Composite 1 is ALSO where the VGA socket reports (see the bind in _ready),
+		# so a cabinet carrying a DE-15 can show that input with no phono row behind
+		# it at all. The computer monitor is exactly that, and gating this on the
+		# phono count alone would have taken the tower's picture away with the
+		# sockets it does not use.
+		return source == Source.COMPOSITE_1 			and _vga_port != null and _vga_port.enabled
+	if source == Source.RF:
+		return _has_aerial()
+	return true
+
+
+## The first input this cabinet has, for a set asked to show one it does not.
+func _first_available_source() -> int:
+	for i in SOURCE_NAMES.size():
+		if _source_available(i):
+			return i
+	return Source.TV
 
 
 ## Select an input. Idempotent, so panels can call it freely.
 func set_source(source: int) -> void:
 	source = clampi(source, 0, SOURCE_NAMES.size() - 1)
-	# A cabinet without the socket cannot show that input; fall back to the first,
-	# which every one of them has.
-	if source < COMPOSITE_INPUTS and source >= _panel_inputs():
-		source = Source.COMPOSITE_1
+	# A cabinet without the socket cannot show that input. Fall back to the first it
+	# DOES have rather than to Composite 1 — that used to be safe because every
+	# cabinet carried at least one phono input, and the computer monitor carries
+	# none, so the old fallback sent it to an input that is not there.
+	if not _source_available(source):
+		source = _first_available_source()
 	if source == current_source:
 		return
 	current_source = source

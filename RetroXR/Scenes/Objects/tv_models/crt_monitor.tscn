@@ -13,14 +13,24 @@
 ; show_button_row is off: the five bezel caps are 25 mm on a 45-70 mm pitch and
 ; there is no lip on a monitor to carry them. TVOptionsPanel, which is already
 ; pointer-driven, is the control surface for this shell.
-; One composite input, the RetroTVShell default — the four-input bank is the stock
-; cabinet's. This back could not take it anyway: a raycast grid reads flat in DEPTH
-; for 180 mm, which is misleading, because the moulding holds its distance while
-; turning out of the plane. The facet printing can actually sit on is the 123 x 46 mm
-; panel around the power inlet, and four groups ran round the corner of the case.
+; NO phono row and NO aerial socket. This is a computer monitor: it takes its
+; picture over the DE-15 below, and a bank of phono jacks or a coax tuner hole on the
+; back of a VGA monitor is the same anachronism as a SCART socket would be.
+;
+; Composite 1 stays SELECTABLE all the same, and that is not a contradiction — the
+; VGA socket reports on that input (see the bind in RetroTV._ready), so it is the
+; input the tower's picture arrives on. av_inputs only says which phono SOCKETS the
+; cabinet carries; RetroTV._source_available knows the DE-15 stands in for the first.
+;
+; The back could not have taken four groups anyway: a raycast grid reads flat in
+; DEPTH for 180 mm, which is misleading, because the moulding holds its distance
+; while turning out of the plane. The facet printing can actually sit on is the
+; 123 x 46 mm panel around the power inlet.
 [node name="CrtMonitor" type="Node3D"]
 script = ExtResource("1_shell")
 body_size = Vector3(0.406, 0.433, 0.419)
+av_inputs = 0
+has_aerial = false
 show_button_row = false
 hide_meshes = PackedStringArray("CRT_Monitor_monitor_glass_0")
 
