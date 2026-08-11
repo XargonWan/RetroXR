@@ -253,8 +253,12 @@ func _build_rope() -> void:
 ## and a spring stiff enough to drag a 50 g plug off the floor at that distance
 ## launches it. VerletRope.anchor_pull is the soft version and stays available.
 ##
-## Plugs held by a hand or seated in a socket are skipped — something else owns
-## their transform, and fighting it either jitters the plug or pulls it out.
+## Plugs held by a hand, a laser or a socket are skipped — something else owns
+## their transform, and fighting it either jitters the plug or pulls it out. The
+## laser has to be in that list: a fray branch reaches 0.15 m, so clamping a
+## beam-held plug to a junction lying on the floor pins it there, and the junction
+## only follows at the speed the rope solver drags it — which reads as the plug
+## hanging back under its own weight rather than coming to the beam.
 func _physics_process(_delta: float) -> void:
 	if not _rope_built or _rope == null or _plugs.is_empty():
 		return
@@ -291,7 +295,7 @@ func _physics_process(_delta: float) -> void:
 		if _shared[e]:
 			continue
 		for plug: RcaPlug in _end_plugs(e):
-			if plug.is_picked_up():
+			if plug.is_held():
 				continue
 			# The branch ends at the cord boss, not at the plug's origin, which
 			# sits 40 mm forward at the collar.
@@ -306,10 +310,10 @@ func _physics_process(_delta: float) -> void:
 
 ## Keep the two ends of a one-cord lead within its rest length of each other.
 ##
-## Only the LOOSE end moves: a plug in a hand or seated in a socket has something
-## else owning its transform, and fighting that either jitters it or pulls it out.
-## With both ends held there is nothing to do — the cord is simply stretched, which
-## is what happens if two people walk apart with one between them.
+## Only the LOOSE end moves: a plug held by a hand, a laser or a socket has
+## something else owning its transform, and fighting that either jitters it or
+## pulls it out. With both ends held there is nothing to do — the cord is simply
+## stretched, which is what happens if two people walk apart with one between them.
 func _clamp_pair() -> void:
 	var a: RcaPlug = _plugs[End.A][0]
 	var b: RcaPlug = _plugs[End.B][0]
@@ -320,11 +324,11 @@ func _clamp_pair() -> void:
 	# rather than the cable's. Otherwise the held end is the anchor; with neither
 	# held, end A stands in as one, so a lead lying on the floor still cannot be
 	# dragged apart by its own physics.
-	if a.is_picked_up() and b.is_picked_up():
+	if a.is_held() and b.is_held():
 		return
 	var fixed: RcaPlug = a
 	var loose: RcaPlug = b
-	if b.is_picked_up():
+	if b.is_held():
 		fixed = b
 		loose = a
 	var reach: float = float(_rope.segment_count) * _rope.segment_length

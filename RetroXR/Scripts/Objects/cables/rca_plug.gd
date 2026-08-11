@@ -55,6 +55,17 @@ func _derive_cable_anchor() -> void:
 		ab.get_center().x, ab.get_center().y, ab.position.z)
 
 
+## True while a hand, a laser or a socket owns this plug's pose.
+##
+## Deliberately not is_picked_up(): the ray grab is a parallel hold mechanism that
+## never calls pick_up(), so it reports false for the whole hold — see
+## XRToolsFunctionPickup._start_ray_grab_at. Every path that takes a plug freezes
+## the body, hand, beam and snap zone alike, so the freeze is the ownership flag.
+## Same test HeldObjectPhysics._escape reads, for the same reason.
+func is_held() -> bool:
+	return freeze
+
+
 ## The socket this plug is currently seated in, or null when it is loose.
 ##
 ## Asked of the SOCKETS rather than remembered here, and rather than walked up the
