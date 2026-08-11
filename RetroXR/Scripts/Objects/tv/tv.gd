@@ -20,16 +20,23 @@ const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 const STATIC_SHADER := preload("res://Shaders/tv_static.gdshader")
 
 ## Which input the set is showing. COMPOSITE_1..4 are the physical sockets on the
-## back — a console, VCR or DVD deck on a composite lead — and TV is the built-in
-## tuner (see tv_tuner.gd) fed by channels.json.
+## back — a console, VCR or DVD deck on a composite lead — TV is the built-in tuner
+## (see tv_tuner.gd) fed by channels.json, and RF is the aerial socket, which is how
+## a console reaches a set through an RF switch (see rf_switch.gd).
 ##
 ## The composite inputs come FIRST and are contiguous, so a composite input's index
 ## is its own Source value and every per-input array is indexed by it directly. TV
-## is last for the same reason: appending leaves that identity alone.
+## and RF are appended for the same reason: appending leaves that identity alone.
+##
+## RF is a real input rather than a flavour of TV even though a set has one aerial
+## hole, because the tuner and an RF switch are two different things arriving at it
+## and the viewer picks between them with SOURCE. The TV slot in the per-input arrays
+## below is therefore always null — the tuner is not a "connected system" — and it is
+## kept only so the arrays stay indexable by Source throughout.
 ##
 ## Named Source, not Input: `Input` is a native Godot singleton and an enum of
 ## that name shadows it, which fails to parse.
-enum Source { COMPOSITE_1, COMPOSITE_2, COMPOSITE_3, COMPOSITE_4, TV }
+enum Source { COMPOSITE_1, COMPOSITE_2, COMPOSITE_3, COMPOSITE_4, TV, RF }
 
 ## How many composite inputs the set has. The back panel carries a socket trio per
 ## input (see tv.tscn) and tv_shell.gd lays them out for a fitted cabinet.
@@ -38,7 +45,13 @@ const COMPOSITE_INPUTS := 4
 ## Names as they appear in the OSD when SOURCE cycles. The OSD shouts, the way it
 ## does for POWER and MUTE; the back panel prints the same names in its own voice
 ## (AV_INPUT_NAMES).
-const SOURCE_NAMES := ["COMPOSITE 1", "COMPOSITE 2", "COMPOSITE 3", "COMPOSITE 4", "TV"]
+const SOURCE_NAMES := ["COMPOSITE 1", "COMPOSITE 2", "COMPOSITE 3", "COMPOSITE 4",
+	"TV", "RF"]
+
+## The channels an RF switch can put a console on, and what the set has to be tuned
+## to for it to appear. Two of them because that is what the switch on the back of an
+## NES offers; the set steps between them with the CH keys while RF is selected.
+const RF_CHANNELS := [3, 4]
 
 ## The same four inputs as SILK-SCREENED beside their sockets — title case, because
 ## that is printing rather than shouting. Fed to AvLegend.title.
@@ -80,6 +93,9 @@ var _speakers_seated: bool = false
 var _av_ports: Array = []
 ## Off unless the fitted shell carries a VgaPortSeat — see _seat_vga_port.
 @onready var _vga_port: XRToolsSnapZone = $VgaPort
+## The aerial socket, Source.RF's one hole. Always fitted: every television has one,
+## and unlike the VGA socket there is no cabinet in the project that would not.
+@onready var _rf_port: XRToolsSnapZone = $RfPort
 @onready var _ambilight: SpotLight3D = $Ambilight
 @onready var _mute_btn: VRButton = $MuteButton
 @onready var _audio_mode_btn: VRButton = $AudioModeButton
@@ -217,6 +233,13 @@ var _tv_enabled: bool = true
 # inputs, and an idle one should cost nothing (no VlcPlayer, no discovery traffic).
 var current_source: int = Source.COMPOSITE_1
 var _tuner: TVTuner = null
+
+## Which channel the set is tuned to while Source.RF is showing — 3 or 4, stepped by
+## the CH keys. A console fed through an RF switch only appears when this matches the
+## channel its own switch is set to; anything else is static, as it would be.
+var rf_channel: int = RF_CHANNELS[0]
+# Snow for an untuned aerial channel; see _rf_static.
+var _rf_static_material: ShaderMaterial = null
 
 # Mute: silences the connected device's audio without changing _volume. A sticky
 # "MUTE" OSD stays up until mute is toggled off or a volume key is pressed.
@@ -462,6 +485,26 @@ func _collect_av_ports() -> void:
 		_av_ports.append(trio)
 		_connected_systems.append(null)
 		_snapped_plugs.append(null)
+	# Two more slots so all three arrays stay indexable by Source over their WHOLE
+	# range and not just the composite part of it — _input_for_device returns a
+	# Source and everything downstream indexes with it.
+	#
+	# TV owns no sockets, so its entry is an empty trio; _video_port already guards
+	# for that, and its connected-system slot stays null because a tuner is not a
+	# connected system. RF owns exactly one, and it is a VIDEO socket, so it sits at
+	# index 0 of its trio where _video_port looks.
+	_av_ports.append([] as Array[RcaPort])
+	_connected_systems.append(null)
+	_snapped_plugs.append(null)
+	var rf := _rf_port as RcaPort
+	var rf_trio: Array[RcaPort] = []
+	if rf != null:
+		rf_trio.append(rf)
+	else:
+		push_warning("[RetroTV] missing aerial socket RfPort")
+	_av_ports.append(rf_trio)
+	_connected_systems.append(null)
+	_snapped_plugs.append(null)
 
 
 ## How many composite inputs this cabinet actually carries sockets for. The stock
@@ -536,6 +579,14 @@ func _seat_av_row(seat: Variant) -> void:
 		for j in (_av_ports[i] as Array).size():
 			var offset: Vector3 = group_step * float(i) + socket_step * float(j)
 			_seat_node(_av_ports[i][j], Transform3D(base.basis, base * offset))
+	# The aerial socket takes the next group slot along, so it travels with the row
+	# onto a fitted cabinet instead of being left at tv.tscn's own coordinates —
+	# which, with the stock body hidden, is a live socket floating beside the set.
+	# One group clear of Composite 4 whether or not this cabinet fits four, since a
+	# shell with fewer still has the room the others use.
+	if _rf_port != null:
+		_seat_node(_rf_port, Transform3D(base.basis,
+			base * (group_step * float(COMPOSITE_INPUTS))))
 
 
 ## Turn the VGA input on, but only for a shell that asked for it.
@@ -663,6 +714,18 @@ func _update_screen_source() -> void:
 			_screen_mesh.set_surface_override_material(0, wanted)
 		return
 
+	# The aerial input paints its own no-signal. A set tuned to a channel nothing is
+	# broadcasting on shows SNOW, not a blue screen — and here "nothing" is the
+	# ordinary state of whichever of the two channels the switch is not using, so the
+	# blue no-signal screen would read as a fault every time you stepped past it.
+	# When the channel does match, the host owns the glass and this falls through.
+	if _tv_enabled and current_source == Source.RF and not _rf_tuned():
+		var snow := _rf_static()
+		if _screen_mesh.get_surface_override_material(0) != snow:
+			_unwrap_crt()
+			_screen_mesh.set_surface_override_material(0, snow)
+		return
+
 	var override := _screen_mesh.get_surface_override_material(0)
 	var effective := _crt_wrapped \
 		if (override == _crt_material or override == _stereo_material) else override
@@ -686,8 +749,12 @@ func _update_screen_source() -> void:
 		# not anything is driving it. Nothing else is on the mesh by then — the
 		# tuner is inactive and the connected host was muted when the input
 		# changed — so on the TV input the screen goes dark whatever is left on it.
+		# Our own snow is reclaimable for the same reason the tuner's is: the static
+		# shader animates whether or not anything drives it, so an untuned aerial
+		# input left on it would go on hissing with the set switched off.
 		var reclaimable := effective == _blue_material or effective == null \
-			or (current_source == Source.TV and _tuner != null)
+			or (current_source == Source.TV and _tuner != null) \
+			or effective == _rf_static_material
 		if reclaimable and effective != _dark_material:
 			_unwrap_crt()
 			_screen_mesh.set_surface_override_material(0, _dark_material)
@@ -1545,7 +1612,7 @@ func on_av_source_found(source: Node3D) -> void:
 ## Called by that deck when the last cord between the two is pulled.
 func on_av_source_lost(source: Node3D) -> void:
 	var found := false
-	for i in COMPOSITE_INPUTS:
+	for i in _connected_systems.size():
 		if _connected_systems[i] == source:
 			_connected_systems[i] = null
 			found = true
@@ -1571,7 +1638,10 @@ func _input_for_device(dev: Node3D) -> int:
 	if dev == null or not is_instance_valid(dev):
 		return -1
 	var audio_match := -1
-	for i in COMPOSITE_INPUTS:
+	# Over every input the set has sockets for, which now includes the aerial one:
+	# a console reached through an RF switch is found here exactly as one on a
+	# composite lead is, because the switch answers links() like any other cable.
+	for i in _av_ports.size():
 		# A captive lead names its own host and carries no CompositeCable at all.
 		var captive: CablePlug = _snapped_plugs[i]
 		if captive != null and is_instance_valid(captive) and captive.get_system() == dev:
@@ -1669,6 +1739,17 @@ func _on_channel_down() -> void:
 func _select_tv_then(up: bool) -> void:
 	if not _tv_enabled:
 		return
+	# On the aerial input the CH keys do what they would on a real set fed by an RF
+	# switch: step between the two channels the switch can occupy, rather than
+	# abandoning the input the viewer just chose to go and find the tuner.
+	if current_source == Source.RF:
+		var i := RF_CHANNELS.find(rf_channel)
+		var n := RF_CHANNELS.size()
+		rf_channel = RF_CHANNELS[((i if i >= 0 else 0) + (1 if up else n - 1)) % n]
+		_apply_screen_enable()
+		_apply_audio_volume()
+		show_osd_timed(_source_banner(), 2.0)
+		return
 	if current_source != Source.TV:
 		set_source(Source.TV)
 		# set_source already tuned whatever channel was last on, so the press that
@@ -1692,7 +1773,7 @@ func cycle_source() -> void:
 	var next := current_source + 1
 	if next >= _panel_inputs() and next < COMPOSITE_INPUTS:
 		next = Source.TV
-	elif next > Source.TV:
+	elif next > Source.RF:
 		next = Source.COMPOSITE_1
 	set_source(next)
 
@@ -1743,6 +1824,11 @@ func _source_banner() -> String:
 		var banner := _tuner.status_banner()
 		if not banner.is_empty():
 			return "TV  %s" % banner
+	if current_source == Source.RF:
+		# The channel is half the state on this input, so it belongs in the banner —
+		# and NO SIGNAL is the difference between "nothing is plugged in" and "you
+		# are on the wrong one of two channels", which the static alone cannot say.
+		return "RF  CH %d%s" % [rf_channel, "" if _rf_tuned() else "  NO SIGNAL"]
 	return SOURCE_NAMES[current_source]
 
 
@@ -2135,7 +2221,9 @@ func _volume_for(source: int) -> float:
 ## Push the current volume to every connected device and to the built-in tuner, so
 ## one knob governs whichever input is showing and the other four are quiet.
 func _apply_audio_volume() -> void:
-	for i in COMPOSITE_INPUTS:
+	# Every slot, not just the composite ones: a console reached through an RF switch
+	# is on Source.RF and has to be silenced with the rest when it is not showing.
+	for i in _connected_systems.size():
 		var system: Node3D = _connected_systems[i]
 		if system != null and is_instance_valid(system):
 			system.set_audio_volume(_volume_for(i))
@@ -2149,16 +2237,63 @@ func _apply_audio_volume() -> void:
 ## host may paint, and only while the set is on. Without it a deselected console goes
 ## on writing its material onto the screen every frame and the two fight.
 func _apply_screen_enable() -> void:
-	for i in COMPOSITE_INPUTS:
+	for i in _connected_systems.size():
 		var system: Node3D = _connected_systems[i]
 		if system != null and is_instance_valid(system) \
 				and system.has_method("set_screen_enabled"):
-			system.set_screen_enabled(_tv_enabled and current_source == i)
+			# RF has a second condition on top of being selected: the set has to be
+			# tuned to the channel the switch is putting the console on.
+			var showing: bool = current_source == i and (i != Source.RF or _rf_tuned())
+			system.set_screen_enabled(_tv_enabled and showing)
 
 
-## Which composite input is selected, or -1 while the tuner is showing.
+## Which socket input is selected, or -1 while the tuner is showing.
+##
+## Tested against Source.TV rather than against COMPOSITE_INPUTS: RF is past the
+## composite block but it is still an input with a host on it, and a bound of
+## COMPOSITE_INPUTS would hide that host from _selected_system — which is what owns
+## the volume keys and the power button.
 func _selected_input() -> int:
-	return current_source if current_source < COMPOSITE_INPUTS else -1
+	return -1 if current_source == Source.TV else current_source
+
+
+## Snow for an aerial channel with nothing on it. Built on first use, like the tuner
+## — a set that never leaves the composite inputs should not pay for it.
+func _rf_static() -> ShaderMaterial:
+	if _rf_static_material == null:
+		_rf_static_material = ShaderMaterial.new()
+		_rf_static_material.shader = STATIC_SHADER
+	return _rf_static_material
+
+
+## True when the set is tuned to the channel the connected RF switch is using.
+##
+## Read off the host duck-typed, and a host that has no opinion counts as a match:
+## the channel switch belongs to the CONSOLE (an NES wears one on its back panel),
+## so a deck or a machine without one fed through an RF switch should simply appear
+## rather than being invisibly wrong on both channels.
+func _rf_tuned() -> bool:
+	var host: Node3D = _connected_systems[Source.RF] \
+		if _connected_systems.size() > Source.RF else null
+	if host == null or not is_instance_valid(host):
+		return false
+	if not host.has_method("get_rf_channel"):
+		return true
+	var ch := int(host.call("get_rf_channel"))
+	# -1 is "this machine has no channel switch". A match, not a mismatch: otherwise
+	# a deck fed through an RF switch would be invisible on BOTH channels.
+	return ch < 0 or ch == rf_channel
+
+
+## The connected console's channel switch moved. Repaint, because the same switch
+## position decides whether there is a picture at all and this is the only thing
+## that tells the set it changed.
+func on_rf_channel_changed() -> void:
+	if current_source != Source.RF:
+		return
+	_apply_screen_enable()
+	_apply_audio_volume()
+	show_osd_timed(_source_banner(), 2.0)
 
 
 ## The host feeding the selected input, if there is one and it is still alive.

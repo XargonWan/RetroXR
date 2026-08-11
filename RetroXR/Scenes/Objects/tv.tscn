@@ -8,6 +8,7 @@
 [ext_resource type="Shader" uid="uid://dp0ojf0bxhg8y" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/rca_port.tscn" id="10_rcaport"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="11_vgaport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/coax_port.tscn" id="12_coaxport"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8
@@ -169,6 +170,40 @@ direction = 1
 transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.066, -0.15, -0.16002099)
 channel = 2
 direction = 1
+
+; The aerial socket, Source.RF. One group pitch past Composite 4, and _seat_av_row
+; puts it in exactly that slot on a fitted cabinet so the two agree.
+;
+; Unlike the VGA socket this is always on: every television has an aerial hole, and
+; it is what an RF switch — the way an NES reaches a set — plugs into. Its 10 mm
+; standoff happens to match the phono row's, so it shares the row's Z.
+[node name="RfPort" parent="." unique_id=771000210 instance=ExtResource("12_coaxport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.09, -0.15, -0.16002099)
+direction = 1
+
+; Silk-screen, so the one hole on the panel that is not phono is not also the one
+; hole with nothing printed by it. A plain Label3D rather than an AvLegend: that
+; class derives each word from its port's CHANNEL and would print VIDEO / AV IN
+; over an aerial socket.
+;
+; A CHILD of the port, so _seat_av_row carries it onto a fitted cabinet without
+; having to know it exists. The port wears Rx(180), so local -Y is world UP and the
+; label sits 13 mm above the socket, 1 mm in front of the panel face at z = -0.010.
+;
+; Rolled 180 about its own Z to undo that Rx(180). The port's flip turns the label
+; upside down AND mirrors it — read from behind the set it came out as ANNETNA —
+; and a roll about Z is the one turn that rights both without moving which way the
+; text faces. Yawing it instead would point the glyphs into the cabinet.
+;
+; Outlined because the CRT shells print without a backing plate.
+[node name="RfLabel" type="Label3D" parent="RfPort"]
+transform = Transform3D(-1, 0, 0, 0, -1, 0, 0, 0, 1, 0, -0.013, -0.009)
+pixel_size = 0.00012
+modulate = Color(0.9, 0.9, 0.87, 1)
+outline_modulate = Color(0.03, 0.03, 0.04, 1)
+text = "ANTENNA"
+font_size = 48
+outline_size = 10
 
 ; VGA in — a computer monitor's input, not a television's. OFF as authored: a shell
 ; opts in by carrying a VgaPortSeat marker and only crt_monitor.tscn does, so the

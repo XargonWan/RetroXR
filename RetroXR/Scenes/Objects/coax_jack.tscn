@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/coax_jack.res" id="1_coaxjackmesh"]
+
+; Socket-on-+Z with the origin on the panel face (see Tools/gen_coax.gd), so this
+; drops onto a port node whose local +Z points out of the cabinet and needs no
+; transform of its own.
+;
+; No script, unlike rca_jack.tscn: that one exists to recolour its insulator for
+; the yellow/white/red code, and an F connector has no colour code to carry.
+; vga_jack.tscn is bare for the same reason.
+[node name="CoaxJack" type="MeshInstance3D"]
+mesh = ExtResource("1_coaxjackmesh")

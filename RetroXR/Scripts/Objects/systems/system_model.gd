@@ -349,6 +349,17 @@ func av_ports_are_multi_way() -> bool:
 	return false
 
 
+## Which channel this machine's RF modulator puts it on, or -1 for "no such switch".
+##
+## Only hardware old enough to reach a set through an RF switch has one — the NES
+## wears a CH3/CH4 slide on its rear panel — and a television on its aerial input
+## only shows a console whose channel matches its own tuning. -1 means the machine
+## has no opinion, and RetroTV treats that as a match rather than as a mismatch, so
+## anything else fed through an RF switch simply appears.
+func get_rf_channel() -> int:
+	return -1
+
+
 ## Place the sockets built from av_port_channels, in that same order. Called once,
 ## with the ports already children of the system.
 func configure_av_ports(_ports: Array) -> void:

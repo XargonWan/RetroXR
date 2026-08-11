@@ -79,6 +79,9 @@ const _PERIPHERALS: Dictionary = {
 		# which is all an NES puts out.
 		{"kind": "peripheral", "label": "Mono Composite Cable",
 			"spawn": "mono_composite_cable"},
+		# How this console actually reached a set in 1985, and the reason its rear
+		# panel wears an RF SWITCH socket and a CH3/CH4 slide beside it.
+		{"kind": "peripheral", "label": "RF Switch (RXR-003)", "spawn": "rf_switch"},
 	],
 	# Same reasoning as the NES: the console moulds its own DE-9 sockets and the
 	# stick wears the matching plug, so the two only look right together. Named

@@ -375,6 +375,9 @@ func _build() -> void:
 		# Not under Controllers: nobody holds it, and it is no more a controller
 		# than the aerial is. It plugs into the Wii and stands on the television.
 		["Sensor Bar",     "sensor_bar"],
+		# The way a console reached a television before anything had a composite
+		# input: phono into the deck, coax into the aerial socket.
+		["RF Switch (RXR-003)", "rf_switch"],
 	])
 
 	_add_spawn_tab(tabs, "Controllers", [

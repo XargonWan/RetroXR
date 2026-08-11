@@ -1,0 +1,254 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/cables/rf_switch.gd" id="1_switchscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/rf_switch_body.gd" id="2_bodyscript"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rf_switch_body.res" id="3_shell"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/rca_plug.gd" id="4_rcaplugscript"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rca_plug_yellow.res" id="5_rcaplug"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/coax_plug.gd" id="6_coaxplugscript"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/coax_plug.res" id="7_coaxplug"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="8_pickhigh"]
+[ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="9_snapgp"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/coax_port.tscn" id="10_coaxport"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.09, 0.02, 0.05)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bodyptr"]
+size = Vector3(0.104, 0.05, 0.064)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_switch"]
+bounce = 0.0
+friction = 0.9
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
+radius = 0.022
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_pointer"]
+radius = 0.038
+
+; ── RXR-003 RF Switch ─────────────────────────────────────────────────────────
+;
+; A lead with a box in the middle. The root is a CompositeCable (see rf_switch.gd
+; for why), so the two connectors MUST stay named PlugA0 and PlugB0 — that is what
+; _count_cords reads, and renaming either one makes the switch carry nothing.
+;
+; PlugA0 is the CONTROL DECK end, the black phono plug on the long lead.
+; PlugB0 is the TV end, the male F connector on the short coax pigtail.
+;
+; The deck rope is named "VerletRope" and not "DeckRope" because CompositeCable
+; resolves $VerletRope in an @onready; the name is the base class's, not a
+; description. The pigtail is TvRope and the base never looks for it.
+[node name="RfSwitch" type="Node3D"]
+script = ExtResource("1_switchscript")
+
+; ── the box ───────────────────────────────────────────────────────────────────
+; 90 x 20 x 50 mm, origin at its centre. Faces: -X is TV, +X is ANT, -Z is
+; CONTROL DECK — the arrangement the mouldings label.
+[node name="Body" type="RigidBody3D" parent="."]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_switch")
+mass = 0.08
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("2_bodyscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Body"]
+shape = SubResource("BoxShape3D_body")
+
+[node name="Shell" type="MeshInstance3D" parent="Body"]
+mesh = ExtResource("3_shell")
+
+; Laser target, deliberately larger than the case so a small grey box can be hit
+; with a beam from across the room. Answers the pointer only (mask 0).
+[node name="PointerArea" type="StaticBody3D" parent="Body"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Body/PointerArea"]
+shape = SubResource("BoxShape3D_bodyptr")
+
+[node name="PickableHighlight" type="Node3D" parent="Body"]
+script = ExtResource("8_pickhigh")
+
+; ── the printed top face ──────────────────────────────────────────────────────
+; Rx(-90) lays a Label3D flat facing +Y with its reading direction along +X and its
+; top toward -Z. Sat 0.2 mm above the shell; alpha_cut = 1 (discard) so the glyphs
+; depth-write instead of sorting as transparency against the case under them.
+[node name="LabelDeck" type="Label3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.019, 0.0102, -0.0185)
+pixel_size = 3.6e-05
+modulate = Color(0.78, 0.77, 0.79, 1)
+text = "▲ CONTROL DECK"
+font_size = 64
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelBrand" type="Label3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.008, 0.0102, -0.0055)
+pixel_size = 5.4e-05
+modulate = Color(0.80, 0.79, 0.82, 1)
+text = "RF SWITCH"
+font_size = 64
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelModel" type="Label3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.004, 0.0102, 0.0075)
+pixel_size = 3.8e-05
+modulate = Color(0.78, 0.77, 0.79, 1)
+text = "MODEL NO. RXR-003"
+font_size = 64
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelMade" type="Label3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.007, 0.0102, 0.0145)
+pixel_size = 3.8e-05
+modulate = Color(0.78, 0.77, 0.79, 1)
+text = "MADE IN JAPAN"
+font_size = 64
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelTv" type="Label3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.0355, 0.0102, 0.0025)
+pixel_size = 3.6e-05
+modulate = Color(0.78, 0.77, 0.79, 1)
+text = "◄ TV"
+font_size = 64
+outline_size = 0
+alpha_cut = 1
+
+[node name="LabelAnt" type="Label3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.0355, 0.0102, 0.0025)
+pixel_size = 3.6e-05
+modulate = Color(0.78, 0.77, 0.79, 1)
+text = "ANT ►"
+font_size = 64
+outline_size = 0
+alpha_cut = 1
+
+; ── the ANT socket ────────────────────────────────────────────────────────────
+; Yawed 90 so the socket receives along +X, the way nes_model.gd turns the jacks on
+; its own +X flank. 55 mm out, not 45: the zone sits where a seated plug's ORIGIN
+; belongs, which is the 10 mm standoff clear of the 45 mm case wall, and the jack is
+; pushed back by that much so its flange lands on the wall.
+[node name="AntPort" parent="Body" instance=ExtResource("10_coaxport")]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0.055, 0, 0)
+direction = 1
+
+; ── where the two leads leave ─────────────────────────────────────────────────
+; A VerletRope leaves its anchor along the anchor's LOCAL -Z, which is the opposite
+; convention to a port's +Z. So the deck lead's marker is unturned to send its rope
+; out -Z, and the TV pigtail's is yawed 90 to send its rope out -X.
+[node name="DeckLeadAttach" type="Marker3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.012, 0, -0.025)
+
+[node name="TvLeadAttach" type="Marker3D" parent="Body"]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -0.045, 0, 0)
+
+; ── End A: the CONTROL DECK plug ──────────────────────────────────────────────
+; Turned about Y so its cord trails back toward the box: the plug mesh is authored
+; connector-on-+Z with the cord leaving -Z, which is also VerletRope's
+; plug_exit_axis, so an unturned plug here would leave its tail with a hairpin.
+[node name="PlugA0" type="RigidBody3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.012, 0, -0.25)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_switch")
+mass = 0.05
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("4_rcaplugscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0"]
+shape = SubResource("SphereShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="PlugA0"]
+mesh = ExtResource("5_rcaplug")
+
+[node name="PointerArea" type="StaticBody3D" parent="PlugA0"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0/PointerArea"]
+shape = SubResource("SphereShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="PlugA0"]
+script = ExtResource("8_pickhigh")
+
+[node name="SnapGrabPoint" parent="PlugA0" instance=ExtResource("9_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; ── End B: the TV pigtail ─────────────────────────────────────────────────────
+; Yawed -90 so its cord trails back toward the box at +X.
+[node name="PlugB0" type="RigidBody3D" parent="."]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -0.2, 0, 0)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_switch")
+mass = 0.05
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("6_coaxplugscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0"]
+shape = SubResource("SphereShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="PlugB0"]
+mesh = ExtResource("7_coaxplug")
+
+[node name="PointerArea" type="StaticBody3D" parent="PlugB0"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0/PointerArea"]
+shape = SubResource("SphereShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="PlugB0"]
+script = ExtResource("8_pickhigh")
+
+[node name="SnapGrabPoint" parent="PlugB0" instance=ExtResource("9_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; ── the ropes ─────────────────────────────────────────────────────────────────
+; The long CONTROL DECK lead: 50 x 36 mm = 1.80 m, the coil in the reference photos.
+[node name="VerletRope" type="VerletRope" parent="."]
+segment_count = 50
+segment_length = 0.036
+constraint_iterations = 8
+bend_stiffness = 0.2
+tube_radius = 0.0022
+tube_sides = 6
+smoothing = 2
+rope_color = Color(0.07, 0.07, 0.08, 1)
+surface_collision_mask = 7
+collision_radius = 0.0045
+self_collision = true
+end_align_stiffness = 0.7
+end_stiffness = 0.45
+end_stiff_segments = 2
+
+; The TV pigtail: 10 x 25 mm = 0.25 m, and STIFF. bend_stiffness 0.5 against the
+; deck lead's 0.2 is what makes it hold the standing arc it has in every photo of
+; one of these rather than flopping like the long lead.
+[node name="TvRope" type="VerletRope" parent="."]
+segment_count = 10
+segment_length = 0.025
+constraint_iterations = 8
+bend_stiffness = 0.5
+tube_radius = 0.0028
+tube_sides = 6
+smoothing = 2
+rope_color = Color(0.07, 0.07, 0.08, 1)
+surface_collision_mask = 7
+collision_radius = 0.005
+self_collision = true
+end_align_stiffness = 0.8
+end_stiffness = 0.5
+end_stiff_segments = 2

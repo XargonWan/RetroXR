@@ -25,7 +25,11 @@ class_name RetroSystemModelNES
 extends RetroSystemModel
 
 const _MODEL_PATH := "res://imported-assets/consoles/nes/nes_console.glb"
+const RCA_PORT_SCENE := preload("res://Scenes/Objects/rca_port.tscn")
 const BUTTON_DEPRESS_DEPTH := 0.0022
+# Travel of the CH3/CH4 knob. 3 mm, so that a 6 mm knob stays inside the 9.8 mm
+# recess the shell moulds for it at both detents — see _build_channel_switch.
+const CH_THROW := 0.003
 const INSERT_SLIDE := 0.07        # metres the cart slides in from the flap mouth
 const LID_OPEN_DEG := -105.0      # flap swing about its top-rear hinge edge
 const LID_ANIM_TIME := 0.35
@@ -40,6 +44,14 @@ var _lid_rest: Transform3D = Transform3D.IDENTITY
 var _lid_pivot: Vector3 = Vector3.ZERO   # hinge point in the flap's parent space
 var _lid_amount: float = 0.0             # 0 = shut … 1 = fully open
 var _lid_tween: Tween = null
+
+# The shell's own RF SWITCH jack and CH3-CH4 slide switch, on the BACK face. The
+# jack is used as it is; the switch needs a cap of its own to slide. See
+# _build_rf_panel.
+var _rf_out: RcaPort = null
+var _ch_slider: VRSlider = null
+var _ch_knob: MeshInstance3D = null
+var _rf_channel: int = 3
 
 var _power_light_mesh: MeshInstance3D = null
 var _power_light_mats: Array[StandardMaterial3D] = []
@@ -427,6 +439,160 @@ func configure_av_ports(ports: Array) -> void:
 		port.rotation = Vector3(0.0, PI / 2.0, 0.0)
 		if port.has_method("set"):
 			port.set("show_jack", false)
+	# The back face carries two more of the console's own fittings.
+	_build_rf_panel()
+
+
+## Make the shell's own RF SWITCH jack and CH3-CH4 slide switch work.
+##
+## BOTH ARE ALREADY MOULDED, on the BACK face beside the AC adapter legend, and the
+## shell prints their names in red. Nothing is drawn here: this hangs a snap zone
+## over the jack and a VRSlider over the switch, exactly as configure_av_ports does
+## for the moulded AUDIO/VIDEO pair on the flank.
+##
+## ── Measured by raycast, because neither is a named node ────────────────────
+## JackRed and JackYellow are their own MeshInstances and can be looked up. These
+## two are baked into NesDeck / NesDeckBlack, so the only way to find them is to
+## fire rays at the back face along +Z and read where the surface is:
+##
+##   panel face                z = -0.0964
+##   RF SWITCH jack, centred   (0.0635, 0.0290)   boss 2.1 mm proud
+##   CH3-CH4 switch, centred   (0.0783, 0.0295)   recessed 2.1 mm into the panel
+##
+## Absolute in the model's frame rather than stepped off another mesh, which is what
+## the rest of this file does for hand-measured geometry (see configure_collision).
+## _ready re-centres the GLB deterministically, so these are stable for this asset;
+## a re-export that moves the case needs them re-measured.
+const RF_OUT_POS := Vector3(0.0635, 0.0290, -0.0985)
+const CH_SW_POS := Vector3(0.0783, 0.0308, -0.0982)
+
+
+func _build_rf_panel() -> void:
+	if _glb == null:
+		return
+	_build_rf_out()
+	_build_channel_switch()
+
+
+func _build_rf_out() -> void:
+	var port := RCA_PORT_SCENE.instantiate() as RcaPort
+	port.name = "RfOut"
+	# Channel.VIDEO, not a channel of its own: an RF feed is not composite video,
+	# but nothing in the routing has to know — which input a television treats it as
+	# is decided by the SOCKET it lands in at the far end. See CoaxPort.
+	port.channel = RcaPort.Channel.VIDEO
+	port.direction = RcaPort.Direction.OUT
+	# The shell moulds this jack, so the port must not draw a second one on top of
+	# it — the same call the AUDIO/VIDEO pair makes, and for the same reason.
+	port.show_jack = false
+	add_child(port)
+	port.position = RF_OUT_POS
+	# Yawed a half turn so the socket receives along device -Z, out of the back.
+	# The flank pair uses +90 for the same reason; this is that rule on the other
+	# face, and a plain yaw is enough because a phono connector is round.
+	port.rotation = Vector3(0.0, PI, 0.0)
+	_rf_out = port
+
+
+## Make the moulded CH3-CH4 switch work, and let it actually slide.
+##
+## The switch IS already modelled — a ribbed thumb cap at the CH3 end of a black slot
+## — but it cannot be moved: it is baked into NesDeckBlack along with half the case,
+## not a node of its own. A switch that never moves is a switch the player cannot
+## read, so the moulded cap is MASKED by a plate the colour of the slot behind it and
+## a cap of our own rides in the slot instead. Only two small meshes, both inside the
+## recess the shell already moulds, and nothing else about the console is touched.
+##
+## The alternative — a hidden placeholder knob, the case VRSlider and WidgetOutline
+## both document — leaves the printed CH3-CH4 legend pointing at something that never
+## changes. Worth the two meshes to avoid.
+##
+## Sizes come off the raycast and the render: the moulded cap spans x 0.0771..0.0832,
+## y 0.0280..0.0336, inside a slot running x 0.0729..0.0836. The mask covers the
+## former and our cap slides 3 mm inside the latter.
+##
+## The mask's DEPTH is the part that bit. A 2.5 mm raycast sweep reported the switch
+## at z = -0.0943 and a plate put there left the ribs poking straight through it: the
+## sweep had been landing in the rib VALLEYS, and the crests stand out at -0.0965,
+## flush with the panel. Both plate and cap therefore sit in FRONT of -0.0965, which
+## is also why the cap ends up standing a couple of millimetres proud — as a thumb
+## switch does.
+const CH_MASK_POS := Vector3(0.0801, 0.0308, -0.0969)
+
+
+func _build_channel_switch() -> void:
+	# The slot's own black, so the plate reads as empty slot rather than as a patch.
+	# UNSHADED, and that is the whole trick: the slot it has to disappear into is a
+	# deep recess the key light never reaches, so a lit plate across the mouth of it
+	# comes back several stops brighter and reads as a patch. Darkness by MATERIAL,
+	# the same call gen_rca_jack.gd makes for a socket bore.
+	var slot_ink := StandardMaterial3D.new()
+	slot_ink.albedo_color = Color(0.02, 0.02, 0.022)
+	slot_ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var mask := MeshInstance3D.new()
+	mask.name = "ChannelMask"
+	var mask_mesh := BoxMesh.new()
+	mask_mesh.size = Vector3(0.0068, 0.0062, 0.0008)
+	mask.mesh = mask_mesh
+	mask.material_override = slot_ink
+	add_child(mask)
+	mask.position = CH_MASK_POS
+
+	var cap_mat := StandardMaterial3D.new()
+	cap_mat.albedo_color = Color(0.52, 0.51, 0.50)
+	cap_mat.roughness = 0.62
+
+	# Authored at the CH3 detent, which is slider value 0 — set_knob_mesh anchors the
+	# knob wherever it finds it AT THE CURRENT VALUE, so a cap left mid-slot would put
+	# both detents half a throw out.
+	_ch_knob = MeshInstance3D.new()
+	_ch_knob.name = "ChannelKnob"
+	var knob_mesh := BoxMesh.new()
+	knob_mesh.size = Vector3(0.0052, 0.0042, 0.0018)
+	_ch_knob.mesh = knob_mesh
+	_ch_knob.material_override = cap_mat
+	add_child(_ch_knob)
+	_ch_knob.position = CH_SW_POS + Vector3(CH_THROW * 0.5, 0.0, 0.0)
+
+	var slider := VRSlider.new()
+	slider.name = "ChannelSwitch"
+	# -X, not +X: the shell prints "CH3-CH4" reading along device -X, so CH3 is the
+	# +X end. Value 0 is the low end of the axis, and value 0 has to be CH3.
+	slider.axis_local = Vector3(-1.0, 0.0, 0.0)
+	slider.travel = CH_THROW
+	slider.steps = 2
+	slider.value = 0.0
+	slider.collision_layer = 1 | (1 << 20)
+	slider.engage_radius = 0.020
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(CH_THROW + 0.008, 0.009, 0.008)
+	col.shape = box
+	slider.add_child(col)
+	add_child(slider)                     # _ready runs here, before adopting
+	slider.position = CH_SW_POS
+	slider.set_knob_mesh(_ch_knob)
+	slider.value_changed.connect(_on_channel_slider_changed)
+	_ch_slider = slider
+
+
+func _on_channel_slider_changed(value: float) -> void:
+	var next: int = 3 if value < 0.5 else 4
+	if next == _rf_channel:
+		return
+	_rf_channel = next
+	print("[NES] RF channel switch -> CH%d" % _rf_channel)
+	# The set has to re-read it: on the aerial input the picture only appears when
+	# its own tuning matches, and nothing else would tell it this moved.
+	var host := get_parent()
+	if host != null and host.has_method("on_rf_channel_changed"):
+		host.call("on_rf_channel_changed")
+
+
+## Which channel this console's RF switch puts it on. -1 from the base class means
+## "no such switch", which is every other machine in the room.
+func get_rf_channel() -> int:
+	return _rf_channel
 
 
 ## The NES's AV jacks sit on the RIGHT (+X) flank — this shell moulds them there

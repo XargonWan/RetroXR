@@ -1,0 +1,45 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="1_snapzone"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/coax_port.gd" id="2_portscript"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/coax_jack.tscn" id="3_coaxjack"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphigh"]
+
+[sub_resource type="CylinderMesh" id="CylMesh_coax_ghost"]
+top_radius = 0.0064
+bottom_radius = 0.0064
+height = 0.022
+
+[sub_resource type="StandardMaterial3D" id="Mat_coax_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1, 0.45)
+emission_enabled = true
+emission = Color(0, 0.15, 0.5, 1)
+emission_energy_multiplier = 0.4
+
+; An aerial socket, placed exactly as rca_port.tscn is: the ZONE sits where a
+; seated plug's origin belongs, which is 10 mm proud of the panel, and the jack is
+; pushed back by that much so its flange lands on the panel.
+;
+; The 10 mm is the same figure as the phono socket's by coincidence and not by
+; sharing — the F pair's standoff falls out of a 10 mm stub against an 8 mm nut,
+; and Tools/gen_coax.gd derives it. Do not "correct" one to match the other.
+;
+; grab_distance is 0.035, NOT the phono row's 0.06. The set's aerial socket sits
+; beside four composite groups, and a zone reaching further than the gap to its
+; neighbour swallows rays aimed at that neighbour.
+[node name="CoaxPort" instance=ExtResource("1_snapzone")]
+grab_distance = 0.035
+snap_require = "coax_plug"
+script = ExtResource("2_portscript")
+
+[node name="CoaxJack" parent="." instance=ExtResource("3_coaxjack")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01)
+
+[node name="SnapHighlight" type="Node3D" parent="."]
+script = ExtResource("4_snaphigh")
+
+[node name="HighlightMesh" type="MeshInstance3D" parent="SnapHighlight"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.003)
+mesh = SubResource("CylMesh_coax_ghost")
+surface_material_override/0 = SubResource("Mat_coax_ghost")

@@ -53,6 +53,7 @@ const WIIMOTE_SCENE          := preload("res://Scenes/Objects/wiimote.tscn")
 const NUNCHUK_SCENE          := preload("res://Scenes/Objects/nunchuk.tscn")
 const MOTION_PLUS_SCENE      := preload("res://Scenes/Objects/motion_plus.tscn")
 const SENSOR_BAR_SCENE       := preload("res://Scenes/Objects/sensor_bar.tscn")
+const RF_SWITCH_SCENE        := preload("res://Scenes/Objects/rf_switch.tscn")
 
 ## Types whose entry carries nothing but a pose — instantiate and place, no
 ## properties to apply. Types that need more are match arms in
@@ -501,6 +502,8 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 				"device": _resolve_ref(root, spawned, rec.get("device")) as Node3D,
 				"port": str(rec.get("port", "")),
 			})
+		if obj.has_method("restore_carried_body"):
+			obj.call("restore_carried_body", d.get("body", {}))
 		(obj as CompositeCable).restore_seating(seats)
 	elif obj is SensorBar:
 		(obj as SensorBar).restore_connection(
@@ -771,7 +774,16 @@ func _serialize_cable(cable: CompositeCable, id: int, n3d: Node3D,
 			"port": seat["port"],
 			"device": _ref(node_to_id, seat["device"] as Node),
 		})
-	return _base(id, "composite_cable", n3d).merged({
+	var extra := {}
+	# A plain lead has no body and _base's pose — the ROOT's — is the whole object.
+	# The RF switch has a box the player carries while its root stays where it
+	# spawned, so without this it restores at the origin and its own tether
+	# immediately hauls both plugs out of their sockets to reach it.
+	if cable.has_method("carried_body_pose"):
+		var body_pose: Dictionary = cable.call("carried_body_pose")
+		if not body_pose.is_empty():
+			extra["body"] = body_pose
+	return _base(id, "composite_cable", n3d).merged(extra).merged({
 		# 2 = the mono lead, 3 = the full one. Both are CompositeCable; only
 		# the scene differs, so the count is what picks it back up.
 		"cords": cable.cord_count(),
@@ -887,6 +899,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 					lead = VGA_CABLE_SCENE
 				elif kind == "trs_cable":
 					lead = TRS_CABLE_SCENE
+				elif kind == "rf_switch":
+					lead = RF_SWITCH_SCENE
 				elif kind == "mono_composite_cable" or int(data.get("cords", 3)) == 2:
 					lead = MONO_CABLE_SCENE
 				obj = lead.instantiate() as Node3D

@@ -1070,6 +1070,27 @@ func set_screen_enabled(enabled: bool) -> void:
 	_libretro.SetScreenMesh(_screen_target() if enabled else null)
 
 
+## Which channel this console's own RF switch puts it on, or -1 if it has none.
+##
+## Asked by a television showing its aerial input: an RF-fed console only appears
+## when the set is tuned to the channel the console is modulating on. The switch is
+## the MODEL's — an NES wears one, a Wii does not — so this only forwards.
+func get_rf_channel() -> int:
+	return _model.get_rf_channel() if _model != null else -1
+
+
+## The model's channel switch moved. Tell whichever set is showing us on its aerial
+## input, because that switch is half of what decides whether there is a picture and
+## nothing else would prompt the set to re-read it.
+func on_rf_channel_changed() -> void:
+	for tv: Variant in _channel_tvs:
+		if tv != null and is_instance_valid(tv) and tv.has_method("on_rf_channel_changed"):
+			tv.call("on_rf_channel_changed")
+	if _av_video_tv != null and is_instance_valid(_av_video_tv) \
+			and _av_video_tv.has_method("on_rf_channel_changed"):
+		_av_video_tv.on_rf_channel_changed()
+
+
 ## Called by the TV when one of this system's plugs connects. `plug` tells us
 ## which video-out channel landed (null = classic single-cable path).
 func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
@@ -1408,7 +1429,15 @@ func _all_links() -> Array:
 		if seen.has(plug.cable):
 			continue
 		seen[plug.cable] = true
-		out.append_array((plug.cable as CompositeCable).links())
+		# Duck-typed, NOT `as CompositeCable`. RcaPlug.cable is a Node3D and
+		# anything at all can be set as one — the RF switch is a DEVICE with two
+		# captive leads that registers itself as its own plugs' cable — and a cast
+		# that misses turns a perfectly good link list into a null dereference in
+		# the routing hot path. RetroTV._input_for_device already reads links() this
+		# way; this was the odd one out.
+		if not plug.cable.has_method("links"):
+			continue
+		out.append_array(plug.cable.call("links"))
 	return out
 
 
