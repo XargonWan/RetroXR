@@ -118,27 +118,65 @@ func _wire(rope: VerletRope, attach: Node3D, plug: RcaPlug) -> void:
 ## something else owns each transform and the reach is the hands' problem. Same call
 ## _clamp_pair makes.
 ##
-## Both leads are resolved before the box is moved once. Applying them one at a time
+## Both leads are resolved before the box is touched. Applying them one at a time
 ## would let two over-extended leads shove it back and forth every frame; summing
 ## them means a box stretched between two anchors simply stays put, which is what a
 ## real one does.
+##
+## ── Why the box is HAULED rather than moved ─────────────────────────────────
+## The first version added the slack straight onto _body.global_position. That is a
+## pure translation: the box tracked the connector perfectly, at a fixed attitude,
+## like a prop being slid along a table. A lump on the end of a cord does not do
+## that — the cord pulls at the point it leaves the case, which is nowhere near the
+## centre of mass, so the box turns as it is dragged and hangs from whichever lead is
+## taut.
+##
+## So the slack becomes an IMPULSE APPLIED AT THE ANCHOR. Godot's solver turns the
+## offset into torque against the body's own inertia, which is what buys the droop
+## and the swing, and gravity does the rest for free. The hard positional clamp is
+## kept, but only past HAUL_LIMIT — far enough out that it never fires during
+## ordinary dragging and only catches a hand moving faster than the impulse can
+## answer, which is the case the bound exists for.
+const HAUL_GAIN := 14.0
+const HAUL_LIMIT := 1.25
 func _physics_process(_delta: float) -> void:
 	if not _rope_built or _plugs.is_empty():
 		return
-	var pull := Vector3.ZERO
-	pull += _tether(_plugs[End.A][0] as RcaPlug, _deck_attach, _deck_reach)
-	pull += _tether(_plugs[End.B][0] as RcaPlug, _tv_attach, _tv_reach)
-	if pull != Vector3.ZERO and _body != null and is_instance_valid(_body):
-		_body.global_position += pull
+	if _body == null or not is_instance_valid(_body):
+		return
+	var hauls: Array[Dictionary] = []
+	var a := _tether(_plugs[End.A][0] as RcaPlug, _deck_attach, _deck_reach)
+	if not a.is_empty():
+		hauls.append(a)
+	var b := _tether(_plugs[End.B][0] as RcaPlug, _tv_attach, _tv_reach)
+	if not b.is_empty():
+		hauls.append(b)
+	if hauls.is_empty():
+		return
+	var origin: Vector3 = _body.global_position
+	var clamp_back := Vector3.ZERO
+	for h: Dictionary in hauls:
+		var slack: Vector3 = h["slack"]
+		# At the anchor, not at the origin — the offset is the whole point.
+		_body.apply_impulse(slack * (_body.mass * HAUL_GAIN),
+			(h["at"] as Vector3) - origin)
+		# Backstop. Only the overshoot PAST the limit is taken out by hand, so the
+		# impulse still does the visible work and this never reads as a snap.
+		var over: float = h["over"]
+		var reach: float = h["reach"]
+		if over > reach * HAUL_LIMIT:
+			clamp_back += slack * ((over - reach * HAUL_LIMIT) / (over - reach))
+	if clamp_back != Vector3.ZERO:
+		_body.global_position += clamp_back
 
 
-## Resolve one lead. Returns how far the BOX has to move to take up the slack, or
-## zero when the plug was the end that moved.
-func _tether(plug: RcaPlug, attach: Node3D, reach: float) -> Vector3:
+## Resolve one lead. Returns {} when nothing is owed, else the slack the BOX has to
+## take up, where on the box the lead pulls, and how far the two ends actually are.
+func _tether(plug: RcaPlug, attach: Node3D, reach: float) -> Dictionary:
 	if plug == null or not is_instance_valid(plug):
-		return Vector3.ZERO
+		return {}
 	if attach == null or not is_instance_valid(attach):
-		return Vector3.ZERO
+		return {}
 	# Boss to boss, not origin to origin: the cord leaves the hood some 32 mm behind
 	# the mating face, and that is the span the rope actually has.
 	var from: Vector3 = attach.global_position
@@ -146,14 +184,14 @@ func _tether(plug: RcaPlug, attach: Node3D, reach: float) -> Vector3:
 	var away: Vector3 = to - from
 	var d: float = away.length()
 	if d <= reach or d < 0.0001:
-		return Vector3.ZERO
+		return {}
 	var slack: Vector3 = away * ((d - reach) / d)
 	if not plug.is_held():
 		plug.global_position -= slack        # loose connector, reel it in
-		return Vector3.ZERO
+		return {}
 	if _body_is_held():
-		return Vector3.ZERO                  # both ends owned; nothing to do
-	return slack                             # drag the box after the connector
+		return {}                            # both ends owned; nothing to do
+	return {"slack": slack, "at": from, "over": d, "reach": reach}
 
 
 ## True while a hand, a laser or a snap zone owns the box's pose.
