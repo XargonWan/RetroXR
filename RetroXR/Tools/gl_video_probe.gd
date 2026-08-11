@@ -33,7 +33,12 @@ const HW_API := {"opengl": 1, "glcore": 3, "vulkan": 6, "d3d11": 7, "d3d12": 9}
 ## Sample points (seconds since StartContent). A N64 core spends the first
 ## seconds in the boot/IPL sequence, which is legitimately black — one late
 ## sample alone can't tell "still booting" from "never draws".
-const SAMPLE_AT := [4.0, 8.0, 14.0, 22.0]
+## Out to 95 s because a Wii disc image is not an N64 cartridge: Wii Sports from
+## an .rvz spent the whole of a 22 s run still black with the right geometry
+## reported, and the same game renders fine in the room within ~90 s of the core
+## starting. A window that ends before first paint reports FAIL for a core that
+## works.
+const SAMPLE_AT := [4.0, 8.0, 14.0, 22.0, 35.0, 50.0, 70.0, 95.0]
 
 var _lib: Node = null
 var _screen: MeshInstance3D = null
@@ -42,12 +47,19 @@ var _lit_best := 0.0
 
 func _ready() -> void:
 	var cfg_args: PackedStringArray = []
-	if FileAccess.file_exists("user://glprobe.cfg"):
-		var f := FileAccess.open("user://glprobe.cfg", FileAccess.READ)
+	# user:// first, then the external dir — a release build is not debuggable, so
+	# `adb run-as` cannot write user://, and release is the only build that runs
+	# properly on the Quest. Deleted on sight either way, so a crash mid-run
+	# cannot wedge the app into the probe.
+	for cfg_path: String in ["user://glprobe.cfg", NetworkManager.GLPROBE_EXTERNAL_CFG]:
+		if not FileAccess.file_exists(cfg_path):
+			continue
+		var f := FileAccess.open(cfg_path, FileAccess.READ)
 		if f:
 			cfg_args = f.get_as_text().split("\n", false)
 			f.close()
-		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://glprobe.cfg"))
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(cfg_path))
+		break
 	for arg: String in OS.get_cmdline_user_args() + cfg_args:
 		arg = arg.strip_edges()
 		if arg.begins_with("--glprobe-core="):

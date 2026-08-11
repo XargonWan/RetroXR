@@ -14,6 +14,10 @@ extends Node
 
 const DEFAULT_PORT := 42777
 const MAX_PLAYERS := 8
+## Where the GL/Vulkan video probe's config is accepted from on device, beside
+## user://. Spelled out rather than derived, the same way rom_library.gd spells
+## out each of its roots.
+const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glprobe.cfg"
 ## 2: systems are replicated by model_id rather than by a (systemid, variant)
 ## pair. A v1 peer sends no model_id, so a v2 host would silently give it default
 ## hardware at the right position — visual divergence with no error, which is a
@@ -105,7 +109,13 @@ func _parse_cmdline() -> void:
 		return
 	# Same hook for the hardware-render video probe (GLES2/GLES3 black-screen
 	# hunt). The probe deletes the cfg itself, like the spike.
-	if FileAccess.file_exists("user://glprobe.cfg") \
+	# Accepted from the EXTERNAL files dir as well as user://. A release build is
+	# not debuggable, so `adb run-as` cannot reach user:// at all — and a release
+	# build is the only one that runs properly on the Quest. Taking the cfg from
+	# /sdcard, which adb can write unaided, is what makes this probe usable on the
+	# build that actually ships.
+	if (FileAccess.file_exists("user://glprobe.cfg") \
+			or FileAccess.file_exists(GLPROBE_EXTERNAL_CFG)) \
 			and ResourceLoader.exists("res://Tools/gl_video_probe.tscn"):
 		print("[NetworkManager] glprobe.cfg found — launching GL video probe")
 		get_tree().change_scene_to_file("res://Tools/gl_video_probe.tscn")
