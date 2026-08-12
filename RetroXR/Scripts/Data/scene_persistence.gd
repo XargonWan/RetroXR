@@ -600,6 +600,10 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 	elif node is RetroTV:
 		var tv := node as RetroTV
 		return _base(id, "tv", n3d).merged({
+			# Which cabinet it wears. Without this a spawned monitor comes back as
+			# the stock black box, since tv_model only ever survived by being
+			# authored into a scene.
+			"tv_model": tv.tv_model,
 			"crt_enabled": tv.crt_enabled,
 			"crt_params": tv.get_crt_params(),
 			"scale_factor": tv.scale_factor,
@@ -833,6 +837,10 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				obj = sys
 			"tv":
 				var tv := TV_SCENE.instantiate() as RetroTV
+				# Before the caller adds it to the tree: _load_shell runs from
+				# _ready. "" is _load_shell's own "stock body, strict no-op"
+				# value, so every set already in a save file restores unchanged.
+				tv.tv_model = data.get("tv_model", "")
 				tv.crt_enabled = data.get("crt_enabled", true)
 				var crt_params: Dictionary = data.get("crt_params", {})
 				if not crt_params.is_empty():

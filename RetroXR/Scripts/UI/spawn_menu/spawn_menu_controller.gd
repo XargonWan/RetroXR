@@ -978,6 +978,15 @@ func _on_spawn_requested(type: String) -> void:
 		card.card_label = card.card_id
 		_place_spawned(card, "memory_card")
 		return
+	# "tv:<shell>" — a set wearing a cabinet variant. Assigned BEFORE
+	# _place_spawned, which is what calls add_child: RetroTV loads its shell from
+	# _ready, so a tv_model set afterwards arrives too late and the set comes out
+	# as the stock black box.
+	if type.begins_with("tv:"):
+		var shelled := TV_SCENE.instantiate() as RetroTV
+		shelled.tv_model = type.substr("tv:".length())
+		_place_spawned(shelled, "tv")
+		return
 	match type:
 		"tv":
 			obj = TV_SCENE.instantiate() as Node3D

@@ -74,6 +74,7 @@ signal source_changed(source: int)
 const _SHELL_SCENES := {
 	"crt_90s":     "res://Scenes/Objects/tv_models/crt_90s.tscn",
 	"crt_monitor": "res://Scenes/Objects/tv_models/crt_monitor.tscn",
+	"crt_plain":   "res://Scenes/Objects/tv_models/crt_plain.tscn",
 }
 
 var _shell: RetroTVShell = null

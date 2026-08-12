@@ -1,0 +1,283 @@
+[gd_scene load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/tv/tv_shell.gd" id="1_shell"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_models/crt_hood.res" id="2_hood"]
+
+; EDITOR NOTE: see crt_90s.tscn — the shell is a runtime swap, so the editor shows
+; RetroTV's stock box body rather than this cabinet. Open this scene to see it.
+;
+; A 14" VGA monitor built out of primitives, the only shell here that is not an
+; imported GLB. Everything is a BoxMesh but the tube hood and the foot, which keeps
+; every dimension a number in this file rather than a measurement taken off someone
+; else's mesh — and costs no licence, no attribution and no decimation pass.
+;
+; SQUARE in front elevation, 0.355 x 0.355, which is period-correct for a 14" set
+; (~355 mm each way) and is also what makes the taper cheap: the hood's front face
+; is square, so it meets the case exactly with no scale fighting its rotation.
+;
+; Origin at the CENTRE of the cabinet, because RetroTV's own origin is the centre
+; of its stock 0.5 x 0.4 x 0.3 body and body_size drives a collider centred there.
+; A GLB shell has to be offset down half its height (see crt_90s.tscn); authoring
+; from primitives we simply build about the origin.
+;
+; NO phono row, NO aerial socket and NO bezel button row. This is a computer
+; monitor: it takes its picture over the DE-15 on the back and nothing else.
+; Composite 1 stays SELECTABLE all the same, and that is not a contradiction — the
+; VGA socket reports on that input (see the bind in RetroTV._ready), so it is the
+; input the tower's picture arrives on.
+
+; Layout, in this shell's frame. Total 0.385 tall, so the foot sits at -0.1925 and
+; the case top at +0.1925.
+;
+;    z  -0.1875 ...... +0.0275 .... +0.1875 +0.2015
+;       hood cap       case rear    case face  bezel front
+;
+[sub_resource type="BoxMesh" id="Mesh_case"]
+size = Vector3(0.355, 0.355, 0.16)
+
+; Tilt-swivel base. 16 segments rather than the default 64 — at 250 mm across the
+; facets are plainly visible, which is the point.
+[sub_resource type="CylinderMesh" id="Mesh_foot"]
+top_radius = 0.125
+bottom_radius = 0.125
+height = 0.03
+radial_segments = 16
+rings = 1
+
+; The bezel is FOUR RAILS, not one slab with a picture stuck on it, so the tube has
+; a real opening to sit inside. In a headset that recess has genuine binocular
+; depth — the same reason gen_curved_screen.gd bakes the tube's curve into geometry
+; instead of warping UVs, and the reason a flat bezel would read as a sticker.
+;
+; Both thicknesses fall straight out of the 0.29 x 0.218 opening in a 0.355 face:
+; (0.355 - 0.218) / 2 = 0.0685 top and bottom, (0.355 - 0.29) / 2 = 0.0325 either
+; side. The rails stand 14 mm proud of the case front.
+[sub_resource type="BoxMesh" id="Mesh_bezel_h"]
+size = Vector3(0.355, 0.0685, 0.016)
+
+[sub_resource type="BoxMesh" id="Mesh_bezel_v"]
+size = Vector3(0.0325, 0.218, 0.016)
+
+; The black surround behind the glass. Fills the opening exactly, so the CRT
+; shader's transparent border (crt_border, ALPHA at the glass edge) has something
+; dark behind it rather than the beige case.
+[sub_resource type="BoxMesh" id="Mesh_shroud"]
+size = Vector3(0.29, 0.218, 0.002)
+
+[sub_resource type="BoxMesh" id="Mesh_led"]
+size = Vector3(0.008, 0.004, 0.004)
+
+[sub_resource type="BoxMesh" id="Mesh_vent"]
+size = Vector3(0.2, 0.004, 0.006)
+
+; The I/O panel the DE-15 and the power inlet sit on, and the surface the VGA seat
+; is measured from — not the hood cap behind it. Standing a 2.5 mm plate over the
+; cap and then seating the socket off the cap would bury the jack's flange in it.
+[sub_resource type="BoxMesh" id="Mesh_ioplate"]
+size = Vector3(0.15, 0.06, 0.003)
+
+[sub_resource type="BoxMesh" id="Mesh_inlet"]
+size = Vector3(0.032, 0.024, 0.006)
+
+; The house beige, lifted verbatim from pc_tower.tscn so the monitor and the tower
+; that drives it are the same plastic: grubby-warm rather than clean grey.
+[sub_resource type="StandardMaterial3D" id="Mat_beige"]
+albedo_color = Color(0.77, 0.73, 0.63, 1)
+roughness = 0.62
+
+[sub_resource type="StandardMaterial3D" id="Mat_bezel"]
+albedo_color = Color(0.81, 0.77, 0.67, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.07, 0.07, 0.08, 1)
+roughness = 0.5
+
+[node name="CrtPlain" type="Node3D"]
+script = ExtResource("1_shell")
+body_size = Vector3(0.36, 0.39, 0.41)
+av_inputs = 0
+has_aerial = false
+show_button_row = false
+
+; The block that holds the tube. Only 160 mm deep — the rest of the cabinet's
+; depth is the hood behind it.
+[node name="Case" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, 0.1075)
+mesh = SubResource("Mesh_case")
+surface_material_override/0 = SubResource("Mat_beige")
+
+; The funnel: 355 mm square at the case, 200 mm square at the back, over 215 mm.
+;
+; A BAKED mesh, and it has to be. The obvious primitive for a tapered square is a
+; CylinderMesh with radial_segments = 4, and it does not survive contact with a
+; light: that mesh carries RADIAL normals, so its four side vertices sit on the
+; diamond's corners with normals ninety degrees apart and every wall Gouraud-
+; interpolates into a curve with rounded corners. Flat per-face normals need
+; unshared vertices and no primitive offers those. See Tools/gen_crt_hood.gd.
+;
+; Baked already lying along Z with the wide end at +Z, so this node needs no basis
+; at all — which also sidesteps the two traps in writing one by hand, .tscn
+; Transform3D being row-major and the roll being a post-multiply about the rotated
+; axis rather than a world yaw.
+[node name="Hood" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, -0.08)
+mesh = ExtResource("2_hood")
+surface_material_override/0 = SubResource("Mat_beige")
+
+; Set slightly forward of the cabinet's own centre, under the tube rather than
+; under the whole depth, which is where a real base carries the weight.
+[node name="Foot" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1775, 0.02)
+mesh = SubResource("Mesh_foot")
+surface_material_override/0 = SubResource("Mat_beige")
+
+; --- front face, at z +0.1875 -------------------------------------------------
+; Front is a bare Node3D and MUST stay at identity — its children's local
+; positions are shell-root-relative, the way pc_tower.tscn's Front/Back are.
+[node name="Front" type="Node3D" parent="."]
+
+[node name="BezelTop" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15825, 0.1935)
+mesh = SubResource("Mesh_bezel_h")
+surface_material_override/0 = SubResource("Mat_bezel")
+
+[node name="BezelBottom" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.12825, 0.1935)
+mesh = SubResource("Mesh_bezel_h")
+surface_material_override/0 = SubResource("Mat_bezel")
+
+[node name="BezelLeft" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.16125, 0.015, 0.1935)
+mesh = SubResource("Mesh_bezel_v")
+surface_material_override/0 = SubResource("Mat_bezel")
+
+[node name="BezelRight" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16125, 0.015, 0.1935)
+mesh = SubResource("Mesh_bezel_v")
+surface_material_override/0 = SubResource("Mat_bezel")
+
+[node name="Shroud" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, 0.1885)
+mesh = SubResource("Mesh_shroud")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; On the bottom rail, right of the opening. Unlit, like the tower's — nothing here
+; drives it, and a permanently glowing LED on an unplugged monitor is worse than a
+; dark one.
+[node name="PowerLed" type="MeshInstance3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.13, -0.12825, 0.2025)
+mesh = SubResource("Mesh_led")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; --- case top, at y +0.1925 ---------------------------------------------------
+[node name="Top" type="Node3D" parent="."]
+
+[node name="Vent1" type="MeshInstance3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1925, 0.06)
+mesh = SubResource("Mesh_vent")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Vent2" type="MeshInstance3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1925, 0.09)
+mesh = SubResource("Mesh_vent")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Vent3" type="MeshInstance3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1925, 0.12)
+mesh = SubResource("Mesh_vent")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="Vent4" type="MeshInstance3D" parent="Top"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1925, 0.15)
+mesh = SubResource("Mesh_vent")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; --- back face, the hood's cap at z -0.1875 -----------------------------------
+[node name="Back" type="Node3D" parent="."]
+
+[node name="IoPlate" type="MeshInstance3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, -0.1885)
+mesh = SubResource("Mesh_ioplate")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="PowerInlet" type="MeshInstance3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0.05, -0.189)
+mesh = SubResource("Mesh_inlet")
+surface_material_override/0 = SubResource("Mat_dark")
+
+; Silkscreen above the socket, the way a real I/O panel names its ports. Ry(180)
+; so the word reads the right way round from BEHIND, and 1.5 mm proud of the plate
+; so it does not z-fight it.
+;
+; font_size 48 with pixel_size 0.000104, NOT font_size 5 with pixel_size 0.001.
+; Both give a 5 mm line, but font_size is the size the glyphs are RASTERISED at:
+; asking for 5 builds a five-pixel atlas and then magnifies it. outline_size 0 —
+; dark text with a dark outline at this size fuses into a blob. Both rules come
+; from pc_tower.tscn, which prints the same word on the other end of the lead.
+;
+; LIGHT ink, which is where this parts company with the tower: that panel prints
+; near-black because it prints on bare beige case. This word sits on the I/O
+; plate, and pc_tower's Color(0.16, 0.15, 0.12) on Mat_dark's (0.07, 0.07, 0.08)
+; rendered as an all-but-invisible smudge. White-on-black is also what a real I/O
+; shield is silkscreened with.
+[node name="VgaLabel" type="Label3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, -0.014, -0.1915)
+pixel_size = 0.000104
+text = "VGA"
+font_size = 48
+outline_size = 0
+modulate = Color(0.66, 0.64, 0.6, 1)
+
+; --- seats --------------------------------------------------------------------
+; The whole shell contract. Anything not named here is left exactly where tv.tscn
+; authored it.
+
+; Scale sizes the tube: the stock curved mesh is 0.35 x 0.25 and this cabinet's
+; picture area is 0.28 x 0.21, hence 0.8 and 0.84. That is load-bearing well
+; beyond looks — RetroTV reads _screen_size_m from the mesh AABB times THIS node's
+; scale, and it drives the phosphor triad pitch and the aspect fit.
+;
+; z 0.190 puts the 9 mm sagitta tip at 0.199, just inside the bezel rails' front
+; face at 0.2015, so the tube sits in the frame rather than bulging past it.
+[node name="ScreenSeat" type="Marker3D" parent="."]
+transform = Transform3D(0.8, 0, 0, 0, 0.84, 0, 0, 0, 0.9, 0, 0.015, 0.19)
+
+; The monitor's one input. Its PRESENCE is the switch: RetroTV leaves its VgaPort
+; disabled and hidden unless a shell carries this marker (see _seat_vga_port).
+;
+; z -0.1975, which is 7.5 mm proud of the I/O PLATE's outer face at -0.190 — not
+; of the hood cap at -0.1875 behind it. 7.5 mm is vga_port.tscn's VgaJack offset
+; read off the scene, NOT the 3 mm both that file's own comment and pc_tower's
+; quote; 3 mm sinks the shell into the case and leaves a white blank where the
+; DE-15 should be. (pc_tower's GEOMETRY is 7.5 mm; only its prose is stale.)
+;
+; Rx(180), and measured rather than derived: a snap zone does not seat a pickable
+; at the zone's own basis, because SnapGrabPoint carries its own 180 about X and
+; that composes in. A zone at identity yields a plug at diag(1,-1,-1) with its
+; hood buried in the case. Nothing extra is needed for the D-shell's keying — the
+; DE-15 mesh is authored wide-edge-DOWN precisely so a back-panel port comes out
+; the right way up through this rotation (see Tools/gen_vga.gd).
+[node name="VgaPortSeat" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -1, -8.7422784e-08, 0, 8.7422784e-08, -1, 0, -0.03, -0.1975)
+
+; In front of the glass, shining out into the room: a SpotLight3D points along its
+; own -Z, and the flipped basis turns that into world +Z.
+[node name="AmbilightSeat" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.015, 0.205)
+
+; On the bottom rail, mirroring the power LED across the opening.
+;
+; This seat is NOT optional the way the others are, and that is worth knowing
+; before writing the next shell: VolumeLabel is permanently visible and is not tied
+; to show_button_row, so an unseated one simply stays where tv.tscn put it — x
+; -0.2, which on a 0.355-wide cabinet is 22 mm clear of the left edge. It rendered
+; as a "100" hanging in the air beside the monitor.
+[node name="VolumeLabelSeat" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, -0.1325, 0.2025)
+
+; NO PortSeat. _seat_av_row returns on anything that is not a Transform3D, so with
+; av_inputs = 0 a marker here would name nothing and move nothing. NO ButtonRow
+; either (show_button_row is off, and RetroTV then set_active(false)s every cap),
+; and no speaker seats — naming NEITHER is the documented way to get the computed
+; pair for this tube (tv_shell.gd: name both or neither).

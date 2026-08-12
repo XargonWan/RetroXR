@@ -297,7 +297,9 @@ func _build() -> void:
 	_spawn_tab_scrolls.append(null)
 	_populate_cartridges_tab()
 
-	_add_spawn_tab(tabs, "TVs", [["TV", "tv"]])
+	# "tv:<shell>" names a cabinet variant, the way "model:<systemid>:<model_id>"
+	# names a console's. A future shell costs a row here and nothing else.
+	_add_spawn_tab(tabs, "TVs", [["TV", "tv"], ["Plain Monitor", "tv:crt_plain"]])
 
 	# Books tab — lists PDFs from the books root directory
 	var books_scroll := ScrollContainer.new()
