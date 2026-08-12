@@ -45,7 +45,10 @@ RetroXR/vlc-godot/*.pdb
 # Godot-specific ignores
 .import/
 export.cfg
-export_presets.cfg
+
+# export_presets.cfg is deliberately NOT ignored. Godot 4.5+ keeps keystore paths,
+# keystore passwords and the script encryption key in RetroXR/.godot/export_credentials.cfg,
+# which RetroXR/.gitignore excludes as part of .godot/, so the preset carries no secrets.
 
 # Imported translations (automatically generated from CSV files)
 *.translation
