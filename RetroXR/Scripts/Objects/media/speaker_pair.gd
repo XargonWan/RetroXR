@@ -64,15 +64,25 @@ func _ready() -> void:
 
 ## Wire the two cabinets together. One cord, both ends anchored — the same shape as
 ## CompositeCable's single-cord lead, minus the plugs.
+##
+## Anchored at the cable BOSSES, not at the cabinets. The marker is what makes the
+## difference: VerletRope reads a RigidBody3D anchor that is neither held nor frozen
+## as a free PLUG and, every tick, zeroes its spin and turns it 70% of the way toward
+## pointing its -Z down the cord (end_align_stiffness, VerletRope::AlignAnchorPlug).
+## That is the whole point for a 30 mm plug and ruinous for a cabinet: anchored at the
+## boxes, a spawned pair rolled flat on its side within a second and then crept across
+## the floor forever, chasing a tangent its own turning kept moving. A plain Node3D
+## anchor is read as a host attach point instead — a device end, which is what these
+## are — exactly as every controller and peripheral cable here anchors its machine end.
+## The cabinet still owns the anchor: RefreshExclusions walks up to the first
+## CollisionObject3D, so the cord is still excluded from the box it leaves.
 func _build_rope() -> void:
 	if not is_inside_tree():
 		return
-	_rope.start_node = _boxes[Side.LEFT]
-	_rope.end_node = _boxes[Side.RIGHT]
-	# Leave each cabinet at its own cable boss rather than at its origin, or the
-	# tube runs out through the middle of the box.
-	_rope.start_anchor_offset = ($SpeakerL/CableBoss as Node3D).position
-	_rope.end_anchor_offset = ($SpeakerR/CableBoss as Node3D).position
+	_rope.start_node = $SpeakerL/CableBoss
+	_rope.end_node = $SpeakerR/CableBoss
+	_rope.start_anchor_offset = Vector3.ZERO
+	_rope.end_anchor_offset = Vector3.ZERO
 	_rope._init_points()
 	_rope_built = true
 
