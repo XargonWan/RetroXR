@@ -1,6 +1,6 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dweg8uyo15175"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/peripherals/nunchuk.gd" id="1_ncscript"]
+[ext_resource type="Script" uid="uid://cl7jiwind56fx" path="res://Scripts/Objects/peripherals/nunchuk.gd" id="1_ncscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="4_rhand"]
@@ -16,49 +16,28 @@
 [sub_resource type="PhysicsMaterial" id="PhysMat_nc"]
 friction = 0.8
 
-; Still a cylinder, and deliberately so: the shell is 38 x 105 x 42 mm and this is
-; the inscribed solid a hand and a table need it to be. The shape is what the MESH
-; is for; a trimesh collider on a picked-up rigid body buys nothing here and costs a
-; convex decomposition.
 [sub_resource type="CylinderShape3D" id="CylShape_body"]
-radius = 0.019
 height = 0.1
+radius = 0.019
 
-; Glossy off-white. The real shell is white with a clear coat, so a flat 0.93 albedo
-; at default roughness read as chalk — the highlight travelling over the scoop is
-; most of what makes the curvature legible at arm's length.
 [sub_resource type="StandardMaterial3D" id="Mat_shell"]
 albedo_color = Color(0.941, 0.941, 0.951, 1)
 metallic_specular = 0.6
 roughness = 0.28
 
-; The keys and the stick cap are the SAME white as the shell on a white Nunchuk —
-; the old model made them mid-grey, which is what a black one's keys look like. They
-; are pulled down a couple of percent and roughened so the edges still read against
-; the body under the room's flat ambient, which is the only thing that separated
-; them in the reference photographs either.
-[sub_resource type="StandardMaterial3D" id="Mat_key"]
-albedo_color = Color(0.898, 0.898, 0.910, 1)
-metallic_specular = 0.5
-roughness = 0.42
-
-; The moulding seam, and the shadow in the stick's gate. Both are DARK BY MATERIAL
-; rather than by geometry or shadow: these rooms light with a flat ambient and no
-; radiance map, so a groove renders exactly as brightly as the surface either side of
-; it and the bottom of a bore as brightly as its mouth. Same call gen_rca_jack.gd
-; makes for its socket.
-;
-; The seam is a sheet, so it is drawn double-sided (cull_mode 2) — which way its
-; normals happen to face is then not something anyone has to get right.
 [sub_resource type="StandardMaterial3D" id="Mat_seam"]
+cull_mode = 2
 albedo_color = Color(0.63, 0.63, 0.62, 1)
 roughness = 0.55
-cull_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Mat_key"]
+albedo_color = Color(0.898, 0.898, 0.91, 1)
+roughness = 0.42
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.06, 0.13, 0.06)
 
-[node name="Nunchuk" type="RigidBody3D" groups=["hand_held_device"]]
+[node name="Nunchuk" type="RigidBody3D" unique_id=1861031895 groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 mass = 0.1
@@ -68,113 +47,61 @@ linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_ncscript")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1070162177]
 shape = SubResource("CylShape_body")
 
-; The lofted shell — crown at y +0.052, tail tip at -0.053, the scoop down the -Z
-; face. Baked by Tools/gen_nunchuk.gd, which is where the profile lives; nothing here
-; is adjustable, so re-run that rather than scaling this node.
-[node name="Body" type="MeshInstance3D" parent="."]
+[node name="Body" type="MeshInstance3D" parent="." unique_id=1489806429]
 mesh = ExtResource("6_ncbody")
 surface_material_override/0 = SubResource("Mat_shell")
 
-; The parting line where the two shell halves meet, running the length of both flanks.
-; In the body's own frame, so no transform of its own.
-[node name="Seam" type="MeshInstance3D" parent="."]
+[node name="Seam" type="MeshInstance3D" parent="." unique_id=1722837844]
 mesh = ExtResource("11_ncseam")
 surface_material_override/0 = SubResource("Mat_seam")
 
-; The octagonal gate the stick sits in, and the shadow at the bottom of it. Both ride
-; the STICK's axis rather than the body's — they are concentric with it, so they carry
-; its 8 degree rake — and sit 2.6 mm further up that axis, which is where the crown's
-; surface is narrow enough for the collar to stand proud all round rather than half
-; buried on the flanks and floating front and back.
-[node name="StickGate" type="MeshInstance3D" parent="."]
+[node name="StickGate" type="MeshInstance3D" parent="." unique_id=2023089395]
 transform = Transform3D(1, 0, 0, 0, 0.99027, -0.13917, 0, 0.13917, 0.99027, 0, 0.0481, -0.0019)
 mesh = ExtResource("12_ncgate")
 surface_material_override/0 = SubResource("Mat_shell")
 
-; Set into the crown rather than stood on it: the stalk's base disc is at the mesh's
-; own y = 0, so seating it here buries most of it and the dome closes round the waist
-; the way the moulding does. Raked 8 degrees toward the buttons because the top face
-; it grows out of is itself tilted that way.
-;
-; Seated at 0.0411, not the 0.0455 it started at, and that 4.4 mm closes a HOLE rather
-; than tidying a gap. The shell tapers to a pole, so between the gate's rim and the
-; cap's underside there was a band where the body is narrower than BOTH — and you
-; could see clean through the crown there, on either flank, right between the two.
-; Measured at 4.4 mm tall by rendering the shell against a flat colour from eight
-; directions and counting background pixels enclosed on all four sides. Dropping the
-; stick by that much lands the cap on the collar and shuts it, and it also puts the
-; cap nearer the shell, which is where the reference photographs have it.
-[node name="Stick" type="MeshInstance3D" parent="."]
+[node name="Stick" type="MeshInstance3D" parent="." unique_id=1025796944]
 transform = Transform3D(1, 0, 0, 0, 0.99027, -0.13917, 0, 0.13917, 0.99027, 0, 0.04114, -0.00089)
 mesh = ExtResource("7_ncstick")
 surface_material_override/0 = SubResource("Mat_key")
 
-; C and Z, on the shelf down the front face. Both seats come from gen_nunchuk.gd's
-; own report of where the surface IS at their stations (y +0.0405 / +0.0247, front
-; z -0.0176 / -0.0145) rather than from a guess — floating slabs are exactly what
-; guessing produced last time.
-;
-; Rx(-55) faces each key 35 degrees above the horizontal, i.e. up and forward out of
-; the shelf, and carries the Z blade's long axis up the body toward C. Each is then
-; pushed 1.5 mm back along its own axis so its skirt meets the shell instead of
-; hovering on the tangent point.
-[node name="CButton" type="MeshInstance3D" parent="."]
+[node name="CButton" type="MeshInstance3D" parent="." unique_id=1185203229]
 transform = Transform3D(1, 0, 0, 0, 0.57358, -0.81915, 0, 0.81915, 0.57358, 0, 0.03964, -0.01637)
 mesh = ExtResource("9_ncc")
 surface_material_override/0 = SubResource("Mat_key")
 
-[node name="ZButton" type="MeshInstance3D" parent="."]
+[node name="ZButton" type="MeshInstance3D" parent="." unique_id=204491322]
 transform = Transform3D(1, 0, 0, 0, 0.57358, -0.81915, 0, 0.81915, 0.57358, 0, 0.02384, -0.01327)
 mesh = ExtResource("10_ncz")
 surface_material_override/0 = SubResource("Mat_key")
 
-; Strain relief, and the reason the cord looks right at all.
-;
-; VerletRope excludes its anchor's CollisionObject3D from the rope's own surface
-; collision — it has to, or the cord would spend every frame fighting the body it
-; hangs off. The consequence is that an anchor sitting ON the shell lets the first
-; segments swing straight through it, and there is no start-side equivalent of
-; plug_exit_axis to hold them out (the boot properties govern the PLUG end only).
-;
-; So the cord is given something to emerge FROM: a short ribbed stub, with the anchor
-; at its tip and clear of the body. Wherever the first segment then wanders, it
-; leaves the nunchuk pointing down out of a moulded boot, which is what the real one
-; does. Same idiom the plug end already uses at the other end of this cord.
-;
-; DEAD CENTRE of the tail and straight down its axis. It used to sit on the bottom
-; rear corner raked 25 degrees back, on the reasoning that the cord trails away
-; behind the hand beside the Z trigger; the reference says otherwise — it leaves the
-; middle of the tip and carries straight on.
-[node name="StrainRelief" type="MeshInstance3D" parent="."]
+[node name="StrainRelief" type="MeshInstance3D" parent="." unique_id=2068435507]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0495, 0)
 mesh = ExtResource("8_ncboot")
 surface_material_override/0 = SubResource("Mat_shell")
 
-; Just past the boot's tip, on its axis, so the cord carries on the line the moulding
-; starts rather than kinking at the join.
-[node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0675, 0)
+[node name="CableAttachPoint" type="Node3D" parent="." unique_id=919458502]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, -0.0675, 0)
 
-[node name="GrabPoint" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+[node name="GrabPoint" type="Marker3D" parent="." unique_id=1464527405]
 visible = false
 script = ExtResource("3_grabpoint")
 
-[node name="PickableHighlight" type="Node3D" parent="."]
+[node name="PickableHighlight" type="Node3D" parent="." unique_id=1627980258]
 script = ExtResource("2_pickhigh")
 
-[node name="PointerArea" type="StaticBody3D" parent="."]
+[node name="PointerArea" type="StaticBody3D" parent="." unique_id=611460704]
 collision_layer = 1048576
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=1560141221]
 shape = SubResource("BoxShape3D_pointer")
 
-[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+[node name="HandRight" parent="." unique_id=1941638741 instance=ExtResource("4_rhand")]
 visible = false
 
-[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+[node name="HandLeft" parent="." unique_id=1489405653 instance=ExtResource("5_lhand")]
 visible = false
