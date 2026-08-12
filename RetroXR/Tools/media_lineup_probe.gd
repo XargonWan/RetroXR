@@ -62,8 +62,6 @@ func _build() -> void:
 		# 1.2 mm is the real disc thickness the baked platter carries; the caption
 		# is a hand-written constant, so it has to be kept in step with gen_disc.gd.
 		var sz := Vector3(d, d, 0.0012)
-		if sid == "playstation_portable":
-			sz = MediaDimensions.cart_size(sid)
 		_place(_spawn_for(sid), sid, i, sz)
 		i += 1
 

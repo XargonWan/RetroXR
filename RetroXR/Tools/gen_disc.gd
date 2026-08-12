@@ -46,6 +46,7 @@ extends SceneTree
 
 const OUT_120 := "res://Scenes/Objects/media/disc_120mm.res"
 const OUT_80 := "res://Scenes/Objects/media/disc_80mm.res"
+const OUT_64 := "res://Scenes/Objects/media/disc_64mm.res"
 
 ## 15 mm centre hole, 1.2 mm thick — identical on a CD, a DVD and a mini-DVD.
 const R_HOLE := 0.0075
@@ -70,6 +71,12 @@ const SEGMENTS := 96
 func _init() -> void:
 	_bake(OUT_120, 0.060, SEGMENTS)
 	_bake(OUT_80, 0.040, SEGMENTS)
+	# The PSP's bare UMD platter. MediaDimensions calls it 64 mm; the real one is
+	# 60 mm inside a 64 mm caddy, and the caddy is what that entry was measured
+	# from. Kept at 64 so the two stay in step. The 15 mm bore is the standard
+	# optical-disc figure rather than a measured UMD one — plausible against
+	# photographs, but not verified.
+	_bake(OUT_64, 0.032, SEGMENTS)
 	quit()
 
 

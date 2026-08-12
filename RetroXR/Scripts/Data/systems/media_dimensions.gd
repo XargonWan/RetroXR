@@ -207,11 +207,16 @@ static func disc_finish(systemid: String, rom_path: String = "") -> Dictionary:
 ## to 22 mm. That wide clear hub annulus is one of the most recognisable things
 ## about a disc's underside, and getting it wrong plates the whole hub in silver.
 ##
-## An 80 mm mini-disc keeps the same 15 mm bore but pulls both data radii in.
+## The smaller discs keep the same 15 mm bore and pull both data radii in. Every
+## size needs its own row: a data_end past the disc's own radius leaves it with no
+## clear outer rim and a mirror band that never resolves.
 static func disc_zones(systemid: String) -> Vector3:
-	if disc_diameter(systemid) < 0.10:
-		return Vector3(0.0155, 0.0160, 0.0380)
-	return Vector3(0.0220, 0.0230, 0.0580)
+	var d := disc_diameter(systemid)
+	if d < 0.07:
+		return Vector3(0.0130, 0.0135, 0.0300)   # UMD platter
+	if d < 0.10:
+		return Vector3(0.0155, 0.0160, 0.0380)   # 80 mm mini-DVD
+	return Vector3(0.0220, 0.0230, 0.0580)       # 120 mm CD/DVD
 
 
 ## How this system loads discs: LOADER_NONE / LOADER_TRAY / LOADER_SLOT.

@@ -13,11 +13,19 @@
 class_name RetroDisc
 extends RetroCartridge
 
-## Two meshes rather than one scaled mesh: the 15 mm hole and the 1.2 mm thickness
-## are identical on a 120 mm CD and an 80 mm mini-DVD, so scaling would shrink them
-## along with the diameter.
+## One mesh per diameter rather than one scaled mesh: the 15 mm hole and the 1.2 mm
+## thickness are identical at every size, so scaling would shrink them along with
+## the disc. Keyed by diameter and matched to the NEAREST — a diameter with no
+## mesh warns rather than silently getting a platter of the wrong size.
 const MESH_120 := preload("res://Scenes/Objects/media/disc_120mm.res")
 const MESH_80 := preload("res://Scenes/Objects/media/disc_80mm.res")
+const MESH_64 := preload("res://Scenes/Objects/media/disc_64mm.res")
+
+const PLATTERS: Dictionary = {
+	0.12: MESH_120,
+	0.08: MESH_80,
+	0.064: MESH_64,
+}
 
 
 ## Whether the host should visually spin this disc while it plays (system.gd's
@@ -28,6 +36,24 @@ const MESH_80 := preload("res://Scenes/Objects/media/disc_80mm.res")
 ## otherwise (see RetroUMD).
 func can_visually_spin() -> bool:
 	return true
+
+
+## The baked platter closest to this diameter. A miss beyond a couple of
+## millimetres means a system was added to DISC_DIAMETERS without a mesh to go
+## with it, which would otherwise show up as a disc quietly rendered at the wrong
+## size — so it warns instead.
+func _platter_for(d: float) -> ArrayMesh:
+	var best: ArrayMesh = MESH_120
+	var best_err := INF
+	for dia: float in PLATTERS:
+		var err: float = absf(dia - d)
+		if err < best_err:
+			best_err = err
+			best = PLATTERS[dia]
+	if best_err > 0.002:
+		push_warning("RetroDisc: no platter mesh for %.3f m (%s); using nearest"
+			% [d, systemid])
+	return best
 
 
 ## Fit the disc to this system: the right platter mesh, and the finish uniforms
@@ -41,7 +67,7 @@ func _apply_system_size() -> void:
 
 	var body := get_node_or_null("DiscMesh") as MeshInstance3D
 	if body != null:
-		body.mesh = MESH_80 if d < 0.10 else MESH_120
+		body.mesh = _platter_for(d)
 		var mat := body.get_surface_override_material(0) as ShaderMaterial
 		if mat != null:
 			var finish := MediaDimensions.disc_finish(systemid, rom_path)
