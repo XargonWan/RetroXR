@@ -245,6 +245,12 @@ jobs:
       - name: Import, and fail on any script or shader error
         run: |
           set -euo pipefail
+          # Two passes, and only the second is an oracle. .godot/ is gitignored
+          # so CI always starts cold, and on a cold cache the editor parses
+          # scripts before the image importers have run: every preload() of a
+          # .png or .svg fails with "has no resource loaders" and takes each
+          # depending script down with it. --import settles the resources first.
+          godot --headless --path RetroXR --import 2>&1 | tail -3 || true
           godot --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
           # Known headless noise, none of it caused by the build. Every
           # extension with a linux stanza is built above and must load, so none
@@ -358,6 +364,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # First pass settles the imports; see the quest job for why a single
+          # pass on a cold .godot/ reports preload failures that are not real.
+          "$GODOT" --headless --path RetroXR --import 2>&1 | tail -3 || true
           "$GODOT" --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
           # All five extensions have a windows stanza and are built above, so
           # none is excused - a load failure here is a real one.
