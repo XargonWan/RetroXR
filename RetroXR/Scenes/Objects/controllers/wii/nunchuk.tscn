@@ -68,13 +68,23 @@ transform = Transform3D(1, 0, 0, 0, 0.99027, -0.13917, 0, 0.13917, 0.99027, 0, 0
 mesh = ExtResource("7_ncstick")
 surface_material_override/0 = SubResource("Mat_key")
 
+; C and Z. BOTH transforms are printed by Tools/gen_nunchuk.gd — position and rake
+; together — rather than authored here. Re-run it and paste; do not nudge these by eye.
+;
+; They used to share a hand-picked Rx(-55), on the reasoning that the shelf faces up
+; and forward at 35 degrees. The front face is not a plane: its reach peaks around
+; t = 0.16 and falls away either side, so C sits ABOVE that brow facing +13 degrees
+; and Z sits BELOW it facing -18.4 degrees — 31 degrees apart, and Z a full 53 degrees
+; from what it was given. On a 20 mm blade that error buried one end 9 mm inside the
+; shell and stood the other 6 mm off it, which is why Z could be seen from underneath
+; the nunchuk: the low end was sticking clean out through the belly.
 [node name="CButton" type="MeshInstance3D" parent="." unique_id=1185203229]
-transform = Transform3D(1, 0, 0, 0, 0.57358, -0.81915, 0, 0.81915, 0.57358, 0, 0.03964, -0.01637)
+transform = Transform3D(1, 0, 0, 0, 0.22519, -0.97431, 0, 0.97431, 0.22519, 0, 0.04011, -0.01616)
 mesh = ExtResource("9_ncc")
 surface_material_override/0 = SubResource("Mat_key")
 
 [node name="ZButton" type="MeshInstance3D" parent="." unique_id=204491322]
-transform = Transform3D(1, 0, 0, 0, 0.57358, -0.81915, 0, 0.81915, 0.57358, 0, 0.02384, -0.01327)
+transform = Transform3D(1, 0, 0, 0, -0.31521, -0.94902, 0, 0.94902, -0.31521, 0, 0.02517, -0.01308)
 mesh = ExtResource("10_ncz")
 surface_material_override/0 = SubResource("Mat_key")
 

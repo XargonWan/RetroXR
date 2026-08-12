@@ -494,10 +494,59 @@ static func _enclosed(mesh: ArrayMesh) -> float:
 
 ## Where the shell's surface actually is at the stations nunchuk.tscn has to author
 ## by hand. The old model floated its buttons because these were guessed.
+## How far a key is pushed back along its own axis so its skirt meets the shell
+## rather than balancing on the tangent point.
+const KEY_SINK := 0.0015
+
+
 func _report_seats() -> void:
-	for row: Array in [["C", T_C], ["Z", T_Z]]:
+	# name, station, half-length of the key along the shelf (C is round r=5.7,
+	# Z is the 20 mm blade).
+	for row: Array in [["C", T_C, 0.0057], ["Z", T_Z, 0.0100]]:
 		var t: float = row[1]
-		var y := lerpf(Y_TOP, Y_TIP, t)
-		var front := _sample(t, 2)
-		print("[gen] seat %s  t=%.3f  y=%+.4f  front z=%.4f" % [row[0], t, y, -front])
+		var n := _front_normal(t)
+		var surf := Vector3(0.0, lerpf(Y_TOP, Y_TIP, t), -_sample(t, 2))
+		var o := surf - n * KEY_SINK
+		# Rx(theta) takes +Y to the normal, which is the direction the key faces.
+		var th := atan2(n.z, n.y)
+		var cs := cos(th)
+		var sn := sin(th)
+		print("[gen] seat %s  t=%.3f  faces %+.1f deg from horizontal" % [
+			row[0], t, rad_to_deg(atan2(n.y, -n.z))])
+		print("[gen]   transform = Transform3D(1, 0, 0, 0, %.5f, %.5f, 0, %.5f, %.5f, 0, %.5f, %.5f)"
+			% [cs, sn, -sn, cs, o.y, o.z])
+		# How far each END of the key stands off the shell. This is the check that was
+		# missing: a key is seated by its CENTRE, but the face it sits on curves, so a
+		# rake that is right in the middle can still drive one end through the shell
+		# and lift the other off it. Anything beyond a couple of mm is a key you will
+		# see from somewhere you should not.
+		var half: float = row[2]
+		var along := Vector3(0.0, -sn, cs)         # the key's own long axis, Rx(theta)*+Z
+		for e: float in [half, -half]:
+			var p: Vector3 = o + along * e
+			var te: float = clampf((Y_TOP - p.y) / (Y_TOP - Y_TIP), 0.0, 1.0)
+			var proud: float = (-_sample(te, 2)) - p.z
+			print("[gen]   end %+.1f mm along: stands %+.2f mm off the shell"
+				% [e * 1000.0, proud * 1000.0])
 	print("[gen] crown y=%+.4f   tail tip y=%+.4f" % [Y_TOP, Y_TIP])
+
+
+## Outward normal of the FRONT face at station `t`, in the YZ plane.
+##
+## Derived, not guessed, and the first cut of this model guessed: both keys were given
+## a flat Rx(-55) on the reasoning that the shelf faces up and forward at 35 degrees.
+## The front face is not a plane. Its reach peaks around t = 0.16 and falls away either
+## side, so C sits ABOVE that brow facing up-and-out while Z sits BELOW it facing
+## DOWN-and-out — 40 degrees apart, and both a long way from -55. The Z blade is 20 mm
+## long, so getting its rake wrong by that much drove one end 9 mm into the shell and
+## stood the other 6 mm off it, which is why the key could be seen from underneath.
+static func _front_normal(t: float) -> Vector3:
+	var h := 0.004
+	var t0 := maxf(t - h, 0.0)
+	var t1 := minf(t + h, 1.0)
+	# The front surface is (y(t), -front(t)); y falls linearly with t.
+	var ty := (Y_TIP - Y_TOP) * (t1 - t0)
+	var tz := -(_sample(t1, 2) - _sample(t0, 2))
+	# Rotate the tangent a quarter turn into the outward side (negative z).
+	var n := Vector3(0.0, -tz, ty).normalized()
+	return n if n.z < 0.0 else -n
