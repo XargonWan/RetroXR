@@ -60,11 +60,11 @@ var _desktop_held := false
 ## handheld instead of the player. A physical pad is never gated by it.
 var _capture: ScrollLockCapture = null
 var _hint: HeldHint = null
-## Nerd Font: gamepad — floats over the handheld while capture is on.
+## Nerd Font: gamepad — floats off the near edge of the handheld while capture is on.
 const ICON_CAPTURE := 0xEC17
 const ICON_SIZE := 0.030
-const ICON_HEIGHT := 0.11
-## Above ICON_HEIGHT so the capture glyph and the hint popup do not overlap.
+const ICON_OFFSET := 0.11
+## Height of the hint popup above the handheld, in metres.
 const HINT_HEIGHT := 0.20
 var _blocking_left := false
 var _blocking_right := false
@@ -89,7 +89,7 @@ func setup(host: Node3D) -> void:
 	host.dropped.connect(_on_dropped_signal)
 	host.released.connect(_on_released_signal)
 	_capture = ScrollLockCapture.attach(host, _can_capture,
-		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+		ICON_CAPTURE, ICON_OFFSET, ICON_SIZE)
 	_hint = HeldHint.attach(host, true, HINT_HEIGHT)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
 		["keyboard_scroll_lock_outline"], "Send keys here")

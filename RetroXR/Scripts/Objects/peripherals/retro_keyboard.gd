@@ -6,7 +6,7 @@
 ## VR typing: the key grid is built procedurally; each hand presses at most the
 ## single nearest key under its controller tip (so a palm can't mash a row).
 ## Real-keyboard passthrough is OPT-IN: hold the board and press Scroll Lock to
-## capture, which floats a keyboard glyph over it and suspends WASD locomotion so
+## capture, which floats a keyboard glyph off its near edge and suspends WASD locomotion so
 ## the keys reach the core instead of the player. Scroll Lock again — or simply
 ## dropping the board — releases it. Keys route from here, offline straight to the
 ## core and in netplay through the deterministic schedule, sinking the matching
@@ -129,13 +129,14 @@ var _pointer_ctrl: XRController3D = null
 var _labels_shifted := false
 var _os_shift_held := false
 
-## Nerd Font: keyboard — shown above the board while Scroll Lock capture is on.
+## Nerd Font: keyboard — shown off the near edge of the board while Scroll Lock
+## capture is on.
 const ICON_CAPTURE := 0xF11C
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
-## Height of the capture glyph, in metres, and how far above the board it floats.
+## Height of the capture glyph, in metres, and how far along +Z of the board it sits.
 const ICON_SIZE := 0.035
-const ICON_HEIGHT := 0.10
-## Above ICON_HEIGHT so the capture glyph and the hint popup do not overlap.
+const ICON_OFFSET := 0.10
+## Height of the hint popup above the board, in metres.
 const HINT_HEIGHT := 0.20
 
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
@@ -152,7 +153,7 @@ func _ready() -> void:
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	_capture = ScrollLockCapture.attach(self, _can_capture,
-		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+		ICON_CAPTURE, ICON_OFFSET, ICON_SIZE)
 	# No drop row: the board lets go on a plain release on both platforms.
 	_hint = HeldHint.attach(self, false, HINT_HEIGHT)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,

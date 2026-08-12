@@ -90,11 +90,11 @@ var _desktop_held: bool = false
 ## pad instead of the player. A physical USB/Bluetooth pad is never gated by it.
 var _capture: ScrollLockCapture = null
 var _hint: HeldHint = null
-## Nerd Font: gamepad — floats over the pad while capture is on.
+## Nerd Font: gamepad — floats off the near edge of the pad while capture is on.
 const ICON_CAPTURE := 0xEC17
 const ICON_SIZE := 0.030
-const ICON_HEIGHT := 0.11
-## Above ICON_HEIGHT so the capture glyph and the hint popup do not overlap.
+const ICON_OFFSET := 0.11
+## Height of the hint popup above the pad, in metres.
 const HINT_HEIGHT := 0.20
 
 # Reference-counted pointer blocking — prevents multi-instance conflicts.
@@ -148,7 +148,7 @@ func _ready() -> void:
 	released.connect(_on_released_signal)
 	_spawn_cable()
 	_capture = ScrollLockCapture.attach(self, _can_capture,
-		ICON_CAPTURE, ICON_HEIGHT, ICON_SIZE)
+		ICON_CAPTURE, ICON_OFFSET, ICON_SIZE)
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
 		["keyboard_scroll_lock_outline"], "Send keys here")

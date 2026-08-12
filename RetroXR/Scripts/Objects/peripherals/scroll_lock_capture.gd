@@ -4,7 +4,7 @@
 ## player: the RetroKeyboard's keys, and the buttons a virtual pad or handheld
 ## binds to RETRO_JOYPAD_* actions. Holding one used to hijack those keys
 ## silently. Capture makes it opt-in instead — press Scroll Lock while holding the
-## device to take the keyboard, shown by a glyph floating over it, with WASD
+## device to take the keyboard, shown by a glyph floating off its near edge, with WASD
 ## locomotion suspended for as long as it lasts.
 ##
 ## Capture is always a subset of "eligible" (held, and plugged into a system), so
@@ -26,13 +26,14 @@ var _loco: LocomotionManager = null
 var _active := false
 
 
-## `glyph` is a Nerd Font codepoint; `height` is metres above the host origin.
+## `glyph` is a Nerd Font codepoint; `offset` is metres along the host's own +Z,
+## which puts the glyph just off the near edge rather than floating overhead.
 static func attach(host: Node3D, eligible: Callable, glyph: int,
-		height := 0.10, size := 0.035) -> ScrollLockCapture:
+		offset := 0.10, size := 0.035) -> ScrollLockCapture:
 	var cap := ScrollLockCapture.new()
 	cap._host = host
 	cap._eligible = eligible
-	cap._build_icon(glyph, height, size)
+	cap._build_icon(glyph, offset, size)
 	cap._find_locomotion_manager.call_deferred()
 	return cap
 
@@ -122,7 +123,7 @@ func _find_locomotion_manager() -> void:
 
 ## Same recipe as vr_hinge.gd's _build_icon: billboarded Label3D with the Symbols
 ## Nerd Font as a fallback, sized in metres, drawn over geometry.
-func _build_icon(glyph: int, height: float, size: float) -> void:
+func _build_icon(glyph: int, offset: float, size: float) -> void:
 	var existing := _host.get_node_or_null("CaptureHint") as Label3D
 	if existing != null:
 		_icon = existing
@@ -145,5 +146,5 @@ func _build_icon(glyph: int, height: float, size: float) -> void:
 	_icon.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
 	_icon.text = String.chr(glyph)
 	_icon.modulate = Color(1.0, 0.82, 0.28)
-	_icon.position = Vector3(0.0, height, 0.0)
+	_icon.position = Vector3(0.0, 0.0, offset)
 	_icon.visible = false
