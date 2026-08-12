@@ -142,32 +142,31 @@ jobs:
       # vlc-godot links the system libVLC on Linux rather than a vendored copy.
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvlc-dev
 
-      # SCons puts every object on ar's command line, and godot-cpp's 1022
-      # objects come to 130,640 bytes at absolute paths against the kernel's
-      # 131,072 byte single-argument ceiling. libretro-godot builds from the
-      # repo root with relative paths (95,892 bytes) and squeaks under; the four
-      # siblings reach godot-cpp from outside their own top directory, so SCons
-      # emits absolute paths and they all die with "sh: Argument list too long".
-      # SCONS_CACHE does not save them: the objects come back from cache but the
-      # archive never can, because no build ever produced one in that form.
-      # Linux takes plain ar off PATH, android uses the NDK's llvm-ar by
-      # absolute path, so the wrapper goes in twice.
-      - name: Route ar through a response file
+      # Build through a short path, because archiving godot-cpp is a hair from
+      # the kernel's 131,072 byte cap on a single argv entry - which is what
+      # SCons' "sh -c <command>" makes the whole command line into.
+      #
+      # godot-cpp is 1022 objects. libretro-godot builds from the repo root and
+      # names them relatively (95,892 bytes), so it fits. The four siblings
+      # reach godot-cpp from outside their own top directory, so SCons switches
+      # to absolute paths: 130,640 bytes, and adding "llvm-ar rc <archive>"
+      # tips it over into "sh: Argument list too long". Note the exec of sh
+      # itself is what fails, so wrapping ar to take an @response file does not
+      # help - nothing downstream of that exec ever runs. SCONS_CACHE does not
+      # save it either: the objects come back from cache, but the archive can
+      # only come back if some build once produced it in that form, and none can.
+      #
+      # /home/runner/work/RetroXR/RetroXR/ -> /w/ takes 31 bytes off all 1022,
+      # landing at 98,958, about the headroom the root build already runs with.
+      # A bind mount rather than a symlink, so build.py's Path.resolve() cannot
+      # collapse it back to the long path.
+      - name: Mount the workspace at a short path
         run: |
           set -euo pipefail
-          shim=Tools/ci/ar-response-file-shim.sh
-          mkdir -p "$RUNNER_TEMP/arshim"
-          install -m755 "$shim" "$RUNNER_TEMP/arshim/ar"
-          ln -sf "$(command -v ar)" "$RUNNER_TEMP/arshim/ar.real"
-          echo "$RUNNER_TEMP/arshim" >> "$GITHUB_PATH"
-
-          ndkar="${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-          mv "$ndkar" "$ndkar.real"
-          install -m755 "$shim" "$ndkar"
-
-          # Both take the passthrough branch, which proves each found its .real.
-          "$RUNNER_TEMP/arshim/ar" --version | head -1
-          "$ndkar" --version | head -1
+          sudo mkdir -p /w
+          sudo mount --bind "$GITHUB_WORKSPACE" /w
+          test -f /w/Tools/build.py
+          python -c "from pathlib import Path; print('build.py resolves to', Path('/w/Tools/build.py').resolve())"
 
       # SCONS_CACHE is load-bearing, not just a speed-up. Each extension has
       # its own VariantDir and .sconsign, so all five otherwise rebuild
@@ -185,7 +184,7 @@ jobs:
           # and then demands a full SDK.
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python Tools/build.py android --target release --jobs 4
+        run: python /w/Tools/build.py android --target release --jobs 4
 
       # The exporting editor is a debug-tagged Linux binary, so it resolves
       # linux.debug.x86_64 out of each .gdextension and loads THAT to register
@@ -201,7 +200,7 @@ jobs:
       - name: Build the host-side extensions the editor needs (linux, debug)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python Tools/build.py linux --target debug --jobs 4
+        run: python /w/Tools/build.py linux --target debug --jobs 4
 
       - uses: actions/cache@v4
         with:
