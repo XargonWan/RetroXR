@@ -266,16 +266,6 @@ transform = Transform3D(1, 0, 0, 0, -1, -8.7422784e-08, 0, 8.7422784e-08, -1, 0,
 [node name="AmbilightSeat" type="Marker3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0.015, 0.205)
 
-; On the bottom rail, mirroring the power LED across the opening.
-;
-; This seat is NOT optional the way the others are, and that is worth knowing
-; before writing the next shell: VolumeLabel is permanently visible and is not tied
-; to show_button_row, so an unseated one simply stays where tv.tscn put it — x
-; -0.2, which on a 0.355-wide cabinet is 22 mm clear of the left edge. It rendered
-; as a "100" hanging in the air beside the monitor.
-[node name="VolumeLabelSeat" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, -0.1325, 0.2025)
-
 ; NO PortSeat. _seat_av_row returns on anything that is not a Transform3D, so with
 ; av_inputs = 0 a marker here would name nothing and move nothing. NO ButtonRow
 ; either (show_button_row is off, and RetroTV then set_active(false)s every cap),

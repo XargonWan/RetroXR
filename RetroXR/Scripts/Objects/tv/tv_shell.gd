@@ -19,7 +19,6 @@
 ##   AmbilightSeat  — pose for the Ambilight SpotLight3D.
 ##   ButtonRow      — pose of the FIRST bezel button (volume-down). The rest step
 ##                    along the marker's local +X by `button_pitch`.
-##   VolumeLabelSeat— pose for the VolumeLabel Label3D.
 ##   SpeakerLSeat   — pose for the SpeakerL marker, the point the left channel
 ##   SpeakerRSeat     radiates from, and the same for the right. Name BOTH or
 ##                    neither: a shell that names one gets the computed pair for
@@ -118,7 +117,6 @@ func port_seat() -> Variant:        return _seat("PortSeat")
 func vga_port_seat() -> Variant:    return _seat("VgaPortSeat")
 func ambilight_seat() -> Variant:   return _seat("AmbilightSeat")
 func button_row_seat() -> Variant:  return _seat("ButtonRow")
-func volume_label_seat() -> Variant: return _seat("VolumeLabelSeat")
 func speaker_l_seat() -> Variant:   return _seat("SpeakerLSeat")
 func speaker_r_seat() -> Variant:   return _seat("SpeakerRSeat")
 

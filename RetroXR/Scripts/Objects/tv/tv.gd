@@ -109,7 +109,6 @@ var _av_ports: Array = []
 @onready var _ch_up_btn: VRButton = $ChannelUpButton
 @onready var _stereo_btn: VRButton = $StereoButton
 @onready var _aspect_btn: VRButton = $AspectButton
-@onready var _volume_label: Label3D = $VolumeLabel
 @onready var _speaker_l: Marker3D = get_node_or_null("SpeakerL")
 @onready var _speaker_r: Marker3D = get_node_or_null("SpeakerR")
 @onready var _osd_label: Label3D = $ScreenMesh/OSDLabel
@@ -326,7 +325,6 @@ func _ready() -> void:
 	# this the picture-shape key on the bezel is an unlabelled button until the
 	# first press.
 	_update_aspect_button()
-	_update_volume_label()
 
 	# Keep the chosen display size across pickups: xr-tools' grab driver is a
 	# RemoteTransform3D that copies scale (forcing us back to 1x while held), so
@@ -397,7 +395,6 @@ func _load_shell() -> void:
 	_seat_av_row(_shell.port_seat())
 	_seat_vga_port(_shell.vga_port_seat())
 	_seat_node(_ambilight, _shell.ambilight_seat())
-	_seat_node(_volume_label, _shell.volume_label_seat())
 
 	# Both or neither: one seated speaker and one still on the stock tube's edge
 	# would be a lopsided stereo image nobody authored. _ready falls back to the
@@ -2394,14 +2391,9 @@ func _clear_mute_silently() -> void:
 		hide_osd()
 
 
-func _update_volume_label() -> void:
-	_volume_label.text = "%d" % roundi(_volume * 100.0)
-
-
 func _on_volume_down() -> void:
 	_clear_mute_silently()
 	_volume = maxf(0.0, _volume - 0.1)
-	_update_volume_label()
 	if _tv_enabled:
 		show_volume_osd()
 	if _tv_enabled:
@@ -2412,7 +2404,6 @@ func _on_volume_down() -> void:
 func _on_volume_up() -> void:
 	_clear_mute_silently()
 	_volume = minf(1.0, _volume + 0.1)
-	_update_volume_label()
 	if _tv_enabled:
 		show_volume_osd()
 	if _tv_enabled:
