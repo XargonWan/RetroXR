@@ -99,11 +99,31 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	_follow()
 	_since_scan += delta
 	if _since_scan < RESCAN_SECONDS:
 		return
 	_since_scan = 0.0
 	_scan()
+
+
+## Re-read each overlay's shape-owner transform.
+##
+## Being parented to the body covers a shape that moves because the BODY moved.
+## A shape that moves within its body does not: the NES's bay flap is a box on
+## the console's own two bodies, re-posed as the flap swings, and read once it
+## would draw shut over an open bay. Assigned only on a change, so the room's
+## static volumes cost a comparison and no transform propagation.
+func _follow() -> void:
+	for overlay in _overlays:
+		if not is_instance_valid(overlay):
+			continue
+		var body := overlay.get_parent() as CollisionObject3D
+		if body == null:
+			continue
+		var t: Transform3D = body.shape_owner_get_transform(overlay.get_meta(&"owner_id", 0))
+		if overlay.transform != t:
+			overlay.transform = t
 
 
 func _scan() -> void:
@@ -165,6 +185,7 @@ func _decorate(body: CollisionObject3D, owner_id: int, shape_id: int, layer: int
 	overlay.mesh = debug_mesh
 	overlay.material_override = _material_for(layer)
 	overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	overlay.set_meta(&"owner_id", owner_id)
 	overlay.transform = body.shape_owner_get_transform(owner_id)
 	# The overlay rides the body it describes, so a swinging flap or a carried
 	# console takes its boxes with it for free.

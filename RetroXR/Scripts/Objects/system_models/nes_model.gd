@@ -184,6 +184,7 @@ func _set_lid(amount: float) -> void:
 	var r := Basis(Vector3.RIGHT, deg_to_rad(LID_OPEN_DEG) * amount)
 	var about := Transform3D(r, _lid_pivot - r * _lid_pivot)
 	_lid_mesh.transform = about * _lid_rest
+	_sync_flap_plug()
 
 
 func _tween_lid(to: float) -> void:
@@ -682,16 +683,142 @@ func on_power_off() -> void:
 	_set_power_light(false)
 
 
-## Rest the console ON the surface it is placed on. Without this it keeps
-## system.tscn's generic box, centred on the model origin, so half hangs below the
-## shell and every table contact holds the console in the air. Sized to the deck
-## (0.256 x 0.093 x 0.206) measured off this asset.
+# --- collision ------------------------------------------------------------------
+
+## Deck envelope, measured off this asset (0.256 x 0.093 x 0.204) and rounded out.
+## Without it the console keeps system.tscn's generic box, centred on the model
+## origin, so half hangs below the shell and every table contact holds it in the air.
+const DECK_BOX := Vector3(0.26, 0.094, 0.208)
+const DECK_POS := Vector3(0.0, 0.047, 0.0)
+## Slack around the bay mouth, and the extra the flap carries so it still seals
+## the mouth from inside.
+const MOUTH_MARGIN := 0.001
+const PLUG_MARGIN := 0.003
+## Bodies the deck is built on: the console's own, and its pointer body.
+const COLLISION_PATHS := ["CollisionShape3D", "PointerArea/CollisionShape3D"]
+
+# The flap's box, one shape on each of those bodies, re-posed by _set_lid.
+var _flap_shapes: Array[CollisionShape3D] = []
+var _flap_plug_centre: Vector3 = Vector3.ZERO   # in the flap mesh's own space
+var _glb_to_host: Transform3D = Transform3D.IDENTITY
+
+
+## Rest the console on the surface it is placed on, and leave the cartridge bay
+## open to the front.
+##
+## Four boxes around a fifth that is left empty. A seated cart lies entirely
+## inside the deck envelope — front edge 21 mm behind the deck face, top face
+## 10 mm below it — so one box for the whole deck puts shell in front of the cart
+## from every angle, and no depth threshold tells the deck top (11 mm of box) from
+## the bay mouth (26 mm), because the legitimate path is the deeper one. Carved,
+## there is nothing in front of the cart to ask the question about.
+##
+## The mouth is shut by the flap's own box, which _set_lid carries with the flap.
 func configure_collision(host: Node3D) -> void:
-	var box := Vector3(0.26, 0.094, 0.208)
-	var pos := Vector3(0.0, 0.047, 0.0)
-	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
+	var env := AABB(DECK_POS - DECK_BOX * 0.5, DECK_BOX)
+	var mouth := _bay_mouth(host, env)
+	var open_bay := mouth.size.x > 0.0 and mouth.size.y > 0.0 and mouth.size.z > 0.0
+	for path in COLLISION_PATHS:
 		var col := host.get_node_or_null(path) as CollisionShape3D
-		if col != null and col.shape is BoxShape3D:
-			col.shape = col.shape.duplicate()
-			(col.shape as BoxShape3D).size = box
-			col.position = pos
+		if col == null or not (col.shape is BoxShape3D):
+			continue
+		if open_bay:
+			_carve_bay(col, env, mouth)
+		else:
+			_box(col, env)
+	if open_bay:
+		_build_flap_plug(host)
+
+
+## The front opening, in the host's frame: the flap's own footprint carried out
+## to the deck's top and front faces.
+func _bay_mouth(host: Node3D, env: AABB) -> AABB:
+	if _lid_mesh == null:
+		return AABB()
+	var fp := _lid_mesh.get_parent() as Node3D
+	if fp == null:
+		return AABB()
+	_glb_to_host = host.global_transform.affine_inverse() * fp.global_transform
+	var m: AABB = (_glb_to_host * _lid_rest) * _lid_mesh.get_aabb()
+	m = m.grow(MOUTH_MARGIN)
+	var hi := Vector3(m.end.x, env.end.y, env.end.z)
+	return AABB(m.position, hi - m.position).intersection(env)
+
+
+## Reuse `col` for the slab under the mouth and give its body three siblings for
+## the volume behind it and to either side.
+func _carve_bay(col: CollisionShape3D, env: AABB, mouth: AABB) -> void:
+	var up_y := mouth.position.y
+	var up_h := env.end.y - up_y
+	var front_z := mouth.position.z
+	var front_d := env.end.z - front_z
+	_box(col, AABB(env.position, Vector3(env.size.x, up_y - env.position.y, env.size.z)))
+	var walls := [
+		["ShellRear", AABB(Vector3(env.position.x, up_y, env.position.z),
+			Vector3(env.size.x, up_h, front_z - env.position.z))],
+		["ShellLeft", AABB(Vector3(env.position.x, up_y, front_z),
+			Vector3(mouth.position.x - env.position.x, up_h, front_d))],
+		["ShellRight", AABB(Vector3(mouth.end.x, up_y, front_z),
+			Vector3(env.end.x - mouth.end.x, up_h, front_d))],
+	]
+	var parent := col.get_parent()
+	for wall in walls:
+		var part_name: String = wall[0]
+		var a: AABB = wall[1]
+		if a.size.x <= 0.0 or a.size.y <= 0.0 or a.size.z <= 0.0:
+			continue
+		var extra := parent.get_node_or_null(NodePath(part_name)) as CollisionShape3D
+		if extra == null:
+			extra = CollisionShape3D.new()
+			extra.name = part_name
+			parent.add_child(extra)
+		_box(extra, a)
+
+
+## The flap's box, one shape on each of the console's own bodies rather than a
+## body of its own parented to the flap mesh. XRTools mutes a held object through
+## its body's collision_layer and collision_mask, which reaches every shape on
+## that body and nothing on a separate one, so a flap body would keep its Pickable
+## layer and sweep a solid box through the room whenever the console was carried.
+func _build_flap_plug(host: Node3D) -> void:
+	if _lid_mesh == null:
+		return
+	var a := _lid_mesh.get_aabb().grow(PLUG_MARGIN)
+	_flap_plug_centre = a.get_center()
+	_flap_shapes.clear()
+	for path in COLLISION_PATHS:
+		var col := host.get_node_or_null(path) as CollisionShape3D
+		if col == null:
+			continue
+		var parent := col.get_parent()
+		var plug := parent.get_node_or_null("BayFlap") as CollisionShape3D
+		if plug == null:
+			plug = CollisionShape3D.new()
+			plug.name = "BayFlap"
+			parent.add_child(plug)
+		var shape := BoxShape3D.new()
+		shape.size = a.size
+		plug.shape = shape
+		_flap_shapes.append(plug)
+	_sync_flap_plug()
+
+
+## Carry the flap's box with the flap. Both bodies it lives on sit at the host's
+## own origin, so the flap mesh's pose in host space IS the shape's transform.
+func _sync_flap_plug() -> void:
+	if _lid_mesh == null or _flap_shapes.is_empty():
+		return
+	var t: Transform3D = _glb_to_host * _lid_mesh.transform \
+		* Transform3D(Basis.IDENTITY, _flap_plug_centre)
+	for cs in _flap_shapes:
+		if is_instance_valid(cs):
+			cs.transform = t
+
+
+## A fresh BoxShape3D spanning `a`. Never the scene's own shape resource: one
+## BoxShape3D sub-resource is shared by every cabinet in the room.
+func _box(col: CollisionShape3D, a: AABB) -> void:
+	var shape := BoxShape3D.new()
+	shape.size = a.size
+	col.shape = shape
+	col.position = a.get_center()
