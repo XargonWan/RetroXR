@@ -694,12 +694,20 @@ const DECK_POS := Vector3(0.0, 0.047, 0.0)
 ## the mouth from inside.
 const MOUTH_MARGIN := 0.001
 const PLUG_MARGIN := 0.003
+## The flap is an L: a top plate 2.1 mm thick running the bay's full 42 mm depth,
+## and a front plate 5.2 mm thick standing its full 34 mm height, with the inside
+## corner empty. Padded to something a solver can stop against. One box round the
+## pair would fill that corner, which is bay interior — harmless shut, and a
+## 48 mm-deep slab standing over the machine once the flap is up.
+const FLAP_TOP_PLATE := 0.008
+const FLAP_FRONT_PLATE := 0.010
 ## Bodies the deck is built on: the console's own, and its pointer body.
 const COLLISION_PATHS := ["CollisionShape3D", "PointerArea/CollisionShape3D"]
 
-# The flap's box, one shape on each of those bodies, re-posed by _set_lid.
+# The flap's plates, on each of those bodies, re-posed by _set_lid. Centres are
+# in the flap mesh's own space and run parallel to the shapes.
 var _flap_shapes: Array[CollisionShape3D] = []
-var _flap_plug_centre: Vector3 = Vector3.ZERO   # in the flap mesh's own space
+var _flap_centres: Array[Vector3] = []
 var _glb_to_host: Transform3D = Transform3D.IDENTITY
 
 
@@ -783,36 +791,51 @@ func _carve_bay(col: CollisionShape3D, env: AABB, mouth: AABB) -> void:
 func _build_flap_plug(host: Node3D) -> void:
 	if _lid_mesh == null:
 		return
-	var a := _lid_mesh.get_aabb().grow(PLUG_MARGIN)
-	_flap_plug_centre = a.get_center()
+	var a := _lid_mesh.get_aabb()
+	var m := PLUG_MARGIN
+	# Each plate keeps the flap's own outer face and takes its thickness inward,
+	# so the pair reads as the door rather than as a block the size of the door's
+	# travel. They meet in the corner, which is solid on the real shell.
+	var plates := {
+		"BayFlapTop": AABB(
+			Vector3(a.position.x - m, a.end.y - FLAP_TOP_PLATE, a.position.z - m),
+			Vector3(a.size.x + m * 2.0, FLAP_TOP_PLATE + m, a.size.z + m * 2.0)),
+		"BayFlapFront": AABB(
+			Vector3(a.position.x - m, a.position.y - m, a.end.z - FLAP_FRONT_PLATE),
+			Vector3(a.size.x + m * 2.0, a.size.y + m * 2.0, FLAP_FRONT_PLATE + m)),
+	}
 	_flap_shapes.clear()
+	_flap_centres.clear()
 	for path in COLLISION_PATHS:
 		var col := host.get_node_or_null(path) as CollisionShape3D
 		if col == null:
 			continue
 		var parent := col.get_parent()
-		var plug := parent.get_node_or_null("BayFlap") as CollisionShape3D
-		if plug == null:
-			plug = CollisionShape3D.new()
-			plug.name = "BayFlap"
-			parent.add_child(plug)
-		var shape := BoxShape3D.new()
-		shape.size = a.size
-		plug.shape = shape
-		_flap_shapes.append(plug)
+		for plate_name in plates:
+			var box: AABB = plates[plate_name]
+			var plug := parent.get_node_or_null(NodePath(plate_name)) as CollisionShape3D
+			if plug == null:
+				plug = CollisionShape3D.new()
+				plug.name = plate_name
+				parent.add_child(plug)
+			var shape := BoxShape3D.new()
+			shape.size = box.size
+			plug.shape = shape
+			_flap_shapes.append(plug)
+			_flap_centres.append(box.get_center())
 	_sync_flap_plug()
 
 
-## Carry the flap's box with the flap. Both bodies it lives on sit at the host's
-## own origin, so the flap mesh's pose in host space IS the shape's transform.
+## Carry the flap's plates with the flap. Both bodies they live on sit at the
+## host's own origin, so the flap mesh's pose in host space is their transform.
 func _sync_flap_plug() -> void:
 	if _lid_mesh == null or _flap_shapes.is_empty():
 		return
-	var t: Transform3D = _glb_to_host * _lid_mesh.transform \
-		* Transform3D(Basis.IDENTITY, _flap_plug_centre)
-	for cs in _flap_shapes:
+	var pose: Transform3D = _glb_to_host * _lid_mesh.transform
+	for i in range(_flap_shapes.size()):
+		var cs := _flap_shapes[i]
 		if is_instance_valid(cs):
-			cs.transform = t
+			cs.transform = pose * Transform3D(Basis.IDENTITY, _flap_centres[i])
 
 
 ## A fresh BoxShape3D spanning `a`. Never the scene's own shape resource: one
