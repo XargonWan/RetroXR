@@ -211,7 +211,7 @@ mesh = SubResource("BoxMesh_6vy4r")
 surface_material_override/0 = SubResource("StandardMaterial3D_tdojy")
 
 [node name="UMDSeat" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0134, -0.0112)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.012, -0.0112)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="UMDSeat"]
@@ -290,7 +290,7 @@ mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
 [node name="UMDDoorPivot" type="Node3D" parent="."]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, -0.0122, 0.0208)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, -0.0108, 0.0208)
 
 [node name="UMDDoor" type="MeshInstance3D" parent="UMDDoorPivot"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0024, 0.032)
