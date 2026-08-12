@@ -350,8 +350,14 @@ func _set_power_led(on: bool) -> void:
 ## of up through it; the hinge's grab box only covers the free (swinging)
 ## half of the door, away from the pivot. See Tools/bake_psp.gd in history
 ## for how it was built, if it ever needs rebuilding from a fresh GLB.
+## The pivot must sit on the edge OPPOSITE the latch, and the latch is on the back
+## edge (see _configure_open_slide) — a latch holds a door's free edge, it does not
+## share a line with the hinge. Both psp.tscn and psp_primitive.tscn therefore
+## hinge at the door's FRONT edge with a 180°-about-Y yaw, which is what makes the
+## spring's positive max_deg swing the door DOWN and away from the shell instead of
+## up through it. The stand-in used to hinge at the back edge, alongside the latch,
+## and opened the wrong way.
 const _UMD_OPEN_DEG := 40.0
-var _umd_door: MeshInstance3D = null
 var _umd_hinge: VRSpringLatchedHinge = null
 var _umd_door_pivot: Node3D = null
 
@@ -361,7 +367,6 @@ func _configure_umd_door() -> void:
 	if pivot == null:
 		return
 	_umd_door_pivot = pivot
-	_umd_door = pivot.get_node_or_null("PSP UMD Deckel22") as MeshInstance3D
 	_umd_hinge = pivot.get_node_or_null("UMDDoorHinge") as VRSpringLatchedHinge
 	if _umd_hinge != null:
 		_umd_hinge.max_deg = _UMD_OPEN_DEG
