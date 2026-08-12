@@ -6,7 +6,7 @@ class_name RetroController
 extends XRToolsPickable
 
 
-const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/cables/controller_cable.tscn")
 const RETRO_DEVICE_JOYPAD := 1
 
 const DPAD_THRESHOLD      := 0.35

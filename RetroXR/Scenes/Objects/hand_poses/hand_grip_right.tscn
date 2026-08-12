@@ -1,6 +1,6 @@
 [gd_scene format=4]
 
-[ext_resource type="Material" path="res://Scenes/Objects/held_hand_material.tres" id="1_mcdiy"]
+[ext_resource type="Material" path="res://Scenes/Objects/hand_poses/held_hand_material.tres" id="1_mcdiy"]
 [ext_resource type="Material" path="res://addons/godot-xr-tools/hands/materials/caucasian_hand.tres" id="2_87cx3"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hmdlo"]

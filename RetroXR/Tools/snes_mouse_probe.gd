@@ -16,8 +16,8 @@ extends Node3D
 ## code runs, not that it is connected to anything.
 
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
-const SNES_MOUSE_SCENE := preload("res://Scenes/Objects/snes_mouse.tscn")
-const RETRO_MOUSE_SCENE := preload("res://Scenes/Objects/retro_mouse.tscn")
+const SNES_MOUSE_SCENE := preload("res://Scenes/Objects/peripherals/snes_mouse.tscn")
+const RETRO_MOUSE_SCENE := preload("res://Scenes/Objects/peripherals/retro_mouse.tscn")
 
 const OUT_DIR := "res://probe_out/snes_mouse"
 const FPS := 24

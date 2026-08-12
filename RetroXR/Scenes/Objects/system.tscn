@@ -6,7 +6,7 @@
 [ext_resource type="Script" uid="uid://dgp6irihw103g" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="4_snaphis"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="5_pickhigh"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/core_options_panel.tscn" id="6_coreopts"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rca_plug_yellow.res" id="7_rcaplug"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/rca_plug_yellow.res" id="7_rcaplug"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_system"]
 friction = 0.8

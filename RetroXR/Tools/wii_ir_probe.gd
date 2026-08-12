@@ -122,7 +122,7 @@ class Driver extends Node:
 		var link: WiiLink = (_wii as RetroSystem).get_wii_link()
 		_log("wii_link=%s  disc=%s" % [link != null, (_wii as RetroSystem).get_snapped_cartridge()])
 
-		_bar = load("res://Scenes/Objects/sensor_bar.tscn").instantiate()
+		_bar = load("res://Scenes/Objects/system_models/wii/sensor_bar.tscn").instantiate()
 		get_tree().current_scene.add_child(_bar)
 		_bar.add_to_group("spawned")
 		await get_tree().process_frame
@@ -152,7 +152,7 @@ class Driver extends Node:
 				if OS.get_name() == "Android" \
 				else OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/roms/wii"
 			var rom := roms + "/Wii Sports (USA) (Rev 1).rvz"
-			var disc := load("res://Scenes/Objects/disc.tscn").instantiate() as RetroCartridge
+			var disc := load("res://Scenes/Objects/media/disc.tscn").instantiate() as RetroCartridge
 			disc.rom_path = rom
 			disc.game_label = "Wii Sports"
 			disc.systemid = "wii"

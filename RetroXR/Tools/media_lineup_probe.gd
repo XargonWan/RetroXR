@@ -7,9 +7,9 @@ extends Node3D
 ##   godot --path RetroXR --resolution 1600x1000 --position 20,20 res://Tools/media_lineup_probe.tscn
 ## PNG lands in res://probe_out/media_lineup.png (gitignored).
 
-const CART_SCENE := preload("res://Scenes/Objects/cartridge.tscn")
-const DISC_SCENE := preload("res://Scenes/Objects/disc.tscn")
-const UMD_SCENE  := preload("res://Scenes/Objects/umd_disc.tscn")
+const CART_SCENE := preload("res://Scenes/Objects/media/cartridge.tscn")
+const DISC_SCENE := preload("res://Scenes/Objects/media/disc.tscn")
+const UMD_SCENE  := preload("res://Scenes/Objects/media/umd_disc.tscn")
 
 const COLS := 6
 const PITCH := Vector3(0.165, 0.0, 0.175)

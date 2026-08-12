@@ -554,7 +554,7 @@ func _build_sensor_bar_port() -> void:
 	# rca_port.tscn is built around, applied to a socket grown in code.
 	var jack := MeshInstance3D.new()
 	jack.name = "WiiSensorJack"
-	jack.mesh = load("res://Scenes/Objects/wii_sensor_jack.res")
+	jack.mesh = load("res://Scenes/Objects/system_models/wii/wii_sensor_jack.res")
 	jack.position = Vector3(0.0, 0.0, -SENSOR_PROUD)
 	_sensor_bar_port.add_child(jack)
 

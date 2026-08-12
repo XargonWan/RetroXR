@@ -4,11 +4,11 @@
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="4_pickhigh"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="5_vrbutton"]
 [ext_resource type="PackedScene" path="res://Scenes/UI/tv_options_panel.tscn" id="6_tvoptspanel"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_screen_curved.res" id="7_screencurved"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/tv_models/tv_screen_curved.res" id="7_screencurved"]
 [ext_resource type="Shader" uid="uid://dp0ojf0bxhg8y" path="res://Shaders/phosphor_decay.gdshader" id="8_phosphor"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/rca_port.tscn" id="10_rcaport"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="11_vgaport"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/coax_port.tscn" id="12_coaxport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/rca_port.tscn" id="10_rcaport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/vga_port.tscn" id="11_vgaport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/coax_port.tscn" id="12_coaxport"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_tv"]
 friction = 0.8

@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
 [ext_resource type="Shader" uid="uid://l6elq8tb54hu" path="res://Shaders/cable.gdshader" id="5_1lb8g"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/wii_sensor_plug.res" id="5_sensorplug"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/system_models/wii/wii_sensor_plug.res" id="5_sensorplug"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
 friction = 0.8

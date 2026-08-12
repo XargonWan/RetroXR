@@ -4,7 +4,7 @@ extends Node
 ## the trigger latch, the drag, and the release. Nothing here calls the fold
 ## solver directly.
 
-const BOOK := preload("res://Scenes/Objects/pdf_book.tscn")
+const BOOK := preload("res://Scenes/Objects/media/pdf_book.tscn")
 const PDF := "nintendo_power_issue1.pdf"
 
 var _book: Node3D

@@ -1,4 +1,4 @@
-## Bakes the RetroTV's curved tube face to Scenes/Objects/tv_screen_curved.res.
+## Bakes the RetroTV's curved tube face to Scenes/Objects/tv_models/tv_screen_curved.res.
 ##
 ## Run once, out of band — the sagitta is a physical property of the tube, not
 ## something to re-solve every load:
@@ -17,7 +17,7 @@
 ## shaders and would still leave the tube flat whenever the TV is off.
 extends SceneTree
 
-const OUT_PATH := "res://Scenes/Objects/tv_screen_curved.res"
+const OUT_PATH := "res://Scenes/Objects/tv_models/tv_screen_curved.res"
 
 # Matches the QuadMesh this replaces.
 const SIZE := Vector2(0.35, 0.25)

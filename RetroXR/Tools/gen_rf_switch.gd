@@ -1,5 +1,5 @@
 ## Bakes the RXR-003 RF Switch's shell to
-## Scenes/Objects/rf_switch_body.res.
+## Scenes/Objects/appliances/rf_switch_body.res.
 ##
 ##   godot --headless --path RetroXR --script res://Tools/gen_rf_switch.gd
 ##
@@ -37,7 +37,7 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_PATH := "res://Scenes/Objects/rf_switch_body.res"
+const OUT_PATH := "res://Scenes/Objects/appliances/rf_switch_body.res"
 
 const HX := 0.045               # 90 mm wide
 const HY := 0.010               # 20 mm tall

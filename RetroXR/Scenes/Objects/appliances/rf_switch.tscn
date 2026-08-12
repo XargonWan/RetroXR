@@ -2,14 +2,14 @@
 
 [ext_resource type="Script" path="res://Scripts/Objects/cables/rf_switch.gd" id="1_switchscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/cables/rf_switch_body.gd" id="2_bodyscript"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rf_switch_body.res" id="3_shell"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/appliances/rf_switch_body.res" id="3_shell"]
 [ext_resource type="Script" path="res://Scripts/Objects/cables/rca_plug.gd" id="4_rcaplugscript"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/rca_plug_yellow.res" id="5_rcaplug"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/rca_plug_yellow.res" id="5_rcaplug"]
 [ext_resource type="Script" path="res://Scripts/Objects/cables/coax_plug.gd" id="6_coaxplugscript"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/coax_plug.res" id="7_coaxplug"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/coax_plug.res" id="7_coaxplug"]
 [ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="8_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="9_snapgp"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/coax_port.tscn" id="10_coaxport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/coax_port.tscn" id="10_coaxport"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.09, 0.02, 0.05)

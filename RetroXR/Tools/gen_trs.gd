@@ -67,8 +67,8 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_PLUG := "res://Scenes/Objects/trs_plug.res"
-const OUT_JACK := "res://Scenes/Objects/trs_jack.res"
+const OUT_PLUG := "res://Scenes/Objects/cables/trs_plug.res"
+const OUT_JACK := "res://Scenes/Objects/cables/trs_jack.res"
 
 ## 24, not the 16 the other connectors use. Every part of this pair is a solid of
 ## revolution and the jack is looked at square-on, so its silhouette IS a circle —

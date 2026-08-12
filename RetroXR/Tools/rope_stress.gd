@@ -14,7 +14,7 @@
 ##   sleep    whether the rope parked by the end of the run
 extends Node3D
 
-const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
+const CABLE_SCENE := preload("res://Scenes/Objects/cables/cable.tscn")
 const TICKS := 420
 const JITTER_WINDOW := 60
 

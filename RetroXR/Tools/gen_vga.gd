@@ -74,8 +74,8 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_PLUG := "res://Scenes/Objects/vga_plug.res"
-const OUT_JACK := "res://Scenes/Objects/vga_jack.res"
+const OUT_PLUG := "res://Scenes/Objects/cables/vga_plug.res"
+const OUT_JACK := "res://Scenes/Objects/cables/vga_jack.res"
 
 # --- measured off the drawing ------------------------------------------------
 const FLANGE_W := 0.0308

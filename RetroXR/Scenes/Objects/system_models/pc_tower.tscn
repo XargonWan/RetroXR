@@ -1,10 +1,10 @@
 [gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/vga_port.tscn" id="2_vgaport"]
-[ext_resource type="PackedScene" path="res://Scenes/Objects/trs_port.tscn" id="3_trsport"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/ps2_jack_keyboard.res" id="4_ps2jackkb"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/ps2_jack_mouse.res" id="5_ps2jackms"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/vga_port.tscn" id="2_vgaport"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/trs_port.tscn" id="3_trsport"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/ps2_jack_keyboard.res" id="4_ps2jackkb"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/ps2_jack_mouse.res" id="5_ps2jackms"]
 
 ; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
 ; footprint. Origin at the base centre, so the system sits on the floor at y 0.

@@ -115,25 +115,25 @@ func _init() -> void:
 	# are what make it 45 degrees.
 	_save(_solid_loft([body_cut, body, body],
 		[-HALF_H, -HALF_H + REAR_CHAMFER, HALF_H]),
-		"res://Scenes/Objects/wii_body.res")
-	_save(_vent(), "res://Scenes/Objects/wii_vent.res", false)
+		"res://Scenes/Objects/system_models/wii/wii_body.res")
+	_save(_vent(), "res://Scenes/Objects/system_models/wii/wii_vent.res", false)
 
 	# --- the keys ------------------------------------------------------------
 	for row in KEYS:
 		_save(_solid(_bent(row[1], row[2], KEY_T), row[3] * 0.5, true),
-			"res://Scenes/Objects/wii_key_%s.res" % row[0])
+			"res://Scenes/Objects/system_models/wii/wii_key_%s.res" % row[0])
 		_save(_solid(_bent(row[1] + SEAM_GROW, row[2] + SEAM_GROW, SEAM_T),
 			row[3] * 0.5 + SEAM_GROW, true),
-			"res://Scenes/Objects/wii_seam_%s.res" % row[0])
+			"res://Scenes/Objects/system_models/wii/wii_seam_%s.res" % row[0])
 
 	# --- the SD door ---------------------------------------------------------
 	_save(_solid(_bent(DOOR_FRONT, DOOR_CHAM, DOOR_T), DOOR_HALF_H, true),
-		"res://Scenes/Objects/wii_door.res")
+		"res://Scenes/Objects/system_models/wii/wii_door.res")
 	_save(_solid(_bent(DOOR_FRONT, DOOR_CHAM, DOOR_BAY_T), DOOR_HALF_H, true),
-		"res://Scenes/Objects/wii_door_bay.res")
+		"res://Scenes/Objects/system_models/wii/wii_door_bay.res")
 	_save(_solid(_bent(DOOR_FRONT + SEAM_GROW, DOOR_CHAM + SEAM_GROW, DOOR_SEAM_T),
 		DOOR_HALF_H + SEAM_GROW, true),
-		"res://Scenes/Objects/wii_door_seam.res")
+		"res://Scenes/Objects/system_models/wii/wii_door_seam.res")
 	quit()
 
 

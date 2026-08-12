@@ -38,7 +38,7 @@
 ## as-is — including a stashed one, for an A/B.
 extends Node3D
 
-const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
+const CABLE_SCENE := preload("res://Scenes/Objects/cables/cable.tscn")
 
 ## Matches a hallway station: the cable spans system to TV across a table top.
 const ANCHOR_SPAN := 0.45

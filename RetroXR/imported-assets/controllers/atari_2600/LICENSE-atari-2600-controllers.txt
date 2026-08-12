@@ -49,7 +49,7 @@ Adapted for RetroXR as atari_2600_plug_cx40.glb and atari_2600_plug_paddle.glb
 The two plugs are deliberately kept separate: the paddle plug is 3 mm longer and
 carries a small moulded text panel the joystick plug does not have.
 
-Scenes/Objects/atari_2600_plug_{cx40,paddle}.res are ArrayMesh resources
+Scenes/Objects/controllers/atari/atari_2600_plug_{cx40,paddle}.res are ArrayMesh resources
 baked from these GLBs, for ControllerPlug.set_plug_mesh().
 
   * Decimated for standalone VR (2026-08-05), by the same route as the console

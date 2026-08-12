@@ -11,7 +11,7 @@ class_name RetroMultitap
 extends XRToolsPickable
 
 
-const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/cables/controller_cable.tscn")
 const SNAP_ZONE_SCENE := preload("res://addons/godot-xr-tools/objects/snap_zone.tscn")
 const RETRO_DEVICE_NONE := 0
 const SUB_PORTS := 4

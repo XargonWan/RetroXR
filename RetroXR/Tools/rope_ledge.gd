@@ -22,8 +22,8 @@
 
 extends Node
 
-const COMPOSITE := preload("res://Scenes/Objects/composite_cable.tscn")
-const PLAIN := preload("res://Scenes/Objects/cable.tscn")
+const COMPOSITE := preload("res://Scenes/Objects/cables/composite_cable.tscn")
+const PLAIN := preload("res://Scenes/Objects/cables/cable.tscn")
 
 const TABLE_TOP := 0.75
 const TICKS := 900

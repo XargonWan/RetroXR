@@ -1,4 +1,4 @@
-## Bakes a to-scale RCA (composite) plug to Scenes/Objects/rca_plug_yellow.res.
+## Bakes a to-scale RCA (composite) plug to Scenes/Objects/cables/rca_plug_yellow.res.
 ##
 ##   godot --headless --path RetroXR --script res://Tools/gen_rca_plug.gd
 ##
@@ -39,7 +39,7 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_PATH := "res://Scenes/Objects/rca_plug_yellow.res"
+const OUT_PATH := "res://Scenes/Objects/cables/rca_plug_yellow.res"
 
 const RING := 16
 

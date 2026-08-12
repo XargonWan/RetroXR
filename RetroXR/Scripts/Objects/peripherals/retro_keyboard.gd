@@ -16,12 +16,12 @@ class_name RetroKeyboard
 extends XRToolsPickable
 
 
-const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/cables/controller_cable.tscn")
 ## PC99 purple, the keyboard half of the colour code. Swapped in over the cable
 ## scene's generic tapered cylinder, which is a 20 mm cone standing in for any
 ## plug at all — fine for the console controllers that share this cable, twice
 ## life size for a mini-DIN.
-const PLUG_MESH := "res://Scenes/Objects/ps2_plug_keyboard.res"
+const PLUG_MESH := "res://Scenes/Objects/cables/ps2_plug_keyboard.res"
 const RETRO_DEVICE_KEYBOARD := 3
 
 # Key grid geometry (board-local metres). X = right, Z = toward the user.

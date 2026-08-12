@@ -1,5 +1,5 @@
 ## Bakes a to-scale F-type coaxial pair — the aerial connector — to
-## Scenes/Objects/coax_plug.res and Scenes/Objects/coax_jack.res.
+## Scenes/Objects/cables/coax_plug.res and Scenes/Objects/cables/coax_jack.res.
 ##
 ##   godot --headless --path RetroXR --script res://Tools/gen_coax.gd
 ##
@@ -44,8 +44,8 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const PLUG_PATH := "res://Scenes/Objects/coax_plug.res"
-const JACK_PATH := "res://Scenes/Objects/coax_jack.res"
+const PLUG_PATH := "res://Scenes/Objects/cables/coax_plug.res"
+const JACK_PATH := "res://Scenes/Objects/cables/coax_jack.res"
 
 const RING := 16
 const HEX_SIDES := 6

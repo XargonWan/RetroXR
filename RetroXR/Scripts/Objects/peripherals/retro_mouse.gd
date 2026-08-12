@@ -12,7 +12,7 @@ class_name RetroMouse
 extends XRToolsPickable
 
 
-const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/controller_cable.tscn")
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/cables/controller_cable.tscn")
 const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/mouse_options_panel.tscn")
 const RETRO_DEVICE_MOUSE := 2
 
@@ -30,7 +30,7 @@ const MOUSE_BTN_MIDDLE := 1 << 6
 ## it at its own connector instead. Authored in ControllerPlug's frame (origin at
 ## the seated position, connector on +Z, cable trailing -Z), which is what lets
 ## set_plug_mesh derive cable_anchor from it.
-@export var plug_mesh_path: String = "res://Scenes/Objects/ps2_plug_mouse.res"
+@export var plug_mesh_path: String = "res://Scenes/Objects/cables/ps2_plug_mouse.res"
 
 ## The systemid this mouse physically belongs to, e.g. "super_nes". A port only
 ## accepts a plug whose systemid matches — the same filter RetroController uses.

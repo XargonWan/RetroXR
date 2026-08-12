@@ -71,8 +71,8 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_PLUG := "res://Scenes/Objects/wii_av_plug.res"
-const OUT_JACK := "res://Scenes/Objects/wii_av_jack.res"
+const OUT_PLUG := "res://Scenes/Objects/system_models/wii/wii_av_plug.res"
+const OUT_JACK := "res://Scenes/Objects/system_models/wii/wii_av_jack.res"
 
 # --- calipered ---------------------------------------------------------------
 const SHROUD_W := 0.027

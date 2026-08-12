@@ -36,7 +36,7 @@
 // multiplies are light-transport operations and belong exactly here.
 
 // ── Geometry ────────────────────────────────────────────────────────────────
-// The tube face is real curved GEOMETRY now (Scenes/Objects/tv_screen_curved.res),
+// The tube face is real curved GEOMETRY now (Scenes/Objects/tv_models/tv_screen_curved.res),
 // so this barrel warp defaults to off. A UV warp is monoscopic — it has no parallax
 // and no binocular depth, so in a headset it reads as a flat sticker. Kept only as
 // an extra stylistic knob.

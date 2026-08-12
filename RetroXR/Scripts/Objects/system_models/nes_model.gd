@@ -25,7 +25,7 @@ class_name RetroSystemModelNES
 extends RetroSystemModel
 
 const _MODEL_PATH := "res://imported-assets/consoles/nes/nes_console.glb"
-const RCA_PORT_SCENE := preload("res://Scenes/Objects/rca_port.tscn")
+const RCA_PORT_SCENE := preload("res://Scenes/Objects/cables/rca_port.tscn")
 const BUTTON_DEPRESS_DEPTH := 0.0022
 # Travel of the CH3/CH4 knob. 3 mm, so that a 6 mm knob stays inside the 9.8 mm
 # recess the shell moulds for it at both detents — see _build_channel_switch.

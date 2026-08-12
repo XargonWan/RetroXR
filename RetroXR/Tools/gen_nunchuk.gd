@@ -97,7 +97,7 @@ func _build_body() -> void:
 		var t := float(r) / float(RINGS)
 		rings.append(_ring(t))
 	var tris := _loft(rings)
-	_save(_smooth(tris), "res://Scenes/Objects/nunchuk_body.res")
+	_save(_smooth(tris), "res://Scenes/Objects/controllers/wii/nunchuk_body.res")
 
 
 ## The moulding seam, which runs the whole length of both flanks where the two shell
@@ -128,7 +128,7 @@ func _build_seam() -> void:
 			prev = [lo, hi]
 	# A ribbon is a sheet, not a solid, so _smooth's orientation check would read its
 	# enclosed volume as meaningless. Emitted double-sided in the material instead.
-	_save_sheet(_smooth_sheet(tris), "res://Scenes/Objects/nunchuk_seam.res")
+	_save_sheet(_smooth_sheet(tris), "res://Scenes/Objects/controllers/wii/nunchuk_seam.res")
 
 
 ## How wide the seam ribbon is, as a half-angle round the ring. About 3 degrees, which
@@ -273,7 +273,7 @@ func _build_gate() -> void:
 	rings.append(_poly(0.0018, 0.0094))       # rim's inner edge
 	rings.append(_poly(-0.0024, 0.0091))      # bore wall dropping away under the cap
 	rings.append(_poly(-0.0028, 0.0000))      # bore floor
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_gate.res")
+	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_gate.res")
 
 
 ## NOTE — there is no separate dark floor to this bore, and that is a retreat rather
@@ -323,7 +323,7 @@ func _build_stick() -> void:
 	rings.append(_disc(0.0126, 0.0044))              # centre, dished a little
 	rings.append(_disc(0.0122, 0.0022))
 	rings.append(_disc(0.0121, 0.0000))
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_stick.res")
+	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_stick.res")
 
 
 ## The ribbed strain relief. Four ribs on a taper, so the cord reads as moulded into
@@ -348,7 +348,7 @@ func _build_boot() -> void:
 		rings.append(_disc(y - 0.0014, base))
 	rings.append(_disc(-0.0164, 0.0026))
 	rings.append(_disc(-0.0170, 0.0000))
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_boot.res")
+	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_boot.res")
 
 
 ## C: a small round key, domed, standing 3 mm off its shelf.
@@ -361,7 +361,7 @@ func _build_c() -> void:
 	rings.append(_disc(0.0029, 0.0042))
 	rings.append(_disc(0.0032, 0.0023))
 	rings.append(_disc(0.0033, 0.0000))
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_c.res")
+	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_c.res")
 
 
 ## Z: the trigger, a rounded oblong 14 x 20 mm standing 4.5 mm off its shelf.
@@ -383,7 +383,7 @@ func _build_z() -> void:
 	rings.append(_oblong(hx * 0.84, hz * 0.90, 0.0043))
 	rings.append(_oblong(hx * 0.55, hz * 0.66, 0.0047))
 	rings.append(_oblong(0.0, 0.0, 0.0048))
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_z.res")
+	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_z.res")
 
 
 ## A rounded-rectangle ring in the XZ plane at height `y`. A superellipse rather than

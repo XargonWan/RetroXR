@@ -98,7 +98,7 @@ func _ready() -> void:
 		_yaw = 160.0
 		_pitch = 22.0
 	else:
-		_part = load("res://Scenes/Objects/cartridge.tscn").instantiate()
+		_part = load("res://Scenes/Objects/media/cartridge.tscn").instantiate()
 		_part.systemid = "atari_2600"
 		_part.rom_path = RomLibrary.rom_dir_for_system("atari_2600").path_join(ROM)
 		_part.game_label = "Air Raid"

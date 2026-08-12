@@ -24,7 +24,7 @@ freeze_mode = 1
 linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_joyscript")
-plug_mesh_path = "res://Scenes/Objects/atari_2600_plug_cx40.res"
+plug_mesh_path = "res://Scenes/Objects/controllers/atari/atari_2600_plug_cx40.res"
 systemid = "atari_2600"
 cable_length = 1.2192
 

@@ -9,8 +9,8 @@
 ## which is the framing that checks the mating face rather than the shape.
 extends Node
 
-const MOTION_PLUS := preload("res://Scenes/Objects/motion_plus.tscn")
-const WIIMOTE := preload("res://Scenes/Objects/wiimote.tscn")
+const MOTION_PLUS := preload("res://Scenes/Objects/controllers/wii/motion_plus.tscn")
+const WIIMOTE := preload("res://Scenes/Objects/controllers/wii/wiimote.tscn")
 
 const OUT_DIR := "res://probe_out"
 const FRAMES := 72

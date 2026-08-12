@@ -22,7 +22,7 @@
 
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/ceiling_fan.glb" id="14_fan"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/tv_stand_corner.glb" id="15_tvstand"]
-[ext_resource type="PackedScene" uid="uid://trashcan_001" path="res://Scenes/Objects/trash_can.tscn" id="16_trash"]
+[ext_resource type="PackedScene" uid="uid://trashcan_001" path="res://Scenes/Objects/appliances/trash_can.tscn" id="16_trash"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/door.glb" id="19_door"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/chair.glb" id="20_chair"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/furniture/nightstand.glb" id="26_nightstand"]

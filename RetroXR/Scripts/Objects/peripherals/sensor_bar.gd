@@ -15,7 +15,7 @@ class_name SensorBar
 extends XRToolsPickable
 
 
-const CABLE_SCENE := preload("res://Scenes/Objects/sensor_bar_cable.tscn")
+const CABLE_SCENE := preload("res://Scenes/Objects/system_models/wii/sensor_bar_cable.tscn")
 
 ## Group the plug joins so the console's SensorBarPort accepts it and nothing
 ## else does. A cabinet controller socket filters on "controller_plug", which

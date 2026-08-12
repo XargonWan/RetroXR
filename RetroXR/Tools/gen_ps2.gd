@@ -48,7 +48,7 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_DIR := "res://Scenes/Objects/"
+const OUT_DIR := "res://Scenes/Objects/cables/"
 
 const SHROUD_OD := 0.0095
 const SHROUD_WALL := 0.0004

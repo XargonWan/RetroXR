@@ -151,7 +151,7 @@ var _last_av_routing: String = ""
 var _av_cord_summary: String = "none"
 
 # Cable scene to instantiate
-const CABLE_SCENE := preload("res://Scenes/Objects/cable.tscn")
+const CABLE_SCENE := preload("res://Scenes/Objects/cables/cable.tscn")
 # Window material for TVs on multi-output hardware (dual-screen handhelds).
 const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
@@ -1268,14 +1268,14 @@ func _build_av_ports() -> void:
 	if _model.av_ports_are_multi_way():
 		# One socket for the lot — the Wii's AV Multi Out. Which cord carries which
 		# signal is WiiAvPort.channel_for's business from here on.
-		var multi: PackedScene = load("res://Scenes/Objects/wii_av_port.tscn")
+		var multi: PackedScene = load("res://Scenes/Objects/system_models/wii/wii_av_port.tscn")
 		if multi != null:
 			var port := multi.instantiate() as RcaPort
 			port.name = "AvMultiOut"
 			add_child(port)
 			built.append(port)
 	else:
-		var scene: PackedScene = load("res://Scenes/Objects/rca_port.tscn")
+		var scene: PackedScene = load("res://Scenes/Objects/cables/rca_port.tscn")
 		if scene == null:
 			return
 		for ch: int in channels:

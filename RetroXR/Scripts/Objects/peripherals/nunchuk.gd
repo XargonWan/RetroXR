@@ -13,7 +13,7 @@ class_name Nunchuk
 extends XRToolsPickable
 
 
-const NUNCHUK_CABLE_SCENE := preload("res://Scenes/Objects/nunchuk_cable.tscn")
+const NUNCHUK_CABLE_SCENE := preload("res://Scenes/Objects/controllers/wii/nunchuk_cable.tscn")
 
 ## What the plug reports so it fits the remote's expansion port and nothing else.
 ## RetroSystem._accepts_plug rejects any plug whose systemid is not the console's,

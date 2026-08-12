@@ -10,8 +10,8 @@ extends Node3D
 
 const SLOT := "probe_nes_restore"
 const SYSTEM_SCENE  := preload("res://Scenes/Objects/system.tscn")
-const NES_PAD_SCENE := preload("res://Scenes/Objects/controllers/nes_controller.tscn")
-const CART_SCENE    := preload("res://Scenes/Objects/cartridge.tscn")
+const NES_PAD_SCENE := preload("res://Scenes/Objects/controllers/nes/nes_controller.tscn")
+const CART_SCENE    := preload("res://Scenes/Objects/media/cartridge.tscn")
 
 var _fail := 0
 

@@ -1,4 +1,4 @@
-## Bakes a to-scale panel-mount RCA (composite) SOCKET to Scenes/Objects/rca_jack.res.
+## Bakes a to-scale panel-mount RCA (composite) SOCKET to Scenes/Objects/cables/rca_jack.res.
 ##
 ##   godot --headless --path RetroXR --script res://Tools/gen_rca_jack.gd
 ##
@@ -39,7 +39,7 @@ extends SceneTree
 
 const PlugMats := preload("res://Tools/plug_materials.gd")
 
-const OUT_PATH := "res://Scenes/Objects/rca_jack.res"
+const OUT_PATH := "res://Scenes/Objects/cables/rca_jack.res"
 
 const RING := 16
 
