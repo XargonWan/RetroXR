@@ -1070,10 +1070,32 @@ func is_stereo_output() -> bool:
 ## Show or hide the screen output (used by TV toggle button).
 ## Multi-output: per-TV blanking is handled by _update_tv_mirrors (it keys off
 ## each TV's own power), so a single TV's toggle must not blank the core here.
+##
+## LATCHED, like set_audio_volume: a machine that is off has no core to point at a
+## mesh, but the set's answer still holds for when it does. Without that a console
+## seated into an unselected input while it is off — every save restore does exactly
+## this, plug first, power second — takes the glass the moment it starts, and paints
+## its picture over whichever input the viewer is actually watching.
 func set_screen_enabled(on: bool) -> void:
-	if not is_powered_on or _channels.size() > 1:
+	if _channels.size() > 1:
+		return
+	_last_screen_enabled = on
+	if not is_powered_on:
 		return
 	_libretro.SetScreenMesh(_screen_target() if on else null)
+
+
+## Whether the set feeding this machine has it on the glass. True by default: a
+## console with no television attached shows its picture wherever it has one.
+var _last_screen_enabled: bool = true
+
+
+## The mesh the core may render into RIGHT NOW: _screen_target(), or nothing while
+## the set it feeds has another input selected. Every StartContent goes through this
+## rather than _screen_target() directly, which answers the different question of
+## whether a display is cabled up at all.
+func _bound_screen_target() -> MeshInstance3D:
+	return _screen_target() if _last_screen_enabled else null
 
 
 ## Which channel this console's own RF switch puts it on, or -1 if it has none.
@@ -1106,6 +1128,11 @@ func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
 	_channel_tvs[ch] = tv
 	if ch == 0:
 		connected_tv = tv
+	# A fresh connection carries no verdict from the set that made it. The one
+	# being joined states its own selection immediately after this returns
+	# (RetroTV._apply_screen_enable), so starting from "shown" cannot strand a
+	# machine dark, while carrying a previous set's "no" over to a new one could.
+	_last_screen_enabled = true
 	if _channels.size() > 1:
 		# Picture arrives via _update_tv_mirrors; a touch channel additionally
 		# turns the TV's glass into the touch screen.
@@ -1135,6 +1162,8 @@ func on_tv_disconnected(plug: CablePlug = null) -> void:
 		_remove_touch_surface(ch)
 		_uninstall_tv_mirror(ch, tv)
 		return
+	# A set that is no longer connected has no say in where the picture goes.
+	_last_screen_enabled = true
 	if is_powered_on:
 		_libretro.SetScreenMesh(_screen_target())
 
@@ -1845,7 +1874,7 @@ func power_on() -> void:
 	# holds the session, nobody is signed in, or the system has no RA console —
 	# all of which just mean this machine runs without achievements.
 	_claim_achievements_session()
-	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
+	_libretro.StartContent(_bound_screen_target(), resolved_dir, resolved_core, rom_path)
 	_bind_audio_player()
 	is_powered_on = true
 	_update_power_button_visual()
@@ -2032,7 +2061,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_apply_forced_core_options(_resolve_dir(), resolved_core)
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
-	_libretro.StartContent(_screen_target(), _resolve_dir(), resolved_core, rom_path)
+	_libretro.StartContent(_bound_screen_target(), _resolve_dir(), resolved_core, rom_path)
 	_bind_audio_player()
 	is_powered_on = true
 	net_remote_powered = false
@@ -2088,7 +2117,7 @@ func reset() -> void:
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.StopContent()
-	_libretro.StartContent(_screen_target(), resolved_dir, resolved_core, rom_path)
+	_libretro.StartContent(_bound_screen_target(), resolved_dir, resolved_core, rom_path)
 	# StopContent destroyed the old voices and StartContent made fresh ones, so
 	# the ids held here are stale. Without this the TV's volume and power would
 	# be writing gain to dead slots while the new voices played at full tilt.

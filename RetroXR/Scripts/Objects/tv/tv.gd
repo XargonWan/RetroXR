@@ -1627,9 +1627,12 @@ func _on_plug_snapped(plug: Node3D, input: int) -> void:
 				system.on_tv_connected(self)
 			# A console plugged in while the set is showing something else must stay
 			# off the glass until SOURCE selects it, or it repaints the screen from
-			# under whatever is playing.
-			if current_source != input and system.has_method("set_screen_enabled"):
-				system.set_screen_enabled(false)
+			# under whatever is playing. Stated through the same pass SOURCE uses,
+			# so the answer is given in BOTH directions: a host told only when it is
+			# unselected has to guess when that stops being true, and one that
+			# remembers the "no" — every host must, since it can arrive while the
+			# machine is off — would never hear it lifted.
+			_apply_screen_enable()
 			# …and it must be silent too until SOURCE picks it, for the same reason.
 			_apply_audio_volume()
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
@@ -1650,10 +1653,10 @@ func on_av_source_found(source: Node3D) -> void:
 	_connected_systems[input] = source
 	source.set_audio_volume(_volume_for(input))
 	_apply_audio_channel_mode()
-	# Same rule as the captive-lead path: a deck cabled up to an input nobody is
-	# watching waits its turn rather than painting over the one they are.
-	if current_source != input and source.has_method("set_screen_enabled"):
-		source.set_screen_enabled(false)
+	# Same rule as the captive-lead path, and stated the same way: a deck cabled up
+	# to an input nobody is watching waits its turn rather than painting over the one
+	# they are, and hears so when its turn comes.
+	_apply_screen_enable()
 
 
 ## Called by that deck when the last cord between the two is pulled.
@@ -1868,10 +1871,28 @@ func set_source(source: int) -> void:
 		return
 	current_source = source
 
-	# Mute every source that is not selected. set_screen_enabled is the contract
-	# every host already implements (RetroSystem, VCRPlayer, DVDPlayer) and the
-	# set already uses it for power -- without it a console keeps writing its
-	# own material onto the screen every frame and the two fight.
+	# Clear the glass BEFORE handing it to the incoming host, never after. A host
+	# installs its material when it is given the mesh and not again — the C++ video
+	# handler binds in SetScreenMesh and on a resolution change, nothing per frame —
+	# so a blank written afterwards is the last word and the new input stays blue
+	# until something re-seats it. That is the whole of "switch to the input the
+	# console is on and the picture disappears, until you pull its plug and put it
+	# back in the same socket".
+	#
+	# Unconditional for the same reason it always was, and that matters between two
+	# composite inputs as much as it does leaving the tuner: the input just left has
+	# its material still installed and still carrying its last frame, so the
+	# no-signal check would go on seeing a picture that nothing is driving any more,
+	# and switching to an empty socket would show the previous input frozen.
+	if current_source != Source.TV:
+		_unwrap_crt()
+		_screen_mesh.set_surface_override_material(0, _blue_material)
+
+	# Mute every source that is not selected, and hand the glass to the one that is.
+	# set_screen_enabled is the contract every host already implements (RetroSystem,
+	# VCRPlayer, DVDPlayer) and the set already uses it for power -- without it a
+	# console keeps writing its own material onto the screen every frame and the two
+	# fight.
 	_apply_screen_enable()
 	# Sound follows the same selection as the picture. Both halves, or the input
 	# you just left goes on being heard.
@@ -1880,19 +1901,8 @@ func set_source(source: int) -> void:
 	if current_source == Source.TV:
 		_ensure_tuner()
 		_tuner.set_active(_tv_enabled)
-	else:
-		if _tuner:
-			_tuner.set_active(false)
-		# Hand the screen back: whichever host now owns it repaints, and until one
-		# does _update_screen_source restores the blue no-signal state.
-		#
-		# Unconditional, and that matters between two composite inputs as much as it
-		# does leaving the tuner: the input just left has its material still
-		# installed and still carrying its last frame, so the no-signal check would
-		# go on seeing a picture that nothing is driving any more, and switching to
-		# an empty socket would show the previous input frozen instead of blue.
-		_unwrap_crt()
-		_screen_mesh.set_surface_override_material(0, _blue_material)
+	elif _tuner:
+		_tuner.set_active(false)
 
 	show_osd_timed(_source_banner(), 2.0)
 	source_changed.emit(current_source)
@@ -2315,15 +2325,28 @@ func _apply_audio_volume() -> void:
 ## The same call covers SOURCE and POWER, which want the identical rule: exactly one
 ## host may paint, and only while the set is on. Without it a deselected console goes
 ## on writing its material onto the screen every frame and the two fight.
+##
+## Two passes, and the order is load-bearing. Releasing the mesh restores the material
+## the releasing host found on it, so a host let go AFTER the selected one has taken
+## the screen writes its own idea of "before" over the new picture. Index order is not
+## selection order — going to Composite 1 from Composite 2 releases second — so a
+## single pass silently depends on which way the viewer happened to be switching.
 func _apply_screen_enable() -> void:
+	var selected := -1
 	for i in _connected_systems.size():
 		var system: Node3D = _connected_systems[i]
-		if system != null and is_instance_valid(system) \
-				and system.has_method("set_screen_enabled"):
-			# RF has a second condition on top of being selected: the set has to be
-			# tuned to the channel the switch is putting the console on.
-			var showing: bool = current_source == i and (i != Source.RF or _rf_tuned())
-			system.set_screen_enabled(_tv_enabled and showing)
+		if system == null or not is_instance_valid(system) \
+				or not system.has_method("set_screen_enabled"):
+			continue
+		# RF has a second condition on top of being selected: the set has to be
+		# tuned to the channel the switch is putting the console on.
+		var showing: bool = current_source == i and (i != Source.RF or _rf_tuned())
+		if _tv_enabled and showing:
+			selected = i
+			continue
+		system.set_screen_enabled(false)
+	if selected >= 0:
+		(_connected_systems[selected] as Node3D).set_screen_enabled(true)
 
 
 ## Which socket input is selected, or -1 while the tuner is showing.
