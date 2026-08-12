@@ -367,15 +367,20 @@ func _update_power_button_visual() -> void:
 		lbl.text = "STOP" if is_powered_on else "START"
 
 
+## What this machine calls itself — the scene's own label, else the systemname
+## its cores agree on, else the bare systemid.
+##
+## The shared database rather than a fresh one: this used to reparse all 314
+## .info files to answer a single lookup, and the answer cannot change at runtime.
+func _display_name() -> String:
+	var name_text := system_label
+	if name_text.is_empty() and not systemid.is_empty():
+		name_text = CoreInfoDatabase.shared().get_systemname_for_id(systemid)
+	return name_text if not name_text.is_empty() else systemid
+
+
 func _update_name_label() -> void:
-	var display_name := system_label
-	if display_name.is_empty() and not systemid.is_empty():
-		var db := CoreInfoDatabase.new()
-		db.load_from_project()
-		display_name = db.get_systemname_for_id(systemid)
-	if display_name.is_empty():
-		display_name = systemid
-	_system_name_label.text = display_name.to_upper()
+	_system_name_label.text = _display_name().to_upper()
 
 
 ## Lay the system name flat on the front face of the model, sized to fit, facing
@@ -1799,6 +1804,14 @@ func power_on() -> void:
 			print("[RetroSystem] Powering on with no display connected (connect a TV to see output)")
 	if rom_path.is_empty():
 		push_error("RetroSystem: Cannot power on - no cartridge inserted")
+		# Orange rather than the red of a fault: nothing is broken, the machine is
+		# just waiting for something the player can put in from where they stand.
+		var empty_toast := _screen_toast()
+		if empty_toast != null:
+			var medium := "disc" if MediaDimensions.is_disc_system(systemid) else "cartridge"
+			empty_toast.show_notice(_display_name(), "No game inserted",
+				"Put a %s in, then switch it on." % medium,
+				AchievementToast.ACCENT_WAITING)
 		return
 
 	# Resolve core_name from CoreDefaults if not baked into the scene
@@ -1860,8 +1873,8 @@ func _resolve_content(core_name: String) -> bool:
 		# log alone, which is all it could show anyway.
 		var toast := _screen_toast()
 		if toast != null:
-			toast.show_notice("Cannot run this game",
-				rom_path.get_file(), str(verdict["message"]))
+			toast.show_notice(rom_path.get_file(),
+				"Cannot run this game", str(verdict["message"]))
 		return false
 
 	var resolved := str(verdict["path"])

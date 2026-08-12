@@ -23,9 +23,12 @@ const PIXELS_PER_METRE := 1400.0
 const PANEL_W := 520.0
 const PANEL_H := 132.0
 
-## Trim colour per kind of card: gold for an unlock, red for a fault.
+## Trim colour per kind of card: gold for an unlock, red for a fault the player
+## cannot fix from where they stand, orange for one they can (nothing in the
+## slot) — the machine is fine, it is just waiting for something.
 const ACCENT_UNLOCK := Color(1.0, 0.78, 0.24)
 const ACCENT_NOTICE := Color(1.0, 0.42, 0.36)
+const ACCENT_WAITING := Color(1.0, 0.60, 0.18)
 
 var _viewport: XRToolsViewport2DIn3D = null
 var _root: Control = null
@@ -139,11 +142,13 @@ func show_unlock(title: String, description: String, points: int, badge: Texture
 ## and the machine that cannot run a game is as often a handheld with no set
 ## connected. Anchoring to the screen covers both: a cabinet's TV, or the
 ## built-in panel of a Lynx being held at the time.
-func show_notice(heading: String, title: String, description: String) -> void:
+func show_notice(heading: String, title: String, description: String,
+				 accent: Color = ACCENT_NOTICE) -> void:
 	_queue.append({
 		"heading": heading,
-		"accent": ACCENT_NOTICE,
+		"accent": accent,
 		"title": title,
+		"title_color": accent,
 		"description": description,
 		"badge": null,
 	})
@@ -240,7 +245,10 @@ func _render(entry: Dictionary) -> void:
 	var title := Label.new()
 	title.text = str(entry.get("title", ""))
 	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(1, 1, 1))
+	# An unlock's title is white against its gold heading; a notice carries the
+	# fault itself on this line, so it takes the accent and the heading below
+	# drops to naming the machine.
+	title.add_theme_color_override("font_color", entry.get("title_color", Color(1, 1, 1)))
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text.add_child(title)
 
