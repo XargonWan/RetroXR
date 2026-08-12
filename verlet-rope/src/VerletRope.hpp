@@ -220,6 +220,7 @@ private:
     godot::Vector3 AnchorPoint(godot::Node3D *node, const godot::Vector3 &offset,
                                const godot::Vector3 &fallback) const;
     bool AnchorsMoved() const;
+    bool AnchorTeleported() const;
     bool PlugIsFixed(godot::Node3D *node) const;
     godot::Vector3 PlugExitDir(godot::Node3D *node) const;
     void AlignAnchorPlug(godot::Node3D *node, const godot::Vector3 &offset,

@@ -26,6 +26,10 @@ constexpr double SLEEP_POINT_EPS_SQ = 0.0015 * 0.0015;
 constexpr int SLEEP_REF_FRAMES = 90;
 constexpr double SLEEP_EXCURSION_EPS_SQ = 0.012 * 0.012;
 constexpr double WAKE_ANCHOR_EPS_SQ = 0.0005 * 0.0005;
+// Further than an anchor can travel in one tick by being carried or thrown: 0.4 m
+// at 60 Hz is 24 m/s, where a hard throw is nearer 10. Every teleport a restore
+// performs is 0.7 m or more, so the gap is wide. See AnchorTeleported.
+constexpr double TELEPORT_EPS_SQ = 0.4 * 0.4;
 } // namespace
 
 // ── Constraint primitives ───────────────────────────────────────────────────
@@ -174,6 +178,37 @@ inline void VerletRope::PinAnchors()
     }
 }
 
+// True when an anchor is further from the particle pinned to it than it could have
+// been carried since the last tick. PinAnchors puts that particle exactly on the
+// anchor every tick, so the gap IS how far the anchor moved, and no extra state is
+// needed to measure it.
+bool VerletRope::AnchorTeleported() const
+{
+    if (m_points.empty())
+        return false;
+    if (m_start_cached != nullptr &&
+        AnchorPoint(m_start_cached, m_start_anchor_offset, m_points[0])
+                .distance_squared_to(m_points[0]) > TELEPORT_EPS_SQ)
+        return true;
+    if (m_end_cached != nullptr)
+    {
+        const int last = TrunkCount() - 1;
+        if (AnchorPoint(m_end_cached, m_end_anchor_offset, m_points[last])
+                .distance_squared_to(m_points[last]) > TELEPORT_EPS_SQ)
+            return true;
+    }
+    for (const FrayChain &fc : m_fray)
+    {
+        if (fc.cached == nullptr)
+            continue;
+        const int last = fc.first + fc.count - 1;
+        if (AnchorPoint(fc.cached, fc.offset, m_points[last]).distance_squared_to(m_points[last]) >
+            TELEPORT_EPS_SQ)
+            return true;
+    }
+    return false;
+}
+
 // Snap point i to just outside a surface and convert its velocity into a
 // friction-damped slide along the surface (no bounce).
 inline void VerletRope::ResolveContact(int i, const Vector3 &contact, const Vector3 &normal)
@@ -304,6 +339,19 @@ void VerletRope::Step(double p_delta)
         return;
 
     CacheAnchors();
+
+    // A socket taking a plug, or a save putting a device back where it was left,
+    // moves an anchor across the room between one tick and the next. Dragging the
+    // cord after it — which is what the solver does with every other kind of
+    // motion — hauls the whole length through the desk and whatever is standing on
+    // it, and the cord can take seconds to arrive. Lay it out afresh between the
+    // anchors' new positions instead, which is where it would have been built had
+    // they been in place at the time.
+    if (AnchorTeleported())
+    {
+        InitPoints();
+        return;
+    }
 
     if (m_asleep)
     {

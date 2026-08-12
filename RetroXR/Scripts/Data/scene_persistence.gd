@@ -388,6 +388,14 @@ func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dict
 		return
 	root.add_child(obj)
 	obj.add_to_group("spawned")
+	# A lead's connectors are stood up here rather than with the rest of its wiring
+	# in pass 2. Where they go needs nothing from the other objects, and the lead
+	# lays its cord out around them at the end of THIS frame — so leaving them until
+	# pass 2 hangs the cord in mid-air over the desk for as many frames as the
+	# restore takes to reach it. Which socket holds which is still pass 2's, because
+	# that genuinely does need every device to exist.
+	if obj is CompositeCable:
+		(obj as CompositeCable).restore_plug_poses(d.get("plugs", []))
 	spawned[id] = obj
 	entries[id] = d
 

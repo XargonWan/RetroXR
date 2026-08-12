@@ -495,7 +495,15 @@ func restore_seating(seats: Array) -> void:
 	call_deferred("_apply_seating", seats)
 
 
-func _apply_seating(seats: Array) -> void:
+## Stand the connectors where they were left, without seating any of them.
+##
+## Split out of _apply_seating and called a whole pass earlier (ScenePersistence
+## spawns objects in pass 1 and wires them in pass 2), because a pose needs nothing
+## from the rest of the room. The rope is built at the end of the frame the lead
+## spawns in, so left until pass 2 this leaves the cord laid out around six plugs
+## still standing at the pose the lead was first spawned from — mid-air over the
+## desk — for however many frames the restore takes to reach them.
+func restore_plug_poses(seats: Array) -> void:
 	for seat: Dictionary in seats:
 		var e: int = int(seat.get("end", 0))
 		var c: int = int(seat.get("cord", 0))
@@ -508,6 +516,16 @@ func _apply_seating(seats: Array) -> void:
 			plug.global_position = Vector3(pos[0], pos[1], pos[2])
 		if rot.size() == 3:
 			plug.global_rotation_degrees = Vector3(rot[0], rot[1], rot[2])
+
+
+func _apply_seating(seats: Array) -> void:
+	restore_plug_poses(seats)
+	for seat: Dictionary in seats:
+		var e: int = int(seat.get("end", 0))
+		var c: int = int(seat.get("cord", 0))
+		if e < 0 or e > 1 or c < 0 or c >= _cords:
+			continue
+		var plug: RcaPlug = _plugs[e][c]
 		var dev: Node3D = seat.get("device")
 		var port_name: String = str(seat.get("port", ""))
 		if dev != null and is_instance_valid(dev) and not port_name.is_empty():
