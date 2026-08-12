@@ -222,6 +222,24 @@ jobs:
           rm -f godot.zip templates.tpz
           godot --version
 
+      # Before anything else touches the project, because a cold .godot/ makes
+      # Godot abort with "Main scene's path could not be resolved from UID.
+      # Make sure the project is imported first" - which is exactly what
+      # --install-android-build-template did until this ran ahead of it.
+      #
+      # Two passes, and only the second is an oracle. On the cold first pass the
+      # editor parses scripts before the image importers have run, so every
+      # preload() of a .png or .svg fails with "has no resource loaders" and
+      # takes each depending script down with it. --import is not a substitute:
+      # it aborts on the same unimported-project check and imports nothing.
+      - name: Import the project
+        run: |
+          set -euo pipefail
+          for pass in 1 2; do
+            godot --headless --path RetroXR --editor --quit > "import$pass.log" 2>&1 || true
+            echo "pass $pass: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import$pass.log") script/shader errors"
+          done
+
       - name: Install the Android build template
         run: |
           set -euo pipefail
@@ -241,21 +259,14 @@ jobs:
                  RetroXR/android/build/build/intermediates/assets
           cat RetroXR/android/.build_version
 
-      - name: Import, and fail on any script or shader error
+      - name: Fail on any script or shader error
         run: |
           set -euo pipefail
-          # Two passes, and only the second is an oracle. .godot/ is gitignored
-          # so CI always starts cold, and on a cold cache the editor parses
-          # scripts before the image importers have run: every preload() of a
-          # .png or .svg fails with "has no resource loaders" and takes each
-          # depending script down with it. --import settles the resources first.
-          godot --headless --path RetroXR --import 2>&1 | tail -3 || true
-          godot --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
           # Known headless noise, none of it caused by the build. Every
           # extension with a linux stanza is built above and must load, so none
           # is excused here - only metaxr-audio, which has no linux library to
           # find at all.
-          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import2.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|metaxr" \
             > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
@@ -363,13 +374,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # First pass settles the imports; see the quest job for why a single
-          # pass on a cold .godot/ reports preload failures that are not real.
-          "$GODOT" --headless --path RetroXR --import 2>&1 | tail -3 || true
-          "$GODOT" --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
+          # Two full editor passes; see the quest job for why the first is not
+          # an oracle on a cold .godot/ and why --import cannot stand in for it.
+          for pass in 1 2; do
+            "$GODOT" --headless --path RetroXR --editor --quit > "import$pass.log" 2>&1 || true
+            echo "pass $pass: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import$pass.log") script/shader errors"
+          done
           # All five extensions have a windows stanza and are built above, so
           # none is excused - a load failure here is a real one.
-          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import2.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
           echo "import clean"
