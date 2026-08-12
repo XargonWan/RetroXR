@@ -9,8 +9,13 @@ name: SideQuest
 # instead of silently updating nothing.
 #
 # SideQuest only accepts a build whose Android versionCode is HIGHER than the
-# one already listed. That lives in the gitignored RetroXR/export_presets.cfg
-# (`version/code`) and has to be bumped by hand alongside `version/name`.
+# one already listed. That lives in RetroXR/export_presets.cfg (`version/code`)
+# and has to be bumped by hand alongside `version/name`.
+#
+# This is the fallback path, for a release published by hand in the web UI.
+# release.yml builds and publishes on a tag and pokes SideQuest itself, using
+# the version-webhook — a release created with GITHUB_TOKEN does not fire the
+# `release: published` event below.
 
 on:
   release:

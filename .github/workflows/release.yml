@@ -1,0 +1,356 @@
+name: Release
+
+# Builds the five GDExtensions, exports the signed Quest APK and the Windows
+# desktop build, publishes them to a GitHub Release, and points the SideQuest
+# listing at the new APK.
+#
+# A tag build does all of it. A manual dispatch defaults to build-and-artifact
+# only, so the whole pipeline can be exercised without cutting a release or
+# touching the live listing.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create a GitHub Release from this build
+        type: boolean
+        default: false
+      notify:
+        description: Send the SideQuest webhook (needs publish)
+        type: boolean
+        default: false
+
+env:
+  GODOT_VERSION: 4.7-stable
+  GODOT_TEMPLATE_DIR: 4.7.stable
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- preflight
+  # Both of these are only otherwise discoverable after a ~30 minute build.
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.v.outputs.name }}
+      version_code: ${{ steps.v.outputs.code }}
+      apk_name: ${{ steps.v.outputs.apk }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Read and check the preset versions
+        id: v
+        run: |
+          set -euo pipefail
+          cfg=RetroXR/export_presets.cfg
+          name=$(sed -n 's/^version\/name="\(.*\)"$/\1/p' "$cfg" | head -1)
+          code=$(sed -n 's/^version\/code=\([0-9]*\)$/\1/p' "$cfg" | head -1)
+          [ -n "$name" ] && [ -n "$code" ] || { echo "::error::could not parse version/name+code from $cfg"; exit 1; }
+          echo "preset: name=$name code=$code"
+
+          # custom_features pairs with a run/main_scene.<tag> override and would
+          # reroute the boot scene for every APK exported from the tree.
+          if grep -q '^custom_features="..*"' "$cfg"; then
+            echo "::error::custom_features is set in $cfg — it must be empty"; exit 1
+          fi
+
+          if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+            [ "${GITHUB_REF_NAME#v}" = "$name" ] || {
+              echo "::error::tag $GITHUB_REF_NAME does not match version/name=$name"; exit 1; }
+          fi
+
+          # SideQuest refuses any build whose versionCode is not higher than the
+          # one already listed, so a stale code is a wasted release.
+          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          if [ -n "$prev" ]; then
+            # export_presets.cfg only became tracked in 7785958, so it is absent
+            # from v0.2.0 and earlier; a missing file just skips the comparison.
+            prev_code=$(git show "$prev:$cfg" 2>/dev/null | sed -n 's/^version\/code=\([0-9]*\)$/\1/p' | head -1 || true)
+            echo "previous tag $prev had code=${prev_code:-<not tracked>}"
+            if [ -n "$prev_code" ] && [ "$code" -le "$prev_code" ]; then
+              echo "::error::version/code=$code is not greater than $prev_code (tag $prev) — SideQuest would reject it"
+              exit 1
+            fi
+          fi
+
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "apk=RetroXR-v$name.apk" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------------------------- quest
+  quest:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+          # The build-stamp export plugin runs `git describe --tags`; a shallow
+          # clone silently stamps an empty build_info.json.
+          fetch-depth: 0
+
+      - name: Reclaim disk
+        run: |
+          # A ~225 MB APK, a ~2 GB android build dir, godot-cpp objects and the
+          # LFS assets do not comfortably fit the runner's default free space.
+          # The Android SDK itself must survive — the gradle export needs it.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+
+      # Two different NDKs are in play and they are not interchangeable:
+      # gradle pins 29.0.14206865 in RetroXR/android/build/config.gradle, while
+      # Tools/build.py compiles the GDExtensions with r27d.
+      - name: Android SDK packages for the gradle build
+        run: |
+          sdkmanager --install "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865" > /dev/null
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with: { ndk-version: r27d, local-cache: true }
+
+      - run: pip install scons
+
+      - name: Build the five GDExtensions (android arm64, release)
+        env:
+          # build.py blanks ANDROID_HOME itself: godot-cpp prefers it when set
+          # and then demands a full SDK.
+          ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+        run: python Tools/build.py android --target release --jobs 4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ hashFiles('RetroXR/export_presets.cfg') }}
+          restore-keys: gradle-
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
+        run: |
+          set -euo pipefail
+          base=https://github.com/godotengine/godot/releases/download/$GODOT_VERSION
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          unzip -q godot.zip && chmod +x Godot_v${GODOT_VERSION}_linux.x86_64
+          sudo mv Godot_v${GODOT_VERSION}_linux.x86_64 /usr/local/bin/godot
+          unzip -q templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR
+          mv templates/* ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR/
+          rm -f godot.zip templates.tpz
+          godot --version
+
+      - name: Install the Android build template
+        run: |
+          set -euo pipefail
+          godot --headless --path RetroXR --install-android-build-template --quit || true
+          if [ ! -f RetroXR/android/build/build.gradle ]; then
+            # Fallback: the template is just android_source.zip out of the .tpz.
+            echo "CLI install produced nothing — unpacking android_source.zip"
+            mkdir -p RetroXR/android/build
+            unzip -q ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR/android_source.zip \
+              -d RetroXR/android/build
+            echo "$GODOT_TEMPLATE_DIR" > RetroXR/android/.build_version
+            touch RetroXR/android/.gdignore
+          fi
+          # A cached gradle dir can re-serve a stale .gdc; the assets staging
+          # dirs are never worth keeping between runs.
+          rm -rf RetroXR/android/build/src/main/assets \
+                 RetroXR/android/build/build/intermediates/assets
+          cat RetroXR/android/.build_version
+
+      - name: Import, and fail on any script or shader error
+        run: |
+          set -euo pipefail
+          godot --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
+          # Known headless noise, none of it caused by the build.
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
+            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|libgodotopenxrvendors|godot-pdfium|libretro_godot" \
+            > errors.log || true
+          if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
+          echo "import clean"
+
+      - name: Export the signed Quest APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEYSTORE_USER }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          APK: ${{ needs.preflight.outputs.apk_name }}
+        run: |
+          set -euo pipefail
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::secret ANDROID_KEYSTORE_BASE64 is unset"; exit 1; }
+          # Never written to the tree: RetroXR/.godot/export_credentials.cfg
+          # stays absent and the keystore lives only in the runner temp dir.
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
+          mkdir -p build_out
+          godot --headless --path RetroXR --export-release "Quest" "$PWD/build_out/$APK"
+          ls -la "build_out/$APK"
+
+      - name: Check the APK
+        env:
+          APK: build_out/${{ needs.preflight.outputs.apk_name }}
+          WANT_CODE: ${{ needs.preflight.outputs.version_code }}
+          WANT_NAME: ${{ needs.preflight.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -1)
+          badging=$("$aapt2" dump badging "$APK")
+          code=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$badging" | head -1)
+          name=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$badging" | head -1)
+          echo "apk: versionCode=$code versionName=$name"
+          [ "$code" = "$WANT_CODE" ] || { echo "::error::versionCode $code != preset $WANT_CODE"; exit 1; }
+          [ "$name" = "$WANT_NAME" ] || { echo "::error::versionName $name != preset $WANT_NAME"; exit 1; }
+
+          size=$(stat -c%s "$APK")
+          [ "$size" -gt 100000000 ] || { echo "::error::APK is only $size bytes — assets are probably missing"; exit 1; }
+
+          # One missing native drops the whole GDExtension at runtime, and a
+          # missing vendors .so has previously shipped a Quest build with no
+          # passthrough. The APK is the only ground truth for this.
+          for lib in liblibretro_godot libverlet_rope libvlc_godot libgodot-pdfium \
+                     libmetaxr-audio libgodotopenxrvendors libvlc.so libpdfium.so \
+                     libMetaXRAudioUnity.so; do
+            unzip -Z1 "$APK" | grep -q "lib/arm64-v8a/$lib" || {
+              echo "::error::APK is missing lib/arm64-v8a/$lib*"; exit 1; }
+          done
+          echo "all expected natives present"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quest-apk
+          path: build_out/${{ needs.preflight.outputs.apk_name }}
+          compression-level: 0   # an APK is already a zip
+          retention-days: 14
+
+  # ------------------------------------------------------------------ windows
+  windows:
+    needs: preflight
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive, lfs: true, fetch-depth: 0 }
+
+      - run: pip install scons
+
+      # No Vulkan SDK install: vulkan-1.lib is vendored in the libretro-godot
+      # submodule (external/vulkan-loader/), which is the whole reason a Windows
+      # runner needs nothing beyond MSVC here.
+      - name: Build the five GDExtensions (windows x86_64, release)
+        run: python Tools/build.py windows --target release
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
+        shell: pwsh
+        run: |
+          $base = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION"
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_export_templates.tpz" -OutFile templates.tpz
+          Expand-Archive godot.zip -DestinationPath godot-bin
+          # Use the _console variant: the plain exe detaches from stdout on
+          # Windows, so the import step would grep an empty log and pass no
+          # matter what the editor reported. It must keep its own filename —
+          # the wrapper locates the real exe by stripping "_console" from it.
+          "GODOT=$PWD/godot-bin/Godot_v${env:GODOT_VERSION}_win64_console.exe" |
+            Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Rename-Item templates.tpz templates.zip
+          Expand-Archive templates.zip -DestinationPath tpz
+          $dest = "$env:APPDATA\Godot\export_templates\$env:GODOT_TEMPLATE_DIR"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Move-Item tpz/templates/* $dest
+          Remove-Item godot.zip, templates.zip -Force
+
+      - name: Import, and fail on any script or shader error
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT" --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to instantiate" import.log \
+            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" > errors.log || true
+          if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
+          echo "import clean"
+
+      - name: Export the Windows desktop build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build_out
+          "$GODOT" --headless --path RetroXR --export-release "Windows Desktop" "$PWD/build_out/RetroXR.exe"
+          ls -la build_out
+
+      - name: Package
+        shell: bash
+        env: { VER: "${{ needs.preflight.outputs.version_name }}" }
+        run: |
+          set -euo pipefail
+          # The exe alone will not run: the export drops libvlc.dll, the VLC
+          # plugin tree, libpdfium.dll and the MetaXR blob alongside it.
+          python -c "import shutil; shutil.make_archive('RetroXR-win-v$VER', 'zip', 'build_out')"
+          ls -la "RetroXR-win-v$VER.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: RetroXR-win-v${{ needs.preflight.outputs.version_name }}.zip
+          compression-level: 0
+          retention-days: 14
+
+  # ------------------------------------------------------------------ release
+  release:
+    needs: [preflight, quest, windows]
+    if: github.ref_type == 'tag' || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.preflight.outputs.version_name) }}
+        run: |
+          set -euo pipefail
+          ls -la dist
+          gh release create "$TAG" --title "RetroXR $TAG" --generate-notes dist/*
+
+      # A release created with GITHUB_TOKEN does NOT fire `on: release:
+      # published`, so sidequest.yml would never see it. SideQuest's
+      # version-webhook takes the APK url directly, which sidesteps that
+      # entirely and needs no PAT.
+      - name: Point SideQuest at the new APK
+        env:
+          WEBHOOK: ${{ secrets.SIDEQUEST_RELEASE_WEBHOOK }}
+          CODE: ${{ needs.preflight.outputs.version_code }}
+          APK: ${{ needs.preflight.outputs.apk_name }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.preflight.outputs.version_name) }}
+          NOTIFY: ${{ github.ref_type == 'tag' || inputs.notify }}
+        run: |
+          set -euo pipefail
+          [ -n "${WEBHOOK:-}" ] || { echo "::error::secret SIDEQUEST_RELEASE_WEBHOOK is unset"; exit 1; }
+          url="${WEBHOOK/release-webhook/version-webhook/$CODE}"
+          body="{\"url\":\"https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$APK\"}"
+
+          if [ "$NOTIFY" != true ]; then
+            # Actions masks the secret itself, not a substring of it, so the
+            # token has to be redacted by hand before anything is printed.
+            echo "notify is off — would POST:"
+            echo "  curl -X POST '$(sed 's#\(version-webhook/[0-9]*/\).*#\1<TOKEN>#' <<<"$url")'"
+            echo "  body: $body"
+            exit 0
+          fi
+
+          code=$(curl -sS -o resp.txt -w '%{http_code}' -X POST "$url" \
+                   -H 'Content-Type: application/json' -d "$body")
+          echo "HTTP $code"; cat resp.txt; echo
+          # A 2xx only means SideQuest accepted the payload; whether it takes the
+          # build still depends on the versionCode, which the listing decides.
+          case "$code" in
+            2*) echo "SideQuest updated to versionCode $CODE" ;;
+            *)  echo "::error::SideQuest webhook returned $code"; exit 1 ;;
+          esac

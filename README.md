@@ -283,6 +283,41 @@ Hand tracking and passthrough are on; eye, face and body tracking are off in bot
 places. Check the generated `RetroXR/android/build/src/debug/AndroidManifest.xml` after
 an export to see what actually landed.
 
+#### Releasing
+
+`.github/workflows/release.yml` does the whole thing on a `v*` tag: builds the five
+GDExtensions for Android and Windows, exports the signed `Quest` APK and the Windows
+desktop build, publishes a GitHub Release with both attached, and points the SideQuest
+listing at the new APK.
+
+```bash
+# bump BOTH in RetroXR/export_presets.cfg, then commit
+#   version/code=5
+#   version/name="0.2.1"
+git tag v0.2.1 && git push --tags
+```
+
+The tag must match `version/name`, and `version/code` must be higher than the previous
+tag's — SideQuest refuses a build whose versionCode is not greater than the one already
+listed. A `preflight` job checks both in seconds so a mismatch fails before the
+half-hour build rather than after it.
+
+Running it from the Actions tab instead (**Run workflow**) builds everything and
+uploads the APK and Windows zip as run artifacts, without creating a release or
+touching the listing. That is the way to test a build; tick `publish` / `notify` only
+when you mean it.
+
+Signing comes from three repo secrets — `ANDROID_KEYSTORE_BASE64` (the `.keystore`
+base64'd), `ANDROID_KEYSTORE_USER`, `ANDROID_KEYSTORE_PASSWORD` — which CI feeds to
+Godot through `GODOT_ANDROID_KEYSTORE_RELEASE_*`, so no `export_credentials.cfg` is
+ever written. It has to be the same keystore you sign with locally or the APK will not
+install over an existing one.
+
+`.github/workflows/sidequest.yml` remains the fallback for a release published by hand
+in the web UI. A release created by CI does not fire it — GitHub does not emit
+`release: published` for a release created with `GITHUB_TOKEN` — which is why
+`release.yml` calls SideQuest's version-webhook itself.
+
 ## Desktop mode controls
 
 When no VR headset is detected, RetroXR falls back to a desktop mode with mouse/keyboard controls.
