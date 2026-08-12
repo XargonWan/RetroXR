@@ -120,9 +120,22 @@ jobs:
           echo "using $sm"
           yes | "$sm" --licenses > /dev/null 2>&1 || true
           "$sm" --install "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865" > /dev/null
+      # local-cache is off deliberately. With it on, the action saved a 588 MiB
+      # entry and restored it in 7s instead of the 56s a real install takes, but
+      # the restored tree's clang++ was unusable ("sh: clang++: not found" - the
+      # NDK's compiler drivers are symlinks and do not survive the round trip).
+      # The action reports success either way, so the failure only surfaced deep
+      # in the build as exit 127. Under a minute is not worth that.
       - uses: nttld/setup-ndk@v1
         id: ndk
-        with: { ndk-version: r27d, local-cache: true }
+        with: { ndk-version: r27d, local-cache: false }
+
+      - name: Check the NDK toolchain is actually usable
+        run: |
+          set -euo pipefail
+          cxx="${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+          [ -x "$cxx" ] && "$cxx" --version || {
+            echo "::error::NDK at ${{ steps.ndk.outputs.ndk-path }} has no working clang++"; exit 1; }
 
       - run: pip install scons
 
