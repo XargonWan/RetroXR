@@ -139,8 +139,22 @@ jobs:
 
       - run: pip install scons
 
+      # Runtime dependencies of the host-side extensions the editor dlopens.
       # vlc-godot links the system libVLC on Linux rather than a vendored copy.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvlc-dev
+      # The rest are what the vendored libSDL3.so.0 declares in DT_NEEDED - it
+      # was built with every backend on, so it wants a full X11/Wayland/audio
+      # stack even though nothing here opens a window. Most are already on the
+      # runner; libpulse0 is the one that is not, and without it the editor
+      # cannot open libretro_godot...so and Libretro never reaches ClassDB.
+      - name: Runtime deps for the host-side extensions
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libvlc-dev \
+            libasound2t64 libpulse0 libfribidi0 libdrm2 libgbm1 libxkbcommon0 \
+            libdecor-0-0 libx11-6 libxext6 libxcursor1 libxi6 libxfixes3 \
+            libxrandr2 libxss1 libxtst6 \
+            libwayland-egl1 libwayland-cursor0 libwayland-client0
 
       # Build through a short path, because archiving godot-cpp is a hair from
       # the kernel's 131,072 byte cap on a single argv entry - which is what
@@ -215,6 +229,22 @@ jobs:
           sdl=$GITHUB_WORKSPACE/libretro-godot/external/SDL3/lib/linux-x64
           test -f "$sdl/libSDL3.so.0"
           echo "LD_LIBRARY_PATH=$sdl${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+      # An unresolved dependency here is otherwise invisible until the editor
+      # fails to dlopen the extension, and then reports it as dozens of
+      # "Could not find type" parse errors with no mention of the real cause.
+      - name: Check the host-side extensions resolve their libraries
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libretro-godot/external/SDL3/lib/linux-x64
+        run: |
+          set -euo pipefail
+          bad=0
+          for so in RetroXR/*/*.linux.template_debug.x86_64.so; do
+            missing=$(ldd "$so" 2>/dev/null | grep "not found" || true)
+            if [ -n "$missing" ]; then echo "$so"; echo "$missing"; bad=1; fi
+          done
+          [ "$bad" -eq 0 ] || { echo "::error::host-side extensions have unresolved libraries"; exit 1; }
+          echo "every host-side extension resolves"
 
       - uses: actions/cache@v4
         with:
