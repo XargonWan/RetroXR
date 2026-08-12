@@ -41,7 +41,7 @@ HeldPhysics="*res://Scripts/Interaction/held_object_physics.gd"
 
 [debug]
 
-#XRToolsPickableandseveralothergodot-xr-toolsbasescarry@toolsotheeditor#candrawtheirconfigurationwarnings.Ourgameplaysubclassesdeliberatelydo#not:their_ready/_processloadGLBs,startVLCplaybackandreachforautoloads,#noneofwhichshouldrunintheeditor.Nothinghereismeanttobeatoolscript.gdscript/warnings/missing_tool=0
+gdscript/warnings/missing_tool=0
 
 [display]
 
