@@ -158,8 +158,8 @@ func _populate() -> void:
 			states[sid] = "off"
 
 	for ui: CartridgeOptions2D in uis:
-		ui.populate(_cart.game_label, saves, _cart.save_id, not core.is_empty(),
-			states, _server_only(saves), _romm_ready())
+		ui.populate(_cart.game_label, _cart.rom_path, saves, _cart.save_id,
+			not core.is_empty(), states, _server_only(saves), _romm_ready())
 		_populate_achievements(ui)
 
 

@@ -46,6 +46,9 @@ const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 var _symbol_font: FontVariation = null
 
 var _title_lbl: Label = null
+## The ROM's path on disk, under the game's name. Small and muted: it is there to
+## tell two dumps of the same game apart, not to be read at a glance.
+var _path_lbl: Label = null
 var _rows_box: VBoxContainer = null
 var _active_scroll: ScrollContainer = null
 
@@ -59,10 +62,11 @@ var _ach_box: VBoxContainer = null
 var _ach_summary: Label = null
 
 
-## Set BEFORE the node enters the tree to drop the panel background, the title
-## and the ✕ — everything that only makes sense when this is a window of its own.
-## The core options panel hosts one of these inside its Cartridge tab, where it
-## already has all three from the panel around it.
+## Set BEFORE the node enters the tree to drop the panel background and the ✕ —
+## what only makes sense when this is a window of its own. The core options panel
+## hosts one of these inside its Cartridge tab, where it has both from the panel
+## around it. The game's name and path are kept either way: the host's title is
+## the console, so nothing else there says which cartridge is in the slot.
 var embedded := false
 
 
@@ -87,6 +91,9 @@ func _build_ui() -> void:
 	if embedded:
 		root_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		add_child(root_vbox)
+		# The host panel's title says "System Settings" and its tab says
+		# "Cartridge", so nothing here named the game actually in the slot.
+		_build_embedded_header(root_vbox)
 	else:
 		var panel := PanelContainer.new()
 		panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -105,6 +112,8 @@ func _build_ui() -> void:
 		margin.add_child(root_vbox)
 
 		_build_title(root_vbox)
+		_path_lbl = _make_path_label()
+		root_vbox.add_child(_path_lbl)
 		root_vbox.add_child(HSeparator.new())
 
 	_tabs = TabContainer.new()
@@ -168,6 +177,35 @@ func _build_title(root_vbox: VBoxContainer) -> void:
 	title_row.add_child(close_btn)
 
 
+## Name and path for the embedded copy, which has no title row of its own. Sits
+## above the ribbons so it heads the whole tab rather than one page of it.
+func _build_embedded_header(root_vbox: VBoxContainer) -> void:
+	var head := VBoxContainer.new()
+	head.add_theme_constant_override("separation", 0)
+	root_vbox.add_child(head)
+
+	_title_lbl = Label.new()
+	_title_lbl.add_theme_font_size_override("font_size", 20)
+	_title_lbl.add_theme_color_override("font_color", COLOR_TITLE)
+	_title_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	head.add_child(_title_lbl)
+
+	_path_lbl = _make_path_label()
+	head.add_child(_path_lbl)
+
+
+## Wrapped rather than trimmed: the filename is the end of a path and the part
+## worth reading, so an ellipsis would eat exactly what the line is for. Two
+## lines is the ceiling — a third would push the ribbons down the panel.
+func _make_path_label() -> Label:
+	var lbl := Label.new()
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", COLOR_MUTED)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	lbl.max_lines_visible = 2
+	lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	lbl.visible = false
+	return lbl
 
 
 func _ribbon(title: String) -> ScrollContainer:
@@ -196,17 +234,18 @@ func _symbols() -> FontVariation:
 
 
 ## Rebuild the list.
+##   rom_path    : the ROM on disk, shown under the name ("" hides the line)
 ##   saves       : SramPaths.list_saves() entries
 ##   current_id  : the cartridge's bound save_id
 ##   sync_states : save_id -> "off" | "on" | "busy" | "conflict"
 ##   server_only : [{slot, size, updated_at}] the server has and this device
 ##                 does not
-func populate(game_label: String, saves: Array, current_id: String, core_known: bool,
-			  sync_states: Dictionary = {}, server_only: Array = [],
+func populate(game_label: String, rom_path: String, saves: Array, current_id: String,
+			  core_known: bool, sync_states: Dictionary = {}, server_only: Array = [],
 			  romm_available: bool = false) -> void:
-	# Absent when embedded — the host panel carries the title.
-	if _title_lbl != null:
-		_title_lbl.text = game_label if not game_label.is_empty() else "Cartridge"
+	_title_lbl.text = game_label if not game_label.is_empty() else "Cartridge"
+	_path_lbl.text = rom_path
+	_path_lbl.visible = not rom_path.is_empty()
 	for child in _rows_box.get_children():
 		child.queue_free()
 
