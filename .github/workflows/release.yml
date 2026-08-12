@@ -111,7 +111,15 @@ jobs:
       # Tools/build.py compiles the GDExtensions with r27d.
       - name: Android SDK packages for the gradle build
         run: |
-          sdkmanager --install "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865" > /dev/null
+          set -euo pipefail
+          # The runner ships the SDK but puts nothing on PATH, and the
+          # cmdline-tools directory is versioned, so glob for it.
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          sm=$(ls "$sdk"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | tail -1)
+          [ -x "$sm" ] || { echo "::error::no sdkmanager under $sdk/cmdline-tools"; exit 1; }
+          echo "using $sm"
+          yes | "$sm" --licenses > /dev/null 2>&1 || true
+          "$sm" --install "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865" > /dev/null
       - uses: nttld/setup-ndk@v1
         id: ndk
         with: { ndk-version: r27d, local-cache: true }
@@ -199,7 +207,9 @@ jobs:
           WANT_NAME: ${{ needs.preflight.outputs.version_name }}
         run: |
           set -euo pipefail
-          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -1)
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          aapt2=$(find "$sdk/build-tools" -name aapt2 -type f | sort | tail -1)
+          [ -x "$aapt2" ] || { echo "::error::no aapt2 under $sdk/build-tools"; exit 1; }
           badging=$("$aapt2" dump badging "$APK")
           code=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$badging" | head -1)
           name=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$badging" | head -1)
