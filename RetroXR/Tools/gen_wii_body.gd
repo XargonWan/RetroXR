@@ -61,6 +61,13 @@ const VENT_N := 5
 const VENT_PITCH := 0.006
 const VENT_HOLE := 0.0044
 
+## The second grille, on the right flank near the back: 5 across the 44 mm thickness
+## by 3 along the length, so 28.4 x 16.4 mm. Same pitch and same hole as the rear
+## block — it is the same moulding on the same machine, and scaled off the same kind
+## of photograph.
+const VENT_SIDE_COLS := 5
+const VENT_SIDE_ROWS := 3
+
 ## Front keys: name, length on the FRONT face, length on the CHAMFER, height.
 ##
 ## Both legs are measured from the fold, which is where the mesh's origin sits — so a
@@ -116,7 +123,10 @@ func _init() -> void:
 	_save(_solid_loft([body_cut, body, body],
 		[-HALF_H, -HALF_H + REAR_CHAMFER, HALF_H]),
 		"res://Scenes/Objects/system_models/wii/wii_body.res")
-	_save(_vent(), "res://Scenes/Objects/system_models/wii/wii_vent.res", false)
+	_save(_vent(VENT_N, VENT_N),
+		"res://Scenes/Objects/system_models/wii/wii_vent.res", false)
+	_save(_vent(VENT_SIDE_COLS, VENT_SIDE_ROWS),
+		"res://Scenes/Objects/system_models/wii/wii_vent_side.res", false)
 
 	# --- the keys ------------------------------------------------------------
 	for row in KEYS:
@@ -259,7 +269,7 @@ func _emit_loft(secs_in: Array, ys: Array) -> Array[Vector3]:
 	return out
 
 
-## The rear fan grille as ONE flat mesh of 25 squares, in XY facing +Z.
+## A fan grille as ONE flat mesh of squares, in XY facing +Z, centred on itself.
 ##
 ## Squares, not holes. These rooms light with a flat ambient and no radiance map, so
 ## the floor of a hole is lit exactly as brightly as the panel around it — the vent has
@@ -267,16 +277,17 @@ func _emit_loft(secs_in: Array, ys: Array) -> Array[Vector3]:
 ## unshaded. Cut as real holes it would have rendered as 25 pale grey squares. Same
 ## call the disc slot and every socket mouth on this machine already make.
 ##
-## One mesh rather than 25 nodes: nothing in a grille moves independently, and 25
-## MeshInstance3Ds is 25 draw calls for something a player reads as one texture.
-func _vent() -> ArrayMesh:
+## One mesh rather than one node per hole: nothing in a grille moves independently, and
+## 25 MeshInstance3Ds is 25 draw calls for something a player reads as one texture.
+func _vent(cols: int, rows: int) -> ArrayMesh:
 	var tris: Array[Vector3] = []
-	var span: float = VENT_PITCH * float(VENT_N - 1)
+	var span_x: float = VENT_PITCH * float(cols - 1)
+	var span_y: float = VENT_PITCH * float(rows - 1)
 	var h: float = VENT_HOLE * 0.5
-	for row in VENT_N:
-		for col in VENT_N:
-			var cx: float = -span * 0.5 + VENT_PITCH * float(col)
-			var cy: float = -span * 0.5 + VENT_PITCH * float(row)
+	for row in rows:
+		for col in cols:
+			var cx: float = -span_x * 0.5 + VENT_PITCH * float(col)
+			var cy: float = -span_y * 0.5 + VENT_PITCH * float(row)
 			tris.append_array([
 				Vector3(cx + h, cy + h, 0.0), Vector3(cx - h, cy - h, 0.0),
 				Vector3(cx - h, cy + h, 0.0),
