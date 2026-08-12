@@ -112,6 +112,17 @@ const _NO_STANDINS: Array[String] = ["nes", "atari_2600"]
 ## generic lead would fit its television and nothing on the console.
 const _OWN_AV_LEAD: Array[String] = ["nes", "wii"]
 
+## Hardware whose picture leaves on a captive pigtail rather than through sockets
+## (av_port_channels() is empty), so a spawned lead has nothing to enter at that
+## end. Every handheld is one — items_for reads the registry's flag for those —
+## and so is the Virtual Boy, which stands on a table and is not flagged handheld
+## but wears no A/V sockets either.
+##
+## A platform with no model of its own is NOT one of these: it spawns the
+## primitive box, which does wear the three sockets, and the lead is how its
+## picture reaches the set.
+const _NO_AV_SOCKETS: Array[String] = ["virtual_boy"]
+
 ## The lead every other platform reaches the TV with. Consoles spawn wearing a
 ## captive one, so this row is a spare — for a lead thrown in the trash, or a
 ## second TV.
@@ -191,7 +202,8 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 	if standins:
 		items.append({"kind": "peripheral", "label": "Primitive Controller",
 			"spawn": PRIMITIVE_CONTROLLER})
-	if not _OWN_AV_LEAD.has(systemid):
+	if not handheld and not _NO_AV_SOCKETS.has(systemid) \
+			and not _OWN_AV_LEAD.has(systemid):
 		items.append(_AV_CABLE.duplicate())
 	return items
 
