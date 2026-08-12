@@ -210,6 +210,16 @@ jobs:
           }
           Get-Content RetroXR/android/.build_version
 
+          # Godot shells out to gradlew and prints nothing of its own while it
+          # runs, so a slow gradle and a wedged one look identical from the log.
+          # A plain console writes one line per task instead of redrawing a
+          # progress bar, and no daemon avoids it waiting on a daemon that has
+          # no terminal to talk to.
+          Add-Content RetroXR/android/build/gradle.properties @(
+            "org.gradle.daemon=false"
+            "org.gradle.console=plain"
+          )
+
       - name: Fail on any script or shader error
         shell: bash
         run: |
@@ -223,7 +233,11 @@ jobs:
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
           echo "import clean"
 
+      # Bounded, because there is no timeout on a step by default and the job
+      # limit is six hours. A gradle build that wedges should cost 45 minutes
+      # and a readable failure, not an afternoon.
       - name: Export the signed Quest APK
+        timeout-minutes: 45
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
