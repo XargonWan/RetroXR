@@ -249,10 +249,26 @@ jobs:
       - name: Import the project
         run: |
           set -euo pipefail
-          for pass in 1 2; do
-            godot --headless --path RetroXR --editor --quit > "import$pass.log" 2>&1 || true
-            echo "pass $pass: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import$pass.log") script/shader errors"
-          done
+          # The .import sidecars are gitignored (.gitignore "**/*.import"), so a
+          # CI clone has every image but nothing that imports them, and until
+          # they exist preload("...png") fails with "has no resource loaders"
+          # and takes each depending script down with it. Locally they were
+          # generated once and have been there ever since, which is why this is
+          # invisible on a dev machine.
+          #
+          # --editor --quit does NOT wait for the filesystem scan, it quits
+          # after init; --import is the mode that waits for imports to finish.
+          # Then an editor pass to regenerate the global class cache. Every
+          # stage is logged and counted because the counts are the only way to
+          # tell a settling error from a real one.
+          pass() {
+            local label=$1; shift
+            godot --headless --path RetroXR "$@" > "import-$label.log" 2>&1 || true
+            echo "$label: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import-$label.log") script/shader errors"
+          }
+          pass import --import
+          pass editor1 --editor --quit
+          pass editor2 --editor --quit
 
       - name: Install the Android build template
         run: |
@@ -280,7 +296,7 @@ jobs:
           # extension with a linux stanza is built above and must load, so none
           # is excused here - only metaxr-audio, which has no linux library to
           # find at all.
-          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import2.log \
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import-editor2.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|metaxr" \
             > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
@@ -388,15 +404,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Two full editor passes; see the quest job for why the first is not
-          # an oracle on a cold .godot/ and why --import cannot stand in for it.
-          for pass in 1 2; do
-            "$GODOT" --headless --path RetroXR --editor --quit > "import$pass.log" 2>&1 || true
-            echo "pass $pass: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import$pass.log") script/shader errors"
-          done
+          # See the quest job: .import sidecars are gitignored, --import is the
+          # only mode that waits for the scan, and only the last pass is an oracle.
+          pass() {
+            local label=$1; shift
+            "$GODOT" --headless --path RetroXR "$@" > "import-$label.log" 2>&1 || true
+            echo "$label: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import-$label.log") script/shader errors"
+          }
+          pass import --import
+          pass editor1 --editor --quit
+          pass editor2 --editor --quit
           # All five extensions have a windows stanza and are built above, so
           # none is excused - a load failure here is a real one.
-          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import2.log \
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import-editor2.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
           echo "import clean"
