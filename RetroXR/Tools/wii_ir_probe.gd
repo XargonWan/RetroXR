@@ -164,7 +164,6 @@ class Driver extends Node:
 			await get_tree().process_frame
 			_log("disc inserted: %s (exists=%s)" % [rom, FileAccess.file_exists(rom)])
 
-		_log("sensor bar position option -> %s" % link.sensor_bar_position())
 		var port: XRToolsSnapZone = link.get_sensor_bar_port()
 		port.pick_up_object(_bar.get_plug())
 		await get_tree().process_frame

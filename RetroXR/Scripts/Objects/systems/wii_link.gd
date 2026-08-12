@@ -17,12 +17,11 @@
 ##
 ## Four slots total across both kinds, which is every Wii game's player cap.
 ##
-## It also owns the SENSOR BAR: which one is plugged into this console, and which
-## side of the screen it ended up on. The jack itself is hardware, so
-## RetroSystemModelWii builds it; what happens when something goes into it is
-## policy, so it happens here. Note it REPORTS the side rather than setting it —
-## whether the bar is on top or below is the player's to choose in Dolphin's
-## options, the same as on the real machine.
+## It also owns the SENSOR BAR: which one is plugged into this console. The jack
+## itself is hardware, so RetroSystemModelWii builds it; what happens when
+## something goes into it is policy, so it happens here. Whether the bar sits
+## above or below the screen is the player's to set in Dolphin's options, the
+## same as on the real machine — nothing here pins that option.
 class_name WiiLink
 extends Node
 
@@ -96,21 +95,6 @@ func _on_sensor_bar_seated(plug: Node3D) -> void:
 	if _sensor_bar == null:
 		return
 	_sensor_bar.set_system(host)
-	# Deferred so the bar has settled where the player let go of it before we
-	# measure which side of the screen that was.
-	_report_bar_side.call_deferred()
-
-
-## Say which way round the bar went in, and which Dolphin option agrees with it.
-## The player owns that setting; this is the breadcrumb for when the pointer sits
-## low and the reason is that the room and the console disagree.
-func _report_bar_side() -> void:
-	var side := sensor_bar_position()
-	if side.is_empty():
-		print("[WiiLink] sensor bar plugged in; no television to measure it against yet")
-		return
-	print("[WiiLink] sensor bar is %s the screen — Dolphin's Sensor Bar Position wants \"%s\""
-		% ["ABOVE" if side == "1" else "BELOW", "Top" if side == "1" else "Bottom"])
 
 
 func _on_sensor_bar_removed() -> void:
@@ -124,8 +108,7 @@ func _on_sensor_bar_removed() -> void:
 ##
 ## Deliberately not what a remote reads for its aim — a camera cannot tell whose
 ## lights it is looking at, so wiimote.gd sweeps every lit bar in the room. This
-## is for the one question that really is per-console: which side of the screen
-## its own bar sits on, which is a SYSCONF value the machine keeps for itself.
+## answers the narrower question of what this particular console has in its jack.
 func get_sensor_bar() -> SensorBar:
 	return _sensor_bar
 
@@ -133,31 +116,6 @@ func get_sensor_bar() -> SensorBar:
 ## The jack itself, for a save restore putting a plug back into it.
 func get_sensor_bar_port() -> XRToolsSnapZone:
 	return _sensor_bar_port
-
-
-## Where the bar is actually sitting relative to the screen, as the SYSCONF value
-## Dolphin would want: "1" above, "0" below, and "" when there is nothing to
-## measure — no bar, or no television.
-##
-## Reported, not imposed. `dolphin_sensor_bar_position` is a Dolphin core option
-## the player sets in the options panel, exactly as they would on the real
-## machine, and pinning it from here would have locked the row: a forced option
-## is disabled in the UI and skipped by a reset. Telling the console where you
-## put the bar is part of setting a Wii up, and there is no reason this room
-## should be the one place you cannot.
-##
-## It is still worth measuring, because the failure is silent. The Wii never sees
-## where the bar is — only two dots — so the setting is what tells its software
-## which way to shift the pointer off the midpoint of them. Disagree with the
-## room and every cursor sits a couple of inches out vertically, with nothing on
-## screen to say why. So the log says which way round the bar went in.
-func sensor_bar_position() -> String:
-	if _sensor_bar == null or not is_instance_valid(host.connected_tv):
-		return ""
-	var screen: Node3D = host.connected_tv.get_screen_mesh()
-	if screen == null:
-		return ""
-	return "1" if _sensor_bar.global_position.y >= screen.global_position.y else "0"
 
 
 # ── Mode ──────────────────────────────────────────────────────────────────────
