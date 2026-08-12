@@ -56,15 +56,19 @@ static func _data_track(rom_path: String) -> String:
 		return rom_path
 	if _track_cache.has(rom_path):
 		return str(_track_cache[rom_path])
+	# Not cached: nothing was learned about the file's contents, and a path that
+	# cannot be opened now may open later. Every outcome below reads the .cue
+	# through, so each is settled for the session.
 	var f := FileAccess.open(rom_path, FileAccess.READ)
 	if f == null:
 		return rom_path
 	var text := f.get_as_text()
 	f.close()
 	var m := _CUE_RE.search(text)
-	if m == null:
-		return rom_path
-	return rom_path.get_base_dir().path_join(m.get_string(1))
+	var track := rom_path if m == null \
+		else rom_path.get_base_dir().path_join(m.get_string(1))
+	_track_cache[rom_path] = track
+	return track
 
 
 static func _read_serial(path: String) -> String:
