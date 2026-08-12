@@ -142,6 +142,33 @@ jobs:
       # vlc-godot links the system libVLC on Linux rather than a vendored copy.
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvlc-dev
 
+      # SCons puts every object on ar's command line, and godot-cpp's 1022
+      # objects come to 130,640 bytes at absolute paths against the kernel's
+      # 131,072 byte single-argument ceiling. libretro-godot builds from the
+      # repo root with relative paths (95,892 bytes) and squeaks under; the four
+      # siblings reach godot-cpp from outside their own top directory, so SCons
+      # emits absolute paths and they all die with "sh: Argument list too long".
+      # SCONS_CACHE does not save them: the objects come back from cache but the
+      # archive never can, because no build ever produced one in that form.
+      # Linux takes plain ar off PATH, android uses the NDK's llvm-ar by
+      # absolute path, so the wrapper goes in twice.
+      - name: Route ar through a response file
+        run: |
+          set -euo pipefail
+          shim=Tools/ci/ar-response-file-shim.sh
+          mkdir -p "$RUNNER_TEMP/arshim"
+          install -m755 "$shim" "$RUNNER_TEMP/arshim/ar"
+          ln -sf "$(command -v ar)" "$RUNNER_TEMP/arshim/ar.real"
+          echo "$RUNNER_TEMP/arshim" >> "$GITHUB_PATH"
+
+          ndkar="${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          mv "$ndkar" "$ndkar.real"
+          install -m755 "$shim" "$ndkar"
+
+          # Both take the passthrough branch, which proves each found its .real.
+          "$RUNNER_TEMP/arshim/ar" --version | head -1
+          "$ndkar" --version | head -1
+
       # SCONS_CACHE is load-bearing, not just a speed-up. Each extension has
       # its own VariantDir and .sconsign, so all five otherwise rebuild
       # godot-cpp from scratch - and the four siblings reference it as
