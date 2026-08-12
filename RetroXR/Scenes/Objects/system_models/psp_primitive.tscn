@@ -27,7 +27,7 @@ size = Vector3(0.009, 0.007, 0.008)
 size = Vector3(0.0047, 0.0011, 0.0034)
 
 [sub_resource type="BoxMesh" id="BoxMesh_door"]
-size = Vector3(0.09, 0.003, 0.064)
+size = Vector3(0.09, 0.0012, 0.064)
 
 [sub_resource type="BoxMesh" id="BoxMesh_led"]
 size = Vector3(0.004, 0.0015, 0.003)
@@ -211,7 +211,7 @@ mesh = SubResource("BoxMesh_6vy4r")
 surface_material_override/0 = SubResource("StandardMaterial3D_tdojy")
 
 [node name="UMDSeat" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0137, -0.0112)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0134, -0.0112)
 gizmo_extents = 0.03
 
 [node name="SeatPreview" type="MeshInstance3D" parent="UMDSeat"]
@@ -293,12 +293,12 @@ surface_material_override/0 = SubResource("Mat_led")
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, -0.0122, 0.0208)
 
 [node name="UMDDoor" type="MeshInstance3D" parent="UMDDoorPivot"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0015, 0.032)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0024, 0.032)
 mesh = SubResource("BoxMesh_door")
 surface_material_override/0 = SubResource("StandardMaterial3D_3enqv")
 
 [node name="UMDDoorHinge" type="Area3D" parent="UMDDoorPivot" node_paths=PackedStringArray("target")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0015, 0.05)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0024, 0.05)
 collision_layer = 1048577
 script = ExtResource("4_hinge")
 target = NodePath("..")
