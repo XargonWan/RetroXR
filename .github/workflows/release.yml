@@ -82,9 +82,20 @@ jobs:
           echo "apk=RetroXR-v$name.apk" >> "$GITHUB_OUTPUT"
 
   # -------------------------------------------------------------------- quest
+  # Windows, not Linux, and not for parity with the desktop build. The vendored
+  # libSDL3.so.0 that libretro_godot links on Linux wants glibc 2.43 and
+  # xkbcommon 1.10, while ubuntu-latest is 24.04 with glibc 2.39. It was built
+  # on a rolling-release box, so a runner cannot load it, the editor could never
+  # open the extension, and Libretro never reached ClassDB.
+  #
+  # Windows sidesteps that entirely - SDL3.dll and libvlc.dll are vendored right
+  # beside the extensions - and windows-latest ships both NDKs preinstalled:
+  # ANDROID_NDK_ROOT is already 27.3.13750724 (r27d, what Tools/build.py wants)
+  # with 29.0.14206865 there for gradle, alongside the build-tools 36.1.0 and
+  # android-36 that config.gradle pins.
   quest:
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,157 +105,42 @@ jobs:
           # clone silently stamps an empty build_info.json.
           fetch-depth: 0
 
-      - name: Reclaim disk
-        run: |
-          # A ~225 MB APK, a ~2 GB android build dir, godot-cpp objects and the
-          # LFS assets do not comfortably fit the runner's default free space.
-          # The Android SDK itself must survive - the gradle export needs it.
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
-                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          df -h /
-
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
 
-      # Two different NDKs are in play and they are not interchangeable:
-      # gradle pins 29.0.14206865 in RetroXR/android/build/config.gradle, while
-      # Tools/build.py compiles the GDExtensions with r27d.
-      - name: Android SDK packages for the gradle build
-        run: |
-          set -euo pipefail
-          # The runner ships the SDK but puts nothing on PATH, and the
-          # cmdline-tools directory is versioned, so glob for it.
-          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          sm=$(ls "$sdk"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | tail -1)
-          [ -x "$sm" ] || { echo "::error::no sdkmanager under $sdk/cmdline-tools"; exit 1; }
-          echo "using $sm"
-          yes | "$sm" --licenses > /dev/null 2>&1 || true
-          "$sm" --install "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865" > /dev/null
-      # local-cache is off deliberately. With it on, the action saved a 588 MiB
-      # entry and restored it in 7s instead of the 56s a real install takes, but
-      # the restored tree's clang++ was unusable ("sh: clang++: not found" - the
-      # NDK's compiler drivers are symlinks and do not survive the round trip).
-      # The action reports success either way, so the failure only surfaced deep
-      # in the build as exit 127. Under a minute is not worth that.
-      - uses: nttld/setup-ndk@v1
-        id: ndk
-        with: { ndk-version: r27d, local-cache: false }
-
-      - name: Check the NDK toolchain is actually usable
-        run: |
-          set -euo pipefail
-          cxx="${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
-          [ -x "$cxx" ] && "$cxx" --version || {
-            echo "::error::NDK at ${{ steps.ndk.outputs.ndk-path }} has no working clang++"; exit 1; }
-
       - run: pip install scons
 
-      # Runtime dependencies of the host-side extensions the editor dlopens.
-      # vlc-godot links the system libVLC on Linux rather than a vendored copy.
-      # The rest are what the vendored libSDL3.so.0 declares in DT_NEEDED - it
-      # was built with every backend on, so it wants a full X11/Wayland/audio
-      # stack even though nothing here opens a window. Most are already on the
-      # runner; libpulse0 is the one that is not, and without it the editor
-      # cannot open libretro_godot...so and Libretro never reaches ClassDB.
-      - name: Runtime deps for the host-side extensions
+      - name: Check the preinstalled NDK is the one build.py expects
+        shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libvlc-dev \
-            libasound2t64 libpulse0 libfribidi0 libdrm2 libgbm1 libxkbcommon0 \
-            libdecor-0-0 libx11-6 libxext6 libxcursor1 libxi6 libxfixes3 \
-            libxrandr2 libxss1 libxtst6 \
-            libwayland-egl1 libwayland-cursor0 libwayland-client0
+          echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-<unset>}"
+          ndk=$(cygpath -u "${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is unset on this runner}")
+          ls "$ndk/toolchains/llvm/prebuilt/windows-x86_64/bin/" | grep -m1 '^clang++' \
+            || { echo "::error::no clang++ under $ndk"; exit 1; }
+          df -h . | tail -1
 
-      # Build through a short path, because archiving godot-cpp is a hair from
-      # the kernel's 131,072 byte cap on a single argv entry - which is what
-      # SCons' "sh -c <command>" makes the whole command line into.
+      # The exporting editor is a debug-tagged Windows binary, so it resolves
+      # windows.debug.x86_64 out of each .gdextension and loads THAT to register
+      # Libretro, VerletRope, VlcPlayer and PDFRenderer in ClassDB. Without them
+      # every script naming those types fails to parse and the export runs over
+      # unresolved scenes. Nothing debug ships: the APK gets
+      # android.release.arm64, picked by the exported game's own feature tags.
       #
-      # godot-cpp is 1022 objects. libretro-godot builds from the repo root and
-      # names them relatively (95,892 bytes), so it fits. The four siblings
-      # reach godot-cpp from outside their own top directory, so SCons switches
-      # to absolute paths: 130,640 bytes, and adding "llvm-ar rc <archive>"
-      # tips it over into "sh: Argument list too long". Note the exec of sh
-      # itself is what fails, so wrapping ar to take an @response file does not
-      # help - nothing downstream of that exec ever runs. SCONS_CACHE does not
-      # save it either: the objects come back from cache, but the archive can
-      # only come back if some build once produced it in that form, and none can.
-      #
-      # /home/runner/work/RetroXR/RetroXR/ -> /w/ takes 31 bytes off all 1022,
-      # landing at 98,958, about the headroom the root build already runs with.
-      # A bind mount rather than a symlink, so build.py's Path.resolve() cannot
-      # collapse it back to the long path.
-      - name: Mount the workspace at a short path
-        run: |
-          set -euo pipefail
-          sudo mkdir -p /w
-          sudo mount --bind "$GITHUB_WORKSPACE" /w
-          test -f /w/Tools/build.py
-          python -c "from pathlib import Path; print('build.py resolves to', Path('/w/Tools/build.py').resolve())"
+      # SCONS_CACHE matters because each extension has its own VariantDir and
+      # .sconsign, so all five otherwise rebuild godot-cpp from scratch. It is
+      # populated and consumed inside this one job.
+      - name: Build the host-side extensions the editor needs (windows, debug)
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+        run: python Tools/build.py windows --target debug
 
-      # SCONS_CACHE is load-bearing, not just a speed-up. Each extension has
-      # its own VariantDir and .sconsign, so all five otherwise rebuild
-      # godot-cpp from scratch - and the four siblings reference it as
-      # ../libretro-godot/godot-cpp/..., which makes SCons emit absolute object
-      # paths and blow the shell's argument limit when archiving ~2000 of them
-      # ("sh: Argument list too long"). godot-cpp's SConstruct sets
-      # Decider("MD5") alongside CacheDir, so the content-addressed entries
-      # libretro-godot populates are valid from the siblings' directories: they
-      # retrieve the archive instead of re-running ar. Populated and consumed
-      # within this one job, so nothing depends on cross-run cache retention.
       - name: Build the five GDExtensions (android arm64, release)
         env:
           # build.py blanks ANDROID_HOME itself: godot-cpp prefers it when set
-          # and then demands a full SDK.
-          ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+          # and then demands a full SDK. ANDROID_NDK_ROOT is the runner's r27d.
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python /w/Tools/build.py android --target release --jobs 4
-
-      # The exporting editor is a debug-tagged Linux binary, so it resolves
-      # linux.debug.x86_64 out of each .gdextension and loads THAT to register
-      # Libretro/VerletRope in ClassDB. Without it every script naming those
-      # types fails to parse and the export runs over unresolved scenes.
-      # Nothing debug ships: the APK gets android.release.arm64, picked by the
-      # exported game's own feature tags.
-      # build.py skips metaxr-audio here - it has no linux stanza at all (Meta
-      # ships that blob for win-x64 and android-arm64 only). Harmless: every
-      # reference to it goes through Engine.has_singleton("MetaXRAudio"), so
-      # nothing names it statically, and its Android library is still packed
-      # into the APK straight from the .gdextension file.
-      - name: Build the host-side extensions the editor needs (linux, debug)
-        env:
-          SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python /w/Tools/build.py linux --target debug --jobs 4
-
-      # The Linux build links libSDL3.so.0 by SONAME - external/SDL3/lib/linux-x64
-      # is a link-time stand-in and the runtime copy is expected to come from the
-      # host, which a runner has no SDL3 on. Without this the editor cannot open
-      # libretro_godot.linux...so at all, Libretro never reaches ClassDB, and
-      # every script naming it fails to parse. LD_LIBRARY_PATH rather than
-      # copying the .so next to the extension, which would risk it being packed
-      # into the APK.
-      - name: Put the vendored SDL3 on the runtime path
-        run: |
-          set -euo pipefail
-          sdl=$GITHUB_WORKSPACE/libretro-godot/external/SDL3/lib/linux-x64
-          test -f "$sdl/libSDL3.so.0"
-          echo "LD_LIBRARY_PATH=$sdl${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-
-      # An unresolved dependency here is otherwise invisible until the editor
-      # fails to dlopen the extension, and then reports it as dozens of
-      # "Could not find type" parse errors with no mention of the real cause.
-      - name: Check the host-side extensions resolve their libraries
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libretro-godot/external/SDL3/lib/linux-x64
-        run: |
-          set -euo pipefail
-          bad=0
-          for so in RetroXR/*/*.linux.template_debug.x86_64.so; do
-            missing=$(ldd "$so" 2>/dev/null | grep "not found" || true)
-            if [ -n "$missing" ]; then echo "$so"; echo "$missing"; bad=1; fi
-          done
-          [ "$bad" -eq 0 ] || { echo "::error::host-side extensions have unresolved libraries"; exit 1; }
-          echo "every host-side extension resolves"
+        run: python Tools/build.py android --target release
 
       - uses: actions/cache@v4
         with:
@@ -253,47 +149,42 @@ jobs:
           restore-keys: gradle-
 
       - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
+        shell: pwsh
         run: |
-          set -euo pipefail
-          base=https://github.com/godotengine/godot/releases/download/$GODOT_VERSION
-          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
-          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}_export_templates.tpz"
-          unzip -q godot.zip && chmod +x Godot_v${GODOT_VERSION}_linux.x86_64
-          sudo mv Godot_v${GODOT_VERSION}_linux.x86_64 /usr/local/bin/godot
-          unzip -q templates.tpz
-          mkdir -p ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR
-          mv templates/* ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR/
-          rm -f godot.zip templates.tpz
-          godot --version
+          $base = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION"
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_export_templates.tpz" -OutFile templates.tpz
+          Expand-Archive godot.zip -DestinationPath godot-bin
+          # The _console variant: the plain exe detaches from stdout, so the
+          # import step would grep an empty log and pass no matter what the
+          # editor reported. It must keep its own filename - the wrapper locates
+          # the real exe by stripping "_console" from it.
+          "GODOT=$PWD/godot-bin/Godot_v${env:GODOT_VERSION}_win64_console.exe" |
+            Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Rename-Item templates.tpz templates.zip
+          Expand-Archive templates.zip -DestinationPath tpz
+          $dest = "$env:APPDATA\Godot\export_templates\$env:GODOT_TEMPLATE_DIR"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Move-Item tpz/templates/* $dest
+          Remove-Item godot.zip, templates.zip -Force
 
-      # Before anything else touches the project, because a cold .godot/ makes
+      # Before anything else reads the project, because a cold .godot/ makes
       # Godot abort with "Main scene's path could not be resolved from UID.
       # Make sure the project is imported first" - which is exactly what
       # --install-android-build-template did until this ran ahead of it.
       #
-      # Two passes, and only the second is an oracle. On the cold first pass the
-      # editor parses scripts before the image importers have run, so every
-      # preload() of a .png or .svg fails with "has no resource loaders" and
-      # takes each depending script down with it. --import is not a substitute:
-      # it aborts on the same unimported-project check and imports nothing.
+      # --editor --quit does NOT wait for the filesystem scan, it quits after
+      # init; --import is the mode that waits for imports to finish. Then editor
+      # passes to regenerate the global class cache. Every stage is logged and
+      # counted, because the counts are the only way to tell a settling error
+      # from a real one.
       - name: Import the project
+        shell: bash
         run: |
           set -euo pipefail
-          # The .import sidecars are gitignored (.gitignore "**/*.import"), so a
-          # CI clone has every image but nothing that imports them, and until
-          # they exist preload("...png") fails with "has no resource loaders"
-          # and takes each depending script down with it. Locally they were
-          # generated once and have been there ever since, which is why this is
-          # invisible on a dev machine.
-          #
-          # --editor --quit does NOT wait for the filesystem scan, it quits
-          # after init; --import is the mode that waits for imports to finish.
-          # Then an editor pass to regenerate the global class cache. Every
-          # stage is logged and counted because the counts are the only way to
-          # tell a settling error from a real one.
           pass() {
             local label=$1; shift
-            godot --headless --path RetroXR "$@" > "import-$label.log" 2>&1 || true
+            "$GODOT" --headless --path RetroXR "$@" > "import-$label.log" 2>&1 || true
             echo "$label: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import-$label.log") script/shader errors"
           }
           pass import --import
@@ -301,38 +192,39 @@ jobs:
           pass editor2 --editor --quit
 
       - name: Install the Android build template
+        shell: pwsh
         run: |
-          set -euo pipefail
-          godot --headless --path RetroXR --install-android-build-template --quit || true
-          if [ ! -f RetroXR/android/build/build.gradle ]; then
-            # Fallback: the template is just android_source.zip out of the .tpz.
-            echo "CLI install produced nothing - unpacking android_source.zip"
-            mkdir -p RetroXR/android/build
-            unzip -q ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR/android_source.zip \
-              -d RetroXR/android/build
-            echo "$GODOT_TEMPLATE_DIR" > RetroXR/android/.build_version
-            touch RetroXR/android/.gdignore
-          fi
+          & $env:GODOT --headless --path RetroXR --install-android-build-template --quit
+          if (-not (Test-Path RetroXR/android/build/build.gradle)) {
+            Write-Host "CLI install produced nothing - unpacking android_source.zip"
+            New-Item -ItemType Directory -Force RetroXR/android/build | Out-Null
+            $src = "$env:APPDATA\Godot\export_templates\$env:GODOT_TEMPLATE_DIR\android_source.zip"
+            Expand-Archive $src -DestinationPath RetroXR/android/build -Force
+            Set-Content RetroXR/android/.build_version $env:GODOT_TEMPLATE_DIR
+          }
           # A cached gradle dir can re-serve a stale .gdc; the assets staging
           # dirs are never worth keeping between runs.
-          rm -rf RetroXR/android/build/src/main/assets \
-                 RetroXR/android/build/build/intermediates/assets
-          cat RetroXR/android/.build_version
+          foreach ($d in "RetroXR/android/build/src/main/assets",
+                         "RetroXR/android/build/build/intermediates/assets") {
+            if (Test-Path $d) { Remove-Item -Recurse -Force $d }
+          }
+          Get-Content RetroXR/android/.build_version
 
       - name: Fail on any script or shader error
+        shell: bash
         run: |
           set -euo pipefail
-          # Known headless noise, none of it caused by the build. Every
-          # extension with a linux stanza is built above and must load, so none
-          # is excused here - only metaxr-audio, which has no linux library to
-          # find at all.
+          # Known headless noise, none of it caused by the build. All five
+          # extensions have a windows stanza and are built above, so none is
+          # excused here - a load failure is a real one.
           grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import-editor2.log \
-            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|metaxr" \
+            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" \
             > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
           echo "import clean"
 
       - name: Export the signed Quest APK
+        shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEYSTORE_USER }}
@@ -343,22 +235,25 @@ jobs:
           [ -n "$KEYSTORE_B64" ] || { echo "::error::secret ANDROID_KEYSTORE_BASE64 is unset"; exit 1; }
           # Never written to the tree: RetroXR/.godot/export_credentials.cfg
           # stays absent and the keystore lives only in the runner temp dir.
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
+          ks=$(cygpath -u "$RUNNER_TEMP")/release.keystore
+          echo "$KEYSTORE_B64" | base64 -d > "$ks"
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$(cygpath -w "$ks")
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH
           mkdir -p build_out
-          godot --headless --path RetroXR --export-release "Quest" "$PWD/build_out/$APK"
+          "$GODOT" --headless --path RetroXR --export-release "Quest" "$PWD/build_out/$APK"
           ls -la "build_out/$APK"
 
       - name: Check the APK
+        shell: bash
         env:
           APK: build_out/${{ needs.preflight.outputs.apk_name }}
           WANT_CODE: ${{ needs.preflight.outputs.version_code }}
           WANT_NAME: ${{ needs.preflight.outputs.version_name }}
         run: |
           set -euo pipefail
-          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          aapt2=$(find "$sdk/build-tools" -name aapt2 -type f | sort | tail -1)
-          [ -x "$aapt2" ] || { echo "::error::no aapt2 under $sdk/build-tools"; exit 1; }
+          sdk=$(cygpath -u "${ANDROID_SDK_ROOT:-$ANDROID_HOME}")
+          aapt2=$(find "$sdk/build-tools" -name 'aapt2*' -type f | sort | tail -1)
+          [ -n "$aapt2" ] || { echo "::error::no aapt2 under $sdk/build-tools"; exit 1; }
           badging=$("$aapt2" dump badging "$APK")
           code=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$badging" | head -1)
           name=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$badging" | head -1)
@@ -366,8 +261,11 @@ jobs:
           [ "$code" = "$WANT_CODE" ] || { echo "::error::versionCode $code != preset $WANT_CODE"; exit 1; }
           [ "$name" = "$WANT_NAME" ] || { echo "::error::versionName $name != preset $WANT_NAME"; exit 1; }
 
-          size=$(stat -c%s "$APK")
+          # python, not stat/unzip: Git Bash has no unzip and its stat differs.
+          size=$(python -c "import os,sys;print(os.path.getsize(sys.argv[1]))" "$APK")
+          echo "size: $size bytes"
           [ "$size" -gt 100000000 ] || { echo "::error::APK is only $size bytes - assets are probably missing"; exit 1; }
+          python -c "import zipfile,sys;[print(n) for n in zipfile.ZipFile(sys.argv[1]).namelist()]" "$APK" > entries.txt
 
           # One missing native drops the whole GDExtension at runtime, and a
           # missing vendors .so has previously shipped a Quest build with no
@@ -375,8 +273,8 @@ jobs:
           for lib in liblibretro_godot libverlet_rope libvlc_godot libgodot-pdfium \
                      libmetaxr-audio libgodotopenxrvendors libvlc.so libpdfium.so \
                      libMetaXRAudioUnity.so; do
-            unzip -Z1 "$APK" | grep -q "lib/arm64-v8a/$lib" || {
-              echo "::error::APK is missing lib/arm64-v8a/$lib*"; exit 1; }
+            grep -q "^lib/arm64-v8a/$lib" entries.txt || {
+              echo "::error::APK is missing lib/arm64-v8a/$lib"; exit 1; }
           done
           echo "all expected natives present"
 
