@@ -91,6 +91,7 @@ var _compact_btn: Button = null
 var _home_page:    VBoxContainer   = null
 var _detail_page:  VBoxContainer   = null
 var _filter_edit:  LineEdit        = null
+var _home_toolbar: HBoxContainer   = null
 var _home_scroll:  ScrollContainer = null
 var _tiles_grid:   GridContainer   = null
 var _home_empty:   Label           = null
@@ -131,6 +132,22 @@ func set_detail_populator(cb: Callable) -> void:
 func detail_toolbar() -> HBoxContainer:
 	_ensure_built()
 	return _detail_toolbar
+
+
+## Pinned row on the HOME page, between the filter box and the tile grid — for a
+## control that acts on the whole list rather than on one system, and so has no
+## meaning once you have drilled into one.
+##
+## Unlike detail_toolbar this is built once and never cleared: the home page is
+## not rebuilt on navigation, so the host fills it during its own build and the
+## row survives every trip in and out of a system.
+##
+## Asking for it is what shows it — an empty row would otherwise take a slice of
+## the grid's height on every browser that has no use for one.
+func home_toolbar() -> HBoxContainer:
+	_ensure_built()
+	_home_toolbar.visible = true
+	return _home_toolbar
 
 
 func open_system(systemid: String) -> void:
@@ -349,6 +366,12 @@ func _ensure_built() -> void:
 				grid_prefs_changed.emit()
 			)
 			filter_row.add_child(_compact_btn)
+
+	_home_toolbar = HBoxContainer.new()
+	_home_toolbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_home_toolbar.add_theme_constant_override("separation", 8)
+	_home_toolbar.visible = false
+	_home_page.add_child(_home_toolbar)
 
 	_home_scroll = ScrollContainer.new()
 	_home_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL

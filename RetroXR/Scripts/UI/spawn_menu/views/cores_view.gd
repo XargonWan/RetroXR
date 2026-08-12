@@ -995,21 +995,6 @@ func _build_download_tab() -> Control:
 	path_val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	path_row.add_child(path_val)
 
-	# One press to get a working set: the recommendation table names exactly one
-	# core per system, so this can never install two cores for one machine.
-	# Above the browser rather than on the home grid, because the grid is only one
-	# of the two pages SystemGridBrowser shows and a control that vanishes on
-	# drill-down reads as a control that stopped existing.
-	_recommend_all_btn = Button.new()
-	_recommend_all_btn.custom_minimum_size = Vector2(0, 56)
-	_recommend_all_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_recommend_all_btn.add_theme_font_size_override("font_size", 18)
-	_recommend_all_btn.add_theme_color_override("font_color", MenuStyle.COLOR_RECOMMENDED)
-	_recommend_all_btn.focus_mode = Control.FOCUS_NONE
-	_recommend_all_btn.pressed.connect(_on_download_all_recommended)
-	outer.add_child(_recommend_all_btn)
-	_refresh_recommend_all_button()
-
 	outer.add_child(HSeparator.new())
 
 	# Job reporting is the same shape as the firmware installer's, so both
@@ -1027,6 +1012,22 @@ func _build_download_tab() -> Control:
 	_download_browser.set_detail_populator(_populate_download_detail)
 	_download_browser.active_scroll_changed.connect(_on_cores_browser_scroll_changed)
 	outer.add_child(_download_browser)
+
+	# One press to get a working set: the recommendation table names exactly one
+	# core per system, so this can never install two cores for one machine.
+	#
+	# In the browser's home toolbar, under the filter and above the grid, so it
+	# goes away on drill-down — inside a system it would be a button offering to
+	# install 47 cores for other machines.
+	_recommend_all_btn = Button.new()
+	_recommend_all_btn.custom_minimum_size = Vector2(0, 56)
+	_recommend_all_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_recommend_all_btn.add_theme_font_size_override("font_size", 18)
+	_recommend_all_btn.add_theme_color_override("font_color", MenuStyle.COLOR_RECOMMENDED)
+	_recommend_all_btn.focus_mode = Control.FOCUS_NONE
+	_recommend_all_btn.pressed.connect(_on_download_all_recommended)
+	_download_browser.home_toolbar().add_child(_recommend_all_btn)
+	_refresh_recommend_all_button()
 
 	return outer
 
