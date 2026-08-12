@@ -152,8 +152,11 @@ jobs:
         shell: pwsh
         run: |
           $base = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION"
-          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip
-          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_export_templates.tpz" -OutFile templates.tpz
+          # Retries because a bare Invoke-WebRequest does not, and a 503 from the
+          # release CDN has already thrown away a 40 minute build.
+          $get = @{ MaximumRetryCount = 5; RetryIntervalSec = 15 }
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip @get
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_export_templates.tpz" -OutFile templates.tpz @get
           Expand-Archive godot.zip -DestinationPath godot-bin
           # The _console variant: the plain exe detaches from stdout, so the
           # import step would grep an empty log and pass no matter what the
@@ -326,8 +329,11 @@ jobs:
         shell: pwsh
         run: |
           $base = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION"
-          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip
-          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_export_templates.tpz" -OutFile templates.tpz
+          # Retries because a bare Invoke-WebRequest does not, and a 503 from the
+          # release CDN has already thrown away a 40 minute build.
+          $get = @{ MaximumRetryCount = 5; RetryIntervalSec = 15 }
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip @get
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_export_templates.tpz" -OutFile templates.tpz @get
           Expand-Archive godot.zip -DestinationPath godot-bin
           # Use the _console variant: the plain exe detaches from stdout on
           # Windows, so the import step would grep an empty log and pass no
