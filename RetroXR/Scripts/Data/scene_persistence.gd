@@ -325,9 +325,12 @@ func _resolve_ref(root: Node, spawned: Dictionary, ref: Variant) -> Node:
 func instantiate_objects(root: Node, objects: Array) -> Dictionary:
 	var spawned: Dictionary = {}
 	var entries: Dictionary = {}
+	var held: Dictionary = {}
 	for entry: Variant in objects:
-		_spawn_entry(root, entry, spawned, entries)
+		_spawn_entry(root, entry, spawned, entries, held)
+	_hold_still_group(root, held)
 	_restore_connections(root, spawned, entries)
+	_let_go(held)
 	return spawned
 
 
@@ -342,6 +345,7 @@ func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
 	var spawned: Dictionary = {}
 	var entries: Dictionary = {}
 	var tree := root.get_tree()
+	var held: Dictionary = {}
 	_restore_generation += 1
 	var generation := _restore_generation
 	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
@@ -352,15 +356,19 @@ func instantiate_objects_async(root: Node, objects: Array) -> Dictionary:
 		# the cache instead; once warm this never suspends.
 		await _acquire_entry_assets(entry)
 		if not _still_ours(root, generation):
+			_let_go(held)
 			return spawned
-		_spawn_entry(root, entry, spawned, entries)
+		_spawn_entry(root, entry, spawned, entries, held)
 		if Time.get_ticks_usec() < deadline:
 			continue
 		await tree.process_frame
 		if not _still_ours(root, generation):
+			_let_go(held)
 			return spawned
 		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	_hold_still_group(root, held)
 	await _restore_connections_async(root, spawned, entries, generation)
+	_let_go(held)
 	return spawned
 
 
@@ -376,7 +384,8 @@ func _acquire_entry_assets(entry: Variant) -> void:
 		await ModelWarmer.acquire(path)
 
 
-func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dictionary) -> void:
+func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dictionary,
+		held: Dictionary) -> void:
 	if not entry is Dictionary:
 		return
 	var d := entry as Dictionary
@@ -388,6 +397,7 @@ func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dict
 		return
 	root.add_child(obj)
 	obj.add_to_group("spawned")
+	_hold_still(obj, held)
 	# A lead's connectors are stood up here rather than with the rest of its wiring
 	# in pass 2. Where they go needs nothing from the other objects, and the lead
 	# lays its cord out around them at the end of THIS frame — so leaving them until
@@ -398,6 +408,71 @@ func _spawn_entry(root: Node, entry: Variant, spawned: Dictionary, entries: Dict
 		(obj as CompositeCable).restore_plug_poses(d.get("plugs", []))
 	spawned[id] = obj
 	entries[id] = d
+
+
+## Take gravity off every rigid body in a freshly spawned object, remembering what
+## it had. _let_go gives it back once the whole room is wired.
+##
+## Restoring is two passes — pass 1 stands the objects where they were left, pass 2
+## hands each one to whatever was holding it — and both are budgeted to a few ms a
+## frame so the headset keeps drawing (see instantiate_objects_async). Everything
+## restored is an XRToolsPickable, which is a RigidBody3D, live from the moment it
+## is added. So a cartridge saved in its slot spawns at the slot's pose with nothing
+## under it and falls out; a disc in a tray does the same; anything resting on
+## another restored object falls through the gap until that one arrives. Measured
+## on a 24-object slot: one to three seconds of that before pass 2 catches up. The
+## whole room appeared to rain into place.
+##
+## Gravity rather than `freeze`, deliberately. Three other things own that flag and
+## would fight over it: XRToolsPickable snapshots it at pick-up and hands it back on
+## release — so a cartridge seated in pass 2 while frozen would stay frozen in
+## mid-air when the player pulled it out (the correction RetroTV._on_tv_grabbed has
+## to make for its own park) — plus FloatLock parks with it and RetroSystem keeps its
+## own copy of that. gravity_scale is written by no script in the project.
+func _hold_still(node: Node, held: Dictionary) -> void:
+	if node is RigidBody3D:
+		var body := node as RigidBody3D
+		var id := body.get_instance_id()
+		# Keyed, and never overwritten: _hold_still_group sweeps again a pass later
+		# and would otherwise record the zero this already wrote as what the body
+		# arrived with, so _let_go would hand back no gravity at all.
+		if not held.has(id):
+			held[id] = {"body": body, "gravity": body.gravity_scale}
+			body.gravity_scale = 0.0
+			body.linear_velocity = Vector3.ZERO
+			body.angular_velocity = Vector3.ZERO
+	for child in node.get_children():
+		_hold_still(child, held)
+
+
+## The same, over everything in the "spawned" group.
+##
+## A second sweep, run once pass 1 is finished, because the captive leads are not
+## children of the object that owns them: a system, a keyboard or a mouse builds its
+## cable in _ready and parents it to the current scene a frame later (see
+## RetroSystem._add_cables_to_scene), so it does not exist yet when its owner spawns
+## and the walk above cannot reach it. Its plug is the most visible faller of the
+## lot — it spawns beside the console's jack and drops to the desk before pass 2
+## puts it in the socket.
+func _hold_still_group(root: Node, held: Dictionary) -> void:
+	if root.get_tree() == null:
+		return
+	for node: Node in root.get_tree().get_nodes_in_group("spawned"):
+		_hold_still(node, held)
+
+
+## Hand the room back to physics. Woken as well as un-weighted: a body that stood
+## still for the length of the restore has gone to sleep, and a sleeping body does
+## not notice it has weight again.
+func _let_go(held: Dictionary) -> void:
+	for id: Variant in held:
+		var rec: Dictionary = held[id]
+		var body: RigidBody3D = rec["body"]
+		if not is_instance_valid(body):
+			continue
+		body.gravity_scale = rec["gravity"]
+		body.sleeping = false
+	held.clear()
 
 
 ## Pass 2: wire the spawned objects to each other. Has to run after every object
