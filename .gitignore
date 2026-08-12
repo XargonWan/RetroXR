@@ -27,18 +27,12 @@ RetroXR/vlc-godot/*.ilk
 RetroXR/vlc-godot/*.lib
 RetroXR/vlc-godot/*.pdb
 
-**/*.import
-
-# The system icons carry a deliberate svg/scale=0.5 — the source art is ~331 px
-# on the long edge and the tiles draw it at 60. Without these, a fresh clone
-# reimports them at full size for no visual gain.
-!RetroXR/Textures/SystemIcons/*.svg.import
-
-# The bedroom's NormalGL maps need compress/normal_map=1 so they import as linear
-# normal data rather than sRGB colour. Godot only sets that when the editor
-# prompts on assignment, which never happens for a hand-authored .tscn — without
-# these a fresh clone renders the walls and carpet nearly flat.
-!RetroXR/imported-assets/bedroom/materials/*.import
+# .import sidecars are tracked, not ignored. They hold each asset's import
+# settings (the system icons' svg/scale=0.5, the bedroom NormalGL maps'
+# compress/normal_map=1) and its uid://, which .tscn and .tres reference by
+# UID rather than by path. A clone that regenerates them invents different
+# UIDs and re-derives every setting from defaults. The build output they point
+# at lives in .godot/, which is ignored above.
 
 *.apk
 
