@@ -101,6 +101,7 @@ const DISC_FINISHES: Dictionary = {
 	"dreamcast":    FINISH_GD,
 	"gamecube":     FINISH_DVD,   # mini-DVD
 	"wii":          FINISH_DVD,
+	"playstation_portable": FINISH_DVD,   # UMD is DVD-derived, not a CD
 	# playstation2 is resolved per-title in disc_finish(): CD-ROM or DVD.
 }
 
@@ -202,21 +203,29 @@ static func disc_finish(systemid: String, rom_path: String = "") -> Dictionary:
 ## unrecorded mirror band gives way to pits, and where the pits stop and the
 ## clear outer rim begins.
 ##
-## Note metal_start is 22 mm, not the 16.5 mm clamping ring — the clamping area is
-## mechanical, not optical, and a CD is transparent from the bore all the way out
-## to 22 mm. That wide clear hub annulus is one of the most recognisable things
-## about a disc's underside, and getting it wrong plates the whole hub in silver.
+## CD and DVD are NOT the same shape here, which keying only on diameter got wrong.
+## A CD is a single 1.2 mm substrate: clear polycarbonate all the way out to 22 mm,
+## then barely a millimetre of mirror band before the pits. A DVD is two bonded
+## 0.6 mm halves whose reflective layer runs far further in — its clamping area
+## ends near 11 mm and the pits do not start until 24 mm, leaving a ~13 mm ring of
+## bare silver. Hold a Wii disc: that wide silvery band round the hub is the tell,
+## and it is absent on an audio CD.
 ##
 ## The smaller discs keep the same 15 mm bore and pull both data radii in. Every
 ## size needs its own row: a data_end past the disc's own radius leaves it with no
 ## clear outer rim and a mirror band that never resolves.
-static func disc_zones(systemid: String) -> Vector3:
+##
+## Takes the pitch rather than looking the finish up again, so the caller's single
+## disc_finish() call also settles CD-or-DVD — and the PS2's per-title branch, file
+## stat and all, is not run twice.
+static func disc_zones(systemid: String, pitch: float = PITCH_CD) -> Vector3:
 	var d := disc_diameter(systemid)
+	var dvd := pitch < 1.0
 	if d < 0.07:
-		return Vector3(0.0130, 0.0135, 0.0300)   # UMD platter
+		return Vector3(0.0105, 0.0135, 0.0300)   # UMD platter (DVD-derived)
 	if d < 0.10:
-		return Vector3(0.0155, 0.0160, 0.0380)   # 80 mm mini-DVD
-	return Vector3(0.0220, 0.0230, 0.0580)       # 120 mm CD/DVD
+		return Vector3(0.0115, 0.0160, 0.0380) if dvd else Vector3(0.0155, 0.0160, 0.0380)
+	return Vector3(0.0115, 0.0240, 0.0580) if dvd else Vector3(0.0220, 0.0230, 0.0580)
 
 
 ## How this system loads discs: LOADER_NONE / LOADER_TRAY / LOADER_SLOT.

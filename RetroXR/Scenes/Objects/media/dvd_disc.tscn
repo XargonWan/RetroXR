@@ -18,6 +18,8 @@ shader_parameter/data_color = Color(0.72, 0.71, 0.79, 1)
 shader_parameter/poly_color = Color(0.09, 0.1, 0.12, 1)
 shader_parameter/poly_alpha = 0.28
 shader_parameter/track_pitch = 0.74
+shader_parameter/r_metal_start = 0.0115
+shader_parameter/r_data_start = 0.024
 
 [node name="DVDDisc" type="RigidBody3D" groups=["dvd_disc"]]
 collision_layer = 4

@@ -75,7 +75,7 @@ func _apply_system_size() -> void:
 			mat.set_shader_parameter("poly_color", finish["poly"])
 			mat.set_shader_parameter("poly_alpha", finish["alpha"])
 			mat.set_shader_parameter("track_pitch", finish["pitch"])
-			var zones := MediaDimensions.disc_zones(systemid)
+			var zones := MediaDimensions.disc_zones(systemid, finish["pitch"])
 			mat.set_shader_parameter("r_metal_start", zones.x)
 			mat.set_shader_parameter("r_data_start", zones.y)
 			mat.set_shader_parameter("r_data_end", zones.z)
