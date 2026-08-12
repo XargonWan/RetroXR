@@ -79,7 +79,11 @@ var _host: Node3D = null
 ## default "straight up, in world space".
 var _local_offset := Vector3.ZERO
 var _pinned := false
+## Offset above the host, split because only one half belongs to the host: the
+## measured part rides its scale, the gap over its lid is a world constant. A set
+## enlarged 5x is five times taller; the breathing room above it is not.
 var _height := 0.18
+var _height_margin := 0.0
 ## Whether the host uses the VR drop combo. The DESKTOP drop rule is not declared
 ## here — it is read off the host, see _needs_desktop_modifier.
 var _vr_combo_drop := false
@@ -178,16 +182,23 @@ static func _is_vr() -> bool:
 ## a surface is taller than that about its own origin, so the popup opens inside
 ## the object and reads as belonging to the hand that spawned it rather than to
 ## the thing itself.
+##
+## Host-local metres, like the default: _anchor multiplies by the host's world
+## scale, so a set resized after this ran needs no re-measure.
 func fit_above(margin := 0.10) -> void:
 	if not is_instance_valid(_host):
 		return
-	_height = maxf(_visual_top(_host), 0.0) + margin
+	_height = maxf(visual_top(_host), 0.0)
+	_height_margin = margin
 
 
 ## Highest point of the host's visible geometry, in host-local metres. Measured
 ## from the meshes rather than a collision shape: several of these objects carry
 ## a coarse box collider that is nothing like the silhouette.
-static func _visual_top(root: Node3D) -> float:
+##
+## Local, i.e. at scale 1: the sweep runs through the inverse of the host's own
+## transform, so the host's scale divides straight back out.
+static func visual_top(root: Node3D) -> float:
 	var inv := root.global_transform.affine_inverse()
 	var top := 0.0
 	var found := false
@@ -496,6 +507,12 @@ func _ensure_nodes() -> void:
 		return
 
 	top_level = true
+	# Going top-level inside the tree BAKES the host's global transform into the
+	# local one, so a popup first built over an enlarged host keeps that host's
+	# scale for good — 1.06 m of tooltip over a 5x TV, and a different size again
+	# depending on how big the host happened to be the first time it was shown.
+	# M_PER_PX is what fixes the apparent size; nothing else may.
+	global_basis = Basis.IDENTITY
 	# Moved every rendered frame in _process. Interpolating those writes against
 	# the 90 Hz physics tick redraws them a beat behind, which reads as judder
 	# up close. Inherited by the sprite and viewport below.
@@ -567,7 +584,13 @@ func _anchor() -> Vector3:
 		return host_xf * _local_offset
 	# World up, not host-local: a controller rolls around in the hand and the
 	# popup should stay above it rather than orbit it.
-	return host_xf.origin + Vector3.UP * _height
+	#
+	# _height is scaled because it is a host-local distance and this is a world
+	# one. A TV enlarged to 5x is five times as tall about its origin while _height
+	# is unchanged, so the unscaled offset put the popup a fifth of the way up the
+	# cabinet — inside it.
+	return host_xf.origin \
+		+ Vector3.UP * (_height * host_xf.basis.get_scale().y + _height_margin)
 
 
 func _process(delta: float) -> void:
