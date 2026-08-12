@@ -10,6 +10,8 @@
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/nunchuk_boot.res" id="8_ncboot"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/nunchuk_c.res" id="9_ncc"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/nunchuk_z.res" id="10_ncz"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/nunchuk_seam.res" id="11_ncseam"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/nunchuk_gate.res" id="12_ncgate"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_nc"]
 friction = 0.8
@@ -40,6 +42,19 @@ albedo_color = Color(0.898, 0.898, 0.910, 1)
 metallic_specular = 0.5
 roughness = 0.42
 
+; The moulding seam, and the shadow in the stick's gate. Both are DARK BY MATERIAL
+; rather than by geometry or shadow: these rooms light with a flat ambient and no
+; radiance map, so a groove renders exactly as brightly as the surface either side of
+; it and the bottom of a bore as brightly as its mouth. Same call gen_rca_jack.gd
+; makes for its socket.
+;
+; The seam is a sheet, so it is drawn double-sided (cull_mode 2) — which way its
+; normals happen to face is then not something anyone has to get right.
+[sub_resource type="StandardMaterial3D" id="Mat_seam"]
+albedo_color = Color(0.63, 0.63, 0.62, 1)
+roughness = 0.55
+cull_mode = 2
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.06, 0.13, 0.06)
 
@@ -61,6 +76,22 @@ shape = SubResource("CylShape_body")
 ; is adjustable, so re-run that rather than scaling this node.
 [node name="Body" type="MeshInstance3D" parent="."]
 mesh = ExtResource("6_ncbody")
+surface_material_override/0 = SubResource("Mat_shell")
+
+; The parting line where the two shell halves meet, running the length of both flanks.
+; In the body's own frame, so no transform of its own.
+[node name="Seam" type="MeshInstance3D" parent="."]
+mesh = ExtResource("11_ncseam")
+surface_material_override/0 = SubResource("Mat_seam")
+
+; The octagonal gate the stick sits in, and the shadow at the bottom of it. Both ride
+; the STICK's axis rather than the body's — they are concentric with it, so they carry
+; its 8 degree rake — and sit 2.6 mm further up that axis, which is where the crown's
+; surface is narrow enough for the collar to stand proud all round rather than half
+; buried on the flanks and floating front and back.
+[node name="StickGate" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.99027, -0.13917, 0, 0.13917, 0.99027, 0, 0.0481, -0.0019)
+mesh = ExtResource("12_ncgate")
 surface_material_override/0 = SubResource("Mat_shell")
 
 ; Set into the crown rather than stood on it: the stalk's base disc is at the mesh's

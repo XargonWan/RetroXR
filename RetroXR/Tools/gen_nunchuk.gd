@@ -79,6 +79,8 @@ const _PROFILE := [
 
 func _init() -> void:
 	_build_body()
+	_build_seam()
+	_build_gate()
 	_build_stick()
 	_build_boot()
 	_build_c()
@@ -96,6 +98,88 @@ func _build_body() -> void:
 		rings.append(_ring(t))
 	var tris := _loft(rings)
 	_save(_smooth(tris), "res://Scenes/Objects/nunchuk_body.res")
+
+
+## The moulding seam, which runs the whole length of both flanks where the two shell
+## halves meet. Visible in every reference photograph and, at this scale, most of what
+## says the thing is moulded plastic rather than turned from one piece.
+##
+## Drawn as a narrow ribbon rather than cut into the shell: the loft is a closed solid
+## and a real groove would mean splitting every ring. The ribbon rides the widest line
+## on each flank — where the seam actually falls, since that IS the parting line a
+## two-part mould leaves — and stands 0.15 mm out so it cannot z-fight the shell.
+func _build_seam() -> void:
+	var tris: Array[Vector3] = []
+	for side in [1.0, -1.0]:
+		var prev: Array = []
+		for r in RINGS + 1:
+			var t := float(r) / float(RINGS)
+			var a_mid := _seam_angle(t, side)
+			# Skip the poles: the ring collapses there and the ribbon would pinch to
+			# nothing across a face it no longer has room to sit on.
+			if t < 0.04 or t > 0.965:
+				prev = []
+				continue
+			var lo := _ring_at(t, a_mid - SEAM_HALF_ANGLE, side)
+			var hi := _ring_at(t, a_mid + SEAM_HALF_ANGLE, side)
+			if not prev.is_empty():
+				tris.append_array([prev[0], prev[1], lo])
+				tris.append_array([prev[1], hi, lo])
+			prev = [lo, hi]
+	# A ribbon is a sheet, not a solid, so _smooth's orientation check would read its
+	# enclosed volume as meaningless. Emitted double-sided in the material instead.
+	_save_sheet(_smooth_sheet(tris), "res://Scenes/Objects/nunchuk_seam.res")
+
+
+## How wide the seam ribbon is, as a half-angle round the ring. About 3 degrees, which
+## comes out near 0.5 mm on the widest part of the body.
+const SEAM_HALF_ANGLE := 0.055
+## How far the ribbon stands off the shell, along the flank's outward normal (+/-X at
+## the seam line, near enough).
+##
+## 0.35 mm, not the 0.15 it started at, and the difference is the shell's TESSELLATION
+## rather than the surface. The ribbon is computed on the analytic surface, but the
+## body is a 28-sided approximation to it, and mid-facet the chord cuts up to
+## 0.12 mm inside — so at 0.15 the far flank's ribbon surfaced through the shell in
+## flecks wherever a facet dipped under it. Clearing the chord error is what matters
+## here, not clearing the surface.
+const SEAM_STANDOFF := 0.00035
+
+
+## Where round the ring the parting line falls, at station `t`.
+##
+## NOT simply the widest point in X. The ring's widest X is at z = 0 by construction,
+## and z = 0 is not its mid-depth — the front and back reaches differ, so the ring's
+## centre sits at (db - df)/2. A seam pinned to the widest point therefore comes out
+## dead straight down the side view while the body curves around it, which is exactly
+## what the first cut looked like and exactly what the reference does not.
+##
+## So the angle is solved for instead: the c where the ring's own z reaches its
+## mid-depth, from ds*c^2 + dm*c - ds = 0. The seam then follows the flank the way a
+## mould's parting line follows the body it splits.
+static func _seam_angle(t: float, side: float) -> float:
+	var df := _sample(t, 2)
+	var db := _sample(t, 3)
+	var dm := (db + df) * 0.5
+	var ds := (db - df) * 0.5
+	var c := 0.0
+	if absf(ds) > 1e-6 and dm > 1e-6:
+		c = clampf((-dm + sqrt(dm * dm + 4.0 * ds * ds)) / (2.0 * ds), -1.0, 1.0)
+	var a := acos(c)                     # in (0, PI), so sin(a) >= 0 — the +X flank
+	return a if side > 0.0 else TAU - a
+
+
+## One point on the body's surface at station `t` and angle `a`, pushed out along the
+## flank so it clears the shell.
+func _ring_at(t: float, a: float, side: float) -> Vector3:
+	var hx := _sample(t, 1)
+	var df := _sample(t, 2)
+	var db := _sample(t, 3)
+	var y := lerpf(Y_TOP, Y_TIP, t)
+	var dm := (db + df) * 0.5
+	var ds := (db - df) * 0.5
+	var c := cos(a)
+	return Vector3(hx * sin(a) + side * SEAM_STANDOFF, y, c * (dm + ds * c))
 
 
 ## One ring of the loft, in the object's own frame.
@@ -168,6 +252,52 @@ static func _loft(rings: Array) -> Array[Vector3]:
 
 # ── Fittings ─────────────────────────────────────────────────────────────────
 
+## The OCTAGONAL gate the stick sits in — the stepped well moulded into the crown,
+## which the thumbstick overhangs. Unmistakable in a photograph taken straight down
+## the stick's axis, and absent from the first cut of this model entirely: the stick
+## grew out of a bare dome, which is what made the crown read as unfinished.
+##
+## A raised collar rather than a recess cut into the shell. The shell is a closed loft
+## and cutting a well into it would mean splitting every ring near the crown around an
+## octagon; a collar set into the dome gets the same silhouette for a fraction of the
+## machinery, and the dome is convex there so nothing floats.
+##
+## Eight sides, flats top and bottom (phase 22.5 degrees). The reference does not say
+## which way the octagon is clocked and this is the reading that looks deliberate.
+func _build_gate() -> void:
+	var rings: Array = []
+	rings.append(_poly(-0.0060, 0.0000))      # buried, closes the bottom
+	rings.append(_poly(-0.0060, 0.0112))
+	rings.append(_poly(0.0000, 0.0112))       # outer wall, most of it inside the dome
+	rings.append(_poly(0.0016, 0.0106))       # chamfer up to the rim
+	rings.append(_poly(0.0018, 0.0094))       # rim's inner edge
+	rings.append(_poly(-0.0024, 0.0091))      # bore wall dropping away under the cap
+	rings.append(_poly(-0.0028, 0.0000))      # bore floor
+	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_gate.res")
+
+
+## NOTE — there is no separate dark floor to this bore, and that is a retreat rather
+## than a design. One was built (a flat octagonal puck, darkness by MATERIAL, the same
+## call gen_rca_jack.gd makes for its socket) and it rendered OVER the stick cap: a
+## 17 mm puck measured at world y 0.0455..0.0491 winning the depth test against a cap
+## whose top is at 0.0597, under an orthographic camera looking straight down. Proven
+## by bisection — hiding that one node made the cap reappear — and not explained. The
+## cap was ruled out as the cause: rendered alone against a green field it is solid,
+## with no hole for anything to show through.
+##
+## It is dropped because the cap covers all but a rim of the bore anyway, so the part
+## bought almost nothing. If a dark bore is ever wanted here, expect this to recur.
+
+
+## An eight-sided ring at height `y`. Radius zero makes it a pole.
+static func _poly(y: float, r: float) -> Array:
+	var out: Array = []
+	for s in 8:
+		var a := TAU * (float(s) + 0.5) / 8.0
+		out.append(Vector3(r * sin(a), y, r * cos(a)))
+	return out
+
+
 ## The stick: a waisted stalk under a dished cap. The cap's top is CONCAVE — a thumb
 ## sits in it — and the rim stands slightly proud of the dish, which is the reading
 ## that separates it from a plain disc at a glance.
@@ -183,11 +313,16 @@ func _build_stick() -> void:
 	rings.append(_disc(0.0098, 0.0094))              # rim, the widest point
 	rings.append(_disc(0.0114, 0.0095))
 	rings.append(_disc(0.0126, 0.0090))              # rim rolls over
-	rings.append(_disc(0.0130, 0.0080))
-	rings.append(_disc(0.0124, 0.0068))              # dish falls away inside the rim
-	rings.append(_disc(0.0118, 0.0045))
-	rings.append(_disc(0.0114, 0.0022))
-	rings.append(_disc(0.0113, 0.0000))              # centre of the dish
+	rings.append(_disc(0.0130, 0.0082))              # the rim land, the cap's high point
+	# The concentric groove. Plainly there in a photograph taken down the stick's
+	# axis, and the detail that stops the cap reading as a plain disc: the top is a
+	# flat outer land, a turned groove, then a shallow centre inside it.
+	rings.append(_disc(0.0124, 0.0076))
+	rings.append(_disc(0.0123, 0.0070))
+	rings.append(_disc(0.0128, 0.0064))              # inner land climbs back out of it
+	rings.append(_disc(0.0126, 0.0044))              # centre, dished a little
+	rings.append(_disc(0.0122, 0.0022))
+	rings.append(_disc(0.0121, 0.0000))
 	_save(_smooth(_loft(rings)), "res://Scenes/Objects/nunchuk_stick.res")
 
 
@@ -288,6 +423,28 @@ func _smooth(tris: Array[Vector3]) -> ArrayMesh:
 	st.index()
 	st.generate_normals()
 	return st.commit()
+
+
+## Weld and smooth-shade a SHEET. No orientation pass: _orient weighs enclosed volume,
+## which is only an oracle for a closed solid — a ribbon encloses nothing and would be
+## flipped or not on the strength of a rounding error. The material draws it
+## double-sided instead, so which way it faces cannot matter.
+func _smooth_sheet(tris: Array[Vector3]) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for v in tris:
+		st.add_vertex(v)
+	st.index()
+	st.generate_normals()
+	return st.commit()
+
+
+## …and save it without the closed-solid check, for the same reason.
+func _save_sheet(mesh: ArrayMesh, path: String) -> void:
+	var err := ResourceSaver.save(mesh, path)
+	var ab: AABB = mesh.get_aabb()
+	print("[gen] %-44s err=%d  %.4f x %.4f x %.4f m  (sheet)"
+		% [path, err, ab.size.x, ab.size.y, ab.size.z])
 
 
 ## Turn a solid the right way out if it came out inside in.
