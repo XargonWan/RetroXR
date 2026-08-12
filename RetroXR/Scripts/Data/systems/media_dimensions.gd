@@ -67,6 +67,55 @@ const DISC_DIAMETERS: Dictionary = {
 ## Default disc diameter (standard CD/DVD) for a disc systemid without an entry.
 const DISC_DIAMETER_DEFAULT := 0.12
 
+## Track pitch in MICROMETRES — the spacing of the data spiral, which is what
+## Shaders/disc.gdshader diffracts light off. A CD's coarse 1.6 um puts four
+## diffraction orders in the visible band and shows repeating spectral bands; a
+## DVD's 0.74 um puts one there and shows a single broad sweep. Getting this right
+## is the whole difference between a PS1 disc and a Wii disc.
+const PITCH_CD := 1.6
+const PITCH_DVD := 0.74
+const PITCH_GD := 1.1   # GD-ROM packed ~1 GB onto a CD by tightening the pitch
+
+## Disc finishes:
+##   data   the reflective layer seen through the substrate (the underside)
+##   poly   bare polycarbonate — bore, rim, edge, and the clear annulus inside
+##          the metal, which on a CD reaches all the way out to 22 mm
+##   show   how much of the label side shows through that clear annulus. A normal
+##          disc's hub is a window; a dyed substrate is not.
+##   pitch  track pitch, micrometres
+const FINISH_CD := {"data": Color(0.78, 0.80, 0.84), "poly": Color(0.09, 0.10, 0.12), "show": 0.24, "pitch": PITCH_CD}
+const FINISH_DVD := {"data": Color(0.72, 0.71, 0.79), "poly": Color(0.09, 0.10, 0.12), "show": 0.24, "pitch": PITCH_DVD}
+const FINISH_GD := {"data": Color(0.76, 0.78, 0.80), "poly": Color(0.09, 0.10, 0.12), "show": 0.24, "pitch": PITCH_GD}
+## The PS1's black disc: the polycarbonate itself is dyed, so the edge goes black
+## too, not just the playing surface, and the hub stops being a window. Near-black
+## albedo is why this one needs the analytic rainbow most — with no reflection
+## probe in any room, the diffraction term is the only thing keeping it from
+## rendering as a featureless black hole.
+const FINISH_PS1 := {"data": Color(0.07, 0.06, 0.09), "poly": Color(0.035, 0.03, 0.045), "show": 0.04, "pitch": PITCH_CD}
+## The PS2's blue CD-ROM. Its DVD titles are FINISH_DVD — see disc_finish().
+const FINISH_PS2_CD := {"data": Color(0.10, 0.20, 0.48), "poly": Color(0.04, 0.07, 0.16), "show": 0.12, "pitch": PITCH_CD}
+
+## systemid -> finish. Unlisted disc systems are silver CDs, which is most of them.
+const DISC_FINISHES: Dictionary = {
+	"playstation":  FINISH_PS1,
+	"dreamcast":    FINISH_GD,
+	"gamecube":     FINISH_DVD,   # mini-DVD
+	"wii":          FINISH_DVD,
+	# playstation2 is resolved per-title in disc_finish(): CD-ROM or DVD.
+}
+
+## CD descriptor formats. A DVD is never described by a .cue, and this check has to
+## come before any size test: rom_path frequently points at the descriptor rather
+## than the data, and "Final Fantasy VII (USA) (Disc 1).cue" is 98 bytes next to a
+## 747 MB .bin.
+const _CD_DESCRIPTORS: PackedStringArray = ["cue", "gdi", "toc", "m3u", "ccd"]
+
+## A PS2 CD-ROM cannot hold more than one CD. A raw 2352-byte-per-sector image
+## inflates that well past the nominal 700 MB — a full 80-minute disc reaches
+## ~783 MB — so the line sits at 1 GiB, still four times under a 4.7 GB DVD5.
+const _CD_MAX_BYTES := 1073741824
+
+
 ## Disc loading mechanisms.
 const LOADER_NONE := 0   # cartridge system — no disc loader
 const LOADER_TRAY := 1   # lid/tray: OPEN button gates insert/remove (PS1, GameCube…)
@@ -120,6 +169,51 @@ static func disc_diameter(systemid: String) -> float:
 	return float(DISC_DIAMETERS.get(systemid, DISC_DIAMETER_DEFAULT))
 
 
+## True when this disc image is a CD rather than a DVD. Extension first, size
+## second — see _CD_DESCRIPTORS and _CD_MAX_BYTES. Unknowable means CD, because a
+## PS2 game whose file can't be read is more usefully blue than wrongly silver.
+static func _is_cd_image(rom_path: String) -> bool:
+	if rom_path.is_empty():
+		return true
+	if _CD_DESCRIPTORS.has(rom_path.get_extension().to_lower()):
+		return true
+	var f := FileAccess.open(rom_path, FileAccess.READ)
+	if f == null:
+		return true
+	var n := f.get_length()   # metadata only, nothing is read
+	f.close()
+	return n < _CD_MAX_BYTES
+
+
+## Disc finish for a system: {"data": Color, "poly": Color, "pitch": float}.
+##
+## The PS2 is the one system that needs the ROM to decide. Its CD-ROM titles are
+## the famous blue discs and its DVD titles are silver-violet, and roughly half
+## the library is each.
+static func disc_finish(systemid: String, rom_path: String = "") -> Dictionary:
+	if systemid == "playstation2":
+		return FINISH_PS2_CD if _is_cd_image(rom_path) else FINISH_DVD
+	var finish: Dictionary = DISC_FINISHES.get(systemid, FINISH_CD)
+	return finish
+
+
+## Radii in metres of the disc's optical zones, as (metal_start, data_start,
+## data_end): where the clear polycarbonate gives way to aluminium, where the
+## unrecorded mirror band gives way to pits, and where the pits stop and the
+## clear outer rim begins.
+##
+## Note metal_start is 22 mm, not the 16.5 mm clamping ring — the clamping area is
+## mechanical, not optical, and a CD is transparent from the bore all the way out
+## to 22 mm. That wide clear hub annulus is one of the most recognisable things
+## about a disc's underside, and getting it wrong plates the whole hub in silver.
+##
+## An 80 mm mini-disc keeps the same 15 mm bore but pulls both data radii in.
+static func disc_zones(systemid: String) -> Vector3:
+	if disc_diameter(systemid) < 0.10:
+		return Vector3(0.0155, 0.0160, 0.0380)
+	return Vector3(0.0220, 0.0230, 0.0580)
+
+
 ## How this system loads discs: LOADER_NONE / LOADER_TRAY / LOADER_SLOT.
 static func disc_loader(systemid: String) -> int:
 	if not DISC_DIAMETERS.has(systemid):
@@ -143,5 +237,11 @@ static func load_label_texture(systemid: String, rom_path: String) -> Texture2D:
 		if FileAccess.file_exists(path):
 			var img := Image.load_from_file(path)
 			if img:
+				# These are ~600x600 photographic scans wrapped onto a disc face or
+				# a cartridge label, both of which are read at a glancing angle in
+				# VR. Without mips the print shimmers as the head moves. (The
+				# project's no-mipmaps rule is about emulator SCREENS, where sharp
+				# aliased pixel art is the point — the opposite case.)
+				img.generate_mipmaps()
 				return ImageTexture.create_from_image(img)
 	return null

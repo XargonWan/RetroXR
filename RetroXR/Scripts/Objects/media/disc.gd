@@ -4,11 +4,20 @@
 ## group), save_id battery-save identity, persistence file resolution, and the
 ## cartridge options panel — with a disc-shaped body instead of a box.
 ##
-## Scraped "support" art (the round disc-label scan, usually with transparent
-## corners) is applied to the top-face ArtQuad; without art the silver disc
-## shows the game title as flat text, like a written-on CD-R.
+## The body is one baked lathe (Tools/gen_disc.gd) shaded by Shaders/disc.gdshader,
+## which draws both faces, the per-system underside colour and the diffraction
+## rainbow from a single surface. Scraped "support" art (the round disc-label scan)
+## goes straight into a shader uniform: it is authored full-bleed to the rim with
+## its own transparent centre hole, so it needs no fitting and no quad of its own.
+## Without art the disc shows the game title as flat text, like a written-on CD-R.
 class_name RetroDisc
 extends RetroCartridge
+
+## Two meshes rather than one scaled mesh: the 15 mm hole and the 1.2 mm thickness
+## are identical on a 120 mm CD and an 80 mm mini-DVD, so scaling would shrink them
+## along with the diameter.
+const MESH_120 := preload("res://Scenes/Objects/media/disc_120mm.res")
+const MESH_80 := preload("res://Scenes/Objects/media/disc_80mm.res")
 
 
 ## Whether the host should visually spin this disc while it plays (system.gd's
@@ -21,30 +30,36 @@ func can_visually_spin() -> bool:
 	return true
 
 
-## Resize the disc to this system's diameter (12 cm CD/DVD, 8 cm GameCube
-## mini-disc). Duplicates every mesh/shape resource before mutation — tscn
-## sub_resources are shared across instances.
+## Fit the disc to this system: the right platter mesh, and the finish uniforms
+## that make a PS1 disc black, a PS2 CD blue and a Wii disc a silver DVD.
+##
+## The ShaderMaterial is resource_local_to_scene, so the override fetched here is
+## this disc's own copy — .tscn sub_resources are otherwise shared across every
+## instance in the room.
 func _apply_system_size() -> void:
 	var d := MediaDimensions.disc_diameter(systemid)
 
 	var body := get_node_or_null("DiscMesh") as MeshInstance3D
-	if body and body.mesh is CylinderMesh:
-		var m := body.mesh.duplicate() as CylinderMesh
-		m.top_radius = d / 2.0
-		m.bottom_radius = d / 2.0
-		body.mesh = m
+	if body != null:
+		body.mesh = MESH_80 if d < 0.10 else MESH_120
+		var mat := body.get_surface_override_material(0) as ShaderMaterial
+		if mat != null:
+			var finish := MediaDimensions.disc_finish(systemid, rom_path)
+			mat.set_shader_parameter("data_color", finish["data"])
+			mat.set_shader_parameter("poly_color", finish["poly"])
+			mat.set_shader_parameter("poly_show_through", finish["show"])
+			mat.set_shader_parameter("track_pitch", finish["pitch"])
+			var zones := MediaDimensions.disc_zones(systemid)
+			mat.set_shader_parameter("r_metal_start", zones.x)
+			mat.set_shader_parameter("r_data_start", zones.y)
+			mat.set_shader_parameter("r_data_end", zones.z)
 
+	# Duplicates before mutating: the tscn's shapes are shared across instances.
 	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if col and col.shape is CylinderShape3D:
 		var shape := col.shape.duplicate() as CylinderShape3D
 		shape.radius = d / 2.0 + 0.005
 		col.shape = shape
-
-	var quad := get_node_or_null("ArtQuad") as MeshInstance3D
-	if quad and quad.mesh is QuadMesh:
-		var qm := quad.mesh.duplicate() as QuadMesh
-		qm.size = Vector2(d * 0.94, d * 0.94)
-		quad.mesh = qm
 
 	var lbl := get_node_or_null("GameLabel") as Label3D
 	if lbl:
@@ -57,20 +72,21 @@ func _apply_system_size() -> void:
 		pointer_col.shape = pshape
 
 
-## Disc art goes on the top-face ArtQuad with alpha transparency (round scans
-## have transparent corners — the silver disc shows through). No art: quad stays
-## hidden and the flat title text is the fallback.
+## Hand the scraped label scan to the shader, which composites it into the label
+## face's albedo — opaque, so unlike a transparent quad it sorts correctly, writes
+## depth and takes the pickable outline. The art's own alpha is the print mask,
+## including its centre hole, so nothing here masks or resizes it.
 func _apply_label_art() -> void:
 	var tex := MediaDimensions.load_label_texture(systemid, rom_path)
-	var quad := get_node_or_null("ArtQuad") as MeshInstance3D
-	if tex == null or quad == null:
+	if tex == null:
 		return
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color.WHITE
-	mat.albedo_texture = tex
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	quad.set_surface_override_material(0, mat)
-	quad.visible = true
+	var body := get_node_or_null("DiscMesh") as MeshInstance3D
+	if body == null:
+		return
+	var mat := body.get_surface_override_material(0) as ShaderMaterial
+	if mat == null:
+		return
+	mat.set_shader_parameter("label_tex", tex)
 
 	var lbl := get_node_or_null("GameLabel") as Label3D
 	if lbl:

@@ -59,7 +59,9 @@ func _build() -> void:
 	i += (COLS - (i % COLS)) % COLS
 	for sid: String in discs:
 		var d := MediaDimensions.disc_diameter(sid)
-		var sz := Vector3(d, d, 0.002)
+		# 1.2 mm is the real disc thickness the baked platter carries; the caption
+		# is a hand-written constant, so it has to be kept in step with gen_disc.gd.
+		var sz := Vector3(d, d, 0.0012)
 		if sid == "playstation_portable":
 			sz = MediaDimensions.cart_size(sid)
 		_place(_spawn_for(sid), sid, i, sz)

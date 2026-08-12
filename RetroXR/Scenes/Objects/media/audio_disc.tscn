@@ -1,32 +1,22 @@
-[gd_scene load_steps=9 format=3 uid="uid://audiodisc_0001"]
+[gd_scene load_steps=8 format=3 uid="uid://audiodisc_0001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/media/audio_disc.gd" id="1"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/media/disc_120mm.res" id="3_discmesh"]
+[ext_resource type="Shader" path="res://Shaders/disc.gdshader" id="4_discshader"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_disc"]
 friction = 0.6
 
 [sub_resource type="CylinderShape3D" id="Cyl_col"]
-height = 0.006
+height = 0.004
 radius = 0.06
 
-[sub_resource type="CylinderMesh" id="Cyl_disc"]
-top_radius = 0.06
-bottom_radius = 0.06
-height = 0.0015
-
-[sub_resource type="StandardMaterial3D" id="Mat_disc"]
-metallic = 0.9
-roughness = 0.1
-albedo_color = Color(0.85, 0.86, 0.9, 1)
-
-[sub_resource type="CylinderMesh" id="Cyl_hub"]
-top_radius = 0.008
-bottom_radius = 0.008
-height = 0.0018
-
-[sub_resource type="StandardMaterial3D" id="Mat_hub"]
-albedo_color = Color(0.1, 0.1, 0.12, 1)
+[sub_resource type="ShaderMaterial" id="Mat_disc"]
+shader = ExtResource("4_discshader")
+shader_parameter/data_color = Color(0.78, 0.8, 0.84, 1)
+shader_parameter/poly_color = Color(0.09, 0.1, 0.12, 1)
+shader_parameter/track_pitch = 1.6
 
 [node name="AudioDisc" type="RigidBody3D" groups=["audio_disc"]]
 collision_layer = 4
@@ -41,16 +31,11 @@ script = ExtResource("1")
 shape = SubResource("Cyl_col")
 
 [node name="DiscMesh" type="MeshInstance3D" parent="."]
-mesh = SubResource("Cyl_disc")
+mesh = ExtResource("3_discmesh")
 surface_material_override/0 = SubResource("Mat_disc")
 
-[node name="HubMesh" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.001, 0)
-mesh = SubResource("Cyl_hub")
-surface_material_override/0 = SubResource("Mat_hub")
-
 [node name="DiscLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0016, 0.022)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0008, 0.022)
 pixel_size = 0.0005
 font_size = 20
 outline_size = 6
