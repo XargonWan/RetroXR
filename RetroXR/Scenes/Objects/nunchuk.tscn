@@ -95,11 +95,20 @@ mesh = ExtResource("12_ncgate")
 surface_material_override/0 = SubResource("Mat_shell")
 
 ; Set into the crown rather than stood on it: the stalk's base disc is at the mesh's
-; own y = 0, so seating it at 0.0455 buries 6.5 mm of it and the dome closes round
-; the waist the way the moulding does. Raked 8 degrees toward the buttons because the
-; top face it grows out of is itself tilted that way.
+; own y = 0, so seating it here buries most of it and the dome closes round the waist
+; the way the moulding does. Raked 8 degrees toward the buttons because the top face
+; it grows out of is itself tilted that way.
+;
+; Seated at 0.0411, not the 0.0455 it started at, and that 4.4 mm closes a HOLE rather
+; than tidying a gap. The shell tapers to a pole, so between the gate's rim and the
+; cap's underside there was a band where the body is narrower than BOTH — and you
+; could see clean through the crown there, on either flank, right between the two.
+; Measured at 4.4 mm tall by rendering the shell against a flat colour from eight
+; directions and counting background pixels enclosed on all four sides. Dropping the
+; stick by that much lands the cap on the collar and shuts it, and it also puts the
+; cap nearer the shell, which is where the reference photographs have it.
 [node name="Stick" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.99027, -0.13917, 0, 0.13917, 0.99027, 0, 0.0455, -0.0015)
+transform = Transform3D(1, 0, 0, 0, 0.99027, -0.13917, 0, 0.13917, 0.99027, 0, 0.04114, -0.00089)
 mesh = ExtResource("7_ncstick")
 surface_material_override/0 = SubResource("Mat_key")
 
