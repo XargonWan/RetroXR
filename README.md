@@ -248,6 +248,43 @@ cd godot-pdfium && scons platform=android arch=arm64 target=template_debug ANDRO
 Each writes a `lib<name>.<platform>.<target>.<arch>.so` (or `.dll`) next to the
 `.gdextension` file that points at it.
 
+#### Exporting
+
+`RetroXR/export_presets.cfg` **is committed**, so the `Quest` and `Windows Desktop`
+presets come with the clone and a headless export works straight away:
+
+```bash
+"$godot" --headless --path RetroXR --export-release "Quest" RetroXR.apk
+```
+
+Signing is the one thing you have to supply yourself. Since Godot 4.5 the keystore
+path, user and password live in `RetroXR/.godot/export_credentials.cfg`, which is
+**not** committed (`.godot/` is ignored wholesale) — that is why the preset can be
+shared without leaking anything. Set yours in the editor under *Project → Export →
+Android → Keystore*, or for CI pass them as environment variables
+(`GODOT_ANDROID_KEYSTORE_RELEASE_PATH` / `_USER` / `_PASSWORD`) so they can come from
+repo secrets rather than a file.
+
+Three fields in the preset are shared state now, and are worth knowing about before
+you commit a change to it:
+
+- **`custom_features` must stay empty.** A feature tag there pairs with a
+  `run/main_scene.<tag>` override in `project.godot` and reroutes the boot scene for
+  *every* APK exported from the tree, not just yours. It is the standard way to boot a
+  probe scene locally; just don't commit it.
+- **`gradle_build/target_sdk="32"`** deliberately overrides the Android template's
+  default of 36 (`RetroXR/android/build/config.gradle`). Quest needs `min_sdk` 29 and
+  Meta requires a target of 32 or higher, so 32 is the floor rather than an accident.
+  Verify on device before raising it.
+- **`version/code` / `version/name`** are the shipped release numbers. Bump them
+  deliberately; two people bumping in parallel conflict.
+
+The Meta feature flags are gated twice: `meta_xr_features/*` in the preset only reaches
+the manifest if the matching `xr/openxr/extensions/*` setting is on in `project.godot`.
+Hand tracking and passthrough are on; eye, face and body tracking are off in both
+places. Check the generated `RetroXR/android/build/src/debug/AndroidManifest.xml` after
+an export to see what actually landed.
+
 ## Desktop mode controls
 
 When no VR headset is detected, RetroXR falls back to a desktop mode with mouse/keyboard controls.
