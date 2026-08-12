@@ -126,12 +126,29 @@ jobs:
 
       - run: pip install scons
 
+      # vlc-godot links the system libVLC on Linux rather than a vendored copy.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvlc-dev
+
       - name: Build the five GDExtensions (android arm64, release)
         env:
           # build.py blanks ANDROID_HOME itself: godot-cpp prefers it when set
           # and then demands a full SDK.
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
         run: python Tools/build.py android --target release --jobs 4
+
+      # The exporting editor is a debug-tagged Linux binary, so it resolves
+      # linux.debug.x86_64 out of each .gdextension and loads THAT to register
+      # Libretro/VerletRope in ClassDB. Without it every script naming those
+      # types fails to parse and the export runs over unresolved scenes.
+      # Nothing debug ships: the APK gets android.release.arm64, picked by the
+      # exported game's own feature tags.
+      # build.py skips metaxr-audio here — it has no linux stanza at all (Meta
+      # ships that blob for win-x64 and android-arm64 only). Harmless: every
+      # reference to it goes through Engine.has_singleton("MetaXRAudio"), so
+      # nothing names it statically, and its Android library is still packed
+      # into the APK straight from the .gdextension file.
+      - name: Build the host-side extensions the editor needs (linux, debug)
+        run: python Tools/build.py linux --target debug --jobs 4
 
       - uses: actions/cache@v4
         with:
@@ -176,9 +193,12 @@ jobs:
         run: |
           set -euo pipefail
           godot --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
-          # Known headless noise, none of it caused by the build.
+          # Known headless noise, none of it caused by the build. Every
+          # extension with a linux stanza is built above and must load, so none
+          # is excused here — only metaxr-audio, which has no linux library to
+          # find at all.
           grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
-            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|libgodotopenxrvendors|godot-pdfium|libretro_godot" \
+            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|metaxr" \
             > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
           echo "import clean"
@@ -251,8 +271,13 @@ jobs:
       # No Vulkan SDK install: vulkan-1.lib is vendored in the libretro-godot
       # submodule (external/vulkan-loader/), which is the whole reason a Windows
       # runner needs nothing beyond MSVC here.
-      - name: Build the five GDExtensions (windows x86_64, release)
-        run: python Tools/build.py windows --target release
+      #
+      # Both targets, and both are needed: the exported .exe loads
+      # windows.release.x86_64, while the editor doing the exporting is itself
+      # debug-tagged and loads windows.debug.x86_64 to register the classes the
+      # project's scenes and scripts name. Only the release ones ship.
+      - name: Build the five GDExtensions (windows x86_64, debug + release)
+        run: python Tools/build.py windows --target both
 
       - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
         shell: pwsh
@@ -279,7 +304,9 @@ jobs:
         run: |
           set -euo pipefail
           "$GODOT" --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
-          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to instantiate" import.log \
+          # All five extensions have a windows stanza and are built above, so
+          # none is excused — a load failure here is a real one.
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
           echo "import clean"
