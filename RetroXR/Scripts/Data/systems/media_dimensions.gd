@@ -203,29 +203,40 @@ static func disc_finish(systemid: String, rom_path: String = "") -> Dictionary:
 ## unrecorded mirror band gives way to pits, and where the pits stop and the
 ## clear outer rim begins.
 ##
-## CD and DVD are NOT the same shape here, which keying only on diameter got wrong.
-## A CD is a single 1.2 mm substrate: clear polycarbonate all the way out to 22 mm,
-## then barely a millimetre of mirror band before the pits. A DVD is two bonded
-## 0.6 mm halves whose reflective layer runs far further in — its clamping area
-## ends near 11 mm and the pits do not start until 24 mm, leaving a ~13 mm ring of
-## bare silver. Hold a Wii disc: that wide silvery band round the hub is the tell,
-## and it is absent on an audio CD.
+## Numbers below are off the standards, not guessed. Diameters halved to radii:
 ##
-## The smaller discs keep the same 15 mm bore and pull both data radii in. Every
-## size needs its own row: a data_end past the disc's own radius leaves it with no
-## clear outer rim and a mirror band that never resolves.
+## CD — ECMA-130 (2nd ed.) clause 8, the free equivalent of ISO/IEC 10149:
+##   d1 = 15,0        centre hole
+##   d3 = 33 min      clamping area outer edge
+##   d4 = 44 max      Information Area starts, and 8.6 puts the REFLECTIVE LAYER
+##                    between d4 and d5 — so metal begins at r 16,5..22
+##   d6 <= 46 max     physical tracks (pits) start (clause 20)
+##   d7 = 50,0        User Data zone;  d8 = 116 max;  d5 = 118 max;  d10 = 120
+## d4 is a MAXIMUM, so a real disc may metallise well inside r 22 and show a mirror
+## band several mm wide rather than the 1 mm the extreme case implies. Measured on
+## a pressed audio CD: clear ring ~12 mm wide (metal from r 19,5), mirror band
+## ~4 mm. That is in spec, and is what the CD row uses.
 ##
-## Takes the pitch rather than looking the finish up again, so the caller's single
-## disc_finish() call also settles CD-or-DVD — and the PS2's per-title branch, file
-## stat and all, is not run twice.
+## DVD — ECMA-267 (3rd ed.) clause 10:
+##   d2 = 15          centre hole;  d4 = 22,0 max -> Clamping Zone;  d5 = 33 min
+##   d6 = 44,0 max, d7 = 45,2 max   Lead-in starts (so pits from r ~22,6)
+##   d8 = 48,0        Data Zone;  d9 = 116 max
+## Note ECMA-267 does NOT pin the reflective layer's inner edge the way ECMA-130
+## does — clause 12.6 only constrains reflectivity of the recorded layer. So how
+## far in a DVD is silvered is a manufacturing choice, and in practice a bonded
+## two-half disc reads metallic from about the clamping zone out. Hence r 11
+## (= d4/2) rather than the CD's r 19,5: on a Wii disc only the bore is clear.
+##
+## The UMD is NOT covered by either standard; its row is scaled from the DVD and
+## is the one set of numbers here that is still an estimate.
 static func disc_zones(systemid: String, pitch: float = PITCH_CD) -> Vector3:
 	var d := disc_diameter(systemid)
 	var dvd := pitch < 1.0
 	if d < 0.07:
-		return Vector3(0.0105, 0.0135, 0.0300)   # UMD platter (DVD-derived)
+		return Vector3(0.0105, 0.0160, 0.0300)   # UMD platter — estimated
 	if d < 0.10:
-		return Vector3(0.0115, 0.0160, 0.0380) if dvd else Vector3(0.0155, 0.0160, 0.0380)
-	return Vector3(0.0115, 0.0240, 0.0580) if dvd else Vector3(0.0220, 0.0230, 0.0580)
+		return Vector3(0.0110, 0.0226, 0.0380) if dvd else Vector3(0.0195, 0.0230, 0.0380)
+	return Vector3(0.0110, 0.0226, 0.0580) if dvd else Vector3(0.0195, 0.0230, 0.0580)
 
 
 ## How this system loads discs: LOADER_NONE / LOADER_TRAY / LOADER_SLOT.

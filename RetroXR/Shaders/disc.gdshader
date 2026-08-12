@@ -61,13 +61,11 @@ uniform vec3 lacquer_color : source_color = vec3(0.80, 0.81, 0.84);
 // that reason.
 uniform float poly_alpha : hint_range(0.0, 1.0) = 0.28;
 
-// Zone radii in metres. Red Book, and the first pass had this wrong: the metal
-// does not start at the clamping ring. From the bore outwards a CD is clear
-// polycarbonate all the way to 22 mm, then ~1 mm of unrecorded mirror band, then
-// the information area, then a clear rim. The wide transparent hub annulus is one
-// of the most recognisable things about a disc's underside.
-// Defaults are a 120 mm CD; disc.gd overrides them for the 80 mm mini-disc.
-uniform float r_metal_start = 0.0220;   // clear polycarbonate ends, aluminium starts
+// Zone radii in metres. Defaults are a pressed 120 mm CD; disc.gd overrides them
+// per system — see MediaDimensions.disc_zones, which carries the ECMA-130 and
+// ECMA-267 clause references these came from. A DVD is silvered far closer to the
+// bore than a CD, so the two are NOT interchangeable.
+uniform float r_metal_start = 0.0195;   // clear polycarbonate ends, aluminium starts
 uniform float r_data_start = 0.0230;    // mirror band ends, pits start
 uniform float r_data_end = 0.0580;      // pits end, clear outer rim starts
 
