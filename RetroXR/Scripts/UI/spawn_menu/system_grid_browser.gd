@@ -30,6 +30,11 @@ const COLOR_DESC       := Color(0.55, 0.55, 0.68)
 const COLOR_LICENSE    := Color(0.65, 0.65, 0.80)
 const COLOR_TILE       := Color(0.14, 0.14, 0.28)
 const COLOR_TILE_HOVER := Color(0.24, 0.24, 0.46)
+## The plate a tile carrying `"alt_tile": true` sits on — same weight as the
+## default, hue turned to purple. What it means is the host's to decide: the
+## Download grid marks a system with no core installed with it.
+const COLOR_TILE_ALT       := Color(0.22, 0.11, 0.30)
+const COLOR_TILE_ALT_HOVER := Color(0.37, 0.19, 0.50)
 
 # ── Config (set before the node enters the tree, or any time) ──────────────────
 ## Show the pointer-first filter box on the home page.
@@ -68,7 +73,8 @@ const BADGE_MARK_PX := 26.0
 const BADGE_RESERVE_PX := 52.0
 
 # ── State ──────────────────────────────────────────────────────────────────────
-# Each entry: { "systemid": String, "name": String, "badge": String (optional) }
+# Each entry: { "systemid": String, "name": String, "badge": String (optional),
+#               "alt_tile": bool (optional) }
 var _systems: Array = []
 var _detail_populator: Callable = Callable()
 var _current_systemid: String = ""
@@ -498,6 +504,7 @@ func _make_tile(s: Dictionary) -> Button:
 	var sid: String   = s.get("systemid", "")
 	var display_name: String = s.get("name", sid)
 	var badge: String = s.get("badge", "")
+	var alt: bool     = bool(s.get("alt_tile", false))
 
 	var btn := Button.new()
 	# Height only. A width minimum here would become the grid's minimum, and
@@ -537,7 +544,7 @@ func _make_tile(s: Dictionary) -> Button:
 			big.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			big.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			btn.add_child(big)
-		_style_tile(btn)
+		_style_tile(btn, alt)
 		btn.pressed.connect(open_system.bind(sid))
 		return btn
 
@@ -632,18 +639,18 @@ func _make_tile(s: Dictionary) -> Button:
 		count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		corner.add_child(count_lbl)
 
-	_style_tile(btn)
+	_style_tile(btn, alt)
 	btn.pressed.connect(open_system.bind(sid))
 	return btn
 
 
 ## The rounded plate a tile sits on. Shared by both tile shapes so the compact
 ## grid is visibly the same furniture, only smaller.
-static func _style_tile(btn: Button) -> void:
+static func _style_tile(btn: Button, alt: bool = false) -> void:
 	var base := StyleBoxFlat.new()
-	base.bg_color = COLOR_TILE
+	base.bg_color = COLOR_TILE_ALT if alt else COLOR_TILE
 	var hover := StyleBoxFlat.new()
-	hover.bg_color = COLOR_TILE_HOVER
+	hover.bg_color = COLOR_TILE_ALT_HOVER if alt else COLOR_TILE_HOVER
 	for st: StyleBoxFlat in [base, hover]:
 		for k in ["corner_radius_top_left", "corner_radius_top_right",
 				  "corner_radius_bottom_left", "corner_radius_bottom_right"]:

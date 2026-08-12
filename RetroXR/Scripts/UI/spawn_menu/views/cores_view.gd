@@ -1059,6 +1059,7 @@ func _on_cores_fetched(cores: Array) -> void:
 func refresh_download_systems() -> void:
 	if not _download_browser:
 		return
+	var installed := _installed_core_names()
 	var systems: Array = []
 	for sid: String in _download_cores_by_system:
 		if SystemFilter.is_hidden(sid):
@@ -1066,9 +1067,40 @@ func refresh_download_systems() -> void:
 		var arr: Array = _download_cores_by_system[sid] as Array
 		var sysname := "Other / Uncategorized" if sid == "__other__" else core_db.get_systemname_for_id(sid)
 		var n := arr.size()
+		# Counted over the tile's own list, which holds every core that serves this
+		# platform rather than only the ones filed under it — the same reading the
+		# detail page gives, so a purple tile always opens on nothing installed.
+		var have := false
+		for e: Dictionary in arr:
+			if installed.has(str(e["core_name"])):
+				have = true
+				break
 		systems.append({"systemid": sid, "name": sysname,
-			"badge": "%d core%s" % [n, "" if n == 1 else "s"]})
+			"badge": "%d core%s" % [n, "" if n == 1 else "s"],
+			"alt_tile": not have})
 	_download_browser.set_systems(systems)
+
+
+## Core names sitting in the cores dir, as a set.
+##
+## The disk rather than the download manifest: the Manager and BIOS tabs both
+## read it that way, so a core dropped in by hand counts here as it does there.
+static func _installed_core_names() -> Dictionary:
+	var names: Dictionary = {}
+	var dir := DirAccess.open(CoreDownloadManager.default_cores_dir())
+	if dir == null:
+		return names
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		# A core can sit there under two naming conventions, and both resolve to
+		# the one name the buildbot list uses.
+		var cn := "" if dir.current_is_dir() else CoreDownloadManager.core_name_from_lib_filename(fname)
+		if not cn.is_empty():
+			names[cn] = true
+		fname = dir.get_next()
+	dir.list_dir_end()
+	return names
 
 
 ## Detail page for one system: its downloadable cores (built lazily on open).
@@ -1235,6 +1267,9 @@ func _on_core_job_finished(key: String, ok: bool, error: String) -> void:
 	_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK), "Installed", MenuToasts.DWELL_OK)
 	_refresh_download_button(core_name)
 	call_deferred("_populate_manager_tab")
+	# Rebuilds the home grid only, so the detail page this was pressed on is left
+	# alone — the tile behind it drops its purple.
+	call_deferred("refresh_download_systems")
 
 	var dl_sids := CoreInfoDatabase.systemids_of(core_db.get_by_core_name(core_name))
 	if dl_sids.is_empty():
