@@ -37,6 +37,7 @@ var _download_fetched: bool = false
 var _download_widgets: Dictionary = {}
 var _download_browser: SystemGridBrowser = null
 var _download_cores_by_system: Dictionary = {}
+var _recommend_all_btn: Button = null
 
 # Manager tab — drill-down browser + installed cores grouped by systemid:
 # sid -> Array[{ "core_name", "display_name" }]
@@ -994,6 +995,21 @@ func _build_download_tab() -> Control:
 	path_val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	path_row.add_child(path_val)
 
+	# One press to get a working set: the recommendation table names exactly one
+	# core per system, so this can never install two cores for one machine.
+	# Above the browser rather than on the home grid, because the grid is only one
+	# of the two pages SystemGridBrowser shows and a control that vanishes on
+	# drill-down reads as a control that stopped existing.
+	_recommend_all_btn = Button.new()
+	_recommend_all_btn.custom_minimum_size = Vector2(0, 56)
+	_recommend_all_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_recommend_all_btn.add_theme_font_size_override("font_size", 18)
+	_recommend_all_btn.add_theme_color_override("font_color", MenuStyle.COLOR_RECOMMENDED)
+	_recommend_all_btn.focus_mode = Control.FOCUS_NONE
+	_recommend_all_btn.pressed.connect(_on_download_all_recommended)
+	outer.add_child(_recommend_all_btn)
+	_refresh_recommend_all_button()
+
 	outer.add_child(HSeparator.new())
 
 	# Job reporting is the same shape as the firmware installer's, so both
@@ -1052,6 +1068,7 @@ func _on_cores_fetched(cores: Array) -> void:
 			(_download_cores_by_system[sid] as Array).append(
 				{"core_name": core_name, "remote_date": remote_date, "info": info})
 	refresh_download_systems()
+	_refresh_recommend_all_button()
 
 
 ## Build the Download home grid from the grouped fetch results.
@@ -1079,6 +1096,80 @@ func refresh_download_systems() -> void:
 			"badge": "%d core%s" % [n, "" if n == 1 else "s"],
 			"alt_tile": not have})
 	_download_browser.set_systems(systems)
+
+
+const RECOMMEND_ALL_KEY := "cores:recommended"
+
+
+## The recommended cores this platform is missing, as {core_name, remote_date}.
+##
+## Intersected with the buildbot listing rather than taken from the table alone:
+## the table names a core per system for every platform, and one that is not
+## published for this one would otherwise be queued only to work its way through
+## every filename candidate and fail.
+##
+## Installed counts from the DISK, not the manifest, the same reading the tiles
+## and the Manager tab take — a core dropped in by hand is installed. An UPDATE
+## is still offered, because that is the same core rather than a second one.
+func _pending_recommended() -> Array[Dictionary]:
+	var wanted: Dictionary = {}
+	for core_name: String in CoreRecommendations.core_names():
+		wanted[core_name] = true
+
+	var installed := _installed_core_names()
+	var out: Array[Dictionary] = []
+	for entry: Dictionary in download_manager.available_cores:
+		var cn := str(entry.get("core_name", ""))
+		if not wanted.has(cn):
+			continue
+		var remote := str(entry.get("remote_date", ""))
+		var state := download_manager.get_core_state(cn, remote)
+		if state == "BUSY":
+			continue
+		if installed.has(cn) and state != "UPDATE":
+			continue
+		out.append({"core_name": cn, "remote_date": remote})
+	return out
+
+
+## Queue every recommended core this platform is missing, in one press.
+##
+## No double-press guard of its own: enqueueing turns each core BUSY, which drops
+## it out of _pending_recommended, so the refresh below disables the button — and
+## a disabled Button never emits the second press a Viewport2DIn3D click sends.
+func _on_download_all_recommended() -> void:
+	var pending := _pending_recommended()
+	if pending.is_empty():
+		return
+	for entry: Dictionary in pending:
+		_on_download_pressed(str(entry["core_name"]), str(entry["remote_date"]))
+	_romm_notify_or_queue(RECOMMEND_ALL_KEY, String.chr(MenuIcons.DOWNLOAD),
+		"Queued %d recommended core%s" % [pending.size(), "" if pending.size() == 1 else "s"],
+		MenuToasts.DWELL_OK)
+	_refresh_recommend_all_button()
+
+
+## An empty listing is "not fetched yet", not "nothing left to do" — the two read
+## identically from the count alone, and calling the first one done would tell a
+## player with no network that they have every core.
+func _refresh_recommend_all_button() -> void:
+	if not is_instance_valid(_recommend_all_btn):
+		return
+	if download_manager.available_cores.is_empty():
+		_recommend_all_btn.text = "Download All Recommended"
+		_recommend_all_btn.tooltip_text = "Waiting for the core list"
+		_recommend_all_btn.disabled = true
+		return
+	var n := _pending_recommended().size()
+	if n == 0:
+		_recommend_all_btn.text = "Every Recommended Core Is Installed"
+		_recommend_all_btn.tooltip_text = ""
+		_recommend_all_btn.disabled = true
+		return
+	_recommend_all_btn.text = "Download All Recommended  (%d)" % n
+	_recommend_all_btn.tooltip_text = \
+		"One core per system, the best default for this platform. Cores you already have are skipped."
+	_recommend_all_btn.disabled = false
 
 
 ## Core names sitting in the cores dir, as a set.
@@ -1113,11 +1204,16 @@ func _populate_download_detail(systemid: String, vbox: VBoxContainer) -> void:
 	)
 	arr = CoreRecommendations.first(systemid, arr)
 	for e: Dictionary in arr:
-		vbox.add_child(_build_core_entry(e["core_name"], e["remote_date"], e["info"]))
+		vbox.add_child(_build_core_entry(systemid, e["core_name"], e["remote_date"], e["info"]))
 	vbox.add_child(MenuStyle.spacer(20))
 
 
-func _build_core_entry(core_name: String, remote_date: String, info: Dictionary) -> Control:
+## `systemid` is the page's, never the core's own. A multi-system core is listed
+## under every platform it serves, and the recommendation is per platform: asking
+## the core which system it belongs to puts PicoDrive's Mega Drive answer on the
+## 32X page, where PicoDrive is the pick and would have shown no badge at all.
+func _build_core_entry(systemid: String, core_name: String, remote_date: String,
+					   info: Dictionary) -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 0)
 
@@ -1140,7 +1236,7 @@ func _build_core_entry(core_name: String, remote_date: String, info: Dictionary)
 	name_lbl.clip_contents = true
 	left.add_child(name_lbl)
 
-	if CoreRecommendations.is_recommended(str(info.get("systemid", "")), core_name):
+	if CoreRecommendations.is_recommended(systemid, core_name):
 		left.add_child(MenuIcons.recommended_badge(13))
 
 	if not info.is_empty():
@@ -1238,6 +1334,7 @@ func _core_from_key(key: String) -> String:
 func _on_core_job_started(key: String, label: String, _total: int) -> void:
 	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY), "Downloading %s" % label, 0.0, 0.0)
 	_refresh_download_button(_core_from_key(key))
+	_refresh_recommend_all_button()
 
 
 func _on_core_job_progress(key: String, received: int, total: int) -> void:
@@ -1254,6 +1351,7 @@ func _on_core_job_retrying(key: String, attempt: int, total: int, reason: String
 func _on_core_job_cancelled(key: String) -> void:
 	notify_clear(key)
 	_refresh_download_button(_core_from_key(key))
+	_refresh_recommend_all_button()
 
 
 func _on_core_job_finished(key: String, ok: bool, error: String) -> void:
@@ -1262,10 +1360,12 @@ func _on_core_job_finished(key: String, ok: bool, error: String) -> void:
 		_romm_notify_or_queue(key, String.chr(MenuIcons.ERROR),
 			error if not error.is_empty() else "Download failed", MenuToasts.DWELL_FAIL)
 		_refresh_download_button(core_name)
+		_refresh_recommend_all_button()
 		return
 
 	_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK), "Installed", MenuToasts.DWELL_OK)
 	_refresh_download_button(core_name)
+	_refresh_recommend_all_button()
 	call_deferred("_populate_manager_tab")
 	# Rebuilds the home grid only, so the detail page this was pressed on is left
 	# alone — the tile behind it drops its purple.
