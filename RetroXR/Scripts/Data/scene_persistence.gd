@@ -80,6 +80,13 @@ const PLAIN_SCENES := {
 	# The bar's own entry is a pose; which console it is plugged into is applied
 	# afterwards by _apply_references, like the remote's pairing.
 	"sensor_bar": SENSOR_BAR_SCENE,
+	# Instantiate-and-place here, with the volume and the two cabinet poses applied
+	# afterwards by _restore_entry — the same split the sensor bar above uses. A
+	# serialize branch and a restore branch both existed for the pair, but nothing
+	# ever built one back: a saved room dropped its speakers with "unknown object
+	# type 'speaker_pair'", which also left any lead plugged into them with nothing
+	# to seat into.
+	"speaker_pair": SPEAKER_PAIR_SCENE,
 }
 
 
@@ -734,10 +741,21 @@ func _serialize_peripheral(node: Node, id: int, n3d: Node3D, node_to_id: Diction
 	elif node is RetroKeyboard:
 		obj_type = "retro_keyboard"
 	var connected_sys: Node = node.get("_connected_system")
+	# The CABINET socket, which is what restore_controller_plug takes — not the
+	# peripheral's own _port_index, which is the libretro port and is pinned to 0
+	# for a mouse on a computer system. Falls back to it for anything the cabinet
+	# does not claim to be holding.
+	var port_index := -1
+	if connected_sys != null:
+		port_index = int(node.get("_port_index"))
+		if connected_sys.has_method("cabinet_port_of"):
+			var socket: int = connected_sys.call("cabinet_port_of", node)
+			if socket >= 0:
+				port_index = socket
 	var entry := _base(id, obj_type, n3d).merged({
 		"device_type": node.get("device_type") as int,
 		"system": _ref(node_to_id, connected_sys),
-		"port_index": node.get("_port_index") if connected_sys != null else -1,
+		"port_index": port_index,
 	})
 	if node is Wiimote:
 		# Which Nunchuk is plugged into this remote, if any. Saved on the REMOTE

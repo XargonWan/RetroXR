@@ -464,6 +464,27 @@ func seating() -> Array[Dictionary]:
 	return out
 
 
+## The socket of that name on this device, wherever it sits underneath it.
+##
+## NOT get_node_or_null on its own, which only sees a DIRECT child. A socket
+## authored into a system MODEL lives at <model>/Back/LineOut and the speaker
+## pair's line-in at SpeakerR/LineIn, while RcaPort.get_device() walks UP to the
+## RetroSystem and to the SpeakerPair — so the name saved beside the device did
+## not resolve from it, and both ends of a 3.5 mm lead came back unseated. Every
+## composite lead was fine only because system.gd::_build_av_ports parents its
+## phono sockets to the system itself.
+##
+## The direct child is still tried first: it is the common case, and it keeps a
+## model that happens to repeat a socket name from stealing the device's own.
+func _port_named(device: Node, port_name: String) -> RcaPort:
+	if device == null or port_name.is_empty():
+		return null
+	var port := device.get_node_or_null(port_name) as RcaPort
+	if port != null:
+		return port
+	return device.find_child(port_name, true, false) as RcaPort
+
+
 ## Put the six ends back: seat the ones that name a socket, and drop the rest where
 ## they were saved.
 ##
@@ -490,7 +511,7 @@ func _apply_seating(seats: Array) -> void:
 		var dev: Node3D = seat.get("device")
 		var port_name: String = str(seat.get("port", ""))
 		if dev != null and is_instance_valid(dev) and not port_name.is_empty():
-			var port := dev.get_node_or_null(port_name) as RcaPort
+			var port := _port_named(dev, port_name)
 			if port != null:
 				port.pick_up_object(plug)
 	# The sockets fire as they take each plug, but a lead restored with nothing
@@ -503,7 +524,7 @@ func _apply_seating(seats: Array) -> void:
 func net_seat_plug(end: int, cord: int, device: Node3D, port_name: String) -> void:
 	if end < 0 or end > 1 or cord < 0 or cord >= _cords or device == null:
 		return
-	var port := device.get_node_or_null(port_name) as RcaPort
+	var port := _port_named(device, port_name)
 	if port != null:
 		port.pick_up_object(_plugs[end][cord])
 

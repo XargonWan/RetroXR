@@ -2627,7 +2627,34 @@ func restore_cartridge(cartridge: Node3D) -> void:
 func restore_controller_plug(port_index: int, plug: ControllerPlug) -> void:
 	if port_index < 0 or port_index >= _port_zones.size():
 		return
+	# Never evict. XRToolsSnapZone.pick_up_object drops whatever a zone is already
+	# holding, so two peripherals naming the same slot would restore as one plugged
+	# in and one lying on the floor — and the loser is decided by file order. That
+	# is exactly what a save written before cabinet_port_of() existed says, since a
+	# computer mouse recorded libretro port 0 rather than its socket, so those files
+	# have to land somewhere sensible rather than unplug the keyboard.
+	if is_instance_valid(_port_zones[port_index].picked_up_object):
+		for i in _port_zones.size():
+			if _port_zones[i].enabled and not is_instance_valid(_port_zones[i].picked_up_object):
+				_port_zones[i].pick_up_object(plug)
+				return
+		return
 	_port_zones[port_index].pick_up_object(plug)
+
+
+## Which cabinet socket holds this peripheral, or -1 if the system is not holding
+## it at all.
+##
+## The peripheral's own _port_index is the LIBRETRO port, which is the same number
+## only by coincidence: _libretro_port_for pins a mouse on a computer system to
+## port 0 whichever socket it is in, because that is where those cores poll it. So
+## a save that recorded _port_index put the mouse and the keyboard both in socket 1
+## on restore, and one of them was left dangling. Ask the cabinet instead.
+func cabinet_port_of(peripheral: Node) -> int:
+	for i in _port_controllers.size():
+		if is_instance_valid(_port_controllers[i]) and _port_controllers[i] == peripheral:
+			return i
+	return -1
 
 
 func _on_cartridge_inserted(cartridge: Node3D) -> void:
