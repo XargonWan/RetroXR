@@ -74,6 +74,21 @@ const FALL_CHECK_HZ := 4.0
 ## speed. Squared, to keep the check off sqrt.
 const AT_REST_SPEED2 := 0.01
 
+## How far below a rider to look for the thing it was standing on, and the cap on
+## bodies one query answers with. Contact is touching, so the probe is slack for a
+## support being carried gently downward rather than a reach.
+const SUPPORT_PROBE := 0.03
+const MAX_RIDERS := 8
+
+## Rate the rider watch runs at. A rider drops one tick after its support clears,
+## and 20 Hz is inside a frame or two at any headset rate.
+const RIDER_CHECK_HZ := 20.0
+
+## Every layer but the held one — what a rider can be, which is anything that is
+## not itself in a hand. Masked to 32 bits: collision_mask is a uint32, and the
+## bare ~ leaves a negative int.
+const NOT_HELD_MASK := 0xFFFFFFFF & ~HELD_BIT
+
 ## Clear of the floor by this much before a pose counts as safe, so a body that
 ## has already begun sinking into geometry is never recorded as somewhere to
 ## return to.
@@ -84,6 +99,11 @@ var _fall_timer := 0.0
 ## Keyed by instance id so a freed object cannot resurrect one.
 var _watched: Dictionary = {}
 var _safe_pose: Dictionary = {}
+
+var _rider_timer := 0.0
+## Bodies that were standing on something now held, and the thing each was
+## standing on: {rider instance id: [rider, support]}.
+var _riders: Dictionary = {}
 
 
 func _ready() -> void:
@@ -165,6 +185,9 @@ func _on_picked_up(pickable: Variant) -> void:
 	var obj := pickable as XRToolsPickable
 	if obj == null or not is_instance_valid(obj):
 		return
+	# Before the desktop gate below: whatever was standing on this has just lost
+	# its floor whichever way it was grabbed.
+	watch_riders(obj)
 	var by := obj.get_picked_up_by()
 	# VR is driven off the pickup's own signals instead (see _apply_mode_rows) —
 	# the rows differ between the hand hold and the ray hold, and only the pickup
@@ -206,6 +229,10 @@ func _on_pickup_grabbed(what: Variant, pickup: XRToolsFunctionPickup) -> void:
 	var obj := what as XRToolsPickable
 	if obj == null or not is_instance_valid(obj):
 		return
+	# The ray grab's only pickup signal — it never calls pick_up, so picked_up
+	# does not fire for one. A hand grab reaches this twice and re-records the
+	# same rows, which is what the second call already did for the hints.
+	watch_riders(obj)
 	_apply_mode_rows(obj, pickup, _is_ray_grab(pickup, obj))
 
 
@@ -327,6 +354,128 @@ func _escape(body: XRToolsPickable) -> void:
 	body.reset_physics_interpolation()
 
 
+# ── What was standing on it ───────────────────────────────────────────────────
+#
+# Picking something up takes it out of the simulation entirely: xr-tools moves it
+# to the held layer and clears its mask, and the patch at the top of this file
+# clears that layer from every other pickable's mask. Nothing collides with it
+# any more — so a body that had fallen asleep resting ON it loses its support
+# without a single contact being reported, and there is nothing left to tell it.
+# It hangs in the air exactly where it sat: a console on top of a set stays put
+# while the set is carried off. Measured on the shipped masks, it floats even
+# when the held object never moves at all.
+#
+# Not woken at the grab, which would be the obvious place. The held object is
+# still right there underneath at that moment, just intangible, so waking then
+# drops the console THROUGH the set and lands it inside the cabinet. Each rider
+# is watched instead and woken once the thing it was standing on is no longer
+# under it — the same instant a player sees it slide out.
+
+## Take note of whatever is standing on `body`, which is about to become
+## intangible in someone's hand. Called from every hold: the pickable's own
+## picked_up (hand, desktop, snap zone) and the pickup function's has_picked_up
+## (which is all a ray grab emits — it never calls pick_up).
+func watch_riders(body: Variant) -> void:
+	var rb := body as RigidBody3D
+	if rb == null or not is_instance_valid(rb) or not rb.is_inside_tree():
+		return
+	for rider in _riders_on(rb):
+		_riders[rider.get_instance_id()] = [rider, rb]
+
+
+## The bodies resting on `body`, found with its own shape lifted by the probe.
+##
+## Sleep state is deliberately NOT a filter here, tempting as it is: an object
+## only just set down is still awake when the grab comes, and measured, it goes
+## to sleep in mid-air on the very next tick — the support stopped colliding, so
+## nothing disturbed it, and it never accumulated a frame of gravity to notice.
+## Skipping the awake ones let exactly that case float. Waking a body that never
+## slept costs nothing, so the watch takes them all.
+##
+## Frozen ones ARE skipped: a frozen body is held, parked by a float lock, or
+## seated in a socket, and all three want to stay where they are.
+func _riders_on(body: RigidBody3D) -> Array[RigidBody3D]:
+	var out: Array[RigidBody3D] = []
+	var cs := _first_shape(body)
+	var world := body.get_world_3d()
+	if cs == null or world == null:
+		return out
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = cs.shape
+	# The shape's own transform, scale included: a set carries its size on the
+	# body node, so the unscaled resource alone would query a smaller cabinet.
+	query.transform = cs.global_transform.translated(Vector3.UP * SUPPORT_PROBE)
+	query.collision_mask = NOT_HELD_MASK
+	query.collide_with_areas = false
+	query.exclude = [body.get_rid()]
+	for hit: Dictionary in world.direct_space_state.intersect_shape(query, MAX_RIDERS):
+		var rider := hit.get("collider") as RigidBody3D
+		if rider == null or rider == body or rider.freeze:
+			continue
+		if not out.has(rider):
+			out.append(rider)
+	return out
+
+
+func _tick_riders(delta: float) -> void:
+	_rider_timer += delta
+	if _rider_timer < 1.0 / RIDER_CHECK_HZ:
+		return
+	_rider_timer = 0.0
+
+	for id: int in _riders.keys():
+		var row: Array = _riders[id]
+		# Untyped first, for the reason spelled out in the fall watch below: a
+		# typed read of a freed instance raises before the erase can run.
+		var rider_any: Variant = row[0]
+		var support_any: Variant = row[1]
+		var rider: RigidBody3D = rider_any if is_instance_valid(rider_any) else null
+		var support: RigidBody3D = support_any if is_instance_valid(support_any) else null
+		if rider == null or not rider.is_inside_tree():
+			_riders.erase(id)
+			continue
+		# Somebody has claimed the rider itself — picked it up, parked it, or
+		# seated it. Its pose is theirs now.
+		if rider.freeze:
+			_riders.erase(id)
+			continue
+		# Support gone or put down: wake either way. Put down back underneath, the
+		# rider settles onto it again in the same breath, so there is nothing to
+		# tell apart here.
+		if support == null or not support.is_inside_tree() or not support.freeze \
+				or not _still_under(rider, support):
+			_wake(rider)
+			_riders.erase(id)
+
+
+## True while `support` is still under `rider` — asked of the held layer alone,
+## so only the object in the hand can answer it.
+func _still_under(rider: RigidBody3D, support: RigidBody3D) -> bool:
+	var cs := _first_shape(rider)
+	var world := rider.get_world_3d()
+	if cs == null or world == null:
+		return false
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = cs.shape
+	query.transform = cs.global_transform.translated(Vector3.DOWN * SUPPORT_PROBE)
+	query.collision_mask = HELD_BIT
+	query.collide_with_areas = false
+	query.exclude = [rider.get_rid()]
+	for hit: Dictionary in world.direct_space_state.intersect_shape(query, MAX_RIDERS):
+		if hit.get("collider") == support:
+			return true
+	return false
+
+
+## Hand a body back to gravity. Both writes: the node property alone leaves the
+## server's copy asleep, which is the same reason the drop in pickable.gd pushes
+## it through PhysicsServer3D as well.
+func _wake(body: RigidBody3D) -> void:
+	body.sleeping = false
+	PhysicsServer3D.body_set_state(
+		body.get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, false)
+
+
 # ── Falling out of the world ──────────────────────────────────────────────────
 #
 # Objects still get under the floor: released inside it (the escape above only
@@ -341,6 +490,9 @@ func _escape(body: XRToolsPickable) -> void:
 # carpet beneath.
 
 func _physics_process(delta: float) -> void:
+	# Ahead of the fall watch's own rate gate, which returns early.
+	_tick_riders(delta)
+
 	_fall_timer += delta
 	if _fall_timer < 1.0 / FALL_CHECK_HZ:
 		return
