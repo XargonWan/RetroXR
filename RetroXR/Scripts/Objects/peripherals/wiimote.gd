@@ -82,7 +82,6 @@ const HINT_HEIGHT := 0.10
 ## Scroll Lock capture glyph, matching RetroController's.
 const ICON_CAPTURE := 0xEC17
 const ICON_SIZE := 0.030
-const ICON_OFFSET := 0.075
 
 ## Desktop keyboard map: Godot action -> the remote's own control name. The same
 ## RETRO_JOYPAD_* actions every other device reads, so one set of keys drives
@@ -275,7 +274,7 @@ func _ready() -> void:
 	dropped.connect(_on_dropped_signal)
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
 	_capture = ScrollLockCapture.attach(self, _can_capture,
-		ICON_CAPTURE, ICON_OFFSET, ICON_SIZE)
+		ICON_CAPTURE, ICON_SIZE)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
 		["keyboard_scroll_lock_outline"], "Send keys here")
 	_laser_dot.visible = false

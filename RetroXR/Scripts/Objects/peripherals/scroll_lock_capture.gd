@@ -17,23 +17,26 @@ class_name ScrollLockCapture
 extends RefCounted
 
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
+## Clear air between the device's +Z face and the near edge of the glyph, in metres.
+const ICON_GAP := 0.02
 
 var _host: Node3D = null
 ## Callable() -> bool: may this host capture right now (held and plugged)?
 var _eligible: Callable = Callable()
 var _icon: Label3D = null
+var _icon_size := 0.035
 var _loco: LocomotionManager = null
 var _active := false
 
 
-## `glyph` is a Nerd Font codepoint; `offset` is metres along the host's own +Z,
-## which puts the glyph just off the near edge rather than floating overhead.
+## `glyph` is a Nerd Font codepoint; `size` is the glyph's height in metres. Where
+## it sits comes from the host's own shapes, so no caller measures its device.
 static func attach(host: Node3D, eligible: Callable, glyph: int,
-		offset := 0.10, size := 0.035) -> ScrollLockCapture:
+		size := 0.035) -> ScrollLockCapture:
 	var cap := ScrollLockCapture.new()
 	cap._host = host
 	cap._eligible = eligible
-	cap._build_icon(glyph, offset, size)
+	cap._build_icon(glyph, size)
 	cap._find_locomotion_manager.call_deferred()
 	return cap
 
@@ -103,6 +106,8 @@ func release() -> void:
 
 func _apply() -> void:
 	if is_instance_valid(_icon):
+		if _active:
+			_place_icon()
 		_icon.visible = _active
 	if _loco != null:
 		_loco.set_block(_owner(), LocomotionManager.CHANNEL_DESKTOP_MOVE, _active)
@@ -121,9 +126,35 @@ func _find_locomotion_manager() -> void:
 	_apply()
 
 
+## Sit the glyph just past the +Z face of the device, measured on every show: a
+## shell model can resize the body long after attach.
+func _place_icon() -> void:
+	_icon.position = Vector3(0.0, 0.0, _body_reach_z() + _icon_size * 0.5 + ICON_GAP)
+
+
+## How far the host's own body reaches along its local +Z. Only the shapes that
+## body owns count — an Area3D button, a pointer volume and the hands wrapped
+## round the device are all children of the host, and none of them is its edge.
+func _body_reach_z() -> float:
+	var body := _host as CollisionObject3D
+	if body == null:
+		return 0.0
+	var reach := 0.0
+	for owner_id: int in body.get_shape_owners():
+		if body.is_shape_owner_disabled(owner_id):
+			continue
+		var xf: Transform3D = body.shape_owner_get_transform(owner_id)
+		for i in range(body.shape_owner_get_shape_count(owner_id)):
+			var shape: Shape3D = body.shape_owner_get_shape(owner_id, i)
+			if shape == null:
+				continue
+			reach = maxf(reach, (xf * shape.get_debug_mesh().get_aabb()).end.z)
+	return reach
+
+
 ## Same recipe as vr_hinge.gd's _build_icon: billboarded Label3D with the Symbols
 ## Nerd Font as a fallback, sized in metres, drawn over geometry.
-func _build_icon(glyph: int, offset: float, size: float) -> void:
+func _build_icon(glyph: int, size: float) -> void:
 	var existing := _host.get_node_or_null("CaptureHint") as Label3D
 	if existing != null:
 		_icon = existing
@@ -136,6 +167,7 @@ func _build_icon(glyph: int, offset: float, size: float) -> void:
 	var symbols: Font = load(SYMBOL_FONT_PATH)
 	if symbols:
 		fv.fallbacks = [symbols]
+	_icon_size = size
 	_icon.font = fv
 	_icon.font_size = 96
 	_icon.pixel_size = size / 96.0
@@ -146,5 +178,5 @@ func _build_icon(glyph: int, offset: float, size: float) -> void:
 	_icon.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
 	_icon.text = String.chr(glyph)
 	_icon.modulate = Color(1.0, 0.82, 0.28)
-	_icon.position = Vector3(0.0, 0.0, offset)
+	_place_icon()
 	_icon.visible = false

@@ -133,9 +133,8 @@ var _os_shift_held := false
 ## capture is on.
 const ICON_CAPTURE := 0xF11C
 const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
-## Height of the capture glyph, in metres, and how far along +Z of the board it sits.
+## Height of the capture glyph, in metres.
 const ICON_SIZE := 0.035
-const ICON_OFFSET := 0.10
 ## Height of the hint popup above the board, in metres.
 const HINT_HEIGHT := 0.20
 
@@ -153,7 +152,7 @@ func _ready() -> void:
 	grabbed.connect(_on_grabbed_signal)
 	dropped.connect(_on_dropped_signal)
 	_capture = ScrollLockCapture.attach(self, _can_capture,
-		ICON_CAPTURE, ICON_OFFSET, ICON_SIZE)
+		ICON_CAPTURE, ICON_SIZE)
 	# No drop row: the board lets go on a plain release on both platforms.
 	_hint = HeldHint.attach(self, false, HINT_HEIGHT)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
