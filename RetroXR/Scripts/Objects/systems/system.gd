@@ -81,9 +81,10 @@ var _audio_player: AudioStreamPlayer3D = null
 # Meta XR Audio voice ids, when the core is being spatialised through the SDK.
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
-# The RetroAchievements unlock popup, made on the first unlock rather than at
-# power-on: most sessions never earn one, and it costs a SubViewport.
-var _achievement_toast: AchievementToast = null
+# The card that floats over this machine's picture — achievement unlocks, and
+# the notice raised when a game cannot run. Made on demand rather than at
+# power-on: most sessions raise neither, and it costs a SubViewport.
+var _screen_toast_card: AchievementToast = null
 var _mx: Object = null
 # Last level pushed by the connected TV. Re-applied on every rebind: a fresh
 # voice starts at full gain, so a core restart would otherwise come back at full
@@ -1816,6 +1817,13 @@ func power_on() -> void:
 		resolved_dir = CoreDownloadManager.default_core_root()
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
+
+	# The core is handed rom_path verbatim: nothing downstream unpacks an archive
+	# the core cannot read, and a refused retro_load_game raises no signal at all,
+	# so without this the machine sits powered on and black.
+	if not _resolve_content(resolved_core):
+		return
+
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetSramPath(_sram_path_for_run(resolved_core))
@@ -1832,6 +1840,40 @@ func power_on() -> void:
 	# Learn whether this core exposes the disk-control interface (multi-disc
 	# swap); the command drains after retro_load_game, so the answer is real.
 	_libretro.RequestDiskInfo()
+
+
+## Settle rom_path against what this core actually declares it can load.
+##
+## Unpacks (and deletes) an archive the core cannot read, and refuses the
+## power-on outright for a format no amount of unpacking will fix. Returns false
+## when the machine must stay off.
+##
+## A core that declares the archive extension is left alone — for fbneo, MAME and
+## daphne the .zip is the romset, not a wrapper around one.
+func _resolve_content(core_name: String) -> bool:
+	var verdict := RomCompat.resolve(rom_path, core_name, systemid)
+	if int(verdict["verdict"]) == RomCompat.Verdict.UNSUPPORTED:
+		push_error("RetroSystem: %s" % verdict["message"])
+		# On the card rather than the TV's OSD: half the machines this fires on
+		# are handhelds with no set connected, and the card anchors to whatever
+		# screen the machine actually has. A console with no TV at all gets the
+		# log alone, which is all it could show anyway.
+		var toast := _screen_toast()
+		if toast != null:
+			toast.show_notice("Cannot run this game",
+				rom_path.get_file(), str(verdict["message"]))
+		return false
+
+	var resolved := str(verdict["path"])
+	if resolved != rom_path and not resolved.is_empty():
+		rom_path = resolved
+		# The cartridge outlives the run — an eject re-reads rom_path from it, and
+		# so does a scene reload — so leaving it holding the .zip we just deleted
+		# would fail the same way on the next insert.
+		if _snapped_cartridge != null and is_instance_valid(_snapped_cartridge) \
+				and "rom_path" in _snapped_cartridge:
+			_snapped_cartridge.set("rom_path", resolved)
+	return true
 
 
 ## Power off: stop the running core
@@ -3167,19 +3209,27 @@ func _on_achievement_unlocked(_id: int, title: String, description: String,
 	# must not raise a toast for its unlocks.
 	if RA.session_owner() != self:
 		return
+	var toast := _screen_toast()
+	if toast == null:
+		return
+	toast.show_unlock(title, description, points, badge)
+
+
+## The notification card over this machine's picture, made on demand.
+##
+## Rebuilt when the picture has moved — plugging a video-out cable into a TV
+## changes _screen_target(), and a cached card is parented to the old one.
+## Null when the machine has no screen at all: a console with no TV connected.
+func _screen_toast() -> AchievementToast:
 	var anchor := _screen_target()
 	if anchor == null:
-		return
-	# Rebuilt when the picture has moved — plugging a video-out cable into a TV
-	# changes _screen_target(), and the cached toast is parented to the old one.
-	if is_instance_valid(_achievement_toast) and _achievement_toast.anchor() != anchor:
-		_achievement_toast.queue_free()
-		_achievement_toast = null
-	if not is_instance_valid(_achievement_toast):
-		_achievement_toast = AchievementToast.attach(anchor)
-		if _achievement_toast == null:
-			return
-	_achievement_toast.show_unlock(title, description, points, badge)
+		return null
+	if is_instance_valid(_screen_toast_card) and _screen_toast_card.anchor() != anchor:
+		_screen_toast_card.queue_free()
+		_screen_toast_card = null
+	if not is_instance_valid(_screen_toast_card):
+		_screen_toast_card = AchievementToast.attach(anchor)
+	return _screen_toast_card if is_instance_valid(_screen_toast_card) else null
 
 
 ## The slot this save occupies on the server. A cartridge's own save_id, so a

@@ -23,6 +23,10 @@ const PIXELS_PER_METRE := 1400.0
 const PANEL_W := 520.0
 const PANEL_H := 132.0
 
+## Trim colour per kind of card: gold for an unlock, red for a fault.
+const ACCENT_UNLOCK := Color(1.0, 0.78, 0.24)
+const ACCENT_NOTICE := Color(1.0, 0.42, 0.36)
+
 var _viewport: XRToolsViewport2DIn3D = null
 var _root: Control = null
 var _queue: Array[Dictionary] = []
@@ -119,10 +123,29 @@ func anchor() -> MeshInstance3D:
 ## or three), so they are shown one at a time rather than drawn over each other.
 func show_unlock(title: String, description: String, points: int, badge: Texture2D) -> void:
 	_queue.append({
+		"heading": "Achievement unlocked  •  %d" % points,
+		"accent": ACCENT_UNLOCK,
 		"title": title,
 		"description": description,
-		"points": points,
 		"badge": badge,
+	})
+	if not _showing:
+		_next()
+
+
+## Queue a plain notice on the same card — no badge, no points, red trim.
+##
+## It rides here rather than on the TV's OSD because the OSD belongs to the set,
+## and the machine that cannot run a game is as often a handheld with no set
+## connected. Anchoring to the screen covers both: a cabinet's TV, or the
+## built-in panel of a Lynx being held at the time.
+func show_notice(heading: String, title: String, description: String) -> void:
+	_queue.append({
+		"heading": heading,
+		"accent": ACCENT_NOTICE,
+		"title": title,
+		"description": description,
+		"badge": null,
 	})
 	if not _showing:
 		_next()
@@ -177,9 +200,11 @@ func _render(entry: Dictionary) -> void:
 	_root.custom_minimum_size = Vector2(PANEL_W, PANEL_H)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+	var accent: Color = entry.get("accent", ACCENT_UNLOCK)
+
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.05, 0.06, 0.09, 1.0)
-	style.border_color = Color(1.0, 0.78, 0.24)
+	style.border_color = accent
 	style.set_border_width_all(3)
 	style.set_corner_radius_all(10)
 	style.set_content_margin_all(12)
@@ -207,9 +232,9 @@ func _render(entry: Dictionary) -> void:
 	row.add_child(text)
 
 	var heading := Label.new()
-	heading.text = "Achievement unlocked  •  %d" % int(entry.get("points", 0))
+	heading.text = str(entry.get("heading", ""))
 	heading.add_theme_font_size_override("font_size", 15)
-	heading.add_theme_color_override("font_color", Color(1.0, 0.78, 0.24))
+	heading.add_theme_color_override("font_color", accent)
 	text.add_child(heading)
 
 	var title := Label.new()
