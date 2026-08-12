@@ -61,9 +61,7 @@ static func _data_track(rom_path: String) -> String:
 		return rom_path
 	var text := f.get_as_text()
 	f.close()
-	var re := RegEx.new()
-	re.compile('FILE\\s+"([^"]+)"')
-	var m := re.search(text)
+	var m := _CUE_RE.search(text)
 	if m == null:
 		return rom_path
 	return rom_path.get_base_dir().path_join(m.get_string(1))

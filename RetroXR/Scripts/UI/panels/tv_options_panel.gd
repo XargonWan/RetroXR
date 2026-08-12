@@ -179,9 +179,9 @@ func _on_crt_param_changed(pname, value) -> void:
 
 
 ## Live while the slider is dragged — resizes the local TV every tick.
-func _on_scale_changed(scale: float) -> void:
+func _on_scale_changed(factor: float) -> void:
 	if _tv and is_instance_valid(_tv):
-		_tv.set_tv_scale(scale)
+		_tv.set_tv_scale(factor)
 
 
 func _on_ignore_gravity_toggled(enabled: bool) -> void:
@@ -190,8 +190,8 @@ func _on_ignore_gravity_toggled(enabled: bool) -> void:
 
 
 ## Drag finished — apply locally and replicate the final size to other players.
-func _on_scale_committed(scale: float) -> void:
+func _on_scale_committed(factor: float) -> void:
 	if _tv and is_instance_valid(_tv):
-		_tv.set_tv_scale(scale)
+		_tv.set_tv_scale(factor)
 		NetworkManager.report_event(NetObjectSync.EV_TV_SIZE,
-			{"tv": _tv, "scale": scale})
+			{"tv": _tv, "scale": factor})

@@ -288,14 +288,14 @@ func _apply_label_art() -> void:
 			art.name = "ModelLabelArt"
 			add_child(art)
 			# Fit-within, so art of any aspect is never stretched to the recess.
-			var fitted := Vector2(ab.size.x, ab.size.y)
+			var recess_fit := Vector2(ab.size.x, ab.size.y)
 			var ar := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
-			if fitted.x / maxf(fitted.y, 0.0001) > ar:
-				fitted.x = fitted.y * ar
+			if recess_fit.x / maxf(recess_fit.y, 0.0001) > ar:
+				recess_fit.x = recess_fit.y * ar
 			else:
-				fitted.y = fitted.x / ar
+				recess_fit.y = recess_fit.x / ar
 			var quad := QuadMesh.new()
-			quad.size = fitted
+			quad.size = recess_fit
 			art.mesh = quad
 			var c := ab.get_center()
 			art.position = Vector3(c.x, c.y, ab.position.z + ab.size.z + 0.0003)

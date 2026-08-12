@@ -11,7 +11,6 @@ class_name DropdownPanel
 extends Node3D
 
 signal option_chosen(id: Variant)
-signal dismissed
 
 const VIEWPORT_2D_IN_3D := preload("res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn")
 const OPTIONS_2D := preload("res://Scenes/UI/dropdown_options_2d.tscn")

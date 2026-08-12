@@ -288,10 +288,10 @@ func _bind_channel_row(row: Control, index: int) -> void:
 		return
 	var ch: Dictionary = _channels[index]
 	var number := str(ch.get("number", ""))
-	var name := str(ch.get("name", ""))
+	var label := str(ch.get("name", ""))
 	var hd := "  HD" if bool(ch.get("hd", false)) else ""
 	btn.disabled = false
-	btn.text = "  %s  %s%s" % [number.rpad(6), name, hd]
+	btn.text = "  %s  %s%s" % [number.rpad(6), label, hd]
 	btn.add_theme_color_override("font_color",
 		COLOR_TITLE if index == _current_channel else COLOR_ROW)
 	# Rebound on every scroll, so the old row's connection has to go first or the

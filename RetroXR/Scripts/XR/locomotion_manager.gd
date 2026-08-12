@@ -75,17 +75,17 @@ func _require(provider_name: String) -> Node:
 	return node
 
 
-func set_block(owner: StringName, channel: StringName, active: bool) -> void:
+func set_block(block_owner: StringName, channel: StringName, active: bool) -> void:
 	match channel:
 		CHANNEL_LEFT:
-			_set_channel_block(_left_blocks, owner, active)
+			_set_channel_block(_left_blocks, block_owner, active)
 		CHANNEL_RIGHT:
-			_set_channel_block(_right_blocks, owner, active)
+			_set_channel_block(_right_blocks, block_owner, active)
 		CHANNEL_ALL:
-			_set_channel_block(_left_blocks, owner, active)
-			_set_channel_block(_right_blocks, owner, active)
+			_set_channel_block(_left_blocks, block_owner, active)
+			_set_channel_block(_right_blocks, block_owner, active)
 		CHANNEL_DESKTOP_MOVE:
-			_set_channel_block(_desktop_blocks, owner, active)
+			_set_channel_block(_desktop_blocks, block_owner, active)
 		_:
 			push_warning("LocomotionManager: unknown channel '%s'" % [channel])
 			return
@@ -93,10 +93,10 @@ func set_block(owner: StringName, channel: StringName, active: bool) -> void:
 	_apply()
 
 
-func clear_owner(owner: StringName) -> void:
-	_left_blocks.erase(owner)
-	_right_blocks.erase(owner)
-	_desktop_blocks.erase(owner)
+func clear_owner(block_owner: StringName) -> void:
+	_left_blocks.erase(block_owner)
+	_right_blocks.erase(block_owner)
+	_desktop_blocks.erase(block_owner)
 	_apply()
 
 
@@ -114,11 +114,11 @@ func is_blocked(channel: StringName) -> bool:
 			return false
 
 
-func _set_channel_block(blocks: Dictionary, owner: StringName, active: bool) -> void:
+func _set_channel_block(blocks: Dictionary, block_owner: StringName, active: bool) -> void:
 	if active:
-		blocks[owner] = true
+		blocks[block_owner] = true
 	else:
-		blocks.erase(owner)
+		blocks.erase(block_owner)
 
 
 func _apply() -> void:

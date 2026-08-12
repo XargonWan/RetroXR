@@ -581,6 +581,7 @@ func _get_page_texture(page_index: int) -> ImageTexture:
 func _crop_to_half(img: Image, page_index: int) -> Image:
 	if not half_page_mode or img == null:
 		return img
+	@warning_ignore("integer_division")
 	var half_w := img.get_width() / 2
 	if half_w <= 0:
 		return img
@@ -596,10 +597,12 @@ func _request_page_render(page_index: int) -> void:
 		return
 	_pending_renders[page_index] = true
 
+	@warning_ignore("integer_division")
 	var src_index := page_index / 2 if half_page_mode else page_index
+	# Captured for the worker lambda so it never reaches back through `self`.
+	var cache_dir := _cache_dir
 
 	if _format == _Format.CBZ:
-		var cache_dir := _cache_dir
 		WorkerThreadPool.add_task(func():
 			var img := _decode_cbz_page(src_index)
 			img = _crop_to_half(img, page_index)
@@ -615,7 +618,6 @@ func _request_page_render(page_index: int) -> void:
 		return
 	var renderer_ref := _renderer
 	var dpi := render_dpi
-	var cache_dir := _cache_dir
 	WorkerThreadPool.add_task(func():
 		_render_mutex.lock()
 		var img: Image = null
@@ -1032,7 +1034,6 @@ func _update_collision_shape() -> void:
 	if not col_shape or not col_shape.shape is BoxShape3D:
 		return
 	var half_w := _book_width / 2.0
-	var spine_half := SPINE_WIDTH / 2.0
 	var total_thick := maxf(_leaf_count * LEAF_THICKNESS, LEAF_THICKNESS * 2)
 	var depth := maxf(total_thick + COVER_THICKNESS + COVER_GAP * 2 + ZFIGHT_MARGIN, MIN_COLLISION_DEPTH)
 	match _state:
@@ -1174,9 +1175,11 @@ func _update_spine_strip(tex: Texture2D) -> void:
 	if src == null or src.get_width() == 0:
 		return
 	var rows := mini(src.get_height(), 256)
+	@warning_ignore("integer_division")
 	var band := maxi(1, src.get_width() / 32)
 	var strip := Image.create(1, rows, false, Image.FORMAT_RGBA8)
 	for y in rows:
+		@warning_ignore("integer_division")
 		var sy := y * src.get_height() / rows
 		var acc := Color(0.0, 0.0, 0.0)
 		for x in band:

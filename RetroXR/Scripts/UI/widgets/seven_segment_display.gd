@@ -75,10 +75,10 @@ func _draw() -> void:
 				x += dw + g
 
 
-func _measure(text: String, dw: float, g: float) -> float:
+func _measure(s: String, dw: float, g: float) -> float:
 	var w := 0.0
-	for i in text.length():
-		match text[i]:
+	for i in s.length():
+		match s[i]:
 			":": w += dw * 0.45 + g
 			"/": w += dw + g
 			" ": w += dw * 0.5 + g

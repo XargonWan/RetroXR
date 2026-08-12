@@ -114,11 +114,13 @@ static func list_saves(data: PackedByteArray, with_icons := true) -> Array[Dicti
 		var name := _ascii_until_nul(raw)
 		var size := data.decode_u32(e + 4)
 		var blk := i * BLOCK_SIZE
+		@warning_ignore("integer_division")
+		var blocks := maxi(1, size / BLOCK_SIZE)
 		out.append({
 			"name": name,
 			"serial": _serial_of(name),
 			"title": _decode_title(data.slice(blk + 4, blk + 68)),
-			"blocks": maxi(1, size / BLOCK_SIZE),
+			"blocks": blocks,
 			"block": i,
 			"icons": _icons(data, blk) if with_icons else [],
 		})
@@ -258,6 +260,7 @@ static func is_mcs(mcs: PackedByteArray) -> bool:
 static func insert_save(data: PackedByteArray, mcs: PackedByteArray) -> PackedByteArray:
 	if not is_card_image(data) or not is_mcs(mcs):
 		return PackedByteArray()
+	@warning_ignore("integer_division")
 	var n := (mcs.size() - FRAME_SIZE) / BLOCK_SIZE
 	var name := _ascii_until_nul(mcs.slice(10, 31))
 	for s in list_saves(data, false):
@@ -401,6 +404,7 @@ static func _icons(data: PackedByteArray, blk: int) -> Array:
 		var px := PackedByteArray()
 		px.resize(16 * 16 * 4)
 		for i in range(16 * 16):
+			@warning_ignore("integer_division")
 			var byte := data[src + i / 2]
 			var idx := (byte & 0x0F) if i % 2 == 0 else (byte >> 4)
 			var col: Color = pal[idx]

@@ -43,17 +43,17 @@ var _anchor: MeshInstance3D = null
 var _needs_interpolation_reset := false
 
 
-## Attach a toast host to a cabinet. `anchor` is the screen mesh it floats above,
+## Attach a toast host to a cabinet. `screen` is the screen mesh it floats above,
 ## so the popup tracks a handheld picked up and carried.
-static func attach(anchor: MeshInstance3D) -> AchievementToast:
-	if anchor == null:
+static func attach(screen: MeshInstance3D) -> AchievementToast:
+	if screen == null:
 		return null
 	var toast := AchievementToast.new()
 	toast.name = "AchievementToast"
-	toast._anchor = anchor
+	toast._anchor = screen
 	# Parented to the screen for lifetime — it should die with the machine — but
 	# top_level, so none of the screen's transform reaches it. See _place().
-	anchor.add_child(toast)
+	screen.add_child(toast)
 	toast._build()
 	return toast
 
@@ -98,7 +98,7 @@ func _place() -> void:
 		return
 
 	var xform := _anchor.global_transform
-	var basis := xform.basis.orthonormalized()
+	var frame := xform.basis.orthonormalized()
 
 	var top_centre := xform.origin
 	if _anchor.mesh != null:
@@ -109,10 +109,10 @@ func _place() -> void:
 
 	# Clear of the bezel, then half the panel so the gap is to its bottom edge,
 	# then a little proud of the screen plane so it never z-fights the picture.
-	var offset := basis.y * (ABOVE_SCREEN + (PANEL_H / PIXELS_PER_METRE) * 0.5) \
-		+ basis.z * 0.01
+	var offset := frame.y * (ABOVE_SCREEN + (PANEL_H / PIXELS_PER_METRE) * 0.5) \
+		+ frame.z * 0.01
 
-	global_transform = Transform3D(basis, top_centre + offset)
+	global_transform = Transform3D(frame, top_centre + offset)
 
 
 ## The screen this toast floats above. Callers compare it against their current

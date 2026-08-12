@@ -365,7 +365,7 @@ func on_plug_seating_changed() -> void:
 func _resolve() -> void:
 	if not is_inside_tree():
 		return
-	var links: Array[Dictionary] = []
+	var resolved: Array[Dictionary] = []
 	var devices: Array[Node3D] = []
 	for c in _cords:
 		var pa: RcaPort = (_plugs[End.A][c] as RcaPlug).seated_port()
@@ -382,7 +382,7 @@ func _resolve() -> void:
 			in_port = pa
 		else:
 			continue        # source to source, or sink to sink: carries nothing
-		links.append({"out": out_port, "in": in_port, "cord": c})
+		resolved.append({"out": out_port, "in": in_port, "cord": c})
 		for port: RcaPort in [out_port, in_port]:
 			var dev: Node3D = port.get_device()
 			if dev != null and not devices.has(dev):
@@ -397,7 +397,7 @@ func _resolve() -> void:
 
 	for dev in devices:
 		if is_instance_valid(dev):
-			dev.on_av_topology_changed(links)
+			dev.on_av_topology_changed(resolved)
 	_report_seating_changes()
 	topology_changed.emit()
 
@@ -459,7 +459,7 @@ func seating() -> Array[Dictionary]:
 				"end": int(e),
 				"cord": c,
 				"device": port.get_device() if port != null else null,
-				"port": port.name if port != null else "",
+				"port": String(port.name) if port != null else "",
 			})
 	return out
 

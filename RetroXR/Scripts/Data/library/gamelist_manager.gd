@@ -152,7 +152,7 @@ func invalidate(systemid: String) -> void:
 
 
 ## Convert an absolute ROM path to a relative path (./filename) for storage.
-static func _to_relative_path(systemid: String, rom_path: String) -> String:
+static func _to_relative_path(_systemid: String, rom_path: String) -> String:
 	var filename := rom_path.get_file()
 	return "./" + filename
 

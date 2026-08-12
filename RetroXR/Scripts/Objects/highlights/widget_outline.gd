@@ -118,14 +118,14 @@ var outline_hidden_source: bool = false
 
 
 ## Show or hide the outline and keep it locked to the source. Call every frame.
-func sync(show: bool) -> void:
+func sync(shown: bool) -> void:
 	if not is_instance_valid(_source):
 		visible = false
 		return
 	# Pick up a runtime mesh swap on the source itself.
 	if _source.mesh != _built_from:
 		_rebuild()
-	if not show or mesh == null \
+	if not shown or mesh == null \
 			or not (outline_hidden_source or _source.is_visible_in_tree()):
 		visible = false
 		return

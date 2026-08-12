@@ -50,7 +50,7 @@ var _tween: Tween = null
 # STATIC so the physics server treats it as non-simulated scenery and it rides the
 # host perfectly rigidly; KINEMATIC (the pickable default) drifts a couple of cm
 # under host rotation because the server keeps re-integrating it.
-var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_KINEMATIC
+var _orig_freeze_mode: RigidBody3D.FreezeMode = RigidBody3D.FREEZE_MODE_KINEMATIC
 var _riding: bool = false         # an insert/eject tween is animating the local pose
 
 

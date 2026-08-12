@@ -157,7 +157,7 @@ func sign_out() -> void:
 ## Ask to track the machine that is powering on. Returns false when another
 ## cabinet already holds the session, the system has no RetroAchievements
 ## console, or nobody is signed in — all of which mean "run without achievements".
-func claim_session(owner: Node, systemid: String, libretro: Object) -> bool:
+func claim_session(claimant: Node, systemid: String, libretro: Object) -> bool:
 	if libretro == null or not is_logged_in():
 		return false
 	var console_id := RaConsoles.for_systemid(systemid)
@@ -165,12 +165,12 @@ func claim_session(owner: Node, systemid: String, libretro: Object) -> bool:
 		return false
 	if not libretro.RaClaimSession(console_id):
 		return false
-	_session_owner = owner
+	_session_owner = claimant
 	return true
 
 
-func release_session(owner: Node) -> void:
-	if _session_owner == owner:
+func release_session(claimant: Node) -> void:
+	if _session_owner == claimant:
 		_session_owner = null
 
 

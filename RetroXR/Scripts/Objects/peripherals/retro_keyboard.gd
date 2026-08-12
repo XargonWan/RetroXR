@@ -533,11 +533,11 @@ func _set_key(index: int, down: bool) -> void:
 ## at rest height. Single place for the move: the real-keyboard path used to
 ## duplicate it and could only ever drift.
 func _set_cap_pressed(k: Dictionary, down: bool) -> void:
-	var drop := PRESS_TRAVEL if down else 0.0
-	(k["mesh"] as MeshInstance3D).position.y = float(k["base_y"]) - drop
+	var sink := PRESS_TRAVEL if down else 0.0
+	(k["mesh"] as MeshInstance3D).position.y = float(k["base_y"]) - sink
 	var lbl := k["label"] as Label3D
 	if lbl != null:
-		lbl.position.y = float(k["label_base_y"]) - drop
+		lbl.position.y = float(k["label_base_y"]) - sink
 
 
 func _release_all() -> void:

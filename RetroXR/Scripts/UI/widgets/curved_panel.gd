@@ -248,8 +248,8 @@ func surface_pose(flat_x: float, y: float, out: float) -> Transform3D:
 	var theta := flat_x / r
 	# Outward normal at this point on the arc, i.e. back toward the viewer.
 	var n := Vector3(-sin(theta), 0.0, cos(theta))
-	var basis := Basis(Vector3.UP, -theta)
-	return Transform3D(basis, _arc_point(flat_x, y) + n * out)
+	var tilt := Basis(Vector3.UP, -theta)
+	return Transform3D(tilt, _arc_point(flat_x, y) + n * out)
 
 
 ## True while the screen is bent enough for surface_pose to matter.

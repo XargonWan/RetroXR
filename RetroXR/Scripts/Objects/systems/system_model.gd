@@ -208,7 +208,7 @@ static func hide_port_placeholders(port_zones: Array) -> void:
 
 ## Handhelds: create and wire the on-device controls (volume slider, power
 ## switch) against the owning RetroSystem. Called after the model loads.
-func configure_handheld_controls(host: Node3D) -> void:
+func configure_handheld_controls(_host: Node3D) -> void:
 	pass
 
 
@@ -227,7 +227,7 @@ func set_lid_angle_deg(_open_deg: float) -> void:
 
 
 ## Reposition the memory-card snap zone to the model's physical card slot.
-func configure_memory_card_slot(slot: Node3D) -> void:
+func configure_memory_card_slot(_slot: Node3D) -> void:
 	pass
 
 
@@ -249,7 +249,7 @@ func get_unsupported_button_mask() -> int:
 
 ## Show or hide the controller plug port visuals for a given port index.
 ## Called by RetroSystem when a controller is plugged in or removed.
-func set_controller_port_occupied(port_index: int, occupied: bool) -> void:
+func set_controller_port_occupied(_port_index: int, _occupied: bool) -> void:
 	pass
 
 
@@ -272,14 +272,14 @@ func av_plug_cable_end(plug: Node3D, fallback: Vector3) -> Vector3:
 
 ## Show or hide the video/cable output port visual.
 ## Called by RetroSystem when a cable is connected or disconnected.
-func set_cable_port_occupied(occupied: bool) -> void:
+func set_cable_port_occupied(_occupied: bool) -> void:
 	pass
 
 
 ## Animate a cartridge into its slot.  Called after XRTools has snapped and
 ## frozen the cartridge at the slot position.  Subclasses unfreeze, tween from
 ## a system-specific start offset to the final position, then refreeze.
-func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
+func play_cartridge_insert(_cartridge: Node3D, _slot: Node3D) -> void:
 	pass
 
 
@@ -307,12 +307,12 @@ func configure_sync_button(_sync_btn: VRButton) -> void:
 ## Reposition controller port snap zones to the model's physical port locations.
 ## port_zones is the system's Array of XRToolsSnapZone nodes (index 0 = port 1).
 ## Only move the zones the model has markers for; others keep their default positions.
-func configure_controller_ports(port_zones: Array) -> void:
+func configure_controller_ports(_port_zones: Array) -> void:
 	pass
 
 
 ## Reposition the cable attach point to the model's physical video-out port.
-func configure_cable_attach(attach_point: Node3D) -> void:
+func configure_cable_attach(_attach_point: Node3D) -> void:
 	pass
 
 
@@ -399,7 +399,7 @@ func get_cable_spawn_offset(channel: int) -> Vector3:
 ## Boy standing on its bipod) override this so the body rests on the ground
 ## instead of floating. Default: leave the scene's collision box unchanged.
 ## (Handhelds resize collision separately via configure_handheld_body.)
-func configure_collision(host: Node3D) -> void:
+func configure_collision(_host: Node3D) -> void:
 	pass
 
 
@@ -477,7 +477,7 @@ func _hide_seat_previews() -> void:
 ## Also returns the insertion offset — the vector the cartridge travels from its
 ## pre-animation position to the snapped position (in world space).
 ## Default: 6 cm straight up (+Y), i.e. cartridge drops straight down into slot.
-func configure_cartridge_slot(slot: Node3D) -> void:
+func configure_cartridge_slot(_slot: Node3D) -> void:
 	pass
 
 
@@ -496,5 +496,5 @@ func play_reset() -> void:
 ## Animate a cartridge ejecting from its slot before it is dropped.
 ## NOTE: by the time has_dropped fires the cartridge is already released, so
 ## this is reserved for future use (e.g. intercepting the drop earlier).
-func play_cartridge_eject(cartridge: Node3D, _slot: Node3D) -> void:
+func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:
 	pass

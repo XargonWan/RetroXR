@@ -54,7 +54,7 @@ var _media: Node3D = null
 var _holder: Node3D = null
 var _open: bool = false
 var _lid_tween: Tween = null
-var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_KINEMATIC
+var _orig_freeze_mode: RigidBody3D.FreezeMode = RigidBody3D.FREEZE_MODE_KINEMATIC
 ## `slot`'s rest pose relative to `disc_lid_pivot`, captured once at _ready()
 ## (slot is a fixed child of `host`, not `disc_lid_pivot`, so its transform
 ## has to be driven every frame in _process instead of via reparenting — it's
@@ -140,7 +140,10 @@ func _apply_open(open: bool, animate: bool) -> void:
 				.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		else:
 			lid_pivot.rotation_degrees.x = target
-	emit_signal("opened" if open else "closed")
+	if open:
+		opened.emit()
+	else:
+		closed.emit()
 
 
 # --- Load / unload -------------------------------------------------------------

@@ -192,16 +192,16 @@ func upload_multipart(method: int, path: String, headers: PackedStringArray,
 	# arbitrary binary and a constant boundary could appear inside one.
 	var boundary := "----RetroXR%016x%016x" % [randi(), randi()]
 
-	var head := PackedByteArray()
-	head.append_array(("--%s\r\n" % boundary).to_utf8_buffer())
-	head.append_array(('Content-Disposition: form-data; name="%s"; filename="%s"\r\n'
+	var preamble := PackedByteArray()
+	preamble.append_array(("--%s\r\n" % boundary).to_utf8_buffer())
+	preamble.append_array(('Content-Disposition: form-data; name="%s"; filename="%s"\r\n'
 		% [field, filename]).to_utf8_buffer())
-	head.append_array(("Content-Type: %s\r\n\r\n" % mime).to_utf8_buffer())
+	preamble.append_array(("Content-Type: %s\r\n\r\n" % mime).to_utf8_buffer())
 
 	var tail := ("\r\n--%s--\r\n" % boundary).to_utf8_buffer()
 
 	var body := PackedByteArray()
-	body.append_array(head)
+	body.append_array(preamble)
 	body.append_array(bytes)
 	body.append_array(tail)
 

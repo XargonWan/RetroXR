@@ -423,6 +423,7 @@ func _load_shell() -> void:
 			var b: Node3D = buttons[i]
 			# Keep each cap's authored basis (they are rotated to face outward);
 			# only the origin walks the row.
+			@warning_ignore("integer_division")
 			b.transform = Transform3D(b.transform.basis, base * Vector3(
 				float(i % per_row) * _shell.button_pitch,
 				float(i / per_row) * -_shell.button_row_drop,
@@ -1167,10 +1168,10 @@ func _unwrap_crt() -> void:
 	_crt_derived_key = ""
 
 
-func set_crt_enabled(enabled: bool) -> void:
-	crt_enabled = enabled
+func set_crt_enabled(on: bool) -> void:
+	crt_enabled = on
 	_update_crt_button_color()
-	NetworkManager.report_event(NetObjectSync.EV_TV_CRT, {"tv": self, "on": enabled})
+	NetworkManager.report_event(NetObjectSync.EV_TV_CRT, {"tv": self, "on": on})
 
 
 func _on_crt_toggle() -> void:
@@ -1349,10 +1350,10 @@ func get_speaker_positions() -> PackedVector3Array:
 		out.push_back(_speaker_r.global_position)
 		return out
 	# No markers (a scene predating them): the defaults, computed in place.
-	var basis := global_transform.basis
-	var face: Vector3 = _screen_mesh.global_position + basis.z * 0.005
-	var right: Vector3 = basis.x * (_screen_size_m.x * 0.5 + 0.055)
-	var down: Vector3 = -basis.y * (_screen_size_m.y * 0.35)
+	var frame := global_transform.basis
+	var face: Vector3 = _screen_mesh.global_position + frame.z * 0.005
+	var right: Vector3 = frame.x * (_screen_size_m.x * 0.5 + 0.055)
+	var down: Vector3 = -frame.y * (_screen_size_m.y * 0.35)
 	out.push_back(face - right + down)
 	out.push_back(face + right + down)
 	return out
@@ -1374,10 +1375,10 @@ func _place_default_speakers() -> void:
 	if _speaker_l == null or _speaker_r == null:
 		return
 	var half_w: float = _screen_size_m.x * 0.5 + 0.055
-	var drop: float = _screen_size_m.y * 0.35
+	var drop_m: float = _screen_size_m.y * 0.35
 	var face: Vector3 = _screen_mesh.position + Vector3(0.0, 0.0, 0.005)
-	_speaker_l.position = face + Vector3(-half_w, -drop, 0.0)
-	_speaker_r.position = face + Vector3(half_w, -drop, 0.0)
+	_speaker_l.position = face + Vector3(-half_w, -drop_m, 0.0)
+	_speaker_r.position = face + Vector3(half_w, -drop_m, 0.0)
 
 
 ## Which way the picture faces. Sound leaves a set the same way it does, so
@@ -1610,17 +1611,17 @@ func _on_plug_snapped(plug: Node3D, input: int) -> void:
 	_unwrap_crt()
 	cable_connected.emit(plug)
 	if plug is CablePlug:
-		var snapped := plug as CablePlug
-		_snapped_plugs[input] = snapped
+		var plugged := plug as CablePlug
+		_snapped_plugs[input] = plugged
 		# Prevent the frozen kinematic plug from physically pushing the TV
-		add_collision_exception_with(snapped)
-		var system := snapped.get_system()
+		add_collision_exception_with(plugged)
+		var system := plugged.get_system()
 		if system:
 			_connected_systems[input] = system
 			# Multi-output systems need to know WHICH cable landed; other
 			# hosts (VCR/DVD) keep the plain single-arg contract.
 			if system is RetroSystem:
-				(system as RetroSystem).on_tv_connected(self, snapped)
+				(system as RetroSystem).on_tv_connected(self, plugged)
 			elif system.has_method("on_tv_connected"):
 				# Guarded: only a host with a captive lead implements this. The decks
 				# dropped it when they moved to sockets and a spawned cable, and an
@@ -1634,7 +1635,7 @@ func _on_plug_snapped(plug: Node3D, input: int) -> void:
 			# …and it must be silent too until SOURCE picks it, for the same reason.
 			_apply_audio_volume()
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
-				{"owner": system, "tv": self, "ch": snapped.channel, "in": input})
+				{"owner": system, "tv": self, "ch": plugged.channel, "in": input})
 
 
 ## Called by a deck that has worked out it is feeding this set through a composite
@@ -1723,13 +1724,13 @@ func _on_plug_released(input: int) -> void:
 	# not our CRT wrapper.
 	_unwrap_crt()
 	cable_disconnected.emit()
-	var snapped: CablePlug = _snapped_plugs[input]
-	if snapped:
-		remove_collision_exception_with(snapped)
-		var system := snapped.get_system()
+	var plugged: CablePlug = _snapped_plugs[input]
+	if plugged:
+		remove_collision_exception_with(plugged)
+		var system := plugged.get_system()
 		if system:
 			if system is RetroSystem:
-				(system as RetroSystem).on_tv_disconnected(snapped)
+				(system as RetroSystem).on_tv_disconnected(plugged)
 			elif system.has_method("on_tv_disconnected"):
 				system.on_tv_disconnected()
 		_connected_systems[input] = null

@@ -219,14 +219,14 @@ func set_remote_target(active: bool) -> void:
 	_update_state()
 
 
-func _set_overlays_visible(show: bool) -> void:
-	set_process(show)
+func _set_overlays_visible(shown: bool) -> void:
+	set_process(shown)
 	var parent_inv := (get_parent() as Node3D).global_transform.affine_inverse()
 	for i in range(_overlays.size()):
 		var overlay := _overlays[i]
 		if not is_instance_valid(overlay):
 			continue
-		if show and i < _overlay_sources.size() and is_instance_valid(_overlay_sources[i]):
+		if shown and i < _overlay_sources.size() and is_instance_valid(_overlay_sources[i]):
 			var src := _overlay_sources[i]
 			var was_hidden := not overlay.visible
 			overlay.transform = parent_inv * src.global_transform

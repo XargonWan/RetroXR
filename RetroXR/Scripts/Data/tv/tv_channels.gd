@@ -171,7 +171,7 @@ static func write_default_config() -> void:
 	if not file:
 		push_error("[TVChannels] Failed to write default: %s" % path)
 		return
-	var seed := {
+	var defaults := {
 		"version": 1,
 		"sources": [
 			{"type": "hdhomerun", "name": "Antenna", "auto": true, "host": ""},
@@ -179,5 +179,5 @@ static func write_default_config() -> void:
 			 "link": "https://example.com/stream.m3u8"},
 		],
 	}
-	file.store_string(JSON.stringify(seed, "\t"))
+	file.store_string(JSON.stringify(defaults, "\t"))
 	print("[TVChannels] Wrote starter channel list: %s" % path)

@@ -7,15 +7,15 @@ extends XRToolsPickable
 ## script — rather than the procedural placeholder every other system shows.
 ## The spawn menu uses it to decide whether a system's hardware row is the real
 ## thing (named after it) or already the stand-in.
-static func has_bespoke_model(systemid: String) -> bool:
-	return SystemModelRegistry.has_any_model(systemid)
+static func has_bespoke_model(sysid: String) -> bool:
+	return SystemModelRegistry.has_any_model(sysid)
 
 
 ## True when this hardware has an authored stand-in model scene, i.e. spawning it
 ## with variant "primitive" gives plain geometry shaped like the device rather
 ## than the generic console box.
-static func has_primitive_model(systemid: String) -> bool:
-	return SystemModelRegistry.has_plain_alternative(systemid)
+static func has_primitive_model(sysid: String) -> bool:
+	return SystemModelRegistry.has_plain_alternative(sysid)
 
 
 ## The libretro core filename (without extension), e.g. "fceumm".
@@ -454,9 +454,9 @@ func _place_name_label() -> void:
 ## _audio_centre_local is: _body_aabb walks every mesh in the model and a
 ## floating panel wants this every frame.
 func body_top_y() -> float:
-	var model_id := _model.get_instance_id() if _model != null else 0
-	if model_id != _body_top_model_id:
-		_body_top_model_id = model_id
+	var inst_id := _model.get_instance_id() if _model != null else 0
+	if inst_id != _body_top_model_id:
+		_body_top_model_id = inst_id
 		var aabb := _body_aabb()
 		_body_top_local = aabb.end.y if aabb.size.y > 0.0 else 0.0
 	# Through the transform, not added to it: the system may be scaled, and the
@@ -740,8 +740,8 @@ func set_lid_angle_deg(open_deg: float) -> void:
 
 ## Enable or disable libretro input polling for this system.
 ## Only the actively-controlled instance should have input enabled.
-func set_input_enabled(enabled: bool) -> void:
-	_libretro.SetInputEnabled(enabled)
+func set_input_enabled(on: bool) -> void:
+	_libretro.SetInputEnabled(on)
 
 
 ## Set the audio volume for the running libretro instance (0.0 = silent, 1.0 = 100%).
@@ -1070,10 +1070,10 @@ func is_stereo_output() -> bool:
 ## Show or hide the screen output (used by TV toggle button).
 ## Multi-output: per-TV blanking is handled by _update_tv_mirrors (it keys off
 ## each TV's own power), so a single TV's toggle must not blank the core here.
-func set_screen_enabled(enabled: bool) -> void:
+func set_screen_enabled(on: bool) -> void:
 	if not is_powered_on or _channels.size() > 1:
 		return
-	_libretro.SetScreenMesh(_screen_target() if enabled else null)
+	_libretro.SetScreenMesh(_screen_target() if on else null)
 
 
 ## Which channel this console's own RF switch puts it on, or -1 if it has none.
@@ -1281,7 +1281,7 @@ func _build_av_ports() -> void:
 		for ch: int in channels:
 			var port := scene.instantiate() as RcaPort
 			port.name = str(PORT_NAMES.get(ch, "AvOut"))
-			port.channel = ch
+			port.channel = ch as RcaPort.Channel
 			port.direction = RcaPort.Direction.OUT
 			add_child(port)
 			built.append(port)
@@ -1457,8 +1457,8 @@ func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> vo
 	# end, so a plain three-cord hookup would otherwise print this eighteen times
 	# and bury the transition that matters.
 	var routing := "video=%s audio=%s  cords: %s" % [
-		video_dev.name if video_dev != null else "<none>",
-		audio_dev.name if audio_dev != null else "<none>",
+		String(video_dev.name) if video_dev != null else "<none>",
+		String(audio_dev.name) if audio_dev != null else "<none>",
 		_av_cord_summary]
 	if routing != _last_av_routing:
 		_last_av_routing = routing
@@ -1863,8 +1863,8 @@ func power_on() -> void:
 ##
 ## A core that declares the archive extension is left alone — for fbneo, MAME and
 ## daphne the .zip is the romset, not a wrapper around one.
-func _resolve_content(core_name: String) -> bool:
-	var verdict := RomCompat.resolve(rom_path, core_name, systemid)
+func _resolve_content(core: String) -> bool:
+	var verdict := RomCompat.resolve(rom_path, core, systemid)
 	if int(verdict["verdict"]) == RomCompat.Verdict.UNSUPPORTED:
 		push_error("RetroSystem: %s" % verdict["message"])
 		# On the card rather than the TV's OSD: half the machines this fires on
@@ -3165,7 +3165,7 @@ func _sync_card_saves(path: String) -> void:
 		# Opt-in per SAVE, not per card: a card is shared between games, and
 		# sending one game's progress to a server should not decide it for every
 		# other game that later writes to the same card.
-		var key := SaveSync.card_save_key(path, slot)
+		var key := RommSaveSync.card_save_key(path, slot)
 		# Record the owner either way. This is the only moment it is knowable,
 		# and it is what lets the menu upload a save the moment it is opted in
 		# rather than waiting for this game to be played again.
@@ -3189,7 +3189,7 @@ func _changed_card_saves(data: PackedByteArray) -> Array[Dictionary]:
 		var bytes := PS1Card.extract_save(data, int(s["block"]))
 		if bytes.is_empty():
 			continue
-		var digest := SaveSync.md5_of(bytes)
+		var digest := RommSaveSync.md5_of(bytes)
 		if str(_card_save_hashes.get(slot, "")) == digest:
 			continue
 		_card_save_hashes[slot] = digest

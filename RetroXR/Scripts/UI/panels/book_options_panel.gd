@@ -92,14 +92,14 @@ func _on_half_page_toggled(enabled: bool) -> void:
 
 
 ## Live while the slider is dragged — resizes the local book every tick.
-func _on_size_changed(scale: float) -> void:
+func _on_size_changed(factor: float) -> void:
 	if _book and is_instance_valid(_book):
-		_book.size_scale = scale
+		_book.size_scale = factor
 
 
 ## Drag finished — replicate the final size to the other players.
-func _on_size_committed(scale: float) -> void:
+func _on_size_committed(factor: float) -> void:
 	if _book and is_instance_valid(_book):
-		_book.size_scale = scale
+		_book.size_scale = factor
 		NetworkManager.report_event(NetObjectSync.EV_BOOK_SIZE,
-			{"book": _book, "scale": scale})
+			{"book": _book, "scale": factor})

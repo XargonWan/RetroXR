@@ -186,6 +186,7 @@ static func fat_vscroll_bar(scroll: ScrollContainer, width := 40, min_grabber :=
 		return
 	bar.custom_minimum_size.x = width
 
+	@warning_ignore("integer_division")
 	var radius := width / 2
 	bar.add_theme_stylebox_override("scroll", _track(COLOR_SCROLL_TRACK, radius, width))
 	bar.add_theme_stylebox_override("scroll_focus", _track(COLOR_SCROLL_TRACK, radius, width))

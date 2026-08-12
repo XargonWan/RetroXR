@@ -29,6 +29,7 @@ const ANIM_LERP: float     = 20.0
 var _anim := ControlAnimator.new()
 
 # Cached animated meshes. Each button entry: {node, rest, bit, depth}.
+@warning_ignore("unused_private_class_variable")
 var _buttons: Array[Dictionary]:
 	get: return _anim.buttons
 	set(v): _anim.buttons = v

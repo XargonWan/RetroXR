@@ -206,7 +206,9 @@ func _refresh_grip() -> void:
 ## real one. Null when the scene carries no such node.
 func grip_anchor(is_left: bool) -> Variant:
 	var hand := get_node_or_null(^"HandLeft" if is_left else ^"HandRight") as Node3D
-	return hand.transform if hand != null else null
+	if hand == null:
+		return null
+	return hand.transform
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────
@@ -380,9 +382,9 @@ func _rehold_hand(by: Node3D) -> void:
 	by.call("_pick_up_object", self)
 
 
-func _set_model_visible(ctrl: XRController3D, show: bool) -> void:
+func _set_model_visible(ctrl: XRController3D, shown: bool) -> void:
 	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
-		ctrl.call("set_model_visible", show)
+		ctrl.call("set_model_visible", shown)
 
 
 func _update_locomotion_block() -> void:
@@ -586,10 +588,10 @@ func reload_bindings() -> void:
 
 
 func _load_bindings() -> void:
-	var systemid := ""
+	var sysid := ""
 	if is_instance_valid(_connected_system):
-		systemid = _connected_system.systemid
-	var bindings := ControllerBindings.get_for_system(systemid)
+		sysid = _connected_system.systemid
+	var bindings := ControllerBindings.get_for_system(sysid)
 	_button_map = bindings["buttons"]
 	_stick_map  = bindings["sticks"]
 	var pad := GamepadBindings.get_global()
@@ -726,9 +728,9 @@ func _process_desktop_joypad() -> void:
 	# friends still belong to the player. The physical pad is merged in below
 	# either way: it has no second meaning, so holding this pad is consent enough.
 	if _capture != null and _capture.is_active():
-		for action: String in DESKTOP_BUTTON_MAP:
-			var bit: int = DESKTOP_BUTTON_MAP[action]
-			if Input.is_action_pressed(action):
+		for act: String in DESKTOP_BUTTON_MAP:
+			var bit: int = DESKTOP_BUTTON_MAP[act]
+			if Input.is_action_pressed(act):
 				btn |= (1 << bit)
 
 		# Left stick from RETRO_ANALOG_LEFT_* actions; Y negated to match VR.

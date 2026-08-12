@@ -444,8 +444,8 @@ func _banner() -> String:
 	if ch.is_empty():
 		return ""
 	var number := str(ch.get("number", ""))
-	var name := str(ch.get("name", "")).to_upper()
-	return ("%s  %s" % [number, name]) if not number.is_empty() else name
+	var label := str(ch.get("name", "")).to_upper()
+	return ("%s  %s" % [number, label]) if not number.is_empty() else label
 
 
 func _set_error(text: String) -> void:
