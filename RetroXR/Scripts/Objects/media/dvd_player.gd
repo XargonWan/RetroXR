@@ -304,7 +304,7 @@ func _on_media_removed() -> void:
 
 
 func _on_eject_pressed() -> void:
-	_slot.eject()
+	_slot.toggle_eject()
 
 
 # --- Playback controls ---
@@ -314,7 +314,7 @@ func remote_pause() -> void: _on_pause_pressed()
 func remote_stop() -> void: _on_stop_pressed()
 func remote_ff() -> void: _on_ff_pressed()
 func remote_rewind() -> void: _on_rewind_pressed()
-func remote_eject() -> void: _slot.eject()
+func remote_eject() -> void: _slot.toggle_eject()
 ## True when a disc is loaded (the remote greys its Eject cell otherwise).
 func has_media() -> bool: return _slot.has_media()
 

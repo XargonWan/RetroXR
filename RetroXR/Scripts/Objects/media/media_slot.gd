@@ -149,6 +149,34 @@ func eject() -> void:
 	_ride_to(_mouth_pose())
 
 
+## True while the media is resting at the mouth, out of the machine but not yet taken.
+func is_parked() -> bool:
+	return _state == State.PARKED
+
+
+## An eject button that also takes the media back: pressed again while the media is
+## still resting at the mouth, it draws it in instead of leaving it there for a hand
+## that isn't coming. Hosts whose button only ever ejects call eject().
+func toggle_eject() -> void:
+	if _state == State.PARKED:
+		reload()
+	else:
+		eject()
+
+
+## Draw parked media back in. It never left the slot's ownership — still a frozen
+## child riding the host, still collision-excepted — so this is the eject ride run
+## backwards, plus a fresh inserted() for the host to re-read it and resume.
+func reload() -> void:
+	if _state != State.PARKED or _media == null:
+		return
+	_state = State.LOADED
+	# Back inside the unit: not grabbable, not pointable (see _set_media_interactive).
+	_set_media_interactive(_media, false)
+	_ride_to(_seated_pose())
+	inserted.emit(_media)
+
+
 ## Grabbable AND pointable, or neither.
 ##
 ## `enabled` alone only stops the GRAB. The media carries a separate PointerArea

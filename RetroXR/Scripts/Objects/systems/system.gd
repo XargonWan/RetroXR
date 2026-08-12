@@ -2795,7 +2795,9 @@ func _on_eject_pressed() -> void:
 				_request_tray_state(not _tray_open)
 		MediaDimensions.LOADER_SLOT:
 			if _slot:
-				_slot.eject()
+				# Pressed again with the disc still resting at the slot mouth, it
+				# takes the disc back — a slot drive has no open tray to leave it on.
+				_slot.toggle_eject()
 
 
 ## True when the model's lid is spring-loaded + hand-closed (see
