@@ -80,6 +80,13 @@ const AT_REST_SPEED2 := 0.01
 const SUPPORT_PROBE := 0.03
 const MAX_RIDERS := 8
 
+## How far under the support's top face a body's underside may be and still count
+## as standing ON it rather than merely touching it. Without this test a shelf of
+## objects pressed against each other all come back as riders, and coupling those
+## would let a held object shove its neighbours aside — the exact bulldozing the
+## pass-through at the top of this file exists to stop.
+const RIDER_SEAT_SLACK := 0.02
+
 ## Rate the rider watch runs at. A rider drops one tick after its support clears,
 ## and 20 Hz is inside a frame or two at any headset rate.
 const RIDER_CHECK_HZ := 20.0
@@ -370,6 +377,19 @@ func _escape(body: XRToolsPickable) -> void:
 # drops the console THROUGH the set and lands it inside the cabinet. Each rider
 # is watched instead and woken once the thing it was standing on is no longer
 # under it — the same instant a player sees it slide out.
+#
+# ── Riding ────────────────────────────────────────────────────────────────────
+# A rider also gets the held layer put BACK into its own mask for as long as it
+# is riding, which re-opens that one collision pair and hands the job to the
+# solver: a keyboard on a desktop machine is carried along by friction, slides
+# when the machine is yanked, and goes over the edge when it is tilted, none of
+# which is written here. Measured on a 0.6 kg board — carried at 0.6 m/s it
+# travels the full 0.5 m still on top; yanked at 3.6 m/s it makes 0.28 m of a
+# 1.5 m sweep and slips off the back.
+#
+# One pair, one direction. The held body's own mask stays 0, so a rider can
+# never shove the thing in the player's hand, and every OTHER loose object in
+# the room still passes straight through it.
 
 ## Take note of whatever is standing on `body`, which is about to become
 ## intangible in someone's hand. Called from every hold: the pickable's own
@@ -380,7 +400,12 @@ func watch_riders(body: Variant) -> void:
 	if rb == null or not is_instance_valid(rb) or not rb.is_inside_tree():
 		return
 	for rider in _riders_on(rb):
-		_riders[rider.get_instance_id()] = [rider, rb]
+		# Re-open this one collision pair, and remember whether opening it was
+		# ours to undo — a mask that already had the bit is somebody else's.
+		var couple := (rider.collision_mask & HELD_BIT) == 0
+		if couple:
+			rider.collision_mask |= HELD_BIT
+		_riders[rider.get_instance_id()] = [rider, rb, couple]
 
 
 ## The bodies resting on `body`, found with its own shape lifted by the probe.
@@ -400,6 +425,7 @@ func _riders_on(body: RigidBody3D) -> Array[RigidBody3D]:
 	var world := body.get_world_3d()
 	if cs == null or world == null:
 		return out
+	var top := _world_aabb(cs).end.y
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = cs.shape
 	# The shape's own transform, scale included: a set carries its size on the
@@ -412,9 +438,22 @@ func _riders_on(body: RigidBody3D) -> Array[RigidBody3D]:
 		var rider := hit.get("collider") as RigidBody3D
 		if rider == null or rider == body or rider.freeze:
 			continue
+		# Standing on it, not just touching it. The query answers with the shelf
+		# neighbour a cabinet is pressed against as readily as the console on its
+		# roof, and only one of those is riding anything.
+		var rcs := _first_shape(rider)
+		if rcs == null or _world_aabb(rcs).position.y < top - RIDER_SEAT_SLACK:
+			continue
 		if not out.has(rider):
 			out.append(rider)
 	return out
+
+
+## A collision shape's bounds in world space. Shape3D publishes no extent of its
+## own — the debug mesh is the one way to ask a shape of any kind how big it is,
+## and it is built once and cached on the resource.
+func _world_aabb(cs: CollisionShape3D) -> AABB:
+	return cs.global_transform * cs.shape.get_debug_mesh().get_aabb()
 
 
 func _tick_riders(delta: float) -> void:
@@ -435,7 +474,8 @@ func _tick_riders(delta: float) -> void:
 			_riders.erase(id)
 			continue
 		# Somebody has claimed the rider itself — picked it up, parked it, or
-		# seated it. Its pose is theirs now.
+		# seated it. Its pose is theirs now, and so is its mask: a pickable puts
+		# its own back on release, from a snapshot that never had our bit.
 		if rider.freeze:
 			_riders.erase(id)
 			continue
@@ -444,6 +484,8 @@ func _tick_riders(delta: float) -> void:
 		# tell apart here.
 		if support == null or not support.is_inside_tree() or not support.freeze \
 				or not _still_under(rider, support):
+			if bool(row[2]):
+				rider.collision_mask &= ~HELD_BIT
 			_wake(rider)
 			_riders.erase(id)
 
