@@ -55,7 +55,7 @@ jobs:
           # custom_features pairs with a run/main_scene.<tag> override and would
           # reroute the boot scene for every APK exported from the tree.
           if grep -q '^custom_features="..*"' "$cfg"; then
-            echo "::error::custom_features is set in $cfg — it must be empty"; exit 1
+            echo "::error::custom_features is set in $cfg - it must be empty"; exit 1
           fi
 
           if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
@@ -72,7 +72,7 @@ jobs:
             prev_code=$(git show "$prev:$cfg" 2>/dev/null | sed -n 's/^version\/code=\([0-9]*\)$/\1/p' | head -1 || true)
             echo "previous tag $prev had code=${prev_code:-<not tracked>}"
             if [ -n "$prev_code" ] && [ "$code" -le "$prev_code" ]; then
-              echo "::error::version/code=$code is not greater than $prev_code (tag $prev) — SideQuest would reject it"
+              echo "::error::version/code=$code is not greater than $prev_code (tag $prev) - SideQuest would reject it"
               exit 1
             fi
           fi
@@ -98,7 +98,7 @@ jobs:
         run: |
           # A ~225 MB APK, a ~2 GB android build dir, godot-cpp objects and the
           # LFS assets do not comfortably fit the runner's default free space.
-          # The Android SDK itself must survive — the gradle export needs it.
+          # The Android SDK itself must survive - the gradle export needs it.
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
@@ -129,11 +129,22 @@ jobs:
       # vlc-godot links the system libVLC on Linux rather than a vendored copy.
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvlc-dev
 
+      # SCONS_CACHE is load-bearing, not just a speed-up. Each extension has
+      # its own VariantDir and .sconsign, so all five otherwise rebuild
+      # godot-cpp from scratch - and the four siblings reference it as
+      # ../libretro-godot/godot-cpp/..., which makes SCons emit absolute object
+      # paths and blow the shell's argument limit when archiving ~2000 of them
+      # ("sh: Argument list too long"). godot-cpp's SConstruct sets
+      # Decider("MD5") alongside CacheDir, so the content-addressed entries
+      # libretro-godot populates are valid from the siblings' directories: they
+      # retrieve the archive instead of re-running ar. Populated and consumed
+      # within this one job, so nothing depends on cross-run cache retention.
       - name: Build the five GDExtensions (android arm64, release)
         env:
           # build.py blanks ANDROID_HOME itself: godot-cpp prefers it when set
           # and then demands a full SDK.
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache
         run: python Tools/build.py android --target release --jobs 4
 
       # The exporting editor is a debug-tagged Linux binary, so it resolves
@@ -142,12 +153,14 @@ jobs:
       # types fails to parse and the export runs over unresolved scenes.
       # Nothing debug ships: the APK gets android.release.arm64, picked by the
       # exported game's own feature tags.
-      # build.py skips metaxr-audio here — it has no linux stanza at all (Meta
+      # build.py skips metaxr-audio here - it has no linux stanza at all (Meta
       # ships that blob for win-x64 and android-arm64 only). Harmless: every
       # reference to it goes through Engine.has_singleton("MetaXRAudio"), so
       # nothing names it statically, and its Android library is still packed
       # into the APK straight from the .gdextension file.
       - name: Build the host-side extensions the editor needs (linux, debug)
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache
         run: python Tools/build.py linux --target debug --jobs 4
 
       - uses: actions/cache@v4
@@ -176,7 +189,7 @@ jobs:
           godot --headless --path RetroXR --install-android-build-template --quit || true
           if [ ! -f RetroXR/android/build/build.gradle ]; then
             # Fallback: the template is just android_source.zip out of the .tpz.
-            echo "CLI install produced nothing — unpacking android_source.zip"
+            echo "CLI install produced nothing - unpacking android_source.zip"
             mkdir -p RetroXR/android/build
             unzip -q ~/.local/share/godot/export_templates/$GODOT_TEMPLATE_DIR/android_source.zip \
               -d RetroXR/android/build
@@ -195,7 +208,7 @@ jobs:
           godot --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
           # Known headless noise, none of it caused by the build. Every
           # extension with a linux stanza is built above and must load, so none
-          # is excused here — only metaxr-audio, which has no linux library to
+          # is excused here - only metaxr-audio, which has no linux library to
           # find at all.
           grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim|metaxr" \
@@ -238,7 +251,7 @@ jobs:
           [ "$name" = "$WANT_NAME" ] || { echo "::error::versionName $name != preset $WANT_NAME"; exit 1; }
 
           size=$(stat -c%s "$APK")
-          [ "$size" -gt 100000000 ] || { echo "::error::APK is only $size bytes — assets are probably missing"; exit 1; }
+          [ "$size" -gt 100000000 ] || { echo "::error::APK is only $size bytes - assets are probably missing"; exit 1; }
 
           # One missing native drops the whole GDExtension at runtime, and a
           # missing vendors .so has previously shipped a Quest build with no
@@ -277,6 +290,8 @@ jobs:
       # debug-tagged and loads windows.debug.x86_64 to register the classes the
       # project's scenes and scripts name. Only the release ones ship.
       - name: Build the five GDExtensions (windows x86_64, debug + release)
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache
         run: python Tools/build.py windows --target both
 
       - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
@@ -288,7 +303,7 @@ jobs:
           Expand-Archive godot.zip -DestinationPath godot-bin
           # Use the _console variant: the plain exe detaches from stdout on
           # Windows, so the import step would grep an empty log and pass no
-          # matter what the editor reported. It must keep its own filename —
+          # matter what the editor reported. It must keep its own filename -
           # the wrapper locates the real exe by stripping "_console" from it.
           "GODOT=$PWD/godot-bin/Godot_v${env:GODOT_VERSION}_win64_console.exe" |
             Out-File -Append -Encoding utf8 $env:GITHUB_ENV
@@ -305,7 +320,7 @@ jobs:
           set -euo pipefail
           "$GODOT" --headless --path RetroXR --editor --quit 2>&1 | tee import.log || true
           # All five extensions have a windows stanza and are built above, so
-          # none is excused — a load failure here is a real one.
+          # none is excused - a load failure here is a real one.
           grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" > errors.log || true
           if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
@@ -376,7 +391,7 @@ jobs:
           if [ "$NOTIFY" != true ]; then
             # Actions masks the secret itself, not a substring of it, so the
             # token has to be redacted by hand before anything is printed.
-            echo "notify is off — would POST:"
+            echo "notify is off - would POST:"
             echo "  curl -X POST '$(sed 's#\(version-webhook/[0-9]*/\).*#\1<TOKEN>#' <<<"$url")'"
             echo "  body: $body"
             exit 0
