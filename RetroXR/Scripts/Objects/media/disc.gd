@@ -73,7 +73,7 @@ func _apply_system_size() -> void:
 			var finish := MediaDimensions.disc_finish(systemid, rom_path)
 			mat.set_shader_parameter("data_color", finish["data"])
 			mat.set_shader_parameter("poly_color", finish["poly"])
-			mat.set_shader_parameter("poly_show_through", finish["show"])
+			mat.set_shader_parameter("poly_alpha", finish["alpha"])
 			mat.set_shader_parameter("track_pitch", finish["pitch"])
 			var zones := MediaDimensions.disc_zones(systemid)
 			mat.set_shader_parameter("r_metal_start", zones.x)

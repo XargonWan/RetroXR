@@ -10,9 +10,18 @@
 // The radius is derived here from length(VERTEX.xz) rather than baked: exact,
 // one vertex instruction, and immune to attribute compression and node scale.
 //
-// OPAQUE, deliberately. The art composites into ALBEDO, so unlike the transparent
-// quad this replaces it sorts correctly, writes depth, cannot z-fight the face
-// below it, and takes the pickable outline. Never write ALPHA here.
+// The printed and metallised areas are OPAQUE — the art composites into ALBEDO, so
+// unlike the floating transparent quad this replaces it cannot z-fight the face
+// below it. But a disc is a clear polycarbonate substrate with aluminium sputtered
+// onto the MIDDLE of it, so the wide hub annulus inside 22 mm, the outer rim past
+// 58 mm, the bore wall and the edge are genuinely see-through, and faking them as
+// opaque grey was the giveaway.
+//
+// ALPHA is therefore written, gated on the aluminium mask, with depth_prepass_alpha
+// so the solid part still lays down depth and only the clear ring blends. Note this
+// puts the whole material in the transparent queue; that is the price of the clear
+// hub and is why poly_alpha is per-system — a PS1's dyed substrate is nearly opaque
+// and must not go glassy.
 //
 // The rainbow is an ANALYTIC diffraction grating, not an environment reflection.
 // It has to be: every room runs ambient_light_source = COLOR with no radiance map,
@@ -36,7 +45,7 @@
 // Because the grating is rotationally symmetric the pattern does NOT rotate when
 // system.gd spins a seated disc — which is what a real spinning disc looks like.
 shader_type spatial;
-render_mode cull_back;
+render_mode cull_back, depth_prepass_alpha;
 
 // --- surface ---------------------------------------------------------------
 // The data side's reflective layer, seen through the substrate. PS1 is near-black
@@ -47,10 +56,10 @@ uniform vec3 data_color : source_color = vec3(0.78, 0.80, 0.84);
 uniform vec3 poly_color : source_color = vec3(0.09, 0.10, 0.12);
 // The unprinted label side — lacquer over the aluminium.
 uniform vec3 lacquer_color : source_color = vec3(0.80, 0.81, 0.84);
-// How much of the label side shows through the clear annulus when you look at the
-// disc's underside. A real CD's hub is a window; a PS1's dyed substrate is not,
-// which is why this is per-system rather than a constant.
-uniform float poly_show_through : hint_range(0.0, 1.0) = 0.24;
+// Opacity of the bare substrate. A normal disc's hub is a window (~0.28); a PS1's
+// black-dyed polycarbonate is not, so it stays near-solid. Per-system for exactly
+// that reason.
+uniform float poly_alpha : hint_range(0.0, 1.0) = 0.28;
 
 // Zone radii in metres. Red Book, and the first pass had this wrong: the metal
 // does not start at the clamping ring. From the bore outwards a CD is clear
@@ -194,6 +203,8 @@ void fragment() {
 		// single biggest cue that a printed disc is a printed disc.
 		METALLIC = mix(0.75 * metal, 0.0, art.a);
 		ROUGHNESS = mix(mix(0.09, 0.14, metal), 0.52, art.a);
+		// Printed ink hides the substrate; so does the aluminium under it.
+		ALPHA = mix(poly_alpha, 1.0, max(art.a, metal));
 		v_irid = vec3(pits * irid_label * irid_strength * (1.0 - art.a))
 			* sqrt(lacquer_color);
 	} else if (face > 0.25) {
@@ -201,15 +212,15 @@ void fragment() {
 		ALBEDO = poly_color;
 		METALLIC = 0.0;
 		ROUGHNESS = 0.08;
+		ALPHA = poly_alpha;
 		v_irid = vec3(0.0);
 	} else {
 		// --- data side ---
-		// Inside the metal it is a window: you see the label side's underside,
-		// dimmed and tinted by the substrate.
-		vec3 clear_look = mix(poly_color, lacquer_color, poly_show_through);
-		ALBEDO = mix(clear_look, data_color, metal);
+		// Inside the metal there is nothing but substrate, so it is a real window.
+		ALBEDO = mix(poly_color, data_color, metal);
 		METALLIC = mix(0.05, 0.80, metal);
 		ROUGHNESS = mix(0.07, 0.13, metal);
+		ALPHA = mix(poly_alpha, 1.0, metal);
 		// Tinted by the substrate. The diffracted ray makes the same two-pass trip
 		// through the dye as the specular one, so a PS1's black disc must dim its
 		// own rainbow — untinted it blows out to white and stops reading as black.

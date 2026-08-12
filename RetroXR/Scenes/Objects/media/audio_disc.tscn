@@ -16,6 +16,7 @@ radius = 0.06
 shader = ExtResource("4_discshader")
 shader_parameter/data_color = Color(0.78, 0.8, 0.84, 1)
 shader_parameter/poly_color = Color(0.09, 0.1, 0.12, 1)
+shader_parameter/poly_alpha = 0.28
 shader_parameter/track_pitch = 1.6
 
 [node name="AudioDisc" type="RigidBody3D" groups=["audio_disc"]]

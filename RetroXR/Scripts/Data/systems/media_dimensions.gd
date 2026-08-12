@@ -80,20 +80,20 @@ const PITCH_GD := 1.1   # GD-ROM packed ~1 GB onto a CD by tightening the pitch
 ##   data   the reflective layer seen through the substrate (the underside)
 ##   poly   bare polycarbonate — bore, rim, edge, and the clear annulus inside
 ##          the metal, which on a CD reaches all the way out to 22 mm
-##   show   how much of the label side shows through that clear annulus. A normal
-##          disc's hub is a window; a dyed substrate is not.
+##   alpha  opacity of that bare substrate. A normal disc's hub is a window; a
+##          dyed one is not, which is the whole reason this is per-system.
 ##   pitch  track pitch, micrometres
-const FINISH_CD := {"data": Color(0.78, 0.80, 0.84), "poly": Color(0.09, 0.10, 0.12), "show": 0.24, "pitch": PITCH_CD}
-const FINISH_DVD := {"data": Color(0.72, 0.71, 0.79), "poly": Color(0.09, 0.10, 0.12), "show": 0.24, "pitch": PITCH_DVD}
-const FINISH_GD := {"data": Color(0.76, 0.78, 0.80), "poly": Color(0.09, 0.10, 0.12), "show": 0.24, "pitch": PITCH_GD}
+const FINISH_CD := {"data": Color(0.78, 0.80, 0.84), "poly": Color(0.09, 0.10, 0.12), "alpha": 0.28, "pitch": PITCH_CD}
+const FINISH_DVD := {"data": Color(0.72, 0.71, 0.79), "poly": Color(0.09, 0.10, 0.12), "alpha": 0.28, "pitch": PITCH_DVD}
+const FINISH_GD := {"data": Color(0.76, 0.78, 0.80), "poly": Color(0.09, 0.10, 0.12), "alpha": 0.28, "pitch": PITCH_GD}
 ## The PS1's black disc: the polycarbonate itself is dyed, so the edge goes black
 ## too, not just the playing surface, and the hub stops being a window. Near-black
 ## albedo is why this one needs the analytic rainbow most — with no reflection
 ## probe in any room, the diffraction term is the only thing keeping it from
 ## rendering as a featureless black hole.
-const FINISH_PS1 := {"data": Color(0.07, 0.06, 0.09), "poly": Color(0.035, 0.03, 0.045), "show": 0.04, "pitch": PITCH_CD}
+const FINISH_PS1 := {"data": Color(0.07, 0.06, 0.09), "poly": Color(0.035, 0.03, 0.045), "alpha": 0.90, "pitch": PITCH_CD}
 ## The PS2's blue CD-ROM. Its DVD titles are FINISH_DVD — see disc_finish().
-const FINISH_PS2_CD := {"data": Color(0.10, 0.20, 0.48), "poly": Color(0.04, 0.07, 0.16), "show": 0.12, "pitch": PITCH_CD}
+const FINISH_PS2_CD := {"data": Color(0.10, 0.20, 0.48), "poly": Color(0.04, 0.07, 0.16), "alpha": 0.55, "pitch": PITCH_CD}
 
 ## systemid -> finish. Unlisted disc systems are silver CDs, which is most of them.
 const DISC_FINISHES: Dictionary = {
