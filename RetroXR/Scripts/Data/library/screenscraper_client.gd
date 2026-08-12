@@ -210,11 +210,17 @@ func _parse_jeu(jeu: Dictionary) -> Dictionary:
 	result["rom_region_codes"] = regions_short
 	print("[ScreenscraperClient] ROM region codes: %s" % str(regions_short))
 
+	# Which disc of a multi-disc set this ROM is (1-based; 0 when unknown).
+	var disc_num := int(rom.get("romnumsupport", 0))
+	result["disc_num"] = disc_num
+	result["disc_total"] = int(rom.get("romtotalsupport", 0))
+	print("[ScreenscraperClient] Disc %d of %d" % [disc_num, result["disc_total"]])
+
 	# Release date
 	result["releasedate"] = _pick_by_region(jeu.get("dates", []))
 
 	# Media URLs — pass ROM region codes so media selection prefers the ROM's own region
-	result["media"] = _extract_media_urls(jeu.get("medias", []), regions_short)
+	result["media"] = _extract_media_urls(jeu.get("medias", []), regions_short, disc_num)
 
 	return result
 
@@ -259,8 +265,9 @@ func _pick_by_language(arr) -> String:
 
 ## Extract media URLs we care about from the medias array.
 ## rom_region_codes: short region codes from the matched ROM (e.g. ["us"]) — used as top priority.
+## disc_num: the ROM's disc number, used to pick its own disc label (0 = unknown).
 ## Returns {wheel: url, box: url, label: url, manual: url} (empty string if not found).
-func _extract_media_urls(medias, rom_region_codes: Array = []) -> Dictionary:
+func _extract_media_urls(medias, rom_region_codes: Array = [], disc_num: int = 0) -> Dictionary:
 	var result := {"wheel": "", "box": "", "label": "", "manual": ""}
 	if not medias is Array:
 		return result
@@ -295,9 +302,26 @@ func _extract_media_urls(medias, rom_region_codes: Array = []) -> Dictionary:
 		elif mtype == "box-texture":
 			candidates["box"].append({"url": url, "region": region})
 		elif mtype == "support-texture":
-			candidates["label"].append({"url": url, "region": region})
+			candidates["label"].append({
+				"url": url, "region": region, "support": int(entry.get("support", 0)),
+			})
 		elif mtype == "manuel":
 			candidates["manual"].append({"url": url, "region": region})
+
+	# A multi-disc game carries one support-texture per disc, keyed by the media
+	# entry's "support" number, which must match the ROM's own romnumsupport.
+	# Disc identity outranks region: a disc-2 label from another region beats
+	# disc 1 from the ROM's own. Game-level media (box, manual) carry no
+	# "support" and stay untouched.
+	if disc_num > 0:
+		var all_labels: Array = candidates["label"]
+		var own_disc: Array = all_labels.filter(
+			func(c: Dictionary) -> bool: return int(c.get("support", 0)) == disc_num
+		)
+		print("[ScreenscraperClient] Media[label] disc %d: %d of %d candidates" % [
+			disc_num, own_disc.size(), all_labels.size()])
+		if not own_disc.is_empty():
+			candidates["label"] = own_disc
 
 	# For each media type, pick best by effective region priority
 	for key: String in result.keys():
