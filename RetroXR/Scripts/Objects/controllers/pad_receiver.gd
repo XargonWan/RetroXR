@@ -38,6 +38,10 @@ func _ready() -> void:
 	reload_bindings()
 
 
+func receiver_glyph() -> String:
+	return TransportGlyphs.glyph("gamepad")
+
+
 func receiver_label() -> String:
 	return pad_name if not pad_name.is_empty() else "NO PAD"
 

@@ -49,10 +49,9 @@ func _derive_cable_anchor() -> void:
 	var tip := get_node_or_null("PlugTip") as MeshInstance3D
 	if tip == null or tip.mesh == null:
 		return
-	var ab: AABB = tip.mesh.get_aabb()
-	# Cable trails -Z, matching VerletRope.plug_exit_axis, so the boss is at min Z.
-	cable_anchor = tip.transform * Vector3(
-		ab.get_center().x, ab.get_center().y, ab.position.z)
+	# One rule, stated in PlugExit rather than here as well: an authored CordExit
+	# marker if the connector carries one, else the centre of its back face.
+	cable_anchor = tip.transform * PlugExit.derive_from_mesh(tip.mesh).origin
 
 
 ## True while a hand, a laser or a socket owns this plug's pose.

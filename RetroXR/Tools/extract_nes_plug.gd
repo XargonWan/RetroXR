@@ -10,8 +10,14 @@
 ## ControllerPlug's frame — origin at the seated position, connector on +Z, cable
 ## trailing -Z — reproducing the depth its author posed it at: the tip 16.2 mm
 ## inside the console's front face, the cable end 27 mm proud of it. So there is
-## no transform to apply here, only a format change: set_plug_mesh() wants a Mesh
-## resource, and a .glb loads as a PackedScene.
+## no transform to apply here, only a format change.
+##
+## The output is a PackedScene, not a bare Mesh: the shell plus a CordExit
+## Marker3D saying where the cord leaves and which way it points. That used to be
+## guessed at runtime from the mesh's bounding box, which cannot express a
+## direction at all and is wrong for any shell that is not a symmetric barrel.
+## The marker is SEEDED from that same guess and then belongs to the asset — open
+## the .res in the editor and move it, rather than arguing with a heuristic.
 ##
 ## Same job as RetroVR's Tools/extract_psx_plug.gd, which does apply a transform
 ## because it reads its plug straight out of an un-posed console GLB.
@@ -47,7 +53,25 @@ func _init() -> void:
 	print("[extract] connector +%.1f mm | cable boss -%.1f mm | face %.1f x %.1f mm" % [
 		ab.end.z * 1000.0, -ab.position.z * 1000.0, ab.size.x * 1000.0, ab.size.y * 1000.0])
 
-	var err := ResourceSaver.save(mesh, DST)
+	# The connector as a scene: shell, plus the cord exit as data.
+	var shell := MeshInstance3D.new()
+	shell.name = "Shell"
+	shell.mesh = mesh
+	var exit := Marker3D.new()
+	exit.name = PlugExit.MARKER
+	exit.transform = PlugExit.derive_from_mesh(mesh)
+	shell.add_child(exit)
+	exit.owner = shell
+	var packed := PackedScene.new()
+	if packed.pack(shell) != OK:
+		print("[extract] could not pack the connector scene")
+		quit(1)
+		return
+	print("[extract] CordExit at %.1f, %.1f, %.1f mm" % [
+		exit.transform.origin.x * 1000.0, exit.transform.origin.y * 1000.0,
+		exit.transform.origin.z * 1000.0])
+
+	var err := ResourceSaver.save(packed, DST)
 	if err != OK:
 		print("[extract] save failed: %d" % err)
 		quit(1)

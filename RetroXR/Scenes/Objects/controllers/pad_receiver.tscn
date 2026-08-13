@@ -70,6 +70,17 @@ modulate = Color(0.75, 0.75, 0.8, 1)
 width = 200.0
 autowrap_mode = 3
 
+; The device this dongle forwards, as one Nerd Font glyph, printed above the
+; name in reading order (the top face reads front-to-back, so "above" is -Z).
+; Font is assigned in code: it is a FontVariation chaining the symbol font behind
+; the project default, and an unchained label renders every codepoint as tofu.
+[node name="GlyphLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0202, -0.0095)
+pixel_size = 0.0006
+font_size = 22
+outline_size = 0
+modulate = Color(0.75, 0.75, 0.8, 1)
+
 ; The lead leaves the back of the case.
 [node name="CableAttachPoint" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, -0.0225)

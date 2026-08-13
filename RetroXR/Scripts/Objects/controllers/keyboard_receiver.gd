@@ -38,6 +38,11 @@ func _ready() -> void:
 	super._ready()
 
 
+func receiver_glyph() -> String:
+	# Bluetooth first: this box is for the paired keyboard, not a cabled one.
+	return TransportGlyphs.glyph("bluetooth") + " " + TransportGlyphs.glyph("keyboard")
+
+
 func receiver_label() -> String:
 	return "KEYBOARD"
 
@@ -59,10 +64,11 @@ func _exit_tree() -> void:
 
 # ── Input ─────────────────────────────────────────────────────────────────────
 
-## Typing into a menu field is not typing at the game. TypingGuard sets this
-## globally the moment a LineEdit takes focus — "the keyboard is one device, so
-## if it is composing text it is not driving any held device", and a receiver is
-## no different for being unheld.
+## Typing into a menu field is not typing at the game. TypingGuard sets the
+## suspension globally the moment a LineEdit takes focus — "the keyboard is one
+## device, so if it is composing text it is not driving any held device" — and a
+## receiver is no different for being unheld.
+##
 ## Deliberately does NOT mark the event handled. The held RetroKeyboard does,
 ## to stop keys it has captured from also moving the player — but consuming here
 ## would mean the FIRST receiver to see a keystroke swallowed it, and the second

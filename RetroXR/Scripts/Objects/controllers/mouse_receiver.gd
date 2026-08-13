@@ -33,6 +33,10 @@ func _ready() -> void:
 	super._ready()
 
 
+func receiver_glyph() -> String:
+	return TransportGlyphs.glyph("bluetooth") + " " + TransportGlyphs.glyph("mouse")
+
+
 func receiver_label() -> String:
 	return "MOUSE"
 

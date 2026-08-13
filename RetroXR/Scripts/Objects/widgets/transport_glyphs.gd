@@ -44,6 +44,12 @@ const CODES := {
 	# plugs into it, and they have no reason to move together.
 	"mouse": 0xEFBA,
 	"keyboard": 0xF030C,
+	# The same codepoint the Scroll Lock capture icon uses on a held pad, kept
+	# here so the receiver dongle and that icon cannot drift into two symbols.
+	"gamepad": 0xEC17,
+	# Prefixed to a device glyph to say "the wireless one" — a receiver's whole
+	# reason for existing is that the real device is paired rather than cabled.
+	"bluetooth": 0xF294,
 	"vga": 0xF0379,
 	"speakers": 0xF0D38,
 }

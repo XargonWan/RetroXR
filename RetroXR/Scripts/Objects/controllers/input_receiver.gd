@@ -69,6 +69,7 @@ var _pending_port_restore: Dictionary = {}
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _led: MeshInstance3D = $Led
 @onready var _label: Label3D = $NameLabel
+@onready var _glyph: Label3D = $GlyphLabel
 
 
 func _ready() -> void:
@@ -86,6 +87,17 @@ func _ready() -> void:
 ## What this receiver prints on its own case.
 func receiver_label() -> String:
 	return "RECEIVER"
+
+
+## The device it forwards, printed as Nerd Font glyphs. One symbol says at a
+## glance what a box on the floor is for, which a three-letter word does not, and
+## the codepoints come from the shared TransportGlyphs table so a dongle and the
+## held device's own capture icon cannot drift into two different symbols.
+##
+## Rendered text rather than a single key, because the wireless devices prefix a
+## Bluetooth mark to theirs.
+func receiver_glyph() -> String:
+	return ""
 
 
 ## True while it has a device to forward. Drives the LED: red means this dongle
@@ -156,8 +168,14 @@ func _adopt_connector(sysid: String) -> void:
 
 
 func _apply_cable_anchor() -> void:
-	if _cable_rope != null and is_instance_valid(_cable_rope) and _cable_plug != null:
-		_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
+	if _cable_rope == null or not is_instance_valid(_cable_rope) or _cable_plug == null:
+		return
+	_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
+	# And which way it leaves, so an angled connector can say so in its asset
+	# rather than in code. Note plug_exit_axis is one value for the whole rope:
+	# a lead with a different connector at each end would need a per-end axis in
+	# VerletRope, which nothing wants yet.
+	_cable_rope.plug_exit_axis = _cable_plug.cable_exit_axis
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────
@@ -224,6 +242,14 @@ func set_led(bound: bool) -> void:
 func refresh_label() -> void:
 	if _label != null:
 		_label.text = receiver_label()
+	if _glyph != null:
+		var glyphs := receiver_glyph()
+		_glyph.visible = not glyphs.is_empty()
+		if not glyphs.is_empty():
+			# The font is a FontVariation chaining the symbol font behind the
+			# project default; an unchained label renders the codepoint as tofu.
+			_glyph.font = TransportGlyphs.font()
+			_glyph.text = glyphs
 
 
 # ── Teardown ──────────────────────────────────────────────────────────────────
