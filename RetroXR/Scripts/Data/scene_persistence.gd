@@ -27,10 +27,12 @@ const _STRING_FIELDS := [
 	"systemid", "model_id", "tv_model", "rom_path", "game_label", "save_id",
 	"cart_systemid", "card_id", "card_label", "pdf_path", "scene", "video_path",
 	"video_label", "dvd_path", "dvd_label", "album_path", "album_label", "kind",
+	"pad_guid", "pad_name",
 ]
 const _NUMBER_FIELDS := [
 	"lid_angle", "scale_factor", "stereo_mode", "size_scale", "page_state",
 	"page_leaf", "sensitivity", "device_type", "port_index", "volume", "cords",
+	"pad_ordinal",
 ]
 const _BOOL_FIELDS := ["video_out", "ignore_gravity", "crt_enabled", "half_pages"]
 const _REFERENCE_FIELDS := [
@@ -40,7 +42,7 @@ const _REFERENCE_FIELDS := [
 const _SPECIALIZED_TYPES := [
 	"system", "tv", "cartridge", "disc", "memory_card", "book",
 	"retro_controller", "retro_mouse", "snes_mouse", "vcr_tape", "dvd_disc",
-	"composite_cable", "audio_disc", "audio_cassette",
+	"composite_cable", "audio_disc", "audio_cassette", "pad_receiver",
 ]
 
 ## Bumped by every async restore as it starts. Because those yield frames, a
@@ -83,6 +85,7 @@ const NUNCHUK_SCENE          := preload("res://Scenes/Objects/controllers/wii/nu
 const MOTION_PLUS_SCENE      := preload("res://Scenes/Objects/controllers/wii/motion_plus.tscn")
 const SENSOR_BAR_SCENE       := preload("res://Scenes/Objects/system_models/wii/sensor_bar.tscn")
 const RF_SWITCH_SCENE        := preload("res://Scenes/Objects/appliances/rf_switch.tscn")
+const PAD_RECEIVER_SCENE     := preload("res://Scenes/Objects/controllers/pad_receiver.tscn")
 
 ## Types whose entry carries nothing but a pose — instantiate and place, no
 ## properties to apply. Types that need more are match arms in
@@ -796,6 +799,15 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 	elif obj is SensorBar:
 		(obj as SensorBar).restore_connection(
 			_resolve_ref(root, spawned, d.get("system")) as RetroSystem)
+	elif obj is PadReceiver:
+		var rx_port := int(d.get("port_index", -1))
+		if rx_port < 0:
+			return
+		var rx_sys := _resolve_ref(root, spawned, d.get("system")) as RetroSystem
+		if rx_sys == null:
+			push_warning("[ScenePersistence] pad receiver id=%d: system not found" % id)
+			return
+		(obj as PadReceiver).restore_port_connection(rx_sys, rx_port)
 	elif obj is RetroController or obj is RayGun or obj is RetroMouse \
 			or obj is RetroKeyboard or obj is Wiimote:
 		# The remote's Nunchuk is restored whether or not it was paired to a
@@ -863,6 +875,12 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"video_out": sys.video_out_enabled,
 			"ignore_gravity": sys.ignore_gravity,
 		})
+		# Which physical gamepad drives it, for handhelds — they have no port to
+		# take a PadReceiver, so the choice lives on the machine. Written only
+		# when one is set, so nothing changes for the rooms that never touch it.
+		if not sys.pad_guid.is_empty():
+			result["pad_guid"] = sys.pad_guid
+			result["pad_ordinal"] = sys.pad_ordinal
 		# Clamshell lid angle (DS/3DS); omitted for systems without a lid.
 		var lid_angle := sys.get_lid_angle_deg()
 		if lid_angle >= 0.0:
@@ -991,6 +1009,22 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 		return _base(id, "speaker_pair", n3d).merged({
 			"boxes": pair.box_poses(),
 			"volume": pair.get_volume(),
+		})
+	elif node is PadReceiver:
+		# Which PAD it is for as well as which port it is in — a receiver with no
+		# pad is a dongle for nothing. The socket, like every other peripheral's,
+		# is the cabinet's rather than the libretro port.
+		var rx := node as PadReceiver
+		var rx_sys: Node = rx.get_connected_system()
+		var rx_port := -1
+		if rx_sys != null and rx_sys.has_method("cabinet_port_of"):
+			rx_port = int(rx_sys.call("cabinet_port_of", rx))
+		return _base(id, "pad_receiver", n3d).merged({
+			"system": _ref(node_to_id, rx_sys),
+			"port_index": rx_port,
+			"pad_guid": rx.pad_guid,
+			"pad_name": rx.pad_name,
+			"pad_ordinal": rx.pad_ordinal,
 		})
 	elif node is CompositeCable:
 		return _serialize_cable(node as CompositeCable, id, n3d, node_to_id)
@@ -1131,6 +1165,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				sys.model_id = str(data.get("model_id", ""))
 				if data.has("video_out"):
 					sys._video_out_from_save = 1 if bool(data["video_out"]) else 0
+				sys.pad_guid = str(data.get("pad_guid", ""))
+				sys.pad_ordinal = int(data.get("pad_ordinal", 0))
 				sys._lid_angle_from_save = float(data.get("lid_angle", -1.0))
 				sys.ignore_gravity = bool(data.get("ignore_gravity", false))
 				obj = sys
@@ -1180,6 +1216,16 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				var snes := SNES_MOUSE_SCENE.instantiate() as SnesMouse
 				snes.sensitivity = data.get("sensitivity", 2400.0)
 				obj = snes
+			"pad_receiver":
+				# The saved pad may well not be connected — switched off, flat, or
+				# swapped for another since. That is not a failure: the receiver
+				# comes back red and binds to whatever turns up
+				# (PadReceiver._resolve_or_adopt), so nothing here warns about it.
+				var rx := PAD_RECEIVER_SCENE.instantiate() as PadReceiver
+				rx.pad_guid = data.get("pad_guid", "")
+				rx.pad_name = data.get("pad_name", "")
+				rx.pad_ordinal = int(data.get("pad_ordinal", 0))
+				obj = rx
 			"vcr_tape":
 				var tape := TAPE_SCENE.instantiate() as VCRTape
 				tape.video_path = data.get("video_path", "")

@@ -5,9 +5,10 @@
 ## InputMap actions. Bindings are stored in user://gamepad_bindings.json and merged
 ## default → global (per-system layer intentionally left open for later).
 ##
-## Every connected pad is merged into a single virtual RetroPad (buttons OR'd,
-## largest-magnitude stick wins) — RetroController.poll() feeds this into the held
-## controller's port alongside VR/keyboard input.
+## One pad, one destination: poll() reads a single named device, and the caller
+## decides which. A PadReceiver plugged into a console port names the pad it was
+## spawned for; a handheld names the pad its own Controllers panel selects. The map
+## itself stays global — every pad plays the same RetroPad layout.
 class_name GamepadBindings
 extends RefCounted
 
@@ -160,44 +161,39 @@ static func binding_display_name(binding: String) -> String:
 	return binding
 
 
-## Poll every connected pad, merge, and return libretro-convention state:
-## {btn, alx, aly, arx, ary}. Y is positive-down (no negation — joypad axes
-## already match libretro's convention, unlike VR sticks).
-static func poll(button_map: Dictionary, stick_map: Dictionary) -> Dictionary:
+## Poll ONE pad and return libretro-convention state: {btn, alx, aly, arx, ary}.
+## Y is positive-down (no negation — joypad axes already match libretro's
+## convention, unlike VR sticks).
+##
+## `device` is a Godot joypad index, and naming it is mandatory. This used to
+## merge every connected pad into one virtual RetroPad and hand the result to
+## whichever controller was held, which is why a real pad and the prop in your
+## hand were the same controller — and why two pads could not be two players.
+## Every caller now points its pad at one destination: a receiver at the port it
+## is plugged into, a handheld at the pad its own panel names. A device of -1, or
+## one that is not connected, is not an error — a receiver whose pad is switched
+## off reads exactly that, every frame, until it comes back.
+static func poll(button_map: Dictionary, stick_map: Dictionary, device: int) -> Dictionary:
 	var zero := {"btn": 0, "alx": 0, "aly": 0, "arx": 0, "ary": 0}
-	if suspend_polling:
-		return zero
-	var pads := Input.get_connected_joypads()
-	if pads.is_empty():
+	if suspend_polling or device < 0 or device not in Input.get_connected_joypads():
 		return zero
 
-	# Buttons: OR each RetroPad target across all connected pads.
 	var btn := 0
 	for i: int in TARGET_ORDER.size():
 		var binding: String = button_map.get(TARGET_ORDER[i], "none")
 		if binding == "none" or binding.is_empty():
 			continue
-		for device: int in pads:
-			if _binding_active(binding, device):
-				btn |= (1 << i)
-				break
+		if _binding_active(binding, device):
+			btn |= (1 << i)
 
-	# Sticks: largest-magnitude vector per stick across pads (deadzoned).
-	var left_vec := Vector2.ZERO
-	var right_vec := Vector2.ZERO
-	for device: int in pads:
-		var lv := Vector2(Input.get_joy_axis(device, JOY_AXIS_LEFT_X),
-						  Input.get_joy_axis(device, JOY_AXIS_LEFT_Y))
-		if lv.length() < DEADZONE:
-			lv = Vector2.ZERO
-		if lv.length_squared() > left_vec.length_squared():
-			left_vec = lv
-		var rv := Vector2(Input.get_joy_axis(device, JOY_AXIS_RIGHT_X),
-						  Input.get_joy_axis(device, JOY_AXIS_RIGHT_Y))
-		if rv.length() < DEADZONE:
-			rv = Vector2.ZERO
-		if rv.length_squared() > right_vec.length_squared():
-			right_vec = rv
+	var left_vec := Vector2(Input.get_joy_axis(device, JOY_AXIS_LEFT_X),
+							Input.get_joy_axis(device, JOY_AXIS_LEFT_Y))
+	if left_vec.length() < DEADZONE:
+		left_vec = Vector2.ZERO
+	var right_vec := Vector2(Input.get_joy_axis(device, JOY_AXIS_RIGHT_X),
+							 Input.get_joy_axis(device, JOY_AXIS_RIGHT_Y))
+	if right_vec.length() < DEADZONE:
+		right_vec = Vector2.ZERO
 
 	# Route sticks through the map. Mirrors retro_controller._process ordering:
 	# left assigns first, then right may overwrite an analog target.
@@ -223,6 +219,40 @@ static func poll(button_map: Dictionary, stick_map: Dictionary) -> Dictionary:
 		btn |= _stick_to_dpad(right_vec)
 
 	return {"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}
+
+# ── Device identity ───────────────────────────────────────────────────────────
+
+## The live joypad index for a saved pad, or -1 when that pad is not connected.
+##
+## Keyed by GUID rather than index because the index is a connection order that
+## changes every session, while the GUID describes the hardware. Two identical
+## pads share a GUID, so `ordinal` picks the nth one of that model — stable within
+## a session, and the only thing that can swap between them across sessions.
+static func resolve_device(guid: String, ordinal: int = 0) -> int:
+	if guid.is_empty():
+		return -1
+	var seen := 0
+	for device: int in Input.get_connected_joypads():
+		if Input.get_joy_guid(device) != guid:
+			continue
+		if seen == ordinal:
+			return device
+		seen += 1
+	return -1
+
+
+## GUID, name and ordinal for a live joypad index — what a receiver stores so it
+## can find this pad again in a later session.
+static func identify_device(device: int) -> Dictionary:
+	var guid := Input.get_joy_guid(device)
+	var ordinal := 0
+	for other: int in Input.get_connected_joypads():
+		if other == device:
+			break
+		if Input.get_joy_guid(other) == guid:
+			ordinal += 1
+	return {"guid": guid, "name": Input.get_joy_name(device), "ordinal": ordinal}
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -105,6 +105,9 @@ var _spawn_tab_scrolls: Array[ScrollContainer] = []
 var _spawn_tabs: TabContainer = null
 var _systems_browser: SystemGridBrowser = null
 var _cartridges_browser: SystemGridBrowser = null
+## Held because its tail is one row per connected gamepad, rebuilt whenever a pad
+## is paired or unpaired.
+var _controllers_vbox: VBoxContainer = null
 var _books_vbox: VBoxContainer = null
 var _videos_vbox: VBoxContainer = null
 var _dvds_vbox: VBoxContainer = null
@@ -382,15 +385,13 @@ func _build() -> void:
 		["RF Switch (RXR-003)", "rf_switch"],
 	])
 
-	_add_spawn_tab(tabs, "Controllers", [
-		["Primitive Controller", "retro_controller"],
-		["Ray Gun",            "ray_gun"],
-		["Mouse",              "retro_mouse"],
-		["Keyboard",           "retro_keyboard"],
-		["Wiimote",            "wiimote"],
-		["Nunchuk",            "nunchuk"],
-		["Wii MotionPlus",     "motion_plus"],
-	])
+	# Rebuilt at runtime, unlike the other const tabs: its tail is one row per
+	# physical gamepad currently connected, which nothing knows at build time.
+	_controllers_vbox = _add_spawn_tab(tabs, "Controllers", [])
+	_populate_controllers_tab()
+	# A pad plugged in or unplugged changes the list while the menu is open.
+	Input.joy_connection_changed.connect(
+		func(_device: int, _connected: bool) -> void: _populate_controllers_tab())
 
 	# Refresh on tab switch — picks up files added to disk since last open
 	# Also update _active_scroll to the current tab's ScrollContainer
@@ -1346,7 +1347,9 @@ func _populate_music_vbox(vbox: VBoxContainer, icon: String, sig: Signal) -> voi
 	vbox.add_child(MenuStyle.spacer(8))
 
 
-func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void:
+## Returns the vbox, so a tab whose contents change at runtime can keep hold of
+## it and repopulate. The const tabs ignore the return.
+func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> VBoxContainer:
 	var scroll := ScrollContainer.new()
 	scroll.name = tab_title
 	tabs.add_child(scroll)
@@ -1364,6 +1367,51 @@ func _add_spawn_tab(tabs: TabContainer, tab_title: String, items: Array) -> void
 		btn.add_theme_font_size_override("font_size", 26)
 		btn.pressed.connect(spawn_requested.emit.bind(item[1]))
 		vbox.add_child(btn)
+	return vbox
+
+
+## The virtual controllers, then a receiver per connected physical pad.
+##
+## A receiver is how a real gamepad reaches a console: plug one into a controller
+## port and that port is driven by its pad, with nothing held. So the list has to
+## follow what is actually paired right now, which is why this tab is rebuilt
+## rather than authored like the others.
+func _populate_controllers_tab() -> void:
+	if _controllers_vbox == null or not is_instance_valid(_controllers_vbox):
+		return
+	_clear_vbox(_controllers_vbox)
+	_controllers_vbox.add_child(MenuStyle.spacer(10))
+	for item: Array in [
+			["Primitive Controller", "retro_controller"],
+			["Ray Gun",            "ray_gun"],
+			["Mouse",              "retro_mouse"],
+			["Keyboard",           "retro_keyboard"],
+			["Wiimote",            "wiimote"],
+			["Nunchuk",            "nunchuk"],
+			["Wii MotionPlus",     "motion_plus"]]:
+		_controllers_vbox.add_child(_spawn_row(str(item[0]), str(item[1])))
+
+	_controllers_vbox.add_child(HSeparator.new())
+	_controllers_vbox.add_child(MenuStyle.header("DETECTED PADS", 20))
+	var pads := Input.get_connected_joypads()
+	if pads.is_empty():
+		_controllers_vbox.add_child(MenuStyle.hint(
+			"No gamepad connected. Pair one and it appears here."))
+		return
+	for device: int in pads:
+		var id := GamepadBindings.identify_device(device)
+		var label := "%s Receiver" % str(id["name"])
+		var token := "pad_receiver:%s:%d" % [str(id["guid"]), int(id["ordinal"])]
+		_controllers_vbox.add_child(_spawn_row(label, token))
+
+
+func _spawn_row(label: String, token: String) -> Button:
+	var btn := Button.new()
+	btn.text = "  +  " + label
+	btn.custom_minimum_size = Vector2(0, 80)
+	btn.add_theme_font_size_override("font_size", 26)
+	btn.pressed.connect(spawn_requested.emit.bind(token))
+	return btn
 
 
 # ── Scraper ──────────────────────────────────────────────────────────────────

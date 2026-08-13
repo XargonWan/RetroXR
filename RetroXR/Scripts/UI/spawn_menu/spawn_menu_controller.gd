@@ -24,6 +24,8 @@ const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/peripherals/retro_m
 const SNES_MOUSE_SCENE      := preload("res://Scenes/Objects/peripherals/snes_mouse.tscn")
 const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/peripherals/retro_keyboard.tscn")
 const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_multitap.tscn")
+# A wireless receiver for one real gamepad — plugged into a port instead of held.
+const PAD_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/pad_receiver.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/peripherals/ray_gun.tscn")
 const WIIMOTE_SCENE         := preload("res://Scenes/Objects/controllers/wii/wiimote.tscn")
 const NUNCHUK_SCENE         := preload("res://Scenes/Objects/controllers/wii/nunchuk.tscn")
@@ -995,6 +997,20 @@ func _on_spawn_requested(type: String) -> void:
 		card.card_id = type.substr("memcard:".length())
 		card.card_label = card.card_id
 		_place_spawned(card, "memory_card")
+		return
+	# "pad_receiver:<guid>:<ordinal>" — a receiver for one physical gamepad.
+	# The pad is set BEFORE _place_spawned for the same reason the set's shell is:
+	# that call is what adds the child, and the receiver prints its pad's name on
+	# its own case from _ready.
+	if type.begins_with("pad_receiver:"):
+		var parts := type.substr("pad_receiver:".length()).split(":")
+		var rx := PAD_RECEIVER_SCENE.instantiate() as PadReceiver
+		rx.pad_guid = parts[0] if parts.size() > 0 else ""
+		rx.pad_ordinal = int(parts[1]) if parts.size() > 1 else 0
+		var live := GamepadBindings.resolve_device(rx.pad_guid, rx.pad_ordinal)
+		if live >= 0:
+			rx.pad_name = str(GamepadBindings.identify_device(live)["name"])
+		_place_spawned(rx, "pad_receiver")
 		return
 	# "tv:<shell>" — a set wearing a cabinet variant. Assigned BEFORE
 	# _place_spawned, which is what calls add_child: RetroTV loads its shell from

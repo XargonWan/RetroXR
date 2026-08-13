@@ -68,10 +68,6 @@ var _port_index: int = -1
 var _button_map: Dictionary = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
 var _stick_map:  Dictionary = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
 
-# Physical gamepad bindings (loaded from GamepadBindings, merged into held input)
-var _pad_button_map: Dictionary = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
-var _pad_stick_map:  Dictionary = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
-
 # Cable
 var _cable_instance: Node3D = null
 var _cable_plug: ControllerPlug = null
@@ -593,9 +589,6 @@ func _load_bindings() -> void:
 	var bindings := ControllerBindings.get_for_system(sysid)
 	_button_map = bindings["buttons"]
 	_stick_map  = bindings["sticks"]
-	var pad := GamepadBindings.get_global()
-	_pad_button_map = pad["buttons"]
-	_pad_stick_map  = pad["sticks"]
 
 
 # Returns the joypad button bitmask contributed by one controller.
@@ -698,8 +691,7 @@ func _process(_delta: float) -> void:
 	elif "left" in rt: alx = int(rstick.x * ANALOG_SCALE); aly = int(-rstick.y * ANALOG_SCALE)
 	if "dpad" in rt: btn |= _threshold_to_dpad(rstick)
 
-	var m := _merge_pad_state(btn, alx, aly, arx, ary)
-	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+	_send_joypad(btn, alx, aly, arx, ary)
 
 
 ## Capture is only meaningful on desktop: in VR the pad reads the hand
@@ -724,8 +716,9 @@ func _process_desktop_joypad() -> void:
 	var ary := 0
 
 	# Keyboard-bound buttons and sticks only while captured — otherwise WASD and
-	# friends still belong to the player. The physical pad is merged in below
-	# either way: it has no second meaning, so holding this pad is consent enough.
+	# friends still belong to the player. A physical gamepad does NOT reach this
+	# pad: it drives the port its own PadReceiver is plugged into, and nothing
+	# else. Holding a controller is not a claim on every pad in the house.
 	if _capture != null and _capture.is_active():
 		for act: String in DESKTOP_BUTTON_MAP:
 			var bit: int = DESKTOP_BUTTON_MAP[act]
@@ -742,8 +735,7 @@ func _process_desktop_joypad() -> void:
 		arx = int(rx * ANALOG_SCALE)
 		ary = int(-ry * ANALOG_SCALE)
 
-	var m := _merge_pad_state(btn, alx, aly, arx, ary)
-	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
+	_send_joypad(btn, alx, aly, arx, ary)
 
 
 ## Route input to the connected system's core, via netplay when a lockstep game
@@ -753,23 +745,6 @@ func _send_joypad(btn: int, alx: int, aly: int, arx: int, ary: int) -> void:
 			{"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}):
 		return
 	_connected_system.get_libretro_node().SetJoypadState(_port_index, btn, alx, aly, arx, ary)
-
-
-## Merge physical-gamepad state into the current (VR or keyboard) state.
-## Buttons OR together; each analog stick takes whichever source has the larger
-## magnitude, so a real pad and the VR thumbstick don't fight.
-func _merge_pad_state(btn: int, alx: int, aly: int, arx: int, ary: int) -> Dictionary:
-	var pad := GamepadBindings.poll(_pad_button_map, _pad_stick_map)
-	btn |= int(pad["btn"])
-	var plx: int = pad["alx"]
-	var ply: int = pad["aly"]
-	var prx: int = pad["arx"]
-	var pry: int = pad["ary"]
-	if plx * plx + ply * ply > alx * alx + aly * aly:
-		alx = plx; aly = ply
-	if prx * prx + pry * pry > arx * arx + ary * ary:
-		arx = prx; ary = pry
-	return {"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}
 
 
 static func _threshold_to_dpad(stick: Vector2) -> int:

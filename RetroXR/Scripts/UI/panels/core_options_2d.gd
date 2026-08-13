@@ -17,6 +17,9 @@ signal option_changed(key: String, value: String)
 ## User pressed "Reset all to defaults" at the top of the Options tab.
 signal options_reset_requested
 signal port_device_changed(port: int, device_id: int)
+## Which physical gamepad drives this machine. Handhelds only — everything with a
+## controller port takes a PadReceiver plugged into it instead.
+signal pad_device_changed(guid: String, ordinal: int)
 ## System-tab toggle: show/hide the console's video-out cables.
 signal video_out_toggled(enabled: bool)
 ## System-tab toggle: float in place where dropped (no gravity).
@@ -36,6 +39,10 @@ var _options_scroll: ScrollContainer
 var _options_rows: VBoxContainer
 var _controllers_scroll: ScrollContainer
 var _controllers_rows: VBoxContainer
+## Handhelds only — see _add_pad_row.
+var _show_pad_picker := false
+var _pad_guid := ""
+var _pad_ordinal := 0
 var _system_scroll: ScrollContainer
 var _video_out_row: HBoxContainer = null
 var _video_out_check: VRToggle = null
@@ -265,8 +272,16 @@ func set_cartridge_tab_visible(shown: bool) -> void:
 	_tabs.set_tab_hidden(_cart_tab_idx, not shown)
 
 
-func populate_system(video_out: bool, show_video_out: bool, ignore_grav: bool) -> void:
+## The pad picker rides `show_video_out`: both are "this machine is a handheld".
+func populate_system(video_out: bool, show_video_out: bool, ignore_grav: bool,
+		pad_guid: String = "", pad_ordinal: int = 0) -> void:
 	_suppress_signal = true
+	var picker_changed := _show_pad_picker != show_video_out 		or _pad_guid != pad_guid or _pad_ordinal != pad_ordinal
+	_show_pad_picker = show_video_out
+	_pad_guid = pad_guid
+	_pad_ordinal = pad_ordinal
+	if picker_changed and _controllers_rows != null:
+		_refresh_controllers()
 	if _video_out_row:
 		_video_out_row.visible = show_video_out
 	if _video_out_check:
@@ -468,8 +483,14 @@ func _refresh_controllers() -> void:
 	for c in _controllers_rows.get_children():
 		c.queue_free()
 
+	# Before the placeholder, not after: a handheld has no port rows at all, and
+	# the pad picker is the only controller setting it has.
+	if _show_pad_picker:
+		_add_pad_row()
+
 	if _controller_info.is_empty():
-		_show_controllers_placeholder()
+		if not _show_pad_picker:
+			_show_controllers_placeholder()
 		return
 
 	for entry in _controller_info:
@@ -502,5 +523,35 @@ func _add_controller_row(entry: Dictionary) -> void:
 		port_device_changed.emit(port, int(device_id))
 	)
 
+	_controllers_rows.add_child(drop)
+	_controllers_rows.add_child(HSeparator.new())
+
+
+## Which real gamepad drives this handheld.
+##
+## A handheld IS its own controller — system.gd gives it no external port zones —
+## so there is nothing to plug a PadReceiver into and the pad has to be named
+## here instead. Everything with a port does it the other way round, by plugging
+## a receiver in, which is why this row appears on nothing else.
+func _add_pad_row() -> void:
+	var options: Array = [["None", ""]]
+	var current := ""
+	for device: int in Input.get_connected_joypads():
+		var id := GamepadBindings.identify_device(device)
+		var value := "%s:%d" % [str(id["guid"]), int(id["ordinal"])]
+		options.append([str(id["name"]), value])
+		if str(id["guid"]) == _pad_guid and int(id["ordinal"]) == _pad_ordinal:
+			current = value
+
+	var drop := VRDropdown.create("Physical Controller", options, current,
+		1, Vector2(300, 48), 16)
+	drop.item_selected.connect(func(value: Variant) -> void:
+		var parts := str(value).split(":")
+		var guid := parts[0] if parts.size() > 0 else ""
+		var ordinal := int(parts[1]) if parts.size() > 1 else 0
+		_pad_guid = guid
+		_pad_ordinal = ordinal
+		pad_device_changed.emit(guid, ordinal)
+	)
 	_controllers_rows.add_child(drop)
 	_controllers_rows.add_child(HSeparator.new())

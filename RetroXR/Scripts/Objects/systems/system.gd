@@ -49,6 +49,14 @@ static func has_primitive_model(sysid: String) -> bool:
 var rom_path: String = ""
 var connected_tv: RetroTV = null
 var is_powered_on: bool = false
+
+## Which physical gamepad drives this machine, for HANDHELDS only. Everything
+## with a controller port takes a PadReceiver plugged into it instead; a handheld
+## has none (port_count is 0 below), so the same choice is made from its own
+## Controllers panel and remembered here. GUID rather than device index, because
+## the index is a connection order that changes every session. Empty = none.
+var pad_guid: String = ""
+var pad_ordinal: int = 0
 ## Exact mounted path registered with RomM's process-wide cache guard.
 var _protected_cache_path: String = ""
 

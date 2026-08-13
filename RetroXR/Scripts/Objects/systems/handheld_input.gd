@@ -1,8 +1,9 @@
 ## HandheldInput — drives port 0 of a handheld RetroSystem while it is held.
 ##
 ## The held device IS the controller: VR controller buttons/sticks map to the
-## game via the per-system ControllerBindings, physical gamepads merge in, and
-## desktop mode uses the keyboard actions — the same pipeline as
+## game via the per-system ControllerBindings, the ONE physical gamepad this
+## machine's Controllers panel selects merges in, and desktop mode uses the
+## keyboard actions — the same pipeline as
 ## retro_controller.gd (adapted copy; the controller stays untouched because
 ## it is battle-tested). Also provides toggle-hold comfort (grip toggles the
 ## grab instead of holding it), pointer/locomotion blocking while held, the
@@ -57,7 +58,7 @@ var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null
 var _desktop_held := false
 ## Scroll Lock capture: while on, keyboard-bound RETRO_JOYPAD_* actions drive this
-## handheld instead of the player. A physical pad is never gated by it.
+## handheld instead of the player. The selected physical pad is never gated by it.
 var _capture: ScrollLockCapture = null
 var _hint: HeldHint = null
 ## Nerd Font: gamepad — floats off the near edge of the handheld while capture is on.
@@ -441,7 +442,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _process_desktop_joypad() -> void:
 	var btn: int = 0
 	# Keyboard-bound buttons only while captured — otherwise WASD and friends
-	# still belong to the player. The physical pad is merged in regardless.
+	# still belong to the player. The selected pad is merged in regardless.
 	if _capture == null or not _capture.is_active():
 		var idle := _merge_pad_state(0, 0, 0, 0, 0)
 		_send_joypad(idle["btn"], idle["alx"], idle["aly"], idle["arx"], idle["ary"])
@@ -459,8 +460,18 @@ func _process_desktop_joypad() -> void:
 	_send_joypad(m["btn"], m["alx"], m["aly"], m["arx"], m["ary"])
 
 
+## Merge the SELECTED physical pad into the current (VR or keyboard) state.
+##
+## A handheld has no controller port — system.gd gives it port_count = 0 — so
+## there is nowhere to plug a PadReceiver in, and the pad is chosen from this
+## machine's own Controllers panel instead. That choice is the whole of the
+## routing: an unset or disconnected selection merges nothing.
+##
+## Buttons OR together; each analog stick takes whichever source has the larger
+## magnitude, so the real pad and the VR thumbstick don't fight.
 func _merge_pad_state(btn: int, alx: int, aly: int, arx: int, ary: int) -> Dictionary:
-	var pad := GamepadBindings.poll(_pad_button_map, _pad_stick_map)
+	var device := GamepadBindings.resolve_device(_host.pad_guid, _host.pad_ordinal)
+	var pad := GamepadBindings.poll(_pad_button_map, _pad_stick_map, device)
 	btn |= int(pad["btn"])
 	var plx: int = pad["alx"]
 	var ply: int = pad["aly"]
