@@ -20,6 +20,7 @@ const POINTER_BITS := 0b0000_0000_0101_0000_0000_0000_0000_0000
 const PICKUP_BITS := 4
 
 var _rows: Array = []
+var _grabber: Node3D = null
 
 
 func _ready() -> void:
@@ -27,6 +28,9 @@ func _ready() -> void:
 		print("[audit] TIMEOUT")
 		get_tree().quit(1))
 	get_tree().current_scene = self
+	_grabber = Node3D.new()
+	_grabber.add_to_group("desktop_hand")
+	add_child(_grabber)
 	_run()
 
 
@@ -98,7 +102,7 @@ func _audit(model_id: String, plain_platform: String = "") -> void:
 		# from outside, along the face it sits on, is it the FIRST thing hit? Burial
 		# alone misses a control that pokes out of some other face and is still
 		# shadowed from the side you would reach for it.
-		var shadow := _shadowed_by(sys, body, box, shell_union, bits)
+		var shadow := _resolver_says(sys, body, box, shell_union, bits)
 		if buried <= 0.0 and shadow.is_empty():
 			continue
 		_rows.append({
@@ -141,49 +145,61 @@ func _deepest_burial(box: AABB, shell: Array[AABB]) -> float:
 	return best
 
 
-## Aim at this control from outside, along the shell face it sits nearest, and
-## name whatever the ray meets first if it is not the control. Empty when the
-## control wins its own approach.
-func _shadowed_by(sys: RetroSystem, body: CollisionObject3D, box: AABB,
-		shell: AABB, bits: int) -> String:
+## Aim at this control from outside and ask the RESOLVER what the game would do.
+##
+## The earlier version fired its own ray and compared colliders, which asked a
+## question the game does not: it used the pointer/pickup masks rather than the
+## resolver's union, it knew nothing of the resolver's see-through rules for
+## volumes and socketed parts, and it aimed at the control's CENTRE — so a grab
+## sphere poking well clear of its shell still read as blocked because its middle
+## was inside. Every face is tried; clear on any one of them is reachable.
+##
+## An EMPTY socket is not a miss. A snap zone holding nothing has no pointer
+## affordance by design — the resolver returns nothing for it and should — so it
+## is reported empty rather than counted against the shell.
+func _resolver_says(sys: RetroSystem, body: CollisionObject3D, box: AABB,
+		shell: AABB, _bits: int) -> String:
+	if body is XRToolsSnapZone 			and InteractionResolver.held_pickable(body as XRToolsSnapZone) == null:
+		return ""
 	if shell.size == Vector3.ZERO:
 		return ""
-	# The face this control belongs to: the axis it is furthest off-centre on,
-	# measured in half-extents so a long flat shell does not always answer "top".
 	var off := box.get_center() - shell.get_center()
 	var half := shell.size * 0.5
 	var norm := Vector3(
 		off.x / maxf(half.x, 0.0001),
 		off.y / maxf(half.y, 0.0001),
 		off.z / maxf(half.z, 0.0001))
-	# Every face, not just the likeliest one. A control low on a tall device has
-	# its largest offset downward, and testing only that approach aims up through
-	# the floor and calls the base plate a blocker — the control is perfectly
-	# reachable from the side. Blocked only when NO approach is clear.
 	var dirs: Array[Vector3] = [
 		Vector3(signf(norm.x), 0, 0), Vector3(0, signf(norm.y), 0),
 		Vector3(0, 0, signf(norm.z)), Vector3(-signf(norm.x), 0, 0),
 		Vector3(0, -signf(norm.y), 0), Vector3(0, 0, -signf(norm.z))]
 	var centre_w: Vector3 = sys.global_transform * box.get_center()
-	var mask := POINTER_BITS if (bits & POINTER_BITS) != 0 else PICKUP_BITS
-	var blocker := "nothing"
+	var got := "nothing"
 	for dir in dirs:
 		if dir == Vector3.ZERO:
 			continue
 		var dir_w: Vector3 = (sys.global_transform.basis * dir).normalized()
-		var q := PhysicsRayQueryParameters3D.create(centre_w + dir_w * 0.5, centre_w, mask)
-		q.collide_with_bodies = true
-		q.collide_with_areas = true
-		var hit := sys.get_world_3d().direct_space_state.intersect_ray(q)
-		if hit.is_empty():
-			continue
-		var node := hit.collider as Node
-		while node != null:
-			if node == body:
-				return ""
-			node = node.get_parent()
-		blocker = str((hit.collider as Node).name)
-	return blocker
+		var target := InteractionResolver.resolve_desktop(
+			sys.get_world_3d().direct_space_state,
+			centre_w + dir_w * 0.5, centre_w, _grabber)
+		if _belongs(target, body):
+			return ""
+		if target.is_valid() and is_instance_valid(target.action_node):
+			got = str(target.action_node.name)
+	return got
+
+
+## True when what the resolver returned IS this control, either way round.
+func _belongs(target: InteractionTarget, body: CollisionObject3D) -> bool:
+	if not target.is_valid():
+		return false
+	for node: Node in [target.action_node, target.hit_node, target.highlight_node]:
+		var n := node
+		while n != null:
+			if n == body:
+				return true
+			n = n.get_parent()
+	return false
 
 
 func _collect_shell(sys: RetroSystem, inv: Transform3D,
@@ -303,7 +319,7 @@ func _report() -> void:
 	_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a["depth"]) > float(b["depth"]))
 	print("[audit] %-24s %-18s %-8s %8s  %s"
-		% ["model", "control", "kind", "buried", "first hit aiming at it"])
+		% ["model", "control", "kind", "buried", "resolver returns"])
 	for r in _rows:
 		var d: float = float(r["depth"])
 		print("[audit] %-24s %-18s %-8s %8s  %s"

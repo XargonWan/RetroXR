@@ -101,6 +101,14 @@ func _run() -> void:
 		print("[ir] keyboard KEY FIELD           | (not found)")
 	_aim("keyboard body, from the side       ",
 		kb.global_position + Vector3(0.40, 0.02, 0), Vector3(-1, 0, 0))
+	# The key field is a slab over 95% of the board, so every face except the top
+	# must still hand you the board — otherwise it cannot be picked up at all.
+	_aim("keyboard from UNDERNEATH           ",
+		kb.global_position + Vector3(0, -0.30, 0), Vector3(0, 1, 0))
+	_aim("keyboard from BEHIND               ",
+		kb.global_position + Vector3(0, 0.016, -0.30), Vector3(0, 0, 1))
+	_aim("keyboard PALM REST                 ",
+		kb.global_position + Vector3(0, 0.016, 0.30), Vector3(0, 0, -1))
 
 	# The whole point. Same aims, with a wall in the way.
 	_show_wall()

@@ -491,6 +491,13 @@ func _scan_hands() -> void:
 ## collide with WASD the way raw keyboard input does.
 ## `by` is the pointer node behind the press; the laser's rumbles, the desktop
 ## reticle's resolves to no controller and silently does not.
+## True when a cap lies under this world point. KeyboardKeyField asks before
+## claiming a press, so aims that land between the keys reach the board instead.
+func has_key_at(at: Vector3) -> bool:
+	var local := to_local(at)
+	return _key_at(Vector2(local.x, local.z)) >= 0
+
+
 func pointer_press_at(at: Vector3, by: Node3D = null) -> void:
 	var local := to_local(at)
 	var hit := _key_at(Vector2(local.x, local.z))

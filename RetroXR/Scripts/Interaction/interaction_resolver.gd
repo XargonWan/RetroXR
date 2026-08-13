@@ -32,11 +32,18 @@ const QUERY_MASK := (1 << 0) | (1 << 2) | (1 << 20) | (1 << 22)
 
 ## How far past the first grabbable thing a control still wins.
 ##
-## Bounded, because unbounded is how a laser presses a button on the far side of
-## the room. The NES's bay mouth is 26 mm deep and a keyboard's keys sit a few mm
-## inside the board's grab box, so this covers the cases and is nowhere near
-## across a room.
-const ENCLOSURE_DEPTH := 0.05
+## FLUSH, not merely nearby. The rule has no notion of which side you are coming
+## from, so any slack lets a control be operated through the back of the object
+## housing it: the keyboard's key field sits 1 mm under the board's top face but
+## 13 mm above its underside and 12 mm inside its back edge, so at 50 mm the board
+## could not be picked up from below, from behind, or by its palm rest — every aim
+## that happened to line up with a key gave the key.
+##
+## 5 mm keeps a control that is level with the surface it sits in and drops one
+## that is merely inside the volume. A control recessed deeper than this needs the
+## shell carved away in front of it, which is what every other case in the room
+## already does.
+const ENCLOSURE_DEPTH := 0.005
 
 ## Hits to walk before giving up. Only volumes overlapping at one spot cost steps.
 const MAX_STEPS := 8
@@ -139,7 +146,7 @@ static func _classify(
 
 		if node.has_method("pointer_event") or node.has_signal("pointer_event"):
 			var pointer_target := node as Node3D
-			if pointer_target != null:
+			if pointer_target != null and _accepts_pointer(pointer_target, hit.position):
 				return _make_target(InteractionTarget.KIND_POINTER, hit.collider as Node3D,
 					pointer_target, null, pointer_target,
 					hit.position, distance, true, false)
@@ -147,6 +154,19 @@ static func _classify(
 		node = node.get_parent()
 
 	return InteractionTarget.none()
+
+
+## Let a pointer target refuse a point it does not actually cover.
+##
+## A pointable area is a box, and some of them are much bigger than the thing
+## they represent: the keyboard's key field is one slab over 95% of the board,
+## because the caps have no colliders of their own. Declining leaves the walk to
+## carry on to whatever is behind — the board itself — so the parts of it with no
+## key under them can still be picked up.
+static func _accepts_pointer(node: Node3D, at: Vector3) -> bool:
+	if node.has_method("accepts_pointer_at"):
+		return bool(node.call("accepts_pointer_at", at))
+	return true
 
 
 ## True when this collider belongs to something a socket is holding.

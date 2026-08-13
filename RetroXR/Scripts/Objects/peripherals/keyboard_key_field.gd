@@ -43,6 +43,18 @@ static func create(board: Node3D, centre: Vector3, size: Vector3) -> KeyboardKey
 	return field
 
 
+## Only claim a point with a cap actually under it.
+##
+## This box is 483 x 134 mm — 95% of the board's footprint — and its top sits 1 mm
+## under the board's own, so without this the resolver's enclosure rule hands it
+## every aim anywhere on the keyboard and the board can never be picked up by
+## pointing at the surround, the palm rest or the back edge.
+func accepts_pointer_at(at: Vector3) -> bool:
+	if not is_instance_valid(_board) or not _board.has_method("has_key_at"):
+		return true
+	return bool(_board.call("has_key_at", at))
+
+
 func pointer_event(event: XRToolsPointerEvent) -> void:
 	if not is_instance_valid(_board):
 		return
