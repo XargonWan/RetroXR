@@ -92,6 +92,10 @@ const FINISH_GD := {"data": Color(0.76, 0.78, 0.80), "poly": Color(0.09, 0.10, 0
 ## probe in any room, the diffraction term is the only thing keeping it from
 ## rendering as a featureless black hole.
 const FINISH_PS1 := {"data": Color(0.07, 0.06, 0.09), "poly": Color(0.035, 0.03, 0.045), "alpha": 0.90, "pitch": PITCH_CD}
+## Dual-layer DVD-9. The second layer is semi-reflective gold rather than plain
+## aluminium, which is why a DVD-9 reads bronze against a DVD-5's silver-violet —
+## and most of the big PS2 and Wii titles are DVD-9.
+const FINISH_DVD9 := {"data": Color(0.70, 0.58, 0.34), "poly": Color(0.09, 0.10, 0.12), "alpha": 0.28, "pitch": PITCH_DVD}
 ## The PS2's blue CD-ROM. Its DVD titles are FINISH_DVD — see disc_finish().
 const FINISH_PS2_CD := {"data": Color(0.10, 0.20, 0.48), "poly": Color(0.04, 0.07, 0.16), "alpha": 0.55, "pitch": PITCH_CD}
 
@@ -115,6 +119,10 @@ const _CD_DESCRIPTORS: PackedStringArray = ["cue", "gdi", "toc", "m3u", "ccd"]
 ## inflates that well past the nominal 700 MB — a full 80-minute disc reaches
 ## ~783 MB — so the line sits at 1 GiB, still four times under a 4.7 GB DVD5.
 const _CD_MAX_BYTES := 1073741824
+
+## A single-layer DVD-5 holds 4.7 GB decimal = 4.377 GiB. Anything past that had
+## to be pressed as dual-layer, so the image size tells you the disc was gold.
+const _DVD5_MAX_BYTES := 4831838208   # 4.5 GiB, just clear of a full DVD-5
 
 
 ## Disc loading mechanisms.
@@ -186,15 +194,32 @@ static func _is_cd_image(rom_path: String) -> bool:
 	return n < _CD_MAX_BYTES
 
 
-## Disc finish for a system: {"data": Color, "poly": Color, "pitch": float}.
+## True when this image is too big to have been a single-layer DVD-5.
+static func _is_dual_layer(rom_path: String) -> bool:
+	if rom_path.is_empty():
+		return false
+	var f := FileAccess.open(rom_path, FileAccess.READ)
+	if f == null:
+		return false
+	var n := f.get_length()
+	f.close()
+	return n > _DVD5_MAX_BYTES
+
+
+## Disc finish for a system: {"data", "poly", "alpha", "pitch"}.
 ##
-## The PS2 is the one system that needs the ROM to decide. Its CD-ROM titles are
-## the famous blue discs and its DVD titles are silver-violet, and roughly half
-## the library is each.
+## Two of these need the ROM, not just the systemid. The PS2 shipped both CD-ROM
+## (the blue discs) and DVD, roughly half the library each. And any DVD-family
+## system can be dual-layer, which is gold rather than silver — the image size is
+## the tell for both.
 static func disc_finish(systemid: String, rom_path: String = "") -> Dictionary:
 	if systemid == "playstation2":
-		return FINISH_PS2_CD if _is_cd_image(rom_path) else FINISH_DVD
+		if _is_cd_image(rom_path):
+			return FINISH_PS2_CD
+		return FINISH_DVD9 if _is_dual_layer(rom_path) else FINISH_DVD
 	var finish: Dictionary = DISC_FINISHES.get(systemid, FINISH_CD)
+	if float(finish["pitch"]) < 1.0 and _is_dual_layer(rom_path):
+		return FINISH_DVD9
 	return finish
 
 

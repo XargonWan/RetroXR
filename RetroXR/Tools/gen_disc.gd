@@ -6,11 +6,11 @@
 ## each defined separately — three thicknesses (2.5/1.5/1.5 mm against a real 1.2 mm),
 ## three silvers, and no centre hole on any of them.
 ##
-## Real Red Book / DVD geometry: 1.2 mm thick, 15 mm centre hole. Two diameters are
-## baked because only two exist (MediaDimensions.DISC_DIAMETERS is 0.12 everywhere
-## except GameCube's 0.08 mini-DVD). They are two MESHES rather than one scaled mesh
-## on purpose: the hole and the thickness are the same on both, so a uniform scale
-## would shrink them with the diameter.
+## Real Red Book / DVD geometry: 1.2 mm thick (1.3 over the stacking ring), 15 mm
+## centre hole. Three diameters are baked — 120 mm, GameCube's 80 mm mini-DVD and
+## the PSP's 64 mm UMD platter. They are separate MESHES rather than one scaled
+## mesh on purpose: the bore, the thickness and the stacking ring are the same at
+## every size, so a uniform scale would shrink them along with the diameter.
 ##
 ## The disc lies in XZ and is lathed about Y, matching the CylinderMesh it replaces,
 ## so every snap pose, tray seat and spin axis downstream keeps working.
@@ -57,6 +57,15 @@ const HALF_T := 0.0006
 ## far too small to be seen as geometry.
 const CHAMFER := 0.00015
 
+## The stacking ring: a shallow raised annulus on the label side, there so stacked
+## discs rest on it and never touch each other's data area. Only 0.08 mm proud —
+## far too small to read as geometry, but the two ramp faces catch a highlight
+## line either side of it, which is a detail the eye picks up on a real disc.
+const RING_IN := 0.0160
+const RING_OUT := 0.0210
+const RING_RAMP := 0.0005
+const RING_H := 0.00008
+
 const FACE_LABEL := 1.0
 const FACE_DATA := 0.0
 const FACE_EDGE := 0.5
@@ -64,7 +73,7 @@ const FACE_EDGE := 0.5
 
 ## 96 segments, not the 160 first tried. The silhouette error on a 60 mm radius is
 ## 60 * (1 - cos(1.875 deg)) = 0.032 mm — well under what anyone resolves holding a
-## disc at arm's length, and it drops the mesh to 1536 triangles.
+## disc at arm's length. 2304 triangles with the stacking ring.
 const SEGMENTS := 96
 
 
@@ -87,25 +96,33 @@ func _bake(path: String, r_out: float, segs: int) -> void:
 	var prof := PackedVector2Array([
 		Vector2(R_HOLE, HALF_T - CHAMFER),              # 0
 		Vector2(R_HOLE + CHAMFER, HALF_T),              # 1
-		Vector2(r_out - CHAMFER, HALF_T),               # 2
-		Vector2(r_out, HALF_T - CHAMFER),               # 3
-		Vector2(r_out, -HALF_T + CHAMFER),              # 4
-		Vector2(r_out - CHAMFER, -HALF_T),              # 5
-		Vector2(R_HOLE + CHAMFER, -HALF_T),             # 6
-		Vector2(R_HOLE, -HALF_T + CHAMFER),             # 7
-		Vector2(R_HOLE, HALF_T - CHAMFER),              # 8 == 0, closes the bore
+		Vector2(RING_IN, HALF_T),                       # 2  label face, inner
+		Vector2(RING_IN + RING_RAMP, HALF_T + RING_H),  # 3  ramp up
+		Vector2(RING_OUT - RING_RAMP, HALF_T + RING_H), # 4  stacking ring crown
+		Vector2(RING_OUT, HALF_T),                      # 5  ramp down
+		Vector2(r_out - CHAMFER, HALF_T),               # 6  label face, outer
+		Vector2(r_out, HALF_T - CHAMFER),               # 7  rim chamfer
+		Vector2(r_out, -HALF_T + CHAMFER),              # 8  rim
+		Vector2(r_out - CHAMFER, -HALF_T),              # 9  rim chamfer
+		Vector2(R_HOLE + CHAMFER, -HALF_T),             # 10 data face
+		Vector2(R_HOLE, -HALF_T + CHAMFER),             # 11 bore chamfer
+		Vector2(R_HOLE, HALF_T - CHAMFER),              # 12 == 0, closes the bore
 	])
 	# Per-segment face id. The chamfers count as edge: at 0.15 mm they are a
 	# highlight line, not a surface anyone reads as printed or as data.
 	var faces := PackedFloat32Array([
 		FACE_EDGE,    # 0-1  bore chamfer, label side
-		FACE_LABEL,   # 1-2  label face
-		FACE_EDGE,    # 2-3  rim chamfer, label side
-		FACE_EDGE,    # 3-4  rim
-		FACE_EDGE,    # 4-5  rim chamfer, data side
-		FACE_DATA,    # 5-6  data face
-		FACE_EDGE,    # 6-7  bore chamfer, data side
-		FACE_EDGE,    # 7-8  bore wall
+		FACE_LABEL,   # 1-2  label face, inner
+		FACE_LABEL,   # 2-3  stacking ring, ramp up
+		FACE_LABEL,   # 3-4  stacking ring, crown
+		FACE_LABEL,   # 4-5  stacking ring, ramp down
+		FACE_LABEL,   # 5-6  label face, outer
+		FACE_EDGE,    # 6-7   rim chamfer, label side
+		FACE_EDGE,    # 7-8   rim
+		FACE_EDGE,    # 8-9   rim chamfer, data side
+		FACE_DATA,    # 9-10  data face
+		FACE_EDGE,    # 10-11 bore chamfer, data side
+		FACE_EDGE,    # 11-12 bore wall
 	])
 
 	var st := SurfaceTool.new()

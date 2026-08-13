@@ -80,6 +80,11 @@ func _apply_system_size() -> void:
 			# (verified byte-identical at grazing); two is not.
 			mat.set_shader_parameter("irid_orders",
 				3 if float(finish["pitch"]) < 1.0 else 4)
+			# save_id is already a random hex per disc, so it is a free seed.
+			# Without it every disc of a system is pixel-identical, and a stack
+			# of them reads as cloned.
+			mat.set_shader_parameter("disc_seed",
+				float(hash(save_id) % 1000) / 1000.0)
 			var zones := MediaDimensions.disc_zones(systemid, finish["pitch"])
 			mat.set_shader_parameter("r_metal_start", zones.x)
 			mat.set_shader_parameter("r_data_start", zones.y)

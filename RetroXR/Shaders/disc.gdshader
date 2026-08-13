@@ -104,6 +104,11 @@ uniform float track_pitch = 1.6;
 // covers. Three is the lossless setting; two is not. disc.gd sets it from pitch.
 uniform int irid_orders : hint_range(1, 4) = 4;
 uniform float irid_strength : hint_range(0.0, 4.0) = 0.5;
+// Per-disc jitter, 0..1, seeded from save_id in disc.gd. Without it every Saturn
+// CD in the room is pixel-identical and a stack of them reads as cloned. Tiny on
+// purpose: a few percent of tint and a little iridescence, nothing that would
+// make one disc look like a different disc.
+uniform float disc_seed : hint_range(0.0, 1.0) = 0.5;
 // The label side's unprinted lacquer shows a much fainter rainbow of its own.
 uniform float irid_label : hint_range(0.0, 1.0) = 0.10;
 // A view-only floor. A DVD's single order needs |L.g + V.g| >= 0.51 before any
@@ -112,17 +117,29 @@ uniform float irid_label : hint_range(0.0, 1.0) = 0.10;
 uniform float irid_ambient : hint_range(0.0, 1.0) = 0.10;
 // Widens the spectral response, standing in for a light that is not a point.
 // Narrow reads as a laser; too wide washes to white.
-uniform float spectral_width : hint_range(0.5, 3.0) = 1.0;
+uniform float spectral_width : hint_range(0.5, 3.0) = 0.85;
 // Extra band widening from the screen-space derivative. This is a STEREO fix as
 // much as an aliasing one: with openxr/multiview each eye computes its own view
 // vector, so tight bands land in different places per eye and produce genuine
 // binocular rivalry. Tune it in the headset, not on a monitor.
 uniform float band_aa : hint_range(0.0, 4.0) = 1.5;
 
+// --- fake environment ------------------------------------------------------
+// A disc is mostly REFLECTED ROOM, and these rooms have no radiance map at all —
+// ambient_light_source = COLOR, one ReflectionProbe in one scene. A mirror with
+// nothing to reflect is why the metal read airbrushed no matter how good the
+// diffraction got. This is a three-stop vertical ramp sampled by the reflection
+// vector: ceiling above, wall at the horizon, floor below. No probe, no texture
+// fetch, no screen read — about a dozen ALU.
+uniform vec3 env_ceiling : source_color = vec3(0.55, 0.58, 0.66);
+uniform vec3 env_horizon : source_color = vec3(0.20, 0.21, 0.26);
+uniform vec3 env_floor : source_color = vec3(0.05, 0.05, 0.06);
+uniform float env_strength : hint_range(0.0, 3.0) = 1.0;
+
 // --- lighting --------------------------------------------------------------
 uniform float disc_specular : hint_range(0.0, 1.0) = 0.6;
 uniform float light_gain : hint_range(0.0, 4.0) = 1.0;
-uniform float spec_gain : hint_range(0.0, 4.0) = 0.7;
+uniform float spec_gain : hint_range(0.0, 4.0) = 0.45;
 uniform float varnish : hint_range(0.0, 2.0) = 0.35;
 
 varying vec3 v_radial;    // view-space radial = the grating vector
@@ -200,6 +217,22 @@ vec3 grating(vec3 L, vec3 V, vec3 g, float blur, int orders) {
 }
 
 
+// Reflected room. Rw is the reflection in WORLD space — the ramp is vertical, so
+// it has to be, and NORMAL/VIEW are view-space. Rough surfaces converge on the
+// average of the three stops, which is what blurring an environment does.
+// inv_view is passed in rather than read directly: Godot exposes built-ins only
+// inside vertex()/fragment()/light(), never in a helper.
+vec3 env_reflect(vec3 N, vec3 V, float rough, vec3 f0, mat4 inv_view) {
+	vec3 Rw = (inv_view * vec4(reflect(-V, N), 0.0)).xyz;
+	float up = clamp(Rw.y, -1.0, 1.0);
+	vec3 c = up > 0.0 ? mix(env_horizon, env_ceiling, up)
+					  : mix(env_horizon, env_floor, -up);
+	c = mix(c, (env_ceiling + env_horizon + env_floor) * (1.0 / 3.0), rough);
+	float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);
+	return c * (f0 + (1.0 - f0) * fres) * env_strength;
+}
+
+
 void fragment() {
 	float face = UV2.x;
 	float r = v_radius;
@@ -249,7 +282,9 @@ void fragment() {
 	} else {
 		// --- data side ---
 		// Inside the metal there is nothing but substrate, so it is a real window.
-		ALBEDO = mix(poly_color, data_color, metal);
+		vec3 dc = data_color * vec3(1.0 + (disc_seed - 0.5) * 0.11, 1.0,
+			1.0 - (disc_seed - 0.5) * 0.11);
+		ALBEDO = mix(poly_color, dc, metal);
 		// The mirror band and the data area are the same aluminium, so they share an
 		// albedo — what separates them is SMOOTHNESS. The band is unpitted, i.e. an
 		// actual mirror, so it returns the room and little else; the pit structure
@@ -264,7 +299,8 @@ void fragment() {
 		// own rainbow — untinted it blows out to white and stops reading as black.
 		// sqrt, not the colour itself: data_color is the double-pass reflectance,
 		// and taking it straight leaves the PS1 too dark to read as a disc at all.
-		v_irid = vec3(pits * irid_strength) * sqrt(data_color);
+		float jit = disc_seed - 0.5;
+		v_irid = vec3(pits * irid_strength * (1.0 + jit * 0.40)) * sqrt(data_color);
 	}
 
 	SPECULAR = disc_specular;
@@ -274,6 +310,13 @@ void fragment() {
 	// disappear, and it fires strongest exactly where the edge is visible.
 	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), V), 0.0, 1.0), 4.0);
 	ALPHA = mix(base_a, 1.0, fres * glass_fresnel);
+
+	// The reflected room. Added here rather than in light() because it is not a
+	// per-light term — with no radiance map Godot's own ambient contributes almost
+	// nothing to a metal, which is the gap this fills.
+	vec3 nrm = normalize(NORMAL);
+	EMISSION += env_reflect(nrm, V, ROUGHNESS,
+		mix(vec3(0.08 * disc_specular), ALBEDO, METALLIC), INV_VIEW_MATRIX);
 
 	// View-only floor, so a disc never goes completely dead in a room whose lights
 	// happen to miss the grating condition. L = V is the retroreflective case.
@@ -301,8 +344,12 @@ void light() {
 	float shine = clamp(2.0 / (a * a) - 2.0, 1.0, 2048.0);
 	vec3 f0 = mix(vec3(0.08 * disc_specular), ALBEDO, METALLIC);
 	vec3 fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(V, H), 0.0), 5.0);
+	// Normalisation clamped: at mirror roughness the Blinn-Phong term reaches 82x,
+	// which clipped a broad region of the disc to flat white instead of leaving a
+	// tight highlight. The reflected room now supplies the brightness that was
+	// coming from this being cranked.
 	SPECULAR_LIGHT += radiance * ndl * fres * pow(ndh, shine)
-		* ((shine + 8.0) / 25.13) * spec_gain;
+		* min((shine + 8.0) / 25.13, 26.0) * spec_gain;
 
 	// The lacquer coat, hand-written because defining light() compiles the
 	// built-in clearcoat lobe out.
