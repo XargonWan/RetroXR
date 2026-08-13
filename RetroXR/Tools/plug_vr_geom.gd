@@ -96,6 +96,20 @@ func _run() -> void:
 	_look(focus, Vector3(0, 0, 1), 0.34)
 	await _grab("SOCKETED — plug moved to layer 17 (grey); only the socket is grabbable")
 
+	# Along the row, which is where the overlap costs you. Rolled a few degrees off
+	# the axis on purpose: dead on, all three circles project onto each other and
+	# read as one, which is true but shows nothing.
+	var along := Vector3(-1, 0, 0.30).normalized()
+	_clear()
+	for i in range(ports.size()):
+		_ring(ports[i].global_position, ports[i].grab_distance, along,
+			_tint(ports[i].collision_layer))
+		if i < plugs.size():
+			_plug_rings(plugs[i], along)
+	_ring(focus + Vector3(0.0, 0.085, 0.10), 0.125, along, HAND)
+	_look(focus, along, 0.34)
+	await _grab("Near enough along the row — the three socket spheres almost coincide")
+
 	print("[vv] wrote %d shots to %s" % [_shot, ProjectSettings.globalize_path(OUT_DIR)])
 	get_tree().quit(0)
 
