@@ -44,6 +44,10 @@ func _run() -> void:
 	tv.position = Vector3(0, 1, 0)
 	add_child(tv)
 	tv.add_to_group("spawned")
+	# Hold everything still. The rings below are baked into world space, so a set
+	# that is still falling leaves them hanging where it used to be — which is
+	# exactly what made the first render look like the spheres sat too high.
+	_hold(tv)
 	await _wait(50)
 
 	var ports: Array[RcaPort] = []
@@ -57,6 +61,7 @@ func _run() -> void:
 	add_child(cable)
 	cable.add_to_group("spawned")
 	await _wait(40)
+	_hold(cable)
 	var plugs: Array[RcaPlug] = []
 	for node in cable.find_children("*", "Node3D", true, false):
 		var plug := node as RcaPlug
@@ -66,6 +71,20 @@ func _run() -> void:
 		ports[i].pick_up_object(plugs[i])
 		await _wait(10)
 	await _wait(30)
+
+	for i in range(mini(3, plugs.size())):
+		var pl := plugs[i] as RcaPlug
+		var ar := pl.get_node_or_null("PointerArea") as CollisionObject3D
+		var ac := Vector3.ZERO
+		if ar != null:
+			for oid_raw in ar.get_shape_owners():
+				ac = ar.global_transform * ar.shape_owner_get_transform(int(oid_raw)).origin
+		print("[pg] %-15s zone %v | plug %v | plug pointer %v | zone-plug dy %.1f mm"
+			% [ports[i].name, ports[i].global_position, pl.global_position, ac,
+				(ports[i].global_position.y - pl.global_position.y) * 1000.0])
+		var jack := ports[i].get_node_or_null("RcaJack") as Node3D
+		if jack != null:
+			print("[pg]     socket mesh (RcaJack) at %v" % jack.global_position)
 
 	_rings = Node3D.new()
 	add_child(_rings)
@@ -85,6 +104,20 @@ func _run() -> void:
 
 	print("[pg] wrote %d shots to %s" % [_shot, ProjectSettings.globalize_path(OUT_DIR)])
 	get_tree().quit(0)
+
+
+## Freeze every rigid body in a subtree so nothing drifts while we draw.
+func _hold(root: Node) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		var rb := n as RigidBody3D
+		if rb != null:
+			rb.freeze = true
+			rb.linear_velocity = Vector3.ZERO
+			rb.angular_velocity = Vector3.ZERO
 
 
 ## One circle per sphere, in the plane facing the camera.
