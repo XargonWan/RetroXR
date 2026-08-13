@@ -11,8 +11,11 @@
 ## it can never outlive the grip and strand the player with movement blocked. The
 ## host clears it on drop by calling refresh().
 ##
-## A physical USB/Bluetooth gamepad is deliberately NOT gated by this — it has no
-## other meaning, so it feeds whatever is held whether capture is on or not.
+## A physical gamepad is not gated by this and never reaches a held device at all:
+## it drives the port its own PadReceiver is plugged into. Nor are the input
+## receivers, which are unheld by definition — seating one is already the
+## unambiguous act that Scroll Lock exists to supply for a board you might merely
+## be carrying. They do honour the typing suspension below.
 class_name ScrollLockCapture
 extends RefCounted
 
@@ -51,6 +54,12 @@ static var _suspended := false
 ## chose survives whatever interrupted it.
 static func set_suspended(on: bool) -> void:
 	_suspended = on
+
+
+## Read by the input receivers, which have no capture of their own but must still
+## keep out of a text field the player is typing into.
+static func is_suspended() -> bool:
+	return _suspended
 
 
 func is_active() -> bool:

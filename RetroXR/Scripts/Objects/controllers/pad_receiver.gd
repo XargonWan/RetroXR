@@ -1,9 +1,7 @@
-## PadReceiver — a wireless receiver for one real gamepad, on a 1 m lead.
+## PadReceiver — a wireless receiver for one real gamepad.
 ##
 ## Plug it into any console's controller port and that port is driven by the
-## physical pad this receiver was spawned for, with nothing held. The point is
-## that your hands stay free: the Quest controllers keep teleporting, grabbing
-## and pointing while the game is played on the pad in your lap.
+## physical pad this receiver was spawned for, with nothing held.
 ##
 ## Before this, a real pad only reached a core by being merged into whatever
 ## virtual controller you were HOLDING — so the pad and the prop were the same
@@ -12,45 +10,10 @@
 ## device). A pad drives exactly one destination and you say which: a console by
 ## plugging in its receiver, a handheld — which has no port — from that machine's
 ## own Controllers panel.
-##
-## Structurally this is RetroMultitap, not RetroController: an object that seats
-## in a controller port without ever being the thing you hold. It borrows that
-## file's cable, plug and port plumbing almost verbatim.
 class_name PadReceiver
-extends XRToolsPickable
+extends InputReceiver
 
-const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/cables/controller_cable.tscn")
 const RETRO_DEVICE_JOYPAD := 1
-
-## Every live receiver, so one can see which pads its siblings have already taken.
-const GROUP := &"pad_receiver"
-
-## Long enough to sit the receiver on the shelf beside the console rather than
-## have it dangle off the port, short enough not to festoon the room. The
-## controller lead it is built from is 1.80 m, which is a pad's reach to a sofa —
-## a receiver never needs that because the pad is what travels.
-const LEAD_LENGTH := 1.0
-
-## Which console moulds its own controller connector. The receiver is universal,
-## so unlike every other pad it cannot know its plug until it seats — on plug-in
-## it adopts the connector of whatever it went into, and drops back to the
-## generic one when pulled out.
-##
-## These mirror the plug_mesh_path exports on the pads that wear them
-## (nes_controller.tscn, atari_2600_cx40.tscn). Two places now know each
-## connector; a third would be one too many, so if this grows past a handful ask
-## the console for its connector instead of listing it here.
-const PORT_CONNECTORS := {
-	"nes": "res://imported-assets/controllers/nes/nes_controller_plug.res",
-	"atari2600": "res://Scenes/Objects/controllers/atari/atari_2600_plug_cx40.res",
-}
-
-## Announced to the console when the plug seats: this port carries a joypad.
-var device_type: int = RETRO_DEVICE_JOYPAD
-
-## Universal — RetroSystem._accepts_plug reads this off the plug and an empty
-## string fits every console's port.
-var systemid: String = ""
 
 ## The pad this receiver is for. GUID rather than device index because the index
 ## is a connection order that changes every session; `pad_ordinal` picks between
@@ -59,40 +22,32 @@ var pad_guid: String = ""
 var pad_name: String = ""
 var pad_ordinal: int = 0
 
-# Port connection state (the console port this receiver's plug occupies).
-var _connected_system: RetroSystem = null
-var _port_index: int = -1
-
-# Cable (same pattern as RetroController / RetroMultitap).
-var _cable_instance: Node3D = null
-var _cable_plug: ControllerPlug = null
-var _cable_rope: VerletRope = null
-var _max_rope_length: float = 0.0
-var _pending_port_restore: Dictionary = {}
-
 # Bindings — the global physical-pad map, refreshed with everyone else's.
 var _pad_button_map: Dictionary = GamepadBindings.DEFAULT_BUTTON_MAP.duplicate()
 var _pad_stick_map:  Dictionary = GamepadBindings.DEFAULT_STICK_MAP.duplicate()
 
-## The joypad index resolved last frame, or -1 while no pad answers. Cached only
-## so the LED and the rumble know what the input read.
+## The joypad index resolved last frame, or -1 while no pad answers. Cached so
+## the LED and the rumble know what the input read.
 var _device: int = -1
-
-@onready var _cable_attach_point: Node3D = $CableAttachPoint
-@onready var _led: MeshInstance3D = $Led
-@onready var _label: Label3D = $NameLabel
 
 
 func _ready() -> void:
+	device_type = RETRO_DEVICE_JOYPAD
 	super._ready()
-	press_to_hold = false
-	add_to_group("spawned")
-	add_to_group(GROUP)
 	add_to_group(ControllerBindings.CONSUMER_GROUP)
 	reload_bindings()
-	_refresh_label()
-	_set_led(false)
-	_spawn_cable()
+
+
+func receiver_label() -> String:
+	return pad_name if not pad_name.is_empty() else "NO PAD"
+
+
+func is_bound() -> bool:
+	return _device >= 0
+
+
+func on_going_idle() -> void:
+	_stop_rumble()
 
 
 func _exit_tree() -> void:
@@ -121,15 +76,14 @@ func _resolve_or_adopt() -> int:
 		pad_guid = str(id["guid"])
 		pad_name = str(id["name"])
 		pad_ordinal = int(id["ordinal"])
-		_refresh_label()
+		refresh_label()
 		print("[PadReceiver] adopted '%s'" % pad_name)
 		return candidate
 	return -1
 
 
-## Device indices other live receivers resolved. A walk of the group rather than
-## a registry: Godot drops a freed node from its groups by itself, so there is no
-## claim to release and nothing to leak when one is binned mid-session.
+## Device indices other live receivers resolved, so two dongles cannot both take
+## the same pad when neither found the one it was saved with.
 func _pads_taken_by_siblings() -> Array:
 	var taken: Array = []
 	for node in get_tree().get_nodes_in_group(GROUP):
@@ -149,13 +103,12 @@ func reload_bindings() -> void:
 
 ## Unplugged it does nothing at all; unbound it shows red and still does nothing.
 ## Deliberately no zero-write in either case — a port with no receiver in it is
-## not the same as one held at neutral, and the difference matters to a core that
-## reads a disconnected pad.
+## not the same as one held at neutral.
 func _process(_delta: float) -> void:
 	if _connected_system == null or _port_index < 0:
 		return
 	_device = _resolve_or_adopt()
-	_set_led(_device >= 0)
+	set_led(_device >= 0)
 	if _device < 0:
 		return
 	var p := GamepadBindings.poll(_pad_button_map, _pad_stick_map, _device)
@@ -187,121 +140,3 @@ func set_rumble(weak: float, strong: float) -> void:
 func _stop_rumble() -> void:
 	if _device >= 0:
 		Input.stop_joy_vibration(_device)
-
-
-# ── Port events ───────────────────────────────────────────────────────────────
-
-func on_plugged_in(system: RetroSystem, port_index: int) -> void:
-	_connected_system = system
-	_port_index = port_index
-	_adopt_connector(system.systemid)
-	print("[PadReceiver] '%s' -> %s port %d" % [pad_name, system.systemid, port_index])
-
-
-func on_unplugged() -> void:
-	_stop_rumble()
-	_connected_system = null
-	_port_index = -1
-	_adopt_connector("")
-
-
-## The console this receiver is plugged into, or null. Read by ScenePersistence,
-## which needs the machine to ask it for the cabinet socket.
-func get_connected_system() -> RetroSystem:
-	return _connected_system if is_instance_valid(_connected_system) else null
-
-
-func restore_port_connection(system: RetroSystem, port_index: int) -> void:
-	if _cable_plug != null:
-		system.restore_controller_plug(port_index, _cable_plug)
-	else:
-		_pending_port_restore = {"system": system, "port_index": port_index}
-
-
-## Wear the connector of the console we are in — an NES 7-pin, an Atari DE-9 —
-## and the generic moulding when we are in nothing. An unlisted console keeps the
-## generic plug rather than the last console's, which is why this is called with
-## "" on unplug rather than simply skipped.
-func _adopt_connector(sysid: String) -> void:
-	if _cable_plug == null or not is_instance_valid(_cable_plug):
-		return
-	_cable_plug.set_plug_mesh(str(PORT_CONNECTORS.get(sysid, "")))
-
-
-# ── Cable ─────────────────────────────────────────────────────────────────────
-
-func _spawn_cable() -> void:
-	_cable_instance = CONTROLLER_CABLE_SCENE.instantiate()
-	call_deferred("_add_cable_to_scene")
-
-
-func _add_cable_to_scene() -> void:
-	get_tree().current_scene.add_child(_cable_instance)
-	_cable_instance.add_to_group("spawned")
-	_cable_plug = _cable_instance.get_node("ControllerPlug") as ControllerPlug
-	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
-	_cable_plug.set_controller(self)
-	_cable_plug.add_collision_exception_with(self)
-	# The lead leaves the back of the case.
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
-	_cable_rope.set_rope_length(LEAD_LENGTH)
-	_cable_rope.start_node = _cable_attach_point
-	_cable_rope.end_node = _cable_plug
-	_cable_rope._init_points()
-	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length
-
-	if not _pending_port_restore.is_empty():
-		var sys: RetroSystem = _pending_port_restore.get("system")
-		var idx: int = _pending_port_restore.get("port_index", -1)
-		_pending_port_restore = {}
-		if is_instance_valid(sys) and idx >= 0:
-			sys.restore_controller_plug(idx, _cable_plug)
-
-
-func _physics_process(_delta: float) -> void:
-	# Cable rope clamp (same as RetroController / RetroMultitap).
-	if _cable_plug != null and _cable_attach_point != null and _max_rope_length > 0.0 \
-			and not _cable_plug.is_picked_up() and _connected_system == null:
-		var attach_pos := _cable_attach_point.global_position
-		var diff := _cable_plug.global_position - attach_pos
-		var dist := diff.length()
-		if dist > _max_rope_length:
-			var dir := diff / dist
-			_cable_plug.global_position = attach_pos + dir * _max_rope_length
-			var outward := dir.dot(_cable_plug.linear_velocity)
-			if outward > 0.0:
-				_cable_plug.linear_velocity -= dir * outward
-
-
-# ── Presentation ──────────────────────────────────────────────────────────────
-
-## Red while no pad answers, lit while one does. The dongle explains itself
-## without a panel, which is the whole reason it is an object rather than a
-## setting — a receiver restored from a saved room with its pad switched off is
-## the ordinary case, not an error.
-func _set_led(bound: bool) -> void:
-	if _led == null:
-		return
-	var mat := _led.get_surface_override_material(0) as StandardMaterial3D
-	if mat == null:
-		return
-	mat.albedo_color = Color(0.15, 0.85, 0.30) if bound else Color(0.85, 0.12, 0.12)
-	mat.emission = mat.albedo_color
-
-
-func _refresh_label() -> void:
-	if _label != null:
-		_label.text = pad_name if not pad_name.is_empty() else "NO PAD"
-
-
-# ── Teardown ──────────────────────────────────────────────────────────────────
-
-## Take the lead with it. The plug is a separate scene parented to the room, so
-## freeing only the body would leave a cord hanging off a freed anchor — the same
-## rule RetroController's cable follows.
-func drop_and_free() -> void:
-	if _cable_plug != null and is_instance_valid(_cable_plug):
-		_cable_plug.drop()
-	if _cable_instance != null and is_instance_valid(_cable_instance):
-		_cable_instance.queue_free()
-	queue_free()

@@ -26,6 +26,9 @@ const RETRO_KEYBOARD_SCENE  := preload("res://Scenes/Objects/peripherals/retro_k
 const RETRO_MULTITAP_SCENE  := preload("res://Scenes/Objects/controllers/retro_multitap.tscn")
 # A wireless receiver for one real gamepad — plugged into a port instead of held.
 const PAD_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/pad_receiver.tscn")
+# The same dongle for the real keyboard and mouse. VR only — see spawn_view.
+const KEYBOARD_RECEIVER_SCENE := preload("res://Scenes/Objects/controllers/keyboard_receiver.tscn")
+const MOUSE_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/mouse_receiver.tscn")
 const RAY_GUN_SCENE         := preload("res://Scenes/Objects/peripherals/ray_gun.tscn")
 const WIIMOTE_SCENE         := preload("res://Scenes/Objects/controllers/wii/wiimote.tscn")
 const NUNCHUK_SCENE         := preload("res://Scenes/Objects/controllers/wii/nunchuk.tscn")
@@ -1086,6 +1089,10 @@ func _on_spawn_requested(type: String) -> void:
 		# connectors are free and it picks its own sockets up off the floor.
 		"rf_switch":
 			obj = RF_SWITCH_SCENE.instantiate() as Node3D
+		"keyboard_receiver":
+			obj = KEYBOARD_RECEIVER_SCENE.instantiate() as Node3D
+		"mouse_receiver":
+			obj = MOUSE_RECEIVER_SCENE.instantiate() as Node3D
 		"ray_gun":
 			var gun := RAY_GUN_SCENE.instantiate() as RayGun
 			gun.show_laser_dot = _aim_crosshair_enabled

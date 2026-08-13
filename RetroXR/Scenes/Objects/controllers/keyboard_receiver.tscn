@@ -1,0 +1,78 @@
+[gd_scene load_steps=8 format=3 uid="uid://kbdreceiver_01"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/controllers/keyboard_receiver.gd" id="1_prscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+
+; 70 x 20 x 45 mm — a wireless dongle, small enough to sit unnoticed beside a
+; console and large enough to grab without a laser.
+[sub_resource type="BoxShape3D" id="BoxShape3D_pr"]
+size = Vector3(0.07, 0.02, 0.045)
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.07, 0.02, 0.045)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.18, 0.17, 0.16, 1)
+roughness = 0.55
+
+; The status LED. Emissive MATERIAL, never an OmniLight: a room can hold a
+; receiver per port per console, and a light apiece would be a real cost for a
+; 4 mm dot. resource_local_to_scene because pad_receiver.gd recolours it per
+; instance — a shared material would turn every dongle in the room green the
+; moment one of them found its pad.
+[sub_resource type="StandardMaterial3D" id="Mat_led"]
+resource_local_to_scene = true
+albedo_color = Color(0.85, 0.12, 0.12, 1)
+emission_enabled = true
+emission = Color(0.85, 0.12, 0.12, 1)
+emission_energy_multiplier = 1.6
+
+[sub_resource type="BoxMesh" id="BoxMesh_led"]
+size = Vector3(0.004, 0.002, 0.004)
+
+[node name="KeyboardReceiver" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 196613
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_prscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+shape = SubResource("BoxShape3D_pr")
+
+[node name="BodyMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_body")
+
+; Front face, so it reads from the side you look at when the lead runs away
+; behind. Proud of the shell by 0.5 mm so it catches its own glow.
+[node name="Led" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0.014, 0.0228)
+mesh = SubResource("BoxMesh_led")
+surface_material_override/0 = SubResource("Mat_led")
+
+; The bound pad's name, printed on the top face reading front-to-back. Rotated
+; -90 about X to lie flat, and 8 mm of text at pixel_size 0.001 — the size this
+; project prints a word on a face (see cassette_player.tscn, speaker_pair.tscn).
+; outline_size 0: a dark outline on a dark case fuses into a blob, and the
+; outline exists to lift a floating billboard off a busy background, which is the
+; opposite of a word printed flat.
+[node name="NameLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0202, 0.002)
+pixel_size = 0.0006
+text = "KEYBOARD"
+font_size = 12
+outline_size = 0
+modulate = Color(0.75, 0.75, 0.8, 1)
+width = 200.0
+autowrap_mode = 3
+
+; The lead leaves the back of the case.
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, -0.0225)
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")

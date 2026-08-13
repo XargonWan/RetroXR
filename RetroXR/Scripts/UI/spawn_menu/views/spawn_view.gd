@@ -1391,6 +1391,15 @@ func _populate_controllers_tab() -> void:
 			["Wii MotionPlus",     "motion_plus"]]:
 		_controllers_vbox.add_child(_spawn_row(str(item[0]), str(item[1])))
 
+	# The keyboard and mouse dongles, VR only. On desktop the real keyboard and
+	# mouse ARE the player — WASD walks and mouse-look drags the virtual mouse —
+	# so a dongle quietly forwarding them to a core would fight the controls you
+	# are standing on, and there is nothing to gain: the point of a receiver is to
+	# free the Quest controllers, and a desktop player has none.
+	if MenuStyle.is_vr_mode():
+		_controllers_vbox.add_child(_spawn_row("Keyboard Receiver", "keyboard_receiver"))
+		_controllers_vbox.add_child(_spawn_row("Mouse Receiver", "mouse_receiver"))
+
 	_controllers_vbox.add_child(HSeparator.new())
 	_controllers_vbox.add_child(MenuStyle.header("DETECTED PADS", 20))
 	var pads := Input.get_connected_joypads()

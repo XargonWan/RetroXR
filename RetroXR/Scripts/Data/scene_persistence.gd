@@ -42,7 +42,8 @@ const _REFERENCE_FIELDS := [
 const _SPECIALIZED_TYPES := [
 	"system", "tv", "cartridge", "disc", "memory_card", "book",
 	"retro_controller", "retro_mouse", "snes_mouse", "vcr_tape", "dvd_disc",
-	"composite_cable", "audio_disc", "audio_cassette", "pad_receiver",
+	"composite_cable", "audio_disc", "audio_cassette",
+	"pad_receiver", "keyboard_receiver", "mouse_receiver",
 ]
 
 ## Bumped by every async restore as it starts. Because those yield frames, a
@@ -86,6 +87,8 @@ const MOTION_PLUS_SCENE      := preload("res://Scenes/Objects/controllers/wii/mo
 const SENSOR_BAR_SCENE       := preload("res://Scenes/Objects/system_models/wii/sensor_bar.tscn")
 const RF_SWITCH_SCENE        := preload("res://Scenes/Objects/appliances/rf_switch.tscn")
 const PAD_RECEIVER_SCENE     := preload("res://Scenes/Objects/controllers/pad_receiver.tscn")
+const KEYBOARD_RECEIVER_SCENE := preload("res://Scenes/Objects/controllers/keyboard_receiver.tscn")
+const MOUSE_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/mouse_receiver.tscn")
 
 ## Types whose entry carries nothing but a pose — instantiate and place, no
 ## properties to apply. Types that need more are match arms in
@@ -799,7 +802,7 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 	elif obj is SensorBar:
 		(obj as SensorBar).restore_connection(
 			_resolve_ref(root, spawned, d.get("system")) as RetroSystem)
-	elif obj is PadReceiver:
+	elif obj is InputReceiver:
 		var rx_port := int(d.get("port_index", -1))
 		if rx_port < 0:
 			return
@@ -807,7 +810,7 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		if rx_sys == null:
 			push_warning("[ScenePersistence] pad receiver id=%d: system not found" % id)
 			return
-		(obj as PadReceiver).restore_port_connection(rx_sys, rx_port)
+		(obj as InputReceiver).restore_port_connection(rx_sys, rx_port)
 	elif obj is RetroController or obj is RayGun or obj is RetroMouse \
 			or obj is RetroKeyboard or obj is Wiimote:
 		# The remote's Nunchuk is restored whether or not it was paired to a
@@ -1010,25 +1013,37 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"boxes": pair.box_poses(),
 			"volume": pair.get_volume(),
 		})
+	elif node is KeyboardReceiver:
+		return _receiver_entry(node as InputReceiver, id, "keyboard_receiver", n3d, node_to_id)
+	elif node is MouseReceiver:
+		return _receiver_entry(node as InputReceiver, id, "mouse_receiver", n3d, node_to_id)
 	elif node is PadReceiver:
 		# Which PAD it is for as well as which port it is in — a receiver with no
-		# pad is a dongle for nothing. The socket, like every other peripheral's,
-		# is the cabinet's rather than the libretro port.
-		var rx := node as PadReceiver
-		var rx_sys: Node = rx.get_connected_system()
-		var rx_port := -1
-		if rx_sys != null and rx_sys.has_method("cabinet_port_of"):
-			rx_port = int(rx_sys.call("cabinet_port_of", rx))
-		return _base(id, "pad_receiver", n3d).merged({
-			"system": _ref(node_to_id, rx_sys),
-			"port_index": rx_port,
-			"pad_guid": rx.pad_guid,
-			"pad_name": rx.pad_name,
-			"pad_ordinal": rx.pad_ordinal,
+		# pad is a dongle for nothing.
+		var pr := node as PadReceiver
+		return _receiver_entry(pr, id, "pad_receiver", n3d, node_to_id).merged({
+			"pad_guid": pr.pad_guid,
+			"pad_name": pr.pad_name,
+			"pad_ordinal": pr.pad_ordinal,
 		})
 	elif node is CompositeCable:
 		return _serialize_cable(node as CompositeCable, id, n3d, node_to_id)
 	return {}
+
+
+## Pose plus which port it is seated in — everything a receiver has in common.
+## The socket, like every other peripheral's, is the CABINET's rather than the
+## libretro port (see _serialize_peripheral).
+func _receiver_entry(rx: InputReceiver, id: int, type_name: String, n3d: Node3D,
+		node_to_id: Dictionary) -> Dictionary:
+	var sys: Node = rx.get_connected_system()
+	var port := -1
+	if sys != null and sys.has_method("cabinet_port_of"):
+		port = int(sys.call("cabinet_port_of", rx))
+	return _base(id, type_name, n3d).merged({
+		"system": _ref(node_to_id, sys),
+		"port_index": port,
+	})
 
 
 func _media_fields(cart: RetroCartridge) -> Dictionary:
@@ -1226,6 +1241,10 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				rx.pad_name = data.get("pad_name", "")
 				rx.pad_ordinal = int(data.get("pad_ordinal", 0))
 				obj = rx
+			"keyboard_receiver":
+				obj = KEYBOARD_RECEIVER_SCENE.instantiate() as Node3D
+			"mouse_receiver":
+				obj = MOUSE_RECEIVER_SCENE.instantiate() as Node3D
 			"vcr_tape":
 				var tape := TAPE_SCENE.instantiate() as VCRTape
 				tape.video_path = data.get("video_path", "")
