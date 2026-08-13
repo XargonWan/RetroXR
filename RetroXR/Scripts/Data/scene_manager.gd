@@ -62,6 +62,10 @@ var active_slot_id: String:
 ## guard in change_scene() doesn't block them.
 var net_scene_override: bool = false
 
+## Set synchronously when a change is accepted, before the deferred worker has
+## removed the outgoing room. This is distinct from _transitioning, which means
+## the worker itself is running.
+var _transition_pending: bool = false
 var _transitioning: bool = false
 
 
@@ -109,6 +113,15 @@ func room_has_slots(scene_id: String) -> bool:
 	return scene_id in SLOT_ROOMS
 
 
+## True only when `room_id` names a live room that can safely be read or saved.
+## current_scene_id names the requested destination immediately, while the old
+## room is still present and while the loading rig temporarily leaves no current
+## scene at all, so comparing that id alone is not a readiness check.
+func is_room_ready(room_id: String) -> bool:
+	return not _transition_pending and not _transitioning \
+		and current_scene_id == room_id and get_tree().current_scene != null
+
+
 func set_active_slot(slot_id: String, room_id: String = current_scene_id) -> void:
 	active_slots[room_id] = slot_id
 	save_prefs()
@@ -146,6 +159,7 @@ func change_scene(scene_id: String) -> void:
 		var persistence := ScenePersistence.new(leaving)
 		persistence.save_slot(get_tree().current_scene, active_slot(leaving))
 
+	_transition_pending = true
 	current_scene_id = scene_id
 	# Deferred: the call arrives from a button inside the scene about to be freed,
 	# so the caller's stack has to unwind first.
@@ -171,6 +185,7 @@ func _run_transition(path: String, title: String) -> void:
 	if _transitioning:
 		return
 	_transitioning = true
+	_transition_pending = false
 	var tree := get_tree()
 
 	# All of this runs in one deferred call: the room leaves and the loading
@@ -205,6 +220,7 @@ func _run_transition(path: String, title: String) -> void:
 			push_error("SceneManager: failed to load '%s' (status %d)" % [path, status])
 			rig.queue_free()
 			_transitioning = false
+			_transition_pending = false
 			return
 		if not progress.is_empty():
 			rig.set_progress(float(progress[0]))
@@ -228,6 +244,7 @@ func _run_transition(path: String, title: String) -> void:
 	if player != null:
 		player.enter_world()
 	_transitioning = false
+	_transition_pending = false
 	scene_ready.emit(current_scene_id)
 
 

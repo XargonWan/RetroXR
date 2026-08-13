@@ -1297,7 +1297,7 @@ func _on_slot_create(room_id: String) -> void:
 ## Whether the player is standing in the room a slot belongs to.
 func _in_room(room_id: String) -> bool:
 	var sm := get_node_or_null("/root/SceneManager")
-	return sm == null or sm.current_scene_id == room_id
+	return sm != null and sm.is_room_ready(room_id)
 
 
 func _on_slot_rename(slot_id: String, new_name: String, room_id: String) -> void:

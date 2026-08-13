@@ -208,7 +208,7 @@ func _room_title(room_id: String) -> String:
 ## time the current scene's contents are this room's to write.
 func _in_shown_room() -> bool:
 	var sm := _scene_manager()
-	return sm == null or sm.current_scene_id == _slot_room
+	return sm != null and sm.is_room_ready(_slot_room)
 
 
 # ── Cards ─────────────────────────────────────────────────────────────────────
