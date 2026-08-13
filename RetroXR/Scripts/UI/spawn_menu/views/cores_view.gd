@@ -377,10 +377,9 @@ func _add_frontend_section(core_name: String, vbox: VBoxContainer) -> void:
 	# "" is no override — the entry names the global so the page says what this
 	# core will actually get, not merely that it is following something.
 	var choices: Array = AppPrefs.hw_render_choices()
-	var effective_default := AppPrefs.default_hw_render_for(core_name)
 	var default_label := "Default"
 	for choice: Array in choices:
-		if str(choice[1]) == effective_default:
+		if str(choice[1]) == AppPrefs.DEFAULT_HW_RENDER:
 			default_label = "Default (%s)" % str(choice[0])
 	var options: Array = [[default_label, ""]]
 	for choice: Array in choices:
