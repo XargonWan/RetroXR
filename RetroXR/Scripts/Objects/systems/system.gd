@@ -49,6 +49,8 @@ static func has_primitive_model(sysid: String) -> bool:
 var rom_path: String = ""
 var connected_tv: RetroTV = null
 var is_powered_on: bool = false
+## Exact mounted path registered with RomM's process-wide cache guard.
+var _protected_cache_path: String = ""
 
 ## Video-out cables shown/usable. Handhelds default OFF (they have their own
 ## screen — the cables are clutter until wanted); consoles default ON (a TV is
@@ -1262,6 +1264,7 @@ static func _live(v: Variant) -> Object:
 
 ## A freed system must not leave its window materials / touch surfaces on TVs.
 func _exit_tree() -> void:
+	_release_cache_protection()
 	for i in _channels.size():
 		var tv := _live(_channel_tvs[i]) as RetroTV
 		if tv != null:
@@ -1874,6 +1877,7 @@ func power_on() -> void:
 	# holds the session, nobody is signed in, or the system has no RA console —
 	# all of which just mean this machine runs without achievements.
 	_claim_achievements_session()
+	_protect_active_rom()
 	_libretro.StartContent(_bound_screen_target(), resolved_dir, resolved_core, rom_path)
 	_bind_audio_player()
 	is_powered_on = true
@@ -1918,6 +1922,23 @@ func _resolve_content(core: String) -> bool:
 	return true
 
 
+func _protect_active_rom() -> void:
+	if rom_path == _protected_cache_path:
+		return
+	_release_cache_protection()
+	if systemid.is_empty() or rom_path.is_empty():
+		return
+	RommCacheManifest.protect_file(systemid, rom_path)
+	_protected_cache_path = rom_path
+
+
+func _release_cache_protection() -> void:
+	if _protected_cache_path.is_empty():
+		return
+	RommCacheManifest.unprotect_file(systemid, _protected_cache_path)
+	_protected_cache_path = ""
+
+
 ## Power off: stop the running core
 func power_off() -> void:
 	if not is_powered_on:
@@ -1930,6 +1951,7 @@ func power_off() -> void:
 			ctrl.set_rumble(0.0, 0.0)
 	RA.release_session(self)
 	_libretro.StopContent()
+	_release_cache_protection()
 	_audio_player = null
 	_audio_voices = PackedInt32Array()
 	is_powered_on = false
@@ -2045,6 +2067,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 		return null
 	if is_powered_on:
 		_libretro.StopContent()
+		_release_cache_protection()
 		is_powered_on = false
 	for k: Variant in options:
 		_libretro.SetCoreOption(str(k), str(options[k]))
@@ -2061,6 +2084,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_apply_forced_core_options(_resolve_dir(), resolved_core)
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
+	_protect_active_rom()
 	_libretro.StartContent(_bound_screen_target(), _resolve_dir(), resolved_core, rom_path)
 	_bind_audio_player()
 	is_powered_on = true
@@ -2079,11 +2103,14 @@ func net_stop_core() -> void:
 	_libretro.SetNetplayMode(false, 1, 0)
 	if is_powered_on:
 		_libretro.StopContent()
+		_release_cache_protection()
 		_audio_player = null
 		_audio_voices = PackedInt32Array()
 		is_powered_on = false
 		_options_panel.hide_panel()
 		_model.on_power_off()
+	else:
+		_release_cache_protection()
 
 
 ## True on clients while the host runs this system's emulation.
@@ -2711,6 +2738,7 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 		# swap overwrites the file in it (replace_image_index).
 		print("[RetroSystem] Hot swap: image slot %d -> %s" % [_disc_index, rom_path])
 		_request_disk_op(1, rom_path)
+		_protect_active_rom()
 	NetworkManager.report_event(NetObjectSync.EV_CART_INSERT,
 		{"sys": self, "cart": cartridge})
 

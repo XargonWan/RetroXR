@@ -18,6 +18,9 @@ const VERSION := 2
 static var _shared_entries: Dictionary = {}
 static var _file_index: Dictionary = {}  # "system/relative member" -> group key
 static var _rom_index: Dictionary = {}   # "system/rom id" -> group key
+## File keys currently mounted by running systems. Counts matter because two
+## cabinets may run the same downloaded game at once.
+static var _active_files: Dictionary = {}
 var _entries: Dictionary:
 	get:
 		return _shared_entries
@@ -82,6 +85,32 @@ static func relative_path(systemid: String, path: String) -> String:
 	if normalized.begins_with(root.trim_suffix("/") + "/"):
 		return normalized.trim_prefix(root.trim_suffix("/") + "/")
 	return normalized.trim_prefix("./") if not normalized.is_absolute_path() else ""
+
+
+static func protect_file(systemid: String, path: String) -> void:
+	var relative := _safe_relative(relative_path(systemid, path))
+	if relative.is_empty():
+		return
+	var key := make_key(systemid, relative)
+	_active_files[key] = int(_active_files.get(key, 0)) + 1
+
+
+static func unprotect_file(systemid: String, path: String) -> void:
+	var relative := _safe_relative(relative_path(systemid, path))
+	if relative.is_empty():
+		return
+	var key := make_key(systemid, relative)
+	var remaining := int(_active_files.get(key, 0)) - 1
+	if remaining > 0:
+		_active_files[key] = remaining
+	else:
+		_active_files.erase(key)
+
+
+static func protection_count(systemid: String, path: String) -> int:
+	var relative := _safe_relative(relative_path(systemid, path))
+	return int(_active_files.get(make_key(systemid, relative), 0)) \
+		if not relative.is_empty() else 0
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +286,9 @@ func evict_to_fit(needed_bytes: int, budget_bytes: int,
 		protected_keys: Array = []) -> Dictionary:
 	load_manifest()
 	var protected_groups: Dictionary = {}
-	for candidate: String in protected_keys:
+	var candidates := protected_keys.duplicate()
+	candidates.append_array(_active_files.keys())
+	for candidate: String in candidates:
 		if _entries.has(candidate):
 			protected_groups[candidate] = true
 			continue

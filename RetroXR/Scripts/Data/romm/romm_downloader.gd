@@ -36,8 +36,6 @@ var _abort := false
 var _current_rom_id := 0
 ## Queue of pending {entry, systemid} — one download at a time; these are big.
 var _queue: Array[Dictionary] = []
-## Keys the eviction pass must not touch (in use right now).
-var _protected_keys: Array[String] = []
 
 
 func setup(cfg: RommConfig, mf: RommCacheManifest) -> void:
@@ -59,17 +57,6 @@ func current_rom_id() -> int:
 
 func queued_count() -> int:
 	return _queue.size()
-
-
-## Protect a file from eviction (e.g. it is inserted in a powered-on system).
-func protect(systemid: String, fs_name: String) -> void:
-	var key := RommCacheManifest.make_key(systemid, fs_name)
-	if key not in _protected_keys:
-		_protected_keys.append(key)
-
-
-func unprotect(systemid: String, fs_name: String) -> void:
-	_protected_keys.erase(RommCacheManifest.make_key(systemid, fs_name))
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +121,7 @@ func _pump() -> void:
 	# happened, and a 4 GB pull that fails at 90% wastes the whole transfer.
 	if manifest != null and config != null and size > 0:
 		var key := RommCacheManifest.make_key(systemid, fs_name)
-		var prot := _protected_keys.duplicate()
+		var prot: Array[String] = []
 		prot.append(key)
 		var res := manifest.evict_to_fit(size, config.cache_budget_bytes(), prot)
 		if int(res["count"]) > 0:
@@ -760,7 +747,7 @@ func _reserve_cache_on_main(systemid: String, bytes: int, keep: PackedStringArra
 	if cancelled:
 		completed.post()
 		return
-	var prot := _protected_keys.duplicate()
+	var prot: Array[String] = []
 	for fs_name: String in keep:
 		prot.append(RommCacheManifest.make_key(systemid, fs_name))
 	var eviction := manifest.evict_to_fit(bytes, config.cache_budget_bytes(), prot)
@@ -791,7 +778,7 @@ static func _remove_downloaded_members(systemid: String, members: Array) -> void
 func _make_room(systemid: String, bytes: int, keep: PackedStringArray) -> void:
 	if manifest == null or config == null or bytes <= 0:
 		return
-	var prot := _protected_keys.duplicate()
+	var prot: Array[String] = []
 	for fs_name: String in keep:
 		prot.append(RommCacheManifest.make_key(systemid, fs_name))
 	var res := manifest.evict_to_fit(bytes, config.cache_budget_bytes(), prot)
