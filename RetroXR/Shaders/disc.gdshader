@@ -216,8 +216,14 @@ void fragment() {
 		// --- data side ---
 		// Inside the metal there is nothing but substrate, so it is a real window.
 		ALBEDO = mix(poly_color, data_color, metal);
-		METALLIC = mix(0.05, 0.80, metal);
-		ROUGHNESS = mix(0.07, 0.13, metal);
+		// The mirror band and the data area are the same aluminium, so they share an
+		// albedo — what separates them is SMOOTHNESS. The band is unpitted, i.e. an
+		// actual mirror, so it returns the room and little else; the pit structure
+		// next to it scatters light back from every direction at once. In a dim room
+		// that makes the mirror band the DARKER of the two, and giving both the same
+		// roughness was what left it reading as flat bright silver.
+		METALLIC = mix(0.05, mix(0.86, 0.80, pits), metal);
+		ROUGHNESS = mix(0.07, mix(0.035, 0.13, pits), metal);
 		ALPHA = mix(poly_alpha, 1.0, metal);
 		// Tinted by the substrate. The diffracted ray makes the same two-pass trip
 		// through the dye as the specular one, so a PS1's black disc must dim its
