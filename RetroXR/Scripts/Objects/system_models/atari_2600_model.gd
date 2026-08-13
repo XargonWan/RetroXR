@@ -31,12 +31,22 @@ const _AXIS_ON := Vector3(0.0, 0.676, -0.737)
 ## and the gap between those two groups is the throw the shell was drawn with.
 ## 7.07 mm as authored, x0.7881 once the shell is normalised to real-world size.
 const _SWITCH_THROW := 0.005572
-## Deck envelope, measured off this asset.
+## Deck envelope, and the step in its top face.
+##
+## The shell is one 22.7k-triangle lump, so its AABB says nothing about the step —
+## these come from raycasting the body's own mesh straight down on a 5 mm grid:
+##
+##     z -95..-57    raised rear plateau, top 87.6 mm
+##     z -50..-30    the switch trough, floor 47..61 mm
+##     z -25..+105   the ribbed front deck, top 53.2 mm
+##
+## PLATEAU_BACK_Z is set clear of the levers rather than at the plateau's real
+## front face, which slopes down over the 8 mm in between; a box cannot follow a
+## slope, and the half that matters is the one that leaves the trough open.
 const DECK_BOX := Vector3(0.334, 0.089, 0.224)
 const DECK_POS := Vector3(0.0, 0.0441, 0.0)
-## How far a recessed control's touch box stands out of the face it sits under,
-## so a ray meets the control rather than the shell.
-const SWITCH_PROUD := 0.002
+const DECK_STEP_Y := 0.0532
+const PLATEAU_BACK_Z := -0.056
 
 var _glb: Node3D = null
 var _reset_slider: VRSpringReturnSlider = null
@@ -107,38 +117,6 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 		return
 	_setup_power(power_btn)
 	_setup_reset(reset_btn)
-	_raise_switch_box(get_node_or_null("PowerSwitch") as Node3D)
-	_raise_switch_box(get_node_or_null("ResetSwitch") as Node3D)
-
-
-## Carry a switch's touch box up to the top of the deck.
-##
-## Both levers are modelled in the console's lower front step, 8 mm under the top
-## of the box that wraps the whole 2600, so a ray aimed at either one reaches the
-## shell first and the switch cannot be pointed at. The box keeps the cap at its
-## foot and grows upward through the step to stand slightly proud. Only the touch
-## volume moves — the lever rides set_knob_mesh and is untouched.
-func _raise_switch_box(slider: Node3D) -> void:
-	if slider == null:
-		return
-	# By TYPE, not by name: these shapes are added unnamed at runtime, so Godot
-	# calls them @CollisionShape3D@3 and a lookup for "CollisionShape3D" finds
-	# nothing at all.
-	var col: CollisionShape3D = null
-	for child in slider.get_children():
-		col = child as CollisionShape3D
-		if col != null:
-			break
-	if col == null or not (col.shape is BoxShape3D):
-		return
-	var box := col.shape as BoxShape3D
-	var deck_top: float = DECK_POS.y + DECK_BOX.y * 0.5 + SWITCH_PROUD
-	var box_top: float = slider.position.y + col.position.y + box.size.y * 0.5
-	var grow: float = deck_top - box_top
-	if grow <= 0.0:
-		return
-	box.size.y += grow
-	col.position.y += grow * 0.5
 
 
 ## POWER: a latching two-detent slider mounted on the shell's own lever.
@@ -388,9 +366,33 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 ## 0.333 x 0.088 x 0.223 m, which sits on y = 0 — a real heavy sixer is about
 ## 0.337 x 0.095 x 0.222 m.
 func configure_collision(host: Node3D) -> void:
+	var env := AABB(DECK_POS - DECK_BOX * 0.5, DECK_BOX)
+	# Two boxes following the step, so the switch trough between them stays open.
+	# One box over the whole console tops out at the plateau, 10 mm above the
+	# levers, and puts shell in front of all six of them from every angle.
+	var parts := [
+		["", AABB(env.position,
+			Vector3(env.size.x, DECK_STEP_Y - env.position.y, env.size.z))],
+		["RearPlateau", AABB(
+			Vector3(env.position.x, DECK_STEP_Y, env.position.z),
+			Vector3(env.size.x, env.end.y - DECK_STEP_Y, PLATEAU_BACK_Z - env.position.z))],
+	]
 	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
 		var col := host.get_node_or_null(path) as CollisionShape3D
-		if col != null and col.shape is BoxShape3D:
-			col.shape = col.shape.duplicate()
-			(col.shape as BoxShape3D).size = DECK_BOX
-			col.position = DECK_POS
+		if col == null or not (col.shape is BoxShape3D):
+			continue
+		var parent := col.get_parent()
+		for part in parts:
+			var part_name: String = part[0]
+			var a: AABB = part[1]
+			var target := col
+			if not part_name.is_empty():
+				target = parent.get_node_or_null(NodePath(part_name)) as CollisionShape3D
+				if target == null:
+					target = CollisionShape3D.new()
+					target.name = part_name
+					parent.add_child(target)
+			var shape := BoxShape3D.new()
+			shape.size = a.size
+			target.shape = shape
+			target.position = a.get_center()

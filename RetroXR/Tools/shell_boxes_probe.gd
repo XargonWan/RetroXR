@@ -22,7 +22,7 @@ const SHOTS := [
 	{
 		"model": "virtual_boy_primitive", "platform": "virtual_boy",
 		"controls": ["PowerButton", "ResetButton", "VolumeSlider"],
-		"caption": "VIRTUAL BOY — pointer body was ONE slab round the whole stand",
+		"caption": "VIRTUAL BOY — pointer body is visor + column + base, not one slab",
 		"close_caption": "START/STOP sat 12 mm inside it, beside the column",
 		"focus": Vector3(0, 0.18, 0), "dist": 0.80, "pitch": 12.0,
 		"close_focus": Vector3(0, 0.028, 0.030), "close_dist": 0.36,
@@ -31,8 +31,8 @@ const SHOTS := [
 	{
 		"model": "atari_2600", "platform": "atari_2600",
 		"controls": ["PowerSwitch", "ResetSwitch"],
-		"caption": "ATARI 2600 — both levers sit in the lower front step",
-		"close_caption": "Their boxes now rise through the step and stand proud",
+		"caption": "ATARI 2600 — two boxes now follow the step in the top face",
+		"close_caption": "The trough between them is open; the levers need no extension",
 		"focus": Vector3(0, 0.045, 0), "dist": 0.62, "pitch": 20.0,
 		"close_focus": Vector3(0, 0.076, -0.020), "close_dist": 0.46,
 		"close_yaw": 8.0, "close_pitch": 9.0,
