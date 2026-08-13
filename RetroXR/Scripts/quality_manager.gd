@@ -115,6 +115,12 @@ const RENDER_SCALE_MAX := 1.5
 ## stack (Godot 4.7 + vendors 5.1 + 4x MSAA + multiview / Quest 3) — see 21351c5.
 const EYE_BUFFER_SCALE_MIN := 0.7
 const EYE_BUFFER_SCALE_MAX := 1.4
+## Where a saved rate does not say otherwise. The headset takes the rate a heavy
+## room can hold: at 120 Hz the 8.3 ms budget goes over on both CPU and GPU, and a
+## missed frame is reprojected and repeated, so the higher rate buys stale frames
+## rather than smoothness. A PCVR runtime drives a display whose rate it already
+## knows, so it takes the highest one offered.
+const DISPLAY_RATE_HEADSET := 72.0
 ## The Quest 3 panel edge over the runtime's recommendation, 2064/1680. The
 ## default, and the highest value that buys anything: past the panel the extra
 ## pixels are resolved away by the compositor.
@@ -131,6 +137,8 @@ var shadow_quality: ShadowQuality = ShadowQuality.OFF
 var ao_quality: AOQuality = AOQuality.OFF
 var render_scale: float = 1.0
 var eye_buffer_scale: float = EYE_BUFFER_PANEL
+## Requested XR display refresh rate. 0 means the platform default above.
+var display_rate: float = 0.0
 ## Desktop window state. Empty resolution means "leave the window where it is".
 var window_mode: String = ""
 var resolution: String = ""
@@ -286,6 +294,67 @@ func apply_eye_buffer_scale() -> void:
 		return
 	var xr := XRServer.find_interface("OpenXR")
 	xr.set("render_target_size_multiplier", eye_buffer_scale)
+
+
+## The rates this runtime will accept, straight from xrEnumerateDisplayRefreshRatesFB.
+## Never a fixed list: a Quest enumerates 120 Hz only once it has been enabled in
+## the headset's own display settings, and a runtime without the extension returns
+## nothing at all — asking for a rate outside the list is refused.
+func available_display_rates() -> Array:
+	var xr := XRServer.find_interface("OpenXR")
+	if xr == null or not xr.is_initialized():
+		return []
+	var rates: Array = xr.call("get_available_display_refresh_rates")
+	return rates
+
+
+func supports_display_rate() -> bool:
+	return available_display_rates().size() > 1
+
+
+## The rate that will actually be asked for: the saved one, or the platform
+## default, snapped to the nearest the runtime offers so the menu row can tick it.
+func effective_display_rate() -> float:
+	var rates := available_display_rates()
+	if rates.is_empty():
+		return 0.0
+	var target := display_rate
+	if target <= 0.0:
+		target = DISPLAY_RATE_HEADSET
+		if _desktop:
+			target = float(rates.max())
+	var best: float = rates[0]
+	for rate: float in rates:
+		if absf(rate - target) < absf(best - target):
+			best = rate
+	return best
+
+
+func set_display_rate(rate: float) -> void:
+	display_rate = maxf(rate, 0.0)
+	apply_display_rate()
+	save_prefs()
+
+
+## Ask the runtime for a refresh rate, at startup or mid-session.
+##
+## Mid-session is what the extension is for: the call is a bare
+## xrRequestDisplayRefreshRateFB on the running session, which is legal at any
+## point in it and tears nothing down. A refused rate only logs.
+##
+## There is no separate frame-rate target to keep in step — xr_init.gd disables
+## vsync and the runtime paces frames through xrWaitFrame, so this IS the target.
+## Engine.physics_ticks_per_second deliberately does NOT follow it: the rope
+## solver is tuned and regression-tested at a fixed tick rate, and moving it under
+## every cable in the room is far more than this setting is worth.
+func apply_display_rate() -> void:
+	var best := effective_display_rate()
+	if best <= 0.0:
+		return
+	var xr := XRServer.find_interface("OpenXR")
+	xr.call("set_display_refresh_rate", best)
+	print("QualityManager: display refresh rate %s Hz (available: %s)" % [
+		best, available_display_rates()])
 
 
 ## Window mode and resolution were the only GRAPHICS rows that reset every launch,
@@ -503,6 +572,9 @@ func _load_prefs() -> void:
 	# the file back must not strip the headset's setting out of it.
 	eye_buffer_scale = clampf(_prefs_float(data, "eye_buffer_scale", eye_buffer_scale),
 		EYE_BUFFER_SCALE_MIN, EYE_BUFFER_SCALE_MAX)
+	# Kept as saved rather than validated here: which rates exist is the runtime's
+	# to say, and effective_display_rate() snaps to the nearest it offers.
+	display_rate = maxf(_prefs_float(data, "display_rate", display_rate), 0.0)
 
 
 func save_prefs() -> void:
@@ -520,6 +592,7 @@ func save_prefs() -> void:
 		"ao_quality": int(ao_quality),
 		"render_scale": render_scale,
 		"eye_buffer_scale": eye_buffer_scale,
+		"display_rate": display_rate,
 	}))
 	file.close()
 

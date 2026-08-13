@@ -197,6 +197,24 @@ func _build(vr_mode: bool) -> void:
 			+ "the centre of view; 123% matches the panel and is sharper where you look, for "
 			+ "real frame time. The picture blinks as it resizes."))
 
+	# Built from what the runtime enumerates, never a fixed list — a rate outside
+	# it is refused, and 120 Hz appears only once the headset's own display setting
+	# allows it. One rate on offer is no choice, so the row hides itself.
+	if QualityManager.supports_display_rate():
+		var rate_opts: Array = []
+		for rate: float in QualityManager.available_display_rates():
+			rate_opts.append(["%d Hz" % int(round(rate)), rate])
+		var rate_opt := VRDropdown.create("Refresh Rate", rate_opts,
+			QualityManager.effective_display_rate(), rate_opts.size(), Vector2(95, 52), 20)
+		rate_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_display_rate(float(id)))
+		vbox.add_child(rate_opt)
+
+		vbox.add_child(MenuStyle.hint("How many times a second the headset draws, in Hz. Higher "
+			+ "is smoother only while the frame time keeps up; where it cannot, the headset "
+			+ "repeats and reprojects frames instead. Watch the performance overlay's frame row "
+			+ "after changing it."))
+
 	_msaa_opt = VRDropdown.create("Anti-Aliasing",
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
 		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
