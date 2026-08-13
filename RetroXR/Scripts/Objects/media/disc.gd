@@ -75,6 +75,11 @@ func _apply_system_size() -> void:
 			mat.set_shader_parameter("poly_color", finish["poly"])
 			mat.set_shader_parameter("poly_alpha", finish["alpha"])
 			mat.set_shader_parameter("track_pitch", finish["pitch"])
+			# A DVD's finer pitch spreads the orders apart until the fourth is
+			# unreachable — see irid_orders in the shader. Three is lossless
+			# (verified byte-identical at grazing); two is not.
+			mat.set_shader_parameter("irid_orders",
+				3 if float(finish["pitch"]) < 1.0 else 4)
 			var zones := MediaDimensions.disc_zones(systemid, finish["pitch"])
 			mat.set_shader_parameter("r_metal_start", zones.x)
 			mat.set_shader_parameter("r_data_start", zones.y)

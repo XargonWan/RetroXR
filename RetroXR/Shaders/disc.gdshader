@@ -91,6 +91,18 @@ uniform sampler2D label_tex : source_color, hint_default_transparent,
 // shows; at 0.74 (DVD) one does, giving the single broad sweep a DVD shows. The
 // difference between a PS1 disc and a Wii disc is this one number.
 uniform float track_pitch = 1.6;
+// How many diffraction orders to sum. Not a quality dial — it is the number that
+// is actually REACHABLE, and it differs by format because the order spacing scales
+// with pitch. u = |L.g + V.g| cannot exceed 2, so with the spectral support running
+// 0.370..0.705 um:
+//   CD  1.6 um  — m=1..4 reach u 0.231..1.762. Four is right.
+//   DVD 0.74 um — m=4 needs u >= 2.000 and is unreachable ENTIRELY, so a DVD
+//                 summing four orders spends a quarter of the loop on nothing.
+// Verified by rendering, not just arithmetic: at a grazing view a DVD at THREE
+// orders is byte-identical to four, while dropping to two moves 0.57% of its
+// pixels by up to 65/255 — the orders SUM, so m=3 still tints where m=2 already
+// covers. Three is the lossless setting; two is not. disc.gd sets it from pitch.
+uniform int irid_orders : hint_range(1, 4) = 4;
 uniform float irid_strength : hint_range(0.0, 4.0) = 0.5;
 // The label side's unprinted lacquer shows a much fainter rainbow of its own.
 uniform float irid_label : hint_range(0.0, 1.0) = 0.10;
@@ -140,6 +152,12 @@ float bump(float x, float mu, float hw) {
 // Wavelength in MICROMETRES to linear RGB. Three lobes, plus a second red term for
 // the violet end of the spectrum — without it short wavelengths come out blue
 // instead of purple, which is the giveaway of a cheap rainbow.
+//
+// That fourth lobe is 25% of this function and was a candidate for removal, but
+// measured against a grazing render it moved 8% of the disc's pixels by up to
+// 122/255: the magenta bands collapse to plain blue. Kept, because on-device
+// measurement put a held disc at ~0.5 ms of a 13.9 ms budget — the headroom is
+// there and this is the one saving that costs looks.
 vec3 spectral(float w, float blur) {
 	float k = spectral_width;
 	return vec3(
@@ -163,19 +181,21 @@ vec3 spectral(float w, float blur) {
 // That is why the specular streak stays white and the spectrum appears either
 // side of it, as on a real disc.
 //
-// Four orders: |L.g + V.g| reaches ~1.4 at grazing angles, and a CD's third order
-// only covers up to 1.41, so stopping at three cuts to black exactly where the
-// effect is strongest.
-vec3 grating(vec3 L, vec3 V, vec3 g, float blur) {
+// The order count comes in per call: the lit term wants every reachable order
+// (see irid_orders), while the ambient floor below only needs the first.
+vec3 grating(vec3 L, vec3 V, vec3 g, float blur, int orders) {
 	float u = abs(dot(L, g) + dot(V, g));
 	vec3 acc = vec3(0.0);
-	for (int m = 1; m <= 4; m++) {
+	for (int m = 1; m <= orders; m++) {
 		float fm = float(m);
 		// Higher orders are dimmer and, being compressed in wavelength, blur more.
 		acc += spectral(track_pitch * u / fm, blur / fm) / fm;
 	}
-	// Normalise by sum(1/m) over the four orders, so adding an order changes where
-	// colour appears rather than how bright the disc is.
+	// Normalised by the FOUR-order sum(1/m) whatever the count actually summed.
+	// Deliberate: normalising by the orders present would rescale the survivors
+	// (2.08/1.5 = +39% for a two-order DVD) and change how the disc looks, when
+	// the whole point is to stop computing terms that contribute nothing. Dropping
+	// an order must SUBTRACT its energy, not redistribute it.
 	return acc * (1.0 / 2.0833);
 }
 
@@ -258,7 +278,7 @@ void fragment() {
 	// View-only floor, so a disc never goes completely dead in a room whose lights
 	// happen to miss the grating condition. L = V is the retroreflective case.
 	if (dot(v_irid, vec3(1.0)) > 0.003) {
-		EMISSION += grating(V, V, g, v_blur) * v_irid * irid_ambient;
+		EMISSION += grating(V, V, g, v_blur, 1) * v_irid * irid_ambient;
 	}
 }
 
@@ -292,6 +312,6 @@ void light() {
 	// tray stays dark rather than glowing.
 	if (dot(v_irid, vec3(1.0)) > 0.003 && dot(N, V) > 0.0) {
 		SPECULAR_LIGHT += radiance * ndl * v_irid
-			* grating(L, V, normalize(v_radial), v_blur);
+			* grating(L, V, normalize(v_radial), v_blur, irid_orders);
 	}
 }
