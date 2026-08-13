@@ -181,14 +181,23 @@ func change_scene(scene_id: String) -> void:
 ## button inside the outgoing room can unwind safely, but no second caller gets
 ## a window in which it can start another worker or rewrite this one's identity.
 func _begin_transition(scene_id: String, net_client: bool = false) -> void:
+	# Read before the two flags below move, because both feed the answer.
+	var leaving := current_scene_id
+	var leaving_restored := is_scene_content_ready(leaving)
 	_transitioning = true
 	_content_ready_scene_id = ""
 
 	# Auto-save the room being left, into its own slot (skip if clean — it's
 	# readonly; skip on clients — the shared world is the host's, not ours to save).
-	var leaving := current_scene_id
+	#
+	# Only a room whose own restore FINISHED may be written back. A queued
+	# destination starts the moment scene_ready returns, and the arriving room's
+	# restore is still suspended at that point: it has cleared the room and not yet
+	# rebuilt it. Saving there put a 24-object arcade back as 1 object — the player
+	# double-tapping a room card is all it takes. The manual Save button has been
+	# gated on the same question (is_room_ready) since it was added.
 	if room_has_slots(leaving) and auto_save_on_switch and active_slot(leaving) != "clean" \
-			and not net_client and get_tree().current_scene != null:
+			and not net_client and leaving_restored and get_tree().current_scene != null:
 		var persistence := ScenePersistence.new(leaving)
 		persistence.save_slot(get_tree().current_scene, active_slot(leaving))
 

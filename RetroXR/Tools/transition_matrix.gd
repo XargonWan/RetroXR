@@ -170,7 +170,10 @@ func _phase_adversarial() -> void:
 	_check("interrupted transition")
 
 	await _mark("leave a room while a slot restore is running")
-	var slot: String = SceneManager.active_slot_id
+	# The ARCADE's slot, named rather than taken from active_slot_id: slots are per
+	# room, and this step runs while standing in a room that keeps none — which read
+	# "clean" and skipped both restore cases without saying so.
+	var slot: String = SceneManager.active_slot("arcade")
 	if slot != "clean":
 		ScenePersistence.new().load_slot_async(tree.current_scene, slot)
 		await tree.create_timer(0.35).timeout
