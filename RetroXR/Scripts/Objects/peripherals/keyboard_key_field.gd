@@ -2,14 +2,17 @@
 ## reticle / VR laser.
 ##
 ## Exists as a separate Area3D rather than as methods on the board because
-## InteractionResolver._classify_pointer_hit tests `is XRToolsPickable` BEFORE
+## InteractionResolver._classify tests `is XRToolsPickable` BEFORE
 ## `has_method("pointer_event")`. RetroKeyboard *is* an XRToolsPickable, so a
 ## pointer_event on the board itself would never fire — every click would grab the
 ## keyboard instead. Hit as its own area it classifies as KIND_POINTER
 ## (can_grab = false), which both routes the press here and blocks the pickup.
 ##
-## It also has to sit on POINTABLE_LAYER so InteractionResolver._is_pointer_interactive
-## lets it win over the board's enclosing grab body, whose surface is nearer.
+## It also has to sit on POINTABLE_LAYER, and it sits INSIDE the board's own grab
+## body — measured at 1 mm behind its surface. The resolver walks front to back,
+## so the board is hit first; what hands the press here instead is
+## InteractionResolver.ENCLOSURE_DEPTH, which lets a control win from up to 50 mm
+## inside the thing housing it. A field further in than that would stop working.
 ##
 ## The individual caps have no colliders of their own — they are bare meshes —
 ## so this is one box over the whole grid and the board resolves which key was hit

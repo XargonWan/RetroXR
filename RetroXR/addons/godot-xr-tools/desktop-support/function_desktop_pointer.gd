@@ -524,31 +524,13 @@ func resolve_interaction_target() -> InteractionTarget:
 		resolved_target = InteractionTargetType.none()
 		return resolved_target
 
-	var pickup_ray := _get_pickup_ray()
-	var pickup_from := ray_cast.global_transform.origin
-	var pickup_to := ray_cast.to_global(ray_cast.target_position)
-	var pickup_mask := 0
-	var pickup_collide_bodies := false
-	var pickup_collide_areas := false
-	if is_instance_valid(pickup_ray):
-		pickup_from = pickup_ray.global_transform.origin
-		pickup_to = pickup_ray.to_global(pickup_ray.target_position)
-		pickup_mask = pickup_ray.collision_mask
-		pickup_collide_bodies = pickup_ray.collide_with_bodies
-		pickup_collide_areas = pickup_ray.collide_with_areas
-
+	# One ray, the one the laser draws. The resolver queries its own union mask —
+	# the pointer's own collision_mask still drives $RayCast, which is now only
+	# here for its endpoints.
 	resolved_target = InteractionResolver.resolve_desktop(
 		get_world_3d().direct_space_state,
 		ray_cast.global_transform.origin,
 		ray_cast.to_global(ray_cast.target_position),
-		collision_mask,
-		collide_with_bodies,
-		collide_with_areas,
-		pickup_from,
-		pickup_to,
-		pickup_mask,
-		pickup_collide_bodies,
-		pickup_collide_areas,
 		_get_desktop_grabber())
 	return resolved_target
 
@@ -557,13 +539,6 @@ func get_resolved_target() -> InteractionTarget:
 	if resolved_target == null:
 		return InteractionTargetType.none()
 	return resolved_target
-
-
-func _get_pickup_ray() -> RayCast3D:
-	var parent := get_parent()
-	if not parent:
-		return null
-	return parent.get_node_or_null("PickupRay") as RayCast3D
 
 
 func _get_desktop_grabber() -> Node3D:

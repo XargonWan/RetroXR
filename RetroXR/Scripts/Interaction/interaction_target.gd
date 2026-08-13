@@ -16,7 +16,6 @@ var highlight_node: Node3D = null
 var pointer_event_target: Node3D = null
 var position: Vector3 = Vector3.ZERO
 var distance: float = INF
-var priority: int = 0
 var can_activate: bool = false
 var can_grab: bool = false
 
@@ -30,7 +29,3 @@ func is_valid() -> bool:
 		is_instance_valid(action_node) or
 		is_instance_valid(highlight_node) or
 		is_instance_valid(pointer_event_target))
-
-
-func blocks_pickup() -> bool:
-	return is_valid() and not can_grab

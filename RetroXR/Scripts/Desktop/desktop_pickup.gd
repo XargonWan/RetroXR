@@ -33,9 +33,6 @@ extends Node3D
 
 const InteractionTargetType := preload("res://Scripts/Interaction/interaction_target.gd")
 
-## Collision layer 3 ("Pickable") = bit 2 = value 4
-const PICKABLE_MASK := 4
-
 ## Scroll step in metres
 const SCROLL_STEP := 0.075
 const MIN_DIST    := 0.15
@@ -57,7 +54,6 @@ const FPS_SNAP_COMPANION_LOCAL := Transform3D(Basis.IDENTITY, Vector3(-0.20, -0.
 var _held_object : XRToolsPickable = null
 var _grab_dist   : float = 1.5
 
-var _raycast     : RayCast3D = null
 var _hand_pivot  : Node3D    = null
 var _desktop_pointer : XRToolsDesktopFunctionPointer = null
 
@@ -69,16 +65,6 @@ var _hovered_target : Node3D = null
 
 
 func _ready() -> void:
-	# Pickup raycast aimed straight ahead (-Z) from the camera
-	_raycast = RayCast3D.new()
-	_raycast.name = "PickupRay"
-	_raycast.collision_mask      = PICKABLE_MASK
-	_raycast.collide_with_bodies = true
-	_raycast.collide_with_areas  = true
-	_raycast.target_position     = Vector3(0, 0, -MAX_DIST)
-	_raycast.enabled             = true
-	add_child(_raycast)
-
 	# Invisible pivot that the grabbed object follows.
 	# Uses DesktopHandPivot script to satisfy XRToolsPickable's grabber interface
 	# (picked_up_ranged property + drop_object() callback).
@@ -213,6 +199,10 @@ func _try_grab() -> void:
 
 	var interaction := _resolve_interaction_target(true)
 	if not interaction.can_grab or not is_instance_valid(interaction.action_node):
+		return
+	# The resolver now runs down the POINTER's ray, which reaches twice as far as
+	# the pickup ray it replaced. Out of arm's reach is out of reach.
+	if interaction.distance > MAX_DIST:
 		return
 
 	_grab_target(interaction.action_node)
