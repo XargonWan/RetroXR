@@ -30,6 +30,17 @@ friction = 0.9
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.238, 0.009, 0.023)
 
+; What a pointer can hit. The body box is on 3:Pickable, which the DESKTOP ray
+; queries and the VR laser does not: XRToolsFunctionPointer masks 21 and 23 only,
+; and XRToolsFunctionPickup._resolve_pickable then takes the collider or its
+; direct parent. With nothing on 21 the bar was simply invisible to the laser and
+; could not be picked up in VR at all, while working perfectly on the desktop.
+;
+; A shade bigger than the body on the two thin axes. The bar is 9 mm high, which
+; is a hard thing to put a beam on across a room.
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.242, 0.015, 0.027)
+
 ; TWO boxes, not one. The bar is silver for the 18 mm nearest the wire and black for
 ; the 5 mm facing the player — the black strip is the window the LEDs shine through,
 ; and it is the only part of this object anyone ever looks at head on.
@@ -113,6 +124,13 @@ surface_material_override/0 = SubResource("Mat_led")
 ; started in the right place and the wire still dropped straight down.
 [node name="CableAttachPoint" type="Node3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0.0115)
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
