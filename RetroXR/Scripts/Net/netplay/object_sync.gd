@@ -76,6 +76,8 @@ var _applying := false               # applying remote state — suppress echo
 var _xform_accum := 0.0
 var _held_accum := 0.0
 var _vcr_accum := 0.0                # host heartbeat for VCR drift sync (M5)
+var _world_ready := false
+var _pending_snapshot_peers: Dictionary = {}
 
 const VCR_HEARTBEAT := 2.0
 
@@ -103,8 +105,12 @@ func node_for_id(net_id: int) -> Node:
 ## Called whenever the world is (re)ready: session start and after scene changes.
 func on_world_ready() -> void:
 	_applying = false
+	_world_ready = true
 	if _nm.is_host():
 		_register_existing()
+		for peer_id: Variant in _pending_snapshot_peers:
+			_send_snapshot(int(peer_id))
+		_pending_snapshot_peers.clear()
 	elif _nm.is_client():
 		_request_snapshot.rpc_id(1)
 
@@ -112,6 +118,8 @@ func on_world_ready() -> void:
 func reset_for_scene_change() -> void:
 	# Scene teardown frees everything — suppress despawn/echo storms.
 	_applying = true
+	_world_ready = false
+	_pending_snapshot_peers.clear()
 	_registry.clear()
 	_held_by_me.clear()
 	_remote_held.clear()
@@ -213,6 +221,14 @@ func _broadcast_spawn(node: Node) -> void:
 func _request_snapshot() -> void:
 	if not _nm.is_host():
 		return
+	var peer_id := multiplayer.get_remote_sender_id()
+	if not _world_ready or _applying or _nm._resolve_world_root() == null:
+		_pending_snapshot_peers[peer_id] = true
+		return
+	_send_snapshot(peer_id)
+
+
+func _send_snapshot(peer_id: int) -> void:
 	_register_existing()
 	var entries: Array = []
 	var node_to_id := {}
@@ -223,7 +239,7 @@ func _request_snapshot() -> void:
 		if not entry.is_empty():
 			_augment_file_fields(_registry[id], entry)
 			entries.append(entry)
-	_world_snapshot.rpc_id(multiplayer.get_remote_sender_id(), entries)
+	_world_snapshot.rpc_id(peer_id, entries)
 
 
 @rpc("authority", "call_remote", "reliable", 0)

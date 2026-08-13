@@ -235,25 +235,41 @@ func _connect_menu_signals() -> void:
 	# No initial call for the performance HUD: it is not persisted, so it is off
 	# at every launch and the node is built by the first switch that asks for it.
 
-	# Auto-load the room's last active slot on startup
-	_autoload_slot()
+	# Auto-load the room's last active slot on startup, then publish the same
+	# post-restore boundary used after later room transitions.
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm != null:
+		var room: String = sm.current_scene_id
+		await _autoload_slot(room)
+		await get_tree().process_frame
+		sm.notify_scene_content_ready(room)
 
 
 ## The rig is carried from room to room, so _deferred_setup and
 ## _connect_menu_signals never run a second time — everything here that depends
 ## on WHICH room we are in has to be re-applied when a new one is ready.
-func _on_scene_ready(_scene_id: String) -> void:
+func _on_scene_ready(scene_id: String) -> void:
 	_apply_world_scale(_world_scale)
-	_autoload_slot()
-
-
-func _autoload_slot() -> void:
+	await _autoload_slot(scene_id)
+	# SceneManager keeps the transition claimed while emitting scene_ready so
+	# callbacks cannot re-enter it. Publish content readiness on the next frame,
+	# after that claim is released.
+	await get_tree().process_frame
 	var sm := get_node_or_null("/root/SceneManager")
-	if sm == null or not sm.room_has_slots(sm.current_scene_id):
+	if sm != null:
+		sm.notify_scene_content_ready(scene_id)
+
+
+func _autoload_slot(room: String) -> void:
+	var sm := get_node_or_null("/root/SceneManager")
+	if sm == null or sm.current_scene_id != room or not sm.room_has_slots(room):
 		return
-	var room: String = sm.current_scene_id
+	# The host's snapshot is authoritative. Loading this machine's own slot first
+	# would briefly build a different world and can race the incoming snapshot.
+	if has_node("/root/NetworkManager") and NetworkManager.is_client():
+		return
 	var slot: String = sm.active_slot(room)
-	if slot != "clean":
+	if slot != "clean" and get_tree().current_scene != null:
 		await ScenePersistence.new(room).load_slot_async(get_tree().current_scene, slot)
 
 

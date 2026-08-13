@@ -93,6 +93,7 @@ func _ready() -> void:
 	# React to host-driven scene switches (rebuild avatars in the new scene).
 	if has_node("/root/SceneManager"):
 		SceneManager.scene_changed.connect(_on_scene_changed)
+		SceneManager.scene_content_ready.connect(_on_scene_content_ready)
 	call_deferred("_parse_cmdline")
 
 
@@ -462,8 +463,7 @@ func _accept(roster: Dictionary, scene_id: String) -> void:
 	_accepted = true
 	if has_node("/root/SceneManager") and not scene_id.is_empty() \
 			and scene_id != SceneManager.current_scene_id:
-		# Follow the host's scene; avatars are rebuilt on scene_changed.
-		SceneManager.change_scene(scene_id)
+		_follow_host_scene(scene_id)
 	else:
 		_setup_world()
 	status_changed.emit("Connected — %d player(s)" % peers.size())
@@ -494,9 +494,13 @@ func _peer_left_msg(id: int) -> void:
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _scene_change(scene_id: String) -> void:
 	if has_node("/root/SceneManager"):
-		SceneManager.net_scene_override = true
-		SceneManager.change_scene(scene_id)
-		SceneManager.net_scene_override = false
+		_follow_host_scene(scene_id)
+
+
+func _follow_host_scene(scene_id: String) -> void:
+	SceneManager.net_scene_override = true
+	SceneManager.change_scene(scene_id)
+	SceneManager.net_scene_override = false
 
 
 # ── Pose sync ─────────────────────────────────────────────────────────────────
@@ -563,6 +567,12 @@ func _resolve_world_root() -> Node:
 
 
 func _setup_world() -> void:
+	# Probes inject world_root. The real scene tree waits until its slot restore is
+	# complete, otherwise the host can answer a snapshot request with an empty or
+	# half-restored room.
+	if world_root == null and has_node("/root/SceneManager") \
+			and not SceneManager.is_scene_content_ready(SceneManager.current_scene_id):
+		return
 	_teardown_world()
 	var root := _resolve_world_root()
 	if root == null:
@@ -626,9 +636,15 @@ func _attach_broadcaster() -> void:
 func _on_scene_changed(scene_id: String) -> void:
 	if not _active or not _accepted:
 		return
-	# Host propagates the switch; everyone rebuilds avatars in the new scene.
+	_object_sync.reset_for_scene_change()
+	_teardown_world()
+	world_root = null
+	# Host propagates the switch only after its old registry has been silenced.
 	if is_host():
 		_scene_change.rpc(scene_id)
-	_object_sync.reset_for_scene_change()
-	world_root = null
-	call_deferred("_setup_world")
+
+
+func _on_scene_content_ready(scene_id: String) -> void:
+	if not _active or not _accepted or scene_id != SceneManager.current_scene_id:
+		return
+	_setup_world()

@@ -11,6 +11,10 @@ signal scene_changed(scene_id: String)
 ## current_scene) can run. scene_changed fires much earlier, when the id is
 ## claimed and the old room is still up.
 signal scene_ready(scene_id: String)
+## The room's saved objects have also finished restoring (or were deliberately
+## skipped on a multiplayer client). Systems that snapshot world contents use
+## this later boundary rather than scene_ready.
+signal scene_content_ready(scene_id: String)
 signal active_slot_changed(slot_id: String)
 
 const SCENE_PATHS := {
@@ -66,6 +70,7 @@ var _transitioning: bool = false
 ## Last valid request received while a transition is running. Only the newest
 ## destination matters; it starts after the current room is fully installed.
 var _pending_scene_id: String = ""
+var _content_ready_scene_id: String = ""
 
 
 func _ready() -> void:
@@ -121,6 +126,19 @@ func is_room_ready(room_id: String) -> bool:
 		and get_tree().current_scene != null
 
 
+func is_scene_content_ready(scene_id: String) -> bool:
+	return is_room_ready(scene_id) and _content_ready_scene_id == scene_id
+
+
+## Called by the carried SpawnMenuController after any slot restore completes.
+## Ignore stale completions from a room that was left while its restore yielded.
+func notify_scene_content_ready(scene_id: String) -> void:
+	if not is_room_ready(scene_id):
+		return
+	_content_ready_scene_id = scene_id
+	scene_content_ready.emit(scene_id)
+
+
 func set_active_slot(slot_id: String, room_id: String = current_scene_id) -> void:
 	active_slots[room_id] = slot_id
 	save_prefs()
@@ -164,6 +182,7 @@ func change_scene(scene_id: String) -> void:
 ## a window in which it can start another worker or rewrite this one's identity.
 func _begin_transition(scene_id: String, net_client: bool = false) -> void:
 	_transitioning = true
+	_content_ready_scene_id = ""
 
 	# Auto-save the room being left, into its own slot (skip if clean — it's
 	# readonly; skip on clients — the shared world is the host's, not ours to save).
