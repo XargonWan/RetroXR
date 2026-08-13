@@ -31,8 +31,8 @@ const SHOTS := [
 	{
 		"model": "atari_2600", "platform": "atari_2600",
 		"controls": ["PowerSwitch", "ResetSwitch"],
-		"caption": "ATARI 2600 — two boxes now follow the step in the top face",
-		"close_caption": "The trough between them is open; the levers need no extension",
+		"caption": "ATARI 2600 — deck box, plateau box, and a wedge for the slope",
+		"close_caption": "The levers stand in the open trough at their own size",
 		"focus": Vector3(0, 0.045, 0), "dist": 0.62, "pitch": 20.0,
 		"close_focus": Vector3(0, 0.076, -0.020), "close_dist": 0.46,
 		"close_yaw": 8.0, "close_pitch": 9.0,

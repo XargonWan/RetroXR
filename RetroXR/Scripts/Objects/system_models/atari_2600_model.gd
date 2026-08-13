@@ -40,13 +40,16 @@ const _SWITCH_THROW := 0.005572
 ##     z -50..-30    the switch trough, floor 47..61 mm
 ##     z -25..+105   the ribbed front deck, top 53.2 mm
 ##
-## PLATEAU_BACK_Z is set clear of the levers rather than at the plateau's real
-## front face, which slopes down over the 8 mm in between; a box cannot follow a
-## slope, and the half that matters is the one that leaves the trough open.
+## The plateau does not end in a wall — it slopes down to the trough over the
+## 6 mm between PLATEAU_BACK_Z and PLATEAU_TOE_Z, 87.6 mm to 76.9 mm. A box
+## cannot follow that, so the slope is its own ConvexPolygonShape3D wedge sitting
+## on the front deck, and the levers still stand clear in front of its toe.
 const DECK_BOX := Vector3(0.334, 0.089, 0.224)
 const DECK_POS := Vector3(0.0, 0.0441, 0.0)
 const DECK_STEP_Y := 0.0532
 const PLATEAU_BACK_Z := -0.056
+const PLATEAU_TOE_Z := -0.050
+const PLATEAU_TOE_Y := 0.0769
 
 var _glb: Node3D = null
 var _reset_slider: VRSpringReturnSlider = null
@@ -396,3 +399,23 @@ func configure_collision(host: Node3D) -> void:
 			shape.size = a.size
 			target.shape = shape
 			target.position = a.get_center()
+		_build_plateau_toe(parent, env)
+
+
+## The plateau's sloping front, as a trapezoidal prism across the full width.
+func _build_plateau_toe(parent: Node, env: AABB) -> void:
+	var toe := parent.get_node_or_null(NodePath("PlateauToe")) as CollisionShape3D
+	if toe == null:
+		toe = CollisionShape3D.new()
+		toe.name = "PlateauToe"
+		parent.add_child(toe)
+	var points := PackedVector3Array()
+	for x in [env.position.x, env.end.x]:
+		points.append(Vector3(x, env.end.y, PLATEAU_BACK_Z))
+		points.append(Vector3(x, PLATEAU_TOE_Y, PLATEAU_TOE_Z))
+		points.append(Vector3(x, DECK_STEP_Y, PLATEAU_BACK_Z))
+		points.append(Vector3(x, DECK_STEP_Y, PLATEAU_TOE_Z))
+	var hull := ConvexPolygonShape3D.new()
+	hull.points = points
+	toe.shape = hull
+	toe.position = Vector3.ZERO

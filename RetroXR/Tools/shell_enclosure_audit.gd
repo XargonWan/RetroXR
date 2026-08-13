@@ -244,33 +244,54 @@ func _shapes_of(body: CollisionObject3D, inv: Transform3D) -> Array:
 			var shape := body.shape_owner_get_shape(owner_id, i)
 			if shape == null:
 				continue
-			var local := body.global_transform * body.shape_owner_get_transform(owner_id)
-			var extent := _extent_of(shape)
-			if extent == Vector3.ZERO:
+			var local := _local_aabb(shape)
+			if local.size == Vector3.ZERO:
 				continue
-			var t := inv * local
-			var centre := t.origin
-			# Conservative AABB of the (possibly rotated) box in host space.
-			var half := (t.basis * extent).abs() \
-				+ (t.basis * Vector3(extent.x, -extent.y, extent.z)).abs()
-			half *= 0.5
-			out.append({"aabb": AABB(centre - half, half * 2.0)})
+			var t: Transform3D = inv * body.global_transform 				* body.shape_owner_get_transform(owner_id)
+			out.append({"aabb": _xform_aabb(t, local)})
 	return out
 
 
-func _extent_of(shape: Shape3D) -> Vector3:
+## The shape's own bounds in its own space. A convex hull is NOT centred on its
+## node's origin the way a box is, so this returns a full AABB rather than a
+## half-extent — the wedge on the 2600's plateau would otherwise be measured
+## around the console's centre.
+func _local_aabb(shape: Shape3D) -> AABB:
 	if shape is BoxShape3D:
-		return (shape as BoxShape3D).size * 0.5
+		var e: Vector3 = (shape as BoxShape3D).size * 0.5
+		return AABB(-e, e * 2.0)
 	if shape is SphereShape3D:
 		var r := (shape as SphereShape3D).radius
-		return Vector3(r, r, r)
+		return AABB(Vector3(-r, -r, -r), Vector3(r, r, r) * 2.0)
 	if shape is CylinderShape3D:
 		var c := shape as CylinderShape3D
-		return Vector3(c.radius, c.height * 0.5, c.radius)
+		var e2 := Vector3(c.radius, c.height * 0.5, c.radius)
+		return AABB(-e2, e2 * 2.0)
 	if shape is CapsuleShape3D:
 		var p := shape as CapsuleShape3D
-		return Vector3(p.radius, p.height * 0.5, p.radius)
-	return Vector3.ZERO
+		var e3 := Vector3(p.radius, p.height * 0.5, p.radius)
+		return AABB(-e3, e3 * 2.0)
+	if shape is ConvexPolygonShape3D:
+		var pts: PackedVector3Array = (shape as ConvexPolygonShape3D).points
+		if pts.is_empty():
+			return AABB()
+		var a := AABB(pts[0], Vector3.ZERO)
+		for pt in pts:
+			a = a.expand(pt)
+		return a
+	return AABB()
+
+
+## Every corner through the transform, then the bounds of those — correct for a
+## rotated shape, where transforming the AABB's own centre and extent is not.
+func _xform_aabb(t: Transform3D, a: AABB) -> AABB:
+	var out := AABB(t * a.position, Vector3.ZERO)
+	for i in range(8):
+		out = out.expand(t * (a.position + Vector3(
+			a.size.x if (i & 1) else 0.0,
+			a.size.y if (i & 2) else 0.0,
+			a.size.z if (i & 4) else 0.0)))
+	return out
 
 
 func _report() -> void:
