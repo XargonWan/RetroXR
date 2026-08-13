@@ -56,11 +56,22 @@ var compact_tiles: bool = false
 ## ever interesting per core, and pushing this back is what stops the core that
 ## follows an overridden one from inheriting its API.
 const DEFAULT_HW_RENDER := "vulkan"
-## core_name -> a value from hw_render_choices(), for cores that need a
-## different answer from the rest. Dolphin is the case that earns this: its
-## Vulkan path hangs the Adreno GPU on Quest while GLES3 runs, and a single
-## global would drag every other multi-API core off Vulkan to work around it.
-## Set from CORES > Manager > (core) > FRONTEND; absent means the default above.
+
+## Cores the global default is wrong for on a given platform, as
+## OS.get_name() -> {core_name: api}.
+##
+## Dolphin on Adreno is the case that earns this. Its Vulkan path corrupts the frame
+## it hands back — a blue cast over horizontal tile-shaped bands of garbage, worst
+## under the extra compositor load of passthrough — and hangs the GPU watchdog beyond
+## that, while its GLES3 path runs clean. Asking per platform rather than globally is
+## what stops every other multi-API core being dragged off Vulkan with it.
+const PLATFORM_HW_RENDER := {
+	"Android": {"dolphin": "opengl"},
+}
+
+## core_name -> a value from hw_render_choices(), for a core the user has answered
+## by hand. Set from CORES > Manager > (core) > FRONTEND; absent means the platform
+## default above, falling back to the global one.
 var hw_render_overrides: Dictionary = {}
 
 
@@ -107,7 +118,15 @@ func hw_render_choices() -> Array:
 ## The API this core will be offered: its own override, or the default.
 func hw_render_for(core_name: String) -> String:
 	var over := str(hw_render_overrides.get(core_name, ""))
-	return over if not over.is_empty() else DEFAULT_HW_RENDER
+	return over if not over.is_empty() else default_hw_render_for(core_name)
+
+
+## What this core gets when the user has not answered for it: this platform's answer
+## for that core, or the global default. The FRONTEND row names this rather than the
+## global, so the page says what the core will actually be offered.
+func default_hw_render_for(core_name: String) -> String:
+	var per_platform: Dictionary = PLATFORM_HW_RENDER.get(OS.get_name(), {})
+	return str(per_platform.get(core_name, DEFAULT_HW_RENDER))
 
 
 ## "" when this core has no override of its own.
