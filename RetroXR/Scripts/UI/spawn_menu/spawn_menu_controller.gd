@@ -1245,7 +1245,9 @@ func _on_slot_load(slot_id: String, room_id: String) -> void:
 		sm.change_scene(room_id)
 		return
 	var persistence := ScenePersistence.new(room_id)
-	await persistence.load_slot_async(get_tree().current_scene, slot_id)
+	var loaded := await persistence.load_slot_async(get_tree().current_scene, slot_id)
+	if not loaded:
+		return
 	if sm:
 		sm.set_active_slot(slot_id, room_id)
 	var menu := _get_menu()

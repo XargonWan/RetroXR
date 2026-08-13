@@ -143,10 +143,13 @@ func load_slot_async(root: Node, slot_id: String) -> bool:
 	if not FileAccess.file_exists(path):
 		push_warning("ScenePersistence: slot file not found '%s'" % path)
 		return false
-	clear_scene(root)
 	var objects: Variant = _read_objects(path)
 	if objects == null:
 		return false
+	# Do not dismantle the room until the replacement has passed every check we
+	# can perform without instantiating it. A truncated or old slot must be a
+	# failed load, not an implicit "Clean Room" action.
+	clear_scene(root)
 	var spawned: Dictionary = await instantiate_objects_async(root, objects)
 	print("[ScenePersistence] loaded %d objects from '%s'" % [spawned.size(), path])
 	return true
