@@ -189,6 +189,7 @@ func _worker(args: Dictionary) -> void:
 	var grand_total := int(entry.get("fs_size_bytes", 0))
 	var done_bytes := 0
 	var launch_path := ""
+	var members: Array[Dictionary] = []
 	var i := 0
 
 	while i < jobs.size():
@@ -205,22 +206,31 @@ func _worker(args: Dictionary) -> void:
 			"ok":
 				pass
 			"cancelled":
+				_remove_downloaded_members(systemid, members)
 				_emit_cancelled.call_deferred(rom_id)
 				return
 			_:
+				_remove_downloaded_members(systemid, members)
 				_emit_finished.call_deferred(rom_id, false, "", str(outcome["error"]))
 				return
 
 		# ── Verified and in place ────────────────────────────────────────────
+		var transfer_size := _file_size(dest)
 		if i == 0 and is_multi:
-			var extracted := _extract_multi(dest, systemid)
-			if extracted.is_empty():
-				_emit_finished.call_deferred(rom_id, false, "", "Could not unpack multi-file ROM")
+			var extracted := _extract_multi(dest, systemid, owned)
+			if not str(extracted.get("error", "")).is_empty():
+				_remove_downloaded_members(systemid, members)
+				if _abort:
+					_emit_cancelled.call_deferred(rom_id)
+				else:
+					_emit_finished.call_deferred(rom_id, false, "", str(extracted["error"]))
 				return
-			launch_path = extracted
+			launch_path = str(extracted["launch"])
+			members.append_array(extracted.get("members", []))
 		else:
 			if i == 0:
 				launch_path = dest
+			members.append({"path": fs_name, "size": transfer_size})
 			var refs := _manifest_references(dest)
 			if not refs.is_empty():
 				var found := _resolve_companions(systemid, refs, claimed)
@@ -230,19 +240,29 @@ func _worker(args: Dictionary) -> void:
 					owned.append(str(extra.get("fs_name", "")))
 					grand_total += int(extra.get("fs_size_bytes", 0))
 				if not str(found["error"]).is_empty():
+					_remove_downloaded_members(systemid, members)
 					_emit_finished.call_deferred(rom_id, false, "", str(found["error"]))
 					return
 				if not rows.is_empty():
 					_make_room.call_deferred(systemid, grand_total - done_bytes, owned)
 
-		var actual_size := _file_size(dest)
-		_register.call_deferred(systemid, fs_name, int(job.get("id", 0)), actual_size,
-			str(job.get("md5_hash", "")).to_lower())
-
-		done_bytes += actual_size
+		done_bytes += transfer_size
 		i += 1
 
-	_merge_gamelist.call_deferred(systemid, entry, str(entry.get("fs_name", "")))
+	var total_size := 0
+	for member: Dictionary in members:
+		total_size += int(member.get("size", 0))
+	if not _reserve_cache_from_worker(systemid, total_size, owned):
+		_remove_downloaded_members(systemid, members)
+		if _abort:
+			_emit_cancelled.call_deferred(rom_id)
+		else:
+			_emit_finished.call_deferred(rom_id, false, "", "Not enough cache space")
+		return
+	var launch_relative := RommCacheManifest.relative_path(systemid, launch_path)
+	_register_group.call_deferred(systemid, str(entry.get("fs_name", "")), launch_relative,
+		rom_id, members, str(entry.get("md5_hash", "")).to_lower())
+	_merge_gamelist.call_deferred(systemid, entry, launch_relative)
 
 	_emit_finished.call_deferred(rom_id, true, launch_path, "")
 
@@ -391,42 +411,67 @@ func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: 
 	return {"status": "ok", "error": ""}
 
 
-## Multi-file ROMs arrive as a zip (RomM injects a generated .m3u). Extract
-## alongside, preserving subpaths, and return the file to launch.
-func _extract_multi(zip_path: String, systemid: String) -> String:
+## Multi-file ROMs arrive as a zip (RomM injects a generated .m3u). Inspect the
+## uncompressed total before writing, then return the launch path plus every
+## exact member the cache group owns.
+func _extract_multi(zip_path: String, systemid: String,
+		keep: PackedStringArray) -> Dictionary:
 	var reader := ZIPReader.new()
 	if reader.open(zip_path) != OK:
-		return ""
+		DirAccess.remove_absolute(zip_path)
+		return {"launch": "", "members": [], "error": "Could not open multi-file ROM"}
 
 	var dest_dir := RomLibrary.rom_dir_for_system(systemid)
 	var plan := _archive_plan(reader, dest_dir)
 	reader.close()
 	if plan.is_empty():
-		return ""
-	var extracted: Dictionary = RommArchiveExtractor.new().extract(zip_path, plan)
-	if not bool(extracted.get("ok", false)):
-		push_warning("RommDownloader: %s"
-			% str(extracted.get("error", "Could not unpack archive")))
-		return ""
-	var launch := ""
-	var first_playable := ""
+		DirAccess.remove_absolute(zip_path)
+		return {"launch": "", "members": [], "error": "Archive contains unsafe files"}
 
-	for item: Dictionary in extracted.get("files", []):
-		var entry_name: String = item["entry"]
-		var out_path: String = item["path"]
+	var extractor := RommArchiveExtractor.new()
+	var inspected: Dictionary = extractor.inspect(zip_path, plan)
+	if not bool(inspected.get("ok", false)):
+		DirAccess.remove_absolute(zip_path)
+		return {"launch": "", "members": [], "error": str(inspected.get("error", ""))}
+	var launch_entry := ""
+	var first_playable := ""
+	for item: Dictionary in inspected.get("files", []):
+		var entry_name := str(item.get("entry", ""))
 		var ext := entry_name.get_extension().to_lower()
 		if ext == "m3u":
-			launch = out_path
+			launch_entry = entry_name
 		elif first_playable.is_empty() and ext in ["cue", "ccd", "mds", "iso", "chd", "gdi"]:
-			first_playable = out_path
+			first_playable = entry_name
+	if launch_entry.is_empty():
+		launch_entry = first_playable
+	if launch_entry.is_empty():
+		DirAccess.remove_absolute(zip_path)
+		return {"launch": "", "members": [], "error": "Archive has no launchable disc file"}
+	if not _reserve_cache_from_worker(systemid, int(inspected.get("total_size", 0)), keep):
+		DirAccess.remove_absolute(zip_path)
+		return {"launch": "", "members": [], "error": "Not enough cache space"}
 
-	if launch.is_empty() and first_playable.is_empty():
-		for item: Dictionary in extracted.get("files", []):
-			DirAccess.remove_absolute(str(item.get("path", "")))
-		return ""
+	var extracted: Dictionary = extractor.extract(zip_path, plan)
+	if not bool(extracted.get("ok", false)):
+		DirAccess.remove_absolute(zip_path)
+		push_warning("RommDownloader: %s"
+			% str(extracted.get("error", "Could not unpack archive")))
+		return {"launch": "", "members": [], "error": str(extracted.get("error", ""))}
+	var launch := ""
+	var members: Array[Dictionary] = []
+
+	for item: Dictionary in extracted.get("files", []):
+		var relative := str(item.get("relative", ""))
+		members.append({"path": relative, "size": int(item.get("size", 0))})
+		if str(item.get("entry", "")) == launch_entry:
+			launch = str(item.get("path", ""))
+	if launch.is_empty():
+		_remove_downloaded_members(systemid, members)
+		DirAccess.remove_absolute(zip_path)
+		return {"launch": "", "members": [], "error": "Launch file was not extracted"}
 	DirAccess.remove_absolute(zip_path)
 
-	return launch if not launch.is_empty() else first_playable
+	return {"launch": launch, "members": members, "error": ""}
 
 
 ## Validate every member before the first mkdir/write. ZIP names are untrusted:
@@ -676,9 +721,65 @@ func _emit_finished(rom_id: int, ok: bool, path: String, error: String) -> void:
 	_pump()
 
 
-func _register(systemid: String, fs_name: String, rom_id: int, size: int, md5: String) -> void:
+func _register_group(systemid: String, source_fs_name: String, launch: String,
+		rom_id: int, members: Array, md5: String) -> void:
 	if manifest != null:
-		manifest.add(systemid, fs_name, rom_id, size, md5)
+		manifest.add_group(systemid, source_fs_name, launch, rom_id, members, md5)
+
+
+## Ask the main thread to run eviction, but never make cancel_all deadlock while
+## it joins this worker: abort breaks the polling loop even if the deferred call
+## cannot run until after the join returns.
+func _reserve_cache_from_worker(systemid: String, bytes: int,
+		keep: PackedStringArray) -> bool:
+	if manifest == null or config == null or bytes <= 0:
+		return true
+	var completed := Semaphore.new()
+	var result_guard := Mutex.new()
+	var result: Dictionary = {}
+	_reserve_cache_on_main.call_deferred(
+		systemid, bytes, keep, result, result_guard, completed)
+	while not completed.try_wait():
+		if _abort:
+			result_guard.lock()
+			result["cancelled"] = true
+			result_guard.unlock()
+			return false
+		OS.delay_msec(10)
+	result_guard.lock()
+	var enough := bool(result.get("enough", false))
+	result_guard.unlock()
+	return not _abort and enough
+
+
+func _reserve_cache_on_main(systemid: String, bytes: int, keep: PackedStringArray,
+		result: Dictionary, result_guard: Mutex, completed: Semaphore) -> void:
+	result_guard.lock()
+	var cancelled := bool(result.get("cancelled", false))
+	result_guard.unlock()
+	if cancelled:
+		completed.post()
+		return
+	var prot := _protected_keys.duplicate()
+	for fs_name: String in keep:
+		prot.append(RommCacheManifest.make_key(systemid, fs_name))
+	var eviction := manifest.evict_to_fit(bytes, config.cache_budget_bytes(), prot)
+	if int(eviction["count"]) > 0:
+		cache_evicted.emit(int(eviction["freed"]), int(eviction["count"]))
+	result_guard.lock()
+	result["enough"] = bool(eviction["enough"])
+	result_guard.unlock()
+	completed.post()
+
+
+static func _remove_downloaded_members(systemid: String, members: Array) -> void:
+	for member: Dictionary in members:
+		var relative := str(member.get("path", ""))
+		if _safe_archive_member(relative).is_empty():
+			continue
+		var path := RommCacheManifest.local_path(systemid, relative)
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
 
 
 ## _pump budgeted for the manifest alone — 98 bytes for a cue — so the tracks it

@@ -813,9 +813,16 @@ func _rebuild_romm_rows() -> void:
 				for r: Variant in rl:
 					regions.append(str(r))
 
-			var local: Dictionary = local_by_name.get(key, {})
+			# A multi-file server ROM is keyed by its deleted source archive in the
+			# cache but launches an m3u/cue below it. Resolve by stable RomM id before
+			# falling back to basename matching.
+			var cached_path := romm_cache.cached_path_for_rom(
+				systemid, romm_catalog.rom_id_at(i)) if romm_cache != null else ""
+			var local: Dictionary = {"path": cached_path, "label": label} \
+				if not cached_path.is_empty() else local_by_name.get(key, {})
 			if not local.is_empty():
 				matched[key] = true
+				matched[str(local.get("path", "")).get_file().get_basename().to_lower()] = true
 
 			for r: String in regions:
 				regions_seen[r] = true
@@ -836,6 +843,9 @@ func _rebuild_romm_rows() -> void:
 		if matched.has(key):
 			continue
 		var rom: Dictionary = local_by_name[key]
+		if romm_cache != null and romm_cache.owns_file(systemid,
+				RommCacheManifest.relative_path(systemid, str(rom["path"]))):
+			continue
 		var ext := str(rom["path"]).get_extension().to_lower()
 		if not _romm_detail_exts.is_empty() and ext not in _romm_detail_exts:
 			continue
@@ -1124,7 +1134,8 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	if not local_path.is_empty():
 		main.pressed.connect(func() -> void:
 			if romm_cache != null:
-				romm_cache.touch(systemid, local_path.get_file())
+				romm_cache.touch(systemid,
+					RommCacheManifest.relative_path(systemid, local_path))
 			spawn_cartridge_requested.emit(local_path, label, systemid)
 		)
 	else:
@@ -1184,14 +1195,15 @@ func _on_rom_delete_pressed(index: int, state: Button) -> void:
 	_romm_delete_armed = -1
 	var systemid := _romm_detail_systemid
 	var fname := local_path.get_file()
-
-	if FileAccess.file_exists(local_path):
+	var relative := RommCacheManifest.relative_path(systemid, local_path)
+	var removed_group := romm_cache != null \
+		and romm_cache.remove_for_file(systemid, relative) >= 0
+	if not removed_group and FileAccess.file_exists(local_path):
 		DirAccess.remove_absolute(local_path)
-	if romm_cache != null:
-		romm_cache.forget(systemid, fname)
 
 	show_notice("Deleted %s" % fname, 2.5)
 	_romm_meta_cache.clear()
+	_invalidate_local_scan(systemid)
 	_rebuild_romm_rows()
 
 
@@ -1769,13 +1781,12 @@ func _on_romm_cache_evicted(freed_bytes: int, count: int) -> void:
 		% [MenuStyle.human_bytes(freed_bytes), count, "" if count == 1 else "s"], -1.0, 4.0)
 
 
-## Eviction can remove a file behind a visible row, so re-bind rather than let
-## the row icon lie about what is on disk.
+## Eviction can change a server row from local to downloadable and can remove
+## companion-only rows, so rebuild the model rather than merely re-binding it.
 func _on_romm_cache_changed() -> void:
 	_romm_meta_cache.clear()
 	_invalidate_local_scan()
-	if _romm_list != null and is_instance_valid(_romm_list):
-		_romm_list.rebind_visible()
+	_rebuild_romm_rows()
 
 
 func _on_romm_art_ready(_rom_id: int, _texture: Texture2D) -> void:

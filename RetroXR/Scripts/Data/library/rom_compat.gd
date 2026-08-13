@@ -169,7 +169,7 @@ static func resolve(rom_path: String, core_name: String, systemid: String = "") 
 		Time.get_ticks_msec() - started])
 
 	if not systemid.is_empty():
-		_rekey_cache(systemid, rom_path.get_file(), str(result["path"]))
+		_rekey_cache(systemid, rom_path.get_file(), str(result["path"]), result.get("files", []))
 
 	verdict["verdict"] = Verdict.OK
 	verdict["path"] = result["path"]
@@ -209,7 +209,7 @@ static func _unpack(zip_path: String, target: String) -> Dictionary:
 			% [target, zip_path.get_file()]}
 
 	DirAccess.remove_absolute(zip_path)
-	return {"path": launch, "error": ""}
+	return {"path": launch, "files": extracted.get("files", []), "error": ""}
 
 
 ## Move a RomM cache entry from the archive onto what came out of it.
@@ -219,28 +219,25 @@ static func _unpack(zip_path: String, target: String) -> Dictionary:
 ## "not downloaded" and orphan the unpacked file, which no longer belongs to any
 ## budget. Re-read from disk rather than sharing an instance, so this stays
 ## correct whether or not the spawn menu happens to be open.
-static func _rekey_cache(systemid: String, archive_name: String, new_path: String) -> void:
+static func _rekey_cache(systemid: String, archive_name: String, new_path: String,
+		extracted_files: Array) -> void:
 	var manifest := RommCacheManifest.new()
 	manifest.load_manifest()
 	var entry := manifest.entry(systemid, archive_name)
 	if entry.is_empty():
 		return   # hand-copied, not server-sourced — nothing to re-key
-	manifest.forget(systemid, archive_name)
 	# The md5 carries over rather than being blanked: RomM's hash describes the
 	# ROM *content*, not the container, so the value recorded against the .zip is
 	# already the hash of what just came out of it.
-	manifest.add(systemid, new_path.get_file(), int(entry.get("rom_id", 0)),
-		_file_size(new_path), str(entry.get("md5", "")))
-
-
-static func _file_size(path: String) -> int:
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return 0
-	var size := f.get_length()
-	f.close()
-	return size
-
+	var members: Array[Dictionary] = []
+	for item: Dictionary in extracted_files:
+		members.append({
+			"path": str(item.get("relative", "")),
+			"size": int(item.get("size", 0)),
+		})
+	manifest.add_group(systemid, archive_name,
+		RommCacheManifest.relative_path(systemid, new_path),
+		int(entry.get("rom_id", 0)), members, str(entry.get("md5", "")))
 
 # ---------------------------------------------------------------------------
 # Internals

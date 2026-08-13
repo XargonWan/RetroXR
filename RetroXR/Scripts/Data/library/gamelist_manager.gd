@@ -151,17 +151,23 @@ func invalidate(systemid: String) -> void:
 	_gamelists.erase(systemid)
 
 
-## Convert an absolute ROM path to a relative path (./filename) for storage.
-static func _to_relative_path(_systemid: String, rom_path: String) -> String:
-	var filename := rom_path.get_file()
-	return "./" + filename
+## Convert an absolute ROM path to a safe ROM-root-relative path for storage.
+## Keep subdirectories: a multi-disc launch manifest commonly lives below one.
+static func _to_relative_path(systemid: String, rom_path: String) -> String:
+	var relative := RommCacheManifest.relative_path(systemid, rom_path)
+	return "./" + relative if not relative.is_empty() else ""
 
 
 ## Convert a relative path from gamelist to absolute.
 static func to_absolute_path(systemid: String, relative_path: String) -> String:
 	var rom_dir := RomLibrary.rom_dir_for_system(systemid)
-	var filename := relative_path.get_file()
-	return rom_dir.path_join(filename)
+	var relative := relative_path.replace("\\", "/").trim_prefix("./")
+	if relative.is_empty() or relative.is_absolute_path() or relative.contains(":"):
+		return ""
+	for part: String in relative.split("/", true):
+		if part.is_empty() or part == "." or part == "..":
+			return ""
+	return rom_dir.path_join(relative)
 
 
 func _gamelist_path(systemid: String) -> String:
