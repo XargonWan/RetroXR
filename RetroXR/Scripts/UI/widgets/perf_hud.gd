@@ -29,10 +29,23 @@ const FAST_S := 0.25
 const SLOW_S := 2.0
 ## Frame samples kept for the trace: two seconds at 72 Hz.
 ##
-## Deliberately reported as worst + over-budget count rather than as a "1% low":
+## Deliberately reported as worst + missed count rather than as a "1% low":
 ## one percent of this window is a single frame, so a percentile here would be
 ## the worst frame under a name that implies it was averaged over many.
 const RING := 144
+
+## What counts as a missed frame, as a multiple of the refresh period.
+##
+## A frame that is keeping up lands ON the budget by definition — 13.9 ms at
+## 72 Hz, every frame, however little work went into it — so being at or a hair
+## over budget is the healthy state and not a fault. Judged against the budget
+## itself, a Quest 3 holding a locked 72/72 with its GPU downclocked to 456 MHz
+## of an available 690 painted every graded row of this section amber or red.
+##
+## A frame that genuinely misses has to wait out the NEXT vsync, so it arrives a
+## whole period late rather than a fraction of one. Past one and a half periods
+## is therefore a real miss, and everything under it is jitter around the lock.
+const MISS_FACTOR := 1.5
 
 # ── Panel metrics ─────────────────────────────────────────────────────────────
 # Two sets. The VR one is read through a lens at arm's length and has to be
@@ -366,8 +379,8 @@ func _build_frame() -> void:
 	var g := _grid(box)
 	_row(g, "fps", "frame rate")
 	_row(g, "ms", "frame time")
-	_row(g, "worst", "worst / over")
-	_row(g, "load", "cpu / gpu")
+	_row(g, "worst", "worst / missed")
+	_row(g, "load", "gpu load")
 	_row(g, "render", "render cpu / gpu")
 	_row(g, "cpu", "process / physics")
 	if MenuStyle.is_vr_mode():
@@ -495,55 +508,63 @@ func _sample_fast() -> void:
 
 
 func _update_frame() -> void:
+	var miss_ms := _budget_ms * MISS_FACTOR
 	var worst := 0.0
-	var over := 0
+	var missed := 0
 	var filled := 0
 	for ms in _ring:
 		if ms <= 0.0:
 			continue
 		filled += 1
 		worst = maxf(worst, ms)
-		if ms > _budget_ms:
-			over += 1
+		if ms > miss_ms:
+			missed += 1
 
 	var fps := Engine.get_frames_per_second()
 	var target := 1000.0 / _budget_ms
 	_put("fps", "%.0f / %.0f" % [fps, target], _grade(target - fps, 2.0, 6.0))
 
 	var now_ms: float = _ring[(_ring_i - 1 + RING) % RING]
-	_put("ms", "%.1f ms" % now_ms, _grade(now_ms - _budget_ms, 0.0, 2.0))
-	_put("worst", "%.1f ms · %d" % [worst, over], _grade(float(over), 1.0, 8.0))
+	_put("ms", "%.1f ms" % now_ms, _grade(now_ms, miss_ms, _budget_ms * 2.0))
+	_put("worst", "%.1f ms · %d" % [worst, missed], _grade(float(missed), 1.0, 8.0))
 
-	# CPU and GPU as a share of the budget, which is the same framing VrApi's
-	# logcat line uses and so is directly comparable to an on-device capture.
-	# CPU is wall-clock frame time, not the sum of the parts below: this app is
-	# single-thread bound, and what matters is how much of the budget producing
-	# the frame took, whoever spent it.
+	# GPU as a share of the budget, which is the framing VrApi's logcat line uses
+	# and so is directly comparable to an on-device capture.
+	#
+	# GPU alone, with no CPU counterpart, because on a rate-locked app there is
+	# no honest one to print. Wall-clock frame time sits on the refresh period
+	# whatever the load, so quoting it against the budget is a fixed 100%; and
+	# TIME_PROCESS in the row below carries the wait for the GPU inside it —
+	# measured, a 144 Hz frame doing 2 ms of script work reports 8.2 ms, against
+	# 3.0 ms for the same work with vsync off. The GPU timestamp is the only
+	# figure here that falls when the room gets cheaper, so it is the only one
+	# quoted as a share. What the CPU has to say is whether frames were missed,
+	# and that is the row above.
 	var gpu_ms := _render_gpu_ms()
-	var cpu_pct := now_ms / _budget_ms * 100.0
 	if gpu_ms > 0.0:
 		var gpu_pct := gpu_ms / _budget_ms * 100.0
-		_put("load", "%s / %s" % [_pct(cpu_pct), _pct(gpu_pct)],
-			_grade(maxf(cpu_pct, gpu_pct), 85.0, 100.0))
+		_put("load", _pct(gpu_pct), _grade(gpu_pct, 85.0, 100.0))
 		# Two decimals: a light scene renders in hundredths of a millisecond, and
 		# at one decimal both halves read 0.0 and look like a broken measurement.
 		_put("render", "%.2f / %.2f ms" % [_render_cpu_ms(), gpu_ms], DIM)
 	else:
 		# Timestamp queries are not available on every driver, and the GL path has
 		# none at all. Say so rather than draw a confident 0%.
-		_put("load", "%s / n/a" % _pct(cpu_pct), _grade(cpu_pct, 85.0, 100.0))
+		_put("load", "n/a", DIM)
 		_put("render", "n/a", DIM)
 
+	# Ungraded. Only the physics half is a clean measure of work done — the
+	# process half is the whole idle frame, wait included, for the reason above,
+	# so there is no threshold on the pair that means anything.
 	var proc_ms := float(Performance.get_monitor(Performance.TIME_PROCESS)) * 1000.0
 	var phys_ms := float(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
-	_put("cpu", "%.1f / %.1f ms" % [proc_ms, phys_ms],
-		_grade(proc_ms + phys_ms - _budget_ms, -2.0, 0.0))
+	_put("cpu", "%.1f / %.1f ms" % [proc_ms, phys_ms], DIM)
 
 	if _val.has("eye"):
 		_put("eye", _eye_text, DIM)
 
 	if _spark != null:
-		_spark.set_trace(_ring, _ring_i, _budget_ms)
+		_spark.set_trace(_ring, _ring_i, _budget_ms, miss_ms)
 	if filled == 0:
 		_put("ms", "--", DIM)
 
