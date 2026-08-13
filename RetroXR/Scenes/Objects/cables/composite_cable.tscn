@@ -7,7 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="5_snapgp"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
-radius = 0.025
+radius = 0.028
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
 bounce = 0.0
@@ -41,6 +41,7 @@ freeze_mode = 1
 script = ExtResource("2_plugscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_plug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugA0"]
@@ -51,6 +52,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugA0"]
@@ -71,6 +73,7 @@ freeze_mode = 1
 script = ExtResource("2_plugscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_plug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugA1"]
@@ -81,6 +84,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA1/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugA1"]
@@ -101,6 +105,7 @@ freeze_mode = 1
 script = ExtResource("2_plugscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_plug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugA2"]
@@ -111,6 +116,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA2/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugA2"]
@@ -134,6 +140,7 @@ freeze_mode = 1
 script = ExtResource("2_plugscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_plug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugB0"]
@@ -144,6 +151,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugB0"]
@@ -164,6 +172,7 @@ freeze_mode = 1
 script = ExtResource("2_plugscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_plug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugB1"]
@@ -174,6 +183,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB1/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugB1"]
@@ -194,6 +204,7 @@ freeze_mode = 1
 script = ExtResource("2_plugscript")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_plug")
 
 [node name="PlugTip" type="MeshInstance3D" parent="PlugB2"]
@@ -204,6 +215,7 @@ collision_layer = 1048576
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB2/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 shape = SubResource("SphereShape3D_pointer")
 
 [node name="PickableHighlight" type="Node3D" parent="PlugB2"]
