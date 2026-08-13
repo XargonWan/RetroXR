@@ -400,13 +400,16 @@ func _extract_multi(zip_path: String, systemid: String) -> String:
 		return ""
 
 	var dest_dir := RomLibrary.rom_dir_for_system(systemid)
+	var plan := _archive_plan(reader, dest_dir)
+	if plan.is_empty():
+		reader.close()
+		return ""
 	var launch := ""
 	var first_playable := ""
 
-	for entry_name: String in reader.get_files():
-		if entry_name.ends_with("/"):
-			continue
-		var out_path := dest_dir.path_join(entry_name)
+	for item: Dictionary in plan:
+		var entry_name: String = item["entry"]
+		var out_path: String = item["path"]
 		DirAccess.make_dir_recursive_absolute(out_path.get_base_dir())
 		var f := FileAccess.open(out_path, FileAccess.WRITE)
 		if f == null:
@@ -424,6 +427,84 @@ func _extract_multi(zip_path: String, systemid: String) -> String:
 	DirAccess.remove_absolute(zip_path)
 
 	return launch if not launch.is_empty() else first_playable
+
+
+## Validate every member before the first mkdir/write. ZIP names are untrusted:
+## RomM may index user-supplied archives, and path_join() alone accepts ../,
+## absolute paths and Windows separators that can escape the ROM directory.
+static func _archive_plan(reader: ZIPReader, dest_dir: String) -> Array[Dictionary]:
+	var plan: Array[Dictionary] = []
+	var claimed: Dictionary = {}
+	var root := dest_dir.replace("\\", "/").simplify_path().trim_suffix("/")
+
+	for raw_name: String in reader.get_files():
+		var directory := raw_name.replace("\\", "/").ends_with("/")
+		var member_name := raw_name.trim_suffix("/") if directory else raw_name
+		var relative := _safe_archive_member(member_name)
+		if relative.is_empty():
+			push_warning("RommDownloader: refusing unsafe archive member '%s'" % raw_name)
+			return []
+
+		var folded := relative.to_lower()
+		if claimed.has(folded):
+			push_warning("RommDownloader: refusing colliding archive member '%s'" % raw_name)
+			return []
+		claimed[folded] = true
+
+		var out_path := root.path_join(relative).simplify_path()
+		if not out_path.to_lower().begins_with(root.to_lower() + "/"):
+			push_warning("RommDownloader: archive member escaped destination '%s'" % raw_name)
+			return []
+		if _archive_parent_is_link(root, relative):
+			push_warning("RommDownloader: archive member crosses a symbolic link '%s'" % raw_name)
+			return []
+		if directory:
+			continue
+		# Never overwrite a hand-copied ROM. Until extraction has been registered,
+		# an existing file is user-owned from the cache's point of view.
+		if FileAccess.file_exists(out_path) or DirAccess.dir_exists_absolute(out_path):
+			push_warning("RommDownloader: archive member already exists '%s'" % out_path)
+			return []
+		plan.append({"entry": raw_name, "relative": relative, "path": out_path})
+
+	return plan
+
+
+## A normalized relative member name, or empty when the spelling is unsafe on
+## any platform RetroXR ships. Colons are rejected as Windows drive/ADS syntax.
+static func _safe_archive_member(entry_name: String) -> String:
+	if entry_name.is_empty() or entry_name.contains("\u0000"):
+		return ""
+	var normalized := entry_name.replace("\\", "/")
+	if normalized.is_absolute_path() or normalized.begins_with("/") \
+			or normalized.begins_with("//") or normalized.contains(":"):
+		return ""
+	var parts := normalized.split("/", true)
+	for part: String in parts:
+		if part.is_empty() or part == "." or part == "..":
+			return ""
+	var relative := normalized.simplify_path()
+	if relative.is_empty() or relative == "." or relative == ".." \
+			or relative.begins_with("../"):
+		return ""
+	return relative
+
+
+## Existing directory symlinks defeat lexical prefix checks: root/link/file can
+## resolve outside root. Check each parent before extraction creates descendants.
+static func _archive_parent_is_link(root: String, relative: String) -> bool:
+	var dir := DirAccess.open(root)
+	if dir == null:
+		return false
+	var parts := relative.split("/", false)
+	var parent := ""
+	for i in range(parts.size() - 1):
+		parent = parts[i] if parent.is_empty() else parent.path_join(parts[i])
+		if dir.is_link(parent):
+			return true
+		if not DirAccess.dir_exists_absolute(root.path_join(parent)):
+			break
+	return false
 
 
 # ---------------------------------------------------------------------------
