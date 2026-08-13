@@ -238,7 +238,8 @@ python Tools/build.py windows --jobs 8 -- verbose=yes    # extra args go to scon
 It runs every eligible extension/target build in sequence, prints a pass/fail table, and
 exits non-zero if any failed. Architecture follows the platform: `x86_64` for Windows and
 Linux, `arm64` for Android, and the host architecture for macOS. Mac builds target macOS
-13.0 by default; build each architecture separately when both are needed.
+13.0 by default; build each architecture separately when both are needed. Libretro Vulkan
+hardware rendering on macOS uses the MoltenVK runtime embedded in official Godot builds.
 
 Asking for `linux` **from Windows** re-invokes the script inside WSL (`--distro`, default
 `Ubuntu`) with `HOME` and `PATH` reset — WSL inherits the Windows environment, whose PATH
