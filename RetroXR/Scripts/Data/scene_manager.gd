@@ -62,11 +62,10 @@ var active_slot_id: String:
 ## guard in change_scene() doesn't block them.
 var net_scene_override: bool = false
 
-## Set synchronously when a change is accepted, before the deferred worker has
-## removed the outgoing room. This is distinct from _transitioning, which means
-## the worker itself is running.
-var _transition_pending: bool = false
 var _transitioning: bool = false
+## Last valid request received while a transition is running. Only the newest
+## destination matters; it starts after the current room is fully installed.
+var _pending_scene_id: String = ""
 
 
 func _ready() -> void:
@@ -118,8 +117,8 @@ func room_has_slots(scene_id: String) -> bool:
 ## room is still present and while the loading rig temporarily leaves no current
 ## scene at all, so comparing that id alone is not a readiness check.
 func is_room_ready(room_id: String) -> bool:
-	return not _transition_pending and not _transitioning \
-		and current_scene_id == room_id and get_tree().current_scene != null
+	return not _transitioning and current_scene_id == room_id \
+		and get_tree().current_scene != null
 
 
 func set_active_slot(slot_id: String, room_id: String = current_scene_id) -> void:
@@ -136,8 +135,6 @@ func is_passthrough_supported() -> bool:
 
 
 func change_scene(scene_id: String) -> void:
-	if scene_id == current_scene_id:
-		return
 	if not SCENE_PATHS.has(scene_id):
 		push_error("SceneManager: unknown scene_id '%s'" % scene_id)
 		return
@@ -150,20 +147,35 @@ func change_scene(scene_id: String) -> void:
 	if net_client and not net_scene_override:
 		push_warning("SceneManager: only the host can change scenes during a session")
 		return
+	# Last intent wins. Asking for the room already in flight also cancels a
+	# different destination that may have been queued after it.
+	if scene_id == current_scene_id:
+		_pending_scene_id = ""
+		return
+	if _transitioning:
+		_pending_scene_id = scene_id
+		return
+
+	_begin_transition(scene_id, net_client)
+
+
+## Claim a validated transition synchronously. The worker is deferred so a menu
+## button inside the outgoing room can unwind safely, but no second caller gets
+## a window in which it can start another worker or rewrite this one's identity.
+func _begin_transition(scene_id: String, net_client: bool = false) -> void:
+	_transitioning = true
 
 	# Auto-save the room being left, into its own slot (skip if clean — it's
 	# readonly; skip on clients — the shared world is the host's, not ours to save).
 	var leaving := current_scene_id
 	if room_has_slots(leaving) and auto_save_on_switch and active_slot(leaving) != "clean" \
-			and not net_client:
+			and not net_client and get_tree().current_scene != null:
 		var persistence := ScenePersistence.new(leaving)
 		persistence.save_slot(get_tree().current_scene, active_slot(leaving))
 
-	_transition_pending = true
 	current_scene_id = scene_id
-	# Deferred: the call arrives from a button inside the scene about to be freed,
-	# so the caller's stack has to unwind first.
-	_run_transition.call_deferred(SCENE_PATHS[scene_id], SCENE_TITLES.get(scene_id, ""))
+	_run_transition.call_deferred(scene_id, SCENE_PATHS[scene_id],
+		SCENE_TITLES.get(scene_id, ""))
 	scene_changed.emit(scene_id)
 
 
@@ -181,11 +193,7 @@ func change_scene(scene_id: String) -> void:
 ## headset. It steps out of the old room, waits on the root, and is spliced into
 ## the new one before that enters the tree. PlayerRig owns what the crossing does
 ## to it; this only decides when.
-func _run_transition(path: String, title: String) -> void:
-	if _transitioning:
-		return
-	_transitioning = true
-	_transition_pending = false
+func _run_transition(scene_id: String, path: String, title: String) -> void:
 	var tree := get_tree()
 
 	# All of this runs in one deferred call: the room leaves and the loading
@@ -219,8 +227,7 @@ func _run_transition(path: String, title: String) -> void:
 			# (a child of the rig) still works, so another room can be picked.
 			push_error("SceneManager: failed to load '%s' (status %d)" % [path, status])
 			rig.queue_free()
-			_transitioning = false
-			_transition_pending = false
+			_finish_transition()
 			return
 		if not progress.is_empty():
 			rig.set_progress(float(progress[0]))
@@ -243,9 +250,21 @@ func _run_transition(path: String, title: String) -> void:
 	tree.current_scene = incoming
 	if player != null:
 		player.enter_world()
+	# Keep the transition claimed while listeners run. If one of them requests
+	# another room it is coalesced, rather than re-entering this coroutine while
+	# it is still returning from the ready signal.
+	scene_ready.emit(scene_id)
+	_finish_transition()
+
+
+func _finish_transition() -> void:
 	_transitioning = false
-	_transition_pending = false
-	scene_ready.emit(current_scene_id)
+	var next := _pending_scene_id
+	_pending_scene_id = ""
+	if not next.is_empty() and next != current_scene_id:
+		# Authorization and platform support were checked when it was queued. In
+		# particular, a client's one-call net_scene_override has already gone away.
+		_begin_transition(next, has_node("/root/NetworkManager") and NetworkManager.is_client())
 
 
 ## Take the player out of the outgoing room and park them on the root so they

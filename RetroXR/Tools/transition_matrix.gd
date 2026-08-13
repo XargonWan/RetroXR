@@ -34,6 +34,7 @@ var _watch := false
 
 func _ready() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	SceneManager.scene_ready.connect(_on_scene_ready)
 	_run.call_deferred()
 
 
@@ -155,6 +156,8 @@ func _phase_adversarial() -> void:
 	SceneManager.change_scene("den")
 	SceneManager.change_scene("bedroom")
 	await _settle(10.0)
+	if SceneManager.current_scene_id != "bedroom":
+		_fail("double change_scene", "latest room request was not installed")
 	_check("double change_scene")
 
 	await _mark("change_scene interrupting a transition in flight")
@@ -162,6 +165,8 @@ func _phase_adversarial() -> void:
 	await tree.create_timer(0.30).timeout
 	SceneManager.change_scene("den")
 	await _settle(12.0)
+	if SceneManager.current_scene_id != "den":
+		_fail("interrupted transition", "latest room request was not installed")
 	_check("interrupted transition")
 
 	await _mark("leave a room while a slot restore is running")
@@ -347,6 +352,10 @@ func _check(where: String) -> void:
 		_fail(where, "loading rig left in the tree")
 	if SceneManager._transitioning:
 		_fail(where, "still marked _transitioning")
+	var expected_path: String = SceneManager.SCENE_PATHS.get(SceneManager.current_scene_id, "")
+	if scene.scene_file_path != expected_path:
+		_fail(where, "scene id '%s' points at '%s', but '%s' is loaded" % [
+			SceneManager.current_scene_id, expected_path, scene.scene_file_path])
 
 	var rig := scene.get_node_or_null("PlayerRig") as PlayerRig
 	if rig == null:
@@ -361,6 +370,17 @@ func _check(where: String) -> void:
 	var y := rig.camera.global_position.y
 	if y < 0.5 or y > 2.5:
 		_fail(where, "camera y=%.2f" % y)
+
+
+func _on_scene_ready(scene_id: String) -> void:
+	var scene := get_tree().current_scene
+	var expected_path: String = SceneManager.SCENE_PATHS.get(scene_id, "")
+	if scene_id != SceneManager.current_scene_id:
+		_fail("scene_ready", "announced '%s' while current id is '%s'" % [
+			scene_id, SceneManager.current_scene_id])
+	elif scene == null or scene.scene_file_path != expected_path:
+		_fail("scene_ready", "announced '%s' while '%s' is loaded" % [
+			scene_id, scene.scene_file_path if scene != null else "<none>"])
 
 
 func _fail(where: String, what: String) -> void:
