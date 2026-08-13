@@ -37,6 +37,11 @@ func receiver_glyph() -> String:
 	return TransportGlyphs.glyph("bluetooth") + " " + TransportGlyphs.glyph("mouse")
 
 
+## Nothing printed: the Bluetooth mark and the device symbol say it.
+func case_text() -> String:
+	return ""
+
+
 func receiver_label() -> String:
 	return "MOUSE"
 

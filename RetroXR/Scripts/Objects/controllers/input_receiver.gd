@@ -71,6 +71,10 @@ var _pending_port_restore: Dictionary = {}
 @onready var _label: Label3D = $NameLabel
 @onready var _glyph: Label3D = $GlyphLabel
 
+## The glyph's authored spot, above the name. Remembered because a receiver with
+## no case text moves it onto the name's spot instead.
+@onready var _glyph_home: Vector3 = _glyph.position
+
 
 func _ready() -> void:
 	super._ready()
@@ -84,9 +88,19 @@ func _ready() -> void:
 
 # ── What a subclass fills in ──────────────────────────────────────────────────
 
-## What this receiver prints on its own case.
+## What this receiver is called, in logs and to anything that asks. Distinct from
+## case_text: a keyboard dongle still wants a name in a print, it just does not
+## want the word painted on it next to a glyph that already says so.
 func receiver_label() -> String:
 	return "RECEIVER"
+
+
+## The words printed on the case, if any. Empty leaves the glyph to speak for
+## itself — which it does for the keyboard and the mouse, where the symbol is
+## unambiguous and the word beneath it was noise. A pad keeps its text because the
+## glyph cannot say WHICH pad, and that is the one thing you need to read.
+func case_text() -> String:
+	return receiver_label()
 
 
 ## The device it forwards, printed as Nerd Font glyphs. One symbol says at a
@@ -240,8 +254,13 @@ func set_led(bound: bool) -> void:
 
 
 func refresh_label() -> void:
+	var words := case_text()
 	if _label != null:
-		_label.text = receiver_label()
+		_label.text = words
+	# A lone glyph moves down to the name's spot, so it reads as centred on the
+	# face rather than parked above a line that is not there.
+	if _glyph != null and _label != null:
+		_glyph.position = _glyph_home if not words.is_empty() else _label.position
 	if _glyph != null:
 		var glyphs := receiver_glyph()
 		_glyph.visible = not glyphs.is_empty()
