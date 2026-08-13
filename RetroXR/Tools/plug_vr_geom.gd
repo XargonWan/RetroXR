@@ -70,19 +70,22 @@ func _run() -> void:
 	add_child(_rings)
 	_build_camera()
 
-	# LOOSE — the plug itself is what the hand takes.
-	var loose: Vector3 = plugs[0].global_position
-	_clear()
-	_plug_rings(plugs[0], Vector3(0, 0, 1))
-	_ring(loose + Vector3(0.09, 0.05, 0.02), 0.125, Vector3(0, 0, 1), HAND)
-	_look(loose, Vector3(0, 0, 1), 0.34)
-	await _grab("LOOSE — the hand grabs the plug's own 25 mm sphere (green)")
-
 	for i in range(mini(3, plugs.size())):
 		ports[i].pick_up_object(plugs[i])
 		await _wait(10)
 	await _wait(30)
 	_hold(cable)
+
+	# In PROFILE, on one seated plug. Viewed down its own axis a sphere is just a
+	# circle wherever it sits; only a side elevation shows whether it is centred on
+	# the body. The cross marks the plug's ORIGIN, which is not its middle.
+	var side: Vector3 = ports[0].global_transform.basis.x.normalized()
+	var body_mid: Vector3 = ports[0].global_transform * Vector3(0, 0, 0.013)
+	_clear()
+	_plug_rings(plugs[0], side)
+	_cross(plugs[0].global_position, 0.006, side, Color(1, 1, 1))
+	_look(body_mid, side, 0.10)
+	await _grab("One seated plug in profile — spheres on the body, cross = its origin")
 
 	# SOCKETED — the plug has left the hand's mask; the socket is all there is.
 	var focus: Vector3 = ports[1].global_position
@@ -112,6 +115,27 @@ func _run() -> void:
 
 	print("[vv] wrote %d shots to %s" % [_shot, ProjectSettings.globalize_path(OUT_DIR)])
 	get_tree().quit(0)
+
+
+## A small cross, for marking a point that has no volume of its own.
+func _cross(at: Vector3, arm: float, view: Vector3, tint: Color) -> void:
+	var n := view.normalized()
+	var u := n.cross(Vector3.UP).normalized()
+	var v := n.cross(u).normalized()
+	for axis in [u, v]:
+		var mesh := ImmediateMesh.new()
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = tint
+		mat.no_depth_test = true
+		mat.render_priority = 9
+		mesh.surface_begin(Mesh.PRIMITIVE_LINES, mat)
+		mesh.surface_add_vertex(at - axis * arm)
+		mesh.surface_add_vertex(at + axis * arm)
+		mesh.surface_end()
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		_rings.add_child(mi)
 
 
 ## Every collision sphere a plug carries, tinted by whether the hand sees it.
