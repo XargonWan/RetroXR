@@ -1,15 +1,24 @@
-## ScenePersistence — saves and restores dynamically-spawned objects for the
-## arcade scene.  Objects must be in the "spawned" group to be tracked.
+## ScenePersistence — saves and restores dynamically-spawned objects for one room.
+## Objects must be in the "spawned" group to be tracked.
 ##
-## Save directory: user://scenes/arcade/
-## Manifest:       user://scenes/arcade/manifest.json
-## Slot files:     user://scenes/arcade/{id}.json
+## Save directory: user://scenes/{room}/
+## Manifest:       user://scenes/{room}/manifest.json
+## Slot files:     user://scenes/{room}/{id}.json
+##
+## Each room keeps its own slots and its own manifest. They cannot be one set: a
+## slot is a list of world poses, and the arcade's are struck against the arcade's
+## furniture — restoring them into passthrough would rain a room's contents into
+## wherever the player happens to be standing. The room is a constructor argument
+## rather than a parameter on every call because one instance is only ever used
+## against one room, and SceneManager.room_has_slots decides which rooms keep them.
 class_name ScenePersistence
 extends RefCounted
 
 
+const ROOMS_DIR     := "user://scenes"
+const DEFAULT_ROOM  := "arcade"
+## The arcade's own directory, named because the save/restore probes reach for it.
 const ARCADE_DIR    := "user://scenes/arcade"
-const MANIFEST_FILE := "user://scenes/arcade/manifest.json"
 const VERSION       := 2
 ## How long the async restore may hold the main thread before yielding a frame.
 const FRAME_BUDGET_USEC := 4000
@@ -90,6 +99,17 @@ const PLAIN_SCENES := {
 }
 
 
+## Which room's slots this instance reads and writes. Defaults to the arcade so
+## that the callers which only serialize — netplay's object sync, the probes —
+## need not name a room at all.
+var room_id := DEFAULT_ROOM
+
+
+func _init(room: String = DEFAULT_ROOM) -> void:
+	if not room.is_empty():
+		room_id = room
+
+
 # ── Multi-slot public API ──────────────────────────────────────────────────────
 
 ## Returns ordered slot list. "clean" is always first and is never stored in the
@@ -106,7 +126,7 @@ func get_slots() -> Array[Dictionary]:
 func save_slot(root: Node, slot_id: String) -> bool:
 	if slot_id == "clean":
 		return false
-	DirAccess.make_dir_recursive_absolute(ARCADE_DIR)
+	DirAccess.make_dir_recursive_absolute(slot_dir())
 	return _write_scene_to_file(root, _slot_file(slot_id))
 
 
@@ -167,7 +187,7 @@ func rename_slot(slot_id: String, new_name: String) -> bool:
 ## Save current scene to a brand-new slot and append it to the manifest.
 ## Returns the new slot id.
 func create_new_slot(root: Node, name: String) -> String:
-	DirAccess.make_dir_recursive_absolute(ARCADE_DIR)
+	DirAccess.make_dir_recursive_absolute(slot_dir())
 	var slot_id := _generate_id()
 	_write_scene_to_file(root, _slot_file(slot_id))
 	var m := _load_manifest()
@@ -207,8 +227,17 @@ func clear_scene(root: Node) -> void:
 
 # ── Private helpers ────────────────────────────────────────────────────────────
 
+## Where this room's slots live.
+func slot_dir() -> String:
+	return "%s/%s" % [ROOMS_DIR, room_id]
+
+
+func _manifest_file() -> String:
+	return slot_dir() + "/manifest.json"
+
+
 func _slot_file(slot_id: String) -> String:
-	return ARCADE_DIR + "/" + slot_id + ".json"
+	return slot_dir() + "/" + slot_id + ".json"
 
 
 func _generate_id() -> String:
@@ -220,8 +249,9 @@ func _empty_manifest() -> Dictionary:
 
 
 func _load_manifest() -> Dictionary:
-	if FileAccess.file_exists(MANIFEST_FILE):
-		var f := FileAccess.open(MANIFEST_FILE, FileAccess.READ)
+	var path := _manifest_file()
+	if FileAccess.file_exists(path):
+		var f := FileAccess.open(path, FileAccess.READ)
 		if f:
 			var parsed: Variant = JSON.parse_string(f.get_as_text())
 			if parsed is Dictionary:
@@ -230,8 +260,8 @@ func _load_manifest() -> Dictionary:
 
 
 func _save_manifest(m: Dictionary) -> bool:
-	DirAccess.make_dir_recursive_absolute(ARCADE_DIR)
-	var f := FileAccess.open(MANIFEST_FILE, FileAccess.WRITE)
+	DirAccess.make_dir_recursive_absolute(slot_dir())
+	var f := FileAccess.open(_manifest_file(), FileAccess.WRITE)
 	if not f:
 		push_error("ScenePersistence: cannot write manifest (err %d)" % FileAccess.get_open_error())
 		return false

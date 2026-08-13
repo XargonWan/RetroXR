@@ -24,6 +24,9 @@ signal hud_changed
 signal aim_crosshair_changed(enabled: bool)
 ## True to aim a teleport with the left stick, false to slide with it.
 signal locomotion_mode_changed(teleport: bool)
+## Whether the sticks keep working while passthrough is on. Only the passthrough
+## room can act on it, so the controller hands it to whatever room is standing.
+signal passthrough_locomotion_changed(enabled: bool)
 signal controller_hands_changed(enabled: bool)
 ## The system filter was toggled — the CORES download list is built from it.
 signal system_filter_changed
@@ -373,6 +376,33 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(move_drop)
 
 	vbox.add_child(HSeparator.new())
+
+	# Whether that movement still works in passthrough. XR only, like Turn Style:
+	# passthrough is not reachable outside a headset. Shown whatever this headset
+	# supports — the answer is only knowable once the OpenXR session is up, well
+	# after this page is built, and a switch that appears on the second visit reads
+	# worse than one that is simply inert on hardware without passthrough.
+	if MenuStyle.is_vr_mode():
+		var ptm_row := HBoxContainer.new()
+		ptm_row.add_theme_constant_override("separation", 10)
+		ptm_row.custom_minimum_size = Vector2(0, 68)
+		vbox.add_child(ptm_row)
+
+		var ptm_lbl := Label.new()
+		ptm_lbl.text = "Move in Passthrough"
+		ptm_lbl.add_theme_font_size_override("font_size", 22)
+		ptm_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+		ptm_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ptm_row.add_child(ptm_lbl)
+
+		ptm_row.add_child(VRToggle.create(AppPrefs.passthrough_locomotion,
+			func(on: bool) -> void:
+				AppPrefs.passthrough_locomotion = on
+				AppPrefs.save_prefs()
+				passthrough_locomotion_changed.emit(on)
+		))
+
+		vbox.add_child(HSeparator.new())
 
 	# Ray Gun crosshair option
 	var xhair_row := HBoxContainer.new()

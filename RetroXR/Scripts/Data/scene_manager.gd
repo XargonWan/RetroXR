@@ -28,6 +28,12 @@ const SCENE_TITLES := {
 	"passthrough": "PASSTHROUGH",
 	"test":        "TEST HALLWAY",
 }
+## Rooms that keep save slots. The arcade and passthrough are the two you furnish:
+## everything in them arrived from the spawn menu, so a slot is the whole room.
+## The den, the bedroom and the test hallway are authored — their contents are in
+## the .tscn, and a slot of what was spawned on top would restore a handful of
+## objects into a room that already has its own.
+const SLOT_ROOMS := ["arcade", "passthrough"]
 const PREFS_FILE := "user://scenes/prefs.json"
 const LOADING_RIG_SCENE := preload("res://Scenes/UI/loading_rig.tscn")
 ## Every room instances res://Scenes/player_rig.tscn under this name.
@@ -36,7 +42,21 @@ const ORIGIN_PATH := "Staging/XROrigin3D"
 
 var current_scene_id: String = "arcade"
 var auto_save_on_switch: bool = true
-var active_slot_id: String = "clean"
+
+## room id -> the slot that room is currently standing on. Absent means "clean".
+## Per room because the slots are: see ScenePersistence.
+var active_slots: Dictionary = {}
+
+## The current room's active slot. Kept as a property so that reading or setting
+## "the active slot" without naming a room still means the room you are in.
+## Assigning writes the entry and nothing else — persisting and announcing is
+## set_active_slot's job, so a probe pointing this at a scratch id cannot leave
+## the real game's prefs behind it.
+var active_slot_id: String:
+	get:
+		return active_slot(current_scene_id)
+	set(value):
+		active_slots[current_scene_id] = value
 
 ## Set by NetworkManager around host-driven scene switches so the client
 ## guard in change_scene() doesn't block them.
@@ -57,19 +77,40 @@ func load_prefs() -> void:
 	if not f:
 		return
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if parsed is Dictionary:
-		active_slot_id = (parsed as Dictionary).get("last_slot_id", "clean")
+	if not parsed is Dictionary:
+		return
+	var data := parsed as Dictionary
+	# last_slot_id is the single-room form this file used to take, and it was
+	# always the arcade's. Read so an existing install comes back to its own room
+	# rather than to a clean one.
+	var legacy: String = data.get("last_slot_id", "")
+	if not legacy.is_empty():
+		active_slots["arcade"] = legacy
+	var slots: Variant = data.get("slots", {})
+	if slots is Dictionary:
+		for room: Variant in (slots as Dictionary):
+			active_slots[str(room)] = str((slots as Dictionary)[room])
 
 
 func save_prefs() -> void:
 	DirAccess.make_dir_recursive_absolute("user://scenes")
 	var f := FileAccess.open(PREFS_FILE, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"last_slot_id": active_slot_id}))
+		f.store_string(JSON.stringify({"slots": active_slots}))
 
 
-func set_active_slot(slot_id: String) -> void:
-	active_slot_id = slot_id
+## The slot `room_id` is standing on, "clean" if it has never been given one.
+func active_slot(room_id: String) -> String:
+	return str(active_slots.get(room_id, "clean"))
+
+
+## Whether a room keeps save slots at all.
+func room_has_slots(scene_id: String) -> bool:
+	return scene_id in SLOT_ROOMS
+
+
+func set_active_slot(slot_id: String, room_id: String = current_scene_id) -> void:
+	active_slots[room_id] = slot_id
 	save_prefs()
 	active_slot_changed.emit(slot_id)
 
@@ -97,12 +138,13 @@ func change_scene(scene_id: String) -> void:
 		push_warning("SceneManager: only the host can change scenes during a session")
 		return
 
-	# Auto-save arcade state before leaving (skip if clean slot — it's readonly;
-	# skip on clients — the shared world is the host's, not ours to save).
-	if current_scene_id == "arcade" and auto_save_on_switch and active_slot_id != "clean" \
+	# Auto-save the room being left, into its own slot (skip if clean — it's
+	# readonly; skip on clients — the shared world is the host's, not ours to save).
+	var leaving := current_scene_id
+	if room_has_slots(leaving) and auto_save_on_switch and active_slot(leaving) != "clean" \
 			and not net_client:
-		var persistence := ScenePersistence.new()
-		persistence.save_slot(get_tree().current_scene, active_slot_id)
+		var persistence := ScenePersistence.new(leaving)
+		persistence.save_slot(get_tree().current_scene, active_slot(leaving))
 
 	current_scene_id = scene_id
 	# Deferred: the call arrives from a button inside the scene about to be freed,

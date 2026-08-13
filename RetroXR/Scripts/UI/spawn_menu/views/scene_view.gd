@@ -9,11 +9,13 @@ class_name SpawnMenuSceneView
 extends Control
 
 signal scene_change_requested(scene_id: String)
-signal slot_load_requested(slot_id: String)
-signal slot_save_requested(slot_id: String)
-signal slot_delete_requested(slot_id: String)
-signal slot_create_requested
-signal slot_rename_requested(slot_id: String, new_name: String)
+## The slot signals all name the room whose grid is open. Each room in
+## SceneManager.SLOT_ROOMS keeps its own set, and this panel shows one at a time.
+signal slot_load_requested(slot_id: String, room_id: String)
+signal slot_save_requested(slot_id: String, room_id: String)
+signal slot_delete_requested(slot_id: String, room_id: String)
+signal slot_create_requested(room_id: String)
+signal slot_rename_requested(slot_id: String, new_name: String, room_id: String)
 ## Which of the two panels' scrolls the thumbstick should now drive. The menu
 ## owns _active_scroll, and this view switches panels on its own.
 signal scroll_changed(scroll: ScrollContainer)
@@ -30,6 +32,12 @@ var _states_vbox:   VBoxContainer   = null
 var _hover_pending: Dictionary      = {}
 var _rename_slot_id: String         = ""
 var _rename_edit:   LineEdit        = null
+## Which room's slots the states panel is showing.
+var _slot_room:     String          = "arcade"
+var _states_title:  Label           = null
+## The bottom "+ Save New" bar. Hidden for a room the player is not standing in:
+## saving writes the CURRENT scene's contents, which are not that room's.
+var _save_bar:      Control         = null
 
 
 static func create() -> SpawnMenuSceneView:
@@ -70,8 +78,9 @@ func _build() -> void:
 	rooms_vbox.add_child(grid)
 	_rooms_grid = grid
 
-	# Arcade Room card → navigates to state grid
-	grid.add_child(_make_room_card("Arcade Room", Color(0.15, 0.13, 0.35), show_states))
+	# Arcade Room card → navigates to its state grid
+	grid.add_child(_make_room_card("Arcade Room", Color(0.15, 0.13, 0.35),
+		show_states.bind("arcade")))
 
 	# Cozy Den card → direct scene switch
 	grid.add_child(_make_room_card("Cozy Den", Color(0.4, 0.25, 0.12),
@@ -113,6 +122,7 @@ func _build() -> void:
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	back_row.add_child(title_lbl)
+	_states_title = title_lbl
 
 	# Spacer so title stays centered despite back button width
 	var back_spacer := Control.new()
@@ -132,6 +142,7 @@ func _build() -> void:
 	bottom_bar.custom_minimum_size = Vector2(0, 64)
 	bottom_bar.add_theme_constant_override("separation", 0)
 	states_root.add_child(bottom_bar)
+	_save_bar = bottom_bar
 
 	var save_new_btn := Button.new()
 	save_new_btn.text = "  + Save New  "
@@ -140,7 +151,7 @@ func _build() -> void:
 	save_new_btn.custom_minimum_size = Vector2(0, 64)
 	save_new_btn.add_theme_stylebox_override("normal",
 		MenuStyle.rounded(MenuStyle.COLOR_BTN_SAVE, 6))
-	save_new_btn.pressed.connect(func(): slot_create_requested.emit())
+	save_new_btn.pressed.connect(func(): slot_create_requested.emit(_slot_room))
 	bottom_bar.add_child(save_new_btn)
 
 
@@ -166,18 +177,38 @@ func _sync_passthrough_card() -> void:
 	var sm := _scene_manager()
 	if sm == null or not sm.is_passthrough_supported():
 		return
+	# Straight to its state grid, like the arcade: passthrough is the other room
+	# whose whole contents were spawned, so it keeps slots of its own and picking
+	# one is how you enter it. "Clean Room" is the empty-handed way in.
 	_passthrough_card = _make_room_card("Passthrough AR", Color(0.85, 0.85, 0.9),
-		func(): scene_change_requested.emit("passthrough"))
+		show_states.bind("passthrough"))
 	_rooms_grid.add_child(_passthrough_card)
 
 
-func show_states() -> void:
+## Open the slot grid for one room. Bound into that room's card, so which grid
+## this is stays with the card rather than being inferred from where the player
+## happens to be standing.
+func show_states(room_id: String = "arcade") -> void:
+	_slot_room = room_id
+	if _states_title != null:
+		_states_title.text = _room_title(room_id)
 	if _rooms_panel:
 		_rooms_panel.visible = false
 	if _states_panel:
 		_states_panel.visible = true
 	scroll_changed.emit(_states_scroll)
 	rebuild_states_grid()
+
+
+func _room_title(room_id: String) -> String:
+	return "Passthrough AR" if room_id == "passthrough" else "Arcade Room"
+
+
+## True while the player is standing in the room whose grid is open — the only
+## time the current scene's contents are this room's to write.
+func _in_shown_room() -> bool:
+	var sm := _scene_manager()
+	return sm == null or sm.current_scene_id == _slot_room
 
 
 # ── Cards ─────────────────────────────────────────────────────────────────────
@@ -216,10 +247,12 @@ func rebuild_states_grid() -> void:
 		child.queue_free()
 	_hover_pending.clear()
 
-	var persistence := ScenePersistence.new()
+	var persistence := ScenePersistence.new(_slot_room)
 	var slots := persistence.get_slots()
 	var sm := _scene_manager()
-	var active_id: String = sm.active_slot_id if sm else "clean"
+	var active_id: String = sm.active_slot(_slot_room) if sm else "clean"
+	if _save_bar != null:
+		_save_bar.visible = _in_shown_room()
 
 	for slot: Dictionary in slots:
 		_states_vbox.add_child(_make_state_card(slot, active_id))
@@ -300,20 +333,25 @@ func _make_state_card(slot: Dictionary, active_slot_id: String) -> Control:
 	inner.add_child(action_row)
 
 	var load_btn := _make_action_btn("Load", MenuStyle.COLOR_BTN_LOAD)
-	load_btn.pressed.connect(func(): slot_load_requested.emit(slot_id))
+	load_btn.pressed.connect(func(): slot_load_requested.emit(slot_id, _slot_room))
 	load_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
 	load_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
 	action_row.add_child(load_btn)
 
 	if not readonly:
-		var save_btn := _make_action_btn("Save", MenuStyle.COLOR_BTN_SAVE)
-		save_btn.pressed.connect(func(): slot_save_requested.emit(slot_id))
-		save_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
-		save_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
-		action_row.add_child(save_btn)
+		# Save only where it means something: overwriting a slot writes the CURRENT
+		# scene, so offering it while standing somewhere else is offering to fill an
+		# arcade slot with a passthrough room. Delete is not like that — a slot can
+		# be binned from anywhere, and Load is how you travel to one.
+		if _in_shown_room():
+			var save_btn := _make_action_btn("Save", MenuStyle.COLOR_BTN_SAVE)
+			save_btn.pressed.connect(func(): slot_save_requested.emit(slot_id, _slot_room))
+			save_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
+			save_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
+			action_row.add_child(save_btn)
 
 		var del_btn := _make_action_btn("Delete", MenuStyle.COLOR_BTN_CLEAR)
-		del_btn.pressed.connect(func(): slot_delete_requested.emit(slot_id))
+		del_btn.pressed.connect(func(): slot_delete_requested.emit(slot_id, _slot_room))
 		del_btn.mouse_entered.connect(_on_card_hover_enter.bind(slot_id, action_row))
 		del_btn.mouse_exited.connect(_on_card_hover_exit.bind(slot_id, action_row))
 		action_row.add_child(del_btn)
@@ -372,5 +410,5 @@ func _finish_rename() -> void:
 	_rename_edit = null
 	var new_name := edit.text.strip_edges() if edit else ""
 	if not new_name.is_empty():
-		slot_rename_requested.emit(slot_id, new_name)
+		slot_rename_requested.emit(slot_id, new_name, _slot_room)
 	rebuild_states_grid()

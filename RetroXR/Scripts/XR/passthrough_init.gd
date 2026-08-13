@@ -6,15 +6,21 @@
 ## See: https://docs.godotengine.org/en/4.6/tutorials/xr/ar_passthrough.html
 extends Node3D
 
-## Locomotion is suspended for as long as passthrough is on. You are standing in
-## your actual room and can see it, so sliding the world past you puts the two
-## out of register — walk instead.
+## Locomotion can be suspended for as long as passthrough is on: you are standing
+## in your actual room and can see it, so sliding the world past you puts the two
+## out of register. Whether it is suspended is the player's call
+## (AppPrefs.passthrough_locomotion), because a real room is usually smaller than
+## the one being furnished and walking alone cannot reach the far end of it.
 const LOCO_OWNER := &"passthrough"
 
 @onready var _viewport: Viewport = get_viewport()
 @onready var _environment: Environment = $WorldEnvironment.environment
 
 var _loco: LocomotionManager = null
+## Whether passthrough actually came up. The block follows this and the pref
+## together, so flipping the switch from the menu can only move the player while
+## they are really in passthrough.
+var _passthrough_on := false
 
 
 func _ready() -> void:
@@ -53,7 +59,8 @@ func _enable_passthrough() -> void:
 	# Tied to passthrough actually being on, not merely to this scene loading —
 	# every path above returns early when it is not available (no OpenXR, no
 	# blend mode), and blocking movement in a bare scene would strand the player.
-	_block_locomotion(true)
+	_passthrough_on = true
+	refresh_locomotion()
 
 	print("PassthroughInit: passthrough enabled (blend_mode=%d)" % xr_interface.environment_blend_mode)
 
@@ -62,6 +69,7 @@ func _disable_passthrough() -> void:
 	# Released first and unconditionally: the returns below are all reasons the
 	# blend mode cannot be restored, none of them a reason to leave the player
 	# unable to move.
+	_passthrough_on = false
 	_block_locomotion(false)
 
 	var xr_interface: XRInterface = XRServer.primary_interface
@@ -77,6 +85,14 @@ func _disable_passthrough() -> void:
 
 func _exit_tree() -> void:
 	_disable_passthrough()
+
+
+## Re-read the pref and block or release accordingly. Called by the OPTIONS switch,
+## which lands on SpawnMenuController while this room is the current scene.
+func refresh_locomotion() -> void:
+	var prefs := get_node_or_null("/root/AppPrefs")
+	var allowed: bool = prefs == null or prefs.passthrough_locomotion
+	_block_locomotion(_passthrough_on and not allowed)
 
 
 ## CHANNEL_ALL covers direct movement, snap turn and teleport; CHANNEL_DESKTOP_MOVE

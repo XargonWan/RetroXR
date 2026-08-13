@@ -89,27 +89,32 @@ func _run() -> void:
 ## room comes up, which silently turns it back on from the player's prefs. A run
 ## of this file then auto-saves the probe's idea of the room over their arcade on
 ## every single change — it overwrote a 39-object save with a 1-object one before
-## this guard existed. Pointing active_slot_id at a scratch id means every write
+## this guard existed. Pointing the active slot at a scratch id means every write
 ## lands in a file nobody else reads. (Copying to it keeps the restore path
 ## covered; "clean" would be safe too but restores nothing.)
+##
+## EVERY room that keeps slots, not just the arcade: this walk enters passthrough
+## too, and passthrough auto-saves on the way out exactly as the arcade does.
 const SCRATCH_SLOT := "zz_probe_scratch"
 
 
 func _claim_scratch_slot() -> void:
 	SceneManager.auto_save_on_switch = false
-	var dir := ScenePersistence.ARCADE_DIR
-	var source := "%s/%s.json" % [dir, SceneManager.active_slot_id]
-	var scratch := "%s/%s.json" % [dir, SCRATCH_SLOT]
-	if FileAccess.file_exists(source):
-		DirAccess.copy_absolute(source, scratch)
-	SceneManager.active_slot_id = SCRATCH_SLOT
-	print("[matrix] using scratch slot '%s' (copied from '%s')" % [SCRATCH_SLOT, source])
+	for room: String in SceneManager.SLOT_ROOMS:
+		var dir := ScenePersistence.new(room).slot_dir()
+		var source := "%s/%s.json" % [dir, SceneManager.active_slot(room)]
+		if FileAccess.file_exists(source):
+			DirAccess.copy_absolute(source, "%s/%s.json" % [dir, SCRATCH_SLOT])
+		SceneManager.active_slots[room] = SCRATCH_SLOT
+		print("[matrix] %s: using scratch slot '%s' (copied from '%s')"
+			% [room, SCRATCH_SLOT, source])
 
 
 func _release_scratch_slot() -> void:
-	var scratch := "%s/%s.json" % [ScenePersistence.ARCADE_DIR, SCRATCH_SLOT]
-	if FileAccess.file_exists(scratch):
-		DirAccess.remove_absolute(scratch)
+	for room: String in SceneManager.SLOT_ROOMS:
+		var scratch := "%s/%s.json" % [ScenePersistence.new(room).slot_dir(), SCRATCH_SLOT]
+		if FileAccess.file_exists(scratch):
+			DirAccess.remove_absolute(scratch)
 
 
 # ── Phases ────────────────────────────────────────────────────────────────────

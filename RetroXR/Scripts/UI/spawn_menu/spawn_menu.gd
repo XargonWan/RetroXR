@@ -31,16 +31,18 @@ signal spawn_cassette_requested(album_path: String)
 signal turn_style_changed(value: String)
 ## Emitted when the user clicks a room card that maps directly to a scene (e.g. passthrough).
 signal scene_change_requested(scene_id: String)
+## Every slot signal names its ROOM as well as its slot: each room keeps its own
+## set, and the grid on screen is not always the room the player is standing in.
 ## Emitted when the user clicks Load on a state card.
-signal scene_slot_load_requested(slot_id: String)
+signal scene_slot_load_requested(slot_id: String, room_id: String)
 ## Emitted when the user clicks Save on a state card (overwrite).
-signal scene_slot_save_requested(slot_id: String)
+signal scene_slot_save_requested(slot_id: String, room_id: String)
 ## Emitted when the user clicks Delete on a state card.
-signal scene_slot_delete_requested(slot_id: String)
+signal scene_slot_delete_requested(slot_id: String, room_id: String)
 ## Emitted when the user clicks "Save New".
-signal scene_slot_create_requested
+signal scene_slot_create_requested(room_id: String)
 ## Emitted when the user confirms a rename via the inline LineEdit.
-signal scene_slot_rename_requested(slot_id: String, new_name: String)
+signal scene_slot_rename_requested(slot_id: String, new_name: String, room_id: String)
 ## Emitted when the user toggles auto-save on scene switch.
 signal auto_save_changed(enabled: bool)
 ## Emitted when any performance-HUD switch or its mount changed. The listener
@@ -50,6 +52,8 @@ signal hud_changed
 signal aim_crosshair_changed(enabled: bool)
 ## True to aim a teleport with the left stick, false to slide with it.
 signal locomotion_mode_changed(teleport: bool)
+## Emitted when the user toggles whether the sticks work in passthrough.
+signal passthrough_locomotion_changed(enabled: bool)
 ## Emitted when the user toggles the wrap-around hands drawn on held controllers.
 signal controller_hands_changed(enabled: bool)
 ## Emitted when the user changes the snap turn angle.
@@ -426,6 +430,7 @@ func _build_ui() -> void:
 			[_options_view.auto_save_changed, auto_save_changed],
 			[_options_view.aim_crosshair_changed, aim_crosshair_changed],
 			[_options_view.locomotion_mode_changed, locomotion_mode_changed],
+			[_options_view.passthrough_locomotion_changed, passthrough_locomotion_changed],
 			[_options_view.controller_hands_changed, controller_hands_changed]]:
 		var out: Signal = relay[1]
 		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))
@@ -448,15 +453,16 @@ func _build_ui() -> void:
 	_scene_view.scene_change_requested.connect(
 		func(id: String) -> void: scene_change_requested.emit(id))
 	_scene_view.slot_load_requested.connect(
-		func(id: String) -> void: scene_slot_load_requested.emit(id))
+		func(id: String, room: String) -> void: scene_slot_load_requested.emit(id, room))
 	_scene_view.slot_save_requested.connect(
-		func(id: String) -> void: scene_slot_save_requested.emit(id))
+		func(id: String, room: String) -> void: scene_slot_save_requested.emit(id, room))
 	_scene_view.slot_delete_requested.connect(
-		func(id: String) -> void: scene_slot_delete_requested.emit(id))
+		func(id: String, room: String) -> void: scene_slot_delete_requested.emit(id, room))
 	_scene_view.slot_create_requested.connect(
-		func() -> void: scene_slot_create_requested.emit())
+		func(room: String) -> void: scene_slot_create_requested.emit(room))
 	_scene_view.slot_rename_requested.connect(
-		func(id: String, n: String) -> void: scene_slot_rename_requested.emit(id, n))
+		func(id: String, n: String, room: String) -> void:
+			scene_slot_rename_requested.emit(id, n, room))
 	_scene_view.scroll_changed.connect(func(s: ScrollContainer) -> void:
 		if _scene_view.visible:
 			_active_scroll = s)

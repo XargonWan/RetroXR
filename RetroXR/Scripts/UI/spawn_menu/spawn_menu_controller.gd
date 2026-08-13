@@ -217,6 +217,7 @@ func _connect_menu_signals() -> void:
 	menu.hud_changed.connect(_on_hud_changed)
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
 	menu.locomotion_mode_changed.connect(_on_locomotion_mode_changed)
+	menu.passthrough_locomotion_changed.connect(_on_passthrough_locomotion_changed)
 	menu.controller_hands_changed.connect(_on_controller_hands_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
@@ -234,7 +235,7 @@ func _connect_menu_signals() -> void:
 	# No initial call for the performance HUD: it is not persisted, so it is off
 	# at every launch and the node is built by the first switch that asks for it.
 
-	# Auto-load last active slot on startup (arcade only)
+	# Auto-load the room's last active slot on startup
 	_autoload_slot()
 
 
@@ -248,8 +249,12 @@ func _on_scene_ready(_scene_id: String) -> void:
 
 func _autoload_slot() -> void:
 	var sm := get_node_or_null("/root/SceneManager")
-	if sm and sm.current_scene_id == "arcade" and sm.active_slot_id != "clean":
-		await ScenePersistence.new().load_slot_async(get_tree().current_scene, sm.active_slot_id)
+	if sm == null or not sm.room_has_slots(sm.current_scene_id):
+		return
+	var room: String = sm.current_scene_id
+	var slot: String = sm.active_slot(room)
+	if slot != "clean":
+		await ScenePersistence.new(room).load_slot_async(get_tree().current_scene, slot)
 
 
 # ── Rebinding ─────────────────────────────────────────────────────────────────
@@ -1168,6 +1173,16 @@ func _on_locomotion_mode_changed(teleport: bool) -> void:
 		_locomotion_manager.set_teleport_mode(teleport)
 
 
+## Whether the sticks work in passthrough. The block belongs to the passthrough
+## room — it is the thing that knows passthrough actually came up — so the switch
+## is handed to whatever room is standing and every other room ignores it. Nothing
+## to do on entering passthrough later: PassthroughInit reads the pref itself.
+func _on_passthrough_locomotion_changed(_enabled: bool) -> void:
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("refresh_locomotion"):
+		scene.call("refresh_locomotion")
+
+
 func _on_aim_crosshair_changed(enabled: bool) -> void:
 	_aim_crosshair_enabled = enabled
 	# Anything that paints a dot where it is aiming follows this switch — the ray
@@ -1215,47 +1230,55 @@ func _on_scene_change_requested(scene_id: String) -> void:
 	sm.change_scene(scene_id)
 
 
-func _on_slot_load(slot_id: String) -> void:
+## Load a slot belonging to `room_id` — the room whose grid the player is looking
+## at, which is not always the room they are standing in.
+##
+## A slot is a list of world poses struck against ONE room, so loading one from
+## somewhere else means travelling there first; otherwise its objects are spawned
+## into whatever room is standing, over the top of that room's own. The arrival
+## runs the load itself: scene_ready fires _autoload_slot, which reads exactly the
+## slot claimed here.
+func _on_slot_load(slot_id: String, room_id: String) -> void:
 	var sm := get_node_or_null("/root/SceneManager")
-	# A slot describes the arcade's contents, so loading one from another room
-	# means going to the arcade first — otherwise its objects are spawned into
-	# whatever room is standing, over the top of that room's own. The arrival
-	# runs the load itself: scene_ready fires _autoload_slot, which reads exactly
-	# the slot claimed here.
-	if sm != null and sm.current_scene_id != "arcade":
-		sm.set_active_slot(slot_id)
-		sm.change_scene("arcade")
+	if sm != null and sm.current_scene_id != room_id:
+		sm.set_active_slot(slot_id, room_id)
+		sm.change_scene(room_id)
 		return
-	var persistence := ScenePersistence.new()
+	var persistence := ScenePersistence.new(room_id)
 	await persistence.load_slot_async(get_tree().current_scene, slot_id)
 	if sm:
-		sm.set_active_slot(slot_id)
+		sm.set_active_slot(slot_id, room_id)
 	var menu := _get_menu()
 	if menu:
 		menu.rebuild_states_grid()
 
 
-func _on_slot_save(slot_id: String) -> void:
-	if slot_id == "clean":
+## Only the room you are standing in can be written into a slot — anywhere else
+## the current scene's contents are not what that slot describes. The view drops
+## the Save buttons in that case, so this is the backstop rather than the rule.
+func _on_slot_save(slot_id: String, room_id: String) -> void:
+	if slot_id == "clean" or not _in_room(room_id):
 		return
-	ScenePersistence.new().save_slot(get_tree().current_scene, slot_id)
+	ScenePersistence.new(room_id).save_slot(get_tree().current_scene, slot_id)
 
 
-func _on_slot_delete(slot_id: String) -> void:
+func _on_slot_delete(slot_id: String, room_id: String) -> void:
 	if slot_id == "clean":
 		return
-	var persistence := ScenePersistence.new()
+	var persistence := ScenePersistence.new(room_id)
 	persistence.delete_slot(slot_id)
 	var sm := get_node_or_null("/root/SceneManager")
-	if sm and sm.active_slot_id == slot_id:
-		sm.set_active_slot("clean")
+	if sm and sm.active_slot(room_id) == slot_id:
+		sm.set_active_slot("clean", room_id)
 	var menu := _get_menu()
 	if menu:
 		menu.rebuild_states_grid()
 
 
-func _on_slot_create() -> void:
-	var persistence := ScenePersistence.new()
+func _on_slot_create(room_id: String) -> void:
+	if not _in_room(room_id):
+		return
+	var persistence := ScenePersistence.new(room_id)
 	var user_count := persistence.get_slots().filter(func(s: Dictionary) -> bool:
 		return not s.get("readonly", false)
 	).size()
@@ -1263,14 +1286,20 @@ func _on_slot_create() -> void:
 	var new_id := persistence.create_new_slot(get_tree().current_scene, slot_name)
 	var sm := get_node_or_null("/root/SceneManager")
 	if sm:
-		sm.set_active_slot(new_id)
+		sm.set_active_slot(new_id, room_id)
 	var menu := _get_menu()
 	if menu:
 		menu.rebuild_states_grid()
 
 
-func _on_slot_rename(slot_id: String, new_name: String) -> void:
-	ScenePersistence.new().rename_slot(slot_id, new_name)
+## Whether the player is standing in the room a slot belongs to.
+func _in_room(room_id: String) -> bool:
+	var sm := get_node_or_null("/root/SceneManager")
+	return sm == null or sm.current_scene_id == room_id
+
+
+func _on_slot_rename(slot_id: String, new_name: String, room_id: String) -> void:
+	ScenePersistence.new(room_id).rename_slot(slot_id, new_name)
 	var menu := _get_menu()
 	if menu:
 		menu.rebuild_states_grid()

@@ -36,6 +36,12 @@ var spatial_audio_sdk: bool = true
 ## teleport" at once. False (smooth walking) is the default because it is the
 ## one that needs no explaining; teleport is the comfort option.
 var locomotion_teleport: bool = false
+## Whether the sticks still drive the player while passthrough is on. Sliding the
+## world past you while you can see your actual room puts the two out of register,
+## which is why it can be switched off — but the room you are standing in is rarely
+## the size of the one you are furnishing, so walking alone is not enough to reach
+## everything and the default is to leave locomotion working.
+var passthrough_locomotion: bool = true
 ## Systemids the player has hidden from the Systems and Cartridges grids. One
 ## list for both: hiding a machine means "I don't care about this", not "not in
 ## this tab". Distinct from SystemFilter, which is our own opinion about which
@@ -183,6 +189,7 @@ func _load_prefs() -> void:
 	hint_uses        = _prefs_dict(data, "hint_uses",        hint_uses)
 	spatial_audio_sdk = _prefs_bool(data, "spatial_audio_sdk", spatial_audio_sdk)
 	locomotion_teleport = _prefs_bool(data, "locomotion_teleport", locomotion_teleport)
+	passthrough_locomotion = _prefs_bool(data, "passthrough_locomotion", passthrough_locomotion)
 	hidden_systems      = _prefs_strings(data, "hidden_systems")
 	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
 	compact_tiles       = _prefs_bool(data, "compact_tiles",       compact_tiles)
@@ -204,6 +211,7 @@ func save_prefs() -> void:
 		"hint_uses":        hint_uses,
 		"spatial_audio_sdk": spatial_audio_sdk,
 		"locomotion_teleport": locomotion_teleport,
+		"passthrough_locomotion": passthrough_locomotion,
 		"hidden_systems":    hidden_systems,
 		"show_hidden_systems": show_hidden_systems,
 		"compact_tiles":     compact_tiles,
