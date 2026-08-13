@@ -182,13 +182,16 @@ vec3 crt_notch_sample(sampler2D tex, vec2 uv, vec3 base) {
 // Optional NTSC-style chroma smear: keep luma sharp, bleed I/Q from taps to the
 // right. Offsets are in source texels so the bleed distance doesn't change with
 // the core's resolution.
-vec3 crt_smear_sample(sampler2D tex, vec2 uv) {
-	vec3 c0 = texture(tex, uv).rgb;
+//
+// `base` is the picture colour at `uv`, passed in rather than sampled here so the
+// luma this keeps is the caller's footprint-aware one (see pixel_aa.gdshaderinc);
+// the I/Q taps are single taps because chroma is being deliberately blurred anyway.
+vec3 crt_smear_sample(sampler2D tex, vec2 uv, vec3 base) {
 	if (crt_smear <= 0.0) {
-		return c0;
+		return base;
 	}
 	float d = crt_smear * 3.0 / float(textureSize(tex, 0).x);
-	vec3 y0 = rgb2yiq(c0);
+	vec3 y0 = rgb2yiq(base);
 	vec3 yi = rgb2yiq(texture(tex, uv + vec2(d, 0.0)).rgb);
 	vec3 yq = rgb2yiq(texture(tex, uv + vec2(d * 2.2, 0.0)).rgb);
 	return yiq2rgb(vec3(y0.x, yi.y, yq.z));

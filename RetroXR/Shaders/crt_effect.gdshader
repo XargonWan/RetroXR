@@ -48,12 +48,15 @@ void fragment() {
 	// Fit inside the glass, not around it: the bars are part of the picture the
 	// tube shows, so they go through the same stage and curve with it.
 	vec2 fuv = (wuv - 0.5) / fit_scale + 0.5;
+	// suv is the single-tap position, which the smear and notch taps are placed
+	// around; the picture itself comes from pixel_aa, which averages the pixel's
+	// footprint when the tube is showing more source texels than it has pixels.
 	vec2 suv = pixel_aa_uv(source_tex, fuv);
 
-	vec3 col = texture(source_tex, suv).rgb;
+	vec3 col = pixel_aa(source_tex, fuv).rgb;
 	vec3 glow = vec3(0.0);
 	if (crt_enabled) {
-		col = crt_smear_sample(source_tex, suv);
+		col = crt_smear_sample(source_tex, suv, col);
 		col = crt_notch_sample(source_tex, suv, col);
 		glow = crt_glow(source_tex, fuv);
 	}

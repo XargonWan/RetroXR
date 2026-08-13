@@ -42,9 +42,12 @@ void fragment() {
 	if (stereo_mode == 2 || (stereo_mode == 0 && VIEW_INDEX == VIEW_RIGHT)) {
 		rect.x += eye_shift;
 	}
-	vec2 suv = pixel_aa_uv(source_tex, rect.xy + wuv * rect.zw);
+	// suv is the single-tap position the notch and glow taps sit around; the picture
+	// comes from pixel_aa, which averages the pixel's footprint under minification.
+	vec2 wrect_uv = rect.xy + wuv * rect.zw;
+	vec2 suv = pixel_aa_uv(source_tex, wrect_uv);
 
-	vec3 col = texture(source_tex, suv).rgb;
+	vec3 col = pixel_aa(source_tex, wrect_uv).rgb;
 	vec3 glow = vec3(0.0);
 	if (crt_enabled) {
 		col = crt_notch_sample(source_tex, suv, col);
