@@ -17,7 +17,8 @@
 ## Sampling is tiered, because this room is CPU-bound on Quest:
 ##   _process   push one float into a ring. No monitor reads, no allocations.
 ##   FAST_S     read the monitors, format the labels, redraw the viewport once.
-##   SLOW_S     re-enumerate nodes (systems, ropes, spawned) and the eye buffer.
+##   SLOW_S     re-enumerate nodes (systems, ropes, spawned), the eye buffer and
+##              the device clocks.
 class_name PerfHud
 extends Node3D
 
@@ -46,6 +47,31 @@ const RING := 144
 ## whole period late rather than a fraction of one. Past one and a half periods
 ## is therefore a real miss, and everything under it is jitter around the lock.
 const MISS_FACTOR := 1.5
+
+# ── Device clocks ─────────────────────────────────────────────────────────────
+## Where the SoC's governor has settled, read straight out of sysfs.
+##
+## Not the same question as "are we hitting the rate", and the more useful one
+## once the answer to that is yes: a Quest 3 holding a locked 72/72 was found
+## sitting at 456 MHz of an available 690, which is a governor that has clocked
+## DOWN because the app is not asking for much. An app in trouble pins its
+## ceiling instead. Read the busy figure beside it and not on its own — DVFS
+## steers on busy and moves the CLOCK to hold it, so a flat 55% at half the
+## ceiling and a flat 55% at the ceiling are opposite readings.
+##
+## Both trees are readable from the app's own UID and SELinux domain, verified on
+## a Quest 3 through `run-as`, so neither figure needs a plugin or a native call.
+## They exist nowhere else, which is why the rows are only built where a read of
+## them actually succeeds.
+##
+## Deliberately NOT Meta's `CPU4/GPU=2/2` from the VrApi log line. That is their
+## own 0-4 tier and it is not what the kgsl table is indexed by — 456 MHz is
+## their level 2 and this table's sixth entry — so printing a rank from here
+## under their name would be a different number wearing their label.
+const GPU_CLOCK_PATH := "/sys/class/kgsl/kgsl-3d0/gpuclk"
+const GPU_TABLE_PATH := "/sys/class/kgsl/kgsl-3d0/gpu_available_frequencies"
+const GPU_BUSY_PATH := "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage"
+const CPU_DIR := "/sys/devices/system/cpu"
 
 # ── Panel metrics ─────────────────────────────────────────────────────────────
 # Two sets. The VR one is read through a lens at arm's length and has to be
@@ -160,6 +186,15 @@ var _systems: Array[Node] = []
 var _spawned_count := 0
 var _eye_text := ""
 var _peak_static := 0
+
+# Device clocks, sampled on the slow tick. The ceilings never move, so they are
+# found once and kept; only the current figures are re-read.
+var _cpu_clock_text := ""
+var _gpu_clock_text := ""
+var _cpu_max_khz := 0
+var _gpu_max_hz := 0
+var _cpu_cur_paths: PackedStringArray = PackedStringArray()
+var _clocks_scanned := false
 
 ## Per-system sampling state, keyed by ObjectID — never by the node itself. A
 ## cabinet can be freed between two ticks, and holding a reference across that is
@@ -385,6 +420,13 @@ func _build_frame() -> void:
 	_row(g, "cpu", "process / physics")
 	if MenuStyle.is_vr_mode():
 		_row(g, "eye", "eye buffer")
+	# Built on a successful read rather than on a platform check, so a panel never
+	# carries a row that can only ever say n/a — and so a kernel that lays these
+	# out somewhere else simply drops the row instead of printing a wrong number.
+	if not _sysfs_line(GPU_CLOCK_PATH).is_empty():
+		_row(g, "gpuclk", "gpu clock")
+	if not _sysfs_line(CPU_DIR + "/cpu0/cpufreq/scaling_cur_freq").is_empty():
+		_row(g, "cpuclk", "cpu clock")
 
 
 func _build_memory() -> void:
@@ -491,6 +533,7 @@ func _sample_slow() -> void:
 	if _sections.has("frame"):
 		_budget_ms = _refresh_budget_ms()
 		_eye_text = _eye_buffer_text()
+		_sample_clocks()
 
 
 func _sample_fast() -> void:
@@ -562,6 +605,14 @@ func _update_frame() -> void:
 
 	if _val.has("eye"):
 		_put("eye", _eye_text, DIM)
+	# Ungraded, like the two rows above it. A governor sitting at its ceiling is
+	# not a fault — it means the headroom is spent, which is a thing to know and
+	# not a thing to go red about. What judges this section is the rate and the
+	# missed count.
+	if _val.has("gpuclk"):
+		_put("gpuclk", _gpu_clock_text, DIM)
+	if _val.has("cpuclk"):
+		_put("cpuclk", _cpu_clock_text, DIM)
 
 	if _spark != null:
 		_spark.set_trace(_ring, _ring_i, _budget_ms, miss_ms)
@@ -802,6 +853,86 @@ func _refresh_budget_ms() -> float:
 			return 1000.0 / rate
 	var screen := DisplayServer.screen_get_refresh_rate()
 	return 1000.0 / screen if screen > 1.0 else 1000.0 / 60.0
+
+
+# ── Device clocks ─────────────────────────────────────────────────────────────
+
+## One line out of sysfs, or "" if it cannot be read.
+##
+## get_line, never get_as_text: these files report a 4096-byte size they do not
+## fill, and a length-based read hands back whatever else is in that buffer along
+## with the value. This reads to the first newline and stops, so it does not care
+## what the size was claimed to be.
+func _sysfs_line(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var line := file.get_line()
+	file.close()
+	return line.strip_edges()
+
+
+## The ceilings, which do not move — found once, then kept for the session.
+func _scan_clock_ceilings() -> void:
+	_clocks_scanned = true
+	for hz_text: String in _sysfs_line(GPU_TABLE_PATH).split(" ", false):
+		if hz_text.is_valid_int():
+			_gpu_max_hz = maxi(_gpu_max_hz, hz_text.to_int())
+
+	var dir := DirAccess.open(CPU_DIR)
+	if dir == null:
+		return
+	for entry: String in dir.get_directories():
+		# "cpuidle" and "cpufreq" sit in here beside the cores themselves, and
+		# only the numbered ones are cores.
+		if not entry.begins_with("cpu") or not entry.substr(3).is_valid_int():
+			continue
+		var freq_dir := "%s/%s/cpufreq" % [CPU_DIR, entry]
+		var ceiling := _sysfs_line(freq_dir + "/cpuinfo_max_freq")
+		if not ceiling.is_valid_int():
+			continue
+		_cpu_max_khz = maxi(_cpu_max_khz, ceiling.to_int())
+		_cpu_cur_paths.append(freq_dir + "/scaling_cur_freq")
+
+
+func _sample_clocks() -> void:
+	if not (_val.has("gpuclk") or _val.has("cpuclk")):
+		return
+	if not _clocks_scanned:
+		_scan_clock_ceilings()
+	_gpu_clock_text = _read_gpu_clock()
+	_cpu_clock_text = _read_cpu_clock()
+
+
+func _read_gpu_clock() -> String:
+	var clock := _sysfs_line(GPU_CLOCK_PATH)
+	if not clock.is_valid_int() or _gpu_max_hz <= 0:
+		return "n/a"
+	var text := "%d / %d MHz" % [clock.to_int() / 1_000_000, _gpu_max_hz / 1_000_000]
+	var busy := _sysfs_line(GPU_BUSY_PATH).replace("%", "").strip_edges()
+	if busy.is_valid_int():
+		text += " · %d%%" % busy.to_int()
+	return text
+
+
+## The fastest core rather than an average across them: this app is single-thread
+## bound, so what matters is the core the main thread is on, and a governor that
+## has raised one core has raised the one doing the work.
+##
+## scaling_cur_freq, not cpuinfo_cur_freq — the second asks the hardware, which is
+## slow and on many kernels root-only, while this one is what the governor last
+## set and is a plain cached read.
+func _read_cpu_clock() -> String:
+	if _cpu_cur_paths.is_empty() or _cpu_max_khz <= 0:
+		return "n/a"
+	var cur_khz := 0
+	for path: String in _cpu_cur_paths:
+		var value := _sysfs_line(path)
+		if value.is_valid_int():
+			cur_khz = maxi(cur_khz, value.to_int())
+	if cur_khz <= 0:
+		return "n/a"
+	return "%.2f / %.2f GHz" % [cur_khz / 1_000_000.0, _cpu_max_khz / 1_000_000.0]
 
 
 ## The eye buffer as the runtime actually sized it, and the foveation level.
