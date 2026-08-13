@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the five GDExtensions, exports the signed Quest APK and the Windows
+# Builds the six GDExtensions, exports the signed Quest APK and the Windows
 # desktop build, publishes them to a GitHub Release, and points the SideQuest
 # listing at the new APK.
 #
@@ -128,14 +128,14 @@ jobs:
       # android.release.arm64, picked by the exported game's own feature tags.
       #
       # SCONS_CACHE matters because each extension has its own VariantDir and
-      # .sconsign, so all five otherwise rebuild godot-cpp from scratch. It is
+      # .sconsign, so all six otherwise rebuild godot-cpp from scratch. It is
       # populated and consumed inside this one job.
       - name: Build the host-side extensions the editor needs (windows, debug)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
         run: python Tools/build.py windows --target debug
 
-      - name: Build the five GDExtensions (android arm64, release)
+      - name: Build the six GDExtensions (android arm64, release)
         env:
           # build.py blanks ANDROID_HOME itself: godot-cpp prefers it when set
           # and then demands a full SDK. ANDROID_NDK_ROOT is the runner's r27d.
@@ -227,7 +227,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Known headless noise, none of it caused by the build. All five
+          # Known headless noise, none of it caused by the build. All six
           # extensions have a windows stanza and are built above, so none is
           # excused here - a load failure is a real one.
           grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import-editor2.log \
@@ -287,7 +287,7 @@ jobs:
           # One missing native drops the whole GDExtension at runtime, and a
           # missing vendors .so has previously shipped a Quest build with no
           # passthrough. The APK is the only ground truth for this.
-          for lib in liblibretro_godot libverlet_rope libvlc_godot libgodot-pdfium \
+          for lib in liblibretro_godot libarchive_godot libverlet_rope libvlc_godot libgodot-pdfium \
                      libmetaxr-audio libgodotopenxrvendors libvlc.so libpdfium.so \
                      libMetaXRAudioUnity.so; do
             grep -q "^lib/arm64-v8a/$lib" entries.txt || {
@@ -320,7 +320,7 @@ jobs:
       # windows.release.x86_64, while the editor doing the exporting is itself
       # debug-tagged and loads windows.debug.x86_64 to register the classes the
       # project's scenes and scripts name. Only the release ones ship.
-      - name: Build the five GDExtensions (windows x86_64, debug + release)
+      - name: Build the six GDExtensions (windows x86_64, debug + release)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
         run: python Tools/build.py windows --target both
@@ -362,7 +362,7 @@ jobs:
           pass import --import
           pass editor1 --editor --quit
           pass editor2 --editor --quit
-          # All five extensions have a windows stanza and are built above, so
+          # All six extensions have a windows stanza and are built above, so
           # none is excused - a load failure here is a real one.
           grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import-editor2.log \
             | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" > errors.log || true

@@ -1,0 +1,18 @@
+# type: ignore
+#
+# Standalone GDExtension for bounded-memory archive extraction. It deliberately
+# lives outside libretro-godot: downloading and unpacking RomM content is an app
+# concern and has no dependency on the libretro emulator bridge.
+#
+#   scons platform=windows arch=x86_64 target=template_debug
+#   scons platform=linux   arch=x86_64 target=template_release
+#   scons platform=macos   arch=arm64  target=template_debug macos_deployment_target=13.0
+#   scons platform=android arch=arm64  target=template_debug ANDROID_HOME=
+
+VariantDir('Temp', '.', duplicate=0)
+env = Environment()
+
+import os
+output_dir = os.environ.get('ARCHIVE_GODOT_OUTPUT_DIR', '#../RetroXR/archive-godot')
+
+SConscript('Temp/SConscript', exports=['env', 'output_dir'])

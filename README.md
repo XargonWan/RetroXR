@@ -184,7 +184,7 @@ it is FPS-snapped — dropping it requires **`Ctrl` + Left-click** (plain click 
 
 ### Building
 
-Almost everything interesting here is C++. Five GDExtensions have to be compiled
+Almost everything interesting here is C++. Six GDExtensions have to be compiled
 before the Godot project will run — a fresh clone has the sources but not the
 libraries. Miss one and Godot says so on startup, then every scene using its types
 fails to parse:
@@ -197,6 +197,7 @@ SCRIPT ERROR: Parse Error: Could not find type "VerletRope" in the current scope
 | Extension | Provides | Built from | Deploys to |
 |---|---|---|---|
 | `libretro-godot` | `Libretro` — runs the emulator cores (submodule) | repo root | `RetroXR/libretro-godot/` |
+| `archive-godot` | `RommArchiveExtractor` — streams ZIP members to disk | `archive-godot/` | `RetroXR/archive-godot/` |
 | `verlet-rope` | `VerletRope` — the simulated cables | `verlet-rope/` | `RetroXR/verlet-rope/` |
 | `vlc-godot` | `VlcPlayer` — video for the VCR and DVD player | `vlc-godot/` | `RetroXR/vlc-godot/` |
 | `godot-pdfium` | `PDFRenderer` — renders manual pages | `godot-pdfium/` | `RetroXR/godot-pdfium/` |
@@ -221,13 +222,13 @@ tools** on macOS, or the **Android NDK** for Quest (set `ANDROID_NDK_ROOT`;
 Every third-party binary these link against is already committed — including PDFium for
 Windows, Linux, Android and both macOS architectures. **libVLC on Linux** links the system
 library (Fedora: `vlc-devel` to build, `vlc-libs` to run). macOS currently builds
-libretro-godot, verlet-rope and godot-pdfium; vlc-godot has no packaged Mac runtime and
+libretro-godot, archive-godot, verlet-rope and godot-pdfium; vlc-godot has no packaged Mac runtime and
 Meta publishes its audio blob only for Windows and Android, so those two are skipped.
 
 #### One command
 
 ```bash
-python Tools/build.py windows                 # all five, debug + release
+python Tools/build.py windows                 # all six, debug + release
 python Tools/build.py android --target release
 python Tools/build.py linux --only vlc-godot
 python Tools/build.py macos                      # host architecture (arm64 on Apple Silicon)
@@ -251,6 +252,7 @@ just builds. *(scons is not currently installed in either WSL distro here; `pip 
 
 ```bash
 scons platform=windows arch=x86_64 target=template_debug          # libretro-godot, from the root
+cd archive-godot && scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
 cd verlet-rope && scons platform=linux arch=x86_64 target=template_release
 cd godot-pdfium && scons platform=android arch=arm64 target=template_debug ANDROID_HOME=
 scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
@@ -301,7 +303,7 @@ an export to see what actually landed.
 
 #### Releasing
 
-`.github/workflows/release.yml` does the whole thing on a `v*` tag: builds the five
+`.github/workflows/release.yml` does the whole thing on a `v*` tag: builds the six
 GDExtensions for Android and Windows, exports the signed `Quest` APK and the Windows
 desktop build, publishes a GitHub Release with both attached, and points the SideQuest
 listing at the new APK.

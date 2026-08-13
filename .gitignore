@@ -90,8 +90,16 @@ RetroXR/verlet-rope/*.lib
 RetroXR/verlet-rope/*.pdb
 verlet-rope/Temp/
 
+# archive-godot build artifacts
+RetroXR/archive-godot/~*
+RetroXR/archive-godot/*.exp
+RetroXR/archive-godot/*.ilk
+RetroXR/archive-godot/*.lib
+RetroXR/archive-godot/*.pdb
+archive-godot/Temp/
+
 # ── Compiled GDExtensions ─────────────────────────────────────────────────────
-# Our own five libraries are BUILD OUTPUT and are not carried in the repo — run
+# Our own six libraries are BUILD OUTPUT and are not carried in the repo — run
 # `python Tools/build.py <platform>` to produce them. They were tracked until
 # 2026-08-02 and cost ~267 MB of history between them, most of it the same debug
 # binary recommitted on every rebuild (the Android debug .so alone had 37
@@ -108,6 +116,9 @@ verlet-rope/Temp/
 RetroXR/libretro-godot/*libretro_godot.*.dll
 RetroXR/libretro-godot/*libretro_godot.*.so
 RetroXR/libretro-godot/*libretro_godot.*.dylib
+RetroXR/archive-godot/*archive_godot.*.dll
+RetroXR/archive-godot/*archive_godot.*.so
+RetroXR/archive-godot/*archive_godot.*.dylib
 RetroXR/verlet-rope/*verlet_rope.*.dll
 RetroXR/verlet-rope/*verlet_rope.*.so
 RetroXR/verlet-rope/*verlet_rope.*.dylib

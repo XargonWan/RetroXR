@@ -185,27 +185,26 @@ static func _unpack(zip_path: String, target: String) -> Dictionary:
 		return {"path": "", "error": "Could not open %s" % zip_path.get_file()}
 
 	var dest_dir := zip_path.get_base_dir()
+	var plan := RommDownloader._archive_plan(reader, dest_dir)
+	reader.close()
+	if plan.is_empty():
+		return {"path": "", "error": "%s contains unsafe, colliding, or unreadable files"
+			% zip_path.get_file()}
+	var extracted: Dictionary = RommArchiveExtractor.new().extract(zip_path, plan)
+	if not bool(extracted.get("ok", false)):
+		return {"path": "", "error": str(extracted.get("error", "Could not unpack archive"))}
 	var launch := ""
 
-	for name: String in reader.get_files():
-		# An entry is free to name any path it likes, including one that climbs
-		# out of the ROM folder. Nothing downstream would notice.
-		if not _is_safe_entry(name):
-			continue
-		var out_path := dest_dir.path_join(name)
-		DirAccess.make_dir_recursive_absolute(out_path.get_base_dir())
-		var f := FileAccess.open(out_path, FileAccess.WRITE)
-		if f == null:
-			reader.close()
-			return {"path": "", "error": "Cannot write into %s" % dest_dir}
-		f.store_buffer(reader.read_file(name))
-		f.close()
-		if name == target:
-			launch = out_path
-
-	reader.close()
+	for item: Dictionary in extracted.get("files", []):
+		if str(item.get("entry", "")) == target:
+			launch = str(item.get("path", ""))
 
 	if launch.is_empty():
+		# The native extractor made every final itself, so they are all known to be
+		# owned by this failed attempt and can be rolled back without touching any
+		# file that predated it.
+		for item: Dictionary in extracted.get("files", []):
+			DirAccess.remove_absolute(str(item.get("path", "")))
 		return {"path": "", "error": "%s was not in %s after unpacking"
 			% [target, zip_path.get_file()]}
 

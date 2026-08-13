@@ -29,7 +29,7 @@ git submodule update --init --recursive
 
 ### One command for every extension
 
-`Tools/build.py` builds all five GDExtensions for one platform, sequentially (they
+`Tools/build.py` builds all six GDExtensions for one platform, sequentially (they
 cannot share a scons invocation — see below). Prefer it over the per-extension
 recipes further down, which are kept because they document each build's quirks.
 
@@ -48,7 +48,7 @@ whose PATH contains spaces and breaks a bare `export PATH="$HOME/.local/bin:$PAT
 Asking for it from Linux just builds. This replaced `Tools/build_linux.sh`.
 It reports a per-extension pass/fail table and exits non-zero if anything failed.
 
-**Not all five ship everywhere.** `metaxr-audio` is windows/android only — it wraps
+**Not all six ship everywhere.** `metaxr-audio` is windows/android only — it wraps
 Meta's `MetaXRAudioUnity` blob, which Meta publishes for win-x64 and android-arm64
 alone, and `metaxr_audio.gdextension` has no Linux or macOS entry. The C++ compiles for
 Linux perfectly well (the loader just finds nothing and `is_available()` returns
@@ -113,18 +113,26 @@ A hardened Mac export will need library validation disabled for downloaded unsig
 and unsigned executable memory for callback trampolines; dynarec cores may also need the
 JIT entitlement.
 
-### Sibling GDExtensions (verlet-rope, vlc-godot, godot-pdfium, metaxr-audio)
+### Sibling GDExtensions (archive-godot, verlet-rope, vlc-godot, godot-pdfium, metaxr-audio)
 
-Four other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
+Five other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
 `<name>/` with `SConstruct` + `src/`, reusing `../libretro-godot/godot-cpp`, deploying to
 `RetroXR/<name>/`). Build each **from its own directory** (each has its own `VariantDir('Temp')`),
 or all at once with `Tools/build.py`:
+
+- **archive-godot** — `RommArchiveExtractor`, a bounded-memory ZIP reader used by RomM
+  downloads. It streams archive members directly to temporary files, validates their sizes
+  and CRCs, then promotes them into place. It is pure godot-cpp and deliberately separate
+  from the libretro emulator bridge.
+  ```bash
+  cd archive-godot && scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
+  ```
 
 - **verlet-rope** — `Xenu::VerletRope`, the simulated cable hanging off every controller and
   A/V plug. Lived inside `libretro-godot` until 2026-08-02 and was moved out (and purged from
   that submodule's history) because it never belonged there: it includes nothing from libretro
   and libretro includes nothing from it. Pure godot-cpp, no third-party dependency, so it is
-  the simplest of the five to build.
+  one of the simplest extensions to build.
   ```bash
   cd verlet-rope && scons platform=windows arch=x86_64 target=template_debug
   cd verlet-rope && scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0

@@ -372,10 +372,9 @@ func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: 
 	# go terminal.
 	#
 	# Size is the authoritative check on what was transferred (it matched to the
-	# byte), so archives are verified on size alone. Hashing the inner entry
-	# instead is not an option: ZIPReader.read_file() has no streaming API, so a
-	# multi-GB inner image would have to be read into RAM whole — reintroducing
-	# exactly the OOM that the need_fullpath fix removed.
+	# byte), so archives are verified on size here. Multi-file archives get their
+	# members' CRCs checked by the streaming extractor; an ordinary archive may be
+	# content in its own right for the selected core and must remain unopened.
 	if not expected_md5.is_empty() and not _is_archive(part):
 		var sums := RomHasher.compute_checksums(part)
 		var md5 := str(sums.get("md5", "")).to_lower()
@@ -401,29 +400,30 @@ func _extract_multi(zip_path: String, systemid: String) -> String:
 
 	var dest_dir := RomLibrary.rom_dir_for_system(systemid)
 	var plan := _archive_plan(reader, dest_dir)
+	reader.close()
 	if plan.is_empty():
-		reader.close()
+		return ""
+	var extracted: Dictionary = RommArchiveExtractor.new().extract(zip_path, plan)
+	if not bool(extracted.get("ok", false)):
+		push_warning("RommDownloader: %s"
+			% str(extracted.get("error", "Could not unpack archive")))
 		return ""
 	var launch := ""
 	var first_playable := ""
 
-	for item: Dictionary in plan:
+	for item: Dictionary in extracted.get("files", []):
 		var entry_name: String = item["entry"]
 		var out_path: String = item["path"]
-		DirAccess.make_dir_recursive_absolute(out_path.get_base_dir())
-		var f := FileAccess.open(out_path, FileAccess.WRITE)
-		if f == null:
-			continue
-		f.store_buffer(reader.read_file(entry_name))
-		f.close()
-
 		var ext := entry_name.get_extension().to_lower()
 		if ext == "m3u":
 			launch = out_path
 		elif first_playable.is_empty() and ext in ["cue", "ccd", "mds", "iso", "chd", "gdi"]:
 			first_playable = out_path
 
-	reader.close()
+	if launch.is_empty() and first_playable.is_empty():
+		for item: Dictionary in extracted.get("files", []):
+			DirAccess.remove_absolute(str(item.get("path", "")))
+		return ""
 	DirAccess.remove_absolute(zip_path)
 
 	return launch if not launch.is_empty() else first_playable

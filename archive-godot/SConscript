@@ -1,0 +1,38 @@
+# type: ignore
+
+Import('env', 'output_dir')
+
+env = env.Clone()
+
+from SCons.Script import ARGUMENTS
+if ARGUMENTS.get("platform") == "macos":
+    ARGUMENTS.setdefault("macos_deployment_target", "13.0")
+if ARGUMENTS.get("target", "template_debug") != "template_release":
+    ARGUMENTS.setdefault("debug_symbols", "yes")
+
+env = SConscript("../../libretro-godot/godot-cpp/SConstruct")
+
+env["CXXFLAGS"] = [f for f in env["CXXFLAGS"]
+                   if not str(f).startswith(("/std:c++", "-std=c++"))]
+
+is_windows = env["platform"] == "windows"
+is_android = env["platform"] == "android"
+is_linux = env["platform"] == "linux"
+is_macos = env["platform"] == "macos"
+
+if is_windows:
+    env.Append(CXXFLAGS=["/std:c++latest"])
+    env.Append(LINKFLAGS=['/IGNORE:4099'])
+
+if is_android or is_linux or is_macos:
+    env.Append(CXXFLAGS=["-std=c++20"])
+
+sources = Glob("src/*.cpp")
+lib_prefix = "lib" if (is_android or is_linux) else ""
+library = env.SharedLibrary(
+    "{}/{}archive_godot.{}.{}.{}{}".format(
+        output_dir, lib_prefix, env["platform"], env["target"],
+        env["arch"], env["SHLIBSUFFIX"]),
+    source=sources)
+
+Default(library)

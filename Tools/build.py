@@ -6,7 +6,7 @@
     python Tools/build.py linux --only vlc-godot
     python Tools/build.py macos --target debug
 
-Five extensions live in this workspace and each needs its OWN scons invocation:
+Six extensions live in this workspace and each needs its OWN scons invocation:
 they share the `godot-cpp` submodule, and godot-cpp's SConstruct can only be run
 once per process, so a single scons run cannot cover two of them. Each also has
 its own `VariantDir('Temp')`, which is why each builds from its own directory —
@@ -46,6 +46,7 @@ ALL_PLATFORMS = ("windows", "linux", "macos", "android")
 # rather than bank a misleading OK in the results table.
 EXTENSIONS = [
     ("libretro-godot", ".", "RetroXR/libretro-godot", ALL_PLATFORMS),
+    ("archive-godot", "archive-godot", "RetroXR/archive-godot", ALL_PLATFORMS),
     ("verlet-rope", "verlet-rope", "RetroXR/verlet-rope", ALL_PLATFORMS),
     # A redistributable macOS libVLC runtime/plugin tree is not vendored yet. Do
     # not report a successful extension build that another Mac cannot load.
