@@ -14,12 +14,6 @@ albedo_color = Color(0.35, 0.4, 0.33, 1)
 [sub_resource type="BoxMesh" id="BoxMesh_placeholder"]
 size = Vector3(0.008, 0.006, 0.008)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_pwr"]
-size = Vector3(0.03, 0.015, 0.03)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_open"]
-size = Vector3(0.016, 0.009, 0.009)
-
 [sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
 size = Vector3(0.009, 0.007, 0.008)
 
@@ -112,6 +106,12 @@ albedo_color = Color(1, 0.55, 0.1, 0.35)
 emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_openslider"]
+size = Vector3(0.019, 0.013, 0.012)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
+size = Vector3(0.011, 0.014, 0.02)
 
 [node name="PSPPrimitive" type="Node3D"]
 script = ExtResource("1_model")
@@ -236,7 +236,8 @@ visible = false
 mesh = SubResource("BoxMesh_placeholder")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch"]
-shape = SubResource("BoxShape3D_pwr")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_powerswitch")
 
 [node name="OpenSlider" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.042, 0.004, -0.0372)
@@ -254,7 +255,8 @@ visible = false
 mesh = SubResource("BoxMesh_placeholder")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="OpenSlider"]
-shape = SubResource("BoxShape3D_open")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_openslider")
 
 [node name="VolumeDown" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0715, 0.0132, 0.0235)

@@ -55,17 +55,17 @@ size = Vector3(0.008, 0.006, 0.008)
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0iy4x"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_7njip"]
-size = Vector3(0.03, 0.015, 0.03)
-
 [sub_resource type="BoxMesh" id="BoxMesh_68f6r"]
 size = Vector3(0.008, 0.006, 0.008)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_44jl0"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_jdcbu"]
-size = Vector3(0.03, 0.015, 0.03)
+[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
+size = Vector3(0.016, 0.014, 0.016)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.016, 0.014, 0.016)
 
 [node name="PokemonMini" type="Node3D" unique_id=578007181]
 script = ExtResource("1_hop4r")
@@ -124,7 +124,8 @@ mesh = SubResource("BoxMesh_q5gur")
 surface_material_override/0 = SubResource("StandardMaterial3D_0iy4x")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=409095036]
-shape = SubResource("BoxShape3D_7njip")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01036)
+shape = SubResource("BoxShape3D_volumeslider")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=1228411775]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.015079999, 0.0085, -0.038)
@@ -140,7 +141,8 @@ mesh = SubResource("BoxMesh_68f6r")
 surface_material_override/0 = SubResource("StandardMaterial3D_44jl0")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=447283335]
-shape = SubResource("BoxShape3D_jdcbu")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
+shape = SubResource("BoxShape3D_powerswitch")
 
 [node name="PowerLabel" type="Label3D" parent="." unique_id=659938694 groups=["printed_label"]]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.015079999, 0.0005, -0.0385)

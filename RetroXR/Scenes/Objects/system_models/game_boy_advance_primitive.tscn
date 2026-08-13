@@ -65,8 +65,11 @@ size = Vector3(0.008, 0.006, 0.008)
 [sub_resource type="StandardMaterial3D" id="Mat_knob"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ctl"]
-size = Vector3(0.03, 0.015, 0.03)
+[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
+size = Vector3(0.016, 0.014, 0.016)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.016, 0.014, 0.016)
 
 [node name="GameBoyAdvancePrimitive" type="Node3D" unique_id=660899921]
 script = ExtResource("1_model")
@@ -132,7 +135,8 @@ mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=54502022]
-shape = SubResource("BoxShape3D_ctl")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.006)
+shape = SubResource("BoxShape3D_volumeslider")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=1464787724]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.045, 0.004, 0.0385)
@@ -147,7 +151,8 @@ mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=302800348]
-shape = SubResource("BoxShape3D_ctl")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.005, 0, 0)
+shape = SubResource("BoxShape3D_powerswitch")
 
 [node name="PowerLabel" type="Label3D" parent="." unique_id=1331413325 groups=["printed_label"]]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -0.045, 0.0132, 0.03)

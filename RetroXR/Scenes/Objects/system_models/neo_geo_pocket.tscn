@@ -55,17 +55,11 @@ size = Vector3(0.008, 0.006, 0.008)
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8nerp"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ujai8"]
-size = Vector3(0.03, 0.015, 0.03)
-
 [sub_resource type="BoxMesh" id="BoxMesh_g473r"]
 size = Vector3(0.008, 0.006, 0.008)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_onad2"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_1n4n2"]
-size = Vector3(0.03, 0.015, 0.03)
 
 [sub_resource type="BoxMesh" id="BoxMesh_ngpseat"]
 size = Vector3(0.048, 0.052, 0.008)
@@ -76,6 +70,12 @@ albedo_color = Color(1, 0.55, 0.1, 0.35)
 emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
+size = Vector3(0.016, 0.014, 0.016)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.016, 0.014, 0.016)
 
 [node name="NeoGeoPocket" type="Node3D" unique_id=1228837787]
 script = ExtResource("1_xgyca")
@@ -134,7 +134,8 @@ mesh = SubResource("BoxMesh_wa3by")
 surface_material_override/0 = SubResource("StandardMaterial3D_8nerp")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=1012742640]
-shape = SubResource("BoxShape3D_ujai8")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01043)
+shape = SubResource("BoxShape3D_volumeslider")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=367900503]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03367, 0.00925, -0.03825)
@@ -150,7 +151,8 @@ mesh = SubResource("BoxMesh_g473r")
 surface_material_override/0 = SubResource("StandardMaterial3D_onad2")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=1716581196]
-shape = SubResource("BoxShape3D_1n4n2")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007, 0, 0)
+shape = SubResource("BoxShape3D_powerswitch")
 
 [node name="PowerLabel" type="Label3D" parent="." unique_id=69419222 groups=["printed_label"]]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.03367, 0.0012499996, -0.03875)

@@ -23,9 +23,6 @@ size = Vector3(0.0762, 0.0229, 0.02)
 [sub_resource type="BoxShape3D" id="BoxShape3D_touch"]
 size = Vector3(0.0624, 0.012, 0.0468)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_slider"]
-size = Vector3(0.014, 0.012, 0.026)
-
 [sub_resource type="BoxMesh" id="BoxMesh_jq3we"]
 size = Vector3(0.134, 0.0105, 0.074)
 
@@ -115,6 +112,12 @@ albedo_color = Color(1, 0.55, 0.1, 0.35)
 emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_slider3d"]
+size = Vector3(0.011, 0.012, 0.018)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.011, 0.012, 0.018)
 
 [node name="Primitive" type="Node3D"]
 script = ExtResource("1_model")
@@ -281,7 +284,8 @@ engage_radius = 0.02
 value = 1.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/Slider3D"]
-shape = SubResource("BoxShape3D_slider")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_slider3d")
 
 [node name="Slider3DLabel" type="Label3D" parent="LidPivot" groups=["printed_label"]]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0.0605, 0.0009, -0.024)
@@ -300,7 +304,8 @@ engage_radius = 0.02
 value = 1.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LidPivot/VolumeSlider"]
-shape = SubResource("BoxShape3D_slider")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_volumeslider")
 
 [node name="BottomScreen" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0072, 0)

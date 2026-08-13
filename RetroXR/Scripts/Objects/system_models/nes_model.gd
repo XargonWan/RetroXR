@@ -564,10 +564,6 @@ func _build_channel_switch() -> void:
 	slider.steps = 2
 	slider.value = 0.0
 	slider.collision_layer = 1 | (1 << 20)
-	# This box is sized below to reach back out of the recessed rear panel, which
-	# is not something the knob's own extents express — see the grow in
-	# configure_collision's neighbourhood.
-	slider.fit_collision_to_knob = false
 	slider.engage_radius = 0.020
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()

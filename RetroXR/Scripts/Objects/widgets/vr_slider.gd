@@ -59,13 +59,6 @@ const TRIGGER_OFF := 0.4
 ## How far past the knob the visible fingertip starts snapping to its face
 ## (metres). Purely visual; it does not change when the knob engages.
 @export var contact_margin: float = 0.015
-
-## Fit the pointer's shape to the knob — see _fit_knob_collision. Off for a model
-## that sizes its own shape.
-@export var fit_collision_to_knob: bool = true
-
-## How far the pointer's shape stands out from the knob on every face when fitted.
-@export var collision_margin: float = 0.004
 ## Current value 0..1.
 @export var value: float = 0.0
 
@@ -150,7 +143,6 @@ func _ready() -> void:
 	_anchor_knob(Transform3D(_knob.basis, Vector3.ZERO) if _knob != null else Transform3D(), 0.5)
 	_adopt_knob_collision()
 	_update_knob()
-	_fit_knob_collision()
 	_outline = WidgetOutline.attach(self)
 	# The knob is a hidden placeholder on every baked handheld — outline it anyway
 	# (see WidgetOutline.outline_hidden_source).
@@ -205,8 +197,6 @@ func set_knob_mesh(mesh: MeshInstance3D) -> void:
 	if _outline:
 		_outline.set_source(_knob)
 	_update_knob()
-	# The adopted cap is the real knob; the placeholder measured at _ready was not.
-	_fit_knob_collision()
 
 
 func _process(delta: float) -> void:
@@ -439,38 +429,6 @@ func _adopt_knob_collision() -> void:
 		if shape != null:
 			set_knob_collision(shape)
 			return
-
-
-## Size the pointer's shape to the knob and centre it on the knob.
-##
-## The authored boxes were drawn round the SLOT, centred on mid-travel: every one
-## of them sat half a throw off its knob — 11 mm on a Lynx volume wheel — and ran
-## the length of the slot, 30 x 15 x 30 mm around an 8 x 6 x 8 mm cap. That was
-## right while the shape stood still and the knob slid through it. Now that the
-## shape rides the knob, the slot length is dead margin and the offset is simply
-## wrong, so the laser lands beside the switch rather than on it.
-##
-## Off for a slider whose model sizes its own shape for a reason the knob does not
-## express: the NES's CH3/CH4 box reaches back out of a recessed panel, and the
-## 2600's levers are turned into the plane of their control panel.
-func _fit_knob_collision() -> void:
-	if not fit_collision_to_knob or _knob_collision == null:
-		return
-	if _knob == null or _knob.mesh == null:
-		return
-	if not (_knob_collision.shape is BoxShape3D):
-		return
-	var rel: Transform3D = global_transform.affine_inverse() * _knob.global_transform
-	var local: AABB = rel * _knob.mesh.get_aabb()
-	# A fresh shape, never the authored one. Every handheld scene declares ONE
-	# BoxShape3D sub-resource and points both of its sliders at it, with no
-	# resource_local_to_scene, so writing to it in place would resize the other
-	# slider — and every other instance of that scene in the room.
-	var box := BoxShape3D.new()
-	box.size = local.size + Vector3.ONE * collision_margin * 2.0
-	_knob_collision.shape = box
-	_knob_collision.transform = Transform3D(Basis.IDENTITY, local.get_center())
-	set_knob_collision(_knob_collision)
 
 
 func _update_knob() -> void:

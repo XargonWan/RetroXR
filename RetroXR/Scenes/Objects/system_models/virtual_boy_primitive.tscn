@@ -41,9 +41,6 @@ size = Vector3(0.005, 0.024, 0.016)
 [sub_resource type="StandardMaterial3D" id="Mat_knob"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_vol"]
-size = Vector3(0.026, 0.024, 0.024)
-
 [sub_resource type="BoxMesh" id="BoxMesh_seat"]
 size = Vector3(0.065, 0.054, 0.006)
 
@@ -53,6 +50,9 @@ albedo_color = Color(1, 0.55, 0.1, 0.35)
 emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.013, 0.032, 0.024)
 
 [node name="VirtualBoyPrimitive" type="Node3D" unique_id=793345474]
 script = ExtResource("1_model")
@@ -101,7 +101,8 @@ mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=383993867]
-shape = SubResource("BoxShape3D_vol")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.003)
+shape = SubResource("BoxShape3D_volumeslider")
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=1126639319]
 transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.305, -0.0305)

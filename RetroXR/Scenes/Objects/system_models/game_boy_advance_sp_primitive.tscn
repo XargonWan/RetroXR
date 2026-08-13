@@ -72,9 +72,6 @@ size = Vector3(0.008, 0.006, 0.008)
 [sub_resource type="StandardMaterial3D" id="Mat_knob"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ctl"]
-size = Vector3(0.03, 0.015, 0.03)
-
 [sub_resource type="BoxMesh" id="BoxMesh_seat"]
 size = Vector3(0.058, 0.036, 0.007)
 
@@ -84,6 +81,12 @@ albedo_color = Color(1, 0.55, 0.1, 0.35)
 emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
+size = Vector3(0.016, 0.014, 0.016)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.016, 0.014, 0.016)
 
 [node name="GameBoyAdvanceSPPrimitive" type="Node3D" unique_id=2054180836]
 script = ExtResource("1_model")
@@ -194,7 +197,8 @@ mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="VolumeSlider" unique_id=175771562]
-shape = SubResource("BoxShape3D_ctl")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.005)
+shape = SubResource("BoxShape3D_volumeslider")
 
 [node name="PowerSwitch" type="Area3D" parent="." unique_id=97010705]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.041, 0, 0.0167)
@@ -210,7 +214,8 @@ mesh = SubResource("BoxMesh_knob")
 surface_material_override/0 = SubResource("Mat_knob")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerSwitch" unique_id=528260853]
-shape = SubResource("BoxShape3D_ctl")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.005)
+shape = SubResource("BoxShape3D_powerswitch")
 
 [node name="CartSeat" type="Marker3D" parent="." unique_id=202477110]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, -0.0005, 0.033530362)
