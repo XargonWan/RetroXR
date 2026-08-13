@@ -46,6 +46,8 @@ const _LABEL_MESH := "media_label"
 
 ## The model's own label face, when a real cart model is in use.
 var _model_label: MeshInstance3D = null
+# True while a handheld slot owns the shapes — see set_seated_grab_stub.
+var _stub_seated := false
 
 
 func _ready() -> void:
@@ -55,6 +57,8 @@ func _ready() -> void:
 	_apply_system_size()
 	_apply_cart_model()
 	_apply_label_art()
+	picked_up.connect(_on_picked_up)
+	dropped.connect(_on_dropped)
 
 
 ## Swap the procedural box for this system's real cartridge model when one ships.
@@ -201,6 +205,48 @@ func _apply_system_size() -> void:
 		pointer_col.shape = pshape
 
 
+## Whoever has it decides how big a target it should be.
+##
+## Loose, it wants generous padding. Seated in a console's bay it does not: the
+## pointer box is the grab box plus 40 mm, and the grab box is already the cart
+## plus 25 mm through its thickness, which together leave it standing 1.9 mm above
+## an NES deck across 149 x 161 mm — most of the top face. Every aim at the
+## console then reached the cartridge first. Handhelds already had this treatment
+## (see set_seated_grab_stub); a console bay never did.
+func _on_picked_up(_p: Variant) -> void:
+	if _stub_seated:
+		return          # a handheld slot has already sized this for its mouth
+	if _snap_zone_holder() != null:
+		_tighten_pointer_box()
+
+
+func _on_dropped(_p: Variant) -> void:
+	if not _stub_seated:
+		_apply_system_size()
+
+
+func _snap_zone_holder() -> XRToolsSnapZone:
+	if not is_picked_up():
+		return null
+	return get_picked_up_by() as XRToolsSnapZone
+
+
+## Pointer target down to the cart itself, so nothing of it stands proud of the
+## machine holding it. The GRAB box is untouched: it is on 17:XRHand_SnapZone,
+## which no pointer ray queries, and hands want the padding.
+func _tighten_pointer_box() -> void:
+	if not MediaDimensions.CART_SIZES.has(systemid):
+		return
+	var pcol := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if pcol == null or not (pcol.shape is BoxShape3D):
+		return
+	var s := MediaDimensions.cart_size(systemid)
+	var shape := pcol.shape.duplicate() as BoxShape3D
+	shape.size = s + Vector3(0.004, 0.004, 0.004)
+	pcol.shape = shape
+	pcol.position = Vector3.ZERO
+
+
 ## While seated in a handheld's recessed slot only the grip end pokes out of
 ## the body — limit grabbing (VR hands, desktop reticle, laser) to that stub.
 ## The normal grab padding (a ≥5 cm box around a 3.3 cm card) otherwise pokes
@@ -209,6 +255,7 @@ func _apply_system_size() -> void:
 func set_seated_grab_stub(depth: float) -> void:
 	if not MediaDimensions.CART_SIZES.has(systemid):
 		return
+	_stub_seated = true
 	var s := MediaDimensions.cart_size(systemid)
 	var stub_center := Vector3(0, s.y / 2.0 - depth / 2.0, 0)
 	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
@@ -232,6 +279,7 @@ func set_seated_grab_stub(depth: float) -> void:
 
 ## Restore the normal (padded) grab shapes after leaving a handheld slot.
 func reset_grab_shapes() -> void:
+	_stub_seated = false
 	if not MediaDimensions.CART_SIZES.has(systemid):
 		return
 	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
