@@ -181,6 +181,22 @@ func _build(vr_mode: bool) -> void:
 			+ "to the display. Below 100% FSR upscales it for cheaper frames; above 100% "
 			+ "supersamples."))
 
+	# The headset's counterpart to the row above, which the mobile backend cannot
+	# take. Never both: render scale is Forward+, this is the headset.
+	if QualityManager.supports_eye_buffer_scale():
+		var eye_opt := VRDropdown.create("Eye Buffer",
+			[["85%", 0.85], ["100%", 1.0],
+			 ["123%", QualityManager.EYE_BUFFER_PANEL], ["140%", 1.4]],
+			QualityManager.eye_buffer_scale, 4, Vector2(95, 52), 20)
+		eye_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_eye_buffer_scale(float(id)))
+		vbox.add_child(eye_opt)
+
+		vbox.add_child(MenuStyle.hint("Resolution each eye is drawn at before the headset warps "
+			+ "it through the lenses. 100% is the runtime's recommendation, which under-samples "
+			+ "the centre of view; 123% matches the panel and is sharper where you look, for "
+			+ "real frame time. The picture blinks as it resizes."))
+
 	_msaa_opt = VRDropdown.create("Anti-Aliasing",
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
 		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],

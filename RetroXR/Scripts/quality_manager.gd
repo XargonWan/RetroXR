@@ -29,8 +29,9 @@ enum PostAA { OFF, FXAA, SMAA }
 ## what the preset becomes once an individual row is moved away from it.
 enum Preset { LOW, MEDIUM, HIGH, CUSTOM }
 
-## Render scale is deliberately absent: it is desktop-only and a taste call
-## (supersampling), not a quality tier, so a preset never moves it.
+## Render scale and the eye buffer are deliberately absent: both are a taste call
+## about how much resolution to buy, not a quality tier, so a preset never moves
+## either one.
 const PRESETS := {
 	Preset.LOW: {
 		"msaa": Viewport.MSAA_4X, "post_aa": PostAA.OFF,
@@ -86,6 +87,39 @@ const AO_TIERS := {
 const RENDER_SCALE_MIN := 0.5
 const RENDER_SCALE_MAX := 1.5
 
+## Multiplier on the OpenXR runtime's recommended eye-buffer size — the headset's
+## counterpart to render scale, and on Quest the only resolution knob there is
+## (see supports_render_scale).
+##
+## x1.0 is NOT "native": OpenXR's recommendedImageRect is a performance
+## recommendation, not the display size. Meta ships Quest 3 with recommended
+## 1680x1760 per eye against a 2064x2208 panel — about 80% linear, on purpose.
+## Unity's default eye texture is the same recommended size; Quest titles that
+## look sharper have raised it themselves.
+##
+## Nor is the shortfall a flat 1.23x upscale of the finished image: the compositor
+## warps a rectilinear eye buffer through the lens distortion, which over-samples
+## the periphery and under-samples the CENTRE, so the runtime sizes the
+## recommendation to land ~1:1 in the middle. The missing detail is therefore
+## concentrated exactly where you look, which is why raising this is worth real
+## frame time — and why foveation is its natural partner (spend the pixels in the
+## centre, drop the ones wasted at the edges).
+##
+## The frame time is real. Measured on a Quest 3 (arcade scene, 72 Hz = 13.9 ms):
+##
+##   1680x1760 (x1.0)      13.55 ms  68 fps
+##   2065x2163 (x1.229)    17.04 ms  56 fps
+##
+## Fixed foveation would pay for it outright (12.92 ms / 71 fps at x1.229), but
+## foveation_level >= 1 fills the whole eye buffer with one flat colour on this
+## stack (Godot 4.7 + vendors 5.1 + 4x MSAA + multiview / Quest 3) — see 21351c5.
+const EYE_BUFFER_SCALE_MIN := 0.7
+const EYE_BUFFER_SCALE_MAX := 1.4
+## The Quest 3 panel edge over the runtime's recommendation, 2064/1680. The
+## default, and the highest value that buys anything: past the panel the extra
+## pixels are resolved away by the compositor.
+const EYE_BUFFER_PANEL := 1.229
+
 ## Ambilight sampling interval (frames between color updates)
 var ambilight_interval: int = 10
 
@@ -96,6 +130,7 @@ var preset: Preset = Preset.CUSTOM
 var shadow_quality: ShadowQuality = ShadowQuality.OFF
 var ao_quality: AOQuality = AOQuality.OFF
 var render_scale: float = 1.0
+var eye_buffer_scale: float = EYE_BUFFER_PANEL
 ## Desktop window state. Empty resolution means "leave the window where it is".
 var window_mode: String = ""
 var resolution: String = ""
@@ -212,6 +247,45 @@ func apply_render_scale() -> void:
 	# a pass for nothing, so bilinear takes over there.
 	root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if render_scale < 1.0 \
 		else Viewport.SCALING_3D_MODE_BILINEAR
+
+
+## Whether the eye-buffer knob means anything in this session. PCVR is left out
+## on purpose: those runtimes size and supersample their own swapchains, and a
+## desktop session already has the render-scale row for the same job.
+##
+## Asked of the interface rather than get_viewport().use_xr for the same reason
+## supports_smaa() is — this autoload runs before xr_init.gd sets that flag,
+## while OpenXR is already initialised by then.
+func supports_eye_buffer_scale() -> bool:
+	if _desktop:
+		return false
+	var xr := XRServer.find_interface("OpenXR")
+	return xr != null and xr.is_initialized()
+
+
+func set_eye_buffer_scale(scale: float) -> void:
+	eye_buffer_scale = clampf(scale, EYE_BUFFER_SCALE_MIN, EYE_BUFFER_SCALE_MAX)
+	apply_eye_buffer_scale()
+	save_prefs()
+
+
+## Resize the eye buffer, at startup or mid-session.
+##
+## Mid-session is supported by the engine: the property setter hands the value to
+## the rendering thread, and OpenXRAPI::pre_render compares the recommended size
+## against the live swapchain every frame, freeing and rebuilding both swapchains
+## when they differ (openxr_api.cpp, Godot 4.7). That reallocation is why the menu
+## offers steps rather than a dragged slider — one hitch per selection instead of
+## one per frame of the drag.
+##
+## xr_init.gd calls this before `use_xr = true`, so a launch allocates once at the
+## saved size rather than building the recommended swapchain and rebuilding it on
+## the first frame.
+func apply_eye_buffer_scale() -> void:
+	if not supports_eye_buffer_scale():
+		return
+	var xr := XRServer.find_interface("OpenXR")
+	xr.set("render_target_size_multiplier", eye_buffer_scale)
 
 
 ## Window mode and resolution were the only GRAPHICS rows that reset every launch,
@@ -424,6 +498,11 @@ func _load_prefs() -> void:
 	resolution = str(data.get("resolution", resolution))
 	render_scale = clampf(_prefs_float(data, "render_scale", render_scale),
 		RENDER_SCALE_MIN, RENDER_SCALE_MAX) if supports_render_scale() else 1.0
+	# Kept whatever the platform, unlike render_scale above: where it is not
+	# supported it is inert rather than harmful, and one desktop session writing
+	# the file back must not strip the headset's setting out of it.
+	eye_buffer_scale = clampf(_prefs_float(data, "eye_buffer_scale", eye_buffer_scale),
+		EYE_BUFFER_SCALE_MIN, EYE_BUFFER_SCALE_MAX)
 
 
 func save_prefs() -> void:
@@ -440,6 +519,7 @@ func save_prefs() -> void:
 		"shadow_quality": int(shadow_quality),
 		"ao_quality": int(ao_quality),
 		"render_scale": render_scale,
+		"eye_buffer_scale": eye_buffer_scale,
 	}))
 	file.close()
 
