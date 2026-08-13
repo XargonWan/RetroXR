@@ -23,6 +23,26 @@ const VERSION       := 2
 ## How long the async restore may hold the main thread before yielding a frame.
 const FRAME_BUDGET_USEC := 4000
 
+const _STRING_FIELDS := [
+	"systemid", "model_id", "tv_model", "rom_path", "game_label", "save_id",
+	"cart_systemid", "card_id", "card_label", "pdf_path", "scene", "video_path",
+	"video_label", "dvd_path", "dvd_label", "album_path", "album_label", "kind",
+]
+const _NUMBER_FIELDS := [
+	"lid_angle", "scale_factor", "stereo_mode", "size_scale", "page_state",
+	"page_leaf", "sensitivity", "device_type", "port_index", "volume", "cords",
+]
+const _BOOL_FIELDS := ["video_out", "ignore_gravity", "crt_enabled", "half_pages"]
+const _REFERENCE_FIELDS := [
+	"tv", "cartridge", "memcard", "tape", "disc", "media", "system",
+	"nunchuk", "motion_plus",
+]
+const _SPECIALIZED_TYPES := [
+	"system", "tv", "cartridge", "disc", "memory_card", "book",
+	"retro_controller", "retro_mouse", "snes_mouse", "vcr_tape", "dvd_disc",
+	"composite_cable", "audio_disc", "audio_cassette",
+]
+
 ## Bumped by every async restore as it starts. Because those yield frames, a
 ## second one can begin — a room change auto-loading a slot on top of a slot the
 ## player picked from the menu — and the two then build into the same room while
@@ -312,7 +332,152 @@ func _read_objects(path: String) -> Variant:
 			% [path, file_version, VERSION])
 		return null
 	var objects: Variant = d.get("objects", [])
-	return objects if objects is Array else null
+	if not objects is Array:
+		push_error("ScenePersistence: slot '%s' has no object list" % path)
+		return null
+	var error := _objects_validation_error(objects as Array)
+	if not error.is_empty():
+		push_error("ScenePersistence: invalid slot '%s': %s" % [path, error])
+		return null
+	return objects
+
+
+static func _objects_validation_error(objects: Array) -> String:
+	var ids: Dictionary = {}
+	for index in objects.size():
+		var value: Variant = objects[index]
+		if not value is Dictionary:
+			return "object %d is not a dictionary" % index
+		var entry := value as Dictionary
+		var id_value: Variant = entry.get("id")
+		if not _is_integer(id_value) or int(id_value) < 0:
+			return "object %d has an invalid id" % index
+		var id := int(id_value)
+		if ids.has(id):
+			return "object %d repeats id %d" % [index, id]
+		ids[id] = true
+
+	for index in objects.size():
+		var entry := objects[index] as Dictionary
+		var error := _entry_validation_error(entry, ids)
+		if not error.is_empty():
+			return "object %d: %s" % [index, error]
+	return ""
+
+
+static func _entry_validation_error(entry: Dictionary, ids: Dictionary) -> String:
+	var obj_type_value: Variant = entry.get("type")
+	if not obj_type_value is String:
+		return "type is not a string"
+	var obj_type := obj_type_value as String
+	if not PLAIN_SCENES.has(obj_type) and obj_type not in _SPECIALIZED_TYPES:
+		return "unknown type '%s'" % obj_type
+	for field: String in ["position", "rotation"]:
+		var pose_error := _vec3_validation_error(entry.get(field))
+		if not pose_error.is_empty():
+			return "%s %s" % [field, pose_error]
+	for field: String in _STRING_FIELDS:
+		if entry.has(field) and not entry[field] is String:
+			return "%s is not a string" % field
+	for field: String in _NUMBER_FIELDS:
+		if entry.has(field) and not _is_finite_number(entry[field]):
+			return "%s is not a finite number" % field
+	for field: String in _BOOL_FIELDS:
+		if entry.has(field) and not entry[field] is bool:
+			return "%s is not a boolean" % field
+	for field: String in _REFERENCE_FIELDS:
+		if entry.has(field):
+			var ref_error := _reference_validation_error(entry[field], ids)
+			if not ref_error.is_empty():
+				return "%s %s" % [field, ref_error]
+
+	if entry.has("extra_tvs"):
+		if not entry["extra_tvs"] is Array:
+			return "extra_tvs is not an array"
+		for ref: Variant in entry["extra_tvs"]:
+			var ref_error := _reference_validation_error(ref, ids)
+			if not ref_error.is_empty():
+				return "extra_tvs member %s" % ref_error
+	if entry.has("tv_inputs"):
+		if not entry["tv_inputs"] is Array:
+			return "tv_inputs is not an array"
+		for input: Variant in entry["tv_inputs"]:
+			if not _is_integer(input):
+				return "tv_inputs contains a non-integer"
+	if entry.has("crt_params"):
+		if not entry["crt_params"] is Dictionary:
+			return "crt_params is not a dictionary"
+		for key: Variant in (entry["crt_params"] as Dictionary):
+			if not key is String or not _is_finite_number(entry["crt_params"][key]):
+				return "crt_params contains a non-numeric value"
+	if entry.has("boxes"):
+		var boxes_error := _pose_records_validation_error(entry["boxes"], ids, false)
+		if not boxes_error.is_empty():
+			return "boxes %s" % boxes_error
+	if entry.has("plugs"):
+		var plugs_error := _pose_records_validation_error(entry["plugs"], ids, true)
+		if not plugs_error.is_empty():
+			return "plugs %s" % plugs_error
+	if entry.has("body"):
+		if not entry["body"] is Dictionary:
+			return "body is not a dictionary"
+		for field: String in ["position", "rotation"]:
+			var pose_error := _vec3_validation_error((entry["body"] as Dictionary).get(field))
+			if not pose_error.is_empty():
+				return "body %s %s" % [field, pose_error]
+	return ""
+
+
+static func _pose_records_validation_error(value: Variant, ids: Dictionary,
+		validate_plug: bool) -> String:
+	if not value is Array:
+		return "is not an array"
+	for index in (value as Array).size():
+		var record_value: Variant = (value as Array)[index]
+		if not record_value is Dictionary:
+			return "member %d is not a dictionary" % index
+		var record := record_value as Dictionary
+		for field: String in ["position", "rotation"]:
+			var pose_error := _vec3_validation_error(record.get(field))
+			if not pose_error.is_empty():
+				return "member %d %s %s" % [index, field, pose_error]
+		if not validate_plug:
+			continue
+		for field: String in ["end", "cord"]:
+			if not _is_integer(record.get(field)):
+				return "member %d %s is not an integer" % [index, field]
+		if record.has("port") and not record["port"] is String:
+			return "member %d port is not a string" % index
+		if record.has("device"):
+			var ref_error := _reference_validation_error(record["device"], ids)
+			if not ref_error.is_empty():
+				return "member %d device %s" % [index, ref_error]
+	return ""
+
+
+static func _vec3_validation_error(value: Variant) -> String:
+	if not value is Array or (value as Array).size() != 3:
+		return "is not a three-component array"
+	for component: Variant in value:
+		if not _is_finite_number(component):
+			return "contains a non-finite number"
+	return ""
+
+
+static func _reference_validation_error(value: Variant, ids: Dictionary) -> String:
+	if value == null or value is String:
+		return ""
+	if not _is_integer(value) or int(value) < 0:
+		return "is not a reference"
+	return "" if ids.has(int(value)) else "references missing id %d" % int(value)
+
+
+static func _is_integer(value: Variant) -> bool:
+	return _is_finite_number(value) and float(value) == floorf(float(value))
+
+
+static func _is_finite_number(value: Variant) -> bool:
+	return (value is int or value is float) and is_finite(float(value))
 
 
 # ── Cross-references ───────────────────────────────────────────────────────────
