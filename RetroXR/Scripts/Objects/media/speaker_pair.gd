@@ -95,9 +95,10 @@ func _build_rope() -> void:
 ## that is NOT held moves — something else owns a held one's transform, and fighting
 ## it just jitters the thing in your hand.
 ##
-## A hard clamp rather than a spring, for the reason CompositeCable records:
-## over-extension reaches a metre or more, and a spring stiff enough to drag a
-## cabinet at that distance launches it.
+## HAULED rather than moved, through CableHaul, which is where that whole argument
+## lives: the wire leaves this cabinet at a boss 45 mm below its centre of mass and off
+## to one side, so a box lifted by the one in your hand turns and hangs from the taut
+## wire instead of sailing along upright. Same call the RF switch's box makes.
 func _physics_process(_delta: float) -> void:
 	if not _rope_built or _rope == null:
 		return
@@ -105,21 +106,31 @@ func _physics_process(_delta: float) -> void:
 	var b: SpeakerBox = _boxes[Side.RIGHT]
 	if not is_instance_valid(a) or not is_instance_valid(b):
 		return
-	if a.is_picked_up() and b.is_picked_up():
+	if _is_held(a) and _is_held(b):
 		return          # both in hands: the wire is simply taut, as it would be
 	var fixed: SpeakerBox = a
 	var loose: SpeakerBox = b
-	if b.is_picked_up():
+	if _is_held(b):
 		fixed = b
 		loose = a
 	var reach: float = float(_rope.segment_count) * _rope.segment_length
-	var from: Vector3 = fixed.global_transform * (fixed.get_node("CableBoss") as Node3D).position
-	var to: Vector3 = loose.global_transform * (loose.get_node("CableBoss") as Node3D).position
-	var away: Vector3 = to - from
-	var d: float = away.length()
-	if d <= reach or d < 0.0001:
-		return
-	loose.global_position += away * ((reach - d) / d)
+	# Boss to boss, not origin to origin: that is the span the wire actually has.
+	loose.global_position += CableHaul.haul(loose, _boss(loose), _boss(fixed), reach)
+
+
+## Where the wire leaves a cabinet, in world space.
+func _boss(box: SpeakerBox) -> Vector3:
+	return box.global_transform * (box.get_node("CableBoss") as Node3D).position
+
+
+## True while a hand, a laser or a snap zone owns this cabinet's pose.
+##
+## `freeze`, for the reason RcaPlug.is_held gives: a ray grab never calls pick_up(), so
+## is_picked_up() reads false for the whole hold. A beam-held box read as loose is the
+## worse half of the bug — an impulse does nothing to a frozen body, so the wire would
+## couple neither way and the far cabinet would sit still while the near one flew off.
+func _is_held(box: SpeakerBox) -> bool:
+	return box.freeze
 
 
 # ── the sink contract ────────────────────────────────────────────────────────
