@@ -310,7 +310,16 @@ func _report() -> void:
 			% [r["model"], r["name"], r["kind"],
 				("%.1fmm" % (d * 1000.0)) if d > 0.0 else "-",
 				str(r["shadow"]) if not str(r["shadow"]).is_empty() else "(reachable)"])
-	print("[audit] %d buried of %d models" % [_rows.size(), _rows.size()])
+	# The two tests are not equivalent and the ray is the one that decides. A
+	# rotated box and a convex hull both have bounding boxes much larger than
+	# themselves, so the bounds test reports burial that a ray walks straight past;
+	# those rows are kept in the table and counted apart rather than dropped.
+	var blocked := 0
+	for r in _rows:
+		if not str(r["shadow"]).is_empty():
+			blocked += 1
+	print("[audit] %d unreachable, %d flagged by bounds alone (a ray still reaches them)"
+		% [blocked, _rows.size() - blocked])
 
 
 ## Models whose boxes are dumped in full, named on the command line:

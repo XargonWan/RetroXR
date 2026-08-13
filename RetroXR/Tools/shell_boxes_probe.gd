@@ -27,6 +27,8 @@ const SHOTS := [
 		"focus": Vector3(0, 0.18, 0), "dist": 0.80, "pitch": 12.0,
 		"close_focus": Vector3(0, 0.028, 0.030), "close_dist": 0.36,
 		"close_yaw": 38.0, "close_pitch": 20.0,
+		"side_focus": Vector3(0, 0.19, 0), "side_size": 0.46,
+		"side_caption": "SIDE ELEVATION — orthographic, so the silhouettes compare directly",
 	},
 	{
 		"model": "atari_2600", "platform": "atari_2600",
@@ -36,6 +38,8 @@ const SHOTS := [
 		"focus": Vector3(0, 0.045, 0), "dist": 0.62, "pitch": 20.0,
 		"close_focus": Vector3(0, 0.076, -0.020), "close_dist": 0.46,
 		"close_yaw": 8.0, "close_pitch": 9.0,
+		"side_focus": Vector3(0, 0.044, 0), "side_size": 0.21,
+		"side_caption": "SIDE ELEVATION — deck, wedge, plateau against the real profile",
 	},
 	{
 		"model": "nes", "platform": "nes",
@@ -45,6 +49,8 @@ const SHOTS := [
 		"focus": Vector3(0, 0.047, 0), "dist": 0.50, "pitch": 18.0,
 		"close_focus": Vector3(0.078, 0.031, -0.098), "close_dist": 0.15,
 		"close_yaw": 196.0, "close_pitch": 14.0,
+		"side_focus": Vector3(0, 0.047, 0), "side_size": 0.20,
+		"side_caption": "SIDE ELEVATION — the bay mouth carved out of the front",
 	},
 ]
 
@@ -104,6 +110,15 @@ func _film(shot: Dictionary) -> void:
 	var yaw: float = float(shot["close_yaw"])
 	await _orbit(str(shot["close_caption"]), close, yaw - 26.0, yaw + 26.0,
 		float(shot["close_pitch"]), float(shot["close_dist"]), 40)
+
+	# Orthographic, dead side on: the only view where the collision silhouette and
+	# the shell's own silhouette can be compared without perspective flattering it.
+	var side: Vector3 = _origin + (shot["side_focus"] as Vector3)
+	_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	_cam.size = float(shot["side_size"])
+	await _orbit(str(shot["side_caption"]), side, 90.0, 90.0, 0.0, 0.6, 26)
+	await _orbit(str(shot["side_caption"]), side, 90.0, 62.0, 0.0, 0.6, 26)
+	_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 
 	CollisionDebug.set_enabled(self, false)
 	sys.queue_free()

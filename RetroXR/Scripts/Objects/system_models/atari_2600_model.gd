@@ -31,25 +31,27 @@ const _AXIS_ON := Vector3(0.0, 0.676, -0.737)
 ## and the gap between those two groups is the throw the shell was drawn with.
 ## 7.07 mm as authored, x0.7881 once the shell is normalised to real-world size.
 const _SWITCH_THROW := 0.005572
-## Deck envelope, and the step in its top face.
+## Deck envelope, and the shape of its top face.
 ##
-## The shell is one 22.7k-triangle lump, so its AABB says nothing about the step —
-## these come from raycasting the body's own mesh straight down on a 5 mm grid:
+## The top is three surfaces, measured by raycasting the shell's own body mesh
+## (one 22.7k-triangle lump, so its AABB says nothing about the shape):
 ##
-##     z -95..-57    raised rear plateau, top 87.6 mm
-##     z -50..-30    the switch trough, floor 47..61 mm
-##     z -25..+105   the ribbed front deck, top 53.2 mm
+##     z -112..-60   raised rear plateau, flat at 87.6 mm
+##     z  -60..-20   the control panel, one continuous 41 deg ramp 87.6 -> 53.1
+##     z  -20..+112  the ribbed front deck, 53.1 mm
 ##
-## The plateau does not end in a wall — it slopes down to the trough over the
-## 6 mm between PLATEAU_BACK_Z and PLATEAU_TOE_Z, 87.6 mm to 76.9 mm. A box
-## cannot follow that, so the slope is its own ConvexPolygonShape3D wedge sitting
-## on the front deck, and the levers still stand clear in front of its toe.
+## Sample the ramp at x = +/-138 or beyond, NOT at the levers' own x: a ray down
+## the lever columns falls through the slots the shell models for them and reads
+## 16 mm, which invents a trough across the middle of the panel that is not there.
+##
+## The ramp is a ConvexPolygonShape3D wedge; a box cannot follow a slope. Taken
+## as one straight face it runs up to 2 mm above the real surface in the middle,
+## against levers that stand ~5 mm out of it, so they still clear it.
 const DECK_BOX := Vector3(0.334, 0.089, 0.224)
 const DECK_POS := Vector3(0.0, 0.0441, 0.0)
 const DECK_STEP_Y := 0.0532
-const PLATEAU_BACK_Z := -0.056
-const PLATEAU_TOE_Z := -0.050
-const PLATEAU_TOE_Y := 0.0769
+const RAMP_BACK_Z := -0.060
+const RAMP_FRONT_Z := -0.020
 
 var _glb: Node3D = null
 var _reset_slider: VRSpringReturnSlider = null
@@ -120,6 +122,62 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 		return
 	_setup_power(power_btn)
 	_setup_reset(reset_btn)
+	_align_switch_box(get_node_or_null("PowerSwitch") as Node3D, "Switch_Power")
+	_align_switch_box(get_node_or_null("ResetSwitch") as Node3D, "Switch_GameReset")
+
+
+## Stand a lever's touch box up square with the panel it sits in.
+##
+## Both are built from the cap's WORLD AABB, and a blade lying at 41 degrees has
+## an axis-aligned box half again its own size — 14 x 13 mm around a lever a few
+## millimetres thick, most of it inside the ramp. Turned into the panel frame it
+## wraps the blade instead, and the part that matters, the height along the panel
+## NORMAL, is the part that decides whether a ray reaches the lever or the shell.
+##
+## The box's axes: X across the panel, Y out of it, Z down the slope. Sized from
+## the cap's own vertices in that frame rather than from its AABB, which is the
+## thing being corrected.
+func _align_switch_box(slider: Node3D, cap_name: String) -> void:
+	if slider == null or _glb == null:
+		return
+	var cap := _glb.find_child(cap_name, true, false) as MeshInstance3D
+	if cap == null or cap.mesh == null:
+		return
+	# By TYPE, not by name: these shapes are added unnamed at runtime, so Godot
+	# calls them @CollisionShape3D@3 and a lookup by name finds nothing at all.
+	var col: CollisionShape3D = null
+	for child in slider.get_children():
+		col = child as CollisionShape3D
+		if col != null:
+			break
+	if col == null or not (col.shape is BoxShape3D):
+		return
+
+	var normal: Vector3 = (Basis(Vector3.RIGHT, PI / 2.0) * _AXIS_ON).normalized()
+	var panel := Basis(Vector3.RIGHT, normal, Vector3.RIGHT.cross(normal).normalized())
+	var to_panel := panel.inverse()
+	var to_model: Transform3D = global_transform.affine_inverse() * cap.global_transform
+
+	var bounds := AABB()
+	var first := true
+	for s in cap.mesh.get_surface_count():
+		var verts: PackedVector3Array = cap.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		for v in verts:
+			var p: Vector3 = to_panel * (to_model * v)
+			bounds = AABB(p, Vector3.ZERO) if first else bounds.expand(p)
+			first = false
+	if first:
+		return
+
+	# Z covers the throw as well as the blade: the shape does not travel with the
+	# knob, so a box round one detent leaves the other outside it.
+	var pad := Vector3(0.003, 0.003, 0.003 + _SWITCH_THROW * 0.5)
+	var box := col.shape as BoxShape3D
+	box.size = bounds.size + pad * 2.0
+	# The slider's own origin is the cap centre with an identity basis, so the
+	# shape carries both the turn and the offset back to the blade's middle.
+	var centre_model: Vector3 = panel * bounds.get_center()
+	col.transform = Transform3D(panel, centre_model - slider.position)
 
 
 ## POWER: a latching two-detent slider mounted on the shell's own lever.
@@ -378,7 +436,7 @@ func configure_collision(host: Node3D) -> void:
 			Vector3(env.size.x, DECK_STEP_Y - env.position.y, env.size.z))],
 		["RearPlateau", AABB(
 			Vector3(env.position.x, DECK_STEP_Y, env.position.z),
-			Vector3(env.size.x, env.end.y - DECK_STEP_Y, PLATEAU_BACK_Z - env.position.z))],
+			Vector3(env.size.x, env.end.y - DECK_STEP_Y, RAMP_BACK_Z - env.position.z))],
 	]
 	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
 		var col := host.get_node_or_null(path) as CollisionShape3D
@@ -399,23 +457,22 @@ func configure_collision(host: Node3D) -> void:
 			shape.size = a.size
 			target.shape = shape
 			target.position = a.get_center()
-		_build_plateau_toe(parent, env)
+		_build_control_panel(parent, env)
 
 
-## The plateau's sloping front, as a trapezoidal prism across the full width.
-func _build_plateau_toe(parent: Node, env: AABB) -> void:
-	var toe := parent.get_node_or_null(NodePath("PlateauToe")) as CollisionShape3D
-	if toe == null:
-		toe = CollisionShape3D.new()
-		toe.name = "PlateauToe"
-		parent.add_child(toe)
+## The control panel's ramp, as a trapezoidal prism across the full width.
+func _build_control_panel(parent: Node, env: AABB) -> void:
+	var ramp := parent.get_node_or_null(NodePath("ControlPanelRamp")) as CollisionShape3D
+	if ramp == null:
+		ramp = CollisionShape3D.new()
+		ramp.name = "ControlPanelRamp"
+		parent.add_child(ramp)
 	var points := PackedVector3Array()
 	for x in [env.position.x, env.end.x]:
-		points.append(Vector3(x, env.end.y, PLATEAU_BACK_Z))
-		points.append(Vector3(x, PLATEAU_TOE_Y, PLATEAU_TOE_Z))
-		points.append(Vector3(x, DECK_STEP_Y, PLATEAU_BACK_Z))
-		points.append(Vector3(x, DECK_STEP_Y, PLATEAU_TOE_Z))
+		points.append(Vector3(x, env.end.y, RAMP_BACK_Z))
+		points.append(Vector3(x, DECK_STEP_Y, RAMP_FRONT_Z))
+		points.append(Vector3(x, DECK_STEP_Y, RAMP_BACK_Z))
 	var hull := ConvexPolygonShape3D.new()
 	hull.points = points
-	toe.shape = hull
-	toe.position = Vector3.ZERO
+	ramp.shape = hull
+	ramp.position = Vector3.ZERO
