@@ -462,7 +462,13 @@ func _fit_knob_collision() -> void:
 		return
 	var rel: Transform3D = global_transform.affine_inverse() * _knob.global_transform
 	var local: AABB = rel * _knob.mesh.get_aabb()
-	(_knob_collision.shape as BoxShape3D).size = local.size + Vector3.ONE * collision_margin * 2.0
+	# A fresh shape, never the authored one. Every handheld scene declares ONE
+	# BoxShape3D sub-resource and points both of its sliders at it, with no
+	# resource_local_to_scene, so writing to it in place would resize the other
+	# slider — and every other instance of that scene in the room.
+	var box := BoxShape3D.new()
+	box.size = local.size + Vector3.ONE * collision_margin * 2.0
+	_knob_collision.shape = box
 	_knob_collision.transform = Transform3D(Basis.IDENTITY, local.get_center())
 	set_knob_collision(_knob_collision)
 
