@@ -37,16 +37,26 @@ uniform bool osd_enabled = false;
 // bar — set by RetroTV from its 4:3 / 16:9 button.
 uniform vec2 fit_scale = vec2(1.0, 1.0);
 
+// Tube stage on/off, same contract as screen_window/vcr_effect/tv_static. The
+// wrapper cannot simply be removed to turn the tube off, because it is also what
+// carries fit_scale — and a tube whose glass is neither 4:3 nor 16:9 always needs
+// a fit, so on those sets the wrapper is pinned and this is the only bypass.
+uniform bool crt_enabled = true;
+
 void fragment() {
-	vec2 wuv = crt_warp(UV);
+	vec2 wuv = crt_enabled ? crt_warp(UV) : UV;
 	// Fit inside the glass, not around it: the bars are part of the picture the
 	// tube shows, so they go through the same stage and curve with it.
 	vec2 fuv = (wuv - 0.5) / fit_scale + 0.5;
 	vec2 suv = pixel_aa_uv(source_tex, fuv);
 
-	vec3 col = crt_smear_sample(source_tex, suv);
-	col = crt_notch_sample(source_tex, suv, col);
-	vec3 glow = crt_glow(source_tex, fuv);
+	vec3 col = texture(source_tex, suv).rgb;
+	vec3 glow = vec3(0.0);
+	if (crt_enabled) {
+		col = crt_smear_sample(source_tex, suv);
+		col = crt_notch_sample(source_tex, suv, col);
+		glow = crt_glow(source_tex, fuv);
+	}
 
 	// Bars before the OSD, so the OSD still reads over them — a real set draws
 	// its menu on top of the letterbox rather than being clipped by it.
@@ -60,8 +70,13 @@ void fragment() {
 		col = mix(col, osd.rgb, osd.a);
 	}
 
-	ALBEDO = clamp(crt_apply_full(col, glow, wuv), 0.0, 1.0);
-	// Beyond the curved glass edge the quad is transparent (not black), so the
-	// TV bezel shows through instead of a dark rectangle.
-	ALPHA = crt_border(wuv);
+	if (crt_enabled) {
+		col = crt_apply_full(col, glow, wuv);
+		// Beyond the curved glass edge the quad is transparent (not black), so the
+		// TV bezel shows through instead of a dark rectangle. Only with the tube on:
+		// off, the picture fills the quad and ALPHA stays 1, which keeps the surface
+		// opaque (it is what the eye buffer's alpha carries under passthrough).
+		ALPHA = crt_border(wuv);
+	}
+	ALBEDO = clamp(col, 0.0, 1.0);
 }

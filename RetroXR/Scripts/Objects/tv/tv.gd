@@ -889,6 +889,13 @@ func _update_crt() -> void:
 		return
 
 	if override == _crt_material:
+		# Pinned by the aspect fit (or by a source that never unwraps): switch the
+		# tube stage itself instead of removing the material.
+		var cur_on: Variant = _crt_material.get_shader_parameter("crt_enabled")
+		if (cur_on == true) != crt_enabled:
+			_crt_material.set_shader_parameter("crt_enabled", crt_enabled)
+			if crt_enabled:
+				_apply_crt_params(_crt_material)
 		return
 
 	# A new source material appeared — wrap it if it carries a picture.
@@ -916,6 +923,10 @@ func _update_crt() -> void:
 	if _crt_material == null:
 		_crt_material = ShaderMaterial.new()
 		_crt_material.shader = CRT_SHADER
+	# Outside the null check: the wrapper is reused across sources, and the toggle
+	# can have moved while it was off the screen. Set here rather than left to the
+	# branch above, which would show one frame of tube on a set wrapped with it off.
+	_crt_material.set_shader_parameter("crt_enabled", crt_enabled)
 	# source_tex before the params: _apply_derived_crt_params reads the source's
 	# resolution back off the material to get the scanline count.
 	_crt_material.set_shader_parameter("source_tex", tex)
