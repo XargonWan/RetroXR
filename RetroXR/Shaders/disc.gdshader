@@ -60,6 +60,16 @@ uniform vec3 lacquer_color : source_color = vec3(0.80, 0.81, 0.84);
 // black-dyed polycarbonate is not, so it stays near-solid. Per-system for exactly
 // that reason.
 uniform float poly_alpha : hint_range(0.0, 1.0) = 0.28;
+// The 1.2 mm lateral edge is not the same as a flat clear face. You are looking
+// THROUGH the substrate the long way, the aluminium layer is sandwiched in there
+// edge-on, and polycarbonate pipes light out of a cut edge the way acrylic does.
+// At poly_alpha it vanished completely — a near-black colour at 28% over the
+// background is nothing, and the specular that should sell it gets scaled by the
+// same alpha.
+uniform float edge_alpha : hint_range(0.0, 1.0) = 0.70;
+// Glass goes mirror at grazing incidence. Without this the clear zones read as a
+// flat wash and the disc has no crisp silhouette.
+uniform float glass_fresnel : hint_range(0.0, 1.0) = 0.85;
 
 // Zone radii in metres. Defaults are a pressed 120 mm CD; disc.gd overrides them
 // per system — see MediaDimensions.disc_zones, which carries the ECMA-130 and
@@ -188,6 +198,7 @@ void fragment() {
 	// the inner bands to grey.
 	v_blur = min(track_pitch * fwidth(dot(V, g)) * band_aa, 0.12);
 
+	float base_a = 1.0;
 	if (face > 0.75) {
 		// --- label side ---
 		vec4 art = texture(label_tex, UV);
@@ -202,15 +213,18 @@ void fragment() {
 		METALLIC = mix(0.75 * metal, 0.0, art.a);
 		ROUGHNESS = mix(mix(0.09, 0.14, metal), 0.52, art.a);
 		// Printed ink hides the substrate; so does the aluminium under it.
-		ALPHA = mix(poly_alpha, 1.0, max(art.a, metal));
+		base_a = mix(poly_alpha, 1.0, max(art.a, metal));
 		v_irid = vec3(pits * irid_label * irid_strength * (1.0 - art.a))
 			* sqrt(lacquer_color);
 	} else if (face > 0.25) {
-		// --- rim and bore: bare substrate ---
-		ALBEDO = poly_color;
-		METALLIC = 0.0;
-		ROUGHNESS = 0.08;
-		ALPHA = poly_alpha;
+		// --- lateral edge and bore wall ---
+		// Carries the reflective layer edge-on, so it is neither bare plastic nor
+		// bare metal. Glossy and part-metallic so it actually catches a highlight;
+		// the mix keeps a PS1's dyed edge black, since both its colours are dark.
+		ALBEDO = mix(poly_color, data_color, 0.35);
+		METALLIC = 0.30;
+		ROUGHNESS = 0.05;
+		base_a = max(poly_alpha, edge_alpha);
 		v_irid = vec3(0.0);
 	} else {
 		// --- data side ---
@@ -224,7 +238,7 @@ void fragment() {
 		// roughness was what left it reading as flat bright silver.
 		METALLIC = mix(0.05, mix(0.86, 0.80, pits), metal);
 		ROUGHNESS = mix(0.07, mix(0.035, 0.13, pits), metal);
-		ALPHA = mix(poly_alpha, 1.0, metal);
+		base_a = mix(poly_alpha, 1.0, metal);
 		// Tinted by the substrate. The diffracted ray makes the same two-pass trip
 		// through the dye as the specular one, so a PS1's black disc must dim its
 		// own rainbow — untinted it blows out to white and stops reading as black.
@@ -234,6 +248,12 @@ void fragment() {
 	}
 
 	SPECULAR = disc_specular;
+
+	// Fresnel: at grazing incidence glass stops transmitting and starts mirroring.
+	// This is what gives the clear rim a bright outline instead of letting it
+	// disappear, and it fires strongest exactly where the edge is visible.
+	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), V), 0.0, 1.0), 4.0);
+	ALPHA = mix(base_a, 1.0, fres * glass_fresnel);
 
 	// View-only floor, so a disc never goes completely dead in a room whose lights
 	// happen to miss the grating condition. L = V is the retroreflective case.
