@@ -494,35 +494,33 @@ func configure_collision(host: Node3D) -> void:
 				(c.shape as BoxShape3D).size = ab.size + Vector3(0.01, 0.01, 0.01)
 				c.position = ab.get_center()
 		return
-	var top := _visor_center_y + VISOR_SIZE.y / 2.0   # full height from the floor
-
-	var col := host.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if col != null and col.shape is BoxShape3D:
-		col.shape = col.shape.duplicate()
-		(col.shape as BoxShape3D).size = VISOR_SIZE
-		col.position = Vector3(0, _visor_center_y, 0)
-
-		var base_col := CollisionShape3D.new()
-		base_col.name = "StandBaseCollision"
-		var base_shape := BoxShape3D.new()
-		base_shape.size = Vector3(0.16, 0.012, 0.14)
-		base_col.shape = base_shape
-		base_col.position = Vector3(0, 0.006, 0)
-		host.add_child(base_col)
-
-		var column_col := CollisionShape3D.new()
-		column_col.name = "StandColumnCollision"
-		var column_shape := BoxShape3D.new()
-		column_shape.size = Vector3(0.03, STAND_H, 0.03)
-		column_col.shape = column_shape
-		column_col.position = Vector3(0, STAND_H / 2.0, 0)
-		host.add_child(column_col)
-
-	var pcol := host.get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
-	if pcol != null and pcol.shape is BoxShape3D:
-		pcol.shape = pcol.shape.duplicate()
-		(pcol.shape as BoxShape3D).size = Vector3(VISOR_SIZE.x + 0.04, top + 0.04, 0.16)
-		pcol.position = Vector3(0, (top + 0.04) / 2.0, 0)
+	# The same three volumes on BOTH bodies. A single full-height slab for the
+	# pointer would reach the visor, but it also fills the empty air either side
+	# of the stand — and the cabinet hangs START/STOP down there, 12 mm off the
+	# floor beside the column, where that slab swallowed them.
+	var parts := [
+		["", VISOR_SIZE, Vector3(0, _visor_center_y, 0)],
+		["StandBaseCollision", Vector3(0.16, 0.012, 0.14), Vector3(0, 0.006, 0)],
+		["StandColumnCollision", Vector3(0.03, STAND_H, 0.03), Vector3(0, STAND_H / 2.0, 0)],
+	]
+	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
+		var col := host.get_node_or_null(path) as CollisionShape3D
+		if col == null or not (col.shape is BoxShape3D):
+			continue
+		var parent := col.get_parent()
+		for part in parts:
+			var part_name: String = part[0]
+			var target := col
+			if not part_name.is_empty():
+				target = parent.get_node_or_null(NodePath(part_name)) as CollisionShape3D
+				if target == null:
+					target = CollisionShape3D.new()
+					target.name = part_name
+					parent.add_child(target)
+			var shape := BoxShape3D.new()
+			shape.size = part[1]
+			target.shape = shape
+			target.position = part[2]
 
 
 func on_power_on() -> void:

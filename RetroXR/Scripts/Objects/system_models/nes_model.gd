@@ -572,6 +572,15 @@ func _build_channel_switch() -> void:
 	slider.add_child(col)
 	add_child(slider)                     # _ready runs here, before adopting
 	slider.position = CH_SW_POS
+	# The panel this switch sits in is recessed inside the deck's back face, so a
+	# ray aimed at the switch reaches the shell first. Grow the touch box back
+	# through the recess until it stands proud of that face. The knob is untouched
+	# — it rides set_knob_mesh, not this shape.
+	var back: float = DECK_POS.z - DECK_BOX.z * 0.5 - SWITCH_PROUD
+	var grow: float = (CH_SW_POS.z - box.size.z * 0.5) - back
+	if grow > 0.0:
+		box.size.z += grow
+		col.position.z -= grow * 0.5
 	slider.set_knob_mesh(_ch_knob)
 	slider.value_changed.connect(_on_channel_slider_changed)
 	_ch_slider = slider
@@ -701,6 +710,9 @@ const PLUG_MARGIN := 0.003
 ## 48 mm-deep slab standing over the machine once the flap is up.
 const FLAP_TOP_PLATE := 0.008
 const FLAP_FRONT_PLATE := 0.010
+## How far a recessed control's touch box stands out of the face it sits under,
+## so a ray meets the control rather than the shell.
+const SWITCH_PROUD := 0.002
 ## Bodies the deck is built on: the console's own, and its pointer body.
 const COLLISION_PATHS := ["CollisionShape3D", "PointerArea/CollisionShape3D"]
 

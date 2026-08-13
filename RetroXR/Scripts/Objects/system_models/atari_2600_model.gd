@@ -31,6 +31,12 @@ const _AXIS_ON := Vector3(0.0, 0.676, -0.737)
 ## and the gap between those two groups is the throw the shell was drawn with.
 ## 7.07 mm as authored, x0.7881 once the shell is normalised to real-world size.
 const _SWITCH_THROW := 0.005572
+## Deck envelope, measured off this asset.
+const DECK_BOX := Vector3(0.334, 0.089, 0.224)
+const DECK_POS := Vector3(0.0, 0.0441, 0.0)
+## How far a recessed control's touch box stands out of the face it sits under,
+## so a ray meets the control rather than the shell.
+const SWITCH_PROUD := 0.002
 
 var _glb: Node3D = null
 var _reset_slider: VRSpringReturnSlider = null
@@ -101,6 +107,38 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 		return
 	_setup_power(power_btn)
 	_setup_reset(reset_btn)
+	_raise_switch_box(get_node_or_null("PowerSwitch") as Node3D)
+	_raise_switch_box(get_node_or_null("ResetSwitch") as Node3D)
+
+
+## Carry a switch's touch box up to the top of the deck.
+##
+## Both levers are modelled in the console's lower front step, 8 mm under the top
+## of the box that wraps the whole 2600, so a ray aimed at either one reaches the
+## shell first and the switch cannot be pointed at. The box keeps the cap at its
+## foot and grows upward through the step to stand slightly proud. Only the touch
+## volume moves — the lever rides set_knob_mesh and is untouched.
+func _raise_switch_box(slider: Node3D) -> void:
+	if slider == null:
+		return
+	# By TYPE, not by name: these shapes are added unnamed at runtime, so Godot
+	# calls them @CollisionShape3D@3 and a lookup for "CollisionShape3D" finds
+	# nothing at all.
+	var col: CollisionShape3D = null
+	for child in slider.get_children():
+		col = child as CollisionShape3D
+		if col != null:
+			break
+	if col == null or not (col.shape is BoxShape3D):
+		return
+	var box := col.shape as BoxShape3D
+	var deck_top: float = DECK_POS.y + DECK_BOX.y * 0.5 + SWITCH_PROUD
+	var box_top: float = slider.position.y + col.position.y + box.size.y * 0.5
+	var grow: float = deck_top - box_top
+	if grow <= 0.0:
+		return
+	box.size.y += grow
+	col.position.y += grow * 0.5
 
 
 ## POWER: a latching two-detent slider mounted on the shell's own lever.
@@ -350,11 +388,9 @@ func configure_cable_attach(attach_point: Node3D) -> void:
 ## 0.333 x 0.088 x 0.223 m, which sits on y = 0 — a real heavy sixer is about
 ## 0.337 x 0.095 x 0.222 m.
 func configure_collision(host: Node3D) -> void:
-	var box := Vector3(0.334, 0.089, 0.224)
-	var pos := Vector3(0.0, 0.0441, 0.0)
 	for path in ["CollisionShape3D", "PointerArea/CollisionShape3D"]:
 		var col := host.get_node_or_null(path) as CollisionShape3D
 		if col != null and col.shape is BoxShape3D:
 			col.shape = col.shape.duplicate()
-			(col.shape as BoxShape3D).size = box
-			col.position = pos
+			(col.shape as BoxShape3D).size = DECK_BOX
+			col.position = DECK_POS

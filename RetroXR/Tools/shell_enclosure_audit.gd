@@ -110,6 +110,14 @@ func _audit(model_id: String, plain_platform: String = "") -> void:
 			"size": box.size,
 		})
 	print("[audit] %-22s %-14s %2d controls" % [model_id, platform, checked])
+	if _verbose_for(model_id):
+		for i in range(shell_pointer.size()):
+			print("[audit]      shell/pointer[%d] %s" % [i, _fmt(shell_pointer[i])])
+		for i in range(shell_pickup.size()):
+			print("[audit]      shell/pickup [%d] %s" % [i, _fmt(shell_pickup[i])])
+		for control in _controls(sys):
+			print("[audit]      control %-18s %-8s %s"
+				% [control["name"], control["kind"], _fmt(control["aabb"])])
 
 	sys.queue_free()
 	await _wait(5)
@@ -148,32 +156,34 @@ func _shadowed_by(sys: RetroSystem, body: CollisionObject3D, box: AABB,
 		off.x / maxf(half.x, 0.0001),
 		off.y / maxf(half.y, 0.0001),
 		off.z / maxf(half.z, 0.0001))
-	var dir := Vector3.UP
-	if absf(norm.x) >= absf(norm.y) and absf(norm.x) >= absf(norm.z):
-		dir = Vector3(signf(norm.x), 0, 0)
-	elif absf(norm.y) >= absf(norm.z):
-		dir = Vector3(0, signf(norm.y), 0)
-	else:
-		dir = Vector3(0, 0, signf(norm.z))
-	if dir == Vector3.ZERO:
-		dir = Vector3.UP
-
+	# Every face, not just the likeliest one. A control low on a tall device has
+	# its largest offset downward, and testing only that approach aims up through
+	# the floor and calls the base plate a blocker — the control is perfectly
+	# reachable from the side. Blocked only when NO approach is clear.
+	var dirs: Array[Vector3] = [
+		Vector3(signf(norm.x), 0, 0), Vector3(0, signf(norm.y), 0),
+		Vector3(0, 0, signf(norm.z)), Vector3(-signf(norm.x), 0, 0),
+		Vector3(0, -signf(norm.y), 0), Vector3(0, 0, -signf(norm.z))]
 	var centre_w: Vector3 = sys.global_transform * box.get_center()
-	var dir_w: Vector3 = (sys.global_transform.basis * dir).normalized()
-	var from := centre_w + dir_w * 0.5
 	var mask := POINTER_BITS if (bits & POINTER_BITS) != 0 else PICKUP_BITS
-	var q := PhysicsRayQueryParameters3D.create(from, centre_w, mask)
-	q.collide_with_bodies = true
-	q.collide_with_areas = true
-	var hit := sys.get_world_3d().direct_space_state.intersect_ray(q)
-	if hit.is_empty():
-		return "nothing"
-	var node := hit.collider as Node
-	while node != null:
-		if node == body:
-			return ""
-		node = node.get_parent()
-	return String((hit.collider as Node).name)
+	var blocker := "nothing"
+	for dir in dirs:
+		if dir == Vector3.ZERO:
+			continue
+		var dir_w: Vector3 = (sys.global_transform.basis * dir).normalized()
+		var q := PhysicsRayQueryParameters3D.create(centre_w + dir_w * 0.5, centre_w, mask)
+		q.collide_with_bodies = true
+		q.collide_with_areas = true
+		var hit := sys.get_world_3d().direct_space_state.intersect_ray(q)
+		if hit.is_empty():
+			continue
+		var node := hit.collider as Node
+		while node != null:
+			if node == body:
+				return ""
+			node = node.get_parent()
+		blocker = str((hit.collider as Node).name)
+	return blocker
 
 
 func _collect_shell(sys: RetroSystem, inv: Transform3D,
@@ -280,6 +290,24 @@ func _report() -> void:
 				("%.1fmm" % (d * 1000.0)) if d > 0.0 else "-",
 				str(r["shadow"]) if not str(r["shadow"]).is_empty() else "(reachable)"])
 	print("[audit] %d buried of %d models" % [_rows.size(), _rows.size()])
+
+
+## Models whose boxes are dumped in full, named on the command line:
+##   -- --dump=virtual_boy_primitive,atari_2600
+func _verbose_for(model_id: String) -> bool:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--dump="):
+			for want in a.split("=")[1].split(","):
+				if model_id.contains(want):
+					return true
+	return false
+
+
+func _fmt(a: AABB) -> String:
+	return "x %7.1f..%7.1f  y %7.1f..%7.1f  z %7.1f..%7.1f  (mm)" % [
+		a.position.x * 1000.0, a.end.x * 1000.0,
+		a.position.y * 1000.0, a.end.y * 1000.0,
+		a.position.z * 1000.0, a.end.z * 1000.0]
 
 
 func _wait(frames: int) -> void:
