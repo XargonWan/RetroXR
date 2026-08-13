@@ -138,7 +138,7 @@ const RECOMMENDED := {
 	},
 	"wii": {
 		"core": "dolphin",
-		"why":  "The retroXR build takes the Wii Remote's aim from the real sensor bar in the room rather than a cursor position, which is what makes pointing land where you point",
+		"why":  "The retroXR build takes the Wiimote's aim from the real sensor bar in the room rather than a cursor position, which is what makes pointing land where you point",
 	},
 
 	# ── Sega ─────────────────────────────────────────────────────────────────

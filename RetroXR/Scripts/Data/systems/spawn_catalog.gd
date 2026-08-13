@@ -51,7 +51,7 @@ const _PERIPHERALS: Dictionary = {
 	# having to know it lives under Controllers. The Nunchuk comes with it because
 	# half the library needs one.
 	"wii": [
-		{"kind": "peripheral", "label": "Wii Remote", "spawn": "wiimote"},
+		{"kind": "peripheral", "label": "Wiimote", "spawn": "wiimote"},
 		{"kind": "peripheral", "label": "Nunchuk", "spawn": "nunchuk"},
 		# Offered here too, because the games that need it need it absolutely:
 		# without the dongle a remote reports no rotation and Wii Sports Resort

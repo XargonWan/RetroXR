@@ -387,7 +387,7 @@ func _build() -> void:
 		["Ray Gun",            "ray_gun"],
 		["Mouse",              "retro_mouse"],
 		["Keyboard",           "retro_keyboard"],
-		["Wii Remote",         "wiimote"],
+		["Wiimote",            "wiimote"],
 		["Nunchuk",            "nunchuk"],
 		["Wii MotionPlus",     "motion_plus"],
 	])
