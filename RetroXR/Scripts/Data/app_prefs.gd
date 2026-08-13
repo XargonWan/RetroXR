@@ -13,7 +13,6 @@ extends Node
 const PREFS_PATH := "user://app_prefs.json"
 
 var auto_save_scene:  bool = true
-var show_fps:         bool = false
 var aim_crosshair:    bool = true
 var controller_hands: bool = false
 var system_filter:    bool = true
@@ -172,7 +171,10 @@ func _load_prefs() -> void:
 		return
 	var data: Dictionary = parsed
 	auto_save_scene  = _prefs_bool(data, "auto_save_scene",  auto_save_scene)
-	show_fps         = _prefs_bool(data, "show_fps",         show_fps)
+	# The performance HUD is deliberately absent: like the collision-shape
+	# overlay it is a look at how the app is running, not a setting, so it lives
+	# on PerfHud's statics and is off again every launch. A "show_fps" left in an
+	# old file is simply ignored.
 	aim_crosshair    = _prefs_bool(data, "aim_crosshair",    aim_crosshair)
 	controller_hands = _prefs_bool(data, "controller_hands", controller_hands)
 	system_filter    = _prefs_bool(data, "system_filter",    system_filter)
@@ -194,7 +196,6 @@ func save_prefs() -> void:
 		return
 	file.store_string(JSON.stringify({
 		"auto_save_scene":  auto_save_scene,
-		"show_fps":         show_fps,
 		"aim_crosshair":    aim_crosshair,
 		"controller_hands": controller_hands,
 		"system_filter":    system_filter,

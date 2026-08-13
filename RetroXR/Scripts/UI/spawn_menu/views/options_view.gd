@@ -18,7 +18,9 @@ signal height_offset_changed(offset: float)
 signal fov_changed(degrees: float)
 signal world_scale_changed(scale: float)
 signal auto_save_changed(enabled: bool)
-signal show_fps_changed(enabled: bool)
+## A performance HUD switch moved. Carries nothing: the controller re-reads
+## AppPrefs, so five switches and a mount are one signal rather than six.
+signal hud_changed
 signal aim_crosshair_changed(enabled: bool)
 ## True to aim a teleport with the left stick, false to slide with it.
 signal locomotion_mode_changed(teleport: bool)
@@ -450,29 +452,46 @@ func _build_debug_options(vbox: VBoxContainer) -> void:
 	_build_plate(vbox)
 	vbox.add_child(MenuStyle.spacer(4))
 
-	vbox.add_child(MenuStyle.header("OVERLAYS", 20))
+	vbox.add_child(MenuStyle.header("PERFORMANCE HUD", 20))
 
-	# One switch for frame rate and video memory: SpawnMenuController draws both
-	# labels off show_fps, and there is no reason to want one without the other.
-	var fps_row := HBoxContainer.new()
-	fps_row.add_theme_constant_override("separation", 10)
-	fps_row.custom_minimum_size = Vector2(0, 68)
-	vbox.add_child(fps_row)
+	# A switch per section rather than one for the lot: they answer different
+	# questions, and a section that is off is never sampled, so leaving the
+	# expensive ones out has a real cost attached to it.
+	MenuStyle.switch_row(vbox, "Frame rate and timing", PerfHud.show_frame) \
+		.toggled.connect(func(on: bool) -> void:
+			PerfHud.show_frame = on
+			hud_changed.emit())
+	MenuStyle.switch_row(vbox, "Memory", PerfHud.show_memory) \
+		.toggled.connect(func(on: bool) -> void:
+			PerfHud.show_memory = on
+			hud_changed.emit())
+	MenuStyle.switch_row(vbox, "Scene load", PerfHud.show_scene) \
+		.toggled.connect(func(on: bool) -> void:
+			PerfHud.show_scene = on
+			hud_changed.emit())
+	MenuStyle.switch_row(vbox, "Emulation", PerfHud.show_emulation) \
+		.toggled.connect(func(on: bool) -> void:
+			PerfHud.show_emulation = on
+			hud_changed.emit())
 
-	var fps_lbl := Label.new()
-	fps_lbl.text = "FPS / VRAM"
-	fps_lbl.add_theme_font_size_override("font_size", 22)
-	fps_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
-	fps_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	fps_row.add_child(fps_lbl)
-
-	fps_row.add_child(VRToggle.create(AppPrefs.show_fps, func(on: bool) -> void:
-		AppPrefs.show_fps = on
-		AppPrefs.save_prefs()
-		show_fps_changed.emit(on)
-	))
+	# XR only. On a monitor the HUD is a panel in the corner of the window, so
+	# there is nowhere for it to be mounted and nothing to choose between.
+	if MenuStyle.is_vr_mode():
+		var mount := VRDropdown.create("Mount",
+			[["In view", "head"], ["Left wrist", "wrist"]],
+			"wrist" if PerfHud.wrist_mount else "head",
+			1, Vector2(220, 56), 22)
+		mount.item_selected.connect(func(id: Variant) -> void:
+			PerfHud.wrist_mount = str(id) == "wrist"
+			hud_changed.emit())
+		vbox.add_child(mount)
+		vbox.add_child(MenuStyle.hint(
+			"On the wrist it reads when you turn your left hand over, like a watch."))
+	vbox.add_child(MenuStyle.hint(
+		"Not saved: the HUD is off again next launch, like the overlay below."))
 
 	vbox.add_child(HSeparator.new())
+	vbox.add_child(MenuStyle.header("OVERLAYS", 20))
 
 	# Collision shapes. Deliberately NOT persisted: it is a look at the room, not
 	# a setting, and one left on across a restart reads as a rendering bug.

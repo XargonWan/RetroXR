@@ -95,8 +95,6 @@ var _grab_active: bool = false
 var _grab_ctrl: XRController3D = null
 var _grab_distance: float = 0.0  # distance along pointer ray
 
-var _last_fps: int = -1
-
 ## The "press this for the menu" popup. Lives on the player — by the left hand
 ## in VR, in the corner of the view on desktop — not on any spawned object.
 ## One instance, so its use count accumulates instead of resetting per spawn.
@@ -108,8 +106,7 @@ const STARTUP_HINT_DELAY := 2.0
 var _locomotion_manager: LocomotionManager = null
 var _move_turn: Node = null
 var _player_body: XRToolsPlayerBody = null
-var _fps_label: Label3D = null
-var _vram_label: Label3D = null
+var _perf_hud: PerfHud = null
 
 # World scale (below 1.0 = player feels smaller / room feels bigger). Applied at
 # startup and tunable from the menu's Controls section. Not persisted — resets to
@@ -218,7 +215,7 @@ func _connect_menu_signals() -> void:
 	menu.scene_slot_create_requested.connect(_on_slot_create)
 	menu.scene_slot_rename_requested.connect(_on_slot_rename)
 	menu.auto_save_changed.connect(_on_auto_save_changed)
-	menu.show_fps_changed.connect(_on_show_fps_changed)
+	menu.hud_changed.connect(_on_hud_changed)
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
 	menu.locomotion_mode_changed.connect(_on_locomotion_mode_changed)
 	menu.controller_hands_changed.connect(_on_controller_hands_changed)
@@ -234,8 +231,9 @@ func _connect_menu_signals() -> void:
 	# Persisted OPTIONS switches that need the rig or the scene tree, so they
 	# can't be applied in AppPrefs._ready() the way the static-backed ones are.
 	_on_auto_save_changed(AppPrefs.auto_save_scene)
-	_on_show_fps_changed(AppPrefs.show_fps)
 	_on_aim_crosshair_changed(AppPrefs.aim_crosshair)
+	# No initial call for the performance HUD: it is not persisted, so it is off
+	# at every launch and the node is built by the first switch that asks for it.
 
 	# Auto-load last active slot on startup (arcade only)
 	_autoload_slot()
@@ -389,15 +387,6 @@ func _note_menu_verb_used() -> void:
 # ── Scroll driving ────────────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
-	if _fps_label:
-		var fps := int(Engine.get_frames_per_second())
-		if fps != _last_fps:
-			_fps_label.text = "FPS: %d" % fps
-			_last_fps = fps
-	if _vram_label:
-		var vram_mb := int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1_048_576)
-		_vram_label.text = "VRAM: %d MB" % vram_mb
-
 	var menu_visible: bool = _viewport_node.visible
 
 	# When menu is closed, handle core options panel scroll instead.
@@ -1194,35 +1183,18 @@ func _on_controller_bindings_changed() -> void:
 		node.call("reload_bindings")
 
 
-func _on_show_fps_changed(enabled: bool) -> void:
-	if enabled:
-		if _fps_label == null and _camera:
-			_fps_label = Label3D.new()
-			_fps_label.text = "FPS: --"
-			_fps_label.font_size = 12
-			_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-			_fps_label.modulate = Color(1.0, 1.0, 0.0)
-			_fps_label.no_depth_test = true
-			_fps_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			_fps_label.position = Vector3(-0.5, 0.15, -0.8)
-			_camera.add_child(_fps_label)
-			_vram_label = Label3D.new()
-			_vram_label.text = "VRAM: --"
-			_vram_label.font_size = 12
-			_vram_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-			_vram_label.modulate = Color(0.6, 1.0, 0.6)
-			_vram_label.no_depth_test = true
-			_vram_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			_vram_label.position = Vector3(-0.5, 0.08, -0.8)
-			_camera.add_child(_vram_label)
-	else:
-		if _fps_label:
-			_fps_label.queue_free()
-			_fps_label = null
-			_last_fps = -1
-		if _vram_label:
-			_vram_label.queue_free()
-			_vram_label = null
+## The performance HUD. Built on first use — every section can be off, and most
+## sessions never turn one on — and told to re-read AppPrefs after that.
+func _on_hud_changed() -> void:
+	if _perf_hud == null:
+		if _camera == null:
+			return
+		_perf_hud = PerfHud.new()
+		_perf_hud.name = "PerfHud"
+		_camera.add_child(_perf_hud)
+		_perf_hud.setup(_camera, _left_ctrl)
+		return
+	_perf_hud.apply_settings()
 
 
 # ── Scene management ──────────────────────────────────────────────────────────
