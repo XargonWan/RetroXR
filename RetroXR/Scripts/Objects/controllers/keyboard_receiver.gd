@@ -38,6 +38,13 @@ func _ready() -> void:
 	super._ready()
 
 
+## The PS/2 plug the held RetroKeyboard wears, named from that class so the two cannot
+## drift apart. The same connector whatever the machine: a keyboard is a
+## keyboard, and only a pad takes the console's own moulding.
+func connector_for(_sysid: String) -> String:
+	return RetroKeyboard.PLUG_MESH
+
+
 func receiver_glyph() -> String:
 	# Bluetooth first: this box is for the paired keyboard, not a cabled one.
 	return TransportGlyphs.glyph("bluetooth") + " " + TransportGlyphs.glyph("keyboard")

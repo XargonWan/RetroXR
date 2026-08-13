@@ -30,7 +30,8 @@ const MOUSE_BTN_MIDDLE := 1 << 6
 ## it at its own connector instead. Authored in ControllerPlug's frame (origin at
 ## the seated position, connector on +Z, cable trailing -Z), which is what lets
 ## set_plug_mesh derive cable_anchor from it.
-@export var plug_mesh_path: String = "res://Scenes/Objects/cables/ps2_plug_mouse.res"
+const PLUG_MESH := "res://Scenes/Objects/cables/ps2_plug_mouse.res"
+@export var plug_mesh_path: String = PLUG_MESH
 
 ## The systemid this mouse physically belongs to, e.g. "super_nes". A port only
 ## accepts a plug whose systemid matches — the same filter RetroController uses.

@@ -34,20 +34,6 @@ const GROUP := &"input_receiver"
 ## a receiver never needs that because the DEVICE is what travels.
 const LEAD_LENGTH := 1.0
 
-## Which console moulds its own controller connector. A receiver is universal, so
-## unlike every other peripheral it cannot know its plug until it seats — on
-## plug-in it adopts the connector of whatever it went into, and drops back to the
-## generic one when pulled out.
-##
-## These mirror the plug_mesh_path exports on the pads that wear them
-## (nes_controller.tscn, atari_2600_cx40.tscn). Two places now know each
-## connector; a third would be one too many, so if this grows past a handful ask
-## the console for its connector instead of listing it here.
-const PORT_CONNECTORS := {
-	"nes": "res://imported-assets/controllers/nes/nes_controller_plug.res",
-	"atari2600": "res://Scenes/Objects/controllers/atari/atari_2600_plug_cx40.res",
-}
-
 ## Announced to the console when the plug seats. Overridden per subclass.
 var device_type: int = 0
 
@@ -164,14 +150,24 @@ func restore_port_connection(system: RetroSystem, port_index: int) -> void:
 		_pending_port_restore = {"system": system, "port_index": port_index}
 
 
-## Wear the connector of the console we are in — an NES 7-pin, an Atari DE-9 —
-## and the generic moulding when we are in nothing. An unlisted console keeps the
-## generic plug rather than the last console's, which is why this is called with
-## "" on unplug rather than simply skipped.
+## The connector this receiver should wear in a machine of `sysid`, or "" for the
+## generic moulding.
+##
+## Asked of the SUBCLASS, because the answer depends on what is being forwarded as
+## well as where it is plugged. A pad's connector is the console's — an NES 7-pin,
+## an Atari DE-9 — while a keyboard or a mouse carries its own regardless of the
+## machine, exactly as the held RetroKeyboard and RetroMouse do.
+func connector_for(_sysid: String) -> String:
+	return ""
+
+
+## Wear it, or the generic moulding when we are in nothing. An unlisted machine
+## gets the generic plug rather than keeping the last one's, which is why this is
+## called with "" on unplug rather than simply skipped.
 func _adopt_connector(sysid: String) -> void:
 	if _cable_plug == null or not is_instance_valid(_cable_plug):
 		return
-	_cable_plug.set_plug_mesh(str(PORT_CONNECTORS.get(sysid, "")))
+	_cable_plug.set_plug_mesh(connector_for(sysid))
 	# And move the cord's end with it. set_plug_mesh recomputes cable_anchor for
 	# the new shell, and a rope still ending at the plug's ORIGIN ends on the
 	# mating face — which, seated, is buried inside the socket, so the cord looks

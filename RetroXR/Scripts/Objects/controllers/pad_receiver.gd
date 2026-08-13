@@ -15,6 +15,22 @@ extends InputReceiver
 
 const RETRO_DEVICE_JOYPAD := 1
 
+## Which console moulds its own controller connector. A pad receiver is universal,
+## so unlike every other peripheral it cannot know its plug until it seats.
+##
+## These mirror the plug_mesh_path exports on the pads that wear them
+## (nes_controller.tscn, atari_2600_cx40.tscn). Two places now know each
+## connector; a third would be one too many, so if this grows past a handful ask
+## the console for its connector instead of listing it here.
+const PORT_CONNECTORS := {
+	"nes": "res://imported-assets/controllers/nes/nes_controller_plug.res",
+	"atari2600": "res://Scenes/Objects/controllers/atari/atari_2600_plug_cx40.res",
+}
+
+
+func connector_for(sysid: String) -> String:
+	return str(PORT_CONNECTORS.get(sysid, ""))
+
 ## The pad this receiver is for. GUID rather than device index because the index
 ## is a connection order that changes every session; `pad_ordinal` picks between
 ## two pads of the same model. `pad_name` is only ever shown to the player.

@@ -33,6 +33,13 @@ func _ready() -> void:
 	super._ready()
 
 
+## The PS/2 plug the held RetroMouse wears, named from that class so the two cannot
+## drift apart. The same connector whatever the machine: a keyboard is a
+## keyboard, and only a pad takes the console's own moulding.
+func connector_for(_sysid: String) -> String:
+	return RetroMouse.PLUG_MESH
+
+
 func receiver_glyph() -> String:
 	return TransportGlyphs.glyph("bluetooth") + " " + TransportGlyphs.glyph("mouse")
 
