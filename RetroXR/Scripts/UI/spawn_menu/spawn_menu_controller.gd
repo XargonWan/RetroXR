@@ -86,9 +86,8 @@ const _DEPTH_SPEED    := 0.8    # m/s at full stick
 const _DEPTH_MIN      := 0.3    # min distance from camera
 const _DEPTH_MAX      := 2.5    # max distance from camera
 const _RESIZE_SPEED   := 0.4    # screen_size m/s at full stick
-const _SIZE_MIN       := Vector2(0.45, 0.375)  # half default
-const _SIZE_MAX       := Vector2(1.8, 1.5)     # double default
-const _SCREEN_ASPECT  := 0.9 / 0.75
+const _SIZE_MIN       := Vector2(0.55, 0.375)  # half the shipped 1.1 x 0.75
+const _SIZE_MAX       := Vector2(2.2, 1.5)     # double it
 
 # Grab state
 var _grab_active: bool = false
@@ -731,11 +730,20 @@ func _process_grab_resize(delta: float, stick_x: float) -> void:
 	if abs(stick_x) < _SCROLL_DEADZONE:
 		return
 	var current_size: Vector2 = _viewport_node.screen_size
+	if current_size.x <= 0.0 or current_size.y <= 0.0:
+		return
+	# The panel's own aspect, read live. This is pure magnification — screen_size
+	# moves and viewport_size does not — so the ratio has to be whatever the pixel
+	# grid is currently drawn at, or the texture is stretched against it. A
+	# declared ratio cannot be right in any case: the corner grip adds page in one
+	# axis, so the aspect is the player's to set.
+	var aspect := current_size.x / current_size.y
 	var change := stick_x * _RESIZE_SPEED * delta
-	var new_w := clampf(current_size.x + change * _SCREEN_ASPECT, _SIZE_MIN.x, _SIZE_MAX.x)
-	var new_h := new_w / _SCREEN_ASPECT
-	new_h = clampf(new_h, _SIZE_MIN.y, _SIZE_MAX.y)
-	CurvedPanel.set_screen_size(_viewport_node, Vector2(new_w, new_h))
+	var new_w := clampf(current_size.x + change * aspect, _SIZE_MIN.x, _SIZE_MAX.x)
+	# The height limits, carried back through the aspect so they bound the same
+	# single number and the ratio survives either clamp.
+	new_w = clampf(new_w, _SIZE_MIN.y * aspect, _SIZE_MAX.y * aspect)
+	CurvedPanel.set_screen_size(_viewport_node, Vector2(new_w, new_w / aspect))
 
 
 # ── Spawning ──────────────────────────────────────────────────────────────────
