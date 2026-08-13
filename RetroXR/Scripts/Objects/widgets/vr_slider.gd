@@ -118,6 +118,10 @@ var _knob_anchor_value: float = 0.5
 # vertex data, so its centre is tens of mm from its origin and turning about the
 # origin would fling it across the shell.
 var _knob_centre: Vector3 = Vector3.ZERO
+# Optional touch shape that rides the knob — see set_knob_collision.
+var _knob_collision: CollisionShape3D = null
+var _knob_collision_rest: Transform3D = Transform3D()
+var _knob_collision_value: float = 0.0
 
 var _outline: WidgetOutline = null
 var _outline_amber: bool = false
@@ -137,6 +141,7 @@ func _ready() -> void:
 	# The authored placeholder is driven from the Area origin at mid-travel, which
 	# is what this class did before knobs could be adopted or turn.
 	_anchor_knob(Transform3D(_knob.basis, Vector3.ZERO) if _knob != null else Transform3D(), 0.5)
+	_adopt_knob_collision()
 	_update_knob()
 	_outline = WidgetOutline.attach(self)
 	# The knob is a hidden placeholder on every baked handheld — outline it anyway
@@ -405,7 +410,44 @@ func _anchor_knob(pose: Transform3D, at_value: float) -> void:
 		_knob_centre = _knob.mesh.get_aabb().get_center()
 
 
+## Re-record the touch shape's pose as belonging to the CURRENT value.
+##
+## _ready adopts the shape automatically, so this is only for a model that
+## re-poses it afterwards — the 2600 turns its levers' boxes into the plane of
+## the control panel long after the slider is in the tree, and without this the
+## next value change would slide them from the pose they no longer have.
+func set_knob_collision(shape: CollisionShape3D) -> void:
+	_knob_collision = shape
+	_knob_collision_rest = shape.transform if shape != null else Transform3D()
+	_knob_collision_value = value
+
+
+## The slider's own touch shape, so it can be carried along with the knob.
+func _adopt_knob_collision() -> void:
+	for child in get_children():
+		var shape := child as CollisionShape3D
+		if shape != null:
+			set_knob_collision(shape)
+			return
+
+
 func _update_knob() -> void:
+	# Before the knob's own early-out: a slider can carry a shape without ever
+	# having been given a mesh to drive.
+	#
+	# The shape travels with the knob rather than covering the slot, so what the
+	# player aims at is the switch itself wherever it currently sits. Every box in
+	# the room is already longer than its slider's throw — 5.7 mm spare on the
+	# 2600's levers, 24 mm on a Game Boy's power switch — so they stay generous
+	# targets rather than turning into slot-length strips.
+	#
+	# Slide only. No slider in the project sets knob_turn_deg; a shape for one that
+	# did would need turning about the knob's own centre as well.
+	if is_instance_valid(_knob_collision):
+		var cd: float = value - _knob_collision_value
+		_knob_collision.transform = Transform3D(
+			_knob_collision_rest.basis,
+			_knob_collision_rest.origin + axis_local.normalized() * cd * travel)
 	if _knob == null:
 		return
 	# Everything is measured from the anchor, so at value == anchor this is exactly

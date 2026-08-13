@@ -136,7 +136,9 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 ##
 ## The box's axes: X across the panel, Y out of it, Z down the slope. Sized from
 ## the cap's own vertices in that frame rather than from its AABB, which is the
-## thing being corrected.
+## thing being corrected. Handed to the slider afterwards so it rides the lever:
+## POWER latches 5.6 mm up the panel when the console goes on, and a shape that
+## stayed put would leave the lever dead with a hotspot beside it.
 func _align_switch_box(slider: Node3D, cap_name: String) -> void:
 	if slider == null or _glb == null:
 		return
@@ -169,15 +171,18 @@ func _align_switch_box(slider: Node3D, cap_name: String) -> void:
 	if first:
 		return
 
-	# Z covers the throw as well as the blade: the shape does not travel with the
-	# knob, so a box round one detent leaves the other outside it.
-	var pad := Vector3(0.003, 0.003, 0.003 + _SWITCH_THROW * 0.5)
+	# No allowance for the throw: set_knob_collision below rides the shape up the
+	# panel with the lever, so it wraps the blade at whichever detent it is at.
+	var pad := Vector3(0.003, 0.003, 0.003)
 	var box := col.shape as BoxShape3D
 	box.size = bounds.size + pad * 2.0
 	# The slider's own origin is the cap centre with an identity basis, so the
 	# shape carries both the turn and the offset back to the blade's middle.
 	var centre_model: Vector3 = panel * bounds.get_center()
 	col.transform = Transform3D(panel, centre_model - slider.position)
+	var vr := slider as VRSlider
+	if vr != null:
+		vr.set_knob_collision(col)
 
 
 ## POWER: a latching two-detent slider mounted on the shell's own lever.
