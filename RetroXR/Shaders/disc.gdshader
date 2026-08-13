@@ -222,13 +222,13 @@ vec3 grating(vec3 L, vec3 V, vec3 g, float blur, int orders) {
 // average of the three stops, which is what blurring an environment does.
 // inv_view is passed in rather than read directly: Godot exposes built-ins only
 // inside vertex()/fragment()/light(), never in a helper.
-vec3 env_reflect(vec3 N, vec3 V, float rough, vec3 f0, mat4 inv_view) {
+vec3 env_reflect(vec3 N, vec3 V, float ndv, float rough, vec3 f0, mat4 inv_view) {
 	vec3 Rw = (inv_view * vec4(reflect(-V, N), 0.0)).xyz;
 	float up = clamp(Rw.y, -1.0, 1.0);
 	vec3 c = up > 0.0 ? mix(env_horizon, env_ceiling, up)
 					  : mix(env_horizon, env_floor, -up);
 	c = mix(c, (env_ceiling + env_horizon + env_floor) * (1.0 / 3.0), rough);
-	float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);
+	float fres = pow(1.0 - ndv, 5.0);
 	return c * (f0 + (1.0 - f0) * fres) * env_strength;
 }
 
@@ -245,6 +245,10 @@ void fragment() {
 
 	vec3 V = normalize(VIEW);
 	vec3 g = normalize(v_radial);
+	// Shared by the alpha ramp and the reflected room below. Both wanted the same
+	// normalize and the same dot, and computing them twice was pure waste.
+	vec3 nrm = normalize(NORMAL);
+	float ndv = clamp(dot(nrm, V), 0.0, 1.0);
 	// Derivatives must be taken here, not in light(): under the per-light loop
 	// they sit in non-uniform control flow, which is undefined on real hardware.
 	// Clamped: g swings fastest near the bore, and an unbounded blur there washes
@@ -308,14 +312,12 @@ void fragment() {
 	// Fresnel: at grazing incidence glass stops transmitting and starts mirroring.
 	// This is what gives the clear rim a bright outline instead of letting it
 	// disappear, and it fires strongest exactly where the edge is visible.
-	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), V), 0.0, 1.0), 4.0);
-	ALPHA = mix(base_a, 1.0, fres * glass_fresnel);
+	ALPHA = mix(base_a, 1.0, pow(1.0 - ndv, 4.0) * glass_fresnel);
 
 	// The reflected room. Added here rather than in light() because it is not a
 	// per-light term — with no radiance map Godot's own ambient contributes almost
 	// nothing to a metal, which is the gap this fills.
-	vec3 nrm = normalize(NORMAL);
-	EMISSION += env_reflect(nrm, V, ROUGHNESS,
+	EMISSION += env_reflect(nrm, V, ndv, ROUGHNESS,
 		mix(vec3(0.08 * disc_specular), ALBEDO, METALLIC), INV_VIEW_MATRIX);
 
 	// View-only floor, so a disc never goes completely dead in a room whose lights
