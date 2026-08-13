@@ -13,5 +13,7 @@ android.release.arm64 = "libmetaxr-audio.android.template_release.arm64.so"
 
 [dependencies]
 
+windows.debug.x86_64 = {"MetaXRAudioUnity.dll": ""}
+windows.release.x86_64 = {"MetaXRAudioUnity.dll": ""}
 android.debug.arm64 = {"libMetaXRAudioUnity.so": ""}
 android.release.arm64 = {"libMetaXRAudioUnity.so": ""}

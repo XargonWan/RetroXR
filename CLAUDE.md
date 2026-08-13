@@ -21,7 +21,8 @@ Branch only when the user explicitly requests it.
 
 ## Build Commands
 
-Requires SCons and MSVC (Windows), GCC/Clang (Linux), or Android NDK (Android). The godot-cpp submodule must be initialized first:
+Requires SCons and MSVC (Windows), GCC/Clang (Linux), Xcode command-line tools (macOS),
+or Android NDK (Android). The godot-cpp submodule must be initialized first:
 ```bash
 git submodule update --init --recursive
 ```
@@ -36,6 +37,8 @@ recipes further down, which are kept because they document each build's quirks.
 python Tools/build.py windows              # both template_debug and template_release
 python Tools/build.py android --target release
 python Tools/build.py linux --only vlc-godot
+python Tools/build.py macos                    # host architecture, macOS 13.0 minimum
+python Tools/build.py macos --arch x86_64      # Intel Mac binaries
 python Tools/build.py windows --jobs 8 -- verbose=yes    # extra args go to scons
 ```
 
@@ -47,10 +50,12 @@ It reports a per-extension pass/fail table and exits non-zero if anything failed
 
 **Not all five ship everywhere.** `metaxr-audio` is windows/android only — it wraps
 Meta's `MetaXRAudioUnity` blob, which Meta publishes for win-x64 and android-arm64
-alone, and `metaxr_audio.gdextension` has no `linux.*` entry. The C++ compiles for
+alone, and `metaxr_audio.gdextension` has no Linux or macOS entry. The C++ compiles for
 Linux perfectly well (the loader just finds nothing and `is_available()` returns
 false), so the skip is a shipping decision, not a compile failure. A whole-platform
-`build.py linux` run skips it with a note; `--only metaxr-audio` on linux is an error.
+run skips it with a note; `--only metaxr-audio` on Linux or macOS is an error.
+`vlc-godot` is also skipped on macOS because no redistributable libVLC runtime/plugin
+tree is vendored yet.
 
 **scons is not installed system-wide in either WSL distro** (`Ubuntu` has g++ but no
 scons; `FedoraLinux-44` has neither on PATH). Install it into the distro first.
@@ -72,6 +77,10 @@ ANDROID_NDK_ROOT="C:/android/android-ndk-r27d" ANDROID_HOME="" \
 # Linux desktop x86_64 (bash — GCC/Clang; SCons via `uv tool install scons`)
 scons platform=linux arch=x86_64 target=template_debug
 scons platform=linux arch=x86_64 target=template_release
+
+# macOS (build arm64 and x86_64 separately; PDFium requires macOS 13.0)
+scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
+scons platform=macos arch=x86_64 target=template_release macos_deployment_target=13.0
 ```
 
 The `SConstruct` is at the workspace root; `Temp/SConscript` does the actual build logic.
@@ -93,6 +102,17 @@ Linux/Windows/Android each need their own trampoline. GDScript platform logic us
 `nightly/linux/x86_64/latest/`, `.so` ext, `$HOME/retroxr/...` roots). Runtime emulation of a
 real core on Linux is only lightly verified — build + extension-load + type-resolution are proven.
 
+The macOS libretro build currently supports software-rendered cores only: Vulkan needs
+MoltenVK and the OpenGL path needs a packaged SDL3 runtime. Core downloads use libretro's
+`nightly/apple/osx/<arch>/latest/` dylibs, and desktop data remains under `~/retroxr`.
+Both extension architectures target macOS 13.0. An official arm64 2048 core was exercised
+for 168 frames in a three-second runtime probe; VLC, Meta XR Audio and a signed/notarized
+macOS export preset remain future packaging work.
+
+A hardened Mac export will need library validation disabled for downloaded unsigned cores
+and unsigned executable memory for callback trampolines; dynarec cores may also need the
+JIT entitlement.
+
 ### Sibling GDExtensions (verlet-rope, vlc-godot, godot-pdfium, metaxr-audio)
 
 Four other C++ GDExtensions live beside libretro-godot, each with the same layout (repo-root
@@ -107,6 +127,7 @@ or all at once with `Tools/build.py`:
   the simplest of the five to build.
   ```bash
   cd verlet-rope && scons platform=windows arch=x86_64 target=template_debug
+  cd verlet-rope && scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
   ```
 
 - **vlc-godot** — libVLC-backed `VlcPlayer`, used by both the DVD player **and** the VHS/VCR
@@ -127,11 +148,15 @@ or all at once with `Tools/build.py`:
   PowerShell script, which only knew win-x64 + android-arm64):
   ```bash
   Tools/download_pdfium.sh -p linux     # just this platform's lib; include/ untouched
+  Tools/download_pdfium.sh -p mac       # macOS arm64 (`mac-x64` for Intel)
   cd godot-pdfium
   PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_debug
   PATH="$HOME/.local/bin:$PATH" scons platform=linux arch=x86_64 target=template_release
+  scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
   ```
-  **rpath gotcha:** the shipped `libpdfium.so` shares its SONAME with the Android arm64 copy
+  On macOS, the two runtime dylibs coexist under `mac-arm64/` and `mac-x64/`; each extension
+  uses an architecture-specific `@loader_path` load command. **Linux rpath gotcha:** the
+  shipped `libpdfium.so` shares its SONAME with the Android arm64 copy
   that sits in the output-dir root (tracked in git, referenced by the android `[dependencies]`
   block). An x86_64 lib with the same name would clobber it and break Quest exports, so the
   Linux lib installs to a `linux-x64/` **subdir** and the SConscript adds
@@ -342,7 +367,10 @@ ThreadCommands that execute on the main thread carry an explicit `Wrapper*` and 
 ### Key Classes (libretro-godot/src/)
 
 - **Wrapper** — Per-instance emulation orchestrator. Owns the emulation thread, all handlers, the command queue, and a back-pointer `Libretro* m_libretro_node`. Exposes `GetCurrentThreadWrapper()` / `SetCurrentThreadWrapper(Wrapper*)` as static helpers for the thread-local pattern.
-- **Core** — Dynamically loads a libretro core (`.dll` on Windows, `.so` on Android) via `DynLib.hpp` abstraction, copies it to a temp directory for isolation, and binds all libretro callback function pointers. All callbacks resolve the current wrapper via `GetCurrentThreadWrapper()`.
+- **Core** — Dynamically loads a libretro core (`.dll` on Windows, `.so` on Linux/Android,
+  `.dylib` on macOS) via `DynLib.hpp`, copies it to a temp directory for isolation, and
+  binds all libretro callback function pointers. All callbacks resolve the current wrapper
+  via `GetCurrentThreadWrapper()`.
 - **Libretro** — The GDExtension Node exposed to GDScript. Instance methods only (`StartContent`, `StopContent`, `SetCoreOption`). Owns a `std::unique_ptr<Wrapper> m_wrapper`. Emits the `options_ready` signal via `NotifyOptionsReady()` (called from Wrapper across the thread boundary using `call_deferred`).
 
 ### Handler Subsystems
@@ -357,7 +385,7 @@ Each handler is owned by a `Wrapper` instance and manages one libretro subsystem
 
 ### Data Flow
 ```
-GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handlers → Libretro Core (.dll/.so)
+GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handlers → Libretro Core (.dll/.so/.dylib)
                                                ↑ ThreadCommand queue (ReaderWriterQueue) ↓
                                          Main thread (_process drains queue)
 ```
@@ -382,7 +410,7 @@ GDScript UI → Libretro Node (instance) → Wrapper (per-node) → Core + Handl
 
 ## Code Conventions
 
-- C++latest standard (MSVC on Windows), C++20 (Clang/NDK on Android)
+- C++latest standard (MSVC on Windows), C++20 (GCC/Clang/NDK elsewhere)
 - Debug logging via `Log`, `LogOK`, `LogWarning`, `LogError` macros
 - Libretro option data exposed to GDScript as `LibretroOptionCategory`, `LibretroOptionDefinition`, `LibretroOptionValue` objects
 - Callback-based design throughout (video_refresh, audio_sample, input_poll, environment)
@@ -402,10 +430,11 @@ stand-ins in `RetroXR/Scenes/Objects/system_models/`.
 be either our own work or licensed for redistribution, with its licence and attribution
 carried alongside it.
 - **`Tools/download_pdfium.sh`** — fetches prebuilt PDFium from bblanchon/pdfium-binaries into
-  `godot-pdfium/external/pdfium/`. All three platforms by default (`-p linux|win|android` for
-  one, `-r <tag>` to pin a release, `-n` to dry-run). Bash, so it runs on Linux, WSL and Git
-  Bash alike; it replaced `download_pdfium.ps1`, which had no Linux platform at all. The
-  `include/` headers are shared by all three libs, so a **partial** run leaves them alone by
+  `godot-pdfium/external/pdfium/`. All five packages by default (`-p
+  linux|win|mac|mac-x64|android` for one, `-r <tag>` to pin a release, `-n` to dry-run).
+  Bash, so it runs on Linux, WSL, macOS and Git Bash; it replaced
+  `download_pdfium.ps1`, which had no Linux or macOS platform at all. The
+  `include/` headers are shared by all packages, so a **partial** run leaves them alone by
   default (`--headers` to force) — new declarations against an unrefreshed binary is how you
   get a link error on the platform you weren't building. Each `lib/<plat>/` carries a `VERSION`
   stamp of the release it came from, and the top-level one belongs to `include/`; they are

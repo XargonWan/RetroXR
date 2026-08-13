@@ -99,6 +99,8 @@ func _ready() -> void:
 ## the two D3D contexts exist only on Windows. Offering one the extension would
 ## reject is offering a black screen.
 func hw_render_choices() -> Array:
+	if OS.get_name() == "macOS":
+		return []
 	var out: Array = [["Vulkan", "vulkan", 6]]
 	if OS.get_name() == "Android":
 		out.append(["OpenGL ES 3", "opengl", 4])

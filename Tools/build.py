@@ -4,6 +4,7 @@
     python Tools/build.py windows
     python Tools/build.py android --target release
     python Tools/build.py linux --only vlc-godot
+    python Tools/build.py macos --target debug
 
 Five extensions live in this workspace and each needs its OWN scons invocation:
 they share the `godot-cpp` submodule, and godot-cpp's SConstruct can only be run
@@ -15,14 +16,17 @@ Asking for `linux` from Windows re-invokes this script inside WSL. Asking for it
 from Linux just builds. (Replaces the old Tools/build_linux.sh, which did the
 WSL half by hand for one extension.)
 
-Not every extension ships everywhere — metaxr-audio is windows/android only. A
-whole-platform run skips those with a note; naming one via --only is an error.
+Not every extension ships everywhere — metaxr-audio is windows/android only,
+and vlc-godot currently has no packaged macOS runtime. A whole-platform run
+skips those with a note; naming one via --only is an error.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import platform as host_platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -34,22 +38,28 @@ REPO = Path(__file__).resolve().parent.parent
 # name, directory scons runs in (relative to REPO), where the artifacts land, and
 # the platforms the extension actually ships on.
 # Order matters only for readability of the log; there are no interdependencies.
-ALL_PLATFORMS = ("windows", "linux", "android")
+ALL_PLATFORMS = ("windows", "linux", "macos", "android")
 
 # metaxr-audio wraps Meta's MetaXRAudioUnity blob, which Meta ships for win-x64 and
-# android-arm64 only, and metaxr_audio.gdextension has no linux entry to match. The
-# C++ does compile for linux — the loader just finds no library and is_available()
-# returns false — so building it there produces an .so nothing ever loads. Skip it
+# android-arm64 only, and metaxr_audio.gdextension has no desktop Unix entry to
+# match. Building it there would produce a library nothing ever loads. Skip it
 # rather than bank a misleading OK in the results table.
 EXTENSIONS = [
     ("libretro-godot", ".", "RetroXR/libretro-godot", ALL_PLATFORMS),
     ("verlet-rope", "verlet-rope", "RetroXR/verlet-rope", ALL_PLATFORMS),
-    ("vlc-godot", "vlc-godot", "RetroXR/vlc-godot", ALL_PLATFORMS),
+    # A redistributable macOS libVLC runtime/plugin tree is not vendored yet. Do
+    # not report a successful extension build that another Mac cannot load.
+    ("vlc-godot", "vlc-godot", "RetroXR/vlc-godot", ("windows", "linux", "android")),
     ("godot-pdfium", "godot-pdfium", "RetroXR/godot-pdfium", ALL_PLATFORMS),
     ("metaxr-audio", "metaxr-audio-godot", "RetroXR/metaxr-audio", ("windows", "android")),
 ]
 
-ARCH = {"windows": "x86_64", "linux": "x86_64", "android": "arm64"}
+ARCH = {
+    "windows": "x86_64",
+    "linux": "x86_64",
+    "macos": "arm64" if host_platform.machine().lower() in ("arm64", "aarch64") else "x86_64",
+    "android": "arm64",
+}
 
 TARGETS = {"debug": ["template_debug"],
            "release": ["template_release"],
@@ -64,6 +74,7 @@ WINDOWS_SCONS_FALLBACKS = [
 
 DEFAULT_NDK = "C:/android/android-ndk-r27d"
 DEFAULT_DISTRO = "Ubuntu"
+MACOS_DEPLOYMENT_TARGET = "13.0"
 
 
 def find_scons() -> str:
@@ -77,7 +88,8 @@ def find_scons() -> str:
     sys.exit(
         "scons not found on PATH.\n"
         "  Windows: pip install --user scons\n"
-        "  Linux:   pip install --user scons   (then ensure ~/.local/bin is on PATH)"
+        "  Linux:   pip install --user scons   (then ensure ~/.local/bin is on PATH)\n"
+        "  macOS:   brew install scons"
     )
 
 
@@ -100,6 +112,11 @@ def run_one(name: str, subdir: str, platform: str, arch: str, target: str,
     cmd = [scons, f"platform={platform}", f"arch={arch}", f"target={target}", f"-j{jobs}"]
     if platform == "android":
         cmd.append("ANDROID_HOME=")
+    if platform == "macos":
+        # Keep the default reproducible instead of inheriting the build host's
+        # SDK version. Extra args are appended after this, so an intentional
+        # macos_deployment_target= override still wins.
+        cmd.append(f"macos_deployment_target={MACOS_DEPLOYMENT_TARGET}")
     cmd += extra
     print(f"\n=== {name}  [{platform} {arch} {target}] ===", flush=True)
     print(f"    {cwd}$ {' '.join(cmd)}", flush=True)
@@ -140,7 +157,7 @@ def dispatch_to_wsl(argv: list[str], distro: str) -> int:
         '[ -d "$HOME" ] || { echo "cannot determine a home directory in WSL" >&2; exit 1; }; '
         'export PATH="$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; '
         f'cd "{to_wsl_path(REPO)}" || exit 1; '
-        f'exec python3 Tools/build.py {" ".join(argv)}'
+        f'exec python3 Tools/build.py {shlex.join(argv)}'
     )
     print(f"[build] host is Windows; dispatching linux build into WSL ({distro})", flush=True)
     return subprocess.run(["wsl", "-d", distro, "--", "bash", "-c", inner]).returncode
@@ -149,7 +166,7 @@ def dispatch_to_wsl(argv: list[str], distro: str) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("platform", choices=["windows", "linux", "android"])
+    ap.add_argument("platform", choices=["windows", "linux", "macos", "android"])
     ap.add_argument("--target", choices=list(TARGETS), default="both",
                     help="which build target(s) to produce (default: both)")
     ap.add_argument("--arch", help="override the per-platform default")
@@ -163,11 +180,26 @@ def main() -> int:
 
     # linux asked for from Windows -> hand the whole thing to WSL and stop here.
     if args.platform == "linux" and sys.platform == "win32":
-        passthrough = [a for a in sys.argv[1:] if not a.startswith("--distro")]
+        passthrough: list[str] = []
+        skip_next = False
+        for arg in sys.argv[1:]:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "--distro":
+                skip_next = True
+                continue
+            if arg.startswith("--distro="):
+                continue
+            passthrough.append(arg)
         return dispatch_to_wsl(passthrough, args.distro)
 
     if args.platform == "windows" and sys.platform != "win32":
         sys.exit("windows builds need MSVC; run this from Windows.")
+    if args.platform == "linux" and not sys.platform.startswith("linux"):
+        sys.exit("linux builds need a Linux host (or WSL when invoked from Windows).")
+    if args.platform == "macos" and sys.platform != "darwin":
+        sys.exit("macos builds need a macOS host with Xcode command-line tools.")
 
     exts = EXTENSIONS
     if args.only:

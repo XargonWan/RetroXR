@@ -15,6 +15,11 @@ static func _buildbot_url() -> String:
 		return "https://buildbot.libretro.com/nightly/android/latest/arm64-v8a/"
 	if OS.get_name() == "Linux":
 		return "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
+	if OS.get_name() == "macOS":
+		var arch := Engine.get_architecture_name()
+		if arch not in ["arm64", "x86_64"]:
+			arch = "arm64"
+		return "https://buildbot.libretro.com/nightly/apple/osx/%s/latest/" % arch
 	return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
 
 static func _core_lib_suffix() -> String:
@@ -72,6 +77,8 @@ static func installed_core_lib(core_name: String) -> String:
 static func _core_lib_ext() -> String:
 	if OS.get_name() in ["Android", "Linux"]:
 		return ".so"
+	if OS.get_name() == "macOS":
+		return ".dylib"
 	return ".dll"
 
 ## Default root directory for libretro data.
@@ -81,7 +88,7 @@ static func _core_lib_ext() -> String:
 static func default_core_root() -> String:
 	if OS.get_name() == "Android":
 		return OS.get_user_data_dir() + "/libretro"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/libretro"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/libretro"
 

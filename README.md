@@ -70,9 +70,11 @@ GDExtension — the same [libVLC](https://www.videolan.org/vlc/libvlc.html)-back
 is the single video backend for both. VLC's bundled `libdvdnav`/`libdvdread` plugins give it
 real disc menus and chapter navigation.
 
+The packaged libVLC backend currently ships on Windows, Linux and Android, not macOS.
+
 1. Drop DVD images into the `dvd/` folder (next to `roms/`, `books/` and `videos/`):
    - Windows: `%USERPROFILE%\retroxr\dvd`
-   - Linux: `~/retroxr/dvd`
+   - Linux / macOS: `~/retroxr/dvd`
    - Quest/Android: `/sdcard/Android/data/com.xenu.retroxr/files/dvd`
    - Supported: a folder containing a `VIDEO_TS/` directory, or a standalone `.iso` / `.img` file.
 2. Open the spawn menu (`Tab`), go to the **DVDs** tab, and click a title to spawn a
@@ -103,7 +105,7 @@ page to a texture (asynchronously, and cached to disk so re-opening a book is in
 
 1. Drop books into the `books/` folder (next to `roms/`, `dvd/` and `videos/`):
    - Windows: `%USERPROFILE%\retroxr\books`
-   - Linux: `~/retroxr/books`
+   - Linux / macOS: `~/retroxr/books`
    - Quest/Android: `/sdcard/Android/data/com.xenu.retroxr/files/books`
    - Supported: `.pdf` and `.cbz` (a ZIP of `.jpg`/`.png`/`.webp` page images). CBR and loose
      image files are not listed.
@@ -131,8 +133,11 @@ the in-tree `vlc-godot` GDExtension — a [libVLC](https://www.videolan.org/vlc/
 backed `VlcPlayer`. It is the single video backend for both the VCR and the DVD player,
 and it handles x265/HEVC.
 
+The packaged libVLC backend currently ships on Windows, Linux and Android, not macOS.
+
 1. Drop video files into the `videos/` folder (next to `roms/` and `books/`):
    - Windows: `%USERPROFILE%\retroxr\videos`
+   - Linux / macOS: `~/retroxr/videos`
    - Quest/Android: `/sdcard/Android/data/com.xenu.retroxr/files/videos`
    - Supported: `.mp4`, `.mkv`, `.avi`, `.webm`, `.mov`
 2. Open the spawn menu (`Tab`), go to the **Videos** tab, and click a video to spawn a
@@ -209,14 +214,15 @@ git submodule update --init --recursive     # godot-cpp, libretro-common, vulkan
 pip install --user scons                    # ensure the Scripts/bin dir is on PATH
 ```
 
-Plus a compiler: **MSVC** on Windows, **GCC/Clang** on Linux, the **Android NDK** for
-Quest (set `ANDROID_NDK_ROOT`; `ANDROID_HOME` must be *empty*, not unset, or godot-cpp
-looks for a full SDK).
+Plus a compiler: **MSVC** on Windows, **GCC/Clang** on Linux, **Xcode command-line
+tools** on macOS, or the **Android NDK** for Quest (set `ANDROID_NDK_ROOT`;
+`ANDROID_HOME` must be *empty*, not unset, or godot-cpp looks for a full SDK).
 
-Every third-party binary these link against is already committed — PDFium for all three
-platforms, the libVLC import libraries and Android `libvlc.so`, the Meta XR Audio blob.
-The one exception is **libVLC on Linux**, which links the system library (Fedora:
-`vlc-devel` to build, `vlc-libs` to run).
+Every third-party binary these link against is already committed — including PDFium for
+Windows, Linux, Android and both macOS architectures. **libVLC on Linux** links the system
+library (Fedora: `vlc-devel` to build, `vlc-libs` to run). macOS currently builds
+libretro-godot, verlet-rope and godot-pdfium; vlc-godot has no packaged Mac runtime and
+Meta publishes its audio blob only for Windows and Android, so those two are skipped.
 
 #### One command
 
@@ -224,12 +230,15 @@ The one exception is **libVLC on Linux**, which links the system library (Fedora
 python Tools/build.py windows                 # all five, debug + release
 python Tools/build.py android --target release
 python Tools/build.py linux --only vlc-godot
+python Tools/build.py macos                      # host architecture (arm64 on Apple Silicon)
+python Tools/build.py macos --arch x86_64        # Intel Mac binaries
 python Tools/build.py windows --jobs 8 -- verbose=yes    # extra args go to scons
 ```
 
-It runs the five builds in sequence, prints a pass/fail table, and exits non-zero if any
-failed. Architecture follows the platform: `x86_64` for windows and linux, `arm64` for
-android.
+It runs every eligible extension/target build in sequence, prints a pass/fail table, and
+exits non-zero if any failed. Architecture follows the platform: `x86_64` for Windows and
+Linux, `arm64` for Android, and the host architecture for macOS. Mac builds target macOS
+13.0 by default; build each architecture separately when both are needed.
 
 Asking for `linux` **from Windows** re-invokes the script inside WSL (`--distro`, default
 `Ubuntu`) with `HOME` and `PATH` reset — WSL inherits the Windows environment, whose PATH
@@ -243,9 +252,10 @@ just builds. *(scons is not currently installed in either WSL distro here; `pip 
 scons platform=windows arch=x86_64 target=template_debug          # libretro-godot, from the root
 cd verlet-rope && scons platform=linux arch=x86_64 target=template_release
 cd godot-pdfium && scons platform=android arch=arm64 target=template_debug ANDROID_HOME=
+scons platform=macos arch=arm64 target=template_debug macos_deployment_target=13.0
 ```
 
-Each writes a `lib<name>.<platform>.<target>.<arch>.so` (or `.dll`) next to the
+Each writes a `lib<name>.<platform>.<target>.<arch>.so`, `.dll` or `.dylib` next to the
 `.gdextension` file that points at it.
 
 #### Exporting
@@ -256,6 +266,11 @@ presets come with the clone and a headless export works straight away:
 ```bash
 "$godot" --headless --path RetroXR --export-release "Quest" RetroXR.apk
 ```
+
+There is not yet a committed macOS export/signing preset; the Mac work above supports
+editor/runtime development and produces both architectures' GDExtensions. A future
+hardened export must permit downloaded unsigned cores and executable callback trampolines;
+dynamic-recompiler cores may additionally need the JIT entitlement.
 
 Signing is the one thing you have to supply yourself. Since Godot 4.5 the keystore
 path, user and password live in `RetroXR/.godot/export_credentials.cfg`, which is not

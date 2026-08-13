@@ -9,6 +9,8 @@ env = env.Clone()
 # on for every non-release target; an explicit debug_symbols=no still wins. Has to
 # happen before godot-cpp's SConstruct, which is where the option is read.
 from SCons.Script import ARGUMENTS
+if ARGUMENTS.get("platform") == "macos":
+    ARGUMENTS.setdefault("macos_deployment_target", "13.0")
 if ARGUMENTS.get("target", "template_debug") != "template_release":
     ARGUMENTS.setdefault("debug_symbols", "yes")
 
@@ -25,12 +27,13 @@ env["CXXFLAGS"] = [f for f in env["CXXFLAGS"]
 is_windows = env["platform"] == "windows"
 is_android = env["platform"] == "android"
 is_linux   = env["platform"] == "linux"
+is_macos   = env["platform"] == "macos"
 
 if is_windows:
     env.Append(CXXFLAGS=["/std:c++latest"])
     env.Append(LINKFLAGS=['/IGNORE:4099'])
 
-if is_android or is_linux:
+if is_android or is_linux or is_macos:
     env.Append(CXXFLAGS=["-std=c++20"])
 
 sources = Glob("src/*.cpp")

@@ -107,12 +107,15 @@ verlet-rope/Temp/
 # `lib<name>…so`. `*name.` matches both, since `*` also matches nothing.
 RetroXR/libretro-godot/*libretro_godot.*.dll
 RetroXR/libretro-godot/*libretro_godot.*.so
+RetroXR/libretro-godot/*libretro_godot.*.dylib
 RetroXR/verlet-rope/*verlet_rope.*.dll
 RetroXR/verlet-rope/*verlet_rope.*.so
+RetroXR/verlet-rope/*verlet_rope.*.dylib
 RetroXR/vlc-godot/*vlc_godot.*.dll
 RetroXR/vlc-godot/*vlc_godot.*.so
 RetroXR/godot-pdfium/*godot-pdfium.*.dll
 RetroXR/godot-pdfium/*godot-pdfium.*.so
+RetroXR/godot-pdfium/*godot-pdfium.*.dylib
 RetroXR/metaxr-audio/*metaxr-audio.*.dll
 RetroXR/metaxr-audio/*metaxr-audio.*.so
 

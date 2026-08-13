@@ -2,8 +2,9 @@
 # download_pdfium.sh — fetch prebuilt PDFium from bblanchon/pdfium-binaries into
 # godot-pdfium/external/pdfium/, laid out the way godot-pdfium/SConscript expects.
 #
-#   Tools/download_pdfium.sh                          # all platforms, latest release
+#   Tools/download_pdfium.sh                          # all platform packages, latest release
 #   Tools/download_pdfium.sh -p linux                 # just the Linux x86_64 lib
+#   Tools/download_pdfium.sh -p mac                   # just the macOS arm64 lib
 #   Tools/download_pdfium.sh -p linux --no-headers    # ...and leave include/ alone
 #   Tools/download_pdfium.sh -r chromium/7988         # pin a release tag
 #   Tools/download_pdfium.sh --dry-run                # show what would change
@@ -14,7 +15,7 @@
 # The libs are committed to the repo, so a fresh clone does NOT need this — it is
 # for refreshing them or adding a platform.
 #
-# The `include/` headers are shared by all three platforms. Refreshing one
+# The `include/` headers are shared by every platform. Refreshing one
 # platform's lib without its headers (--no-headers) is the safe, minimal move;
 # refreshing the headers without every lib pairs new declarations with older
 # binaries, so a header write from a partial run warns.
@@ -26,7 +27,7 @@ DEST="$REPO/godot-pdfium/external/pdfium"
 GH_REPO="bblanchon/pdfium-binaries"
 
 # key -> archive basename : destination lib subdir
-ALL_PLATFORMS=(win-x64 android-arm64 linux-x64)
+ALL_PLATFORMS=(win-x64 android-arm64 linux-x64 mac-x64 mac-arm64)
 
 release="latest"
 platforms=()
@@ -47,8 +48,10 @@ canon_platform() {
     case "$1" in
         win|win-x64|windows|windows-x64)          echo win-x64 ;;
         linux|linux-x64|linux-x86_64)             echo linux-x64 ;;
+        mac|macos|mac-arm64|macos-arm64)          echo mac-arm64 ;;
+        mac-x64|macos-x64|mac-x86_64|macos-x86_64) echo mac-x64 ;;
         android|android-arm64|android-arm64-v8a)  echo android-arm64 ;;
-        *) die "unknown platform '$1' (want: win-x64, linux-x64, android-arm64)" ;;
+        *) die "unknown platform '$1' (want: win-x64, linux-x64, mac-x64, mac-arm64, android-arm64)" ;;
     esac
 }
 
@@ -211,4 +214,4 @@ for _p in "" "${ALL_PLATFORMS[@]}"; do
 done
 note ""
 note "Next: build the extension —"
-note "  python Tools/build.py linux --only godot-pdfium"
+note "  python Tools/build.py <windows|linux|macos|android> --only godot-pdfium"

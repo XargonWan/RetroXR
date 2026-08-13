@@ -11,7 +11,7 @@ extends RefCounted
 static func default_roms_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retroxr/files/roms"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/roms"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/roms"
 
@@ -158,7 +158,7 @@ static func scraped_manual_path(systemid: String, romname: String) -> String:
 static func default_books_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retroxr/files/books"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/books"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/books"
 
@@ -204,7 +204,7 @@ const VIDEO_EXTENSIONS := ["mp4", "mkv", "avi", "webm", "mov"]
 static func default_videos_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retroxr/files/videos"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/videos"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/videos"
 
@@ -246,7 +246,7 @@ static func scan_videos() -> Array[Dictionary]:
 static func default_tv_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retroxr/files/tv"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/tv"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/tv"
 
@@ -266,7 +266,7 @@ static func ensure_tv_root() -> void:
 static func default_dvd_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retroxr/files/dvd"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/dvd"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/dvd"
 
@@ -315,7 +315,7 @@ const MUSIC_EXTENSIONS := ["mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "w
 static func default_music_root() -> String:
 	if OS.get_name() == "Android":
 		return "/sdcard/Android/data/com.xenu.retroxr/files/music"
-	if OS.get_name() == "Linux":
+	if OS.get_name() in ["Linux", "macOS"]:
 		return OS.get_environment("HOME") + "/retroxr/music"
 	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/music"
 
