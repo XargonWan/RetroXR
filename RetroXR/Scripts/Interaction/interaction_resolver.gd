@@ -59,6 +59,7 @@ static func resolve_desktop(
 
 	var exclude: Array[RID] = []
 	var found: InteractionTarget = null
+	var socket: InteractionTarget = null
 
 	for _step in MAX_STEPS:
 		var query := PhysicsRayQueryParameters3D.create(from, to, QUERY_MASK)
@@ -71,6 +72,20 @@ static func resolve_desktop(
 
 		var target := _classify(hit, from, grabber)
 		if target.is_valid():
+			# A socket's REACH SPHERE is an affordance volume, not a surface: it is
+			# invisible, far bigger than the part it holds, and it overlaps its
+			# neighbours. The NES bay's stands 51 mm out through the top of the
+			# deck, and a console's three phono sockets are 120 mm across with
+			# their centres a few tens of mm apart. Taken as a surface it hands you
+			# the cartridge when you point at solid casework, and the nearest plug
+			# when you point at the one behind it. Held back as a fallback, the
+			# plug's OWN body answers first and the sphere only catches an aim that
+			# nothing else claims.
+			if hit.collider is XRToolsSnapZone:
+				if socket == null:
+					socket = target
+				exclude.append(hit.rid)
+				continue
 			if found == null:
 				# Keep walking a little further: this may be the shell around the
 				# control that was actually meant.
@@ -91,9 +106,18 @@ static func resolve_desktop(
 		if hit.collider is Area3D or _is_socketed(hit.collider):
 			exclude.append(hit.rid)
 			continue
-		return found if found != null else InteractionTarget.none()
+		return _best(found, socket)
 
-	return found if found != null else InteractionTarget.none()
+	return _best(found, socket)
+
+
+## What the walk actually reached, preferring a real surface over a socket's reach.
+static func _best(found: InteractionTarget, socket: InteractionTarget) -> InteractionTarget:
+	if found != null:
+		return found
+	if socket != null:
+		return socket
+	return InteractionTarget.none()
 
 
 ## A control is something you operate rather than pick up — the kind that is
