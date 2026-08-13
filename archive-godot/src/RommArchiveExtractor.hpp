@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -27,10 +29,18 @@ public:
     /// Stream the selected plan to per-member .part files, validate size + CRC,
     /// then rename each completed member into place. On any failure, every part
     /// and final file created by this call is removed.
-    /// Returns { ok, error, files: [{entry,path,relative,size}], total_size }.
+    /// Returns { ok, cancelled, error, files, total_size }.
     godot::Dictionary Extract(const godot::String& zip_path, const godot::Array& plan);
+
+    /// May be called from the main thread while Extract runs on a worker. The
+    /// current operation stops at the next streaming chunk and removes all
+    /// output it created.
+    void RequestCancel();
 
 protected:
     static void _bind_methods();
+
+private:
+    std::atomic_bool m_cancel_requested{false};
 };
 }

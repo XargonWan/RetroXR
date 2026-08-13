@@ -34,6 +34,9 @@ var manifest: RommCacheManifest = null
 var _thread: Thread = null
 var _abort := false
 var _current_rom_id := 0
+## Created on the main thread and used by the worker, so cancellation can wake
+## an extraction that is otherwise inside native decompression.
+var _active_archive_extractor: RommArchiveExtractor = null
 ## Queue of pending {entry, systemid} — one download at a time; these are big.
 var _queue: Array[Dictionary] = []
 
@@ -82,15 +85,20 @@ func enqueue(entry: Dictionary, systemid: String) -> void:
 func cancel_current() -> void:
 	if is_busy():
 		_abort = true
+		if _active_archive_extractor != null:
+			_active_archive_extractor.request_cancel()
 
 
 func cancel_all() -> void:
 	_queue.clear()
 	_abort = true
+	if _active_archive_extractor != null:
+		_active_archive_extractor.request_cancel()
 	if _thread != null:
 		if _thread.is_started():
 			_thread.wait_to_finish()
 		_thread = null
+	_active_archive_extractor = null
 	_abort = false
 	_current_rom_id = 0
 
@@ -137,14 +145,19 @@ func _pump() -> void:
 	download_started.emit(rom_id, str(entry.get("name", fs_name)), size)
 
 	_thread = Thread.new()
+	_active_archive_extractor = null
+	if bool(entry.get("multi", false)):
+		_active_archive_extractor = RommArchiveExtractor.new()
 	var args := {
 		"entry": entry,
 		"systemid": systemid,
 		"base_url": config.base_url,
 		"headers": config.auth_headers(),
+		"archive_extractor": _active_archive_extractor,
 	}
 	if _thread.start(_worker.bind(args)) != OK:
 		_thread = null
+		_active_archive_extractor = null
 		_current_rom_id = 0
 		download_finished.emit(rom_id, false, "", "Could not start download thread")
 		_pump()
@@ -159,6 +172,8 @@ func _worker(args: Dictionary) -> void:
 	var systemid: String = args["systemid"]
 	var rom_id := int(entry.get("id", 0))
 	var is_multi := bool(entry.get("multi", false))
+	var archive_extractor: RommArchiveExtractor = \
+		args.get("archive_extractor") as RommArchiveExtractor
 
 	RomLibrary.ensure_rom_dir(systemid)
 
@@ -204,7 +219,7 @@ func _worker(args: Dictionary) -> void:
 		# ── Verified and in place ────────────────────────────────────────────
 		var transfer_size := _file_size(dest)
 		if i == 0 and is_multi:
-			var extracted := _extract_multi(dest, systemid, owned)
+			var extracted := _extract_multi(dest, systemid, owned, archive_extractor)
 			if not str(extracted.get("error", "")).is_empty():
 				_remove_downloaded_members(systemid, members)
 				if _abort:
@@ -402,7 +417,7 @@ func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: 
 ## uncompressed total before writing, then return the launch path plus every
 ## exact member the cache group owns.
 func _extract_multi(zip_path: String, systemid: String,
-		keep: PackedStringArray) -> Dictionary:
+		keep: PackedStringArray, extractor: RommArchiveExtractor) -> Dictionary:
 	var reader := ZIPReader.new()
 	if reader.open(zip_path) != OK:
 		DirAccess.remove_absolute(zip_path)
@@ -415,7 +430,6 @@ func _extract_multi(zip_path: String, systemid: String,
 		DirAccess.remove_absolute(zip_path)
 		return {"launch": "", "members": [], "error": "Archive contains unsafe files"}
 
-	var extractor := RommArchiveExtractor.new()
 	var inspected: Dictionary = extractor.inspect(zip_path, plan)
 	if not bool(inspected.get("ok", false)):
 		DirAccess.remove_absolute(zip_path)
@@ -696,12 +710,14 @@ func _emit_retrying(rom_id: int, attempt: int, max_attempts: int, reason: String
 
 func _emit_cancelled(rom_id: int) -> void:
 	_current_rom_id = 0
+	_active_archive_extractor = null
 	download_cancelled.emit(rom_id)
 	_pump()
 
 
 func _emit_finished(rom_id: int, ok: bool, path: String, error: String) -> void:
 	_current_rom_id = 0
+	_active_archive_extractor = null
 	if not ok:
 		push_warning("[RommDownloader] rom %d failed: %s" % [rom_id, error])
 	download_finished.emit(rom_id, ok, path, error)

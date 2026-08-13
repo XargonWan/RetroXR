@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -34,6 +35,7 @@ constexpr size_t   EOCD_MAX_SEARCH              = EOCD_MIN_SIZE + 0xffffu;
 constexpr int32_t  STREAM_CHUNK_SIZE            = 256 * 1024;
 constexpr uint64_t MAX_ARCHIVE_ENTRIES          = 65536u;
 constexpr int64_t  MAX_PLAN_ENTRIES             = 65536;
+constexpr char     CANCELLED_ERROR[]             = "Archive extraction cancelled";
 
 struct CentralEntry
 {
@@ -106,14 +108,24 @@ bool ReadAt(const Ref<FileAccess>& file, uint64_t file_size, uint64_t offset,
     return size == 0 || ReadAt(file, file_size, offset, destination.data(), size);
 }
 
-Dictionary Result(bool ok, const String& error, const Array& files, uint64_t total_size)
+Dictionary Result(bool ok, const String& error, const Array& files,
+                  uint64_t total_size, bool cancelled = false)
 {
     Dictionary result;
     result["ok"] = ok;
+    result["cancelled"] = cancelled;
     result["error"] = error;
     result["files"] = files;
     result["total_size"] = static_cast<int64_t>(total_size);
     return result;
+}
+
+bool CancellationRequested(const std::atomic_bool& cancel_requested, String& error)
+{
+    if (!cancel_requested.load(std::memory_order_acquire))
+        return false;
+    error = CANCELLED_ERROR;
+    return true;
 }
 
 bool ParseZip64Extra(const std::vector<uint8_t>& extra,
@@ -520,10 +532,13 @@ bool WriteChunk(const Ref<FileAccess>& output, const PackedByteArray& bytes,
 
 bool DrainInflater(const Ref<StreamPeerGZIP>& inflater,
                    const Ref<FileAccess>& output, uint64_t expected_size,
-                   uint64_t& written, uint32_t& crc, String& error)
+                   uint64_t& written, uint32_t& crc, String& error,
+                   const std::atomic_bool& cancel_requested)
 {
     while (inflater->get_available_bytes() > 0)
     {
+        if (CancellationRequested(cancel_requested, error))
+            return false;
         const int32_t available = inflater->get_available_bytes();
         const Array received = inflater->get_partial_data(
             std::min<int32_t>(available, STREAM_CHUNK_SIZE));
@@ -592,7 +607,8 @@ bool LocateMemberData(const ArchiveIndex& index, const CentralEntry& entry,
 
 bool ExtractStored(const ArchiveIndex& index, const CentralEntry& entry,
                    uint64_t data_offset, const Ref<FileAccess>& output,
-                   uint64_t& written, uint32_t& crc, String& error)
+                   uint64_t& written, uint32_t& crc, String& error,
+                   const std::atomic_bool& cancel_requested)
 {
     if (entry.compressed_size != entry.uncompressed_size)
     {
@@ -606,6 +622,8 @@ bool ExtractStored(const ArchiveIndex& index, const CentralEntry& entry,
     uint64_t cursor = data_offset;
     while (remaining > 0)
     {
+        if (CancellationRequested(cancel_requested, error))
+            return false;
         const int32_t amount = static_cast<int32_t>(
             std::min<uint64_t>(remaining, STREAM_CHUNK_SIZE));
         if (index.file->get_position() != cursor)
@@ -627,7 +645,8 @@ bool ExtractStored(const ArchiveIndex& index, const CentralEntry& entry,
 
 bool ExtractDeflated(const ArchiveIndex& index, const CentralEntry& entry,
                      uint64_t data_offset, const Ref<FileAccess>& output,
-                     uint64_t& written, uint32_t& crc, String& error)
+                     uint64_t& written, uint32_t& crc, String& error,
+                     const std::atomic_bool& cancel_requested)
 {
     Ref<StreamPeerGZIP> inflater;
     inflater.instantiate();
@@ -649,9 +668,11 @@ bool ExtractDeflated(const ArchiveIndex& index, const CentralEntry& entry,
         int32_t consumed = 0;
         while (consumed < input.size())
         {
+            if (CancellationRequested(cancel_requested, error))
+                return false;
             const uint64_t written_before = written;
             if (!DrainInflater(inflater, output, entry.uncompressed_size,
-                               written, crc, error))
+                               written, crc, error, cancel_requested))
                 return false;
 
             const PackedByteArray pending = input.slice(consumed, input.size());
@@ -669,7 +690,7 @@ bool ExtractDeflated(const ArchiveIndex& index, const CentralEntry& entry,
             }
             consumed += just_consumed;
             if (!DrainInflater(inflater, output, entry.uncompressed_size,
-                               written, crc, error))
+                               written, crc, error, cancel_requested))
                 return false;
             if (just_consumed == 0 && written == written_before)
             {
@@ -698,6 +719,8 @@ bool ExtractDeflated(const ArchiveIndex& index, const CentralEntry& entry,
     uint64_t cursor = data_offset;
     while (remaining > 0)
     {
+        if (CancellationRequested(cancel_requested, error))
+            return false;
         const int32_t amount = static_cast<int32_t>(
             std::min<uint64_t>(remaining, STREAM_CHUNK_SIZE));
         if (index.file->get_position() != cursor)
@@ -718,7 +741,10 @@ bool ExtractDeflated(const ArchiveIndex& index, const CentralEntry& entry,
     }
 
     if (!DrainInflater(inflater, output, entry.uncompressed_size,
-                       written, crc, error))
+                       written, crc, error, cancel_requested))
+        return false;
+
+    if (CancellationRequested(cancel_requested, error))
         return false;
 
     // Append the gzip CRC32 and ISIZE in little-endian order plus one byte that
@@ -748,7 +774,7 @@ bool ExtractDeflated(const ArchiveIndex& index, const CentralEntry& entry,
         return false;
     }
     return DrainInflater(inflater, output, entry.uncompressed_size,
-                         written, crc, error);
+                         written, crc, error, cancel_requested);
 }
 
 void Cleanup(const std::vector<String>& parts, const std::vector<String>& finals)
@@ -768,6 +794,9 @@ void Cleanup(const std::vector<String>& parts, const std::vector<String>& finals
 
 Dictionary RommArchiveExtractor::Inspect(const String& zip_path, const Array& requested)
 {
+    if (m_cancel_requested.load(std::memory_order_acquire))
+        return Result(false, CANCELLED_ERROR, Array(), 0, true);
+
     ArchiveIndex index;
     String error;
     if (!ParseArchive(zip_path, index, error))
@@ -778,11 +807,16 @@ Dictionary RommArchiveExtractor::Inspect(const String& zip_path, const Array& re
     uint64_t total_size = 0;
     if (!BuildPlan(index, requested, plan, described, total_size, error))
         return Result(false, error, Array(), 0);
+    if (m_cancel_requested.load(std::memory_order_acquire))
+        return Result(false, CANCELLED_ERROR, Array(), total_size, true);
     return Result(true, String(), described, total_size);
 }
 
 Dictionary RommArchiveExtractor::Extract(const String& zip_path, const Array& requested)
 {
+    if (m_cancel_requested.load(std::memory_order_acquire))
+        return Result(false, CANCELLED_ERROR, Array(), 0, true);
+
     ArchiveIndex index;
     String error;
     if (!ParseArchive(zip_path, index, error))
@@ -804,6 +838,8 @@ Dictionary RommArchiveExtractor::Extract(const String& zip_path, const Array& re
     // files this invocation itself created.
     for (const PlannedEntry& item : plan)
     {
+        if (m_cancel_requested.load(std::memory_order_acquire))
+            return Result(false, CANCELLED_ERROR, Array(), total_size, true);
         if (FileAccess::file_exists(item.output_path) ||
             DirAccess::dir_exists_absolute(item.output_path))
         {
@@ -821,6 +857,11 @@ Dictionary RommArchiveExtractor::Extract(const String& zip_path, const Array& re
 
     for (size_t i = 0; i < plan.size(); ++i)
     {
+        if (m_cancel_requested.load(std::memory_order_acquire))
+        {
+            Cleanup(parts, finals);
+            return Result(false, CANCELLED_ERROR, Array(), total_size, true);
+        }
         const PlannedEntry& item = plan[i];
         const CentralEntry& entry = *item.archive_entry;
         const String& part = parts[i];
@@ -844,9 +885,11 @@ Dictionary RommArchiveExtractor::Extract(const String& zip_path, const Array& re
         uint32_t crc = 0xffffffffu;
         bool ok = LocateMemberData(index, entry, data_offset, error);
         if (ok && entry.method == METHOD_STORED)
-            ok = ExtractStored(index, entry, data_offset, output, written, crc, error);
+            ok = ExtractStored(index, entry, data_offset, output, written, crc, error,
+                               m_cancel_requested);
         else if (ok)
-            ok = ExtractDeflated(index, entry, data_offset, output, written, crc, error);
+            ok = ExtractDeflated(index, entry, data_offset, output, written, crc, error,
+                                 m_cancel_requested);
         output->close();
 
         crc ^= 0xffffffffu;
@@ -863,7 +906,13 @@ Dictionary RommArchiveExtractor::Extract(const String& zip_path, const Array& re
         if (!ok)
         {
             Cleanup(parts, finals);
-            return Result(false, error, Array(), total_size);
+            return Result(false, error, Array(), total_size,
+                          m_cancel_requested.load(std::memory_order_acquire));
+        }
+        if (m_cancel_requested.load(std::memory_order_acquire))
+        {
+            Cleanup(parts, finals);
+            return Result(false, CANCELLED_ERROR, Array(), total_size, true);
         }
         if (FileAccess::file_exists(item.output_path) ||
             DirAccess::rename_absolute(part, item.output_path) != OK)
@@ -875,7 +924,17 @@ Dictionary RommArchiveExtractor::Extract(const String& zip_path, const Array& re
         finals.push_back(item.output_path);
     }
 
+    if (m_cancel_requested.load(std::memory_order_acquire))
+    {
+        Cleanup(parts, finals);
+        return Result(false, CANCELLED_ERROR, Array(), total_size, true);
+    }
     return Result(true, String(), described, total_size);
+}
+
+void RommArchiveExtractor::RequestCancel()
+{
+    m_cancel_requested.store(true, std::memory_order_release);
 }
 
 void RommArchiveExtractor::_bind_methods()
@@ -884,5 +943,7 @@ void RommArchiveExtractor::_bind_methods()
                          &RommArchiveExtractor::Inspect);
     ClassDB::bind_method(D_METHOD("extract", "zip_path", "plan"),
                          &RommArchiveExtractor::Extract);
+    ClassDB::bind_method(D_METHOD("request_cancel"),
+                         &RommArchiveExtractor::RequestCancel);
 }
 }
