@@ -29,6 +29,26 @@ enum PostAA { OFF, FXAA, SMAA }
 ## what the preset becomes once an individual row is moved away from it.
 enum Preset { LOW, MEDIUM, HIGH, CUSTOM }
 
+## What the app tells the runtime about how hard this stretch of it works the
+## chip, mirroring OpenXRInterface.PerfSettingsLevel. It is a declaration of
+## complexity, not a clock in MHz — the runtime answers it with clocks, and
+## answers the thermal budget first. SUSTAINED_HIGH means "high or dynamic
+## complexity, held inside a thermally sustainable range"; BOOST asks to step
+## OUTSIDE that range, which is granted for short stretches and paid for in heat
+## and in the throttling that follows.
+enum PerfLevel { POWER_SAVINGS, SUSTAINED_LOW, SUSTAINED_HIGH, BOOST }
+
+## Fixed foveated rendering: the eye buffer's edges are shaded at a fraction of
+## the centre's rate, which is nearly free detail to give up on a lens that
+## over-samples the periphery anyway. Where it works it pays for the eye-buffer
+## scale outright (12.92 ms / 71 fps against 17.04 / 56 at x1.229, Quest 3).
+##
+## It does not currently work here. At LOW and above the whole eye buffer renders
+## as one flat colour on this stack — Godot 4.7 + vendors 5.1 + 4x MSAA +
+## multiview on a Quest 3 (21351c5). OFF is the default for that reason, and the
+## menu row says so; anyone turning it up is testing whether it is still true.
+enum Foveation { OFF, LOW, MEDIUM, HIGH }
+
 ## Render scale and the eye buffer are deliberately absent: both are a taste call
 ## about how much resolution to buy, not a quality tier, so a preset never moves
 ## either one.
@@ -139,6 +159,9 @@ var render_scale: float = 1.0
 var eye_buffer_scale: float = EYE_BUFFER_PANEL
 ## Requested XR display refresh rate. 0 means the platform default above.
 var display_rate: float = 0.0
+var cpu_level: PerfLevel = PerfLevel.SUSTAINED_HIGH
+var gpu_level: PerfLevel = PerfLevel.SUSTAINED_HIGH
+var foveation_level: Foveation = Foveation.OFF
 ## Desktop window state. Empty resolution means "leave the window where it is".
 var window_mode: String = ""
 var resolution: String = ""
@@ -355,6 +378,72 @@ func apply_display_rate() -> void:
 	xr.call("set_display_refresh_rate", best)
 	print("QualityManager: display refresh rate %s Hz (available: %s)" % [
 		best, available_display_rates()])
+
+
+## Whether the runtime takes performance-level requests. Asked with has_method
+## rather than a version check, and headset-only: XR_EXT_performance_settings is
+## a mobile-thermal extension, and Godot exposes no way to ask whether the runtime
+## actually carries it — the engine silently drops the call where it does not.
+func supports_perf_levels() -> bool:
+	if _desktop:
+		return false
+	var xr := XRServer.find_interface("OpenXR")
+	return xr != null and xr.is_initialized() and xr.has_method("set_cpu_level")
+
+
+func set_cpu_level(level: int) -> void:
+	cpu_level = clampi(level, PerfLevel.POWER_SAVINGS, PerfLevel.BOOST) as PerfLevel
+	apply_perf_levels()
+	save_prefs()
+
+
+func set_gpu_level(level: int) -> void:
+	gpu_level = clampi(level, PerfLevel.POWER_SAVINGS, PerfLevel.BOOST) as PerfLevel
+	apply_perf_levels()
+	save_prefs()
+
+
+## Declare both domains at once — xrPerfSettingsSetPerformanceLevelEXT per domain,
+## legal at any point in a session.
+##
+## Nothing can report back what the chip is actually running at: Godot binds the
+## two setters and no getter, so the menu shows what was asked for, not what was
+## granted. What the runtime does say is when the answer has changed — the
+## cpu_level_changed / gpu_level_changed signals carry a thermal notification
+## level (normal / warning / impaired) rather than a clock.
+func apply_perf_levels() -> void:
+	if not supports_perf_levels():
+		return
+	var xr := XRServer.find_interface("OpenXR")
+	xr.call("set_cpu_level", int(cpu_level))
+	xr.call("set_gpu_level", int(gpu_level))
+
+
+## Foveation is an FB extension, so the runtime is asked directly rather than the
+## platform guessed at.
+func supports_foveation() -> bool:
+	var xr := XRServer.find_interface("OpenXR")
+	if xr == null or not xr.is_initialized() or not xr.has_method("is_foveation_supported"):
+		return false
+	return bool(xr.call("is_foveation_supported"))
+
+
+func set_foveation_level(level: int) -> void:
+	foveation_level = clampi(level, Foveation.OFF, Foveation.HIGH) as Foveation
+	apply_foveation()
+	save_prefs()
+
+
+## Safe to call before the swapchain exists and safe to call mid-session: the
+## extension re-applies the profile on every swapchain creation, and a change made
+## while one is live goes through xrUpdateSwapchainFB on the rendering thread. A
+## resize from the eye-buffer row therefore carries the current level over on its
+## own.
+func apply_foveation() -> void:
+	if not supports_foveation():
+		return
+	var xr := XRServer.find_interface("OpenXR")
+	xr.set("foveation_level", int(foveation_level))
 
 
 ## Window mode and resolution were the only GRAPHICS rows that reset every launch,
@@ -575,6 +664,12 @@ func _load_prefs() -> void:
 	# Kept as saved rather than validated here: which rates exist is the runtime's
 	# to say, and effective_display_rate() snaps to the nearest it offers.
 	display_rate = maxf(_prefs_float(data, "display_rate", display_rate), 0.0)
+	cpu_level = clampi(_prefs_int(data, "cpu_level", cpu_level),
+		PerfLevel.POWER_SAVINGS, PerfLevel.BOOST) as PerfLevel
+	gpu_level = clampi(_prefs_int(data, "gpu_level", gpu_level),
+		PerfLevel.POWER_SAVINGS, PerfLevel.BOOST) as PerfLevel
+	foveation_level = clampi(_prefs_int(data, "foveation_level", foveation_level),
+		Foveation.OFF, Foveation.HIGH) as Foveation
 
 
 func save_prefs() -> void:
@@ -593,6 +688,9 @@ func save_prefs() -> void:
 		"render_scale": render_scale,
 		"eye_buffer_scale": eye_buffer_scale,
 		"display_rate": display_rate,
+		"cpu_level": int(cpu_level),
+		"gpu_level": int(gpu_level),
+		"foveation_level": int(foveation_level),
 	}))
 	file.close()
 

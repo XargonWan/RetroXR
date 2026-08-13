@@ -34,6 +34,10 @@ func _ready():
 		# `xr/openxr/render_target_size_multiplier` project setting (the whole xr/*
 		# list was dumped to check).
 		QualityManager.apply_eye_buffer_scale()
+		# Both are live settings; applied here so a launch starts where the saved
+		# ones say rather than at the runtime's own defaults.
+		QualityManager.apply_perf_levels()
+		QualityManager.apply_foveation()
 		# Enable XR rendering — this also signals desktop support nodes to disable
 		# themselves (xr_start_shim.gd returns get_viewport().use_xr).
 		get_viewport().use_xr = true

@@ -215,6 +215,45 @@ func _build(vr_mode: bool) -> void:
 			+ "repeats and reprojects frames instead. Watch the performance overlay's frame row "
 			+ "after changing it."))
 
+	# Foveation shades the edges of each eye at a fraction of the centre's rate.
+	# It is offered knowing it is broken on this stack, because the row is also
+	# how anyone finds out that it has been fixed.
+	if QualityManager.supports_foveation():
+		var fov_opt := VRDropdown.create("Foveation",
+			[["Off", QualityManager.Foveation.OFF],
+			 ["Low", QualityManager.Foveation.LOW],
+			 ["Medium", QualityManager.Foveation.MEDIUM],
+			 ["High", QualityManager.Foveation.HIGH]],
+			int(QualityManager.foveation_level), 4, Vector2(110, 52), 20)
+		fov_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_foveation_level(int(id)))
+		vbox.add_child(fov_opt)
+
+		vbox.add_child(MenuStyle.hint("Spends fewer pixels at the edges of each eye, where the "
+			+ "lens throws detail away anyway, and hands the saving to the centre. WARNING: on "
+			+ "this headset anything above Off has been rendering the whole view as one flat "
+			+ "colour. If that happens, set it back to Off."))
+
+	# Requests to the runtime, not clock speeds — and nothing reads back, since
+	# Godot binds the setters and no getter. The rows show what was asked for.
+	if QualityManager.supports_perf_levels():
+		var cpu_opt := VRDropdown.create("CPU Level", _perf_level_options(),
+			int(QualityManager.cpu_level), 4, Vector2(150, 52), 20)
+		cpu_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_cpu_level(int(id)))
+		vbox.add_child(cpu_opt)
+
+		var gpu_opt := VRDropdown.create("GPU Level", _perf_level_options(),
+			int(QualityManager.gpu_level), 4, Vector2(150, 52), 20)
+		gpu_opt.item_selected.connect(func(id: Variant) -> void:
+			QualityManager.set_gpu_level(int(id)))
+		vbox.add_child(gpu_opt)
+
+		vbox.add_child(MenuStyle.hint("What the headset is told to expect of this room, which it "
+			+ "answers with clock speed inside its heat budget. Sustained High is the working "
+			+ "default. Boost asks to run past that budget — it holds for a while, then the "
+			+ "headset throttles and gets hot."))
+
 	_msaa_opt = VRDropdown.create("Anti-Aliasing",
 		[["Off", Viewport.MSAA_DISABLED], ["2×", Viewport.MSAA_2X],
 		 ["4×", Viewport.MSAA_4X], ["8×", Viewport.MSAA_8X]],
@@ -278,6 +317,15 @@ func _build(vr_mode: bool) -> void:
 			+ "resolution."))
 
 	vbox.add_child(HSeparator.new())
+
+
+## The same four levels for both domains, in the order the OpenXR enum declares
+## them.
+func _perf_level_options() -> Array:
+	return [["Power Save", QualityManager.PerfLevel.POWER_SAVINGS],
+		["Low", QualityManager.PerfLevel.SUSTAINED_LOW],
+		["High", QualityManager.PerfLevel.SUSTAINED_HIGH],
+		["Boost", QualityManager.PerfLevel.BOOST]]
 
 
 ## Push QualityManager's current values back into the rows, so choosing a preset
