@@ -386,10 +386,44 @@ func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
 		attach_point.position += Vector3(-0.04 * channel, 0, 0)
 
 
-## World-space offset from the video-out attach point where channel `channel`'s
-## cable plug first spawns — i.e. which way the rope initially trails out of the
-## console. Default trails it out the back (-Z); models whose port faces another
-## way override this (the NES's captive AV lead exits the right/+X side).
+## Point an attach point's cord-exit axis along `normal`, the outward normal of the
+## face its port sits on, given in this model's own frame.
+##
+## VerletRope leaves a fixed anchor stiffly along that node's local -Z
+## (VerletRope::PlugExitDir), so this is the whole of what decides which way a
+## captive lead leaves the machine. Left at identity the cord runs out of the
+## model's BACK whatever face the port ended up on — which on a handheld whose port
+## moved to the side edge means the lead emerges from the flank and immediately
+## doubles back along the body. It also aims PortVisual into the jack, the plug mesh
+## being authored connector-on-+Z.
+##
+## The NES and the Atari 2600 wrote this out by hand — rotate -90 degrees about Y
+## for a flank jack, identity for a rear panel — and this is the same rule for any
+## face. Written through the GLOBAL transform because an attach point is a child of
+## the SYSTEM, not of the model: the two frames coincide today, and a model that
+## ever carries a transform of its own would silently aim every cord wrongly.
+func aim_cable_exit(attach_point: Node3D, normal: Vector3) -> void:
+	var n: Vector3 = (global_transform.basis.orthonormalized() * normal)
+	if n.length_squared() < 0.0001:
+		return
+	n = n.normalized()
+	# Any perpendicular will do for the roll — nothing about a cord cares which way
+	# up its port is — but it must not lie along the normal itself.
+	var up := Vector3.UP if absf(n.dot(Vector3.UP)) < 0.99 else Vector3(0, 0, -1)
+	var x := up.cross(n).normalized()
+	attach_point.global_transform = Transform3D(
+		Basis(x, (-n).cross(x), -n), attach_point.global_position)
+
+
+## Offset from the video-out attach point where channel `channel`'s cable plug
+## first stands, in the ATTACH POINT's own frame — so local -Z is the cord's exit
+## axis (see aim_cable_exit) and the default simply trails the lead 100 mm straight
+## out of the face its port is on. Local X runs along that face, which is what
+## separates one channel's plug from the next.
+##
+## Read in the attach point's frame rather than in the world, so a machine standing
+## at any angle — or simply picked up — lays its cord out of itself rather than
+## toward world -Z.
 func get_cable_spawn_offset(channel: int) -> Vector3:
 	return Vector3(0.05 * channel, 0, -0.1)
 

@@ -389,12 +389,18 @@ func get_cartridge_insert_direction() -> Vector3:
 ## centred cartridge slot mouth. On narrow bodies whose back edge is mostly
 ## slot (Game Boy, WonderSwan, Supervision, Pokémon Mini) the port moves to
 ## the right side edge instead.
+##
+## The exit axis moves WITH it. A lead leaves its attach point along that point's
+## local -Z, so a side-mounted port left at identity put the cord out of the flank
+## and then straight back along the body — see aim_cable_exit.
 func configure_cable_attach(attach_point: Node3D) -> void:
 	var back_x := maxf(body_size.x * 0.30, (cart_size.x + 0.005) / 2.0 + 0.010)
 	if back_x <= body_size.x / 2.0 - 0.008:
 		attach_point.position = Vector3(back_x, 0, -body_size.z / 2.0 - 0.002)
+		aim_cable_exit(attach_point, Vector3(0, 0, -1))   # out of the back edge
 	else:
 		attach_point.position = Vector3(body_size.x / 2.0 + 0.002, 0, -body_size.z * 0.30)
+		aim_cable_exit(attach_point, Vector3(1, 0, 0))    # out of the right flank
 	# The scene's console-scale grey port barrel dwarfs a handheld shell —
 	# hide it (the cable itself marks the port).
 	var vis := attach_point.get_node_or_null("PortVisual") as MeshInstance3D

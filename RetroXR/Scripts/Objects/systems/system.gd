@@ -1623,11 +1623,9 @@ func _add_cables_to_scene() -> void:
 		# Exclude the plug from colliding with this system so it doesn't jitter on spawn
 		plug.add_collision_exception_with(self)
 
-		# Position plug near the rope's start anchor (the attach point), offset the
-		# way the console's port faces (per-model; default trails out the back -Z)
-		# so multiple plugs don't spawn intersecting.
-		plug.global_position = _attach_points[i].global_position \
-			+ _model.get_cable_spawn_offset(i)
+		# Stand the plug off the rope's start anchor along the way the port faces,
+		# so the lead lays itself out of the machine rather than across it.
+		plug.global_position = _plug_park_pos(i, 0)
 
 		# Per-channel wiring, when the model asks for something other than the
 		# cable scene's own composite pigtail. A channel carrying one signal wants
@@ -1711,11 +1709,32 @@ func _adopt_audio_pair(inst: Node3D, channel: int, rope: VerletRope) -> Array:
 		# it for a second video connection from this machine.
 		p.channel = channel
 		p.add_collision_exception_with(self)
-		p.global_position = _attach_points[channel].global_position \
-			+ _model.get_cable_spawn_offset(channel) \
-			+ _attach_points[channel].global_transform.basis.x * (0.02 * (c * 2 - 1))
+		p.global_position = _plug_park_pos(channel, c + 1)
 	_cable_audio_plugs[channel] = pair
 	return pair
+
+
+## Sideways step per connector across the face the port is on, so three plugs on
+## one lead do not spawn inside each other. Indexed picture, left, right.
+const _PLUG_PARK_SPREAD := [0.0, -0.02, 0.02]
+
+
+## Where connector `index` of channel `ch`'s lead stands when the lead is built or
+## parked, in world space.
+##
+## Through the attach point's TRANSFORM, not its position: the model's spawn offset
+## is read in that frame (see RetroSystemModel.get_cable_spawn_offset), so the cord
+## trails out of the face its port is on whichever way the machine happens to be
+## turned. Added in the world, it always pointed at world -Z — which is the back of
+## a console standing square to the room and nothing at all on one that has been
+## picked up, turned round, or built with its port on the flank.
+func _plug_park_pos(ch: int, index: int) -> Vector3:
+	var attach := _live(_attach_points[ch]) as Node3D
+	if attach == null:
+		return global_position
+	var spread: float = _PLUG_PARK_SPREAD[mini(index, _PLUG_PARK_SPREAD.size() - 1)]
+	return attach.global_transform * (_model.get_cable_spawn_offset(ch)
+		+ Vector3(spread, 0, 0))
 
 
 ## How far one lead reaches from its attach point: the trunk, plus the tail a
@@ -1831,8 +1850,7 @@ func _apply_video_out() -> void:
 				# then drifts under gravity + rope tension. Only park a free-dangling plug.
 				if not p.is_picked_up():
 					p.freeze = false
-					p.global_position = _attach_points[i].global_position \
-						+ Vector3(0.05 * i + 0.02 * (c - 1), 0, -0.1)
+					p.global_position = _plug_park_pos(i, c)
 					p.linear_velocity = Vector3.ZERO
 			else:
 				p.freeze = true

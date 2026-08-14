@@ -523,6 +523,11 @@ func configure_buttons(power_btn: VRButton, _reset_btn: VRButton, _eject_btn: VR
 func configure_cable_attach_for(attach_point: Node3D, channel: int) -> void:
 	var x := body_size.x * (0.30 if channel == 0 else -0.30)
 	attach_point.position = Vector3(x, 0, -body_size.z / 2.0 - 0.002)
+	# Both ports are on the back edge, so both cords leave along its normal. The
+	# base's side-edge branch never applies here — a clamshell's back edge is wide
+	# enough for two — but the aim still has to be stated: an attach point placed
+	# without one keeps whatever it was left at.
+	aim_cable_exit(attach_point, Vector3(0, 0, -1))
 	# Channel 0 is the scene's CableAttachPoint, which carries the console's
 	# grey barrel PortVisual — out of scale on a handheld (the extra channels'
 	# points are bare Node3Ds), so hide it and let the labels mark the ports.

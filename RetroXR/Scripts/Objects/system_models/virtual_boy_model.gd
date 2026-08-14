@@ -465,14 +465,19 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 
 
 func configure_cable_attach(attach_point: Node3D) -> void:
-	# Video-out on the rear of the visor, not the left edge.
+	# Video-out on the rear of the visor, not the left edge — and the cord leaves
+	# along that face's normal rather than along whatever the attach point was left
+	# pointing at (see RetroSystemModel.aim_cable_exit). The shell is yawed so its
+	# sockets face the back, so both bodies want the same answer.
 	if _glb != null:
 		attach_point.global_position = _marker("Cable Plug (R)")
+		aim_cable_exit(attach_point, Vector3(0, 0, -1))
 		var pv := attach_point.get_node_or_null("PortVisual") as MeshInstance3D
 		if pv != null:
 			pv.visible = false
 		return
 	attach_point.position = Vector3(0, _visor_center_y, -VISOR_SIZE.z / 2.0 - 0.002)
+	aim_cable_exit(attach_point, Vector3(0, 0, -1))
 
 
 ## The default console collision box (bottom at y=-0.05) leaves the Virtual Boy
