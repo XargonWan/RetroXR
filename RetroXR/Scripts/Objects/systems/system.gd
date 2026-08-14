@@ -2331,29 +2331,20 @@ func net_set_remote_power(on: bool) -> void:
 			connected_tv.hide_osd()
 
 
-## Hard reset: restart the running core without going through power on/off.
-## Does not change button state, labels, or fire power model hooks.
+## Front-panel reset: the machine restarts, the core stays loaded. Does not
+## change button state, labels, or fire power model hooks.
+##
+## retro_reset, not a stop/start of the core: a restart has to join the
+## emulation thread, and a core that owns internal threads of its own (Dolphin)
+## does not unwind on demand, so the join never returns and the app hangs with
+## every thread parked. Nothing is torn down here, so the screen, the audio
+## voices and the port bindings all survive and there is nothing to rebind.
 func reset() -> void:
 	if not is_powered_on:
 		return
 	_model.play_reset()
-	var resolved_core := core_name
-	if resolved_core.is_empty() and not systemid.is_empty():
-		var defaults := CoreDefaults.new()
-		defaults.setup(CoreDefaults.default_path())
-		resolved_core = defaults.get_default_core(systemid)
-	var resolved_dir := core_directory
-	if resolved_dir.is_empty():
-		resolved_dir = CoreDownloadManager.default_core_root()
-	print("[RetroSystem] Resetting: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
-	_apply_forced_core_options(resolved_dir, resolved_core)
-	AppPrefs.apply_hw_render_for(resolved_core)
-	_libretro.StopContent()
-	_libretro.StartContent(_bound_screen_target(), resolved_dir, resolved_core, rom_path)
-	# StopContent destroyed the old voices and StartContent made fresh ones, so
-	# the ids held here are stale. Without this the TV's volume and power would
-	# be writing gain to dead slots while the new voices played at full tilt.
-	_bind_audio_player()
+	print("[RetroSystem] Resetting: rom=%s" % rom_path)
+	_libretro.RequestReset()
 
 
 ## Merge the model's REQUIRED core options into <dir>/core_options/<core>.opt
