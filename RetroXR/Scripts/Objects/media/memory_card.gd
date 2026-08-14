@@ -12,6 +12,8 @@ extends XRToolsPickable
 const OPTIONS_PANEL_SCENE := preload("res://Scenes/UI/memory_card_panel.tscn")
 
 var _options_panel: MemoryCardPanel = null
+# The authored pointer box, restored whenever the card leaves a slot.
+var _loose_pointer_box := Vector3.ZERO
 
 
 ## Persistent identity, and literally the file name this card's saves live in
@@ -40,6 +42,9 @@ func _ready() -> void:
 		card_label = card_id
 		minted = true
 	_update_label()
+	_loose_pointer_box = _pointer_box_size()
+	picked_up.connect(_on_picked_up)
+	dropped.connect(_on_dropped)
 
 
 ## True only for a card this session invented — the id was not handed in.
@@ -68,3 +73,52 @@ func toggle_options_ui(camera: Node3D) -> void:
 		_options_panel.hide_panel()
 	else:
 		_options_panel.show_for(self, camera)
+
+
+## Whoever has it decides how big a target it should be.
+##
+## Loose, a card wants generous padding — it is a 55 x 17 x 75 mm brick and the
+## authored box is 90 x 50 x 110. Seated in a console it does not: that box stands
+## 13 mm above a PlayStation's lid across 90 x 110 mm of it, so pointing at a good
+## part of the machine handed you the card instead of the machine. Same treatment
+## the cartridge gets, for the same reason.
+func _on_picked_up(_p: Variant) -> void:
+	if _snap_zone_holder() != null:
+		_set_pointer_box(_card_box_size() + Vector3.ONE * 0.004)
+
+
+func _on_dropped(_p: Variant) -> void:
+	if _loose_pointer_box != Vector3.ZERO:
+		_set_pointer_box(_loose_pointer_box)
+
+
+func _snap_zone_holder() -> XRToolsSnapZone:
+	if not is_picked_up():
+		return null
+	return get_picked_up_by() as XRToolsSnapZone
+
+
+func _card_box_size() -> Vector3:
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col != null and col.shape is BoxShape3D:
+		return (col.shape as BoxShape3D).size
+	return Vector3(0.055, 0.017, 0.075)
+
+
+func _pointer_box_size() -> Vector3:
+	var col := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if col != null and col.shape is BoxShape3D:
+		return (col.shape as BoxShape3D).size
+	return Vector3.ZERO
+
+
+## A FRESH shape every time. The scene declares one BoxShape3D sub-resource with
+## no resource_local_to_scene, so writing to it in place would resize every card
+## in the room.
+func _set_pointer_box(size: Vector3) -> void:
+	var col := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
+	if col == null:
+		return
+	var box := BoxShape3D.new()
+	box.size = size
+	col.shape = box
