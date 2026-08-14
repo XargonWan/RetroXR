@@ -1589,6 +1589,29 @@ func release_input(input: int = Source.COMPOSITE_1) -> void:
 		port.drop_object()
 
 
+## The L and R sockets of one composite input, in that order — the pair a captive
+## lead's audio cords go into beside its picture cord. Empty for an input this
+## cabinet has no sockets for, and for the tuner, which has no audio of its own.
+func audio_ports(input: int) -> Array:
+	if input < 0 or input >= _av_ports.size():
+		return []
+	var trio: Array = _av_ports[input]
+	return trio.slice(1) if trio.size() > 1 else []
+
+
+## Which socket ANYWHERE on this set is holding `plug` — audio as well as video.
+## port_holding answers the narrower question of which INPUT a lead is feeding, and
+## an audio cord is never the answer to that one.
+func socket_holding(plug: Node3D) -> XRToolsSnapZone:
+	for group: Array in _av_ports:
+		for port: RcaPort in group:
+			if port.picked_up_object == plug:
+				return port
+	if _vga_port != null and _vga_port.picked_up_object == plug:
+		return _vga_port
+	return null
+
+
 ## Which video socket is holding `plug`, or null. Lets a host that seated a captive
 ## lead find its way back to the right socket without knowing the numbering.
 func port_holding(plug: Node3D) -> XRToolsSnapZone:

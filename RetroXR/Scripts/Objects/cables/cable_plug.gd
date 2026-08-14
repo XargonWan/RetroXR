@@ -15,8 +15,22 @@ var _system: Node3D = null
 ## hosts leave it 0.
 var channel: int = 0
 
-## Cable tag shown on the plug ("TOP"/"BOTTOM"); "" on single-cable hosts.
+## Cable tag ("TOP"/"BOTTOM"); "" on single-cable hosts. Not printed on the plug —
+## a lead is told from its neighbour by what it is, a trio or a lone cord, the way
+## the hardware is (see RetroSystem._decorate_channel_plug).
 var channel_label: String = ""
+
+## Colour of the connector's plastic body.
+##
+## The bake is composite yellow, so the picture cord needs no override and the
+## audio pair beside it says white and red. Surface 0 is the plastic and surface 1
+## the metal — the split exists for exactly this (Tools/gen_rca_plug.gd) — and the
+## plating is deliberately not tintable, since plated shells are the same on every
+## connector.
+@export var plug_color: Color = RcaJack.COMPOSITE_YELLOW:
+	set(value):
+		plug_color = value
+		_apply_plug_color()
 
 ## Where the cord meets this plug, in plug-local space — for
 ## VerletRope.end_anchor_offset.
@@ -36,7 +50,35 @@ func _ready() -> void:
 	# Add to the snap group so TV's CompositePort (snap_require = "composite_plug") accepts us
 	add_to_group("composite_plug")
 	_derive_cable_anchor()
+	_apply_plug_color()
 	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
+
+
+## Tint the connector body, leaving the plating alone.
+##
+## The baked material belongs to the .res every plug in the room shares, so it is
+## duplicated before a colour goes into it — writing straight into it would
+## recolour the lot. Same rule, and the same surface, as RcaJack._apply_color;
+## the exported value may also be assigned before PlugTip exists, which is why
+## _ready calls this again.
+func _apply_plug_color() -> void:
+	var tip := get_node_or_null("PlugTip") as MeshInstance3D
+	if tip == null or tip.mesh == null or tip.mesh.get_surface_count() == 0:
+		return
+	var base := tip.mesh.surface_get_material(0) as StandardMaterial3D
+	if base == null:
+		return
+	# The bake is already this colour, so an override would be nothing but a second
+	# copy of it — and dropping it is also what returns a plug recoloured twice to
+	# the yellow it started as.
+	if base.albedo_color.is_equal_approx(plug_color):
+		tip.set_surface_override_material(0, null)
+		return
+	var mat := tip.get_surface_override_material(0) as StandardMaterial3D
+	if mat == null:
+		mat = base.duplicate() as StandardMaterial3D
+		tip.set_surface_override_material(0, mat)
+	mat.albedo_color = plug_color
 
 
 func _derive_cable_anchor() -> void:

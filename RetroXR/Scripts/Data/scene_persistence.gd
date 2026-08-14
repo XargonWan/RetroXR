@@ -235,7 +235,9 @@ func clear_scene(root: Node) -> void:
 	# Cable instances are in "spawned".  Their plug child may be snapped into a
 	# snap-zone.  Calling drop() clears _grab_driver before queue_free.
 	for node: Node in spawned:
-		for plug_name: String in ["CablePlug", "ControllerPlug"]:
+		# The captive A/V lead ends in three connectors, not one — the picture cord
+		# plus the audio pair beside it — and any of them can be sitting in a socket.
+		for plug_name: String in ["CablePlug", "CablePlugL", "CablePlugR", "ControllerPlug"]:
 			var plug := node.get_node_or_null(plug_name)
 			if plug and plug.has_method("drop"):
 				plug.call("drop")

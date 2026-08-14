@@ -172,6 +172,10 @@ const SCREEN_WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 var _channels: Array = []
 var _cable_instances: Array = []
 var _cable_plugs: Array = []
+# The audio pair on each channel's lead, [left, right], or empty on a channel whose
+# model asks for a single wire (the DS's bottom screen). Only the plug in
+# _cable_plugs carries a signal — see _seat_audio_pair.
+var _cable_audio_plugs: Array = []
 
 # A/V sockets, for hardware that wears them instead of a captive lead (the NES).
 # _av_speaker is which of the set's speakers the one mono cord reaches — 0 left,
@@ -546,6 +550,7 @@ func _load_system_model() -> void:
 	for i in _channels.size():
 		_cable_instances.append(null)
 		_cable_plugs.append(null)
+		_cable_audio_plugs.append([])
 		_cable_ropes.append(null)
 		_max_rope_lengths.append(0.0)
 		_channel_tvs.append(null)
@@ -554,9 +559,10 @@ func _load_system_model() -> void:
 		_tv_window_mats.append(null)
 		_tv_touch_surfaces.append(null)
 		_model.configure_cable_attach_for(_attach_points[i], i)
-	# Consoles ALWAYS have video out (a TV is their only display — no toggle);
-	# handhelds default OFF and remember the saved choice.
-	if _model.is_handheld():
+	# A machine with no display of its own ALWAYS has video out — a TV is the only
+	# place its picture can go, so there is no toggle. One that carries its own
+	# screen defaults OFF and remembers the saved choice.
+	if supports_video_out_toggle():
 		video_out_enabled = _video_out_from_save == 1
 	else:
 		video_out_enabled = true
@@ -1138,6 +1144,7 @@ func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
 	_channel_tvs[ch] = tv
 	if ch == 0:
 		connected_tv = tv
+	_seat_audio_pair(ch, tv)
 	# A fresh connection carries no verdict from the set that made it. The one
 	# being joined states its own selection immediately after this returns
 	# (RetroTV._apply_screen_enable), so starting from "shown" cannot strand a
@@ -1168,6 +1175,7 @@ func on_tv_disconnected(plug: CablePlug = null) -> void:
 	_channel_tvs[ch] = null
 	if ch == 0:
 		connected_tv = null
+	_release_audio_pair(ch, tv)
 	if _channels.size() > 1:
 		_remove_touch_surface(ch)
 		_uninstall_tv_mirror(ch, tv)
@@ -1176,6 +1184,44 @@ func on_tv_disconnected(plug: CablePlug = null) -> void:
 	_last_screen_enabled = true
 	if is_powered_on:
 		_libretro.SetScreenMesh(_screen_target())
+
+
+## Put the lead's audio pair into the L and R sockets of the input the picture
+## cord just went into, and take them out again when it leaves.
+##
+## The pair travels with the picture because on a CAPTIVE lead the sound already
+## does: a machine with no A/V sockets of its own has one connection to a set, and
+## on_tv_connected is the whole of it. Leaving the two connectors dangling in front
+## of the television while the yellow one was seated would have said the opposite —
+## that they route something, and that this lead was half plugged in.
+##
+## Hardware that wears real sockets (the NES, the Wii) never comes through here:
+## it has no captive lead at all, and a spawned CompositeCable resolves every cord
+## on its own. See CompositeCable._resolve.
+func _seat_audio_pair(ch: int, tv: RetroTV) -> void:
+	if tv == null or ch < 0 or ch >= _cable_audio_plugs.size():
+		return
+	var pair: Array = _cable_audio_plugs[ch]
+	if pair.is_empty():
+		return
+	var plug := _live(_cable_plugs[ch]) as CablePlug
+	if plug == null:
+		return
+	var sockets: Array = tv.audio_ports(tv.input_holding(plug))
+	for c in mini(pair.size(), sockets.size()):
+		var p := _live(pair[c]) as CablePlug
+		var port := sockets[c] as RcaPort
+		if p != null and port != null and port.enabled and port.seated_plug() == null:
+			port.pick_up_object(p)
+
+
+func _release_audio_pair(ch: int, tv: RetroTV) -> void:
+	if tv == null or not is_instance_valid(tv) or ch < 0 or ch >= _cable_audio_plugs.size():
+		return
+	for extra: Variant in _cable_audio_plugs[ch]:
+		var p := _live(extra) as CablePlug
+		if p != null:
+			_release_plug(tv.socket_holding(p), p)
 
 
 ## The TV connected to a given video-out channel, or null (persistence).
@@ -1569,8 +1615,7 @@ func _add_cables_to_scene() -> void:
 		plug.set_system(self)
 		plug.channel = i
 		plug.channel_label = str(_channels[i].get("label", ""))
-		if not plug.channel_label.is_empty():
-			_decorate_channel_plug(plug, i)
+		_decorate_channel_plug(plug, i)
 
 		# Exclude the plug from colliding with this system so it doesn't jitter on spawn
 		plug.add_collision_exception_with(self)
@@ -1590,20 +1635,38 @@ func _add_cables_to_scene() -> void:
 			rope.ribbon_count = wires.size()
 			rope.ribbon_colors = wires
 
+		# The audio pair, and whether this channel has one at all.
+		var pair: Array = _adopt_audio_pair(inst, i, rope)
+
 		# Wire rope anchors: start = system's attach point, end = plug
 		rope.start_node = _attach_points[i]
-		rope.end_node = plug
-		# End the cord AT the RCA plug's cable boss. The plug's origin is its
-		# SEATING reference, up at the collar, so a zero offset runs the tube out
-		# through the barrel.
-		rope.end_anchor_offset = plug.cable_anchor
 		# Same correction at THIS end. The attach point sits at the console's jack,
 		# and the plug seated in it is modelled from its collar too — so without
 		# this the cord started inside the barrel and appeared to sprout from the
 		# middle of the connector rather than the strain relief behind it.
 		rope.start_anchor_offset = _port_cable_anchor(_attach_points[i])
+		if pair.is_empty():
+			rope.end_node = plug
+			# End the cord AT the RCA plug's cable boss. The plug's origin is its
+			# SEATING reference, up at the collar, so a zero offset runs the tube out
+			# through the barrel.
+			rope.end_anchor_offset = plug.cable_anchor
+		else:
+			# One tail per cord, each ending at its own connector's boss. The trunk's
+			# terminal particle is left unanchored on purpose — the plugs carry the
+			# breakout, the way an unsupported junction behaves on the real lead.
+			var groups := PackedInt32Array()
+			for c in rope.ribbon_count:
+				groups.append(c)
+			rope.fray_end_groups = groups
+			rope.end_node = null
+			var ends: Array = [plug, pair[0], pair[1]]
+			for c in ends.size():
+				var p: CablePlug = ends[c]
+				rope.set_fray_end_node(c, p)
+				rope.set_fray_end_anchor_offset(c, p.cable_anchor)
 		rope._init_points()
-		_max_rope_lengths[i] = rope.segment_count * rope.segment_length
+		_max_rope_lengths[i] = _rope_reach(rope)
 
 		# Restore a pending TV connection requested before the cable was ready
 		if _pending_tv_restores[i] != null:
@@ -1612,6 +1675,55 @@ func _add_cables_to_scene() -> void:
 			_pending_tv_restores[i] = null
 			_pending_tv_inputs[i] = 0
 	_apply_video_out()
+
+
+## Take charge of one lead's audio pair, or retire it.
+##
+## The cable scene ships a composite pigtail — a picture cord with the audio pair
+## beside it — because that is what all but one of this room's leads is. A channel
+## whose model asks for a single wire has no pair to break out, so the two spare
+## connectors are freed and the rope goes back to the plain unfrayed cord it was:
+## the fray count comes off, and the trunk grows by the tail it is no longer
+## spending, which keeps every channel's reach the 1.80 m the lead is.
+##
+## Returns [left, right], or [] on a one-wire channel.
+func _adopt_audio_pair(inst: Node3D, channel: int, rope: VerletRope) -> Array:
+	var pair: Array = []
+	for nm in ["CablePlugL", "CablePlugR"]:
+		var p := inst.get_node_or_null(nm) as CablePlug
+		if p != null:
+			pair.append(p)
+	if rope.ribbon_count < 3 or pair.size() < 2:
+		for p: CablePlug in pair:
+			p.queue_free()
+		rope.segment_count += rope.fray_segments_end
+		rope.fray_segments_end = 0
+		_cable_audio_plugs[channel] = []
+		return []
+	for c in pair.size():
+		var p: CablePlug = pair[c]
+		# NO set_system: on this lead the sound travels with the picture, so these
+		# two are the picture cord's companions rather than routes of their own (see
+		# _seat_audio_pair). A plug that named a host would have the television take
+		# it for a second video connection from this machine.
+		p.channel = channel
+		p.add_collision_exception_with(self)
+		p.global_position = _attach_points[channel].global_position \
+			+ _model.get_cable_spawn_offset(channel) \
+			+ _attach_points[channel].global_transform.basis.x * (0.02 * (c * 2 - 1))
+	_cable_audio_plugs[channel] = pair
+	return pair
+
+
+## How far one lead reaches from its attach point: the trunk, plus the tail a
+## frayed end hangs off it. Read off the rope rather than tabled, so a scene that
+## re-lengths the cord cannot leave the tether behind.
+func _rope_reach(rope: VerletRope) -> float:
+	var fray_seg: float = rope.fray_segment_length
+	if fray_seg <= 0.0:
+		fray_seg = rope.segment_length
+	return rope.segment_count * rope.segment_length \
+		+ float(rope.fray_segments_end) * fray_seg
 
 
 ## Where the cord meets the plug seated in the console's own jack, in the attach
@@ -1630,10 +1742,18 @@ func _port_cable_anchor(attach: Node3D) -> Vector3:
 	return pv.transform * Vector3(ab.get_center().x, ab.get_center().y, ab.position.z)
 
 
-## True when this system offers the Enable Video Out toggle (handhelds only —
-## consoles have no builtin screen, so their cable is always on).
+## True when this system offers the Enable Video Out toggle: the machine has a
+## display of its own, so running a lead to a television is a choice.
+##
+## Asked of the SCREEN rather than of is_handheld(), because the two are not the
+## same question. The Virtual Boy is a tabletop console by every other measure —
+## it takes a controller and it has no battery — but the picture is already in
+## front of your eyes, and a lead permanently hanging off the back of it is the
+## one thing on that machine nobody would want.
 func supports_video_out_toggle() -> bool:
-	return _model != null and _model.is_handheld()
+	if _model == null:
+		return false
+	return _model.is_handheld() or _model.get_builtin_screen() != null
 
 
 ## Toggle floating: on = freeze right where it is (or where it's next dropped);
@@ -1683,55 +1803,96 @@ func _apply_video_out() -> void:
 		if inst == null or plug == null:
 			continue
 		var tv := _live(_channel_tvs[i]) as RetroTV
+		# The whole lead goes with the picture cord: the audio pair beside it is on
+		# the same cable, and a set fed by a machine with its video out switched off
+		# is not fed at all.
+		var ends: Array = [plug]
+		for extra: Variant in _cable_audio_plugs[i]:
+			var p := _live(extra) as CablePlug
+			if p != null:
+				ends.append(p)
 		if not video_out_enabled and tv != null:
-			# Ask the set which socket is holding it rather than assuming the first:
+			# Ask the set which socket is holding each rather than assuming the first:
 			# a television has four composite inputs and this lead may be in any of
 			# them, and naming CompositePort left a lead in Composite 2 seated while
 			# its video-out was switched off.
-			var port := tv.port_holding(plug)
-			if port:
-				# Disarm around the drop so the zone's stale grab list can't
-				# instantly re-snap the plug (same pattern as the disc slot).
-				port.enabled = false
-				port.drop_object()
-				port.set_deferred("enabled", true)
-		plug.enabled = video_out_enabled
+			for e: CablePlug in ends:
+				_release_plug(tv.socket_holding(e), e)
+		for c in ends.size():
+			var p: CablePlug = ends[c]
+			p.enabled = video_out_enabled
+			if video_out_enabled:
+				# A plug already socketed into a TV (e.g. restored from a save, where
+				# _apply_video_out runs right after the snap) is held frozen at the port by
+				# the snap zone. Unfreezing/parking it here drops it off the socket, and it
+				# then drifts under gravity + rope tension. Only park a free-dangling plug.
+				if not p.is_picked_up():
+					p.freeze = false
+					p.global_position = _attach_points[i].global_position \
+						+ Vector3(0.05 * i + 0.02 * (c - 1), 0, -0.1)
+					p.linear_velocity = Vector3.ZERO
+			else:
+				p.freeze = true
 		if video_out_enabled:
 			inst.visible = true
 			inst.process_mode = Node.PROCESS_MODE_INHERIT
-			# A plug already socketed into a TV (e.g. restored from a save, where
-			# _apply_video_out runs right after the snap) is held frozen at the port by
-			# the snap zone. Unfreezing/parking it here drops it off the socket, and it
-			# then drifts under gravity + rope tension. Only park a free-dangling plug.
-			if not plug.is_picked_up():
-				plug.freeze = false
-				plug.global_position = _attach_points[i].global_position \
-					+ Vector3(0.05 * i, 0, -0.1)
-				plug.linear_velocity = Vector3.ZERO
 		else:
-			plug.freeze = true
 			inst.visible = false
 			inst.process_mode = Node.PROCESS_MODE_DISABLED
 
 
-## Label a multi-output plug so the player can tell the cables apart: floating
-## billboard tag ("TOP"/"BOTTOM") plus a tinted tip on the second channel.
+## How far a released connector is drawn out of its socket, in metres. Clear of the
+## 60 mm grab distance every RcaPort uses, so it cannot be snapped straight back up.
+const PULLED_CLEAR := 0.12
+
+
+## Take a plug out of the socket holding it and stand it clear of the bank.
+##
+## Disarming the zone around the drop is not enough on its own once three cords go
+## into a set at once. A composite input's sockets are 18 mm apart and each reaches
+## 60 mm, so a plug released at the panel is standing inside its NEIGHBOURS' grab
+## areas as well as its own — pull the lead and the set caught the red connector in
+## the socket the white one had just left. So it is also drawn back along the
+## socket's own axis, which is the way a hand takes it out.
+##
+## The transform goes through the physics server as well as the node: the body is
+## live again the moment it is dropped, and a transform written only on the node is
+## overwritten on the next tick, putting it back in the socket. Same recipe, and the
+## same reasons, as CompositeCable.net_release_plug.
+func _release_plug(port: XRToolsSnapZone, plug: CablePlug) -> void:
+	if port == null or not is_instance_valid(port):
+		return
+	port.enabled = false
+	port.drop_object()
+	if plug != null and is_instance_valid(plug):
+		plug.global_position = port.global_position \
+			+ port.global_transform.basis.z.normalized() * PULLED_CLEAR
+		PhysicsServer3D.body_set_state(plug.get_rid(),
+			PhysicsServer3D.BODY_STATE_TRANSFORM, plug.global_transform)
+	_reopen_port(port)
+
+
+## Let the deferred drop handler and the area's body_exited both run before the
+## socket is live again. Deliberately not awaited by the caller: the release has
+## already happened, and this only reopens the socket behind it.
+func _reopen_port(port: XRToolsSnapZone) -> void:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	if is_instance_valid(port):
+		port.enabled = true
+
+
+## Mark a multi-output host's second lead so the player can tell the two apart: a
+## blue connector on the BOTTOM channel against the composite trio of the top.
+##
+## No printed tag. The word TOP floated in the air off the end of a cable, which is
+## not a thing a lead does, and it was redundant twice over by the time it read:
+## the top lead is a yellow/white/red pigtail and the bottom one a single blue
+## cord, which is the same distinction the hardware would make.
 func _decorate_channel_plug(plug: CablePlug, channel: int) -> void:
-	var lbl := Label3D.new()
-	lbl.name = "ChannelLabel"
-	lbl.text = plug.channel_label
-	lbl.pixel_size = 0.0005
-	lbl.font_size = 14
-	lbl.outline_size = 4
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.position = Vector3(0, 0.045, 0)
-	plug.add_child(lbl)
-	if channel > 0:
-		var tip := plug.get_node_or_null("PlugTip") as MeshInstance3D
-		if tip:
-			var mat := StandardMaterial3D.new()
-			mat.albedo_color = Color(0.2, 0.6, 1.0)   # blue = BOTTOM
-			tip.set_surface_override_material(0, mat)
+	if channel <= 0:
+		return
+	plug.plug_color = Color(0.2, 0.6, 1.0)
 
 
 func _process(_delta: float) -> void:
@@ -1809,20 +1970,35 @@ func _physics_process(_delta: float) -> void:
 		if plug == null or attach == null:
 			continue
 		# Snapped to TV or actively held by the user — don't fight whoever owns the plug
-		if _live(_channel_tvs[i]) != null or plug.is_picked_up():
-			continue
+		if _live(_channel_tvs[i]) == null:
+			_clamp_plug(plug, attach.global_position, max_len)
+		# Every connector on the lead is on the same cord and reaches the same
+		# distance; the pair is guarded on its own hold rather than on the channel's
+		# television, since either of them can be sitting in a socket while the
+		# picture cord is not.
+		for extra: Variant in _cable_audio_plugs[i]:
+			var p := _live(extra) as CablePlug
+			if p != null:
+				_clamp_plug(p, attach.global_position, max_len)
 
-		var attach_pos: Vector3 = attach.global_position
-		var diff := plug.global_position - attach_pos
-		var dist := diff.length()
 
-		if dist > max_len:
-			var dir := diff / dist
-			# Clamp plug to rope length and kill outward velocity
-			plug.global_position = attach_pos + dir * max_len
-			var outward_vel := dir.dot(plug.linear_velocity)
-			if outward_vel > 0.0:
-				plug.linear_velocity -= dir * outward_vel
+## Hold one plug within the cord's reach of where the cord leaves the machine,
+## and kill the velocity that carried it past. A hard clamp rather than a spring,
+## for the reason CompositeCable._physics_process gives: over-extension here runs
+## to a metre and a spring stiff enough to haul a plug back at that distance
+## launches it.
+func _clamp_plug(plug: CablePlug, attach_pos: Vector3, max_len: float) -> void:
+	if plug.is_picked_up():
+		return          # a hand, a beam or a socket owns it
+	var diff := plug.global_position - attach_pos
+	var dist := diff.length()
+	if dist <= max_len or dist < 0.0001:
+		return
+	var dir := diff / dist
+	plug.global_position = attach_pos + dir * max_len
+	var outward_vel := dir.dot(plug.linear_velocity)
+	if outward_vel > 0.0:
+		plug.linear_velocity -= dir * outward_vel
 
 
 ## Power on: start this system's libretro core

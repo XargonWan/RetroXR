@@ -62,6 +62,86 @@ script = ExtResource("3_pickhigh")
 [node name="SnapGrabPoint" parent="CablePlug" instance=ExtResource("4_snapgp")]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 
+; The audio pair beside the picture cord. Same connector, same body, tinted by
+; CablePlug.plug_color — the colour code is on the CONNECTOR, which is what a
+; player matches to a socket, and the wires stay black (see the rope below).
+;
+; Only the yellow one carries anything: on a captive lead the sound travels with
+; the picture (see RetroSystem.on_tv_connected), so these two are seated and
+; pulled alongside it rather than resolving a route of their own. That is the
+; difference between this lead and the spawnable CompositeCable, where every cord
+; is a plain wire and the routing falls out of the sockets its ends sit in.
+;
+; Spread by one cord pitch across the ribbon's own axis (X): 3 mm here, which is
+; 2 x tube_radius, so the three tails leave the breakout at the spacing the trunk
+; already lies at.
+
+[node name="CablePlugL" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.003, 0, 0)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.1
+linear_damp = 5.0
+angular_damp = 8.0
+gravity_scale = 1.0
+freeze = false
+freeze_mode = 1
+script = ExtResource("1_plugscript")
+plug_color = Color(0.87, 0.87, 0.84, 1)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CablePlugL"]
+shape = SubResource("SphereShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="CablePlugL"]
+mesh = ExtResource("5_rcaplug")
+
+[node name="PointerArea" type="StaticBody3D" parent="CablePlugL"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CablePlugL/PointerArea"]
+shape = SubResource("SphereShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="CablePlugL"]
+script = ExtResource("3_pickhigh")
+
+[node name="SnapGrabPoint" parent="CablePlugL" instance=ExtResource("4_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+[node name="CablePlugR" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.003, 0, 0)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.1
+linear_damp = 5.0
+angular_damp = 8.0
+gravity_scale = 1.0
+freeze = false
+freeze_mode = 1
+script = ExtResource("1_plugscript")
+plug_color = Color(0.72, 0.08, 0.08, 1)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CablePlugR"]
+shape = SubResource("SphereShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="CablePlugR"]
+mesh = ExtResource("5_rcaplug")
+
+[node name="PointerArea" type="StaticBody3D" parent="CablePlugR"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CablePlugR/PointerArea"]
+shape = SubResource("SphereShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="CablePlugR"]
+script = ExtResource("3_pickhigh")
+
+[node name="SnapGrabPoint" parent="CablePlugR" instance=ExtResource("4_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
 ; 8.3 mm A/V lead (tube_radius 0.00415) — nearly twice the 4.5 mm controller cord
 ; in controller_cable.tscn, which is right: this is a shielded composite cable.
 ; collision_radius is the standoff the solver holds each particle at from a contact
@@ -80,14 +160,14 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; loop. Do not push it past ~0.3: bend_stiffness sets the long-range constraint
 ; depth (1 + round(k*3)), and 0.6 costs +24% CPU per cable for a hose look.
 ;
-; 60 x 30 mm = 1.80 m, the length a real composite lead shipped at. The rest
-; length is also the tether: every host clamps its plug to segment_count x
-; segment_length from the attach point. Length is bought with segment COUNT, not
-; a longer segment, so the boot and the minimum bend radius above stay where
-; they were tuned in millimetres — but the solver is per-particle, so it costs
-; about double (measured 0.56 -> 1.05 ms per cable per physics tick, 8 cables on
-; a floor with collision on). 45 x 40 mm is the same 1.80 m for ~0.8 ms if a
-; Quest frame budget ever needs it back.
+; 1.80 m overall, the length a real composite lead shipped at, split so the
+; breakout is part of it: a 1.65 m trunk (55 x 30 mm) plus a 150 mm tail per cord
+; at the plug end (5 x 30 mm). The rest length is also the tether: every host
+; clamps its plugs to trunk + tail from the attach point. Length is bought with
+; segment COUNT, not a longer segment, so the boot and the minimum bend radius
+; above stay where they were tuned in millimetres — but the solver is
+; per-particle, so it costs about double (measured 0.56 -> 1.05 ms per cable per
+; physics tick, 8 cables on a floor with collision on).
 ;
 ; THREE 3 mm wires, not one 8 mm cord: this is the lead that leaves a handheld
 ; when video out is switched on, and the real thing is a composite pigtail — a
@@ -95,14 +175,21 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
 ; so 3 mm across is 0.0015. collision_radius has to cover the whole ribbon rather
 ; than one wire (3 x tube_radius, the ratio composite_cable.tscn uses).
 ;
+; Frayed at the PLUG end only. The console end is a moulded pigtail — the three
+; wires leave the shell inside one jacket and there is nothing there to take
+; hold of — so the trunk anchors straight to the attach point and only the free
+; end breaks out into its three connectors. fray_end_groups and the per-group
+; anchors are wired in system.gd, which is where the plugs are known.
+;
 ; No ribbon_colors: with the array absent every cord falls back to rope_color, so
 ; all three come out black — the colour code belongs to the connectors, not the
 ; wire (RcaJack.WIRE_BLACK, written as a literal because a .tscn cannot reference
 ; a constant). A model can still override count and colour per channel through
-; its video-channel descriptor; the DS's bottom screen is one wire that way. See
-; RetroSystemModel.get_video_channels.
+; its video-channel descriptor; the DS's bottom screen is one wire that way, and
+; a one-wire channel keeps a plain unfrayed cord with its single plug on the end.
+; See RetroSystemModel.get_video_channels.
 [node name="VerletRope" type="VerletRope" parent="."]
-segment_count = 60
+segment_count = 55
 segment_length = 0.03
 constraint_iterations = 8
 bend_stiffness = 0.2
@@ -117,3 +204,5 @@ self_collision = true
 end_align_stiffness = 0.7
 end_stiffness = 0.45
 end_stiff_segments = 2
+fray_segments_end = 5
+fray_taper_segments = 3
