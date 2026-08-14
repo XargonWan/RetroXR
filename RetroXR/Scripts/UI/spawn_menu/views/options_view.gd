@@ -89,6 +89,11 @@ var _ra_status_label: Label = null
 var _ra_signin_btn: Button = null
 var _ra_last_signin_frame: int = -1
 
+# The DEBUG page's audio queue depth. Held so the field can be rewritten with
+# what the mixer actually took, which is how its clamp becomes visible.
+var _audio_buffer_edit: LineEdit = null
+var _audio_buffer_hint: Label = null
+
 
 static func create(menu: Node) -> SpawnMenuOptionsView:
 	var v := SpawnMenuOptionsView.new()
@@ -543,6 +548,87 @@ func _build_debug_options(vbox: VBoxContainer) -> void:
 	col_row.add_child(VRToggle.create(CollisionDebug.is_enabled(), func(on: bool) -> void:
 		CollisionDebug.set_enabled(self, on)
 	))
+
+	_build_audio_buffer_row(vbox)
+
+
+## The queue depth every producer pushes towards, in milliseconds — the dominant
+## term in the whole audio latency budget, and a straight trade against
+## underruns: the queue has to survive the longest main-thread stall this device
+## suffers, so the value that holds on a desktop crackles on a headset dropping
+## frames.
+##
+## Not persisted, like everything else on this page. It is a measurement you take
+## with the HUD's underrun row open, not a preference, and one that came back
+## after a restart would read as an audio bug rather than a setting.
+func _build_audio_buffer_row(vbox: VBoxContainer) -> void:
+	var mx: Object = _meta_audio()
+	if mx == null:
+		return
+
+	vbox.add_child(HSeparator.new())
+	vbox.add_child(MenuStyle.header("SPATIAL AUDIO", 20))
+
+	_audio_buffer_edit = _add_options_text_field(vbox, "Buffer (ms)",
+		"%.0f" % float(mx.call("get_target_latency_ms")),
+		func(text: String) -> void: _apply_audio_buffer(text),
+		false, true)
+
+	_audio_buffer_hint = MenuStyle.hint("")
+	vbox.add_child(_audio_buffer_hint)
+	_refresh_audio_buffer_row()
+
+
+func _apply_audio_buffer(text: String) -> void:
+	var mx: Object = _meta_audio()
+	if mx == null:
+		return
+	var ms := text.strip_edges().to_float()
+	if ms > 0.0:
+		mx.call("set_target_latency_ms", ms)
+		# Every underrun counted so far was counted against the old depth, so
+		# leaving the total standing would make the HUD's row describe a queue
+		# that is no longer running.
+		mx.call("reset_underrun_count")
+	# Unparseable or out of range: the field is rewritten from the mixer below,
+	# so what the player is left looking at is what actually took effect.
+	_refresh_audio_buffer_row()
+
+
+func _refresh_audio_buffer_row() -> void:
+	var mx: Object = _meta_audio()
+	if mx == null:
+		return
+	var ms := float(mx.call("get_target_latency_ms"))
+	var rate := AudioServer.get_mix_rate()
+
+	if is_instance_valid(_audio_buffer_edit):
+		_audio_buffer_edit.text = "%.0f" % ms
+	if is_instance_valid(_audio_buffer_hint):
+		# The default is a frame count, not a duration, so it reads as 43 ms on a
+		# desktop and 46 on a Quest -- which mixes at 44.1 kHz whatever
+		# project.godot asks for.
+		_audio_buffer_hint.text = (
+			"Now %.0f ms — %d frames at %s kHz. Default 2048 frames: 43 ms here, "
+			% [ms, roundi(ms * rate / 1000.0), _khz(rate)]
+			+ "46 ms on a Quest. Lower is tighter but underruns sooner, and a "
+			+ "value the ring cannot hold snaps back. Not saved.")
+
+
+static func _khz(rate: float) -> String:
+	return ("%.1f" % (rate / 1000.0)).trim_suffix(".0")
+
+
+## The mixer, or null where there is none to tune: the extension ships on Windows
+## and Android only, and reports itself unavailable when the desktop switch has
+## handed spatial audio back to Godot's own panner.
+func _meta_audio() -> Object:
+	if not Engine.has_singleton("MetaXRAudio"):
+		return null
+	var mx: Object = Engine.get_singleton("MetaXRAudio")
+	if mx == null or not bool(mx.call("is_available")):
+		return null
+	return mx
 
 
 ## The build plate at the top of DEBUG.
@@ -1097,9 +1183,14 @@ func update_romm_status_label() -> void:
 
 ## Returns the LineEdit so a caller can hang a button off its row
 ## (edit.get_parent()) or write a value back into it.
+##
+## `digits` makes it a whole-number field: anything else is dropped as it is
+## typed, and the headset's overlay keyboard opens on its number layout. Godot
+## has no numeric LineEdit, and a SpinBox is unusable through a laser pointer at
+## this size, so the restriction is the field's own.
 func _add_options_text_field(parent: VBoxContainer, label_text: String,
 							 initial_value: String, on_changed: Callable,
-							 secret: bool = false) -> LineEdit:
+							 secret: bool = false, digits: bool = false) -> LineEdit:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	row.custom_minimum_size = Vector2(0, 56)
@@ -1117,6 +1208,21 @@ func _add_options_text_field(parent: VBoxContainer, label_text: String,
 	edit.custom_minimum_size = Vector2(260, 48)
 	edit.add_theme_font_size_override("font_size", 16)
 	edit.secret = secret
+
+	if digits:
+		# Read by VRKeyboardFix when it raises the overlay keyboard.
+		edit.set_meta("vr_kb_type", DisplayServer.KEYBOARD_TYPE_NUMBER)
+		# Assigning .text does not re-emit text_changed, so this cannot recurse.
+		edit.text_changed.connect(func(text: String) -> void:
+			var kept := ""
+			for c in text:
+				if c >= "0" and c <= "9":
+					kept += c
+			if kept != text:
+				var caret := edit.caret_column - (text.length() - kept.length())
+				edit.text = kept
+				edit.caret_column = maxi(0, caret)
+		)
 
 	# Keyboard dismissal is handled globally by the VRKeyboard autoload.
 	edit.text_submitted.connect(func(text: String) -> void: on_changed.call(text))

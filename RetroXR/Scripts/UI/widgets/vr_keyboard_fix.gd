@@ -92,7 +92,14 @@ static func _show_keyboard(field: Control) -> void:
 		existing = (field as LineEdit).text
 	elif field is TextEdit:
 		existing = (field as TextEdit).text
-	DisplayServer.virtual_keyboard_show(existing)
+	# A field that only accepts numbers asks for the number layout, so the
+	# player is not hunting for digits on a QWERTY overlay. Set as metadata
+	# rather than a call here: patching happens as the field enters the tree,
+	# which is before whoever built it can tell this autoload anything.
+	var type: int = DisplayServer.KEYBOARD_TYPE_DEFAULT
+	if field.has_meta("vr_kb_type"):
+		type = int(field.get_meta("vr_kb_type"))
+	DisplayServer.virtual_keyboard_show(existing, Rect2(-1, -1, -1, -1), type)
 
 
 ## Losing focus is not on its own a reason to take the keyboard away: moving
