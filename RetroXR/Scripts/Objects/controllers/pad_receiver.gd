@@ -89,7 +89,7 @@ func _resolve_or_adopt() -> int:
 	if device >= 0:
 		return device
 	var taken := _pads_taken_by_siblings()
-	for candidate: int in Input.get_connected_joypads():
+	for candidate: int in GamepadBindings.usable_pads():
 		if candidate in taken:
 			continue
 		var id := GamepadBindings.identify_device(candidate)

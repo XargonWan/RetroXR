@@ -580,7 +580,7 @@ func _on_pad_controls_save() -> void:
 func _refresh_pad_status() -> void:
 	if not is_instance_valid(_pad_status_label):
 		return
-	var pads := Input.get_connected_joypads()
+	var pads := GamepadBindings.usable_pads()
 	if pads.is_empty():
 		_pad_status_label.text = "No gamepad detected — connect one via USB or Bluetooth."
 		return

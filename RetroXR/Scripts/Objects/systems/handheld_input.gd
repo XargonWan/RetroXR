@@ -283,7 +283,7 @@ func _exit_tree() -> void:
 		_update_pointer_block(_right_vr_ctrl, false)
 	XRToolsRumbleManager.clear(self)
 	if _pad_rumble_active:
-		for device in Input.get_connected_joypads():
+		for device in GamepadBindings.usable_pads():
 			Input.stop_joy_vibration(device)
 		_pad_rumble_active = false
 	if _locomotion_manager != null:
@@ -533,7 +533,7 @@ func _apply_rumble() -> void:
 	var is_held: bool = is_instance_valid(_holding_ctrl) or is_instance_valid(secondary) or _desktop_held
 	if not is_held or combined <= 0.0:
 		if _pad_rumble_active:
-			for device in Input.get_connected_joypads():
+			for device in GamepadBindings.usable_pads():
 				Input.stop_joy_vibration(device)
 			_pad_rumble_active = false
 		return
@@ -550,6 +550,6 @@ func _apply_rumble() -> void:
 		if not trackers.is_empty():
 			XRToolsRumbleManager.add(self, _rumble_event, trackers)
 	if is_held:
-		for device in Input.get_connected_joypads():
+		for device in GamepadBindings.usable_pads():
 			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
 		_pad_rumble_active = true

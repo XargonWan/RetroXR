@@ -479,7 +479,7 @@ func _exit_tree() -> void:
 		_update_pointer_block(_right_vr_ctrl, false)
 	XRToolsRumbleManager.clear(self)
 	if _pad_rumble_active:
-		for device in Input.get_connected_joypads():
+		for device in GamepadBindings.usable_pads():
 			Input.stop_joy_vibration(device)
 		_pad_rumble_active = false
 	if _locomotion_manager != null:
@@ -537,7 +537,7 @@ func _apply_rumble() -> void:
 	# No physical holder → stop desktop vibration if active, nothing else to do.
 	if not is_held or combined <= 0.0:
 		if _pad_rumble_active:
-			for device in Input.get_connected_joypads():
+			for device in GamepadBindings.usable_pads():
 				Input.stop_joy_vibration(device)
 			_pad_rumble_active = false
 		return
@@ -563,7 +563,7 @@ func _apply_rumble() -> void:
 	# case) works perfectly; multi-pad rumbles uniformly. Runs alongside the VR
 	# haptics above, so a hand and a pad can buzz together.
 	if is_held:
-		for device in Input.get_connected_joypads():
+		for device in GamepadBindings.usable_pads():
 			Input.start_joy_vibration(device, _rumble_weak, _rumble_strong, 0.0)
 		_pad_rumble_active = true
 

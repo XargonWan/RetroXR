@@ -175,7 +175,7 @@ static func binding_display_name(binding: String) -> String:
 ## off reads exactly that, every frame, until it comes back.
 static func poll(button_map: Dictionary, stick_map: Dictionary, device: int) -> Dictionary:
 	var zero := {"btn": 0, "alx": 0, "aly": 0, "arx": 0, "ary": 0}
-	if suspend_polling or device < 0 or device not in Input.get_connected_joypads():
+	if suspend_polling or device < 0 or device not in usable_pads():
 		return zero
 
 	var btn := 0
@@ -220,6 +220,75 @@ static func poll(button_map: Dictionary, stick_map: Dictionary, device: int) -> 
 
 	return {"btn": btn, "alx": alx, "aly": aly, "arx": arx, "ary": ary}
 
+# ── Which joypads are actually gamepads ───────────────────────────────────────
+
+## VR controller vendors. A Touch or a Knuckle can surface as an ordinary joypad
+## on some Android/OpenXR builds, and everything downstream would then treat it as
+## a gamepad: the SPAWN list would offer a "Oculus Touch Receiver" you could plug
+## into an NES, a receiver could bind to the thing already in your hand, and the
+## emulated pad would fight the hand that is meant to be free. The whole point of
+## a receiver is that your VR controllers stay yours.
+const XR_VENDORS := {
+	0x2833: "Meta / Oculus",
+	0x0BB4: "HTC",
+	0x28DE: "Valve",
+}
+
+## Fallback for a platform that reports no vendor id. Matched case-insensitively
+## against the device name — deliberately a substring test, because these arrive
+## suffixed ("Oculus Touch (Left)") and prefixed by driver names.
+const XR_NAME_HINTS := [
+	"oculus", "quest", "meta ", "openxr", "vive", "valve index", "knuckles",
+	"windows mixed reality", "wmr", "touch controller",
+]
+
+
+## Joypads that are real gamepads: everything Godot reports, minus the VR
+## controllers. THE gate — every enumeration in the project goes through here
+## rather than calling Input.get_connected_joypads() directly, so a new caller
+## cannot forget the question.
+static func usable_pads() -> Array:
+	var out: Array = []
+	for device: int in Input.get_connected_joypads():
+		if not is_xr_device(device):
+			out.append(device)
+	return out
+
+
+static func is_xr_device(device: int) -> bool:
+	return is_xr_identity(Input.get_joy_name(device), Input.get_joy_guid(device),
+		Input.get_joy_info(device))
+
+
+## Split out from the device so it can be tested against real-world names and
+## GUIDs without the hardware in hand.
+##
+## Vendor id first: it is the hardware speaking, and it does not change with a
+## driver or a locale. `info` carries it where the platform fills it in; the SDL
+## GUID embeds the same value at a fixed offset everywhere else, which is what
+## makes this work on Android where get_joy_info() can come back empty.
+static func is_xr_identity(name: String, guid: String, info: Dictionary) -> bool:
+	var vendor := int(info.get("vendor_id", 0))
+	if vendor == 0:
+		vendor = vendor_from_guid(guid)
+	if XR_VENDORS.has(vendor):
+		return true
+	var lower := name.to_lower()
+	for hint: String in XR_NAME_HINTS:
+		if lower.contains(hint):
+			return true
+	return false
+
+
+## The vendor id an SDL joystick GUID carries, or 0 when it is not that shape.
+## Layout is four little-endian 16-bit fields — bus, name CRC, vendor, then a
+## zero — so the vendor is hex characters 8..12, low byte first.
+static func vendor_from_guid(guid: String) -> int:
+	if guid.length() < 12 or not guid.is_valid_hex_number():
+		return 0
+	return (guid.substr(10, 2) + guid.substr(8, 2)).hex_to_int()
+
+
 # ── Device identity ───────────────────────────────────────────────────────────
 
 ## The live joypad index for a saved pad, or -1 when that pad is not connected.
@@ -232,7 +301,7 @@ static func resolve_device(guid: String, ordinal: int = 0) -> int:
 	if guid.is_empty():
 		return -1
 	var seen := 0
-	for device: int in Input.get_connected_joypads():
+	for device: int in usable_pads():
 		if Input.get_joy_guid(device) != guid:
 			continue
 		if seen == ordinal:
@@ -246,7 +315,7 @@ static func resolve_device(guid: String, ordinal: int = 0) -> int:
 static func identify_device(device: int) -> Dictionary:
 	var guid := Input.get_joy_guid(device)
 	var ordinal := 0
-	for other: int in Input.get_connected_joypads():
+	for other: int in usable_pads():
 		if other == device:
 			break
 		if Input.get_joy_guid(other) == guid:

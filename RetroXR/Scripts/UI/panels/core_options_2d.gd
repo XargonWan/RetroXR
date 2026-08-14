@@ -536,7 +536,7 @@ func _add_controller_row(entry: Dictionary) -> void:
 func _add_pad_row() -> void:
 	var options: Array = [["None", ""]]
 	var current := ""
-	for device: int in Input.get_connected_joypads():
+	for device: int in GamepadBindings.usable_pads():
 		var id := GamepadBindings.identify_device(device)
 		var value := "%s:%d" % [str(id["guid"]), int(id["ordinal"])]
 		options.append([str(id["name"]), value])

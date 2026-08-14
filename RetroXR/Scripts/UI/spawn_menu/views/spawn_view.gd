@@ -1402,7 +1402,7 @@ func _populate_controllers_tab() -> void:
 
 	_controllers_vbox.add_child(HSeparator.new())
 	_controllers_vbox.add_child(MenuStyle.header("DETECTED PADS", 20))
-	var pads := Input.get_connected_joypads()
+	var pads := GamepadBindings.usable_pads()
 	if pads.is_empty():
 		_controllers_vbox.add_child(MenuStyle.hint(
 			"No gamepad connected. Pair one and it appears here."))
