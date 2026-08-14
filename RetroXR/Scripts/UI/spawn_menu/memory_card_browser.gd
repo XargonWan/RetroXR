@@ -28,7 +28,7 @@ signal page_changed(title: String, on_back: Callable)
 
 ## Only the PlayStation has removable cards, so this browses its folder rather
 ## than asking which console was meant.
-const SYSTEMID := "playstation"
+const SYSTEMID := CardSaveOps.SYSTEMID
 
 ## How long a delete stays armed. Matches the ROM rows' confirm window.
 const ARM_SECONDS := 3.0
@@ -37,9 +37,6 @@ const ARM_SECONDS := 3.0
 var _editing_id := ""
 ## Save slot whose delete has been armed and is waiting for a second press.
 var _armed_slot := ""
-## The upload this page is waiting on, and the card to redraw when it lands.
-var _pending_key := ""
-var _pending_card: Dictionary = {}
 
 
 ## How many card images are on disk.
@@ -193,28 +190,8 @@ func _adopt_rename_in_room(old_id: String, new_id: String) -> void:
 			continue
 		card.card_id = new_id
 		card.card_label = new_id
-		_refresh_holder(new_id)
+		CardSaveOps.refresh_holder(get_tree(), new_id)
 		return
-
-
-## The console holding this card, or null. One walk: menu code reaching into
-## console internals is a surface worth having exactly one copy of, and the three
-## hand-written copies had already drifted over whether "powered off" counts.
-func _holder_of(card_id: String) -> Node:
-	for sys: Node in get_tree().get_nodes_in_group("retro_system"):
-		if not sys.has_method("get_snapped_memcard"):
-			continue
-		var seated: Node = sys.get_snapped_memcard()
-		if seated != null and str(seated.get("card_id")) == card_id:
-			return sys
-	return null
-
-
-## Tell whichever console holds this card that its image changed underneath.
-func _refresh_holder(card_id: String) -> void:
-	var sys := _holder_of(card_id)
-	if sys != null and sys.has_method("refresh_memcard_path"):
-		sys.refresh_memcard_path()
 
 
 ## The saves RomM holds, and which of them will fit on this card.
@@ -243,9 +220,7 @@ func _build_restore(card: Dictionary) -> void:
 
 		var data := FileAccess.get_file_as_bytes(str(card["path"]))
 		var free := PS1Card.free_blocks(data)
-		var present := {}
-		for s: Dictionary in PS1Card.list_saves(data, false):
-			present[str(s["name"])] = true
+		var present := CardSaveOps.present_slots(data)
 		for s: Dictionary in saves:
 			add_child(_restore_row(card, s, present, free)))
 
@@ -253,15 +228,8 @@ func _build_restore(card: Dictionary) -> void:
 func _restore_row(card: Dictionary, s: Dictionary, present: Dictionary, free: int) -> Control:
 	var row := MenuStyle.hbox(8)
 	var slot := str(s["slot"])
-	# .mcs is a 128-byte directory entry plus whole blocks.
-	@warning_ignore("integer_division")
-	var blocks: int = maxi(1, (int(s["size"]) - PS1Card.FRAME_SIZE) / PS1Card.BLOCK_SIZE)
-
-	var reason := ""
-	if present.has(slot):
-		reason = "already on this card"
-	elif blocks > free:
-		reason = "needs %d blocks, %d free" % [blocks, free]
+	var blocks := CardSaveOps.blocks_of(s)
+	var reason := CardSaveOps.restore_blocker(s, present, free)
 
 	var btn := MenuStyle.row_button("", 24)
 	var rom_name := str(s.get("rom_name", ""))
@@ -275,49 +243,23 @@ func _restore_row(card: Dictionary, s: Dictionary, present: Dictionary, free: in
 	return row
 
 
-## Pull one save down and splice it into the card. Written to a temp image and
-## checked before it replaces the real one: a bad splice would take every other
-## save on that card with it.
+## Pull one save down and splice it into the card — see CardSaveOps.restore_save.
 func _restore(card: Dictionary, s: Dictionary) -> void:
 	_clear()
 	_page(str(card["label"]), func() -> void: _build_saves(card))
 	var status := MenuStyle.label("Downloading…", 20, MenuStyle.COLOR_DESC)
 	add_child(status)
 
-	SaveSync.fetch_card_save(int(s["id"]), func(ok: bool, bytes: PackedByteArray) -> void:
-		if not is_inside_tree():
-			return
-		if not ok or bytes.is_empty():
-			status.text = "Download failed."
-			return
-		# Never splice what has not been shown to be a PS1 save. The platform
-		# filter should already have ruled this out; this is the check that does
-		# not depend on the server labelling things correctly.
-		if not PS1Card.is_mcs(bytes):
-			status.text = "That file is not a PlayStation save."
-			return
-		var merged := PS1Card.insert_save(FileAccess.get_file_as_bytes(str(card["path"])), bytes)
-		if merged.is_empty():
-			status.text = "That save will not fit on this card."
-			return
-		if not _write_card(card, merged):
-			status.text = "The card did not verify — nothing was written."
-			return
-
-		# A save fetched from the server is already one the player wants kept
-		# there, so it arrives opted in rather than making them ask again for
-		# what they just asked for.
-		#
-		# The listing also names the game it belongs to, which is the one thing
-		# this device could not otherwise work out for a save it never watched
-		# being written — recorded now so a later local change uploads at once
-		# instead of falling back to sweeping the disc library for its serial.
-		var key := RommSaveSync.card_save_key(str(card["path"]), str(s["slot"]))
-		SaveSync.set_key_enabled(key, true)
-		SaveSync.note_card_save_owner(key, int(s["rom_id"]))
-		notice.emit("Restored %s — kept backed up to RomM"
-			% str(s.get("rom_name", s["slot"])), 3.5)
-		_build_saves(card))
+	CardSaveOps.restore_save(get_tree(), str(card["path"]), str(card["card_id"]), s,
+		func(problem: String) -> void:
+			if not is_inside_tree():
+				return
+			if not problem.is_empty():
+				status.text = problem
+				return
+			notice.emit("Restored %s — kept backed up to RomM"
+				% str(s.get("rom_name", s["slot"])), 3.5)
+			_build_saves(card))
 
 
 func _build_saves(card: Dictionary) -> void:
@@ -355,99 +297,31 @@ func _build_saves(card: Dictionary) -> void:
 	if not is_instance_valid(ui):
 		return
 
-	# Which of these saves are already opted in.
-	var synced: Dictionary = {}
-	for s: Dictionary in saves:
-		if SaveSync.is_key_enabled(
-				RommSaveSync.card_save_key(str(card["path"]), str(s["name"]))):
-			synced[str(s["name"])] = true
-	ui.synced_slots = synced
+	ui.synced_slots = CardSaveOps.synced_slots(str(card["path"]), saves)
 	ui.sync_available = SaveSync.is_available()
 	ui.populate(str(card["label"]), saves, free)
 
 
-## Opt one save in or out, and on opting in send it straight away rather than
-## waiting for the game to be played again — pressing "back this up" and having
-## nothing happen is indistinguishable from it being broken.
-##
-## Uploading needs to know which game owns the save. That is recorded whenever a
-## game writes it, so a save this device has never seen written has no owner yet
-## and genuinely cannot be uploaded until it is; the notice says so instead of
-## failing quietly.
+## Opt one save in or out — see CardSaveOps.backup_save, which uploads at once
+## on the way in.
 func _toggle_save_sync(card: Dictionary, s: Dictionary, on: bool) -> void:
-	var slot := str(s["name"])
-	var key := RommSaveSync.card_save_key(str(card["path"]), slot)
-	SaveSync.set_key_enabled(key, on)
 	if not on:
-		notice.emit("Stopped backing up %s" % _title_of(s), 2.5)
+		CardSaveOps.stop_backup(str(card["path"]), str(s["name"]))
+		notice.emit("Stopped backing up %s" % CardSaveOps.title_of(s), 2.5)
 		_build_saves(card)
 		return
 
-	# Owner from what a running game last told us; failing that, ask the discs,
-	# which is the only place a save's product code maps to a game.
-	var rom_id := SaveSync.card_save_owner(key)
-	if rom_id <= 0:
-		rom_id = SaveSync.rom_id_for_serial(SYSTEMID, str(s.get("serial", "")))
-		if rom_id > 0:
-			SaveSync.note_card_save_owner(key, rom_id)
-	if rom_id <= 0:
-		# Only reachable when the game is not in the library at all, or is there
-		# but not known to RomM — neither of which uploading can fix.
-		notice.emit("%s: no matching game in your library, so there is nothing "
-			% _title_of(s) + "to attach it to on RomM", 5.0)
-		_build_saves(card)
-		return
-
-	var bytes := PS1Card.extract_save(FileAccess.get_file_as_bytes(str(card["path"])), int(s["block"]))
-	if bytes.is_empty():
-		notice.emit("Could not read %s" % _title_of(s), 3.0)
-		_build_saves(card)
-		return
-
-	notice.emit("Uploading %s…" % _title_of(s), 8.0)
-	_pending_key = key
-	_pending_card = card
-	if not SaveSync.sync_finished.is_connected(_on_sync_finished):
-		SaveSync.sync_finished.connect(_on_sync_finished)
-	SaveSync.push_card_save(key, rom_id, SramPaths.core_for_systemid(SYSTEMID),
-		slot, _title_of(s), bytes)
-
-
-func _on_sync_finished(key: String, action: String, ok: bool, detail: String) -> void:
-	# sync_finished is global. Without this the card page would announce the
-	# result of a cartridge save flushing in another room.
-	if key != _pending_key:
-		return
-	_pending_key = ""
-	SaveSync.sync_finished.disconnect(_on_sync_finished)
-	if not ok:
-		notice.emit("Upload failed: %s" % detail, 4.0)
-	elif action == "nothing":
-		notice.emit("Already backed up", 2.5)
-	else:
-		notice.emit("Backed up to RomM", 2.5)
-	if not _pending_card.is_empty() and is_inside_tree():
-		var card := _pending_card
-		_pending_card = {}
-		_build_saves(card)
-
-
-func _title_of(s: Dictionary) -> String:
-	var t := str(s.get("title", ""))
-	return t if not t.is_empty() else str(s.get("name", ""))
+	notice.emit("Uploading %s…" % CardSaveOps.title_of(s), 8.0)
+	CardSaveOps.backup_save(str(card["path"]), s, func(ok: bool, message: String) -> void:
+		if not is_inside_tree():
+			return
+		notice.emit(message, 5.0 if not ok else 2.5)
+		_build_saves(card))
 
 
 ## Why this card must not be changed right now, or "".
-##
-## Editing the image under a running game means the core is holding save data
-## this no longer matches, and its next flush would write that back over the
-## edit. Powering the console off is the honest fix, so say so rather than
-## silently doing something half-applied.
 func _in_use_reason(card: Dictionary) -> String:
-	var sys := _holder_of(str(card["card_id"]))
-	if sys != null and bool(sys.get("is_powered_on")):
-		return "in use — power the console off first"
-	return ""
+	return CardSaveOps.in_use_reason(get_tree(), str(card["card_id"]))
 
 
 ## Delete one save. Armed on the first press and done on the second, the way a
@@ -459,7 +333,7 @@ func _delete_save(card: Dictionary, s: Dictionary) -> void:
 		# Same shape as deleting a ROM: arm, say so, and disarm after 3 s. The
 		# glyph alone changing is easy to miss on a headset.
 		_armed_slot = slot
-		notice.emit("Press again to delete %s" % _title_of(s), ARM_SECONDS)
+		notice.emit("Press again to delete %s" % CardSaveOps.title_of(s), ARM_SECONDS)
 		_build_saves(card)
 		get_tree().create_timer(ARM_SECONDS).timeout.connect(func() -> void:
 			if _armed_slot == slot and is_inside_tree():
@@ -467,8 +341,8 @@ func _delete_save(card: Dictionary, s: Dictionary) -> void:
 				_build_saves(card))
 		return
 	_armed_slot = ""
-	var out := PS1Card.delete_save(FileAccess.get_file_as_bytes(str(card["path"])), int(s["block"]))
-	if out.is_empty() or not _write_card(card, out):
+	if not CardSaveOps.delete_save(get_tree(), str(card["path"]),
+			str(card["card_id"]), int(s["block"])):
 		push_warning("[MemoryCardBrowser] could not delete '%s'" % slot)
 	_build_saves(card)
 
@@ -520,31 +394,13 @@ func _do_move(src: Dictionary, dest: Dictionary, s: Dictionary) -> void:
 		_build_saves(src)
 		return
 	var merged := PS1Card.insert_save(FileAccess.get_file_as_bytes(str(dest["path"])), mcs)
-	if merged.is_empty() or not _write_card(dest, merged):
+	if merged.is_empty() or not CardSaveOps.write_card(get_tree(), str(dest["path"]),
+			str(dest["card_id"]), merged):
 		push_warning("[MemoryCardBrowser] move aborted — nothing was changed")
 		_build_saves(src)
 		return
-	var trimmed := PS1Card.delete_save(src_data, int(s["block"]))
-	if trimmed.is_empty() or not _write_card(src, trimmed):
+	if not CardSaveOps.delete_save(get_tree(), str(src["path"]),
+			str(src["card_id"]), int(s["block"])):
 		push_warning("[MemoryCardBrowser] '%s' was copied to '%s' but could not be "
 			% [s["name"], dest["label"]] + "removed from '%s' — it is on both" % src["label"])
 	_build_saves(src)
-
-
-## Verify before committing: parse what is about to be written and confirm the
-## save it should contain comes back out of it. A bad splice would take every
-## other save on that card with it, so nothing reaches disk unproven.
-func _write_card(card: Dictionary, data: PackedByteArray) -> bool:
-	if not PS1Card.is_card_image(data):
-		return false
-	for s: Dictionary in PS1Card.list_saves(data, false):
-		if PS1Card.extract_save(data, int(s["block"])).is_empty():
-			return false
-	var f := FileAccess.open(str(card["path"]), FileAccess.WRITE)
-	if f == null:
-		return false
-	f.store_buffer(data)
-	f.close()
-	# The console holding this card is now looking at a stale image.
-	_refresh_holder(str(card["card_id"]))
-	return true

@@ -14,10 +14,15 @@ extends Node3D
 ## Height above the card's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.32
 
+## How long a delete stays armed. Matches the card shelf and the ROM rows.
+const ARM_SECONDS := 3.0
+
 var _card: MemoryCard = null
 var _camera: Node3D = null
 # Guard so we only wire the 2D UI signals once (the SubViewport persists).
 var _ui_connected := false
+## Save slot whose delete has been armed and is waiting for a second press.
+var _armed_slot := ""
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $MemoryCardViewport
 
@@ -71,22 +76,35 @@ func _ensure_ui_connected() -> void:
 		return
 	ui.name_committed.connect(_on_renamed)
 	ui.close_requested.connect(hide_panel)
+	ui.save_delete_requested.connect(_on_delete_requested)
+	ui.save_sync_toggled.connect(_on_sync_toggled)
+	ui.restore_requested.connect(_on_restore_requested)
+	ui.restore_picked.connect(_on_restore_picked)
+	ui.restore_closed.connect(_populate)
 	_ui_connected = true
 
 
-func _populate() -> void:
+## This card's image, or "" when it has none. A card only gets one the first
+## time it is seated in a powered console.
+func _path() -> String:
+	if not (_card and is_instance_valid(_card)):
+		return ""
+	return SramPaths.find_card(_card.card_id)
+
+
+func _populate(status := "") -> void:
 	if not _card:
 		return
 	var ui := _get_ui()
 	if not ui:
-		call_deferred("_populate")
+		call_deferred("_populate", status)
 		return
 
 	# A card that has never been in a powered console has no image yet. That is
 	# not an error — it is a blank card, and saying so beats an empty panel.
 	var saves: Array[Dictionary] = []
 	var free := 15
-	var path := SramPaths.find_card(_card.card_id)
+	var path := _path()
 	if not path.is_empty():
 		var data := FileAccess.get_file_as_bytes(path)
 		saves = PS1Card.list_saves(data)
@@ -98,9 +116,114 @@ func _populate() -> void:
 	# new card has no image yet and will get one; a card that HAD one and lost it
 	# has saves somewhere that this object can no longer find.
 	ui.missing = path.is_empty() and not _card.minted
-	# The card's own panel reads; backing individual saves up is done from the
-	# spawn menu, where the rest of card management lives.
+	# The same management the spawn menu's shelf offers, minus moving a save to
+	# another card: that picks from a list of every card there is, which belongs
+	# to the shelf. The card in your hand manages itself.
+	ui.show_save_actions = true
+	ui.show_move_action = false
+	ui.show_restore_action = true
+	ui.sync_available = SaveSync.is_available()
+	ui.synced_slots = CardSaveOps.synced_slots(path, saves) if not path.is_empty() else {}
+	ui.armed_slot = _armed_slot
+	ui.actions_blocked = CardSaveOps.in_use_reason(get_tree(), _card.card_id)
 	ui.populate(_card.card_label, saves, free)
+	ui.set_status(status)
+
+
+## Delete one save, armed on the first press and done on the second, because
+## this cannot be undone: the blocks are freed and nothing keeps a copy.
+func _on_delete_requested(s: Dictionary) -> void:
+	var slot := str(s["name"])
+	if _armed_slot != slot:
+		_armed_slot = slot
+		_populate("Press the delete button again to erase %s." % CardSaveOps.title_of(s))
+		get_tree().create_timer(ARM_SECONDS).timeout.connect(func() -> void:
+			if _armed_slot == slot and is_instance_valid(self):
+				_armed_slot = ""
+				_populate())
+		return
+	_armed_slot = ""
+	var path := _path()
+	if path.is_empty() or not CardSaveOps.delete_save(
+			get_tree(), path, _card.card_id, int(s["block"])):
+		_populate("Could not delete %s." % CardSaveOps.title_of(s))
+		return
+	_populate("Deleted %s." % CardSaveOps.title_of(s))
+
+
+## Opt one save in or out of RomM backup. Opting in uploads it there and then —
+## see CardSaveOps.backup_save.
+func _on_sync_toggled(s: Dictionary, on: bool) -> void:
+	var path := _path()
+	if path.is_empty():
+		return
+	if not on:
+		CardSaveOps.stop_backup(path, str(s["name"]))
+		_populate("Stopped backing up %s." % CardSaveOps.title_of(s))
+		return
+	_populate("Uploading %s…" % CardSaveOps.title_of(s))
+	CardSaveOps.backup_save(path, s, func(_ok: bool, message: String) -> void:
+		if is_instance_valid(self) and visible:
+			_populate(message))
+
+
+## Show what RomM holds for this card, and which of it will fit.
+func _on_restore_requested() -> void:
+	var ui := _get_ui()
+	if ui == null:
+		return
+	ui.show_restore([], "Asking RomM…")
+	SaveSync.list_card_saves(CardSaveOps.SYSTEMID, func(ok: bool, saves: Array) -> void:
+		if not (is_instance_valid(self) and visible and is_instance_valid(ui)):
+			return
+		if not ok:
+			ui.show_restore([], "Could not reach RomM.")
+			return
+		if saves.is_empty():
+			ui.show_restore([], "RomM holds no memory-card saves yet.")
+			return
+
+		# A card with no image yet has all 15 blocks and nothing on it, which is
+		# exactly what a blank one it has not been given yet would report.
+		var path := _path()
+		var data := FileAccess.get_file_as_bytes(path) if not path.is_empty() \
+			else PS1Card.blank_image()
+		var free := PS1Card.free_blocks(data)
+		var present := CardSaveOps.present_slots(data)
+		var rows: Array = []
+		for s: Dictionary in saves:
+			var row := s.duplicate()
+			row["blocks"] = CardSaveOps.blocks_of(s)
+			row["reason"] = CardSaveOps.restore_blocker(s, present, free)
+			rows.append(row)
+		ui.show_restore(rows, ""))
+
+
+## Pull one save down onto this card.
+##
+## A card this session invented may still have no image; restoring is the one
+## thing that can want it created early, so it is formatted here. A card that
+## HAD an image and lost it is never given a blank — that would answer missing
+## saves with something that looks exactly like them being wiped.
+func _on_restore_picked(s: Dictionary) -> void:
+	var path := _path()
+	if path.is_empty():
+		if not _card.minted:
+			_populate("This card's image is missing — nothing was written.")
+			return
+		path = SramPaths.ensure_card(CardSaveOps.SYSTEMID, _card.card_id)
+	var ui := _get_ui()
+	if ui != null:
+		ui.set_status("Downloading %s…" % str(s.get("rom_name", s.get("slot", ""))))
+	CardSaveOps.restore_save(get_tree(), path, _card.card_id, s,
+		func(problem: String) -> void:
+			if not (is_instance_valid(self) and visible):
+				return
+			if problem.is_empty():
+				_populate("Restored %s — kept backed up to RomM"
+					% str(s.get("rom_name", s["slot"])))
+			else:
+				_populate(problem))
 
 
 ## A card's name IS its filename, so renaming moves the image on disk. Refused

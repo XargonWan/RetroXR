@@ -22,6 +22,13 @@ signal save_delete_requested(save: Dictionary)
 ## server is the player's call, and it is made per save because a card is shared
 ## between games.
 signal save_sync_toggled(save: Dictionary, on: bool)
+## Show what RomM holds for this card. The owner does the asking; this only says
+## the button was pressed.
+signal restore_requested
+## Bring one of RomM's saves down onto this card.
+signal restore_picked(save: Dictionary)
+## Leave the restore list for the card's own saves.
+signal restore_closed
 signal close_requested
 
 const COLOR_BG := Color(0.08, 0.08, 0.16, 0.96)
@@ -41,9 +48,15 @@ var show_name_field := true
 ## This card had an image and it is gone, as opposed to never having had one.
 var missing := false
 
-## Offer move/delete on each save row. Off for the card's own 3D panel, which is
-## a reader; the spawn menu turns it on because that is where cards are managed.
+## Offer the per-save actions. Both menus that manage cards turn this on.
 var show_save_actions := false
+## Include "move to another card" among them. Off for the card's own panel: the
+## destination is picked from a list of every other card, which is the shelf's
+## business — the card in your hand only manages itself.
+var show_move_action := true
+## Offer restoring a save from RomM under the list. The spawn menu draws its own
+## button for this on the page around us, so it leaves this off.
+var show_restore_action := false
 ## Slot whose delete is armed and awaiting a second press, or "".
 var armed_slot := ""
 ## Save names already opted in to RomM backup, as a set, and whether a server
@@ -57,6 +70,8 @@ var actions_blocked := ""
 var _list: VBoxContainer = null
 var _name_edit: LineEdit = null
 var _usage: Label = null
+var _status: Label = null
+var _restore_btn: Button = null
 
 # Each entry: {rect: TextureRect, frames: Array[ImageTexture]}
 var _animated: Array[Dictionary] = []
@@ -140,6 +155,15 @@ func _build_ui() -> void:
 	_usage.add_theme_color_override("font_color", COLOR_DIM)
 	vbox.add_child(_usage)
 
+	# What just happened, where it happened. The spawn menu has a toast for this;
+	# a panel floating over a card in the room has nowhere else to say it.
+	_status = Label.new()
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.add_theme_font_size_override("font_size", 15)
+	_status.add_theme_color_override("font_color", Color(0.85, 0.78, 0.5))
+	_status.visible = false
+	vbox.add_child(_status)
+
 	var sep := HSeparator.new()
 	vbox.add_child(sep)
 
@@ -152,17 +176,25 @@ func _build_ui() -> void:
 	_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_list)
 
+	_restore_btn = Button.new()
+	_restore_btn.text = "Restore a save from RomM"
+	_restore_btn.custom_minimum_size = Vector2(0, 44)
+	_restore_btn.visible = false
+	_restore_btn.pressed.connect(func() -> void: restore_requested.emit())
+	vbox.add_child(_restore_btn)
+
 
 ## Fill from a parsed card. `saves` is PS1Card.list_saves() output.
 func populate(card_name: String, saves: Array, free: int) -> void:
 	_name_edit.text = card_name
-	_animated.clear()
-	for c in _list.get_children():
-		c.queue_free()
+	_clear_list()
 
 	var used := 15 - free
 	_usage.text = "%d of 15 blocks used   ·   %d save%s" \
 		% [used, saves.size(), "" if saves.size() == 1 else "s"]
+	# A card being played must not be edited, and restoring into it is an edit.
+	_restore_btn.visible = show_restore_action and sync_available \
+		and actions_blocked.is_empty() and not missing
 
 	if show_save_actions and not actions_blocked.is_empty():
 		var why := Label.new()
@@ -190,7 +222,92 @@ func populate(card_name: String, saves: Array, free: int) -> void:
 		_list.add_child(_make_row(s))
 
 
-func _make_row(s: Dictionary) -> Control:
+## Say what just happened, or clear it with "". Survives until the next call —
+## populate() leaves it alone so a result can outlive the redraw that follows it.
+func set_status(text: String) -> void:
+	_status.text = text
+	_status.visible = not text.is_empty()
+
+
+## Show what RomM holds for this card in place of the card's own saves.
+##
+## `note` covers every state with nothing to list — asking, unreachable, holding
+## none — so the page always says why it is blank instead of showing an empty
+## box. Each save carries the "blocks" it needs and the "reason" it cannot be
+## taken, worked out by the owner against this card.
+func show_restore(saves: Array, note: String) -> void:
+	_clear_list()
+	_usage.text = "Saves on RomM"
+	_restore_btn.visible = false
+	# Whatever was said about the card's own list was said about another page.
+	set_status("")
+
+	var back := Button.new()
+	back.text = "‹   Back to this card"
+	back.custom_minimum_size = Vector2(0, 44)
+	back.pressed.connect(func() -> void: restore_closed.emit())
+	_list.add_child(back)
+
+	if not note.is_empty():
+		var lbl := Label.new()
+		lbl.text = note
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl.add_theme_font_size_override("font_size", 16)
+		lbl.add_theme_color_override("font_color", COLOR_DIM)
+		_list.add_child(lbl)
+
+	for s: Dictionary in saves:
+		_list.add_child(_restore_row(s))
+
+
+## Built like the card's own rows rather than as one wide button: a Button draws
+## its text on one line, and a game's name, its size and why it will not fit do
+## not fit on one line of a panel this narrow.
+func _restore_row(s: Dictionary) -> Control:
+	var reason := str(s.get("reason", ""))
+	var row := _row_panel()
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	row.add_child(h)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(col)
+
+	var t := Label.new()
+	var rom_name := str(s.get("rom_name", ""))
+	t.text = rom_name if not rom_name.is_empty() else str(s.get("slot", ""))
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	t.add_theme_font_size_override("font_size", 19)
+	t.add_theme_color_override("font_color", COLOR_TITLE if reason.is_empty() else COLOR_DIM)
+	col.add_child(t)
+
+	var blocks: int = int(s.get("blocks", 1))
+	var sub := Label.new()
+	sub.text = "%d block%s%s" % [blocks, "" if blocks == 1 else "s",
+		"" if reason.is_empty() else "   ·   " + reason]
+	sub.add_theme_font_size_override("font_size", 15)
+	sub.add_theme_color_override("font_color", COLOR_DIM)
+	col.add_child(sub)
+
+	if reason.is_empty():
+		h.add_child(_action(MenuIcons.DOWNLOAD, "Put this save on the card",
+			MenuIcons.TINT_DOWNLOAD,
+			func() -> void: restore_picked.emit(s)))
+	return row
+
+
+func _clear_list() -> void:
+	_animated.clear()
+	for c in _list.get_children():
+		_list.remove_child(c)
+		c.queue_free()
+
+
+## One row's tinted plate. Shared so a save on the card and a save on the server
+## read as the same kind of thing.
+func _row_panel() -> PanelContainer:
 	var row := PanelContainer.new()
 	var rbg := StyleBoxFlat.new()
 	rbg.bg_color = Color(1, 1, 1, 0.05)
@@ -202,6 +319,11 @@ func _make_row(s: Dictionary) -> Control:
 	rbg.content_margin_top = 6
 	rbg.content_margin_bottom = 6
 	row.add_theme_stylebox_override("panel", rbg)
+	return row
+
+
+func _make_row(s: Dictionary) -> Control:
+	var row := _row_panel()
 
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 12)
@@ -245,9 +367,10 @@ func _make_row(s: Dictionary) -> Control:
 	# actions_blocked is a fact about the card, said once above the list rather
 	# than repeated on every row.
 	if show_save_actions and actions_blocked.is_empty():
-		h.add_child(_action(MenuIcons.MOVE, "Move to another card",
-			Color(0.72, 0.76, 0.92),
-			func() -> void: save_move_requested.emit(s)))
+		if show_move_action:
+			h.add_child(_action(MenuIcons.MOVE, "Move to another card",
+				Color(0.72, 0.76, 0.92),
+				func() -> void: save_move_requested.emit(s)))
 		if sync_available:
 			var on: bool = synced_slots.has(str(s.get("name", "")))
 			h.add_child(_action(
