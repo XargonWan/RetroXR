@@ -7,9 +7,12 @@
 [sub_resource type="SphereShape3D" id="SphereShape3D_plug"]
 radius = 0.03
 
+; The moulded boot: fat where it meets the connector, tapering down to the cord.
+; Its top (local +Y) maps to world -Z under the -90 rotation below, so top_radius
+; is the CORD end.
 [sub_resource type="CylinderMesh" id="CylMesh_plug"]
-top_radius = 0.01
-bottom_radius = 0.006
+top_radius = 0.006
+bottom_radius = 0.01
 height = 0.04
 
 [sub_resource type="StandardMaterial3D" id="Mat_plug"]
@@ -50,15 +53,20 @@ script = ExtResource("1_plugscript")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ControllerPlug"]
 shape = SubResource("SphereShape3D_plug")
 
+; The two halves, the way round they actually go: the TIP is the dark stub that
+; enters the socket (+Z), and the STRAIN RELIEF is the grey moulded boot the cord
+; leaves from (-Z). They were swapped — the tapered grey piece sat on the socket
+; side, so a cord correctly anchored at the boot came out of what read as the
+; connector, and the shape that reads as a strain relief was buried in the port.
 [node name="PlugTip" type="MeshInstance3D" parent="ControllerPlug"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0)
-mesh = SubResource("CylMesh_plug")
-surface_material_override/0 = SubResource("Mat_plug")
-
-[node name="StrainRelief" type="MeshInstance3D" parent="ControllerPlug"]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.03)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0.01)
 mesh = SubResource("CylMesh_strain")
 surface_material_override/0 = SubResource("Mat_strain")
+
+[node name="StrainRelief" type="MeshInstance3D" parent="ControllerPlug"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.02)
+mesh = SubResource("CylMesh_plug")
+surface_material_override/0 = SubResource("Mat_plug")
 
 ; Where the cord leaves the generic plug: the OUTER end of the strain-relief boot
 ; (z -0.04), not the plug's origin. The origin sits mid-barrel on the grey tip,
