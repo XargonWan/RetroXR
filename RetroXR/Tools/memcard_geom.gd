@@ -1,8 +1,8 @@
 ## A memory card seated in a console, measured and photographed.
 ##
-## 55 x 42 x 8 mm — a PlayStation card. What the photo has to show is how much of
-## it stays proud of the front face: enough to read as a tab you could pull, not
-## so much that it looks unplugged.
+## 42 x 8 x 63.5 mm — a PlayStation card, entering on its short edge. What the
+## photo has to show is how much of it stays proud of the front face: enough to
+## read as a tab you could pull, not so much that it looks unplugged.
 ##
 ##   godot --path RetroXR --resolution 320x240 --position 20,20 \
 ##       res://Tools/memcard_geom.tscn
@@ -64,14 +64,28 @@ func _run() -> void:
 
 	_build_camera()
 	var focus: Vector3 = sys.global_transform * Vector3(-0.09, 0.038, 0.115)
-	await _shoot(focus, Vector3(-0.55, 0.35, 1.0), 0.11,
-		"PS1 memory card, 55 x 42 x 8 mm, seated")
+	await _shoot(focus, Vector3(-0.55, 0.35, 1.0), 0.13,
+		"PS1 memory card, 42 x 8 x 63.5 mm, seated")
 	# From above rather than side on: looking along the card's width just puts the
 	# console's own body between the lens and the card.
-	await _shoot(focus + Vector3(0, 0, 0.01), Vector3(0.0, 1.0, 0.02), 0.13,
-		"From above — 16 mm of the card is in, 26 mm stands out")
+	await _shoot(focus + Vector3(0, 0, 0.02), Vector3(0.0, 1.0, 0.02), 0.15,
+		"From above — 33 mm of the card is in, 30 mm stands out")
 	await _shoot(sys.global_position + Vector3(0, 0.02, 0), Vector3(-0.5, 0.5, 1.0), 0.34,
 		"In context on the console's front face")
+
+	# The card by itself, at the three-quarter angle every photo of one is taken
+	# from — the view to hold against a real card when judging its proportions.
+	zone.drop_object()
+	var loose := CARD_SCENE.instantiate() as Node3D
+	loose.position = Vector3(0.6, 1.0, 0)
+	add_child(loose)
+	await _wait(10)
+	_hold(loose)
+	var box := _mesh_aabb(loose.global_transform.affine_inverse(), loose)
+	print("[mc] loose card %.1f x %.1f x %.1f mm"
+		% [box.size.x * 1000, box.size.y * 1000, box.size.z * 1000])
+	await _shoot(loose.global_position, Vector3(-0.45, 0.75, 0.9), 0.085,
+		"The card alone — 42 mm across, 63.5 mm along, 8 mm thick")
 
 	print("[mc] wrote %d shots to %s" % [_shot, ProjectSettings.globalize_path(OUT_DIR)])
 	get_tree().quit(0)

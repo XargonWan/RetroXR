@@ -77,8 +77,8 @@ func toggle_options_ui(camera: Node3D) -> void:
 
 ## Whoever has it decides how big a target it should be.
 ##
-## Loose, a card wants generous padding — it is a 55 x 42 x 8 mm card and the
-## authored box is 75 x 28 x 62. Seated in a console it does not: that box stands
+## Loose, a card wants generous padding — it is a 42 x 8 x 63.5 mm card and the
+## authored box is 62 x 28 x 83.5. Seated in a console it does not: that box stands
 ## 13 mm above a PlayStation's lid across 90 x 110 mm of it, so pointing at a good
 ## part of the machine handed you the card instead of the machine. Same treatment
 ## the cartridge gets, for the same reason.
@@ -102,7 +102,7 @@ func _card_box_size() -> Vector3:
 	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if col != null and col.shape is BoxShape3D:
 		return (col.shape as BoxShape3D).size
-	return Vector3(0.055, 0.008, 0.042)
+	return Vector3(0.042, 0.008, 0.0635)
 
 
 func _pointer_box_size() -> Vector3:

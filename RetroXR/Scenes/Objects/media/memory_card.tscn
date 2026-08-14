@@ -3,26 +3,34 @@
 [ext_resource type="Script" path="res://Scripts/Objects/media/memory_card.gd" id="1_memcardscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 
-; 55 x 42 x 8 mm — a PlayStation memory card (SCPH-1020); the PS2's is within a
-; couple of mm and shares this primitive. Was 55 x 17 x 75: the width was right
-; and the other two were roughly double the real card.
+; 42 x 8 x 63.5 mm — a PlayStation memory card (SCPH-1020); the PS2's is within a
+; couple of mm and shares this primitive.
+;
+; The LONG axis is Z, the way the card goes into the slot: a card enters on its
+; 42 mm edge and its 63.5 mm length points out of the machine at you. It was
+; 55 x 42 with the long axis across the front, which seated as a wide stubby tab —
+; the right area, the wrong shape. The footprint is the PocketStation's, which
+; occupies the same slot (64 x 42), and matches the 1.75 x 2.5 in on the card's
+; own retail listing.
 [sub_resource type="BoxShape3D" id="BoxShape3D_card"]
-size = Vector3(0.055, 0.008, 0.042)
+size = Vector3(0.042, 0.008, 0.0635)
 
 ; The LOOSE pointer target: the card plus 10 mm on every face, so a small flat
 ; object is still findable on a shelf. memory_card.gd swaps this for a box the
 ; size of the card itself while a console is holding it.
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
-size = Vector3(0.075, 0.028, 0.062)
+size = Vector3(0.062, 0.028, 0.0835)
 
 [sub_resource type="BoxMesh" id="BoxMesh_card"]
-size = Vector3(0.055, 0.008, 0.042)
+size = Vector3(0.042, 0.008, 0.0635)
 
 [sub_resource type="StandardMaterial3D" id="Mat_card"]
 albedo_color = Color(0.55, 0.55, 0.58, 1.0)
 
+; The dark band across the connector end, where the real card carries its grip
+; ridges. Sized to the card's 42 mm width, not to its length.
 [sub_resource type="BoxMesh" id="BoxMesh_stripe"]
-size = Vector3(0.04, 0.002, 0.008)
+size = Vector3(0.03, 0.002, 0.008)
 
 [sub_resource type="StandardMaterial3D" id="Mat_stripe"]
 albedo_color = Color(0.15, 0.15, 0.17, 1.0)
@@ -48,12 +56,16 @@ mesh = SubResource("BoxMesh_card")
 surface_material_override/0 = SubResource("Mat_card")
 
 [node name="StripeMesh" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0045, -0.0125)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0045, -0.0255)
 mesh = SubResource("BoxMesh_stripe")
 surface_material_override/0 = SubResource("Mat_stripe")
 
+; Toward the OUTER end, like the printed plate on a real card — and so a seated
+; card's name is still readable with a third of its length inside the console.
+; 36 mm wide (120 px at this pixel_size) to sit inside the 42 mm face; a long name
+; takes the second line rather than hanging over the edges.
 [node name="CardLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0045, 0.006)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0045, 0.016)
 modulate = Color(0.1, 0.1, 0.1, 1)
 text = "MEMORY CARD"
 pixel_size = 0.0003
@@ -63,7 +75,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 max_lines_visible = 2
-width = 170.0
+width = 120.0
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
