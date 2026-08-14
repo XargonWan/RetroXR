@@ -95,6 +95,9 @@ var _audio_voices: PackedInt32Array = PackedInt32Array()
 # the notice raised when a game cannot run. Made on demand rather than at
 # power-on: most sessions raise neither, and it costs a SubViewport.
 var _screen_toast_card: AchievementToast = null
+# The card that floats over the hardware itself, for what the machine is waiting
+# on rather than showing. Same on-demand cost as _screen_toast_card.
+var _machine_toast_card: AchievementToast = null
 var _mx: Object = null
 # Last level pushed by the connected TV. Re-applied on every rebind: a fresh
 # voice starts at full gain, so a core restart would otherwise come back at full
@@ -2022,7 +2025,7 @@ func power_on() -> void:
 		push_error("RetroSystem: Cannot power on - no cartridge inserted")
 		# Orange rather than the red of a fault: nothing is broken, the machine is
 		# just waiting for something the player can put in from where they stand.
-		var empty_toast := _screen_toast()
+		var empty_toast := _machine_toast()
 		if empty_toast != null:
 			var medium := "disc" if MediaDimensions.is_disc_system(systemid) else "cartridge"
 			empty_toast.show_notice(_display_name(), "No game inserted",
@@ -3513,6 +3516,19 @@ func _screen_toast() -> AchievementToast:
 	if not is_instance_valid(_screen_toast_card):
 		_screen_toast_card = AchievementToast.attach(anchor)
 	return _screen_toast_card if is_instance_valid(_screen_toast_card) else null
+
+
+## The notification card over the hardware itself, made on demand.
+##
+## For what the machine is waiting on rather than what it is showing. An empty
+## slot is a state of the console, and the player who just pressed its power
+## button is standing at it; a console cabled to a set across the room puts its
+## picture where they are not, and a handheld's own panel is dark until a game
+## runs. Never null: unlike the picture, the machine is always there.
+func _machine_toast() -> AchievementToast:
+	if not is_instance_valid(_machine_toast_card):
+		_machine_toast_card = AchievementToast.attach_to_machine(self)
+	return _machine_toast_card if is_instance_valid(_machine_toast_card) else null
 
 
 ## The slot this save occupies on the server. A cartridge's own save_id, so a

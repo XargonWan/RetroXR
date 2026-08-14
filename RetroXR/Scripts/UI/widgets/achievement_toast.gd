@@ -17,6 +17,10 @@ extends Node3D
 const DWELL := 6.0
 ## Metres above the screen's top edge.
 const ABOVE_SCREEN := 0.06
+## Metres above the hardware's crown, for a card anchored to the machine itself.
+## Wider than ABOVE_SCREEN because what sticks up off a console is unpredictable —
+## an NES flap standing open, a cartridge half out of the slot.
+const ABOVE_MACHINE := 0.10
 ## Pixels per metre. ToastPanel's 1.7x over page scale, for the same reason.
 const PIXELS_PER_METRE := 1400.0
 
@@ -38,6 +42,10 @@ var _showing := false
 ## The screen this toast belongs to. Held rather than read from get_parent(),
 ## because the node is top_level and its parent is only a lifetime owner.
 var _anchor: MeshInstance3D = null
+## The machine this toast belongs to, when it hangs over the hardware instead of
+## over a picture. Set by attach_to_machine; exclusive with _anchor. Typed Node3D
+## rather than RetroSystem so this widget does not name a game object back.
+var _machine: Node3D = null
 ## Placement is stale for one frame after a show; physics interpolation would
 ## otherwise lerp the quad in from wherever it last sat.
 var _needs_interpolation_reset := false
@@ -54,6 +62,24 @@ static func attach(screen: MeshInstance3D) -> AchievementToast:
 	# Parented to the screen for lifetime — it should die with the machine — but
 	# top_level, so none of the screen's transform reaches it. See _place().
 	screen.add_child(toast)
+	toast._build()
+	return toast
+
+
+## Attach a toast host to the hardware itself, floating over its crown.
+##
+## For anything the machine is waiting on rather than showing: the player who
+## just pressed the power button is standing at the console, and a console cabled
+## to a set on the other side of the room puts its picture where they are not.
+## `machine` needs a `body_top_y()` (RetroSystem has one) or the card sits at its
+## origin.
+static func attach_to_machine(machine: Node3D) -> AchievementToast:
+	if machine == null:
+		return null
+	var toast := AchievementToast.new()
+	toast.name = "MachineToast"
+	toast._machine = machine
+	machine.add_child(toast)
 	toast._build()
 	return toast
 
@@ -94,6 +120,9 @@ func _build() -> void:
 ## basis is orthonormalized, which strips the scale so the quad keeps the physical
 ## size screen_size asked for.
 func _place() -> void:
+	if _machine != null:
+		_place_over_machine()
+		return
 	if not is_instance_valid(_anchor):
 		return
 
@@ -113,6 +142,37 @@ func _place() -> void:
 		+ frame.z * 0.01
 
 	global_transform = Transform3D(frame, top_centre + offset)
+
+
+## Centred over the machine, its bottom edge clear of the hardware's crown, turned
+## to face the player.
+##
+## A body has no picture plane to take a facing from, and a console can be sitting
+## at any yaw in the room, so this billboards — the look_at-then-flip that puts the
+## quad's +Z front toward the viewer, kept level rather than pitched at a headset
+## looking down. The height comes from body_top_y() because the bodies differ by an
+## order of magnitude: a PC tower is 0.42 m tall and a flat console around 0.07.
+func _place_over_machine() -> void:
+	if not is_instance_valid(_machine):
+		return
+
+	var top_y := _machine.global_position.y
+	if _machine.has_method("body_top_y"):
+		top_y = float(_machine.call("body_top_y"))
+	var origin := _machine.global_position
+	global_position = Vector3(origin.x,
+		top_y + ABOVE_MACHINE + (PANEL_H / PIXELS_PER_METRE) * 0.5,
+		origin.z)
+
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var flat := cam.global_position - global_position
+	flat.y = 0.0
+	if flat.length_squared() < 1e-6:
+		return
+	look_at(global_position + flat, Vector3.UP)
+	rotate_object_local(Vector3.UP, PI)
 
 
 ## The screen this toast floats above. Callers compare it against their current
@@ -183,7 +243,8 @@ func _next() -> void:
 ## Follow the machine. A cabinet is furniture but a handheld gets picked up and
 ## carried, and a top_level node does not inherit that movement for free.
 func _process(_delta: float) -> void:
-	if not is_instance_valid(_anchor):
+	var host: Node3D = _machine if _machine != null else _anchor
+	if not is_instance_valid(host):
 		visible = false
 		set_process(false)
 		return
