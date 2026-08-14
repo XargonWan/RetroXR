@@ -254,7 +254,12 @@ private:
     std::atomic<uint64_t>     m_proc_ok{0};
     std::atomic<uint64_t>     m_proc_fail{0};
 
-    godot::AudioStreamPlayer* m_player = nullptr;
+    /// The mixer node is parented to the scene root, so the SceneTree owns it and
+    /// destroys it at shutdown before this server tears down. A raw pointer then
+    /// dangles and is_inside_tree() faults inside Godot; held by id, a freed node
+    /// simply resolves to null.
+    godot::AudioStreamPlayer* LivePlayer() const;
+    uint64_t m_player_id = 0;
     godot::Ref<MetaXRAudioStream> m_stream;
 };
 

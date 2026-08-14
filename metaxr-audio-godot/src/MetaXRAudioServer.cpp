@@ -155,16 +155,31 @@ bool MetaXRAudioServer::Initialise()
     return true;
 }
 
+AudioStreamPlayer* MetaXRAudioServer::LivePlayer() const
+{
+    if (m_player_id == 0)
+        return nullptr;
+    return Object::cast_to<AudioStreamPlayer>(ObjectDB::get_instance(m_player_id));
+}
+
 void MetaXRAudioServer::Shutdown()
 {
-    if (m_player)
+    if (AudioStreamPlayer* player = LivePlayer())
     {
-        // May still be waiting on its deferred add, so free it either way.
-        if (m_player->is_inside_tree())
-            m_player->stop();
-        m_player->queue_free();
+        // May still be waiting on its deferred add, so free it either way. At
+        // process exit the tree is already gone, and queue_free() without one
+        // only logs an error, so free it directly in that case.
+        if (player->is_inside_tree())
+        {
+            player->stop();
+            player->queue_free();
+        }
+        else
+        {
+            memdelete(player);
+        }
     }
-    m_player = nullptr;
+    m_player_id = 0;
     m_stream.unref();
 
     if (m_ctx)
@@ -180,7 +195,7 @@ void MetaXRAudioServer::Shutdown()
 
 void MetaXRAudioServer::EnsurePlayer()
 {
-    if (!m_available || m_player != nullptr)
+    if (!m_available || m_player_id != 0)
         return;
 
     SceneTree* tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
@@ -188,20 +203,21 @@ void MetaXRAudioServer::EnsurePlayer()
         return;
 
     m_stream.instantiate();
-    m_player = memnew(AudioStreamPlayer);
-    m_player->set_name("MetaXRAudioMixer");
-    m_player->set_stream(m_stream);
+    AudioStreamPlayer* player = memnew(AudioStreamPlayer);
+    m_player_id = static_cast<uint64_t>(player->get_instance_id());
+    player->set_name("MetaXRAudioMixer");
+    player->set_stream(m_stream);
 
     // Deferred, because the first voice is usually created from some device's
     // _ready, and a node cannot be parented to the root while the root is still
     // setting up its own children -- add_child() refuses, play() then refuses
-    // for a node outside the tree, and m_player is left non-null so this
+    // for a node outside the tree, and m_player_id is left set so this
     // function never tries again. One mixer feeds every source, so that silences
     // the whole application for the session. Whether the first voice lands
     // inside that window depends on scene composition, which is why it can start
     // happening after an unrelated change.
-    tree->get_root()->call_deferred("add_child", m_player);
-    m_player->call_deferred("play", 0.0);
+    tree->get_root()->call_deferred("add_child", player);
+    player->call_deferred("play", 0.0);
 }
 
 // ---------------------------------------------------------------------------
