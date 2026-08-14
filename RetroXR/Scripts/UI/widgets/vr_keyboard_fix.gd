@@ -99,7 +99,17 @@ static func _show_keyboard(field: Control) -> void:
 	var type: int = DisplayServer.KEYBOARD_TYPE_DEFAULT
 	if field.has_meta("vr_kb_type"):
 		type = int(field.get_meta("vr_kb_type"))
-	DisplayServer.virtual_keyboard_show(existing, Rect2(-1, -1, -1, -1), type)
+	# Except on the headset. Godot maps the number layouts to InputType.TYPE_CLASS_NUMBER,
+	# and the runtime raises the system numeric keypad for that — a far smaller view than
+	# the text IME, which the Meta overlay puts up as a sliver you cannot type into. The
+	# fields that ask for digits filter their own input anyway, so the plain keyboard
+	# costs a layout the player has to hunt across, not a wrong value.
+	if OS.get_name() == "Android" and type != DisplayServer.KEYBOARD_TYPE_DEFAULT:
+		type = DisplayServer.KEYBOARD_TYPE_DEFAULT
+	# Rect2 is the field's screen rect on platforms that scroll the view to it. Android
+	# never receives it — showKeyboard() takes the text and four ints — so it is only
+	# ever the "no rect" value here.
+	DisplayServer.virtual_keyboard_show(existing, Rect2(), type)
 
 
 ## Losing focus is not on its own a reason to take the keyboard away: moving
