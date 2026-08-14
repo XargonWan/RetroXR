@@ -552,11 +552,15 @@ func _build_debug_options(vbox: VBoxContainer) -> void:
 	_build_audio_buffer_row(vbox)
 
 
-## The queue depth every producer pushes towards, in milliseconds — the dominant
-## term in the whole audio latency budget, and a straight trade against
-## underruns: the queue has to survive the longest main-thread stall this device
-## suffers, so the value that holds on a desktop crackles on a headset dropping
-## frames.
+## The queue depth every producer pushes towards — the dominant term in the whole
+## audio latency budget, and a straight trade against underruns: the queue has to
+## survive the longest main-thread stall this device suffers, so the value that
+## holds on a desktop crackles on a headset dropping frames.
+##
+## Set in FRAMES, which is what the mixer stores and what its limits are cut to.
+## Milliseconds are the derived figure: the same 2048-frame queue is 43 ms on a
+## desktop and 46 on a Quest, which mixes at 44.1 kHz whatever project.godot asks
+## for, so a duration typed here would mean a different queue on each.
 ##
 ## Not persisted, like everything else on this page. It is a measurement you take
 ## with the HUD's underrun row open, not a preference, and one that came back
@@ -569,8 +573,8 @@ func _build_audio_buffer_row(vbox: VBoxContainer) -> void:
 	vbox.add_child(HSeparator.new())
 	vbox.add_child(MenuStyle.header("SPATIAL AUDIO", 20))
 
-	_audio_buffer_edit = _add_options_text_field(vbox, "Buffer (ms)",
-		"%.0f" % float(mx.call("get_target_latency_ms")),
+	_audio_buffer_edit = _add_options_text_field(vbox, "Buffer (frames)",
+		str(_audio_buffer_frames(mx)),
 		func(text: String) -> void: _apply_audio_buffer(text),
 		false, true)
 
@@ -583,9 +587,12 @@ func _apply_audio_buffer(text: String) -> void:
 	var mx: Object = _meta_audio()
 	if mx == null:
 		return
-	var ms := text.strip_edges().to_float()
-	if ms > 0.0:
-		mx.call("set_target_latency_ms", ms)
+	var frames := text.strip_edges().to_int()
+	if frames > 0:
+		# The mixer takes milliseconds and converts back by truncation, so a
+		# frame count handed over exactly can land one frame low. Half a frame of
+		# slack is far larger than the float error and far smaller than the step.
+		mx.call("set_target_latency_ms", (frames + 0.5) * 1000.0 / AudioServer.get_mix_rate())
 		# Every underrun counted so far was counted against the old depth, so
 		# leaving the total standing would make the HUD's row describe a queue
 		# that is no longer running.
@@ -599,20 +606,24 @@ func _refresh_audio_buffer_row() -> void:
 	var mx: Object = _meta_audio()
 	if mx == null:
 		return
-	var ms := float(mx.call("get_target_latency_ms"))
-	var rate := AudioServer.get_mix_rate()
+	var frames := _audio_buffer_frames(mx)
 
 	if is_instance_valid(_audio_buffer_edit):
-		_audio_buffer_edit.text = "%.0f" % ms
+		_audio_buffer_edit.text = str(frames)
 	if is_instance_valid(_audio_buffer_hint):
-		# The default is a frame count, not a duration, so it reads as 43 ms on a
-		# desktop and 46 on a Quest -- which mixes at 44.1 kHz whatever
-		# project.godot asks for.
 		_audio_buffer_hint.text = (
-			"Now %.0f ms — %d frames at %s kHz. Default 2048 frames: 43 ms here, "
-			% [ms, roundi(ms * rate / 1000.0), _khz(rate)]
-			+ "46 ms on a Quest. Lower is tighter but underruns sooner, and a "
-			+ "value the ring cannot hold snaps back. Not saved.")
+			"Now %d frames — %.0f ms at %s kHz. Default 2048. Lower is tighter but "
+			% [frames, float(mx.call("get_target_latency_ms")),
+				_khz(AudioServer.get_mix_rate())]
+			+ "underruns sooner, and a value the ring cannot hold snaps back. "
+			+ "Not saved.")
+
+
+## What the mixer is actually holding, in frames. It reports milliseconds, but
+## the value behind them is a whole frame count, so this rounds rather than
+## truncating — the conversion cannot land between two frames.
+func _audio_buffer_frames(mx: Object) -> int:
+	return roundi(float(mx.call("get_target_latency_ms")) * AudioServer.get_mix_rate() / 1000.0)
 
 
 static func _khz(rate: float) -> String:
