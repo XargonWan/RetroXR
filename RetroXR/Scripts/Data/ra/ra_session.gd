@@ -26,6 +26,9 @@ var _bridge: RaHttpBridge = null
 ## only ever compared and cleared, never used to keep the cabinet alive.
 var _session_owner: Node = null
 var _busy_signing_in := false
+## handle -> the callback waiting on that browse lookup. Keyed because several
+## rows can ask at once and the answers come back in whatever order they finish.
+var _lookups: Dictionary = {}
 var _badge_cache: Dictionary = {}
 
 
@@ -93,6 +96,54 @@ func achievements() -> Array:
 func rich_presence() -> String:
 	var ra: Object = _ra()
 	return ra.GetRichPresence() if ra != null else ""
+
+
+## A game's achievements WITHOUT running it, delivered to
+## `callback(ok, info: Dictionary)` on the main thread.
+##
+## `info` carries game_id, title, badge_url, achievements (id, title,
+## description, points, type, rarity, badge_url, badge_locked_url, unlocked) and
+## error. game_id 0 with ok true means RetroAchievements does not know this ROM —
+## which is an answer, not a failure.
+##
+## Nothing here starts a session: the console's own hash rules are applied
+## locally and only the lookup calls go out, so this can be asked while another
+## game is running without disturbing it.
+func lookup_achievements(systemid: String, rom_path: String, callback: Callable) -> void:
+	var ra: Object = _ra()
+	var console_id := RaConsoles.for_systemid(systemid)
+	if ra == null or console_id <= 0 or not is_logged_in():
+		callback.call(false, {"error": "Sign in to RetroAchievements to see achievements."})
+		return
+	if not ra.has_method("LookupAchievements"):
+		# An older extension binary against newer scripts — say so rather than
+		# failing with "method not found" three frames later.
+		callback.call(false, {"error": "This build cannot look achievements up yet."})
+		return
+
+	var handle: int = ra.LookupAchievements(console_id, rom_path)
+	if handle <= 0:
+		callback.call(false, {"error": "Could not read this ROM to identify it."})
+		return
+	_lookups[handle] = callback
+	if not ra.is_connected("ra_lookup_result", _on_lookup_result):
+		ra.connect("ra_lookup_result", _on_lookup_result)
+
+
+func _on_lookup_result(handle: int, ok: bool, game_id: int, title: String,
+					   badge_url: String, achievements_in: Array, error: String) -> void:
+	if not _lookups.has(handle):
+		return
+	var callback: Callable = _lookups[handle]
+	_lookups.erase(handle)
+	if callback.is_valid():
+		callback.call(ok, {
+			"game_id": game_id,
+			"title": title,
+			"badge_url": badge_url,
+			"achievements": achievements_in,
+			"error": error,
+		})
 
 
 ## Flip the master switch. Disabling destroys the client and drops the session.

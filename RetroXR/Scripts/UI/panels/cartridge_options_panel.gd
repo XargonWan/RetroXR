@@ -28,6 +28,10 @@ var _server_saves: Array = []
 var _conflicted: Dictionary = {}
 ## The save whose delete is armed and waiting for a second press, or "".
 var _armed_id := ""
+## rom_path -> what a browse lookup returned for it, and the rom currently being
+## asked about. See _lookup_achievements.
+var _looked_up: Dictionary = {}
+var _looking_up := ""
 ## How long a delete stays armed — the memory card's window, and the ROM rows'.
 const ARM_SECONDS := 3.0
 
@@ -249,11 +253,11 @@ func _populate_achievements(ui: CartridgeOptions2D) -> void:
 			"Sign in to RetroAchievements in OPTIONS to track achievements.")
 		return
 	if not _is_live_cartridge():
-		# The set lives in the running game's rcheevos session, so a game that is
-		# not running has none to show — including one being read from the library.
-		ui.populate_achievements([], {}, "Play this game to see its achievements."
-			if not _bindable()
-			else "Insert this cartridge and power the console on to see its achievements.")
+		# Not running, so rcheevos' session holds nothing for it — but the set and
+		# this player's unlocks can still be fetched from the ROM alone. Live
+		# progress (measured bars, what just triggered) is the part that needs the
+		# game running; what is earned and what is left does not.
+		_lookup_achievements(ui)
 		return
 
 	var entries := RA.achievements()
@@ -262,6 +266,60 @@ func _populate_achievements(ui: CartridgeOptions2D) -> void:
 			"RetroAchievements has no achievement set for this game.")
 		return
 	ui.populate_achievements(entries, RA.game_info(), "")
+
+
+## Ask the server what this ROM's achievements are, and which the player has.
+##
+## Cached per ROM for the life of the panel: the ribbon is repopulated on every
+## sync result and every save edit, and three HTTP round trips per redraw would
+## be both slow and rude. A repeat ask for the same ROM redraws from what came
+## back the first time.
+func _lookup_achievements(ui: CartridgeOptions2D) -> void:
+	var rom := _rom()
+	if _looked_up.has(rom):
+		var got: Dictionary = _looked_up[rom]
+		ui.populate_achievements(got["achievements"], got["summary"], str(got["state"]))
+		return
+	if _looking_up == rom:
+		ui.populate_achievements([], {}, "Asking RetroAchievements…")
+		return
+
+	_looking_up = rom
+	ui.populate_achievements([], {}, "Asking RetroAchievements…")
+	RA.lookup_achievements(_sysid(), rom, func(ok: bool, info: Dictionary) -> void:
+		if not is_instance_valid(self):
+			return
+		_looking_up = ""
+		var entries: Array = info.get("achievements", [])
+		var state := ""
+		if not ok:
+			state = str(info.get("error", "Could not reach RetroAchievements."))
+		elif int(info.get("game_id", 0)) == 0:
+			state = "RetroAchievements does not recognise this ROM."
+		elif entries.is_empty():
+			state = "RetroAchievements has no achievement set for this game."
+		var unlocked := 0
+		var points := 0
+		var points_unlocked := 0
+		for e: Dictionary in entries:
+			points += int(e.get("points", 0))
+			if bool(e.get("unlocked", false)):
+				unlocked += 1
+				points_unlocked += int(e.get("points", 0))
+		_looked_up[rom] = {
+			"achievements": entries,
+			"summary": {
+				"title": info.get("title", ""),
+				"badge_url": info.get("badge_url", ""),
+				"num_achievements": entries.size(),
+				"num_unlocked": unlocked,
+				"points_total": points,
+				"points_unlocked": points_unlocked,
+			},
+			"state": state,
+		}
+		if _showing():
+			_populate())
 
 
 ## True when the game in the machine holding the RA session is this one.
