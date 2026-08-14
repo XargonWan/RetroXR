@@ -9,7 +9,11 @@ extends Node3D
 
 const FLOAT_HEIGHT := 0.25
 
-var _cart: RetroCartridge = null
+## What these saves belong to: a RetroCartridge in the room, or a
+## CartridgeSaveTarget standing in for a ROM that has no cartridge — see
+## adopt_external_ui. Read through _sysid()/_rom()/_label()/_save_id() so both
+## kinds answer the same way.
+var _cart: Object = null
 var _camera: Node3D = null
 ## Set when another panel hosts a COPY of the UI (the core options Cartridge tab).
 ## This panel then drives that copy as well as its own quad — it does not stop
@@ -21,7 +25,10 @@ var _server_saves: Array = []
 ## user acts on it.
 var _conflicted: Dictionary = {}
 
-@onready var _viewport_node: XRToolsViewport2DIn3D = $CartOptionsViewport
+## get_node_or_null, not $: this class is also used bare (CartridgeOptionsPanel.new())
+## to drive somebody else's UI, with no quad of its own to find.
+@onready var _viewport_node: XRToolsViewport2DIn3D = \
+	get_node_or_null("CartOptionsViewport") as XRToolsViewport2DIn3D
 
 
 func _ready() -> void:
@@ -39,8 +46,11 @@ func _showing() -> bool:
 func _process(_delta: float) -> void:
 	if not visible:
 		return
-	if _cart and is_instance_valid(_cart):
-		global_position = _cart.global_position + Vector3(0, FLOAT_HEIGHT, 0)
+	# Only ever visible for a cartridge in the room; a stand-in target has no
+	# position to float above.
+	var cart := _cart as Node3D
+	if cart != null and is_instance_valid(cart):
+		global_position = cart.global_position + Vector3(0, FLOAT_HEIGHT, 0)
 	if _camera and is_instance_valid(_camera):
 		look_at(_camera.global_position, Vector3.UP)
 		rotate_object_local(Vector3.UP, PI)
@@ -49,8 +59,8 @@ func _process(_delta: float) -> void:
 func show_for(cart: RetroCartridge, camera: Node3D) -> void:
 	_cart = cart
 	_camera = camera
-	if _cart:
-		global_position = _cart.global_position + Vector3(0, FLOAT_HEIGHT, 0)
+	if cart:
+		global_position = cart.global_position + Vector3(0, FLOAT_HEIGHT, 0)
 	visible = true
 	_ensure_ui_connected()
 	_populate()
@@ -67,7 +77,11 @@ func hide_panel() -> void:
 ##
 ## The host owns the Control's lifetime; this node keeps only the reference and
 ## its own quad stays hidden.
-func adopt_external_ui(ui: CartridgeOptions2D, cart: RetroCartridge) -> void:
+##
+## `cart` is a RetroCartridge, or a CartridgeSaveTarget when the host is showing a
+## ROM from the library that has no cartridge in the room. The second kind reads
+## everything and binds nothing — see _bindable().
+func adopt_external_ui(ui: CartridgeOptions2D, cart: Object) -> void:
 	_external_ui = ui
 	_cart = cart
 	_ensure_ui_connected()
@@ -75,8 +89,40 @@ func adopt_external_ui(ui: CartridgeOptions2D, cart: RetroCartridge) -> void:
 	_refresh_server_list()
 
 
+# ── The target, whichever kind it is ──────────────────────────────────────────
+
+## A save belongs to the object you put in the machine, so only a real cartridge
+## can be bound to one. A ROM standing in for itself can be read, synced and
+## downloaded to, but never made "current".
+func _bindable() -> bool:
+	return _cart is RetroCartridge
+
+
+func _sysid() -> String:
+	return str(_cart.get("systemid")) if _cart != null else ""
+
+
+func _rom() -> String:
+	return str(_cart.get("rom_path")) if _cart != null else ""
+
+
+func _label() -> String:
+	return str(_cart.get("game_label")) if _cart != null else ""
+
+
+func _save_id() -> String:
+	return str(_cart.get("save_id")) if _cart != null else ""
+
+
+func _bind_save(save_id: String) -> void:
+	if _cart != null:
+		_cart.set("save_id", save_id)
+
+
 ## The Control inside this panel's own quad, or null before it is built.
 func _own_ui() -> CartridgeOptions2D:
+	if _viewport_node == null:
+		return null
 	var vp := _viewport_node.get_node_or_null("Viewport") as SubViewport
 	if not vp or vp.get_child_count() == 0:
 		return null
@@ -141,13 +187,13 @@ func _populate() -> void:
 	var uis := _uis()
 	if uis.is_empty():
 		return
-	var core := SramPaths.core_for_systemid(_cart.systemid)
-	var saves: Array = SramPaths.list_saves(core, _cart.rom_path) if not core.is_empty() else []
+	var core := SramPaths.core_for_systemid(_sysid())
+	var saves: Array = SramPaths.list_saves(core, _rom()) if not core.is_empty() else []
 
 	var states: Dictionary = {}
 	for s: Variant in saves:
 		var sid := str((s as Dictionary).get("save_id", ""))
-		var path := SramPaths.cart_save_path(core, _cart.rom_path, sid)
+		var path := SramPaths.cart_save_path(core, _rom(), sid)
 		if _conflicted.has(sid):
 			states[sid] = "conflict"
 		elif SaveSync.current_key() == RommSaveSync.key_for(path):
@@ -158,7 +204,8 @@ func _populate() -> void:
 			states[sid] = "off"
 
 	for ui: CartridgeOptions2D in uis:
-		ui.populate(_cart.game_label, _cart.rom_path, saves, _cart.save_id,
+		ui.selectable = _bindable()
+		ui.populate(_label(), _rom(), saves, _save_id(),
 			not core.is_empty(), states, _server_only(saves), _romm_ready())
 		_populate_achievements(ui)
 
@@ -172,8 +219,8 @@ func _populate_achievements(ui: CartridgeOptions2D) -> void:
 	if not RA.is_available():
 		ui.populate_achievements([], {}, "Achievements are unavailable in this build.")
 		return
-	if not RaConsoles.is_supported(_cart.systemid):
-		var what := _cart.systemid if not _cart.systemid.is_empty() else "this system"
+	if not RaConsoles.is_supported(_sysid()):
+		var what := _sysid() if not _sysid().is_empty() else "this system"
 		ui.populate_achievements([], {},
 			"RetroAchievements has no achievement sets for %s." % what)
 		return
@@ -182,8 +229,11 @@ func _populate_achievements(ui: CartridgeOptions2D) -> void:
 			"Sign in to RetroAchievements in OPTIONS to track achievements.")
 		return
 	if not _is_live_cartridge():
-		ui.populate_achievements([], {},
-			"Insert this cartridge and power the console on to see its achievements.")
+		# The set lives in the running game's rcheevos session, so a game that is
+		# not running has none to show — including one being read from the library.
+		ui.populate_achievements([], {}, "Play this game to see its achievements."
+			if not _bindable()
+			else "Insert this cartridge and power the console on to see its achievements.")
 		return
 
 	var entries := RA.achievements()
@@ -194,12 +244,22 @@ func _populate_achievements(ui: CartridgeOptions2D) -> void:
 	ui.populate_achievements(entries, RA.game_info(), "")
 
 
-## True when this cartridge is the one in the machine holding the RA session.
+## True when the game in the machine holding the RA session is this one.
+##
+## By ROM as well as by object: a library page has no cartridge to be identical
+## to, and the game it is asking about may be the one running right now — which is
+## exactly when its achievements are worth showing.
 func _is_live_cartridge() -> bool:
 	var owner_system := RA.session_owner()
 	if owner_system == null or not owner_system.has_method("get_snapped_cartridge"):
 		return false
-	return owner_system.get_snapped_cartridge() == _cart
+	var seated: Node = owner_system.get_snapped_cartridge()
+	if seated == null:
+		return false
+	if seated == _cart:
+		return true
+	var rom := _rom()
+	return not rom.is_empty() and str(seated.get("rom_path")) == rom
 
 
 func _on_ra_changed(_ok: bool, _title: String, _n: int, _u: int, _err: String) -> void:
@@ -235,18 +295,20 @@ func _romm_ready() -> bool:
 func _rom_id() -> int:
 	if _cart == null:
 		return 0
-	return SaveSync.rom_id_for(_cart.systemid, _cart.rom_path)
+	return SaveSync.rom_id_for(_sysid(), _rom())
 
 
 func _on_save_selected(save_id: String) -> void:
-	if _cart == null or not is_instance_valid(_cart):
+	# Only a cartridge can carry a save. The UI hides these rows' action when the
+	# target cannot be bound, so this is the belt to that braces.
+	if _cart == null or not is_instance_valid(_cart) or not _bindable():
 		return
 	if save_id.is_empty():
 		# New blank save: mint a fresh identity — the first flush creates it.
-		_cart.save_id = "%08x%08x" % [randi(), randi()]
+		_bind_save("%08x%08x" % [randi(), randi()])
 	else:
-		_cart.save_id = save_id
-	print("[CartridgeOptions] %s bound to save %s" % [_cart.game_label, _cart.save_id])
+		_bind_save(save_id)
+	print("[CartridgeOptions] %s bound to save %s" % [_label(), _save_id()])
 	_populate()
 
 
@@ -254,16 +316,16 @@ func _on_save_selected(save_id: String) -> void:
 ## before any file exists, so the very first flush uploads instead of the user
 ## having to come back and toggle it afterwards.
 func _on_new_synced_save() -> void:
-	if _cart == null or not is_instance_valid(_cart):
+	if _cart == null or not is_instance_valid(_cart) or not _bindable():
 		return
-	var core := SramPaths.core_for_systemid(_cart.systemid)
+	var core := SramPaths.core_for_systemid(_sysid())
 	var rid := _rom_id()
 	if core.is_empty() or rid <= 0:
 		return
 	var new_id := "%08x%08x" % [randi(), randi()]
-	_cart.save_id = new_id
-	SaveSync.set_enabled(SramPaths.cart_save_path(core, _cart.rom_path, new_id), true, rid)
-	print("[CartridgeOptions] %s bound to new synced save %s" % [_cart.game_label, new_id])
+	_bind_save(new_id)
+	SaveSync.set_enabled(SramPaths.cart_save_path(core, _rom(), new_id), true, rid)
+	print("[CartridgeOptions] %s bound to new synced save %s" % [_label(), new_id])
 	_populate()
 
 
@@ -273,15 +335,15 @@ func _on_new_synced_save() -> void:
 func _on_sync_toggled(save_id: String, on: bool) -> void:
 	if _cart == null or not is_instance_valid(_cart):
 		return
-	var core := SramPaths.core_for_systemid(_cart.systemid)
+	var core := SramPaths.core_for_systemid(_sysid())
 	if core.is_empty():
 		return
-	var path := SramPaths.cart_save_path(core, _cart.rom_path, save_id)
+	var path := SramPaths.cart_save_path(core, _rom(), save_id)
 	var rid := _rom_id()
 	SaveSync.set_enabled(path, on, rid)
 	if on and rid > 0:
 		_conflicted.erase(save_id)
-		SaveSync.enqueue(path, rid, core, save_id, _cart.game_label)
+		SaveSync.enqueue(path, rid, core, save_id, _label())
 	_populate()
 
 
@@ -291,14 +353,16 @@ func _on_sync_toggled(save_id: String, on: bool) -> void:
 func _on_server_save_requested(slot: String) -> void:
 	if _cart == null or not is_instance_valid(_cart):
 		return
-	var core := SramPaths.core_for_systemid(_cart.systemid)
+	var core := SramPaths.core_for_systemid(_sysid())
 	var rid := _rom_id()
 	if core.is_empty() or rid <= 0:
 		return
-	var path := SramPaths.cart_save_path(core, _cart.rom_path, slot)
+	var path := SramPaths.cart_save_path(core, _rom(), slot)
 	SaveSync.set_enabled(path, true, rid)
-	SaveSync.enqueue(path, rid, core, slot, _cart.game_label)
-	_cart.save_id = slot
+	SaveSync.enqueue(path, rid, core, slot, _label())
+	# Harmless on a stand-in, which nothing reads back — the download is the point
+	# there, and the cartridge you spawn later finds the file waiting.
+	_bind_save(slot)
 	_populate()
 
 

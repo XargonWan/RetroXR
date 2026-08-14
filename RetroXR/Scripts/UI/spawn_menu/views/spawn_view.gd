@@ -119,6 +119,10 @@ var _scrape_popup: PanelContainer = null
 var _scrape_in_progress: bool = false
 var _game_detail_panel: PanelContainer = null
 var _rom_variants_panel: PanelContainer = null
+## The saves-and-achievements page for one ROM, and the CartridgeOptionsPanel
+## driving it — both live only as long as the page is open.
+var _game_saves_panel: PanelContainer = null
+var _game_saves_driver: CartridgeOptionsPanel = null
 ## Connected to scraper_client.media_download_completed so the tab refreshes
 ## when a wheel image or manual PDF finishes downloading.
 var _media_dl_refresh_cb: Callable = Callable()
@@ -1036,7 +1040,7 @@ func _build_blank_rom_row() -> Control:
 	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(main)
 
-	for n: String in ["Detail", "Manual", "Scrape"]:
+	for n: String in ["Detail", "Saves", "Manual", "Scrape"]:
 		var b := Button.new()
 		b.name = n
 		b.custom_minimum_size = Vector2(66, 100)
@@ -1068,12 +1072,14 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	var cover := row.get_node("Cover") as TextureRect
 	var main := row.get_node("Main") as MarqueeButton
 	var detail := row.get_node("Detail") as Button
+	var saves := row.get_node("Saves") as Button
 	var manual := row.get_node("Manual") as Button
 	var scrape := row.get_node("Scrape") as Button
 
 	_disconnect_all(state.pressed)
 	_disconnect_all(main.pressed)
 	_disconnect_all(detail.pressed)
+	_disconnect_all(saves.pressed)
 	_disconnect_all(manual.pressed)
 	_disconnect_all(scrape.pressed)
 
@@ -1150,6 +1156,17 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	detail.visible = not game.is_empty()
 	if not game.is_empty():
 		detail.pressed.connect(_show_game_detail_panel.bind(game, systemid))
+
+	# The game's saves and achievements, the same page the cartridge's own menu
+	# shows — reachable here so you can look before you spawn anything. Needs a
+	# local ROM: a save is keyed by the file's path, and a title that is still only
+	# on the server has none on this device.
+	saves.text = String.chr(MenuIcons.CARD_SAVES)
+	saves.visible = not local_path.is_empty()
+	saves.tooltip_text = "Saves and achievements"
+	if not local_path.is_empty():
+		saves.pressed.connect(
+			_show_game_saves_panel.bind(systemid, local_path, label))
 
 	var has_manual: bool = meta["has_manual"]
 	var manual_path: String = meta["manual_path"]
@@ -2019,6 +2036,79 @@ func _close_game_detail_panel() -> void:
 	if _game_detail_panel and is_instance_valid(_game_detail_panel):
 		_game_detail_panel.queue_free()
 	_game_detail_panel = null
+
+
+## A game's saves and achievements, without going and finding the cartridge.
+##
+## The page IS the cartridge menu's — an embedded CartridgeOptions2D driven by a
+## CartridgeOptionsPanel — so save recovery, RomM sync and the achievement list
+## behave here exactly as they do there, and are written once.
+##
+## What it is pointed at depends on the room: the actual cartridge when one for
+## this ROM has been spawned, so choosing a save binds it the way it always did;
+## otherwise a CartridgeSaveTarget standing in for the ROM, which reads and syncs
+## but has nothing to bind to.
+func _show_game_saves_panel(systemid: String, rom_path: String, label: String) -> void:
+	_close_game_saves_panel()
+
+	_game_saves_panel = PanelContainer.new()
+	var bg := StyleBoxFlat.new()
+	# Opaque: a list of save timestamps with the library's rows showing through it
+	# is unreadable, and this page covers the whole content area.
+	bg.bg_color = Color(0.1, 0.1, 0.2)
+	for k in ["corner_radius_top_left", "corner_radius_top_right",
+			  "corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		bg.set(k, 8)
+	_game_saves_panel.add_theme_stylebox_override("panel", bg)
+	_game_saves_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, 14)
+	_game_saves_panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	margin.add_child(vbox)
+
+	var ui := CartridgeOptions2D.create_embedded()
+	vbox.add_child(ui)
+
+	var close_btn := Button.new()
+	close_btn.text = "  CLOSE  "
+	close_btn.custom_minimum_size = Vector2(0, 56)
+	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.pressed.connect(_close_game_saves_panel)
+	vbox.add_child(close_btn)
+
+	get_parent().add_child(_game_saves_panel)
+
+	# The driver goes in the page, so closing the page takes it with it. It is a
+	# bare CartridgeOptionsPanel — no quad of its own, external UI only.
+	_game_saves_driver = CartridgeOptionsPanel.new()
+	_game_saves_panel.add_child(_game_saves_driver)
+	var target: Object = _spawned_cartridge_for(rom_path)
+	if target == null:
+		target = CartridgeSaveTarget.create(systemid, rom_path, label)
+	_game_saves_driver.adopt_external_ui(ui, target)
+
+
+## The cartridge in the room holding this ROM, or null.
+func _spawned_cartridge_for(rom_path: String) -> RetroCartridge:
+	if rom_path.is_empty():
+		return null
+	for n: Node in get_tree().get_nodes_in_group("cartridge"):
+		var cart := n as RetroCartridge
+		if cart != null and cart.rom_path == rom_path:
+			return cart
+	return null
+
+
+func _close_game_saves_panel() -> void:
+	if _game_saves_panel and is_instance_valid(_game_saves_panel):
+		_game_saves_panel.queue_free()
+	_game_saves_panel = null
+	_game_saves_driver = null
 
 
 func _show_rom_variants_panel(game: Dictionary, systemid: String) -> void:

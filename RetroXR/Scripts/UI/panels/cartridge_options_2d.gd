@@ -69,6 +69,13 @@ var _ach_summary: Label = null
 ## the console, so nothing else there says which cartridge is in the slot.
 var embedded := false
 
+## Can a save be made the current one from here? True whenever there is a
+## cartridge to bind it to. The spawn menu's library shows the same saves for a
+## ROM with no cartridge in the room: they can be synced and downloaded, but there
+## is nothing to make one "current", so the rows are read as a list rather than
+## offered as a choice that would quietly do nothing.
+var selectable := true
+
 
 static func create_embedded() -> CartridgeOptions2D:
 	var ui := CartridgeOptions2D.new()
@@ -257,7 +264,24 @@ func populate(game_label: String, rom_path: String, saves: Array, current_id: St
 		_rows_box.add_child(note)
 		return
 
-	_add_new_row(current_id.is_empty() or not _has_id(saves, current_id), romm_available)
+	if selectable:
+		_add_new_row(current_id.is_empty() or not _has_id(saves, current_id), romm_available)
+	else:
+		# Starting a save needs something to start it on. Say so once, above the
+		# list, rather than leaving rows that look pressable and are not.
+		var note := Label.new()
+		note.text = "Spawn this cartridge to choose which save it uses."
+		note.add_theme_font_size_override("font_size", 16)
+		note.add_theme_color_override("font_color", COLOR_MUTED)
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_rows_box.add_child(note)
+		if saves.is_empty() and server_only.is_empty():
+			var empty := Label.new()
+			empty.text = "No saves for this game yet."
+			empty.add_theme_font_size_override("font_size", 18)
+			empty.add_theme_color_override("font_color", COLOR_ROW)
+			_rows_box.add_child(empty)
+
 	for s: Variant in saves:
 		var d := s as Dictionary
 		var save_id := str(d.get("save_id", ""))
@@ -327,16 +351,28 @@ func _add_row(text: String, save_id: String, is_current: bool,
 	row.add_theme_constant_override("separation", 6)
 	_rows_box.add_child(row)
 
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(0, 52)
-	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn.add_theme_font_size_override("font_size", 18)
-	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	btn.text = ("●  " if is_current else "    ") + text
-	if is_current:
-		btn.add_theme_color_override("font_color", COLOR_CURRENT)
-	btn.pressed.connect(func(): save_selected.emit(save_id))
-	row.add_child(btn)
+	if selectable:
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 52)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.add_theme_font_size_override("font_size", 18)
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.text = ("●  " if is_current else "    ") + text
+		if is_current:
+			btn.add_theme_color_override("font_color", COLOR_CURRENT)
+		btn.pressed.connect(func(): save_selected.emit(save_id))
+		row.add_child(btn)
+	else:
+		# A label, not a disabled button: nothing here is waiting to be pressed,
+		# and the sync toggle beside it still is.
+		var lbl := Label.new()
+		lbl.custom_minimum_size = Vector2(0, 52)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.add_theme_font_size_override("font_size", 18)
+		lbl.add_theme_color_override("font_color", COLOR_ROW)
+		lbl.text = "    " + text
+		row.add_child(lbl)
 
 	# "New blank save" has no file yet, so nothing to sync until it exists.
 	if save_id.is_empty() or not romm_available:
