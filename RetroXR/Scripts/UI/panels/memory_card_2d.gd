@@ -312,16 +312,7 @@ func _clear_list() -> void:
 ## read as the same kind of thing.
 func _row_panel() -> PanelContainer:
 	var row := PanelContainer.new()
-	var rbg := StyleBoxFlat.new()
-	rbg.bg_color = Color(1, 1, 1, 0.05)
-	for corner in ["corner_radius_top_left", "corner_radius_top_right",
-			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		rbg.set(corner, 6)
-	rbg.content_margin_left = 8
-	rbg.content_margin_right = 8
-	rbg.content_margin_top = 6
-	rbg.content_margin_bottom = 6
-	row.add_theme_stylebox_override("panel", rbg)
+	row.add_theme_stylebox_override("panel", MenuStyle.save_plate_box())
 	return row
 
 

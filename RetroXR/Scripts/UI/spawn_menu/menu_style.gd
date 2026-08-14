@@ -49,6 +49,19 @@ const COLOR_SLOT_NORMAL    := Color(0.12, 0.12, 0.27)
 
 # ── Builders ──────────────────────────────────────────────────────────────────
 
+## The tinted plate one save sits on — a memory card's or a cartridge's. Defined
+## once because the two lists show the same kind of thing and were drifting: one
+## had rounded plates with a title and a detail line, the other flat buttons
+## holding a single run-on string.
+static func save_plate_box() -> StyleBoxFlat:
+	var s := rounded(Color(1, 1, 1, 0.05), 6)
+	s.content_margin_left = 8
+	s.content_margin_right = 8
+	s.content_margin_top = 6
+	s.content_margin_bottom = 6
+	return s
+
+
 ## A filled box with every corner rounded. StyleBoxFlat has no set-all for corner
 ## radius the way it does for content margins, so this was written out as a
 ## four-key loop in seventeen places.

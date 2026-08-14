@@ -184,6 +184,18 @@ static func core_for_systemid(systemid: String) -> String:
 	return defaults.get_default_core(systemid)
 
 
+## Erase one .srm. Nothing keeps a copy, so both menus that offer this ask twice
+## first, and neither offers it while the console holding the game is on — the
+## core would write the file straight back on its next flush.
+static func delete_save(core_name: String, rom_path: String, save_id: String) -> bool:
+	if core_name.is_empty() or save_id.is_empty():
+		return false
+	var path := cart_save_path(core_name, rom_path, save_id)
+	if not FileAccess.file_exists(path):
+		return false
+	return DirAccess.remove_absolute(path) == OK
+
+
 ## Every existing .srm for this game (save recovery list). Entries:
 ## {save_id, path, mtime, size}, newest first.
 static func list_saves(core_name: String, rom_path: String) -> Array:

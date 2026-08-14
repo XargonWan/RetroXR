@@ -3,7 +3,9 @@
 ## Parented to a RetroCartridge but top_level so it inherits no transform;
 ## floats above the cartridge facing the camera. Mirrors BookOptionsPanel.
 ## Selecting a save re-binds the cartridge's save_id ("recovery"); a new
-## blank id means a fresh save. .srm files are never deleted here.
+## blank id means a fresh save. A save can also be deleted — armed on the first
+## press and done on the second, and never while the console holding the game is
+## on, which is the rule a memory card's saves follow too.
 class_name CartridgeOptionsPanel
 extends Node3D
 
@@ -24,6 +26,10 @@ var _server_saves: Array = []
 ## save_ids whose last sync forked a conflict, so the row can say so until the
 ## user acts on it.
 var _conflicted: Dictionary = {}
+## The save whose delete is armed and waiting for a second press, or "".
+var _armed_id := ""
+## How long a delete stays armed — the memory card's window, and the ROM rows'.
+const ARM_SECONDS := 3.0
 
 ## get_node_or_null, not $: this class is also used bare (CartridgeOptionsPanel.new())
 ## to drive somebody else's UI, with no quad of its own to find.
@@ -164,6 +170,7 @@ func _ensure_ui_connected() -> void:
 		if not ui.save_selected.is_connected(_on_save_selected):
 			ui.save_selected.connect(_on_save_selected)
 			ui.sync_toggled.connect(_on_sync_toggled)
+			ui.save_delete_requested.connect(_on_delete_requested)
 			ui.server_save_requested.connect(_on_server_save_requested)
 			ui.new_synced_save_requested.connect(_on_new_synced_save)
 		# The embedded copy has no ✕ of its own; its host closes it.
@@ -203,8 +210,21 @@ func _populate() -> void:
 		else:
 			states[sid] = "off"
 
+	# Which saves the server actually holds — not which are opted in. A save whose
+	# game RomM does not know stays opted in and never uploads, and the bin on its
+	# row must not promise a copy that is not there.
+	var backed: Dictionary = {}
+	for s: Variant in saves:
+		var sid := str((s as Dictionary).get("save_id", ""))
+		if SaveSync.key_backed_up(
+				RommSaveSync.key_for(SramPaths.cart_save_path(core, _rom(), sid))):
+			backed[sid] = true
+
 	for ui: CartridgeOptions2D in uis:
 		ui.selectable = _bindable()
+		ui.backed_up = backed
+		ui.armed_id = _armed_id
+		ui.delete_blocked = _in_use_reason()
 		ui.populate(_label(), _rom(), saves, _save_id(),
 			not core.is_empty(), states, _server_only(saves), _romm_ready())
 		_populate_achievements(ui)
@@ -326,6 +346,54 @@ func _on_new_synced_save() -> void:
 	_bind_save(new_id)
 	SaveSync.set_enabled(SramPaths.cart_save_path(core, _rom(), new_id), true, rid)
 	print("[CartridgeOptions] %s bound to new synced save %s" % [_label(), new_id])
+	_populate()
+
+
+## Why a save must not be deleted right now, or "".
+##
+## A running game owns its .srm: the core holds the save data and writes it back
+## on its next flush, so a file deleted underneath simply reappears — and the one
+## time it does not is when it takes the session's progress with it. Powering the
+## console off is the honest fix, which is what a memory card's list says too.
+func _in_use_reason() -> String:
+	if _cart == null or not is_inside_tree():
+		return ""
+	var rom := _rom()
+	for sys: Node in get_tree().get_nodes_in_group("retro_system"):
+		if not sys.has_method("get_snapped_cartridge"):
+			continue
+		var seated: Node = sys.get_snapped_cartridge()
+		if seated == null:
+			continue
+		if seated != _cart and str(seated.get("rom_path")) != rom:
+			continue
+		if bool(sys.get("is_powered_on")):
+			return "in use — power the console off first"
+	return ""
+
+
+## Delete one save's file. Armed on the first press and done on the second: this
+## cannot be undone, and the row says which of the two it is by the bin it shows.
+func _on_delete_requested(save_id: String) -> void:
+	if save_id.is_empty() or not _in_use_reason().is_empty():
+		return
+	if _armed_id != save_id:
+		_armed_id = save_id
+		_populate()
+		if is_inside_tree():
+			get_tree().create_timer(ARM_SECONDS).timeout.connect(func() -> void:
+				if _armed_id == save_id and is_instance_valid(self):
+					_armed_id = ""
+					_populate())
+		return
+	_armed_id = ""
+	var core := SramPaths.core_for_systemid(_sysid())
+	if not SramPaths.delete_save(core, _rom(), save_id):
+		push_warning("[CartridgeOptions] could not delete save '%s'" % save_id)
+	# The cartridge was using the file that just went: leave it pointing there and
+	# the next flush writes it back. A fresh identity is what "no save" means.
+	elif _bindable() and _save_id() == save_id:
+		_bind_save("%08x%08x" % [randi(), randi()])
 	_populate()
 
 

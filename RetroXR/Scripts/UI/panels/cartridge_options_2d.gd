@@ -19,6 +19,10 @@ extends Control
 
 signal save_selected(save_id: String)
 signal sync_toggled(save_id: String, on: bool)
+## Delete this save's file. The list only reports the press — arming and
+## confirming belong to the owner, which is what knows whether the game holding
+## it is running. Same division as the memory card's list.
+signal save_delete_requested(save_id: String)
 signal server_save_requested(slot: String)
 signal new_synced_save_requested
 signal close_requested
@@ -75,6 +79,16 @@ var embedded := false
 ## is nothing to make one "current", so the rows are read as a list rather than
 ## offered as a choice that would quietly do nothing.
 var selectable := true
+
+## save_ids RomM is known to hold, as a set. Decides which trash can a row
+## shows — the plain one when a copy survives the delete, the crossed-out one
+## when this is the last one. Same rule and same glyphs as a memory card's saves.
+var backed_up: Dictionary = {}
+## save_id whose delete is armed and waiting for a second press, or "".
+var armed_id := ""
+## Why saves must not be deleted right now, or "". A game writes its .srm as it
+## plays, so deleting one under a running console loses whatever it flushes next.
+var delete_blocked := ""
 
 
 static func create_embedded() -> CartridgeOptions2D:
@@ -285,9 +299,12 @@ func populate(game_label: String, rom_path: String, saves: Array, current_id: St
 	for s: Variant in saves:
 		var d := s as Dictionary
 		var save_id := str(d.get("save_id", ""))
+		# The date is the title: it is the one thing that tells two saves of the
+		# same game apart at a glance. The id and the size are the detail line,
+		# where a memory card puts its serial and block count.
 		var when := Time.get_datetime_string_from_unix_time(int(d.get("mtime", 0))).replace("T", "  ")
-		var text := "%s    %s    %.1f KB" % [save_id.left(8), when, int(d.get("size", 0)) / 1024.0]
-		_add_row(text, save_id, save_id == current_id,
+		_add_row(when, "%s   ·   %.1f KB" % [save_id.left(8), int(d.get("size", 0)) / 1024.0],
+			save_id, save_id == current_id,
 			str(sync_states.get(save_id, "off")), romm_available)
 
 	if server_only.is_empty():
@@ -345,39 +362,93 @@ func _has_id(saves: Array, id: String) -> bool:
 	return false
 
 
-func _add_row(text: String, save_id: String, is_current: bool,
+## One save, on the same plate a memory card's saves sit on: a title line, a
+## detail line, and the actions on the right.
+func _add_row(title: String, detail: String, save_id: String, is_current: bool,
 			  sync_state: String = "", romm_available: bool = false) -> void:
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", MenuStyle.save_plate_box())
+	_rows_box.add_child(plate)
+
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	_rows_box.add_child(row)
+	row.add_theme_constant_override("separation", 10)
+	plate.add_child(row)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	var t := Label.new()
+	t.text = ("●  " if is_current else "") + title
+	t.add_theme_font_size_override("font_size", 19)
+	t.add_theme_color_override("font_color", COLOR_CURRENT if is_current else COLOR_TITLE)
+	col.add_child(t)
+
+	var sub := Label.new()
+	var armed: bool = armed_id == save_id
+	sub.text = ("Press the bin again to delete this save" if armed else detail)
+	sub.add_theme_font_size_override("font_size", 15)
+	sub.add_theme_color_override("font_color", COLOR_WARN if armed else COLOR_MUTED)
+	col.add_child(sub)
 
 	if selectable:
+		# The plate is the "use this save" target, so the text sits inside a flat
+		# button filling it rather than beside one. A Button lays out no children,
+		# hence the full-rect anchors and the height it cannot measure itself.
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(0, 52)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.add_theme_font_size_override("font_size", 18)
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.text = ("●  " if is_current else "    ") + text
-		if is_current:
-			btn.add_theme_color_override("font_color", COLOR_CURRENT)
+		btn.flat = true
+		btn.tooltip_text = "Use this save"
 		btn.pressed.connect(func(): save_selected.emit(save_id))
 		row.add_child(btn)
+		col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(col)
 	else:
-		# A label, not a disabled button: nothing here is waiting to be pressed,
-		# and the sync toggle beside it still is.
-		var lbl := Label.new()
-		lbl.custom_minimum_size = Vector2(0, 52)
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		lbl.add_theme_font_size_override("font_size", 18)
-		lbl.add_theme_color_override("font_color", COLOR_ROW)
-		lbl.text = "    " + text
-		row.add_child(lbl)
+		row.add_child(col)
 
-	# "New blank save" has no file yet, so nothing to sync until it exists.
-	if save_id.is_empty() or not romm_available:
+	# "New blank save" has no file yet, so nothing to sync or delete until it does.
+	if save_id.is_empty():
 		return
+	if romm_available:
+		row.add_child(_sync_toggle(save_id, sync_state))
+	row.add_child(_delete_button(save_id))
 
+
+## Delete this save's file — the same act, the same two bins and the same second
+## press a memory card's saves ask for.
+func _delete_button(save_id: String) -> Button:
+	var armed: bool = armed_id == save_id
+	# Which bin: RomM holding a copy is the difference between removing one of two
+	# and erasing the only one there is.
+	var forever := not backed_up.has(save_id)
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(64, 52)
+	b.add_theme_font_override("font", _symbols())
+	b.add_theme_font_size_override("font_size", 22)
+	if not delete_blocked.is_empty():
+		b.disabled = true
+		b.text = String.chr(MenuIcons.DELETE_FOREVER)
+		b.add_theme_color_override("font_color", COLOR_MUTED)
+		b.tooltip_text = delete_blocked
+		return b
+	b.text = String.chr(MenuIcons.ERROR if armed
+		else (MenuIcons.DELETE_FOREVER if forever else MenuIcons.DELETE))
+	b.add_theme_color_override("font_color",
+		Color(0.95, 0.55, 0.35) if armed else Color(0.85, 0.5, 0.5))
+	if armed:
+		b.tooltip_text = "Press again to delete permanently" if forever \
+			else "Press again — RomM keeps its copy"
+	else:
+		b.tooltip_text = "Delete this save permanently" if forever \
+			else "Delete this save from the device — RomM keeps its copy"
+	b.pressed.connect(func(): save_delete_requested.emit(save_id))
+	return b
+
+
+func _sync_toggle(save_id: String, sync_state: String) -> Button:
 	var toggle := Button.new()
 	toggle.custom_minimum_size = Vector2(64, 52)
 	toggle.add_theme_font_override("font", _symbols())
@@ -401,7 +472,7 @@ func _add_row(text: String, save_id: String, is_current: bool,
 			toggle.tooltip_text = "Not synced — press to keep this save on RomM"
 	var want_on := sync_state != "on"
 	toggle.pressed.connect(func(): sync_toggled.emit(save_id, want_on))
-	row.add_child(toggle)
+	return toggle
 
 
 ## A save that exists only on the server. Pressing it downloads a copy and
