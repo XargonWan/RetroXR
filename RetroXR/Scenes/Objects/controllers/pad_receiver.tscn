@@ -84,8 +84,12 @@ modulate = Color(0.75, 0.75, 0.8, 1)
 ; The lead leaves the face OPPOSITE the LED and the foot of the text: you stand on
 ; the side that reads, and the cord runs away from you to the machine rather than
 ; out across the front of the box you are looking at.
+; Turned 180 about Y so its own -Z points OUT of the case. VerletRope shares one
+; plug_exit_axis (-Z) between both ends and transforms it by each end's own basis
+; (VerletRopeSim PlugExitDir), so an unrotated marker on the +Z face aimed the
+; stub straight back INTO the box and held the first two segments inside it.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0.0225)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.01, 0.0225)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
