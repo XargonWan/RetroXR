@@ -143,3 +143,6 @@ RetroXR/metaxr-audio/*metaxr-audio.*.so
 
 # Claude Code machine-local settings (absolute paths, per-machine allow-list)
 .claude/settings.local.json
+
+# Its own repo, cloned beside the tools that build its core.
+Tools/azahar-libretro-vr/
