@@ -30,7 +30,7 @@ albedo_color = Color(0.03, 0.03, 0.04, 1)
 ; the seated card reads as sitting IN a socket rather than pushed into flat
 ; plastic. Recessed into the front face, not proud of it.
 [sub_resource type="BoxMesh" id="BoxMesh_memcard_recess"]
-size = Vector3(0.061, 0.021, 0.012)
+size = Vector3(0.059, 0.012, 0.012)
 
 [sub_resource type="CylinderMesh" id="CylMesh_cable"]
 top_radius = 0.012
@@ -130,11 +130,12 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.055, 0)
 grab_distance = 0.07
 snap_require = "cartridge"
 
-; Above controller port 1, seating the card 50 mm into the shell and leaving a
-; 25 mm tab to grab. The old (-0.09, 0.02, 0.14) floated 15 mm clear of the front
-; face and its seated card swallowed the port's "1" label.
+; Above controller port 1, where a PlayStation puts it. Only the connector end of
+; a memory card goes in: ~16 mm of the card's 42 mm, leaving ~26 mm and the whole
+; printed face standing out of the 0.125 front face. That is what the real machine
+; looks like with a card in, and it is why the card is easy to take hold of.
 [node name="MemoryCardSlot" parent="." unique_id=-294967294 instance=ExtResource("2_snapzone")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.038, 0.102)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.038, 0.13)
 grab_distance = 0.05
 snap_require = "memory_card"
 
