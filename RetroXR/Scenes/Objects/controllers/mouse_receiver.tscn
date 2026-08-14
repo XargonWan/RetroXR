@@ -81,11 +81,11 @@ font_size = 22
 outline_size = 0
 modulate = Color(0.75, 0.75, 0.8, 1)
 
-; The lead leaves the NEAR edge — the same face the LED is on and the text reads
-; up from, so the cord comes out towards you rather than off the back where it is
-; hidden by the box you are looking at.
+; The lead leaves the face OPPOSITE the LED and the foot of the text: you stand on
+; the side that reads, and the cord runs away from you to the machine rather than
+; out across the front of the box you are looking at.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, -0.0225)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0.0225)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")

@@ -204,7 +204,7 @@ func _add_cable_to_scene() -> void:
 	_cable_plug.add_collision_exception_with(self)
 	# Laid out the way the attach point faces — a plug spawned on the far side
 	# would drag the whole cord back around the box on the first frame.
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, 0.12)
 	_cable_rope.set_rope_length(LEAD_LENGTH)
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
