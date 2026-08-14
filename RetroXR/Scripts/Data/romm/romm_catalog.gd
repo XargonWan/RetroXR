@@ -524,6 +524,15 @@ func sync_platform(systemid: String, platform_id: int, full: bool = false) -> bo
 
 	abort_sync()  # joins any finished-but-unjoined thread
 
+	# An index built while grouping existed holds one ROM per meta group, and the
+	# regional releases it dropped are not "changed" on the server — their
+	# updated_at is older than the watermark, so a delta asks for them and is
+	# told nothing has moved. Only a full pass can bring them back. Self-limiting:
+	# the rebuilt meta records false, so the next sync is a delta again.
+	if not full and read_meta(systemid).get("group_by_meta_id", false):
+		print("[RommCatalog] %s was synced grouped — forcing a full sync" % systemid)
+		full = true
+
 	# The worker replaces index.jsonl by rename. Windows will not rename over a
 	# file we still hold open, and the failure is silent — leaving new sidecars
 	# describing the old index, so every offset points at the wrong line.
@@ -538,7 +547,6 @@ func sync_platform(systemid: String, platform_id: int, full: bool = false) -> bo
 		"full": full,
 		"base_url": config.base_url,
 		"headers": config.auth_headers(),
-		"group": config.group_by_meta_id,
 		"updated_after": "" if full else str(config.get_sync_state(systemid).get("updated_after", "")),
 	}
 	var err := _thread.start(_sync_worker.bind(args))
@@ -601,7 +609,7 @@ func _sync_worker(args: Dictionary) -> void:
 			DirAccess.remove_absolute(tmp_jsonl)
 			return
 
-		var path := _page_path(platform_id, offset, args["group"], updated_after, first_page, PAGE_LIMIT)
+		var path := _page_path(platform_id, offset, updated_after, first_page, PAGE_LIMIT)
 		var resp := _fetch_page_with_retry(http, args["base_url"], path, headers)
 		var result := int(resp["result"])
 
@@ -758,7 +766,10 @@ func _sync_worker(args: Dictionary) -> void:
 		"shown": count_shown(fs_bases, fs_exts),
 		"updated_after": max_updated,
 		"synced_at": Time.get_datetime_string_from_system(true),
-		"group_by_meta_id": args["group"],
+		# Recorded, though nothing reads it, because it is the one way to tell an
+		# index synced while grouping still existed — and therefore missing whole
+		# regional releases — from a complete one.
+		"group_by_meta_id": false,
 		"platform_id": platform_id,
 	}, "\t"))
 
@@ -824,12 +835,17 @@ func _sleep_abortable(msec: int) -> bool:
 ## body, and nothing here reads it. Turning it off took a PlayStation page from
 ## 26.4 s to 2.5 s. It gained an opt-out in RomM 5.1.0; older servers ignore the
 ## parameter and simply keep sending it.
-func _page_path(platform_id: int, offset: int, group: bool,
+func _page_path(platform_id: int, offset: int,
 				updated_after: String, first_page: bool, limit: int) -> String:
 	var path := "/api/roms?limit=%d&offset=%d&order_by=name&order_dir=asc" % [limit, offset]
 	if platform_id > 0:
 		path += "&platform_ids=%d" % platform_id
-	path += "&group_by_meta_id=%s" % ("true" if group else "false")
+	# Always ungrouped. Grouping returns one ROM per meta group and leaves the
+	# rest in a `sibling_roms` array that _slim_row drops, so a regional release
+	# the server holds — Paper Mario: TTYD (USA) against the Europe copy — simply
+	# had no row to appear as. Sent explicitly rather than left to the server's
+	# default, which is not ours to assume.
+	path += "&group_by_meta_id=false"
 	path += "&with_char_index=%s" % ("true" if first_page else "false")
 	path += "&with_rom_id_index=false&with_filter_values=false&with_files=false"
 	if not updated_after.is_empty():

@@ -941,21 +941,6 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 				update_romm_status_label()
 	)
 
-	var group_row := HBoxContainer.new()
-	group_row.custom_minimum_size = Vector2(0, 68)
-	group_row.add_theme_constant_override("separation", 10)
-	vbox.add_child(group_row)
-	var group_lbl := Label.new()
-	group_lbl.text = "Group multi-region duplicates"
-	group_lbl.add_theme_font_size_override("font_size", 20)
-	group_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
-	group_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	group_row.add_child(group_lbl)
-	group_row.add_child(VRToggle.create(romm_config.group_by_meta_id, func(on: bool) -> void:
-		romm_config.group_by_meta_id = on
-		romm_config.save_config()
-	))
-
 	# Actions
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 10)

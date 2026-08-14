@@ -24,9 +24,6 @@ var password: String = ""
 ## toward this and are never evicted.
 var cache_budget_gb: float = 20.0
 
-## Collapse multi-region duplicates into one row (RomM's group_by_meta_id).
-var group_by_meta_id: bool = true
-
 ## romm platform slug (or fs_slug) -> project systemid, for platforms the
 ## built-in RommPlatforms map doesn't cover.
 var platform_overrides: Dictionary = {}
@@ -139,7 +136,6 @@ func load_config() -> void:
 	username = str(data.get("username", ""))
 	password = str(data.get("password", ""))
 	cache_budget_gb = float(data.get("cache_budget_gb", 20.0))
-	group_by_meta_id = bool(data.get("group_by_meta_id", true))
 
 	if data.get("platform_overrides") is Dictionary:
 		platform_overrides = data["platform_overrides"]
@@ -170,7 +166,6 @@ func save_config() -> void:
 		"username": username,
 		"password": password,
 		"cache_budget_gb": cache_budget_gb,
-		"group_by_meta_id": group_by_meta_id,
 		"platform_overrides": platform_overrides,
 		"sync_state": sync_state,
 		"last_stats": last_stats,
