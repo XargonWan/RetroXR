@@ -235,6 +235,16 @@ func set_key_enabled(key: String, on: bool) -> void:
 	save_state()
 
 
+## Does the server hold this save, as of the last sync?
+##
+## Not the same question as is_key_enabled: opting in is a wish, and a save whose
+## game is not in the library stays opted in and never uploads. The server's own
+## id for it is only recorded once a push, a pull or a matching hash has proved
+## the bytes are there — which is what a row may safely call "backed up".
+func key_backed_up(key: String) -> bool:
+	return int((_state.get(key, {}) as Dictionary).get("server_save_id", 0)) > 0
+
+
 ## How many saves from one memory card the server is known to hold.
 ##
 ## Read from what the last sync recorded, not by asking RomM — this is for a menu
@@ -247,8 +257,7 @@ func card_backup_count(card_path: String) -> int:
 	var prefix := key_for(card_path) + "#"
 	var n := 0
 	for k: String in _state:
-		if k.begins_with(prefix) \
-				and int((_state[k] as Dictionary).get("server_save_id", 0)) > 0:
+		if k.begins_with(prefix) and key_backed_up(k):
 			n += 1
 	return n
 

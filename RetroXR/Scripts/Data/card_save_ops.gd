@@ -89,6 +89,23 @@ static func synced_slots(path: String, saves: Array) -> Dictionary:
 	return out
 
 
+## Which of these saves the server actually holds, as a set of slot names.
+##
+## What a delete needs to know, and a different question from synced_slots: this
+## is the difference between erasing the only copy and removing one of two.
+static func backed_up_slots(path: String, saves: Array) -> Dictionary:
+	var out: Dictionary = {}
+	for s: Dictionary in saves:
+		if SaveSync.key_backed_up(RommSaveSync.card_save_key(path, str(s["name"]))):
+			out[str(s["name"])] = true
+	return out
+
+
+## Deleting this save from the card takes the last copy with it.
+static func delete_is_forever(path: String, slot: String) -> bool:
+	return not SaveSync.key_backed_up(RommSaveSync.card_save_key(path, slot))
+
+
 ## How many of a card's 15 blocks one of RomM's saves will take.
 ## A .mcs is a 128-byte directory entry plus whole blocks.
 static func blocks_of(s: Dictionary) -> int:

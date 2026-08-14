@@ -43,6 +43,14 @@ var _status_bar: PanelContainer = null
 var _status_label: Label = null
 ## Bumped per notice so a stale auto-hide can't clear a newer message.
 var _notice_token := 0
+## Widest a bar's text may run before it wraps, in pixels; 0 leaves it on one
+## line. Set by ToastPanel from the width its quad may occupy — on the spawn menu
+## that is over a thousand pixels and nothing ever wraps, but a memory card's
+## panel is 420 px wide and a sentence has to fold to be read at all.
+var _wrap_width := 0.0
+
+## Chrome either side of a bar's text: the margins, the icon and its gap.
+const BAR_CHROME := 60.0
 
 
 static func create() -> MenuToasts:
@@ -79,6 +87,43 @@ func _ensure_panel() -> void:
 func refresh() -> void:
 	if _panel != null and is_instance_valid(_panel):
 		_panel.refresh.call_deferred()
+
+
+## Fold each bar's text to fit `px` of quad. Called by ToastPanel before it
+## measures, so the width it then reads back already accounts for the wrapping.
+##
+## The wrap width is also the label's MINIMUM width. Autowrap alone would let a
+## label shrink to its longest word, which the quad would then size itself to —
+## every message a narrow column.
+func set_wrap_width(px: float) -> void:
+	var text_w := maxf(px - BAR_CHROME, 80.0)
+	if is_equal_approx(_wrap_width, text_w):
+		return
+	_wrap_width = text_w
+	# The message labels only. A bar's icon is a Label too, and giving that one a
+	# minimum width would push every bar out by the width it was told to fit in.
+	for t: Dictionary in _toasts.values():
+		_apply_wrap(t.get("label"))
+	_apply_wrap(_status_label)
+
+
+## The minimum width is the text's OWN width, capped at the wrap width — not the
+## wrap width itself. A bar hugs its message (the quad is sized to the widest
+## one, so a filling bar would stretch them all), and on the spawn menu, where
+## the cap is over a thousand pixels, nothing is ever wide enough to fold.
+func _apply_wrap(lbl: Variant) -> void:
+	if _wrap_width <= 0.0 or lbl == null or not is_instance_valid(lbl):
+		return
+	var l := lbl as Label
+	var font := l.get_theme_font("font")
+	if font == null:
+		return
+	var natural := font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		l.get_theme_font_size("font_size")).x
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# +2: this measurement and the Label's own can disagree by a pixel, and one
+	# pixel short with autowrap on drops the last word onto a line of its own.
+	l.custom_minimum_size.x = minf(natural + 2.0, _wrap_width)
 
 
 # ── Toasts ────────────────────────────────────────────────────────────────────
@@ -136,6 +181,7 @@ func _update(key: String, icon_text: String, msg: String, progress: float = -1.0
 	var bar: ProgressBar = toast.get("progress")
 	if lbl != null and is_instance_valid(lbl):
 		lbl.text = msg
+		_apply_wrap(lbl)
 	if icn != null and is_instance_valid(icn):
 		icn.text = icon_text
 	if bar != null and is_instance_valid(bar):
@@ -149,6 +195,9 @@ func _add(key: String, icon_text: String, msg: String, progress: float) -> void:
 	_ensure_panel()
 	var built := _make_bar(icon_text, msg, progress, true)
 	add_child(built["bar"])
+	# After it is in the tree: the wrap is measured with the theme's font, and a
+	# Control outside the tree has none to ask.
+	_apply_wrap(built["label"])
 	_toasts[key] = built
 	_enforce_cap()
 	refresh()
@@ -161,6 +210,7 @@ func status(msg: String) -> void:
 	if _status_bar != null and is_instance_valid(_status_bar):
 		if _status_label != null:
 			_status_label.text = msg
+			_apply_wrap(_status_label)
 			refresh()
 		return
 	_ensure_panel()
@@ -170,6 +220,7 @@ func status(msg: String) -> void:
 	# Last child: it always sat below the toasts, and the stack grows upward.
 	add_child(_status_bar)
 	move_child(_status_bar, -1)
+	_apply_wrap(_status_label)
 	refresh()
 
 
@@ -177,6 +228,7 @@ func status(msg: String) -> void:
 func status_update(msg: String) -> void:
 	if _status_label != null and is_instance_valid(_status_label):
 		_status_label.text = msg
+		_apply_wrap(_status_label)
 		refresh()
 
 

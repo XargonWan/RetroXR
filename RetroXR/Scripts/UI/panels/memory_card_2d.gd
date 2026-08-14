@@ -63,14 +63,18 @@ var armed_slot := ""
 ## exists at all — set like the other view state, before populate().
 var synced_slots: Dictionary = {}
 var sync_available := false
+## Save names the server is known to hold. Opted in is not the same as uploaded,
+## so this is its own set: it decides which trash can a row shows, and that is a
+## promise about whether the bytes survive the press.
+var backed_up_slots: Dictionary = {}
 ## Why the actions are unavailable, shown in place of the buttons. Empty when
 ## they work — a card being played is the case that matters.
 var actions_blocked := ""
 
 var _list: VBoxContainer = null
+var _scroll: ScrollContainer = null
 var _name_edit: LineEdit = null
 var _usage: Label = null
-var _status: Label = null
 var _restore_btn: Button = null
 
 # Each entry: {rect: TextureRect, frames: Array[ImageTexture]}
@@ -155,22 +159,19 @@ func _build_ui() -> void:
 	_usage.add_theme_color_override("font_color", COLOR_DIM)
 	vbox.add_child(_usage)
 
-	# What just happened, where it happened. The spawn menu has a toast for this;
-	# a panel floating over a card in the room has nowhere else to say it.
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.add_theme_font_size_override("font_size", 15)
-	_status.add_theme_color_override("font_color", Color(0.85, 0.78, 0.5))
-	_status.visible = false
-	vbox.add_child(_status)
-
 	var sep := HSeparator.new()
 	vbox.add_child(sep)
 
-	var scroll := ScrollContainer.new()
+	# A card holds up to 15 saves and about four rows are in view, so this list
+	# scrolls on any well-used card. The bar is widened like every other panel's:
+	# the default 8 px is under 6 mm on a panel this size, which a laser cannot
+	# hold. 22 px matches the ~15 mm the menu's own bars present.
+	_scroll = ScrollContainer.new()
+	var scroll := _scroll
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vbox.add_child(scroll)
+	MenuStyle.fat_vscroll_bar(scroll, 22, 40)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 6)
@@ -222,11 +223,12 @@ func populate(card_name: String, saves: Array, free: int) -> void:
 		_list.add_child(_make_row(s))
 
 
-## Say what just happened, or clear it with "". Survives until the next call —
-## populate() leaves it alone so a result can outlive the redraw that follows it.
-func set_status(text: String) -> void:
-	_status.text = text
-	_status.visible = not text.is_empty()
+## Drive the list from an external stick input (pixels > 0 = down), the way every
+## other options panel does — SpawnMenuController finds this by name on whatever
+## panel a pointer is aimed at.
+func scroll_active(pixels: float) -> void:
+	if _scroll != null:
+		_scroll.scroll_vertical += int(pixels)
 
 
 ## Show what RomM holds for this card in place of the card's own saves.
@@ -239,8 +241,9 @@ func show_restore(saves: Array, note: String) -> void:
 	_clear_list()
 	_usage.text = "Saves on RomM"
 	_restore_btn.visible = false
-	# Whatever was said about the card's own list was said about another page.
-	set_status("")
+	# A different list, read from the top. (populate() deliberately does not do
+	# this: deleting the twelfth save should not throw you back to the first.)
+	_scroll.scroll_vertical = 0
 
 	var back := Button.new()
 	back.text = "‹   Back to this card"
@@ -352,6 +355,10 @@ func _make_row(s: Dictionary) -> Control:
 	var t := Label.new()
 	var title_text := str(s.get("title", ""))
 	t.text = title_text if not title_text.is_empty() else str(s.get("name", ""))
+	# Wrapping is what lets the row narrow: an unwrapped Label's minimum width is
+	# its whole title, so one long name ("PARAPPA THE RAPPER") pushed the buttons
+	# and the scrollbar off the edge of the panel.
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	t.add_theme_font_size_override("font_size", 20)
 	t.add_theme_color_override("font_color", COLOR_TITLE)
 	col.add_child(t)
@@ -384,10 +391,19 @@ func _make_row(s: Dictionary) -> Control:
 				func() -> void: save_sync_toggled.emit(s, not on)))
 		# Armed shows the warning glyph and says so, matching how a ROM row
 		# asks twice before deleting.
+		#
+		# And which trash can, on the same rule those rows use: the plain one
+		# when RomM holds a copy of this save, the crossed-out one when the
+		# card is the only place it exists.
 		var armed: bool = armed_slot == str(s.get("name", ""))
+		var forever: bool = not backed_up_slots.has(str(s.get("name", "")))
+		var glyph := MenuIcons.DELETE_FOREVER if forever else MenuIcons.DELETE
+		var tip := "Delete this save permanently" if forever \
+			else "Delete this save from the card — RomM keeps its copy"
 		h.add_child(_action(
-			MenuIcons.ERROR if armed else MenuIcons.DELETE_FOREVER,
-			"Press again to delete permanently" if armed else "Delete this save",
+			MenuIcons.ERROR if armed else glyph,
+			("Press again to delete permanently" if forever
+				else "Press again — RomM keeps its copy") if armed else tip,
 			Color(0.95, 0.55, 0.35) if armed else Color(0.85, 0.5, 0.5),
 			func() -> void: save_delete_requested.emit(s)))
 

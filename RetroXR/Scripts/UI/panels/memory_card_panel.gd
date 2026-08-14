@@ -23,6 +23,10 @@ var _camera: Node3D = null
 var _ui_connected := false
 ## Save slot whose delete has been armed and is waiting for a second press.
 var _armed_slot := ""
+## The bars that float in front of this panel — the spawn menu's stack, hosted
+## here. Results are transient and belong over the page, not inside a list that
+## is about to be redrawn under them.
+var _toasts: MenuToasts = null
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $MemoryCardViewport
 
@@ -81,7 +85,17 @@ func _ensure_ui_connected() -> void:
 	ui.restore_requested.connect(_on_restore_requested)
 	ui.restore_picked.connect(_on_restore_picked)
 	ui.restore_closed.connect(_populate)
+	# The stack lifts itself onto its own quad in front of whichever Viewport2Din3D
+	# hosts it — this panel's, here — so it needs to live in the 2D tree.
+	_toasts = MenuToasts.create()
+	ui.add_child(_toasts)
 	_ui_connected = true
+
+
+## Say what just happened, in front of the panel rather than inside it.
+func _notice(text: String, seconds := MenuToasts.DWELL_OK) -> void:
+	if _toasts != null and is_instance_valid(_toasts):
+		_toasts.notice(text, seconds)
 
 
 ## This card's image, or "" when it has none. A card only gets one the first
@@ -92,12 +106,12 @@ func _path() -> String:
 	return SramPaths.find_card(_card.card_id)
 
 
-func _populate(status := "") -> void:
+func _populate() -> void:
 	if not _card:
 		return
 	var ui := _get_ui()
 	if not ui:
-		call_deferred("_populate", status)
+		call_deferred("_populate")
 		return
 
 	# A card that has never been in a powered console has no image yet. That is
@@ -124,19 +138,27 @@ func _populate(status := "") -> void:
 	ui.show_restore_action = true
 	ui.sync_available = SaveSync.is_available()
 	ui.synced_slots = CardSaveOps.synced_slots(path, saves) if not path.is_empty() else {}
+	ui.backed_up_slots = CardSaveOps.backed_up_slots(path, saves) if not path.is_empty() else {}
 	ui.armed_slot = _armed_slot
 	ui.actions_blocked = CardSaveOps.in_use_reason(get_tree(), _card.card_id)
 	ui.populate(_card.card_label, saves, free)
-	ui.set_status(status)
 
 
 ## Delete one save, armed on the first press and done on the second, because
-## this cannot be undone: the blocks are freed and nothing keeps a copy.
+## the blocks are freed and the card keeps no copy.
+##
+## Whether that is the LAST copy is the thing worth saying, so the confirm names
+## it either way — the same distinction a ROM row draws between deleting a
+## download and deleting the only one there is.
 func _on_delete_requested(s: Dictionary) -> void:
 	var slot := str(s["name"])
+	var forever := CardSaveOps.delete_is_forever(_path(), slot)
 	if _armed_slot != slot:
 		_armed_slot = slot
-		_populate("Press the delete button again to erase %s." % CardSaveOps.title_of(s))
+		_notice("Press again to %s %s%s" % ["delete" if forever else "remove",
+			CardSaveOps.title_of(s),
+			" permanently" if forever else " — RomM keeps its copy"], ARM_SECONDS)
+		_populate()
 		get_tree().create_timer(ARM_SECONDS).timeout.connect(func() -> void:
 			if _armed_slot == slot and is_instance_valid(self):
 				_armed_slot = ""
@@ -146,9 +168,12 @@ func _on_delete_requested(s: Dictionary) -> void:
 	var path := _path()
 	if path.is_empty() or not CardSaveOps.delete_save(
 			get_tree(), path, _card.card_id, int(s["block"])):
-		_populate("Could not delete %s." % CardSaveOps.title_of(s))
+		_notice("Could not delete %s" % CardSaveOps.title_of(s), MenuToasts.DWELL_FAIL)
+		_populate()
 		return
-	_populate("Deleted %s." % CardSaveOps.title_of(s))
+	_notice("Deleted %s%s" % [CardSaveOps.title_of(s),
+		"" if forever else " — RomM still has its copy"])
+	_populate()
 
 
 ## Opt one save in or out of RomM backup. Opting in uploads it there and then —
@@ -159,12 +184,15 @@ func _on_sync_toggled(s: Dictionary, on: bool) -> void:
 		return
 	if not on:
 		CardSaveOps.stop_backup(path, str(s["name"]))
-		_populate("Stopped backing up %s." % CardSaveOps.title_of(s))
+		_notice("Stopped backing up %s" % CardSaveOps.title_of(s))
+		_populate()
 		return
-	_populate("Uploading %s…" % CardSaveOps.title_of(s))
-	CardSaveOps.backup_save(path, s, func(_ok: bool, message: String) -> void:
-		if is_instance_valid(self) and visible:
-			_populate(message))
+	_notice("Uploading %s…" % CardSaveOps.title_of(s), 8.0)
+	CardSaveOps.backup_save(path, s, func(ok: bool, message: String) -> void:
+		if not (is_instance_valid(self) and visible):
+			return
+		_notice(message, MenuToasts.DWELL_OK if ok else MenuToasts.DWELL_FAIL)
+		_populate())
 
 
 ## Show what RomM holds for this card, and which of it will fit.
@@ -209,21 +237,21 @@ func _on_restore_picked(s: Dictionary) -> void:
 	var path := _path()
 	if path.is_empty():
 		if not _card.minted:
-			_populate("This card's image is missing — nothing was written.")
+			_notice("This card's image is missing — nothing was written",
+				MenuToasts.DWELL_FAIL)
 			return
 		path = SramPaths.ensure_card(CardSaveOps.SYSTEMID, _card.card_id)
-	var ui := _get_ui()
-	if ui != null:
-		ui.set_status("Downloading %s…" % str(s.get("rom_name", s.get("slot", ""))))
+	_notice("Downloading %s…" % str(s.get("rom_name", s.get("slot", ""))), 8.0)
 	CardSaveOps.restore_save(get_tree(), path, _card.card_id, s,
 		func(problem: String) -> void:
 			if not (is_instance_valid(self) and visible):
 				return
 			if problem.is_empty():
-				_populate("Restored %s — kept backed up to RomM"
-					% str(s.get("rom_name", s["slot"])))
+				_notice("Restored %s — kept backed up to RomM"
+					% str(s.get("rom_name", s["slot"])), MenuToasts.DWELL_INFO)
 			else:
-				_populate(problem))
+				_notice(problem, MenuToasts.DWELL_FAIL)
+			_populate())
 
 
 ## A card's name IS its filename, so renaming moves the image on disk. Refused
@@ -238,7 +266,7 @@ func _on_renamed(text: String) -> void:
 		return
 	var new_id := SramPaths.rename_card(_card.card_id, text)
 	if new_id.is_empty():
-		push_warning("[MemoryCardPanel] a card named '%s' already exists" % text)
+		_notice("A card named %s already exists" % text, MenuToasts.DWELL_FAIL)
 		_populate()
 		return
 	_card.card_id = new_id

@@ -35,6 +35,17 @@ const MIN_W := 300.0
 ## is ~9 mm tall — too small to read across the room, which is the one thing a
 ## notification has to do.
 const SCALE := 1.7
+## Above this width, in metres, the host is a menu you stand in front of and the
+## blow-up above applies. Below it the host is something you hold — a memory
+## card's panel is 28 cm — already close to your face, where 1.7x is a banner
+## bigger than the thing it belongs to and fits about four words.
+##
+## Under the spawn menu's smallest size (0.55 m, half its shipped 1.1): shrinking
+## that panel must not quietly shrink its notifications too.
+const HELD_WIDTH := 0.45
+## How much of a held host's width a bar may span. Higher than the menu's half,
+## because half of 28 cm is not a sentence.
+const HELD_WIDTH_FRACTION := 0.9
 const MIN_H := 48.0
 
 var _host: XRToolsViewport2DIn3D = null
@@ -125,10 +136,18 @@ func refresh() -> void:
 		return
 
 	var vp := _host.viewport_size
+	var cap := vp.x * (MAX_WIDTH_FRACTION if not _held() else HELD_WIDTH_FRACTION)
+	# A bar wider than the quad is a message with its end cut off, so the stack is
+	# told what it has to fit in before it is measured.
+	if _stack.has_method("set_wrap_width"):
+		_stack.call("set_wrap_width", cap)
 	# Sized to the content, both ways: the bars shrink to their text, so the
 	# stack's minimum width is the widest bar's.
 	var want := _stack.get_combined_minimum_size()
-	var px_w := clampf(want.x, MIN_W, vp.x * MAX_WIDTH_FRACTION)
+	# The ceiling wins over the floor. On the spawn menu the two never meet, but a
+	# small panel — a memory card's, at 420 px — has a ceiling below MIN_W, and a
+	# floor that beat it would hang a bar wider than the panel it belongs to.
+	var px_w := clampf(want.x, minf(MIN_W, cap), cap)
 	var px_h := maxf(MIN_H, want.y)
 
 	if _viewport.viewport_size.x != px_w or _viewport.viewport_size.y != px_h:
@@ -168,9 +187,15 @@ func _base_m_per_px() -> float:
 	return 0.0005
 
 
-## Metres per pixel for the quad itself, blown up for legibility.
+## Is the host a panel held in the hand rather than one stood in front of?
+func _held() -> bool:
+	return _host.screen_size.x < HELD_WIDTH
+
+
+## Metres per pixel for the quad itself, blown up for legibility — except on a
+## held panel, which is already an arm's length away.
 func _m_per_px() -> float:
-	return _base_m_per_px() * SCALE
+	return _base_m_per_px() * (1.0 if _held() else SCALE)
 
 
 ## Bottom-centre of the host, floating forward, riding the arc when it is curved.

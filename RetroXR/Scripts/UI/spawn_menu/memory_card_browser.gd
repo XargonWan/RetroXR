@@ -298,6 +298,7 @@ func _build_saves(card: Dictionary) -> void:
 		return
 
 	ui.synced_slots = CardSaveOps.synced_slots(str(card["path"]), saves)
+	ui.backed_up_slots = CardSaveOps.backed_up_slots(str(card["path"]), saves)
 	ui.sync_available = SaveSync.is_available()
 	ui.populate(str(card["label"]), saves, free)
 
@@ -325,15 +326,17 @@ func _in_use_reason(card: Dictionary) -> String:
 
 
 ## Delete one save. Armed on the first press and done on the second, the way a
-## ROM row asks twice, because this cannot be undone: the blocks are freed and
-## nothing keeps a copy.
+## ROM row asks twice, because the blocks are freed and the card keeps no copy.
 func _delete_save(card: Dictionary, s: Dictionary) -> void:
 	var slot := str(s["name"])
 	if _armed_slot != slot:
 		# Same shape as deleting a ROM: arm, say so, and disarm after 3 s. The
-		# glyph alone changing is easy to miss on a headset.
+		# glyph alone changing is easy to miss on a headset — and as there, the
+		# confirm says whether this is the last copy or one of two.
 		_armed_slot = slot
-		notice.emit("Press again to delete %s" % CardSaveOps.title_of(s), ARM_SECONDS)
+		notice.emit("Press again to delete %s%s" % [CardSaveOps.title_of(s),
+			"" if CardSaveOps.delete_is_forever(str(card["path"]), slot)
+				else " — RomM keeps its copy"], ARM_SECONDS)
 		_build_saves(card)
 		get_tree().create_timer(ARM_SECONDS).timeout.connect(func() -> void:
 			if _armed_slot == slot and is_inside_tree():
