@@ -202,8 +202,9 @@ func _add_cable_to_scene() -> void:
 	_cable_rope = _cable_instance.get_node("VerletRope") as VerletRope
 	_cable_plug.set_controller(self)
 	_cable_plug.add_collision_exception_with(self)
-	# The lead leaves the back of the case.
-	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, -0.12)
+	# Laid out in FRONT of the case, the way the attach point faces — a plug spawned
+	# behind it would drag the whole cord back around the box on the first frame.
+	_cable_plug.global_position = _cable_attach_point.global_position + Vector3(0, 0, 0.12)
 	_cable_rope.set_rope_length(LEAD_LENGTH)
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug

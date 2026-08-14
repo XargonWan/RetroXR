@@ -48,6 +48,13 @@ static func of_resource(res: Resource) -> Transform3D:
 	return Transform3D.IDENTITY
 
 
+## The marker on a LIVE node — the generic plug carries one as a child, so it
+## answers the question the same way a connector asset does.
+static func of_node(node: Node) -> Transform3D:
+	var marker := node.get_node_or_null(MARKER) as Node3D
+	return marker.transform if marker != null else Transform3D.IDENTITY
+
+
 ## The marker inside a connector scene, or the derived fallback when it has none.
 static func of_scene(scene: PackedScene) -> Transform3D:
 	var root: Node = scene.instantiate()

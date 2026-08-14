@@ -13,9 +13,9 @@ var device_type: int = 1  # RETRO_DEVICE_JOYPAD
 var systemid: String = ""
 
 ## Local point the cable leaves this plug at, fed to VerletRope.end_anchor_offset.
-## Zero for the generic cylinder plug, whose origin already sits mid-barrel with
-## the strain relief covering it; a bespoke connector sets its own cable boss in
-## set_plug_mesh, since its origin is the SEATING reference buried in the shell.
+## The generic plug reads its own CordExit marker (the end of the strain-relief
+## boot); a bespoke connector brings its own, since its origin is the SEATING
+## reference buried in the shell rather than anywhere a cord could emerge.
 var cable_anchor: Vector3 = Vector3.ZERO
 
 ## Which way the cord leaves, in this plug's frame. Fed to VerletRope's
@@ -23,10 +23,17 @@ var cable_anchor: Vector3 = Vector3.ZERO
 ## (-Z) for every straight plug, which is what the rope assumed globally before.
 var cable_exit_axis: Vector3 = Vector3.BACK
 
+## The generic plug's own exit, read from its CordExit marker at _ready and kept
+## so removing a bespoke connector can put it back.
+var _generic_exit := Transform3D.IDENTITY
+
 
 func _ready() -> void:
 	super._ready()
 	add_to_group("controller_plug")
+	_generic_exit = PlugExit.of_node(self)
+	cable_anchor = _generic_exit.origin
+	cable_exit_axis = -_generic_exit.basis.z.normalized()
 	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
 
 
@@ -86,8 +93,10 @@ func set_plug_mesh(path: String) -> void:
 		if g != null:
 			g.visible = mesh == null
 	if mesh == null:
-		cable_anchor = Vector3.ZERO
-		cable_exit_axis = Vector3.BACK
+		# Back to the generic moulding, and back to ITS exit — not to zero, which
+		# is the middle of the bare grey barrel.
+		cable_anchor = _generic_exit.origin
+		cable_exit_axis = -_generic_exit.basis.z.normalized()
 		return
 	var mi := MeshInstance3D.new()
 	mi.name = "PlugModel"

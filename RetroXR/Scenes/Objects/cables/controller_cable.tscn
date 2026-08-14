@@ -60,6 +60,15 @@ transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -0.03)
 mesh = SubResource("CylMesh_strain")
 surface_material_override/0 = SubResource("Mat_strain")
 
+; Where the cord leaves the generic plug: the OUTER end of the strain-relief boot
+; (z -0.04), not the plug's origin. The origin sits mid-barrel on the grey tip,
+; which is bare — the boot only spans -0.04 .. -0.02 — so a cord anchored there
+; came out of the middle of the metal. Read through PlugExit, the same marker a
+; converted connector asset carries, so the generic plug answers the question the
+; same way every other one does.
+[node name="CordExit" type="Marker3D" parent="ControllerPlug"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.04)
+
 ; Layer 21 (pointable) is the only layer the FunctionPointer's RayCast masks, so
 ; without this the beam passes straight through the plug — the plug body itself
 ; sits on layer 3 (pickable). Same StaticBody-child pattern as system.tscn;

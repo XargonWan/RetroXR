@@ -47,10 +47,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
 mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_body")
 
-; Front face, so it reads from the side you look at when the lead runs away
-; behind. Proud of the shell by 0.5 mm so it catches its own glow.
+; The face the PLAYER is on: the lead leaves the front toward the machine, so
+; the back is what you look at. Proud of the shell by 0.5 mm for its own glow.
 [node name="Led" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0.014, 0.0228)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.026, 0.014, -0.0228)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
@@ -61,7 +61,7 @@ surface_material_override/0 = SubResource("Mat_led")
 ; outline exists to lift a floating billboard off a busy background, which is the
 ; opposite of a word printed flat.
 [node name="NameLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0202, 0.002)
+transform = Transform3D(-1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0.0202, -0.002)
 pixel_size = 0.0006
 text = "KEYBOARD"
 font_size = 12
@@ -71,19 +71,21 @@ width = 200.0
 autowrap_mode = 3
 
 ; The device this dongle forwards, as one Nerd Font glyph, printed above the
-; name in reading order (the top face reads front-to-back, so "above" is -Z).
+; name in reading order (the top face reads back-to-front, so "above" is +Z).
 ; Font is assigned in code: it is a FontVariation chaining the symbol font behind
 ; the project default, and an unchained label renders every codepoint as tofu.
 [node name="GlyphLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0202, -0.0095)
+transform = Transform3D(-1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0.0202, 0.0095)
 pixel_size = 0.0006
 font_size = 22
 outline_size = 0
 modulate = Color(0.75, 0.75, 0.8, 1)
 
-; The lead leaves the back of the case.
+; The lead leaves the FRONT of the case, toward the machine it plugs into. Out of
+; the back it doubled straight around the box on its way to the port, which read
+; as a cord tangled round the dongle rather than running to a console.
 [node name="CableAttachPoint" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, -0.0225)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0.0225)
 
 [node name="PickableHighlight" type="Node3D" parent="."]
 script = ExtResource("2_pickhigh")
