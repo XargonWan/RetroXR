@@ -568,6 +568,8 @@ func _populate_cartridges_tab() -> void:
 			s["badge_icon"] = mark
 			s["badge_count"] = remote
 
+	_mark_systems_without_a_core(systems)
+
 	_cartridges_browser.set_systems(systems)
 	# If a system detail is open, re-run it so newly-added ROMs appear.
 	_cartridges_browser.refresh()
@@ -577,6 +579,32 @@ func _populate_cartridges_tab() -> void:
 	# time — 25-37 ms on desktop, considerably worse on Quest storage — and this
 	# spends that on a worker thread before the tap rather than during it.
 	_prewarm_top_platforms(systems)
+
+
+## Purple a platform you cannot actually play yet, the same plate the Cores tab's
+## Download grid uses for a system with nothing installed. The two grids answer
+## the same question from opposite ends — one lists what you could install, the
+## other what you could load — so a platform that is purple in one and plain in
+## the other would be reading the same library two different ways.
+##
+## A platform counts as covered when any installed core is filed under it, or when
+## the core it would actually boot is installed. Both, because a core often serves
+## a platform it is not filed under: the default is what a cartridge here launches.
+func _mark_systems_without_a_core(systems: Array) -> void:
+	var by_system := FirmwareRequirements.installed_cores_by_system()
+	var installed_names: Dictionary = {}
+	for sid: String in by_system:
+		for e: Dictionary in (by_system[sid] as Array):
+			installed_names[str(e.get("core_name", ""))] = true
+
+	for s: Dictionary in systems:
+		var sid: String = str(s.get("systemid", ""))
+		var covered: bool = by_system.has(sid) and not (by_system[sid] as Array).is_empty()
+		if not covered and core_defaults != null:
+			var dflt := core_defaults.get_default_core(sid)
+			covered = not dflt.is_empty() and installed_names.has(dflt)
+		s["alt_tile"] = not covered
+
 
 
 ## One /api/platforms call, cached. Local systems are already on screen by the
