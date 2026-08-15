@@ -1815,6 +1815,14 @@ func _input_for_device(dev: Node3D) -> int:
 		if (link["out"] as RcaPort).get_device() != dev:
 			continue
 		var in_port := link["in"] as RcaPort
+		# The DE-15 answers for Composite 1 — it is that input's alternative rather
+		# than a fifth input, exactly as _source_available and the bind in _ready
+		# already have it. It is not in _av_ports, which is built from the phono
+		# trios a cabinet carries, and the computer monitor carries NONE: a tower
+		# cabled to one over VGA was resolved to no input at all, so the set had
+		# nothing selected to show and stayed on the blue screen.
+		if _vga_port != null and in_port == _vga_port:
+			return Source.COMPOSITE_1
 		for i in _av_ports.size():
 			if not (_av_ports[i] as Array).has(in_port):
 				continue
