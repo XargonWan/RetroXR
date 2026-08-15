@@ -17,10 +17,11 @@
 ; picture over the DE-15 below, and a bank of phono jacks or a coax tuner hole on the
 ; back of a VGA monitor is the same anachronism as a SCART socket would be.
 ;
-; Composite 1 stays SELECTABLE all the same, and that is not a contradiction — the
-; VGA socket reports on that input (see the bind in RetroTV._ready), so it is the
-; input the tower's picture arrives on. av_inputs only says which phono SOCKETS the
-; cabinet carries; RetroTV._source_available knows the DE-15 stands in for the first.
+; The DE-15 is an INPUT in its own right (RetroTV.Source.VGA), not an alias for
+; Composite 1, so this cabinet offers exactly one input and SOURCE announces "VGA"
+; rather than naming a phono socket it does not have. av_inputs says which phono
+; SOCKETS the cabinet carries, which here is none; _source_available reads the DE-15
+; separately, and _first_available_source starts the set on it rather than the tuner.
 ;
 ; The back could not have taken four groups anyway: a raycast grid reads flat in
 ; DEPTH for 180 mm, which is misleading, because the moulding holds its distance

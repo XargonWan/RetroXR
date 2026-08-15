@@ -16,6 +16,7 @@ const TV_SCENE := preload("res://Scenes/Objects/tv.tscn")
 const VCR_SCENE := preload("res://Scenes/Objects/appliances/vcr_player.tscn")
 const CABLE_SCENE := preload("res://Scenes/Objects/cables/composite_cable.tscn")
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
+const VGA_CABLE := preload("res://Scenes/Objects/cables/vga_cable.tscn")
 const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
 ## A machine or deck reduced to the contract a television actually reads.
@@ -70,6 +71,8 @@ func _run() -> void:
 		["routing/picture into an audio socket is not a picture", _r_video_into_audio],
 		["routing/pulling the picture cord leaves the sound", _r_pull_picture],
 		["routing/picture and sound on different inputs: picture wins", _r_video_wins],
+		["routing/a machine on VGA is filed on the VGA input", _r_vga],
+		["display/a monitor lands on its own socket, not the tuner", _d_monitor_default],
 		["display/the selected input is shown", _d_selected],
 		["display/another input is blue, not the last picture", _d_away],
 		["display/coming back shows it again", _d_back],
@@ -353,6 +356,62 @@ func _r_video_wins() -> void:
 	await _lead([[0, outs[0], two[0]]])
 	await _lead([[1, outs[1], three[1]], [2, outs[2], three[2]]])
 	_check_eq(_which_input(tv, deck), RetroTV.Source.COMPOSITE_2, "the picture decides")
+
+
+## A computer monitor and a tower: one DE-15 at each end and no phono row anywhere.
+##
+## The DE-15 used to answer for Composite 1, which meant a cabinet with no phono
+## sockets at all announced "COMPOSITE 1", and a cabinet carrying both would have
+## had them share one slot — plug in either and it evicts the other.
+func _r_vga() -> void:
+	var tv := TV_SCENE.instantiate() as RetroTV
+	tv.tv_model = "crt_monitor"
+	tv.freeze = true
+	add_child(tv)
+	tv.add_to_group("spawned")
+	_spawned.append(tv)
+	var sys := SYSTEM_SCENE.instantiate() as Node3D
+	sys.model_id = "pc_tower"
+	sys.systemid = "dos"
+	sys.position = Vector3(2.0, 1, 0)
+	sys.freeze = true
+	add_child(sys)
+	sys.add_to_group("spawned")
+	_spawned.append(sys)
+	await _wait(60)
+
+	var tower_vga := sys.find_child("VgaPort", true, false) as XRToolsSnapZone
+	var mon_vga := tv.get_node_or_null("VgaPort") as XRToolsSnapZone
+	_check(tower_vga != null, "the tower wears a DE-15")
+	_check(mon_vga != null and mon_vga.enabled, "the monitor's DE-15 is fitted and live")
+	if tower_vga == null or mon_vga == null:
+		return
+
+	var lead := VGA_CABLE.instantiate() as Node3D
+	lead.position = Vector3(1.0, 1, -0.5)
+	add_child(lead)
+	_spawned.append(lead)
+	await _wait(20)
+	tower_vga.pick_up_object(lead.get_node("PlugA0"))
+	mon_vga.pick_up_object(lead.get_node("PlugB0"))
+	await _wait(40)
+	_check_eq(_which_input(tv, sys), RetroTV.Source.VGA, "the tower is filed on VGA")
+	_check(sys.connected_tv == tv, "and the tower knows which monitor it feeds")
+
+
+func _d_monitor_default() -> void:
+	var tv := TV_SCENE.instantiate() as RetroTV
+	tv.tv_model = "crt_monitor"
+	tv.freeze = true
+	add_child(tv)
+	tv.add_to_group("spawned")
+	_spawned.append(tv)
+	await _wait(40)
+	# The tuner is available on every set, so picking the first available input in
+	# enum order would sit a monitor on a channel list rather than on its one socket.
+	_check_eq(tv.current_source, RetroTV.Source.VGA, "a monitor starts on its DE-15")
+	_check(not tv._source_available(RetroTV.Source.COMPOSITE_1),
+		"and does not offer a phono input it has no socket for")
 
 
 # ── Display ───────────────────────────────────────────────────────────────────

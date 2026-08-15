@@ -36,7 +36,7 @@ const STATIC_SHADER := preload("res://Shaders/tv_static.gdshader")
 ##
 ## Named Source, not Input: `Input` is a native Godot singleton and an enum of
 ## that name shadows it, which fails to parse.
-enum Source { COMPOSITE_1, COMPOSITE_2, COMPOSITE_3, COMPOSITE_4, TV, RF }
+enum Source { COMPOSITE_1, COMPOSITE_2, COMPOSITE_3, COMPOSITE_4, TV, RF, VGA }
 
 ## How many composite inputs the set has. The back panel carries a socket trio per
 ## input (see tv.tscn) and tv_shell.gd lays them out for a fitted cabinet.
@@ -46,7 +46,7 @@ const COMPOSITE_INPUTS := 4
 ## does for POWER and MUTE; the back panel prints the same names in its own voice
 ## (AV_INPUT_NAMES).
 const SOURCE_NAMES := ["COMPOSITE 1", "COMPOSITE 2", "COMPOSITE 3", "COMPOSITE 4",
-	"TV", "RF"]
+	"TV", "RF", "VGA"]
 
 ## The channels an RF switch can put a console on, and what the set has to be tuned
 ## to for it to appear. Two of them because that is what the switch on the back of an
@@ -290,12 +290,11 @@ func _ready() -> void:
 			continue
 		video.has_picked_up.connect(_on_plug_snapped.bind(i))
 		video.has_dropped.connect(_on_plug_released.bind(i))
-	# The VGA socket announces the same way, and answers for Composite 1: it is an
-	# alternative to that socket rather than a fifth input, and only the computer
-	# monitor carries one at all. Connected whether or not this shell uses it — a
-	# disabled zone never fires, so there is nothing to gate.
-	_vga_port.has_picked_up.connect(_on_plug_snapped.bind(Source.COMPOSITE_1))
-	_vga_port.has_dropped.connect(_on_plug_released.bind(Source.COMPOSITE_1))
+	# The VGA socket announces the same way, on its own input. Connected whether or
+	# not this shell uses it — a disabled zone never fires, so there is nothing to
+	# gate.
+	_vga_port.has_picked_up.connect(_on_plug_snapped.bind(Source.VGA))
+	_vga_port.has_dropped.connect(_on_plug_released.bind(Source.VGA))
 	_mute_btn.button_pressed.connect(_on_mute_toggle)
 	_audio_mode_btn.button_pressed.connect(_on_audio_mode_toggle)
 	_vol_down_btn.button_pressed.connect(_on_volume_down)
@@ -507,6 +506,18 @@ func _collect_av_ports() -> void:
 	else:
 		push_warning("[RetroTV] missing aerial socket RfPort")
 	_av_ports.append(rf_trio)
+	_connected_systems.append(null)
+	_snapped_plugs.append(null)
+	# And the DE-15, which is an input in its own right rather than an alias for
+	# Composite 1. As that alias it announced "COMPOSITE 1" on a cabinet with no
+	# phono row at all, and a set carrying both would have had them share one slot,
+	# so plugging either would evict the other. Its socket IS an RcaPort (VgaPort
+	# extends it), so it needs no special case anywhere that walks these.
+	var vga_trio: Array[RcaPort] = []
+	var vga := _vga_port as RcaPort
+	if vga != null:
+		vga_trio.append(vga)
+	_av_ports.append(vga_trio)
 	_connected_systems.append(null)
 	_snapped_plugs.append(null)
 
@@ -1703,14 +1714,16 @@ func port_holding(plug: Node3D) -> XRToolsSnapZone:
 	return null
 
 
-## Which INPUT is holding `plug`, for a host writing itself to a save file. Falls
-## back to Composite 1 for anything it cannot find, which is where a restore with no
-## opinion puts a lead anyway — including the VGA socket, that input's alternative.
+## Which INPUT is holding `plug`, for a host writing itself to a save file. The DE-15
+## answers Source.VGA, its own input; anything else it cannot find falls back to
+## Composite 1, which is where a restore with no opinion puts a lead anyway.
 func input_holding(plug: Node3D) -> int:
 	for i in COMPOSITE_INPUTS:
 		var port := _video_port(i)
 		if port != null and port.picked_up_object == plug:
 			return i
+	if _vga_port != null and _vga_port.picked_up_object == plug:
+		return Source.VGA
 	return Source.COMPOSITE_1
 
 
@@ -1815,14 +1828,6 @@ func _input_for_device(dev: Node3D) -> int:
 		if (link["out"] as RcaPort).get_device() != dev:
 			continue
 		var in_port := link["in"] as RcaPort
-		# The DE-15 answers for Composite 1 — it is that input's alternative rather
-		# than a fifth input, exactly as _source_available and the bind in _ready
-		# already have it. It is not in _av_ports, which is built from the phono
-		# trios a cabinet carries, and the computer monitor carries NONE: a tower
-		# cabled to one over VGA was resolved to no input at all, so the set had
-		# nothing selected to show and stayed on the blue screen.
-		if _vga_port != null and in_port == _vga_port:
-			return Source.COMPOSITE_1
 		for i in _av_ports.size():
 			if not (_av_ports[i] as Array).has(in_port):
 				continue
@@ -1957,23 +1962,23 @@ func cycle_source() -> void:
 ## the safe fallback in set_source.
 func _source_available(source: int) -> bool:
 	if source < COMPOSITE_INPUTS:
-		if source < _panel_inputs():
-			return true
-		# Composite 1 is ALSO where the VGA socket reports (see the bind in _ready),
-		# so a cabinet carrying a DE-15 can show that input with no phono row behind
-		# it at all. The computer monitor is exactly that, and gating this on the
-		# phono count alone would have taken the tower's picture away with the
-		# sockets it does not use.
-		return source == Source.COMPOSITE_1 			and _vga_port != null and _vga_port.enabled
+		return source < _panel_inputs()
 	if source == Source.RF:
 		return _has_aerial()
+	if source == Source.VGA:
+		return _vga_port != null and _vga_port.enabled
 	return true
 
 
 ## The first input this cabinet has, for a set asked to show one it does not.
+##
+## The tuner is tried LAST despite sitting mid-enum: it is available on every set,
+## so first-hit-in-enum-order would sit a computer monitor on a channel list rather
+## than on the machine cabled to its only socket. Every set with a phono row still
+## lands on Composite 1, which is what it always did.
 func _first_available_source() -> int:
 	for i in SOURCE_NAMES.size():
-		if _source_available(i):
+		if i != Source.TV and _source_available(i):
 			return i
 	return Source.TV
 
