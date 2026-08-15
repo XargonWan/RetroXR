@@ -334,21 +334,29 @@ adb shell monkey -p com.xenu.retroxr 1                           # GodotApp isn'
   (`files/libretro/…`, populated by the in-app CoreDownloadManager).
 - ROMs/books/videos live on the **external** dir `/sdcard/Android/data/com.xenu.retroxr/files/`
   (plain `adb push`/`ls` works there).
-- **`chmod 660` everything you push into that external dir, every time.** A push lands
-  owned by `shell` mode `0644`; the app is only in the `ext_data_rw` group, so it gets
-  `r--`. It can still *create* files beside yours, so nothing looks wrong — but it can
-  never *overwrite* one you pushed, and `FileAccess.open(…, WRITE)` failing is invisible
-  from inside the headset. Pushing a `roms/` backup this way silently froze
-  `romm_config.json` for nine days: `sync_state` and `last_stats` stopped persisting, so
-  every menu open re-queued a **full** RomM sync of every platform, and a stale
-  `cached_platforms` kept pinning `nintendo_64` to a since-corrected slug mapping.
-  - Diagnose by owner + mtime, not by logs: an app-owned file with a fresh mtime sitting
-    beside a `shell`-owned one stuck at the push date is the tell.
-  - `run-as com.xenu.retroxr test -w …` is **not** a valid oracle here — that shell does
-    not get the app's storage mount view and reports NOT-WRITABLE for files the app
-    demonstrably just wrote.
-  - `chmod` on an already app-owned file answers "Operation not permitted". That is fine;
-    those are already `0660`.
+- **Never `adb push` over a file, or into a directory, that the app itself writes.** The
+  app is `other` for everything `shell` creates in its own tree, and no chmod fixes that
+  sanely. Confirm the group list before theorising — `cat /proc/$(pidof
+  com.xenu.retroxr)/status` reports `Groups: 3003 9997 20198 50198`, i.e. `inet`,
+  `everybody`, `<uid>_cache` and `all_a<uid>`. **`ext_data_rw` (1078) is not among them**,
+  and it is the group on every `adb`-created file and directory here. Owner is `shell`,
+  group is unreachable, so only the `other` bits apply:
+  - `adb push` lands a file `0644` — other `r--`. The app can read it forever and can
+    never overwrite it. Fine for ROMs, fatal for state files.
+  - `adb` creates directories `0770` — other `---`. The app cannot create anything inside
+    one, so a system folder made by push gets no `.romm/` index. `romm_catalog.gd` ignores
+    the return of `make_dir_recursive_absolute`, so this surfaces one line later and one
+    level down as "Cannot write to …/nintendo_64/.romm".
+  - Granting the app access through the bits alone would mean `0666` on files and `0777`
+    on directories, because the group is useless to it. Don't. Let the app own what it
+    writes: delete the pushed copy and let it be recreated in-app.
+  - **`chmod 660` is actively harmful here** — it clears the `other` read bit the app was
+    relying on, and grants write to a group the app is not in. A config the app can no
+    longer read looks exactly like a config that was wiped.
+  - Diagnose by owner, not by logs, and never with `run-as com.xenu.retroxr test -w …` —
+    that shell does not get the app's storage mount view and reports NOT-WRITABLE for
+    files the app demonstrably just wrote. The reliable tell is that every `.romm/` on the
+    device is owned by the same uid as its parent directory, never a mix.
 - Extra cores: same source the app uses (core_download_manager.gd) —
   `buildbot.libretro.com/nightly/android/latest/arm64-v8a/<core>_libretro_android.so.zip`.
 
