@@ -52,6 +52,8 @@ var _menu: Node = null
 
 var _server_address_label: Label = null
 var _romm_status_label: Label = null
+## "Sync all now" doubles as "Stop syncing" while anything is running.
+var _romm_sync_btn: Button = null
 ## Entries are {sid: String, full: bool}. One queue for the whole app: a second
 ## caller reaching straight for sync_platform while a sync runs would have its
 ## request dropped, not deferred.
@@ -127,6 +129,7 @@ func notify(key: String, icon: String, msg: String,
 			progress: float = -1.0, seconds: float = 0.0) -> void:
 	if _menu:
 		_menu.notify(key, icon, msg, progress, seconds)
+
 
 func _build() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -963,12 +966,13 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 	actions.add_child(test_btn)
 
 	var sync_btn := Button.new()
-	sync_btn.text = "  Sync all now  "
 	sync_btn.custom_minimum_size = Vector2(0, 56)
 	sync_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sync_btn.add_theme_font_size_override("font_size", 18)
 	sync_btn.pressed.connect(_on_romm_sync_all_pressed)
 	actions.add_child(sync_btn)
+	_romm_sync_btn = sync_btn
+	_update_romm_sync_btn()
 
 	_romm_status_label = Label.new()
 	_romm_status_label.add_theme_font_size_override("font_size", 16)
@@ -1094,7 +1098,38 @@ func _commit_scan(url: String, code: String) -> void:
 
 ## Sync every mapped platform, one after another — for deliberate offline
 ## browsing. Normal use never needs this; platforms sync when you open them.
+## The button reads "Sync all now" or "Stop syncing" depending on what is
+## happening, so this is both. Called from update_romm_status_label, which the
+## menu already runs on every sync transition.
+func _update_romm_sync_btn() -> void:
+	if _romm_sync_btn == null or not is_instance_valid(_romm_sync_btn):
+		return
+	var busy := romm_catalog != null and romm_catalog.is_syncing()
+	if busy:
+		var queued := _romm_sync_queue.size()
+		_romm_sync_btn.text = "  Stop syncing  " if queued == 0 \
+			else "  Stop syncing (%d queued)  " % queued
+	else:
+		_romm_sync_btn.text = "  Sync all now  "
+
+
 func _on_romm_sync_all_pressed() -> void:
+	# Stop, when there is something to stop. Everything queued goes too: this is
+	# the control that queued them, and cancelling one platform only to watch the
+	# next start immediately does not read as a cancel.
+	if romm_catalog != null and romm_catalog.is_syncing():
+		var dropped := _romm_sync_queue.size()
+		# Cleared BEFORE the abort: aborting announces itself, and the SPAWN tab
+		# answers that by advancing the queue. Stopping one platform only to
+		# watch the next start does not read as a cancel.
+		_romm_sync_queue.clear()
+		romm_catalog.abort_sync()
+		if dropped > 0:
+			notify("romm:sync:queue", "⏹", "%d queued platform%s dropped"
+				% [dropped, "" if dropped == 1 else "s"], -1.0, MenuToasts.DWELL_OK)
+		update_romm_status_label()
+		return
+
 	if not romm_config.is_configured():
 		notify("romm:conn", "❌", "Set a server URL and sign-in first", -1.0, MenuToasts.DWELL_FAIL)
 		return
@@ -1105,6 +1140,7 @@ func _on_romm_sync_all_pressed() -> void:
 	for systemid: String in _platforms():
 		_romm_sync_queue.append({"sid": systemid, "full": true})
 	pump_romm_sync_queue()
+	_update_romm_sync_btn()
 
 
 ## Add platforms to the queue without disturbing what is already in it. `full`
@@ -1147,6 +1183,9 @@ func pump_romm_sync_queue() -> void:
 ## Public: the menu owns the RomM sync signals, and a finished sync must move
 ## this readout even when the OPTIONS tab is not the one on screen.
 func update_romm_status_label() -> void:
+	# The menu calls this on every sync transition, which is exactly when the
+	# button has to flip between starting and stopping.
+	_update_romm_sync_btn()
 	if _romm_status_label == null or not is_instance_valid(_romm_status_label):
 		return
 

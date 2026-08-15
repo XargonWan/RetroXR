@@ -181,10 +181,12 @@ There is no formal test framework. The project is validated by running the Godot
 **headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
 tests. This works without a VR headset (desktop fallback) and without a display.
 
-One probe is a **keeper rather than a throwaway**: `RetroXR/Tools/romm_tests.tscn` asserts
-the pure-logic half of the RomM stack — pair-QR parsing, slug mapping and systemid
-collision, the sync fingerprint, cache path safety, and the `scan_roms` disk walk. No
-server, no headset, no network; exits non-zero on failure, so it can gate a commit.
+Two probes are **keepers rather than throwaways**, and both exit non-zero on failure so
+they can gate a commit: the A/V suite in §2c, and the RomM one below.
+
+`RetroXR/Tools/romm_tests.tscn` asserts the pure-logic half of the RomM stack — pair-QR
+parsing, slug mapping and systemid collision, the sync fingerprint, cache path safety,
+and the `scan_roms` disk walk. No server, no headset, no network, ~2 s.
 ```bash
 "$godot" --headless --path RetroXR res://Tools/romm_tests.tscn 2>&1 | grep -a "\[test\]"
 ```

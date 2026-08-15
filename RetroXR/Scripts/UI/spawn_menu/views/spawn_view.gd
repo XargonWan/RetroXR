@@ -84,6 +84,9 @@ var _romm_region_drop: VRDropdown = null
 var _romm_region_options: Array[String] = []
 var _romm_list: VirtualRowList = null
 var _romm_empty_label: Label = null
+## The toolbar's RETRY button, which doubles as this platform's stop button
+## while it is the one syncing.
+var _romm_resync_btn: Button = null
 ## rom_id -> percent, so a recycled row can show live progress when it scrolls
 ## back into view mid-download.
 var _romm_progress_pct: Dictionary = {}
@@ -163,6 +166,7 @@ func _connect_romm() -> void:
 	romm_catalog.sync_started.connect(_on_romm_sync_started)
 	romm_catalog.sync_progress.connect(_on_romm_sync_progress)
 	romm_catalog.sync_finished.connect(_on_romm_sync_finished)
+	romm_catalog.sync_aborted.connect(_on_romm_sync_aborted)
 	# The warm thread works out a platform's shown count after the grid is
 	# already up, so the tile it belongs to has to be redrawn.
 	romm_catalog.index_stats_ready.connect(func(_sid: String) -> void:
@@ -761,9 +765,10 @@ func _populate_cartridges_detail(systemid: String, vbox: VBoxContainer) -> void:
 	resync.add_theme_font_size_override("font_size", 22)
 	resync.custom_minimum_size = Vector2(64, 52)
 	resync.size_flags_horizontal = Control.SIZE_SHRINK_END
-	resync.tooltip_text = "Check RomM for changes to %s since the last sync" % _system_label(systemid)
 	resync.pressed.connect(_on_romm_resync_pressed.bind(systemid))
 	toolbar.add_child(resync)
+	_romm_resync_btn = resync
+	_romm_update_resync_btn()
 
 	_romm_empty_label = Label.new()
 	_romm_empty_label.add_theme_font_size_override("font_size", 18)
@@ -1837,6 +1842,8 @@ func _on_romm_sync_started(systemid: String, total: int) -> void:
 	else:
 		notify("romm:sync:" + systemid, "⏳",
 			"Syncing %s · 0 / %s" % [label, _commas(total)], 0.0)
+	# The toolbar button is this platform's stop button for as long as this runs.
+	_romm_update_resync_btn()
 
 
 func _on_romm_sync_progress(systemid: String, done: int, total: int) -> void:
@@ -1848,6 +1855,8 @@ func _on_romm_sync_progress(systemid: String, done: int, total: int) -> void:
 func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int, error: String) -> void:
 	var key := "romm:sync:" + systemid
 	var label := _system_label(systemid)
+	# Back to offering a resync, whichever way this ended.
+	_romm_update_resync_btn()
 
 	if not ok:
 		notify(key, "❌", "RomM sync failed — %s" % error, -1.0, MenuToasts.DWELL_FAIL)
@@ -1879,10 +1888,61 @@ func _on_romm_sync_finished(systemid: String, ok: bool, added: int, removed: int
 ## Delta by default — this is the "I just added a game" button, and a full
 ## re-fetch of a large platform is ~20 pages. A platform with no index yet is
 ## already having a full sync started for it by the open itself.
+## Paint the toolbar button for what pressing it will do right now — resync this
+## platform, or stop the sync that is already running on it.
+func _romm_update_resync_btn() -> void:
+	if _romm_resync_btn == null or not is_instance_valid(_romm_resync_btn):
+		return
+	var label := _system_label(_romm_detail_systemid)
+	if _romm_syncing_this_platform():
+		_romm_resync_btn.text = String.chr(MenuIcons.CROSS)
+		_romm_resync_btn.add_theme_color_override("font_color", MenuIcons.TINT_DELETE)
+		_romm_resync_btn.tooltip_text = "Stop syncing %s" % label
+	else:
+		_romm_resync_btn.text = String.chr(MenuIcons.RETRY)
+		_romm_resync_btn.remove_theme_color_override("font_color")
+		_romm_resync_btn.tooltip_text = "Check RomM for changes to %s since the last sync" % label
+
+
+func _romm_syncing_this_platform() -> bool:
+	return romm_catalog != null and romm_catalog.is_syncing() \
+		and romm_catalog.syncing_systemid() == _romm_detail_systemid
+
+
+## Resync, or stop — whichever the button is currently offering. Everything the
+## stop needs to tidy up happens in _on_romm_sync_aborted, so that a cancel from
+## OPTIONS cleans up identically.
 func _on_romm_resync_pressed(systemid: String) -> void:
-	if _menu == null or not RommCatalog.has_index(systemid):
+	if _menu == null:
+		return
+	if romm_catalog != null and romm_catalog.is_syncing() \
+			and romm_catalog.syncing_systemid() == systemid:
+		romm_catalog.abort_sync()
+		return
+	if not RommCatalog.has_index(systemid):
 		return
 	_menu.queue_romm_sync([systemid], false)
+
+
+## Tidy up after a cancelled sync, from wherever it was cancelled.
+##
+## The half-written index is not a concern — pages go to index.jsonl.part and
+## swap in atomically at the end, so the previous index survives untouched.
+## Emitting romm_state_changed is what advances the queue: only this platform
+## was stopped, and anything queued behind it still wants to run. OPTIONS clears
+## the queue before it aborts, so its Stop really does stop everything.
+func _on_romm_sync_aborted(systemid: String) -> void:
+	# abort_sync is also the teardown path, so this can fire while the menu is on
+	# its way out. `if _menu` inside the notify wrappers is not enough — a freed
+	# Object is still truthy in GDScript.
+	if not is_instance_valid(_menu):
+		return
+	notify_clear("romm:sync:" + systemid)
+	notify("romm:conn", "⏹", "Stopped syncing %s" % _system_label(systemid),
+		-1.0, MenuToasts.DWELL_OK)
+	_romm_update_resync_btn()
+	_romm_update_empty_label()
+	romm_state_changed.emit()
 
 
 func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:

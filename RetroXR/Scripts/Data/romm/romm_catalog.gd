@@ -24,6 +24,13 @@ signal sync_started(systemid: String, total: int)
 signal sync_progress(systemid: String, done: int, total: int)
 ## sync_finished(systemid, ok, added, removed, error)
 signal sync_finished(systemid: String, ok: bool, added: int, removed: int, error: String)
+
+## A cancelled sync is not a finished one — the worker returns without calling
+## _finish, deliberately, so that a cancel raises no failure toast. That leaves
+## nobody to take down the in-progress toast or to advance the sync queue, which
+## is pumped by nothing except a sync finishing. Anyone who cares subscribes
+## here rather than each cancel button cleaning up after itself.
+signal sync_aborted(systemid: String)
 ## A platform's index gained stats it did not have — its badge is now wrong.
 signal index_stats_ready(systemid: String)
 
@@ -95,6 +102,8 @@ func _exit_tree() -> void:
 
 ## Signal the sync thread to stop and join it. Safe to call when idle.
 func abort_sync() -> void:
+	var was := _syncing_systemid
+	var stopped := _thread != null
 	_abort = true
 	if _thread != null:
 		if _thread.is_started():
@@ -102,6 +111,12 @@ func abort_sync() -> void:
 		_thread = null
 	_abort = false
 	_syncing_systemid = ""
+	# Only when something was actually running. This is also the teardown path
+	# (_exit_tree), where listeners may already be on their way out — hence the
+	# announcement carries no payload beyond the systemid, and every handler
+	# guards its own nodes.
+	if stopped:
+		sync_aborted.emit(was)
 
 
 func is_syncing() -> bool:
