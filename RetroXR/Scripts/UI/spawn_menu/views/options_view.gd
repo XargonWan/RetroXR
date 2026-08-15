@@ -1070,10 +1070,16 @@ func _on_qr_scanned(payload: String) -> void:
 ## against the configured host. A failed exchange leaves the new URL in place so
 ## it stays visible and editable; silently restoring a stale address would be
 ## harder to recover from than a wrong one you can see.
+##
+## In memory only. A QR carries whatever address the browser that drew it was
+## open at, which is regularly one the headset cannot reach (localhost, a proxy
+## hostname), so a scan is a likely way to LOSE a working server. Persisting is
+## left to _apply_pair_code, which saves once the exchange succeeds — the URL
+## stays on screen and editable either way, and a restart recovers the address
+## that was actually working.
 func _commit_scan(url: String, code: String) -> void:
 	if not url.is_empty():
 		romm_config.base_url = url
-		romm_config.save_config()
 		if _romm_url_edit != null:
 			_romm_url_edit.text = url
 		if romm_art != null:

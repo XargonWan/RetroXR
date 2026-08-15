@@ -108,7 +108,12 @@ func get_sync_state(systemid: String) -> Dictionary:
 func stats_unchanged(stats: Dictionary) -> bool:
 	if last_stats.is_empty() or stats.is_empty():
 		return false
+	# Three numbers, not two: a platform added and another emptied can leave the
+	# ROM count and byte total untouched. It still cannot see a swap for a file
+	# of identical size — nothing short of a hash could — but that costs a stale
+	# row until the next full sync, not a wrong one.
 	return int(last_stats.get("ROMS", -1)) == int(stats.get("ROMS", -2)) \
+		and int(last_stats.get("PLATFORMS", -1)) == int(stats.get("PLATFORMS", -2)) \
 		and int(last_stats.get("TOTAL_FILESIZE_BYTES", -1)) == int(stats.get("TOTAL_FILESIZE_BYTES", -2))
 
 

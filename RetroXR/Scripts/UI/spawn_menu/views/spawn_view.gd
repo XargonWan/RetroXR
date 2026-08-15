@@ -622,18 +622,35 @@ func romm_fetch_platforms() -> void:
 			return
 		var part := RommPlatforms.partition(platforms, romm_config.platform_overrides)
 		_romm_platforms.clear()
-		for p: Dictionary in part["mapped"]:
-			_romm_platforms[str(p["systemid"])] = p
 		_romm_unmapped = part["unmapped"]
+		# Several RomM slugs legitimately share one systemid — snes/sfc/sgb, the
+		# nine arcade slugs, gb/gbc. Keeping whichever arrived last made the
+		# winner a function of the server's array order, so a platform could
+		# vanish and reappear between syncs with nothing said. Biggest library
+		# wins, deterministically, and the one it displaces is reported: the
+		# remedy is the same platform_overrides entry an unmapped platform needs.
+		for p: Dictionary in part["mapped"]:
+			var sid := str(p["systemid"])
+			var prev: Dictionary = _romm_platforms.get(sid, {})
+			if prev.is_empty():
+				_romm_platforms[sid] = p
+			elif int(p.get("rom_count", 0)) > int(prev.get("rom_count", 0)):
+				_romm_platforms[sid] = p
+				_romm_unmapped.append(prev)
+			else:
+				_romm_unmapped.append(p)
 
 		# Only announce when the set actually changes. Most unmapped platforms
 		# stay unmapped forever (no systemid or 3D model exists for them), so
 		# re-reporting the same list on every menu open is pure noise.
+		# Worded "not shown" from here down: the list also carries platforms that
+		# mapped fine and then lost their systemid to a bigger library, and
+		# calling those unmapped sends you hunting for a mapping that exists.
 		var signature := ""
 		for p: Dictionary in _romm_unmapped:
 			signature += str(p.get("slug", "")) + ","
 		if not _romm_unmapped.is_empty() and signature != _romm_unmapped_announced:
-			notify("romm:map", "⚠", "%d RomM platform%s unmapped — see OPTIONS"
+			notify("romm:map", "⚠", "%d RomM platform%s not shown — see OPTIONS"
 				% [_romm_unmapped.size(), "" if _romm_unmapped.size() == 1 else "s"],
 				-1.0, 4.0)
 		_romm_unmapped_announced = signature
@@ -881,7 +898,11 @@ func _rebuild_romm_rows() -> void:
 		if matched.has(key):
 			continue
 		var rom: Dictionary = local_by_name[key]
-		if romm_cache != null and romm_cache.owns_file(systemid,
+		# Skipping a cache-owned file is only safe when there was an index to
+		# match it against — step 2 is where it earns its row back. With no
+		# index the row never comes, and a game sitting on disk is listed
+		# nowhere at all.
+		if have_index and romm_cache != null and romm_cache.owns_file(systemid,
 				RommCacheManifest.relative_path(systemid, str(rom["path"]))):
 			continue
 		var ext := str(rom["path"]).get_extension().to_lower()
@@ -996,7 +1017,11 @@ func _romm_row_passes(source: String, regions: PackedStringArray) -> bool:
 			if source != "local":
 				return false
 
-	if not _romm_region_filter.is_empty():
+	# Local-only rows are exempt. The dropdown's options are built from server
+	# rows alone (_romm_refresh_region_options), and a local file carries no
+	# region at all — so it can never match any option, and picking a region
+	# silently emptied the list of the files the player actually owns.
+	if source != "local" and not _romm_region_filter.is_empty():
 		if _romm_region_filter not in regions:
 			return false
 	return true
