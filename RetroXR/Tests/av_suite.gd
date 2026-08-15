@@ -19,6 +19,7 @@ const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const VGA_CABLE := preload("res://Scenes/Objects/cables/vga_cable.tscn")
 const TRS_CABLE := preload("res://Scenes/Objects/cables/trs_cable.tscn")
 const SPEAKERS := preload("res://Scenes/Objects/appliances/speaker_pair.tscn")
+const RF_SWITCH := preload("res://Scenes/Objects/appliances/rf_switch.tscn")
 const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
 ## A machine or deck reduced to the contract a television actually reads.
@@ -87,6 +88,7 @@ func _run() -> void:
 		["wiring/the sound goes where its lead goes", _w_sound_routing],
 		["wiring/two machines on one set keep their own inputs", _w_two_machines],
 		["wiring/unplugging a machine takes it off both displays", _w_unplug_all],
+		["wiring/an NES feeds composite and RF at the same time", _w_nes_rf],
 		["display/the selected input is shown", _d_selected],
 		["display/another input is blue, not the last picture", _d_away],
 		["display/coming back shows it again", _d_back],
@@ -652,6 +654,52 @@ func _w_unplug_all() -> void:
 	await _unplug(comp.get_node("PlugB0") as RcaPlug)
 	_check_eq(_which_input(mon, tower), -1, "the monitor let go")
 	_check_eq(_which_input(tv, tower), -1, "and so did the set")
+
+
+## The NES wears both: a phono pair on its flank and an RF OUT with a CH3/CH4
+## switch on its back. The RF switch is itself a lead — its links() reports console
+## RF OUT to the set's aerial socket, with the grey box in the middle counting for
+## nothing — so both paths resolve through exactly the same code.
+func _w_nes_rf() -> void:
+	var tv_comp := _tv()
+	var tv_rf := _tv()
+	tv_rf.position = Vector3(3.0, 1, 0)
+	var nes := SYSTEM_SCENE.instantiate() as Node3D
+	nes.systemid = "nes"
+	nes.model_id = "nes"          # the detailed shell: only it moulds an RF panel
+	nes.freeze = true
+	nes.position = Vector3(6.0, 1, 0)
+	add_child(nes)
+	nes.add_to_group("spawned")
+	_spawned.append(nes)
+	# The shell is a GLB and can be slow to land; the RF socket is built with it.
+	await _wait(180)
+
+	var rf_out := nes.find_child("RfOut", true, false) as RcaPort
+	if rf_out == null:
+		print("[av]         (this build's NES has no RF panel — skipped)")
+		return
+	await _lead([[0, _out_ports(nes)[0],
+		_input_ports(tv_comp, RetroTV.Source.COMPOSITE_1)[0]]])
+	await _single_lead(RF_SWITCH, nes, "RfOut", tv_rf, "RfPort")
+
+	_check_eq(_which_input(tv_comp, nes), RetroTV.Source.COMPOSITE_1,
+		"the composite lead reaches one set")
+	_check_eq(_which_input(tv_rf, nes), RetroTV.Source.RF,
+		"and the RF lead reaches the other, at the same time")
+
+	# On the aerial input the console's own switch decides whether there is a
+	# picture at all: a set tuned to the other channel shows snow.
+	tv_rf.set_source(RetroTV.Source.RF)
+	await _wait(5)
+	var ch: int = nes.get_rf_channel()
+	if ch >= 0:
+		tv_rf.rf_channel = ch
+		await _wait(5)
+		_check(tv_rf.can_paint(nes), "tuned to the console's channel, it may paint")
+		tv_rf.rf_channel = 4 if ch != 4 else 3
+		await _wait(5)
+		_check(not tv_rf.can_paint(nes), "on the other channel it may not")
 
 
 # ── Display ───────────────────────────────────────────────────────────────────
