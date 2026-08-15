@@ -1798,28 +1798,30 @@ func on_av_source_lost(source: Node3D) -> void:
 func _input_for_device(dev: Node3D) -> int:
 	if dev == null or not is_instance_valid(dev):
 		return -1
-	var audio_match := -1
-	# Over every input the set has sockets for, which now includes the aerial one:
-	# a console reached through an RF switch is found here exactly as one on a
-	# composite lead is, because the switch answers links() like any other cable.
+	# A captive lead names its own host and carries no CompositeCable at all, so it
+	# is not in the graph. Over every input the set has sockets for, which includes
+	# the aerial one: a console reached through an RF switch is found here exactly
+	# as one on a composite lead is.
 	for i in _av_ports.size():
-		# A captive lead names its own host and carries no CompositeCable at all.
 		var captive: CablePlug = _snapped_plugs[i]
 		if captive != null and is_instance_valid(captive) and captive.get_system() == dev:
 			return i
-		for port: RcaPort in _av_ports[i]:
-			var plug := port.seated_plug() as RcaPlug
-			if plug == null or plug.cable == null or not is_instance_valid(plug.cable):
+
+	# Everything else comes off the graph, which walks every cable the device is
+	# on rather than every socket this set owns — the same answer from one walker
+	# instead of a second copy of it here.
+	var audio_match := -1
+	for link: Dictionary in AvGraph.links_for(dev):
+		if (link["out"] as RcaPort).get_device() != dev:
+			continue
+		var in_port := link["in"] as RcaPort
+		for i in _av_ports.size():
+			if not (_av_ports[i] as Array).has(in_port):
 				continue
-			for link: Dictionary in plug.cable.links():
-				if link["in"] != port:
-					continue
-				if (link["out"] as RcaPort).get_device() != dev:
-					continue
-				if port.channel == RcaPort.Channel.VIDEO:
-					return i
-				if audio_match < 0:
-					audio_match = i
+			if in_port.channel == RcaPort.Channel.VIDEO:
+				return i
+			if audio_match < 0:
+				audio_match = i
 	return audio_match
 
 

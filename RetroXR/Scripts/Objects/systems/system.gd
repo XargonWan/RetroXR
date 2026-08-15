@@ -1489,28 +1489,7 @@ func on_av_topology_changed(_reported: Array) -> void:
 ## is — and get_device() is what decides whose it is either way. This runs on a
 ## plug or unplug, not per frame.
 func _all_links() -> Array:
-	var out: Array = []
-	var seen := {}
-	for node in get_tree().get_nodes_in_group(RcaPort.GROUP):
-		var port := node as RcaPort
-		if port == null or port.get_device() != self:
-			continue
-		var plug := port.seated_plug() as RcaPlug
-		if plug == null or plug.cable == null or not is_instance_valid(plug.cable):
-			continue
-		if seen.has(plug.cable):
-			continue
-		seen[plug.cable] = true
-		# Duck-typed, NOT `as CompositeCable`. RcaPlug.cable is a Node3D and
-		# anything at all can be set as one — the RF switch is a DEVICE with two
-		# captive leads that registers itself as its own plugs' cable — and a cast
-		# that misses turns a perfectly good link list into a null dereference in
-		# the routing hot path. RetroTV._input_for_device already reads links() this
-		# way; this was the odd one out.
-		if not plug.cable.has_method("links"):
-			continue
-		out.append_array(plug.cable.call("links"))
-	return out
+	return AvGraph.links_for(self)
 
 
 func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> void:

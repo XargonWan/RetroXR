@@ -638,7 +638,12 @@ func _on_video_finished() -> void:
 
 ## Called by a CompositeCable whenever a plug is seated or pulled anywhere on it,
 ## with every source-to-sink pair the lead currently carries.
-func on_av_topology_changed(links: Array) -> void:
+func on_av_topology_changed(_links: Array) -> void:
+	# The reported list is this ONE cable's cords. Ask for every cable instead: a
+	# deck with its picture on one lead and its sound on another had whichever
+	# resolved last overwrite the whole of its routing, so the other half went
+	# silently dead. RetroSystem has always read it this way.
+	var links := AvGraph.links_for(self)
 	var tv: RetroTV = null
 	var video := false
 	var l := -1
