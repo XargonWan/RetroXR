@@ -414,38 +414,65 @@ jobs:
           ls -la dist
           gh release create "$TAG" --title "RetroXR $TAG" --generate-notes dist/*
 
-      # A release created with GITHUB_TOKEN does NOT fire `on: release:
-      # published`, so sidequest.yml would never see it. SideQuest's
-      # version-webhook takes the APK url directly, which sidesteps that
-      # entirely and needs no PAT.
+      # Neither webhook can be trusted to report what it did.
+      #
+      # version-webhook was retired: it answers 410 Gone to every request, a
+      # deliberately fake token included, which is how its death was told apart
+      # from a bad credential. release-webhook is still routed but answers 200
+      # whatever happens - a malformed payload comes back 200 "No! repo", and on
+      # v0.3.0 a well-formed one came back 200 with an empty body while leaving
+      # the listing on v0.2.0. Reading the status code is what let that ship as
+      # "sent".
+      #
+      # So: poke the webhook, then ask the public listing what SideQuest is
+      # actually serving, and believe only that. Failing here does not unpublish
+      # anything - the release is already out by this point - it just says the
+      # portal needs a hand.
       - name: Point SideQuest at the new APK
         env:
+          GH_TOKEN: ${{ github.token }}
           WEBHOOK: ${{ secrets.SIDEQUEST_RELEASE_WEBHOOK }}
-          CODE: ${{ needs.preflight.outputs.version_code }}
-          APK: ${{ needs.preflight.outputs.apk_name }}
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.preflight.outputs.version_name) }}
           NOTIFY: ${{ github.ref_type == 'tag' || inputs.notify }}
+          APP_ID: '61366'
         run: |
           set -euo pipefail
           [ -n "${WEBHOOK:-}" ] || { echo "::error::secret SIDEQUEST_RELEASE_WEBHOOK is unset"; exit 1; }
-          url="${WEBHOOK/release-webhook/version-webhook/$CODE}"
-          body="{\"url\":\"https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$APK\"}"
+
+          # api.sidequestvr.com 403s a bare urllib-style client; curl is fine.
+          serving() {
+            curl -sS --max-time 30 "https://api.sidequestvr.com/v2/apps/$APP_ID" \
+              | jq -r '[.urls[] | select(.provider == "Github Release") | .link_url] | join(" ")'
+          }
+          echo "listing currently serves: $(serving || echo '<unreadable>')"
 
           if [ "$NOTIFY" != true ]; then
-            # Actions masks the secret itself, not a substring of it, so the
-            # token has to be redacted by hand before anything is printed.
-            echo "notify is off - would POST:"
-            echo "  curl -X POST '$(sed 's#\(version-webhook/[0-9]*/\).*#\1<TOKEN>#' <<<"$url")'"
-            echo "  body: $body"
+            echo "notify is off - would POST the release payload to the webhook"
             exit 0
           fi
 
-          code=$(curl -sS -o resp.txt -w '%{http_code}' -X POST "$url" \
-                   -H 'Content-Type: application/json' -d "$body")
-          echo "HTTP $code"; cat resp.txt; echo
-          # A 2xx only means SideQuest accepted the payload; whether it takes the
-          # build still depends on the versionCode, which the listing decides.
-          case "$code" in
-            2*) echo "SideQuest updated to versionCode $CODE" ;;
-            *)  echo "::error::SideQuest webhook returned $code"; exit 1 ;;
-          esac
+          # The same payload shape a GitHub repository webhook would send, which
+          # is what this endpoint expects. sidequest.yml builds it identically.
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
+          gh api "repos/$GITHUB_REPOSITORY" > repository.json
+          jq -n --slurpfile r release.json --slurpfile repo repository.json \
+            '{action: "published", release: $r[0], repository: $repo[0]}' > payload.json
+
+          code=$(curl -sS -o resp.txt -w '%{http_code}' -X POST "$WEBHOOK" \
+                   -H 'Content-Type: application/json' -H 'X-GitHub-Event: release' \
+                   --data-binary @payload.json)
+          echo "webhook: HTTP $code $(cat resp.txt)"
+
+          # The sync is not synchronous even when it works, so give it five
+          # minutes before calling it dead.
+          for _ in $(seq 1 20); do
+            now=$(serving || true)
+            case "$now" in
+              *"/download/$TAG/"*) echo "SideQuest is serving $TAG:"; echo "  $now"; exit 0 ;;
+            esac
+            sleep 15
+          done
+
+          echo "listing still serves: ${now:-<unreadable>}"
+          echo "::error::SideQuest did not pick up $TAG (webhook said HTTP $code). Set it by hand: Developer Portal > RetroXR > Edit listing > Distribution > Release, choose $TAG, Save & publish. That dropdown reads the repo's releases directly, so $TAG is already in it."
+          exit 1
