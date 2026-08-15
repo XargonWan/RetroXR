@@ -178,20 +178,47 @@ func configure_buttons(power_btn: VRButton, reset_btn: VRButton, eject_btn: VRBu
 		reset_btn.set_active(false)
 
 
-## The disc seats in the tray's well. Its pose is read back by RetroSystem and
-## re-expressed relative to get_disc_lid_pivot(), so this must be positioned with
-## the tray at its REST pose — which it is, since _ready has not moved it.
+## This tower has two drives, and which one a machine loads from is a property of
+## the MACHINE, not of the shell: scummvm's games are on CD and go in the optical
+## tray, and the other seventeen platforms wearing this tower load from a 3.5 in
+## floppy and go in the drive below it.
 ##
-## DiscSeat's position is local to TrayPivot, NOT to the model root, and `slot`
-## lives in the model root's frame. Assigning it raw put the well at the tower's
-## base 6 mm under the floor — 36 cm from the tray — so a disc had nothing to snap
-## to however far the tray slid out. Compose the pivot's own transform in.
+## Seating a floppy system's media in the tray is what put it INSIDE the tower: at
+## rest the tray is drawn back into the case, so a cartridge snapped to DiscSeat is
+## swallowed by the beige box with nothing to grab. Only a disc system opens that
+## tray, which is what makes the well reachable.
+##
+## The disc case: DiscSeat's position is local to TrayPivot, NOT to the model root,
+## and `slot` lives in the model root's frame. Assigning it raw put the well at the
+## tower's base 6 mm under the floor — 36 cm from the tray — so a disc had nothing
+## to snap to however far the tray slid out. Compose the pivot's own transform in.
+## Its pose is then read back by RetroSystem and re-expressed relative to
+## get_disc_lid_pivot(), so it must be set with the tray at its REST pose — which it
+## is, since _ready has not moved it.
 func configure_cartridge_slot(slot: Node3D) -> void:
-	var pivot: Node3D = $TrayPivot
-	slot.position = pivot.transform * (pivot.get_node("DiscSeat") as Node3D).position
+	if MediaDimensions.is_disc_system(_host_systemid()):
+		var pivot: Node3D = $TrayPivot
+		slot.position = pivot.transform * (pivot.get_node("DiscSeat") as Node3D).position
+	else:
+		# Authored, like every other seat on this model — see FloppySeat's note in
+		# pc_tower.tscn for the basis and the 40 mm bite. Front is a bare Node3D at
+		# the model root, so the marker's local transform is already in `slot`'s
+		# frame; give Front a transform and this silently breaks.
+		slot.transform = ($Front/FloppySeat as Node3D).transform
 	var v := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if v != null:
 		v.visible = false
+
+
+## The systemid of the machine wearing this tower, or "" before it is parented.
+## The tower is one shell across eighteen platforms, so anything that differs
+## between them has to be asked of the host rather than baked into the model.
+func _host_systemid() -> String:
+	var host := get_parent()
+	if host == null:
+		return ""
+	var id: Variant = host.get("systemid")
+	return str(id) if id is String else ""
 
 
 ## Composite out, the same three sockets the primitive system carries. A tower's

@@ -169,7 +169,7 @@ func _update_label() -> void:
 ## mutation — tscn sub_resources are shared across instances, so editing them
 ## in place would resize every cartridge in the room.
 func _apply_system_size() -> void:
-	if not MediaDimensions.CART_SIZES.has(systemid):
+	if not MediaDimensions.has_cart_size(systemid):
 		return
 	var s := MediaDimensions.cart_size(systemid)
 
@@ -204,6 +204,93 @@ func _apply_system_size() -> void:
 		pshape.size = (col.shape as BoxShape3D).size + Vector3(0.04, 0.04, 0)
 		pointer_col.shape = pshape
 
+	_apply_floppy_shell()
+
+
+## A 3.5-inch disk instead of a moulded cartridge, for the machines that loaded
+## from one (MediaDimensions.FLOPPY_SYSTEMS). The body is already the right slab
+## by the time this runs — what is left is what tells a disk from a cart at a
+## glance: black shell, sprung metal shutter on the leading edge, paper label.
+##
+## Called from the tail of _apply_system_size rather than once from _ready,
+## because that runs again on every drop and after a handheld stub is released,
+## and it would otherwise put the cartridge's chunky 2 mm sticker back on.
+## Everything here is therefore idempotent.
+##
+## Fresh materials, never the scene's: cartridge.tscn's Mat_cart and Mat_label are
+## shared sub_resources, so tinting one would repaint every cartridge in the room.
+func _apply_floppy_shell() -> void:
+	if not MediaDimensions.uses_floppy(systemid):
+		return
+	var s := MediaDimensions.cart_size(systemid)
+
+	# The shell and its shutter are built once; the Shutter node's absence is what
+	# says this cartridge has not been through here yet.
+	#
+	# The shutter: 37 x 24 mm of stamped steel over the head window, a hair thicker
+	# than the shell so it stands proud on both faces the way the real slider does.
+	#
+	# On +Y, the OPPOSITE end from a cartridge's connector, even though it is the
+	# end that goes into the drive first. That is where a real disk has it, and the
+	# three things a floppy shows cannot be satisfied any other way: hold one with
+	# the label toward you and the title upright and the shutter is at the TOP, in
+	# your fingers, pointing at the drive. Putting it at -Y instead forces the seat
+	# basis to invert X to stay a rotation, which seats the disk with its title
+	# mirrored. See FloppySeat in pc_tower.tscn.
+	#
+	# Metallic 0.45, not 1.0. No room in RetroXR has a reflection probe, so a fully
+	# metallic material has nothing to mirror and renders as a dark hole; at 0.45
+	# the diffuse term carries it and the specular still reads as bare metal.
+	if get_node_or_null("Shutter") == null:
+		var body := get_node_or_null("CartridgeMesh") as MeshInstance3D
+		if body != null:
+			var shell := StandardMaterial3D.new()
+			shell.albedo_color = Color(0.12, 0.12, 0.14)
+			shell.roughness = 0.55
+			body.set_surface_override_material(0, shell)
+		var shutter := MeshInstance3D.new()
+		shutter.name = "Shutter"
+		var sm := BoxMesh.new()
+		sm.size = Vector3(0.037, 0.024, s.z + 0.0008)
+		shutter.mesh = sm
+		var smat := StandardMaterial3D.new()
+		smat.albedo_color = Color(0.72, 0.73, 0.75)
+		smat.metallic = 0.45
+		smat.roughness = 0.28
+		shutter.set_surface_override_material(0, smat)
+		shutter.position = Vector3(0.0, s.y * 0.5 - 0.012, 0.0)
+		add_child(shutter)
+
+	# A paper sticker, not the cartridge's moulded-in label: the real 70 x 46 mm
+	# one, 0.6 mm thick against a 3.3 mm disk. The generic label is 2 mm proud,
+	# which on a slab this thin stands up like a second cartridge.
+	#
+	# Pushed against the trailing edge (-Y, away from the shutter), 4 mm short of
+	# it, which is where the sticker goes and is what makes the disk read as one:
+	# a seated disk shows only the half standing out of the drive, so a label
+	# centred on the body would be the whole of what there is to see and the black
+	# shell would never appear at all.
+	#
+	# Left alone once _apply_label_art has been there — it swaps the box for a
+	# QuadMesh carrying the scraped art, and that is not ours to resize.
+	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
+	if label_mesh != null and label_mesh.mesh is BoxMesh:
+		var lm := label_mesh.mesh.duplicate() as BoxMesh
+		lm.size = Vector3(0.070, 0.046, 0.0006)
+		label_mesh.mesh = lm
+		label_mesh.position = Vector3(0.0, -s.y * 0.5 + 0.004 + lm.size.y * 0.5,
+			s.z * 0.5 + 0.0003)
+		var lmat := StandardMaterial3D.new()
+		lmat.resource_local_to_scene = true
+		lmat.albedo_color = Color(0.88, 0.86, 0.78)
+		lmat.roughness = 0.85
+		label_mesh.set_surface_override_material(0, lmat)
+		var lbl := get_node_or_null("GameLabel") as Label3D
+		if lbl != null:
+			lbl.position = Vector3(label_mesh.position.x, label_mesh.position.y,
+				label_mesh.position.z + 0.0007)
+			lbl.width = lm.size.x * 2000.0
+
 
 ## Whoever has it decides how big a target it should be.
 ##
@@ -235,7 +322,7 @@ func _snap_zone_holder() -> XRToolsSnapZone:
 ## machine holding it. The GRAB box is untouched: it is on 17:XRHand_SnapZone,
 ## which no pointer ray queries, and hands want the padding.
 func _tighten_pointer_box() -> void:
-	if not MediaDimensions.CART_SIZES.has(systemid):
+	if not MediaDimensions.has_cart_size(systemid):
 		return
 	var pcol := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
 	if pcol == null or not (pcol.shape is BoxShape3D):
@@ -253,7 +340,7 @@ func _tighten_pointer_box() -> void:
 ## through the thin shell and swallows clicks meant for the device itself.
 ## `depth` is the exposed length along the cart's +Y (grip) end.
 func set_seated_grab_stub(depth: float) -> void:
-	if not MediaDimensions.CART_SIZES.has(systemid):
+	if not MediaDimensions.has_cart_size(systemid):
 		return
 	_stub_seated = true
 	var s := MediaDimensions.cart_size(systemid)
@@ -280,7 +367,7 @@ func set_seated_grab_stub(depth: float) -> void:
 ## Restore the normal (padded) grab shapes after leaving a handheld slot.
 func reset_grab_shapes() -> void:
 	_stub_seated = false
-	if not MediaDimensions.CART_SIZES.has(systemid):
+	if not MediaDimensions.has_cart_size(systemid):
 		return
 	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if col:

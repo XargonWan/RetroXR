@@ -38,6 +38,44 @@ const CART_SIZES: Dictionary = {
 ## without an entry above.
 const CART_SIZE_DEFAULT := Vector3(0.10, 0.08, 0.015)
 
+## The 3.5-inch disk: 90 mm across, 94 mm deep, 3.3 mm thick — the real thing.
+## One constant rather than a row per system, because every machine below loaded
+## from the same disk. Axes match a cartridge: the shutter edge is -Y (where a
+## cart's connector is) and the paper label faces +Z.
+const FLOPPY_SIZE := Vector3(0.090, 0.094, 0.0033)
+
+## Systems whose media is a floppy disk rather than a cartridge.
+##
+## This is every platform the PC tower is hardware for (SystemModelRegistry's
+## _COMPUTER_PLATFORMS) except scummvm, which shipped on CD and appears in
+## DISC_DIAMETERS above. Listed rather than derived for the reason the registry
+## lists them too: this is a const table and SystemInfo is a loaded resource, so a
+## new computer system has to be added here as well as given its .tres.
+##
+## Not every one of them really used a 3.5-inch disk — a VIC-20 took cartridges, a
+## ZX81 a cassette — but the tower is already an admitted stand-in for eighteen
+## machines and it has exactly one 3.5-inch drive on its bezel. One medium per
+## shell beats sixteen exceptions to it.
+const FLOPPY_SYSTEMS: Dictionary = {
+	"apple_ii": true,
+	"atari_8bit": true,
+	"atari_st": true,
+	"commodore_amiga": true,
+	"commodore_c128": true,
+	"commodore_c64": true,
+	"commodore_vic20": true,
+	"cpc": true,
+	"dos": true,
+	"msx": true,
+	"pc_88": true,
+	"pc_98": true,
+	"sharp_x1": true,
+	"sharp_x68000": true,
+	"svi": true,
+	"zx81": true,
+	"zx_spectrum": true,
+}
+
 ## Disc diameters: systemid -> diameter in metres. Doubles as the disc-system
 ## set — a systemid present here spawns a RetroDisc instead of a cartridge.
 ## (pc_engine stays a cartridge: its HuCard — the CD add-on is pc_engine_cd.
@@ -168,8 +206,23 @@ static func is_disc_system(systemid: String) -> bool:
 	return DISC_DIAMETERS.has(systemid)
 
 
+## True when this system's media is a floppy disk (a dark shell with a sprung
+## metal shutter) rather than a moulded cartridge.
+static func uses_floppy(systemid: String) -> bool:
+	return FLOPPY_SYSTEMS.has(systemid)
+
+
+## True when a real-world size is known for this system's media, so the generic
+## cartridge body is worth resizing to it. Ask this rather than CART_SIZES.has():
+## a floppy system carries its size in FLOPPY_SIZE and is in neither table.
+static func has_cart_size(systemid: String) -> bool:
+	return CART_SIZES.has(systemid) or FLOPPY_SYSTEMS.has(systemid)
+
+
 ## Cartridge body size for a system, or the generic default.
 static func cart_size(systemid: String) -> Vector3:
+	if FLOPPY_SYSTEMS.has(systemid):
+		return FLOPPY_SIZE
 	return CART_SIZES.get(systemid, CART_SIZE_DEFAULT)
 
 

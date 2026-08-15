@@ -101,6 +101,26 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.058, 0.108, 0.2305)
 mesh = SubResource("Mesh_led")
 surface_material_override/0 = SubResource("Mat_dark")
 
+; Where a floppy sits in the 3.5 in drive — the seat for every machine this tower
+; stands in for EXCEPT scummvm, whose games are on CD and belong in the tray below.
+; A disk is media, not a disc, so it must never be seated in the optical well: that
+; well is inside the case at rest, and a cartridge snapped into it disappears.
+;
+; Basis is R_x(-90): the disk lies FLAT with its label up, its title readable from
+; in front of the machine, and its shutter leading. A floppy carries that shutter on
+; the cart frame's +Y (see _apply_floppy_shell), which is what lets one X rotation
+; do all three at once. The NES cradle's basis — the other way media is
+; laid flat here — inverts X, because a cartridge's connector is at -Y and mapping
+; THAT into the machine while keeping the label up is only a rotation if X flips;
+; borrowing it for a disk seats the title mirrored.
+;
+; z 0.2415: the slit's face is at 0.2345 and the snap zone seats media by its
+; CENTRE, so a 94 mm disk bitten 40 mm deep centres 7 mm behind that face and
+; stands 54 mm out in front of the bezel — far enough to read the label across the
+; room and to take hold of without reaching into the case.
+[node name="FloppySeat" type="Marker3D" parent="Front"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0.268, 0.2415)
+
 ; Anchors, not geometry — RetroSystem's own VRButtons are moved onto these, so the
 ; button meshes it already carries are the visible caps.
 [node name="PowerButtonAnchor" type="Marker3D" parent="Front"]
