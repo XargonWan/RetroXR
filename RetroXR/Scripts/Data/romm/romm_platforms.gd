@@ -258,3 +258,34 @@ static func partition(platforms: Array, overrides: Dictionary = {}) -> Dictionar
 			mapped.append(entry)
 
 	return {"mapped": mapped, "unmapped": unmapped}
+
+
+## Collapse partition()'s mapped LIST into a systemid -> platform dictionary.
+##
+## Several RomM slugs legitimately share one systemid — snes/sfc/sgb, the nine
+## arcade slugs, gb/gbc — so this is a real contest, not an anomaly. Keying the
+## dict directly kept whichever arrived last, which made the winner a function
+## of the server's array order: a platform could vanish and reappear between
+## syncs with nothing said.
+##
+## Biggest library wins, deterministically. The platforms it displaces come back
+## as `shadowed` rather than disappearing; their remedy is the same
+## RommConfig.platform_overrides entry an unmapped platform needs.
+##
+## Returns {platforms: Dictionary, shadowed: Array}.
+static func collapse_by_systemid(mapped: Array) -> Dictionary:
+	var platforms: Dictionary = {}
+	var shadowed: Array = []
+	for p: Dictionary in mapped:
+		var sid := str(p.get("systemid", ""))
+		if sid.is_empty():
+			continue
+		var prev: Dictionary = platforms.get(sid, {})
+		if prev.is_empty():
+			platforms[sid] = p
+		elif int(p.get("rom_count", 0)) > int(prev.get("rom_count", 0)):
+			platforms[sid] = p
+			shadowed.append(prev)
+		else:
+			shadowed.append(p)
+	return {"platforms": platforms, "shadowed": shadowed}

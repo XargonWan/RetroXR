@@ -98,7 +98,12 @@ static func _first_of(s: String, a: String, b: String) -> int:
 static func _code() -> RegEx:
 	if _code_re == null:
 		_code_re = RegEx.new()
-		_code_re.compile("[?&#]code=([A-Za-z0-9\\-_%%]{1,%d})" % MAX_CODE_LEN)
+		# The trailing lookahead is what makes MAX_CODE_LEN a limit rather than a
+		# truncation point. Unanchored, a 33-character code matched its first 32
+		# and was passed on as a plausible-looking wrong code, which the server
+		# can only answer with "invalid or expired" — a real code and a malformed
+		# one became the same message.
+		_code_re.compile("[?&#]code=([A-Za-z0-9\\-_%%]{1,%d})(?![A-Za-z0-9\\-_%%])" % MAX_CODE_LEN)
 	return _code_re
 
 

@@ -621,24 +621,13 @@ func romm_fetch_platforms() -> void:
 		if not ok:
 			return
 		var part := RommPlatforms.partition(platforms, romm_config.platform_overrides)
-		_romm_platforms.clear()
+		var collapsed := RommPlatforms.collapse_by_systemid(part["mapped"])
+		_romm_platforms = collapsed["platforms"]
+		# Shadowed platforms ride the unmapped channel: both are platforms with
+		# ROMs that the grid will not show, and both are fixed by the same
+		# platform_overrides entry.
 		_romm_unmapped = part["unmapped"]
-		# Several RomM slugs legitimately share one systemid — snes/sfc/sgb, the
-		# nine arcade slugs, gb/gbc. Keeping whichever arrived last made the
-		# winner a function of the server's array order, so a platform could
-		# vanish and reappear between syncs with nothing said. Biggest library
-		# wins, deterministically, and the one it displaces is reported: the
-		# remedy is the same platform_overrides entry an unmapped platform needs.
-		for p: Dictionary in part["mapped"]:
-			var sid := str(p["systemid"])
-			var prev: Dictionary = _romm_platforms.get(sid, {})
-			if prev.is_empty():
-				_romm_platforms[sid] = p
-			elif int(p.get("rom_count", 0)) > int(prev.get("rom_count", 0)):
-				_romm_platforms[sid] = p
-				_romm_unmapped.append(prev)
-			else:
-				_romm_unmapped.append(p)
+		_romm_unmapped.append_array(collapsed["shadowed"])
 
 		# Only announce when the set actually changes. Most unmapped platforms
 		# stay unmapped forever (no systemid or 3D model exists for them), so
