@@ -570,6 +570,7 @@ func _on_pad_controls_reset() -> void:
 	for stick: String in ["stick_left", "stick_right"]:
 		var def := "left+dpad" if stick == "stick_left" else "right"
 		_reset_vr_dropdown("padstick:" + stick, _edit_pad_stick_map.get(stick, def))
+	_on_pad_controls_save()
 
 
 func _on_pad_controls_save() -> void:
