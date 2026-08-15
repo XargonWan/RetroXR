@@ -17,6 +17,8 @@ const VCR_SCENE := preload("res://Scenes/Objects/appliances/vcr_player.tscn")
 const CABLE_SCENE := preload("res://Scenes/Objects/cables/composite_cable.tscn")
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const VGA_CABLE := preload("res://Scenes/Objects/cables/vga_cable.tscn")
+const TRS_CABLE := preload("res://Scenes/Objects/cables/trs_cable.tscn")
+const SPEAKERS := preload("res://Scenes/Objects/appliances/speaker_pair.tscn")
 const WINDOW_SHADER := preload("res://Shaders/screen_window.gdshader")
 
 ## A machine or deck reduced to the contract a television actually reads.
@@ -73,6 +75,18 @@ func _run() -> void:
 		["routing/picture and sound on different inputs: picture wins", _r_video_wins],
 		["routing/a machine on VGA is filed on the VGA input", _r_vga],
 		["display/a monitor lands on its own socket, not the tuner", _d_monitor_default],
+		["wiring/VGA alone reaches the monitor", _w_vga_only],
+		["wiring/composite alone reaches the television", _w_composite_only],
+		["wiring/VGA and composite together reach BOTH", _w_both_video],
+		["wiring/sound to the speakers does not take the picture away", _w_trs_speakers],
+		["wiring/sound to a second set leaves the first showing", _w_audio_elsewhere],
+		["wiring/pulling one video lead leaves the other", _w_pull_one_video],
+		["wiring/pulling the sound lead leaves the picture", _w_pull_sound],
+		["wiring/the sound lead first, then the picture", _w_sound_first],
+		["wiring/both displays may actually paint the machine", _w_both_can_paint],
+		["wiring/the sound goes where its lead goes", _w_sound_routing],
+		["wiring/two machines on one set keep their own inputs", _w_two_machines],
+		["wiring/unplugging a machine takes it off both displays", _w_unplug_all],
 		["display/the selected input is shown", _d_selected],
 		["display/another input is blue, not the last picture", _d_away],
 		["display/coming back shows it again", _d_back],
@@ -412,6 +426,232 @@ func _d_monitor_default() -> void:
 	_check_eq(tv.current_source, RetroTV.Source.VGA, "a monitor starts on its DE-15")
 	_check(not tv._source_available(RetroTV.Source.COMPOSITE_1),
 		"and does not offer a phono input it has no socket for")
+
+
+# ── Wiring: a machine with more than one output ───────────────────────────────
+#
+# The PC tower wears three: a DE-15, a phono row, and a 3.5 mm line out. Every case
+# here is a combination a player can make in ten seconds, and the ones marked were
+# all broken at once — the machine resolved ONE picture sink (first cord in cable
+# order) and told ONE sink about itself (the SOUND one, if any lead carried sound).
+# Being told is what lets a set show a machine, so plugging in a speaker lead took
+# the picture off the monitor.
+
+
+func _monitor() -> RetroTV:
+	var tv := TV_SCENE.instantiate() as RetroTV
+	tv.tv_model = "crt_monitor"      # a DE-15 and no phono row at all
+	tv.freeze = true
+	tv.position = Vector3(0, 1, 0)
+	add_child(tv)
+	tv.add_to_group("spawned")
+	_spawned.append(tv)
+	return tv
+
+
+func _tower() -> Node3D:
+	var sys := SYSTEM_SCENE.instantiate() as Node3D
+	sys.systemid = "dos"
+	sys.model_id = "pc_tower"
+	sys.freeze = true
+	sys.position = Vector3(3.0, 1, 0)
+	add_child(sys)
+	sys.add_to_group("spawned")
+	_spawned.append(sys)
+	return sys
+
+
+func _speakers() -> Node3D:
+	var sp := SPEAKERS.instantiate() as Node3D
+	sp.position = Vector3(6.0, 1, 0)
+	add_child(sp)
+	sp.add_to_group("spawned")
+	_spawned.append(sp)
+	return sp
+
+
+## Seat a one-cord lead (VGA or TRS) between two named sockets.
+func _single_lead(scene: PackedScene, from: Node3D, from_port: String,
+		to: Node3D, to_port: String) -> Node3D:
+	var lead := scene.instantiate() as Node3D
+	lead.position = Vector3(_spawned.size() * 2.0, 1, -1.0)
+	add_child(lead)
+	_spawned.append(lead)
+	await _wait(20)
+	var a := from.find_child(from_port, true, false) as XRToolsSnapZone
+	var b := to.find_child(to_port, true, false) as XRToolsSnapZone
+	_check(a != null and b != null, "sockets %s / %s exist" % [from_port, to_port])
+	if a != null and b != null:
+		a.pick_up_object(lead.get_node("PlugA0"))
+		b.pick_up_object(lead.get_node("PlugB0"))
+	await _wait(35)
+	return lead
+
+
+func _w_vga_only() -> void:
+	var mon := _monitor()
+	var tower := _tower()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA, "the monitor has the tower")
+
+
+func _w_composite_only() -> void:
+	var tv := _tv()
+	var tower := _tower()
+	await _wait(60)
+	var ins := _input_ports(tv, RetroTV.Source.COMPOSITE_1)
+	await _lead([[0, _out_ports(tower)[0], ins[0]]])
+	_check_eq(_which_input(tv, tower), RetroTV.Source.COMPOSITE_1, "the set has the tower")
+
+
+func _w_both_video() -> void:
+	var mon := _monitor()
+	var tv := _tv()
+	var tower := _tower()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	await _lead([[0, _out_ports(tower)[0], _input_ports(tv, RetroTV.Source.COMPOSITE_1)[0]]])
+	# BOTH, not whichever cord the walk happened to reach first. A machine cabled to
+	# two displays feeds two displays; that is what the wiring says.
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA, "the monitor still has it")
+	_check_eq(_which_input(tv, tower), RetroTV.Source.COMPOSITE_1, "and so does the set")
+
+
+func _w_trs_speakers() -> void:
+	var mon := _monitor()
+	var tower := _tower()
+	var speakers := _speakers()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA, "picture first")
+	# The 3.5 mm lead to a pair of speakers: sound leaves the machine somewhere with
+	# no screen at all, and the monitor must not hear about it.
+	await _single_lead(TRS_CABLE, tower, "LineOut", speakers, "LineIn")
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA,
+		"the monitor keeps the picture when the sound goes to the speakers")
+
+
+func _w_audio_elsewhere() -> void:
+	var mon := _monitor()
+	var tv := _tv()
+	var tower := _tower()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	var ins := _input_ports(tv, RetroTV.Source.COMPOSITE_1)
+	var outs := _out_ports(tower)
+	await _lead([[1, outs[1], ins[1]], [2, outs[2], ins[2]]])
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA,
+		"the monitor keeps the picture when the sound goes to another set")
+	_check_eq(_which_input(tv, tower), RetroTV.Source.COMPOSITE_1,
+		"and the set carrying the sound knows about it too")
+
+
+func _w_pull_one_video() -> void:
+	var mon := _monitor()
+	var tv := _tv()
+	var tower := _tower()
+	await _wait(60)
+	var vga := await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	await _lead([[0, _out_ports(tower)[0], _input_ports(tv, RetroTV.Source.COMPOSITE_1)[0]]])
+	await _unplug(vga.get_node("PlugB0") as RcaPlug)
+	_check_eq(_which_input(tv, tower), RetroTV.Source.COMPOSITE_1,
+		"the set keeps the picture when the OTHER lead is pulled")
+	_check_eq(_which_input(mon, tower), -1, "and the monitor lets it go")
+
+
+func _w_pull_sound() -> void:
+	var mon := _monitor()
+	var tower := _tower()
+	var speakers := _speakers()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	var trs := await _single_lead(TRS_CABLE, tower, "LineOut", speakers, "LineIn")
+	await _unplug(trs.get_node("PlugB0") as RcaPlug)
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA,
+		"pulling the sound lead leaves the picture alone")
+
+
+## The same wiring in the other order. Order-dependence is the signature of the bug
+## this group exists for: the machine kept ONE sink, so which lead moved last
+## decided who knew about it.
+func _w_sound_first() -> void:
+	var mon := _monitor()
+	var tower := _tower()
+	var speakers := _speakers()
+	await _wait(60)
+	await _single_lead(TRS_CABLE, tower, "LineOut", speakers, "LineIn")
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	_check_eq(_which_input(mon, tower), RetroTV.Source.VGA,
+		"the picture arrives even though the sound was plugged in first")
+
+
+## Filed is not quite shown: each set has to select that input and be willing to
+## paint it. Both of them, at once, off one machine.
+func _w_both_can_paint() -> void:
+	var mon := _monitor()
+	var tv := _tv()
+	var tower := _tower()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	await _lead([[0, _out_ports(tower)[0], _input_ports(tv, RetroTV.Source.COMPOSITE_2)[0]]])
+	mon.set_source(RetroTV.Source.VGA)
+	tv.set_source(RetroTV.Source.COMPOSITE_2)
+	await _wait(6)
+	_check(mon.can_paint(tower), "the monitor would show it")
+	_check(tv.can_paint(tower), "and the set would show it at the same time")
+
+
+## Where the sound ends up, which is the other half of every case above.
+func _w_sound_routing() -> void:
+	var mon := _monitor()
+	var tower := _tower()
+	var speakers := _speakers()
+	await _wait(60)
+	await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	_check(tower._av_tv == null, "a picture-only hookup carries no sound")
+	await _single_lead(TRS_CABLE, tower, "LineOut", speakers, "LineIn")
+	_check_eq(tower._av_tv, speakers, "the 3.5 mm lead puts the sound in the speakers")
+	_check(tower._av_speaker_l >= 0 and tower._av_speaker_r >= 0,
+		"and both channels land somewhere (l=%d r=%d)"
+		% [tower._av_speaker_l, tower._av_speaker_r])
+
+
+## Two machines into one set, on different inputs. Nothing here is specific to a
+## tower: it is the same resolution every console in the room goes through.
+func _w_two_machines() -> void:
+	var tv := _tv()
+	var a := _tower()
+	var b := _tower()
+	b.position = Vector3(4.5, 1, 0)
+	await _wait(70)
+	await _lead([[0, _out_ports(a)[0], _input_ports(tv, RetroTV.Source.COMPOSITE_1)[0]]])
+	await _lead([[0, _out_ports(b)[0], _input_ports(tv, RetroTV.Source.COMPOSITE_3)[0]]])
+	_check_eq(_which_input(tv, a), RetroTV.Source.COMPOSITE_1, "the first keeps its input")
+	_check_eq(_which_input(tv, b), RetroTV.Source.COMPOSITE_3, "the second has its own")
+	tv.set_source(RetroTV.Source.COMPOSITE_1)
+	await _wait(5)
+	_check(tv.can_paint(a) and not tv.can_paint(b), "only the selected one may paint")
+	tv.set_source(RetroTV.Source.COMPOSITE_3)
+	await _wait(5)
+	_check(tv.can_paint(b) and not tv.can_paint(a), "and it swaps over on SOURCE")
+
+
+## Pulling a machine out entirely: every display that had it lets go, not just the
+## one that happened to be resolved.
+func _w_unplug_all() -> void:
+	var mon := _monitor()
+	var tv := _tv()
+	var tower := _tower()
+	await _wait(60)
+	var vga := await _single_lead(VGA_CABLE, tower, "VgaPort", mon, "VgaPort")
+	var comp := await _lead([[0, _out_ports(tower)[0],
+		_input_ports(tv, RetroTV.Source.COMPOSITE_1)[0]]])
+	_check(_which_input(mon, tower) >= 0 and _which_input(tv, tower) >= 0, "both have it")
+	await _unplug(vga.get_node("PlugB0") as RcaPlug)
+	await _unplug(comp.get_node("PlugB0") as RcaPlug)
+	_check_eq(_which_input(mon, tower), -1, "the monitor let go")
+	_check_eq(_which_input(tv, tower), -1, "and so did the set")
 
 
 # ── Display ───────────────────────────────────────────────────────────────────

@@ -191,6 +191,9 @@ var _av_ports: Array = []
 var _av_tv: Node3D = null
 var _av_video_tv: RetroTV = null
 var _av_control_tv: Node3D = null
+## Every sink this machine currently reaches — each has been told it is here, and
+## each decides for itself which of its inputs that means.
+var _av_sinks: Array[Node3D] = []
 # True once an AUDIO_R socket exists — stereo hardware. Mono hardware has one
 # audio socket, and its single cord drives BOTH voices to the same speaker.
 var _av_stereo: bool = false
@@ -1401,7 +1404,12 @@ func on_av_topology_changed(_reported: Array) -> void:
 	# lead to the speakers — and a single accumulator dropped whichever link named
 	# the second device. First wins WITHIN each role, which is the old behaviour for
 	# two cords into two sets.
-	var video_dev: RetroTV = null
+	# EVERY set the picture reaches, not the first one the walk happens to meet. A
+	# machine can wear two video outs — the tower has a DE-15 and a phono jack — and
+	# under the old single winner the other set was never told the machine existed,
+	# so it sat on its blue screen. Which one won depended on cable iteration order,
+	# which is why pulling the VGA lead made the picture appear on the TV.
+	var video_devs: Array[RetroTV] = []
 	var audio_dev: Node3D = null
 	var l := -1
 	var r := -1
@@ -1442,8 +1450,10 @@ func on_av_topology_changed(_reported: Array) -> void:
 			RcaPort.Channel.VIDEO:
 				# A picture needs a screen, so this sink has to be a television —
 				# and only a VIDEO input carries one.
-				if in_ch == RcaPort.Channel.VIDEO and video_dev == null:
-					video_dev = target as RetroTV
+				if in_ch == RcaPort.Channel.VIDEO:
+					var set_ := target as RetroTV
+					if set_ != null and not video_devs.has(set_):
+						video_devs.append(set_)
 			RcaPort.Channel.AUDIO_L:
 				if audio_dev != null and audio_dev != target:
 					continue
@@ -1471,7 +1481,7 @@ func on_av_topology_changed(_reported: Array) -> void:
 					l = 0
 					r = 1
 	_av_cord_summary = ", ".join(cords) if not cords.is_empty() else "none"
-	_apply_av_feed(video_dev, audio_dev, l, r)
+	_apply_av_feed(video_devs, audio_dev, l, r)
 
 
 ## Every link reaching this console, gathered from ITS OWN sockets rather than from
@@ -1492,7 +1502,11 @@ func _all_links() -> Array:
 	return AvGraph.links_for(self)
 
 
-func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> void:
+func _apply_av_feed(video_devs: Array[RetroTV], audio_dev: Node3D, l: int, r: int) -> void:
+	# The set every single-display consumer means: the wiimote's pointer, the RF
+	# channel check, "has the picture moved to a television". The FIRST video sink,
+	# and the only one that was ever resolved before.
+	var video_dev: RetroTV = video_devs[0] if not video_devs.is_empty() else null
 	# The conclusion, not the wiring — RcaPort logs each cord as it lands, this
 	# says what they added up to. Picture and sound resolve independently below, so
 	# "video=<none> audio=TV" is a real and easily-missed state: the console is
@@ -1501,8 +1515,11 @@ func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> vo
 	# Only on CHANGE. Seating one lead re-resolves the routing once per cord per
 	# end, so a plain three-cord hookup would otherwise print this eighteen times
 	# and bury the transition that matters.
+	var names := PackedStringArray()
+	for dev in video_devs:
+		names.append(String(dev.name))
 	var routing := "video=%s audio=%s  cords: %s" % [
-		String(video_dev.name) if video_dev != null else "<none>",
+		"<none>" if names.is_empty() else ", ".join(names),
 		String(audio_dev.name) if audio_dev != null else "<none>",
 		_av_cord_summary]
 	if routing != _last_av_routing:
@@ -1534,17 +1551,28 @@ func _apply_av_feed(video_dev: RetroTV, audio_dev: Node3D, l: int, r: int) -> vo
 		_av_video_tv = showing
 		if showing != null:
 			on_tv_connected(showing, null)
-	# Volume belongs to whatever is actually carrying the sound — the speakers' knob
-	# when the lead goes there, the set's buttons when it does not. Falling back to
-	# the picture sink keeps a video-only connection answering its volume buttons,
-	# which is what it did before there was anywhere else for sound to go.
-	var ctrl: Node3D = audio_dev if audio_dev != null else video_dev
-	if ctrl != _av_control_tv:
-		if _av_control_tv != null and is_instance_valid(_av_control_tv):
-			_av_control_tv.on_av_source_lost(self)
-		_av_control_tv = ctrl
-		if ctrl != null:
-			ctrl.on_av_source_found(self)
+	# EVERY sink is told, picture and sound alike, because being told is what lets a
+	# set work out which of its own inputs this machine is on — and a set that has
+	# not been told shows its blue screen no matter what is cabled to it.
+	#
+	# One sink used to be told, and it was the AUDIO one when there was any: wire
+	# the tower's sound to a speaker pair and its picture to a monitor, and the
+	# thing that got the announcement was the speakers, which have no screen. The
+	# monitor was never told about the machine plugged into it.
+	var sinks: Array[Node3D] = []
+	for dev in video_devs:
+		sinks.append(dev)
+	if audio_dev != null and not sinks.has(audio_dev):
+		sinks.append(audio_dev)
+	for old_sink in _av_sinks:
+		if old_sink != null and is_instance_valid(old_sink) and not sinks.has(old_sink):
+			old_sink.on_av_source_lost(self)
+	for sink in sinks:
+		if not _av_sinks.has(sink):
+			sink.on_av_source_found(self)
+	_av_sinks = sinks
+	# Kept for the volume keys, which belong to whatever is carrying the sound.
+	_av_control_tv = audio_dev if audio_dev != null else video_dev
 
 
 func _spawn_cables() -> void:
