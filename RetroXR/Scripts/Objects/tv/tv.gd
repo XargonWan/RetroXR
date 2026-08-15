@@ -706,8 +706,9 @@ func _process(_delta: float) -> void:
 	# readback that stalls the whole pipeline on Quest, and an idle TV (off /
 	# blue "no signal") has nothing new to sample anyway.
 	var override := _screen_mesh.get_surface_override_material(0)
-	var effective := _crt_wrapped \
-		if (override == _crt_material or override == _stereo_material) else override
+	# A material the set samples into has nothing underneath it, so what is really
+	# showing is _crt_wrapped — null unless a pushing host's material is wrapped.
+	var effective := _crt_wrapped if _is_sampling_material(override) else override
 	# effective is null for a SAMPLED source as well as for an empty screen — there
 	# is no wrapped material underneath one — so the texture decides between them.
 	if not _tv_enabled or effective == _dark_material \
@@ -784,8 +785,9 @@ func _update_screen_source() -> void:
 		return
 
 	var override := _screen_mesh.get_surface_override_material(0)
-	var effective := _crt_wrapped \
-		if (override == _crt_material or override == _stereo_material) else override
+	# A material the set samples into has nothing underneath it, so what is really
+	# showing is _crt_wrapped — null unless a pushing host's material is wrapped.
+	var effective := _crt_wrapped if _is_sampling_material(override) else override
 
 	if _tv_enabled:
 		var has_picture := false
@@ -959,14 +961,31 @@ func _update_crt() -> void:
 ## _extract_texture, _crt_wrapped and an unwrap ordered against every handover.
 func _pull_from_selected() -> bool:
 	var host := _selected_system()
-	if host == null or not host.has_method("get_video_texture"):
-		return false
-	var tex: Texture2D = host.get_video_texture()
+	var tex: Texture2D = null
+	if host != null and host.has_method("get_video_texture"):
+		tex = host.get_video_texture()
 	if tex == null:
+		_drop_sampled()
 		return false
 
+	# A source may ask for a stage of its own — the VHS effect is one — and the set
+	# runs it in a material the set owns. It does not need to know what the stage
+	# means: the shader and its uniforms both come from the source, and the CRT
+	# stage chains inside it exactly as it did when the deck owned the material.
+	var stage: Dictionary = host.get_video_stage() if host.has_method("get_video_stage") \
+		else {}
+	var shader := stage.get("shader") as Shader
 	var stereo := _source_is_sbs()
-	var mat := _stereo_screen_material() if stereo else _crt_screen_material()
+	var mat: ShaderMaterial
+	if shader != null:
+		mat = _stage_screen_material(shader)
+		var params: Dictionary = stage.get("params", {})
+		for key: String in params:
+			mat.set_shader_parameter(key, params[key])
+	elif stereo:
+		mat = _stereo_screen_material()
+	else:
+		mat = _crt_screen_material()
 	if _screen_mesh.get_surface_override_material(0) != mat:
 		# Anything a pushing host left behind goes first, including a wrapper of
 		# its material — _unwrap_crt also clears _crt_source_tex, so it has to
@@ -976,15 +995,16 @@ func _pull_from_selected() -> bool:
 	# Against _crt_source_tex rather than the material, because the phosphor
 	# accumulator legitimately swaps source_tex for its ping-pong buffer — reading
 	# it back would look like a source change every frame and undo the persistence.
-	var current: Texture2D = mat.get_shader_parameter("source_tex") as Texture2D \
-		if stereo else _crt_source_tex
+	var on_crt := mat == _crt_material
+	var current: Texture2D = _crt_source_tex if on_crt \
+		else mat.get_shader_parameter("source_tex") as Texture2D
 	if current != tex:
 		mat.set_shader_parameter("source_tex", tex)
 		# The fit does not survive a new source, and the scanline count is derived
 		# from the source's own resolution.
 		_apply_aspect()
 		_apply_crt_params(mat)
-	if not stereo:
+	if on_crt:
 		_crt_source_tex = tex     # what the phosphor accumulator reads
 	return true
 
@@ -998,6 +1018,43 @@ func _crt_screen_material() -> ShaderMaterial:
 		_crt_material.shader = CRT_SHADER
 		_crt_material.set_shader_parameter("crt_enabled", crt_enabled)
 	return _crt_material
+
+
+## True for a material this set samples a source into, as against one a host
+## painted for itself. The distinction is what tells "a picture is up" from "the
+## set is holding a picture that has stopped arriving".
+func _is_sampling_material(mat: Material) -> bool:
+	return mat != null and (mat == _crt_material or mat == _stereo_material
+		or _stage_materials.values().has(mat))
+
+
+## Forget the picture the set was sampling, when the source stops offering one —
+## a machine switched off, a picture cord pulled out.
+##
+## Only the set's record of it. The material keeps the dead texture and is simply
+## painted over: a sampling material counts as showing nothing (see _effective in
+## _update_screen_source), and clearing the uniform instead would also strip the
+## CRT wrapper when what it happens to be wrapping is the set's own blue screen —
+## which renders as a white panel, not a blue one.
+func _drop_sampled() -> void:
+	_crt_source_tex = null
+
+
+## One material per stage shader a source has asked for, kept because the uniforms
+## on it (the VHS tuning, the CRT stage's own) are worth not rebuilding per frame.
+## Keyed by shader, so two decks asking for the same stage share nothing but the
+## shader itself — only one of them can be on the glass at a time.
+var _stage_materials := {}
+
+
+func _stage_screen_material(shader: Shader) -> ShaderMaterial:
+	var mat: ShaderMaterial = _stage_materials.get(shader)
+	if mat == null:
+		mat = ShaderMaterial.new()
+		mat.shader = shader
+		mat.set_shader_parameter("crt_enabled", crt_enabled)
+		_stage_materials[shader] = mat
+	return mat
 
 
 ## The same for a full-frame side-by-side source (Virtual Boy): the windowing

@@ -11,7 +11,7 @@ render_mode unshaded, cull_disabled, shadows_disabled, fog_disabled;
 
 #include "res://Shaders/crt_filter.gdshaderinc"
 
-uniform sampler2D video_tex : source_color, filter_linear, repeat_disable;
+uniform sampler2D source_tex : source_color, filter_linear, repeat_disable;
 
 // Chained CRT display stage (set by the connected RetroTV when its CRT filter
 // is on): tape signal (VHS effects above) → tube (curvature/scanlines/mask).
@@ -94,9 +94,9 @@ void fragment() {
 	// Chromatic aberration — split the colour channels horizontally, stronger in
 	// the tracking band.
 	float ab = aberration * amt * (1.0 + track * 4.0);
-	float r = texture(video_tex, uv + vec2(ab, 0.0)).r;
-	float g = texture(video_tex, uv).g;
-	float b = texture(video_tex, uv - vec2(ab, 0.0)).b;
+	float r = texture(source_tex, uv + vec2(ab, 0.0)).r;
+	float g = texture(source_tex, uv).g;
+	float b = texture(source_tex, uv - vec2(ab, 0.0)).b;
 	vec3 col = vec3(r, g, b);
 
 	// Slight colour washout, then the VHS contrast crush (discolor).

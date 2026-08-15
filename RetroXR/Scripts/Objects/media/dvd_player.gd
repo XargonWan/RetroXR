@@ -26,7 +26,6 @@ var _scan_accum: float = 0.0
 const SCAN_SEEK_INTERVAL := 0.08
 
 var _vlc: Object = null                 # VlcPlayer (GDExtension)
-var _screen_material: StandardMaterial3D = null
 
 # Front-loading disc bay (insert ride, eject, grab hand-off, collision) — all owned
 # by the shared MediaSlot; see media_slot.gd. Disc rides in 10 cm, lies flat.
@@ -219,8 +218,6 @@ func _process(delta: float) -> void:
 		return
 	# Pump the latest decoded frame into the VLC texture every frame.
 	_vlc.update_frame()
-	if _may_paint():
-		_bind_screen_to_tv()
 	_pump_audio()
 	_update_scan(delta)
 	# Low-rate refresh of the cached audio/subtitle track counts (the remote reads
@@ -470,10 +467,6 @@ func stop() -> void:
 	_n_sub = -1
 	if _emitter:
 		_emitter.flush()
-	# Only the glass we are actually on: STOP on a deck the viewer is not watching
-	# must not black out the input they are.
-	if _screen_allowed:
-		_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
 	_net_push_state()
@@ -798,78 +791,21 @@ func set_audio_channel_mode(mode: int) -> void:
 		_emitter.set_channel_mode(mode)
 
 
-## Show or hide the screen output. The set says this on SOURCE and on POWER.
-##
-## LATCHED, and the latch is set before the early return: the answer is about
-## which input the viewer has selected, which holds whether or not this deck has a
-## television to point at yet. Dropping it left the deck painting the glass of a
-## set showing something else — see _may_paint.
-func set_screen_enabled(on: bool) -> void:
-	_screen_allowed = on
-	if not connected_tv:
-		return
-	if _may_paint():
-		_bind_screen_to_tv()
-	else:
-		_blank_screen()
+# --- What the set reads ---
+#
+# The deck no longer paints anything. It answers one question — is there a picture
+# — and RetroTV builds the material. set_screen_enabled, _screen_allowed,
+# _may_paint, _bind_screen_to_tv and _blank_screen all existed to keep this deck's
+# painting in step with a set that was painting too. There is one painter now.
 
 
-## Whether the set feeding this deck has it on the glass. True by default: a deck
-## with no television attached has nobody to tell it otherwise.
-var _screen_allowed: bool = true
-
-
-## Everything that has to be true before this deck may paint the glass: a set, a
-## disc running, a picture cord that reaches that set's video socket, and that set
-## showing this input.
-##
-## Every paint goes through it — the per-frame one and a cord moving — or they
-## disagree. They did: _process painted whether or not the set had this input
-## selected, so a film played on top of Composite 1 with nothing plugged into it.
-func _may_paint() -> bool:
-	return connected_tv != null and is_playing and _feed_video and _screen_allowed
-
-
-# --- Screen routing ---
-
-## Route the VlcPlayer's frame texture onto the connected TV screen mesh. Installs
-## an unshaded emissive-picture material the TV recognises (its CRT wrap reads the
-## albedo_texture as source_tex); the ImageTexture updates in place each frame, so
-## we only (re)install when the TV has taken the screen back (e.g. blue "no signal").
-func _bind_screen_to_tv() -> void:
-	if connected_tv == null or _vlc == null:
-		return
-	var mesh := connected_tv.get_screen_mesh()
-	if mesh == null:
-		return
-	var tex: Texture2D = _vlc.get_texture()
-	if tex == null:
-		return
-	if _screen_material == null:
-		_screen_material = StandardMaterial3D.new()
-		_screen_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_screen_material.albedo_texture = tex
-
-	var cur := mesh.get_surface_override_material(0)
-	var showing_ours := cur == _screen_material
-	if cur is ShaderMaterial:
-		# The TV's CRT wrapper of our material carries our texture as source_tex.
-		showing_ours = (cur as ShaderMaterial).get_shader_parameter("source_tex") == tex
-	if not showing_ours:
-		connected_tv.paint_screen(self, _screen_material)
-
-
-## Take the picture off a set's glass. Named rather than assumed, because the set
-## being blanked is not always the one this deck is connected to: a cord pulled out
-## sets connected_tv to null first, and a blank aimed at that leaves the film
-## playing on the television it has just been unplugged from.
-func _blank_screen(tv: RetroTV = connected_tv) -> void:
-	if tv == null or not is_instance_valid(tv):
-		return
-	# The set decides what "nothing" looks like — blue while it is on, dark while
-	# it is off. Painting our own black said that for it, and said it over the top
-	# of whatever input it had moved on to.
-	tv.release_screen(self)
+## The disc's live frame, or null when there is nothing to show: stopped, or the
+## picture cord is not in the set's video socket. A different object after a
+## resolution change, so the set re-reads it per frame.
+func get_video_texture() -> Texture2D:
+	if _vlc == null or not is_playing or not _feed_video:
+		return null
+	return _vlc.get_texture()
 
 
 # --- A/V out ---
@@ -924,24 +860,14 @@ func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
 	_feed_left = l
 	_feed_right = r
 	connected_tv = tv
+	# No picture to move on or off anything: a set reads get_video_texture() and
+	# stops getting one the moment the cord leaves the socket.
 	if previous != tv:
 		if previous != null and is_instance_valid(previous):
-			_blank_screen(previous)
 			previous.hide_osd()
 			previous.on_av_source_lost(self)
 		if tv != null:
-			# A fresh connection carries no verdict from the set that made it, and
-			# the one being joined states its own the moment on_av_source_found
-			# returns (RetroTV._apply_screen_enable). Carrying a previous set's
-			# "you are not selected" over to a new one would strand it dark.
-			_screen_allowed = true
 			tv.on_av_source_found(self)
-	if _may_paint():
-		_bind_screen_to_tv()
-	elif _screen_allowed:
-		# Only when this deck is the input on show: a picture cord pulled out of a
-		# set watching something else is not a reason to black that out.
-		_blank_screen()
 	# A channel with nowhere to go is silenced at its voice; the one still
 	# connected plays on. See SpatialAudioEmitter.set_channel_gains.
 	if _emitter:
