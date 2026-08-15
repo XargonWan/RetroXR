@@ -228,14 +228,6 @@ modulate = Color(0.32, 0.32, 0.31, 1)
 font_size = 48
 outline_size = 0
 
-[node name="NameMark" type="Label3D" parent="Front" unique_id=270731434]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0085, 0.00729, 0.1079)
-pixel_size = 0.000146
-modulate = Color(0.55, 0.55, 0.54, 1)
-text = "Wii"
-font_size = 48
-outline_size = 0
-
 [node name="DiscSeat" type="Marker3D" parent="Front" unique_id=1322401009]
 transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0.0148, 0.08018, 0.1077)
 
