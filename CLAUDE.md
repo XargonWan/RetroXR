@@ -177,9 +177,21 @@ or all at once with `Tools/build.py`:
 
 ## Headless Testing & Validation
 
-There is no formal test suite. The project is validated by running the Godot editor
+There is no formal test framework. The project is validated by running the Godot editor
 **headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
 tests. This works without a VR headset (desktop fallback) and without a display.
+
+One probe is a **keeper rather than a throwaway**: `RetroXR/Tools/romm_tests.tscn` asserts
+the pure-logic half of the RomM stack — pair-QR parsing, slug mapping and systemid
+collision, the sync fingerprint, cache path safety, and the `scan_roms` disk walk. No
+server, no headset, no network; exits non-zero on failure, so it can gate a commit.
+```bash
+"$godot" --headless --path RetroXR res://Tools/romm_tests.tscn 2>&1 | grep -a "\[test\]"
+```
+Every case in it is a bug that actually shipped, so it doubles as the regression record —
+add to it when you fix something in that layer rather than starting a new probe. It uses a
+scratch `__romm_selftest` system folder under the real roms root (the path is derived from
+the systemid and cannot be pointed elsewhere) and removes it at both ends.
 
 **For anything visual, a photo (or a VIDEO if it's animated — mp4 preferred over
 animated GIF) is the preferred proof of validation, delivered inline in the chat.**
