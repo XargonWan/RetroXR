@@ -334,6 +334,21 @@ adb shell monkey -p com.xenu.retroxr 1                           # GodotApp isn'
   (`files/libretro/…`, populated by the in-app CoreDownloadManager).
 - ROMs/books/videos live on the **external** dir `/sdcard/Android/data/com.xenu.retroxr/files/`
   (plain `adb push`/`ls` works there).
+- **`chmod 660` everything you push into that external dir, every time.** A push lands
+  owned by `shell` mode `0644`; the app is only in the `ext_data_rw` group, so it gets
+  `r--`. It can still *create* files beside yours, so nothing looks wrong — but it can
+  never *overwrite* one you pushed, and `FileAccess.open(…, WRITE)` failing is invisible
+  from inside the headset. Pushing a `roms/` backup this way silently froze
+  `romm_config.json` for nine days: `sync_state` and `last_stats` stopped persisting, so
+  every menu open re-queued a **full** RomM sync of every platform, and a stale
+  `cached_platforms` kept pinning `nintendo_64` to a since-corrected slug mapping.
+  - Diagnose by owner + mtime, not by logs: an app-owned file with a fresh mtime sitting
+    beside a `shell`-owned one stuck at the push date is the tell.
+  - `run-as com.xenu.retroxr test -w …` is **not** a valid oracle here — that shell does
+    not get the app's storage mount view and reports NOT-WRITABLE for files the app
+    demonstrably just wrote.
+  - `chmod` on an already app-owned file answers "Operation not permitted". That is fine;
+    those are already `0660`.
 - Extra cores: same source the app uses (core_download_manager.gd) —
   `buildbot.libretro.com/nightly/android/latest/arm64-v8a/<core>_libretro_android.so.zip`.
 
