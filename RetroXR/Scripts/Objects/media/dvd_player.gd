@@ -856,7 +856,7 @@ func _bind_screen_to_tv() -> void:
 		# The TV's CRT wrapper of our material carries our texture as source_tex.
 		showing_ours = (cur as ShaderMaterial).get_shader_parameter("source_tex") == tex
 	if not showing_ours:
-		mesh.set_surface_override_material(0, _screen_material)
+		connected_tv.paint_screen(self, _screen_material)
 
 
 ## Take the picture off a set's glass. Named rather than assumed, because the set
@@ -866,12 +866,10 @@ func _bind_screen_to_tv() -> void:
 func _blank_screen(tv: RetroTV = connected_tv) -> void:
 	if tv == null or not is_instance_valid(tv):
 		return
-	var mesh := tv.get_screen_mesh()
-	if mesh == null:
-		return
-	var black := StandardMaterial3D.new()
-	black.albedo_color = Color(0, 0, 0, 1)
-	mesh.set_surface_override_material(0, black)
+	# The set decides what "nothing" looks like — blue while it is on, dark while
+	# it is off. Painting our own black said that for it, and said it over the top
+	# of whatever input it had moved on to.
+	tv.release_screen(self)
 
 
 # --- A/V out ---

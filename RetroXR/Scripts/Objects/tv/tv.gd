@@ -758,7 +758,7 @@ func _update_screen_source() -> void:
 			showing_ours = true
 		if not showing_ours:
 			_unwrap_crt()
-			_screen_mesh.set_surface_override_material(0, wanted)
+			_paint(wanted)
 		return
 
 	# The aerial input paints its own no-signal. A set tuned to a channel nothing is
@@ -770,7 +770,7 @@ func _update_screen_source() -> void:
 		var snow := _rf_static()
 		if _screen_mesh.get_surface_override_material(0) != snow:
 			_unwrap_crt()
-			_screen_mesh.set_surface_override_material(0, snow)
+			_paint(snow)
 		return
 
 	var override := _screen_mesh.get_surface_override_material(0)
@@ -785,7 +785,7 @@ func _update_screen_source() -> void:
 			has_picture = effective is ShaderMaterial or _extract_texture(effective) != null
 		if not has_picture and effective != _blue_material:
 			_unwrap_crt()
-			_screen_mesh.set_surface_override_material(0, _blue_material)
+			_paint(_blue_material)
 	else:
 		# Off. The blank states are ours to paint over; a live source's material is
 		# not, and is left until its host hands the glass back.
@@ -804,7 +804,7 @@ func _update_screen_source() -> void:
 			or effective == _rf_static_material
 		if reclaimable and effective != _dark_material:
 			_unwrap_crt()
-			_screen_mesh.set_surface_override_material(0, _dark_material)
+			_paint(_dark_material)
 
 
 ## Retro CRT turn-on: the picture starts as a thin horizontal line and expands
@@ -884,7 +884,7 @@ func _update_crt() -> void:
 	# quietly stretch a letterboxed picture back over the whole glass.
 	if not crt_enabled and not _source_is_sbs() and not _aspect_needs_fit():
 		if override == _crt_material and _crt_wrapped != null:
-			_screen_mesh.set_surface_override_material(0, _crt_wrapped)
+			_paint(_crt_wrapped)
 		_crt_wrapped = null
 		return
 
@@ -918,7 +918,7 @@ func _update_crt() -> void:
 		if crt_enabled:
 			_apply_crt_params(_stereo_material)
 		_crt_wrapped = override
-		_screen_mesh.set_surface_override_material(0, _stereo_material)
+		_paint(_stereo_material)
 		return
 	if _crt_material == null:
 		_crt_material = ShaderMaterial.new()
@@ -935,7 +935,7 @@ func _update_crt() -> void:
 	# The wrapper is new or its source changed; the fit does not survive that.
 	_apply_aspect()
 	_crt_wrapped = override
-	_screen_mesh.set_surface_override_material(0, _crt_material)
+	_paint(_crt_material)
 
 
 ## Phosphor persistence: run the live frame through the decay accumulator and feed
@@ -1171,7 +1171,7 @@ func _current_source_texture() -> Texture2D:
 func _unwrap_crt() -> void:
 	var override := _screen_mesh.get_surface_override_material(0)
 	if _crt_wrapped != null and (override == _crt_material or override == _stereo_material):
-		_screen_mesh.set_surface_override_material(0, _crt_wrapped)
+		_paint(_crt_wrapped)
 	_crt_wrapped = null
 	_crt_source_tex = null
 	_crt_derived_key = ""
@@ -1337,6 +1337,78 @@ func _update_stereo_button_glyph() -> void:
 ## Returns the screen MeshInstance3D so Libretro can render onto it
 func get_screen_mesh() -> MeshInstance3D:
 	return _screen_mesh
+
+
+# ── Who may paint the glass ───────────────────────────────────────────────────
+#
+# One mesh, one material slot, and until now five things wrote it directly: the
+# C++ video handler, both decks, this script, and a dual-screen console's mirror.
+# Nothing owned it, so who was showing had to be inferred from whatever material
+# happened to be installed — and every bug in this area came from that. A host
+# painting an input nobody selected produced a picture on the wrong input; a host
+# that stopped painting produced no picture at all. Both were SILENT.
+#
+# The rule is now stated: a host may put a picture on the glass only while the set
+# is showing its input, and may always take its own picture off again. Breaking it
+# is an error rather than a wrong picture.
+
+
+## Who last painted the glass — the set itself, or the host on the shown input.
+var _screen_owner: Object = null
+
+## The last caller refused, so a host that keeps asking is reported once rather
+## than once per frame.
+var _refused: Object = null
+
+
+## True when `who` is allowed to show a picture right now: the set itself, or the
+## host on the selected input while the set is on. RF adds its own condition — a
+## console on the aerial input only appears on the channel its switch is using.
+func can_paint(who: Object) -> bool:
+	if who == self:
+		return true
+	if not _tv_enabled or who == null:
+		return false
+	if current_source == Source.RF and not _rf_tuned():
+		return false
+	return who == _selected_system()
+
+
+## Put a material on the glass. Refused, loudly, unless `who` may paint.
+func paint_screen(who: Object, mat: Material) -> bool:
+	if not can_paint(who):
+		if _refused != who:
+			_refused = who
+			push_error("[RetroTV] %s tried to paint %s while it is showing %s"
+				% [who, name, SOURCE_NAMES[current_source]])
+		return false
+	_refused = null
+	_screen_owner = who
+	_screen_mesh.set_surface_override_material(0, mat)
+	return true
+
+
+## Take `who`'s picture off the glass. Always allowed — a host may stop showing
+## whenever it likes — but it only clears when the picture up there is actually
+## theirs, so a deck being unplugged cannot blank the input somebody is watching.
+func release_screen(who: Object) -> void:
+	# Or while the set is showing their input: what is on the glass then is
+	# theirs by definition, even when the set has wrapped it in its own CRT
+	# material and taken nominal ownership doing so.
+	if _screen_owner != who and not can_paint(who):
+		return
+	# _update_screen_source paints the right nothing (blue while on, dark while
+	# off) on the next frame; clearing the override is what lets it.
+	_unwrap_crt()
+	_paint(null)
+	_screen_owner = null
+
+
+## The set's own writes. Separate from paint_screen so the set does not have to
+## police itself, and so every write still passes through one place.
+func _paint(mat: Material) -> void:
+	_screen_owner = self
+	_screen_mesh.set_surface_override_material(0, mat)
 
 
 ## World positions of the set's left and right speakers, in that order.
@@ -1920,7 +1992,7 @@ func set_source(source: int) -> void:
 	# and switching to an empty socket would show the previous input frozen.
 	if current_source != Source.TV:
 		_unwrap_crt()
-		_screen_mesh.set_surface_override_material(0, _blue_material)
+		_paint(_blue_material)
 
 	# Mute every source that is not selected, and hand the glass to the one that is.
 	# set_screen_enabled is the contract every host already implements (RetroSystem,

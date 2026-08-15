@@ -625,9 +625,6 @@ func _may_paint() -> bool:
 func _bind_screen_to_tv() -> void:
 	if connected_tv == null or _vlc == null:
 		return
-	var mesh := connected_tv.get_screen_mesh()
-	if mesh == null:
-		return
 	var tex: Texture2D = _vlc.get_texture()
 	if tex == null:
 		return
@@ -637,7 +634,7 @@ func _bind_screen_to_tv() -> void:
 		(_screen_material as ShaderMaterial).set_shader_parameter("video_tex", tex)
 	else:
 		(_screen_material as StandardMaterial3D).albedo_texture = tex
-	mesh.set_surface_override_material(0, _screen_material)
+	connected_tv.paint_screen(self, _screen_material)
 
 
 ## True if the current material already matches the vcr_effect_enabled setting.
@@ -698,12 +695,10 @@ func get_vcr_params() -> Dictionary:
 func _blank_screen(tv: RetroTV = connected_tv) -> void:
 	if tv == null or not is_instance_valid(tv):
 		return
-	var mesh := tv.get_screen_mesh()
-	if mesh == null:
-		return
-	var black := StandardMaterial3D.new()
-	black.albedo_color = Color(0, 0, 0, 1)
-	mesh.set_surface_override_material(0, black)
+	# The set decides what "nothing" looks like — blue while it is on, dark while
+	# it is off. Painting our own black said that for it, and said it over the top
+	# of whatever input it had moved on to.
+	tv.release_screen(self)
 
 
 func _on_video_finished() -> void:

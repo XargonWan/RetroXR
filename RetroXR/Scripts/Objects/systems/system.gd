@@ -1279,7 +1279,11 @@ func _update_tv_mirrors() -> void:
 		if tv_obj == null or not is_instance_valid(tv_obj):
 			continue
 		var tv := tv_obj as RetroTV
-		if tex == null or not tv.is_powered_on():
+		# can_paint, not just the set's power: a dual-screen machine used to mirror
+		# itself onto a television regardless of which input the viewer had chosen,
+		# because this path never asked. Asking first also keeps the set's guard a
+		# backstop rather than something normal operation trips.
+		if tex == null or not tv.is_powered_on() or not tv.can_paint(self):
 			_uninstall_tv_mirror(i, tv)
 			continue
 		var mat: ShaderMaterial = _tv_window_mats[i]
@@ -1295,7 +1299,7 @@ func _update_tv_mirrors() -> void:
 			mat.set_shader_parameter("source_tex", tex)
 		var mesh := tv.get_screen_mesh()
 		if mesh.get_surface_override_material(0) != mat:
-			mesh.set_surface_override_material(0, mat)
+			tv.paint_screen(self, mat)
 
 
 ## Take our window material off a TV so its own blue/dark states resume.
@@ -1303,9 +1307,7 @@ func _uninstall_tv_mirror(ch: int, tv: RetroTV) -> void:
 	var mat: ShaderMaterial = _tv_window_mats[ch]
 	if mat == null or tv == null or not is_instance_valid(tv):
 		return
-	var mesh := tv.get_screen_mesh()
-	if mesh.get_surface_override_material(0) == mat:
-		mesh.set_surface_override_material(0, null)
+	tv.release_screen(self)
 
 
 ## Read a slot that may be holding a freed instance.
