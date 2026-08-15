@@ -6,7 +6,7 @@
 ## one probe worth keeping in the tree: every case below is a bug that actually
 ## shipped, so the file doubles as the regression record.
 ##
-##     "$godot" --headless --path RetroXR res://Tools/romm_tests.tscn
+##     "$godot" --headless --path RetroXR res://Tests/romm_tests.tscn
 ##
 ## Exits 0 when everything passes, 1 otherwise, so it can gate a commit.
 ##

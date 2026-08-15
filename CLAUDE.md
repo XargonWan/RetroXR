@@ -181,14 +181,20 @@ There is no formal test framework. The project is validated by running the Godot
 **headless** for compile/scene checks, plus small throwaway "probe" scenes for functional
 tests. This works without a VR headset (desktop fallback) and without a display.
 
-Two probes are **keepers rather than throwaways**, and both exit non-zero on failure so
-they can gate a commit: the A/V suite in §2c, and the RomM one below.
+**`RetroXR/Tests/` is the exception, and the bar for living there is exact:** a scene
+that checks itself, runs unattended with no ROM, core, headset or device, and **exits
+non-zero on failure**, so it can gate a commit. Two so far — the A/V suite in §2c and
+the RomM one below. Everything else is a probe and stays in `RetroXR/Tools/`, including
+the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe`,
+`vb_probe`, `nds_probe`, `handheld_probe`, `gl_video_probe`), a headset or a Quest
+(`netplay_spike`), or they are reproductions of open bugs and report failures BY DESIGN
+(`three_plug_probe`). Moving one of those into `Tests/` would make a red run meaningless.
 
-`RetroXR/Tools/romm_tests.tscn` asserts the pure-logic half of the RomM stack — pair-QR
+`RetroXR/Tests/romm_tests.tscn` asserts the pure-logic half of the RomM stack — pair-QR
 parsing, slug mapping and systemid collision, the sync fingerprint, cache path safety,
 and the `scan_roms` disk walk. No server, no headset, no network, ~2 s.
 ```bash
-"$godot" --headless --path RetroXR res://Tools/romm_tests.tscn 2>&1 | grep -a "\[test\]"
+"$godot" --headless --path RetroXR res://Tests/romm_tests.tscn 2>&1 | grep -a "\[test\]"
 ```
 Every case in it is a bug that actually shipped, so it doubles as the regression record —
 add to it when you fix something in that layer rather than starting a new probe. It uses a
@@ -283,13 +289,13 @@ nothing at all. Run `--editor --quit` between the overwrite and the render.
 
 ### 2c. The A/V suite — the one thing here that is an actual test suite
 
-`RetroXR/Tools/av_suite.tscn` — 21 cases over what reaches a television's inputs and
+`RetroXR/Tests/av_suite.tscn` — 21 cases over what reaches a television's inputs and
 what it shows. Headless, ~90 s, **exits non-zero on failure**, so it is the one probe
 that can be run as a gate rather than read.
 
 ```bash
-"$godot" --headless --path RetroXR res://Tools/av_suite.tscn
-"$godot" --headless --path RetroXR res://Tools/av_suite.tscn -- --only=display
+"$godot" --headless --path RetroXR res://Tests/av_suite.tscn
+"$godot" --headless --path RetroXR res://Tests/av_suite.tscn -- --only=display
 ```
 
 Groups: `routing/` (real TV + VCR + composite leads — cords into the wrong sockets, a
