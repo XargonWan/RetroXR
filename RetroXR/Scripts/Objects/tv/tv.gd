@@ -708,7 +708,10 @@ func _process(_delta: float) -> void:
 	var override := _screen_mesh.get_surface_override_material(0)
 	var effective := _crt_wrapped \
 		if (override == _crt_material or override == _stereo_material) else override
-	if not _tv_enabled or effective == _dark_material or effective == null:
+	# effective is null for a SAMPLED source as well as for an empty screen — there
+	# is no wrapped material underneath one — so the texture decides between them.
+	if not _tv_enabled or effective == _dark_material \
+			or (effective == null and _current_source_texture() == null):
 		_ambilight.light_energy = 0.0
 		return
 	_ambilight.light_energy = _ambilight_energy
@@ -771,6 +774,13 @@ func _update_screen_source() -> void:
 		if _screen_mesh.get_surface_override_material(0) != snow:
 			_unwrap_crt()
 			_paint(snow)
+		return
+
+	# A host that hands over a texture is SAMPLED, not left to paint: the set builds
+	# the picture itself out of the source's frame. Everything below this line is the
+	# old arrangement, where a host installed its own material and the set worked out
+	# what was on the glass by looking at it.
+	if _tv_enabled and _pull_from_selected():
 		return
 
 	var override := _screen_mesh.get_surface_override_material(0)
@@ -936,6 +946,72 @@ func _update_crt() -> void:
 	_apply_aspect()
 	_crt_wrapped = override
 	_paint(_crt_material)
+
+
+## Show the selected host by SAMPLING the picture it offers, in a material this
+## set owns. False when there is nothing to sample — no host on this input, no
+## picture yet — and the caller falls through to the set's own no-signal states.
+##
+## The set has always owned a material that samples a source texture: the CRT
+## wrapper. What is new is where the texture comes from. Wrapping meant waiting for
+## a host to paint, reading the texture back out of whatever it painted, and
+## re-wrapping every time it changed its mind — which is why the old path needed
+## _extract_texture, _crt_wrapped and an unwrap ordered against every handover.
+func _pull_from_selected() -> bool:
+	var host := _selected_system()
+	if host == null or not host.has_method("get_video_texture"):
+		return false
+	var tex: Texture2D = host.get_video_texture()
+	if tex == null:
+		return false
+
+	var stereo := _source_is_sbs()
+	var mat := _stereo_screen_material() if stereo else _crt_screen_material()
+	if _screen_mesh.get_surface_override_material(0) != mat:
+		# Anything a pushing host left behind goes first, including a wrapper of
+		# its material — _unwrap_crt also clears _crt_source_tex, so it has to
+		# happen before this frame's source is recorded below.
+		_unwrap_crt()
+		_paint(mat)
+	# Against _crt_source_tex rather than the material, because the phosphor
+	# accumulator legitimately swaps source_tex for its ping-pong buffer — reading
+	# it back would look like a source change every frame and undo the persistence.
+	var current: Texture2D = mat.get_shader_parameter("source_tex") as Texture2D \
+		if stereo else _crt_source_tex
+	if current != tex:
+		mat.set_shader_parameter("source_tex", tex)
+		# The fit does not survive a new source, and the scanline count is derived
+		# from the source's own resolution.
+		_apply_aspect()
+		_apply_crt_params(mat)
+	if not stereo:
+		_crt_source_tex = tex     # what the phosphor accumulator reads
+	return true
+
+
+## The set's own material for a sampled picture. crt_enabled is set at creation
+## because the shader's own default is ON, so a set with the tube switched off
+## would show one frame of it before _update_crt caught up.
+func _crt_screen_material() -> ShaderMaterial:
+	if _crt_material == null:
+		_crt_material = ShaderMaterial.new()
+		_crt_material.shader = CRT_SHADER
+		_crt_material.set_shader_parameter("crt_enabled", crt_enabled)
+	return _crt_material
+
+
+## The same for a full-frame side-by-side source (Virtual Boy): the windowing
+## shader takes the left half and shifts +0.5 for the right eye, with the CRT
+## stage chained inside it.
+func _stereo_screen_material() -> ShaderMaterial:
+	if _stereo_material == null:
+		_stereo_material = ShaderMaterial.new()
+		_stereo_material.shader = WINDOW_SHADER
+		_stereo_material.set_shader_parameter("source_rect", Vector4(0.0, 0.0, 0.5, 1.0))
+		_stereo_material.set_shader_parameter("eye_shift", 0.5)
+		_stereo_material.set_shader_parameter("stereo_mode", stereo_mode)
+		_stereo_material.set_shader_parameter("crt_enabled", crt_enabled)
+	return _stereo_material
 
 
 ## Phosphor persistence: run the live frame through the decay accumulator and feed

@@ -1068,16 +1068,61 @@ func _update_audio_position() -> void:
 		_audio_player.position = Vector3.ZERO
 
 
-## The mesh the core should render to right now: a connected TV wins,
-## otherwise a handheld's built-in LCD, otherwise null (no display).
-## Multi-output hardware (dual-screen handhelds) ALWAYS renders to its own
-## builtin proxy — connected TVs are fed per-channel by _update_tv_mirrors.
+## The core's picture. The ONE way anything gets at it — the television that shows
+## this machine reads it here rather than being painted into, and so does the
+## model's own panel.
+##
+## Null before the first frame and while nothing is running, and a different object
+## after a resolution change, so callers read it per frame instead of caching it.
+func get_video_texture() -> Texture2D:
+	return _libretro.GetVideoTexture() if _libretro != null else null
+
+
+## The mesh the core paints, which is now only ever this machine's OWN screen: a
+## handheld's built-in LCD, or the hidden proxy a dual-screen or stereo model
+## samples. Null for a console, which has no panel of its own.
+##
+## A television is never named here any more. It reads get_video_texture() and
+## paints its own glass, so the picture no longer depends on which set was
+## connected first, and a machine feeding two sets is not a special case.
 func _screen_target() -> MeshInstance3D:
-	if _channels.size() > 1:
-		return _model.get_builtin_screen() if _model else null
-	if connected_tv != null:
-		return connected_tv.get_screen_mesh()
 	return _model.get_builtin_screen() if _model else null
+
+
+## The panel the core actually paints. This machine's own, except that a video-out
+## cable MOVES the picture to the television rather than mirroring it — Super Game
+## Boy, and what a handheld has always done here.
+##
+## Keyed on the cable being connected, never on which input the set has selected:
+## the machine's own panel is not the set's to darken. The set samples the same
+## texture either way, so a switch away from this input costs the set its picture
+## and nothing else.
+##
+## The last thing still deciding where a core renders. Step 5 hands the decision to
+## the model, which owns that mesh, and SetScreenMesh goes with it.
+func _own_panel_target() -> MeshInstance3D:
+	if _channels.size() == 1 and connected_tv != null and is_instance_valid(connected_tv):
+		return null
+	return _screen_target()
+
+
+## Somewhere for the picture to go: this machine's own panel, or a television
+## cabled to it. Powering on with neither is the "no display" fault.
+func _has_display() -> bool:
+	if _screen_target() != null:
+		return true
+	for tv in _channel_tvs:
+		if tv != null and is_instance_valid(tv):
+			return true
+	return false
+
+
+## A machine wired to nothing is silent. Used to fall out of SetScreenMesh(null) —
+## no mesh, no sound — which only worked while a picture reached a set by being
+## painted onto it.
+func _apply_audio_playing() -> void:
+	if _libretro != null:
+		_libretro.SetAudioPlaying(_has_display())
 
 
 ## True when the running core outputs a side-by-side stereo frame (Virtual Boy);
@@ -1086,35 +1131,11 @@ func is_stereo_output() -> bool:
 	return _model != null and _model.is_stereo_side_by_side()
 
 
-## Show or hide the screen output (used by TV toggle button).
-## Multi-output: per-TV blanking is handled by _update_tv_mirrors (it keys off
-## each TV's own power), so a single TV's toggle must not blank the core here.
-##
-## LATCHED, like set_audio_volume: a machine that is off has no core to point at a
-## mesh, but the set's answer still holds for when it does. Without that a console
-## seated into an unselected input while it is off — every save restore does exactly
-## this, plug first, power second — takes the glass the moment it starts, and paints
-## its picture over whichever input the viewer is actually watching.
-func set_screen_enabled(on: bool) -> void:
-	if _channels.size() > 1:
-		return
-	_last_screen_enabled = on
-	if not is_powered_on:
-		return
-	_libretro.SetScreenMesh(_screen_target() if on else null)
-
-
-## Whether the set feeding this machine has it on the glass. True by default: a
-## console with no television attached shows its picture wherever it has one.
-var _last_screen_enabled: bool = true
-
-
-## The mesh the core may render into RIGHT NOW: _screen_target(), or nothing while
-## the set it feeds has another input selected. Every StartContent goes through this
-## rather than _screen_target() directly, which answers the different question of
-## whether a display is cabled up at all.
-func _bound_screen_target() -> MeshInstance3D:
-	return _screen_target() if _last_screen_enabled else null
+# set_screen_enabled, _last_screen_enabled and _bound_screen_target are gone with
+# the push. Which input a set is showing decided where the CORE rendered, so it had
+# to be latched for a machine that was off, stated in both directions, and applied
+# in an order that did not clobber the incoming picture. None of that is a question
+# any more: the core renders to its own texture, and the set samples it or does not.
 
 
 ## Which channel this console's own RF switch puts it on, or -1 if it has none.
@@ -1148,11 +1169,9 @@ func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
 	if ch == 0:
 		connected_tv = tv
 	_seat_audio_pair(ch, tv)
-	# A fresh connection carries no verdict from the set that made it. The one
-	# being joined states its own selection immediately after this returns
-	# (RetroTV._apply_screen_enable), so starting from "shown" cannot strand a
-	# machine dark, while carrying a previous set's "no" over to a new one could.
-	_last_screen_enabled = true
+	_apply_audio_playing()
+	if is_powered_on:
+		_libretro.SetScreenMesh(_own_panel_target())
 	if _channels.size() > 1:
 		# Picture arrives via _update_tv_mirrors; a touch channel additionally
 		# turns the TV's glass into the touch screen.
@@ -1163,8 +1182,6 @@ func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
 			tv.get_screen_mesh().add_child(surf)
 			_tv_touch_surfaces[ch] = surf
 		return
-	if is_powered_on:
-		_libretro.SetScreenMesh(tv.get_screen_mesh())
 
 
 ## Called by the TV when a plug disconnects. Handhelds take the picture back
@@ -1179,14 +1196,13 @@ func on_tv_disconnected(plug: CablePlug = null) -> void:
 	if ch == 0:
 		connected_tv = null
 	_release_audio_pair(ch, tv)
+	if is_powered_on:
+		_libretro.SetScreenMesh(_own_panel_target())
 	if _channels.size() > 1:
 		_remove_touch_surface(ch)
 		_uninstall_tv_mirror(ch, tv)
 		return
-	# A set that is no longer connected has no say in where the picture goes.
-	_last_screen_enabled = true
-	if is_powered_on:
-		_libretro.SetScreenMesh(_screen_target())
+	_apply_audio_playing()
 
 
 ## Put the lead's audio pair into the L and R sockets of the input the picture
@@ -1267,13 +1283,7 @@ func _remove_touch_surface(ch: int) -> void:
 func _update_tv_mirrors() -> void:
 	if _channels.size() <= 1:
 		return
-	var tex: Texture2D = null
-	if is_powered_on and _model != null:
-		var scr := _model.get_builtin_screen()
-		if scr != null:
-			var m := scr.get_surface_override_material(0)
-			if m is StandardMaterial3D:
-				tex = (m as StandardMaterial3D).emission_texture
+	var tex: Texture2D = get_video_texture() if is_powered_on else null
 	for i in _channels.size():
 		var tv_obj = _channel_tvs[i]
 		if tv_obj == null or not is_instance_valid(tv_obj):
@@ -2028,11 +2038,10 @@ func _clamp_plug(plug: CablePlug, attach_pos: Vector3, max_len: float) -> void:
 func power_on() -> void:
 	if is_powered_on:
 		return
-	# A console with no TV connected still powers on and runs — the core renders
-	# to its texture with no bound mesh; connecting a TV later attaches the picture
-	# (SetScreenMesh), same as re-plugging a TV that was pulled mid-game. Handhelds
-	# always have a built-in screen so _screen_target() is non-null for them.
-	if _screen_target() == null:
+	# A console with no TV connected still powers on and runs — the core renders to
+	# its own texture regardless, and a set plugged in later simply starts sampling
+	# it. Handhelds always have a panel, so they never take this branch.
+	if not _has_display():
 		# Name the actual state. "No display" covers two very different faults and
 		# the loud one — audio cords in, video cord out — looks identical to a
 		# console that is simply broken, because you can hear it running.
@@ -2085,7 +2094,9 @@ func power_on() -> void:
 	# all of which just mean this machine runs without achievements.
 	_claim_achievements_session()
 	_protect_active_rom()
-	_libretro.StartContent(_bound_screen_target(), resolved_dir, resolved_core, rom_path)
+	_libretro.StartContent(_own_panel_target(), resolved_dir, resolved_core, rom_path)
+	# A machine with nowhere to send its picture is not heard either.
+	_apply_audio_playing()
 	_bind_audio_player()
 	is_powered_on = true
 	_update_power_button_visual()
@@ -2262,7 +2273,7 @@ func net_resolve_rom(md5: String) -> bool:
 ## BEFORE StartContent so the core holds at `start_frame` until inputs post.
 ## Returns the Libretro node (the session connects its signals). null on failure.
 func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
-	if _screen_target() == null:
+	if not _has_display():
 		push_error("RetroSystem: netplay start — no display (connect a TV)")
 		return null
 	if rom_path.is_empty():
@@ -2292,7 +2303,9 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_protect_active_rom()
-	_libretro.StartContent(_bound_screen_target(), _resolve_dir(), resolved_core, rom_path)
+	_libretro.StartContent(_own_panel_target(), _resolve_dir(), resolved_core, rom_path)
+	# A machine with nowhere to send its picture is not heard either.
+	_apply_audio_playing()
 	_bind_audio_player()
 	is_powered_on = true
 	net_remote_powered = false
