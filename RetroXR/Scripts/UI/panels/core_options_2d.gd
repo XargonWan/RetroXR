@@ -59,6 +59,9 @@ var _suppress_signal := false
 
 var _definitions: Dictionary = {}
 var _values: Dictionary = {}
+## The core this machine will run, for the FRONTEND row. Empty until the first
+## populate(), and empty for a system whose core cannot be resolved at all.
+var _core_name: String = ""
 # Options the system model pins; shown locked rather than hidden, so it is clear
 # why they cannot be changed instead of leaving them unexplained absences.
 var _forced: Dictionary = {}
@@ -245,12 +248,13 @@ func _build_ui() -> void:
 ## Fill or refresh all tabs.
 ## controller_info: Array of Dicts [{port, controllers:[{name,id}], current_id}]
 func populate(definitions: Dictionary, current_values: Dictionary, controller_info: Array,
-		forced: Dictionary = {}, unavailable: String = "") -> void:
+		forced: Dictionary = {}, unavailable: String = "", core_name: String = "") -> void:
 	_definitions = definitions
 	_values = current_values
 	_controller_info = controller_info
 	_forced = forced
 	_unavailable = unavailable
+	_core_name = core_name
 	print("[CoreOptions2D] populate() — %d options, %d ports" % [definitions.size(), controller_info.size()])
 	_refresh_options()
 	_refresh_controllers()
@@ -299,9 +303,9 @@ func scroll_active(pixels: float) -> void:
 
 # ── Options tab ────────────────────────────────────────────────────────────────
 
+## Appended, never clearing: the FRONTEND row above it is a setting in its own
+## right and outlives "this core has published nothing yet".
 func _show_options_placeholder() -> void:
-	for c in _options_rows.get_children():
-		c.queue_free()
 	var lbl := Label.new()
 	lbl.text = _unavailable if not _unavailable.is_empty() \
 		else "No options available.\n(Start emulation first.)"
@@ -317,6 +321,8 @@ func _refresh_options() -> void:
 	for c in _options_rows.get_children():
 		c.queue_free()
 
+	_add_frontend_row()
+
 	if _definitions.is_empty():
 		_show_options_placeholder()
 		return
@@ -329,6 +335,57 @@ func _refresh_options() -> void:
 		_add_option_row(key, _definitions[key], String(_values.get(key, "")))
 
 	print("[CoreOptions2D] %d option rows built" % keys.size())
+
+
+## Which API this core is told the frontend would rather render with — the same
+## setting as CORES > Manager > (core) > FRONTEND in the spawn menu, reachable
+## from the machine as well.
+##
+## Above the core's own options and outside the reset, because it is not one of
+## them: every row below is a key the core publishes about itself and is written
+## to that core's option file, while this is our answer to
+## GET_PREFERRED_HW_RENDER, kept per core in AppPrefs. Built whether or not the
+## core has published anything, since a machine that has never been switched on
+## is exactly when this gets set.
+func _add_frontend_row() -> void:
+	if _core_name.is_empty():
+		return
+
+	var head := Label.new()
+	head.text = "FRONTEND"
+	head.add_theme_font_size_override("font_size", 15)
+	head.add_theme_color_override("font_color", COLOR_TITLE)
+	_options_rows.add_child(head)
+
+	# "" is no override — the entry names the global, so the row says what this
+	# core will actually get rather than merely that it is following something.
+	var default_label := "Default"
+	var options: Array = []
+	for choice: Array in AppPrefs.hw_render_choices():
+		if str(choice[1]) == AppPrefs.DEFAULT_HW_RENDER:
+			default_label = "Default (%s)" % str(choice[0])
+		options.append([str(choice[0]), str(choice[1])])
+	options.push_front([default_label, ""])
+
+	# VRDropdown, never OptionButton — every Viewport2Din3D click fires twice.
+	var drop := VRDropdown.create("Preferred HW Render", options,
+		AppPrefs.hw_render_override(_core_name), 1, Vector2(300, 48), 16)
+	drop.item_selected.connect(func(id: Variant) -> void:
+		print("[CoreOptions2D] hw render for '%s' → '%s'" % [_core_name, str(id)])
+		AppPrefs.set_hw_render_override(_core_name, str(id))
+	)
+	_options_rows.add_child(drop)
+
+	# One line: this page is 600x500 and the core's own options are what it is
+	# for. The full explanation lives on the spawn menu's copy of this row.
+	var note := Label.new()
+	note.text = "Applied as the core starts."
+	note.add_theme_font_size_override("font_size", 12)
+	note.add_theme_color_override("font_color", COLOR_ROW)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_options_rows.add_child(note)
+
+	_options_rows.add_child(HSeparator.new())
 
 
 ## Sits above the list rather than at the bottom: it acts on everything below it,

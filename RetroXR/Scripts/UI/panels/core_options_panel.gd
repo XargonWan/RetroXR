@@ -132,7 +132,8 @@ func _populate() -> void:
 	if not ui:
 		return
 	ui.populate(_system._options_definitions, _system._options_values, _system._controller_info,
-		_system.forced_core_options(), _system._options_unavailable)
+		_system.forced_core_options(), _system._options_unavailable,
+		_system._resolve_core())
 	ui.populate_system(_system.video_out_enabled, _system.supports_video_out_toggle(),
 		_system.ignore_gravity, _system.pad_guid, _system.pad_ordinal)
 	_populate_cartridge_tab(ui)
