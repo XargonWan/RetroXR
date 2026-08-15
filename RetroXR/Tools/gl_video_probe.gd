@@ -118,7 +118,7 @@ func _run() -> void:
 		var api_id: int = HW_API[hwapi]
 		ClassDB.class_call_static("Libretro", "SetPreferredHwRender", api_id)
 		print("[glprobe] preferred hw render = %s (%d)" % [hwapi, api_id])
-	_lib.StartContent(_screen, root_dir, core, rom)
+	_lib.StartContent(root_dir, core, rom)
 
 	var t0 := Time.get_ticks_msec()
 	for at: float in SAMPLE_AT:

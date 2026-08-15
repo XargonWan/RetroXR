@@ -64,7 +64,7 @@ func _fail_if(cond: bool, msg: String) -> void:
 
 func _boot(sram_path: String) -> void:
 	_lib.SetSramPath(sram_path)
-	_lib.StartContent(_mesh, root_dir, core, rom)
+	_lib.StartContent(root_dir, core, rom)
 
 
 func _wait_frames(n: int) -> void:

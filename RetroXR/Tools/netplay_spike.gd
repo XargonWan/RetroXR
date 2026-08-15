@@ -83,7 +83,7 @@ func _ready() -> void:
 	# Rollback mode: port 0 is REMOTE (local_mask 0) so the engine predicts it
 	# and our lagged confirmations force rewind+replay corrections.
 	_lib.SetNetplayRollback(rollback, 0, ROLLBACK_MAX_AHEAD)
-	_lib.StartContent(_mesh, root_dir, core, rom)
+	_lib.StartContent(root_dir, core, rom)
 	print("[spike] started %s / %s%s" % [core, rom.get_file(), " (ROLLBACK)" if rollback else ""])
 
 

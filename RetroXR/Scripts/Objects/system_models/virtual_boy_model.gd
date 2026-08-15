@@ -75,7 +75,7 @@ func get_controller_port_count() -> int:
 
 
 func get_builtin_screen() -> MeshInstance3D:
-	return _proxy   # hidden — VideoHandler renders here, the eyepiece samples it
+	return _proxy   # hidden and now unpainted: it answers "this machine has a panel" and nothing else
 
 
 func is_stereo_side_by_side() -> bool:
@@ -287,15 +287,12 @@ func _lens_x(m: MeshInstance3D) -> float:
 
 
 func _process(_delta: float) -> void:
-	# Feed the eyepiece: whatever emission texture the VideoHandler put on the
-	# proxy flows into the stereo shader (same copy-on-change pattern as the
-	# dual-screen bottom quad and the TVs' CRT wrapper).
-	if _proxy == null or _stereo_mat == null:
+	# Feed the eyepiece from the machine's own picture (same copy-on-change pattern
+	# as the dual-screen quads and the television's CRT stage). It used to be read
+	# back out of a material the C++ video handler painted onto a hidden proxy.
+	if _stereo_mat == null:
 		return
-	var mat := _proxy.get_surface_override_material(0)
-	var tex: Texture2D = null
-	if mat is StandardMaterial3D:
-		tex = (mat as StandardMaterial3D).get_texture(BaseMaterial3D.TEXTURE_EMISSION)
+	var tex := host_picture()
 	if _stereo_mat.get_shader_parameter("source_tex") != tex:
 		_stereo_mat.set_shader_parameter("source_tex", tex)
 	for m in _lens_mats:

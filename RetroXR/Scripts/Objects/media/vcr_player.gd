@@ -595,7 +595,7 @@ func get_video_texture() -> Texture2D:
 ##
 ## The set owns the material; this only says what to run in it. That is the whole
 ## of what the deck used to build, install and keep in step by hand.
-func get_video_stage() -> Dictionary:
+func get_video_stage(_tv: Node) -> Dictionary:
 	if not vcr_effect_enabled:
 		return {}
 	return {"shader": VCR_SHADER, "params": _vcr_params}

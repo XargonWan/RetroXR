@@ -205,7 +205,6 @@ var _pending_tv_restores: Array = []
 # Which of that TV's composite inputs each pending restore is bound for
 var _pending_tv_inputs: Array = []
 # screen_window ShaderMaterials mirrored onto connected TVs (multi-out only)
-var _tv_window_mats: Array = []
 # TVTouchSurface on the TV showing a touch channel (multi-out only)
 var _tv_touch_surfaces: Array = []
 var _snapped_cartridge: Node3D = null
@@ -559,7 +558,6 @@ func _load_system_model() -> void:
 		_channel_tvs.append(null)
 		_pending_tv_restores.append(null)
 		_pending_tv_inputs.append(0)
-		_tv_window_mats.append(null)
 		_tv_touch_surfaces.append(null)
 		_model.configure_cable_attach_for(_attach_points[i], i)
 	# A machine with no display of its own ALWAYS has video out — a TV is the only
@@ -1089,21 +1087,12 @@ func _screen_target() -> MeshInstance3D:
 	return _model.get_builtin_screen() if _model else null
 
 
-## The panel the core actually paints. This machine's own, except that a video-out
-## cable MOVES the picture to the television rather than mirroring it — Super Game
-## Boy, and what a handheld has always done here.
-##
-## Keyed on the cable being connected, never on which input the set has selected:
-## the machine's own panel is not the set's to darken. The set samples the same
-## texture either way, so a switch away from this input costs the set its picture
-## and nothing else.
-##
-## The last thing still deciding where a core renders. Step 5 hands the decision to
-## the model, which owns that mesh, and SetScreenMesh goes with it.
-func _own_panel_target() -> MeshInstance3D:
-	if _channels.size() == 1 and connected_tv != null and is_instance_valid(connected_tv):
-		return null
-	return _screen_target()
+## True while a video-out cable has taken the picture to a television. The model
+## asks, and darkens its own panel: a handheld's picture MOVES to the set rather
+## than being mirrored (Super Game Boy), and that is the model's own glass to
+## decide about.
+func picture_on_tv() -> bool:
+	return _channels.size() == 1 and connected_tv != null and is_instance_valid(connected_tv)
 
 
 ## Somewhere for the picture to go: this machine's own panel, or a television
@@ -1170,11 +1159,9 @@ func on_tv_connected(tv: RetroTV, plug: CablePlug = null) -> void:
 		connected_tv = tv
 	_seat_audio_pair(ch, tv)
 	_apply_audio_playing()
-	if is_powered_on:
-		_libretro.SetScreenMesh(_own_panel_target())
 	if _channels.size() > 1:
-		# Picture arrives via _update_tv_mirrors; a touch channel additionally
-		# turns the TV's glass into the touch screen.
+		# The set samples our picture through get_video_stage; a touch channel
+		# additionally turns the TV's glass into the touch screen.
 		if bool(_channels[ch].get("touch", false)):
 			_remove_touch_surface(ch)
 			var surf := TVTouchSurface.new()
@@ -1196,13 +1183,10 @@ func on_tv_disconnected(plug: CablePlug = null) -> void:
 	if ch == 0:
 		connected_tv = null
 	_release_audio_pair(ch, tv)
-	if is_powered_on:
-		_libretro.SetScreenMesh(_own_panel_target())
+	_apply_audio_playing()
 	if _channels.size() > 1:
 		_remove_touch_surface(ch)
-		_uninstall_tv_mirror(ch, tv)
 		return
-	_apply_audio_playing()
 
 
 ## Put the lead's audio pair into the L and R sockets of the input the picture
@@ -1276,48 +1260,31 @@ func _remove_touch_surface(ch: int) -> void:
 	_tv_touch_surfaces[ch] = null
 
 
-## Mirror the core's composite picture onto each connected TV through a
-## per-channel screen_window material (multi-output hardware only). The C++
-## VideoHandler owns only the hidden proxy; TVs are fed here, keyed off the
-## proxy's emission texture (identity checks — steady state costs nothing).
-func _update_tv_mirrors() -> void:
+## Which window of this machine's picture a given television should show, and the
+## shader that cuts it out — dual-screen hardware only, where one composite frame
+## carries the top panel above the bottom and each set is cabled to one of them.
+##
+## Replaces _update_tv_mirrors, which pushed a material onto every connected set
+## every frame and had to be told when to stop. The set asks, so a set showing
+## another input simply does not ask.
+func get_video_stage(tv: Node) -> Dictionary:
 	if _channels.size() <= 1:
-		return
-	var tex: Texture2D = get_video_texture() if is_powered_on else null
-	for i in _channels.size():
-		var tv_obj = _channel_tvs[i]
-		if tv_obj == null or not is_instance_valid(tv_obj):
-			continue
-		var tv := tv_obj as RetroTV
-		# can_paint, not just the set's power: a dual-screen machine used to mirror
-		# itself onto a television regardless of which input the viewer had chosen,
-		# because this path never asked. Asking first also keeps the set's guard a
-		# backstop rather than something normal operation trips.
-		if tex == null or not tv.is_powered_on() or not tv.can_paint(self):
-			_uninstall_tv_mirror(i, tv)
-			continue
-		var mat: ShaderMaterial = _tv_window_mats[i]
-		if mat == null:
-			mat = ShaderMaterial.new()
-			mat.shader = SCREEN_WINDOW_SHADER
-			var r: Rect2 = _channels[i]["rect"]
-			mat.set_shader_parameter("source_rect",
-				Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
-			mat.set_shader_parameter("eye_shift", float(_channels[i].get("eye_shift", 0.0)))
-			_tv_window_mats[i] = mat
-		if mat.get_shader_parameter("source_tex") != tex:
-			mat.set_shader_parameter("source_tex", tex)
-		var mesh := tv.get_screen_mesh()
-		if mesh.get_surface_override_material(0) != mat:
-			tv.paint_screen(self, mat)
-
-
-## Take our window material off a TV so its own blue/dark states resume.
-func _uninstall_tv_mirror(ch: int, tv: RetroTV) -> void:
-	var mat: ShaderMaterial = _tv_window_mats[ch]
-	if mat == null or tv == null or not is_instance_valid(tv):
-		return
-	tv.release_screen(self)
+		return {}
+	var ch := -1
+	for i in _channel_tvs.size():
+		if _channel_tvs[i] == tv:
+			ch = i
+			break
+	if ch < 0:
+		return {}
+	var r: Rect2 = _channels[ch]["rect"]
+	return {
+		"shader": SCREEN_WINDOW_SHADER,
+		"params": {
+			"source_rect": Vector4(r.position.x, r.position.y, r.size.x, r.size.y),
+			"eye_shift": float(_channels[ch].get("eye_shift", 0.0)),
+		},
+	}
 
 
 ## Read a slot that may be holding a freed instance.
@@ -1331,13 +1298,11 @@ static func _live(v: Variant) -> Object:
 	return v if is_instance_valid(v) else null
 
 
-## A freed system must not leave its window materials / touch surfaces on TVs.
+## A freed system must not leave its touch surfaces on TVs. Its picture needs no
+## cleaning up any more: a set that asks a freed machine for one stops getting it.
 func _exit_tree() -> void:
 	_release_cache_protection()
 	for i in _channels.size():
-		var tv := _live(_channel_tvs[i]) as RetroTV
-		if tv != null:
-			_uninstall_tv_mirror(i, tv)
 		_remove_touch_surface(i)
 	super._exit_tree()
 
@@ -1944,7 +1909,6 @@ func _process(_delta: float) -> void:
 					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
 		else:
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
-	_update_tv_mirrors()
 	_update_disc_spin(_delta)
 	_ensure_audio_bound()
 	_update_audio_position()
@@ -2094,7 +2058,7 @@ func power_on() -> void:
 	# all of which just mean this machine runs without achievements.
 	_claim_achievements_session()
 	_protect_active_rom()
-	_libretro.StartContent(_own_panel_target(), resolved_dir, resolved_core, rom_path)
+	_libretro.StartContent(resolved_dir, resolved_core, rom_path)
 	# A machine with nowhere to send its picture is not heard either.
 	_apply_audio_playing()
 	_bind_audio_player()
@@ -2303,7 +2267,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_protect_active_rom()
-	_libretro.StartContent(_own_panel_target(), _resolve_dir(), resolved_core, rom_path)
+	_libretro.StartContent(_resolve_dir(), resolved_core, rom_path)
 	# A machine with nowhere to send its picture is not heard either.
 	_apply_audio_playing()
 	_bind_audio_player()

@@ -78,7 +78,7 @@ func _run(root: String) -> void:
 		_finish()
 		return
 	add_child(_lib)
-	_lib.StartContent(_screen, root, CORE, rom)
+	_lib.StartContent(root, CORE, rom)
 
 	# Wait (wall-clock) for the core to boot the homebrew and render frames —
 	# azahar's Vulkan device + shader init takes several seconds before the

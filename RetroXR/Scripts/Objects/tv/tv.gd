@@ -121,7 +121,6 @@ var _av_ports: Array = []
 # CRT wrap state: the ShaderMaterial we install over the source material, and
 # the source material we replaced (restored when the filter turns off).
 var _crt_material: ShaderMaterial = null
-var _crt_wrapped: Material = null
 
 # Stereo wrapper for full-frame side-by-side sources (Virtual Boy): a
 # screen_window material (left-eye window + eye_shift, CRT chained inside) that
@@ -199,7 +198,7 @@ var _screen_size_m := Vector2(0.35, 0.25)
 
 # TV-owned screen states: blue "no signal" (ON with no live input) and the
 # original dark bezel material (OFF).
-var _blue_material: StandardMaterial3D = null
+var _blue_texture: Texture2D = null
 var _dark_material: Material = null
 
 # CRT power-on animation (thin horizontal line expanding to full height).
@@ -360,11 +359,12 @@ func _ready() -> void:
 	if _shell != null and not _speakers_seated:
 		_place_default_speakers()
 
+	# A texture rather than a material: the no-signal screen is SAMPLED like every
+	# other picture, so it goes through the tube stage instead of being a flat
+	# rectangle of blue over a curved glass.
 	var blue_img := Image.create(2, 2, false, Image.FORMAT_RGB8)
 	blue_img.fill(BLUE_SCREEN_COLOR)
-	_blue_material = StandardMaterial3D.new()
-	_blue_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_blue_material.albedo_texture = ImageTexture.create_from_image(blue_img)
+	_blue_texture = ImageTexture.create_from_image(blue_img)
 
 
 ## Wear a cabinet variant. Strict no-op when tv_model is empty — that is the
@@ -706,17 +706,11 @@ func _process(_delta: float) -> void:
 	# readback that stalls the whole pipeline on Quest, and an idle TV (off /
 	# blue "no signal") has nothing new to sample anyway.
 	var override := _screen_mesh.get_surface_override_material(0)
-	# A material the set samples into has nothing underneath it, so what is really
-	# showing is _crt_wrapped — null unless a pushing host's material is wrapped.
-	var effective := _crt_wrapped if _is_sampling_material(override) else override
-	# effective is null for a SAMPLED source as well as for an empty screen — there
-	# is no wrapped material underneath one — so the texture decides between them.
-	if not _tv_enabled or effective == _dark_material \
-			or (effective == null and _current_source_texture() == null):
+	if not _tv_enabled or override == _dark_material:
 		_ambilight.light_energy = 0.0
 		return
 	_ambilight.light_energy = _ambilight_energy
-	if effective == _blue_material:
+	if _crt_source_tex == _blue_texture:
 		_ambilight.light_color = BLUE_SCREEN_COLOR
 		return
 
@@ -729,7 +723,7 @@ func _process(_delta: float) -> void:
 	# Live source (emulator / tape / disc): sample the average screen color from
 	# the current texture (works for system emission materials, VCR materials
 	# and the CRT wrapper alike).
-	var tex := _current_source_texture()
+	var tex := _screen_texture()
 	if not tex:
 		return
 	var img := tex.get_image()
@@ -757,11 +751,8 @@ func _update_screen_source() -> void:
 	if _tv_enabled and current_source == Source.TV and _tuner != null:
 		var wanted := _tuner.screen_material()
 		var current := _screen_mesh.get_surface_override_material(0)
-		var showing_ours := current == wanted
-		if current == _crt_material and _crt_wrapped == wanted:
-			showing_ours = true
-		if not showing_ours:
-			_unwrap_crt()
+		if current != wanted:
+			_drop_sampled()
 			_paint(wanted)
 		return
 
@@ -773,50 +764,27 @@ func _update_screen_source() -> void:
 	if _tv_enabled and current_source == Source.RF and not _rf_tuned():
 		var snow := _rf_static()
 		if _screen_mesh.get_surface_override_material(0) != snow:
-			_unwrap_crt()
+			_drop_sampled()
 			_paint(snow)
 		return
 
-	# A host that hands over a texture is SAMPLED, not left to paint: the set builds
-	# the picture itself out of the source's frame. Everything below this line is the
-	# old arrangement, where a host installed its own material and the set worked out
-	# what was on the glass by looking at it.
+	# The selected input's picture, sampled into a material this set owns.
 	if _tv_enabled and _pull_from_selected():
 		return
 
-	var override := _screen_mesh.get_surface_override_material(0)
-	# A material the set samples into has nothing underneath it, so what is really
-	# showing is _crt_wrapped — null unless a pushing host's material is wrapped.
-	var effective := _crt_wrapped if _is_sampling_material(override) else override
-
-	if _tv_enabled:
-		var has_picture := false
-		if effective != null and effective != _blue_material and effective != _dark_material:
-			# VHS shader = live VCR; standard materials are live once they
-			# carry a picture texture.
-			has_picture = effective is ShaderMaterial or _extract_texture(effective) != null
-		if not has_picture and effective != _blue_material:
-			_unwrap_crt()
-			_paint(_blue_material)
-	else:
-		# Off. The blank states are ours to paint over; a live source's material is
-		# not, and is left until its host hands the glass back.
-		#
-		# The tuner's material is ours too, and neither of its two looks reads as
-		# blank: set_active(false) leaves the last decoded frame frozen on the
-		# picture material, and the static shader carries on animating whether or
-		# not anything is driving it. Nothing else is on the mesh by then — the
-		# tuner is inactive and the connected host was muted when the input
-		# changed — so on the TV input the screen goes dark whatever is left on it.
-		# Our own snow is reclaimable for the same reason the tuner's is: the static
-		# shader animates whether or not anything drives it, so an untuned aerial
-		# input left on it would go on hissing with the set switched off.
-		var reclaimable := effective == _blue_material or effective == null \
-			or (current_source == Source.TV and _tuner != null) \
-			or effective == _rf_static_material
-		if reclaimable and effective != _dark_material:
-			_unwrap_crt()
+	# Nothing to show. Every material on the glass is the set's own now, so this no
+	# longer has to work out whether it is allowed to paint over what is up there:
+	# it is. What stood here read the installed material back to guess whether some
+	# host was still live, counted any ShaderMaterial as a picture, and kept a list
+	# of which blank states were safe to reclaim while the set was off.
+	if not _tv_enabled:
+		if _screen_mesh.get_surface_override_material(0) != _dark_material:
+			_drop_sampled()
 			_paint(_dark_material)
+		return
+	# The blue screen is a picture like any other, so it takes the same route and
+	# comes out curved, scanlined and fitted to the tube.
+	_show_sampled(_crt_screen_material(), _blue_texture)
 
 
 ## Retro CRT turn-on: the picture starts as a thin horizontal line and expands
@@ -843,111 +811,30 @@ func _stop_power_on_anim() -> void:
 
 # ── CRT filter ─────────────────────────────────────────────────────────────────
 
-## Keep the CRT filter applied to whatever is currently on the screen. The
-## sources own the screen material (the C++ video handler re-asserts its own
-## material whenever the core's texture changes; the VCR swaps materials on
-## play/stop/effect-toggle), so instead of fighting them we watch the override
-## each frame and re-wrap when it changes — identity checks only, so the steady
-## state costs nothing.
+## Keep the tube stage and the stereo mode in step with the buttons.
+##
+## Was 118 lines of watching the override each frame to see whether a host had
+## installed a new material, reading the texture back out of it, wrapping it in
+## ours, and unwrapping it again when the toggle went off - all because the
+## material on the glass belonged to somebody else. It belongs to the set, so this
+## only writes uniforms. The tube is a stage inside every display shader
+## (crt_filter.gdshaderinc), switched by crt_enabled, whether that shader is the
+## set's own or one a source asked for.
 func _update_crt() -> void:
-	var override := _screen_mesh.get_surface_override_material(0)
-	if override == null:
-		_crt_wrapped = null
+	var mat := _screen_mesh.get_surface_override_material(0) as ShaderMaterial
+	if mat == null:
 		return
-
-	# VHS / a system's screen-window shader on the screen: chain the CRT stage
-	# inside it via its crt_enabled uniform rather than replacing the material.
-	# Window shaders additionally take this TV's stereo presentation mode.
-	if override is ShaderMaterial and override != _crt_material \
-			and override != _stereo_material:
-		var sm := override as ShaderMaterial
-		if sm.shader == VCR_SHADER or sm.shader == WINDOW_SHADER \
-				or sm.shader == STATIC_SHADER:
-			# Note: an unset uniform reads back as null, never bool — compare
-			# against the Variant directly.
-			var cur: Variant = sm.get_shader_parameter("crt_enabled")
-			if (cur == true) != crt_enabled:
-				sm.set_shader_parameter("crt_enabled", crt_enabled)
-				if crt_enabled:
-					_apply_crt_params(sm)   # sync tube tuning onto the source shader
-			if sm.shader == WINDOW_SHADER:
-				var cur_mode: Variant = sm.get_shader_parameter("stereo_mode")
-				if cur_mode != stereo_mode:
-					sm.set_shader_parameter("stereo_mode", stereo_mode)
-		_crt_wrapped = null
-		return
-
-	# Our stereo wrapper is installed (full-frame SBS source): it stays on
-	# regardless of the CRT toggle — only its uniforms follow the buttons.
-	if override == _stereo_material:
-		var cur_crt: Variant = _stereo_material.get_shader_parameter("crt_enabled")
-		if (cur_crt == true) != crt_enabled:
-			_stereo_material.set_shader_parameter("crt_enabled", crt_enabled)
-			if crt_enabled:
-				_apply_crt_params(_stereo_material)
-		var cur_mode: Variant = _stereo_material.get_shader_parameter("stereo_mode")
-		if cur_mode != stereo_mode:
-			_stereo_material.set_shader_parameter("stereo_mode", stereo_mode)
-		return
-
-	# The wrapper also carries the aspect fit, and the raw source material has no
-	# fit of its own — so a picture that needs shrinking keeps the wrapper on with
-	# the tube stage merely switched off. Without this, turning CRT off would
-	# quietly stretch a letterboxed picture back over the whole glass.
-	if not crt_enabled and not _source_is_sbs() and not _aspect_needs_fit():
-		if override == _crt_material and _crt_wrapped != null:
-			_paint(_crt_wrapped)
-		_crt_wrapped = null
-		return
-
-	if override == _crt_material:
-		# Pinned by the aspect fit (or by a source that never unwraps): switch the
-		# tube stage itself instead of removing the material.
-		var cur_on: Variant = _crt_material.get_shader_parameter("crt_enabled")
-		if (cur_on == true) != crt_enabled:
-			_crt_material.set_shader_parameter("crt_enabled", crt_enabled)
-			if crt_enabled:
-				_apply_crt_params(_crt_material)
-		return
-
-	# A new source material appeared — wrap it if it carries a picture.
-	var tex := _extract_texture(override)
-	if tex == null:
-		return
-	if _source_is_sbs():
-		# Full-frame side-by-side source (Virtual Boy): wrap with the windowing
-		# shader — left-eye window + eye_shift 0.5 gives the per-eye split (or
-		# LEFT/RIGHT via the 3D button) with the CRT stage chained inside, so
-		# stereo no longer depends on the CRT toggle.
-		if _stereo_material == null:
-			_stereo_material = ShaderMaterial.new()
-			_stereo_material.shader = WINDOW_SHADER
-			_stereo_material.set_shader_parameter("source_rect", Vector4(0.0, 0.0, 0.5, 1.0))
-			_stereo_material.set_shader_parameter("eye_shift", 0.5)
-		_stereo_material.set_shader_parameter("source_tex", tex)
-		_stereo_material.set_shader_parameter("stereo_mode", stereo_mode)
-		_stereo_material.set_shader_parameter("crt_enabled", crt_enabled)
+	# Writing a uniform a shader does not declare is harmless, so this does not
+	# have to know which of the display shaders is currently showing.
+	var cur: Variant = mat.get_shader_parameter("crt_enabled")
+	if (cur == true) != crt_enabled:
+		mat.set_shader_parameter("crt_enabled", crt_enabled)
 		if crt_enabled:
-			_apply_crt_params(_stereo_material)
-		_crt_wrapped = override
-		_paint(_stereo_material)
-		return
-	if _crt_material == null:
-		_crt_material = ShaderMaterial.new()
-		_crt_material.shader = CRT_SHADER
-	# Outside the null check: the wrapper is reused across sources, and the toggle
-	# can have moved while it was off the screen. Set here rather than left to the
-	# branch above, which would show one frame of tube on a set wrapped with it off.
-	_crt_material.set_shader_parameter("crt_enabled", crt_enabled)
-	# source_tex before the params: _apply_derived_crt_params reads the source's
-	# resolution back off the material to get the scanline count.
-	_crt_material.set_shader_parameter("source_tex", tex)
-	_crt_source_tex = tex
-	_apply_crt_params(_crt_material)
-	# The wrapper is new or its source changed; the fit does not survive that.
-	_apply_aspect()
-	_crt_wrapped = override
-	_paint(_crt_material)
+			_apply_crt_params(mat)
+	if mat.shader == WINDOW_SHADER:
+		var cur_mode: Variant = mat.get_shader_parameter("stereo_mode")
+		if cur_mode != stereo_mode:
+			mat.set_shader_parameter("stereo_mode", stereo_mode)
 
 
 ## Show the selected host by SAMPLING the picture it offers, in a material this
@@ -972,8 +859,11 @@ func _pull_from_selected() -> bool:
 	# runs it in a material the set owns. It does not need to know what the stage
 	# means: the shader and its uniforms both come from the source, and the CRT
 	# stage chains inside it exactly as it did when the deck owned the material.
-	var stage: Dictionary = host.get_video_stage() if host.has_method("get_video_stage") \
-		else {}
+	# Named, because the answer can depend on which set is asking: a dual-screen
+	# machine cabled to two televisions shows each of them a different window of
+	# the same frame.
+	var stage: Dictionary = host.get_video_stage(self) \
+		if host.has_method("get_video_stage") else {}
 	var shader := stage.get("shader") as Shader
 	var stereo := _source_is_sbs()
 	var mat: ShaderMaterial
@@ -986,11 +876,16 @@ func _pull_from_selected() -> bool:
 		mat = _stereo_screen_material()
 	else:
 		mat = _crt_screen_material()
+	_show_sampled(mat, tex)
+	return true
+
+
+## Install one of the set's own materials and point it at a texture. The one place
+## a picture reaches the glass, whether it came from a machine, a deck, or the
+## set's own no-signal screen.
+func _show_sampled(mat: ShaderMaterial, tex: Texture2D) -> void:
 	if _screen_mesh.get_surface_override_material(0) != mat:
-		# Anything a pushing host left behind goes first, including a wrapper of
-		# its material — _unwrap_crt also clears _crt_source_tex, so it has to
-		# happen before this frame's source is recorded below.
-		_unwrap_crt()
+		_drop_sampled()
 		_paint(mat)
 	# Against _crt_source_tex rather than the material, because the phosphor
 	# accumulator legitimately swaps source_tex for its ping-pong buffer — reading
@@ -998,15 +893,15 @@ func _pull_from_selected() -> bool:
 	var on_crt := mat == _crt_material
 	var current: Texture2D = _crt_source_tex if on_crt \
 		else mat.get_shader_parameter("source_tex") as Texture2D
-	if current != tex:
-		mat.set_shader_parameter("source_tex", tex)
-		# The fit does not survive a new source, and the scanline count is derived
-		# from the source's own resolution.
-		_apply_aspect()
-		_apply_crt_params(mat)
+	if current == tex:
+		return
+	mat.set_shader_parameter("source_tex", tex)
+	# The fit does not survive a new source, and the scanline count is derived
+	# from the source's own resolution.
+	_apply_aspect()
+	_apply_crt_params(mat)
 	if on_crt:
 		_crt_source_tex = tex     # what the phosphor accumulator reads
-	return true
 
 
 ## The set's own material for a sampled picture. crt_enabled is set at creation
@@ -1038,6 +933,7 @@ func _is_sampling_material(mat: Material) -> bool:
 ## which renders as a white panel, not a blue one.
 func _drop_sampled() -> void:
 	_crt_source_tex = null
+	_crt_derived_key = ""
 
 
 ## One material per stage shader a source has asked for, kept because the uniforms
@@ -1182,7 +1078,7 @@ func _apply_derived_crt_params(mat: ShaderMaterial) -> void:
 	# the point: the raster belongs to the signal, so walking backwards must not
 	# change how many scanlines are on the tube.
 	var lines := 240.0
-	var tex: Texture2D = _extract_texture(mat)
+	var tex := mat.get_shader_parameter("source_tex") as Texture2D
 	if tex != null:
 		var h: float = tex.get_size().y
 		# A window shader shows one sub-rect of a composite framebuffer, so a DS
@@ -1214,7 +1110,7 @@ func _refresh_crt_derived() -> void:
 	var mat := _active_crt_material()
 	if mat == null:
 		return
-	var tex := _extract_texture(mat)
+	var tex := mat.get_shader_parameter("source_tex") as Texture2D
 	var key := "%s|%.4f|%.4f|%s" % [
 		mat.get_instance_id(), scale_factor,
 		float(_crt_params.get("crt_mask_pitch_mm", 2.0)),
@@ -1275,39 +1171,17 @@ func set_crt_params(values: Dictionary) -> void:
 ## Pull the picture texture out of a screen material, whichever shape it has:
 ## the C++ video handler uses emission, the VCR uses albedo or a video_tex
 ## uniform, and our own CRT wrapper uses source_tex.
-func _extract_texture(mat: Material) -> Texture2D:
+## Replaces _extract_texture, which had to guess where the picture was: the C++
+## handler used emission, a deck used albedo or its own video_tex uniform, the
+## set's wrapper used source_tex. One convention now, because the set writes them.
+func _screen_texture() -> Texture2D:
+	var mat := _screen_mesh.get_surface_override_material(0)
+	if mat is ShaderMaterial:
+		return (mat as ShaderMaterial).get_shader_parameter("source_tex") as Texture2D
 	if mat is StandardMaterial3D:
 		var std := mat as StandardMaterial3D
-		if std.emission_texture != null:
-			return std.emission_texture
-		return std.albedo_texture
-	if mat is ShaderMaterial:
-		var sm := mat as ShaderMaterial
-		var tex: Variant = sm.get_shader_parameter("video_tex")
-		if tex == null:
-			tex = sm.get_shader_parameter("source_tex")
-		return tex as Texture2D
+		return std.emission_texture if std.emission_texture != null else std.albedo_texture
 	return null
-
-
-## The texture currently being shown, regardless of which material owns it.
-func _current_source_texture() -> Texture2D:
-	var mat := _screen_mesh.get_surface_override_material(0)
-	if mat == null:
-		return null
-	return _extract_texture(mat)
-
-
-## Restore the wrapped source material. Called before hosts (re)take the
-## screen so the C++ video handler captures/restores a clean original instead
-## of our wrapper.
-func _unwrap_crt() -> void:
-	var override := _screen_mesh.get_surface_override_material(0)
-	if _crt_wrapped != null and (override == _crt_material or override == _stereo_material):
-		_paint(_crt_wrapped)
-	_crt_wrapped = null
-	_crt_source_tex = null
-	_crt_derived_key = ""
 
 
 func set_crt_enabled(on: bool) -> void:
@@ -1532,7 +1406,7 @@ func release_screen(who: Object) -> void:
 		return
 	# _update_screen_source paints the right nothing (blue while on, dark while
 	# off) on the next frame; clearing the override is what lets it.
-	_unwrap_crt()
+	_drop_sampled()
 	_paint(null)
 	_screen_owner = null
 
@@ -1845,7 +1719,7 @@ func input_holding(plug: Node3D) -> int:
 func _on_plug_snapped(plug: Node3D, input: int) -> void:
 	# Hand the incoming host a clean screen so the C++ video handler doesn't
 	# capture our CRT wrapper as the "original" material to restore later.
-	_unwrap_crt()
+	_drop_sampled()
 	cable_connected.emit(plug)
 	if plug is CablePlug:
 		var plugged := plug as CablePlug
@@ -1871,7 +1745,6 @@ func _on_plug_snapped(plug: Node3D, input: int) -> void:
 			# unselected has to guess when that stops being true, and one that
 			# remembers the "no" — every host must, since it can arrive while the
 			# machine is off — would never hear it lifted.
-			_apply_screen_enable()
 			# …and it must be silent too until SOURCE picks it, for the same reason.
 			_apply_audio_volume()
 			NetworkManager.report_event(NetObjectSync.EV_TV_PLUG,
@@ -1888,14 +1761,13 @@ func on_av_source_found(source: Node3D) -> void:
 		return                  # nothing of ours is actually joined to it
 	# Hand the incoming host a clean screen, exactly as the plug path does, so the
 	# video handler doesn't capture our CRT wrapper as the material to restore.
-	_unwrap_crt()
+	_drop_sampled()
 	_connected_systems[input] = source
 	source.set_audio_volume(_volume_for(input))
 	_apply_audio_channel_mode()
 	# Same rule as the captive-lead path, and stated the same way: a deck cabled up
 	# to an input nobody is watching waits its turn rather than painting over the one
 	# they are, and hears so when its turn comes.
-	_apply_screen_enable()
 
 
 ## Called by that deck when the last cord between the two is pulled.
@@ -1907,7 +1779,7 @@ func on_av_source_lost(source: Node3D) -> void:
 			found = true
 	if not found:
 		return                  # already replaced by something else
-	_unwrap_crt()
+	_drop_sampled()
 
 
 ## Which input a device's signal is arriving on, or -1 if none of ours reaches it.
@@ -1962,7 +1834,7 @@ func on_av_topology_changed(_links: Array) -> void:
 func _on_plug_released(input: int) -> void:
 	# Unwrap before the host tears down so it restores over its own material,
 	# not our CRT wrapper.
-	_unwrap_crt()
+	_drop_sampled()
 	cable_disconnected.emit()
 	var plugged: CablePlug = _snapped_plugs[input]
 	if plugged:
@@ -2035,7 +1907,6 @@ func _select_tv_then(up: bool) -> void:
 		var i := RF_CHANNELS.find(rf_channel)
 		var n := RF_CHANNELS.size()
 		rf_channel = RF_CHANNELS[((i if i >= 0 else 0) + (1 if up else n - 1)) % n]
-		_apply_screen_enable()
 		_apply_audio_volume()
 		show_osd_timed(_source_banner(), 2.0)
 		return
@@ -2110,30 +1981,14 @@ func set_source(source: int) -> void:
 		return
 	current_source = source
 
-	# Clear the glass BEFORE handing it to the incoming host, never after. A host
-	# installs its material when it is given the mesh and not again — the C++ video
-	# handler binds in SetScreenMesh and on a resolution change, nothing per frame —
-	# so a blank written afterwards is the last word and the new input stays blue
-	# until something re-seats it. That is the whole of "switch to the input the
-	# console is on and the picture disappears, until you pull its plug and put it
-	# back in the same socket".
-	#
-	# Unconditional for the same reason it always was, and that matters between two
-	# composite inputs as much as it does leaving the tuner: the input just left has
-	# its material still installed and still carrying its last frame, so the
-	# no-signal check would go on seeing a picture that nothing is driving any more,
-	# and switching to an empty socket would show the previous input frozen.
-	if current_source != Source.TV:
-		_unwrap_crt()
-		_paint(_blue_material)
+	# Nothing to hand over, and nothing to clear first: the set reads the new
+	# input's picture on the next frame, or paints its own no-signal. What stood
+	# here blanked the glass BEFORE the incoming host could take it, because a host
+	# installed its material once and anything painted afterwards was the last word
+	# — "switch to the input the console is on and the picture disappears, until you
+	# pull its plug and put it back in the same socket".
 
-	# Mute every source that is not selected, and hand the glass to the one that is.
-	# set_screen_enabled is the contract every host already implements (RetroSystem,
-	# VCRPlayer, DVDPlayer) and the set already uses it for power -- without it a
-	# console keeps writing its own material onto the screen every frame and the two
-	# fight.
-	_apply_screen_enable()
-	# Sound follows the same selection as the picture. Both halves, or the input
+	# Sound still has to be told: only the picture is pulled. Without this the input
 	# you just left goes on being heard.
 	_apply_audio_volume()
 
@@ -2570,22 +2425,10 @@ func _apply_audio_volume() -> void:
 ## the screen writes its own idea of "before" over the new picture. Index order is not
 ## selection order — going to Composite 1 from Composite 2 releases second — so a
 ## single pass silently depends on which way the viewer happened to be switching.
-func _apply_screen_enable() -> void:
-	var selected := -1
-	for i in _connected_systems.size():
-		var system: Node3D = _connected_systems[i]
-		if system == null or not is_instance_valid(system) \
-				or not system.has_method("set_screen_enabled"):
-			continue
-		# RF has a second condition on top of being selected: the set has to be
-		# tuned to the channel the switch is putting the console on.
-		var showing: bool = current_source == i and (i != Source.RF or _rf_tuned())
-		if _tv_enabled and showing:
-			selected = i
-			continue
-		system.set_screen_enabled(false)
-	if selected >= 0:
-		(_connected_systems[selected] as Node3D).set_screen_enabled(true)
+# _apply_screen_enable is gone with the push. Telling every host whether it was
+# the one showing — in two passes, in an order that mattered, latched on the host's
+# side so a machine that was off still heard it — was the whole cost of hosts
+# painting. The set reads the selected input's picture, or paints its own blank.
 
 
 ## Which socket input is selected, or -1 while the tuner is showing.
@@ -2632,7 +2475,6 @@ func _rf_tuned() -> bool:
 func on_rf_channel_changed() -> void:
 	if current_source != Source.RF:
 		return
-	_apply_screen_enable()
 	_apply_audio_volume()
 	show_osd_timed(_source_banner(), 2.0)
 
@@ -2712,7 +2554,6 @@ func _on_tv_toggle() -> void:
 		_set_vol_osd_text("")
 	# Powering back on must not un-mute a composite input while the set is showing
 	# the tuner (or another input) -- it would start repainting the screen underneath.
-	_apply_screen_enable()
 	if _tuner:
 		_tuner.set_active(_tv_enabled and current_source == Source.TV)
 	_apply_audio_volume()

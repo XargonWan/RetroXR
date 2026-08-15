@@ -33,7 +33,11 @@ func _on_controller_button_pressed(button_name: String):
 			return
 		clear_options()
 		AppPrefs.apply_hw_render_for(core_name)
-		libretro_node.StartContent(monitor_node, core_directory, core_name, rom_path)
+		libretro_node.StartContent(core_directory, core_name, rom_path)
+		# The core renders to its own texture now, so a display samples it rather
+		# than being handed over. This standalone harness has one monitor and no
+		# television logic, so it does the simplest possible version of that.
+		_sample_into(monitor_node)
 	elif button_name == "b_button":
 		libretro_node.StopContent()
 		clear_options()
@@ -120,3 +124,27 @@ func _on_core_option_selected(index, key, dropdown):
 func clear_options():
 	if vbox:
 		vbox.queue_free()
+
+
+## Put the core's picture on a mesh, the way RetroTV does on its glass.
+func _sample_into(mesh: MeshInstance3D) -> void:
+	if mesh == null:
+		return
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0, 0, 0, 1)
+	mat.emission_enabled = true
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mesh.set_surface_override_material(0, mat)
+	_sampling_material = mat
+	_sampling_mesh = mesh
+
+
+var _sampling_material: StandardMaterial3D = null
+var _sampling_mesh: MeshInstance3D = null
+
+
+func _process(_delta: float) -> void:
+	if _sampling_material != null and libretro_node != null:
+		var tex: Texture2D = libretro_node.GetVideoTexture()
+		if _sampling_material.emission_texture != tex:
+			_sampling_material.emission_texture = tex

@@ -54,7 +54,7 @@ class LiveSys extends Node3D:
 		for k: Variant in options:
 			lib.SetCoreOption(str(k), str(options[k]))
 		lib.SetNetplayMode(true, port_mask, start_frame)
-		lib.StartContent(_mesh, root_dir, core, rom)
+		lib.StartContent(root_dir, core, rom)
 		print("[live] core started (mask=%d start=%d)" % [port_mask, start_frame])
 		return lib
 

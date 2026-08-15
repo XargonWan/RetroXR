@@ -12,6 +12,48 @@ var _baked_shell: Node3D = null
 var _baked_shell_checked: bool = false
 
 
+# ── The machine's own picture ─────────────────────────────────────────────────
+#
+# A model owns the panels it authored, so a model paints them — nobody else. The
+# C++ video handler used to install a material on whichever mesh it was handed,
+# and every model here then read the texture back out of that material to wrap it
+# in an LCD or stereo shader of its own. The picture is asked for now.
+
+
+## The core's picture, from the machine this model belongs to. Null when nothing
+## is running. A different object after a resolution change, so it is read per
+## frame rather than cached.
+func host_picture() -> Texture2D:
+	var host := get_parent()
+	if host == null or not host.has_method("get_video_texture"):
+		return null
+	return host.get_video_texture()
+
+
+## True while a video-out cable has taken the picture to a television, which for
+## a handheld means its own panel goes dark (Super Game Boy).
+func host_picture_on_tv() -> bool:
+	var host := get_parent()
+	return host != null and host.has_method("picture_on_tv") and host.picture_on_tv()
+
+
+## The material a panel shows a raw core picture in — emissive so it reads as lit
+## from within, point-sampled so a 160-pixel-wide frame is not pre-softened before
+## the headset resamples it. Moved here from VideoHandler::Init, which installed
+## exactly this on whatever mesh it was given.
+var _picture_material: StandardMaterial3D = null
+
+
+func picture_material(tex: Texture2D) -> StandardMaterial3D:
+	if _picture_material == null:
+		_picture_material = StandardMaterial3D.new()
+		_picture_material.albedo_color = Color(0, 0, 0, 1)
+		_picture_material.emission_enabled = true
+		_picture_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_picture_material.emission_texture = tex
+	return _picture_material
+
+
 ## True when this model wears a detailed shell — a GLB instanced into the scene as
 ## a child named "Shell".
 ##

@@ -12,9 +12,22 @@ extends Node3D
 
 var _fail := false
 
+## The machine's picture, which each model asks its parent for. The probe stands
+## in for the RetroSystem here.
+var picture: Texture2D = null
+
+
+func get_video_texture() -> Texture2D:
+	return picture
+
 
 class StubHost extends Node3D:
 	var touches: Array = []
+	## The machine's picture, which the model now ASKS for rather than having it
+	## painted onto a hidden proxy for it to read back.
+	var picture: Texture2D = null
+	func get_video_texture() -> Texture2D:
+		return picture
 	func feed_touch(uv: Vector2, pressed: bool) -> void:
 		touches.append([uv, pressed])
 	func set_audio_volume(_v: float) -> void:
@@ -67,28 +80,27 @@ func _check_model(path: String, want_top: Rect2, want_bottom: Rect2) -> void:
 	_fail_if(not bot_uv.position.is_equal_approx(want_bottom.position)
 		or not bot_uv.size.is_equal_approx(want_bottom.size), "%s bottom UV window" % nm)
 
-	# Material mirroring: the C++ VideoHandler seats an emissive picture on the
-	# hidden proxy; next _process must route it onto BOTH visible screen quads
-	# through their window shaders.
+	# The machine's picture must reach BOTH visible screen quads through their
+	# window shaders. It comes from the machine itself now — the model asks its
+	# parent — where it used to be read back off a material the C++ video handler
+	# painted onto the hidden proxy.
+	var host := StubHost.new()
+	add_child(host)
+	model._host = host
+	# The model asks its PARENT for the picture, and its parent here is the probe.
 	var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
-	var core_mat := StandardMaterial3D.new()
-	core_mat.emission_enabled = true
-	core_mat.emission_texture = ImageTexture.create_from_image(img)
-	proxy.set_surface_override_material(0, core_mat)
+	picture = ImageTexture.create_from_image(img)
 	model._process(0.016)
 	_fail_if(top.get_surface_override_material(0) != model._top_mat,
 		"%s top did not adopt window shader" % nm)
 	_fail_if(bottom.get_surface_override_material(0) != model._bottom_mat,
 		"%s bottom did not adopt window shader" % nm)
-	_fail_if(model._top_mat.get_shader_parameter("source_tex") != core_mat.emission_texture,
-		"%s window source_tex not fed from proxy" % nm)
+	_fail_if(model._top_mat.get_shader_parameter("source_tex") != picture,
+		"%s window source_tex not fed from the machine" % nm)
 
 	# Touch conversion: pokes at the bottom screen's centre and corner map
 	# through the bottom UV window.
-	var host := StubHost.new()
-	add_child(host)
-	model._host = host
 	var touch: Area3D = model._touch
 	model._send_touch(touch.global_position, true)   # centre
 	model._send_touch(touch.to_global(Vector3(

@@ -52,6 +52,8 @@ const PIXEL_AA_SHADER: Shader = preload("res://Shaders/screen_pixel_aa.gdshader"
 
 var _lcd_shader: Shader = PIXEL_AA_SHADER
 var _lcd_material: ShaderMaterial = null
+## What the panel shows with nothing running — the authored, unlit LCD.
+var _screen_off_material: Material = null
 
 ## The detailed shell, when this scene bakes one as a child named "Shell". Null on
 ## a plain model, whose geometry is authored directly in the scene — the two are
@@ -160,6 +162,11 @@ func _screen_light_range(screen: MeshInstance3D) -> float:
 ## meshes, so runtime placement (collision/slot/cable) tracks the scene geometry.
 func _cache_shell_nodes() -> void:
 	_screen = get_node_or_null("HandheldScreen") as MeshInstance3D
+	# The dark panel, kept so the model can put it back when nothing is running.
+	# The C++ video handler used to hold this and restore it on teardown, which is
+	# why a machine that never tore down cleanly left its last frame frozen there.
+	if _screen != null:
+		_screen_off_material = _screen.get_surface_override_material(0)
 	_volume_slider = get_node_or_null("VolumeSlider") as VRSlider
 	_power_switch = get_node_or_null("PowerSwitch") as VRSlider
 	# find_child, not get_node: the stand-in shell is a "Primitive" subtree now.
@@ -236,23 +243,37 @@ func _glb_local_aabb(inst: Node3D) -> AABB:
 	return acc
 
 
-## Keep the LCD filter wrapped over the live core picture. Cheap identity checks
-## in the steady state; only re-installs when the source material changes.
+## Show the machine's picture on its own panel, through this device's LCD filter.
+##
+## Nothing else paints this mesh. It used to be handed to the C++ video handler,
+## which installed an emissive material on it, which this then read back and
+## wrapped — and a video-out cable moved the handler's target to the television,
+## which is how the panel went dark. The panel is ours; the picture is asked for.
 func _process(_delta: float) -> void:
+	_update_screen()
 	_update_screen_light()
-	if _lcd_shader == null or _screen == null:
+
+
+func _update_screen() -> void:
+	if _screen == null:
 		return
-	var override := _screen.get_surface_override_material(0)
-	if override == null or override == _lcd_material:
-		return
-	var tex := _screen_emission_texture(override)
+	# The picture MOVES to a television rather than being mirrored, so a connected
+	# set darkens the panel exactly as it always did.
+	var tex := null if host_picture_on_tv() else host_picture()
 	if tex == null:
-		return   # off / no picture — leave the unlit LCD material alone
+		if _screen.get_surface_override_material(0) != _screen_off_material:
+			_screen.set_surface_override_material(0, _screen_off_material)
+		return
+	if _lcd_shader == null:
+		_screen.set_surface_override_material(0, picture_material(tex))
+		return
 	if _lcd_material == null:
 		_lcd_material = ShaderMaterial.new()
 		_lcd_material.shader = _lcd_shader
-	_lcd_material.set_shader_parameter("source_tex", tex)
-	_screen.set_surface_override_material(0, _lcd_material)
+	if _lcd_material.get_shader_parameter("source_tex") != tex:
+		_lcd_material.set_shader_parameter("source_tex", tex)
+	if _screen.get_surface_override_material(0) != _lcd_material:
+		_screen.set_surface_override_material(0, _lcd_material)
 
 
 func _update_screen_light() -> void:

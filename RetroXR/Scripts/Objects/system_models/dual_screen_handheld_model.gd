@@ -424,7 +424,7 @@ func _apply_window_params() -> void:
 
 
 func get_builtin_screen() -> MeshInstance3D:
-	return _proxy   # hidden — VideoHandler renders here, the screen quads sample it
+	return _proxy   # hidden and now unpainted: it answers "this machine has a panel" and nothing else
 
 
 ## TWO video-out cables: TOP (plain) and BOTTOM (carries touch back to the
@@ -449,16 +449,6 @@ func has_start_stop_button() -> bool:
 	return true
 
 
-## The composite picture texture currently on the proxy, or null when off.
-func _proxy_texture() -> Texture2D:
-	if _proxy == null:
-		return null
-	var mat := _proxy.get_surface_override_material(0)
-	if mat is StandardMaterial3D:
-		return (mat as StandardMaterial3D).emission_texture
-	return null
-
-
 func _process(delta: float) -> void:
 	# This override replaces the base's _process entirely (the base wraps its ONE
 	# screen with _lcd_shader, which does not apply here — both panels carry their
@@ -466,9 +456,11 @@ func _process(delta: float) -> void:
 	# be driven, though: without this call the DS/3DS lights added in c988b76 never
 	# turned on at all.
 	_update_screen_light()
-	# Feed both screen quads from whatever emission texture the VideoHandler
-	# put on the proxy (copy-on-change identity checks, VB-eyepiece style).
-	var tex := _proxy_texture()
+	# Feed both screen quads from the machine's own picture (copy-on-change
+	# identity checks). It used to come out of a material the C++ video handler
+	# painted onto a hidden proxy mesh, purely because that was the only way to
+	# get a texture out of it.
+	var tex := host_picture()
 	if tex != null:
 		if _top_mat.get_shader_parameter("source_tex") != tex:
 			_top_mat.set_shader_parameter("source_tex", tex)
