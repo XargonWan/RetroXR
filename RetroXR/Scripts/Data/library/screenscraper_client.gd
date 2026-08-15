@@ -11,6 +11,30 @@ const MAX_RETRIES := 3
 const REQUEST_TIMEOUT := 75.0
 const MIN_MEDIA_SIZE := 256  # bytes — reject placeholder/error responses
 
+## Longest error sentence taken from a response body, in characters.
+const MAX_ERROR_TEXT := 160
+
+## What screenscraper's status codes mean. Its 4xx range is about the account,
+## not the request, so the standard HTTP reason phrases would mislead: 430 is
+## the documented quota code, not "Request Header Fields Too Large". The number
+## is always shown beside the words, so a code that is not in here still says
+## enough to act on.
+const HTTP_ERROR_TEXT := {
+	400: "Bad request",
+	401: "Bad ScreenScraper login",
+	403: "Access refused",
+	404: "Not found",
+	423: "API closed",
+	426: "API closed to non-members",
+	429: "Too many requests (quota exceeded)",
+	430: "Too many requests (quota exceeded)",
+	431: "Too many requests",
+	500: "ScreenScraper server error",
+	502: "ScreenScraper server error",
+	503: "ScreenScraper unavailable",
+	504: "ScreenScraper timed out",
+}
+
 
 signal scrape_completed(result: Dictionary)
 signal scrape_failed(error: String)
@@ -79,11 +103,16 @@ func _build_query_url(rom_path: String, systemeid: int, checksums: Dictionary) -
 	return API_BASE + "?" + "&".join(params)
 
 
-func _do_scrape_request(url: String, rom_path: String, retry_count: int) -> void:
+## `reason` is why the previous attempt failed; it rides along so the retry says
+## what it is retrying, rather than leaving a silent bar counting to three.
+func _do_scrape_request(url: String, rom_path: String, retry_count: int,
+						reason: String = "") -> void:
 	if retry_count == 0:
 		scrape_status.emit("Sending request...")
-	else:
+	elif reason.is_empty():
 		scrape_status.emit("Retrying (%d/%d)..." % [retry_count, MAX_RETRIES])
+	else:
+		scrape_status.emit("Retrying (%d/%d) — %s" % [retry_count, MAX_RETRIES, reason])
 
 	if _scrape_http != null:
 		_scrape_http.queue_free()
@@ -111,33 +140,29 @@ func _on_scrape_completed(result: int, response_code: int, body: PackedByteArray
 	print("[ScreenscraperClient] Response: result=%d code=%d body_len=%d" % [result, response_code, body.size()])
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		var reason := _describe_failure(result, response_code, body)
 		if retry_count < MAX_RETRIES:
 			var delay := pow(2, retry_count + 1)
-			print("[ScreenscraperClient] Retry %d after %.0fs (result=%d code=%d)" % [retry_count + 1, delay, result, response_code])
+			print("[ScreenscraperClient] Retry %d after %.0fs: %s" % [retry_count + 1, delay, reason])
 			await get_tree().create_timer(delay).timeout
-			_do_scrape_request(url, rom_path, retry_count + 1)
+			_do_scrape_request(url, rom_path, retry_count + 1, reason)
 			return
-		scrape_failed.emit("HTTP error after %d retries (result=%d code=%d)" % [MAX_RETRIES, result, response_code])
+		scrape_failed.emit("%s — gave up after %d retries" % [reason, MAX_RETRIES])
 		return
 
 	var text := body.get_string_from_utf8()
 
-	# Check for known error strings
+	# Check for known error strings. The specific refusals are asked first: a body
+	# reading "Erreur : votre quota est dépassé" is a quota, and the general
+	# "Erreur" test below would otherwise answer "not found" for it.
+	var refusal := _known_api_error(text)
+	if not refusal.is_empty():
+		push_warning("[ScreenscraperClient] API refusal: %s" % refusal)
+		scrape_failed.emit(refusal)
+		return
 	if text.find("non trouvée") >= 0 or text.find("Erreur") >= 0:
 		push_warning("[ScreenscraperClient] API text error (non trouvée/Erreur): %s" % text.left(200))
 		scrape_failed.emit("Game not found in screenscraper database")
-		return
-	if text.find("API fermé") >= 0 or text.find("API totalement fermé") >= 0:
-		push_warning("[ScreenscraperClient] API closed")
-		scrape_failed.emit("ScreenScraper API is currently closed")
-		return
-	if text.find("blacklisté") >= 0:
-		push_warning("[ScreenscraperClient] Account blacklisted")
-		scrape_failed.emit("Your account has been blacklisted")
-		return
-	if text.find("Votre quota") >= 0:
-		push_warning("[ScreenscraperClient] Daily quota exceeded")
-		scrape_failed.emit("Daily scrape quota exceeded")
 		return
 
 	var json := JSON.new()
@@ -148,13 +173,14 @@ func _on_scrape_completed(result: int, response_code: int, body: PackedByteArray
 	var data: Dictionary = json.data if json.data is Dictionary else {}
 	var header: Dictionary = data.get("header", {})
 	if str(header.get("success", "")) != "true":
-		var error_msg: String = str(header.get("error", "Unknown error"))
+		var error_msg := _clean_error_text(str(header.get("error", "Unknown error")))
 		if retry_count < MAX_RETRIES:
 			var delay := pow(2, retry_count + 1)
+			print("[ScreenscraperClient] Retry %d after %.0fs: API error: %s" % [retry_count + 1, delay, error_msg])
 			await get_tree().create_timer(delay).timeout
-			_do_scrape_request(url, rom_path, retry_count + 1)
+			_do_scrape_request(url, rom_path, retry_count + 1, "API error: %s" % error_msg)
 			return
-		scrape_failed.emit("API error: %s" % error_msg)
+		scrape_failed.emit("API error: %s — gave up after %d retries" % [error_msg, MAX_RETRIES])
 		return
 
 	var response: Dictionary = data.get("response", {})
@@ -167,6 +193,95 @@ func _on_scrape_completed(result: int, response_code: int, body: PackedByteArray
 	var parsed := _parse_jeu(jeu)
 	print("[ScreenscraperClient] Scrape success: game_id=%s name=%s" % [parsed.get("game_id", "?"), parsed.get("name", "?")])
 	scrape_completed.emit(parsed)
+
+
+# ── Failure text ──────────────────────────────────────────────────────────────
+
+## One line naming why an attempt failed, for the retry bar and the final
+## failure alike. Never just a pair of numbers: "Retrying (1/3)" on its own reads
+## as a flaky connection when it is really a quota that will not clear today.
+func _describe_failure(result: int, response_code: int, body: PackedByteArray) -> String:
+	if result != HTTPRequest.RESULT_SUCCESS:
+		return _transport_error_text(result)
+
+	# The body's own sentence outranks the code's label: screenscraper answers an
+	# error with the specific complaint ("Votre quota de scrape est dépassé"),
+	# and 429/430/431 all say only "too many requests" without it.
+	var detail := _body_error_text(body)
+	if not detail.is_empty():
+		var refusal := _known_api_error(detail)
+		return "HTTP %d — %s" % [response_code, refusal if not refusal.is_empty() else detail]
+
+	var label: String = HTTP_ERROR_TEXT.get(response_code, "")
+	if not label.is_empty():
+		return "HTTP %d — %s" % [response_code, label]
+	return "HTTP %d" % response_code
+
+
+## A failure that never reached screenscraper, named rather than numbered.
+func _transport_error_text(result: int) -> String:
+	match result:
+		HTTPRequest.RESULT_CANT_CONNECT: return "Could not connect"
+		HTTPRequest.RESULT_CANT_RESOLVE: return "Could not resolve screenscraper.fr"
+		HTTPRequest.RESULT_CONNECTION_ERROR: return "Connection error"
+		HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR: return "TLS handshake failed"
+		HTTPRequest.RESULT_NO_RESPONSE: return "No response"
+		HTTPRequest.RESULT_TIMEOUT: return "Timed out"
+		HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED: return "Too many redirects"
+		HTTPRequest.RESULT_CHUNKED_BODY_SIZE_MISMATCH: return "Truncated response"
+		HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED: return "Response too large"
+		HTTPRequest.RESULT_BODY_DECOMPRESS_FAILED: return "Could not decompress response"
+		HTTPRequest.RESULT_REQUEST_FAILED: return "Request failed"
+	return "Network error %d" % result
+
+
+## The complaint carried in an error response. An account-level refusal comes
+## back as plain text even though the request asked for JSON, so both shapes are
+## read; an HTML page is a proxy's words rather than screenscraper's and is
+## dropped in favour of the status code.
+func _body_error_text(body: PackedByteArray) -> String:
+	var text := body.get_string_from_utf8().strip_edges()
+	if text.is_empty() or text.begins_with("<"):
+		return ""
+
+	if text.begins_with("{"):
+		var json := JSON.new()
+		if json.parse(text) != OK or not json.data is Dictionary:
+			return ""
+		var data: Dictionary = json.data
+		var header: Dictionary = data.get("header", {})
+		return _clean_error_text(str(header.get("error", "")))
+
+	return _clean_error_text(text)
+
+
+## Screenscraper's account-level refusals, in English. It writes them in French,
+## and they arrive both in a successful body and as the text of a 4xx, so this
+## reads either. Only phrases that mean one thing live here — a bare "Erreur" is
+## judged by the caller, which knows whether a miss is a plausible reading.
+func _known_api_error(text: String) -> String:
+	if text.find("Votre quota") >= 0 or text.find("quota de scrape") >= 0:
+		return "Daily scrape quota exceeded"
+	if text.find("blacklisté") >= 0 or text.find("blacklisted") >= 0:
+		return "Your account has been blacklisted"
+	if text.find("API fermé") >= 0 or text.find("API totalement fermé") >= 0 \
+			or text.find("API closed") >= 0:
+		return "ScreenScraper API is currently closed"
+	if text.find("non membre") >= 0 or text.find("non-registered") >= 0:
+		return "ScreenScraper API is open to members only"
+	return ""
+
+
+## Fold to one line and cap the length — a bar in the toast stack has to stay
+## readable through a headset.
+func _clean_error_text(text: String) -> String:
+	var flat := text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+	while flat.find("  ") >= 0:
+		flat = flat.replace("  ", " ")
+	flat = flat.strip_edges()
+	if flat.length() > MAX_ERROR_TEXT:
+		flat = flat.left(MAX_ERROR_TEXT).strip_edges() + "…"
+	return flat
 
 
 ## Parse the jeu object into our normalized format.
@@ -392,7 +507,10 @@ func _on_media_download_completed(media_type: String, result: int,
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		if FileAccess.file_exists(dest_path):
 			DirAccess.remove_absolute(dest_path)
-		media_download_failed.emit(media_type, "HTTP error result=%d code=%d" % [result, response_code])
+		# The body went to a file, so there is no sentence to read — the code's
+		# own label is all this one can say.
+		media_download_failed.emit(media_type,
+			_describe_failure(result, response_code, PackedByteArray()))
 		return
 
 	# Check minimum file size
