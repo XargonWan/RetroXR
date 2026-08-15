@@ -165,7 +165,7 @@ func _process(delta: float) -> void:
 	if _vlc:
 		# Pump the latest decoded frame + PCM every frame.
 		_vlc.update_frame()
-		if is_playing and connected_tv != null and _feed_video:
+		if _may_paint():
 			_bind_screen_to_tv()
 		_pump_audio()
 		# Emanate the sound from the connected TV so it's spatialised there, aimed
@@ -532,7 +532,12 @@ func play() -> void:
 	if _emitter:
 		_emitter.flush()
 		_apply_volume()
-	_bind_screen_to_tv()
+	# Only if the picture has somewhere to go. PLAY used to paint regardless, which
+	# is how a deck with its picture cord out of the socket showed a film anyway:
+	# the frame texture is updated in place, so one unearned bind keeps playing
+	# until the first SOURCE press takes it off and nothing ever puts it back.
+	if _may_paint():
+		_bind_screen_to_tv()
 	_osd("PLAY", false)
 	_net_push_state()
 
@@ -547,7 +552,10 @@ func stop() -> void:
 	_paused = false
 	if _emitter:
 		_emitter.flush()
-	_blank_screen()
+	# Only the glass we are actually on: STOP on a deck the viewer is not watching
+	# must not black out the input they are.
+	if _screen_allowed:
+		_blank_screen()
 	if connected_tv:
 		connected_tv.hide_osd()
 	_net_push_state()
@@ -577,14 +585,38 @@ func set_audio_channel_mode(mode: int) -> void:
 		_emitter.set_channel_mode(mode)
 
 
-## Show or hide the screen output. Called by the TV toggle button.
+## Show or hide the screen output. The set says this on SOURCE and on POWER.
+##
+## LATCHED, and the latch is set before the early return: the answer is about
+## which input the viewer has selected, which holds whether or not this deck has a
+## television to point at yet. Dropping it left the deck painting the glass of a
+## set showing something else — see _may_paint.
 func set_screen_enabled(on: bool) -> void:
+	_screen_allowed = on
 	if not connected_tv:
 		return
-	if on and is_playing and _feed_video:
+	if _may_paint():
 		_bind_screen_to_tv()
 	else:
 		_blank_screen()
+
+
+## Whether the set feeding this deck has it on the glass. True by default: a deck
+## with no television attached has nobody to tell it otherwise.
+var _screen_allowed: bool = true
+
+
+## Everything that has to be true before this deck may paint the glass: a set, a
+## tape running, a picture cord that reaches that set's video socket, and that set
+## showing this input.
+##
+## Every paint goes through it — the per-frame one, PLAY, and a cord moving — or
+## they disagree. They did: PLAY painted whatever the routing said, so a picture
+## appeared on a set the deck had no picture cord to, and _process painted whether
+## or not the set had this input selected, so a tape played on top of Composite 1
+## with nothing plugged into it.
+func _may_paint() -> bool:
+	return connected_tv != null and is_playing and _feed_video and _screen_allowed
 
 
 # --- Screen routing ---
@@ -634,7 +666,7 @@ func set_vcr_effect_enabled(on: bool) -> void:
 	if vcr_effect_enabled == on:
 		return
 	vcr_effect_enabled = on
-	if is_playing:
+	if _may_paint():
 		_bind_screen_to_tv()
 
 
@@ -659,10 +691,14 @@ func get_vcr_params() -> Dictionary:
 	return _vcr_params.duplicate()
 
 
-func _blank_screen() -> void:
-	if connected_tv == null:
+## Take the picture off a set's glass. Named rather than assumed, because the set
+## being blanked is not always the one this deck is connected to: a cord pulled out
+## sets connected_tv to null first, and a blank aimed at that leaves the film
+## playing on the television it has just been unplugged from.
+func _blank_screen(tv: RetroTV = connected_tv) -> void:
+	if tv == null or not is_instance_valid(tv):
 		return
-	var mesh := connected_tv.get_screen_mesh()
+	var mesh := tv.get_screen_mesh()
 	if mesh == null:
 		return
 	var black := StandardMaterial3D.new()
@@ -732,13 +768,21 @@ func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
 	connected_tv = tv
 	if previous != tv:
 		if previous != null and is_instance_valid(previous):
+			_blank_screen(previous)
 			previous.hide_osd()
 			previous.on_av_source_lost(self)
 		if tv != null:
+			# A fresh connection carries no verdict from the set that made it, and
+			# the one being joined states its own the moment on_av_source_found
+			# returns (RetroTV._apply_screen_enable). Carrying a previous set's
+			# "you are not selected" over to a new one would strand it dark.
+			_screen_allowed = true
 			tv.on_av_source_found(self)
-	if tv != null and video and is_playing:
+	if _may_paint():
 		_bind_screen_to_tv()
-	else:
+	elif _screen_allowed:
+		# Only when this deck is the input on show: a picture cord pulled out of a
+		# set watching something else is not a reason to black that out.
 		_blank_screen()
 	# A channel with nowhere to go is silenced at its voice; the one still
 	# connected plays on. See SpatialAudioEmitter.set_channel_gains.
