@@ -76,6 +76,8 @@ func _run() -> void:
 		["display/a source that stops is blue, not frozen", _d_stopped],
 		["display/a set switched off is dark", _d_off],
 		["display/an empty input is blue", _d_empty],
+		["display/the aerial input on the wrong channel is snow", _d_rf_untuned],
+		["display/the aerial input on the right channel shows the machine", _d_rf_tuned],
 		["display/a source's own stage shader is used", _d_stage],
 		["display/two sets get their own window of one picture", _d_stage_per_tv],
 		["guard/a host that is not shown is refused", _g_refused],
@@ -425,6 +427,31 @@ func _d_empty() -> void:
 	tv.set_source(RetroTV.Source.COMPOSITE_2)
 	await _wait(6)
 	_check_eq(_shown(tv), tv._blue_texture, "an input with nothing plugged in is blue")
+
+
+func _d_rf_untuned() -> void:
+	var tv := _tv()
+	await _wait(30)
+	var src := StubSource.new()
+	src.texture = _a_texture()
+	src.rf_channel = 4 if tv.rf_channel != 4 else 3     # deliberately not the set's
+	await _seat_stub(tv, RetroTV.Source.RF, src)
+	await _wait(6)
+	_check(_shown(tv) != src.texture, "a machine modulating on the other channel is not shown")
+	_check_eq(_glass(tv), tv._rf_static_material,
+		"an aerial channel with nothing on it is SNOW, not the blue no-signal screen")
+
+
+func _d_rf_tuned() -> void:
+	var tv := _tv()
+	await _wait(30)
+	var src := StubSource.new()
+	src.texture = _a_texture()
+	src.rf_channel = tv.rf_channel                      # the one the set is tuned to
+	await _seat_stub(tv, RetroTV.Source.RF, src)
+	await _wait(6)
+	_check_eq(_shown(tv), src.texture, "tuned to its channel, the machine appears")
+	_check(tv.can_paint(src), "and it counts as the shown input")
 
 
 func _d_stage() -> void:

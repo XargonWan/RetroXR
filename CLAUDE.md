@@ -283,7 +283,7 @@ nothing at all. Run `--editor --quit` between the overwrite and the render.
 
 ### 2c. The A/V suite — the one thing here that is an actual test suite
 
-`RetroXR/Tools/av_suite.tscn` — 19 cases over what reaches a television's inputs and
+`RetroXR/Tools/av_suite.tscn` — 21 cases over what reaches a television's inputs and
 what it shows. Headless, ~90 s, **exits non-zero on failure**, so it is the one probe
 that can be run as a gate rather than read.
 
@@ -294,8 +294,8 @@ that can be run as a gate rather than read.
 
 Groups: `routing/` (real TV + VCR + composite leads — cords into the wrong sockets, a
 crossed pair, two leads on one deck, a cord pulled), `display/` (which input is shown,
-what a blank input paints, a source that stops, a set switched off, a source's own
-shader stage, two sets sharing one machine), `guard/` (`can_paint` / `paint_screen` /
+what a blank input paints, a source that stops, a set switched off, snow on an
+untuned aerial channel, a source's own shader stage, two sets sharing one machine), `guard/` (`can_paint` / `paint_screen` /
 `release_screen`) and `audio/` (only the selected input is heard; a machine wired to
 nothing is silent). Every case is a bug that shipped at least once.
 
