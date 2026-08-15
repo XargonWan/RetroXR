@@ -36,6 +36,11 @@ const WHEEL_BOX := Vector2i(300, 76)
 ## Typing in the ROM filter rebuilds the list; this waits for a pause first.
 const SEARCH_DEBOUNCE_SEC := 0.18
 
+## Applied to a whole row rather than its label: a server-only title with the
+## server down has no working control on it, and dimming only the icon reads as
+## decoration rather than as "none of this does anything".
+const UNREACHABLE_DIM := Color(1.0, 1.0, 1.0, 0.45)
+
 var core_db: CoreInfoDatabase = null
 var core_defaults: CoreDefaults = null
 var gamelist_manager: GamelistManager = null
@@ -900,16 +905,28 @@ func _rebuild_romm_rows() -> void:
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.set_row_count(_romm_rows.size())
 
-	if _romm_empty_label != null and is_instance_valid(_romm_empty_label):
-		_romm_empty_label.visible = _romm_rows.is_empty()
-		if _romm_rows.is_empty():
-			if not _romm_filter.is_empty():
-				_romm_empty_label.text = "No games match “%s”." % _romm_filter
-			elif romm_catalog.is_syncing():
-				_romm_empty_label.text = "Syncing from RomM…"
-			else:
-				_romm_empty_label.text = "Add ROMs to %s/ to see them here." \
-					% RomLibrary.rom_dir_for_system(systemid)
+	_romm_update_empty_label()
+
+
+## Split out of the rebuild so a reachability transition can correct the wording
+## without rebuilding every row.
+func _romm_update_empty_label() -> void:
+	if _romm_empty_label == null or not is_instance_valid(_romm_empty_label):
+		return
+	_romm_empty_label.visible = _romm_rows.is_empty()
+	if not _romm_rows.is_empty():
+		return
+	if not _romm_filter.is_empty():
+		_romm_empty_label.text = "No games match “%s”." % _romm_filter
+	elif not romm_client.is_reachable():
+		# Ahead of the sync check: a sync that is still "running" against a dead
+		# server is not news the player can use.
+		_romm_empty_label.text = "RomM is unreachable — only local files are listed."
+	elif romm_catalog.is_syncing():
+		_romm_empty_label.text = "Syncing from RomM…"
+	else:
+		_romm_empty_label.text = "Add ROMs to %s/ to see them here." \
+			% RomLibrary.rom_dir_for_system(_romm_detail_systemid)
 
 
 ## Warm the sidecars for the platforms most likely to be opened next.
@@ -1111,6 +1128,13 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	_disconnect_all(manual.pressed)
 	_disconnect_all(scrape.pressed)
 
+	# Rows are pooled, so anything a branch below only sets conditionally has to
+	# be cleared here — otherwise one dead-server row leaves every title it later
+	# recycles into greyed out and unpressable.
+	row.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	state.disabled = false
+	main.disabled = false
+
 	# A scraped wheel logo replaces the title text entirely; otherwise the title
 	# scrolls. MarqueeButton extends Button, so it carries the icon itself.
 	var wheel: Texture2D = null
@@ -1142,13 +1166,23 @@ func _bind_rom_row(row: Control, index: int) -> void:
 		pct.text = "%d%%" % _romm_progress_pct.get(rom_id, 0)
 		state.pressed.connect(func() -> void: romm_downloader.cancel_current())
 	elif source == "server":
-		state.text = String.chr(MenuIcons.DOWNLOAD)
 		# The cloud glyph is visually lighter than the trash glyphs at the same
 		# size — a small bump evens the weight out.
 		state.add_theme_font_size_override("font_size", 44)
-		state.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
-		state.tooltip_text = "Download from RomM (%s)" % MenuStyle.human_bytes(int(entry.get("fs_size_bytes", 0)))
-		state.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
+		if romm_client.is_reachable():
+			state.text = String.chr(MenuIcons.DOWNLOAD)
+			state.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
+			state.tooltip_text = "Download from RomM (%s)" % MenuStyle.human_bytes(int(entry.get("fs_size_bytes", 0)))
+			state.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
+		else:
+			# The index is on disk, so these keep listing with the server down.
+			# The row is the only place that can say so: the unreachable toast is
+			# long gone by the time you have scrolled to the one you wanted.
+			state.text = String.chr(MenuIcons.SYNC_OFF)
+			state.add_theme_color_override("font_color", MenuIcons.TINT_MUTED)
+			state.tooltip_text = "RomM is unreachable — this title is on the server only"
+			state.disabled = true
+			row.modulate = UNREACHABLE_DIM
 	else:
 		state.add_theme_font_size_override("font_size", 40)
 		var forever := source == "local"
@@ -1173,9 +1207,11 @@ func _bind_rom_row(row: Control, index: int) -> void:
 					RommCacheManifest.relative_path(systemid, local_path))
 			spawn_cartridge_requested.emit(local_path, label, systemid)
 		)
-	else:
+	elif romm_client.is_reachable():
 		# Not downloaded yet — tapping the title fetches it, same as the icon.
 		main.pressed.connect(func() -> void: romm_downloader.enqueue(entry, systemid))
+	else:
+		main.disabled = true
 
 	# ── Trailing cluster ────────────────────────────────────────────────────
 	var meta := _romm_row_meta(systemid, local_path)
@@ -1765,7 +1801,14 @@ func _on_romm_auth_failed(detail: String) -> void:
 
 
 ## Fires only on a transition, so a dead server can't produce a toast stream.
+##
+## Repaints in BOTH directions: the cached index keeps listing server-only titles
+## whether or not the server answers, so the rows have to say which of them can
+## still be acted on — and say it again when it comes back.
 func _on_romm_reachability_changed(reachable: bool) -> void:
+	if _romm_list != null and is_instance_valid(_romm_list):
+		_romm_list.rebind_visible()
+	_romm_update_empty_label()
 	if reachable:
 		return
 	notify("romm:conn", "❌", "RomM unreachable", -1.0, MenuToasts.DWELL_FAIL)

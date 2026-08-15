@@ -296,6 +296,13 @@ func _set_reachable(now: bool) -> void:
 	reachability_changed.emit(now)
 
 
+## Unknown counts as reachable. Nothing has asked the server yet at that point,
+## and painting a whole cached catalogue as dead on the strength of no evidence
+## is worse than painting it live and correcting on the first failed request.
+func is_reachable() -> bool:
+	return _reachable == null or bool(_reachable)
+
+
 static func _describe_http(code: int, fallback: String) -> String:
 	match code:
 		0:   return "Could not reach the server"
