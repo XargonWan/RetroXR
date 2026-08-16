@@ -2373,34 +2373,12 @@ func _apply_forced_core_options(dir: String, core: String) -> void:
 	if _model == null:
 		return
 	var forced := _all_forced_options(core)
-	if forced.is_empty():
-		return
-	var opt_dir := dir.path_join("core_options")
-	var path := opt_dir.path_join(core + ".opt")
-	var entries: Dictionary = {}
-	if FileAccess.file_exists(path):
-		var f := FileAccess.open(path, FileAccess.READ)
-		if f:
-			for line: String in f.get_as_text().split("\n"):
-				var eq := line.find("=")
-				if eq > 0:
-					entries[line.substr(0, eq).strip_edges()] = \
-						line.substr(eq + 1).strip_edges().trim_prefix("\"").trim_suffix("\"")
-	var changed := false
-	for k: Variant in forced:
-		if entries.get(str(k), null) != str(forced[k]):
-			entries[str(k)] = str(forced[k])
-			changed = true
-	if not changed:
-		return
-	DirAccess.make_dir_recursive_absolute(opt_dir)
-	var out := FileAccess.open(path, FileAccess.WRITE)
-	if out == null:
-		push_warning("RetroSystem: cannot write forced core options to %s" % path)
-		return
-	for k: String in entries:
-		out.store_string("%s = \"%s\"\n" % [k, entries[k]])
-	print("[RetroSystem] forced core options applied: %s -> %s" % [str(forced), path])
+	# Through the store, which owns this file: set_core_option already writes it
+	# that way, and two writers with their own idea of the format is how the same
+	# file came out in a different order depending on which one touched it last.
+	if CoreOptionsStore.merge_values(dir, core, forced):
+		print("[RetroSystem] forced core options applied: %s -> %s"
+			% [str(forced), CoreOptionsStore.opt_path(dir, core)])
 
 
 # --- Core options ---

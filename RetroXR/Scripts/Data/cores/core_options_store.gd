@@ -78,6 +78,30 @@ static func save_values(root: String, core_name: String, values: Dictionary) -> 
 	return true
 
 
+## Force a set of keys into the file, leaving every other key alone, and write
+## only if something actually moved. Returns true when the file was rewritten.
+##
+## This is the shape a caller pinning options wants — a system pins what its
+## shell demands before every launch — and having it here is what keeps one
+## writer on the file. A caller that loaded, merged and wrote for itself had the
+## same three steps with one difference: it did not sort the keys, so the file
+## reshuffled depending on which writer touched it last.
+static func merge_values(root: String, core_name: String, forced: Dictionary) -> bool:
+	if forced.is_empty():
+		return false
+	var values := load_values(root, core_name)
+	var changed := false
+	for k: Variant in forced:
+		var key := str(k)
+		var val := str(forced[k])
+		if values.get(key, null) != val:
+			values[key] = val
+			changed = true
+	if not changed:
+		return false
+	return save_values(root, core_name, values)
+
+
 ## Set one key and persist, leaving every other key alone.
 static func set_value(root: String, core_name: String, key: String, value: String) -> bool:
 	var values := load_values(root, core_name)

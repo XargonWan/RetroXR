@@ -98,6 +98,7 @@ func _ready() -> void:
 	_test_expanded_port_binding()
 	_test_belongs_here()
 	_test_core_resolution()
+	_test_forced_options_merge()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -536,3 +537,46 @@ func _test_core_resolution() -> void:
 		sys._resolve_dir(), CoreDownloadManager.default_core_root())
 
 	sys.free()
+
+
+# ---------------------------------------------------------------------------
+# The forced-options merge. A shell pins the options its screen needs before
+# every launch, into the same <core>.opt file the running core loads and the
+# options panel edits — so the merge has to leave the player's own keys alone,
+# and it must not rewrite the file when nothing moved (a rewrite reorders it).
+# ---------------------------------------------------------------------------
+
+func _test_forced_options_merge() -> void:
+	var root := "user://__system_selftest"
+	var core := "selftest_core"
+	var path := CoreOptionsStore.opt_path(root, core)
+
+	_ok("forced/nothing forced writes nothing",
+		not CoreOptionsStore.merge_values(root, core, {}))
+	_ok("forced/and creates no file", not FileAccess.file_exists(path))
+
+	# The player's own settings, as a run would have left them.
+	CoreOptionsStore.save_values(root, core, {"user_key": "mine", "vb_3dmode": "anaglyph"})
+
+	_ok("forced/a new pin is written",
+		CoreOptionsStore.merge_values(root, core, {"vb_3dmode": "sidebyside"}))
+	var after := CoreOptionsStore.load_values(root, core)
+	_eq("forced/the pin took", after.get("vb_3dmode", ""), "sidebyside")
+	_eq("forced/the player's own key survives", after.get("user_key", ""), "mine")
+
+	# Already pinned: no write at all, so the file keeps its bytes and its order.
+	var before_time := FileAccess.get_modified_time(path)
+	_ok("forced/an unchanged pin rewrites nothing",
+		not CoreOptionsStore.merge_values(root, core, {"vb_3dmode": "sidebyside"}))
+	_eq("forced/the file was left alone", FileAccess.get_modified_time(path), before_time)
+
+	# Values arrive from a model as ints and bools as often as strings.
+	_ok("forced/a non-string value is written",
+		CoreOptionsStore.merge_values(root, core, {"citra_factor_3d": 0}))
+	_eq("forced/and reads back as its text",
+		CoreOptionsStore.load_values(root, core).get("citra_factor_3d", ""), "0")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CoreOptionsStore.opt_dir(root)))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(root))
+	_ok("forced/cleaned up", not FileAccess.file_exists(path))
