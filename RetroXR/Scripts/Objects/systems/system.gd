@@ -2096,6 +2096,16 @@ func power_on() -> void:
 	_claim_achievements_session()
 	_protect_active_rom()
 	_libretro.StartContent(resolved_dir, resolved_core, rom_path)
+	_after_core_started()
+
+
+## Everything a machine does once its core is up, whichever way it was started.
+##
+## Written once because the netplay start used to be an abridged copy, and what
+## the abridgement dropped was invisible until you looked for it: the power
+## button kept saying START on a machine that was running, and the core was never
+## asked whether it has disk control, so a netplay disc swap had nothing to go on.
+func _after_core_started() -> void:
 	# A machine with nowhere to send its picture is not heard either.
 	_apply_audio_playing()
 	# A fresh run re-opens the bind window — which backend comes up is decided per
@@ -2168,6 +2178,15 @@ func power_off() -> void:
 	if not is_powered_on:
 		return
 	print("[RetroSystem] Powering off")
+	_stop_core()
+
+
+## Everything a machine does when its core goes away, whichever way it was
+## stopped. The netplay stop used to be an abridged copy of this, and what the
+## abridgement dropped stayed behind: the achievements session was never
+## released, so no other cabinet could claim it, and the disc state survived to
+## describe a core that had gone.
+func _stop_core() -> void:
 	# Zero any active rumble on all plugged-in controllers so vibration
 	# doesn't leak past core unload if the core was rumbling at shutdown.
 	for ctrl in _port_controllers:
@@ -2310,37 +2329,21 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_protect_active_rom()
 	_libretro.StartContent(_resolve_dir(), resolved_core, rom_path)
-	# A machine with nowhere to send its picture is not heard either.
-	_apply_audio_playing()
-	# A fresh run re-opens the bind window — which backend comes up is decided per
-	# core start, and this first attempt is expected to find neither.
-	_audio_bind_settled = false
-	_audio_bind_tries = 0
-	_bind_audio_player()
-	is_powered_on = true
-	set_process(true)
+	_after_core_started()
 	net_remote_powered = false
 	if connected_tv:
 		connected_tv.hide_osd()   # real local output now, not the placeholder
-	_model.on_power_on()
 	return _libretro
 
 
 ## Stop the local netplay core and clear the gate.
 func net_stop_core() -> void:
-	for ctrl in _port_controllers:
-		if ctrl and is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
-			ctrl.set_rumble(0.0, 0.0)
 	_libretro.SetNetplayMode(false, 1, 0)
 	if is_powered_on:
-		_libretro.StopContent()
-		_release_cache_protection()
-		_audio_player = null
-		_audio_voices = PackedInt32Array()
-		is_powered_on = false
-		_options_panel.hide_panel()
-		_model.on_power_off()
+		_stop_core()
 	else:
+		# Nothing was running, but a session may still have pinned the ROM in the
+		# cache on its way to a start that never happened.
 		_release_cache_protection()
 
 
