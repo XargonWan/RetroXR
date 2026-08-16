@@ -91,6 +91,13 @@ var _audio_player: AudioStreamPlayer3D = null
 # Meta XR Audio voice ids, when the core is being spatialised through the SDK.
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
+# How long the bind waits for the SDK to publish voice ids before settling for
+# whichever backend did come up. Frames, not seconds: this is a startup handshake
+# with the emulation thread, and about four seconds of them is far longer than it
+# has ever taken. See _ensure_audio_bound.
+const AUDIO_BIND_ATTEMPTS := 300
+var _audio_bind_tries := 0
+var _audio_bind_settled := false
 # The card that floats over this machine's picture — achievement unlocks, and
 # the notice raised when a game cannot run. Made on demand rather than at
 # power-on: most sessions raise neither, and it costs a SubViewport.
@@ -837,16 +844,25 @@ func _bind_audio_player() -> void:
 ## SDK's default position: the world origin. Hardware that sits near the middle
 ## of the room sounds about right like that, which is why this went unnoticed
 ## until a handheld was carried around and its sound stayed behind.
+##
+## The retry is bounded because on the AudioStreamPlayer3D backend no voice id is
+## ever coming — GetAudioVoiceIds() answers empty for the whole run — and an
+## unbounded retry is a GDExtension call per frame per running machine, forever,
+## to re-learn a fixed answer. Once the window closes, whatever the handler did
+## choose is bound and the question is not asked again.
 func _ensure_audio_bound() -> void:
-	if not is_powered_on or not _audio_voices.is_empty():
+	if _audio_bind_settled or not is_powered_on:
 		return
 	# Only the voice ids say which backend came up. A non-null _audio_player says
 	# nothing: Wrapper creates that AudioStreamPlayer3D node unconditionally,
 	# before the handler has chosen anything, so it is already sitting there on
 	# the first attempt -- and keying the retry off it stopped the retry dead.
 	if _libretro.GetAudioVoiceIds().is_empty():
-		return
+		_audio_bind_tries += 1
+		if _audio_bind_tries < AUDIO_BIND_ATTEMPTS:
+			return
 	_bind_audio_player()
+	_audio_bind_settled = true
 
 
 ## Push the remembered level onto whichever backend was just bound. A voice is
@@ -2082,6 +2098,10 @@ func power_on() -> void:
 	_libretro.StartContent(resolved_dir, resolved_core, rom_path)
 	# A machine with nowhere to send its picture is not heard either.
 	_apply_audio_playing()
+	# A fresh run re-opens the bind window — which backend comes up is decided per
+	# core start, and this first attempt is expected to find neither.
+	_audio_bind_settled = false
+	_audio_bind_tries = 0
 	_bind_audio_player()
 	is_powered_on = true
 	set_process(true)
@@ -2292,6 +2312,10 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_libretro.StartContent(_resolve_dir(), resolved_core, rom_path)
 	# A machine with nowhere to send its picture is not heard either.
 	_apply_audio_playing()
+	# A fresh run re-opens the bind window — which backend comes up is decided per
+	# core start, and this first attempt is expected to find neither.
+	_audio_bind_settled = false
+	_audio_bind_tries = 0
 	_bind_audio_player()
 	is_powered_on = true
 	set_process(true)
