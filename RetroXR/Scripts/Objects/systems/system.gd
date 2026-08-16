@@ -2731,100 +2731,101 @@ func get_libretro_node() -> Libretro:
 # --- Controller port snap handlers ---
 
 func _on_port_snapped(port_index: int, controller: Node3D) -> void:
-	add_collision_exception_with(controller)
 	var device_type: int = controller.get("device_type") if "device_type" in controller else 1
 	# The libretro port a peripheral drives isn't always its cabinet slot: on
 	# computer systems the mouse is forced to port 0 (where those cores poll it),
 	# so a mouse + keyboard can share the cabinet. See _libretro_port_for().
-	var lib_port := _libretro_port_for(device_type, port_index)
-	# On a Wii the slot may already hold a paired remote, and a wired pad may need
-	# announcing as a GameCube pad rather than a plain joypad. Both are Wii policy
-	# and both live in WiiLink; every other console skips them entirely.
-	var announce := device_type
-	if _wii_link != null:
-		_wii_link.evict_remote_from(lib_port)
-		announce = _wii_link.cabinet_device_id(device_type)
-	announce = _core_device_id(announce, lib_port)
-	print("[RetroSystem] port %d snapped: device_type=%d -> libretro port %d (announced %d)" %
-		[port_index, device_type, lib_port, announce])
-	if _claims_port_device(device_type):
-		set_controller_port_device(lib_port, announce)
-	# The snapped node is a ControllerPlug (cable end). Unwrap to the actual
-	# RetroController so rumble can be routed to its set_rumble() method, and keep
-	# the plug itself for the release path, which is handed nothing.
-	_port_plugs[port_index] = controller
-	_port_controllers[port_index] = controller.get_controller() \
-		if controller.has_method("get_controller") else controller
-	if controller.has_method("on_plugged_in"):
-		controller.on_plugged_in(self, lib_port)
-	# Auto-select the core's per-port pad type (e.g. PCSX-ReARMed: DualShock vs
-	# the original digital pad). No-ops unless the core exposes such an option.
-	_apply_pad_type_option(lib_port, _port_controllers[port_index])
-	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
-		{"sys": self, "ctrl": _port_controllers[port_index], "port": port_index})
+	_bind_port(_libretro_port_for(device_type, port_index), controller, port_index)
 
 
 func _on_port_released(port_index: int) -> void:
-	var controller: Node3D = _port_plugs[port_index]
+	var plug: Node3D = _port_plugs[port_index]
 	_port_plugs[port_index] = null
-	if not is_instance_valid(controller):
+	if not is_instance_valid(plug):
 		return
-	print("[RetroSystem] port %d released" % port_index)
-	# Stop any active rumble on the controller being unplugged. The snapped
-	# node is a ControllerPlug, so unwrap to the real RetroController first.
-	var actual_ctrl: Node3D = controller.get_controller() \
-		if is_instance_valid(controller) and controller.has_method("get_controller") \
-		else controller
-	if is_instance_valid(actual_ctrl) and actual_ctrl.has_method("set_rumble"):
-		actual_ctrl.set_rumble(0.0, 0.0)
+	var device_type: int = plug.get("device_type") if "device_type" in plug else 1
 	# Clear the SAME libretro port the snap set (a computer mouse claimed port 0,
 	# not its cabinet slot; a computer keyboard claimed none).
-	var device_type: int = controller.get("device_type") \
-		if is_instance_valid(controller) and "device_type" in controller else 1
-	if is_instance_valid(controller):
-		remove_collision_exception_with(controller)
-	_port_controllers[port_index] = null
-	if _claims_port_device(device_type):
-		set_controller_port_device(_libretro_port_for(device_type, port_index), RETRO_DEVICE_NONE)
-	if is_instance_valid(controller) and controller.has_method("on_unplugged"):
-		controller.on_unplugged()
-	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG,
-		{"sys": self, "port": port_index})
+	_unbind_port(_libretro_port_for(device_type, port_index), plug, port_index)
 
 
 ## Attach a controller (by its cable plug) to an EXPANDED libretro port that has
 ## no cabinet snap zone — used by a multitap plugged into a native port to fan
-## out to consecutive ports. Mirrors _on_port_snapped without a snap zone.
-## Rumble routing is registered only for ports within _port_controllers; input
-## and device selection work for any port the core supports.
+## out to consecutive ports.
 func attach_expanded_controller(port: int, plug: Node3D) -> void:
-	if port < 0 or not is_instance_valid(plug):
-		return
-	var dev: int = plug.get("device_type") if "device_type" in plug else 1
-	set_controller_port_device(port, dev)
-	var ctrl: Node3D = plug.get_controller() if plug.has_method("get_controller") else plug
-	if port < _port_controllers.size():
-		_port_controllers[port] = ctrl
-	if plug.has_method("on_plugged_in"):
-		plug.on_plugged_in(self, port)
-	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
-		{"sys": self, "ctrl": ctrl, "port": port})
+	_bind_port(port, plug, -1)
 
 
 ## Detach a controller from an expanded port (see attach_expanded_controller).
 func detach_expanded_controller(port: int, plug: Node3D) -> void:
-	if port < 0:
+	_unbind_port(port, plug, -1)
+
+
+## Bind a peripheral to a libretro port, from either direction: `cabinet_index`
+## is the socket it seated into, or -1 for an EXPANDED port — one a multitap fans
+## out to, which has no socket, no plug to remember and no Wii translation, but is
+## a port to the core like any other.
+##
+## Written once because the expanded copy used to be an abridged one, and the
+## abridgement is what dropped the device translation: a light gun on a multitap
+## announced RETRO_DEVICE_LIGHTGUN, which fceumm turns into a gamepad.
+func _bind_port(lib_port: int, plug: Node3D, cabinet_index: int) -> void:
+	if lib_port < 0 or not is_instance_valid(plug):
 		return
-	var actual: Node3D = plug.get_controller() \
+	var device_type: int = plug.get("device_type") if "device_type" in plug else 1
+	var announce := device_type
+	if cabinet_index >= 0:
+		add_collision_exception_with(plug)
+		# The plug itself is kept for the release path, which is handed nothing.
+		_port_plugs[cabinet_index] = plug
+		# On a Wii the slot may already hold a paired remote, and a wired pad may
+		# need announcing as a GameCube pad rather than a plain joypad. Both are
+		# Wii policy and both live in WiiLink; every other console skips them.
+		if _wii_link != null:
+			_wii_link.evict_remote_from(lib_port)
+			announce = _wii_link.cabinet_device_id(device_type)
+	announce = _core_device_id(announce, lib_port)
+	print("[RetroSystem] port %d bound: device_type=%d -> libretro port %d (announced %d)" %
+		[cabinet_index, device_type, lib_port, announce])
+	if _claims_port_device(device_type):
+		set_controller_port_device(lib_port, announce)
+	# The bound node is a ControllerPlug (cable end). Unwrap to the actual
+	# RetroController so rumble can be routed to its set_rumble() method.
+	var ctrl: Node3D = plug.get_controller() if plug.has_method("get_controller") else plug
+	var slot := cabinet_index if cabinet_index >= 0 else lib_port
+	if slot < _port_controllers.size():
+		_port_controllers[slot] = ctrl
+	if plug.has_method("on_plugged_in"):
+		plug.on_plugged_in(self, lib_port)
+	# Auto-select the core's per-port pad type (e.g. PCSX-ReARMed: DualShock vs
+	# the original digital pad). No-ops unless the core exposes such an option.
+	_apply_pad_type_option(lib_port, ctrl)
+	NetworkManager.report_event(NetObjectSync.EV_PORT_PLUG,
+		{"sys": self, "ctrl": ctrl, "port": slot})
+
+
+## Release a peripheral from a libretro port. See _bind_port for `cabinet_index`.
+func _unbind_port(lib_port: int, plug: Node3D, cabinet_index: int) -> void:
+	if lib_port < 0:
+		return
+	print("[RetroSystem] port %d released" % cabinet_index)
+	# Stop any active rumble on the controller being unplugged.
+	var ctrl: Node3D = plug.get_controller() \
 		if is_instance_valid(plug) and plug.has_method("get_controller") else plug
-	if is_instance_valid(actual) and actual.has_method("set_rumble"):
-		actual.set_rumble(0.0, 0.0)
-	if port < _port_controllers.size():
-		_port_controllers[port] = null
-	set_controller_port_device(port, 0)  # RETRO_DEVICE_NONE
+	if is_instance_valid(ctrl) and ctrl.has_method("set_rumble"):
+		ctrl.set_rumble(0.0, 0.0)
+	var device_type: int = plug.get("device_type") \
+		if is_instance_valid(plug) and "device_type" in plug else 1
+	if cabinet_index >= 0 and is_instance_valid(plug):
+		remove_collision_exception_with(plug)
+	var slot := cabinet_index if cabinet_index >= 0 else lib_port
+	if slot < _port_controllers.size():
+		_port_controllers[slot] = null
+	if _claims_port_device(device_type):
+		set_controller_port_device(lib_port, RETRO_DEVICE_NONE)
 	if is_instance_valid(plug) and plug.has_method("on_unplugged"):
 		plug.on_unplugged()
-	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG, {"sys": self, "port": port})
+	NetworkManager.report_event(NetObjectSync.EV_PORT_UNPLUG, {"sys": self, "port": slot})
 
 
 ## Route a rumble request from the core to the RetroController currently

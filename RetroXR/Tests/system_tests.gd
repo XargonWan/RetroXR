@@ -38,6 +38,7 @@ class FakeSeated extends Node3D:
 	var card_id: String = ""
 	var game_label: String = ""
 	var systemid: String = ""
+	var device_type: int = 1
 
 
 ## Port lists exactly as fceumm declares them (read back from the running core).
@@ -94,6 +95,7 @@ func _ready() -> void:
 	_test_cabinet_lookup()
 	_test_seated_content()
 	_test_media_removal()
+	_test_expanded_port_binding()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -420,3 +422,38 @@ func _test_lid_ops() -> void:
 		RetroSystem._tray_op_for(false, true, false), NONE)
 	_eq("lid/shutting an empty drive the core thinks is shut",
 		RetroSystem._tray_op_for(false, false, false), NONE)
+
+
+# ---------------------------------------------------------------------------
+# An EXPANDED port — one a multitap fans out to — is a port to the core like any
+# other. It used to be bound by an abridged copy of the cabinet path, and the
+# abridgement dropped the device translation, so a gun on a multitap reached
+# fceumm as a gamepad. Only the expanded half is reachable here: the cabinet half
+# seats a plug into a snap zone and adds a physics exception.
+# ---------------------------------------------------------------------------
+
+func _test_expanded_port_binding() -> void:
+	var sys := _system()
+	sys._controller_info = FCEUMM_PORTS.duplicate(true)
+	var gun := FakeSeated.new()
+	gun.device_type = DEVICE_LIGHTGUN
+
+	sys.attach_expanded_controller(1, gun)
+	_eq("expanded/a gun is announced as the core's gun",
+		sys._controller_info[1].get("current_id", -1), 258)
+	_eq("expanded/the port remembers the peripheral", sys.port_holder(1), gun)
+	# No cabinet socket, so nothing is recorded as a plug — that array belongs to
+	# the sockets, and a stray entry would be released as if a cord were pulled.
+	_ok("expanded/no cabinet plug recorded", sys._port_plugs[1] == null)
+
+	sys.detach_expanded_controller(1, gun)
+	_eq("expanded/unplugging clears the port", sys._controller_info[1]["current_id"], 0)
+	_eq("expanded/unplugging frees the holder", sys.port_holder(1), null)
+
+	# A port below zero is not a port; binding one used to be caught by the
+	# caller, and _bind_port is now the only thing that can catch it.
+	sys.attach_expanded_controller(-1, gun)
+	_ok("expanded/a negative port binds nothing", sys.port_holder(0) == null)
+
+	gun.free()
+	sys.free()
