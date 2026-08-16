@@ -185,12 +185,11 @@ var _cable_audio_plugs: Array = []
 # 1 right, -1 nowhere — and the picture, the sound and the set's controls each
 # follow a different one of these, because a lead can carry any of them alone.
 var _av_ports: Array = []
-# The sink carrying this console's SOUND, and the sink whose controls own its
-# volume. Node3D, not RetroTV: a pair of powered speakers is a sink with no
-# screen, and the picture can be going somewhere else entirely.
+# The sink carrying this console's SOUND. Node3D, not RetroTV: a pair of powered
+# speakers is a sink with no screen, and the picture can be going somewhere else
+# entirely.
 var _av_tv: Node3D = null
 var _av_video_tv: RetroTV = null
-var _av_control_tv: Node3D = null
 ## Every sink this machine currently reaches — each has been told it is here, and
 ## each decides for itself which of its inputs that means.
 var _av_sinks: Array[Node3D] = []
@@ -1580,8 +1579,6 @@ func _apply_av_feed(video_devs: Array[RetroTV], audio_dev: Node3D, l: int, r: in
 		if not _av_sinks.has(sink):
 			sink.on_av_source_found(self)
 	_av_sinks = sinks
-	# Kept for the volume keys, which belong to whatever is carrying the sound.
-	_av_control_tv = audio_dev if audio_dev != null else video_dev
 
 
 func _spawn_cables() -> void:
