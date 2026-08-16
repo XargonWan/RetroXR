@@ -319,6 +319,15 @@ const RETRO_DEVICE_NONE := 0
 const RETRO_DEVICE_JOYPAD := 1
 const RETRO_DEVICE_MOUSE := 2
 const RETRO_DEVICE_KEYBOARD := 3
+const RETRO_DEVICE_LIGHTGUN := 7
+## A device id is a base type in the low byte and a core-specific subclass above it.
+const RETRO_DEVICE_MASK := 0xFF
+
+## Words a core uses for a light gun in its own device list, for the cores that
+## give one a base type other than RETRO_DEVICE_LIGHTGUN.
+const _LIGHTGUN_WORDS: Array = [
+	"zapper", "lightgun", "light gun", "gun", "scope", "justifier", "phaser", "menacer",
+]
 
 
 
@@ -2580,7 +2589,8 @@ func _reannounce_port_devices() -> void:
 		var announce := dev
 		if _wii_link != null and _port_plugs[i] != null:
 			announce = _wii_link.cabinet_device_id(dev)
-		set_controller_port_device(_libretro_port_for(dev, i), announce)
+		var lib_port := _libretro_port_for(dev, i)
+		set_controller_port_device(lib_port, _core_device_id(announce, lib_port))
 
 
 ## Re-apply every plugged pad's preferred pad type. Called when the option set
@@ -2627,6 +2637,40 @@ func _libretro_port_for(device_type: int, physical_port: int) -> int:
 	if device_type == RETRO_DEVICE_MOUSE and _is_computer():
 		return 0
 	return physical_port
+
+
+## The id the RUNNING core understands for a peripheral, given the generic type
+## the peripheral carries. Only the light gun needs translating, and it needs it
+## badly: a core names its own device ids, and a gun is rarely plain
+## RETRO_DEVICE_LIGHTGUN — fceumm's Zapper is 258, a MOUSE subclass. An id a core
+## does not recognise does not leave the port alone either; fceumm's switch falls
+## through to a gamepad, which un-plugs the gun the game had auto-detected.
+##
+## The core's own declared list is the source, so this needs no per-core table:
+## prefer an entry whose base type IS a light gun, else one whose name reads as a
+## gun, else announce what we were given.
+func _core_device_id(device_type: int, lib_port: int) -> int:
+	if device_type != RETRO_DEVICE_LIGHTGUN:
+		return device_type
+	var by_name := -1
+	for entry: Dictionary in _controller_info:
+		if int(entry.get("port", -1)) != lib_port:
+			continue
+		for dev: Dictionary in entry.get("controllers", []):
+			var id := int(dev.get("id", 0))
+			if (id & RETRO_DEVICE_MASK) == RETRO_DEVICE_LIGHTGUN:
+				return id
+			if by_name < 0 and _reads_as_lightgun(String(dev.get("name", ""))):
+				by_name = id
+	return by_name if by_name >= 0 else device_type
+
+
+static func _reads_as_lightgun(device_name: String) -> bool:
+	var lower := device_name.to_lower()
+	for word: String in _LIGHTGUN_WORDS:
+		if lower.contains(word):
+			return true
+	return false
 
 
 ## Whether a plugged peripheral occupies a numbered libretro port device. A
@@ -2700,6 +2744,7 @@ func _on_port_snapped(port_index: int, controller: Node3D) -> void:
 	if _wii_link != null:
 		_wii_link.evict_remote_from(lib_port)
 		announce = _wii_link.cabinet_device_id(device_type)
+	announce = _core_device_id(announce, lib_port)
 	print("[RetroSystem] port %d snapped: device_type=%d -> libretro port %d (announced %d)" %
 		[port_index, device_type, lib_port, announce])
 	if _claims_port_device(device_type):
