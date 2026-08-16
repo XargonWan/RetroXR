@@ -376,6 +376,11 @@ func _ready() -> void:
 	_update_name_label()
 	# Lay the name flat on the model's front face once meshes + text are built.
 	_place_name_label.call_deferred()
+	# A machine spawns switched off, and its leads are clamped only once they
+	# exist. Both ticks are armed by the things that make them worth running:
+	# power_on/net_start_core and _apply_video_out.
+	set_process(false)
+	set_physics_process(false)
 
 
 ## The power button always reflects run state: green START when off, red STOP
@@ -1809,6 +1814,11 @@ func set_video_out_enabled(on: bool) -> void:
 
 
 func _apply_video_out() -> void:
+	# The only thing _physics_process does is keep the video-out leads inside
+	# their reach. With the leads hidden and frozen there is nothing to clamp, so
+	# the tick goes off entirely rather than opening with a flag test 90 times a
+	# second — and a handheld, which has no video out, never ticks at all.
+	set_physics_process(video_out_enabled)
 	for i in _channels.size():
 		var inst := _live(_cable_instances[i]) as Node3D
 		var plug := _live(_cable_plugs[i]) as CablePlug
@@ -1914,7 +1924,7 @@ func _process(_delta: float) -> void:
 	# screen-top = -Z, screen-right = +X. During netplay the tilt rides the
 	# deterministic frame schedule (aux block, supplied by the port-0 owner)
 	# instead of feeding the core directly.
-	if _model != null and _model.is_handheld() and is_powered_on:
+	if is_powered_on and _model != null and _model.is_handheld():
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
 		if NetworkManager.netplay_running():
 			if NetworkManager.netplay_system() == self:
@@ -1925,6 +1935,10 @@ func _process(_delta: float) -> void:
 	_update_disc_spin(_delta)
 	_ensure_audio_bound()
 	_update_audio_position()
+	# Nothing left to do until something switches on again. Tested here rather
+	# than per frame from outside: a room holds a lot of these, most of them off.
+	if not is_powered_on and _disc_spin <= 0.0:
+		set_process(false)
 
 
 ## Spin the seated disc: ramp up while powered with the tray shut, ramp down
@@ -2070,6 +2084,7 @@ func power_on() -> void:
 	_apply_audio_playing()
 	_bind_audio_player()
 	is_powered_on = true
+	set_process(true)
 	_update_power_button_visual()
 	_model.on_power_on()
 	# Learn whether this core exposes the disk-control interface (multi-disc
@@ -2279,6 +2294,7 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	_apply_audio_playing()
 	_bind_audio_player()
 	is_powered_on = true
+	set_process(true)
 	net_remote_powered = false
 	if connected_tv:
 		connected_tv.hide_osd()   # real local output now, not the placeholder
