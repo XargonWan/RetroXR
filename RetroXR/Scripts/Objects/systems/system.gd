@@ -2840,32 +2840,33 @@ func _on_rumble_state_changed(port: int, weak: float, strong: float) -> void:
 
 # --- Cartridge slot callbacks ---
 
-## True when a piece of media (cartridge/disc) belongs in this system's slot.
+## Does this object belong to this system, per one of the compatibility tables?
+##
+## An object that names no system is universal and always fits — RetroXR's own
+## props (generic pad, keyboard, mouse, multitap, ray gun) stand in for hardware
+## we have no model of, so locking them to one system would strand every console
+## that has no dedicated pad yet, and unlabelled legacy media keeps working.
+##
+## Anything that is not media or a plug at all falls through to true and is still
+## filtered by the zone's own snap_require.
+func _belongs_here(obj: Node3D, compat: Dictionary) -> bool:
+	if not "systemid" in obj:
+		return true
+	var mid := str(obj.get("systemid"))
+	if mid.is_empty():
+		return true
+	return mid == systemid or mid in compat.get(systemid, [])
+
+
+## Slot gate: does this piece of media (cartridge/disc) belong in this system?
 func _accepts_media(obj: Node3D) -> bool:
-	if not "systemid" in obj:
-		return true
-	var mid := str(obj.get("systemid"))
-	if mid.is_empty():
-		return true
-	return mid == systemid or mid in _MEDIA_COMPAT.get(systemid, [])
+	return _belongs_here(obj, _MEDIA_COMPAT)
 
 
-## Port gate: does this plug's controller belong to this system?
-##
-## Reads the systemid the ControllerPlug copied off its controller. Empty means
-## universal and always fits — RetroXR's own props (generic pad, keyboard, mouse,
-## multitap, ray gun) stand in for hardware we have no model of, so locking them
-## to one system would strand every console that has no dedicated pad yet.
-##
-## Anything that is not a controller plug at all falls through to true and is
-## still filtered by the zone's snap_require = "controller_plug".
+## Port gate: does this plug's controller belong to this system? Reads the
+## systemid the ControllerPlug copied off its controller.
 func _accepts_plug(obj: Node3D) -> bool:
-	if not "systemid" in obj:
-		return true
-	var mid := str(obj.get("systemid"))
-	if mid.is_empty():
-		return true
-	return mid == systemid or mid in _CONTROLLER_COMPAT.get(systemid, [])
+	return _belongs_here(obj, _CONTROLLER_COMPAT)
 
 
 ## Returns the currently snapped cartridge, or null (used by save/load).

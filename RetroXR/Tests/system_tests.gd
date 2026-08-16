@@ -96,6 +96,7 @@ func _ready() -> void:
 	_test_seated_content()
 	_test_media_removal()
 	_test_expanded_port_binding()
+	_test_belongs_here()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -457,3 +458,53 @@ func _test_expanded_port_binding() -> void:
 
 	gun.free()
 	sys.free()
+
+
+# ---------------------------------------------------------------------------
+# What a system's slot and ports will accept. One rule, two tables — an object
+# that names no system is universal, which is what keeps RetroXR's stand-in
+# props and unlabelled legacy media working everywhere.
+# ---------------------------------------------------------------------------
+
+func _test_belongs_here() -> void:
+	var nes := _system("nes")
+	var cart := FakeSeated.new()
+
+	cart.systemid = "nes"
+	_ok("belongs/its own media fits", nes._accepts_media(cart))
+	cart.systemid = "snes"
+	_ok("belongs/another system's media does not", not nes._accepts_media(cart))
+	cart.systemid = ""
+	_ok("belongs/unlabelled media fits anywhere", nes._accepts_media(cart))
+	# An object with no systemid property at all — a prop that predates the rule.
+	var plain := Node3D.new()
+	_ok("belongs/an object naming no system fits", nes._accepts_media(plain))
+
+	cart.systemid = "snes"
+	_ok("belongs/the port gate reads the same way", not nes._accepts_plug(cart))
+	cart.systemid = ""
+	_ok("belongs/an unlabelled plug fits", nes._accepts_plug(cart))
+	nes.free()
+
+	# The media table is the console's, and it is not symmetric: a Wii takes a
+	# GameCube disc, a GameCube does not take a Wii one.
+	var wii := _system("wii")
+	cart.systemid = "gamecube"
+	_ok("belongs/a Wii takes a GameCube disc", wii._accepts_media(cart))
+	# ...but the port table is empty today, so the same pair is not compatible
+	# there. If that ever changes, this case is the one that says so.
+	_ok("belongs/a GameCube pad is not a Wii plug yet", not wii._accepts_plug(cart))
+	wii.free()
+
+	var cube := _system("gamecube")
+	cart.systemid = "wii"
+	_ok("belongs/a GameCube refuses a Wii disc", not cube._accepts_media(cart))
+	cube.free()
+
+	var gba := _system("game_boy_advance")
+	cart.systemid = "game_boy"
+	_ok("belongs/a GBA takes a Game Boy cart", gba._accepts_media(cart))
+	gba.free()
+
+	plain.free()
+	cart.free()
