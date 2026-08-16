@@ -139,15 +139,16 @@ const DEFAULT_LIGHTGUN_MAP: Dictionary = {
 ##
 ## One hand carries five usable inputs and the remote has seven buttons, so this
 ## CANNOT cover all of them and is not meant to. It takes the four you need with
-## a game running — A, B, 1 and 2 — plus shake. The rest (+, -, HOME) are the
+## a game running — A, B, 1 and 2 — plus + to start. The rest (-, HOME) are the
 ## ones you reach for between rounds, and those are poked on the shell itself
-## with the free hand, which every button on the remote also answers to.
+## with the free hand, which every button on the remote also answers to. Shake
+## is left unbound: the remote's own motion drives the accelerometer.
 const DEFAULT_WIIMOTE_MAP: Dictionary = {
     "trigger":       "b",       # index finger, on the underside — same as the real B
     "ax_button":     "a",
     "by_button":     "two",
-    "grip":          "shake",
-    "primary_click": "one",
+    "grip":          "one",
+    "primary_click": "plus",
     "stick":         "dpad",
 }
 
