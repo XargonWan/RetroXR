@@ -18,7 +18,7 @@ extends Node
 ## set_active_slot() writes user://scenes/prefs.json. Both are snapshotted at the
 ## start and put back at the end, so a red run cannot cost anyone their room.
 
-const GROUPS := ["slots", "ready", "transition", "autosave", "manifest"]
+const GROUPS := ["slots", "ready", "transition", "autosave", "reload", "overlap", "vlc", "manifest"]
 ## Scratch slot ids, in the arcade's real directory — slot_dir() is derived from
 ## the room id and cannot be pointed somewhere safer.
 const SLOT_A := "__scene_selftest_a"
@@ -56,6 +56,12 @@ func _ready() -> void:
 		_test_transition()
 	if _want_group("autosave"):
 		await _test_autosave()
+	if _want_group("reload"):
+		await _test_reload()
+	if _want_group("overlap"):
+		await _test_overlap()
+	if _want_group("vlc"):
+		_test_vlc()
 	if _want_group("manifest"):
 		_test_manifest()
 	_restore()
@@ -251,10 +257,176 @@ func _test_autosave() -> void:
 	ScenePersistence.flush_pending_writes()
 	_ok(FileAccess.file_exists(path), "autosave/the rewrite landed")
 
-	for n in get_children():
-		if n is RetroSystem:
-			n.queue_free()
+	# clear_scene, not a hand-rolled queue_free of the systems: a system also puts
+	# its captive cable in "spawned", and freeing only the systems left that cable
+	# standing in the next group's room.
+	sp.clear_scene(self)
+	for i in range(20):
+		await get_tree().physics_frame
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+# ── Clearing and reloading the room you are standing in ───────────────────────
+
+## Loading the "clean" slot IS the clear-room action, and loading any other slot
+## while already in the room clears it first. Both run against a live room, and
+## clear_scene has to leave nothing behind — a survivor is a node still in the
+## "spawned" group, which the next save then writes back out.
+func _test_reload() -> void:
+	var sp := ScenePersistence.new("arcade")
+	var entries := [
+		{"id": 0, "type": "system", "systemid": "nes",
+			"position": [0, 0, 0], "rotation": [0, 0, 0]},
+		{"id": 1, "type": "system", "systemid": "game_boy",
+			"position": [1, 0, 0], "rotation": [0, 0, 0]},
+	]
+	sp.instantiate_objects(self, entries)
+	for i in range(30):
+		await get_tree().physics_frame
+	# A system registers its captive cable in "spawned" too, so the group is bigger
+	# than the entry list. The invariant is that a reload reproduces this exact
+	# population — measure it rather than hardcoding a count that quietly tracks
+	# how many cables a console happens to ship with.
+	var baseline := get_tree().get_nodes_in_group("spawned").size()
+	_ok(baseline >= 2, "reload/room furnished (%d spawned nodes)" % baseline)
+	_eq(_systems(), 2, "reload/two systems furnished")
+
+	sp.clear_scene(self)
+	for i in range(30):
+		await get_tree().physics_frame
+	_eq(get_tree().get_nodes_in_group("spawned").size(), 0, "reload/clear_scene leaves nothing")
+
+	# And clearing an already-empty room is not an error.
+	sp.clear_scene(self)
+	for i in range(10):
+		await get_tree().physics_frame
+	_eq(get_tree().get_nodes_in_group("spawned").size(), 0, "reload/clearing twice is safe")
+
+	# Reload in place: save, then load the same slot back over a live room.
+	sp.instantiate_objects(self, entries)
+	for i in range(30):
+		await get_tree().physics_frame
+	_ok(sp.save_slot(self, SLOT_A), "reload/saved the furnished room")
+	await sp.load_slot_async(self, SLOT_A)
+	for i in range(30):
+		await get_tree().physics_frame
+	_eq(get_tree().get_nodes_in_group("spawned").size(), baseline,
+		"reload/in-place reload restores exactly one room's worth")
+	_eq(_systems(), 2, "reload/in-place reload restores two systems")
+
+	# Loading "clean" over it is the clear-room action.
+	var clean_ok: bool = await sp.load_slot_async(self, "clean")
+	_ok(clean_ok, "reload/clean slot loads")
+	for i in range(20):
+		await get_tree().physics_frame
+	_eq(get_tree().get_nodes_in_group("spawned").size(), 0, "reload/clean slot empties the room")
+
+	# A slot that does not exist must fail WITHOUT clearing: a failed load is not
+	# an implicit clear-room, or a typo costs the player their furniture.
+	sp.instantiate_objects(self, entries)
+	for i in range(30):
+		await get_tree().physics_frame
+	var missing_ok: bool = await sp.load_slot_async(self, "__no_such_slot")
+	_ok(not missing_ok, "reload/missing slot fails")
+	_eq(get_tree().get_nodes_in_group("spawned").size(), baseline,
+		"reload/failed load left the room standing")
+
+	sp.clear_scene(self)
+	for i in range(20):
+		await get_tree().physics_frame
+
+
+## Two restores into one room. The second bumps _restore_generation, and the
+## first must notice after its next yield and stand down — otherwise both build
+## into the same room while each clear_scene()s what the other spawned, leaving
+## live systems holding freed cable plugs (scene_persistence.gd:49-54).
+func _test_overlap() -> void:
+	var sp := ScenePersistence.new("arcade")
+	sp.instantiate_objects(self, [
+		{"id": 0, "type": "system", "systemid": "nes",
+			"position": [0, 0, 0], "rotation": [0, 0, 0]},
+		{"id": 1, "type": "system", "systemid": "game_boy",
+			"position": [1, 0, 0], "rotation": [0, 0, 0]},
+	])
+	for i in range(30):
+		await get_tree().physics_frame
+	sp.save_slot(self, SLOT_A)
+
+	# Both started before either is awaited: the race the guard exists for.
+	# call_deferred, because GDScript will not let a coroutine be called any other
+	# way without awaiting it — a bare call is a parse error and Callable.call is a
+	# runtime one — and awaiting the first would serialise the overlap under test.
+	# Held in locals so the two instances outlive the deferred dispatch.
+	var runner_a := ScenePersistence.new("arcade")
+	var runner_b := ScenePersistence.new("arcade")
+	runner_a.call_deferred("load_slot_async", self, SLOT_A)
+	runner_b.call_deferred("load_slot_async", self, SLOT_A)
+	for i in range(40):
+		await get_tree().physics_frame
+
+	# One room's worth, not two, and nothing freed still in the group.
+	_eq(_systems(), 2, "overlap/two concurrent restores leave one room's systems")
+	var alive := 0
+	for n in get_tree().get_nodes_in_group("spawned"):
+		if is_instance_valid(n) and not n.is_queued_for_deletion():
+			alive += 1
+	_eq(alive, get_tree().get_nodes_in_group("spawned").size(),
+		"overlap/every survivor is a live node")
+
+	sp.clear_scene(self)
+	for i in range(20):
+		await get_tree().physics_frame
+
+	# _let_go hands the room back to physics after a restore. A body freed while it
+	# was held — which is precisely what an overlapping restore does — must not stop
+	# it weighting the rest: everything after the freed one stayed weightless and
+	# asleep, permanently, because the typed local threw before is_instance_valid
+	# could be consulted. Freed entry FIRST, so a throw abandons the live one.
+	var doomed := RigidBody3D.new()
+	add_child(doomed)
+	var live := RigidBody3D.new()
+	live.gravity_scale = 0.0
+	add_child(live)
+	var held := {
+		0: {"body": doomed, "gravity": 1.0},
+		1: {"body": live, "gravity": 1.0},
+	}
+	doomed.free()
+	sp._let_go(held)
+	_eq(live.gravity_scale, 1.0, "overlap/_let_go weights bodies after a freed one")
+	live.queue_free()
+
+
+# ── The video decks' teardown contract ────────────────────────────────────────
+
+## The decks call _vlc.shutdown() from _exit_tree, which is a GDExtension method:
+## if it ever stops being exported, every room change starts logging an invalid
+## call and silently goes back to the unbounded destructor teardown.
+func _test_vlc() -> void:
+	if not ClassDB.class_exists("VlcPlayer"):
+		print("[test] skip vlc/ — VlcPlayer extension not loaded")
+		return
+	var player: Object = ClassDB.instantiate("VlcPlayer")
+	_ok(player.has_method("shutdown"), "vlc/VlcPlayer exports shutdown()")
+
+	# With no media open there is nothing to stop, so it must return at once
+	# rather than spending its budget.
+	var t := Time.get_ticks_usec()
+	player.shutdown()
+	var us := Time.get_ticks_usec() - t
+	_ok(us < 500000, "vlc/shutdown with no media returns immediately (%.1f ms)" % (us / 1000.0))
+
+	# Idempotent: a deck freed after an explicit stop must not tear down twice.
+	player.shutdown()
+	_ok(true, "vlc/shutdown is idempotent")
+
+	# And the decks actually call it, which is the half a C++ method cannot assert.
+	for path in ["res://Scripts/Objects/media/dvd_player.gd",
+			"res://Scripts/Objects/media/vcr_player.gd",
+			"res://Scripts/Objects/tv/tv_tuner.gd"]:
+		var src := FileAccess.get_file_as_string(path)
+		_ok(src.contains("func _exit_tree") and src.contains("shutdown()"),
+			"vlc/%s stops libVLC on teardown" % path.get_file())
 
 
 # ── Slot manifest CRUD ────────────────────────────────────────────────────────
@@ -290,6 +462,16 @@ func _test_manifest() -> void:
 
 
 # ── Harness ───────────────────────────────────────────────────────────────────
+
+## Systems currently in the room. The stable half of the "spawned" population —
+## cables come and go with what a console brings.
+func _systems() -> int:
+	var n := 0
+	for node in get_tree().get_nodes_in_group("spawned"):
+		if node is RetroSystem:
+			n += 1
+	return n
+
 
 func _want_group(name: String) -> bool:
 	return _only.is_empty() or _only == name

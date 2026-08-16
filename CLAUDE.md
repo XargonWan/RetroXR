@@ -205,7 +205,9 @@ the systemid and cannot be pointed elsewhere) and removes it at both ends.
 `RetroXR/Tests/scene_tests.tscn` covers SceneManager and the save gates around it — which
 rooms keep slots, the per-room active slot and its prefs round-trip (including the legacy
 single-room key), the `is_room_ready` / `is_scene_content_ready` boundaries, the transition
-state machine's coalescing, the periodic autosave, and slot-manifest CRUD. 52 cases, ~5 s.
+state machine's coalescing, the periodic autosave, clearing and reloading the room you are
+standing in, two restores racing into one room, the video decks' teardown contract, and
+slot-manifest CRUD. 72 cases, ~25 s.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/scene_tests.tscn
 "$godot" --headless --path RetroXR res://Tests/scene_tests.tscn -- --only=autosave
@@ -214,6 +216,12 @@ It deliberately does **not** drive a real transition: `change_scene()` loads Mai
 whose SubViewports render every frame, and a headless run has no GPU to service them — that
 hangs rather than fails (see the SubViewport gotcha below). The cases drive `_transitioning`
 and `_pending_scene_id` directly and assert the decisions made from them.
+
+Two traps it hit that the next case will hit too. A spawned system also registers its
+captive cable in the `"spawned"` group, so the group is always bigger than the entry list —
+measure a baseline rather than hardcoding a count. And tear a group's room down with
+`clear_scene()`, not by freeing the systems: freeing only those leaves the cables standing
+in the next group's room.
 
 It writes to the player's real `user://scenes` — the slot dir is derived from the room id
 and cannot be pointed elsewhere — so it snapshots `prefs.json`, the arcade manifest and the

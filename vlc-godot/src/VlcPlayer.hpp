@@ -56,6 +56,26 @@ public:
     // cannot may call open() regardless and take the wait.
     bool is_ready() const;
 
+    // Tear the player down with a time budget, for a node that is going away.
+    //
+    // The destructor cannot be bounded. libVLC 3 has no async stop, so
+    // ~VlcPlayer() blocks in libvlc_media_player_stop for as long as that takes,
+    // and on a source that has stopped answering (an unreachable tuner URL) that
+    // is an unbounded block on whichever thread frees the object -- in this app,
+    // the main thread during a room change.
+    //
+    // So the stop runs on a worker and the caller waits at most budget_ms for it.
+    // Past that the player is ABANDONED: a reference is parked in a graveyard so
+    // the object outlives the room, and the worker is left to finish whenever it
+    // does. It must outlive it -- `this` is the opaque pointer libVLC hands back
+    // to every video and audio callback, so freeing it while the media player is
+    // still alive is a use-after-free, which is worse than the hitch. Abandoning
+    // leaks the object, its libVLC instance and one thread for the process
+    // lifetime; it mirrors Libretro::AbandonWrapper, for the same reason.
+    //
+    // Idempotent, and safe to skip: the destructor still tears down, unbounded.
+    void shutdown(int budget_ms = 2000);
+
     void play();
     void pause();
     void stop();
@@ -156,6 +176,9 @@ private:
 
     void *m_vlc = nullptr;   // libvlc_instance_t*
     void *m_mp = nullptr;    // libvlc_media_player_t*
+
+    // shutdown() has run. The destructor then has nothing left to block on.
+    bool m_shutdown_started = false;
 
     // Instance construction, which warm_up() may be running on its own thread
     // while the main thread calls open(). m_instance_ready reports that the

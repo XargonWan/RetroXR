@@ -13,6 +13,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 
@@ -80,11 +81,60 @@ VlcPlayer::~VlcPlayer()
     // A libvlc_new in flight owns members of this object.
     if (m_warm_thread.joinable())
         m_warm_thread.join();
+    // Normally a no-op: shutdown() has already stopped and released the player,
+    // so this only runs unbounded for an owner that never called it.
     release_player();
     if (m_vlc)
     {
         libvlc_release(static_cast<libvlc_instance_t *>(m_vlc));
         m_vlc = nullptr;
+    }
+}
+
+namespace
+{
+// Players whose stop outran its budget. Holding a Ref keeps the object -- and so
+// the opaque pointer libVLC's callbacks still carry -- alive for the process
+// lifetime. Only ever touched on the thread that calls shutdown().
+std::vector<godot::Ref<Xenu::VlcPlayer>> s_abandoned;
+} // namespace
+
+void VlcPlayer::shutdown(int budget_ms)
+{
+    if (m_shutdown_started)
+        return;
+    m_shutdown_started = true;
+
+    // Building the instance is a local plugin-tree walk with no network in it, so
+    // this join is bounded in practice -- and it has to happen before the stop:
+    // the worker below writes m_vlc.
+    if (m_warm_thread.joinable())
+        m_warm_thread.join();
+    if (!m_mp)
+        return;
+
+    // The worker holds no reference: either we wait it out below, or the
+    // graveyard takes one, so `this` outlives the thread either way. A Ref
+    // captured here could instead drop the last reference on the worker and
+    // delete a Godot Object off the main thread.
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    std::thread([this, done]() {
+        release_player();
+        done->store(true, std::memory_order_release);
+    }).detach();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budget_ms);
+    while (!done->load(std::memory_order_acquire))
+    {
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            UtilityFunctions::push_warning(
+                "VlcPlayer: stop exceeded ", budget_ms,
+                " ms — abandoning the player (its thread and libVLC instance leak for this process)");
+            s_abandoned.push_back(godot::Ref<VlcPlayer>(this));
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
@@ -838,6 +888,7 @@ void VlcPlayer::_bind_methods()
     ClassDB::bind_method(D_METHOD("play"), &VlcPlayer::play);
     ClassDB::bind_method(D_METHOD("pause"), &VlcPlayer::pause);
     ClassDB::bind_method(D_METHOD("stop"), &VlcPlayer::stop);
+    ClassDB::bind_method(D_METHOD("shutdown", "budget_ms"), &VlcPlayer::shutdown, DEFVAL(2000));
     ClassDB::bind_method(D_METHOD("set_paused", "paused"), &VlcPlayer::set_paused);
     ClassDB::bind_method(D_METHOD("is_playing"), &VlcPlayer::is_playing);
     ClassDB::bind_method(D_METHOD("get_frame_count"), &VlcPlayer::get_frame_count);

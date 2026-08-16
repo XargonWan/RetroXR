@@ -762,11 +762,17 @@ func _hold_still_group(root: Node, held: Dictionary) -> void:
 func _let_go(held: Dictionary) -> void:
 	for id: Variant in held:
 		var rec: Dictionary = held[id]
-		var body: RigidBody3D = rec["body"]
+		# Untyped on purpose. Assigning a freed instance to a TYPED local throws on
+		# the assignment, so `var body: RigidBody3D = ...` made the is_instance_valid
+		# below unreachable — and the throw abandoned the loop, leaving every body
+		# after the freed one weightless and asleep for good. Overlapping restores
+		# produce exactly this: the newer one frees what the older one is holding.
+		var body: Variant = rec["body"]
 		if not is_instance_valid(body):
 			continue
-		body.gravity_scale = rec["gravity"]
-		body.sleeping = false
+		var rb := body as RigidBody3D
+		rb.gravity_scale = rec["gravity"]
+		rb.sleeping = false
 	held.clear()
 
 

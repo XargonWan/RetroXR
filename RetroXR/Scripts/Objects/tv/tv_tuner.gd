@@ -269,6 +269,15 @@ func current_channel() -> Dictionary:
 	return channels[current_index]
 
 
+## The tuner is the deck that actually earns the budget: its sources are URLs, and
+## a host that has stopped answering makes libvlc_media_player_stop block for as
+## long as it takes to give up. Freeing the node used to pay that on the main
+## thread, mid-room-change. See VlcPlayer::shutdown.
+func _exit_tree() -> void:
+	if _vlc:
+		_vlc.shutdown()
+
+
 func _start_current() -> void:
 	if _vlc == null:
 		_set_error("VIDEO ENGINE UNAVAILABLE")

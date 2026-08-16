@@ -531,6 +531,13 @@ func play() -> void:
 	_net_push_state()
 
 
+## See DVDPlayer._exit_tree — a freed deck has to stop libVLC with a budget, and
+## stop() is not that: it returns early when paused and pushes netplay state.
+func _exit_tree() -> void:
+	if _vlc:
+		_vlc.shutdown()
+
+
 func stop() -> void:
 	if not is_playing:
 		return

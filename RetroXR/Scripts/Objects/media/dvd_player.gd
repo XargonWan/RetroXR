@@ -455,6 +455,16 @@ func play() -> void:
 	_net_push_state()
 
 
+## Nothing used to stop libVLC when a deck was freed — a room change just dropped
+## the node and left the engine to be torn down by VlcPlayer's destructor, which
+## blocks for as long as libvlc_media_player_stop takes. shutdown() is the bounded
+## form of that. Not stop(): that one returns early when the deck is paused, and
+## pushes netplay state, neither of which belongs in a teardown.
+func _exit_tree() -> void:
+	if _vlc:
+		_vlc.shutdown()
+
+
 func stop() -> void:
 	if not is_playing:
 		return
