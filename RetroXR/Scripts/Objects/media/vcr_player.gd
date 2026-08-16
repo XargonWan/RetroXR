@@ -639,42 +639,18 @@ func _on_video_finished() -> void:
 ## Called by a CompositeCable whenever a plug is seated or pulled anywhere on it,
 ## with every source-to-sink pair the lead currently carries.
 func on_av_topology_changed(_links: Array) -> void:
-	# The reported list is this ONE cable's cords. Ask for every cable instead: a
-	# deck with its picture on one lead and its sound on another had whichever
-	# resolved last overwrite the whole of its routing, so the other half went
-	# silently dead. RetroSystem has always read it this way.
-	var links := AvGraph.links_for(self)
-	var tv: RetroTV = null
-	var video := false
-	var l := -1
-	var r := -1
-	for link in links:
-		var out_port: RcaPort = link["out"]
-		if out_port.get_device() != self:
-			continue
-		var in_port: RcaPort = link["in"]
-		var target := in_port.get_device() as RetroTV
-		if target == null:
-			continue
-		if tv == null:
-			tv = target
-		elif target != tv:
-			continue        # cords into two different sets: the first one wins
-		match out_port.channel:
-			RcaPort.Channel.VIDEO:
-				# Picture into an audio input is just a buzz; nothing to show.
-				video = video or in_port.channel == RcaPort.Channel.VIDEO
-			RcaPort.Channel.AUDIO_L:
-				l = _speaker_for(in_port)
-			RcaPort.Channel.AUDIO_R:
-				r = _speaker_for(in_port)
-	_apply_av_feed(tv, video, l, r)
-
-
-## Which of the set's speakers an input socket drives: 0 left, 1 right, -1 for the
-## video socket, which does nothing with audio. Channel order is VIDEO, L, R.
-func _speaker_for(in_port: RcaPort) -> int:
-	return -1 if in_port.channel == RcaPort.Channel.VIDEO else int(in_port.channel) - 1
+	# The reported list is this ONE cable's cords. AvSource asks every cable this
+	# deck's own sockets touch: a deck with its picture on one lead and its sound
+	# on another had whichever resolved last overwrite the whole of its routing,
+	# so the other half went silently dead.
+	#
+	# Shared with RetroSystem and the DVD player, which is how this deck gained the
+	# rules it was written without: a multi-way socket read through channel_for(),
+	# a sink with no screen of its own, a stereo lead, and a picture and a sound
+	# that land in two different boxes.
+	var feed := AvSource.resolve(self, true)
+	_apply_av_feed(feed.primary_sink() as RetroTV, not feed.video_sinks.is_empty(),
+		feed.left, feed.right)
 
 
 func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
