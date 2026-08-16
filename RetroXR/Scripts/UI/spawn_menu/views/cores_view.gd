@@ -57,6 +57,13 @@ var _firmware_installer: FirmwareInstaller = null
 var _bios_job_buttons: Dictionary = {}
 var _bios_refreshing := false
 
+## Toast key -> what that job is fetching, remembered from job_started. Only the
+## start carries the name, and every message after it is keyed to the same bar —
+## without this a progress tick overwrites "Downloading Snes9x" with a bare size,
+## and four bars at once become four identical ones. Both job producers in this
+## view fill it; cleared when the job ends.
+var _job_labels: Dictionary = {}
+
 
 static func create(menu: Node) -> SpawnMenuCoresView:
 	var v := SpawnMenuCoresView.new()
@@ -554,10 +561,33 @@ func _build_bios_tab() -> Control:
 
 # ── Install progress ──────────────────────────────────────────────────────────
 
+## What a job's bar reads while it runs. The name comes first and stays there:
+## several of these can be up at once, and a bar saying only "43%" or "12.4 MiB"
+## belongs to any of them.
+##
+## The size is appended once it is known rather than at the start — the core
+## downloader emits job_started with a total of 0, because the buildbot's
+## Content-Length is not in hand until the response arrives.
+func _job_text(key: String, total: int) -> String:
+	var label := str(_job_labels.get(key, ""))
+	if label.is_empty():
+		label = "…"
+	if total <= 0:
+		return "Downloading %s" % label
+	return "Downloading %s  (%s)" % [label, String.humanize_size(total)]
+
+
+## For a message that ends the job. "Installed" alone left four finished bars
+## saying the same word.
+func _job_label(key: String) -> String:
+	var label := str(_job_labels.get(key, ""))
+	return label if not label.is_empty() else "Download"
+
+
 func _on_firmware_started(key: String, label: String, total: int) -> void:
-	var size_text := "" if total <= 0 else "  (%s)" % String.humanize_size(total)
+	_job_labels[key] = label
 	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY),
-		"Downloading %s%s" % [label, size_text], 0.0, 0.0)
+		_job_text(key, total), 0.0, 0.0)
 
 
 func _on_firmware_progress(key: String, received: int, total: int) -> void:
@@ -566,26 +596,31 @@ func _on_firmware_progress(key: String, received: int, total: int) -> void:
 	if btn != null and is_instance_valid(btn):
 		btn.text = "%d%%" % int(frac * 100.0)
 	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY),
-		"Downloading %s" % String.humanize_size(total), 0.0, frac)
+		_job_text(key, total), 0.0, frac)
 
 
 func _on_firmware_retrying(key: String, attempt: int, total: int, reason: String) -> void:
 	_romm_notify_or_queue(key, String.chr(MenuIcons.RETRY),
-		"%s — retry %d of %d" % [reason, attempt, total], 0.0)
+		"%s — retry %d of %d: %s" % [_job_label(key), attempt, total, reason], 0.0)
 
 
 func _on_firmware_finished(key: String, ok: bool, error: String) -> void:
 	_bios_job_buttons.erase(key)
 	if ok:
-		_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK), "Installed", MenuToasts.DWELL_OK)
+		_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK),
+			"%s installed" % _job_label(key), MenuToasts.DWELL_OK)
 	else:
 		_romm_notify_or_queue(key, String.chr(MenuIcons.ERROR),
-			error if not error.is_empty() else "Install failed", MenuToasts.DWELL_FAIL)
+			"%s — %s" % [_job_label(key),
+				error if not error.is_empty() else "install failed"],
+			MenuToasts.DWELL_FAIL)
+	_job_labels.erase(key)
 	refresh_bios_view()
 
 
 func _on_firmware_cancelled(key: String) -> void:
 	_bios_job_buttons.erase(key)
+	_job_labels.erase(key)
 	notify_clear(key)
 	refresh_bios_view()
 
@@ -1337,8 +1372,9 @@ func _core_from_key(key: String) -> String:
 	return key.substr(CoreDownloadManager.JOB_PREFIX.length())
 
 
-func _on_core_job_started(key: String, label: String, _total: int) -> void:
-	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY), "Downloading %s" % label, 0.0, 0.0)
+func _on_core_job_started(key: String, label: String, total: int) -> void:
+	_job_labels[key] = label
+	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY), _job_text(key, total), 0.0, 0.0)
 	_refresh_download_button(_core_from_key(key))
 	_refresh_recommend_all_button()
 
@@ -1346,15 +1382,16 @@ func _on_core_job_started(key: String, label: String, _total: int) -> void:
 func _on_core_job_progress(key: String, received: int, total: int) -> void:
 	var frac := 0.0 if total <= 0 else clampf(float(received) / float(total), 0.0, 1.0)
 	_romm_notify_or_queue(key, String.chr(MenuIcons.BUSY),
-		"Downloading %s" % String.humanize_size(total), 0.0, frac)
+		_job_text(key, total), 0.0, frac)
 
 
 func _on_core_job_retrying(key: String, attempt: int, total: int, reason: String) -> void:
 	_romm_notify_or_queue(key, String.chr(MenuIcons.RETRY),
-		"%s — retry %d of %d" % [reason, attempt, total], 0.0)
+		"%s — retry %d of %d: %s" % [_job_label(key), attempt, total, reason], 0.0)
 
 
 func _on_core_job_cancelled(key: String) -> void:
+	_job_labels.erase(key)
 	notify_clear(key)
 	_refresh_download_button(_core_from_key(key))
 	_refresh_recommend_all_button()
@@ -1362,14 +1399,18 @@ func _on_core_job_cancelled(key: String) -> void:
 
 func _on_core_job_finished(key: String, ok: bool, error: String) -> void:
 	var core_name := _core_from_key(key)
+	var label := _job_label(key)
+	_job_labels.erase(key)
 	if not ok:
 		_romm_notify_or_queue(key, String.chr(MenuIcons.ERROR),
-			error if not error.is_empty() else "Download failed", MenuToasts.DWELL_FAIL)
+			"%s — %s" % [label, error if not error.is_empty() else "download failed"],
+			MenuToasts.DWELL_FAIL)
 		_refresh_download_button(core_name)
 		_refresh_recommend_all_button()
 		return
 
-	_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK), "Installed", MenuToasts.DWELL_OK)
+	_romm_notify_or_queue(key, String.chr(MenuIcons.CHECK),
+		"%s installed" % label, MenuToasts.DWELL_OK)
 	_refresh_download_button(core_name)
 	_refresh_recommend_all_button()
 	call_deferred("_populate_manager_tab")

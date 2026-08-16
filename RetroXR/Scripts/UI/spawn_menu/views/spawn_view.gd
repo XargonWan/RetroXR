@@ -90,6 +90,11 @@ var _romm_resync_btn: Button = null
 ## rom_id -> percent, so a recycled row can show live progress when it scrolls
 ## back into view mid-download.
 var _romm_progress_pct: Dictionary = {}
+## rom_id -> game name, remembered from the start of the download. Only the
+## started signal carries it, and looking it up again per tick would mean a
+## catalog scan thousands of times over one ROM — the same reason the row index
+## below is resolved once.
+var _romm_dl_labels: Dictionary = {}
 ## Row index of the in-flight download, resolved once when it starts.
 var _romm_dl_row_index: int = -1
 ## local_path -> {game, manual_path, has_manual}; binding hits the disk otherwise.
@@ -1946,6 +1951,7 @@ func _on_romm_sync_aborted(systemid: String) -> void:
 
 
 func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
+	_romm_dl_labels[rom_id] = label
 	notify("romm:dl:%d" % rom_id, "⬇", "%s · %s" % [label, MenuStyle.human_bytes(total_bytes)], 0.0)
 	# Resolved once; a scan per progress tick would be O(rows) on an 11k list.
 	_romm_dl_row_index = -1
@@ -1967,14 +1973,21 @@ func _on_romm_dl_progress(rom_id: int, received: int, total: int) -> void:
 		return
 	_romm_progress_pct[rom_id] = pct
 	notify("romm:dl:%d" % rom_id, "⬇",
-		"%d%% · %s / %s" % [pct, MenuStyle.human_bytes(received), MenuStyle.human_bytes(total)], frac)
+		"%s · %d%% · %s / %s" % [_romm_dl_label(rom_id), pct,
+			MenuStyle.human_bytes(received), MenuStyle.human_bytes(total)], frac)
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.rebind_index(_romm_dl_row_index)
 
 
 func _on_romm_dl_retrying(rom_id: int, attempt: int, max_attempts: int, reason: String) -> void:
 	notify("romm:dl:%d" % rom_id, "⏳",
-		"%s — retry %d/%d" % [reason, attempt, max_attempts], -1.0)
+		"%s — retry %d/%d: %s" % [_romm_dl_label(rom_id), attempt, max_attempts, reason], -1.0)
+
+
+## What this download is fetching, for every bar after the first.
+func _romm_dl_label(rom_id: int) -> String:
+	var label := str(_romm_dl_labels.get(rom_id, ""))
+	return label if not label.is_empty() else "Download"
 
 
 func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) -> void:
@@ -1982,7 +1995,9 @@ func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) ->
 	if ok:
 		_romm_notify_or_queue(key, "✅", "%s ready" % path.get_file().get_basename(), MenuToasts.DWELL_OK)
 	else:
-		_romm_notify_or_queue(key, "❌", error, MenuToasts.DWELL_FAIL)
+		_romm_notify_or_queue(key, "❌", "%s — %s" % [_romm_dl_label(rom_id), error],
+			MenuToasts.DWELL_FAIL)
+	_romm_dl_labels.erase(rom_id)
 	_romm_dl_row_index = -1
 	_romm_meta_cache.clear()
 	_invalidate_local_scan()
@@ -1990,6 +2005,7 @@ func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) ->
 
 
 func _on_romm_dl_cancelled(rom_id: int) -> void:
+	_romm_dl_labels.erase(rom_id)
 	notify_clear("romm:dl:%d" % rom_id)
 	_rebuild_romm_rows()
 
