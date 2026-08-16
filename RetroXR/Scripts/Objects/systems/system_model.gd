@@ -497,6 +497,22 @@ func get_disc_lid_pivot() -> Node3D:
 	return null
 
 
+## Build this shell's disc mechanism on the host, and return it if it has one
+## that moves. A bespoke shell brings its own geometry — its lid or shelf is part
+## of the model — so the base builds nothing and answers null; the placeholder box
+## draws one to match itself. `front` asks for a sliding shelf rather than a
+## hinged lid, and `on_lid_swung` is told when a hand pushes a spring lid home.
+func build_disc_bay(_host: Node3D, _slot: Node3D, _systemid: String, _front: bool,
+		_on_lid_swung: Callable) -> ProceduralDiscBay:
+	return null
+
+
+## Draw the mouth a slot-loaded disc goes in through. Same split as
+## build_disc_bay: a bespoke shell already has one.
+func build_disc_slit(_host: Node3D, _systemid: String) -> void:
+	pass
+
+
 ## True when this model draws the machine's name itself, so the cabinet should not
 ## also lay its own nameplate on the front face.
 ##

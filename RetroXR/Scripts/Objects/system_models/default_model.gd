@@ -9,10 +9,22 @@ var _reset_btn: VRButton = null
 
 
 ## Nothing here draws a console — this model dresses the box system.tscn already
-## carries. So the cabinet keeps that box, and builds the procedural disc tray or
-## slot to go with it.
+## carries. So the cabinet keeps that box, and this model draws the disc
+## mechanism to match it.
 func brings_own_body() -> bool:
 	return false
+
+
+## The disc pod, shelf and slit are measurements of the placeholder box, so they
+## are this model's geometry and not the cabinet's. Every dimension lives in
+## ProceduralDiscBay.
+func build_disc_bay(host: Node3D, slot: Node3D, systemid: String, front: bool,
+		on_lid_swung: Callable) -> ProceduralDiscBay:
+	return ProceduralDiscBay.build_tray(host, slot, systemid, front, on_lid_swung)
+
+
+func build_disc_slit(host: Node3D, systemid: String) -> void:
+	ProceduralDiscBay.build_slit(host, systemid)
 
 
 func get_controller_port_count() -> int:
