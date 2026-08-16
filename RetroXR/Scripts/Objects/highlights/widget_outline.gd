@@ -57,6 +57,18 @@ static func attach(owner_node: Node3D) -> WidgetOutline:
 
 
 func _init() -> void:
+	# An outline is not part of the object's geometry, and this one is a
+	# MeshInstance3D parented to the widget — so PickableHighlight._collect_overlays
+	# walked straight into it and built a SECOND outline tracing the first. Eleven
+	# of them on a television, five on a console.
+	#
+	# The copy is what the player sees go wrong. It is an ordinary child, so it is
+	# physics-interpolated, and it tracks a top_level node that holds the WORLD
+	# ORIGIN until its first hover. The frame a button's outline lights up, the copy
+	# turns visible and its local transform jumps origin-to-cap in one go — through
+	# _process, which has no reset — and the engine spends a frame sliding it in
+	# from out in the room. A button-sized outline, half a metre away, for a frame.
+	add_to_group("outline_exclude")
 	# top_level: the overlay is driven from the source's GLOBAL transform in
 	# sync(), so it must not inherit the widget Area3D's transform as well.
 	top_level = true
