@@ -146,8 +146,8 @@ const DEFAULT_WIIMOTE_MAP: Dictionary = {
     "trigger":       "b",       # index finger, on the underside — same as the real B
     "ax_button":     "a",
     "by_button":     "two",
-    "grip":          "one",
-    "primary_click": "shake",
+    "grip":          "shake",
+    "primary_click": "one",
     "stick":         "dpad",
 }
 
