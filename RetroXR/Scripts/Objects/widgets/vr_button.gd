@@ -295,6 +295,13 @@ func _activate() -> void:
 	button_pressed.emit()
 
 
+## The outline is updated HERE and not left to the next _process. The pointer
+## reports EXITED on the button it left and ENTERED on the one it reached inside a
+## single call, so deferring both to _process makes the handover depend on the
+## order the three nodes happen to sit in: with the pointer between them, the
+## button being left has already drawn this frame and stays lit alongside the new
+## one — two outlines, a room apart, for a frame. PickableHighlight has always
+## repainted on the signal edge; this is the same rule.
 func pointer_event(event: XRToolsPointerEvent) -> void:
 	match event.event_type:
 		XRToolsPointerEvent.Type.ENTERED:
@@ -315,6 +322,7 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			_pointer_pressed = false
 			Haptics.click(Haptics.controller_of(event.pointer), false, HAPTIC_KEY)
 			_update_visual_state()
+	_sync_outline()
 
 
 ## Swap the mesh used for the depress animation and hide the original ButtonMesh child.

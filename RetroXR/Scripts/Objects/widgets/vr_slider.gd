@@ -344,7 +344,9 @@ func _tip_in_box(tip: Vector3) -> bool:
 	return box.has_point(_knob.global_transform.affine_inverse() * tip)
 
 
-## Desktop reticle / VR laser support (same contract as VRButton).
+## Desktop reticle / VR laser support (same contract as VRButton), including
+## repainting the outline on the event rather than on the next _process — see
+## VRButton.pointer_event for why the handover cannot wait a frame.
 func pointer_event(event: XRToolsPointerEvent) -> void:
 	match event.event_type:
 		XRToolsPointerEvent.Type.ENTERED:
@@ -361,6 +363,7 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 		XRToolsPointerEvent.Type.EXITED:
 			_pointer_engaged = false
 			_pointer_hovered = false
+	_sync_outline()
 
 
 ## Value the travel axis projects a world point to, unclamped and unsnapped.
