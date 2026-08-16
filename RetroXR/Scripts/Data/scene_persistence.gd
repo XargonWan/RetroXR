@@ -309,8 +309,15 @@ func clear_scene(root: Node) -> void:
 	# Main pass: power off and free everything.
 	for node: Node in spawned:
 		# Power off systems so the emulation thread shuts down cleanly.
+		#
+		# power_off(), not toggle_power(): the toggle is the POWER BUTTON's verb and
+		# it answers to the session. In netplay it stops the lockstep game, or sends
+		# the intent to the host, and returns in both cases WITHOUT stopping the core
+		# in front of it — so tearing a room down mid-session made a network call and
+		# then freed a machine that was still running. power_off is the local,
+		# unconditional stop, which is the only thing a teardown ever means.
 		if node is RetroSystem and (node as RetroSystem).is_powered_on:
-			(node as RetroSystem).toggle_power()
+			(node as RetroSystem).power_off()
 		# drop_and_free() clears _grab_driver before queue_free, preventing a
 		# use-after-free in XRToolsPickable._exit_tree when a snap-zone that
 		# was "holding" this pickable gets freed first.

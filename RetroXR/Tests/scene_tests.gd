@@ -18,7 +18,7 @@ extends Node
 ## set_active_slot() writes user://scenes/prefs.json. Both are snapshotted at the
 ## start and put back at the end, so a red run cannot cost anyone their room.
 
-const GROUPS := ["slots", "ready", "transition", "autosave", "reload", "overlap", "vlc", "manifest"]
+const GROUPS := ["slots", "ready", "transition", "autosave", "reload", "overlap", "power", "vlc", "manifest"]
 ## Scratch slot ids, in the arcade's real directory — slot_dir() is derived from
 ## the room id and cannot be pointed somewhere safer.
 const SLOT_A := "__scene_selftest_a"
@@ -60,6 +60,8 @@ func _ready() -> void:
 		await _test_reload()
 	if _want_group("overlap"):
 		await _test_overlap()
+	if _want_group("power"):
+		await _test_power()
 	if _want_group("vlc"):
 		_test_vlc()
 	if _want_group("manifest"):
@@ -395,6 +397,34 @@ func _test_overlap() -> void:
 	sp._let_go(held)
 	_eq(live.gravity_scale, 1.0, "overlap/_let_go weights bodies after a freed one")
 	live.queue_free()
+
+
+# ── A machine's core must not outlive the machine ─────────────────────────────
+
+## Leaving the tree has to stop the core. clear_scene was the only path that
+## powered machines off, so a trash-canned console, a bare queue_free or a room
+## torn down around one skipped the whole GDScript release — the achievements
+## session stayed claimed and a rumbling pad kept rumbling. The emulation thread
+## itself was always stopped by the C++ Libretro::_exit_tree, which is exactly why
+## nobody noticed.
+func _test_power() -> void:
+	var sys: Node = preload("res://Scenes/Objects/system.tscn").instantiate()
+	add_child(sys)
+	await get_tree().process_frame
+
+	# No core is started here — there is no ROM and no installed core in a headless
+	# run — so the flag is set directly. What is under test is the teardown branch,
+	# not what powering on does.
+	sys.is_powered_on = true
+	remove_child(sys)
+	_ok(not sys.is_powered_on, "power/leaving the tree stops the core")
+	sys.free()
+
+	# And the teardown path must not go through the power BUTTON's verb, which
+	# answers to the netplay session and can return without stopping anything.
+	var src := FileAccess.get_file_as_string("res://Scripts/Data/scene_persistence.gd")
+	_ok(src.contains(".power_off()") and not src.contains(".toggle_power()"),
+		"power/clear_scene powers off locally rather than toggling")
 
 
 # ── The video decks' teardown contract ────────────────────────────────────────

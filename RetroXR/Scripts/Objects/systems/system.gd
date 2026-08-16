@@ -1354,7 +1354,18 @@ static func _live(v: Variant) -> Object:
 
 ## A freed system must not leave its touch surfaces on TVs. Its picture needs no
 ## cleaning up any more: a set that asks a freed machine for one stops getting it.
+##
+## It must also let its core go. Only ScenePersistence.clear_scene used to power
+## machines off, so every other way one leaves — the trash can, a bare queue_free,
+## a room torn down around it — skipped _stop_core() entirely: the achievements
+## session was never released, so no other cabinet could claim it, and a controller
+## rumbling at that moment kept rumbling. The C++ Libretro::_exit_tree still stops
+## the emulation thread, which is why this was invisible; none of the GDScript-side
+## release is its job. Safe here because a system is never reparented — a grab is
+## driven, not a re-hang — so leaving the tree always means going away.
 func _exit_tree() -> void:
+	if is_powered_on:
+		power_off()
 	_release_cache_protection()
 	for i in _channels.size():
 		_remove_touch_surface(i)

@@ -206,8 +206,8 @@ the systemid and cannot be pointed elsewhere) and removes it at both ends.
 rooms keep slots, the per-room active slot and its prefs round-trip (including the legacy
 single-room key), the `is_room_ready` / `is_scene_content_ready` boundaries, the transition
 state machine's coalescing, the periodic autosave, clearing and reloading the room you are
-standing in, two restores racing into one room, the video decks' teardown contract, and
-slot-manifest CRUD. 72 cases, ~25 s.
+standing in, two restores racing into one room, a machine's core outliving its machine, the video decks'
+teardown contract, and slot-manifest CRUD. 74 cases, ~25 s.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/scene_tests.tscn
 "$godot" --headless --path RetroXR res://Tests/scene_tests.tscn -- --only=autosave
