@@ -183,8 +183,9 @@ tests. This works without a VR headset (desktop fallback) and without a display.
 
 **`RetroXR/Tests/` is the exception, and the bar for living there is exact:** a scene
 that checks itself, runs unattended with no ROM, core, headset or device, and **exits
-non-zero on failure**, so it can gate a commit. Two so far — the A/V suite in §2c and
-the RomM one below. Everything else is a probe and stays in `RetroXR/Tools/`, including
+non-zero on failure**, so it can gate a commit. Four so far — the A/V suite in §2c, the
+RomM and scene-management ones below, and `system_tests` over the machine controller's
+port, pad, save and disc rules. Everything else is a probe and stays in `RetroXR/Tools/`, including
 the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe`,
 `vb_probe`, `nds_probe`, `handheld_probe`, `gl_video_probe`), a headset or a Quest
 (`netplay_spike`), or they are reproductions of open bugs and report failures BY DESIGN
@@ -200,6 +201,25 @@ Every case in it is a bug that actually shipped, so it doubles as the regression
 add to it when you fix something in that layer rather than starting a new probe. It uses a
 scratch `__romm_selftest` system folder under the real roms root (the path is derived from
 the systemid and cannot be pointed elsewhere) and removes it at both ends.
+
+`RetroXR/Tests/scene_tests.tscn` covers SceneManager and the save gates around it — which
+rooms keep slots, the per-room active slot and its prefs round-trip (including the legacy
+single-room key), the `is_room_ready` / `is_scene_content_ready` boundaries, the transition
+state machine's coalescing, the periodic autosave, and slot-manifest CRUD. 52 cases, ~5 s.
+```bash
+"$godot" --headless --path RetroXR res://Tests/scene_tests.tscn
+"$godot" --headless --path RetroXR res://Tests/scene_tests.tscn -- --only=autosave
+```
+It deliberately does **not** drive a real transition: `change_scene()` loads MainScene.tscn,
+whose SubViewports render every frame, and a headless run has no GPU to service them — that
+hangs rather than fails (see the SubViewport gotcha below). The cases drive `_transitioning`
+and `_pending_scene_id` directly and assert the decisions made from them.
+
+It writes to the player's real `user://scenes` — the slot dir is derived from the room id
+and cannot be pointed elsewhere — so it snapshots `prefs.json`, the arcade manifest and the
+active slots up front and restores them byte-for-byte at the end. Restoring the manifest
+matters beyond deleting the test's own entry: any rewrite round-trips it through JSON, which
+turns its version int into `1.0`.
 
 **For anything visual, a photo (or a VIDEO if it's animated — mp4 preferred over
 animated GIF) is the preferred proof of validation, delivered inline in the chat.**

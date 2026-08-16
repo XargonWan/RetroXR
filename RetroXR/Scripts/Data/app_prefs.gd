@@ -13,6 +13,16 @@ extends Node
 const PREFS_PATH := "user://app_prefs.json"
 
 var auto_save_scene:  bool = true
+## Whether the room is also written back on a timer, not just when it is left.
+## On by default: until this existed, quitting the app — or losing it to the
+## Quest's own lifecycle — dropped everything placed since the last room change,
+## and there is still no save-on-quit hook to fall back on.
+var autosave_periodic: bool = true
+## Seconds between periodic saves. Clamped to the slider's range on load so a
+## hand-edited 0 cannot spin the timer every frame.
+var autosave_interval: float = 60.0
+const AUTOSAVE_INTERVAL_MIN := 15.0
+const AUTOSAVE_INTERVAL_MAX := 300.0
 var aim_crosshair:    bool = true
 var controller_hands: bool = false
 var system_filter:    bool = true
@@ -179,6 +189,9 @@ func _load_prefs() -> void:
 		return
 	var data: Dictionary = parsed
 	auto_save_scene  = _prefs_bool(data, "auto_save_scene",  auto_save_scene)
+	autosave_periodic = _prefs_bool(data, "autosave_periodic", autosave_periodic)
+	autosave_interval = clampf(_prefs_float(data, "autosave_interval", autosave_interval),
+		AUTOSAVE_INTERVAL_MIN, AUTOSAVE_INTERVAL_MAX)
 	# The performance HUD is deliberately absent: like the collision-shape
 	# overlay it is a look at how the app is running, not a setting, so it lives
 	# on PerfHud's statics and is off again every launch. A "show_fps" left in an
@@ -205,6 +218,8 @@ func save_prefs() -> void:
 		return
 	file.store_string(JSON.stringify({
 		"auto_save_scene":  auto_save_scene,
+		"autosave_periodic": autosave_periodic,
+		"autosave_interval": autosave_interval,
 		"aim_crosshair":    aim_crosshair,
 		"controller_hands": controller_hands,
 		"system_filter":    system_filter,
@@ -227,6 +242,15 @@ func _prefs_bool(data: Dictionary, key: String, fallback: bool) -> bool:
 	var value: Variant = data.get(key)
 	if typeof(value) == TYPE_BOOL:
 		return value
+	return fallback
+
+
+## Same contract as _prefs_bool. JSON numbers come back as floats, but a value
+## written as a whole number can read as an int, so both are accepted.
+func _prefs_float(data: Dictionary, key: String, fallback: float) -> float:
+	var value: Variant = data.get(key)
+	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+		return float(value)
 	return fallback
 
 

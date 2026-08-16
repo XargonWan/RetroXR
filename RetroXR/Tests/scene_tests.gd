@@ -1,0 +1,346 @@
+extends Node
+
+## Scene management, room transitions and the save gates around them.
+##
+##   godot --headless --path RetroXR res://Tests/scene_tests.tscn
+##   godot --headless --path RetroXR res://Tests/scene_tests.tscn -- --only=autosave
+##
+## Exits non-zero on failure, so it can gate a commit.
+##
+## What it deliberately does NOT do is drive a real transition. change_scene()
+## loads MainScene.tscn, whose SubViewports render every frame, and a headless run
+## has no GPU to service them — the run hangs rather than fails. So the transition
+## cases drive the state machine (_transitioning, _pending_scene_id) and assert the
+## decisions it makes; what a loaded room looks like is a question for a probe with
+## a display.
+##
+## SceneManager is an autoload holding the player's real active slots, and
+## set_active_slot() writes user://scenes/prefs.json. Both are snapshotted at the
+## start and put back at the end, so a red run cannot cost anyone their room.
+
+const GROUPS := ["slots", "ready", "transition", "autosave", "manifest"]
+## Scratch slot ids, in the arcade's real directory — slot_dir() is derived from
+## the room id and cannot be pointed somewhere safer.
+const SLOT_A := "__scene_selftest_a"
+const SLOT_B := "__scene_selftest_b"
+const MANIFEST_FILE := "user://scenes/arcade/manifest.json"
+
+var _fail := 0
+var _ran := 0
+var _only := ""
+
+var _saved_slots: Dictionary = {}
+var _saved_scene_id := ""
+var _saved_prefs_json := ""
+var _had_prefs := false
+var _saved_manifest_json := ""
+var _had_manifest := false
+
+
+func _ready() -> void:
+	get_tree().create_timer(120.0).timeout.connect(func():
+		print("[test] TIMEOUT")
+		get_tree().quit(1))
+	get_tree().current_scene = self
+
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--only="):
+			_only = a.trim_prefix("--only=")
+
+	_snapshot()
+	if _want_group("slots"):
+		_test_slots()
+	if _want_group("ready"):
+		_test_ready()
+	if _want_group("transition"):
+		_test_transition()
+	if _want_group("autosave"):
+		await _test_autosave()
+	if _want_group("manifest"):
+		_test_manifest()
+	_restore()
+
+	print("[test] %d cases, %s" % [_ran,
+		"PASS" if _fail == 0 else "%d FAILURE(S)" % _fail])
+	get_tree().quit(0 if _fail == 0 else 1)
+
+
+# ── Which rooms keep slots, and what the active one is ────────────────────────
+
+func _test_slots() -> void:
+	# The authored rooms must never keep slots: a slot there restores a handful of
+	# spawned objects into a room that already has its own contents.
+	_ok(SceneManager.room_has_slots("arcade"), "slots/arcade has slots")
+	_ok(SceneManager.room_has_slots("passthrough"), "slots/passthrough has slots")
+	for room in ["den", "bedroom", "test"]:
+		_ok(not SceneManager.room_has_slots(room), "slots/%s has none" % room)
+	_ok(not SceneManager.room_has_slots("nonesuch"), "slots/unknown room has none")
+
+	# A room nobody has given a slot reads as clean rather than as empty string.
+	SceneManager.active_slots.erase("den")
+	_eq(SceneManager.active_slot("den"), "clean", "slots/default is clean")
+
+	# Per room: setting one must not move another.
+	SceneManager.set_active_slot(SLOT_A, "arcade")
+	SceneManager.set_active_slot(SLOT_B, "passthrough")
+	_eq(SceneManager.active_slot("arcade"), SLOT_A, "slots/arcade kept its own")
+	_eq(SceneManager.active_slot("passthrough"), SLOT_B, "slots/passthrough kept its own")
+
+	# active_slot_id means "the room I am in".
+	SceneManager.current_scene_id = "passthrough"
+	_eq(SceneManager.active_slot_id, SLOT_B, "slots/active_slot_id follows the room")
+	SceneManager.current_scene_id = "arcade"
+	_eq(SceneManager.active_slot_id, SLOT_A, "slots/active_slot_id follows back")
+
+	# Assigning the property must not persist — that is set_active_slot's job, and
+	# it is what stops a probe leaving its scratch id in the player's prefs.
+	var before := FileAccess.get_file_as_string(SceneManager.PREFS_FILE)
+	SceneManager.active_slot_id = "__not_persisted"
+	_eq(FileAccess.get_file_as_string(SceneManager.PREFS_FILE), before,
+		"slots/property assignment does not write prefs")
+	SceneManager.active_slots["arcade"] = SLOT_A
+
+	# The prefs file round-trips, and the single-room legacy key still migrates.
+	SceneManager.save_prefs()
+	SceneManager.active_slots.clear()
+	SceneManager.load_prefs()
+	_eq(SceneManager.active_slot("arcade"), SLOT_A, "slots/round-trips through prefs")
+
+	var f := FileAccess.open(SceneManager.PREFS_FILE, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"last_slot_id": "legacy_id"}))
+	f = null
+	SceneManager.active_slots.clear()
+	SceneManager.load_prefs()
+	_eq(SceneManager.active_slot("arcade"), "legacy_id", "slots/legacy key migrates to arcade")
+
+
+# ── The readiness gates every save is hung on ─────────────────────────────────
+
+func _test_ready() -> void:
+	SceneManager.current_scene_id = "arcade"
+	SceneManager._transitioning = false
+	SceneManager._content_ready_scene_id = ""
+
+	_ok(SceneManager.is_room_ready("arcade"), "ready/current room with a scene is ready")
+	_ok(not SceneManager.is_room_ready("den"), "ready/another room is not")
+
+	# current_scene_id names the DESTINATION the moment a transition is claimed,
+	# while the old room is still standing — so the id alone is not readiness.
+	SceneManager._transitioning = true
+	_ok(not SceneManager.is_room_ready("arcade"), "ready/not while transitioning")
+	SceneManager._transitioning = false
+
+	# Content readiness is the later boundary: the room is up AND its slot restored.
+	_ok(not SceneManager.is_scene_content_ready("arcade"),
+		"ready/content not ready before the restore finishes")
+	SceneManager.notify_scene_content_ready("arcade")
+	_ok(SceneManager.is_scene_content_ready("arcade"), "ready/content ready after notify")
+
+	# A restore that yielded while the player left must not mark the room it
+	# finished in. This is the 24-object-arcade-saved-as-1 bug.
+	SceneManager.notify_scene_content_ready("den")
+	_eq(SceneManager._content_ready_scene_id, "arcade",
+		"ready/stale notify from another room is ignored")
+
+	# And claiming a transition drops content readiness immediately.
+	SceneManager._transitioning = true
+	_ok(not SceneManager.is_scene_content_ready("arcade"),
+		"ready/content readiness lost while transitioning")
+	SceneManager._transitioning = false
+
+
+# ── The transition state machine ──────────────────────────────────────────────
+
+func _test_transition() -> void:
+	SceneManager.current_scene_id = "arcade"
+	SceneManager._transitioning = false
+	SceneManager._pending_scene_id = ""
+
+	# An unknown room is refused outright rather than claiming a transition.
+	SceneManager.change_scene("nonesuch")
+	_eq(SceneManager.current_scene_id, "arcade", "transition/unknown id is refused")
+	_ok(not SceneManager._transitioning, "transition/unknown id claims nothing")
+
+	# Passthrough needs the headset to support it; headless has no OpenXR at all.
+	if not SceneManager.is_passthrough_supported():
+		SceneManager.change_scene("passthrough")
+		_eq(SceneManager.current_scene_id, "arcade",
+			"transition/passthrough refused without support")
+
+	# Asking for the room you are already in is a no-op, and cancels anything
+	# queued behind it — a double-tap must not leave a stale destination armed.
+	SceneManager._transitioning = true
+	SceneManager._pending_scene_id = "den"
+	SceneManager.change_scene("arcade")
+	_eq(SceneManager._pending_scene_id, "", "transition/same room cancels the queue")
+
+	# While one is in flight, the newest request wins rather than stacking.
+	SceneManager.change_scene("den")
+	_eq(SceneManager._pending_scene_id, "den", "transition/request queues while busy")
+	SceneManager.change_scene("bedroom")
+	_eq(SceneManager._pending_scene_id, "bedroom", "transition/last intent wins")
+	_eq(SceneManager.current_scene_id, "arcade", "transition/queued request does not move the id")
+
+	SceneManager._transitioning = false
+	SceneManager._pending_scene_id = ""
+
+
+# ── Periodic autosave ─────────────────────────────────────────────────────────
+
+func _test_autosave() -> void:
+	var sp := ScenePersistence.new("arcade")
+	var path := "user://scenes/arcade/%s.json" % SLOT_A
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+	sp.instantiate_objects(self, [
+		{"id": 0, "type": "system", "systemid": "nes",
+			"position": [0, 0, 0], "rotation": [0, 0, 0]},
+		{"id": 1, "type": "system", "systemid": "game_boy",
+			"position": [1, 0, 0], "rotation": [0, 0, 0]},
+	])
+	for i in range(40):
+		await get_tree().physics_frame
+
+	# Clean Room is readonly. An autosave aimed at it must refuse rather than
+	# quietly writing a file named "clean".
+	_ok(not sp.autosave_slot(self, "clean"), "autosave/refuses the clean slot")
+	_ok(not FileAccess.file_exists("user://scenes/arcade/clean.json"),
+		"autosave/wrote no clean.json")
+
+	# The deferred write really lands, and costs the main thread only the walk.
+	# Time the call and nothing else: _ok() prints, and a print into a piped
+	# console costs ~15 ms, which is what this number was measuring at first.
+	var t := Time.get_ticks_usec()
+	var dispatched := sp.autosave_slot(self, SLOT_A)
+	var main_us := Time.get_ticks_usec() - t
+	_ok(dispatched, "autosave/first save dispatches")
+	ScenePersistence.flush_pending_writes()
+	_ok(FileAccess.file_exists(path), "autosave/deferred write landed")
+	print("[test] autosave main-thread cost %.3f ms (walk only; encode+write deferred)"
+		% (main_us / 1000.0))
+
+	var first := FileAccess.get_file_as_string(path)
+	_ok(first.length() > 0, "autosave/file is not empty")
+
+	# An untouched room re-encodes to the identical bytes every interval. Writing
+	# them again is pure flash wear, so it must be skipped.
+	_ok(not sp.autosave_slot(self, SLOT_A), "autosave/unchanged room is skipped")
+
+	# But a room that changed must not be.
+	var sys: Node3D = null
+	for n in get_children():
+		if n is RetroSystem:
+			sys = n
+			break
+	sys.global_position += Vector3(0, 0, 3.5)
+	_ok(sp.autosave_slot(self, SLOT_A), "autosave/changed room is written")
+	ScenePersistence.flush_pending_writes()
+	_ok(FileAccess.get_file_as_string(path) != first, "autosave/file contents changed")
+
+	# What landed has to be a loadable slot, not just different bytes.
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	_ok(parsed is Dictionary and (parsed as Dictionary).get("version", 0) == ScenePersistence.VERSION,
+		"autosave/wrote a current-version slot")
+	_eq(((parsed as Dictionary).get("objects", []) as Array).size(), 2,
+		"autosave/wrote both objects")
+
+	# A deleted slot file must be rewritten even though the digest still matches:
+	# the digest describes what we last wrote, not what is on disk now.
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_ok(sp.autosave_slot(self, SLOT_A), "autosave/rewrites a slot deleted underneath it")
+	ScenePersistence.flush_pending_writes()
+	_ok(FileAccess.file_exists(path), "autosave/the rewrite landed")
+
+	for n in get_children():
+		if n is RetroSystem:
+			n.queue_free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+# ── Slot manifest CRUD ────────────────────────────────────────────────────────
+
+func _test_manifest() -> void:
+	var sp := ScenePersistence.new("arcade")
+	var before := sp.get_slots().size()
+
+	# "clean" is synthesised, never stored, and always first.
+	_eq(str(sp.get_slots()[0].get("id", "")), "clean", "manifest/clean is first")
+	_ok(bool(sp.get_slots()[0].get("readonly", false)), "manifest/clean is readonly")
+
+	var id := sp.create_new_slot(self, "Self Test")
+	_ok(not id.is_empty(), "manifest/create returns an id")
+	_eq(sp.get_slots().size(), before + 1, "manifest/create appends one slot")
+
+	_ok(sp.rename_slot(id, "Renamed"), "manifest/rename succeeds")
+	var found := ""
+	for s in sp.get_slots():
+		if str(s.get("id", "")) == id:
+			found = str(s.get("name", ""))
+	_eq(found, "Renamed", "manifest/rename took")
+
+	# The readonly slot refuses every mutation.
+	_ok(not sp.rename_slot("clean", "Nope"), "manifest/clean cannot be renamed")
+	_ok(not sp.delete_slot("clean"), "manifest/clean cannot be deleted")
+	_ok(not sp.save_slot(self, "clean"), "manifest/clean cannot be saved over")
+
+	_ok(sp.delete_slot(id), "manifest/delete succeeds")
+	_eq(sp.get_slots().size(), before, "manifest/delete removes the slot")
+	_ok(not FileAccess.file_exists("user://scenes/arcade/%s.json" % id),
+		"manifest/delete removed the file")
+
+
+# ── Harness ───────────────────────────────────────────────────────────────────
+
+func _want_group(name: String) -> bool:
+	return _only.is_empty() or _only == name
+
+
+func _snapshot() -> void:
+	_saved_slots = SceneManager.active_slots.duplicate(true)
+	_saved_scene_id = SceneManager.current_scene_id
+	_had_prefs = FileAccess.file_exists(SceneManager.PREFS_FILE)
+	if _had_prefs:
+		_saved_prefs_json = FileAccess.get_file_as_string(SceneManager.PREFS_FILE)
+	# The manifest group creates and deletes a slot in the player's real manifest.
+	# Deleting the test's own entry is not enough to leave the file as it was: the
+	# rewrite round-trips every value through JSON, which turns the version int
+	# into 1.0. Harmless, but the suite should leave no fingerprints at all.
+	_had_manifest = FileAccess.file_exists(MANIFEST_FILE)
+	if _had_manifest:
+		_saved_manifest_json = FileAccess.get_file_as_string(MANIFEST_FILE)
+
+
+func _restore() -> void:
+	ScenePersistence.flush_pending_writes()
+	SceneManager.active_slots = _saved_slots
+	SceneManager.current_scene_id = _saved_scene_id
+	SceneManager._transitioning = false
+	SceneManager._pending_scene_id = ""
+	SceneManager._content_ready_scene_id = ""
+	for slot in [SLOT_A, SLOT_B]:
+		var p := ProjectSettings.globalize_path("user://scenes/arcade/%s.json" % slot)
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(p)
+	if _had_prefs:
+		var f := FileAccess.open(SceneManager.PREFS_FILE, FileAccess.WRITE)
+		if f:
+			f.store_string(_saved_prefs_json)
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SceneManager.PREFS_FILE))
+	if _had_manifest:
+		var mf := FileAccess.open(MANIFEST_FILE, FileAccess.WRITE)
+		if mf:
+			mf.store_string(_saved_manifest_json)
+
+
+func _ok(cond: bool, what: String) -> void:
+	_ran += 1
+	if cond:
+		print("[test] ok   %s" % what)
+	else:
+		_fail += 1
+		print("[test] FAIL %s" % what)
+
+
+func _eq(got: Variant, want: Variant, what: String) -> void:
+	_ok(got == want, what if got == want else "%s (got %s, want %s)" % [what, got, want])

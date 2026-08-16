@@ -66,6 +66,11 @@ var active_slot_id: String:
 ## guard in change_scene() doesn't block them.
 var net_scene_override: bool = false
 
+## Seconds since the last periodic autosave of the current room. Reset whenever a
+## room finishes restoring, so an interval is always measured from a settled room
+## rather than from whenever the last one happened to fire.
+var _autosave_accum: float = 0.0
+
 var _transitioning: bool = false
 ## Last valid request received while a transition is running. Only the newest
 ## destination matters; it starts after the current room is fully installed.
@@ -76,6 +81,52 @@ var _content_ready_scene_id: String = ""
 func _ready() -> void:
 	_warm_models.call_deferred()
 	load_prefs()
+	scene_content_ready.connect(func(_id: String) -> void: _autosave_accum = 0.0)
+
+
+## Periodic autosave of the room being played. The gates are the same ones
+## _begin_transition uses, for the same reasons — in particular a room whose own
+## restore has not finished must never be written back, or it saves as the empty
+## room it is halfway through becoming.
+func _process(delta: float) -> void:
+	if not AppPrefs.autosave_periodic:
+		return
+	var room := current_scene_id
+	if not room_has_slots(room) or not is_scene_content_ready(room):
+		return
+	# The shared world belongs to the host; a client saving it would write the
+	# host's room into the client's own slot.
+	if has_node("/root/NetworkManager") and NetworkManager.is_client():
+		return
+	_autosave_accum += delta
+	if _autosave_accum < AppPrefs.autosave_interval:
+		return
+	_autosave_accum = 0.0
+	_autosave_now(room)
+
+
+## Clean Room is readonly, so an autosave with no slot of its own has nowhere to
+## go. Rather than doing nothing forever behind an enabled switch, give it one:
+## Clean Room is left untouched and the new slot appears in the slot grid like
+## any other, so the player can see what has been happening and rename it.
+func _autosave_now(room: String) -> void:
+	var persistence := ScenePersistence.new(room)
+	var slot := active_slot(room)
+	if slot == "clean":
+		slot = persistence.create_new_slot(get_tree().current_scene, "Autosave")
+		set_active_slot(slot, room)
+		return
+	persistence.autosave_slot(get_tree().current_scene, slot)
+
+
+## A deferred autosave write lives on a worker thread, and the process exiting
+## (or Android freezing the app) out from under one leaves a truncated slot file
+## that reads back as an unloadable room. Waiting is the whole fix; it is a few
+## milliseconds at worst and usually nothing at all.
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_EXIT_TREE:
+			ScenePersistence.flush_pending_writes()
 
 
 func load_prefs() -> void:

@@ -156,6 +156,67 @@ func save_slot(root: Node, slot_id: String) -> bool:
 	return _write_scene_to_file(root, _slot_file(slot_id))
 
 
+## Save without the frame hitch, for the periodic autosave.
+##
+## Profiled over a 27-object arcade: the walk is 0.46 ms but encoding and writing
+## are 4.6 ms, and the write alone swings to 7 ms — half a frame at 90 Hz, gone.
+## Only the walk has to see the live tree, so it stays here and the rest goes to a
+## worker. Returns false if nothing was dispatched (unchanged, or a bad slot).
+##
+## An idle room re-encodes to the identical 17 KB every interval, so an unchanged
+## payload is dropped rather than written: the point of the interval is to catch
+## changes, not to keep rewriting a room nobody touched.
+func autosave_slot(root: Node, slot_id: String) -> bool:
+	if slot_id == "clean":
+		return false
+	var path := _slot_file(slot_id)
+	var text := _encode(_collect_objects(root))
+	var digest := text.sha256_text()
+	if _last_digest.get(path, "") == digest and FileAccess.file_exists(path):
+		return false
+	DirAccess.make_dir_recursive_absolute(slot_dir())
+	_last_digest[path] = digest
+	_dispatch_write(path, text)
+	return true
+
+
+# ── Deferred writes ───────────────────────────────────────────────────────────
+#
+# Statics, not instance state: callers build a ScenePersistence, save through it
+# and drop it on the same line (see SceneManager._begin_transition), so an
+# in-flight task outlives the object that started it.
+
+## slot path -> sha256 of the payload last written there.
+static var _last_digest: Dictionary = {}
+## slot path -> WorkerThreadPool task id currently writing it.
+static var _pending: Dictionary = {}
+
+
+func _dispatch_write(path: String, text: String) -> void:
+	# One writer per path. Waiting on the previous task is near-free in practice
+	# (it has a whole interval's head start) and it is what stops two workers
+	# interleaving store_string into the same file.
+	_await_path(path)
+	_pending[path] = WorkerThreadPool.add_task(
+		func() -> void: _store_text(path, text), false, "scene autosave")
+
+
+static func _await_path(path: String) -> void:
+	if not _pending.has(path):
+		return
+	WorkerThreadPool.wait_for_task_completion(_pending[path])
+	_pending.erase(path)
+
+
+## Block until every deferred write has landed. Must be called before the app
+## exits and before a slot file is read back, or a restore can race a half-written
+## file. Cheap when nothing is outstanding.
+static func flush_pending_writes() -> void:
+	for path: Variant in _pending.keys():
+		WorkerThreadPool.wait_for_task_completion(_pending[path])
+	_pending.clear()
+
+
 ## Clear the scene then restore from the slot file, spread over frames — see
 ## instantiate_objects_async(). Loading "clean" just clears the scene.
 ##
@@ -193,6 +254,9 @@ func delete_slot(slot_id: String) -> bool:
 	m["slots"] = new_slots
 	_save_manifest(m)
 	var path := _slot_file(slot_id)
+	# A worker still holding this path would recreate the file behind the delete.
+	_await_path(path)
+	_last_digest.erase(path)
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	return true
@@ -301,6 +365,21 @@ func _save_manifest(m: Dictionary) -> bool:
 
 
 func _write_scene_to_file(root: Node, path: String) -> bool:
+	var objects := _collect_objects(root)
+	var text := _encode(objects)
+	# An autosave of this same slot may still be in a worker; letting it land after
+	# an explicit save would undo it.
+	_await_path(path)
+	if not _store_text(path, text):
+		return false
+	_last_digest[path] = text.sha256_text()
+	print("[ScenePersistence] saved %d objects to '%s'" % [objects.size(), path])
+	return true
+
+
+## Walk the spawned set and serialize it. Main thread only: every entry reads live
+## node state (global transforms, a TV's CRT params, a cable's seating).
+func _collect_objects(root: Node) -> Array[Dictionary]:
 	var nodes := root.get_tree().get_nodes_in_group("spawned")
 	# The whole map has to exist before anything serializes: a reference can point
 	# either way through the set.
@@ -312,17 +391,27 @@ func _write_scene_to_file(root: Node, path: String) -> bool:
 		var data := _serialize_node(nodes[i], i, node_to_id)
 		if not data.is_empty():
 			objects.append(data)
+	return objects
+
+
+func _encode(objects: Array[Dictionary]) -> String:
+	return JSON.stringify({"version": VERSION, "objects": objects}, "\t")
+
+
+func _store_text(path: String, text: String) -> bool:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if not f:
 		push_error("ScenePersistence: cannot write '%s' (err %d)" % [path, FileAccess.get_open_error()])
 		return false
-	f.store_string(JSON.stringify({"version": VERSION, "objects": objects}, "\t"))
-	print("[ScenePersistence] saved %d objects to '%s'" % [objects.size(), path])
+	f.store_string(text)
 	return true
 
 
 ## The object entries of a slot file, or null if it cannot be read.
 func _read_objects(path: String) -> Variant:
+	# Never read a file a worker is still writing — a truncated slot parses as an
+	# invalid file and restores as an empty room.
+	_await_path(path)
 	var f := FileAccess.open(path, FileAccess.READ)
 	if not f:
 		return null

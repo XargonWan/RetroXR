@@ -171,6 +171,14 @@ func active_scroll() -> ScrollContainer:
 	return _pages[clampi(_tabs.current_tab, 0, _pages.size() - 1)]
 
 
+## Seconds below a minute read as seconds; past that, minutes with the odd half.
+func _interval_text(seconds: float) -> String:
+	if seconds < 60.0:
+		return "%d s" % int(seconds)
+	var mins := seconds / 60.0
+	return "%d min" % int(mins) if is_equal_approx(mins, floorf(mins)) else "%.1f min" % mins
+
+
 func _build_general_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(MenuStyle.spacer(10))
 
@@ -326,7 +334,9 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(as_row)
 
 	var as_lbl := Label.new()
-	as_lbl.text = "Auto-save Scene"
+	# Named for when it fires now that there is a second auto-save below it: on its
+	# own, "Auto-save Scene" reads as though it covers both.
+	as_lbl.text = "Auto-save on Room Change"
 	as_lbl.add_theme_font_size_override("font_size", 22)
 	as_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
 	as_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -336,6 +346,72 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 		AppPrefs.auto_save_scene = on
 		AppPrefs.save_prefs()
 		auto_save_changed.emit(on)
+	))
+
+	vbox.add_child(HSeparator.new())
+
+	# Periodic auto-save, and how often. Only the two furnishable rooms keep slots,
+	# so this does nothing in the den or the bedroom — the same as the switch above,
+	# and not worth a second explanation in the row.
+	var ap_row := HBoxContainer.new()
+	ap_row.add_theme_constant_override("separation", 10)
+	ap_row.custom_minimum_size = Vector2(0, 68)
+	vbox.add_child(ap_row)
+
+	var ap_lbl := Label.new()
+	ap_lbl.text = "Auto-save Periodically"
+	ap_lbl.add_theme_font_size_override("font_size", 22)
+	ap_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+	ap_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ap_row.add_child(ap_lbl)
+
+	var ai_header := HBoxContainer.new()
+	ai_header.add_theme_constant_override("separation", 10)
+	vbox.add_child(ai_header)
+
+	var ai_lbl := Label.new()
+	ai_lbl.text = "Auto-save Interval"
+	ai_lbl.add_theme_font_size_override("font_size", 22)
+	ai_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
+	ai_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ai_header.add_child(ai_lbl)
+
+	var ai_val := Label.new()
+	ai_val.add_theme_font_size_override("font_size", 20)
+	ai_val.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	ai_val.custom_minimum_size = Vector2(80, 0)
+	ai_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ai_header.add_child(ai_val)
+
+	var ai_slider := HSlider.new()
+	ai_slider.min_value = AppPrefs.AUTOSAVE_INTERVAL_MIN
+	ai_slider.max_value = AppPrefs.AUTOSAVE_INTERVAL_MAX
+	ai_slider.step = 15.0
+	ai_slider.value = AppPrefs.autosave_interval
+	ai_val.text = _interval_text(ai_slider.value)
+	ai_slider.custom_minimum_size = Vector2(0, 48)
+	ai_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ai_slider.add_theme_constant_override("grabber_offset", 0)
+	vbox.add_child(ai_slider)
+
+	ai_slider.value_changed.connect(func(v: float) -> void:
+		ai_val.text = _interval_text(v)
+		AppPrefs.autosave_interval = v
+		AppPrefs.save_prefs()
+	)
+
+	# The interval means nothing with the switch off, so it reads as switched off
+	# too rather than sitting there live and ignored.
+	var ap_apply := func(on: bool) -> void:
+		ai_slider.editable = on
+		var dim: Color = MenuStyle.COLOR_TITLE if on else MenuStyle.COLOR_LICENSE
+		ai_lbl.add_theme_color_override("font_color", dim)
+	ap_apply.call(AppPrefs.autosave_periodic)
+
+	ap_row.add_child(VRToggle.create(AppPrefs.autosave_periodic, func(on: bool) -> void:
+		AppPrefs.autosave_periodic = on
+		AppPrefs.save_prefs()
+		ap_apply.call(on)
 	))
 
 	vbox.add_child(HSeparator.new())
