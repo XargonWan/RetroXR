@@ -465,11 +465,6 @@ func _place_name_label() -> void:
 		lbl.position = Vector3(cx, top_y + EPS, front_z - la.size.y * s * 0.6)
 
 
-## AABB of the console/handheld body meshes in this system's local space
-## (default box or the bespoke model's meshes). Excludes buttons/ports/cables/
-## label, which are siblings of the body root. A model may narrow the measured
-## body via name_label_body() — e.g. a clamshell returns just its base so the
-## name lands on the base's front, not over the raised lid.
 ## World-space Y of the top of the hardware body.
 ##
 ## Floating panels sit above this rather than at a fixed height off the origin.
@@ -491,6 +486,11 @@ func body_top_y() -> float:
 	return (global_transform * Vector3(0.0, _body_top_local, 0.0)).y
 
 
+## AABB of the console/handheld body meshes in this system's local space
+## (default box or the bespoke model's meshes). Excludes buttons/ports/cables/
+## label, which are siblings of the body root. A model may narrow the measured
+## body via name_label_body() — e.g. a clamshell returns just its base so the
+## name lands on the base's front, not over the raised lid.
 func _body_aabb() -> AABB:
 	var meshes: Array[MeshInstance3D] = []
 	var src: Node = null
@@ -891,14 +891,6 @@ func _refresh_hardware_audio_geometry() -> void:
 	_audio_half_sep = minf(audio_speaker_separation, aabb.size.x * 0.2)
 
 
-## Fold the distance law into the voice gain. The SDK applies none of its own --
-## a source four metres away measures the same level as one a metre away -- so
-## without this a running game is exactly as loud from across the room as from
-## in front of the set, and audio_max_distance means nothing.
-##
-## Shared with SpatialAudioEmitter so that hardware and everything else fall off
-## identically. RetroSystem cannot simply use an emitter here: the libretro
-## AudioHandler owns these voices and only hands back their ids.
 ## The listener autoload, resolved once. Null before it exists.
 func _audio_listener_node() -> Node:
 	if _audio_listener == null or not is_instance_valid(_audio_listener):
@@ -922,6 +914,14 @@ func _apply_voice_directivity(forward: Vector3) -> void:
 		_mx.set_voice_directivity(v, k)
 
 
+## Fold the distance law into the voice gain. The SDK applies none of its own --
+## a source four metres away measures the same level as one a metre away -- so
+## without this a running game is exactly as loud from across the room as from
+## in front of the set, and audio_max_distance means nothing.
+##
+## Shared with SpatialAudioEmitter so that hardware and everything else fall off
+## identically. RetroSystem cannot simply use an emitter here: the libretro
+## AudioHandler owns these voices and only hands back their ids.
 func _apply_voice_distance_gain(centre: Vector3) -> void:
 	if _mx == null or _audio_voices.is_empty():
 		return
@@ -2333,10 +2333,6 @@ func reset() -> void:
 	_libretro.RequestReset()
 
 
-## Merge the model's REQUIRED core options into <dir>/core_options/<core>.opt
-## before StartContent — the C++ OptionsHandler reads that file when the core
-## boots. (SetCoreOption needs a running core, so pre-start forcing goes
-## through the file; user-set values for other keys are preserved.)
 ## Make the console report an EMPTY slot when no card is seated.
 ##
 ## The SAVE_RAM interface cannot express this: it always hands back a 128 KB
@@ -2369,6 +2365,10 @@ func _all_forced_options(core: String) -> Dictionary:
 	return out
 
 
+## Merge the model's REQUIRED core options into <dir>/core_options/<core>.opt
+## before StartContent — the C++ OptionsHandler reads that file when the core
+## boots. (SetCoreOption needs a running core, so pre-start forcing goes
+## through the file; user-set values for other keys are preserved.)
 func _apply_forced_core_options(dir: String, core: String) -> void:
 	if _model == null:
 		return
@@ -2686,13 +2686,13 @@ func get_wii_link() -> WiiLink:
 	return _wii_link
 
 
-## Returns the Libretro node so plugged-in controller objects can call input methods on it.
 ## The active hardware model (RetroSystemModel). Lets peripherals/held-input drive
 ## model-side visuals (e.g. a handheld animating its own buttons from input).
 func get_model() -> RetroSystemModel:
 	return _model
 
 
+## The Libretro node, so plugged-in peripherals can call input methods on it.
 func get_libretro_node() -> Libretro:
 	return _libretro
 
@@ -3155,11 +3155,6 @@ static func _tray_op_for(open: bool, core_ejected: bool, has_disc: bool) -> int:
 	return DISK_OP_CLOSE if has_disc else DISK_OP_NONE
 
 
-## Build the physical disc well + hinged lid on the placeholder box body:
-## a raised pod bridging the box top (y=0.05) up to the seated-disc height
-## (y=0.07), a dark recessed bed the disc rests in, and a lid hinged at the
-## pod's back edge. The lid doubles as a touch button — physically pushing an
-## open lid shuts it (same replicated path as the OPEN button).
 ## Run the front-sliding shelf out of the bay and back. No-op on a hinged lid,
 ## which MediaTray swings instead. Eased rather than linear — a real tray coasts
 ## out and thumps home (same motion as RetroSystemModelPCTower._slide_to).
@@ -3247,6 +3242,11 @@ func _build_front_disc_tray() -> void:
 		visual.visible = false
 
 
+## Build the physical disc well + hinged lid on the placeholder box body:
+## a raised pod bridging the box top (y=0.05) up to the seated-disc height
+## (y=0.07), a dark recessed bed the disc rests in, and a lid hinged at the
+## pod's back edge. The lid doubles as a touch button — physically pushing an
+## open lid shuts it (same replicated path as the OPEN button).
 func _build_disc_tray() -> void:
 	if _front_tray:
 		_build_front_disc_tray()
