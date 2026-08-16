@@ -2039,20 +2039,14 @@ func power_on() -> void:
 				AchievementToast.ACCENT_WAITING)
 		return
 
-	# Resolve core_name from CoreDefaults if not baked into the scene
-	var resolved_core := core_name
-	if resolved_core.is_empty() and not systemid.is_empty():
-		var defaults := CoreDefaults.new()
-		defaults.setup(CoreDefaults.default_path())
-		resolved_core = defaults.get_default_core(systemid)
+	# Through the same resolvers as every other path — the options panel, netplay,
+	# the SRAM paths and achievements all ask these two, and the power button
+	# answering them itself is how it would end up running a different core.
+	var resolved_core := _resolve_core()
 	if resolved_core.is_empty():
 		push_error("RetroSystem: Cannot power on - no core set and no default for systemid '%s'" % systemid)
 		return
-
-	# Resolve core_directory — C++ appends /cores/ internally, so pass the root dir
-	var resolved_dir := core_directory
-	if resolved_dir.is_empty():
-		resolved_dir = CoreDownloadManager.default_core_root()
+	var resolved_dir := _resolve_dir()
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 

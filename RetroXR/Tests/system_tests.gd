@@ -97,6 +97,7 @@ func _ready() -> void:
 	_test_media_removal()
 	_test_expanded_port_binding()
 	_test_belongs_here()
+	_test_core_resolution()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -508,3 +509,30 @@ func _test_belongs_here() -> void:
 
 	plain.free()
 	cart.free()
+
+
+# ---------------------------------------------------------------------------
+# Which core and which directory this machine runs from. Every path asks these
+# two — the options panel, netplay, the SRAM paths, achievements and the power
+# button — so a machine that answered them itself would run a different core
+# from the one the panel was editing.
+# ---------------------------------------------------------------------------
+
+func _test_core_resolution() -> void:
+	var sys := _system("nes")
+
+	sys.core_name = "some_core"
+	_eq("resolve/a named core wins", sys._resolve_core(), "some_core")
+	sys.core_name = ""
+	_ok("resolve/a known system falls back to its default",
+		not sys._resolve_core().is_empty())
+	sys.systemid = ""
+	_eq("resolve/nothing to go on", sys._resolve_core(), "")
+
+	sys.core_directory = "C:/somewhere/libretro"
+	_eq("resolve/a named directory wins", sys._resolve_dir(), "C:/somewhere/libretro")
+	sys.core_directory = ""
+	_eq("resolve/the directory falls back to the core root",
+		sys._resolve_dir(), CoreDownloadManager.default_core_root())
+
+	sys.free()
