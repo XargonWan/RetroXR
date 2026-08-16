@@ -1,5 +1,7 @@
 # RetroXR
 
+**[retroxr.app](https://retroxr.app)** — how to install it, how to play it, and the devlog.
+
 A VR retro-gaming room in Godot 4: real emulated hardware you pick up, plug in and
 play with, driven by libretro cores.
 
