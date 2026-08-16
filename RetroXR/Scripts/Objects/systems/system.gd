@@ -2958,7 +2958,11 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	# MediaSlot/MediaTray — the disc's enabled state follows the lid there.)
 	# Hot swap: a powered disc console with its virtual tray open takes the new
 	# disc without a reboot (multi-disc games — FF7 "insert disc 2").
-	if is_powered_on and _has_disk_control and _disc_ejected \
+	#
+	# A lidded drive reports nothing here. Its lid is the sensor, so the swap
+	# reaches the core when the lid shuts (_sync_core_tray) — a disc laid in an
+	# open tray has not been read by anything yet.
+	if _tray == null and is_powered_on and _supports_disk_control() and _disc_ejected \
 			and not rom_path.is_empty() and not NetworkManager.is_event_applying():
 		# _disc_index is the core's internal image-list SLOT (get_image_index),
 		# not a disc number — without .m3u the list has one slot (0) and the
@@ -2979,13 +2983,20 @@ func _on_cartridge_removed() -> void:
 			remove_collision_exception_with(_snapped_cartridge)
 		_snapped_cartridge = null
 	_disc_spin = 0.0
-	if is_powered_on and _has_disk_control:
-		# Hot eject: open the core's virtual tray — the game keeps running and
-		# waits for the next disc. rom_path stays mounted (the disc image is
-		# still what the core is running).
-		print("[RetroSystem] Hot eject: game keeps running, waiting for next disc (%s)" % rom_path)
-		if not NetworkManager.is_event_applying():
-			_request_disk_op(0, "")
+	# Taking the media out never interrupts the run. A console does not stop when
+	# a disc leaves the drive — that is what lets Monster Rancher read whatever
+	# CD you hand it, and what keeps a multi-disc game alive between discs — and a
+	# floppy machine behaves the same way. Only a cartridge deck powers off, where
+	# pulling the cart really does take the program away.
+	if is_powered_on and _media_survives_removal():
+		# A lidded drive tells the core nothing yet: the lid is the sensor, and
+		# the core hears about it when the lid shuts. A slot drive has no lid, so
+		# the disc leaving IS the event. rom_path stays mounted either way — that
+		# image is still what the core is running.
+		print("[RetroSystem] Media out: game keeps running (%s)" % rom_path)
+		if _tray == null and _supports_disk_control() \
+				and not NetworkManager.is_event_applying():
+			_request_disk_op(DISK_OP_EJECT, "")
 		NetworkManager.report_event(NetObjectSync.EV_CART_REMOVE, {"sys": self})
 		return
 	if is_powered_on:
@@ -3005,6 +3016,34 @@ func _on_disk_control_ready(has_control: bool, count: int, current_index: int,
 	_has_disk_control = has_control
 	_disc_index = current_index
 	_disc_ejected = ejected
+
+
+## Whether a disc change can reach the core without rebooting it.
+##
+## The live answer arrives on disk_control_ready, which is async: it lands some
+## frames after the core comes up, and a disc pulled before it did took the "no
+## disk control" path and powered the machine off. The core's own .info file
+## answers the same question before the core is even loaded, so ask that too.
+func _supports_disk_control() -> bool:
+	if _has_disk_control:
+		return true
+	var info := CoreInfoDatabase.shared().get_by_core_name(_resolve_core())
+	return str(info.get("disk_control", "false")) == "true"
+
+
+## True when this machine's media can leave while the program keeps running: a
+## disc drive of either kind, or a floppy machine. A cartridge deck cannot — the
+## program itself lives on the cart.
+func _media_survives_removal() -> bool:
+	return _disc_loader != MediaDimensions.LOADER_NONE \
+		or MediaDimensions.uses_floppy(systemid)
+
+
+## Disc ops, as `_request_disk_op` takes them. NONE is not an op — it is the
+## answer `_tray_op_for` gives when the core needs to hear nothing at all.
+const DISK_OP_NONE := -1
+const DISK_OP_EJECT := 0
+const DISK_OP_CLOSE := 1
 
 
 ## Perform a disc op — op 0 = eject (open the core's tray), op 1 = replace the
@@ -3104,6 +3143,45 @@ func _set_tray_open(open: bool) -> void:
 		_model.play_open()
 	else:
 		_model.play_close()
+	_sync_core_tray()
+
+
+## The lid is the drive's sensor, so the core's tray follows the LID and not the
+## disc. Opening tells the core the tray is open; shutting hands it whatever is
+## in the well by then. In between the core hears nothing, which is what lets a
+## disc be swapped — or an unrelated one shown to the drive and taken back out —
+## without the program seeing anything but one tray cycle.
+##
+## A slot drive has no lid to read, so its insert and eject are the events; they
+## stay where they are, in _on_cartridge_inserted/_removed.
+func _sync_core_tray() -> void:
+	if _tray == null or not is_powered_on or not _supports_disk_control():
+		return
+	# A remote peer's lid arrives through net_set_tray_open; the machine's owner
+	# schedules the op for everyone, so applying one here would double it.
+	if NetworkManager.is_event_applying():
+		return
+	var op := _tray_op_for(_tray_open, _disc_ejected,
+		_snapped_cartridge != null and not rom_path.is_empty())
+	if op == DISK_OP_NONE:
+		return
+	_request_disk_op(op, rom_path if op == DISK_OP_CLOSE else "")
+	if op == DISK_OP_CLOSE:
+		_protect_active_rom()
+
+
+## Pure lid-to-core decision: what the core needs to be told when the lid reaches
+## `open`, given what it currently believes (`core_ejected`) and whether there is
+## a disc in the well to hand it.
+##
+## Shutting the lid over a disc always hands it over, even the one already
+## mounted — a real drive re-reads what it finds. Shutting it over an empty well
+## says nothing, so the core keeps waiting with its tray open rather than being
+## told to close on nothing.
+static func _tray_op_for(open: bool, core_ejected: bool, has_disc: bool) -> int:
+	if open:
+		return DISK_OP_NONE if core_ejected else DISK_OP_EJECT
+	return DISK_OP_CLOSE if has_disc else DISK_OP_NONE
 
 
 ## Build the physical disc well + hinged lid on the placeholder box body:
