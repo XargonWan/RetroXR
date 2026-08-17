@@ -100,9 +100,25 @@ func configure_controller_ports(port_zones: Array) -> void:
 		if seat != null:
 			zone.global_transform = seat.global_transform
 	# system.tscn's grey port box and floating number are stand-ins for the default
-	# procedural shell. This tower moulds its own colour-coded sockets, so leaving
-	# them on would park a grey cube and a "1" over the purple one.
-	hide_port_placeholders(port_zones)
+	# procedural shell. Seats 1 and 2 mould their own colour-coded PS/2 sockets, so
+	# leaving the stand-in on would park a grey cube and a "1" over the purple one.
+	#
+	# The game port keeps its recess: it has no moulded socket of its own, and the
+	# plain dark rectangle is what a controller port looks like everywhere else in
+	# the project. Its NUMBER still goes, though — the seat is rotated 180 about X
+	# so the socket faces out of the back, and that flips Y, which stands a Label3D
+	# on its head and drops it below the port instead of above. The panel names this
+	# one in silkscreen (GameLabel) like every other socket on it.
+	for i in range(port_zones.size()):
+		var zone := port_zones[i] as Node3D
+		if zone == null:
+			continue
+		var lbl := zone.get_node_or_null("PortLabel") as Label3D
+		if lbl != null:
+			lbl.hide()
+		var recess := zone.get_node_or_null("PortRecess") as MeshInstance3D
+		if recess != null and i != 2:
+			recess.hide()
 
 
 # --- the sliding tray -------------------------------------------------------

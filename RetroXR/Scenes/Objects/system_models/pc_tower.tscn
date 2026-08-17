@@ -1,11 +1,10 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/cables/vga_port.tscn" id="2_vgaport"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/cables/trs_port.tscn" id="3_trsport"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/ps2_jack_keyboard.res" id="4_ps2jackkb"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/ps2_jack_mouse.res" id="5_ps2jackms"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/vga_jack.res" id="6_vgajack"]
 
 ; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
 ; footprint. Origin at the base centre, so the system sits on the floor at y 0.
@@ -278,16 +277,6 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.372, -0.2235)
 ; RetroSystem._libretro_port_for pins it, the way it already pins a computer mouse.
 [node name="PortSeat3" type="Marker3D" parent="Back"]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.262, -0.2235)
-
-; The socket itself. Reuses the VGA D-sub jack: a real game port is a DA-15, wider
-; than this DE-15, but it is the same family of shell and the project has no DA-15
-; generator. Ry(180), not the seat's Rx(180) — same reason the PS/2 meshes carry it:
-; the D-shell is not symmetric about Y and Rx would stand it on its head.
-;
-; z -0.2215, 1.5 mm proud of the back face, matching the PS/2 pair.
-[node name="GamePort" type="MeshInstance3D" parent="Back"]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.262, -0.2215)
-mesh = ExtResource("6_vgajack")
 
 [node name="GameLabel" type="Label3D" parent="Back"]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.2724, -0.2205)
