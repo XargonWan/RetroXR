@@ -177,6 +177,10 @@ func _ensure_ui_connected() -> void:
 			ui.save_delete_requested.connect(_on_delete_requested)
 			ui.server_save_requested.connect(_on_server_save_requested)
 			ui.new_synced_save_requested.connect(_on_new_synced_save)
+			ui.state_capture_requested.connect(_on_state_capture_requested)
+			ui.state_overwrite_requested.connect(_on_state_overwrite_requested)
+			ui.state_load_requested.connect(_on_state_load_requested)
+			ui.state_delete_requested.connect(_on_state_delete_requested)
 		# The embedded copy has no ✕ of its own; its host closes it.
 		if ui != _external_ui and not ui.close_requested.is_connected(hide_panel):
 			ui.close_requested.connect(hide_panel)
@@ -231,6 +235,7 @@ func _populate() -> void:
 		ui.delete_blocked = _in_use_reason()
 		ui.populate(_label(), _rom(), saves, _save_id(),
 			not core.is_empty(), states, _server_only(saves), _romm_ready())
+		_populate_states(ui)
 		_populate_achievements(ui)
 
 
@@ -520,3 +525,171 @@ func _refresh_server_list() -> void:
 		if _showing():
 			_populate()
 	)
+
+
+# ── Save states ───────────────────────────────────────────────────────────────
+#
+# The list is read from disk; taking and restoring one needs a live machine, so
+# every action first asks which console in the room is running this game. The
+# panel is routinely open with no machine at all (the library shows it for a ROM
+# nobody has spawned), and that case has to read as "nothing to take a state
+# from", not as a broken button.
+
+## The state waiting on a second press, and which action is waiting. ONE slot:
+## arming either action disarms the other, so a row is never waiting on two
+## confirmations at once.
+var _states_armed_id := ""
+var _states_armed_action := ""
+## Set while a capture or a load is in flight, so the tab can say so and the
+## second press of a doubled click cannot start a second one.
+var _state_busy := ""
+
+
+## The console in the room running this cartridge's game, or null. Same walk the
+## in-use check makes — a save state belongs to a machine, not to a ROM.
+func _live_machine() -> Node:
+	if _cart == null or not is_inside_tree():
+		return null
+	var rom := _rom()
+	for sys: Node in get_tree().get_nodes_in_group("retro_system"):
+		if not sys.has_method("get_snapped_cartridge"):
+			continue
+		var seated: Node = sys.get_snapped_cartridge()
+		if seated == null:
+			continue
+		if seated == _cart or str(seated.get("rom_path")) == rom:
+			return sys
+	return null
+
+
+## Why a state cannot be taken right now, or "". Loading is deliberately NOT
+## blocked by any of these: a machine that is off powers itself on to do it.
+func _capture_blocked() -> String:
+	if not _state_busy.is_empty():
+		return _state_busy
+	var sys := _live_machine()
+	if sys == null:
+		return "no machine is running this game"
+	if not sys.has_method("can_capture_state"):
+		return "this machine cannot take save states"
+	var gate: Dictionary = sys.can_capture_state()
+	return "" if bool(gate.get("ok", false)) else str(gate.get("reason", ""))
+
+
+func _populate_states(ui: CartridgeOptions2D) -> void:
+	var core := SramPaths.core_for_systemid(_sysid())
+	if core.is_empty():
+		ui.capture_blocked = "insert this cartridge into a console once first"
+		ui.populate_states([], 0)
+		return
+	var rows := StatePaths.list_states(core, _rom())
+	ui.capture_blocked = _capture_blocked()
+	ui.states_armed_id = _states_armed_id
+	ui.states_armed_action = _states_armed_action
+	ui.populate_states(rows, StatePaths.total_bytes(core, _rom()))
+
+
+## Arm, then do. Both writing actions and the delete share one slot, so pressing
+## one clears whatever the other was waiting for.
+func _arm_state(state_id: String, action: String) -> bool:
+	if _states_armed_id == state_id and _states_armed_action == action:
+		_states_armed_id = ""
+		_states_armed_action = ""
+		return true
+	_states_armed_id = state_id
+	_states_armed_action = action
+	_populate()
+	if is_inside_tree():
+		get_tree().create_timer(ARM_SECONDS).timeout.connect(func() -> void:
+			if is_instance_valid(self) and _states_armed_id == state_id \
+					and _states_armed_action == action:
+				_states_armed_id = ""
+				_states_armed_action = ""
+				_populate())
+	return false
+
+
+func _on_state_capture_requested() -> void:
+	if not _capture_blocked().is_empty():
+		return
+	_begin_capture("")
+
+
+func _on_state_overwrite_requested(state_id: String) -> void:
+	if not _capture_blocked().is_empty():
+		return
+	if not _arm_state(state_id, "overwrite"):
+		return
+	_begin_capture(state_id)
+
+
+func _begin_capture(into_id: String) -> void:
+	var sys := _live_machine()
+	if sys == null:
+		return
+	_state_busy = "taking a save state…"
+	_connect_machine(sys)
+	sys.capture_state(into_id)
+	_populate()
+
+
+func _on_state_load_requested(state_id: String) -> void:
+	if not _state_busy.is_empty():
+		return
+	var sys := _live_machine()
+	if sys == null:
+		return
+	# Loading disarms whatever was waiting: the press landed on the plate, not on
+	# the button that was asking for a second one.
+	_states_armed_id = ""
+	_states_armed_action = ""
+	_state_busy = "loading a save state…"
+	_connect_machine(sys)
+	sys.load_state(state_id)
+	_populate()
+
+
+func _on_state_delete_requested(state_id: String) -> void:
+	if not _arm_state(state_id, "delete"):
+		return
+	var core := SramPaths.core_for_systemid(_sysid())
+	# Forget the picture first: the path is reused if this id is ever minted
+	# again, and a cache keyed on it would serve the dead one.
+	for ui: CartridgeOptions2D in _uis():
+		ui.forget_thumb(StatePaths.shot_path(core, _rom(), state_id))
+	if StatePaths.delete_state(core, _rom(), state_id):
+		print("[CartridgeOptions] deleted save state %s" % state_id)
+	_populate()
+
+
+## One connection per machine, kept for the life of the panel. A machine answers
+## exactly once per request, so these fire and the tab redraws.
+func _connect_machine(sys: Node) -> void:
+	if not sys.has_signal("state_captured"):
+		return
+	if not sys.is_connected("state_captured", _on_state_captured):
+		sys.connect("state_captured", _on_state_captured)
+		sys.connect("state_loaded", _on_state_loaded)
+
+
+func _on_state_captured(state_id: String, ok: bool, reason: String) -> void:
+	_state_busy = ""
+	if not is_instance_valid(self):
+		return
+	# An overwrite writes a NEW picture to the SAME path, so the cache has to be
+	# told or the row keeps showing the frame it replaced.
+	var core := SramPaths.core_for_systemid(_sysid())
+	for ui: CartridgeOptions2D in _uis():
+		ui.forget_thumb(StatePaths.shot_path(core, _rom(), state_id))
+	if not ok:
+		push_warning("[CartridgeOptions] save state failed: %s" % reason)
+	_populate()
+
+
+func _on_state_loaded(_state_id: String, ok: bool, reason: String) -> void:
+	_state_busy = ""
+	if not is_instance_valid(self):
+		return
+	if not ok:
+		push_warning("[CartridgeOptions] loading a save state failed: %s" % reason)
+	_populate()

@@ -6,7 +6,11 @@
 [node name="CoreOptionsPanel" type="Node3D"]
 script = ExtResource("1_panelscript")
 
+; Grown from 600x500 / 0.6x0.5 when the cartridge's States ribbon landed: this
+; panel hosts a whole CartridgeOptions2D in its Cartridge tab, so it carries
+; that tab strip inside its own and was the narrower of the two.
+; 1000 px/m as before, so nothing inside changes physical size.
 [node name="CoreOptionsViewport" parent="." instance=ExtResource("2_viewport2d3d")]
-screen_size = Vector2(0.6, 0.5)
-viewport_size = Vector2(600, 500)
+screen_size = Vector2(0.8, 0.62)
+viewport_size = Vector2(800, 620)
 transparent = 1

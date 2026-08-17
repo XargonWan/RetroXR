@@ -237,6 +237,12 @@ func _build_ui() -> void:
 			0: _active_scroll = _options_scroll
 			1: _active_scroll = _controllers_scroll
 			2: _active_scroll = _system_scroll
+			# The Cartridge tab hosts a whole CartridgeOptions2D with ribbons of
+			# its own, so it knows which of them is showing and this does not.
+			# Clearing the reference is what makes scroll_active hand over.
+			# Without this the stick scrolled the System tab while you were
+			# looking at the cartridge page.
+			_: _active_scroll = null
 	)
 
 	_show_options_placeholder()
@@ -299,6 +305,9 @@ func populate_system(video_out: bool, show_video_out: bool, ignore_grav: bool,
 func scroll_active(pixels: float) -> void:
 	if _active_scroll:
 		_active_scroll.scroll_vertical += int(pixels)
+	elif _cart_ui != null and is_instance_valid(_cart_ui):
+		# The Cartridge tab: its own ribbon strip decides which list scrolls.
+		_cart_ui.scroll_active(pixels)
 
 
 # ── Options tab ────────────────────────────────────────────────────────────────

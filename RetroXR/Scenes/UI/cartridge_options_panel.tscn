@@ -7,12 +7,14 @@
 [node name="CartridgeOptionsPanel" type="Node3D"]
 script = ExtResource("1_panelscript")
 
-; Grown from 500x300 / 0.5x0.3 when the Achievements ribbon landed: a tab strip
-; costs ~68 px of height and a 30-row achievement list needs somewhere to go.
+; Grown from 500x300 / 0.5x0.3 when the Achievements ribbon landed, and again
+; from 720x460 for States. TabStrip floors every pill at the widest title, so
+; "Achievements" makes all three ~234 px and three of those do not fit 696 px —
+; the strip wrapped to a second row and took 62 px off a ~436 px list.
 ; Pixel density is unchanged at 1000 px/m, so every existing label keeps exactly
 ; the physical size it had — only the panel around them got bigger.
 [node name="CartOptionsViewport" parent="." instance=ExtResource("2_viewport2d3d")]
-screen_size = Vector2(0.72, 0.46)
+screen_size = Vector2(0.9, 0.6)
 scene = ExtResource("3_cartopts2d")
-viewport_size = Vector2(720, 460)
+viewport_size = Vector2(900, 600)
 transparent = 1

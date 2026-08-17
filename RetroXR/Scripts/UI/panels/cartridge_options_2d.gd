@@ -25,6 +25,14 @@ signal sync_toggled(save_id: String, on: bool)
 signal save_delete_requested(save_id: String)
 signal server_save_requested(slot: String)
 signal new_synced_save_requested
+## Save states. Capture and overwrite are the same act with and without a row to
+## write into; the view only reports the press, and the owner does the arming —
+## the same division the delete bin already follows.
+signal state_capture_requested
+signal state_overwrite_requested(state_id: String)
+signal state_load_requested(state_id: String)
+signal state_delete_requested(state_id: String)
+signal server_state_requested(state_id: String)
 signal close_requested
 
 const COLOR_BG      := Color(0.08, 0.08, 0.16, 0.96)
@@ -61,6 +69,11 @@ var _active_scroll: ScrollContainer = null
 ## the app's settings.
 var _tabs: TabContainer = null
 var _saves_scroll: ScrollContainer = null
+var _states_scroll: ScrollContainer = null
+var _states_box: VBoxContainer = null
+var _state_capture_btn: Button = null
+var _state_total_lbl: Label = null
+var _state_notice_lbl: Label = null
 var _ach_scroll: ScrollContainer = null
 var _ach_box: VBoxContainer = null
 var _ach_summary: Label = null
@@ -86,6 +99,15 @@ var selectable := true
 var backed_up: Dictionary = {}
 ## save_id whose delete is armed and waiting for a second press, or "".
 var armed_id := ""
+
+## The state waiting on a second press, and which action is waiting. ONE slot,
+## not one per action: arming either disarms the other, so a row can never be
+## waiting on two different confirmations at once.
+var states_armed_id := ""
+var states_armed_action := ""
+## Why a state cannot be taken right now, or "". Greys out both capture and
+## overwrite, since both of them write.
+var capture_blocked := ""
 ## Why saves must not be deleted right now, or "". A game writes its .srm as it
 ## plays, so deleting one under a running console loses whatever it flushes next.
 var delete_blocked := ""
@@ -145,6 +167,8 @@ func _build_ui() -> void:
 	_rows_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rows_box.add_theme_constant_override("separation", 4)
 	_saves_scroll.add_child(_rows_box)
+
+	_build_states_page()
 
 	_ach_scroll = _ribbon("Achievements")
 	# The fat VR scrollbar is 40 px and overlays the content, so the points column
@@ -239,8 +263,24 @@ func _ribbon(title: String) -> ScrollContainer:
 	return scroll
 
 
+## Whichever ScrollContainer the visible page owns.
+##
+## This used to be `_ach_scroll if current_tab == 1 else _saves_scroll`, which
+## is a landmine: inserting any tab silently re-points the thumbstick at the
+## wrong page, and correcting the constant would only re-arm it. Ask the page.
 func _sync_active_scroll() -> void:
-	_active_scroll = _ach_scroll if _tabs.current_tab == 1 else _saves_scroll
+	var page := _tabs.get_current_tab_control()
+	_active_scroll = _find_scroll(page) if page != null else _saves_scroll
+
+
+static func _find_scroll(node: Node) -> ScrollContainer:
+	if node is ScrollContainer:
+		return node as ScrollContainer
+	for child in node.get_children():
+		var found := _find_scroll(child)
+		if found != null:
+			return found
+	return null
 
 
 func _symbols() -> FontVariation:
@@ -601,3 +641,352 @@ func populate_achievements(entries: Array, summary: Dictionary, state: String) -
 func scroll_active(pixels: float) -> void:
 	if _active_scroll:
 		_active_scroll.scroll_vertical += int(pixels)
+
+
+# ── States ────────────────────────────────────────────────────────────────────
+#
+# Not a bare _ribbon(): "Save state now" is the verb the page exists for and
+# must not scroll away under forty rows, so the page is a VBox with a fixed
+# header above the list.
+
+## The picture box, and the thumbnails written at twice it so they stay sharp.
+const _THUMB_BOX := Vector2(96, 72)
+
+## path -> texture, for the life of this Control. Repopulate runs on every sync
+## result and every capture; decoding the same PNGs each time is the stutter
+## RommArtCache exists to avoid.
+var _thumb_cache: Dictionary = {}
+
+
+func _build_states_page() -> void:
+	var page := VBoxContainer.new()
+	# The node name IS the tab title, and add_child order IS the tab order.
+	page.name = "States"
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_theme_constant_override("separation", 6)
+	_tabs.add_child(page)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	page.add_child(head)
+
+	_state_capture_btn = Button.new()
+	_state_capture_btn.custom_minimum_size = Vector2(0, 52)
+	_state_capture_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_state_capture_btn.add_theme_font_size_override("font_size", 18)
+	_state_capture_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_state_capture_btn.text = "    ＋  Save state now"
+	# Inside a Viewport2Din3D every click arrives twice. The Saves tab's bin gets
+	# away with it because _populate() frees the button between the two presses;
+	# a capture has no such protection and one click would write two states.
+	_state_capture_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	_state_capture_btn.pressed.connect(func(): state_capture_requested.emit())
+	head.add_child(_state_capture_btn)
+
+	_state_total_lbl = Label.new()
+	_state_total_lbl.add_theme_font_size_override("font_size", 15)
+	_state_total_lbl.add_theme_color_override("font_color", COLOR_MUTED)
+	_state_total_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	head.add_child(_state_total_lbl)
+
+	_state_notice_lbl = Label.new()
+	_state_notice_lbl.add_theme_font_size_override("font_size", 15)
+	_state_notice_lbl.add_theme_color_override("font_color", COLOR_WARN)
+	_state_notice_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_state_notice_lbl.visible = false
+	page.add_child(_state_notice_lbl)
+
+	_states_scroll = ScrollContainer.new()
+	_states_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_states_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	MenuStyle.fat_vscroll_bar(_states_scroll)
+	page.add_child(_states_scroll)
+
+	_states_box = VBoxContainer.new()
+	_states_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_states_box.add_theme_constant_override("separation", 4)
+	_states_scroll.add_child(_states_box)
+
+
+## Rebuild the States list.
+##   rows         : StatePaths.list_states() entries
+##   total        : bytes on disk for the whole list
+##   backup_states: state_id -> "off" | "on" | "busy" | "failed"
+##   server_only  : [{state_id, updated_at, size}] the server has and we do not
+##   notice       : a sentence above the list, or "" — a failing backup, mostly
+func populate_states(rows: Array, total: int, backup_states: Dictionary = {},
+					 server_only: Array = [], notice: String = "",
+					 romm_available: bool = false) -> void:
+	_state_capture_btn.disabled = not capture_blocked.is_empty()
+	_state_capture_btn.tooltip_text = capture_blocked if not capture_blocked.is_empty() \
+		else "Take a save state of this game right now"
+	_state_capture_btn.add_theme_color_override("font_color",
+		COLOR_MUTED if _state_capture_btn.disabled else COLOR_TITLE)
+
+	_state_total_lbl.text = "%d state%s  ·  %s" % [rows.size(),
+		"" if rows.size() == 1 else "s", MenuStyle.human_bytes(total)]
+	_state_notice_lbl.text = notice
+	_state_notice_lbl.visible = not notice.is_empty()
+
+	for child in _states_box.get_children():
+		child.queue_free()
+
+	if rows.is_empty() and server_only.is_empty():
+		var empty := Label.new()
+		empty.text = ("No save states for this game yet." if capture_blocked.is_empty()
+			else "No save states for this game yet — %s." % capture_blocked)
+		empty.add_theme_font_size_override("font_size", 18)
+		empty.add_theme_color_override("font_color", COLOR_ROW)
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_states_box.add_child(empty)
+
+	for r: Variant in rows:
+		_add_state_row(r as Dictionary,
+			str(backup_states.get(str((r as Dictionary).get("state_id", "")), "off")),
+			romm_available)
+
+	if server_only.is_empty():
+		return
+	var head := Label.new()
+	head.text = "  On RomM"
+	head.add_theme_font_size_override("font_size", 16)
+	head.add_theme_color_override("font_color", COLOR_MUTED)
+	_states_box.add_child(head)
+	for e: Variant in server_only:
+		_add_server_state_row(e as Dictionary)
+
+
+## One state: its own picture, when it was last written, and the three things
+## that can be done to it. The whole plate loads it.
+func _add_state_row(row: Dictionary, backup_state: String, romm_available: bool) -> void:
+	var state_id := str(row.get("state_id", ""))
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", MenuStyle.save_plate_box())
+	_states_box.add_child(plate)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 10)
+	plate.add_child(hbox)
+
+	var armed_here: bool = states_armed_id == state_id
+	var detail := ""
+	match states_armed_action if armed_here else "":
+		"overwrite":
+			detail = "Press again to save over this state"
+		"delete":
+			detail = "Press the bin again to delete this state"
+		_:
+			detail = "%s  ·  %s" % [MenuStyle.human_bytes(int(row.get("bytes", 0))),
+				_backup_word(backup_state, romm_available)]
+
+	# The plate is the load target, so its content sits inside a flat button
+	# filling it — the same trick a save row uses. A Button lays out no children,
+	# hence the full-rect anchors.
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(0, _THUMB_BOX.y + 10)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.flat = true
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	btn.tooltip_text = "Load this save state"
+	btn.pressed.connect(func(): state_load_requested.emit(state_id))
+	hbox.add_child(btn)
+
+	var content := HBoxContainer.new()
+	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.add_theme_constant_override("separation", 10)
+	# A Label ignores the mouse by default; a TextureRect does not, and one that
+	# does not would eat the press meant for the plate.
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(content)
+	content.add_child(_thumb_frame(str(row.get("shot", ""))))
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(col)
+
+	var t := Label.new()
+	t.text = _when(int(row.get("mtime", 0)))
+	t.add_theme_font_size_override("font_size", 19)
+	t.add_theme_color_override("font_color", COLOR_TITLE)
+	col.add_child(t)
+
+	var sub := Label.new()
+	sub.text = detail
+	sub.add_theme_font_size_override("font_size", 15)
+	sub.add_theme_color_override("font_color", COLOR_WARN if armed_here else COLOR_MUTED)
+	col.add_child(sub)
+
+	hbox.add_child(_overwrite_button(state_id, armed_here
+		and states_armed_action == "overwrite"))
+	if romm_available:
+		hbox.add_child(_backup_glyph(backup_state))
+	hbox.add_child(_state_delete_button(state_id, armed_here
+		and states_armed_action == "delete"))
+
+
+## The picture, in a faintly recessed box so an empty one reads as "no picture"
+## rather than as a hole in the layout. Fixed size, so the row never reflows.
+func _thumb_frame(shot_path: String) -> Control:
+	var frame := PanelContainer.new()
+	frame.custom_minimum_size = _THUMB_BOX
+	frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0, 0, 0, 0.35)
+	for corner in ["corner_radius_top_left", "corner_radius_top_right",
+			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		box.set(corner, 4)
+	frame.add_theme_stylebox_override("panel", box)
+
+	var tex := _thumb(shot_path)
+	if tex == null:
+		return frame
+	var rect := TextureRect.new()
+	rect.texture = tex
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# NOT nearest, despite the memory card's icons: those are 16x16 upscales,
+	# where nearest is right. These are downscales, where it shimmers.
+	frame.add_child(rect)
+	return frame
+
+
+func _thumb(shot_path: String) -> Texture2D:
+	if shot_path.is_empty():
+		return null
+	if _thumb_cache.has(shot_path):
+		return _thumb_cache[shot_path]
+	var img := Image.load_from_file(shot_path)
+	var tex: Texture2D = null
+	if img != null and not img.is_empty():
+		tex = ImageTexture.create_from_image(img)
+	_thumb_cache[shot_path] = tex
+	return tex
+
+
+## Drop one picture from the cache, so an overwritten row shows its NEW frame.
+## The path does not change across an overwrite, which is exactly why a cache
+## keyed on it has to be told.
+func forget_thumb(shot_path: String) -> void:
+	_thumb_cache.erase(shot_path)
+
+
+func _when(unix: int) -> String:
+	if unix <= 0:
+		return "unknown"
+	var t := Time.get_datetime_dict_from_unix_time(unix)
+	return "%02d:%02d  %d %s" % [t["hour"], t["minute"], t["day"],
+		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+		 "Nov", "Dec"][int(t["month"]) - 1]]
+
+
+func _backup_word(backup_state: String, romm_available: bool) -> String:
+	if not romm_available:
+		return "on this device"
+	match backup_state:
+		"on": return "On RomM"
+		"busy": return "Uploading…"
+		"failed": return "Not backed up"
+		_: return "On this device"
+
+
+## Save over this state, keeping its place in the list. Armed like the bin: this
+## is the one action that both writes a file AND destroys what the row held.
+func _overwrite_button(state_id: String, armed: bool) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(64, 52)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.add_theme_font_override("font", _symbols())
+	b.add_theme_font_size_override("font_size", 22)
+	b.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	b.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.RETRY)
+	if not capture_blocked.is_empty():
+		b.disabled = true
+		b.add_theme_color_override("font_color", COLOR_MUTED)
+		b.tooltip_text = capture_blocked
+		return b
+	b.add_theme_color_override("font_color", COLOR_WARN if armed else COLOR_SYNC)
+	b.tooltip_text = "Press again to save over this state" if armed \
+		else "Save over this state, keeping its place in the list"
+	b.pressed.connect(func(): state_overwrite_requested.emit(state_id))
+	return b
+
+
+func _state_delete_button(state_id: String, armed: bool) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(64, 52)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.add_theme_font_override("font", _symbols())
+	b.add_theme_font_size_override("font_size", 22)
+	b.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	b.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.DELETE_FOREVER)
+	b.add_theme_color_override("font_color",
+		Color(0.95, 0.55, 0.35) if armed else Color(0.85, 0.5, 0.5))
+	b.tooltip_text = "Press again to delete this state" if armed \
+		else "Delete this save state"
+	b.pressed.connect(func(): state_delete_requested.emit(state_id))
+	return b
+
+
+## Backup is a global switch now, so a row reports rather than offers.
+func _backup_glyph(backup_state: String) -> Control:
+	var lbl := Label.new()
+	lbl.custom_minimum_size = Vector2(40, 52)
+	lbl.add_theme_font_override("font", _symbols())
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	match backup_state:
+		"on":
+			lbl.text = String.chr(_ICON_SYNC_ON)
+			lbl.add_theme_color_override("font_color", COLOR_SYNC)
+			lbl.tooltip_text = "Backed up to RomM"
+		"busy":
+			lbl.text = String.chr(_ICON_BUSY)
+			lbl.add_theme_color_override("font_color", COLOR_WARN)
+			lbl.tooltip_text = "Uploading to RomM…"
+		"failed":
+			lbl.text = String.chr(_ICON_WARN)
+			lbl.add_theme_color_override("font_color", COLOR_WARN)
+			lbl.tooltip_text = "This state could not be backed up"
+		_:
+			lbl.text = String.chr(_ICON_SYNC_OFF)
+			lbl.add_theme_color_override("font_color", COLOR_MUTED)
+			lbl.tooltip_text = "Not backed up yet"
+	return lbl
+
+
+## A state that exists only on the server. Pressing it pulls it down, after
+## which it is an ordinary row.
+func _add_server_state_row(e: Dictionary) -> void:
+	var state_id := str(e.get("state_id", ""))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_states_box.add_child(row)
+
+	var lbl := Button.new()
+	lbl.custom_minimum_size = Vector2(0, 52)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	lbl.add_theme_color_override("font_color", COLOR_ROW)
+	lbl.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	lbl.text = "    %s    %s" % [str(e.get("updated_at", "")).replace("T", "  ").left(19),
+		MenuStyle.human_bytes(int(e.get("size", 0)))]
+	lbl.pressed.connect(func(): server_state_requested.emit(state_id))
+	row.add_child(lbl)
+
+	var get_btn := Button.new()
+	get_btn.custom_minimum_size = Vector2(64, 52)
+	get_btn.add_theme_font_override("font", _symbols())
+	get_btn.add_theme_font_size_override("font_size", 22)
+	get_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+	get_btn.text = String.chr(_ICON_CLOUD)
+	get_btn.add_theme_color_override("font_color", COLOR_SYNC)
+	get_btn.tooltip_text = "Download this save state"
+	get_btn.pressed.connect(func(): server_state_requested.emit(state_id))
+	row.add_child(get_btn)
