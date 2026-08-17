@@ -98,6 +98,39 @@ func _build() -> void:
 	add_child(vbox)
 	vbox.add_child(MenuStyle.spacer(16))
 
+	# The app first, then who made it, then who else contributed. The page used to
+	# open on a person's name, which reads as a personal page rather than an
+	# About box — and left a build line nowhere to go but between the author and
+	# their donate button.
+	var title_lbl := MenuStyle.label("RetroXR", 40, MenuStyle.COLOR_TITLE)
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title_lbl)
+
+	# Which build this is. The full plate — commit, tag, built-at — stays on
+	# OPTIONS > Debug, where it exists to be quoted into a bug report. This
+	# answers the other question: someone who wants to know what they are running
+	# looks here, and Debug is a page most people never open.
+	#
+	# `describe` already ends "-dirty" when the tree was not clean. Dropped here
+	# and said as "modified" below instead: the same fact twice reads as two
+	# problems, and "dirty" is git's word rather than anyone else's.
+	var build_lbl := MenuStyle.label(
+		BuildInfo.describe().trim_suffix("-dirty"), 20, MenuStyle.COLOR_LICENSE)
+	build_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(build_lbl)
+
+	var target_text := BuildInfo.target_line()
+	if BuildInfo.is_dirty():
+		# Uncommitted changes were present at build time, so the hash above does
+		# not fully describe what is running. Cheap to carry, and expensive to
+		# discover later from a report quoting a commit that never matched.
+		target_text += "  ·  modified"
+	var target_lbl := MenuStyle.label(target_text, 14, MenuStyle.COLOR_DESC)
+	target_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(target_lbl)
+
+	vbox.add_child(MenuStyle.spacer(18))
+
 	# Author credit
 	var author_lbl := MenuStyle.label("Ryan McClelland", 32, MenuStyle.COLOR_TITLE)
 	author_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
