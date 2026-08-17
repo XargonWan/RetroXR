@@ -18,7 +18,7 @@ extends Node
 ## set_active_slot() writes user://scenes/prefs.json. Both are snapshotted at the
 ## start and put back at the end, so a red run cannot cost anyone their room.
 
-const GROUPS := ["slots", "ready", "transition", "autosave", "reload", "overlap", "power", "vlc", "manifest"]
+const GROUPS := ["slots", "ready", "transition", "autosave", "reload", "overlap", "fixture", "power", "vlc", "manifest"]
 ## Scratch slot ids, in the arcade's real directory — slot_dir() is derived from
 ## the room id and cannot be pointed somewhere safer.
 const SLOT_A := "__scene_selftest_a"
@@ -60,6 +60,8 @@ func _ready() -> void:
 		await _test_reload()
 	if _want_group("overlap"):
 		await _test_overlap()
+	if _want_group("fixture"):
+		await _test_fixture()
 	if _want_group("power"):
 		await _test_power()
 	if _want_group("vlc"):
@@ -397,6 +399,74 @@ func _test_overlap() -> void:
 	sp._let_go(held)
 	_eq(live.gravity_scale, 1.0, "overlap/_let_go weights bodies after a freed one")
 	live.queue_free()
+
+
+# ── The room's own movable furniture ──────────────────────────────────────────
+
+## The arcade's television is instanced by the room, so it is not in "spawned" and
+## the object walk never saw it — it is an XRToolsPickable, so the player could
+## carry it anywhere and the position was lost on every load. It is recorded by
+## path instead, and must NOT be swept into "spawned", which clear_scene frees.
+func _test_fixture() -> void:
+	var sp := ScenePersistence.new("arcade")
+	var tv := Node3D.new()
+	tv.name = "TV"
+	add_child(tv)
+	tv.add_to_group("fixture")
+	tv.global_position = Vector3(1.5, 0.95, -2.25)
+	tv.global_rotation_degrees = Vector3(0, 37, 0)
+
+	var snap := sp._snapshot(self)
+	_ok(snap.has("fixtures"), "fixture/a room with fixtures writes the section")
+	var fx: Array = snap.get("fixtures", [])
+	_eq(fx.size(), 1, "fixture/exactly one fixture recorded")
+	_eq(str((fx[0] as Dictionary).get("path", "")), "TV", "fixture/recorded by path")
+
+	# It must never be treated as a spawned object, or clear_scene deletes the
+	# room's own television and nothing in the file can rebuild it.
+	_ok(not tv.is_in_group("spawned"), "fixture/a fixture is not spawned")
+	sp.clear_scene(self)
+	await get_tree().process_frame
+	_ok(is_instance_valid(tv) and not tv.is_queued_for_deletion(),
+		"fixture/clear_scene leaves the fixture standing")
+
+	# Move it, then restore: it goes back rather than staying where it was left.
+	tv.global_position = Vector3(-9.0, 0.0, 9.0)
+	tv.global_rotation_degrees = Vector3(0, -120, 0)
+	sp._restore_fixtures(self, fx)
+	_ok(tv.global_position.distance_to(Vector3(1.5, 0.95, -2.25)) < 0.001,
+		"fixture/position restored (%s)" % tv.global_position)
+	_ok(absf(tv.global_rotation_degrees.y - 37.0) < 0.01,
+		"fixture/rotation restored (%.2f)" % tv.global_rotation_degrees.y)
+
+	# A slot written before fixtures existed carries no section at all, and must
+	# leave the room's furniture exactly where the .tscn authored it.
+	tv.global_position = Vector3(4.0, 1.0, 4.0)
+	sp._restore_fixtures(self, [])
+	_ok(tv.global_position.is_equal_approx(Vector3(4.0, 1.0, 4.0)),
+		"fixture/an old slot moves nothing")
+	# And a fixture the room no longer has is skipped, not an error.
+	sp._restore_fixtures(self, [{"path": "NoSuchNode", "position": [0, 0, 0]}])
+	_ok(true, "fixture/a missing fixture is skipped")
+
+	# A room with no fixtures writes no section, so those slots are byte-identical
+	# to what this build wrote before fixtures existed.
+	tv.remove_from_group("fixture")
+	_ok(not sp._snapshot(self).has("fixtures"),
+		"fixture/a room without fixtures writes no section")
+	tv.queue_free()
+
+	# The mechanism above is worth nothing unless the arcade's own television is
+	# actually tagged. Read from the .tscn because the room cannot be loaded here —
+	# its SubViewports would hang a headless run.
+	var scene_src := FileAccess.get_file_as_string("res://Scenes/MainScene.tscn")
+	var tv_line := ""
+	for line in scene_src.split("\n"):
+		if line.begins_with("[node name=\"TV\"") and line.contains("instance="):
+			tv_line = line
+	_ok(not tv_line.is_empty(), "fixture/the arcade still authors a TV node")
+	_ok(tv_line.contains("groups=[\"fixture\"]"),
+		"fixture/the arcade's TV is tagged as a fixture")
 
 
 # ── A machine's core must not outlive the machine ─────────────────────────────

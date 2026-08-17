@@ -365,7 +365,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.95, 0.35, -0.35)
 mesh = SubResource("BoxMesh_table_leg")
 surface_material_override/0 = SubResource("Mat_table_apron")
 
-[node name="TV" parent="." unique_id=-1294967286 instance=ExtResource("13_tv")]
+[node name="TV" parent="." unique_id=-1294967286 groups=["fixture"] instance=ExtResource("13_tv")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.95, -0.5)
 
 [node name="CeilLight_NE" type="OmniLight3D" parent="." unique_id=-1294967096 groups=["ceiling_light"]]

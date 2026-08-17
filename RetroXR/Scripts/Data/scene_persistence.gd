@@ -170,7 +170,7 @@ func autosave_slot(root: Node, slot_id: String) -> bool:
 	if slot_id == "clean":
 		return false
 	var path := _slot_file(slot_id)
-	var text := _encode(_collect_objects(root))
+	var text := _encode(_snapshot(root))
 	var digest := text.sha256_text()
 	if _last_digest.get(path, "") == digest and FileAccess.file_exists(path):
 		return false
@@ -237,6 +237,10 @@ func load_slot_async(root: Node, slot_id: String) -> bool:
 	# can perform without instantiating it. A truncated or old slot must be a
 	# failed load, not an implicit "Clean Room" action.
 	clear_scene(root)
+	# Before the objects: the room's own furniture is what everything else was
+	# arranged around, and a lead restored into a television still standing in its
+	# authored place would be laid out to the wrong end of the room.
+	_restore_fixtures(root, _read_fixtures(path))
 	var spawned: Dictionary = await instantiate_objects_async(root, objects)
 	print("[ScenePersistence] loaded %d objects from '%s'" % [spawned.size(), path])
 	return true
@@ -372,8 +376,9 @@ func _save_manifest(m: Dictionary) -> bool:
 
 
 func _write_scene_to_file(root: Node, path: String) -> bool:
-	var objects := _collect_objects(root)
-	var text := _encode(objects)
+	var snapshot := _snapshot(root)
+	var objects: Array = snapshot["objects"]
+	var text := _encode(snapshot)
 	# An autosave of this same slot may still be in a worker; letting it land after
 	# an explicit save would undo it.
 	_await_path(path)
@@ -401,8 +406,72 @@ func _collect_objects(root: Node) -> Array[Dictionary]:
 	return objects
 
 
-func _encode(objects: Array[Dictionary]) -> String:
-	return JSON.stringify({"version": VERSION, "objects": objects}, "\t")
+## Everything a slot file holds, ready to encode.
+func _snapshot(root: Node) -> Dictionary:
+	var out := {"version": VERSION, "objects": _collect_objects(root)}
+	var fixtures := _collect_fixtures(root)
+	# Omitted entirely when the room has none, so a room without fixtures writes
+	# the same bytes it always did.
+	if not fixtures.is_empty():
+		out["fixtures"] = fixtures
+	return out
+
+
+## Authored objects the player can move.
+##
+## The arcade's television is instanced by the room rather than spawned into it,
+## so it is not in the "spawned" group and the object walk never sees it — but it
+## is an XRToolsPickable and can be carried anywhere, and its position was simply
+## lost. It cannot join "spawned" to fix that: clear_scene frees that whole group,
+## and a slot load would delete the room's own television with nothing in the file
+## to rebuild it.
+##
+## So fixtures are recorded separately and by PATH, and restoring one moves the
+## node that is already there. Membership comes from the room's .tscn
+## (groups=["fixture"]), which is what keeps a spawned television — same scene,
+## no group — out of this list.
+func _collect_fixtures(root: Node) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if root.get_tree() == null:
+		return out
+	for node: Node in root.get_tree().get_nodes_in_group("fixture"):
+		var n3d := node as Node3D
+		if n3d == null or not root.is_ancestor_of(n3d):
+			continue
+		var pos := n3d.global_position
+		var rot := n3d.global_rotation_degrees
+		out.append({
+			"path": str(root.get_path_to(n3d)),
+			"position": [pos.x, pos.y, pos.z],
+			"rotation": [rot.x, rot.y, rot.z],
+		})
+	return out
+
+
+## Put the room's own movable furniture back where it was left. Absent from every
+## slot written before fixtures existed, in which case the room keeps the pose its
+## .tscn authored.
+func _restore_fixtures(root: Node, fixtures: Variant) -> void:
+	if not fixtures is Array:
+		return
+	for entry: Variant in fixtures as Array:
+		if not entry is Dictionary:
+			continue
+		var d := entry as Dictionary
+		var n3d := root.get_node_or_null(NodePath(str(d.get("path", "")))) as Node3D
+		if n3d == null:
+			# A room whose furniture was renamed or removed since the save.
+			continue
+		var pos: Array = d.get("position", [])
+		var rot: Array = d.get("rotation", [])
+		if pos.size() == 3:
+			n3d.global_position = Vector3(pos[0], pos[1], pos[2])
+		if rot.size() == 3:
+			n3d.global_rotation_degrees = Vector3(rot[0], rot[1], rot[2])
+
+
+func _encode(snapshot: Dictionary) -> String:
+	return JSON.stringify(snapshot, "\t")
 
 
 func _store_text(path: String, text: String) -> bool:
@@ -412,6 +481,19 @@ func _store_text(path: String, text: String) -> bool:
 		return false
 	f.store_string(text)
 	return true
+
+
+## The fixture entries of a slot file — an empty array for one written before
+## fixtures existed, or for a room that has none.
+func _read_fixtures(path: String) -> Variant:
+	_await_path(path)
+	var f := FileAccess.open(path, FileAccess.READ)
+	if not f:
+		return []
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if not parsed is Dictionary:
+		return []
+	return (parsed as Dictionary).get("fixtures", [])
 
 
 ## The object entries of a slot file, or null if it cannot be read.
