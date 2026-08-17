@@ -1,10 +1,11 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/system_models/pc_tower_model.gd" id="1_pctower"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/cables/vga_port.tscn" id="2_vgaport"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/cables/trs_port.tscn" id="3_trsport"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/ps2_jack_keyboard.res" id="4_ps2jackkb"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/ps2_jack_mouse.res" id="5_ps2jackms"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/cables/vga_jack.res" id="6_vgajack"]
 
 ; A 90s beige mini-tower: 0.19 W x 0.42 H x 0.44 D, which is a real ATX mini-tower
 ; footprint. Origin at the base centre, so the system sits on the floor at y 0.
@@ -265,6 +266,36 @@ transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.340, -0.2235)
 
 [node name="PortSeat2" type="Marker3D" parent="Back"]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.372, -0.2235)
+
+; Port 3 = the game port, the 15-pin socket a joystick or pad plugged into. On the
+; sound card on real hardware, which is why it sits down here with the audio jacks
+; rather than up in the PS/2 stack: y 0.262 is 32 mm below LineOut (0.294), so the
+; 12.6 mm flange clears that by 25 mm and stays well above the RCA row at 0.130.
+;
+; Rx(180) like the two seats above, and for the same measured reason.
+;
+; A pad in this socket drives libretro port 0 whatever cabinet slot it is —
+; RetroSystem._libretro_port_for pins it, the way it already pins a computer mouse.
+[node name="PortSeat3" type="Marker3D" parent="Back"]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.055, 0.262, -0.2235)
+
+; The socket itself. Reuses the VGA D-sub jack: a real game port is a DA-15, wider
+; than this DE-15, but it is the same family of shell and the project has no DA-15
+; generator. Ry(180), not the seat's Rx(180) — same reason the PS/2 meshes carry it:
+; the D-shell is not symmetric about Y and Rx would stand it on its head.
+;
+; z -0.2215, 1.5 mm proud of the back face, matching the PS/2 pair.
+[node name="GamePort" type="MeshInstance3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.262, -0.2215)
+mesh = ExtResource("6_vgajack")
+
+[node name="GameLabel" type="Label3D" parent="Back"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.055, 0.2724, -0.2205)
+pixel_size = 0.000104
+text = "Game"
+font_size = 48
+outline_size = 0
+modulate = Color(0.16, 0.15, 0.12, 1)
 
 ; The video card's socket, on the I/O panel directly under the PS/2 stack — where a
 ; board with onboard video puts it. y 0.318 is 22 mm below the keyboard socket, so

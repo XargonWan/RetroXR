@@ -2585,8 +2585,13 @@ func _is_computer() -> bool:
 ## The libretro port a plugged peripheral should drive. On computer systems the
 ## mouse always drives port 0 — where ScummVM/DOS/Amiga cores poll it — no matter
 ## which cabinet slot it's in; every other device drives its own physical port.
+##
+## A joypad on a computer is pinned the same way, and for the same reason. Its
+## socket is the tower's game port, which is cabinet slot 3 because slots 1 and 2
+## are the keyboard and mouse — but a DOS or Amiga core reads its one joystick on
+## port 0, and a pad announced on port 2 is a pad the game never sees.
 func _libretro_port_for(device_type: int, physical_port: int) -> int:
-	if device_type == RETRO_DEVICE_MOUSE and _is_computer():
+	if _is_computer() and (device_type == RETRO_DEVICE_MOUSE or device_type == RETRO_DEVICE_JOYPAD):
 		return 0
 	return physical_port
 

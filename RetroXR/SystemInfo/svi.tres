@@ -6,7 +6,7 @@
 script = ExtResource("1")
 systemid = "svi"
 display_name = "Spectravideo SVI"
-native_ports = 2
+native_ports = 3
 media_type = 0
 supports_multitap = false
 multitap_ports = 0

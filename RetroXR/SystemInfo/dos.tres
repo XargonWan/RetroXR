@@ -6,7 +6,7 @@
 script = ExtResource("1")
 systemid = "dos"
 display_name = "MS-DOS"
-native_ports = 2
+native_ports = 3
 media_type = 0
 supports_multitap = false
 multitap_ports = 0

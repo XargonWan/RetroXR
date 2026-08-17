@@ -47,6 +47,7 @@ const PORT_GLYPHS := {
 	"KeyboardLabel": "keyboard",
 	"VgaLabel": "vga",
 	"SpeakerLabel": "speakers",
+	"GameLabel": "gamepad",
 }
 
 ## 6 mm, against the 5 mm of text it replaces. A glyph carries a whole word in one
@@ -131,14 +132,20 @@ func _slide_to(target: Vector3) -> void:
 # --- hardware description ---------------------------------------------------
 
 ## A PC takes keyboard and mouse rather than joypads, but RetroSystem's ports are
-## how any input reaches the core, so two are kept.
+## how any input reaches the core, so two are kept — plus the game port, which is
+## the one socket here a joypad really did go into.
 ##
 ## They stay ORDINARY controller ports: RetroKeyboard and RetroMouse already
 ## implement the port contract (on_plugged_in / on_unplugged) and spawn the same
 ## cable a gamepad does. Only the socket geometry and its PC99 colour coding —
 ## purple keyboard, green mouse, matching the plug meshes — say otherwise.
+##
+## Seat 3 is the game port. A pad in it drives libretro port 0 whichever cabinet
+## slot it occupies, exactly as the mouse does — see RetroSystem._libretro_port_for.
+## SystemInfo.native_ports OVERRIDES this number whenever it is set, so the count
+## here is only half the story: every computer .tres has to allow three too.
 func get_controller_port_count() -> int:
-	return 2
+	return 3
 
 
 ## Saves live on the hard disk, not a removable card.

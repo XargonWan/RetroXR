@@ -6,7 +6,7 @@
 script = ExtResource("1")
 systemid = "zx81"
 display_name = "Sinclair ZX81"
-native_ports = 1
+native_ports = 3
 media_type = 0
 supports_multitap = false
 multitap_ports = 0

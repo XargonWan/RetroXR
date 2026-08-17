@@ -6,7 +6,7 @@
 script = ExtResource("1")
 systemid = "apple_ii"
 display_name = "Apple II"
-native_ports = 2
+native_ports = 3
 media_type = 0
 supports_multitap = false
 multitap_ports = 0
