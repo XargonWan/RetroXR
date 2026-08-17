@@ -32,13 +32,13 @@ var _options_scroll: ScrollContainer
 var _options_rows: VBoxContainer
 var _vhs_scroll: ScrollContainer = null
 var _active_scroll: ScrollContainer = null
-var _effect_check: CheckBox = null
+var _effect_check: VRCheck = null
 var _float_check: VRToggle = null
 var _scan_idx: int = 2   # default 8×
 var _scan_val_lbl: Label = null
 # VHS shader controls, keyed by uniform name → {slider, val_label, fmt}.
 var _vhs_sliders: Dictionary = {}
-var _pixelate_check: CheckBox = null
+var _pixelate_check: VRCheck = null
 # Guard so populate() doesn't re-emit effect_toggled when it sets the checkbox.
 var _suppress_signal := false
 
@@ -137,11 +137,7 @@ func _build_option_rows() -> void:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
-	_effect_check = CheckBox.new()
-	_effect_check.button_pressed = true
-	_effect_check.custom_minimum_size = Vector2(48, 48)
-	_effect_check.add_theme_font_size_override("font_size", 22)
-	_effect_check.toggled.connect(func(pressed: bool):
+	_effect_check = VRCheck.create(true, func(pressed: bool) -> void:
 		if _suppress_signal:
 			return
 		print("[VCROptions2D] VCR shader → ", pressed)
@@ -223,11 +219,7 @@ func _build_vhs_tab(tabs: TabContainer) -> void:
 	plabel.add_theme_color_override("font_color", COLOR_ROW)
 	plabel.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	prow.add_child(plabel)
-	_pixelate_check = CheckBox.new()
-	_pixelate_check.button_pressed = true
-	_pixelate_check.custom_minimum_size = Vector2(48, 48)
-	_pixelate_check.add_theme_font_size_override("font_size", 22)
-	_pixelate_check.toggled.connect(func(pressed: bool):
+	_pixelate_check = VRCheck.create(true, func(pressed: bool) -> void:
 		if not _suppress_signal:
 			vcr_param_changed.emit("pixelate", pressed))
 	prow.add_child(_pixelate_check)

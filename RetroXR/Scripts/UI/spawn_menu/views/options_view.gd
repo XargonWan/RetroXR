@@ -993,13 +993,12 @@ func _rebuild_cleanup_panel() -> void:
 			"Nothing to clean up — everything on disk is in use.", 16, MenuIcons.TINT_OK))
 		return
 
-	# A VRToggle, not a CheckBox — the same switch every other boolean row in
-	# OPTIONS uses. A bare CheckBox was both too small to read through a headset
-	# and wrong: it defaults to ACTION_MODE_BUTTON_PRESS, and every click inside a
-	# Viewport2DIn3D arrives as TWO presses, so each tap flipped it twice and left
-	# it exactly where it started. VRToggle is a release-mode Button, and its
-	# ON/OFF caption means the off state reads as plainly as the on state instead
-	# of being an empty square.
+	# A VRCheck, not a CheckBox and not a VRToggle. These rows are a selection out
+	# of a list, which is what a tickbox means; an ON/OFF switch reads as a
+	# setting that persists. Godot's own CheckBox is unusable here twice over: its
+	# ~16 px indicator is a few faint pixels at panel distance, and it defaults to
+	# ACTION_MODE_BUTTON_PRESS while every click inside a Viewport2DIn3D arrives
+	# as TWO presses — each tap flipped it twice and left it where it started.
 	for kind: String in _cleanup_found:
 		var entry: Dictionary = _cleanup_found[kind]
 		var is_saves := kind == StorageCleanup.SAVES
@@ -1026,7 +1025,7 @@ func _rebuild_cleanup_panel() -> void:
 		size_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		row.add_child(size_lbl)
 
-		row.add_child(VRToggle.create(bool(_cleanup_selected.get(kind, false)),
+		row.add_child(VRCheck.create(bool(_cleanup_selected.get(kind, false)),
 			func(on: bool) -> void: _cleanup_selected[kind] = on))
 
 		# The scrollbar is 40 px and drawn over the content, so without this the

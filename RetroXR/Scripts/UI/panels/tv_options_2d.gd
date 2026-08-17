@@ -46,7 +46,7 @@ var _suppress_signal := false
 # Channels tab.
 var _channels_scroll: ScrollContainer = null
 var _channel_list: VirtualRowList = null
-var _auto_toggle: CheckBox = null
+var _auto_toggle: VRCheck = null
 var _host_edit: LineEdit = null
 var _tuner_status: Label = null
 var _channels: Array[Dictionary] = []
@@ -207,16 +207,22 @@ func _build_channels_tab(tabs: TabContainer) -> void:
 	# No "TUNER" header: the tab is already called Channels and the controls say
 	# what they are. Vertical space here comes straight out of the channel list,
 	# which is the thing with 80-odd rows to show.
-	_auto_toggle = CheckBox.new()
-	_auto_toggle.text = "Find tuner automatically"
-	_auto_toggle.button_pressed = true
-	_auto_toggle.add_theme_font_size_override("font_size", 18)
-	_auto_toggle.custom_minimum_size = Vector2(0, 38)
-	# ACTION_MODE_BUTTON_RELEASE, never PRESS: every click inside a
-	# Viewport2DIn3D arrives as two presses, and a press-mode toggle flips twice.
-	_auto_toggle.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
-	_auto_toggle.toggled.connect(_on_auto_toggled)
-	tuner_box.add_child(_auto_toggle)
+	# Caption on the left, box on the right — the shape the book and VCR panels
+	# already use, and the reason VRCheck carries no text of its own.
+	var auto_row := HBoxContainer.new()
+	auto_row.add_theme_constant_override("separation", 8)
+	auto_row.custom_minimum_size = Vector2(0, 52)
+	tuner_box.add_child(auto_row)
+
+	var auto_lbl := Label.new()
+	auto_lbl.text = "Find tuner automatically"
+	auto_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	auto_lbl.add_theme_font_size_override("font_size", 18)
+	auto_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	auto_row.add_child(auto_lbl)
+
+	_auto_toggle = VRCheck.create(true, _on_auto_toggled)
+	auto_row.add_child(_auto_toggle)
 
 	var addr_row := HBoxContainer.new()
 	addr_row.add_theme_constant_override("separation", 8)

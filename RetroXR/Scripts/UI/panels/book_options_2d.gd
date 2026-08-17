@@ -20,7 +20,7 @@ const COLOR_BG    := Color(0.08, 0.08, 0.16, 0.96)
 const COLOR_TITLE := Color(0.9,  0.9,  1.0)
 const COLOR_ROW   := Color(0.65, 0.65, 0.80)
 
-var _half_check: CheckBox = null
+var _half_check: VRCheck = null
 var _size_slider: HSlider = null
 var _size_val: Label = null
 var _active_scroll: ScrollContainer = null
@@ -98,10 +98,7 @@ func _build_ui() -> void:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
-	_half_check = CheckBox.new()
-	_half_check.custom_minimum_size = Vector2(48, 48)
-	_half_check.add_theme_font_size_override("font_size", 22)
-	_half_check.toggled.connect(func(pressed: bool):
+	_half_check = VRCheck.create(false, func(pressed: bool) -> void:
 		if _suppress_signal:
 			return
 		half_page_toggled.emit(pressed)
