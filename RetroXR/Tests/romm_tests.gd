@@ -44,6 +44,7 @@ func _ready() -> void:
 	_test_gamelist_removal()
 	_test_media_and_cleanup()
 	_test_cleanup_gate()
+	_test_cleanup_core_dirs()
 	_test_cleanup_folder_as_file()
 	_test_gamelist_bad_paths()
 	_test_core_uninstall()
@@ -540,14 +541,30 @@ func _test_media_and_cleanup() -> void:
 		not orphans.has(media.path_join("box/Live.png")), sample)
 	_ok("cleanup/finds art with no rom",
 		orphans.has(media.path_join("box/Dead.png")), sample)
-	_ok("cleanup/finds a cover with no download",
-		orphans.has(media.path_join("romm/4242_s.webp")), sample)
+	# A cover with no download IS found, but under COVERS — asserted just below.
+	# What matters here is that it does not ALSO land in the artwork category.
+	_ok("cleanup/a cover is not counted as scraped artwork",
+		not orphans.has(media.path_join("romm/4242_s.webp")), sample)
 
-	# THE boundary: saves are reported but never in the set a sweep may remove
-	# without being asked for them by name.
+	# A cached RomM cover is not an orphan, it is a cache — its own category, or
+	# it dominates the total and a sweep looks like it reclaimed far more than it
+	# did. 3,184 of them against 163 scraped files on a real disk.
+	var covers := {}
+	for p: String in (found.get(StorageCleanup.COVERS, {}) as Dictionary).get("paths", []):
+		covers[p] = true
+	_ok("cleanup/romm cover is its own category",
+		covers.has(media.path_join("romm/4242_s.webp")), _sample(covers))
+	_ok("cleanup/scraped art is not filed as a cover",
+		not covers.has(media.path_join("box/Dead.png")), _sample(covers))
+
+	# THE boundary: the two that cannot be got back by pressing a button are
+	# reported but never pre-selected. Saves are progress; a BIOS folder is
+	# firmware no server here hands out, and removing a core is routine.
 	_ok("cleanup/saves are never swept by default",
-		not (StorageCleanup.SAVES in StorageCleanup.SAFE_KINDS))
-	_ok("cleanup/media is sweepable", StorageCleanup.MEDIA in StorageCleanup.SAFE_KINDS)
+		not (StorageCleanup.SAVES in StorageCleanup.DEFAULT_SELECTED))
+	_ok("cleanup/bios folders are never swept by default",
+		not (StorageCleanup.CORE_SYSTEM in StorageCleanup.DEFAULT_SELECTED))
+	_ok("cleanup/media is sweepable", StorageCleanup.MEDIA in StorageCleanup.DEFAULT_SELECTED)
 
 	# purge_rom_metadata takes one ROM's art and leaves its neighbours'.
 	var freed := StorageCleanup.purge_rom_metadata(TEST_SYSTEM, "Live.z64", 0)
@@ -586,7 +603,7 @@ func _test_cleanup_gate() -> void:
 		StorageCleanup.SAVES: {"label": "s", "count": 1, "bytes": 1, "paths": [save_dir]},
 	}
 
-	var res := StorageCleanup.remove(found, StorageCleanup.SAFE_KINDS)
+	var res := StorageCleanup.remove(found, StorageCleanup.DEFAULT_SELECTED)
 	_ok("gate/sweeps the safe category", not FileAccess.file_exists(art))
 	_ok("gate/SAVES SURVIVES A DEFAULT SWEEP",
 		FileAccess.file_exists(save_dir.path_join("game.srm")))
@@ -604,6 +621,43 @@ func _test_cleanup_gate() -> void:
 	_ok("gate/unnamed category untouched", FileAccess.file_exists(art))
 
 	_rm_rf(dir_path)
+
+
+## Which directories under system/ may be offered for deletion.
+##
+## Both shapes below were live on a real disk and both were pre-ticked before the
+## gate went in: `cheats/` is shared infrastructure holding dolphin-emu/*.cht,
+## and `melonDS DS/` belongs to a core that IS installed but names its directory
+## after its display name rather than its core_name. "Not installed" was the
+## wrong test; "is a core this app knows about, and is not installed" is right,
+## because it leaves anything unidentifiable alone.
+func _test_cleanup_core_dirs() -> void:
+	var system_root := CoreDownloadManager.default_core_root().path_join("system")
+	var db := CoreInfoDatabase.shared()
+
+	# The gate itself, asserted directly — the scan cannot be pointed at a
+	# scratch libretro root, so planting directories under the real one to prove
+	# it would risk the developer's own firmware.
+	_ok("coredir/cheats is not a core name", db.get_by_core_name("cheats").is_empty())
+	_ok("coredir/a display name is not a core name",
+		db.get_by_core_name("melonDS DS").is_empty())
+	_ok("coredir/the core behind that display name IS known",
+		not db.get_by_core_name("melondsds").is_empty())
+	_ok("coredir/a real core name is known", not db.get_by_core_name("snes9x").is_empty())
+
+	# And the live scan: nothing it offers may be a directory the database
+	# cannot name, whatever is actually on this machine.
+	var offered := (StorageCleanup.scan().get(StorageCleanup.CORE_SYSTEM, {}) as Dictionary)
+	var bad := {}
+	for p: String in offered.get("paths", []):
+		var leaf := str(p).trim_suffix("/").get_file()
+		if db.get_by_core_name(leaf).is_empty():
+			bad[p] = true
+	_eq("coredir/offers no unidentifiable directory", bad.size(), 0)
+	# Belt and braces: name the two that actually shipped wrong.
+	for leaf: String in ["cheats", "melonDS DS"]:
+		_ok("coredir/never offers %s" % leaf,
+			not (system_root.path_join(leaf) in offered.get("paths", [])))
 
 
 ## A "folder as file" game — a directory named Game.cue holding the cue and its

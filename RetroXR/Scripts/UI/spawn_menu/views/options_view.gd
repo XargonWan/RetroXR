@@ -959,7 +959,7 @@ func _on_cleanup_scanned(found: Dictionary) -> void:
 	# Everything safe starts ticked; saves never do. The user came here to clean
 	# up, so the safe set is the default — but nothing irreversible is opted in
 	# on their behalf.
-	for kind: String in StorageCleanup.SAFE_KINDS:
+	for kind: String in StorageCleanup.DEFAULT_SELECTED:
 		if _cleanup_found.has(kind):
 			_cleanup_selected[kind] = true
 	_rebuild_cleanup_panel()
@@ -1116,7 +1116,7 @@ func _on_cleanup_removed(res: Dictionary) -> void:
 
 	_cleanup_found = res.get("found", {}) as Dictionary
 	_cleanup_selected.clear()
-	for kind: String in StorageCleanup.SAFE_KINDS:
+	for kind: String in StorageCleanup.DEFAULT_SELECTED:
 		if _cleanup_found.has(kind):
 			_cleanup_selected[kind] = true
 	_rebuild_cleanup_panel()

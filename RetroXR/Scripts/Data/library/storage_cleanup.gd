@@ -20,20 +20,34 @@ class_name StorageCleanup
 extends RefCounted
 
 
-## Category ids. `SAVES` is deliberately excluded from `SAFE_KINDS`.
+## Category ids.
 const GAMELIST := "gamelist"
 const MEDIA := "media"
+const COVERS := "covers"
 const CORE_OPTIONS := "core_options"
 const CORE_SYSTEM := "core_system"
 const PARTIALS := "partials"
 const SAVES := "saves"
 
-## Everything the sweep may remove without singling it out.
-const SAFE_KINDS := [GAMELIST, MEDIA, CORE_OPTIONS, CORE_SYSTEM, PARTIALS]
+## Ticked when the panel opens. Everything else is found and shown but must be
+## asked for by name.
+##
+## The two left out are the two that cannot be got back by pressing a button:
+## SAVES is progress, and CORE_SYSTEM holds BIOS dumps, which are harder to
+## re-acquire than the core that wanted them — no server here hands them out.
+## Removing a core is a routine thing to do and should not quietly arm the
+## deletion of the firmware it took effort to find.
+const DEFAULT_SELECTED := [GAMELIST, MEDIA, COVERS, CORE_OPTIONS, PARTIALS]
 
 const LABELS := {
 	GAMELIST: "Library entries for missing games",
 	MEDIA: "Artwork and manuals with no game",
+	# Its own category because it is not an orphan, it is a cache: a cover is
+	# fetched for every row you scroll past, so this is mostly art for games
+	# never downloaded and every byte of it comes back the next time that
+	# platform is browsed. Folded in with the rest it dominated the total and
+	# made a sweep look like it reclaimed far more than it did.
+	COVERS: "Cover art cache (re-downloads when you browse)",
 	CORE_OPTIONS: "Settings for cores you removed",
 	CORE_SYSTEM: "BIOS folders for cores you removed",
 	PARTIALS: "Interrupted downloads",
@@ -157,9 +171,13 @@ static func _scan_media(systemid: String, found: Dictionary) -> void:
 		live["romm:%d" % rom_id] = true
 
 	for path: String in index:
-		if live.has(str(index[path])):
+		var key := str(index[path])
+		if live.has(key):
 			continue
-		_add_file(found, MEDIA, path)
+		# RomMedia.index marks a cached RomM cover with a "romm:" key. Kept apart
+		# from scraped art because the two are not the same kind of leftover —
+		# see the COVERS label.
+		_add_file(found, COVERS if key.begins_with("romm:") else MEDIA, path)
 
 
 ## Abandoned `.part` files — the wreckage a failed download leaves, which is
@@ -181,12 +199,32 @@ static func _scan_core_leftovers(installed: Dictionary, found: Dictionary) -> vo
 		dir.list_dir_begin()
 		var fname := dir.get_next()
 		while fname != "":
+			# Same gate as the system dirs below: a name the info database does
+			# not recognise is left alone rather than assumed to be a core that
+			# went away.
+			var opt_core := fname.trim_suffix(".opt")
 			if not dir.current_is_dir() and fname.ends_with(".opt") \
-					and not installed.has(fname.trim_suffix(".opt")):
+					and not installed.has(opt_core) \
+					and not CoreInfoDatabase.shared().get_by_core_name(opt_core).is_empty():
 				_add_file(found, CORE_OPTIONS, opts.path_join(fname))
 			fname = dir.get_next()
 		dir.list_dir_end()
 
+	# A directory under system/ is only a candidate when its name IS a core this
+	# app knows about and that core is not installed. "Not installed" alone was
+	# wrong twice over, and both were live on a real disk:
+	#
+	#   system/cheats/       shared infrastructure, not a core at all — it holds
+	#                        dolphin-emu/*.cht, and the sweep offered to delete
+	#                        them with the box already ticked;
+	#   system/melonDS DS/   made by a core that IS installed, which names its
+	#                        directory after its display name rather than its
+	#                        core_name (melondsds).
+	#
+	# Asking the info database inverts the test: a name nobody can identify is
+	# left alone, which is the only safe default for a directory of unknown
+	# provenance.
+	var db := CoreInfoDatabase.shared()
 	var system_root := root.path_join("system")
 	var sys_dir := DirAccess.open(system_root)
 	if sys_dir != null:
@@ -194,7 +232,8 @@ static func _scan_core_leftovers(installed: Dictionary, found: Dictionary) -> vo
 		var fname := sys_dir.get_next()
 		while fname != "":
 			if sys_dir.current_is_dir() and not fname.begins_with(".") \
-					and not installed.has(fname):
+					and not installed.has(fname) \
+					and not db.get_by_core_name(fname).is_empty():
 				_add_dir(found, CORE_SYSTEM, system_root.path_join(fname))
 			fname = sys_dir.get_next()
 		sys_dir.list_dir_end()
