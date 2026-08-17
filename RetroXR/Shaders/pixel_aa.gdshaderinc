@@ -46,13 +46,16 @@ vec2 pixel_aa_uv(sampler2D tex, vec2 uv) {
 	return (floor(tuv) + 0.5 + ramp) / tsize;
 }
 
-vec4 pixel_aa(sampler2D tex, vec2 uv) {
+// The same filter, with every hardware tap confined to [lo, hi]. Bounds are
+// texel CENTRES, not texture edges: bilinear sampling on an edge would still
+// mix the texels on its two sides.
+vec4 pixel_aa_bounded(sampler2D tex, vec2 uv, vec2 lo, vec2 hi) {
 	// Derivatives are undefined inside non-uniform control flow, so everything the
 	// branch below needs is taken here, before it.
 	vec2 fw = max(fwidth(uv * vec2(textureSize(tex, 0))), vec2(1e-5));
 	vec2 dx = dFdx(uv);
 	vec2 dy = dFdy(uv);
-	vec2 snapped = pixel_aa_uv(tex, uv);
+	vec2 snapped = clamp(pixel_aa_uv(tex, uv), lo, hi);
 	float foot = max(fw.x, fw.y);          // texels this screen pixel covers
 
 	// The dead zone below has to clear 1:1 rather than sit on it. A TV's aspect fit
@@ -77,13 +80,29 @@ vec4 pixel_aa(sampler2D tex, vec2 uv) {
 	float k = t * (foot - 1.0) / (2.0 * foot);
 	// The snapped position is a texel centre, which is the right place for one tap
 	// and the wrong centre for a box; hand the box the true position instead.
-	vec2 centre = mix(snapped, uv, t);
+	vec2 centre = mix(snapped, clamp(uv, lo, hi), t);
 
 	vec4 acc = vec4(0.0);
 	for (int j = -1; j <= 1; j++) {
 		for (int i = -1; i <= 1; i++) {
-			acc += texture(tex, centre + (float(i) * k) * dx + (float(j) * k) * dy);
+			vec2 tap = centre + (float(i) * k) * dx + (float(j) * k) * dy;
+			acc += texture(tex, clamp(tap, lo, hi));
 		}
 	}
 	return acc * (1.0 / 9.0);
+}
+
+vec4 pixel_aa(sampler2D tex, vec2 uv) {
+	vec2 half_texel = 0.5 / vec2(textureSize(tex, 0));
+	return pixel_aa_bounded(tex, uv, half_texel, vec2(1.0) - half_texel);
+}
+
+// Windowed composite sources (DS top/bottom, 3DS eyes/screens) share one
+// texture. Confining every footprint tap to this window prevents a neighbouring
+// screen's outer row or column from entering the filter.
+vec4 pixel_aa_rect(sampler2D tex, vec2 uv, vec4 rect) {
+	vec2 half_texel = 0.5 / vec2(textureSize(tex, 0));
+	vec2 lo = rect.xy + half_texel;
+	vec2 hi = rect.xy + rect.zw - half_texel;
+	return pixel_aa_bounded(tex, uv, lo, hi);
 }

@@ -47,10 +47,13 @@ void fragment() {
 	vec2 wrect_uv = rect.xy + wuv * rect.zw;
 	vec2 suv = pixel_aa_uv(source_tex, wrect_uv);
 
-	vec3 col = pixel_aa(source_tex, wrect_uv).rgb;
+	// Every footprint tap stays inside this screen's last texel centre. Clamping
+	// merely to rect's geometric edge would still let bilinear filtering mix the
+	// top screen's final row into the bottom screen's first row (and vice versa).
+	vec3 col = pixel_aa_rect(source_tex, wrect_uv, rect).rgb;
 	vec3 glow = vec3(0.0);
 	if (crt_enabled) {
-		col = crt_notch_sample(source_tex, suv, col);
+		col = crt_notch_sample_rect(source_tex, suv, col, rect);
 		// Clamp the halation taps to this screen's window so a DS panel can't
 		// bleed glow in from the other screen packed into the same framebuffer.
 		glow = crt_glow_rect(source_tex, suv, rect);

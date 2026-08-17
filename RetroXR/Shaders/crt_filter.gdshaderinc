@@ -179,6 +179,20 @@ vec3 crt_notch_sample(sampler2D tex, vec2 uv, vec3 base) {
 	return mix(base, 0.25 * l + 0.5 * base + 0.25 * r, crt_notch);
 }
 
+// Windowed form for a screen packed beside another screen in one texture.
+// Clamp to texel centres; a bilinear tap on rect.xy itself spans both windows.
+vec3 crt_notch_sample_rect(sampler2D tex, vec2 uv, vec3 base, vec4 rect) {
+	if (crt_notch <= 0.0) {
+		return base;
+	}
+	vec2 texel = 1.0 / vec2(textureSize(tex, 0));
+	vec2 lo = rect.xy + 0.5 * texel;
+	vec2 hi = rect.xy + rect.zw - 0.5 * texel;
+	vec3 l = texture(tex, clamp(uv - vec2(texel.x, 0.0), lo, hi)).rgb;
+	vec3 r = texture(tex, clamp(uv + vec2(texel.x, 0.0), lo, hi)).rgb;
+	return mix(base, 0.25 * l + 0.5 * base + 0.25 * r, crt_notch);
+}
+
 // Optional NTSC-style chroma smear: keep luma sharp, bleed I/Q from taps to the
 // right. Offsets are in source texels so the bleed distance doesn't change with
 // the core's resolution.
@@ -209,8 +223,9 @@ vec3 crt_glow_rect(sampler2D tex, vec2 uv, vec4 rect) {
 		return vec3(0.0);
 	}
 	vec2 r = crt_glow_radius / vec2(textureSize(tex, 0));
-	vec2 lo = rect.xy;
-	vec2 hi = rect.xy + rect.zw;
+	vec2 half_texel = 0.5 / vec2(textureSize(tex, 0));
+	vec2 lo = rect.xy + half_texel;
+	vec2 hi = rect.xy + rect.zw - half_texel;
 	vec3 g = texture(tex, clamp(uv + vec2( r.x,  r.y), lo, hi)).rgb
 	       + texture(tex, clamp(uv + vec2(-r.x,  r.y), lo, hi)).rgb
 	       + texture(tex, clamp(uv + vec2( r.x, -r.y), lo, hi)).rgb
