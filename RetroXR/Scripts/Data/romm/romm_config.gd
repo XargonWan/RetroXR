@@ -20,6 +20,14 @@ var token: String = ""
 var username: String = ""
 var password: String = ""
 
+## Back local saves and save states up to the server as they are written.
+##
+## Default ON, and one switch for both kinds. Battery saves used to be opt-in
+## per save, which meant the common answer ("yes, keep my progress") had to be
+## given once per file; a per-save record still wins where one exists, so
+## anything already toggled keeps the answer it was given.
+var backup_enabled: bool = true
+
 ## Cap on disk used by ROMs pulled from RomM. Hand-copied ROMs never count
 ## toward this and are never evicted.
 var cache_budget_gb: float = 20.0
@@ -141,6 +149,8 @@ func load_config() -> void:
 	username = str(data.get("username", ""))
 	password = str(data.get("password", ""))
 	cache_budget_gb = float(data.get("cache_budget_gb", 20.0))
+	# Default true, so an existing config that predates the switch adopts it.
+	backup_enabled = bool(data.get("backup_enabled", true))
 
 	if data.get("platform_overrides") is Dictionary:
 		platform_overrides = data["platform_overrides"]
@@ -171,6 +181,7 @@ func save_config() -> void:
 		"username": username,
 		"password": password,
 		"cache_budget_gb": cache_budget_gb,
+		"backup_enabled": backup_enabled,
 		"platform_overrides": platform_overrides,
 		"sync_state": sync_state,
 		"last_stats": last_stats,

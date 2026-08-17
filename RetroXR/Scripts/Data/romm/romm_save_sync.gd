@@ -136,8 +136,17 @@ static func key_for(sram_path: String) -> String:
 	return sram_path.trim_prefix(root).trim_prefix("/")
 
 
+## An explicit record wins; otherwise the global switch answers.
+##
+## Records only exist for saves that have already synced or been toggled, so a
+## save nobody has said anything about now follows "Back up to RomM" — which is
+## the point of that switch. A first launch after upgrading can therefore queue
+## a lot of uploads; the 20 s rate limit paces them.
 func is_enabled(sram_path: String) -> bool:
-	return bool(_record(sram_path).get("enabled", false))
+	var rec := _record(sram_path)
+	if rec.has("enabled"):
+		return bool(rec["enabled"])
+	return config != null and config.backup_enabled
 
 
 func set_enabled(sram_path: String, on: bool, rom_id: int = 0) -> void:
@@ -164,7 +173,10 @@ static func card_save_key(card_path: String, slot: String) -> String:
 
 
 func is_key_enabled(key: String) -> bool:
-	return bool((_state.get(key, {}) as Dictionary).get("enabled", false))
+	var rec: Dictionary = _state.get(key, {})
+	if rec.has("enabled"):
+		return bool(rec["enabled"])
+	return config != null and config.backup_enabled
 
 
 ## Remember which game wrote a card save, whether or not it is opted in.

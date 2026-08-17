@@ -1225,6 +1225,17 @@ func _build_scraper_options(vbox: VBoxContainer) -> void:
 
 ## RomM server connection and sync settings. The sub-tab carries the name and
 ## the logo, so there is no in-body header here.
+## Persist the RomM config AND hand it to the sync layer.
+##
+## RommSaveSync.setup() has existed since that layer landed and nothing ever
+## called it, so a server, a token or a switch changed here stayed invisible to
+## it until the app was restarted — the sync thread went on using the config it
+## read at boot. Every write in this tab goes through here now.
+func _save_romm_config() -> void:
+	romm_config.save_config()
+	SaveSync.setup(romm_config)
+
+
 func _build_romm_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(MenuStyle.spacer(10))
 
@@ -1242,15 +1253,33 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 
 	enable_row.add_child(VRToggle.create(romm_config.enabled, func(on: bool) -> void:
 		romm_config.enabled = on
-		romm_config.save_config()
+		_save_romm_config()
 		if on:
 			romm_platforms_requested.emit()
+	))
+
+	var backup_row := HBoxContainer.new()
+	backup_row.custom_minimum_size = Vector2(0, 68)
+	backup_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(backup_row)
+
+	var backup_lbl := Label.new()
+	backup_lbl.text = "Back up saves and states"
+	backup_lbl.add_theme_font_size_override("font_size", 20)
+	backup_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	backup_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	backup_lbl.tooltip_text = "Upload battery saves and save states to RomM as they are written"
+	backup_row.add_child(backup_lbl)
+
+	backup_row.add_child(VRToggle.create(romm_config.backup_enabled, func(on: bool) -> void:
+		romm_config.backup_enabled = on
+		_save_romm_config()
 	))
 
 	_romm_url_edit = _add_options_text_field(vbox, "Server URL", romm_config.base_url,
 		func(text: String) -> void:
 			romm_config.base_url = RommConfig.normalize_url(text)
-			romm_config.save_config()
+			_save_romm_config()
 			if romm_art != null:
 				romm_art.setup(romm_config.base_url)
 	)
@@ -1283,7 +1312,7 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 		romm_config.auth_mode, 1, Vector2(300, 56), 18)
 	_romm_mode_drop.item_selected.connect(func(id: Variant) -> void:
 		romm_config.auth_mode = str(id)
-		romm_config.save_config()
+		_save_romm_config()
 		_apply_romm_auth_rows()
 	)
 	vbox.add_child(_romm_mode_drop)
@@ -1291,19 +1320,19 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 	_romm_token_edit = _add_options_text_field(vbox, "API token", romm_config.token,
 		func(text: String) -> void:
 			romm_config.token = text.strip_edges()
-			romm_config.save_config()
+			_save_romm_config()
 	, true)
 
 	var user_edit := _add_options_text_field(vbox, "Username", romm_config.username,
 		func(text: String) -> void:
 			romm_config.username = text.strip_edges()
-			romm_config.save_config()
+			_save_romm_config()
 	)
 
 	var pass_edit := _add_options_text_field(vbox, "Password", romm_config.password,
 		func(text: String) -> void:
 			romm_config.password = text
-			romm_config.save_config()
+			_save_romm_config()
 	, true)
 
 	# Device pairing: type a short code instead of a 68-character token in VR.
@@ -1330,7 +1359,7 @@ func _build_romm_options(vbox: VBoxContainer) -> void:
 			var v := text.strip_edges().to_float()
 			if v > 0.0:
 				romm_config.cache_budget_gb = v
-				romm_config.save_config()
+				_save_romm_config()
 				update_romm_status_label()
 	)
 

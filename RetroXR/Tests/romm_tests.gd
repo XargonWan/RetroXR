@@ -48,6 +48,7 @@ func _ready() -> void:
 	_test_cleanup_folder_as_file()
 	_test_gamelist_bad_paths()
 	_test_core_uninstall()
+	_test_backup_switch()
 	await _test_http_stalls()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -974,3 +975,52 @@ func _rm_rf(path: String) -> void:
 		n = d.get_next()
 	d.list_dir_end()
 	DirAccess.remove_absolute(path)
+
+
+# ---------------------------------------------------------------------------
+# The global backup switch. This changed SHIPPED behaviour — battery saves used
+# to be opt-in per save, defaulting to off — so the exact fallback order is
+# worth pinning: an explicit record always wins, and only a save nobody has
+# said anything about follows the switch.
+# ---------------------------------------------------------------------------
+
+func _test_backup_switch() -> void:
+	var cfg := RommConfig.new()
+	var sync := RommSaveSync.new()
+	sync.config = cfg
+	var path := CoreDownloadManager.default_core_root().path_join("save") 		.path_join("fceumm").path_join("Game").path_join("abc123.srm")
+
+	cfg.backup_enabled = true
+	_ok("backup/a save nobody has ruled on follows the switch", sync.is_enabled(path))
+	cfg.backup_enabled = false
+	_ok("backup/and follows it the other way", not sync.is_enabled(path))
+
+	# An explicit answer outranks the switch in BOTH directions. The first is
+	# what lets a player keep one save off a shared server; the second is what
+	# stops turning the switch off silently un-syncing a save they turned on.
+	sync.set_enabled(path, true)
+	_ok("backup/an opted-in save ignores the switch being off", sync.is_enabled(path))
+	cfg.backup_enabled = true
+	sync.set_enabled(path, false)
+	_ok("backup/an opted-out save ignores the switch being on", not sync.is_enabled(path))
+
+	# A save INSIDE a memory card is keyed separately and has to follow the same
+	# ladder — a card's saves were opt-in per slot too.
+	var card := CoreDownloadManager.default_core_root().path_join("save") 		.path_join("memcards").path_join("playstation").path_join("MEMORY CARD.mcr")
+	var key := RommSaveSync.card_save_key(card, "BASLUS-00594")
+	cfg.backup_enabled = true
+	_ok("backup/a card save follows the switch too", sync.is_key_enabled(key))
+	cfg.backup_enabled = false
+	_ok("backup/and follows it off", not sync.is_key_enabled(key))
+
+	# Nothing was persisted by this case beyond the two records it wrote; drop
+	# them so a rerun starts where it did.
+	sync._state.erase(RommSaveSync.key_for(path))
+	sync.save_state()
+
+	# The switch survives a round trip through the file, and an OLD config that
+	# has never heard of it comes back ON — that is what makes the default
+	# apply to everyone who upgrades rather than only to new installs.
+	var fresh := RommConfig.new()
+	_ok("backup/a config with no such key defaults on", fresh.backup_enabled)
+	sync.free()
