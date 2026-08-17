@@ -183,36 +183,92 @@ func get_json(path: String, headers: PackedStringArray, abort: Callable = Callab
 	return {"result": Result.OK, "code": code, "data": json.data}
 
 
-## POST/PUT a file as multipart/form-data and read the JSON reply.
+## POST a JSON body and read the JSON reply.
 ##
-## The only upload primitive here — everything else in this class is
-## download-shaped. Battery saves are the whole use case and they are KB-sized
-## (128 KB for a PS1 card, 16 MB for the largest GameCube one), so the body is
-## composed in memory rather than streamed.
+## Not every RomM write is a file upload: deleting states is
+## POST /api/states/delete with {"states": [id, …]} — there is no
+## DELETE /api/states/{id} route to use instead.
 ##
+## A 2xx with an empty or unparseable body is still a success; `data` is null.
 ## Returns {result: Result, code: int, data: Variant}.
+func post_json(path: String, headers: PackedStringArray, body: String,
+			   abort: Callable = Callable(),
+			   timeout_sec: float = RESPONSE_TIMEOUT_SEC) -> Dictionary:
+	var all := PackedStringArray(headers)
+	all.append("Content-Type: application/json")
+	var sent := _send(HTTPClient.METHOD_POST, path, all, body, abort, timeout_sec)
+	if int(sent["result"]) != Result.OK:
+		return {"result": sent["result"], "code": sent["code"], "data": null}
+
+	var code := int(sent["code"])
+	var raw := _read_body(abort, timeout_sec)
+	if int(raw["result"]) != Result.OK:
+		return {"result": raw["result"], "code": code, "data": null}
+	if code < 200 or code >= 300:
+		return {"result": Result.HTTP_ERROR, "code": code, "data": null}
+
+	return {"result": Result.OK, "code": code,
+		"data": JSON.parse_string((raw["body"] as PackedByteArray).get_string_from_utf8())}
+
+
+## POST/PUT one file as multipart/form-data. The one-part case, kept because it
+## is most of the callers — see upload_parts for the general form.
 func upload_multipart(method: int, path: String, headers: PackedStringArray,
 					  field: String, filename: String, bytes: PackedByteArray,
-					  mime: String = "application/octet-stream") -> Dictionary:
+					  mime: String = "application/octet-stream",
+					  abort: Callable = Callable(),
+					  timeout_sec: float = RESPONSE_TIMEOUT_SEC) -> Dictionary:
+	return upload_parts(method, path, headers,
+		[{"field": field, "filename": filename, "bytes": bytes, "mime": mime}],
+		abort, timeout_sec)
+
+
+## POST/PUT several files in ONE multipart/form-data body and read the JSON reply.
+##
+## The only upload primitive here — everything else in this class is
+## download-shaped. Bodies are composed in memory rather than streamed: battery
+## saves are KB-sized (128 KB for a PS1 card, 16 MB for the largest GameCube
+## one) and a save state with its thumbnail is tens of MB at worst.
+##
+## More than one part exists for /api/states, which takes `stateFile` and
+## `screenshotFile` together — sending them in ONE request is what makes the
+## server store the picture AGAINST the state rather than beside it.
+##
+## `parts` : [{field, filename, bytes, mime}] — mime defaults to octet-stream.
+## `abort` : optional func() -> bool, polled while waiting. Without it a quit
+##           during a 50 MB upload waits out the whole response timeout on a
+##           join, which is exactly when a quit is likeliest.
+##
+## Returns {result: Result, code: int, data: Variant}.
+func upload_parts(method: int, path: String, headers: PackedStringArray,
+				  parts: Array, abort: Callable = Callable(),
+				  timeout_sec: float = RESPONSE_TIMEOUT_SEC) -> Dictionary:
 	if _client == null:
 		return {"result": Result.CONNECT_FAILED, "code": 0, "data": null}
+	if parts.is_empty():
+		return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
 
 	# Must not occur in the payload. Random rather than fixed: a save file is
 	# arbitrary binary and a constant boundary could appear inside one.
 	var boundary := "----RetroXR%016x%016x" % [randi(), randi()]
-
-	var preamble := PackedByteArray()
-	preamble.append_array(("--%s\r\n" % boundary).to_utf8_buffer())
-	preamble.append_array(('Content-Disposition: form-data; name="%s"; filename="%s"\r\n'
-		% [field, filename]).to_utf8_buffer())
-	preamble.append_array(("Content-Type: %s\r\n\r\n" % mime).to_utf8_buffer())
-
-	var tail := ("\r\n--%s--\r\n" % boundary).to_utf8_buffer()
+	var CRLF := PackedByteArray([13, 10])
 
 	var body := PackedByteArray()
-	body.append_array(preamble)
-	body.append_array(bytes)
-	body.append_array(tail)
+	for part: Variant in parts:
+		var d := part as Dictionary
+		body.append_array(("--%s" % boundary).to_utf8_buffer())
+		body.append_array(CRLF)
+		body.append_array(('Content-Disposition: form-data; name="%s"; filename="%s"'
+			% [str(d.get("field", "file")), str(d.get("filename", "file"))]).to_utf8_buffer())
+		body.append_array(CRLF)
+		body.append_array(("Content-Type: %s"
+			% str(d.get("mime", "application/octet-stream"))).to_utf8_buffer())
+		body.append_array(CRLF)
+		body.append_array(CRLF)
+		body.append_array(d.get("bytes", PackedByteArray()) as PackedByteArray)
+		body.append_array(CRLF)
+	body.append_array(("--%s--" % boundary).to_utf8_buffer())
+	body.append_array(CRLF)
 
 	var all := PackedStringArray(headers)
 	all.append("Content-Type: multipart/form-data; boundary=%s" % boundary)
@@ -221,9 +277,11 @@ func upload_multipart(method: int, path: String, headers: PackedStringArray,
 	if _client.request_raw(method, path, all, body) != OK:
 		return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
 
-	var deadline := Time.get_ticks_msec() + int(RESPONSE_TIMEOUT_SEC * 1000.0)
+	var deadline := Time.get_ticks_msec() + int(timeout_sec * 1000.0)
 	while _client.get_status() == HTTPClient.STATUS_REQUESTING:
 		_client.poll()
+		if abort.is_valid() and abort.call():
+			return {"result": Result.ABORTED, "code": 0, "data": null}
 		if Time.get_ticks_msec() > deadline:
 			return {"result": Result.TIMED_OUT, "code": 0, "data": null}
 		OS.delay_msec(POLL_SLEEP_MS)
@@ -232,7 +290,7 @@ func upload_multipart(method: int, path: String, headers: PackedStringArray,
 		return {"result": Result.REQUEST_FAILED, "code": 0, "data": null}
 
 	var code := _client.get_response_code()
-	var raw := _read_body()
+	var raw := _read_body(abort, timeout_sec)
 	if int(raw["result"]) != Result.OK:
 		return {"result": raw["result"], "code": code, "data": null}
 	if code < 200 or code >= 300:

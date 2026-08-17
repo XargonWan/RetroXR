@@ -28,7 +28,7 @@ func _ready() -> void:
 	# wait as well, because this timer is a SceneTree timer: it only fires while
 	# the main loop is running, and a blocking call made ON the main thread would
 	# stop the very clock meant to catch it.
-	get_tree().create_timer(120.0).timeout.connect(func() -> void:
+	get_tree().create_timer(240.0).timeout.connect(func() -> void:
 		print("[test] TIMEOUT")
 		get_tree().quit(1))
 
@@ -49,6 +49,11 @@ func _ready() -> void:
 	_test_gamelist_bad_paths()
 	_test_core_uninstall()
 	_test_backup_switch()
+	_test_state_schema()
+	await _test_state_upload_body()
+	await _test_save_upload_still_works()
+	await _test_state_overwrite_and_delete()
+	_test_state_server_only()
 	await _test_http_stalls()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -841,6 +846,10 @@ const _BODY := '{"ok":true}'
 class FakeServer extends RefCounted:
 
 	var port := 0
+	## Everything the client sent. Read it after stop() — the serve thread owns
+	## it until then. Draining is not only for inspection: an upload body larger
+	## than the socket buffer would block the CLIENT if nobody ever read it.
+	var received := PackedByteArray()
 	var _server := TCPServer.new()
 	var _thread := Thread.new()
 	var _stop := false
@@ -876,6 +885,19 @@ class FakeServer extends RefCounted:
 			OS.delay_msec(5)
 			peer.poll()
 
+		# Let the request land before answering. A canned reply sent before the
+		# client has finished writing is fine for HTTP, but this is also where
+		# the body gets drained, and the client stalls if it never is.
+		var quiet := Time.get_ticks_msec() + 250
+		while Time.get_ticks_msec() < quiet and not _stop:
+			peer.poll()
+			var n := peer.get_available_bytes()
+			if n > 0:
+				received.append_array(peer.get_data(n)[1])
+				quiet = Time.get_ticks_msec() + 60
+			else:
+				OS.delay_msec(5)
+
 		for step: Array in steps:
 			OS.delay_msec(int(step[0]))
 			var chunk: PackedByteArray = step[1]
@@ -883,6 +905,10 @@ class FakeServer extends RefCounted:
 				peer.put_data(chunk)
 
 		while not _stop:
+			peer.poll()
+			var more := peer.get_available_bytes()
+			if more > 0:
+				received.append_array(peer.get_data(more)[1])
 			OS.delay_msec(10)
 		peer.disconnect_from_host()
 
@@ -921,6 +947,54 @@ func _probe(steps: Array, abort: Callable, timeout_sec: float,
 	srv.stop()
 	t.wait_to_finish()
 	return {"result": -3} if stuck else box["out"]
+
+
+## Like _probe, but the caller supplies the request and gets the raw bytes the
+## server received back with the result. Composing a multipart body is the part
+## of an upload most likely to be wrong, and the only way to check it is to look
+## at what actually went down the socket.
+##
+## Returns {out: Dictionary, request: String} — or {out: {result: -1|-2|-3}}.
+func _probe_request(steps: Array, send: Callable, cap_sec: float = 10.0) -> Dictionary:
+	var srv := FakeServer.new()
+	if not srv.start(steps):
+		return {"out": {"result": -1}, "request": ""}
+
+	var box := {"out": {"result": -2}}
+	var url := "http://127.0.0.1:%d" % srv.port
+	var t := Thread.new()
+	t.start(func() -> void:
+		var http := RommHttp.new()
+		if http.open(url) == RommHttp.Result.OK:
+			box["out"] = send.call(http)
+		http.close())
+
+	var deadline := Time.get_ticks_msec() + int(cap_sec * 1000.0)
+	while t.is_alive() and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+	var stuck := t.is_alive()
+	srv.stop()
+	t.wait_to_finish()
+	if stuck:
+		return {"out": {"result": -3}, "request": ""}
+	return {"out": box["out"], "request": _printable(srv.received),
+		"raw": srv.received}
+
+
+## A request rendered so its headers read and its LENGTH still means something.
+##
+## Not get_string_from_ascii(): a state is arbitrary binary and its first byte
+## here is 0x00, which stops that decode dead — the capture came back 178 bytes
+## long against a 925-byte body, so every length case failed on the harness
+## rather than on the code. Every non-printable becomes ".", so one byte in is
+## still one character out.
+func _printable(bytes: PackedByteArray) -> String:
+	var out := PackedByteArray()
+	out.resize(bytes.size())
+	for i in range(bytes.size()):
+		var b := bytes[i]
+		out[i] = b if (b >= 32 and b <= 126) or b == 13 or b == 10 else 46
+	return out.get_string_from_ascii()
 
 
 func _test_http_stalls() -> void:
@@ -988,7 +1062,8 @@ func _test_backup_switch() -> void:
 	var cfg := RommConfig.new()
 	var sync := RommSaveSync.new()
 	sync.config = cfg
-	var path := CoreDownloadManager.default_core_root().path_join("save") 		.path_join("fceumm").path_join("Game").path_join("abc123.srm")
+	var path := CoreDownloadManager.default_core_root().path_join("save") \
+		.path_join("fceumm").path_join("Game").path_join("abc123.srm")
 
 	cfg.backup_enabled = true
 	_ok("backup/a save nobody has ruled on follows the switch", sync.is_enabled(path))
@@ -1006,7 +1081,8 @@ func _test_backup_switch() -> void:
 
 	# A save INSIDE a memory card is keyed separately and has to follow the same
 	# ladder — a card's saves were opt-in per slot too.
-	var card := CoreDownloadManager.default_core_root().path_join("save") 		.path_join("memcards").path_join("playstation").path_join("MEMORY CARD.mcr")
+	var card := CoreDownloadManager.default_core_root().path_join("save") \
+		.path_join("memcards").path_join("playstation").path_join("MEMORY CARD.mcr")
 	var key := RommSaveSync.card_save_key(card, "BASLUS-00594")
 	cfg.backup_enabled = true
 	_ok("backup/a card save follows the switch too", sync.is_key_enabled(key))
@@ -1024,3 +1100,231 @@ func _test_backup_switch() -> void:
 	var fresh := RommConfig.new()
 	_ok("backup/a config with no such key defaults on", fresh.backup_enabled)
 	sync.free()
+
+
+# ---------------------------------------------------------------------------
+# RommStates — /api/states, which is NOT /api/saves with a different noun.
+#
+# Three differences bite, and all three are pinned below: there is no `slot` so
+# identity is the filename; deleting is a POST with a list; and there is no
+# `overwrite` parameter, so an overwrite has to PUT to a remembered id.
+#
+# The upload cases read the bytes the server actually received. Composing a
+# multipart body is the part most likely to be silently wrong — a missing CRLF
+# or a stale Content-Length produces a 200 from some servers and a corrupt file
+# on disk, which no response-code check would ever catch.
+# ---------------------------------------------------------------------------
+
+const _STATE_ID := "1787000000000-0a1b2c"
+## The line ending multipart is specified in, spelled out so the needles below
+## read as what they are: every delimiter must be preceded by one.
+const _CRLF := "\r\n"
+
+
+func _test_state_schema() -> void:
+	# `screenshot` is a REQUIRED field of StateSchema that may be null, so both
+	# shapes arrive in practice and neither may throw.
+	var with_shot := RommStates.from_schema({
+		"id": 12, "rom_id": 7, "file_name": _STATE_ID + ".state",
+		"file_size_bytes": 4456448, "emulator": "pcsx_rearmed",
+		"updated_at": "2026-08-17T21:00:00", "created_at": "2026-08-17T20:00:00",
+		"screenshot": {"download_path": "/assets/states/12.png",
+			"file_name": "12.png", "file_size_bytes": 9000},
+	})
+	_eq("states/the id comes through", int(with_shot["id"]), 12)
+	_eq("states/and the picture's path", str(with_shot["screenshot_path"]),
+		"/assets/states/12.png")
+
+	var without := RommStates.from_schema({
+		"id": 13, "rom_id": 7, "file_name": "someone-elses.state", "screenshot": null})
+	_eq("states/a null screenshot flattens to nothing", str(without["screenshot_path"]), "")
+
+	# Identity is the filename, because RomM gives a state no slot to key on. A
+	# name this app did not mint must NOT be adopted: claiming it would take an
+	# id we might mint ourselves later, and the two would then collide.
+	_eq("states/our own filename yields its id",
+		RommStates.id_from_filename(_STATE_ID + ".state"), _STATE_ID)
+	_eq("states/a foreign name yields nothing",
+		RommStates.id_from_filename("someone-elses.state"), "")
+	_eq("states/and so does an empty one", RommStates.id_from_filename(""), "")
+
+
+func _test_state_upload_body() -> void:
+	# Binary, NULs and all, with an ASCII sentinel buried in it: the length cases
+	# below prove the body is the size it claims, and the sentinel proves those
+	# bytes are the ones the caller handed over rather than a same-sized
+	# re-encoding of them.
+	var payload := PackedByteArray()
+	for i in range(256):
+		payload.append(i)
+	payload.append_array("STATE-BYTES-HERE".to_utf8_buffer())
+	for i in range(256):
+		payload.append(255 - i)
+	var shot := "PNG-not-really".to_utf8_buffer()
+
+	var both: Dictionary = await _probe_request([[0, (_HEAD + _BODY).to_utf8_buffer()]],
+		func(http: RommHttp) -> Dictionary:
+			return RommStates.create(http, PackedStringArray(), 7, "pcsx_rearmed",
+				_STATE_ID + ".state", payload, shot))
+	var req: String = both["request"]
+	_ok("upload/the call came back", bool((both["out"] as Dictionary).get("ok", false)),
+		str((both["out"] as Dictionary).get("error", both["out"])))
+	_ok("upload/POSTs to /api/states with the rom and emulator",
+		req.begins_with("POST /api/states?rom_id=7&emulator=pcsx_rearmed "), req.left(60))
+	_ok("upload/declares a multipart body",
+		req.contains("Content-Type: multipart/form-data; boundary=----RetroXR"))
+	# BOTH parts in ONE request — that is the whole reason the server stores the
+	# picture against the state instead of beside it.
+	_ok("upload/carries the state part",
+		req.contains('name="stateFile"; filename="%s.state"' % _STATE_ID))
+	_ok("upload/and the screenshot part",
+		req.contains('name="screenshotFile"; filename="%s.png"' % _STATE_ID))
+	_ok("upload/the screenshot is declared as a png", req.contains("Content-Type: image/png"))
+	_ok("upload/the state's own bytes are in the body", req.contains("STATE-BYTES-HERE"))
+	_ok("upload/and the picture's", req.contains("PNG-not-really"))
+
+	# Every delimiter is preceded by CRLF — RFC 7578's rule, and the one an
+	# implementation quietly gets wrong. Asserting it structurally rather than by
+	# re-deriving the expected length: comparing the body against its own
+	# Content-Length is self-consistent and stays green when a terminator is
+	# dropped from BOTH, which is exactly what a mutation of this proved.
+	var boundary := _boundary_of(req)
+	_ok("upload/there is a boundary", not boundary.is_empty(), boundary)
+	_ok("upload/the closing delimiter is preceded by CRLF",
+		req.contains(_CRLF + "--%s--" % boundary))
+	_ok("upload/and so is the second part's",
+		req.contains(_CRLF + "--%s%sContent-Disposition: form-data; name=\"screenshotFile\""
+			% [boundary, _CRLF]))
+	# A stale Content-Length is a different fault: too short and the server reads
+	# the rest as the next request, too long and it waits for bytes never sent.
+	_eq("upload/Content-Length matches the body", _body_len(req), _declared_len(req))
+
+	# No picture: one part, and the upload still goes. A thumbnail that failed to
+	# encode must never hold a state back.
+	var alone: Dictionary = await _probe_request([[0, (_HEAD + _BODY).to_utf8_buffer()]],
+		func(http: RommHttp) -> Dictionary:
+			return RommStates.create(http, PackedStringArray(), 7, "fceumm",
+				_STATE_ID + ".state", payload))
+	var req2: String = alone["request"]
+	_ok("upload/a state with no picture still uploads",
+		bool((alone["out"] as Dictionary).get("ok", false)))
+	_ok("upload/and sends only the one part",
+		req2.contains('name="stateFile"') and not req2.contains('name="screenshotFile"'))
+	_eq("upload/its Content-Length matches too", _body_len(req2), _declared_len(req2))
+	_ok("upload/and its one part is terminated",
+		req2.contains(_CRLF + "--%s--" % _boundary_of(req2)))
+
+
+## The battery-save upload still composes the way it always did. upload_multipart
+## became a one-part wrapper over upload_parts when states needed two, and saves
+## are the caller that was already shipping — a regression here would corrupt
+## every .srm uploaded, silently, with a 200 back from the server.
+func _test_save_upload_still_works() -> void:
+	var sent: Dictionary = await _probe_request([[0, (_HEAD + _BODY).to_utf8_buffer()]],
+		func(http: RommHttp) -> Dictionary:
+			return RommSaves.create(http, PackedStringArray(), 7, "fceumm", "slot1",
+				"game.srm", "battery".to_utf8_buffer()))
+	var req: String = sent["request"]
+	_ok("saves/still POSTs to /api/saves with its slot",
+		req.begins_with("POST /api/saves?rom_id=7&emulator=fceumm&slot=slot1&overwrite=true "),
+		req.left(70))
+	_ok("saves/still names the part saveFile",
+		req.contains('name="saveFile"; filename="game.srm"'))
+	_ok("saves/still sends the bytes", req.contains("battery"))
+	_ok("saves/and still terminates the body",
+		req.contains(_CRLF + "--%s--" % _boundary_of(req)))
+	_eq("saves/with a Content-Length that matches", _body_len(req), _declared_len(req))
+
+
+func _test_state_overwrite_and_delete() -> void:
+	var payload := "core".to_utf8_buffer()
+	# There is no `overwrite` parameter on /api/states, unlike /api/saves — an
+	# overwrite is a PUT to the id the ledger remembers, which is what stops the
+	# same filename being uploaded twice.
+	var put: Dictionary = await _probe_request([[0, (_HEAD + _BODY).to_utf8_buffer()]],
+		func(http: RommHttp) -> Dictionary:
+			return RommStates.update(http, PackedStringArray(), 42,
+				_STATE_ID + ".state", payload))
+	_ok("overwrite/PUTs to the state's own id",
+		str(put["request"]).begins_with("PUT /api/states/42 "), str(put["request"]).left(40))
+	_ok("overwrite/does not ask for overwrite=true",
+		not str(put["request"]).contains("overwrite"))
+
+	# Deleting is POST /api/states/delete with a list. DELETE /api/states/{id}
+	# does not exist, and calling it would 404 forever while looking like a
+	# server problem.
+	var del: Dictionary = await _probe_request([[0, (_HEAD + _BODY).to_utf8_buffer()]],
+		func(http: RommHttp) -> Dictionary:
+			return RommStates.delete(http, PackedStringArray(), [42, 43]))
+	var dreq: String = del["request"]
+	_ok("delete/POSTs to /api/states/delete",
+		dreq.begins_with("POST /api/states/delete "), dreq.left(40))
+	_ok("delete/sends json", dreq.contains("Content-Type: application/json"))
+	_ok("delete/with the ids in a list", dreq.contains('{"states":[42,43]}'), dreq.right(40))
+	_ok("delete/nothing to delete makes no request at all",
+		bool(RommStates.delete(null, PackedStringArray(), [])["ok"]))
+
+
+func _test_state_server_only() -> void:
+	var sync := RommStateSync.new()
+	var core := "__state_selftest"
+	var rom := "selftest.nes"
+	var mine := StatePaths.state_path(core, rom, _STATE_ID)
+	DirAccess.make_dir_recursive_absolute(mine.get_base_dir())
+	var f := FileAccess.open(mine, FileAccess.WRITE)
+	f.store_string("x")
+	f.close()
+
+	var server := [
+		{"id": 1, "file_name": _STATE_ID + ".state", "size": 10, "updated_at": "a",
+		 "screenshot_path": ""},
+		{"id": 2, "file_name": "1787000000001-0a1b2d.state", "size": 20, "updated_at": "b",
+		 "screenshot_path": "/assets/2.png"},
+		{"id": 3, "file_name": "retroarch-slot1.state", "size": 30, "updated_at": "c",
+		 "screenshot_path": ""},
+	]
+	var only := sync.server_only(core, rom, server)
+	_eq("server-only/one row offered", only.size(), 1)
+	if only.size() == 1:
+		# Not the one we already have, and not the one another client wrote.
+		_eq("server-only/and it is the one we lack", str(only[0]["state_id"]),
+			"1787000000001-0a1b2d")
+		_eq("server-only/carrying its server id", int(only[0]["server_id"]), 2)
+		_eq("server-only/and its picture", str(only[0]["screenshot_path"]), "/assets/2.png")
+
+	# The ledger key is relative to the states root, so it survives the app being
+	# moved — the same rule saves follow.
+	var key := RommStateSync.key_for(mine)
+	_ok("server-only/the ledger key is relative", not key.begins_with("/")
+		and not key.contains(":"), key)
+	_ok("server-only/and names the game", key.contains(core) and key.contains(_STATE_ID), key)
+
+	DirAccess.remove_absolute(mine)
+	DirAccess.remove_absolute(mine.get_base_dir())
+	sync.free()
+
+
+## The multipart boundary a request declared, or "".
+func _boundary_of(req: String) -> String:
+	var at := req.find("boundary=")
+	if at < 0:
+		return ""
+	var rest := req.substr(at + 9)
+	var end := rest.find("\r")
+	return rest.left(end) if end > 0 else rest
+
+
+## Bytes after the blank line that ends the headers.
+func _body_len(req: String) -> int:
+	var at := req.find("\r\n\r\n")
+	return req.length() - at - 4 if at >= 0 else -1
+
+
+## What the Content-Length header claimed.
+func _declared_len(req: String) -> int:
+	var at := req.find("Content-Length: ")
+	if at < 0:
+		return -2
+	var rest := req.substr(at + 16)
+	var end := rest.find("\r")
+	return int(rest.left(end) if end > 0 else rest)

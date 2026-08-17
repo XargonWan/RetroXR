@@ -23,6 +23,9 @@ var _camera: Node3D = null
 var _external_ui: CartridgeOptions2D = null
 ## Saves the server holds for this cartridge's ROM, fetched when the panel opens.
 var _server_saves: Array = []
+## And the save states it holds. Fetched on its own thread, so the States tab
+## never waits behind the saves list or behind an upload.
+var _server_states: Array = []
 ## save_ids whose last sync forked a conflict, so the row can say so until the
 ## user acts on it.
 var _conflicted: Dictionary = {}
@@ -181,6 +184,7 @@ func _ensure_ui_connected() -> void:
 			ui.state_overwrite_requested.connect(_on_state_overwrite_requested)
 			ui.state_load_requested.connect(_on_state_load_requested)
 			ui.state_delete_requested.connect(_on_state_delete_requested)
+			ui.server_state_requested.connect(_on_server_state_requested)
 		# The embedded copy has no ✕ of its own; its host closes it.
 		if ui != _external_ui and not ui.close_requested.is_connected(hide_panel):
 			ui.close_requested.connect(hide_panel)
@@ -188,6 +192,9 @@ func _ensure_ui_connected() -> void:
 	# adopt_external_ui() stacking another connection on every one.
 	if not SaveSync.sync_finished.is_connected(_on_sync_finished):
 		SaveSync.sync_finished.connect(_on_sync_finished)
+		StateSync.upload_started.connect(_on_state_backup_changed.bind(true, ""))
+		StateSync.upload_finished.connect(_on_state_backup_finished)
+		StateSync.listed.connect(_on_states_listed)
 		SaveSync.conflict_forked.connect(_on_conflict_forked)
 		RA.game_loaded.connect(_on_ra_changed)
 		RA.achievement_unlocked.connect(_on_ra_unlocked)
@@ -365,7 +372,15 @@ func _server_only(local: Array) -> Array:
 	for e: Dictionary in _server_saves:
 		var slot := str(e.get("slot", ""))
 		# Memory-card slots belong to a card, not to this cartridge.
-		if slot.is_empty() or slot.begins_with("card:") or have.has(slot):
+		#
+		# `state:` is belt-and-braces rather than a live hazard: save states go
+		# to /api/states, a separate endpoint family with no slot field at all,
+		# so none of them can reach this list today. It is here because the day
+		# anything routes a state through the saves namespace, every state the
+		# player has ever taken would appear in SAVES as a phantom battery save
+		# offering to download over their real one.
+		if slot.is_empty() or slot.begins_with("card:") \
+				or slot.begins_with("state:") or have.has(slot):
 			continue
 		out.append(e)
 	return out
@@ -515,8 +530,11 @@ func _on_conflict_forked(_key: String, forked_save_id: String, _label: String) -
 ## panel draws immediately with whatever it already knew.
 func _refresh_server_list() -> void:
 	var rid := _rom_id()
+	if rid > 0 and StateSync.is_available():
+		StateSync.list_for_rom(rid)
 	if rid <= 0 or not SaveSync.is_available():
 		_server_saves = []
+		_server_states = []
 		return
 	SaveSync.list_server_saves(rid, func(ok: bool, saves: Array) -> void:
 		if not ok:
@@ -586,7 +604,11 @@ func _populate_states(ui: CartridgeOptions2D) -> void:
 	ui.capture_blocked = _capture_blocked()
 	ui.states_armed_id = _states_armed_id
 	ui.states_armed_action = _states_armed_action
-	ui.populate_states(rows, StatePaths.total_bytes(core, _rom()))
+	ui.populate_states(rows, StatePaths.total_bytes(core, _rom()),
+		StateSync.statuses_for(core, _rom(), rows),
+		StateSync.server_only(core, _rom(), _server_states),
+		StateSync.failure_notice(core, _rom(), rows),
+		StateSync.backup_enabled() and _rom_id() > 0)
 
 
 ## Arm, then do. Both writing actions and the delete share one slot, so pressing
@@ -658,6 +680,9 @@ func _on_state_delete_requested(state_id: String) -> void:
 	for ui: CartridgeOptions2D in _uis():
 		ui.forget_thumb(StatePaths.shot_path(core, _rom(), state_id))
 	if StatePaths.delete_state(core, _rom(), state_id):
+		# The ledger goes too, or a state minted later at the same path would
+		# inherit this one's server id and PUT over a stranger's copy.
+		StateSync.forget(StatePaths.state_path(core, _rom(), state_id))
 		print("[CartridgeOptions] deleted save state %s" % state_id)
 	_populate()
 
@@ -676,6 +701,11 @@ func _on_state_captured(state_id: String, ok: bool, reason: String) -> void:
 	_state_busy = ""
 	if not is_instance_valid(self):
 		return
+	# Every state uploads as it is made — that is what "Back up saves and states"
+	# means. An overwrite PUTs over the copy this row already has on the server
+	# rather than uploading its name twice.
+	if ok:
+		StateSync.enqueue(SramPaths.core_for_systemid(_sysid()), _rom(), state_id, _rom_id())
 	# An overwrite writes a NEW picture to the SAME path, so the cache has to be
 	# told or the row keeps showing the frame it replaced.
 	var core := SramPaths.core_for_systemid(_sysid())
@@ -693,3 +723,35 @@ func _on_state_loaded(_state_id: String, ok: bool, reason: String) -> void:
 	if not ok:
 		push_warning("[CartridgeOptions] loading a save state failed: %s" % reason)
 	_populate()
+
+
+## The RomM half of the States tab: a status glyph moving, a listing landing, or
+## a pull finishing. All of them mean the same thing here — redraw.
+func _on_state_backup_changed(_key: String, _ok: bool, _detail: String) -> void:
+	if _showing():
+		_populate()
+
+
+func _on_state_backup_finished(key: String, ok: bool, detail: String) -> void:
+	if not ok:
+		push_warning("[CartridgeOptions] RomM: %s (%s)" % [detail, key])
+	if _showing():
+		_populate()
+
+
+func _on_states_listed(rom_id: int, ok: bool, states: Array, _detail: String) -> void:
+	if not ok or rom_id != _rom_id():
+		return
+	_server_states = states
+	if _showing():
+		_populate()
+
+
+## Pull a state the server has and this device does not. It arrives in the
+## normal local layout, after which it is an ordinary row.
+func _on_server_state_requested(state_id: String) -> void:
+	var core := SramPaths.core_for_systemid(_sysid())
+	for e: Variant in StateSync.server_only(core, _rom(), _server_states):
+		if str((e as Dictionary)["state_id"]) == state_id:
+			StateSync.download(core, _rom(), e as Dictionary)
+			return
