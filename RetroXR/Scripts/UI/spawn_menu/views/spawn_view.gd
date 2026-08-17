@@ -242,7 +242,7 @@ func _update_spawn_active_scroll(tab_idx: int) -> void:
 		and tab_idx >= 0 and tab_idx < _spawn_tabs.get_tab_count() else ""
 	if title == "Systems":
 		_update_systems_inner_scroll()
-	elif title == "Cartridges":
+	elif title == "Games":
 		_update_cartridges_inner_scroll()
 	elif tab_idx >= 0 and tab_idx < _spawn_tab_scrolls.size():
 		_active_scroll = _spawn_tab_scrolls[tab_idx]
@@ -300,7 +300,7 @@ func _build() -> void:
 
 	# Cartridges tab — drill-down browser, one tile per system
 	_cartridges_browser = SystemGridBrowser.new()
-	_cartridges_browser.name = "Cartridges"
+	_cartridges_browser.name = "Games"
 	_cartridges_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	# These tiles stand for the media, not the machine, so show the cartridge.
 	_cartridges_browser.use_content_art = true
@@ -423,7 +423,7 @@ func _build() -> void:
 	tabs.tab_changed.connect(func(idx: int):
 		match tabs.get_tab_title(idx):
 			"Systems": _populate_systems_tab()
-			"Cartridges": _populate_cartridges_tab()
+			"Games": _populate_cartridges_tab()
 			"Books": _populate_books_tab()
 			"Videos": _populate_videos_tab()
 			"DVDs": _populate_dvds_tab()
@@ -584,6 +584,19 @@ func _populate_cartridges_tab() -> void:
 		if remote > 0 and mark != null:
 			s["badge_icon"] = mark
 			s["badge_count"] = remote
+			# What is already on this device, shown as the left half of the pair.
+			#
+			# From the cache manifest rather than the ROM folder: it is an
+			# in-memory walk with no disk I/O, and this runs once per platform on
+			# every repopulate — _local_by_name() would mean a synchronous
+			# directory scan per tile, and it counts gamelist.json and other
+			# sidecars that the detail list filters out again later.
+			#
+			# So the number means "downloaded from this server", not "files in the
+			# folder": a ROM copied in by hand is not counted. That is the reading
+			# the RomM mark above it promises.
+			if romm_cache != null:
+				s["badge_here"] = romm_cache.rom_ids_for_system(sid).size()
 
 	_mark_systems_without_a_core(systems)
 

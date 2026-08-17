@@ -28,6 +28,12 @@ signal grid_prefs_changed()
 const COLOR_TITLE      := Color(0.9,  0.9,  1.0)
 const COLOR_DESC       := Color(0.55, 0.55, 0.68)
 const COLOR_LICENSE    := Color(0.65, 0.65, 0.80)
+## The half of the corner badge that is already on this device. Green because
+## that is what green means everywhere else here — the firmware ticks, the
+## Installed labels — so a tile reads without a legend. Kept as a local constant
+## rather than MenuIcons.TINT_OK: this browser has no other dependency on the
+## menu's icon set and is the poorer for gaining one.
+const COLOR_BADGE_HERE := Color(0.62, 0.82, 0.66)
 const COLOR_TILE       := Color(0.14, 0.14, 0.28)
 const COLOR_TILE_HOVER := Color(0.24, 0.24, 0.46)
 ## The plate a tile carrying `"alt_tile": true` sits on — same weight as the
@@ -70,6 +76,12 @@ const COMPACT_INSET_PX := 10.0
 ## Source-badge mark in the tile's bottom-right corner.
 const BADGE_MARK_PX := 26.0
 ## Right margin the name column gives up so it cannot run under that badge.
+## One value, whether the badge shows one number or two. A wider reserve for the
+## pair cost the name column more than the badge gained: at 86 px names began
+## breaking mid-word — "Famico|m Disk", "GameC|ube" — because this label wraps
+## before it ellipsizes. The badge is an overlay growing leftward from the
+## corner and may reach a little past this line; the reserve only has to stop the
+## name running UNDER it, and the ellipsis lands well before that.
 const BADGE_RESERVE_PX := 52.0
 
 # ── State ──────────────────────────────────────────────────────────────────────
@@ -577,6 +589,10 @@ func _make_tile(s: Dictionary) -> Button:
 	var mark: Texture2D = s.get("badge_icon")
 	var mark_count := int(s.get("badge_count", 0))
 	var has_mark := mark != null and mark_count > 0
+	# -1, not 0: a host that sets no local count gets the single-number badge it
+	# always had, while a host that genuinely counted zero still shows "0 / N".
+	var mark_here := int(s.get("badge_here", -1))
+	var has_pair := has_mark and mark_here >= 0
 
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -654,13 +670,25 @@ func _make_tile(s: Dictionary) -> Button:
 		mark_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		corner.add_child(mark_rect)
 
-		var count_lbl := Label.new()
-		count_lbl.text = _compact_count(mark_count)
-		count_lbl.add_theme_font_size_override("font_size", 14)
-		count_lbl.add_theme_color_override("font_color", COLOR_LICENSE)
-		count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		corner.add_child(count_lbl)
+		if has_pair:
+			# "12 / 388" — how many are on this device, then how many the server
+			# has. Three labels rather than one RichTextLabel: a tile is rebuilt
+			# on every repopulate and there can be seventy of them, so this is
+			# three of the cheapest Control there is against a BBCode parse.
+			#
+			# The slash is white and the numbers are not, which is what lets the
+			# pair be read as one value at 14 px — the eye takes the bright pip in
+			# the middle as the divider and the two tints as the two halves.
+			var pair := HBoxContainer.new()
+			pair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			pair.alignment = BoxContainer.ALIGNMENT_CENTER
+			pair.add_theme_constant_override("separation", 0)
+			corner.add_child(pair)
+			pair.add_child(_badge_number(_compact_count(mark_here), COLOR_BADGE_HERE))
+			pair.add_child(_badge_number(" / ", Color.WHITE))
+			pair.add_child(_badge_number(_compact_count(mark_count), COLOR_LICENSE))
+		else:
+			corner.add_child(_badge_number(_compact_count(mark_count), COLOR_LICENSE))
 
 	_style_tile(btn, alt)
 	btn.pressed.connect(open_system.bind(sid))
@@ -688,6 +716,18 @@ static func _style_tile(btn: Button, alt: bool = false) -> void:
 ## True when this grid is drawing bare squares rather than labelled rows.
 func _compact() -> bool:
 	return allow_compact and AppPrefs.compact_tiles
+
+
+## One cell of the corner badge.
+static func _badge_number(text: String, color: Color) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return lbl
 
 
 ## 78911 in a 26 px corner is unreadable — 78.9k is not.
