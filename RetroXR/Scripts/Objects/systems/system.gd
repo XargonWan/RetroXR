@@ -2052,7 +2052,8 @@ func _after_core_started() -> void:
 	_update_power_button_visual()
 	_model.on_power_on()
 	# Learn whether this core exposes the disk-control interface (multi-disc
-	# swap); the command drains after retro_load_game, so the answer is real.
+	# swap). The emulation thread is only starting here, so this queues and is
+	# answered once the core is up.
 	_libretro.RequestDiskInfo()
 
 
