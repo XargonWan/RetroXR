@@ -54,6 +54,7 @@ func _ready() -> void:
 	await _test_save_upload_still_works()
 	await _test_state_overwrite_and_delete()
 	_test_state_server_only()
+	_test_state_restore()
 	await _test_http_stalls()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -1301,6 +1302,65 @@ func _test_state_server_only() -> void:
 
 	DirAccess.remove_absolute(mine)
 	DirAccess.remove_absolute(mine.get_base_dir())
+	sync.free()
+
+
+## Pulling a state down, and the bookkeeping that keeps it from being pushed
+## straight back up again.
+func _test_state_restore() -> void:
+	var sync := RommStateSync.new()
+	var cfg := RommConfig.new()
+	cfg.enabled = true
+	cfg.base_url = "http://127.0.0.1:1"
+	cfg.token = "x"
+	cfg.backup_enabled = true
+	sync.config = cfg
+	var core := "__state_selftest"
+	var rom := "selftest.nes"
+	var path := StatePaths.state_path(core, rom, _STATE_ID)
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string("pulled")
+	f.close()
+
+	# Fresh off the wire, before anything is recorded: the row must not claim to
+	# be backed up.
+	_eq("restore/an unrecorded state is not backed up", sync.status_for(path), "off")
+
+	# What _download_worker reports when a pull lands. Recording the server id is
+	# what stops the tab offering to upload a state it has just downloaded — and
+	# what lets a later overwrite PUT over the right copy instead of creating a
+	# second one.
+	sync._download_done(path, true, 99, "")
+	_eq("restore/a pulled state reads as backed up", sync.status_for(path), "on")
+	_eq("restore/against the server's own id",
+		int(sync.record_for(path).get("server_id", 0)), 99)
+	# And it is no longer offered as server-only, because the file now exists.
+	_eq("restore/and drops out of the server list",
+		sync.server_only(core, rom, [{"id": 99, "file_name": _STATE_ID + ".state",
+			"size": 6, "updated_at": "a", "screenshot_path": ""}]).size(), 0)
+
+	# A failed pull records nothing: a row that says "on" with no file behind it
+	# is worse than one that says nothing.
+	var missing := StatePaths.state_path(core, rom, "1787000000009-0b2c3d")
+	sync._download_done(missing, false, 0, "Connection lost")
+	_eq("restore/a failed pull claims nothing", sync.status_for(missing), "off")
+
+	# Deleting locally must drop the ledger entry, or a state minted later at the
+	# same path would inherit this server id and PUT over a stranger's copy.
+	sync.forget(path)
+	_eq("restore/deleting forgets the server id", sync.status_for(path), "off")
+
+	# With backup switched off the column goes away entirely rather than showing
+	# a stale "on" for every row.
+	sync._download_done(path, true, 99, "")
+	cfg.backup_enabled = false
+	_eq("restore/the switch hides the column", sync.status_for(path), "off")
+
+	sync._state.clear()
+	sync.save_state()
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(path.get_base_dir())
 	sync.free()
 
 

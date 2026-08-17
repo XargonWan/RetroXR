@@ -884,6 +884,15 @@ func _when(unix: int) -> String:
 		 "Nov", "Dec"][int(t["month"]) - 1]]
 
 
+## RomM's ISO 8601 timestamp as unix seconds, or 0. Its `updated_at` carries no
+## zone, and the server is normally the same box on the same LAN, so it is read
+## as local time rather than pretending to know better.
+func _unix_of(iso: String) -> int:
+	if iso.is_empty():
+		return 0
+	return int(Time.get_unix_time_from_datetime_string(iso))
+
+
 func _backup_word(backup_state: String, romm_available: bool) -> String:
 	if not romm_available:
 		return "on this device"
@@ -975,7 +984,10 @@ func _add_server_state_row(e: Dictionary) -> void:
 	lbl.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	lbl.add_theme_color_override("font_color", COLOR_ROW)
 	lbl.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
-	lbl.text = "    %s    %s" % [str(e.get("updated_at", "")).replace("T", "  ").left(19),
+	# Through _when(), like a local row: the server's ISO string trimmed to a
+	# fixed width lost its last digit ("21:14:0"), and two halves of one list
+	# reading in two different date formats is worse than either.
+	lbl.text = "    %s    %s" % [_when(_unix_of(str(e.get("updated_at", "")))),
 		MenuStyle.human_bytes(int(e.get("size", 0)))]
 	lbl.pressed.connect(func(): server_state_requested.emit(state_id))
 	row.add_child(lbl)
