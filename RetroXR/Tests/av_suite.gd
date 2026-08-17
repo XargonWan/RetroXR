@@ -48,6 +48,9 @@ class StubSource extends Node3D:
 
 
 var _case := ""
+## Set by a case that cannot run here (no core, no shell in this build). Anything
+## else that ends without asserting is an abort, not a pass.
+var _skipped := ""
 var _failed_cases := {}
 var _checks := 0
 var _spawned: Array[Node] = []
@@ -97,6 +100,7 @@ func _run() -> void:
 		["display/an empty input is blue", _d_empty],
 		["display/the aerial input on the wrong channel is snow", _d_rf_untuned],
 		["display/the aerial input on the right channel shows the machine", _d_rf_tuned],
+		["display/the afterglow does not carry over from the last machine", _d_no_ghost],
 		["display/a source's own stage shader is used", _d_stage],
 		["display/two sets get their own window of one picture", _d_stage_per_tv],
 		["guard/a host that is not shown is refused", _g_refused],
@@ -112,9 +116,22 @@ func _run() -> void:
 		if not only.is_empty() and not name.contains(only):
 			continue
 		_case = name
+		_skipped = ""
+		var before := _checks
 		await (c[1] as Callable).call()
 		await _teardown()
-		if not _failed_cases.has(name):
+		# A case that asserted NOTHING did not pass — it aborted. GDScript kills the
+		# coroutine on a bad property or a null call and the runner never hears, so
+		# an empty case used to be reported green. That is how a test survives the
+		# very change it was written to catch.
+		if _checks == before and _skipped.is_empty():
+			_failed_cases[name] = true
+			print("[av] FAIL  %s
+[av]         made no assertions — it aborted part way"
+				% name)
+		elif not _skipped.is_empty():
+			print("[av] SKIP  %s (%s)" % [name, _skipped])
+		elif not _failed_cases.has(name):
 			print("[av] PASS  %s" % name)
 
 	print("[av] %d checks, %d case(s) failed" % [_checks, _failed_cases.size()])
@@ -123,6 +140,11 @@ func _run() -> void:
 
 
 # ── Checks ────────────────────────────────────────────────────────────────────
+
+## Say why a case cannot run, rather than returning quietly.
+func _skip(why: String) -> void:
+	_skipped = why
+
 
 func _check(cond: bool, what: String) -> void:
 	_checks += 1
@@ -677,7 +699,7 @@ func _w_nes_rf() -> void:
 
 	var rf_out := nes.find_child("RfOut", true, false) as RcaPort
 	if rf_out == null:
-		print("[av]         (this build's NES has no RF panel — skipped)")
+		_skip("this build's NES has no RF panel")
 		return
 	await _lead([[0, _out_ports(nes)[0],
 		_input_ports(tv_comp, RetroTV.Source.COMPOSITE_1)[0]]])
@@ -799,6 +821,57 @@ func _d_rf_tuned() -> void:
 	await _wait(6)
 	_check_eq(_shown(tv), src.texture, "tuned to its channel, the machine appears")
 	_check(tv.can_paint(src), "and it counts as the shown input")
+
+
+## The tube's afterglow belongs to the picture that made it.
+##
+## The accumulator ping-pongs between two SubViewports and blends each frame with
+## what it already holds, and nothing ever cleared it: switch input, or reset a
+## machine, and the last picture bled back in — "I pressed reset on the PS1 and saw
+## the Wii for a moment, then the BIOS". Measured in pixels by
+## Tools/phosphor_ghost_probe.tscn (a quarter of the old picture on the first frame,
+## gone over eight); asserted here as the thing that decides it, since a headless
+## run has no renderer to accumulate anything.
+func _d_no_ghost() -> void:
+	var tv := _tv()
+	await _wait(30)
+	var first := StubSource.new()
+	first.texture = _a_texture(Color(1, 0, 0, 1))
+	await _seat_stub(tv, RetroTV.Source.COMPOSITE_1, first)
+	await _wait(8)
+	_check(tv._phosphor_fresh == 0, "the accumulator settles while one source runs")
+
+	var second := StubSource.new()
+	second.texture = _a_texture(Color(0, 1, 0, 1))
+	add_child(second)
+	_spawned.append(second)
+	tv._connected_systems[RetroTV.Source.COMPOSITE_2] = second
+	tv.set_source(RetroTV.Source.COMPOSITE_2)
+	await _wait(1)
+	_check(tv._phosphor_fresh > 0 or _prev_is(tv, second.texture),
+		"a new source starts with no history behind it")
+
+	# And the same when a machine restarts: its picture stops, then a new one
+	# arrives, and what the buffers hold in between is the OLD one.
+	await _wait(10)
+	second.texture = null
+	await _wait(6)
+	_check(tv._phosphor_fresh > 0, "a source that stops arms the accumulator")
+	second.texture = _a_texture(Color(0, 0, 1, 1))
+	await _wait(1)
+	_check(tv._phosphor_fresh > 0 or _prev_is(tv, second.texture),
+		"and the picture that comes back does not blend with the old one")
+
+
+## True when either accumulation buffer is blending against `tex` itself — which is
+## what "no history" looks like — rather than against the other buffer's contents.
+func _prev_is(tv: RetroTV, tex: Texture2D) -> bool:
+	for vp in [tv._phosphor_a, tv._phosphor_b]:
+		var rect := (vp as SubViewport).get_child(0) as ColorRect
+		if rect != null and rect.material is ShaderMaterial:
+			if (rect.material as ShaderMaterial).get_shader_parameter("prev") == tex:
+				return true
+	return false
 
 
 func _d_stage() -> void:
@@ -941,7 +1014,7 @@ func _a_no_display() -> void:
 	var ins := _input_ports(tv, RetroTV.Source.COMPOSITE_1)
 	var outs := _out_ports(sys)
 	if outs[0] == null:
-		print("[av]         (this cabinet wears a captive lead, not sockets — skipped)")
+		_skip("this cabinet wears a captive lead, not sockets")
 		return
 	await _lead([[0, outs[0], ins[0]], [1, outs[1], ins[1]], [2, outs[2], ins[2]]])
 	_check(sys._has_display(), "cabling it to a set gives it one")

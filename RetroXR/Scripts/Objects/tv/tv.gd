@@ -184,6 +184,14 @@ var _crt_params := {
 @onready var _phosphor_a: SubViewport = $PhosphorA
 @onready var _phosphor_b: SubViewport = $PhosphorB
 var _phosphor_write_a: bool = true
+## Frames for which the accumulator must ignore its own history, counted down one
+## per buffer because it ping-pongs between two and BOTH hold the old picture.
+##
+## Nothing used to reset it, so the decayed image of whatever was on the glass
+## before survived an input change, a machine being switched off and a reset —
+## reset a console on Composite 2 and the last thing Composite 1 was showing came
+## back for a moment before the BIOS did.
+var _phosphor_fresh: int = 0
 # The raw picture texture we wrapped, kept because _crt_material's source_tex is
 # replaced by the accumulator once persistence is running.
 var _crt_source_tex: Texture2D = null
@@ -907,6 +915,8 @@ func _show_sampled(mat: ShaderMaterial, tex: Texture2D) -> void:
 	if current == tex:
 		return
 	mat.set_shader_parameter("source_tex", tex)
+	# A different picture: the afterglow of the last one is not this one's history.
+	_phosphor_fresh = 2
 	# The fit does not survive a new source, and the scanline count is derived
 	# from the source's own resolution.
 	_apply_aspect()
@@ -945,6 +955,7 @@ func _is_sampling_material(mat: Material) -> bool:
 func _drop_sampled() -> void:
 	_crt_source_tex = null
 	_crt_derived_key = ""
+	_phosphor_fresh = 2
 
 
 ## One material per stage shader a source has asked for, kept because the uniforms
@@ -1011,7 +1022,13 @@ func _update_phosphor() -> void:
 	var rect := write.get_child(0) as ColorRect
 	var pm := rect.material as ShaderMaterial
 	pm.set_shader_parameter("src", _crt_source_tex)
-	pm.set_shader_parameter("prev", read.get_texture())
+	# A fresh source has no afterglow of its own yet, and the buffers still hold the
+	# last one's. Blend against the source itself until both have been written.
+	if _phosphor_fresh > 0:
+		_phosphor_fresh -= 1
+		pm.set_shader_parameter("prev", _crt_source_tex)
+	else:
+		pm.set_shader_parameter("prev", read.get_texture())
 	# Red decays slowest, blue fastest, so the afterglow goes warm as it fades.
 	pm.set_shader_parameter("decay", Vector3(amount, amount * 0.85, amount * 0.7))
 	# UPDATE_ONCE re-armed every frame, never UPDATE_ALWAYS — an ALWAYS render
