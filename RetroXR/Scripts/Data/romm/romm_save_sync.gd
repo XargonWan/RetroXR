@@ -46,6 +46,10 @@ var _current_key := ""
 ## behind a save being uploaded.
 var _list_thread: Thread = null
 var _list_busy := false
+## Polled by every worker between HTTP chunks. Whoever joins one of these threads
+## raises it first: a request left running answers to nothing else, so the join
+## would otherwise wait out the server's full timeout on the main thread.
+var _abort := false
 ## Local save path -> unix seconds of the last upload, for MIN_UPLOAD_GAP_SEC.
 var _last_upload: Dictionary = {}
 ## rom_path -> RomM rom_id (0 = not on the server). Resolved once per path;
@@ -103,14 +107,25 @@ func rom_id_for(systemid: String, rom_path: String) -> int:
 	return resolved
 
 
+## Both joins are unguarded — unlike _pump and the listing calls, which only ever
+## join a worker that has already run its last line — so the abort has to be
+## raised first or quitting mid-request hangs on the socket.
 func _exit_tree() -> void:
 	_queue.clear()
+	_abort = true
 	if _thread != null and _thread.is_started():
 		_thread.wait_to_finish()
 		_thread = null
 	if _list_thread != null and _list_thread.is_started():
 		_list_thread.wait_to_finish()
 		_list_thread = null
+	_abort = false
+
+
+## Passed to RommSaves so a request can be cut short. A plain bool read across
+## the thread boundary, matching RommCatalog and RommDownloader.
+func _aborting() -> bool:
+	return _abort
 
 
 # ── Per-save opt-in ───────────────────────────────────────────────────────────
@@ -326,10 +341,10 @@ func list_card_saves(systemid: String, callback: Callable) -> void:
 func _card_list_worker(platform_id: int, callback: Callable, base_url: String,
 					   headers: PackedStringArray) -> void:
 	var http := RommHttp.new()
-	if http.open(base_url) != RommHttp.Result.OK:
+	if http.open(base_url, _aborting) != RommHttp.Result.OK:
 		_list_done.call_deferred(callback, false, [])
 		return
-	var out := RommSaves.list_all(http, headers, platform_id)
+	var out := RommSaves.list_all(http, headers, platform_id, _aborting)
 	var rows: Array[Dictionary] = []
 	if bool(out["ok"]):
 		# One name lookup per distinct ROM, not per save: a card's worth of
@@ -340,7 +355,7 @@ func _card_list_worker(platform_id: int, callback: Callable, base_url: String,
 				continue
 			var rid := int(s["rom_id"])
 			if not names.has(rid):
-				names[rid] = RommSaves.rom_name(http, headers, rid)
+				names[rid] = RommSaves.rom_name(http, headers, rid, _aborting)
 			var row := s.duplicate()
 			row["rom_name"] = str(names[rid])
 			rows.append(row)
@@ -366,10 +381,10 @@ func fetch_card_save(save_id: int, callback: Callable) -> void:
 func _fetch_worker(save_id: int, callback: Callable, base_url: String,
 				   headers: PackedStringArray) -> void:
 	var http := RommHttp.new()
-	if http.open(base_url) != RommHttp.Result.OK:
+	if http.open(base_url, _aborting) != RommHttp.Result.OK:
 		_fetch_done.call_deferred(callback, false, PackedByteArray())
 		return
-	var got := RommSaves.download(http, headers, save_id)
+	var got := RommSaves.download(http, headers, save_id, _aborting)
 	http.close()
 	_fetch_done.call_deferred(callback, bool(got["ok"]), got["bytes"])
 
@@ -383,10 +398,10 @@ func _fetch_done(callback: Callable, ok: bool, bytes: PackedByteArray) -> void:
 func _list_worker(rom_id: int, callback: Callable, base_url: String,
 				  headers: PackedStringArray) -> void:
 	var http := RommHttp.new()
-	if http.open(base_url) != RommHttp.Result.OK:
+	if http.open(base_url, _aborting) != RommHttp.Result.OK:
 		_list_done.call_deferred(callback, false, [])
 		return
-	var out := RommSaves.list(http, headers, rom_id)
+	var out := RommSaves.list(http, headers, rom_id, _aborting)
 	http.close()
 	_list_done.call_deferred(callback, bool(out["ok"]), out["saves"])
 
@@ -515,11 +530,11 @@ func _worker(job: Dictionary) -> void:
 	var last_hash := str(rec.get("last_hash", ""))
 
 	var http := RommHttp.new()
-	if http.open(str(job["base_url"])) != RommHttp.Result.OK:
+	if http.open(str(job["base_url"]), _aborting) != RommHttp.Result.OK:
 		_done.call_deferred(job, "none", false, "Cannot reach RomM", {})
 		return
 
-	var listed := RommSaves.list(http, headers, int(job["rom_id"]))
+	var listed := RommSaves.list(http, headers, int(job["rom_id"]), _aborting)
 	if not bool(listed["ok"]):
 		http.close()
 		_done.call_deferred(job, "none", false, str(listed["error"]), {})
@@ -551,7 +566,7 @@ func _worker(job: Dictionary) -> void:
 				res.get("record", {}))
 
 		Action.PULL:
-			var got := RommSaves.download(http, headers, int(mine["id"]))
+			var got := RommSaves.download(http, headers, int(mine["id"]), _aborting)
 			http.close()
 			if not bool(got["ok"]):
 				_done.call_deferred(job, "pull", false, str(got["error"]), {})
@@ -563,7 +578,7 @@ func _worker(job: Dictionary) -> void:
 				{"last_hash": md5_of(got["bytes"]), "server_save_id": int(mine["id"])})
 
 		Action.CONFLICT:
-			var theirs := RommSaves.download(http, headers, int(mine["id"]))
+			var theirs := RommSaves.download(http, headers, int(mine["id"]), _aborting)
 			if not bool(theirs["ok"]):
 				http.close()
 				_done.call_deferred(job, "conflict", false, str(theirs["error"]), {})
@@ -597,10 +612,10 @@ func _worker_push_only(job: Dictionary) -> void:
 	var local_hash := md5_of(bytes)
 
 	var http := RommHttp.new()
-	if http.open(str(job["base_url"])) != RommHttp.Result.OK:
+	if http.open(str(job["base_url"]), _aborting) != RommHttp.Result.OK:
 		_done.call_deferred(job, "none", false, "Cannot reach RomM", {})
 		return
-	var listed := RommSaves.list(http, headers, int(job["rom_id"]))
+	var listed := RommSaves.list(http, headers, int(job["rom_id"]), _aborting)
 	if not bool(listed["ok"]):
 		http.close()
 		_done.call_deferred(job, "none", false, str(listed["error"]), {})

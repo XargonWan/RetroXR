@@ -323,7 +323,7 @@ func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: 
 	var expected_md5 := str(entry.get("md5_hash", "")).to_lower()
 
 	var http := RommHttp.new()
-	if http.open(args["base_url"]) != RommHttp.Result.OK:
+	if http.open(args["base_url"], func() -> bool: return _abort) != RommHttp.Result.OK:
 		return {"status": "transient", "error": "Could not reach the server"}
 
 	# Resume when a .part is already on disk.

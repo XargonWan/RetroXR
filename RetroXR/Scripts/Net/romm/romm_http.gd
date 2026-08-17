@@ -69,7 +69,11 @@ static func parse_url(base_url: String) -> Dictionary:
 
 
 ## Connect (or reconnect) to the server. Returns a Result.
-func open(base_url: String) -> int:
+##
+## `abort` is polled while connecting for the same reason the request loops poll
+## it: a server under load can take most of CONNECT_TIMEOUT_SEC just to accept,
+## and a caller waiting to join this thread should not have to sit through that.
+func open(base_url: String, abort: Callable = Callable()) -> int:
 	close()
 
 	var parts := parse_url(base_url)
@@ -94,6 +98,9 @@ func open(base_url: String) -> int:
 		if status != HTTPClient.STATUS_CONNECTING and status != HTTPClient.STATUS_RESOLVING:
 			close()
 			return Result.CONNECT_FAILED
+		if abort.is_valid() and abort.call():
+			close()
+			return Result.ABORTED
 		if Time.get_ticks_msec() > deadline:
 			close()
 			return Result.CONNECT_FAILED
@@ -159,7 +166,9 @@ func get_json(path: String, headers: PackedStringArray, abort: Callable = Callab
 		return {"result": sent["result"], "code": sent["code"], "data": null}
 
 	var code := int(sent["code"])
-	var raw := _read_body(abort)
+	# A caller patient enough to wait `timeout_sec` for headers is just as patient
+	# mid-body — the same slow query is what produces both.
+	var raw := _read_body(abort, timeout_sec)
 	if int(raw["result"]) != Result.OK:
 		return {"result": raw["result"], "code": code, "data": null}
 
@@ -246,7 +255,10 @@ func upload_multipart(method: int, path: String, headers: PackedStringArray,
 func download_to_file(path: String, headers: PackedStringArray, file: FileAccess,
 					  progress_cb: Callable = Callable(),
 					  abort: Callable = Callable()) -> Dictionary:
-	var sent := _send(HTTPClient.METHOD_GET, path, headers)
+	# `abort` covers the header wait too. A cancel raised while the server is
+	# still thinking is the likeliest moment for one, and a request that ignores
+	# it there stays deaf for the whole response timeout.
+	var sent := _send(HTTPClient.METHOD_GET, path, headers, "", abort)
 	if int(sent["result"]) != Result.OK:
 		return {"result": sent["result"], "code": sent["code"], "received": 0, "total": 0}
 
@@ -259,6 +271,10 @@ func download_to_file(path: String, headers: PackedStringArray, file: FileAccess
 	var total := _content_length(sent["headers"])
 	var received := 0
 	var last_report := 0
+	# Silence between chunks, not total transfer time: a 4 GB ROM legitimately
+	# takes many minutes, and capping the whole download would abandon a healthy
+	# one. Reset below on every chunk that lands.
+	var deadline := Time.get_ticks_msec() + int(RESPONSE_TIMEOUT_SEC * 1000.0)
 
 	while _client.get_status() == HTTPClient.STATUS_BODY:
 		if abort.is_valid() and abort.call():
@@ -267,6 +283,9 @@ func download_to_file(path: String, headers: PackedStringArray, file: FileAccess
 		_client.poll()
 		var chunk := _client.read_response_body_chunk()
 		if chunk.is_empty():
+			if Time.get_ticks_msec() > deadline:
+				return {"result": Result.TIMED_OUT, "code": code,
+					"received": received, "total": total}
 			OS.delay_msec(POLL_SLEEP_MS)
 			continue
 
@@ -275,6 +294,7 @@ func download_to_file(path: String, headers: PackedStringArray, file: FileAccess
 			return {"result": Result.WRITE_FAILED, "code": code, "received": received, "total": total}
 
 		received += chunk.size()
+		deadline = Time.get_ticks_msec() + int(RESPONSE_TIMEOUT_SEC * 1000.0)
 		# Throttle: a per-chunk deferred call would flood the main thread.
 		if progress_cb.is_valid() and (received - last_report) > 262144:
 			last_report = received
@@ -299,17 +319,27 @@ func head(path: String, headers: PackedStringArray) -> Dictionary:
 	}
 
 
-func _read_body(abort: Callable = Callable()) -> Dictionary:
+## `stall_sec` bounds SILENCE, not total transfer: the deadline resets on every
+## chunk that arrives, so a slow-but-moving body runs as long as it needs while a
+## server that stops mid-response is cut loose. A body loop with no deadline is
+## the one wait an unaborted caller can never leave — it pins the worker for as
+## long as the socket stays open, and with it anyone who joins that thread.
+func _read_body(abort: Callable = Callable(),
+		stall_sec: float = RESPONSE_TIMEOUT_SEC) -> Dictionary:
 	var body := PackedByteArray()
+	var deadline := Time.get_ticks_msec() + int(stall_sec * 1000.0)
 	while _client.get_status() == HTTPClient.STATUS_BODY:
 		if abort.is_valid() and abort.call():
 			return {"result": Result.ABORTED, "body": body}
 		_client.poll()
 		var chunk := _client.read_response_body_chunk()
 		if chunk.is_empty():
+			if Time.get_ticks_msec() > deadline:
+				return {"result": Result.TIMED_OUT, "body": body}
 			OS.delay_msec(POLL_SLEEP_MS)
 		else:
 			body.append_array(chunk)
+			deadline = Time.get_ticks_msec() + int(stall_sec * 1000.0)
 	return {"result": Result.OK, "body": body}
 
 

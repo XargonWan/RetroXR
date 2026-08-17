@@ -7,6 +7,11 @@
 ##
 ## Every call blocks, so all of this is worker-thread-only — same contract as
 ## RommHttp itself. RommSaveSync is the only caller and owns the thread.
+##
+## Every call takes an `abort` predicate, polled by RommHttp between chunks.
+## Passing one is what makes the worker joinable on demand: without it the call
+## runs to its own timeout no matter what the main thread wants, and a teardown
+## that joins the thread waits out the whole request.
 class_name RommSaves
 
 
@@ -40,11 +45,11 @@ static func from_schema(d: Dictionary) -> Dictionary:
 ## platform_id <= 0 asks for everything, which is only useful for diagnostics.
 ## Returns {ok: bool, saves: Array[Dictionary], error: String}.
 static func list_all(http: RommHttp, headers: PackedStringArray,
-					 platform_id: int = 0) -> Dictionary:
+					 platform_id: int = 0, abort: Callable = Callable()) -> Dictionary:
 	var path := "/api/saves"
 	if platform_id > 0:
 		path += "?platform_id=%d" % platform_id
-	var out: Dictionary = http.get_json(path, headers)
+	var out: Dictionary = http.get_json(path, headers, abort)
 	if int(out["result"]) != RommHttp.Result.OK:
 		return {"ok": false, "saves": [], "error": _describe(out)}
 	var saves: Array[Dictionary] = []
@@ -58,8 +63,9 @@ static func list_all(http: RommHttp, headers: PackedStringArray,
 
 
 ## A ROM's display name, or "" — used to say which game a save belongs to.
-static func rom_name(http: RommHttp, headers: PackedStringArray, rom_id: int) -> String:
-	var out: Dictionary = http.get_json("/api/roms/%d" % rom_id, headers)
+static func rom_name(http: RommHttp, headers: PackedStringArray, rom_id: int,
+					 abort: Callable = Callable()) -> String:
+	var out: Dictionary = http.get_json("/api/roms/%d" % rom_id, headers, abort)
 	if int(out["result"]) != RommHttp.Result.OK or not (out["data"] is Dictionary):
 		return ""
 	return str((out["data"] as Dictionary).get("name", ""))
@@ -67,8 +73,9 @@ static func rom_name(http: RommHttp, headers: PackedStringArray, rom_id: int) ->
 
 ## Every save the server holds for one ROM, newest first.
 ## Returns {ok: bool, saves: Array[Dictionary], error: String}.
-static func list(http: RommHttp, headers: PackedStringArray, rom_id: int) -> Dictionary:
-	var out: Dictionary = http.get_json("/api/saves?rom_id=%d" % rom_id, headers)
+static func list(http: RommHttp, headers: PackedStringArray, rom_id: int,
+				 abort: Callable = Callable()) -> Dictionary:
+	var out: Dictionary = http.get_json("/api/saves?rom_id=%d" % rom_id, headers, abort)
 	if int(out["result"]) != RommHttp.Result.OK:
 		return {"ok": false, "saves": [], "error": _describe(out)}
 
@@ -86,7 +93,8 @@ static func list(http: RommHttp, headers: PackedStringArray, rom_id: int) -> Dic
 
 ## Fetch one save's bytes.
 ## Returns {ok: bool, bytes: PackedByteArray, error: String}.
-static func download(http: RommHttp, headers: PackedStringArray, save_id: int) -> Dictionary:
+static func download(http: RommHttp, headers: PackedStringArray, save_id: int,
+					 abort: Callable = Callable()) -> Dictionary:
 	# Straight into memory rather than download_to_file: saves are small, and
 	# the caller has to hash the bytes before deciding where they go.
 	var tmp := FileAccess.open(_scratch_path(save_id), FileAccess.WRITE)
@@ -94,7 +102,7 @@ static func download(http: RommHttp, headers: PackedStringArray, save_id: int) -
 		return {"ok": false, "bytes": PackedByteArray(), "error": "Cannot write scratch file"}
 
 	var out: Dictionary = http.download_to_file(
-		"/api/saves/%d/content" % save_id, headers, tmp)
+		"/api/saves/%d/content" % save_id, headers, tmp, Callable(), abort)
 	tmp.close()
 
 	if int(out["result"]) != RommHttp.Result.OK:

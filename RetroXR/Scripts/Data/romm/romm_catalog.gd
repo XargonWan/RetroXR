@@ -587,7 +587,13 @@ func _sync_worker(args: Dictionary) -> void:
 	var is_delta := not updated_after.is_empty()
 
 	var http := RommHttp.new()
-	if http.open(args["base_url"]) != RommHttp.Result.OK:
+	var opened := http.open(args["base_url"], func() -> bool: return _abort)
+	if opened != RommHttp.Result.OK:
+		# Same contract as the page loop below: a cancelled sync is not a failure,
+		# and a cancel raised while the connection is still being made must not
+		# surface as one either.
+		if opened == RommHttp.Result.ABORTED or _abort:
+			return
 		_finish.call_deferred(systemid, false, 0, 0, "Could not reach the server")
 		return
 
@@ -811,7 +817,7 @@ func _fetch_page_with_retry(http: RommHttp, base_url: String, path: String,
 			http.close()
 			if not _sleep_abortable(PAGE_RETRY_BACKOFF_MS * attempt):
 				return {"result": RommHttp.Result.ABORTED, "code": 0, "data": null}
-			if http.open(base_url) != RommHttp.Result.OK:
+			if http.open(base_url, func() -> bool: return _abort) != RommHttp.Result.OK:
 				continue
 
 		resp = http.get_json(path, headers, func() -> bool: return _abort,
