@@ -95,6 +95,9 @@ var _romm_progress_pct: Dictionary = {}
 ## catalog scan thousands of times over one ROM — the same reason the row index
 ## below is resolved once.
 var _romm_dl_labels: Dictionary = {}
+## rom_id -> which attempt is running, 0 for the first. Shown on the progress bar
+## so a transfer that silently started over is visible as one.
+var _romm_dl_attempt: Dictionary = {}
 ## Row index of the in-flight download, resolved once when it starts.
 var _romm_dl_row_index: int = -1
 ## local_path -> {game, manual_path, has_manual}; binding hits the disk otherwise.
@@ -1302,12 +1305,33 @@ func _on_rom_delete_pressed(index: int, state: Button) -> void:
 	var systemid := _romm_detail_systemid
 	var fname := local_path.get_file()
 	var relative := RommCacheManifest.relative_path(systemid, local_path)
+
+	# Read BEFORE the ROM goes, because the artwork lookup keys on the ROM's own
+	# basename and the RomM cover on the server id. A hand-copied ROM has no
+	# catalog row and yields 0, which matches no cover — correct, it has none.
+	var catalog_index := int(model.get("index", -1))
+	var rom_id := romm_catalog.rom_id_at(catalog_index) if \
+		romm_catalog != null and catalog_index >= 0 else 0
+	var metadata := StorageCleanup.metadata_for_rom(systemid, relative, rom_id)
+
 	var removed_group := romm_cache != null \
 		and romm_cache.remove_for_file(systemid, relative) >= 0
 	if not removed_group and FileAccess.file_exists(local_path):
 		DirAccess.remove_absolute(local_path)
 
-	show_notice("Deleted %s" % fname, 2.5)
+	# Library row and artwork go with it. Saves deliberately do not: a game can be
+	# fetched again and a save cannot, so orphaned saves are surfaced by the
+	# Clean up sweep as their own explicitly-confirmed category instead.
+	var freed := StorageCleanup.purge_rom_metadata(systemid, relative, rom_id)
+	# The purge edited gamelist.json through its own manager, so this view's
+	# cached copy is now a frame behind the disk.
+	if gamelist_manager != null:
+		gamelist_manager.invalidate(systemid)
+
+	show_notice("Deleted %s%s" % [fname,
+		"" if metadata.is_empty() else " and %d metadata file%s (%s)" % [
+			metadata.size(), "" if metadata.size() == 1 else "s",
+			MenuStyle.human_bytes(freed)]], 2.5)
 	_romm_meta_cache.clear()
 	_invalidate_local_scan(systemid)
 	_rebuild_romm_rows()
@@ -1952,6 +1976,9 @@ func _on_romm_sync_aborted(systemid: String) -> void:
 
 func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
 	_romm_dl_labels[rom_id] = label
+	# A ROM tapped again after a failed run must not inherit that run's count.
+	_romm_dl_attempt[rom_id] = 0
+	notify_clear("romm:dl:%d:why" % rom_id)
 	notify("romm:dl:%d" % rom_id, "⬇", "%s · %s" % [label, MenuStyle.human_bytes(total_bytes)], 0.0)
 	# Resolved once; a scan per progress tick would be O(rows) on an 11k list.
 	_romm_dl_row_index = -1
@@ -1967,21 +1994,38 @@ func _on_romm_dl_started(rom_id: int, label: String, total_bytes: int) -> void:
 ## main thread; with an emulator running that reads as a hard freeze. Only act
 ## when the displayed percentage actually changes, and touch one row.
 func _on_romm_dl_progress(rom_id: int, received: int, total: int) -> void:
-	var frac := (float(received) / float(total)) if total > 0 else -1.0
+	# Clamped because the total is the catalog's size for the ROM, while the body
+	# may be a container the server generated around it — a few hundred bytes
+	# larger. "101%" reads as a bug in the bar rather than what it is.
+	var frac := clampf(float(received) / float(total), 0.0, 1.0) if total > 0 else -1.0
 	var pct := int(frac * 100.0) if frac >= 0.0 else 0
 	if int(_romm_progress_pct.get(rom_id, -1)) == pct:
 		return
 	_romm_progress_pct[rom_id] = pct
+	var attempt := int(_romm_dl_attempt.get(rom_id, 0))
 	notify("romm:dl:%d" % rom_id, "⬇",
-		"%s · %d%% · %s / %s" % [_romm_dl_label(rom_id), pct,
+		"%s%s · %d%% · %s / %s" % [_romm_dl_label(rom_id),
+			"" if attempt <= 0 else "  (attempt %d)" % attempt, pct,
 			MenuStyle.human_bytes(received), MenuStyle.human_bytes(total)], frac)
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.rebind_index(_romm_dl_row_index)
 
 
+## The reason gets a toast of its own, not the download's.
+##
+## A retry resumes within its backoff and the first progress tick lands 256 KB
+## later, which on a LAN is immediate — sharing the download's key meant the only
+## place the failure was ever named got overwritten before it could be read, and
+## a run that failed three times looked like one that simply stopped. This one
+## dwells like any other failure, beside the bar rather than on top of it.
 func _on_romm_dl_retrying(rom_id: int, attempt: int, max_attempts: int, reason: String) -> void:
+	_romm_dl_attempt[rom_id] = attempt
 	notify("romm:dl:%d" % rom_id, "⏳",
-		"%s — retry %d/%d: %s" % [_romm_dl_label(rom_id), attempt, max_attempts, reason], -1.0)
+		"%s — retry %d/%d" % [_romm_dl_label(rom_id), attempt, max_attempts], -1.0)
+	notify("romm:dl:%d:why" % rom_id, "⚠",
+		"%s — %s" % [_romm_dl_label(rom_id),
+			reason if not reason.is_empty() else "the transfer failed"],
+		-1.0, MenuToasts.DWELL_FAIL)
 
 
 ## What this download is fetching, for every bar after the first.
@@ -1998,6 +2042,10 @@ func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) ->
 		_romm_notify_or_queue(key, "❌", "%s — %s" % [_romm_dl_label(rom_id), error],
 			MenuToasts.DWELL_FAIL)
 	_romm_dl_labels.erase(rom_id)
+	_romm_dl_attempt.erase(rom_id)
+	# The final message names the same failure, so leaving the retry note up
+	# would say it twice.
+	notify_clear("romm:dl:%d:why" % rom_id)
 	_romm_dl_row_index = -1
 	_romm_meta_cache.clear()
 	_invalidate_local_scan()
@@ -2006,7 +2054,9 @@ func _on_romm_dl_finished(rom_id: int, ok: bool, path: String, error: String) ->
 
 func _on_romm_dl_cancelled(rom_id: int) -> void:
 	_romm_dl_labels.erase(rom_id)
+	_romm_dl_attempt.erase(rom_id)
 	notify_clear("romm:dl:%d" % rom_id)
+	notify_clear("romm:dl:%d:why" % rom_id)
 	_rebuild_romm_rows()
 
 

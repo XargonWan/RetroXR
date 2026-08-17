@@ -6,9 +6,14 @@
 ##   GET /api/firmware/{id}/content/{name}    download
 ##
 ## The list response carries no platform_id field — only `file_path`, which is
-## "bios/<platform slug>". Since the join we actually want is against the
-## filenames each .info declares, one unfiltered call is enough; filtering per
-## platform would mean one request per platform for no extra information.
+## "bios/<platform slug>". One unfiltered call is enough; filtering per platform
+## would mean one request per platform for no extra information.
+##
+## Two indexes, because cores declare their firmware two ways. Most name a file
+## ("scph5500.bin"), which joins on the basename. The PS2 cores name a FOLDER
+## ("pcsx2/bios") and never say what goes in it, so the only join left is the
+## platform: `file_path`'s trailing component is the server's fs_slug, which
+## RommPlatforms maps to a systemid.
 class_name RommFirmware
 extends Node
 
@@ -18,8 +23,10 @@ signal listed(ok: bool, count: int, error: String)
 
 var config: RommConfig = null
 
-## lowercase basename -> {id, file_name, size, md5}
+## lowercase basename -> {id, file_name, size, md5, systemid}
 var _by_name: Dictionary = {}
+## systemid -> [entry, ...], name-sorted
+var _by_system: Dictionary = {}
 var _loaded := false
 var _in_flight := false
 
@@ -42,6 +49,27 @@ func find(firmware_path: String) -> Dictionary:
 	if not _loaded:
 		return {}
 	return _by_name.get(firmware_path.get_file().to_lower(), {})
+
+
+## Everything the server holds for one project systemid, name-sorted.
+##
+## This is what a folder requirement gets offered: the core will take any of
+## them, so the choice is the user's.
+func find_for_system(systemid: String) -> Array:
+	if not _loaded or systemid.is_empty():
+		return []
+	return _by_system.get(systemid, [])
+
+
+## The platform folder a firmware entry sits in on the server.
+##
+## `file_path` is "bios/<fs_slug>" — the fs_slug is the folder the user named,
+## so it is fed to RommPlatforms as one. A path with no folder part yields "",
+## which maps to nothing rather than to whatever the bare filename resembles.
+static func platform_slug_from_path(file_path: String) -> String:
+	var p := file_path.replace("\\", "/").trim_suffix("/")
+	var cut := p.rfind("/")
+	return "" if cut < 0 else p.substr(cut + 1).to_lower().strip_edges()
 
 
 ## Request path for a firmware entry's content.
@@ -96,6 +124,9 @@ func refresh(force: bool = false) -> void:
 
 func _index(items: Array) -> void:
 	_by_name.clear()
+	_by_system.clear()
+	var overrides: Dictionary = config.platform_overrides if config != null else {}
+
 	for item: Variant in items:
 		if not (item is Dictionary):
 			continue
@@ -108,9 +139,26 @@ func _index(items: Array) -> void:
 		# which is the truth, rather than offering a download that 404s.
 		if bool(d.get("missing_from_fs", false)):
 			continue
-		_by_name[file_name.to_lower()] = {
+
+		var slug := platform_slug_from_path(str(d.get("file_path", "")))
+		var systemid := RommPlatforms.systemid_for({"fs_slug": slug}, overrides)
+
+		var entry := {
 			"id": int(d.get("id", 0)),
 			"file_name": file_name,
 			"size": int(d.get("file_size_bytes", 0)),
 			"md5": str(d.get("md5_hash", "")).to_lower(),
+			"systemid": systemid,
 		}
+		_by_name[file_name.to_lower()] = entry
+		if not systemid.is_empty():
+			if not _by_system.has(systemid):
+				_by_system[systemid] = []
+			(_by_system[systemid] as Array).append(entry)
+
+	# Sorted here, once, rather than in the view: the picker is rebuilt on every
+	# repaint and a server's own order is not one a person would pick from.
+	for sid: String in _by_system:
+		(_by_system[sid] as Array).sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return str(a["file_name"]).naturalnocasecmp_to(str(b["file_name"])) < 0
+		)

@@ -380,11 +380,14 @@ func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: 
 				return {"status": "transient", "error": "Server error (%d)" % code}
 			return {"status": "terminal", "error": "Server refused the download (%d)" % code}
 
-	# Transfer completed — verify before promoting the .part.
+	# ── Verify before promoting the .part ────────────────────────────────────
 	var got := _file_size(part)
-	if expected_size > 0 and got != expected_size:
-		return {"status": "restart",
-				"error": "Incomplete download (%s of %s)" % [_human_size(got), _human_size(expected_size)]}
+	var archive := _is_archive(part)
+
+	var verdict := verify_transfer(have, code, int(resp.get("total", 0)), got,
+		expected_size, archive)
+	if not verdict.is_empty():
+		return {"status": "restart", "error": verdict}
 
 	# RomM's md5_hash describes the ROM *content*, while fs_size_bytes describes
 	# the file as stored. For a ROM kept as a .zip those are different things —
@@ -393,11 +396,12 @@ func _attempt_download(args: Dictionary, entry: Dictionary, dest: String, part: 
 	# therefore never match, and every archived ROM would fail three retries and
 	# go terminal.
 	#
-	# Size is the authoritative check on what was transferred (it matched to the
-	# byte), so archives are verified on size here. Multi-file archives get their
-	# members' CRCs checked by the streaming extractor; an ordinary archive may be
-	# content in its own right for the selected core and must remain unopened.
-	if not expected_md5.is_empty() and not _is_archive(part):
+	# The response's own Content-Length is the authoritative check on what was
+	# transferred, so archives are verified on length in verify_transfer. Multi-file
+	# archives get their members' CRCs checked by the streaming extractor; an
+	# ordinary archive may be content in its own right for the selected core and
+	# must remain unopened.
+	if not expected_md5.is_empty() and not archive:
 		var sums := RomHasher.compute_checksums(part)
 		var md5 := str(sums.get("md5", "")).to_lower()
 		if not md5.is_empty() and md5 != expected_md5:
@@ -862,6 +866,65 @@ static func _file_size(path: String) -> int:
 	if f == null:
 		return 0
 	return f.get_length()
+
+
+## Did the bytes on disk arrive whole? Returns "" when they did, and the reason
+## they did not otherwise — the caller treats any reason as `restart`.
+##
+##   have          bytes already in the .part before this attempt
+##   code          HTTP status of this response
+##   served        this response's Content-Length, 0 when it sent none
+##   got           bytes in the .part now
+##   expected_size the catalog's fs_size_bytes for the ROM
+##   is_archive    the .part starts with zip/7z magic
+##
+## Two rules, in order.
+##
+## 1. The resume is a REQUEST, not a guarantee. Every attempt sends a Range
+##    header; a server that ignores it answers 200 with the WHOLE body, which
+##    lands appended onto the partial. `have + served` then equals the corrupt
+##    length, so no later check can tell. RomM streams a generated archive for a
+##    multi-file ROM and cannot serve a range of one, which makes this ordinary
+##    rather than an edge case: without the rule, one hiccup poisons every
+##    remaining attempt of only three.
+##
+## 2. What THIS response promised is the only authority on whether the body
+##    arrived whole — HTTPClient leaves STATUS_BODY both when a body ends and
+##    when the socket dies mid-stream, so a truncation looks like a clean finish.
+##    `fs_size_bytes` is NOT that authority: it describes the ROM as the server
+##    FILES it, and for a multi-file entry that is the sum of the members while
+##    the body is a zip wrapped around them, necessarily larger by its own
+##    headers. Comparing the two failed every such ROM at 100%, three times over,
+##    deleting the whole transfer each time. It is used only as a fallback, and
+##    only for a body that is the stored file: a streamed archive is left
+##    unchecked HERE, not unchecked — a truncated zip fails to open in
+##    _extract_multi, whose members are size- and CRC-verified by the extractor.
+static func verify_transfer(have: int, code: int, served: int, got: int,
+							expected_size: int, is_archive: bool) -> String:
+	if have > 0 and code == 200:
+		return "The server did not resume the download"
+
+	if served > 0:
+		var whole := have + served
+		if got != whole:
+			return "Incomplete download (%s)" % _size_pair(got, whole)
+		return ""
+
+	if expected_size > 0 and not is_archive and got != expected_size:
+		return "Incomplete download (%s)" % _size_pair(got, expected_size)
+	return ""
+
+
+## "3.1 GB of 3.3 GB", or exact bytes when rounding would print the same number
+## twice. A size check that fails by a few hundred bytes otherwise reports
+## "204 MB of 204 MB", which reads as a bug in the message rather than a real
+## mismatch — and that is precisely the size of a zip's own headers.
+static func _size_pair(got: int, want: int) -> String:
+	var a := _human_size(got)
+	var b := _human_size(want)
+	if a == b:
+		return "%d of %d bytes" % [got, want]
+	return "%s of %s" % [a, b]
 
 
 static func _human_size(bytes: int) -> String:

@@ -113,6 +113,102 @@ func add_or_merge_rom(systemid: String, game_data: Dictionary, rom_data: Diction
 		existing_game["roms"] = roms
 
 
+## Drop one ROM from the gamelist. Mutates the cache only — the caller saves,
+## matching add_or_merge_rom.
+##
+## `rom_path` may be absolute or already ROM-root-relative. Returns true when
+## something was removed.
+##
+## A game entry holds every regional/revision copy of one title, so removing the
+## last ROM removes the game with it: an entry with an empty `roms` array is a
+## title the library claims to have and cannot produce, which is exactly the
+## stale row this is meant to stop accumulating.
+func remove_rom(systemid: String, rom_path: String) -> bool:
+	var relative := rom_path
+	if rom_path.is_absolute_path() or rom_path.contains(":"):
+		relative = _to_relative_path(systemid, rom_path)
+	elif not relative.begins_with("./"):
+		relative = "./" + relative.replace("\\", "/").trim_prefix("./")
+	if relative.is_empty() or relative == "./":
+		return false
+
+	var gamelist := load_gamelist(systemid)
+	var games: Array = gamelist.get("games", [])
+	var removed := false
+
+	for gi in range(games.size() - 1, -1, -1):
+		var g: Dictionary = games[gi]
+		var roms: Array = g.get("roms", [])
+		var dropped_preferred := false
+		for ri in range(roms.size() - 1, -1, -1):
+			if str((roms[ri] as Dictionary).get("path", "")) != relative:
+				continue
+			dropped_preferred = dropped_preferred \
+				or bool((roms[ri] as Dictionary).get("preferred", false))
+			roms.remove_at(ri)
+			removed = true
+		if not removed:
+			continue
+		if roms.is_empty():
+			games.remove_at(gi)
+		elif dropped_preferred:
+			# get_preferred_rom falls back to roms[0] when no flag is set, but a
+			# set_preferred_rom later reads the flags, so leaving none set makes
+			# the choice depend on which reader asked.
+			(roms[0] as Dictionary)["preferred"] = true
+		break
+
+	return removed
+
+
+## Drop every entry whose ROM file is no longer on disk.
+## Mutates the cache only. Returns the relative paths removed.
+##
+## `keep` holds paths a caller knows are live even though the file check would
+## say otherwise — nothing uses it yet, but a scan that runs while a download is
+## promoting its .part would otherwise prune the row it is about to fill.
+func prune_missing(systemid: String, keep: Dictionary = {}) -> PackedStringArray:
+	var gone := PackedStringArray()
+	var gamelist := load_gamelist(systemid)
+	var games: Array = gamelist.get("games", [])
+
+	for gi in range(games.size() - 1, -1, -1):
+		var g: Dictionary = games[gi]
+		var roms: Array = g.get("roms", [])
+		var lost_preferred := false
+		for ri in range(roms.size() - 1, -1, -1):
+			var rel := str((roms[ri] as Dictionary).get("path", ""))
+			if rel.is_empty() or keep.has(rel):
+				continue
+			var absolute := to_absolute_path(systemid, rel)
+			# An unresolvable path is a broken row, not a present file: an
+			# absolute or traversing entry cannot be launched either way.
+			if not absolute.is_empty() and FileAccess.file_exists(absolute):
+				continue
+			lost_preferred = lost_preferred \
+				or bool((roms[ri] as Dictionary).get("preferred", false))
+			gone.append(rel)
+			roms.remove_at(ri)
+		if roms.is_empty():
+			games.remove_at(gi)
+		elif lost_preferred:
+			(roms[0] as Dictionary)["preferred"] = true
+
+	return gone
+
+
+## Every ROM-relative path the gamelist claims, for an orphan sweep that needs to
+## ask the question the other way round.
+func known_rom_paths(systemid: String) -> Dictionary:
+	var out: Dictionary = {}
+	for g: Dictionary in load_gamelist(systemid).get("games", []):
+		for r: Dictionary in g.get("roms", []):
+			var rel := str(r.get("path", ""))
+			if not rel.is_empty():
+				out[rel] = true
+	return out
+
+
 ## Find the game entry containing a ROM with the given path. Returns empty dict if not found.
 func get_game_for_rom(systemid: String, rom_path: String) -> Dictionary:
 	var relative := _to_relative_path(systemid, rom_path)

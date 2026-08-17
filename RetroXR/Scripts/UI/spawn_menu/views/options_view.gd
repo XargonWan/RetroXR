@@ -52,6 +52,17 @@ var _menu: Node = null
 
 var _server_address_label: Label = null
 var _romm_status_label: Label = null
+var _storage_usage_label: Label = null
+## The Storage page's last scan and which categories are ticked. Held rather than
+## rescanned on confirm, so what gets deleted is what was shown.
+var _cleanup_panel: VBoxContainer = null
+var _cleanup_found: Dictionary = {}
+var _cleanup_selected: Dictionary = {}
+## Both the scan and the removal run off the main thread — see the note above
+## _on_cleanup_scan_pressed. One at a time, and joined before the view goes.
+var _cleanup_thread: Thread = null
+var _cleanup_busy := false
+var _cleanup_scan_btn: Button = null
 ## "Sync all now" doubles as "Stop syncing" while anything is running.
 var _romm_sync_btn: Button = null
 ## Entries are {sid: String, full: bool}. One queue for the whole app: a second
@@ -139,6 +150,7 @@ func _build() -> void:
 
 	_build_general_options(_page("General"))
 	_build_system_filter_options(_page("Systems"))
+	_build_storage_options(_page("Storage"))
 	if OS.get_name() == "Android":
 		_build_file_server_options(_page("File Server"))
 	_build_romm_options(_page("RomM", MenuIcons.romm_mark()))
@@ -809,6 +821,309 @@ func _plate_chip(text: String, color: Color) -> Control:
 
 ## System Filter option — off shows the media players, test core and
 ## single-game cores that SystemFilter keeps out of the Download grid.
+# ── Storage ───────────────────────────────────────────────────────────────────
+#
+# Where everything lives, what it costs, and what nothing claims any more.
+#
+# On its own page rather than under BIOS / Extras, where this started: that tab
+# is built from the cores you have installed, so it lists no page at all for a
+# system without one, and a sweep that spans ROM artwork, library rows and save
+# folders has nothing to do with any single core. It is also not RomM's — the
+# leftovers it finds include ScreenScraper art and core settings — so it sits
+# beside the RomM page rather than inside it.
+
+func _build_storage_options(vbox: VBoxContainer) -> void:
+	vbox.add_child(MenuStyle.spacer(10))
+	vbox.add_child(MenuStyle.header("WHERE THINGS LIVE", 20))
+	_add_storage_path(vbox, "ROMs", RomLibrary.default_roms_root())
+	_add_storage_path(vbox, "Cores and saves", CoreDownloadManager.default_core_root())
+	_add_storage_path(vbox, "Books", RomLibrary.default_books_root())
+	_add_storage_path(vbox, "Videos", RomLibrary.default_videos_root())
+
+	_storage_usage_label = MenuStyle.label("", 15, MenuStyle.COLOR_DESC)
+	_storage_usage_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_storage_usage_label)
+	_refresh_storage_usage()
+
+	vbox.add_child(MenuStyle.spacer(16))
+	vbox.add_child(MenuStyle.header("CLEAN UP", 20))
+	vbox.add_child(MenuStyle.hint(
+		"Artwork, settings and library entries left behind by games and cores you "
+		+ "removed. Nothing is deleted until you choose it."))
+
+	var scan_row := MenuStyle.hbox(10)
+	_cleanup_scan_btn = Button.new()
+	_cleanup_scan_btn.text = "%s  Scan for leftovers" % String.chr(MenuIcons.SCRAPE)
+	_cleanup_scan_btn.add_theme_font_override("font", MenuIcons.symbols())
+	_cleanup_scan_btn.add_theme_font_size_override("font_size", 17)
+	_cleanup_scan_btn.custom_minimum_size = Vector2(280, 52)
+	_cleanup_scan_btn.pressed.connect(_on_cleanup_scan_pressed)
+	scan_row.add_child(_cleanup_scan_btn)
+	var pad := Control.new()
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scan_row.add_child(pad)
+	vbox.add_child(scan_row)
+
+	_cleanup_panel = VBoxContainer.new()
+	_cleanup_panel.add_theme_constant_override("separation", 4)
+	vbox.add_child(_cleanup_panel)
+
+
+func _add_storage_path(vbox: VBoxContainer, label_text: String, path: String) -> void:
+	var row := MenuStyle.hbox(10)
+	var name_lbl := MenuStyle.label(label_text, 16, MenuStyle.COLOR_TITLE)
+	name_lbl.custom_minimum_size = Vector2(220, 0)
+	row.add_child(name_lbl)
+	var path_lbl := MenuStyle.label(path, 15, MenuStyle.COLOR_LICENSE)
+	path_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	path_lbl.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	row.add_child(path_lbl)
+	vbox.add_child(row)
+
+
+func _refresh_storage_usage() -> void:
+	if _storage_usage_label == null or not is_instance_valid(_storage_usage_label):
+		return
+	var parts: Array[String] = []
+	if romm_cache != null and romm_config != null:
+		parts.append("%s of downloaded games cached, %.0f GB budget"
+			% [MenuStyle.human_bytes(romm_cache.total_bytes()), romm_config.cache_budget_gb])
+	var cores := 0
+	var dir := DirAccess.open(CoreDownloadManager.default_cores_dir())
+	if dir != null:
+		dir.list_dir_begin()
+		var fname := dir.get_next()
+		while fname != "":
+			if not dir.current_is_dir() \
+					and not CoreDownloadManager.core_name_from_lib_filename(fname).is_empty():
+				cores += 1
+			fname = dir.get_next()
+		dir.list_dir_end()
+	parts.append("%d core%s installed" % [cores, "" if cores == 1 else "s"])
+	_storage_usage_label.text = " · ".join(PackedStringArray(parts))
+
+
+# Both halves run on a worker thread, and both must.
+#
+# Measured on a 72-system library: the scan is ~160 ms, which is fourteen dropped
+# frames at 90 Hz — a visible judder in a headset, not a pause. Removing is far
+# worse: the same library offered 3,164 files to unlink, and that is seconds.
+#
+# StorageCleanup is static and shares nothing — each call builds its own
+# GamelistManager and RommCacheManifest — so the worker touches no state the main
+# thread can see. Results come back through call_deferred, and only the main
+# thread ever builds a Control.
+
+func _exit_tree() -> void:
+	# A Thread freed while running prints "destroyed without its completion having
+	# been realized" and leaves the worker writing into a freed view.
+	_join_cleanup_thread()
+
+
+func _join_cleanup_thread() -> void:
+	if _cleanup_thread != null:
+		if _cleanup_thread.is_started():
+			_cleanup_thread.wait_to_finish()
+		_cleanup_thread = null
+
+
+## Scan and render. Idempotent — pressing it again rescans, which is what you
+## want after removing a core.
+func _on_cleanup_scan_pressed() -> void:
+	if _cleanup_panel == null or _cleanup_busy:
+		return
+	# A live transfer's .part is indistinguishable from an abandoned one, and the
+	# sweep would offer to delete the download in progress.
+	var dl: Object = _menu.romm_downloader if _menu != null else null
+	if dl != null and dl.is_busy():
+		notify("cleanup", String.chr(MenuIcons.ERROR),
+			"Finish the download first — a running transfer looks like leftovers",
+			-1.0, MenuToasts.DWELL_FAIL)
+		return
+
+	_set_cleanup_busy(true)
+	_show_cleanup_status("Looking through your library…")
+	_join_cleanup_thread()
+	_cleanup_thread = Thread.new()
+	_cleanup_thread.start(_cleanup_scan_worker)
+
+
+func _cleanup_scan_worker() -> void:
+	_on_cleanup_scanned.call_deferred(StorageCleanup.scan())
+
+
+func _on_cleanup_scanned(found: Dictionary) -> void:
+	_set_cleanup_busy(false)
+	_cleanup_found = found
+	_cleanup_selected.clear()
+	# Everything safe starts ticked; saves never do. The user came here to clean
+	# up, so the safe set is the default — but nothing irreversible is opted in
+	# on their behalf.
+	for kind: String in StorageCleanup.SAFE_KINDS:
+		if _cleanup_found.has(kind):
+			_cleanup_selected[kind] = true
+	_rebuild_cleanup_panel()
+
+
+## A one-line placeholder in the results area while a worker runs, so the page
+## says what is happening rather than looking inert.
+func _set_cleanup_busy(busy: bool) -> void:
+	_cleanup_busy = busy
+	if _cleanup_scan_btn != null and is_instance_valid(_cleanup_scan_btn):
+		_cleanup_scan_btn.disabled = busy
+
+
+func _show_cleanup_status(text: String) -> void:
+	if _cleanup_panel == null or not is_instance_valid(_cleanup_panel):
+		return
+	for c in _cleanup_panel.get_children():
+		c.queue_free()
+	var lbl := MenuStyle.label("%s  %s" % [String.chr(MenuIcons.BUSY), text],
+		16, MenuIcons.TINT_BUSY)
+	lbl.add_theme_font_override("font", MenuIcons.symbols())
+	_cleanup_panel.add_child(lbl)
+
+
+func _rebuild_cleanup_panel() -> void:
+	for c in _cleanup_panel.get_children():
+		c.queue_free()
+
+	if _cleanup_found.is_empty():
+		_cleanup_panel.add_child(MenuStyle.label(
+			"Nothing to clean up — everything on disk is in use.", 16, MenuIcons.TINT_OK))
+		return
+
+	# A VRToggle, not a CheckBox — the same switch every other boolean row in
+	# OPTIONS uses. A bare CheckBox was both too small to read through a headset
+	# and wrong: it defaults to ACTION_MODE_BUTTON_PRESS, and every click inside a
+	# Viewport2DIn3D arrives as TWO presses, so each tap flipped it twice and left
+	# it exactly where it started. VRToggle is a release-mode Button, and its
+	# ON/OFF caption means the off state reads as plainly as the on state instead
+	# of being an empty square.
+	for kind: String in _cleanup_found:
+		var entry: Dictionary = _cleanup_found[kind]
+		var is_saves := kind == StorageCleanup.SAVES
+
+		var row := MenuStyle.hbox(10)
+		row.custom_minimum_size = Vector2(0, 62)
+
+		var lbl := MenuStyle.label("%s  —  %d item%s" % [str(entry["label"]),
+			int(entry["count"]), "" if int(entry["count"]) == 1 else "s"], 18,
+			# Saves read differently from the rest, and the colour is the only
+			# warning that survives being skim-read.
+			MenuIcons.TINT_WARN if is_saves else MenuStyle.COLOR_TITLE)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if is_saves:
+			lbl.tooltip_text = "Game progress. Once deleted it cannot be downloaded again."
+		row.add_child(lbl)
+
+		var size_lbl := MenuStyle.label(
+			String.humanize_size(int(entry["bytes"])), 16, MenuIcons.TINT_MUTED)
+		size_lbl.custom_minimum_size = Vector2(130, 0)
+		size_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		size_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(size_lbl)
+
+		row.add_child(VRToggle.create(bool(_cleanup_selected.get(kind, false)),
+			func(on: bool) -> void: _cleanup_selected[kind] = on))
+
+		# The scrollbar is 40 px and drawn over the content, so without this the
+		# switch sits underneath it — the same gutter every other list here keeps.
+		var gutter := Control.new()
+		gutter.custom_minimum_size = Vector2(44, 0)
+		gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(gutter)
+
+		_cleanup_panel.add_child(row)
+
+	var actions := MenuStyle.hbox(10)
+	actions.custom_minimum_size = Vector2(0, 56)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	actions.add_child(spacer)
+
+	var close := Button.new()
+	close.text = "Close"
+	close.custom_minimum_size = Vector2(140, 50)
+	close.add_theme_font_size_override("font_size", 17)
+	close.pressed.connect(func() -> void:
+		_cleanup_found.clear()
+		_cleanup_selected.clear()
+		_rebuild_cleanup_panel()
+		for c in _cleanup_panel.get_children():
+			c.queue_free())
+	actions.add_child(close)
+
+	var go := Button.new()
+	go.add_theme_font_override("font", MenuIcons.symbols())
+	go.add_theme_font_size_override("font_size", 17)
+	go.custom_minimum_size = Vector2(230, 50)
+	go.text = "%s  Delete selected" % String.chr(MenuIcons.DELETE_FOREVER)
+	go.add_theme_color_override("font_color", MenuIcons.TINT_DELETE)
+	go.pressed.connect(_on_cleanup_confirm)
+	actions.add_child(go)
+
+	var act_gutter := Control.new()
+	act_gutter.custom_minimum_size = Vector2(44, 0)
+	act_gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	actions.add_child(act_gutter)
+
+	_cleanup_panel.add_child(actions)
+
+
+func _on_cleanup_confirm() -> void:
+	if _cleanup_busy:
+		return
+	var kinds: Array = []
+	for kind: String in _cleanup_selected:
+		if bool(_cleanup_selected[kind]):
+			kinds.append(kind)
+	if kinds.is_empty():
+		notify("cleanup", String.chr(MenuIcons.ERROR), "Nothing selected",
+			-1.0, MenuToasts.DWELL_OK)
+		return
+
+	var total := 0
+	for kind: String in kinds:
+		total += int((_cleanup_found[kind] as Dictionary)["count"])
+
+	_set_cleanup_busy(true)
+	_show_cleanup_status("Removing %d item%s…" % [total, "" if total == 1 else "s"])
+	# The findings are handed to the worker by value so a repaint on this side
+	# cannot mutate what is being deleted halfway through.
+	var snapshot := _cleanup_found.duplicate(true)
+	_join_cleanup_thread()
+	_cleanup_thread = Thread.new()
+	_cleanup_thread.start(_cleanup_remove_worker.bind(snapshot, kinds))
+
+
+func _cleanup_remove_worker(found: Dictionary, kinds: Array) -> void:
+	var res := StorageCleanup.remove(found, kinds)
+	# Rescanned on the worker too, rather than assuming: a category may have been
+	# partly undeletable, and the panel would otherwise claim work it did not do.
+	res["found"] = StorageCleanup.scan()
+	_on_cleanup_removed.call_deferred(res)
+
+
+func _on_cleanup_removed(res: Dictionary) -> void:
+	_set_cleanup_busy(false)
+	notify("cleanup", String.chr(MenuIcons.CHECK),
+		"Removed %d item%s, freed %s" % [int(res["removed"]),
+			"" if int(res["removed"]) == 1 else "s",
+			String.humanize_size(int(res["freed"]))],
+		-1.0, MenuToasts.DWELL_OK)
+
+	_cleanup_found = res.get("found", {}) as Dictionary
+	_cleanup_selected.clear()
+	for kind: String in StorageCleanup.SAFE_KINDS:
+		if _cleanup_found.has(kind):
+			_cleanup_selected[kind] = true
+	_rebuild_cleanup_panel()
+	_refresh_storage_usage()
+
+
 func _build_system_filter_options(vbox: VBoxContainer) -> void:
 	vbox.add_child(MenuStyle.spacer(10))
 

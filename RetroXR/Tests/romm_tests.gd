@@ -24,8 +24,11 @@ var _fail := 0
 
 
 func _ready() -> void:
-	# A probe must never hang a headless run.
-	get_tree().create_timer(60.0).timeout.connect(func() -> void:
+	# A probe must never hang a headless run. The HTTP cases each cap their own
+	# wait as well, because this timer is a SceneTree timer: it only fires while
+	# the main loop is running, and a blocking call made ON the main thread would
+	# stop the very clock meant to catch it.
+	get_tree().create_timer(120.0).timeout.connect(func() -> void:
 		print("[test] TIMEOUT")
 		get_tree().quit(1))
 
@@ -33,9 +36,18 @@ func _ready() -> void:
 	_test_systemid_for()
 	_test_partition()
 	_test_collapse_by_systemid()
+	_test_firmware_index()
 	_test_stats_unchanged()
+	_test_verify_transfer()
 	_test_cache_paths()
 	_test_scan_roms()
+	_test_gamelist_removal()
+	_test_media_and_cleanup()
+	_test_cleanup_gate()
+	_test_cleanup_folder_as_file()
+	_test_gamelist_bad_paths()
+	_test_core_uninstall()
+	await _test_http_stalls()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -52,6 +64,13 @@ func _ok(name: String, cond: bool, detail: String = "") -> void:
 
 func _eq(name: String, got: Variant, want: Variant) -> void:
 	_ok(name, got == want, "got %s, want %s" % [str(got), str(want)])
+
+
+## Indexing an array that came out shorter than expected is a hard error, which
+## aborts the rest of the case function — so one broken assumption takes its
+## neighbours' results with it and the run reports fewer cases, not failures.
+func _at(arr: Array, i: int) -> Dictionary:
+	return arr[i] as Dictionary if i >= 0 and i < arr.size() else {}
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +185,81 @@ func _test_collapse_by_systemid() -> void:
 
 
 # ---------------------------------------------------------------------------
+# RommFirmware — the two indexes over the server's firmware list.
+#
+# The PS2 BIOS shipped invisible: both PS2 cores declare a FOLDER ("pcsx2/bios")
+# rather than a filename, so the by-name join had nothing to match and 68 files
+# sitting on the server were never offered. The platform index is the fix, and
+# `file_path` — which the indexer used to discard — is the only key it has.
+# ---------------------------------------------------------------------------
+
+func _test_firmware_index() -> void:
+	_eq("fw/slug from path", RommFirmware.platform_slug_from_path("bios/ps2"), "ps2")
+	_eq("fw/slug trailing slash", RommFirmware.platform_slug_from_path("bios/ps2/"), "ps2")
+	_eq("fw/slug backslashes", RommFirmware.platform_slug_from_path("bios\\ps2"), "ps2")
+	_eq("fw/slug cased", RommFirmware.platform_slug_from_path("bios/PS2"), "ps2")
+	# A bare name is not a folder. Reading one as a slug would file every loose
+	# firmware under whatever platform its filename happened to resemble.
+	_eq("fw/slug needs a folder", RommFirmware.platform_slug_from_path("ps2"), "")
+	_eq("fw/slug empty", RommFirmware.platform_slug_from_path(""), "")
+
+	var fw := RommFirmware.new()
+	fw.config = RommConfig.new()
+	# _index and _loaded are reached into directly: the only public route to them
+	# is refresh(), which needs a server.
+	fw._index([
+		{"id": 7, "file_name": "ps2-0120a-20000902.bin", "file_path": "bios/ps2",
+			"file_size_bytes": 4194304, "md5_hash": "8DB2FBBAC7413BF3E7154C1E0715E565"},
+		{"id": 3, "file_name": "ps2-0100j-20000117.bin", "file_path": "bios/ps2",
+			"file_size_bytes": 4194304, "md5_hash": "acf4730ceb38ac9d8c7d8e21f2614600"},
+		{"id": 9, "file_name": "scph5500.bin", "file_path": "bios/psx",
+			"file_size_bytes": 524288, "md5_hash": ""},
+		# On the server's books but not on its disk — offering it would 404.
+		{"id": 11, "file_name": "ps2-0101j-20000217.bin", "file_path": "bios/ps2",
+			"file_size_bytes": 4194304, "missing_from_fs": true},
+		# An unmappable folder must not become its own bucket keyed on "".
+		{"id": 12, "file_name": "mystery.rom", "file_path": "bios/nonesuch",
+			"file_size_bytes": 1024},
+	])
+	fw._loaded = true
+
+	var ps2: Array = fw.find_for_system("playstation2")
+	_eq("fw/platform index size", ps2.size(), 2)
+	_eq("fw/name sorted", str(_at(ps2, 0).get("file_name", "")), "ps2-0100j-20000117.bin")
+	_eq("fw/other platform", fw.find_for_system("playstation").size(), 1)
+	_eq("fw/unmapped is not a bucket", fw.find_for_system("").size(), 0)
+	_eq("fw/no such system", fw.find_for_system("gamecube").size(), 0)
+
+	# The by-name index still works, and now carries the system with it.
+	var hit := fw.find("scph5500.bin")
+	_eq("fw/by name id", int(hit.get("id", 0)), 9)
+	_eq("fw/by name stamps systemid", str(hit.get("systemid", "")), "playstation")
+	# Declared nested and stored flat, cased differently — the shipped case.
+	_eq("fw/by name is basename+caseless",
+		int(fw.find("Machines/PS2-0120A-20000902.BIN").get("id", 0)), 7)
+
+	# md5 is compared against FileAccess.get_md5, which is lowercase.
+	_eq("fw/md5 lowercased", str(_at(ps2, 1).get("md5", "")),
+		"8db2fbbac7413bf3e7154c1e0715e565")
+
+	# A missing file is absent from BOTH indexes, not just the one it was
+	# filtered out of.
+	_eq("fw/missing from fs excluded by name",
+		fw.find("ps2-0101j-20000217.bin").is_empty(), true)
+
+	# Re-listing replaces; a server that lost a file must not keep serving it out
+	# of a stale platform bucket.
+	fw._index([
+		{"id": 3, "file_name": "ps2-0100j-20000117.bin", "file_path": "bios/ps2",
+			"file_size_bytes": 4194304},
+	])
+	_eq("fw/reindex replaces", fw.find_for_system("playstation2").size(), 1)
+	_eq("fw/reindex clears other platforms", fw.find_for_system("playstation").size(), 0)
+
+	fw.free()
+
+
+# ---------------------------------------------------------------------------
 # RommConfig — the "did the library move?" fingerprint.
 # ---------------------------------------------------------------------------
 
@@ -187,6 +281,70 @@ func _test_stats_unchanged() -> void:
 		var moved := stats.duplicate()
 		moved[key] = int(moved[key]) + 1
 		_ok("stats/%s move is seen" % key, not cfg.stats_unchanged(moved))
+
+
+# ---------------------------------------------------------------------------
+# RommDownloader.verify_transfer — is what landed on disk the whole body?
+#
+# The shipped bug: this compared the .part against the catalog's fs_size_bytes.
+# For a "folder as file" ROM the server has no such file to send and streams a
+# zip it builds around the members, which is larger than their sum by its own
+# headers — so the check could never pass, and a download that genuinely
+# finished was deleted and retried three times before going terminal. Reported
+# as "downloads to 100%, then fails, for all the retries".
+# ---------------------------------------------------------------------------
+
+func _test_verify_transfer() -> void:
+	var V: Callable = RommDownloader.verify_transfer
+
+	# A plain, complete file: the response's own length is what it is judged on.
+	_eq("verify/exact length ok", V.call(0, 200, 1000, 1000, 1000, false), "")
+	# Truncated. HTTPClient cannot distinguish this from a clean finish, so this
+	# check is the only thing that catches it.
+	_ok("verify/short body caught",
+		not V.call(0, 200, 1000, 940, 1000, false).is_empty())
+
+	# THE BUG: a generated zip is bigger than the ROM the catalog describes, and
+	# the server sent no length to check it against. It must still pass.
+	_eq("verify/streamed zip larger than fs_size_bytes",
+		V.call(0, 200, 0, 214223188, 214222438, true), "")
+	# And a raw streamed file with no length still falls back to fs_size_bytes.
+	_ok("verify/streamed raw file still checked",
+		not V.call(0, 200, 0, 940, 1000, false).is_empty())
+	_eq("verify/streamed raw file complete", V.call(0, 200, 0, 1000, 1000, false), "")
+
+	# A served length always wins over fs_size_bytes — a zip whose body length IS
+	# known must be judged on it, not on the members' sum.
+	_eq("verify/served length beats fs_size_bytes",
+		V.call(0, 200, 214223188, 214223188, 214222438, true), "")
+
+	# Resume honoured: 206, and have + served is the whole file.
+	_eq("verify/206 resume ok", V.call(400, 206, 600, 1000, 1000, false), "")
+	_ok("verify/206 resume short caught",
+		not V.call(400, 206, 600, 900, 1000, false).is_empty())
+
+	# Resume IGNORED: 200 with a partial already on disk means the whole body was
+	# appended onto it. have + served then equals the corrupt length, so nothing
+	# downstream can catch it — this rule is the only guard.
+	_ok("verify/range ignored caught", not V.call(400, 200, 1000, 1400, 1000, false).is_empty())
+	_eq("verify/range ignored names itself",
+		V.call(400, 200, 1000, 1400, 1000, false), "The server did not resume the download")
+	# Not a resume, so a 200 is simply the normal case.
+	_eq("verify/200 with no partial is fine", V.call(0, 200, 1000, 1000, 1000, false), "")
+
+	# Nothing to check against at all: no served length, no catalog size. Passing
+	# is the only option — failing here would block every unsized transfer.
+	_eq("verify/no oracle passes", V.call(0, 200, 0, 1234, 0, false), "")
+
+	# A mismatch that rounds to the same words must print exact bytes, or it
+	# reports "204 MB of 204 MB" and reads as a broken message rather than a real
+	# difference — which is exactly the scale a zip's headers add.
+	var near: String = V.call(0, 200, 214222438, 214223188, 0, false)
+	_ok("verify/near-miss reports exact bytes", near.contains("214223188")
+		and near.contains("214222438"), near)
+	# A difference big enough to render differently keeps the readable form.
+	var far: String = V.call(0, 200, 3300000000, 1100000000, 0, false)
+	_ok("verify/wide miss stays human", far.contains("GB"), far)
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +424,483 @@ func _test_scan_roms() -> void:
 
 	_rm_rf(dir_path)
 	_ok("scan/cleaned up", not DirAccess.dir_exists_absolute(dir_path))
+
+
+# ---------------------------------------------------------------------------
+# Deleting a game — what goes with it, and what must not.
+#
+# Deleting a ROM used to remove the bytes and nothing else: its library row, its
+# box art, its manual and its cached cover all stayed forever, because
+# GamelistManager had no removal API at all. These cover the removal rules and
+# the one boundary that matters — saves are NEVER swept with a game, since a ROM
+# can be downloaded again and a save cannot.
+#
+# Uses the same scratch system folder as the scan cases, removed at both ends.
+# ---------------------------------------------------------------------------
+
+func _test_gamelist_removal() -> void:
+	var dir_path := RomLibrary.rom_dir_for_system(TEST_SYSTEM)
+	_rm_rf(dir_path)
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	_touch(dir_path.path_join("Kept.z64"))
+
+	var gl := GamelistManager.new()
+	gl.invalidate(TEST_SYSTEM)
+	for entry: Array in [["Kept.z64", "keep"], ["Gone.z64", "drop"], ["Also.z64", "drop"]]:
+		gl.add_or_merge_rom(TEST_SYSTEM,
+			{"game_id": str(entry[1]), "name": str(entry[1])},
+			{"path": "./" + str(entry[0]), "romname": str(entry[0])})
+
+	# Absolute or relative, both must resolve to the same row.
+	_ok("del/remove by absolute path",
+		gl.remove_rom(TEST_SYSTEM, dir_path.path_join("Also.z64")))
+	_ok("del/removed row is gone", not gl.known_rom_paths(TEST_SYSTEM).has("./Also.z64"))
+	_ok("del/other rows untouched", gl.known_rom_paths(TEST_SYSTEM).has("./Kept.z64"))
+	_ok("del/removing twice is not an error", not gl.remove_rom(TEST_SYSTEM, "Also.z64"))
+	_ok("del/unknown rom refuses", not gl.remove_rom(TEST_SYSTEM, "Nonesuch.z64"))
+
+	# The "drop" game held two ROMs and one is left, so the game must survive.
+	var by_id := {}
+	for g: Dictionary in gl.load_gamelist(TEST_SYSTEM).get("games", []):
+		by_id[str(g.get("game_id", ""))] = g
+	_ok("del/game survives while a rom remains", by_id.has("drop"))
+	_eq("del/last rom standing", (by_id["drop"] as Dictionary).get("roms", []).size(), 1)
+
+	# Removing the last one takes the game with it: an entry the library claims
+	# and cannot produce is exactly the stale row this exists to stop.
+	_ok("del/remove the last rom", gl.remove_rom(TEST_SYSTEM, "Gone.z64"))
+	var ids := {}
+	for g: Dictionary in gl.load_gamelist(TEST_SYSTEM).get("games", []):
+		ids[str(g.get("game_id", ""))] = true
+	_ok("del/empty game entry removed", not ids.has("drop"), str(ids.keys()))
+
+	# prune_missing judges by the file, not by the row.
+	gl.add_or_merge_rom(TEST_SYSTEM, {"game_id": "ghost", "name": "ghost"},
+		{"path": "./Ghost.z64", "romname": "Ghost.z64"})
+	var pruned := gl.prune_missing(TEST_SYSTEM)
+	_ok("del/prune drops the missing", "./Ghost.z64" in pruned, str(pruned))
+	_ok("del/prune keeps what is on disk",
+		gl.known_rom_paths(TEST_SYSTEM).has("./Kept.z64"))
+
+	# The preferred flag must not be left on a row that is gone — get_preferred_rom
+	# falls back to roms[0], but set_preferred_rom reads the flags, so with none
+	# set the answer depends on which reader asks.
+	gl.invalidate(TEST_SYSTEM)
+	for n: String in ["A.z64", "B.z64"]:
+		_touch(dir_path.path_join(n))
+		gl.add_or_merge_rom(TEST_SYSTEM, {"game_id": "pref", "name": "pref"},
+			{"path": "./" + n, "romname": n})
+	_ok("del/remove the preferred copy", gl.remove_rom(TEST_SYSTEM, "A.z64"))
+	for g: Dictionary in gl.load_gamelist(TEST_SYSTEM).get("games", []):
+		if str(g.get("game_id", "")) == "pref":
+			_ok("del/preferred moves to a surviving rom",
+				bool(GamelistManager.get_preferred_rom(g).get("preferred", false)))
+
+	_rm_rf(dir_path)
+
+
+func _test_media_and_cleanup() -> void:
+	var dir_path := RomLibrary.rom_dir_for_system(TEST_SYSTEM)
+	_rm_rf(dir_path)
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	_touch(dir_path.path_join("Live.z64"))
+
+	var media := RomMedia.media_root(TEST_SYSTEM)
+	for rel: String in ["box/Live.png", "wheel/Live.jpg", "manual/Live.pdf",
+						"box/Dead.png", "label/Dead.png", "romm/4242_s.webp"]:
+		DirAccess.make_dir_recursive_absolute(media.path_join(rel).get_base_dir())
+		_touch(media.path_join(rel))
+
+	# Art is keyed on the ROM's basename and the extension is whatever the
+	# scraper was handed, so a composed path would miss the .jpg every time.
+	var live := RomMedia.scraped_for_rom(TEST_SYSTEM, "Live.z64")
+	_eq("media/finds every extension for one rom", live.size(), 3)
+	_ok("media/matches a rom-relative path",
+		RomMedia.scraped_for_rom(TEST_SYSTEM, "./sub/Live.cue").size() == 3)
+	_eq("media/unknown rom has none",
+		RomMedia.scraped_for_rom(TEST_SYSTEM, "Nothing.z64").size(), 0)
+
+	# The RomM cover is keyed on the server id instead, and the index has to say
+	# so or the sweep cannot tell the two schemes apart.
+	var index := RomMedia.index(TEST_SYSTEM)
+	_eq("media/index keys scraped art by basename",
+		str(index.get(media.path_join("box/Live.png"), "")), "Live")
+	_eq("media/index keys romm art by id",
+		str(index.get(media.path_join("romm/4242_s.webp"), "")), "romm:4242")
+	_eq("media/romm art found by id", RomMedia.romm_art_for_id(TEST_SYSTEM, 4242).size(), 1)
+	_eq("media/wrong id finds nothing", RomMedia.romm_art_for_id(TEST_SYSTEM, 1).size(), 0)
+
+	# A sweep must spare art whose ROM is still here and take the rest.
+	var found := StorageCleanup.scan()
+	var orphans := {}
+	for p: String in (found.get(StorageCleanup.MEDIA, {}) as Dictionary).get("paths", []):
+		orphans[p] = true
+	var sample := _sample(orphans)
+	_ok("cleanup/keeps art for a rom on disk",
+		not orphans.has(media.path_join("box/Live.png")), sample)
+	_ok("cleanup/finds art with no rom",
+		orphans.has(media.path_join("box/Dead.png")), sample)
+	_ok("cleanup/finds a cover with no download",
+		orphans.has(media.path_join("romm/4242_s.webp")), sample)
+
+	# THE boundary: saves are reported but never in the set a sweep may remove
+	# without being asked for them by name.
+	_ok("cleanup/saves are never swept by default",
+		not (StorageCleanup.SAVES in StorageCleanup.SAFE_KINDS))
+	_ok("cleanup/media is sweepable", StorageCleanup.MEDIA in StorageCleanup.SAFE_KINDS)
+
+	# purge_rom_metadata takes one ROM's art and leaves its neighbours'.
+	var freed := StorageCleanup.purge_rom_metadata(TEST_SYSTEM, "Live.z64", 0)
+	_ok("cleanup/purge reports bytes", freed >= 0)
+	_ok("cleanup/purge took the box art",
+		not FileAccess.file_exists(media.path_join("box/Live.png")))
+	_ok("cleanup/purge took the manual",
+		not FileAccess.file_exists(media.path_join("manual/Live.pdf")))
+	_ok("cleanup/purge left another rom's art alone",
+		FileAccess.file_exists(media.path_join("box/Dead.png")))
+	# It is metadata only — the ROM itself is the caller's to remove, and a purge
+	# that took the file would delete the game twice over.
+	_ok("cleanup/purge does not touch the rom",
+		FileAccess.file_exists(dir_path.path_join("Live.z64")))
+
+	_rm_rf(dir_path)
+	_ok("cleanup/cleaned up", not DirAccess.dir_exists_absolute(dir_path))
+
+
+## The category gate — the one rule in this feature that must never regress.
+##
+## Driven against a HAND-BUILT findings dict, never a real scan: calling
+## remove() with SAVES on whatever scan() found would delete the developer's own
+## orphaned saves the first time this suite ran. The gate is what is under test,
+## not the scanner, so the input is synthetic on purpose.
+func _test_cleanup_gate() -> void:
+	var dir_path := RomLibrary.rom_dir_for_system(TEST_SYSTEM)
+	_rm_rf(dir_path)
+	var art := RomMedia.media_root(TEST_SYSTEM).path_join("box/Sweepable.png")
+	var save_dir := dir_path.path_join("__fake_save")
+	_touch(art)
+	_touch(save_dir.path_join("game.srm"))
+
+	var found := {
+		StorageCleanup.MEDIA: {"label": "m", "count": 1, "bytes": 1, "paths": [art]},
+		StorageCleanup.SAVES: {"label": "s", "count": 1, "bytes": 1, "paths": [save_dir]},
+	}
+
+	var res := StorageCleanup.remove(found, StorageCleanup.SAFE_KINDS)
+	_ok("gate/sweeps the safe category", not FileAccess.file_exists(art))
+	_ok("gate/SAVES SURVIVES A DEFAULT SWEEP",
+		FileAccess.file_exists(save_dir.path_join("game.srm")))
+	_eq("gate/counts only what it removed", int(res["removed"]), 1)
+
+	# Named explicitly, it goes — and a directory goes with its contents.
+	StorageCleanup.remove(found, [StorageCleanup.SAVES])
+	_ok("gate/saves removed when asked for by name",
+		not DirAccess.dir_exists_absolute(save_dir))
+
+	# A category present in the findings but absent from `kinds` is untouched,
+	# which is what makes the checkboxes mean anything.
+	_touch(art)
+	StorageCleanup.remove(found, [StorageCleanup.SAVES])
+	_ok("gate/unnamed category untouched", FileAccess.file_exists(art))
+
+	_rm_rf(dir_path)
+
+
+## A "folder as file" game — a directory named Game.cue holding the cue and its
+## tracks, the layout ES-DE and RetroDECK use. The folder IS the ROM, so its art
+## must not be swept.
+func _test_cleanup_folder_as_file() -> void:
+	var dir_path := RomLibrary.rom_dir_for_system(TEST_SYSTEM)
+	_rm_rf(dir_path)
+	# The common shape: the folder and its launch file share a name.
+	_touch(dir_path.path_join("Disc Game.cue/Disc Game.cue"))
+	_touch(dir_path.path_join("Disc Game.cue/Disc Game.bin"))
+	# And the shape that actually tests the rule: a folder whose contents are
+	# named nothing like it, so ONLY the folder's own name can vouch for the art.
+	# Without it, the two cases above pass whether or not folders are recorded.
+	_touch(dir_path.path_join("Compilation.m3u/track01.bin"))
+	_touch(dir_path.path_join("Compilation.m3u/track02.bin"))
+
+	var media := RomMedia.media_root(TEST_SYSTEM)
+	_touch(media.path_join("box/Disc Game.png"))
+	_touch(media.path_join("box/Compilation.png"))
+	_touch(media.path_join("box/Vanished.png"))
+	# Art keyed on a file INSIDE the folder must survive too — the walk records
+	# the folder's own name and its contents.
+	_touch(media.path_join("label/Disc Game.png"))
+
+	var orphans := {}
+	for p: String in (StorageCleanup.scan().get(StorageCleanup.MEDIA, {}) as Dictionary
+			).get("paths", []):
+		orphans[p] = true
+	# The sweep sees the whole real library, so a failure would otherwise print
+	# every orphan on the disk — hundreds of lines nobody reads.
+	var sample := _sample(orphans)
+
+	_ok("folder/keeps art for a folder-as-file game",
+		not orphans.has(media.path_join("box/Disc Game.png")), sample)
+	_ok("folder/keeps art when only the folder name matches",
+		not orphans.has(media.path_join("box/Compilation.png")), sample)
+	_ok("folder/keeps art keyed on a member",
+		not orphans.has(media.path_join("label/Disc Game.png")), sample)
+	_ok("folder/still finds a real orphan beside it",
+		orphans.has(media.path_join("box/Vanished.png")), sample)
+
+	_rm_rf(dir_path)
+
+
+## A gamelist row whose path escapes the ROM root resolves to nothing. It must
+## read as missing and be pruned, not silently kept forever because the check
+## could not answer.
+func _test_gamelist_bad_paths() -> void:
+	var dir_path := RomLibrary.rom_dir_for_system(TEST_SYSTEM)
+	_rm_rf(dir_path)
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	_touch(dir_path.path_join("Real.z64"))
+
+	var gl := GamelistManager.new()
+	gl.invalidate(TEST_SYSTEM)
+	for bad: String in ["./../../etc/passwd", "./", "C:/Windows/system.ini"]:
+		gl.add_or_merge_rom(TEST_SYSTEM, {"game_id": bad, "name": bad},
+			{"path": bad, "romname": bad})
+	gl.add_or_merge_rom(TEST_SYSTEM, {"game_id": "ok", "name": "ok"},
+		{"path": "./Real.z64", "romname": "Real.z64"})
+
+	var pruned := gl.prune_missing(TEST_SYSTEM)
+	_ok("badpath/traversal pruned", "./../../etc/passwd" in pruned, str(pruned))
+	_ok("badpath/absolute pruned", "C:/Windows/system.ini" in pruned, str(pruned))
+	_ok("badpath/real rom kept", gl.known_rom_paths(TEST_SYSTEM).has("./Real.z64"))
+
+	_rm_rf(dir_path)
+
+
+## Uninstalling a core. Runs against the real cores directory because the path is
+## derived, not injectable — under a name nothing could ever ship as, and the
+## cores manifest is byte-restored afterwards: rewriting it round-trips through
+## JSON, and the user's real install is not this suite's to reformat.
+func _test_core_uninstall() -> void:
+	const FAKE := "__cleanup_selftest"
+	var cores_dir := CoreDownloadManager.default_cores_dir()
+	var manifest_path := CoreDownloadManager.default_manifest_dir().path_join(
+		"cores_manifest.json")
+
+	var backup := ""
+	var had_manifest := FileAccess.file_exists(manifest_path)
+	if had_manifest:
+		backup = FileAccess.get_file_as_string(manifest_path)
+
+	# The naming rules, driven with an explicit suffix list rather than this
+	# platform's. Desktop has ONE suffix, so a test that leaned on the live list
+	# could not tell "removes every variant" from "removes the only one" — it
+	# passed with the loop cut down to a single name.
+	var android := PackedStringArray(["_libretro_android", "_libretro"])
+	var both := CoreDownloadManager.core_lib_filenames(FAKE, android, ".so")
+	_eq("uninstall/android has two naming variants", both.size(), 2)
+	_eq("uninstall/canonical variant first", both[0], FAKE + "_libretro_android.so")
+	_eq("uninstall/round-trips the android name",
+		CoreDownloadManager.core_name_from_lib_filename(
+			FAKE + "_libretro_android.so", android, ".so"), FAKE)
+	_eq("uninstall/round-trips the bare name",
+		CoreDownloadManager.core_name_from_lib_filename(
+			FAKE + "_libretro.so", android, ".so"), FAKE)
+	_eq("uninstall/a non-core filename yields nothing",
+		CoreDownloadManager.core_name_from_lib_filename("readme.txt", android, ".so"), "")
+
+	var names := CoreDownloadManager.core_lib_filenames(FAKE)
+	_ok("uninstall/has a filename for this platform", names.size() > 0)
+	for n: String in names:
+		_touch(cores_dir.path_join(n))
+	# A stray file under a name uninstall must NOT touch, to prove the sweep is
+	# scoped to this core rather than to anything sharing its prefix.
+	var bystander := cores_dir.path_join(FAKE + "2" + names[0].trim_prefix(FAKE))
+	_touch(bystander)
+
+	var res := CoreDownloadManager.uninstall(FAKE)
+	_ok("uninstall/reports ok", bool(res["ok"]), str(res))
+	var left := 0
+	for n: String in names:
+		if FileAccess.file_exists(cores_dir.path_join(n)):
+			left += 1
+	_eq("uninstall/removes this platform's library", left, 0)
+	_ok("uninstall/leaves a similarly named core alone", FileAccess.file_exists(bystander))
+	DirAccess.remove_absolute(bystander)
+
+	# Uninstalling what is not there must fail rather than report success — the
+	# UI turns ok into "Removed X, N freed".
+	var again := CoreDownloadManager.uninstall(FAKE)
+	_ok("uninstall/absent core refuses", not bool(again["ok"]), str(again))
+	_ok("uninstall/absent core says why", not str(again["error"]).is_empty())
+	_ok("uninstall/empty name refuses", not bool(CoreDownloadManager.uninstall("")["ok"]))
+
+	# Nothing in the scene, so nothing can be using it.
+	_eq("uninstall/nothing is using a fake core",
+		CoreDownloadManager.systems_using(FAKE).size(), 0)
+	_eq("uninstall/an unnamed core is used by nothing",
+		CoreDownloadManager.systems_using("").size(), 0)
+
+	if had_manifest:
+		var f := FileAccess.open(manifest_path, FileAccess.WRITE)
+		if f:
+			f.store_string(backup)
+			f.close()
+	elif FileAccess.file_exists(manifest_path):
+		DirAccess.remove_absolute(manifest_path)
+	_ok("uninstall/manifest restored",
+		not had_manifest or FileAccess.get_file_as_string(manifest_path) == backup)
+
+
+## A readable slice of a set that may legitimately hold thousands of entries.
+func _sample(found: Dictionary, limit: int = 6) -> String:
+	var keys := found.keys()
+	var head: Array = keys.slice(0, mini(limit, keys.size()))
+	return "%d found, e.g. %s" % [keys.size(), str(head)]
+
+
+func _touch(path: String) -> void:
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_string("x")
+		f.close()
+
+
+# ---------------------------------------------------------------------------
+# RommHttp — what a stalled server does to the thread waiting on it.
+#
+# A RomM box that accepts the connection and then goes quiet froze the whole app:
+# the body loop had no deadline, so the worker sat on the socket indefinitely and
+# whoever joined that thread sat there with it. These drive a real socket that
+# behaves exactly that way, on loopback, with no RomM anywhere.
+# ---------------------------------------------------------------------------
+
+const _HEAD := "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n"
+const _BODY := '{"ok":true}'
+
+
+## A TCP server that accepts one connection and then does as it is told: a list
+## of [delay_ms, bytes] steps, followed by silence with the socket HELD OPEN.
+##
+## Holding it open is the whole point. A server that closes instead ends the
+## client's body loop by itself, and every case below would pass green without
+## the code under test contributing anything.
+class FakeServer extends RefCounted:
+
+	var port := 0
+	var _server := TCPServer.new()
+	var _thread := Thread.new()
+	var _stop := false
+
+	func start(steps: Array) -> bool:
+		for p in range(49500, 49560):
+			if _server.listen(p, "127.0.0.1") == OK:
+				port = p
+				break
+		if port == 0:
+			return false
+		_thread.start(_serve.bind(steps))
+		return true
+
+	func stop() -> void:
+		_stop = true
+		if _thread.is_started():
+			_thread.wait_to_finish()
+		_server.stop()
+
+	func _serve(steps: Array) -> void:
+		var peer: StreamPeerTCP = null
+		var give_up := Time.get_ticks_msec() + 5000
+		while peer == null and Time.get_ticks_msec() < give_up and not _stop:
+			if _server.is_connection_available():
+				peer = _server.take_connection()
+			else:
+				OS.delay_msec(5)
+		if peer == null:
+			return
+		peer.poll()
+		while peer.get_status() == StreamPeerTCP.STATUS_CONNECTING and not _stop:
+			OS.delay_msec(5)
+			peer.poll()
+
+		for step: Array in steps:
+			OS.delay_msec(int(step[0]))
+			var chunk: PackedByteArray = step[1]
+			if chunk.size() > 0:
+				peer.put_data(chunk)
+
+		while not _stop:
+			OS.delay_msec(10)
+		peer.disconnect_from_host()
+
+
+## One exchange against a scripted server, run on ITS OWN thread.
+##
+## The blocking call cannot go on the main thread: a body loop with no deadline
+## would pin _ready() itself, and a probe that hangs is worse than no probe —
+## nothing left running would ever report the failure. Off-thread, `cap_sec`
+## turns that same regression into a red line.
+##
+## Sentinel results, so a setup failure can never read as a pass:
+##   -1 could not listen   -2 could not connect   -3 still blocked at the cap
+func _probe(steps: Array, abort: Callable, timeout_sec: float,
+			cap_sec: float = 10.0) -> Dictionary:
+	var srv := FakeServer.new()
+	if not srv.start(steps):
+		return {"result": -1}
+
+	var box := {"out": {"result": -2}}
+	var url := "http://127.0.0.1:%d" % srv.port
+	var t := Thread.new()
+	t.start(func() -> void:
+		var http := RommHttp.new()
+		if http.open(url) == RommHttp.Result.OK:
+			box["out"] = http.get_json("/x", PackedStringArray(), abort, timeout_sec)
+		http.close())
+
+	var deadline := Time.get_ticks_msec() + int(cap_sec * 1000.0)
+	while t.is_alive() and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+
+	var stuck := t.is_alive()
+	# Dropping the server closes the socket, which is what lets a stuck call
+	# unwind far enough to be joined.
+	srv.stop()
+	t.wait_to_finish()
+	return {"result": -3} if stuck else box["out"]
+
+
+func _test_http_stalls() -> void:
+	# Positive control. The header wait always had a deadline, so this one passing
+	# says the fake server and the harness work; if it ever goes red, suspect them
+	# before suspecting RommHttp.
+	var silent: Dictionary = await _probe([], Callable(), 1.0)
+	_eq("http/a server that never answers times out",
+		int(silent["result"]), RommHttp.Result.TIMED_OUT)
+
+	# The freeze itself: headers arrive, three bytes of an eleven-byte body
+	# arrive, and then nothing ever does.
+	var half: Array = [[0, (_HEAD + "abc").to_utf8_buffer()]]
+	var stalled: Dictionary = await _probe(half, Callable(), 1.0)
+	_eq("http/a body that stops mid-stream times out",
+		int(stalled["result"]), RommHttp.Result.TIMED_OUT)
+
+	# Same stall, but the caller changes its mind first. A generous timeout so
+	# that reaching ABORTED proves the abort ended it and not the clock — this is
+	# what lets a teardown join the worker instead of waiting out the server.
+	var give_up := Time.get_ticks_msec() + 300
+	var aborted: Dictionary = await _probe(half,
+		func() -> bool: return Time.get_ticks_msec() > give_up, 30.0)
+	_eq("http/a stalled body answers the abort",
+		int(aborted["result"]), RommHttp.Result.ABORTED)
+
+	# The deadline bounds SILENCE, not total transfer. Six chunks 200 ms apart run
+	# 1.2 s against a 0.5 s budget and must all get through: a 4 GB ROM outruns
+	# any single timeout, so a total-duration cap would abandon healthy downloads.
+	var drip: Array = [[0, _HEAD.to_utf8_buffer()]]
+	for i in range(6):
+		drip.append([200, _BODY.substr(i * 2, 2).to_utf8_buffer()])
+	var slow: Dictionary = await _probe(drip, Callable(), 0.5)
+	_eq("http/a slow but moving body is not cut off",
+		int(slow["result"]), RommHttp.Result.OK)
 
 
 func _rm_rf(path: String) -> void:

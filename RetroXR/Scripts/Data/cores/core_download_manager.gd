@@ -366,6 +366,79 @@ func _parse_listing_html(html: String, suffixes := PackedStringArray(),
 # ---------------------------------------------------------------------------
 
 ## Returns one of: "Download", "Re-Download", "UPDATE", "BUSY"
+## Remove an installed core's library and forget it.
+##
+## Deliberately narrow: the .dll/.so and the manifest row, nothing else. A core's
+## system directory holds BIOS dumps the user may have spent real effort getting,
+## and its .opt file holds tuning — neither is re-downloadable the way the core
+## itself is, and both belong to the machine rather than to this binary. They are
+## offered separately by the cleanup sweep once nothing claims them.
+##
+## Returns {ok, freed, error}. `freed` is bytes reclaimed.
+static func uninstall(core_name: String) -> Dictionary:
+	if core_name.is_empty():
+		return {"ok": false, "freed": 0, "error": "No core named"}
+
+	var dir := default_cores_dir()
+	var freed := 0
+	var removed := 0
+	var last_error := ""
+
+	# Every naming variant, not just the canonical one: Android installs land as
+	# either `_libretro_android.so` or `_libretro.so` depending on what the
+	# buildbot served, and removing only the first leaves the core still loadable.
+	for filename: String in core_lib_filenames(core_name):
+		var path := dir.path_join(filename)
+		if not FileAccess.file_exists(path):
+			continue
+		var size := 0
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f != null:
+			size = int(f.get_length())
+			f.close()
+		if DirAccess.remove_absolute(path) == OK:
+			freed += size
+			removed += 1
+		else:
+			last_error = "Could not remove %s" % filename
+
+	if removed == 0:
+		return {"ok": false, "freed": 0,
+			"error": last_error if not last_error.is_empty() else "Core is not installed"}
+
+	# Only after the file is gone. A manifest that forgets a core still on disk
+	# reports it as downloadable and re-downloads over itself.
+	var mf := DownloadManifest.new()
+	mf.setup(default_manifest_dir())
+	mf.remove(core_name)
+
+	return {"ok": true, "freed": freed, "error": last_error}
+
+
+## Machines in the scene currently resolved to this core, by display name.
+##
+## A core is copied to a temp directory when it loads, so deleting the original
+## does not crash a running emulator — it fails the NEXT start, long after the
+## action that caused it, which is the worst possible time to find out.
+static func systems_using(core_name: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	if core_name.is_empty() or not Engine.get_main_loop() is SceneTree:
+		return out
+	var tree := Engine.get_main_loop() as SceneTree
+	for node: Node in tree.get_nodes_in_group("retro_system"):
+		if not is_instance_valid(node):
+			continue
+		# Duck-typed: system.gd resolves an empty core_name through CoreDefaults,
+		# so the property alone would miss every machine left on its default.
+		if not node.has_method("resolve_core_name"):
+			continue
+		if str(node.resolve_core_name()) != core_name:
+			continue
+		out.append(str(node.get("system_label")) if node.get("system_label") != null
+			else node.name)
+	return out
+
+
 func get_core_state(core_name: String, remote_date: String) -> String:
 	if is_queued(core_name):
 		return "BUSY"

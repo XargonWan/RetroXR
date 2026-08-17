@@ -2175,6 +2175,13 @@ func _netplay_eligible() -> bool:
 	return NetworkManager.netplay_capable(_resolve_core())
 
 
+## Which core this machine would actually load. Public because the core manager
+## has to ask before letting one be uninstalled, and `core_name` alone is not the
+## answer: a machine left on its default has it empty and resolves it here.
+func resolve_core_name() -> String:
+	return _resolve_core()
+
+
 func _resolve_core() -> String:
 	var c := core_name
 	if c.is_empty() and not systemid.is_empty():

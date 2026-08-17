@@ -106,6 +106,24 @@ func cancel_current() -> void:
 	_abort = true
 
 
+## Stop one job by key, whether it is running or still waiting.
+##
+## The fetch-all button queues dozens at once, and `cancel_current` on a row
+## whose turn has not come yet would abort a stranger's download instead. A
+## queued job never reached the worker, so it is dropped here and announced
+## directly — `_emit_cancelled` must not run for it: that clears `_current_key`
+## and pumps, which would strand the job actually in flight.
+func cancel(key: String) -> void:
+	if _current_key == key:
+		_abort = true
+		return
+	for i in range(_queue.size()):
+		if str(_queue[i]["key"]) == key:
+			_queue.remove_at(i)
+			job_cancelled.emit(key)
+			return
+
+
 func cancel_all() -> void:
 	_queue.clear()
 	_abort = true

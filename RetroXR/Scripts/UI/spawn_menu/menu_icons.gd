@@ -39,6 +39,8 @@ const MOVE      := 0xF04E1   # md-swap_horizontal — move a save to another car
 const SYNC_ON   := 0xF063F   # md-cloud_sync      — kept in step with RomM
 const SYNC_OFF  := 0xF0164   # md-cloud_off_outline — local only
 const UPDATE    := 0xF01B    # fa-circle_up       — installed, but newer on the buildbot
+const EXPAND    := 0xF0140   # md-chevron_down    — open a row's picker
+const COLLAPSE  := 0xF0143   # md-chevron_up      — close it again
 
 const TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
 const TINT_BUSY     := Color(1.00, 0.75, 0.25)
@@ -80,3 +82,22 @@ static func recommended_badge(font_size: int) -> Label:
 	lbl.add_theme_font_override("font", symbols())
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	return lbl
+
+
+## The core's own `is_experimental` flag, which 57 of the bundled .info files
+## set. Independent of the recommendation — a core can be the best available for
+## a system and still be work in progress, so both badges can show at once.
+static func experimental_badge(font_size: int) -> Label:
+	var lbl := MenuStyle.label("%s  Experimental" % String.chr(ERROR),
+		font_size, TINT_WARN)
+	lbl.add_theme_font_override("font", symbols())
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.tooltip_text = "The core's authors mark this one as experimental — expect bugs"
+	return lbl
+
+
+## Reads the flag off a parsed .info entry. Written unquoted in two of the
+## bundled files and quoted in the rest; the parser strips quotes, so both
+## arrive here as the bare word.
+static func is_experimental(info: Dictionary) -> bool:
+	return str(info.get("is_experimental", "false")).strip_edges().to_lower() == "true"

@@ -55,7 +55,18 @@ var _bios_cores_by_system: Dictionary = {}
 var _bios_row_cache: Dictionary = {}
 var _firmware_installer: FirmwareInstaller = null
 var _bios_job_buttons: Dictionary = {}
+## Core awaiting its second delete press, "" when nothing is armed. Cleared by a
+## rebuild rather than a timer — the row is redrawn on arm, so the armed glyph
+## and this are always written together.
+var _core_delete_armed := ""
+## "<core>|<firmware path>" awaiting its second delete press.
+var _bios_delete_armed := ""
 var _bios_refreshing := false
+var _bios_refresh_queued := false
+## "<core>|<folder path>" -> whether that folder's RomM picker is showing.
+## Deliberately outlives a rebuild: every install refreshes the whole tab, and a
+## picker that closed itself after each file would make choosing several a chore.
+var _bios_dir_open: Dictionary = {}
 
 ## Toast key -> what that job is fetching, remembered from job_started. Only the
 ## start carries the name, and every message after it is keyed to the same bar —
@@ -310,9 +321,79 @@ func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
 			_manager_browser.open_system(systemid)
 		)
 		row.add_child(opts_btn)
+		row.add_child(_build_core_delete_button(systemid, cn, entry["display_name"] as String))
 
 		vbox.add_child(row)
 		vbox.add_child(HSeparator.new())
+
+
+## Uninstall a core. Two presses, like deleting a ROM — a mis-tap here means
+## re-downloading tens of megabytes.
+##
+## The glyph is DELETE, never DELETE_FOREVER: a core is always on the buildbot,
+## which is the distinction those two pictograms carry everywhere else.
+func _build_core_delete_button(systemid: String, core_name: String,
+							   display_name: String) -> Button:
+	var armed := _core_delete_armed == core_name
+	var btn := Button.new()
+	btn.add_theme_font_override("font", MenuIcons.symbols())
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.custom_minimum_size = Vector2(64, 52)
+	btn.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.DELETE)
+	btn.add_theme_color_override("font_color",
+		MenuIcons.TINT_WARN if armed else MenuIcons.TINT_DELETE)
+	btn.tooltip_text = "Press again to remove this core" if armed \
+		else "Remove this core (its BIOS files and settings are kept)"
+
+	btn.pressed.connect(func() -> void:
+		# A core is copied to a temp dir when it loads, so removing it under a
+		# running machine does not crash — it fails that machine's NEXT start,
+		# which is far enough away that nobody connects it to this button.
+		var in_use := CoreDownloadManager.systems_using(core_name)
+		if not in_use.is_empty():
+			_core_delete_armed = ""
+			_romm_notify_or_queue("cores:delete", String.chr(MenuIcons.ERROR),
+				"%s is in use by %s" % [display_name, ", ".join(in_use)],
+				MenuToasts.DWELL_FAIL)
+			return
+
+		if not armed:
+			_core_delete_armed = core_name
+			_romm_notify_or_queue("cores:delete", String.chr(MenuIcons.ERROR),
+				"Press again to remove %s" % display_name, 3.0)
+			_manager_browser.open_system(systemid)
+			return
+
+		_core_delete_armed = ""
+		var res := CoreDownloadManager.uninstall(core_name)
+		if bool(res["ok"]):
+			# The default points at a core that is gone; leaving it would make
+			# every spawn of this system fail with nothing on screen to explain it.
+			if core_defaults.get_default_core(systemid) == core_name:
+				core_defaults.set_default_core(systemid, "")
+				core_defaults.save()
+				default_core_changed.emit(systemid, "")
+			_romm_notify_or_queue("cores:delete", String.chr(MenuIcons.CHECK),
+				"Removed %s (%s freed)" % [display_name,
+					String.humanize_size(int(res["freed"]))],
+				MenuToasts.DWELL_OK)
+		else:
+			_romm_notify_or_queue("cores:delete", String.chr(MenuIcons.ERROR),
+				"%s — %s" % [display_name, str(res["error"])], MenuToasts.DWELL_FAIL)
+		refresh_after_core_change()
+	)
+	return btn
+
+
+## Re-derive every tab that reads the cores directory. Installing or removing a
+## core changes the Download list's state, the Manager grid and the BIOS grid
+## alike, and a stale one of those is how a removed core keeps offering options.
+func refresh_after_core_change() -> void:
+	_populate_manager_tab()
+	if not _manager_browser.current_systemid().is_empty():
+		_manager_browser.open_system(_manager_browser.current_systemid())
+	_refresh_bios_soon()
+	refresh_download_systems()
 
 
 ## Option editor for one core, read out of the core file itself so it works before
@@ -615,13 +696,28 @@ func _on_firmware_finished(key: String, ok: bool, error: String) -> void:
 				error if not error.is_empty() else "install failed"],
 			MenuToasts.DWELL_FAIL)
 	_job_labels.erase(key)
-	refresh_bios_view()
+	_refresh_bios_soon()
 
 
 func _on_firmware_cancelled(key: String) -> void:
 	_bios_job_buttons.erase(key)
 	_job_labels.erase(key)
 	notify_clear(key)
+	_refresh_bios_soon()
+
+
+## One rebuild per frame, however many jobs report in it. Stopping a fetch-all
+## cancels every queued file at once, and a full rescan-and-redraw each time
+## froze the panel for as long as the list was.
+func _refresh_bios_soon() -> void:
+	if _bios_refresh_queued:
+		return
+	_bios_refresh_queued = true
+	_do_refresh_bios_soon.call_deferred()
+
+
+func _do_refresh_bios_soon() -> void:
+	_bios_refresh_queued = false
 	refresh_bios_view()
 
 
@@ -739,7 +835,9 @@ func _populate_bios_detail(systemid: String, vbox: VBoxContainer) -> void:
 			vbox.add_child(_build_bios_archive_row(cn, rows))
 
 		for r: Dictionary in rows:
-			vbox.add_child(_build_bios_row(r))
+			vbox.add_child(_build_bios_row(r, systemid))
+			if bool(r.get("is_dir", false)) and _bios_dir_is_open(cn, str(r.get("path", ""))):
+				vbox.add_child(_build_bios_picker(r, systemid))
 
 		vbox.add_child(HSeparator.new())
 
@@ -824,7 +922,7 @@ func _build_bios_archive_row(core_name: String, rows: Array[Dictionary]) -> Cont
 
 
 ## One firmware row: status glyph, path, description, and an Optional tag.
-func _build_bios_row(r: Dictionary) -> Control:
+func _build_bios_row(r: Dictionary, systemid: String) -> Control:
 	var status := int(r.get("status", FirmwareState.Status.PRESENT))
 	var optional: bool = bool(r.get("optional", true))
 
@@ -893,7 +991,7 @@ func _build_bios_row(r: Dictionary) -> Control:
 			MenuIcons.TINT_DELETE if status == FirmwareState.Status.MISSING_REQUIRED else MenuStyle.COLOR_LICENSE)
 	row.add_child(tag)
 
-	row.add_child(_build_bios_action(r))
+	row.add_child(_build_bios_action(r, systemid))
 
 	# The detail list scrolls, and its scrollbar is 40 px wide and drawn over the
 	# content — without this the tag sits underneath it.
@@ -910,7 +1008,7 @@ func _build_bios_row(r: Dictionary) -> Control:
 ## A cloud button when RomM is holding this file, and otherwise a plain note
 ## saying so — most declared BIOSes are console dumps no server redistributes,
 ## and a dead button on every one of them would read as broken.
-func _build_bios_action(r: Dictionary) -> Control:
+func _build_bios_action(r: Dictionary, systemid: String) -> Control:
 	var status := int(r.get("status", FirmwareState.Status.PRESENT))
 	var path := str(r.get("path", ""))
 
@@ -919,8 +1017,21 @@ func _build_bios_action(r: Dictionary) -> Control:
 	cell.alignment = BoxContainer.ALIGNMENT_END
 	cell.add_theme_constant_override("separation", 10)
 
-	if status == FirmwareState.Status.PRESENT or bool(r.get("is_dir", false)):
-		return cell
+	# A folder requirement names no file, so there is nothing to look up by name.
+	# It gets a picker over everything RomM holds for this system instead — and
+	# it keeps that picker once satisfied, because "the folder exists" is a much
+	# weaker thing to know than which dumps are in it.
+	if bool(r.get("is_dir", false)):
+		return _build_bios_dir_action(r, systemid, cell)
+
+	# A file that is here can be removed — the only reason to, and the reason this
+	# is worth having, is a MISMATCH: the classic wrong-region BIOS that the app
+	# can already see is wrong but previously had no way to get rid of.
+	if status == FirmwareState.Status.PRESENT or status == FirmwareState.Status.MISMATCH:
+		cell.add_child(_build_firmware_delete_button(
+			str(r.get("core_name", "")), path, str(r.get("dest", ""))))
+		if status == FirmwareState.Status.PRESENT:
+			return cell
 
 	var hit: Dictionary = romm_firmware.find(path) if romm_firmware != null else {}
 	if hit.is_empty():
@@ -979,6 +1090,411 @@ func _build_bios_action(r: Dictionary) -> Control:
 	)
 	cell.add_child(btn)
 	return cell
+
+
+# ── Folder requirements ───────────────────────────────────────────────────────
+#
+# The PS2 cores declare "pcsx2/bios", a directory, and never say what belongs in
+# it — any valid dump will do, and which one you want is a regional choice no
+# .info can make. Matching by filename is therefore impossible; the join that
+# does work is the platform, since RomM files its firmware under bios/<fs_slug>.
+
+## Everything the folder could hold: what RomM offers, plus what is already in
+## it that RomM has never heard of.
+##
+## The second half is what makes the picker a manager rather than a download
+## list. A BIOS dropped in by hand — which is how most people get one — was
+## invisible here and therefore undeletable, so the row could say "complete"
+## while holding a file the user wanted gone.
+##
+## Returns [{file_name, size, id, md5, on_server, here}], name-sorted.
+func _bios_dir_entries(r: Dictionary, systemid: String) -> Array:
+	var dir: String = FirmwareRequirements.destination(
+		str(r.get("core_name", "")), str(r.get("path", "")))
+
+	var out: Array = []
+	var seen: Dictionary = {}
+	var from_server: Array = romm_firmware.find_for_system(systemid) \
+		if romm_firmware != null else []
+	for e: Dictionary in from_server:
+		var name := str(e["file_name"])
+		seen[name.to_lower()] = true
+		var row := e.duplicate()
+		row["on_server"] = true
+		row["here"] = FileAccess.file_exists(dir.path_join(name))
+		out.append(row)
+
+	var d := DirAccess.open(dir)
+	if d != null:
+		d.list_dir_begin()
+		var fname := d.get_next()
+		while fname != "":
+			if not d.current_is_dir() and not fname.begins_with(".") \
+					and not seen.has(fname.to_lower()):
+				var f := FileAccess.open(dir.path_join(fname), FileAccess.READ)
+				var size := int(f.get_length()) if f != null else 0
+				if f != null:
+					f.close()
+				out.append({"file_name": fname, "size": size, "id": 0, "md5": "",
+					"on_server": false, "here": true})
+			fname = d.get_next()
+		d.list_dir_end()
+
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a["file_name"]).naturalnocasecmp_to(str(b["file_name"])) < 0)
+	return out
+
+
+## The folder row's own cell: a count and a toggle for the list underneath.
+func _build_bios_dir_action(r: Dictionary, systemid: String, cell: HBoxContainer) -> Control:
+	var entries := _bios_dir_entries(r, systemid)
+	if entries.is_empty():
+		var note := Label.new()
+		note.text = "Not on RomM" if _romm_ready() else ""
+		note.add_theme_font_size_override("font_size", 14)
+		note.add_theme_color_override("font_color", MenuIcons.TINT_MUTED)
+		note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cell.add_child(note)
+		return cell
+
+	var on_server := 0
+	var here := 0
+	for e: Dictionary in entries:
+		if bool(e["on_server"]):
+			on_server += 1
+		if bool(e["here"]):
+			here += 1
+
+	# The mark says the server is the source of some of these. It is dropped when
+	# none of them came from there, so a folder holding only hand-copied dumps
+	# does not claim a provenance it hasn't got.
+	var mark := MenuIcons.romm_mark() if on_server > 0 else null
+	if mark != null:
+		var mark_rect := TextureRect.new()
+		mark_rect.texture = mark
+		mark_rect.custom_minimum_size = Vector2(30, 30)
+		mark_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		mark_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mark_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		mark_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mark_rect.tooltip_text = "On your RomM server"
+		cell.add_child(mark_rect)
+
+	var open := _bios_dir_is_open(str(r.get("core_name", "")), str(r.get("path", "")))
+	var btn := Button.new()
+	btn.add_theme_font_override("font", MenuIcons.symbols())
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.custom_minimum_size = Vector2(110, 48)
+	btn.text = "%d  %s" % [entries.size(),
+		String.chr(MenuIcons.COLLAPSE if open else MenuIcons.EXPAND)]
+	btn.add_theme_color_override("font_color",
+		MenuIcons.TINT_OK if here > 0 else MenuIcons.TINT_DOWNLOAD)
+	btn.tooltip_text = "%d in this folder, %d available on RomM" % [here, on_server]
+	btn.pressed.connect(func() -> void:
+		_bios_dir_open[_bios_dir_key(str(r.get("core_name", "")), str(r.get("path", "")))] = not open
+		refresh_bios_view()
+	)
+	cell.add_child(btn)
+	return cell
+
+
+## The list itself, indented under its folder row: a fetch-all across the top,
+## then one row per file — what the server holds, and what is already installed.
+func _build_bios_picker(r: Dictionary, systemid: String) -> Control:
+	var entries := _bios_dir_entries(r, systemid)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 50)
+	margin.add_theme_constant_override("margin_bottom", 8)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	margin.add_child(box)
+
+	var path := str(r.get("path", ""))
+	var dir: String = FirmwareRequirements.destination(str(r.get("core_name", "")), path)
+
+	# Outstanding drives both the button's wording and what it queues, so it is
+	# computed once here rather than asked for twice.
+	var outstanding: Array = []
+	var outstanding_bytes := 0
+	var in_flight := 0
+	for e: Dictionary in entries:
+		# Already here, or here only — a hand-copied file has no id to fetch.
+		if bool(e["here"]) or not bool(e["on_server"]):
+			continue
+		outstanding.append(e)
+		outstanding_bytes += int(e["size"])
+		if _firmware_installer != null and _firmware_installer.is_queued(_bios_dir_job_key(path, str(e["file_name"]))):
+			in_flight += 1
+
+	box.add_child(_build_bios_picker_header(path, entries, outstanding, outstanding_bytes, in_flight))
+
+	for e: Dictionary in entries:
+		box.add_child(_build_bios_picker_row(e, str(r.get("core_name", "")), path, dir))
+
+	return margin
+
+
+func _build_bios_picker_header(path: String, entries: Array, outstanding: Array,
+							   outstanding_bytes: int, in_flight: int) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 48)
+
+	var here := 0
+	for e: Dictionary in entries:
+		if bool(e["here"]):
+			here += 1
+	var lbl := Label.new()
+	lbl.text = "%d in this folder · %d more on RomM" % [here, outstanding.size()]
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", MenuStyle.COLOR_DESC)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(lbl)
+
+	var btn := Button.new()
+	btn.add_theme_font_override("font", MenuIcons.symbols())
+	btn.add_theme_font_size_override("font_size", 16)
+	btn.custom_minimum_size = Vector2(230, 44)
+	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	if outstanding.is_empty():
+		btn.text = "All installed"
+		btn.disabled = true
+		btn.add_theme_color_override("font_color_disabled", MenuIcons.TINT_OK)
+	elif in_flight > 0:
+		btn.text = "%s  Stop %d" % [String.chr(MenuIcons.BUSY), in_flight]
+		btn.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
+		btn.tooltip_text = "Cancel the files queued for this folder"
+		btn.pressed.connect(func() -> void:
+			if _firmware_installer == null:
+				return
+			for e: Dictionary in outstanding:
+				_firmware_installer.cancel(_bios_dir_job_key(path, str(e["file_name"])))
+		)
+	else:
+		# The size is on the button and not in a tooltip: these are whole BIOS
+		# sets, and the PS2's is 68 files. Pressing it should not be a surprise.
+		btn.text = "%s  Get all %d  (%s)" % [String.chr(MenuIcons.DOWNLOAD),
+			outstanding.size(), String.humanize_size(outstanding_bytes)]
+		btn.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
+		btn.tooltip_text = "Download every file this system's folder is missing"
+		btn.pressed.connect(func() -> void:
+			var queued := 0
+			for e: Dictionary in outstanding:
+				if _enqueue_bios_dir_file(e, path):
+					queued += 1
+			if queued > 0:
+				# Every row's button has to redraw as queued, and the alternative
+				# is the header lying about what is happening.
+				refresh_bios_view()
+		)
+	row.add_child(btn)
+
+	var gutter := Control.new()
+	gutter.custom_minimum_size = Vector2(44, 0)
+	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gutter)
+
+	return row
+
+
+## One candidate file. Presence is the only status shown: the folder's contents
+## are unnamed by the .info, so there is no published md5 to disagree with.
+func _build_bios_picker_row(e: Dictionary, core_name: String, path: String,
+							dir: String) -> Control:
+	var file_name := str(e["file_name"])
+	var here := bool(e["here"])
+	var on_server := bool(e["on_server"])
+	var key := _bios_dir_job_key(path, file_name)
+	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, 44)
+
+	var glyph := Label.new()
+	glyph.add_theme_font_override("font", MenuIcons.symbols())
+	glyph.add_theme_font_size_override("font_size", 20)
+	glyph.custom_minimum_size = Vector2(30, 0)
+	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	glyph.text = String.chr(MenuIcons.CHECK if here else MenuIcons.DASH)
+	glyph.add_theme_color_override("font_color",
+		MenuIcons.TINT_OK if here else MenuIcons.TINT_MUTED)
+	row.add_child(glyph)
+
+	var name_lbl := Label.new()
+	name_lbl.text = file_name
+	name_lbl.add_theme_font_size_override("font_size", 17)
+	name_lbl.add_theme_color_override("font_color",
+		MenuStyle.COLOR_TITLE if here else MenuStyle.COLOR_LICENSE)
+	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(name_lbl)
+
+	var size_lbl := Label.new()
+	size_lbl.text = String.humanize_size(int(e["size"]))
+	size_lbl.add_theme_font_size_override("font_size", 14)
+	size_lbl.add_theme_color_override("font_color", MenuIcons.TINT_MUTED)
+	size_lbl.custom_minimum_size = Vector2(100, 0)
+	size_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	size_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(size_lbl)
+
+	var btn := Button.new()
+	btn.add_theme_font_override("font", MenuIcons.symbols())
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.custom_minimum_size = Vector2(100, 40)
+	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if running:
+		btn.text = String.chr(MenuIcons.BUSY)
+		btn.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
+		btn.tooltip_text = "Downloading — press to cancel"
+	elif here and not on_server:
+		# Dropped in by hand. There is nothing to re-fetch, and a button that
+		# looks pressable but cannot act is worse than no button.
+		btn.text = ""
+		btn.disabled = true
+		btn.flat = true
+		btn.tooltip_text = "Not on RomM — this copy came from somewhere else"
+	elif here:
+		# Still pressable, for the same reason the archive row is: re-fetching is
+		# how a bad dump gets repaired.
+		btn.text = String.chr(MenuIcons.RETRY)
+		btn.add_theme_color_override("font_color", MenuIcons.TINT_MUTED)
+		btn.tooltip_text = "Already in the folder — download again to replace it"
+	else:
+		btn.text = String.chr(MenuIcons.DOWNLOAD)
+		btn.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
+		btn.tooltip_text = "Download %s from RomM (%s)" % [
+			file_name, String.humanize_size(int(e["size"]))]
+	btn.pressed.connect(func() -> void:
+		if _firmware_installer == null:
+			return
+		if _firmware_installer.is_queued(key):
+			_firmware_installer.cancel(key)
+			return
+		_bios_job_buttons[key] = btn
+		if _enqueue_bios_dir_file(e, path):
+			btn.text = "0%"
+			btn.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
+	)
+	row.add_child(btn)
+
+	# Only a file that is actually here can be deleted, and the arming key is the
+	# file's own path inside the folder — arming on the folder row's key would
+	# arm every file in it at once.
+	if here:
+		row.add_child(_build_firmware_delete_button(
+			core_name, path.path_join(file_name), dir.path_join(file_name)))
+	else:
+		var pad := Control.new()
+		pad.custom_minimum_size = Vector2(64, 0)
+		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(pad)
+
+	var gutter := Control.new()
+	gutter.custom_minimum_size = Vector2(44, 0)
+	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gutter)
+
+	return row
+
+
+## Queue one file into every core's copy of this folder. False when it was
+## already queued, so a caller can count what it actually started.
+func _enqueue_bios_dir_file(e: Dictionary, path: String) -> bool:
+	if _firmware_installer == null or romm_config == null:
+		return false
+	var file_name := str(e["file_name"])
+	var key := _bios_dir_job_key(path, file_name)
+	if _firmware_installer.is_queued(key):
+		return false
+	var dests := _bios_dir_destinations_for(path, file_name)
+	if dests.is_empty():
+		return false
+	_firmware_installer.enqueue_file(
+		key, file_name, romm_config.base_url,
+		RommFirmware.content_path(int(e["id"]), file_name),
+		romm_config.auth_headers(), dests,
+		int(e["size"]), str(e["md5"]))
+	return true
+
+
+## Keyed on the folder and the file, never on a core: the fan-out below already
+## writes it to every core that declares the folder, so a per-core key would
+## queue the same download twice and have each one overwrite the other.
+static func _bios_dir_job_key(path: String, file_name: String) -> String:
+	return "bios:dir:%s:%s" % [path, file_name]
+
+
+static func _bios_dir_key(core_name: String, path: String) -> String:
+	return "%s|%s" % [core_name, path]
+
+
+func _bios_dir_is_open(core_name: String, path: String) -> bool:
+	return bool(_bios_dir_open.get(_bios_dir_key(core_name, path), false))
+
+
+## The same fan-out a named file gets, one level down inside the folder.
+func _bios_dir_destinations_for(path: String, file_name: String) -> Array[String]:
+	var dests: Array[String] = []
+	for d: String in _bios_destinations_for(path):
+		dests.append(d.path_join(file_name))
+	return dests
+
+
+## Remove one installed firmware file. Two presses, like every other delete here.
+##
+## Scoped to ONE core's copy, not to every core that declares the same file. The
+## fan-out on download is a convenience; the fan-out on delete would be a
+## surprise — removing a shared BIOS from the row you were looking at would
+## silently break three other cores.
+func _build_firmware_delete_button(core_name: String, path: String, dest: String) -> Button:
+	var key := _bios_dir_key(core_name, path)
+	var armed := _bios_delete_armed == key
+
+	var btn := Button.new()
+	btn.add_theme_font_override("font", MenuIcons.symbols())
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.custom_minimum_size = Vector2(64, 44)
+	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# DELETE_FOREVER, not DELETE: most BIOS dumps are not on any server, so for
+	# the usual case this really is the last copy the app can reach.
+	btn.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.DELETE_FOREVER)
+	btn.add_theme_color_override("font_color",
+		MenuIcons.TINT_WARN if armed else MenuIcons.TINT_DELETE)
+	btn.tooltip_text = "Press again to delete this file" if armed \
+		else "Delete this file from %s's system folder" % core_name
+
+	btn.pressed.connect(func() -> void:
+		if not armed:
+			_bios_delete_armed = key
+			_romm_notify_or_queue("bios:delete", String.chr(MenuIcons.ERROR),
+				"Press again to delete %s" % path.get_file(), 3.0)
+			refresh_bios_view()
+			return
+		_bios_delete_armed = ""
+		if not FileAccess.file_exists(dest):
+			refresh_bios_view()
+			return
+		if DirAccess.remove_absolute(dest) == OK:
+			# The status cache is keyed on size+mtime, and a path that comes back
+			# with the same two would otherwise read as the file we just removed.
+			FirmwareState.shared().invalidate(core_name, path)
+			FirmwareState.shared().save_cache()
+			_romm_notify_or_queue("bios:delete", String.chr(MenuIcons.CHECK),
+				"Deleted %s" % path.get_file(), MenuToasts.DWELL_OK)
+		else:
+			_romm_notify_or_queue("bios:delete", String.chr(MenuIcons.ERROR),
+				"Could not delete %s" % path.get_file(), MenuToasts.DWELL_FAIL)
+		refresh_bios_view()
+	)
+	return btn
 
 
 ## Every installed core that declares this exact firmware path wants its own
@@ -1277,8 +1793,13 @@ func _build_core_entry(systemid: String, core_name: String, remote_date: String,
 	name_lbl.clip_contents = true
 	left.add_child(name_lbl)
 
+	# Recommended first when a core is both: the pick for this system is the more
+	# useful fact, and the caveat reads as a qualifier under it rather than as a
+	# competing verdict.
 	if CoreRecommendations.is_recommended(systemid, core_name):
 		left.add_child(MenuIcons.recommended_badge(13))
+	if MenuIcons.is_experimental(info):
+		left.add_child(MenuIcons.experimental_badge(13))
 
 	if not info.is_empty():
 		left.add_child(MenuStyle.label(info.get("license", ""), 13, MenuStyle.COLOR_LICENSE))

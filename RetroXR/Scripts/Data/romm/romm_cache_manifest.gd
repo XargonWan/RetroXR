@@ -150,6 +150,24 @@ func total_bytes() -> int:
 	return sum
 
 
+## Server ids this system still holds a download for.
+##
+## The orphan sweep asks so a cached cover is only unlinked once the ROM it
+## belongs to is gone: cover art is keyed on the id, and a group whose files were
+## evicted for space will be downloaded again — throwing the art away with it
+## would mean re-fetching what is already on disk.
+func rom_ids_for_system(systemid: String) -> PackedInt64Array:
+	var out := PackedInt64Array()
+	for key: String in _entries:
+		var group: Dictionary = _entries[key]
+		if str(group.get("systemid", "")) != systemid:
+			continue
+		var rom_id := int(group.get("rom_id", 0))
+		if rom_id != 0:
+			out.append(rom_id)
+	return out
+
+
 func lru_keys() -> Array[String]:
 	var keys: Array[String] = []
 	for key: String in _entries:
