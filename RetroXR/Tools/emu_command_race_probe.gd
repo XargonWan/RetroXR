@@ -142,10 +142,42 @@ func _run() -> void:
 	_lib.StopContent()
 	await get_tree().create_timer(0.5).timeout
 
+	await _video_image()
 	await _sram_rewind()
 
 	print("[race] RESULT=%s" % ("FAIL" if _fail else "PASS"))
 	get_tree().quit(1 if _fail else 0)
+
+
+## F: the CPU-side frame a savestate thumbnail is cut from.
+##
+## GetVideoImage() hands back the buffer the texture was uploaded FROM, so a
+## thumbnail costs a memcpy instead of a GPU readback. It has to be a real frame
+## at the core's own resolution, and it has to be the SAME object frame after
+## frame — UpdateTexture refreshes it in place, which is exactly why anything
+## outliving the frame must duplicate it.
+func _video_image() -> void:
+	_phase = "F video image"
+	_lib.StartContent(root_dir, core, rom)
+	await _wait_core_frames(60)
+	var img: Image = _lib.GetVideoImage()
+	var tex: Texture2D = _lib.GetVideoTexture()
+	_check(img != null and not img.is_empty(), "the running core hands back a CPU-side frame")
+	if img == null or img.is_empty():
+		_lib.StopContent()
+		await get_tree().create_timer(1.0).timeout
+		return
+	print("[race]       %dx%d %s" % [img.get_width(), img.get_height(), img.get_format()])
+	_check(tex != null and img.get_size() == Vector2i(tex.get_size()),
+		"and it is the size of the texture the room samples")
+	# The alpha the thumbnail has to drop: cores draw opaque and never write it.
+	var px := img.get_pixel(img.get_width() / 2, img.get_height() / 2)
+	print("[race]       centre pixel a=%.2f (0 means the thumbnail must convert to RGB8)" % px.a)
+	await _wait_core_frames(30)
+	_check(_lib.GetVideoImage() == img, "and the next frame refreshes it in place")
+	_lib.StopContent()
+	await get_tree().create_timer(1.0).timeout
+	_check(_lib.GetVideoImage() == null, "a machine with no core hands back nothing")
 
 
 ## E: does the battery save survive a savestate load?
