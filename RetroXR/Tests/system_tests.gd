@@ -99,6 +99,9 @@ func _ready() -> void:
 	_test_belongs_here()
 	_test_core_resolution()
 	_test_forced_options_merge()
+	_test_state_paths()
+	_test_state_thumbnail()
+	_test_state_disk_round_trip()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -580,3 +583,138 @@ func _test_forced_options_merge() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(CoreOptionsStore.opt_dir(root)))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(root))
 	_ok("forced/cleaned up", not FileAccess.file_exists(path))
+
+
+# ---------------------------------------------------------------------------
+# Save states: the pure half — ids, paths, the thumbnail, and the disk round
+# trip. Capture needs a live core and lives in Tools/state_probe.tscn; what is
+# here is everything that decides WHERE a state goes and WHAT it looks like.
+# ---------------------------------------------------------------------------
+
+func _test_state_paths() -> void:
+	# The id is the row's identity and outlives every overwrite, so it has to be
+	# unique per capture and recognisable on sight.
+	var seen := {}
+	for i in range(200):
+		seen[StatePaths.mint_id()] = true
+	_eq("state/200 ids are 200 ids", seen.size(), 200)
+	var one := StatePaths.mint_id()
+	_ok("state/an id reads as one", StatePaths.is_state_id(one), one)
+	_ok("state/a stray file does not", not StatePaths.is_state_id("autosave"))
+	_ok("state/nor does a bare timestamp", not StatePaths.is_state_id("1787000000000"))
+	_ok("state/nor does a path traversal", not StatePaths.is_state_id("../../etc/passwd"))
+
+	# The three files are siblings sharing a basename: that is what lets delete
+	# find them without an index, and what lets an overwrite keep its picture.
+	var sp := StatePaths.state_path("fceumm", "C:/roms/nes/Game (USA).nes", one)
+	var shot := StatePaths.shot_path("fceumm", "C:/roms/nes/Game (USA).nes", one)
+	var meta := StatePaths.meta_path("fceumm", "C:/roms/nes/Game (USA).nes", one)
+	_eq("state/paths differ only by extension",
+		[sp.get_basename(), shot.get_basename(), meta.get_basename()],
+		[sp.get_basename(), sp.get_basename(), sp.get_basename()])
+	_eq("state/the state is a .state", sp.get_extension(), "state")
+	_ok("state/keyed by core", sp.contains("fceumm"), sp)
+	_ok("state/and by game", sp.contains("Game (USA)"), sp)
+	# Two cores running the same game keep separate folders — a state is only
+	# ever meaningful to the core that wrote it.
+	_ok("state/another core is another folder",
+		StatePaths.game_dir("nestopia", "C:/roms/nes/Game (USA).nes")
+			!= StatePaths.game_dir("fceumm", "C:/roms/nes/Game (USA).nes"))
+	# ...but the same game reached by a different path is the same folder, which
+	# is what lets a ROM be moved without losing its states.
+	_eq("state/the same game moved is the same folder",
+		StatePaths.game_dir("fceumm", "D:/elsewhere/Game (USA).nes"),
+		StatePaths.game_dir("fceumm", "C:/roms/nes/Game (USA).nes"))
+
+
+func _test_state_thumbnail() -> void:
+	# The core hands over RGBA8 with every pixel at alpha 0 — it draws opaque and
+	# never writes the channel. A thumbnail that keeps it saves a fully
+	# transparent rectangle, which is what this shipped as the first time.
+	var frame := Image.create(256, 224, false, Image.FORMAT_RGBA8)
+	frame.fill(Color(0.2, 0.6, 0.9, 0.0))
+	var thumb := StatePaths.thumbnail(frame)
+	_eq("thumb/alpha is dropped", thumb.get_format(), Image.FORMAT_RGB8)
+	_eq("thumb/the picture survives it",
+		thumb.get_pixel(thumb.get_width() / 2, thumb.get_height() / 2).a, 1.0)
+	# Downscale keeps the aspect: a 4:3 frame must not come back square.
+	_eq("thumb/scaled to the box", thumb.get_width(), StatePaths.THUMB_MAX_W)
+	_eq("thumb/aspect kept", thumb.get_height(), 168)
+	_ok("thumb/the source is left alone", frame.get_width() == 256
+		and frame.get_format() == Image.FORMAT_RGBA8)
+
+	# Never upscaled. Blowing a Game Boy frame up to fill the box only makes it
+	# blurry, and the row centres it instead.
+	var gb := Image.create(160, 144, false, Image.FORMAT_RGBA8)
+	gb.fill(Color(1, 1, 1, 0))
+	var small := StatePaths.thumbnail(gb)
+	_eq("thumb/a small frame is left at its size", small.get_size(), Vector2i(160, 144))
+
+
+func _test_state_disk_round_trip() -> void:
+	# A scratch core name, so this writes beside the player's real states without
+	# ever being able to collide with one.
+	var core := "__state_selftest"
+	var rom := "selftest.nes"
+	var dir := StatePaths.game_dir(core, rom)
+	if DirAccess.dir_exists_absolute(dir):
+		for f: String in DirAccess.get_files_at(dir):
+			DirAccess.remove_absolute(dir.path_join(f))
+
+	_eq("disk/nothing is listed to start", StatePaths.list_states(core, rom).size(), 0)
+
+	var id := StatePaths.mint_id()
+	var job := StatePaths.Job.new()
+	job.state_path = StatePaths.state_path(core, rom, id)
+	job.shot_path = StatePaths.shot_path(core, rom, id)
+	job.meta_path = StatePaths.meta_path(core, rom, id)
+	job.data = "the core".to_utf8_buffer()
+	job.shot = Image.create(64, 48, false, Image.FORMAT_RGBA8)
+	job.shot.fill(Color(1, 0, 0, 0))
+	job.frame = 4242
+	job.core = core
+	job.rom = rom
+	job.created_at = 1000
+	_eq("disk/the write reports no error", StatePaths.write_job(job), "")
+
+	var rows := StatePaths.list_states(core, rom)
+	_eq("disk/one state is listed", rows.size(), 1)
+	if rows.size() == 1:
+		_eq("disk/under its own id", rows[0]["state_id"], id)
+		_ok("disk/with its picture", not str(rows[0]["shot"]).is_empty())
+		_eq("disk/and its size", int(rows[0]["bytes"]), job.data.size())
+	var meta := StatePaths.read_meta(core, rom, id)
+	_eq("disk/the sidecar carries the frame", int(meta.get("frame", -1)), 4242)
+	_eq("disk/and the birthday", int(meta.get("created_at", -1)), 1000)
+
+	# Overwrite: the same id, new contents, and the birthday is NOT restamped —
+	# that is what makes a row behave like a slot rather than a new entry.
+	job.data = "a longer core image".to_utf8_buffer()
+	job.frame = 9999
+	job.created_at = 2000
+	_eq("disk/the overwrite reports no error", StatePaths.write_job(job), "")
+	_eq("disk/still one state", StatePaths.list_states(core, rom).size(), 1)
+	var meta2 := StatePaths.read_meta(core, rom, id)
+	_eq("disk/the frame moved on", int(meta2.get("frame", -1)), 9999)
+	_eq("disk/the birthday did not", int(meta2.get("created_at", -1)), 1000)
+	_ok("disk/updated_at is stamped", int(meta2.get("updated_at", 0)) > 0)
+
+	# Nothing half-written is ever offered: the promote is a rename, so a .part
+	# left behind by a crash is invisible to the list.
+	var stray := FileAccess.open(job.state_path + ".part", FileAccess.WRITE)
+	stray.store_string("half")
+	stray.close()
+	_eq("disk/a .part is not a state", StatePaths.list_states(core, rom).size(), 1)
+	DirAccess.remove_absolute(job.state_path + ".part")
+
+	_eq("disk/total_bytes counts the picture too", StatePaths.total_bytes(core, rom),
+		job.data.size() + NetFileTransfer.size_of(job.shot_path))
+
+	_ok("disk/delete succeeds", StatePaths.delete_state(core, rom, id))
+	_eq("disk/and the list is empty", StatePaths.list_states(core, rom).size(), 0)
+	_ok("disk/the picture went with it", not FileAccess.file_exists(job.shot_path))
+	_ok("disk/and the sidecar", not FileAccess.file_exists(job.meta_path))
+	_ok("disk/deleting it twice is not a success", not StatePaths.delete_state(core, rom, id))
+	_ok("disk/nor is deleting something that is not an id",
+		not StatePaths.delete_state(core, rom, "../../boot"))
+	DirAccess.remove_absolute(dir)
