@@ -2306,6 +2306,12 @@ func reset() -> void:
 	if not is_powered_on:
 		return
 	_model.play_reset()
+	# Re-assert the drive first. A machine coming back up should boot whatever is
+	# physically in its bay, and the core's tray is a mirror that can be left
+	# behind — a lid cycle the core did not hear about leaves it believing the
+	# tray is open, and then every reset lands in the BIOS menu until the machine
+	# is switched off and on again.
+	_sync_core_tray()
 	print("[RetroSystem] Resetting: rom=%s" % rom_path)
 	_libretro.RequestReset()
 
@@ -3010,13 +3016,18 @@ func _request_disk_op(op: int, path: String) -> void:
 		# The core-side state flips on the scheduled frame; the mirror updates
 		# via disk_control_ready then.
 		return
-	if op == 0:
+	if op == DISK_OP_EJECT:
 		_libretro.SetDiskEjectState(true)
 		_disc_ejected = true
 	else:
 		_libretro.ReplaceDiskImage(_disc_index, path)
 		_libretro.SetDiskEjectState(false)
 		_disc_ejected = false
+	# Read the drive back rather than trusting what we just wrote. The mirror is
+	# what the next decision is made from, and it drifts: the answer to a
+	# RequestDiskInfo issued at power-on drains AFTER an early lid press and
+	# reports the state from before it, quietly overwriting the truth.
+	_libretro.RequestDiskInfo()
 
 
 # --- Disc loader (tray lid / slot loading) ---
@@ -3110,8 +3121,14 @@ func _sync_core_tray() -> void:
 	# schedules the op for everyone, so applying one here would double it.
 	if NetworkManager.is_event_applying():
 		return
-	var op := _tray_op_for(_tray_open, _disc_ejected,
-		_snapped_cartridge != null and not rom_path.is_empty())
+	var has_disc := _snapped_cartridge != null and not rom_path.is_empty()
+	var op := _tray_op_for(_tray_open, _disc_ejected, has_disc)
+	# Logged either way. When a machine will not boot what is plainly sitting in
+	# its bay, this line is the difference between the room and the core — and
+	# the one thing that cannot be read off the screen.
+	print("[RetroSystem] Lid %s: disc=%s core_ejected=%s -> %s"
+		% ["open" if _tray_open else "shut", has_disc, _disc_ejected,
+			["nothing", "eject", "close on " + rom_path.get_file()][op + 1]])
 	if op == DISK_OP_NONE:
 		return
 	_request_disk_op(op, rom_path if op == DISK_OP_CLOSE else "")
