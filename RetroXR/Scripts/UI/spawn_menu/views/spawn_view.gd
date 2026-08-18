@@ -31,8 +31,6 @@ signal scroll_changed(scroll: ScrollContainer)
 ## A RomM sync or download changed something the OPTIONS readout shows.
 signal romm_state_changed
 
-## Wheel-art textures held in memory, and the box they are fitted to.
-const MAX_WHEEL_TEXTURES := 200
 const WHEEL_BOX := Vector2i(300, 76)
 ## Poster row thumbnails. Bounded for the same reason WHEEL_BOX is: an unbounded
 ## Button.icon with expand_icon draws far past its row and spills into the
@@ -57,6 +55,11 @@ var romm_catalog: RommCatalog = null
 var romm_downloader: RommDownloader = null
 var romm_cache: RommCacheManifest = null
 var romm_art: RommArtCache = null
+## The same treatment for ScreenScraper art. Built here rather than injected:
+## it needs no config, unlike romm_art which needs the server URL.
+var scraped_art: ScrapedArtCache = null
+## Guards the coalesced media rebuild — see _queue_media_refresh.
+var _media_refresh_queued := false
 
 ## The menu, for raising notices. Typed Node so the classes do not name each
 ## other — same reason as SpawnMenuOptionsView.
@@ -112,11 +115,7 @@ var _romm_meta_cache: Dictionary = {}
 var _romm_delete_armed: int = -1
 ## Typing is bursty; one rebuild after the keys stop instead of one per key.
 var _romm_search_timer: Timer = null
-## "<systemid>/<filename>" -> Texture2D or null. Wheel logos are scaled into
-## WHEEL_BOX so they cannot inflate the row height.
-var _wheel_cache: Dictionary = {}
-var _wheel_cache_order: Array[String] = []
-## Poster thumbnails, same memoized-with-misses shape as the wheel cache above.
+## Poster thumbnails, memoized with misses — most entries have no thumbnail.
 var _poster_thumb_cache: Dictionary = {}
 var _poster_thumb_order: Array[String] = []
 ## systemid -> {lowercase basename: rom}. A directory listing, so it is cached
@@ -170,6 +169,7 @@ static func create(menu: Node) -> SpawnMenuSpawnView:
 	v.romm_downloader  = menu.romm_downloader
 	v.romm_cache       = menu.romm_cache
 	v.romm_art         = menu.romm_art
+	v.scraped_art      = menu.scraped_art
 	v._connect_romm()
 	v._build()
 	return v
@@ -197,6 +197,8 @@ func _connect_romm() -> void:
 	romm_downloader.download_cancelled.connect(_on_romm_dl_cancelled)
 	romm_downloader.cache_evicted.connect(_on_romm_cache_evicted)
 	romm_art.art_ready.connect(_on_romm_art_ready)
+	if scraped_art != null:
+		scraped_art.art_ready.connect(_on_scraped_art_ready)
 	# Show last run's platforms immediately; a refresh only corrects it.
 	for sid: String in romm_config.cached_platforms:
 		var p: Variant = romm_config.cached_platforms[sid]
@@ -1202,7 +1204,7 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	# scrolls. MarqueeButton extends Button, so it carries the icon itself.
 	var wheel: Texture2D = null
 	if not local_path.is_empty():
-		wheel = _cached_wheel_texture(systemid, local_path.get_file())
+		wheel = scraped_art.get_or_request(systemid, local_path.get_file(), "wheel", WHEEL_BOX)
 	if wheel != null:
 		main.icon = wheel
 		main.expand_icon = false
@@ -1259,7 +1261,11 @@ func _bind_rom_row(row: Control, index: int) -> void:
 	if rom_id > 0:
 		cover.texture = romm_art.get_or_request(rom_id, str(entry.get("cover_small", "")), systemid)
 	if cover.texture == null and not model["path"].is_empty():
-		cover.texture = MediaDimensions.load_label_texture(systemid, str(model["path"]))
+		# Mipmapped: these are photographic scans read at a glancing angle in VR.
+		# Was MediaDimensions.load_label_texture, which decoded and generated mips
+		# inline with no cache at all — 4.1 ms per row on every scroll step.
+		cover.texture = scraped_art.get_or_request(
+			systemid, str(model["path"]), "label", Vector2i.ZERO, true)
 	cover.visible = cover.texture != null
 
 	# ── Launch ──────────────────────────────────────────────────────────────
@@ -1390,22 +1396,6 @@ func _romm_row_meta(systemid: String, local_path: String) -> Dictionary:
 	}
 	_romm_meta_cache[local_path] = meta
 	return meta
-
-
-## Memoized _load_wheel_texture. Binding is per-row per-scroll, and the raw
-## lookup is 4 file_exists calls plus a synchronous decode — misses are cached
-## too, since most ROMs have no wheel.
-func _cached_wheel_texture(systemid: String, filename: String) -> Texture2D:
-	var key := systemid + "/" + filename
-	if _wheel_cache.has(key):
-		return _wheel_cache[key]
-
-	var tex := _load_wheel_texture(systemid, filename)
-	_wheel_cache[key] = tex
-	_wheel_cache_order.append(key)
-	while _wheel_cache_order.size() > MAX_WHEEL_TEXTURES:
-		_wheel_cache.erase(_wheel_cache_order.pop_front())
-	return tex
 
 
 ## Rows are recycled, so every connection from the previous bind must go.
@@ -2110,7 +2100,32 @@ func _on_romm_cache_changed() -> void:
 	_rebuild_romm_rows()
 
 
+## One tab rebuild per frame however many files land in it.
+##
+## Rebuilding per file was the other half of the scrape stutter: four media
+## downloads can finish within a frame of each other, and each was rebuilding the
+## grid and the row model in full.
+func _queue_media_refresh() -> void:
+	if _media_refresh_queued:
+		return
+	_media_refresh_queued = true
+	_do_media_refresh.call_deferred()
+
+
+func _do_media_refresh() -> void:
+	_media_refresh_queued = false
+	_populate_cartridges_tab()
+	_rebuild_romm_rows()
+
+
 func _on_romm_art_ready(_rom_id: int, _texture: Texture2D) -> void:
+	if _romm_list != null and is_instance_valid(_romm_list):
+		_romm_list.rebind_visible()
+
+
+## A wheel or label finished decoding. Only the visible rows are re-bound, and
+## the cache's per-frame budget means at most two of these land in one frame.
+func _on_scraped_art_ready(_key: String, _texture: Texture2D) -> void:
 	if _romm_list != null and is_instance_valid(_romm_list):
 		_romm_list.rebind_visible()
 
@@ -2160,15 +2175,23 @@ func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary)
 
 	# Re-populate when wheel or manual finishes downloading so the list
 	# updates without requiring a manual tab switch.
+	# Scoped to the ROM that was just scraped, and coalesced.
+	#
+	# This used to clear the whole art memo and rebuild both the tile grid and
+	# the row model on EVERY file. download_all_media fetches up to four per
+	# game and two of them landed here, so one accept ran that cycle twice and a
+	# batch ran it dozens of times — each pass throwing away every other row's
+	# decoded art and forcing it all to be read again. Measured before this:
+	# 2.4 ms per wheel and 4.1 ms per label to re-decode, times every visible row.
+	var scraped_rom := rom_path
 	_media_dl_refresh_cb = func(mtype: String, _path: String) -> void:
-		if mtype == "wheel" or mtype == "manual":
-			print("[SpawnMenu] Media downloaded (%s), refreshing cartridges tab." % mtype)
-			# The memo cached a miss for this ROM before the art existed.
-			_wheel_cache.clear()
-			_wheel_cache_order.clear()
-			_romm_meta_cache.clear()
-			_populate_cartridges_tab()
-			_rebuild_romm_rows()
+		if mtype != "wheel" and mtype != "manual":
+			return
+		# The lookup cached a miss for this ROM before the art existed.
+		if scraped_art != null:
+			scraped_art.forget(systemid, scraped_rom)
+		_romm_meta_cache.erase(scraped_rom)
+		_queue_media_refresh()
 	scraper_client.media_download_completed.connect(_media_dl_refresh_cb)
 
 	# Download media files asynchronously

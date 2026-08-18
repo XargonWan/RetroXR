@@ -100,6 +100,9 @@ var romm_catalog: RommCatalog = null
 var romm_downloader: RommDownloader = null
 var romm_cache: RommCacheManifest = null
 var romm_art: RommArtCache = null
+## ScreenScraper art (wheel/label/box), decoded off the main thread. Sibling of
+## romm_art; needs no config, so it is built with no setup call.
+var scraped_art: ScrapedArtCache = null
 var romm_firmware: RommFirmware = null
 ## systemid -> platform dict from /api/platforms (with "systemid" added).
 ## Slug signature of the last unmapped set announced, so it is reported once.
@@ -257,6 +260,10 @@ func _init_romm() -> void:
 	romm_art.name = "RommArtCache"
 	romm_art.setup(romm_config.base_url)
 	add_child(romm_art)
+
+	scraped_art = ScrapedArtCache.new()
+	scraped_art.name = "ScrapedArtCache"
+	add_child(scraped_art)
 
 	romm_firmware = RommFirmware.new()
 	romm_firmware.name = "RommFirmware"
@@ -685,4 +692,3 @@ func _set_nav_active(active: Button) -> void:
 func scroll_active(pixels: float) -> void:
 	if _active_scroll:
 		_active_scroll.scroll_vertical += int(pixels)
-
