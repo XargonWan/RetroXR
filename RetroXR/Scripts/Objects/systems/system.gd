@@ -1141,6 +1141,30 @@ func _screen_target() -> MeshInstance3D:
 	return _model.get_builtin_screen() if _model else null
 
 
+## Is a VIDEO cord from this machine actually reaching `tv`?
+##
+## Asked by a set before it paints, because being wired to a machine is not the
+## same as being sent its picture. A phono plug fits any phono socket, so an
+## AUDIO cord in the yellow input is ordinary hardware — and the set still files
+## the machine on that input, deliberately, so the sound routes. What it must not
+## do is take that as a picture.
+##
+## Read off the video channels rather than recomputed, because that is the one
+## record both routes keep: a captive lead sets it through on_tv_connected, a
+## composite cable through _apply_av_feed, and a walk of the cable graph would
+## see only the second — captive leads carry no CompositeCable and are not in it.
+##
+## Per set, not per machine. A tower with its picture on a monitor and its sound
+## on a second television is wired to both, and only one of them has the picture.
+func sends_video_to(tv: Node3D) -> bool:
+	if tv == null or not is_instance_valid(tv):
+		return false
+	for chan: VideoChannel in _channels:
+		if chan.tv == tv:
+			return true
+	return false
+
+
 ## True while a video-out cable has taken the picture to a television. The model
 ## asks, and darkens its own panel: a handheld's picture MOVES to the set rather
 ## than being mirrored (Super Game Boy), and that is the model's own glass to

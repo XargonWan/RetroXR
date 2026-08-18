@@ -16,6 +16,7 @@ const TV_SCENE := preload("res://Scenes/Objects/tv.tscn")
 const SYSTEM_SCENE := preload("res://Scenes/Objects/system.tscn")
 const VCR_SCENE := preload("res://Scenes/Objects/appliances/vcr_player.tscn")
 const CABLE_SCENE := preload("res://Scenes/Objects/cables/composite_cable.tscn")
+const RF_SWITCH := preload("res://Scenes/Objects/appliances/rf_switch.tscn")
 
 static var _home := OS.get_environment("HOME") if OS.get_name() == "Linux" \
 		else OS.get_environment("USERPROFILE").replace(String.chr(92), "/")
@@ -175,6 +176,87 @@ func _run() -> void:
 		% [glass2, glass2 == tv2._blue_texture])
 	_check(glass2 == tv2._blue_texture,
 		"the same miswiring leaves the set blue (deck, the control)")
+
+	for n in [cable2, deck, tv2]:
+		n.queue_free()
+	await _wait(10)
+
+	# ── C: correct wiring still shows a picture ───────────────────────────────
+	#
+	# The point of the guard is to refuse a picture nobody sent. It has to be
+	# checked in BOTH directions or "shows nothing, ever" would pass phase A —
+	# and the two routes a console reaches a set by are different code: a
+	# composite lead resolves through _apply_av_feed, an aerial lead through the
+	# RF switch, and only the first one calls on_tv_connected directly.
+	var tv3 := TV_SCENE.instantiate() as RetroTV
+	tv3.freeze = true
+	tv3.position = Vector3(12.0, 1, 0)
+	add_child(tv3)
+	tv3.add_to_group("spawned")
+	var sys3 := SYSTEM_SCENE.instantiate() as RetroSystem
+	sys3.systemid = "nes"
+	sys3.model_id = "nes"
+	sys3.core_name = core
+	sys3.freeze = true
+	sys3.position = Vector3(15.0, 1, 0)
+	add_child(sys3)
+	sys3.add_to_group("spawned")
+	await _wait(180)
+	sys3.rom_path = rom
+	sys3.power_on()
+	await _wait(150)
+
+	var vid_out: RcaPort = null
+	for pv: Variant in _outs(sys3):
+		if (pv as RcaPort).channel == RcaPort.Channel.VIDEO:
+			vid_out = pv as RcaPort
+	var in3 := tv3.get_node("CompositePort") as RcaPort
+	var cable3 := CABLE_SCENE.instantiate() as Node3D
+	cable3.position = Vector3(13.0, 1, 0.6)
+	add_child(cable3)
+	await _wait(25)
+	vid_out.pick_up_object(cable3.get_node("PlugA0") as RcaPlug)
+	in3.pick_up_object(cable3.get_node("PlugB0") as RcaPlug)
+	await _wait(45)
+	tv3.set_source(RetroTV.Source.COMPOSITE_1)
+	await _wait(30)
+	print("[rca] composite: sends_video_to=%s" % sys3.sends_video_to(tv3))
+	_check(_shown(tv3) == sys3.get_video_texture(),
+		"a VIDEO cord in the VIDEO socket still shows the picture")
+
+	# ── D: the same, over an aerial lead ──────────────────────────────────────
+	var tv4 := TV_SCENE.instantiate() as RetroTV
+	tv4.freeze = true
+	tv4.position = Vector3(19.0, 1, 0)
+	add_child(tv4)
+	tv4.add_to_group("spawned")
+	await _wait(30)
+	var rf_out := sys3.find_child("RfOut", true, false) as RcaPort
+	if rf_out == null:
+		print("[rca] SKIP phase D: this build's NES has no RF panel")
+	else:
+		var lead := RF_SWITCH.instantiate() as Node3D
+		lead.position = Vector3(17.0, 1, -1.0)
+		add_child(lead)
+		await _wait(20)
+		var a := sys3.find_child("RfOut", true, false) as XRToolsSnapZone
+		var b := tv4.find_child("RfPort", true, false) as XRToolsSnapZone
+		if a != null and b != null:
+			a.pick_up_object(lead.get_node("PlugA0"))
+			b.pick_up_object(lead.get_node("PlugB0"))
+		await _wait(45)
+		tv4.set_source(RetroTV.Source.RF)
+		var rfch: int = sys3.get_rf_channel()
+		if rfch >= 0:
+			tv4.rf_channel = rfch
+		await _wait(30)
+		print("[rca] aerial: sends_video_to=%s can_paint=%s"
+			% [sys3.sends_video_to(tv4), tv4.can_paint(sys3)])
+		_check(_shown(tv4) == sys3.get_video_texture(),
+			"and an aerial lead on the right channel still shows it")
+
+	sys3.power_off()
+	await get_tree().create_timer(1.0).timeout
 
 	print("[rca] RESULT=%s" % ("FAIL" if _fail else "PASS"))
 	get_tree().quit(1 if _fail else 0)

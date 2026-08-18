@@ -868,6 +868,18 @@ func _update_crt() -> void:
 func _pull_from_selected() -> bool:
 	var host := _selected_system()
 	var tex: Texture2D = null
+	# Being ON this input is not the same as SENDING a picture to it. The set
+	# files a machine on a video input as soon as any cord lands there, on
+	# purpose, so its sound routes — and a phono plug fits any phono socket, so
+	# an AUDIO cord in the yellow input is ordinary hardware rather than a fault.
+	# Without this the set pulled the machine's picture anyway: red lead into the
+	# yellow socket, no video cord anywhere, and the game appeared on the glass.
+	# The two decks never had the bug because each already refuses its own
+	# texture unless a picture cord reached the set (VCRPlayer._feed_video); a
+	# console's accessor hands the core's frame to anyone who asks, so the guard
+	# has to be here as well as there. Asked of the source, per set.
+	if host != null and host.has_method("sends_video_to") and not host.sends_video_to(self):
+		host = null
 	if host != null and host.has_method("get_video_texture"):
 		tex = host.get_video_texture()
 	if tex == null:

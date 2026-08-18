@@ -33,6 +33,12 @@ class StubSource extends Node3D:
 	var stage_by_tv: Dictionary = {}
 	var rf_channel: int = -1
 	var volumes: Array[float] = []
+	## Whether this source is putting a picture on the asking set. A real source
+	## answers per set; the default is yes, so every other case reads as before.
+	var video_to_tv := true
+
+	func sends_video_to(_tv: Node) -> bool:
+		return video_to_tv
 
 	func get_video_texture() -> Texture2D:
 		return texture
@@ -98,6 +104,7 @@ func _run() -> void:
 		["display/a source that stops is blue, not frozen", _d_stopped],
 		["display/a set switched off is dark", _d_off],
 		["display/an empty input is blue", _d_empty],
+		["display/a host on the input that sends no picture is blue", _d_no_video_cord],
 		["display/the aerial input on the wrong channel is snow", _d_rf_untuned],
 		["display/the aerial input on the right channel shows the machine", _d_rf_tuned],
 		["display/the afterglow does not carry over from the last machine", _d_no_ghost],
@@ -796,6 +803,37 @@ func _d_empty() -> void:
 	tv.set_source(RetroTV.Source.COMPOSITE_2)
 	await _wait(6)
 	_check_eq(_shown(tv), tv._blue_texture, "an input with nothing plugged in is blue")
+
+
+## Being ON an input is not the same as SENDING a picture to it.
+##
+## A phono plug fits any phono socket, so a red cord in the yellow input is
+## ordinary hardware — and the set still files the machine on that input, on
+## purpose, so its sound routes (see routing/picture into an audio socket). What
+## it must not do is take that as a picture, which it did: the game appeared on
+## the glass with no video cord anywhere in the room.
+##
+## The source answers, because only it knows where its picture went. The two
+## decks always did, through their own _feed_video; a console's accessor hands
+## the core's frame to anyone who asks, so the set has to ask first.
+func _d_no_video_cord() -> void:
+	var tv := _tv()
+	await _wait(30)
+	var src := StubSource.new()
+	src.texture = _a_texture()
+	src.video_to_tv = false
+	await _seat_stub(tv, RetroTV.Source.COMPOSITE_1, src)
+	await _wait(6)
+	_check(_shown(tv) != src.texture, "a host sending no picture here must not be shown")
+	_check_eq(_shown(tv), tv._blue_texture, "the set shows its no-signal screen")
+
+	# And the moment a picture cord does land, the same host appears.
+	src.video_to_tv = true
+	tv.set_source(RetroTV.Source.COMPOSITE_2)
+	await _wait(4)
+	tv.set_source(RetroTV.Source.COMPOSITE_1)
+	await _wait(6)
+	_check_eq(_shown(tv), src.texture, "and is shown again once it is sending one")
 
 
 func _d_rf_untuned() -> void:
