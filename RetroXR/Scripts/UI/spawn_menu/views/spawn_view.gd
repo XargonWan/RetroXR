@@ -624,8 +624,10 @@ func _populate_cartridges_tab() -> void:
 	_mark_systems_without_a_core(systems)
 
 	_cartridges_browser.set_systems(systems)
-	# If a system detail is open, re-run it so newly-added ROMs appear.
-	_cartridges_browser.refresh()
+	# If a system detail is open, re-run it so newly-added ROMs appear. Detail
+	# only: set_systems has just rebuilt the tiles, and refresh() would build all
+	# 68 of them again for nothing.
+	_cartridges_browser.refresh_detail()
 
 	# Pull the largest synced platforms' sidecars into the file cache while the
 	# user is still looking at the grid. Opening one is disk-bound the first
@@ -870,6 +872,11 @@ func _rebuild_romm_rows() -> void:
 	# data is read on demand in _bind_rom_row, for the dozen rows on screen.
 	var have_index := romm_catalog.load_index(systemid)
 	var matched: Dictionary = {}
+	# rom_id -> local path for everything this system has downloaded, resolved
+	# once. Asking the manifest per row formats a key and probes two dictionaries
+	# 49,000 times to find the thirteen entries that exist — 60 ms of the rebuild.
+	var cached_by_rom: Dictionary = romm_cache.cached_paths_for_system(systemid) \
+		if romm_cache != null else {}
 	if have_index:
 		var fast := romm_catalog.has_fast_sidecars()
 		var indices := PackedInt32Array()
@@ -909,8 +916,7 @@ func _rebuild_romm_rows() -> void:
 			# A multi-file server ROM is keyed by its deleted source archive in the
 			# cache but launches an m3u/cue below it. Resolve by stable RomM id before
 			# falling back to basename matching.
-			var cached_path := romm_cache.cached_path_for_rom(
-				systemid, romm_catalog.rom_id_at(i)) if romm_cache != null else ""
+			var cached_path := str(cached_by_rom.get(romm_catalog.rom_id_at(i), ""))
 			var local: Dictionary = {"path": cached_path, "label": label} \
 				if not cached_path.is_empty() else local_by_name.get(key, {})
 			if not local.is_empty():

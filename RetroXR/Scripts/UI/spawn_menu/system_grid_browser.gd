@@ -242,6 +242,16 @@ func show_home() -> void:
 func refresh() -> void:
 	_ensure_built()
 	_rebuild_tiles()
+	refresh_detail()
+
+
+## Re-run the populator for the open system, leaving the tile grid alone.
+##
+## For a host that has just called set_systems(), which rebuilt the tiles as part
+## of its own work — refresh() would then build all of them a second time, and
+## that is 19 ms on a 68-tile grid.
+func refresh_detail() -> void:
+	_ensure_built()
 	if _detail_page.visible and not _current_systemid.is_empty():
 		var at := _detail_scroll.scroll_vertical
 		_refreshing = true

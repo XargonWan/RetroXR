@@ -168,6 +168,25 @@ func rom_ids_for_system(systemid: String) -> PackedInt64Array:
 	return out
 
 
+## Every downloaded ROM of one system as { rom_id: launch path }.
+##
+## For a caller that would otherwise ask cached_path_for_rom once per catalog
+## row. That call formats a key string and probes two dictionaries, which is
+## nothing on its own and 60 ms across a 49,000-row PlayStation index — to find
+## the thirteen entries this system actually has. Built once, read by integer.
+func cached_paths_for_system(systemid: String) -> Dictionary:
+	var out: Dictionary = {}
+	for key: String in _entries:
+		var group: Dictionary = _entries[key]
+		if str(group.get("systemid", "")) != systemid:
+			continue
+		var rom_id := int(group.get("rom_id", 0))
+		if rom_id == 0 or not _group_exists(group):
+			continue
+		out[rom_id] = local_path(systemid, str(group.get("launch", group.get("fs_name", ""))))
+	return out
+
+
 func lru_keys() -> Array[String]:
 	var keys: Array[String] = []
 	for key: String in _entries:
