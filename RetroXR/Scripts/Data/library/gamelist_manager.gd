@@ -58,21 +58,37 @@ func save_gamelist(systemid: String) -> void:
 	print("[GamelistManager] Saved %s" % path)
 
 
-## Add or merge a ROM into the gamelist. If a game with the same game_id exists,
-## the ROM is appended (or updated if same path). Otherwise a new game entry is created.
+## Add or merge a ROM into the gamelist.
+##
+## A game entry is identified by the ROMS IT HOLDS first and by its game_id only
+## second. That order matters, and getting it the other way round is what put
+## two entries in the list for one file: the RomM downloader writes
+## "romm:<id>" and ScreenScraper writes its own numeric id, so scraping a ROM
+## that came from RomM found no game with a matching id and appended a duplicate
+## instead of updating the one already there. Everything reading game_id then had
+## two answers to choose between, and which one it got depended on insertion
+## order — a ROM scraped BEFORE it was downloaded reported no RomM id at all,
+## which silently switched off save sync and save-state backup for it.
+##
 ## game_data: {game_id, name, desc, developer, publisher, genre}
 ## rom_data: {path, romname, releasedate, region}
 func add_or_merge_rom(systemid: String, game_data: Dictionary, rom_data: Dictionary) -> void:
 	print("[GamelistManager] add_or_merge_rom: system=%s game_id=%s rom=%s" % [systemid, game_data.get("game_id", "?"), rom_data.get("path", "?")])
+	# Fold away any duplicates a previous version of this function left behind,
+	# so a list that is already split heals the next time anything writes to it.
+	dedupe(systemid)
 	var gamelist := load_gamelist(systemid)
 	var games: Array = gamelist["games"]
 	var game_id: String = game_data.get("game_id", "")
+	var rom_path: String = rom_data.get("path", "")
 
-	var existing_game: Dictionary = {}
-	for g: Dictionary in games:
-		if g.get("game_id", "") == game_id:
-			existing_game = g
-			break
+	# The entry that already lists this ROM, whatever id it happens to carry.
+	var existing_game := _game_holding_rom(games, rom_path)
+	if existing_game.is_empty():
+		for g: Dictionary in games:
+			if g.get("game_id", "") == game_id:
+				existing_game = g
+				break
 
 	if existing_game.is_empty():
 		# New game entry — first ROM is preferred
@@ -88,19 +104,21 @@ func add_or_merge_rom(systemid: String, game_data: Dictionary, rom_data: Diction
 		}
 		games.append(new_game)
 	else:
-		# Update game-level metadata
-		existing_game["name"] = game_data.get("name", existing_game.get("name", ""))
-		existing_game["desc"] = game_data.get("desc", existing_game.get("desc", ""))
-		existing_game["developer"] = game_data.get("developer", existing_game.get("developer", ""))
-		existing_game["publisher"] = game_data.get("publisher", existing_game.get("publisher", ""))
-		existing_game["genre"] = game_data.get("genre", existing_game.get("genre", ""))
+		existing_game["game_id"] = _best_game_id(
+			str(existing_game.get("game_id", "")), game_id)
+		# Field by field, keeping what is already there when the incoming value
+		# is blank. The two writers fill in different things — the downloader
+		# sends desc "" and no publisher, the scraper sends both — so a plain
+		# overwrite means re-downloading a scraped game erases its description.
+		for field: String in ["name", "desc", "developer", "publisher", "genre"]:
+			existing_game[field] = _keep_better(
+				str(game_data.get(field, "")), str(existing_game.get(field, "")))
 
 		# Find existing ROM by path or add new
 		var roms: Array = existing_game.get("roms", [])
-		var rom_path: String = rom_data.get("path", "")
 		var found := false
 		for i in roms.size():
-			if (roms[i] as Dictionary).get("path", "") == rom_path:
+			if _same_rom_path(str((roms[i] as Dictionary).get("path", "")), rom_path):
 				# Update existing ROM entry (re-scrape)
 				var was_preferred: bool = (roms[i] as Dictionary).get("preferred", false)
 				roms[i] = rom_data
@@ -111,6 +129,105 @@ func add_or_merge_rom(systemid: String, game_data: Dictionary, rom_data: Diction
 		if not found:
 			roms.append(rom_data)
 		existing_game["roms"] = roms
+
+
+## The entry listing this ROM, or {}.
+static func _game_holding_rom(games: Array, rom_path: String) -> Dictionary:
+	if rom_path.is_empty():
+		return {}
+	for g: Dictionary in games:
+		for r: Dictionary in g.get("roms", []):
+			if _same_rom_path(str(r.get("path", "")), rom_path):
+				return g
+	return {}
+
+
+## Are these two gamelist paths the same file?
+##
+## Exact match everywhere, plus case-insensitive where the filesystem is: on
+## Windows "Super Mario Bros. 2 (USA).nes" and "super mario bros. 2 (usa).nes"
+## are one file, and treating them as two put the same ROM in a game's list
+## twice. NOT case-insensitive on Linux or Android, where they are genuinely two
+## files and merging them would drop one.
+static func _same_rom_path(a: String, b: String) -> bool:
+	if a == b:
+		return true
+	if OS.get_name() in ["Windows", "macOS"]:
+		return a.nocasecmp_to(b) == 0
+	return false
+
+
+## Which of two ids to keep when one entry absorbs another.
+##
+## A "romm:" id is load-bearing — save sync, save-state backup and the cache
+## manifest all key on it — while a ScreenScraper id only ever identifies the
+## scrape record. So the RomM link is adopted when it arrives and never
+## surrendered when it is already held; between two scraper ids the newer wins,
+## because a re-scrape is the user re-identifying the game.
+static func _best_game_id(existing: String, incoming: String) -> String:
+	if incoming.begins_with("romm:"):
+		return incoming
+	if existing.begins_with("romm:"):
+		return existing
+	return incoming if not incoming.is_empty() else existing
+
+
+static func _keep_better(incoming: String, existing: String) -> String:
+	return incoming if not incoming.is_empty() else existing
+
+
+## Fold entries that describe the same ROM into one, and drop repeated ROM paths
+## within an entry. Returns how many entries were removed.
+##
+## Repairs lists written before add_or_merge_rom matched on ROM path. Mutates the
+## cache only — the caller saves, matching every other mutator here.
+func dedupe(systemid: String) -> int:
+	var gamelist := load_gamelist(systemid)
+	var games: Array = gamelist.get("games", [])
+	var removed := 0
+
+	for gi in range(games.size() - 1, 0, -1):
+		var g: Dictionary = games[gi]
+		var target: Dictionary = {}
+		for r: Dictionary in g.get("roms", []):
+			target = _game_holding_rom(games.slice(0, gi), str(r.get("path", "")))
+			if not target.is_empty():
+				break
+		if target.is_empty():
+			continue
+		target["game_id"] = _best_game_id(
+			str(target.get("game_id", "")), str(g.get("game_id", "")))
+		for field: String in ["name", "desc", "developer", "publisher", "genre"]:
+			target[field] = _keep_better(
+				str(target.get(field, "")), str(g.get(field, "")))
+		var into: Array = target.get("roms", [])
+		for r: Dictionary in g.get("roms", []):
+			if _game_holding_rom([target], str(r.get("path", ""))).is_empty():
+				into.append(r)
+		target["roms"] = into
+		games.remove_at(gi)
+		removed += 1
+
+	# And the same ROM listed twice inside one entry.
+	for g: Dictionary in games:
+		var roms: Array = g.get("roms", [])
+		for i in range(roms.size() - 1, 0, -1):
+			var dup := false
+			for j in range(i):
+				if _same_rom_path(str((roms[i] as Dictionary).get("path", "")),
+						str((roms[j] as Dictionary).get("path", ""))):
+					# Keep whichever of the two was marked preferred.
+					if bool((roms[i] as Dictionary).get("preferred", false)):
+						(roms[j] as Dictionary)["preferred"] = true
+					dup = true
+					break
+			if dup:
+				roms.remove_at(i)
+		g["roms"] = roms
+
+	if removed > 0:
+		print("[GamelistManager] %s: folded %d duplicate game entries" % [systemid, removed])
+	return removed
 
 
 ## Drop one ROM from the gamelist. Mutates the cache only — the caller saves,
@@ -210,14 +327,28 @@ func known_rom_paths(systemid: String) -> Dictionary:
 
 
 ## Find the game entry containing a ROM with the given path. Returns empty dict if not found.
+## The game entry listing this ROM, or {}.
+##
+## When more than one lists it — which a list written before add_or_merge_rom
+## matched on ROM path can still contain — the one carrying a "romm:" id wins.
+## Returning whichever came first meant the answer depended on whether the ROM
+## was scraped before or after it was downloaded, and getting the scraper's
+## entry reads as "this ROM is not on RomM", which switches off save sync and
+## save-state backup for a game that is.
 func get_game_for_rom(systemid: String, rom_path: String) -> Dictionary:
 	var relative := _to_relative_path(systemid, rom_path)
 	var gamelist := load_gamelist(systemid)
+	var fallback: Dictionary = {}
 	for g: Dictionary in gamelist.get("games", []):
 		for r: Dictionary in g.get("roms", []):
-			if r.get("path", "") == relative:
+			if not _same_rom_path(str(r.get("path", "")), relative):
+				continue
+			if str(g.get("game_id", "")).begins_with("romm:"):
 				return g
-	return {}
+			if fallback.is_empty():
+				fallback = g
+			break
+	return fallback
 
 
 ## Get the preferred ROM dict from a game entry. Returns empty dict if none found.

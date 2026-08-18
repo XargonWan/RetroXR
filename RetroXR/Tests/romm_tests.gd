@@ -56,6 +56,8 @@ func _ready() -> void:
 	_test_state_server_only()
 	_test_state_restore()
 	await _test_rom_id_resolve()
+	_test_gamelist_one_entry_per_rom()
+	_test_gamelist_dedupe()
 	await _test_http_stalls()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -1363,6 +1365,120 @@ func _test_state_restore() -> void:
 	DirAccess.remove_absolute(path)
 	DirAccess.remove_absolute(path.get_base_dir())
 	sync.free()
+
+
+## One ROM, one game entry.
+##
+## The regression record for a bug found in a real library: add_or_merge_rom
+## identified a game by game_id alone, so scraping a ROM that came from RomM
+## found no match for the scraper's numeric id and appended a SECOND entry for
+## the same file. Whichever entry a reader hit first then decided whether the
+## ROM appeared to be on RomM at all — and with it whether save sync and
+## save-state backup did anything.
+func _test_gamelist_one_entry_per_rom() -> void:
+	var sysid := TEST_SYSTEM
+	var gl := GamelistManager.new()
+	gl._gamelists[sysid] = {"games": []}
+	var rom := "./Super Mario Bros. 2 (USA).nes"
+
+	# Downloaded from RomM first, then scraped — the order your library is in.
+	gl.add_or_merge_rom(sysid, {"game_id": "romm:93288", "name": "Super Mario Bros. 2",
+		"desc": "", "developer": "Nintendo", "publisher": "", "genre": "Platform"},
+		{"path": rom, "romname": rom.get_file()})
+	gl.add_or_merge_rom(sysid, {"game_id": "1248", "name": "Super Mario Bros. 2",
+		"desc": "Mario in a dream world.", "developer": "Nintendo",
+		"publisher": "Nintendo", "genre": "Platform"},
+		{"path": rom, "romname": rom.get_file()})
+
+	var games: Array = gl._gamelists[sysid]["games"]
+	_eq("gamelist/scraping a RomM rom does not add a second entry", games.size(), 1)
+	if games.size() == 1:
+		# The RomM link is load-bearing and the scraper id is not, so the scrape
+		# must not take it away.
+		_eq("gamelist/and keeps the RomM id", str(games[0].get("game_id", "")), "romm:93288")
+		# ...while the description it brought is kept, rather than the entry
+		# holding a RomM id and no metadata.
+		_eq("gamelist/while adopting the scraped description",
+			str(games[0].get("desc", "")), "Mario in a dream world.")
+		_eq("gamelist/and lists the rom once", (games[0].get("roms", []) as Array).size(), 1)
+
+	# The other order: scraped first, downloaded second. This is the one that
+	# used to leave rom_id_for answering 0 for a ROM that IS on the server.
+	var gl2 := GamelistManager.new()
+	gl2._gamelists[sysid] = {"games": []}
+	gl2.add_or_merge_rom(sysid, {"game_id": "1248", "name": "Super Mario Bros. 2",
+		"desc": "Mario in a dream world.", "developer": "", "publisher": "", "genre": ""},
+		{"path": rom, "romname": rom.get_file()})
+	gl2.add_or_merge_rom(sysid, {"game_id": "romm:93288", "name": "Super Mario Bros. 2",
+		"desc": "", "developer": "", "publisher": "", "genre": ""},
+		{"path": rom, "romname": rom.get_file()})
+	var games2: Array = gl2._gamelists[sysid]["games"]
+	_eq("gamelist/downloading a scraped rom does not add one either", games2.size(), 1)
+	if games2.size() == 1:
+		_eq("gamelist/and upgrades it to the RomM id",
+			str(games2[0].get("game_id", "")), "romm:93288")
+		# The download must not wipe what the scrape wrote — the downloader
+		# sends desc "" and would otherwise blank it.
+		_eq("gamelist/without erasing the description",
+			str(games2[0].get("desc", "")), "Mario in a dream world.")
+
+	# Two different games still get two entries. The merge keys on the ROM, so a
+	# rule that folded these together would be far worse than the bug.
+	gl2.add_or_merge_rom(sysid, {"game_id": "1246", "name": "Super Mario Bros. 3",
+		"desc": "", "developer": "", "publisher": "", "genre": ""},
+		{"path": "./Super Mario Bros. 3 (USA).nes", "romname": "Super Mario Bros. 3 (USA).nes"})
+	_eq("gamelist/a different rom is still its own entry",
+		(gl2._gamelists[sysid]["games"] as Array).size(), 2)
+
+	# A second regional copy of the SAME game joins its entry rather than
+	# starting a new one — that is what the game_id match is still there for.
+	gl2.add_or_merge_rom(sysid, {"game_id": "romm:93288", "name": "Super Mario Bros. 2",
+		"desc": "", "developer": "", "publisher": "", "genre": ""},
+		{"path": "./Super Mario Bros. 2 (Europe).nes", "romname": "smb2eu.nes"})
+	var smb2: Dictionary = gl2._gamelists[sysid]["games"][0]
+	_eq("gamelist/another region joins the same game",
+		(smb2.get("roms", []) as Array).size(), 2)
+	gl._gamelists.clear()
+	gl2._gamelists.clear()
+
+
+## Repairing a list that is already split, which every existing install has.
+func _test_gamelist_dedupe() -> void:
+	var sysid := TEST_SYSTEM
+	var gl := GamelistManager.new()
+	# Exactly the shape found in the real nes/gamelist.json: a romm entry and a
+	# scraper entry for one file, plus one entry listing the same ROM twice
+	# under two spellings.
+	gl._gamelists[sysid] = {"games": [
+		{"game_id": "romm:90988", "name": "1943 (USA)", "desc": "",
+		 "roms": [{"path": "./1943.nes", "preferred": true}]},
+		{"game_id": "1468", "name": "1943", "desc": "Shoot em up",
+		 "roms": [{"path": "./1943.nes"}]},
+		{"game_id": "1248", "name": "Super Mario Bros. 2", "desc": "Dream world",
+		 "roms": [{"path": "./smb2.nes", "preferred": true}, {"path": "./SMB2.NES"}]},
+	]}
+	var folded := gl.dedupe(sysid)
+	var games: Array = gl._gamelists[sysid]["games"]
+	_eq("dedupe/the split pair became one", folded, 1)
+	_eq("dedupe/leaving two games", games.size(), 2)
+	_eq("dedupe/under the RomM id", str(games[0].get("game_id", "")), "romm:90988")
+	_eq("dedupe/keeping the scraped description",
+		str(games[0].get("desc", "")), "Shoot em up")
+	_eq("dedupe/and one rom", (games[0].get("roms", []) as Array).size(), 1)
+	if OS.get_name() in ["Windows", "macOS"]:
+		# Same file, two spellings — one row.
+		_eq("dedupe/a case-variant duplicate rom is dropped",
+			(games[1].get("roms", []) as Array).size(), 1)
+		_ok("dedupe/and the kept one is still preferred",
+			bool((games[1].get("roms", [])[0] as Dictionary).get("preferred", false)))
+	else:
+		# Two genuinely different files on a case-sensitive filesystem.
+		_eq("dedupe/case-distinct roms are left alone",
+			(games[1].get("roms", []) as Array).size(), 2)
+
+	# Idempotent: running it again changes nothing.
+	_eq("dedupe/a clean list folds nothing", gl.dedupe(sysid), 0)
+	gl._gamelists.clear()
 
 
 ## Matching a hand-copied ROM to the server's copy by content hash.
