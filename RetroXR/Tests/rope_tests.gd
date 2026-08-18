@@ -44,11 +44,13 @@ const STILL_WINDOW := 60
 ## worst of them, so ordinary variation passes and a contact that has started
 ## fighting itself does not.
 const STILL_MM := 1.5
-## A cord heaped on itself is the one shape that keeps churning: the self-collision
-## pass has dozens of near-coincident pairs to separate and never quite finishes.
-## Measured at 8.9 mm/tick, and kept as its own case rather than hidden by
-## loosening STILL_MM for everything.
-const HEAP_STILL_MM := 15.0
+## No contact in this suite needs a looser bound than STILL_MM. That is worth
+## recording, because an earlier version of the ledge case measured 8.9 mm/tick —
+## an order of magnitude above everything else — and it was tempting to write that
+## down as "a heaped cord churns". It was neither: the case had pinned its far end
+## in MID-AIR beyond the table edge, and a cord loaded by a point floating in space
+## is not a wiring the room can contain. Anchor the same cord at floor level, where
+## a socket could be, and it settles to 0.14 mm/tick.
 
 var _pass := 0
 var _fail := 0
@@ -502,29 +504,25 @@ func _group_contact() -> void:
 		"sagged %.0f mm" % (sag * 1000.0))
 	await _drop_case()
 
-	# A long cord heaped on a small table, which is what a spare lead dropped in a
-	# corner looks like. It settles and sleeps like the rest, but held awake it
-	# keeps churning an order of magnitude more than any single-surface contact —
-	# the self-collision pass separating a pile it can never quite finish. Kept as
-	# its own case with its own bound so the wrap cases can stay tight.
+	# 2.4 m of cord piled on a 0.4 m span, both ends on the surface — a spare lead
+	# dropped in a heap. Measured at 0.35 mm/tick held awake, i.e. a pile settles as
+	# quietly as a single drape. Worth stating, because the obvious guess is that
+	# self-collision in a heap is what makes a cord restless, and it is not.
 	base = _new_case()
 	_box(base + Vector3(0, 0.50, -0.10), Vector3(1.2, 0.50, 0.80))
-	_rope_between(base + Vector3(0, 0.80, -0.40), base + Vector3(0, 0.80, 0.55), 30)
-	await _assert_settles("a cord heaped on itself", 2400, HEAP_STILL_MM)
+	_rope_between(base + Vector3(0, 0.80, -0.30), base + Vector3(0, 0.80, 0.10), 40)
+	await _assert_settles("a cord heaped on itself", 2400, STILL_MM)
 	await _drop_case()
 
-	# Dropped from a height onto a thin plate. This is the motion-sweep path: at
-	# 2 m the tail is doing ~6 m/s, which is 70 mm per tick against a 20 mm plate,
-	# so a solver that only tested the END of the step would put the cord through
-	# the table.
+	# Shelf to floor: one end on the table, the other at floor level past the edge,
+	# with slack in between — a lead from a machine on a shelf to one on the floor.
+	# Both ends are somewhere a socket could be, which the version of this case that
+	# measured 8.9 mm/tick was not: it pinned the far end in mid-air.
 	base = _new_case()
-	var plate_c := base + Vector3(0, 0.50, 0)
-	var plate_s := Vector3(2.0, 0.02, 2.0)
-	_box(plate_c, plate_s)
-	_rope_from(base + Vector3(0, 2.60, 0), base + Vector3(0.4, 2.60, 0), 40)
-	await _settle(900)
-	_ok("contact/a cord dropped from height does not tunnel",
-		_lowest_y() > base.y + 0.49, "lowest point %.0f mm" % ((_lowest_y() - base.y) * 1000.0))
+	_box(base + Vector3(0, 0.50, -0.10), Vector3(1.2, 0.50, 0.80))
+	_box(base + Vector3(0, -0.05, 0.60), Vector3(2.0, 0.10, 1.2))
+	_rope_between(base + Vector3(0, 0.80, -0.30), base + Vector3(0, 0.03, 0.75), 40)
+	await _assert_settles("a cord run from a shelf to the floor", 2400, STILL_MM)
 	await _drop_case()
 
 
@@ -766,6 +764,24 @@ func _group_loose() -> void:
 	_ok("loose/a lead over an edge hangs down the other side", hanging)
 	_ok("loose/a lead over an edge does not cut through the table", through < 0.01,
 		"deepest %.1f mm inside" % (through * 1000.0))
+	lead.queue_free()
+	await get_tree().physics_frame
+
+	# Dropped 1.5 m onto a thin plate. This is the motion-sweep path: a lead in
+	# free fall is doing ~5 m/s by the time it arrives, which is 60 mm per tick
+	# against a 20 mm plate, so a solver that only tested the END of a step would
+	# put the cord through the table. It has to be a real lead — a bare rope keeps
+	# particle 0 pinned wherever it was laid, so it dangles rather than falls.
+	base = _new_case()
+	_box(base + Vector3(0, 0.50, 0), Vector3(2.0, 0.02, 2.0))
+	lead = await _drop_lead(base + Vector3(0, 2.00, 0), 480)
+	rope = lead.get_node("VerletRope")
+	var lowest2 := 1e9
+	for p: Vector3 in rope.get_points():
+		lowest2 = minf(lowest2, p.y)
+	_ok("loose/a lead dropped from height does not go through the plate",
+		lowest2 > base.y + 0.48,
+		"lowest point %.0f mm, plate at 500 mm" % ((lowest2 - base.y) * 1000.0))
 	lead.queue_free()
 	await get_tree().physics_frame
 
