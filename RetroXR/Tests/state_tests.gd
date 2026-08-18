@@ -274,17 +274,47 @@ func _test_backup_notice() -> void:
 	_ok("notice/the switch being off names the switch",
 		off.contains("Back up saves and states") and off.contains("OPTIONS"), off)
 
-	# Switch on, server up, but this game is not on RomM. _rom_id() is 0 here
-	# because the panel has no cartridge bound at all, which is the same answer a
-	# hand-copied ROM gives.
+	# Switch on, server up, and a real ROM with no RomM id. The three answers
+	# below are the ones that were conflated: "not asked yet", "asked and it is
+	# not there", and "could not find out" are different sentences, and telling
+	# a player the second when the third is true sends them looking for the
+	# wrong problem.
 	cfg.backup_enabled = true
-	var unknown := panel._backup_notice("fceumm", [])
-	_ok("notice/a game RomM does not have says so",
-		unknown.contains("RomM does not have this game"), unknown)
+	panel._cart = FakeCart.new()
+	var rom_path: String = panel._rom()
 
+	_eq("notice/before the lookup runs there is nothing to say",
+		panel._backup_notice("fceumm", []), "")
+
+	SaveSync._id_done("nes", rom_path, 0, false)
+	_ok("notice/a lookup that failed says it could not check",
+		panel._backup_notice("fceumm", []).contains("Could not reach RomM"),
+		panel._backup_notice("fceumm", []))
+
+	SaveSync._id_done("nes", rom_path, 0, true)
+	_ok("notice/a lookup that answered 'no' says THAT instead",
+		panel._backup_notice("fceumm", []).contains("does not have this ROM"),
+		panel._backup_notice("fceumm", []))
+
+	# And a hit says nothing at all — the column is there, so the rows speak.
+	SaveSync._id_done("nes", rom_path, 4242, true)
+	_eq("notice/a hit says nothing", panel._backup_notice("fceumm", []), "")
+
+	SaveSync._hash_ids.erase("nes/" + rom_path.get_file())
+	SaveSync._id_failed.erase("nes/" + rom_path.get_file())
+	SaveSync._rom_ids.erase(rom_path)
 	SaveSync.config = saved_save_cfg
 	StateSync.config = saved_state_cfg
 	panel.free()
+
+
+## The panel reads its target through named properties only, so a bare object
+## carrying them stands in for a cartridge.
+class FakeCart extends RefCounted:
+	var systemid := "nes"
+	var rom_path := "/__state_tests/notice_probe.nes"
+	var game_label := "Notice Probe"
+	var save_id := ""
 
 
 func _test_thumb_cache() -> void:

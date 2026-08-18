@@ -50,6 +50,14 @@ const _ICON_CLOUD    := 0xF0ED    # fa-cloud_download    — on the server, not 
 const _ICON_SYNC_ON  := 0xF063F   # md-cloud_sync        — kept in step
 const _ICON_SYNC_OFF := 0xF0164   # md-cloud_off_outline — local only
 const _ICON_BUSY     := 0xF019    # fa-download
+## A state in flight is going UP. The saves list reuses fa-download for "syncing"
+## because its sync can go either way; a state's only ever does one, and an
+## arrow pointing into a tray while bytes leave the device reads as the opposite
+## of what is happening.
+const _ICON_UPLOAD   := 0xF093    # fa-upload
+## Saving OVER a state, so the floppy rather than a refresh arrow: this writes a
+## file, it does not re-run something.
+const _ICON_OVERWRITE := 0xF0C7   # fa-save
 const _ICON_WARN     := 0xF071    # fa-warning
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
@@ -912,7 +920,7 @@ func _overwrite_button(state_id: String, armed: bool) -> Button:
 	b.add_theme_font_override("font", _symbols())
 	b.add_theme_font_size_override("font_size", 22)
 	b.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
-	b.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.RETRY)
+	b.text = String.chr(MenuIcons.ERROR if armed else _ICON_OVERWRITE)
 	if not capture_blocked.is_empty():
 		b.disabled = true
 		b.add_theme_color_override("font_color", COLOR_MUTED)
@@ -955,7 +963,7 @@ func _backup_glyph(backup_state: String) -> Control:
 			lbl.add_theme_color_override("font_color", COLOR_SYNC)
 			lbl.tooltip_text = "Backed up to RomM"
 		"busy":
-			lbl.text = String.chr(_ICON_BUSY)
+			lbl.text = String.chr(_ICON_UPLOAD)
 			lbl.add_theme_color_override("font_color", COLOR_WARN)
 			lbl.tooltip_text = "Uploading to RomM…"
 		"failed":

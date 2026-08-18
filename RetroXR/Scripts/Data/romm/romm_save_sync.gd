@@ -85,11 +85,13 @@ func is_available() -> bool:
 ## RomM's id for a local ROM, or 0.
 ##
 ## ROMs pulled from RomM carry it in gamelist.json as "romm:<id>", written by
-## RommDownloader. A ROM that arrived some other way has none, and resolving it
-## would mean hashing the file against /api/roms/by-hash — deliberately not done
-## here, because this is called from the flush path and hashing a 4 GB ISO
-## there would stall the emulation thread's listener. The cartridge menu can
-## offer that lookup explicitly instead.
+## RommDownloader. A ROM that arrived some other way has none — it carries a
+## SCRAPER id instead, which looks similar and means something else — and
+## resolving it means hashing the file against /api/roms/by-hash. That is
+## deliberately not done here, because this is called from the flush path and
+## hashing a 4 GB ISO there would stall the emulation thread's listener.
+## resolve_rom_id() below does it asynchronously, from the cartridge menu, and
+## feeds the answer back into this cache so the flush path never has to ask.
 func rom_id_for(systemid: String, rom_path: String) -> int:
 	if systemid.is_empty() or rom_path.is_empty():
 		return 0
@@ -119,6 +121,9 @@ func _exit_tree() -> void:
 	if _list_thread != null and _list_thread.is_started():
 		_list_thread.wait_to_finish()
 		_list_thread = null
+	if _id_thread != null and _id_thread.is_started():
+		_id_thread.wait_to_finish()
+		_id_thread = null
 	_abort = false
 
 
@@ -744,6 +749,8 @@ func load_state() -> void:
 	f.close()
 	if parsed is Dictionary and (parsed as Dictionary).get("saves") is Dictionary:
 		_state = (parsed as Dictionary)["saves"]
+	if parsed is Dictionary and (parsed as Dictionary).get("rom_ids") is Dictionary:
+		_hash_ids = (parsed as Dictionary)["rom_ids"]
 
 
 func save_state() -> void:
@@ -752,5 +759,202 @@ func save_state() -> void:
 	if f == null:
 		push_warning("[RommSaveSync] Cannot write %s" % state_path())
 		return
-	f.store_string(JSON.stringify({"version": 1, "saves": _state}, "\t"))
+	f.store_string(JSON.stringify(
+		{"version": 1, "saves": _state, "rom_ids": _hash_ids}, "\t"))
 	f.close()
+
+
+# ── Matching a local ROM to the server's copy ─────────────────────────────────
+#
+# rom_id_for reads gamelist.json and accepts only a "romm:<id>", which a ROM
+# that was downloaded from RomM carries and a hand-copied one does not — it
+# carries a SCRAPER id instead, which looks similar and means something else
+# entirely. So every hand-copied ROM answered 0, and everything keyed on that
+# answer (save sync, state backup) silently did nothing for it while the server
+# happily held the same game.
+#
+# The mapping the server offers is by content hash. That is why this is separate
+# from rom_id_for and asynchronous: hashing belongs nowhere near the SRAM flush
+# path, which runs off the emulation thread's listener.
+
+## Answered for every resolve_rom_id call, hit or miss (rom_id 0 = not there).
+signal rom_id_resolved(systemid: String, rom_path: String, rom_id: int)
+
+## See the note where it is used: RomM's by-hash search is slow enough that the
+## ordinary response timeout was cutting off answers that were on their way.
+const ID_LOOKUP_TIMEOUT_SEC := 150.0
+
+## "<systemid>/<filename>" -> {id, size, mtime}. Persisted, because the whole
+## cost of this is reading the file, and a miss is as worth remembering as a hit.
+var _hash_ids: Dictionary = {}
+## Lookups that went out and did not come back, this session only. Deliberately
+## NOT persisted: it is the difference between "never asked" and "asked and the
+## server did not answer", which a menu has to be able to tell apart, but it
+## must not survive a restart or a server that was briefly down would look
+## permanently broken.
+var _id_failed: Dictionary = {}
+var _id_thread: Thread = null
+var _id_busy := false
+
+
+## Is a hash lookup running? Lets a menu say "checking" rather than leaving a
+## blank that reads as "there is nothing here".
+func is_resolving() -> bool:
+	return _id_busy
+
+
+## Did the last attempt for this ROM fail to get an answer? Distinct from a
+## resolved miss: one is "RomM does not have this", the other is "we could not
+## find out", and telling a player the first when the second is true sends them
+## looking for the wrong problem.
+func lookup_failed(systemid: String, rom_path: String) -> bool:
+	return _id_failed.has(_hash_key(systemid, rom_path))
+
+
+static func _hash_key(systemid: String, rom_path: String) -> String:
+	return "%s/%s" % [systemid, rom_path.get_file()]
+
+
+## What a previous resolve found for this ROM, or -1 for "never asked".
+##
+## The size and mtime are part of the record: a file replaced under the same name
+## is a different ROM, and answering for the old one would attach a save to the
+## wrong game on the server.
+func resolved_rom_id(systemid: String, rom_path: String) -> int:
+	var rec: Dictionary = _hash_ids.get(_hash_key(systemid, rom_path), {})
+	if rec.is_empty():
+		return -1
+	if int(rec.get("size", -1)) != NetFileTransfer.size_of(rom_path):
+		return -1
+	if int(rec.get("mtime", -1)) != FileAccess.get_modified_time(rom_path):
+		return -1
+	return int(rec.get("id", 0))
+
+
+## Ask the server which of its ROMs this file is. Answers through
+## rom_id_resolved, exactly once, whatever happens.
+##
+## Costs one full read of the ROM, so it is never called from anywhere hot — the
+## cartridge menu opening is the moment, and the answer is then kept. A hit makes
+## rom_id_for start answering for this ROM too, so nothing downstream has to know
+## the lookup happened.
+func resolve_rom_id(systemid: String, rom_path: String) -> void:
+	if systemid.is_empty() or rom_path.is_empty() or not FileAccess.file_exists(rom_path):
+		_answer_id(systemid, rom_path, 0)
+		return
+	# Already known, either from gamelist.json or from a previous lookup.
+	var known := rom_id_for(systemid, rom_path)
+	if known > 0:
+		_answer_id(systemid, rom_path, known)
+		return
+	var cached := resolved_rom_id(systemid, rom_path)
+	if cached >= 0:
+		_answer_id(systemid, rom_path, cached)
+		return
+	if config == null or not config.is_configured() or _id_busy:
+		_answer_id(systemid, rom_path, 0)
+		return
+
+	if _id_thread != null and _id_thread.is_started():
+		_id_thread.wait_to_finish()
+		_id_thread = null
+	_id_busy = true
+	_id_thread = Thread.new()
+	_id_thread.start(_id_worker.bind(systemid, rom_path, config.base_url,
+		config.auth_headers()))
+
+
+## Did by-hash actually ANSWER, as opposed to failing on the way?
+##
+## Only an answer is worth remembering. A lookup that died on the network must
+## not be cached as "RomM does not have this game" — that would be permanent,
+## and wrong the moment the server came back.
+##
+## But a 404 IS an answer: it is how by-hash says the library has no such file,
+## and it costs the server the same full search a hit does. Treating it as a
+## failure meant every homebrew and every unmatched dump re-searched from
+## scratch on every single panel open — measured at 78 s a time.
+static func is_hash_answer(result: int, code: int) -> bool:
+	if result == RommHttp.Result.OK:
+		return true
+	return result == RommHttp.Result.HTTP_ERROR and code == 404
+
+
+## Never answered synchronously. Half these answers come off a worker and half come
+## straight back from a cache, and a caller that connects the signal AFTER
+## calling — which reads perfectly naturally — would miss only the fast ones.
+func _answer_id(systemid: String, rom_path: String, rom_id: int) -> void:
+	call_deferred("emit_signal", "rom_id_resolved", systemid, rom_path, rom_id)
+
+
+func _id_worker(systemid: String, rom_path: String, base_url: String,
+				headers: PackedStringArray) -> void:
+	var md5 := _md5_abortable(rom_path)
+	if md5.is_empty():
+		call_deferred("_id_done", systemid, rom_path, 0, false)
+		return
+	var http := RommHttp.new()
+	if http.open(base_url, _aborting) != RommHttp.Result.OK:
+		call_deferred("_id_done", systemid, rom_path, 0, false)
+		return
+	# Its own timeout, well past the default. Measured against a real RomM at
+	# 20-30 s for a 256 KB NES rom — the hash itself is 1 ms, so this is the
+	# server searching its library, and the default 30 s sat right on the line:
+	# the same lookup answered one minute and timed out the next. Nothing waits
+	# on this, so waiting longer costs only the worker.
+	var out: Dictionary = http.get_json("/api/roms/by-hash?md5_hash=%s" % md5,
+		headers, _aborting, ID_LOOKUP_TIMEOUT_SEC)
+	http.close()
+	var found := 0
+	var result := int(out["result"])
+	var code := int(out["code"])
+	if result == RommHttp.Result.OK and out["data"] is Dictionary:
+		found = int((out["data"] as Dictionary).get("id", 0))
+
+	var answered := is_hash_answer(result, code)
+	if not answered:
+		push_warning("[RommSaveSync] by-hash for %s gave no answer (result=%d code=%d)"
+			% [rom_path.get_file(), result, code])
+	call_deferred("_id_done", systemid, rom_path, found, answered)
+
+
+## MD5 in chunks rather than FileAccess.get_md5, so the abort is checked while it
+## runs. get_md5 is one blocking call: on a 4 GB disc image a quit would join
+## this thread and wait out the whole read.
+func _md5_abortable(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var ctx := HashingContext.new()
+	if ctx.start(HashingContext.HASH_MD5) != OK:
+		f.close()
+		return ""
+	const CHUNK := 1 << 20
+	while not f.eof_reached():
+		if _aborting():
+			f.close()
+			return ""
+		ctx.update(f.get_buffer(CHUNK))
+	f.close()
+	return ctx.finish().hex_encode()
+
+
+func _id_done(systemid: String, rom_path: String, rom_id: int, answered: bool) -> void:
+	_id_busy = false
+	var key := _hash_key(systemid, rom_path)
+	if answered:
+		_id_failed.erase(key)
+	else:
+		_id_failed[key] = true
+	if answered:
+		_hash_ids[_hash_key(systemid, rom_path)] = {
+			"id": rom_id,
+			"size": NetFileTransfer.size_of(rom_path),
+			"mtime": FileAccess.get_modified_time(rom_path),
+		}
+		# So rom_id_for answers for it from here on, including on the flush path.
+		if rom_id > 0:
+			_rom_ids[rom_path] = rom_id
+		save_state()
+		print("[RommSaveSync] %s -> RomM id %d" % [rom_path.get_file(), rom_id])
+	_answer_id(systemid, rom_path, rom_id)

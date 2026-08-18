@@ -55,6 +55,7 @@ func _ready() -> void:
 	await _test_state_overwrite_and_delete()
 	_test_state_server_only()
 	_test_state_restore()
+	await _test_rom_id_resolve()
 	await _test_http_stalls()
 
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -1362,6 +1363,101 @@ func _test_state_restore() -> void:
 	DirAccess.remove_absolute(path)
 	DirAccess.remove_absolute(path.get_base_dir())
 	sync.free()
+
+
+## Matching a hand-copied ROM to the server's copy by content hash.
+##
+## This is the regression record for the bug that made state backup look absent:
+## gamelist.json only carries a "romm:" id for a ROM DOWNLOADED from RomM, a
+## hand-copied one carries a scraper id that looks similar and means something
+## else, so rom_id_for answered 0 and everything keyed on it silently did nothing
+## — while the server held the very same game.
+func _test_rom_id_resolve() -> void:
+	var sync := RommSaveSync.new()
+	add_child(sync)
+	var dir := CoreDownloadManager.default_core_root().path_join("temp")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var rom := dir.path_join("__resolve_selftest.nes")
+	var f := FileAccess.open(rom, FileAccess.WRITE)
+	f.store_string("cartridge bytes")
+	f.close()
+
+	_eq("resolve/never asked reads as unknown", sync.resolved_rom_id("nes", rom), -1)
+
+	# Which HTTP outcomes count as the server having ANSWERED. A 404 does — it
+	# is how by-hash says "not in the library" — and everything that went wrong
+	# on the way does not, or a server that was briefly down would permanently
+	# mark half the shelf as unavailable.
+	_ok("resolve/a 200 is an answer",
+		RommSaveSync.is_hash_answer(RommHttp.Result.OK, 200))
+	_ok("resolve/a 404 is an answer too",
+		RommSaveSync.is_hash_answer(RommHttp.Result.HTTP_ERROR, 404))
+	_ok("resolve/a timeout is not",
+		not RommSaveSync.is_hash_answer(RommHttp.Result.TIMED_OUT, 0))
+	_ok("resolve/nor a dropped connection",
+		not RommSaveSync.is_hash_answer(RommHttp.Result.REQUEST_FAILED, 0))
+	_ok("resolve/nor a server error",
+		not RommSaveSync.is_hash_answer(RommHttp.Result.HTTP_ERROR, 500))
+	_ok("resolve/nor being signed out",
+		not RommSaveSync.is_hash_answer(RommHttp.Result.HTTP_ERROR, 401))
+
+	# A real answer is recorded, and rom_id_for starts answering for it — that is
+	# what lets the flush path use it without ever hashing anything itself.
+	sync._id_done("nes", rom, 93288, true)
+	_eq("resolve/a hit is remembered", sync.resolved_rom_id("nes", rom), 93288)
+	_eq("resolve/and rom_id_for adopts it", sync.rom_id_for("nes", rom), 93288)
+
+	# A 404 IS an answer — it is how by-hash says "not in the library" — and it
+	# costs the server the same full search a hit does. Not caching it meant
+	# every homebrew re-searched from scratch on every panel open, measured at
+	# 78 s a time.
+	var other := dir.path_join("__resolve_selftest2.nes")
+	var f2 := FileAccess.open(other, FileAccess.WRITE)
+	f2.store_string("homebrew")
+	f2.close()
+	sync._id_done("nes", other, 0, true)
+	_eq("resolve/a miss is remembered too", sync.resolved_rom_id("nes", other), 0)
+
+	# A lookup that died on the network must NOT be remembered: caching that as
+	# "RomM does not have this game" would be permanent, and wrong the moment
+	# the server came back.
+	var third := dir.path_join("__resolve_selftest3.nes")
+	var f3 := FileAccess.open(third, FileAccess.WRITE)
+	f3.store_string("unreachable")
+	f3.close()
+	sync._id_done("nes", third, 0, false)
+	_eq("resolve/an unanswered lookup is not remembered",
+		sync.resolved_rom_id("nes", third), -1)
+
+	# A file replaced under the same name is a different ROM. Answering for the
+	# old one would attach this game's saves to another game on the server.
+	await get_tree().create_timer(1.2).timeout
+	var f4 := FileAccess.open(rom, FileAccess.WRITE)
+	f4.store_string("a completely different dump, different length")
+	f4.close()
+	_eq("resolve/a replaced file invalidates its answer",
+		sync.resolved_rom_id("nes", rom), -1)
+
+	# The answer must never arrive synchronously. Half of them come off a worker
+	# and half straight out of the cache, and a caller that connects the signal
+	# after calling — which reads perfectly naturally — would miss only the fast
+	# ones. That trap cost a probe run before it was closed.
+	sync._id_done("nes", other, 0, true)
+	var seen: Array = []
+	sync.resolve_rom_id("nes", other)
+	_ok("resolve/a cached answer does not fire before the caller can listen",
+		seen.is_empty())
+	sync.rom_id_resolved.connect(func(_s: String, p: String, i: int) -> void:
+		seen.append([p, i]))
+	var spins := 0
+	while seen.is_empty() and spins < 60:
+		await get_tree().process_frame
+		spins += 1
+	_ok("resolve/but it does arrive", not seen.is_empty())
+
+	for p: String in [rom, other, third]:
+		DirAccess.remove_absolute(p)
+	sync.queue_free()
 
 
 ## The multipart boundary a request declared, or "".

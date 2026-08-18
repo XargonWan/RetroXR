@@ -192,6 +192,7 @@ func _ensure_ui_connected() -> void:
 	# adopt_external_ui() stacking another connection on every one.
 	if not SaveSync.sync_finished.is_connected(_on_sync_finished):
 		SaveSync.sync_finished.connect(_on_sync_finished)
+		SaveSync.rom_id_resolved.connect(_on_rom_id_resolved)
 		StateSync.upload_started.connect(_on_state_backup_changed.bind(true, ""))
 		StateSync.upload_finished.connect(_on_state_backup_finished)
 		StateSync.listed.connect(_on_states_listed)
@@ -530,6 +531,13 @@ func _on_conflict_forked(_key: String, forked_save_id: String, _label: String) -
 ## panel draws immediately with whatever it already knew.
 func _refresh_server_list() -> void:
 	var rid := _rom_id()
+	# A ROM with no RomM id yet may still BE on the server — gamelist.json only
+	# records one for a ROM that came from there. Ask by content hash, once, off
+	# the main thread, and the answer is kept for good. This is the moment for
+	# it: the panel is open, so the cost is paid where it is expected.
+	if rid <= 0 and SaveSync.is_available() and not _rom().is_empty() \
+			and SaveSync.resolved_rom_id(_sysid(), _rom()) < 0:
+		SaveSync.resolve_rom_id(_sysid(), _rom())
 	if rid > 0 and StateSync.is_available():
 		StateSync.list_for_rom(rid)
 	if rid <= 0 or not SaveSync.is_available():
@@ -629,11 +637,24 @@ func _backup_notice(core: String, rows: Array) -> String:
 	if StateSync.config != null and not StateSync.config.backup_enabled:
 		return "Backing up is off — turn on \"Back up saves and states\" in OPTIONS ▸ RomM."
 	if _rom_id() <= 0:
-		# The commonest case by far, and the least guessable: backup is keyed on
-		# RomM knowing the game, and a hand-copied ROM carries no RomM id. The
-		# Saves tab hides its sync toggle for exactly the same reason and has
-		# never said so either.
-		return "RomM does not have this game, so its save states stay on this device."
+		# Not "RomM does not have this game" — it very often does. gamelist.json
+		# only carries a RomM id for a ROM that was DOWNLOADED from RomM; a
+		# hand-copied one carries a scraper id instead, which looks similar and
+		# means something else. So the honest states are "still asking" and
+		# "asked, and it is not there", and the two must not be conflated.
+		if SaveSync.is_resolving():
+			return "Checking whether RomM has this game…"
+		if SaveSync.lookup_failed(_sysid(), _rom()):
+			# Asked and got nothing back — a timeout or a dropped connection.
+			# Never cached, so it is retried the next time this panel opens; say
+			# that rather than leaving a "checking…" that will never finish, and
+			# never say "RomM does not have it", which is a different claim.
+			return "Could not reach RomM to check for this game — it will try again."
+		if SaveSync.resolved_rom_id(_sysid(), _rom()) == 0:
+			return "RomM does not have this ROM, so its save states stay on this device."
+		# Never asked. The lookup is kicked off when the panel opens, so this is
+		# the blink before it starts; nothing useful to say yet.
+		return ""
 	return ""
 
 
@@ -761,6 +782,18 @@ func _on_state_backup_changed(_key: String, _ok: bool, _detail: String) -> void:
 func _on_state_backup_finished(key: String, ok: bool, detail: String) -> void:
 	if not ok:
 		push_warning("[CartridgeOptions] RomM: %s (%s)" % [detail, key])
+	if _showing():
+		_populate()
+
+
+## The hash lookup came back. A hit turns the whole RomM half of both tabs on
+## for this game, so both lists want redrawing — and the server's states for it
+## are only worth asking for now that there is an id to ask with.
+func _on_rom_id_resolved(_systemid: String, rom_path: String, rom_id: int) -> void:
+	if rom_path != _rom():
+		return
+	if rom_id > 0:
+		_refresh_server_list()
 	if _showing():
 		_populate()
 
