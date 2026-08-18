@@ -607,8 +607,34 @@ func _populate_states(ui: CartridgeOptions2D) -> void:
 	ui.populate_states(rows, StatePaths.total_bytes(core, _rom()),
 		StateSync.statuses_for(core, _rom(), rows),
 		StateSync.server_only(core, _rom(), _server_states),
-		StateSync.failure_notice(core, _rom(), rows),
+		_backup_notice(core, rows),
 		StateSync.backup_enabled() and _rom_id() > 0)
+
+
+## Why there is no RomM column, when there isn't one.
+##
+## Silence here is what "I don't see the option to back it up" looks like: the
+## rows just read "On this device" and nothing says whether that is a setting, a
+## missing server, or this particular game. Each of these names the one thing
+## the player could act on.
+func _backup_notice(core: String, rows: Array) -> String:
+	# A failure beats an explanation — it is the one the player can fix now.
+	var failed := StateSync.failure_notice(core, _rom(), rows)
+	if not failed.is_empty():
+		return failed
+	# No server configured at all is not a problem to report; RomM simply is not
+	# part of how this player uses the app.
+	if not SaveSync.is_available():
+		return ""
+	if StateSync.config != null and not StateSync.config.backup_enabled:
+		return "Backing up is off — turn on \"Back up saves and states\" in OPTIONS ▸ RomM."
+	if _rom_id() <= 0:
+		# The commonest case by far, and the least guessable: backup is keyed on
+		# RomM knowing the game, and a hand-copied ROM carries no RomM id. The
+		# Saves tab hides its sync toggle for exactly the same reason and has
+		# never said so either.
+		return "RomM does not have this game, so its save states stay on this device."
+	return ""
 
 
 ## Arm, then do. Both writing actions and the delete share one slot, so pressing

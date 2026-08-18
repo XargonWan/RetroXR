@@ -895,7 +895,7 @@ func _unix_of(iso: String) -> int:
 
 func _backup_word(backup_state: String, romm_available: bool) -> String:
 	if not romm_available:
-		return "on this device"
+		return "On this device"
 	match backup_state:
 		"on": return "On RomM"
 		"busy": return "Uploading…"

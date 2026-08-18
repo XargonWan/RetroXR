@@ -117,11 +117,22 @@ func _run() -> void:
 	var total := 0
 	var backup := {}
 	var notice := ""
+	var romm := true
 	match _case:
 		"empty":
 			pass
 		"blocked":
 			_ui.capture_blocked = "no machine is running this game"
+		"unknown":
+			# Backup is on and the server is up, but RomM has never heard of this
+			# ROM — the commonest reason the column is missing.
+			rows = _rows(2)
+			notice = "RomM does not have this game, so its save states stay on this device."
+			romm = false
+		"switchedoff":
+			rows = _rows(2)
+			notice = "Backing up is off — turn on \"Back up saves and states\" in OPTIONS ▸ RomM."
+			romm = false
 		"armed":
 			rows = _rows(3)
 			_ui.states_armed_id = str(rows[1]["state_id"])
@@ -138,7 +149,7 @@ func _run() -> void:
 	for i in range(rows.size()):
 		backup[str(rows[i]["state_id"])] = ["on", "busy", "failed", "off"][i % 4]
 		total += int(rows[i]["bytes"])
-	_ui.populate_states(rows, total, backup, server, notice, true)
+	_ui.populate_states(rows, total, backup, server, notice, romm)
 
 	var tabs := _find_tabs(_ui)
 	if tabs != null:

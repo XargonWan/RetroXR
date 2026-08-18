@@ -31,6 +31,7 @@ func _ready() -> void:
 	_test_armed_row()
 	_test_arm_ladder()
 	_test_thumb_cache()
+	_test_backup_notice()
 	print("[state-ui] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -241,6 +242,48 @@ func _test_arm_ladder() -> void:
 	# A different row takes the slot rather than sharing it.
 	_ok("arm/another row only arms", not panel._arm_state("B", "overwrite"))
 	_eq("arm/and owns the slot now", panel._states_armed_id, "B")
+	panel.free()
+
+
+## Why there is no RomM column, when there isn't one.
+##
+## The bug this pins shipped: with backup on and the server up, a hand-copied ROM
+## has no RomM id, so the column vanished and every row read "On this device"
+## with nothing anywhere saying why — indistinguishable from the feature being
+## missing. Each branch has to name the one thing the player could act on.
+func _test_backup_notice() -> void:
+	var panel := CartridgeOptionsPanel.new()
+	add_child(panel)
+	var cfg := RommConfig.new()
+	cfg.enabled = true
+	cfg.base_url = "http://127.0.0.1:1"
+	cfg.token = "x"
+
+	# No server at all is not a problem to report — RomM simply is not part of
+	# how this player uses the app, and a nag on every cartridge would be noise.
+	var saved_save_cfg: RommConfig = SaveSync.config
+	var saved_state_cfg: RommConfig = StateSync.config
+	SaveSync.config = RommConfig.new()
+	StateSync.config = cfg
+	_eq("notice/an unconfigured server says nothing", panel._backup_notice("fceumm", []), "")
+
+	# Configured, but the switch is off: name the switch, not the symptom.
+	SaveSync.config = cfg
+	cfg.backup_enabled = false
+	var off := panel._backup_notice("fceumm", [])
+	_ok("notice/the switch being off names the switch",
+		off.contains("Back up saves and states") and off.contains("OPTIONS"), off)
+
+	# Switch on, server up, but this game is not on RomM. _rom_id() is 0 here
+	# because the panel has no cartridge bound at all, which is the same answer a
+	# hand-copied ROM gives.
+	cfg.backup_enabled = true
+	var unknown := panel._backup_notice("fceumm", [])
+	_ok("notice/a game RomM does not have says so",
+		unknown.contains("RomM does not have this game"), unknown)
+
+	SaveSync.config = saved_save_cfg
+	StateSync.config = saved_state_cfg
 	panel.free()
 
 

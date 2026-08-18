@@ -1234,6 +1234,11 @@ func _build_scraper_options(vbox: VBoxContainer) -> void:
 func _save_romm_config() -> void:
 	romm_config.save_config()
 	SaveSync.setup(romm_config)
+	# BOTH sync layers, or the one that was added second inherits exactly the
+	# bug this helper exists to fix: StateSync would go on using the config it
+	# read at boot, so a server set up during the session would leave the States
+	# tab reporting "on this device" for every row until the app restarted.
+	StateSync.setup(romm_config)
 
 
 func _build_romm_options(vbox: VBoxContainer) -> void:
