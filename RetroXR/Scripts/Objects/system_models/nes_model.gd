@@ -69,8 +69,10 @@ var _sfx_reset_release: Array = []
 var _sfx_channel: Array = []
 var _sfx_cart_insert: Array = []
 var _sfx_cart_remove: Array = []
-var _sfx_tray_down: Array = []
-var _sfx_tray_up: Array = []
+# nes_tray_down_*.wav / nes_tray_up_*.wav are recorded and shipped, but nothing
+# plays them yet: the flap this model hinges is not the ZIF tray they are of.
+# Left unloaded until they have somewhere to go, so a spawn does not decode 15
+# clips for nothing.
 var _sfx_last: Dictionary = {}
 # Where the POWER switch physically sits. The NES's is push-push, so a press
 # always clicks — which of the two clicks it is depends on the latch position
@@ -174,8 +176,6 @@ func _build_sfx() -> void:
 	_sfx_channel = _load_variants("nes_channel_switch")
 	_sfx_cart_insert = _load_variants("nes_cart_insert")
 	_sfx_cart_remove = _load_variants("nes_cart_remove")
-	_sfx_tray_down = _load_variants("nes_tray_down")
-	_sfx_tray_up = _load_variants("nes_tray_up")
 	for i in 2:
 		var v := PcmOneShot.new()
 		v.name = "SwitchSfx%d" % i
@@ -451,11 +451,6 @@ func _on_flap_drag(deg: float) -> void:
 	if open == _lid_open:
 		return
 	_lid_open = open
-	# The bay mechanism only makes a noise when a HAND swings it. play_open() and
-	# play_close() move the same flap from code — inserting a cartridge swings it
-	# automatically — and sounding those would fire the flap on top of the
-	# cartridge's own sound for one continuous motion.
-	_play_sfx(_sfx_tray_up if open else _sfx_tray_down, "tray")
 	if _cartridge_slot != null:
 		_cartridge_slot.enabled = _lid_open
 
