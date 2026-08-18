@@ -69,11 +69,16 @@ func _ready() -> void:
 	super._ready()
 	add_to_group("poster")
 	_stick = SurfaceStick.attach(self, _ray)
-	_stick.stuck_changed.connect(func(_t: Node3D) -> void: apply_fit())
+	_stick.stuck_changed.connect(func(_t: Node3D) -> void:
+		_end_preview()
+		apply_fit())
 	_find_vr_nodes.call_deferred()
+	_build_outline()
+	_build_hint()
+	highlight_updated.connect(_on_highlight)
 	# A grab IS the peel: every hold restores `freeze` itself, so there is no
 	# separate verb and nothing to teach.
-	picked_up.connect(func(_p: Node3D) -> void: _stick.peel())
+	picked_up.connect(func(_p: Node3D) -> void: _stick.peel(true))
 	if not image_path.is_empty():
 		_load_image()
 	else:
@@ -193,6 +198,8 @@ func _apply_dimensions() -> void:
 	var box := _body_shape.shape as BoxShape3D
 	if box != null:
 		box.size = Vector3(size.x, size.y, 0.002)
+	if _outline != null:
+		(_outline.mesh as QuadMesh).size = size + Vector2.ONE * OUTLINE_MARGIN
 	var ptr := _pointer_shape.shape as BoxShape3D
 	if ptr != null:
 		# Slightly proud of the sheet so aiming at a poster is not a pixel hunt.
@@ -224,15 +231,23 @@ var _ctrls_found := false
 
 
 func _process(delta: float) -> void:
-	if not _ctrls_found:
-		return
-	var holder := _ray_holder()
+	var holder := _ray_holder() if _ctrls_found else null
 	# Remember where the beam is pointing for as long as it holds the sheet. The
 	# release itself is silent on this path (no `dropped`), and by the time the
 	# stick runs the grab is already over — so the aim has to be kept, not asked
 	# for afterwards.
 	if holder != null and _stick != null:
 		_stick.aim_direction = -holder.global_transform.basis.z
+		# A beam grab emits nothing on the pickable — no `picked_up`, no
+		# `dropped` — so a stuck poster has to notice the beam itself, or it
+		# stays parented to the wall while the laser drags it around.
+		if is_stuck():
+			_stick.peel(true)
+	# Preview whenever something is HOLDING it and it is not already stuck.
+	# `freeze` is the predicate every hold sets — hand, snap zone and beam alike —
+	# so this shows the landing for a hand placement too, and it does not depend
+	# on a controller being found.
+	_update_preview(delta, freeze and not is_stuck())
 	var rotator := _rotating_controller_for(holder)
 	if rotator == null:
 		return
@@ -368,3 +383,112 @@ func peel() -> void:
 func set_aim_direction(dir: Vector3) -> void:
 	if _stick != null:
 		_stick.aim_direction = dir
+
+
+# ── Hover outline ─────────────────────────────────────────────────────────────
+#
+# A border quad rather than PickableHighlight's inverted hull. Two reasons: that
+# highlight only walks its parent's DIRECT children and the sheet lives one level
+# down under Surface, and inflating a single-sided sheet along its normals gives a
+# doubled ghost instead of a rim. A flat border is what a sheet's outline IS.
+
+const OUTLINE_COLOR := Color(1.0, 0.85, 0.30)
+## How far the border stands out past the sheet's edge.
+const OUTLINE_MARGIN := 0.018
+
+var _outline: MeshInstance3D = null
+
+
+func _build_outline() -> void:
+	_outline = MeshInstance3D.new()
+	_outline.name = "HoverOutline"
+	var quad := QuadMesh.new()
+	_outline.mesh = quad
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = OUTLINE_COLOR
+	mat.emission_enabled = true
+	mat.emission = OUTLINE_COLOR
+	mat.emission_energy_multiplier = 1.6
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Behind the sheet by a hair, so it reads as a rim around it rather than a
+	# panel over the art.
+	_outline.material_override = mat
+	_outline.position = Vector3(0, 0, -0.001)
+	_outline.visible = false
+	_surface.add_child(_outline)
+
+
+func _on_highlight(_p: Node3D, on: bool) -> void:
+	if _outline != null:
+		_outline.visible = on
+
+
+# ── Placement preview ─────────────────────────────────────────────────────────
+#
+# While a beam holds the sheet and a surface is in reach, the ARTWORK slides to
+# where it would land and a sticker glyph shows above it. The body itself is left
+# alone: the ray grab writes its transform every frame and a preview that fought
+# that would stutter. Detaching the visual instead is the same trick RetroMouse
+# uses to lie its shell on a desk while the body follows the hand.
+
+## Metres per second the preview closes the gap. Fast enough to feel attached to
+## the aim, slow enough to read as a move rather than a jump.
+const PREVIEW_LERP := 14.0
+const HINT_GLYPH_M := 0.10
+const HINT_RASTER := 48
+
+var _hint: Label3D = null
+var _previewing := false
+
+
+func _build_hint() -> void:
+	_hint = Label3D.new()
+	_hint.name = "StickHint"
+	_hint.font = TransportGlyphs.font()
+	_hint.font_size = HINT_RASTER
+	_hint.pixel_size = HINT_GLYPH_M / float(HINT_RASTER)
+	_hint.text = TransportGlyphs.glyph("sticker")
+	_hint.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_hint.no_depth_test = true
+	_hint.modulate = OUTLINE_COLOR
+	_hint.visible = false
+	add_child(_hint)
+
+
+## Show — or stop showing — where this would land if let go now.
+func _update_preview(delta: float, active: bool) -> void:
+	var hit: Dictionary = _stick.predict() if (active and _stick != null) else {}
+	if hit.is_empty():
+		_end_preview()
+		return
+	var pose: Transform3D = _stick.pose_for(hit)
+	if not _previewing:
+		_previewing = true
+		# top_level so the sheet stops inheriting the body the beam is dragging.
+		_surface.top_level = true
+		_surface.global_transform = global_transform
+	var t: float = clampf(delta * PREVIEW_LERP, 0.0, 1.0)
+	_surface.global_transform = _surface.global_transform.interpolate_with(pose, t)
+	_hint.visible = true
+	_hint.global_position = pose.origin + pose.basis.z.normalized() * 0.06 \
+		+ Vector3.UP * (get_sheet_size().y * 0.5 + 0.05)
+
+
+func _end_preview() -> void:
+	if _previewing:
+		_previewing = false
+		_surface.top_level = false
+		_surface.transform = Transform3D.IDENTITY
+	if _hint != null:
+		_hint.visible = false
+
+
+## Where this would land if let go now, and the pose it would take there. The
+## preview draws from these, so anything checking the preview checks the commit.
+func predict_stick() -> Dictionary:
+	return _stick.predict() if _stick != null else {}
+
+
+func pose_for_stick(hit: Dictionary) -> Transform3D:
+	return _stick.pose_for(hit) if _stick != null else Transform3D.IDENTITY

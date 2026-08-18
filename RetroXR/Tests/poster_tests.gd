@@ -16,7 +16,7 @@ extends Node
 ## transparent corner, to exercise the alpha path) into the real posters folder and
 ## removes it at both ends.
 
-const GROUPS := ["image", "stick", "release", "conform", "menu", "persist"]
+const GROUPS := ["image", "stick", "release", "peel", "preview", "conform", "menu", "persist"]
 const SLOT := "__poster_selftest"
 const TEST_IMAGE := "__poster_selftest.png"
 
@@ -48,6 +48,10 @@ func _ready() -> void:
 		await _test_stick()
 	if _want("release"):
 		await _test_release()
+	if _want("peel"):
+		await _test_peel()
+	if _want("preview"):
+		await _test_preview()
 	if _want("conform"):
 		await _test_conform()
 	if _want("menu"):
@@ -552,5 +556,114 @@ func _test_release() -> void:
 	far.queue_free()
 	tilted.queue_free()
 	backwards.queue_free()
+	wall.queue_free()
+	await get_tree().process_frame
+
+
+# ── Taking one back off ───────────────────────────────────────────────────────
+#
+# A parked poster is FROZEN, and every hold snapshots `freeze` into
+# `restore_freeze` and hands it back on release. So picking a stuck poster up and
+# letting go left it hanging in mid-air: the release faithfully restored the park.
+# The snapshot has to be corrected, not just the flag — the same correction
+# RetroTV._on_tv_grabbed makes for its own park.
+
+func _test_peel() -> void:
+	var wall := _make_wall(Vector3(0, 1.5, -2.0))
+	await get_tree().physics_frame
+
+	# By hand.
+	var p := _make_poster()
+	await get_tree().process_frame
+	p.global_transform = Transform3D(Basis(), Vector3(0, 1.5, -1.80))
+	await _release(p)
+	_ok(p.is_stuck(), "peel/stuck to begin with")
+
+	_grab(p)
+	_ok(not p.is_stuck(), "peel/a grab takes it off the surface")
+	_ok(not p.restore_freeze,
+		"peel/and clears the park the release would otherwise restore")
+	_let_go(p)
+	for i in range(6):
+		await get_tree().physics_frame
+	_ok(not p.freeze, "peel/it is live again after the drop")
+	var y0: float = p.global_position.y
+	for i in range(25):
+		await get_tree().physics_frame
+	_ok(p.global_position.y < y0 - 0.02,
+		"peel/and falls instead of hanging (dropped %.3f m)" % (y0 - p.global_position.y))
+
+	# By ray, which fires no signal at all — the poster has to notice the beam.
+	var r := _make_poster()
+	await get_tree().process_frame
+	r.global_transform = Transform3D(Basis(), Vector3(0.6, 1.5, -1.80))
+	await _release(r)
+	_ok(r.is_stuck(), "peel/second one stuck")
+	r.peel()
+	_ok(not r.is_stuck(), "peel/the menu verb takes it off too")
+	_ok(not r.freeze, "peel/and hands it straight back to physics")
+
+	p.queue_free()
+	r.queue_free()
+	wall.queue_free()
+	await get_tree().process_frame
+
+
+## What XRToolsPickable.pick_up does to the body, without a controller.
+func _grab(p: Poster) -> void:
+	p.restore_freeze = p.freeze
+	p.freeze = true
+	p.picked_up.emit(p)
+
+
+## ...and what let_go does.
+func _let_go(p: Poster) -> void:
+	p.freeze = p.restore_freeze
+
+
+# ── Preview and hover feedback ────────────────────────────────────────────────
+
+func _test_preview() -> void:
+	var wall := _make_wall(Vector3(0, 1.5, -2.0))
+	await get_tree().physics_frame
+	var p := _make_poster()
+	await get_tree().process_frame
+	p.global_transform = Transform3D(Basis(), Vector3(0, 1.5, -1.0))
+	# Held on a beam aimed at the wall — the case the preview exists for. A hand
+	# never holds it a metre out and expects it to fly.
+	p.set_aim_direction(Vector3(0, 0, -1))
+
+	# The preview and the commit must come from the same arithmetic, or the ghost
+	# lies about where the sheet lands.
+	var predicted: Dictionary = p.predict_stick()
+	_ok(not predicted.is_empty(), "preview/a landing is predicted from a held pose")
+	var pose: Transform3D = p.pose_for_stick(predicted)
+	await _release(p)
+	_ok(p.is_stuck(), "preview/it then sticks")
+	_ok(p.global_position.distance_to(pose.origin) < 0.001,
+		"preview/exactly where the preview said (%.4f m off)"
+			% p.global_position.distance_to(pose.origin))
+
+	# The hint glyph is the one asked for, and only shows while previewing.
+	var hint := p.get_node_or_null("StickHint") as Label3D
+	_ok(hint != null, "preview/there is a stick hint")
+	if hint != null:
+		_eq(hint.text, String.chr(0xF136B), "preview/it prints the sticker glyph")
+		_ok(not hint.visible, "preview/hidden once it has landed")
+
+	# Hover outline.
+	var outline := p.get_node_or_null("Surface/HoverOutline") as MeshInstance3D
+	_ok(outline != null, "preview/there is a hover outline")
+	if outline != null:
+		_ok(not outline.visible, "preview/off until something points at it")
+		p.request_highlight(self, true)
+		_ok(outline.visible, "preview/on when it can be picked up")
+		p.request_highlight(self, false)
+		_ok(not outline.visible, "preview/off again")
+		var sz: Vector2 = p.get_sheet_size()
+		_ok((outline.mesh as QuadMesh).size.x > sz.x,
+			"preview/and stands proud of the sheet")
+
+	p.queue_free()
 	wall.queue_free()
 	await get_tree().process_frame

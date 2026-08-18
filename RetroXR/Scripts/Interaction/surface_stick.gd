@@ -94,27 +94,26 @@ func _physics_process(_delta: float) -> void:
 ## Look straight out of the sheet's face. Not from the hand: under a ray grab the
 ## body floats metres away from the controller, so a controller-origin probe finds
 ## whatever is in front of the PLAYER instead of what the poster is against.
-func try_stick() -> void:
-	if not is_instance_valid(_body) or is_stuck() or not _body.is_inside_tree():
-		return
+## Where this body would stick if it were let go right now: {position, normal,
+## collider}, or empty when nothing is in reach.
+##
+## Shared by the preview and the commit on purpose — a preview drawn from
+## different arithmetic than the placement is a preview that lies.
+func predict() -> Dictionary:
+	if not is_instance_valid(_body) or not _body.is_inside_tree():
+		return {}
 	var space := _body.get_world_3d().direct_space_state
 	if space == null:
-		return
+		return {}
 	var from := _body.global_position
 
 	# The laser first, when there is one: that is the surface the player chose, and
 	# a ray-held sheet floats at the beam's hold distance facing however it was
 	# grabbed, so its own face usually looks at nothing.
 	if aim_direction.length_squared() > 0.0001:
-		var aq := PhysicsRayQueryParameters3D.create(
-			from, from + aim_direction.normalized() * AIM_REACH)
-		aq.collision_mask = SURFACE_MASK
-		aq.exclude = [_body.get_rid()]
-		var ah := space.intersect_ray(aq)
+		var ah := _cast(space, from, aim_direction, AIM_REACH)
 		if not ah.is_empty():
-			stick_to(ah["collider"] as Node3D, ah["position"] as Vector3,
-				(ah["normal"] as Vector3).normalized())
-			return
+			return ah
 
 	# Otherwise both faces, nearest wins. Which way round a sheet is held is
 	# arbitrary — a poster has a front but a hand does not — so looking only out of
@@ -123,20 +122,38 @@ func try_stick() -> void:
 	var best: Dictionary = {}
 	var best_d := REACH + 1.0
 	for dir: Vector3 in [-_body.global_transform.basis.z, _body.global_transform.basis.z]:
-		var q := PhysicsRayQueryParameters3D.create(from, from + dir.normalized() * REACH)
-		q.collision_mask = SURFACE_MASK
-		q.exclude = [_body.get_rid()]
-		var hit := space.intersect_ray(q)
+		var hit := _cast(space, from, dir, REACH)
 		if hit.is_empty():
 			continue
 		var d: float = from.distance_to(hit["position"] as Vector3)
 		if d < best_d:
 			best_d = d
 			best = hit
-	if best.is_empty():
+	return best
+
+
+func _cast(space: PhysicsDirectSpaceState3D, from: Vector3, dir: Vector3,
+		reach: float) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir.normalized() * reach)
+	q.collision_mask = SURFACE_MASK
+	q.exclude = [_body.get_rid()]
+	return space.intersect_ray(q)
+
+
+## The pose the sheet would take on `hit`, for a preview or for the commit.
+func pose_for(hit: Dictionary) -> Transform3D:
+	var n := (hit["normal"] as Vector3).normalized()
+	return _surface_basis(n, (hit["position"] as Vector3) + n * SKIN)
+
+
+func try_stick() -> void:
+	if is_stuck():
 		return
-	stick_to(best["collider"] as Node3D, best["position"] as Vector3,
-		(best["normal"] as Vector3).normalized())
+	var hit := predict()
+	if hit.is_empty():
+		return
+	stick_to(hit["collider"] as Node3D, hit["position"] as Vector3,
+		(hit["normal"] as Vector3).normalized())
 
 
 ## Commit against a surface. `point`/`normal` are world space.
@@ -169,10 +186,19 @@ func stick_to(collider: Node3D, point: Vector3, normal: Vector3) -> void:
 	stuck_changed.emit(host)
 
 
-## Hand the body back to the room. Called when something picks it up again — a
-## grab IS the peel, since every hold restores `freeze` on its own.
-func peel() -> void:
+## Hand the body back to the room.
+##
+## `held` says something is holding it right now — a hand or a beam — in which
+## case the hold owns `freeze` and this must not fight it. What this ALWAYS does
+## is correct the hold's snapshot: every grab copies `freeze` into
+## `restore_freeze` and hands it back on release, and a parked poster is frozen,
+## so an uncorrected snapshot restores the park and the poster hangs in mid-air
+## wherever it was let go. Correct the snapshot, not just the flag — the same
+## correction RetroTV._on_tv_grabbed makes for its own park.
+func peel(held: bool = false) -> void:
 	if not is_stuck():
+		if is_instance_valid(_body) and held:
+			_body.restore_freeze = false
 		return
 	var host := target
 	target = null
@@ -183,6 +209,10 @@ func peel() -> void:
 		if scene != null and _body.get_parent() != scene:
 			_body.reparent(scene, true)
 		_body.freeze_mode = _orig_freeze_mode
+		_body.restore_freeze = false
+		if not held:
+			_body.freeze = false
+			_body.sleeping = false
 		_body.reset_physics_interpolation()
 	stuck_changed.emit(null)
 
