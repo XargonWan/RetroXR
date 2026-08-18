@@ -53,6 +53,9 @@ var _manager_cores_by_system: Dictionary = {}
 var _bios_browser: SystemGridBrowser = null
 var _bios_cores_by_system: Dictionary = {}
 var _bios_row_cache: Dictionary = {}
+## folder path -> the per-core destination dirs for it. Same lifetime as the row
+## cache: both are derived from what is installed, and both are rebuilt together.
+var _bios_dest_cache: Dictionary = {}
 var _firmware_installer: FirmwareInstaller = null
 var _bios_job_buttons: Dictionary = {}
 ## Core awaiting its second delete press, "" when nothing is armed. Cleared by a
@@ -765,6 +768,7 @@ func _populate_bios_tab() -> void:
 	# Dropped in by hand or by the web uploader since the last look — the whole
 	# point of the tab is that it reflects the disk, so nothing survives a rebuild.
 	_bios_row_cache.clear()
+	_bios_dest_cache.clear()
 	_bios_cores_by_system = FirmwareRequirements.installed_cores_by_system()
 
 	# One request per session, and the grid does not wait for it — `listed`
@@ -1099,6 +1103,23 @@ func _build_bios_action(r: Dictionary, systemid: String) -> Control:
 # .info can make. Matching by filename is therefore impossible; the join that
 # does work is the platform, since RomM files its firmware under bios/<fs_slug>.
 
+## Is this directory requirement one that BIOS dumps belong in?
+##
+## RomM's firmware store is BIOS files, so the picker must not be offered for a
+## folder that wants something else. Only eight directory requirements exist in
+## the whole info database and they split cleanly on the leaf name:
+##
+##   pcsx2/bios          pcsx2, pcee2, yaps2   — BIOS dumps
+##   pcsx2/resources     pcee2, yaps2          — shaders, GameIndex.yaml, fonts
+##   mkxp-z/RTP/...      mkxp-z                — RPG Maker Run Time Packages
+##
+## Without this the resources row got the same 68 PS2 BIOS files as the bios row,
+## and pressing Get all on it filed twenty of them under pcsx2/resources on a
+## real headset.
+static func _is_bios_folder(path: String) -> bool:
+	return path.trim_suffix("/").get_file().to_lower() == "bios"
+
+
 ## Everything the folder could hold: what RomM offers, plus what is already in
 ## it that RomM has never heard of.
 ##
@@ -1114,8 +1135,11 @@ func _bios_dir_entries(r: Dictionary, systemid: String) -> Array:
 
 	var out: Array = []
 	var seen: Dictionary = {}
+	# The server half is offered only where BIOS dumps belong. A non-BIOS folder
+	# still lists what is already inside it, so its contents stay inspectable and
+	# deletable — it just gets nothing pushed at it.
 	var from_server: Array = romm_firmware.find_for_system(systemid) \
-		if romm_firmware != null else []
+		if romm_firmware != null and _is_bios_folder(str(r.get("path", ""))) else []
 	for e: Dictionary in from_server:
 		var name := str(e["file_name"])
 		seen[name.to_lower()] = true
@@ -1499,7 +1523,17 @@ func _build_firmware_delete_button(core_name: String, path: String, dest: String
 
 ## Every installed core that declares this exact firmware path wants its own
 ## copy, so one fetch fills them all.
+##
+## Memoised for the life of a rebuild, because the fetch-all calls it once PER
+## FILE. It walks every installed core and rebuilds that core's whole
+## requirement list through FirmwareRequirements.for_core, which re-parses the
+## `notes` checksum table each time — cheap once, and 68 files against ~40 cores
+## on a headset froze the app solid the moment Get all was pressed. The scan does
+## not depend on the file, only on the folder, so it never needed repeating.
 func _bios_destinations_for(path: String) -> Array[String]:
+	if _bios_dest_cache.has(path):
+		return _bios_dest_cache[path]
+
 	var dests: Array[String] = []
 	for sid: String in _bios_cores_by_system:
 		for c: Dictionary in _bios_cores_by_system[sid]:
@@ -1508,6 +1542,7 @@ func _bios_destinations_for(path: String) -> Array[String]:
 				if str(req["path"]) == path:
 					dests.append(FirmwareRequirements.destination(cn, path))
 					break
+	_bios_dest_cache[path] = dests
 	return dests
 
 

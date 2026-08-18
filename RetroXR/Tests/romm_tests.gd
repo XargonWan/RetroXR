@@ -45,6 +45,7 @@ func _ready() -> void:
 	_test_media_and_cleanup()
 	_test_cleanup_gate()
 	_test_cleanup_core_dirs()
+	_test_bios_folder_rule()
 	_test_cleanup_folder_as_file()
 	_test_gamelist_bad_paths()
 	_test_core_uninstall()
@@ -631,6 +632,43 @@ func _test_cleanup_gate() -> void:
 	_ok("gate/unnamed category untouched", FileAccess.file_exists(art))
 
 	_rm_rf(dir_path)
+
+
+## Which folder requirements may be offered BIOS files from the server.
+##
+## Both PS2 cores declare two directories, and only one of them is for BIOS.
+## Keying the picker on the systemid alone offered the same 68 PS2 dumps for
+## `pcsx2/resources` — a shaders/GameIndex/fonts folder — and pressing Get all
+## there filed twenty of them in the wrong place on a real headset.
+func _test_bios_folder_rule() -> void:
+	var V: Callable = SpawnMenuCoresView._is_bios_folder
+
+	_ok("biosdir/pcsx2 bios is one", V.call("pcsx2/bios"))
+	_ok("biosdir/trailing slash still one", V.call("pcsx2/bios/"))
+	_ok("biosdir/a bare bios folder is one", V.call("bios"))
+	_ok("biosdir/case does not matter", V.call("PCSX2/BIOS"))
+
+	# The three shapes in the info database that are NOT bios folders.
+	_ok("biosdir/pcsx2 resources is not", not V.call("pcsx2/resources"))
+	_ok("biosdir/mkxp RTP is not", not V.call("mkxp-z/RTP/Standard"))
+	_ok("biosdir/mkxp RTP VXAce is not", not V.call("mkxp-z/RTP/RPGVXAce"))
+	_ok("biosdir/empty is not", not V.call(""))
+
+	# Every directory requirement the shipped .info files actually declare, so a
+	# new core with a new folder shape shows up here rather than in a bug report.
+	var dirs: Dictionary = {}
+	var db := CoreInfoDatabase.shared()
+	for core: String in ["pcsx2", "pcee2", "yaps2", "mkxp-z"]:
+		for req: Dictionary in FirmwareRequirements.from_info(db.get_by_core_name(core)):
+			if bool(req.get("is_dir", false)):
+				dirs[str(req["path"])] = true
+	_ok("biosdir/corpus still only these folders",
+		dirs.has("pcsx2/bios") and dirs.has("pcsx2/resources"), str(dirs.keys()))
+	var offered: Array = []
+	for d: String in dirs:
+		if V.call(d):
+			offered.append(d)
+	_eq("biosdir/exactly one folder shape takes server files", offered, ["pcsx2/bios"])
 
 
 ## Which directories under system/ may be offered for deletion.
