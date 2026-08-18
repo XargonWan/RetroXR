@@ -1145,6 +1145,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"image_path": poster.image_path,
 			"size_scale": poster.size_scale,
 			"fit_mode": int(poster.fit_mode),
+			"stuck": poster.is_stuck(),
 		})
 	elif node is PDFBook:
 		var book := node as PDFBook
@@ -1414,6 +1415,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				poster.size_scale = float(data.get("size_scale", 1.0))
 				poster.fit_mode = int(data.get("fit_mode", 0)) as Poster.FitMode
 				poster.image_path = str(data.get("image_path", ""))
+				poster.stuck_from_save = bool(data.get("stuck", false))
 				obj = poster
 			"book":
 				var book := BOOK_SCENE.instantiate() as PDFBook

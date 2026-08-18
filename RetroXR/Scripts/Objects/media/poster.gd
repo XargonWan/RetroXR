@@ -48,6 +48,12 @@ const EMISSION_ENERGY := 0.1
 @onready var _flat_mesh: MeshInstance3D = $Surface/FlatMesh
 @onready var _body_shape: CollisionShape3D = $CollisionShape3D
 @onready var _pointer_shape: CollisionShape3D = $PointerArea/CollisionShape3D
+@onready var _ray: RayCast3D = $SurfaceRay
+
+var _stick: SurfaceStick = null
+## Set from a save before _ready, so a restored poster re-parks itself instead of
+## dropping off the wall while the room finishes loading.
+var stuck_from_save := false
 
 ## Image aspect (width / height). 1.0 until an image loads.
 var _aspect: float = 1.0
@@ -57,10 +63,43 @@ var _texture: Texture2D = null
 func _ready() -> void:
 	super._ready()
 	add_to_group("poster")
+	_stick = SurfaceStick.attach(self, _ray)
+	# A grab IS the peel: every hold restores `freeze` itself, so there is no
+	# separate verb and nothing to teach.
+	picked_up.connect(func(_p: Node3D) -> void: _stick.peel())
 	if not image_path.is_empty():
 		_load_image()
 	else:
 		_apply_dimensions()
+	if stuck_from_save:
+		# Deferred twice over: the body has not reached its restored pose at
+		# _ready, and the restore's own _let_go hands gravity back to everything
+		# it froze a pass later.
+		_repark_after_restore.call_deferred()
+
+
+## True while the sheet is committed to a surface.
+func is_stuck() -> bool:
+	return _stick != null and _stick.is_stuck()
+
+
+func stick_target() -> Node3D:
+	return _stick.target if _stick != null else null
+
+
+## A restored poster comes back at its saved WORLD pose, parented to the room —
+## not under the host it was riding, because the walk that saves it is over the
+## "spawned" group and _base() records a global transform.
+##
+## So it re-probes rather than restoring a reference: the surface it was stuck to
+## has been restored to its own saved pose too, and the sheet still sits 2 mm off
+## it, so the same short ray that stuck it the first time finds it again. That also
+## self-heals when the room changed underneath the save, where a stored reference
+## would only be able to fail.
+func _repark_after_restore() -> void:
+	if _stick == null:
+		return
+	_stick.try_stick()
 
 
 ## Metres, as currently sized. Width first.
