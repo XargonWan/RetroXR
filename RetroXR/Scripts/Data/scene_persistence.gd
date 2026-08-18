@@ -32,7 +32,7 @@ const _STRING_FIELDS := [
 const _NUMBER_FIELDS := [
 	"lid_angle", "scale_factor", "stereo_mode", "size_scale", "page_state",
 	"page_leaf", "sensitivity", "device_type", "port_index", "volume", "cords",
-	"pad_ordinal", "fit_mode",
+	"pad_ordinal", "fit_mode", "roll",
 ]
 const _BOOL_FIELDS := ["video_out", "ignore_gravity", "crt_enabled", "half_pages", "stuck"]
 const _REFERENCE_FIELDS := [
@@ -1145,6 +1145,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"image_path": poster.image_path,
 			"size_scale": poster.size_scale,
 			"fit_mode": int(poster.fit_mode),
+			"roll": poster.roll_degrees,
 			"stuck": poster.is_stuck(),
 		})
 	elif node is PDFBook:
@@ -1414,6 +1415,7 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				# sheet's dimensions and has to see the final scale.
 				poster.size_scale = float(data.get("size_scale", 1.0))
 				poster.fit_mode = int(data.get("fit_mode", 0)) as Poster.FitMode
+				poster.roll_degrees = float(data.get("roll", 0.0))
 				poster.image_path = str(data.get("image_path", ""))
 				poster.stuck_from_save = bool(data.get("stuck", false))
 				obj = poster

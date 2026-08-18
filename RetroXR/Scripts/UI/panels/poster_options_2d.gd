@@ -14,6 +14,7 @@ extends Control
 signal fit_selected(mode: int)
 signal size_changed(value: float)
 signal size_committed(value: float)
+signal rotate_requested(clockwise: bool)
 signal peel_requested
 signal close_requested
 
@@ -29,6 +30,7 @@ var _size_slider: HSlider = null
 var _size_val: Label = null
 var _fit_buttons: Array[Button] = []
 var _peel_btn: Button = null
+var _rot_btns: Array[Button] = []
 var _suppress_signal := false
 
 
@@ -122,6 +124,28 @@ func _build_ui() -> void:
 	_size_val.add_theme_font_size_override("font_size", 18)
 	row.add_child(_size_val)
 
+	# Turning it in the plane of the wall. Two arrows rather than a slider: this is
+	# nudged to taste against what is around it, not dialled to a number.
+	var rot_row := HBoxContainer.new()
+	rot_row.add_theme_constant_override("separation", 6)
+	vbox.add_child(rot_row)
+	var rot_lbl := Label.new()
+	rot_lbl.text = "Turn"
+	rot_lbl.add_theme_color_override("font_color", COLOR_ROW)
+	rot_lbl.add_theme_font_size_override("font_size", 18)
+	rot_lbl.custom_minimum_size = Vector2(52, 0)
+	rot_row.add_child(rot_lbl)
+	for spec: Array in [["↺", false], ["↻", true]]:
+		var rb := Button.new()
+		rb.text = str(spec[0])
+		rb.custom_minimum_size = Vector2(0, 40)
+		rb.add_theme_font_size_override("font_size", 22)
+		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var cw: bool = spec[1]
+		rb.pressed.connect(func() -> void: rotate_requested.emit(cw))
+		rot_row.add_child(rb)
+		_rot_btns.append(rb)
+
 	_peel_btn = Button.new()
 	_peel_btn.text = "Peel off"
 	_peel_btn.custom_minimum_size = Vector2(0, 40)
@@ -144,6 +168,8 @@ func populate(fit_mode: int, size_scale: float, stuck: bool) -> void:
 	_size_slider.value = clampf(size_scale, MIN_SIZE, MAX_SIZE)
 	_size_val.text = "%.2f×" % _size_slider.value
 	_peel_btn.disabled = not stuck
+	for rb: Button in _rot_btns:
+		rb.disabled = not stuck
 	_suppress_signal = false
 
 

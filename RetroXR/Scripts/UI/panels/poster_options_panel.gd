@@ -73,6 +73,7 @@ func _ensure_ui_connected() -> void:
 	ui.fit_selected.connect(_on_fit_selected)
 	ui.size_changed.connect(_on_size_changed)
 	ui.size_committed.connect(_on_size_committed)
+	ui.rotate_requested.connect(_on_rotate)
 	ui.peel_requested.connect(_on_peel)
 	ui.close_requested.connect(hide_panel)
 	_ui_connected = true
@@ -106,6 +107,14 @@ func _on_size_committed(value: float) -> void:
 	if _poster and is_instance_valid(_poster):
 		_poster.size_scale = value
 		_poster.apply_fit()
+
+
+func _on_rotate(clockwise: bool) -> void:
+	if _poster and is_instance_valid(_poster):
+		if clockwise:
+			_poster.rotate_cw()
+		else:
+			_poster.rotate_ccw()
 
 
 func _on_peel() -> void:

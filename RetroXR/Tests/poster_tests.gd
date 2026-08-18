@@ -16,7 +16,7 @@ extends Node
 ## transparent corner, to exercise the alpha path) into the real posters folder and
 ## removes it at both ends.
 
-const GROUPS := ["image", "stick", "release", "peel", "preview", "desktop", "conform", "menu", "persist"]
+const GROUPS := ["image", "stick", "release", "peel", "preview", "desktop", "roll", "conform", "menu", "persist"]
 const SLOT := "__poster_selftest"
 const TEST_IMAGE := "__poster_selftest.png"
 
@@ -54,6 +54,8 @@ func _ready() -> void:
 		await _test_preview()
 	if _want("desktop"):
 		await _test_desktop()
+	if _want("roll"):
+		await _test_roll()
 	if _want("conform"):
 		await _test_conform()
 	if _want("menu"):
@@ -730,4 +732,73 @@ func _test_desktop() -> void:
 			"desktop/and discards rather than writing ALPHA")
 
 	p.queue_free()
+	await get_tree().process_frame
+
+
+# ── Turning one on the wall ───────────────────────────────────────────────────
+
+func _test_roll() -> void:
+	var wall := _make_wall(Vector3(0, 1.5, -2.0))
+	await get_tree().physics_frame
+	var p := _make_poster()
+	await get_tree().process_frame
+	p.global_transform = Transform3D(Basis(), Vector3(0, 1.5, -1.80))
+	await _release(p)
+	_ok(p.is_stuck(), "roll/stuck to begin with")
+
+	# Square to the world when it lands — the right first guess.
+	_ok(absf(p.global_transform.basis.y.dot(Vector3.UP) - 1.0) < 0.01,
+		"roll/lands upright")
+	var at: Vector3 = p.global_position
+
+	p.rotate_cw()
+	await get_tree().process_frame
+	_ok(absf(p.roll_degrees - 15.0) < 0.001, "roll/one step clockwise is 15 deg")
+	# Turned in the plane of the wall: the face still points out of it, and the
+	# sheet has not moved off its anchor.
+	_ok(p.global_transform.basis.z.dot(Vector3(0, 0, 1)) > 0.999,
+		"roll/still lies flat on the wall")
+	_ok(p.global_position.distance_to(at) < 0.001, "roll/and spins in place")
+	var tilt := rad_to_deg(acos(clampf(p.global_transform.basis.y.dot(Vector3.UP), -1.0, 1.0)))
+	_ok(absf(tilt - 15.0) < 0.5, "roll/the sheet really turned (%.1f deg)" % tilt)
+
+	for i in range(3):
+		p.rotate_ccw()
+	await get_tree().process_frame
+	_ok(absf(p.roll_degrees - (-30.0)) < 0.001, "roll/steps back the other way")
+
+	# It has to survive a save, or a hung room comes back straightened.
+	var sp := ScenePersistence.new("arcade")
+	p.add_to_group("spawned")
+	_ok(sp.save_slot(self, SLOT), "roll/saved")
+	var raw: Variant = JSON.parse_string(
+		FileAccess.get_file_as_string("user://scenes/arcade/%s.json" % SLOT))
+	var entry: Dictionary = {}
+	for o: Variant in (raw as Dictionary).get("objects", []):
+		if str((o as Dictionary).get("type", "")) == "poster":
+			entry = o as Dictionary
+	_ok(absf(float(entry.get("roll", 0.0)) - (-30.0)) < 0.001, "roll/recorded")
+
+	sp.clear_scene(self)
+	for i in range(20):
+		await get_tree().physics_frame
+	await sp.load_slot_async(self, SLOT)
+	for i in range(40):
+		await get_tree().physics_frame
+	var back: Poster = null
+	for n in get_tree().get_nodes_in_group("spawned"):
+		if n is Poster:
+			back = n as Poster
+	_ok(back != null and absf(back.roll_degrees - (-30.0)) < 0.001,
+		"roll/came back turned")
+	if back != null and back.is_stuck():
+		var t2 := rad_to_deg(acos(clampf(back.global_transform.basis.y.dot(Vector3.UP), -1.0, 1.0)))
+		_ok(absf(t2 - 30.0) < 1.0, "roll/and is actually hanging at that angle (%.1f)" % t2)
+
+	sp.clear_scene(self)
+	for i in range(10):
+		await get_tree().physics_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(
+		"user://scenes/arcade/%s.json" % SLOT))
+	wall.queue_free()
 	await get_tree().process_frame

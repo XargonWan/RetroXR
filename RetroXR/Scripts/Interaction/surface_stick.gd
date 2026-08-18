@@ -55,6 +55,10 @@ var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_STATIC
 ## of its own face finds empty room — the surface the player means is the one
 ## under the laser, which can be metres away. Aim wins when it is set.
 var aim_direction := Vector3.ZERO
+## In-plane spin, in radians about the surface normal. Sticking squares a sheet
+## up to world-up, which is right for a first placement and wrong as the only
+## option — a poster hung on a slant is a deliberate look.
+var roll := 0.0
 
 
 static func attach(body: RigidBody3D, ray: RayCast3D) -> SurfaceStick:
@@ -217,6 +221,18 @@ func peel(held: bool = false) -> void:
 	stuck_changed.emit(null)
 
 
+## Re-apply the pose after the roll changed, keeping the anchor. Nothing about
+## what it is stuck TO changes, so this must not go back through stick_to and
+## re-parent or re-probe.
+func reapply_roll() -> void:
+	if not is_stuck() or not is_instance_valid(_body) or not is_instance_valid(target):
+		return
+	var n := (target.global_transform.basis * anchor_normal).normalized()
+	var at := target.to_global(anchor_position)
+	_body.global_transform = _surface_basis(n, at)
+	_body.reset_physics_interpolation()
+
+
 ## Re-park after a slot restore. The restore's own _let_go hands gravity back to
 ## everything it froze, so a poster that was saved stuck has to re-assert itself
 ## after that sweep rather than during it.
@@ -246,11 +262,16 @@ func _host_for(collider: Node3D) -> Node3D:
 ## The sheet's +Z along the surface normal, up as near world-up as the surface
 ## allows. Same construction retro_mouse uses to lie a mouse on a desk, turned for
 ## a face rather than a base.
-static func _surface_basis(n: Vector3, origin: Vector3) -> Transform3D:
+func _surface_basis(n: Vector3, origin: Vector3) -> Transform3D:
 	var up := Vector3.UP - n * Vector3.UP.dot(n)
 	if up.length_squared() < 0.0001:
 		# Floor or ceiling: no world-up component survives, so pick any axis in
 		# the plane and let the sheet lie flat.
 		up = Vector3.FORWARD - n * Vector3.FORWARD.dot(n)
 	up = up.normalized()
-	return Transform3D(Basis(up.cross(n), up, n).orthonormalized(), origin)
+	var basis := Basis(up.cross(n), up, n).orthonormalized()
+	if not is_zero_approx(roll):
+		# About the normal, so the sheet spins in the surface it is lying on rather
+		# than lifting a corner off it.
+		basis = Basis(n, roll) * basis
+	return Transform3D(basis, origin)

@@ -44,6 +44,20 @@ const EMISSION_ENERGY := 0.1
 
 @export var fit_mode: FitMode = FitMode.FLAT
 
+## In-plane spin on the surface, in degrees. Sticking squares a sheet up to
+## world-up, which is the right first guess and a poor only option — a poster
+## hung at a slant is a deliberate look, not a mistake.
+@export_range(-180.0, 180.0) var roll_degrees: float = 0.0:
+	set(value):
+		roll_degrees = wrapf(value, -180.0, 180.0)
+		if _stick != null:
+			_stick.roll = deg_to_rad(roll_degrees)
+			_stick.reapply_roll()
+			# A conformed sheet was sampled through the old frame, so its wrap and
+			# its UVs are both stale once it turns.
+			if is_inside_tree() and fit_mode == FitMode.CONFORM:
+				apply_fit()
+
 @onready var _surface: Node3D = $Surface
 @onready var _flat_mesh: MeshInstance3D = $Surface/FlatMesh
 @onready var _body_shape: CollisionShape3D = $CollisionShape3D
@@ -69,6 +83,7 @@ func _ready() -> void:
 	super._ready()
 	add_to_group("poster")
 	_stick = SurfaceStick.attach(self, _ray)
+	_stick.roll = deg_to_rad(roll_degrees)
 	_stick.stuck_changed.connect(func(_t: Node3D) -> void:
 		_end_preview()
 		apply_fit())
@@ -544,3 +559,15 @@ func _desktop_resize(delta: float) -> void:
 	if is_zero_approx(step):
 		return
 	size_scale = clampf(size_scale + step, SIZE_MIN, SIZE_MAX)
+
+
+## Turn the sheet in the plane of whatever it is on. The menu's two arrows.
+const ROLL_STEP := 15.0
+
+
+func rotate_cw() -> void:
+	roll_degrees += ROLL_STEP
+
+
+func rotate_ccw() -> void:
+	roll_degrees -= ROLL_STEP
