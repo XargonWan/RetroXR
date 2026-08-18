@@ -275,7 +275,7 @@ func _case_table(name: String) -> void:
 	var rope := _rope_between(Vector3(-0.3, 0.76, 0), Vector3(0.66, 0.76, 0), 16)
 	_look(Vector3(0.5, 1.15, 1.1), Vector3(0.1, 0.78, 0))
 	var f: int = await _record(name, rope, 120)
-	f = await _record_carry(name, rope, Vector3(0.3, 0.76, 0), 90, f)
+	f = await _record_carry(name, rope, rope.end_node, Vector3(0.3, 0.76, 0), 90, f)
 	await _record(name, rope, 690, f)
 
 
@@ -285,7 +285,7 @@ func _case_corner(name: String) -> void:
 	var rope := _rope_between(Vector3(-0.9, 0.76, 0), Vector3(0.35, 0.76, 0), 34)
 	_look(Vector3(1.1, 1.05, 1.7), Vector3(-0.25, 0.45, 0))
 	var f: int = await _record(name, rope, 120)
-	f = await _record_carry(name, rope, Vector3(0.30, 0.03, 0), 90, f)
+	f = await _record_carry(name, rope, rope.end_node, Vector3(0.30, 0.03, 0), 90, f)
 	await _record(name, rope, 690, f)
 
 
@@ -393,7 +393,8 @@ func _case_wall(name: String) -> void:
 	_look(Vector3(0.3, 1.3, 2.4), Vector3(0, 0.3, 0))
 	var f: int = await _record_engine(name, 240)
 	var plug: RigidBody3D = lead.get_node("PlugA0")
-	f = await _record_tow(name, plug, Vector3(1.1, 0.75, 0), 150, f)
+	f = await _record_tow(name, plug, Vector3(-0.4, 0.75, 0), 75, f)
+	f = await _record_tow(name, plug, Vector3(1.1, 0.75, 0), 75, f)
 	f = await _record_engine(name, 60, f)
 	plug.freeze = false
 	await _record_engine(name, 600, f)

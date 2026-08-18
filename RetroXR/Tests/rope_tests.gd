@@ -743,11 +743,15 @@ func _group_handling() -> void:
 	lead.queue_free()
 	await get_tree().physics_frame
 
-	# CARRIED OVER A WALL. The held plug taken up and over a partition while the
-	# loose far plug still lies behind it, so the reach clamp's pull line passes
-	# straight through the wall. The far plug has to come up the near face and
-	# over — or stay pressed against it — but never end up inside, and the cord
-	# has to finish around the partition rather than through it.
+	# CARRIED OVER A WALL. The held plug LIFTED and then taken across, the way a
+	# hand actually clears a partition — the first draft towed it in a straight
+	# line, which passes through the wall's middle, and a frozen body moved by
+	# the harness goes wherever it is sent: the pinned anchor rode through the
+	# solid and the cord sliced the wall after it while every particle-based
+	# assertion read 0.0 (the particles sat legally on either side; it was the
+	# SEGMENTS spanning between them that crossed). Hence the segment oracle
+	# below, sampled every frame of the carry: the cord may only cross the
+	# wall's plane above its top edge.
 	base = _new_case()
 	_box(base + Vector3(0, -0.05, 0), Vector3(6.0, 0.10, 3.0))
 	var part_c := base + Vector3(0, 0.25, 0)
@@ -758,29 +762,36 @@ func _group_handling() -> void:
 	plug = lead.get_node("PlugA0")
 	far = lead.get_node("PlugB0")
 	plug.freeze = true
-	var over_stride: Vector3 = (base + Vector3(1.1, 0.75, 0) - plug.global_position) / 150.0
 	var far_into := 0.0
-	for f in 150:
-		_move_held(plug, over_stride)
-		await get_tree().physics_frame
-		var fp: Vector3 = far.global_position
-		var dxp := Vector3(part_s.x * 0.5 - absf(fp.x - part_c.x),
-			part_s.y * 0.5 - absf(fp.y - part_c.y), part_s.z * 0.5 - absf(fp.z - part_c.z))
-		if dxp.x > 0.0 and dxp.y > 0.0 and dxp.z > 0.0:
-			far_into = maxf(far_into, minf(dxp.x, minf(dxp.y, dxp.z)))
+	var pierced := false
+	for leg: Vector3 in [base + Vector3(-0.4, 0.75, 0), base + Vector3(1.1, 0.75, 0)]:
+		var legs := 75
+		var over_stride: Vector3 = (leg - plug.global_position) / float(legs)
+		for f in legs:
+			_move_held(plug, over_stride)
+			await get_tree().physics_frame
+			var fp: Vector3 = far.global_position
+			var dxp := Vector3(part_s.x * 0.5 - absf(fp.x - part_c.x),
+				part_s.y * 0.5 - absf(fp.y - part_c.y), part_s.z * 0.5 - absf(fp.z - part_c.z))
+			if dxp.x > 0.0 and dxp.y > 0.0 and dxp.z > 0.0:
+				far_into = maxf(far_into, minf(dxp.x, minf(dxp.y, dxp.z)))
+			if _pierces_below_top(rope, part_c, part_s):
+				pierced = true
 	for f in 60:
 		await get_tree().physics_frame
-	_ok("handling/a snatch cannot pull the far plug through a wall", far_into < 0.005,
+	_ok("handling/a carry cannot pull the far plug through a wall", far_into < 0.005,
 		"plug centre %.1f mm inside the partition at the worst frame" % (far_into * 1000.0))
+	_ok("handling/the cord goes over the wall, never through it",
+		not pierced and not _pierces_below_top(rope, part_c, part_s))
 	var part_cut := _deepest_in_box_of(rope, part_c, part_s)
-	_ok("handling/the cord ends up around the wall, not through it", part_cut < 0.01,
+	_ok("handling/the cord ends up around the wall, not inside it", part_cut < 0.01,
 		"deepest %.1f mm inside" % (part_cut * 1000.0))
 	plug.freeze = false
 	# 1800, not the 900 the other tow cases get: the release leaves the lead
 	# draped over the partition with a plug swinging on each side, and the swing
 	# has twice the pendulum to damp before the wake threshold lets it latch.
 	slept = await _wait_until_asleep(rope, 1800)
-	_ok("handling/a lead snatched over a wall settles", slept >= 0,
+	_ok("handling/a lead carried over a wall settles", slept >= 0,
 		"asleep after %d frames" % slept if slept >= 0 else "never slept")
 	lead.queue_free()
 	await get_tree().physics_frame
@@ -1098,6 +1109,34 @@ func _move_held(plug: RigidBody3D, stride: Vector3) -> void:
 	plug.global_transform = xf
 	PhysicsServer3D.body_set_state(plug.get_rid(),
 		PhysicsServer3D.BODY_STATE_TRANSFORM, xf)
+
+
+## True when any trunk segment of `rope` crosses the mid-plane of an upright
+## slab well BELOW its top face — a cord passing THROUGH a wall rather than
+## over it. Particle-position checks cannot see this: two particles resting
+## legally on opposite faces with a stretched segment strung between them read
+## as 0.0 mm inside while the rendered cord slices the wall.
+## The 20 mm allowance under the top is for the corner: a taut chord between
+## two 30 mm-spaced particles riding the edge cuts it by a few millimetres
+## (measured 2 mm) — that is discretisation, not a cord inside a wall, and a
+## real slice crosses hundreds of millimetres down.
+func _pierces_below_top(rope: VerletRope, centre: Vector3, size: Vector3) -> bool:
+	var pts: PackedVector3Array = rope.get_points()
+	var half := size * 0.5
+	var n: int = mini(rope.segment_count, pts.size() - 1)
+	for i in n:
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[i + 1]
+		if absf(b.x - a.x) < 0.0001:
+			continue
+		var t: float = (centre.x - a.x) / (b.x - a.x)
+		if t < 0.0 or t > 1.0:
+			continue
+		var y: float = lerpf(a.y, b.y, t)
+		var z: float = lerpf(a.z, b.z, t)
+		if y < centre.y + half.y - 0.02 and absf(z - centre.z) < half.z:
+			return true
+	return false
 
 
 ## Worst trunk-segment stretch of a lead's rope, as a multiple of rest length.
