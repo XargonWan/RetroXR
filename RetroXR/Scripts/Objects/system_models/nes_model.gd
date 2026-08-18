@@ -57,6 +57,23 @@ var _power_light_mesh: MeshInstance3D = null
 var _power_light_mats: Array[StandardMaterial3D] = []
 var _power_button: VRButton = null
 
+# Switch sounds, recorded off the real NES-001 with a contact mic on the shell
+# layered against an air mic. See _build_sfx.
+var _reset_button: VRButton = null
+var _sfx_voices: Array[PcmOneShot] = []
+var _sfx_next: int = 0
+var _sfx_power_on: Array = []
+var _sfx_power_off: Array = []
+var _sfx_reset_press: Array = []
+var _sfx_reset_release: Array = []
+var _sfx_channel: Array = []
+var _sfx_last: Dictionary = {}
+# Where the POWER switch physically sits. The NES's is push-push, so a press
+# always clicks — which of the two clicks it is depends on the latch position
+# BEFORE the press, and not at all on whether a core managed to start.
+var _power_in: bool = false
+var _reset_was_held: bool = false
+
 var _cartridge_slot: Node3D = null
 var _cartridge_insert_dir: Vector3 = Vector3.BACK
 
@@ -126,6 +143,99 @@ func _ready() -> void:
 	if _power_light_mesh:
 		_prep_power_light()
 		_set_power_light(false)
+
+	_build_sfx()
+
+
+# --- switch sounds --------------------------------------------------------------
+
+## Recordings of this exact machine's switches, spatialised through PcmOneShot.
+##
+## They hang off the WIDGETS, not off RetroSystem.power_on()/power_off(): those are
+## also called by code — scene_persistence powers every running machine down when it
+## tears a room out — and a rack of consoles all clicking at once during a room
+## change is not what a power switch means. A switch sound means something moved.
+##
+## TWO voices, round-robin. RESET is a spring button whose press and release are
+## separate clips ~250 ms apart, and PcmOneShot restarts rather than layers, so a
+## single voice would cut the press off the moment the finger lifted.
+const SFX_DIR := "res://Audio/nes/"
+
+
+func _build_sfx() -> void:
+	_sfx_power_on = _load_variants("nes_power_on")
+	_sfx_power_off = _load_variants("nes_power_off")
+	_sfx_reset_press = _load_variants("nes_reset_press")
+	_sfx_reset_release = _load_variants("nes_reset_release")
+	_sfx_channel = _load_variants("nes_channel_switch")
+	for i in 2:
+		var v := PcmOneShot.new()
+		v.name = "SwitchSfx%d" % i
+		# A console's switch is a small, local noise: you are within arm's reach of
+		# the front panel to press it at all. Matches bead_pull_cord's pull click
+		# rather than the console's own audio feed (unit_size 3.0).
+		v.unit_size = 0.6
+		v.max_distance = 3.0
+		v.volume = 0.6
+		add_child(v)
+		_sfx_voices.append(v)
+	set_process(true)
+
+
+## Every `<prefix>_NN.wav` in SFX_DIR, counting up until one is missing.
+## ResourceLoader.exists(), never FileAccess.file_exists() — the latter is false in
+## an exported build, where res:// paths are remapped into the pck.
+func _load_variants(prefix: String) -> Array:
+	var out: Array = []
+	var i := 1
+	while true:
+		var p := "%s%s_%02d.wav" % [SFX_DIR, prefix, i]
+		if not ResourceLoader.exists(p):
+			break
+		var frames := PcmClip.load_frames(p)
+		if not frames.is_empty():
+			out.append(frames)
+		i += 1
+	if out.is_empty():
+		push_warning("NESModel: no %s_NN.wav under %s" % [prefix, SFX_DIR])
+	return out
+
+
+## Pick a variant and play it on the next free-ish voice. Never repeats the variant
+## it played last for that key — with 5-8 takes per switch, a plain random pick
+## still doubles often enough to read as a glitch rather than as variation.
+func _play_sfx(bank: Array, key: String) -> void:
+	if bank.is_empty() or _sfx_voices.is_empty():
+		return
+	var idx := randi() % bank.size()
+	if bank.size() > 1 and idx == int(_sfx_last.get(key, -1)):
+		idx = (idx + 1) % bank.size()
+	_sfx_last[key] = idx
+	var voice: PcmOneShot = _sfx_voices[_sfx_next]
+	_sfx_next = (_sfx_next + 1) % _sfx_voices.size()
+	voice.play(bank[idx])
+
+
+func _on_power_button_pressed() -> void:
+	_power_in = not _power_in
+	_play_sfx(_sfx_power_on if _power_in else _sfx_power_off, "power")
+
+
+func _on_reset_button_pressed() -> void:
+	_play_sfx(_sfx_reset_press, "reset_press")
+	_reset_was_held = true
+
+
+## VRButton reports the press but has no released signal, so the release click is
+## driven off the falling edge of is_held(). Watched here rather than by adding a
+## signal to VRButton — that widget is shared by every machine, every panel and the
+## Wiimote, and this is one console's sound.
+func _process(_delta: float) -> void:
+	if not _reset_was_held or _reset_button == null:
+		return
+	if not _reset_button.is_held():
+		_reset_was_held = false
+		_play_sfx(_sfx_reset_release, "reset_release")
 
 
 # --- power LED ------------------------------------------------------------------
@@ -339,10 +449,13 @@ func uses_memory_cards() -> bool:
 ## their mesh centres and pressed along the console's own -Z, into the front face.
 func configure_buttons(power_btn: VRButton, reset_btn: VRButton, _eject_btn: VRButton) -> void:
 	_power_button = power_btn
+	_reset_button = reset_btn
 	power_btn.depress_depth = BUTTON_DEPRESS_DEPTH
 	reset_btn.depress_depth = BUTTON_DEPRESS_DEPTH
 	power_btn.set_latched_pressed(false)
 	reset_btn.set_latched_pressed(false)
+	power_btn.button_pressed.connect(_on_power_button_pressed)
+	reset_btn.button_pressed.connect(_on_reset_button_pressed)
 	if _glb != null:
 		var into_face: Vector3 = -global_transform.basis.z.normalized()
 		var power_mesh := _glb.find_child("ButtonPower", true, false) as MeshInstance3D
@@ -591,6 +704,7 @@ func _on_channel_slider_changed(value: float) -> void:
 	if next == _rf_channel:
 		return
 	_rf_channel = next
+	_play_sfx(_sfx_channel, "channel")
 	print("[NES] RF channel switch -> CH%d" % _rf_channel)
 	# The set has to re-read it: on the aerial input the picture only appears when
 	# its own tuning matches, and nothing else would tell it this moved.
@@ -680,12 +794,17 @@ func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:
 func on_power_on() -> void:
 	if _power_button:
 		_power_button.set_latched_pressed(true)
+	# Track the switch position but make no sound: this also runs when code powers
+	# the machine, and nothing has physically moved. _on_power_button_pressed is
+	# what a finger sounds like.
+	_power_in = true
 	_set_power_light(true)
 
 
 func on_power_off() -> void:
 	if _power_button:
 		_power_button.set_latched_pressed(false)
+	_power_in = false
 	_set_power_light(false)
 
 

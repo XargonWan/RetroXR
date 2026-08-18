@@ -41,6 +41,54 @@ crt/crt_idle.wav, crt/crt_power_on.wav, crt/crt_power_off.wav
     within 0.2%.
 
 
+=== Recorded in-house — no licence attaches =====================================
+
+nes/nes_power_on_*.wav, nes_power_off_*.wav, nes_reset_press_*.wav,
+nes/nes_reset_release_*.wav, nes_channel_switch_*.wav,
+nes/nes_pad_face_press_*.wav, nes_pad_face_release_*.wav,
+nes/nes_pad_menu_press_*.wav, nes_pad_dpad_press_*.wav, nes_pad_dpad_release_*.wav
+
+    Original recordings of our own NES-001 console and pad. Nobody else's
+    material is in them, so nothing has to be cleared to ship them.
+
+    TWO microphones at once, because neither is usable alone. A Korg CM-300
+    piezo contact mic on the shell hears the mechanism but almost nothing below
+    500 Hz — into a PC mic jack's ~2 kΩ input a piezo's capacitance forms a
+    high-pass, so it is all tick and no weight. An iPhone 15 Pro 10 cm away
+    (Voice Memos, 24-bit/48 kHz, MONO — stereo would comb-filter when summed for
+    a mono spatial emitter) supplies the body the contact mic cannot reach.
+
+    The blend is inverted between the two sets, and deliberately so. For the
+    CONSOLE the phone leads and the contact mic adds the attack above 1.5 kHz.
+    For the PAD the contact mic leads, because it is mounted centimetres from the
+    button and has real body there, while the phone is straining to hear a
+    D-pad click at all — 17 dB down on it in the 150-1000 Hz band.
+
+    Two measurement traps, both of which silently corrupt levels:
+
+      * Voice Memos applies AGC that cannot be disabled. Measured at +1.97 dB/s
+        — 22 dB across one 16 s take — with its noise floor climbing 19 dB while
+        the contact mic's stayed flat. Every gesture is therefore corrected
+        against the CONTACT mic, whose chain is fixed-gain analogue and cannot
+        drift. Skip that and the "press-force variation" you preserve is mostly
+        the phone.
+      * A PC fan is airborne, so it lands only on the phone: +6 dB below 1 kHz,
+        exactly the band the phone layer exists to supply. Removed by spectral
+        subtraction against a profile taken from the take's own quietest 0.6 s,
+        which drops that band's floor from -80.9 to -99.4 dBFS.
+
+    Levels are matched per FAMILY, not per file, so hard and soft presses stay
+    different; the spread is compressed to about 9 dB so no variant vanishes.
+
+    Three pad banks, not eight buttons: A and B are the same moulding and sound
+    identical, as do SELECT and START, as do the four arms of the rocker. Pooling
+    them gives each bank far more variation than a per-button split would.
+
+    There is no nes_pad_menu_release. SELECT and START have a long, soft return
+    that never clears the noise floor — confirmed across two independent takes
+    (29% and 30% short gaps, against 52-62% for the buttons that do have one).
+
+
 === Import settings are load-bearing ============================================
 
 Every .wav here MUST import with compress/mode=0 (uncompressed PCM). The

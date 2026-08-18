@@ -62,3 +62,123 @@ func _rocker(stem: String, drop_dist: float) -> Dictionary:
 		push_warning("NesController: control mesh not found: " + stem)
 		return {}
 	return {"node": m, "rest": m.transform, "pivot": m.position - Vector3(0.0, drop_dist, 0.0)}
+
+
+# --- button sounds --------------------------------------------------------------
+#
+# Recorded off a real NES-001 pad. Three banks, not eight: A and B are the same
+# moulding and sound identical, as do SELECT and START, as do the four arms of the
+# rocker — so each bank pools every take of its group and gets far more variation
+# than a per-button split would have allowed.
+#
+# Driven off the edges of AnimatedController's merged _cur_btn rather than off any
+# widget: these buttons are read as INPUT STATE, not pressed as VRButtons the way
+# the console's POWER and RESET are.
+
+const SFX_DIR := "res://Audio/nes/"
+
+## Which sample bank each joypad bit belongs to.
+const BANK_OF: Dictionary = {
+	ControllerBindings.JOYPAD_A: "face",
+	ControllerBindings.JOYPAD_B: "face",
+	ControllerBindings.JOYPAD_START: "menu",
+	ControllerBindings.JOYPAD_SELECT: "menu",
+	ControllerBindings.JOYPAD_UP: "dpad",
+	ControllerBindings.JOYPAD_DOWN: "dpad",
+	ControllerBindings.JOYPAD_LEFT: "dpad",
+	ControllerBindings.JOYPAD_RIGHT: "dpad",
+}
+
+var _prev_btn: int = 0
+var _sfx_voices: Array[PcmOneShot] = []
+var _sfx_next: int = 0
+var _sfx_banks: Dictionary = {}     # "face_press" -> Array[PackedVector2Array]
+var _sfx_last: Dictionary = {}
+
+
+func _ready() -> void:
+	super._ready()
+	for bank in ["face", "menu", "dpad"]:
+		for role in ["press", "release"]:
+			var key := "%s_%s" % [bank, role]
+			var v := _load_variants("nes_pad_" + key)
+			if not v.is_empty():
+				_sfx_banks[key] = v
+	# THREE voices. A pad can have a direction and a face button change in the same
+	# frame, and PcmOneShot restarts rather than layers, so fewer would cut a click
+	# short every time someone runs and jumps.
+	for i in 3:
+		var v := PcmOneShot.new()
+		v.name = "PadSfx%d" % i
+		# Held in the hand, so closer and quieter than the console's panel switches.
+		v.unit_size = 0.4
+		v.max_distance = 2.5
+		v.volume = 0.45
+		add_child(v)
+		_sfx_voices.append(v)
+
+
+## Every `<prefix>_NN.wav` in SFX_DIR, counting up until one is missing.
+## ResourceLoader.exists(), not FileAccess.file_exists() — the latter is false in
+## an exported build, where res:// paths are remapped into the pck.
+func _load_variants(prefix: String) -> Array:
+	var out: Array = []
+	var i := 1
+	while true:
+		var p := "%s%s_%02d.wav" % [SFX_DIR, prefix, i]
+		if not ResourceLoader.exists(p):
+			break
+		var frames := PcmClip.load_frames(p)
+		if not frames.is_empty():
+			out.append(frames)
+		i += 1
+	return out
+
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if not _got_input:
+		# Not held, or not plugged in. The base class has already forced _cur_btn to
+		# 0, so comparing against it would fire a release click for every button that
+		# happened to be down — a dropped pad clicking its own buttons on the way to
+		# the floor. Forget the state instead, so picking it back up is silent too.
+		_prev_btn = 0
+		return
+	var down := _cur_btn & ~_prev_btn
+	var up := _prev_btn & ~_cur_btn
+	_prev_btn = _cur_btn
+	if down != 0:
+		_click(down, "press")
+	if up != 0:
+		_click(up, "release")
+
+
+## One click per BANK per edge, not one per bit: rolling the rocker from UP to
+## UP+RIGHT is a single movement of a single piece of plastic, and firing two
+## samples for it comb-filters into something metallic.
+func _click(bits: int, role: String) -> void:
+	var fired: Dictionary = {}
+	for bit: int in BANK_OF:
+		if (bits & (1 << bit)) == 0:
+			continue
+		var key: String = "%s_%s" % [BANK_OF[bit], role]
+		if fired.has(key):
+			continue
+		fired[key] = true
+		_play_sfx(key)
+
+
+## Pick a variant and play it on the next voice. Never repeats the variant it
+## played last for that bank — a face button gets mashed, and a plain random pick
+## doubles often enough to read as a glitch rather than as variation.
+func _play_sfx(key: String) -> void:
+	var bank: Array = _sfx_banks.get(key, [])
+	if bank.is_empty() or _sfx_voices.is_empty():
+		return
+	var idx := randi() % bank.size()
+	if bank.size() > 1 and idx == int(_sfx_last.get(key, -1)):
+		idx = (idx + 1) % bank.size()
+	_sfx_last[key] = idx
+	var voice: PcmOneShot = _sfx_voices[_sfx_next]
+	_sfx_next = (_sfx_next + 1) % _sfx_voices.size()
+	voice.play(bank[idx])
