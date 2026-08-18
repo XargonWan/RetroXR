@@ -2599,8 +2599,13 @@ func _is_computer() -> bool:
 ## are the keyboard and mouse — but a DOS or Amiga core reads its one joystick on
 ## port 0, and a pad announced on port 2 is a pad the game never sees.
 func _libretro_port_for(device_type: int, physical_port: int) -> int:
-	if _is_computer() and (device_type == RETRO_DEVICE_MOUSE or device_type == RETRO_DEVICE_JOYPAD):
+	if device_type == RETRO_DEVICE_MOUSE and _is_computer():
 		return 0
+	# The GAME PORT only, not every joypad socket on a computer: a machine with two
+	# joystick ports still drives port 1 from its second one.
+	if device_type == RETRO_DEVICE_JOYPAD and _is_computer():
+		if _model != null and _model.game_port_index() == physical_port:
+			return 0
 	return physical_port
 
 

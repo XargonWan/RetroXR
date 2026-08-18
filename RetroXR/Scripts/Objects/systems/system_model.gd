@@ -170,6 +170,18 @@ func has_spring_latched_lid() -> bool:
 	return false
 
 
+## Which controller socket is this machine's GAME PORT — the one a joystick went
+## into, as opposed to the keyboard and mouse sockets beside it — or -1 for
+## hardware that has no such distinction.
+##
+## Only computers need it. A console's pads drive the port they are plugged into;
+## a DOS or Amiga core reads its one joystick on port 0 whatever socket the cabinet
+## put it in, and RetroSystem._libretro_port_for uses this to pin exactly that one
+## socket without touching the others (a C64 really does have two joystick ports).
+func game_port_index() -> int:
+	return -1
+
+
 ## Returns the number of controller ports active on this hardware.
 ## The base system scene has 4 snap zones; ports beyond this count are hidden.
 func get_controller_port_count() -> int:

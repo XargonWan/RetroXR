@@ -164,6 +164,12 @@ func get_controller_port_count() -> int:
 	return 3
 
 
+## Seat 3 — the 15-pin socket down with the audio jacks. Seats 1 and 2 are the
+## PS/2 keyboard and mouse, which drive their own ports.
+func game_port_index() -> int:
+	return 2
+
+
 ## Saves live on the hard disk, not a removable card.
 func uses_memory_cards() -> bool:
 	return false

@@ -230,6 +230,22 @@ func _test_libretro_port_routing() -> void:
 		pc._libretro_port_for(DEVICE_JOYPAD, 1), 1)
 	_eq("routing/computer keyboard keeps its socket",
 		pc._libretro_port_for(DEVICE_KEYBOARD, 1), 1)
+	# ...but the GAME PORT does drive port 0: a DOS or Amiga core reads its one
+	# joystick there, and a pad announced on port 2 is a pad the game never sees.
+	# Narrow on purpose — pinning every joypad socket would break the machines
+	# that really do have two.
+	#
+	# Instantiated and added rather than built with _system(): which socket is the
+	# game port is the MODEL's to say, and a bare RetroSystem has no model. Adding
+	# it runs _ready, which loads one — no frame needed.
+	var tower := preload("res://Scenes/Objects/system.tscn").instantiate() as RetroSystem
+	tower.systemid = "dos"
+	add_child(tower)
+	_eq("routing/computer game port drives port 0",
+		tower._libretro_port_for(DEVICE_JOYPAD, 2), 0)
+	_eq("routing/its other sockets are untouched",
+		tower._libretro_port_for(DEVICE_JOYPAD, 1), 1)
+	tower.queue_free()
 	# ...but does not occupy it: its keys are global to port 0 regardless, and
 	# claiming a numbered port would take the slot the mouse needs.
 	_ok("routing/computer keyboard claims no port",
