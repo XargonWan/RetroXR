@@ -56,6 +56,9 @@ var _bios_row_cache: Dictionary = {}
 ## folder path -> the per-core destination dirs for it. Same lifetime as the row
 ## cache: both are derived from what is installed, and both are rebuilt together.
 var _bios_dest_cache: Dictionary = {}
+## Uniform height of a picker row. The virtual list needs it up front — that is
+## what lets it decide which rows are on screen without measuring any of them.
+const PICKER_ROW_H := 46
 var _firmware_installer: FirmwareInstaller = null
 var _bios_job_buttons: Dictionary = {}
 ## Core awaiting its second delete press, "" when nothing is armed. Cleared by a
@@ -64,6 +67,9 @@ var _bios_job_buttons: Dictionary = {}
 var _core_delete_armed := ""
 ## "<core>|<firmware path>" awaiting its second delete press.
 var _bios_delete_armed := ""
+## The button showing that armed state, so arming can repaint one control
+## instead of rebuilding the tab. Cleared whenever a rebuild frees it.
+var _bios_delete_armed_btn: Button = null
 var _bios_refreshing := false
 var _bios_refresh_queued := false
 ## "<core>|<folder path>" -> whether that folder's RomM picker is showing.
@@ -713,6 +719,18 @@ func _on_firmware_cancelled(key: String) -> void:
 ## cancels every queued file at once, and a full rescan-and-redraw each time
 ## froze the panel for as long as the list was.
 func _refresh_bios_soon() -> void:
+	# Once per BATCH, not once per file. A full rebuild measures 63 ms on a
+	# desktop and several hundred on a headset — rescanning every installed
+	# core's requirements and rebuilding a 68-row picker — and Get all fires this
+	# on every one of 68 completions. Coalescing to one per frame was not enough:
+	# the frames themselves were the stall.
+	#
+	# Nothing is lost by waiting. A running file's own button is driven directly
+	# from _bios_job_buttons by the progress handler, so the row the user is
+	# watching stays live; only the status glyphs lag, and they are settled by
+	# the rebuild the last completion triggers.
+	if _firmware_installer != null and _firmware_installer.queued_count() > 0:
+		return
 	if _bios_refresh_queued:
 		return
 	_bios_refresh_queued = true
@@ -1254,8 +1272,21 @@ func _build_bios_picker(r: Dictionary, systemid: String) -> Control:
 
 	box.add_child(_build_bios_picker_header(path, entries, outstanding, outstanding_bytes, in_flight))
 
-	for e: Dictionary in entries:
-		box.add_child(_build_bios_picker_row(e, str(r.get("core_name", "")), path, dir))
+	# A VirtualRowList, not one Control per file. PS2 offers 68 files and each
+	# row is six Controls, so building them all cost ~400 allocations every time
+	# this page was drawn — and the page is drawn again on every install, every
+	# delete and every toggle. The pool only ever holds the rows on screen, so
+	# the count stops mattering.
+	var core_name := str(r.get("core_name", ""))
+	var list := VirtualRowList.new()
+	list.row_height = PICKER_ROW_H
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.set_row_builder(_build_blank_picker_row)
+	list.set_row_binder(func(row: Control, i: int) -> void:
+		if i >= 0 and i < entries.size():
+			_bind_bios_picker_row(row, entries[i] as Dictionary, core_name, path, dir))
+	box.add_child(list)
+	list.set_row_count(entries.size())
 
 	return margin
 
@@ -1325,43 +1356,33 @@ func _build_bios_picker_header(path: String, entries: Array, outstanding: Array,
 	return row
 
 
-## One candidate file. Presence is the only status shown: the folder's contents
-## are unnamed by the .info, so there is no published md5 to disagree with.
-func _build_bios_picker_row(e: Dictionary, core_name: String, path: String,
-							dir: String) -> Control:
-	var file_name := str(e["file_name"])
-	var here := bool(e["here"])
-	var on_server := bool(e["on_server"])
-	var key := _bios_dir_job_key(path, file_name)
-	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
-
+## A blank picker row: the Controls, no data. Built at most pool-size times and
+## then re-bound as the list scrolls, so nothing here may depend on which file
+## it will show.
+func _build_blank_picker_row() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	row.custom_minimum_size = Vector2(0, 44)
+	row.custom_minimum_size = Vector2(0, PICKER_ROW_H)
 
 	var glyph := Label.new()
+	glyph.name = "Glyph"
 	glyph.add_theme_font_override("font", MenuIcons.symbols())
 	glyph.add_theme_font_size_override("font_size", 20)
 	glyph.custom_minimum_size = Vector2(30, 0)
 	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	glyph.text = String.chr(MenuIcons.CHECK if here else MenuIcons.DASH)
-	glyph.add_theme_color_override("font_color",
-		MenuIcons.TINT_OK if here else MenuIcons.TINT_MUTED)
 	row.add_child(glyph)
 
 	var name_lbl := Label.new()
-	name_lbl.text = file_name
+	name_lbl.name = "Name"
 	name_lbl.add_theme_font_size_override("font_size", 17)
-	name_lbl.add_theme_color_override("font_color",
-		MenuStyle.COLOR_TITLE if here else MenuStyle.COLOR_LICENSE)
 	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(name_lbl)
 
 	var size_lbl := Label.new()
-	size_lbl.text = String.humanize_size(int(e["size"]))
+	size_lbl.name = "Size"
 	size_lbl.add_theme_font_size_override("font_size", 14)
 	size_lbl.add_theme_color_override("font_color", MenuIcons.TINT_MUTED)
 	size_lbl.custom_minimum_size = Vector2(100, 0)
@@ -1370,10 +1391,60 @@ func _build_bios_picker_row(e: Dictionary, core_name: String, path: String,
 	row.add_child(size_lbl)
 
 	var btn := Button.new()
+	btn.name = "Action"
 	btn.add_theme_font_override("font", MenuIcons.symbols())
 	btn.add_theme_font_size_override("font_size", 20)
 	btn.custom_minimum_size = Vector2(100, 40)
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(btn)
+
+	# Always present, shown only for a file that is here. A row whose children
+	# come and go would change width as it is re-bound.
+	var del := Button.new()
+	del.name = "Delete"
+	del.add_theme_font_override("font", MenuIcons.symbols())
+	del.add_theme_font_size_override("font_size", 20)
+	del.custom_minimum_size = Vector2(64, 44)
+	del.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(del)
+
+	var gutter := Control.new()
+	gutter.custom_minimum_size = Vector2(44, 0)
+	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gutter)
+
+	return row
+
+
+## Fill a pooled row for one file.
+##
+## Every signal is disconnected first: the same Control is re-bound to a
+## different file as the list scrolls, and a stale `pressed` handler would
+## download or delete whatever the row used to be.
+func _bind_bios_picker_row(row: Control, e: Dictionary, core_name: String,
+						   path: String, dir: String) -> void:
+	var file_name := str(e["file_name"])
+	var here := bool(e["here"])
+	var on_server := bool(e["on_server"])
+	var key := _bios_dir_job_key(path, file_name)
+	var running := _firmware_installer != null and _firmware_installer.is_queued(key)
+
+	var glyph := row.get_node("Glyph") as Label
+	glyph.text = String.chr(MenuIcons.CHECK if here else MenuIcons.DASH)
+	glyph.add_theme_color_override("font_color",
+		MenuIcons.TINT_OK if here else MenuIcons.TINT_MUTED)
+
+	var name_lbl := row.get_node("Name") as Label
+	name_lbl.text = file_name
+	name_lbl.add_theme_color_override("font_color",
+		MenuStyle.COLOR_TITLE if here else MenuStyle.COLOR_LICENSE)
+
+	(row.get_node("Size") as Label).text = String.humanize_size(int(e["size"]))
+
+	var btn := row.get_node("Action") as Button
+	_clear_pressed(btn)
+	btn.disabled = false
+	btn.flat = false
 	if running:
 		btn.text = String.chr(MenuIcons.BUSY)
 		btn.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
@@ -1396,37 +1467,34 @@ func _build_bios_picker_row(e: Dictionary, core_name: String, path: String,
 		btn.add_theme_color_override("font_color", MenuIcons.TINT_DOWNLOAD)
 		btn.tooltip_text = "Download %s from RomM (%s)" % [
 			file_name, String.humanize_size(int(e["size"]))]
-	btn.pressed.connect(func() -> void:
-		if _firmware_installer == null:
-			return
-		if _firmware_installer.is_queued(key):
-			_firmware_installer.cancel(key)
-			return
-		_bios_job_buttons[key] = btn
-		if _enqueue_bios_dir_file(e, path):
-			btn.text = "0%"
-			btn.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
-	)
-	row.add_child(btn)
+	if not btn.disabled:
+		btn.pressed.connect(func() -> void:
+			if _firmware_installer == null:
+				return
+			if _firmware_installer.is_queued(key):
+				_firmware_installer.cancel(key)
+				return
+			_bios_job_buttons[key] = btn
+			if _enqueue_bios_dir_file(e, path):
+				btn.text = "0%"
+				btn.add_theme_color_override("font_color", MenuIcons.TINT_BUSY)
+		)
 
 	# Only a file that is actually here can be deleted, and the arming key is the
 	# file's own path inside the folder — arming on the folder row's key would
 	# arm every file in it at once.
+	var del := row.get_node("Delete") as Button
+	_clear_pressed(del)
+	del.visible = here
 	if here:
-		row.add_child(_build_firmware_delete_button(
-			core_name, path.path_join(file_name), dir.path_join(file_name)))
-	else:
-		var pad := Control.new()
-		pad.custom_minimum_size = Vector2(64, 0)
-		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(pad)
+		_wire_firmware_delete(del, core_name, path.path_join(file_name),
+			dir.path_join(file_name))
 
-	var gutter := Control.new()
-	gutter.custom_minimum_size = Vector2(44, 0)
-	gutter.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(gutter)
 
-	return row
+## Drop every `pressed` handler a pooled Control picked up on its last binding.
+static func _clear_pressed(btn: BaseButton) -> void:
+	for c: Dictionary in btn.pressed.get_connections():
+		btn.pressed.disconnect(c["callable"])
 
 
 ## Queue one file into every core's copy of this folder. False when it was
@@ -1479,46 +1547,79 @@ func _bios_dir_destinations_for(path: String, file_name: String) -> Array[String
 ## surprise — removing a shared BIOS from the row you were looking at would
 ## silently break three other cores.
 func _build_firmware_delete_button(core_name: String, path: String, dest: String) -> Button:
-	var key := _bios_dir_key(core_name, path)
-	var armed := _bios_delete_armed == key
-
 	var btn := Button.new()
 	btn.add_theme_font_override("font", MenuIcons.symbols())
 	btn.add_theme_font_size_override("font_size", 20)
 	btn.custom_minimum_size = Vector2(64, 44)
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	# DELETE_FOREVER, not DELETE: most BIOS dumps are not on any server, so for
-	# the usual case this really is the last copy the app can reach.
-	btn.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.DELETE_FOREVER)
-	btn.add_theme_color_override("font_color",
-		MenuIcons.TINT_WARN if armed else MenuIcons.TINT_DELETE)
-	btn.tooltip_text = "Press again to delete this file" if armed \
-		else "Delete this file from %s's system folder" % core_name
+	_wire_firmware_delete(btn, core_name, path, dest)
+	return btn
+
+
+## Paint and connect an existing button. Separate from allocating one because a
+## pooled picker row supplies its own and only needs re-wiring for the file it
+## now shows.
+func _wire_firmware_delete(btn: Button, core_name: String, path: String,
+						   dest: String) -> void:
+	var key := _bios_dir_key(core_name, path)
+	_paint_delete_button(btn, _bios_delete_armed == key, core_name)
 
 	btn.pressed.connect(func() -> void:
-		if not armed:
+		if _bios_delete_armed != key:
+			# Arming is UI state and nothing else, so it repaints one button.
+			# It used to rebuild the whole tab — 63 ms on a desktop and several
+			# hundred on a headset, which is the stutter felt on the FIRST press
+			# of a button that had not deleted anything yet.
+			_disarm_firmware_delete()
 			_bios_delete_armed = key
+			_bios_delete_armed_btn = btn
+			_paint_delete_button(btn, true, core_name)
 			_romm_notify_or_queue("bios:delete", String.chr(MenuIcons.ERROR),
 				"Press again to delete %s" % path.get_file(), 3.0)
-			refresh_bios_view()
+			# Matches the toast: an armed delete must not stay armed once the
+			# prompt that explained it has gone.
+			get_tree().create_timer(3.0).timeout.connect(func() -> void:
+				if _bios_delete_armed == key:
+					_disarm_firmware_delete(core_name))
 			return
-		_bios_delete_armed = ""
+
+		_disarm_firmware_delete()
 		if not FileAccess.file_exists(dest):
 			refresh_bios_view()
 			return
 		if DirAccess.remove_absolute(dest) == OK:
 			# The status cache is keyed on size+mtime, and a path that comes back
 			# with the same two would otherwise read as the file we just removed.
+			# Not saved here: evaluate() persists when it finds the cache dirty,
+			# and the rebuild below runs it anyway.
 			FirmwareState.shared().invalidate(core_name, path)
-			FirmwareState.shared().save_cache()
 			_romm_notify_or_queue("bios:delete", String.chr(MenuIcons.CHECK),
 				"Deleted %s" % path.get_file(), MenuToasts.DWELL_OK)
 		else:
 			_romm_notify_or_queue("bios:delete", String.chr(MenuIcons.ERROR),
 				"Could not delete %s" % path.get_file(), MenuToasts.DWELL_FAIL)
+		# The row's status really did change, so this one rebuild is earned.
 		refresh_bios_view()
 	)
-	return btn
+
+
+## DELETE_FOREVER, not DELETE: most BIOS dumps are not on any server, so for the
+## usual case this really is the last copy the app can reach.
+static func _paint_delete_button(btn: Button, armed: bool, core_name: String) -> void:
+	btn.text = String.chr(MenuIcons.ERROR if armed else MenuIcons.DELETE_FOREVER)
+	btn.add_theme_color_override("font_color",
+		MenuIcons.TINT_WARN if armed else MenuIcons.TINT_DELETE)
+	btn.tooltip_text = "Press again to delete this file" if armed \
+		else "Delete this file from %s's system folder" % core_name
+
+
+## Clear the armed delete and repaint whatever button was showing it. The button
+## may have been freed by a rebuild in between, which is why it is checked.
+func _disarm_firmware_delete(core_name: String = "") -> void:
+	_bios_delete_armed = ""
+	if _bios_delete_armed_btn != null and is_instance_valid(_bios_delete_armed_btn):
+		_paint_delete_button(_bios_delete_armed_btn, false, core_name)
+	_bios_delete_armed_btn = null
 
 
 ## Every installed core that declares this exact firmware path wants its own
