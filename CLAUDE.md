@@ -195,23 +195,33 @@ the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe
 `RetroXR/Tests/rope_tests.tscn` is the behaviour half of the rope's cover — what a cord
 does on a table, over a corner, round a pipe, wrapped on a ledge, heaped on itself, and
 dropped from height, plus inextensibility, determinism, anchor pinning, `set_rope_length`
-and sleep/wake. 38 cases, ~40 s, no GPU. It complements rather than replaces the two
+and sleep/wake. 48 cases, ~40 s, no GPU. It complements rather than replaces the two
 BIT-EXACT oracles in `Tools/` (`rope_bench --settle` prints `still_awake=9`, `rope_stress`
 diffs a 22-row table): those catch arithmetic drift, this catches a cord that jitters,
-tunnels or will not settle.
+tunnels or will not settle. `Tools/rope_video_probe.tscn` renders the same cases to PNG
+frames (windowed, not `--headless`) for when a case has to be WATCHED — three of the four
+traps below were caught on its footage, not by an assertion.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/rope_tests.tscn
 "$godot" --headless --path RetroXR res://Tests/rope_tests.tscn -- --only=contact
 ```
-Two traps it already hit. **Measuring jitter after a rope sleeps measures nothing** —
+Four traps it already hit. **Measuring jitter after a rope sleeps measures nothing** —
 `step()` on a sleeping rope is a no-op, so the answer is a confident 0.000 mm however
-badly it chattered; the cases hold the cord awake with `wake()` and measure there. And a
-test rope built with `VerletRope.new()` takes the C++ defaults, which are softer than
-anything that ships — these mirror `cable.tscn` (8 iterations, `collision_radius` 0.0045,
+badly it chattered; the cases hold the cord awake with `wake()` and measure the tail
+window of the hold (the first wakes just finish a slump sleep froze mid-way). **A rope
+built with `VerletRope.new()` takes the C++ defaults**, which are softer than anything
+that ships — these mirror `cable.tscn` (8 iterations, `collision_radius` 0.0045,
 self-collision on) or every threshold describes a cord the room does not contain.
-Measured residuals: 0.2–0.7 mm/tick for any single-surface contact, and **8.9 mm/tick for
-a cord heaped on itself**, which is the self-collision pass never quite finishing with a
-pile — that one has its own looser bound rather than loosening the rest.
+**Never initialise a cord in a state no hand can produce**: a straight lay from a
+table-top socket to a floor socket passes through the slab and wedges particles 11 mm
+inside it (a particle born inside a solid has no contact plane), and a lay pre-compressed
+between close sockets buckles into a 318 mm standing arch and sleeps there — the cases
+lay the cord clear and `_carry()` the end to its socket the way a hand does. And **a
+long free-hanging span cannot be held awake at all**: `wake()` every tick feeds the edge
+contact's chatter into the span's pendulum mode and pumps a 0.4 m swing the room cannot
+reach, because the sleep system cuts that loop off — the corner case asserts what the
+room actually does (brushed awake once, asleep again in 30 ticks, 8 mm of drift).
+Everything else measures 0.0003–0.07 mm/tick held awake, heaps included.
 
 `RetroXR/Tests/romm_tests.tscn` asserts the pure-logic half of the RomM stack — pair-QR
 parsing, slug mapping and systemid collision, the sync fingerprint, cache path safety,

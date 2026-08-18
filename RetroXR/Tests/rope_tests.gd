@@ -39,18 +39,20 @@ const CASE_PITCH := 60.0
 ## The window a "has it stopped moving?" question is asked over.
 const STILL_WINDOW := 60
 ## A settled cord may still move this much per tick when it is denied sleep.
-## Measured across every contact case below: 0.20 mm on a pipe, 0.27 wrapping a
-## ledge, 0.34 over a corner, 0.72 pulled taut round one. 1.5 is about twice the
-## worst of them, so ordinary variation passes and a contact that has started
-## fighting itself does not.
-const STILL_MM := 1.5
+## Measured across every contact case below, over the tail window of the awake
+## hold (see _awake_residual): 0.0003 mm/tick on a flat table up to 0.07 pulled
+## taut round a corner. 0.5 is ~7x the worst of them, so ordinary variation
+## passes and a contact that has started fighting itself does not.
+const STILL_MM := 0.5
 ## No contact in this suite needs a looser bound than STILL_MM. That is worth
 ## recording, because an earlier version of the ledge case measured 8.9 mm/tick —
 ## an order of magnitude above everything else — and it was tempting to write that
 ## down as "a heaped cord churns". It was neither: the case had pinned its far end
 ## in MID-AIR beyond the table edge, and a cord loaded by a point floating in space
 ## is not a wiring the room can contain. Anchor the same cord at floor level, where
-## a socket could be, and it settles to 0.14 mm/tick.
+## a socket could be, and it settles quiet.
+## The corner case is the one contact measured another way — see it for why a
+## long free-hanging span cannot be held awake without pumping it.
 
 var _pass := 0
 var _fail := 0
@@ -186,6 +188,24 @@ func _drop_case() -> void:
 	await get_tree().physics_frame
 
 
+## Walk an anchor to `to` over `ticks` ticks, stepping the solver as it goes —
+## a hand carrying a plug. Cases use this instead of initialising the cord in a
+## state no hand can produce: a straight lay THROUGH furniture leaves particles
+## born inside a solid with no contact plane to escape along (measured 11 mm
+## wedged into a table), and a straight lay COMPRESSED between close anchors
+## buckles upward into a standing arch and sleeps there.
+func _carry(rope: VerletRope, node: Node3D, to: Vector3, ticks: int) -> void:
+	var stride: Vector3 = (to - node.position) / float(ticks)
+	var done := 0
+	while done < ticks:
+		await get_tree().physics_frame
+		var n: int = mini(BATCH, ticks - done)
+		for i in n:
+			node.position += stride
+			rope.step(1.0 / 90.0)
+		done += n
+
+
 ## Run the solver `ticks` times, in batches inside physics frames.
 func _settle(ticks: int) -> void:
 	var done := 0
@@ -283,9 +303,16 @@ func _assert_settles(name: String, limit: int, still_mm: float) -> void:
 		"%.4f mm/tick held awake (slept at tick %d)" % [residual * 1000.0, prof["tick"]])
 
 
-## Largest per-tick movement over `ticks`, with the rope forbidden to sleep. This
-## is the chatter amplitude: whatever the cord is still doing once it has finished
-## falling, measured where the sleep system cannot mask it.
+## Largest per-tick movement in the LAST STILL_WINDOW ticks of an awake hold of
+## `ticks`, with the rope forbidden to sleep. This is the chatter amplitude:
+## whatever the cord is still doing once it has finished falling, measured where
+## the sleep system cannot mask it.
+##
+## Only the tail of the hold counts. Sleep can catch a cord a moment early, so
+## the first wakes let it finish a slump it was frozen in the middle of — a
+## one-time transient, over in well under the hold. Chatter is the thing that is
+## STILL going at the end; a corner case once read 12.3 mm/tick from a tail
+## slumping on the first wake and 0.2 mm/tick once it had.
 func _awake_residual(ticks: int) -> float:
 	var worst := 0.0
 	var prev: PackedVector3Array = _rope.get_points()
@@ -296,13 +323,37 @@ func _awake_residual(ticks: int) -> float:
 		for i in n:
 			_rope.wake()
 			_rope.step(1.0 / 90.0)
+			done += 1
+			if done <= ticks - STILL_WINDOW:
+				prev = _rope.get_points()
+				continue
 			var now: PackedVector3Array = _rope.get_points()
 			if now.size() == prev.size():
 				for pt in now.size():
 					worst = maxf(worst, prev[pt].distance_to(now[pt]))
 			prev = now
-		done += n
 	return worst
+
+
+## Wake the settled cord once and watch: does it go back to sleep, how long did
+## that take, and how far did anything move before it did?
+func _wake_once(max_ticks: int) -> Dictionary:
+	var before: PackedVector3Array = _rope.get_points()
+	_rope.wake()
+	var tick := 0
+	while tick < max_ticks and not _rope.is_sleeping():
+		await get_tree().physics_frame
+		for i in BATCH:
+			if tick >= max_ticks or _rope.is_sleeping():
+				break
+			_rope.step(1.0 / 90.0)
+			tick += 1
+	var after: PackedVector3Array = _rope.get_points()
+	var drift := 0.0
+	if after.size() == before.size():
+		for p in after.size():
+			drift = maxf(drift, before[p].distance_to(after[p]))
+	return {"reslept": _rope.is_sleeping(), "tick": tick, "drift": drift}
 
 
 func _points() -> PackedVector3Array:
@@ -346,7 +397,6 @@ func _deepest_in_box(centre: Vector3, size: Vector3) -> float:
 	return worst
 
 
-## How far inside a cylinder lying along X any particle sits.
 ## _deepest_in_box for a rope the harness is not holding — the loose cases own
 ## their own lead rather than the shared _rope.
 func _deepest_in_box_of(rope: VerletRope, centre: Vector3, size: Vector3) -> float:
@@ -360,6 +410,7 @@ func _deepest_in_box_of(rope: VerletRope, centre: Vector3, size: Vector3) -> flo
 	return worst
 
 
+## How far inside a cylinder lying along X any particle sits.
 func _deepest_in_cylinder(centre: Vector3, radius: float, half_len: float) -> float:
 	var worst := 0.0
 	for p: Vector3 in _points():
@@ -386,26 +437,80 @@ func _group_contact() -> void:
 	if not _wants("contact"):
 		return
 
-	# Slack cord dropped onto a table top. The floor of everything else: if a cord
-	# cannot lie still on a flat surface, nothing below is worth reading.
+	# Slack cord between two sockets ON a table top. The floor of everything else:
+	# if a cord cannot lie still on a flat surface, nothing below is worth reading.
+	# The anchors sit just above the surface, where a socket could be — an earlier
+	# version pinned them 200 mm up, and the video showed a cord dangling from two
+	# points in empty space rather than lying on furniture.
+	# Laid at full stretch and CARRIED into its socket (see _carry): initialising
+	# it pre-compressed between the close sockets buckled it into a standing arch,
+	# and it slept 318 mm in the air.
 	var base := _new_case()
 	_box(base + Vector3(0, 0.70, 0), Vector3(2.0, 0.10, 2.0))
-	_rope_between(base + Vector3(-0.3, 0.95, 0), base + Vector3(0.3, 0.95, 0))
+	var table_rope := _rope_between(
+		base + Vector3(-0.3, 0.76, 0), base + Vector3(0.66, 0.76, 0), 16)
+	await _settle(120)
+	await _carry(table_rope, table_rope.end_node, base + Vector3(0.3, 0.76, 0), 90)
 	await _assert_settles("a cord on a table", 1500, STILL_MM)
 	var top := base.y + 0.75
 	var sink := top - _lowest_y()
 	_ok("contact/lies on a table", sink < _rope.collision_radius + 0.005,
 		"rests %.1f mm above the surface" % (-sink * 1000.0))
+	# A cord pushed into its socket keeps a little standing pigtail where the
+	# slack folded — measured 48 mm, and a real springy lead does the same. What
+	# this bound rejects is the pre-compression buckle it was added for: a cord
+	# sleeping in a 318 mm standing ARCH, clear off the table.
+	var highest := -1e9
+	for p: Vector3 in _points():
+		highest = maxf(highest, p.y)
+	_ok("contact/the cord lies down, pigtail and all", highest < top + 0.12,
+		"tallest point %.0f mm above the surface" % ((highest - top) * 1000.0))
 	await _drop_case()
 
 	# THE JITTER CASE. A cord half on a table and half over its edge is the shape
 	# that has produced a contact-chatter limit cycle in this solver before: the
 	# overhang pulls, the contact pushes back, and the pair never agree. Measured
 	# as movement, not as sleep, so it fails even if the sleep test is loosened.
+	# Run from a socket on the table top, over the front edge, down the face to a
+	# socket at floor level — everywhere the cord ends is somewhere a machine
+	# could be, so the hanging weight is real cord and not a floating pin.
+	#
+	# Built the way a player builds it: laid over the edge first, then the free
+	# end CARRIED down to the floor socket. Initialising the cord straight from
+	# table top to floor lays it diagonally through the slab, and a particle born
+	# inside a solid next to a pinned anchor has no contact plane and stays
+	# wedged — measured 11 mm inside. The ledge case documents the same trap.
 	base = _new_case()
-	_box(base + Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.0))
-	_rope_between(base + Vector3(-0.9, 0.95, 0), base + Vector3(-0.2, 0.95, 0))
-	await _assert_settles("a cord over a table corner", 1500, STILL_MM)
+	var slab_c := base + Vector3(-0.5, 0.70, 0)
+	var slab_s := Vector3(1.0, 0.10, 1.0)
+	_box(slab_c, slab_s)
+	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))    # the floor
+	var corner_rope := _rope_between(
+		base + Vector3(-0.9, 0.76, 0), base + Vector3(0.35, 0.76, 0), 34)
+	await _settle(120)
+	await _carry(corner_rope, corner_rope.end_node, base + Vector3(0.30, 0.03, 0), 90)
+	var corner_prof := await _settle_profile(1500)
+	_ok("contact/a cord over a table corner settles", corner_prof["slept"],
+		"still awake after %d ticks, moving %.3f mm/tick"
+			% [corner_prof["tick"], float(corner_prof["worst_awake"]) * 1000.0])
+	# NOT the held-awake residual the other contacts use. This shape has a long
+	# free-hanging span, and wake()-ing it every tick feeds the edge contact's
+	# chatter into the span's pendulum mode: measured, the hold pumps a 0.4 m
+	# sideways swing the room cannot contain — and cannot reach, because the
+	# sleep system cuts the loop off. So the claim is the one the room makes:
+	# brushed awake once, the cord lies straight back down (measured: asleep
+	# again in 30 ticks, 7 mm of drift). A sleep test too broken to re-latch, or
+	# a contact that genuinely churns, both still fail it.
+	var w := await _wake_once(600)
+	_ok("contact/a brushed corner cord lies back down",
+		bool(w["reslept"]) and float(w["drift"]) < 0.03,
+		"%s, drifted %.1f mm" % [
+			"asleep again after %d ticks" % int(w["tick"]) if w["reslept"]
+				else "still awake after %d ticks" % int(w["tick"]),
+			float(w["drift"]) * 1000.0])
+	var cut := _deepest_in_box(slab_c, slab_s)
+	_ok("contact/the corner is wrapped, not cut", cut < 0.01,
+		"deepest %.1f mm inside the table" % (cut * 1000.0))
 	await _drop_case()
 
 	# TAUT around the corner, which is the shape that actually chatters: the cord
@@ -451,24 +556,29 @@ func _group_contact() -> void:
 
 	# Draped over a horizontal pipe. A round surface is where a plane-cache
 	# contact model shows its seams: the contact normal turns under the cord.
+	# The slack is sized to the shape: an earlier version hung 1.1 m of spare cord
+	# from anchors 180 mm above the crown, and the bight slid off the top and
+	# swung UNDERNEATH — the video showed a cord slung under the pipe, not draped
+	# on it, while the old "rests on the pipe" check passed on a side graze.
 	base = _new_case()
 	var pipe := base + Vector3(0, 1.00, 0)
 	_cylinder(pipe, 0.12, 1.6)
-	_rope_between(base + Vector3(0, 1.30, -0.35), base + Vector3(0, 1.30, 0.35), 30)
+	_rope_between(base + Vector3(0, 1.16, -0.40), base + Vector3(0, 1.16, 0.40), 21)
 	await _assert_settles("a cord draped on a pipe", 1800, STILL_MM)
 	var into_pipe := _deepest_in_cylinder(pipe, 0.12, 0.8)
 	_ok("contact/draping a pipe stays out of it", into_pipe < 0.02,
 		"deepest %.1f mm inside" % (into_pipe * 1000.0))
 	# "Not inside the pipe" is only half the claim: a cord that ignores collision
-	# entirely falls PAST it and reads a clean zero. It also has to be lying ON it.
-	var touching := false
+	# entirely falls PAST it and reads a clean zero. It has to be lying ON it —
+	# and on the CROWN, not brushing a flank on its way underneath.
+	var on_crown := false
 	for pt: Vector3 in _points():
-		if absf(pt.x - pipe.x) > 0.8 or pt.y < pipe.y:
+		if absf(pt.x - pipe.x) > 0.8 or pt.y < pipe.y + 0.06:
 			continue
 		var r := Vector2(pt.y - pipe.y, pt.z - pipe.z).length()
 		if absf(r - 0.12) < 0.02:
-			touching = true
-	_ok("contact/the cord actually rests on the pipe", touching)
+			on_crown = true
+	_ok("contact/the cord rests on top of the pipe", on_crown)
 	await _drop_case()
 
 	# Over a thin upright post: the cord must end up hanging down BOTH sides
@@ -486,15 +596,32 @@ func _group_contact() -> void:
 			elif p.x > base.x + 0.05:
 				right = true
 	_ok("contact/a cord over a post hangs both sides", left and right)
+	# "Both sides" alone cannot fail: with collision off the cord hangs straight
+	# THROUGH the post and still has particles either side of it. The cord also
+	# has to be leaning on the post — and not be inside it.
+	var into_post := 0.0
+	var on_post := false
+	for p: Vector3 in _points():
+		var d := Vector2(p.x - base.x, p.z - base.z).length()
+		if p.y > base.y and p.y < base.y + 0.995:
+			into_post = maxf(into_post, 0.05 - d)
+			if absf(d - 0.05) < 0.02:
+				on_post = true
+		elif p.y >= base.y + 0.995 and p.y < base.y + 1.03 and d < 0.05:
+			on_post = true            # resting across the top counts too
+	_ok("contact/the cord leans on the post, not through it",
+		on_post and into_post < 0.01,
+		"deepest %.1f mm inside" % (into_post * 1000.0))
 	await _drop_case()
 
 	# Bridging two supports with a gap between them: it should sag into the gap
-	# and stop, not sink through to the floor.
+	# and stop, not sink through to the floor. Anchored on the support surfaces,
+	# so the spare cord lies on them and only the span crosses the gap.
 	base = _new_case()
 	_box(base + Vector3(-0.45, 0.70, 0), Vector3(0.6, 0.10, 1.0))
 	_box(base + Vector3(0.45, 0.70, 0), Vector3(0.6, 0.10, 1.0))
 	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))     # the floor
-	_rope_between(base + Vector3(-0.5, 0.95, 0), base + Vector3(0.5, 0.95, 0), 30)
+	_rope_between(base + Vector3(-0.5, 0.76, 0), base + Vector3(0.5, 0.76, 0), 30)
 	await _settle(900)
 	var sag := base.y + 0.75 - _lowest_y()
 	_ok("contact/a bridged cord sags without reaching the floor",
