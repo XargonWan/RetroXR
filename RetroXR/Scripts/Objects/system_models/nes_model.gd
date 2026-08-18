@@ -30,7 +30,30 @@ const BUTTON_DEPRESS_DEPTH := 0.0022
 # Travel of the CH3/CH4 knob. 3 mm, so that a 6 mm knob stays inside the 9.8 mm
 # recess the shell moulds for it at both detents — see _build_channel_switch.
 const CH_THROW := 0.003
-const INSERT_SLIDE := 0.07        # metres the cart slides in from the flap mouth
+# --- the ZIF cradle -------------------------------------------------------------
+#
+# The hardware hinges the whole carriage: Nintendo's patent for this mechanism
+# (EP0217538) has the tray "elastically energized upward by these coil springs", the
+# cart entering at about 10 degrees to the board, and a push-push latch. This shell
+# cannot swing that carriage — NesCradle's side walls top out 1.1 mm under the deck's
+# own skin, so the mesh has 0.68 degrees before it comes out through the top of the
+# console. The CART has the room the tray has not: 9.7 mm over its label to that same
+# skin, which at the mouth is TRAY_UP_DEG. So the cart tilts and the cradle stays put.
+const TRAY_UP_DEG := 4.0
+## A push released within this of flat counts as home.
+const TRAY_LATCH_DEG := 1.5
+## Seconds the tray takes to sink under a click. A VR hand carries it down itself,
+## but a click has no travel of its own to borrow, and a tray that teleports home
+## is not a hinge.
+const TRAY_PUSH_TIME := 0.14
+## Degrees/sec the springs take it back up — a quarter of the class default, which
+## is sized for a disc lid swinging through ninety.
+const TRAY_SPRING_DEG := 35.0
+## How far the cart's face stands proud of the shell's front while perched. The seat
+## is 21.5 mm inside that face, so the slide home is that distance plus this.
+const CART_PROUD := 0.010
+## How far a controller plug stands off its socket before it goes in.
+const PLUG_PROUD := 0.012
 const LID_OPEN_DEG := -105.0      # flap swing about its top-rear hinge edge
 const LID_ANIM_TIME := 0.35
 
@@ -69,10 +92,8 @@ var _sfx_reset_release: Array = []
 var _sfx_channel: Array = []
 var _sfx_cart_insert: Array = []
 var _sfx_cart_remove: Array = []
-# nes_tray_down_*.wav / nes_tray_up_*.wav are recorded and shipped, but nothing
-# plays them yet: the flap this model hinges is not the ZIF tray they are of.
-# Left unloaded until they have somewhere to go, so a spawn does not decode 15
-# clips for nothing.
+var _sfx_tray_down: Array = []
+var _sfx_tray_up: Array = []
 var _sfx_last: Dictionary = {}
 # Where the POWER switch physically sits. The NES's is push-push, so a press
 # always clicks — which of the two clicks it is depends on the latch position
@@ -81,7 +102,14 @@ var _power_in: bool = false
 var _reset_was_held: bool = false
 
 var _cartridge_slot: Node3D = null
-var _cartridge_insert_dir: Vector3 = Vector3.BACK
+# The tray is not a mesh here (see TRAY_UP_DEG) — it is a hinged frame that carries
+# the cartridge SLOT, so a seated cart rides it and nothing else has to move.
+var _tray_pivot: Node3D = null
+var _tray_hinge: VRSpringLatchedHinge = null
+var _seat_in_tray := Transform3D.IDENTITY
+var _tray_applied_deg := INF   # last angle written onto the slot
+var _tray_tween: Tween = null
+var _tray_down := false
 
 # Front-flap interaction — a grip-latched VRHinge drives the flap: grab its
 # bottom (free) half and swing it. _flap_frame/_flap_pivot form the angle-driver
@@ -176,6 +204,8 @@ func _build_sfx() -> void:
 	_sfx_channel = _load_variants("nes_channel_switch")
 	_sfx_cart_insert = _load_variants("nes_cart_insert")
 	_sfx_cart_remove = _load_variants("nes_cart_remove")
+	_sfx_tray_down = _load_variants("nes_tray_down")
+	_sfx_tray_up = _load_variants("nes_tray_up")
 	for i in 2:
 		var v := PcmOneShot.new()
 		v.name = "SwitchSfx%d" % i
@@ -252,6 +282,7 @@ func _on_reset_button_pressed() -> void:
 ## signal to VRButton — that widget is shared by every machine, every panel and the
 ## Wiimote, and this is one console's sound.
 func _process(_delta: float) -> void:
+	_sync_cart_tray()
 	if not _reset_was_held or _reset_button == null:
 		return
 	if not _reset_button.is_held():
@@ -457,6 +488,28 @@ func _on_flap_drag(deg: float) -> void:
 
 # --- ports / buttons / cable ----------------------------------------------------
 
+## Push the plug the last centimetre in. Same shape as the cartridge slide, and for
+## the same reason: the ghost stood off the socket, so something has to cover the
+## distance or the plug simply appears seated.
+##
+## The cord is anchored to this plug, so the move has to be a TRAVEL and not a
+## teleport — a rope whose anchor jumps re-lays itself across the room.
+func play_port_plug_insert(plug: Node3D, zone: Node3D) -> void:
+	if not _hand_did_it():
+		return
+	var socket := zone as XRToolsSnapZone
+	if socket == null or not (plug is RigidBody3D):
+		return
+	var seated := plug.global_transform
+	var body := plug as RigidBody3D
+	body.freeze = false
+	plug.global_transform = socket.preview_pose_for(plug)
+	var tween := plug.create_tween()
+	tween.tween_property(plug, "global_transform", seated, 0.18) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void: body.freeze = true)
+
+
 func get_controller_port_count() -> int:
 	return 2
 
@@ -537,6 +590,11 @@ func configure_controller_ports(port_zones: Array) -> void:
 			# roll sends the plug's +Z connector to -Z (into the shell) and keeps +Y
 			# up; a yaw sends the connector back OUT and flips the plug over.
 			zone.rotation_degrees = Vector3(0, 0, 180)
+		# Offer the plug at the socket's mouth rather than already inside it. The
+		# roll above is about Z, which leaves the zone's own +Z pointing out of the
+		# shell, so the stand-off is that axis whether the pose was authored or
+		# computed.
+		zone.preview_offset = Vector3(0, 0, PLUG_PROUD)
 	hide_port_placeholders(port_zones)
 
 
@@ -777,12 +835,11 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 			slot.global_transform = Transform3D(
 				b * Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
 				cradle.global_transform * cradle.get_aabb().get_center())
-		# This shell ships no "System Socket" marker, so the insert axis is the
-		# console's own front direction rather than read off the socket.
-		_cartridge_insert_dir = global_transform.basis.z.normalized()
 		var seat := find_child("CartSeat", true, false) as Node3D
 		if seat != null:
 			slot.global_transform = seat.global_transform
+		_setup_cart_tray(slot)
+		_set_cart_perch(slot)
 	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if slot_visual:
 		slot_visual.hide()
@@ -790,21 +847,167 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	slot.enabled = _lid_open
 
 
-func get_cartridge_insert_direction() -> Vector3:
-	return _cartridge_insert_dir
+## Stand the held cart's ghost proud of the mouth, so the release has somewhere to
+## slide FROM. The distance is measured rather than written down: this bay seats a
+## cart 21.5 mm inside the shell's own front face, so a stand-off quoted from the
+## seat would leave the ghost buried in the machine and the slide invisible.
+func _set_cart_perch(slot: Node3D) -> void:
+	var deck := _glb.find_child("NesDeck", true, false) as MeshInstance3D
+	if deck == null:
+		return
+	var to_model := global_transform.affine_inverse()
+	var front: float = ((to_model * deck.global_transform) * deck.get_aabb()).end.z
+	var seat_z: float = (to_model * slot.global_transform).origin.z
+	var half: float = MediaDimensions.cart_size("nes").y * 0.5
+	var proud: float = maxf(front - (seat_z + half) + CART_PROUD, 0.0)
+	# Zone-LOCAL, so it rides the tray's angle without knowing the tray can move.
+	var out_zone: Vector3 = (slot.global_transform.basis.inverse()
+		* global_transform.basis.z).normalized()
+	slot.preview_offset = out_zone * proud
 
 
-func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
+## The hinged frame the cartridge slot rides. No mesh moves with it — see TRAY_UP_DEG
+## for why the cradle itself cannot swing in this shell.
+func _setup_cart_tray(slot: Node3D) -> void:
+	var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
+	if cradle == null:
+		return
+	var to_model := global_transform.affine_inverse()
+	var ab: AABB = ((to_model * cradle.global_transform) * cradle.get_aabb())
+	_tray_pivot = Node3D.new()
+	_tray_pivot.name = "CartTrayPivot"
+	add_child(_tray_pivot)
+	# Hinged at the cradle's back-bottom edge, and yawed 180 so a POSITIVE angle
+	# lifts the FRONT — the sense VRSpringLatchedHinge is written to, where min_deg
+	# is the latched limit and max_deg the sprung one.
+	_tray_pivot.transform = Transform3D(Basis(Vector3.UP, PI),
+		Vector3(ab.get_center().x, ab.position.y, ab.position.z))
+	_seat_in_tray = _tray_pivot.global_transform.affine_inverse() * slot.global_transform
+	_tray_hinge = VRSpringLatchedHinge.new()
+	_tray_hinge.name = "CartTrayHinge"
+	_tray_hinge.target = _tray_pivot
+	_tray_hinge.min_deg = 0.0
+	_tray_hinge.max_deg = TRAY_UP_DEG
+	_tray_hinge.close_latch_deg = TRAY_LATCH_DEG
+	_tray_hinge.spring_speed_deg = TRAY_SPRING_DEG
+	# An empty bay rests UP, where the springs hold it — not shut like a disc lid.
+	_tray_hinge.start_closed = false
+	_tray_hinge.engage_radius = 0.05
+	_tray_pivot.add_child(_tray_hinge)
+	# The grab box lies over the cart's LABEL, which is the face a hand pushes on.
+	# The cart's sides and front stay clear, so the grab that pulls it back out
+	# still reaches the cart itself.
+	var cart: Vector3 = MediaDimensions.cart_size("nes")
+	_tray_hinge.position = _seat_in_tray.origin + Vector3(0, cart.z * 0.5 + 0.004, 0)
+	var col := CollisionShape3D.new()
+	col.name = "CollisionShape3D"
+	var box := BoxShape3D.new()
+	box.size = Vector3(cart.x * 0.9, 0.008, cart.y * 0.6)
+	col.shape = box
+	_tray_hinge.add_child(col)
+	_tray_hinge.rotation_changed.connect(_on_tray_moved)
+
+
+## Carry the slot with the tray. Driven from the pivot's angle rather than from the
+## hinge's signal because the spring return is deliberately silent — it reports no
+## rotation at all, and a cart that only followed the reported moves would stay
+## behind when the tray sprang back up under a released push.
+func _sync_cart_tray() -> void:
+	if _tray_pivot == null or _cartridge_slot == null:
+		return
+	var deg := rad_to_deg(_tray_pivot.rotation.x)
+	if is_equal_approx(deg, _tray_applied_deg):
+		return
+	_tray_applied_deg = deg
+	_cartridge_slot.global_transform = _tray_pivot.global_transform * _seat_in_tray
+
+
+func _on_tray_moved(_deg: float) -> void:
+	_sync_cart_tray()
+	if _tray_hinge != null:
+		_set_tray_down(_tray_hinge.is_latched_closed())
+
+
+## Push the cart home. Only now is the machine wired to it.
+##
+## The latch is thrown FIRST and the travel drawn afterwards: an unlatched hinge is
+## sprung, so a tray tweened down before latching would be hauled back up by
+## VRSpringLatchedHinge's own idle spring on the very next frame.
+func push_tray_down() -> void:
+	if _tray_hinge == null or _tray_hinge.is_latched_closed():
+		return
+	var from := _tray_pivot.rotation.x
+	_tray_hinge.latch_closed()
+	_set_tray_down(true)
+	if not _hand_did_it():
+		return
+	_tray_pivot.rotation.x = from
+	if _tray_tween != null and _tray_tween.is_valid():
+		_tray_tween.kill()
+	_tray_tween = create_tween()
+	_tray_tween.tween_property(_tray_pivot, "rotation:x", 0.0, TRAY_PUSH_TIME) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## Let the springs take it back up. The cart stays in the tray; the machine loses it.
+## No tween here — unlatching is all it takes, and the hinge's own spring carries it
+## at TRAY_SPRING_DEG.
+func lift_tray() -> void:
+	if _tray_hinge == null or not _tray_hinge.is_latched_closed():
+		return
+	if _tray_tween != null and _tray_tween.is_valid():
+		_tray_tween.kill()
+	_tray_hinge.open()
+	_set_tray_down(false)
+	if not _hand_did_it():
+		_tray_pivot.rotation.x = deg_to_rad(TRAY_UP_DEG)
+
+
+func is_tray_down() -> bool:
+	return _tray_down
+
+
+func has_push_tray() -> bool:
+	return true
+
+
+func _set_tray_down(down: bool) -> void:
+	if down == _tray_down:
+		return
+	_tray_down = down
 	if _hand_did_it():
-		_play_sfx(_sfx_cart_insert, "cart_insert")
-	# Make sure the flap is up, then slide the cart from the mouth back into the
-	# socket. XRTools has already snapped/frozen it at the final socket position.
+		_play_sfx(_sfx_tray_down if down else _sfx_tray_up, "tray")
+	cart_tray_changed.emit(down)
+
+
+## Read off the TRAY, which tilts: a cart goes in along the cradle's mouth, not
+## along the console's level front, and the two differ by TRAY_UP_DEG for as long as
+## the tray is up — which is every moment a cart is being handled.
+func get_cartridge_insert_direction() -> Vector3:
+	if _tray_pivot != null:
+		return (-_tray_pivot.global_transform.basis.z).normalized()
+	return global_transform.basis.z.normalized()
+
+
+func play_cartridge_insert(cartridge: Node3D, slot: Node3D) -> void:
+	# A restore is a state, not a motion: the cart is already at the seat and no hand
+	# put it there.
+	if not _hand_did_it():
+		return
+	_play_sfx(_sfx_cart_insert, "cart_insert")
+	# Make sure the flap is up, then slide the cart home from where its ghost was
+	# standing. XRTools has already snapped/frozen it at the seat, and the start is
+	# read back off the zone rather than written down, so the ghost and the slide
+	# cannot drift apart when the perch or the tray's angle is retuned.
 	play_open()
-	var final_pos := cartridge.global_position
+	var zone := slot as XRToolsSnapZone
+	if zone == null:
+		return
+	var seated := cartridge.global_transform
 	cartridge.freeze = false
-	cartridge.global_position = final_pos + _cartridge_insert_dir * INSERT_SLIDE
+	cartridge.global_transform = zone.preview_pose_for(cartridge)
 	var tween := cartridge.create_tween()
-	tween.tween_property(cartridge, "global_position", final_pos, 0.25) \
+	tween.tween_property(cartridge, "global_transform", seated, 0.25) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tween.tween_callback(func() -> void: cartridge.freeze = true)
 

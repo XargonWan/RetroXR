@@ -330,6 +330,30 @@ func set_cable_port_occupied(_occupied: bool) -> void:
 	pass
 
 
+## Emitted by a model whose bay only connects when its tray is pushed down (the
+## NES ZIF cradle). `down` true = the cart is home and the machine may read it;
+## false = the tray is up and the cart is merely lying in it.
+signal cart_tray_changed(down: bool)
+
+
+## True when this model's bay defers the insert to a push, so RetroSystem knows the
+## snap zone's own capture is not the moment the cart went in.
+func has_push_tray() -> bool:
+	return false
+
+
+## For a push-tray bay: is the tray currently pushed home?
+func is_tray_down() -> bool:
+	return false
+
+
+## Animate a controller plug into a port.  Called after XRTools has snapped and
+## frozen the plug at the socket, on the same terms as play_cartridge_insert: the
+## model tweens it from wherever the zone stood its ghost, then refreezes.
+func play_port_plug_insert(_plug: Node3D, _zone: Node3D) -> void:
+	pass
+
+
 ## Animate a cartridge into its slot.  Called after XRTools has snapped and
 ## frozen the cartridge at the slot position.  Subclasses unfreeze, tween from
 ## a system-specific start offset to the final position, then refreeze.

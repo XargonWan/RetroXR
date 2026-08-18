@@ -123,6 +123,27 @@ func snap_pose_for(obj: Node3D) -> Transform3D:
 	return t
 
 
+## LOCAL PATCH (RetroXR): where a held object is SHOWN before release, as an
+## offset from the seated pose in this zone's own local metres. Zero for every
+## zone but a bay whose media is presented before it goes in — the NES cart sits
+## proud of the mouth and slides the last centimetre on release, and a controller
+## plug stands off its socket. Local to the zone on purpose: the NES bay's zone
+## rides a cradle that hinges, so the offset follows the tray's angle without
+## anything here knowing the tray can move.
+var preview_offset: Vector3 = Vector3.ZERO
+
+
+## LOCAL PATCH (RetroXR): the pose the ghost draws — `snap_pose_for` offset by
+## `preview_offset`. Kept apart from snap_pose_for because that one also RANKS
+## which of several sockets wins a release; moving the ranking pose would change
+## which socket catches a plug dropped between two.
+func preview_pose_for(obj: Node3D) -> Transform3D:
+	var t := snap_pose_for(obj)
+	if preview_offset != Vector3.ZERO:
+		t.origin += global_transform.basis * preview_offset
+	return t
+
+
 ## LOCAL PATCH (RetroXR): nearest zone that could capture `obj` if released at
 ## `at` (the HAND's desired object position — not the object's actual one,
 ## which sits at the zone while previewing). `radius` is the object's bounding

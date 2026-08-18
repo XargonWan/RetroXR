@@ -50,6 +50,29 @@ var _model_label: MeshInstance3D = null
 var _stub_seated := false
 
 
+## The cabinet this cart is lying in, but only when its bay is a push tray. Null
+## everywhere else, which is what keeps every other console's carts on plain
+## click-to-take.
+func push_tray_host() -> Node:
+	if _grab_driver == null or not is_instance_valid(_grab_driver.primary):
+		return null
+	var zone := _grab_driver.primary.by as XRToolsSnapZone
+	if zone == null:
+		return null
+	var host := zone.get_parent()
+	if host != null and host.has_method("has_push_tray_bay") and host.has_push_tray_bay():
+		return host
+	return null
+
+
+## Desktop: a click on a cart lying in a push tray pushes it home, and a click on a
+## pushed-home one lifts it back out. Pulling it out is the DRAG — see DesktopPickup.
+func desktop_click_action() -> void:
+	var host := push_tray_host()
+	if host != null:
+		host.toggle_cart_tray()
+
+
 func _ready() -> void:
 	if save_id.is_empty():
 		save_id = "%08x%08x" % [randi(), randi()]

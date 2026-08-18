@@ -160,16 +160,10 @@ func _physics_process(delta : float) -> void:
 		# isn't shoved by the previewed object (which would jitter the socket).
 		_set_preview_collisions(zone != null)
 		if _preview_blend > 0.001 and is_instance_valid(_preview_zone):
-			# Preview at the pose the object will actually SNAP to, which for an
-			# object with a snap grab-point is the zone offset by that point's
-			# inverse (matches pickable.pick_up -> create_snap). Without this the
-			# ghost would show the raw zone orientation (e.g. a plug backwards)
-			# while the real snap is grab-point-corrected.
-			var zt := _preview_zone.global_transform
-			if is_instance_valid(target) and target.has_method("_get_grab_point"):
-				var gp: XRToolsGrabPoint = target._get_grab_point(_preview_zone, null)
-				if gp:
-					zt = zt * gp.transform.affine_inverse()
+			# The zone's own preview pose: grab-point-corrected (without it the
+			# ghost shows the raw zone orientation, e.g. a plug backwards) and
+			# offset by whatever stand-off the zone presents its media at.
+			var zt := _preview_zone.preview_pose_for(target)
 			var w := smoothstep(0.0, 1.0, _preview_blend)
 			var scale := destination.basis.get_scale()
 			var q := destination.basis.get_rotation_quaternion().slerp(

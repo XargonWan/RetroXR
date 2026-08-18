@@ -32,6 +32,7 @@
 extends Node3D
 
 const InteractionTargetType := preload("res://Scripts/Interaction/interaction_target.gd")
+const InteractionResolver := preload("res://Scripts/Interaction/interaction_resolver.gd")
 
 ## Scroll step in metres
 const SCROLL_STEP := 0.075
@@ -40,6 +41,9 @@ const MAX_DIST    := 5.0
 
 ## Mouse sensitivity for rotation (radians per pixel)
 const ROT_SENSITIVITY := 0.008
+
+## Pointer travel (pixels) that turns a click into a drag.
+const CLICK_DRAG_PX := 6.0
 
 ## FPS-snap local offset from camera: right, down, forward.
 ## Applied as a Transform3D in camera-local space so the weapon is always
@@ -62,6 +66,13 @@ var _companion_pivot  : Node3D = null
 
 var _middle_held : bool = false
 var _hovered_target : Node3D = null
+
+## Left button down over something that answers to a click (a cart lying in a push
+## tray). Held until the button comes back up — a release without travel is the
+## click, travel first is a pull — so the grab has to wait for one or the other.
+var _pending_click : Node3D = null
+var _pending_grab  : Node3D = null
+var _click_drag    : float = 0.0
 
 
 func _ready() -> void:
@@ -115,6 +126,14 @@ func _unhandled_input(event: InputEvent) -> void:
 							get_viewport().set_input_as_handled()
 					else:
 						_try_grab()
+				elif _pending_click != null:
+					# Came back up without travelling: it was a click.
+					var clicked := _pending_click
+					_pending_click = null
+					_pending_grab = null
+					if is_instance_valid(clicked):
+						clicked.desktop_click_action()
+					get_viewport().set_input_as_handled()
 
 			MOUSE_BUTTON_MIDDLE:
 				_middle_held = mbe.pressed
@@ -128,6 +147,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _held_object and not _is_fps_snap():
 					_grab_dist = clampf(_grab_dist + SCROLL_STEP, MIN_DIST, MAX_DIST)
 					get_viewport().set_input_as_handled()
+
+	elif event is InputEventMouseMotion and _pending_click != null:
+		# Travelled while held: the player is pulling it out, not pressing it.
+		_click_drag += (event as InputEventMouseMotion).relative.length()
+		if _click_drag >= CLICK_DRAG_PX:
+			var target := _pending_grab
+			_pending_click = null
+			_pending_grab = null
+			if is_instance_valid(target):
+				_grab_target(target)
 
 	elif event is InputEventMouseMotion and _middle_held:
 		if _held_object and not _is_fps_snap():
@@ -205,7 +234,27 @@ func _try_grab() -> void:
 	if interaction.distance > MAX_DIST:
 		return
 
+	# Something that answers to a click takes the press instead of the grab, and
+	# only gives it up if the pointer then travels.
+	var clickable := _click_action_node(interaction.action_node)
+	if clickable != null:
+		_pending_click = clickable
+		_pending_grab = interaction.action_node
+		_click_drag = 0.0
+		return
+
 	_grab_target(interaction.action_node)
+
+
+## The object under the pointer that wants the click for itself, or null. A snap
+## zone is asked about what it is HOLDING: the resolver hands back the socket, but
+## it is the cart in the tray that knows a click means "push me home".
+func _click_action_node(target: Node3D) -> Node3D:
+	var zone := target as XRToolsSnapZone
+	var obj: Node3D = InteractionResolver.held_pickable(zone) if zone != null else target
+	if obj != null and obj.has_method("desktop_click_action"):
+		return obj
+	return null
 
 
 ## Park the companion slot and reconcile who is standing in it.

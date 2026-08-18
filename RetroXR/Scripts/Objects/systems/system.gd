@@ -293,6 +293,10 @@ var _disc_ejected := false
 
 @onready var _system_body: MeshInstance3D = $SystemBody
 @onready var _cartridge_slot: XRToolsSnapZone = $CartridgeSlot
+## The cart lying in a push-tray bay, which the machine cannot read until the tray
+## is pushed home. Distinct from _snapped_cartridge, which means "the machine has
+## this cart" — on such a bay the two are apart for as long as the tray is up.
+var _tray_cartridge: Node3D = null
 @onready var _memcard_slot: XRToolsSnapZone = $MemoryCardSlot
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _libretro: Libretro = $Libretro
@@ -610,6 +614,7 @@ func _load_system_model() -> void:
 	else:
 		video_out_enabled = true
 	_model.configure_cartridge_slot(_cartridge_slot)
+	_wire_push_tray()
 	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
 	# real console's built-in port count) over the model's default, clamped to
@@ -2725,6 +2730,7 @@ func get_libretro_node() -> Libretro:
 # --- Controller port snap handlers ---
 
 func _on_port_snapped(port_index: int, controller: Node3D) -> void:
+	_model.play_port_plug_insert(controller, _port_zones[port_index])
 	var device_type: int = controller.get("device_type") if "device_type" in controller else 1
 	# The libretro port a peripheral drives isn't always its cabinet slot: on
 	# computer systems the mouse is forced to port 0 (where those cores poll it),
@@ -2908,6 +2914,11 @@ func restore_cartridge(cartridge: Node3D) -> void:
 		_tray.restore(cartridge)
 	else:
 		_cartridge_slot.pick_up_object(cartridge)
+		# A saved cart is one the machine could READ, so the tray it came out of was
+		# pushed home. Pushed again inside the restore flag, so it lands latched with
+		# neither the slide nor the sound.
+		if has_push_tray_bay():
+			_model.push_tray_down()
 	_restoring_media = false
 
 
@@ -2949,6 +2960,67 @@ func cabinet_port_of(peripheral: Node) -> int:
 	return -1
 
 
+## True when this cabinet's bay only connects on a push, so a cart lying in it knows
+## a click means "push me home" rather than "take me out".
+func has_push_tray_bay() -> bool:
+	return _model != null and _model.has_push_tray()
+
+
+## Push the cart home, or lift it back out. Both the desktop click and the VR hand
+## end up here.
+func toggle_cart_tray() -> void:
+	if not has_push_tray_bay():
+		return
+	if _model.is_tray_down():
+		_model.lift_tray()
+	else:
+		_model.push_tray_down()
+
+
+## A bay whose cart only connects when it is pushed home (the NES ZIF cradle).
+## The zone catching a cart means the cart is LYING in the tray, nothing more, so
+## the emulation-side pair is fired by the tray instead — the same swap MediaSlot
+## and MediaTray make for disc loaders.
+func _wire_push_tray() -> void:
+	if not _model.has_push_tray():
+		return
+	if _cartridge_slot.has_picked_up.is_connected(_on_cartridge_inserted):
+		_cartridge_slot.has_picked_up.disconnect(_on_cartridge_inserted)
+	if _cartridge_slot.has_dropped.is_connected(_on_cartridge_removed):
+		_cartridge_slot.has_dropped.disconnect(_on_cartridge_removed)
+	_cartridge_slot.has_picked_up.connect(_on_cart_laid_in_tray)
+	_cartridge_slot.has_dropped.connect(_on_cart_taken_from_tray)
+	_model.cart_tray_changed.connect(_on_cart_tray_changed)
+
+
+## Cart is in the tray. It slides home visually here; the machine still cannot read
+## it. A tray left down by a cart pulled out of it takes the next one straight away,
+## because nothing more is going to be pushed.
+func _on_cart_laid_in_tray(cartridge: Node3D) -> void:
+	_tray_cartridge = cartridge
+	_model.play_cartridge_insert(cartridge, _cartridge_slot)
+	if _model.is_tray_down():
+		_on_cartridge_inserted(cartridge)
+
+
+## Cart has left the tray for good.
+func _on_cart_taken_from_tray() -> void:
+	_tray_cartridge = null
+	if _snapped_cartridge != null:
+		_on_cartridge_removed()
+	else:
+		_model.play_cartridge_eject(null, _cartridge_slot)
+
+
+## The tray was pushed home, or sprung back up.
+func _on_cart_tray_changed(down: bool) -> void:
+	if down:
+		if is_instance_valid(_tray_cartridge):
+			_on_cartridge_inserted(_tray_cartridge)
+	elif _snapped_cartridge != null:
+		_on_cartridge_removed()
+
+
 func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	_snapped_cartridge = cartridge
 	# Prevent the frozen kinematic cartridge from physically pushing the system body.
@@ -2962,7 +3034,10 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 	# resolve the core) — a cart inserted into an NES is an NES cart.
 	if "systemid" in cartridge and str(cartridge.get("systemid")).is_empty():
 		cartridge.set("systemid", systemid)
-	_model.play_cartridge_insert(cartridge, _cartridge_slot)
+	# A push-tray bay already slid the cart home when it was laid in — this moment
+	# is the tray latching, which moves nothing.
+	if not _model.has_push_tray():
+		_model.play_cartridge_insert(cartridge, _cartridge_slot)
 	# (Slot/tray loaders already seated the disc and set its grabbability through
 	# MediaSlot/MediaTray — the disc's enabled state follows the lid there.)
 	# Hot swap: a powered disc console with its virtual tray open takes the new
@@ -2985,7 +3060,11 @@ func _on_cartridge_inserted(cartridge: Node3D) -> void:
 
 func _on_cartridge_removed() -> void:
 	if _snapped_cartridge:
-		_model.play_cartridge_eject(_snapped_cartridge, _cartridge_slot)
+		# On a push-tray bay this fires when the tray is LIFTED, with the cart still
+		# lying in it — the eject belongs to the cart actually leaving, which
+		# _on_cart_taken_from_tray plays.
+		if not _model.has_push_tray():
+			_model.play_cartridge_eject(_snapped_cartridge, _cartridge_slot)
 		# Slot/tray loaders let MediaSlot/MediaTray manage (and hold) the collision
 		# exception until the disc is grabbed clear — don't drop it here.
 		if _slot == null and _tray == null:

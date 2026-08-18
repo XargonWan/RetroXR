@@ -1223,18 +1223,12 @@ func _apply_socket_preview(want: Transform3D, delta: float) -> Transform3D:
 		want.origin.lerp(seated.origin, w))
 
 
-## Where the object will actually sit once `zone` captures it. An object with a
-## snap grab-point seats at the zone offset by that point's inverse (matching
-## pickable.pick_up -> create_snap); without this the preview would show the raw
-## socket orientation and a plug would appear to go in backwards.
+## Where the object will actually sit once `zone` captures it: grab-point-
+## corrected (without it a plug would appear to go in backwards) and offset by
+## whatever stand-off the zone presents its media at, so the beam's ghost and
+## the hand-held ghost agree.
 func _seated_transform(zone: XRToolsSnapZone) -> Transform3D:
-	var zt := zone.global_transform
-	if is_instance_valid(_ray_grab_object) \
-			and _ray_grab_object.has_method("_get_grab_point"):
-		var gp: XRToolsGrabPoint = _ray_grab_object._get_grab_point(zone, null)
-		if gp:
-			zt = zt * gp.transform.affine_inverse()
-	return zt
+	return zone.preview_pose_for(_ray_grab_object)
 
 
 func _get_ray_preview_radius() -> float:
