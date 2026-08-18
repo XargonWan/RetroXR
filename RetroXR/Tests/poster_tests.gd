@@ -16,7 +16,7 @@ extends Node
 ## transparent corner, to exercise the alpha path) into the real posters folder and
 ## removes it at both ends.
 
-const GROUPS := ["image", "stick", "release", "peel", "preview", "conform", "menu", "persist"]
+const GROUPS := ["image", "stick", "release", "peel", "preview", "desktop", "conform", "menu", "persist"]
 const SLOT := "__poster_selftest"
 const TEST_IMAGE := "__poster_selftest.png"
 
@@ -52,6 +52,8 @@ func _ready() -> void:
 		await _test_peel()
 	if _want("preview"):
 		await _test_preview()
+	if _want("desktop"):
+		await _test_desktop()
 	if _want("conform"):
 		await _test_conform()
 	if _want("menu"):
@@ -666,4 +668,36 @@ func _test_preview() -> void:
 
 	p.queue_free()
 	wall.queue_free()
+	await get_tree().process_frame
+
+
+# ── Desktop resize, and a rim that follows the art ────────────────────────────
+
+func _test_desktop() -> void:
+	var p := _make_poster()
+	await get_tree().process_frame
+
+	# Q/E only bite while it is held and not already on a surface.
+	var before := p.size_scale
+	Input.action_press("ui_accept")   # unrelated key, to prove nothing else moves it
+	await get_tree().process_frame
+	Input.action_release("ui_accept")
+	_ok(is_equal_approx(p.size_scale, before), "desktop/an unrelated key changes nothing")
+
+	# The rim samples the poster's own alpha rather than covering its rectangle —
+	# a die-cut star must not light up as a slab.
+	var outline := p.get_node("Surface/HoverOutline") as MeshInstance3D
+	var mat := outline.material_override as ShaderMaterial
+	_ok(mat != null, "desktop/the rim is a shader, not a plain quad")
+	if mat != null:
+		_ok(mat.get_shader_parameter("poster_tex") != null,
+			"desktop/it is given the poster's own texture to cut itself out with")
+		_ok(absf(float(mat.get_shader_parameter("cutoff")) - 0.5) < 0.001,
+			"desktop/at the same threshold the sheet scissors at")
+		var src := FileAccess.get_file_as_string("res://Shaders/poster_outline.gdshader")
+		# ALPHA would move it to the transparent pass and cost depth writes.
+		_ok(src.contains("discard") and not src.contains("ALPHA ="),
+			"desktop/and discards rather than writing ALPHA")
+
+	p.queue_free()
 	await get_tree().process_frame

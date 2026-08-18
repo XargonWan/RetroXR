@@ -149,6 +149,9 @@ func _load_image() -> void:
 			_texture = ImageTexture.create_from_image(img)
 			_aspect = float(img.get_width()) / maxf(1.0, float(img.get_height()))
 			_flat_mesh.set_surface_override_material(0, _build_material(_texture, alpha))
+			if _outline != null:
+				(_outline.material_override as ShaderMaterial).set_shader_parameter(
+					"poster_tex", _texture)
 	_apply_dimensions()
 
 
@@ -248,6 +251,7 @@ func _process(delta: float) -> void:
 	# so this shows the landing for a hand placement too, and it does not depend
 	# on a controller being found.
 	_update_preview(delta, freeze and not is_stuck())
+	_desktop_resize(delta)
 	var rotator := _rotating_controller_for(holder)
 	if rotator == null:
 		return
@@ -394,27 +398,26 @@ func set_aim_direction(dir: Vector3) -> void:
 
 const OUTLINE_COLOR := Color(1.0, 0.85, 0.30)
 ## How far the border stands out past the sheet's edge.
-const OUTLINE_MARGIN := 0.018
+const OUTLINE_MARGIN := 0.045
 
 var _outline: MeshInstance3D = null
+
+
+const OUTLINE_SHADER := preload("res://Shaders/poster_outline.gdshader")
 
 
 func _build_outline() -> void:
 	_outline = MeshInstance3D.new()
 	_outline.name = "HoverOutline"
-	var quad := QuadMesh.new()
-	_outline.mesh = quad
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = OUTLINE_COLOR
-	mat.emission_enabled = true
-	mat.emission = OUTLINE_COLOR
-	mat.emission_energy_multiplier = 1.6
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	# Behind the sheet by a hair, so it reads as a rim around it rather than a
-	# panel over the art.
+	_outline.mesh = QuadMesh.new()
+	var mat := ShaderMaterial.new()
+	mat.shader = OUTLINE_SHADER
+	mat.set_shader_parameter("rim_color", OUTLINE_COLOR)
+	mat.set_shader_parameter("cutoff", 0.5)
 	_outline.material_override = mat
-	_outline.position = Vector3(0, 0, -0.001)
+	# A hair behind the sheet, so the enlarged silhouette shows as a rim around it
+	# rather than a panel over the art.
+	_outline.position = Vector3(0, 0, -0.0015)
 	_outline.visible = false
 	_surface.add_child(_outline)
 
@@ -492,3 +495,32 @@ func predict_stick() -> Dictionary:
 
 func pose_for_stick(hit: Dictionary) -> Transform3D:
 	return _stick.pose_for(hit) if _stick != null else Transform3D.IDENTITY
+
+
+# ── Resizing on desktop ───────────────────────────────────────────────────────
+#
+# Q shrinks, E grows, while the poster is held. The VR gesture is the face buttons
+# on the rotating hand (see above); a desk has no second controller, and the mouse
+# wheel is already the reticle's own scroll.
+
+const KEY_GROW := KEY_E
+const KEY_SHRINK := KEY_Q
+
+
+func _desktop_resize(delta: float) -> void:
+	if not freeze or is_stuck():
+		return
+	# Not while a text field has focus, or naming a save slot resizes whatever is
+	# in your hand. The typing guard suspends scroll and movement for the same
+	# reason; a focused LineEdit is the same question asked directly.
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return
+	var step := 0.0
+	if Input.is_physical_key_pressed(KEY_GROW):
+		step += RESIZE_SPEED * delta
+	if Input.is_physical_key_pressed(KEY_SHRINK):
+		step -= RESIZE_SPEED * delta
+	if is_zero_approx(step):
+		return
+	size_scale = clampf(size_scale + step, SIZE_MIN, SIZE_MAX)
