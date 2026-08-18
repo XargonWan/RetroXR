@@ -226,7 +226,14 @@ var _ctrls_found := false
 func _process(delta: float) -> void:
 	if not _ctrls_found:
 		return
-	var rotator := _rotating_controller()
+	var holder := _ray_holder()
+	# Remember where the beam is pointing for as long as it holds the sheet. The
+	# release itself is silent on this path (no `dropped`), and by the time the
+	# stick runs the grab is already over — so the aim has to be kept, not asked
+	# for afterwards.
+	if holder != null and _stick != null:
+		_stick.aim_direction = -holder.global_transform.basis.z
+	var rotator := _rotating_controller_for(holder)
 	if rotator == null:
 		return
 	var step := 0.0
@@ -246,8 +253,7 @@ func _process(delta: float) -> void:
 ## The hand that is NOT holding this poster on its laser, or null when no laser
 ## holds it. That is the hand xr-tools already gives the rotation to, so size and
 ## rotation stay on one controller and the other simply aims.
-func _rotating_controller() -> XRController3D:
-	var holder := _ray_holder()
+func _rotating_controller_for(holder: XRController3D) -> XRController3D:
 	if holder == null:
 		return null
 	return _right_ctrl if holder == _left_ctrl else _left_ctrl
@@ -356,3 +362,9 @@ func peel() -> void:
 	if _stick != null:
 		_stick.peel()
 	_show_flat()
+
+
+## Where the holder is aiming, for the laser placement path.
+func set_aim_direction(dir: Vector3) -> void:
+	if _stick != null:
+		_stick.aim_direction = dir

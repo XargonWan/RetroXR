@@ -16,7 +16,7 @@ extends Node
 ## transparent corner, to exercise the alpha path) into the real posters folder and
 ## removes it at both ends.
 
-const GROUPS := ["image", "stick", "conform", "menu", "persist"]
+const GROUPS := ["image", "stick", "release", "conform", "menu", "persist"]
 const SLOT := "__poster_selftest"
 const TEST_IMAGE := "__poster_selftest.png"
 
@@ -46,6 +46,8 @@ func _ready() -> void:
 		await _test_image()
 	if _want("stick"):
 		await _test_stick()
+	if _want("release"):
+		await _test_release()
 	if _want("conform"):
 		await _test_conform()
 	if _want("menu"):
@@ -467,4 +469,88 @@ func _test_menu() -> void:
 	_ok(not p.is_stuck(), "menu/peeling an unstuck poster is safe")
 
 	p.queue_free()
+	await get_tree().process_frame
+
+
+# ── Releasing it the way a player actually does ───────────────────────────────
+#
+# The cases above place the sheet 2 cm from the wall and perfectly square, which
+# is not how anyone holds a poster. These are the real gestures: at arm's length,
+# at an angle, and facing the wrong way round.
+
+func _test_release() -> void:
+	var wall := _make_wall(Vector3(0, 1.5, -2.0))
+	await get_tree().physics_frame
+
+	# 1. Let go at arm's length rather than pressed against the plaster.
+	var far := _make_poster()
+	await get_tree().process_frame
+	far.global_transform = Transform3D(Basis(), Vector3(0, 1.5, -1.68))
+	await _release(far)
+	_ok(far.is_stuck(), "release/sticks from a hand's length away")
+
+	# 2. Held at an angle, as a hand holds it.
+	var tilted := _make_poster()
+	await get_tree().process_frame
+	var b := Basis(Vector3.UP, deg_to_rad(22.0)) * Basis(Vector3.RIGHT, deg_to_rad(-14.0))
+	tilted.global_transform = Transform3D(b, Vector3(-0.4, 1.5, -1.74))
+	await _release(tilted)
+	_ok(tilted.is_stuck(), "release/sticks when held at an angle")
+	if tilted.is_stuck():
+		_ok(tilted.global_transform.basis.z.dot(Vector3(0, 0, 1)) > 0.99,
+			"release/and squares up to the wall it found")
+
+	# 3. Facing the wrong way — the sheet's back to the wall. Nothing about a
+	#    poster says which face the player had toward them.
+	var backwards := _make_poster()
+	await get_tree().process_frame
+	backwards.global_transform = Transform3D(Basis(Vector3.UP, PI), Vector3(0.5, 1.5, -1.74))
+	await _release(backwards)
+	_ok(backwards.is_stuck(), "release/sticks when held back-to-front")
+
+	# 4. THE RAY GESTURE, which is how a poster reaches a far wall. The sheet
+	#    floats at the beam's hold distance, facing however it was grabbed — so
+	#    its own faces look at nothing and only the aim knows what was chosen.
+	var aimed := _make_poster()
+	await get_tree().process_frame
+	aimed.global_transform = Transform3D(Basis(Vector3.UP, deg_to_rad(70.0)),
+		Vector3(0, 1.5, -0.6))          # 1.3 m out from the wall, turned away
+	aimed.set_aim_direction(Vector3(0, 0, -1))
+	await _release(aimed)
+	_ok(aimed.is_stuck(), "release/a ray release sticks where the beam points")
+	if aimed.is_stuck():
+		_ok(absf(aimed.global_position.z - (-1.923)) < 0.01,
+			"release/and lands on that wall, not where it floated (z %.3f)"
+				% aimed.global_position.z)
+	aimed.queue_free()
+
+	# 5. An OBJECT, not the room. A television is an XRToolsPickable on the
+	#    Pickable layer, not world geometry — a probe that searched only World
+	#    stuck to every wall and passed straight through every machine.
+	var prop := RigidBody3D.new()
+	prop.freeze = true
+	prop.collision_layer = 4          # Pickable, exactly as a TV or console is
+	var pcs := CollisionShape3D.new()
+	var pbox := BoxShape3D.new()
+	pbox.size = Vector3(0.6, 0.5, 0.4)
+	pcs.shape = pbox
+	prop.add_child(pcs)
+	add_child(prop)
+	prop.global_position = Vector3(2.5, 1.2, -1.0)
+	await get_tree().physics_frame
+	var on_prop := _make_poster()
+	await get_tree().process_frame
+	on_prop.size_scale = 0.5
+	on_prop.global_transform = Transform3D(Basis(), Vector3(2.5, 1.2, -0.66))
+	await _release(on_prop)
+	_ok(on_prop.is_stuck(), "release/sticks to an object, not just the room")
+	_ok(on_prop.is_stuck() and on_prop.get_parent() == prop,
+		"release/and rides that object")
+	on_prop.queue_free()
+	prop.queue_free()
+
+	far.queue_free()
+	tilted.queue_free()
+	backwards.queue_free()
+	wall.queue_free()
 	await get_tree().process_frame

@@ -20,10 +20,25 @@ extends Node
 signal stuck_changed(target: Node3D)
 
 ## How far in front of the sheet to look for a surface when it is let go.
-const REACH := 0.12
+## How far to look for a surface when the sheet is let go.
+##
+## Generous on purpose. A player holds a poster UP TO a wall at arm's length and
+## lets go; they do not press it against the plaster first. At 0.12 m — which is
+## what a test that placed the sheet 2 cm out and perfectly square was happy with
+## — every real release missed and the poster fell on the floor.
+const REACH := 0.35
+## How far along the laser to look. A poster is placed across a room with it.
+const AIM_REACH := 6.0
 ## Clear of the surface, against z-fighting. The room's own framed posters sit 17 mm
 ## off the wall; a bare sheet only needs enough to not fight the plaster.
 const SKIN := 0.002
+## What counts as something to stick to: World (1) for the room shell and its
+## furniture, and Pickable (3) for the machines and decks standing in it.
+##
+## Pickable is not optional — a television is an XRToolsPickable on layer 3, not
+## world geometry, so a probe that searched only World found the walls and went
+## straight through every object in the room.
+const SURFACE_MASK := (1 << 0) | (1 << 2)
 
 var target: Node3D = null
 var anchor_position := Vector3.ZERO
@@ -33,6 +48,13 @@ var _body: RigidBody3D = null
 var _ray: RayCast3D = null
 var _was_held := false
 var _orig_freeze_mode: int = RigidBody3D.FREEZE_MODE_STATIC
+## Where the holder was AIMING when it let go, in world space, or zero.
+##
+## Set by the owner while a laser holds it. A ray-held poster floats at the
+## beam's hold distance with whatever facing it was grabbed with, so probing out
+## of its own face finds empty room — the surface the player means is the one
+## under the laser, which can be metres away. Aim wins when it is set.
+var aim_direction := Vector3.ZERO
 
 
 static func attach(body: RigidBody3D, ray: RayCast3D) -> SurfaceStick:
@@ -73,17 +95,48 @@ func _physics_process(_delta: float) -> void:
 ## body floats metres away from the controller, so a controller-origin probe finds
 ## whatever is in front of the PLAYER instead of what the poster is against.
 func try_stick() -> void:
-	if not is_instance_valid(_body) or is_stuck():
+	if not is_instance_valid(_body) or is_stuck() or not _body.is_inside_tree():
 		return
-	if _ray == null:
+	var space := _body.get_world_3d().direct_space_state
+	if space == null:
 		return
-	_ray.force_raycast_update()
-	if not _ray.is_colliding():
+	var from := _body.global_position
+
+	# The laser first, when there is one: that is the surface the player chose, and
+	# a ray-held sheet floats at the beam's hold distance facing however it was
+	# grabbed, so its own face usually looks at nothing.
+	if aim_direction.length_squared() > 0.0001:
+		var aq := PhysicsRayQueryParameters3D.create(
+			from, from + aim_direction.normalized() * AIM_REACH)
+		aq.collision_mask = SURFACE_MASK
+		aq.exclude = [_body.get_rid()]
+		var ah := space.intersect_ray(aq)
+		if not ah.is_empty():
+			stick_to(ah["collider"] as Node3D, ah["position"] as Vector3,
+				(ah["normal"] as Vector3).normalized())
+			return
+
+	# Otherwise both faces, nearest wins. Which way round a sheet is held is
+	# arbitrary — a poster has a front but a hand does not — so looking only out of
+	# its -Z made "held back-to-front" a poster that fell on the floor. Sticking
+	# squares it up either way, so the two cases end identically.
+	var best: Dictionary = {}
+	var best_d := REACH + 1.0
+	for dir: Vector3 in [-_body.global_transform.basis.z, _body.global_transform.basis.z]:
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir.normalized() * REACH)
+		q.collision_mask = SURFACE_MASK
+		q.exclude = [_body.get_rid()]
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			continue
+		var d: float = from.distance_to(hit["position"] as Vector3)
+		if d < best_d:
+			best_d = d
+			best = hit
+	if best.is_empty():
 		return
-	var collider := _ray.get_collider() as Node3D
-	if collider == null:
-		return
-	stick_to(collider, _ray.get_collision_point(), _ray.get_collision_normal())
+	stick_to(best["collider"] as Node3D, best["position"] as Vector3,
+		(best["normal"] as Vector3).normalized())
 
 
 ## Commit against a surface. `point`/`normal` are world space.
