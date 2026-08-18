@@ -305,7 +305,7 @@ func _physics_process(_delta: float) -> void:
 			var r: float = reach[e]
 			if d <= r or d < 0.0001:
 				continue
-			plug.global_position += away * ((r - d) / d)
+			_clamp_move(plug, away * ((r - d) / d))
 
 
 ## Keep the two ends of a one-cord lead within its rest length of each other.
@@ -340,7 +340,21 @@ func _clamp_pair() -> void:
 	var d: float = away.length()
 	if d <= reach or d < 0.0001:
 		return
-	loose.global_position += away * ((reach - d) / d)
+	_clamp_move(loose, away * ((reach - d) / d))
+
+
+## Move a clamped plug with a SWEPT motion, sliding along whatever it meets.
+## The clamp used to write global_position directly, which bypasses collision
+## entirely; the physics server happens to rescue steps smaller than the
+## obstacle's half-thickness, so no tunnel was ever reproduced from this write
+## alone at hand speeds — but that rescue is luck of scale, not a contract, and
+## an uncollided write composes badly with everything else that repositions a
+## plug (the rope's plug alignment carried one through a floor before its step
+## was capped). Swept is strictly safer and costs one query.
+func _clamp_move(plug: RcaPlug, motion: Vector3) -> void:
+	var hit := plug.move_and_collide(motion)
+	if hit != null:
+		plug.move_and_collide(hit.get_remainder().slide(hit.get_normal()))
 
 
 func _on_plug_moved() -> void:
