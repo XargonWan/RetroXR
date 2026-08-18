@@ -63,6 +63,27 @@ const SOURCES := {
 			"Android": "azahar_libretro.so.zip",
 		},
 	},
+	# Play!, the PS2 core. Two of the three fixes are the difference between a
+	# core that runs on Quest and one that does not: the buildbot's Android build
+	# points its data directory at /sdcard, which scoped storage will not let it
+	# create, and the exception that follows escapes retro_init and aborts the
+	# whole frontend. Past that, every thread the core starts asked to attach to
+	# a JavaVM that a dlopen'd library never receives, and the assert guarding it
+	# is compiled out of a release build. The third fix is visible on both
+	# platforms — sprites are snapped to whole pixels, closing the column of
+	# black seams the GS's corner sampling leaves down an OpenGL-rendered frame.
+	#
+	# Play! is BSD, so unlike Dolphin the binary carries no source obligation;
+	# the fork is where it is built from all the same.
+	"play": {
+		"repo":  "XenuIsWatching/Play-",
+		"known_tag": "retroxr-play-libretro-v1",
+		"label": "Play! (retroXR build)",
+		"assets": {
+			"Windows": "play_libretro.dll.zip",
+			"Android": "play_libretro_android.so.zip",
+		},
+	},
 }
 
 
