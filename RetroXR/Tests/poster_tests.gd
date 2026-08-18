@@ -56,6 +56,7 @@ func _ready() -> void:
 		await _test_desktop()
 	if _want("roll"):
 		await _test_roll()
+		await _test_inherit_roll()
 	if _want("conform"):
 		await _test_conform()
 	if _want("menu"):
@@ -800,5 +801,41 @@ func _test_roll() -> void:
 		await get_tree().physics_frame
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(
 		"user://scenes/arcade/%s.json" % SLOT))
+	wall.queue_free()
+	await get_tree().process_frame
+
+
+## The off-hand stick already turns a ray-held object; landing used to square that
+## away. A beam release keeps the angle, a hand release still squares up.
+
+func _test_inherit_roll() -> void:
+	var wall := _make_wall(Vector3(0, 1.5, -2.0))
+	await get_tree().physics_frame
+
+	# Beam: held turned 25 deg about the beam axis, aimed at the wall.
+	var beam := _make_poster()
+	await get_tree().process_frame
+	beam.global_transform = Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(25.0)),
+		Vector3(-0.5, 1.5, -1.0))
+	beam.set_aim_direction(Vector3(0, 0, -1))
+	await _release(beam)
+	_ok(beam.is_stuck(), "inherit/a turned sheet still sticks")
+	_ok(absf(beam.roll_degrees - 25.0) < 1.0,
+		"inherit/it lands at the angle it was held (%.1f deg)" % beam.roll_degrees)
+	var tilt := rad_to_deg(acos(clampf(
+		beam.global_transform.basis.y.dot(Vector3.UP), -1.0, 1.0)))
+	_ok(absf(tilt - 25.0) < 1.0, "inherit/and really hangs at it (%.1f)" % tilt)
+
+	# Hand: same tilt, no beam. A wrist is not a deliberate angle.
+	var hand := _make_poster()
+	await get_tree().process_frame
+	hand.global_transform = Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(25.0)),
+		Vector3(0.5, 1.5, -1.80))
+	await _release(hand)
+	_ok(hand.is_stuck(), "inherit/a hand-placed sheet sticks")
+	_ok(absf(hand.roll_degrees) < 0.001, "inherit/and squares up instead")
+
+	beam.queue_free()
+	hand.queue_free()
 	wall.queue_free()
 	await get_tree().process_frame

@@ -84,6 +84,9 @@ func _ready() -> void:
 	add_to_group("poster")
 	_stick = SurfaceStick.attach(self, _ray)
 	_stick.roll = deg_to_rad(roll_degrees)
+	# Keep the exported angle in step when a landing adopts one, so the menu reads
+	# right and the save records what is actually on the wall.
+	_stick.roll_inherited.connect(func(deg: float) -> void: roll_degrees = deg)
 	_stick.stuck_changed.connect(func(_t: Node3D) -> void:
 		_end_preview()
 		apply_fit())

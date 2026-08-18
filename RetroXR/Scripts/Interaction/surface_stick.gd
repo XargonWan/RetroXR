@@ -18,6 +18,8 @@ extends Node
 
 ## Emitted after the body has stuck to `target`, and again with null when peeled.
 signal stuck_changed(target: Node3D)
+## The landing adopted an angle from how the sheet was being held.
+signal roll_inherited(degrees: float)
 
 ## How far in front of the sheet to look for a surface when it is let go.
 ## How far to look for a surface when the sheet is let go.
@@ -156,6 +158,13 @@ func try_stick() -> void:
 	var hit := predict()
 	if hit.is_empty():
 		return
+	# Keep the angle it was being held at, but only off the BEAM. The off-hand
+	# stick already turns a ray-held object — that is xr-tools' own gesture — and
+	# squaring up on landing threw the result away, so the rotation the player just
+	# made was pointless. A HAND placement is left to square up: a wrist is not a
+	# deliberate angle, and baking its wobble in would make every poster crooked.
+	if aim_direction.length_squared() > 0.0001:
+		inherit_roll_from_pose((hit["normal"] as Vector3).normalized())
 	stick_to(hit["collider"] as Node3D, hit["position"] as Vector3,
 		(hit["normal"] as Vector3).normalized())
 
@@ -219,6 +228,29 @@ func peel(held: bool = false) -> void:
 			_body.sleeping = false
 		_body.reset_physics_interpolation()
 	stuck_changed.emit(null)
+
+
+## Adopt the sheet's current in-plane angle as its roll, so a landing keeps the
+## orientation the player set rather than snapping upright.
+##
+## Measured against the same world-up reference _surface_basis starts from, so
+## the two cannot disagree about where zero is.
+func inherit_roll_from_pose(n: Vector3) -> void:
+	if not is_instance_valid(_body):
+		return
+	var base_up := Vector3.UP - n * Vector3.UP.dot(n)
+	if base_up.length_squared() < 0.0001:
+		base_up = Vector3.FORWARD - n * Vector3.FORWARD.dot(n)
+	base_up = base_up.normalized()
+	# The held sheet's own up, flattened into the surface it is about to lie on.
+	var held_up := _body.global_transform.basis.y
+	held_up = held_up - n * held_up.dot(n)
+	if held_up.length_squared() < 0.0001:
+		return      # edge-on: no in-plane angle to read
+	held_up = held_up.normalized()
+	var angle := base_up.signed_angle_to(held_up, n)
+	roll = angle
+	roll_inherited.emit(rad_to_deg(angle))
 
 
 ## Re-apply the pose after the roll changed, keeping the anchor. Nothing about
