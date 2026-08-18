@@ -58,8 +58,6 @@ var romm_art: RommArtCache = null
 ## The same treatment for ScreenScraper art. Built here rather than injected:
 ## it needs no config, unlike romm_art which needs the server URL.
 var scraped_art: ScrapedArtCache = null
-## Guards the coalesced media rebuild — see _queue_media_refresh.
-var _media_refresh_queued := false
 
 ## The menu, for raising notices. Typed Node so the classes do not name each
 ## other — same reason as SpawnMenuOptionsView.
@@ -2100,22 +2098,6 @@ func _on_romm_cache_changed() -> void:
 	_rebuild_romm_rows()
 
 
-## One tab rebuild per frame however many files land in it.
-##
-## Rebuilding per file was the other half of the scrape stutter: four media
-## downloads can finish within a frame of each other, and each was rebuilding the
-## grid and the row model in full.
-func _queue_media_refresh() -> void:
-	if _media_refresh_queued:
-		return
-	_media_refresh_queued = true
-	_do_media_refresh.call_deferred()
-
-
-func _do_media_refresh() -> void:
-	_media_refresh_queued = false
-	_populate_cartridges_tab()
-	_rebuild_romm_rows()
 
 
 func _on_romm_art_ready(_rom_id: int, _texture: Texture2D) -> void:
@@ -2187,11 +2169,21 @@ func _on_scrape_accepted(rom_path: String, systemid: String, result: Dictionary)
 	_media_dl_refresh_cb = func(mtype: String, _path: String) -> void:
 		if mtype != "wheel" and mtype != "manual":
 			return
-		# The lookup cached a miss for this ROM before the art existed.
+		# Drop what cached a miss for this ROM before the art existed.
 		if scraped_art != null:
 			scraped_art.forget(systemid, scraped_rom)
 		_romm_meta_cache.erase(scraped_rom)
-		_queue_media_refresh()
+		# ...then repaint the rows on screen, and nothing else.
+		#
+		# A piece of art landing changes neither the tile grid nor the row model
+		# — only what an already-bound row draws. Rebuilding both cost 134 ms
+		# measured, because _populate_cartridges_tab ends in browser.refresh(),
+		# which re-runs the detail populator over every row of the open system:
+		# 9,927 of them on this library, and then _rebuild_romm_rows did it a
+		# second time. The name and metadata that DO change are handled by the
+		# single _populate_cartridges_tab this accept already runs below.
+		if _romm_list != null and is_instance_valid(_romm_list):
+			_romm_list.rebind_visible()
 	scraper_client.media_download_completed.connect(_media_dl_refresh_cb)
 
 	# Download media files asynchronously
