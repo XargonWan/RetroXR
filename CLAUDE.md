@@ -192,15 +192,27 @@ the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe
 (`netplay_spike`), or they are reproductions of open bugs and report failures BY DESIGN
 (`three_plug_probe`). Moving one of those into `Tests/` would make a red run meaningless.
 
-`RetroXR/Tests/rope_tests.tscn` is the behaviour half of the rope's cover — what a cord
-does on a table, over a corner, round a pipe, wrapped on a ledge, heaped on itself, and
-dropped from height, plus inextensibility, determinism, anchor pinning, `set_rope_length`
-and sleep/wake. 48 cases, ~40 s, no GPU. It complements rather than replaces the two
-BIT-EXACT oracles in `Tools/` (`rope_bench --settle` prints `still_awake=9`, `rope_stress`
-diffs a 22-row table): those catch arithmetic drift, this catches a cord that jitters,
-tunnels or will not settle. `Tools/rope_video_probe.tscn` renders the same cases to PNG
-frames (windowed, not `--headless`) for when a case has to be WATCHED — three of the four
-traps below were caught on its footage, not by an assertion.
+`RetroXR/Tests/rope_tests.tscn` is the behaviour half of the rope's cover. Two kinds of
+case: where a cord LIES (contact/ — table, over a corner to a floor socket, round a pipe,
+on a ledge, heaped, bridging a gap; loose/ — a whole lead dropped flat, across an edge,
+from height) and what a player DOES to one (handling/ — a real lead's plug yanked at
+5 m/s, towed 2.5 m across the floor, pulled out through a 100 mm slot, carried over a
+partition, a cord wrapped round a post and hauled tight), plus inextensibility,
+determinism, anchor pinning, teleport re-lay, `set_rope_length` and sleep/wake. 58 cases,
+~2 min, no GPU. It complements rather than replaces the two BIT-EXACT oracles in `Tools/`
+(`rope_bench --settle` prints `still_awake=12`, `rope_stress` diffs a 22-row table): those
+catch arithmetic drift, this catches a cord that jitters, tunnels or will not settle.
+(The bench printed 15 until 2026-08-17: DepenetrateLay freed wedged lays and three more
+bench ropes settle; the stress rows that moved are the two impossible lays. Re-baselined
+deliberately — an UNINTENDED move in these numbers is still a stop-everything signal.)
+Two defects this suite caught and got fixed the same day: `AlignAnchorPlug` used to apply
+uncapped rotation steps about the cable anchor, a per-tick transform teleport that carried
+a dropped lead's plug through a 100 mm floor (now capped at MAX_ALIGN_STEP); and a cord
+laid straight through furniture — every restore/teleport re-lay can do this — left
+particles wedged inside it for ever (now freed by `DepenetrateLay` on the first tick after
+a lay). `Tools/rope_video_probe.tscn` renders the same cases to PNG frames (windowed, not
+`--headless`) for when a case has to be WATCHED — most of the traps below were caught on
+its footage, not by an assertion.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/rope_tests.tscn
 "$godot" --headless --path RetroXR res://Tests/rope_tests.tscn -- --only=contact

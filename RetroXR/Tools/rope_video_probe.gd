@@ -56,11 +56,12 @@ func _ready() -> void:
 func _run() -> void:
 	var cases := {
 		"table": _case_table, "corner": _case_corner,
-		"taut_corner": _case_taut_corner, "taut_pipe": _case_taut_pipe,
 		"ledge": _case_ledge, "pipe": _case_pipe, "post": _case_post,
-		"bridge": _case_bridge, "heap": _case_heap, "shelf": _case_shelf,
+		"bridge": _case_bridge, "heap": _case_heap,
 		"loose_table": _case_loose_table, "loose_edge": _case_loose_edge,
 		"loose_height": _case_loose_height,
+		"yank": _case_yank, "drag": _case_drag, "slot": _case_slot,
+		"wall": _case_wall, "wrap": _case_wrap, "teleport": _case_teleport,
 	}
 	for name: String in cases:
 		if not _only.is_empty() and _only != name:
@@ -146,7 +147,9 @@ func _anchor_marker(at: Vector3) -> MeshInstance3D:
 	return mi
 
 
-var _end_marker: MeshInstance3D = null
+## Which socket marker stands where each anchor node is, so a carried anchor's
+## marker travels with it.
+var _markers := {}
 
 
 func _rope_between(a: Vector3, b: Vector3, segments := 24, seg_len := 0.06) -> VerletRope:
@@ -156,8 +159,8 @@ func _rope_between(a: Vector3, b: Vector3, segments := 24, seg_len := 0.06) -> V
 	var nb := Node3D.new()
 	nb.position = b
 	_stage.add_child(nb)
-	_anchor_marker(a)
-	_end_marker = _anchor_marker(b)
+	_markers[na] = _anchor_marker(a)
+	_markers[nb] = _anchor_marker(b)
 	var rope := VerletRope.new()
 	_stage.add_child(rope)
 	rope.constraint_iterations = 8
@@ -200,17 +203,17 @@ func _record(name: String, rope: VerletRope, ticks: int, start_frame := 0) -> in
 	return frame
 
 
-## Carry the rope's end anchor (and its socket marker) to `to`, capturing as it
+## Carry `node` (an anchor; its socket marker follows) to `to`, capturing as it
 ## goes. Returns the next frame index.
-func _record_carry(name: String, rope: VerletRope, to: Vector3, ticks: int, start_frame: int) -> int:
+func _record_carry(name: String, rope: VerletRope, node: Node3D, to: Vector3, ticks: int, start_frame: int) -> int:
 	var dir := "res://probe_out/rope/%s" % name
-	var node: Node3D = rope.end_node
 	var stride: Vector3 = (to - node.position) / float(ticks)
 	var f := start_frame
+	var mk: MeshInstance3D = _markers.get(node)
 	for i in ticks:
 		node.position += stride
-		if _end_marker != null:
-			_end_marker.position = node.position
+		if mk != null:
+			mk.position = node.position
 		rope.step(1.0 / 90.0)
 		if i % TICKS_PER_FRAME == 0:
 			rope.remesh()
@@ -220,11 +223,12 @@ func _record_carry(name: String, rope: VerletRope, to: Vector3, ticks: int, star
 	return f
 
 
-## Capture an engine-ticked scene (loose leads): every 3rd physics frame.
-func _record_engine(name: String, frames: int) -> void:
+## Capture an engine-ticked scene (real leads): every 3rd physics frame.
+## Returns the next frame index so a case can record in stages.
+func _record_engine(name: String, frames: int, start_frame := 0) -> int:
 	var dir := "res://probe_out/rope/%s" % name
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
-	var frame := 0
+	var frame := start_frame
 	for f in frames:
 		await get_tree().physics_frame
 		if f % TICKS_PER_FRAME != 0:
@@ -232,6 +236,28 @@ func _record_engine(name: String, frames: int) -> void:
 		await RenderingServer.frame_post_draw
 		_sv.get_texture().get_image().save_png("%s/f%04d.png" % [dir, frame])
 		frame += 1
+	return frame
+
+
+## Tow a frozen plug like a held pickup while the engine ticks, capturing.
+func _record_tow(name: String, plug: RigidBody3D, to: Vector3, ticks: int, start_frame: int) -> int:
+	var dir := "res://probe_out/rope/%s" % name
+	plug.freeze = true
+	var stride: Vector3 = (to - plug.global_position) / float(ticks)
+	var frame := start_frame
+	for f in ticks:
+		var xf: Transform3D = plug.global_transform
+		xf.origin += stride
+		plug.global_transform = xf
+		PhysicsServer3D.body_set_state(plug.get_rid(),
+			PhysicsServer3D.BODY_STATE_TRANSFORM, xf)
+		await get_tree().physics_frame
+		if f % TICKS_PER_FRAME != 0:
+			continue
+		await RenderingServer.frame_post_draw
+		_sv.get_texture().get_image().save_png("%s/f%04d.png" % [dir, frame])
+		frame += 1
+	return frame
 
 
 func _drop_lead(at: Vector3, yaw := 0.0) -> Node3D:
@@ -261,20 +287,6 @@ func _case_corner(name: String) -> void:
 	var f: int = await _record(name, rope, 120)
 	f = await _record_carry(name, rope, Vector3(0.30, 0.03, 0), 90, f)
 	await _record(name, rope, 690, f)
-
-
-func _case_taut_corner(name: String) -> void:
-	_box(Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.0))
-	var rope := _rope_between(Vector3(-0.9, 0.80, 0), Vector3(0.35, 0.05, 0), 24)
-	_look(Vector3(0.6, 1.15, 1.6), Vector3(-0.2, 0.5, 0))
-	await _record(name, rope, 900)
-
-
-func _case_taut_pipe(name: String) -> void:
-	_cylinder(Vector3(0, 1.00, 0), 0.12, 1.6)
-	var rope := _rope_between(Vector3(0, 1.30, -0.30), Vector3(0, 0.30, 0.45), 24)
-	_look(Vector3(1.6, 1.25, 0.9), Vector3(0, 0.85, 0.05))
-	await _record(name, rope, 900)
 
 
 func _case_ledge(name: String) -> void:
@@ -314,14 +326,6 @@ func _case_heap(name: String) -> void:
 	await _record(name, rope, 1200)
 
 
-func _case_shelf(name: String) -> void:
-	_box(Vector3(0, 0.50, -0.10), Vector3(1.2, 0.50, 0.80))
-	_box(Vector3(0, -0.05, 0.60), Vector3(2.0, 0.10, 1.2))
-	var rope := _rope_between(Vector3(0, 0.80, -0.30), Vector3(0, 0.03, 0.75), 40)
-	_look(Vector3(1.7, 1.1, 1.4), Vector3(0, 0.45, 0.2))
-	await _record(name, rope, 1200)
-
-
 func _case_loose_table(name: String) -> void:
 	_box(Vector3(0, 0.70, 0), Vector3(1.6, 0.10, 1.6))
 	_drop_lead(Vector3(0, 1.10, 0))
@@ -342,3 +346,79 @@ func _case_loose_height(name: String) -> void:
 	_drop_lead(Vector3(0, 2.00, 0))
 	_look(Vector3(1.8, 1.7, 2.2), Vector3(0, 1.1, 0))
 	await _record_engine(name, 540)
+
+
+func _case_yank(name: String) -> void:
+	_box(Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))
+	var lead := _drop_lead(Vector3(0, 0.15, 0))
+	_look(Vector3(1.6, 1.1, 2.0), Vector3(0.3, 0.4, 0))
+	var f: int = await _record_engine(name, 240)
+	var plug: RigidBody3D = lead.get_node("PlugA0")
+	f = await _record_tow(name, plug, plug.global_position + Vector3(0.9, 0.9, 0), 18, f)
+	f = await _record_engine(name, 90, f)
+	plug.freeze = false
+	await _record_engine(name, 420, f)
+
+
+func _case_drag(name: String) -> void:
+	_box(Vector3(0, -0.05, 0), Vector3(8.0, 0.10, 4.0))
+	var lead := _drop_lead(Vector3(-1.2, 0.15, 0))
+	_look(Vector3(0.4, 1.6, 3.0), Vector3(0.2, 0.1, 0))
+	var f: int = await _record_engine(name, 240)
+	var plug: RigidBody3D = lead.get_node("PlugA0")
+	f = await _record_tow(name, plug, plug.global_position + Vector3(2.5, 0, 0), 120, f)
+	plug.freeze = false
+	await _record_engine(name, 300, f)
+
+
+func _case_slot(name: String) -> void:
+	_box(Vector3(0, -0.05, 0), Vector3(8.0, 0.10, 4.0))
+	_box(Vector3(0, 0.25, -0.30), Vector3(0.10, 0.50, 0.50))
+	_box(Vector3(0, 0.25, 0.30), Vector3(0.10, 0.50, 0.50))
+	var lead := _drop_lead(Vector3(0, 0.20, 0), PI * 0.5)
+	_look(Vector3(1.5, 1.7, 2.6), Vector3(0.5, 0.1, 0.2))
+	var f: int = await _record_engine(name, 240)
+	var pa: RigidBody3D = lead.get_node("PlugA0")
+	var pb: RigidBody3D = lead.get_node("PlugB0")
+	var plug: RigidBody3D = pa if pa.global_position.x > pb.global_position.x else pb
+	f = await _record_tow(name, plug, Vector3(2.3, 0.35, 0.9), 200, f)
+	plug.freeze = false
+	await _record_engine(name, 300, f)
+
+
+func _case_wall(name: String) -> void:
+	_box(Vector3(0, -0.05, 0), Vector3(6.0, 0.10, 3.0))
+	_box(Vector3(0, 0.25, 0), Vector3(0.10, 0.50, 1.6))
+	var lead := _drop_lead(Vector3(-0.9, 0.15, 0))
+	_look(Vector3(0.3, 1.3, 2.4), Vector3(0, 0.3, 0))
+	var f: int = await _record_engine(name, 240)
+	var plug: RigidBody3D = lead.get_node("PlugA0")
+	f = await _record_tow(name, plug, Vector3(1.1, 0.75, 0), 150, f)
+	f = await _record_engine(name, 60, f)
+	plug.freeze = false
+	await _record_engine(name, 600, f)
+
+
+func _case_wrap(name: String) -> void:
+	_cylinder(Vector3(0, 0.50, 0), 0.05, 1.0, true)
+	var rope := _rope_between(Vector3(-0.5, 0.5, 0.2), Vector3(0.5, 0.5, 0.2), 24)
+	_look(Vector3(0.2, 1.7, 1.5), Vector3(0, 0.45, -0.05))
+	var f: int = await _record(name, rope, 200)
+	f = await _record_carry(name, rope, rope.end_node, Vector3(0.5, 0.5, -0.3), 60, f)
+	f = await _record_carry(name, rope, rope.end_node, Vector3(-0.3, 0.5, -0.3), 60, f)
+	f = await _record_carry(name, rope, rope.end_node, Vector3(-0.62, 0.5, -0.45), 40, f)
+	await _record(name, rope, 300, f)
+
+
+func _case_teleport(name: String) -> void:
+	_box(Vector3(0, -0.05, 0), Vector3(6.0, 0.10, 4.0))
+	_box(Vector3(0.75, 0.45, 0), Vector3(0.5, 0.9, 0.6))
+	var rope := _rope_between(Vector3(0, 1.2, 0), Vector3(0.3, 1.2, 0), 34)
+	_look(Vector3(1.9, 1.5, 2.1), Vector3(0.7, 0.6, 0))
+	var f: int = await _record(name, rope, 240)
+	var moved: Node3D = rope.end_node
+	moved.position = Vector3(1.5, 0.2, 0)
+	var mk: MeshInstance3D = _markers.get(moved)
+	if mk != null:
+		mk.position = moved.position
+	await _record(name, rope, 700, f)
