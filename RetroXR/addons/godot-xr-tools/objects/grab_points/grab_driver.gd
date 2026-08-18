@@ -52,6 +52,11 @@ var _preview_exc_owner : Array[RID] = []
 # Whether the object is currently in snap-preview range; drives the pickable's
 # orange snap-preview outline. Notify the highlight only on transitions.
 var _prev_previewing : bool = false
+# An object taken straight out of a socket starts the grab already AT that
+# socket's seated pose, so the preview is seeded engaged instead of blending up
+# from zero — see the first-frame seed below.
+const PREVIEW_SEATED_EPSILON := 0.002   # m; "was sitting in this zone"
+var _preview_seed_pending : bool = true
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta : float) -> void:
@@ -124,6 +129,18 @@ func _physics_process(delta : float) -> void:
 			and not (primary.by is XRToolsSnapZone):
 		var r := _get_preview_radius()
 		var zone := XRToolsSnapZone.find_preview_zone(target, destination.origin, r)
+		# First frame of a grab that took the object out of a socket: it is still
+		# standing in that socket's seated pose, so engage the preview already
+		# blended in. Starting from zero puts it at the hold pose for a frame and
+		# then drags it back over ~0.12 s — a jump out to the hold pose and a jump
+		# back into the seat, most visible on desktop, where the hold pose comes
+		# from where the player is LOOKING and so barely moves. Seeded, the object
+		# simply stays seated until the hold pose leaves the socket's range.
+		if _preview_seed_pending:
+			_preview_seed_pending = false
+			if zone != null and target.global_position.distance_to(
+					zone.snap_pose_for(target).origin) < PREVIEW_SEATED_EPSILON:
+				_preview_blend = 1.0
 		if zone == null and is_instance_valid(_preview_zone) \
 				and _preview_zone.can_preview(target) \
 				and _preview_zone.global_position.distance_to(destination.origin) \
