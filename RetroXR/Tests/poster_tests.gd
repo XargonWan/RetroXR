@@ -16,7 +16,7 @@ extends Node
 ## transparent corner, to exercise the alpha path) into the real posters folder and
 ## removes it at both ends.
 
-const GROUPS := ["image", "stick", "conform", "persist"]
+const GROUPS := ["image", "stick", "conform", "menu", "persist"]
 const SLOT := "__poster_selftest"
 const TEST_IMAGE := "__poster_selftest.png"
 
@@ -48,6 +48,8 @@ func _ready() -> void:
 		await _test_stick()
 	if _want("conform"):
 		await _test_conform()
+	if _want("menu"):
+		await _test_menu()
 	if _want("persist"):
 		await _test_persist()
 
@@ -432,4 +434,37 @@ func _test_conform() -> void:
 	wp.queue_free()
 	host.queue_free()
 	wall.queue_free()
+	await get_tree().process_frame
+
+
+# ── The options menu contract ─────────────────────────────────────────────────
+
+func _test_menu() -> void:
+	var p := _make_poster()
+	await get_tree().process_frame
+
+	# The controller finds a host by TYPE and then calls this without checking, so
+	# a poster registered in those chains must answer it.
+	_ok(p.has_method("toggle_options_ui"), "menu/the poster exports toggle_options_ui")
+
+	var src := FileAccess.get_file_as_string(
+		"res://Scripts/UI/spawn_menu/spawn_menu_controller.gd")
+	# BOTH chains — the VR pointer's and the desktop Tab's. Missing either means the
+	# menu silently does nothing on that platform.
+	_eq(src.count("node is Poster"), 2, "menu/registered in both host chains")
+
+	var panel := p.get_node_or_null("PosterOptionsPanel")
+	_ok(panel != null, "menu/the panel is on the poster")
+	_ok(panel != null and not panel.visible, "menu/and starts hidden")
+	p.toggle_options_ui(null)
+	_ok(panel != null and panel.visible, "menu/opens")
+	p.toggle_options_ui(null)
+	_ok(panel != null and not panel.visible, "menu/and closes again")
+
+	# Peel is offered as a verb too, for a poster out of arm's reach.
+	_ok(p.has_method("peel"), "menu/peel is callable without a grab")
+	p.peel()
+	_ok(not p.is_stuck(), "menu/peeling an unstuck poster is safe")
+
+	p.queue_free()
 	await get_tree().process_frame

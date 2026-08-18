@@ -1,0 +1,14 @@
+[gd_scene load_steps=4 format=3 uid="uid://poster_opts_pnl_1"]
+
+[ext_resource type="Script" path="res://Scripts/UI/panels/poster_options_panel.gd" id="1_panelscript"]
+[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="2_viewport2d3d"]
+[ext_resource type="PackedScene" uid="uid://poster_opts_2d_01" path="res://Scenes/UI/poster_options_2d.tscn" id="3_posteropts2d"]
+
+[node name="PosterOptionsPanel" type="Node3D"]
+script = ExtResource("1_panelscript")
+
+[node name="PosterOptionsViewport" parent="." instance=ExtResource("2_viewport2d3d")]
+screen_size = Vector2(0.42, 0.24)
+scene = ExtResource("3_posteropts2d")
+viewport_size = Vector2(420, 240)
+transparent = 1

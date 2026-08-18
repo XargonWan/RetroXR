@@ -49,6 +49,7 @@ const EMISSION_ENERGY := 0.1
 @onready var _body_shape: CollisionShape3D = $CollisionShape3D
 @onready var _pointer_shape: CollisionShape3D = $PointerArea/CollisionShape3D
 @onready var _ray: RayCast3D = $SurfaceRay
+@onready var _options_panel: PosterOptionsPanel = $PosterOptionsPanel
 
 var _stick: SurfaceStick = null
 ## Set from a save before _ready, so a restored poster re-parks itself instead of
@@ -340,3 +341,18 @@ func _build_conform() -> void:
 	_conform_mesh.set_surface_override_material(
 		0, _flat_mesh.get_surface_override_material(0))
 	_flat_mesh.visible = false
+## The contextual options menu. The controller detects a host by type and then
+## calls this unconditionally, so a poster registered in those chains MUST have it.
+func toggle_options_ui(camera: Node3D) -> void:
+	if _options_panel.visible:
+		_options_panel.hide_panel()
+	else:
+		_options_panel.show_for(self, camera)
+
+
+## Take it off the surface without picking it up — the menu's own verb, for a
+## poster that is out of reach.
+func peel() -> void:
+	if _stick != null:
+		_stick.peel()
+	_show_flat()

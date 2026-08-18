@@ -262,6 +262,24 @@ active slots up front and restores them byte-for-byte at the end. Restoring the 
 matters beyond deleting the test's own entry: any rewrite round-trips it through JSON, which
 turns its version int into `1.0`.
 
+`RetroXR/Tests/poster_tests.tscn` covers the posters feature — the image load and the
+sheet it sizes (alpha scissor vs opaque, mipmaps, aspect, per-instance sub-resources),
+sticking to a surface on release, riding the object it stuck to, peeling, conforming to
+a curved shell, the options-menu contract, and the save/restore round trip. 57 cases, ~20 s.
+```bash
+"$godot" --headless --path RetroXR res://Tests/poster_tests.tscn
+"$godot" --headless --path RetroXR res://Tests/poster_tests.tscn -- --only=conform
+```
+Physics runs fine headless — the dummy renderer stubs RENDERING, not Jolt — so the stick
+and conform cases are real raycasts against real bodies. It writes its own PNG into the
+player's posters folder (`scan_posters` derives that path) and removes it at both ends.
+
+Two traps worth knowing before adding a case. A stuck poster is REPARENTED under its
+host, so anything that walks the host's meshes sees the poster's own sheet — that is what
+made the first conform sample every interior ray at depth zero. And a poster is placed by
+RAY as often as by hand, where `dropped` never fires; a release has to be detected from
+`freeze`, so a test that only simulates a hand grab proves nothing about the real gesture.
+
 **For anything visual, a photo (or a VIDEO if it's animated — mp4 preferred over
 animated GIF) is the preferred proof of validation, delivered inline in the chat.**
 Headless runs catch parse/scene/shader errors but cannot confirm how something *looks*

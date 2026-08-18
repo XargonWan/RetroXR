@@ -1,6 +1,7 @@
-[gd_scene load_steps=6 format=3 uid="uid://poster_0001"]
+[gd_scene load_steps=7 format=3 uid="uid://poster_0001"]
 
 [ext_resource type="Script" path="res://Scripts/Objects/media/poster.gd" id="1_poster"]
+[ext_resource type="PackedScene" uid="uid://poster_opts_pnl_1" path="res://Scenes/UI/poster_options_panel.tscn" id="2_posteropts"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_poster"]
 friction = 0.8
@@ -55,3 +56,5 @@ collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
 shape = SubResource("Box_pointer")
+
+[node name="PosterOptionsPanel" parent="." instance=ExtResource("2_posteropts")]
