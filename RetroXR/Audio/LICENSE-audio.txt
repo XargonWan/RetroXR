@@ -46,7 +46,10 @@ crt/crt_idle.wav, crt/crt_power_on.wav, crt/crt_power_off.wav
 nes/nes_power_on_*.wav, nes_power_off_*.wav, nes_reset_press_*.wav,
 nes/nes_reset_release_*.wav, nes_channel_switch_*.wav,
 nes/nes_pad_face_press_*.wav, nes_pad_face_release_*.wav,
-nes/nes_pad_menu_press_*.wav, nes_pad_dpad_press_*.wav, nes_pad_dpad_release_*.wav
+nes/nes_pad_menu_press_*.wav, nes_pad_dpad_press_*.wav, nes_pad_dpad_release_*.wav,
+nes/nes_cart_insert_*.wav, nes_cart_remove_*.wav,
+nes/nes_plug_in_*.wav, nes_plug_unplug_*.wav,
+nes/nes_tray_down_*.wav, nes_tray_up_*.wav
 
     Original recordings of our own NES-001 console and pad. Nobody else's
     material is in them, so nothing has to be cleared to ship them.
@@ -87,6 +90,18 @@ nes/nes_pad_menu_press_*.wav, nes_pad_dpad_press_*.wav, nes_pad_dpad_release_*.w
     There is no nes_pad_menu_release. SELECT and START have a long, soft return
     that never clears the noise floor — confirmed across two independent takes
     (29% and 30% short gaps, against 52-62% for the buttons that do have one).
+
+    The cart and plug clips are cut to START AT THEIR PEAK, keeping 400 ms of
+    decay. In the room a cartridge seats the instant the snap zone catches it,
+    but a recording of a real hand approaches for half a second first — measured,
+    the loudest moment sat 40-50% into every file, so the click arrived half a
+    second after the visual and read as lag. The front half is the approach, not
+    silence to be trimmed; dropping it is what makes the sound land on the event.
+
+    The tray clips are NOT cut that way and should not be: a mechanism with a
+    fixed travel and a hard stop already starts where it means to. That take is
+    also the most consistent of the set (3.5-5.9 dB spread, against 11-21 dB for
+    anything held in a hand), which is what a fixed travel buys you.
 
 
 === Import settings are load-bearing ============================================

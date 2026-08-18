@@ -2893,13 +2893,22 @@ func _snap_cable_to_tv(tv: RetroTV, channel: int = 0, tv_input: int = 0) -> void
 ## Restore a cartridge→slot insertion after loading from a save file. Slot/tray
 ## loaders seat the disc immediately through MediaSlot/MediaTray (no ride, filter
 ## bypassed); plain cartridge systems snap it through the zone as before.
+## True only while a save is being reloaded into this machine. Restoring seats
+## media and plugs through the SAME snap-zone calls a hand does, so anything that
+## makes a NOISE on those events has to be able to tell the two apart — otherwise
+## loading a room plays a cartridge insert for every console at once.
+var _restoring_media: bool = false
+
+
 func restore_cartridge(cartridge: Node3D) -> void:
+	_restoring_media = true
 	if _slot != null:
 		_slot.restore(cartridge)
 	elif _tray != null:
 		_tray.restore(cartridge)
 	else:
 		_cartridge_slot.pick_up_object(cartridge)
+	_restoring_media = false
 
 
 ## Restore a controller plug into a port after loading from a save file.
@@ -2912,13 +2921,17 @@ func restore_controller_plug(port_index: int, plug: ControllerPlug) -> void:
 	# is exactly what a save written before cabinet_port_of() existed says, since a
 	# computer mouse recorded libretro port 0 rather than its socket, so those files
 	# have to land somewhere sensible rather than unplug the keyboard.
+	_restoring_media = true
 	if is_instance_valid(_port_zones[port_index].picked_up_object):
 		for i in _port_zones.size():
 			if _port_zones[i].enabled and not is_instance_valid(_port_zones[i].picked_up_object):
 				_port_zones[i].pick_up_object(plug)
+				_restoring_media = false
 				return
+		_restoring_media = false
 		return
 	_port_zones[port_index].pick_up_object(plug)
+	_restoring_media = false
 
 
 ## Which cabinet socket holds this peripheral, or -1 if the system is not holding

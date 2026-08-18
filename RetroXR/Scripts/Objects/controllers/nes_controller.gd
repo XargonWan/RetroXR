@@ -104,6 +104,12 @@ func _ready() -> void:
 			var v := _load_variants("nes_pad_" + key)
 			if not v.is_empty():
 				_sfx_banks[key] = v
+	# The cable end, which lives on the controller rather than the console: these
+	# are recordings of THIS plug in THIS port, so they belong with the pad.
+	for key in ["plug_in", "plug_unplug"]:
+		var pv := _load_variants("nes_" + key)
+		if not pv.is_empty():
+			_sfx_banks[key] = pv
 	# THREE voices. A pad can have a direction and a face button change in the same
 	# frame, and PcmOneShot restarts rather than layers, so fewer would cut a click
 	# short every time someone runs and jumps.
@@ -166,6 +172,34 @@ func _click(bits: int, role: String) -> void:
 			continue
 		fired[key] = true
 		_play_sfx(key)
+
+
+# --- the plug going into a console's port -------------------------------------
+#
+# RetroController already receives these from ControllerPlug, so the sound needs no
+# new plumbing. Both are guarded, because the same two calls are made by code:
+#
+#  * RetroSystem.restore_controller_plug seats a saved plug through the very snap
+#    zone a hand uses, so loading a room would plug in every controller at once.
+#  * Tearing a room down frees the port zones, and an emptied zone reports a drop —
+#    which is a machine being deleted, not a cable being pulled.
+
+
+func on_plugged_in(system: RetroSystem, port_index: int) -> void:
+	super.on_plugged_in(system, port_index)
+	# != true, not bool(...): Object.get() returns null for a property the host does
+	# not have, and bool(null) throws rather than yielding false.
+	if system != null and system.get("_restoring_media") != true:
+		_play_sfx("plug_in")
+
+
+func on_unplugged() -> void:
+	# Read the system BEFORE super() clears it — that reference is the only way to
+	# tell a pulled cable from a console being freed out from under one.
+	var sys := _connected_system
+	super.on_unplugged()
+	if is_instance_valid(sys) and not sys.is_queued_for_deletion() and not is_queued_for_deletion():
+		_play_sfx("plug_unplug")
 
 
 ## Pick a variant and play it on the next voice. Never repeats the variant it

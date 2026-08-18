@@ -67,6 +67,10 @@ var _sfx_power_off: Array = []
 var _sfx_reset_press: Array = []
 var _sfx_reset_release: Array = []
 var _sfx_channel: Array = []
+var _sfx_cart_insert: Array = []
+var _sfx_cart_remove: Array = []
+var _sfx_tray_down: Array = []
+var _sfx_tray_up: Array = []
 var _sfx_last: Dictionary = {}
 # Where the POWER switch physically sits. The NES's is push-push, so a press
 # always clicks — which of the two clicks it is depends on the latch position
@@ -168,6 +172,10 @@ func _build_sfx() -> void:
 	_sfx_reset_press = _load_variants("nes_reset_press")
 	_sfx_reset_release = _load_variants("nes_reset_release")
 	_sfx_channel = _load_variants("nes_channel_switch")
+	_sfx_cart_insert = _load_variants("nes_cart_insert")
+	_sfx_cart_remove = _load_variants("nes_cart_remove")
+	_sfx_tray_down = _load_variants("nes_tray_down")
+	_sfx_tray_up = _load_variants("nes_tray_up")
 	for i in 2:
 		var v := PcmOneShot.new()
 		v.name = "SwitchSfx%d" % i
@@ -214,6 +222,19 @@ func _play_sfx(bank: Array, key: String) -> void:
 	var voice: PcmOneShot = _sfx_voices[_sfx_next]
 	_sfx_next = (_sfx_next + 1) % _sfx_voices.size()
 	voice.play(bank[idx])
+
+
+## False while a save is being reloaded. RetroSystem.restore_cartridge seats media
+## through the same snap zone a hand uses, so without this, loading a room plays a
+## cartridge insert for every console in it at once.
+func _hand_did_it() -> bool:
+	var host := get_parent()
+	if host == null:
+		return true
+	# Compare against true rather than converting: Object.get() returns NULL for a
+	# property the host does not have, and bool(null) is not a valid call — it
+	# throws, the function bails out false, and the sound silently never plays.
+	return host.get("_restoring_media") != true
 
 
 func _on_power_button_pressed() -> void:
@@ -430,6 +451,11 @@ func _on_flap_drag(deg: float) -> void:
 	if open == _lid_open:
 		return
 	_lid_open = open
+	# The bay mechanism only makes a noise when a HAND swings it. play_open() and
+	# play_close() move the same flap from code — inserting a cartridge swings it
+	# automatically — and sounding those would fire the flap on top of the
+	# cartridge's own sound for one continuous motion.
+	_play_sfx(_sfx_tray_up if open else _sfx_tray_down, "tray")
 	if _cartridge_slot != null:
 		_cartridge_slot.enabled = _lid_open
 
@@ -774,6 +800,8 @@ func get_cartridge_insert_direction() -> Vector3:
 
 
 func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
+	if _hand_did_it():
+		_play_sfx(_sfx_cart_insert, "cart_insert")
 	# Make sure the flap is up, then slide the cart from the mouth back into the
 	# socket. XRTools has already snapped/frozen it at the final socket position.
 	play_open()
@@ -787,6 +815,8 @@ func play_cartridge_insert(cartridge: Node3D, _slot: Node3D) -> void:
 
 
 func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:
+	if _hand_did_it():
+		_play_sfx(_sfx_cart_remove, "cart_remove")
 	# Cart is already in hand; make sure the flap is up so the pull reads right.
 	play_open()
 
