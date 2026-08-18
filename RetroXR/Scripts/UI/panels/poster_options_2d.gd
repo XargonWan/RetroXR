@@ -22,7 +22,7 @@ const COLOR_TITLE := Color(0.9, 0.9, 1.0)
 const COLOR_ROW := Color(0.65, 0.65, 0.80)
 const COLOR_ON := Color(0.25, 0.45, 0.85)
 
-const MIN_SIZE := 0.25
+const MIN_SIZE := 0.05
 const MAX_SIZE := 3.0
 
 var _size_slider: HSlider = null
@@ -109,7 +109,7 @@ func _build_ui() -> void:
 	_size_slider = HSlider.new()
 	_size_slider.min_value = MIN_SIZE
 	_size_slider.max_value = MAX_SIZE
-	_size_slider.step = 0.05
+	_size_slider.step = 0.01
 	_size_slider.custom_minimum_size = Vector2(200, 32)
 	_size_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_size_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER

@@ -36,9 +36,9 @@ const EMISSION_ENERGY := 0.1
 		if is_inside_tree():
 			_load_image()
 
-@export_range(0.25, 3.0) var size_scale: float = 1.0:
+@export_range(0.05, 3.0) var size_scale: float = 1.0:
 	set(value):
-		size_scale = clampf(value, 0.25, 3.0)
+		size_scale = clampf(value, SIZE_MIN, SIZE_MAX)
 		if is_inside_tree():
 			_apply_dimensions()
 
@@ -223,7 +223,9 @@ func _apply_dimensions() -> void:
 # lookup has resolved the locomotion manager, and the block is silently dropped.
 
 ## Full size range, in multiples of BASE_LONG_EDGE. A postcard to a door.
-const SIZE_MIN := 0.25
+## 0.05 is a 25 mm sticker on the 0.5 m sheet — small enough to badge a console
+## rather than cover it.
+const SIZE_MIN := 0.05
 const SIZE_MAX := 3.0
 ## Multiples per second while a button is held.
 const RESIZE_SPEED := 0.6
@@ -252,6 +254,7 @@ func _process(delta: float) -> void:
 	# on a controller being found.
 	_update_preview(delta, freeze and not is_stuck())
 	_desktop_resize(delta)
+	_refresh_outline()
 	var rotator := _rotating_controller_for(holder)
 	if rotator == null:
 		return
@@ -401,6 +404,7 @@ const OUTLINE_COLOR := Color(1.0, 0.85, 0.30)
 const OUTLINE_MARGIN := 0.045
 
 var _outline: MeshInstance3D = null
+var _highlight_requested := false
 
 
 const OUTLINE_SHADER := preload("res://Shaders/poster_outline.gdshader")
@@ -423,8 +427,22 @@ func _build_outline() -> void:
 
 
 func _on_highlight(_p: Node3D, on: bool) -> void:
-	if _outline != null:
-		_outline.visible = on
+	_highlight_requested = on
+	_refresh_outline()
+
+
+## The rim shows while something is pointing at the sheet — and while something is
+## HOLDING it, which is the same thing from the player's side and is not covered
+## by the highlight alone: both the hand and the beam explicitly drop the
+## highlight at pick-up ("the object transitions from highlighted to held"), so a
+## poster went dark exactly while it was the thing being aimed and moved.
+##
+## Deliberately not gated on being stuck: a loose poster in the air is the case
+## where knowing what you have hold of matters most.
+func _refresh_outline() -> void:
+	if _outline == null:
+		return
+	_outline.visible = _highlight_requested or (freeze and not is_stuck())
 
 
 # ── Placement preview ─────────────────────────────────────────────────────────

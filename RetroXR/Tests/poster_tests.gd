@@ -666,6 +666,23 @@ func _test_preview() -> void:
 		_ok((outline.mesh as QuadMesh).size.x > sz.x,
 			"preview/and stands proud of the sheet")
 
+	# And on while a LOOSE poster is held, with nothing pointing at it: both the
+	# hand and the beam drop the highlight at pick-up, so the rim would otherwise
+	# go dark exactly while you are aiming the thing you are holding. A fresh
+	# sheet, because the one above is already on the wall.
+	var loose := _make_poster()
+	await get_tree().process_frame
+	loose.global_transform = Transform3D(Basis(), Vector3(8, 1.5, 8))
+	var lo := loose.get_node("Surface/HoverOutline") as MeshInstance3D
+	_ok(not lo.visible, "preview/a loose poster lying about has no rim")
+	loose.freeze = true
+	await get_tree().process_frame
+	_ok(lo.visible, "preview/on while held, even unstuck")
+	loose.freeze = false
+	await get_tree().process_frame
+	_ok(not lo.visible, "preview/off once let go")
+	loose.queue_free()
+
 	p.queue_free()
 	wall.queue_free()
 	await get_tree().process_frame
@@ -683,6 +700,19 @@ func _test_desktop() -> void:
 	await get_tree().process_frame
 	Input.action_release("ui_accept")
 	_ok(is_equal_approx(p.size_scale, before), "desktop/an unrelated key changes nothing")
+
+	# A sticker, not just a poster: 0.05x is a 25 mm badge on a console.
+	p.size_scale = 0.05
+	await get_tree().process_frame
+	_ok(absf(p.size_scale - 0.05) < 0.0001, "desktop/scales down to 0.05x")
+	_ok(absf(p.get_sheet_size().x - 0.025) < 0.0005,
+		"desktop/which is a 25 mm sheet (%.4f m)" % p.get_sheet_size().x)
+	p.size_scale = 0.001
+	_ok(absf(p.size_scale - 0.05) < 0.0001, "desktop/and no smaller")
+	p.size_scale = 99.0
+	_ok(absf(p.size_scale - 3.0) < 0.0001, "desktop/still capped at 3x")
+	p.size_scale = 1.0
+	await get_tree().process_frame
 
 	# The rim samples the poster's own alpha rather than covering its rectangle —
 	# a die-cut star must not light up as a slab.
