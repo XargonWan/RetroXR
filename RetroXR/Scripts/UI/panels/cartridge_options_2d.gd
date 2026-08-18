@@ -59,6 +59,10 @@ const _ICON_UPLOAD   := 0xF093    # fa-upload
 ## file, it does not re-run something.
 const _ICON_OVERWRITE := 0xF0C7   # fa-save
 const _ICON_WARN     := 0xF071    # fa-warning
+## Neither the theme font nor the Nerd Font has a fullwidth plus, so that
+## character renders only where the OS fallback happens to cover it — tofu on
+## Quest. md-plus is in the font this panel already ships with.
+const _ICON_NEW      := 0xF0415   # md-plus
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 ## One shared FontVariation — the list is rebuilt on every populate(), and a
@@ -683,7 +687,8 @@ func _build_states_page() -> void:
 	_state_capture_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_state_capture_btn.add_theme_font_size_override("font_size", 18)
 	_state_capture_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_state_capture_btn.text = "    ＋  Save state now"
+	_state_capture_btn.add_theme_font_override("font", _symbols())
+	_state_capture_btn.text = "    %s  Save state now" % String.chr(_ICON_NEW)
 	# Inside a Viewport2Din3D every click arrives twice. The Saves tab's bin gets
 	# away with it because _populate() frees the button between the two presses;
 	# a capture has no such protection and one click would write two states.
