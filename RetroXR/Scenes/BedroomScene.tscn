@@ -520,7 +520,7 @@ light_cull_mask = 2
 [node name="PlayerRig" parent="." instance=ExtResource("2_playerrig")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 0, 0.55)
 
-[node name="Floor" type="StaticBody3D" parent="."]
+[node name="Floor" type="StaticBody3D" parent="." groups=["poster_flat"]]
 collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
@@ -531,7 +531,7 @@ shape = SubResource("Shape_floor")
 mesh = SubResource("PlaneMesh_floor")
 surface_material_override/0 = SubResource("Mat_carpet")
 
-[node name="Room" type="StaticBody3D" parent="."]
+[node name="Room" type="StaticBody3D" parent="." groups=["poster_flat"]]
 collision_mask = 0
 
 [node name="NorthWallW" type="MeshInstance3D" parent="Room"]

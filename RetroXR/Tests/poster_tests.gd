@@ -16,7 +16,7 @@ extends Node
 ## transparent corner, to exercise the alpha path) into the real posters folder and
 ## removes it at both ends.
 
-const GROUPS := ["image", "stick", "persist"]
+const GROUPS := ["image", "stick", "conform", "persist"]
 const SLOT := "__poster_selftest"
 const TEST_IMAGE := "__poster_selftest.png"
 
@@ -46,6 +46,8 @@ func _ready() -> void:
 		await _test_image()
 	if _want("stick"):
 		await _test_stick()
+	if _want("conform"):
+		await _test_conform()
 	if _want("persist"):
 		await _test_persist()
 
@@ -242,6 +244,9 @@ func _make_poster(path: String = "") -> Poster:
 	return p
 
 
+## Mesh AND collider at the same size, the way the rooms author their walls —
+## which is what makes the poster_flat opt-out worth testing: without a mesh
+## there is nothing to sample and conform would bail for the wrong reason.
 func _make_wall(at: Vector3) -> StaticBody3D:
 	var wall := StaticBody3D.new()
 	var cs := CollisionShape3D.new()
@@ -249,6 +254,11 @@ func _make_wall(at: Vector3) -> StaticBody3D:
 	box.size = Vector3(4, 3, 0.15)
 	cs.shape = box
 	wall.add_child(cs)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = box.size
+	mi.mesh = bm
+	wall.add_child(mi)
 	add_child(wall)
 	wall.global_position = at
 	return wall
@@ -308,3 +318,118 @@ func _ok(cond: bool, what: String) -> void:
 
 func _eq(got: Variant, want: Variant, what: String) -> void:
 	_ok(got == want, what if got == want else "%s (got %s, want %s)" % [what, got, want])
+
+
+# ── Conforming to a curved surface ────────────────────────────────────────────
+
+func _test_conform() -> void:
+	# A cylinder standing on Y, so its circle is in X-Z and the sheet has to wrap
+	# around it horizontally. Radius 0.4, roughly a CRT shoulder.
+	var host := StaticBody3D.new()
+	var mi := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.4
+	cyl.bottom_radius = 0.4
+	cyl.height = 2.0
+	mi.mesh = cyl
+	host.add_child(mi)
+	var cs := CollisionShape3D.new()
+	# A deliberately crude collider — a box around the cylinder, the way most of
+	# the room's GLB furniture is wrapped. Conform must ignore it and read the mesh.
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.8, 2.0, 0.8)
+	cs.shape = box
+	host.add_child(cs)
+	add_child(host)
+	host.global_position = Vector3(0, 1.2, -3.0)
+	await get_tree().physics_frame
+
+	var p := _make_poster()
+	await get_tree().process_frame
+	p.size_scale = 0.6                      # 0.3 x 0.225, well inside the barrel
+	p.global_transform = Transform3D(Basis(), Vector3(0, 1.2, -2.55))
+	await _release(p)
+	_ok(p.is_stuck(), "conform/stuck to the cylinder")
+
+	p.set_fit_mode(Poster.FitMode.CONFORM)
+	for i in range(20):
+		await get_tree().physics_frame
+
+	var cm := p.get_node_or_null("Surface/ConformMesh") as MeshInstance3D
+	_ok(cm != null and cm.mesh != null, "conform/a wrapped mesh was built")
+	if cm == null or cm.mesh == null:
+		host.queue_free()
+		p.queue_free()
+		return
+	_ok(not (p.get_node("Surface/FlatMesh") as MeshInstance3D).visible,
+		"conform/the flat quad gives way to it")
+
+	var arrays := cm.mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	_ok(verts.size() > 40, "conform/subdivided (%d verts)" % verts.size())
+	_ok(norms.size() == verts.size() and uvs.size() == verts.size(),
+		"conform/normals and UVs per vertex")
+
+	# The real check: every vertex should sit on the cylinder, 0.4 from its axis.
+	# A flat sheet would leave the corners short by centimetres.
+	var worst := 0.0
+	var flat_worst := 0.0
+	for i in range(verts.size()):
+		var world: Vector3 = p.global_transform * verts[i]
+		var rel := world - host.global_position
+		var r := Vector2(rel.x, rel.z).length()
+		worst = maxf(worst, absf(r - 0.4))
+		# Same point if the sheet had stayed flat (z of the vertex zeroed).
+		var flat_v: Vector3 = Vector3(verts[i].x, verts[i].y, 0.0)
+		var fw: Vector3 = p.global_transform * flat_v
+		var frel := fw - host.global_position
+		flat_worst = maxf(flat_worst, absf(Vector2(frel.x, frel.z).length() - 0.4))
+	_ok(worst < 0.006, "conform/every vertex lies on the cylinder (worst %.4f m)" % worst)
+	_ok(flat_worst > worst * 2.0,
+		"conform/and a flat sheet would not (flat worst %.4f m)" % flat_worst)
+
+	# Normals must be smooth, not the facets a trimesh hit reports. Compared along a
+	# ROW: consecutive array indices wrap from one edge of the sheet to the other,
+	# where the normals genuinely differ by the whole wrap angle.
+	var w := 18   # nx + 1 for this sheet
+	var min_dot := 1.0
+	for k in range(norms.size()):
+		if (k + 1) % w == 0:
+			continue
+		min_dot = minf(min_dot, norms[k].dot(norms[k + 1]))
+	_ok(min_dot > 0.99, "conform/normals vary smoothly along a row (worst %.4f)" % min_dot)
+
+	# UVs still span the sheet exactly, so the art fills it.
+	var umin := 2.0
+	var umax := -1.0
+	for uv in uvs:
+		umin = minf(umin, uv.x)
+		umax = maxf(umax, uv.x)
+	_ok(absf(umin) < 0.001 and absf(umax - 1.0) < 0.001,
+		"conform/UVs still span 0..1 (%.3f..%.3f)" % [umin, umax])
+
+	# A wall is tagged as its own surface, so it must NOT be sampled.
+	var wall := _make_wall(Vector3(0, 1.5, 4.0))
+	wall.add_to_group("poster_flat")
+	await get_tree().physics_frame
+	var wp := _make_poster()
+	await get_tree().process_frame
+	# In FRONT of the wall for a sheet whose probe runs along its own -Z.
+	wp.global_transform = Transform3D(Basis(), Vector3(0, 1.5, 4.12))
+	wp.fit_mode = Poster.FitMode.CONFORM
+	await _release(wp)
+	for i in range(20):
+		await get_tree().physics_frame
+	_ok(wp.is_stuck(), "conform/the wall poster stuck at all")
+	_ok(wp.get_node_or_null("Surface/ConformMesh") == null,
+		"conform/a poster_flat surface is never sampled")
+	_ok((wp.get_node("Surface/FlatMesh") as MeshInstance3D).visible,
+		"conform/it stays a flat quad")
+
+	p.queue_free()
+	wp.queue_free()
+	host.queue_free()
+	wall.queue_free()
+	await get_tree().process_frame
