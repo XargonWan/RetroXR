@@ -28,6 +28,9 @@
 extends Node3D
 
 const CABLE_SCENE := preload("res://Scenes/Objects/cables/cable.tscn")
+## A whole lead — two plug bodies with a cord between them, exactly as the room
+## spawns it. Used by the loose/ group, where the ends have to be free to fall.
+const LEAD_SCENE := preload("res://Scenes/Objects/cables/trs_cable.tscn")
 
 ## Ticks per physics frame. The solver's world queries are only legal inside a
 ## physics frame, so the batch runs there rather than in a tight loop of its own.
@@ -71,6 +74,7 @@ func _run() -> void:
 	await _group_integrity()
 	await _group_anchors()
 	await _group_sleep()
+	await _group_loose()
 	await _group_budget()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -341,6 +345,19 @@ func _deepest_in_box(centre: Vector3, size: Vector3) -> float:
 
 
 ## How far inside a cylinder lying along X any particle sits.
+## _deepest_in_box for a rope the harness is not holding — the loose cases own
+## their own lead rather than the shared _rope.
+func _deepest_in_box_of(rope: VerletRope, centre: Vector3, size: Vector3) -> float:
+	var half := size * 0.5
+	var worst := 0.0
+	for p: Vector3 in rope.get_points():
+		var d := Vector3(half.x - absf(p.x - centre.x),
+			half.y - absf(p.y - centre.y), half.z - absf(p.z - centre.z))
+		if d.x > 0.0 and d.y > 0.0 and d.z > 0.0:
+			worst = maxf(worst, minf(d.x, minf(d.y, d.z)))
+	return worst
+
+
 func _deepest_in_cylinder(centre: Vector3, radius: float, half_len: float) -> float:
 	var worst := 0.0
 	for p: Vector3 in _points():
@@ -678,6 +695,108 @@ func _group_sleep() -> void:
 	await _settle(2)
 	_ok("sleep/nudging a point wakes it", not rope.is_sleeping())
 	await _drop_case()
+
+
+# ── loose ─────────────────────────────────────────────────────────────────────
+# Every case above pins both ends of the cord, because that is what the room
+# normally does to a lead: a plug in a socket, a cord bolted to a console. But it
+# means the cord is HANGING OVER the furniture rather than lying on it, and the
+# contact is correspondingly light.
+#
+# A cord with nothing holding it is not expressible on a bare rope: InitPoints
+# pins particle 0 whenever the start does not fray, so `start_node = null` gives a
+# cord nailed to the air rather than a free one (measured: the first particle
+# falls 0.000 m). What IS free is a whole lead — the ends are plug BODIES, and
+# they fall, land and rest like any other rigid body.
+#
+# So these cases use the real lead scene and the engine's own physics tick rather
+# than the hand-stepped solver: the plugs are simulated by the physics server, and
+# the rope has to stay in step with them.
+
+func _group_loose() -> void:
+	if not _wants("loose"):
+		return
+
+	# A lead dropped flat onto a table. Nothing holds it up: if it ends up resting
+	# on the surface, that is the plugs and the cord doing it between them.
+	var base := _new_case()
+	_box(base + Vector3(0, 0.70, 0), Vector3(1.6, 0.10, 1.6))
+	var lead := await _drop_lead(base + Vector3(0, 1.10, 0), 420)
+	var rope: VerletRope = lead.get_node("VerletRope")
+	var lowest := 1e9
+	for p: Vector3 in rope.get_points():
+		lowest = minf(lowest, p.y)
+	_ok("loose/a dropped lead comes to rest on the table",
+		lowest > base.y + 0.74 and lowest < base.y + 0.80,
+		"lowest point %.0f mm, table top at %.0f mm"
+			% [(lowest - base.y) * 1000.0, 750.0])
+	# Waited for rather than asserted at a fixed frame count: this case is ticked by
+	# the ENGINE (the plugs are rigid bodies), so how many frames a settle takes
+	# depends on what else the suite is doing that frame. Asserting is_sleeping()
+	# at exactly 420 frames passed alone and failed in a full run — a flake, which
+	# is worse than a failure because it teaches everyone to re-run the suite.
+	var slept_at := await _wait_until_asleep(rope, 900)
+	_ok("loose/a dropped lead settles", slept_at >= 0,
+		"asleep after %d frames" % slept_at if slept_at >= 0 else "never slept")
+	lead.queue_free()
+	await get_tree().physics_frame
+
+	# Dropped ACROSS the edge, so half lands on the table and half hangs off it.
+	# The half in the air pulls on the half on the surface, and the cord has to
+	# hold its own weight over the corner rather than sliding off.
+	base = _new_case()
+	_box(base + Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.6))
+	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))    # the floor to land on
+	lead = await _drop_lead(base + Vector3(-0.20, 1.10, 0), 600, PI * 0.5)
+	rope = lead.get_node("VerletRope")
+	# What "stays put" means here, measured rather than assumed: the far plug goes
+	# over the edge, drops, and swings back UNDER the table, so the cord hugs the
+	# corner instead of extending out past it. The claims that matter are that some
+	# cord is still up on the surface, that the rest hangs well below it, and above
+	# all that none of it is INSIDE the table.
+	var on_table := false
+	var hanging := false
+	for p: Vector3 in rope.get_points():
+		if p.y > base.y + 0.72 and p.x < base.x:
+			on_table = true
+		if p.y < base.y + 0.55:
+			hanging = true
+	var through := _deepest_in_box_of(rope, base + Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.6))
+	_ok("loose/a lead over an edge keeps its grip on the table", on_table)
+	_ok("loose/a lead over an edge hangs down the other side", hanging)
+	_ok("loose/a lead over an edge does not cut through the table", through < 0.01,
+		"deepest %.1f mm inside" % (through * 1000.0))
+	lead.queue_free()
+	await get_tree().physics_frame
+
+
+## Wait for an engine-ticked rope to fall asleep. Returns the frame it slept on,
+## or -1 if it never did.
+func _wait_until_asleep(rope: VerletRope, max_frames: int) -> int:
+	for f in max_frames:
+		await get_tree().physics_frame
+		if rope.is_sleeping():
+			return f
+	return -1
+
+
+## Drop a whole lead from `at` and let the ENGINE tick it — plug bodies are
+## simulated by the physics server, so these cannot be hand-stepped.
+func _drop_lead(at: Vector3, ticks: int, yaw := 0.0) -> Node3D:
+	var lead: Node3D = LEAD_SCENE.instantiate()
+	# Posed BEFORE it enters the tree. The ends are RigidBody3Ds, and once a body
+	# is in the world the physics server owns its transform — moving the parent
+	# node afterwards moves the node and not the body, so the lead would drop from
+	# wherever it was built rather than from where it was put.
+	#
+	# The lead lies along its OWN z (its plugs sit at z = -0.75 and +0.75), so a
+	# case that needs it across an x-running edge has to turn it.
+	lead.position = at
+	lead.rotation.y = yaw
+	add_child(lead)
+	for f in ticks:
+		await get_tree().physics_frame
+	return lead
 
 
 # ── budget ────────────────────────────────────────────────────────────────────
