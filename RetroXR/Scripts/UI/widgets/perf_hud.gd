@@ -139,7 +139,7 @@ static var show_frame := false
 static var show_memory := false
 static var show_scene := false
 static var show_emulation := false
-static var wrist_mount := false
+static var wrist_mount := true
 
 
 ## True when there is no headset. Decided once, at _ready — the XR session is up
