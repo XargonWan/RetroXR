@@ -202,7 +202,7 @@ func _apply_dimensions() -> void:
 	if box != null:
 		box.size = Vector3(size.x, size.y, 0.002)
 	if _outline != null:
-		(_outline.mesh as QuadMesh).size = size + Vector2.ONE * OUTLINE_MARGIN
+		(_outline.mesh as QuadMesh).size = size * OUTLINE_GROW
 	var ptr := _pointer_shape.shape as BoxShape3D
 	if ptr != null:
 		# Slightly proud of the sheet so aiming at a poster is not a pixel hunt.
@@ -400,8 +400,10 @@ func set_aim_direction(dir: Vector3) -> void:
 # doubled ghost instead of a rim. A flat border is what a sheet's outline IS.
 
 const OUTLINE_COLOR := Color(1.0, 0.85, 0.30)
-## How far the border stands out past the sheet's edge.
-const OUTLINE_MARGIN := 0.045
+## How far the rim stands proud, as a FRACTION of the sheet rather than a fixed
+## number of millimetres. Absolute was wrong once posters could go down to 0.05x:
+## 45 mm of margin on a 25 mm sticker is a rim wider than the art it outlines.
+const OUTLINE_GROW := 1.025
 
 var _outline: MeshInstance3D = null
 var _highlight_requested := false
