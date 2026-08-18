@@ -241,6 +241,52 @@ static func scan_videos() -> Array[Dictionary]:
 	return results
 
 
+## Image extensions a poster can be made from.
+const POSTER_EXTENSIONS := ["png", "jpg", "jpeg", "webp"]
+
+
+## Root directory for posters.
+## Sits alongside the roms/ and books/ folders in the same files root.
+static func default_posters_root() -> String:
+	if OS.get_name() == "Android":
+		return "/sdcard/Android/data/com.xenu.retroxr/files/posters"
+	if OS.get_name() in ["Linux", "macOS"]:
+		return OS.get_environment("HOME") + "/retroxr/posters"
+	return OS.get_environment("USERPROFILE").replace("\\", "/") + "/retroxr/posters"
+
+
+## Create the posters root if it doesn't already exist.
+static func ensure_posters_root() -> void:
+	var path := default_posters_root()
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err == OK:
+		print("[RomLibrary] Ensured posters root: ", path)
+	else:
+		push_warning("[RomLibrary] Failed to create posters root '%s' (err %d)" % [path, err])
+
+
+## Scan the posters root and return all image files sorted by name.
+## Returns Array of {path: String, label: String}.
+static func scan_posters() -> Array[Dictionary]:
+	var dir_path := default_posters_root()
+	var dir := DirAccess.open(dir_path)
+	if not dir:
+		return []
+	var results: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		var ext := fname.get_extension().to_lower()
+		if not dir.current_is_dir() and ext in POSTER_EXTENSIONS:
+			results.append({"path": dir_path.path_join(fname), "label": fname.get_basename()})
+		fname = dir.get_next()
+	dir.list_dir_end()
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["label"] as String).naturalnocasecmp_to(b["label"] as String) < 0
+	)
+	return results
+
+
 ## Path to the TV root — the set's channel list (channels.json) lives here, and
 ## it is where a guide cache or channel logos would go later.
 static func default_tv_root() -> String:

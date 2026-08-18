@@ -27,14 +27,14 @@ const _STRING_FIELDS := [
 	"systemid", "model_id", "tv_model", "rom_path", "game_label", "save_id",
 	"cart_systemid", "card_id", "card_label", "pdf_path", "scene", "video_path",
 	"video_label", "dvd_path", "dvd_label", "album_path", "album_label", "kind",
-	"pad_guid", "pad_name",
+	"pad_guid", "pad_name", "image_path",
 ]
 const _NUMBER_FIELDS := [
 	"lid_angle", "scale_factor", "stereo_mode", "size_scale", "page_state",
 	"page_leaf", "sensitivity", "device_type", "port_index", "volume", "cords",
-	"pad_ordinal",
+	"pad_ordinal", "fit_mode",
 ]
-const _BOOL_FIELDS := ["video_out", "ignore_gravity", "crt_enabled", "half_pages"]
+const _BOOL_FIELDS := ["video_out", "ignore_gravity", "crt_enabled", "half_pages", "stuck"]
 const _REFERENCE_FIELDS := [
 	"tv", "cartridge", "memcard", "tape", "disc", "media", "system",
 	"nunchuk", "motion_plus",
@@ -43,7 +43,7 @@ const _SPECIALIZED_TYPES := [
 	"system", "tv", "cartridge", "disc", "memory_card", "book",
 	"retro_controller", "retro_mouse", "snes_mouse", "vcr_tape", "dvd_disc",
 	"composite_cable", "audio_disc", "audio_cassette",
-	"pad_receiver", "keyboard_receiver", "mouse_receiver",
+	"pad_receiver", "keyboard_receiver", "mouse_receiver", "poster",
 ]
 
 ## Bumped by every async restore as it starts. Because those yield frames, a
@@ -60,6 +60,7 @@ const DISC_SCENE             := preload("res://Scenes/Objects/media/disc.tscn")
 const UMD_DISC_SCENE         := preload("res://Scenes/Objects/media/umd_disc.tscn")
 const MEMCARD_SCENE          := preload("res://Scenes/Objects/media/memory_card.tscn")
 const BOOK_SCENE             := preload("res://Scenes/Objects/media/pdf_book.tscn")
+const POSTER_SCENE           := preload("res://Scenes/Objects/media/poster.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
 const RAY_GUN_SCENE          := preload("res://Scenes/Objects/peripherals/ray_gun.tscn")
 const VCR_SCENE              := preload("res://Scenes/Objects/appliances/vcr_player.tscn")
@@ -1138,6 +1139,13 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"card_id": card.card_id,
 			"card_label": card.card_label,
 		})
+	elif node is Poster:
+		var poster := node as Poster
+		return _base(id, "poster", n3d).merged({
+			"image_path": poster.image_path,
+			"size_scale": poster.size_scale,
+			"fit_mode": int(poster.fit_mode),
+		})
 	elif node is PDFBook:
 		var book := node as PDFBook
 		var page := book.net_get_page()
@@ -1399,6 +1407,14 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				card.card_id = data.get("card_id", "")
 				card.card_label = data.get("card_label", "MEMORY CARD")
 				obj = card
+			"poster":
+				var poster := POSTER_SCENE.instantiate() as Poster
+				# Size and mode BEFORE the path: the image setter derives the
+				# sheet's dimensions and has to see the final scale.
+				poster.size_scale = float(data.get("size_scale", 1.0))
+				poster.fit_mode = int(data.get("fit_mode", 0)) as Poster.FitMode
+				poster.image_path = str(data.get("image_path", ""))
+				obj = poster
 			"book":
 				var book := BOOK_SCENE.instantiate() as PDFBook
 				book.half_page_mode = data.get("half_pages", false)

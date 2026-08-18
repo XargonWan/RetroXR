@@ -12,6 +12,7 @@ const CART_SCENE            := preload("res://Scenes/Objects/media/cartridge.tsc
 const DISC_SCENE            := preload("res://Scenes/Objects/media/disc.tscn")
 const UMD_DISC_SCENE        := preload("res://Scenes/Objects/media/umd_disc.tscn")
 const BOOK_SCENE            := preload("res://Scenes/Objects/media/pdf_book.tscn")
+const POSTER_SCENE := preload("res://Scenes/Objects/media/poster.tscn")
 const TRASH_CAN_SCENE       := preload("res://Scenes/Objects/appliances/trash_can.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
 # Stand-in Virtual Boy pad: carries the console POWER switch, like the real one.
@@ -207,6 +208,7 @@ func _connect_menu_signals() -> void:
 	menu.close_requested.connect(_hide_menu)
 	menu.spawn_cartridge_requested.connect(_on_spawn_cartridge_requested)
 	menu.spawn_manual_requested.connect(_on_spawn_manual_requested)
+	menu.spawn_poster_requested.connect(_on_spawn_poster_requested)
 	menu.spawn_video_requested.connect(_on_spawn_video_requested)
 	menu.spawn_dvd_requested.connect(_on_spawn_dvd_requested)
 	menu.spawn_cd_requested.connect(_on_spawn_cd_requested)
@@ -1122,6 +1124,12 @@ func _on_spawn_manual_requested(pdf_path: String) -> void:
 	var book := BOOK_SCENE.instantiate() as PDFBook
 	book.pdf_path = pdf_path
 	_place_spawned(book, "book")
+
+
+func _on_spawn_poster_requested(image_path: String) -> void:
+	var poster := POSTER_SCENE.instantiate() as Poster
+	poster.image_path = image_path
+	_place_spawned(poster, "poster")
 
 
 func _on_spawn_video_requested(video_path: String) -> void:

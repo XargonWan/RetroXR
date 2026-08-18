@@ -19,6 +19,7 @@ extends Control
 signal spawn_requested(type: String)
 signal spawn_cartridge_requested(rom_path: String, game_label: String, systemid: String)
 signal spawn_manual_requested(pdf_path: String)
+signal spawn_poster_requested(image_path: String)
 signal spawn_video_requested(video_path: String)
 signal spawn_dvd_requested(dvd_path: String)
 signal spawn_cd_requested(album_path: String)
@@ -33,6 +34,11 @@ signal romm_state_changed
 ## Wheel-art textures held in memory, and the box they are fitted to.
 const MAX_WHEEL_TEXTURES := 200
 const WHEEL_BOX := Vector2i(300, 76)
+## Poster row thumbnails. Bounded for the same reason WHEEL_BOX is: an unbounded
+## Button.icon with expand_icon draws far past its row and spills into the
+## neighbours.
+const POSTER_THUMB_BOX := Vector2i(96, 72)
+const MAX_POSTER_THUMBS := 200
 ## Typing in the ROM filter rebuilds the list; this waits for a pause first.
 const SEARCH_DEBOUNCE_SEC := 0.18
 
@@ -110,6 +116,9 @@ var _romm_search_timer: Timer = null
 ## WHEEL_BOX so they cannot inflate the row height.
 var _wheel_cache: Dictionary = {}
 var _wheel_cache_order: Array[String] = []
+## Poster thumbnails, same memoized-with-misses shape as the wheel cache above.
+var _poster_thumb_cache: Dictionary = {}
+var _poster_thumb_order: Array[String] = []
 ## systemid -> {lowercase basename: rom}. A directory listing, so it is cached
 ## and dropped whenever something writes to a ROM dir.
 var _local_scan_cache: Dictionary = {}
@@ -129,6 +138,7 @@ var _videos_vbox: VBoxContainer = null
 var _dvds_vbox: VBoxContainer = null
 var _cds_vbox: VBoxContainer = null
 var _tapes_vbox: VBoxContainer = null
+var _posters_vbox: VBoxContainer = null
 
 # ── Scraper / detail panels ───────────────────────────────────────────────────
 var _scrape_popup: PanelContainer = null
@@ -386,6 +396,18 @@ func _build() -> void:
 	tapes_scroll.add_child(_tapes_vbox)
 	_populate_tapes_tab()
 
+	# Posters tab — lists images from the posters root directory
+	var posters_scroll := ScrollContainer.new()
+	posters_scroll.name = "Posters"
+	tabs.add_child(posters_scroll)
+	_spawn_tab_scrolls.append(posters_scroll)
+	MenuStyle.fat_vscroll_bar(posters_scroll)
+	_posters_vbox = VBoxContainer.new()
+	_posters_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_posters_vbox.add_theme_constant_override("separation", 10)
+	posters_scroll.add_child(_posters_vbox)
+	_populate_posters_tab()
+
 	_add_spawn_tab(tabs, "Objects", [
 		["Trash Can",       "trash_can"],
 		["VCR",             "vcr_player"],
@@ -429,6 +451,7 @@ func _build() -> void:
 			"DVDs": _populate_dvds_tab()
 			"CDs": _populate_cds_tab()
 			"Tapes": _populate_tapes_tab()
+			"Posters": _populate_posters_tab()
 		_update_spawn_active_scroll(idx)
 	)
 
@@ -2485,6 +2508,58 @@ static func _fit_within(img: Image, box: Vector2i) -> void:
 	var factor: float = minf(float(box.x) / float(w), float(box.y) / float(h))
 	img.resize(maxi(1, int(round(w * factor))), maxi(1, int(round(h * factor))),
 		Image.INTERPOLATE_LANCZOS)
+
+
+func _populate_posters_tab() -> void:
+	if not _posters_vbox:
+		return
+	_clear_vbox(_posters_vbox)
+	var posters := RomLibrary.scan_posters()
+	if posters.is_empty():
+		var hint := Label.new()
+		hint.text = "No images found in posters folder."
+		hint.add_theme_color_override("font_color", MenuStyle.COLOR_DESC)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_posters_vbox.add_child(hint)
+		return
+	for poster: Dictionary in posters:
+		var btn := Button.new()
+		btn.text = "  " + str(poster["label"])
+		btn.custom_minimum_size = Vector2(0, 84)
+		btn.add_theme_font_size_override("font_size", 24)
+		var thumb := _cached_poster_thumb(str(poster["path"]))
+		if thumb != null:
+			btn.icon = thumb
+			btn.add_theme_constant_override("icon_max_width", POSTER_THUMB_BOX.x)
+		else:
+			btn.text = "  🖼  " + str(poster["label"])
+		btn.pressed.connect(spawn_poster_requested.emit.bind(poster["path"]))
+		_posters_vbox.add_child(btn)
+	_posters_vbox.add_child(MenuStyle.spacer(8))
+
+
+## Memoized, misses included — a folder of large images would otherwise be decoded
+## again on every tab entry.
+func _cached_poster_thumb(path: String) -> Texture2D:
+	if _poster_thumb_cache.has(path):
+		return _poster_thumb_cache[path]
+	var tex := _load_poster_thumb(path)
+	_poster_thumb_cache[path] = tex
+	_poster_thumb_order.append(path)
+	while _poster_thumb_order.size() > MAX_POSTER_THUMBS:
+		_poster_thumb_cache.erase(_poster_thumb_order.pop_front())
+	return tex
+
+
+## No mipmaps: this is a 2D icon drawn at one size, not print art on a wall.
+func _load_poster_thumb(path: String) -> Texture2D:
+	if not FileAccess.file_exists(path):
+		return null
+	var img := Image.load_from_file(path)
+	if img == null:
+		return null
+	_fit_within(img, POSTER_THUMB_BOX)
+	return ImageTexture.create_from_image(img)
 
 
 func _has_scraped_manual(systemid: String, romname: String) -> bool:

@@ -19,6 +19,7 @@ signal default_core_changed(systemid: String, core_name: String)
 signal spawn_cartridge_requested(rom_path: String, game_label: String, systemid: String)
 ## Emitted when the user clicks the manual (📖) button for a ROM.
 signal spawn_manual_requested(pdf_path: String)
+signal spawn_poster_requested(image_path: String)
 ## Emitted when the user clicks a video (📼) in the Videos tab.
 signal spawn_video_requested(video_path: String)
 
@@ -192,6 +193,7 @@ func _ready() -> void:
 	RomLibrary.ensure_videos_root()
 	RomLibrary.ensure_dvd_root()
 	RomLibrary.ensure_music_root()
+	RomLibrary.ensure_posters_root()
 	_build_ui()
 
 
@@ -373,7 +375,8 @@ func _build_ui() -> void:
 			[_spawn_view.spawn_video_requested, spawn_video_requested],
 			[_spawn_view.spawn_dvd_requested, spawn_dvd_requested],
 			[_spawn_view.spawn_cd_requested, spawn_cd_requested],
-			[_spawn_view.spawn_cassette_requested, spawn_cassette_requested]]:
+			[_spawn_view.spawn_cassette_requested, spawn_cassette_requested],
+			[_spawn_view.spawn_poster_requested, spawn_poster_requested]]:
 		var out: Signal = relay[1]
 		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))
 	_spawn_view.spawn_cartridge_requested.connect(

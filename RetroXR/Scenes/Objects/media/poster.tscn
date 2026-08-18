@@ -1,0 +1,57 @@
+[gd_scene load_steps=6 format=3 uid="uid://poster_0001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/media/poster.gd" id="1_poster"]
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_poster"]
+friction = 0.8
+
+; Every one of these is resource_local_to_scene: the poster resizes its own quad
+; and both of its shapes, and a shared sub-resource would mean resizing one poster
+; resized every other poster in the room.
+[sub_resource type="QuadMesh" id="Quad_poster"]
+resource_local_to_scene = true
+size = Vector2(0.5, 0.5)
+
+[sub_resource type="BoxShape3D" id="Box_body"]
+resource_local_to_scene = true
+size = Vector3(0.5, 0.5, 0.002)
+
+[sub_resource type="BoxShape3D" id="Box_pointer"]
+resource_local_to_scene = true
+size = Vector3(0.52, 0.52, 0.02)
+
+[node name="Poster" type="RigidBody3D" groups=["poster"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_poster")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_poster")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Box_body")
+
+; All fit-mode geometry hangs off Surface, never off the root. Two reasons: the
+; conformed mesh replaces FlatMesh without touching the body, and PickableHighlight
+; only walks its parent's DIRECT children — so a sheet parked one level down is
+; already out of the inverted-hull outline, which is the right answer for a
+; single-sided sheet (inflating one along its normals gives a doubled ghost, not a
+; rim) and sidesteps its cache being keyed on a mesh RID this object refills in place.
+[node name="Surface" type="Node3D" parent="."]
+
+[node name="FlatMesh" type="MeshInstance3D" parent="Surface"]
+mesh = SubResource("Quad_poster")
+
+; Cast from the sheet itself, along its own -Z. Under a ray grab the poster floats
+; metres from the hand, so a controller-origin probe would find the wrong surface.
+[node name="SurfaceRay" type="RayCast3D" parent="."]
+target_position = Vector3(0, 0, -0.12)
+collision_mask = 1
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("Box_pointer")
