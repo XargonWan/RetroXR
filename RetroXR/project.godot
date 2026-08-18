@@ -279,6 +279,10 @@ openxr/multiview=true
 renderer/rendering_method.android="mobile"
 limits/spatial_indexer/threaded_cull_minimum_instances.android=65536
 
+[threading]
+
+worker_pool/max_threads.android=2
+
 [xr]
 
 openxr/enabled=true
