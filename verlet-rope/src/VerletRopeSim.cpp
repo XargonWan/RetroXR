@@ -30,6 +30,15 @@ constexpr double WAKE_ANCHOR_EPS_SQ = 0.0005 * 0.0005;
 // at 60 Hz is 24 m/s, where a hard throw is nearer 10. Every teleport a restore
 // performs is 0.7 m or more, so the gap is wide. See AnchorTeleported.
 constexpr double TELEPORT_EPS_SQ = 0.4 * 0.4;
+// Largest rotation AlignAnchorPlug may apply in one tick, radians. The rotation
+// is about the cable anchor, some 40 mm from the body origin, and it is written
+// as a transform — a teleport the physics server never sweeps. Uncapped, a cord
+// whipping during a drop flips the tangent and the alignment arcs the origin
+// ~90 mm in a single write, far past the server's depenetration recovery: a
+// dropped lead's plug was carried clean through a 100 mm floor slab and fell
+// out of the world. 0.12 rad keeps the arc under ~5 mm a tick — unescapably
+// inside contact recovery — and still turns a full flip in a third of a second.
+constexpr double MAX_ALIGN_STEP = 0.12;
 } // namespace
 
 // ── Constraint primitives ───────────────────────────────────────────────────
@@ -316,7 +325,11 @@ void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &offset, const Vect
     }
     const Quaternion cur_q = basis.get_rotation_quaternion();
     const Quaternion target_q = (arc * cur_q).normalized();
-    const Quaternion new_q = cur_q.slerp(target_q, CLAMP(k, 0.0, 1.0));
+    const double theta = std::acos(dot); // slerp is linear in angle, so w*theta is the applied step
+    double w = CLAMP(k, 0.0, 1.0);
+    if (w * theta > MAX_ALIGN_STEP)
+        w = MAX_ALIGN_STEP / theta;
+    const Quaternion new_q = cur_q.slerp(target_q, w);
     Transform3D xf = rb->get_global_transform();
     // Pin the anchor: work out where it is now, re-basis, then put the origin
     // back so the anchor lands in exactly the same place.
@@ -351,6 +364,12 @@ void VerletRope::Step(double p_delta)
     {
         InitPoints();
         return;
+    }
+
+    if (m_depen_pending)
+    {
+        m_depen_pending = false;
+        DepenetrateLay();
     }
 
     if (m_asleep)
@@ -908,6 +927,64 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
         m_mid_contact[s] = 0;
         if (m_next_seg[i] >= 0)
             m_mid_contact[m_next_seg[i]] = 0;
+    }
+}
+
+// Free any particle the last lay buried inside a solid. A cord is laid as a
+// straight line between its anchors, and a restore or teleport can put
+// furniture on that line. A buried particle is invisible to every contact
+// pass — the motion sweep only sees crossings and the rest query refuses
+// planes the particle is behind — so it stayed wedged for ever (measured 11 mm
+// inside a table). Runs once per lay, on the first tick after it: each buried
+// particle is walked out through its nearest face, ray-probed from OUTSIDE
+// because a ray cast from inside a solid reports nothing. Point containment
+// only answers for convex shapes, which is what furniture is made of; a lay
+// through a concave trimesh stays a known gap.
+void VerletRope::DepenetrateLay()
+{
+    if (m_surface_collision_mask == 0 || m_point_query.is_null() || m_ray_query.is_null())
+        return;
+    Ref<World3D> world = get_world_3d();
+    if (world.is_null())
+        return;
+    PhysicsDirectSpaceState3D *space_state = world->get_direct_space_state();
+    if (space_state == nullptr)
+        return;
+    // Deeper than half a PROBE inside anything and the lay was hopeless anyway.
+    constexpr double PROBE = 0.6;
+    static const Vector3 DIRS[6] = {Vector3(1, 0, 0),  Vector3(-1, 0, 0), Vector3(0, 1, 0),
+                                    Vector3(0, -1, 0), Vector3(0, 0, 1),  Vector3(0, 0, -1)};
+    const int count = static_cast<int>(m_points.size());
+    for (int i = 0; i < count; ++i)
+    {
+        if (m_inv_mass[i] == 0.0f)
+            continue;
+        m_point_query->set_position(m_points[i]);
+        if (space_state->intersect_point(m_point_query, 1).is_empty())
+            continue;
+        double best = PROBE;
+        Vector3 best_pos;
+        Vector3 best_n;
+        for (const Vector3 &d : DIRS)
+        {
+            m_ray_query->set_from(m_points[i] + d * PROBE);
+            m_ray_query->set_to(m_points[i]);
+            Dictionary hit = space_state->intersect_ray(m_ray_query);
+            if (hit.is_empty())
+                continue;
+            const Vector3 hp = hit["position"];
+            const double dist = hp.distance_to(m_points[i]);
+            if (dist < best)
+            {
+                best = dist;
+                best_pos = hp;
+                best_n = hit["normal"];
+            }
+        }
+        if (best >= PROBE || best_n == Vector3())
+            continue;
+        m_points[i] = best_pos + best_n * m_collision_radius;
+        m_prev_points[i] = m_points[i];
     }
 }
 

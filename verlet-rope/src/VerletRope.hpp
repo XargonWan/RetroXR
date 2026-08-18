@@ -45,6 +45,7 @@
 #include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/classes/physics_point_query_parameters3d.hpp>
 #include <godot_cpp/classes/physics_ray_query_parameters3d.hpp>
 #include <godot_cpp/classes/physics_shape_query_parameters3d.hpp>
 #include <godot_cpp/classes/rigid_body3d.hpp>
@@ -226,6 +227,7 @@ private:
     void AlignAnchorPlug(godot::Node3D *node, const godot::Vector3 &offset,
                          const godot::Vector3 &target_dir, double k);
     void RefreshExclusions();
+    void DepenetrateLay();
     // Resolved once per tick so the hot paths don't repeat the ObjectDB lookup.
     void CacheAnchors();
 
@@ -341,6 +343,7 @@ private:
     std::vector<godot::Ref<godot::ShaderMaterial>> m_materials;
     godot::Ref<godot::PhysicsRayQueryParameters3D> m_ray_query;
     godot::Ref<godot::PhysicsShapeQueryParameters3D> m_shape_query;
+    godot::Ref<godot::PhysicsPointQueryParameters3D> m_point_query;
     godot::Ref<godot::SphereShape3D> m_sphere;
 
     uint64_t m_start_node_id = 0;
@@ -351,6 +354,9 @@ private:
     godot::RigidBody3D *m_end_body = nullptr;
 
     int m_raycast_frame = 0;
+    // Set by InitPoints, consumed by the first Step after a lay: run
+    // DepenetrateLay there, where space-state queries are legal.
+    bool m_depen_pending = false;
     bool m_asleep = false;
     int m_still_frames = 0;
     int m_ref_frames = 0;

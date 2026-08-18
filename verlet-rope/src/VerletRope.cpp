@@ -442,6 +442,8 @@ void VerletRope::_ready()
         m_shape_query.instantiate();
         m_shape_query->set_shape(m_sphere);
         m_shape_query->set_collision_mask(m_surface_collision_mask);
+        m_point_query.instantiate();
+        m_point_query->set_collision_mask(m_surface_collision_mask);
         RefreshExclusions();
     }
 }
@@ -851,6 +853,10 @@ void VerletRope::InitPoints()
     for (FrayChain &fc : m_fray)
         fc.sleep_pos = AnchorPoint(fc.cached, fc.offset, m_points[fc.first + fc.count - 1]);
     RefreshExclusions();
+    // The straight lay above ignores the world, so furniture on the line leaves
+    // particles buried in it. Deferred to the first Step, where space-state
+    // queries are legal — InitPoints also runs from _ready and from setters.
+    m_depen_pending = true;
     // Resize-and-seed: SnapshotRenderState detects the length change and fills
     // both history buffers from the fresh points.
     m_curr_render.clear();
@@ -904,6 +910,8 @@ void VerletRope::RefreshExclusions()
         m_ray_query->set_exclude(rids);
     if (m_shape_query.is_valid())
         m_shape_query->set_exclude(rids);
+    if (m_point_query.is_valid())
+        m_point_query->set_exclude(rids);
 }
 
 bool VerletRope::AnchorsMoved() const
