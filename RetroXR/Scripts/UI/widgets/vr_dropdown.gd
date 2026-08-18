@@ -107,6 +107,9 @@ func _build(label_text: String, toggle_min_size: Vector2) -> void:
 	row.add_child(_label)
 
 	_toggle = Button.new()
+	# The open/closed chevron is a Nerd Font glyph, so the toggle carries the
+	# symbol font whether or not a caller sets a leading glyph of its own.
+	_toggle.add_theme_font_override("font", MenuIcons.symbols())
 	_toggle.custom_minimum_size = toggle_min_size
 	_toggle.add_theme_font_size_override("font_size", _font_size)
 	_toggle.focus_mode = Control.FOCUS_NONE
@@ -152,6 +155,7 @@ func set_options(options: Array, current_id: Variant) -> void:
 		_ids.append(opt_id)
 
 		var btn := Button.new()
+		btn.add_theme_font_override("font", MenuIcons.symbols())
 		btn.text = _tick(opt_id) + opt_label
 		var glyph := _icon_for(entry)
 		if glyph:
@@ -240,7 +244,7 @@ func is_open() -> bool:
 # ── Internals ──────────────────────────────────────────────────────────────────
 
 func _tick(id: Variant) -> String:
-	return "✓  " if id == _current_id else "    "
+	return "%s  " % String.chr(MenuIcons.CHECK) if id == _current_id else "    "
 
 
 func _current_label() -> String:
@@ -270,7 +274,8 @@ func _refresh_labels() -> void:
 
 func _refresh_toggle_arrow() -> void:
 	var prefix := (String.chr(_toggle_glyph) + "   ") if _toggle_glyph != 0 else ""
-	_toggle.text = prefix + _current_label() + (" ▴" if _is_open else " ▾")
+	var arrow := String.chr(MenuIcons.COLLAPSE if _is_open else MenuIcons.EXPAND)
+	_toggle.text = prefix + _current_label() + " " + arrow
 	var glyph := _current_icon()
 	_toggle.icon = glyph
 	if glyph:

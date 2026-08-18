@@ -112,7 +112,8 @@ func _build_ui() -> void:
 	title_row.add_child(title_lbl)
 
 	var close_btn := Button.new()
-	close_btn.text = "  ✕  "
+	close_btn.add_theme_font_override("font", MenuIcons.symbols())
+	close_btn.text = "  %s  " % String.chr(MenuIcons.CLOSE)
 	close_btn.add_theme_font_size_override("font_size", 22)
 	close_btn.pressed.connect(func(): close_requested.emit())
 	title_row.add_child(close_btn)

@@ -63,15 +63,18 @@ func set_options(options: Array, current_id: Variant, font: Font = null,
 
 	for entry: Array in options:
 		var btn := Button.new()
-		btn.text = ("✓ " if _same(entry[1], current_id) else "   ") + str(entry[0])
+		btn.text = ("%s " % String.chr(MenuIcons.CHECK)
+			if _same(entry[1], current_id) else "   ") + str(entry[0])
 		btn.custom_minimum_size = Vector2(0, ROW_H)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.add_theme_font_size_override("font_size", font_size)
 		btn.add_theme_color_override("font_color", COLOR_TITLE)
-		if font != null:
-			btn.add_theme_font_override("font", font)
+		# The tick is a Nerd Font glyph, so a caller that passes no font still
+		# needs one that can draw it.
+		btn.add_theme_font_override("font",
+			font if font != null else MenuIcons.symbols())
 		if entry.size() > 2 and entry[2] is Texture2D:
 			btn.icon = entry[2]
 			btn.add_theme_constant_override("icon_max_width", 32)

@@ -286,7 +286,9 @@ func _populate_manager_detail(systemid: String, vbox: VBoxContainer) -> void:
 		row.custom_minimum_size = Vector2(0, 64)
 
 		var lbl := Label.new()
-		lbl.text = ("✓  " if is_def else "     ") + (entry["display_name"] as String)
+		lbl.text = ("%s  " % String.chr(MenuIcons.CHECK)
+			if is_def else "     ") + (entry["display_name"] as String)
+		lbl.add_theme_font_override("font", MenuIcons.symbols())
 		lbl.add_theme_font_size_override("font_size", 20)
 		lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE if is_def else MenuStyle.COLOR_LICENSE)
 		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -412,7 +414,8 @@ func _populate_core_options(systemid: String, core_name: String, vbox: VBoxConta
 	var root := CoreOptionsStore.default_root()
 
 	var back := Button.new()
-	back.text = "←  Back to cores"
+	back.add_theme_font_override("font", MenuIcons.symbols())
+	back.text = "%s  Back to cores" % String.chr(MenuIcons.BACK)
 	back.custom_minimum_size = Vector2(0, 52)
 	back.add_theme_font_size_override("font_size", 17)
 	back.pressed.connect(func() -> void:

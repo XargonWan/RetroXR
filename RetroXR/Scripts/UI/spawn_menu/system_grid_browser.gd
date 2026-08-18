@@ -426,7 +426,8 @@ func _ensure_built() -> void:
 	_detail_page.add_child(header)
 
 	var back := Button.new()
-	back.text = "◀  Back"
+	back.add_theme_font_override("font", MenuIcons.symbols())
+	back.text = "%s  Back" % String.chr(MenuIcons.BACK)
 	back.custom_minimum_size = Vector2(150, 52)
 	back.add_theme_font_size_override("font_size", 20)
 	back.pressed.connect(_on_detail_back)

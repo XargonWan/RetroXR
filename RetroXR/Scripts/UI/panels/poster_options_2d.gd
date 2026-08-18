@@ -68,7 +68,8 @@ func _build_ui() -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(title)
 	var close_btn := Button.new()
-	close_btn.text = "✕"
+	close_btn.add_theme_font_override("font", MenuIcons.symbols())
+	close_btn.text = String.chr(MenuIcons.CLOSE)
 	close_btn.custom_minimum_size = Vector2(36, 36)
 	close_btn.pressed.connect(func() -> void: close_requested.emit())
 	title_row.add_child(close_btn)
@@ -135,9 +136,10 @@ func _build_ui() -> void:
 	rot_lbl.add_theme_font_size_override("font_size", 18)
 	rot_lbl.custom_minimum_size = Vector2(52, 0)
 	rot_row.add_child(rot_lbl)
-	for spec: Array in [["↺", false], ["↻", true]]:
+	for spec: Array in [[MenuIcons.ROTATE_CCW, false], [MenuIcons.ROTATE_CW, true]]:
 		var rb := Button.new()
-		rb.text = str(spec[0])
+		rb.add_theme_font_override("font", MenuIcons.symbols())
+		rb.text = String.chr(spec[0] as int)
 		rb.custom_minimum_size = Vector2(0, 40)
 		rb.add_theme_font_size_override("font_size", 22)
 		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL

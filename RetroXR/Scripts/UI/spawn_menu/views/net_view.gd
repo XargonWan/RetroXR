@@ -94,16 +94,18 @@ func _build() -> void:
 	pad.add_theme_constant_override("h_separation", 6)
 	pad.add_theme_constant_override("v_separation", 6)
 	vbox.add_child(pad)
-	for key: String in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", ".", "⌫"]:
+	var rub := String.chr(MenuIcons.BACKSPACE)
+	for key: String in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", ".", rub]:
 		var kb := Button.new()
 		kb.text = key
 		kb.custom_minimum_size = Vector2(0, 52)
 		kb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		kb.add_theme_font_size_override("font_size", 22)
+		kb.add_theme_font_override("font", MenuIcons.symbols())
 		kb.focus_mode = Control.FOCUS_NONE
 		var captured := key
 		kb.pressed.connect(func() -> void:
-			if captured == "⌫":
+			if captured == rub:
 				_ip_edit.text = _ip_edit.text.left(_ip_edit.text.length() - 1)
 			else:
 				_ip_edit.text += captured

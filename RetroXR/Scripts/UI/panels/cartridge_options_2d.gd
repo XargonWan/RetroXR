@@ -59,10 +59,13 @@ const _ICON_UPLOAD   := 0xF093    # fa-upload
 ## file, it does not re-run something.
 const _ICON_OVERWRITE := 0xF0C7   # fa-save
 const _ICON_WARN     := 0xF071    # fa-warning
-## Neither the theme font nor the Nerd Font has a fullwidth plus, so that
-## character renders only where the OS fallback happens to cover it — tofu on
-## Quest. md-plus is in the font this panel already ships with.
+## The theme font carries none of the panel's pictograms, so a bare Unicode
+## symbol renders only where the OS fallback happens to cover it — tofu on
+## Quest. These three replace the fullwidth plus, the black circle and the
+## multiplication X with glyphs from the font this panel already ships.
 const _ICON_NEW      := 0xF0415   # md-plus
+const _ICON_CURRENT  := 0xF09DE   # md-circle_medium — the save in the slot
+const _ICON_CLOSE    := 0xF0156   # md-close
 const _SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 
 ## One shared FontVariation — the list is rebuilt on every populate(), and a
@@ -228,7 +231,8 @@ func _build_title(root_vbox: VBoxContainer) -> void:
 	title_row.add_child(_title_lbl)
 
 	var close_btn := Button.new()
-	close_btn.text = "  ✕  "
+	close_btn.add_theme_font_override("font", _symbols())
+	close_btn.text = "  %s  " % String.chr(_ICON_CLOSE)
 	close_btn.add_theme_font_size_override("font_size", 22)
 	close_btn.pressed.connect(func(): close_requested.emit())
 	title_row.add_child(close_btn)
@@ -385,7 +389,9 @@ func _add_new_row(is_current: bool, romm_available: bool) -> void:
 	blank.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	blank.add_theme_font_size_override("font_size", 18)
 	blank.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	blank.text = ("●  " if is_current else "    ") + "＋  New blank save"
+	blank.add_theme_font_override("font", _symbols())
+	var mark := "%s  " % String.chr(_ICON_CURRENT) if is_current else "    "
+	blank.text = mark + "%s  New blank save" % String.chr(_ICON_NEW)
 	if is_current:
 		blank.add_theme_color_override("font_color", COLOR_CURRENT)
 	blank.pressed.connect(func(): save_selected.emit(""))
@@ -432,7 +438,8 @@ func _add_row(title: String, detail: String, save_id: String, is_current: bool,
 	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	var t := Label.new()
-	t.text = ("●  " if is_current else "") + title
+	t.add_theme_font_override("font", _symbols())
+	t.text = ("%s  " % String.chr(_ICON_CURRENT) if is_current else "") + title
 	t.add_theme_font_size_override("font_size", 19)
 	t.add_theme_color_override("font_color", COLOR_CURRENT if is_current else COLOR_TITLE)
 	col.add_child(t)

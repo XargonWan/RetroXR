@@ -113,7 +113,8 @@ func _build() -> void:
 	states_root.add_child(back_row)
 
 	var back_btn := Button.new()
-	back_btn.text = "← Back"
+	back_btn.add_theme_font_override("font", MenuIcons.symbols())
+	back_btn.text = "%s Back" % String.chr(MenuIcons.BACK)
 	back_btn.add_theme_font_size_override("font_size", 20)
 	back_btn.pressed.connect(show_rooms)
 	back_row.add_child(back_btn)
@@ -322,7 +323,8 @@ func _make_state_card(slot: Dictionary, active_slot_id: String) -> Control:
 		name_row.add_child(name_btn)
 
 	if is_active:
-		var dot := MenuStyle.label("●", 18, Color(0.4, 0.9, 0.4))
+		var dot := MenuStyle.label(String.chr(MenuIcons.DOT), 18, Color(0.4, 0.9, 0.4))
+		dot.add_theme_font_override("font", MenuIcons.symbols())
 		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_row.add_child(dot)
 

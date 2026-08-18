@@ -137,7 +137,8 @@ func _build_ui() -> void:
 	title_row.add_child(title)
 	if show_name_field:
 		var close := Button.new()
-		close.text = "✕"
+		close.add_theme_font_override("font", MenuIcons.symbols())
+		close.text = String.chr(MenuIcons.CLOSE)
 		close.pressed.connect(func() -> void: close_requested.emit())
 		title_row.add_child(close)
 

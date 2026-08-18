@@ -41,6 +41,12 @@ const SYNC_OFF  := 0xF0164   # md-cloud_off_outline — local only
 const UPDATE    := 0xF01B    # fa-circle_up       — installed, but newer on the buildbot
 const EXPAND    := 0xF0140   # md-chevron_down    — open a row's picker
 const COLLAPSE  := 0xF0143   # md-chevron_up      — close it again
+const CLOSE     := 0xF0156   # md-close           — dismiss a panel
+const BACK      := 0xF004D   # md-arrow_left      — up a level in the menu
+const DOT       := 0xF09DE   # md-circle_medium   — the one in use right now
+const ROTATE_CCW := 0xF0E2   # fa-rotate_left     — turn a poster
+const ROTATE_CW  := 0xF01E   # fa-rotate_right
+const BACKSPACE := 0xF006E   # md-backspace       — on-menu keypad
 
 const TINT_DOWNLOAD := Color(0.45, 0.70, 1.00)
 const TINT_BUSY     := Color(1.00, 0.75, 0.25)
