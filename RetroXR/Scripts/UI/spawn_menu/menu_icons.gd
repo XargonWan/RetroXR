@@ -58,6 +58,8 @@ const TINT_MUTED    := Color(0.45, 0.45, 0.58)
 ## Built once and shared — the ROM list recycles rows, so a FontVariation per
 ## row (or per bind) would churn resources on every scroll.
 static var _font: FontVariation = null
+## base font instance id -> the same font with the glyphs behind it.
+static var _wrapped: Dictionary = {}
 static var _romm_mark: Texture2D = null
 
 
@@ -72,6 +74,24 @@ static func symbols() -> FontVariation:
 	if glyphs != null:
 		_font.fallbacks = [glyphs]
 	return _font
+
+
+## A caller that already has a font of its own still needs the glyph table
+## behind it: substituting symbols() would throw that font away, and using it
+## as-is drops every ICON_* into a tofu box.
+static func with_symbols(base: Font) -> Font:
+	if base == null:
+		return symbols()
+	var key := base.get_instance_id()
+	if _wrapped.has(key):
+		return _wrapped[key]
+	var fv := FontVariation.new()
+	fv.base_font = base
+	var glyphs: Font = load(FONT_PATH)
+	if glyphs != null:
+		fv.fallbacks = [glyphs]
+	_wrapped[key] = fv
+	return fv
 
 
 ## The RomM logo, for marking rows that came from the server. Null if absent.

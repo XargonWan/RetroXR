@@ -71,10 +71,9 @@ func set_options(options: Array, current_id: Variant, font: Font = null,
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.add_theme_font_size_override("font_size", font_size)
 		btn.add_theme_color_override("font_color", COLOR_TITLE)
-		# The tick is a Nerd Font glyph, so a caller that passes no font still
-		# needs one that can draw it.
-		btn.add_theme_font_override("font",
-			font if font != null else MenuIcons.symbols())
+		# The tick is a Nerd Font glyph. The caller's font is the panel's, and it
+		# cannot draw one, so it goes in with the glyph table behind it.
+		btn.add_theme_font_override("font", MenuIcons.with_symbols(font))
 		if entry.size() > 2 and entry[2] is Texture2D:
 			btn.icon = entry[2]
 			btn.add_theme_constant_override("icon_max_width", 32)
