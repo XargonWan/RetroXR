@@ -165,16 +165,23 @@ func _check_rig(ctrl: XRController3D, art: ControllerArt) -> void:
 	const LEAN := 27.0
 	const TRIGGER := 18.0
 	const PRESS := 0.001
-	var shaft := Vector3(0.2, 0.9, -0.3).normalized()
+
+	# The model hangs off a grip anchor tilted out of the hand, as the runtime's
+	# does, and the hand itself is not at the origin.
+	ctrl.transform = Transform3D(Basis.from_euler(Vector3(-0.25, 0.6, 0.1)), Vector3(0.2, 1.1, -0.3))
+	art.transform = Transform3D(Basis.from_euler(Vector3(-1.05, 0.0, 0.0)), Vector3(0.0, -0.02, -0.046))
 
 	var skel := Skeleton3D.new()
 	skel.name = "Skeleton3D"
 	art.add_child(skel)
+	var root := skel.add_bone("controller_world")
 	for bone_name: String in ["b_trigger_front", "b_button_x", "b_thumbstick"]:
 		var idx := skel.add_bone(bone_name)
+		skel.set_bone_parent(idx, root)
 		skel.set_bone_rest(idx, Transform3D(
 			Basis.from_euler(Vector3(0.4, -0.9, 0.25)), Vector3(0.01, 0.02, -0.03)))
 		skel.set_bone_pose(idx, skel.get_bone_rest(idx))
+	await get_tree().process_frame
 
 	var clip := Animation.new()
 	clip.length = 5.0
@@ -199,7 +206,15 @@ func _check_rig(ctrl: XRController3D, art: ControllerArt) -> void:
 	clip.position_track_insert_key(p, 0.45, button_rest + Vector3(0.0, 0.0, -PRESS))
 	clip.position_track_insert_key(p, 0.55, button_rest)
 
+	# A stick stands up out of the controller face, leaning back a little. The
+	# shaft is authored in the hand's terms and carried into the bone's, rather
+	# than picked to make the arithmetic easy.
 	var stick_rest := Quaternion(Vector3(0.0, 0.5, 0.86).normalized(), deg_to_rad(16.0))
+	var bone := skel.find_bone("b_thumbstick")
+	var to_bone := ((ctrl.global_transform.affine_inverse() * skel.global_transform
+		* skel.get_bone_global_pose(skel.get_bone_parent(bone))).basis * Basis(stick_rest)).inverse()
+	var shaft: Vector3 = (to_bone * Vector3(0.0, 0.94, -0.34).normalized()).normalized()
+
 	var sweep := clip.add_track(Animation.TYPE_ROTATION_3D)
 	clip.track_set_path(sweep, NodePath("Skeleton3D:b_thumbstick"))
 	clip.rotation_track_insert_key(sweep, 1.0, stick_rest)
@@ -223,10 +238,74 @@ func _check_rig(ctrl: XRController3D, art: ControllerArt) -> void:
 	art.source = ControllerArt.Source.VENDOR_FB
 	ctrl.call("_resolve_rig")
 	await get_tree().process_frame
+	_rebase(ctrl, skel)
 
-	# Everything is measured from where the CLIP rests each bone, which is not
-	# where the skeleton's own rest puts it - a rig is free to disagree with
-	# itself, and this one deliberately does.
+	_check(not anim.is_playing(), "the rig's own clip is stopped, not left playing over the inputs")
+	var driven: Dictionary = ctrl.get("_driven")
+	_check(driven.size() == 3, "every animated bone is picked up (%d)" % driven.size())
+	var stick: Dictionary = ctrl.get("_stick")
+	_check(absf((stick.get("shaft", Vector3.ZERO) as Vector3).dot(shaft)) > 0.999,
+		"the shaft is recovered from the sweep")
+
+	# One input, one bone.
+	ctrl.call("_on_float_changed", "trigger", 1.0)
+	var turned := _turn(skel, "b_trigger_front")
+	_check(absf(turned - TRIGGER) < 0.5,
+		"a full pull turns the trigger as far as the rig does (%.1f of %.1f deg)" % [turned, TRIGGER])
+	_check(_turn(skel, "b_thumbstick") < 0.2, "and leaves the stick alone")
+	ctrl.call("_on_float_changed", "trigger", 0.5)
+	_check(absf(_turn(skel, "b_trigger_front") - TRIGGER * 0.5) < 0.5,
+		"half a pull is half the travel (%.1f deg)" % _turn(skel, "b_trigger_front"))
+	ctrl.call("_on_float_changed", "trigger", 0.0)
+	_check(_turn(skel, "b_trigger_front") < 0.2,
+		"releasing puts it back (%.3f deg out)" % _turn(skel, "b_trigger_front"))
+
+	# The bounce.
+	ctrl.call("_on_button_pressed", "ax_button")
+	var pressed := _shift(skel, "b_button_x")
+	_check(absf(pressed - PRESS * 1000.0) < 0.02,
+		"a press travels the rig's full 1 mm (%.3f mm)" % pressed)
+	ctrl.call("_on_button_released", "ax_button")
+	_check(_shift(skel, "b_button_x") < 0.005, "and comes back out")
+	# Sampling the clip by time here would find the button already released.
+	ctrl.call("_on_float_changed", "nonsense", 0.5)
+	_check(_shift(skel, "b_button_x") < 0.005, "an unknown action moves nothing")
+
+	# The stick leans where it is pushed.
+	var leans: Array[float] = []
+	for push: Vector2 in [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0),
+			Vector2(0.7, 0.7)]:
+		ctrl.call("_on_vec2_changed", "primary", push)
+		leans.append(_tip_travel_3d(ctrl, skel, shaft).length())
+		_check(_tip_travel(ctrl, skel, shaft).normalized().dot(push.normalized()) > 0.97,
+			"pushed %s, tip goes %s" % [push, _tip_travel(ctrl, skel, shaft).normalized()])
+	var spread: float = leans.max() - leans.min()
+	_check(spread < 0.0005,
+		"and leans the same distance whichever way (spread %.3f mm)" % (spread * 1000.0))
+
+	ctrl.call("_on_vec2_changed", "primary", Vector2(0, 0.5))
+	var half := _tip_travel_3d(ctrl, skel, shaft).length()
+	_check(half < leans[0] * 0.75,
+		"a half push leans less (%.2f vs %.2f mm)" % [half * 1000.0, leans[0] * 1000.0])
+
+	# The hand moves after the rig was read. A model loads while the controllers
+	# are still asleep, so whatever frame was current then is not the one the
+	# stick is pushed in; the art also hangs off a grip anchor that stays at
+	# identity until a pose arrives.
+	ctrl.transform = Transform3D(Basis.from_euler(Vector3(0.15, -0.9, -0.2)), Vector3(-0.4, 1.3, 0.25))
+	await get_tree().process_frame
+	_rebase(ctrl, skel)
+	for push: Vector2 in [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0)]:
+		ctrl.call("_on_vec2_changed", "primary", push)
+		var went := _tip_travel(ctrl, skel, shaft)
+		_check(went.normalized().dot(push.normalized()) > 0.97,
+			"hand moved, pushed %s, tip still goes %s" % [push, went.normalized()])
+
+
+## Everything is measured from where the CLIP rests each bone, which is not where
+## the skeleton's own rest puts it - a rig is free to disagree with itself, and
+## this one deliberately does.
+func _rebase(ctrl: XRController3D, skel: Skeleton3D) -> void:
 	_settle(ctrl)
 	_baseline.clear()
 	for i in skel.get_bone_count():
@@ -236,68 +315,6 @@ func _check_rig(ctrl: XRController3D, art: ControllerArt) -> void:
 			"global": skel.get_bone_global_pose(i),
 		}
 
-	_check(not anim.is_playing(), "the rig's own clip is stopped, not left playing over the inputs")
-	var driven: Dictionary = ctrl.get("_driven")
-	_check(driven.size() == 3, "every animated bone is picked up (%d)" % driven.size())
-
-	# ── One input, one bone ──
-	ctrl.call("_on_float_changed", "trigger", 1.0)
-	var turned := _turn(skel, "b_trigger_front")
-	_check(absf(turned - TRIGGER) < 0.5, "a full pull turns the trigger as far as the rig does (%.1f of %.1f deg)" % [turned, TRIGGER])
-	_check(_turn(skel, "b_thumbstick") < 0.2, "and leaves the stick alone")
-	ctrl.call("_on_float_changed", "trigger", 0.5)
-	_check(absf(_turn(skel, "b_trigger_front") - TRIGGER * 0.5) < 0.5,
-		"half a pull is half the travel (%.1f deg)" % _turn(skel, "b_trigger_front"))
-	ctrl.call("_on_float_changed", "trigger", 0.0)
-	_check(_turn(skel, "b_trigger_front") < 0.2,
-		"releasing puts it back (%.3f deg out)" % _turn(skel, "b_trigger_front"))
-
-	# ── The bounce ──
-	ctrl.call("_on_button_pressed", "ax_button")
-	var pressed := _shift(skel, "b_button_x")
-	_check(absf(pressed - PRESS * 1000.0) < 0.02, "a press travels the rig's full 1 mm (%.3f mm)" % pressed)
-	ctrl.call("_on_button_released", "ax_button")
-	_check(_shift(skel, "b_button_x") < 0.005, "and comes back out")
-	# Sampling the clip by time here would find the button already released.
-	ctrl.call("_on_float_changed", "nonsense", 0.5)
-	_check(_shift(skel, "b_button_x") < 0.001, "an unknown action moves nothing")
-
-	# ── The stick leans where it is pushed ──
-	var leans: Array[float] = []
-	for push: Vector2 in [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0),
-			Vector2(0.7, 0.7)]:
-		ctrl.call("_on_vec2_changed", "primary", push)
-		var went := _tip_travel(ctrl, skel, shaft)
-		# The tip swings on a cone, so it rises as well as leans; how far it
-		# travelled is the whole displacement, not its shadow on the flat.
-		leans.append(_tip_travel_3d(ctrl, skel, shaft).length())
-		_check(went.normalized().dot(push.normalized()) > 0.98,
-			"pushed %s, tip goes %s" % [push, went.normalized()])
-	var spread: float = leans.max() - leans.min()
-	_check(spread < 0.0005, "and leans the same distance whichever way (spread %.3f mm)" % (spread * 1000.0))
-
-	ctrl.call("_on_vec2_changed", "primary", Vector2(0, 0.5))
-	var half := _tip_travel_3d(ctrl, skel, shaft).length()
-	_check(half < leans[0] * 0.75, "a half push leans less (%.2f vs %.2f mm)" % [half * 1000.0, leans[0] * 1000.0])
-
-
-func _tip_travel_3d(ctrl: XRController3D, skel: Skeleton3D, shaft: Vector3) -> Vector3:
-	var bone := skel.find_bone("b_thumbstick")
-	var to_hand := ctrl.global_transform.affine_inverse() * skel.global_transform
-	var tip := shaft * 0.02
-	var was: Transform3D = _baseline["b_thumbstick"]["global"]
-	return (to_hand * skel.get_bone_global_pose(bone) * tip) - (to_hand * was * tip)
-
-
-## How far the stick's tip moved, in the hand's own frame: +X right, +Y forward.
-func _tip_travel(ctrl: XRController3D, skel: Skeleton3D, shaft: Vector3) -> Vector2:
-	var bone := skel.find_bone("b_thumbstick")
-	var to_hand := ctrl.global_transform.affine_inverse() * skel.global_transform
-	var tip := shaft * 0.02
-	var was: Transform3D = _baseline["b_thumbstick"]["global"]
-	var moved: Vector3 = (to_hand * skel.get_bone_global_pose(bone) * tip) - (to_hand * was * tip)
-	return Vector2(moved.x, -moved.z)
-
 
 ## Put every input back to nothing, so a measurement starts from the rig's rest.
 func _settle(ctrl: XRController3D) -> void:
@@ -306,6 +323,22 @@ func _settle(ctrl: XRController3D) -> void:
 	ctrl.call("_on_vec2_changed", "primary", Vector2.ZERO)
 	for button: String in ["ax_button", "by_button", "menu_button"]:
 		ctrl.call("_on_button_released", button)
+
+
+## The whole distance the stick's tip travelled, in the hand's own frame. It
+## swings on a cone, so it rises as well as leans and the flat shadow is short.
+func _tip_travel_3d(ctrl: XRController3D, skel: Skeleton3D, shaft: Vector3) -> Vector3:
+	var bone := skel.find_bone("b_thumbstick")
+	var to_hand := ctrl.global_transform.affine_inverse() * skel.global_transform
+	var tip := shaft * 0.02
+	var was: Transform3D = _baseline["b_thumbstick"]["global"]
+	return (to_hand * skel.get_bone_global_pose(bone) * tip) - (to_hand * was * tip)
+
+
+## Which way the tip went, read the way a stick is pushed: +X right, +Y forward.
+func _tip_travel(ctrl: XRController3D, skel: Skeleton3D, shaft: Vector3) -> Vector2:
+	var moved := _tip_travel_3d(ctrl, skel, shaft)
+	return Vector2(moved.x, -moved.z)
 
 
 func _turn(skel: Skeleton3D, bone_name: String) -> float:

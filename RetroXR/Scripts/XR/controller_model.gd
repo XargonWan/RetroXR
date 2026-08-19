@@ -188,21 +188,11 @@ func _read_stick(clip: Animation) -> void:
 	if shaft == Vector3.ZERO:
 		return
 
-	var bone: int = d["bone"]
-	# The frame the clip's rotations are written in, as the player sees it. A key
-	# is the clip's own rest turned by the lean, so the frame is the bone's parent
-	# carrying that rest - NOT the skeleton's rest for this bone, which a rig is
-	# free to author differently.
-	var parent := _skeleton.get_bone_parent(bone)
-	var below := _skeleton.get_bone_global_pose(parent) if parent >= 0 else Transform3D.IDENTITY
-	var in_hand := (global_transform.affine_inverse() * _skeleton.global_transform
-		* below).basis * Basis(rest)
 	_stick = {
-		"bone": bone,
+		"bone": d["bone"],
 		"rest": rest,
 		"shaft": shaft,
 		"lean": rest.angle_to(d["rot_far"] as Quaternion),
-		"to_bone": in_hand.inverse(),
 	}
 
 
@@ -214,27 +204,46 @@ func _track_of(clip: Animation, bone_name: String, kind: int) -> int:
 
 
 ## The normal shared by a set of rotation axes, i.e. the direction none of them
-## turn about. Zero if they do not span a plane, which is a rig whose stick only
-## ever leans one way. Its sign does not matter: a lean is built from two crosses
+## turn about. Taken over every pair rather than one chosen pair, so a stray key
+## - a touch of twist along the shaft, a barely-deflected frame - cannot decide
+## the whole plane. Zero if they do not span one, which is a rig whose stick only
+## ever leans one way. The sign does not matter: a lean is built from two crosses
 ## with the shaft, and flipping it cancels.
 func _plane_normal(axes: Array[Vector3]) -> Vector3:
-	if axes.size() < 2:
+	var normal := Vector3.ZERO
+	for i in axes.size():
+		for j in range(i + 1, axes.size()):
+			var pair := axes[i].cross(axes[j])
+			if pair.length() < 0.1:
+				continue
+			pair = pair.normalized()
+			normal += pair if normal == Vector3.ZERO or normal.dot(pair) >= 0.0 else -pair
+	if normal.length() < 0.001:
 		return Vector3.ZERO
-	var widest := 0.0
-	var pair := Vector3.ZERO
-	for a: Vector3 in axes:
-		var spread: float = 1.0 - absf(axes[0].dot(a))
-		if spread > widest:
-			widest = spread
-			pair = a
-	if widest < 0.02:
-		return Vector3.ZERO
-	return axes[0].cross(pair).normalized()
+	return normal.normalized()
 
 
-## Lean the stick the way it is pushed, as far as it is pushed. Turning about
-## `shaft cross lean` moves the tip along `lean`, so the direction is solved
-## rather than searched for.
+## The frame the clip's stick rotations are written in, as the player sees it -
+## measured now rather than when the model loaded. A model arrives while the
+## controllers are still asleep, so at that point there is no pose to read and
+## the art still hangs off a grip anchor sitting at identity; a mapping baked
+## then sends the stick anywhere but where it was pushed.
+func _stick_frame() -> Basis:
+	var bone: int = _stick["bone"]
+	var parent := _skeleton.get_bone_parent(bone)
+	var below := _skeleton.get_bone_global_pose(parent) if parent >= 0 else Transform3D.IDENTITY
+	var in_hand := (global_transform.affine_inverse() * _skeleton.global_transform
+		* below).basis * Basis(_stick["rest"] as Quaternion)
+	return in_hand.inverse()
+
+
+## Lean the stick the way it is pushed, as far as it is pushed.
+##
+## A stick leans in the plane of its own face, which is not the plane the push
+## arrives in: the face is tilted out of the controller by however the hardware
+## sits in the hand. So "away from me" means the hand's forward direction laid
+## down onto that face, and "right" is the face's own right, taken so it agrees
+## with the hand's. Turning about `shaft x lean` then moves the tip along `lean`.
 func _actuate_stick(value: Vector2) -> void:
 	if _stick.is_empty():
 		_actuate(ACTION_BONES["primary"], minf(1.0, value.length()))
@@ -245,17 +254,29 @@ func _actuate_stick(value: Vector2) -> void:
 		_skeleton.set_bone_pose_rotation(_stick["bone"], rest)
 		return
 
-	# A push is read in the controller's own frame: +X to the right of the hand,
-	# -Z away from it.
-	var push := Vector3(value.x, 0.0, -value.y).normalized()
 	var shaft: Vector3 = _stick["shaft"]
-	var lean: Vector3 = (_stick["to_bone"] as Basis) * push
-	lean -= shaft * lean.dot(shaft)
-	if lean.length() < 0.0001:
-		return
-	var axis := shaft.cross(lean.normalized()).normalized()
+	var frame := _stick_frame()
+	var forward := _on_face(frame * Vector3.FORWARD, shaft)
+	if forward == Vector3.ZERO:
+		# Looking straight down the shaft there is no "away"; the hand's own up
+		# still crosses the face.
+		forward = _on_face(frame * Vector3.UP, shaft)
+		if forward == Vector3.ZERO:
+			return
+	var side := shaft.cross(forward).normalized()
+	if side.dot(frame * Vector3.RIGHT) < 0.0:
+		side = -side
+
+	var lean := (side * value.x + forward * value.y).normalized()
 	_skeleton.set_bone_pose_rotation(_stick["bone"],
-		rest * Quaternion(axis, _stick["lean"] * amount))
+		rest * Quaternion(shaft.cross(lean).normalized(), _stick["lean"] * amount))
+
+
+## A direction laid down onto the stick's face, i.e. with the part pointing along
+## the shaft taken out of it. Zero if there is nothing left to lay down.
+func _on_face(dir: Vector3, shaft: Vector3) -> Vector3:
+	var flat := dir - shaft * dir.dot(shaft)
+	return flat.normalized() if flat.length() > 0.05 else Vector3.ZERO
 
 
 func _setup_input() -> void:
