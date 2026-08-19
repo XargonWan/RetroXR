@@ -313,12 +313,14 @@ func _process_poke() -> void:
 		return
 	_update_poke_rearm()
 	if _poke_ctrl != null:
+		var tip := PokeTip.tip_of(_poke_ctrl)
+		var previous: Vector3 = _poke_prev_tips.get(_poke_ctrl.get_instance_id(), tip)
+		if _qualified_poke(_poke_ctrl):
+			_update_active_poke_face(tip, tip - previous)
 		if not _qualified_poke(_poke_ctrl) \
-				or not _tip_on_face(PokeTip.tip_of(_poke_ctrl), _poke_shape, _poke_face,
-					poke_release_margin):
+				or not _tip_on_face(tip, _poke_shape, _poke_face, poke_release_margin):
 			_end_poke()
 		else:
-			var tip := PokeTip.tip_of(_poke_ctrl)
 			_claim_poke_face(_poke_ctrl, tip, _poke_shape, _poke_face,
 				PokeTip.CONTACT_ENGAGED)
 			_on_poke_motion(tip, _poke_mode)
@@ -351,18 +353,42 @@ func _begin_poke(ctrl: XRController3D, shape: CollisionShape3D,
 	_poke_ctrl = ctrl
 	_poke_shape = shape
 	_poke_face = face
-	if (_shape_faces(shape, &"poke_torque_faces", poke_torque_faces) & face) != 0:
-		_poke_mode = POKE_TORQUE
-	else:
-		_poke_mode = POKE_OPEN \
-			if (_shape_faces(shape, &"poke_open_faces", poke_open_faces) & face) != 0 \
-			else POKE_CLOSE
+	_poke_mode = _poke_mode_for_face(shape, face)
 	_begin_track(tip)
 	_on_poke_started(tip, _face_world_normal(face, shape), _poke_mode)
 	_state_log("poke %s -> %s at %.2f deg" % [
 		_face_name(face), _poke_mode_name(_poke_mode),
 		rad_to_deg(target.rotation.x) if target != null else 0.0])
 	Haptics.click(ctrl, true, HAPTIC_POKE_KEY)
+
+
+## The initial face is only a seam-safe starting choice, not a gesture-long lock.
+## Once the fingertip is clearly on another authored surface (or its motion resolves
+## an ambiguous seam), transfer the poke and its open/close intent without jumping.
+func _update_active_poke_face(tip: Vector3, approach: Vector3) -> void:
+	var contact := _poke_contact_at(tip, poke_face_margin, -1, approach)
+	if contact.is_empty():
+		return
+	var shape := contact["shape"] as CollisionShape3D
+	var face: int = contact["face"]
+	if shape == _poke_shape and face == _poke_face:
+		return
+	_poke_shape = shape
+	_poke_face = face
+	_poke_mode = _poke_mode_for_face(shape, face)
+	_begin_track(tip)
+	_on_poke_started(tip, _face_world_normal(face, shape), _poke_mode)
+	_state_log("poke crossed to %s -> %s at %.2f deg" % [
+		_face_name(face), _poke_mode_name(_poke_mode),
+		rad_to_deg(target.rotation.x) if target != null else 0.0])
+
+
+func _poke_mode_for_face(shape: CollisionShape3D, face: int) -> int:
+	if (_shape_faces(shape, &"poke_torque_faces", poke_torque_faces) & face) != 0:
+		return POKE_TORQUE
+	return POKE_OPEN \
+		if (_shape_faces(shape, &"poke_open_faces", poke_open_faces) & face) != 0 \
+		else POKE_CLOSE
 
 
 func _end_poke(skip_release: bool = false) -> void:

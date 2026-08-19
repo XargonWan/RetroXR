@@ -257,6 +257,28 @@ func _group_tray() -> void:
 		"tray/downward approach selects +Y at the front/top seam")
 	_check(flap._face_at_tip(lid_top, 0.001) == VRHinge.FACE_Y_POS,
 		"tray/the lid's top face pokes it closed")
+	var face_follow_ctrl := XRController3D.new()
+	add_child(face_follow_ctrl)
+	flap._poke_ctrl = face_follow_ctrl
+	flap._poke_shape = lid_poke_front
+	flap._poke_face = VRHinge.FACE_Z_POS
+	flap._poke_mode = VRHinge.POKE_TORQUE
+	flap._begin_track(lid_top_front_seam)
+	flap._update_active_poke_face(lid_top, top_approach)
+	_check(flap._poke_shape == lid_poke_top
+		and flap._poke_face == VRHinge.FACE_Y_POS
+		and flap._poke_mode == VRHinge.POKE_CLOSE,
+		"tray/an active lid poke follows onto the top face and changes to close")
+	flap._update_active_poke_face(lid_front, front_approach)
+	_check(flap._poke_shape == lid_poke_front
+		and flap._poke_face == VRHinge.FACE_Z_POS
+		and flap._poke_mode == VRHinge.POKE_TORQUE,
+		"tray/an active lid poke follows back onto the front face and changes to torque")
+	flap._poke_ctrl = null
+	flap._poke_shape = null
+	flap._poke_face = 0
+	flap._poke_mode = 0
+	face_follow_ctrl.queue_free()
 	var top_underside: Vector3 = lid_poke_top.global_transform \
 		* Vector3(0, -top_half.y, 0)
 	_check(flap._face_at_tip(top_underside, 0.001) == VRHinge.FACE_Y_NEG
@@ -445,10 +467,13 @@ func _group_tray() -> void:
 		"tray/the first latch press visibly overtravels below home")
 	_check(tray_hinge._poke_ctrl == held_latch_finger and tray_hinge._poke_consumed,
 		"tray/the caught latch keeps the same poke captured")
-	var before_rebound: float = rad_to_deg(model._tray_pivot.rotation.x)
-	tray_hinge._step_latch_rebound(0.02)
-	_check(rad_to_deg(model._tray_pivot.rotation.x) > before_rebound,
-		"tray/the latch rebounds while that poke remains captured")
+	var held_latch_angle: float = rad_to_deg(model._tray_pivot.rotation.x)
+	tray_hinge._on_poke_motion(latch_arc, VRHinge.POKE_CLOSE)
+	_check(is_equal_approx(rad_to_deg(model._tray_pivot.rotation.x), held_latch_angle),
+		"tray/the caught latch does not rebound through a stationary fingertip")
+	tray_hinge._on_poke_motion(home_arc, VRHinge.POKE_CLOSE)
+	_check(rad_to_deg(model._tray_pivot.rotation.x) > held_latch_angle,
+		"tray/the caught latch follows the fingertip upward")
 	# The test has no tracked hand to leave the face, so simulate that physical exit.
 	tray_hinge._poke_ctrl = null
 	tray_hinge._on_poke_ended()
@@ -464,6 +489,7 @@ func _group_tray() -> void:
 	# once it trips, the spring owns the carriage all the way back up.
 	tray_top = tray_shape.global_transform * Vector3(0, tray_half.y, 0)
 	var poke_normal: Vector3 = tray_hinge._face_world_normal(VRHinge.FACE_Y_POS)
+	tray_hinge._begin_track(tray_top)
 	tray_hinge._on_poke_started(tray_top, poke_normal, VRHinge.POKE_CLOSE)
 	var held_release_finger := XRController3D.new()
 	add_child(held_release_finger)
@@ -476,10 +502,15 @@ func _group_tray() -> void:
 		"tray/the release press visibly overtravels below home")
 	_check(tray_hinge._poke_ctrl == held_release_finger and tray_hinge._poke_consumed,
 		"tray/the released latch follows the poke instead of dropping it")
-	var before_spring: float = rad_to_deg(model._tray_pivot.rotation.x)
-	tray_hinge._step_spring_open(0.02)
-	_check(rad_to_deg(model._tray_pivot.rotation.x) > before_spring,
-		"tray/the spring moves while the release poke remains captured")
+	var held_release_angle: float = rad_to_deg(model._tray_pivot.rotation.x)
+	var release_tip: Vector3 = tray_top \
+		- poke_normal * (tray_hinge.push_push_unlatch_depth + 0.001)
+	tray_hinge._on_poke_motion(release_tip, VRHinge.POKE_CLOSE)
+	_check(is_equal_approx(rad_to_deg(model._tray_pivot.rotation.x), held_release_angle),
+		"tray/the released latch does not spring through a stationary fingertip")
+	tray_hinge._on_poke_motion(tray_top, VRHinge.POKE_CLOSE)
+	_check(rad_to_deg(model._tray_pivot.rotation.x) > held_release_angle,
+		"tray/the released latch follows the fingertip upward")
 	tray_hinge._poke_ctrl = null
 	tray_hinge._on_poke_ended()
 	tray_hinge._skip_next_release = false

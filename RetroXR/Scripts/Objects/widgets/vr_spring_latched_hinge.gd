@@ -117,14 +117,6 @@ func _can_engage() -> bool:
 
 func _process(delta: float) -> void:
 	super._process(delta)
-	# A state-changing poke stays captured until the fingertip actually leaves.
-	# The mechanism keeps moving under that captured finger, but the consumed poke
-	# cannot trigger the next push-push phase.
-	if _poke_consumed and _poke_ctrl != null:
-		if _latched_closed:
-			_step_latch_rebound(delta)
-		else:
-			_step_spring_open(delta)
 	if push_push and _latched_closed and (_trigger_ctrl != null or _pointer_held):
 		open()
 
@@ -147,6 +139,7 @@ func _on_poke_started(tip: Vector3, outward_normal: Vector3,
 
 func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 	if _poke_consumed:
+		_follow_consumed_poke(world_pos)
 		return
 	if _poke_latching:
 		if target == null:
@@ -165,6 +158,9 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 			if is_instance_valid(_poke_ctrl) and _poke_ctrl.get_is_active():
 				Haptics.pulse(_poke_ctrl, 0.3, 10, &"push_push_latch")
 			latch_closed(true, true)
+			# Re-anchor at the catch point. From here the locked cradle follows the
+			# fingertip back toward its rest angle instead of rebounding through it.
+			_begin_track(world_pos)
 		return
 	if not _poke_overtravel:
 		super._on_poke_motion(world_pos, mode)
@@ -179,8 +175,25 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 		_poke_overtravel = false
 		_poke_consumed = true
 		open()
-		# Keep the poke captured while the spring moves under the finger. It ends only
-		# when the fingertip physically leaves the moving top face.
+		# Re-anchor at the release point. The spring-loaded cradle remains constrained
+		# by the fingertip until that fingertip physically leaves the moving top face.
+		_begin_track(world_pos)
+
+
+## A latch transition consumes the gesture so it cannot immediately trigger the
+## opposite state, but it does not consume the physical contact. Keep the cradle
+## on the fingertip: stationary finger means stationary cradle; retreating finger
+## lets it rise. Once contact ends, idle spring/rebound motion finishes the travel.
+func _follow_consumed_poke(world_pos: Vector3) -> void:
+	if target == null:
+		return
+	var wanted := _poke_wanted_deg(world_pos, false)
+	if is_nan(wanted):
+		return
+	var bottom := min_deg - push_push_overtravel_deg
+	wanted = clampf(wanted, bottom, min_deg if _latched_closed else max_deg)
+	target.rotation.x = deg_to_rad(wanted)
+	rotation_changed.emit(wanted)
 
 
 func _on_poke_ended() -> void:
