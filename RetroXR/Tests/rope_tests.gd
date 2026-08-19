@@ -1009,6 +1009,30 @@ func _group_anchors() -> void:
 	_ok("anchors/the freed cord drapes over the cabinet", on_cab)
 	await _drop_case()
 
+	# A legacy save has no particle layout: both anchors appear in their restored
+	# positions before the rope is built, so its first lay is the direct line
+	# between them. With one socket on a tabletop and the other below it that line
+	# crosses the slab. Repair must find a route around the inflated solid as one
+	# coherent span; independently ejecting buried particles leaves neighbours on
+	# opposite faces and creates the collision/stretch jitter seen in 00764aee.
+	base = _new_case()
+	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))
+	var restore_table_c := base + Vector3(0, 0.70, 0)
+	var restore_table_s := Vector3(1.2, 0.10, 1.0)
+	_box(restore_table_c, restore_table_s)
+	rope = _rope_between(base + Vector3(-0.20, 0.76, 0),
+		base + Vector3(0.20, 0.06, 0), 50, 0.036)
+	await _settle(1800)
+	var restore_wedged := _deepest_in_box(restore_table_c, restore_table_s)
+	var restore_stretch := _lead_stretch(rope)
+	_ok("anchors/a restored lay through a tabletop repairs and sleeps",
+		rope.is_sleeping(), "sleeping=%s" % str(rope.is_sleeping()))
+	_ok("anchors/a repaired restored lay leaves the tabletop",
+		restore_wedged < 0.01, "deepest %.1f mm inside" % (restore_wedged * 1000.0))
+	_ok("anchors/a repaired restored lay does not remain severely stretched",
+		restore_stretch < 1.5, "worst segment %.2fx rest" % restore_stretch)
+	await _drop_case()
+
 	# set_rope_length is the one setter that rewrites the rest table. Halving it
 	# must halve how far the free end can get — a cached rest length once made
 	# this silently do nothing.

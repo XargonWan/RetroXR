@@ -14,6 +14,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <limits>
+#include <queue>
 
 using namespace godot;
 
@@ -1242,7 +1245,8 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
 // through a concave trimesh stays a known gap.
 void VerletRope::DepenetrateLay()
 {
-    if (m_surface_collision_mask == 0 || m_point_query.is_null() || m_ray_query.is_null())
+    if (m_surface_collision_mask == 0 || m_point_query.is_null() ||
+        m_ray_query.is_null() || m_shape_query.is_null())
         return;
     Ref<World3D> world = get_world_3d();
     if (world.is_null())
@@ -1250,6 +1254,236 @@ void VerletRope::DepenetrateLay()
     PhysicsDirectSpaceState3D *space_state = world->get_direct_space_state();
     if (space_state == nullptr)
         return;
+
+    // A restore can place the whole direct anchor-to-anchor lay through a
+    // tabletop. Ejecting each buried particle independently is not sufficient:
+    // neighbours choose opposite faces, leaving a segment threaded through the
+    // slab and the stretch/contact solvers fight forever. Before the pointwise
+    // fallback below, route a buried trunk coherently through a small temporary
+    // occupancy grid around its anchors. This is intentionally a one-shot lay
+    // repair, not a per-frame pathfinder.
+    const auto repair_chain = [&](int first, int point_count, double rest_length) -> bool {
+        if (point_count < 2)
+            return false;
+        bool buried = false;
+        for (int k = 1; k < point_count - 1; ++k)
+        {
+            m_point_query->set_position(m_points[first + k]);
+            if (!space_state->intersect_point(m_point_query, 1).is_empty())
+            {
+                buried = true;
+                break;
+            }
+        }
+        // A thin slab can sit wholly between adjacent particle centres, so no
+        // point is contained even though the rendered cable passes through it.
+        // Opposing hits from the two directions distinguish a true entry/exit
+        // crossing from a legitimate graze over a convex edge.
+        if (!buried)
+        {
+            for (int k = 0; k < point_count - 1; ++k)
+            {
+                const Vector3 a = m_points[first + k];
+                const Vector3 b = m_points[first + k + 1];
+                m_ray_query->set_from(a);
+                m_ray_query->set_to(b);
+                const Dictionary entry = space_state->intersect_ray(m_ray_query);
+                if (entry.is_empty())
+                    continue;
+                m_ray_query->set_from(b);
+                m_ray_query->set_to(a);
+                const Dictionary exit = space_state->intersect_ray(m_ray_query);
+                if (exit.is_empty())
+                    continue;
+                const Vector3 entry_n = entry["normal"];
+                const Vector3 exit_n = exit["normal"];
+                if (entry_n != Vector3() && exit_n != Vector3() && entry_n.dot(exit_n) < -0.7)
+                {
+                    buried = true;
+                    break;
+                }
+            }
+        }
+        if (!buried)
+            return false;
+
+        const Vector3 start = m_points[first];
+        const Vector3 goal = m_points[first + point_count - 1];
+        const double direct = start.distance_to(goal);
+        const double slack = std::fmax(0.0, rest_length - direct);
+        // The obstacle's nearest edge can be much farther away than the raw
+        // cable slack (a controller near the middle of a wide tabletop is the
+        // common case), so the search needs a real furniture-sized halo.
+        double margin = CLAMP(slack * 0.6 + 0.40, 0.45, 0.90);
+        double cell = CLAMP(rest_length / static_cast<double>(point_count - 1) * 2.0,
+                            0.055, 0.10);
+        Vector3 lo(std::fmin(start.x, goal.x) - margin,
+                   std::fmin(start.y, goal.y) - margin,
+                   std::fmin(start.z, goal.z) - margin);
+        Vector3 hi(std::fmax(start.x, goal.x) + margin,
+                   std::fmax(start.y, goal.y) + margin,
+                   std::fmax(start.z, goal.z) + margin);
+
+        auto dims_for = [&](double c) {
+            return Vector3i(static_cast<int>(std::ceil((hi.x - lo.x) / c)) + 1,
+                            static_cast<int>(std::ceil((hi.y - lo.y) / c)) + 1,
+                            static_cast<int>(std::ceil((hi.z - lo.z) / c)) + 1);
+        };
+        Vector3i dims = dims_for(cell);
+        constexpr int MAX_NODES = 120000;
+        while (static_cast<int64_t>(dims.x) * dims.y * dims.z > MAX_NODES && cell < 0.16)
+        {
+            cell *= 1.2;
+            dims = dims_for(cell);
+        }
+        const int64_t node_count_64 = static_cast<int64_t>(dims.x) * dims.y * dims.z;
+        if (dims.x < 2 || dims.y < 2 || dims.z < 2 || node_count_64 > MAX_NODES)
+            return false;
+        const int node_count = static_cast<int>(node_count_64);
+
+        const auto clamp_coord = [&](const Vector3 &p) {
+            return Vector3i(CLAMP(static_cast<int>(std::lround((p.x - lo.x) / cell)), 0, dims.x - 1),
+                            CLAMP(static_cast<int>(std::lround((p.y - lo.y) / cell)), 0, dims.y - 1),
+                            CLAMP(static_cast<int>(std::lround((p.z - lo.z) / cell)), 0, dims.z - 1));
+        };
+        const auto index_of = [&](const Vector3i &c) {
+            return (c.z * dims.y + c.y) * dims.x + c.x;
+        };
+        const auto coord_of = [&](int index) {
+            const int x = index % dims.x;
+            index /= dims.x;
+            const int y = index % dims.y;
+            const int z = index / dims.y;
+            return Vector3i(x, y, z);
+        };
+        const Vector3i start_c = clamp_coord(start);
+        const Vector3i goal_c = clamp_coord(goal);
+        const int start_i = index_of(start_c);
+        const int goal_i = index_of(goal_c);
+        const auto position_of = [&](int index) {
+            if (index == start_i)
+                return start;
+            if (index == goal_i)
+                return goal;
+            const Vector3i c = coord_of(index);
+            return lo + Vector3(c.x * cell, c.y * cell, c.z * cell);
+        };
+
+        std::vector<int8_t> occupied(node_count, -1);
+        const auto is_occupied = [&](int index) {
+            if (index == start_i || index == goal_i)
+                return false;
+            if (occupied[index] >= 0)
+                return occupied[index] != 0;
+            m_shape_query->set_motion(Vector3());
+            m_shape_query->set_transform(Transform3D(Basis(), position_of(index)));
+            const bool hit = !space_state->intersect_shape(m_shape_query, 1).is_empty();
+            occupied[index] = hit ? 1 : 0;
+            return hit;
+        };
+
+        const double inf = std::numeric_limits<double>::infinity();
+        std::vector<double> cost(node_count, inf);
+        std::vector<int> parent(node_count, -1);
+        using OpenNode = std::pair<double, int>;
+        std::priority_queue<OpenNode, std::vector<OpenNode>, std::greater<OpenNode>> open;
+        cost[start_i] = 0.0;
+        open.push({start.distance_to(goal), start_i});
+        int expanded = 0;
+        while (!open.empty() && expanded++ < MAX_NODES)
+        {
+            const int current = open.top().second;
+            open.pop();
+            if (current == goal_i)
+                break;
+            const Vector3i cc = coord_of(current);
+            for (int dz = -1; dz <= 1; ++dz)
+            for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+            {
+                if (dx == 0 && dy == 0 && dz == 0)
+                    continue;
+                const Vector3i step(dx, dy, dz);
+                const Vector3i nc = cc + step;
+                if (nc.x < 0 || nc.y < 0 || nc.z < 0 ||
+                    nc.x >= dims.x || nc.y >= dims.y || nc.z >= dims.z)
+                    continue;
+                const int next = index_of(nc);
+                if (is_occupied(next))
+                    continue;
+                const Vector3 current_pos = position_of(current);
+                const Vector3 next_pos = position_of(next);
+                // An attachment point may legitimately begin just inside the
+                // supporting tabletop even though its host body is excluded.
+                // A shape cast starting overlapped reports zero safe motion in
+                // every direction and strands the A* start. Let the first/last
+                // edge escape; the neighbouring cell itself must still be free.
+                if (current != start_i && next != goal_i)
+                {
+                    m_shape_query->set_transform(Transform3D(Basis(), current_pos));
+                    m_shape_query->set_motion(next_pos - current_pos);
+                    const PackedFloat32Array sweep = space_state->cast_motion(m_shape_query);
+                    if (sweep.size() >= 1 && sweep[0] < 0.999f)
+                        continue;
+                }
+                const double next_cost = cost[current] + current_pos.distance_to(next_pos);
+                if (next_cost >= cost[next])
+                    continue;
+                cost[next] = next_cost;
+                parent[next] = current;
+                open.push({next_cost + position_of(next).distance_to(goal), next});
+            }
+        }
+        m_shape_query->set_motion(Vector3());
+        if (start_i != goal_i && parent[goal_i] < 0)
+            return false;
+
+        std::vector<Vector3> path;
+        for (int at = goal_i; at >= 0; at = parent[at])
+        {
+            path.push_back(position_of(at));
+            if (at == start_i)
+                break;
+        }
+        if (path.size() < 2 || path.back().distance_squared_to(start) > 1e-8)
+            return false;
+        std::reverse(path.begin(), path.end());
+
+        std::vector<double> cumulative(path.size(), 0.0);
+        for (size_t i = 1; i < path.size(); ++i)
+            cumulative[i] = cumulative[i - 1] + path[i - 1].distance_to(path[i]);
+        const double path_length = cumulative.back();
+        // A restored placement can be slightly beyond the cable's true reach.
+        // Keep a coherent route up to a bounded 1.5x strain; the ordinary
+        // tension/coupling path can then move a free endpoint. Rejecting it here
+        // falls back to the much worse state of a short segment threaded through
+        // the obstacle.
+        if (path_length < 1e-6 || path_length > rest_length * 1.5)
+            return false;
+        for (int k = 0; k < point_count; ++k)
+        {
+            const double target = path_length * static_cast<double>(k) /
+                                  static_cast<double>(point_count - 1);
+            size_t edge = 1;
+            while (edge < cumulative.size() && cumulative[edge] < target)
+                ++edge;
+            if (edge >= cumulative.size())
+                edge = cumulative.size() - 1;
+            const double span = cumulative[edge] - cumulative[edge - 1];
+            const double t = span > 1e-9 ? (target - cumulative[edge - 1]) / span : 0.0;
+            m_points[first + k] = path[edge - 1].lerp(path[edge], t);
+            m_prev_points[first + k] = m_points[first + k];
+        }
+        return true;
+    };
+
+    const bool trunk_repaired = repair_chain(0, TrunkCount(), RestLength());
+    if (trunk_repaired)
+    {
+        std::fill(m_c_flags.begin(), m_c_flags.end(), 0);
+        std::fill(m_mid_contact.begin(), m_mid_contact.end(), 0);
+        std::fill(m_stuck_passes.begin(), m_stuck_passes.end(), 0);
+    }
     // Deeper than half a PROBE inside anything and the lay was hopeless anyway.
     constexpr double PROBE = 0.6;
     static const Vector3 DIRS[6] = {Vector3(1, 0, 0),  Vector3(-1, 0, 0), Vector3(0, 1, 0),
