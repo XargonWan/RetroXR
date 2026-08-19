@@ -229,6 +229,11 @@ func _group_tray() -> void:
 		* Vector3(0, 0, front_half.z)
 	var lid_front_bottom_seam: Vector3 = lid_poke_front.global_transform \
 		* Vector3(0, -front_half.y, front_half.z)
+	var top_front_corner: Vector3 = lid_poke_top.global_transform \
+		* Vector3(0, top_half.y, top_half.z)
+	var front_top_corner: Vector3 = lid_poke_front.global_transform \
+		* Vector3(0, front_half.y, front_half.z)
+	var lid_top_front_seam := top_front_corner.lerp(front_top_corner, 0.5)
 	_check(flap._face_at_tip(lid_bottom, 0.001) == VRHinge.FACE_Y_NEG
 		and flap._face_at_tip(lid_front, 0.001) == VRHinge.FACE_Z_POS,
 		"tray/the front plane's thin bottom and broad outward faces accept pokes")
@@ -237,8 +242,19 @@ func _group_tray() -> void:
 		and (flap._shape_faces(lid_poke_front, &"poke_torque_faces", 0)
 			& VRHinge.FACE_Z_POS) != 0,
 		"tray/the front bottom opens while its outward face follows torque")
-	_check(flap._face_at_tip(lid_front_bottom_seam, 0.001) == VRHinge.FACE_Z_POS,
-		"tray/the broad front face wins a tie with its thin bottom edge")
+	var front_approach: Vector3 = -flap._face_world_normal(
+		VRHinge.FACE_Z_POS, lid_poke_front) * 0.005
+	var top_approach: Vector3 = -flap._face_world_normal(
+		VRHinge.FACE_Y_POS, lid_poke_top) * 0.005
+	_check(flap._face_at_tip(lid_front_bottom_seam, 0.001, -1, front_approach)
+		== VRHinge.FACE_Z_POS,
+		"tray/frontward intent wins the front/bottom seam")
+	_check(flap._face_at_tip(lid_top_front_seam, 0.002, -1, front_approach)
+		== VRHinge.FACE_Z_POS,
+		"tray/frontward approach selects +Z at the front/top seam")
+	_check(flap._face_at_tip(lid_top_front_seam, 0.002, -1, top_approach)
+		== VRHinge.FACE_Y_POS,
+		"tray/downward approach selects +Y at the front/top seam")
 	_check(flap._face_at_tip(lid_top, 0.001) == VRHinge.FACE_Y_POS,
 		"tray/the lid's top face pokes it closed")
 	var top_underside: Vector3 = lid_poke_top.global_transform \
@@ -419,11 +435,25 @@ func _group_tray() -> void:
 	var latch_arc: Vector3 = tray_origin + Basis(tray_axis, deg_to_rad(
 		-(RetroSystemModelNES.TRAY_UP_DEG + tray_hinge.push_push_overtravel_deg + 0.5))) \
 		* (tray_top - tray_origin)
+	var held_latch_finger := XRController3D.new()
+	add_child(held_latch_finger)
+	tray_hinge._poke_ctrl = held_latch_finger
 	tray_hinge._on_poke_motion(latch_arc, VRHinge.POKE_CLOSE)
 	_check(tray_hinge.is_latched_closed(),
 		"tray/a top poke crossing below home catches the latch")
 	_check(rad_to_deg(model._tray_pivot.rotation.x) < -0.5,
 		"tray/the first latch press visibly overtravels below home")
+	_check(tray_hinge._poke_ctrl == held_latch_finger and tray_hinge._poke_consumed,
+		"tray/the caught latch keeps the same poke captured")
+	var before_rebound: float = rad_to_deg(model._tray_pivot.rotation.x)
+	tray_hinge._step_latch_rebound(0.02)
+	_check(rad_to_deg(model._tray_pivot.rotation.x) > before_rebound,
+		"tray/the latch rebounds while that poke remains captured")
+	# The test has no tracked hand to leave the face, so simulate that physical exit.
+	tray_hinge._poke_ctrl = null
+	tray_hinge._on_poke_ended()
+	tray_hinge._skip_next_release = false
+	held_latch_finger.queue_free()
 	await _settle_tray(sys)
 	_check(absf(rad_to_deg(model._tray_pivot.rotation.x)) < 0.1,
 		"tray/the caught latch rebounds up to its locked rest angle")
@@ -435,23 +465,29 @@ func _group_tray() -> void:
 	tray_top = tray_shape.global_transform * Vector3(0, tray_half.y, 0)
 	var poke_normal: Vector3 = tray_hinge._face_world_normal(VRHinge.FACE_Y_POS)
 	tray_hinge._on_poke_started(tray_top, poke_normal, VRHinge.POKE_CLOSE)
+	var held_release_finger := XRController3D.new()
+	add_child(held_release_finger)
+	tray_hinge._poke_ctrl = held_release_finger
 	tray_hinge._on_poke_motion(tray_top
 		- poke_normal * (tray_hinge.push_push_unlatch_depth + 0.001), VRHinge.POKE_CLOSE)
 	_check(not tray_hinge.is_latched_closed(),
 		"tray/a second top poke releases the push-push latch")
 	_check(rad_to_deg(model._tray_pivot.rotation.x) < -0.5,
 		"tray/the release press visibly overtravels below home")
+	_check(tray_hinge._poke_ctrl == held_release_finger and tray_hinge._poke_consumed,
+		"tray/the released latch follows the poke instead of dropping it")
+	var before_spring: float = rad_to_deg(model._tray_pivot.rotation.x)
+	tray_hinge._step_spring_open(0.02)
+	_check(rad_to_deg(model._tray_pivot.rotation.x) > before_spring,
+		"tray/the spring moves while the release poke remains captured")
+	tray_hinge._poke_ctrl = null
+	tray_hinge._on_poke_ended()
+	tray_hinge._skip_next_release = false
+	held_release_finger.queue_free()
 	model._set_tray_down(false)
 	await _settle_tray(sys)
 	_check(absf(rad_to_deg(model._tray_pivot.rotation.x) - RetroSystemModelNES.TRAY_UP_DEG) < 0.5,
 		"tray/the released poke springs the cradle all the way up")
-	var held_finger := XRController3D.new()
-	add_child(held_finger)
-	tray_hinge._require_poke_exit(held_finger)
-	_check(not tray_hinge._poke_can_begin(held_finger),
-		"tray/a state-changing poke cannot double-tap before the finger exits")
-	held_finger.queue_free()
-
 	# Shut the bay for the move: a cart let go inside its own grab sphere is caught
 	# straight back by it, which is the room's behaviour and not what this asks.
 	slot.enabled = false

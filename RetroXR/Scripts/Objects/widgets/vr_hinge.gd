@@ -58,6 +58,8 @@ const HAPTIC_POKE_KEY := &"vr_hinge_poke"
 ## Faces within this distance are effectively the same seam. Prefer the larger
 ## physical face there, so a broad front press does not become a thin-edge press.
 const POKE_FACE_TIE_MARGIN := 0.002
+const POKE_APPROACH_MIN := 0.0001
+const POKE_APPROACH_DOT_EPS := 0.05
 ## Slack around the grab box for the grip test, in metres. The grip is deliberately
 ## judged on the BOX and not on engage_radius: the sphere is sized to make the
 ## trigger easy to hit and on the NES it swallows most of the console's front, which
@@ -132,6 +134,7 @@ var _poke_mode: int = 0
 var _skip_next_release := false
 var _poke_shapes_cache: Array[CollisionShape3D] = []
 var _poke_rearm_required: Dictionary = {}
+var _poke_prev_tips: Dictionary = {}
 
 
 func _ready() -> void:
@@ -166,6 +169,7 @@ func _process(delta: float) -> void:
 			_rearmed_grip[ctrl.get_instance_id()] = true
 	_sync_pickup_mutes()
 	_process_poke()
+	_remember_poke_tips()
 	# VR: button-latched engagement. A latched controller drives the hinge until
 	# it lets the button go — however far the hand roams from the grab box.
 	if _trigger_ctrl != null:
@@ -327,7 +331,8 @@ func _process_poke() -> void:
 		if not _poke_can_begin(ctrl):
 			continue
 		var tip := PokeTip.tip_of(ctrl)
-		var contact := _poke_contact_at(tip, poke_face_margin)
+		var previous: Vector3 = _poke_prev_tips.get(ctrl.get_instance_id(), tip)
+		var contact := _poke_contact_at(tip, poke_face_margin, -1, tip - previous)
 		if contact.is_empty():
 			continue
 		var shape := contact["shape"] as CollisionShape3D
@@ -378,40 +383,44 @@ func _end_poke(skip_release: bool = false) -> void:
 	Haptics.click(old, false, HAPTIC_POKE_KEY)
 
 
-func _face_at_tip(tip: Vector3, margin: float, allowed_faces: int = -1) -> int:
-	var contact := _poke_contact_at(tip, margin, allowed_faces)
+func _face_at_tip(tip: Vector3, margin: float, allowed_faces: int = -1,
+		approach: Vector3 = Vector3.ZERO) -> int:
+	var contact := _poke_contact_at(tip, margin, allowed_faces, approach)
 	return 0 if contact.is_empty() else int(contact["face"])
 
 
 func _poke_contact_at(tip: Vector3, margin: float,
-		allowed_faces: int = -1) -> Dictionary:
+		allowed_faces: int = -1, approach: Vector3 = Vector3.ZERO) -> Dictionary:
 	var best: Dictionary = {}
 	var best_d := INF
 	var best_area := -INF
 	var best_external := false
+	var best_alignment := -INF
+	var has_approach := approach.length() >= POKE_APPROACH_MIN
 	for cs in _poke_shapes():
 		var shape_allowed := allowed_faces if allowed_faces >= 0 else (
 			_shape_faces(cs, &"poke_open_faces", poke_open_faces)
 			| _shape_faces(cs, &"poke_close_faces", poke_close_faces)
 			| _shape_faces(cs, &"poke_torque_faces", poke_torque_faces))
-		var hit := _face_on_shape(tip, cs, margin, shape_allowed)
+		var hit := _face_on_shape(tip, cs, margin, shape_allowed, approach)
 		if hit.is_empty():
 			continue
 		var d: float = hit["distance"]
 		var area: float = hit["area"]
 		var external: bool = hit["external"]
-		if best.is_empty() or (external and not best_external) \
-				or external == best_external and (d < best_d - POKE_FACE_TIE_MARGIN \
-				or absf(d - best_d) <= POKE_FACE_TIE_MARGIN and area > best_area):
+		var alignment: float = hit["alignment"]
+		if best.is_empty() or _poke_candidate_better(external, d, alignment, area,
+				best_external, best_d, best_alignment, best_area, has_approach):
 			best = hit
 			best_d = d
 			best_area = area
 			best_external = external
+			best_alignment = alignment
 	return best
 
 
 func _face_on_shape(tip: Vector3, cs: CollisionShape3D, margin: float,
-		allowed_faces: int = -1) -> Dictionary:
+		allowed_faces: int = -1, approach: Vector3 = Vector3.ZERO) -> Dictionary:
 	var p: Vector3 = cs.global_transform.affine_inverse() * tip
 	var half: Vector3 = (cs.shape as BoxShape3D).size * 0.5
 	var allowed := (poke_open_faces | poke_close_faces | poke_torque_faces) \
@@ -420,6 +429,9 @@ func _face_on_shape(tip: Vector3, cs: CollisionShape3D, margin: float,
 	var best_d := INF
 	var best_area := -INF
 	var best_external := false
+	var best_alignment := -INF
+	var has_approach := approach.length() >= POKE_APPROACH_MIN
+	var approach_dir := approach.normalized() if has_approach else Vector3.ZERO
 	for face in [FACE_X_NEG, FACE_X_POS, FACE_Y_NEG, FACE_Y_POS,
 			FACE_Z_NEG, FACE_Z_POS]:
 		if (allowed & face) == 0:
@@ -437,20 +449,41 @@ func _face_on_shape(tip: Vector3, cs: CollisionShape3D, margin: float,
 		if inside:
 			var area := _face_area(half, axis)
 			var external := sign * p[axis] >= half[axis] - 0.0005
-			if best_face == 0 or (external and not best_external) \
-					or external == best_external and (d < best_d - POKE_FACE_TIE_MARGIN \
-					or absf(d - best_d) <= POKE_FACE_TIE_MARGIN and area > best_area):
+			var alignment := approach_dir.dot(-_face_world_normal(face, cs)) \
+				if has_approach else 0.0
+			if best_face == 0 or _poke_candidate_better(external, d, alignment, area,
+					best_external, best_d, best_alignment, best_area, has_approach):
 				best_face = face
 				best_d = d
 				best_area = area
 				best_external = external
+				best_alignment = alignment
 	return {} if best_face == 0 else {
 		"shape": cs,
 		"face": best_face,
 		"distance": best_d,
 		"area": best_area,
 		"external": best_external,
+		"alignment": best_alignment,
 	}
+
+
+func _poke_candidate_better(external: bool, distance: float, alignment: float,
+		area: float, best_external: bool, best_distance: float,
+		best_alignment: float, best_area: float, has_approach: bool) -> bool:
+	if distance < best_distance - POKE_FACE_TIE_MARGIN:
+		return true
+	if distance > best_distance + POKE_FACE_TIE_MARGIN:
+		return false
+	# At a seam, infer intent from the inward normal nearest the fingertip's travel.
+	if has_approach:
+		if alignment > best_alignment + POKE_APPROACH_DOT_EPS:
+			return true
+		if alignment < best_alignment - POKE_APPROACH_DOT_EPS:
+			return false
+	if external != best_external:
+		return external
+	return area > best_area
 
 
 func _face_area(half: Vector3, axis: int) -> float:
@@ -510,6 +543,12 @@ func _require_poke_exit(ctrl: XRController3D) -> void:
 func _poke_can_begin(ctrl: XRController3D) -> bool:
 	return is_instance_valid(ctrl) \
 		and not _poke_rearm_required.get(ctrl.get_instance_id(), false)
+
+
+func _remember_poke_tips() -> void:
+	for ctrl in _controllers:
+		if is_instance_valid(ctrl):
+			_poke_prev_tips[ctrl.get_instance_id()] = PokeTip.tip_of(ctrl)
 
 
 func _tip_on_face(tip: Vector3, shape: CollisionShape3D,

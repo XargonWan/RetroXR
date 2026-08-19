@@ -37,6 +37,7 @@ extends VRHinge
 var _latched_closed := false
 var _poke_overtravel := false
 var _poke_latching := false
+var _poke_consumed := false
 var _poke_start_tip := Vector3.ZERO
 var _poke_outward_normal := Vector3.ZERO
 var _spring_logged_open := true
@@ -63,10 +64,12 @@ func open() -> void:
 
 ## Latch fully shut (model.play_close, or the hand pushed it home). Emits so the
 ## host can mark the tray closed.
-func latch_closed(rebound_from_overtravel: bool = false) -> void:
+func latch_closed(rebound_from_overtravel: bool = false,
+		preserve_poke: bool = false) -> void:
 	_latched_closed = true
 	_trigger_ctrl = null
-	_end_poke(true)
+	if not preserve_poke:
+		_end_poke(true)
 	_pointer_held = false
 	# A push-push tray keeps its grab box: a hand has to be able to reach a latched
 	# one to let it up again.
@@ -114,6 +117,14 @@ func _can_engage() -> bool:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	# A state-changing poke stays captured until the fingertip actually leaves.
+	# The mechanism keeps moving under that captured finger, but the consumed poke
+	# cannot trigger the next push-push phase.
+	if _poke_consumed and _poke_ctrl != null:
+		if _latched_closed:
+			_step_latch_rebound(delta)
+		else:
+			_step_spring_open(delta)
 	if push_push and _latched_closed and (_trigger_ctrl != null or _pointer_held):
 		open()
 
@@ -122,6 +133,7 @@ func _process(delta: float) -> void:
 ## fingertip first drives it a few millimetres farther DOWN until the latch trips.
 func _on_poke_started(tip: Vector3, outward_normal: Vector3,
 		mode: int) -> void:
+	_poke_consumed = false
 	_poke_overtravel = push_push and _latched_closed and mode == POKE_CLOSE
 	_poke_latching = push_push and not _latched_closed and mode == POKE_CLOSE
 	_poke_start_tip = tip
@@ -134,6 +146,8 @@ func _on_poke_started(tip: Vector3, outward_normal: Vector3,
 
 
 func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
+	if _poke_consumed:
+		return
 	if _poke_latching:
 		if target == null:
 			return
@@ -146,8 +160,11 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 		rotation_changed.emit(wanted)
 		if wanted <= bottom + 0.001:
 			_poke_latching = false
+			_poke_consumed = true
 			_state_log("latch overtravel reached -> LATCHED_CLOSED")
-			latch_closed(true)
+			if is_instance_valid(_poke_ctrl) and _poke_ctrl.get_is_active():
+				Haptics.pulse(_poke_ctrl, 0.3, 10, &"push_push_latch")
+			latch_closed(true, true)
 		return
 	if not _poke_overtravel:
 		super._on_poke_motion(world_pos, mode)
@@ -160,14 +177,18 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 	if t >= 1.0:
 		_state_log("release overtravel %.1f mm reached" % (depth * 1000.0))
 		_poke_overtravel = false
+		_poke_consumed = true
 		open()
-		# Let the spring own the tray immediately. Calling the normal release hook
-		# here would see it near `min_deg` and latch it shut again.
-		_end_poke(true)
+		# Keep the poke captured while the spring moves under the finger. It ends only
+		# when the fingertip physically leaves the moving top face.
 
 
 func _on_poke_ended() -> void:
-	if _poke_latching and not _latched_closed:
+	if _poke_consumed:
+		# The state transition already decided the mechanism's outcome; physical
+		# separation merely ends the gesture and must not invoke the release latch.
+		_skip_next_release = true
+	elif _poke_latching and not _latched_closed:
 		# A poke that only reaches the normal home angle has not crossed the latch.
 		# Skip the generic near-closed release rule and let the spring take it back.
 		_skip_next_release = true
@@ -175,6 +196,7 @@ func _on_poke_ended() -> void:
 		_state_log("latch press released early -> SPRINGING_OPEN")
 	_poke_overtravel = false
 	_poke_latching = false
+	_poke_consumed = false
 
 
 # closed = min_deg, open = max_deg: wheel UP opens, wheel DOWN closes.
@@ -197,15 +219,25 @@ func _on_idle(delta: float) -> void:
 	if target == null:
 		return
 	if _latched_closed:
-		if not _latch_rebound:
-			return
-		var rebound_cur := rad_to_deg(target.rotation.x)
-		var rebound_next := move_toward(rebound_cur, min_deg,
-			push_push_rebound_speed_deg * delta)
-		target.rotation.x = deg_to_rad(rebound_next)
-		if is_equal_approx(rebound_next, min_deg):
-			_latch_rebound = false
-			_state_log("latch rebound settled at %.2f deg" % min_deg)
+		_step_latch_rebound(delta)
+		return
+	_step_spring_open(delta)
+
+
+func _step_latch_rebound(delta: float) -> void:
+	if not _latch_rebound or target == null:
+		return
+	var rebound_cur := rad_to_deg(target.rotation.x)
+	var rebound_next := move_toward(rebound_cur, min_deg,
+		push_push_rebound_speed_deg * delta)
+	target.rotation.x = deg_to_rad(rebound_next)
+	if is_equal_approx(rebound_next, min_deg):
+		_latch_rebound = false
+		_state_log("latch rebound settled at %.2f deg" % min_deg)
+
+
+func _step_spring_open(delta: float) -> void:
+	if target == null:
 		return
 	var cur := rad_to_deg(target.rotation.x)
 	if is_equal_approx(cur, max_deg):
