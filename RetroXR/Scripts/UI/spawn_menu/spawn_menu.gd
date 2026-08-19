@@ -55,6 +55,8 @@ signal aim_crosshair_changed(enabled: bool)
 signal locomotion_mode_changed(teleport: bool)
 ## Emitted when the user toggles whether the sticks work in passthrough.
 signal passthrough_locomotion_changed(enabled: bool)
+## Emitted when the physical controller/Capsense presentation changes.
+signal xr_display_mode_changed(mode: int)
 ## Emitted when the user toggles the wrap-around hands drawn on held controllers.
 signal controller_hands_changed(enabled: bool)
 ## Emitted when the user changes the snap turn angle.
@@ -442,6 +444,7 @@ func _build_ui() -> void:
 			[_options_view.aim_crosshair_changed, aim_crosshair_changed],
 			[_options_view.locomotion_mode_changed, locomotion_mode_changed],
 			[_options_view.passthrough_locomotion_changed, passthrough_locomotion_changed],
+			[_options_view.xr_display_mode_changed, xr_display_mode_changed],
 			[_options_view.controller_hands_changed, controller_hands_changed]]:
 		var out: Signal = relay[1]
 		(relay[0] as Signal).connect(func(v: Variant) -> void: out.emit(v))

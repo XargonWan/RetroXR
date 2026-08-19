@@ -225,6 +225,7 @@ func _connect_menu_signals() -> void:
 	menu.aim_crosshair_changed.connect(_on_aim_crosshair_changed)
 	menu.locomotion_mode_changed.connect(_on_locomotion_mode_changed)
 	menu.passthrough_locomotion_changed.connect(_on_passthrough_locomotion_changed)
+	menu.xr_display_mode_changed.connect(_on_xr_display_mode_changed)
 	menu.controller_hands_changed.connect(_on_controller_hands_changed)
 	menu.snap_angle_changed.connect(_on_snap_angle_changed)
 	menu.height_offset_changed.connect(_on_height_offset_changed)
@@ -239,6 +240,7 @@ func _connect_menu_signals() -> void:
 	# can't be applied in AppPrefs._ready() the way the static-backed ones are.
 	_on_auto_save_changed(AppPrefs.auto_save_scene)
 	_on_aim_crosshair_changed(AppPrefs.aim_crosshair)
+	_on_xr_display_mode_changed(AppPrefs.xr_display_mode)
 	# No initial call for the performance HUD: it is not persisted, so it is off
 	# at every launch and the node is built by the first switch that asks for it.
 
@@ -1237,6 +1239,12 @@ func _on_aim_crosshair_changed(enabled: bool) -> void:
 	for node in get_tree().get_nodes_in_group("spawned"):
 		if "show_laser_dot" in node:
 			node.set("show_laser_dot", enabled)
+
+
+func _on_xr_display_mode_changed(_mode: int) -> void:
+	for ctrl: XRController3D in [_left_ctrl, _right_ctrl]:
+		if is_instance_valid(ctrl) and ctrl.has_method("refresh_xr_display_mode"):
+			ctrl.call("refresh_xr_display_mode")
 
 
 func _on_controller_hands_changed(enabled: bool) -> void:

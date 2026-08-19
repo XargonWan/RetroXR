@@ -279,8 +279,8 @@ func _begin_track(world_pos: Vector3) -> void:
 	_min_perp = _perp_of(world_pos)
 
 
-## Hand the fingertip nib to the real knob so it lands ON the cap rather than
-## floating over it. Visual only. Vector3.ZERO picks whichever face the tip is
+## Hand the fingertip contact disc to the real knob so it lands ON the cap rather
+## than floating over it. Visual only. Vector3.ZERO picks whichever face the tip is
 ## nearest — a knob is grabbable from any side, unlike a button's press face.
 func _claim_contact() -> void:
 	if not is_instance_valid(_knob) or _knob.mesh == null:

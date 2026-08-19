@@ -24,6 +24,16 @@ var autosave_interval: float = 60.0
 const AUTOSAVE_INTERVAL_MIN := 15.0
 const AUTOSAVE_INTERVAL_MAX := 300.0
 var aim_crosshair:    bool = true
+enum XRDisplayMode {
+	CONTROLLERS,
+	HANDS,
+	BOTH,
+}
+## What the physical XR input devices look like. BOTH is deliberately the
+## missing-key default too, so an existing install receives Capsense hands on
+## its first run after the feature arrives rather than silently keeping the old
+## controller-only presentation.
+var xr_display_mode: XRDisplayMode = XRDisplayMode.BOTH
 var controller_hands: bool = false
 var system_filter:    bool = true
 ## Whether the spawn menu wraps onto a cylinder. Unlike the rest, this one is not
@@ -197,6 +207,7 @@ func _load_prefs() -> void:
 	# on PerfHud's statics and is off again every launch. A "show_fps" left in an
 	# old file is simply ignored.
 	aim_crosshair    = _prefs_bool(data, "aim_crosshair",    aim_crosshair)
+	xr_display_mode = _prefs_xr_display_mode(data, "xr_display_mode", xr_display_mode)
 	controller_hands = _prefs_bool(data, "controller_hands", controller_hands)
 	system_filter    = _prefs_bool(data, "system_filter",    system_filter)
 	menu_curved      = _prefs_bool(data, "menu_curved",      menu_curved)
@@ -221,6 +232,7 @@ func save_prefs() -> void:
 		"autosave_periodic": autosave_periodic,
 		"autosave_interval": autosave_interval,
 		"aim_crosshair":    aim_crosshair,
+		"xr_display_mode":  xr_display_mode,
 		"controller_hands": controller_hands,
 		"system_filter":    system_filter,
 		"menu_curved":      menu_curved,
@@ -252,6 +264,19 @@ func _prefs_float(data: Dictionary, key: String, fallback: float) -> float:
 	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
 		return float(value)
 	return fallback
+
+
+## Accept only the three named display modes. JSON numbers may be int or float;
+## a stale or hand-edited value keeps the safe BOTH default.
+func _prefs_xr_display_mode(data: Dictionary, key: String,
+		fallback: XRDisplayMode) -> XRDisplayMode:
+	var value: Variant = data.get(key)
+	if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+		return fallback
+	var mode := int(value)
+	if mode < XRDisplayMode.CONTROLLERS or mode > XRDisplayMode.BOTH:
+		return fallback
+	return mode as XRDisplayMode
 
 
 ## JSON has no packed-array type, so a saved PackedStringArray reads back as a

@@ -3,11 +3,9 @@
 ##
 ## Run: godot --headless --path RetroXR res://Tools/vr_snap_probe.tscn
 ##
-## The load-bearing assertion is the first one. PokeTip.tip_of() IS the PokeTip
-## node's origin, and every widget projects against it, so the snap must move only
-## the cone/disc CHILDREN. If someone ever "simplifies" PokeTip to move its own
-## node, widgets project onto a face, the tip follows, they re-project, and the
-## geometry chases itself. That test catches it.
+## The load-bearing assertions are the first ones: the obsolete controller-tip
+## cone must stay gone, tip_of() must not move when contact feedback snaps, and
+## the surface disc must still land on the claimed face.
 extends Node3D
 
 const LIFT := PokeTip.CONTACT_LIFT
@@ -74,16 +72,14 @@ func _run() -> void:
 	await _frames(6)
 	_check(_ctrl.get_is_active(), "fake tracker drives the controller")
 
-	# ── 1. rest pose is bit-identical to the old authored one ────────────────
+	# ── 1. no controller-tip cone; the contact disc remains ─────────────────
 	await _frames(20)
-	var cone: MeshInstance3D = _poke.get("_cone")
-	var rest_o := Vector3(0.0, 0.0, PokeTip.CONE_HEIGHT / 2.0)
-	_check(cone.transform.origin.distance_to(rest_o) < 1e-5,
-		"idle cone sits at the old rest origin (%v)" % cone.transform.origin)
-	_check((cone.basis * Vector3.UP).distance_to(Vector3(0, 0, -1)) < 1e-4,
-		"idle cone still points -Z")
+	var disc: MeshInstance3D = _poke.get("_disc")
+	_check(_poke.get_child_count() == 1 and _poke.get_child(0) == disc,
+		"PokeTip contains only the contact disc (no cone mesh)")
+	_check(not disc.visible, "contact disc is hidden without a claimed surface")
 
-	# ── 2. tip_of() invariance while the nib is displaced ────────────────────
+	# ── 2. tip_of() invariance while the disc is displaced ───────────────────
 	var cap := _cap(Vector3(0.02, 0.01, 0.02))
 	add_child(cap)
 	cap.global_position = Vector3(0.0, 1.0, 0.0)
@@ -97,8 +93,9 @@ func _run() -> void:
 		await get_tree().process_frame
 	_check(PokeTip.tip_of(_ctrl).distance_to(tip_at) < 1e-5,
 		"tip_of() is unmoved by the snap (%v)" % PokeTip.tip_of(_ctrl))
-	_check(cone.transform.origin.distance_to(rest_o) > 0.002,
-		"...while the cone HAS moved (%.4f m)" % cone.transform.origin.distance_to(rest_o))
+	_check(disc.visible, "contact disc appears on a claimed surface")
+	_check(disc.global_position.distance_to(Vector3(0.004, 1.006, 0.004)) < 0.003,
+		"contact disc snaps to the claimed face (%v)" % disc.global_position)
 
 	# ── 3. face projection ───────────────────────────────────────────────────
 	PokeTip.claim_box_face(_ctrl, cap, Vector3(0.004, 1.02, 0.004), Vector3.UP,
@@ -264,7 +261,7 @@ func _run() -> void:
 		_check(up_uv.distance_to(last_true) < 1e-6,
 			"release is the last in-window point (%v vs %v)" % [up_uv, last_true])
 		_check(up_uv.x < 0.99, "and is NOT pinned to the border (x = %.4f)" % up_uv.x)
-	_check(surf._claim_contact != null, "TV surface claims the nib on the glass")
+	_check(surf._claim_contact != null, "TV surface claims the disc on the glass")
 
 	print("[probe] RESULT %s" % ("PASS" if not _fail else "FAIL"))
 	get_tree().quit(1 if _fail else 0)

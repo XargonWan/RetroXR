@@ -133,7 +133,7 @@ func _run() -> void:
 	_check(diff > 0.02, "game state changed after the poke (diff %.4f)" % diff)
 
 	# ── Round 2: the user's exact scenario — DS HELD in the right hand,
-	# poking with the left hand's cone ─────────────────────────────────────────
+	# poking with the left hand's fingertip ────────────────────────────────────
 	var right_ctrl := get_tree().root.find_child("RightController", true, false) as XRController3D
 	var right_pickup := XRToolsFunctionPickup.find_instance(right_ctrl)
 	_check(right_pickup != null, "found right FunctionPickup")
@@ -151,7 +151,7 @@ func _run() -> void:
 	var before2 := _composite_img(model)
 	before2.save_png(OUT + "/held_before.png")
 
-	# Poke the (now hand-held, tilted) pad with the left cone.
+	# Poke the (now hand-held, tilted) pad with the left fingertip.
 	var touch2: Area3D = model._touch
 	var pad2: Vector3 = touch2.global_transform * Vector3(0, 0.002, 0)
 	var aim2 := -touch2.global_transform.basis.y

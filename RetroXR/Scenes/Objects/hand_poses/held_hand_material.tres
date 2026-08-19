@@ -1,7 +1,7 @@
 [gd_resource type="StandardMaterial3D" format=3]
 
 ; Light-blue, very transparent "held" hand indicator (see controller_model.gd).
-; Applied as XRToolsHand.hand_material_override on the rig's hand instances.
+; Shared by authored XRToolsHand poses and the native runtime Capsense meshes.
 
 [resource]
 resource_name = "HeldHandMaterial"

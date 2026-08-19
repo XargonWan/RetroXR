@@ -19,6 +19,7 @@ const SHOT_PATH := "user://render_model.png"
 var _frames := 0
 var _elapsed := 0.0
 var _controllers: Array[XRController3D] = []
+var _hands: Array[CapsenseHand] = []
 ## The thumbstick bone with nothing pushed, as a baseline for the lean readings.
 var _rest_tip := Transform3D.IDENTITY
 
@@ -32,6 +33,12 @@ func _ready() -> void:
 	if initialized:
 		xri.set_play_area_mode(XRInterface.XR_PLAY_AREA_ROOMSCALE)
 		get_viewport().use_xr = true
+		if Engine.has_singleton("OpenXRMetaSimultaneousHandsAndControllersExtension"):
+			var simultaneous: Object = Engine.get_singleton(
+				"OpenXRMetaSimultaneousHandsAndControllersExtension")
+			if simultaneous.call("is_simultaneous_hands_and_controllers_supported"):
+				simultaneous.call("resume_simultaneous_hands_and_controllers_tracking")
+	AppPrefs.xr_display_mode = AppPrefs.XRDisplayMode.BOTH
 
 	print("[rmprobe] settings core=%s meta=%s" % [
 		ProjectSettings.get_setting("xr/openxr/extensions/render_model", false),
@@ -44,10 +51,28 @@ func _ready() -> void:
 	origin.add_child(cam)
 	for hand: StringName in [&"left_hand", &"right_hand"]:
 		var ctrl := XRController3D.new()
+		ctrl.name = "LeftController" if hand == &"left_hand" else "RightController"
 		ctrl.set_script(load("res://Scripts/XR/controller_model.gd"))
 		ctrl.tracker = hand
 		origin.add_child(ctrl)
 		_controllers.append(ctrl)
+	for i in 2:
+		var capsense := CapsenseHand.new()
+		capsense.name = "LeftCapsenseHand" if i == 0 else "RightCapsenseHand"
+		capsense.tracker = &"/user/hand_tracker/left" if i == 0 \
+			else &"/user/hand_tracker/right"
+		capsense.controller_path = NodePath("../%s" % _controllers[i].name)
+		capsense.hand = i
+		var mesh: Node = ClassDB.instantiate("OpenXRFbHandTrackingMesh")
+		mesh.name = "OpenXRFbHandTrackingMesh"
+		mesh.set("hand", i)
+		mesh.set("material", load("res://Scenes/Objects/hand_poses/held_hand_material.tres"))
+		capsense.add_child(mesh)
+		var modifier := XRHandModifier3D.new()
+		modifier.hand_tracker = capsense.tracker
+		mesh.add_child(modifier)
+		origin.add_child(capsense)
+		_hands.append(capsense)
 
 	_run.call_deferred()
 
@@ -64,6 +89,8 @@ func _run() -> void:
 		for ctrl in _controllers:
 			_describe(ctrl)
 			_exercise(ctrl)
+		for hand in _hands:
+			_describe_hand(hand)
 	await _shoot()
 	print("[rmprobe] ===== done =====")
 	get_tree().quit(0)
@@ -71,12 +98,30 @@ func _run() -> void:
 
 func _report_classes() -> void:
 	for name: String in ["OpenXRRenderModelExtension", "OpenXRRenderModelManager",
-			"OpenXRFbRenderModel", "OpenXRFbRenderModelExtension"]:
+			"OpenXRFbRenderModel", "OpenXRFbRenderModelExtension",
+			"OpenXRFbHandTrackingMesh", "XRHandModifier3D",
+			"OpenXRMetaSimultaneousHandsAndControllersExtension"]:
 		print("[rmprobe] class %s exists=%s" % [name, ClassDB.class_exists(name)])
 	var has_core := Engine.has_singleton("OpenXRRenderModelExtension")
 	var ext: Object = Engine.get_singleton("OpenXRRenderModelExtension") if has_core else null
 	print("[rmprobe] core singleton=%s is_active=%s" % [
 		ext != null, ext != null and ext.call("is_active")])
+
+
+func _describe_hand(hand: CapsenseHand) -> void:
+	var tracker := hand.hand_tracker()
+	var source := hand.hand_source()
+	var valid := hand.joints_valid()
+	var ready := hand.mesh_ready()
+	var tip: Variant = hand.index_tip_position()
+	var ctrl := hand.get_node_or_null(hand.controller_path) as XRController3D
+	var separation := -1.0
+	if tip is Vector3 and ctrl != null:
+		separation = (tip as Vector3).distance_to(ctrl.global_position) * 1000.0
+	print(("[rmprobe] %s: hand_tracker=%s source=%d mesh_ready=%s joints_valid=%s "
+		+ "motion_range=%d visible=%s tip_controller_mm=%.1f") % [
+		hand.name, tracker != null, source, ready, valid,
+		hand.active_motion_range(), hand.visible, separation])
 
 
 func _describe(ctrl: XRController3D) -> void:

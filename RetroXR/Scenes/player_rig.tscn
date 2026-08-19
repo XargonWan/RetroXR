@@ -27,6 +27,8 @@
 [ext_resource type="PackedScene" path="res://Scenes/UI/desktop_reticle.tscn" id="22_reticle"]
 [ext_resource type="PackedScene" uid="uid://d2iqcc25yvk61" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_crouch.tscn" id="23_desktopcrouch"]
 [ext_resource type="PackedScene" uid="uid://dgm5op1hausw5" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_sprint.tscn" id="24_desktopwalk"]
+[ext_resource type="Script" path="res://Scripts/XR/capsense_hand.gd" id="25_capsense"]
+[ext_resource type="Material" path="res://Scenes/Objects/hand_poses/held_hand_material.tres" id="26_handmat"]
 
 [node name="PlayerRig" type="Node3D"]
 script = ExtResource("0_playerrig")
@@ -126,6 +128,57 @@ turn_mode = 1
 
 [node name="PokeTip" type="Node3D" parent="Staging/XROrigin3D/RightController"]
 script = ExtResource("1_poketip")
+
+[node name="LeftCapsenseHand" type="XRNode3D" parent="Staging/XROrigin3D"]
+tracker = &"/user/hand_tracker/left"
+show_when_tracked = true
+script = ExtResource("25_capsense")
+controller_path = NodePath("../LeftController")
+
+[node name="OpenXRFbHandTrackingMesh" type="OpenXRFbHandTrackingMesh" parent="Staging/XROrigin3D/LeftCapsenseHand"]
+material = ExtResource("26_handmat")
+
+[node name="XRHandModifier3D" type="XRHandModifier3D" parent="Staging/XROrigin3D/LeftCapsenseHand/OpenXRFbHandTrackingMesh"]
+
+[node name="RightCapsenseHand" type="XRNode3D" parent="Staging/XROrigin3D"]
+tracker = &"/user/hand_tracker/right"
+show_when_tracked = true
+script = ExtResource("25_capsense")
+controller_path = NodePath("../RightController")
+hand = 1
+
+[node name="OpenXRFbHandTrackingMesh" type="OpenXRFbHandTrackingMesh" parent="Staging/XROrigin3D/RightCapsenseHand"]
+hand = 1
+material = ExtResource("26_handmat")
+bones/0/name = "RightPalm"
+bones/1/name = "RightHand"
+bones/2/name = "RightThumbMetacarpal"
+bones/3/name = "RightThumbProximal"
+bones/4/name = "RightThumbDistal"
+bones/5/name = "RightThumbTip"
+bones/6/name = "RightIndexMetacarpal"
+bones/7/name = "RightIndexProximal"
+bones/8/name = "RightIndexIntermediate"
+bones/9/name = "RightIndexDistal"
+bones/10/name = "RightIndexTip"
+bones/11/name = "RightMiddleMetacarpal"
+bones/12/name = "RightMiddleProximal"
+bones/13/name = "RightMiddleIntermediate"
+bones/14/name = "RightMiddleDistal"
+bones/15/name = "RightMiddleTip"
+bones/16/name = "RightRingMetacarpal"
+bones/17/name = "RightRingProximal"
+bones/18/name = "RightRingIntermediate"
+bones/19/name = "RightRingDistal"
+bones/20/name = "RightRingTip"
+bones/21/name = "RightLittleMetacarpal"
+bones/22/name = "RightLittleProximal"
+bones/23/name = "RightLittleIntermediate"
+bones/24/name = "RightLittleDistal"
+bones/25/name = "RightLittleTip"
+
+[node name="XRHandModifier3D" type="XRHandModifier3D" parent="Staging/XROrigin3D/RightCapsenseHand/OpenXRFbHandTrackingMesh"]
+hand_tracker = &"/user/hand_tracker/right"
 
 [node name="SpawnMenuController" type="Node3D" parent="."]
 script = ExtResource("9_menuctl")

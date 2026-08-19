@@ -27,6 +27,7 @@ signal locomotion_mode_changed(teleport: bool)
 ## Whether the sticks keep working while passthrough is on. Only the passthrough
 ## room can act on it, so the controller hands it to whatever room is standing.
 signal passthrough_locomotion_changed(enabled: bool)
+signal xr_display_mode_changed(mode: int)
 signal controller_hands_changed(enabled: bool)
 ## The system filter was toggled — the CORES download list is built from it.
 signal system_filter_changed
@@ -549,14 +550,31 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# Draw hands on held controllers option (default off)
+	# Physical XR device presentation. The mode updates the live rig; the runtime
+	# hand mesh falls back to controller art if joints or geometry are absent.
+	if MenuStyle.is_vr_mode():
+		var display_drop := VRDropdown.create("XR Display", [
+			["Controllers", AppPrefs.XRDisplayMode.CONTROLLERS],
+			["Hands", AppPrefs.XRDisplayMode.HANDS],
+			["Controllers + Hands", AppPrefs.XRDisplayMode.BOTH],
+		], AppPrefs.xr_display_mode, 1, Vector2(300, 52), 18)
+		display_drop.item_selected.connect(func(id: Variant) -> void:
+			AppPrefs.xr_display_mode = int(id) as AppPrefs.XRDisplayMode
+			AppPrefs.save_prefs()
+			xr_display_mode_changed.emit(AppPrefs.xr_display_mode)
+		)
+		vbox.add_child(display_drop)
+		vbox.add_child(HSeparator.new())
+
+	# Authored wrap-around hands on virtual peripherals (default off). This is
+	# intentionally independent of the native Capsense display mode above.
 	var hands_row := HBoxContainer.new()
 	hands_row.add_theme_constant_override("separation", 10)
 	hands_row.custom_minimum_size = Vector2(0, 68)
 	vbox.add_child(hands_row)
 
 	var hands_lbl := Label.new()
-	hands_lbl.text = "Controller Hands"
+	hands_lbl.text = "Hands on Game Controllers"
 	hands_lbl.add_theme_font_size_override("font_size", 22)
 	hands_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
 	hands_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL

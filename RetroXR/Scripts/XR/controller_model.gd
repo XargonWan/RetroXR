@@ -12,6 +12,9 @@ static var draw_hands: bool = false
 ## tier choice and the geometry. This node owns what the room does to it: the
 ## fade on a grab, and the hand drawn over a held device.
 var _art: ControllerArt
+## The runtime hand paired with this controller. Kept untyped so the controller
+## still parses on platforms where the vendor hand-mesh class is unavailable.
+var _capsense_hand: Node = null
 
 # --- Wrap-around hand indicator on held peripherals ---
 ## A pickable must be in this group to get a wrap-around hand while held. Each
@@ -339,12 +342,46 @@ const FADE_TIME := 0.08
 
 var _fade := 1.0
 var _fade_target := 1.0
+## Visibility has three independent owners. A peripheral may suppress the model,
+## the XR display mode may suppress it, and a near grab always suppresses it.
+## Recombining them in one place is what stops a drop's `true` from resurrecting
+## controller art while Hands mode remains selected.
+var _content_visible := true
+var _display_visible := true
+var _grab_suppressed := false
 
 
 ## Show or hide the loaded controller model (called by VRInputMapper). Kept as a
 ## bool for its callers; it sets a fade target rather than toggling.
 func set_model_visible(v: bool) -> void:
-	_fade_to(1.0 if v else 0.0)
+	_content_visible = v
+	_refresh_fade_target()
+
+
+func set_display_visible(v: bool) -> void:
+	_display_visible = v
+	_refresh_fade_target()
+
+
+func register_capsense_hand(hand: Node) -> void:
+	_capsense_hand = hand
+
+
+## Variant is intentional: null means use the controller-forward fallback.
+func capsense_index_tip() -> Variant:
+	if not is_instance_valid(_capsense_hand) \
+			or not _capsense_hand.has_method("index_tip_position"):
+		return null
+	return _capsense_hand.call("index_tip_position")
+
+
+func refresh_xr_display_mode() -> void:
+	if is_instance_valid(_capsense_hand) \
+			and _capsense_hand.has_method("apply_display_mode"):
+		_capsense_hand.call("apply_display_mode")
+	else:
+		# No hand node means the fallback is controller art in every mode.
+		set_display_visible(true)
 
 
 ## The fade is independent of `draw_hands`: the art gets out of the way because
@@ -352,6 +389,10 @@ func set_model_visible(v: bool) -> void:
 ## whether or not a hand is drawn over the device.
 func _fade_to(target: float) -> void:
 	_fade_target = target
+
+
+func _refresh_fade_target() -> void:
+	_fade_to(1.0 if _content_visible and _display_visible and not _grab_suppressed else 0.0)
 
 
 func _drive_fade(delta: float) -> void:
@@ -384,7 +425,7 @@ func _apply_fade() -> void:
 ## the held object was freed under it, which strands the art faded out with
 ## nothing in hand. Restore whenever this hand is hidden but holding nothing.
 func _check_hold_state() -> void:
-	if _pickup == null or _fade_target > 0.0:
+	if _pickup == null or not _grab_suppressed:
 		return
 	if is_instance_valid(_pickup.picked_up_object) or _pickup.is_ray_grabbing():
 		return
@@ -403,14 +444,16 @@ func _on_held_grabbed(what: Node) -> void:
 	# Fade on ANY grab, not just the device peripherals that author their own
 	# hand pose. A cartridge or a TV left the controller art sitting inside
 	# whatever you were holding.
-	_fade_to(0.0)
+	_grab_suppressed = true
+	_refresh_fade_target()
 	_show_device_hand(what)
 
 
 ## This controller released whatever it held — hide the hand, restore the art.
 func _on_held_dropped() -> void:
 	_hide_device_hand()
-	_fade_to(1.0)
+	_grab_suppressed = false
+	_refresh_fade_target()
 
 
 ## Draw the device's own hand for this tracker, if it authors one and the option
