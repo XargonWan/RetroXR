@@ -339,10 +339,12 @@ func _begin_poke(ctrl: XRController3D, shape: CollisionShape3D,
 	_poke_ctrl = ctrl
 	_poke_shape = shape
 	_poke_face = face
-	if (poke_torque_faces & face) != 0:
+	if (_shape_faces(shape, &"poke_torque_faces", poke_torque_faces) & face) != 0:
 		_poke_mode = POKE_TORQUE
 	else:
-		_poke_mode = POKE_OPEN if (poke_open_faces & face) != 0 else POKE_CLOSE
+		_poke_mode = POKE_OPEN \
+			if (_shape_faces(shape, &"poke_open_faces", poke_open_faces) & face) != 0 \
+			else POKE_CLOSE
 	_begin_track(tip)
 	_on_poke_started(tip, _face_world_normal(face, shape), _poke_mode)
 	_state_log("poke %s -> %s at %.2f deg" % [
@@ -377,7 +379,11 @@ func _poke_contact_at(tip: Vector3, margin: float,
 	var best: Dictionary = {}
 	var best_d := INF
 	for cs in _poke_shapes():
-		var hit := _face_on_shape(tip, cs, margin, allowed_faces)
+		var shape_allowed := allowed_faces if allowed_faces >= 0 else (
+			_shape_faces(cs, &"poke_open_faces", poke_open_faces)
+			| _shape_faces(cs, &"poke_close_faces", poke_close_faces)
+			| _shape_faces(cs, &"poke_torque_faces", poke_torque_faces))
+		var hit := _face_on_shape(tip, cs, margin, shape_allowed)
 		if not hit.is_empty() and float(hit["distance"]) < best_d:
 			best = hit
 			best_d = float(hit["distance"])
@@ -435,6 +441,12 @@ func _poke_shapes() -> Array[CollisionShape3D]:
 		if fallback != null:
 			_poke_shapes_cache.append(fallback)
 	return _poke_shapes_cache
+
+
+## A poke surface may narrow the hinge-wide face policy with authored metadata.
+## This keeps thin edge faces intentional instead of incidental.
+func _shape_faces(shape: CollisionShape3D, key: StringName, fallback: int) -> int:
+	return int(shape.get_meta(key, fallback)) if shape != null else fallback
 
 
 func _tip_on_face(tip: Vector3, shape: CollisionShape3D,

@@ -221,24 +221,39 @@ func _group_tray() -> void:
 		"tray/the lid pokes use two surfaces separate from its trigger box")
 	_check(top_half.y < 0.002 and front_half.z < 0.004,
 		"tray/the lid poke boxes are thin planes, not another volume")
-	var lid_bottom: Vector3 = lid_poke_top.global_transform \
-		* Vector3(0, -top_half.y, top_half.z - 0.002)
+	var lid_bottom: Vector3 = lid_poke_front.global_transform \
+		* Vector3(0, -front_half.y, 0)
 	var lid_top: Vector3 = lid_poke_top.global_transform \
 		* Vector3(0, top_half.y, 0)
 	var lid_front: Vector3 = lid_poke_front.global_transform \
 		* Vector3(0, 0, front_half.z)
 	_check(flap._face_at_tip(lid_bottom, 0.001) == VRHinge.FACE_Y_NEG
 		and flap._face_at_tip(lid_front, 0.001) == VRHinge.FACE_Z_POS,
-		"tray/the lid's bottom and outward faces accept their poke modes")
-	_check((flap.poke_open_faces & VRHinge.FACE_Y_NEG) != 0
-		and (flap.poke_torque_faces & VRHinge.FACE_Z_POS) != 0,
-		"tray/the lid bottom opens while its outward face follows torque")
+		"tray/the front plane's thin bottom and broad outward faces accept pokes")
+	_check((flap._shape_faces(lid_poke_front, &"poke_open_faces", 0)
+			& VRHinge.FACE_Y_NEG) != 0
+		and (flap._shape_faces(lid_poke_front, &"poke_torque_faces", 0)
+			& VRHinge.FACE_Z_POS) != 0,
+		"tray/the front bottom opens while its outward face follows torque")
 	_check(flap._face_at_tip(lid_top, 0.001) == VRHinge.FACE_Y_POS,
 		"tray/the lid's top face pokes it closed")
+	var top_underside: Vector3 = lid_poke_top.global_transform \
+		* Vector3(0, -top_half.y, 0)
+	_check(flap._face_at_tip(top_underside, 0.001) == VRHinge.FACE_Y_NEG
+		and (flap._shape_faces(lid_poke_top, &"poke_open_faces", 0)
+			& VRHinge.FACE_Y_NEG) != 0,
+		"tray/the top plane's underside is explicitly open-only")
 	flap._begin_track(lid_bottom)
 	flap._on_poke_motion(lid_bottom + Vector3.UP * 0.03, VRHinge.POKE_OPEN)
 	_check(model.get_lid_angle_deg() > 40.0,
 		"tray/an upward bottom-face poke lifts the lid")
+	model.set_lid_angle_deg(0.0)
+	var top_underside_lever: Vector3 = lid_poke_top.global_transform \
+		* Vector3(0, -top_half.y, top_half.z - 0.002)
+	flap._begin_track(top_underside_lever)
+	flap._on_poke_motion(top_underside_lever + Vector3.UP * 0.03, VRHinge.POKE_OPEN)
+	_check(model.get_lid_angle_deg() > 40.0,
+		"tray/an upward poke under the top plane lifts the lid")
 	model.set_lid_angle_deg(0.0)
 	lid_front = lid_poke_front.global_transform * Vector3(0, 0, front_half.z)
 	flap._begin_track(lid_front)
