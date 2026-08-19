@@ -68,6 +68,12 @@ func _basis_angle(a: Node3D, b: Node3D) -> float:
 		b.global_transform.basis.get_rotation_quaternion()))
 
 
+func _box_aabb_in(frame: Node3D, shape: CollisionShape3D) -> AABB:
+	var size: Vector3 = (shape.shape as BoxShape3D).size
+	return (frame.global_transform.affine_inverse() * shape.global_transform) \
+		* AABB(-size * 0.5, size)
+
+
 ## Wait for the tray to stop moving. The travel is a spring one way and a tween the
 ## other, and both scale with TRAY_UP_DEG — a fixed frame count reads mid-swing the
 ## moment the angle is retuned, which is a failure that says nothing about the bay.
@@ -186,6 +192,47 @@ func _group_tray() -> void:
 	var sys := await _console("nes", "nes")
 	var slot := sys.get_node("CartridgeSlot") as XRToolsSnapZone
 	var cart := await _cart("nes")
+	var model := sys._model as RetroSystemModelNES
+	var flap := model._flap_hinge as VRHinge
+	var flap_shape := flap.find_child("LidActivationBox", false, false) as CollisionShape3D
+	var lid := model._lid_mesh as MeshInstance3D
+	var lid_box: AABB = (model.global_transform.affine_inverse() * lid.global_transform) \
+		* lid.get_aabb()
+	var flap_box := _box_aabb_in(model, flap_shape)
+	_check(flap.box_engages and flap_shape.shape is BoxShape3D,
+		"tray/the flap uses its box for VR activation")
+	_check(absf(flap_box.position.z - lid_box.position.z) < 0.0001,
+		"tray/the flap box stops at the lid's inward face")
+	_check(flap_box.end.y > lid_box.end.y + 0.015,
+		"tray/the flap box reaches above the lid")
+	_check(flap_box.end.z > lid_box.end.z + 0.020,
+		"tray/the flap box reaches out in front")
+	var flap_half: Vector3 = (flap_shape.shape as BoxShape3D).size * 0.5
+	var behind_flap: Vector3 = flap_shape.global_transform \
+		* Vector3(0, 0, -flap_half.z - 0.005)
+	_check(not flap._tip_in_activation_region(behind_flap),
+		"tray/a hand behind the flap box cannot activate it")
+
+	var tray_hinge := model._tray_hinge as VRHinge
+	var tray_shape := tray_hinge.find_child("CradleActivationBox", false, false) as CollisionShape3D
+	var cradle_geom := model._cradle_mesh() as MeshInstance3D
+	var deck_geom := model._glb.find_child("NesDeck", true, false) as MeshInstance3D
+	var cradle_box: AABB = (model.global_transform.affine_inverse()
+		* cradle_geom.global_transform) * cradle_geom.get_aabb()
+	var deck_box: AABB = (model.global_transform.affine_inverse()
+		* deck_geom.global_transform) * deck_geom.get_aabb()
+	var tray_box := _box_aabb_in(model, tray_shape)
+	_check(tray_hinge.box_engages and tray_shape.shape is BoxShape3D,
+		"tray/the cradle uses its box for VR activation")
+	_check(tray_box.position.z >= cradle_box.end.z - 0.001,
+		"tray/the cradle box begins at its reachable front face")
+	_check(tray_box.end.z > deck_box.end.z + 0.020,
+		"tray/the cradle box reaches outside the shell")
+	var tray_half: Vector3 = (tray_shape.shape as BoxShape3D).size * 0.5
+	var behind_tray: Vector3 = tray_shape.global_transform \
+		* Vector3(0, 0, tray_half.z + 0.005)
+	_check(not tray_hinge._tip_in_activation_region(behind_tray),
+		"tray/a hand deeper inside the shell cannot activate the cradle")
 
 	_check(sys.has_push_tray_bay(), "tray/the NES bay is a push tray")
 	_check(not sys._model.is_tray_down(), "tray/an empty bay rests up")

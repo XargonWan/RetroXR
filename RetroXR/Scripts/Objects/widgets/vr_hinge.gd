@@ -3,8 +3,8 @@
 ## clamshell lid or a console flap).
 ##
 ## Interaction (VR + desktop), unified:
-##   • HOVER — a controller tip within engage_radius, or the desktop reticle over
-##     the grab box, shows a floating OPEN-HAND icon above the lid ("grab here").
+##   • HOVER — a controller tip inside the configured reach region, or the desktop
+##     reticle over the grab box, shows a floating OPEN-HAND icon ("grab here").
 ##   • HELD  — pull the TRIGGER (VR) / press-drag the reticle (desktop) to LATCH;
 ##     the icon becomes a FIST and the lid rotates toward the hand/pointer. Once
 ##     latched the hand need NOT stay in the grab box — the latch holds until the
@@ -59,6 +59,10 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 @export var max_deg: float = 180.0
 ## Controller tip distance (m) that engages the handle.
 @export var engage_radius: float = 0.04
+## Use the child BoxShape3D as the VR trigger/hover region instead of the legacy
+## sphere around this node. Runtime-built controls can then expose only the face
+## a hand can physically reach without activating through the surrounding shell.
+@export var box_engages: bool = false
 ## Also take hold on the GRIP, for a lid on hardware the player never picks up.
 ##
 ## Reaching into a console and squeezing is what a player actually does, and on a
@@ -145,7 +149,7 @@ func _process(delta: float) -> void:
 			var id := ctrl.get_instance_id()
 			var tip: Vector3 = PokeTip.tip_of(ctrl)
 			if _rearmed.get(id, false) \
-					and global_position.distance_to(tip) <= engage_radius \
+					and _tip_in_activation_region(tip) \
 					and ctrl.get_float(TRIGGER_ACTION) > TRIGGER_ON:
 				_rearmed[id] = false
 				_latch(ctrl, TRIGGER_ACTION, tip)
@@ -241,14 +245,22 @@ func _grab_box() -> CollisionShape3D:
 	return null
 
 
-func _tip_in_grab_box(tip: Vector3) -> bool:
+func _tip_in_grab_box(tip: Vector3, margin: float = GRIP_BOX_MARGIN) -> bool:
 	var cs := _grab_box()
 	if cs == null:
 		return false
 	var half: Vector3 = (cs.shape as BoxShape3D).size * 0.5 \
-		+ Vector3.ONE * GRIP_BOX_MARGIN
+		+ Vector3.ONE * margin
 	var p: Vector3 = cs.global_transform.affine_inverse() * tip
 	return absf(p.x) <= half.x and absf(p.y) <= half.y and absf(p.z) <= half.z
+
+
+## VR trigger/hover reach. Box mode is exact: any deliberate reach padding belongs
+## in the authored box, where each face can grow independently.
+func _tip_in_activation_region(tip: Vector3) -> bool:
+	if box_engages:
+		return _tip_in_grab_box(tip, 0.0)
+	return global_position.distance_to(tip) <= engage_radius
 
 
 ## Mute the pickup of every free hand sitting in the grab box, and of the hand
@@ -424,8 +436,7 @@ func _vr_hovering() -> bool:
 	if not _can_engage():
 		return false
 	for ctrl in _controllers:
-		if ctrl and ctrl.get_is_active() \
-				and global_position.distance_to(PokeTip.tip_of(ctrl)) <= engage_radius:
+		if ctrl and ctrl.get_is_active() and _tip_in_activation_region(PokeTip.tip_of(ctrl)):
 			return true
 	return false
 

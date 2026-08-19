@@ -1,0 +1,40 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/system_models/nes_model.gd" id="1_model"]
+[ext_resource type="PackedScene" path="res://imported-assets/consoles/nes/nes_console.glb" id="2_shell"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lid_activation"]
+size = Vector3(0.133636, 0.054266, 0.067435)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cradle_activation"]
+size = Vector3(0.114543, 0.03, 0.049519)
+
+[node name="NESModel" type="Node3D"]
+script = ExtResource("1_model")
+
+[node name="Shell" parent="." instance=ExtResource("2_shell")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.000117, 0.046615, -0.002116)
+
+; Editor preview only: keep the cartridge flap open so both activation boxes and
+; the entire console are visible while tuning. nes_model.gd restores this pivot
+; to its closed rest transform before runtime setup.
+[node name="NesLidPivot" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13" index="8"]
+transform = Transform3D(1, 0, 0, 0, -0.258819, 0.965926, 0, -0.965926, -0.258819, -0.020389, 0.046524, 0.060819)
+
+; Select LidActivationBox in the 3D editor and edit its BoxShape3D gizmo. This
+; Area3D is lid-local, so it follows both the open preview and the runtime flap.
+[node name="LidActivation" type="Area3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesLidPivot/NesLid" index="0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.007133, 0.033718)
+
+[node name="LidActivationBox" type="CollisionShape3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesLidPivot/NesLid/LidActivation"]
+shape = SubResource("BoxShape3D_lid_activation")
+
+; Select CradleActivationBox to tune the push-push cradle's reachable front volume.
+; Its Area3D follows the cradle mesh through the tray's full travel.
+[node name="CradleActivation" type="Area3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesCradlePivot/NesCradle" index="0"]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.000053, 0.019086, 0.144975)
+
+[node name="CradleActivationBox" type="CollisionShape3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesCradlePivot/NesCradle/CradleActivation"]
+shape = SubResource("BoxShape3D_cradle_activation")
+
+[editable path="Shell"]

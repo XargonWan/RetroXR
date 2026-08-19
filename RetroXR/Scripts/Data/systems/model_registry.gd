@@ -72,14 +72,13 @@ const _COMPUTER_PLATFORMS: Array[String] = [
 ## what an empty model_id resolves to.
 const _ROWS: Dictionary = {
 	# --- consoles -------------------------------------------------------------
-	# A script row, not a scene: the model loads its own GLB and needs nothing
-	# authored around it. `requires` names that GLB, so a build without the asset
-	# lists the platform's stand-in instead of a row that cannot spawn.
+	# `requires` names each detailed model's GLB, so a build without the asset lists
+	# the platform's stand-in instead of a row that cannot spawn.
 	"atari_2600":           {"platform": "atari_2600", "label": "Atari 2600",
 		"script": "res://Scripts/Objects/system_models/atari_2600_model.gd",
 		"requires": ["res://imported-assets/consoles/atari_2600/atari_2600_console.glb"]},
 	"nes":                  {"platform": "nes", "label": "Nintendo Entertainment System",
-		"script": "res://Scripts/Objects/system_models/nes_model.gd",
+		"scene": _SCENES + "nes.tscn",
 		"requires": ["res://imported-assets/consoles/nes/nes_console.glb"]},
 	# A scene row with the model script on its root: primitive geometry, no GLB, so
 	# there is no `requires` to declare. It also still carries the core options the

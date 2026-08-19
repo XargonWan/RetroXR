@@ -185,6 +185,13 @@ func _ready() -> void:
 	if preview is Node3D:
 		(preview as Node3D).visible = false
 
+	# nes.tscn deliberately authors this imported pivot OPEN so the complete shell
+	# and both activation boxes can be edited together. Runtime starts from the real
+	# shut rest pose; the flap interaction below then owns all subsequent movement.
+	var editor_lid_pivot := _glb.find_child("NesLidPivot", true, false) as Node3D
+	if editor_lid_pivot != null:
+		editor_lid_pivot.rotation = Vector3.ZERO
+
 	# The shell is authored centred on its own middle, so half of it would hang
 	# below any surface it is placed on. Recentre on X/Z and rest the base at
 	# y = 0 — which is also what the port constants below assume. Baked scenes
@@ -476,19 +483,34 @@ func _setup_flap_hinge() -> void:
 	# flap, so the grip is free to mean "open this" here; the hinge mutes that
 	# hand's pickup while it is on the flap so the console stays put.
 	_flap_hinge.grip_engages = true
+	_flap_hinge.box_engages = true
 	_flap_hinge.target = _flap_pivot
 	_flap_hinge.min_deg = minf(0.0, _deg_open)
 	_flap_hinge.max_deg = maxf(0.0, _deg_open)
 	_flap_hinge.engage_radius = clampf(maxf(a.size.x, a.size.y * 0.5) * 0.6, 0.03, 0.09)
 	_lid_mesh.add_child(_flap_hinge)
-	_flap_hinge.transform = Transform3D(Basis.IDENTITY,
-		Vector3(cx, a.position.y + a.size.y * 0.25, cz))
-	var col := CollisionShape3D.new()
-	col.name = "CollisionShape3D"
-	var box := BoxShape3D.new()
-	box.size = Vector3(a.size.x * 0.9, a.size.y * 0.5, maxf(a.size.z, 0.006) + 0.012)
-	col.shape = box
-	_flap_hinge.add_child(col)
+	var col := _lid_mesh.find_child("LidActivationBox", true, false) as CollisionShape3D
+	if col != null and col.shape is BoxShape3D:
+		# The scene owns both transform and size. Move the shape under the live Area3D
+		# while preserving exactly what was authored relative to the lid mesh.
+		var preview_area := col.get_parent() as Area3D
+		_flap_hinge.global_transform = col.global_transform
+		col.reparent(_flap_hinge, true)
+		col.transform = Transform3D.IDENTITY
+		if preview_area != null:
+			preview_area.queue_free()
+	else:
+		# Fallback for a bare script instance: the shipped model always takes the
+		# authored branch, but keeping this makes the class independently usable.
+		_flap_hinge.transform = Transform3D(Basis.IDENTITY,
+			Vector3(cx, a.position.y + a.size.y * 0.25, cz))
+		col = CollisionShape3D.new()
+		col.name = "LidActivationBox"
+		var fallback_box := BoxShape3D.new()
+		fallback_box.size = Vector3(a.size.x * 0.9, a.size.y * 0.5,
+			maxf(a.size.z, 0.006) + 0.012)
+		col.shape = fallback_box
+		_flap_hinge.add_child(col)
 	# Hint in the flap's OWN plane, just past the grab box. Derived from the pivot
 	# rather than written as a literal -Y: this hinge hangs off the flap MESH while
 	# its pivot lives under _flap_frame, so their axes only happen to line up.
@@ -496,8 +518,9 @@ func _setup_flap_hinge() -> void:
 	var radial: Vector3 = _flap_hinge.global_position - _flap_pivot.global_position
 	radial -= ax_w * radial.dot(ax_w)
 	if radial.length() > 0.0001:
+		var box_size: Vector3 = (col.shape as BoxShape3D).size
 		_flap_hinge.place_hint(_flap_hinge.to_local(_flap_hinge.global_position
-			+ radial.normalized() * (a.size.y * 0.25 + 0.014)))
+			+ radial.normalized() * (box_size.y * 0.5 + 0.014)))
 	_flap_hinge.rotation_changed.connect(_on_flap_drag)
 
 
@@ -960,6 +983,7 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	var cradle := _cradle_mesh()
 	if cradle == null:
 		return
+	var authored_col := cradle.find_child("CradleActivationBox", true, false) as CollisionShape3D
 	var to_model := global_transform.affine_inverse()
 	var ab: AABB = ((to_model * cradle.global_transform) * cradle.get_aabb())
 	_tray_pivot = Node3D.new()
@@ -988,19 +1012,26 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	_tray_hinge.spring_speed_deg = TRAY_SPRING_DEG
 	# An empty bay rests UP, where the springs hold it — not shut like a disc lid.
 	_tray_hinge.start_closed = false
-	_tray_hinge.engage_radius = 0.05
+	_tray_hinge.box_engages = true
 	_tray_pivot.add_child(_tray_hinge)
-	# The grab box lies over the cart's LABEL, which is the face a hand pushes on.
-	# The cart's sides and front stay clear, so the grab that pulls it back out
-	# still reaches the cart itself.
-	var cart: Vector3 = MediaDimensions.cart_size("nes")
-	_tray_hinge.position = _seat_in_tray.origin + Vector3(0, cart.z * 0.5 + 0.004, 0)
-	var col := CollisionShape3D.new()
-	col.name = "CollisionShape3D"
-	var box := BoxShape3D.new()
-	box.size = Vector3(cart.x * 0.9, 0.008, cart.y * 0.6)
-	col.shape = box
-	_tray_hinge.add_child(col)
+	if authored_col != null and authored_col.shape is BoxShape3D:
+		# It was authored under NesCradle, so at this point it has already inherited
+		# the sink and sprung-up tray pose. Make that exact pose the live Area origin.
+		var preview_area := authored_col.get_parent() as Area3D
+		_tray_hinge.global_transform = authored_col.global_transform
+		authored_col.reparent(_tray_hinge, true)
+		authored_col.transform = Transform3D.IDENTITY
+		if preview_area != null:
+			preview_area.queue_free()
+	else:
+		var cart: Vector3 = MediaDimensions.cart_size("nes")
+		_tray_hinge.position = _seat_in_tray.origin + Vector3(0, cart.z * 0.5 + 0.004, 0)
+		authored_col = CollisionShape3D.new()
+		authored_col.name = "CradleActivationBox"
+		var fallback_box := BoxShape3D.new()
+		fallback_box.size = Vector3(cart.x * 0.9, 0.008, cart.y * 0.6)
+		authored_col.shape = fallback_box
+		_tray_hinge.add_child(authored_col)
 	_tray_hinge.push_push = true       # a hand may take hold of it to let it up
 	_tray_hinge.rotation_changed.connect(_on_tray_moved)
 
