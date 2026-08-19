@@ -216,18 +216,17 @@ func _group_tray() -> void:
 	var tray_hinge := model._tray_hinge as VRHinge
 	var tray_shape := tray_hinge.find_child("CradleActivationBox", false, false) as CollisionShape3D
 	var cradle_geom := model._cradle_mesh() as MeshInstance3D
-	var deck_geom := model._glb.find_child("NesDeck", true, false) as MeshInstance3D
-	var cradle_box: AABB = (model.global_transform.affine_inverse()
-		* cradle_geom.global_transform) * cradle_geom.get_aabb()
-	var deck_box: AABB = (model.global_transform.affine_inverse()
-		* deck_geom.global_transform) * deck_geom.get_aabb()
-	var tray_box := _box_aabb_in(model, tray_shape)
 	_check(tray_hinge.box_engages and tray_shape.shape is BoxShape3D,
 		"tray/the cradle uses its box for VR activation")
-	_check(tray_box.position.z >= cradle_box.end.z - 0.001,
-		"tray/the cradle box begins at its reachable front face")
-	_check(tray_box.end.z > deck_box.end.z + 0.020,
-		"tray/the cradle box reaches outside the shell")
+	var tray_size: Vector3 = (tray_shape.shape as BoxShape3D).size
+	var want_size := Vector3(0.114543, 0.021835938, 0.037454814)
+	_check(tray_size.distance_to(want_size) < 0.000001,
+		"tray/the authored cradle box size reaches runtime")
+	var tray_in_cradle: Transform3D = cradle_geom.global_transform.affine_inverse() \
+		* tray_shape.global_transform
+	var want_origin := Vector3(-0.000053, 0.0150039685, 0.099778757)
+	_check(tray_in_cradle.origin.distance_to(want_origin) < 0.000001,
+		"tray/the authored cradle box offset reaches runtime")
 	var tray_half: Vector3 = (tray_shape.shape as BoxShape3D).size * 0.5
 	var behind_tray: Vector3 = tray_shape.global_transform \
 		* Vector3(0, 0, tray_half.z + 0.005)
