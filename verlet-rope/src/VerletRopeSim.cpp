@@ -752,6 +752,28 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         return n.dot(cached_n) > 0.85 &&
                std::abs((p - cached_p).dot(cached_n)) <= m_collision_radius * 0.5;
     };
+    const auto point_inside = [this, space_state](const Vector3 &p) {
+        if (m_point_query.is_null())
+            return true;
+        m_point_query->set_position(p);
+        return !space_state->intersect_point(m_point_query, 1).is_empty();
+    };
+    const auto cached_surface_exists = [this, space_state](const Vector3 &p,
+                                                           const Vector3 &cached_p,
+                                                           const Vector3 &cached_n) {
+        if (m_ray_query.is_null() || cached_n == Vector3())
+            return false;
+        const double probe = m_collision_radius * 3.0;
+        m_ray_query->set_from(p + cached_n * probe);
+        m_ray_query->set_to(p - cached_n * probe);
+        const Dictionary hit = space_state->intersect_ray(m_ray_query);
+        if (hit.is_empty())
+            return false;
+        const Vector3 n = hit["normal"];
+        const Vector3 hp = hit["position"];
+        return n.dot(cached_n) > 0.85 &&
+               std::abs((hp - cached_p).dot(cached_n)) <= m_collision_radius;
+    };
 
     const int count = static_cast<int>(m_points.size());
     for (int i = 0; i < count; ++i)
@@ -762,8 +784,27 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         const Dictionary rest = space_state->get_rest_info(m_shape_query);
         const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
         const bool had = m_c_flags[i] != 0;
-        if (has != had)
+        if (!has && had)
+        {
+            bool surface_still_there = false;
+            if ((m_c_flags[i] & 1) != 0)
+                surface_still_there = cached_surface_exists(m_points[i], m_c_p1[i], m_c_n1[i]);
+            if (!surface_still_there && (m_c_flags[i] & 2) != 0)
+                surface_still_there = cached_surface_exists(m_points[i], m_c_p2[i], m_c_n2[i]);
+            if (surface_still_there)
+                continue;
             return true;
+        }
+        if (has && !had)
+        {
+            // A sphere can discover the other face of a static edge even when
+            // that face was absent from the last manifold. Only treat a wholly
+            // new contact as moved furniture when the unchanged particle centre
+            // is now actually inside it.
+            if (point_inside(m_points[i]))
+                return true;
+            continue;
+        }
         if (!has)
             continue;
         const Vector3 p = rest["point"];
@@ -774,7 +815,14 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         if (!matches && (m_c_flags[i] & 2) != 0)
             matches = plane_matches(p, n, m_c_p2[i], m_c_n2[i]);
         if (!matches)
-            return true;
+        {
+            const bool cached_valid = ((m_c_flags[i] & 1) != 0 &&
+                                       PlaneValid(i, m_c_p1[i], m_c_n1[i])) ||
+                                      ((m_c_flags[i] & 2) != 0 &&
+                                       PlaneValid(i, m_c_p2[i], m_c_n2[i]));
+            if (!cached_valid)
+                return true;
+        }
     }
 
     const int seg_count = static_cast<int>(m_seg_a.size());
@@ -789,11 +837,46 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         const Dictionary rest = space_state->get_rest_info(m_shape_query);
         const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
         const bool had = m_mid_contact[s] != 0;
-        if (has != had)
+        if (!has && had)
+        {
+            if (cached_surface_exists(mid, m_mid_contact_point[s], m_mid_contact_normal[s]))
+                continue;
             return true;
-        if (has && !plane_matches(rest["point"], rest["normal"],
-                                  m_mid_contact_point[s], m_mid_contact_normal[s]))
-            return true;
+        }
+        if (has && !had)
+        {
+            if (point_inside(mid))
+                return true;
+            continue;
+        }
+        if (has)
+        {
+            const Vector3 cached_p = m_mid_contact_point[s];
+            const Vector3 cached_n = m_mid_contact_normal[s];
+            const Vector3 p = rest["point"];
+            const Vector3 n = rest["normal"];
+            if (n.dot(cached_n) > 0.85)
+            {
+                // Same face: movement along its normal means the supporting
+                // collider itself moved and the rope must wake.
+                if (!plane_matches(p, n, cached_p, cached_n))
+                    return true;
+            }
+            else
+            {
+                // At a convex edge get_rest_info may alternate between the top
+                // and side faces although nothing in the world moved. A midpoint
+                // stores one plane, unlike particles' two-slot manifolds, so
+                // accept the alternate normal while the cached plane remains a
+                // plausible contact at the unchanged midpoint.
+                const double rest_len = m_seg_rest[s];
+                const bool cached_valid = mid.distance_squared_to(cached_p) <= rest_len * rest_len * 4.0 &&
+                                          std::abs((mid - cached_p).dot(cached_n)) <
+                                              m_collision_radius * 3.0;
+                if (!cached_valid)
+                    return true;
+            }
+        }
     }
     return false;
 }

@@ -1303,6 +1303,43 @@ func _group_edges() -> void:
 		"deepest %.1f mm inside" % (mover_depth * 1000.0))
 	await _drop_case()
 
+	# An edge contact legitimately has two answers: the tabletop normal and the
+	# vertical-face normal. The sleeping environment poll must accept either one
+	# without deciding that the table moved, clearing the contact manifold and
+	# kicking the cord awake. This is the static version of a controller lead
+	# draped over the table edge; fixed anchors isolate the contact logic from any
+	# rigid-body movement in the controller itself.
+	base = _new_case()
+	_box(base + Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.0))
+	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))
+	rope = _rope_between(base + Vector3(-0.9, 0.76, 0),
+		base + Vector3(0.35, 0.76, 0), 34)
+	await _carry(rope, rope.end_node, base + Vector3(0.35, 0.06, 0), 90)
+	var corner_settle := await _settle_profile(1800)
+	var corner_prev := rope.get_points()
+	var corner_wakes := 0
+	var corner_worst := 0.0
+	var corner_was_asleep := rope.is_sleeping()
+	for tick in 120:
+		if tick % BATCH == 0:
+			await get_tree().physics_frame
+		rope.step(1.0 / 90.0)
+		var corner_now := rope.get_points()
+		for i in corner_now.size():
+			corner_worst = maxf(corner_worst,
+				corner_prev[i].distance_to(corner_now[i]))
+		if corner_was_asleep and not rope.is_sleeping():
+			corner_wakes += 1
+		corner_was_asleep = rope.is_sleeping()
+		corner_prev = corner_now
+	_ok("edges/a sleeping corner cord is not woken by alternating edge normals",
+		corner_settle["slept"] and corner_wakes == 0,
+		"%d false wakes in 120 ticks" % corner_wakes)
+	_ok("edges/a sleeping corner cord does not kick at the environment-poll cadence",
+		corner_worst * 1000.0 < STILL_MM,
+		"worst movement %.3f mm/tick" % (corner_worst * 1000.0))
+	await _drop_case()
+
 	# A true six-plug lead exercises both frayed ends and all six branch anchors.
 	# The ordinary behaviour cases use trs_cable.tscn, which is deliberately a
 	# single unfrayed cord and therefore cannot catch ribbon/fray regressions.
