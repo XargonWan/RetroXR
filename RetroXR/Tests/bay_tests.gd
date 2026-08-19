@@ -365,19 +365,46 @@ func _group_tray() -> void:
 		_check(absf(tray_up - want) < 0.5 and absf(tray_up - cart_turned) < 0.5,
 			"tray/and carries the cart at its own angle when up")
 
-	# Shut the bay for the move: a cart let go inside its own grab sphere is caught
-	# straight back by it, which is the room's behaviour and not what this asks.
-	slot.enabled = false
-	slot.drop_object()
-	cart.global_position += Vector3(0, 0.5, 0)
-	await _wait(20)
-	_check(sys._tray_cartridge == null, "tray/taking it out empties the bay")
-	_check(not cart.desktop_click_available(),
-		"tray/and a loose cart goes back to click-to-take")
+	# A direct top-face press must cross BELOW the normal locked rest angle before
+	# the push-push latch catches. Releasing at home without that overtravel springs
+	# back up; crossing it latches below home and then rebounds slightly to zero.
+	var tray_axis: Vector3 = model._tray_pivot.global_transform.basis.x.normalized()
+	var tray_origin: Vector3 = model._tray_pivot.global_position
+	tray_top = tray_shape.global_transform * Vector3(0, tray_half.y, 0)
+	tray_hinge._begin_track(tray_top)
+	tray_hinge._on_poke_started(tray_top,
+		tray_hinge._face_world_normal(VRHinge.FACE_Y_POS), VRHinge.POKE_CLOSE)
+	var home_arc: Vector3 = tray_origin + Basis(tray_axis,
+		deg_to_rad(-RetroSystemModelNES.TRAY_UP_DEG)) * (tray_top - tray_origin)
+	tray_hinge._on_poke_motion(home_arc, VRHinge.POKE_CLOSE)
+	tray_hinge._on_poke_ended()
+	await _settle_tray(sys)
+	_check(not tray_hinge.is_latched_closed()
+		and absf(rad_to_deg(model._tray_pivot.rotation.x)
+			- RetroSystemModelNES.TRAY_UP_DEG) < 0.5,
+		"tray/a top poke released at home has not crossed the latch")
 
-	# A second top press on a latched tray travels a little BELOW home, releases
-	# the push-push latch, and hands the carriage back to its spring.
-	tray_hinge.latch_closed()
+	tray_top = tray_shape.global_transform * Vector3(0, tray_half.y, 0)
+	tray_hinge._begin_track(tray_top)
+	tray_hinge._on_poke_started(tray_top,
+		tray_hinge._face_world_normal(VRHinge.FACE_Y_POS), VRHinge.POKE_CLOSE)
+	var latch_arc: Vector3 = tray_origin + Basis(tray_axis, deg_to_rad(
+		-(RetroSystemModelNES.TRAY_UP_DEG + tray_hinge.push_push_overtravel_deg + 0.5))) \
+		* (tray_top - tray_origin)
+	tray_hinge._on_poke_motion(latch_arc, VRHinge.POKE_CLOSE)
+	_check(tray_hinge.is_latched_closed(),
+		"tray/a top poke crossing below home catches the latch")
+	_check(rad_to_deg(model._tray_pivot.rotation.x) < -0.5,
+		"tray/the first latch press visibly overtravels below home")
+	await _settle_tray(sys)
+	_check(absf(rad_to_deg(model._tray_pivot.rotation.x)) < 0.1,
+		"tray/the caught latch rebounds up to its locked rest angle")
+	_check(cart.is_clamped() and model.is_tray_down(),
+		"tray/the rebounded carriage is locked with the cart connected")
+
+	# Pressing that same top face while latched uses linear overtravel to release;
+	# once it trips, the spring owns the carriage all the way back up.
+	tray_top = tray_shape.global_transform * Vector3(0, tray_half.y, 0)
 	var poke_normal: Vector3 = tray_hinge._face_world_normal(VRHinge.FACE_Y_POS)
 	tray_hinge._on_poke_started(tray_top, poke_normal, VRHinge.POKE_CLOSE)
 	tray_hinge._on_poke_motion(tray_top
@@ -390,6 +417,17 @@ func _group_tray() -> void:
 	await _settle_tray(sys)
 	_check(absf(rad_to_deg(model._tray_pivot.rotation.x) - RetroSystemModelNES.TRAY_UP_DEG) < 0.5,
 		"tray/the released poke springs the cradle all the way up")
+
+	# Shut the bay for the move: a cart let go inside its own grab sphere is caught
+	# straight back by it, which is the room's behaviour and not what this asks.
+	slot.enabled = false
+	slot.drop_object()
+	cart.global_position += Vector3(0, 0.5, 0)
+	await _wait(20)
+	_check(sys._tray_cartridge == null, "tray/taking it out empties the bay")
+	_check(not cart.desktop_click_available(),
+		"tray/and a loose cart goes back to click-to-take")
+
 	await _clear()
 
 

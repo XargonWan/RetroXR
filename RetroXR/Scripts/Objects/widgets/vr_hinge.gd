@@ -457,11 +457,9 @@ func _claim_poke_face(ctrl: XRController3D, tip: Vector3, face: int, priority: i
 ## Default poke motion is the trigger drag constrained to the direction named by
 ## the contacted face. Subclasses may replace it (push-push overtravel does).
 func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
-	var raw := _angle_at(world_pos, _grab_raw_prev)
-	if is_nan(raw) or target == null:
+	var wanted := _poke_wanted_deg(world_pos, true)
+	if is_nan(wanted) or target == null:
 		return
-	_grab_raw_prev = raw
-	var wanted := clampf(raw + _grab_offset_deg, min_deg, max_deg)
 	if mode == POKE_TORQUE:
 		_apply(wanted, true)
 		return
@@ -471,6 +469,17 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 	var allowed := wanted >= cur if toward_open == increasing_opens else wanted <= cur
 	if allowed:
 		_apply(wanted, true)
+
+
+## Angle implied by the active fingertip drag. Push-push subclasses request the
+## unclamped value so a tray can travel slightly beyond its nominal closed limit.
+func _poke_wanted_deg(world_pos: Vector3, clamp_to_limits: bool) -> float:
+	var raw := _angle_at(world_pos, _grab_raw_prev)
+	if is_nan(raw):
+		return NAN
+	_grab_raw_prev = raw
+	var wanted := raw + _grab_offset_deg
+	return clampf(wanted, min_deg, max_deg) if clamp_to_limits else wanted
 
 
 func _on_poke_started(_tip: Vector3, _outward_normal: Vector3,

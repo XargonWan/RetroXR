@@ -31,12 +31,16 @@ extends VRHinge
 ## releases. The visible hinge overtravels slightly, then the spring takes it up.
 @export var push_push_unlatch_depth: float = 0.006
 @export var push_push_overtravel_deg: float = 2.0
+## Speed of the small upward rebound after the latch catches below its rest angle.
+@export var push_push_rebound_speed_deg: float = 40.0
 
 var _latched_closed := false
 var _poke_overtravel := false
+var _poke_latching := false
 var _poke_start_tip := Vector3.ZERO
 var _poke_outward_normal := Vector3.ZERO
 var _spring_logged_open := true
+var _latch_rebound := false
 
 
 func _ready() -> void:
@@ -50,6 +54,7 @@ func _ready() -> void:
 func open() -> void:
 	var was_latched := _latched_closed
 	_latched_closed = false
+	_latch_rebound = false
 	_set_interactive(true)
 	_spring_logged_open = false
 	if was_latched:
@@ -58,7 +63,7 @@ func open() -> void:
 
 ## Latch fully shut (model.play_close, or the hand pushed it home). Emits so the
 ## host can mark the tray closed.
-func latch_closed() -> void:
+func latch_closed(rebound_from_overtravel: bool = false) -> void:
 	_latched_closed = true
 	_trigger_ctrl = null
 	_end_poke(true)
@@ -67,7 +72,13 @@ func latch_closed() -> void:
 	# one to let it up again.
 	_set_interactive(push_push)
 	_state_log("LATCHED_CLOSED")
-	_apply(min_deg, true)
+	_latch_rebound = rebound_from_overtravel
+	if rebound_from_overtravel:
+		# Report the state change without erasing the visible below-home press. Idle
+		# processing eases it back to `min_deg` over the next few frames.
+		rotation_changed.emit(rad_to_deg(target.rotation.x) if target != null else min_deg)
+	else:
+		_apply(min_deg, true)
 	_spring_logged_open = false
 
 
@@ -112,13 +123,32 @@ func _process(delta: float) -> void:
 func _on_poke_started(tip: Vector3, outward_normal: Vector3,
 		mode: int) -> void:
 	_poke_overtravel = push_push and _latched_closed and mode == POKE_CLOSE
+	_poke_latching = push_push and not _latched_closed and mode == POKE_CLOSE
 	_poke_start_tip = tip
 	_poke_outward_normal = outward_normal
 	if _poke_overtravel:
 		_state_log("LATCHED_CLOSED -> PRESSING_RELEASE")
+	elif _poke_latching:
+		_spring_logged_open = false
+		_state_log("SPRUNG_OPEN -> PRESSING_LATCH")
 
 
 func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
+	if _poke_latching:
+		if target == null:
+			return
+		var wanted := _poke_wanted_deg(world_pos, false)
+		if is_nan(wanted):
+			return
+		var bottom := min_deg - push_push_overtravel_deg
+		wanted = clampf(wanted, bottom, max_deg)
+		target.rotation.x = deg_to_rad(wanted)
+		rotation_changed.emit(wanted)
+		if wanted <= bottom + 0.001:
+			_poke_latching = false
+			_state_log("latch overtravel reached -> LATCHED_CLOSED")
+			latch_closed(true)
+		return
 	if not _poke_overtravel:
 		super._on_poke_motion(world_pos, mode)
 		return
@@ -137,7 +167,14 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 
 
 func _on_poke_ended() -> void:
+	if _poke_latching and not _latched_closed:
+		# A poke that only reaches the normal home angle has not crossed the latch.
+		# Skip the generic near-closed release rule and let the spring take it back.
+		_skip_next_release = true
+		_spring_logged_open = false
+		_state_log("latch press released early -> SPRINGING_OPEN")
 	_poke_overtravel = false
+	_poke_latching = false
 
 
 # closed = min_deg, open = max_deg: wheel UP opens, wheel DOWN closes.
@@ -157,7 +194,18 @@ func _on_released() -> void:
 # Ease back toward fully open whenever it's neither held nor latched shut. Silent
 # (no signal) — only latch_closed reports state; the spring return isn't "an event".
 func _on_idle(delta: float) -> void:
-	if _latched_closed or target == null:
+	if target == null:
+		return
+	if _latched_closed:
+		if not _latch_rebound:
+			return
+		var rebound_cur := rad_to_deg(target.rotation.x)
+		var rebound_next := move_toward(rebound_cur, min_deg,
+			push_push_rebound_speed_deg * delta)
+		target.rotation.x = deg_to_rad(rebound_next)
+		if is_equal_approx(rebound_next, min_deg):
+			_latch_rebound = false
+			_state_log("latch rebound settled at %.2f deg" % min_deg)
 		return
 	var cur := rad_to_deg(target.rotation.x)
 	if is_equal_approx(cur, max_deg):
