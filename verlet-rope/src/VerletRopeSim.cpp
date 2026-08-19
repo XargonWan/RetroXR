@@ -151,13 +151,10 @@ inline void VerletRope::SolveBendTriple(int a, int b, int c, double allowed_dev,
     }
 }
 
-// The first flexible joint after a strain-relief boot uses ordinary
-// bend_stiffness, but its midpoint formulation is ill-conditioned near a
-// hairpin: stretch restores almost all of the correction. Use an angular form
-// only for that handoff joint and only above 150 degrees. The correction remains
-// entirely stiffness-scaled; zero stiffness permits the fold and there is no
-// hard angle limit.
-inline void VerletRope::SolveHairpinBend(int a, int b, int c, double allowed_dev, double k)
+// True local angular bending. Stiffness controls the correction toward the free
+// angle, resistance ramps progressively near a fold, and the hard limit handles
+// adjacent segments that self-collision deliberately excludes.
+inline void VerletRope::SolveAngleBend(int a, int b, int c, double free_angle, double k)
 {
     const Vector3 incoming = m_points[b] - m_points[a];
     const Vector3 outgoing = m_points[c] - m_points[b];
@@ -168,17 +165,28 @@ inline void VerletRope::SolveHairpinBend(int a, int b, int c, double allowed_dev
     const Vector3 u = incoming / incoming_len;
     const Vector3 v_out = outgoing / outgoing_len;
     const double forward_dot = CLAMP(u.dot(v_out), -1.0, 1.0);
-    constexpr double HAIRPIN_DOT = -0.866025403784; // cos(150 degrees)
-    if (forward_dot >= HAIRPIN_DOT)
+    const double turn = std::acos(forward_dot);
+    const double stiffen = Math::deg_to_rad(CLAMP(m_bend_stiffen_degrees, 0.0, 180.0));
+    const double limit = Math::deg_to_rad(
+        CLAMP(std::max(m_bend_limit_degrees, m_bend_stiffen_degrees + 0.001), 0.0, 180.0));
+    if (turn <= stiffen)
         return;
 
-    double angular_k = k;
-    if (allowed_dev > 0.0)
+    double k_eff = CLAMP(k, 0.0, 1.0);
+    double target_turn;
+    if (turn > limit)
+        target_turn = limit;
+    else
     {
-        const double dev = ((m_points[a] + m_points[c]) * 0.5f - m_points[b]).length();
-        if (dev <= allowed_dev)
-            return;
-        angular_k *= (dev - allowed_dev) / dev;
+        const double t = turn > stiffen
+                             ? CLAMP((turn - stiffen) / (limit - stiffen), 0.0, 1.0)
+                             : 0.0;
+        const double ramp = t * t * (3.0 - 2.0 * t);
+        // Multiply the authored response progressively rather than blending
+        // toward rigidity. A soft cable remains softer than a stiff one even
+        // near the limit; only the separate hard-limit branch is absolute.
+        k_eff = 1.0 - std::pow(1.0 - k_eff, 1.0 + ramp * 12.0);
+        target_turn = turn - (turn - stiffen) * k_eff;
     }
     const Vector3 reference = std::abs(u.dot(Vector3(0, 1, 0))) < 0.9
                                   ? Vector3(0, 1, 0)
@@ -193,18 +201,48 @@ inline void VerletRope::SolveHairpinBend(int a, int b, int c, double allowed_dev
         if (axis.dot(stable_axis) < 0.0)
             axis = -axis;
     }
-    const double turn = std::acos(forward_dot);
-    const Vector3 target =
-        Basis(axis, turn * (1.0 - CLAMP(angular_k, 0.0, 1.0))).xform(u) * outgoing_len;
-    const Vector3 correction = target - outgoing;
+    const double sin_turn = std::sqrt(std::max(0.0, 1.0 - forward_dot * forward_dot));
     const float w_b = m_inv_mass[b];
     const float w_c = m_inv_mass[c];
-    const float w_sum = w_b + w_c;
-    if (w_sum > 0.0f)
+    const float w_a = m_inv_mass[a];
+
+    // At an exact hairpin the angle gradient is undefined. One deterministic
+    // angular projection breaks the symmetry; subsequent iterations use the
+    // regular three-particle gradient below.
+    if (sin_turn < 1e-5)
     {
-        m_points[b] -= correction * (w_b / w_sum);
-        m_points[c] += correction * (w_c / w_sum);
+        const Vector3 target = Basis(axis, target_turn).xform(u) * outgoing_len;
+        const Vector3 correction = target - outgoing;
+        const float w_sum = w_b + w_c;
+        if (w_sum > 0.0f)
+        {
+            m_points[b] -= correction * (w_b / w_sum);
+            m_points[c] += correction * (w_c / w_sum);
+        }
+        return;
     }
+
+    const Vector3 g_a = (v_out - u * forward_dot) / (incoming_len * sin_turn);
+    const Vector3 g_c = -(u - v_out * forward_dot) / (outgoing_len * sin_turn);
+    const Vector3 g_b = -g_a - g_c;
+    const double weight = w_a * g_a.length_squared() +
+                          w_b * g_b.length_squared() +
+                          w_c * g_c.length_squared();
+    if (weight < 1e-10)
+        return;
+
+    // Angle gradients preserve segment lengths only to first order. Bound a
+    // nonlinear correction so one iteration cannot manufacture stretch while
+    // trying to open a severe fold; repeated solver iterations converge it.
+    const double constraint = std::min(turn - target_turn, Math::deg_to_rad(5.0));
+    const uint64_t key = BendLambdaKey(a, b, c, false, free_angle, k);
+    double &lambda = m_angle_lambda[key];
+    const double alpha = m_bend_compliance > 0.0 ? m_bend_compliance / m_step_dt_sq : 0.0;
+    const double delta_lambda = (-constraint - alpha * lambda) / (weight + alpha);
+    lambda += delta_lambda;
+    m_points[a] += g_a * (w_a * delta_lambda);
+    m_points[b] += g_b * (w_b * delta_lambda);
+    m_points[c] += g_c * (w_c * delta_lambda);
 }
 
 // Bend on (a, b, c) with `a` held immovable — the correction is shared by b and c
@@ -701,6 +739,7 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
     m_contact_lambda_1.assign(m_points.size(), 0.0);
     m_contact_lambda_2.assign(m_points.size(), 0.0);
     m_bend_lambda.clear();
+    m_angle_lambda.clear();
 
     // Stretch stiffness is remapped so extensibility is independent of the
     // iteration count (k' = 1-(1-k)^(1/n)); 1.0 stays fully rigid.
@@ -708,6 +747,9 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
     // Bend stiffness is applied directly per iteration — remapping it the same
     // way crushes mid-range values into "floppy" at typical iteration counts.
     const double k_bend = CLAMP(m_bend_stiffness, 0.0, 1.0);
+    // Angular projection is stronger than the old midpoint displacement for
+    // the same numeric rating. Preserve the authored cable feel while making
+    // the value iteration-count independent.
     // A bend of angle B deviates the particle L*sin(B/2) from the midpoint;
     // bends up to max_bend_degrees are free.
     const double allowed_dev = m_segment_length * std::sin(Math::deg_to_rad(m_max_bend_degrees) * 0.5);
@@ -732,12 +774,8 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
             SolvePair(m_seg_a[s], m_seg_b[s], m_seg_rest[s], k_stretch,
                       m_stretch_compliance > 0.0 ? &m_stretch_lambda[s] : nullptr);
 
-        // Bend, hierarchical: besides adjacent triples (spacing 1), also
-        // constrain toward midpoints at spacing 2/4/8… Plain PBD bending
-        // saturates with chain length, so long ropes stay droopy no matter the
-        // stiffness; the long-range constraints fix that in O(log n) passes. The
-        // hierarchy depth scales with stiffness. Sweep direction alternates per
-        // iteration. The free-bend allowance grows ~s^2 with spacing.
+        // Bend, hierarchical: adjacent midpoint bending preserves the existing
+        // cable drape, while spacing 2/4/8 keeps long ropes from saturating.
         if (k_bend > 0.0)
         {
             int levels = 1 + static_cast<int>(std::lround(k_bend * 3.0));
@@ -778,21 +816,18 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
                 for (int i = count - 1 - n_end; i < count - 1; ++i)
                     SolveBend(i, 1, 0.0, StubWeight(ke, count - 1 - i, n_end));
             }
+        }
 
-            // At the very next joint the boot hands off to ordinary cable bend
-            // stiffness. Use its angular form only if that joint has collapsed
-            // into the midpoint solver's near-180-degree singularity.
-            if (k_bend > 0.0)
-            {
-                const int start_transition = n_end + 1;
-                const int end_transition = count - 2 - n_end;
-                if (start_transition < count - 1)
-                    SolveHairpinBend(start_transition - 1, start_transition,
-                                     start_transition + 1, allowed_dev, k_bend);
-                if (end_transition > 0 && end_transition != start_transition)
-                    SolveHairpinBend(end_transition - 1, end_transition,
-                                     end_transition + 1, allowed_dev, k_bend);
-            }
+        // Adjacent segments cannot self-collide. Only in the severe-fold region
+        // add nonlinear angular resistance and the hard per-joint limit.
+        if (k_bend > 0.0 || m_bend_limit_degrees < 180.0)
+        {
+            if (iter_i % 2 == 0)
+                for (int i = 1; i < count - 1; ++i)
+                    SolveAngleBend(i - 1, i, i + 1, 0.0, k_bend);
+            else
+                for (int i = count - 2; i >= 1; --i)
+                    SolveAngleBend(i - 1, i, i + 1, 0.0, k_bend);
         }
 
         // Directional strain-relief stub: pull the first/last few particles
@@ -895,6 +930,16 @@ void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, doubl
                 s *= 2;
                 levels -= 1;
             }
+        }
+
+        if (p_k_bend > 0.0 || m_bend_limit_degrees < 180.0)
+        {
+            if (p_iter % 2 == 0)
+                for (int i = first + 1; i < last; ++i)
+                    SolveAngleBend(i - 1, i, i + 1, 0.0, p_k_bend);
+            else
+                for (int i = last - 1; i > first; --i)
+                    SolveAngleBend(i - 1, i, i + 1, 0.0, p_k_bend);
         }
 
         // Strain-relief boot at the plug, the same taper the trunk's ends get.

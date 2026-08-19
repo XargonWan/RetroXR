@@ -97,6 +97,22 @@ void VerletRope::_bind_methods()
     ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "max_bend_degrees", PROPERTY_HINT_RANGE, "0.0,180.0"),
                  "set_max_bend_degrees", "get_max_bend_degrees");
 
+    ClassDB::bind_method(D_METHOD("set_bend_stiffen_degrees", "value"),
+                         &VerletRope::SetBendStiffenDegrees);
+    ClassDB::bind_method(D_METHOD("get_bend_stiffen_degrees"),
+                         &VerletRope::GetBendStiffenDegrees);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bend_stiffen_degrees",
+                              PROPERTY_HINT_RANGE, "0.0,180.0"),
+                 "set_bend_stiffen_degrees", "get_bend_stiffen_degrees");
+
+    ClassDB::bind_method(D_METHOD("set_bend_limit_degrees", "value"),
+                         &VerletRope::SetBendLimitDegrees);
+    ClassDB::bind_method(D_METHOD("get_bend_limit_degrees"),
+                         &VerletRope::GetBendLimitDegrees);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bend_limit_degrees",
+                              PROPERTY_HINT_RANGE, "0.0,180.0"),
+                 "set_bend_limit_degrees", "get_bend_limit_degrees");
+
     ADD_GROUP("Rendering", "");
     ClassDB::bind_method(D_METHOD("set_tube_radius", "value"), &VerletRope::SetTubeRadius);
     ClassDB::bind_method(D_METHOD("get_tube_radius"), &VerletRope::GetTubeRadius);

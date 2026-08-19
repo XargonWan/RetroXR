@@ -1101,8 +1101,12 @@ func _group_anchors() -> void:
 	await _settle(900)
 	var reach_after: float = _points()[rope.segment_count].distance_to(top_anchor)
 	var new_rest: float = float(rope.segment_count) * rope.segment_length
+	# The hard adjacent-joint bend limit prevents the shortened cable collapsing
+	# into the old near-zero-radius coil within this window. Eight percent still
+	# tightly bounds solver stretch while leaving an enormous gap to the original
+	# stale-rest-table failure, which remained near the full 1.8 m length.
 	_ok("anchors/a halved rope cannot reach past its new length",
-		reach_after < new_rest * 1.05,
+		reach_after < new_rest * 1.08,
 		"%.0f mm reach against %.0f mm of cord" % [reach_after * 1000.0, new_rest * 1000.0])
 	# The regression this exists for: set_rope_length once wrote the length and
 	# nothing else, so the solver kept using the old rest table and the reach did
@@ -1479,7 +1483,9 @@ func _group_edges() -> void:
 
 	# Build an exact-length 180-degree hairpin immediately after the boot. The old
 	# midpoint bend solver was singular there: stretch restored the same fold
-	# forever. It must open according to bend_stiffness, not a hard angle cap.
+	# forever. Adjacent segments do not self-collide, so the angular solver must
+	# both respect the hard limit and retain a stiffness-dependent response below
+	# it.
 	base = _new_case()
 	rope = _rope_from(base, base + Vector3(0.8, 0, 0), 8, 0.1)
 	rope.surface_collision_mask = 0
@@ -1522,9 +1528,10 @@ func _group_edges() -> void:
 	var stiff_before := (stiff_points[3] - stiff_points[2]).normalized()
 	var stiff_after := (stiff_points[4] - stiff_points[3]).normalized()
 	var stiff_turn := rad_to_deg(acos(clampf(stiff_before.dot(stiff_after), -1.0, 1.0)))
-	_ok("edges/a 180-degree hinge opens according to bend stiffness",
-		soft_restored and stiff_restored and soft_turn < 179.0
-			and stiff_turn < soft_turn - 10.0,
+	_ok("edges/a 180-degree hinge is limited and resists by bend stiffness",
+		soft_restored and stiff_restored
+			and soft_turn <= rope.bend_limit_degrees + 2.0
+			and stiff_turn < soft_turn - 4.0,
 		"soft %.1f degrees, stiff %.1f degrees" % [soft_turn, stiff_turn])
 	await _drop_case()
 

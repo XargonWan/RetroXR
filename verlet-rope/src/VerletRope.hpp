@@ -141,6 +141,8 @@ public:
     XENU_ROPE_PROP(double, BendCompliance, m_bend_compliance)
     XENU_ROPE_PROP(double, ContactCompliance, m_contact_compliance)
     XENU_ROPE_PROP(double, MaxBendDegrees, m_max_bend_degrees)
+    XENU_ROPE_PROP(double, BendStiffenDegrees, m_bend_stiffen_degrees)
+    XENU_ROPE_PROP(double, BendLimitDegrees, m_bend_limit_degrees)
     XENU_ROPE_PROP(double, TubeRadius, m_tube_radius)
     XENU_ROPE_PROP(int, TubeSides, m_tube_sides)
     XENU_ROPE_PROP(int, Smoothing, m_smoothing)
@@ -251,7 +253,7 @@ private:
     inline void SolvePair(int a, int b, double rest, double k, double *lambda = nullptr);
     inline void SolveBend(int b, int spacing, double allowed_dev, double k);
     inline void SolveBendTriple(int a, int b, int c, double allowed_dev, double k);
-    inline void SolveHairpinBend(int a, int b, int c, double allowed_dev, double k);
+    inline void SolveAngleBend(int a, int b, int c, double free_angle, double k);
     inline void SolveBendAnchored(int a, int b, int c, double k);
     inline void SolveMidContact(int s, bool second);
     inline void ProjectPlane(int i, const godot::Vector3 &cp, const godot::Vector3 &n,
@@ -359,6 +361,7 @@ private:
     std::vector<double> m_contact_lambda_1;
     std::vector<double> m_contact_lambda_2;
     std::unordered_map<uint64_t, godot::Vector3> m_bend_lambda;
+    std::unordered_map<uint64_t, double> m_angle_lambda;
     double m_step_dt_sq = 1.0 / (60.0 * 60.0);
     // Segment starting at each particle, or -1 — only used to invalidate a
     // midpoint cache after the tunnel recovery moves a particle.
@@ -456,6 +459,11 @@ private:
     double m_bend_compliance = 0.0;
     double m_contact_compliance = 0.000001;
     double m_max_bend_degrees = 0.0;
+    // Above this local turn, bend_stiffness ramps progressively. The limit is
+    // the adjacent-segment case self-collision cannot handle because neighbours
+    // share a particle and are deliberately excluded from each other.
+    double m_bend_stiffen_degrees = 150.0;
+    double m_bend_limit_degrees = 175.0;
     double m_tube_radius = 0.005;
     int m_tube_sides = 8;
     int m_smoothing = 0;
