@@ -190,7 +190,10 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	# != true, not bool(...): Object.get() returns null for a property the host does
 	# not have, and bool(null) throws rather than yielding false.
 	if system != null and system.get("_restoring_media") != true:
-		_play_sfx("plug_in")
+		# From the PLUG. These voices hang off the controller, so left alone the
+		# sound comes from wherever the pad is lying rather than from the socket
+		# the cable just went into.
+		_play_sfx("plug_in", _socket_pos(system, port_index))
 
 
 func on_unplugged() -> void:
@@ -199,13 +202,48 @@ func on_unplugged() -> void:
 	var sys := _connected_system
 	super.on_unplugged()
 	if is_instance_valid(sys) and not sys.is_queued_for_deletion() and not is_queued_for_deletion():
-		_play_sfx("plug_unplug")
+		_play_sfx("plug_unplug", _plug_pos())
+
+
+## The socket the plug is going into.
+##
+## Not the plug's own position: on_plugged_in fires from inside the snap, before
+## the zone has moved the plug onto the socket, so the plug is still hanging
+## where the hand let go of it — which is why the sound came from the pad.
+##
+## Two ways to find the socket, because _port_plugs is not always filled in yet
+## by the time this runs. The index is the fallback rather than the primary: it
+## is the LIBRETRO port, which equals the cabinet socket for a joypad but not
+## for everything (a computer mouse is forced to port 0 whichever socket it is
+## in), so the identity lookup is preferred when it is available.
+func _socket_pos(system: RetroSystem, port_index: int) -> Vector3:
+	if system == null:
+		return _plug_pos()
+	var zones: Variant = system.get("_port_zones")
+	if not (zones is Array):
+		return _plug_pos()
+	var za: Array = zones as Array
+	var plugs: Variant = system.get("_port_plugs")
+	if plugs is Array:
+		for i in (plugs as Array).size():
+			if (plugs as Array)[i] == _cable_plug and i < za.size() and za[i] != null:
+				return (za[i] as Node3D).global_position
+	if port_index >= 0 and port_index < za.size() and za[port_index] != null:
+		return (za[port_index] as Node3D).global_position
+	return _plug_pos()
+
+
+## Where the cable end is right now, or the pad itself if it has none.
+func _plug_pos() -> Vector3:
+	if is_instance_valid(_cable_plug):
+		return (_cable_plug as Node3D).global_position
+	return global_position
 
 
 ## Pick a variant and play it on the next voice. Never repeats the variant it
 ## played last for that bank — a face button gets mashed, and a plain random pick
 ## doubles often enough to read as a glitch rather than as variation.
-func _play_sfx(key: String) -> void:
+func _play_sfx(key: String, at: Variant = null) -> void:
 	var bank: Array = _sfx_banks.get(key, [])
 	if bank.is_empty() or _sfx_voices.is_empty():
 		return
@@ -215,4 +253,7 @@ func _play_sfx(key: String) -> void:
 	_sfx_last[key] = idx
 	var voice: PcmOneShot = _sfx_voices[_sfx_next]
 	_sfx_next = (_sfx_next + 1) % _sfx_voices.size()
-	voice.play(bank[idx])
+	if at == null:
+		voice.play(bank[idx])
+	else:
+		voice.play_from(bank[idx], at as Vector3)
