@@ -9,6 +9,12 @@ size = Vector3(0.114543, 0.021835938, 0.037454814)
 [sub_resource type="BoxShape3D" id="BoxShape3D_lid_activation"]
 size = Vector3(0.133636, 0.054266, 0.067435)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_lid_poke_top"]
+size = Vector3(0.148484, 0.003, 0.042435)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lid_poke_front"]
+size = Vector3(0.148484, 0.0323, 0.006)
+
 [node name="NESModel" type="Node3D" unique_id=1212574433]
 script = ExtResource("1_model")
 
@@ -30,5 +36,17 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.007133, 0.033718)
 
 [node name="LidActivationBox" type="CollisionShape3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesLidPivot/NesLid/LidActivation" unique_id=1792810010]
 shape = SubResource("BoxShape3D_lid_activation")
+
+[node name="LidPokeSurfaces" type="Area3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesLidPivot/NesLid" index="1"]
+
+[node name="LidPokeTop" type="CollisionShape3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesLidPivot/NesLid/LidPokeSurfaces"]
+position = Vector3(0, -0.0015, 0.0212175)
+shape = SubResource("BoxShape3D_lid_poke_top")
+metadata/poke_surface = true
+
+[node name="LidPokeFront" type="CollisionShape3D" parent="Shell/Sketchfab_model/root/GLTF_SceneRootNode/NesDeck_13/NesLidPivot/NesLid/LidPokeSurfaces"]
+position = Vector3(0, -0.01815, 0.0394)
+shape = SubResource("BoxShape3D_lid_poke_front")
+metadata/poke_surface = true
 
 [editable path="Shell"]

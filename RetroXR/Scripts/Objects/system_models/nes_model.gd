@@ -519,6 +519,16 @@ func _setup_flap_hinge() -> void:
 			maxf(a.size.z, 0.006) + 0.012)
 		col.shape = fallback_box
 		_flap_hinge.add_child(col)
+	# Poke uses two thin boxes matching the lid's horizontal and front planes,
+	# independent of the generous trigger/grip box above. Move the authored shapes
+	# under the live hinge so they follow the flap while retaining lid-local poses.
+	var poke_area := _lid_mesh.get_node_or_null("LidPokeSurfaces") as Area3D
+	if poke_area != null:
+		for node in poke_area.find_children("*", "CollisionShape3D", true, false):
+			var poke_shape := node as CollisionShape3D
+			if poke_shape != null:
+				poke_shape.reparent(_flap_hinge, true)
+		poke_area.queue_free()
 	# Hint in the flap's OWN plane, just past the grab box. Derived from the pivot
 	# rather than written as a literal -Y: this hinge hangs off the flap MESH while
 	# its pivot lives under _flap_frame, so their axes only happen to line up.

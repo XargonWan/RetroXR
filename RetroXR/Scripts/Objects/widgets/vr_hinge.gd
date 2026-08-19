@@ -123,9 +123,11 @@ var _pointer_hover := false              # desktop reticle over the grab box
 var _controllers: Array[XRController3D] = []
 var _icon: Label3D = null
 var _poke_ctrl: XRController3D = null
+var _poke_shape: CollisionShape3D = null
 var _poke_face: int = 0
 var _poke_mode: int = 0
 var _skip_next_release := false
+var _poke_shapes_cache: Array[CollisionShape3D] = []
 
 
 func _ready() -> void:
@@ -303,12 +305,13 @@ func _process_poke() -> void:
 		return
 	if _poke_ctrl != null:
 		if not _qualified_poke(_poke_ctrl) \
-				or not _tip_on_face(PokeTip.tip_of(_poke_ctrl), _poke_face,
+				or not _tip_on_face(PokeTip.tip_of(_poke_ctrl), _poke_shape, _poke_face,
 					poke_release_margin):
 			_end_poke()
 		else:
 			var tip := PokeTip.tip_of(_poke_ctrl)
-			_claim_poke_face(_poke_ctrl, tip, _poke_face, PokeTip.CONTACT_ENGAGED)
+			_claim_poke_face(_poke_ctrl, tip, _poke_shape, _poke_face,
+				PokeTip.CONTACT_ENGAGED)
 			_on_poke_motion(tip, _poke_mode)
 		return
 	if _trigger_ctrl != null or _pointer_held or not _can_engage():
@@ -317,11 +320,13 @@ func _process_poke() -> void:
 		if not _qualified_poke(ctrl):
 			continue
 		var tip := PokeTip.tip_of(ctrl)
-		var face := _face_at_tip(tip, poke_face_margin)
-		if face == 0:
+		var contact := _poke_contact_at(tip, poke_face_margin)
+		if contact.is_empty():
 			continue
-		_claim_poke_face(ctrl, tip, face, PokeTip.CONTACT_ENGAGED)
-		_begin_poke(ctrl, face, tip)
+		var shape := contact["shape"] as CollisionShape3D
+		var face: int = contact["face"]
+		_claim_poke_face(ctrl, tip, shape, face, PokeTip.CONTACT_ENGAGED)
+		_begin_poke(ctrl, shape, face, tip)
 		break
 
 
@@ -329,15 +334,17 @@ func _qualified_poke(ctrl: XRController3D) -> bool:
 	return is_instance_valid(ctrl) and ctrl.get_is_active() and PokeTip.is_poking(ctrl)
 
 
-func _begin_poke(ctrl: XRController3D, face: int, tip: Vector3) -> void:
+func _begin_poke(ctrl: XRController3D, shape: CollisionShape3D,
+		face: int, tip: Vector3) -> void:
 	_poke_ctrl = ctrl
+	_poke_shape = shape
 	_poke_face = face
 	if (poke_torque_faces & face) != 0:
 		_poke_mode = POKE_TORQUE
 	else:
 		_poke_mode = POKE_OPEN if (poke_open_faces & face) != 0 else POKE_CLOSE
 	_begin_track(tip)
-	_on_poke_started(tip, _face_world_normal(face), _poke_mode)
+	_on_poke_started(tip, _face_world_normal(face, shape), _poke_mode)
 	_state_log("poke %s -> %s at %.2f deg" % [
 		_face_name(face), _poke_mode_name(_poke_mode),
 		rad_to_deg(target.rotation.x) if target != null else 0.0])
@@ -349,6 +356,7 @@ func _end_poke(skip_release: bool = false) -> void:
 		return
 	var old := _poke_ctrl
 	_poke_ctrl = null
+	_poke_shape = null
 	_poke_face = 0
 	_poke_mode = 0
 	_skip_next_release = _skip_next_release or skip_release
@@ -360,14 +368,29 @@ func _end_poke(skip_release: bool = false) -> void:
 
 
 func _face_at_tip(tip: Vector3, margin: float, allowed_faces: int = -1) -> int:
-	var cs := _grab_box()
-	if cs == null:
-		return 0
+	var contact := _poke_contact_at(tip, margin, allowed_faces)
+	return 0 if contact.is_empty() else int(contact["face"])
+
+
+func _poke_contact_at(tip: Vector3, margin: float,
+		allowed_faces: int = -1) -> Dictionary:
+	var best: Dictionary = {}
+	var best_d := INF
+	for cs in _poke_shapes():
+		var hit := _face_on_shape(tip, cs, margin, allowed_faces)
+		if not hit.is_empty() and float(hit["distance"]) < best_d:
+			best = hit
+			best_d = float(hit["distance"])
+	return best
+
+
+func _face_on_shape(tip: Vector3, cs: CollisionShape3D, margin: float,
+		allowed_faces: int = -1) -> Dictionary:
 	var p: Vector3 = cs.global_transform.affine_inverse() * tip
 	var half: Vector3 = (cs.shape as BoxShape3D).size * 0.5
 	var allowed := (poke_open_faces | poke_close_faces | poke_torque_faces) \
 		if allowed_faces < 0 else allowed_faces
-	var best := 0
+	var best_face := 0
 	var best_d := INF
 	for face in [FACE_X_NEG, FACE_X_POS, FACE_Y_NEG, FACE_Y_POS,
 			FACE_Z_NEG, FACE_Z_POS]:
@@ -384,17 +407,44 @@ func _face_at_tip(tip: Vector3, margin: float, allowed_faces: int = -1) -> int:
 				inside = false
 				break
 		if inside and d < best_d:
-			best = face
+			best_face = face
 			best_d = d
-	return best
+	return {} if best_face == 0 else {
+		"shape": cs,
+		"face": best_face,
+		"distance": best_d,
+	}
 
 
-func _tip_on_face(tip: Vector3, face: int, margin: float) -> bool:
-	if face == 0:
+## Authored poke surfaces are marked on their CollisionShape3D. A hinge without
+## any keeps the legacy behaviour and pokes against its trigger/grip box.
+func _poke_shapes() -> Array[CollisionShape3D]:
+	var valid: Array[CollisionShape3D] = []
+	for cs in _poke_shapes_cache:
+		if is_instance_valid(cs):
+			valid.append(cs)
+	if not valid.is_empty():
+		_poke_shapes_cache = valid
+		return _poke_shapes_cache
+	for node in find_children("*", "CollisionShape3D", true, false):
+		var cs := node as CollisionShape3D
+		if cs != null and cs.shape is BoxShape3D and cs.get_meta(&"poke_surface", false):
+			_poke_shapes_cache.append(cs)
+	if _poke_shapes_cache.is_empty():
+		var fallback := _grab_box()
+		if fallback != null:
+			_poke_shapes_cache.append(fallback)
+	return _poke_shapes_cache
+
+
+func _tip_on_face(tip: Vector3, shape: CollisionShape3D,
+		face: int, margin: float) -> bool:
+	if face == 0 or shape == null:
 		return false
-	# `_face_at_tip` selects the nearest allowed face. Restrict it to the face that
-	# began this push so sliding round an edge cannot reverse the hinge direction.
-	return _face_at_tip(tip, margin, face) == face
+	# Stay on the exact physical plane that began this push. Sliding round the seam
+	# onto the other plane releases rather than silently changing interaction mode.
+	var hit := _face_on_shape(tip, shape, margin, face)
+	return not hit.is_empty() and int(hit["face"]) == face
 
 
 func _face_axis(face: int) -> int:
@@ -431,8 +481,8 @@ func _state_log(message: String) -> void:
 		print("[NES state] %s: %s" % [state_log_name, message])
 
 
-func _face_world_normal(face: int) -> Vector3:
-	var cs := _grab_box()
+func _face_world_normal(face: int, shape: CollisionShape3D = null) -> Vector3:
+	var cs := shape if shape != null else (_poke_shape if _poke_shape != null else _grab_box())
 	if cs == null:
 		return Vector3.ZERO
 	var local := Vector3.ZERO
@@ -440,8 +490,9 @@ func _face_world_normal(face: int) -> Vector3:
 	return (cs.global_transform.basis * local).normalized()
 
 
-func _claim_poke_face(ctrl: XRController3D, tip: Vector3, face: int, priority: int) -> void:
-	var cs := _grab_box()
+func _claim_poke_face(ctrl: XRController3D, tip: Vector3,
+		shape: CollisionShape3D, face: int, priority: int) -> void:
+	var cs := shape
 	if cs == null:
 		return
 	var p: Vector3 = cs.global_transform.affine_inverse() * tip

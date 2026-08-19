@@ -212,12 +212,21 @@ func _group_tray() -> void:
 		* Vector3(0, 0, -flap_half.z - 0.005)
 	_check(not flap._tip_in_activation_region(behind_flap),
 		"tray/a hand behind the flap box cannot activate it")
-	var lid_bottom: Vector3 = flap_shape.global_transform \
-		* Vector3(0, -flap_half.y, 0)
-	var lid_top: Vector3 = flap_shape.global_transform \
-		* Vector3(0, flap_half.y, 0)
-	var lid_front: Vector3 = flap_shape.global_transform \
-		* Vector3(0, 0, flap_half.z)
+	var lid_poke_top := flap.find_child("LidPokeTop", false, false) as CollisionShape3D
+	var lid_poke_front := flap.find_child("LidPokeFront", false, false) as CollisionShape3D
+	var top_half: Vector3 = (lid_poke_top.shape as BoxShape3D).size * 0.5
+	var front_half: Vector3 = (lid_poke_front.shape as BoxShape3D).size * 0.5
+	_check(lid_poke_top != flap_shape and lid_poke_front != flap_shape
+		and flap._poke_shapes().size() == 2,
+		"tray/the lid pokes use two surfaces separate from its trigger box")
+	_check(top_half.y < 0.002 and front_half.z < 0.004,
+		"tray/the lid poke boxes are thin planes, not another volume")
+	var lid_bottom: Vector3 = lid_poke_top.global_transform \
+		* Vector3(0, -top_half.y, top_half.z - 0.002)
+	var lid_top: Vector3 = lid_poke_top.global_transform \
+		* Vector3(0, top_half.y, 0)
+	var lid_front: Vector3 = lid_poke_front.global_transform \
+		* Vector3(0, 0, front_half.z)
 	_check(flap._face_at_tip(lid_bottom, 0.001) == VRHinge.FACE_Y_NEG
 		and flap._face_at_tip(lid_front, 0.001) == VRHinge.FACE_Z_POS,
 		"tray/the lid's bottom and outward faces accept their poke modes")
@@ -231,13 +240,13 @@ func _group_tray() -> void:
 	_check(model.get_lid_angle_deg() > 40.0,
 		"tray/an upward bottom-face poke lifts the lid")
 	model.set_lid_angle_deg(0.0)
-	lid_front = flap_shape.global_transform * Vector3(0, 0, flap_half.z)
+	lid_front = lid_poke_front.global_transform * Vector3(0, 0, front_half.z)
 	flap._begin_track(lid_front)
 	flap._on_poke_motion(lid_front + Vector3.UP * 0.03, VRHinge.POKE_TORQUE)
 	_check(model.get_lid_angle_deg() > 20.0,
 		"tray/upward torque on the front face lifts the lid")
 	model.set_lid_angle_deg(105.0)
-	lid_front = flap_shape.global_transform * Vector3(0, 0, flap_half.z)
+	lid_front = lid_poke_front.global_transform * Vector3(0, 0, front_half.z)
 	var hinge_axis: Vector3 = model._flap_pivot.global_transform.basis.x.normalized()
 	var hinge_origin: Vector3 = model._flap_pivot.global_position
 	var close_arc: Vector3 = hinge_origin + Basis(hinge_axis, deg_to_rad(20.0)) \
@@ -247,8 +256,8 @@ func _group_tray() -> void:
 	_check(model.get_lid_angle_deg() < 100.0,
 		"tray/closing torque on the front face lowers the lid")
 	model.set_lid_angle_deg(105.0)
-	lid_top = flap_shape.global_transform * Vector3(0, flap_half.y, 0)
-	var top_inward: Vector3 = -flap._face_world_normal(VRHinge.FACE_Y_POS)
+	lid_top = lid_poke_top.global_transform * Vector3(0, top_half.y, 0)
+	var top_inward: Vector3 = -flap._face_world_normal(VRHinge.FACE_Y_POS, lid_poke_top)
 	flap._begin_track(lid_top)
 	flap._on_poke_motion(lid_top + top_inward * 0.03, VRHinge.POKE_CLOSE)
 	_check(model.get_lid_angle_deg() < 90.0,
