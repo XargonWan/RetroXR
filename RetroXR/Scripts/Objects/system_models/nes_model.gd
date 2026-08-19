@@ -530,13 +530,14 @@ func play_port_plug_insert(plug: Node3D, zone: Node3D) -> void:
 	if socket == null or not (plug is RigidBody3D):
 		return
 	var seated := socket.snap_pose_for(plug)
-	var body := plug as RigidBody3D
-	body.freeze = false
+	# The snap zone already froze and owns this body. Keep it kinematic for the
+	# travel: unfreezing here revives the downward release velocity that Pickable
+	# deliberately gives a dropped body, so a physics tick can pull the plug down
+	# for one rendered frame before the tween puts it back.
 	plug.global_transform = socket.preview_pose_for(plug)
 	var tween := plug.create_tween()
 	tween.tween_property(plug, "global_transform", seated, 0.18) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_callback(func() -> void: body.freeze = true)
 
 
 func get_controller_port_count() -> int:
@@ -1104,12 +1105,13 @@ func play_cartridge_insert(cartridge: Node3D, slot: Node3D) -> void:
 	# physics tick, so a tween aimed there lands short and is then dragged the rest
 	# of the way by the grab driver.
 	var seated := zone.snap_pose_for(cartridge)
-	cartridge.freeze = false
+	# It is already frozen by the snap zone. The insertion is authored motion,
+	# not a free rigid body: unfreezing would reactivate the drop's retained
+	# gravity velocity and expose a one-frame world -Y excursion.
 	cartridge.global_transform = zone.preview_pose_for(cartridge)
 	var tween := cartridge.create_tween()
 	tween.tween_property(cartridge, "global_transform", seated, 0.25) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_callback(func() -> void: cartridge.freeze = true)
 
 
 func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:

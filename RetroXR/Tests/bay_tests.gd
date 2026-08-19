@@ -151,6 +151,8 @@ func _group_perch() -> void:
 		"perch/the ghost's cart reaches the front face")
 
 	slot.pick_up_object(cart)
+	_check(cart.freeze,
+		"perch/the insertion keeps the snapped cart out of rigid-body physics")
 	await _wait(40)
 	_check(cart.global_position.distance_to(slot.snap_pose_for(cart).origin) < 0.003,
 		"perch/a released cart ends at the seat, not the perch")
@@ -312,6 +314,8 @@ func _group_plug() -> void:
 		"plug/the offer stands off the socket's own axis")
 
 	port.pick_up_object(plug)
+	_check(plug.freeze,
+		"plug/the insertion keeps the snapped plug out of rigid-body physics")
 	await _wait(40)
 	_check(plug.global_position.distance_to(port.snap_pose_for(plug).origin) < 0.003,
 		"plug/a released plug ends in the socket")
