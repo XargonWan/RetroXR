@@ -576,6 +576,14 @@ func _pick_up_object(target: Node3D) -> void:
 	var snap := target as XRToolsSnapZone
 	if snap:
 		target = snap.picked_up_object
+		if not is_instance_valid(target):
+			return
+		# LOCAL PATCH (RetroXR): asked BEFORE the zone lets go, and only about what
+		# does not depend on the zone holding it — can_pick_up() answers "already
+		# held" while it does. A clamped cart refused after the drop would be
+		# released by the socket and picked up by nobody.
+		if target.has_method("is_clamped") and target.is_clamped():
+			return
 		snap.drop_object()
 
 	# Re-check can_pick_up here: state may have changed since closest_object was last updated

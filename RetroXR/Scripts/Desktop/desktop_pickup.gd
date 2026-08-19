@@ -249,10 +249,15 @@ func _try_grab() -> void:
 ## The object under the pointer that wants the click for itself, or null. A snap
 ## zone is asked about what it is HOLDING: the resolver hands back the socket, but
 ## it is the cart in the tray that knows a click means "push me home".
+##
+## The object is asked whether the click is claimable RIGHT NOW, not whether it owns
+## the method at all — a cartridge carries one wherever it is, and a class-level
+## test made every loose cart in the room wait for a drag before it could be picked
+## up, with a plain click doing nothing.
 func _click_action_node(target: Node3D) -> Node3D:
 	var zone := target as XRToolsSnapZone
 	var obj: Node3D = InteractionResolver.held_pickable(zone) if zone != null else target
-	if obj != null and obj.has_method("desktop_click_action"):
+	if obj != null and obj.has_method("desktop_click_available") 			and obj.desktop_click_available() and obj.has_method("desktop_click_action"):
 		return obj
 	return null
 
@@ -383,13 +388,21 @@ func _grab_target(target: Node3D) -> void:
 	var snap_zone := target as XRToolsSnapZone
 	if snap_zone:
 		pickable = InteractionResolver.held_pickable(snap_zone)
-		if not pickable:
-			return
-		snap_zone.drop_object()
 	else:
 		pickable = target as XRToolsPickable
 
-	if not pickable or not pickable.can_pick_up(_hand_pivot):
+	if not pickable:
+		return
+	# Asked BEFORE the zone lets go, and only about the rules that do not depend on
+	# the zone holding it — can_pick_up() answers "already held" while it does. A
+	# refusal taken after the drop leaves the object released by the socket and
+	# picked up by nobody, which is how a clamped cart falls out of a console.
+	if not pickable.enabled \
+			or (pickable.has_method("is_clamped") and pickable.is_clamped()):
+		return
+	if snap_zone:
+		snap_zone.drop_object()
+	if not pickable.can_pick_up(_hand_pivot):
 		return
 
 	# Position the pivot at the object's origin so the grab offset is ~zero,

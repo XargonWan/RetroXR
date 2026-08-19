@@ -65,6 +65,32 @@ func push_tray_host() -> Node:
 	return null
 
 
+## True while a pushed-home tray is holding this cart down. Asked by every grab
+## route BEFORE the socket lets go, because can_pick_up() cannot answer it: while a
+## snap zone holds an object, that method answers "already held" whatever the
+## object thinks, so a clamp expressed there would only be read once the zone had
+## already released the cart.
+func is_clamped() -> bool:
+	var host := push_tray_host()
+	return host != null and host.is_tray_down()
+
+
+## The clamp again, for a route that reaches the cart directly rather than through
+## the socket holding it.
+func can_pick_up(by: Node3D) -> bool:
+	if is_clamped():
+		return false
+	return super(by)
+
+
+## Whether a click on this cart means something other than "pick me up" — true only
+## while it is lying in a push tray. A cart on the floor, on a shelf, or in any
+## ordinary bay answers false and is taken by a plain click, as everything else in
+## the room is.
+func desktop_click_available() -> bool:
+	return push_tray_host() != null
+
+
 ## Desktop: a click on a cart lying in a push tray pushes it home, and a click on a
 ## pushed-home one lifts it back out. Pulling it out is the DRAG — see DesktopPickup.
 func desktop_click_action() -> void:
@@ -105,10 +131,16 @@ func _apply_cart_model() -> void:
 	var ab := _cart_model_aabb(glb)
 	if ab.size.y <= 0.0001:
 		return
-	# Scale the (oversized) model down to the system's real card dimensions.
+	# Scale the (oversized) model to the system's real card dimensions, PER AXIS.
+	# One uniform factor off width and height leaves depth to whatever proportions
+	# the asset happens to have — the NES cart drew 12.2 mm against a real 17 — and
+	# depth is the axis a bay's clearances are built on.
 	var s := MediaDimensions.cart_size(systemid)
-	var k: float = minf(s.x / maxf(ab.size.x, 0.0001), s.y / maxf(ab.size.y, 0.0001))
-	glb.scale = Vector3(k, k, k)
+	var k := Vector3(
+		s.x / maxf(ab.size.x, 0.0001),
+		s.y / maxf(ab.size.y, 0.0001),
+		s.z / maxf(ab.size.z, 0.0001))
+	glb.scale = k
 	glb.position = -(ab.position + ab.size * 0.5) * k
 	# Moulded plastic exported with a high metallicFactor reads as a dark mirror
 	# rather than a grey shell — the NES cart ships metallic 0.76.

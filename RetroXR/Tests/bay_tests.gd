@@ -59,6 +59,30 @@ func _want(group: String) -> bool:
 	return _only.is_empty() or _only == group
 
 
+## Angle between two nodes' orientations, in degrees. The cradle and the deck are
+## authored in the same frame under pure-translation parents, so at rest this is
+## zero — which makes the deck a free reference for how far the tray has swung,
+## with no authored basis to write down.
+func _basis_angle(a: Node3D, b: Node3D) -> float:
+	return rad_to_deg(a.global_transform.basis.get_rotation_quaternion().angle_to(
+		b.global_transform.basis.get_rotation_quaternion()))
+
+
+## Wait for the tray to stop moving. The travel is a spring one way and a tween the
+## other, and both scale with TRAY_UP_DEG — a fixed frame count reads mid-swing the
+## moment the angle is retuned, which is a failure that says nothing about the bay.
+func _settle_tray(sys: Node3D) -> void:
+	var last := INF
+	var still := 0
+	for i in 150:
+		await get_tree().physics_frame
+		var deg: float = rad_to_deg(sys._model._tray_pivot.rotation.x)
+		still = (still + 1) if is_equal_approx(deg, last) else 0
+		last = deg
+		if still >= 4 and i >= 10:
+			return
+
+
 ## A console in the tree, modelled and cabled up the way the room spawns one.
 func _console(model_id: String, systemid: String) -> Node3D:
 	var sys := SYSTEM_SCENE.instantiate() as Node3D
@@ -115,20 +139,42 @@ func _group_perch() -> void:
 	_check(axis.dot(level) < 0.9995,
 		"perch/the mouth is tilted up, so the offer is too")
 
-	# The point of measuring the distance rather than writing one down: the ghost
-	# has to stand OUTSIDE the shell, and this bay seats a cart 21.5 mm inside its
-	# own front face, so a nominal centimetre would leave it buried.
+	# The point of measuring the offer rather than writing one down: the ghost has to
+	# reach the shell's front face, and this bay seats a cart well inside it, so a
+	# stand-off quoted from the seat would leave the ghost buried in the machine.
 	var deck := sys.find_child("NesDeck", true, false) as MeshInstance3D
 	var to_model := sys.global_transform.affine_inverse()
 	var front_z: float = ((to_model * deck.global_transform) * deck.get_aabb()).end.z
 	var half: float = MediaDimensions.cart_size("nes").y * 0.5
 	var face_z: float = (to_model * (ghost.origin + axis * half)).z
-	_check(face_z > front_z, "perch/the ghost's cart stands proud of the front face")
+	_check(face_z >= front_z - 0.001,
+		"perch/the ghost's cart reaches the front face")
 
 	slot.pick_up_object(cart)
 	await _wait(40)
 	_check(cart.global_position.distance_to(slot.snap_pose_for(cart).origin) < 0.003,
 		"perch/a released cart ends at the seat, not the perch")
+
+	# Taking hold of it again pulls it back out to the mouth — as a SLIDE. The
+	# stand-off is 30-odd mm, which flicked in one frame is a teleport.
+	var hand := Node3D.new()
+	hand.set_script(load("res://Scripts/Desktop/desktop_hand_pivot.gd"))
+	add_child(hand)
+	_spawned.append(hand)
+	hand.global_transform = cart.global_transform
+	await _wait(2)
+	var seat_o := slot.snap_pose_for(cart).origin
+	var stand: float = slot.preview_offset.length()
+	# The socket has to let go first — a pickable it still holds refuses every
+	# grab, which is why the grab paths drop before they take.
+	slot.drop_object()
+	cart.pick_up(hand)
+	await _wait(1)
+	var first: float = cart.global_position.distance_to(seat_o)
+	_check(first < stand * 0.5, "perch/taking hold of it eases it out, not flicks it")
+	await _wait(30)
+	_check(cart.global_position.distance_to(seat_o) > stand * 0.9,
+		"perch/and it does reach the mouth")
 	await _clear()
 
 
@@ -152,11 +198,27 @@ func _group_tray() -> void:
 		"tray/a cart laid in is not read yet")
 	_check(sys._tray_cartridge == cart, "tray/but the bay knows it is lying there")
 
+	var cradle_up: Transform3D = Transform3D.IDENTITY
+	var cradle_node := sys.find_child("NesCradle", true, false) as MeshInstance3D
+	if cradle_node != null:
+		cradle_up = cradle_node.global_transform
+
 	sys.toggle_cart_tray()
-	await _wait(20)
+	await _settle_tray(sys)
 	var down_axis_rise: float = sys._model.get_cartridge_insert_direction().y
 	_check(sys._model.is_tray_down(), "tray/a click pushes it home")
 	_check(sys._snapped_cartridge == cart, "tray/and only then is it read")
+
+	# Pushed home, the tray is LEVEL with the console — not merely "somewhere else
+	# than it was". Measured absolutely, because a cradle inverted about its own
+	# rest pose still travels the right number of degrees.
+	var deck := sys.find_child("NesDeck", true, false) as MeshInstance3D
+	var cradle_now := sys.find_child("NesCradle", true, false) as MeshInstance3D
+	if deck != null and cradle_now != null:
+		_check(_basis_angle(cradle_now, deck) < 0.5,
+			"tray/the cradle is level when it is pushed home")
+	else:
+		_check(false, "tray/the cradle is level when it is pushed home")
 
 	# The cart travels with the tray: its nose drops as the cradle levels out.
 	var down_pose := cart.global_transform
@@ -165,12 +227,49 @@ func _group_tray() -> void:
 	_check(down_axis_rise < up_axis_rise and absf(down_axis_rise) < 0.005,
 		"tray/and levels out as it goes")
 
+	# The tray the player can SEE moves, not just the cart riding an invisible frame.
+	# The tray hinges about its own back edge, so the mesh's NODE origin barely
+	# moves — its body is what travels.
+	var cradle := sys.find_child("NesCradle", true, false) as MeshInstance3D
+	if cradle != null:
+		var now: Vector3 = (cradle.global_transform * cradle.get_aabb()).get_center()
+		var was: Vector3 = (cradle_up * cradle.get_aabb()).get_center()
+		_check(now.distance_to(was) > 0.001, "tray/the cradle travels with it")
+		var swung := rad_to_deg(cradle_up.basis.get_rotation_quaternion().angle_to(
+			cradle.global_transform.basis.get_rotation_quaternion()))
+		_check(swung > 2.0, "tray/and swings through the tray's own angle")
+	else:
+		_check(false, "tray/the cradle travels with it")
+
+	# Clamped home: no hand, beam or drag takes it until the tray is let up.
+	_check(cart.is_clamped(), "tray/a cart pushed home cannot be taken")
+	# A click means "push/lift" only while the cart is in the tray. Everywhere else
+	# it has to mean "pick me up", or a cart lying on the floor cannot be taken by
+	# clicking it at all — which is how every other object in the room behaves.
+	_check(cart.desktop_click_available(),
+		"tray/a cart in the tray claims the click")
+	# ...and the refusal happens before the socket lets go, so a grab that is
+	# turned down leaves the cart where it was rather than loose in the machine.
+	_check(slot.picked_up_object == cart, "tray/a refused grab leaves it seated")
+
 	sys.toggle_cart_tray()
-	await _wait(20)
+	await _settle_tray(sys)
+	_check(not cart.is_clamped(), "tray/letting it up frees the cart again")
 	_check(not sys._model.is_tray_down(), "tray/a second click lifts it")
 	_check(sys._snapped_cartridge == null,
 		"tray/lifting takes the cart off the machine")
 	_check(slot.picked_up_object == cart, "tray/but leaves it lying in the tray")
+
+	# ...and sprung back up it carries the cart at the cart's own angle. Both halves
+	# matter: a tray that swings the right distance from the wrong rest pose ends up
+	# flat here, with the cart's nose lifting out of the tray holding it.
+	if deck != null and cradle_now != null:
+		var tray_up := _basis_angle(cradle_now, deck)
+		var cart_turned := rad_to_deg(cart.global_transform.basis.get_rotation_quaternion()
+			.angle_to(down_pose.basis.get_rotation_quaternion()))
+		var want: float = RetroSystemModelNES.TRAY_UP_DEG
+		_check(absf(tray_up - want) < 0.5 and absf(tray_up - cart_turned) < 0.5,
+			"tray/and carries the cart at its own angle when up")
 
 	# Shut the bay for the move: a cart let go inside its own grab sphere is caught
 	# straight back by it, which is the room's behaviour and not what this asks.
@@ -179,6 +278,8 @@ func _group_tray() -> void:
 	cart.global_position += Vector3(0, 0.5, 0)
 	await _wait(20)
 	_check(sys._tray_cartridge == null, "tray/taking it out empties the bay")
+	_check(not cart.desktop_click_available(),
+		"tray/and a loose cart goes back to click-to-take")
 	await _clear()
 
 

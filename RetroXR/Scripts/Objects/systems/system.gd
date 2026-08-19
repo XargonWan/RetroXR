@@ -2966,6 +2966,11 @@ func has_push_tray_bay() -> bool:
 	return _model != null and _model.has_push_tray()
 
 
+## Is this cabinet's tray pushed home? False for every bay that has no tray.
+func is_tray_down() -> bool:
+	return has_push_tray_bay() and _model.is_tray_down()
+
+
 ## Push the cart home, or lift it back out. Both the desktop click and the VR hand
 ## end up here.
 func toggle_cart_tray() -> void:

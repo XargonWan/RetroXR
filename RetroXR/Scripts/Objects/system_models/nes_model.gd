@@ -35,11 +35,29 @@ const CH_THROW := 0.003
 # The hardware hinges the whole carriage: Nintendo's patent for this mechanism
 # (EP0217538) has the tray "elastically energized upward by these coil springs", the
 # cart entering at about 10 degrees to the board, and a push-push latch. This shell
-# cannot swing that carriage — NesCradle's side walls top out 1.1 mm under the deck's
-# own skin, so the mesh has 0.68 degrees before it comes out through the top of the
-# console. The CART has the room the tray has not: 9.7 mm over its label to that same
-# skin, which at the mouth is TRAY_UP_DEG. So the cart tilts and the cradle stays put.
-const TRAY_UP_DEG := 4.0
+# models that carriage jammed under its own top skin — NesCradle's side walls have
+# 1.1 mm of headroom, which is 0.68 degrees before it comes out through the top of
+# the console — so the bay is SUNK by CRADLE_DROP first, and cradle and cart swing
+# together through TRAY_UP_DEG. The pair of numbers is what the shell allows: past
+# 4.5 degrees no drop satisfies both the skin above and the mouth's lower lip.
+static var TRAY_UP_DEG := 10.0
+## The shell models the cradle jammed under its own top skin — 1.1 mm of headroom,
+## which is not enough for it to hinge at all — so the whole bay is sunk this far.
+##
+## Three surfaces bound the swing, and TRAY_UP_DEG is what is left over:
+##   * the mouth is 34.2 mm and the cart 17 mm, over a 138 mm lever from the hinge
+##     to the mouth plane: 7.1 degrees, and no choice here can beat it, because the
+##     cart has to pass that hole both level and tilted;
+##   * the cradle's tallest wall must stay under the deck's outer skin, which costs
+##     1.67 mm of drop per degree;
+##   * a level cart must still clear the mouth's lower lip, which caps the drop.
+## At 6 degrees each of the three keeps about a millimetre in hand.
+static var CRADLE_DROP := 0.016
+## How much higher the cart rides in the cradle than the tray's own mid-height. The
+## cradle is a 34 mm box around a 17 mm cart, and sinking the tray far enough to
+## swing would otherwise drag the cart below the mouth with it: lifting it inside
+## the tray buys back most of the drop.
+static var CART_LIFT := 0.001
 ## A push released within this of flat counts as home.
 const TRAY_LATCH_DEG := 1.5
 ## Seconds the tray takes to sink under a click. A VR hand carries it down itself,
@@ -49,11 +67,18 @@ const TRAY_PUSH_TIME := 0.14
 ## Degrees/sec the springs take it back up — a quarter of the class default, which
 ## is sized for a disc lid swinging through ninety.
 const TRAY_SPRING_DEG := 35.0
-## How far the cart's face stands proud of the shell's front while perched. The seat
-## is 21.5 mm inside that face, so the slide home is that distance plus this.
-const CART_PROUD := 0.010
+## Depth of the seat along the console's front, measured from the tray's own
+## centre: 0 is where the cradle puts it, positive brings the cart out of the
+## machine. The tray is authored well back in this shell, so this is the knob that
+## decides how much of a seated cart the player can actually see.
+static var CART_SEAT_DEPTH := -0.005
+## How far the HELD cart's ghost stands proud of the shell's front face. The seat
+## itself is inside the machine — this bay is authored 24.5 mm behind that face and
+## is shorter than the cart — so the offer is measured from the face rather than
+## quoted from the seat, and the release slides the whole of that distance home.
+static var CART_PROUD := 0.000
 ## How far a controller plug stands off its socket before it goes in.
-const PLUG_PROUD := 0.012
+static var PLUG_PROUD := 0.012
 const LID_OPEN_DEG := -105.0      # flap swing about its top-rear hinge edge
 const LID_ANIM_TIME := 0.35
 
@@ -108,6 +133,10 @@ var _tray_pivot: Node3D = null
 var _tray_hinge: VRSpringLatchedHinge = null
 var _seat_in_tray := Transform3D.IDENTITY
 var _tray_applied_deg := INF   # last angle written onto the slot
+# Where the cradle was before the bay was built, so the whole thing can be torn
+# down and laid out again from changed numbers (see retune).
+var _cradle_home_parent: Node = null
+var _cradle_home_xform := Transform3D.IDENTITY
 var _tray_tween: Tween = null
 var _tray_down := false
 
@@ -500,7 +529,7 @@ func play_port_plug_insert(plug: Node3D, zone: Node3D) -> void:
 	var socket := zone as XRToolsSnapZone
 	if socket == null or not (plug is RigidBody3D):
 		return
-	var seated := plug.global_transform
+	var seated := socket.snap_pose_for(plug)
 	var body := plug as RigidBody3D
 	body.freeze = false
 	plug.global_transform = socket.preview_pose_for(plug)
@@ -823,6 +852,15 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	if _glb != null:
 		var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
 		if cradle:
+			# Remember where the shell put it, so a rebuild starts from the asset
+			# rather than from the last layout — the drop below is relative.
+			if _cradle_home_parent == null:
+				_cradle_home_parent = cradle.get_parent()
+				_cradle_home_xform = cradle.transform
+			# Sink the whole bay so it can hinge — see CRADLE_DROP. Done before the
+			# seat is read off it, so the cart follows the tray down rather than
+			# floating where the tray used to be.
+			cradle.global_position -= global_transform.basis.y.normalized() * CRADLE_DROP
 			# Lay the cart FLAT, label up, connector pointing into the machine. A
 			# cartridge is authored connector -Y / label +Z, so map its +Y (grip)
 			# onto +Z (out the front) and its +Z (label) onto up; X inverts to keep
@@ -834,11 +872,15 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 			var b: Basis = _glb.global_transform.basis.orthonormalized()
 			slot.global_transform = Transform3D(
 				b * Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)),
-				cradle.global_transform * cradle.get_aabb().get_center())
+				_cart_seat_point(cradle))
 		var seat := find_child("CartSeat", true, false) as Node3D
 		if seat != null:
 			slot.global_transform = seat.global_transform
 		_setup_cart_tray(slot)
+		# Settle the slot onto the tray's rest angle first: building the hinge swings
+		# the pivot at once, but the slot only follows in _process, and a perch
+		# measured against the un-tilted seat lands short of where it was aimed.
+		_sync_cart_tray()
 		_set_cart_perch(slot)
 	var slot_visual := slot.get_node_or_null("SlotVisual") as MeshInstance3D
 	if slot_visual:
@@ -847,10 +889,20 @@ func configure_cartridge_slot(slot: Node3D) -> void:
 	slot.enabled = _lid_open
 
 
+## Where a seated cart sits, in world space: the tray's own centre, raised by
+## CART_LIFT so the cradle has room to sink under it (see CRADLE_DROP). The cradle
+## has already been dropped by the time this is read, so the seat inherits that.
+func _cart_seat_point(cradle: MeshInstance3D) -> Vector3:
+	var to_model := global_transform.affine_inverse()
+	var centre: Vector3 = to_model * (cradle.global_transform * cradle.get_aabb().get_center())
+	return global_transform * Vector3(
+		centre.x, centre.y + CART_LIFT, centre.z + CART_SEAT_DEPTH)
+
+
 ## Stand the held cart's ghost proud of the mouth, so the release has somewhere to
-## slide FROM. The distance is measured rather than written down: this bay seats a
-## cart 21.5 mm inside the shell's own front face, so a stand-off quoted from the
-## seat would leave the ghost buried in the machine and the slide invisible.
+## slide FROM. Measured rather than written down: this bay seats a cart well inside
+## the shell's own front face, so a stand-off quoted from the seat would leave the
+## ghost buried in the machine and the slide invisible.
 func _set_cart_perch(slot: Node3D) -> void:
 	var deck := _glb.find_child("NesDeck", true, false) as MeshInstance3D
 	if deck == null:
@@ -859,17 +911,52 @@ func _set_cart_perch(slot: Node3D) -> void:
 	var front: float = ((to_model * deck.global_transform) * deck.get_aabb()).end.z
 	var seat_z: float = (to_model * slot.global_transform).origin.z
 	var half: float = MediaDimensions.cart_size("nes").y * 0.5
-	var proud: float = maxf(front - (seat_z + half) + CART_PROUD, 0.0)
+	# Along the TRAY's axis, which is what the offset actually travels: the mouth
+	# points up while the tray is sprung, so a distance quoted in the console's own
+	# depth falls short of the face by the cosine of that angle.
+	var axis: Vector3 = (to_model.basis * get_cartridge_insert_direction()).normalized()
+	var face: float = seat_z + half * axis.z
+	var proud: float = maxf((front + CART_PROUD - face) / maxf(axis.z, 0.001), 0.0)
+	# Along the mouth, not along the console: a cart leaves the way its slot points.
 	# Zone-LOCAL, so it rides the tray's angle without knowing the tray can move.
 	var out_zone: Vector3 = (slot.global_transform.basis.inverse()
-		* global_transform.basis.z).normalized()
+		* get_cartridge_insert_direction()).normalized()
 	slot.preview_offset = out_zone * proud
 
 
-## The hinged frame the cartridge slot rides. No mesh moves with it — see TRAY_UP_DEG
-## for why the cradle itself cannot swing in this shell.
+## Lay the bay out again from the current numbers. For the tuning probe — nothing
+## in the room calls this, and it costs a rebuild of the tray rig.
+func retune() -> void:
+	if _cartridge_slot == null:
+		return
+	var cradle := _cradle_mesh()
+	if cradle != null and _cradle_home_parent != null:
+		cradle.reparent(_cradle_home_parent, false)
+		cradle.transform = _cradle_home_xform
+	if _tray_pivot != null:
+		_tray_pivot.queue_free()
+		_tray_pivot = null
+		_tray_hinge = null
+	_tray_applied_deg = INF
+	_tray_down = false
+	configure_cartridge_slot(_cartridge_slot)
+
+
+## The cradle mesh, wherever it currently hangs: it starts under the GLB and is
+## reparented onto the tray pivot once that exists.
+func _cradle_mesh() -> MeshInstance3D:
+	if is_instance_valid(_tray_pivot):
+		var moved := _tray_pivot.find_child("NesCradle", true, false) as MeshInstance3D
+		if moved != null:
+			return moved
+	if _glb == null:
+		return null
+	return _glb.find_child("NesCradle", true, false) as MeshInstance3D
+
+
+## The hinged frame the cartridge slot and the cradle mesh both ride.
 func _setup_cart_tray(slot: Node3D) -> void:
-	var cradle := _glb.find_child("NesCradle", true, false) as MeshInstance3D
+	var cradle := _cradle_mesh()
 	if cradle == null:
 		return
 	var to_model := global_transform.affine_inverse()
@@ -883,6 +970,14 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	_tray_pivot.transform = Transform3D(Basis(Vector3.UP, PI),
 		Vector3(ab.get_center().x, ab.position.y, ab.position.z))
 	_seat_in_tray = _tray_pivot.global_transform.affine_inverse() * slot.global_transform
+	# The cradle rides the hinge, so the tray the player sees is the tray that moves.
+	# It goes on BEFORE the hinge exists, and that order is the whole of it: adding
+	# the hinge runs its _ready, which swings the pivot to max_deg on the spot, and a
+	# cradle reparented after that keeps its flat WORLD pose under an already-turned
+	# parent — which leaves it flat when the tray is up and dipping when it is home,
+	# the exact inverse of the cart it carries. Captured here it is flat at rest, on
+	# the same terms as _seat_in_tray above.
+	cradle.reparent(_tray_pivot, true)
 	_tray_hinge = VRSpringLatchedHinge.new()
 	_tray_hinge.name = "CartTrayHinge"
 	_tray_hinge.target = _tray_pivot
@@ -905,6 +1000,7 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	box.size = Vector3(cart.x * 0.9, 0.008, cart.y * 0.6)
 	col.shape = box
 	_tray_hinge.add_child(col)
+	_tray_hinge.push_push = true       # a hand may take hold of it to let it up
 	_tray_hinge.rotation_changed.connect(_on_tray_moved)
 
 
@@ -1003,7 +1099,11 @@ func play_cartridge_insert(cartridge: Node3D, slot: Node3D) -> void:
 	var zone := slot as XRToolsSnapZone
 	if zone == null:
 		return
-	var seated := cartridge.global_transform
+	# The seat, asked of the zone — NOT the cart's transform, which at this moment is
+	# still wherever it was released: the socket only pulls it home on the next
+	# physics tick, so a tween aimed there lands short and is then dragged the rest
+	# of the way by the grab driver.
+	var seated := zone.snap_pose_for(cartridge)
 	cartridge.freeze = false
 	cartridge.global_transform = zone.preview_pose_for(cartridge)
 	var tween := cartridge.create_tween()

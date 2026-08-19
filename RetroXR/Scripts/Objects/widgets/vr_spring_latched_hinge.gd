@@ -23,6 +23,10 @@ extends VRHinge
 @export var close_latch_deg: float = 12.0
 ## Consoles boot with the tray shut, so the lid starts latched closed.
 @export var start_closed: bool = true
+## Push-push, as a cartridge tray latches: a hand may take hold of it while it is
+## LATCHED, and doing so releases it. A lid leaves this off — only its OPEN button
+## may unlatch one, which is what keeps a hand from prising a closed drive open.
+@export var push_push: bool = false
 
 var _latched_closed := false
 
@@ -46,7 +50,9 @@ func latch_closed() -> void:
 	_latched_closed = true
 	_trigger_ctrl = null
 	_pointer_held = false
-	_set_interactive(false)
+	# A push-push tray keeps its grab box: a hand has to be able to reach a latched
+	# one to let it up again.
+	_set_interactive(push_push)
 	_apply(min_deg, true)
 
 
@@ -72,9 +78,18 @@ func is_latched_closed() -> bool:
 	return _latched_closed
 
 
-# The hand can only grab an OPEN (unlatched) lid — button-only opening.
+# The hand can only grab an OPEN (unlatched) lid — button-only opening. A
+# push-push tray is the exception: a hand may take hold of a latched one, which is
+# how it is let up. Pure: this is polled every frame, so the unlatch belongs to the
+# grab actually starting (see _process), not to being asked whether it could.
 func _can_engage() -> bool:
-	return not _latched_closed
+	return push_push or not _latched_closed
+
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if push_push and _latched_closed and (_trigger_ctrl != null or _pointer_held):
+		open()
 
 
 # closed = min_deg, open = max_deg: wheel UP opens, wheel DOWN closes.

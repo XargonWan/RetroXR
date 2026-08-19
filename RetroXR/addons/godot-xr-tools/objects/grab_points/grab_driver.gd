@@ -57,6 +57,11 @@ var _prev_previewing : bool = false
 # from zero — see the first-frame seed below.
 const PREVIEW_SEATED_EPSILON := 0.002   # m; "was sitting in this zone"
 var _preview_seed_pending : bool = true
+# How much of the zone's stand-off the ghost is currently drawn at. A grab that
+# starts from the SEAT eases this up from nothing, so taking hold of seated media
+# slides it out to the mouth instead of flicking it there — the stand-off can be
+# tens of millimetres, which is a jump you would see.
+var _perch_ease : float = 1.0
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta : float) -> void:
@@ -141,6 +146,7 @@ func _physics_process(delta : float) -> void:
 			if zone != null and target.global_position.distance_to(
 					zone.snap_pose_for(target).origin) < PREVIEW_SEATED_EPSILON:
 				_preview_blend = 1.0
+				_perch_ease = 0.0
 		if zone == null and is_instance_valid(_preview_zone) \
 				and _preview_zone.can_preview(target) \
 				and _preview_zone.global_position.distance_to(destination.origin) \
@@ -156,6 +162,7 @@ func _physics_process(delta : float) -> void:
 			_notify_snap_preview(previewing)
 		_preview_blend = move_toward(
 			_preview_blend, 1.0 if zone else 0.0, delta * PREVIEW_BLEND_SPEED)
+		_perch_ease = move_toward(_perch_ease, 1.0, delta * PREVIEW_BLEND_SPEED)
 		# Suppress object<->socket-owner collisions while engaged so the console
 		# isn't shoved by the previewed object (which would jitter the socket).
 		_set_preview_collisions(zone != null)
@@ -163,7 +170,7 @@ func _physics_process(delta : float) -> void:
 			# The zone's own preview pose: grab-point-corrected (without it the
 			# ghost shows the raw zone orientation, e.g. a plug backwards) and
 			# offset by whatever stand-off the zone presents its media at.
-			var zt := _preview_zone.preview_pose_for(target)
+			var zt := _preview_zone.preview_pose_for(target, _perch_ease)
 			var w := smoothstep(0.0, 1.0, _preview_blend)
 			var scale := destination.basis.get_scale()
 			var q := destination.basis.get_rotation_quaternion().slerp(

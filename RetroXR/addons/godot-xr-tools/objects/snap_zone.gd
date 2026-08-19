@@ -137,10 +137,12 @@ var preview_offset: Vector3 = Vector3.ZERO
 ## `preview_offset`. Kept apart from snap_pose_for because that one also RANKS
 ## which of several sockets wins a release; moving the ranking pose would change
 ## which socket catches a plug dropped between two.
-func preview_pose_for(obj: Node3D) -> Transform3D:
+## [param amount] scales the stand-off, so a caller can ease between the seat (0)
+## and the offer (1) rather than jumping the object the whole way.
+func preview_pose_for(obj: Node3D, amount: float = 1.0) -> Transform3D:
 	var t := snap_pose_for(obj)
-	if preview_offset != Vector3.ZERO:
-		t.origin += global_transform.basis * preview_offset
+	if preview_offset != Vector3.ZERO and amount > 0.0:
+		t.origin += global_transform.basis * (preview_offset * amount)
 	return t
 
 
