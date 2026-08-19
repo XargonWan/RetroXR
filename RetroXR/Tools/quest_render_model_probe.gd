@@ -19,6 +19,8 @@ const SHOT_PATH := "user://render_model.png"
 var _frames := 0
 var _elapsed := 0.0
 var _controllers: Array[XRController3D] = []
+## The thumbstick bone with nothing pushed, as a baseline for the lean readings.
+var _rest_tip := Transform3D.IDENTITY
 
 
 func _ready() -> void:
@@ -184,7 +186,6 @@ func _exercise(ctrl: XRController3D) -> void:
 	if skel == null:
 		print("[rmprobe] %s: no skeleton to exercise" % ctrl.tracker)
 		return
-	_dump_stick(ctrl, art, skel)
 	var stick: Dictionary = ctrl.get("_stick")
 	print("[rmprobe] %s: stick measured=%s lean=%.1fdeg" % [ctrl.tracker, not stick.is_empty(),
 		(stick.get("lean", 0.0) as float) * 180.0 / PI])
@@ -198,6 +199,9 @@ func _exercise(ctrl: XRController3D) -> void:
 		ctrl.call("_on_button_pressed", button)
 		_report_move(ctrl, skel, rest, button)
 		ctrl.call("_on_button_released", button)
+	# Where the tip sits with the stick centred, which every push is measured from.
+	ctrl.call("_on_vec2_changed", "primary", Vector2.ZERO)
+	_rest_tip = skel.get_bone_global_pose(skel.find_bone("b_thumbstick"))
 	for dir: Vector2 in [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0)]:
 		ctrl.call("_on_vec2_changed", "primary", dir)
 		_report_move(ctrl, skel, rest, "stick %s" % dir)
@@ -205,70 +209,23 @@ func _exercise(ctrl: XRController3D) -> void:
 	ctrl.call("_on_vec2_changed", "primary", Vector2.ZERO)
 
 
-## Where the stick's tip actually went, in the hand's own frame, measured off the
-## posed skeleton rather than from the code that posed it. Pushing forward has to
-## move it forward.
+## Where the stick's tip actually went, in the hand's own frame. The tip has to
+## be a point ON the shaft: turning about an axis moves every other point in its
+## own direction, so picking "whichever axis moved furthest" reads a different
+## direction from one push to the next and none of them comparable.
 func _report_lean(ctrl: XRController3D, skel: Skeleton3D, pushed: Vector2) -> void:
 	var bone := skel.find_bone("b_thumbstick")
-	if bone < 0:
+	var stick: Dictionary = ctrl.get("_stick")
+	if bone < 0 or stick.is_empty():
 		return
+	var tip: Vector3 = (stick["shaft"] as Vector3) * 0.02
 	var to_hand := ctrl.global_transform.affine_inverse() * skel.global_transform
-	var rest_g: Transform3D = to_hand * skel.get_bone_global_rest(bone)
-	var posed_g: Transform3D = to_hand * skel.get_bone_global_pose(bone)
-	var best := Vector3.ZERO
-	for axis: Vector3 in [Vector3.RIGHT, Vector3.UP, Vector3.BACK]:
-		var tip := axis * 0.02
-		var moved: Vector3 = (posed_g * tip) - (rest_g * tip)
-		if moved.length() > best.length():
-			best = moved
-	var went := Vector2(best.x, -best.z)
+	var moved: Vector3 = (to_hand * skel.get_bone_global_pose(bone) * tip) \
+		- (to_hand * _rest_tip * tip)
+	var went := Vector2(moved.x, -moved.z)
 	print("[rmprobe] %s: pushed %s -> tip went %s (%.2f mm, agreement %.2f)" % [
-		ctrl.tracker, pushed, went.normalized(), best.length() * 1000.0,
+		ctrl.tracker, pushed, went.normalized(), moved.length() * 1000.0,
 		went.normalized().dot(pushed.normalized())])
-
-
-## Every direction the rig actually leans the stick, as the axis it turns about
-## and where that puts the tip in the hand's frame. This is the ground truth the
-## push mapping has to agree with.
-func _dump_stick(ctrl: XRController3D, art: ControllerArt, skel: Skeleton3D) -> void:
-	var anim := art.animation_player()
-	if anim == null:
-		return
-	var clip: Animation = anim.get_animation(anim.get_animation_list()[0])
-	var track := -1
-	for t in clip.get_track_count():
-		if String(clip.track_get_path(t).get_concatenated_subnames()) == "b_thumbstick":
-			track = t
-	if track < 0:
-		return
-	var rest: Quaternion = clip.track_get_key_value(track, 0)
-	var bone := skel.find_bone("b_thumbstick")
-	var parent := skel.get_bone_parent(bone)
-	var below: Transform3D = skel.get_bone_global_pose(parent) if parent >= 0 else Transform3D.IDENTITY
-	var in_hand := (ctrl.global_transform.affine_inverse() * skel.global_transform * below).basis * Basis(rest)
-	print("[rmprobe] %s: stick frame x=%s y=%s z=%s" % [ctrl.tracker,
-		in_hand.x.normalized(), in_hand.y.normalized(), in_hand.z.normalized()])
-
-	var seen: Array[Vector3] = []
-	for k in clip.track_get_key_count(track):
-		var delta := rest.inverse() * (clip.track_get_key_value(track, k) as Quaternion)
-		var axis := Vector3(delta.x, delta.y, delta.z)
-		if axis.length() < 0.005:
-			continue
-		var unit := axis.normalized()
-		var fresh := true
-		for prior: Vector3 in seen:
-			if prior.dot(unit) > 0.99:
-				fresh = false
-		if not fresh:
-			continue
-		seen.append(unit)
-		# Where turning about this axis puts the tip, in the hand's own frame.
-		var tip: Vector3 = in_hand * (unit.cross(Vector3(0, 1, 0)) * 0.02)
-		print("[rmprobe] %s:   key %.2f turns %.1fdeg about %s" % [ctrl.tracker,
-			clip.track_get_key_time(track, k), rad_to_deg(rest.angle_to(
-			clip.track_get_key_value(track, k))), unit])
-	print("[rmprobe] %s: distinct axes=%d" % [ctrl.tracker, seen.size()])
 
 
 func _pose_of(skel: Skeleton3D) -> Array:
