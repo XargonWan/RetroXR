@@ -27,8 +27,16 @@ extends VRHinge
 ## LATCHED, and doing so releases it. A lid leaves this off — only its OPEN button
 ## may unlatch one, which is what keeps a hand from prising a closed drive open.
 @export var push_push: bool = false
+## A latched push-push tray travels this far under the fingertip before its latch
+## releases. The visible hinge overtravels slightly, then the spring takes it up.
+@export var push_push_unlatch_depth: float = 0.006
+@export var push_push_overtravel_deg: float = 2.0
 
 var _latched_closed := false
+var _poke_overtravel := false
+var _poke_start_tip := Vector3.ZERO
+var _poke_outward_normal := Vector3.ZERO
+var _spring_logged_open := true
 
 
 func _ready() -> void:
@@ -40,8 +48,12 @@ func _ready() -> void:
 
 ## Button-driven open (model.play_open): unlatch so the spring pulls it fully open.
 func open() -> void:
+	var was_latched := _latched_closed
 	_latched_closed = false
 	_set_interactive(true)
+	_spring_logged_open = false
+	if was_latched:
+		_state_log("latch RELEASED -> SPRINGING_OPEN")
 
 
 ## Latch fully shut (model.play_close, or the hand pushed it home). Emits so the
@@ -49,11 +61,14 @@ func open() -> void:
 func latch_closed() -> void:
 	_latched_closed = true
 	_trigger_ctrl = null
+	_end_poke(true)
 	_pointer_held = false
 	# A push-push tray keeps its grab box: a hand has to be able to reach a latched
 	# one to let it up again.
 	_set_interactive(push_push)
+	_state_log("LATCHED_CLOSED")
 	_apply(min_deg, true)
+	_spring_logged_open = false
 
 
 ## A latched-shut lid genuinely can't be interacted with — only the OPEN
@@ -92,6 +107,39 @@ func _process(delta: float) -> void:
 		open()
 
 
+## A second top-face press on a latched push-push tray is not a drag open: the
+## fingertip first drives it a few millimetres farther DOWN until the latch trips.
+func _on_poke_started(tip: Vector3, outward_normal: Vector3,
+		mode: int) -> void:
+	_poke_overtravel = push_push and _latched_closed and mode == POKE_CLOSE
+	_poke_start_tip = tip
+	_poke_outward_normal = outward_normal
+	if _poke_overtravel:
+		_state_log("LATCHED_CLOSED -> PRESSING_RELEASE")
+
+
+func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
+	if not _poke_overtravel:
+		super._on_poke_motion(world_pos, mode)
+		return
+	if target == null:
+		return
+	var depth := maxf((_poke_start_tip - world_pos).dot(_poke_outward_normal), 0.0)
+	var t := clampf(depth / maxf(push_push_unlatch_depth, 0.0001), 0.0, 1.0)
+	target.rotation.x = deg_to_rad(min_deg - push_push_overtravel_deg * t)
+	if t >= 1.0:
+		_state_log("release overtravel %.1f mm reached" % (depth * 1000.0))
+		_poke_overtravel = false
+		open()
+		# Let the spring own the tray immediately. Calling the normal release hook
+		# here would see it near `min_deg` and latch it shut again.
+		_end_poke(true)
+
+
+func _on_poke_ended() -> void:
+	_poke_overtravel = false
+
+
 # closed = min_deg, open = max_deg: wheel UP opens, wheel DOWN closes.
 func _open_toward_max() -> bool:
 	return true
@@ -114,7 +162,11 @@ func _on_idle(delta: float) -> void:
 	var cur := rad_to_deg(target.rotation.x)
 	if is_equal_approx(cur, max_deg):
 		return
-	_apply(move_toward(cur, max_deg, spring_speed_deg * delta), false)
+	var next := move_toward(cur, max_deg, spring_speed_deg * delta)
+	_apply(next, false)
+	if is_equal_approx(next, max_deg) and not _spring_logged_open:
+		_spring_logged_open = true
+		_state_log("SPRUNG_OPEN at %.2f deg" % max_deg)
 
 
 ## Build a spring lid rig on `host` from an already-placed lid mesh: a DiscLidPivot

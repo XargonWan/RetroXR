@@ -43,6 +43,18 @@ const TRIGGER_OFF := 0.4  # trigger float that releases it (hysteresis)
 const GRIP_ACTION := "grip"
 const GRIP_ON := 0.6
 const GRIP_OFF := 0.4
+## Box-face bits for direct fingertip pushing. These are in the authored
+## CollisionShape3D's LOCAL frame, so a moving lid carries its faces with it.
+const FACE_X_NEG := 1 << 0
+const FACE_X_POS := 1 << 1
+const FACE_Y_NEG := 1 << 2
+const FACE_Y_POS := 1 << 3
+const FACE_Z_NEG := 1 << 4
+const FACE_Z_POS := 1 << 5
+const POKE_TORQUE := 0
+const POKE_OPEN := 1
+const POKE_CLOSE := -1
+const HAPTIC_POKE_KEY := &"vr_hinge_poke"
 ## Slack around the grab box for the grip test, in metres. The grip is deliberately
 ## judged on the BOX and not on engage_radius: the sphere is sized to make the
 ## trigger easy to hit and on the NES it swallows most of the console's front, which
@@ -63,6 +75,19 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 ## sphere around this node. Runtime-built controls can then expose only the face
 ## a hand can physically reach without activating through the surrounding shell.
 @export var box_engages: bool = false
+## Faces from which a bare fingertip may push the hinge toward OPEN/CLOSED.
+## Zero preserves the old trigger/grip-only behaviour.
+@export_flags("-X", "+X", "-Y", "+Y", "-Z", "+Z") var poke_open_faces: int = 0
+@export_flags("-X", "+X", "-Y", "+Y", "-Z", "+Z") var poke_close_faces: int = 0
+## Bidirectional faces follow the torque implied by fingertip travel instead of
+## forcing the hinge toward one end. Useful for a broad front face that can be
+## swept either upward or downward.
+@export_flags("-X", "+X", "-Y", "+Y", "-Z", "+Z") var poke_torque_faces: int = 0
+## Distance either side of a configured face that starts/keeps a fingertip push.
+@export var poke_face_margin: float = 0.012
+@export var poke_release_margin: float = 0.025
+## Non-empty enables concise state-transition logging for this hinge.
+@export var state_log_name: String = ""
 ## Also take hold on the GRIP, for a lid on hardware the player never picks up.
 ##
 ## Reaching into a console and squeezing is what a player actually does, and on a
@@ -97,6 +122,10 @@ var _held_prev := false                  # held state at the END of last _proces
 var _pointer_hover := false              # desktop reticle over the grab box
 var _controllers: Array[XRController3D] = []
 var _icon: Label3D = null
+var _poke_ctrl: XRController3D = null
+var _poke_face: int = 0
+var _poke_mode: int = 0
+var _skip_next_release := false
 
 
 func _ready() -> void:
@@ -130,6 +159,7 @@ func _process(delta: float) -> void:
 		if ctrl.get_float(GRIP_ACTION) < GRIP_OFF:
 			_rearmed_grip[ctrl.get_instance_id()] = true
 	_sync_pickup_mutes()
+	_process_poke()
 	# VR: button-latched engagement. A latched controller drives the hinge until
 	# it lets the button go — however far the hand roams from the grab box.
 	if _trigger_ctrl != null:
@@ -139,7 +169,7 @@ func _process(delta: float) -> void:
 			_trigger_ctrl = null
 		else:
 			_track_world_point(PokeTip.tip_of(_trigger_ctrl))
-	elif not _pointer_held and _can_engage():
+	elif not _pointer_held and _poke_ctrl == null and _can_engage():
 		# Not latched (and desktop isn't dragging): latch a hovering hand that
 		# pulls the trigger. A hand holding something is skipped, so firing a held
 		# object's action never swings a lid as a side effect.
@@ -160,9 +190,12 @@ func _process(delta: float) -> void:
 				_rearmed_grip[id] = false
 				_latch(ctrl, GRIP_ACTION, tip)
 				break
-	var held := _trigger_ctrl != null or _pointer_held
+	var held := _trigger_ctrl != null or _pointer_held or _poke_ctrl != null
 	if was_held and not held:
-		_on_released()
+		if _skip_next_release:
+			_skip_next_release = false
+		else:
+			_on_released()
 	elif not held:
 		_on_idle(delta)
 	_held_prev = held
@@ -261,6 +294,192 @@ func _tip_in_activation_region(tip: Vector3) -> bool:
 	if box_engages:
 		return _tip_in_grab_box(tip, 0.0)
 	return global_position.distance_to(tip) <= engage_radius
+
+
+# --- direct fingertip pushing -------------------------------------------------
+
+func _process_poke() -> void:
+	if poke_open_faces == 0 and poke_close_faces == 0 and poke_torque_faces == 0:
+		return
+	if _poke_ctrl != null:
+		if not _qualified_poke(_poke_ctrl) \
+				or not _tip_on_face(PokeTip.tip_of(_poke_ctrl), _poke_face,
+					poke_release_margin):
+			_end_poke()
+		else:
+			var tip := PokeTip.tip_of(_poke_ctrl)
+			_claim_poke_face(_poke_ctrl, tip, _poke_face, PokeTip.CONTACT_ENGAGED)
+			_on_poke_motion(tip, _poke_mode)
+		return
+	if _trigger_ctrl != null or _pointer_held or not _can_engage():
+		return
+	for ctrl in _controllers:
+		if not _qualified_poke(ctrl):
+			continue
+		var tip := PokeTip.tip_of(ctrl)
+		var face := _face_at_tip(tip, poke_face_margin)
+		if face == 0:
+			continue
+		_claim_poke_face(ctrl, tip, face, PokeTip.CONTACT_ENGAGED)
+		_begin_poke(ctrl, face, tip)
+		break
+
+
+func _qualified_poke(ctrl: XRController3D) -> bool:
+	return is_instance_valid(ctrl) and ctrl.get_is_active() and PokeTip.is_poking(ctrl)
+
+
+func _begin_poke(ctrl: XRController3D, face: int, tip: Vector3) -> void:
+	_poke_ctrl = ctrl
+	_poke_face = face
+	if (poke_torque_faces & face) != 0:
+		_poke_mode = POKE_TORQUE
+	else:
+		_poke_mode = POKE_OPEN if (poke_open_faces & face) != 0 else POKE_CLOSE
+	_begin_track(tip)
+	_on_poke_started(tip, _face_world_normal(face), _poke_mode)
+	_state_log("poke %s -> %s at %.2f deg" % [
+		_face_name(face), _poke_mode_name(_poke_mode),
+		rad_to_deg(target.rotation.x) if target != null else 0.0])
+	Haptics.click(ctrl, true, HAPTIC_POKE_KEY)
+
+
+func _end_poke(skip_release: bool = false) -> void:
+	if _poke_ctrl == null:
+		return
+	var old := _poke_ctrl
+	_poke_ctrl = null
+	_poke_face = 0
+	_poke_mode = 0
+	_skip_next_release = _skip_next_release or skip_release
+	_on_poke_ended()
+	_state_log("poke released%s at %.2f deg" % [
+		" (state transition owns release)" if skip_release else "",
+		rad_to_deg(target.rotation.x) if target != null else 0.0])
+	Haptics.click(old, false, HAPTIC_POKE_KEY)
+
+
+func _face_at_tip(tip: Vector3, margin: float, allowed_faces: int = -1) -> int:
+	var cs := _grab_box()
+	if cs == null:
+		return 0
+	var p: Vector3 = cs.global_transform.affine_inverse() * tip
+	var half: Vector3 = (cs.shape as BoxShape3D).size * 0.5
+	var allowed := (poke_open_faces | poke_close_faces | poke_torque_faces) \
+		if allowed_faces < 0 else allowed_faces
+	var best := 0
+	var best_d := INF
+	for face in [FACE_X_NEG, FACE_X_POS, FACE_Y_NEG, FACE_Y_POS,
+			FACE_Z_NEG, FACE_Z_POS]:
+		if (allowed & face) == 0:
+			continue
+		var axis := _face_axis(face)
+		var sign := _face_sign(face)
+		var d: float = absf(p[axis] - sign * half[axis])
+		if d > margin:
+			continue
+		var inside := true
+		for other in 3:
+			if other != axis and absf(p[other]) > half[other] + margin:
+				inside = false
+				break
+		if inside and d < best_d:
+			best = face
+			best_d = d
+	return best
+
+
+func _tip_on_face(tip: Vector3, face: int, margin: float) -> bool:
+	if face == 0:
+		return false
+	# `_face_at_tip` selects the nearest allowed face. Restrict it to the face that
+	# began this push so sliding round an edge cannot reverse the hinge direction.
+	return _face_at_tip(tip, margin, face) == face
+
+
+func _face_axis(face: int) -> int:
+	if face == FACE_X_NEG or face == FACE_X_POS:
+		return 0
+	return 1 if face == FACE_Y_NEG or face == FACE_Y_POS else 2
+
+
+func _face_sign(face: int) -> float:
+	return -1.0 if face == FACE_X_NEG or face == FACE_Y_NEG or face == FACE_Z_NEG else 1.0
+
+
+func _face_name(face: int) -> String:
+	match face:
+		FACE_X_NEG: return "-X"
+		FACE_X_POS: return "+X"
+		FACE_Y_NEG: return "-Y"
+		FACE_Y_POS: return "+Y"
+		FACE_Z_NEG: return "-Z"
+		FACE_Z_POS: return "+Z"
+	return "?"
+
+
+func _poke_mode_name(mode: int) -> String:
+	if mode == POKE_OPEN:
+		return "OPEN"
+	if mode == POKE_CLOSE:
+		return "CLOSE"
+	return "TORQUE"
+
+
+func _state_log(message: String) -> void:
+	if not state_log_name.is_empty():
+		print("[NES state] %s: %s" % [state_log_name, message])
+
+
+func _face_world_normal(face: int) -> Vector3:
+	var cs := _grab_box()
+	if cs == null:
+		return Vector3.ZERO
+	var local := Vector3.ZERO
+	local[_face_axis(face)] = _face_sign(face)
+	return (cs.global_transform.basis * local).normalized()
+
+
+func _claim_poke_face(ctrl: XRController3D, tip: Vector3, face: int, priority: int) -> void:
+	var cs := _grab_box()
+	if cs == null:
+		return
+	var p: Vector3 = cs.global_transform.affine_inverse() * tip
+	var half: Vector3 = (cs.shape as BoxShape3D).size * 0.5
+	var axis := _face_axis(face)
+	p[axis] = _face_sign(face) * half[axis]
+	for other in 3:
+		if other != axis:
+			p[other] = clampf(p[other], -half[other], half[other])
+	PokeTip.set_contact(ctrl, cs.global_transform * p, _face_world_normal(face), priority)
+
+
+## Default poke motion is the trigger drag constrained to the direction named by
+## the contacted face. Subclasses may replace it (push-push overtravel does).
+func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
+	var raw := _angle_at(world_pos, _grab_raw_prev)
+	if is_nan(raw) or target == null:
+		return
+	_grab_raw_prev = raw
+	var wanted := clampf(raw + _grab_offset_deg, min_deg, max_deg)
+	if mode == POKE_TORQUE:
+		_apply(wanted, true)
+		return
+	var cur := rad_to_deg(target.rotation.x)
+	var increasing_opens := _open_toward_max()
+	var toward_open := mode == POKE_OPEN
+	var allowed := wanted >= cur if toward_open == increasing_opens else wanted <= cur
+	if allowed:
+		_apply(wanted, true)
+
+
+func _on_poke_started(_tip: Vector3, _outward_normal: Vector3,
+		_mode: int) -> void:
+	pass
+
+
+func _on_poke_ended() -> void:
+	pass
 
 
 ## Mute the pickup of every free hand sitting in the grab box, and of the hand
@@ -410,7 +629,7 @@ func _build_icon() -> void:
 func _update_icon() -> void:
 	if _icon == null:
 		return
-	var held := _trigger_ctrl != null or _pointer_held
+	var held := _trigger_ctrl != null or _pointer_held or _poke_ctrl != null
 	if held:
 		_icon.text = String.chr(ICON_HELD)
 		_icon.modulate = Color(1.0, 0.82, 0.28)   # fist — amber "holding"

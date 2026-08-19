@@ -212,6 +212,48 @@ func _group_tray() -> void:
 		* Vector3(0, 0, -flap_half.z - 0.005)
 	_check(not flap._tip_in_activation_region(behind_flap),
 		"tray/a hand behind the flap box cannot activate it")
+	var lid_bottom: Vector3 = flap_shape.global_transform \
+		* Vector3(0, -flap_half.y, 0)
+	var lid_top: Vector3 = flap_shape.global_transform \
+		* Vector3(0, flap_half.y, 0)
+	var lid_front: Vector3 = flap_shape.global_transform \
+		* Vector3(0, 0, flap_half.z)
+	_check(flap._face_at_tip(lid_bottom, 0.001) == VRHinge.FACE_Y_NEG
+		and flap._face_at_tip(lid_front, 0.001) == VRHinge.FACE_Z_POS,
+		"tray/the lid's bottom and outward faces accept their poke modes")
+	_check((flap.poke_open_faces & VRHinge.FACE_Y_NEG) != 0
+		and (flap.poke_torque_faces & VRHinge.FACE_Z_POS) != 0,
+		"tray/the lid bottom opens while its outward face follows torque")
+	_check(flap._face_at_tip(lid_top, 0.001) == VRHinge.FACE_Y_POS,
+		"tray/the lid's top face pokes it closed")
+	flap._begin_track(lid_bottom)
+	flap._on_poke_motion(lid_bottom + Vector3.UP * 0.03, VRHinge.POKE_OPEN)
+	_check(model.get_lid_angle_deg() > 40.0,
+		"tray/an upward bottom-face poke lifts the lid")
+	model.set_lid_angle_deg(0.0)
+	lid_front = flap_shape.global_transform * Vector3(0, 0, flap_half.z)
+	flap._begin_track(lid_front)
+	flap._on_poke_motion(lid_front + Vector3.UP * 0.03, VRHinge.POKE_TORQUE)
+	_check(model.get_lid_angle_deg() > 20.0,
+		"tray/upward torque on the front face lifts the lid")
+	model.set_lid_angle_deg(105.0)
+	lid_front = flap_shape.global_transform * Vector3(0, 0, flap_half.z)
+	var hinge_axis: Vector3 = model._flap_pivot.global_transform.basis.x.normalized()
+	var hinge_origin: Vector3 = model._flap_pivot.global_position
+	var close_arc: Vector3 = hinge_origin + Basis(hinge_axis, deg_to_rad(20.0)) \
+		* (lid_front - hinge_origin)
+	flap._begin_track(lid_front)
+	flap._on_poke_motion(close_arc, VRHinge.POKE_TORQUE)
+	_check(model.get_lid_angle_deg() < 100.0,
+		"tray/closing torque on the front face lowers the lid")
+	model.set_lid_angle_deg(105.0)
+	lid_top = flap_shape.global_transform * Vector3(0, flap_half.y, 0)
+	var top_inward: Vector3 = -flap._face_world_normal(VRHinge.FACE_Y_POS)
+	flap._begin_track(lid_top)
+	flap._on_poke_motion(lid_top + top_inward * 0.03, VRHinge.POKE_CLOSE)
+	_check(model.get_lid_angle_deg() < 90.0,
+		"tray/an inward top-face poke lowers the lid")
+	model.set_lid_angle_deg(0.0)
 
 	var tray_hinge := model._tray_hinge as VRHinge
 	var tray_shape := tray_hinge.find_child("CradleActivationBox", false, false) as CollisionShape3D
@@ -232,6 +274,10 @@ func _group_tray() -> void:
 		* Vector3(0, 0, tray_half.z + 0.005)
 	_check(not tray_hinge._tip_in_activation_region(behind_tray),
 		"tray/a hand deeper inside the shell cannot activate the cradle")
+	var tray_top: Vector3 = tray_shape.global_transform \
+		* Vector3(0, tray_half.y, 0)
+	_check(tray_hinge._face_at_tip(tray_top, 0.001) == VRHinge.FACE_Y_POS,
+		"tray/only the cradle's top face accepts a poke")
 
 	_check(sys.has_push_tray_bay(), "tray/the NES bay is a push tray")
 	_check(not sys._model.is_tray_down(), "tray/an empty bay rests up")
@@ -328,6 +374,22 @@ func _group_tray() -> void:
 	_check(sys._tray_cartridge == null, "tray/taking it out empties the bay")
 	_check(not cart.desktop_click_available(),
 		"tray/and a loose cart goes back to click-to-take")
+
+	# A second top press on a latched tray travels a little BELOW home, releases
+	# the push-push latch, and hands the carriage back to its spring.
+	tray_hinge.latch_closed()
+	var poke_normal: Vector3 = tray_hinge._face_world_normal(VRHinge.FACE_Y_POS)
+	tray_hinge._on_poke_started(tray_top, poke_normal, VRHinge.POKE_CLOSE)
+	tray_hinge._on_poke_motion(tray_top
+		- poke_normal * (tray_hinge.push_push_unlatch_depth + 0.001), VRHinge.POKE_CLOSE)
+	_check(not tray_hinge.is_latched_closed(),
+		"tray/a second top poke releases the push-push latch")
+	_check(rad_to_deg(model._tray_pivot.rotation.x) < -0.5,
+		"tray/the release press visibly overtravels below home")
+	model._set_tray_down(false)
+	await _settle_tray(sys)
+	_check(absf(rad_to_deg(model._tray_pivot.rotation.x) - RetroSystemModelNES.TRAY_UP_DEG) < 0.5,
+		"tray/the released poke springs the cradle all the way up")
 	await _clear()
 
 

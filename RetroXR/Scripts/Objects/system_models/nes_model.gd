@@ -399,6 +399,7 @@ func play_open() -> void:
 	if _lid_open:
 		return
 	_lid_open = true
+	print("[NES state] lid: OPENING (automatic)")
 	_tween_lid(1.0)
 	if _flap_hinge != null:
 		_flap_hinge.set_rotation_deg_no_signal(_deg_open)
@@ -411,6 +412,7 @@ func play_close() -> void:
 	if not _lid_open:
 		return
 	_lid_open = false
+	print("[NES state] lid: CLOSING (automatic)")
 	_tween_lid(0.0)
 	if _flap_hinge != null:
 		_flap_hinge.set_rotation_deg_no_signal(0.0)
@@ -484,6 +486,12 @@ func _setup_flap_hinge() -> void:
 	# hand's pickup while it is on the flap so the console stays put.
 	_flap_hinge.grip_engages = true
 	_flap_hinge.box_engages = true
+	# In this asset the flap's outward/front face is local +Z. Its torque decides
+	# direction; the bottom (-Y) remains open-only and the top (+Y) close-only.
+	_flap_hinge.poke_open_faces = VRHinge.FACE_Y_NEG
+	_flap_hinge.poke_close_faces = VRHinge.FACE_Y_POS
+	_flap_hinge.poke_torque_faces = VRHinge.FACE_Z_POS
+	_flap_hinge.state_log_name = "lid"
 	_flap_hinge.target = _flap_pivot
 	_flap_hinge.min_deg = minf(0.0, _deg_open)
 	_flap_hinge.max_deg = maxf(0.0, _deg_open)
@@ -534,6 +542,8 @@ func _on_flap_drag(deg: float) -> void:
 	if open == _lid_open:
 		return
 	_lid_open = open
+	print("[NES state] lid: %s at %.2f deg" % [
+		"OPEN" if open else "CLOSED", absf(deg)])
 	if _cartridge_slot != null:
 		_cartridge_slot.enabled = _lid_open
 
@@ -1013,6 +1023,10 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	# An empty bay rests UP, where the springs hold it — not shut like a disc lid.
 	_tray_hinge.start_closed = false
 	_tray_hinge.box_engages = true
+	# The NES push-push carriage is worked only from its top face: first press
+	# drives it home and latches, the next adds overtravel and releases the latch.
+	_tray_hinge.poke_close_faces = VRHinge.FACE_Y_POS
+	_tray_hinge.state_log_name = "cradle"
 	_tray_pivot.add_child(_tray_hinge)
 	if authored_col != null and authored_col.shape is BoxShape3D:
 		# It was authored under NesCradle, so at this point it has already inherited
@@ -1103,6 +1117,7 @@ func _set_tray_down(down: bool) -> void:
 	if down == _tray_down:
 		return
 	_tray_down = down
+	print("[NES state] cradle: %s" % ("LOCKED_DOWN" if down else "RELEASED_UP"))
 	if _hand_did_it():
 		_play_sfx(_sfx_tray_down if down else _sfx_tray_up, "tray")
 	cart_tray_changed.emit(down)
