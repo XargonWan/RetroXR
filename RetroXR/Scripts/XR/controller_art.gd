@@ -107,6 +107,18 @@ func skeleton() -> Skeleton3D:
 	return null
 
 
+## The rig's own description of how each input moves it. Meta ships one with the
+## model; it is the only thing that knows the axes and the travel.
+func animation_player() -> AnimationPlayer:
+	if source != Source.VENDOR_FB:
+		return null
+	for node in _walk(self):
+		var anim := node as AnimationPlayer
+		if anim != null:
+			return anim
+	return null
+
+
 func _walk(node: Node, out: Array[Node] = []) -> Array[Node]:
 	for child in node.get_children():
 		out.append(child)

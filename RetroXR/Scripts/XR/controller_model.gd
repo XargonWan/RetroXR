@@ -39,7 +39,7 @@ func _ready():
 	# Geometry can be replaced at any point — a model that arrives during a grab
 	# would otherwise be drawn opaque inside whatever is being held.
 	_art.art_changed.connect(_apply_fade)
-	_art.art_changed.connect(_resolve_bones)
+	_art.art_changed.connect(_resolve_rig)
 	_setup_input()
 
 	# A runtime hands its models over when the session begins, and the hardware
@@ -59,84 +59,203 @@ func _on_profile_changed(_role: String) -> void:
 	_art.refresh()
 
 
-# ── Driving the model's buttons ──────────────────────────────────────────
+# ── Driving the model's own rig ──────────────────────────────────────────
 #
-# Meta's runtime hands over the same articulated rig as its downloadable art
-# pack, so a trigger pull still moves a trigger. Bone names verified on a Quest 3:
-# the face buttons name their letter and everything else is unprefixed, where the
-# art pack prefixed the hand onto half of them.
+# The runtime hands the controller over with an AnimationPlayer describing how
+# each of its inputs moves it. Nothing here chooses an axis or a travel distance:
+# for every input we find the stretch of that clip in which its bone moves, and
+# sample it. A rig from another vendor, with different geometry and different
+# bone axes, animates for the same reason.
 
-# Max rotation in degrees for each input.
-const TRIGGER_FRONT_MAX  = 18.0
-const THUMBSTICK_MAX     = 14.0
-## Metres. The runtime rig is metre-scale — a face button sits ~10 mm out from
-## its parent — where the same numbers against the centimetre-scale art pack were
-## 0.11 and 0.6.
-const BUTTON_PRESS  = 0.0011
-const GRIP_PRESS    = 0.006
+## Which bone each action actuates. Face buttons are named for the letters
+## printed on them, so they differ per hand.
+const ACTION_BONES := {
+	"trigger": "b_trigger_front",
+	"grip": "b_trigger_grip",
+	"primary": "b_thumbstick",
+	"menu_button": "b_button_oculus",
+}
+const AX_BONES := {"left_hand": "b_button_x", "right_hand": "b_button_a"}
+const BY_BONES := {"left_hand": "b_button_y", "right_hand": "b_button_b"}
 
 var _skeleton: Skeleton3D
-
-# Bone indices (-1 = not found)
-var _bone_trigger_front  := -1
-var _bone_trigger_grip   := -1
-var _bone_thumbstick     := -1
-var _bone_ax             := -1  # A (right) or X (left)
-var _bone_by             := -1  # B (right) or Y (left)
-var _bone_oculus         := -1
-
-# Rest positions for bones animated by translation
-var _rest_pos := {}
-# Rest rotations for bones animated by rotation
-var _rest_rot := {}
+## Bone name -> { bone, rot_rest, rot_far, pos_rest, pos_far }: where the rig
+## rests each bone and how far it takes it.
+var _driven := {}
+## The thumbstick's measured geometry: which way its shaft points and how far the
+## rig leans it.
+var _stick := {}
 
 
 ## Re-read the rig whenever the art changes. A model can be replaced mid-session,
 ## and a stale bone index would drive a freed skeleton.
-func _resolve_bones() -> void:
-	var skel := _art.skeleton()
-	if skel == _skeleton:
+func _resolve_rig() -> void:
+	_skeleton = _art.skeleton()
+	_driven.clear()
+	_stick.clear()
+	var anim := _art.animation_player()
+	if _skeleton == null or anim == null:
 		return
-	_skeleton = skel
-	_bone_trigger_front = -1
-	_bone_trigger_grip = -1
-	_bone_thumbstick = -1
-	_bone_ax = -1
-	_bone_by = -1
-	_bone_oculus = -1
-	_rest_pos.clear()
-	_rest_rot.clear()
-	if _skeleton == null:
+	var clips := anim.get_animation_list()
+	if clips.is_empty():
 		return
+	# The clip describes the motion; it must not play it. Left running it would
+	# actuate every input in turn on its own, over the top of the real ones.
+	anim.stop()
+	var clip: Animation = anim.get_animation(clips[0])
 
-	_bone_trigger_front = _find_bone("b_trigger_front")
-	_bone_trigger_grip  = _find_bone("b_trigger_grip")
-	_bone_thumbstick    = _find_bone("b_thumbstick")
-	_bone_oculus        = _find_bone("b_button_oculus")
-	if tracker == "left_hand":
-		_bone_ax = _find_bone("b_button_x")
-		_bone_by = _find_bone("b_button_y")
+	for track in clip.get_track_count():
+		var kind := clip.track_get_type(track)
+		if kind != Animation.TYPE_ROTATION_3D and kind != Animation.TYPE_POSITION_3D:
+			continue
+		var bone_name := String(clip.track_get_path(track).get_concatenated_subnames())
+		var bone := _skeleton.find_bone(bone_name)
+		if bone < 0:
+			continue
+		var d: Dictionary = _driven.get(bone_name, {"bone": bone})
+		_read_extremes(clip, track, kind, d)
+		_driven[bone_name] = d
+	_read_stick(clip)
+
+
+## The clip runs every input in turn across five seconds, and a button's stretch
+## of it presses twice. So the timeline is no use as a dial — what is wanted from
+## each track is only where the bone rests and how far it travels, and a press
+## interpolates between the two.
+func _read_extremes(clip: Animation, track: int, kind: int, d: Dictionary) -> void:
+	var count := clip.track_get_key_count(track)
+	if count == 0:
+		return
+	var rest: Variant = clip.track_get_key_value(track, 0)
+	var far: Variant = rest
+	var furthest := 0.0
+	for k in count:
+		var v: Variant = clip.track_get_key_value(track, k)
+		var dist: float = _deviation(rest, v)
+		if dist > furthest:
+			furthest = dist
+			far = v
+	if kind == Animation.TYPE_ROTATION_3D:
+		d["rot_rest"] = rest
+		d["rot_far"] = far
 	else:
-		_bone_ax = _find_bone("b_button_a")
-		_bone_by = _find_bone("b_button_b")
-
-	for idx in [_bone_trigger_grip, _bone_ax, _bone_by, _bone_oculus]:
-		if idx >= 0:
-			_rest_pos[idx] = _skeleton.get_bone_rest(idx).origin
-	for idx in [_bone_trigger_front, _bone_thumbstick]:
-		if idx >= 0:
-			_rest_rot[idx] = _skeleton.get_bone_rest(idx).basis.get_rotation_quaternion()
+		d["pos_rest"] = rest
+		d["pos_far"] = far
 
 
-## The art pack prefixed the hand onto the trigger, grip, thumbstick and Oculus
-## bones; the runtime rig does not. Accept either rather than tie the animation
-## to one supplier's naming.
-func _find_bone(base: String) -> int:
-	var idx := _skeleton.find_bone(base)
-	if idx >= 0:
-		return idx
-	var prefix := "left" if tracker == "left_hand" else "right"
-	return _skeleton.find_bone("%s_%s" % [prefix, base])
+func _deviation(rest: Variant, v: Variant) -> float:
+	if rest is Quaternion:
+		return (rest as Quaternion).angle_to(v as Quaternion)
+	if rest is Vector3:
+		return (rest as Vector3).distance_to(v as Vector3)
+	return 0.0
+
+
+## Put a bone `amount` of the way from where the rig rests it to as far as the
+## rig ever takes it.
+func _actuate(bone_name: String, amount: float) -> void:
+	var d: Variant = _driven.get(bone_name)
+	if d == null or _skeleton == null:
+		return
+	var t := clampf(amount, 0.0, 1.0)
+	if d.has("rot_rest"):
+		_skeleton.set_bone_pose_rotation(d["bone"], (d["rot_rest"] as Quaternion).slerp(d["rot_far"], t))
+	if d.has("pos_rest"):
+		_skeleton.set_bone_pose_position(d["bone"], (d["pos_rest"] as Vector3).lerp(d["pos_far"], t))
+
+
+## A stick has two axes where the clip has one timeline, so the rig sweeps it
+## round a circle. Rather than replay that sweep, measure it once: the axes a
+## stick turns about all lie in one plane whose normal is the shaft, and the
+## furthest key says how far it leans. Any push can then be built directly.
+func _read_stick(clip: Animation) -> void:
+	_stick.clear()
+	var d: Variant = _driven.get(ACTION_BONES["primary"])
+	if d == null or not d.has("rot_rest"):
+		return
+	var track := _track_of(clip, ACTION_BONES["primary"], Animation.TYPE_ROTATION_3D)
+	if track < 0:
+		return
+
+	var rest: Quaternion = d["rot_rest"]
+	var axes: Array[Vector3] = []
+	for k in clip.track_get_key_count(track):
+		var delta := rest.inverse() * (clip.track_get_key_value(track, k) as Quaternion)
+		var axis := Vector3(delta.x, delta.y, delta.z)
+		if axis.length() > 0.005:
+			axes.append(axis.normalized())
+	var shaft := _plane_normal(axes)
+	if shaft == Vector3.ZERO:
+		return
+
+	var bone: int = d["bone"]
+	# The frame the clip's rotations are written in, as the player sees it. A key
+	# is the clip's own rest turned by the lean, so the frame is the bone's parent
+	# carrying that rest - NOT the skeleton's rest for this bone, which a rig is
+	# free to author differently.
+	var parent := _skeleton.get_bone_parent(bone)
+	var below := _skeleton.get_bone_global_pose(parent) if parent >= 0 else Transform3D.IDENTITY
+	var in_hand := (global_transform.affine_inverse() * _skeleton.global_transform
+		* below).basis * Basis(rest)
+	_stick = {
+		"bone": bone,
+		"rest": rest,
+		"shaft": shaft,
+		"lean": rest.angle_to(d["rot_far"] as Quaternion),
+		"to_bone": in_hand.inverse(),
+	}
+
+
+func _track_of(clip: Animation, bone_name: String, kind: int) -> int:
+	for t in clip.get_track_count():
+		if clip.track_get_type(t) == kind 				and String(clip.track_get_path(t).get_concatenated_subnames()) == bone_name:
+			return t
+	return -1
+
+
+## The normal shared by a set of rotation axes, i.e. the direction none of them
+## turn about. Zero if they do not span a plane, which is a rig whose stick only
+## ever leans one way. Its sign does not matter: a lean is built from two crosses
+## with the shaft, and flipping it cancels.
+func _plane_normal(axes: Array[Vector3]) -> Vector3:
+	if axes.size() < 2:
+		return Vector3.ZERO
+	var widest := 0.0
+	var pair := Vector3.ZERO
+	for a: Vector3 in axes:
+		var spread: float = 1.0 - absf(axes[0].dot(a))
+		if spread > widest:
+			widest = spread
+			pair = a
+	if widest < 0.02:
+		return Vector3.ZERO
+	return axes[0].cross(pair).normalized()
+
+
+## Lean the stick the way it is pushed, as far as it is pushed. Turning about
+## `shaft cross lean` moves the tip along `lean`, so the direction is solved
+## rather than searched for.
+func _actuate_stick(value: Vector2) -> void:
+	if _stick.is_empty():
+		_actuate(ACTION_BONES["primary"], minf(1.0, value.length()))
+		return
+	var amount := minf(1.0, value.length())
+	var rest: Quaternion = _stick["rest"]
+	if amount < 0.001:
+		_skeleton.set_bone_pose_rotation(_stick["bone"], rest)
+		return
+
+	# A push is read in the controller's own frame: +X to the right of the hand,
+	# -Z away from it.
+	var push := Vector3(value.x, 0.0, -value.y).normalized()
+	var shaft: Vector3 = _stick["shaft"]
+	var lean: Vector3 = (_stick["to_bone"] as Basis) * push
+	lean -= shaft * lean.dot(shaft)
+	if lean.length() < 0.0001:
+		return
+	var axis := shaft.cross(lean.normalized()).normalized()
+	_skeleton.set_bone_pose_rotation(_stick["bone"],
+		rest * Quaternion(axis, _stick["lean"] * amount))
 
 
 func _setup_input() -> void:
@@ -146,56 +265,30 @@ func _setup_input() -> void:
 	button_released.connect(_on_button_released)
 
 
-func _on_float_changed(action: String, value: float):
-	match action:
-		"trigger":
-			_set_bone_rot(_bone_trigger_front, Vector3(value * TRIGGER_FRONT_MAX, 0.0, 0.0))
-		"grip":
-			var grip_dir = -1.0 if tracker == "right_hand" else 1.0
-			_set_bone_pos(_bone_trigger_grip, Vector3(grip_dir * value * GRIP_PRESS, 0.0, 0.0))
+func _on_float_changed(action: String, value: float) -> void:
+	if ACTION_BONES.has(action):
+		_actuate(ACTION_BONES[action], value)
 
 
-func _on_vec2_changed(action: String, value: Vector2):
+func _on_vec2_changed(action: String, value: Vector2) -> void:
 	if action == "primary":
-		_set_bone_rot(_bone_thumbstick, Vector3(
-			value.y * THUMBSTICK_MAX,
-			0.0,
-			value.x * THUMBSTICK_MAX
-		))
+		_actuate_stick(value)
 
 
-func _on_button_pressed(button: String):
+func _on_button_pressed(button: String) -> void:
+	_actuate(_button_bone(button), 1.0)
+
+
+func _on_button_released(button: String) -> void:
+	_actuate(_button_bone(button), 0.0)
+
+
+func _button_bone(button: String) -> String:
 	match button:
-		"ax_button":   _set_bone_pos(_bone_ax,     Vector3(0.0, -BUTTON_PRESS, 0.0))
-		"by_button":   _set_bone_pos(_bone_by,     Vector3(0.0, -BUTTON_PRESS, 0.0))
-		"menu_button": _set_bone_pos(_bone_oculus, Vector3(0.0, -BUTTON_PRESS, 0.0))
-
-
-func _on_button_released(button: String):
-	match button:
-		"ax_button":   _reset_bone(_bone_ax)
-		"by_button":   _reset_bone(_bone_by)
-		"menu_button": _reset_bone(_bone_oculus)
-
-
-func _reset_bone(bone_idx: int) -> void:
-	if bone_idx >= 0 and _skeleton:
-		_skeleton.reset_bone_pose(bone_idx)
-
-
-func _set_bone_rot(bone_idx: int, euler_degrees: Vector3):
-	if bone_idx < 0 or not _skeleton:
-		return
-	var offset = Quaternion.from_euler(
-		Vector3(deg_to_rad(euler_degrees.x), deg_to_rad(euler_degrees.y), deg_to_rad(euler_degrees.z))
-	)
-	_skeleton.set_bone_pose_rotation(bone_idx, _rest_rot.get(bone_idx, Quaternion.IDENTITY) * offset)
-
-
-func _set_bone_pos(bone_idx: int, offset: Vector3):
-	if bone_idx < 0 or not _skeleton:
-		return
-	_skeleton.set_bone_pose_position(bone_idx, _rest_pos.get(bone_idx, Vector3.ZERO) + offset)
+		"ax_button":   return AX_BONES.get(tracker, "")
+		"by_button":   return BY_BONES.get(tracker, "")
+		"menu_button": return ACTION_BONES["menu_button"]
+	return ""
 
 
 # ── Fading the controller art ────────────────────────────────────────────

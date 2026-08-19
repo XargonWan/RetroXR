@@ -61,6 +61,7 @@ func _run() -> void:
 		print("[rmprobe] alive t=%.1fs frames=%d" % [_elapsed, _frames])
 		for ctrl in _controllers:
 			_describe(ctrl)
+			_exercise(ctrl)
 	await _shoot()
 	print("[rmprobe] ===== done =====")
 	get_tree().quit(0)
@@ -134,11 +135,118 @@ func _describe_rig(ctrl: XRController3D, art: Node) -> void:
 					skel.get_bone_rest(i).basis.get_euler() * (180.0 / PI)])
 		var anim := node as AnimationPlayer
 		if anim != null:
-			print("[rmprobe] %s: animations=%s" % [ctrl.tracker, anim.get_animation_list()])
+			print("[rmprobe] %s: animations=%s playing=%s autoplay=%s current=%s" % [
+				ctrl.tracker, anim.get_animation_list(), anim.is_playing(),
+				anim.autoplay, anim.current_animation])
+			_dump_animation(ctrl, anim)
 		var n3 := node as Node3D
 		if n3 != null and node.name in ["root", "grip", "model"]:
 			print("[rmprobe] %s: %s local origin=%s euler=%s" % [ctrl.tracker, node.name,
 				n3.transform.origin, n3.transform.basis.get_euler() * (180.0 / PI)])
+
+
+## What the rig says about itself, in one line per track rather than 151.
+func _dump_animation(ctrl: XRController3D, anim: AnimationPlayer) -> void:
+	for clip_name: String in anim.get_animation_list():
+		var clip: Animation = anim.get_animation(clip_name)
+		print("[rmprobe] %s: clip '%s' len=%.3f tracks=%d" % [
+			ctrl.tracker, clip_name, clip.length, clip.get_track_count()])
+		for t in clip.get_track_count():
+			var count := clip.track_get_key_count(t)
+			if count == 0:
+				continue
+			var rest: Variant = clip.track_get_key_value(t, 0)
+			var far: Variant = rest
+			var far_at := 0.0
+			var worst := 0.0
+			var moving := 0
+			for k in count:
+				var v: Variant = clip.track_get_key_value(t, k)
+				var dist: float = (rest as Quaternion).angle_to(v) if rest is Quaternion 					else (rest as Vector3).distance_to(v)
+				if dist > 0.0001:
+					moving += 1
+				if dist > worst:
+					worst = dist
+					far = v
+					far_at = clip.track_get_key_time(t, k)
+			var travel: String = "%.2f deg" % (worst * 180.0 / PI) if rest is Quaternion 				else "%.2f mm" % (worst * 1000.0)
+			print("[rmprobe] %s:   %s kind=%d travel=%s at t=%.2f (%d/%d keys move)" % [
+				ctrl.tracker, clip.track_get_path(t).get_concatenated_subnames(),
+				clip.track_get_type(t), travel, far_at, moving, count])
+
+
+## Drive every input and watch the rig answer. A bone that does not move, or one
+## that moves when a different input was actuated, is the bug the headset would
+## otherwise have to find.
+func _exercise(ctrl: XRController3D) -> void:
+	var art := ctrl.get_node_or_null("ModelArt") as ControllerArt
+	var skel: Skeleton3D = art.skeleton() if art != null else null
+	if skel == null:
+		print("[rmprobe] %s: no skeleton to exercise" % ctrl.tracker)
+		return
+	var stick: Dictionary = ctrl.get("_stick")
+	print("[rmprobe] %s: stick measured=%s lean=%.1fdeg" % [ctrl.tracker, not stick.is_empty(),
+		(stick.get("lean", 0.0) as float) * 180.0 / PI])
+
+	var rest := _pose_of(skel)
+	for probe: Array in [["trigger", 1.0], ["grip", 1.0]]:
+		ctrl.call("_on_float_changed", probe[0], probe[1])
+		_report_move(ctrl, skel, rest, str(probe[0]))
+		ctrl.call("_on_float_changed", probe[0], 0.0)
+	for button: String in ["ax_button", "by_button", "menu_button"]:
+		ctrl.call("_on_button_pressed", button)
+		_report_move(ctrl, skel, rest, button)
+		ctrl.call("_on_button_released", button)
+	for dir: Vector2 in [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0)]:
+		ctrl.call("_on_vec2_changed", "primary", dir)
+		_report_move(ctrl, skel, rest, "stick %s" % dir)
+		_report_lean(ctrl, skel, dir)
+	ctrl.call("_on_vec2_changed", "primary", Vector2.ZERO)
+
+
+## Where the stick's tip actually went, in the hand's own frame, measured off the
+## posed skeleton rather than from the code that posed it. Pushing forward has to
+## move it forward.
+func _report_lean(ctrl: XRController3D, skel: Skeleton3D, pushed: Vector2) -> void:
+	var bone := skel.find_bone("b_thumbstick")
+	if bone < 0:
+		return
+	var to_hand := ctrl.global_transform.affine_inverse() * skel.global_transform
+	var rest_g: Transform3D = to_hand * skel.get_bone_global_rest(bone)
+	var posed_g: Transform3D = to_hand * skel.get_bone_global_pose(bone)
+	var best := Vector3.ZERO
+	for axis: Vector3 in [Vector3.RIGHT, Vector3.UP, Vector3.BACK]:
+		var tip := axis * 0.02
+		var moved: Vector3 = (posed_g * tip) - (rest_g * tip)
+		if moved.length() > best.length():
+			best = moved
+	var went := Vector2(best.x, -best.z)
+	print("[rmprobe] %s: pushed %s -> tip went %s (%.2f mm, agreement %.2f)" % [
+		ctrl.tracker, pushed, went.normalized(), best.length() * 1000.0,
+		went.normalized().dot(pushed.normalized())])
+
+
+func _pose_of(skel: Skeleton3D) -> Array:
+	var out: Array = []
+	for i in skel.get_bone_count():
+		out.append(skel.get_bone_pose(i))
+	return out
+
+
+## Which bones moved, and how far, measured at the mesh rather than in the pose:
+## a bone pose means nothing until it is composed down the chain.
+func _report_move(ctrl: XRController3D, skel: Skeleton3D, rest: Array, what: String) -> void:
+	var moved: PackedStringArray = []
+	for i in skel.get_bone_count():
+		var before: Transform3D = rest[i]
+		var after := skel.get_bone_pose(i)
+		var shift: float = before.origin.distance_to(after.origin) * 1000.0
+		var turn: float = before.basis.get_rotation_quaternion().angle_to(
+			after.basis.get_rotation_quaternion()) * 180.0 / PI
+		if shift > 0.005 or turn > 0.05:
+			moved.append("%s %.2fmm/%.1fdeg" % [skel.get_bone_name(i), shift, turn])
+	print("[rmprobe] %s: %s -> %s" % [ctrl.tracker, what,
+		", ".join(moved) if moved.size() > 0 else "NOTHING MOVED"])
 
 
 func _walk(node: Node, out: Array[Node] = []) -> Array[Node]:
