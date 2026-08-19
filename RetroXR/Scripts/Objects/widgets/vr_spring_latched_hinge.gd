@@ -34,6 +34,12 @@ extends VRHinge
 ## Speed of the small upward rebound after the latch catches below its rest angle.
 @export var push_push_rebound_speed_deg: float = 40.0
 
+const LATCH_CATCH_HAPTIC_MAGNITUDE := 0.5
+const LATCH_REST_HAPTIC_MAGNITUDE := 0.2
+const LATCH_HAPTIC_MS := 10
+const LATCH_CATCH_HAPTIC_KEY := &"push_push_latch_catch"
+const LATCH_REST_HAPTIC_KEY := &"push_push_latch_rest"
+
 var _latched_closed := false
 var _poke_overtravel := false
 var _poke_latching := false
@@ -42,6 +48,7 @@ var _poke_start_tip := Vector3.ZERO
 var _poke_outward_normal := Vector3.ZERO
 var _spring_logged_open := true
 var _latch_rebound := false
+var _latch_feedback_ctrl: XRController3D = null
 
 
 func _ready() -> void:
@@ -56,6 +63,7 @@ func open() -> void:
 	var was_latched := _latched_closed
 	_latched_closed = false
 	_latch_rebound = false
+	_latch_feedback_ctrl = null
 	_set_interactive(true)
 	_spring_logged_open = false
 	if was_latched:
@@ -81,6 +89,7 @@ func latch_closed(rebound_from_overtravel: bool = false,
 		# processing eases it back to `min_deg` over the next few frames.
 		rotation_changed.emit(rad_to_deg(target.rotation.x) if target != null else min_deg)
 	else:
+		_latch_feedback_ctrl = null
 		_apply(min_deg, true)
 	_spring_logged_open = false
 
@@ -160,8 +169,10 @@ func _on_poke_motion(world_pos: Vector3, mode: int) -> void:
 			_poke_latching = false
 			_poke_consumed = true
 			_state_log("latch overtravel reached -> LATCHED_CLOSED")
-			if is_instance_valid(_poke_ctrl) and _poke_ctrl.get_is_active():
-				Haptics.pulse(_poke_ctrl, 0.3, 10, &"push_push_latch")
+			_latch_feedback_ctrl = _poke_ctrl if is_instance_valid(_poke_ctrl) else null
+			if _latch_feedback_ctrl != null and _latch_feedback_ctrl.get_is_active():
+				Haptics.pulse(_latch_feedback_ctrl, LATCH_CATCH_HAPTIC_MAGNITUDE,
+					LATCH_HAPTIC_MS, LATCH_CATCH_HAPTIC_KEY)
 			latch_closed(true, true)
 			# Re-anchor at the catch point. From here the locked cradle follows the
 			# fingertip back toward its rest angle instead of rebounding through it.
@@ -199,6 +210,9 @@ func _follow_consumed_poke(world_pos: Vector3) -> void:
 	wanted = clampf(wanted, bottom, min_deg if _latched_closed else max_deg)
 	target.rotation.x = deg_to_rad(wanted)
 	rotation_changed.emit(wanted)
+	if _latched_closed and is_equal_approx(wanted, min_deg):
+		_latch_rebound = false
+		_finish_latch_feedback()
 
 
 func _on_poke_ended() -> void:
@@ -252,6 +266,14 @@ func _step_latch_rebound(delta: float) -> void:
 	if is_equal_approx(rebound_next, min_deg):
 		_latch_rebound = false
 		_state_log("latch rebound settled at %.2f deg" % min_deg)
+		_finish_latch_feedback()
+
+
+func _finish_latch_feedback() -> void:
+	if is_instance_valid(_latch_feedback_ctrl) and _latch_feedback_ctrl.get_is_active():
+		Haptics.pulse(_latch_feedback_ctrl, LATCH_REST_HAPTIC_MAGNITUDE,
+			LATCH_HAPTIC_MS, LATCH_REST_HAPTIC_KEY)
+	_latch_feedback_ctrl = null
 
 
 func _step_spring_open(delta: float) -> void:

@@ -467,6 +467,8 @@ func _group_tray() -> void:
 		"tray/the first latch press visibly overtravels below home")
 	_check(tray_hinge._poke_ctrl == held_latch_finger and tray_hinge._poke_consumed,
 		"tray/the caught latch keeps the same poke captured")
+	_check(tray_hinge._latch_feedback_ctrl == held_latch_finger,
+		"tray/the latch remembers which controller receives its resting feedback")
 	var held_latch_angle: float = rad_to_deg(model._tray_pivot.rotation.x)
 	tray_hinge._on_poke_motion(latch_arc, VRHinge.POKE_CLOSE)
 	_check(is_equal_approx(rad_to_deg(model._tray_pivot.rotation.x), held_latch_angle),
@@ -474,6 +476,8 @@ func _group_tray() -> void:
 	tray_hinge._on_poke_motion(home_arc, VRHinge.POKE_CLOSE)
 	_check(rad_to_deg(model._tray_pivot.rotation.x) > held_latch_angle,
 		"tray/the caught latch follows the fingertip upward")
+	_check(tray_hinge._latch_feedback_ctrl == null,
+		"tray/the resting latch consumes its pending light feedback once")
 	# The test has no tracked hand to leave the face, so simulate that physical exit.
 	tray_hinge._poke_ctrl = null
 	tray_hinge._on_poke_ended()
