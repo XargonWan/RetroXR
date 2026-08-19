@@ -387,5 +387,5 @@ CC BY 4.0. Several of the 3D models are CC BY and **attribution is a licence
 condition**: the full credit list is in the app under OPTIONS → ABOUT, and each
 asset directory carries its own `LICENSE-*` file.
 
-Meta's controller art in `RetroXR/Models/oculus-controller-art-v1.8/` is licensed
-by Meta for use in a VR experience only, and is not redistributable on its own.
+The controller you see in your hands is supplied by the XR runtime at runtime
+(OpenXR render models), so no headset vendor's controller art is shipped here.

@@ -8,61 +8,10 @@ extends XRController3D
 ## the menu all share one value.
 static var draw_hands: bool = false
 
-const TOUCH_PLUS_BASE = "res://Models/oculus-controller-art-v1.8/Meta Quest Touch Plus/"
-const TOUCH_PRO_BASE  = "res://Models/oculus-controller-art-v1.8/Meta Quest Touch Pro/"
-
-const MODELS = {
-	"touch_plus": {
-		"left_hand":  TOUCH_PLUS_BASE + "models/MetaQuestTouchPlus_Left.fbx",
-		"right_hand": TOUCH_PLUS_BASE + "models/MetaQuestTouchPlus_Right.fbx",
-	},
-	"touch_pro": {
-		"left_hand":  TOUCH_PRO_BASE + "models/questpro_controllers_left.fbx",
-		"right_hand": TOUCH_PRO_BASE + "models/questpro_controllers_right.fbx",
-	},
-}
-
-const TOUCH_PLUS_TEXTURES = {
-	"left_hand": {
-		"albedo": TOUCH_PLUS_BASE + "textures/MetaQuestTouchPlus_Left_BaseColor.png",
-		"orm":    TOUCH_PLUS_BASE + "textures/MetaQuestTouchPlus_ORM.png",
-		"normal": TOUCH_PLUS_BASE + "textures/MetaQuestTouchPlus_Normals.png",
-	},
-	"right_hand": {
-		"albedo": TOUCH_PLUS_BASE + "textures/MetaQuestTouchPlus_right_BaseColor.png",
-		"orm":    TOUCH_PLUS_BASE + "textures/MetaQuestTouchPlus_ORM.png",
-		"normal": TOUCH_PLUS_BASE + "textures/MetaQuestTouchPlus_Normals.png",
-	},
-}
-const BATTERY_TEXTURE = TOUCH_PLUS_BASE + "textures/batteryIndicatorTexture32.png"
-
-# Max rotation in degrees for each input
-const TRIGGER_FRONT_MAX  = 18.0
-const THUMBSTICK_MAX     = 14.0
-const BUTTON_PRESS  = 0.11  # cm-scale units pressed in
-const GRIP_PRESS    = 0.6
-
-var _model_loaded := false
-var _model_root: Node3D
-var _skeleton: Skeleton3D
-## Interaction profile the last load attempt was made for. With hand tracking on,
-## a Quest reports a hand or simple-controller profile while the Touch controllers
-## sit idle and only swaps to the touch profile once they wake, so a profile with
-## no model has to be retried when it changes — never latched.
-var _tried_profile := ""
-
-# Bone indices (-1 = not found)
-var _bone_trigger_front  := -1
-var _bone_trigger_grip   := -1
-var _bone_thumbstick     := -1
-var _bone_ax             := -1  # A (right) or X (left)
-var _bone_by             := -1  # B (right) or Y (left)
-var _bone_oculus         := -1
-
-# Rest positions for bones animated by translation
-var _rest_pos := {}
-# Rest rotations for bones animated by rotation
-var _rest_rot := {}
+## The art itself comes from the XR runtime — see [ControllerArt], which owns the
+## tier choice and the geometry. This node owns what the room does to it: the
+## fade on a grab, and the hand drawn over a held device.
+var _art: ControllerArt
 
 # --- Wrap-around hand indicator on held peripherals ---
 ## A pickable must be in this group to get a wrap-around hand while held. Each
@@ -83,65 +32,93 @@ func _ready():
 		_pickup.has_picked_up.connect(_on_held_grabbed)
 		_pickup.has_dropped.connect(_on_held_dropped)
 
+	_art = ControllerArt.new()
+	_art.name = "ModelArt"
+	add_child(_art)
+	_art.setup(self)
+	# Geometry can be replaced at any point — a model that arrives during a grab
+	# would otherwise be drawn opaque inside whatever is being held.
+	_art.art_changed.connect(_apply_fade)
+	_art.art_changed.connect(_resolve_bones)
+	_setup_input()
+
+	# A runtime hands its models over when the session begins, and the hardware
+	# behind a hand can change mid-session (controllers waking, a swap to hand
+	# tracking). Both are signals; neither is worth a per-frame poll.
+	profile_changed.connect(_on_profile_changed)
+	var xri := XRServer.find_interface("OpenXR")
+	if xri != null and xri.has_signal("session_begun"):
+		xri.connect("session_begun", _art.refresh)
+	_art.refresh.call_deferred()
+
 func _process(delta):
 	_drive_fade(delta)
 	_check_hold_state()
-	if _model_loaded:
+
+func _on_profile_changed(_role: String) -> void:
+	_art.refresh()
+
+
+# ── Driving the model's buttons ──────────────────────────────────────────
+#
+# Meta's runtime hands over the same articulated rig as its downloadable art
+# pack, so a trigger pull still moves a trigger. Bone names verified on a Quest 3:
+# the face buttons name their letter and everything else is unprefixed, where the
+# art pack prefixed the hand onto half of them.
+
+# Max rotation in degrees for each input.
+const TRIGGER_FRONT_MAX  = 18.0
+const THUMBSTICK_MAX     = 14.0
+## Metres. The runtime rig is metre-scale — a face button sits ~10 mm out from
+## its parent — where the same numbers against the centimetre-scale art pack were
+## 0.11 and 0.6.
+const BUTTON_PRESS  = 0.0011
+const GRIP_PRESS    = 0.006
+
+var _skeleton: Skeleton3D
+
+# Bone indices (-1 = not found)
+var _bone_trigger_front  := -1
+var _bone_trigger_grip   := -1
+var _bone_thumbstick     := -1
+var _bone_ax             := -1  # A (right) or X (left)
+var _bone_by             := -1  # B (right) or Y (left)
+var _bone_oculus         := -1
+
+# Rest positions for bones animated by translation
+var _rest_pos := {}
+# Rest rotations for bones animated by rotation
+var _rest_rot := {}
+
+
+## Re-read the rig whenever the art changes. A model can be replaced mid-session,
+## and a stale bone index would drive a freed skeleton.
+func _resolve_bones() -> void:
+	var skel := _art.skeleton()
+	if skel == _skeleton:
 		return
-	var xr_tracker := XRServer.get_tracker(tracker) as XRPositionalTracker
-	if xr_tracker == null:
+	_skeleton = skel
+	_bone_trigger_front = -1
+	_bone_trigger_grip = -1
+	_bone_thumbstick = -1
+	_bone_ax = -1
+	_bone_by = -1
+	_bone_oculus = -1
+	_rest_pos.clear()
+	_rest_rot.clear()
+	if _skeleton == null:
 		return
-	var profile := xr_tracker.profile
-	if profile.is_empty() or "none" in profile or profile == _tried_profile:
-		return
-	_tried_profile = profile
-	_model_loaded = _load_model(profile)
 
-## Returns whether a model was actually built. A false result leaves the poll in
-## _process running so a later profile can still supply one.
-func _load_model(profile: String) -> bool:
-	var model_key: String
-	var path: String
-	if "touch_plus" in profile or "oculus/touch_controller" in profile:
-		model_key = "touch_plus"
-		path = MODELS["touch_plus"][tracker]
-	else:
-		push_warning("No model for profile: " + profile)
-		return false
-
-	var scene = load(path)
-	if not scene:
-		push_warning("Failed to load controller model: " + path)
-		return false
-
-	_model_root = scene.instantiate()
-	_model_root.rotation_degrees.y = 180.0
-	add_child(_model_root)
-
-	if model_key == "touch_plus":
-		_apply_touch_plus_material()
-
-	_setup_skeleton()
-	_setup_input()
-	_apply_fade()
-	return true
-
-func _setup_skeleton():
-	_skeleton = _model_root.find_child("Skeleton3D", true, false) as Skeleton3D
-	if not _skeleton:
-		return
-	var prefix = "left" if tracker == "left_hand" else "right"
-	_bone_trigger_front = _skeleton.find_bone(prefix + "_b_trigger_front")
-	_bone_trigger_grip  = _skeleton.find_bone(prefix + "_b_trigger_grip")
-	_bone_thumbstick    = _skeleton.find_bone(prefix + "_b_thumbstick")
-	_bone_oculus        = _skeleton.find_bone(prefix + "_b_button_oculus")
-	# A/X and B/Y share names across both controllers
+	_bone_trigger_front = _find_bone("b_trigger_front")
+	_bone_trigger_grip  = _find_bone("b_trigger_grip")
+	_bone_thumbstick    = _find_bone("b_thumbstick")
+	_bone_oculus        = _find_bone("b_button_oculus")
 	if tracker == "left_hand":
-		_bone_ax = _skeleton.find_bone("b_button_x")
-		_bone_by = _skeleton.find_bone("b_button_y")
+		_bone_ax = _find_bone("b_button_x")
+		_bone_by = _find_bone("b_button_y")
 	else:
-		_bone_ax = _skeleton.find_bone("b_button_a")
-		_bone_by = _skeleton.find_bone("b_button_b")
+		_bone_ax = _find_bone("b_button_a")
+		_bone_by = _find_bone("b_button_b")
 
 	for idx in [_bone_trigger_grip, _bone_ax, _bone_by, _bone_oculus]:
 		if idx >= 0:
@@ -151,11 +128,23 @@ func _setup_skeleton():
 			_rest_rot[idx] = _skeleton.get_bone_rest(idx).basis.get_rotation_quaternion()
 
 
-func _setup_input():
+## The art pack prefixed the hand onto the trigger, grip, thumbstick and Oculus
+## bones; the runtime rig does not. Accept either rather than tie the animation
+## to one supplier's naming.
+func _find_bone(base: String) -> int:
+	var idx := _skeleton.find_bone(base)
+	if idx >= 0:
+		return idx
+	var prefix := "left" if tracker == "left_hand" else "right"
+	return _skeleton.find_bone("%s_%s" % [prefix, base])
+
+
+func _setup_input() -> void:
 	input_float_changed.connect(_on_float_changed)
 	input_vector2_changed.connect(_on_vec2_changed)
 	button_pressed.connect(_on_button_pressed)
 	button_released.connect(_on_button_released)
+
 
 func _on_float_changed(action: String, value: float):
 	match action:
@@ -165,6 +154,7 @@ func _on_float_changed(action: String, value: float):
 			var grip_dir = -1.0 if tracker == "right_hand" else 1.0
 			_set_bone_pos(_bone_trigger_grip, Vector3(grip_dir * value * GRIP_PRESS, 0.0, 0.0))
 
+
 func _on_vec2_changed(action: String, value: Vector2):
 	if action == "primary":
 		_set_bone_rot(_bone_thumbstick, Vector3(
@@ -173,17 +163,25 @@ func _on_vec2_changed(action: String, value: Vector2):
 			value.x * THUMBSTICK_MAX
 		))
 
+
 func _on_button_pressed(button: String):
 	match button:
 		"ax_button":   _set_bone_pos(_bone_ax,     Vector3(0.0, -BUTTON_PRESS, 0.0))
 		"by_button":   _set_bone_pos(_bone_by,     Vector3(0.0, -BUTTON_PRESS, 0.0))
 		"menu_button": _set_bone_pos(_bone_oculus, Vector3(0.0, -BUTTON_PRESS, 0.0))
 
+
 func _on_button_released(button: String):
 	match button:
-		"ax_button":   _skeleton.reset_bone_pose(_bone_ax)
-		"by_button":   _skeleton.reset_bone_pose(_bone_by)
-		"menu_button": _skeleton.reset_bone_pose(_bone_oculus)
+		"ax_button":   _reset_bone(_bone_ax)
+		"by_button":   _reset_bone(_bone_by)
+		"menu_button": _reset_bone(_bone_oculus)
+
+
+func _reset_bone(bone_idx: int) -> void:
+	if bone_idx >= 0 and _skeleton:
+		_skeleton.reset_bone_pose(bone_idx)
+
 
 func _set_bone_rot(bone_idx: int, euler_degrees: Vector3):
 	if bone_idx < 0 or not _skeleton:
@@ -193,43 +191,11 @@ func _set_bone_rot(bone_idx: int, euler_degrees: Vector3):
 	)
 	_skeleton.set_bone_pose_rotation(bone_idx, _rest_rot.get(bone_idx, Quaternion.IDENTITY) * offset)
 
+
 func _set_bone_pos(bone_idx: int, offset: Vector3):
 	if bone_idx < 0 or not _skeleton:
 		return
 	_skeleton.set_bone_pose_position(bone_idx, _rest_pos.get(bone_idx, Vector3.ZERO) + offset)
-
-func _apply_touch_plus_material():
-	var tex = TOUCH_PLUS_TEXTURES[tracker]
-
-	var mat = StandardMaterial3D.new()
-	mat.albedo_texture            = load(tex["albedo"])
-	mat.orm_texture               = load(tex["orm"])
-	mat.normal_enabled            = true
-	mat.normal_texture            = load(tex["normal"])
-	mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
-	mat.ao_texture_channel        = BaseMaterial3D.TEXTURE_CHANNEL_RED
-	mat.metallic_texture_channel  = BaseMaterial3D.TEXTURE_CHANNEL_BLUE
-
-	var battery_mat = StandardMaterial3D.new()
-	battery_mat.albedo_texture = load(BATTERY_TEXTURE)
-	battery_mat.transparency   = BaseMaterial3D.TRANSPARENCY_ALPHA
-
-	var prefix = "left" if tracker == "left_hand" else "right"
-	var battery_mesh = _model_root.find_child(prefix + "_batteryIndicatorQuad_MeshX", true, false) as MeshInstance3D
-	if battery_mesh:
-		for i in battery_mesh.get_surface_override_material_count():
-			battery_mesh.set_surface_override_material(i, battery_mat)
-
-	_apply_material_recursive(_model_root, mat, battery_mesh)
-	# Every mesh shares these two, so the fade only has to touch them.
-	_fade_mats = [mat, battery_mat]
-
-func _apply_material_recursive(node: Node, mat: Material, exclude: Node = null):
-	if node != exclude and node is MeshInstance3D:
-		for i in node.get_surface_override_material_count():
-			node.set_surface_override_material(i, mat)
-	for child in node.get_children():
-		_apply_material_recursive(child, mat, exclude)
 
 
 # ── Fading the controller art ────────────────────────────────────────────
@@ -244,9 +210,6 @@ const FADE_TIME := 0.08
 
 var _fade := 1.0
 var _fade_target := 1.0
-## Materials the whole model shares (see _apply_touch_plus_material), so the fade
-## is two writes rather than a walk of the tree every frame.
-var _fade_mats: Array[StandardMaterial3D] = []
 
 
 ## Show or hide the loaded controller model (called by VRInputMapper). Kept as a
@@ -269,21 +232,23 @@ func _drive_fade(delta: float) -> void:
 	_apply_fade()
 
 
-## Push the current fade level onto the model. Also called once the model loads:
-## a grab during the load runs the fade to its target against a null _model_root,
-## after which _drive_fade short-circuits and the fresh materials would stay
-## opaque over whatever is being held.
+## Push the current fade level onto the art. The materials belong to ControllerArt
+## because they are duplicates of whatever the runtime supplied; a surface it
+## could not give us a BaseMaterial3D for cannot take an alpha at all, so it is
+## hidden for the whole of a partial fade rather than left standing opaque.
 func _apply_fade() -> void:
-	if _model_root == null:
+	if _art == null:
 		return
 	# Skip drawing entirely once invisible, and go back to opaque rendering at
 	# full alpha so the model keeps its normal depth behaviour when in use.
-	_model_root.visible = _fade > 0.001
-	for m in _fade_mats:
+	_art.visible = _fade > 0.001
+	for m in _art.fade_materials:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if _fade >= 0.999 \
 			else BaseMaterial3D.TRANSPARENCY_ALPHA
 		var c: Color = m.albedo_color
 		m.albedo_color = Color(c.r, c.g, c.b, _fade)
+	for g in _art.opaque_only:
+		g.visible = _fade >= 0.999
 
 
 ## XRToolsFunctionPickup.drop_object() returns before emitting has_dropped when
