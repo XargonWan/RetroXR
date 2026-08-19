@@ -1429,6 +1429,55 @@ func _group_edges() -> void:
 		"worst movement %.3f mm/tick" % (corner_worst * 1000.0))
 	await _drop_case()
 
+	# A mounted controller or sensor-bar end owns an authored exit direction: it
+	# is the moulded strain relief, not an interchangeable plug. A socketed plug
+	# must remain a hinge because its nominal axis may point into the cabinet.
+	# Start both cords vertically so this tests authority rather than preserving
+	# an already-correct initial lay.
+	base = _new_case()
+	rope = _rope_between(base + Vector3(0, 0.9, 0),
+		base + Vector3(0, 0.1, 0), 8, 0.1)
+	rope.surface_collision_mask = 0
+	rope.self_collision = false
+	rope.gravity = Vector3.ZERO
+	rope.bend_stiffness = 0.0
+	rope.end_stiffness = 1.0
+	rope.end_stiff_segments = 2
+	rope.start_endpoint_role = VerletRope.ENDPOINT_HOST
+	rope.end_endpoint_role = VerletRope.ENDPOINT_SOCKETED_PLUG
+	rope.start_exit_axis = Vector3.RIGHT
+	rope._init_points()
+	for tick in 8:
+		rope.step(1.0 / 90.0)
+	var host_points := rope.get_points()
+	var host_exit := (host_points[1] - host_points[0]).normalized()
+	_ok("edges/a host attachment holds its strain-relief exit direction",
+		host_exit.dot(Vector3.RIGHT) > 0.8,
+		"first segment alignment %.3f" % host_exit.dot(Vector3.RIGHT))
+	await _drop_case()
+
+	base = _new_case()
+	rope = _rope_between(base + Vector3(0, 0.9, 0),
+		base + Vector3(0, 0.1, 0), 8, 0.1)
+	rope.surface_collision_mask = 0
+	rope.self_collision = false
+	rope.gravity = Vector3.ZERO
+	rope.bend_stiffness = 0.0
+	rope.end_stiffness = 1.0
+	rope.end_stiff_segments = 2
+	rope.start_endpoint_role = VerletRope.ENDPOINT_SOCKETED_PLUG
+	rope.end_endpoint_role = VerletRope.ENDPOINT_SOCKETED_PLUG
+	rope.start_exit_axis = Vector3.RIGHT
+	rope._init_points()
+	for tick in 8:
+		rope.step(1.0 / 90.0)
+	var socket_points := rope.get_points()
+	var socket_exit := (socket_points[1] - socket_points[0]).normalized()
+	_ok("edges/a socketed plug remains a non-directional hinge",
+		socket_exit.dot(Vector3.DOWN) > 0.95,
+		"first segment down alignment %.3f" % socket_exit.dot(Vector3.DOWN))
+	await _drop_case()
+
 	# The shipped controller lead has a loose spherical plug at its far end. Its
 	# cable anchor is off-centre, so microscopic rolling that never reaches Jolt's
 	# body sleep can accumulate into enough anchor drift to wake an otherwise
@@ -1466,12 +1515,12 @@ func _group_edges() -> void:
 	controller_rope.start_node = controller_attach
 	controller_rope.end_node = controller_plug
 	controller_rope.end_anchor_offset = controller_plug.cable_anchor
-	# Deliberately give the host and plug different axes. Before endpoint axes and
-	# roles were independent, configuring the interchangeable plug also changed
-	# the host end and drove the first particles into the tabletop forever.
+	# Give the host its actual outward direction independently of the plug. Before
+	# endpoint axes were separate, configuring the interchangeable plug also
+	# changed this end and could drive the first particles into the tabletop.
 	controller_rope.start_endpoint_role = VerletRope.ENDPOINT_HOST
 	controller_rope.end_endpoint_role = VerletRope.ENDPOINT_AUTO
-	controller_rope.start_exit_axis = controller_attach.global_basis.inverse() * Vector3.DOWN
+	controller_rope.start_exit_axis = controller_attach.global_basis.inverse() * Vector3.RIGHT
 	controller_rope.end_exit_axis = controller_plug.cable_exit_axis
 	_ok("edges/endpoint roles and axes are independent",
 		controller_rope.start_endpoint_role == VerletRope.ENDPOINT_HOST
@@ -1488,7 +1537,10 @@ func _group_edges() -> void:
 	_ok("edges/a settled controller lead sleeps its loose plug",
 		controller_slept_at >= 0,
 		"all asleep after %d frames" % controller_slept_at
-			if controller_slept_at >= 0 else "plug never slept")
+			if controller_slept_at >= 0 else
+			"rope=%s controller=%s plug=%s metrics=%s" % [
+				controller_rope.is_sleeping(), controller.sleeping,
+				controller_plug.sleeping, controller_rope.get_sleep_metrics()])
 	var controller_prev := controller_rope.get_points()
 	var controller_wakes := 0
 	var controller_worst := 0.0

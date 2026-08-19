@@ -382,7 +382,13 @@ bool VerletRope::EndpointIsFixed(EndpointRole role)
 
 bool VerletRope::EndpointIsDirectional(EndpointRole role)
 {
-    return role == ENDPOINT_HELD_PLUG;
+    // A host attachment is the fixed moulded end of a controller, sensor bar,
+    // speaker, etc. Its authored exit axis is exactly what gives the nearby
+    // segments their visible strain relief. Held plugs also carry orientation
+    // authority from the player's hand. A seated plug deliberately does not:
+    // its nominal axis may point straight into the cabinet or furniture around
+    // the socket, so collision must be allowed to choose the departing route.
+    return role == ENDPOINT_HOST || role == ENDPOINT_HELD_PLUG;
 }
 
 bool VerletRope::EndpointIsFree(EndpointRole role)
@@ -517,16 +523,13 @@ void VerletRope::Step(double p_delta)
                     return;
                 m_environment_change_polls = 0;
                 Wake();
-                // Every cached plane belongs to the OLD world arrangement. A
-                // removed table otherwise keeps projecting the cord onto an
-                // invisible surface even after the poll correctly wakes it.
+                // The poll now discounts shallow "inside" reports already
+                // explained by a valid cached plane, so a confirmed result is
+                // a real removal or intrusion. Discard the old arrangement and
+                // free any particles newly covered by moved furniture.
                 std::fill(m_c_flags.begin(), m_c_flags.end(), 0);
                 std::fill(m_mid_contact.begin(), m_mid_contact.end(), 0);
                 std::fill(m_stuck_passes.begin(), m_stuck_passes.end(), 0);
-                // A collider may have been pushed over a stationary particle.
-                // Free that newly-buried lay before ordinary contact resolution,
-                // whose motion sweep cannot see a crossing the particle did not
-                // itself make.
                 DepenetrateLay();
                 m_raycast_frame = m_raycast_interval;
             }
@@ -554,8 +557,9 @@ void VerletRope::Step(double p_delta)
     const bool end_fixed = EndpointIsFixed(end_role);
     const Vector3 start_exit = start_fixed ? PlugExitDir(m_start_cached, m_start_exit_axis) : Vector3();
     const Vector3 end_exit = end_fixed ? PlugExitDir(m_end_cached, m_end_exit_axis) : Vector3();
-    // Only a held plug's orientation is player-authored and should drive the
-    // rope. Hosts and seated plugs pin position but keep the ordinary bend boot.
+    // Hosts and held plugs have authored orientation and drive the rope's
+    // strain-relief stub. Seated plugs pin position but let collision choose
+    // the departure direction around the panel or nearby furniture.
     const bool start_directional = EndpointIsDirectional(start_role);
     const bool end_directional = EndpointIsDirectional(end_role);
 
@@ -935,7 +939,13 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         // reliable environmental signal is a collider newly covering the
         // stationary centre.
         if (point_inside(m_points[i]))
-            return true;
+        {
+            const bool cached_valid =
+                ((m_c_flags[i] & 1) && PlaneValid(i, m_c_p1[i], m_c_n1[i])) ||
+                ((m_c_flags[i] & 2) && PlaneValid(i, m_c_p2[i], m_c_n2[i]));
+            if (!cached_valid)
+                return true;
+        }
     }
 
     const int seg_count = static_cast<int>(m_seg_a.size());
@@ -945,12 +955,19 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         const int b = m_seg_b[s];
         if (m_inv_mass[a] + m_inv_mass[b] == 0.0f)
             continue;
-        const Vector3 sample = (m_points[a] + m_points[b]) * 0.5;
+        // A capsule-only hit may lie anywhere along the segment. Poll that
+        // cached coordinate, not always the midpoint: on a thin plate the
+        // midpoint can be in open air while the segment is legitimately held
+        // near one end. Two false midpoint misses used to wake a settled cable,
+        // clear its valid manifold and let it fall through the plate.
+        const Vector3 sample = (m_mid_contact[s] & 1)
+                                   ? m_points[a].lerp(m_points[b], m_mid_contact_t[s])
+                                   : (m_points[a] + m_points[b]) * 0.5;
         m_shape_query->set_transform(Transform3D(Basis(), sample));
         const Dictionary rest = space_state->get_rest_info(m_shape_query);
         const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
         const bool had = m_mid_contact[s] != 0;
-        if (point_inside(sample))
+        if (point_inside(sample) && !had)
             return true;
         if (had)
         {
@@ -1833,16 +1850,24 @@ void VerletRope::UpdateSleepState()
     const int count = static_cast<int>(m_points.size());
     double max_velocity_sq = 0.0;
     double velocity_sum_sq = 0.0;
+    // Measure final-pose motion from the previous physics tick, not Verlet's
+    // internal current-minus-history velocity. Constraints intentionally edit
+    // the latter: a directional strain-relief boot corrects its first particle
+    // after stretch on every iteration and can therefore report perpetual
+    // energy even after the visible centreline has reached a fixed point. The
+    // render snapshot is rolled only after this function, so m_curr_render is
+    // exactly the preceding tick's solved particle layout.
+    const bool have_previous_pose = static_cast<int>(m_curr_render.size()) == count;
     for (int i = 0; i < count; ++i)
     {
-        const double velocity_sq = m_points[i].distance_squared_to(m_prev_points[i]);
+        const double velocity_sq = have_previous_pose
+                                       ? m_points[i].distance_squared_to(m_curr_render[i])
+                                       : m_points[i].distance_squared_to(m_prev_points[i]);
         max_velocity_sq = std::max(max_velocity_sq, velocity_sq);
         velocity_sum_sq += velocity_sq;
     }
-    // One contact or strain-relief particle may make a sub-millimetre correction
-    // while the rest of the cable is inert. Gate both its peak and the rope's
-    // actual kinetic energy so localized solver dust can sleep but visible
-    // whole-cable squirm cannot.
+    // Gate both the peak and the rope's actual pose energy so localized solver
+    // dust can sleep but visible whole-cable squirm cannot.
     const bool velocity_still = max_velocity_sq <= SLEEP_MAX_VELOCITY_EPS_SQ &&
                                 velocity_sum_sq / std::max(1, count) <=
                                     SLEEP_RMS_VELOCITY_EPS_SQ;
