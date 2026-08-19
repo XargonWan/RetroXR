@@ -227,6 +227,8 @@ func _group_tray() -> void:
 		* Vector3(0, top_half.y, 0)
 	var lid_front: Vector3 = lid_poke_front.global_transform \
 		* Vector3(0, 0, front_half.z)
+	var lid_front_bottom_seam: Vector3 = lid_poke_front.global_transform \
+		* Vector3(0, -front_half.y, front_half.z)
 	_check(flap._face_at_tip(lid_bottom, 0.001) == VRHinge.FACE_Y_NEG
 		and flap._face_at_tip(lid_front, 0.001) == VRHinge.FACE_Z_POS,
 		"tray/the front plane's thin bottom and broad outward faces accept pokes")
@@ -235,6 +237,8 @@ func _group_tray() -> void:
 		and (flap._shape_faces(lid_poke_front, &"poke_torque_faces", 0)
 			& VRHinge.FACE_Z_POS) != 0,
 		"tray/the front bottom opens while its outward face follows torque")
+	_check(flap._face_at_tip(lid_front_bottom_seam, 0.001) == VRHinge.FACE_Z_POS,
+		"tray/the broad front face wins a tie with its thin bottom edge")
 	_check(flap._face_at_tip(lid_top, 0.001) == VRHinge.FACE_Y_POS,
 		"tray/the lid's top face pokes it closed")
 	var top_underside: Vector3 = lid_poke_top.global_transform \
@@ -441,6 +445,12 @@ func _group_tray() -> void:
 	await _settle_tray(sys)
 	_check(absf(rad_to_deg(model._tray_pivot.rotation.x) - RetroSystemModelNES.TRAY_UP_DEG) < 0.5,
 		"tray/the released poke springs the cradle all the way up")
+	var held_finger := XRController3D.new()
+	add_child(held_finger)
+	tray_hinge._require_poke_exit(held_finger)
+	_check(not tray_hinge._poke_can_begin(held_finger),
+		"tray/a state-changing poke cannot double-tap before the finger exits")
+	held_finger.queue_free()
 
 	# Shut the bay for the move: a cart let go inside its own grab sphere is caught
 	# straight back by it, which is the room's behaviour and not what this asks.
