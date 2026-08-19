@@ -91,6 +91,13 @@ const SYMBOL_FONT_PATH := "res://fonts/SymbolsNerdFont-Regular.ttf"
 ## Distance either side of a configured face that starts/keeps a fingertip push.
 @export var poke_face_margin: float = 0.012
 @export var poke_release_margin: float = 0.025
+## Carry a fingertip poke's angular motion into the hinge when contact breaks.
+## Disabled by default; lightweight doors such as the NES lid opt in.
+@export var poke_release_momentum: bool = false
+@export var poke_momentum_max_deg_per_sec: float = 240.0
+@export var poke_momentum_min_deg_per_sec: float = 12.0
+@export var poke_momentum_damping_deg_per_sec2: float = 600.0
+@export var poke_momentum_response: float = 18.0
 ## Non-empty enables concise state-transition logging for this hinge.
 @export var state_log_name: String = ""
 ## Also take hold on the GRIP, for a lid on hardware the player never picks up.
@@ -135,6 +142,8 @@ var _skip_next_release := false
 var _poke_shapes_cache: Array[CollisionShape3D] = []
 var _poke_rearm_required: Dictionary = {}
 var _poke_prev_tips: Dictionary = {}
+var _poke_release_velocity_deg := 0.0
+var _release_angular_velocity_deg := 0.0
 
 
 func _ready() -> void:
@@ -147,6 +156,7 @@ func _ready() -> void:
 
 ## Set the target rotation without emitting (restore/populate use).
 func set_rotation_deg_no_signal(deg: float) -> void:
+	_release_angular_velocity_deg = 0.0
 	_apply(deg, false)
 
 
@@ -168,7 +178,7 @@ func _process(delta: float) -> void:
 		if ctrl.get_float(GRIP_ACTION) < GRIP_OFF:
 			_rearmed_grip[ctrl.get_instance_id()] = true
 	_sync_pickup_mutes()
-	_process_poke()
+	_process_poke(delta)
 	_remember_poke_tips()
 	# VR: button-latched engagement. A latched controller drives the hinge until
 	# it lets the button go — however far the hand roams from the grab box.
@@ -208,6 +218,8 @@ func _process(delta: float) -> void:
 			_on_released()
 	elif not held:
 		_on_idle(delta)
+	if not held:
+		_step_release_momentum(delta)
 	_held_prev = held
 	_update_icon()
 
@@ -226,6 +238,7 @@ func pointer_event(event: XRToolsPointerEvent) -> void:
 			_pointer_hover = true
 		XRToolsPointerEvent.Type.PRESSED:
 			if _can_engage():
+				_release_angular_velocity_deg = 0.0
 				_pointer_held = true
 				if vr:
 					_begin_track(event.position)
@@ -268,6 +281,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _latch(ctrl: XRController3D, action: String, tip: Vector3) -> void:
+	_release_angular_velocity_deg = 0.0
 	_trigger_ctrl = ctrl
 	_grab_action = action
 	_begin_track(tip)
@@ -308,7 +322,7 @@ func _tip_in_activation_region(tip: Vector3) -> bool:
 
 # --- direct fingertip pushing -------------------------------------------------
 
-func _process_poke() -> void:
+func _process_poke(delta: float) -> void:
 	if poke_open_faces == 0 and poke_close_faces == 0 and poke_torque_faces == 0:
 		return
 	_update_poke_rearm()
@@ -324,6 +338,7 @@ func _process_poke() -> void:
 			_claim_poke_face(_poke_ctrl, tip, _poke_shape, _poke_face,
 				PokeTip.CONTACT_ENGAGED)
 			_on_poke_motion(tip, _poke_mode)
+			_sample_poke_release_velocity(tip, previous, delta)
 		return
 	if _trigger_ctrl != null or _pointer_held or not _can_engage():
 		return
@@ -350,6 +365,8 @@ func _qualified_poke(ctrl: XRController3D) -> bool:
 
 func _begin_poke(ctrl: XRController3D, shape: CollisionShape3D,
 		face: int, tip: Vector3) -> void:
+	_release_angular_velocity_deg = 0.0
+	_poke_release_velocity_deg = 0.0
 	_poke_ctrl = ctrl
 	_poke_shape = shape
 	_poke_face = face
@@ -395,6 +412,15 @@ func _end_poke(skip_release: bool = false) -> void:
 	if _poke_ctrl == null:
 		return
 	var old := _poke_ctrl
+	if poke_release_momentum and not skip_release \
+			and absf(_poke_release_velocity_deg) >= poke_momentum_min_deg_per_sec:
+		_release_angular_velocity_deg = clampf(_poke_release_velocity_deg,
+			-poke_momentum_max_deg_per_sec, poke_momentum_max_deg_per_sec)
+		_state_log("poke released with %.1f deg/s momentum" \
+			% _release_angular_velocity_deg)
+	else:
+		_release_angular_velocity_deg = 0.0
+	_poke_release_velocity_deg = 0.0
 	if skip_release and is_instance_valid(old):
 		_require_poke_exit(old)
 	_poke_ctrl = null
@@ -407,6 +433,42 @@ func _end_poke(skip_release: bool = false) -> void:
 		" (state transition owns release)" if skip_release else "",
 		rad_to_deg(target.rotation.x) if target != null else 0.0])
 	Haptics.click(old, false, HAPTIC_POKE_KEY)
+
+
+## Convert world fingertip motion into angular velocity about the actual hinge
+## axis. Radial motion contributes nothing; only motion carrying angular momentum
+## around the pivot survives into the release.
+func _sample_poke_release_velocity(tip: Vector3, previous: Vector3,
+		delta: float) -> void:
+	if not poke_release_momentum or target == null or delta <= 0.0:
+		return
+	var axis := target.global_transform.basis.x.normalized()
+	var radial := tip - target.global_position
+	radial -= axis * radial.dot(axis)
+	var radius_sq := radial.length_squared()
+	if radius_sq < 0.000001:
+		return
+	var velocity := (tip - previous) / delta
+	var instant := rad_to_deg(axis.dot(radial.cross(velocity)) / radius_sq)
+	instant = clampf(instant, -poke_momentum_max_deg_per_sec,
+		poke_momentum_max_deg_per_sec)
+	var blend := 1.0 - exp(-poke_momentum_response * delta)
+	_poke_release_velocity_deg = lerpf(_poke_release_velocity_deg, instant, blend)
+
+
+func _step_release_momentum(delta: float) -> void:
+	if not poke_release_momentum or target == null \
+			or is_zero_approx(_release_angular_velocity_deg):
+		return
+	var cur := rad_to_deg(target.rotation.x)
+	var wanted := cur + _release_angular_velocity_deg * delta
+	var next := clampf(wanted, min_deg, max_deg)
+	_apply(next, true)
+	if not is_equal_approx(next, wanted):
+		_release_angular_velocity_deg = 0.0
+		return
+	_release_angular_velocity_deg = move_toward(_release_angular_velocity_deg, 0.0,
+		poke_momentum_damping_deg_per_sec2 * delta)
 
 
 func _face_at_tip(tip: Vector3, margin: float, allowed_faces: int = -1,

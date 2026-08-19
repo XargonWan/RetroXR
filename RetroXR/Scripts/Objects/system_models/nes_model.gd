@@ -491,6 +491,7 @@ func _setup_flap_hinge() -> void:
 	_flap_hinge.poke_open_faces = VRHinge.FACE_Y_NEG
 	_flap_hinge.poke_close_faces = VRHinge.FACE_Y_POS
 	_flap_hinge.poke_torque_faces = VRHinge.FACE_Z_POS
+	_flap_hinge.poke_release_momentum = true
 	_flap_hinge.state_log_name = "lid"
 	_flap_hinge.target = _flap_pivot
 	_flap_hinge.min_deg = minf(0.0, _deg_open)

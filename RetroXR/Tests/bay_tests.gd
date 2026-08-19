@@ -302,6 +302,23 @@ func _group_tray() -> void:
 	flap._on_poke_motion(lid_front + Vector3.UP * 0.03, VRHinge.POKE_TORQUE)
 	_check(model.get_lid_angle_deg() > 20.0,
 		"tray/upward torque on the front face lifts the lid")
+	_check(flap.poke_release_momentum,
+		"tray/the NES lid carries angular poke motion through release")
+	var momentum_axis: Vector3 = model._flap_pivot.global_transform.basis.x.normalized()
+	var momentum_origin: Vector3 = model._flap_pivot.global_position
+	var momentum_next: Vector3 = momentum_origin + Basis(momentum_axis,
+		deg_to_rad(4.0)) * (lid_front - momentum_origin)
+	flap._poke_release_velocity_deg = 0.0
+	flap._sample_poke_release_velocity(momentum_next, lid_front, 0.02)
+	_check(flap._poke_release_velocity_deg > flap.poke_momentum_min_deg_per_sec,
+		"tray/a tangential pull-off gives the lid angular release momentum")
+	model.set_lid_angle_deg(45.0)
+	var momentum_before := rad_to_deg(model._flap_pivot.rotation.x)
+	flap._release_angular_velocity_deg = flap._poke_release_velocity_deg
+	flap._step_release_momentum(0.02)
+	var momentum_after := rad_to_deg(model._flap_pivot.rotation.x)
+	_check((momentum_after - momentum_before) * flap._poke_release_velocity_deg > 0.0,
+		"tray/the released lid coasts in the fingertip's angular direction")
 	model.set_lid_angle_deg(105.0)
 	lid_front = lid_poke_front.global_transform * Vector3(0, 0, front_half.z)
 	var hinge_axis: Vector3 = model._flap_pivot.global_transform.basis.x.normalized()
