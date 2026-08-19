@@ -5,6 +5,7 @@
 extends Node3D
 
 const PICKUP := preload("res://addons/godot-xr-tools/functions/function_pickup.tscn")
+const FINGER_SNAP_SCRIPT := preload("res://Scripts/XR/capsense_finger_snap.gd")
 
 var _fail := false
 var _origin: XROrigin3D
@@ -108,6 +109,8 @@ func _run() -> void:
 	_hand.apply_display_mode()
 	_check(_hand.visible, "ending the ray grab restores the selected mode")
 
+	await _check_finger_snap()
+
 	print("[probe] RESULT %s" % ("FAIL" if _fail else "PASS"))
 	get_tree().quit(1 if _fail else 0)
 
@@ -165,3 +168,54 @@ func _set_tracking(has_data: bool, source: int) -> void:
 func _frames(count: int) -> void:
 	for i in count:
 		await get_tree().process_frame
+
+
+func _check_finger_snap() -> void:
+	var skeleton := Skeleton3D.new()
+	add_child(skeleton)
+	for i in XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP + 1:
+		skeleton.add_bone("Bone%d" % i)
+	# A straight 80 mm index chain occupying the standard OpenXR joint indices.
+	skeleton.set_bone_parent(6, 0)
+	for i in range(7, 11):
+		skeleton.set_bone_parent(i, i - 1)
+		var segment := Transform3D(Basis.IDENTITY, Vector3(0.02, 0, 0))
+		skeleton.set_bone_rest(i, segment)
+		skeleton.set_bone_pose(i, segment)
+	await get_tree().process_frame
+	skeleton.force_update_all_bone_transforms()
+
+	var before_lengths: Array[float] = []
+	var before_scales: Array[Vector3] = []
+	for i in range(7, 11):
+		before_lengths.append(skeleton.get_bone_global_pose(i).origin.distance_to(
+			skeleton.get_bone_global_pose(i - 1).origin))
+		before_scales.append(skeleton.get_bone_global_pose(i).basis.get_scale())
+	var raw_tip_before := PokeTip.tip_of(_ctrl)
+	var start := skeleton.get_bone_global_pose(10).origin
+	var target := start + Vector3(-0.004, 0.012, 0.0)
+	var solver: SkeletonModifier3D = FINGER_SNAP_SCRIPT.new()
+	solver._solve(skeleton, target)
+	skeleton.force_update_all_bone_transforms()
+	var end := skeleton.get_bone_global_pose(10).origin
+	_check(end.distance_to(target) < start.distance_to(target) * 0.35,
+		"finger IK moves the visual tip onto a nearby surface (%.2f -> %.2f mm)" % [
+			start.distance_to(target) * 1000.0, end.distance_to(target) * 1000.0])
+	var lengths_unchanged := true
+	for i in range(7, 11):
+		var after_pose := skeleton.get_bone_global_pose(i)
+		var after := after_pose.origin.distance_to(
+			skeleton.get_bone_global_pose(i - 1).origin)
+		lengths_unchanged = lengths_unchanged and absf(after - before_lengths[i - 7]) < 1e-6
+		lengths_unchanged = lengths_unchanged \
+			and after_pose.basis.get_scale().distance_to(before_scales[i - 7]) < 1e-6
+	_check(lengths_unchanged, "finger IK preserves every bone length and scale")
+	_check(PokeTip.tip_of(_ctrl).distance_to(raw_tip_before) < 1e-6,
+		"visual finger IK does not move the tracked interaction tip")
+
+	var settled := skeleton.get_bone_global_pose(10).origin
+	solver._solve(skeleton, settled + Vector3(0, float(solver.MAX_REACH) + 0.01, 0))
+	skeleton.force_update_all_bone_transforms()
+	_check(skeleton.get_bone_global_pose(10).origin.distance_to(settled) < 1e-6,
+		"a surface outside the snap range leaves the finger untouched")
+	skeleton.queue_free()

@@ -96,6 +96,10 @@ func _run() -> void:
 	_check(disc.visible, "contact disc appears on a claimed surface")
 	_check(disc.global_position.distance_to(Vector3(0.004, 1.006, 0.004)) < 0.003,
 		"contact disc snaps to the claimed face (%v)" % disc.global_position)
+	var finger_target: Variant = _poke.visual_contact_target()
+	_check(finger_target is Vector3 \
+			and (finger_target as Vector3).distance_to(Vector3(0.004, 1.005, 0.004)) < 0.003,
+		"finger IK target sits on the surface without the disc lift (%v)" % finger_target)
 
 	# ── 3. face projection ───────────────────────────────────────────────────
 	PokeTip.claim_box_face(_ctrl, cap, Vector3(0.004, 1.02, 0.004), Vector3.UP,

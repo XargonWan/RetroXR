@@ -79,6 +79,15 @@ func index_tip_position() -> Variant:
 	return global_transform * (palm.affine_inverse() * tip).origin
 
 
+## Surface target for the post-tracking finger modifier. Only the rendered
+## skeleton consumes this; PokeTip.tip_of() continues to expose the raw joint.
+func visual_contact_target() -> Variant:
+	if not visible or _controller == null or not PokeTip.is_poking(_controller):
+		return null
+	var poke := _controller.get_node_or_null("PokeTip") as PokeTip
+	return poke.visual_contact_target() if poke != null else null
+
+
 func apply_display_mode() -> void:
 	var mode: int = AppPrefs.xr_display_mode
 	var source := hand_source()

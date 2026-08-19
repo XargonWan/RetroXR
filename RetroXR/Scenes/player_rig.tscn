@@ -29,6 +29,7 @@
 [ext_resource type="PackedScene" uid="uid://dgm5op1hausw5" path="res://addons/godot-xr-tools/desktop-support/movement_desktop_sprint.tscn" id="24_desktopwalk"]
 [ext_resource type="Script" path="res://Scripts/XR/capsense_hand.gd" id="25_capsense"]
 [ext_resource type="Material" path="res://Scenes/Objects/hand_poses/held_hand_material.tres" id="26_handmat"]
+[ext_resource type="Script" path="res://Scripts/XR/capsense_finger_snap.gd" id="27_fingersnap"]
 
 [node name="PlayerRig" type="Node3D"]
 script = ExtResource("0_playerrig")
@@ -140,6 +141,9 @@ material = ExtResource("26_handmat")
 
 [node name="XRHandModifier3D" type="XRHandModifier3D" parent="Staging/XROrigin3D/LeftCapsenseHand/OpenXRFbHandTrackingMesh"]
 
+[node name="CapsenseFingerSnap" type="SkeletonModifier3D" parent="Staging/XROrigin3D/LeftCapsenseHand/OpenXRFbHandTrackingMesh"]
+script = ExtResource("27_fingersnap")
+
 [node name="RightCapsenseHand" type="XRNode3D" parent="Staging/XROrigin3D"]
 tracker = &"/user/hand_tracker/right"
 show_when_tracked = true
@@ -179,6 +183,9 @@ bones/25/name = "RightLittleTip"
 
 [node name="XRHandModifier3D" type="XRHandModifier3D" parent="Staging/XROrigin3D/RightCapsenseHand/OpenXRFbHandTrackingMesh"]
 hand_tracker = &"/user/hand_tracker/right"
+
+[node name="CapsenseFingerSnap" type="SkeletonModifier3D" parent="Staging/XROrigin3D/RightCapsenseHand/OpenXRFbHandTrackingMesh"]
+script = ExtResource("27_fingersnap")
 
 [node name="SpawnMenuController" type="Node3D" parent="."]
 script = ExtResource("9_menuctl")

@@ -232,6 +232,17 @@ func _process(delta: float) -> void:
 	_apply_disc(apex)
 
 
+## Smoothed surface point for visual fingertip IK. This is deliberately NOT the
+## point tip_of() reports to widgets: interaction remains on the raw tracked
+## joint, while the rendered finger may curl the last few millimetres onto the
+## surface. Returning the un-lifted point puts skin on the face; the disc keeps
+## its tiny CONTACT_LIFT to avoid z-fighting.
+func visual_contact_target() -> Variant:
+	if not visible or _blend <= 0.02 or _claim_smooth == Vector3.ZERO:
+		return null
+	return _claim_smooth - _claim_normal * CONTACT_LIFT
+
+
 func _apply_disc(apex: Vector3) -> void:
 	if _disc == null:
 		return

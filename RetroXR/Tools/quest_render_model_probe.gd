@@ -15,6 +15,7 @@ extends Node3D
 ## when the session begins only turns up on a later pass.
 const SAMPLES: Array[float] = [2.0, 6.0, 12.0, 20.0, 30.0]
 const SHOT_PATH := "user://render_model.png"
+const FINGER_SNAP_SCRIPT := preload("res://Scripts/XR/capsense_finger_snap.gd")
 
 var _frames := 0
 var _elapsed := 0.0
@@ -71,6 +72,8 @@ func _ready() -> void:
 		var modifier := XRHandModifier3D.new()
 		modifier.hand_tracker = capsense.tracker
 		mesh.add_child(modifier)
+		var finger_snap: SkeletonModifier3D = FINGER_SNAP_SCRIPT.new()
+		mesh.add_child(finger_snap)
 		origin.add_child(capsense)
 		_hands.append(capsense)
 
