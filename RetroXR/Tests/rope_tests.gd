@@ -28,6 +28,7 @@
 extends Node3D
 
 const CABLE_SCENE := preload("res://Scenes/Objects/cables/cable.tscn")
+const COMPOSITE_SCENE := preload("res://Scenes/Objects/cables/composite_cable.tscn")
 ## A whole lead — two plug bodies with a cord between them, exactly as the room
 ## spawns it. Used by the loose/ group, where the ends have to be free to fall.
 const LEAD_SCENE := preload("res://Scenes/Objects/cables/trs_cable.tscn")
@@ -80,6 +81,7 @@ func _run() -> void:
 	await _group_anchors()
 	await _group_sleep()
 	await _group_loose()
+	await _group_edges()
 	await _group_budget()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -420,6 +422,61 @@ func _deepest_in_cylinder(centre: Vector3, radius: float, half_len: float) -> fl
 		var r := Vector2(p.y - centre.y, p.z - centre.z).length()
 		worst = maxf(worst, radius - r)
 	return worst
+
+
+## Shortest distance between two finite 3D line segments. Self-collision has to
+## keep the swept cord volumes apart, not merely their endpoint particles.
+func _segment_distance(a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> float:
+	var u := b - a
+	var v := d - c
+	var w := a - c
+	var aa := u.dot(u)
+	var bb := u.dot(v)
+	var cc := v.dot(v)
+	var dd := u.dot(w)
+	var ee := v.dot(w)
+	var denom := aa * cc - bb * bb
+	var sn := 0.0
+	var sd := denom
+	var tn := 0.0
+	var td := denom
+	if denom < 0.00000001:
+		sn = 0.0
+		sd = 1.0
+		tn = ee
+		td = cc
+	else:
+		sn = bb * ee - cc * dd
+		tn = aa * ee - bb * dd
+		if sn < 0.0:
+			sn = 0.0
+			tn = ee
+			td = cc
+		elif sn > sd:
+			sn = sd
+			tn = ee + bb
+			td = cc
+	if tn < 0.0:
+		tn = 0.0
+		if -dd < 0.0:
+			sn = 0.0
+		elif -dd > aa:
+			sn = sd
+		else:
+			sn = -dd
+			sd = aa
+	elif tn > td:
+		tn = td
+		if -dd + bb < 0.0:
+			sn = 0.0
+		elif -dd + bb > aa:
+			sn = sd
+		else:
+			sn = -dd + bb
+			sd = aa
+	var sc := 0.0 if absf(sn) < 0.00000001 else sn / sd
+	var tc := 0.0 if absf(tn) < 0.00000001 else tn / td
+	return (w + u * sc - v * tc).length()
 
 
 func _centroid() -> Vector3:
@@ -1178,6 +1235,160 @@ func _drop_lead(at: Vector3, ticks: int, yaw := 0.0) -> Node3D:
 	for f in ticks:
 		await get_tree().physics_frame
 	return lead
+
+
+# ── edges ─────────────────────────────────────────────────────────────────────
+# State changes that do not originate at a rope particle: furniture moves after
+# a cord sleeps, an anchor disappears, or the simulated chain is a branched
+# ribbon rather than the ordinary single cord exercised by the groups above.
+
+func _group_edges() -> void:
+	if not _wants("edges"):
+		return
+
+	# Removing a support changes no anchor. A sleeping query-only rope receives no
+	# physics callback from the table, so it must still notice that gravity is no
+	# longer balanced by a contact and fall instead of hovering in empty space.
+	var base := _new_case()
+	var support := _box(base + Vector3(0, 0.70, 0), Vector3(1.6, 0.10, 1.2))
+	var rope := _rope_between(base + Vector3(-0.55, 0.82, 0), base + Vector3(0.55, 0.82, 0), 30, 0.04)
+	await _settle(900)
+	var supported_y := _lowest_y()
+	var slept_on_support := rope.is_sleeping()
+	support.queue_free()
+	await get_tree().physics_frame
+	var woke_without_support := false
+	for tick in 180:
+		if tick % BATCH == 0:
+			await get_tree().physics_frame
+		rope.step(1.0 / 90.0)
+		woke_without_support = woke_without_support or not rope.is_sleeping()
+	var unsupported_y := _lowest_y()
+	_ok("edges/removing support wakes a sleeping cord", slept_on_support and woke_without_support,
+		"lowest %.0f -> %.0f mm" % [(supported_y - base.y) * 1000.0,
+			(unsupported_y - base.y) * 1000.0])
+	_ok("edges/a cord falls when its support is removed", unsupported_y < supported_y - 0.05,
+		"fell %.1f mm" % ((supported_y - unsupported_y) * 1000.0))
+	await _drop_case()
+
+	# The inverse operation: furniture pushed into a sleeping cord has to wake and
+	# displace it. The rope is not a CollisionObject3D, so polling is its only way
+	# to observe a collider whose motion begins outside the rope.
+	base = _new_case()
+	var mover := _box(base + Vector3(0, 0.10, 0), Vector3(1.0, 0.60, 0.8))
+	rope = _rope_between(base + Vector3(-0.55, 0.75, 0), base + Vector3(0.55, 0.75, 0), 30, 0.04)
+	await _settle(900)
+	var before_push := _points()
+	var before_high := -1e9
+	for p: Vector3 in before_push:
+		before_high = maxf(before_high, p.y)
+	mover.position += Vector3(0, 0.55, 0)
+	await get_tree().physics_frame
+	var woke_for_furniture := false
+	for tick in 180:
+		if tick % BATCH == 0:
+			await get_tree().physics_frame
+		rope.step(1.0 / 90.0)
+		woke_for_furniture = woke_for_furniture or not rope.is_sleeping()
+	var after_high := -1e9
+	for p: Vector3 in _points():
+		after_high = maxf(after_high, p.y)
+	var mover_c := base + Vector3(0, 0.65, 0)
+	var mover_s := Vector3(1.0, 0.60, 0.8)
+	var mover_depth := _deepest_in_box(mover_c, mover_s)
+	_ok("edges/furniture wakes a sleeping cord when pushed into it", woke_for_furniture,
+		"highest %.0f -> %.0f mm" % [(before_high - base.y) * 1000.0,
+			(after_high - base.y) * 1000.0])
+	_ok("edges/moving furniture pushes the cord out of its volume", mover_depth < 0.01,
+		"deepest %.1f mm inside" % (mover_depth * 1000.0))
+	await _drop_case()
+
+	# A true six-plug lead exercises both frayed ends and all six branch anchors.
+	# The ordinary behaviour cases use trs_cable.tscn, which is deliberately a
+	# single unfrayed cord and therefore cannot catch ribbon/fray regressions.
+	base = _new_case()
+	var composite: Node3D = COMPOSITE_SCENE.instantiate()
+	composite.position = base + Vector3(0, 1.0, 0)
+	# Keep the six physics bodies still so this assertion measures the rope's
+	# branch pinning, not whether a body integrated after the rope this frame.
+	for end in ["A", "B"]:
+		for c in 3:
+			(composite.get_node("Plug%s%d" % [end, c]) as RigidBody3D).freeze = true
+	add_child(composite)
+	await get_tree().process_frame # CompositeCable builds its rope deferred.
+	await get_tree().physics_frame
+	var comp_rope := composite.get_node("VerletRope") as VerletRope
+	var topology_ok := comp_rope.ribbon_count == 3 and comp_rope.get_points().size() == 81
+	var anchor_error := 0.0
+	for c in 3:
+		var pa := composite.get_node("PlugA%d" % c) as RcaPlug
+		var pb := composite.get_node("PlugB%d" % c) as RcaPlug
+		anchor_error = maxf(anchor_error,
+			comp_rope.get_fray_start_point(c).distance_to(pa.global_transform * pa.cable_anchor))
+		anchor_error = maxf(anchor_error,
+			comp_rope.get_fray_end_point(c).distance_to(pb.global_transform * pb.cable_anchor))
+	_ok("edges/a six-plug composite builds three cords and six fray branches", topology_ok,
+		"%d particles" % comp_rope.get_points().size())
+	_ok("edges/all six composite branches are pinned to their plugs", anchor_error < 0.00001,
+		"worst anchor error %.3f mm" % (anchor_error * 1000.0))
+	composite.queue_free()
+	await get_tree().physics_frame
+
+	# Two non-neighbour segments cross at their midpoints while every particle is
+	# well clear of every other particle. Particle-only self-collision cannot see
+	# this; a cord-volume collision pass must separate the segments themselves.
+	# Keep this numerical oracle near the origin. In the full suite _new_case() is
+	# more than a kilometre out by now, where float world coordinates can round an
+	# exact 300 mm bow-tie differently than the isolated --only=edges run.
+	base = Vector3.ZERO
+	rope = _rope_between(base + Vector3(-0.15, 0.8, -0.15),
+		base + Vector3(0.15, 0.8, -0.15), 3, 0.30)
+	rope.gravity = Vector3.ZERO
+	rope.stretch_stiffness = 0.0
+	rope.bend_stiffness = 0.0
+	rope.surface_collision_mask = 0
+	var crossed := [
+		base + Vector3(-0.15, 0.8, -0.15),
+		base + Vector3(0.15, 0.8, 0.15),
+		base + Vector3(-0.15, 0.8, 0.15),
+		base + Vector3(0.15, 0.8, -0.15),
+	]
+	var laid := rope.get_points()
+	for i in range(1, 3):
+		# nudge_point changes current but not previous, so the next Verlet integrate
+		# repeats 99% of the displacement. Divide by 1.99 to land on the intended
+		# bow-tie at the moment collision runs, with no accidental endpoint contact.
+		rope.nudge_point(i, (crossed[i] - laid[i]) / 1.99)
+	await get_tree().physics_frame
+	rope.step(1.0 / 90.0)
+	var cross_pts := rope.get_points()
+	var crossing_gap := _segment_distance(cross_pts[0], cross_pts[1], cross_pts[2], cross_pts[3])
+	_ok("edges/self-collision separates crossing segments, not only particles",
+		crossing_gap >= rope.collision_radius * 1.8,
+		"segment gap %.2f mm" % (crossing_gap * 1000.0))
+	await _drop_case()
+
+	# ObjectIDs protect the anchor lookup after a node is freed, but the endpoint's
+	# inverse mass must also change. Otherwise it remains pinned to the last valid
+	# transform forever, particularly when the rope was asleep at deletion time.
+	base = _new_case()
+	rope = _rope_between(base + Vector3(-0.4, 1.0, 0), base + Vector3(0.4, 1.0, 0), 24)
+	await _settle(900)
+	var removed_anchor: Node3D = rope.end_node
+	var endpoint_before: Vector3 = rope.get_points()[rope.segment_count]
+	removed_anchor.queue_free()
+	await get_tree().physics_frame
+	var woke_after_removal := false
+	for tick in 180:
+		if tick % BATCH == 0:
+			await get_tree().physics_frame
+		rope.step(1.0 / 90.0)
+		woke_after_removal = woke_after_removal or not rope.is_sleeping()
+	var endpoint_after: Vector3 = rope.get_points()[rope.segment_count]
+	_ok("edges/removing an anchor wakes the rope", woke_after_removal)
+	_ok("edges/a removed anchor releases its endpoint", endpoint_after.y < endpoint_before.y - 0.05,
+		"endpoint fell %.1f mm" % ((endpoint_before.y - endpoint_after.y) * 1000.0))
+	await _drop_case()
 
 
 # ── budget ────────────────────────────────────────────────────────────────────

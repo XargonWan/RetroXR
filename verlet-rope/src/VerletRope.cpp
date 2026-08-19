@@ -257,8 +257,15 @@ void VerletRope::_bind_methods()
 
 void VerletRope::SetStartNode(Node3D *p_node)
 {
+    const uint64_t old_id = m_start_node_id;
     m_start_node_id = p_node ? p_node->get_instance_id() : 0;
     m_start_cached = p_node;
+    if (old_id != m_start_node_id && !m_points.empty())
+    {
+        m_inv_mass[0] = p_node ? 0.0f : 1.0f;
+        Wake();
+        RefreshExclusions();
+    }
 }
 
 Node3D *VerletRope::GetStartNode() const
@@ -270,8 +277,17 @@ Node3D *VerletRope::GetStartNode() const
 
 void VerletRope::SetEndNode(Node3D *p_node)
 {
+    const uint64_t old_id = m_end_node_id;
     m_end_node_id = p_node ? p_node->get_instance_id() : 0;
     m_end_cached = p_node;
+    if (old_id != m_end_node_id && !m_points.empty())
+    {
+        const int last = TrunkCount() - 1;
+        if (last >= 0 && last < static_cast<int>(m_inv_mass.size()))
+            m_inv_mass[last] = p_node ? 0.0f : 1.0f;
+        Wake();
+        RefreshExclusions();
+    }
 }
 
 Node3D *VerletRope::GetEndNode() const
@@ -289,6 +305,48 @@ void VerletRope::CacheAnchors()
         fc.cached = fc.node_id == 0
                         ? nullptr
                         : Object::cast_to<Node3D>(ObjectDB::get_instance(fc.node_id));
+}
+
+bool VerletRope::ReconcileAnchors()
+{
+    Node3D *new_start = GetStartNode();
+    Node3D *new_end = GetEndNode();
+    bool changed = (m_start_cached != nullptr) != (new_start != nullptr) ||
+                   (m_end_cached != nullptr) != (new_end != nullptr);
+    if (!m_points.empty())
+    {
+        if ((m_start_cached != nullptr) != (new_start != nullptr))
+            m_inv_mass[0] = new_start ? 0.0f : 1.0f;
+        if ((m_end_cached != nullptr) != (new_end != nullptr))
+        {
+            const int last = TrunkCount() - 1;
+            if (last >= 0 && last < static_cast<int>(m_inv_mass.size()))
+                m_inv_mass[last] = new_end ? 0.0f : 1.0f;
+        }
+    }
+    m_start_cached = new_start;
+    m_end_cached = new_end;
+    for (FrayChain &fc : m_fray)
+    {
+        Node3D *resolved = fc.node_id == 0
+                               ? nullptr
+                               : Object::cast_to<Node3D>(ObjectDB::get_instance(fc.node_id));
+        const bool anchor_changed = (fc.cached != nullptr) != (resolved != nullptr);
+        if (anchor_changed && !m_points.empty())
+        {
+            const int last = fc.first + fc.count - 1;
+            if (last >= 0 && last < static_cast<int>(m_inv_mass.size()))
+                m_inv_mass[last] = resolved ? 0.0f : 1.0f;
+        }
+        changed = changed || anchor_changed;
+        fc.cached = resolved;
+    }
+    if (changed)
+    {
+        RefreshExclusions();
+        Wake();
+    }
+    return changed;
 }
 
 // ── Fray anchors ────────────────────────────────────────────────────────────
@@ -323,8 +381,15 @@ void VerletRope::SetFrayStartNode(int p_group, Node3D *p_node)
             continue;
         if (g++ == p_group)
         {
+            const bool changed = fc.node_id != m_fray_start_ids[p_group];
             fc.node_id = m_fray_start_ids[p_group];
             fc.cached = p_node;
+            if (changed && !m_points.empty())
+            {
+                m_inv_mass[fc.first + fc.count - 1] = p_node ? 0.0f : 1.0f;
+                Wake();
+                RefreshExclusions();
+            }
             break;
         }
     }
@@ -350,8 +415,15 @@ void VerletRope::SetFrayEndNode(int p_group, Node3D *p_node)
             continue;
         if (g++ == p_group)
         {
+            const bool changed = fc.node_id != m_fray_end_ids[p_group];
             fc.node_id = m_fray_end_ids[p_group];
             fc.cached = p_node;
+            if (changed && !m_points.empty())
+            {
+                m_inv_mass[fc.first + fc.count - 1] = p_node ? 0.0f : 1.0f;
+                Wake();
+                RefreshExclusions();
+            }
             break;
         }
     }
@@ -565,6 +637,7 @@ void VerletRope::SetRopeLength(double p_length)
 void VerletRope::Wake()
 {
     m_asleep = false;
+    m_sleep_environment_frame = 0;
     m_still_frames = 0;
     OpenExcursionWindow();
 }
@@ -579,6 +652,7 @@ void VerletRope::OpenExcursionWindow()
 void VerletRope::SleepNow()
 {
     m_asleep = true;
+    m_sleep_environment_frame = 0;
     // Zero implied velocities so waking doesn't inherit stale motion — and so a
     // rope stopped mid-oscillation doesn't resume it.
     m_prev_points = m_points;

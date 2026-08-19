@@ -203,6 +203,7 @@ private:
     void SolveSurfaceCollision(bool p_do_rest);
     void ApplyAnchorCoupling();
     void UpdateSleepState();
+    bool EnvironmentChangedWhileSleeping();
 
     void SolveFrayConstraints(int p_iter, double p_k_stretch, double p_k_bend, double p_allowed_dev);
 
@@ -230,6 +231,7 @@ private:
     void DepenetrateLay();
     // Resolved once per tick so the hot paths don't repeat the ObjectDB lookup.
     void CacheAnchors();
+    bool ReconcileAnchors();
 
     // ── Ribbon ───────────────────────────────────────────────────────────────
     // Lateral pitch between neighbouring cords. Zero means "touching".
@@ -354,6 +356,7 @@ private:
     godot::RigidBody3D *m_end_body = nullptr;
 
     int m_raycast_frame = 0;
+    int m_sleep_environment_frame = 0;
     // Set by InitPoints, consumed by the first Step after a lay: run
     // DepenetrateLay there, where space-state queries are legal.
     bool m_depen_pending = false;

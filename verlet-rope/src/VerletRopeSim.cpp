@@ -12,6 +12,7 @@
 #include <godot_cpp/classes/physics_direct_space_state3d.hpp>
 #include <godot_cpp/classes/world3d.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace godot;
@@ -26,6 +27,11 @@ constexpr double SLEEP_POINT_EPS_SQ = 0.0015 * 0.0015;
 constexpr int SLEEP_REF_FRAMES = 90;
 constexpr double SLEEP_EXCURSION_EPS_SQ = 0.012 * 0.012;
 constexpr double WAKE_ANCHOR_EPS_SQ = 0.0005 * 0.0005;
+// A sleeping rope has no CollisionObject3D of its own, so furniture cannot wake
+// it through a physics callback. Poll its cached contacts at a low cadence: six
+// times a second at the project's 90 Hz tick catches moved support without
+// turning every sleeping cable back into a per-frame physics cost.
+constexpr int SLEEP_ENVIRONMENT_INTERVAL = 15;
 // Further than an anchor can travel in one tick by being carried or thrown: 0.4 m
 // at 60 Hz is 24 m/s, where a hard throw is nearer 10. Every teleport a restore
 // performs is 0.7 m or more, so the gap is wide. See AnchorTeleported.
@@ -351,7 +357,7 @@ void VerletRope::Step(double p_delta)
     if (m_points.empty())
         return;
 
-    CacheAnchors();
+    ReconcileAnchors();
 
     // A socket taking a plug, or a save putting a device back where it was left,
     // moves an anchor across the room between one tick and the next. Dragging the
@@ -376,7 +382,27 @@ void VerletRope::Step(double p_delta)
     {
         if (AnchorsMoved())
             Wake();
-        else
+        else if (++m_sleep_environment_frame >= SLEEP_ENVIRONMENT_INTERVAL)
+        {
+            m_sleep_environment_frame = 0;
+            if (EnvironmentChangedWhileSleeping())
+            {
+                Wake();
+                // Every cached plane belongs to the OLD world arrangement. A
+                // removed table otherwise keeps projecting the cord onto an
+                // invisible surface even after the poll correctly wakes it.
+                std::fill(m_c_flags.begin(), m_c_flags.end(), 0);
+                std::fill(m_mid_contact.begin(), m_mid_contact.end(), 0);
+                std::fill(m_stuck_passes.begin(), m_stuck_passes.end(), 0);
+                // A collider may have been pushed over a stationary particle.
+                // Free that newly-buried lay before ordinary contact resolution,
+                // whose motion sweep cannot see a crossing the particle did not
+                // itself make.
+                DepenetrateLay();
+                m_raycast_frame = m_raycast_interval;
+            }
+        }
+        if (m_asleep)
         {
             // Nothing moved, so there is nothing to interpolate between; leaving
             // this true would re-mesh a settled cable every frame forever.
@@ -710,6 +736,68 @@ void VerletRope::ApplyContactFriction()
     }
 }
 
+bool VerletRope::EnvironmentChangedWhileSleeping()
+{
+    if (m_surface_collision_mask == 0 || m_shape_query.is_null())
+        return false;
+    Ref<World3D> world = get_world_3d();
+    if (world.is_null())
+        return false;
+    PhysicsDirectSpaceState3D *space_state = world->get_direct_space_state();
+    if (space_state == nullptr)
+        return false;
+
+    const auto plane_matches = [this](const Vector3 &p, const Vector3 &n,
+                                      const Vector3 &cached_p, const Vector3 &cached_n) {
+        return n.dot(cached_n) > 0.85 &&
+               std::abs((p - cached_p).dot(cached_n)) <= m_collision_radius * 0.5;
+    };
+
+    const int count = static_cast<int>(m_points.size());
+    for (int i = 0; i < count; ++i)
+    {
+        if (m_inv_mass[i] == 0.0f)
+            continue;
+        m_shape_query->set_transform(Transform3D(Basis(), m_points[i]));
+        const Dictionary rest = space_state->get_rest_info(m_shape_query);
+        const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
+        const bool had = m_c_flags[i] != 0;
+        if (has != had)
+            return true;
+        if (!has)
+            continue;
+        const Vector3 p = rest["point"];
+        const Vector3 n = rest["normal"];
+        bool matches = false;
+        if ((m_c_flags[i] & 1) != 0)
+            matches = plane_matches(p, n, m_c_p1[i], m_c_n1[i]);
+        if (!matches && (m_c_flags[i] & 2) != 0)
+            matches = plane_matches(p, n, m_c_p2[i], m_c_n2[i]);
+        if (!matches)
+            return true;
+    }
+
+    const int seg_count = static_cast<int>(m_seg_a.size());
+    for (int s = 0; s < seg_count; ++s)
+    {
+        const int a = m_seg_a[s];
+        const int b = m_seg_b[s];
+        if (m_inv_mass[a] + m_inv_mass[b] == 0.0f)
+            continue;
+        const Vector3 mid = (m_points[a] + m_points[b]) * 0.5f;
+        m_shape_query->set_transform(Transform3D(Basis(), mid));
+        const Dictionary rest = space_state->get_rest_info(m_shape_query);
+        const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
+        const bool had = m_mid_contact[s] != 0;
+        if (has != had)
+            return true;
+        if (has && !plane_matches(rest["point"], rest["normal"],
+                                  m_mid_contact_point[s], m_mid_contact_normal[s]))
+            return true;
+    }
+    return false;
+}
+
 void VerletRope::SolveSelfCollision()
 {
     const int count = static_cast<int>(m_points.size());
@@ -742,6 +830,135 @@ void VerletRope::SolveSelfCollision()
             m_points[j] -= push * (w_j / w_sum);
         }
         m_points[i] = p_i;
+    }
+
+    // Particle pairs do not see two long segments crossing at their middles:
+    // every endpoint can be centimetres clear while the rendered tubes pass
+    // straight through each other. Work from the real segment table so fray
+    // chain boundaries are topological rather than accidental array adjacency.
+    const int seg_count = static_cast<int>(m_seg_a.size());
+    bool segment_corrected = false;
+    for (int sa = 0; sa < seg_count; ++sa)
+    {
+        const int a0 = m_seg_a[sa];
+        const int a1 = m_seg_b[sa];
+        for (int sb = sa + 1; sb < seg_count; ++sb)
+        {
+            const int b0 = m_seg_a[sb];
+            const int b1 = m_seg_b[sb];
+            if (a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1)
+                continue; // neighbours joined by construction
+
+            // The first particles around one fray junction deliberately overlap
+            // inside the moulded breakout. Preserve the same exemption the point
+            // solver uses for that shared construction volume.
+            bool construction_pair = false;
+            const int ae[2] = {a0, a1};
+            const int be[2] = {b0, b1};
+            for (int ai = 0; ai < 2 && !construction_pair; ++ai)
+                for (int bi = 0; bi < 2; ++bi)
+                    if (m_self_group[ae[ai]] != 0 && m_self_group[ae[ai]] == m_self_group[be[bi]])
+                    {
+                        construction_pair = true;
+                        break;
+                    }
+            if (construction_pair)
+                continue;
+
+            const Vector3 p0 = m_points[a0];
+            const Vector3 p1 = m_points[a1];
+            const Vector3 q0 = m_points[b0];
+            const Vector3 q1 = m_points[b1];
+            const Vector3 u = p1 - p0;
+            const Vector3 v = q1 - q0;
+            const Vector3 w = p0 - q0;
+            const double uu = u.dot(u);
+            const double uv = u.dot(v);
+            const double vv = v.dot(v);
+            const double uw = u.dot(w);
+            const double vw = v.dot(w);
+            const double denom = uu * vv - uv * uv;
+            if (uu < 1e-12 || vv < 1e-12)
+                continue;
+
+            // Only interior/interior contacts belong to this pass, so the
+            // unclamped closest points on the two supporting lines are enough.
+            // Endpoint cases are deliberately left to particle collision below.
+            if (denom < 1e-12)
+                continue;
+            const double s = (uv * vw - vv * uw) / denom;
+            const double t = (uu * vw - uv * uw) / denom;
+            // Endpoint-near contact is already covered by the particle pass.
+            // Solving it again as a segment pair over-inflates tight coils and
+            // makes a shortened rope appear longer. This pass exists for the
+            // blind spot particle collision cannot see: interior crossings.
+            constexpr double INTERIOR_EPS = 0.05;
+            if (s <= INTERIOR_EPS || s >= 1.0 - INTERIOR_EPS ||
+                t <= INTERIOR_EPS || t >= 1.0 - INTERIOR_EPS)
+                continue;
+            const Vector3 cp = p0 + u * s;
+            const Vector3 cq = q0 + v * t;
+            Vector3 diff = cq - cp;
+            double dist = diff.length();
+            // Leave a small dead band at contact. Correcting numerical dust on
+            // two already-separated strands every tick can keep a draped lead
+            // awake indefinitely.
+            if (dist >= min_d * 0.9)
+                continue;
+
+            Vector3 n;
+            if (dist > min_d * 0.01)
+                n = diff / dist;
+            else
+            {
+                n = u.cross(v);
+                if (n.length_squared() < 1e-12)
+                {
+                    const Vector3 ref = std::abs(u.normalized().dot(Vector3(0, 1, 0))) < 0.9
+                                            ? Vector3(0, 1, 0)
+                                            : Vector3(1, 0, 0);
+                    n = u.cross(ref);
+                }
+                n = n.normalized();
+                dist = 0.0;
+            }
+
+            const double as0 = 1.0 - s;
+            const double as1 = s;
+            const double bt0 = 1.0 - t;
+            const double bt1 = t;
+            const double weight = m_inv_mass[a0] * as0 * as0 + m_inv_mass[a1] * as1 * as1 +
+                                  m_inv_mass[b0] * bt0 * bt0 + m_inv_mass[b1] * bt1 * bt1;
+            if (weight <= 0.0)
+                continue;
+            const double lambda = (min_d - dist) / weight;
+            const Vector3 da0 = -n * (lambda * m_inv_mass[a0] * as0);
+            const Vector3 da1 = -n * (lambda * m_inv_mass[a1] * as1);
+            const Vector3 db0 = n * (lambda * m_inv_mass[b0] * bt0);
+            const Vector3 db1 = n * (lambda * m_inv_mass[b1] * bt1);
+            m_points[a0] += da0;
+            m_points[a1] += da1;
+            m_points[b0] += db0;
+            m_points[b1] += db1;
+            // A positional collision correction is not a launch impulse. Move
+            // Verlet history with it so the separated strands do not inherit
+            // the correction as velocity on the next tick.
+            m_prev_points[a0] += da0;
+            m_prev_points[a1] += da1;
+            m_prev_points[b0] += db0;
+            m_prev_points[b1] += db1;
+            segment_corrected = true;
+        }
+    }
+    // Collision is applied after the main constraint solve. Restore the length
+    // it may have borrowed in order to part a crossing, otherwise a hard yank
+    // can leave one segment just beyond the established recovery bound.
+    if (segment_corrected && m_stretch_stiffness > 0.0)
+    {
+        const double k = CLAMP(m_stretch_stiffness, 0.0, 1.0);
+        for (int s = 0; s < seg_count; ++s)
+            SolvePair(m_seg_a[s], m_seg_b[s], m_seg_rest[s], k);
+        PinAnchors();
     }
 }
 
