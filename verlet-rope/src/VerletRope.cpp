@@ -670,6 +670,22 @@ void VerletRope::SleepNow()
     // Zero implied velocities so waking doesn't inherit stale motion — and so a
     // rope stopped mid-oscillation doesn't resume it.
     m_prev_points = m_points;
+
+    // A free plug uses a spherical collision shape but its cable anchor sits
+    // several centimetres off-centre. Jolt can leave that sphere microscopically
+    // rolling on a floor forever: too little motion to keep the rope awake, but
+    // enough accumulated anchor drift to wake it again a few frames later. Once
+    // the entire rope has met its sleep criterion, latch only its genuinely free
+    // plug bodies asleep with it. Mounted controller anchors are plain Node3D
+    // children and PlugIsFixed() keeps their ancestor bodies out of this path;
+    // held and socketed plugs are fixed for the same reason.
+    if (m_start_body != nullptr && !PlugIsFixed(m_start_cached))
+        m_start_body->set_sleeping(true);
+    if (m_end_body != nullptr && !PlugIsFixed(m_end_cached))
+        m_end_body->set_sleeping(true);
+    for (const FrayChain &fc : m_fray)
+        if (fc.body != nullptr && !PlugIsFixed(fc.cached))
+            fc.body->set_sleeping(true);
 }
 
 // Work out the fray chains at one end and append their particles to the layout.

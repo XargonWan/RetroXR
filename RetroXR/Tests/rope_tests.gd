@@ -29,6 +29,7 @@ extends Node3D
 
 const CABLE_SCENE := preload("res://Scenes/Objects/cables/cable.tscn")
 const COMPOSITE_SCENE := preload("res://Scenes/Objects/cables/composite_cable.tscn")
+const CONTROLLER_CABLE_SCENE := preload("res://Scenes/Objects/cables/controller_cable.tscn")
 ## A whole lead — two plug bodies with a cord between them, exactly as the room
 ## spawns it. Used by the loose/ group, where the ends have to be free to fall.
 const LEAD_SCENE := preload("res://Scenes/Objects/cables/trs_cable.tscn")
@@ -1339,6 +1340,77 @@ func _group_edges() -> void:
 		corner_worst * 1000.0 < STILL_MM,
 		"worst movement %.3f mm/tick" % (corner_worst * 1000.0))
 	await _drop_case()
+
+	# The shipped controller lead has a loose spherical plug at its far end. Its
+	# cable anchor is off-centre, so microscopic rolling that never reaches Jolt's
+	# body sleep can accumulate into enough anchor drift to wake an otherwise
+	# settled rope over and over. Once the whole rope sleeps, that genuinely free
+	# plug should latch asleep with it; the controller body is a mounted Node3D
+	# anchor and must be left to the physics server.
+	# This case mixes two Jolt bodies with millimetre-scale rope contacts. Keep it
+	# near the origin: by this point a full suite's _new_case() is over a kilometre
+	# out, where float transform precision itself wakes the 3.6 mm cord. Negative X
+	# is unused by the ordinary cases, so it remains its own world.
+	base = Vector3(-120.0, 0, 0)
+	_box(base + Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.2))
+	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))
+	var controller := RigidBody3D.new()
+	controller.mass = 0.2
+	controller.linear_damp = 5.0
+	controller.angular_damp = 8.0
+	controller.collision_layer = 4
+	controller.collision_mask = 1
+	controller.position = base + Vector3(-0.55, 0.84, 0)
+	add_child(controller)
+	var controller_collision := CollisionShape3D.new()
+	var controller_box := BoxShape3D.new()
+	controller_box.size = Vector3(0.16, 0.05, 0.09)
+	controller_collision.shape = controller_box
+	controller.add_child(controller_collision)
+	var controller_attach := Node3D.new()
+	controller_attach.position = Vector3(0.07, 0, 0)
+	controller.add_child(controller_attach)
+	var controller_cable: Node3D = CONTROLLER_CABLE_SCENE.instantiate()
+	add_child(controller_cable)
+	var controller_plug := controller_cable.get_node("ControllerPlug") as ControllerPlug
+	var controller_rope := controller_cable.get_node("VerletRope") as VerletRope
+	controller_plug.global_position = base + Vector3(0.35, 0.85, 0)
+	controller_plug.add_collision_exception_with(controller)
+	controller_rope.start_node = controller_attach
+	controller_rope.end_node = controller_plug
+	controller_rope.end_anchor_offset = controller_plug.cable_anchor
+	controller_rope._init_points()
+	var controller_slept_at := -1
+	for frame in 1200:
+		await get_tree().physics_frame
+		if controller_rope.is_sleeping() and controller.sleeping and controller_plug.sleeping:
+			controller_slept_at = frame
+			break
+	_ok("edges/a settled controller lead sleeps its loose plug",
+		controller_slept_at >= 0,
+		"all asleep after %d frames" % controller_slept_at
+			if controller_slept_at >= 0 else "plug never slept")
+	var controller_prev := controller_rope.get_points()
+	var controller_wakes := 0
+	var controller_worst := 0.0
+	var controller_was_asleep := controller_rope.is_sleeping()
+	for frame in 180:
+		await get_tree().physics_frame
+		var controller_now := controller_rope.get_points()
+		for i in controller_now.size():
+			controller_worst = maxf(controller_worst,
+				controller_prev[i].distance_to(controller_now[i]))
+		if controller_was_asleep and not controller_rope.is_sleeping():
+			controller_wakes += 1
+		controller_was_asleep = controller_rope.is_sleeping()
+		controller_prev = controller_now
+	_ok("edges/a rested controller lead stays still beside the table edge",
+		controller_wakes == 0 and controller_worst * 1000.0 < STILL_MM,
+		"%d wakes, %.3f mm/tick worst movement" % [
+			controller_wakes, controller_worst * 1000.0])
+	controller_cable.queue_free()
+	controller.queue_free()
+	await get_tree().physics_frame
 
 	# A true six-plug lead exercises both frayed ends and all six branch anchors.
 	# The ordinary behaviour cases use trs_cable.tscn, which is deliberately a
