@@ -192,8 +192,23 @@ func _read_stick(clip: Animation) -> void:
 		"bone": d["bone"],
 		"rest": rest,
 		"shaft": shaft,
-		"lean": rest.angle_to(d["rot_far"] as Quaternion),
+		"lean": _swing_of(clip, track, rest, shaft),
 	}
+
+
+## How far the rig leans the stick, which is not how far it turns it. A key can
+## carry a twist about the shaft as well - spin, which moves the tip nowhere -
+## and counting that as lean throws the stick further than the rig ever does.
+## Taken as the widest swing over the sweep, with the twist divided out.
+func _swing_of(clip: Animation, track: int, rest: Quaternion, shaft: Vector3) -> float:
+	var widest := 0.0
+	for k in clip.track_get_key_count(track):
+		var delta := rest.inverse() * (clip.track_get_key_value(track, k) as Quaternion)
+		var along := Vector3(delta.x, delta.y, delta.z).dot(shaft)
+		var twist := Quaternion(shaft.x * along, shaft.y * along, shaft.z * along, delta.w).normalized()
+		var swing := delta * twist.inverse()
+		widest = maxf(widest, 2.0 * acos(clampf(absf(swing.w), -1.0, 1.0)))
+	return widest
 
 
 func _track_of(clip: Animation, bone_name: String, kind: int) -> int:

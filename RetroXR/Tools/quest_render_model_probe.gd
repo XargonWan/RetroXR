@@ -189,6 +189,7 @@ func _exercise(ctrl: XRController3D) -> void:
 	var stick: Dictionary = ctrl.get("_stick")
 	print("[rmprobe] %s: stick measured=%s lean=%.1fdeg" % [ctrl.tracker, not stick.is_empty(),
 		(stick.get("lean", 0.0) as float) * 180.0 / PI])
+	_report_swing(ctrl, art, stick)
 
 	var rest := _pose_of(skel)
 	for probe: Array in [["trigger", 1.0], ["grip", 1.0]]:
@@ -226,6 +227,38 @@ func _report_lean(ctrl: XRController3D, skel: Skeleton3D, pushed: Vector2) -> vo
 	print("[rmprobe] %s: pushed %s -> tip went %s (%.2f mm, agreement %.2f)" % [
 		ctrl.tracker, pushed, went.normalized(), moved.length() * 1000.0,
 		went.normalized().dot(pushed.normalized())])
+
+
+## What the rig's sweep is made of: how much of each key turns the stick over its
+## face (swing, which is what leans it) and how much spins it about its own shaft
+## (twist, which moves the tip nowhere).
+func _report_swing(ctrl: XRController3D, art: ControllerArt, stick: Dictionary) -> void:
+	if stick.is_empty():
+		return
+	var anim := art.animation_player()
+	if anim == null:
+		return
+	var clip: Animation = anim.get_animation(anim.get_animation_list()[0])
+	var track := -1
+	for t in clip.get_track_count():
+		if String(clip.track_get_path(t).get_concatenated_subnames()) == "b_thumbstick":
+			track = t
+	if track < 0:
+		return
+	var rest: Quaternion = stick["rest"]
+	var shaft: Vector3 = stick["shaft"]
+	var rows: PackedStringArray = []
+	for k in clip.track_get_key_count(track):
+		var delta := rest.inverse() * (clip.track_get_key_value(track, k) as Quaternion)
+		var total: float = rad_to_deg(2.0 * acos(clampf(absf(delta.w), -1.0, 1.0)))
+		if total < 0.5:
+			continue
+		var along := Vector3(delta.x, delta.y, delta.z).dot(shaft)
+		var twist := Quaternion(shaft.x * along, shaft.y * along, shaft.z * along, delta.w).normalized()
+		var swing := delta * twist.inverse()
+		rows.append("%.1f/%.1f" % [total,
+			rad_to_deg(2.0 * acos(clampf(absf(swing.w), -1.0, 1.0)))])
+	print("[rmprobe] %s: sweep total/swing deg: %s" % [ctrl.tracker, ", ".join(rows)])
 
 
 func _pose_of(skel: Skeleton3D) -> Array:
