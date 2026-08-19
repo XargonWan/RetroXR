@@ -195,6 +195,9 @@ func _check_finger_snap() -> void:
 	var start := skeleton.get_bone_global_pose(10).origin
 	var target := start + Vector3(-0.004, 0.012, 0.0)
 	var solver: SkeletonModifier3D = FINGER_SNAP_SCRIPT.new()
+	var skin_target: Vector3 = solver._skin_target(Vector3.ZERO, Vector3.UP, 0.006)
+	_check(skin_target.distance_to(Vector3(0, 0.006, 0)) < 1e-6,
+		"fingertip joint stays one radius outside the contacted surface")
 	solver._solve(skeleton, target)
 	skeleton.force_update_all_bone_transforms()
 	var end := skeleton.get_bone_global_pose(10).origin

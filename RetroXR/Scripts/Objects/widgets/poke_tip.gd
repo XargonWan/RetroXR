@@ -238,9 +238,20 @@ func _process(delta: float) -> void:
 ## surface. Returning the un-lifted point puts skin on the face; the disc keeps
 ## its tiny CONTACT_LIFT to avoid z-fighting.
 func visual_contact_target() -> Variant:
+	var contact := visual_contact()
+	return contact.get("point") if not contact.is_empty() else null
+
+
+## Point and outward normal for consumers that must account for their own
+## thickness. The contact disc wants the point alone; fingertip IK also needs the
+## normal so the joint centre can remain one fingertip radius above the face.
+func visual_contact() -> Dictionary:
 	if not visible or _blend <= 0.02 or _claim_smooth == Vector3.ZERO:
-		return null
-	return _claim_smooth - _claim_normal * CONTACT_LIFT
+		return {}
+	return {
+		"point": _claim_smooth - _claim_normal * CONTACT_LIFT,
+		"normal": _claim_normal,
+	}
 
 
 func _apply_disc(apex: Vector3) -> void:

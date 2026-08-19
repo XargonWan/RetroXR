@@ -26,10 +26,20 @@ func _process_modification() -> void:
 	var hand := skeleton.get_parent() as CapsenseHand if skeleton != null else null
 	if skeleton == null or hand == null:
 		return
-	var world_target: Variant = hand.visual_contact_target()
-	if world_target is not Vector3:
+	var contact: Dictionary = hand.visual_contact()
+	if contact.is_empty():
 		return
+	var world_target := _skin_target(contact["point"], contact["normal"],
+		hand.index_tip_radius())
 	_solve(skeleton, skeleton.to_local(world_target as Vector3))
+
+
+## The OpenXR tip transform is the centre of the fingertip joint, not the outer
+## skin. Keep that centre one reported radius above the face so the mesh touches
+## instead of entering the button.
+func _skin_target(surface: Vector3, normal: Vector3, radius: float) -> Vector3:
+	var n := normal.normalized() if normal.length_squared() > 1e-10 else Vector3.UP
+	return surface + n * maxf(radius, 0.0)
 
 
 ## Kept separate so the synthetic probe can exercise the same solver without an

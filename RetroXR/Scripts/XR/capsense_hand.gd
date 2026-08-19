@@ -82,10 +82,25 @@ func index_tip_position() -> Variant:
 ## Surface target for the post-tracking finger modifier. Only the rendered
 ## skeleton consumes this; PokeTip.tip_of() continues to expose the raw joint.
 func visual_contact_target() -> Variant:
+	var contact := visual_contact()
+	return contact.get("point") if not contact.is_empty() else null
+
+
+func visual_contact() -> Dictionary:
 	if not visible or _controller == null or not PokeTip.is_poking(_controller):
-		return null
+		return {}
 	var poke := _controller.get_node_or_null("PokeTip") as PokeTip
-	return poke.visual_contact_target() if poke != null else null
+	return poke.visual_contact() if poke != null else {}
+
+
+## OpenXR reports a spherical radius for every hand joint. The index-tip radius
+## is the distance from its joint centre to the skin that should meet a surface.
+## Some runtimes leave it at zero; 6 mm is a conservative fingertip fallback.
+func index_tip_radius() -> float:
+	var ht := hand_tracker()
+	if ht == null:
+		return 0.006
+	return maxf(ht.get_hand_joint_radius(INDEX_TIP), 0.006)
 
 
 func apply_display_mode() -> void:
