@@ -424,8 +424,21 @@ void VerletRope::Step(double p_delta)
     const bool end_fixed = PlugIsFixed(m_end_cached);
     const Vector3 start_exit = start_fixed ? PlugExitDir(m_start_cached) : Vector3();
     const Vector3 end_exit = end_fixed ? PlugExitDir(m_end_cached) : Vector3();
+    // A plain Node3D is a host attachment (controller shell, sensor bar, etc.),
+    // not a connector plug. A seated controller plug may also have an ideal exit
+    // line that immediately meets the furniture around its panel. Both keep the
+    // ordinary bend boot; actual held/frozen test plugs retain directional
+    // authority, while a plug that reports itself socketed does not.
+    RigidBody3D *start_rb = Object::cast_to<RigidBody3D>(m_start_cached);
+    RigidBody3D *end_rb = Object::cast_to<RigidBody3D>(m_end_cached);
+    const auto is_socketed = [](RigidBody3D *rb) {
+        return rb != nullptr && rb->has_method("is_plugged_in") &&
+               static_cast<bool>(rb->call("is_plugged_in"));
+    };
+    const bool start_directional = start_fixed && start_rb != nullptr && !is_socketed(start_rb);
+    const bool end_directional = end_fixed && end_rb != nullptr && !is_socketed(end_rb);
 
-    SolveConstraints(start_fixed, end_fixed, start_exit, end_exit);
+    SolveConstraints(start_directional, end_directional, start_exit, end_exit);
     ApplyContactFriction();
 
     // Cadence shared by the two heavy passes below.
@@ -576,10 +589,12 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
             }
         }
 
-        // Directional stub for a FIXED end: pull the first/last few particles
-        // onto the line leaving the plug along its exit axis, so a held or
-        // socketed cable emerges stiffly in the direction it plugs in.
-        if (m_end_stiffness > 0.0 && m_end_stiff_segments > 0 && (p_start_fixed || p_end_fixed))
+        // Directional stub for a held or otherwise fixed non-socketed plug:
+        // pull the first/last few particles onto its exit line. Socketed plugs
+        // and mounted host attachments keep the ordinary bend boot above but do
+        // not impose a line that may pass through surrounding furniture.
+        if (m_end_stiffness > 0.0 && m_end_stiff_segments > 0 &&
+            (p_start_fixed || p_end_fixed))
         {
             const double ked = CLAMP(m_end_stiffness, 0.0, 1.0);
             const int nd = std::min(m_end_stiff_segments, (count - 1) / 2);
@@ -591,7 +606,8 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
                     const int idx = count - 1 - j;
                     if (m_inv_mass[idx] != 0.0f)
                         m_points[idx] = m_points[idx].lerp(
-                            base_e + p_end_exit * (m_segment_length * j), StubWeight(ked, j, nd));
+                            base_e + p_end_exit * (m_segment_length * j),
+                            StubWeight(ked, j, nd));
                 }
             }
             if (p_start_fixed)
@@ -601,7 +617,8 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
                 {
                     if (m_inv_mass[j] != 0.0f)
                         m_points[j] = m_points[j].lerp(
-                            base_s + p_start_exit * (m_segment_length * j), StubWeight(ked, j, nd));
+                            base_s + p_start_exit * (m_segment_length * j),
+                            StubWeight(ked, j, nd));
                 }
             }
         }
@@ -753,7 +770,7 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
     const auto plane_matches = [this](const Vector3 &p, const Vector3 &n,
                                       const Vector3 &cached_p, const Vector3 &cached_n) {
         return n.dot(cached_n) > 0.85 &&
-               std::abs((p - cached_p).dot(cached_n)) <= m_collision_radius * 0.5;
+               std::abs((p - cached_p).dot(cached_n)) <= m_collision_radius * 1.5;
     };
     const auto point_inside = [this, space_state](const Vector3 &p) {
         if (m_point_query.is_null())
@@ -805,7 +822,9 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
             // new contact as moved furniture when the unchanged particle centre
             // is now actually inside it.
             if (point_inside(m_points[i]))
+            {
                 return true;
+            }
             continue;
         }
         if (!has)
@@ -824,7 +843,9 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
                                       ((m_c_flags[i] & 2) != 0 &&
                                        PlaneValid(i, m_c_p2[i], m_c_n2[i]));
             if (!cached_valid)
+            {
                 return true;
+            }
         }
     }
 
@@ -849,7 +870,9 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         if (has && !had)
         {
             if (point_inside(mid))
+            {
                 return true;
+            }
             continue;
         }
         if (has)
@@ -863,7 +886,9 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
                 // Same face: movement along its normal means the supporting
                 // collider itself moved and the rope must wake.
                 if (!plane_matches(p, n, cached_p, cached_n))
+                {
                     return true;
+                }
             }
             else
             {
@@ -877,7 +902,9 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
                                           std::abs((mid - cached_p).dot(cached_n)) <
                                               m_collision_radius * 3.0;
                 if (!cached_valid)
+                {
                     return true;
+                }
             }
         }
     }
@@ -1605,7 +1632,9 @@ void VerletRope::UpdateSleepState()
     {
         m_still_frames += 1;
         if (m_still_frames >= SLEEP_FRAMES)
+        {
             SleepNow();
+        }
     }
     else
     {
@@ -1616,7 +1645,9 @@ void VerletRope::UpdateSleepState()
     if (m_ref_frames >= SLEEP_REF_FRAMES)
     {
         if (anchors_still && m_max_excursion_sq < SLEEP_EXCURSION_EPS_SQ)
+        {
             SleepNow();
+        }
         else
             OpenExcursionWindow();
     }

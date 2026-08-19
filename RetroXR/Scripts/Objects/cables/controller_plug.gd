@@ -6,6 +6,7 @@ extends XRToolsPickable
 
 ## The controller (RetroController or RayGun) that owns this plug.
 var _controller: Node3D = null
+var _plugged_in := false
 
 ## Device type exposed so system.gd can read it without knowing the controller type.
 var device_type: int = 1  # RETRO_DEVICE_JOYPAD
@@ -122,11 +123,17 @@ func set_controller(controller: Node3D) -> void:
 
 ## Called by system.gd when this plug snaps into a port.
 func on_plugged_in(system: RetroSystem, port_index: int) -> void:
+	_plugged_in = true
 	if is_instance_valid(_controller) and _controller.has_method("on_plugged_in"):
 		_controller.on_plugged_in(system, port_index)
 
 
 ## Called by system.gd when this plug is removed from a port.
 func on_unplugged() -> void:
+	_plugged_in = false
 	if is_instance_valid(_controller) and _controller.has_method("on_unplugged"):
 		_controller.on_unplugged()
+
+
+func is_plugged_in() -> bool:
+	return _plugged_in
