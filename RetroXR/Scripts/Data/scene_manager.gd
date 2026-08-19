@@ -76,6 +76,11 @@ var _transitioning: bool = false
 ## destination matters; it starts after the current room is fully installed.
 var _pending_scene_id: String = ""
 var _content_ready_scene_id: String = ""
+## The rig and player survive a failed load so retrying (or choosing another
+## room) cannot strand one player on the root and create a second one.
+var _parked_player: PlayerRig = null
+var _failed_loading_rig: LoadingRig = null
+var _last_load_failed: bool = false
 
 
 func _ready() -> void:
@@ -218,7 +223,7 @@ func change_scene(scene_id: String) -> void:
 		return
 	# Last intent wins. Asking for the room already in flight also cancels a
 	# different destination that may have been queued after it.
-	if scene_id == current_scene_id:
+	if _same_scene_request_is_noop(scene_id):
 		_pending_scene_id = ""
 		return
 	if _transitioning:
@@ -226,6 +231,12 @@ func change_scene(scene_id: String) -> void:
 		return
 
 	_begin_transition(scene_id, net_client)
+
+
+## A failed destination is not the room the player is in: there is no current
+## scene at all. Treating it as the normal same-room no-op made Retry inert.
+func _same_scene_request_is_noop(scene_id: String) -> bool:
+	return scene_id == current_scene_id and not _last_load_failed
 
 
 ## Claim a validated transition synchronously. The worker is deferred so a menu
@@ -236,6 +247,7 @@ func _begin_transition(scene_id: String, net_client: bool = false) -> void:
 	var leaving := current_scene_id
 	var leaving_restored := is_scene_content_ready(leaving)
 	_transitioning = true
+	_last_load_failed = false
 	_content_ready_scene_id = ""
 
 	# Auto-save the room being left, into its own slot (skip if clean — it's
@@ -278,12 +290,13 @@ func _run_transition(scene_id: String, path: String, title: String) -> void:
 	# All of this runs in one deferred call: the room leaves and the loading
 	# screen arrives without a frame drawn in between.
 	var outgoing := tree.current_scene
-	var player := _take_player_rig(outgoing)
+	var player := _player_for_transition(outgoing)
 	if outgoing != null:
 		tree.current_scene = null
 		tree.root.remove_child(outgoing)
 		outgoing.queue_free()
 
+	_clear_failed_loading_rig()
 	var rig: LoadingRig = LOADING_RIG_SCENE.instantiate()
 	rig.prepare_for_player(player)
 	tree.root.add_child(rig)
@@ -293,8 +306,12 @@ func _run_transition(scene_id: String, path: String, title: String) -> void:
 	# out of the cache before the next scene starts pulling its own in.
 	await tree.process_frame
 	await tree.process_frame
+	rig.set_progress(0.05)
 
-	ResourceLoader.load_threaded_request(path)
+	var request_error := ResourceLoader.load_threaded_request(path)
+	if request_error != OK:
+		_fail_transition(rig, path, "request error %d" % request_error)
+		return
 	var progress: Array = []
 	while true:
 		var status := ResourceLoader.load_threaded_get_status(path, progress)
@@ -303,20 +320,31 @@ func _run_transition(scene_id: String, path: String, title: String) -> void:
 		if status != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			# Nothing to go back to — the old room is already gone. Leave the
 			# player parked on the root: they keep head tracking and the menu
-			# (a child of the rig) still works, so another room can be picked.
-			push_error("SceneManager: failed to load '%s' (status %d)" % [path, status])
-			rig.queue_free()
-			_finish_transition()
+			# (a child of the player rig) still works, so another room can be picked.
+			_fail_transition(rig, path, "loader status %d" % status)
 			return
 		if not progress.is_empty():
-			rig.set_progress(float(progress[0]))
+			# Resource loading is most of the work, but scene instantiation still
+			# happens afterward on the main thread. Reserve the last ten percent so
+			# the bar never claims completion before that blocking step.
+			rig.set_progress(0.05 + 0.85 * float(progress[0]))
 		await tree.process_frame
-	rig.set_progress(1.0)
+	rig.set_progress(0.9)
+	await tree.process_frame
 
-	var packed: PackedScene = ResourceLoader.load_threaded_get(path)
+	var loaded := ResourceLoader.load_threaded_get(path)
+	var packed := loaded as PackedScene
+	if packed == null:
+		_fail_transition(rig, path, "resource is not a PackedScene")
+		return
 	var incoming: Node = packed.instantiate()
+	# Make READY observable rather than setting it and removing the rig in the
+	# same frame. The carried player is still on the root and tracking throughout.
+	rig.set_progress(1.0)
+	await tree.process_frame
 	if player != null:
 		_seat_player_rig(incoming, player)
+		_parked_player = null
 	# The rig has to be out of the tree BEFORE the incoming scene enters, not just
 	# switched off. Its WorldEnvironment would otherwise be the one the new room
 	# has to displace, and in the no-player fallback its camera holds the viewport:
@@ -334,6 +362,27 @@ func _run_transition(scene_id: String, path: String, title: String) -> void:
 	# it is still returning from the ready signal.
 	scene_ready.emit(scene_id)
 	_finish_transition()
+
+
+## Keep the error panel and the carried player alive. The spawn menu belongs to
+## the player, so it remains available for Retry or for choosing a different room.
+func _fail_transition(rig: LoadingRig, path: String, reason: String) -> void:
+	push_error("SceneManager: failed to load '%s' (%s)" % [path, reason])
+	_last_load_failed = true
+	_failed_loading_rig = rig
+	rig.show_load_error()
+	_finish_transition()
+
+
+func _clear_failed_loading_rig() -> void:
+	if not is_instance_valid(_failed_loading_rig):
+		_failed_loading_rig = null
+		return
+	var parent := _failed_loading_rig.get_parent()
+	if parent != null:
+		parent.remove_child(_failed_loading_rig)
+	_failed_loading_rig.queue_free()
+	_failed_loading_rig = null
 
 
 func _finish_transition() -> void:
@@ -358,6 +407,20 @@ func _take_player_rig(outgoing: Node) -> PlayerRig:
 	player.leave_world()
 	outgoing.remove_child(player)
 	get_tree().root.add_child(player)
+	return player
+
+
+## Recover the player parked by a failed attempt when there is no outgoing room
+## left to take it from. This is what prevents duplicate players/origins/cameras
+## on the next attempt.
+func _player_for_transition(outgoing: Node) -> PlayerRig:
+	var player := _take_player_rig(outgoing)
+	if player != null:
+		_parked_player = player
+	elif is_instance_valid(_parked_player):
+		player = _parked_player
+	else:
+		_parked_player = null
 	return player
 
 
