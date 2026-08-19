@@ -16,21 +16,6 @@ namespace Xenu
 
 namespace
 {
-// Once every particle has been near-still for SLEEP_FRAMES ticks the rope
-// sleeps: the whole sim and the re-mesh are skipped until an anchor moves.
-constexpr int SLEEP_FRAMES = 30;
-constexpr double SLEEP_POINT_EPS_SQ = 0.0015 * 0.0015;
-
-// Second, slower way to be finished: the rope is oscillating rather than
-// stopping. A segment resting near the reach of the rest-info sphere drops in
-// and out of detection between throttled passes, so its cached plane vanishes,
-// the segment falls for an interval, is re-detected and is pushed back — a
-// stable cycle whose per-tick motion never drops under SLEEP_POINT_EPS_SQ. Its
-// signature is that it goes nowhere, so track the furthest any particle strays
-// from a reference pose and sleep when a whole window fits in a small envelope.
-constexpr int SLEEP_REF_FRAMES = 90;
-constexpr double SLEEP_EXCURSION_EPS_SQ = 0.012 * 0.012;
-
 constexpr double WAKE_ANCHOR_EPS_SQ = 0.0005 * 0.0005;
 // Tighter than the wake threshold: this only costs a tube rebuild, whereas
 // waking costs a full solve, so it can afford to notice smaller motion.
@@ -88,6 +73,24 @@ void VerletRope::_bind_methods()
     ClassDB::bind_method(D_METHOD("get_bend_stiffness"), &VerletRope::GetBendStiffness);
     ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bend_stiffness", PROPERTY_HINT_RANGE, "0.0,1.0"),
                  "set_bend_stiffness", "get_bend_stiffness");
+
+    ClassDB::bind_method(D_METHOD("set_stretch_compliance", "value"), &VerletRope::SetStretchCompliance);
+    ClassDB::bind_method(D_METHOD("get_stretch_compliance"), &VerletRope::GetStretchCompliance);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "stretch_compliance", PROPERTY_HINT_RANGE,
+                              "0.0,0.01,0.0000001,or_greater"),
+                 "set_stretch_compliance", "get_stretch_compliance");
+
+    ClassDB::bind_method(D_METHOD("set_bend_compliance", "value"), &VerletRope::SetBendCompliance);
+    ClassDB::bind_method(D_METHOD("get_bend_compliance"), &VerletRope::GetBendCompliance);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bend_compliance", PROPERTY_HINT_RANGE,
+                              "0.0,0.01,0.0000001,or_greater"),
+                 "set_bend_compliance", "get_bend_compliance");
+
+    ClassDB::bind_method(D_METHOD("set_contact_compliance", "value"), &VerletRope::SetContactCompliance);
+    ClassDB::bind_method(D_METHOD("get_contact_compliance"), &VerletRope::GetContactCompliance);
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "contact_compliance", PROPERTY_HINT_RANGE,
+                              "0.0,0.01,0.0000001,or_greater"),
+                 "set_contact_compliance", "get_contact_compliance");
 
     ClassDB::bind_method(D_METHOD("set_max_bend_degrees", "value"), &VerletRope::SetMaxBendDegrees);
     ClassDB::bind_method(D_METHOD("get_max_bend_degrees"), &VerletRope::GetMaxBendDegrees);
@@ -261,6 +264,8 @@ void VerletRope::_bind_methods()
     ClassDB::bind_method(D_METHOD("wake"), &VerletRope::Wake);
     ClassDB::bind_method(D_METHOD("rest_length"), &VerletRope::RestLength);
     ClassDB::bind_method(D_METHOD("get_points"), &VerletRope::GetPoints);
+    ClassDB::bind_method(D_METHOD("restore_points", "points"), &VerletRope::RestorePoints);
+    ClassDB::bind_method(D_METHOD("get_sleep_metrics"), &VerletRope::GetSleepMetrics);
     ClassDB::bind_method(D_METHOD("nudge_point", "index", "delta"), &VerletRope::NudgePoint);
     ClassDB::bind_method(D_METHOD("point_count"), &VerletRope::PointCount);
     ClassDB::bind_method(D_METHOD("point_position", "index"), &VerletRope::PointPosition);
@@ -544,6 +549,12 @@ void VerletRope::_ready()
         m_shape_query.instantiate();
         m_shape_query->set_shape(m_sphere);
         m_shape_query->set_collision_mask(m_surface_collision_mask);
+        m_segment_capsule.instantiate();
+        m_segment_capsule->set_radius(m_collision_radius * 1.3);
+        m_segment_capsule->set_height(m_collision_radius * 2.6);
+        m_segment_shape_query.instantiate();
+        m_segment_shape_query->set_shape(m_segment_capsule);
+        m_segment_shape_query->set_collision_mask(m_surface_collision_mask);
         m_point_query.instantiate();
         m_point_query->set_collision_mask(m_surface_collision_mask);
         RefreshExclusions();
@@ -627,6 +638,53 @@ PackedVector3Array VerletRope::GetPoints() const
     return out;
 }
 
+bool VerletRope::RestorePoints(const PackedVector3Array &p_points)
+{
+    if (p_points.size() != static_cast<int64_t>(m_points.size()) || m_points.empty())
+        return false;
+    for (int i = 0; i < p_points.size(); ++i)
+    {
+        const Vector3 p = p_points[i];
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+            return false;
+    }
+    // Reject corrupt or stale topology rather than injecting an arbitrarily
+    // stretched chain. A valid saved lay may be under tension, but four times a
+    // segment's rest length is already far beyond any player-produced state.
+    for (int s = 0; s < static_cast<int>(m_seg_a.size()); ++s)
+    {
+        if (p_points[m_seg_a[s]].distance_to(p_points[m_seg_b[s]]) > m_seg_rest[s] * 4.0)
+            return false;
+    }
+    for (int i = 0; i < p_points.size(); ++i)
+        m_points[i] = p_points[i];
+    m_prev_points = m_points;
+    PinAnchors();
+    std::fill(m_c_flags.begin(), m_c_flags.end(), 0);
+    std::fill(m_mid_contact.begin(), m_mid_contact.end(), 0);
+    std::fill(m_stuck_passes.begin(), m_stuck_passes.end(), 0);
+    // Validation against the live room is deliberately deferred to the first
+    // physics tick, when direct-space queries are legal. DepenetrateLay then
+    // repairs a saved cord whose furniture moved through it while loading.
+    m_depen_pending = true;
+    m_settle_repair_attempted = false;
+    Wake();
+    m_mesh_dirty = true;
+    return true;
+}
+
+Dictionary VerletRope::GetSleepMetrics() const
+{
+    Dictionary out;
+    out["max_velocity"] = m_debug_max_velocity;
+    out["rms_velocity"] = m_debug_rms_velocity;
+    out["stretch_error"] = m_debug_stretch_error;
+    out["contact_error"] = m_debug_contact_error;
+    out["contact_stable_frames"] = m_contact_stable_frames;
+    out["still_frames"] = m_still_frames;
+    return out;
+}
+
 void VerletRope::NudgePoint(int p_index, const Vector3 &p_delta)
 {
     if (p_index < 0 || p_index >= static_cast<int>(m_points.size()) || m_inv_mass[p_index] == 0.0f)
@@ -680,21 +738,22 @@ void VerletRope::Wake()
 {
     m_asleep = false;
     m_sleep_environment_frame = 0;
+    m_environment_change_polls = 0;
     m_still_frames = 0;
     OpenExcursionWindow();
 }
 
 void VerletRope::OpenExcursionWindow()
 {
-    m_sleep_ref = m_points;
-    m_ref_frames = 0;
-    m_max_excursion_sq = 0.0;
+    m_still_frames = 0;
+    m_contact_stable_frames = 0;
 }
 
 void VerletRope::SleepNow()
 {
     m_asleep = true;
     m_sleep_environment_frame = 0;
+    m_environment_change_polls = 0;
     // Zero implied velocities so waking doesn't inherit stale motion — and so a
     // rope stopped mid-oscillation doesn't resume it.
     m_prev_points = m_points;
@@ -861,7 +920,12 @@ void VerletRope::InitPoints()
     m_mid_contact.assign(seg_count, 0);
     m_mid_contact_point.assign(seg_count, Vector3());
     m_mid_contact_normal.assign(seg_count, Vector3());
+    m_mid_contact_t.assign(seg_count, 0.5f);
+    m_mid_contact_point_2.assign(seg_count, Vector3());
+    m_mid_contact_normal_2.assign(seg_count, Vector3());
+    m_mid_contact_t_2.assign(seg_count, 0.5f);
     m_active_mid.reserve(seg_count);
+    m_settle_repair_attempted = false;
 
     CacheAnchors();
     // How many branches each end has, and where their plugs are. Both decide the
@@ -1044,6 +1108,8 @@ void VerletRope::RefreshExclusions()
         m_ray_query->set_exclude(rids);
     if (m_shape_query.is_valid())
         m_shape_query->set_exclude(rids);
+    if (m_segment_shape_query.is_valid())
+        m_segment_shape_query->set_exclude(rids);
     if (m_point_query.is_valid())
         m_point_query->set_exclude(rids);
 }

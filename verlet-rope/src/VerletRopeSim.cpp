@@ -25,10 +25,15 @@ namespace Xenu
 
 namespace
 {
-constexpr int SLEEP_FRAMES = 30;
-constexpr double SLEEP_POINT_EPS_SQ = 0.0015 * 0.0015;
-constexpr int SLEEP_REF_FRAMES = 90;
-constexpr double SLEEP_EXCURSION_EPS_SQ = 0.012 * 0.012;
+constexpr int SLEEP_FRAMES = 45;
+constexpr double SLEEP_MAX_VELOCITY_EPS_SQ = 0.0025 * 0.0025;
+constexpr double SLEEP_RMS_VELOCITY_EPS_SQ = 0.0004 * 0.0004;
+// These are sanity gates, not equilibrium tolerances: a deliberately heaped
+// cord begins extremely compressed and can retain large local constraint error
+// while being perfectly motionless. Velocity decides rest; residuals only stop
+// a pathological/tunnelled solve from being frozen and hidden.
+constexpr double SLEEP_STRETCH_ERROR = 4.0;
+constexpr double SLEEP_CONTACT_ERROR = 0.05;
 constexpr double WAKE_ANCHOR_EPS_SQ = 0.0005 * 0.0005;
 // A sleeping rope has no CollisionObject3D of its own, so furniture cannot wake
 // it through a physics callback. Poll its cached contacts at a low cadence: six
@@ -54,7 +59,7 @@ constexpr double MAX_ALIGN_STEP = 0.12;
 
 // Positional constraint between points a/b toward rest distance, split by
 // inverse mass.
-inline void VerletRope::SolvePair(int a, int b, double rest, double k)
+inline void VerletRope::SolvePair(int a, int b, double rest, double k, double *lambda)
 {
     const float w_a = m_inv_mass[a];
     const float w_b = m_inv_mass[b];
@@ -65,7 +70,21 @@ inline void VerletRope::SolvePair(int a, int b, double rest, double k)
     const double dist = diff.length();
     if (dist < 0.0001)
         return;
-    const Vector3 correction = diff * ((dist - rest) / dist) * k;
+    if (lambda == nullptr || m_stretch_compliance <= 0.0)
+    {
+        // Keep the authored-stiffness path arithmetically identical to the
+        // pre-XPBD solver. Settling is chaotic enough that even reassociating
+        // these multiplies changes a pose several metres down a translated test.
+        const Vector3 correction = diff * ((dist - rest) / dist) * k;
+        m_points[a] += correction * (w_a / w_sum);
+        m_points[b] -= correction * (w_b / w_sum);
+        return;
+    }
+    const double alpha = m_stretch_compliance / m_step_dt_sq;
+    const double c = dist - rest;
+    const double delta_lambda = (-c - alpha * *lambda) / (w_sum + alpha);
+    *lambda += delta_lambda;
+    const Vector3 correction = diff * (-delta_lambda / dist);
     m_points[a] += correction * (w_a / w_sum);
     m_points[b] -= correction * (w_b / w_sum);
 }
@@ -113,9 +132,22 @@ inline void VerletRope::SolveBendTriple(int a, int b, int c, double allowed_dev,
         // the strain-relief stub always passes 0.
         v = delta * k;
     }
-    m_points[b] += v * (w_b / w_total);
-    m_points[a] -= v * (0.5f * w_a / w_total);
-    m_points[c] -= v * (0.5f * w_c / w_total);
+    if (m_bend_compliance > 0.0)
+    {
+        const double alpha = m_bend_compliance / m_step_dt_sq;
+        Vector3 &lambda = m_bend_lambda[BendLambdaKey(a, b, c, false, allowed_dev, k)];
+        const Vector3 delta_lambda = (v / k - lambda * alpha) / (w_total + alpha);
+        lambda += delta_lambda;
+        m_points[b] += delta_lambda * w_b;
+        m_points[a] -= delta_lambda * (0.5f * w_a);
+        m_points[c] -= delta_lambda * (0.5f * w_c);
+    }
+    else
+    {
+        m_points[b] += v * (w_b / w_total);
+        m_points[a] -= v * (0.5f * w_a / w_total);
+        m_points[c] -= v * (0.5f * w_c / w_total);
+    }
 }
 
 // Bend on (a, b, c) with `a` held immovable — the correction is shared by b and c
@@ -136,14 +168,40 @@ inline void VerletRope::SolveBendAnchored(int a, int b, int c, double k)
     if (delta.length_squared() < 1e-8)
         return;
     const Vector3 v = delta * k;
-    m_points[b] += v * (w_b / w_total);
-    m_points[c] -= v * (0.5f * w_c / w_total);
+    if (m_bend_compliance > 0.0)
+    {
+        const double alpha = m_bend_compliance / m_step_dt_sq;
+        Vector3 &lambda = m_bend_lambda[BendLambdaKey(a, b, c, true, 0.0, k)];
+        const Vector3 delta_lambda = (delta - lambda * alpha) / (w_total + alpha);
+        lambda += delta_lambda;
+        m_points[b] += delta_lambda * w_b;
+        m_points[c] -= delta_lambda * (0.5f * w_c);
+    }
+    else
+    {
+        m_points[b] += v * (w_b / w_total);
+        m_points[c] -= v * (0.5f * w_c / w_total);
+    }
+}
+
+uint64_t VerletRope::BendLambdaKey(int a, int b, int c, bool anchored,
+                                   double allowed_dev, double strength) const
+{
+    uint64_t key = (static_cast<uint64_t>(anchored) << 63) |
+                   (static_cast<uint64_t>(a & 0x1fffff) << 42) |
+                   (static_cast<uint64_t>(b & 0x1fffff) << 21) |
+                   static_cast<uint64_t>(c & 0x1fffff);
+    // The same triple may carry both the ordinary cable bend and a stronger
+    // strain-relief constraint. Keep their multipliers independent.
+    key ^= static_cast<uint64_t>(std::hash<double>{}(allowed_dev)) * 0x9e3779b97f4a7c15ULL;
+    key ^= static_cast<uint64_t>(std::hash<double>{}(strength)) * 0xbf58476d1ce4e5b9ULL;
+    return key;
 }
 
 // Keep segment s's midpoint outside its cached contact plane, splitting the
 // correction so the midpoint clears fully. The distance cap guards against stale
 // planes (refreshed only every raycast_interval frames, and infinite in extent).
-inline void VerletRope::SolveMidContact(int s)
+inline void VerletRope::SolveMidContact(int s, bool second)
 {
     const int ia = m_seg_a[s];
     const int ib = m_seg_b[s];
@@ -152,28 +210,63 @@ inline void VerletRope::SolveMidContact(int s)
     const float w_sum = w_a + w_b;
     if (w_sum == 0.0f)
         return;
-    const Vector3 mid = (m_points[ia] + m_points[ib]) * 0.5f;
+    const double t = second ? m_mid_contact_t_2[s] : m_mid_contact_t[s];
+    const double ta = 1.0 - t;
+    const Vector3 mid = m_points[ia] * ta + m_points[ib] * t;
     const double rest = m_seg_rest[s];
-    if (mid.distance_squared_to(m_mid_contact_point[s]) > rest * rest * 4.0)
+    const Vector3 &contact_point = second ? m_mid_contact_point_2[s] : m_mid_contact_point[s];
+    const Vector3 &contact_normal = second ? m_mid_contact_normal_2[s] : m_mid_contact_normal[s];
+    if (mid.distance_squared_to(contact_point) > rest * rest * 4.0)
         return;
-    const Vector3 n = m_mid_contact_normal[s];
-    const double d = (mid - m_mid_contact_point[s]).dot(n);
+    const Vector3 n = contact_normal;
+    const double d = (mid - contact_point).dot(n);
     if (d >= m_collision_radius)
         return;
-    const Vector3 push = n * (m_collision_radius - d);
-    m_points[ia] += push * (2.0f * w_a / w_sum);
-    m_points[ib] += push * (2.0f * w_b / w_sum);
+    double push_distance = m_collision_radius - d;
+    if (m_contact_compliance > 0.0)
+    {
+        const double alpha = m_contact_compliance / m_step_dt_sq;
+        double &lambda = second ? m_mid_contact_lambda_2[s] : m_mid_contact_lambda[s];
+        const double old_lambda = lambda;
+        const double weight = w_a * ta * ta + w_b * t * t;
+        const double delta_lambda = (push_distance - alpha * old_lambda) / (weight + alpha);
+        lambda = std::max(0.0, old_lambda + delta_lambda);
+        push_distance = lambda - old_lambda;
+        m_points[ia] += n * (ta * w_a * push_distance);
+        m_points[ib] += n * (t * w_b * push_distance);
+    }
+    else
+    {
+        const Vector3 push = n * push_distance;
+        const double weight = w_a * ta * ta + w_b * t * t;
+        if (weight <= 0.0)
+            return;
+        m_points[ia] += push * (w_a * ta / weight);
+        m_points[ib] += push * (w_b * t / weight);
+    }
 }
 
 // Keep particle i at least collision_radius outside the cached plane.
-inline void VerletRope::ProjectPlane(int i, const Vector3 &cp, const Vector3 &n)
+inline void VerletRope::ProjectPlane(int i, const Vector3 &cp, const Vector3 &n, double &lambda)
 {
     const double d = (m_points[i] - cp).dot(n);
     if (d < m_collision_radius)
-        m_points[i] += n * (m_collision_radius - d);
+    {
+        if (m_contact_compliance <= 0.0)
+        {
+            m_points[i] += n * (m_collision_radius - d);
+            return;
+        }
+        const double alpha = m_contact_compliance / m_step_dt_sq;
+        const double delta_lambda = (m_collision_radius - d - alpha * lambda) /
+                                    (m_inv_mass[i] + alpha);
+        const double old_lambda = lambda;
+        lambda = std::max(0.0, lambda + delta_lambda);
+        m_points[i] += n * (m_inv_mass[i] * (lambda - old_lambda));
+    }
 }
 
-inline void VerletRope::PinAnchors()
+void VerletRope::PinAnchors()
 {
     if (m_start_cached)
     {
@@ -383,6 +476,7 @@ void VerletRope::Step(double p_delta)
 {
     if (m_points.empty())
         return;
+    m_step_dt_sq = std::max(p_delta * p_delta, 1e-8);
 
     ReconcileAnchors();
 
@@ -414,6 +508,14 @@ void VerletRope::Step(double p_delta)
             m_sleep_environment_frame = 0;
             if (EnvironmentChangedWhileSleeping())
             {
+                // Edge queries can return a different face (or no face) on one
+                // poll although nothing moved. Require the same conclusion on
+                // two polls; a removed or intruding support persists, an
+                // alternating-normal false positive does not.
+                m_environment_change_polls += 1;
+                if (m_environment_change_polls < 2)
+                    return;
+                m_environment_change_polls = 0;
                 Wake();
                 // Every cached plane belongs to the OLD world arrangement. A
                 // removed table otherwise keeps projecting the cord onto an
@@ -428,6 +530,8 @@ void VerletRope::Step(double p_delta)
                 DepenetrateLay();
                 m_raycast_frame = m_raycast_interval;
             }
+            else
+                m_environment_change_polls = 0;
         }
         if (m_asleep)
         {
@@ -458,7 +562,7 @@ void VerletRope::Step(double p_delta)
     SolveConstraints(start_directional, end_directional, start_exit, end_exit);
     ApplyContactFriction();
 
-    // Cadence shared by the two heavy passes below.
+    // Cadence shared by the heavier environment queries below.
     m_raycast_frame += 1;
     const bool do_rest = m_raycast_frame >= m_raycast_interval;
     if (do_rest)
@@ -529,6 +633,12 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
     const int count = TrunkCount();
     const int seg_count = static_cast<int>(m_seg_a.size());
     const int iters = m_constraint_iterations > 1 ? m_constraint_iterations : 1;
+    m_stretch_lambda.assign(seg_count, 0.0);
+    m_mid_contact_lambda.assign(seg_count, 0.0);
+    m_mid_contact_lambda_2.assign(seg_count, 0.0);
+    m_contact_lambda_1.assign(m_points.size(), 0.0);
+    m_contact_lambda_2.assign(m_points.size(), 0.0);
+    m_bend_lambda.clear();
 
     // Stretch stiffness is remapped so extensibility is independent of the
     // iteration count (k' = 1-(1-k)^(1/n)); 1.0 stays fully rigid.
@@ -557,7 +667,8 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
         // Stretch runs off the segment table, so a branch's link back to the
         // junction is solved with the rest, at the branch's own rest length.
         for (int s = 0; s < seg_count; ++s)
-            SolvePair(m_seg_a[s], m_seg_b[s], m_seg_rest[s], k_stretch);
+            SolvePair(m_seg_a[s], m_seg_b[s], m_seg_rest[s], k_stretch,
+                      m_stretch_compliance > 0.0 ? &m_stretch_lambda[s] : nullptr);
 
         // Bend, hierarchical: besides adjacent triples (spacing 1), also
         // constrain toward midpoints at spacing 2/4/8… Plain PBD bending
@@ -648,14 +759,19 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
         // contacts — including edge wraps — are part of the equilibrium instead
         // of oscillating.
         for (int s : m_active_mid)
-            SolveMidContact(s);
+        {
+            if (m_mid_contact[s] & 1)
+                SolveMidContact(s, false);
+            if (m_mid_contact[s] & 2)
+                SolveMidContact(s, true);
+        }
         for (int i : m_active_contact)
         {
             const uint8_t flags = m_c_flags[i];
             if (flags & 1)
-                ProjectPlane(i, m_c_p1[i], m_c_n1[i]);
+                ProjectPlane(i, m_c_p1[i], m_c_n1[i], m_contact_lambda_1[i]);
             if (flags & 2)
-                ProjectPlane(i, m_c_p2[i], m_c_n2[i]);
+                ProjectPlane(i, m_c_p2[i], m_c_n2[i], m_contact_lambda_2[i]);
         }
         PinAnchors();
     }
@@ -785,11 +901,6 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
     if (space_state == nullptr)
         return false;
 
-    const auto plane_matches = [this](const Vector3 &p, const Vector3 &n,
-                                      const Vector3 &cached_p, const Vector3 &cached_n) {
-        return n.dot(cached_n) > 0.85 &&
-               std::abs((p - cached_p).dot(cached_n)) <= m_collision_radius * 1.5;
-    };
     const auto point_inside = [this, space_state](const Vector3 &p) {
         if (m_point_query.is_null())
             return true;
@@ -818,53 +929,13 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
     {
         if (m_inv_mass[i] == 0.0f)
             continue;
-        m_shape_query->set_transform(Transform3D(Basis(), m_points[i]));
-        const Dictionary rest = space_state->get_rest_info(m_shape_query);
-        const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
-        const bool had = m_c_flags[i] != 0;
-        if (!has && had)
-        {
-            bool surface_still_there = false;
-            if ((m_c_flags[i] & 1) != 0)
-                surface_still_there = cached_surface_exists(m_points[i], m_c_p1[i], m_c_n1[i]);
-            if (!surface_still_there && (m_c_flags[i] & 2) != 0)
-                surface_still_there = cached_surface_exists(m_points[i], m_c_p2[i], m_c_n2[i]);
-            if (surface_still_there)
-                continue;
+        // Capsule contacts below are the authoritative support test. Particle
+        // planes are only local solver manifold slots and can legitimately go
+        // stale as an edge hands support to the adjacent segment. Their one
+        // reliable environmental signal is a collider newly covering the
+        // stationary centre.
+        if (point_inside(m_points[i]))
             return true;
-        }
-        if (has && !had)
-        {
-            // A sphere can discover the other face of a static edge even when
-            // that face was absent from the last manifold. Only treat a wholly
-            // new contact as moved furniture when the unchanged particle centre
-            // is now actually inside it.
-            if (point_inside(m_points[i]))
-            {
-                return true;
-            }
-            continue;
-        }
-        if (!has)
-            continue;
-        const Vector3 p = rest["point"];
-        const Vector3 n = rest["normal"];
-        bool matches = false;
-        if ((m_c_flags[i] & 1) != 0)
-            matches = plane_matches(p, n, m_c_p1[i], m_c_n1[i]);
-        if (!matches && (m_c_flags[i] & 2) != 0)
-            matches = plane_matches(p, n, m_c_p2[i], m_c_n2[i]);
-        if (!matches)
-        {
-            const bool cached_valid = ((m_c_flags[i] & 1) != 0 &&
-                                       PlaneValid(i, m_c_p1[i], m_c_n1[i])) ||
-                                      ((m_c_flags[i] & 2) != 0 &&
-                                       PlaneValid(i, m_c_p2[i], m_c_n2[i]));
-            if (!cached_valid)
-            {
-                return true;
-            }
-        }
     }
 
     const int seg_count = static_cast<int>(m_seg_a.size());
@@ -874,57 +945,31 @@ bool VerletRope::EnvironmentChangedWhileSleeping()
         const int b = m_seg_b[s];
         if (m_inv_mass[a] + m_inv_mass[b] == 0.0f)
             continue;
-        const Vector3 mid = (m_points[a] + m_points[b]) * 0.5f;
-        m_shape_query->set_transform(Transform3D(Basis(), mid));
+        const Vector3 sample = (m_points[a] + m_points[b]) * 0.5;
+        m_shape_query->set_transform(Transform3D(Basis(), sample));
         const Dictionary rest = space_state->get_rest_info(m_shape_query);
         const bool has = !rest.is_empty() && rest["normal"].operator Vector3() != Vector3();
         const bool had = m_mid_contact[s] != 0;
-        if (!has && had)
+        if (point_inside(sample))
+            return true;
+        if (had)
         {
-            if (cached_surface_exists(mid, m_mid_contact_point[s], m_mid_contact_normal[s]))
+            if (has)
+                continue;
+            bool surface_still_there =
+                (m_mid_contact[s] & 1) &&
+                cached_surface_exists(sample, m_mid_contact_point[s], m_mid_contact_normal[s]);
+            if (!surface_still_there && (m_mid_contact[s] & 2))
+            {
+                const Vector3 sample2 = m_points[a].lerp(m_points[b], m_mid_contact_t_2[s]);
+                surface_still_there = cached_surface_exists(
+                    sample2, m_mid_contact_point_2[s], m_mid_contact_normal_2[s]);
+            }
+            if (surface_still_there)
                 continue;
             return true;
         }
-        if (has && !had)
-        {
-            if (point_inside(mid))
-            {
-                return true;
-            }
-            continue;
-        }
-        if (has)
-        {
-            const Vector3 cached_p = m_mid_contact_point[s];
-            const Vector3 cached_n = m_mid_contact_normal[s];
-            const Vector3 p = rest["point"];
-            const Vector3 n = rest["normal"];
-            if (n.dot(cached_n) > 0.85)
-            {
-                // Same face: movement along its normal means the supporting
-                // collider itself moved and the rope must wake.
-                if (!plane_matches(p, n, cached_p, cached_n))
-                {
-                    return true;
-                }
-            }
-            else
-            {
-                // At a convex edge get_rest_info may alternate between the top
-                // and side faces although nothing in the world moved. A midpoint
-                // stores one plane, unlike particles' two-slot manifolds, so
-                // accept the alternate normal while the cached plane remains a
-                // plausible contact at the unchanged midpoint.
-                const double rest_len = m_seg_rest[s];
-                const bool cached_valid = mid.distance_squared_to(cached_p) <= rest_len * rest_len * 4.0 &&
-                                          std::abs((mid - cached_p).dot(cached_n)) <
-                                              m_collision_radius * 3.0;
-                if (!cached_valid)
-                {
-                    return true;
-                }
-            }
-        }
+        (void)has;
     }
     return false;
 }
@@ -1123,6 +1168,9 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
                 if (hit_normal != Vector3())
                 {
                     ResolveContact(i, hit["position"], hit_normal);
+                    m_c_flags[i] |= 1;
+                    m_c_p1[i] = hit["position"];
+                    m_c_n1[i] = hit_normal;
                     continue;
                 }
             }
@@ -1160,17 +1208,35 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
                         m_c_p2[i] = np;
                         m_c_n2[i] = nn;
                     }
+                    else if (keep1 && nn.dot(m_c_n1[i]) > 0.5)
+                    {
+                        // Sliding over a curved surface: update its tangent
+                        // plane. Retaining both nearby tangents pinches the
+                        // particle as if the smooth pipe were a sharp corner.
+                        m_c_p1[i] = np;
+                        m_c_n1[i] = nn;
+                    }
+                    else if (keep2 && nn.dot(m_c_n2[i]) > 0.5)
+                    {
+                        m_c_p2[i] = np;
+                        m_c_n2[i] = nn;
+                    }
                     else if (!keep1)
                     {
                         m_c_p1[i] = np;
                         m_c_n1[i] = nn;
                         keep1 = true;
                     }
-                    else
+                    else if (!keep2 && np.distance_to(m_c_p1[i]) < m_collision_radius * 3.0)
                     {
                         m_c_p2[i] = np;
                         m_c_n2[i] = nn;
                         keep2 = true;
+                    }
+                    else if (!keep2)
+                    {
+                        m_c_p1[i] = np;
+                        m_c_n1[i] = nn;
                     }
                 }
             }
@@ -1178,50 +1244,199 @@ void VerletRope::SolveSurfaceCollision(bool p_do_rest)
         }
     }
 
-    if (!p_do_rest)
-        return;
-
-    // Segment-midpoint contact CACHE refresh: particle collision alone lets the
-    // straight span BETWEEN two particles cut through a convex corner. We only
-    // query here — the cached plane is enforced every frame inside the
-    // constraint loop, so the corner contact is part of the solver's
-    // equilibrium. Pushing directly from this throttled pass instead makes an
-    // edge-wrapped rope visibly oscillate.
+    // Whole-segment capsule collision. Point rays miss an obstacle whenever
+    // both particles clear it but the jacket between them does not. Translation
+    // is swept every tick; the final, rotated capsule is sampled on the resting
+    // contact cadence. The resulting point along the segment is constrained in
+    // the same iterative solve as stretch and bend.
     const int seg_count = static_cast<int>(m_seg_a.size());
+    const auto set_capsule = [&](const Vector3 &a, const Vector3 &b) {
+        const Vector3 segment = b - a;
+        const double length = segment.length();
+        Basis basis;
+        if (length > 1e-8)
+            basis = Basis(Quaternion(Vector3(0, 1, 0), segment / length));
+        m_segment_capsule->set_height(static_cast<float>(length + m_collision_radius * 2.6));
+        return Transform3D(basis, (a + b) * 0.5);
+    };
+    const auto cache_segment_hit = [&](int s, const Dictionary &rest) {
+        if (rest.is_empty())
+            return false;
+        const Vector3 n = rest["normal"];
+        if (n == Vector3())
+            return false;
+        const int ia = m_seg_a[s];
+        const int ib = m_seg_b[s];
+        const Vector3 segment = m_points[ib] - m_points[ia];
+        const double length_sq = segment.length_squared();
+        const Vector3 point = rest["point"];
+        double t = length_sq > 1e-10
+                       ? CLAMP((point - m_points[ia]).dot(segment) / length_sq, 0.0, 1.0)
+                       : 0.5;
+        const auto slot_valid = [&](bool second) {
+            const float old_t = second ? m_mid_contact_t_2[s] : m_mid_contact_t[s];
+            const Vector3 &old_point = second ? m_mid_contact_point_2[s] : m_mid_contact_point[s];
+            const Vector3 &old_normal = second ? m_mid_contact_normal_2[s] : m_mid_contact_normal[s];
+            const Vector3 old_sample = m_points[ia].lerp(m_points[ib], old_t);
+            return old_sample.distance_squared_to(old_point) <=
+                       m_seg_rest[s] * m_seg_rest[s] * 4.0 &&
+                   std::abs((old_sample - old_point).dot(old_normal)) <
+                       m_collision_radius * 3.0;
+        };
+        if ((m_mid_contact[s] & 1) && !slot_valid(false))
+            m_mid_contact[s] &= ~1;
+        if ((m_mid_contact[s] & 2) && !slot_valid(true))
+            m_mid_contact[s] &= ~2;
+
+        bool second = false;
+        if ((m_mid_contact[s] & 1) && n.dot(m_mid_contact_normal[s]) > 0.9)
+            t = m_mid_contact_t[s];
+        else if ((m_mid_contact[s] & 2) && n.dot(m_mid_contact_normal_2[s]) > 0.9)
+        {
+            second = true;
+            t = m_mid_contact_t_2[s];
+        }
+        else if ((m_mid_contact[s] & 1) == 0)
+            second = false;
+        else if ((m_mid_contact[s] & 2) == 0)
+        {
+            // Two simultaneous planes are for a real sharp edge. A curved pipe
+            // also changes normal as the contact coordinate slides, but keeping
+            // both nearby tangents pinches the segment and creates chatter.
+            second = std::abs(n.dot(m_mid_contact_normal[s])) < 0.2 &&
+                     point.distance_to(m_mid_contact_point[s]) < m_collision_radius;
+        }
+        else
+            return true; // both edge faces remain valid; keep the stable manifold
+
+        const Vector3 centreline = m_points[ia].lerp(m_points[ib], t);
+        if (-(centreline - point).dot(n) > m_collision_radius * 3.0)
+            return false;
+        if (second)
+        {
+            m_mid_contact[s] |= 2;
+            m_mid_contact_point_2[s] = point;
+            m_mid_contact_normal_2[s] = n;
+            m_mid_contact_t_2[s] = static_cast<float>(t);
+        }
+        else
+        {
+            m_mid_contact[s] |= 1;
+            m_mid_contact_point[s] = point;
+            m_mid_contact_normal[s] = n;
+            m_mid_contact_t[s] = static_cast<float>(t);
+        }
+        return true;
+    };
     for (int s = 0; s < seg_count; ++s)
     {
         const int ia = m_seg_a[s];
         const int ib = m_seg_b[s];
-        m_mid_contact[s] = 0;
         if (m_inv_mass[ia] + m_inv_mass[ib] == 0.0f)
             continue;
-        const Vector3 mid = (m_points[ia] + m_points[ib]) * 0.5f;
-        m_shape_query->set_transform(Transform3D(Basis(), mid));
-        Dictionary rest = space_state->get_rest_info(m_shape_query);
-        if (rest.is_empty())
-            continue;
-        const Vector3 n = rest["normal"];
-        if (n == Vector3())
-            continue;
-        // Deep-penetration guard, but bounded. A midpoint behind the reported
-        // plane must not be ejected along this normal when it has genuinely
-        // passed through a slab — that pops it out the far side. A chord
-        // cutting a convex CORNER puts the midpoint slightly behind the surface
-        // too, though, and that is the exact case this cache exists to fix. An
-        // unconditional reject therefore drops the contact whenever the segment
-        // needs it most: between throttled passes the segment sinks into the
-        // corner, the refresh refuses to cache it, it sinks further, and the
-        // stretch constraints eventually snap it back out — a limit cycle with
-        // a period locked to raycast_interval, and the visible jitter wherever
-        // a cable bends over an edge. Only a penetration deeper than a corner
-        // cut can produce is treated as a tunnel.
-        const double behind = -(mid - rest["point"].operator Vector3()).dot(n);
-        if (behind > m_collision_radius * 3.0)
-            continue;
-        m_mid_contact[s] = 1;
-        m_mid_contact_point[s] = rest["point"];
-        m_mid_contact_normal[s] = n;
+        const Vector3 previous_mid = (m_prev_points[ia] + m_prev_points[ib]) * 0.5;
+        const Vector3 current_mid = (m_points[ia] + m_points[ib]) * 0.5;
+        const Vector3 motion = current_mid - previous_mid;
+        const double capsule_sweep_threshold = m_collision_radius * 4.0;
+        if (m_mid_contact[s] == 0 &&
+            motion.length_squared() > capsule_sweep_threshold * capsule_sweep_threshold)
+        {
+            m_segment_shape_query->set_transform(set_capsule(m_prev_points[ia], m_prev_points[ib]));
+            m_segment_shape_query->set_motion(Vector3());
+            const bool already_touching =
+                !space_state->get_rest_info(m_segment_shape_query).is_empty();
+            if (!already_touching)
+            {
+                m_segment_shape_query->set_motion(motion);
+                const PackedFloat32Array fractions = space_state->cast_motion(m_segment_shape_query);
+                if (fractions.size() >= 2 && fractions[0] < 1.0f)
+                {
+                    const double safe = fractions[0];
+                    const double unsafe = fractions[1];
+                    const Vector3 wanted_a = m_points[ia];
+                    const Vector3 wanted_b = m_points[ib];
+                    const Vector3 hit_a = m_prev_points[ia].lerp(wanted_a, unsafe);
+                    const Vector3 hit_b = m_prev_points[ib].lerp(wanted_b, unsafe);
+                    m_segment_shape_query->set_transform(set_capsule(hit_a, hit_b));
+                    m_segment_shape_query->set_motion(Vector3());
+                    Dictionary hit = space_state->get_rest_info(m_segment_shape_query);
+                    if (!hit.is_empty() && hit["normal"].operator Vector3() != Vector3())
+                    {
+                        const Vector3 hit_segment = hit_b - hit_a;
+                        const double hit_length_sq = hit_segment.length_squared();
+                        const Vector3 hit_point = hit["point"];
+                        const double t = hit_length_sq > 1e-10
+                                             ? CLAMP((hit_point - hit_a).dot(hit_segment) /
+                                                         hit_length_sq,
+                                                     0.0, 1.0)
+                                             : 0.5;
+                        const Vector3 safe_a = m_prev_points[ia].lerp(wanted_a, safe);
+                        const Vector3 safe_b = m_prev_points[ib].lerp(wanted_b, safe);
+                        const Vector3 correction = safe_a.lerp(safe_b, t) -
+                                                   wanted_a.lerp(wanted_b, t);
+                        const double ta = 1.0 - t;
+                        const double weight = m_inv_mass[ia] * ta * ta +
+                                              m_inv_mass[ib] * t * t;
+                        if (weight > 0.0)
+                        {
+                            const Vector3 da = correction * (m_inv_mass[ia] * ta / weight);
+                            const Vector3 db = correction * (m_inv_mass[ib] * t / weight);
+                            m_points[ia] += da;
+                            m_points[ib] += db;
+                            m_prev_points[ia] += da;
+                            m_prev_points[ib] += db;
+                            // Zero the contact point's inward normal velocity.
+                            // Preserving it makes the same swept segment strike
+                            // the edge again next tick and pumps a pendulum mode.
+                            const Vector3 normal = hit["normal"];
+                            const Vector3 contact_velocity =
+                                m_points[ia].lerp(m_points[ib], t) -
+                                m_prev_points[ia].lerp(m_prev_points[ib], t);
+                            const double normal_velocity = contact_velocity.dot(normal);
+                            if (normal_velocity < 0.0)
+                            {
+                                const Vector3 stop = normal * normal_velocity;
+                                m_prev_points[ia] += stop * (m_inv_mass[ia] * ta / weight);
+                                m_prev_points[ib] += stop * (m_inv_mass[ib] * t / weight);
+                            }
+                        }
+                        cache_segment_hit(s, hit);
+                    }
+                }
+            }
+        }
+        if (p_do_rest)
+        {
+            // Prefer the finite midpoint sphere on broad resting surfaces: a
+            // full capsule has infinitely many equally deep contacts there and
+            // the engine may hand back a different coordinate every refresh.
+            // Fall back to the capsule only for its actual blind spot — an
+            // obstacle intersecting the segment away from its midpoint.
+            const Vector3 midpoint = (m_points[ia] + m_points[ib]) * 0.5;
+            m_shape_query->set_transform(Transform3D(Basis(), midpoint));
+            const Dictionary midpoint_rest = space_state->get_rest_info(m_shape_query);
+            if (!midpoint_rest.is_empty())
+            {
+                // A finite midpoint sphere owns one contact coordinate. Replace
+                // its plane as a smooth surface turns; two planes here would
+                // pinch a cord on a pipe. The two-slot manifold is reserved for
+                // capsule-only edge contacts away from the midpoint.
+                m_mid_contact[s] = 0;
+                if (cache_segment_hit(s, midpoint_rest))
+                    m_mid_contact_t[s] = 0.5f;
+            }
+            else
+            {
+                m_segment_shape_query->set_transform(set_capsule(m_points[ia], m_points[ib]));
+                m_segment_shape_query->set_motion(Vector3());
+                if (!cache_segment_hit(s, space_state->get_rest_info(m_segment_shape_query)))
+                    m_mid_contact[s] = 0;
+            }
+        }
     }
+
+    if (!p_do_rest)
+        return;
 
     // Wrong-side recovery: a particle that tunnelled through a slab gets locked
     // on the far side — every time the stretch constraints pull it back, the
@@ -1616,37 +1831,179 @@ void VerletRope::ApplyAnchorCoupling()
 void VerletRope::UpdateSleepState()
 {
     const int count = static_cast<int>(m_points.size());
-    if (static_cast<int>(m_sleep_ref.size()) != count)
-        OpenExcursionWindow();
-
-    bool still = true;
+    double max_velocity_sq = 0.0;
+    double velocity_sum_sq = 0.0;
     for (int i = 0; i < count; ++i)
     {
-        if (m_points[i].distance_squared_to(m_prev_points[i]) > SLEEP_POINT_EPS_SQ)
-            still = false;
-        const double e = m_points[i].distance_squared_to(m_sleep_ref[i]);
-        if (e > m_max_excursion_sq)
-            m_max_excursion_sq = e;
+        const double velocity_sq = m_points[i].distance_squared_to(m_prev_points[i]);
+        max_velocity_sq = std::max(max_velocity_sq, velocity_sq);
+        velocity_sum_sq += velocity_sq;
     }
+    // One contact or strain-relief particle may make a sub-millimetre correction
+    // while the rest of the cable is inert. Gate both its peak and the rope's
+    // actual kinetic energy so localized solver dust can sleep but visible
+    // whole-cable squirm cannot.
+    const bool velocity_still = max_velocity_sq <= SLEEP_MAX_VELOCITY_EPS_SQ &&
+                                velocity_sum_sq / std::max(1, count) <=
+                                    SLEEP_RMS_VELOCITY_EPS_SQ;
+    m_debug_max_velocity = std::sqrt(max_velocity_sq);
+    m_debug_rms_velocity = std::sqrt(velocity_sum_sq / std::max(1, count));
+
+    double worst_stretch_error = 0.0;
+    int worst_stretch_segment = -1;
+    for (int s = 0; s < static_cast<int>(m_seg_a.size()); ++s)
+    {
+        const double rest = m_seg_rest[s];
+        if (rest > 1e-8)
+        {
+            const double error =
+                std::abs(m_points[m_seg_a[s]].distance_to(m_points[m_seg_b[s]]) - rest) / rest;
+            if (error > worst_stretch_error)
+            {
+                worst_stretch_error = error;
+                worst_stretch_segment = s;
+            }
+        }
+    }
+
+    double worst_contact_error = 0.0;
+    for (int i = 0; i < count; ++i)
+    {
+        if (m_c_flags[i] & 1)
+        {
+            worst_contact_error = std::max(
+                worst_contact_error,
+                std::max(0.0, m_collision_radius - (m_points[i] - m_c_p1[i]).dot(m_c_n1[i])));
+        }
+        if (m_c_flags[i] & 2)
+        {
+            worst_contact_error = std::max(
+                worst_contact_error,
+                std::max(0.0, m_collision_radius - (m_points[i] - m_c_p2[i]).dot(m_c_n2[i])));
+        }
+    }
+    for (int s = 0; s < static_cast<int>(m_mid_contact.size()); ++s)
+    {
+        if (m_mid_contact[s] == 0)
+            continue;
+        if (m_mid_contact[s] & 1)
+        {
+            const Vector3 p = m_points[m_seg_a[s]].lerp(m_points[m_seg_b[s]],
+                                                        m_mid_contact_t[s]);
+            worst_contact_error = std::max(
+                worst_contact_error,
+                std::max(0.0, m_collision_radius -
+                                  (p - m_mid_contact_point[s]).dot(m_mid_contact_normal[s])));
+        }
+        if (m_mid_contact[s] & 2)
+        {
+            const Vector3 p = m_points[m_seg_a[s]].lerp(m_points[m_seg_b[s]],
+                                                        m_mid_contact_t_2[s]);
+            worst_contact_error = std::max(
+                worst_contact_error,
+                std::max(0.0, m_collision_radius -
+                                  (p - m_mid_contact_point_2[s]).dot(m_mid_contact_normal_2[s])));
+        }
+    }
+    if (worst_contact_error <= SLEEP_CONTACT_ERROR)
+        m_contact_stable_frames += 1;
+    else
+        m_contact_stable_frames = 0;
 
     const Vector3 a_start = AnchorPoint(m_start_cached, m_start_anchor_offset, m_sleep_anchor_start);
     const Vector3 a_end = AnchorPoint(m_end_cached, m_end_anchor_offset, m_sleep_anchor_end);
-    bool anchors_still =
-        a_start.distance_squared_to(m_sleep_anchor_start) <= WAKE_ANCHOR_EPS_SQ &&
-        a_end.distance_squared_to(m_sleep_anchor_end) <= WAKE_ANCHOR_EPS_SQ;
+    bool anchors_still = true;
+    // Hosts, sockets and hands are external authority and must be stationary.
+    // A free plug belongs to the rope system itself; Jolt can roll its small
+    // sphere by microscopic amounts forever, and SleepNow is specifically what
+    // latches that body once the cable's kinetic criteria are met.
+    const EndpointRole sleep_start_role = ResolveEndpointRole(m_start_cached, m_start_endpoint_role);
+    const EndpointRole sleep_end_role = ResolveEndpointRole(m_end_cached, m_end_endpoint_role);
+    const auto quiet_host = [](RigidBody3D *body, EndpointRole role) {
+        return role == ENDPOINT_HOST && body != nullptr &&
+               body->get_linear_velocity().length_squared() < 0.3 * 0.3 &&
+               body->get_angular_velocity().length_squared() < 3.0 * 3.0;
+    };
+    if (!EndpointIsFree(sleep_start_role) && !quiet_host(m_start_body, sleep_start_role) &&
+        a_start.distance_squared_to(m_sleep_anchor_start) > WAKE_ANCHOR_EPS_SQ)
+        anchors_still = false;
+    if (!EndpointIsFree(sleep_end_role) && !quiet_host(m_end_body, sleep_end_role) &&
+        a_end.distance_squared_to(m_sleep_anchor_end) > WAKE_ANCHOR_EPS_SQ)
+        anchors_still = false;
     m_sleep_anchor_start = a_start;
     m_sleep_anchor_end = a_end;
     for (FrayChain &fc : m_fray)
     {
         const Vector3 a = AnchorPoint(fc.cached, fc.offset, fc.sleep_pos);
-        if (a.distance_squared_to(fc.sleep_pos) > WAKE_ANCHOR_EPS_SQ)
+        if (!EndpointIsFree(ResolveEndpointRole(fc.cached, ENDPOINT_AUTO)) &&
+            a.distance_squared_to(fc.sleep_pos) > WAKE_ANCHOR_EPS_SQ)
             anchors_still = false;
         fc.sleep_pos = a;
     }
     if (!anchors_still)
-        still = false;
-
-    if (still)
+        m_contact_stable_frames = 0;
+    const bool constraints_settled = worst_stretch_error <= SLEEP_STRETCH_ERROR &&
+                                     worst_contact_error <= SLEEP_CONTACT_ERROR;
+    m_debug_stretch_error = worst_stretch_error;
+    m_debug_contact_error = worst_contact_error;
+    // A controller or sensor bar is the physical host at a plain Node3D anchor.
+    // Jolt may keep a resting host microscopically rocking on an edge; because
+    // the endpoint is pinned, that motion drives the whole cable forever. Once
+    // the rope manifold is established and the host itself is already moving
+    // below ordinary grab/throw speeds, let the physics body sleep. Any grab,
+    // force or transform change wakes the body and AnchorsMoved wakes the rope.
+    const auto latch_resting_host = [this](RigidBody3D *body, EndpointRole role) {
+        if (body == nullptr || role != ENDPOINT_HOST || body->is_sleeping())
+            return;
+        if (body->has_method("is_picked_up") && static_cast<bool>(body->call("is_picked_up")))
+            return;
+        if (body->get_linear_velocity().length_squared() < 0.3 * 0.3 &&
+            body->get_angular_velocity().length_squared() < 3.0 * 3.0)
+            body->set_sleeping(true);
+    };
+    if (m_contact_stable_frames > 90 && constraints_settled)
+    {
+        latch_resting_host(m_start_body, sleep_start_role);
+        latch_resting_host(m_end_body, sleep_end_role);
+    }
+    // A restored legacy lay can be legal at every particle yet have one segment
+    // trapped between stale planes on opposite sides of furniture. Contact then
+    // wins the last write of every iteration and leaves that segment >2x long,
+    // injecting a large correction forever. Drop only the local manifold once;
+    // the swept/rest queries rebuild it from the live geometry next tick.
+    if (!m_settle_repair_attempted && m_contact_stable_frames > 180 &&
+        m_debug_max_velocity > 0.005 && worst_stretch_error > 0.5 &&
+        worst_stretch_segment >= 0)
+    {
+        const int a = m_seg_a[worst_stretch_segment];
+        const int b = m_seg_b[worst_stretch_segment];
+        m_c_flags[a] = 0;
+        m_c_flags[b] = 0;
+        m_mid_contact[worst_stretch_segment] = 0;
+        if (m_next_seg[a] >= 0)
+            m_mid_contact[m_next_seg[a]] = 0;
+        if (m_next_seg[b] >= 0)
+            m_mid_contact[m_next_seg[b]] = 0;
+        m_prev_points = m_points;
+        m_contact_stable_frames = 0;
+        m_settle_repair_attempted = true;
+    }
+    // A contact-driven limit cycle can continuously replace the tiny amount of
+    // global Verlet damping (edge impact -> stretch correction -> edge impact).
+    // Once the manifold and anchors have stayed valid for a full second, add
+    // physical contact damping to the history. The ordinary velocity gate still
+    // decides sleep; this merely lets energy leave instead of freezing motion.
+    if (!velocity_still && anchors_still && constraints_settled &&
+        m_contact_stable_frames > 90)
+    {
+        constexpr double CONTACT_SETTLE_RETAIN = 0.5;
+        for (int i = 0; i < count; ++i)
+            if (m_inv_mass[i] != 0.0f)
+                m_prev_points[i] = m_points[i] -
+                                   (m_points[i] - m_prev_points[i]) * CONTACT_SETTLE_RETAIN;
+    }
+    if (velocity_still && anchors_still && constraints_settled &&
+        m_contact_stable_frames >= m_raycast_interval * 2)
     {
         m_still_frames += 1;
         if (m_still_frames >= SLEEP_FRAMES)
@@ -1655,20 +2012,7 @@ void VerletRope::UpdateSleepState()
         }
     }
     else
-    {
-        m_still_frames = 0;
-    }
-
-    m_ref_frames += 1;
-    if (m_ref_frames >= SLEEP_REF_FRAMES)
-    {
-        if (anchors_still && m_max_excursion_sq < SLEEP_EXCURSION_EPS_SQ)
-        {
-            SleepNow();
-        }
-        else
-            OpenExcursionWindow();
-    }
+        m_still_frames = std::max(0, m_still_frames - 1);
 }
 
 } // namespace Xenu

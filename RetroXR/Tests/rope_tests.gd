@@ -37,7 +37,6 @@ const LEAD_SCENE := preload("res://Scenes/Objects/cables/trs_cable.tscn")
 ## Ticks per physics frame. The solver's world queries are only legal inside a
 ## physics frame, so the batch runs there rather than in a tight loop of its own.
 const BATCH := 30
-const CASE_PITCH := 60.0
 ## The window a "has it stopped moving?" question is asked over.
 const STILL_WINDOW := 60
 ## A settled cord may still move this much per tick when it is denied sleep.
@@ -59,9 +58,11 @@ const STILL_MM := 0.5
 var _pass := 0
 var _fail := 0
 var _only := ""
-var _x := 0.0
 var _rope: VerletRope = null
 var _holder: Node3D = null
+var _case_geometry: Node3D = null
+var _case_slot := 0
+var _last_wait_motion := 0.0
 
 
 func _ready() -> void:
@@ -105,8 +106,18 @@ func _ok(name: String, cond: bool, detail: String = "") -> void:
 
 ## A patch of world for one case, far enough along X to be its own universe.
 func _new_case() -> Vector3:
-	_x += CASE_PITCH
-	return Vector3(_x, 0.0, 0.0)
+	# Tear down the previous case instead of marching cases kilometres away from
+	# the origin. Jolt uses float world coordinates; at the old 60 m pitch a full
+	# run reached several kilometres and identical contacts stopped being
+	# numerically identical to their focused-test counterparts.
+	if is_instance_valid(_case_geometry):
+		_case_geometry.free()
+	_case_geometry = Node3D.new()
+	add_child(_case_geometry)
+	_case_slot = 1 - _case_slot
+	# Alternate two nearby patches. This leaves a whole frame of separation from
+	# a queued-for-deletion lead without accumulating float error across the run.
+	return Vector3(float(_case_slot) * 20.0, 0.0, 0.0)
 
 
 ## A static box. Everything the rope collides with is built here rather than
@@ -115,7 +126,7 @@ func _box(centre: Vector3, size: Vector3) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
-	add_child(body)
+	_case_geometry.add_child(body)
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size
@@ -130,7 +141,7 @@ func _cylinder(centre: Vector3, radius: float, height: float, upright := false) 
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
-	add_child(body)
+	_case_geometry.add_child(body)
 	var col := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = radius
@@ -148,7 +159,7 @@ func _cylinder(centre: Vector3, radius: float, height: float, upright := false) 
 ## which is a different behaviour and not what most of these cases are about.
 func _rope_between(a: Vector3, b: Vector3, segments := 24, seg_len := 0.06) -> VerletRope:
 	_holder = Node3D.new()
-	add_child(_holder)
+	_case_geometry.add_child(_holder)
 	var na := Node3D.new()
 	na.position = a
 	_holder.add_child(na)
@@ -185,9 +196,12 @@ func _rope_from(a: Vector3, toward: Vector3, segments := 24, seg_len := 0.06) ->
 
 
 func _drop_case() -> void:
-	if is_instance_valid(_holder):
-		_holder.queue_free()
+	if is_instance_valid(_case_geometry):
+		_case_geometry.free()
+	elif is_instance_valid(_holder):
+		_holder.free()
 	_holder = null
+	_case_geometry = null
 	_rope = null
 	await get_tree().physics_frame
 
@@ -583,16 +597,26 @@ func _group_contact() -> void:
 	var ledge_c := base + Vector3(0, 0.50, -0.10)
 	var ledge_s := Vector3(1.2, 0.50, 0.80)
 	_box(ledge_c, ledge_s)
-	_rope_between(base + Vector3(0, 0.80, -0.40), base + Vector3(0, 0.80, 0.55), 20)
+	var ledge_rope := _rope_between(base + Vector3(0, 0.80, -0.40),
+		base + Vector3(0, 0.80, 0.80), 20)
+	# Lay the cord at full length, then bring the far end inward as a hand would.
+	# Initialising 250 mm of compression chooses an arbitrary standing buckle and
+	# tests that synthetic pose rather than a cable routed over an edge.
+	await _carry(ledge_rope, ledge_rope.end_node as Node3D,
+		base + Vector3(0, 0.80, 0.55), 90)
 	await _assert_settles("a cord wrapping a ledge", 1800, STILL_MM)
 	var into := _deepest_in_box(ledge_c, ledge_s)
 	_ok("contact/wrapping a ledge stays out of the solid", into < 0.01,
 		"deepest %.1f mm inside" % (into * 1000.0))
 	var over := false
+	var over_lowest := 1e9
 	for p: Vector3 in _points():
-		if p.z > base.z + 0.32 and p.y < base.y + 0.70:
-			over = true
-	_ok("contact/the overhang drapes down the face", over)
+		if p.z > base.z + 0.32:
+			over_lowest = minf(over_lowest, p.y)
+			if p.y < base.y + 0.73:
+				over = true
+	_ok("contact/the overhang drapes down the face", over,
+		"lowest overhang %.0f mm" % ((over_lowest - base.y) * 1000.0))
 	await _drop_case()
 
 	# Draped over a horizontal pipe. A round surface is where a plane-cache
@@ -727,7 +751,8 @@ func _group_handling() -> void:
 	plug.freeze = false
 	var slept := await _wait_until_asleep(rope, 900)
 	_ok("handling/a yanked lead settles when dropped", slept >= 0,
-		"asleep after %d frames" % slept if slept >= 0 else "never slept")
+		"asleep after %d frames" % slept if slept >= 0
+			else "never slept, moving %.3f mm/frame" % (_last_wait_motion * 1000.0))
 	lead.queue_free()
 	await get_tree().physics_frame
 
@@ -850,7 +875,8 @@ func _group_handling() -> void:
 	# has twice the pendulum to damp before the wake threshold lets it latch.
 	slept = await _wait_until_asleep(rope, 1800)
 	_ok("handling/a lead carried over a wall settles", slept >= 0,
-		"asleep after %d frames" % slept if slept >= 0 else "never slept")
+		"asleep after %d frames" % slept if slept >= 0
+			else "never slept, moving %.3f mm/frame" % (_last_wait_motion * 1000.0))
 	lead.queue_free()
 	await get_tree().physics_frame
 
@@ -910,6 +936,22 @@ func _group_integrity() -> void:
 		"%.3f x rest" % elong)
 	await _drop_case()
 
+	# XPBD compliance is an explicit physical mode, not an iteration-dependent
+	# stiffness tweak. A deliberately soft test cord should extend by a bounded,
+	# finite amount under the same load; zero compliance above remains the exact
+	# authored-stiffness compatibility path used by shipping cables today.
+	base = _new_case()
+	var compliant := _rope_from(base + Vector3(0, 2.0, 0),
+		base + Vector3(0.3, 2.0, 0), 20)
+	compliant.bend_stiffness = 0.0
+	compliant.stretch_compliance = 0.00001
+	await _settle(300)
+	var compliant_stretch := _max_stretch()
+	_ok("integrity/compliance produces bounded physical extension",
+		compliant_stretch > 1.01 and compliant_stretch < 2.0,
+		"worst segment %.3f x rest" % compliant_stretch)
+	await _drop_case()
+
 	# Abuse: anchors 20x further apart than the cord is long, then shaken. The
 	# question is only whether the arithmetic survives it.
 	base = _new_case()
@@ -942,7 +984,8 @@ func _group_integrity() -> void:
 	var first := _points()
 	var first_base := base
 	await _drop_case()
-	base = _new_case()
+	_new_case()
+	base = first_base
 	_rope_between(base + Vector3(-0.3, 1.2, 0), base + Vector3(0.3, 1.2, 0), 20)
 	await _settle(300)
 	var second := _points()
@@ -979,6 +1022,19 @@ func _group_anchors() -> void:
 			drift = maxf(drift, pts[rope.segment_count].distance_to(b.global_position))
 	_ok("anchors/a pinned end never leaves its anchor", drift < 1e-6,
 		"worst drift %.9f m" % drift)
+	var saved_layout := rope.get_points()
+	rope._init_points()
+	var restored_ok := rope.restore_points(saved_layout)
+	var restored_layout := rope.get_points()
+	var restore_error := 0.0
+	for i in saved_layout.size():
+		restore_error = maxf(restore_error, saved_layout[i].distance_to(restored_layout[i]))
+	_ok("anchors/a saved particle layout restores exactly",
+		restored_ok and restore_error < 1e-9,
+		"worst immediate error %.9f m" % restore_error)
+	var corrupt := saved_layout.duplicate()
+	corrupt[1] += Vector3(10.0, 0, 0)
+	_ok("anchors/a corrupt saved layout is rejected", not rope.restore_points(corrupt))
 	await _drop_case()
 
 	# An anchor that jumps further than it could have travelled is a teleport —
@@ -1236,8 +1292,16 @@ func _lead_stretch(rope: VerletRope) -> float:
 ## Wait for an engine-ticked rope to fall asleep. Returns the frame it slept on,
 ## or -1 if it never did.
 func _wait_until_asleep(rope: VerletRope, max_frames: int) -> int:
+	var previous := rope.get_points()
+	_last_wait_motion = 0.0
 	for f in max_frames:
 		await get_tree().physics_frame
+		var current := rope.get_points()
+		if f >= max_frames - 60 and current.size() == previous.size():
+			for i in current.size():
+				_last_wait_motion = maxf(_last_wait_motion,
+					current[i].distance_to(previous[i]))
+		previous = current
 		if rope.is_sleeping():
 			return f
 	return -1
@@ -1256,7 +1320,7 @@ func _drop_lead(at: Vector3, ticks: int, yaw := 0.0) -> Node3D:
 	# case that needs it across an x-running edge has to turn it.
 	lead.position = at
 	lead.rotation.y = yaw
-	add_child(lead)
+	_case_geometry.add_child(lead)
 	for f in ticks:
 		await get_tree().physics_frame
 	return lead
@@ -1371,10 +1435,9 @@ func _group_edges() -> void:
 	# settled rope over and over. Once the whole rope sleeps, that genuinely free
 	# plug should latch asleep with it; the controller body is a mounted Node3D
 	# anchor and must be left to the physics server.
+	_new_case()
 	# This case mixes two Jolt bodies with millimetre-scale rope contacts. Keep it
-	# near the origin: by this point a full suite's _new_case() is over a kilometre
-	# out, where float transform precision itself wakes the 3.6 mm cord. Negative X
-	# is unused by the ordinary cases, so it remains its own world.
+	# on a dedicated nearby patch rather than inheriting any previous geometry.
 	base = Vector3(-120.0, 0, 0)
 	_box(base + Vector3(-0.5, 0.70, 0), Vector3(1.0, 0.10, 1.2))
 	_box(base + Vector3(0, -0.05, 0), Vector3(4.0, 0.10, 4.0))
@@ -1385,7 +1448,7 @@ func _group_edges() -> void:
 	controller.collision_layer = 4
 	controller.collision_mask = 1
 	controller.position = base + Vector3(-0.55, 0.84, 0)
-	add_child(controller)
+	_case_geometry.add_child(controller)
 	var controller_collision := CollisionShape3D.new()
 	var controller_box := BoxShape3D.new()
 	controller_box.size = Vector3(0.16, 0.05, 0.09)
@@ -1395,7 +1458,7 @@ func _group_edges() -> void:
 	controller_attach.position = Vector3(0.07, 0, 0)
 	controller.add_child(controller_attach)
 	var controller_cable: Node3D = CONTROLLER_CABLE_SCENE.instantiate()
-	add_child(controller_cable)
+	_case_geometry.add_child(controller_cable)
 	var controller_plug := controller_cable.get_node("ControllerPlug") as ControllerPlug
 	var controller_rope := controller_cable.get_node("VerletRope") as VerletRope
 	controller_plug.global_position = base + Vector3(0.35, 0.85, 0)
@@ -1459,7 +1522,7 @@ func _group_edges() -> void:
 	for end in ["A", "B"]:
 		for c in 3:
 			(composite.get_node("Plug%s%d" % [end, c]) as RigidBody3D).freeze = true
-	add_child(composite)
+	_case_geometry.add_child(composite)
 	await get_tree().process_frame # CompositeCable builds its rope deferred.
 	await get_tree().physics_frame
 	var comp_rope := composite.get_node("VerletRope") as VerletRope
@@ -1544,7 +1607,7 @@ func _group_budget() -> void:
 	var base := _new_case()
 	var ropes: Array[VerletRope] = []
 	_holder = Node3D.new()
-	add_child(_holder)
+	_case_geometry.add_child(_holder)
 	for i in 16:
 		var na := Node3D.new()
 		na.position = base + Vector3(float(i) * 0.5, 1.2, -0.3)

@@ -43,6 +43,7 @@
 // the m_seg_* segment table and the m_fray chain table below.
 
 #include <godot_cpp/classes/array_mesh.hpp>
+#include <godot_cpp/classes/capsule_shape3d.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/physics_point_query_parameters3d.hpp>
@@ -57,6 +58,7 @@
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace Xenu
@@ -101,6 +103,8 @@ public:
     void Wake();
     double RestLength() const;
     godot::PackedVector3Array GetPoints() const;
+    bool RestorePoints(const godot::PackedVector3Array &p_points);
+    godot::Dictionary GetSleepMetrics() const;
     void NudgePoint(int p_index, const godot::Vector3 &p_delta);
 
     /// How many particles the cord is made of, and where one of them is in
@@ -133,6 +137,9 @@ public:
     XENU_ROPE_PROP(int, ConstraintIterations, m_constraint_iterations)
     XENU_ROPE_PROP(double, StretchStiffness, m_stretch_stiffness)
     XENU_ROPE_PROP(double, BendStiffness, m_bend_stiffness)
+    XENU_ROPE_PROP(double, StretchCompliance, m_stretch_compliance)
+    XENU_ROPE_PROP(double, BendCompliance, m_bend_compliance)
+    XENU_ROPE_PROP(double, ContactCompliance, m_contact_compliance)
     XENU_ROPE_PROP(double, MaxBendDegrees, m_max_bend_degrees)
     XENU_ROPE_PROP(double, TubeRadius, m_tube_radius)
     XENU_ROPE_PROP(int, TubeSides, m_tube_sides)
@@ -241,14 +248,17 @@ private:
 
     void SolveFrayConstraints(int p_iter, double p_k_stretch, double p_k_bend, double p_allowed_dev);
 
-    inline void SolvePair(int a, int b, double rest, double k);
+    inline void SolvePair(int a, int b, double rest, double k, double *lambda = nullptr);
     inline void SolveBend(int b, int spacing, double allowed_dev, double k);
     inline void SolveBendTriple(int a, int b, int c, double allowed_dev, double k);
     inline void SolveBendAnchored(int a, int b, int c, double k);
-    inline void SolveMidContact(int s);
-    inline void ProjectPlane(int i, const godot::Vector3 &cp, const godot::Vector3 &n);
-    inline void PinAnchors();
+    inline void SolveMidContact(int s, bool second);
+    inline void ProjectPlane(int i, const godot::Vector3 &cp, const godot::Vector3 &n,
+                             double &lambda);
+    void PinAnchors();
     inline void ResolveContact(int i, const godot::Vector3 &contact, const godot::Vector3 &normal);
+    uint64_t BendLambdaKey(int a, int b, int c, bool anchored,
+                           double allowed_dev, double strength) const;
     double StubWeight(double base, int k, int n) const;
     bool PlaneValid(int i, const godot::Vector3 &cp, const godot::Vector3 &n) const;
 
@@ -312,6 +322,10 @@ private:
     std::vector<uint8_t> m_mid_contact;
     std::vector<godot::Vector3> m_mid_contact_point;
     std::vector<godot::Vector3> m_mid_contact_normal;
+    std::vector<float> m_mid_contact_t;
+    std::vector<godot::Vector3> m_mid_contact_point_2;
+    std::vector<godot::Vector3> m_mid_contact_normal_2;
+    std::vector<float> m_mid_contact_t_2;
 
     std::vector<uint8_t> m_c_flags;
     std::vector<godot::Vector3> m_c_p1;
@@ -336,6 +350,15 @@ private:
     // it across took the rope_bench settle count from 9 cables still awake
     // to 15.
     std::vector<double> m_seg_rest;
+    // XPBD multipliers live for one physics step and accumulate across solver
+    // iterations. They are reset before every solve, never persisted in saves.
+    std::vector<double> m_stretch_lambda;
+    std::vector<double> m_mid_contact_lambda;
+    std::vector<double> m_mid_contact_lambda_2;
+    std::vector<double> m_contact_lambda_1;
+    std::vector<double> m_contact_lambda_2;
+    std::unordered_map<uint64_t, godot::Vector3> m_bend_lambda;
+    double m_step_dt_sq = 1.0 / (60.0 * 60.0);
     // Segment starting at each particle, or -1 — only used to invalidate a
     // midpoint cache after the tunnel recovery moves a particle.
     std::vector<int> m_next_seg;
@@ -363,7 +386,6 @@ private:
     std::vector<godot::Vector3> m_render_points;
     std::vector<godot::Vector3> m_prev_render;
     std::vector<godot::Vector3> m_curr_render;
-    std::vector<godot::Vector3> m_sleep_ref;
 
     std::vector<float> m_cos_table;
     std::vector<float> m_sin_table;
@@ -383,8 +405,10 @@ private:
     std::vector<godot::Ref<godot::ShaderMaterial>> m_materials;
     godot::Ref<godot::PhysicsRayQueryParameters3D> m_ray_query;
     godot::Ref<godot::PhysicsShapeQueryParameters3D> m_shape_query;
+    godot::Ref<godot::PhysicsShapeQueryParameters3D> m_segment_shape_query;
     godot::Ref<godot::PhysicsPointQueryParameters3D> m_point_query;
     godot::Ref<godot::SphereShape3D> m_sphere;
+    godot::Ref<godot::CapsuleShape3D> m_segment_capsule;
 
     uint64_t m_start_node_id = 0;
     uint64_t m_end_node_id = 0;
@@ -395,17 +419,22 @@ private:
 
     int m_raycast_frame = 0;
     int m_sleep_environment_frame = 0;
+    int m_environment_change_polls = 0;
     // Set by InitPoints, consumed by the first Step after a lay: run
     // DepenetrateLay there, where space-state queries are legal.
     bool m_depen_pending = false;
+    bool m_settle_repair_attempted = false;
     bool m_asleep = false;
     int m_still_frames = 0;
-    int m_ref_frames = 0;
-    double m_max_excursion_sq = 0.0;
+    int m_contact_stable_frames = 0;
     godot::Vector3 m_sleep_anchor_start;
     godot::Vector3 m_sleep_anchor_end;
     bool m_mesh_dirty = true;
     bool m_interpolating = false;
+    double m_debug_max_velocity = 0.0;
+    double m_debug_rms_velocity = 0.0;
+    double m_debug_stretch_error = 0.0;
+    double m_debug_contact_error = 0.0;
     // Cord count and ring count the current ArrayMesh was built for, so a
     // resize after _ready rebuilds instead of overrunning the ring buffers.
     int m_built_cords = 0;
@@ -420,6 +449,11 @@ private:
     int m_constraint_iterations = 5;
     double m_stretch_stiffness = 1.0;
     double m_bend_stiffness = 0.0;
+    // Physical compliance (inverse stiffness), divided by dt^2 by XPBD. Zero
+    // deliberately selects the legacy stiffness path for scene compatibility.
+    double m_stretch_compliance = 0.0;
+    double m_bend_compliance = 0.0;
+    double m_contact_compliance = 0.000001;
     double m_max_bend_degrees = 0.0;
     double m_tube_radius = 0.005;
     int m_tube_sides = 8;

@@ -873,6 +873,8 @@ func _let_go(held: Dictionary) -> void:
 func _restore_connections(root: Node, spawned: Dictionary, entries: Dictionary) -> void:
 	for id: int in spawned:
 		_restore_entry(root, id, spawned, entries)
+	for id: int in spawned:
+		_restore_rope_layouts(spawned[id], entries[id])
 	_report_restored(spawned)
 
 
@@ -889,7 +891,36 @@ func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictio
 		if not _still_ours(root, generation):
 			return
 		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	for id: int in spawned:
+		_restore_rope_layouts(spawned[id], entries[id])
+		if Time.get_ticks_usec() < deadline:
+			continue
+		await tree.process_frame
+		if not _still_ours(root, generation):
+			return
+		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	_report_restored(spawned)
+
+
+## Restore after pass 2 has seated every plug. The saved particles preserve the
+## actual route round furniture; VerletRope validates topology immediately and
+## validates the route against live collision geometry on its next physics tick.
+func _restore_rope_layouts(obj: Node, entry: Dictionary) -> void:
+	if not is_instance_valid(obj):
+		return
+	for rec: Dictionary in entry.get("rope_layouts", []):
+		var rope := obj.get_node_or_null(NodePath(str(rec.get("path", "")))) as VerletRope
+		if rope == null:
+			continue
+		var points := PackedVector3Array()
+		for raw: Variant in rec.get("points", []):
+			if not raw is Array or (raw as Array).size() < 3:
+				points = PackedVector3Array()
+				break
+			var xyz := raw as Array
+			points.append(Vector3(float(xyz[0]), float(xyz[1]), float(xyz[2])))
+		if not rope.restore_points(points):
+			push_warning("ScenePersistence: rejected rope layout at %s" % rec.get("path", ""))
 
 
 ## False once the room we are building into has gone, or once a newer restore
@@ -1045,7 +1076,33 @@ func _base(id: int, type_name: String, n3d: Node3D) -> Dictionary:
 		floating = bool(n3d.get("ignore_gravity"))
 	if floating:
 		out["ignore_gravity"] = true
+	var rope_layouts := _serialize_rope_layouts(n3d)
+	if not rope_layouts.is_empty():
+		out["rope_layouts"] = rope_layouts
 	return out
+
+
+## Save world-space particles, keyed by a stable path inside the spawned object.
+## Endpoints alone cannot reconstruct which side of a table, post or partition a
+## player routed a lead around.
+func _serialize_rope_layouts(root: Node3D) -> Array:
+	var layouts: Array = []
+	var ropes: Array[Node] = root.find_children("*", "VerletRope", true, false)
+	if root is VerletRope:
+		ropes.push_front(root)
+	for child: Node in ropes:
+		var rope := child as VerletRope
+		if rope == null:
+			continue
+		var encoded: Array = []
+		for point: Vector3 in rope.get_points():
+			encoded.append([point.x, point.y, point.z])
+		if not encoded.is_empty():
+			layouts.append({
+				"path": str(root.get_path_to(rope)),
+				"points": encoded,
+			})
+	return layouts
 
 
 ## An ordered chain, not a lookup table: `is` matches every ancestor, so a
