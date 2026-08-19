@@ -35,6 +35,7 @@
 [ext_resource type="Script" path="res://Scripts/Objects/room/window_blinds.gd" id="49_blinds"]
 [ext_resource type="Script" path="res://Scripts/Objects/room/time_of_day.gd" id="50_timeofday"]
 [ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_lever.gd" id="51_vrlever"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="52_nerdfont"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
@@ -280,10 +281,10 @@ roughness = 0.5
 ; of its throw and the tick arc outside it, neither of which a 0.24 plate did. Its outer face sits 12 mm proud, the same
 ; relief the light switch beside it has.
 [sub_resource type="BoxMesh" id="Mesh_tod_plate"]
-size = Vector3(0.012, 0.32, 0.17)
+size = Vector3(0.012, 0.37, 0.2)
 
 [sub_resource type="StandardMaterial3D" id="Mat_tod_plate"]
-albedo_color = Color(0.9, 0.87, 0.79, 1)
+albedo_color = Color(0.55, 0.53, 0.5, 1)
 roughness = 0.55
 
 ; CylinderMesh runs along its own +Y, so the Arm node carries an R_x(-90) to lay it
@@ -318,46 +319,9 @@ emission_energy_multiplier = 0.55
 [sub_resource type="SphereShape3D" id="Shape_tod_ball"]
 radius = 0.035
 
-; Four ticks, one per time the lever selects, each emissive in that time's own
-; colour. Glyphs were the other option and are the wrong one: a bare Unicode sun or
-; moon tofus on Quest, and at 9 mm the colour carries further than a symbol would.
-;
-; They ring the ball's path at radius 0.140, just outside the 0.132 its far edge
-; reaches. Both other placements failed for the same reason in mirror image: at the
-; ball's own radius each end tick sat underneath it, invisible at exactly the
-; position it labelled; pulled inside to 0.060 they spanned half the arc the ball
-; does and stopped lining up with anything.
-[sub_resource type="BoxMesh" id="Mesh_tod_tick"]
-size = Vector3(0.002, 0.009, 0.009)
-
-[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Morning"]
-albedo_color = Color(1, 0.85, 0.6, 1)
-roughness = 0.4
-emission_enabled = true
-emission = Color(1, 0.85, 0.6, 1)
-emission_energy_multiplier = 0.7
-
-[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Day"]
-albedo_color = Color(1, 1, 0.95, 1)
-roughness = 0.4
-emission_enabled = true
-emission = Color(1, 1, 0.95, 1)
-emission_energy_multiplier = 0.7
-
-[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Evening"]
-albedo_color = Color(1, 0.55, 0.25, 1)
-roughness = 0.4
-emission_enabled = true
-emission = Color(1, 0.55, 0.25, 1)
-emission_energy_multiplier = 0.7
-
-[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Night"]
-albedo_color = Color(0.45, 0.6, 1, 1)
-roughness = 0.4
-emission_enabled = true
-emission = Color(0.45, 0.6, 1, 1)
-emission_energy_multiplier = 0.7
-
+; The plate is a shade darker than the light switch beside it. A cream plate is
+; right for a switch and wrong here: the day glyph is near-white, and on cream it
+; disappeared entirely.
 [sub_resource type="BoxShape3D" id="Shape_bookcase"]
 size = Vector3(0.36, 1.8, 0.95)
 
@@ -990,29 +954,90 @@ surface_material_override/0 = SubResource("Mat_lever")
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -2.525, 1.15, 0.25)
 
 [node name="Plate" type="MeshInstance3D" parent="Furniture/TimeLever"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.006, 0, -0.055)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.006, 0, -0.085)
 mesh = SubResource("Mesh_tod_plate")
 surface_material_override/0 = SubResource("Mat_tod_plate")
 
-[node name="TickMorning" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, 0.1269, -0.0042)
-mesh = SubResource("Mesh_tod_tick")
-surface_material_override/0 = SubResource("Mat_tod_tick_Morning")
+; Four glyphs from the Nerd Font's Weather Icons set, one per time the lever
+; selects, each tinted in that time's own colour.
+;
+; They must carry the BUNDLED font. A bare Unicode sun or moon renders as tofu on
+; Quest, where the theme font has no such glyph — these codepoints are in the
+; Private Use Area and exist only in SymbolsNerdFont-Regular.ttf. Tests/
+; time_of_day_tests.tscn --only=glyphs asserts the font is attached AND that it
+; actually has each codepoint, because a tofu box is a silent failure.
+;
+; Tinted as well as drawn, because sunrise and sunset are the same sun over the
+; same horizon and differ only in which way the chevron points — at 20 mm on a
+; wall that is not a difference. Colour and arc position carry it; the glyph is the
+; support cue. (menu_icons.gd records the same reasoning for its two bins.)
+;
+; Label3D, one draw call each. Unshaded so the tint IS the colour, and outlined so
+; every one of them reads against the plate whatever the room's light is doing.
+;
+; They ring the ball's path at radius 0.160 — 28 mm beyond the 0.132 the ball's far
+; edge reaches, which is what it takes for an END glyph to stay READABLE with the
+; lever parked on it. At 0.132 the ball sat straight on top of the evening glyph;
+; even at 0.150 it still covered most of the morning and night ones, hiding each
+; label at exactly the position it names.
+;
+; The plate (0.37 x 0.20, centred at -0.085) is sized from the glyphs' measured
+; AABBs, not from their origins. Drawn, these are 40-60 mm across — the sunrise one
+; is the widest — so an origin comfortably inside the plate still hung its rays over
+; the edge. Tests/time_of_day_tests.tscn --only=glyphs measures the real corners.
+; The plate also has to reach down past the pivot the arm turns about, which is what
+; puts its centre well below the arc.
+[node name="TickMorning" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, 0.1450, 0.0174)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(1, 0.78, 0.5, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
 
-[node name="TickDay" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, 0.0527, -0.0747)
-mesh = SubResource("Mesh_tod_tick")
-surface_material_override/0 = SubResource("Mat_tod_tick_Day")
+[node name="TickDay" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, 0.0602, -0.0632)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(1, 0.85, 0.22, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
 
-[node name="TickEvening" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, -0.0497, -0.0759)
-mesh = SubResource("Mesh_tod_tick")
-surface_material_override/0 = SubResource("Mat_tod_tick_Evening")
+[node name="TickEvening" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, -0.0568, -0.0646)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(0.98, 0.45, 0.16, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
 
-[node name="TickNight" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, -0.1269, -0.0042)
-mesh = SubResource("Mesh_tod_tick")
-surface_material_override/0 = SubResource("Mat_tod_tick_Night")
+[node name="TickNight" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, -0.1450, 0.0174)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(0.5, 0.66, 1, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
 
 ; IDENTITY, and VRLever's target. The hinge writes target.rotation.x and measures
 ; the hand in the parent frame, so the basis has to live on the mount above and this

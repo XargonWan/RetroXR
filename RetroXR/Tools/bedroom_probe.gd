@@ -168,7 +168,11 @@ func _do_flythrough() -> void:
 const SWEEP_SHOTS: Array = [
 	["overview", Vector3(-2.25, 1.95, 1.95), Vector3(1.40, 0.55, -1.50), 82.0],
 	["window", Vector3(-0.10, 1.45, -0.30), Vector3(-1.00, 1.40, -2.10), 62.0],
-	["lever", Vector3(-1.75, 1.35, 0.95), Vector3(-2.60, 1.19, 0.25), 46.0],
+	# Near head-on, deliberately. The ball stands 22 mm proud of the plate the tick
+	# glyphs are printed on, so an oblique view projects it over whichever glyph it
+	# is nearest and reads as an overlap that is not there. A player working this
+	# lever is facing the wall.
+	["lever", Vector3(-1.82, 1.24, 0.34), Vector3(-2.60, 1.21, 0.26), 40.0],
 ]
 
 ## Keyframe times, and what each is called in the filename.

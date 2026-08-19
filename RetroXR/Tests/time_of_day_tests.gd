@@ -23,7 +23,8 @@ extends Node
 ## What this canNOT check is how any of it LOOKS. That is
 ## `Tools/bedroom_probe.tscn --mode=timesweep`, windowed.
 
-const GROUPS := ["authored", "sharing", "sweep", "night", "blinds", "lever", "desktop", "persist"]
+const GROUPS := ["authored", "sharing", "sweep", "night", "blinds", "lever", "glyphs",
+	"desktop", "persist"]
 const SCENE := preload("res://Scenes/BedroomScene.tscn")
 
 ## The authored dusk, transcribed from BedroomScene.tscn before TimeOfDay existed.
@@ -88,6 +89,8 @@ func _ready() -> void:
 		await _test_blinds()
 	if _want("lever"):
 		await _test_lever()
+	if _want("glyphs"):
+		await _test_glyphs()
 	if _want("desktop"):
 		await _test_desktop()
 	if _want("persist"):
@@ -323,6 +326,76 @@ func _test_lever() -> void:
 	_num(_tod.time, 1.0, "lever/the final value of a fast sweep still lands", 0.001)
 
 
+# ── The plate's Nerd Font glyphs ──────────────────────────────────────────────
+
+## A tofu box is a SILENT failure — the label still draws, still sits in the right
+## place, and shows a hollow rectangle. Nothing errors, so only an explicit check
+## catches it, and only on a device where the font is missing would anyone notice.
+##
+## These codepoints are Private Use Area: they exist in SymbolsNerdFont-Regular.ttf
+## and in no theme or system font. So both halves matter — that a font is attached
+## at all, and that the attached font actually has the character.
+const TICK_GLYPHS := {
+	"TickMorning": 0xE34C,   # weather-sunrise
+	"TickDay": 0xE30D,       # weather-day_sunny
+	"TickEvening": 0xE34D,   # weather-sunset
+	"TickNight": 0xE3A5,     # weather-moon_waning_crescent_3
+}
+
+
+func _test_glyphs() -> void:
+	var plate: Node3D = _root.get_node("Furniture/TimeLever/Plate")
+	for tick_name: String in TICK_GLYPHS:
+		var label := plate.get_node_or_null(tick_name) as Label3D
+		if not _ok(label != null, "glyphs/%s exists" % tick_name):
+			continue
+		var cp: int = TICK_GLYPHS[tick_name]
+		_eq(label.text, String.chr(cp), "glyphs/%s carries its codepoint" % tick_name)
+		var f: Font = label.font
+		if not _ok(f != null, "glyphs/%s has a font attached" % tick_name):
+			continue
+		_ok(f.has_char(cp),
+			"glyphs/%s: the attached font really has U+%X" % [tick_name, cp])
+		# Unshaded, or the tint stops being the colour the moment the room dims.
+		_ok(not label.shaded, "glyphs/%s is unshaded" % tick_name)
+		# Flat on the plate. A billboarded tick would swing to face the player and
+		# stop marking the arc position it exists to mark.
+		_eq(label.billboard, BaseMaterial3D.BILLBOARD_DISABLED,
+			"glyphs/%s does not billboard" % tick_name)
+
+	# Each tint distinct — sunrise and sunset are the same sun over the same
+	# horizon, so colour is what separates the two ends of the arc.
+	var seen := {}
+	for tick_name: String in TICK_GLYPHS:
+		var label := plate.get_node_or_null(tick_name) as Label3D
+		if label != null:
+			seen[label.modulate] = true
+	_eq(seen.size(), TICK_GLYPHS.size(), "glyphs/all four tints are distinct")
+
+	# Every glyph must sit ON the plate — measured by its real AABB, not by its
+	# origin. These are 40-60 mm wide drawn, so a position comfortably inside the
+	# plate can still hang its rays over the edge, and the sunrise one did.
+	var plate_mesh := (plate as MeshInstance3D).mesh as BoxMesh
+	var half_y: float = plate_mesh.size.y * 0.5
+	var half_z: float = plate_mesh.size.z * 0.5
+	for tick_name: String in TICK_GLYPHS:
+		var label := plate.get_node_or_null(tick_name) as Label3D
+		if label == null:
+			continue
+		var box: AABB = label.get_aabb()
+		# Into plate space: the label is turned to lie flat, so its own local
+		# extents are not the plate's axes.
+		var lo := Vector3(INF, INF, INF)
+		var hi := Vector3(-INF, -INF, -INF)
+		for i in 8:
+			var corner: Vector3 = label.transform * box.get_endpoint(i)
+			lo = lo.min(corner)
+			hi = hi.max(corner)
+		_ok(lo.y >= -half_y and hi.y <= half_y and lo.z >= -half_z and hi.z <= half_z,
+			"glyphs/%s fits the plate (y %.3f..%.3f in +-%.3f, z %.3f..%.3f in +-%.3f)"
+			% [tick_name, lo.y, hi.y, half_y, lo.z, hi.z, half_z])
+
+
 # ── Desktop press-drag ────────────────────────────────────────────────────────
 
 func _test_desktop() -> void:
@@ -398,32 +471,36 @@ func _point(type: XRToolsPointerEvent.Type, at: Vector3, last: Vector3) -> void:
 	_lever.pointer_event(XRToolsPointerEvent.new(type, null, _lever, at, last))
 
 
-func _ok(cond: bool, what: String) -> void:
+## Returns the result so a case can bail out rather than cascade — checking a
+## font on a label that does not exist reports four failures for one fault.
+func _ok(cond: bool, what: String) -> bool:
 	_ran += 1
 	if cond:
 		print("[test] ok   %s" % what)
 	else:
 		_fail += 1
 		print("[test] FAIL %s" % what)
+	return cond
 
 
-func _eq(got: Variant, want: Variant, what: String) -> void:
-	_ok(got == want, what if got == want else "%s (got %s, want %s)" % [what, got, want])
+func _eq(got: Variant, want: Variant, what: String) -> bool:
+	return _ok(got == want,
+		what if got == want else "%s (got %s, want %s)" % [what, got, want])
 
 
-func _num(got: float, want: float, what: String, tol: float = 0.002) -> void:
-	_ok(absf(got - want) <= tol,
+func _num(got: float, want: float, what: String, tol: float = 0.002) -> bool:
+	return _ok(absf(got - want) <= tol,
 		what if absf(got - want) <= tol
 		else "%s (got %.4f, want %.4f)" % [what, got, want])
 
 
-func _col(got: Color, want: Color, what: String) -> void:
+func _col(got: Color, want: Color, what: String) -> bool:
 	var ok := absf(got.r - want.r) <= 0.002 and absf(got.g - want.g) <= 0.002 \
 		and absf(got.b - want.b) <= 0.002
-	_ok(ok, what if ok else "%s (got %s, want %s)" % [what, str(got), str(want)])
+	return _ok(ok, what if ok else "%s (got %s, want %s)" % [what, str(got), str(want)])
 
 
-func _basis(got: Basis, want: Basis, what: String) -> void:
+func _basis(got: Basis, want: Basis, what: String) -> bool:
 	var ok := (got.x - want.x).length() <= 0.01 and (got.y - want.y).length() <= 0.01 \
 		and (got.z - want.z).length() <= 0.01
-	_ok(ok, what if ok else "%s (got x=%v y=%v z=%v)" % [what, got.x, got.y, got.z])
+	return _ok(ok, what if ok else "%s (got x=%v y=%v z=%v)" % [what, got.x, got.y, got.z])
