@@ -48,6 +48,12 @@ constexpr const char *CABLE_SHADER_PATH = "res://Shaders/cable.gdshader";
 
 void VerletRope::_bind_methods()
 {
+    BIND_ENUM_CONSTANT(ENDPOINT_AUTO);
+    BIND_ENUM_CONSTANT(ENDPOINT_HOST);
+    BIND_ENUM_CONSTANT(ENDPOINT_FREE_PLUG);
+    BIND_ENUM_CONSTANT(ENDPOINT_HELD_PLUG);
+    BIND_ENUM_CONSTANT(ENDPOINT_SOCKETED_PLUG);
+
     // Property names deliberately match the GDScript ones exactly — the two
     // cable scenes and every caller in Scripts/ already use them.
     ClassDB::bind_method(D_METHOD("set_segment_count", "value"), &VerletRope::SetSegmentCount);
@@ -143,6 +149,28 @@ void VerletRope::_bind_methods()
     ClassDB::bind_method(D_METHOD("set_plug_exit_axis", "value"), &VerletRope::SetPlugExitAxis);
     ClassDB::bind_method(D_METHOD("get_plug_exit_axis"), &VerletRope::GetPlugExitAxis);
     ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "plug_exit_axis"), "set_plug_exit_axis", "get_plug_exit_axis");
+
+    ClassDB::bind_method(D_METHOD("set_start_exit_axis", "value"), &VerletRope::SetStartExitAxis);
+    ClassDB::bind_method(D_METHOD("get_start_exit_axis"), &VerletRope::GetStartExitAxis);
+    ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "start_exit_axis"),
+                 "set_start_exit_axis", "get_start_exit_axis");
+
+    ClassDB::bind_method(D_METHOD("set_end_exit_axis", "value"), &VerletRope::SetEndExitAxis);
+    ClassDB::bind_method(D_METHOD("get_end_exit_axis"), &VerletRope::GetEndExitAxis);
+    ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "end_exit_axis"),
+                 "set_end_exit_axis", "get_end_exit_axis");
+
+    ClassDB::bind_method(D_METHOD("set_start_endpoint_role", "value"), &VerletRope::SetStartEndpointRole);
+    ClassDB::bind_method(D_METHOD("get_start_endpoint_role"), &VerletRope::GetStartEndpointRole);
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "start_endpoint_role", PROPERTY_HINT_ENUM,
+                              "Auto,Host,Free Plug,Held Plug,Socketed Plug"),
+                 "set_start_endpoint_role", "get_start_endpoint_role");
+
+    ClassDB::bind_method(D_METHOD("set_end_endpoint_role", "value"), &VerletRope::SetEndEndpointRole);
+    ClassDB::bind_method(D_METHOD("get_end_endpoint_role"), &VerletRope::GetEndEndpointRole);
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "end_endpoint_role", PROPERTY_HINT_ENUM,
+                              "Auto,Host,Free Plug,Held Plug,Socketed Plug"),
+                 "set_end_endpoint_role", "get_end_endpoint_role");
 
     ClassDB::bind_method(D_METHOD("set_start_anchor_offset", "value"), &VerletRope::SetStartAnchorOffset);
     ClassDB::bind_method(D_METHOD("get_start_anchor_offset"), &VerletRope::GetStartAnchorOffset);
@@ -679,9 +707,11 @@ void VerletRope::SleepNow()
     // plug bodies asleep with it. Mounted controller anchors are plain Node3D
     // children and PlugIsFixed() keeps their ancestor bodies out of this path;
     // held and socketed plugs are fixed for the same reason.
-    if (m_start_body != nullptr && !PlugIsFixed(m_start_cached))
+    if (m_start_body != nullptr &&
+        EndpointIsFree(ResolveEndpointRole(m_start_cached, m_start_endpoint_role)))
         m_start_body->set_sleeping(true);
-    if (m_end_body != nullptr && !PlugIsFixed(m_end_cached))
+    if (m_end_body != nullptr &&
+        EndpointIsFree(ResolveEndpointRole(m_end_cached, m_end_endpoint_role)))
         m_end_body->set_sleeping(true);
     for (const FrayChain &fc : m_fray)
         if (fc.body != nullptr && !PlugIsFixed(fc.cached))

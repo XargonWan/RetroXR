@@ -264,25 +264,49 @@ bool VerletRope::PlaneValid(int i, const Vector3 &cp, const Vector3 &n) const
 // leave it stiffly along its exit axis rather than hanging freely. That covers a
 // host attach point (a plain Node3D bolted to a device) and a plug that's held
 // or socketed. A free-dangling plug is NOT fixed — it follows the rope instead.
-bool VerletRope::PlugIsFixed(Node3D *node) const
+VerletRope::EndpointRole VerletRope::ResolveEndpointRole(Node3D *node, int configured_role) const
 {
     if (node == nullptr)
-        return false;
+        return ENDPOINT_FREE_PLUG;
+    if (configured_role >= ENDPOINT_HOST && configured_role <= ENDPOINT_SOCKETED_PLUG)
+        return static_cast<EndpointRole>(configured_role);
     RigidBody3D *rb = Object::cast_to<RigidBody3D>(node);
     if (rb == nullptr)
-        return true; // host attach point — rigidly mounted to its device
+        return ENDPOINT_HOST;
+    if (rb->has_method("is_plugged_in") && static_cast<bool>(rb->call("is_plugged_in")))
+        return ENDPOINT_SOCKETED_PLUG;
+    if (rb->has_method("is_picked_up") && static_cast<bool>(rb->call("is_picked_up")))
+        return ENDPOINT_HELD_PLUG;
     if (rb->is_freeze_enabled())
-        return true;
-    if (rb->has_method("is_picked_up"))
-        return static_cast<bool>(rb->call("is_picked_up"));
-    return false;
+        return ENDPOINT_HELD_PLUG; // legacy test/tool stand-in for a held plug
+    return ENDPOINT_FREE_PLUG;
 }
 
-Vector3 VerletRope::PlugExitDir(Node3D *node) const
+bool VerletRope::EndpointIsFixed(EndpointRole role)
+{
+    return role != ENDPOINT_FREE_PLUG;
+}
+
+bool VerletRope::EndpointIsDirectional(EndpointRole role)
+{
+    return role == ENDPOINT_HELD_PLUG;
+}
+
+bool VerletRope::EndpointIsFree(EndpointRole role)
+{
+    return role == ENDPOINT_FREE_PLUG;
+}
+
+bool VerletRope::PlugIsFixed(Node3D *node) const
+{
+    return EndpointIsFixed(ResolveEndpointRole(node, ENDPOINT_AUTO));
+}
+
+Vector3 VerletRope::PlugExitDir(Node3D *node, const Vector3 &axis) const
 {
     if (node == nullptr)
         return Vector3();
-    return (node->get_global_transform().basis.orthonormalized().xform(m_plug_exit_axis)).normalized();
+    return (node->get_global_transform().basis.orthonormalized().xform(axis)).normalized();
 }
 
 // Rotate a free plug rigidbody so its cable-exit axis points along the rope's
@@ -298,8 +322,8 @@ Vector3 VerletRope::PlugExitDir(Node3D *node) const
 // Six free plugs on a composite lead made that a standing wave: each anchor
 // moved ~0.7 mm a tick, over the 0.5 mm wake threshold, so the rope re-woke
 // every tick forever and a cable draped on a table never stopped shivering.
-void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &offset, const Vector3 &target_dir_in,
-                                 double k)
+void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &offset, const Vector3 &axis,
+                                 const Vector3 &target_dir_in, double k)
 {
     RigidBody3D *rb = Object::cast_to<RigidBody3D>(node);
     if (rb == nullptr || rb->is_freeze_enabled())
@@ -313,7 +337,7 @@ void VerletRope::AlignAnchorPlug(Node3D *node, const Vector3 &offset, const Vect
     // so the physics engine doesn't drift it between our frames.
     rb->set_angular_velocity(Vector3());
     const Basis basis = rb->get_global_transform().basis.orthonormalized();
-    const Vector3 cur_axis = basis.xform(m_plug_exit_axis).normalized();
+    const Vector3 cur_axis = basis.xform(axis).normalized();
     if (cur_axis.length_squared() < 1e-8)
         return;
     const double dot = CLAMP(cur_axis.dot(target_dir), -1.0, 1.0);
@@ -420,23 +444,16 @@ void VerletRope::Step(double p_delta)
     // End orientation authority: a plug whose orientation is externally fixed
     // drives the ROPE. A free plug is the complement — it follows the rope (see
     // AlignAnchorPlug after the solve).
-    const bool start_fixed = PlugIsFixed(m_start_cached);
-    const bool end_fixed = PlugIsFixed(m_end_cached);
-    const Vector3 start_exit = start_fixed ? PlugExitDir(m_start_cached) : Vector3();
-    const Vector3 end_exit = end_fixed ? PlugExitDir(m_end_cached) : Vector3();
-    // A plain Node3D is a host attachment (controller shell, sensor bar, etc.),
-    // not a connector plug. A seated controller plug may also have an ideal exit
-    // line that immediately meets the furniture around its panel. Both keep the
-    // ordinary bend boot; actual held/frozen test plugs retain directional
-    // authority, while a plug that reports itself socketed does not.
-    RigidBody3D *start_rb = Object::cast_to<RigidBody3D>(m_start_cached);
-    RigidBody3D *end_rb = Object::cast_to<RigidBody3D>(m_end_cached);
-    const auto is_socketed = [](RigidBody3D *rb) {
-        return rb != nullptr && rb->has_method("is_plugged_in") &&
-               static_cast<bool>(rb->call("is_plugged_in"));
-    };
-    const bool start_directional = start_fixed && start_rb != nullptr && !is_socketed(start_rb);
-    const bool end_directional = end_fixed && end_rb != nullptr && !is_socketed(end_rb);
+    const EndpointRole start_role = ResolveEndpointRole(m_start_cached, m_start_endpoint_role);
+    const EndpointRole end_role = ResolveEndpointRole(m_end_cached, m_end_endpoint_role);
+    const bool start_fixed = EndpointIsFixed(start_role);
+    const bool end_fixed = EndpointIsFixed(end_role);
+    const Vector3 start_exit = start_fixed ? PlugExitDir(m_start_cached, m_start_exit_axis) : Vector3();
+    const Vector3 end_exit = end_fixed ? PlugExitDir(m_end_cached, m_end_exit_axis) : Vector3();
+    // Only a held plug's orientation is player-authored and should drive the
+    // rope. Hosts and seated plugs pin position but keep the ordinary bend boot.
+    const bool start_directional = EndpointIsDirectional(start_role);
+    const bool end_directional = EndpointIsDirectional(end_role);
 
     SolveConstraints(start_directional, end_directional, start_exit, end_exit);
     ApplyContactFriction();
@@ -465,17 +482,18 @@ void VerletRope::Step(double p_delta)
     if (m_end_align_stiffness > 0.0 && count >= 2)
     {
         if (!start_fixed)
-            AlignAnchorPlug(m_start_cached, m_start_anchor_offset,
+            AlignAnchorPlug(m_start_cached, m_start_anchor_offset, m_start_exit_axis,
                             m_points[1] - m_points[0], m_end_align_stiffness);
         if (!end_fixed)
-            AlignAnchorPlug(m_end_cached, m_end_anchor_offset,
+            AlignAnchorPlug(m_end_cached, m_end_anchor_offset, m_end_exit_axis,
                             m_points[count - 2] - m_points[count - 1], m_end_align_stiffness);
         for (const FrayChain &fc : m_fray)
         {
             if (fc.cached == nullptr || fc.count < 2 || PlugIsFixed(fc.cached))
                 continue;
             const int last = fc.first + fc.count - 1;
-            AlignAnchorPlug(fc.cached, fc.offset, m_points[last - 1] - m_points[last],
+            AlignAnchorPlug(fc.cached, fc.offset, m_end_exit_axis,
+                            m_points[last - 1] - m_points[last],
                             m_end_align_stiffness);
         }
     }
@@ -718,7 +736,7 @@ void VerletRope::SolveFrayConstraints(int p_iter, double, double p_k_bend, doubl
             // it along the plug's exit axis rather than hanging off it.
             if (PlugIsFixed(fc.cached))
             {
-                const Vector3 exit = PlugExitDir(fc.cached);
+                const Vector3 exit = PlugExitDir(fc.cached, m_end_exit_axis);
                 const Vector3 base = m_points[last];
                 for (int j = 1; j <= n_end; ++j)
                 {

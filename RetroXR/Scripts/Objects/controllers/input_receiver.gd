@@ -182,10 +182,9 @@ func _apply_cable_anchor() -> void:
 		return
 	_cable_rope.end_anchor_offset = _cable_plug.cable_anchor
 	# And which way it leaves, so an angled connector can say so in its asset
-	# rather than in code. Note plug_exit_axis is one value for the whole rope:
-	# a lead with a different connector at each end would need a per-end axis in
-	# VerletRope, which nothing wants yet.
-	_cable_rope.plug_exit_axis = _cable_plug.cable_exit_axis
+	# rather than in code. End axes are independent: the host attachment at the
+	# other end must not inherit an interchangeable connector's orientation.
+	_cable_rope.end_exit_axis = _cable_plug.cable_exit_axis
 
 
 # ── Cable ─────────────────────────────────────────────────────────────────────
@@ -210,6 +209,8 @@ func _add_cable_to_scene() -> void:
 	_cable_rope.set_rope_length(LEAD_LENGTH)
 	_cable_rope.start_node = _cable_attach_point
 	_cable_rope.end_node = _cable_plug
+	_cable_rope.start_endpoint_role = VerletRope.ENDPOINT_HOST
+	_cable_rope.end_endpoint_role = VerletRope.ENDPOINT_AUTO
 	_apply_cable_anchor()
 	_cable_rope._init_points()
 	_max_rope_length = _cable_rope.segment_count * _cable_rope.segment_length

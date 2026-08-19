@@ -1403,11 +1403,18 @@ func _group_edges() -> void:
 	controller_rope.start_node = controller_attach
 	controller_rope.end_node = controller_plug
 	controller_rope.end_anchor_offset = controller_plug.cable_anchor
-	# Deliberately make the interchangeable plug's axis point down in the HOST
-	# attachment's basis. Before host anchors were separated from connector plugs,
-	# the directional boot borrowed this axis at both ends and drove the first
-	# particles into the tabletop forever.
-	controller_rope.plug_exit_axis = controller_attach.global_basis.inverse() * Vector3.DOWN
+	# Deliberately give the host and plug different axes. Before endpoint axes and
+	# roles were independent, configuring the interchangeable plug also changed
+	# the host end and drove the first particles into the tabletop forever.
+	controller_rope.start_endpoint_role = VerletRope.ENDPOINT_HOST
+	controller_rope.end_endpoint_role = VerletRope.ENDPOINT_AUTO
+	controller_rope.start_exit_axis = controller_attach.global_basis.inverse() * Vector3.DOWN
+	controller_rope.end_exit_axis = controller_plug.cable_exit_axis
+	_ok("edges/endpoint roles and axes are independent",
+		controller_rope.start_endpoint_role == VerletRope.ENDPOINT_HOST
+			and controller_rope.end_endpoint_role == VerletRope.ENDPOINT_AUTO
+			and controller_rope.start_exit_axis != controller_rope.end_exit_axis,
+		"start role/axis remain distinct from end role/axis")
 	controller_rope._init_points()
 	var controller_slept_at := -1
 	for frame in 1200:

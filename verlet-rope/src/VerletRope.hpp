@@ -67,6 +67,19 @@ class VerletRope : public godot::MeshInstance3D
     GDCLASS(VerletRope, godot::MeshInstance3D)
 
 public:
+    // Endpoint authority is explicit at the rope boundary. AUTO preserves old
+    // scenes by deriving the live state from the node, while authored roles let
+    // callers state the contract without relying on RigidBody freeze/pickup
+    // implementation details.
+    enum EndpointRole
+    {
+        ENDPOINT_AUTO = 0,
+        ENDPOINT_HOST,
+        ENDPOINT_FREE_PLUG,
+        ENDPOINT_HELD_PLUG,
+        ENDPOINT_SOCKETED_PLUG,
+    };
+
     VerletRope() = default;
     ~VerletRope() override = default;
 
@@ -131,7 +144,18 @@ public:
     XENU_ROPE_PROP(bool, SelfCollision, m_self_collision)
     XENU_ROPE_PROP(double, AnchorPull, m_anchor_pull)
     XENU_ROPE_PROP(double, EndAlignStiffness, m_end_align_stiffness)
-    XENU_ROPE_PROP(godot::Vector3, PlugExitAxis, m_plug_exit_axis)
+    // Legacy whole-rope alias. Setting it updates both ends so old scenes keep
+    // their exact behaviour; new code should author the two axes independently.
+    void SetPlugExitAxis(const godot::Vector3 &v)
+    {
+        m_start_exit_axis = v;
+        m_end_exit_axis = v;
+    }
+    godot::Vector3 GetPlugExitAxis() const { return m_end_exit_axis; }
+    XENU_ROPE_PROP(godot::Vector3, StartExitAxis, m_start_exit_axis)
+    XENU_ROPE_PROP(godot::Vector3, EndExitAxis, m_end_exit_axis)
+    XENU_ROPE_PROP(int, StartEndpointRole, m_start_endpoint_role)
+    XENU_ROPE_PROP(int, EndEndpointRole, m_end_endpoint_role)
     XENU_ROPE_PROP(godot::Vector3, StartAnchorOffset, m_start_anchor_offset)
     XENU_ROPE_PROP(godot::Vector3, EndAnchorOffset, m_end_anchor_offset)
     XENU_ROPE_PROP(double, EndStiffness, m_end_stiffness)
@@ -233,10 +257,14 @@ private:
                                const godot::Vector3 &fallback) const;
     bool AnchorsMoved() const;
     bool AnchorTeleported() const;
+    EndpointRole ResolveEndpointRole(godot::Node3D *node, int configured_role) const;
+    static bool EndpointIsFixed(EndpointRole role);
+    static bool EndpointIsDirectional(EndpointRole role);
+    static bool EndpointIsFree(EndpointRole role);
     bool PlugIsFixed(godot::Node3D *node) const;
-    godot::Vector3 PlugExitDir(godot::Node3D *node) const;
+    godot::Vector3 PlugExitDir(godot::Node3D *node, const godot::Vector3 &axis) const;
     void AlignAnchorPlug(godot::Node3D *node, const godot::Vector3 &offset,
-                         const godot::Vector3 &target_dir, double k);
+                         const godot::Vector3 &axis, const godot::Vector3 &target_dir, double k);
     void RefreshExclusions();
     void DepenetrateLay();
     // Resolved once per tick so the hot paths don't repeat the ObjectDB lookup.
@@ -404,7 +432,10 @@ private:
     bool m_self_collision = false;
     double m_anchor_pull = 0.0;
     double m_end_align_stiffness = 0.0;
-    godot::Vector3 m_plug_exit_axis = godot::Vector3(0, 0, -1);
+    godot::Vector3 m_start_exit_axis = godot::Vector3(0, 0, -1);
+    godot::Vector3 m_end_exit_axis = godot::Vector3(0, 0, -1);
+    int m_start_endpoint_role = ENDPOINT_AUTO;
+    int m_end_endpoint_role = ENDPOINT_AUTO;
     godot::Vector3 m_start_anchor_offset;
     godot::Vector3 m_end_anchor_offset;
     double m_end_stiffness = 0.0;
@@ -429,3 +460,5 @@ private:
 };
 
 } // namespace Xenu
+
+VARIANT_ENUM_CAST(Xenu::VerletRope::EndpointRole);
