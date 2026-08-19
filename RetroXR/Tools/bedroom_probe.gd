@@ -18,7 +18,12 @@
 ##     "$godot" --path RetroXR --resolution 320x240 --position 20,20 \
 ##         res://Tools/bedroom_probe.tscn -- --mode=flythrough
 ##
-## Modes: stills (default), flythrough, both. PNGs land in `out_dir`; delete it
+## `--mode=timesweep` walks the TimeOfDay lever from morning to night: one still per
+## keyframe from three framings, then a continuous clip of the room changing under a
+## held camera, with the lever's own arm driven from the same t so the ball is seen
+## sweeping its arc. `--sweep-frames=N` sets the clip length.
+##
+## Modes: stills (default), flythrough, both, timesweep. PNGs land in `out_dir`; delete it
 ## when finished. Encode a flythrough with imageio at 24 fps:
 ##
 ##     iio.get_writer("tour.mp4", fps=24, codec="libx264", pixelformat="yuv420p",
@@ -28,7 +33,7 @@
 ## 21 MB, and CRF 24 gives 2 MB with no visible difference at this size.
 extends Node3D
 
-enum Mode { STILLS, FLYTHROUGH, BOTH }
+enum Mode { STILLS, FLYTHROUGH, BOTH, TIMESWEEP }
 
 const SCENE := preload("res://Scenes/BedroomScene.tscn")
 
@@ -86,6 +91,7 @@ func _resolve_mode() -> Mode:
 				"stills": return Mode.STILLS
 				"flythrough": return Mode.FLYTHROUGH
 				"both": return Mode.BOTH
+				"timesweep": return Mode.TIMESWEEP
 	return mode
 
 
@@ -115,6 +121,8 @@ func _run() -> void:
 		await _do_stills()
 	if m == Mode.FLYTHROUGH or m == Mode.BOTH:
 		await _do_flythrough()
+	if m == Mode.TIMESWEEP:
+		await _do_timesweep()
 	print("[probe] done -> %s" % out_dir)
 	get_tree().quit(0)
 
@@ -151,6 +159,76 @@ func _do_flythrough() -> void:
 		_cam.look_at(pos + Vector3(cos(phi), 0.0, -sin(phi)), Vector3.UP)
 		await _frame()
 	print("[probe] flythrough: %d frames" % _n)
+
+
+# --- Time-of-day sweep --------------------------------------------------------
+# Framings chosen for what each one proves: `overview` for the room as a whole,
+# `window` for the beam, the sky and the street outside (where the change is
+# largest), and `switch` for the lever, which is on that wall.
+const SWEEP_SHOTS: Array = [
+	["overview", Vector3(-2.25, 1.95, 1.95), Vector3(1.40, 0.55, -1.50), 82.0],
+	["window", Vector3(-0.10, 1.45, -0.30), Vector3(-1.00, 1.40, -2.10), 62.0],
+	["lever", Vector3(-1.75, 1.35, 0.95), Vector3(-2.60, 1.19, 0.25), 46.0],
+]
+
+## Keyframe times, and what each is called in the filename.
+const SWEEP_KEYS: Array = [
+	[0.00, "morning"], [0.25, "midday"], [0.50, "afternoon"],
+	[0.75, "dusk"], [1.00, "night"],
+]
+
+
+func _do_timesweep() -> void:
+	var tod: TimeOfDay = get_tree().root.find_child("TimeOfDay", true, false) as TimeOfDay
+	if tod == null:
+		print("[probe] no TimeOfDay in the scene"); return
+	var lever: VRLever = get_tree().root.find_child("Lever", true, false) as VRLever
+	# The lever must NOT be left driving time from here: apply_now bypasses the
+	# throttle, which a 240-frame render wants, and set_value would fight it.
+	if lever != null:
+		lever.value_changed.disconnect(tod.set_time)
+
+	_sv.size = still_size
+	for shot in SWEEP_SHOTS:
+		_cam.fov = shot[3]
+		_cam.global_position = shot[1]
+		_cam.look_at(shot[2], Vector3.UP)
+		for key in SWEEP_KEYS:
+			tod.apply_now(key[0])
+			if lever != null:
+				lever.set_value_no_signal(key[0])
+			# The sky is INCREMENTAL, so its radiance map needs a few frames to
+			# converge. A still taken on the next frame shows the previous key's
+			# reflections.
+			for i in 12:
+				await get_tree().process_frame
+			await _save("%s/t_%s_%s.png" % [out_dir, shot[0], key[1]])
+			print("[probe] still %s %s" % [shot[0], key[1]])
+
+	var frames: int = _sweep_frames()
+	_sv.size = video_size
+	for shot in SWEEP_SHOTS:
+		_cam.fov = shot[3]
+		_cam.global_position = shot[1]
+		_cam.look_at(shot[2], Vector3.UP)
+		_n = 0
+		for f in frames:
+			var t: float = float(f) / float(frames - 1)
+			tod.apply_now(t)
+			if lever != null:
+				lever.set_value_no_signal(t)
+			await _save("%s/sweep_%s_%04d.png" % [out_dir, shot[0], _n])
+			if _n % 40 == 0:
+				print("[probe] sweep %s frame %d/%d" % [shot[0], _n, frames])
+			_n += 1
+	print("[probe] timesweep: %d frames per framing" % frames)
+
+
+func _sweep_frames() -> int:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--sweep-frames="):
+			return maxi(2, int(arg.split("=")[1]))
+	return 240
 
 
 func _frame() -> void:

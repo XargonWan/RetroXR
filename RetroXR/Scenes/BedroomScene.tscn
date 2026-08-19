@@ -33,6 +33,8 @@
 [ext_resource type="Script" path="res://Scripts/Objects/room/string_lights.gd" id="36_strlights"]
 [ext_resource type="Script" path="res://Scripts/Objects/room/bead_pull_cord.gd" id="48_pullcord"]
 [ext_resource type="Script" path="res://Scripts/Objects/room/window_blinds.gd" id="49_blinds"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/time_of_day.gd" id="50_timeofday"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_lever.gd" id="51_vrlever"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
@@ -272,6 +274,90 @@ size = Vector3(0.02, 0.014, 0.044)
 albedo_color = Color(0.93, 0.9, 0.83, 1)
 roughness = 0.5
 
+; --- Time-of-day lever -------------------------------------------------------
+; Plate lies flat on the west wall: thin in the mount's local X (the wall normal),
+; 0.32 along the wall and 0.17 tall — wide enough to hold both the ball at the ends
+; of its throw and the tick arc outside it, neither of which a 0.24 plate did. Its outer face sits 12 mm proud, the same
+; relief the light switch beside it has.
+[sub_resource type="BoxMesh" id="Mesh_tod_plate"]
+size = Vector3(0.012, 0.32, 0.17)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_plate"]
+albedo_color = Color(0.9, 0.87, 0.79, 1)
+roughness = 0.55
+
+; CylinderMesh runs along its own +Y, so the Arm node carries an R_x(-90) to lay it
+; down the mount's -Z, which is up.
+[sub_resource type="CylinderMesh" id="Mesh_tod_arm"]
+top_radius = 0.004
+bottom_radius = 0.005
+height = 0.11
+radial_segments = 10
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_arm"]
+albedo_color = Color(0.18, 0.18, 0.2, 1)
+metallic = 0.7
+roughness = 0.35
+
+; The ball. Emissive as well as lit, because the whole point of the lever is to be
+; findable at t = 1, when the room it controls is dark.
+[sub_resource type="SphereMesh" id="Mesh_tod_ball"]
+radius = 0.022
+height = 0.044
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_ball"]
+albedo_color = Color(0.96, 0.78, 0.09, 1)
+roughness = 0.35
+emission_enabled = true
+emission = Color(1, 0.8, 0.15, 1)
+emission_energy_multiplier = 0.55
+
+[sub_resource type="SphereShape3D" id="Shape_tod_ball"]
+radius = 0.035
+
+; Four ticks, one per time the lever selects, each emissive in that time's own
+; colour. Glyphs were the other option and are the wrong one: a bare Unicode sun or
+; moon tofus on Quest, and at 9 mm the colour carries further than a symbol would.
+;
+; They ring the ball's path at radius 0.140, just outside the 0.132 its far edge
+; reaches. Both other placements failed for the same reason in mirror image: at the
+; ball's own radius each end tick sat underneath it, invisible at exactly the
+; position it labelled; pulled inside to 0.060 they spanned half the arc the ball
+; does and stopped lining up with anything.
+[sub_resource type="BoxMesh" id="Mesh_tod_tick"]
+size = Vector3(0.002, 0.009, 0.009)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Morning"]
+albedo_color = Color(1, 0.85, 0.6, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(1, 0.85, 0.6, 1)
+emission_energy_multiplier = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Day"]
+albedo_color = Color(1, 1, 0.95, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(1, 1, 0.95, 1)
+emission_energy_multiplier = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Evening"]
+albedo_color = Color(1, 0.55, 0.25, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(1, 0.55, 0.25, 1)
+emission_energy_multiplier = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_tick_Night"]
+albedo_color = Color(0.45, 0.6, 1, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(0.45, 0.6, 1, 1)
+emission_energy_multiplier = 0.7
+
 [sub_resource type="BoxShape3D" id="Shape_bookcase"]
 size = Vector3(0.36, 1.8, 0.95)
 
@@ -498,11 +584,17 @@ environment = SubResource("Env_bedroom")
 ;   ExteriorSun -> layer 2 only (the street)    energy 1.5
 ;
 ; Scripts/Objects/room/bedroom_exterior.gd puts every renderable under Exterior on layer 2.
+; sky_mode 2 is SKY_MODE_LIGHT_ONLY. A ProceduralSkyMaterial paints a sun disc for
+; every one of LIGHT0..3, so an indoor fill and a blue sky fill were both smearing
+; glows across a sky authored for ONE sun. Light-only also means moving these two
+; no longer dirties the sky, which is what keeps a time-of-day drag cheap: the
+; radiance cubemap and its mip chain rebuild whenever the sky shader's inputs change.
 [node name="Dusk" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.94, -0.24, 0.24, 0, 0.7, 0.71, -0.34, -0.67, 0.66, 0, 2.2, -2.2)
 light_color = Color(1, 0.72, 0.5, 1)
 light_energy = 0.15
 light_cull_mask = 1
+sky_mode = 2
 
 [node name="ExteriorSun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.87, -0.32, 0.37, 0, 0.76, 0.65, -0.49, -0.57, 0.66, 0, 8, -14)
@@ -516,6 +608,7 @@ transform = Transform3D(-0.87, 0.28, -0.4, 0, 0.82, 0.57, 0.49, 0.5, -0.71, 0, 8
 light_color = Color(0.45, 0.55, 0.85, 1)
 light_energy = 0.5
 light_cull_mask = 2
+sky_mode = 2
 
 [node name="PlayerRig" parent="." instance=ExtResource("2_playerrig")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 0, 0.55)
@@ -879,6 +972,86 @@ shape = SubResource("Shape_lever")
 [node name="ButtonMesh" type="MeshInstance3D" parent="Furniture/LightSwitch/Button"]
 mesh = SubResource("Mesh_lever")
 surface_material_override/0 = SubResource("Mat_lever")
+
+
+; --- Time-of-day lever -------------------------------------------------------
+; West wall, same pier as the light switch, 0.30 m north of it so the two never
+; share a grab volume, and 0.45 m clear of the door opening (z 0.70 .. 1.70).
+;
+; The basis IS the hinge axis, and it was derived by round-tripping a real node
+; rather than written by hand: .tscn Transform3D lists the basis ROWS, the transpose
+; of what the constructor takes, and guessing it wrong is silent.
+;   local X = world +X  the axis, straight out of the wall
+;   local Y = world +Z  toward the door, so a positive angle swings that way
+;   local Z = world -Y  so local -Z is UP and the arm stands up at 0 deg
+; Verified: the ball's world x holds at -2.525 across the whole sweep (a turn about
+; the wall normal) while z sweeps 0.150 .. 0.350.
+[node name="TimeLever" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -2.525, 1.15, 0.25)
+
+[node name="Plate" type="MeshInstance3D" parent="Furniture/TimeLever"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.006, 0, -0.055)
+mesh = SubResource("Mesh_tod_plate")
+surface_material_override/0 = SubResource("Mat_tod_plate")
+
+[node name="TickMorning" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, 0.1269, -0.0042)
+mesh = SubResource("Mesh_tod_tick")
+surface_material_override/0 = SubResource("Mat_tod_tick_Morning")
+
+[node name="TickDay" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, 0.0527, -0.0747)
+mesh = SubResource("Mesh_tod_tick")
+surface_material_override/0 = SubResource("Mat_tod_tick_Day")
+
+[node name="TickEvening" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, -0.0497, -0.0759)
+mesh = SubResource("Mesh_tod_tick")
+surface_material_override/0 = SubResource("Mat_tod_tick_Evening")
+
+[node name="TickNight" type="MeshInstance3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.007, -0.1269, -0.0042)
+mesh = SubResource("Mesh_tod_tick")
+surface_material_override/0 = SubResource("Mat_tod_tick_Night")
+
+; IDENTITY, and VRLever's target. The hinge writes target.rotation.x and measures
+; the hand in the parent frame, so the basis has to live on the mount above and this
+; node has to stay clean.
+[node name="LeverPivot" type="Node3D" parent="Furniture/TimeLever"]
+
+[node name="Arm" type="MeshInstance3D" parent="Furniture/TimeLever/LeverPivot"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.018, 0, -0.055)
+mesh = SubResource("Mesh_tod_arm")
+surface_material_override/0 = SubResource("Mat_tod_arm")
+
+[node name="Ball" type="MeshInstance3D" parent="Furniture/TimeLever/LeverPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.018, 0, -0.11)
+mesh = SubResource("Mesh_tod_ball")
+surface_material_override/0 = SubResource("Mat_tod_ball")
+
+; The Area3D sits ON the ball, not on the pivot: VRHinge measures tip proximity from
+; this node's own origin, so a hinge parked at the pivot would arm when a hand came
+; near the hub instead of near the handle. Child of the pivot, so it rides the arm.
+;
+; value_at_max = 0 puts MORNING at +65 deg, the door side, which is the player's left
+; when facing this wall; night is the far end. Left to right, as it reads.
+[node name="Lever" type="Area3D" parent="Furniture/TimeLever/LeverPivot" node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.018, 0, -0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("51_vrlever")
+target = NodePath("..")
+min_deg = -65.0
+max_deg = 65.0
+engage_radius = 0.05
+value_at_min = 1.0
+value_at_max = 0.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Furniture/TimeLever/LeverPivot/Lever"]
+shape = SubResource("Shape_tod_ball")
+
+[node name="HingeHint" type="Label3D" parent="Furniture/TimeLever/LeverPivot/Lever"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.055, 0, -0.03)
 
 ; Fan blades spin about the hub; the glass shade must ride the STATIC mount or
 ; the light swings round the room with them (the den learned this the hard way).
@@ -1418,5 +1591,27 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 1.08, -1.78)
 light_color = Color(1, 0.82, 0.58, 1)
 light_energy = 1.0
 omni_range = 3.0
+
+
+; --- Time of day --------------------------------------------------------------
+; LAST child of Root on purpose. _ready() runs depth-first in tree order, and
+; Furniture/Blinds REPLACES the WorldEnvironment's environment with a duplicate of
+; its own during its _ready(); anything that resolved the environment earlier would
+; be holding the copy that gets discarded. TimeOfDay also defers its first apply,
+; so this ordering is belt and braces rather than the only thing holding it up.
+;
+; It drives the daylight and the street, never the room's own lamps: the wall
+; switch, the two pull cords and the string lights keep those.
+[node name="TimeOfDay" type="Node3D" parent="."]
+script = ExtResource("50_timeofday")
+world_env_path = NodePath("../WorldEnvironment")
+blinds_path = NodePath("../Furniture/Blinds")
+room_daylight_path = NodePath("../Dusk")
+window_sun_path = NodePath("../WindowSun")
+exterior_sun_path = NodePath("../ExteriorSun")
+exterior_fill_path = NodePath("../ExteriorFill")
+street_lamp_path = NodePath("../Exterior/StreetLamp/Light")
+street_lamp_head_path = NodePath("../Exterior/StreetLamp/Head")
+lever_path = NodePath("../Furniture/TimeLever/LeverPivot/Lever")
 
 [connection signal="pulled" from="Furniture/BlindCord" to="Furniture/Blinds" method="_on_cord_pulled"]

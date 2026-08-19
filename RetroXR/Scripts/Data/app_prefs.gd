@@ -76,6 +76,14 @@ var show_hidden_systems: bool = false
 ## core count, no source badge. One pref for both, like the hidden list: it is a
 ## statement about how you want to read a grid, not about one tab.
 var compact_tiles: bool = false
+
+## The bedroom's time-of-day lever, 0 = morning .. 1 = night. 0.75 is the dusk the
+## room was authored at, so an unset pref opens the room exactly as it always was.
+##
+## Here rather than in a save slot because the bedroom has none: SLOT_ROOMS is
+## ["arcade", "passthrough"], and scene_persistence only tracks the "spawned" group,
+## which an authored wall fixture is not in.
+var bedroom_time_of_day: float = 0.75
 ## What GET_PREFERRED_HW_RENDER advertises to a core with no opinion of its own,
 ## matching the default the extension itself carries. A constant rather than a
 ## setting: there is no global switch for this, because the question is only
@@ -219,6 +227,8 @@ func _load_prefs() -> void:
 	hidden_systems      = _prefs_strings(data, "hidden_systems")
 	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
 	compact_tiles       = _prefs_bool(data, "compact_tiles",       compact_tiles)
+	bedroom_time_of_day = clampf(_prefs_float(data, "bedroom_time_of_day",
+		bedroom_time_of_day), 0.0, 1.0)
 	hw_render_overrides = _prefs_dict(data, "hw_render_overrides", hw_render_overrides)
 
 
@@ -244,6 +254,7 @@ func save_prefs() -> void:
 		"hidden_systems":    hidden_systems,
 		"show_hidden_systems": show_hidden_systems,
 		"compact_tiles":     compact_tiles,
+		"bedroom_time_of_day": bedroom_time_of_day,
 		"hw_render_overrides": hw_render_overrides,
 	}, "\t"))
 	file.close()
