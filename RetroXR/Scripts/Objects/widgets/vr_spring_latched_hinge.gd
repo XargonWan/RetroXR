@@ -98,7 +98,12 @@ func _set_interactive(active: bool) -> void:
 
 
 func _update_icon() -> void:
-	if _latched_closed:
+	# A normal spring lid is dead while latched, so it has no hint. A push-push
+	# cradle remains interactive while latched and must keep running the base hover
+	# test; returning here used to freeze the poke's fist glyph on forever.
+	if _latched_closed and not push_push:
+		if _icon != null:
+			_icon.visible = false
 		return
 	super._update_icon()
 

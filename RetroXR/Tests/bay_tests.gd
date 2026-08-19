@@ -479,6 +479,10 @@ func _group_tray() -> void:
 	tray_hinge._on_poke_ended()
 	tray_hinge._skip_next_release = false
 	held_latch_finger.queue_free()
+	tray_hinge._icon.visible = true
+	tray_hinge._update_icon()
+	_check(not tray_hinge._icon.visible,
+		"tray/the latched cradle clears its poke glyph when the hand leaves")
 	await _settle_tray(sys)
 	_check(absf(rad_to_deg(model._tray_pivot.rotation.x)) < 0.1,
 		"tray/the caught latch rebounds up to its locked rest angle")
