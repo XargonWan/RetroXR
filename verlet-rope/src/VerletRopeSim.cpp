@@ -116,12 +116,13 @@ inline void VerletRope::SolveBendTriple(int a, int b, int c, double allowed_dev,
     // a settled rope going to sleep.
     if (dev_sq < 1e-8)
         return;
+    const double dev = std::sqrt(dev_sq);
+    if (allowed_dev > 0.0 && dev <= allowed_dev)
+        return;
+
     Vector3 v;
     if (allowed_dev > 0.0)
     {
-        if (dev_sq <= allowed_dev * allowed_dev)
-            return;
-        const double dev = std::sqrt(dev_sq);
         v = delta * ((dev - allowed_dev) / dev * k);
     }
     else
@@ -147,6 +148,62 @@ inline void VerletRope::SolveBendTriple(int a, int b, int c, double allowed_dev,
         m_points[b] += v * (w_b / w_total);
         m_points[a] -= v * (0.5f * w_a / w_total);
         m_points[c] -= v * (0.5f * w_c / w_total);
+    }
+}
+
+// The first flexible joint after a strain-relief boot uses ordinary
+// bend_stiffness, but its midpoint formulation is ill-conditioned near a
+// hairpin: stretch restores almost all of the correction. Use an angular form
+// only for that handoff joint and only above 150 degrees. The correction remains
+// entirely stiffness-scaled; zero stiffness permits the fold and there is no
+// hard angle limit.
+inline void VerletRope::SolveHairpinBend(int a, int b, int c, double allowed_dev, double k)
+{
+    const Vector3 incoming = m_points[b] - m_points[a];
+    const Vector3 outgoing = m_points[c] - m_points[b];
+    const double incoming_len = incoming.length();
+    const double outgoing_len = outgoing.length();
+    if (incoming_len < 1e-6 || outgoing_len < 1e-6)
+        return;
+    const Vector3 u = incoming / incoming_len;
+    const Vector3 v_out = outgoing / outgoing_len;
+    const double forward_dot = CLAMP(u.dot(v_out), -1.0, 1.0);
+    constexpr double HAIRPIN_DOT = -0.866025403784; // cos(150 degrees)
+    if (forward_dot >= HAIRPIN_DOT)
+        return;
+
+    double angular_k = k;
+    if (allowed_dev > 0.0)
+    {
+        const double dev = ((m_points[a] + m_points[c]) * 0.5f - m_points[b]).length();
+        if (dev <= allowed_dev)
+            return;
+        angular_k *= (dev - allowed_dev) / dev;
+    }
+    const Vector3 reference = std::abs(u.dot(Vector3(0, 1, 0))) < 0.9
+                                  ? Vector3(0, 1, 0)
+                                  : Vector3(1, 0, 0);
+    const Vector3 stable_axis = u.cross(reference).normalized();
+    Vector3 axis = u.cross(v_out);
+    if (axis.length_squared() < 1e-10)
+        axis = stable_axis;
+    else
+    {
+        axis.normalize();
+        if (axis.dot(stable_axis) < 0.0)
+            axis = -axis;
+    }
+    const double turn = std::acos(forward_dot);
+    const Vector3 target =
+        Basis(axis, turn * (1.0 - CLAMP(angular_k, 0.0, 1.0))).xform(u) * outgoing_len;
+    const Vector3 correction = target - outgoing;
+    const float w_b = m_inv_mass[b];
+    const float w_c = m_inv_mass[c];
+    const float w_sum = w_b + w_c;
+    if (w_sum > 0.0f)
+    {
+        m_points[b] -= correction * (w_b / w_sum);
+        m_points[c] += correction * (w_c / w_sum);
     }
 }
 
@@ -385,10 +442,12 @@ bool VerletRope::EndpointIsDirectional(EndpointRole role)
     // A host attachment is the fixed moulded end of a controller, sensor bar,
     // speaker, etc. Its authored exit axis is exactly what gives the nearby
     // segments their visible strain relief. Held plugs also carry orientation
-    // authority from the player's hand. A seated plug deliberately does not:
-    // its nominal axis may point straight into the cabinet or furniture around
-    // the socket, so collision must be allowed to choose the departing route.
-    return role == ENDPOINT_HOST || role == ENDPOINT_HELD_PLUG;
+    // authority from the player's hand. A seated plug is equally authored by
+    // its socket: changing role must not make its moulded strain relief vanish.
+    // Surface contacts are solved after this constraint and still keep the boot
+    // out of the panel or nearby furniture.
+    return role == ENDPOINT_HOST || role == ENDPOINT_HELD_PLUG ||
+           role == ENDPOINT_SOCKETED_PLUG;
 }
 
 bool VerletRope::EndpointIsFree(EndpointRole role)
@@ -557,9 +616,8 @@ void VerletRope::Step(double p_delta)
     const bool end_fixed = EndpointIsFixed(end_role);
     const Vector3 start_exit = start_fixed ? PlugExitDir(m_start_cached, m_start_exit_axis) : Vector3();
     const Vector3 end_exit = end_fixed ? PlugExitDir(m_end_cached, m_end_exit_axis) : Vector3();
-    // Hosts and held plugs have authored orientation and drive the rope's
-    // strain-relief stub. Seated plugs pin position but let collision choose
-    // the departure direction around the panel or nearby furniture.
+    // Hosts, held plugs and seated plugs all have authored orientation and keep
+    // the moulded strain-relief stub when their endpoint role changes.
     const bool start_directional = EndpointIsDirectional(start_role);
     const bool end_directional = EndpointIsDirectional(end_role);
 
@@ -720,12 +778,25 @@ void VerletRope::SolveConstraints(bool p_start_fixed, bool p_end_fixed,
                 for (int i = count - 1 - n_end; i < count - 1; ++i)
                     SolveBend(i, 1, 0.0, StubWeight(ke, count - 1 - i, n_end));
             }
+
+            // At the very next joint the boot hands off to ordinary cable bend
+            // stiffness. Use its angular form only if that joint has collapsed
+            // into the midpoint solver's near-180-degree singularity.
+            if (k_bend > 0.0)
+            {
+                const int start_transition = n_end + 1;
+                const int end_transition = count - 2 - n_end;
+                if (start_transition < count - 1)
+                    SolveHairpinBend(start_transition - 1, start_transition,
+                                     start_transition + 1, allowed_dev, k_bend);
+                if (end_transition > 0 && end_transition != start_transition)
+                    SolveHairpinBend(end_transition - 1, end_transition,
+                                     end_transition + 1, allowed_dev, k_bend);
+            }
         }
 
-        // Directional stub for a held or otherwise fixed non-socketed plug:
-        // pull the first/last few particles onto its exit line. Socketed plugs
-        // and mounted host attachments keep the ordinary bend boot above but do
-        // not impose a line that may pass through surrounding furniture.
+        // Directional strain-relief stub: pull the first/last few particles
+        // onto the authored exit line of a host, held plug or seated plug.
         if (m_end_stiffness > 0.0 && m_end_stiff_segments > 0 &&
             (p_start_fixed || p_end_fixed))
         {

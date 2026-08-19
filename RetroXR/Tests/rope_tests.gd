@@ -1429,11 +1429,10 @@ func _group_edges() -> void:
 		"worst movement %.3f mm/tick" % (corner_worst * 1000.0))
 	await _drop_case()
 
-	# A mounted controller or sensor-bar end owns an authored exit direction: it
-	# is the moulded strain relief, not an interchangeable plug. A socketed plug
-	# must remain a hinge because its nominal axis may point into the cabinet.
-	# Start both cords vertically so this tests authority rather than preserving
-	# an already-correct initial lay.
+	# A mounted controller, sensor bar, or seated plug owns an authored exit
+	# direction: socketing must not make its moulded strain relief disappear.
+	# Start the cords vertically so this tests authority rather than preserving an
+	# already-correct initial lay.
 	base = _new_case()
 	rope = _rope_between(base + Vector3(0, 0.9, 0),
 		base + Vector3(0, 0.1, 0), 8, 0.1)
@@ -1466,16 +1465,67 @@ func _group_edges() -> void:
 	rope.end_stiffness = 1.0
 	rope.end_stiff_segments = 2
 	rope.start_endpoint_role = VerletRope.ENDPOINT_SOCKETED_PLUG
-	rope.end_endpoint_role = VerletRope.ENDPOINT_SOCKETED_PLUG
+	rope.end_endpoint_role = VerletRope.ENDPOINT_FREE_PLUG
 	rope.start_exit_axis = Vector3.RIGHT
 	rope._init_points()
 	for tick in 8:
 		rope.step(1.0 / 90.0)
 	var socket_points := rope.get_points()
 	var socket_exit := (socket_points[1] - socket_points[0]).normalized()
-	_ok("edges/a socketed plug remains a non-directional hinge",
-		socket_exit.dot(Vector3.DOWN) > 0.95,
-		"first segment down alignment %.3f" % socket_exit.dot(Vector3.DOWN))
+	_ok("edges/a socketed plug keeps its strain-relief exit direction",
+		socket_exit.dot(Vector3.RIGHT) > 0.8,
+		"first segment alignment %.3f" % socket_exit.dot(Vector3.RIGHT))
+	await _drop_case()
+
+	# Build an exact-length 180-degree hairpin immediately after the boot. The old
+	# midpoint bend solver was singular there: stretch restored the same fold
+	# forever. It must open according to bend_stiffness, not a hard angle cap.
+	base = _new_case()
+	rope = _rope_from(base, base + Vector3(0.8, 0, 0), 8, 0.1)
+	rope.surface_collision_mask = 0
+	rope.self_collision = false
+	rope.gravity = Vector3.ZERO
+	rope.bend_stiffness = 0.03
+	rope.end_stiffness = 0.3
+	rope.end_stiff_segments = 2
+	rope.start_endpoint_role = VerletRope.ENDPOINT_HOST
+	rope.start_exit_axis = Vector3.RIGHT
+	var hairpin := PackedVector3Array()
+	for i in 9:
+		var x: float = float(i) * 0.1 if i <= 3 else 0.3 - float(i - 3) * 0.1
+		hairpin.append(base + Vector3(x, 0, 0))
+	var soft_restored := rope.restore_points(hairpin)
+	rope.step(1.0 / 90.0)
+	var soft_points := rope.get_points()
+	var soft_before := (soft_points[3] - soft_points[2]).normalized()
+	var soft_after := (soft_points[4] - soft_points[3]).normalized()
+	var soft_turn := rad_to_deg(acos(clampf(soft_before.dot(soft_after), -1.0, 1.0)))
+	await _drop_case()
+
+	base = _new_case()
+	rope = _rope_from(base, base + Vector3(0.8, 0, 0), 8, 0.1)
+	rope.surface_collision_mask = 0
+	rope.self_collision = false
+	rope.gravity = Vector3.ZERO
+	rope.bend_stiffness = 0.3
+	rope.end_stiffness = 0.3
+	rope.end_stiff_segments = 2
+	rope.start_endpoint_role = VerletRope.ENDPOINT_HOST
+	rope.start_exit_axis = Vector3.RIGHT
+	hairpin = PackedVector3Array()
+	for i in 9:
+		var x: float = float(i) * 0.1 if i <= 3 else 0.3 - float(i - 3) * 0.1
+		hairpin.append(base + Vector3(x, 0, 0))
+	var stiff_restored := rope.restore_points(hairpin)
+	rope.step(1.0 / 90.0)
+	var stiff_points := rope.get_points()
+	var stiff_before := (stiff_points[3] - stiff_points[2]).normalized()
+	var stiff_after := (stiff_points[4] - stiff_points[3]).normalized()
+	var stiff_turn := rad_to_deg(acos(clampf(stiff_before.dot(stiff_after), -1.0, 1.0)))
+	_ok("edges/a 180-degree hinge opens according to bend stiffness",
+		soft_restored and stiff_restored and soft_turn < 179.0
+			and stiff_turn < soft_turn - 10.0,
+		"soft %.1f degrees, stiff %.1f degrees" % [soft_turn, stiff_turn])
 	await _drop_case()
 
 	# The shipped controller lead has a loose spherical plug at its far end. Its
