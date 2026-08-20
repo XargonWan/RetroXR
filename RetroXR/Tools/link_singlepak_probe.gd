@@ -2,6 +2,9 @@
 ##
 ##     "$godot" --headless --path RetroXR res://Tools/link_singlepak_probe.tscn -- --roms=Z:/roms
 ##
+## Both machines end up playing Mario Bros. together, and one of them has nothing
+## in it.
+##
 ## The host has Super Mario Advance in it. The client has NOTHING in it -- no
 ## cartridge at all -- and sits on the GAME BOY screen its BIOS draws when there
 ## is nothing to boot, listening on the link port. The host sends it a program to
@@ -153,17 +156,18 @@ func _run() -> void:
 	# moves thousands, and there is no reading of an idle poll that reaches it.
 	_check("a program crossed the wire rather than a handshake", peak > 4000)
 
-	# KNOWN FAILING, and here on purpose.
+	# The check that earned its place.
 	#
-	# The send works and the client runs what it was sent, but neither machine
-	# gets past the LOADING screen the game puts up afterwards: the wire goes
-	# quiet for several seconds, the client gives up with ERROR!, and the host is
-	# still saying LOADING when the run ends. Whatever the two of them trade to
-	# turn a finished transfer into a running game is not crossing.
+	# It was written FAILING, when the send worked and neither machine got past
+	# the LOADING screen afterwards: the wire went quiet, the client gave up with
+	# ERROR!, and the host was still saying LOADING when the run ended. Three
+	# greens said the feature worked and this one said it did not reach play,
+	# which is what sent the trace at the hand-off and found the cause -- the
+	# clock owner being read off the wrong SIOCNT bit, so the host was armed as a
+	# listener and its transfer could never complete.
 	#
-	# Asserted rather than left out, because a probe that stops at "the program
-	# arrived" would report PASS for a feature that does not yet reach play, and
-	# that is the failure this whole exercise keeps running into.
+	# A probe that stopped at "the program arrived" would have reported PASS for
+	# a feature that did not work.
 	var tail: int = _host.LinkSent(0) - last_reported
 	_check("the game is still running at the end of the run", tail > 0)
 
