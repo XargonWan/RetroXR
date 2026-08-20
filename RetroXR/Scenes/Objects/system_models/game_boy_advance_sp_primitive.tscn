@@ -226,10 +226,16 @@ gizmo_extents = 0.03
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("Mat_seat")
 
-; The EXT socket, on the front edge beside the cartridge slot, where the SP keeps
-; its two external ports.
+; The EXT socket, on the TOP of the bottom clamshell rather than on an edge.
 ;
-; +Z points OUT of the shell — see the note on the original GBA's port. This face
-; looks along +Z, so the node is unturned.
+; Set back near the hinge, on the strip the lid does not close over, clear of the
+; shoulder buttons at z -0.0395 and the brightness button at z -0.022.
+;
+; Facing UP, so the node is turned -90 degrees about X: a port's +Z points OUT of
+; the shell, the seated plug's shaft goes in along the port's -Z, and its own
+; shell stays outside. Same rule as the original GBA's port, different face.
+;
+; 1 mm proud of the surface, as everywhere else: a seated link plug's origin is
+; the front face of its shell, and that face stops almost flush against the rim.
 [node name="LinkPort" parent="." instance=ExtResource("9_linkport")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0, 0.0433)
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.026, 0.007, -0.03)
