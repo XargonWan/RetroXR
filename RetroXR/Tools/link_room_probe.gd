@@ -61,9 +61,17 @@ func _run() -> void:
 		return
 
 	# Three handhelds, switched on, exactly as the room builds them.
+	#
+	# Deliberately a MIXED set: a plain GBA, an SP, and another plain one. The GBA
+	# and the SP are two models of one platform and their sockets sit in different
+	# places on different shells, so a pair of identical machines would never
+	# catch a port wired up on one model and not the other -- which is the most
+	# ordinary way for a player's first attempt to be a mixed pair.
+	var models: Array[String] = ["", "game_boy_advance_sp_primitive", ""]
 	for i in range(3):
 		var sys := (load(SYS_SCENE) as PackedScene).instantiate() as RetroSystem
 		sys.systemid = "game_boy_advance"
+		sys.model_id = models[i]
 		sys.core_name = CORE
 		sys.name = "GBA%d" % i
 		add_child(sys)
