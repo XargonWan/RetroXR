@@ -27,6 +27,12 @@
 class_name LinkCable
 extends CompositeCable
 
+## A machine on this wire has been thrown back to its boot logo so that it can
+## see the cable. Nothing in the room listens yet; it is emitted because this is
+## the one thing this class does that a player did not ask for, and a room that
+## wants to say so on screen should not have to scrape the log for it.
+signal machine_restarted(machine: Node)
+
 ## The pair currently joined, as [{libretro, port}, {libretro, port}], so a pull
 ## can be undone against the same machines and the same sockets that were joined,
 ## even if by then one of them has been switched off or carried out of the room.
@@ -169,7 +175,8 @@ func _machines_on_this_wire(cables: Array[Node3D]) -> Array[Dictionary]:
 			if machine != null:
 				var node := port.get_libretro()
 				if node != null:
-					machines.append({"libretro": node, "port": port.link_port})
+					machines.append({"libretro": node, "port": port.link_port,
+						"machine": machine})
 				continue
 			# Not a machine, so it is another lead's junction: follow it.
 			_visit(port.get_cable(), cables, seen)
@@ -214,10 +221,9 @@ func _join(group: Array[Dictionary]) -> void:
 	if head.LinkConnectGroup(others, ports):
 		_linked = group.duplicate()
 	_log_ends("joined", _linked)
-	_restart_running(_linked)
 
 
-## Power-cycle any machine on this wire that was already running.
+## Power-cycle a machine that was already running when the cable arrived.
 ##
 ## A GBA reads whether anything is on the other end ONCE, while it boots, and
 ## never asks again: it samples the ready line about a third of a second in and
@@ -235,17 +241,26 @@ func _join(group: Array[Dictionary]) -> void:
 ## for the power switch. The room does it for them, because the alternative is a
 ## cable that looks perfect and silently does nothing.
 ##
-## Only machines that are actually running: a console still on its boot logo, or
-## switched off, has nothing to re-read.
-func _restart_running(group: Array[Dictionary]) -> void:
-	for end: Dictionary in group:
+## Only machines that need it, which is a narrower set than "running":
+##
+##   * A console still inside its first three quarters of a second has not
+##     sampled the link yet and will see it without being touched.
+##   * A console that has ALREADY been linked since it started knows the port is
+##     live, so pulling the lead and pushing it back in must not throw its game
+##     away. That is the ordinary thing a player does to a cable, and losing a
+##     single-player run to it would be worse than the fault this repairs.
+func _restart(members: Array[Dictionary]) -> void:
+	for end: Dictionary in members:
 		var lib: Libretro = end["libretro"]
-		if not is_instance_valid(lib) or lib.GetFrameCount() <= 0:
+		if not is_instance_valid(lib) or lib.GetFrameCount() < BOOT_SAMPLE_FRAMES:
+			continue
+		if bool(end.get("was_live", false)):
 			continue
 		lib.RequestReset()
-		var machine := lib.get_parent()
+		var machine: Node = end["machine"]
 		print("[LinkCable] restarted %s so it can see the cable" % [
-			machine.name if machine != null else "a machine"])
+			machine.name if machine != null and is_instance_valid(machine) else "a machine"])
+		machine_restarted.emit(machine)
 
 
 func _log_ends(verb: String, ends: Array[Dictionary]) -> void:
@@ -319,9 +334,109 @@ func _link_port_at(e: int) -> LinkPort:
 const JUNCTION_AT := 0.25
 
 
+## How long a GBA takes to decide whether anything is on the other end. It asks
+## once, roughly a third of a second in, and caches the answer for the session.
+const BOOT_SAMPLE_FRAMES := 45
+
+## Set on a Libretro node once it has been on a live bus since its core started,
+## and cleared when the machine is switched on again. A machine carrying this has
+## already seen a working port and does not need throwing back to its boot logo
+## when a lead is re-seated.
+const WAS_LIVE := "link_was_live"
+
+## Which of this wire's machines were switched on last time we looked, as their
+## Libretro nodes: an identity that survives a machine being restarted, which the
+## dictionaries around it do not.
+var _watched: Array = []
+
+## Physics frames to wait before saying the wire again.
+##
+## A core takes a moment to reach the bus after its machine is switched on, and
+## in that moment the room is right that the machine is on while the bus is right
+## that it is not there yet. Without a pause the two disagree every frame and the
+## wire is re-stated on all of them. The delay costs nothing that matters: the
+## machine has not sampled its link yet either, and the restart rule below is
+## what covers it once it has.
+const RESTATE_COOLDOWN := 20
+var _restate_wait := 0
+
+
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
 	_ride_junction()
+	_watch()
+
+
+## Keep the bus and the room agreeing about a wire nobody has touched.
+##
+## Two things happen to a seated lead without any plug moving, and neither is
+## visible from the room:
+##
+## A machine being SWITCHED OFF takes the wires with it. The bus keys them on the
+## core's instance, and switching off destroys that instance, so the lead is
+## still in both sockets and joined to nothing. Powering back on does not undo it
+## -- the new core attaches to a bus that no longer exists -- and the player's
+## only way out is to unplug and replug, a repair for a fault they cannot see.
+##
+## And a machine ARRIVING on a wire that already had one running means the one
+## already there booted alone and cached "nobody home", because a GBA asks once.
+## Nothing moved, so nothing re-resolves, and the game refuses multiplayer with a
+## rejection noise while every count in the room reads correctly.
+func _watch() -> void:
+	if _linked.is_empty():
+		_watched = []
+		return
+
+	var live: Array[Dictionary] = []
+	var live_libs: Array = []
+	for end: Dictionary in _linked:
+		var lib: Libretro = end["libretro"]
+		var machine: Node = end["machine"]
+		if not is_instance_valid(lib) or machine == null or not is_instance_valid(machine):
+			continue
+		if not machine.is_powered_on:
+			# A machine switched off starts its next session knowing nothing.
+			lib.set_meta(WAS_LIVE, false)
+			continue
+		var seen := end.duplicate()
+		# Read BEFORE the flag is raised below. The machine that has just gained
+		# a peer is exactly the one that may need restarting, and raising the flag
+		# first would have it report that it had known all along.
+		seen["was_live"] = bool(lib.get_meta(WAS_LIVE, false))
+		if lib.LinkPeerCount(end["port"]) >= 2:
+			lib.set_meta(WAS_LIVE, true)
+		live.append(seen)
+		live_libs.append(lib)
+
+	# Every running machine on one wire must see every other running machine on
+	# it. Anything else means the bus has forgotten a wire the room still has.
+	if _restate_wait > 0:
+		_restate_wait -= 1
+	else:
+		for end: Dictionary in live:
+			if (end["libretro"] as Libretro).LinkPeerCount(end["port"]) != live.size():
+				print("[LinkCable] %s: the bus lost this wire, saying it again" % name)
+				_restate_wait = RESTATE_COOLDOWN
+				_linked = []
+				# _watched is deliberately LEFT ALONE. Saying the wire again does
+				# not change who is switched on, and forgetting that is how the
+				# restart below gets swallowed: a machine coming up mismatches for
+				# a moment before its core reaches the bus, and clearing the
+				# record here erased the very machine that was already running and
+				# waiting to be told about it.
+				_resolve()
+				return
+
+	# Someone new is on the wire, so everyone who was already here has to look
+	# again. Checked AFTER the meta above, so a machine that was already linked
+	# is left alone.
+	if live.size() > _watched.size():
+		var already: Array[Dictionary] = []
+		for end: Dictionary in live:
+			if _watched.has(end["libretro"]):
+				already.append(end)
+		_restart(already)
+	_watched = live_libs
 
 
 func _ride_junction() -> void:

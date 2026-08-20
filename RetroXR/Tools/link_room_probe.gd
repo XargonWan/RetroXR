@@ -32,6 +32,7 @@ var _opt_backup := ""
 var _restored := false
 var _systems: Array[RetroSystem] = []
 var _cables: Array[Node3D] = []
+var _restarted: Array[String] = []
 
 
 func _ready() -> void:
@@ -122,6 +123,52 @@ func _run() -> void:
 	await _settle(4)
 	_eq("pushing it back in joins them again", _peers(0), 2)
 
+	# ── Switching a machine off and on again ──────────────────────────────────
+	# The bus keys its wires on the core instance, so switching off destroys them
+	# while the lead stays in both sockets. Nothing in the room moves, so nothing
+	# re-resolves, and the machines come back joined to nothing. The only way out
+	# a player has is to unplug and replug a cable that was never the problem.
+	# The lead did not move, so they should come back to what they were on:
+	# switching a machine off is not unplugging it.
+	#
+	# Switched on one at a time and far enough apart to matter, which is what the
+	# room really does: a restored scene powers its machines up in sequence, so
+	# the first one is always alone at the moment it decides.
+	lead.machine_restarted.connect(func(m: Node) -> void: _restarted.append(m.name))
+	_restarted.clear()
+	_systems[0].power_off()
+	_systems[1].power_off()
+	await _idle(20)
+	_systems[0].power_on()
+	await _settle(90)
+	_systems[1].power_on()
+	await _settle(90)
+
+	_eq("a power cycle leaves them cabled", _peers(0), 2)
+	_eq("as seen from the other one", _peers(1), 2)
+
+	# The machine that booted alone has to be thrown back to its boot logo, or it
+	# refuses multiplayer for the rest of the session with every count in the room
+	# reading correctly. The one that arrived second saw a live port on its way up
+	# and must be left alone.
+	_ok("the machine that booted alone was restarted", _restarted.has("GBA0"),
+		"restarted: %s" % str(_restarted))
+	_ok("the one that arrived second was not", not _restarted.has("GBA1"),
+		"restarted: %s" % str(_restarted))
+
+	# ── Re-seating a lead that was already live ───────────────────────────────
+	# The ordinary thing a player does to a cable. Both machines have been linked
+	# since they started, so they know the port is live and must NOT be thrown
+	# away: losing a run to a wiggled plug is worse than the fault above.
+	await _settle(120)
+	_restarted.clear()
+	await _pull(lead.get_node("PlugB0") as RcaPlug)
+	(ports[1] as XRToolsSnapZone).pick_up_object(lead.get_node("PlugB0"))
+	await _settle(60)
+	_eq("re-seating the lead joins them again", _peers(0), 2)
+	_ok("and throws nobody's game away doing it", _restarted.is_empty(),
+		"restarted: %s" % str(_restarted))
+
 	# ── A third player, through the junction ──────────────────────────────────
 	# The junction is a socket on a lead rather than on a machine, so the walk
 	# has to conduct through it and pick up whatever is on the far side. This is
@@ -190,6 +237,12 @@ func _pull(plug: RcaPlug) -> void:
 	await _settle(6)
 
 
+## Wait on process frames alone, for when the machines are deliberately off.
+func _idle(n: int) -> void:
+	for i in range(n):
+		await get_tree().process_frame
+
+
 ## The machines still have to RUN while all this happens.
 ##
 ## Waiting on process frames alone would pass on a pair of cores that had stopped
@@ -197,17 +250,36 @@ func _pull(plug: RcaPlug) -> void:
 ## frames, a stalled machine never satisfies the wait and the run times out
 ## instead of reporting a false pass.
 func _settle(frames: int) -> void:
-	var targets: Array[int] = []
+	# Only machines that are switched ON, and never for ever.
+	#
+	# Two ways this used to wait for something that could not arrive. A machine
+	# deliberately powered down never advances a frame at all. And a machine that
+	# has just been switched on hands back the OLD count for a moment before its
+	# new core takes over at zero, so a target read at that instant is thousands
+	# of frames out of reach. A count that goes BACKWARDS is a core that started
+	# again, which is a re-baseline rather than a fault.
+	var deadline: int = Time.get_ticks_msec() + 20000
+	var base: Array[int] = []
 	for sys in _systems:
-		targets.append(int(sys.get_libretro_node().GetFrameCount()) + frames)
-	while true:
+		base.append(int(sys.get_libretro_node().GetFrameCount()))
+	while Time.get_ticks_msec() < deadline:
 		var done := true
 		for i in _systems.size():
-			if int(_systems[i].get_libretro_node().GetFrameCount()) < targets[i]:
+			if not _systems[i].is_powered_on:
+				continue
+			var now: int = int(_systems[i].get_libretro_node().GetFrameCount())
+			if now < base[i]:
+				base[i] = now
+			if now - base[i] < frames:
 				done = false
 		if done:
 			return
 		await get_tree().process_frame
+	var stuck: PackedStringArray = []
+	for i in _systems.size():
+		if _systems[i].is_powered_on 				and int(_systems[i].get_libretro_node().GetFrameCount()) - base[i] < frames:
+			stuck.append(_systems[i].name)
+	print("[room] NOTE  %s did not advance %d frames; carrying on" % [", ".join(stuck), frames])
 
 
 func _peers(which: int) -> int:

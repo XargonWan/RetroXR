@@ -30,7 +30,27 @@
 extends Node
 
 const CORE := "mgba"
-const OPT_KEY := "mgba_link_cable"
+## Core options this probe pins, and what it pins them to.
+##
+## The link one is the point of the exercise. The BIOS one is here because this
+## probe reaches Mario Bros. by pressing buttons at counted frames, and the BIOS
+## start-up animation is about two seconds of them: whether it plays depends on
+## the player's own settings, so leaving it alone made the run depend on what
+## somebody last changed in a menu. It did not fail loudly either. The title
+## press landed mid-fade, the cursor never came off Single Player, and the result
+## read as a link carrying nothing.
+##
+## The VALUE, not the label the menu prints beside it. Writing "enabled" put a
+## string these options do not offer into the file: the core read it, matched
+## nothing, and left the link driver uninstalled, so the probe was exercising a
+## configuration no player can produce and passed while the room failed.
+const PINNED := {
+	"mgba_link_cable": "ON",
+	"mgba_skip_bios": "ON",
+}
+
+## A GBA cartridge's save, as Super Mario Advance sizes it.
+const SRAM_BYTES := 512
 
 const BTN_A := 1 << 8
 const BTN_START := 1 << 3
@@ -79,6 +99,28 @@ func _run() -> void:
 	_b = Libretro.new()
 	add_child(_a)
 	add_child(_b)
+
+	# Boot both machines from an ERASED cartridge, and never write one back.
+	#
+	# Without this the probe is not repeatable, and it failed silently rather
+	# than loudly: the game writes a save, the save changes how it boots, and a
+	# run that navigates the menu by pressing buttons at counted frames walks
+	# into a different screen than the one it was written against. After enough
+	# runs the title press landed mid-fade and the cursor never moved off Single
+	# Player, which reads exactly like a link that carries nothing.
+	#
+	# 0xFF because that is what unwritten cartridge SRAM reads as; zeroes are a
+	# save file full of zeroes, which is not the same thing. The path is pointed
+	# at a scratch file as well, so a run cannot flush over the player's own save.
+	var blank := PackedByteArray()
+	blank.resize(SRAM_BYTES)
+	blank.fill(0xFF)
+	var scratch := OS.get_cache_dir().path_join("retroxr_mario_link_probe")
+	DirAccess.make_dir_recursive_absolute(scratch)
+	for pair: Array in [[_a, "a"], [_b, "b"]]:
+		var machine: Libretro = pair[0]
+		machine.SetSramPath(scratch.path_join("probe_%s.srm" % pair[1]))
+		machine.SetSramData(blank)
 
 	# Deliberately NOT calling SetInputEnabled. That flag lets a wrapper poll the
 	# global Godot Input singleton, and it OVERWRITES the joypad every frame, so
@@ -278,7 +320,7 @@ func _run() -> void:
 	# transfer rate of zero, which says nothing about why.
 	if _a.LinkPeerCount(0) == 0 or _b.LinkPeerCount(0) == 0:
 		failures.append("a machine reports no peers, so its core never joined the bus:"
-			+ " check %s is set to ON in %s" % [OPT_KEY, _opt_path])
+			+ " check mgba_link_cable is ON in %s" % _opt_path)
 	if per_frame < 5.0:
 		failures.append("only %.1f transfers per frame; a session in play runs about 9, one a frame is the idle poll" % per_frame)
 	if fps < 50.0:
@@ -427,14 +469,19 @@ func _enable_link_option(root: String) -> bool:
 
 	var lines: PackedStringArray = []
 	for line in existing.split("\n", false):
-		if not line.begins_with(OPT_KEY):
+		var pinned := false
+		for key: String in PINNED:
+			if line.begins_with(key):
+				pinned = true
+		if not pinned:
 			lines.append(line)
 	# "ON", the option's own VALUE, not "enabled", which is only the label the
 	# menu prints beside it. Writing the label put a string the option does not
 	# offer into the file: the core read it, matched nothing, and left the link
 	# driver uninstalled -- so a probe that wrote it was exercising a
 	# configuration no player can produce, and passed while the room failed.
-	lines.append('%s = "ON"' % OPT_KEY)
+	for key: String in PINNED:
+		lines.append('%s = "%s"' % [key, PINNED[key]])
 
 	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
 	if writer == null:
