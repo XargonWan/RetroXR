@@ -515,9 +515,11 @@ func _test_belongs_here() -> void:
 	var wii := _system("wii")
 	cart.systemid = "gamecube"
 	_ok("belongs/a Wii takes a GameCube disc", wii._accepts_media(cart))
-	# ...but the port table is empty today, so the same pair is not compatible
-	# there. If that ever changes, this case is the one that says so.
-	_ok("belongs/a GameCube pad is not a Wii plug yet", not wii._accepts_plug(cart))
+	# ...and the front of the machine agrees with the tray. This case used to
+	# read the other way, pinning an empty port table, and the cost of that
+	# showed up the day a GameCube-to-Game Boy Advance lead was carried over to
+	# the one console in the room that could use it and was silently refused.
+	_ok("belongs/and a GameCube plug in its front sockets", wii._accepts_plug(cart))
 	wii.free()
 
 	var cube := _system("gamecube")
