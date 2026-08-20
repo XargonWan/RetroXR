@@ -504,6 +504,9 @@ func on_unplugged() -> void:
 	print("[RetroController] unplugged from port %d" % _port_index)
 	_connected_system = null
 	_port_index = -1
+	# Back to the global map. Keeping the last console's profile would mean a pad
+	# pulled out of a NES still played a NES layout in your hand.
+	_load_bindings()
 	# Stop any lingering rumble when the cable is yanked. Usually already
 	# cleared by RetroSystem._on_port_released, but idempotent and safer.
 	_rumble_weak = 0.0

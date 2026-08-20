@@ -113,10 +113,28 @@ func _pads_taken_by_siblings() -> Array:
 	return taken
 
 
+## Reload this port's pad map. The systemid decides which profile applies, so a
+## receiver moved from one console to another changes layout with it.
 func reload_bindings() -> void:
-	var pad := GamepadBindings.get_global()
+	var sysid := ""
+	if is_instance_valid(_connected_system):
+		sysid = _connected_system.systemid
+	var pad := GamepadBindings.get_for_system(sysid)
 	_pad_button_map = pad["buttons"]
 	_pad_stick_map  = pad["sticks"]
+
+
+## The base class does not reload bindings on a plug, because a keyboard or a
+## mouse receiver has no map to reload. This one does, and the map it wants
+## depends on the console it just went into.
+func on_plugged_in(system: RetroSystem, port_index: int) -> void:
+	super.on_plugged_in(system, port_index)
+	reload_bindings()
+
+
+func on_unplugged() -> void:
+	super.on_unplugged()
+	reload_bindings()
 
 
 # ── Input ─────────────────────────────────────────────────────────────────────

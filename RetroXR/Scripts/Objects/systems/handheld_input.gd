@@ -126,7 +126,7 @@ func _load_bindings() -> void:
 	var bindings := ControllerBindings.get_for_system(systemid)
 	_button_map = bindings["buttons"]
 	_stick_map = bindings["sticks"]
-	var pad := GamepadBindings.get_global()
+	var pad := GamepadBindings.get_for_system(systemid)
 	_pad_button_map = pad["buttons"]
 	_pad_stick_map = pad["sticks"]
 

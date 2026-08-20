@@ -183,10 +183,11 @@ tests. This works without a VR headset (desktop fallback) and without a display.
 
 **`RetroXR/Tests/` is the exception, and the bar for living there is exact:** a scene
 that checks itself, runs unattended with no ROM, core, headset or device, and **exits
-non-zero on failure**, so it can gate a commit. Five so far — the A/V suite in §2c, the
+non-zero on failure**, so it can gate a commit. Among them — the A/V suite in §2c, the
 RomM and scene-management ones below, `system_tests` over the machine controller's
-port, pad, save and disc rules, and `rope_tests` over what a cable does when it meets
-furniture. Everything else is a probe and stays in `RetroXR/Tools/`, including
+port, pad, save and disc rules, `rope_tests` over what a cable does when it meets
+furniture, and `binding_tests` over which control map a platform resolves to.
+Everything else is a probe and stays in `RetroXR/Tools/`, including
 the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe`,
 `vb_probe`, `nds_probe`, `handheld_probe`, `gl_video_probe`), a headset or a Quest
 (`netplay_spike`), or they are reproductions of open bugs and report failures BY DESIGN
@@ -291,6 +292,28 @@ host, so anything that walks the host's meshes sees the poster's own sheet — t
 made the first conform sample every interior ray at depth zero. And a poster is placed by
 RAY as often as by hand, where `dropped` never fires; a release has to be detected from
 `freeze`, so a test that only simulates a hand grab proves nothing about the real gesture.
+
+`RetroXR/Tests/binding_tests.tscn` covers the resolution rules behind per-platform
+control overrides. Both stores — `ControllerBindings` (VR controllers) and
+`GamepadBindings` (a real pad) — merge default → global → per-system, and a platform's
+stored profile IS its override switch; there is no separate flag. So three rules are
+load-bearing and each has cases here: a platform with no profile is indistinguishable
+from global, a profile shadows global completely INCLUDING global edits made after it
+(which is why a profile is always written whole), and clearing one puts that platform
+back on global without touching anyone else's. 39 cases, ~2 s.
+```bash
+"$godot" --headless --path RetroXR res://Tests/binding_tests.tscn
+```
+It writes the player's real `user://controller_bindings.json` and
+`user://gamepad_bindings.json` — the paths are consts on the two classes and cannot be
+pointed elsewhere — so both are snapshotted up front and restored at the end.
+
+That a binding reaches a RUNNING core is deliberately not here: it needs a real system,
+a real controller and the `binding_consumers` fan-out, and lives in
+`Tools/binding_live_probe.tscn`. Drive that probe through the view's OWN
+`_global_editor` rather than a fresh `ControlsBindingEditor` — a detached editor writes
+to disk and reaches nobody, so every "applies immediately" case fails for a reason the
+player never sees.
 
 **For anything visual, a photo (or a VIDEO if it's animated — mp4 preferred over
 animated GIF) is the preferred proof of validation, delivered inline in the chat.**

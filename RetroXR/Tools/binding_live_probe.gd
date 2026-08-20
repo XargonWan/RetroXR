@@ -12,11 +12,16 @@
 ## by a held pad) and GamepadBindings (a physical pad, read by a PadReceiver).
 ## They are separate files with separate editors, and the GAME CONTROLLER half
 ## went on skipping the write long after the XR half was fixed.
+##
+## The per-platform half is covered too: an override written on one platform's
+## page must reach a controller plugged into that platform and no other, and
+## pulling that controller out must put it back on the global map.
 extends Node
 
 const MAIN := preload("res://Scenes/MainScene.tscn")
 const PAD := "res://Scenes/Objects/controllers/retro_controller.tscn"
 const RX := "res://Scenes/Objects/controllers/pad_receiver.tscn"
+const SYSTEM := "res://Scenes/Objects/system.tscn"
 
 var _fail := false
 # The player's own bindings, taken away for the run and put back before quitting.
@@ -89,18 +94,25 @@ func _run() -> void:
 	for i in 12:
 		await get_tree().process_frame
 
-	# Build both editors directly. Headless reports no OpenXR, so
-	# _build_controls_section would pick the desktop branch; these are the same
-	# functions the headset path runs.
-	var box := VBoxContainer.new()
-	add_child(box)
-	menu.call("_build_xr_controls", box)
-	menu.call("_build_gamepad_controls", box)
+	# Drive the view's OWN global editor, not a detached one. Its
+	# controller_bindings_changed is already relayed to SpawnMenuController,
+	# which is what fans reload_bindings() out over the consumer group — a
+	# stand-alone editor writes to disk and reaches nobody, so every "applies
+	# immediately" case below would fail for a reason the player never sees.
+	# Headless reports no OpenXR, so the view built its desktop branch and the
+	# XR rows are missing; _build_xr_controls is the same function the headset
+	# path runs. The gamepad rows are built unconditionally and are already there.
+	var editor: Node = menu.get("_global_editor")
+	_check(editor != null, "the view exposes its global editor")
+	if editor == null:
+		_quit(1)
+		return
+	editor.call("_build_xr_controls", editor)
 	await get_tree().process_frame
-	var opts: Dictionary = menu.get("_controls_opts")
+	var opts: Dictionary = editor.get("_controls_opts")
 
 	# ── XR: a held pad reads ControllerBindings ───────────────────────────────
-	var edit: Dictionary = menu.get("_edit_button_map")
+	var edit: Dictionary = editor.get("_edit_button_map")
 	_check(edit.size() > 0, "the editor loads the current bindings (%d entries)" % edit.size())
 	_check(int((pad.get("_button_map") as Dictionary).get("right_ax_button")) == 8,
 		"the pad starts on the default: right A -> RetroPad A")
@@ -134,7 +146,7 @@ func _run() -> void:
 		"and it reached disk")
 
 	# Reset must be live too — it used to need the same missing button.
-	menu.call("_on_controls_reset")
+	editor.call("_on_controls_reset")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_check(int((pad.get("_button_map") as Dictionary).get("right_ax_button")) == 8,
@@ -158,13 +170,83 @@ func _run() -> void:
 
 	# The pad half's Reset repainted the UI and wrote nothing at all, so the
 	# defaults it showed were a lie until the player also pressed Save.
-	menu.call("_on_pad_controls_reset")
+	editor.call("_on_pad_controls_reset")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_check(_stick(rx.get("_pad_stick_map")) == "left+dpad",
 		"the pad Reset to Default is live (got %s)" % _stick(rx.get("_pad_stick_map")))
 	_check(_stick(GamepadBindings.get_global()["sticks"]) == "left+dpad",
 		"and it reached disk")
+
+	# ── PER-PLATFORM: an override reaches its own platform and no other ───────
+	# A platform page's editor is the same class with a systemid on it, so this
+	# drives the identical dropdown and watches where the write lands.
+	_check(menu.has_method("refresh_platforms"),
+		"the CONTROLS view exposes the per-platform grid")
+	_check(not ControllerBindings.has_system_override("nes"),
+		"nes has no override before the page is touched")
+
+	# Stand a real NES up and plug the pad into it FIRST, so the edit below has
+	# to reach a machine already in the room rather than being read on the way in.
+	var nes_sys: Node = (load(SYSTEM) as PackedScene).instantiate()
+	nes_sys.set("systemid", "nes")
+	get_tree().current_scene.add_child(nes_sys)
+	for i in 12:
+		await get_tree().process_frame
+	pad.call("on_plugged_in", nes_sys, 0)
+	await get_tree().process_frame
+	_check(int((pad.get("_button_map") as Dictionary).get("right_ax_button"))
+		== ControllerBindings.JOYPAD_A,
+		"a pad in the nes starts on the global map")
+
+	var nes_editor: Node = ControlsBindingEditor.new()
+	nes_editor.set("_systemid", "nes")
+	add_child(nes_editor)
+	# Relayed the way SpawnMenuControlsView._wire_editor relays a platform page's
+	# editor, because the fan-out is the whole point of the case.
+	nes_editor.connect("controller_bindings_changed",
+		func() -> void: menu.emit_signal("controller_bindings_changed"))
+	nes_editor.call("_build_xr_controls", nes_editor)
+	await get_tree().process_frame
+	var nes_opts: Dictionary = nes_editor.get("_controls_opts")
+
+	var ndrop: Node = nes_opts.get("btn:right_ax_button")
+	_check(ndrop != null, "the platform page's Right A dropdown exists")
+	if ndrop != null:
+		ndrop.emit_signal("item_selected", ControllerBindings.JOYPAD_X)
+		await get_tree().process_frame
+		await get_tree().process_frame
+
+	_check(ControllerBindings.has_system_override("nes"),
+		"editing a platform row is what turns its override on")
+	_check(int((ControllerBindings.get_for_system("nes")["buttons"] as Dictionary)
+		.get("right_ax_button")) == ControllerBindings.JOYPAD_X,
+		"the override reached disk for nes")
+	_check(int((ControllerBindings.get_global()["buttons"] as Dictionary)
+		.get("right_ax_button")) == ControllerBindings.JOYPAD_A,
+		"and left the global map alone")
+	_check(int((ControllerBindings.get_for_system("super_nes")["buttons"] as Dictionary)
+		.get("right_ax_button")) == ControllerBindings.JOYPAD_A,
+		"and left every other platform alone")
+	_check(int((pad.get("_button_map") as Dictionary).get("right_ax_button"))
+		== ControllerBindings.JOYPAD_X,
+		"the pad already in the nes picks it up with no re-plug (got %s)"
+			% str((pad.get("_button_map") as Dictionary).get("right_ax_button")))
+
+	# The receiver is plugged into nothing, so the same fan-out must leave it on
+	# the global map — an override is not a global edit wearing a systemid.
+	_check(_stick(rx.get("_pad_stick_map")) == "left+dpad",
+		"a receiver in no console is untouched by a platform override (got %s)"
+			% _stick(rx.get("_pad_stick_map")))
+
+	# Pulling the pad out has to put it back on global, or a pad carried away
+	# from a console keeps playing that console's layout in your hand.
+	pad.call("on_unplugged")
+	await get_tree().process_frame
+	_check(int((pad.get("_button_map") as Dictionary).get("right_ax_button"))
+		== ControllerBindings.JOYPAD_A,
+		"and unplugging puts it back on the global map (got %s)"
+			% str((pad.get("_button_map") as Dictionary).get("right_ax_button")))
 
 	print("[probe] RESULT %s" % ("PASS" if not _fail else "FAIL"))
 	_quit(1 if _fail else 0)

@@ -422,7 +422,7 @@ func _build_ui() -> void:
 			default_core_changed.emit(sid, cn))
 	content.add_child(_cores_view)
 
-	_controls_view = SpawnMenuControlsView.create()
+	_controls_view = SpawnMenuControlsView.create(core_defaults, core_db)
 	_controls_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_controls_view.rebind_started.connect(
 		func(action: String) -> void: rebind_started.emit(action))
@@ -430,6 +430,13 @@ func _build_ui() -> void:
 		func(target: String) -> void: pad_rebind_started.emit(target))
 	_controls_view.controller_bindings_changed.connect(
 		func() -> void: controller_bindings_changed.emit())
+	# The tab is built once and never rebuilt on a switch, so the per-platform
+	# grid has to be told when a system gains a default core. Connected to the
+	# menu-level signal, which both the CORES and SPAWN paths already emit.
+	default_core_changed.connect(
+		func(_sid: String, _cn: String) -> void:
+			if is_instance_valid(_controls_view):
+				_controls_view.refresh_platforms())
 	content.add_child(_controls_view)
 
 	_options_view = SpawnMenuOptionsView.create(self)
@@ -531,6 +538,9 @@ func _show_cores_view() -> void:
 
 func _show_controls_view() -> void:
 	_show_view(_controls_view, _controls_view, _nav_controls_btn)
+	# A platform can gain or lose an override from anywhere the tab is not
+	# looking, and the badges are painted from the store.
+	_controls_view.refresh_platforms()
 
 
 func _show_options_view() -> void:
