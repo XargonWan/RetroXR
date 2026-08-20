@@ -38,6 +38,9 @@ func _ready() -> void:
 	await _test_gc_gba_cable()
 	await _test_lid_clears_the_socket()
 	await _test_bus_head_is_the_same_on_every_peer()
+	await _test_the_lead_will_seat()
+	await _test_a_seated_plug_sits_outside()
+	await _test_a_machine_takes_a_plug_the_same_way()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -631,4 +634,185 @@ func _test_bus_head_is_the_same_on_every_peer() -> void:
 
 	first.queue_free()
 	second.queue_free()
+	await get_tree().process_frame
+
+
+# -- Will the lead actually go in? --------------------------------------------
+# Every other case here asks what a seated lead MEANS. This one asks whether the
+# room lets a hand seat it at all, which is a different question and was never
+# being asked: the probes seat their leads with pick_up_object, and that skips
+# the gate entirely. So a lead could pass every test in this file and still be
+# unpluggable in the room.
+#
+# The gate is XRToolsSnapZone.can_preview: the required group, the excluded
+# group, and the owner's own filter. That is exactly what a hand runs into.
+
+func _test_the_lead_will_seat() -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	_ok("the machine scene loads", sys_scene != null)
+	if sys_scene == null:
+		return
+
+	var console: Node3D = sys_scene.instantiate()
+	console.systemid = "gamecube"
+	add_child(console)
+	var handheld: Node3D = sys_scene.instantiate()
+	handheld.systemid = "game_boy_advance"
+	add_child(handheld)
+	var lead: Node3D = load(GC_GBA_SCENE).instantiate()
+	add_child(lead)
+	var pair: Node3D = load(CABLE_SCENE).instantiate()
+	add_child(pair)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var slot := console.find_child("ControllerPort1", true, false) as XRToolsSnapZone
+	var ext := handheld.find_child("LinkPort", true, false) as XRToolsSnapZone
+	_ok("the console has a controller socket", slot != null)
+	_ok("the handheld has an EXT socket", ext != null)
+	if slot == null or ext == null:
+		console.queue_free()
+		handheld.queue_free()
+		lead.queue_free()
+		pair.queue_free()
+		return
+
+	var gc_end := lead.get_node_or_null("PlugA0") as Node3D
+	var gba_end := lead.get_node_or_null("PlugB0") as Node3D
+	var link_end := pair.get_node_or_null("PlugA0") as Node3D
+
+	# The two that must work. Either one refusing makes the lead a prop.
+	_ok("the console end goes into a controller socket", slot.can_preview(gc_end),
+		"require '%s', plug in %s" % [slot.snap_require, str(gc_end.get_groups())])
+	_ok("the handheld end goes into an EXT socket", ext.can_preview(gba_end),
+		"require '%s', plug in %s" % [ext.snap_require, str(gba_end.get_groups())])
+
+	# And the four that must not, which is the whole reason the ends are
+	# different shapes.
+	_ok("the console end does not go into an EXT socket", not ext.can_preview(gc_end))
+	_ok("the handheld end does not go into a controller socket",
+		not slot.can_preview(gba_end))
+	_ok("a handheld link lead does not go into a controller socket",
+		not slot.can_preview(link_end))
+	_ok("but it does go into an EXT socket", ext.can_preview(link_end))
+
+	console.queue_free()
+	handheld.queue_free()
+	lead.queue_free()
+	pair.queue_free()
+	await get_tree().process_frame
+
+
+# -- Which way a socket faces -------------------------------------------------
+# A port's +Z points OUT of whatever it is a socket on: that is where the seated
+# shell ends up, and the nose travels the other way. Turn one round and the shell
+# goes in and the nose comes out, which on the link lead's junction block meant a
+# 20 mm plug buried in a 17 mm box with its nose in the air.
+#
+# Not something a reader can check by eye: the transform is authored as rows, the
+# grab point carries its own half-turn, and the two cancel in a way that reads
+# plausibly whichever way round it is. So this measures it, in the frame of the
+# thing being plugged into, the same way the fault was found.
+
+const SHELL := "PlugTip"
+
+
+func _test_a_seated_plug_sits_outside() -> void:
+	var lead: LinkCable = load(CABLE_SCENE).instantiate()
+	var other: LinkCable = load(CABLE_SCENE).instantiate()
+	add_child(lead)
+	add_child(other)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var junction := lead.junction_port()
+	_ok("the lead carries a junction socket", junction != null)
+	var plug := other.get_node_or_null("PlugA0") as RigidBody3D
+	if junction == null or plug == null:
+		lead.queue_free()
+		other.queue_free()
+		return
+
+	junction.pick_up_object(plug)
+	for i in range(20):
+		await get_tree().process_frame
+	# The block rides the cord and the cord swings, so it is stopped before
+	# anything is measured. Everything below is in the block's OWN frame.
+	lead.set_physics_process(false)
+	other.set_physics_process(false)
+	await get_tree().process_frame
+
+	var block := lead.get_node_or_null("Junction") as Node3D
+	var into := block.global_transform.affine_inverse()
+	var shell := plug.get_node_or_null(SHELL) as MeshInstance3D
+	_ok("the block and the plug's shell are both there", block != null and shell != null)
+	if block == null or shell == null:
+		lead.queue_free()
+		other.queue_free()
+		return
+
+	# 17 mm cube, so its faces are 8.5 mm out. A shell whose centre is inside
+	# that is a shell that has been swallowed.
+	var half := 0.0085
+	var box: BoxMesh = (lead.get_node("Junction/Box") as MeshInstance3D).mesh
+	half = box.size.x * 0.5
+	var at: Vector3 = into * shell.global_position
+	_ok("the shell sits outside the junction block", absf(at.x) > half,
+		"shell centre %.1f mm out, the block's face is at %.1f mm" % [at.x * 1000.0, half * 1000.0])
+
+	# And on the side the socket is on, rather than out through the far wall.
+	var port_at: Vector3 = into * junction.global_position
+	_ok("and on the socket's own side", signf(at.x) == signf(port_at.x),
+		"shell at %.1f mm, socket at %.1f mm" % [at.x * 1000.0, port_at.x * 1000.0])
+
+	# The nose is the other half of the same fact and fails the opposite way, so
+	# a socket turned round cannot pass both.
+	var nose := plug.get_node_or_null("PlugNose") as MeshInstance3D
+	if nose != null:
+		var nose_at: Vector3 = into * nose.global_position
+		_ok("and the nose is inside it", absf(nose_at.x) < half,
+			"nose centre %.1f mm out" % (nose_at.x * 1000.0))
+
+	lead.queue_free()
+	other.queue_free()
+	await get_tree().process_frame
+
+
+func _test_a_machine_takes_a_plug_the_same_way() -> void:
+	# The same measurement against a real machine, because the junction is only
+	# unusual in being small enough to notice.
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	var handheld: Node3D = sys_scene.instantiate()
+	handheld.systemid = "game_boy_advance"
+	add_child(handheld)
+	var lead: LinkCable = load(CABLE_SCENE).instantiate()
+	add_child(lead)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var port := handheld.find_child("LinkPort", true, false) as XRToolsSnapZone
+	var plug := lead.get_node_or_null("PlugA0") as RigidBody3D
+	_ok("the handheld has a socket to measure", port != null and plug != null)
+	if port == null or plug == null:
+		handheld.queue_free()
+		lead.queue_free()
+		return
+
+	port.pick_up_object(plug)
+	for i in range(20):
+		await get_tree().process_frame
+	lead.set_physics_process(false)
+	await get_tree().process_frame
+
+	# Measured along the socket's own axis rather than the machine's, so this
+	# holds for a socket on any face of any shell. A port's +Z is the way OUT:
+	# it is where the shell ends up, and the nose travels the other way.
+	var shell := plug.get_node_or_null(SHELL) as MeshInstance3D
+	var out: Vector3 = port.global_basis.z.normalized()
+	var reach: float = (shell.global_position - port.global_position).dot(out)
+	_ok("the shell sits outside the machine", reach > 0.0,
+		"shell centre %.1f mm along the socket's axis, and out is positive" % (reach * 1000.0))
+
+	handheld.queue_free()
+	lead.queue_free()
 	await get_tree().process_frame

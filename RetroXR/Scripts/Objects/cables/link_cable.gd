@@ -289,13 +289,18 @@ func _join(group: Array[Dictionary]) -> void:
 func _restart(members: Array[Dictionary]) -> void:
 	for end: Dictionary in members:
 		var lib: Libretro = end["libretro"]
-		if not is_instance_valid(lib) or bool(end.get("was_live", false)):
+		if not is_instance_valid(lib):
 			continue
-		lib.set_meta(WAS_LIVE, true)
+		var seat: int = int(end.get("seat", NO_SEAT))
+		var had: int = int(end.get("live_seat", NO_SEAT))
+		if had == seat:
+			continue
+		lib.set_meta(LIVE_SEAT, seat)
 		lib.RequestReset()
 		var machine: Node = end["machine"]
-		print("[LinkCable] restarted %s so it can see the cable" % [
-			machine.name if machine != null and is_instance_valid(machine) else "a machine"])
+		var why := "so it can see the cable" if had == NO_SEAT 			else "so it can be player %d rather than player %d" % [seat + 1, had + 1]
+		print("[LinkCable] restarted %s %s" % [
+			machine.name if machine != null and is_instance_valid(machine) else "a machine", why])
 		machine_restarted.emit(machine)
 
 
@@ -375,11 +380,25 @@ func _link_port_at(e: int) -> LinkPort:
 const JUNCTION_AT := 0.25
 
 
-## Set on a Libretro node once it has been on a live bus since its core started,
-## and cleared when the machine is switched on again. A machine carrying this has
-## already seen a working port and does not need throwing back to its boot logo
-## when a lead is re-seated.
-const WAS_LIVE := "link_was_live"
+## The seat a machine last had on a live bus, set on its Libretro node and reset
+## to NONE when the machine is switched on again.
+##
+## A bare "has it been live" flag was not enough, and the case that proved it is
+## the ordinary one: a player seats the lead the wrong way round, notices, and
+## swaps the ends. Seat zero is player one, so swapping the ends swaps who is
+## player one, and a game that has already decided it is player two does not
+## become player one because a plug moved. It is the same fault the flag exists
+## to repair, arriving by a different route, so it wants the same repair.
+##
+## Single-pak is where this bites hardest, because there the seat is not a
+## preference: the machine WITH the cartridge has to be player one, or it will
+## not offer to send the game at all. Measured on the two-machine probe with the
+## seats reversed: zero bytes of program cross the wire and the host sends 24
+## messages in half a minute, against tens of thousands the right way round.
+const LIVE_SEAT := "link_live_seat"
+
+## No seat: never been on a live bus, or has been switched off since.
+const NO_SEAT := -1
 
 ## Physics frames to wait before saying the wire again.
 ##
@@ -419,22 +438,27 @@ func _watch() -> void:
 		return
 
 	var live: Array[Dictionary] = []
-	for end: Dictionary in _linked:
+	for seat in range(_linked.size()):
+		var end: Dictionary = _linked[seat]
 		var lib: Libretro = end["libretro"]
 		var machine: Node = end["machine"]
 		if not is_instance_valid(lib) or machine == null or not is_instance_valid(machine):
 			continue
 		if not machine.is_powered_on:
 			# A machine switched off starts its next session knowing nothing.
-			lib.set_meta(WAS_LIVE, false)
+			lib.set_meta(LIVE_SEAT, NO_SEAT)
 			continue
 		var seen := end.duplicate()
-		# Read BEFORE the flag is raised below. The machine that has just gained
-		# a peer is exactly the one that may need restarting, and raising the flag
-		# first would have it report that it had known all along.
-		seen["was_live"] = bool(lib.get_meta(WAS_LIVE, false))
+		# The seat is this machine's position in the bus order, which is the
+		# player number the hardware gives it: index zero is player one.
+		seen["seat"] = seat
+		# Read BEFORE the seat is recorded below. The machine that has just
+		# gained a peer, or just been handed a different seat, is exactly the one
+		# that may need restarting, and recording first would have it report that
+		# it had been sitting there all along.
+		seen["live_seat"] = int(lib.get_meta(LIVE_SEAT, NO_SEAT))
 		if lib.LinkPeerCount(end["port"]) >= 2:
-			lib.set_meta(WAS_LIVE, true)
+			lib.set_meta(LIVE_SEAT, seat)
 		live.append(seen)
 
 	# Every running machine on one wire must see every other running machine on
@@ -450,9 +474,11 @@ func _watch() -> void:
 				_resolve()
 				return
 
-	# Anyone on a live wire who has not been on one since their core started has
-	# to look again. The flag was read above BEFORE it was raised, so a machine
-	# that has just gained its peer still reports not having had one.
+	# Anyone on a live wire whose seat is not the seat they booted into has to
+	# look again, which covers both a machine that has never been on a live wire
+	# and one whose player number just changed under it. The seat was read above
+	# BEFORE it was recorded, so a machine that has just gained its peer still
+	# reports not having had one.
 	#
 	# Deliberately not "has the number of running machines gone up". That looked
 	# equivalent and was not: it needed a record of who was here BEFORE, and there

@@ -194,11 +194,19 @@ top_level = true
 mesh = SubResource("BoxMesh_junction")
 surface_material_override/0 = SubResource("Mat_junction")
 
-; Turned to face out of the block's side. The junction is oriented with -Z along
-; the cord, so a socket left facing forward would point back down the wire it is
-; moulded into; +X puts its mouth on the flank where a plug can reach it.
+; On the block's flank, MOUTH OUTWARD. The junction is oriented with -Z along the
+; cord, so a socket left facing forward would point back down the wire it is
+; moulded into; +X puts it on the side where a plug can reach it.
+;
+; The facing is the part that was wrong, and it is worth being explicit about
+; because it is not visible in the number. A port's +Z points OUT of the thing it
+; is a socket on, which is where the seated shell ends up; the nose travels the
+; other way, into the shell. Every machine's port is authored that way. This one
+; was turned round, which put the 20 mm shell inside a 17 mm block and left the
+; 7 mm nose waving in the air. The block is small enough that this reads as the
+; plug having been swallowed rather than as anything being the wrong way about.
 [node name="LinkPort" parent="Junction" instance=ExtResource("5_linkport")]
-transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0.0085, 0, 0)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.0085, 0, 0)
 
 ; 40 x 30 mm = 1.20 m, the length a GBA link cable ships at, against 0.96 m
 ; between the plugs so it hangs rather than pulling straight.

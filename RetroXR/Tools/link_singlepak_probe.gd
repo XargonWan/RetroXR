@@ -98,16 +98,37 @@ func _run() -> void:
 	_client = _clients[0]
 	print("[pak] host + %d client%s" % [clients, "" if clients == 1 else "s"])
 
+	# Which way round the lead goes in.
+	#
+	# --reversed puts the CARTRIDGE-LESS machine at bus index 0, which is what a
+	# player produces by seating the purple end in the wrong handheld. It is a
+	# reachable state and it is the one this probe exists to tell apart from a
+	# broken link, because from the room it looks identical: both machines
+	# cabled, both reading the right peer count, and the game refusing.
+	#
+	# --swap starts reversed and then re-cables the right way round mid-run,
+	# WITHOUT switching anything off. That is what a player does the moment they
+	# notice, and the question is whether the machines pick the new seats up.
+	var reversed := false
+	var swap := false
+	var swap_reset := false
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--reversed":
+			reversed = true
+		elif arg == "--swap":
+			reversed = true
+			swap = true
+		elif arg == "--swap-reset":
+			reversed = true
+			swap = true
+			swap_reset = true
+	print("[pak] seating: %s" % ("cartridge-less machine first" if reversed
+		else "cartridge first"))
+
 	# Cabled before anything is switched on, which is the order that works and
 	# the order a room produces. Every machine reads whether anything is out
 	# there while it boots and never asks again.
-	var others: Array = []
-	var ports := PackedInt32Array()
-	ports.append(0)
-	for c: Libretro in _clients:
-		others.append(c)
-		ports.append(0)
-	var joined: bool = _host.LinkConnectGroup(others, ports)
+	var joined: bool = _cable(reversed)
 	print("[pak] cabled=%s" % str(joined))
 
 	# The client takes the null game info: no cartridge, so the BIOS is all it
@@ -131,6 +152,29 @@ func _run() -> void:
 	_check("every client is running with no cartridge", booted)
 	_check("every machine is on the cable", cabled)
 	_shot("a_boot")
+
+	# Re-cable the right way round, with everything still running. No reset, no
+	# power cycle: the plugs move and that is all, which is exactly what the
+	# player did.
+	if swap:
+		for machine: Libretro in _all:
+			machine.LinkDisconnect(0)
+		await _wait(30)
+		print("[pak] re-cabled the right way round: %s" % str(_cable(false)))
+		await _wait(60)
+		# What the room now does for the player. A machine that has already
+		# decided it is player two does not become player one because a plug
+		# moved, so the seat change is a reset, exactly as the cable arriving
+		# late is one.
+		if swap_reset:
+			for machine: Libretro in _all:
+				machine.RequestReset()
+			print("[pak] and reset both machines into their new seats")
+			await _wait(180)
+		var after: PackedStringArray = []
+		for machine: Libretro in _all:
+			after.append(str(machine.LinkPeerCount(0)))
+		print("[pak] after the swap peers=%s" % "/".join(after))
 
 	# Through the host's intro to Multiplayer, the same route the two-cartridge
 	# probe takes. What differs is on the other end of the wire.
@@ -209,6 +253,26 @@ func _run() -> void:
 	_restore()
 	print("[pak] ---- %s ----" % ("PASS" if _fail == 0 else "%d failed" % _fail))
 	get_tree().quit(1 if _fail > 0 else 0)
+
+
+## Join every machine onto one bus. Bus index 0 is the seat the hardware calls
+## player one, and LinkConnectGroup takes it from the machine the call is made
+## on, so which machine that is decides the whole ordering.
+func _cable(cartridge_last: bool) -> bool:
+	var order: Array[Libretro] = _clients.duplicate() if cartridge_last else []
+	if cartridge_last:
+		order.append(_host)
+	else:
+		order.append(_host)
+		order.append_array(_clients)
+	var head: Libretro = order[0]
+	var others: Array = []
+	var ports := PackedInt32Array()
+	ports.append(0)
+	for i in range(1, order.size()):
+		others.append(order[i])
+		ports.append(0)
+	return head.LinkConnectGroup(others, ports)
 
 
 func _check(name: String, cond: bool) -> void:

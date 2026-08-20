@@ -338,15 +338,23 @@ const _MEDIA_COMPAT: Dictionary = {
 }
 
 ## The same idea for connectors: controllers of these systemids ALSO fit this
-## system's ports. Deliberately empty — each console takes its own pad and
-## nothing else.
+## system's ports.
 ##
-## Real hardware is looser than this, and each of these is one line if wanted:
+## The Wii row is the same fact as the Wii row above, seen from the front of the
+## machine: a console that plays GameCube discs has the four GameCube controller
+## sockets to play them with, under the flap. Without it a GameCube pad, or a
+## GameCube-to-Game Boy Advance lead, is refused by the only machine in the room
+## that can use one, and the refusal is silent because a snap zone that declines
+## an object simply does nothing.
+##
+## Real hardware is looser still, and each of these is one line if wanted:
 ##   "playstation2": ["playstation"]   PS2 takes PS1 pads (identical connector)
 ##   "mega_drive":   ["atari_2600"]    the DE-9 is shared, and vice versa
 ## Physical fit only — a plug that cannot enter the socket does not belong here
 ## however well its buttons would map.
-const _CONTROLLER_COMPAT: Dictionary = {}
+const _CONTROLLER_COMPAT: Dictionary = {
+	"wii": ["gamecube"],
+}
 
 # RETRO_DEVICE_* types relevant to port routing (libretro.h).
 const RETRO_DEVICE_NONE := 0
