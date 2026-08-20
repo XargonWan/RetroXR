@@ -1,0 +1,205 @@
+## Link-cable self-tests — the decisions a link lead makes, headless.
+##
+##     "$godot" --headless --path RetroXR res://Tests/link_tests.tscn
+##
+## Exits 0 when everything passes, 1 otherwise, so it can gate a commit.
+##
+## What is here is what can be decided without a core: which sockets will take a
+## link plug, which machine a socket belongs to, and the connect/disconnect
+## bookkeeping that decides whether two cores are told they share a wire. Whether
+## a linked pair actually trades bytes needs two real cores and lives in the
+## coordinator's own C++ tests (libretro-godot/tests/run_tests.py), which is also
+## where the deadlock and determinism cases are.
+##
+## Two of these are the regression record for traps this feature can fall into.
+## A link lead that reported itself to AvGraph would put a television in the
+## business of routing serial traffic, and a cable that stayed joined after being
+## carried out of the room would leave two cores waiting on each other over a
+## lead that no longer exists.
+extends Node
+
+var _pass := 0
+var _fail := 0
+
+
+func _ready() -> void:
+	get_tree().create_timer(60.0).timeout.connect(func() -> void:
+		print("[link] TIMEOUT")
+		get_tree().quit(1))
+	_test_plug_gating()
+	_test_port_pins_its_channel()
+	_test_machine_lookup()
+	_test_libretro_lookup()
+	_test_cable_is_not_av()
+	await _test_disconnect_is_idempotent()
+	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
+	get_tree().quit(1 if _fail > 0 else 0)
+
+
+func _ok(name: String, cond: bool, detail := "") -> void:
+	if cond:
+		_pass += 1
+		print("[link] PASS  %s" % name)
+	else:
+		_fail += 1
+		print("[link] FAIL  %s%s" % [name, "  — " + detail if not detail.is_empty() else ""])
+
+
+func _eq(name: String, got: Variant, want: Variant) -> void:
+	_ok(name, got == want, "got %s, want %s" % [str(got), str(want)])
+
+
+## A socket in the tree, so _ready has run. Caller frees it.
+func _port() -> LinkPort:
+	var p := LinkPort.new()
+	add_child(p)
+	return p
+
+
+# ── The gate ────────────────────────────────────────────────────────────────
+# plug_group() is the whole of what stops a lead going somewhere it could not go
+# on real hardware, and it only works if both halves agree.
+
+func _test_plug_gating() -> void:
+	var port := _port()
+	var plug := LinkPlug.new()
+	add_child(plug)
+
+	_eq("port and plug name the same group", port.plug_group(), plug.plug_group())
+	_eq("the group is link_plug", port.plug_group(), "link_plug")
+
+	# A link lead must not fit an A/V socket, and a phono cord must not fit this
+	# one. Asserted against the real classes rather than string literals, so
+	# renaming a group cannot quietly open the gate.
+	var rca := RcaPort.new()
+	add_child(rca)
+	_ok("a link socket does not take a phono plug", port.plug_group() != rca.plug_group())
+
+	var trs := TrsPort.new()
+	add_child(trs)
+	_ok("a link socket does not take a stereo plug", port.plug_group() != trs.plug_group())
+
+	# The gate is enforced through the snap zone, so the requirement has to have
+	# actually been applied and not just be available to read.
+	_eq("the socket requires that group to snap", port.snap_require, port.plug_group())
+
+	port.queue_free()
+	plug.queue_free()
+	rca.queue_free()
+	trs.queue_free()
+
+
+func _test_port_pins_its_channel() -> void:
+	var port := _port()
+	# Inherited from RcaPort but meaningless on a cable that carries neither
+	# picture nor sound, so it is pinned rather than left for a scene to set
+	# wrong.
+	_eq("channel is pinned", port.channel, RcaPort.Channel.VIDEO)
+	_ok("the jack visual is off", not port.show_jack)
+	port.queue_free()
+
+
+# ── Finding the machine ─────────────────────────────────────────────────────
+
+func _test_machine_lookup() -> void:
+	var loose := _port()
+	_eq("a socket owned by nobody has no machine", loose.get_machine(), null)
+	loose.queue_free()
+
+	var machine := _StubMachine.new()
+	add_child(machine)
+	var shell := Node3D.new()
+	machine.add_child(shell)          # a socket may sit any depth inside a machine
+	var port := LinkPort.new()
+	shell.add_child(port)
+
+	_eq("a socket finds the machine that owns it", port.get_machine(), machine)
+	machine.queue_free()
+
+
+func _test_libretro_lookup() -> void:
+	var machine := _StubMachine.new()
+	add_child(machine)
+	var port := LinkPort.new()
+	machine.add_child(port)
+
+	# A cable seated into a console that has not been switched on is ordinary,
+	# not an error: the link should simply come up when it is powered.
+	_eq("an unpowered machine yields no core", port.get_libretro(), null)
+	machine.queue_free()
+
+
+# ── Not an A/V lead ─────────────────────────────────────────────────────────
+
+func _test_cable_is_not_av() -> void:
+	var cable := LinkCable.new()
+	add_child(cable)
+	# AvGraph duck-types on links(), so an empty list is how a lead says "not
+	# mine". A link cable reporting itself here would drag televisions into
+	# routing serial traffic.
+	_eq("a link cable reports no A/V links", cable.links().size(), 0)
+	cable.queue_free()
+
+
+# ── Coming apart ────────────────────────────────────────────────────────────
+
+func _test_disconnect_is_idempotent() -> void:
+	var cable := LinkCable.new()
+	add_child(cable)
+
+	# Never joined, so there is nothing to undo. This runs on every unseated
+	# resolve and on the way out of the tree, so it has to be safe to call at any
+	# time and any number of times.
+	cable._disconnect()
+	cable._disconnect()
+	_eq("a cable that was never joined records no link", cable._linked.size(), 0)
+
+	# Neither machine is running, and the cable joins them anyway. That is the
+	# behaviour a cable has: seating one into a console that is switched off is
+	# an ordinary thing to do, and the link comes alive when both cores attach
+	# their serial hardware. Refusing here would mean a player had to power both
+	# handhelds before plugging them together, which no cable has ever required.
+	var m1 := _StubMachine.new()
+	var m2 := _StubMachine.new()
+	add_child(m1)
+	add_child(m2)
+	m1.libretro = Libretro.new()
+	m2.libretro = Libretro.new()
+	m1.add_child(m1.libretro)
+	m2.add_child(m2.libretro)
+	var p1 := LinkPort.new()
+	var p2 := LinkPort.new()
+	m1.add_child(p1)
+	m2.add_child(p2)
+
+	cable._connect_ports(p1, p2)
+	_eq("two idle machines are still cabled together", cable._linked.size(), 2)
+	cable._disconnect()
+
+	# And the guard against a machine cabled to itself, which the room can
+	# present as two sockets on one handheld.
+	cable._connect_ports(p1, p1)
+	_eq("a machine cabled to itself is not recorded", cable._linked.size(), 0)
+
+	# Disconnect has to survive the ends being gone. A machine can be carried out
+	# of the room, or the room torn down, between joining and pulling.
+	cable._linked = [
+		{"libretro": m1.libretro, "port": 0},
+		{"libretro": m2.libretro, "port": 0},
+	]
+	m2.libretro.free()
+	cable._disconnect()
+	_eq("disconnect clears even when an end is gone", cable._linked.size(), 0)
+
+	m1.queue_free()
+	m2.queue_free()
+	cable.queue_free()
+	await get_tree().process_frame
+
+
+## A machine that answers the question LinkPort walks for, without being one.
+class _StubMachine extends Node3D:
+	var libretro: Libretro = null
+
+	func get_libretro_node() -> Libretro:
+		return libretro
