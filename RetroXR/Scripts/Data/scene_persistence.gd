@@ -77,6 +77,7 @@ const MONO_CABLE_SCENE       := preload("res://Scenes/Objects/cables/mono_compos
 const WII_AV_CABLE_SCENE     := preload("res://Scenes/Objects/system_models/wii/wii_av_cable.tscn")
 const VGA_CABLE_SCENE        := preload("res://Scenes/Objects/cables/vga_cable.tscn")
 const TRS_CABLE_SCENE        := preload("res://Scenes/Objects/cables/trs_cable.tscn")
+const LINK_CABLE_SCENE       := preload("res://Scenes/Objects/cables/link_cable.tscn")
 const SPEAKER_PAIR_SCENE     := preload("res://Scenes/Objects/appliances/speaker_pair.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/appliances/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/peripherals/retro_mouse.tscn")
@@ -1477,6 +1478,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 					lead = VGA_CABLE_SCENE
 				elif kind == "trs_cable":
 					lead = TRS_CABLE_SCENE
+				elif kind == "link_cable":
+					lead = LINK_CABLE_SCENE
 				elif kind == "rf_switch":
 					lead = RF_SWITCH_SCENE
 				elif kind == "mono_composite_cable" or int(data.get("cords", 3)) == 2:

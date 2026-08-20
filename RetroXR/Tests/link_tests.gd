@@ -34,6 +34,7 @@ func _ready() -> void:
 	await _test_disconnect_is_idempotent()
 	await _test_cable_scene()
 	await _test_port_scene()
+	_test_cable_is_spawnable()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -315,6 +316,34 @@ func _test_port_scene() -> void:
 
 	port.queue_free()
 	await get_tree().process_frame
+
+
+
+# ── Reachable from the room ─────────────────────────────────────────────────
+
+func _test_cable_is_spawnable() -> void:
+	# The lead existed for a while as a scene nobody could get hold of: built,
+	# tested, rendered, and offered by no menu. A cable that cannot be spawned is
+	# not a feature, so this asserts the catalogue actually lists it.
+	var items: Array = SpawnCatalog.items_for("game_boy_advance")
+	var found := false
+	for item: Dictionary in items:
+		if str(item.get("spawn", "")) == "link_cable":
+			found = true
+			_ok("it is offered under the Game Boy Advance", true)
+			_ok("and it is labelled", not str(item.get("label", "")).is_empty())
+	if not found:
+		_ok("it is offered under the Game Boy Advance", false,
+			"%d items, none of them the link cable" % items.size())
+
+	# Offered only where there is a socket to put it in. A console with no EXT
+	# port listing a link lead would be an invitation to nothing.
+	var console: Array = SpawnCatalog.items_for("playstation")
+	var stray := false
+	for item: Dictionary in console:
+		if str(item.get("spawn", "")) == "link_cable":
+			stray = true
+	_ok("and not offered where nothing takes it", not stray)
 
 
 ## A machine that answers the question LinkPort walks for, without being one.

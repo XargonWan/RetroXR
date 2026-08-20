@@ -46,6 +46,7 @@ const MONO_CABLE_SCENE      := preload("res://Scenes/Objects/cables/mono_composi
 const WII_AV_CABLE_SCENE    := preload("res://Scenes/Objects/system_models/wii/wii_av_cable.tscn")
 const VGA_CABLE_SCENE       := preload("res://Scenes/Objects/cables/vga_cable.tscn")
 const TRS_CABLE_SCENE       := preload("res://Scenes/Objects/cables/trs_cable.tscn")
+const LINK_CABLE_SCENE      := preload("res://Scenes/Objects/cables/link_cable.tscn")
 const SPEAKER_PAIR_SCENE    := preload("res://Scenes/Objects/appliances/speaker_pair.tscn")
 const DVD_DISC_SCENE        := preload("res://Scenes/Objects/media/dvd_disc.tscn")
 const CD_PLAYER_SCENE       := preload("res://Scenes/Objects/appliances/cd_player.tscn")
@@ -1053,6 +1054,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = VGA_CABLE_SCENE.instantiate() as Node3D
 		"trs_cable":
 			obj = TRS_CABLE_SCENE.instantiate() as Node3D
+		"link_cable":
+			obj = LINK_CABLE_SCENE.instantiate() as Node3D
 		"speaker_pair":
 			obj = SPEAKER_PAIR_SCENE.instantiate() as Node3D
 		"tv_remote":

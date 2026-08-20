@@ -68,44 +68,37 @@ func _run() -> void:
 	# turning it on throws away everything SetJoypadState puts there. Off is what
 	# a probe wants: the state it sets is the state the core sees.
 
-	for i in range(300):
+	# Cable up straight away, the way a player who plugged the lead in before
+	# switching on would have it.
+	for i in range(20):
 		await get_tree().process_frame
-
 	var joined: bool = _a.LinkConnect(_b, 0, 0)
-	await get_tree().process_frame
-	print("[mario] cabled=%s  peers A=%d B=%d" % [str(joined), _a.LinkPeerCount(0), _b.LinkPeerCount(0)])
+	print("[mario] cabled=%s" % str(joined))
 
-	# Press through the intro and into the menu on BOTH machines, photographing
-	# each step so a wrong turn can be seen rather than guessed at.
-	# One shot per press, so the route can be READ off the frames instead of
-	# guessed at. Both machines are driven together: the multiplayer handshake
-	# only happens if they reach the same screen at about the same time.
-	for i in range(180):
+	# Through the logo, then interrupt the attract demo.
+	#
+	# The menu does NOT wait for anyone. Boot runs logo, fade, and straight into
+	# a Super Mario 2 demo; Start interrupts that and brings up the title with
+	# Single Player / Multiplayer on it. Every earlier attempt pressed into the
+	# demo and read the result as a menu refusing input.
+	for i in range(260):
 		await get_tree().process_frame
-	_shot("a_boot")
-	await _hold(BTN_START, 20, 150)
-	await _hold(BTN_DOWN, 20, 90)
-	_shot("b_multiplayer_selected")
+	_shot("a_demo")
 
-	# Photograph the moments RIGHT AFTER the confirm as well as later. If the
-	# game dips into a "looking for players" screen and bounces straight back,
-	# a single late frame would show the menu and look like nothing happened.
-	for machine: Libretro in [_a, _b]:
-		machine.SetJoypadState(0, BTN_A, 0, 0, 0, 0)
-	for i in range(20):
-		await get_tree().process_frame
-	for machine: Libretro in [_a, _b]:
-		machine.SetJoypadState(0, 0, 0, 0, 0, 0)
-	_shot("c_confirm_t0")
-	for i in range(20):
-		await get_tree().process_frame
-	_shot("d_confirm_t20")
-	for i in range(40):
-		await get_tree().process_frame
-	_shot("e_confirm_t60")
-	for i in range(120):
-		await get_tree().process_frame
-	_shot("f_confirm_t180")
+	await _hold(BTN_START, 8, 40)
+	_shot("b_title")
+
+	await _hold(BTN_DOWN, 8, 25)
+	_shot("c_multiplayer")
+
+	await _hold(BTN_A, 8, 45)
+	_shot("d_confirmed")
+
+	await _hold(BTN_A, 8, 60)
+	_shot("e_next")
+
+	await _hold(BTN_A, 8, 90)
+	_shot("f_next2")
 
 	# Then let them sit and watch the counter.
 	var last := 0

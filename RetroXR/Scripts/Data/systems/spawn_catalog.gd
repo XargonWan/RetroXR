@@ -150,6 +150,16 @@ const _VGA_CABLE: Dictionary = {"kind": "peripheral", "label": "VGA Cable",
 ## for computers only, for the same reason the VGA lead is: the sockets a 3.5 mm plug
 ## fits are the tower's line out and the right speaker's line in, and a console has
 ## neither.
+## The link lead, offered on the platforms that have an EXT socket to put it in.
+## Two handhelds and one cable is the whole of GBA multiplayer, and the lead
+## carries a junction so a third and fourth can chain on.
+const _LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable", "spawn": "link_cable"}
+
+## Keyed on the PLATFORM, not the model: the GBA and the SP are two models of one
+## platform and both have the socket.
+const _LINK_PLATFORMS: Array = ["game_boy_advance"]
+
+
 const _TRS_KIT: Array = [
 	{"kind": "peripheral", "label": "Speakers", "spawn": "speaker_pair"},
 	{"kind": "peripheral", "label": "3.5 mm Cable", "spawn": "trs_cable"},
@@ -194,6 +204,8 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
 	items.append_array(imported)
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
+	if _LINK_PLATFORMS.has(systemid):
+		items.append(_LINK_CABLE.duplicate())
 	var info := SystemInfo.for_system(systemid)
 	if info != null and info.computer:
 		items.append_array(_COMPUTER_INPUT.duplicate(true))
