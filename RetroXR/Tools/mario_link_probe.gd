@@ -173,6 +173,26 @@ func _run() -> void:
 			_a.RequestReset()
 			_b.RequestReset()
 			await _wait_frames(30)
+		"cable-last-raw":
+			# Both running, then the lead goes in, and NOBODY is reset. The room
+			# throws a machine back to its boot logo when it gains a cable it
+			# booted without, and this is the case that says whether it still has
+			# to: if a game can pick a link up mid-session, that restart is a run
+			# thrown away for nothing.
+			_a.StartContent(root, CORE, rom)
+			_b.StartContent(root, CORE, rom)
+			await _wait_frames(200)
+			joined = _a.LinkConnect(_b, 0, 0)
+			await _wait_frames(30)
+		"cable-first-raw":
+			# The lead in first and the machines switched on one at a time, which
+			# is what a restored room does, with no restart either.
+			joined = _a.LinkConnect(_b, 0, 0)
+			_a.StartContent(root, CORE, rom)
+			while _a.GetFrameCount() < 90:
+				await get_tree().process_frame
+			_b.StartContent(root, CORE, rom)
+			await _wait_frames(30)
 		"cable-last-reset":
 			# Both running, then the lead goes in, then both are reset. On real
 			# hardware you power-cycle a pair you cabled up after the fact, and
