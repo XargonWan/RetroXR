@@ -85,20 +85,27 @@ func _run() -> void:
 		await get_tree().process_frame
 	_shot("a_demo")
 
-	await _hold(BTN_START, 8, 40)
+	# Start interrupts the attract demo and raises the title; the game does not
+	# wait on its menu. Then Down to Multiplayer and A to take it, which is the
+	# route confirmed by hand.
+	await _hold(BTN_START, 8, 60)
 	_shot("b_title")
-
-	await _hold(BTN_DOWN, 8, 25)
+	await _hold(BTN_DOWN, 8, 30)
 	_shot("c_multiplayer")
+	await _hold(BTN_A, 8, 120)
+	_shot("d_after_a")
+	await _hold(BTN_A, 8, 150)
+	_shot("e_after_a2")
 
-	await _hold(BTN_A, 8, 45)
-	_shot("d_confirmed")
-
-	await _hold(BTN_A, 8, 60)
-	_shot("e_next")
-
-	await _hold(BTN_A, 8, 90)
-	_shot("f_next2")
+	# It reaches "CHECKING" and starts trading transfers. Watch what it settles
+	# into, and keep nudging A in case the next screen wants a confirm too.
+	for step in range(6):
+		for i in range(120):
+			await get_tree().process_frame
+		_shot("f_check%d" % step)
+		print("[mario] check%d  sent A=%d B=%d" % [step, _a.LinkSent(0), _b.LinkSent(0)])
+	await _hold(BTN_A, 8, 180)
+	_shot("g_after_a3")
 
 	# Then let them sit and watch the counter.
 	var last := 0
