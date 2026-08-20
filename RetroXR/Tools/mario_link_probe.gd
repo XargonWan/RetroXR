@@ -61,11 +61,15 @@ const BTN_LEFT := 1 << 6
 var _opt_path := ""
 var _opt_backup := ""
 var _restored := false
+## Every machine on the cable, in bus order. The first owns the clock.
+var _m: Array[Libretro] = []
+## The two the menu navigation talks about: the machine that calls, and one that
+## answers. With more than two players every machine after the first answers, and
+## the guest-facing steps run over all of them.
 var _a: Libretro = null
 var _b: Libretro = null
 var _wall_prev := 0
-var _fa_prev := 0
-var _fb_prev := 0
+var _frames_prev: Array[int] = []
 var _filming := false
 var _film_frame := 0
 
@@ -95,10 +99,18 @@ func _run() -> void:
 		get_tree().quit(0)
 		return
 
-	_a = Libretro.new()
-	_b = Libretro.new()
-	add_child(_a)
-	add_child(_b)
+	# Two by default, up to the four a GBA link cable carries.
+	var players := 2
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--players="):
+			players = clampi(int(arg.substr(10)), 2, 4)
+	for i in range(players):
+		var machine := Libretro.new()
+		add_child(machine)
+		_m.append(machine)
+	_a = _m[0]
+	_b = _m[1]
+	print("[mario] players=%d" % players)
 
 	# Boot both machines from an ERASED cartridge, and never write one back.
 	#
@@ -117,10 +129,9 @@ func _run() -> void:
 	blank.fill(0xFF)
 	var scratch := OS.get_cache_dir().path_join("retroxr_mario_link_probe")
 	DirAccess.make_dir_recursive_absolute(scratch)
-	for pair: Array in [[_a, "a"], [_b, "b"]]:
-		var machine: Libretro = pair[0]
-		machine.SetSramPath(scratch.path_join("probe_%s.srm" % pair[1]))
-		machine.SetSramData(blank)
+	for i in _m.size():
+		_m[i].SetSramPath(scratch.path_join("probe_%d.srm" % i))
+		_m[i].SetSramData(blank)
 
 	# Deliberately NOT calling SetInputEnabled. That flag lets a wrapper poll the
 	# global Godot Input singleton, and it OVERWRITES the joypad every frame, so
@@ -148,17 +159,18 @@ func _run() -> void:
 		"cable-first":
 			# A saved room restores its leads before anything is powered up, then
 			# the player switches two handhelds on one after the other.
-			joined = _a.LinkConnect(_b, 0, 0)
-			_a.StartContent(root, CORE, rom)
-			while _a.GetFrameCount() < 90:
+			joined = _cable()
+			_m[0].StartContent(root, CORE, rom)
+			while _m[0].GetFrameCount() < 90:
 				await get_tree().process_frame
-			_b.StartContent(root, CORE, rom)
-			# The first machine booted alone and cached "nobody there". The second
-			# one arriving is exactly the membership change LinkCable restarts on,
-			# and LinkConnect is the raw call below the room, so the probe has to
-			# do it by hand.
+			for k in range(1, _m.size()):
+				_m[k].StartContent(root, CORE, rom)
+			# The machines that booted before the last one arrived cached "nobody
+			# there". That membership change is what LinkCable restarts on, and
+			# LinkConnect is the raw call below the room, so the probe does it.
 			await _wait_frames(30)
-			_a.RequestReset()
+			for k in range(_m.size() - 1):
+				_m[k].RequestReset()
 			await _wait_frames(30)
 		"cable-last":
 			# Both running, then the lead goes in. What a player does by hand.
@@ -166,12 +178,12 @@ func _run() -> void:
 			# Without the restart this order carries exactly zero transfers. A GBA
 			# reads whether anything is on the other end once, while it boots, and
 			# never asks again.
-			_a.StartContent(root, CORE, rom)
-			_b.StartContent(root, CORE, rom)
+			for machine: Libretro in _m:
+				machine.StartContent(root, CORE, rom)
 			await _wait_frames(200)
-			joined = _a.LinkConnect(_b, 0, 0)
-			_a.RequestReset()
-			_b.RequestReset()
+			joined = _cable()
+			for machine: Libretro in _m:
+				machine.RequestReset()
 			await _wait_frames(30)
 		"cable-last-raw":
 			# Both running, then the lead goes in, and NOBODY is reset. The room
@@ -179,37 +191,38 @@ func _run() -> void:
 			# booted without, and this is the case that says whether it still has
 			# to: if a game can pick a link up mid-session, that restart is a run
 			# thrown away for nothing.
-			_a.StartContent(root, CORE, rom)
-			_b.StartContent(root, CORE, rom)
+			for machine: Libretro in _m:
+				machine.StartContent(root, CORE, rom)
 			await _wait_frames(200)
-			joined = _a.LinkConnect(_b, 0, 0)
+			joined = _cable()
 			await _wait_frames(30)
 		"cable-first-raw":
 			# The lead in first and the machines switched on one at a time, which
 			# is what a restored room does, with no restart either.
-			joined = _a.LinkConnect(_b, 0, 0)
-			_a.StartContent(root, CORE, rom)
-			while _a.GetFrameCount() < 90:
+			joined = _cable()
+			_m[0].StartContent(root, CORE, rom)
+			while _m[0].GetFrameCount() < 90:
 				await get_tree().process_frame
-			_b.StartContent(root, CORE, rom)
+			for k in range(1, _m.size()):
+				_m[k].StartContent(root, CORE, rom)
 			await _wait_frames(30)
 		"cable-last-reset":
 			# Both running, then the lead goes in, then both are reset. On real
 			# hardware you power-cycle a pair you cabled up after the fact, and
 			# this asks whether a reset is genuinely all it takes.
-			_a.StartContent(root, CORE, rom)
-			_b.StartContent(root, CORE, rom)
+			for machine: Libretro in _m:
+				machine.StartContent(root, CORE, rom)
 			await _wait_frames(200)
-			joined = _a.LinkConnect(_b, 0, 0)
+			joined = _cable()
 			await _wait_frames(30)
-			_a.RequestReset()
-			_b.RequestReset()
+			for machine: Libretro in _m:
+				machine.RequestReset()
 			await _wait_frames(30)
 		_:
 			# Both switched on in the same frame with the lead already seated.
-			_a.StartContent(root, CORE, rom)
-			_b.StartContent(root, CORE, rom)
-			joined = _a.LinkConnect(_b, 0, 0)
+			for machine: Libretro in _m:
+				machine.StartContent(root, CORE, rom)
+			joined = _cable()
 	print("[mario] order=%s cabled=%s" % [order, str(joined)])
 	_wall_prev = Time.get_ticks_msec()
 
@@ -238,8 +251,9 @@ func _run() -> void:
 	# The master takes Multiplayer first and starts calling.
 	await _hold(BTN_A, 6, 60, [_a])
 	_shot("d_master_calling")
-	# Then the guest answers, a beat later, as the second player would.
-	await _hold(BTN_A, 6, 60, [_b])
+	# Then the guests answer, one at a time and a beat apart, as people would.
+	for guest: Libretro in _guests():
+		await _hold(BTN_A, 6, 60, [guest])
 	_shot("d_guest_joining")
 
 	# CHECKING. The two machines trade one word a frame while the game looks for
@@ -259,7 +273,8 @@ func _run() -> void:
 		# A confirm can land while the screen is mid-transition and be dropped.
 		# Offering it again costs nothing on a machine that has already moved on.
 		if step == 3 or step == 8 or step == 15:
-			await _hold(BTN_A, 6, 20, [_b])
+			for guest: Libretro in _guests():
+				await _hold(BTN_A, 6, 20, [guest])
 		# Traffic stopping is the signal the handshake has SETTLED, one way or
 		# the other; sitting through the rest of the loop after that only wastes
 		# the run.
@@ -300,14 +315,11 @@ func _run() -> void:
 	# machine B's screen is if the position crossed the cable. Standing still
 	# proves nothing, because two cores running the same ROM from the same reset
 	# will draw the same level whether or not a wire connects them.
-	var script: Array[Array] = [
-		[_a, BTN_RIGHT, "a_right"],
-		[_a, BTN_LEFT | BTN_A, "a_left_jump"],
-		[_b, BTN_LEFT, "b_left"],
-		[_b, BTN_RIGHT | BTN_A, "b_right_jump"],
-		[_a, BTN_RIGHT | BTN_A, "a_right_jump"],
-		[null, 0, "idle"],
-	]
+	var script: Array[Array] = []
+	for i in _m.size():
+		script.append([_m[i], BTN_RIGHT, "p%d_right" % (i + 1)])
+		script.append([_m[i], BTN_LEFT | BTN_A, "p%d_left_jump" % (i + 1)])
+	script.append([null, 0, "idle"])
 	for step in range(script.size()):
 		var machine: Libretro = script[step][0]
 		var mask: int = script[step][1]
@@ -322,10 +334,16 @@ func _run() -> void:
 		_shot("j_watch%d" % step)
 		_report("watch%d %s" % [step, script[step][2]])
 
-	# The master sends two messages per transfer, a start and its own word, so
-	# halving its count gives transfers. Measured over the watch loop alone,
-	# which is the only stretch where a game is actually being played.
-	var transfers: float = (_a.LinkSent(0) - play_sent) / 2.0
+	# The master sends two messages per transfer, a start and its own word, and
+	# the bus counts a broadcast once per RECIPIENT rather than once per call --
+	# it counts where a message is queued, not where it is attempted. So the
+	# divisor grows with the party, and reading it as two flattered a four-player
+	# session into claiming 27 transfers a frame when it was doing nine.
+	#
+	# Measured over the watch loop alone, the only stretch where a game is
+	# actually being played.
+	var per_transfer: float = 2.0 * float(_m.size() - 1)
+	var transfers: float = (_a.LinkSent(0) - play_sent) / per_transfer
 	var frames: float = maxf(1.0, _a.GetFrameCount() - play_frames)
 	var per_frame: float = transfers / frames
 	var fps: float = frames / maxf(0.001, (Time.get_ticks_msec() - play_wall) / 1000.0)
@@ -338,32 +356,59 @@ func _run() -> void:
 	# of zero on a cabled machine means its CORE never joined the bus, which is
 	# the link core option not having taken -- and that reads downstream as a
 	# transfer rate of zero, which says nothing about why.
-	if _a.LinkPeerCount(0) == 0 or _b.LinkPeerCount(0) == 0:
+	var counts: PackedInt32Array = []
+	for machine: Libretro in _m:
+		counts.append(machine.LinkPeerCount(0))
+	if counts.has(0):
 		failures.append("a machine reports no peers, so its core never joined the bus:"
 			+ " check mgba_link_cable is ON in %s" % _opt_path)
 	if per_frame < 5.0:
 		failures.append("only %.1f transfers per frame; a session in play runs about 9, one a frame is the idle poll" % per_frame)
 	if fps < 50.0:
 		failures.append("machines ran at %.1f fps; the link is being paid for in emulation speed" % fps)
-	if _a.LinkPeerCount(0) != 2 or _b.LinkPeerCount(0) != 2:
-		failures.append("cable reports %d and %d peers" % [_a.LinkPeerCount(0), _b.LinkPeerCount(0)])
+	for c in counts:
+		if c != _m.size():
+			failures.append("cable reports %s peers for %d machines" % [str(counts), _m.size()])
+			break
 
 	for f in failures:
 		print("[mario] FAIL  %s" % f)
 	if failures.is_empty():
-		print("[mario] RESULT=PLAYING  two cores are running a link game over the cable")
+		print("[mario] RESULT=PLAYING  %d cores are running a link game over one cable" % _m.size())
 	else:
 		print("[mario] RESULT=FAILED")
 
-	_a.StopContent()
-	_b.StopContent()
+	for machine: Libretro in _m:
+		machine.StopContent()
 	for i in range(120):
 		await get_tree().process_frame
 	_restore()
 	get_tree().quit(0 if failures.is_empty() else 1)
 
 
-## Wait for a number of EMULATED frames on the slower of the two machines.
+## Put every machine on one wire.
+##
+## LinkConnectGroup rather than LinkConnect, because a link cable CHAINS: the
+## third and fourth players join through the junction moulded into the lead, and
+## what the bus is told is the whole set that ends up sharing the wire. A pair is
+## just the smallest case of that, so both go through the same call and the
+## two-player path is not a separate thing that could rot on its own.
+func _cable() -> bool:
+	var others: Array = []
+	var ports := PackedInt32Array()
+	ports.append(0)
+	for k in range(1, _m.size()):
+		others.append(_m[k])
+		ports.append(0)
+	return _m[0].LinkConnectGroup(others, ports)
+
+
+## Every machine except the one that owns the clock.
+func _guests() -> Array:
+	return _m.slice(1)
+
+
+## Wait for a number of EMULATED frames on the slowest machine.
 ##
 ## The distinction matters more than it looks. A headless run has no vsync, so
 ## get_tree().process_frame comes round several times per emulated frame, and a
@@ -371,9 +416,16 @@ func _run() -> void:
 ## for ten of them depending on how loaded the box is. Counted here, a press is
 ## the same length every time.
 func _wait_frames(n: int) -> void:
-	var target_a: int = _a.GetFrameCount() + n
-	var target_b: int = _b.GetFrameCount() + n
-	while _a.GetFrameCount() < target_a or _b.GetFrameCount() < target_b:
+	var targets: Array[int] = []
+	for machine: Libretro in _m:
+		targets.append(machine.GetFrameCount() + n)
+	while true:
+		var done := true
+		for i in _m.size():
+			if _m[i].GetFrameCount() < targets[i]:
+				done = false
+		if done:
+			return
 		await get_tree().process_frame
 
 
@@ -406,15 +458,21 @@ func _film(n: int) -> void:
 ## costing the frames then a transfer rate says nothing about the game at all.
 func _report(tag: String) -> void:
 	var wall: int = Time.get_ticks_msec()
-	var fa: int = _a.GetFrameCount()
-	var fb: int = _b.GetFrameCount()
 	var secs: float = max(1, wall - _wall_prev) / 1000.0
-	print("[mario] %-9s sent A=%d B=%d  got A=%d B=%d  peers=%d  fps A=%.1f B=%.1f" % [
-		tag, _a.LinkSent(0), _b.LinkSent(0), _a.LinkTraffic(0), _b.LinkTraffic(0),
-		_a.LinkPeerCount(0), (fa - _fa_prev) / secs, (fb - _fb_prev) / secs])
+	var sent: PackedStringArray = []
+	var peers: PackedStringArray = []
+	var fps: PackedStringArray = []
+	for i in _m.size():
+		sent.append(str(_m[i].LinkSent(0)))
+		peers.append(str(_m[i].LinkPeerCount(0)))
+		var now: int = _m[i].GetFrameCount()
+		fps.append("%.1f" % ((now - (_frames_prev[i] if i < _frames_prev.size() else 0)) / secs))
+	print("[mario] %-9s sent=%s  peers=%s  fps=%s" % [
+		tag, "/".join(sent), "/".join(peers), "/".join(fps)])
 	_wall_prev = wall
-	_fa_prev = fa
-	_fb_prev = fb
+	_frames_prev.clear()
+	for machine: Libretro in _m:
+		_frames_prev.append(machine.GetFrameCount())
 
 
 ## Save what machine A is showing, so a run that goes wrong can be LOOKED at.
@@ -426,13 +484,12 @@ func _shot(tag: String) -> void:
 	# BOTH machines. Only ever photographing the master hid the whole first half
 	# of the story: the two screens diverge for most of the handshake, and which
 	# of them is stuck is the question being asked.
-	for pair: Array in [[_a, "a"], [_b, "b"]]:
-		var machine: Libretro = pair[0]
-		var img: Image = machine.GetVideoImage()
+	for i in _m.size():
+		var img: Image = _m[i].GetVideoImage()
 		if img == null or img.is_empty():
-			print("[mario] shot %s/%s: no frame yet" % [tag, pair[1]])
+			print("[mario] shot %s/%d: no frame yet" % [tag, i])
 			continue
-		img.save_png("res://probe_out/mario_%s_%s.png" % [tag, pair[1]])
+		img.save_png("res://probe_out/mario_%s_%s.png" % [tag, char(97 + i)])
 	print("[mario] shot %s" % tag)
 
 
@@ -446,7 +503,7 @@ func _shot(tag: String) -> void:
 ## the other one is still on its own title screen refusing to move, which reads
 ## exactly like a link that never negotiated.
 func _hold(mask: int, press_frames: int, gap_frames: int, who: Array = []) -> void:
-	var machines: Array = who if not who.is_empty() else [_a, _b]
+	var machines: Array = who if not who.is_empty() else _m
 	for machine: Libretro in machines:
 		machine.SetJoypadState(0, mask, 0, 0, 0, 0)
 	await _wait_frames(press_frames)
