@@ -55,6 +55,8 @@ func _ready() -> void:
 	_test_empty_systemid_is_global()
 	_test_overridden_systems()
 	_test_console_pad_art()
+	_test_desktop_layers()
+	_test_desktop_legacy_file()
 
 	_restore()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -87,19 +89,26 @@ func _snapshot() -> void:
 	if _snapped:
 		return
 	_snapped = true
-	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
+	for path: String in _stores():
 		if FileAccess.file_exists(path):
 			_saved[path] = FileAccess.get_file_as_string(path)
 
 
 ## The clean slate each case wants. Deletes only — it never touches the snapshot.
 func _clear() -> void:
-	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
+	for path: String in _stores():
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
+## Every file these cases write. DesktopBindings is here too: it is a third
+## store, and forgetting it would leave test key maps in the player's InputMap.
+func _stores() -> Array:
+	return [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH,
+		DesktopBindings.SAVE_PATH]
+
+
 func _restore() -> void:
-	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
+	for path: String in _stores():
 		if _saved.has(path):
 			var f := FileAccess.open(path, FileAccess.WRITE)
 			if f:
@@ -401,3 +410,127 @@ func _test_console_pad_art() -> void:
 
 	_ok("art/the texture loads", ConsolePadArt.texture("nes") != null)
 	_ok("art/an uncovered platform has no texture", ConsolePadArt.texture("super_nes") == null)
+
+
+# ---------------------------------------------------------------------------
+# DesktopBindings — the third store, and the odd one out: it cannot be READ per
+# system, because every consumer goes through the process-global InputMap. A
+# scope is APPLIED instead, so these cases assert on the InputMap.
+# ---------------------------------------------------------------------------
+
+const _DESK_ACTION := "RETRO_JOYPAD_A"
+
+
+## The physical key currently bound to an action, as a keycode, or 0 for none.
+func _bound_key(action: String) -> int:
+	if not InputMap.has_action(action):
+		return 0
+	var events := InputMap.action_get_events(action)
+	if events.is_empty():
+		return 0
+	var k := events[0] as InputEventKey
+	return int(k.physical_keycode) if k != null else 0
+
+
+func _bind_key(action: String, code: Key) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = code
+	ev.keycode = code
+	InputMap.action_erase_events(action)
+	InputMap.action_add_event(action, ev)
+
+
+func _test_desktop_layers() -> void:
+	_clear()
+	InputMap.load_from_project_settings()
+	var shipped := _bound_key(_DESK_ACTION)
+	_ok("desktop/the action has a project default", shipped != 0)
+
+	# Global layer.
+	_bind_key(_DESK_ACTION, KEY_J)
+	DesktopBindings.save()
+	_ok("desktop/no override before a platform is written",
+		not DesktopBindings.has_system_override(SYS_A))
+
+	# A platform profile on top.
+	_bind_key(_DESK_ACTION, KEY_K)
+	DesktopBindings.save_for_system(SYS_A)
+	_ok("desktop/writing a platform profile turns its override on",
+		DesktopBindings.has_system_override(SYS_A))
+
+	DesktopBindings.apply_for_system(SYS_A)
+	_eq("desktop/the platform's key applies", _bound_key(_DESK_ACTION), KEY_K)
+	DesktopBindings.apply_for_system(SYS_B)
+	_eq("desktop/another platform gets the global key", _bound_key(_DESK_ACTION), KEY_J)
+	DesktopBindings.apply_for_system("")
+	_eq("desktop/the global scope is untouched", _bound_key(_DESK_ACTION), KEY_J)
+
+	# A later global edit must not reach the overridden platform — the same rule
+	# the other two stores keep, and the reason a whole layer is written.
+	_bind_key(_DESK_ACTION, KEY_L)
+	DesktopBindings.save()
+	DesktopBindings.apply_for_system(SYS_A)
+	_eq("desktop/a later global edit does not reach an overridden platform",
+		_bound_key(_DESK_ACTION), KEY_K)
+	DesktopBindings.apply_for_system(SYS_B)
+	_eq("desktop/but it does reach an un-overridden one", _bound_key(_DESK_ACTION), KEY_L)
+
+	# Clearing puts the platform back on global.
+	DesktopBindings.clear_system_override(SYS_A)
+	_ok("desktop/clear drops the override",
+		not DesktopBindings.has_system_override(SYS_A))
+	DesktopBindings.apply_for_system(SYS_A)
+	_eq("desktop/cleared platform is back on global", _bound_key(_DESK_ACTION), KEY_L)
+
+	_eq("desktop/overridden_systems lists nothing now",
+		DesktopBindings.overridden_systems(), [])
+
+	# save_for_system("") is save(), the fall-through the shared editor needs.
+	_bind_key(_DESK_ACTION, KEY_M)
+	DesktopBindings.save_for_system("")
+	DesktopBindings.apply_for_system("")
+	_eq("desktop/save_for_system(\"\") writes global", _bound_key(_DESK_ACTION), KEY_M)
+	_ok("desktop/and creates no per-system entry",
+		DesktopBindings.overridden_systems().is_empty())
+
+	# An action NOT named by any layer must come back as its project default
+	# rather than keeping the previous scope's key — that is what makes
+	# apply_for_system a scope SWITCH and not a merge.
+	_clear()
+	InputMap.load_from_project_settings()
+	var start_default := _bound_key("RETRO_JOYPAD_START")
+	_bind_key("RETRO_JOYPAD_START", KEY_F13)
+	DesktopBindings.save_for_system(SYS_A)
+	DesktopBindings.clear_system_override(SYS_A)
+	DesktopBindings.apply_for_system(SYS_A)
+	_eq("desktop/an unnamed action returns to its project default",
+		_bound_key("RETRO_JOYPAD_START"), start_default)
+
+	InputMap.load_from_project_settings()
+
+
+## The file shipped before there were layers is a flat action -> event dict.
+## Reading it as anything other than the global layer loses every desktop
+## player's key map on first launch of this build.
+func _test_desktop_legacy_file() -> void:
+	_clear()
+	InputMap.load_from_project_settings()
+	var f := FileAccess.open(DesktopBindings.SAVE_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify({
+		_DESK_ACTION: {"type": "key", "physical_keycode": KEY_N, "keycode": KEY_N},
+	}))
+	f.close()
+
+	DesktopBindings.apply_for_system("")
+	_eq("desktop/a legacy flat file still applies", _bound_key(_DESK_ACTION), KEY_N)
+	_ok("desktop/and reads as global, not as a platform",
+		DesktopBindings.overridden_systems().is_empty())
+
+	# And once it is re-saved it comes back in the layered shape.
+	DesktopBindings.save()
+	var text := FileAccess.get_file_as_string(DesktopBindings.SAVE_PATH)
+	var parsed: Variant = JSON.parse_string(text)
+	_ok("desktop/a re-save migrates it to layers",
+		parsed is Dictionary and (parsed as Dictionary).has("global"))
+
+	InputMap.load_from_project_settings()

@@ -300,11 +300,16 @@ stored profile IS its override switch; there is no separate flag. So three rules
 load-bearing and each has cases here: a platform with no profile is indistinguishable
 from global, a profile shadows global completely INCLUDING global edits made after it
 (which is why a profile is always written whole), and clearing one puts that platform
-back on global without touching anyone else's. It also covers ConsolePadArt, the
+back on global without touching anyone else's. DesktopBindings is the odd one
+and has its own cases: its consumers all read the process-global InputMap, so a
+platform's keys cannot be looked up per system — they are APPLIED, and the Scroll
+Lock capture decides when (RetroController._sync_desktop_scope). Its legacy flat
+file is read as the global layer, which is covered too, because losing it would
+wipe every desktop player's key map on first launch. It also covers ConsolePadArt, the
 table a platform's own controller is drawn from — that a control key's index in
 GamepadBindings.TARGET_ORDER really is its RetroPad bit (the trick that lets one
 table serve both the XR and the physical-pad sections), and that every control
-has an anchor and a row. 56 cases, ~2 s.
+has an anchor and a row. 73 cases, ~2 s.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/binding_tests.tscn
 ```

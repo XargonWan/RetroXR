@@ -60,6 +60,11 @@ var _pad_status_label: Label = null
 var _console_xr_diagram: ConsolePadDiagram = null
 var _console_pad_diagram: ConsolePadDiagram = null
 
+## The desktop key map's diagram, and action -> control so a completed capture
+## can find the row that asked for it.
+var _desktop_diagram: ConsolePadDiagram = null
+var _desktop_control_of: Dictionary = {}
+
 
 static func create(systemid: String = "") -> ControlsBindingEditor:
 	var e := ControlsBindingEditor.new()
@@ -148,6 +153,10 @@ const _CONTROLS_DIAGRAM_H := 520.0
 ## the art, with the picture between them.
 const _CONSOLE_DIAGRAM_H := 470.0
 
+## Height reserved for the desktop key map's diagram. Taller than a console
+## pad's: the generic pad is roughly square and stacks eight rows a side.
+const _DESKTOP_DIAGRAM_H := 620.0
+
 ## Order in which lightgun sources appear in the Controls UI.
 const _LIGHTGUN_SOURCE_ORDER: Array = [
 	"trigger", "grip", "ax_button", "by_button", "primary_click",
@@ -160,15 +169,8 @@ func _build() -> void:
 
 	if MenuStyle.is_vr_mode():
 		_build_xr_controls(self)
-	elif _systemid.is_empty():
-		_build_desktop_controls(self)
 	else:
-		var note := Label.new()
-		note.text = "Keyboard and mouse bindings are global — they are set on the main Controls page."
-		note.add_theme_font_size_override("font_size", 16)
-		note.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
-		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		add_child(note)
+		_build_desktop_controls(self)
 
 	# Physical gamepad section — shown in both modes (a real pad works whether
 	# the player is in VR or at the desktop). Added unconditionally because it
@@ -296,23 +298,54 @@ func _reset_label() -> String:
 	return "Reset to Default" if _systemid.is_empty() else "Reset to Global"
 
 
+## The keyboard and mouse map, drawn on a pad rather than listed.
+##
+## This scope's bindings are pushed into the InputMap first, because that map IS
+## the store here — every row reads its label back out of it. Leaving the page
+## puts the right scope back; see SpawnMenuControlsView.
 func _build_desktop_controls(vbox: VBoxContainer) -> void:
 	_rebind_buttons.clear()
+	_desktop_control_of.clear()
+	DesktopBindings.apply_for_system(_systemid)
 
-	# ── Gamepad Buttons ───────────────────────────────────────────────────────
-	vbox.add_child(MenuStyle.label("Gamepad Buttons", 18, MenuStyle.COLOR_LICENSE))
+	# A platform with a pad of its own gets it; anything else binds the generic
+	# RetroPad, which is what the core sees regardless.
+	var pad_id := _systemid if ConsolePadArt.has(_systemid) else ConsolePadArt.RETROPAD
 
-	for action: String in DesktopBindings.JOYPAD_ACTIONS:
-		vbox.add_child(_make_rebind_row(action))
+	vbox.add_child(MenuStyle.label("Keyboard & Mouse", 18, MenuStyle.COLOR_LICENSE))
+	vbox.add_child(_hint("Press a button below, then press the key or mouse button "
+		+ "you want on it. Escape cancels."))
 
-	# ── Analog Sticks ─────────────────────────────────────────────────────────
-	vbox.add_child(HSeparator.new())
-	vbox.add_child(MenuStyle.label("Analog Sticks", 18, MenuStyle.COLOR_LICENSE))
+	_desktop_diagram = ConsolePadDiagram.new()
+	_desktop_diagram.custom_minimum_size = Vector2(0, _DESKTOP_DIAGRAM_H)
+	_desktop_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_desktop_diagram)
+	_desktop_diagram.setup(pad_id, [], _desktop_current_by_control(pad_id),
+		ConsolePadDiagram.RowKind.BIND)
+	_desktop_diagram.bind_requested.connect(_on_desktop_bind_requested)
 
-	for action: String in DesktopBindings.ANALOG_ACTIONS:
-		vbox.add_child(_make_rebind_row(action))
+	for control: String in _desktop_diagram.controls():
+		_desktop_control_of[_desktop_action_for(control)] = control
 
-	# ── Save / Reset ──────────────────────────────────────────────────────────
+	# Anything the generic pad has no anchor for — the analog stick directions and
+	# the light-gun trigger — still has to be bindable, so it stays a list.
+	#
+	# ONLY under the generic pad. A console's own page must not offer the buttons
+	# its hardware never had: a NES has no X, no shoulders and no sticks, and
+	# listing them there would put back exactly the noise this whole feature
+	# exists to remove.
+	var rest: Array = []
+	if pad_id == ConsolePadArt.RETROPAD:
+		for action: String in DesktopBindings.managed_actions():
+			if not _desktop_control_of.has(action):
+				rest.append(action)
+	if not rest.is_empty():
+		vbox.add_child(HSeparator.new())
+		vbox.add_child(MenuStyle.label("Analog Sticks & Trigger", 18, MenuStyle.COLOR_LICENSE))
+		for action: String in rest:
+			vbox.add_child(_make_rebind_row(action))
+
+	# ── Reset ─────────────────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 10)
@@ -320,20 +353,37 @@ func _build_desktop_controls(vbox: VBoxContainer) -> void:
 	vbox.add_child(action_row)
 
 	var reset_btn := Button.new()
-	reset_btn.text = "Reset to Default"
+	reset_btn.text = _reset_label()
 	reset_btn.custom_minimum_size = Vector2(220, 52)
 	reset_btn.add_theme_font_size_override("font_size", 18)
+	reset_btn.focus_mode = Control.FOCUS_NONE
 	reset_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	reset_btn.pressed.connect(_on_desktop_controls_reset)
 	action_row.add_child(reset_btn)
 
-	var save_btn := Button.new()
-	save_btn.text = "Save"
-	save_btn.custom_minimum_size = Vector2(220, 52)
-	save_btn.add_theme_font_size_override("font_size", 18)
-	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save_btn.pressed.connect(DesktopBindings.save)
-	action_row.add_child(save_btn)
+	# No Save button: every capture writes on the spot, the way the XR and pad
+	# halves do. It used to need one, and a rebind that looked applied but was
+	# not is exactly what Tools/binding_live_probe.tscn exists to catch.
+
+
+## The InputMap action a console control binds. Control keys are RetroPad target
+## strings and the actions are named for the same targets, so this is the whole
+## mapping.
+func _desktop_action_for(control: String) -> String:
+	return "RETRO_JOYPAD_" + control.to_upper()
+
+
+func _desktop_current_by_control(pad_id: String) -> Dictionary:
+	var out: Dictionary = {}
+	var anchors: Dictionary = ConsolePadArt.row(pad_id).get("anchors", {})
+	for control: String in anchors:
+		out[control] = DesktopBindings.event_display_name(_desktop_action_for(control))
+	return out
+
+
+func _on_desktop_bind_requested(control: String) -> void:
+	_rebinding_action = _desktop_action_for(control)
+	rebind_started.emit(_rebinding_action)
 
 
 ## Creates a single rebind row: [Label: action display name] [Button: current key]
@@ -375,20 +425,39 @@ func _make_rebind_row(action: String) -> HBoxContainer:
 ## back from DesktopBindings either way.
 func on_rebind_complete(action: String, _event: InputEvent) -> void:
 	_rebinding_action = ""
+	var label := DesktopBindings.event_display_name(action)
+
+	# The capture wrote straight into the InputMap, so the binding is already
+	# live; what is left is telling the row and putting it on disk in THIS
+	# editor's scope rather than always the global one.
+	if is_instance_valid(_desktop_diagram) and _desktop_control_of.has(action):
+		_desktop_diagram.set_bind_label(String(_desktop_control_of[action]), label)
 	var btn: Button = _rebind_buttons.get(action) as Button
-	if not is_instance_valid(btn):
-		return
-	btn.text = DesktopBindings.event_display_name(action)
+	if is_instance_valid(btn):
+		btn.text = label
+
+	DesktopBindings.save_for_system(_systemid)
+	controller_bindings_changed.emit()
 
 
+## Reset drops this scope back to the layer beneath it, like the other two: the
+## project defaults for the global map, the global map for a platform.
 func _on_desktop_controls_reset() -> void:
-	# Reload project defaults by restoring from project settings.
-	InputMap.load_from_project_settings()
-	# Refresh all button labels.
+	if _systemid.is_empty():
+		InputMap.load_from_project_settings()
+		DesktopBindings.save()
+	else:
+		DesktopBindings.clear_system_override(_systemid)
+		DesktopBindings.apply_for_system(_systemid)
+
+	if is_instance_valid(_desktop_diagram):
+		var pad_id := _systemid if ConsolePadArt.has(_systemid) else ConsolePadArt.RETROPAD
+		_desktop_diagram.refresh(_desktop_current_by_control(pad_id))
 	for action: String in _rebind_buttons:
 		var btn: Button = _rebind_buttons[action] as Button
 		if is_instance_valid(btn):
 			btn.text = DesktopBindings.event_display_name(action)
+	controller_bindings_changed.emit()
 
 
 ## Write this scope's XR bindings and push them to everything holding a copy.
@@ -407,6 +476,8 @@ func apply_all() -> void:
 		ControllerBindings.save_for_system(_systemid,
 			_edit_button_map, _edit_stick_map, _edit_lightgun_map)
 	GamepadBindings.save_for_system(_systemid, _edit_pad_button_map, _edit_pad_stick_map)
+	if not MenuStyle.is_vr_mode():
+		DesktopBindings.save_for_system(_systemid)
 	controller_bindings_changed.emit()
 
 
@@ -764,6 +835,8 @@ func _on_pad_controls_reset() -> void:
 
 func _on_pad_controls_save() -> void:
 	GamepadBindings.save_for_system(_systemid, _edit_pad_button_map, _edit_pad_stick_map)
+	if not MenuStyle.is_vr_mode():
+		DesktopBindings.save_for_system(_systemid)
 	controller_bindings_changed.emit()
 
 

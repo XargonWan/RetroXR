@@ -168,7 +168,8 @@ func _display_name(systemid: String) -> String:
 ## together by the switch, but in desktop mode only the gamepad half exists.
 static func _has_override(systemid: String) -> bool:
 	return ControllerBindings.has_system_override(systemid) \
-		or GamepadBindings.has_system_override(systemid)
+		or GamepadBindings.has_system_override(systemid) \
+		or DesktopBindings.has_system_override(systemid)
 
 
 func _make_tile(systemid: String) -> Button:
@@ -317,6 +318,9 @@ func _open_platform(systemid: String) -> void:
 ## the same tile rebuilds it anyway, and freeing it here would race the button
 ## press that is still being handled.
 func show_global() -> void:
+	# A platform page loads its own keys into the InputMap to show them; leaving
+	# it is where the global map comes back.
+	DesktopBindings.apply_for_system("")
 	_platform_page.visible = false
 	_global_page.visible = true
 	_active_editor = _global_editor
@@ -337,6 +341,11 @@ func _on_override_toggled(on: bool) -> void:
 	else:
 		ControllerBindings.clear_system_override(_current_sid)
 		GamepadBindings.clear_system_override(_current_sid)
+		DesktopBindings.clear_system_override(_current_sid)
+		# The editor pushed this platform's keys into the InputMap when it built;
+		# dropping the profile has to put the global ones back or the page keeps
+		# showing, and the desk keeps using, a map that no longer exists.
+		DesktopBindings.apply_for_system("")
 		controller_bindings_changed.emit()
 	# Hidden rather than freed, so flicking the switch back does not rebuild two
 	# diagrams and lose the rows the player was part-way through.

@@ -1,9 +1,17 @@
 ## DesktopBindings — save, load, and apply keyboard/mouse bindings for desktop mode.
 ##
-## Bindings are stored in user://desktop_bindings.json as a flat dict of
-## action_name → serialised InputEvent.  On load, each entry is applied to
-## the live InputMap so all existing code that calls Input.is_action_pressed()
-## or Input.get_axis() automatically picks up the user's preferences.
+## Stored in user://desktop_bindings.json, merged project default → global →
+## per-system, the same three layers ControllerBindings and GamepadBindings use.
+## An entry is a serialised InputEvent, so a binding can be a key OR a mouse
+## button; the capture in spawn_menu_controller accepts either.
+##
+## Unlike the other two stores this one cannot simply be READ per system: every
+## consumer goes through Input.is_action_pressed(), and the InputMap those
+## actions live in is global to the process. So a scope is APPLIED rather than
+## looked up — apply_for_system() rewrites the map — and something has to decide
+## when. That something is the Scroll Lock capture: exactly one controller can
+## hold the keyboard at a time, so RetroController applies its system's profile
+## when it takes the capture and puts the global map back when it lets go.
 class_name DesktopBindings
 extends RefCounted
 
@@ -56,42 +64,129 @@ const ACTION_LABELS: Dictionary = {
 }
 
 
-## Load saved bindings from disk and apply them to the live InputMap.
-## Safe to call even if the file does not exist (does nothing in that case).
-static func load_and_apply() -> void:
+## Every action this class manages, in one list.
+static func managed_actions() -> Array:
+	return JOYPAD_ACTIONS + ANALOG_ACTIONS
+
+
+static func _load_file() -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
-		return
+		return {}
 	var text := FileAccess.get_file_as_string(SAVE_PATH)
 	if text.is_empty():
-		return
+		return {}
 	var parsed: Variant = JSON.parse_string(text)
 	if not parsed is Dictionary:
 		push_warning("DesktopBindings: failed to parse %s" % SAVE_PATH)
-		return
+		return {}
 	var data: Dictionary = parsed as Dictionary
-	for action: String in data:
+	# Legacy shape: a flat action -> event dict, written before there were
+	# layers. Read it as the global layer rather than discarding it, or every
+	# desktop player loses their key map the first time they launch this build.
+	if not data.has("global") and not data.has("per_system"):
+		return {"global": data}
+	return data
+
+
+static func _save_file(data: Dictionary) -> void:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f == null:
+		push_error("DesktopBindings: cannot write to %s (error %d)"
+			% [SAVE_PATH, FileAccess.get_open_error()])
+		return
+	f.store_string(JSON.stringify(data, "	"))
+	f.close()
+
+
+## Put one layer's events into the live InputMap.
+static func _apply_layer(layer: Dictionary) -> void:
+	for action: String in layer:
 		if not InputMap.has_action(action):
 			continue
-		var ev := _dict_to_event(data[action] as Dictionary)
+		var ev := _dict_to_event(layer[action] as Dictionary)
 		if ev == null:
 			continue
 		InputMap.action_erase_events(action)
 		InputMap.action_add_event(action, ev)
 
 
-## Save the current InputMap state for all managed actions to disk.
-static func save() -> void:
+## Rewrite the InputMap for one scope: project defaults, then the global layer,
+## then that system's own. Reloading from project settings first is what stops a
+## previous scope's keys lingering on actions the new scope does not name.
+static func apply_for_system(systemid: String) -> void:
+	InputMap.load_from_project_settings()
+	var data := _load_file()
+	_apply_layer(data.get("global", {}) as Dictionary)
+	if not systemid.is_empty():
+		var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
+		_apply_layer(per_sys.get(systemid, {}) as Dictionary)
+
+
+## Load saved bindings and apply the global scope. Safe with no file present.
+static func load_and_apply() -> void:
+	apply_for_system("")
+
+
+## The InputMap's current state for every managed action, as a storable layer.
+static func _current_layer() -> Dictionary:
 	var data: Dictionary = {}
-	for action: String in JOYPAD_ACTIONS:
+	for action: String in managed_actions():
 		_add_action_to_dict(data, action)
-	for action: String in ANALOG_ACTIONS:
-		_add_action_to_dict(data, action)
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f == null:
-		push_error("DesktopBindings: cannot write to %s (error %d)" % [SAVE_PATH, FileAccess.get_open_error()])
+	return data
+
+
+## Save the current InputMap state as the global layer.
+static func save() -> void:
+	var data := _load_file()
+	data["global"] = _current_layer()
+	_save_file(data)
+
+
+## Save the current InputMap state as one system's profile. Falls through to
+## save() on an empty systemid, the way the other two stores do, so one editor
+## can serve both the global page and a platform page.
+##
+## The WHOLE map is written, not just the rows touched, which is what makes a
+## profile an override rather than a patch — the same rule as the other stores.
+static func save_for_system(systemid: String) -> void:
+	if systemid.is_empty():
+		save()
 		return
-	f.store_string(JSON.stringify(data, "\t"))
-	f.close()
+	var data := _load_file()
+	if not data.has("per_system"):
+		data["per_system"] = {}
+	data["per_system"][systemid] = _current_layer()
+	_save_file(data)
+
+
+## True when this system carries a key map of its own.
+static func has_system_override(systemid: String) -> bool:
+	if systemid.is_empty():
+		return false
+	var per_sys: Dictionary = _load_file().get("per_system", {}) as Dictionary
+	return per_sys.has(systemid)
+
+
+## Drop a system's key map so it falls back to global again.
+static func clear_system_override(systemid: String) -> void:
+	if systemid.is_empty():
+		return
+	var data := _load_file()
+	var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
+	if not per_sys.has(systemid):
+		return
+	per_sys.erase(systemid)
+	data["per_system"] = per_sys
+	_save_file(data)
+
+
+## Every systemid carrying a key map, for the per-platform tile badges.
+static func overridden_systems() -> Array[String]:
+	var out: Array[String] = []
+	var per_sys: Dictionary = _load_file().get("per_system", {}) as Dictionary
+	for sid: String in per_sys:
+		out.append(sid)
+	return out
 
 
 static func _add_action_to_dict(data: Dictionary, action: String) -> void:

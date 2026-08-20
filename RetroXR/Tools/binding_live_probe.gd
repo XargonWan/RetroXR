@@ -46,14 +46,16 @@ func _ready() -> void:
 
 
 func _backup() -> void:
-	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
+	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH,
+			DesktopBindings.SAVE_PATH]:
 		if FileAccess.file_exists(path):
 			_saved[path] = FileAccess.get_file_as_string(path)
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 func _restore() -> void:
-	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
+	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH,
+			DesktopBindings.SAVE_PATH]:
 		if _saved.has(path):
 			var f := FileAccess.open(path, FileAccess.WRITE)
 			if f != null:
@@ -66,6 +68,17 @@ func _restore() -> void:
 func _quit(code: int) -> void:
 	_restore()
 	get_tree().quit(code)
+
+
+## The physical keycode bound to an action, or 0 for none.
+func _first_key(action: String) -> int:
+	if not InputMap.has_action(action):
+		return 0
+	var events := InputMap.action_get_events(action)
+	if events.is_empty():
+		return 0
+	var k := events[0] as InputEventKey
+	return int(k.physical_keycode) if k != null else 0
 
 
 func _stick(store: Dictionary) -> String:
@@ -241,6 +254,47 @@ func _run() -> void:
 	_check(_stick(rx.get("_pad_stick_map")) == "left+dpad",
 		"a receiver in no console is untouched by a platform override (got %s)"
 			% _stick(rx.get("_pad_stick_map")))
+
+	# ── The desktop key map follows whoever holds the keyboard ───────────────
+	# This store is the odd one: every consumer reads the process-global
+	# InputMap, so a platform's keys are APPLIED rather than looked up, and the
+	# Scroll Lock capture is what decides when. Nothing else asserts that hookup.
+	InputMap.load_from_project_settings()
+	var global_key := _first_key("RETRO_JOYPAD_A")
+	_check(global_key != 0, "RETRO_JOYPAD_A has a project default")
+	DesktopBindings.save()
+
+	var nes_key := KEY_F14
+	var ev := InputEventKey.new()
+	ev.physical_keycode = nes_key
+	ev.keycode = nes_key
+	InputMap.action_erase_events("RETRO_JOYPAD_A")
+	InputMap.action_add_event("RETRO_JOYPAD_A", ev)
+	DesktopBindings.save_for_system("nes")
+	DesktopBindings.apply_for_system("")
+	_check(_first_key("RETRO_JOYPAD_A") == global_key,
+		"the global key map is what stands with nobody captured")
+
+	# Capture is only eligible for a pad HELD at a desk and plugged into a port
+	# (RetroController._can_capture). It is already plugged; this is the hold.
+	pad.set("_desktop_held", true)
+	var cap: Object = pad.get("_capture")
+	_check(cap != null, "the pad has a Scroll Lock capture")
+	if cap != null:
+		cap.call("refresh")
+		cap.call("set_active", true)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_check(_first_key("RETRO_JOYPAD_A") == nes_key,
+			"taking the keyboard at a NES loads the NES key map (got %d, want %d)"
+				% [_first_key("RETRO_JOYPAD_A"), nes_key])
+
+		cap.call("set_active", false)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_check(_first_key("RETRO_JOYPAD_A") == global_key,
+			"and letting it go puts the global map back (got %d, want %d)"
+				% [_first_key("RETRO_JOYPAD_A"), global_key])
 
 	# Pulling the pad out has to put it back on global, or a pad carried away
 	# from a console keeps playing that console's layout in your hand.

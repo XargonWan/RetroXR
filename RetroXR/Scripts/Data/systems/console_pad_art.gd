@@ -17,7 +17,50 @@
 class_name ConsolePadArt
 extends RefCounted
 
+## The generic pad's key in _ROWS. Not a systemid — no console uses it — so
+## has() keeps answering false for every real platform while row() and texture()
+## still serve it.
+const RETROPAD := "__retropad"
+
 const _ROWS: Dictionary = {
+	# The generic pad, for scopes that are not one console: the desktop key map on
+	# the global Controls page binds RetroPad buttons, not a NES's. Keyed by a
+	# systemid no console uses, so has() still answers false for every platform.
+	#
+	# Art and anchors are GamepadDiagram's, re-keyed from the Xbox PHYSICAL names
+	# it uses to the RetroPad targets everything else here speaks. The face four
+	# swap on the way: RetroPad B is the BOTTOM button and A is the right one,
+	# which is the positional convention GamepadBindings.DEFAULT_BUTTON_MAP is
+	# built on. Getting that backwards would put the picture and the core's idea
+	# of "A" on opposite buttons.
+	RETROPAD: {
+		"label": "Controller",
+		"art": "res://Textures/Controllers/gamepad_line.svg",
+		"layout": "columns",
+		"anchors": {
+			"l2": Vector2(0.3000, 0.1139),
+			"r2": Vector2(0.7000, 0.1139),
+			"l": Vector2(0.3000, 0.1778),
+			"r": Vector2(0.7000, 0.1778),
+			"l3": Vector2(0.2680, 0.3639),
+			"r3": Vector2(0.6050, 0.5667),
+			"up": Vector2(0.3980, 0.5028),
+			"down": Vector2(0.3980, 0.6306),
+			"left": Vector2(0.3520, 0.5667),
+			"right": Vector2(0.4440, 0.5667),
+			"x": Vector2(0.7220, 0.2944),
+			"a": Vector2(0.7780, 0.3722),
+			"b": Vector2(0.7220, 0.4500),
+			"y": Vector2(0.6660, 0.3722),
+			"select": Vector2(0.4410, 0.3722),
+			"start": Vector2(0.5590, 0.3722),
+		},
+		# GamepadDiagram's own column orders, which were chosen by counting
+		# segment intersections over a sweep of panel sizes. Do not reorder
+		# without re-running that count — see the note on its LEFT_ORDER.
+		"left": ["l2", "l", "l3", "select", "up", "left", "right", "down"],
+		"right": ["r2", "r", "x", "a", "y", "b", "start", "r3"],
+	},
 	"nes": {
 		"label": "NES Controller",
 		"art": "res://Textures/Controllers/nes_pad_colour.svg",
@@ -50,9 +93,10 @@ const _ROWS: Dictionary = {
 }
 
 
-## True when this platform has a pad of its own to draw.
+## True when this platform has a pad of its own to draw. The generic pad is not
+## a platform, so it never answers true here.
 static func has(systemid: String) -> bool:
-	return not systemid.is_empty() and _ROWS.has(systemid)
+	return not systemid.is_empty() and systemid != RETROPAD and _ROWS.has(systemid)
 
 
 ## The row for a platform, or an empty Dictionary.
