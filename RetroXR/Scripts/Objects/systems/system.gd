@@ -387,6 +387,7 @@ func _ready() -> void:
 	_libretro.rumble_state_changed.connect(_on_rumble_state_changed)
 	_libretro.disk_control_ready.connect(_on_disk_control_ready)
 	_libretro.sram_flushed.connect(_on_sram_flushed)
+	_libretro.content_load_failed.connect(_on_content_load_failed)
 	# Wire controller port snap signals
 	for i in range(4):
 		var idx := i
@@ -2020,35 +2021,52 @@ func power_on() -> void:
 				% _av_tv.name + "no video cord is linked. Check the yellow lead at BOTH ends.")
 		else:
 			print("[RetroSystem] Powering on with no display connected (connect a TV to see output)")
-	if rom_path.is_empty():
-		push_error("RetroSystem: Cannot power on - no cartridge inserted")
-		# Orange rather than the red of a fault: nothing is broken, the machine is
-		# just waiting for something the player can put in from where they stand.
-		var empty_toast := _machine_toast()
-		if empty_toast != null:
-			var medium := "disc" if MediaDimensions.is_disc_system(systemid) else "cartridge"
-			empty_toast.show_notice(_display_name(), "No game inserted",
-				"Put a %s in, then switch it on." % medium,
-				AchievementToast.ACCENT_WAITING)
-		return
-
 	# Through the same resolvers as every other path — the options panel, netplay,
 	# the SRAM paths and achievements all ask these two, and the power button
 	# answering them itself is how it would end up running a different core.
+	# Resolved BEFORE the empty-slot check, which cannot be answered without
+	# knowing the core: whether a machine shows its BIOS is a fact about the core
+	# and the files in its system directory, not about the systemid.
 	var resolved_core := _resolve_core()
-	if resolved_core.is_empty():
-		push_error("RetroSystem: Cannot power on - no core set and no default for systemid '%s'" % systemid)
-		return
 	var resolved_dir := _resolve_dir()
+
+	# Only when the slot is empty: empty_media_path CREATES the blank image, and
+	# a machine with a game in it must not leave one behind.
+	var blank := ""
+	if rom_path.is_empty() and BiosBoot.can_boot_empty(resolved_core, systemid):
+		blank = BiosBoot.empty_media_path(
+			BiosBoot.empty_media_extension(resolved_core, systemid))
+
+	var verdict := _power_on_verdict(resolved_core, systemid, rom_path,
+		BiosBoot.missing_required(resolved_core), blank,
+		rom_path.is_empty() and BiosBoot.can_boot_empty(resolved_core, systemid)
+			and BiosBoot.boots_with_no_content(resolved_core, systemid))
+	if not bool(verdict["start"]):
+		push_error("RetroSystem: Cannot power on - %s" % verdict["log"])
+		# Over the hardware rather than the picture: every one of these is a
+		# state of the console, and half the machines they fire on have no set
+		# connected to show anything on.
+		var refusal_toast := _machine_toast()
+		if refusal_toast != null:
+			refusal_toast.show_notice(_display_name(), str(verdict["title"]),
+				str(verdict["description"]), Color(verdict["accent"]))
+		return
+
+	# May be empty media: a machine with nothing in it whose BIOS is installed is
+	# handed a blank disc, which is what a console with a closed empty tray is.
+	rom_path = str(verdict["rom"])
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 
 	# The core is handed rom_path verbatim: nothing downstream unpacks an archive
-	# the core cannot read, and a refused retro_load_game raises no signal at all,
-	# so without this the machine sits powered on and black.
+	# the core cannot read, so without this the machine sits powered on and black.
 	if not _resolve_content(resolved_core):
 		return
 
+	# Before the forced options, which win: these are defaults the player may
+	# turn back off, and a pin is something they may not.
+	CoreOptionsStore.seed_values(resolved_dir, resolved_core,
+		BiosBoot.splash_options(resolved_core, systemid))
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetSramPath(_sram_path_for_run(resolved_core))
@@ -2058,7 +2076,17 @@ func power_on() -> void:
 	# all of which just mean this machine runs without achievements.
 	_claim_achievements_session()
 	_protect_active_rom()
+	# A machine starting with NOTHING in it needs the core handed a null game
+	# info rather than an empty path, and most cores do not survive that -- six of
+	# sixteen surveyed took the process down. It is switched on only for the
+	# machines measured to want it, and off again straight after so the next
+	# machine to start is not handed a setting it never asked for.
+	var no_content := rom_path.is_empty() 		and BiosBoot.boots_with_no_content(resolved_core, systemid) 		and BiosBoot.can_boot_empty(resolved_core, systemid)
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", true)
 	_libretro.StartContent(resolved_dir, resolved_core, rom_path)
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", false)
 	_after_core_started()
 
 
@@ -2084,6 +2112,82 @@ func _after_core_started() -> void:
 	# swap). The emulation thread is only starting here, so this queues and is
 	# answered once the core is up.
 	_libretro.RequestDiskInfo()
+
+
+## Should the power button do anything, and with what in the slot?
+##
+## Static and pure so the decision can be asserted without a core, a model or a
+## scene — power_on() itself dereferences all three, which is why the rules used
+## to be untestable. The two facts that need the disk are looked up by the
+## caller and passed in: `missing` is BiosBoot.missing_required(), and `blank` is
+## the path to an empty image when this machine can show its BIOS with an empty
+## slot, "" otherwise. Returns
+##   {start: bool, rom: String, log: String, title, description, accent}
+## with the card fields filled in whenever `start` is false.
+##
+## Three refusals and one substitution, in the order they can be answered:
+##   * no core resolved — used to be a bare push_error with nothing shown at all
+##   * a required BIOS is missing — used to be a black screen and no explanation
+##   * an empty slot the machine cannot boot from — the long-standing card
+##   * an empty slot it CAN boot from — hand it a blank disc and start
+static func _power_on_verdict(core_name: String, sysid: String, rom: String,
+		missing: Array[Dictionary], blank: String, empty_ok := false) -> Dictionary:
+	var waiting := AchievementToast.ACCENT_WAITING
+	var fault := AchievementToast.ACCENT_NOTICE
+
+	if core_name.is_empty():
+		return {
+			"start": false, "rom": "",
+			"log": "no core set and no default for systemid '%s'" % sysid,
+			"title": "No core installed",
+			"description": "Pick one in OPTIONS > Cores, then switch it on.",
+			"accent": waiting,
+		}
+
+	# Asked even when a game IS inserted: a PS2 with no bios folder cannot run
+	# anything, and the failure looks identical to a broken core.
+	if not missing.is_empty():
+		var first: Dictionary = missing[0]
+		var desc := str(first.get("desc", first.get("path", "")))
+		var folder := str(first.get("dest", "")).get_base_dir()
+		var more := "" if missing.size() == 1 else " (+%d more)" % (missing.size() - 1)
+		return {
+			"start": false, "rom": rom,
+			"log": "core '%s' is missing required firmware: %s" % [core_name, first.get("path", "")],
+			"title": "BIOS required",
+			# Names the file and where it goes, because the card cannot carry a
+			# button — it is a dwell notice, not a dialog.
+			"description": "%s%s\nPut it in %s, or get it from OPTIONS > Cores > BIOS / Extras."
+				% [desc, more, folder],
+			"accent": fault,
+		}
+
+	if not rom.is_empty():
+		return {"start": true, "rom": rom, "log": "", "title": "", "description": "", "accent": waiting}
+
+	# Nothing in the slot. A machine whose BIOS is installed and whose core will
+	# take a blank disc starts anyway, silently, the way the hardware does.
+	if not blank.is_empty():
+		return {"start": true, "rom": blank, "log": "", "title": "", "description": "", "accent": waiting}
+
+	# Or whose core will start with nothing handed to it at all, which is a
+	# different mechanism and a rarer one: a Game Boy Advance with no cartridge
+	# draws its BIOS screen and then listens on the link port, which is how it
+	# ends up on the end of a GameCube lead or receiving a game from another
+	# handheld. An empty file would not do -- there is no drive to look at.
+	if empty_ok:
+		return {"start": true, "rom": "", "log": "", "title": "", "description": "", "accent": waiting}
+
+	# Orange rather than the red of a fault: nothing is broken, the machine is
+	# just waiting for something the player can put in from where they stand.
+	var medium := "disc" if MediaDimensions.is_disc_system(sysid) else "cartridge"
+	return {
+		"start": false, "rom": "",
+		"log": "no cartridge inserted",
+		"title": "No game inserted",
+		"description": "Put a %s in, then switch it on." % medium,
+		"accent": waiting,
+	}
 
 
 ## Settle rom_path against what this core actually declares it can load.
@@ -2402,6 +2506,22 @@ func _apply_forced_core_options(dir: String, core: String) -> void:
 
 
 # --- Core options ---
+
+## The run never started. Until this signal existed a refused load raised
+## nothing at all, so the machine reported is_powered_on = true and sat dark —
+## indistinguishable from a broken core, a missing BIOS or a dead TV.
+##
+## Powers back off rather than leaving the button saying STOP on a machine with
+## no core behind it, and says why on the hardware, where the player is.
+func _on_content_load_failed(reason: String) -> void:
+	push_error("RetroSystem: content load failed — %s" % reason)
+	if is_powered_on:
+		_stop_core()
+	var toast := _machine_toast()
+	if toast != null:
+		toast.show_notice(_display_name(), "Could not start", reason,
+			AchievementToast.ACCENT_NOTICE)
+
 
 ## Fired by the Libretro node (via options_ready signal) once the emulation core
 ## has registered its option set. Caches the data and refreshes the panel if it

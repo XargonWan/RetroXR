@@ -99,6 +99,9 @@ func _ready() -> void:
 	_test_belongs_here()
 	_test_core_resolution()
 	_test_forced_options_merge()
+	_test_bios_seed()
+	_test_bios_boot_table()
+	_test_power_on_verdict()
 	_test_state_paths()
 	_test_state_thumbnail()
 	_test_state_disk_round_trip()
@@ -734,3 +737,168 @@ func _test_state_disk_round_trip() -> void:
 	_ok("disk/nor is deleting something that is not an id",
 		not StatePaths.delete_state(core, rom, "../../boot"))
 	DirAccess.remove_absolute(dir)
+
+
+# ---------------------------------------------------------------------------
+# BIOS boot: seeding a default, the table that decides what is offered, and the
+# power button's own verdict. What a real core does with an empty disc needs a
+# real core and a real BIOS and lives in Tools/bios_boot_probe.tscn.
+# ---------------------------------------------------------------------------
+
+func _test_bios_seed() -> void:
+	var root := "user://__biosboot_selftest"
+	var core := "selftest_core"
+	var path := CoreOptionsStore.opt_path(root, core)
+
+	_ok("seed/nothing to seed writes nothing", not CoreOptionsStore.seed_values(root, core, {}))
+	_ok("seed/and creates no file", not FileAccess.file_exists(path))
+
+	_ok("seed/a fresh key is written",
+		CoreOptionsStore.seed_values(root, core, {"splash": "enabled"}))
+	_eq("seed/the default took",
+		CoreOptionsStore.load_values(root, core).get("splash", ""), "enabled")
+
+	# The whole point of a default: the player turns it off and it STAYS off.
+	# merge_values would put it back on at the next power-on.
+	CoreOptionsStore.set_value(root, core, "splash", "disabled")
+	_ok("seed/seeding twice writes nothing",
+		not CoreOptionsStore.seed_values(root, core, {"splash": "enabled"}))
+	_eq("seed/the player's choice survives",
+		CoreOptionsStore.load_values(root, core).get("splash", ""), "disabled")
+
+	# A core serialises its WHOLE option set on shutdown, so after one run every
+	# key it declares is already in the file. Presence must not be mistaken for
+	# "already seeded" or a BIOS installed later would never take effect.
+	CoreOptionsStore.save_values(root, core, {"splash": "disabled", "later": "off"})
+	_ok("seed/a key the core already wrote is still seedable",
+		CoreOptionsStore.seed_values(root, core, {"later": "on"}))
+	var after := CoreOptionsStore.load_values(root, core)
+	_eq("seed/and takes", after.get("later", ""), "on")
+	_eq("seed/without disturbing its neighbours", after.get("splash", ""), "disabled")
+
+	# The record is per (core, key). genesis_plus_gx_bios really is shared by
+	# five machines under one core, so the key alone cannot be the identity.
+	_ok("seed/another core's same key is untouched",
+		CoreOptionsStore.seed_values(root, "other_core", {"later": "on"}))
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(
+		CoreOptionsStore.opt_path(root, "other_core")))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CoreOptionsStore.opt_dir(root)))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CoreOptionsStore.seeded_path(root)))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(root))
+	_ok("seed/cleaned up", not FileAccess.file_exists(path))
+
+
+func _test_bios_boot_table() -> void:
+	var db := CoreInfoDatabase.shared()
+	for key: String in BiosBoot._ROWS:
+		var parts := key.split("/", false)
+		_eq("table/%s is keyed core-then-systemid" % key, parts.size(), 2)
+		if parts.size() != 2:
+			continue
+		_ok("table/%s names a real core" % key,
+			not db.get_by_core_name(parts[0]).is_empty())
+		_ok("table/%s names a real system" % key,
+			ResourceLoader.exists("res://SystemInfo/%s.tres" % parts[1]))
+		var row: Dictionary = BiosBoot._ROWS[key]
+		_ok("table/%s declares a boot rom" % key,
+			not (row.get("boot_rom", []) as Array).is_empty())
+		for opt_key: String in (row.get("splash", {}) as Dictionary):
+			_ok("table/%s option %s is named" % [key, opt_key],
+				not opt_key.strip_edges().is_empty())
+
+	# Keyed on the PAIR. One core, five Sega machines, five different boot ROMs
+	# — read by core alone this would offer a Game Gear the Mega Drive's.
+	_eq("table/a Mega Drive wants its own boot rom",
+		BiosBoot.entry("genesis_plus_gx", "mega_drive").get("boot_rom", []), ["bios_MD.bin"])
+	_eq("table/a Game Gear wants its own",
+		BiosBoot.entry("genesis_plus_gx", "game_gear").get("boot_rom", []), ["bios.gg"])
+
+	# Measured, and the natural guess is the wrong way round: pcee2 says
+	# pcsx2_fast_boot where LRPS2 says pcsx2_fastboot.
+	_ok("table/pcee2 uses fast_boot",
+		(BiosBoot.entry("pcee2", "playstation2").get("splash", {}) as Dictionary)
+			.has("pcsx2_fast_boot"))
+	_ok("table/pcsx2 uses fastboot",
+		(BiosBoot.entry("pcsx2", "playstation2").get("splash", {}) as Dictionary)
+			.has("pcsx2_fastboot"))
+
+	# Only the PlayStation reaches a BIOS from an empty slot; measured over
+	# sixteen cores, and the rest refuse a blank image or crash on one.
+	_eq("table/a PlayStation takes a blank disc",
+		BiosBoot.empty_media_extension("pcsx_rearmed", "playstation"), "cue")
+	_eq("table/a GameCube does not",
+		BiosBoot.empty_media_extension("dolphin", "gamecube"), "")
+	_eq("table/nor does a machine with no row",
+		BiosBoot.empty_media_extension("fceumm", "nes"), "")
+
+	_ok("table/an unknown pair offers nothing",
+		BiosBoot.entry("selftest_core", "nes").is_empty())
+	_ok("table/and no splash", BiosBoot.splash_options("selftest_core", "nes").is_empty())
+	_ok("table/a core with no .info requires nothing",
+		BiosBoot.missing_required("selftest_core").is_empty())
+	# The pair is required: a core alone names no machine.
+	_ok("table/no systemid is not a match", BiosBoot.entry("pcsx_rearmed", "").is_empty())
+
+
+func _test_power_on_verdict() -> void:
+	var none: Array[Dictionary] = []
+
+	var no_core := RetroSystem._power_on_verdict("", "nes", "/roms/a.nes", none, "")
+	_ok("verdict/no core refuses", not no_core["start"])
+	_eq("verdict/and says so", no_core["title"], "No core installed")
+
+	var running := RetroSystem._power_on_verdict("fceumm", "nes", "/roms/a.nes", none, "")
+	_ok("verdict/a game inserted starts", running["start"])
+	_eq("verdict/with that game", running["rom"], "/roms/a.nes")
+
+	var empty := RetroSystem._power_on_verdict("fceumm", "nes", "", none, "")
+	_ok("verdict/an empty slot refuses when the machine cannot boot", not empty["start"])
+	_eq("verdict/with the long-standing card", empty["title"], "No game inserted")
+	_ok("verdict/worded for a cartridge", str(empty["description"]).contains("cartridge"))
+	_eq("verdict/and nothing in the slot", empty["rom"], "")
+
+	# The wording follows the machine, not the core. Untested before this.
+	var disc := RetroSystem._power_on_verdict("pcsx_rearmed", "playstation", "", none, "")
+	_ok("verdict/worded for a disc", str(disc["description"]).contains("disc"))
+
+	# The substitution: a blank image was resolved, so the machine starts on it.
+	var bios := RetroSystem._power_on_verdict(
+		"pcsx_rearmed", "playstation", "", none, "/tmp/no_disc.cue")
+	_ok("verdict/an empty slot with a blank disc starts", bios["start"])
+	_eq("verdict/on the blank disc", bios["rom"], "/tmp/no_disc.cue")
+
+	# A required BIOS blocks the run whether or not a game is in — the core
+	# cannot start either way, and a black screen explains neither.
+	var missing: Array[Dictionary] = [{
+		"path": "pcsx2/bios", "desc": "'pcsx2/bios' folder",
+		"dest": "/root/system/pcee2/pcsx2/bios",
+	}]
+	var no_bios := RetroSystem._power_on_verdict(
+		"pcee2", "playstation2", "/roms/g.iso", missing, "")
+	_ok("verdict/a missing required bios refuses", not no_bios["start"])
+	_eq("verdict/and names the fault", no_bios["title"], "BIOS required")
+	_ok("verdict/names the file",
+		str(no_bios["description"]).contains("'pcsx2/bios' folder"))
+	_ok("verdict/and the folder it goes in",
+		str(no_bios["description"]).contains("/root/system/pcee2/pcsx2"))
+	_ok("verdict/and where to get it",
+		str(no_bios["description"]).contains("BIOS / Extras"))
+	_ok("verdict/one missing file is not counted up",
+		not str(no_bios["description"]).contains("more"))
+
+	var two: Array[Dictionary] = [missing[0], {
+		"path": "pcsx2/resources", "desc": "'pcsx2/resources' folder",
+		"dest": "/root/system/pcee2/pcsx2/resources",
+	}]
+	var counted := RetroSystem._power_on_verdict("pcee2", "playstation2", "/roms/g.iso", two, "")
+	_ok("verdict/two missing files are counted",
+		str(counted["description"]).contains("(+1 more)"))
+
+	# Order matters: a machine that is both empty AND missing its BIOS is told
+	# about the BIOS, which is the one the player cannot fix from where they
+	# stand by reaching for a cartridge.
+	_eq("verdict/a missing bios outranks an empty slot",
+		RetroSystem._power_on_verdict("pcee2", "playstation2", "", missing, "")["title"],
+		"BIOS required")

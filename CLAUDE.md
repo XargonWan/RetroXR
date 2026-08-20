@@ -445,6 +445,40 @@ guard, or restoring the frozen-frame bug each fails exactly the cases that name 
 Adding a case that cannot fail is worse than no case, so break the code and watch it go
 red before believing a new one.
 
+### 2d. The BIOS-boot survey — a probe that must stay one core per process
+
+`RetroXR/Tools/bios_boot_probe.tscn` + `Tools/bios_boot_survey.sh` are the provenance
+of the `BiosBoot` table, and the only way to refresh it when a core is updated. The
+probe reports one core's firmware status, its boot-ROM-ish option keys, and whether it
+will start with no content; the survey drives every candidate and prints a table.
+
+```bash
+Tools/bios_boot_survey.sh                # every candidate
+Tools/bios_boot_survey.sh mgba flycast   # just these
+```
+
+**Never loop cores inside one Godot process.** Starting a core with a game info it did
+not expect runs code its author may never have exercised, and the extension is built
+`-fno-exceptions` with no sandbox: of sixteen cores surveyed 2026-08-20, **six killed the
+process** — mgba and parallel_n64 dereference a null `retro_game_info`, and
+mednafen_saturn, neocd, dolphin and same_cdi die on a zeroed one. One process per attempt
+is what makes a casualty cost one table row instead of the run.
+
+Two things the survey settled that are easy to re-derive wrongly:
+
+- **`supports_no_game` in the `.info` is useless here** — all sixteen candidates declare
+  it `false`, and it is *also* true that none of them starts without content. The flag is
+  not consulted anywhere; the table records what was measured.
+- **The mechanism is empty MEDIA, not an empty path.** Only pcsx_rearmed accepts a
+  zero-byte image, and it gives the real PS1 BIOS. flycast (gdi/cdi/chd),
+  mednafen_saturn, mednafen_pce and neocd all refuse one.
+
+It **writes the player's real `core_options/`** — a core serialises its whole option set
+on shutdown, and a crashed run can leave a key moved (a crashed mgba run flipped
+`mgba_skip_bios` to `ON`). The survey snapshots the directory up front and restores it on
+exit, including on failure. A probe run by hand does not, so restore by hand or re-run the
+survey afterwards.
+
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
 `RenderingServer.frame_post_draw` just hangs; `get_image()` is blank). To actually render a
