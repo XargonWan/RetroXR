@@ -49,6 +49,16 @@ signal time_changed(time: float)
 ## every light at its authored angle and changes colour and energy alone.
 @export var rotate_suns: bool = true
 
+## Where this bedroom is, for the sun's path. Chicago.
+@export var latitude_deg: float = 41.88
+
+## Solar declination for the day being modelled: +23.44 at midsummer, 0 at the
+## equinoxes, -23.44 at midwinter. 12.1 is late August, which is the season the
+## room already dresses for — the trees outside are in full leaf and the light is
+## warm. It sets how high the sun gets at noon: 90 - latitude + declination, so
+## 60.2 degrees here.
+@export_range(-23.44, 23.44) var solar_declination_deg: float = 12.1
+
 ## The room must stay usable at night with the wall switch off and both lamp cords
 ## pulled. Nothing may take ambient below this.
 @export var night_ambient_floor: float = 0.06
@@ -73,6 +83,15 @@ signal time_changed(time: float)
 # Colours interpolate component-wise. They are `source_color` uniforms, so these
 # numbers are sRGB and this is a gamma-space lerp — the right trade here, because
 # the keys were authored by eye in that same space.
+#
+# `hour_angle` is degrees from SOLAR NOON, negative in the morning — 15 per hour.
+# The sun's direction is derived from it (solar_position), not authored, so the
+# whole path follows from latitude and declination and stays consistent if either
+# is changed. The clock times it works out to are on each row.
+#
+# The keys are not evenly spaced in clock time and are not meant to be: they are
+# spaced by how the room LOOKS, and midday to dusk covers six hours where morning
+# to midday covers five.
 const KEYS: Array[Dictionary] = [
 	{   # 0.00 — early morning, sun low and to the north-east, sky still cool
 		"t": 0.0,
@@ -89,7 +108,7 @@ const KEYS: Array[Dictionary] = [
 		"sun_energy": 3.0,
 		"ext_color": Color(1.00, 0.86, 0.70), "ext_energy": 2.2,
 		"fill_color": Color(0.50, 0.62, 0.90), "fill_energy": 0.7,
-		"azimuth": -55.0, "elevation": 14.0,
+		"hour_angle": -75,   # 07:00
 	},
 	{   # 0.25 — midday, near-white light, sky at its bluest
 		"t": 0.25,
@@ -106,7 +125,7 @@ const KEYS: Array[Dictionary] = [
 		"sun_energy": 4.6,
 		"ext_color": Color(1.00, 0.95, 0.86), "ext_energy": 3.2,
 		"fill_color": Color(0.55, 0.66, 0.95), "fill_energy": 0.9,
-		"azimuth": -10.0, "elevation": 66.0,
+		"hour_angle": 0,   # 12:00 solar noon
 	},
 	{   # 0.50 — afternoon, warming, sun swinging west
 		"t": 0.5,
@@ -123,7 +142,7 @@ const KEYS: Array[Dictionary] = [
 		"sun_energy": 4.2,
 		"ext_color": Color(1.00, 0.86, 0.66), "ext_energy": 2.4,
 		"fill_color": Color(0.50, 0.60, 0.88), "fill_energy": 0.7,
-		"azimuth": 12.0, "elevation": 55.0,
+		"hour_angle": 52.5,   # 15:30
 	},
 	{   # 0.75 — THE AUTHORED ROOM. Every value here is what BedroomScene.tscn
 		# shipped before this script existed, including the two sun angles, which
@@ -143,7 +162,7 @@ const KEYS: Array[Dictionary] = [
 		"sun_energy": 3.6,
 		"ext_color": Color(1.00, 0.74, 0.48), "ext_energy": 1.5,
 		"fill_color": Color(0.45, 0.55, 0.85), "fill_energy": 0.5,
-		"azimuth": 29.2, "elevation": 40.5,
+		"hour_angle": 95,   # 18:20
 	},
 	{   # 0.875 — blue hour. Its only job is to stop the dusk-orange to night-blue
 		# segment transiting through grey, which a straight two-key lerp does.
@@ -161,7 +180,7 @@ const KEYS: Array[Dictionary] = [
 		"sun_energy": 1.6,
 		"ext_color": Color(0.80, 0.62, 0.62), "ext_energy": 0.6,
 		"fill_color": Color(0.38, 0.46, 0.80), "fill_energy": 0.36,
-		"azimuth": 38.0, "elevation": 31.0,
+		"hour_angle": 108.75,   # 19:15
 	},
 	{   # 1.00 — night. WindowSun stays lit, cool and dim: it is the moon patch, and
 		# zeroing it turns the window into a black rectangle.
@@ -179,7 +198,7 @@ const KEYS: Array[Dictionary] = [
 		"sun_energy": 0.50,
 		"ext_color": Color(0.45, 0.55, 0.95), "ext_energy": 0.18,
 		"fill_color": Color(0.30, 0.38, 0.70), "fill_energy": 0.25,
-		"azimuth": 45.0, "elevation": 25.0,
+		"hour_angle": 142.5,   # 21:30
 	},
 ]
 
@@ -402,43 +421,74 @@ func _apply_exterior(k: Dictionary) -> void:
 
 ## Which lights may turn, and which may not.
 ##
+## COMPASS. The window wall (z = -2.2, with the street beyond it) faces SOUTH, so
+## in this room -Z is south, +Z north, -X east and +X west. That is the orientation
+## a bedroom wants in the northern hemisphere: a south-facing window takes sun for
+## most of the day. NB that wall's nodes are still named North* — layout labels from
+## when the room was blocked out, and renaming them would break every NodePath into
+## Room/. The compass here is the authority.
+##
+## One consequence, before it reads as a bug: with the sun in the southern sky and
+## the houses opposite ALSO to the south, those houses show us their north faces,
+## which never take direct sun. ExteriorFill, the sky term, is what lights them.
+## That is what a real south-facing street view looks like — you are always looking
+## into the light.
+##
 ## WindowSun is FROZEN. It is not a sun, it is a fake occluder: shadows are off on
 ## Quest, so a directional would light the room through its walls, and the 11-degree
 ## cone stands in for the shadow map. It was measured to be 1.27 m across at a
 ## 1.5 x 1.2 m opening, which is the only reason nothing spills onto the plaster
-## around it — a few degrees of yaw walks the patch off the window entirely.
+## around it — a few degrees of yaw walks the patch off the window entirely. Aiming
+## it from the real sun, so the patch TRAVELS across the floor through the day, is
+## the obvious next thing and is deliberately not done here: it needs the cone
+## re-solved against the opening at every angle, or it paints the wall instead.
 ##
 ## ExteriorFill is frozen too: a sky fill's direction carries no information.
 ##
-## ExteriorSun turns, because it is the only light whose direction a player can read
-## — off the house faces and the street. Dusk follows its AZIMUTH only, holding the
-## authored 45.2-degree elevation: it is unshadowed, so its angle picks which walls
-## take the warm rake and nothing else, but letting it disagree with the sun outside
-## looks wrong.
+## ExteriorSun takes the real solar path. It is masked to the street (layer 2), so
+## nothing about it can rake the room — which is what makes a physically low sun
+## safe out there when it would be unusable indoors.
+##
+## Dusk, the room's own fill, follows the sun's AZIMUTH but holds a fixed high
+## elevation. Unshadowed and masked to the room, its angle only picks which walls
+## take the warm rake, and a real low sun would rake straight through them.
 func _apply_suns(k: Dictionary) -> void:
 	if not rotate_suns:
 		return
-	var az: float = k["azimuth"]
+	var sol := solar_position(k["hour_angle"], latitude_deg, solar_declination_deg)
 	if _exterior_sun != null:
 		_exterior_sun.transform = Transform3D(
-			sun_basis(az, k["elevation"]), _exterior_sun.transform.origin)
+			sun_basis(sol.x, sol.y), _exterior_sun.transform.origin)
 	if _room_daylight != null and _room_daylight is DirectionalLight3D:
 		_room_daylight.transform = Transform3D(
-			sun_basis(az + DUSK_AZIMUTH_OFFSET_DEG, DUSK_ELEVATION_DEG),
-			_room_daylight.transform.origin)
+			sun_basis(sol.x, DUSK_ELEVATION_DEG), _room_daylight.transform.origin)
 
 
-## The indoor fill's authored pose, recovered from its .tscn basis: azimuth 19.9,
-## elevation 45.2. Both are deliberate and neither is astronomy — a low unshadowed
-## directional rakes the room through its walls, so the elevation was authored high
-## and is held there, and the azimuth sits 9.3 degrees off the exterior sun's.
-##
-## The fill FOLLOWS the sun's azimuth through that fixed offset rather than sharing
-## it outright, which is what makes t = 0.75 restore the authored basis exactly.
-## Slaving it to the sun's raw azimuth swung it 9.3 degrees the moment this script
-## loaded, silently relighting the shipped room.
+## Elevation the room's own fill is held at. Not astronomy and not meant to be.
 const DUSK_ELEVATION_DEG := 45.2
-const DUSK_AZIMUTH_OFFSET_DEG := -9.3
+
+
+## Where the sun is: hour angle in degrees from solar noon (negative = morning),
+## a latitude and a declination. Returns Vector2(azimuth for sun_basis, altitude),
+## both degrees. Altitude goes negative after sunset, which is correct and harmless
+## — the keyframes have the light near dark by then.
+##
+##   sin(alt) = sin(lat) sin(dec) + cos(lat) cos(dec) cos(h)
+##   A        = atan2(sin h, cos h sin(lat) - tan(dec) cos(lat))
+##
+## A comes out measured from due SOUTH, positive toward the west, which is the
+## convenient form — it is 0 at solar noon by construction. sun_basis puts the sun
+## in the NORTH at azimuth 0 (a DirectionalLight3D shines down its own -Z), so the
+## conversion is 180 - A: noon becomes 180 and the sun stands due south.
+static func solar_position(hour_angle_deg: float, lat_deg: float,
+		dec_deg: float) -> Vector2:
+	var lat := deg_to_rad(lat_deg)
+	var dec := deg_to_rad(dec_deg)
+	var h := deg_to_rad(hour_angle_deg)
+	var sin_alt: float = sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(h)
+	var alt := asin(clampf(sin_alt, -1.0, 1.0))
+	var a := atan2(sin(h), cos(h) * sin(lat) - tan(dec) * cos(lat))
+	return Vector2(180.0 - rad_to_deg(a), rad_to_deg(alt))
 
 
 ## Basis for a directional light at an azimuth and elevation. A DirectionalLight3D

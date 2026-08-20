@@ -23,8 +23,8 @@ extends Node
 ## What this canNOT check is how any of it LOOKS. That is
 ## `Tools/bedroom_probe.tscn --mode=timesweep`, windowed.
 
-const GROUPS := ["authored", "sharing", "sweep", "night", "blinds", "lever", "glyphs",
-	"desktop", "persist"]
+const GROUPS := ["authored", "sun", "sharing", "sweep", "night", "blinds", "lever",
+	"glyphs", "desktop", "persist"]
 const SCENE := preload("res://Scenes/BedroomScene.tscn")
 
 ## The authored dusk, transcribed from BedroomScene.tscn before TimeOfDay existed.
@@ -79,6 +79,8 @@ func _ready() -> void:
 
 	if _want("authored"):
 		await _test_authored()
+	if _want("sun"):
+		await _test_sun()
 	if _want("sharing"):
 		await _test_sharing()
 	if _want("sweep"):
@@ -115,19 +117,11 @@ func _test_authored() -> void:
 
 	_col(_dusk.light_color, Color(1, 0.72, 0.5), "authored/Dusk colour")
 	_num(_dusk.light_energy, lerpf(0.035, 0.15, open), "authored/Dusk energy")
-	_basis(_dusk.global_transform.basis,
-		Basis(Vector3(0.94, 0, -0.34), Vector3(-0.24, 0.7, -0.67), Vector3(0.24, 0.71, 0.66)),
-		"authored/Dusk basis (azimuth 19.9, elevation 45.2)")
-
 	_col(_win_sun.light_color, Color(1, 0.83, 0.62), "authored/WindowSun colour")
 	_num(_win_sun.light_energy, 3.6 * open, "authored/WindowSun energy")
 
 	_col(_ext_sun.light_color, Color(1, 0.74, 0.48), "authored/ExteriorSun colour")
 	_num(_ext_sun.light_energy, 1.5, "authored/ExteriorSun energy")
-	_basis(_ext_sun.global_transform.basis,
-		Basis(Vector3(0.87, 0, -0.49), Vector3(-0.32, 0.76, -0.57), Vector3(0.37, 0.65, 0.66)),
-		"authored/ExteriorSun basis (azimuth 29.2, elevation 40.5)")
-
 	_col(_ext_fill.light_color, Color(0.45, 0.55, 0.85), "authored/ExteriorFill colour")
 	_num(_ext_fill.light_energy, 0.5, "authored/ExteriorFill energy")
 
@@ -148,6 +142,90 @@ func _test_authored() -> void:
 	# The lamp's reach is what keeps it OUTSIDE. Widening it at night would light
 	# the bedroom through a wall, because shadows are off.
 	_num(_lamp.omni_range, 14.0, "authored/street lamp range is not widened")
+
+
+# ── The sun's path ────────────────────────────────────────────────────────────
+
+## COMPASS: the window wall faces SOUTH, so -Z is south, +Z north, -X east and
+## +X west. A DirectionalLight3D shines down its own -Z, so the direction light
+## TRAVELS is -basis.z, and the sun is in the opposite direction from that.
+##
+##   sun in the east  -> light travels +X
+##   sun in the south -> light travels +Z
+##   sun in the west  -> light travels -X
+##
+## These are the cases that would catch the compass being flipped, which is the
+## failure that looks plausible in every still and is wrong all day.
+func _test_sun() -> void:
+	var lat: float = _tod.latitude_deg
+	var dec: float = _tod.solar_declination_deg
+
+	# Solar noon: due south, and at the textbook altitude for the latitude.
+	_tod.apply_now(0.25)
+	await get_tree().process_frame
+	var noon: Vector3 = -_ext_sun.global_transform.basis.z
+	_num(noon.x, 0.0, "sun/at noon the sun is due south (no east-west lean)", 0.01)
+	_ok(noon.z > 0.0, "sun/at noon light travels north, so the sun is south (z %.3f)"
+		% noon.z)
+	_num(rad_to_deg(asin(-noon.y)), 90.0 - lat + dec,
+		"sun/noon altitude is 90 - latitude + declination", 0.05)
+
+	# Morning in the east, afternoon and dusk in the west.
+	_tod.apply_now(0.0)
+	await get_tree().process_frame
+	var morn: Vector3 = -_ext_sun.global_transform.basis.z
+	_ok(morn.x > 0.5, "sun/morning sun is in the east (light travels +x, %.3f)" % morn.x)
+	_ok(morn.y < 0.0, "sun/morning sun is above the horizon")
+
+	_tod.apply_now(0.5)
+	await get_tree().process_frame
+	var aft: Vector3 = -_ext_sun.global_transform.basis.z
+	_ok(aft.x < -0.5, "sun/afternoon sun is in the west (light travels -x, %.3f)" % aft.x)
+
+	# It climbs to noon and sinks after: altitude is single-peaked.
+	var alts: Array[float] = []
+	for t in [0.0, 0.25, 0.5, 0.75, 1.0]:
+		_tod.apply_now(t)
+		await get_tree().process_frame
+		alts.append(rad_to_deg(asin(-(-_ext_sun.global_transform.basis.z).y)))
+	_ok(alts[1] > alts[0] and alts[1] > alts[2],
+		"sun/altitude peaks at noon (%.1f, %.1f, %.1f)" % [alts[0], alts[1], alts[2]])
+	_ok(alts[2] > alts[3] and alts[3] > alts[4], "sun/and falls away through the evening")
+	_ok(alts[4] < 0.0, "sun/at night the sun is below the horizon (%.1f)" % alts[4])
+
+	# The room's own fill shares the azimuth but NOT the altitude. It is unshadowed
+	# and masked to the room, so a real low sun would rake straight through a wall.
+	for t in [0.0, 0.25, 0.75]:
+		_tod.apply_now(t)
+		await get_tree().process_frame
+		var sd: Vector3 = -_dusk.global_transform.basis.z
+		var xd: Vector3 = -_ext_sun.global_transform.basis.z
+		_num(atan2(sd.x, sd.z), atan2(xd.x, xd.z),
+			"sun/room fill shares the sun's azimuth at t = %.2f" % t, 0.001)
+		_num(rad_to_deg(asin(-sd.y)), TimeOfDay.DUSK_ELEVATION_DEG,
+			"sun/room fill holds its high elevation at t = %.2f" % t, 0.05)
+
+	# The window cone and the sky fill must never move.
+	var win0: Basis = _win_sun.global_transform.basis
+	var fill0: Basis = _ext_fill.global_transform.basis
+	for t in [0.0, 0.25, 0.5, 0.75, 1.0]:
+		_tod.apply_now(t)
+		await get_tree().process_frame
+		_basis(_win_sun.global_transform.basis, win0,
+			"sun/WindowSun never turns (t = %.2f)" % t)
+		_basis(_ext_fill.global_transform.basis, fill0,
+			"sun/ExteriorFill never turns (t = %.2f)" % t)
+
+	# And the whole thing is opt-out.
+	_tod.apply_now(0.25)
+	await get_tree().process_frame
+	var parked: Basis = _ext_sun.global_transform.basis
+	_tod.rotate_suns = false
+	_tod.apply_now(1.0)
+	await get_tree().process_frame
+	_basis(_ext_sun.global_transform.basis, parked,
+		"sun/rotate_suns = false leaves every light where it was")
+	_tod.rotate_suns = true
 
 
 # ── Instance-local resources ──────────────────────────────────────────────────
