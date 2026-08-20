@@ -8,6 +8,13 @@
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="6_snapzone"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="7_vrbtn"]
 [ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="8_vrhinge"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_power.svg" id="9_mk_power"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_a.svg" id="9_mk_a"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_minus.svg" id="9_mk_minus"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_home.svg" id="9_mk_home"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_plus.svg" id="9_mk_plus"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_one.svg" id="9_mk_one"]
+[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_two.svg" id="9_mk_two"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_wm"]
 friction = 0.8
@@ -170,6 +177,63 @@ rings = 1
 [sub_resource type="StandardMaterial3D" id="Mat_power"]
 albedo_color = Color(0.45, 0.12, 0.12, 1)
 
+; The printed marks. Each texture is a 128 square with the cap filling the frame
+; (Tools/gen_wii_face_marks.py), so a quad the width of the cap prints the mark at
+; the size the CONTROLS diagram draws it — same drawing, same proportion.
+;
+; ALPHA_SCISSOR and not ALPHA: solid ink needs no gradient, and scissor keeps
+; these in the OPAQUE pass where they write depth. A transparent decal 0.1 mm off
+; a cap is a sorting question nobody wants to answer seven times per remote.
+[sub_resource type="QuadMesh" id="Quad_mark_power"]
+size = Vector2(0.005, 0.005)
+
+[sub_resource type="QuadMesh" id="Quad_mark_a"]
+size = Vector2(0.011, 0.011)
+
+[sub_resource type="QuadMesh" id="Quad_mark_small"]
+size = Vector2(0.007, 0.007)
+
+[sub_resource type="QuadMesh" id="Quad_mark_home"]
+size = Vector2(0.0072, 0.0072)
+
+[sub_resource type="QuadMesh" id="Quad_mark_num"]
+size = Vector2(0.009, 0.009)
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_power"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_power")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_a"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_a")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_minus"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_minus")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_home"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_home")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_plus"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_plus")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_one"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_one")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mark_two"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+albedo_texture = ExtResource("9_mk_two")
+
 ; B trigger on the underside: a wedge the finger curls onto.
 [sub_resource type="BoxMesh" id="BoxMesh_trigger"]
 size = Vector3(0.014, 0.011, 0.018)
@@ -280,6 +344,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0011, 0)
 mesh = SubResource("Cyl_power")
 surface_material_override/0 = SubResource("Mat_power")
 
+; Ink, printed on the cap and travelling with it. -90 deg about X lays the quad
+; face-up with its own +Y toward the IR end, which is the way you read a remote
+; that is pointing at the set.
+[node name="Mark" type="MeshInstance3D" parent="PowerButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.0011, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_power")
+surface_material_override/0 = SubResource("Mat_mark_power")
+
 [node name="DPad" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, -0.044)
 
@@ -317,6 +391,13 @@ shape = SubResource("CylShape_a")
 mesh = SubResource("Cyl_a")
 surface_material_override/0 = SubResource("Mat_grey")
 
+[node name="Mark" type="MeshInstance3D" parent="AButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.0016, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_a")
+surface_material_override/0 = SubResource("Mat_mark_a")
+
 [node name="MinusButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.011, 0.0155, 0.004)
 collision_layer = 0
@@ -332,6 +413,13 @@ shape = SubResource("CylShape_small")
 [node name="ButtonMesh" type="MeshInstance3D" parent="MinusButton"]
 mesh = SubResource("Cyl_small")
 surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="Mark" type="MeshInstance3D" parent="MinusButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.00135, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_small")
+surface_material_override/0 = SubResource("Mat_mark_minus")
 
 [node name="HomeButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.004)
@@ -350,6 +438,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0005, 0)
 mesh = SubResource("Cyl_home")
 surface_material_override/0 = SubResource("Mat_cap")
 
+[node name="Mark" type="MeshInstance3D" parent="HomeButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.0012, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_home")
+surface_material_override/0 = SubResource("Mat_mark_home")
+
 [node name="PlusButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.011, 0.0155, 0.004)
 collision_layer = 0
@@ -365,6 +460,13 @@ shape = SubResource("CylShape_small")
 [node name="ButtonMesh" type="MeshInstance3D" parent="PlusButton"]
 mesh = SubResource("Cyl_small")
 surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="Mark" type="MeshInstance3D" parent="PlusButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.00135, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_small")
+surface_material_override/0 = SubResource("Mat_mark_plus")
 
 ; The speaker sits between the +/- row and 1, and until it was drawn 1, 2 and the
 ; player LEDs had all slid forward into its space. They are back where the
@@ -393,6 +495,13 @@ shape = SubResource("CylShape_num")
 mesh = SubResource("Cyl_num")
 surface_material_override/0 = SubResource("Mat_cap")
 
+[node name="Mark" type="MeshInstance3D" parent="OneButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.00135, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_num")
+surface_material_override/0 = SubResource("Mat_mark_one")
+
 [node name="TwoButton" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.058)
 collision_layer = 0
@@ -408,6 +517,13 @@ shape = SubResource("CylShape_num")
 [node name="ButtonMesh" type="MeshInstance3D" parent="TwoButton"]
 mesh = SubResource("Cyl_num")
 surface_material_override/0 = SubResource("Mat_cap")
+
+[node name="Mark" type="MeshInstance3D" parent="TwoButton/ButtonMesh" groups=["outline_exclude"]]
+position = Vector3(0, 0.00135, 0)
+rotation = Vector3(-1.5707963, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Quad_mark_num")
+surface_material_override/0 = SubResource("Mat_mark_two")
 
 [node name="PlayerLEDs" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0.0685)

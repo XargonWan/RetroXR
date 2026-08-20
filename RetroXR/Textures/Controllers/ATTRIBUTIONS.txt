@@ -1,8 +1,9 @@
 Controller art — attribution
 ============================
 
-Art in this directory feeds the CONTROLS tab's remap diagrams. Four sources,
-each redistributable and none carrying anyone's branding.
+Art in this directory feeds the CONTROLS tab's remap diagrams, and — in the
+case of wii_marks/ — the 3D hardware in the room. Four sources, each
+redistributable and none carrying anyone's branding.
 
 
 quest_touch_plus_left.png / quest_touch_plus_right.png
@@ -111,3 +112,33 @@ wii_remote.svg
 
   Branding : none. The marks are the functional labels naming the controls the
              diagram binds; there is no wordmark on the shell and none was added.
+
+
+wii_marks/wii_mark_*.svg
+------------------------
+  CUT OUT of wii_remote.svg above by Tools/gen_wii_face_marks.py, one per cap,
+  so the same seven marks are printed on the 3D remote you pick up in the room.
+  Same origin and same licence as the diagram's: Kenney, CC0-1.0.
+
+  Re-run that script rather than editing these, and re-run it AFTER
+  gen_wii_remote_art.py if the diagram is ever regenerated — it reads its input
+  from the diagram, which is the point. The sizing decision that matters (scale
+  each mark by its own CAP, so a minus stays a minus beside an A) is made once,
+  there, and inherited here.
+
+  Modified : re-inked a second time, and only where the medium forces it. The
+             diagram prints on a near-white drawing; these print on moulded grey
+             caps, and POWER's cap is red.
+
+               power        #e9e9ec  pale    a red power symbol on a red cap is
+                                             not a design, it is an absence. The
+                                             diagram inks this red to say "not a
+                                             game input"; on the model the CAP
+                                             already says it.
+               minus plus   #4a4a50  darker  #75757a was chosen to stay legible
+               1     2                       on white. These caps are Mat_cap,
+                                             and grey on grey is not legible.
+               A            #3d3d3d          unchanged, contrast to spare
+               home         #16b4e6          unchanged, and it ties to the four
+                                             player LEDs 60 mm below it, which
+                                             really are that blue on this model
