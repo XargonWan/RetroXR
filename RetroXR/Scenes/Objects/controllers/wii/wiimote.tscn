@@ -106,11 +106,57 @@ height = 0.004
 radius = 0.005
 height = 0.004
 
+; The bezel POWER sits in. The shell is one box mesh and cannot be bored, so the
+; recess is a slightly darker disc standing a hair proud of the face — at this
+; size that reads as a well, where a hole cut into flat ambient light would not.
+; Shared with HOME, which has the same collar on the hardware.
+[sub_resource type="StandardMaterial3D" id="Mat_well"]
+albedo_color = Color(0.74, 0.745, 0.76, 1)
+metallic_specular = 0.4
+roughness = 0.55
+
+[sub_resource type="CylinderMesh" id="Cyl_power_well"]
+top_radius = 0.0038
+bottom_radius = 0.0038
+height = 0.0016
+radial_segments = 16
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Cyl_home_well"]
+top_radius = 0.0062
+bottom_radius = 0.0062
+height = 0.0012
+radial_segments = 16
+rings = 1
+
+; One speaker hole / LED index pip. Every dot on the face is this mesh under a
+; MultiMesh: 36 of them, one draw call. Separate MeshInstance3Ds would be 36
+; draws per remote on a CPU-bound headset, for detail 1 mm across.
+[sub_resource type="CylinderMesh" id="Cyl_hole"]
+top_radius = 0.0004
+bottom_radius = 0.0004
+height = 0.0006
+radial_segments = 6
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_hole"]
+albedo_color = Color(0.22, 0.22, 0.24, 1)
+roughness = 0.8
+
+; 26 speaker holes in an oval below the +/- row, then the 1/2/3/4 pips printed
+; over the player LEDs. Positions are generated, not hand-typed — see the
+; corresponding block in Tools if these ever need regenerating.
+[sub_resource type="MultiMesh" id="MM_face_dots"]
+transform_format = 1
+instance_count = 36
+mesh = SubResource("Cyl_hole")
+buffer = PackedFloat32Array(1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, -0.0105, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, -0.00415, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, -0.00285, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0022, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0035, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0048, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.00855, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.00985, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.01115, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.01245, 0, 1, 0, 0, 0, 0, 1, 0.0658)
+
 [sub_resource type="CylinderMesh" id="Cyl_power"]
-top_radius = 0.003
-bottom_radius = 0.003
+top_radius = 0.0025
+bottom_radius = 0.0025
 height = 0.002
-radial_segments = 10
+radial_segments = 16
 rings = 1
 
 [sub_resource type="StandardMaterial3D" id="Mat_power"]
@@ -188,13 +234,26 @@ surface_material_override/0 = SubResource("Mat_dark")
 [node name="BarrelTip" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.078)
 
-; POWER, at the TOP LEFT of the face where the hardware puts it — not centred,
-; and on the same side as MINUS below it (-X is the player's left when the barrel
-; points at the set). A VRButton like the face caps rather than a bare mesh: it is
-; worked by a finger and nothing else, so it needs the poke volume. Nothing binds
-; to it and it reaches no core; wiimote.gd reads how long it is HELD.
+; The bezel under POWER, and under HOME. Plain meshes: the wells are moulded into
+; the shell and nothing presses them.
+[node name="PowerWell" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.0152, -0.066)
+mesh = SubResource("Cyl_power_well")
+surface_material_override/0 = SubResource("Mat_well")
+
+[node name="HomeWell" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0151, 0.004)
+mesh = SubResource("Cyl_home_well")
+surface_material_override/0 = SubResource("Mat_well")
+
+; POWER, in the TOP LEFT CORNER where the hardware puts it — about 9 mm in from
+; the left edge and 8 mm down from the tip, on the same side as MINUS below it
+; (-X is the player's left when the barrel points at the set). A VRButton like the
+; face caps rather than a bare mesh: it is worked by a finger and nothing else, so
+; it needs the poke volume. Nothing binds to it and it reaches no core;
+; wiimote.gd reads how long it is HELD.
 [node name="PowerButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.01, 0.016, -0.062)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.016, -0.066)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
@@ -294,8 +353,16 @@ shape = SubResource("CylShape_small")
 mesh = SubResource("Cyl_small")
 surface_material_override/0 = SubResource("Mat_cap")
 
+; The speaker sits between the +/- row and 1, and until it was drawn 1, 2 and the
+; player LEDs had all slid forward into its space. They are back where the
+; hardware has them, which is what makes the lower face read as a Wii Remote.
+[node name="FaceDots" type="MultiMeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0)
+multimesh = SubResource("MM_face_dots")
+material_override = SubResource("Mat_hole")
+
 [node name="OneButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.026)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.045)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
@@ -311,7 +378,7 @@ mesh = SubResource("Cyl_num")
 surface_material_override/0 = SubResource("Mat_cap")
 
 [node name="TwoButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.042)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.058)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
@@ -327,7 +394,7 @@ mesh = SubResource("Cyl_num")
 surface_material_override/0 = SubResource("Mat_cap")
 
 [node name="PlayerLEDs" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0.06)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0.0685)
 
 [node name="LED1" type="MeshInstance3D" parent="PlayerLEDs"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0105, 0, 0)
