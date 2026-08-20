@@ -1,20 +1,32 @@
-## Two GBAs on one cable, running Mario Bros.
+## Two GBAs on one cable, playing Mario Bros. together.
 ##
-##     "$godot" --headless --path RetroXR res://Tools/mario_link_probe.tscn
+##     "$godot" --headless --path RetroXR res://Tools/mario_link_probe.tscn -- --roms=Z:/roms
 ##
 ## The probe that asks the question the others cannot: does a real game actually
-## trade bytes over the link, or does the cable merely negotiate?
+## play over this link, or does the cable merely negotiate?
 ##
 ## Super Mario Advance is the ROM for it. It carries the Mario Bros. arcade game
-## alongside Super Mario Bros. 2, and that mode is a two-to-four player link game,
-## so the guests start driving their serial ports as soon as multiplayer is
-## chosen. Point --rom at a copy; nothing is bundled.
+## alongside Super Mario Bros. 2, and that mode is a two-to-four player link game.
+## Point --roms at a library holding a copy; nothing is bundled.
 ##
-## Reaching the mode needs input, so this presses through the intro and the menu
-## rather than sitting at the title. That makes it fragile in a way a test may not
-## be: a different revision puts the cursor somewhere else and the run proves
-## nothing. It reports what it saw rather than asserting a frame count, and the
-## number that matters is the traffic counter climbing at all.
+## Reaching the mode needs input, so this presses through the intro, the menu and
+## the lobby rather than sitting at the title. That makes it fragile in a way a
+## test may not be: a different revision puts a cursor somewhere else and the run
+## proves nothing, which is why it lives here rather than in Tests/. What it does
+## assert is the shape of a session that is genuinely running, and both halves of
+## that matter:
+##
+##   RATE  -- a GBA multiplayer game in play clocks about nine transfers per
+##            frame, not one. One a frame is the IDLE rate, the pairing poll, and
+##            a run that stops there has negotiated a cable and played nothing.
+##   SPEED -- and both machines still run at 60 fps while doing it. The bus
+##            rendezvouses the two emulation threads tens of thousands of times a
+##            second, so a link that carried the traffic by halving the framerate
+##            would satisfy the first number and be worthless.
+##
+## The GAME is what proves it. Two cores at the right transfer rate could still be
+## trading rubbish, so the run also saves both screens: at PHASE 1 they show the
+## same level with P1 marked on one machine and P2 on the other.
 extends Node
 
 const CORE := "mgba"
@@ -31,6 +43,9 @@ var _opt_backup := ""
 var _restored := false
 var _a: Libretro = null
 var _b: Libretro = null
+var _wall_prev := 0
+var _fa_prev := 0
+var _fb_prev := 0
 
 
 func _ready() -> void:
@@ -74,6 +89,7 @@ func _run() -> void:
 		await get_tree().process_frame
 	var joined: bool = _a.LinkConnect(_b, 0, 0)
 	print("[mario] cabled=%s" % str(joined))
+	_wall_prev = Time.get_ticks_msec()
 
 	# Through the logo, then interrupt the attract demo.
 	#
@@ -81,58 +97,151 @@ func _run() -> void:
 	# a Super Mario 2 demo; Start interrupts that and brings up the title with
 	# Single Player / Multiplayer on it. Every earlier attempt pressed into the
 	# demo and read the result as a menu refusing input.
-	for i in range(260):
-		await get_tree().process_frame
+	#
+	# Counted in EMULATED frames rather than process frames. Headless Godot has
+	# no vsync, so its loop free-runs while a core paces itself to 60 Hz, and the
+	# two counts drift apart by a factor of three or more. A menu press timed in
+	# process frames is therefore timed in nothing at all: the same code waits a
+	# different number of game frames on every run and on every machine.
+	await _wait_frames(240)
 	_shot("a_demo")
 
 	# Start interrupts the attract demo and raises the title; the game does not
 	# wait on its menu. Then Down to Multiplayer and A to take it, which is the
 	# route confirmed by hand.
-	await _hold(BTN_START, 8, 60)
+	await _hold(BTN_START, 6, 40)
 	_shot("b_title")
-	await _hold(BTN_DOWN, 8, 30)
+	await _hold(BTN_DOWN, 6, 20)
 	_shot("c_multiplayer")
-	await _hold(BTN_A, 8, 120)
-	_shot("d_after_a")
-	await _hold(BTN_A, 8, 150)
-	_shot("e_after_a2")
+	# The master takes Multiplayer first and starts calling.
+	await _hold(BTN_A, 6, 60, [_a])
+	_shot("d_master_calling")
+	# Then the guest answers, a beat later, as the second player would.
+	await _hold(BTN_A, 6, 60, [_b])
+	_shot("d_guest_joining")
 
-	# It reaches "CHECKING" and starts trading transfers. Watch what it settles
-	# into, and keep nudging A in case the next screen wants a confirm too.
+	# CHECKING. The two machines trade one word a frame while the game looks for
+	# a partner, and it takes several hundred frames before it believes in one.
+	# Watch the counter rather than guessing a duration.
+	var quiet := 0
+	var last_sent: int = _a.LinkSent(0)
+	for step in range(40):
+		await _wait_frames(30)
+		var now_sent: int = _a.LinkSent(0)
+		if now_sent == last_sent:
+			quiet += 1
+		else:
+			quiet = 0
+		last_sent = now_sent
+		_report("check%02d" % step)
+		# A confirm can land while the screen is mid-transition and be dropped.
+		# Offering it again costs nothing on a machine that has already moved on.
+		if step == 3 or step == 8 or step == 15:
+			await _hold(BTN_A, 6, 20, [_b])
+		# Traffic stopping is the signal the handshake has SETTLED, one way or
+		# the other; sitting through the rest of the loop after that only wastes
+		# the run.
+		if quiet >= 3 and step >= 4:
+			break
+	_shot("e_lobby")
+
+	# Both players are on the lobby now. Start takes the master through to the
+	# Mario Bros. mode screen, where Classic or Battle is chosen, and A takes it.
+	#
+	# The link goes quiet between the lobby and the mode screen, which is why the
+	# run keeps going rather than stopping at the first silence: pairing and
+	# playing are separate conversations, and the second one has not been asked
+	# for yet at the point the first ends.
+	await _hold(BTN_START, 6, 90)
+	_shot("f_after_start")
+	_report("started")
+	await _hold(BTN_A, 6, 90)
+	_shot("g_after_mode")
+	_report("mode")
+	await _hold(BTN_A, 6, 90)
+	_shot("h_after_mode2")
+	_report("mode2")
+	await _hold(BTN_START, 6, 90)
+	_shot("i_after_start2")
+	_report("start2")
+
+	# From here on the game is in play, and everything measured at the end is
+	# measured over this window alone. Counting from boot would fold in the long
+	# idle poll of the pairing screens and bury the rate that matters.
+	var play_sent: int = _a.LinkSent(0)
+	var play_frames: int = _a.GetFrameCount()
+	var play_wall: int = Time.get_ticks_msec()
 	for step in range(6):
-		for i in range(120):
-			await get_tree().process_frame
-		_shot("f_check%d" % step)
-		print("[mario] check%d  sent A=%d B=%d" % [step, _a.LinkSent(0), _b.LinkSent(0)])
-	await _hold(BTN_A, 8, 180)
-	_shot("g_after_a3")
+		await _wait_frames(120)
+		_shot("j_watch%d" % step)
+		_report("watch%d" % step)
 
-	# Then let them sit and watch the counter.
-	var last := 0
-	for round_i in range(12):
-		for i in range(120):
-			await get_tree().process_frame
-		var ta: int = _a.LinkTraffic(0)
-		var tb: int = _b.LinkTraffic(0)
-		print("[mario] t+%2ds  sent A=%d B=%d  got A=%d B=%d  peers A=%d" % [
-			(round_i + 1) * 2, _a.LinkSent(0), _b.LinkSent(0), ta, tb, _a.LinkPeerCount(0)])
-		if ta + tb > last:
-			last = ta + tb
-		if round_i == 2 or round_i == 7:
-			_shot("06_round%d" % round_i)
+	# The master sends two messages per transfer, a start and its own word, so
+	# halving its count gives transfers. Measured over the watch loop alone,
+	# which is the only stretch where a game is actually being played.
+	var transfers: float = (_a.LinkSent(0) - play_sent) / 2.0
+	var frames: float = maxf(1.0, _a.GetFrameCount() - play_frames)
+	var per_frame: float = transfers / frames
+	var fps: float = frames / maxf(0.001, (Time.get_ticks_msec() - play_wall) / 1000.0)
 
-	print("[mario] ---- total link messages: %d ----" % last)
-	if last > 0:
-		print("[mario] RESULT=TRAFFIC  the guests are talking over the cable")
+	print("[mario] ---- %d transfers over %d frames: %.1f per frame, %.1f fps ----" % [
+		int(transfers), int(frames), per_frame, fps])
+
+	var failures: PackedStringArray = []
+	if per_frame < 5.0:
+		failures.append("only %.1f transfers per frame; a session in play runs about 9, one a frame is the idle poll" % per_frame)
+	if fps < 50.0:
+		failures.append("machines ran at %.1f fps; the link is being paid for in emulation speed" % fps)
+	if _a.LinkPeerCount(0) != 2 or _b.LinkPeerCount(0) != 2:
+		failures.append("cable reports %d and %d peers" % [_a.LinkPeerCount(0), _b.LinkPeerCount(0)])
+
+	for f in failures:
+		print("[mario] FAIL  %s" % f)
+	if failures.is_empty():
+		print("[mario] RESULT=PLAYING  two cores are running a link game over the cable")
 	else:
-		print("[mario] RESULT=SILENT   the cable negotiated but nothing crossed it")
+		print("[mario] RESULT=FAILED")
 
 	_a.StopContent()
 	_b.StopContent()
 	for i in range(120):
 		await get_tree().process_frame
 	_restore()
-	get_tree().quit(0)
+	get_tree().quit(0 if failures.is_empty() else 1)
+
+
+## Wait for a number of EMULATED frames on the slower of the two machines.
+##
+## The distinction matters more than it looks. A headless run has no vsync, so
+## get_tree().process_frame comes round several times per emulated frame, and a
+## menu press counted in process frames lands for a fraction of a game frame or
+## for ten of them depending on how loaded the box is. Counted here, a press is
+## the same length every time.
+func _wait_frames(n: int) -> void:
+	var target_a: int = _a.GetFrameCount() + n
+	var target_b: int = _b.GetFrameCount() + n
+	while _a.GetFrameCount() < target_a or _b.GetFrameCount() < target_b:
+		await get_tree().process_frame
+
+
+## One line of everything worth knowing: link traffic, and how fast each machine
+## is actually running.
+##
+## Emulated speed belongs next to the traffic count because a link that looks
+## slow may only be a core running slow. The barrier this rests on rendezvouses
+## the two threads tens of thousands of times a second, and if that is what is
+## costing the frames then a transfer rate says nothing about the game at all.
+func _report(tag: String) -> void:
+	var wall: int = Time.get_ticks_msec()
+	var fa: int = _a.GetFrameCount()
+	var fb: int = _b.GetFrameCount()
+	var secs: float = max(1, wall - _wall_prev) / 1000.0
+	print("[mario] %-9s sent A=%d B=%d  got A=%d B=%d  peers=%d  fps A=%.1f B=%.1f" % [
+		tag, _a.LinkSent(0), _b.LinkSent(0), _a.LinkTraffic(0), _b.LinkTraffic(0),
+		_a.LinkPeerCount(0), (fa - _fa_prev) / secs, (fb - _fb_prev) / secs])
+	_wall_prev = wall
+	_fa_prev = fa
+	_fb_prev = fb
 
 
 ## Save what machine A is showing, so a run that goes wrong can be LOOKED at.
@@ -140,25 +249,37 @@ func _run() -> void:
 ## Blind button pressing through a menu is guesswork, and a probe that reports
 ## silence without showing where it got stuck is not evidence of anything.
 func _shot(tag: String) -> void:
-	var img: Image = _a.GetVideoImage()
-	if img == null or img.is_empty():
-		print("[mario] shot %s: no frame yet" % tag)
-		return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://probe_out"))
-	img.save_png("res://probe_out/mario_%s.png" % tag)
+	# BOTH machines. Only ever photographing the master hid the whole first half
+	# of the story: the two screens diverge for most of the handshake, and which
+	# of them is stuck is the question being asked.
+	for pair: Array in [[_a, "a"], [_b, "b"]]:
+		var machine: Libretro = pair[0]
+		var img: Image = machine.GetVideoImage()
+		if img == null or img.is_empty():
+			print("[mario] shot %s/%s: no frame yet" % [tag, pair[1]])
+			continue
+		img.save_png("res://probe_out/mario_%s_%s.png" % [tag, pair[1]])
 	print("[mario] shot %s" % tag)
 
 
 ## Press a button on both machines, then let go, then wait.
-func _hold(mask: int, press_frames: int, gap_frames: int) -> void:
-	for machine: Libretro in [_a, _b]:
+## Press a button, then let go, then wait.
+##
+## `who` picks the machines: both by default, or one of them. Pressing both at
+## once is not what two people do and not what the game expects. The parent goes
+## into multiplayer first and starts calling, and the second machine joins a call
+## that is already in progress; pressed together, the master reaches CHECKING and
+## the other one is still on its own title screen refusing to move, which reads
+## exactly like a link that never negotiated.
+func _hold(mask: int, press_frames: int, gap_frames: int, who: Array = []) -> void:
+	var machines: Array = who if not who.is_empty() else [_a, _b]
+	for machine: Libretro in machines:
 		machine.SetJoypadState(0, mask, 0, 0, 0, 0)
-	for i in range(press_frames):
-		await get_tree().process_frame
-	for machine: Libretro in [_a, _b]:
+	await _wait_frames(press_frames)
+	for machine: Libretro in machines:
 		machine.SetJoypadState(0, 0, 0, 0, 0, 0)
-	for i in range(gap_frames):
-		await get_tree().process_frame
+	await _wait_frames(gap_frames)
 
 
 func _find_rom() -> String:
