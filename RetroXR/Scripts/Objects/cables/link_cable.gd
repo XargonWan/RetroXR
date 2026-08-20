@@ -33,20 +33,108 @@ extends CompositeCable
 var _linked: Array[Dictionary] = []
 
 
+## Every lead that currently shares a wire with this one, this one included, as
+## of the last resolve. Kept so a lead being carried out of the room can tell the
+## ones it leaves behind, at which point the walk that would have found them is
+## already broken.
+var _wire: Array[Node3D] = []
+
+## Guards the wake below against ringing back and forth for ever: a lead woken by
+## its neighbour would otherwise wake the neighbour straight back.
+static var _waking := false
+
+
 func _resolve() -> void:
 	if not is_inside_tree():
 		return
 
-	var group := _machines_on_this_wire()
-	if group.size() >= 2:
+	var wire: Array[Node3D] = []
+	var group := _machines_on_this_wire(wire)
+
+	if group.size() >= 2 and _bus_head(wire) == self:
 		_join(group)
 	else:
+		# Either there is nothing to join, or another lead on this wire is the
+		# one that joins it. Release whatever this lead is still holding either
+		# way, so exactly one of them owns the bus.
 		_disconnect()
 
 	# Still reported and still announced: seating replication and anything
 	# listening for a cable to move do not care what the cable carries.
 	_report_seating_changes()
 	topology_changed.emit()
+
+	_wake(wire)
+
+
+## Which lead on a wire performs the join.
+##
+## Every lead sharing a wire walks to the same machines, so without a rule they
+## would all join them and all record having done so, and then whichever was
+## pulled first would tear the bus down for the others. It has to be one.
+##
+## The head of the chain, meaning the lead that is not itself hanging off another
+## lead's junction. That is a physical property of how the leads are plugged
+## together rather than a fact about this program, so every lead on the wire
+## picks the same one, and it puts the clock where the hardware puts it: on the
+## machine at the head lead's purple end, which is the machine the walk visits
+## first and therefore the one that takes bus index 0.
+##
+## A topology with no clear head, which needs both junctions in use, falls back
+## to whichever lead was made first. Arbitrary, but it has to be decided somehow,
+## and it is at least the same answer from every lead.
+func _bus_head(wire: Array[Node3D]) -> Node3D:
+	var head: Node3D = null
+	for c in wire:
+		var cable := c as LinkCable
+		if cable == null or cable._hangs_off_a_junction():
+			continue
+		if head == null or cable.get_instance_id() < head.get_instance_id():
+			head = cable
+	if head != null:
+		return head
+	for c in wire:
+		if head == null or c.get_instance_id() < head.get_instance_id():
+			head = c
+	return head
+
+
+## Whether either of this lead's ends sits in another lead's junction rather than
+## in a machine. A junction socket has no core behind it, which is exactly what
+## tells the two kinds of socket apart.
+func _hangs_off_a_junction() -> bool:
+	for e in [End.A, End.B]:
+		var port := _link_port_at(e)
+		if port != null and port.get_machine() == null and port.get_cable() != null:
+			return true
+	return false
+
+
+## Tell every other lead on this wire to look again.
+##
+## A lead resolves when ITS OWN plug moves, and that is not the same question as
+## which machines are on the wire. Chain a third handheld onto a lead's junction
+## and the FIRST lead's bus grew from two machines to three without anything of
+## its own having moved.
+##
+## The union of the wire before and after, because unplugging from a junction
+## takes this lead OFF the wire it needs to tell.
+func _wake(wire: Array[Node3D]) -> void:
+	var reach: Array[Node3D] = []
+	for group: Array[Node3D] in [_wire, wire]:
+		for c in group:
+			if c != self and is_instance_valid(c) and not reach.has(c):
+				reach.append(c)
+	_wire = wire
+
+	if _waking:
+		return
+	_waking = true
+	for c in reach:
+		var cable := c as LinkCable
+		if cable != null:
+			cable._resolve()
+	_waking = false
 
 
 ## Every machine that ends up sharing this wire, as [{libretro, port}, ...].
@@ -60,9 +148,9 @@ func _resolve() -> void:
 ## The coordinator cannot do this walk itself, because a junction can never be an
 ## endpoint there. Working it out is the room's job precisely because the cables
 ## and their junctions are things in the room.
-func _machines_on_this_wire() -> Array[Dictionary]:
+func _machines_on_this_wire(cables: Array[Node3D]) -> Array[Dictionary]:
 	var machines: Array[Dictionary] = []
-	var cables: Array[Node3D] = [self]
+	cables.append(self)
 	var seen := {self: true}
 	var i := 0
 
@@ -125,6 +213,34 @@ func _join(group: Array[Dictionary]) -> void:
 
 	if head.LinkConnectGroup(others, ports):
 		_linked = group.duplicate()
+	_log_ends("joined", _linked)
+
+
+func _log_ends(verb: String, ends: Array[Dictionary]) -> void:
+	# Worth the noise for the same reason RcaPort logs every seating: the symptom
+	# this explains is silent and misleading.
+	#
+	# A machine only takes part in a link if its CORE attached to the bus, and
+	# that happens at load, behind a core option that says "(Restart)" and means
+	# it. Switch a handheld on, then turn Link Cable on, and the room is entirely
+	# right that the lead is seated and the machines are cabled -- while the game
+	# reads "all GBAs ready" as false and refuses multiplayer with a rejection
+	# noise. From the outside that is indistinguishable from a broken cable, a
+	# socket that belongs to nobody, or a game that does not support linking.
+	#
+	# Peer COUNT is the number that tells them apart, because it comes back from
+	# the core rather than from the room. Two machines cabled and only one peer
+	# each means the other one's core is not on the bus.
+	var parts: PackedStringArray = []
+	for end: Dictionary in ends:
+		var lib: Libretro = end["libretro"]
+		if not is_instance_valid(lib):
+			continue
+		var machine := lib.get_parent()
+		parts.append("%s (%d peers)" % [
+			machine.name if machine != null else "?", lib.LinkPeerCount(end["port"])])
+	print("[LinkCable] %s %s: %s" % [name, verb,
+		", ".join(parts) if parts.size() > 0 else "nothing"])
 
 
 func _same_group(group: Array[Dictionary]) -> bool:
@@ -208,10 +324,14 @@ func _disconnect() -> void:
 	# machine really can go away between joining and pulling: carried out of the
 	# room, or the whole room torn down.
 	var ends := _linked
+	if ends.is_empty():
+		return
 	_linked = []
 	for end: Dictionary in ends:
 		if is_instance_valid(end["libretro"]):
 			end["libretro"].LinkDisconnect(end["port"])
+	# After the disconnects, so the count reported is the one that resulted.
+	_log_ends("parted", ends)
 
 
 func _exit_tree() -> void:
@@ -219,3 +339,11 @@ func _exit_tree() -> void:
 	# pulling it. Leaving the cores joined would hold each other up over a lead
 	# that no longer exists.
 	_disconnect()
+
+	# And the leads it was chained to have to rebuild whatever is left. Deferred,
+	# because this one is still half in the tree and a wire walk performed now
+	# would walk straight back into it.
+	for c in _wire:
+		if c != self and is_instance_valid(c):
+			c.call_deferred("_resolve")
+	_wire = []
