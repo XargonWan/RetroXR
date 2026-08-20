@@ -880,11 +880,16 @@ func _test_power_on_verdict() -> void:
 	_ok("verdict/a missing required bios refuses", not no_bios["start"])
 	_eq("verdict/and names the fault", no_bios["title"], "BIOS required")
 	_ok("verdict/names the file",
-		str(no_bios["description"]).contains("'pcsx2/bios' folder"))
-	_ok("verdict/and the folder it goes in",
-		str(no_bios["description"]).contains("/root/system/pcee2/pcsx2"))
+		str(no_bios["description"]).contains("pcsx2/bios"))
 	_ok("verdict/and where to get it",
 		str(no_bios["description"]).contains("BIOS / Extras"))
+	# The card is 520x132 px at 1400 px/m. An absolute system path overflowed it
+	# top and bottom and clipped the instruction clean off — caught by rendering
+	# it, not by any assertion, so the length is pinned here now.
+	_ok("verdict/says it in two short lines",
+		str(no_bios["description"]).split("\n").size() == 2)
+	for line: String in str(no_bios["description"]).split("\n"):
+		_ok("verdict/line fits the card: %s" % line, line.length() <= 52)
 	_ok("verdict/one missing file is not counted up",
 		not str(no_bios["description"]).contains("more"))
 

@@ -2148,17 +2148,19 @@ static func _power_on_verdict(core_name: String, sysid: String, rom: String,
 	# anything, and the failure looks identical to a broken core.
 	if not missing.is_empty():
 		var first: Dictionary = missing[0]
-		var desc := str(first.get("desc", first.get("path", "")))
-		var folder := str(first.get("dest", "")).get_base_dir()
+		var path := str(first.get("path", ""))
 		var more := "" if missing.size() == 1 else " (+%d more)" % (missing.size() - 1)
 		return {
 			"start": false, "rom": rom,
-			"log": "core '%s' is missing required firmware: %s" % [core_name, first.get("path", "")],
+			"log": "core '%s' is missing required firmware: %s" % [core_name, path],
 			"title": "BIOS required",
-			# Names the file and where it goes, because the card cannot carry a
-			# button — it is a dwell notice, not a dialog.
-			"description": "%s%s\nPut it in %s, or get it from OPTIONS > Cores > BIOS / Extras."
-				% [desc, more, folder],
+			# Two lines, and no absolute path. The card is 520x132 at 1400 px/m —
+			# about a playing card held at arm's length — and a Windows system path
+			# overflowed it top AND bottom, clipping the one line that says what to
+			# do about it. The BIOS / Extras tab prints the folder itself ("Files go
+			# in: …"), so repeating it here bought nothing and cost the instruction.
+			"description": "%s%s is missing.\nAdd it in OPTIONS > Cores > BIOS / Extras."
+				% [path, more],
 			"accent": fault,
 		}
 
