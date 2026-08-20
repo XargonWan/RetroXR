@@ -44,19 +44,41 @@ KENNEY_BOX = 64.0
 # Marks to print, and which button of the remote each goes on. The names on the
 # left are Kenney's file stems; the ones on the right are the control names
 # ConsolePadArt and the Wiimote's FACE_BUTTONS dictionary already speak.
-MARKS = [
-    ("a", "a"),
-    ("minus", "minus"),
-    ("home", "home"),
-    ("plus", "plus"),
-    ("1", "one"),
-    ("2", "two"),
-]
-
-# The mark is inked in the shell's own darkest grey rather than Kenney's white,
-# which would be invisible on a white remote. This is the value the source file
-# already uses for the speaker holes.
+# Kenney draws these white, which is invisible on a white remote, so each mark is
+# re-inked. Four values, following the hardware rather than one flat grey — the
+# colour is doing work here, because it is the only thing that separates the game
+# buttons from the two that are not.
+#
+# A is the darkest: it is the button you press, and on the remote it is the one
+# with real contrast against its cap.
 INK = "#3d3d3d"
+
+# minus, plus, 1 and 2 are grey on the hardware and grey here, a stop lighter than
+# A so the hierarchy reads at diagram size. Not lighter than this: it has to stay
+# legible on a near-white cap.
+GREY_INK = "#75757a"
+
+# Home takes the remote's own blue — #16b4e6 is already in this file, as the lit
+# player LED, so the accent is the source's rather than one invented for it.
+HOME_INK = "#16b4e6"
+
+# Power is the exception, and red on purpose. It is the one control on this
+# remote that is NOT a game input — it turns the thing on — and it carries no
+# anchor, no lead and no binding row, so nothing else on the page distinguishes
+# it from the six caps that do. Colour is what says "this one is different"
+# before you have read a word. Muted rather than a signal red: it sits beside a
+# dark grey d-pad on a white shell and should not be the loudest thing there.
+POWER_INK = "#cc3327"
+
+MARKS = [
+    ("power", "power", POWER_INK),
+    ("a", "a", INK),
+    ("minus", "minus", GREY_INK),
+    ("home", "home", HOME_INK),
+    ("plus", "plus", GREY_INK),
+    ("1", "one", GREY_INK),
+    ("2", "two", GREY_INK),
+]
 
 # Trimmed to the drawing's own alpha, with a little air. The source is a 1000
 # square with the remote occupying a quarter of it; left uncropped the diagram
@@ -140,6 +162,9 @@ def main() -> None:
     # The buttons, by hand from the source's own geometry. Each is the centre and
     # radius of one round control; see circle_pairs() for where they come from.
     buttons = {
+        # Top left, and the smallest cap on the remote. The 23.9 circle around it
+        # in the source is the recess, not the button.
+        "power": (438.69, 65.06, 17.08),
         "a": (501.00, 320.92, 38.29),
         "minus": (435.77, 480.57, 19.10),
         "home": (501.09, 480.57, 19.10),
@@ -149,7 +174,7 @@ def main() -> None:
     }
 
     groups = []
-    for stem, control in MARKS:
+    for stem, control, ink in MARKS:
         glyph = zf.read("Nintendo Wii/Vector/wii_button_%s.svg" % stem).decode()
         d = mark_path(glyph)
         cx, cy, r = buttons[control]
@@ -167,7 +192,7 @@ def main() -> None:
         groups.append(
             '  <g transform="translate(%.4f %.4f) scale(%.6f) translate(%.4f %.4f)">\n'
             '    <path fill="%s" d="%s"/>\n'
-            "  </g>" % (cx, cy, s, -ox, -oy, INK, d)
+            "  </g>" % (cx, cy, s, -ox, -oy, ink, d)
         )
 
     # Crop, and append the marks last so they sit over the caps.
@@ -187,6 +212,8 @@ def main() -> None:
         "right": (535.90, 176.50),
     }
     print("\n\t\t\"anchors\": {")
+    # Deliberately NOT power: it is printed on the art but is not a game input, so
+    # it gets no anchor, no lead and no binding row.
     order = ["up", "down", "left", "right", "a", "minus", "home", "plus", "one", "two"]
     for k in order:
         if k in extra:

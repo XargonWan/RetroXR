@@ -81,13 +81,27 @@ wii_remote.svg
 
   Modified : the shell arrives with BLANK buttons, which is no use in a remap
              diagram where a row called "minus" has to be matched to a physical
-             cap. The six marks the hardware carries — A, minus, home, plus, 1,
-             2 — are lifted out of Kenney's glyphs and printed onto it, each
-             scaled by its own cap so it keeps the proportion Kenney drew it at,
-             and inked in #3d3d3d, the grey the shell already uses for its
-             speaker holes. Kenney's white would be invisible on a white remote.
-             The viewBox is cropped from the source's 1000 square to the drawing's
-             own extent; uncropped, three quarters of the diagram is empty.
+             cap. Seven marks are lifted out of Kenney's glyphs and printed onto
+             it — power, A, minus, home, plus, 1, 2 — each scaled by its own cap
+             so it keeps the proportion Kenney drew it at. The viewBox is cropped
+             from the source's 1000 square to the drawing's own extent;
+             uncropped, three quarters of the diagram is empty.
+
+             Kenney draws all of these white, which is invisible on a white
+             shell, so each is re-inked to follow the hardware:
+
+               power        #cc3327  red     not a game input, and the only
+                                             thing on the page that says so
+               A            #3d3d3d  dark    the button you actually press
+               minus plus   #75757a  grey    a stop lighter than A, so the
+               1     2                       hierarchy reads at diagram size
+               home         #16b4e6  blue    the source file's OWN accent — it
+                                             is the lit player LED at the foot
+                                             of the remote, so the blue is the
+                                             artist's, not one invented for it
+
+             Power carries no anchor, no lead and no binding row: it is printed
+             because the remote has one, not because anything can be bound to it.
 
   Why these : both are CC0, so neither adds a second share-alike obligation
              alongside nes_pad_colour.svg. Taking the marks from the same Kenney
