@@ -214,6 +214,38 @@ func _join(group: Array[Dictionary]) -> void:
 	if head.LinkConnectGroup(others, ports):
 		_linked = group.duplicate()
 	_log_ends("joined", _linked)
+	_restart_running(_linked)
+
+
+## Power-cycle any machine on this wire that was already running.
+##
+## A GBA reads whether anything is on the other end ONCE, while it boots, and
+## never asks again: it samples the ready line about a third of a second in and
+## caches the answer for the rest of the session. Cable two handhelds together
+## after either of them has got past that moment and the link is live, both cores
+## are on the bus, both read two peers, and the game still refuses multiplayer
+## with a rejection noise -- because it decided before the cable existed.
+##
+## Measured, not guessed: the same two machines and the same ROM run 9 transfers
+## a frame when both are switched on with the lead already in, and exactly zero
+## when the lead goes in afterwards. A reset is what closes the gap.
+##
+## Real hardware behaves the same way, which is why the instruction on the box is
+## to connect the cable BEFORE switching on, and why a player who forgets reaches
+## for the power switch. The room does it for them, because the alternative is a
+## cable that looks perfect and silently does nothing.
+##
+## Only machines that are actually running: a console still on its boot logo, or
+## switched off, has nothing to re-read.
+func _restart_running(group: Array[Dictionary]) -> void:
+	for end: Dictionary in group:
+		var lib: Libretro = end["libretro"]
+		if not is_instance_valid(lib) or lib.GetFrameCount() <= 0:
+			continue
+		lib.RequestReset()
+		var machine := lib.get_parent()
+		print("[LinkCable] restarted %s so it can see the cable" % [
+			machine.name if machine != null else "a machine"])
 
 
 func _log_ends(verb: String, ends: Array[Dictionary]) -> void:

@@ -79,20 +79,76 @@ func _run() -> void:
 	_b = Libretro.new()
 	add_child(_a)
 	add_child(_b)
-	_a.StartContent(root, CORE, rom)
-	_b.StartContent(root, CORE, rom)
 
 	# Deliberately NOT calling SetInputEnabled. That flag lets a wrapper poll the
 	# global Godot Input singleton, and it OVERWRITES the joypad every frame, so
 	# turning it on throws away everything SetJoypadState puts there. Off is what
 	# a probe wants: the state it sets is the state the core sees.
 
-	# Cable up straight away, the way a player who plugged the lead in before
-	# switching on would have it.
+	# Cable first, then switch the machines on one at a time.
+	#
+	# This is the order a room produces and it is the harder one, so it is the
+	# one that gets tested. A saved room restores its leads before anything is
+	# powered up, and a player switches two handhelds on one after the other, so
+	# the cable's membership changes UNDER a core that is already running and
+	# already driving its serial port. Starting both machines in the same frame
+	# with the lead already seated hides a whole class of fault, because then the
+	# count is settled before the guest ever looks at it.
+	var order := "cable-first"
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--order="):
+			order = arg.substr(8)
 	for i in range(20):
 		await get_tree().process_frame
-	var joined: bool = _a.LinkConnect(_b, 0, 0)
-	print("[mario] cabled=%s" % str(joined))
+
+	var joined := false
+	match order:
+		"cable-first":
+			# A saved room restores its leads before anything is powered up, then
+			# the player switches two handhelds on one after the other.
+			joined = _a.LinkConnect(_b, 0, 0)
+			_a.StartContent(root, CORE, rom)
+			while _a.GetFrameCount() < 90:
+				await get_tree().process_frame
+			_b.StartContent(root, CORE, rom)
+			# The first machine booted alone and cached "nobody there". The second
+			# one arriving is exactly the membership change LinkCable restarts on,
+			# and LinkConnect is the raw call below the room, so the probe has to
+			# do it by hand.
+			await _wait_frames(30)
+			_a.RequestReset()
+			await _wait_frames(30)
+		"cable-last":
+			# Both running, then the lead goes in. What a player does by hand.
+			#
+			# Without the restart this order carries exactly zero transfers. A GBA
+			# reads whether anything is on the other end once, while it boots, and
+			# never asks again.
+			_a.StartContent(root, CORE, rom)
+			_b.StartContent(root, CORE, rom)
+			await _wait_frames(200)
+			joined = _a.LinkConnect(_b, 0, 0)
+			_a.RequestReset()
+			_b.RequestReset()
+			await _wait_frames(30)
+		"cable-last-reset":
+			# Both running, then the lead goes in, then both are reset. On real
+			# hardware you power-cycle a pair you cabled up after the fact, and
+			# this asks whether a reset is genuinely all it takes.
+			_a.StartContent(root, CORE, rom)
+			_b.StartContent(root, CORE, rom)
+			await _wait_frames(200)
+			joined = _a.LinkConnect(_b, 0, 0)
+			await _wait_frames(30)
+			_a.RequestReset()
+			_b.RequestReset()
+			await _wait_frames(30)
+		_:
+			# Both switched on in the same frame with the lead already seated.
+			_a.StartContent(root, CORE, rom)
+			_b.StartContent(root, CORE, rom)
+			joined = _a.LinkConnect(_b, 0, 0)
+	print("[mario] order=%s cabled=%s" % [order, str(joined)])
 	_wall_prev = Time.get_ticks_msec()
 
 	# Through the logo, then interrupt the attract demo.
