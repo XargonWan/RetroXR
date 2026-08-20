@@ -1,0 +1,356 @@
+## A GameCube and its Game Boy Advances, on one bus.
+##
+##     "$godot" --headless --path RetroXR res://Tools/gc_gba_probe.tscn -- --roms=Z:/roms
+##
+## Four Swords Adventures gives each player a GBA on the end of a GameCube lead:
+## a second screen for caves and inventories, and the only way the game is meant
+## to be played. On real hardware the console sends each handheld a program to
+## run out of RAM, so the GBAs have no cartridges in them.
+##
+## This is the first thing on this bus that is not two of the same machine. A
+## GameCube counts at about 729 million ticks a second and a Game Boy Advance at
+## 16.7 million, and neither ever sees the other's units: the frontend converts,
+## which is what the clock rate declared at attach has been for all along.
+##
+## It is also why the link had to stop working out which core was calling from
+## the calling thread. Dolphin runs its CPU on a thread of its own whenever
+## dual-core is on, so every call from its serial port arrives from somewhere the
+## frontend had never heard of.
+##
+##   --gbas=N   how many handhelds, 1 to 4. The game wants one per player.
+extends Node
+
+const GC_CORE := "dolphin"
+const GBA_CORE := "mgba"
+
+## What a GBA on the end of a GameCube lead is, as libretro counts devices.
+## Matches RETRO_DEVICE_GBA_LINK in DolphinLibretro: (7 << 8) | RETRO_DEVICE_NONE.
+const RETRO_DEVICE_GBA_LINK := (7 << 8) | 0
+
+## The bus port a GBA keeps for a GameCube lead, beside the one its link cable
+## uses. One EXT socket, two kinds of conversation, and the frontend refuses to
+## join the wrong pair because their protocol ids differ.
+const GBA_JOY_PORT := 1
+
+const PINNED := {
+	"mgba_link_cable": "ON",
+	"mgba_skip_bios": "OFF",
+}
+
+const BTN_A := 1 << 8
+const BTN_START := 1 << 3
+const BTN_LEFT := 1 << 6
+
+var _opt_path := ""
+var _opt_backup := ""
+var _restored := false
+var _gc: Libretro = null
+var _gbas: Array[Libretro] = []
+var _fail := 0
+var _filming := false
+var _film_frame := 0
+
+
+func _ready() -> void:
+	get_tree().create_timer(420.0).timeout.connect(func() -> void:
+		print("[gcgba] TIMEOUT")
+		_restore()
+		get_tree().quit(1))
+	await _run()
+
+
+func _run() -> void:
+	var count := 2
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--gbas="):
+			count = clampi(int(arg.substr(7)), 1, 4)
+
+	var iso := _find_iso()
+	if iso.is_empty():
+		print("[gcgba] SKIP  no Four Swords Adventures image found; pass --roms=<library>")
+		get_tree().quit(0)
+		return
+	print("[gcgba] iso  %s" % iso)
+
+	var root := CoreDownloadManager.default_core_root()
+	for pair: Array in [[GC_CORE, "dolphin_libretro.dll"], [GBA_CORE, "mgba_libretro.dll"]]:
+		if not FileAccess.file_exists(root.path_join("cores").path_join(pair[1])):
+			print("[gcgba] SKIP  %s is not installed" % pair[0])
+			get_tree().quit(0)
+			return
+	var bios := root.path_join("system").path_join(GBA_CORE).path_join("gba_bios.bin")
+	if not FileAccess.file_exists(bios):
+		print("[gcgba] SKIP  need gba_bios.bin at %s" % bios)
+		get_tree().quit(0)
+		return
+	if not _pin_options(root):
+		print("[gcgba] SKIP  could not write the core options file")
+		get_tree().quit(0)
+		return
+
+	_gc = Libretro.new()
+	add_child(_gc)
+	for i in range(count):
+		var gba := Libretro.new()
+		add_child(gba)
+		_gbas.append(gba)
+	print("[gcgba] one GameCube, %d handheld%s" % [count, "" if count == 1 else "s"])
+
+	# --plain runs the GameCube on its own with ordinary controllers, which is the
+	# control this needs: a console that will not boot here says nothing about a
+	# link, and the two failures look identical from the outside.
+	var plain := "--plain" in OS.get_cmdline_user_args()
+
+	# Cable each handheld to a controller port BEFORE anything is switched on.
+	# Both machines read whether anything is out there while they boot.
+	if not plain:
+		for i in _gbas.size():
+			var joined: bool = _gc.LinkConnect(_gbas[i], i, GBA_JOY_PORT)
+			_check("handheld %d is cabled to port %d" % [i + 1, i + 1], joined)
+
+		# Tell the GameCube what is plugged into those ports. A device type, which
+		# is what libretro already means by that question, rather than a core
+		# option.
+		for i in _gbas.size():
+			_gc.SetControllerPortDevice(i, RETRO_DEVICE_GBA_LINK)
+	else:
+		print("[gcgba] plain: no handhelds cabled, ordinary controllers")
+
+	# The handhelds have NOTHING in them: no cartridge, so the BIOS is all they
+	# have, and the BIOS is what listens on the port.
+	ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", true)
+	for gba: Libretro in _gbas:
+		gba.StartContent(root, GBA_CORE, "")
+	_gc.StartContent(root, GC_CORE, iso)
+
+	await _settle(180)
+	print("[gcgba] gc frames=%d  handheld frames=%s" % [
+		_gc.GetFrameCount(), str(_gbas.map(func(m: Libretro) -> int: return m.GetFrameCount()))])
+	var running := true
+	for gba: Libretro in _gbas:
+		running = running and gba.GetFrameCount() > 0
+	_check("every handheld is running with no cartridge", running)
+	_check("the GameCube is running", _gc.GetFrameCount() > 0)
+	_shot("a_boot")
+
+	# Through the title and into the game, pressed on the HANDHELDS.
+	#
+	# Not on the GameCube: in this game the handheld IS the controller, so a port
+	# with one on it has no pad behind it and a press aimed at the console reaches
+	# nothing at all. That is not a quirk of the probe -- it is the arrangement
+	# the game is built around, and it took a title screen that would not move
+	# through forty-eight presses to notice.
+	var before := _sent()
+	_filming = "--film" in OS.get_cmdline_user_args()
+	for step in range(110):
+		if _filming and step >= 62:
+			await _film(60)
+		else:
+			await _settle(60)
+		# Start on the title, then A through whatever it puts up next. Pressed
+		# often rather than once, because this is a menu nobody has mapped and a
+		# press that lands mid-fade is a press that did nothing.
+		# Start only while the title is up, then A and nothing else.
+		#
+		# Alternating the two past the title walked in and out of the memory-card
+		# dialog for ever: A takes the highlighted answer, Start backs out of the
+		# menu that put it there, and pressing both in turn is a loop rather than
+		# a route.
+		if step < 6:
+			await _press(BTN_START, _gbas)
+		elif step >= 22 and step % 3 == 0:
+			# Start skips the opening story, which runs for a good while before
+			# anybody gets to move.
+			await _press(BTN_START, _gbas)
+		elif step >= 16 or step % 2 == 0:
+			# Past the two dialogs it is A the whole way: the save-slot list and
+			# everything after it want the highlighted entry taken, and a LEFT
+			# there walks off onto Copy and Erase.
+			await _press(BTN_A, _gbas)
+		else:
+			# Left first, then A. The game asks two yes/no questions on the way in
+			# and both default to the answer that goes back rather than on: it
+			# offers to make a save file, and when told no asks whether to carry on
+			# without one. A alone takes the highlighted answer, so every other
+			# press moves off it first.
+			await _press(BTN_LEFT, _gbas)
+			await _press(BTN_A, _gbas)
+		_shot("b_step%02d" % step)
+		print("[gcgba] step%02d  sent=%s  peers=%s" % [step, str(_sent()), str(_peers())])
+	_shot("c_end")
+
+	var moved := 0
+	var now := _sent()
+	for i in now.size():
+		moved += now[i] - before[i]
+	print("[gcgba] ---- %d messages crossed ----" % moved)
+	_check("the GameCube and the handhelds are talking", moved > 0)
+
+	for machine: Libretro in _all():
+		machine.StopContent()
+	for i in range(120):
+		await get_tree().process_frame
+	_restore()
+	print("[gcgba] ---- %s ----" % ("PASS" if _fail == 0 else "%d failed" % _fail))
+	get_tree().quit(1 if _fail > 0 else 0)
+
+
+## Save every machine's screen each frame, for encoding into one clip.
+##
+## A GameCube and its handhelds are not the same size or the same shape, and what
+## makes the thing legible is seeing them together: the television doing one
+## thing and the little screens doing another, at the same moment.
+func _film(frames: int) -> void:
+	var dir := "res://probe_out/gcfilm"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	var machines := _all()
+	var target: int = _gc.GetFrameCount() + frames
+	var deadline: int = Time.get_ticks_msec() + 25000
+	while _gc.GetFrameCount() < target and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+		var shots: Array[Image] = []
+		for machine: Libretro in machines:
+			var img: Image = machine.GetVideoImage()
+			if img == null or img.is_empty():
+				shots.clear()
+				break
+			shots.append(img)
+		if shots.is_empty():
+			continue
+		for i in shots.size():
+			shots[i].save_png("%s/%05d_%d.png" % [dir, _film_frame, i])
+		_film_frame += 1
+
+
+func _all() -> Array[Libretro]:
+	var out: Array[Libretro] = [_gc]
+	out.append_array(_gbas)
+	return out
+
+
+func _sent() -> Array[int]:
+	var out: Array[int] = []
+	for i in _gbas.size():
+		out.append(_gc.LinkSent(i))
+	for gba: Libretro in _gbas:
+		out.append(gba.LinkSent(GBA_JOY_PORT))
+	return out
+
+
+func _peers() -> Array[int]:
+	var out: Array[int] = []
+	for i in _gbas.size():
+		out.append(_gc.LinkPeerCount(i))
+	for gba: Libretro in _gbas:
+		out.append(gba.LinkPeerCount(GBA_JOY_PORT))
+	return out
+
+
+func _check(name: String, cond: bool) -> void:
+	if cond:
+		print("[gcgba] PASS  %s" % name)
+	else:
+		_fail += 1
+		print("[gcgba] FAIL  %s" % name)
+
+
+## Wait for emulated frames on every machine, and never for ever.
+##
+## A GameCube and a Game Boy Advance do not run at the same rate and a machine
+## that has stalled must not hang the run, so this is a floor on progress rather
+## than a barrier.
+func _settle(frames: int) -> void:
+	var deadline: int = Time.get_ticks_msec() + 25000
+	var base: Array[int] = []
+	for machine: Libretro in _all():
+		base.append(machine.GetFrameCount())
+	while Time.get_ticks_msec() < deadline:
+		var done := true
+		var machines := _all()
+		for i in machines.size():
+			var now: int = machines[i].GetFrameCount()
+			if now < base[i]:
+				base[i] = now
+			if now - base[i] < frames:
+				done = false
+		if done:
+			return
+		await get_tree().process_frame
+
+
+func _press(mask: int, who: Array) -> void:
+	for machine: Libretro in who:
+		machine.SetJoypadState(0, mask, 0, 0, 0, 0)
+	await _settle(6)
+	for machine: Libretro in who:
+		machine.SetJoypadState(0, 0, 0, 0, 0, 0)
+	await _settle(10)
+
+
+func _shot(tag: String) -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://probe_out"))
+	var machines := _all()
+	for i in machines.size():
+		var img: Image = machines[i].GetVideoImage()
+		if img != null and not img.is_empty():
+			img.save_png("res://probe_out/gcgba_%s_%s.png" % [
+				tag, "gc" if i == 0 else "gba%d" % i])
+
+
+func _find_iso() -> String:
+	var roots: PackedStringArray = [RomLibrary.default_roms_root()]
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--roms="):
+			roots.append(arg.substr(7))
+	for root in roots:
+		for systemid in ["nintendo_gamecube", "gc", "gamecube"]:
+			var dir_path: String = root.path_join(systemid)
+			var dir := DirAccess.open(dir_path)
+			if dir == null:
+				continue
+			for f in dir.get_files():
+				var lower := f.to_lower()
+				if lower.contains("four swords") and not lower.contains("(unl)") \
+						and (lower.ends_with(".rvz") or lower.ends_with(".iso") \
+							or lower.ends_with(".gcm") or lower.ends_with(".ciso")):
+					return dir_path.path_join(f)
+	return ""
+
+
+func _pin_options(root: String) -> bool:
+	_opt_path = "%s/core_options/%s.opt" % [root, GBA_CORE]
+	var existing := ""
+	if FileAccess.file_exists(_opt_path):
+		var reader := FileAccess.open(_opt_path, FileAccess.READ)
+		if reader != null:
+			existing = reader.get_as_text()
+			reader.close()
+	_opt_backup = existing
+
+	var lines: PackedStringArray = []
+	for line in existing.split("\n", false):
+		var pinned := false
+		for key: String in PINNED:
+			if line.begins_with(key):
+				pinned = true
+		if not pinned:
+			lines.append(line)
+	for key: String in PINNED:
+		lines.append('%s = "%s"' % [key, PINNED[key]])
+
+	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
+	if writer == null:
+		return false
+	writer.store_string("\n".join(lines) + "\n")
+	writer.close()
+	return true
+
+
+func _restore() -> void:
+	if _restored or _opt_path.is_empty():
+		return
+	_restored = true
+	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
+	if writer != null:
+		writer.store_string(_opt_backup)
+		writer.close()
