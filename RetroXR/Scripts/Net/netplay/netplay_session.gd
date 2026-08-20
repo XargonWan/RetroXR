@@ -138,6 +138,9 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 	_options = NetplayCores.forced_options(core)
 	_delay = clampi(delay, 1, 8)
 	_rollback = NetplayCores.rollback_capable(core) if rollback < 0 else rollback == 1
+	if _rollback and _is_linked(system):
+		push_warning("[Netplay] machine is on a link bus; starting in lockstep, not rollback")
+		_rollback = false
 	_set_owners(owners)
 	_ready_peers.clear()
 
@@ -543,6 +546,48 @@ func _resolve_disk_path(md5: String) -> String:
 			and _system.net_resolve_rom(md5):
 		return str(_system.get("rom_path"))
 	return ""
+
+
+# ── The link cable ────────────────────────────────────────────────────────────
+
+## The bus ports a machine can be cabled on.
+##
+## Two of them, because a Game Boy Advance has ONE socket and the lead in it
+## decides which conversation it is having: another handheld on a link cable, or
+## a console on a GameCube lead. The frontend keeps a port per conversation and
+## the cable picks which one it means.
+const LINK_PORTS: Array[int] = [0, 1]
+
+
+## Whether this machine is cabled to another one.
+##
+## Asked because rollback and a link cable cannot both be on. Rollback rewinds
+## ONE core in isolation, and a cabled machine's state is only half a
+## conversation: rewind one end and not the other and it replays a transfer the
+## far end has already answered, after which the two disagree about the wire and
+## never find out. It is not a desync the CRC checker can resync either, because
+## both peers are wrong in the same way.
+##
+## So a linked machine starts in lockstep whatever the core is capable of. The
+## real fix is group rollback, rewinding every core on the bus AND the
+## coordinator to one frame, which is a project rather than a flag, and the plan
+## records it as such.
+##
+## Asked of the CORE rather than of the room, deliberately: the cable is what
+## joined them, but the core is what knows it is joined, and it keeps knowing
+## across the restart a cold start puts it through.
+func _is_linked(system: Object) -> bool:
+	if system == null or not system.has_method("get_libretro_node"):
+		return false
+	var lib: Object = system.get_libretro_node()
+	if lib == null or not lib.has_method("LinkPeerCount"):
+		return false
+	for port: int in LINK_PORTS:
+		# Two, not one. A port with only this machine on it is a socket with a
+		# lead hanging out of it, which is a cable nobody is on the far end of.
+		if int(lib.LinkPeerCount(port)) >= 2:
+			return true
+	return false
 
 
 # ── Per-frame drive ───────────────────────────────────────────────────────────

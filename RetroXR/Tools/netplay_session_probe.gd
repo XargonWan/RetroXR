@@ -32,6 +32,12 @@ class MockLib extends Node:
 	var _acc := 0
 	var _enabled := false
 	var desync := false
+	## How many machines are on each of this core's link bus ports. The guard
+	## asks the CORE whether it is cabled, so the mock has to be able to say.
+	var link_peers: Dictionary = {}
+
+	func LinkPeerCount(port: int) -> int:
+		return int(link_peers.get(port, 0))
 
 	func setup_gate(_mask: int, start_frame: int) -> void:
 		_enabled = true
@@ -219,6 +225,52 @@ func _run() -> void:
 			break
 	print("[probe] D: desync detected=%s (%d events)" % [detected, desyncs.size()])
 	_fail_if(not detected, "diverging peer CRC was not detected")
+	host_nm.netplay_stop("probe done")
+	await _await_frames(10)
+
+	# ── Phase E: a cabled machine refuses rollback ────────────────────────────
+	# Rollback rewinds one core, and a cabled machine's state is half a
+	# conversation: rewinding one end replays a transfer the far end already
+	# answered. Both peers would be wrong the same way, so the CRC checker
+	# cannot even see it. Asking for rollback on a linked machine has to come
+	# back as lockstep, and asking for it on an UNCABLED one still has to work,
+	# or the guard is just rollback switched off everywhere.
+	desyncs.clear()
+	client_sys.lib.desync = false
+	host_sys.lib.link_peers = {}
+	client_sys.lib.link_peers = {}
+	var ok3: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3, 1)
+	_fail_if(not ok3, "rollback start failed")
+	print("[probe] E: uncabled, asked for rollback -> rollback=%s" % host_np._rollback)
+	_fail_if(not host_np._rollback, "an uncabled machine was denied rollback")
+	host_nm.netplay_stop("probe done")
+	await _await_frames(10)
+
+	# Same request, same core, one cable in it.
+	host_sys.lib.link_peers = {0: 2}
+	var ok4: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3, 1)
+	_fail_if(not ok4, "linked start failed")
+	print("[probe] E: cabled, asked for rollback -> rollback=%s" % host_np._rollback)
+	_fail_if(host_np._rollback, "a cabled machine was started in rollback")
+
+	# And the far port counts too: a GameCube lead sits on port 1, not port 0,
+	# and a guard that only looked at port 0 would wave it through.
+	host_nm.netplay_stop("probe done")
+	await _await_frames(10)
+	host_sys.lib.link_peers = {1: 2}
+	var ok5: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3, 1)
+	_fail_if(not ok5, "console-lead start failed")
+	print("[probe] E: on a console lead -> rollback=%s" % host_np._rollback)
+	_fail_if(host_np._rollback, "a machine on a console lead was started in rollback")
+
+	# A lead hanging out of the socket with nobody on the far end is not a link.
+	host_nm.netplay_stop("probe done")
+	await _await_frames(10)
+	host_sys.lib.link_peers = {0: 1}
+	var ok6: bool = host_nm.netplay_start_host(host_sys, "fceumm", "MD5", {0: 1, 1: client_id}, 3, 1)
+	_fail_if(not ok6, "lone-port start failed")
+	print("[probe] E: alone on the bus -> rollback=%s" % host_np._rollback)
+	_fail_if(not host_np._rollback, "a machine alone on a bus was denied rollback")
 	host_nm.netplay_stop("probe done")
 	await _await_frames(10)
 
