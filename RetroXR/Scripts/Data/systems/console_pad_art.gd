@@ -30,17 +30,17 @@ const _ROWS: Dictionary = {
 		# the buttons are somebody else's drawing, so the dots have to be found
 		# in it. Re-run that tool if the art is ever replaced.
 		"anchors": {
-			"left": Vector2(0.0813, 0.5056),
-			"up": Vector2(0.1606, 0.3302),
-			"right": Vector2(0.2399, 0.5056),
-			"down": Vector2(0.1606, 0.6811),
-			"select": Vector2(0.3699, 0.6398),
-			"start": Vector2(0.4914, 0.6397),
-			"b": Vector2(0.6436, 0.6186),
-			"a": Vector2(0.7623, 0.6187),
+			"left": Vector2(0.0867, 0.5892),
+			"up": Vector2(0.1611, 0.4086),
+			"right": Vector2(0.2354, 0.5892),
+			"down": Vector2(0.1611, 0.7698),
+			"select": Vector2(0.3915, 0.7122),
+			"start": Vector2(0.5287, 0.7122),
+			"b": Vector2(0.7019, 0.7070),
+			"a": Vector2(0.8307, 0.7069),
 		},
 		# Rows along the top and bottom rather than columns down the sides: this
-		# pad is 2.2:1, and a column beside it would put every lead nearly
+		# pad is 2.4:1, and a column beside it would put every lead nearly
 		# horizontal across the whole picture. Split by anchor height, ordered by
 		# anchor x. `down` is on the bottom row despite sharing the cross's x
 		# with `up`, because from the top its lead would run through the cross.

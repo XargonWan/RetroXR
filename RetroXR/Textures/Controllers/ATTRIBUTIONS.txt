@@ -28,25 +28,39 @@ gamepad_line.svg
 
 nes_pad_colour.svg
 ------------------
-  Source   : https://commons.wikimedia.org/wiki/File:Retro_gamepad_straight_with_no_cord.svg
-  Original : Openclipart, by user BHSPitMonkey (upstream filename "nes-cont.svg");
-             uploaded to Wikimedia Commons by Drilnoth.
-  Licence  : CC0 1.0 — Creative Commons Zero, Public Domain Dedication.
-             No attribution is required; this record is kept anyway so the
-             provenance can be re-checked.
+  Source   : https://commons.wikimedia.org/wiki/File:Nes_controller.svg
+  Author   : Fant0men (Wikimedia Commons), 2007.
+  Licence  : dual-licensed CC BY-SA 3.0 Unported / GFDL 1.2+.
+             WE TAKE THE CC BY-SA 3.0 OPTION. GFDL is a poor fit for artwork —
+             it would oblige us to ship the whole licence text with the game.
   SHA-256 of the file as downloaded:
-             56182d5f4cbb9ce5039b8f38e687f4c4fb0abc1f9c21d8b8263bdbc56819f2dc
+             1a9d33fa326704cb806b44a23c026739b8f035f5a81c96e7210f06889787973b
 
-  Modified : ONE change, to the <svg> element only — added
-             viewBox="0 141 512 229" and changed height from 512 to 229, which
-             crops the empty margin above and below the drawing so the texture
-             IS the pad. No path, colour or transform was touched, and the
-             drawing itself is byte-identical to upstream.
+  THIS IS THE ONLY SHARE-ALIKE ASSET IN THE REPO. Two obligations follow, and
+  neither is optional:
 
-  Branding : none. The only text in the file is the letters "A" and "B" on the
-             two face buttons, and Godot's SVG importer (ThorVG) has no text
-             support so even those do not render. There is no wordmark and no
-             logo, on the hardware or in the file.
+    1. ATTRIBUTION. Credit the author and name the licence wherever the game is
+       distributed. Done in the ARTWORK section of the in-app About panel
+       (Scripts/UI/spawn_menu/views/about_view.gd) as well as here.
+
+    2. SHARE-ALIKE. This file is a DERIVATIVE (see below), so the modified file
+       is itself CC BY-SA 3.0 and must stay so. It does NOT relicense the rest
+       of the project: an asset shipped alongside the code is not a combined
+       work with it, and every other file keeps its own terms. Do not paste
+       parts of this drawing into art that is meant to be ours.
+
+  Modified : the "Nintendo(R)" wordmark was REMOVED — eleven #FE0016 paths,
+             ids path6991/6995/6999/7003/7007/7011/7015/7019/7023/7027/7029,
+             which together drew the eight letters and the registered-trademark
+             mark in the top right of the face. Nothing else was touched: no
+             other path, no colour, no transform, and the viewBox is upstream's
+             own ("-0.004 270.034 612.002 251.924"), already tight to the pad.
+             Removing a trademark is a trade-dress measure, not a licence one;
+             CC BY-SA permits the modification either way.
+
+  Branding : none remains. The SELECT / START legends and the B / A button
+             letters are kept — those are functional labels naming the controls
+             the diagram binds, not anyone's mark.
 
   Anchors  : measured from a Godot render by Tools/nes_pad_anchors.py and stored
              in Scripts/Data/systems/console_pad_art.gd. Re-run that tool if this

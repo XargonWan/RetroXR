@@ -650,8 +650,11 @@ carried alongside it.
   circles, capsules and a cross on a symmetric body — which keeps the anchors as
   chosen coordinates that cannot drift from a render; it is an Xbox *layout* and
   deliberately not an Xbox, so there is no mark being borrowed. The NES pad is a
-  CC0 illustration from Openclipart via Wikimedia Commons, cropped only by its
-  `viewBox`; its anchors are therefore MEASURED out of a Godot render by
+  Wikimedia Commons drawing by Fant0men used under **CC BY-SA 3.0** with the
+  Nintendo wordmark's eleven paths deleted — the repo's ONLY share-alike asset,
+  so it carries two live obligations: the About panel must keep crediting it,
+  and the modified file stays CC BY-SA (it does not relicense anything else).
+  Its anchors are MEASURED out of a Godot render by
   `Tools/nes_pad_anchors.py` (red discs → A/B, black cross → d-pad, black pills →
   Select/Start) rather than chosen. That tool also counts leader-line
   intersections over a sweep of panel sizes, and the count must stay 0.

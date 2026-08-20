@@ -42,10 +42,13 @@ const SECTIONS: Array = [
 		["Systematic icon set", "BAXY Square — github.com/baxysquare", "MIT"],
 		["Input Prompts", "Kenney — kenney.nl", "CC0 1.0"],
 		["Touch controller model", "immersive-web/webxr-input-profiles", "MIT"],
+		["NES controller diagram", "Fant0men — Wikimedia Commons", "CC BY-SA 3.0"],
 		["Lamp chain switch (audio)", "ftpalad — freesound.org", "CC0 1.0"],
 	], "Console art from the Systematic theme for RetroArch / Lakka. "
 		+ "Controller line art is rendered from the WebXR input profile model; "
-		+ "button glyphs are Kenney's Input Prompts."],
+		+ "button glyphs are Kenney's Input Prompts. The NES controller drawing is "
+		+ "used under CC BY-SA 3.0 with its maker's branding removed; that edit is "
+		+ "shared under the same licence."],
 
 	["GAME DATA", [
 		["ScreenScraper", "screenscraper.fr contributors", "CC BY-NC-SA 4.0"],
