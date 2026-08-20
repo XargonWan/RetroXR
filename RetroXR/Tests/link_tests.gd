@@ -37,6 +37,7 @@ func _ready() -> void:
 	_test_cable_is_spawnable()
 	await _test_gc_gba_cable()
 	await _test_lid_clears_the_socket()
+	await _test_bus_head_is_the_same_on_every_peer()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -567,3 +568,67 @@ func _obb_gap(ta: Transform3D, sa: Vector3, tb: Transform3D, sb: Vector3) -> flo
 		var rb: float = absf(bx[0].dot(axis)) * eb.x + absf(bx[1].dot(axis)) * eb.y + absf(bx[2].dot(axis)) * eb.z
 		best = maxf(best, absf(d.dot(axis)) - (ra + rb))
 	return best
+
+
+# -- Who joins the bus, seen from two headsets --------------------------------
+# Every lead on a wire walks to the same machines, so exactly one of them has to
+# perform the join, and the one that does decides which machine takes bus index
+# zero, which is to say who is player one. Under replication both peers run both
+# cores and must reach the same answer from the same room.
+#
+# The tie-break used to be the lowest instance id. That is a per-process
+# allocation: the same two leads can come out in either order on two headsets, so
+# the two peers could seat the machines differently and diverge from frame one,
+# with no message on the wire to disagree about. This asserts the key that
+# replaced it does not move with allocation order.
+
+func _test_bus_head_is_the_same_on_every_peer() -> void:
+	var first: LinkCable = load(CABLE_SCENE).instantiate()
+	var second: LinkCable = load(CABLE_SCENE).instantiate()
+	add_child(first)
+	add_child(second)
+	first.name = "LeadOne"
+	second.name = "LeadTwo"
+	await get_tree().process_frame
+
+	_ok("allocation order is what it looks like",
+		first.get_instance_id() < second.get_instance_id())
+
+	var wire: Array[Node3D] = [first, second]
+	# Numbered against the allocation order on purpose. A head picked by instance
+	# id answers "first" here and a head picked by the minted id answers "second",
+	# so this case cannot pass by accident.
+	first.set_meta("net_id", 7)
+	second.set_meta("net_id", 3)
+	_ok("the head follows the minted id, not the allocation order",
+		first._bus_head(wire) == second)
+
+	# And the other way about, so the case is not just reading a fixed answer.
+	first.set_meta("net_id", 2)
+	second.set_meta("net_id", 9)
+	_ok("and it moves when the minted ids move", first._bus_head(wire) == first)
+
+	# Both leads agree, which is the property the wire actually needs: they each
+	# run this walk separately and only one of them may conclude it is the head.
+	_ok("and both leads name the same head", first._bus_head(wire) == second._bus_head(wire))
+
+	# With nothing minted, the fallback is the node path. Cables are not
+	# registered today, so this is the case that runs in a real session.
+	first.remove_meta("net_id")
+	second.remove_meta("net_id")
+	_ok("an unregistered lead is keyed by its path",
+		LinkCable.stable_key(first) == str(first.get_path()))
+	_ok("and two of them are keyed apart",
+		LinkCable.stable_key(first) != LinkCable.stable_key(second))
+	var by_path: Node3D = first if str(first.get_path()) < str(second.get_path()) else second
+	_ok("the head is the lower path", first._bus_head(wire) == by_path)
+
+	# A minted lead never sorts into the middle of unregistered ones. Mixed keys
+	# are a transient, but a transient that reordered the bus would restart both
+	# machines for no reason a player could see.
+	second.set_meta("net_id", 999999)
+	_ok("a minted lead outranks an unminted one", first._bus_head(wire) == second)
+
+	first.queue_free()
+	second.queue_free()
+	await get_tree().process_frame

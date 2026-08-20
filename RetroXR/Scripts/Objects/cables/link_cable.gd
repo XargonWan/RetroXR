@@ -87,22 +87,49 @@ func _resolve() -> void:
 ## first and therefore the one that takes bus index 0.
 ##
 ## A topology with no clear head, which needs both junctions in use, falls back
-## to whichever lead was made first. Arbitrary, but it has to be decided somehow,
-## and it is at least the same answer from every lead.
+## to the lowest stable key. Arbitrary, but it has to be decided somehow, and it
+## is at least the same answer from every lead AND from every peer.
 func _bus_head(wire: Array[Node3D]) -> Node3D:
 	var head: Node3D = null
+	var head_key := ""
 	for c in wire:
 		var cable := c as LinkCable
 		if cable == null or cable._hangs_off_a_junction():
 			continue
-		if head == null or cable.get_instance_id() < head.get_instance_id():
+		var key := stable_key(cable)
+		if head == null or key < head_key:
 			head = cable
+			head_key = key
 	if head != null:
 		return head
 	for c in wire:
-		if head == null or c.get_instance_id() < head.get_instance_id():
+		var key := stable_key(c)
+		if head == null or key < head_key:
 			head = c
+			head_key = key
 	return head
+
+
+## What a lead is called, in a way every peer agrees on.
+##
+## The tie-break used to be the lowest instance id, and that is a desync waiting
+## to happen. An instance id is a per-process allocation: two headsets running
+## the same replicated room hand back different ones for the same lead, so they
+## can pick different heads, and the head decides which machine takes bus index
+## zero. Different player one on each peer, from identical inputs.
+##
+## A net_id where there is one, because the host mints those and every peer is
+## told the same number. Cables do not get one today (they serialise empty and
+## object_sync skips them), so in practice this is the node path, which is what
+## object_sync ALREADY puts on the wire for a cable: EV_RCA_PLUG encodes an
+## unregistered node as "$path" and the far peer looks it up by that path. So the
+## path being the same everywhere is not a new assumption, it is the one this
+## room already runs on.
+static func stable_key(node: Node) -> String:
+	var id := int(node.get_meta("net_id", -1))
+	# Zero-padded so it sorts numerically rather than as text, and prefixed so a
+	# registered lead never sorts into the middle of the unregistered ones.
+	return "#%012d" % id if id >= 0 else str(node.get_path())
 
 
 ## Whether either of this lead's ends sits in another lead's junction rather than
