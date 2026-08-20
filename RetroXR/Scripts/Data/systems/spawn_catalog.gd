@@ -155,6 +155,15 @@ const _VGA_CABLE: Dictionary = {"kind": "peripheral", "label": "VGA Cable",
 ## carries a junction so a third and fourth can chain on.
 const _LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable", "spawn": "link_cable"}
 
+## The console-to-handheld lead, offered on BOTH platforms it joins. A player
+## spawning a GameCube for Four Swords Adventures should be offered one without
+## having to know it is filed under the handheld, and a player spawning a Game
+## Boy Advance should be offered it without having to know it is filed under the
+## console: it is one cable and it belongs to neither of them.
+const _GC_GBA_CABLE: Dictionary = {"kind": "peripheral", "label": "GC-GBA Cable",
+	"spawn": "gc_gba_cable"}
+const _GC_GBA_PLATFORMS: Array = ["gamecube", "game_boy_advance"]
+
 ## Keyed on the PLATFORM, not the model: the GBA and the SP are two models of one
 ## platform and both have the socket.
 const _LINK_PLATFORMS: Array = ["game_boy_advance"]
@@ -206,6 +215,8 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
 	if _LINK_PLATFORMS.has(systemid):
 		items.append(_LINK_CABLE.duplicate())
+	if _GC_GBA_PLATFORMS.has(systemid):
+		items.append(_GC_GBA_CABLE.duplicate())
 	var info := SystemInfo.for_system(systemid)
 	if info != null and info.computer:
 		items.append_array(_COMPUTER_INPUT.duplicate(true))

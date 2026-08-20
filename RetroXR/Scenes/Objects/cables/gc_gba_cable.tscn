@@ -1,0 +1,208 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/cables/gc_gba_cable.gd" id="1_cablescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/gc_link_plug.gd" id="2_gcplug"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/link_plug.gd" id="3_gbaplug"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="4_pickhigh"]
+[ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="5_snapgp"]
+
+; PLACEHOLDER GEOMETRY. Boxes and a cylinder, not a model.
+;
+; Same reasoning as the link cable it sits beside: the repo ships only assets it
+; has the right to, and a Nintendo connector is not something to guess at with
+; somebody else's export. Boxes are generated, so they carry no licence at all.
+;
+; The numbers and the colours are real, taken off a photograph of a DOL-011. The
+; two ends are deliberately nothing alike, because that is the point of this
+; cable: a wide flat shell with two latch tabs for a console's controller socket,
+; and a round barrel with a bare metal collar for a handheld's EXT port. Neither
+; will enter the other's socket in the room either, which is plug_group()'s job.
+;
+; The cord is PURPLE. The Game Boy link cable's is grey with one purple shell;
+; this one is the other way round, and telling the two apart at a glance is worth
+; the two lines it costs.
+
+; ── The GameCube end ──────────────────────────────────────────────────────────
+; A wide, shallow shell, roughly 44 x 12 x 26 mm, that lies flat against the
+; console's front panel with its latches either side.
+[sub_resource type="BoxMesh" id="BoxMesh_gcbody"]
+size = Vector3(0.044, 0.012, 0.026)
+
+[sub_resource type="StandardMaterial3D" id="Mat_gcshell"]
+albedo_color = Color(0.78, 0.78, 0.79, 1)
+roughness = 0.55
+
+; The two purple tabs that squeeze to release it. Small, and the only colour on
+; this end, which is exactly how you pick the connector out of a photograph.
+[sub_resource type="BoxMesh" id="BoxMesh_gctab"]
+size = Vector3(0.005, 0.009, 0.012)
+
+[sub_resource type="StandardMaterial3D" id="Mat_gctab"]
+albedo_color = Color(0.33, 0.22, 0.55, 1)
+roughness = 0.5
+
+; The dark recess with the pins in it, on the face that meets the console.
+[sub_resource type="BoxMesh" id="BoxMesh_gcmouth"]
+size = Vector3(0.014, 0.006, 0.003)
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.06, 0.06, 0.07, 1)
+roughness = 0.8
+
+[sub_resource type="BoxShape3D" id="Shape_gcplug"]
+size = Vector3(0.044, 0.012, 0.026)
+
+; Laser target, deliberately larger than the shell: a beam from across the room
+; has to be able to find it. Only the pointer answers this shape.
+[sub_resource type="BoxShape3D" id="Shape_gcpointer"]
+size = Vector3(0.06, 0.035, 0.05)
+
+; ── The Game Boy Advance end ──────────────────────────────────────────────────
+; The same family as the link cable's plug, in grey, with a metal collar: 13 x 9
+; mm and 20 mm deep, with a keyed nose 7 mm proud of the mating face.
+[sub_resource type="BoxMesh" id="BoxMesh_gbabody"]
+size = Vector3(0.013, 0.009, 0.02)
+
+[sub_resource type="StandardMaterial3D" id="Mat_gbashell"]
+albedo_color = Color(0.78, 0.78, 0.79, 1)
+roughness = 0.55
+
+[sub_resource type="CylinderMesh" id="Cyl_collar"]
+top_radius = 0.0062
+bottom_radius = 0.0062
+height = 0.008
+
+; Bare metal, lightly. A fully metallic surface takes its colour from what it
+; reflects, and a room with no reflection probe gives it almost nothing, so the
+; collar would render near-black in exactly the dim corners a handheld gets used
+; in. Mostly diffuse with a little specular reads as brushed metal anywhere.
+[sub_resource type="StandardMaterial3D" id="Mat_metal"]
+albedo_color = Color(0.74, 0.73, 0.71, 1)
+metallic = 0.25
+metallic_specular = 0.75
+roughness = 0.4
+
+[sub_resource type="BoxShape3D" id="Shape_gbaplug"]
+size = Vector3(0.013, 0.009, 0.027)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
+bounce = 0.0
+friction = 0.8
+
+; A 1.8 m lead, which is what the DOL-011 ships at, against 1.4 m between the
+; plugs so it hangs rather than pulling straight.
+[node name="GcGbaCable" type="Node3D"]
+script = ExtResource("1_cablescript")
+
+; -- End A: the console ---------------------------------------------------------
+; Turned about Y so the cord trails toward the far end: the plug is authored
+; connector-on-+Z with the cord leaving -Z, which is also VerletRope's
+; plug_exit_axis, so an unturned plug here would leave its tail with a hairpin.
+[node name="PlugA0" type="RigidBody3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -0.7)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.03
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("2_gcplug")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
+shape = SubResource("Shape_gcplug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
+mesh = SubResource("BoxMesh_gcbody")
+surface_material_override/0 = SubResource("Mat_gcshell")
+
+[node name="TabLeft" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0235, 0, -0.013)
+mesh = SubResource("BoxMesh_gctab")
+surface_material_override/0 = SubResource("Mat_gctab")
+
+[node name="TabRight" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0235, 0, -0.013)
+mesh = SubResource("BoxMesh_gctab")
+surface_material_override/0 = SubResource("Mat_gctab")
+
+[node name="Mouth" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0005)
+mesh = SubResource("BoxMesh_gcmouth")
+surface_material_override/0 = SubResource("Mat_dark")
+
+[node name="PointerArea" type="StaticBody3D" parent="PlugA0"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
+shape = SubResource("Shape_gcpointer")
+
+[node name="PickableHighlight" type="Node3D" parent="PlugA0"]
+script = ExtResource("4_pickhigh")
+
+[node name="SnapGrabPoint" parent="PlugA0" instance=ExtResource("5_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; -- End B: the handheld --------------------------------------------------------
+; Unturned: its cord already trails -Z, back toward end A.
+[node name="PlugB0" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.7)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.025
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("3_gbaplug")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0065)
+shape = SubResource("Shape_gbaplug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01)
+mesh = SubResource("BoxMesh_gbabody")
+surface_material_override/0 = SubResource("Mat_gbashell")
+
+[node name="PlugCollar" type="MeshInstance3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0.002)
+mesh = SubResource("Cyl_collar")
+surface_material_override/0 = SubResource("Mat_metal")
+
+[node name="PointerArea" type="StaticBody3D" parent="PlugB0"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0065)
+shape = SubResource("Shape_gcpointer")
+
+[node name="PickableHighlight" type="Node3D" parent="PlugB0"]
+script = ExtResource("4_pickhigh")
+
+[node name="SnapGrabPoint" parent="PlugB0" instance=ExtResource("5_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; 45 x 40 mm = 1.80 m, the length a DOL-011 ships at, against 1.40 m between the
+; plugs so it hangs. Same tuning as the link lead: a thin cord, not a shielded
+; A/V jacket, so it wants the softer bend and the tighter standoff.
+[node name="VerletRope" type="VerletRope" parent="."]
+segment_count = 45
+segment_length = 0.04
+constraint_iterations = 8
+bend_stiffness = 0.15
+tube_radius = 0.002
+tube_sides = 8
+smoothing = 2
+rope_color = Color(0.35, 0.24, 0.58, 1.0)
+surface_collision_mask = 7
+collision_radius = 0.003
+self_collision = true
+end_align_stiffness = 0.7
+end_stiffness = 0.3
+end_stiff_segments = 2

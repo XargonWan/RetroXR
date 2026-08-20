@@ -101,6 +101,13 @@ func _run() -> void:
 	# link, and the two failures look identical from the outside.
 	var plain := "--plain" in OS.get_cmdline_user_args()
 
+	# --cable seats REAL leads instead of calling LinkConnect, which is the only
+	# way to find out whether a player can do this. Everything else here talks to
+	# the bus directly and would keep passing with the cable in the room broken.
+	if "--cable" in OS.get_cmdline_user_args():
+		await _run_with_cables(root, iso, count)
+		return
+
 	# Cable each handheld to a controller port BEFORE anything is switched on.
 	# Both machines read whether anything is out there while they boot.
 	if not plain:
@@ -220,6 +227,95 @@ func _film(frames: int) -> void:
 		for i in shots.size():
 			shots[i].save_png("%s/%05d_%d.png" % [dir, _film_frame, i])
 		_film_frame += 1
+
+
+## The same thing, done with leads a hand could pick up.
+##
+## Spawns a GameCube and N handhelds as room objects, then seats a DOL-011 into
+## each: the wide end into a controller socket, the barrel into an EXT port. The
+## console is told what is on the port by the plug seating, not by anything here.
+func _run_with_cables(root: String, iso: String, count: int) -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	var console := sys_scene.instantiate() as RetroSystem
+	console.systemid = "gamecube"
+	console.core_name = GC_CORE
+	console.name = "GameCube"
+	add_child(console)
+
+	var handhelds: Array[RetroSystem] = []
+	for i in range(count):
+		var hh := sys_scene.instantiate() as RetroSystem
+		hh.systemid = "game_boy_advance"
+		hh.core_name = GBA_CORE
+		hh.name = "GBA%d" % (i + 1)
+		add_child(hh)
+		handhelds.append(hh)
+	await get_tree().process_frame
+
+	var leads: Array[GcGbaCable] = []
+	var cable_scene := load("res://Scenes/Objects/cables/gc_gba_cable.tscn") as PackedScene
+	for i in range(count):
+		var lead := cable_scene.instantiate() as GcGbaCable
+		lead.name = "Lead%d" % (i + 1)
+		add_child(lead)
+		leads.append(lead)
+	await get_tree().process_frame
+
+	# Seat both ends. The console's controller sockets are ordinary snap zones,
+	# the handheld's EXT port is a LinkPort, and neither end of this lead answers
+	# to the other's filter -- which is what stops a player putting it in
+	# backwards.
+	for i in range(count):
+		var slot := console.find_child("ControllerPort%d" % (i + 1), true, false) as XRToolsSnapZone
+		if slot == null:
+			var zones: Array[Node] = console.find_children("*", "XRToolsSnapZone", true, false)
+			for z: Node in zones:
+				if z.name.begins_with("ControllerPort") or z.name.begins_with("Port"):
+					if z.get_meta("gc_taken", false):
+						continue
+					z.set_meta("gc_taken", true)
+					slot = z as XRToolsSnapZone
+					break
+		var ext := handhelds[i].find_child("LinkPort", true, false) as XRToolsSnapZone
+		_check("console socket %d exists" % (i + 1), slot != null)
+		_check("handheld %d has an EXT port" % (i + 1), ext != null)
+		if slot == null or ext == null:
+			continue
+		slot.pick_up_object(leads[i].get_node("PlugA0"))
+		ext.pick_up_object(leads[i].get_node("PlugB0"))
+	for i in range(20):
+		await get_tree().process_frame
+
+	# Now switch everything on. Cabled first, powered second, which is the order
+	# a restored room produces and the order that works.
+	for hh: RetroSystem in handhelds:
+		hh.rom_path = ""
+		hh.power_on()
+	console.rom_path = iso
+	console.power_on()
+	for i in range(600):
+		await get_tree().process_frame
+
+	var counts: PackedStringArray = []
+	var joined := true
+	for i in range(count):
+		var gc_lib: Libretro = console.get_libretro_node()
+		var hh_lib: Libretro = handhelds[i].get_libretro_node()
+		var a: int = gc_lib.LinkPeerCount(i)
+		var b: int = hh_lib.LinkPeerCount(GBA_JOY_PORT)
+		counts.append("%d/%d" % [a, b])
+		joined = joined and a == 2 and b == 2
+	print("[gcgba] cabled by hand: peers %s" % "/".join(counts))
+	_check("every lead joined its console port to its handheld", joined)
+
+	console.power_off()
+	for hh: RetroSystem in handhelds:
+		hh.power_off()
+	for i in range(60):
+		await get_tree().process_frame
+	_restore()
+	print("[gcgba] ---- %s ----" % ("PASS" if _fail == 0 else "%d failed" % _fail))
+	get_tree().quit(1 if _fail > 0 else 0)
 
 
 func _all() -> Array[Libretro]:

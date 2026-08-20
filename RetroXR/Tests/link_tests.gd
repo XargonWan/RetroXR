@@ -35,8 +35,61 @@ func _ready() -> void:
 	await _test_cable_scene()
 	await _test_port_scene()
 	_test_cable_is_spawnable()
+	await _test_gc_gba_cable()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
+
+
+# -- The console-to-handheld lead --------------------------------------------
+# The only asymmetric cable in the room, and every one of these is about that
+# asymmetry: two ends that fit different sockets, joining two machines that are
+# not peers, over a protocol neither of the handheld leads speaks.
+
+func _test_gc_gba_cable() -> void:
+	var scene := load("res://Scenes/Objects/cables/gc_gba_cable.tscn") as PackedScene
+	_ok("the lead has a scene", scene != null)
+	if scene == null:
+		return
+	var lead := scene.instantiate() as GcGbaCable
+	_ok("and it is a GcGbaCable", lead != null)
+	if lead == null:
+		return
+	add_child(lead)
+	await get_tree().process_frame
+
+	var gc_end := lead.get_node_or_null("PlugA0") as GcLinkPlug
+	var gba_end := lead.get_node_or_null("PlugB0") as LinkPlug
+	_ok("one end is a GameCube plug", gc_end != null)
+	_ok("the other is a handheld plug", gba_end != null)
+	if gc_end == null or gba_end == null:
+		lead.queue_free()
+		return
+
+	# The whole point of the two ends being different. A console socket filters
+	# on "controller_plug" and a handheld's EXT port on "link_plug", and neither
+	# end answers to both, so neither can be pushed into the wrong machine.
+	_ok("the console end answers a controller socket", gc_end.is_in_group("controller_plug"))
+	_ok("and is not a handheld plug", gc_end.plug_group() != gba_end.plug_group())
+	_ok("the handheld end answers an EXT port", gba_end.is_in_group("link_plug"))
+	_ok("and is not a controller plug", not gba_end.is_in_group("controller_plug"))
+
+	# Which console's ports will take it. A GameCube lead is not a Wii lead, and
+	# the socket says so before anything electrical is decided.
+	_eq("the console end fits a GameCube", gc_end.systemid, "gamecube")
+
+	# Seating it announces a handheld to the core, the same way any pad announces
+	# itself: there is no separate step and nothing else to configure.
+	_eq("and announces a Game Boy Advance", gc_end.device_type, (7 << 8) | 0)
+
+	# It carries neither picture nor sound, so AvGraph must walk straight past it.
+	_ok("the lead is not an A/V cable", lead.links().is_empty())
+
+	# Nothing is seated, so it is joined to nothing and says so without faulting.
+	lead._resolve()
+	_ok("an unseated lead joins nothing", true)
+
+	lead.queue_free()
+	await get_tree().process_frame
 
 
 func _ok(name: String, cond: bool, detail := "") -> void:

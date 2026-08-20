@@ -420,6 +420,7 @@ func _build() -> void:
 		["VGA Cable",       "vga_cable"],
 		["3.5 mm Cable",   "trs_cable"],
 		["Link Cable",     "link_cable"],
+		["GC-GBA Cable",   "gc_gba_cable"],
 		["Speakers",       "speaker_pair"],
 		# Not under Controllers: nobody holds it, and it is no more a controller
 		# than the aerial is. It plugs into the Wii and stands on the television.

@@ -289,9 +289,14 @@ func _log_ends(verb: String, ends: Array[Dictionary]) -> void:
 	# each means the other one's core is not on the bus.
 	var parts: PackedStringArray = []
 	for end: Dictionary in ends:
-		var lib: Libretro = end["libretro"]
-		if not is_instance_valid(lib):
+		# Checked BEFORE it is bound to a typed variable. Binding a freed object
+		# to one faults on the assignment, before is_instance_valid ever gets to
+		# answer, and the machines here really can be gone: this runs from the
+		# disconnect path, which is where a lead reports on a room that has just
+		# been torn down around it.
+		if not is_instance_valid(end["libretro"]):
 			continue
+		var lib: Libretro = end["libretro"]
 		var machine := lib.get_parent()
 		parts.append("%s (%d peers)" % [
 			machine.name if machine != null else "?", lib.LinkPeerCount(end["port"])])
