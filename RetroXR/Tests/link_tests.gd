@@ -36,6 +36,7 @@ func _ready() -> void:
 	await _test_port_scene()
 	_test_cable_is_spawnable()
 	await _test_gc_gba_cable()
+	await _test_lid_clears_the_socket()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -405,3 +406,164 @@ class _StubMachine extends Node3D:
 
 	func get_libretro_node() -> Libretro:
 		return libretro
+
+
+# -- The clamshell over its own socket ----------------------------------------
+# A Game Boy Advance SP hinges at the same edge its EXT socket sits on, so the
+# lid and the lead are competing for one strip of plastic. Get the pivot or the
+# open stop wrong and the lid closes on a plugged-in cable, which is a thing no
+# real machine does and a thing the room cannot recover from: the plug is held
+# by a snap zone and the lid is driven by a hand, so they simply interpenetrate.
+#
+# This walks the hinge across its whole travel with a lead seated and measures
+# the gap, rather than trusting a render. Two more cases hold the geometry that
+# makes the gap possible in the first place: a barrel narrow enough to leave the
+# socket outboard of it, and a pivot high enough that the lid swings above the
+# deck instead of through it.
+
+const SP_SCENE := "res://Scenes/Objects/system_models/game_boy_advance_sp_primitive.tscn"
+const GC_GBA_SCENE := "res://Scenes/Objects/cables/gc_gba_cable.tscn"
+
+
+func _test_lid_clears_the_socket() -> void:
+	var sp: Node3D = load(SP_SCENE).instantiate()
+	add_child(sp)
+	# Both leads, because either fits that socket and the lid has to clear the
+	# fatter of them. They are not the same shell: one carries a metal shroud.
+	var leads: Array[Node3D] = []
+	for path: String in [GC_GBA_SCENE, CABLE_SCENE]:
+		var l: Node3D = load(path).instantiate()
+		add_child(l)
+		leads.append(l)
+	await get_tree().process_frame
+
+	var port := sp.get_node_or_null("LinkPort") as Node3D
+	var lid := sp.get_node_or_null("LidPivot/Lid") as MeshInstance3D
+	var barrel := sp.get_node_or_null("HingeBarrel") as MeshInstance3D
+	var body := sp.get_node_or_null("HandheldBody") as MeshInstance3D
+	_ok("the SP has a socket, a lid, a barrel and a body",
+		port != null and lid != null and barrel != null and body != null)
+	if port == null or lid == null or barrel == null or body == null:
+		sp.queue_free()
+		for l: Node3D in leads:
+			l.queue_free()
+		return
+
+	# Seated, which for this purpose is the plug sitting at the socket's own
+	# transform. That is what the snap zone does to it, and the shell is the part
+	# that can be hit: the cord is a rope and will simply drape aside.
+	# Measured against the SHELL, which is what a player watches the lid meet.
+	# The collision box is deliberately deeper than the shell so a hand can find
+	# it, and it reaches back inside the machine where the lid is entitled to be.
+	var shells: Array[MeshInstance3D] = []
+	for l: Node3D in leads:
+		var plug := l.get_node_or_null("PlugB0") as RigidBody3D
+		if plug == null:
+			continue
+		plug.freeze = true
+		# The same move the snap zone makes, not the socket's bare transform. A
+		# zone lands the object's GRAB POINT on itself, and this plug's grab
+		# point is turned about X, so seating it on the socket transform alone
+		# puts the shell inside the machine and the cord out through the screen.
+		# That is a plug nothing could clash with, which would make this whole
+		# case pass for free.
+		var gp := plug.get_node_or_null("SnapGrabPoint") as Node3D
+		plug.global_transform = port.global_transform * (gp.transform.affine_inverse() if gp != null else Transform3D())
+		for child in plug.get_children():
+			var mi := child as MeshInstance3D
+			if mi != null and mi.mesh != null:
+				shells.append(mi)
+	_ok("both leads have a shell to measure", shells.size() >= 4,
+		"%d meshes over %d leads" % [shells.size(), leads.size()])
+	var lid_box := (lid.mesh as BoxMesh).size
+
+	# Every degree of the travel, because the clash does not have to be at either
+	# end: a lid that clears when shut and clears at the stop can still sweep
+	# through the plug on the way past.
+	var worst := INF
+	var worst_at := -1.0
+	for step in range(0, 181):
+		var open_deg := float(step)
+		sp.set_lid_angle_deg(open_deg)
+		# Read back rather than trusting the request: the hinge owns the limits
+		# and clamps, so the angles actually reachable are the ones to test.
+		var reached: float = sp.get_lid_angle_deg()
+		for mi: MeshInstance3D in shells:
+			var box := mi.mesh.get_aabb()
+			var t := mi.global_transform.translated_local(box.get_center())
+			var gap := _obb_gap(lid.global_transform, lid_box, t, box.size)
+			if gap < worst:
+				worst = gap
+				worst_at = reached
+	print("[link] lid clearance over a seated lead: %.2f mm, closest at %.0f degrees open"
+		% [worst * 1000.0, worst_at])
+	_ok("the lid never touches a seated lead", worst > 0.0,
+		"closest %.1f mm at %.0f degrees open" % [worst * 1000.0, worst_at])
+
+	# And with room to spare, because a hand-driven lid overshoots and a snapped
+	# plug wobbles in its zone. A hair's clearance reads as a clash on a headset.
+	_ok("and clears it by more than a millimetre", worst > 0.001,
+		"closest %.1f mm" % (worst * 1000.0))
+
+	# The socket is outboard of the barrel. This is the whole reason the barrel
+	# was narrowed: on the real machine the hinge takes the middle of that edge
+	# and the sockets live either side of it.
+	var barrel_half: float = absf((barrel.mesh as CylinderMesh).height) * 0.5
+	var port_x: float = absf(port.position.x)
+	var plug_half := 0.0
+	for mi: MeshInstance3D in shells:
+		plug_half = maxf(plug_half, mi.mesh.get_aabb().size.x * 0.5)
+	_ok("the socket sits outboard of the hinge barrel", port_x - plug_half > barrel_half,
+		"socket edge %.1f mm, barrel end %.1f mm" % [(port_x - plug_half) * 1000.0, barrel_half * 1000.0])
+	_ok("and the barrel is narrower than the machine",
+		barrel_half * 2.0 < (body.mesh as BoxMesh).size.x)
+
+	# The pivot stands proud of the deck. A hinge buried in the top face turns the
+	# lid about a line inside the shell, which is what put it through its own back
+	# edge, and it is also just visibly wrong: a real SP's hinge is a raised boss.
+	var deck_y: float = (body.mesh as BoxMesh).size.y * 0.5
+	_ok("the hinge stands proud of the deck", barrel.position.y + barrel_half * 0.0 > deck_y,
+		"barrel axis at %.1f mm, deck at %.1f mm" % [barrel.position.y * 1000.0, deck_y * 1000.0])
+	var pivot := sp.get_node_or_null("LidPivot") as Node3D
+	_ok("and the lid turns about the barrel, not beside it",
+		pivot != null and pivot.position.distance_to(barrel.position) < 0.0005)
+
+	# Shut still means shut. Raising the pivot moves every child of it, so the
+	# compensating drop is what keeps a closed lid lying on the body rather than
+	# floating above it.
+	sp.set_lid_angle_deg(0.0)
+	var shut_y: float = lid.global_position.y
+	var want_y: float = deck_y + lid_box.y * 0.5
+	_ok("a shut lid lies flush on the body", absf(shut_y - want_y) < 0.0005,
+		"lid centre at %.1f mm, flush would be %.1f mm" % [shut_y * 1000.0, want_y * 1000.0])
+
+	sp.queue_free()
+	for l: Node3D in leads:
+		l.queue_free()
+	await get_tree().process_frame
+
+
+## Separating-axis gap between two boxes, in metres. Positive is the width of the
+## smallest gap found along any separating axis, which is a lower bound on the
+## real distance; zero or less means they overlap. A lower bound is the safe side
+## of the question being asked here.
+func _obb_gap(ta: Transform3D, sa: Vector3, tb: Transform3D, sb: Vector3) -> float:
+	var ax: Array[Vector3] = [ta.basis.x.normalized(), ta.basis.y.normalized(), ta.basis.z.normalized()]
+	var bx: Array[Vector3] = [tb.basis.x.normalized(), tb.basis.y.normalized(), tb.basis.z.normalized()]
+	var ea := sa * 0.5
+	var eb := sb * 0.5
+	var axes: Array[Vector3] = [ax[0], ax[1], ax[2], bx[0], bx[1], bx[2]]
+	for u: Vector3 in ax:
+		for v: Vector3 in bx:
+			var c := u.cross(v)
+			# Parallel edges give a degenerate axis. The face normals already
+			# cover that case, so dropping it loses nothing.
+			if c.length_squared() > 1e-12:
+				axes.append(c.normalized())
+	var d := tb.origin - ta.origin
+	var best := -INF
+	for axis: Vector3 in axes:
+		var ra: float = absf(ax[0].dot(axis)) * ea.x + absf(ax[1].dot(axis)) * ea.y + absf(ax[2].dot(axis)) * ea.z
+		var rb: float = absf(bx[0].dot(axis)) * eb.x + absf(bx[1].dot(axis)) * eb.y + absf(bx[2].dot(axis)) * eb.z
+		best = maxf(best, absf(d.dot(axis)) - (ra + rb))
+	return best

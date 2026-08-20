@@ -12,8 +12,8 @@ size = Vector3(0.082, 0.012, 0.0846)
 albedo_color = Color(0.13, 0.24, 0.55, 1)
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_barrel"]
-top_radius = 0.0045
-bottom_radius = 0.0045
+top_radius = 0.0062
+bottom_radius = 0.0062
 height = 0.04
 
 [sub_resource type="StandardMaterial3D" id="Mat_dark"]
@@ -97,30 +97,30 @@ mesh = SubResource("BoxMesh_body")
 surface_material_override/0 = SubResource("Mat_shell")
 
 [node name="HingeBarrel" type="MeshInstance3D" parent="." unique_id=1759503723]
-transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0.0095, -0.0423)
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0.0117, -0.0423)
 mesh = SubResource("CylinderMesh_barrel")
 surface_material_override/0 = SubResource("Mat_dark")
 
 [node name="LidPivot" type="Node3D" parent="." unique_id=2018091870]
-transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0.0095, -0.0423)
+transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0.0117, -0.0423)
 
 [node name="Lid" type="MeshInstance3D" parent="LidPivot" unique_id=1865159718]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0025, -0.0423)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0003, -0.0423)
 mesh = SubResource("BoxMesh_lid")
 surface_material_override/0 = SubResource("Mat_shell")
 
 [node name="TopBezel" type="MeshInstance3D" parent="LidPivot" unique_id=872758683]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0043, -0.0423)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0065, -0.0423)
 mesh = SubResource("BoxMesh_bezel")
 surface_material_override/0 = SubResource("Mat_dark")
 
 [node name="HandheldScreen" type="MeshInstance3D" parent="LidPivot" unique_id=1801244051]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0054, -0.0423)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0076, -0.0423)
 mesh = SubResource("QuadMesh_screen")
 surface_material_override/0 = SubResource("Mat_screen")
 
 [node name="LidHinge" type="Area3D" parent="LidPivot" unique_id=328742951 node_paths=PackedStringArray("target")]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0075, -0.062)
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0097, -0.062)
 collision_layer = 1048577
 script = ExtResource("2_hinge")
 target = NodePath("..")
