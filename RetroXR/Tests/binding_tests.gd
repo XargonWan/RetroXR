@@ -64,6 +64,14 @@ func _ready() -> void:
 	get_tree().quit(1 if _fail > 0 else 0)
 
 
+## The filename a diagram actually resolves for a control, or "" for none.
+func _glyph_stem(diagram: ConsolePadDiagram, control: String) -> String:
+	var tex: Texture2D = diagram._control_glyph(control)
+	if tex == null:
+		return ""
+	return tex.resource_path.get_file().get_basename()
+
+
 func _ok(name: String, cond: bool, detail: String = "") -> void:
 	if cond:
 		_pass += 1
@@ -422,6 +430,65 @@ func _test_wii_pad_art() -> void:
 	_ok("wii/the colour art is not tinted", row.get("tint", true) == false)
 	_ok("wii/carries the other-hand note",
 		String(row.get("note", "")).contains("other"))
+
+	# The chips. Falling back to the shared RETROPAD map put a PlayStation R3 on
+	# Home and a PlayStation Start on plus — names for buttons a Wii Remote does
+	# not have. Every control must name a Wii glyph, and every one of those files
+	# must actually be there: a missing texture is a blank chip, not an error.
+	var glyphs: Dictionary = row.get("glyphs", {})
+	var glyph_keys: Array = glyphs.keys()
+	glyph_keys.sort()
+	_eq("wii/every control has a glyph of its own", glyph_keys, want)
+	var all_wii := true
+	var all_present := true
+	for key: String in glyphs:
+		var g := String(glyphs[key])
+		if not g.begins_with("wii_"):
+			all_wii = false
+		if not ResourceLoader.exists(ConsolePadDiagram.GLYPH_DIR + g + ".png"):
+			all_present = false
+			print("[test]        missing glyph: %s" % g)
+	_ok("wii/every glyph is a Wii one, not a borrowed RetroPad picture", all_wii)
+	_ok("wii/every glyph file is present", all_present)
+	# The two that were actually wrong on screen.
+	_eq("wii/plus is a plus, not Start", String(glyphs.get("start", "")),
+		"wii_button_plus_outline")
+	_eq("wii/home is a house, not R3", String(glyphs.get("r3", "")),
+		"wii_button_home_outline")
+
+	# And the external-pad page is replaced rather than drawn: a Wii Remote is
+	# pointed and swung, and none of that maps onto a gamepad.
+	var gp_note := String(row.get("gamepad_note", ""))
+	_ok("wii/says why there is no gamepad remapping", not gp_note.is_empty())
+	_ok("wii/the reason names the sensors, not just the shape",
+		gp_note.contains("infrared") or gp_note.contains("accelerometer"))
+	# Every OTHER console must keep its remapping page.
+	_ok("art/the nes still gets a gamepad page",
+		String(ConsolePadArt.row("nes").get("gamepad_note", "")).is_empty())
+
+	# End to end, through the panel that actually picks the picture. The cases
+	# above only prove the row DECLARES Wii glyphs; this proves the diagram reads
+	# them, which is the half that was broken — the data was fine and the lookup
+	# went to the shared RetroPad map regardless.
+	var diagram := ConsolePadDiagram.new()
+	add_child(diagram)
+	diagram.setup("wii", [], {})
+	_eq("wii/the diagram resolves plus to the Wii glyph",
+		_glyph_stem(diagram, "start"), "wii_button_plus_outline")
+	_eq("wii/the diagram resolves home to the Wii glyph",
+		_glyph_stem(diagram, "r3"), "wii_button_home_outline")
+	_eq("wii/the diagram resolves the d-pad to Wii glyphs",
+		_glyph_stem(diagram, "up"), "wii_dpad_up_outline")
+	diagram.queue_free()
+
+	# A pad that declares none still gets the shared picture — the fallback is
+	# right for a console whose controls really are RetroPad-shaped.
+	var nes_diagram := ConsolePadDiagram.new()
+	add_child(nes_diagram)
+	nes_diagram.setup("nes", [], {})
+	_eq("art/a pad with no glyphs of its own falls back to the shared map",
+		_glyph_stem(nes_diagram, "start"), "playstation3_button_start_outline")
+	nes_diagram.queue_free()
 
 
 func _test_console_pad_art() -> void:

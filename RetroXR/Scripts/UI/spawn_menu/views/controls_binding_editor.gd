@@ -629,6 +629,18 @@ func _build_gamepad_controls(vbox: VBoxContainer) -> void:
 	# ── Header ────────────────────────────────────────────────────────────────
 	vbox.add_child(MenuStyle.label("GAME CONTROLLER", 22, MenuStyle.COLOR_TITLE))
 
+	# ── Hardware a gamepad cannot stand in for ────────────────────────────────
+	# Some controllers are not a pad with the buttons moved around. The Wii Remote
+	# is pointed and swung: its IR pointer, accelerometer and gyro have nothing on
+	# a gamepad to map onto, and drawing the usual grid would say an ordinary pad
+	# plays these the way they were meant to be played. Where a ConsolePadArt row
+	# says so, the whole remapping section is that sentence instead — including the
+	# connected-pad status, which would otherwise report a pad that cannot help.
+	var no_pad := String(ConsolePadArt.row(_systemid).get("gamepad_note", ""))
+	if not no_pad.is_empty():
+		vbox.add_child(_hint(no_pad))
+		return
+
 	# ── Connected-pad status line ─────────────────────────────────────────────
 	var status := Label.new()
 	status.add_theme_font_size_override("font_size", 16)

@@ -136,6 +136,38 @@ const _ROWS: Dictionary = {
 		# for the same reason — the three share a row on the hardware.
 		"left": ["up", "left", "a", "select", "x"],
 		"right": ["right", "down", "b", "r3", "start", "y"],
+		# The chips beside each row. Without these the page falls back to the shared
+		# RETROPAD glyphs, and a Wii Remote ends up labelled with a PlayStation R3
+		# for Home and a PlayStation Start for plus — which is what shipped, and is
+		# worse than no picture: it names a button this hardware does not have.
+		#
+		# Keyed by the same RETROPAD targets as the anchors, so the left-hand column
+		# reads "the control" and the picture agrees with it. Kenney's Wii set, the
+		# same family the marks printed on the shell come from.
+		"glyphs": {
+			"up": "wii_dpad_up_outline",
+			"down": "wii_dpad_down_outline",
+			"left": "wii_dpad_left_outline",
+			"right": "wii_dpad_right_outline",
+			"a": "wii_button_a_outline",
+			"b": "wii_button_b_outline",
+			"select": "wii_button_minus_outline",
+			"start": "wii_button_plus_outline",
+			"r3": "wii_button_home_outline",
+			"x": "wii_button_1_outline",
+			"y": "wii_button_2_outline",
+		},
+		# No external-pad remapping page for this one. A Wii Remote is not a gamepad
+		# with the buttons moved around: it is pointed at the screen and swung, and
+		# the IR pointer, the accelerometer and the MotionPlus gyro have no sticks
+		# or buttons on a pad to be mapped onto. Offering the usual grid would imply
+		# an ordinary pad can play these games as they were meant to be played.
+		"gamepad_note": "The Wii Remote is not a gamepad. Aiming is an infrared "
+			+ "pointer at the sensor bar, and motion comes from the "
+			+ "accelerometer and the MotionPlus gyro inside the remote — none of "
+			+ "which a standard controller has anything to map onto. Its buttons "
+			+ "still follow the XR bindings above, and in VR you press them on "
+			+ "the remote itself.",
 		# Shown under the diagram. This remote is the one console pad held in ONE
 		# hand, and one VR hand does not carry enough inputs to reach seven buttons
 		# and a d-pad — so the buttons are pokeable, and a player who does not

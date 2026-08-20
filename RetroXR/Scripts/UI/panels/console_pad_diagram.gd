@@ -164,12 +164,22 @@ func _bind_row(control: String, text: String, glyph: Texture2D) -> Control:
 	return box
 
 
-## The RetroPad glyph for a control. Shared with GamepadDiagram rather than
-## chosen again here: these are the same RetroPad targets, and the two panels
-## disagreeing about which picture means "Select" would be worse than either
-## choice.
+## The glyph for a control: this pad's OWN if it declares one, else the shared
+## RetroPad picture.
+##
+## The fallback is right for a console whose controls are RetroPad-shaped — a NES
+## Start really is a Start — and wrong the moment the hardware has buttons the
+## RetroPad has no name for. The Wii Remote binds Home to r3 and plus to start
+## because that is what reaches the core, and taking the picture from that map too
+## labelled the diagram with a PlayStation R3 and a PlayStation Start: names for
+## buttons this remote does not have. A row that knows better says so.
+##
+## GamepadDiagram is left alone. It draws an actual gamepad, where the shared map
+## is the right answer, and the two panels agreeing about a real pad is the thing
+## that comment was protecting.
 func _control_glyph(control: String) -> Texture2D:
-	var name_text := String(GamepadDiagram.TARGET_GLYPHS.get(control, ""))
+	var own: Dictionary = _row.get("glyphs", {})
+	var name_text := String(own.get(control, GamepadDiagram.TARGET_GLYPHS.get(control, "")))
 	if name_text.is_empty():
 		return null
 	return load(GLYPH_DIR + name_text + ".png") as Texture2D
