@@ -68,11 +68,15 @@ height = 0.0025
 radial_segments = 12
 rings = 1
 
+; HOME, 7.2 mm across. It used to be 9 — wider than MINUS and PLUS beside it,
+; which the hardware does not do: on a real remote HOME is the same size as its
+; neighbours or a whisker over, and what sets it apart is that it sits DOWN in a
+; dish rather than that it is big.
 [sub_resource type="CylinderMesh" id="Cyl_home"]
-top_radius = 0.0045
-bottom_radius = 0.0045
-height = 0.0025
-radial_segments = 12
+top_radius = 0.0036
+bottom_radius = 0.0036
+height = 0.0022
+radial_segments = 16
 rings = 1
 
 [sub_resource type="CylinderMesh" id="Cyl_num"]
@@ -106,28 +110,32 @@ height = 0.004
 radius = 0.005
 height = 0.004
 
-; The bezel POWER sits in. The shell is one box mesh and cannot be bored, so the
-; recess is a slightly darker disc standing a hair proud of the face — at this
-; size that reads as a well, where a hole cut into flat ambient light would not.
-; Shared with HOME, which has the same collar on the hardware.
+; The dished lip POWER and HOME sit down inside. Both are recessed on the real
+; shell, and neither can be bored here — the body is one box mesh, and nothing
+; below its top face at y=0.015 can be seen at all.
+;
+; So the recess is built the other way up: a raised LIP whose crown clears the cap
+; it surrounds, which reads as a dish because the cap is the lower of the two. It
+; has to be a RING and not a disc — a solid disc of larger radius simply swallows
+; the cap, which is what made HOME a featureless grey plate. The tube is
+; (outer - inner) / 2 = 0.8 mm, so each lip stands 0.8 mm off its centre line and
+; 0.4 mm above the cap in its mouth.
 [sub_resource type="StandardMaterial3D" id="Mat_well"]
 albedo_color = Color(0.74, 0.745, 0.76, 1)
 metallic_specular = 0.4
 roughness = 0.55
 
-[sub_resource type="CylinderMesh" id="Cyl_power_well"]
-top_radius = 0.0038
-bottom_radius = 0.0038
-height = 0.0016
-radial_segments = 16
-rings = 1
+[sub_resource type="TorusMesh" id="Torus_power_lip"]
+inner_radius = 0.0028
+outer_radius = 0.0044
+rings = 20
+ring_segments = 6
 
-[sub_resource type="CylinderMesh" id="Cyl_home_well"]
-top_radius = 0.0062
-bottom_radius = 0.0062
-height = 0.0012
-radial_segments = 16
-rings = 1
+[sub_resource type="TorusMesh" id="Torus_home_lip"]
+inner_radius = 0.004
+outer_radius = 0.0056
+rings = 20
+ring_segments = 6
 
 ; One speaker hole / LED index pip. Every dot on the face is this mesh under a
 ; MultiMesh: 36 of them, one draw call. Separate MeshInstance3Ds would be 36
@@ -135,7 +143,7 @@ rings = 1
 [sub_resource type="CylinderMesh" id="Cyl_hole"]
 top_radius = 0.0004
 bottom_radius = 0.0004
-height = 0.0006
+height = 0.0004
 radial_segments = 6
 rings = 1
 
@@ -234,16 +242,16 @@ surface_material_override/0 = SubResource("Mat_dark")
 [node name="BarrelTip" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.078)
 
-; The bezel under POWER, and under HOME. Plain meshes: the wells are moulded into
-; the shell and nothing presses them.
+; The lips around POWER and HOME. Plain meshes: they are moulded into the shell
+; and nothing presses them.
 [node name="PowerWell" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.0152, -0.066)
-mesh = SubResource("Cyl_power_well")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.0155, -0.066)
+mesh = SubResource("Torus_power_lip")
 surface_material_override/0 = SubResource("Mat_well")
 
 [node name="HomeWell" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0151, 0.004)
-mesh = SubResource("Cyl_home_well")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0157, 0.004)
+mesh = SubResource("Torus_home_lip")
 surface_material_override/0 = SubResource("Mat_well")
 
 ; POWER, in the TOP LEFT CORNER where the hardware puts it — about 9 mm in from
@@ -264,7 +272,11 @@ contact_margin = 0.004
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton"]
 shape = SubResource("CylShape_power")
 
+; Down 1.1 mm, which puts its crown 0.4 mm under the lip's — and still 0.9 mm
+; clear of the face when pressed, so the travel never sinks into the shell (where
+; the box's own top surface would hide it outright).
 [node name="ButtonMesh" type="MeshInstance3D" parent="PowerButton"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0011, 0)
 mesh = SubResource("Cyl_power")
 surface_material_override/0 = SubResource("Mat_power")
 
@@ -334,6 +346,7 @@ contact_margin = 0.005
 shape = SubResource("CylShape_home")
 
 [node name="ButtonMesh" type="MeshInstance3D" parent="HomeButton"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0005, 0)
 mesh = SubResource("Cyl_home")
 surface_material_override/0 = SubResource("Mat_cap")
 
@@ -356,8 +369,11 @@ surface_material_override/0 = SubResource("Mat_cap")
 ; The speaker sits between the +/- row and 1, and until it was drawn 1, 2 and the
 ; player LEDs had all slid forward into its space. They are back where the
 ; hardware has them, which is what makes the lower face read as a Wii Remote.
+; Barely proud — 0.25 mm. A dot standing half a millimetre off the shell throws
+; its own shadow at any raking angle and reads as a STUD, which is the opposite of
+; a hole; near-flush, the dark material does the work on its own.
 [node name="FaceDots" type="MultiMeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01505, 0)
 multimesh = SubResource("MM_face_dots")
 material_override = SubResource("Mat_hole")
 
