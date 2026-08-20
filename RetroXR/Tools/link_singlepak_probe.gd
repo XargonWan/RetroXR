@@ -42,7 +42,11 @@ var _opt_path := ""
 var _opt_backup := ""
 var _restored := false
 var _host: Libretro = null
+## The first client, which is the one the two-machine wording talks about.
 var _client: Libretro = null
+var _clients: Array[Libretro] = []
+## Host and clients together, in bus order.
+var _all: Array[Libretro] = []
 var _fail := 0
 
 
@@ -77,29 +81,55 @@ func _run() -> void:
 		get_tree().quit(0)
 		return
 
+	# One host and up to three cartridge-less clients, which is the party a GBA
+	# link cable carries.
+	var clients := 1
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--clients="):
+			clients = clampi(int(arg.substr(10)), 1, 3)
 	_host = Libretro.new()
-	_client = Libretro.new()
 	add_child(_host)
-	add_child(_client)
+	_all.append(_host)
+	for i in range(clients):
+		var c := Libretro.new()
+		add_child(c)
+		_clients.append(c)
+		_all.append(c)
+	_client = _clients[0]
+	print("[pak] host + %d client%s" % [clients, "" if clients == 1 else "s"])
 
-	# Cabled before either is switched on, which is the order that works and the
-	# order a room produces. Both machines read whether anything is out there
-	# while they boot and never ask again.
-	var joined: bool = _host.LinkConnect(_client, 0, 0)
+	# Cabled before anything is switched on, which is the order that works and
+	# the order a room produces. Every machine reads whether anything is out
+	# there while it boots and never asks again.
+	var others: Array = []
+	var ports := PackedInt32Array()
+	ports.append(0)
+	for c: Libretro in _clients:
+		others.append(c)
+		ports.append(0)
+	var joined: bool = _host.LinkConnectGroup(others, ports)
 	print("[pak] cabled=%s" % str(joined))
 
 	# The client takes the null game info: no cartridge, so the BIOS is all it
 	# has, and the BIOS is what listens on the link port.
 	ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", true)
 	_host.StartContent(root, CORE, rom)
-	_client.StartContent(root, CORE, "")
+	for c: Libretro in _clients:
+		c.StartContent(root, CORE, "")
 	await _wait(120)
-	print("[pak] host frames=%d  client frames=%d  peers=%d/%d" % [
-		_host.GetFrameCount(), _client.GetFrameCount(),
-		_host.LinkPeerCount(0), _client.LinkPeerCount(0)])
-	_check("the client is running with no cartridge", _client.GetFrameCount() > 0)
-	_check("both machines are on the cable",
-		_host.LinkPeerCount(0) == 2 and _client.LinkPeerCount(0) == 2)
+	var peers: PackedStringArray = []
+	for machine: Libretro in _all:
+		peers.append(str(machine.LinkPeerCount(0)))
+	print("[pak] host frames=%d  client frames=%d  peers=%s" % [
+		_host.GetFrameCount(), _client.GetFrameCount(), "/".join(peers)])
+	var booted := true
+	var cabled := true
+	for c: Libretro in _clients:
+		booted = booted and c.GetFrameCount() > 0
+	for machine: Libretro in _all:
+		cabled = cabled and machine.LinkPeerCount(0) == _all.size()
+	_check("every client is running with no cartridge", booted)
+	_check("every machine is on the cable", cabled)
 	_shot("a_boot")
 
 	# Through the host's intro to Multiplayer, the same route the two-cartridge
@@ -128,7 +158,7 @@ func _run() -> void:
 		# transfer that half worked. The presses are here to get through menus,
 		# and a menu that has been left is a menu that must stop being pressed.
 		if step < 14:
-			var who: Array = [_host] if step < 12 else [_host, _client]
+			var who: Array = [_host] if step < 12 else _all
 			if step % 3 == 1:
 				await _hold(BTN_A, 6, 10, who)
 			if step % 3 == 2:
@@ -137,9 +167,10 @@ func _run() -> void:
 		var now: int = _host.LinkSent(0)
 		peak = maxi(peak, now - last)
 		last = now
-		print("[pak] step%02d  host sent=%d  client sent=%d  peers=%d/%d" % [
-			step, now, _client.LinkSent(0),
-			_host.LinkPeerCount(0), _client.LinkPeerCount(0)])
+		var sent: PackedStringArray = []
+		for machine: Libretro in _all:
+			sent.append(str(machine.LinkSent(0)))
+		print("[pak] step%02d  sent=%s" % [step, "/".join(sent)])
 		if step == 28:
 			last_reported = now
 	_shot("d_playing")
@@ -171,7 +202,7 @@ func _run() -> void:
 	var tail: int = _host.LinkSent(0) - last_reported
 	_check("the game is still running at the end of the run", tail > 0)
 
-	for machine: Libretro in [_host, _client]:
+	for machine: Libretro in _all:
 		machine.StopContent()
 	for i in range(120):
 		await get_tree().process_frame
@@ -227,11 +258,15 @@ func _find_bytes(hay: PackedByteArray, needle: PackedByteArray, from: int) -> in
 
 func _wait(n: int) -> void:
 	var targets: Array[int] = []
-	for machine: Libretro in [_host, _client]:
+	for machine: Libretro in _all:
 		targets.append(machine.GetFrameCount() + n)
 	var deadline: int = Time.get_ticks_msec() + 30000
 	while Time.get_ticks_msec() < deadline:
-		if _host.GetFrameCount() >= targets[0] and _client.GetFrameCount() >= targets[1]:
+		var done := true
+		for i in _all.size():
+			if _all[i].GetFrameCount() < targets[i]:
+				done = false
+		if done:
 			return
 		await get_tree().process_frame
 
@@ -247,10 +282,11 @@ func _hold(mask: int, press: int, gap: int, who: Array) -> void:
 
 func _shot(tag: String) -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://probe_out"))
-	for pair: Array in [[_host, "host"], [_client, "client"]]:
-		var img: Image = (pair[0] as Libretro).GetVideoImage()
+	for i in _all.size():
+		var img: Image = _all[i].GetVideoImage()
 		if img != null and not img.is_empty():
-			img.save_png("res://probe_out/pak_%s_%s.png" % [tag, pair[1]])
+			img.save_png("res://probe_out/pak_%s_%s.png" % [
+				tag, "host" if i == 0 else "client%d" % i])
 
 
 func _find_rom() -> String:
