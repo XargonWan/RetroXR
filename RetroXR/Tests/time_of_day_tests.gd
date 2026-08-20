@@ -205,6 +205,33 @@ func _test_sun() -> void:
 		_num(rad_to_deg(asin(-sd.y)), TimeOfDay.DUSK_ELEVATION_DEG,
 			"sun/room fill holds its high elevation at t = %.2f" % t, 0.05)
 
+	# THE one that matters after sunset. A DirectionalLight3D below the horizon
+	# shines UPWARD — undersides light up and every shadow on the street points at
+	# the sky. Sweep finely through the whole range: the sun crosses the horizon
+	# around t = 0.81, between two keys, so checking only the keys misses it.
+	var worst_up: float = 0.0
+	var worst_t: float = -1.0
+	for i in 101:
+		var t: float = float(i) / 100.0
+		_tod.apply_now(t)
+		await get_tree().process_frame
+		var dir: Vector3 = -_ext_sun.global_transform.basis.z
+		if dir.y > 0.0:   # light travelling upward, i.e. sun below the horizon
+			var lit: float = _ext_sun.light_energy * dir.y
+			if lit > worst_up:
+				worst_up = lit
+				worst_t = t
+	_ok(worst_up < 0.02,
+		"sun/never lights the street from below (worst %.4f at t = %.2f)"
+		% [worst_up, worst_t])
+
+	# And the gate must not touch the sun while it is still up — the authored dusk
+	# key sits at 4.39 degrees and the room shipped at that frame.
+	_num(TimeOfDay.horizon_gain(4.39), 1.0, "sun/the authored dusk sun is ungated", 0.0001)
+	_num(TimeOfDay.horizon_gain(60.2), 1.0, "sun/a high sun is ungated", 0.0001)
+	_num(TimeOfDay.horizon_gain(-1.5), 0.0, "sun/a set sun is fully gated", 0.0001)
+	_ok(TimeOfDay.horizon_gain(2.0) < 1.0, "sun/the gate ramps below 4 degrees")
+
 	# The window cone and the sky fill must never move.
 	var win0: Basis = _win_sun.global_transform.basis
 	var fill0: Basis = _ext_fill.global_transform.basis

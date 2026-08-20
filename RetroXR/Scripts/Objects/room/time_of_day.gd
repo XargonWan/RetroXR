@@ -306,10 +306,13 @@ func _apply() -> void:
 	var env := _resolve_env()
 	_localise(env)
 	var k := _sample(time)
+	# Once, and shared: the exterior sun's ENERGY depends on where it is, not just
+	# on the keyframe, so the two cannot be worked out independently.
+	var sol := solar_position(k["hour_angle"], latitude_deg, solar_declination_deg)
 	_apply_sky(k, env)
 	_apply_daylight(k, env)
-	_apply_exterior(k)
-	_apply_suns(k)
+	_apply_exterior(k, sol.y)
+	_apply_suns(k, sol)
 	_apply_street_lamp(time)
 
 
@@ -410,13 +413,33 @@ func _apply_daylight(k: Dictionary, env: Environment) -> void:
 		env.ambient_light_energy = amb_open
 
 
-func _apply_exterior(k: Dictionary) -> void:
+func _apply_exterior(k: Dictionary, altitude_deg: float) -> void:
 	if _exterior_sun != null:
 		_exterior_sun.light_color = k["ext_color"]
-		_exterior_sun.light_energy = k["ext_energy"]
+		_exterior_sun.light_energy = k["ext_energy"] * horizon_gain(altitude_deg)
 	if _exterior_fill != null:
 		_exterior_fill.light_color = k["fill_color"]
 		_exterior_fill.light_energy = k["fill_energy"]
+
+
+## How much DIRECT sun survives at a given altitude. Zero once the sun is down.
+##
+## This is not a nicety. The keyframes carry the sun past sunset — it is 1.1 energy
+## and still falling when it crosses the horizon around t = 0.81 — and a
+## DirectionalLight3D below the horizon shines UPWARD: undersides light up, and
+## every shadow on the street points at the sky. The energy has to be gone before
+## the direction turns, and no amount of keyframing the energy alone gets that
+## right, because where the sun is depends on latitude and declination.
+##
+## The band ends at 4 degrees rather than at 0 so that the authored dusk key, which
+## sits at 4.39 degrees, is untouched: the room shipped at that frame. The lower end
+## is 1 degree BELOW the horizon so the last of it is gone by the time the direction
+## flips rather than exactly as it does.
+##
+## Real sunlight falls off this steeply near the horizon anyway — the path through
+## the atmosphere lengthens sharply — so the shape is not a fudge.
+static func horizon_gain(altitude_deg: float) -> float:
+	return smoothstep(-1.0, 4.0, altitude_deg)
 
 
 ## Which lights may turn, and which may not.
@@ -452,10 +475,9 @@ func _apply_exterior(k: Dictionary) -> void:
 ## Dusk, the room's own fill, follows the sun's AZIMUTH but holds a fixed high
 ## elevation. Unshadowed and masked to the room, its angle only picks which walls
 ## take the warm rake, and a real low sun would rake straight through them.
-func _apply_suns(k: Dictionary) -> void:
+func _apply_suns(k: Dictionary, sol: Vector2) -> void:
 	if not rotate_suns:
 		return
-	var sol := solar_position(k["hour_angle"], latitude_deg, solar_declination_deg)
 	if _exterior_sun != null:
 		_exterior_sun.transform = Transform3D(
 			sun_basis(sol.x, sol.y), _exterior_sun.transform.origin)
@@ -470,8 +492,11 @@ const DUSK_ELEVATION_DEG := 45.2
 
 ## Where the sun is: hour angle in degrees from solar noon (negative = morning),
 ## a latitude and a declination. Returns Vector2(azimuth for sun_basis, altitude),
-## both degrees. Altitude goes negative after sunset, which is correct and harmless
-## — the keyframes have the light near dark by then.
+## both degrees.
+##
+## Altitude goes NEGATIVE after sunset, and that is not harmless: a directional
+## light below the horizon shines upward. horizon_gain() is what takes the energy
+## away before the direction turns over.
 ##
 ##   sin(alt) = sin(lat) sin(dec) + cos(lat) cos(dec) cos(h)
 ##   A        = atan2(sin h, cos h sin(lat) - tan(dec) cos(lat))
