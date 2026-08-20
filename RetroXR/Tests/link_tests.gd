@@ -32,6 +32,8 @@ func _ready() -> void:
 	_test_libretro_lookup()
 	_test_cable_is_not_av()
 	await _test_disconnect_is_idempotent()
+	await _test_cable_scene()
+	await _test_port_scene()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -194,6 +196,100 @@ func _test_disconnect_is_idempotent() -> void:
 	m1.queue_free()
 	m2.queue_free()
 	cable.queue_free()
+	await get_tree().process_frame
+
+
+
+# ── The scenes ──────────────────────────────────────────────────────────────
+# Importing a scene proves it parses. Only building one proves the scripts and
+# node types actually fit together.
+
+const CABLE_SCENE := "res://Scenes/Objects/cables/link_cable.tscn"
+const PORT_SCENE := "res://Scenes/Objects/cables/link_port.tscn"
+
+
+func _test_cable_scene() -> void:
+	var packed: PackedScene = load(CABLE_SCENE)
+	_ok("the cable scene loads", packed != null)
+	if packed == null:
+		return
+	var cable := packed.instantiate() as LinkCable
+	_ok("it builds as a LinkCable", cable != null)
+	if cable == null:
+		return
+	add_child(cable)
+
+	var a := cable.get_node_or_null("PlugA0") as LinkPlug
+	var b := cable.get_node_or_null("PlugB0") as LinkPlug
+	_ok("both ends are link plugs", a != null and b != null)
+	if a == null or b == null:
+		cable.queue_free()
+		return
+
+	# One cord, so CompositeCable takes its single-rope path. A miscount here
+	# would send it down the ribbon path looking for a breakout that does not
+	# exist.
+	_eq("it is a one-cord lead", cable.cord_count(), 1)
+	_ok("it has a rope", cable.get_node_or_null("VerletRope") != null)
+
+	# Both ends answer to the group their sockets require, which is the whole of
+	# what decides where this lead will go.
+	_ok("end A is in the link group", a.is_in_group("link_plug"))
+	_ok("end B is in the link group", b.is_in_group("link_plug"))
+
+	# The trap the two-mesh split exists for. RcaPlug derives the cord's exit from
+	# PlugTip's AABB alone, so folding the keyed nose into that mesh would drag
+	# the anchor forward of the mating face and run the tail out through the
+	# barrel. The shell is 20 mm deep behind an origin that sits on that face, so
+	# the cord has to leave 20 mm back.
+	_ok("the cord leaves the back of the shell",
+		absf(a.cable_anchor.z - -0.02) < 0.0005,
+		"anchor z = %f" % a.cable_anchor.z)
+	_ok("and on the axis", absf(a.cable_anchor.x) < 0.0005 and absf(a.cable_anchor.y) < 0.0005)
+
+	# The two ends are not interchangeable and the shells have to say so. End A is
+	# always handed to LinkConnect first, so its machine owns the clock, and on
+	# the real cable that end is purple against a grey secondary. CompositeCable
+	# would repaint both from the cord palette, which is why LinkCable overrides
+	# _tint_plug — drop that override and this goes red rather than silently
+	# turning a two-tone lead into one colour.
+	var ma := (a.get_node("PlugTip") as MeshInstance3D).get_surface_override_material(0) as StandardMaterial3D
+	var mb := (b.get_node("PlugTip") as MeshInstance3D).get_surface_override_material(0) as StandardMaterial3D
+	_ok("both shells are painted", ma != null and mb != null)
+	if ma != null and mb != null:
+		_ok("the two ends are different colours", ma.albedo_color != mb.albedo_color,
+			"both %s" % str(ma.albedo_color))
+		# The master end is the purple one, so it has to be the bluer of the two.
+		_ok("end A is the purple shell", ma.albedo_color.b > ma.albedo_color.r + 0.1,
+			"A = %s" % str(ma.albedo_color))
+		_ok("end B is the grey shell", absf(mb.albedo_color.b - mb.albedo_color.r) < 0.06,
+			"B = %s" % str(mb.albedo_color))
+
+	cable.queue_free()
+	await get_tree().process_frame
+
+
+func _test_port_scene() -> void:
+	var packed: PackedScene = load(PORT_SCENE)
+	_ok("the port scene loads", packed != null)
+	if packed == null:
+		return
+	var port := packed.instantiate() as LinkPort
+	_ok("it builds as a LinkPort", port != null)
+	if port == null:
+		return
+	add_child(port)
+
+	# The gate, as the socket actually enforces it rather than as the class
+	# merely reports it.
+	_eq("it requires a link plug", port.snap_require, "link_plug")
+
+	# Named LinkJack rather than RcaJack on purpose, so the inherited channel
+	# tinting cannot repaint a socket that carries no signal.
+	_ok("its jack is out of RcaPort's reach", port.get_node_or_null("RcaJack") == null)
+	_ok("but it has one", port.get_node_or_null("LinkJack") != null)
+
+	port.queue_free()
 	await get_tree().process_frame
 
 

@@ -1,0 +1,63 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="1_snapzone"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/link_port.gd" id="2_portscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/snap_highlight.gd" id="3_snaphigh"]
+
+; PLACEHOLDER GEOMETRY, matching link_cable.tscn. A recessed slot drawn as one
+; box, standing in for a moulded socket until there is a model to sit it on.
+;
+; Sized 1 mm proud of the plug's nose all round, so a seated plug looks like it
+; went INTO something rather than resting against it.
+[sub_resource type="BoxMesh" id="BoxMesh_jack"]
+size = Vector3(0.0115, 0.0085, 0.005)
+
+[sub_resource type="StandardMaterial3D" id="Mat_jack"]
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+roughness = 0.9
+
+; The plug's own shell, so the ghost reads as "a link lead goes here" rather than
+; as a generic marker.
+[sub_resource type="BoxMesh" id="BoxMesh_plug_ghost"]
+size = Vector3(0.013, 0.009, 0.02)
+
+[sub_resource type="StandardMaterial3D" id="Mat_plug_ghost"]
+transparency = 1
+albedo_color = Color(0.2, 0.5, 1, 0.45)
+emission_enabled = true
+emission = Color(0, 0.15, 0.5, 1)
+emission_energy_multiplier = 0.4
+
+; A link socket, placed the way every other port in the room is: the ZONE sits
+; where a seated plug's ORIGIN belongs, and the jack is pushed back by however far
+; that origin stands proud of the panel. Copy this node's transform from an
+; existing port and the plug still seats right.
+;
+; 1 mm here, against the TRS lead's 2 mm and the phono pair's 10 mm. A seated link
+; plug's origin is the front face of its shell, and that face stops almost flush
+; against the socket's rim. Every connector has its own number.
+;
+; grab_distance is the TRS socket's 50 mm rather than a phono jack's, because this
+; is a small connector on a handheld that a player is holding, not a panel socket
+; reached across a room.
+[node name="LinkPort" instance=ExtResource("1_snapzone")]
+grab_distance = 0.05
+script = ExtResource("2_portscript")
+
+; Named LinkJack, not RcaJack, deliberately: RcaPort's _tint_jack and show_jack
+; both look for a child called RcaJack, so this one is invisible to them and the
+; port's inherited channel colouring is a no-op. Which is right — a link cable
+; carries neither picture nor sound, so there is no signal colour to paint.
+[node name="LinkJack" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.001)
+mesh = SubResource("BoxMesh_jack")
+surface_material_override/0 = SubResource("Mat_jack")
+
+[node name="SnapHighlight" type="Node3D" parent="."]
+script = ExtResource("3_snaphigh")
+
+; Back along -Z from the mating face, where the shell actually sits once seated.
+[node name="HighlightMesh" type="MeshInstance3D" parent="SnapHighlight"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01)
+mesh = SubResource("BoxMesh_plug_ghost")
+surface_material_override/0 = SubResource("Mat_plug_ghost")

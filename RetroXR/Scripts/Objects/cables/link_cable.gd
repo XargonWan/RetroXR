@@ -18,6 +18,12 @@
 ##
 ## The A/V graph. links() stays empty on purpose, so AvGraph walks straight past
 ## this lead. A television has no business hearing about it.
+##
+## The two ends are not interchangeable, and the shells say so. End A is always
+## the one handed to LinkConnect first, so its machine takes bus index 0 and owns
+## the clock; on the real cable that end is the purple connector and the
+## secondary is grey. The colours are the hardware's, and here they happen to be
+## accurate rather than decorative.
 class_name LinkCable
 extends CompositeCable
 
@@ -49,6 +55,17 @@ func _resolve() -> void:
 ## duck-types on this method, so an empty list is how a lead says "not mine".
 func links() -> Array[Dictionary]:
 	return []
+
+
+## Left alone, deliberately.
+##
+## CompositeCable tints each plug with its CORD's colour so the wires of a
+## multi-cord lead can be told apart at both ends. A link lead has one cord, and
+## its two ends differ by ROLE rather than by wire: the purple shell is the
+## master end, the grey one the secondary, exactly as on the real cable. Painting
+## both from a one-entry cord palette would erase the only thing there is to see.
+func _tint_plug(_plug: RcaPlug, _col: Color) -> void:
+	pass
 
 
 func _link_port_at(e: int) -> LinkPort:

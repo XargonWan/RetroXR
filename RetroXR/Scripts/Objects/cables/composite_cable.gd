@@ -175,6 +175,14 @@ func _tint_plug(plug: RcaPlug, col: Color) -> void:
 func _build_rope() -> void:
 	if not is_inside_tree():
 		return          # a netplay client's local copy is freed before we get here
+	if _rope == null or _cords == 0:
+		# A lead with no cord, or none of the rope a scene is supposed to ship,
+		# has nothing to build. Only a bare `.new()` reaches this — every lead in
+		# the room comes from a scene that carries both — but it is worth
+		# surviving rather than writing through a null, because that is what a
+		# unit test constructs and the failure is a stack trace rather than a
+		# missing cable.
+		return
 	# One cord is one rope. The ribbon path below would build a trunk plus a single
 	# fray tail meeting at a junction nothing holds — geometry a one-wire lead does
 	# not have, and a VGA lead is exactly that. Both ends anchor straight to their
