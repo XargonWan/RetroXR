@@ -208,30 +208,33 @@ func _run() -> void:
 		func() -> void: menu.emit_signal("controller_bindings_changed"))
 	nes_editor.call("_build_xr_controls", nes_editor)
 	await get_tree().process_frame
-	var nes_opts: Dictionary = nes_editor.get("_controls_opts")
 
-	var ndrop: Node = nes_opts.get("btn:right_ax_button")
-	_check(ndrop != null, "the platform page's Right A dropdown exists")
+	# The NES page draws a NES pad, so the row to drive is the console control
+	# "a" — not a "btn:<source>" dropdown, which this page does not have.
+	var nes_diagram: Node = nes_editor.get("_console_xr_diagram")
+	_check(nes_diagram != null, "the NES page built its own controller")
+	var ndrop: Node = nes_diagram.call("get_dropdown", "a") if nes_diagram else null
+	_check(ndrop != null, "the platform page's A dropdown exists")
 	if ndrop != null:
-		ndrop.emit_signal("item_selected", ControllerBindings.JOYPAD_X)
+		ndrop.emit_signal("item_selected", "right_trigger")
 		await get_tree().process_frame
 		await get_tree().process_frame
 
 	_check(ControllerBindings.has_system_override("nes"),
 		"editing a platform row is what turns its override on")
 	_check(int((ControllerBindings.get_for_system("nes")["buttons"] as Dictionary)
-		.get("right_ax_button")) == ControllerBindings.JOYPAD_X,
+		.get("right_trigger", -1)) == ControllerBindings.JOYPAD_A,
 		"the override reached disk for nes")
 	_check(int((ControllerBindings.get_global()["buttons"] as Dictionary)
-		.get("right_ax_button")) == ControllerBindings.JOYPAD_A,
+		.get("right_trigger", -1)) != ControllerBindings.JOYPAD_A,
 		"and left the global map alone")
 	_check(int((ControllerBindings.get_for_system("super_nes")["buttons"] as Dictionary)
-		.get("right_ax_button")) == ControllerBindings.JOYPAD_A,
+		.get("right_trigger", -1)) != ControllerBindings.JOYPAD_A,
 		"and left every other platform alone")
-	_check(int((pad.get("_button_map") as Dictionary).get("right_ax_button"))
-		== ControllerBindings.JOYPAD_X,
+	_check(int((pad.get("_button_map") as Dictionary).get("right_trigger", -1))
+		== ControllerBindings.JOYPAD_A,
 		"the pad already in the nes picks it up with no re-plug (got %s)"
-			% str((pad.get("_button_map") as Dictionary).get("right_ax_button")))
+			% str((pad.get("_button_map") as Dictionary).get("right_trigger")))
 
 	# The receiver is plugged into nothing, so the same fan-out must leave it on
 	# the global map — an override is not a global edit wearing a systemid.
@@ -247,6 +250,58 @@ func _run() -> void:
 		== ControllerBindings.JOYPAD_A,
 		"and unplugging puts it back on the global map (got %s)"
 			% str((pad.get("_button_map") as Dictionary).get("right_ax_button")))
+
+	# ── The console's own pad drives the same two stores ─────────────────────
+	# A NES page draws a NES pad and asks the inverse question — this button,
+	# what drives it? — so the write has to invert back onto maps keyed the other
+	# way. That inversion is the part with somewhere to go wrong.
+	var nes_editor2: Node = ControlsBindingEditor.new()
+	nes_editor2.set("_systemid", "nes")
+	add_child(nes_editor2)
+	nes_editor2.call("_build_xr_controls", nes_editor2)
+	nes_editor2.call("_build_gamepad_controls", nes_editor2)
+	await get_tree().process_frame
+
+	_check(nes_editor2.get("_console_xr_diagram") != null,
+		"a platform with pad art gets its own controller, not the Quest picture")
+	_check(nes_editor2.get("_console_pad_diagram") != null,
+		"and its own controller in the GAME CONTROLLER section too")
+
+	# The fallback is the whole reason the registry has a `has()`: 65 of the 66
+	# configured platforms have no art and must still be bindable.
+	var snes_editor: Node = ControlsBindingEditor.new()
+	snes_editor.set("_systemid", "super_nes")
+	add_child(snes_editor)
+	snes_editor.call("_build_xr_controls", snes_editor)
+	snes_editor.call("_build_gamepad_controls", snes_editor)
+	await get_tree().process_frame
+	_check(snes_editor.get("_console_xr_diagram") == null
+		and snes_editor.get("_pad_diagram") != null,
+		"a platform without pad art falls back to the generic diagrams")
+
+	# Releasing the old input is the half the store assertions above cannot see:
+	# two inputs on one button would still read as bound.
+	var after: Dictionary = nes_editor2.get("_edit_button_map")
+	_check(int(after.get("right_ax_button", -1)) != ControllerBindings.JOYPAD_A,
+		"binding A to a new input released the one that held it (%s)"
+			% str(after.get("right_ax_button")))
+
+	# Physical pad: give the NES's B whatever currently drives its A. A is a
+	# control this pad SHOWS, so it has to be released.
+	var pad_before: Dictionary = nes_editor2.get("_edit_pad_button_map")
+	var a_bind := String(pad_before.get("a", "none"))
+	_check(a_bind != "none", "the NES A has a gamepad button to begin with (%s)" % a_bind)
+	nes_editor2.call("_on_console_pad_changed", "b", a_bind)
+	await get_tree().process_frame
+	var pad_after: Dictionary = nes_editor2.get("_edit_pad_button_map")
+	_check(String(pad_after.get("b", "none")) == a_bind,
+		"picking a gamepad button for B binds it")
+	_check(String(pad_after.get("a", "none")) == "none",
+		"and takes it off A, which this pad shows (got %s)" % str(pad_after.get("a")))
+	# A target the NES pad does NOT draw keeps whatever it had: the console has no
+	# such button, and clearing a binding the player cannot see would be worse.
+	_check(String(pad_after.get("x", "none")) == String(pad_before.get("x", "none")),
+		"but leaves a button the NES does not have alone")
 
 	print("[probe] RESULT %s" % ("PASS" if not _fail else "FAIL"))
 	_quit(1 if _fail else 0)

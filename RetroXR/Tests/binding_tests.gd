@@ -50,6 +50,7 @@ func _ready() -> void:
 	_test_clear_restores_global()
 	_test_empty_systemid_is_global()
 	_test_overridden_systems()
+	_test_console_pad_art()
 
 	_restore()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -322,3 +323,62 @@ func _test_overridden_systems() -> void:
 	_ok("the two stores disagree independently",
 		GamepadBindings.has_system_override(SYS_A)
 			and not ControllerBindings.has_system_override(SYS_A))
+
+
+# ---------------------------------------------------------------------------
+# ConsolePadArt — the table a platform's own controller is drawn from.
+# ---------------------------------------------------------------------------
+
+func _test_console_pad_art() -> void:
+	_ok("art/nes has a pad", ConsolePadArt.has("nes"))
+	_ok("art/a platform without one says so", not ConsolePadArt.has("super_nes"))
+	# The global page passes "" as its systemid, and it must never draw a console.
+	_ok("art/the global scope has no pad", not ConsolePadArt.has(""))
+
+	var controls := ConsolePadArt.controls("nes")
+	var want := ["up", "down", "left", "right", "select", "start", "b", "a"]
+	var got := controls.duplicate()
+	got.sort()
+	want.sort()
+	_eq("art/nes carries exactly its eight controls", got, want)
+
+	# The whole two-sections-one-table trick rests on this: a control key is a
+	# GamepadBindings target, and that array's index IS the RetroPad bit. If the
+	# two ever disagree, the XR half silently binds the wrong button.
+	_eq("art/a maps to JOYPAD_A", ConsolePadArt.bit_of("a"), ControllerBindings.JOYPAD_A)
+	_eq("art/b maps to JOYPAD_B", ConsolePadArt.bit_of("b"), ControllerBindings.JOYPAD_B)
+	_eq("art/select maps to JOYPAD_SELECT",
+		ConsolePadArt.bit_of("select"), ControllerBindings.JOYPAD_SELECT)
+	_eq("art/start maps to JOYPAD_START",
+		ConsolePadArt.bit_of("start"), ControllerBindings.JOYPAD_START)
+	_eq("art/up maps to JOYPAD_UP", ConsolePadArt.bit_of("up"), ControllerBindings.JOYPAD_UP)
+	_eq("art/down maps to JOYPAD_DOWN",
+		ConsolePadArt.bit_of("down"), ControllerBindings.JOYPAD_DOWN)
+	_eq("art/left maps to JOYPAD_LEFT",
+		ConsolePadArt.bit_of("left"), ControllerBindings.JOYPAD_LEFT)
+	_eq("art/right maps to JOYPAD_RIGHT",
+		ConsolePadArt.bit_of("right"), ControllerBindings.JOYPAD_RIGHT)
+
+	# Structural check for whoever adds the next console: every control needs an
+	# anchor and a row, and every anchor needs to be a control. A row entry with
+	# no anchor draws a lead to the origin; an anchor with no row draws nothing
+	# and its control silently cannot be bound.
+	var row := ConsolePadArt.row("nes")
+	var anchors: Dictionary = row["anchors"]
+	var listed: Array = (row["top"] as Array) + (row["bottom"] as Array)
+	var listed_sorted := listed.duplicate()
+	listed_sorted.sort()
+	_eq("art/every control appears in exactly one row", listed_sorted, want)
+	var anchor_keys: Array = anchors.keys()
+	anchor_keys.sort()
+	_eq("art/anchors and controls are the same set", anchor_keys, want)
+
+	var in_range := true
+	for control: String in anchors:
+		var uv: Vector2 = anchors[control]
+		if uv.x < 0.0 or uv.x > 1.0 or uv.y < 0.0 or uv.y > 1.0:
+			in_range = false
+	_ok("art/anchors are normalized to the art", in_range)
+
+	_ok("art/the texture loads", ConsolePadArt.texture("nes") != null)
+	_ok("art/an uncovered platform has no texture", ConsolePadArt.texture("super_nes") == null)

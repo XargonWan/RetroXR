@@ -55,6 +55,11 @@ var _pad_rebinding_target: String = ""
 var _pad_rebind_buttons: Dictionary = {}
 var _pad_status_label: Label = null
 
+# The console's own pad, when this platform has art for one. Null on the global
+# page and on any platform ConsolePadArt does not cover.
+var _console_xr_diagram: ConsolePadDiagram = null
+var _console_pad_diagram: ConsolePadDiagram = null
+
 
 static func create(systemid: String = "") -> ControlsBindingEditor:
 	var e := ControlsBindingEditor.new()
@@ -139,6 +144,10 @@ const _BUTTON_SOURCE_ORDER: Array = [
 ## with room for the art between the columns.
 const _CONTROLS_DIAGRAM_H := 520.0
 
+## Height reserved for a ConsolePadDiagram: a row of dropdowns above and below
+## the art, with the picture between them.
+const _CONSOLE_DIAGRAM_H := 470.0
+
 ## Order in which lightgun sources appear in the Controls UI.
 const _LIGHTGUN_SOURCE_ORDER: Array = [
 	"trigger", "grip", "ax_button", "by_button", "primary_click",
@@ -178,23 +187,43 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 	_edit_lightgun_map = current["lightgun"].duplicate()
 
 	# ── Joypad Buttons ────────────────────────────────────────────────────────
-	vbox.add_child(MenuStyle.label("XR Joypad Buttons", 18, MenuStyle.COLOR_LICENSE))
+	if ConsolePadArt.has(_systemid):
+		# This platform's own controller, asked the way an override is meant to
+		# be read: for each button the hardware HAS, what drives it. The generic
+		# picture below offers all sixteen RetroPad bits, which on a console with
+		# four buttons is mostly choices that do nothing.
+		var row := ConsolePadArt.row(_systemid)
+		vbox.add_child(MenuStyle.label(String(row["label"]), 18, MenuStyle.COLOR_LICENSE))
+		# The d-pad rows read None on a fresh map and that is not a fault: the
+		# thumbstick drives the d-pad through the stick routing below, not through
+		# any button source. Say so, rather than leaving four empty-looking rows.
+		vbox.add_child(_hint("Pick which VR controller input works each button. "
+			+ "The D-pad is driven by the thumbstick unless you bind a button to it."))
 
-	# Picture of both controllers with a leader line from each input to its own
-	# dropdown, instead of ten unillustrated "Left Grip"-style rows. Its
-	# dropdowns register under the same "btn:<src>" keys, so reset still drives
-	# them through _reset_vr_dropdown.
-	var diagram := ControllerDiagram.new()
-	diagram.custom_minimum_size = Vector2(0, _CONTROLS_DIAGRAM_H)
-	diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	diagram.setup(_edit_button_map, _JOYPAD_OPTIONS)
-	diagram.binding_changed.connect(func(src: String, bit: int) -> void:
-		_edit_button_map[src] = bit
-		_apply_xr_bindings())
-	vbox.add_child(diagram)
+		_console_xr_diagram = ConsolePadDiagram.new()
+		_console_xr_diagram.custom_minimum_size = Vector2(0, _CONSOLE_DIAGRAM_H)
+		_console_xr_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_child(_console_xr_diagram)
+		_console_xr_diagram.setup(_systemid, _xr_source_options(), _xr_current_by_control())
+		_console_xr_diagram.binding_changed.connect(_on_console_xr_changed)
+	else:
+		vbox.add_child(MenuStyle.label("XR Joypad Buttons", 18, MenuStyle.COLOR_LICENSE))
 
-	for src: String in _BUTTON_SOURCE_ORDER:
-		_controls_opts["btn:" + src] = diagram.get_dropdown(src)
+		# Picture of both controllers with a leader line from each input to its own
+		# dropdown, instead of ten unillustrated "Left Grip"-style rows. Its
+		# dropdowns register under the same "btn:<src>" keys, so reset still drives
+		# them through _reset_vr_dropdown.
+		var diagram := ControllerDiagram.new()
+		diagram.custom_minimum_size = Vector2(0, _CONTROLS_DIAGRAM_H)
+		diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		diagram.setup(_edit_button_map, _JOYPAD_OPTIONS)
+		diagram.binding_changed.connect(func(src: String, bit: int) -> void:
+			_edit_button_map[src] = bit
+			_apply_xr_bindings())
+		vbox.add_child(diagram)
+
+		for src: String in _BUTTON_SOURCE_ORDER:
+			_controls_opts["btn:" + src] = diagram.get_dropdown(src)
 
 	# ── Analog Sticks ─────────────────────────────────────────────────────────
 	vbox.add_child(HSeparator.new())
@@ -400,7 +429,103 @@ func _on_controls_reset() -> void:
 	for src: String in _LIGHTGUN_SOURCE_ORDER:
 		_reset_vr_dropdown("gun:" + src, _edit_lightgun_map.get(src, -1))
 	_reset_vr_dropdown("gun:stick", str(_edit_lightgun_map.get("stick", "dpad")))
+	if is_instance_valid(_console_xr_diagram):
+		_console_xr_diagram.refresh(_xr_current_by_control())
 	_apply_xr_bindings()
+
+
+# ── The console's own pad ─────────────────────────────────────────────────────
+#
+# Both sections anchor on the console's controls and choose a SOURCE for each,
+# which is the inverse of how the two stores are keyed on the XR side and the
+# same as how they are keyed on the gamepad side. The conversions live here
+# rather than in the diagram, so the widget stays about drawing.
+
+func _hint(text: String) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", MenuStyle.COLOR_LICENSE)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return lbl
+
+
+## The VR inputs a console control can be driven by.
+func _xr_source_options() -> Array:
+	var out: Array = [["None", ""]]
+	for src: String in _BUTTON_SOURCE_ORDER:
+		out.append([String(ControllerBindings.BUTTON_SOURCE_LABELS.get(src, src)), src])
+	return out
+
+
+## The physical-pad buttons a console control can be driven by.
+func _pad_source_options() -> Array:
+	var out: Array = [["None", "none"]]
+	for input: String in GamepadDiagram.INPUTS:
+		var bind := String((GamepadDiagram.INPUTS[input] as Dictionary)["bind"])
+		out.append([String(GamepadDiagram.INPUT_LABELS.get(input, input)), bind])
+	return out
+
+
+## The VR input currently driving a RetroPad bit, or "" for none. The stored map
+## runs source -> bit, so this is a reverse lookup; where two sources share a bit
+## the first in _BUTTON_SOURCE_ORDER wins, and picking anything on that control
+## collapses the pair.
+func _xr_source_for_bit(bit: int) -> String:
+	if bit < 0:
+		return ""
+	for src: String in _BUTTON_SOURCE_ORDER:
+		if int(_edit_button_map.get(src, -1)) == bit:
+			return src
+	return ""
+
+
+func _xr_current_by_control() -> Dictionary:
+	var out: Dictionary = {}
+	for control: String in ConsolePadArt.controls(_systemid):
+		out[control] = _xr_source_for_bit(ConsolePadArt.bit_of(control))
+	return out
+
+
+func _pad_current_by_control() -> Dictionary:
+	var out: Dictionary = {}
+	for control: String in ConsolePadArt.controls(_systemid):
+		out[control] = String(_edit_pad_button_map.get(control, "none"))
+	return out
+
+
+## One source per control: free whatever drove this button, then assign. Taking a
+## source off another button is correct — one finger cannot do two jobs — and the
+## whole diagram is refreshed because the button it left now reads None.
+func _on_console_xr_changed(control: String, id: Variant) -> void:
+	var bit := ConsolePadArt.bit_of(control)
+	if bit < 0:
+		return
+	for other: String in _BUTTON_SOURCE_ORDER:
+		if int(_edit_button_map.get(other, -1)) == bit:
+			_edit_button_map[other] = ControllerBindings.JOYPAD_NONE
+	var src := String(id)
+	if not src.is_empty():
+		_edit_button_map[src] = bit
+	_apply_xr_bindings()
+	if is_instance_valid(_console_xr_diagram):
+		_console_xr_diagram.refresh(_xr_current_by_control())
+
+
+## Same rule, but duplicates are cleared only across the controls this pad SHOWS.
+## A hidden target holding the same button is left alone: the console has no such
+## button, so nothing it drives is visible, and silently clearing a binding the
+## player cannot see would be worse than the duplicate.
+func _on_console_pad_changed(control: String, id: Variant) -> void:
+	var binding := String(id)
+	if binding != "none" and not binding.is_empty():
+		for other: String in ConsolePadArt.controls(_systemid):
+			if other != control and String(_edit_pad_button_map.get(other, "none")) == binding:
+				_edit_pad_button_map[other] = "none"
+	_edit_pad_button_map[control] = binding
+	_on_pad_controls_save()
+	if is_instance_valid(_console_pad_diagram):
+		_console_pad_diagram.refresh(_pad_current_by_control())
 
 
 # ── Physical gamepad remapping ────────────────────────────────────────────────
@@ -426,12 +551,22 @@ func _build_gamepad_controls(vbox: VBoxContainer) -> void:
 		Input.joy_connection_changed.connect(_on_pad_connection_changed)
 
 	# ── Diagram ───────────────────────────────────────────────────────────────
-	_pad_diagram = GamepadDiagram.new()
-	_pad_diagram.custom_minimum_size = Vector2(0, 580)
-	_pad_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_child(_pad_diagram)
-	_pad_diagram.setup(_edit_pad_button_map)
-	_pad_diagram.binding_changed.connect(_on_pad_diagram_changed)
+	if ConsolePadArt.has(_systemid):
+		vbox.add_child(_hint("Pick which button on your gamepad works each one."))
+		_console_pad_diagram = ConsolePadDiagram.new()
+		_console_pad_diagram.custom_minimum_size = Vector2(0, _CONSOLE_DIAGRAM_H)
+		_console_pad_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_child(_console_pad_diagram)
+		_console_pad_diagram.setup(_systemid, _pad_source_options(),
+			_pad_current_by_control())
+		_console_pad_diagram.binding_changed.connect(_on_console_pad_changed)
+	else:
+		_pad_diagram = GamepadDiagram.new()
+		_pad_diagram.custom_minimum_size = Vector2(0, 580)
+		_pad_diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_child(_pad_diagram)
+		_pad_diagram.setup(_edit_pad_button_map)
+		_pad_diagram.binding_changed.connect(_on_pad_diagram_changed)
 
 	# ── Buttons (press-to-rebind; joypad presses reach us in VR and desktop) ──
 	# Behind a switch, because the diagram covers it for an Xbox-layout pad. It
@@ -553,6 +688,8 @@ func on_pad_rebind_complete(target: String, binding: String) -> void:
 		# The same binding is shown in both places; a capture must move the
 		# diagram too or the two disagree until the tab is rebuilt.
 		_refresh_pad_diagram()
+		if is_instance_valid(_console_pad_diagram):
+			_console_pad_diagram.refresh(_pad_current_by_control())
 	var btn: Button = _pad_rebind_buttons.get(target) as Button
 	if is_instance_valid(btn):
 		var cur: String = _edit_pad_button_map.get(target, "none")
@@ -600,6 +737,8 @@ func _on_pad_controls_reset() -> void:
 		_edit_pad_button_map = (g["buttons"] as Dictionary).duplicate()
 		_edit_pad_stick_map  = (g["sticks"] as Dictionary).duplicate()
 	_refresh_pad_diagram()
+	if is_instance_valid(_console_pad_diagram):
+		_console_pad_diagram.refresh(_pad_current_by_control())
 	for target: String in GamepadBindings.TARGET_ORDER:
 		var btn: Button = _pad_rebind_buttons.get(target) as Button
 		if is_instance_valid(btn):

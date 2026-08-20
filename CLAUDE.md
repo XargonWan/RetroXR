@@ -300,7 +300,11 @@ stored profile IS its override switch; there is no separate flag. So three rules
 load-bearing and each has cases here: a platform with no profile is indistinguishable
 from global, a profile shadows global completely INCLUDING global edits made after it
 (which is why a profile is always written whole), and clearing one puts that platform
-back on global without touching anyone else's. 39 cases, ~2 s.
+back on global without touching anyone else's. It also covers ConsolePadArt, the
+table a platform's own controller is drawn from — that a control key's index in
+GamepadBindings.TARGET_ORDER really is its RetroPad bit (the trick that lets one
+table serve both the XR and the physical-pad sections), and that every control
+has an anchor and a row. 56 cases, ~2 s.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/binding_tests.tscn
 ```
@@ -639,6 +643,19 @@ carried alongside it.
   get a link error on the platform you weren't building. Each `lib/<plat>/` carries a `VERSION`
   stamp of the release it came from, and the top-level one belongs to `include/`; they are
   allowed to differ, and the script prints them so you can see when they do.
+- **Controller line art** — three generators feed the Controls remap diagrams.
+  `bake_controller_art.py` bakes the Quest Touch art from a glTF (MIT,
+  immersive-web/webxr-input-profiles), because a Touch controller's shape cannot be
+  guessed. `gen_gamepad_art.py` and `gen_nes_pad_art.py` DRAW their pads instead —
+  circles, capsules and a cross on a symmetric body — which is simpler and keeps the
+  anchors as chosen coordinates that cannot drift from a render. Each prints the
+  anchor table for its diagram; `gen_nes_pad_art.py` also verifies that no two leader
+  lines cross at any panel size, and that count must stay 0 if an anchor moves.
+  Every drawn pad is a *layout*, never a product: no logo, no trade dress, nothing
+  traced, so there is nothing to license.
+  ```bash
+  python Tools/gen_nes_pad_art.py
+  ```
 - **`Tools/glb/decimate_glb.py`** — Blender-headless triangle reduction for a downloaded shell.
   Sketchfab assets arrive subdivided for renders: the Atari 2600 console shipped 1,080,733
   triangles and 57.7 MB, against 27,893 for the NES. **Weld first** — these exports are
