@@ -46,6 +46,8 @@ var _b: Libretro = null
 var _wall_prev := 0
 var _fa_prev := 0
 var _fb_prev := 0
+var _filming := false
+var _film_frame := 0
 
 
 func _ready() -> void:
@@ -64,6 +66,8 @@ func _run() -> void:
 		get_tree().quit(0)
 		return
 	print("[mario] rom  %s" % rom)
+
+	_filming = "--film" in OS.get_cmdline_user_args()
 
 	var root := CoreDownloadManager.default_core_root()
 	if not _enable_link_option(root):
@@ -171,10 +175,34 @@ func _run() -> void:
 	var play_sent: int = _a.LinkSent(0)
 	var play_frames: int = _a.GetFrameCount()
 	var play_wall: int = Time.get_ticks_msec()
-	for step in range(6):
-		await _wait_frames(120)
+	# Drive ONE player at a time, and only on its own machine.
+	#
+	# This is the part that cannot be faked. Machine A's joypad reaches machine
+	# A's core and nothing else; the only way its Mario can appear to move on
+	# machine B's screen is if the position crossed the cable. Standing still
+	# proves nothing, because two cores running the same ROM from the same reset
+	# will draw the same level whether or not a wire connects them.
+	var script: Array[Array] = [
+		[_a, BTN_RIGHT, "a_right"],
+		[_a, BTN_LEFT | BTN_A, "a_left_jump"],
+		[_b, BTN_LEFT, "b_left"],
+		[_b, BTN_RIGHT | BTN_A, "b_right_jump"],
+		[_a, BTN_RIGHT | BTN_A, "a_right_jump"],
+		[null, 0, "idle"],
+	]
+	for step in range(script.size()):
+		var machine: Libretro = script[step][0]
+		var mask: int = script[step][1]
+		if machine != null:
+			machine.SetJoypadState(0, mask, 0, 0, 0, 0)
+		if _filming:
+			await _film(120)
+		else:
+			await _wait_frames(120)
+		if machine != null:
+			machine.SetJoypadState(0, 0, 0, 0, 0, 0)
 		_shot("j_watch%d" % step)
-		_report("watch%d" % step)
+		_report("watch%d %s" % [step, script[step][2]])
 
 	# The master sends two messages per transfer, a start and its own word, so
 	# halving its count gives transfers. Measured over the watch loop alone,
@@ -222,6 +250,26 @@ func _wait_frames(n: int) -> void:
 	var target_b: int = _b.GetFrameCount() + n
 	while _a.GetFrameCount() < target_a or _b.GetFrameCount() < target_b:
 		await get_tree().process_frame
+
+
+## Save both screens every emulated frame, for encoding into a side-by-side clip.
+##
+## A still cannot show a link game working. Two machines can agree on a level and
+## still be running two separate games in it, and the only thing that tells them
+## apart is whether one player's Mario moves on the other player's screen.
+func _film(n: int) -> void:
+	var dir := "res://probe_out/film"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	var target_a: int = _a.GetFrameCount() + n
+	while _a.GetFrameCount() < target_a:
+		await get_tree().process_frame
+		var ia: Image = _a.GetVideoImage()
+		var ib: Image = _b.GetVideoImage()
+		if ia == null or ib == null or ia.is_empty() or ib.is_empty():
+			continue
+		ia.save_png("%s/%05d_a.png" % [dir, _film_frame])
+		ib.save_png("%s/%05d_b.png" % [dir, _film_frame])
+		_film_frame += 1
 
 
 ## One line of everything worth knowing: link traffic, and how fast each machine
