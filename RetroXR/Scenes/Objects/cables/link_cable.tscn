@@ -1,9 +1,10 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://Scripts/Objects/cables/link_cable.gd" id="1_cablescript"]
 [ext_resource type="Script" path="res://Scripts/Objects/cables/link_plug.gd" id="2_plugscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
 [ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/link_port.tscn" id="5_linkport"]
 
 ; PLACEHOLDER GEOMETRY. Two boxes, not a model.
 ;
@@ -66,6 +67,16 @@ friction = 0.8
 ; else notices it is generous.
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.035, 0.035, 0.06)
+
+; The inline junction: the purple block moulded partway along the cord, whose
+; socket is how a third and fourth machine chain onto the same wire. Roughly a
+; 17 mm cube on the real lead.
+[sub_resource type="BoxMesh" id="BoxMesh_junction"]
+size = Vector3(0.017, 0.017, 0.017)
+
+[sub_resource type="StandardMaterial3D" id="Mat_junction"]
+albedo_color = Color(0.32, 0.3, 0.55, 1)
+roughness = 0.65
 
 ; A 1.2 m GBA link cable: ONE cord, a link plug at each end.
 ;
@@ -167,6 +178,27 @@ script = ExtResource("3_pickhigh")
 
 [node name="SnapGrabPoint" parent="PlugB0" instance=ExtResource("4_snapgp")]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; -- The junction ---------------------------------------------------------------
+; top_level because it RIDES the cord rather than hanging off the cable's origin:
+; LinkCable places it on a rope particle every physics frame, and a socket that
+; did not move with the lead it is moulded into would read as broken.
+;
+; Its own socket is a full LinkPort, not a decoration. A junction that looked
+; like a socket and refused a plug would be worse than none at all, and the whole
+; point of it is that the third and fourth players are real.
+[node name="Junction" type="Node3D" parent="."]
+top_level = true
+
+[node name="Box" type="MeshInstance3D" parent="Junction"]
+mesh = SubResource("BoxMesh_junction")
+surface_material_override/0 = SubResource("Mat_junction")
+
+; Turned to face out of the block's side. The junction is oriented with -Z along
+; the cord, so a socket left facing forward would point back down the wire it is
+; moulded into; +X puts its mouth on the flank where a plug can reach it.
+[node name="LinkPort" parent="Junction" instance=ExtResource("5_linkport")]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0.0085, 0, 0)
 
 ; 40 x 30 mm = 1.20 m, the length a GBA link cable ships at, against 0.96 m
 ; between the plugs so it hangs rather than pulling straight.

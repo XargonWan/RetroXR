@@ -174,13 +174,25 @@ func _test_disconnect_is_idempotent() -> void:
 	m1.add_child(p1)
 	m2.add_child(p2)
 
-	cable._connect_ports(p1, p2)
+	var g2: Array[Dictionary] = [
+		{"libretro": m1.libretro, "port": 0},
+		{"libretro": m2.libretro, "port": 0},
+	]
+	cable._join(g2)
 	_eq("two idle machines are still cabled together", cable._linked.size(), 2)
+
+	# Re-stating the same set changes nothing, which matters because every cable
+	# in a chain resolves whenever any plug in it moves.
+	cable._join(g2)
+	_eq("re-stating the same group is a no-op", cable._linked.size(), 2)
 	cable._disconnect()
 
-	# And the guard against a machine cabled to itself, which the room can
-	# present as two sockets on one handheld.
-	cable._connect_ports(p1, p1)
+	# The guard against a machine cabled to itself, which the room can present as
+	# two sockets on one handheld.
+	cable._join([
+		{"libretro": m1.libretro, "port": 0},
+		{"libretro": m1.libretro, "port": 0},
+	] as Array[Dictionary])
 	_eq("a machine cabled to itself is not recorded", cable._linked.size(), 0)
 
 	# Disconnect has to survive the ends being gone. A machine can be carried out
@@ -264,6 +276,18 @@ func _test_cable_scene() -> void:
 			"A = %s" % str(ma.albedo_color))
 		_ok("end B is the grey shell", absf(mb.albedo_color.b - mb.albedo_color.r) < 0.06,
 			"B = %s" % str(mb.albedo_color))
+
+	# The junction, which is what makes a third and fourth player possible. A
+	# socket that looked real and refused a plug would be worse than none, so it
+	# is a full LinkPort and has to answer as one.
+	var j := cable.junction_port()
+	_ok("the lead carries a junction", j != null)
+	if j != null:
+		_eq("it takes the same plugs the machines do", j.snap_require, "link_plug")
+		# The two kinds of socket have to be told apart during the chain walk:
+		# a machine port answers get_machine, a junction answers get_cable.
+		_eq("it belongs to no machine", j.get_machine(), null)
+		_eq("it belongs to this cable", j.get_cable(), cable)
 
 	cable.queue_free()
 	await get_tree().process_frame

@@ -89,6 +89,16 @@ public:
     double RestLength() const;
     godot::PackedVector3Array GetPoints() const;
     void NudgePoint(int p_index, const godot::Vector3 &p_delta);
+
+    /// How many particles the cord is made of, and where one of them is in
+    /// world space. Read-only counterparts to NudgePoint, for anything that has
+    /// to RIDE a cord rather than pull on it — the moulded junction partway
+    /// along a GBA link cable being the case this was added for. Returns the
+    /// zero vector for an index off the end rather than faulting, because the
+    /// particle count changes with segment_count and a caller that cached one
+    /// should get a harmless answer.
+    int PointCount() const;
+    godot::Vector3 PointPosition(int p_index) const;
     void SetRopeLength(double p_length);
 
     // Anchors. Held as ObjectIDs rather than raw pointers: a plug or a host

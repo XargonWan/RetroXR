@@ -46,6 +46,23 @@ func get_machine() -> Node3D:
 	return null
 
 
+## The cable this socket belongs to, when it is the junction moulded into a lead
+## rather than a socket on a machine.
+##
+## A link cable carries an inline junction so a third and fourth player can chain
+## in, and that junction is a real socket on a scene object with no core behind
+## it. It conducts rather than participates, so the chain walk has to be able to
+## tell the two kinds of socket apart: a machine port answers get_machine(), a
+## junction answers this.
+func get_cable() -> Node3D:
+	var n: Node = get_parent()
+	while n != null:
+		if n is LinkCable:
+			return n as Node3D
+		n = n.get_parent()
+	return null
+
+
 ## The Libretro node behind this socket, or null when the machine is off. Null is
 ## ordinary rather than exceptional: a cable can be seated into a console that
 ## has not been switched on yet, and it should simply come alive when it is.

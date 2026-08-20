@@ -234,6 +234,8 @@ void VerletRope::_bind_methods()
     ClassDB::bind_method(D_METHOD("rest_length"), &VerletRope::RestLength);
     ClassDB::bind_method(D_METHOD("get_points"), &VerletRope::GetPoints);
     ClassDB::bind_method(D_METHOD("nudge_point", "index", "delta"), &VerletRope::NudgePoint);
+    ClassDB::bind_method(D_METHOD("point_count"), &VerletRope::PointCount);
+    ClassDB::bind_method(D_METHOD("point_position", "index"), &VerletRope::PointPosition);
     ClassDB::bind_method(D_METHOD("set_rope_length", "length"), &VerletRope::SetRopeLength);
     ClassDB::bind_method(D_METHOD("step", "delta"), &VerletRope::Step);
     ClassDB::bind_method(D_METHOD("remesh"), &VerletRope::Remesh);
@@ -603,6 +605,18 @@ void VerletRope::NudgePoint(int p_index, const Vector3 &p_delta)
         return;
     m_points[p_index] += p_delta;
     Wake();
+}
+
+int VerletRope::PointCount() const
+{
+    return static_cast<int>(m_points.size());
+}
+
+Vector3 VerletRope::PointPosition(int p_index) const
+{
+    if (p_index < 0 || p_index >= static_cast<int>(m_points.size()))
+        return Vector3();
+    return m_points[p_index];
 }
 
 // Rest distances only — the particle layout, the chains and the contact caches
