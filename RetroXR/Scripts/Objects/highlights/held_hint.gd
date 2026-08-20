@@ -480,7 +480,7 @@ func _glyph(pattern: String, right_hand: bool) -> TextureRect:
 		.replace("{side}", "right" if right_hand else "left") \
 		.replace("{s}", "r" if right_hand else "l")
 	var rect := TextureRect.new()
-	var path := "%s/%s.png" % [GLYPH_DIR, file]
+	var path := "%s/%s%s" % [GLYPH_DIR, file, ConsolePadDiagram.GLYPH_EXT]
 	if ResourceLoader.exists(path):
 		rect.texture = ResourceLoader.load(path) as Texture2D
 	else:

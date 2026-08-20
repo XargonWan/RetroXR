@@ -1,0 +1,29 @@
+Input prompt glyphs — attribution
+=================================
+
+Every .svg in this directory is from Kenney's "Input Prompts" pack. The pack's
+own licence text is beside this file, verbatim, as Kenney-License.txt.
+
+  Source   : https://kenney.nl/assets/input-prompts
+  Version  : 1.5 / 1.5A
+  Licence  : CC0-1.0 — public domain. Crediting Kenney is requested and not
+             required; done here and in the About panel's ARTWORK section.
+  Taken as : the pack's Vector/ SVGs, unmodified. Files keep Kenney's own names,
+             which is what the glyph tables in Scripts/UI/panels/*.gd key off.
+
+WHY SVG AND NOT THE PNGs. These were the pack's Double/ PNGs until 2026-08-19.
+Nothing was wrong with them — 128 px drawn at 46 is already oversampled — but
+this repo treats SVG as the normal thing for flat UI art (Textures/SystemIcons
+is 234 of them, Textures/Controllers likewise), and PNG here was the odd one out.
+Godot rasterises SVG at IMPORT, so this is not a runtime cost: it is the same
+texture, from a source that can be re-imported larger if a panel ever grows.
+
+  svg/scale = 2.0 on every one, giving 128 px from Kenney's 64 viewBox — the
+  size the PNGs were, so nothing changed on screen.
+
+Ten names ship in both "Nintendo Switch" and "Nintendo Switch 2"; the two copies
+are byte-identical, so which folder a file came from does not matter.
+
+The extension is ConsolePadDiagram.GLYPH_EXT, in one place. Seven lookups across
+four panels used to spell ".png" out independently, which is why swapping format
+is a change worth doing once rather than per-caller.

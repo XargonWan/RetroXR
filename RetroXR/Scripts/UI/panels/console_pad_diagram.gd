@@ -49,6 +49,12 @@ const DOT_RADIUS := 5.0
 
 ## Kenney Input Prompts 1.5 (CC0), the same set the other two diagrams use.
 const GLYPH_DIR := "res://Textures/InputPrompts/"
+## Kenney ships these as vectors and Godot rasterises them at IMPORT, so the
+## extension is not a runtime detail — it decides which file the seven glyph
+## lookups scattered across four panels reach for. One constant, because six of
+## them said ".png" independently and adding a set in the other format meant
+## finding all six.
+const GLYPH_EXT := ".svg"
 
 ## Larger than the sibling diagrams' 42: the four d-pad glyphs differ only by
 ## which arm of the same cross is filled, and the pack has no single-arrow
@@ -182,7 +188,7 @@ func _control_glyph(control: String) -> Texture2D:
 	var name_text := String(own.get(control, GamepadDiagram.TARGET_GLYPHS.get(control, "")))
 	if name_text.is_empty():
 		return null
-	return load(GLYPH_DIR + name_text + ".png") as Texture2D
+	return load(GLYPH_DIR + name_text + GLYPH_EXT) as Texture2D
 
 
 ## True when this art lays its rows down the sides rather than along the top and

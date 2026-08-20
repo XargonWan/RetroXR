@@ -445,7 +445,8 @@ func _test_wii_pad_art() -> void:
 		var g := String(glyphs[key])
 		if not g.begins_with("wii_"):
 			all_wii = false
-		if not ResourceLoader.exists(ConsolePadDiagram.GLYPH_DIR + g + ".png"):
+		if not ResourceLoader.exists(ConsolePadDiagram.GLYPH_DIR + g
+				+ ConsolePadDiagram.GLYPH_EXT):
 			all_present = false
 			print("[test]        missing glyph: %s" % g)
 	_ok("wii/every glyph is a Wii one, not a borrowed RetroPad picture", all_wii)
@@ -480,6 +481,33 @@ func _test_wii_pad_art() -> void:
 	_eq("wii/the diagram resolves the d-pad to Wii glyphs",
 		_glyph_stem(diagram, "up"), "wii_dpad_up_outline")
 	diagram.queue_free()
+
+	# EVERY glyph any panel can ask for must resolve. These are Kenney vectors now,
+	# rasterised at import, and the extension lives in one constant — so a name that
+	# has no file is not an error anywhere, it is a silently blank chip. This walks
+	# all four maps rather than the handful the Wii happens to use.
+	var all_names: Array = []
+	for v: String in GamepadDiagram.TARGET_GLYPHS.values():
+		all_names.append(v)
+	for k: String in GamepadDiagram.INPUTS:
+		all_names.append(String((GamepadDiagram.INPUTS[k] as Dictionary).get("glyph", "")))
+	for v: String in ControllerDiagram.GLYPHS.values():
+		all_names.append(v)
+	for v: String in ControllerDiagram.RETROPAD_GLYPHS.values():
+		all_names.append(v)
+	for sysid: String in ["wii"]:
+		for v: String in (ConsolePadArt.row(sysid).get("glyphs", {}) as Dictionary).values():
+			all_names.append(v)
+	var absent: Array = []
+	for name_text: String in all_names:
+		if name_text.is_empty():
+			continue
+		if not ResourceLoader.exists(ConsolePadDiagram.GLYPH_DIR + name_text
+				+ ConsolePadDiagram.GLYPH_EXT):
+			if not absent.has(name_text):
+				absent.append(name_text)
+	_ok("art/every glyph every panel names has a file (%d checked)" % all_names.size(),
+		absent.is_empty(), "missing: %s" % str(absent))
 
 	# A pad that declares none still gets the shared picture — the fallback is
 	# right for a console whose controls really are RetroPad-shaped.

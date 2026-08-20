@@ -554,7 +554,8 @@ func _pad_source_options() -> Array:
 func _glyph(name_text: String) -> Texture2D:
 	if name_text.is_empty():
 		return null
-	return load(ConsolePadDiagram.GLYPH_DIR + name_text + ".png") as Texture2D
+	return load(ConsolePadDiagram.GLYPH_DIR + name_text
+		+ ConsolePadDiagram.GLYPH_EXT) as Texture2D
 
 
 ## The VR input currently driving a RetroPad bit, or "" for none. The stored map
