@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://1mgrac1nixul" path="res://Scripts/Objects/system_models/game_boy_advance_sp_model.gd" id="1_model"]
 [ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="2_hinge"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="3_slider"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/link_port.tscn" id="9_linkport"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
 size = Vector3(0.082, 0.012, 0.0846)
@@ -224,3 +225,11 @@ gizmo_extents = 0.03
 [node name="SeatPreview" type="MeshInstance3D" parent="CartSeat" unique_id=1664212621]
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("Mat_seat")
+
+; The EXT socket, on the front edge beside the cartridge slot, where the SP keeps
+; its two external ports.
+;
+; +Z points OUT of the shell — see the note on the original GBA's port. This face
+; looks along +Z, so the node is unturned.
+[node name="LinkPort" parent="." instance=ExtResource("9_linkport")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.026, 0, 0.0433)
