@@ -73,6 +73,12 @@ size = Vector3(0.008, 0.006, 0.008)
 [sub_resource type="StandardMaterial3D" id="Mat_knob"]
 albedo_color = Color(0.2, 0.2, 0.22, 1)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
+size = Vector3(0.016, 0.014, 0.016)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
+size = Vector3(0.016, 0.014, 0.016)
+
 [sub_resource type="BoxMesh" id="BoxMesh_seat"]
 size = Vector3(0.058, 0.036, 0.007)
 
@@ -82,12 +88,6 @@ albedo_color = Color(1, 0.55, 0.1, 0.35)
 emission_enabled = true
 emission = Color(1, 0.55, 0.1, 1)
 emission_energy_multiplier = 0.4
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_powerswitch"]
-size = Vector3(0.016, 0.014, 0.016)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_volumeslider"]
-size = Vector3(0.016, 0.014, 0.016)
 
 [node name="GameBoyAdvanceSPPrimitive" type="Node3D" unique_id=2054180836]
 script = ExtResource("1_model")
@@ -226,16 +226,9 @@ gizmo_extents = 0.03
 mesh = SubResource("BoxMesh_seat")
 surface_material_override/0 = SubResource("Mat_seat")
 
-; The EXT socket, on the TOP of the bottom clamshell rather than on an edge.
-;
-; Set back near the hinge, on the strip the lid does not close over, clear of the
-; shoulder buttons at z -0.0395 and the brightness button at z -0.022.
-;
-; Facing UP, so the node is turned -90 degrees about X: a port's +Z points OUT of
-; the shell, the seated plug's shaft goes in along the port's -Z, and its own
-; shell stays outside. Same rule as the original GBA's port, different face.
-;
-; 1 mm proud of the surface, as everywhere else: a seated link plug's origin is
-; the front face of its shell, and that face stops almost flush against the rim.
-[node name="LinkPort" parent="." instance=ExtResource("9_linkport")]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.026, 0.007, -0.03)
+[node name="LinkPort" parent="." unique_id=660090029 instance=ExtResource("9_linkport")]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, -0.026, -0.0005099056, -0.04190069)
+link_port = 0
+channel = 0
+direction = 1
+show_jack = true
