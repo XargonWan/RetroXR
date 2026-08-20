@@ -272,6 +272,13 @@ func _run() -> void:
 		int(transfers), int(frames), per_frame, fps])
 
 	var failures: PackedStringArray = []
+	# Checked first, because it explains every other number at once. A peer count
+	# of zero on a cabled machine means its CORE never joined the bus, which is
+	# the link core option not having taken -- and that reads downstream as a
+	# transfer rate of zero, which says nothing about why.
+	if _a.LinkPeerCount(0) == 0 or _b.LinkPeerCount(0) == 0:
+		failures.append("a machine reports no peers, so its core never joined the bus:"
+			+ " check %s is set to ON in %s" % [OPT_KEY, _opt_path])
 	if per_frame < 5.0:
 		failures.append("only %.1f transfers per frame; a session in play runs about 9, one a frame is the idle poll" % per_frame)
 	if fps < 50.0:
@@ -422,7 +429,12 @@ func _enable_link_option(root: String) -> bool:
 	for line in existing.split("\n", false):
 		if not line.begins_with(OPT_KEY):
 			lines.append(line)
-	lines.append('%s = "enabled"' % OPT_KEY)
+	# "ON", the option's own VALUE, not "enabled", which is only the label the
+	# menu prints beside it. Writing the label put a string the option does not
+	# offer into the file: the core read it, matched nothing, and left the link
+	# driver uninstalled -- so a probe that wrote it was exercising a
+	# configuration no player can produce, and passed while the room failed.
+	lines.append('%s = "ON"' % OPT_KEY)
 
 	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
 	if writer == null:

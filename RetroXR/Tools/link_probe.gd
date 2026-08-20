@@ -156,7 +156,12 @@ func _enable_link_option(root: String) -> bool:
 	for line in existing.split("\n", false):
 		if not line.begins_with(OPT_KEY):
 			lines.append(line)
-	lines.append('%s = "enabled"' % OPT_KEY)
+	# "ON", the option's own VALUE, not "enabled", which is only the label the
+	# menu prints beside it. Writing the label put a string the option does not
+	# offer into the file: the core read it, matched nothing, and left the link
+	# driver uninstalled -- so a probe that wrote it was exercising a
+	# configuration no player can produce, and passed while the room failed.
+	lines.append('%s = "ON"' % OPT_KEY)
 
 	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
 	if writer == null:
