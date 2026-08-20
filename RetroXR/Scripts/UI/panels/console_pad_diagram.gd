@@ -23,6 +23,8 @@ extends Control
 ## options array the owner supplied, or "" for unbound.
 signal binding_changed(control: String, id: Variant)
 
+## Applied only to line art. A colour illustration is shown as drawn — see
+## ConsolePadArt.tints().
 const ART_TINT := Color(0.74, 0.78, 0.87)
 const LEAD_COLOR := Color(1.0, 0.69, 0.29)
 const DOT_COLOR := Color(1.0, 0.80, 0.47)
@@ -46,8 +48,15 @@ const SLOT_GAP := 18.0
 var _systemid := ""
 var _row: Dictionary = {}
 var _drops: Dictionary = {}
-var _art: TextureRect = null
 var _anchor_px: Dictionary = {}
+
+# The art is DRAWN rather than parented as a TextureRect. A Control renders its
+# own _draw() behind its children, so a child would have covered the leader
+# lines and the anchor dots — invisible with line art, whose body is nearly
+# transparent, and total with a colour illustration.
+var _art_tex: Texture2D = null
+var _art_rect := Rect2()
+var _tint := true
 
 
 ## `options` is the VRDropdown options array of sources to choose from;
@@ -63,17 +72,10 @@ func setup(systemid: String, options: Array, current: Dictionary) -> void:
 	if _row.is_empty():
 		return
 
-	_art = TextureRect.new()
-	_art.texture = ConsolePadArt.texture(systemid)
-	_art.stretch_mode = TextureRect.STRETCH_SCALE
-	# Without this the texture's own size becomes the minimum and the explicit
-	# size set in _relayout() is clamped back up.
-	_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_art.modulate = ART_TINT
-	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_art)
+	_art_tex = ConsolePadArt.texture(systemid)
+	_tint = ConsolePadArt.tints(systemid)
 
-	# Dropdowns after the art so they draw over it.
+	# Dropdowns are children, so they draw over the art either way.
 	for control: String in _controls():
 		var label: String = GamepadBindings.TARGET_LABELS.get(control, control)
 		var drop := VRDropdown.create(label, options, current.get(control, ""),
@@ -152,15 +154,14 @@ func _slot_xs(order: Array, art: Rect2) -> Array:
 
 
 func _relayout() -> void:
-	if _art == null or not is_instance_valid(_art) or _row.is_empty():
+	if _art_tex == null or _row.is_empty():
 		return
 
 	var band_w := minf(size.x, MAX_W)
 	var art_h := size.y - 2.0 * (ROW_H + ROW_PAD)
-	var tex := _art.texture
-	if tex == null or art_h <= 0.0:
+	if art_h <= 0.0:
 		return
-	var aspect := float(tex.get_width()) / float(tex.get_height())
+	var aspect := float(_art_tex.get_width()) / float(_art_tex.get_height())
 	var art_w := art_h * aspect
 	if art_w > band_w:
 		art_w = band_w
@@ -168,8 +169,7 @@ func _relayout() -> void:
 
 	var r := Rect2(Vector2((size.x - art_w) * 0.5, (size.y - art_h) * 0.5),
 		Vector2(art_w, art_h))
-	_art.position = r.position
-	_art.size = r.size
+	_art_rect = r
 
 	for top in [true, false]:
 		var order: Array = _row["top"] if top else _row["bottom"]
@@ -196,6 +196,9 @@ func _relayout() -> void:
 func _draw() -> void:
 	if _row.is_empty():
 		return
+	if _art_tex != null and _art_rect.size.x > 0.0:
+		draw_texture_rect(_art_tex, _art_rect, false,
+			ART_TINT if _tint else Color.WHITE)
 	for top in [true, false]:
 		var order: Array = _row["top"] if top else _row["bottom"]
 		for control: String in order:

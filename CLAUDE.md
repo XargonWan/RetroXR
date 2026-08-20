@@ -643,19 +643,25 @@ carried alongside it.
   get a link error on the platform you weren't building. Each `lib/<plat>/` carries a `VERSION`
   stamp of the release it came from, and the top-level one belongs to `include/`; they are
   allowed to differ, and the script prints them so you can see when they do.
-- **Controller line art** — three generators feed the Controls remap diagrams.
-  `bake_controller_art.py` bakes the Quest Touch art from a glTF (MIT,
-  immersive-web/webxr-input-profiles), because a Touch controller's shape cannot be
-  guessed. `gen_gamepad_art.py` and `gen_nes_pad_art.py` DRAW their pads instead —
-  circles, capsules and a cross on a symmetric body — which is simpler and keeps the
-  anchors as chosen coordinates that cannot drift from a render. Each prints the
-  anchor table for its diagram; `gen_nes_pad_art.py` also verifies that no two leader
-  lines cross at any panel size, and that count must stay 0 if an anchor moves.
-  Every drawn pad is a *layout*, never a product: no logo, no trade dress, nothing
-  traced, so there is nothing to license.
+- **Controller art** — three sources feed the Controls remap diagrams, and the
+  licence of each is recorded in `RetroXR/Textures/Controllers/ATTRIBUTIONS.txt`.
+  `bake_controller_art.py` bakes the Quest Touch art from a glTF (MIT), because a
+  Touch controller's shape cannot be guessed. `gen_gamepad_art.py` DRAWS its pad —
+  circles, capsules and a cross on a symmetric body — which keeps the anchors as
+  chosen coordinates that cannot drift from a render; it is an Xbox *layout* and
+  deliberately not an Xbox, so there is no mark being borrowed. The NES pad is a
+  CC0 illustration from Openclipart via Wikimedia Commons, cropped only by its
+  `viewBox`; its anchors are therefore MEASURED out of a Godot render by
+  `Tools/nes_pad_anchors.py` (red discs → A/B, black cross → d-pad, black pills →
+  Select/Start) rather than chosen. That tool also counts leader-line
+  intersections over a sweep of panel sizes, and the count must stay 0.
   ```bash
-  python Tools/gen_nes_pad_art.py
+  python Tools/nes_pad_anchors.py RetroXR/probe_out/nes_colour_raw.png
   ```
+  **A console pad's art is drawn inside `_draw()`, not parented as a TextureRect**
+  — a Control renders its own `_draw()` behind its children, so a child texture
+  hides the leader lines and anchor dots. Invisible with line art, whose body is
+  nearly transparent; total with a colour illustration.
 - **`Tools/glb/decimate_glb.py`** — Blender-headless triangle reduction for a downloaded shell.
   Sketchfab assets arrive subdivided for renders: the Atari 2600 console shipped 1,080,733
   triangles and 57.7 MB, against 27,893 for the NES. **Weld first** — these exports are

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bpdu77the1vur"
-path="res://.godot/imported/nes_pad_line.svg-b0e33c30942d24b69a49731c37247f56.ctex"
+uid="uid://0ggh8h2v7n24"
+path="res://.godot/imported/nes_pad_colour.svg-471482f37a2b53cca0f8936045651b98.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Textures/Controllers/nes_pad_line.svg"
-dest_files=["res://.godot/imported/nes_pad_line.svg-b0e33c30942d24b69a49731c37247f56.ctex"]
+source_file="res://Textures/Controllers/nes_pad_colour.svg"
+dest_files=["res://.godot/imported/nes_pad_colour.svg-471482f37a2b53cca0f8936045651b98.ctex"]
 
 [params]
 

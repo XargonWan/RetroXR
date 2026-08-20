@@ -11,32 +11,38 @@
 ## sections: the physical-pad map is keyed by target already, and the XR map's
 ## RetroPad bit is that target's index in GamepadBindings.TARGET_ORDER.
 ##
-## Art is drawn, not baked — see Tools/gen_nes_pad_art.py, which emits the SVG
-## and prints the anchors and row orders below. Each is deliberately a *layout*
-## rather than a specific product: no logo, no inset panel, no trade dress,
-## nothing traced from a photo.
+## Art must be redistributable and free of anyone's branding — see the
+## ATTRIBUTIONS file beside the SVGs. Anchors are measured from a render rather
+## than chosen (Tools/nes_pad_anchors.py), because the drawing is not ours.
 class_name ConsolePadArt
 extends RefCounted
 
 const _ROWS: Dictionary = {
 	"nes": {
 		"label": "NES Controller",
-		"art": "res://Textures/Controllers/nes_pad_line.svg",
+		"art": "res://Textures/Controllers/nes_pad_colour.svg",
+		# Colour art, so the diagram must NOT tint it — ART_TINT exists to recolour
+		# the white-on-alpha line drawings, and over this it would wash the red
+		# buttons and the grey shell into one blue.
+		"tint": false,
 		# Normalized to the SVG viewBox, so the diagram lays out at any size.
+		# MEASURED from a Godot render by Tools/nes_pad_anchors.py, not chosen:
+		# the buttons are somebody else's drawing, so the dots have to be found
+		# in it. Re-run that tool if the art is ever replaced.
 		"anchors": {
-			"up": Vector2(0.1980, 0.3116),
-			"down": Vector2(0.1980, 0.6744),
-			"left": Vector2(0.1200, 0.4930),
-			"right": Vector2(0.2760, 0.4930),
-			"select": Vector2(0.4300, 0.6093),
-			"start": Vector2(0.5560, 0.6093),
-			"b": Vector2(0.7420, 0.5070),
-			"a": Vector2(0.8680, 0.5070),
+			"left": Vector2(0.0813, 0.5056),
+			"up": Vector2(0.1606, 0.3302),
+			"right": Vector2(0.2399, 0.5056),
+			"down": Vector2(0.1606, 0.6811),
+			"select": Vector2(0.3699, 0.6398),
+			"start": Vector2(0.4914, 0.6397),
+			"b": Vector2(0.6436, 0.6186),
+			"a": Vector2(0.7623, 0.6187),
 		},
 		# Rows along the top and bottom rather than columns down the sides: this
-		# pad is 2.3:1, and a column beside it would put every lead nearly
+		# pad is 2.2:1, and a column beside it would put every lead nearly
 		# horizontal across the whole picture. Split by anchor height, ordered by
-		# anchor x. `down` is on the bottom row despite sharing the d-pad's x
+		# anchor x. `down` is on the bottom row despite sharing the cross's x
 		# with `up`, because from the top its lead would run through the cross.
 		"top": ["left", "up", "right"],
 		"bottom": ["down", "select", "start", "b", "a"],
@@ -66,6 +72,13 @@ static func controls(systemid: String) -> Array:
 ## whose order IS the bit order — see the comment on TARGET_ORDER.
 static func bit_of(control: String) -> int:
 	return GamepadBindings.TARGET_ORDER.find(control)
+
+
+## True when the diagram should recolour this art to follow the panel theme.
+## Line art is white-on-alpha and wants it; a colour illustration does not.
+static func tints(systemid: String) -> bool:
+	var r := row(systemid)
+	return bool(r.get("tint", true)) if not r.is_empty() else true
 
 
 ## The art for a platform, or null.

@@ -1,0 +1,53 @@
+Controller art — attribution
+============================
+
+Art in this directory feeds the CONTROLS tab's remap diagrams. Three sources,
+three different licences; each is redistributable and none carries anyone's
+branding.
+
+
+quest_touch_plus_left.png / quest_touch_plus_right.png
+------------------------------------------------------
+  Baked by Tools/bake_controller_art.py from the meta-quest-touch-plus glTF.
+
+  Source   : https://github.com/immersive-web/webxr-input-profiles
+  Licence  : MIT
+  Note     : white RGB with the drawing in the alpha channel, so the diagram
+             tints it with modulate. Meta's own controller art is NOT
+             redistributable and is deliberately absent from this repo.
+
+
+gamepad_line.svg
+----------------
+  Our own work, drawn by Tools/gen_gamepad_art.py. An Xbox *layout* — offset
+  sticks, ABXY diamond, bumpers and triggers — and deliberately not an Xbox:
+  no logo, nothing traced, so there is no mark being borrowed.
+
+  Licence  : same as this project.
+
+
+nes_pad_colour.svg
+------------------
+  Source   : https://commons.wikimedia.org/wiki/File:Retro_gamepad_straight_with_no_cord.svg
+  Original : Openclipart, by user BHSPitMonkey (upstream filename "nes-cont.svg");
+             uploaded to Wikimedia Commons by Drilnoth.
+  Licence  : CC0 1.0 — Creative Commons Zero, Public Domain Dedication.
+             No attribution is required; this record is kept anyway so the
+             provenance can be re-checked.
+  SHA-256 of the file as downloaded:
+             56182d5f4cbb9ce5039b8f38e687f4c4fb0abc1f9c21d8b8263bdbc56819f2dc
+
+  Modified : ONE change, to the <svg> element only — added
+             viewBox="0 141 512 229" and changed height from 512 to 229, which
+             crops the empty margin above and below the drawing so the texture
+             IS the pad. No path, colour or transform was touched, and the
+             drawing itself is byte-identical to upstream.
+
+  Branding : none. The only text in the file is the letters "A" and "B" on the
+             two face buttons, and Godot's SVG importer (ThorVG) has no text
+             support so even those do not render. There is no wordmark and no
+             logo, on the hardware or in the file.
+
+  Anchors  : measured from a Godot render by Tools/nes_pad_anchors.py and stored
+             in Scripts/Data/systems/console_pad_art.gd. Re-run that tool if this
+             file is ever replaced.
