@@ -450,21 +450,33 @@ func _hint(text: String) -> Label:
 	return lbl
 
 
-## The VR inputs a console control can be driven by.
+## The VR inputs a console control can be driven by, as glyphs. Falls back to
+## the input's name for anything the glyph set does not cover, so a new source
+## still appears rather than becoming a blank row.
 func _xr_source_options() -> Array:
 	var out: Array = [["None", ""]]
 	for src: String in _BUTTON_SOURCE_ORDER:
-		out.append([String(ControllerBindings.BUTTON_SOURCE_LABELS.get(src, src)), src])
+		var label := String(ControllerBindings.BUTTON_SOURCE_LABELS.get(src, src))
+		var tex := _glyph(String(ControllerDiagram.GLYPHS.get(src, "")))
+		out.append(["", src, tex] if tex else [label, src])
 	return out
 
 
-## The physical-pad buttons a console control can be driven by.
+## The physical-pad buttons a console control can be driven by, as glyphs.
 func _pad_source_options() -> Array:
 	var out: Array = [["None", "none"]]
 	for input: String in GamepadDiagram.INPUTS:
-		var bind := String((GamepadDiagram.INPUTS[input] as Dictionary)["bind"])
-		out.append([String(GamepadDiagram.INPUT_LABELS.get(input, input)), bind])
+		var row: Dictionary = GamepadDiagram.INPUTS[input]
+		var label := String(GamepadDiagram.INPUT_LABELS.get(input, input))
+		var tex := _glyph(String(row.get("glyph", "")))
+		out.append(["", String(row["bind"]), tex] if tex else [label, String(row["bind"])])
 	return out
+
+
+func _glyph(name_text: String) -> Texture2D:
+	if name_text.is_empty():
+		return null
+	return load(ConsolePadDiagram.GLYPH_DIR + name_text + ".png") as Texture2D
 
 
 ## The VR input currently driving a RetroPad bit, or "" for none. The stored map

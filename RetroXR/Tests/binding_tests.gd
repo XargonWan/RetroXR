@@ -34,6 +34,9 @@ var _fail := 0
 ## path -> file contents, or an absent key when there was no file to begin with.
 var _saved: Dictionary = {}
 
+## Guards _snapshot() against overwriting the player's data with test data.
+var _snapped := false
+
 
 func _ready() -> void:
 	get_tree().create_timer(60.0).timeout.connect(func() -> void:
@@ -41,7 +44,8 @@ func _ready() -> void:
 		_restore()
 		get_tree().quit(1))
 
-	_backup()
+	_snapshot()
+	_clear()
 
 	_test_no_profile_is_global()
 	_test_profile_shadows_global()
@@ -72,10 +76,25 @@ func _eq(name: String, got: Variant, want: Variant) -> void:
 
 # ── The player's own files, taken away and put back ───────────────────────────
 
-func _backup() -> void:
+## Snapshot the player's real bindings. Idempotent ON PURPOSE, and the guard is
+## the whole point: every case below starts from a clean slate, so this used to
+## be called again at the top of each one — and because it also DELETED the
+## files, the second call snapshotted the FIRST case's test data over the
+## player's. _restore() then faithfully put the test data back. It overwrote a
+## real settings file with `right_grip -> R2` and `a -> btn:9`, which are
+## literally _xr_profile() and _pad_profile()'s arguments.
+func _snapshot() -> void:
+	if _snapped:
+		return
+	_snapped = true
 	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
 		if FileAccess.file_exists(path):
 			_saved[path] = FileAccess.get_file_as_string(path)
+
+
+## The clean slate each case wants. Deletes only — it never touches the snapshot.
+func _clear() -> void:
+	for path: String in [ControllerBindings.SAVE_PATH, GamepadBindings.SAVE_PATH]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
@@ -111,7 +130,7 @@ func _pad_profile(target: String, binding: String) -> Array:
 # ---------------------------------------------------------------------------
 
 func _test_no_profile_is_global() -> void:
-	_backup()
+	_clear()
 	var xr_global := _xr_profile("right_grip", ControllerBindings.JOYPAD_L)
 	ControllerBindings.save_global(xr_global[0], xr_global[1], xr_global[2])
 	var pad_global := _pad_profile("a", "btn:5")
@@ -138,7 +157,7 @@ func _test_no_profile_is_global() -> void:
 # ---------------------------------------------------------------------------
 
 func _test_profile_shadows_global() -> void:
-	_backup()
+	_clear()
 	var g := _xr_profile("right_grip", ControllerBindings.JOYPAD_L)
 	ControllerBindings.save_global(g[0], g[1], g[2])
 	var a := _xr_profile("right_grip", ControllerBindings.JOYPAD_R2)
@@ -173,7 +192,7 @@ func _test_profile_shadows_global() -> void:
 # ---------------------------------------------------------------------------
 
 func _test_later_global_edit_does_not_leak() -> void:
-	_backup()
+	_clear()
 	var g := _xr_profile("right_grip", ControllerBindings.JOYPAD_L)
 	ControllerBindings.save_global(g[0], g[1], g[2])
 	var a := _xr_profile("right_grip", ControllerBindings.JOYPAD_R2)
@@ -196,7 +215,7 @@ func _test_later_global_edit_does_not_leak() -> void:
 # ---------------------------------------------------------------------------
 
 func _test_has_override() -> void:
-	_backup()
+	_clear()
 	_ok("xr/no override before a write", not ControllerBindings.has_system_override(SYS_A))
 	_ok("pad/no override before a write", not GamepadBindings.has_system_override(SYS_A))
 
@@ -220,7 +239,7 @@ func _test_has_override() -> void:
 # ---------------------------------------------------------------------------
 
 func _test_clear_restores_global() -> void:
-	_backup()
+	_clear()
 	var g := _xr_profile("right_grip", ControllerBindings.JOYPAD_L)
 	ControllerBindings.save_global(g[0], g[1], g[2])
 	var a := _xr_profile("right_grip", ControllerBindings.JOYPAD_R2)
@@ -265,7 +284,7 @@ func _test_clear_restores_global() -> void:
 # ---------------------------------------------------------------------------
 
 func _test_empty_systemid_is_global() -> void:
-	_backup()
+	_clear()
 	var a := _xr_profile("right_grip", ControllerBindings.JOYPAD_R2)
 	ControllerBindings.save_for_system("", a[0], a[1], a[2])
 	_eq("xr/save_for_system(\"\") writes global",
@@ -297,7 +316,7 @@ func _test_empty_systemid_is_global() -> void:
 # ---------------------------------------------------------------------------
 
 func _test_overridden_systems() -> void:
-	_backup()
+	_clear()
 	_ok("xr/nothing overridden on a fresh store",
 		ControllerBindings.overridden_systems().is_empty())
 

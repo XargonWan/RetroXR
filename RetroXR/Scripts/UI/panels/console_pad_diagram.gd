@@ -15,6 +15,12 @@
 ## Rows run along the top and bottom rather than down the sides. Console pads are
 ## wide and short, so a column beside one would put every lead nearly horizontal
 ## across the picture.
+##
+## A row carries no words: the glyph on its left names the console control and
+## the one on its toggle names whatever drives it, both from the Kenney set the
+## other two diagrams already use. The four d-pad rows are the weak case — those
+## glyphs differ only by which arm of the same cross is filled — so the leader
+## line, which points at the arm itself, is what actually disambiguates them.
 class_name ConsolePadDiagram
 extends Control
 
@@ -31,10 +37,19 @@ const DOT_COLOR := Color(1.0, 0.80, 0.47)
 const LEAD_WIDTH := 2.0
 const DOT_RADIUS := 5.0
 
+## Kenney Input Prompts 1.5 (CC0), the same set the other two diagrams use. The
+## row wears the glyph for the console's control and the toggle wears the glyph
+## for whatever drives it, so a row reads as one picture rather than two names.
+const GLYPH_DIR := "res://Textures/InputPrompts/"
+## Larger than the sibling diagrams' 42: the four d-pad glyphs differ only by
+## which arm of the same cross is filled, and the pack has no single-arrow
+## variant. The leader line to the arm itself is still the primary cue.
+const GLYPH_PX := 46.0
+
 ## Mirrored in Tools/gen_nes_pad_art.py, which verifies that no two leads cross
 ## at any panel size. Changing one without the other invalidates that check.
 const MAX_W := 1520.0
-const SLOT_W := 250.0
+const SLOT_W := 180.0
 const ROW_H := 50.0
 const ROW_PAD := 14.0
 const STUB := 18.0
@@ -78,8 +93,14 @@ func setup(systemid: String, options: Array, current: Dictionary) -> void:
 	# Dropdowns are children, so they draw over the art either way.
 	for control: String in _controls():
 		var label: String = GamepadBindings.TARGET_LABELS.get(control, control)
-		var drop := VRDropdown.create(label, options, current.get(control, ""),
-			3, Vector2(150, ROW_H - 8), 15)
+		# No label text: the glyph names the control and the leader line points at
+		# it on the picture, so the words were saying a third time what the row
+		# already said twice.
+		var drop := VRDropdown.create("", options, current.get(control, ""),
+			3, Vector2(96, ROW_H - 6), 16)
+		var glyph := _control_glyph(control)
+		if glyph:
+			drop.set_icon(glyph, GLYPH_PX)
 		drop.tooltip_text = "What drives %s on this system" % label
 		drop.float_panel = true
 		var captured := control
@@ -89,6 +110,17 @@ func setup(systemid: String, options: Array, current: Dictionary) -> void:
 		_drops[control] = drop
 
 	_relayout()
+
+
+## The RetroPad glyph for a console control. Shared with GamepadDiagram rather
+## than chosen again here: these are the same RetroPad targets, and the two
+## panels disagreeing about which picture means "Select" would be worse than
+## either choice.
+func _control_glyph(control: String) -> Texture2D:
+	var name_text := String(GamepadDiagram.TARGET_GLYPHS.get(control, ""))
+	if name_text.is_empty():
+		return null
+	return load(GLYPH_DIR + name_text + ".png") as Texture2D
 
 
 func _controls() -> Array:

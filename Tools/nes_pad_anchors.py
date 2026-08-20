@@ -1,13 +1,19 @@
 """Measure the ConsolePadArt anchors for the NES pad, and check the leader lines.
 
 The NES pad used to be DRAWN here, the way gen_gamepad_art.py still draws the
-Xbox one, so its anchors were coordinates chosen in this file. It is now a CC0
-illustration (see RetroXR/Textures/Controllers/ATTRIBUTIONS.txt), so the anchors
-have to be found IN the art instead — which is what this does, by colour:
+Xbox one, so its anchors were coordinates chosen in this file. It is now someone
+else's illustration (CC BY-SA 3.0 — see
+RetroXR/Textures/Controllers/ATTRIBUTIONS.txt), so the anchors have to be found
+IN the art instead — which is what this does, by colour:
 
     the two red discs          -> b, a
-    the black cross            -> up, down, left, right (arm tips, pulled in)
-    the two black pills        -> select, start
+    the dark cross             -> up, down, left, right (arm tips, pulled in)
+    the two dark pills         -> select, start
+
+The cross and the pills share their fill with the face plate behind them, but
+each is ringed by a lighter outline, so they still come out as their own
+connected components. The face itself is rejected for spanning most of the
+image.
 
 Measuring beats eyeballing because every one of these is a filled shape with an
 unambiguous centre, and re-running this after the art changes is the only way the
@@ -18,11 +24,11 @@ one whose ThorVG output the game actually shows — so produce it with a throwaw
 probe (see CLAUDE.md "Headless Testing"):
 
     var tex := load("res://Textures/Controllers/nes_pad_colour.svg") as Texture2D
-    tex.get_image().save_png("res://probe_out/nes_colour_raw.png")
+    tex.get_image().save_png("res://probe_out/pad_raw.png")
 
 Then:
 
-    python Tools/nes_pad_anchors.py RetroXR/probe_out/nes_colour_raw.png
+    python Tools/nes_pad_anchors.py RetroXR/probe_out/pad_raw.png
 
 Prints the anchor table for console_pad_art.gd and the leader-line intersection
 count over a sweep of panel sizes, which must stay 0.
@@ -36,7 +42,7 @@ from PIL import Image
 # ── Diagram layout constants, mirrored from console_pad_diagram.gd ────────────
 # The crossing count below is only meaningful if these match the widget.
 MAX_W = 1520.0
-SLOT_W = 250.0
+SLOT_W = 180.0
 ROW_H = 50.0
 ROW_PAD = 14.0
 STUB = 18.0
