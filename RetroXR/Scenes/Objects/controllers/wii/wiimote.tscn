@@ -100,6 +100,12 @@ height = 0.004
 radius = 0.006
 height = 0.004
 
+; Poke volume for POWER. Same idea as the face caps' — a touch wider than the
+; cap so a fingertip landing on its edge still counts as on it.
+[sub_resource type="CylinderShape3D" id="CylShape_power"]
+radius = 0.005
+height = 0.004
+
 [sub_resource type="CylinderMesh" id="Cyl_power"]
 top_radius = 0.003
 bottom_radius = 0.003
@@ -182,8 +188,24 @@ surface_material_override/0 = SubResource("Mat_dark")
 [node name="BarrelTip" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.078)
 
-[node name="PowerButton" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.016, -0.062)
+; POWER, at the TOP LEFT of the face where the hardware puts it — not centred,
+; and on the same side as MINUS below it (-X is the player's left when the barrel
+; points at the set). A VRButton like the face caps rather than a bare mesh: it is
+; worked by a finger and nothing else, so it needs the poke volume. Nothing binds
+; to it and it reaches no core; wiimote.gd reads how long it is HELD.
+[node name="PowerButton" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.01, 0.016, -0.062)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("7_vrbtn")
+trigger_radius = 0.007
+depress_depth = 0.0008
+contact_margin = 0.004
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton"]
+shape = SubResource("CylShape_power")
+
+[node name="ButtonMesh" type="MeshInstance3D" parent="PowerButton"]
 mesh = SubResource("Cyl_power")
 surface_material_override/0 = SubResource("Mat_power")
 

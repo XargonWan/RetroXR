@@ -443,6 +443,23 @@ func is_held() -> bool:
 	return _touch_pressed or _pointer_pressed or _trigger_pressed
 
 
+## The HAND holding this button down, or null.
+##
+## is_held answers whether; this answers which, which a caller needs the moment a
+## press drives something continuous rather than an edge — a rumble that runs for
+## as long as the finger stays on the cap has to know whose finger it is, and
+## touch mode can hand a held button from one hand to the other mid-press.
+##
+## Null for a pointer press. The desktop reticle has no hand to rumble at all,
+## and a laser is not touching anything.
+func held_by() -> XRController3D:
+	if _touch_pressed:
+		return _touch_ctrl
+	if _trigger_pressed:
+		return _engaged_ctrl
+	return null
+
+
 func _update_visual_state() -> void:
 	if not _mesh:
 		return

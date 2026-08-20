@@ -239,6 +239,34 @@ const FACE_BUTTONS: Dictionary = {
 	"home":  "HomeButton",
 }
 var _face_buttons: Dictionary = {}   # control name -> VRButton
+
+## Seconds a finger must stay on POWER before the paired console shuts down.
+##
+## There is no hardware figure to copy. Nintendo's own manual says only "Press to
+## turn the console ON or OFF", and on a real remote a tap does both — the one
+## documented hold in the Wii family is the CONSOLE's own key, about four seconds
+## from standby to a full shutdown, which is far too long to stand there with a
+## fingertip on a 6 mm cap. A second is what the remote is commonly reported to
+## want, and it is long enough that no brush of the shell can reach it.
+const POWER_HOLD_SEC := 1.0
+
+## Rumble queue slot for that hold. Its own key rather than VRButton's HAPTIC_KEY,
+## which the cap's own press tick already owns — sharing it would mean the press
+## tick cancelling the hold a frame after starting it.
+const POWER_HAPTIC_KEY := &"wiimote_power"
+## How hard it buzzes. Low on purpose: this runs for a whole second, and the
+## magnitude a button click uses (0.5) is a power tool at that length. It says
+## "something is counting", not "something fired".
+const POWER_HAPTIC_MAGNITUDE := 0.15
+
+var _power_held_for := 0.0
+## The hand being rumbled through the hold, so it can be stopped on the same hand
+## that started — a touch press may be relayed between hands mid-hold.
+var _power_haptic_ctrl: XRController3D = null
+## Latched for the whole of one contact, so a hold that has already acted cannot
+## act again without letting go first — which is what stops the power-off rolling
+## straight into a power-on under a finger that never moved.
+var _power_fired := false
 var _trigger_rest := Transform3D()
 var _dpad_rest := Transform3D()
 
@@ -251,6 +279,11 @@ const DPAD_THRESHOLD := 0.35
 @onready var _laser_dot: MeshInstance3D = $LaserDot
 @onready var _expansion_port: XRToolsSnapZone = $ExpansionPort
 @onready var _sync_button: VRButton = $SyncButton
+## The red key at the top left of the face. Deliberately absent from FACE_BUTTONS,
+## from DESKTOP_BUTTON_MAP and from ControllerBindings: no core sees it and no
+## controller input maps to it, so the only way to work it is a finger on the cap
+## (or the pointer, on desktop). That is what makes the hold below meaningful.
+@onready var _power_button: VRButton = $PowerButton
 ## Under CoverPivot, not beside it: the hinge's grab box has to ride the cover it
 ## swings, or it stays over the shut position while the lid moves out from under it.
 @onready var _battery_cover: VRHinge = $CoverPivot/BatteryCover
@@ -669,6 +702,7 @@ func _drop_all() -> void:
 
 
 func _exit_tree() -> void:
+	_stop_power_haptic()
 	if _blocking_left and is_instance_valid(_left_vr_ctrl):
 		_update_pointer_block(_left_vr_ctrl, false)
 	if _blocking_right and is_instance_valid(_right_vr_ctrl):
@@ -763,6 +797,81 @@ func _desktop_dpad_mask() -> int:
 	return mask
 
 
+# ── POWER ─────────────────────────────────────────────────────────────────────
+
+## The two halves of POWER are not symmetric, and that asymmetry is the design.
+##
+## OFF, a press acts at once: that is what the manual describes and what anyone
+## picking up a remote expects. ON, a press does nothing at all and only a HOLD
+## of POWER_HOLD_SEC stops the machine, because a tap is exactly what putting the
+## remote down on a table looks like, and losing a running game to that is not a
+## thing the room should permit.
+##
+## toggle_power rather than power_on/power_off: it is the same entry the cabinet's
+## own key uses, and it carries the netplay rules (a lockstep session stops on
+## every peer, a client sends the intent instead of acting) that a direct call
+## would quietly skip.
+func _update_power_hold(delta: float) -> void:
+	if not _power_button.is_held():
+		_stop_power_haptic()
+		_power_held_for = 0.0
+		_power_fired = false
+		return
+
+	if _power_fired:
+		return
+
+	if not is_instance_valid(_connected_system):
+		# Said once per press, not once per frame. A remote that is not paired has
+		# no console to switch, and from the room that looks the same as a dead
+		# button.
+		_power_fired = true
+		print("[Wiimote] POWER with no console paired — press SYNC on both first")
+		return
+
+	if not _connected_system.is_powered_on:
+		_power_fired = true
+		print("[Wiimote] POWER — switching the console on")
+		_connected_system.toggle_power()
+		return
+
+	# The rumble IS the timer, and it is the only thing that is: there is no dial
+	# and no sound, so without it a player holding a red cap has nothing telling
+	# them the hold is being counted rather than ignored. It starts on the first
+	# frame of the count and is cut the instant the machine acts, which is what
+	# makes the stop read as "done" rather than as a dropped press.
+	_set_power_haptic(_power_button.held_by())
+
+	_power_held_for += delta
+	if _power_held_for < POWER_HOLD_SEC:
+		return
+	_stop_power_haptic()
+	_power_fired = true
+	print("[Wiimote] POWER held %.1fs — switching the console off" % POWER_HOLD_SEC)
+	_connected_system.toggle_power()
+
+
+## Rumble [param ctrl] for the length of the hold, moving the buzz if the press is
+## relayed to the other hand. A null hand (the pointer, or the desktop reticle)
+## simply stops it: there is nothing there to feel it.
+func _set_power_haptic(ctrl: XRController3D) -> void:
+	if ctrl == _power_haptic_ctrl:
+		return
+	_stop_power_haptic()
+	if is_instance_valid(ctrl):
+		_power_haptic_ctrl = ctrl
+		Haptics.hold(ctrl, POWER_HAPTIC_MAGNITUDE, POWER_HAPTIC_KEY)
+
+
+## Every path that can end the hold calls this — firing, letting go, dropping the
+## remote, leaving the tree. Haptics.hold is indefinite, so one missed stop is a
+## controller that buzzes until the room is torn down.
+func _stop_power_haptic() -> void:
+	if is_instance_valid(_power_haptic_ctrl):
+		Haptics.stop(_power_haptic_ctrl, POWER_HAPTIC_KEY)
+	_power_haptic_ctrl = null
+
+
 # ── Shell animation ───────────────────────────────────────────────────────────
 
 func _cache_controls() -> void:
@@ -775,6 +884,9 @@ func _cache_controls() -> void:
 			# with the held hand's bindings, so pressing A from the controller
 			# would count as having learned to use the other hand.
 			b.button_pressed.connect(_note_poked)
+	# POWER is not a face button — it drives no core — but pressing it IS the
+	# other-hand poke the hint teaches, so it retires the row like the rest.
+	_power_button.button_pressed.connect(_note_poked)
 	if _trigger_pivot != null:
 		_trigger_rest = _trigger_pivot.transform
 	if _dpad != null:
@@ -868,6 +980,14 @@ func _animate_controls(pressed: Dictionary) -> void:
 func _set_face_buttons_active(active: bool) -> void:
 	for key: String in _face_buttons:
 		(_face_buttons[key] as VRButton).set_interactive(active)
+	# POWER goes with them. It is on the pointable layer too, and a remote across
+	# the room whose red key answers the laser is a remote you cannot pick up by
+	# pointing at it without switching a console off.
+	_power_button.set_interactive(active)
+	if not active:
+		_stop_power_haptic()
+		_power_held_for = 0.0
+		_power_fired = false
 
 
 ## Count the poke hint as learned the first time a face button is actually
@@ -999,6 +1119,7 @@ func _button_mask(pressed: Dictionary) -> int:
 
 func _process(delta: float) -> void:
 	_update_leds(delta)
+	_update_power_hold(delta)
 
 	if _is_combo_pressed(_holding_ctrl):
 		_drop_all()
