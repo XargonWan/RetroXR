@@ -241,21 +241,30 @@ func _join(group: Array[Dictionary]) -> void:
 ## for the power switch. The room does it for them, because the alternative is a
 ## cable that looks perfect and silently does nothing.
 ##
-## Only machines that need it, which is a narrower set than "running":
+## Only machines that have NOT been on a live wire since their core started.
 ##
-##   * A console still inside its first three quarters of a second has not
-##     sampled the link yet and will see it without being touched.
-##   * A console that has ALREADY been linked since it started knows the port is
-##     live, so pulling the lead and pushing it back in must not throw its game
-##     away. That is the ordinary thing a player does to a cable, and losing a
-##     single-player run to it would be worse than the fault this repairs.
+## A console that has already been linked knows the port is live, so pulling the
+## lead and pushing it back in must not throw its game away. That is the ordinary
+## thing a player does to a cable, and losing a single-player run to it would be
+## worse than the fault this repairs.
+##
+## Marked as having seen a live port on the way out, which is what stops this
+## repeating: after the restart the machine boots INTO a working link, so that is
+## true by the time it matters. Without it the rule fed itself and the pair sat
+## restarting each other for ever.
+##
+## No "is it still booting" exemption, because there is nothing to hang one on:
+## the frame count carries across a core starting rather than beginning again, so
+## a console switched on a moment ago is indistinguishable from one that has been
+## running all afternoon. Restarting a machine that had not sampled its link yet
+## costs it a second of boot logo and guarantees it comes up with the link live,
+## which is the outcome wanted either way.
 func _restart(members: Array[Dictionary]) -> void:
 	for end: Dictionary in members:
 		var lib: Libretro = end["libretro"]
-		if not is_instance_valid(lib) or lib.GetFrameCount() < BOOT_SAMPLE_FRAMES:
+		if not is_instance_valid(lib) or bool(end.get("was_live", false)):
 			continue
-		if bool(end.get("was_live", false)):
-			continue
+		lib.set_meta(WAS_LIVE, true)
 		lib.RequestReset()
 		var machine: Node = end["machine"]
 		print("[LinkCable] restarted %s so it can see the cable" % [
@@ -334,20 +343,11 @@ func _link_port_at(e: int) -> LinkPort:
 const JUNCTION_AT := 0.25
 
 
-## How long a GBA takes to decide whether anything is on the other end. It asks
-## once, roughly a third of a second in, and caches the answer for the session.
-const BOOT_SAMPLE_FRAMES := 45
-
 ## Set on a Libretro node once it has been on a live bus since its core started,
 ## and cleared when the machine is switched on again. A machine carrying this has
 ## already seen a working port and does not need throwing back to its boot logo
 ## when a lead is re-seated.
 const WAS_LIVE := "link_was_live"
-
-## Which of this wire's machines were switched on last time we looked, as their
-## Libretro nodes: an identity that survives a machine being restarted, which the
-## dictionaries around it do not.
-var _watched: Array = []
 
 ## Physics frames to wait before saying the wire again.
 ##
@@ -384,11 +384,9 @@ func _physics_process(delta: float) -> void:
 ## rejection noise while every count in the room reads correctly.
 func _watch() -> void:
 	if _linked.is_empty():
-		_watched = []
 		return
 
 	var live: Array[Dictionary] = []
-	var live_libs: Array = []
 	for end: Dictionary in _linked:
 		var lib: Libretro = end["libretro"]
 		var machine: Node = end["machine"]
@@ -406,7 +404,6 @@ func _watch() -> void:
 		if lib.LinkPeerCount(end["port"]) >= 2:
 			lib.set_meta(WAS_LIVE, true)
 		live.append(seen)
-		live_libs.append(lib)
 
 	# Every running machine on one wire must see every other running machine on
 	# it. Anything else means the bus has forgotten a wire the room still has.
@@ -418,25 +415,20 @@ func _watch() -> void:
 				print("[LinkCable] %s: the bus lost this wire, saying it again" % name)
 				_restate_wait = RESTATE_COOLDOWN
 				_linked = []
-				# _watched is deliberately LEFT ALONE. Saying the wire again does
-				# not change who is switched on, and forgetting that is how the
-				# restart below gets swallowed: a machine coming up mismatches for
-				# a moment before its core reaches the bus, and clearing the
-				# record here erased the very machine that was already running and
-				# waiting to be told about it.
 				_resolve()
 				return
 
-	# Someone new is on the wire, so everyone who was already here has to look
-	# again. Checked AFTER the meta above, so a machine that was already linked
-	# is left alone.
-	if live.size() > _watched.size():
-		var already: Array[Dictionary] = []
-		for end: Dictionary in live:
-			if _watched.has(end["libretro"]):
-				already.append(end)
-		_restart(already)
-	_watched = live_libs
+	# Anyone on a live wire who has not been on one since their core started has
+	# to look again. The flag was read above BEFORE it was raised, so a machine
+	# that has just gained its peer still reports not having had one.
+	#
+	# Deliberately not "has the number of running machines gone up". That looked
+	# equivalent and was not: it needed a record of who was here BEFORE, and there
+	# is no before when the lead is first pushed in. Plugging one into two
+	# consoles that were already running -- the most ordinary thing anyone does
+	# with a cable -- restarted neither of them, and the link carried nothing.
+	if live.size() >= 2:
+		_restart(live)
 
 
 func _ride_junction() -> void:

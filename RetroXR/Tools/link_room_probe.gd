@@ -106,11 +106,24 @@ func _run() -> void:
 	await _settle(4)
 	_eq("one end in a socket is still nobody", _peers(0), 0)
 
+	lead.machine_restarted.connect(func(m: Node) -> void: _restarted.append(m.name))
+	_restarted.clear()
 	(ports[1] as XRToolsSnapZone).pick_up_object(lead.get_node("PlugB0"))
 	await _settle(4)
 	_eq("both ends in leaves machine 0 on a bus of two", _peers(0), 2)
 	_eq("and machine 1 with it", _peers(1), 2)
 	_eq("machine 2 is untouched", _peers(2), 0)
+
+	# Both machines were already running when the lead went in, so both have to
+	# be thrown back to their boot logos: a GBA reads whether anything is out
+	# there once, and neither of them was linked when it did. This is the most
+	# ordinary thing anyone does with a cable, and it used to restart neither,
+	# because the rule asked whether the number of running machines had gone up
+	# and there is no BEFORE when a lead is first pushed in.
+	await _settle(10)
+	_ok("plugging a lead into two running machines restarts both",
+		_restarted.has("GBA0") and _restarted.has("GBA1"),
+		"restarted: %s" % str(_restarted))
 
 	# ── Pulling a plug ────────────────────────────────────────────────────────
 	# The diegetic action and the emulated one are the same action, which is the
@@ -134,7 +147,6 @@ func _run() -> void:
 	# Switched on one at a time and far enough apart to matter, which is what the
 	# room really does: a restored scene powers its machines up in sequence, so
 	# the first one is always alone at the moment it decides.
-	lead.machine_restarted.connect(func(m: Node) -> void: _restarted.append(m.name))
 	_restarted.clear()
 	_systems[0].power_off()
 	_systems[1].power_off()
@@ -153,8 +165,15 @@ func _run() -> void:
 	# and must be left alone.
 	_ok("the machine that booted alone was restarted", _restarted.has("GBA0"),
 		"restarted: %s" % str(_restarted))
-	_ok("the one that arrived second was not", not _restarted.has("GBA1"),
-		"restarted: %s" % str(_restarted))
+	# At most once each. The rule marks a machine as having seen a live port on
+	# the way out, so it cannot feed itself; without that the pair sat restarting
+	# each other for ever, which looks from the room like two consoles stuck on
+	# their boot logos.
+	var once := true
+	for machine_name in ["GBA0", "GBA1", "GBA2"]:
+		if _restarted.count(machine_name) > 1:
+			once = false
+	_ok("and nobody was restarted twice", once, "restarted: %s" % str(_restarted))
 
 	# ── Re-seating a lead that was already live ───────────────────────────────
 	# The ordinary thing a player does to a cable. Both machines have been linked
