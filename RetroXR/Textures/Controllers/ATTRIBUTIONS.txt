@@ -1,9 +1,8 @@
 Controller art — attribution
 ============================
 
-Art in this directory feeds the CONTROLS tab's remap diagrams. Three sources,
-three different licences; each is redistributable and none carries anyone's
-branding.
+Art in this directory feeds the CONTROLS tab's remap diagrams. Four sources,
+each redistributable and none carrying anyone's branding.
 
 
 quest_touch_plus_left.png / quest_touch_plus_right.png
@@ -65,3 +64,36 @@ nes_pad_colour.svg
   Anchors  : measured from a Godot render by Tools/nes_pad_anchors.py and stored
              in Scripts/Data/systems/console_pad_art.gd. Re-run that tool if this
              file is ever replaced.
+
+
+wii_remote.svg
+--------------
+  COMPOSED by Tools/gen_wii_remote_art.py from two CC0 sources. Re-run that
+  script rather than editing this file; it also prints the anchors.
+
+  the shell : MilkToastRat Pack, SVG/wii.svg
+              https://github.com/milktoastrat/milktoastrat-pack
+              Licence : CC0-1.0 (LICENSE file in that repo)
+
+  the marks : Kenney, "Input Prompts" 1.5, Nintendo Wii/Vector/wii_button_*.svg
+              https://kenney.nl/assets/input-prompts
+              Licence : CC0-1.0 (stated on the asset page and in the download)
+
+  Modified : the shell arrives with BLANK buttons, which is no use in a remap
+             diagram where a row called "minus" has to be matched to a physical
+             cap. The six marks the hardware carries — A, minus, home, plus, 1,
+             2 — are lifted out of Kenney's glyphs and printed onto it, each
+             scaled by its own cap so it keeps the proportion Kenney drew it at,
+             and inked in #3d3d3d, the grey the shell already uses for its
+             speaker holes. Kenney's white would be invisible on a white remote.
+             The viewBox is cropped from the source's 1000 square to the drawing's
+             own extent; uncropped, three quarters of the diagram is empty.
+
+  Why these : both are CC0, so neither adds a second share-alike obligation
+             alongside nes_pad_colour.svg. Taking the marks from the same Kenney
+             family the diagrams already use for their legend chips also means
+             the mark on the picture and the chip beside it are one drawing
+             rather than two artists' idea of a plus sign.
+
+  Branding : none. The marks are the functional labels naming the controls the
+             diagram binds; there is no wordmark on the shell and none was added.

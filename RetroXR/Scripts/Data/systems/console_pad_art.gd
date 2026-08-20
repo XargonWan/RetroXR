@@ -90,6 +90,61 @@ const _ROWS: Dictionary = {
 		"top": ["left", "up", "right"],
 		"bottom": ["down", "select", "start", "b", "a"],
 	},
+	"wii": {
+		"label": "Wii Remote",
+		"art": "res://Textures/Controllers/wii_remote.svg",
+		# Colour art like the NES pad's, so the diagram must not tint it: ART_TINT
+		# exists to recolour the white-on-alpha line drawings, and over a white
+		# shell it would take the whole remote to one flat blue.
+		"tint": false,
+		# Columns, not rows: this remote is 1:4 portrait, and labels along its top
+		# and bottom would leave every lead running the full height of the picture.
+		"layout": "columns",
+		# The keys are RETROPAD targets, not the names printed on the shell, because
+		# that is what _control_glyph and the binding rows speak. The remote's own
+		# mapping is in Scripts/Objects/peripherals/wiimote.gd DESKTOP_BUTTON_MAP
+		# and this follows it exactly:
+		#     a -> A     x -> 1     y -> 2
+		#     start -> plus         select -> minus        r3 -> home
+		# Getting one of those backwards would put the picture and the core's idea
+		# of the button on different caps.
+		#
+		# Positions come from the art's own path data rather than from measuring a
+		# render — see Tools/gen_wii_remote_art.py, which composes the drawing and
+		# prints this block. The NES has to be measured because that drawing is
+		# somebody else's with unknown geometry; this one we assemble, so the
+		# centres are known exactly.
+		"anchors": {
+			"up": Vector2(0.5077, 0.1232),
+			"left": Vector2(0.3659, 0.1679),
+			"right": Vector2(0.6500, 0.1679),
+			"down": Vector2(0.5077, 0.2125),
+			"a": Vector2(0.5081, 0.3161),
+			# B is the TRIGGER, on the back of the remote, so a front view cannot
+			# show it. The dot sits on the shell where the trigger is behind rather
+			# than being left off: a control the page will not draw is a control the
+			# player cannot rebind.
+			"b": Vector2(0.5081, 0.3922),
+			"select": Vector2(0.2430, 0.4801),
+			"r3": Vector2(0.5085, 0.4801),
+			"start": Vector2(0.7740, 0.4801),
+			"x": Vector2(0.5107, 0.7350),
+			"y": Vector2(0.5107, 0.8205),
+		},
+		# Each column ordered by anchor height, so no lead crosses another. select
+		# and start sit at the same height as r3 and are split left and right of it
+		# for the same reason — the three share a row on the hardware.
+		"left": ["up", "left", "a", "select", "x"],
+		"right": ["right", "down", "b", "r3", "start", "y"],
+		# Shown under the diagram. This remote is the one console pad held in ONE
+		# hand, and one VR hand does not carry enough inputs to reach seven buttons
+		# and a d-pad — so the buttons are pokeable, and a player who does not
+		# think of that simply cannot press 1, 2 or minus. The remote says the same
+		# thing in VR through a HeldHint when you pick it up; this is the half a
+		# desktop player, or someone reading the page before ever holding one, gets.
+		"note": "In VR you can press the remote's own buttons directly: hold it "
+			+ "in one hand and poke them with the other.",
+	},
 }
 
 
@@ -109,6 +164,13 @@ static func controls(systemid: String) -> Array:
 	var r := row(systemid)
 	if r.is_empty():
 		return []
+	# Layout-aware, because a "columns" row has no top/bottom. It used to read
+	# them unconditionally and a missing key is not an error in GDScript — it is
+	# null, and `null as Array` is [], so a columns pad reported NO controls at all
+	# rather than failing. ConsolePadDiagram._order() has always split the same two
+	# ways; this is the half of the pair that did not.
+	if String(r.get("layout", "rows")) == "columns":
+		return (r["left"] as Array) + (r["right"] as Array)
 	return (r["top"] as Array) + (r["bottom"] as Array)
 
 

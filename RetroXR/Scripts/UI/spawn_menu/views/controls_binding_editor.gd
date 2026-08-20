@@ -208,6 +208,13 @@ func _build_xr_controls(vbox: VBoxContainer) -> void:
 		vbox.add_child(_console_xr_diagram)
 		_console_xr_diagram.setup(_systemid, _xr_source_options(), _xr_current_by_control())
 		_console_xr_diagram.binding_changed.connect(_on_console_xr_changed)
+		# Some pads carry a note about how the hardware is actually handled — the
+		# Wii Remote's buttons being pokeable with the free hand, for one. It lives
+		# on the ConsolePadArt row next to the art it describes, so adding one for
+		# another console needs no change here.
+		var pad_note := String(row.get("note", ""))
+		if not pad_note.is_empty():
+			vbox.add_child(_hint(pad_note))
 	else:
 		vbox.add_child(MenuStyle.label("XR Joypad Buttons", 18, MenuStyle.COLOR_LICENSE))
 

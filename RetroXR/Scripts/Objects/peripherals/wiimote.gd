@@ -277,6 +277,17 @@ func _ready() -> void:
 		ICON_CAPTURE, ICON_SIZE)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
 		["keyboard_scroll_lock_outline"], "Send keys here")
+	# One VR hand carries five usable inputs against this remote's seven buttons
+	# and a d-pad, so the hand binding alone can never reach all of them. The
+	# answer is the one the hardware itself suggests — hold it in one hand, poke
+	# the awkward ones with the other — but nothing on screen says so, and a
+	# player who does not think of it simply cannot press 1, 2 or minus.
+	#
+	# VR only. On desktop the same buttons are keys under Scroll Lock capture,
+	# which the row above already explains.
+	_hint.add_row(&"poke_buttons", HeldHint.PLATFORM_VR,
+		["generic_button_finger"], "Press its buttons with your other hand",
+		HeldHint.WHEN_HELD)
 	_laser_dot.visible = false
 	var tan_y := tan(deg_to_rad(CAMERA_FOV_X_DEG / CAMERA_AR) * 0.5)
 	_tan_half_fov = Vector2(CAMERA_AR * tan_y, tan_y)
@@ -759,6 +770,11 @@ func _cache_controls() -> void:
 		var b := get_node_or_null(String(FACE_BUTTONS[key])) as VRButton
 		if b != null:
 			_face_buttons[key] = b
+			# Only a POKE retires the poke hint, which is why this listens to the
+			# VRButton rather than to _pressed_now(): that merges the poked state
+			# with the held hand's bindings, so pressing A from the controller
+			# would count as having learned to use the other hand.
+			b.button_pressed.connect(_note_poked)
 	if _trigger_pivot != null:
 		_trigger_rest = _trigger_pivot.transform
 	if _dpad != null:
@@ -852,6 +868,15 @@ func _animate_controls(pressed: Dictionary) -> void:
 func _set_face_buttons_active(active: bool) -> void:
 	for key: String in _face_buttons:
 		(_face_buttons[key] as VRButton).set_interactive(active)
+
+
+## Count the poke hint as learned the first time a face button is actually
+## pressed in a hold. Without this the row would reappear on every pickup for
+## ever — note_used is what retires it after HeldHint.LEARNED_AFTER holds, and it
+## is already idempotent within one hold.
+func _note_poked() -> void:
+	if _hint:
+		_hint.note_used(&"poke_buttons")
 
 
 ## What the aim is doing, printed only when the answer CHANGES.

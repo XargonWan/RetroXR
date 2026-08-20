@@ -55,6 +55,7 @@ func _ready() -> void:
 	_test_empty_systemid_is_global()
 	_test_overridden_systems()
 	_test_console_pad_art()
+	_test_wii_pad_art()
 	_test_desktop_layers()
 	_test_desktop_legacy_file()
 
@@ -356,6 +357,72 @@ func _test_overridden_systems() -> void:
 # ---------------------------------------------------------------------------
 # ConsolePadArt — the table a platform's own controller is drawn from.
 # ---------------------------------------------------------------------------
+
+## The Wii Remote's diagram, and the one thing about it that can silently rot:
+## the art speaks RETROPAD targets while the remote itself speaks the names
+## printed on its shell, and the two have to agree about which cap is which.
+func _test_wii_pad_art() -> void:
+	_ok("wii/has a pad", ConsolePadArt.has("wii"))
+	_ok("wii/the art loads",
+		ResourceLoader.exists(String(ConsolePadArt.row("wii")["art"])))
+
+	var row := ConsolePadArt.row("wii")
+	var controls := ConsolePadArt.controls("wii")
+
+	# Derived from the remote's OWN map rather than typed out again here. That map
+	# is what reaches the core, so if someone re-points 1 or 2 there and not here,
+	# the page would go on drawing a lead to the cap the core no longer means.
+	# "shake" is excluded on purpose: it is a motion gesture with no cap to press,
+	# so it has nothing for a lead to point at.
+	var want: Array = []
+	for retro_name: String in Wiimote.DESKTOP_BUTTON_MAP:
+		if String(Wiimote.DESKTOP_BUTTON_MAP[retro_name]) == "shake":
+			continue
+		want.append(retro_name.trim_prefix("RETRO_JOYPAD_").to_lower())
+	for dir in ["up", "down", "left", "right"]:
+		want.append(dir)
+	want.sort()
+	var got := controls.duplicate()
+	got.sort()
+	_eq("wii/carries exactly the controls the remote drives", got, want)
+	_ok("wii/the shake gesture is not drawn", not controls.has("r2"))
+
+	# Same structural rule the NES gets: a row entry with no anchor draws a lead
+	# to the origin, and an anchor with no row entry silently cannot be bound.
+	var anchors: Dictionary = row["anchors"]
+	var listed: Array = (row["left"] as Array) + (row["right"] as Array)
+	var listed_sorted := listed.duplicate()
+	listed_sorted.sort()
+	_eq("wii/every control appears in exactly one column", listed_sorted, want)
+	var anchor_keys: Array = anchors.keys()
+	anchor_keys.sort()
+	_eq("wii/every anchor is a control", anchor_keys, want)
+
+	var in_range := true
+	for key: String in anchors:
+		var v: Vector2 = anchors[key]
+		if v.x < 0.0 or v.x > 1.0 or v.y < 0.0 or v.y > 1.0:
+			in_range = false
+	_ok("wii/every anchor is inside the picture", in_range)
+
+	# Each column ordered by height, which is what keeps the leads from crossing.
+	for side in ["left", "right"]:
+		var last := -1.0
+		var sorted_ok := true
+		for key: String in row[side]:
+			var y: float = (anchors[key] as Vector2).y
+			if y < last:
+				sorted_ok = false
+			last = y
+		_ok("wii/the %s column runs down the picture" % side, sorted_ok)
+
+	_ok("wii/portrait art lays its labels in columns",
+		String(row.get("layout", "rows")) == "columns")
+	# Colour art: tinting it would take the whole white shell to one flat blue.
+	_ok("wii/the colour art is not tinted", row.get("tint", true) == false)
+	_ok("wii/carries the other-hand note",
+		String(row.get("note", "")).contains("other"))
+
 
 func _test_console_pad_art() -> void:
 	_ok("art/nes has a pad", ConsolePadArt.has("nes"))
