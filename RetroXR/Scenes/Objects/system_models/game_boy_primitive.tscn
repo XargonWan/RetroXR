@@ -169,5 +169,13 @@ font_size = 16
 ; this one is turned a quarter turn about Y to look along +X. 1 mm proud of the
 ; panel: a seated link plug's origin is the front face of its shell, and that
 ; face stops almost flush against the socket's rim.
+;
+; A .tscn lists a basis by ROWS, not by the columns the Transform3D constructor
+; takes, so a quarter turn written from the columns comes out as its own
+; transpose -- which for a rotation is its inverse. That put +Z along -X, into
+; the shell, and the lead left the plug through the console and had to climb back
+; over the screen. Copy this basis from the junction's own LinkPort, which faces
+; +X too; do NOT copy it from the GBA's, whose matrix is symmetric and reads the
+; same under either convention.
 [node name="LinkPort" parent="." instance=ExtResource("9_linkport")]
-transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0.0437, 0, 0.008)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.0437, 0, 0.008)
