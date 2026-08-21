@@ -110,6 +110,19 @@ jobs:
 
       - run: pip install scons
 
+      # SCons' content cache already deduplicates identical godot-cpp objects
+      # between the extension builds in this job. Persist it as well, so a new
+      # release does not start by recompiling the same generated bindings.
+      # Quest has its own key because this job also caches Android/NDK objects
+      # and runs concurrently with the desktop job.
+      - name: Restore the SCons cache
+        uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-v1-quest-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ github.sha }}
+          restore-keys: |
+            scons-v1-quest-${{ runner.os }}-${{ env.GODOT_VERSION }}-
+
       - name: Check the preinstalled NDK is the one build.py expects
         shell: bash
         run: |
@@ -127,13 +140,15 @@ jobs:
       # unresolved scenes. Nothing debug ships: the APK gets
       # android.release.arm64, picked by the exported game's own feature tags.
       #
-      # SCONS_CACHE matters because each extension has its own VariantDir and
-      # .sconsign, so all six otherwise rebuild godot-cpp from scratch. It is
-      # populated and consumed inside this one job.
+      # build.py compiles the profiled godot-cpp library once, then links every
+      # extension against it. SCONS_CACHE also reuses its object files across
+      # release runs after the restore step above.
       - name: Build the host-side extensions the editor needs (windows, debug)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python Tools/build.py windows --target debug
+        # These DLLs only register classes in the exporting editor; they are not
+        # shipped or debugged in CI, so PDB generation and hot reload are waste.
+        run: python Tools/build.py windows --target debug debug_symbols=no use_hot_reload=no
 
       - name: Build the six GDExtensions (android arm64, release)
         env:
@@ -312,6 +327,14 @@ jobs:
 
       - run: pip install scons
 
+      - name: Restore the SCons cache
+        uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-v1-desktop-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ github.sha }}
+          restore-keys: |
+            scons-v1-desktop-${{ runner.os }}-${{ env.GODOT_VERSION }}-
+
       # No Vulkan SDK install: vulkan-1.lib is vendored in the libretro-godot
       # submodule (external/vulkan-loader/), which is the whole reason a Windows
       # runner needs nothing beyond MSVC here.
@@ -323,7 +346,7 @@ jobs:
       - name: Build the six GDExtensions (windows x86_64, debug + release)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python Tools/build.py windows --target both
+        run: python Tools/build.py windows --target both debug_symbols=no use_hot_reload=no
 
       - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
         shell: pwsh

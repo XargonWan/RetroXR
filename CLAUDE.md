@@ -29,9 +29,13 @@ git submodule update --init --recursive
 
 ### One command for every extension
 
-`Tools/build.py` builds all six GDExtensions for one platform, sequentially (they
-cannot share a scons invocation — see below). Prefer it over the per-extension
-recipes further down, which are kept because they document each build's quirks.
+`Tools/build.py` builds all six GDExtensions for one platform. It first builds one
+shared, trimmed `godot-cpp` static library for each target, then runs the extensions
+sequentially with `build_library=no` (they still cannot share a scons invocation —
+see below). Prefer it over the per-extension recipes further down, which are kept
+because they document each build's quirks. The shared API allowlist is
+`Tools/godot_cpp_profile.json`; add a Godot class there when extension C++ starts
+including or calling it.
 
 ```bash
 python Tools/build.py windows              # both template_debug and template_release
