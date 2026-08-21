@@ -1608,4 +1608,7 @@ func _is_hand_held(node: Node) -> bool:
 
 
 func _is_port_peripheral(node: Node) -> bool:
-	return "_connected_system" in node and "_port_index" in node
+	# Receiver boxes forward a fixed local desktop device; carrying the box does
+	# not mean the carrier took ownership of that keyboard/mouse/gamepad.
+	return not node is InputReceiver \
+		and "_connected_system" in node and "_port_index" in node

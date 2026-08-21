@@ -988,6 +988,27 @@ func _test_rollback() -> void:
 	w.host_sys._port_controllers.clear()
 	await _await_frames(5)
 
+	# A fixed physical-pad receiver does not change input ownership when someone
+	# moves its box, so it may keep rollback. A keyboard receiver cannot: key
+	# transitions use the lockstep event tail rather than the native live slot.
+	var receiver := MockPadReceiver.new()
+	w.host_sys._port_controllers = [receiver]
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, 1)
+	_ok(w.host_np._rollback, "rollback/a fixed gamepad receiver may still roll back")
+	w.host_nm.netplay_stop("done")
+	w.host_sys._port_controllers.clear()
+	receiver.free()
+	await _await_frames(5)
+	var keyboard := MockKeyboardReceiver.new()
+	w.host_sys._port_controllers = [keyboard]
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, 1)
+	_ok(not w.host_np._rollback,
+		"rollback/a keyboard receiver uses lockstep so key events are not lost")
+	w.host_nm.netplay_stop("done")
+	w.host_sys._port_controllers.clear()
+	keyboard.free()
+	await _await_frames(5)
+
 	# Auto (-1) follows the core's own table rather than anything asked for.
 	w.host_sys.lib.link_peers = {}
 	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, -1)
@@ -1398,6 +1419,14 @@ class MockController extends Node:
 	var _connected_system: Object = null
 	var _port_index := -1
 	func is_picked_up() -> bool: return false
+
+
+class MockPadReceiver extends InputReceiver:
+	func _ready() -> void: pass
+
+
+class MockKeyboardReceiver extends KeyboardReceiver:
+	func _ready() -> void: pass
 
 
 ## A NetworkManager stand-in for the cases that need a session but no network.

@@ -578,7 +578,7 @@ path is covered by the `_fast` ROMs instead.
 
 ### 2f. Netplay — a suite, and the one thing it cannot cover
 
-`RetroXR/Tests/netplay_tests.tscn` is 240 cases over the whole lockstep stack,
+`RetroXR/Tests/netplay_tests.tscn` is 242 cases over the whole lockstep stack,
 headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
 `identity/` (which core builds may play each other), `wire/` (every packed
 block's round trip, including per-port accelerometer, gyro, IR/touch and

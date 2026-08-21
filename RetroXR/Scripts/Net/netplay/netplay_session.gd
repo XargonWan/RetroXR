@@ -337,7 +337,10 @@ func _requires_lockstep_input() -> bool:
 		if "_port_controllers" in machine:
 			var controllers: Array = machine.get("_port_controllers")
 			for controller: Variant in controllers:
+				if controller is KeyboardReceiver:
+					return true
 				if controller != null and is_instance_valid(controller) \
+						and not controller is InputReceiver \
 						and controller.has_method("is_picked_up"):
 					return true
 	return false
