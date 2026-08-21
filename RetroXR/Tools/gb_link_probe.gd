@@ -195,6 +195,40 @@ func _run() -> void:
 		await get_tree().process_frame
 	_eq("and the link comes back on its own", _shade(a.GetVideoImage()), shade_a)
 
+	# A machine can be switched off and on with the lead still in it. A reset takes
+	# this end off its own timeline -- the cycle counter restarts, so the driver
+	# re-anchors, and anything queued for it is dropped -- while the peer carries
+	# on and never notices. Bus membership does not change, so nothing prompts the
+	# other end to speak: what brings the link back is the next transfer, because
+	# being clocked is itself a change the peer publishes.
+	#
+	# The port must survive it. mGBA routes a reset through GBSIOSetDriver, which
+	# deinits the driver and inits it again, so a deinit that left the bus would
+	# take the machine off the wire every time a guest was reset -- with the cable
+	# still visibly plugged in.
+	#
+	# The peer count is the weaker half of that and cannot see it happen: the init
+	# re-attaches immediately, so by the time this reads the count it is 2 again
+	# whether or not the port was ever dropped. What catches a transient detach is
+	# the shade -- the machine comes back on the bus with its identity rebuilt and
+	# never recovers the link. Verified by making deinit detach: the count case
+	# still passes, the shade case goes red.
+	a.RequestReset()
+	for i in range(180):
+		await get_tree().process_frame
+	_eq("a reset never takes the port off the wire", a.LinkPeerCount(0), 2)
+	_eq("and the master rejoins the link on its own",
+			_shade(a.GetVideoImage()), shade_a)
+
+	# The other end of the same question. The slave is the one being clocked, so
+	# it comes back by a different route: it has to re-arm and be found armed.
+	b.RequestReset()
+	for i in range(180):
+		await get_tree().process_frame
+	_eq("the same holds when it is the slave that resets", b.LinkPeerCount(0), 2)
+	_eq("and the slave rejoins the link on its own",
+			_shade(b.GetVideoImage()), shade_b)
+
 	# Stopping a cabled core must not wedge the other: its emulation thread is
 	# parked on the barrier waiting for a peer that will never publish again.
 	a.StopContent()
