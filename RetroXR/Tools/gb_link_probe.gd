@@ -19,9 +19,18 @@
 ## player's own, so it is snapshotted and put back at both ends.
 extends Node
 
-const CORE := "gambatte"
-const LINK_KEY := "gambatte_gb_link_mode"
-const BOOT_KEY := "gambatte_gb_bootloader"
+## Which core, and the options that switch its cable on and its boot ROM off.
+##
+## Both are asked for by name because a Game Boy game runs on more than one:
+## gambatte is the room's default and mGBA carries a Game Boy core too. The boot
+## ROM matters because these ROMs carry no Nintendo logo, so a real one would
+## refuse to hand them control.
+const CORE_OPTIONS := {
+	"gambatte": [["gambatte_gb_link_mode", "Link Cable"], ["gambatte_gb_bootloader", "disabled"]],
+	"mgba": [["mgba_link_cable", "ON"], ["mgba_use_bios", "OFF"]],
+}
+
+var _core := "gambatte"
 
 ## How long the two machines are left running. The master ROM clocks a byte
 ## about every 27 ms, so this is dozens of exchanges rather than one lucky one.
@@ -63,6 +72,15 @@ func _finish() -> void:
 
 
 func _run() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--core="):
+			_core = arg.substr(7)
+	if not CORE_OPTIONS.has(_core):
+		print("[gb-link] SKIP  no link options known for %s" % _core)
+		get_tree().quit(0)
+		return
+	print("[gb-link] core %s" % _core)
+
 	var root := CoreDownloadManager.default_core_root()
 	var master_rom := ProjectSettings.globalize_path("res://Tools/gblink/link_master.gb")
 	var slave_rom := ProjectSettings.globalize_path("res://Tools/gblink/link_slave.gb")
@@ -71,9 +89,9 @@ func _run() -> void:
 		print("[gb-link] SKIP  run Tools/gen_gblink_rom.py first")
 		get_tree().quit(0)
 		return
-	if not FileAccess.file_exists("%s/cores/%s_libretro.dll" % [root, CORE]) \
-			and not FileAccess.file_exists("%s/cores/%s_libretro.so" % [root, CORE]):
-		print("[gb-link] SKIP  no %s core installed under %s" % [CORE, root])
+	if not FileAccess.file_exists("%s/cores/%s_libretro.dll" % [root, _core]) \
+			and not FileAccess.file_exists("%s/cores/%s_libretro.so" % [root, _core]):
+		print("[gb-link] SKIP  no %s core installed under %s" % [_core, root])
 		get_tree().quit(0)
 		return
 
@@ -88,8 +106,8 @@ func _run() -> void:
 	add_child(a)
 	add_child(b)
 
-	a.StartContent(root, CORE, master_rom)
-	b.StartContent(root, CORE, slave_rom)
+	a.StartContent(root, _core, master_rom)
+	b.StartContent(root, _core, slave_rom)
 
 	# Both cores have to get through retro_load_game to attach, which is a thread
 	# hand-off and a file load away.
@@ -191,7 +209,73 @@ func _run() -> void:
 	a.queue_free()
 	b.queue_free()
 	await get_tree().process_frame
+
+	await _fast_pass(root)
 	_finish()
+
+
+## The same exchange at the Game Boy Color's own rate.
+##
+## SC bit 1 picks a 262144 Hz clock over the Game Boy's 8192, which is a transfer
+## of 128 cycles against 4096 -- thirty-two times shorter than the horizon the
+## driver uses for a Game Boy, so the whole timing has to move underneath it or
+## every byte lands after the transfer that carried it. Nothing on a Game Boy can
+## reach this path: the bit reads back as one on a DMG whatever is written, so a
+## machine has to be a Game Boy Color for it to mean anything, and these two ROMs
+## carry the flag in their header that makes one.
+func _fast_pass(root: String) -> void:
+	var master_rom := ProjectSettings.globalize_path("res://Tools/gblink/link_master_fast.gbc")
+	var slave_rom := ProjectSettings.globalize_path("res://Tools/gblink/link_slave_fast.gbc")
+	if not FileAccess.file_exists(master_rom) or not FileAccess.file_exists(slave_rom):
+		print("[gb-link] SKIP  no fast-clock ROMs; run Tools/gen_gblink_rom.py")
+		return
+
+	var a := Libretro.new()
+	var b := Libretro.new()
+	add_child(a)
+	add_child(b)
+	a.StartContent(root, _core, master_rom)
+	b.StartContent(root, _core, slave_rom)
+	for i in range(240):
+		await get_tree().process_frame
+
+	var shade_bad := _shade(a.GetVideoImage())
+	var shade_idle := _shade(b.GetVideoImage())
+	print("[gb-link] fast uncabled: master %s, slave %s" % [shade_bad, shade_idle])
+	_ok("fast: the two uncabled machines are in different states", shade_bad != shade_idle,
+			"both %s" % shade_bad)
+
+	_ok("fast: cabling them together succeeds", a.LinkConnect(b, 0, 0))
+	await get_tree().process_frame
+	_eq("fast: master sees both machines", a.LinkPeerCount(0), 2)
+
+	var sent_before := a.LinkSent(0)
+	for i in range(int(RUN_SECONDS * 60.0)):
+		await get_tree().process_frame
+	var sent := a.LinkSent(0) - sent_before
+	print("[gb-link] fast: master sent %d" % sent)
+	_ok("fast: the master put messages on the wire", sent > 0, "sent %d" % sent)
+
+	var img_a := a.GetVideoImage()
+	var img_b := b.GetVideoImage()
+	var shade_a := _shade(img_a)
+	var shade_b := _shade(img_b)
+	print("[gb-link] fast cabled: master %s, slave %s" % [shade_a, shade_b])
+	_save(img_a, "fast_master")
+	_save(img_b, "fast_slave")
+	_ok("fast: the master read the byte the slave was holding",
+			shade_a != shade_bad and shade_a != shade_idle, "still showing %s" % shade_a)
+	_ok("fast: the slave read the byte the master clocked",
+			shade_b != shade_bad and shade_b != shade_idle, "still showing %s" % shade_b)
+	_ok("fast: and both agree", shade_a == shade_b, "%s vs %s" % [shade_a, shade_b])
+
+	a.StopContent()
+	b.StopContent()
+	for i in range(120):
+		await get_tree().process_frame
+	a.queue_free()
+	b.queue_free()
+	await get_tree().process_frame
 
 
 ## The one shade the whole screen is painted, or an empty string if it is not
@@ -218,11 +302,9 @@ func _save(img: Image, name: String) -> void:
 	print("[gb-link] wrote %s" % path)
 
 
-## Turn the cable on and the bootloader off, keeping a copy of whatever was
-## there. The bootloader matters: our ROMs carry no Nintendo logo, so a real boot
-## ROM would refuse to hand them control, and gambatte ships that option on.
+## Turn the cable on and the boot ROM off, keeping a copy of whatever was there.
 func _write_options(root: String) -> bool:
-	_opt_path = "%s/core_options/%s.opt" % [root, CORE]
+	_opt_path = "%s/core_options/%s.opt" % [root, _core]
 	var existing := ""
 	_had_opt = FileAccess.file_exists(_opt_path)
 	if _had_opt:
@@ -232,14 +314,19 @@ func _write_options(root: String) -> bool:
 			reader.close()
 	_opt_backup = existing
 
+	var wanted: Array = CORE_OPTIONS[_core]
 	var lines: PackedStringArray = []
 	for line in existing.split("\n", false):
-		if not line.begins_with(LINK_KEY) and not line.begins_with(BOOT_KEY):
+		var keep := true
+		for pair: Array in wanted:
+			if line.begins_with(str(pair[0])):
+				keep = false
+		if keep:
 			lines.append(line)
 	# The option's own VALUE, not the label a menu prints beside it: the core
 	# compares against the value and matches nothing else.
-	lines.append('%s = "Link Cable"' % LINK_KEY)
-	lines.append('%s = "disabled"' % BOOT_KEY)
+	for pair: Array in wanted:
+		lines.append('%s = "%s"' % [pair[0], pair[1]])
 
 	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
 	if writer == null:
@@ -247,7 +334,6 @@ func _write_options(root: String) -> bool:
 	writer.store_string("\n".join(lines) + "\n")
 	writer.close()
 	return true
-
 
 func _restore() -> void:
 	if _restored or _opt_path.is_empty():

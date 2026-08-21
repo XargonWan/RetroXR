@@ -18,8 +18,20 @@
 ## tells you to do and what a restored room does.
 extends Node
 
-const CORE := "gambatte"
-const LINK_KEY := "gambatte_gb_link_mode"
+## Which core, and how its link is switched on. Both are asked for by name
+## because a Game Boy game runs on more than one: gambatte is the room's default
+## and mGBA carries a Game Boy core too, and a cable has to work on either.
+const LINK_OPTION := {
+	"gambatte": ["gambatte_gb_link_mode", "Link Cable"],
+	"mgba": ["mgba_link_cable", "ON"],
+}
+
+## One per machine, because they need not be the same. The two cores agree on
+## the protocol id and the message layout, so a Game Boy run by one and a Game
+## Boy run by the other are joined by the same cable -- and if that ever stops
+## being true, this is where it shows.
+var _cores: Array[String] = ["gambatte", "gambatte"]
+var _rom_override := ""
 
 const BTN_A := 1 << 8
 const BTN_START := 1 << 3
@@ -30,9 +42,7 @@ const BTN_LEFT := 1 << 6
 var _pass := 0
 var _fail := 0
 var _m: Array[Libretro] = []
-var _opt_path := ""
-var _opt_backup := ""
-var _had_opt := false
+var _opt_backup: Dictionary = {}
 var _restored := false
 var _shots := 0
 
@@ -46,7 +56,21 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	var rom := _find_rom()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--core="):
+			_cores = [arg.substr(7), arg.substr(7)]
+		elif arg.begins_with("--core2="):
+			_cores[1] = arg.substr(8)
+		elif arg.begins_with("--rom="):
+			_rom_override = arg.substr(6)
+	for core in _cores:
+		if not LINK_OPTION.has(core):
+			print("[tetris] SKIP  no link option known for %s" % core)
+			get_tree().quit(0)
+			return
+	print("[tetris] cores %s and %s" % [_cores[0], _cores[1]])
+
+	var rom := _rom_override if not _rom_override.is_empty() else _find_rom()
 	if rom.is_empty():
 		print("[tetris] SKIP  no Tetris (World) found; pass --roms=<library>")
 		get_tree().quit(0)
@@ -54,11 +78,14 @@ func _run() -> void:
 	print("[tetris] rom  %s" % rom)
 
 	var root := CoreDownloadManager.default_core_root()
-	if not FileAccess.file_exists(root.path_join("cores").path_join(CORE + "_libretro.dll")) \
-			and not FileAccess.file_exists(root.path_join("cores").path_join(CORE + "_libretro.so")):
-		print("[tetris] SKIP  the %s core is not installed" % CORE)
-		get_tree().quit(0)
-		return
+	for core in _cores:
+		var have := FileAccess.file_exists(root.path_join("cores").path_join(core + "_libretro.dll"))
+		if not have:
+			have = FileAccess.file_exists(root.path_join("cores").path_join(core + "_libretro.so"))
+		if not have:
+			print("[tetris] SKIP  the %s core is not installed" % core)
+			get_tree().quit(0)
+			return
 	if not _enable_link(root):
 		print("[tetris] SKIP  could not write the core options file")
 		get_tree().quit(0)
@@ -74,8 +101,8 @@ func _run() -> void:
 	# the box asks for and the one a restored room produces, so it is the one
 	# that gets tested.
 	_ok("the lead goes in before either is switched on", _m[0].LinkConnect(_m[1], 0, 0))
-	for lib in _m:
-		lib.StartContent(root, CORE, rom)
+	for i in range(2):
+		_m[i].StartContent(root, _cores[i], rom)
 	await _frames(600)
 
 	_eq("machine 0 is on the wire", _m[0].LinkPeerCount(0), 2)
@@ -268,36 +295,44 @@ func _finish() -> void:
 
 
 func _enable_link(root: String) -> bool:
-	_opt_path = "%s/core_options/%s.opt" % [root, CORE]
-	var existing := ""
-	_had_opt = FileAccess.file_exists(_opt_path)
-	if _had_opt:
-		var reader := FileAccess.open(_opt_path, FileAccess.READ)
-		if reader != null:
-			existing = reader.get_as_text()
-			reader.close()
-	_opt_backup = existing
-	var lines: PackedStringArray = []
-	for line in existing.split("\n", false):
-		if not line.begins_with(LINK_KEY):
-			lines.append(line)
-	lines.append('%s = "Link Cable"' % LINK_KEY)
-	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
-	if writer == null:
-		return false
-	writer.store_string("\n".join(lines) + "\n")
-	writer.close()
+	for core in _cores:
+		if _opt_backup.has(core):
+			continue
+		var path: String = "%s/core_options/%s.opt" % [root, core]
+		var existing := ""
+		var had := FileAccess.file_exists(path)
+		if had:
+			var reader := FileAccess.open(path, FileAccess.READ)
+			if reader != null:
+				existing = reader.get_as_text()
+				reader.close()
+		_opt_backup[core] = existing if had else null
+
+		var key: String = LINK_OPTION[core][0]
+		var lines: PackedStringArray = []
+		for line in existing.split("\n", false):
+			if not line.begins_with(key):
+				lines.append(line)
+		lines.append('%s = "%s"' % [key, LINK_OPTION[core][1]])
+
+		var writer := FileAccess.open(path, FileAccess.WRITE)
+		if writer == null:
+			return false
+		writer.store_string("\n".join(lines) + "\n")
+		writer.close()
 	return true
 
-
 func _restore() -> void:
-	if _restored or _opt_path.is_empty():
+	if _restored:
 		return
 	_restored = true
-	if not _had_opt:
-		DirAccess.remove_absolute(_opt_path)
-		return
-	var writer := FileAccess.open(_opt_path, FileAccess.WRITE)
-	if writer != null:
-		writer.store_string(_opt_backup)
-		writer.close()
+	var root := CoreDownloadManager.default_core_root()
+	for core in _opt_backup:
+		var path: String = "%s/core_options/%s.opt" % [root, core]
+		if _opt_backup[core] == null:
+			DirAccess.remove_absolute(path)
+			continue
+		var writer := FileAccess.open(path, FileAccess.WRITE)
+		if writer != null:
+			writer.store_string(str(_opt_backup[core]))
+			writer.close()
