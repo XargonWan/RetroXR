@@ -624,6 +624,10 @@ func _load_system_model() -> void:
 		video_out_enabled = true
 	_model.configure_cartridge_slot(_cartridge_slot)
 	_wire_push_tray()
+	# The serial socket, for the consoles that have one. Placed by the model for
+	# the same reason the A/V sockets are: it goes on the back panel, and only
+	# the thing that draws the back panel knows where that is.
+	_model.build_serial_port(self, systemid)
 	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
 	# real console's built-in port count) over the model's default, clamped to

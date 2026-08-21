@@ -9,5 +9,6 @@ display_name = "Sony PlayStation"
 native_ports = 2
 media_type = 1
 memory_cards = true
+serial_port = true
 supports_multitap = true
 multitap_ports = 8

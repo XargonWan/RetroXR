@@ -43,6 +43,12 @@ func _ready() -> void:
 	await _test_a_machine_takes_a_plug_the_same_way()
 	await _test_each_end_says_what_it_is()
 	await _test_every_socket_can_be_saved()
+	_test_psx_plug_gating()
+	_test_psx_cable_is_not_av()
+	_test_psx_cable_is_spawnable()
+	await _test_psx_socket_follows_the_hardware()
+	await _test_psx_lead_will_seat()
+	await _test_psx_cable_joins_a_pair()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -938,4 +944,233 @@ func _test_every_socket_can_be_saved() -> void:
 	lead.queue_free()
 	pair.queue_free()
 	chained.queue_free()
+	await get_tree().process_frame
+
+
+# -- The PlayStation's serial port --------------------------------------------
+# A second kind of link lead, and every case below is about it being a DIFFERENT
+# one. The console's serial socket is SIO1, on the back panel; the controller
+# bus on the front is SIO0 and shares nothing with it but a register layout. The
+# lead between two of them is a null modem -- transmit crossed to receive, DTR to
+# DSR, RTS to CTS -- so the two consoles are peers, either end goes in either
+# console, and there is no junction and no third player.
+
+const PSX_CABLE_SCENE := "res://Scenes/Objects/cables/psx_link_cable.tscn"
+const PSX_PORT_SCENE := "res://Scenes/Objects/cables/psx_link_port.tscn"
+
+
+func _test_psx_plug_gating() -> void:
+	var port := PsxLinkPort.new()
+	add_child(port)
+	var plug := PsxLinkPlug.new()
+	add_child(plug)
+
+	_eq("the PlayStation port and plug name the same group",
+		port.plug_group(), plug.plug_group())
+	_eq("the group is psx_link_plug", port.plug_group(), "psx_link_plug")
+	_eq("the socket requires that group to snap", port.snap_require, port.plug_group())
+
+	# The case this class exists for. Reusing the handheld group would have let a
+	# Game Boy Advance lead seat in a console's serial socket and look right doing
+	# it -- the refusal would still have come, one layer down, where the bus
+	# declines to join two cores publishing different protocol ids, but it would
+	# have arrived as a line in a log with the cable sitting there looking
+	# connected. Asserted against the real classes so renaming a group cannot
+	# quietly open the gate.
+	var gba := LinkPort.new()
+	add_child(gba)
+	var gba_plug := LinkPlug.new()
+	add_child(gba_plug)
+	_ok("a PlayStation socket does not take a handheld link plug",
+		port.plug_group() != gba_plug.plug_group())
+	_ok("a handheld socket does not take a PlayStation link plug",
+		gba.plug_group() != plug.plug_group())
+
+	var rca := RcaPort.new()
+	add_child(rca)
+	_ok("nor does it take a phono plug", port.plug_group() != rca.plug_group())
+
+	# link_port is inherited and a PlayStation has exactly one serial socket, so
+	# it stays where it started. The export exists for hardware that has more.
+	_eq("the console's one serial socket is port 0", port.link_port, 0)
+
+	port.queue_free()
+	plug.queue_free()
+	gba.queue_free()
+	gba_plug.queue_free()
+	rca.queue_free()
+
+
+func _test_psx_cable_is_not_av() -> void:
+	# Same trap the handheld lead has: a link cord that reported itself to AvGraph
+	# would put a television in the business of routing serial traffic.
+	var cable := PsxLinkCable.new()
+	add_child(cable)
+	_eq("a PlayStation link cable carries no A/V links", cable.links().size(), 0)
+	cable.queue_free()
+
+
+func _test_psx_cable_is_spawnable() -> void:
+	var items: Array = SpawnCatalog.items_for("playstation")
+	var found := false
+	for item: Dictionary in items:
+		if str(item.get("spawn", "")) == "psx_link_cable":
+			found = true
+			_ok("and it is labelled", not str(item.get("label", "")).is_empty())
+	_ok("it is offered under the PlayStation", found,
+		"%d items, none of them the PlayStation link cable" % items.size())
+
+	# Offered only where there is a socket to put it in.
+	var handheld: Array = SpawnCatalog.items_for("game_boy_advance")
+	var stray := false
+	for item: Dictionary in handheld:
+		if str(item.get("spawn", "")) == "psx_link_cable":
+			stray = true
+	_ok("and not offered to a machine with no serial port", not stray)
+
+
+func _test_psx_socket_follows_the_hardware() -> void:
+	# The socket is on the primitive body, and which consoles wear one is a fact
+	# about the hardware rather than about the model: SystemInfo.serial_port is the
+	# same kind of switch as memory_cards, which is what shows the card slot.
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	_ok("the machine scene loads", sys_scene != null)
+	if sys_scene == null:
+		return
+
+	var psx: Node3D = sys_scene.instantiate()
+	psx.systemid = "playstation"
+	add_child(psx)
+	# A Dreamcast, NOT a NES. The gate being tested lives on the primitive body,
+	# and a console with a model scene of its own never reaches it -- a negative
+	# case picked from those passes whether the gate works or not. The Dreamcast
+	# has no model row, so it wears the same box the PlayStation does and the
+	# only thing telling them apart is SystemInfo.serial_port.
+	var plain: Node3D = sys_scene.instantiate()
+	plain.systemid = "dreamcast"
+	add_child(plain)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var on_psx := psx.find_child("PsxLinkPort", true, false) as PsxLinkPort
+	_ok("a PlayStation wears a serial socket", on_psx != null)
+	var on_plain := plain.find_child("PsxLinkPort", true, false)
+	_ok("a console with no serial port does not, on the same body",
+		on_plain == null)
+
+	if on_psx != null:
+		# Behind the machine, not inside it: the socket has to be reachable by a
+		# hand coming at the back panel, and it sits alongside the A/V row rather
+		# than on top of it.
+		_ok("it is on the back panel", on_psx.position.z < -0.12,
+			"z = %.3f" % on_psx.position.z)
+		_ok("and clear of the A/V sockets", absf(on_psx.position.x - 0.082) > 0.02,
+			"x = %.3f against the A/V row at 0.082" % on_psx.position.x)
+		# The machine behind the socket is the one it is bolted to, which is what
+		# the cable resolves through.
+		_eq("and it belongs to that machine", on_psx.get_machine(), psx)
+
+	psx.queue_free()
+	plain.queue_free()
+	await get_tree().process_frame
+
+
+func _test_psx_lead_will_seat() -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	if sys_scene == null:
+		return
+	var a: Node3D = sys_scene.instantiate()
+	a.systemid = "playstation"
+	add_child(a)
+	var handheld: Node3D = sys_scene.instantiate()
+	handheld.systemid = "game_boy_advance"
+	add_child(handheld)
+	var lead: Node3D = load(PSX_CABLE_SCENE).instantiate()
+	add_child(lead)
+	var gba_lead: Node3D = load(CABLE_SCENE).instantiate()
+	add_child(gba_lead)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var serial := a.find_child("PsxLinkPort", true, false) as XRToolsSnapZone
+	var ext := handheld.find_child("LinkPort", true, false) as XRToolsSnapZone
+	var pad := a.find_child("ControllerPort1", true, false) as XRToolsSnapZone
+	_ok("the console has a serial socket", serial != null)
+	_ok("the handheld has an EXT socket", ext != null)
+	if serial == null or ext == null or pad == null:
+		a.queue_free()
+		handheld.queue_free()
+		lead.queue_free()
+		gba_lead.queue_free()
+		return
+
+	var end_a := lead.get_node_or_null("PlugA0") as Node3D
+	var end_b := lead.get_node_or_null("PlugB0") as Node3D
+	var gba_end := gba_lead.get_node_or_null("PlugA0") as Node3D
+
+	# Symmetric, unlike the GameCube lead: this is a null modem between peers, so
+	# either end goes in either console and there is no wrong way round.
+	_ok("either end goes into a serial socket",
+		serial.can_preview(end_a) and serial.can_preview(end_b),
+		"require '%s', plug in %s" % [serial.snap_require, str(end_a.get_groups())])
+
+	# And the three that must not.
+	_ok("a PlayStation lead does not go into a handheld's EXT socket",
+		not ext.can_preview(end_a))
+	_ok("nor into a controller socket", not pad.can_preview(end_a))
+	_ok("and a handheld link lead does not go into a serial socket",
+		not serial.can_preview(gba_end))
+
+	a.queue_free()
+	handheld.queue_free()
+	lead.queue_free()
+	gba_lead.queue_free()
+	await get_tree().process_frame
+
+
+func _test_psx_cable_joins_a_pair() -> void:
+	var cable := PsxLinkCable.new()
+	add_child(cable)
+
+	# Safe at any time and any number of times: this runs on every unseated
+	# resolve and on the way out of the tree.
+	cable._disconnect()
+	cable._disconnect()
+	_eq("a lead that was never joined records no link", cable._linked.size(), 0)
+
+	var m1 := _StubMachine.new()
+	var m2 := _StubMachine.new()
+	add_child(m1)
+	add_child(m2)
+	m1.libretro = Libretro.new()
+	m2.libretro = Libretro.new()
+	m1.add_child(m1.libretro)
+	m2.add_child(m2.libretro)
+
+	var a := {"libretro": m1.libretro, "machine": m1, "port": 0}
+	var b := {"libretro": m2.libretro, "machine": m2, "port": 0}
+
+	# Neither console is running, and the lead joins them anyway. Seating a cable
+	# into a machine that is switched off is an ordinary thing to do, and the link
+	# comes alive when both cores attach their serial hardware.
+	cable._join(a, b)
+	_eq("two idle consoles are still cabled together", cable._linked.size(), 6)
+
+	# Re-stating the same pair changes nothing, which matters because a lead
+	# resolves whenever either of its plugs moves.
+	var was: Variant = cable._linked
+	cable._join(a, b)
+	_ok("re-stating the same pair is a no-op", cable._linked == was)
+
+	cable._disconnect()
+	_eq("pulling a plug parts them", cable._linked.size(), 0)
+
+	# A machine cabled to itself, which the room cannot present -- one console has
+	# one serial socket -- but which the guard exists for anyway.
+	cable._join(a, {"libretro": m1.libretro, "machine": m1, "port": 0})
+	_eq("a console is not cabled to itself", cable._linked.size(), 0)
+
+	cable.queue_free()
+	m1.queue_free()
+	m2.queue_free()
 	await get_tree().process_frame

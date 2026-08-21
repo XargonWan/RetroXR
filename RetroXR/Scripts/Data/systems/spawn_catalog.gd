@@ -154,6 +154,8 @@ const _VGA_CABLE: Dictionary = {"kind": "peripheral", "label": "VGA Cable",
 ## Two handhelds and one cable is the whole of GBA multiplayer, and the lead
 ## carries a junction so a third and fourth can chain on.
 const _LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable", "spawn": "link_cable"}
+const _PSX_LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable",
+	"spawn": "psx_link_cable"}
 
 ## The console-to-handheld lead, offered on BOTH platforms it joins. A player
 ## spawning a GameCube for Four Swords Adventures should be offered one without
@@ -167,6 +169,11 @@ const _GC_GBA_PLATFORMS: Array = ["gamecube", "game_boy_advance"]
 ## Keyed on the PLATFORM, not the model: the GBA and the SP are two models of one
 ## platform and both have the socket.
 const _LINK_PLATFORMS: Array = ["game_boy_advance"]
+
+## The consoles whose serial port takes a link cable between two of them. A
+## different lead from the handhelds' -- different connector, different protocol
+## -- so a different entry, and the two can never be offered as one.
+const _PSX_LINK_PLATFORMS: Array = ["playstation"]
 
 
 const _TRS_KIT: Array = [
@@ -215,6 +222,8 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
 	if _LINK_PLATFORMS.has(systemid):
 		items.append(_LINK_CABLE.duplicate())
+	if _PSX_LINK_PLATFORMS.has(systemid):
+		items.append(_PSX_LINK_CABLE.duplicate())
 	if _GC_GBA_PLATFORMS.has(systemid):
 		items.append(_GC_GBA_CABLE.duplicate())
 	var info := SystemInfo.for_system(systemid)
