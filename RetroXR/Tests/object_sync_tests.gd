@@ -28,12 +28,15 @@ class StubNM extends Node:
 	var world: Node = null
 	var active := false
 	var disk_calls: Array = []
+	var handoff_calls: Array = []
 	func is_host() -> bool: return true
 	func is_client() -> bool: return false
 	func is_active() -> bool: return active
 	func _resolve_world_root() -> Node: return world
 	func netplay_schedule_disk(system: Object, op: int, md5: String, index: int) -> void:
 		disk_calls.append([system, op, md5, index])
+	func netplay_handoff_port(system: Object, port: int, owner: int) -> void:
+		handoff_calls.append([system, port, owner])
 
 
 class MockPowerHost extends Node3D:
@@ -348,6 +351,14 @@ func _test_registry_lifecycle() -> void:
 		"registry/a fixed room control is encoded by scene path")
 	_eq(sync._decode_args(fixed_wire).get("switch"), fixed_control,
 		"registry/a fixed room control path resolves back to its effect target")
+	sync._remote_held[id] = 7
+	_eq(sync.holder_peer(card), 7,
+		"registry/the authoritative remote holder is available to initial port ownership")
+	sync._update_port_owner(NetObjectSync.EV_PORT_PLUG,
+		{"sys": card, "ctrl": fixed_control, "port": 2}, 7)
+	sync._update_port_owner(NetObjectSync.EV_PORT_UNPLUG, {"sys": card, "port": 2}, 7)
+	_eq(nm.handoff_calls, [[card, 2, 7], [card, 2, 0]],
+		"registry/plug and unplug events assign and release the netplay port")
 	sync.end_session()
 	_eq(sync._registry.size(), 0, "registry/end_session clears the lookup")
 	sync.on_world_ready()
@@ -706,6 +717,8 @@ func _test_controller_end_to_end(p: Pair) -> void:
 	_ok(await _until(func() -> bool:
 		return int(p.host_os._remote_held.get(pad_id, -1)) == p.client_id),
 		"controllers/a real controller grab transfers authority to the client")
+	_eq(int(p.host_nm.default_owners(host_system).get(0, 0)), p.client_id,
+		"controllers/a new game initially assigns the port to its physical holder")
 	client_pad.global_position = Vector3(1.25, 1.4, -0.8)
 	p.client_os._client_send_held()
 	_ok(await _until(func() -> bool:

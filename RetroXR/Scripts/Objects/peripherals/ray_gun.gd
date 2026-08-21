@@ -458,14 +458,14 @@ func _process(_delta: float) -> void:
 
 	# VR mode: no controller held → report offscreen and clear buttons
 	if not is_instance_valid(_holding_ctrl):
-		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_set_aim(libretro, 0, 0, true)
 		for lid: int in pressed:
-			libretro.SetLightgunButton(_port_index, lid, false)
+			_set_button(libretro, lid, false)
 		if _lightgun_map.get("stick", "none") == "dpad":
-			libretro.SetLightgunButton(_port_index, 8,  false)
-			libretro.SetLightgunButton(_port_index, 9,  false)
-			libretro.SetLightgunButton(_port_index, 10, false)
-			libretro.SetLightgunButton(_port_index, 11, false)
+			_set_button(libretro, 8, false)
+			_set_button(libretro, 9, false)
+			_set_button(libretro, 10, false)
+			_set_button(libretro, 11, false)
 		_laser_dot.visible = false
 		return
 
@@ -473,15 +473,15 @@ func _process(_delta: float) -> void:
 
 	# Buttons come from the map via _pressed_now(); "stick" is handled separately.
 	for lid: int in pressed:
-		libretro.SetLightgunButton(_port_index, lid, pressed[lid])
+		_set_button(libretro, lid, pressed[lid])
 
 	# Thumbstick → lightgun d-pad (thresholded).
 	if _lightgun_map.get("stick", "none") == "dpad":
 		var stick: Vector2 = ctrl.get_vector2("primary")
-		libretro.SetLightgunButton(_port_index, 8,  stick.y >  DPAD_THRESHOLD)
-		libretro.SetLightgunButton(_port_index, 9,  stick.y < -DPAD_THRESHOLD)
-		libretro.SetLightgunButton(_port_index, 10, stick.x < -DPAD_THRESHOLD)
-		libretro.SetLightgunButton(_port_index, 11, stick.x >  DPAD_THRESHOLD)
+		_set_button(libretro, 8, stick.y > DPAD_THRESHOLD)
+		_set_button(libretro, 9, stick.y < -DPAD_THRESHOLD)
+		_set_button(libretro, 10, stick.x < -DPAD_THRESHOLD)
+		_set_button(libretro, 11, stick.x > DPAD_THRESHOLD)
 
 	_update_aim(libretro)
 
@@ -489,16 +489,16 @@ func _process(_delta: float) -> void:
 ## Desktop: read keyboard+mouse, aim from camera centre ray.
 func _process_desktop_lightgun(libretro: Libretro, pressed: Dictionary) -> void:
 	for lid: int in pressed:
-		libretro.SetLightgunButton(_port_index, lid, pressed[lid])
+		_set_button(libretro, lid, pressed[lid])
 
 	# D-pad from WASD/retro joypad actions
-	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_UP,
+	_set_button(libretro, ControllerBindings.LIGHTGUN_DPAD_UP,
 		Input.is_action_pressed("RETRO_JOYPAD_UP"))
-	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_DOWN,
+	_set_button(libretro, ControllerBindings.LIGHTGUN_DPAD_DOWN,
 		Input.is_action_pressed("RETRO_JOYPAD_DOWN"))
-	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_LEFT,
+	_set_button(libretro, ControllerBindings.LIGHTGUN_DPAD_LEFT,
 		Input.is_action_pressed("RETRO_JOYPAD_LEFT"))
-	libretro.SetLightgunButton(_port_index, ControllerBindings.LIGHTGUN_DPAD_RIGHT,
+	_set_button(libretro, ControllerBindings.LIGHTGUN_DPAD_RIGHT,
 		Input.is_action_pressed("RETRO_JOYPAD_RIGHT"))
 
 	_update_aim_desktop(libretro)
@@ -507,7 +507,7 @@ func _process_desktop_lightgun(libretro: Libretro, pressed: Dictionary) -> void:
 ## VR aim: ray from barrel tip along barrel -Z.
 func _update_aim(libretro: Libretro) -> void:
 	if _screen_mesh == null or _screen_w == 0.0:
-		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_set_aim(libretro, 0, 0, true)
 		_laser_dot.visible = false
 		return
 
@@ -523,13 +523,13 @@ func _update_aim(libretro: Libretro) -> void:
 ## Desktop aim: ray from camera centre along camera -Z (matches the crosshair).
 func _update_aim_desktop(libretro: Libretro) -> void:
 	if _screen_mesh == null or _screen_w == 0.0:
-		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_set_aim(libretro, 0, 0, true)
 		_laser_dot.visible = false
 		return
 
 	var cam := get_viewport().get_camera_3d()
 	if not is_instance_valid(cam):
-		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_set_aim(libretro, 0, 0, true)
 		_laser_dot.visible = false
 		return
 
@@ -554,7 +554,7 @@ func _apply_aim_hit(
 	var hit: Variant = plane.intersects_ray(ray_origin, ray_dir)
 
 	if hit == null:
-		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_set_aim(libretro, 0, 0, true)
 		_laser_dot.visible = false
 		return
 
@@ -564,17 +564,29 @@ func _apply_aim_hit(
 	var v := (-local.y / _screen_h) + 0.5
 
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
-		libretro.SetLightgunIsOffscreen(_port_index, true)
+		_set_aim(libretro, 0, 0, true)
 		_laser_dot.visible = false
 		return
 
 	var lx := int((u * 2.0 - 1.0) * 32767)
 	var ly := int((v * 2.0 - 1.0) * 32767)
-	libretro.SetLightgunPosition(_port_index, lx, ly)
-	libretro.SetLightgunIsOffscreen(_port_index, false)
+	_set_aim(libretro, lx, ly, false)
 
 	_laser_dot.visible = show_laser_dot
 	_laser_dot.global_position = (hit as Vector3) + screen_normal * 0.002
+
+
+func _set_button(libretro: Libretro, button: int, pressed: bool) -> void:
+	if not NetworkManager.netplay_set_lightgun_button(_connected_system, _port_index,
+			button, pressed):
+		libretro.SetLightgunButton(_port_index, button, pressed)
+
+
+func _set_aim(libretro: Libretro, x: int, y: int, offscreen: bool) -> void:
+	if not NetworkManager.netplay_set_lightgun_aim(_connected_system, _port_index,
+			x, y, offscreen):
+		libretro.SetLightgunPosition(_port_index, x, y)
+		libretro.SetLightgunIsOffscreen(_port_index, offscreen)
 
 
 ## Per-instance owner for the desktop channel. Several objects share the

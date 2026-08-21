@@ -1918,11 +1918,8 @@ func _process(_delta: float) -> void:
 	# instead of feeding the core directly.
 	if is_powered_on and _model != null and _model.is_handheld():
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
-		if NetworkManager.netplay_running():
-			if NetworkManager.netplay_covers(self):
-				NetworkManager.netplay_set_aux_sensor(self,
-					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
-		else:
+		if not NetworkManager.netplay_set_aux_sensor(self, 0, 0,
+				int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0)):
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
 	_update_disc_spin(_delta)
 	_ensure_audio_bound()
@@ -1967,11 +1964,8 @@ func feed_touch(uv: Vector2, pressed: bool) -> void:
 		return
 	var px := int(clampf(uv.x, 0.0, 1.0) * 65534.0) - 32767
 	var py := int(clampf(uv.y, 0.0, 1.0) * 65534.0) - 32767
-	if NetworkManager.netplay_running():
-		if NetworkManager.netplay_covers(self):
-			NetworkManager.netplay_set_aux_pointer(self, px, py, pressed)
-		return
-	_libretro.SetPointerState(0, px, py, pressed)
+	if not NetworkManager.netplay_set_aux_pointer(self, 0, 0, px, py, pressed):
+		_libretro.SetPointerState(0, px, py, pressed)
 
 
 func _physics_process(_delta: float) -> void:

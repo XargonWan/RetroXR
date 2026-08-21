@@ -578,10 +578,11 @@ path is covered by the `_fast` ROMs instead.
 
 ### 2f. Netplay — a suite, and the one thing it cannot cover
 
-`RetroXR/Tests/netplay_tests.tscn` is 181 cases over the whole lockstep stack,
+`RetroXR/Tests/netplay_tests.tscn` is 240 cases over the whole lockstep stack,
 headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
 `identity/` (which core builds may play each other), `wire/` (every packed
-block's round trip), `owners/` (who supplies which port on which frame),
+block's round trip, including per-port accelerometer, gyro, IR/touch and
+lightgun state), `owners/` (who supplies which port on which frame),
 `assemble/` (frame completion and pruning), `start/` (the asynchronous cold
 start), `lockstep/`, `desync/`, `join/`, `leave/`, `rollback/`, `link/` (a
 cabled pair as one session).

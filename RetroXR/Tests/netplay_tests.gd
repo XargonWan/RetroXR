@@ -222,16 +222,24 @@ func _test_wire() -> void:
 		_eq(buf.get_u8(), 3, "wire/port %s keeps its index" % str(vals[0]))
 		_eq(np._get_port(buf), vals, "wire/port %s round-trips" % str(vals))
 
-	# Aux: sensor tilt in milli-g and a touch pointer, both signed, plus flags.
-	# This is the block a Quest player fills in and a desktop player does not,
-	# so it crosses between platforms more than anything else here.
-	for aux: Array in [[0, 0, 0, 0, 0, 0, 0], [3, -1000, 1000, -32768, 32767, -1, 1],
-			[1, 981, -981, 0, 0, 0, 0], [2, 0, 0, 0, -5, 5, 1]]:
+	# Aux is per port: two accelerometers, two gyros and four IR/touch points.
+	# Exercise every signed field and the last pointer so an offset error cannot
+	# silently leave Wii MotionPlus or one IR blob local-only.
+	var aux_zero: Array = np._aux_default()
+	var aux_full: Array = np._aux_default()
+	aux_full[0] = 0xFF
+	for i in range(1, 13):
+		aux_full[i] = -30000 + i * 4000
+	for i in range(13, NetplaySession.AUX_INTS_PER_PORT):
+		aux_full[i] = -32768 + i * 2000
+	for i in [15, 18, 21, 24]:
+		aux_full[i] = 1
+	for aux: Array in [aux_zero, aux_full]:
 		var buf2 := StreamPeerBuffer.new()
 		np._put_aux(buf2, aux)
 		# Against the CONSTANT the readers budget with, not against a number
 		# written out here — the two disagreeing is the bug this pins down.
-		_eq(buf2.get_size(), NetplaySession.AUX_BYTES,
+		_eq(buf2.get_size(), NetplaySession.AUX_BYTES_PER_PORT,
 			"wire/aux is exactly the size every reader budgets for")
 		buf2.seek(0)
 		_eq(np._get_aux(buf2), aux, "wire/aux %s round-trips" % str(aux))
@@ -239,9 +247,12 @@ func _test_wire() -> void:
 	# The pressed flag is a bit, not a number: anything non-zero has to come back
 	# as exactly 1 or the two peers fold different values into their CRCs.
 	var bufp := StreamPeerBuffer.new()
-	np._put_aux(bufp, [2, 0, 0, 0, 0, 0, 99])
+	var pressed_aux: Array = np._aux_default()
+	pressed_aux[0] = 1 << 7
+	pressed_aux[24] = 99
+	np._put_aux(bufp, pressed_aux)
 	bufp.seek(0)
-	_eq(np._get_aux(bufp)[6], 1, "wire/a pressed pointer normalises to 1")
+	_eq(np._get_aux(bufp)[24], 1, "wire/a pressed pointer normalises to 1")
 
 	# Keyboard: keycode plus a down bit plus a character, per slot.
 	var keys: Array = [65 | 65536, 97, 66, 98]
@@ -282,7 +293,8 @@ func _test_wire() -> void:
 	for _p in range(2):
 		one.put_u16(0)
 		one.put_16(0); one.put_16(0); one.put_16(0); one.put_16(0)
-	np._put_aux(one, [0, 0, 0, 0, 0, 0, 0])
+	for _p in range(NetplaySession.PORTS_PER_MACHINE):
+		np._put_aux(one, np._aux_default())
 	np._put_keys(one, [])
 	_eq(one.get_size(), 4 + 2 * 10 + NetplaySession.AUX_BYTES + NetplaySession.KEY_BYTES,
 		"wire/a broadcast frame is exactly the size the client budgets for")
@@ -291,39 +303,59 @@ func _test_wire() -> void:
 	inp.put_u32(7)
 	inp.put_u8(1)
 	np._put_port(inp, 0, [0, 0, 0, 0, 0])
-	np._put_aux(inp, [0, 0, 0, 0, 0, 0, 0])
+	for _p in range(NetplaySession.PORTS_PER_MACHINE):
+		np._put_aux(inp, np._aux_default())
 	np._put_keys(inp, [])
 	_eq(inp.get_size(), 4 + 1 + 11 + NetplaySession.AUX_BYTES + NetplaySession.KEY_BYTES,
 		"wire/and an input frame is the size the host budgets for")
 
 	# The assembled frame is one flat int array with a fixed layout; the gate
 	# indexes straight into it, so a field landing one slot over is silent.
+	var port0_aux: Array = np._aux_default()
+	port0_aux[0] = 0x91
+	port0_aux[1] = 11
+	port0_aux[7] = -12
+	port0_aux[13] = 14
+	port0_aux[15] = 1
+	port0_aux[22] = -15
+	port0_aux[24] = 1
 	var flat := np._flat_from_frame({0: [1, 2, 3, 4, 5], 2: [6, 7, 8, 9, 10]},
-		{0: [3, 11, 12, 13, 14, 15, 1]}, {0: [70 | 65536, 102]})
+		{0: port0_aux}, {0: [70 | 65536, 102]})
 	_eq(flat.size(), 20 + NetplaySession.AUX_INTS + NetplaySession.KEY_SLOTS * 2,
 		"wire/an assembled frame is one fixed-size block")
 	_eq(flat[0], 1, "wire/port 0 lands at 0")
 	_eq(flat[10], 6, "wire/port 2 lands at 10")
 	_eq(flat[5], 0, "wire/an absent port is neutral, not stale")
-	_eq(flat[20], 3, "wire/aux follows the four ports")
-	_eq(flat[26], 1, "wire/and ends with the pointer button")
-	_eq(flat[27], 70 | 65536, "wire/keys follow aux")
+	_eq(flat[20], 0x91, "wire/aux follows the four ports")
+	_eq(flat[27], -12, "wire/gyro follows accelerometer state")
+	_eq(flat[44], 1, "wire/and ends with the fourth pointer button")
+	_eq(flat[20 + NetplaySession.AUX_INTS], 70 | 65536, "wire/keys follow aux")
 
 	# A linked machine owns a separate aux/key tail. Sharing one tail copied the
 	# anchor handheld's tilt into every core and discarded the far machine's.
 	var far_wire_machine := Node.new()
 	np._group = [self, far_wire_machine]
+	var near_aux: Array = np._aux_default()
+	near_aux[0] = 1
+	near_aux[1] = 10
+	var far_aux: Array = np._aux_default()
+	far_aux[0] = 1 << 4
+	far_aux[13] = 40
+	far_aux[14] = 50
+	far_aux[15] = 1
 	var linked_flat := np._flat_from_frame({},
-		{0: [1, 10, 20, 30, 0, 0, 0], 1: [2, 0, 0, 0, 40, 50, 1]},
+		{0: near_aux, 4: far_aux},
 		{0: [65, 97], 1: [66 | 65536, 98]})
 	var near_slice := np._slice_for_machine(linked_flat, 0)
 	var far_slice := np._slice_for_machine(linked_flat, 1)
 	_eq(near_slice[20], 1, "wire/the anchor keeps its own aux flags")
 	_eq(near_slice[21], 10, "wire/the anchor keeps its own sensor")
-	_eq(far_slice[20], 2, "wire/the far machine keeps its own aux flags")
-	_eq(far_slice[24], 40, "wire/the far machine keeps its own pointer")
-	_eq(near_slice[27], 65, "wire/the anchor keeps its own keyboard")
-	_eq(far_slice[27], 66 | 65536, "wire/the far machine keeps its own keyboard")
+	_eq(far_slice[20], 1 << 4, "wire/the far machine keeps its own aux flags")
+	_eq(far_slice[33], 40, "wire/the far machine keeps its own pointer")
+	_eq(near_slice[20 + NetplaySession.AUX_INTS], 65,
+		"wire/the anchor keeps its own keyboard")
+	_eq(far_slice[20 + NetplaySession.AUX_INTS], 66 | 65536,
+		"wire/the far machine keeps its own keyboard")
 	far_wire_machine.free()
 
 	np.get_parent().queue_free()
@@ -389,6 +421,53 @@ func _test_owners() -> void:
 	np.route(self, 0, {"btn": 3, "alx": 40, "aly": -40, "drain": true})
 	_eq(np._capture_local(), {0: [3, 40, -40, 0, 0]}, "owners/a delta device is captured once")
 	_eq(np._capture_local(), {0: [3, 0, 0, 0, 0]}, "owners/and drains, keeping its buttons")
+
+	# Lightgun state shares the five-int port block but has different semantics.
+	np._pending_local_route.erase(0)
+	np.set_lightgun_button(self, 0, 2, true)
+	np.set_lightgun_aim(self, 0, -1200, 2300, false)
+	_eq(np._capture_local()[0], [1 << 2, -1200, 2300, 0, 0],
+		"owners/lightgun buttons and aim enter the deterministic port frame")
+
+	# Motion data is scoped to the actual controller port, including both Wii
+	# sensors, gyro and all four IR blobs.
+	np._set_owners({0: 1, 2: 1})
+	_ok(np.set_aux_sensor(self, 2, 1, 101, -202, 303),
+		"owners/a second controller's accelerometer is consumed")
+	_ok(np.set_aux_sensor(self, 2, 0, -404, 505, -606, true),
+		"owners/gyro input is consumed")
+	_ok(np.set_aux_pointer(self, 2, 3, 700, -800, true),
+		"owners/the fourth IR point is consumed")
+	var aux: Array = np._local_aux[2]
+	_eq(aux[0], (1 << 1) | (1 << 2) | (1 << 7),
+		"owners/aux validity tracks sensor, gyro and pointer independently")
+	_eq([aux[4], aux[5], aux[6]], [101, -202, 303],
+		"owners/the second accelerometer keeps its own values")
+	_eq([aux[7], aux[8], aux[9]], [-404, 505, -606], "owners/gyro axes stay signed")
+	_eq([aux[22], aux[23], aux[24]], [700, -800, 1],
+		"owners/the fourth pointer keeps its state")
+
+	# Reassigning a port must not carry its former owner's last held button into
+	# the new owner's first frame.
+	np._pending_local_route[0] = [0xFFFF, 1, 2, 3, 4]
+	np._complete_upto = 10
+	np._delay = 2
+	np._schedule_transfer(0, 7)
+	_ok(not np._pending_local_route.has(0), "owners/a handoff clears stale local input")
+
+	# Reliable topology/media barriers cannot freeze the session forever if a
+	# connected peer wedges without disconnecting.
+	np._link_deadlines[4] = 99
+	np._disc_deadlines[5] = 200
+	_eq(np._expired_operation(100), "link operation 4 acknowledgement timed out",
+		"owners/a link acknowledgement has a deadline")
+	np._link_deadlines.clear()
+	_eq(np._expired_operation(201), "disc operation 5 acknowledgement timed out",
+		"owners/a disc acknowledgement has a deadline")
+	np._disc_deadlines.clear()
+	np._reset_deadlines[6] = 300
+	_eq(np._expired_operation(300), "reset 6 acknowledgement timed out",
+		"owners/a reset acknowledgement has a deadline")
 
 	np._running = false
 	np._system = sys
@@ -617,6 +696,31 @@ func _test_lockstep() -> void:
 	_ok(absi(hc - cc) <= 10, "lockstep/and both peers stay together (%d vs %d)" % [hc, cc])
 	_eq(desyncs.size(), 0, "lockstep/a clean run reports no desync")
 
+	# Exercise the expanded device frame over real ENet, not just the packers.
+	w.host_np.set_aux_sensor(w.host_sys, 0, 0, 111, -222, 333)
+	w.host_np.set_aux_sensor(w.host_sys, 0, 0, -444, 555, -666, true)
+	w.host_np.set_aux_pointer(w.host_sys, 0, 3, 1234, -2345, true)
+	w.client_np.set_aux_sensor(w.client_sys, 1, 1, 777, 888, -999)
+	w.host_np._pending_local_route.erase(0)
+	w.host_np.set_lightgun_button(w.host_sys, 0, 2, true)
+	w.host_np.set_lightgun_aim(w.host_sys, 0, -3000, 4000, false)
+	await _await_frames(40)
+	var host_frame: PackedInt32Array = w.host_sys.lib.last_input
+	var client_frame: PackedInt32Array = w.client_sys.lib.last_input
+	_eq(host_frame, client_frame,
+		"lockstep/lightgun, accelerometer, gyro and pointer data agree end to end")
+	_eq([host_frame[0], host_frame[1], host_frame[2], host_frame[3]],
+		[1 << 2, -3000, 4000, 0], "lockstep/the lightgun state keeps its port layout")
+	_eq([host_frame[20], host_frame[21], host_frame[22], host_frame[23]],
+		[(1 << 0) | (1 << 2) | (1 << 7), 111, -222, 333],
+		"lockstep/the primary accelerometer and validity flags arrive")
+	_eq([host_frame[27], host_frame[28], host_frame[29]], [-444, 555, -666],
+		"lockstep/gyro axes arrive on the same controller port")
+	_eq([host_frame[42], host_frame[43], host_frame[44]], [1234, -2345, 1],
+		"lockstep/the fourth IR point arrives")
+	_eq([host_frame[49], host_frame[50], host_frame[51]], [777, 888, -999],
+		"lockstep/a second port keeps its second sensor separate")
+
 	# One peer stops sending. Lockstep means exactly this: everyone waits.
 	var before: int = w.host_sys.lib.GetFrameCount()
 	w.client_np._running = false
@@ -642,6 +746,34 @@ func _test_lockstep() -> void:
 	_ok(not w.host_np.is_active(), "lockstep/leaving nothing active")
 	_ok(not w.client_np.is_running(), "lockstep/and reaches the stalled peer")
 	_ok(w.client_sys.stopped, "lockstep/whose core is stopped, not left running")
+	_free(w)
+
+	# A room transition invalidates every system node in the group. It must stop
+	# the game before ObjectSync clears those ids, or both gates wait forever on
+	# cores that belonged to the previous room.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
+		{0: 1, 1: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return w.client_np.is_running()),
+		"lockstep/a game is running before a client room transition")
+	w.client_nm._on_scene_changed("different_room")
+	_ok(await _until(func() -> bool:
+		return not w.host_np.is_active() and not w.client_np.is_active()),
+		"lockstep/a room transition stops netplay on every peer")
+	_free(w)
+
+	# A peer can remain connected while its main thread is wedged. Reliable RPC
+	# then never ACKs, so the explicit operation deadline must release the gate.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
+		{0: 1, 1: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running()),
+		"lockstep/a game is running before an operation ACK timeout")
+	w.host_np._link_waiting[99] = {w.client_id: true}
+	w.host_np._link_deadlines[99] = Time.get_ticks_msec() - 1
+	w.host_np._check_stall()
+	_ok(await _until(func() -> bool: return not w.host_np.is_active()),
+		"lockstep/a missing operation ACK stops instead of freezing forever")
 	_free(w)
 
 
@@ -810,7 +942,14 @@ func _test_rollback() -> void:
 	_ok(w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, 1),
 		"rollback/an uncabled machine starts")
 	_ok(w.host_np._rollback, "rollback/and is allowed to roll back")
-	w.host_nm.netplay_stop("done")
+	await _until(func() -> bool: return w.host_np.is_running())
+	var topology_stops: Array = []
+	w.host_np.session_stopped.connect(func(reason: String) -> void: topology_stops.append(reason))
+	w.host_np.handoff_port(w.host_sys, 0, 0)
+	_ok(await _until(func() -> bool: return not w.host_np.is_active()),
+		"rollback/an ownership change stops instead of leaving stale input")
+	_ok(not topology_stops.is_empty() and str(topology_stops[0]).contains("ownership"),
+		"rollback/the stop explains that the topology must restart")
 	await _await_frames(5)
 
 	w.host_sys.lib.link_peers = {0: 2}
@@ -834,6 +973,19 @@ func _test_rollback() -> void:
 	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, 1)
 	_ok(w.host_np._rollback, "rollback/a lone machine on a bus still rolls back")
 	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+
+	# A room controller can be passed between hands and may carry motion data.
+	# Starting it in rollback used to make both operations silently ineffective.
+	var movable := MockController.new()
+	w.host_sys.add_child(movable)
+	w.host_sys._port_controllers = [movable]
+	w.host_sys.lib.link_peers = {}
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, 1)
+	_ok(not w.host_np._rollback,
+		"rollback/a movable room peripheral forces the ownership-safe lockstep path")
+	w.host_nm.netplay_stop("done")
+	w.host_sys._port_controllers.clear()
 	await _await_frames(5)
 
 	# Auto (-1) follows the core's own table rather than anything asked for.
@@ -944,10 +1096,10 @@ func _test_link() -> void:
 		"link/and boots from its corresponding host save")
 	_ok(w.host_sys.link_refreshes > 0 and w.client_sys.link_refreshes > 0,
 		"link/each peer re-seats the bus after restarting its cores")
-	w.client_np.set_aux_sensor(w.client_far, 111, -222, 333)
-	_ok(w.client_np._local_aux.has(1),
+	w.client_np.set_aux_sensor(w.client_far, 0, 0, 111, -222, 333)
+	_ok(w.client_np._local_aux.has(4),
 		"link/the far machine can supply its own sensor block")
-	_eq((w.client_np._local_aux[1] as Array)[1], 111,
+	_eq((w.client_np._local_aux[4] as Array)[1], 111,
 		"link/without writing the anchor's sensor block")
 	_ok(w.client_np.queue_key_event(w.client_far, 65, true, 97),
 		"link/the far machine can queue its own keyboard input")
@@ -1090,6 +1242,7 @@ class MockLib extends Node:
 	var link_applied: Array = []
 	var disc_ops: Array = []
 	var reset_ops: Array = []
+	var last_input := PackedInt32Array()
 
 	var _count := 0
 	var _acc := 0
@@ -1144,6 +1297,7 @@ class MockLib extends Node:
 	func PostNetplayInputs(frame: int, flat: PackedInt32Array) -> void:
 		if not _enabled or frame != _count:
 			return                  # the gate: only the expected next frame runs
+		last_input = flat.duplicate()
 		var h := frame
 		for v in flat:
 			h = (h * 1103515245 + int(v) + 12345) & 0x3FFFFFFF
@@ -1187,6 +1341,7 @@ class MockSys extends Node:
 	var received_sram := PackedByteArray()
 	var link_refreshes := 0
 	var reset_visuals := 0
+	var _port_controllers: Array = []
 	## The machines on this one's link bus, itself included, or empty when the
 	## machine is not cabled to anything. This is the seam the session asks
 	## through, so a probe needs no cables and no room.
@@ -1242,6 +1397,7 @@ class MockSys extends Node:
 class MockController extends Node:
 	var _connected_system: Object = null
 	var _port_index := -1
+	func is_picked_up() -> bool: return false
 
 
 ## A NetworkManager stand-in for the cases that need a session but no network.

@@ -637,7 +637,9 @@ func _set_device_type(dev: int) -> void:
 	# one's first frame.
 	var libretro := _connected_system.get_libretro_node()
 	if is_instance_valid(libretro):
-		libretro.SetSensorAccel(_port_index, 0.0, 0.0, 1.0, NUNCHUK_SENSOR_INDEX)
+		if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index,
+				NUNCHUK_SENSOR_INDEX, 0, 0, 1000):
+			libretro.SetSensorAccel(_port_index, 0.0, 0.0, 1.0, NUNCHUK_SENSOR_INDEX)
 		print("[Wiimote] extension changed — slot %d re-announced as %d"
 			% [_port_index, device_type])
 
@@ -1165,8 +1167,10 @@ func _process(delta: float) -> void:
 	# Right stick stays at zero on purpose: with a Nunchuk attached in pointer IR
 	# mode the core binds the Tilt group to it, which would fight the real
 	# accelerometer below.
-	libretro.SetJoypadState(_port_index, _button_mask(pressed),
-		int(nstick.x * ANALOG_SCALE), int(-nstick.y * ANALOG_SCALE), 0, 0)
+	var joy := {"btn": _button_mask(pressed), "alx": int(nstick.x * ANALOG_SCALE),
+		"aly": int(-nstick.y * ANALOG_SCALE), "arx": 0, "ary": 0}
+	if not NetworkManager.netplay_route(_connected_system, _port_index, joy):
+		libretro.SetJoypadState(_port_index, joy.btn, joy.alx, joy.aly, 0, 0)
 
 	_update_aim(libretro)
 	_send_accel(libretro, delta)
@@ -1245,6 +1249,12 @@ func _visible_leds() -> Array[Vector3]:
 	return out
 
 
+func _send_pointer(libretro: Libretro, index: int, x: int, y: int, pressed: bool) -> void:
+	if not NetworkManager.netplay_set_aux_pointer(_connected_system, _port_index,
+			index, x, y, pressed):
+		libretro.SetPointerIndexState(_port_index, index, x, y, pressed)
+
+
 ## Report every IR object as unseen. Dolphin skips any object whose size is zero,
 ## so an all-blank frame is a camera looking at nothing — which is what the Wii's
 ## own software reads as "the remote is pointed away", and is how the cursor gets
@@ -1253,7 +1263,7 @@ func _visible_leds() -> Array[Vector3]:
 ## border.
 func _blank_ir(libretro: Libretro) -> void:
 	for i in range(IR_OBJECTS):
-		libretro.SetPointerIndexState(_port_index, i, 0, 0, false)
+		_send_pointer(libretro, i, 0, 0, false)
 	_laser_dot.visible = false
 
 
@@ -1290,7 +1300,7 @@ func _update_aim(libretro: Libretro) -> void:
 		# Normalised over the sensor, because the core's IRPassthrough group scales
 		# a 0..1 control back up by (RES - 1). It reads the POSITIVE half of the
 		# pointer range only, so 0 is the left/top edge and 32767 the right/bottom.
-		libretro.SetPointerIndexState(_port_index, i,
+		_send_pointer(libretro, i,
 			int(p.x / (CAMERA_RES_X - 1.0) * POINTER_SCALE),
 			int(p.y / (CAMERA_RES_Y - 1.0) * POINTER_SCALE),
 			p.z > 0.0)
@@ -1350,15 +1360,20 @@ func _send_accel(libretro: Libretro, delta: float) -> void:
 	_accel_smoothed = _accel_smoothed.lerp(a_world, ACCEL_SMOOTHING)
 
 	var g_vec := accel_in_wiimote_frame()
-	libretro.SetSensorAccel(_port_index, g_vec.x, g_vec.y, g_vec.z)
+	if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index, 0,
+			int(g_vec.x * 1000.0), int(g_vec.y * 1000.0), int(g_vec.z * 1000.0)):
+		libretro.SetSensorAccel(_port_index, g_vec.x, g_vec.y, g_vec.z)
 
 	# And the Nunchuk's, on the same port. The remote owns the slot and makes
 	# every core call for the pair, so a Nunchuk seated directly and one seated
 	# behind a dongle are the same thing from here: _nunchuk is the one answer.
 	if _has_nunchuk() and _nunchuk != null:
 		var n_vec: Vector3 = _nunchuk.accel_in_nunchuk_frame()
-		libretro.SetSensorAccel(_port_index, n_vec.x, n_vec.y, n_vec.z,
-			NUNCHUK_SENSOR_INDEX)
+		if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index,
+				NUNCHUK_SENSOR_INDEX, int(n_vec.x * 1000.0), int(n_vec.y * 1000.0),
+				int(n_vec.z * 1000.0)):
+			libretro.SetSensorAccel(_port_index, n_vec.x, n_vec.y, n_vec.z,
+				NUNCHUK_SENSOR_INDEX)
 
 
 ## The smoothed world acceleration expressed on the emulated remote's own axes,
@@ -1423,7 +1438,9 @@ func _send_gyro(libretro: Libretro, delta: float) -> void:
 	_gyro_smoothed = _gyro_smoothed.lerp(w_world, GYRO_SMOOTHING)
 
 	var rad := gyro_in_wiimote_frame()
-	libretro.SetSensorGyro(_port_index, rad.x, rad.y, rad.z)
+	if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index, 0,
+			int(rad.x * 100.0), int(rad.y * 100.0), int(rad.z * 100.0), true):
+		libretro.SetSensorGyro(_port_index, rad.x, rad.y, rad.z)
 
 
 ## The smoothed angular velocity on the emulated remote's own axes, in rad/s.

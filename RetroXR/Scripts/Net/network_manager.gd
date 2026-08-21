@@ -23,9 +23,10 @@ const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glpro
 ## machine. 5 added per-machine aux/keyboard blocks and machine-addressed disc
 ## operations. 6 adds articulated child-control batches (plain/spring hinges,
 ## levers, knobs and sliders). 7 adds deterministic reset plus explicit TV
-## source/channel/aspect state. These wire layouts are intentionally refused across versions:
+## source/channel/aspect state. 8 adds per-port accel/gyro/pointer frames. These
+## wire layouts are intentionally refused across versions:
 ## accepting an old peer would look connected while feeding different cores.
-const PROTOCOL_VERSION := 7
+const PROTOCOL_VERSION := 8
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels
@@ -340,7 +341,16 @@ func default_owners(system: Object) -> Dictionary:
 			# its core is gated on inputs the assembler never asks anyone for.
 			plugged.append(m * NetplaySession.PORTS_PER_MACHINE)
 	for i in range(plugged.size()):
-		owners[plugged[i]] = ids[i % ids.size()]
+		var global_port := int(plugged[i])
+		var machine: Object = group[NetplaySession.machine_of_port(global_port)]
+		var local_port := NetplaySession.port_on_machine(global_port)
+		var controller: Object = null
+		if machine != null and "_port_controllers" in machine:
+			var pc: Array = machine.get("_port_controllers")
+			if local_port < pc.size():
+				controller = pc[local_port]
+		var holder := _object_sync.holder_peer(controller) if _object_sync != null else 0
+		owners[global_port] = holder if holder > 0 else ids[i % ids.size()]
 	return owners
 
 
@@ -364,6 +374,11 @@ func netplay_handoff(controller: Object, peer_id: int) -> void:
 		_netplay.handoff_controller(controller, peer_id)
 
 
+func netplay_handoff_port(system: Object, port: int, peer_id: int) -> void:
+	if _netplay != null:
+		_netplay.handoff_port(system, port, peer_id)
+
+
 ## Host: frame-schedule a disc eject/swap for the running netplay game so
 ## every peer's core applies it on the same frame. op 0 = eject, op 1 =
 ## replace image `index` with the disc whose md5 matches (resolved locally
@@ -380,17 +395,27 @@ func netplay_schedule_reset(system: Object) -> void:
 		_netplay.schedule_reset(system)
 
 
-## Aux input feeds for the running netplay game (port-0 owner only): tilt
-## sensor in milli-g and touch pointer. Both ride the deterministic frame
-## schedule so every peer's core sees identical values on identical frames.
-func netplay_set_aux_sensor(system: Object, x_mg: int, y_mg: int, z_mg: int) -> void:
-	if _netplay != null:
-		_netplay.set_aux_sensor(system, x_mg, y_mg, z_mg)
+## Aux input feeds for the running game. True means netplay consumed the input.
+func netplay_set_aux_sensor(system: Object, port: int, sensor_index: int,
+		x_mg: int, y_mg: int, z_mg: int, gyro := false) -> bool:
+	return _netplay != null and _netplay.set_aux_sensor(system, port, sensor_index,
+		x_mg, y_mg, z_mg, gyro)
 
 
-func netplay_set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
-	if _netplay != null:
-		_netplay.set_aux_pointer(system, px, py, pressed)
+func netplay_set_aux_pointer(system: Object, port: int, pointer_index: int,
+		px: int, py: int, pressed: bool) -> bool:
+	return _netplay != null and _netplay.set_aux_pointer(system, port, pointer_index,
+		px, py, pressed)
+
+
+func netplay_set_lightgun_button(system: Object, port: int, button: int,
+		pressed: bool) -> bool:
+	return _netplay != null and _netplay.set_lightgun_button(system, port, button, pressed)
+
+
+func netplay_set_lightgun_aim(system: Object, port: int, px: int, py: int,
+		offscreen: bool) -> bool:
+	return _netplay != null and _netplay.set_lightgun_aim(system, port, px, py, offscreen)
 
 
 ## Queue a keyboard transition into the running netplay game's deterministic
@@ -703,6 +728,8 @@ func _attach_broadcaster() -> void:
 func _on_scene_changed(scene_id: String) -> void:
 	if not _active or not _accepted:
 		return
+	if _netplay != null and _netplay.is_active():
+		_netplay.stop("room changed")
 	_object_sync.reset_for_scene_change()
 	_teardown_world()
 	world_root = null

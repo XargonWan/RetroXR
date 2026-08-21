@@ -41,6 +41,7 @@ const TRANSFER_LEAD := 8        # frames ahead a port-ownership handoff is sched
 const DISK_LEAD := 8            # frames ahead a disc eject/swap is scheduled
 const RESET_LEAD := 8           # frames ahead a front-panel reset is scheduled
 const LINK_LEAD := 8            # frames ahead a link plug/pull is scheduled
+const OP_ACK_TIMEOUT_MS := 5000 # reliable control op accepted by every peer
 ## Ports per machine, and the stride of a global port index. A session over a
 ## cabled pair has two machines' pads in one frame, so a port is identified by
 ## machine * PORTS_PER_MACHINE + port rather than by port alone.
@@ -122,13 +123,17 @@ var _join_capture_frame := -1
 var _host_identities: Array = []
 var _local_identities: Array = []
 
-# Aux input (sensor tilt + touch pointer, port 0), one block per machine.
-# [flags, sx, sy, sz (milli-g), px, py, pressed]. flags bit0 = sensor valid,
-# bit1 = pointer valid. Each machine's port-0 owner supplies its block.
-const AUX_INTS := 7
-var _local_aux: Dictionary = {}             # machine -> Array(7)
-var _local_aux_by_frame: Dictionary = {}    # frame -> {machine -> Array(7)}
-var _recv_aux: Dictionary = {}              # host: frame -> {machine -> Array(7)}
+# Aux input is per controller port: two accelerometers, two gyroscopes and four
+# pointer/IR contacts. Layout is flags, accel[2]*xyz, gyro[2]*xyz, pointer[4]*
+# {x,y,pressed}. Flags bits 0..1 = accel, 2..3 = gyro, 4..7 = pointer valid.
+# Values are milli-g / centi-radians-per-second / signed libretro coordinates.
+const AUX_SENSOR_COUNT := 2
+const AUX_POINTER_COUNT := 4
+const AUX_INTS_PER_PORT := 25
+const AUX_INTS := PORTS_PER_MACHINE * AUX_INTS_PER_PORT
+var _local_aux: Dictionary = {}             # global port -> Array(25)
+var _local_aux_by_frame: Dictionary = {}    # frame -> {global port -> Array(25)}
+var _recv_aux: Dictionary = {}              # host: frame -> {global port -> Array(25)}
 # Ports whose scheduled values are per-frame DELTAS (mouse dx/dy): zeroed after
 # the first scheduled frame consumes them, unlike held joypad state.
 var _drain_ports: Dictionary = {}          # port -> true
@@ -143,7 +148,8 @@ const KEY_SLOTS := 4
 ## produced and bailed out on the LAST frame of every packet. The redundancy
 ## window hid it for streamed frames and could not hide it for a re-request,
 ## which sends one frame and had it dropped every time.
-const AUX_BYTES := 13
+const AUX_BYTES_PER_PORT := 45
+const AUX_BYTES := PORTS_PER_MACHINE * AUX_BYTES_PER_PORT
 const KEY_BYTES := KEY_SLOTS * 4
 var _local_keys: Dictionary = {}             # machine -> pending [packed, char] pairs
 var _local_keys_by_frame: Dictionary = {}    # frame -> {machine -> Array}
@@ -167,15 +173,18 @@ var _link_serial := 0
 ## Assembly pauses until each participant acknowledges, so frame traffic cannot
 ## overtake a topology change sent on another ENet channel.
 var _link_waiting: Dictionary = {}
+var _link_deadlines: Dictionary = {}
 var _disc_serial := 0
 ## Disc changes travel on the reliable control channel while completed input
 ## frames use a different channel. Pause assembly until every participant has
 ## armed the native frame schedule, or frame traffic can overtake the swap.
 var _disc_waiting: Dictionary = {}
+var _disc_deadlines: Dictionary = {}
 var _reset_serial := 0
 ## Reset changes deterministic core state just like a disc swap. Assembly waits
 ## until every peer has armed the native reset at the same future frame.
 var _reset_waiting: Dictionary = {}
+var _reset_deadlines: Dictionary = {}
 var _deferred_joiners: Dictionary = {}
 
 var _last_progress_ms := 0
@@ -231,6 +240,9 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 	_rollback = NetplayCores.rollback_capable(core) if rollback < 0 else rollback == 1
 	if _rollback and (_group.size() > 1 or _is_linked(system)):
 		push_warning("[Netplay] machine is on a link bus; starting in lockstep, not rollback")
+		_rollback = false
+	if _rollback and _requires_lockstep_input():
+		push_warning("[Netplay] movable or sensor peripheral requires lockstep; disabling rollback")
 		_rollback = false
 	_set_owners(owners)
 	_ready_peers.clear()
@@ -309,6 +321,26 @@ func _set_group(group: Array) -> void:
 	_group_net_ids = PackedInt32Array()
 	for machine: Object in _group:
 		_group_net_ids.append(_resolve_net_id(machine))
+
+
+## Rollback can change only fixed, native-fed port state safely. A handheld's
+## own motion sensors and any pickable room peripheral need the lockstep frame
+## scheduler: it carries their aux data and can transfer ownership as hands move.
+func _requires_lockstep_input() -> bool:
+	for machine: Object in _group:
+		if machine == null:
+			continue
+		if "_model" in machine:
+			var model: Variant = machine.get("_model")
+			if model != null and model.has_method("is_handheld") and model.is_handheld():
+				return true
+		if "_port_controllers" in machine:
+			var controllers: Array = machine.get("_port_controllers")
+			for controller: Variant in controllers:
+				if controller != null and is_instance_valid(controller) \
+						and controller.has_method("is_picked_up"):
+					return true
+	return false
 
 
 ## Capture exactly what every machine is running.  The anchor's values are
@@ -731,8 +763,11 @@ func _stop_local(reason: String) -> void:
 	_local_inputs.clear()
 	_link_ops.clear()
 	_link_waiting.clear()
+	_link_deadlines.clear()
 	_disc_waiting.clear()
+	_disc_deadlines.clear()
 	_reset_waiting.clear()
+	_reset_deadlines.clear()
 	_deferred_joiners.clear()
 	_joining.clear()
 	_spectators.clear()
@@ -751,8 +786,11 @@ func _reset_runtime(start_frame: int) -> void:
 	_local_inputs.clear()
 	_link_ops.clear()
 	_link_waiting.clear()
+	_link_deadlines.clear()
 	_disc_waiting.clear()
+	_disc_deadlines.clear()
 	_reset_waiting.clear()
+	_reset_deadlines.clear()
 	_deferred_joiners.clear()
 	_pending_local_route.clear()
 	_crc_table.clear()
@@ -816,29 +854,100 @@ func _capture_local() -> Dictionary:
 	return out
 
 
-## Aux feeds from the game system (only meaningful on the port-0 owner).
-func set_aux_sensor(system: Object, x_mg: int, y_mg: int, z_mg: int) -> void:
-	var machine_index := _group.find(system)
-	if machine_index < 0 or not _local_ports.has(machine_index * PORTS_PER_MACHINE):
-		return
-	var aux: Array = _local_aux.get(machine_index, [0, 0, 0, 0, 0, 0, 0])
-	aux[0] = int(aux[0]) | 1
-	aux[1] = x_mg
-	aux[2] = y_mg
-	aux[3] = z_mg
-	_local_aux[machine_index] = aux
+func _aux_default() -> Array:
+	var out: Array = []
+	out.resize(AUX_INTS_PER_PORT)
+	out.fill(0)
+	return out
 
 
-func set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
+func _global_port(system: Object, local_port: int) -> int:
 	var machine_index := _group.find(system)
-	if machine_index < 0 or not _local_ports.has(machine_index * PORTS_PER_MACHINE):
-		return
-	var aux: Array = _local_aux.get(machine_index, [0, 0, 0, 0, 0, 0, 0])
-	aux[0] = int(aux[0]) | 2
-	aux[4] = px
-	aux[5] = py
-	aux[6] = 1 if pressed else 0
-	_local_aux[machine_index] = aux
+	return -1 if machine_index < 0 or local_port < 0 or local_port >= PORTS_PER_MACHINE \
+		else machine_index * PORTS_PER_MACHINE + local_port
+
+
+## Aux feeds from handhelds and motion controllers. True means the session owns
+## the port, so the caller must not write the core directly.
+func set_aux_sensor(system: Object, local_port: int, sensor_index: int,
+		x_mg: int, y_mg: int, z_mg: int, gyro := false) -> bool:
+	if not _running:
+		return false
+	var port := _global_port(system, local_port)
+	if port < 0 or not _is_participating(port):
+		return false
+	if _rollback:
+		stop("sensor input appeared during rollback; restart in lockstep")
+		return true
+	if not _local_ports.has(port):
+		return true
+	if sensor_index < 0 or sensor_index >= AUX_SENSOR_COUNT:
+		return true
+	var aux: Array = _local_aux.get(port, _aux_default())
+	var flag_bit := sensor_index + (2 if gyro else 0)
+	var base := (7 if gyro else 1) + sensor_index * 3
+	aux[0] = int(aux[0]) | (1 << flag_bit)
+	aux[base] = x_mg
+	aux[base + 1] = y_mg
+	aux[base + 2] = z_mg
+	_local_aux[port] = aux
+	return true
+
+
+func set_aux_pointer(system: Object, local_port: int, pointer_index: int,
+		px: int, py: int, pressed: bool) -> bool:
+	if not _running:
+		return false
+	var port := _global_port(system, local_port)
+	if port < 0 or not _is_participating(port):
+		return false
+	if _rollback:
+		stop("pointer input appeared during rollback; restart in lockstep")
+		return true
+	if not _local_ports.has(port):
+		return true
+	if pointer_index < 0 or pointer_index >= AUX_POINTER_COUNT:
+		return true
+	var aux: Array = _local_aux.get(port, _aux_default())
+	var base := 13 + pointer_index * 3
+	aux[0] = int(aux[0]) | (1 << (4 + pointer_index))
+	aux[base] = px
+	aux[base + 1] = py
+	aux[base + 2] = 1 if pressed else 0
+	_local_aux[port] = aux
+	return true
+
+
+func set_lightgun_button(system: Object, local_port: int, button: int, pressed: bool) -> bool:
+	var port := _global_port(system, local_port)
+	if not _running or port < 0 or not _is_participating(port):
+		return false
+	if _local_ports.has(port):
+		if _rollback:
+			return false
+		var vals: Array = _pending_local_route.get(port, [0, 0, 0, 1, 0])
+		if pressed:
+			vals[0] = int(vals[0]) | (1 << button)
+		else:
+			vals[0] = int(vals[0]) & ~(1 << button)
+		_pending_local_route[port] = vals
+	return true
+
+
+func set_lightgun_aim(system: Object, local_port: int, px: int, py: int,
+		offscreen: bool) -> bool:
+	var port := _global_port(system, local_port)
+	if not _running or port < 0 or not _is_participating(port):
+		return false
+	if _local_ports.has(port):
+		if _rollback:
+			return false
+		var vals: Array = _pending_local_route.get(port, [0, 0, 0, 1, 0])
+		vals[1] = px
+		vals[2] = py
+		vals[3] = 1 if offscreen else 0
+		_pending_local_route[port] = vals
+	return true
 
 
 ## Queue a keyboard transition into the deterministic schedule. Returns true
@@ -877,19 +986,30 @@ func queue_key_event(system: Object, keycode: int, down: bool, character: int) -
 ## host then feeds that port neutral input until someone grabs it again). If the
 ## controller occupies a participating netplay port, schedule the change.
 func handoff_controller(controller: Object, new_owner: int) -> void:
-	if not _nm.is_host() or not _running or _rollback:
+	if not _nm.is_host() or not _running:
 		return
 	if controller == null or not is_instance_valid(controller):
 		return
 	var machine: Object = controller.get("_connected_system")
-	var machine_index := _group.find(machine)
-	if machine_index < 0:
-		return
 	var local_port := int(controller.get("_port_index"))
-	if local_port < 0:
+	handoff_port(machine, local_port, new_owner)
+
+
+## Host: schedule ownership for a known system/port. Plug/unplug events use this
+## seam because on_unplugged has already cleared the controller's own fields.
+func handoff_port(machine: Object, local_port: int, new_owner: int) -> void:
+	if not _nm.is_host() or not _running:
 		return
-	var port := machine_index * PORTS_PER_MACHINE + local_port
+	var port := _global_port(machine, local_port)
+	if port < 0:
+		return
 	if not _is_participating(port):
+		return
+	# Movable/sensor peripherals force lockstep at start. A fixed receiver can
+	# still be unplugged during rollback; end cleanly instead of leaving a stale
+	# owner and held input in the speculative timeline.
+	if _rollback:
+		stop("controller ownership changed during rollback; restart required")
 		return
 	# Compare against the latest intended owner so a rapid grab/drop coalesces
 	# (a second schedule just overwrites the not-yet-landed one).
@@ -919,6 +1039,7 @@ func _schedule_transfer(port: int, new_owner: int) -> void:
 	# LEAD is strictly past every peer's current _sched_frame — a safe boundary.
 	var frame := _complete_upto + _delay + TRANSFER_LEAD
 	_pending[port] = {"frame": frame, "old": old_owner, "new": new_owner, "applied": false}
+	_clear_port_state(port)
 	print("[Netplay] port %d handoff: peer %d -> %d @frame %d" %
 		[port, old_owner, new_owner, frame])
 	_np_transfer.rpc(port, old_owner, new_owner, frame)
@@ -927,6 +1048,15 @@ func _schedule_transfer(port: int, new_owner: int) -> void:
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_transfer(port: int, old_owner: int, new_owner: int, frame: int) -> void:
 	_pending[port] = {"frame": frame, "old": old_owner, "new": new_owner, "applied": false}
+	_clear_port_state(port)
+
+
+func _clear_port_state(port: int) -> void:
+	_pending_local_route.erase(port)
+	_local_aux.erase(port)
+	_drain_ports.erase(port)
+	if port_on_machine(port) == 0:
+		_local_keys.erase(machine_of_port(port))
 
 
 ## Owner of `port` for a specific frame, honouring a pending (not-yet-cleared)
@@ -970,6 +1100,7 @@ func schedule_disk_op(system: Object, op: int, md5: String, index: int) -> void:
 	var waiting := _participating_remote_peers()
 	if not waiting.is_empty():
 		_disc_waiting[serial] = waiting
+		_disc_deadlines[serial] = _now() + OP_ACK_TIMEOUT_MS
 	print("[Netplay] disc op %d/%d machine=%d (md5 %s…) @frame %d; waiting=%s" % [
 		serial, op, machine_index, md5.left(8), frame, str(waiting.keys())])
 	if not _apply_disk_op(machine_index, op, md5, index, frame):
@@ -996,6 +1127,7 @@ func _np_disk_ready(serial: int) -> void:
 	waiting.erase(multiplayer.get_remote_sender_id())
 	if waiting.is_empty():
 		_disc_waiting.erase(serial)
+		_disc_deadlines.erase(serial)
 		print("[Netplay] disc op %d acknowledged by every peer" % serial)
 
 
@@ -1046,6 +1178,7 @@ func schedule_reset(system: Object) -> void:
 	var waiting := _participating_remote_peers()
 	if not waiting.is_empty():
 		_reset_waiting[serial] = waiting
+		_reset_deadlines[serial] = _now() + OP_ACK_TIMEOUT_MS
 	print("[Netplay] reset %d machine=%d @frame %d; waiting=%s" % [
 		serial, machine_index, frame, str(waiting.keys())])
 	if not _apply_reset(machine_index, frame):
@@ -1071,6 +1204,7 @@ func _np_reset_ready(serial: int) -> void:
 	waiting.erase(multiplayer.get_remote_sender_id())
 	if waiting.is_empty():
 		_reset_waiting.erase(serial)
+		_reset_deadlines.erase(serial)
 		print("[Netplay] reset %d acknowledged by every peer" % serial)
 
 
@@ -1156,6 +1290,7 @@ func schedule_link_op(system: Object, op: int, members: Array, ports: Array) -> 
 	var waiting := _participating_remote_peers()
 	if not waiting.is_empty():
 		_link_waiting[serial] = waiting
+		_link_deadlines[serial] = _now() + OP_ACK_TIMEOUT_MS
 	print("[Netplay] link op %d/%d over machines %s @frame %d; waiting=%s" % [
 		serial, op, str(member_ids), frame, str(waiting.keys())])
 	if not _apply_link_op(op, member_ids, port_ids, frame):
@@ -1208,6 +1343,7 @@ func _np_link_ready(serial: int) -> void:
 	waiting.erase(multiplayer.get_remote_sender_id())
 	if waiting.is_empty():
 		_link_waiting.erase(serial)
+		_link_deadlines.erase(serial)
 		print("[Netplay] link op %d acknowledged by every peer" % serial)
 
 
@@ -1385,11 +1521,11 @@ func _schedule_local() -> void:
 		_local_inputs[_sched_frame] = inp
 		var aux_frame := {}
 		var keys_frame := {}
+		for port: int in _local_ports:
+			aux_frame[port] = (_local_aux.get(port, _aux_default()) as Array).duplicate()
 		for machine_index in range(_group.size()):
 			if not _local_ports.has(machine_index * PORTS_PER_MACHINE):
 				continue
-			aux_frame[machine_index] = (_local_aux.get(machine_index,
-				[0, 0, 0, 0, 0, 0, 0]) as Array).duplicate()
 			var kv: Array = []
 			var pending_keys: Array = _local_keys.get(machine_index, [])
 			while not pending_keys.is_empty() and kv.size() < KEY_SLOTS * 2:
@@ -1431,7 +1567,9 @@ func _send_local_window() -> void:
 		var aux_frame: Dictionary = _local_aux_by_frame.get(f, {})
 		var keys_frame: Dictionary = _local_keys_by_frame.get(f, {})
 		for machine_index in range(_group.size()):
-			_put_aux(buf, aux_frame.get(machine_index, [0, 0, 0, 0, 0, 0, 0]))
+			for local_port in range(PORTS_PER_MACHINE):
+				var global_port := machine_index * PORTS_PER_MACHINE + local_port
+				_put_aux(buf, aux_frame.get(global_port, _aux_default()))
 			_put_keys(buf, keys_frame.get(machine_index, []))
 	_np_input.rpc_id(1, buf.data_array)
 
@@ -1465,16 +1603,19 @@ func _np_input(bytes: PackedByteArray) -> void:
 		if buf.get_available_bytes() < _machine_count() * (AUX_BYTES + KEY_BYTES):
 			return
 		for machine_index in range(_machine_count()):
-			var aux := _get_aux(buf)
+			for local_port in range(PORTS_PER_MACHINE):
+				var aux := _get_aux(buf)
+				var aux_port := machine_index * PORTS_PER_MACHINE + local_port
+				if _owner_for_frame(aux_port, f) == sender and f > _complete_upto:
+					if not _recv_aux.has(f):
+						_recv_aux[f] = {}
+					_recv_aux[f][aux_port] = aux
 			var keys := _get_keys(buf)
-			# Each aux/key block rides with that machine's port-0 owner.
+			# Keyboard state is global to a core and rides with port 0's owner.
 			var global_port := machine_index * PORTS_PER_MACHINE
 			if _owner_for_frame(global_port, f) == sender and f > _complete_upto:
-				if not _recv_aux.has(f):
-					_recv_aux[f] = {}
 				if not _recv_keys.has(f):
 					_recv_keys[f] = {}
-				_recv_aux[f][machine_index] = aux
 				_recv_keys[f][machine_index] = keys
 
 
@@ -1522,7 +1663,8 @@ func _broadcast_frames() -> void:
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
 		for machine_index in range(_machine_count()):
-			_put_aux(buf, _aux_of(flat, machine_index))
+			for local_port in range(PORTS_PER_MACHINE):
+				_put_aux(buf, _aux_of(flat, machine_index, local_port))
 			_put_keys(buf, _keys_of(flat, machine_index))
 	_np_frame.rpc(buf.data_array)
 
@@ -1559,11 +1701,13 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 			flat[base + 1] = buf.get_16(); flat[base + 2] = buf.get_16()
 			flat[base + 3] = buf.get_16(); flat[base + 4] = buf.get_16()
 		for machine_index in range(_machine_count()):
-			var aux := _get_aux(buf)
-			var keys := _get_keys(buf)
 			var tail := _machine_tail_offset(machine_index)
-			for i in range(AUX_INTS):
-				flat[tail + i] = int(aux[i])
+			for local_port in range(PORTS_PER_MACHINE):
+				var aux := _get_aux(buf)
+				var aux_base := tail + local_port * AUX_INTS_PER_PORT
+				for i in range(AUX_INTS_PER_PORT):
+					flat[aux_base + i] = int(aux[i])
+			var keys := _get_keys(buf)
 			for i in range(KEY_SLOTS * 2):
 				flat[tail + AUX_INTS + i] = int(keys[i])
 		if f >= _next_post and not _frames.has(f):
@@ -1593,6 +1737,9 @@ func _drain_to_core() -> void:
 func _check_stall() -> void:
 	if _nm.is_host() and (not _link_waiting.is_empty() or not _disc_waiting.is_empty() \
 			or not _reset_waiting.is_empty()):
+		var timeout_reason := _expired_operation(_now())
+		if not timeout_reason.is_empty():
+			stop(timeout_reason)
 		return
 	if _frames.has(_next_post):
 		return
@@ -1613,6 +1760,19 @@ func _check_stall() -> void:
 					_np_input_req.rpc_id(owner_peer, f)
 	else:
 		_np_frame_req.rpc_id(1, _next_post)
+
+
+func _expired_operation(now: int) -> String:
+	for serial: int in _link_deadlines:
+		if now >= int(_link_deadlines[serial]):
+			return "link operation %d acknowledgement timed out" % serial
+	for serial: int in _disc_deadlines:
+		if now >= int(_disc_deadlines[serial]):
+			return "disc operation %d acknowledgement timed out" % serial
+	for serial: int in _reset_deadlines:
+		if now >= int(_reset_deadlines[serial]):
+			return "reset %d acknowledgement timed out" % serial
+	return ""
 
 
 @rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
@@ -1638,7 +1798,8 @@ func _np_frame_req(frame: int) -> void:
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
 		for machine_index in range(_machine_count()):
-			_put_aux(buf, _aux_of(flat, machine_index))
+			for local_port in range(PORTS_PER_MACHINE):
+				_put_aux(buf, _aux_of(flat, machine_index, local_port))
 			_put_keys(buf, _keys_of(flat, machine_index))
 	_np_frame_reliable.rpc_id(sender, buf.data_array)
 
@@ -1658,7 +1819,9 @@ func _np_input_req(frame: int) -> void:
 	var aux_frame: Dictionary = _local_aux_by_frame.get(frame, {})
 	var keys_frame: Dictionary = _local_keys_by_frame.get(frame, {})
 	for machine_index in range(_machine_count()):
-		_put_aux(buf, aux_frame.get(machine_index, [0, 0, 0, 0, 0, 0, 0]))
+		for local_port in range(PORTS_PER_MACHINE):
+			var global_port := machine_index * PORTS_PER_MACHINE + local_port
+			_put_aux(buf, aux_frame.get(global_port, _aux_default()))
 		_put_keys(buf, keys_frame.get(machine_index, []))
 	_np_input.rpc_id(1, buf.data_array)
 
@@ -1872,16 +2035,19 @@ func on_peer_left(peer_id: int) -> void:
 		waiting.erase(peer_id)
 		if waiting.is_empty():
 			_link_waiting.erase(serial)
+			_link_deadlines.erase(serial)
 	for serial: int in _disc_waiting.keys():
 		var waiting: Dictionary = _disc_waiting[serial]
 		waiting.erase(peer_id)
 		if waiting.is_empty():
 			_disc_waiting.erase(serial)
+			_disc_deadlines.erase(serial)
 	for serial: int in _reset_waiting.keys():
 		var waiting: Dictionary = _reset_waiting[serial]
 		waiting.erase(peer_id)
 		if waiting.is_empty():
 			_reset_waiting.erase(serial)
+			_reset_deadlines.erase(serial)
 	if _joining.is_empty():
 		_join_paused = false
 	for port: int in _owners:
@@ -2010,7 +2176,7 @@ func _frame_ints() -> int:
 ## Assembled frame: one 5-int block per GLOBAL port, then one aux + keyboard
 ## block per machine. A linked handheld's tilt or keyboard belongs to that
 ## handheld alone and must not be dropped or copied into every other core.
-func _flat_from_frame(pm: Dictionary, aux_by_machine: Dictionary,
+func _flat_from_frame(pm: Dictionary, aux_by_port: Dictionary,
 		keys_by_machine: Dictionary) -> PackedInt32Array:
 	var port_ints := _port_ints()
 	var flat := PackedInt32Array()
@@ -2024,10 +2190,13 @@ func _flat_from_frame(pm: Dictionary, aux_by_machine: Dictionary,
 			flat[base + i] = int(v[i])
 	for machine_index in range(_machine_count()):
 		var tail := _machine_tail_offset(machine_index)
-		var aux: Array = aux_by_machine.get(machine_index, [0, 0, 0, 0, 0, 0, 0])
 		var keys: Array = keys_by_machine.get(machine_index, [])
-		for i in range(AUX_INTS):
-			flat[tail + i] = int(aux[i])
+		for local_port in range(PORTS_PER_MACHINE):
+			var global_port := machine_index * PORTS_PER_MACHINE + local_port
+			var aux: Array = aux_by_port.get(global_port, _aux_default())
+			var aux_base := tail + local_port * AUX_INTS_PER_PORT
+			for i in range(AUX_INTS_PER_PORT):
+				flat[aux_base + i] = int(aux[i])
 		for i in range(mini(keys.size(), KEY_SLOTS * 2)):
 			flat[tail + AUX_INTS + i] = int(keys[i])
 	return flat
@@ -2049,10 +2218,10 @@ func _slice_for_machine(flat: PackedInt32Array, machine_index: int) -> PackedInt
 
 
 ## One machine's aux block out of an assembled frame.
-func _aux_of(flat: PackedInt32Array, machine_index: int) -> Array:
-	var base := _machine_tail_offset(machine_index)
+func _aux_of(flat: PackedInt32Array, machine_index: int, local_port: int) -> Array:
+	var base := _machine_tail_offset(machine_index) + local_port * AUX_INTS_PER_PORT
 	var out: Array = []
-	for i in range(AUX_INTS):
+	for i in range(AUX_INTS_PER_PORT):
 		out.append(flat[base + i] if base + i < flat.size() else 0)
 	return out
 
@@ -2076,26 +2245,30 @@ func _get_port(buf: StreamPeerBuffer) -> Array:
 	return [buf.get_u16(), buf.get_16(), buf.get_16(), buf.get_16(), buf.get_16()]
 
 
-## Aux wire block (AUX_BYTES): u8 flags, 3x s16 sensor milli-g, 2x s16 pointer,
-## u8 pressed, u8 reserved.
+## One port's aux wire block: flags, accel+gyro for two sensor indices, then
+## four pointer contacts. All analogue values are signed 16-bit quantities.
 func _put_aux(buf: StreamPeerBuffer, aux: Array) -> void:
 	buf.put_u8(int(aux[0]) & 0xFF)
-	buf.put_16(int(aux[1])); buf.put_16(int(aux[2])); buf.put_16(int(aux[3]))
-	buf.put_16(int(aux[4])); buf.put_16(int(aux[5]))
-	buf.put_u8(1 if int(aux[6]) != 0 else 0)
-	buf.put_u8(0)
+	for i in range(1, 13):
+		buf.put_16(int(aux[i]))
+	for pointer_index in range(AUX_POINTER_COUNT):
+		var base := 13 + pointer_index * 3
+		buf.put_16(int(aux[base]))
+		buf.put_16(int(aux[base + 1]))
+		buf.put_u8(1 if int(aux[base + 2]) != 0 else 0)
 
 
 func _get_aux(buf: StreamPeerBuffer) -> Array:
-	var flags := buf.get_u8()
-	var sx := buf.get_16()
-	var sy := buf.get_16()
-	var sz := buf.get_16()
-	var px := buf.get_16()
-	var py := buf.get_16()
-	var pressed := buf.get_u8()
-	buf.get_u8()
-	return [flags, sx, sy, sz, px, py, pressed]
+	var out := _aux_default()
+	out[0] = buf.get_u8()
+	for i in range(1, 13):
+		out[i] = buf.get_16()
+	for pointer_index in range(AUX_POINTER_COUNT):
+		var base := 13 + pointer_index * 3
+		out[base] = buf.get_16()
+		out[base + 1] = buf.get_16()
+		out[base + 2] = buf.get_u8()
+	return out
 
 
 ## Key-event wire block (KEY_SLOTS x 4 bytes): u16 keycode|down<<15... packed

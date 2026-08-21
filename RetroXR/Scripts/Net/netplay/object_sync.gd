@@ -114,6 +114,17 @@ func node_for_id(net_id: int) -> Node:
 	return node if is_instance_valid(node) else null
 
 
+## Peer currently holding this replicated object: host=1, remote peer id, or 0.
+## Used when a netplay session assigns its initial port owners.
+func holder_peer(node: Object) -> int:
+	if node == null or not is_instance_valid(node):
+		return 0
+	var net_id := id_of(node as Node)
+	if net_id >= 0 and _remote_held.has(net_id):
+		return int(_remote_held[net_id])
+	return 1 if _is_hand_held(node as Node) else 0
+
+
 # ── Session lifecycle (called by NetworkManager) ──────────────────────────────
 
 ## Called whenever the world is (re)ready: session start and after scene changes.
@@ -808,14 +819,14 @@ func _held_pose(net_id: int, pos: Vector3, quat: Quaternion) -> void:
 ## Host: a pickable's grab authority just moved to `peer_id`. If it's a controller
 ## plugged into a live netplay port, hand that port to the new holder (pass-me).
 func _maybe_handoff_port(node: Node, peer_id: int) -> void:
-	if _nm.is_host() and node is RetroController and _nm.has_method("netplay_handoff"):
+	if _nm.is_host() and _is_port_peripheral(node) and _nm.has_method("netplay_handoff"):
 		_nm.netplay_handoff(node, peer_id)
 
 
 ## Host: a controller was dropped and nobody else holds it — release its netplay
 ## port to unowned (owner 0), so it goes neutral and any player can grab it next.
 func _maybe_release_port(node: Node) -> void:
-	if _nm.is_host() and node is RetroController and _nm.has_method("netplay_handoff"):
+	if _nm.is_host() and _is_port_peripheral(node) and _nm.has_method("netplay_handoff"):
 		_nm.netplay_handoff(node, 0)
 
 
@@ -848,6 +859,7 @@ func report_event(kind: int, args: Dictionary) -> void:
 		return
 	var wire := _encode_args(args)
 	if _nm.is_host():
+		_update_port_owner(kind, args, 1)
 		_event_apply.rpc(kind, wire)
 	else:
 		_event_req.rpc_id(1, kind, wire)
@@ -859,6 +871,7 @@ func _event_req(kind: int, wire: Dictionary) -> void:
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	_apply_event(kind, wire)
+	_update_port_owner(kind, _decode_args(wire), sender)
 	# Relay to everyone except the originator (who already has the state).
 	for id: int in _nm.peers:
 		if id != 1 and id != sender:
@@ -868,6 +881,15 @@ func _event_req(kind: int, wire: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable", 0)
 func _event_apply(kind: int, wire: Dictionary) -> void:
 	_apply_event(kind, wire)
+
+
+func _update_port_owner(kind: int, args: Dictionary, peer_id: int) -> void:
+	if not _nm.is_host() or not _nm.has_method("netplay_handoff_port"):
+		return
+	if kind == EV_PORT_PLUG and _valid(args, ["sys", "ctrl"]):
+		_nm.netplay_handoff_port(args["sys"], int(args.get("port", 0)), peer_id)
+	elif kind == EV_PORT_UNPLUG and _valid(args, ["sys"]):
+		_nm.netplay_handoff_port(args["sys"], int(args.get("port", 0)), 0)
 
 
 func _apply_event(kind: int, wire: Dictionary) -> void:
@@ -1583,3 +1605,7 @@ func _is_hand_held(node: Node) -> bool:
 	if not node.has_method("is_picked_up") or not node.call("is_picked_up"):
 		return false
 	return not _is_zone_snapped(node)
+
+
+func _is_port_peripheral(node: Node) -> bool:
+	return "_connected_system" in node and "_port_index" in node
