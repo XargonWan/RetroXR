@@ -44,6 +44,8 @@ jobs:
 
       - name: Read and check the preset versions
         id: v
+        env:
+          CHECK_RELEASE_VERSION: ${{ github.ref_type == 'tag' || inputs.publish }}
         run: |
           set -euo pipefail
           cfg=RetroXR/export_presets.cfg
@@ -68,17 +70,20 @@ jobs:
               echo "::error::tag $GITHUB_REF_NAME does not match version/name=$name"; exit 1; }
           fi
 
-          # SideQuest refuses any build whose versionCode is not higher than the
-          # one already listed, so a stale code is a wasted release.
-          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-          if [ -n "$prev" ]; then
-            # export_presets.cfg only became tracked in 7785958, so it is absent
-            # from v0.2.0 and earlier; a missing file just skips the comparison.
-            prev_code=$(git show "$prev:$cfg" 2>/dev/null | sed -n 's/^version\/code=\([0-9]*\)$/\1/p' | head -1 || true)
-            echo "previous tag $prev had code=${prev_code:-<not tracked>}"
-            if [ -n "$prev_code" ] && [ "$code" -le "$prev_code" ]; then
-              echo "::error::version/code=$code is not greater than $prev_code (tag $prev) - SideQuest would reject it"
-              exit 1
+          # SideQuest refuses a published build whose versionCode is not higher
+          # than the one already listed. Non-publishing workflow_dispatch runs
+          # deliberately rebuild the current version and must remain testable.
+          if [ "$CHECK_RELEASE_VERSION" = true ]; then
+            prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+            if [ -n "$prev" ]; then
+              # export_presets.cfg only became tracked in 7785958, so it is absent
+              # from v0.2.0 and earlier; a missing file skips the comparison.
+              prev_code=$(git show "$prev:$cfg" 2>/dev/null | sed -n 's/^version\/code=\([0-9]*\)$/\1/p' | head -1 || true)
+              echo "previous tag $prev had code=${prev_code:-<not tracked>}"
+              if [ -n "$prev_code" ] && [ "$code" -le "$prev_code" ]; then
+                echo "::error::version/code=$code is not greater than $prev_code (tag $prev) - SideQuest would reject it"
+                exit 1
+              fi
             fi
           fi
 
