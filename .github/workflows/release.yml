@@ -52,10 +52,15 @@ jobs:
           [ -n "$name" ] && [ -n "$code" ] || { echo "::error::could not parse version/name+code from $cfg"; exit 1; }
           echo "preset: name=$name code=$code"
 
-          # custom_features pairs with a run/main_scene.<tag> override and would
-          # reroute the boot scene for every APK exported from the tree.
-          if grep -q '^custom_features="..*"' "$cfg"; then
-            echo "::error::custom_features is set in $cfg - it must be empty"; exit 1
+          # custom_features pairs with a run/main_scene.<tag> override. Check
+          # the shipping Quest preset specifically: separate probe presets are
+          # expected to select their own tagged entry points.
+          quest_features=$(awk '
+            $0 == "name=\"Quest\"" { quest = 1; next }
+            quest && /^custom_features=/ { print; exit }
+          ' "$cfg")
+          if [ "$quest_features" != 'custom_features=""' ]; then
+            echo "::error::Quest custom_features must be empty (found: ${quest_features:-missing})"; exit 1
           fi
 
           if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
