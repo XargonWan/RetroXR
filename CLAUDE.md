@@ -186,7 +186,8 @@ that checks itself, runs unattended with no ROM, core, headset or device, and **
 non-zero on failure**, so it can gate a commit. Among them — the A/V suite in §2c, the
 RomM and scene-management ones below, `system_tests` over the machine controller's
 port, pad, save and disc rules, `rope_tests` over what a cable does when it meets
-furniture, and `binding_tests` over which control map a platform resolves to.
+furniture, `binding_tests` over which control map a platform resolves to, and
+`netplay_tests` (§2f) over the whole lockstep stack, two NetworkManagers deep.
 Everything else is a probe and stays in `RetroXR/Tools/`, including
 the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe`,
 `vb_probe`, `nds_probe`, `handheld_probe`, `gl_video_probe`), a headset or a Quest
@@ -551,6 +552,63 @@ wire.
 out until a profile exists, so each machine needs a scripted name entry through
 an on-screen keyboard first, and the two routes drift apart. The Game Boy Color
 path is covered by the `_fast` ROMs instead.
+
+### 2f. Netplay — a suite, and the one thing it cannot cover
+
+`RetroXR/Tests/netplay_tests.tscn` is 155 cases over the whole lockstep stack,
+headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
+`identity/` (which core builds may play each other), `wire/` (every packed
+block's round trip), `owners/` (who supplies which port on which frame),
+`assemble/` (frame completion and pruning), `start/` (the asynchronous cold
+start), `lockstep/`, `desync/`, `join/`, `leave/`, `rollback/`.
+
+```bash
+"$godot" --headless --path RetroXR res://Tests/netplay_tests.tscn
+"$godot" --headless --path RetroXR res://Tests/netplay_tests.tscn -- --only=start
+```
+
+**It runs two — for the join cases, three — complete NetworkManagers in ONE
+process**, each under its own `SceneMultiplayer`, over real loopback ENet. Do
+not reach for two OS processes instead: the RPCs, channels, serialization and
+handshake are already the real ones, and one process keeps the run deterministic
+and headless. It replaced `Tools/netplay_session_probe.tscn`, which was the same
+idea at a quarter of the coverage.
+
+What no suite here can cover is a real core's arithmetic. That is
+`Tools/netplay_spike.gd`, and it now has a **cross-machine leg**, which is the
+only thing that tests the one payload lockstep actually puts on the wire — a
+savestate, shipped for a late join or a desync resync:
+
+```bash
+machine 1:  ... res://Tools/netplay_spike.tscn -- --spike-state-out=Z:/np.bin
+machine 2:  ... res://Tools/netplay_spike.tscn -- --spike-state-in=Z:/np.bin
+```
+
+Machine 1 writes its state, the frame, its core identity and its whole phase-A
+CRC table; machine 2 loads that state into ITS core and replays the same input
+timeline against machine 1's CRCs. Run it x86_64 → arm64 and back. Cold-start
+CRC determinism was verified across those two in 2026-07-06; a foreign savestate
+crossing between them was not, and a libretro state is a struct dump for most
+cores.
+
+**Cross-platform play is a build-identity problem before it is a determinism
+problem.** `core_download_manager.gd` points every platform at
+`nightly/<platform>/latest/`, so five separate builds are in play (win-x64,
+linux-x64, android-arm64, osx-arm64, osx-x64) cut at five different times from
+five different commits. Two Windows players who downloaded the same day are
+byte-identical; a Windows player and a Quest player essentially never are. The
+core FILE can therefore never be compared — what is compared is
+`Libretro.GetCoreIdentity()`, which the C++ publishes from the emulation thread
+once `retro_load_game` succeeds: `library_name`, `library_version`,
+`api_version`, `serialize_size`. fceumm puts its git hash in the version
+(`FCEUmm (SVN) 5cd4a43`), so nightly skew really is visible there.
+
+That dictionary is **empty until content has loaded and empty again after it
+stops**, which makes it the readiness test as well as the identity. That matters
+more than it sounds: `StartContent` spins the emulation thread and returns, so a
+core that is missing, refused or wedged fails ASYNCHRONOUSLY — a real fceumm
+took **34 frames** to come up in a probe here. Reporting a peer ready before
+then is reporting a peer with no core.
 
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
