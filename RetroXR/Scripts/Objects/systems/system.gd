@@ -2430,6 +2430,36 @@ func net_start_core(core: String, port_mask: int, start_frame: int, options: Dic
 	return _libretro
 
 
+## Every machine on this one's link bus, ITSELF FIRST, or just itself when
+## nothing is cabled to it.
+##
+## Netplay asks this because a link cable never crosses the network: the bus is
+## a process-wide singleton joining two cores in one process, so a cabled pair
+## is one session over two machines that every peer replicates, not two players'
+## machines talking to each other.
+##
+## Self first because index 0 anchors the session — it owns the frame clock and
+## the savestate. Only the host walks this; every other peer is told the answer,
+## so the order has to be stable within one process rather than across them.
+func net_link_group() -> Array:
+	var machines: Array = [self]
+	for node in find_children("*", "LinkPort", true, false):
+		var port := node as LinkPort
+		if port == null:
+			continue
+		var plug := port.seated_plug()
+		if plug == null:
+			continue
+		var cable := plug.get("cable") as LinkCable
+		if cable == null:
+			continue
+		for entry: Dictionary in cable.machines_on_wire():
+			var machine: Object = entry.get("machine")
+			if machine != null and not machines.has(machine):
+				machines.append(machine)
+	return machines
+
+
 ## Stop the local netplay core and clear the gate.
 func net_stop_core() -> void:
 	_libretro.SetNetplayMode(false, 1, 0)

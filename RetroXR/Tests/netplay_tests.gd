@@ -33,7 +33,7 @@ extends Node
 
 const NM_SCRIPT := preload("res://Scripts/Net/network_manager.gd")
 const GROUPS := ["cores", "identity", "wire", "owners", "assemble", "start",
-	"lockstep", "desync", "join", "leave", "rollback"]
+	"lockstep", "desync", "join", "leave", "rollback", "link"]
 const PORT := 42913
 
 ## What a real fceumm reports, near enough. The exact strings do not matter to
@@ -78,6 +78,8 @@ func _ready() -> void:
 		await _test_leave()
 	if _want("rollback"):
 		await _test_rollback()
+	if _want("link"):
+		await _test_link()
 
 	print("[test] %d cases, %s" % [_ran,
 		"PASS" if _fail == 0 else "%d FAILURE(S)" % _fail])
@@ -352,8 +354,12 @@ func _test_owners() -> void:
 	# The input seam. A participating port is swallowed whatever happens to it,
 	# because the gate is the only thing allowed to drive it.
 	np._set_owners({0: 1, 1: 9})
+	# The session addresses ports as machine * PORTS_PER_MACHINE + port, so it
+	# needs a group to look a machine up in, not just an anchor.
 	var sys := np._system
+	var grp := np._group
 	np._system = self
+	np._group = [self]
 	np._running = true
 	_ok(np.route(self, 0, {"btn": 5}), "owners/our own participating port is consumed")
 	_ok(np.route(self, 1, {"btn": 5}), "owners/so is a port another peer owns")
@@ -369,6 +375,7 @@ func _test_owners() -> void:
 
 	np._running = false
 	np._system = sys
+	np._group = grp
 	np.get_parent().queue_free()
 	await get_tree().process_frame
 
@@ -793,6 +800,92 @@ func _test_rollback() -> void:
 	_free(w)
 
 
+# ══ A cabled pair ═════════════════════════════════════════════════════════════
+# A link cable never crosses the network. LinkCoordinator is a process-wide
+# singleton joining two cores in the SAME process, so under netplay every peer
+# runs both machines and it is determinism, not a wire, that keeps the two
+# buses agreeing.
+#
+# Which means a cabled pair is one session over TWO machines, and the session
+# used to hold exactly one. The far machine was left out: on the host it ran
+# anyway (it is in the room), on a client it did not run at all, so the client's
+# gated core sat on a bus whose other end never published — and the coordinator
+# waits for a peer that is behind rather than guessing, with deliberately no
+# timeout. Host fine, client wedged, which is the worst shape a fault can have.
+
+func _test_link() -> void:
+	# The control. An uncabled machine is a group of one, and must stay one.
+	var w := await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running()),
+		"link/an uncabled machine starts on its own")
+	_eq(w.host_np.group_size(), 1, "link/and is a group of one")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	_free(w)
+
+	# The pair. Both peers must bring up BOTH machines, or the bus is asymmetric.
+	w = await _pair_cabled()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 4: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running()),
+		"link/a cabled pair starts")
+	_eq(w.host_np.group_size(), 2, "link/as a group of two")
+	_ok(w.host_far.started, "link/the host runs the far machine")
+	_ok(w.client_far.started, "link/and so does the client — the bus needs both ends")
+	_eq(w.client_far.started_core, "fceumm",
+		"link/the far machine runs the host's core too")
+
+	# Ports are per machine, so the second machine's pad is a different port
+	# from the first machine's pad, and both are in the same frame.
+	await _await_frames(120)
+	_ok(w.host_far.lib.GetFrameCount() > 0, "link/the far machine is actually running")
+	_ok(absi(w.host_far.lib.GetFrameCount() - w.client_far.lib.GetFrameCount()) <= 10,
+		"link/in step across peers, like the near one")
+	_ok(absi(w.host_sys.lib.GetFrameCount() - w.host_far.lib.GetFrameCount()) <= 10,
+		"link/and in step with the machine it is cabled to")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	_ok(w.host_far.stopped and w.client_far.stopped,
+		"link/stopping the session stops every machine in it")
+	_free(w)
+
+	# Seating a plug mid-game changes deterministic state on both cores, so it
+	# has to land on the SAME emulated frame everywhere — the same rule as a
+	# disc swap. Applying it the instant a hand moves forks the session.
+	w = await _pair_cabled()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 4: w.client_id}, 3, 0)
+	await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running())
+	await _await_frames(60)
+	# The HEAD of the bus is the core that gets the op — LinkConnectGroup is
+	# called on machine 0 with the others as arguments — so that is where the
+	# landing frame shows up, on each peer's own copy of it.
+	var applied: Array = []
+	w.host_sys.lib.link_applied = applied
+	var client_applied: Array = []
+	w.client_sys.lib.link_applied = client_applied
+	w.host_np.schedule_link_op(w.host_sys, 1, [0, 1], [0, 0])
+	_eq(applied.size(), 0, "link/a plug seated mid-game is not applied at once")
+	_ok(await _until(func() -> bool: return applied.size() > 0 and client_applied.size() > 0),
+		"link/it reaches every peer")
+	_eq(int(applied[0]) if applied.size() > 0 else -1,
+		int(client_applied[0]) if client_applied.size() > 0 else -2,
+		"link/and lands on the same frame on both")
+
+	# And a pull is the same decision in reverse.
+	applied.clear()
+	client_applied.clear()
+	w.host_np.schedule_link_op(w.host_sys, 0, [0], [0])
+	_eq(applied.size(), 0, "link/pulling a plug is not applied at once either")
+	_ok(await _until(func() -> bool: return applied.size() > 0 and client_applied.size() > 0),
+		"link/it too reaches every peer")
+	_eq(int(applied[0]) if applied.size() > 0 else -1,
+		int(client_applied[0]) if client_applied.size() > 0 else -2,
+		"link/on one agreed frame")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	_free(w)
+
+
 # ══ Mocks ═════════════════════════════════════════════════════════════════════
 
 ## The C++ frame gate, a deterministic RAM CRC, and a core identity that appears
@@ -820,6 +913,9 @@ class MockLib extends Node:
 	var desync := false
 	var loaded_state := false
 	var link_peers: Dictionary = {}
+	## Frames at which a scheduled link op landed on this core, appended in
+	## order. A case hands in its own array so it can watch a single window.
+	var link_applied: Array = []
 
 	var _count := 0
 	var _acc := 0
@@ -843,6 +939,15 @@ class MockLib extends Node:
 	func LinkPeerCount(port: int) -> int:
 		return int(link_peers.get(port, 0))
 
+	## Mirrors ScheduleDiscOp: the frontend hands the core an op and the frame
+	## it must land on, and the core applies it strictly before running that
+	## frame. Recording the frame is the whole point — two peers applying the
+	## same cable on different frames is a fork nothing downstream can see.
+	func ScheduleLinkOp(frame: int, _op: int, _peers: Array, _ports: PackedInt32Array) -> void:
+		link_pending[frame] = true
+
+	var link_pending: Dictionary = {}
+
 	func setup_gate(_mask: int, start_frame: int) -> void:
 		_enabled = true
 		_ticks = 0
@@ -861,6 +966,9 @@ class MockLib extends Node:
 	func PostNetplayInputs(frame: int, flat: PackedInt32Array) -> void:
 		if not _enabled or frame != _count:
 			return                  # the gate: only the expected next frame runs
+		if link_pending.has(frame):
+			link_pending.erase(frame)
+			link_applied.append(frame)
 		var h := frame
 		for v in flat:
 			h = (h * 1103515245 + int(v) + 12345) & 0x3FFFFFFF
@@ -893,6 +1001,10 @@ class MockSys extends Node:
 	var started := false
 	var stopped := false
 	var started_core := ""
+	## The machines on this one's link bus, itself included, or empty when the
+	## machine is not cabled to anything. This is the seam the session asks
+	## through, so a probe needs no cables and no room.
+	var link_group: Array = []
 
 	func _init() -> void:
 		lib = MockLib.new()
@@ -924,6 +1036,9 @@ class MockSys extends Node:
 	func net_set_sram(_path: String, _data: PackedByteArray) -> void:
 		pass
 
+	func net_link_group() -> Array:
+		return link_group
+
 
 ## A NetworkManager stand-in for the cases that need a session but no network.
 class StubNM extends Node:
@@ -945,6 +1060,10 @@ class Pair:
 	var host_np: NetplaySession
 	var client_np: NetplaySession
 	var client_id := -1
+	## The far end of a link cable, when the pair was built cabled. Each peer
+	## replicates BOTH machines, so there are two of these, one per branch.
+	var host_far: MockSys
+	var client_far: MockSys
 
 
 ## A session with a stub parent and no multiplayer peer, for the pure cases.
@@ -995,6 +1114,32 @@ func _pair() -> Pair:
 		_ok(false, "harness/the two peers never connected")
 		return p
 	p.client_id = _other_id(p.host_nm, 1)
+	return p
+
+
+## The same pair with a second machine cabled to the first on both peers. Every
+## peer replicates the whole bus, so each branch gets its own far machine, and
+## the session is told about it through net_link_group().
+func _pair_cabled() -> Pair:
+	var p := await _pair()
+	p.host_far = MockSys.new()
+	p.host_far.name = "Far"
+	p.host_nm.add_child(p.host_far)
+	p.client_far = MockSys.new()
+	p.client_far.name = "Far"
+	p.client_nm.add_child(p.client_far)
+	# Two machines with a lead between them: each names the whole bus, itself
+	# first, and the session takes the order from the machine it was started on.
+	p.host_sys.link_group = [p.host_sys, p.host_far]
+	p.host_far.link_group = [p.host_sys, p.host_far]
+	p.client_sys.link_group = [p.client_sys, p.client_far]
+	p.client_far.link_group = [p.client_sys, p.client_far]
+	# Both cores report themselves cabled, which is also what stops rollback.
+	for lib: MockLib in [p.host_sys.lib, p.host_far.lib, p.client_sys.lib, p.client_far.lib]:
+		lib.link_peers = {0: 2}
+	# Each branch resolves its own two machines by the group's net ids.
+	p.host_np.systems_override = {0: p.host_sys, 1: p.host_far}
+	p.client_np.systems_override = {0: p.client_sys, 1: p.client_far}
 	return p
 
 

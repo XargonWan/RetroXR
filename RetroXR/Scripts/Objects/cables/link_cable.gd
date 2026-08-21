@@ -57,7 +57,18 @@ func _resolve() -> void:
 	var wire: Array[Node3D] = []
 	var group := _machines_on_this_wire(wire)
 
-	if group.size() >= 2 and _bus_head(wire) == self:
+	if _bus_head(wire) == self and _netplay_owns(group):
+		# A lockstep game is running over these machines, so this decision is
+		# not this peer's to make alone. Seating or pulling a link plug changes
+		# deterministic state on both cores, and applying it the instant a hand
+		# moves lands it on a different emulated frame on every peer, which
+		# forks the session with nothing downstream able to see why. The host
+		# picks a frame ahead of the pipeline and every peer applies it there —
+		# the same rule a disc swap follows.
+		if NetworkManager.is_host():
+			NetworkManager.netplay_schedule_link(1 if group.size() >= 2 else 0,
+				group if group.size() >= 2 else _held_entries())
+	elif group.size() >= 2 and _bus_head(wire) == self:
 		_join(group)
 	else:
 		# Either there is nothing to join, or another lead on this wire is the
@@ -181,6 +192,15 @@ func _wake(wire: Array[Node3D]) -> void:
 ## The coordinator cannot do this walk itself, because a junction can never be an
 ## endpoint there. Working it out is the room's job precisely because the cables
 ## and their junctions are things in the room.
+## Every machine port on this lead's wire, as [{libretro, port, machine}].
+## Public because a machine needs to know its own bus before netplay can put
+## the whole of it into one session; the walk itself is the same one _resolve
+## does, and there must not be two of them.
+func machines_on_wire() -> Array[Dictionary]:
+	var cables: Array[Node3D] = []
+	return _machines_on_this_wire(cables)
+
+
 func _machines_on_this_wire(cables: Array[Node3D]) -> Array[Dictionary]:
 	var machines: Array[Dictionary] = []
 	cables.append(self)
@@ -229,6 +249,38 @@ func _visit(cable: Node3D, cables: Array[Node3D], seen: Dictionary) -> void:
 ## without one.
 func junction_port() -> LinkPort:
 	return get_node_or_null("Junction/LinkPort") as LinkPort
+
+
+## Whether a running lockstep game covers what this lead touches — the machines
+## it would join now, or the ones it is still holding when it is being pulled.
+##
+## Asked of every machine rather than one: a lead half in a session is a bus the
+## session cannot schedule, and joining it locally anyway is the fork this whole
+## path exists to avoid. The session refuses such an op too; this is the earlier
+## of the two guards and the one that keeps a client from applying it.
+func _netplay_owns(group: Array[Dictionary]) -> bool:
+	if not NetworkManager.netplay_running():
+		return false
+	var entries := group if group.size() >= 2 else _held_entries()
+	if entries.is_empty():
+		return false
+	for entry: Dictionary in entries:
+		if not NetworkManager.netplay_covers(entry.get("machine")):
+			return false
+	return true
+
+
+## What this lead is currently holding, in the same [{machine, port}] shape the
+## walk produces — the machines a PULL has to name, since by then the walk finds
+## nothing.
+func _held_entries() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for end: Dictionary in _linked:
+		var machine: Object = end.get("machine")
+		if machine == null:
+			continue
+		out.append({"machine": machine, "port": int(end.get("port", 0))})
+	return out
 
 
 func _join(group: Array[Dictionary]) -> void:

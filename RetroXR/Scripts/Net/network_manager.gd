@@ -268,6 +268,20 @@ func netplay_system() -> Object:
 	return _netplay._system if _netplay != null else null
 
 
+## True when a running netplay session covers `machine` — i.e. a cable seated on
+## it has to be scheduled onto an agreed frame rather than joined on the spot.
+func netplay_covers(machine: Object) -> bool:
+	return _netplay != null and _netplay.covers(machine)
+
+
+## Host: schedule a link-cable change for the running session. `entries` are
+## [{machine, port}, ...], head first. op 1 joins them as one bus, op 0 drops
+## the single named port.
+func netplay_schedule_link(op: int, entries: Array) -> void:
+	if _netplay != null and is_host():
+		_netplay.schedule_link_for(op, entries)
+
+
 ## Host: begin netplay for `system`. `owners` maps port -> peer_id (defaults to
 ## a sensible assignment across connected peers). rollback: -1 auto (core
 ## capability), 0 force lockstep, 1 force rollback. Returns false if not host,
@@ -287,14 +301,28 @@ func default_owners(system: Object) -> Dictionary:
 	var ids: Array = peers.keys()
 	ids.sort()
 	var owners := {}
+	# Over the whole bus, not just the machine the power button was pressed on:
+	# a cabled pair is one session over two machines, and a port is named by
+	# machine * PORTS_PER_MACHINE + port so both machines' pads fit in one frame.
+	var group: Array = [system]
+	if system != null and system.has_method("net_link_group"):
+		var bus: Array = system.net_link_group()
+		if bus.size() > 1:
+			group = bus
 	var plugged: Array = []
-	if system != null and "_port_controllers" in system:
-		var pc: Array = system.get("_port_controllers")
-		for i in range(pc.size()):
-			if pc[i] != null:
-				plugged.append(i)
-	if plugged.is_empty():
-		plugged = [0]   # at least port 0 participates
+	for m in range(group.size()):
+		var machine: Object = group[m]
+		var found := false
+		if machine != null and "_port_controllers" in machine:
+			var pc: Array = machine.get("_port_controllers")
+			for i in range(pc.size()):
+				if pc[i] != null:
+					plugged.append(m * NetplaySession.PORTS_PER_MACHINE + i)
+					found = true
+		if not found:
+			# Every machine on the wire needs at least one port in the frame, or
+			# its core is gated on inputs the assembler never asks anyone for.
+			plugged.append(m * NetplaySession.PORTS_PER_MACHINE)
 	for i in range(plugged.size()):
 		owners[plugged[i]] = ids[i % ids.size()]
 	return owners

@@ -555,12 +555,13 @@ path is covered by the `_fast` ROMs instead.
 
 ### 2f. Netplay — a suite, and the one thing it cannot cover
 
-`RetroXR/Tests/netplay_tests.tscn` is 164 cases over the whole lockstep stack,
+`RetroXR/Tests/netplay_tests.tscn` is 181 cases over the whole lockstep stack,
 headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
 `identity/` (which core builds may play each other), `wire/` (every packed
 block's round trip), `owners/` (who supplies which port on which frame),
 `assemble/` (frame completion and pruning), `start/` (the asynchronous cold
-start), `lockstep/`, `desync/`, `join/`, `leave/`, `rollback/`.
+start), `lockstep/`, `desync/`, `join/`, `leave/`, `rollback/`, `link/` (a
+cabled pair as one session).
 
 ```bash
 "$godot" --headless --path RetroXR res://Tests/netplay_tests.tscn
@@ -645,6 +646,52 @@ half that matters. And give Dolphin `--ident-leg=gated` and `--ident-leg=ungated
 in separate processes: both legs in one run means a restart, Dolphin is one of
 the cores that will not unwind, and the abandoned thread segfaults on the way
 out looking exactly like an identity crash.
+
+### 2g. Netplay over a link cable — one session, two machines
+
+**A link cable never crosses the network.** `LinkCoordinator` is a process-wide
+singleton joining two cores in the SAME process, so under netplay every peer
+replicates BOTH machines and it is determinism, not a wire, that keeps the two
+buses agreeing. A cabled pair is therefore ONE session over TWO machines, which
+is why `NetplaySession` holds a `_group` rather than a system.
+
+Ports are named `machine * PORTS_PER_MACHINE + port`, so both machines' pads fit
+in one assembled frame; each core is handed only its own 20-int block plus the
+group's shared aux and key blocks, which is exactly what the gate always got.
+Aux (tilt, touch) and keyboard belong to the GROUP, not per machine — one
+player's hands, one set of them — and ride with the port-0 owner of machine 0.
+A late join ships one savestate per machine and resumes only once every core has
+taken its own.
+
+Two things this had to get right, and both are the same rule:
+
+- **Every machine on the wire is in the session.** When it held one, the far end
+  was ungated on the host and not running at all on a client, so the client's
+  gated core sat on a bus whose other end never published — and the coordinator
+  waits for a peer that is behind rather than guessing, with deliberately no
+  timeout. Host fine, client wedged.
+- **A plug seated mid-game lands on ONE agreed frame.** `LinkCoordinator.hpp`
+  says so itself: the thing it cannot enforce is that Connect and Disconnect
+  happen on the same emulated frame on every peer, and that is the caller's job.
+  Nothing was doing it. Now `Wrapper::ScheduleLinkOp` / `ApplyScheduledLinkOps`
+  applies it on the emulation thread strictly before its frame, the disc-swap
+  path exactly, and `link_cable._resolve` hands the decision to the host instead
+  of joining on the spot whenever a hand moves.
+
+`RetroXR/Tools/netplay_link_probe.tscn` is the real-core half — two gambatte
+Game Boys, the real bus, ROMs from `Tools/gen_gblink_rom.py`:
+
+```bash
+python Tools/gen_gblink_rom.py     # once, into RetroXR/Tools/gblink/
+"$godot" --headless --path RetroXR res://Tools/netplay_link_probe.tscn
+```
+
+Its two legs pull opposite ways and both must hold. Fed on both machines, the
+pair runs and trades bytes (240 frames, 293/431 messages). Fed on only the near
+one — a client before the group existed — **the near core reaches frame 2 and
+stops dead.** That second leg is the reproduction, and a green there would mean
+the bus had stopped waiting, which is worse than the hang: a cabled netplay pair
+would desync instead of stalling.
 
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
