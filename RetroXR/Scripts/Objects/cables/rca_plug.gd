@@ -43,6 +43,83 @@ func _ready() -> void:
 	add_to_group(plug_group())
 	_derive_cable_anchor()
 	picked_up.connect(func(_p: Variant) -> void: PlugAim.aim(self))
+	dropped.connect(report_missed_socket)
+
+
+## Say why a released plug did not land anywhere.
+##
+## A snap zone that declines an object does nothing at all: no sound, no message,
+## no mark in the log. From the player's side a socket that will not take a lead
+## is indistinguishable from a socket that is full, one that is switched off, one
+## whose console has the wrong systemid, and one that was simply never quite in
+## range. That silence has now cost two evenings, once on a GameCube lead that a
+## Wii would not accept and once on the same lead again.
+##
+## So a release that seats nothing looks around and reports what it saw: every
+## socket within reach, whether it would have taken this plug, and how far away
+## it was. One line, only on a MISS.
+##
+## Called from BOTH release paths, which is the part that is easy to get wrong. A
+## hand emits `dropped`; a ray grab never does, because it is a parallel hold
+## mechanism that never calls let_go, so function_pickup calls this itself. Wired
+## to one of them only, the diagnostic is silent for exactly the player who most
+## needs it: the one on a desktop, holding the lead on the end of a beam.
+func report_missed_socket(_p: Variant = null) -> void:
+	if not is_inside_tree() or seated_port() != null:
+		return
+	# A snap zone can hold a plug without it being an RcaPort: a console's
+	# controller sockets are plain zones. Landing in one of those is not a miss.
+	for zone in XRToolsSnapZone.live_zones():
+		if zone.picked_up_object == self:
+			return
+
+	var reach := 0.25
+	var found: Array = []
+	for z in XRToolsSnapZone.live_zones():
+		if not is_instance_valid(z):
+			continue
+		var d: float = z.global_position.distance_to(global_position)
+		if d > reach:
+			continue
+		var why := "would take it"
+		if not z.enabled:
+			why = "switched off"
+		elif is_instance_valid(z.picked_up_object):
+			why = "already full, holding %s" % z.picked_up_object.name
+		elif not z.snap_require.is_empty() and not is_in_group(z.snap_require):
+			why = "wants a '%s', this plug is %s" % [z.snap_require, str(get_groups())]
+		elif z.snap_filter.is_valid() and not z.snap_filter.call(self):
+			why = "the machine refused this plug"
+		found.append({"d": d, "text": "%s on %s, %.0f mm: %s" % [
+			z.name, _owner_name(z), d * 1000.0, why]})
+	# Nearest first, because the nearest is the one being aimed at.
+	found.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return x["d"] < y["d"])
+	if found.is_empty():
+		print("[Plug] %s landed in nothing, and no socket was within %.0f mm" % [
+			name, reach * 1000.0])
+		return
+	# The nearest few, because past that it is a list of the furniture. Said out
+	# loud rather than trimmed quietly: a cap nobody mentions reads as "that was
+	# everything", which is the same silence this exists to break.
+	var shown := mini(found.size(), 4)
+	var lines: PackedStringArray = []
+	for i in range(shown):
+		lines.append(str((found[i] as Dictionary)["text"]))
+	var rest := "" if found.size() == shown else " (and %d further off)" % (found.size() - shown)
+	print("[Plug] %s landed in nothing. Sockets in reach: %s%s" % [
+		name, "; ".join(lines), rest])
+
+
+## Whose socket that is, so two handhelds in one room do not both report
+## "LinkPort". The machine if there is one, else whatever the socket hangs off.
+func _owner_name(zone: Node) -> String:
+	var at: Node = zone
+	while at != null:
+		if at.is_in_group("retro_system"):
+			return "%s (%s)" % [at.name, str(at.get("systemid"))]
+		at = at.get_parent()
+	var parent := zone.get_parent()
+	return parent.name if parent != null else "nothing"
 
 
 func _derive_cable_anchor() -> void:

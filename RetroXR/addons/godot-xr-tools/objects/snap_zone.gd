@@ -94,6 +94,15 @@ func _exit_tree() -> void:
 	_live_zones.erase(self)
 
 
+## LOCAL PATCH (RetroXR): every zone currently in the tree. A dropped object that
+## seated nowhere uses this to say which sockets were in reach and why each one
+## declined it, because a zone that refuses an object otherwise does nothing at
+## all and the silence is indistinguishable from a socket being full, switched
+## off, or simply not quite reached.
+static func live_zones() -> Array[XRToolsSnapZone]:
+	return _live_zones
+
+
 ## LOCAL PATCH (RetroXR): whether this zone would accept `obj` if dropped here
 ## right now (used by the held-object snap preview). Only zones with an explicit
 ## snap_require participate — generic catch-all zones don't preview.
