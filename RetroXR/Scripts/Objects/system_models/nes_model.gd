@@ -103,6 +103,7 @@ var _rf_channel: int = 3
 
 var _power_light_mesh: MeshInstance3D = null
 var _power_light_mats: Array[StandardMaterial3D] = []
+var _power_light_glow: OmniLight3D = null
 var _power_button: VRButton = null
 
 # Switch sounds, recorded off the real NES-001 with a contact mic on the shell
@@ -328,6 +329,20 @@ func _process(_delta: float) -> void:
 
 # --- power LED ------------------------------------------------------------------
 
+## How far in front of the lens face the light source sits. Level with the lens
+## the pool is a hard dot; a few millimetres out it spreads across the front
+## panel the way the real one bleeds into the plastic around it.
+const LED_STANDOFF := 0.006
+## Reach of the LED. Nothing more than a hand's width from the console notices it.
+const LED_RANGE := 0.05
+## Two orders of magnitude below a room lamp, because the panel it lights is six
+## millimetres away. Rendered in the bedroom at midday and at night: 0.012 turns
+## the front bezel into a torch and burns its core to white, 0.004 is lost in
+## daylight, 0.006 lays a small red pool on the bezel and the carpet at both.
+const LED_ENERGY := 0.006
+const LED_COLOR := Color(1.0, 0.09, 0.03)
+
+
 ## Give the LED an emissive material so it glows red when the console is on and
 ## reads as a dark unlit lens when off, instead of just toggling visibility.
 func _prep_power_light() -> void:
@@ -342,11 +357,47 @@ func _prep_power_light() -> void:
 		m.emission_energy_multiplier = 0.0
 		_power_light_mesh.set_surface_override_material(s, m)
 		_power_light_mats.append(m)
+	_build_power_glow()
+
+
+## A glowing lens is not the same as the LED lighting anything. This hangs a real
+## OmniLight3D just off the lens face, so a powered console lays a red pool on its
+## own front panel and on whatever it is standing on.
+##
+## Shadows are off (the "no_shadow" group, which QualityManager honours): the
+## source sits millimetres from the panel it lights, where a shadow map buys
+## nothing but acne, and a hallway of consoles would each want an atlas slot. The
+## distance fade drops it out entirely past 4.5 m for the same reason — a 50 mm
+## pool is a couple of pixels by then.
+func _build_power_glow() -> void:
+	_power_light_glow = OmniLight3D.new()
+	_power_light_glow.name = "PowerLightGlow"
+	_power_light_glow.add_to_group("no_shadow")
+	_power_light_glow.light_color = LED_COLOR
+	_power_light_glow.light_energy = LED_ENERGY
+	_power_light_glow.light_specular = 0.3
+	_power_light_glow.omni_range = LED_RANGE
+	_power_light_glow.omni_attenuation = 2.0
+	_power_light_glow.shadow_enabled = false
+	_power_light_glow.distance_fade_enabled = true
+	_power_light_glow.distance_fade_begin = 3.0
+	_power_light_glow.distance_fade_length = 1.5
+	_power_light_glow.visible = false
+	add_child(_power_light_glow)
+	# Measured off the lens rather than quoted from the asset: the shell is
+	# recentred on load, so the GLB's own coordinates are not this node's.
+	var to_model := global_transform.affine_inverse() * _power_light_mesh.global_transform
+	var lens := to_model * _power_light_mesh.get_aabb().get_center()
+	_power_light_glow.position = lens + Vector3(0.0, 0.0, LED_STANDOFF)
 
 
 func _set_power_light(on: bool) -> void:
 	for m in _power_light_mats:
 		m.emission_energy_multiplier = 3.0 if on else 0.0
+	if _power_light_glow != null:
+		# Hidden rather than dimmed to zero: an energy-0 light is still a light
+		# the renderer culls and binds per object.
+		_power_light_glow.visible = on
 
 
 func _model_aabb(inst: Node3D) -> AABB:
