@@ -156,6 +156,30 @@ func _test_identity() -> void:
 	_ok(msg.contains("13701") and msg.contains("13702"),
 		"identity/and the refusal gives both sizes")
 
+	# 0 is "not measured yet", not "zero bytes", and the difference decides
+	# whether netplay can start at all. A core cannot always be asked its
+	# savestate size before it has run a frame (Dolphin segfaults on the
+	# question), and under the gate NO peer has run one at cold start, because
+	# the gate is waiting on the readiness this check is part of. Treating an
+	# unmeasured size as a difference refuses every session on both platforms.
+	b = IDENT_A.duplicate()
+	b["serialize_size"] = 0
+	_ok(NetplaySession.identity_mismatch(a, b).is_empty(),
+		"identity/a size not measured yet is not a difference")
+	_ok(NetplaySession.identity_mismatch(b, a).is_empty(),
+		"identity/in either direction")
+	var both_unmeasured := IDENT_A.duplicate()
+	both_unmeasured["serialize_size"] = 0
+	_ok(NetplaySession.identity_mismatch(both_unmeasured, both_unmeasured.duplicate()).is_empty(),
+		"identity/nor when neither side has measured one")
+	# ...but the version check still has to bite through an unmeasured size,
+	# or "not measured" becomes a way to get past the whole check.
+	var unmeasured_other := IDENT_A.duplicate()
+	unmeasured_other["serialize_size"] = 0
+	unmeasured_other["library_version"] = "(SVN 2026-08-20)"
+	_ok(not NetplaySession.identity_mismatch(a, unmeasured_other).is_empty(),
+		"identity/an unmeasured size does not excuse a different build")
+
 	b = IDENT_A.duplicate()
 	b["api_version"] = 2
 	_ok(not NetplaySession.identity_mismatch(a, b).is_empty(),
@@ -479,6 +503,41 @@ func _test_start() -> void:
 		"start/and the reason names the savestate, not the version")
 	_free(w)
 
+	# READINESS MUST NOT COST A FRAME. The gate runs frame 0 only once inputs
+	# for it are posted, which happens only once every peer is ready, and being
+	# ready IS reporting an identity. A core that only identifies itself after
+	# running deadlocks that circle, and it is not a hypothetical: the identity
+	# was briefly published after the first retro_run (to keep Dolphin from
+	# being asked its savestate size before it had a machine to measure) and
+	# every real cold start hung until its deadline.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running()),
+		"start/a normal cold start completes")
+	_eq(w.host_sys.lib.frames_at_identity, 0,
+		"start/the host answered ready with no frame run")
+	_eq(w.client_sys.lib.frames_at_identity, 0,
+		"start/and so did the client")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	_free(w)
+
+	# The same thing from the other side: a core that WILL not identify itself
+	# until it has run must fail, not quietly half-start. If this one ever goes
+	# green, the gate has stopped gating.
+	w = await _pair()
+	w.client_sys.lib.identity_needs_frame = true
+	stops = []
+	w.host_np.session_stopped.connect(func(r: String) -> void: stops.append(r))
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	await _until(func() -> bool: return not w.client_np._await_core.is_empty())
+	w.client_np._await_deadline = Time.get_ticks_msec() + 150
+	_ok(await _until(func() -> bool: return stops.size() > 0),
+		"start/a core that identifies itself only after a frame cannot start")
+	_eq(w.client_sys.lib.GetFrameCount(), 0,
+		"start/because the gate never let it run one")
+	_free(w)
+
 	# A core that never comes up. StartContent succeeded, the node exists, and
 	# nothing will ever load — the deadline is the only thing between that and
 	# a peer that reports ready with no core behind it.
@@ -750,6 +809,14 @@ class MockLib extends Node:
 	## The real thing loads on another thread; 0 here is the lucky case, not the
 	## normal one.
 	var ready_after := 0
+	## Model a core that only reports itself once it has RUN a frame. The real
+	## Wrapper must never behave this way and the start/ group proves why: under
+	## the gate no frame runs until every peer is ready, and readiness is the
+	## identity, so the two wait on each other for ever.
+	var identity_needs_frame := false
+	## The frame count at the moment the identity first became available, so a
+	## case can assert a peer answered ready without its core having run.
+	var frames_at_identity := -1
 	var desync := false
 	var loaded_state := false
 	var link_peers: Dictionary = {}
@@ -758,6 +825,7 @@ class MockLib extends Node:
 	var _acc := 0
 	var _enabled := false
 	var _ticks := -1
+	var _start_frame := 0
 
 	func _process(_d: float) -> void:
 		if _ticks >= 0:
@@ -766,6 +834,10 @@ class MockLib extends Node:
 	func GetCoreIdentity() -> Dictionary:
 		if _ticks < 0 or _ticks < ready_after:
 			return {}
+		if identity_needs_frame and _count <= _start_frame:
+			return {}
+		if frames_at_identity < 0:
+			frames_at_identity = _count - _start_frame
 		return identity
 
 	func LinkPeerCount(port: int) -> int:
@@ -775,6 +847,8 @@ class MockLib extends Node:
 		_enabled = true
 		_ticks = 0
 		_count = start_frame
+		_start_frame = start_frame
+		frames_at_identity = -1
 		_acc = start_frame          # deterministic seed, identical across peers
 
 	func stop() -> void:

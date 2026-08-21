@@ -555,7 +555,7 @@ path is covered by the `_fast` ROMs instead.
 
 ### 2f. Netplay — a suite, and the one thing it cannot cover
 
-`RetroXR/Tests/netplay_tests.tscn` is 155 cases over the whole lockstep stack,
+`RetroXR/Tests/netplay_tests.tscn` is 164 cases over the whole lockstep stack,
 headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
 `identity/` (which core builds may play each other), `wire/` (every packed
 block's round trip), `owners/` (who supplies which port on which frame),
@@ -609,6 +609,42 @@ more than it sounds: `StartContent` spins the emulation thread and returns, so a
 core that is missing, refused or wedged fails ASYNCHRONOUSLY — a real fceumm
 took **34 frames** to come up in a probe here. Reporting a peer ready before
 then is reporting a peer with no core.
+
+**The identity is published in two halves, at the two moments each half is safe
+at, and both constraints are load-bearing:**
+
+- `library_name`/`library_version`/`api_version` land **at load**. They were
+  read from `retro_get_system_info` during `Core::Load` and cost no call into
+  the core, so they are safe everywhere.
+- `serialize_size` lands **after the first `retro_run`**, and is 0 until then.
+  Dolphin answers `retro_serialize_size` by marshalling onto its CPU thread and
+  walking every subsystem, so asking at load segfaults it on a machine that does
+  not exist yet — and because the publish sat on the unconditional load path,
+  that broke every Dolphin boot, not just netplay.
+
+It cannot simply move to after the first frame either: **the netplay gate does
+not run frame 0 until every peer reports ready, and readiness is this dictionary
+being non-empty.** Requiring a frame deadlocks every cold start — measured, the
+identity never arrived in 2888 ticks — and the symptom is a 10 s timeout saying
+"core did not come up". So a reader comparing sizes across peers must treat 0 as
+"not measured yet" rather than as a difference; at cold start both peers are
+usually 0 and the version comparison carries the weight.
+
+`RetroXR/Tools/core_identity_probe.tscn` is the guard for all of that, and it
+needs a real core so it stays a probe. It runs the same core twice, gated (a
+netplay cold start: identity must arrive with ZERO frames run) and ungated (the
+size must really get measured), and exits non-zero.
+
+```bash
+"$godot" --headless --path RetroXR res://Tools/core_identity_probe.tscn -- \
+  --ident-core=fceumm "--ident-rom=$HOME/retroxr/roms/nes/rom.nes"
+```
+
+**Run it against dolphin, not just a quick NES core** — fceumm cannot fail the
+half that matters. And give Dolphin `--ident-leg=gated` and `--ident-leg=ungated`
+in separate processes: both legs in one run means a restart, Dolphin is one of
+the cores that will not unwind, and the abandoned thread segfaults on the way
+out looking exactly like an identity crash.
 
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits

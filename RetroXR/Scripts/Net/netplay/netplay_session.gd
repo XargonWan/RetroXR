@@ -347,9 +347,18 @@ static func identity_mismatch(want: Dictionary, got: Dictionary) -> String:
 	# A late join and every desync resync ship the host's serialized state for
 	# this peer to load. Different sizes means that transfer cannot work, and
 	# the symptom would be a failed join rather than anything naming the cause.
-	if int(want.get("serialize_size", 0)) != int(got.get("serialize_size", 0)):
-		return "savestate size mismatch: host %d bytes, you %d" % [
-			int(want.get("serialize_size", 0)), int(got.get("serialize_size", 0))]
+	#
+	# 0 is "not measured yet", not "zero bytes". A core cannot always be asked
+	# its savestate size before it has run a frame — Dolphin segfaults on the
+	# question — and under the netplay gate no peer has run one yet at cold
+	# start, because the gate is waiting for the readiness this check is part
+	# of. So at cold start both sides are usually 0 and the version comparison
+	# above carries the weight; by the time a resync ships a state, the peers
+	# have been running frames and this is a real comparison.
+	var want_size := int(want.get("serialize_size", 0))
+	var got_size := int(got.get("serialize_size", 0))
+	if want_size > 0 and got_size > 0 and want_size != got_size:
+		return "savestate size mismatch: host %d bytes, you %d" % [want_size, got_size]
 	if int(want.get("api_version", 0)) != int(got.get("api_version", 0)):
 		return "libretro API mismatch: host %d, you %d" % [
 			int(want.get("api_version", 0)), int(got.get("api_version", 0))]
