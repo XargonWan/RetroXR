@@ -38,6 +38,10 @@ func plug_group() -> String:
 	return "gc_link_plug"
 
 
+func plug_label() -> String:
+	return "a GameCube controller plug"
+
+
 func _ready() -> void:
 	super._ready()
 	# In BOTH groups: its own, so the cable's own bookkeeping can find it and so

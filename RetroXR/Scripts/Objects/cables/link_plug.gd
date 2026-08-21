@@ -17,3 +17,7 @@ extends RcaPlug
 
 func plug_group() -> String:
 	return "link_plug"
+
+
+func plug_label() -> String:
+	return "a Game Boy Advance link plug"

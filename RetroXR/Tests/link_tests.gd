@@ -41,6 +41,7 @@ func _ready() -> void:
 	await _test_the_lead_will_seat()
 	await _test_a_seated_plug_sits_outside()
 	await _test_a_machine_takes_a_plug_the_same_way()
+	await _test_each_end_says_what_it_is()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -815,4 +816,50 @@ func _test_a_machine_takes_a_plug_the_same_way() -> void:
 
 	handheld.queue_free()
 	lead.queue_free()
+	await get_tree().process_frame
+
+
+# -- Telling the two ends apart -----------------------------------------------
+# The one thing a two-ended lead has to be able to say. A socket that declines a
+# plug is silent, so a player holding the wrong end of this cable gets no signal
+# at all, and both ends of it were reached for wrongly in one evening. Each plug
+# names itself, and a release that lands nowhere says which end it is and where
+# the socket that takes it actually is.
+
+func _test_each_end_says_what_it_is() -> void:
+	var lead: Node3D = load(GC_GBA_SCENE).instantiate()
+	var pair: Node3D = load(CABLE_SCENE).instantiate()
+	add_child(lead)
+	add_child(pair)
+	await get_tree().process_frame
+
+	var console_end := lead.get_node_or_null("PlugA0") as RcaPlug
+	var handheld_end := lead.get_node_or_null("PlugB0") as RcaPlug
+	var link_end := pair.get_node_or_null("PlugA0") as RcaPlug
+	_ok("both ends of the console lead are there",
+		console_end != null and handheld_end != null and link_end != null)
+	if console_end == null or handheld_end == null or link_end == null:
+		lead.queue_free()
+		pair.queue_free()
+		return
+
+	_ok("the console end names itself", console_end.plug_label().contains("GameCube"),
+		console_end.plug_label())
+	_ok("the handheld end names itself",
+		handheld_end.plug_label().contains("Game Boy Advance"), handheld_end.plug_label())
+	# The point of the labels: a player who cannot tell the ends apart by shape
+	# can tell them apart by what the room calls them.
+	_ok("and the two ends are not called the same thing",
+		console_end.plug_label() != handheld_end.plug_label())
+	# The handheld end of a console lead and a plain link lead's end are the same
+	# connector, so they must be called the same thing. Calling them differently
+	# would be a distinction the hardware does not make.
+	_ok("a link lead's end is the same connector as the console lead's handheld end",
+		handheld_end.plug_label() == link_end.plug_label())
+	# Every plug has to answer this, not just the ones added for the console
+	# lead: the message that uses it is on RcaPlug and runs for all of them.
+	_ok("and the base connector has a name too", not RcaPlug.new().plug_label().is_empty())
+
+	lead.queue_free()
+	pair.queue_free()
 	await get_tree().process_frame

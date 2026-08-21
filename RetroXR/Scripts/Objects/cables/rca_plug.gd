@@ -38,6 +38,17 @@ func plug_group() -> String:
 	return "composite_plug"
 
 
+## What to call this connector when telling a player where it goes.
+##
+## Overridden alongside plug_group, because the two say the same thing to
+## different audiences: one names the group a socket filters on, the other names
+## the thing a person is holding. A lead whose two ends fit different sockets is
+## unusable without this -- the GameCube lead was reached for by the wrong end
+## twice in one evening, and nothing in the room was in a position to say so.
+func plug_label() -> String:
+	return "a phono plug"
+
+
 func _ready() -> void:
 	super._ready()
 	add_to_group(plug_group())
@@ -73,6 +84,29 @@ func report_missed_socket(_p: Variant = null) -> void:
 		if zone.picked_up_object == self:
 			return
 
+	# What this plug IS, and where the nearest thing that takes one is, wherever
+	# that is in the room. This is the half that was missing and it is the half
+	# that answers the question: a player holding the wrong end of a two-ended
+	# lead learns nothing from being told the socket in front of them wants
+	# something else. They want to know which end they are holding and where it
+	# goes.
+	var fits: XRToolsSnapZone = null
+	var fits_at := INF
+	for z in XRToolsSnapZone.live_zones():
+		if not is_instance_valid(z) or not z.can_preview(self):
+			continue
+		var away: float = z.global_position.distance_to(global_position)
+		if away < fits_at:
+			fits_at = away
+			fits = z
+	var goes: String
+	if fits == null:
+		goes = "It is %s, and nothing in this room takes one." % plug_label()
+	else:
+		goes = "It is %s; the nearest socket that takes one is %s on %s, %s away." % [
+			plug_label(), fits.name, _owner_name(fits),
+			"%.0f mm" % (fits_at * 1000.0) if fits_at < 1.0 else "%.1f m" % fits_at]
+
 	var reach := 0.25
 	var found: Array = []
 	for z in XRToolsSnapZone.live_zones():
@@ -95,8 +129,8 @@ func report_missed_socket(_p: Variant = null) -> void:
 	# Nearest first, because the nearest is the one being aimed at.
 	found.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return x["d"] < y["d"])
 	if found.is_empty():
-		print("[Plug] %s landed in nothing, and no socket was within %.0f mm" % [
-			name, reach * 1000.0])
+		print("[Plug] %s landed in nothing. %s No socket at all was within %.0f mm." % [
+			name, goes, reach * 1000.0])
 		return
 	# The nearest few, because past that it is a list of the furniture. Said out
 	# loud rather than trimmed quietly: a cap nobody mentions reads as "that was
@@ -106,8 +140,8 @@ func report_missed_socket(_p: Variant = null) -> void:
 	for i in range(shown):
 		lines.append(str((found[i] as Dictionary)["text"]))
 	var rest := "" if found.size() == shown else " (and %d further off)" % (found.size() - shown)
-	print("[Plug] %s landed in nothing. Sockets in reach: %s%s" % [
-		name, "; ".join(lines), rest])
+	print("[Plug] %s landed in nothing. %s Sockets in reach: %s%s" % [
+		name, goes, "; ".join(lines), rest])
 
 
 ## Whose socket that is, so two handhelds in one room do not both report

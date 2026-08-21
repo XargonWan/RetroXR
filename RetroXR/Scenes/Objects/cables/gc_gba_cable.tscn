@@ -23,19 +23,29 @@
 ; the two lines it costs.
 
 ; ── The GameCube end ──────────────────────────────────────────────────────────
-; A wide, shallow shell, roughly 44 x 12 x 26 mm, that lies flat against the
-; console's front panel with its latches either side.
+; SQUARE and chunky, roughly 20 x 15 x 24 mm, with one latch on top.
+;
+; It was a 44 x 12 x 26 slab, and that was the whole of why this lead could not
+; be used. Two ends that fit different sockets have to be told apart by LOOKING
+; at them, and 44 mm is more than twice the real connector: it read as the wide
+; flat one, which is the Game Boy Advance's shape, not the console's. So the lead
+; was reached for by the wrong end, at both ends, all evening -- and a snap zone
+; that declines a plug does nothing at all, so the room never said a word.
+;
+; The two ends now differ the way the real pair does: this one is deeper than it
+; is wide and stands proud, the handheld's is slim and flat.
 [sub_resource type="BoxMesh" id="BoxMesh_gcbody"]
-size = Vector3(0.044, 0.012, 0.026)
+size = Vector3(0.02, 0.015, 0.024)
 
 [sub_resource type="StandardMaterial3D" id="Mat_gcshell"]
 albedo_color = Color(0.78, 0.78, 0.79, 1)
 roughness = 0.55
 
-; The two purple tabs that squeeze to release it. Small, and the only colour on
-; this end, which is exactly how you pick the connector out of a photograph.
+; The latch that squeezes to release it, on top where the real one is. The only
+; colour on this end, which is exactly how you pick the connector out of a
+; photograph, and now also how you tell this end from the other one at a glance.
 [sub_resource type="BoxMesh" id="BoxMesh_gctab"]
-size = Vector3(0.005, 0.009, 0.012)
+size = Vector3(0.011, 0.004, 0.013)
 
 [sub_resource type="StandardMaterial3D" id="Mat_gctab"]
 albedo_color = Color(0.33, 0.22, 0.55, 1)
@@ -43,14 +53,14 @@ roughness = 0.5
 
 ; The dark recess with the pins in it, on the face that meets the console.
 [sub_resource type="BoxMesh" id="BoxMesh_gcmouth"]
-size = Vector3(0.014, 0.006, 0.003)
+size = Vector3(0.012, 0.007, 0.003)
 
 [sub_resource type="StandardMaterial3D" id="Mat_dark"]
 albedo_color = Color(0.06, 0.06, 0.07, 1)
 roughness = 0.8
 
 [sub_resource type="BoxShape3D" id="Shape_gcplug"]
-size = Vector3(0.044, 0.012, 0.026)
+size = Vector3(0.02, 0.015, 0.026)
 
 ; Laser target, deliberately larger than the shell: a beam from across the room
 ; has to be able to find it. Only the pointer answers this shape.
@@ -120,13 +130,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.013)
 mesh = SubResource("BoxMesh_gcbody")
 surface_material_override/0 = SubResource("Mat_gcshell")
 
-[node name="TabLeft" type="MeshInstance3D" parent="PlugA0"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0235, 0, -0.013)
-mesh = SubResource("BoxMesh_gctab")
-surface_material_override/0 = SubResource("Mat_gctab")
-
-[node name="TabRight" type="MeshInstance3D" parent="PlugA0"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0235, 0, -0.013)
+[node name="Latch" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0085, -0.011)
 mesh = SubResource("BoxMesh_gctab")
 surface_material_override/0 = SubResource("Mat_gctab")
 
