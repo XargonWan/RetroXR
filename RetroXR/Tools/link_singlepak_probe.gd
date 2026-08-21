@@ -259,8 +259,12 @@ func _run() -> void:
 ## player one, and LinkConnectGroup takes it from the machine the call is made
 ## on, so which machine that is decides the whole ordering.
 func _cable(cartridge_last: bool) -> bool:
-	var order: Array[Libretro] = _clients.duplicate() if cartridge_last else []
+	# Built up rather than picked with a ternary: an empty array literal in one
+	# branch of one is an untyped Array, and assigning that to a typed variable
+	# is a runtime error, which came out as the re-cable silently returning false.
+	var order: Array[Libretro] = []
 	if cartridge_last:
+		order.append_array(_clients)
 		order.append(_host)
 	else:
 		order.append(_host)
