@@ -94,6 +94,7 @@ func _ready() -> void:
 			# Host ended the game — treat a normal end as success on the client.
 			print("[live] session stopped: %s" % reason)
 			print("[live] RESULT=%s" % ("PASS" if reason == "finished" else "FAIL"))
+			await _settle()
 			get_tree().quit(0 if reason == "finished" else 1))
 	if _is_host:
 		NetworkManager.peer_registered.connect(_on_peer_registered)
@@ -148,6 +149,20 @@ func _process(_delta: float) -> void:
 		pass  # progress visible via [Netplay]/[live] lines
 	if _is_host and emu >= END_AT:
 		_finish(true)
+
+
+## Frames, not wall time, between the core stopping and quitting.
+##
+## A GDExtension AudioStreamPlayback still held by the AudioServer at quit is
+## destroyed AFTER its class record has been unregistered, which segfaults the
+## exit with everything already printed and no crash dump. The server only hands
+## a stopped playback back in AudioServer::update() on the main thread, so what
+## it needs is main-loop iterations before quit() — quitting straight out of the
+## session_stopped handler is the worst possible moment for it, and it made this
+## probe exit 139 on a run that had otherwise passed cleanly.
+func _settle() -> void:
+	for _i in range(60):
+		await get_tree().process_frame
 
 
 func _finish(ok: bool) -> void:
