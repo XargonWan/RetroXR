@@ -21,6 +21,10 @@ var _last_motion_range := -1
 
 
 func _ready() -> void:
+	# This script owns visibility: XRNode3D's built-in tracking visibility is
+	# updated from pose_changed and can turn the hand back on after our _process
+	# hides it while holding an object, producing a one-frame grip flash.
+	show_when_tracked = false
 	_controller = get_node_or_null(controller_path) as XRController3D
 	_mesh = get_node_or_null("OpenXRFbHandTrackingMesh")
 	if _controller != null and _controller.has_method("register_capsense_hand"):

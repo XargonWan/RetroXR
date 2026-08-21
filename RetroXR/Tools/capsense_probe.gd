@@ -35,6 +35,8 @@ func _run() -> void:
 		AppPrefs.XRDisplayMode.BOTH) == AppPrefs.XRDisplayMode.BOTH,
 		"an invalid saved display mode keeps the default")
 	_build_rig()
+	_check(not _hand.show_when_tracked,
+		"Capsense owns visibility instead of XRNode3D tracking updates")
 	_set_tracking(true, XRHandTracker.HAND_TRACKING_SOURCE_CONTROLLER)
 	await _frames(5)
 
@@ -133,6 +135,9 @@ func _build_rig() -> void:
 	_hand = CapsenseHand.new()
 	_hand.name = "CapsenseHand"
 	_hand.tracker = &"/user/hand_tracker/left"
+	# Reproduce the scene misconfiguration that caused pose_changed to briefly
+	# resurrect a hand hidden by CapsenseHand while an object was held.
+	_hand.show_when_tracked = true
 	_hand.controller_path = NodePath("../Controller")
 	_origin.add_child(_hand)
 	_hand.set_mesh_ready_override(true)
