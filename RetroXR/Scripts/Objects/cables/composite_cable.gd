@@ -475,15 +475,49 @@ func seating() -> Array[Dictionary]:
 		# put three netplay events on the wire for one hand movement.
 		for c in (1 if _shared[e] else _cords):
 			var plug: RcaPlug = _plugs[e][c]
-			var port := plug.seated_port()
+			var where := _seat_of(plug)
 			out.append({
 				"plug": plug,
 				"end": int(e),
 				"cord": c,
-				"device": port.get_device() if port != null else null,
-				"port": String(port.name) if port != null else "",
+				"device": where.get("owner"),
+				"port": where.get("port", ""),
 			})
 	return out
+
+
+## Where a plug is sitting, as an OWNER node and a socket name under it.
+##
+## Not "the device and its RcaPort", which is what this used to be and what left
+## two kinds of socket unrestorable. A save records the pair, so a socket the
+## pair cannot describe is a socket a plug never comes back to, silently: the
+## lead reloads lying on the floor and nothing says why.
+##
+##   * A console's CONTROLLER socket is a plain snap zone, not an RcaPort, so
+##     seated_port() finds nothing at all. The plug is the only thing that knows,
+##     because RetroSystem tells it when it seats.
+##   * A lead's JUNCTION is a real RcaPort, but it belongs to a CABLE, and
+##     get_device() walks for a device. It answers get_cable() instead.
+##
+## Both come back as a node the save file can reference and a name to find under
+## it, which is all the restore ever needed.
+func _seat_of(plug: RcaPlug) -> Dictionary:
+	var port := plug.seated_port()
+	if port != null:
+		var owner_node: Node3D = port.get_device()
+		if owner_node == null and port.has_method("get_cable"):
+			owner_node = port.get_cable()
+		if owner_node != null:
+			return {"owner": owner_node, "port": String(port.name)}
+		return {}
+	if "seated_system" in plug and plug.seated_system != null 			and is_instance_valid(plug.seated_system) and plug.seated_port_index >= 0:
+		# Named by the convention RetroSystem's own scene uses for these zones
+		# (ControllerPort1..4, one-based). The plug is handed an index rather
+		# than the zone, so the name is rebuilt from it here; if that convention
+		# ever moves, this is the line that has to move with it.
+		return {"owner": plug.seated_system,
+			"port": "ControllerPort%d" % (plug.seated_port_index + 1)}
+	return {}
 
 
 ## The socket of that name on this device, wherever it sits underneath it.
@@ -498,13 +532,16 @@ func seating() -> Array[Dictionary]:
 ##
 ## The direct child is still tried first: it is the common case, and it keeps a
 ## model that happens to repeat a socket name from stealing the device's own.
-func _port_named(device: Node, port_name: String) -> RcaPort:
+## Typed as a SNAP ZONE rather than an RcaPort, because a console's controller
+## socket is one of those and nothing more. Everything done with the result here
+## is pick_up_object, which every zone answers.
+func _port_named(device: Node, port_name: String) -> XRToolsSnapZone:
 	if device == null or port_name.is_empty():
 		return null
-	var port := device.get_node_or_null(port_name) as RcaPort
+	var port := device.get_node_or_null(port_name) as XRToolsSnapZone
 	if port != null:
 		return port
-	return device.find_child(port_name, true, false) as RcaPort
+	return device.find_child(port_name, true, false) as XRToolsSnapZone
 
 
 ## Put the six ends back: seat the ones that name a socket, and drop the rest where

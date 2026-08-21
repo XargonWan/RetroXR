@@ -72,7 +72,17 @@ func _run() -> void:
 		return
 	print("[gcgba] iso  %s" % iso)
 
+	# --root= points this run at a PRIVATE core root, cores, system folders,
+	# options and all. Worth having because this probe writes to a root as well
+	# as reading from it (see _pin_options), and because more than one person can
+	# be building mGBA at a time: measuring a change of your own by dropping it
+	# into the shared cores folder overwrites whatever somebody else just put
+	# there, and the first sign of it is their build behaving strangely.
 	var root := CoreDownloadManager.default_core_root()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--root="):
+			root = arg.trim_prefix("--root=")
+			print("[gcgba] core root: %s" % root)
 	for pair: Array in [[GC_CORE, "dolphin_libretro.dll"], [GBA_CORE, "mgba_libretro.dll"]]:
 		if not FileAccess.file_exists(root.path_join("cores").path_join(pair[1])):
 			print("[gcgba] SKIP  %s is not installed" % pair[0])
@@ -183,8 +193,12 @@ func _run() -> void:
 			await _press(BTN_LEFT, _gbas)
 			await _press(BTN_A, _gbas)
 		_shot("b_step%02d" % step)
+		_sample_audio()
 		print("[gcgba] step%02d  sent=%s  peers=%s" % [step, str(_sent()), str(_peers())])
 	_shot("c_end")
+
+	print("[gcgba] audio sink floor per machine (%% of 100 ms held): %s" % str(_floor))
+	print("[gcgba] samples under 20%%: %s of %d" % [str(_dips), 110])
 
 	var moved := 0
 	var now := _sent()
@@ -355,6 +369,34 @@ func _check(name: String, cond: bool) -> void:
 ## A GameCube and a Game Boy Advance do not run at the same rate and a machine
 ## that has stalled must not hang the run, so this is a floor on progress rather
 ## than a barrier.
+## The audio sink's depth, sampled per machine.
+##
+## The number that decides whether the sound breaks up, and the only one that
+## measures the SYMPTOM rather than a cause. The sink holds 100 ms; a core whose
+## emulation thread is parked at a link rendezvous is not producing samples, so
+## every stall drains it and a stall longer than the sink is a hole in the
+## audio. Averages hide this completely: a run can spend 75% of itself blocked
+## in short stalls and never miss a sample, or stall once for 200 ms and crackle.
+var _floor: Array[int] = []
+var _dips: Array[int] = []
+
+
+func _sample_audio() -> void:
+	var all := _all()
+	if _floor.size() != all.size():
+		_floor.resize(all.size())
+		_dips.resize(all.size())
+		_floor.fill(100)
+		_dips.fill(0)
+	for i in range(all.size()):
+		var occ: int = int(all[i].GetAudioBufferOccupancy())
+		if occ < _floor[i]:
+			_floor[i] = occ
+		# Under a fifth of the sink is a machine within ~20 ms of silence.
+		if occ < 20:
+			_dips[i] += 1
+
+
 func _settle(frames: int) -> void:
 	var deadline: int = Time.get_ticks_msec() + 25000
 	var base: Array[int] = []

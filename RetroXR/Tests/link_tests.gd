@@ -42,6 +42,7 @@ func _ready() -> void:
 	await _test_a_seated_plug_sits_outside()
 	await _test_a_machine_takes_a_plug_the_same_way()
 	await _test_each_end_says_what_it_is()
+	await _test_every_socket_can_be_saved()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -862,4 +863,79 @@ func _test_each_end_says_what_it_is() -> void:
 
 	lead.queue_free()
 	pair.queue_free()
+	await get_tree().process_frame
+
+
+# -- Coming back to the socket you were left in ------------------------------
+# A save records where each end of a lead sits as an owner and a socket name. A
+# socket that pair cannot describe is a socket the plug never returns to, and it
+# fails silently: the room reloads with the lead on the floor and nothing says
+# why. Two of them could not be described, and both were found by a player
+# rather than by this suite.
+
+func _test_every_socket_can_be_saved() -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	var console: Node3D = sys_scene.instantiate()
+	console.systemid = "gamecube"
+	console.name = "GameCube"
+	add_child(console)
+	var handheld: Node3D = sys_scene.instantiate()
+	handheld.systemid = "game_boy_advance"
+	handheld.name = "Handheld"
+	add_child(handheld)
+	var lead: Node3D = load(GC_GBA_SCENE).instantiate()
+	add_child(lead)
+	var pair: LinkCable = load(CABLE_SCENE).instantiate()
+	add_child(pair)
+	var chained: LinkCable = load(CABLE_SCENE).instantiate()
+	add_child(chained)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# The console end, into a controller socket. A plain snap zone, so the plug
+	# is the only thing that knows where it went.
+	var port1 := console.get_node_or_null("ControllerPort1") as XRToolsSnapZone
+	var gc_end := lead.get_node_or_null("PlugA0") as RcaPlug
+	if port1 != null and gc_end != null:
+		port1.pick_up_object(gc_end)
+	# And a link lead into another lead's junction, which is an RcaPort but sits
+	# on a CABLE rather than on a machine.
+	var junction := pair.junction_port()
+	var chained_end := chained.get_node_or_null("PlugA0") as RcaPlug
+	if junction != null and chained_end != null:
+		junction.pick_up_object(chained_end)
+	await get_tree().process_frame
+
+	var console_seat := {}
+	for seat: Dictionary in lead.seating():
+		if seat.get("plug") == gc_end:
+			console_seat = seat
+	_ok("a controller socket can be described in a save",
+		console_seat.get("device") != null and not str(console_seat.get("port", "")).is_empty(),
+		"owner %s, port '%s'" % [str(console_seat.get("device")), str(console_seat.get("port", ""))])
+	_ok("and it names the console it is on", console_seat.get("device") == console)
+
+	var junction_seat := {}
+	for seat: Dictionary in chained.seating():
+		if seat.get("plug") == chained_end:
+			junction_seat = seat
+	_ok("a junction can be described in a save",
+		junction_seat.get("device") != null and not str(junction_seat.get("port", "")).is_empty(),
+		"owner %s, port '%s'" % [str(junction_seat.get("device")), str(junction_seat.get("port", ""))])
+	_ok("and it names the lead the junction is moulded into",
+		junction_seat.get("device") == pair)
+
+	# The round trip that matters: what was written has to find the socket again.
+	for spec in [[lead, console_seat], [chained, junction_seat]]:
+		var owner_node: Node = spec[1].get("device")
+		var pname: String = str(spec[1].get("port", ""))
+		var found: XRToolsSnapZone = (spec[0] as CompositeCable)._port_named(owner_node, pname)
+		_ok("and the saved pair finds that socket again on load", found != null,
+			"looked for '%s' under %s" % [pname, str(owner_node)])
+
+	console.queue_free()
+	handheld.queue_free()
+	lead.queue_free()
+	pair.queue_free()
+	chained.queue_free()
 	await get_tree().process_frame
