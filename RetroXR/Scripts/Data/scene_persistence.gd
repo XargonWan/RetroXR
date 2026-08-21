@@ -78,6 +78,7 @@ const WII_AV_CABLE_SCENE     := preload("res://Scenes/Objects/system_models/wii/
 const VGA_CABLE_SCENE        := preload("res://Scenes/Objects/cables/vga_cable.tscn")
 const TRS_CABLE_SCENE        := preload("res://Scenes/Objects/cables/trs_cable.tscn")
 const LINK_CABLE_SCENE       := preload("res://Scenes/Objects/cables/link_cable.tscn")
+const GB_LINK_CABLE_SCENE    := preload("res://Scenes/Objects/cables/gb_link_cable.tscn")
 const GC_GBA_CABLE_SCENE     := preload("res://Scenes/Objects/cables/gc_gba_cable.tscn")
 const PSX_LINK_CABLE_SCENE   := preload("res://Scenes/Objects/cables/psx_link_cable.tscn")
 const SPEAKER_PAIR_SCENE     := preload("res://Scenes/Objects/appliances/speaker_pair.tscn")
@@ -1539,6 +1540,8 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 					lead = TRS_CABLE_SCENE
 				elif kind == "link_cable":
 					lead = LINK_CABLE_SCENE
+				elif kind == "gb_link_cable":
+					lead = GB_LINK_CABLE_SCENE
 				elif kind == "gc_gba_cable":
 					lead = GC_GBA_CABLE_SCENE
 				elif kind == "psx_link_cable":

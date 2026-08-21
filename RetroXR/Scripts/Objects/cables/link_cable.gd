@@ -250,6 +250,20 @@ func _join(group: Array[Dictionary]) -> void:
 	_log_ends("joined", _linked)
 
 
+## Platforms that read their link once, on the way up.
+##
+## A Game Boy Advance samples SIOCNT's "all GBAs ready" bit while it boots and
+## caches the answer, so a lead pushed in afterwards reaches a machine that has
+## already decided it is alone.
+##
+## A Game Boy decides nothing. Its serial port is self-synchronising and a game
+## looks at it when the player asks to link, which is when the cable turns up in
+## real life: both Pokemon players are hours into a save by the time they walk
+## into the Cable Club. Resetting one there would throw the session away to
+## repair a fault it does not have.
+const SAMPLES_LINK_AT_BOOT: Array = ["game_boy_advance"]
+
+
 ## Power-cycle a machine that was already running when the cable arrived.
 ##
 ## A GBA reads whether anything is on the other end ONCE, while it boots, and
@@ -290,6 +304,12 @@ func _restart(members: Array[Dictionary]) -> void:
 	for end: Dictionary in members:
 		var lib: Libretro = end["libretro"]
 		if not is_instance_valid(lib):
+			continue
+		var machine_node: Node = end["machine"]
+		var systemid: String = ""
+		if machine_node != null and is_instance_valid(machine_node):
+			systemid = str(machine_node.get("systemid"))
+		if not SAMPLES_LINK_AT_BOOT.has(systemid):
 			continue
 		var seat: int = int(end.get("seat", NO_SEAT))
 		var had: int = int(end.get("live_seat", NO_SEAT))

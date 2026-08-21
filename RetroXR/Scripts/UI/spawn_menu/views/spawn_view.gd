@@ -420,6 +420,7 @@ func _build() -> void:
 		["VGA Cable",       "vga_cable"],
 		["3.5 mm Cable",   "trs_cable"],
 		["Link Cable",     "link_cable"],
+		["GB Link Cable",  "gb_link_cable"],
 		["GC-GBA Cable",   "gc_gba_cable"],
 		["PS Link Cable",  "psx_link_cable"],
 		["Speakers",       "speaker_pair"],
