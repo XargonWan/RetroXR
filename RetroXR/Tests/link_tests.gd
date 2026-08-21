@@ -50,6 +50,7 @@ func _ready() -> void:
 	await _test_psx_socket_is_in_the_panel()
 	await _test_psx_lead_will_seat()
 	await _test_psx_cable_joins_a_pair()
+	await _test_every_lead_states_its_bus()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -103,6 +104,116 @@ func _test_gc_gba_cable() -> void:
 	_ok("an unseated lead joins nothing", true)
 
 	lead.queue_free()
+	await get_tree().process_frame
+
+
+## Every lead that can put two cores on a wire has to be able to SAY so.
+##
+## Netplay asks each lead what bus it makes, because a cabled pair is one
+## session over two machines that every peer replicates — a link cable never
+## crosses the network. A lead that cannot answer is a lead the session cannot
+## put in a group, and the far machine is then ungated on the host and not
+## running at all on a client, whose core then sits on a bus whose other end
+## never publishes.
+##
+## This is here rather than in netplay_tests because it is a fact about the
+## LEADS. It is also the case that would have caught the GameCube lead being
+## left out: it was the one whose wide end sits in a controller socket, so a
+## search from the machine's own link ports could never have found it, and
+## nothing said so out loud.
+func _test_every_lead_states_its_bus() -> void:
+	var leads := {
+		"res://Scenes/Objects/cables/link_cable.tscn": "the handheld lead",
+		"res://Scenes/Objects/cables/gc_gba_cable.tscn": "the GameCube lead",
+		"res://Scenes/Objects/cables/psx_link_cable.tscn": "the PlayStation lead",
+	}
+	for path: String in leads:
+		var scene := load(path) as PackedScene
+		_ok("%s has a scene" % leads[path], scene != null)
+		if scene == null:
+			continue
+		var lead := scene.instantiate()
+		add_child(lead)
+		await get_tree().process_frame
+		_ok("%s can state its bus" % leads[path], lead.has_method("linked_machines"))
+		_ok("%s can name what it holds" % leads[path], lead.has_method("held_machines"))
+		if lead.has_method("linked_machines"):
+			# Seated in nothing, so it joins nothing — and must say that rather
+			# than fault, because _resolve asks before anything is plugged in.
+			_ok("%s joins nothing while unseated" % leads[path],
+				(lead.linked_machines() as Array).is_empty())
+			_ok("%s holds nothing while unseated" % leads[path],
+				(lead.held_machines() as Array).is_empty())
+		# And it must defer to a session the same way, which with no session
+		# running means taking the decision itself.
+		_ok("%s acts alone when no game is running" % leads[path],
+			not lead.netplay_took_bus([], []))
+		lead.queue_free()
+		await get_tree().process_frame
+
+	# The above can only tell that a METHOD is there, and CompositeCable now
+	# supplies an empty default for both — so a lead that lost its override
+	# would sail through it. What cannot be faked is a lead that has actually
+	# joined a pair naming them, which is also the harder half: a pull has to
+	# name machines the walk can no longer reach.
+	await _joined_lead_names_its_pair()
+
+
+func _joined_lead_names_its_pair() -> void:
+	var m1 := _StubMachine.new()
+	var m2 := _StubMachine.new()
+	add_child(m1)
+	add_child(m2)
+	m1.libretro = Libretro.new()
+	m2.libretro = Libretro.new()
+	m1.add_child(m1.libretro)
+	m2.add_child(m2.libretro)
+
+	var psx := PsxLinkCable.new()
+	add_child(psx)
+	psx._join({"libretro": m1.libretro, "machine": m1, "port": 0},
+		{"libretro": m2.libretro, "machine": m2, "port": 0})
+	var psx_held: Array = psx.held_machines()
+	_eq("a joined PlayStation lead names two machines", psx_held.size(), 2)
+	if psx_held.size() == 2:
+		_ok("and they are the two it joined",
+			psx_held[0]["machine"] == m1 and psx_held[1]["machine"] == m2)
+	psx._disconnect()
+	_eq("a parted PlayStation lead names none", (psx.held_machines() as Array).size(), 0)
+
+	var gc := GcGbaCable.new()
+	add_child(gc)
+	# Console first, the end handed to LinkConnect — the same rule the handheld
+	# lead follows for its purple end.
+	gc._join({"libretro": m1.libretro, "machine": m1, "port": 2}, m2.libretro)
+	var gc_held: Array = gc.held_machines()
+	_eq("a joined GameCube lead names two machines", gc_held.size(), 2)
+	if gc_held.size() == 2:
+		_ok("console first", gc_held[0]["machine"] == m1)
+		_ok("then the handheld", gc_held[1]["machine"] == m2)
+		_eq("the console keeps its own port number", int(gc_held[0]["port"]), 2)
+		_eq("and the handheld its GameCube conversation",
+			int(gc_held[1]["port"]), GcGbaCable.GBA_JOY_PORT)
+	gc._disconnect()
+	_eq("a parted GameCube lead names none", (gc.held_machines() as Array).size(), 0)
+
+	var handheld := LinkCable.new()
+	add_child(handheld)
+	handheld._join([{"libretro": m1.libretro, "machine": m1, "port": 0},
+		{"libretro": m2.libretro, "machine": m2, "port": 0}])
+	var hh_held: Array = handheld.held_machines()
+	_eq("a joined handheld lead names two machines", hh_held.size(), 2)
+	if hh_held.size() == 2:
+		_ok("and they are the two it joined",
+			hh_held[0]["machine"] == m1 and hh_held[1]["machine"] == m2)
+	handheld._disconnect()
+	_eq("a parted handheld lead names none", (handheld.held_machines() as Array).size(), 0)
+
+	psx.queue_free()
+	gc.queue_free()
+	handheld.queue_free()
+	m1.queue_free()
+	m2.queue_free()
 	await get_tree().process_frame
 
 

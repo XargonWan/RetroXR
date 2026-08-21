@@ -57,17 +57,8 @@ func _resolve() -> void:
 	var wire: Array[Node3D] = []
 	var group := _machines_on_this_wire(wire)
 
-	if _bus_head(wire) == self and _netplay_owns(group):
-		# A lockstep game is running over these machines, so this decision is
-		# not this peer's to make alone. Seating or pulling a link plug changes
-		# deterministic state on both cores, and applying it the instant a hand
-		# moves lands it on a different emulated frame on every peer, which
-		# forks the session with nothing downstream able to see why. The host
-		# picks a frame ahead of the pipeline and every peer applies it there —
-		# the same rule a disc swap follows.
-		if NetworkManager.is_host():
-			NetworkManager.netplay_schedule_link(1 if group.size() >= 2 else 0,
-				group if group.size() >= 2 else _held_entries())
+	if _bus_head(wire) == self and netplay_took_bus(linked_machines(), held_machines()):
+		pass    # the session scheduled it; every peer applies it on that frame
 	elif group.size() >= 2 and _bus_head(wire) == self:
 		_join(group)
 	else:
@@ -192,6 +183,24 @@ func _wake(wire: Array[Node3D]) -> void:
 ## The coordinator cannot do this walk itself, because a junction can never be an
 ## endpoint there. Working it out is the room's job precisely because the cables
 ## and their junctions are things in the room.
+## The bus this lead makes, as [{machine, port}], head first, or [] when it
+## joins nothing.
+##
+## Every cable that can put two cores on a wire answers this, whatever its
+## shape: a handheld lead walking a chain of junctions, a GameCube-to-GBA lead
+## joining two ends that are not even the same KIND of socket, a PlayStation
+## null modem between peers. A machine asks all of them to find its own bus, so
+## a lead that cannot say what it joins is a lead netplay cannot schedule.
+func linked_machines() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var wire := machines_on_wire()
+	if wire.size() < 2:
+		return out
+	for entry: Dictionary in wire:
+		out.append({"machine": entry.get("machine"), "port": int(entry.get("port", 0))})
+	return out
+
+
 ## Every machine port on this lead's wire, as [{libretro, port, machine}].
 ## Public because a machine needs to know its own bus before netplay can put
 ## the whole of it into one session; the walk itself is the same one _resolve
@@ -251,29 +260,10 @@ func junction_port() -> LinkPort:
 	return get_node_or_null("Junction/LinkPort") as LinkPort
 
 
-## Whether a running lockstep game covers what this lead touches — the machines
-## it would join now, or the ones it is still holding when it is being pulled.
-##
-## Asked of every machine rather than one: a lead half in a session is a bus the
-## session cannot schedule, and joining it locally anyway is the fork this whole
-## path exists to avoid. The session refuses such an op too; this is the earlier
-## of the two guards and the one that keeps a client from applying it.
-func _netplay_owns(group: Array[Dictionary]) -> bool:
-	if not NetworkManager.netplay_running():
-		return false
-	var entries := group if group.size() >= 2 else _held_entries()
-	if entries.is_empty():
-		return false
-	for entry: Dictionary in entries:
-		if not NetworkManager.netplay_covers(entry.get("machine")):
-			return false
-	return true
-
-
 ## What this lead is currently holding, in the same [{machine, port}] shape the
 ## walk produces — the machines a PULL has to name, since by then the walk finds
 ## nothing.
-func _held_entries() -> Array[Dictionary]:
+func held_machines() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for end: Dictionary in _linked:
 		var machine: Object = end.get("machine")

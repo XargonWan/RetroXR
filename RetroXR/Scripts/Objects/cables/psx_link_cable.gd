@@ -47,13 +47,45 @@ func _resolve() -> void:
 
 	var a := _console_end(End.A)
 	var b := _console_end(End.B)
-	if a.is_empty() or b.is_empty() or a["libretro"] == b["libretro"]:
+	if netplay_took_bus(linked_machines(), held_machines()):
+		pass    # a lockstep game owns both consoles; the host schedules it
+	elif a.is_empty() or b.is_empty() or a["libretro"] == b["libretro"]:
 		_disconnect()
 	else:
 		_join(a, b)
 
 	_report_seating_changes()
 	topology_changed.emit()
+
+
+## The bus this lead makes, as [{machine, port}]. End A first, arbitrarily but
+## consistently: neither console owns the clock on a null modem, so the order
+## only has to be the same answer every time it is asked.
+func linked_machines() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var a := _console_end(End.A)
+	var b := _console_end(End.B)
+	if a.is_empty() or b.is_empty() or a["libretro"] == b["libretro"]:
+		return out
+	if a.get("machine") == null or b.get("machine") == null:
+		return out
+	out.append({"machine": a["machine"], "port": int(a["port"])})
+	out.append({"machine": b["machine"], "port": int(b["port"])})
+	return out
+
+
+## The pair this lead is still holding, for a pull.
+func held_machines() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if _linked.is_empty():
+		return out
+	var ma: Object = _linked.get("machine_a")
+	var mb: Object = _linked.get("machine_b")
+	if ma == null or mb == null:
+		return out
+	out.append({"machine": ma, "port": int(_linked.get("port_a", 0))})
+	out.append({"machine": mb, "port": int(_linked.get("port_b", 0))})
+	return out
 
 
 ## The console this end is plugged into, as {libretro, machine, port}, or {}.

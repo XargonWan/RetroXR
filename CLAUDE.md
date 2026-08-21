@@ -670,6 +670,15 @@ Two things this had to get right, and both are the same rule:
   gated core sat on a bus whose other end never published — and the coordinator
   waits for a peer that is behind rather than guessing, with deliberately no
   timeout. Host fine, client wedged.
+- **All THREE leads, not just the handheld one.** Every lead that can put two
+  cores on a wire answers `linked_machines()` / `held_machines()`, and a machine
+  finds its bus by asking the leads rather than searching its own sockets. That
+  is not tidiness: a GameCube-to-GBA lead puts its wide end in a **controller**
+  socket, so there is no `LinkPort` on the console side to walk out of, and a
+  search from the machine would have decided a cabled GameCube was on no bus at
+  all. `net_link_bus` therefore sweeps both the `link_plug` and `controller_plug`
+  groups. (That the GC end is in `controller_plug` and not `link_plug` is pinned
+  by `link_tests`; that `net_link_bus` must consult both is only reasoned.)
 - **A plug seated mid-game lands on ONE agreed frame.** `LinkCoordinator.hpp`
   says so itself: the thing it cannot enforce is that Connect and Disconnect
   happen on the same emulated frame on every peer, and that is the caller's job.

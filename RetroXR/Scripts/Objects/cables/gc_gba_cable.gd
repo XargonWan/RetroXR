@@ -36,13 +36,60 @@ func _resolve() -> void:
 
 	var console := _console_end()
 	var handheld := _handheld_end()
-	if console.is_empty() or handheld == null:
+	if netplay_took_bus(linked_machines(), held_machines()):
+		pass    # a lockstep game owns these machines; the host schedules it
+	elif console.is_empty() or handheld == null:
 		_disconnect()
 	else:
 		_join(console, handheld)
 
 	_report_seating_changes()
 	topology_changed.emit()
+
+
+## The bus this lead makes, as [{machine, port}], console first.
+##
+## Console first because that end is the one handed to LinkConnect, the same
+## rule the handheld lead follows for its purple end. The two ports are not the
+## same number and never were: one counts sockets on a console, the other says
+## which of a handheld's two conversations this cable is.
+func linked_machines() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var console := _console_end()
+	var handheld := _handheld_end()
+	if console.is_empty() or handheld == null:
+		return out
+	var console_machine: Object = console.get("machine")
+	var handheld_machine: Object = _machine_of(handheld)
+	if console_machine == null or handheld_machine == null:
+		return out
+	out.append({"machine": console_machine, "port": int(console["port"])})
+	out.append({"machine": handheld_machine, "port": GBA_JOY_PORT})
+	return out
+
+
+## The machine owning a Libretro node, by walking back up out of it.
+func _machine_of(lib: Node) -> Object:
+	var n: Node = lib
+	while n != null:
+		if n.has_method("get_libretro_node"):
+			return n
+		n = n.get_parent()
+	return null
+
+
+## The pair this lead is still holding, console first, for a pull.
+func held_machines() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if _linked.is_empty():
+		return out
+	var console: Object = _linked.get("machine")
+	var gba: Object = _linked.get("gba_machine")
+	if console == null or gba == null:
+		return out
+	out.append({"machine": console, "port": int(_linked.get("port", 0))})
+	out.append({"machine": gba, "port": GBA_JOY_PORT})
+	return out
 
 
 ## The console this lead's wide end is in, and which of its ports, or {}.
@@ -59,7 +106,8 @@ func _console_end() -> Dictionary:
 		var lib: Libretro = plug.seated_system.get_libretro_node()
 		if lib == null:
 			continue
-		return {"libretro": lib, "port": plug.seated_port_index}
+		return {"libretro": lib, "port": plug.seated_port_index,
+			"machine": plug.seated_system}
 	return {}
 
 
@@ -95,7 +143,8 @@ func _join(console: Dictionary, handheld: Libretro) -> void:
 	# same number and never were: one counts sockets on a console, the other says
 	# which of a handheld's two conversations this cable is.
 	if lib.LinkConnect(handheld, port, GBA_JOY_PORT):
-		_linked = {"libretro": lib, "gba": handheld, "port": port}
+		_linked = {"libretro": lib, "gba": handheld, "port": port,
+			"machine": console.get("machine"), "gba_machine": _machine_of(handheld)}
 		_log("joined")
 
 

@@ -2443,21 +2443,37 @@ func net_start_core(core: String, port_mask: int, start_frame: int, options: Dic
 ## so the order has to be stable within one process rather than across them.
 func net_link_group() -> Array:
 	var machines: Array = [self]
-	for node in find_children("*", "LinkPort", true, false):
-		var port := node as LinkPort
-		if port == null:
-			continue
-		var plug := port.seated_plug()
-		if plug == null:
-			continue
-		var cable := plug.get("cable") as LinkCable
-		if cable == null:
-			continue
-		for entry: Dictionary in cable.machines_on_wire():
-			var machine: Object = entry.get("machine")
-			if machine != null and not machines.has(machine):
-				machines.append(machine)
+	for entry: Dictionary in net_link_bus():
+		var machine: Object = entry.get("machine")
+		if machine != null and not machines.has(machine):
+			machines.append(machine)
 	return machines
+
+
+## The bus this machine is on, as [{machine, port}], or [] when it is on none.
+##
+## Asked of every LEAD in the room rather than walked out of this machine's own
+## sockets, because the three kinds of link cable do not attach the same way and
+## two of them cannot be found from here at all. A handheld lead and a
+## PlayStation null modem both sit in LinkPorts, but a GameCube-to-GBA lead puts
+## its wide end in a CONTROLLER socket — there is no LinkPort on the console
+## side to walk out of, and a search from this machine would silently decide a
+## cabled GameCube was on no bus.
+func net_link_bus() -> Array:
+	if not is_inside_tree():
+		return []
+	for plug in get_tree().get_nodes_in_group("link_plug") \
+			+ get_tree().get_nodes_in_group("controller_plug"):
+		var cable: Object = plug.get("cable")
+		if cable == null or not is_instance_valid(cable):
+			continue
+		if not cable.has_method("linked_machines"):
+			continue
+		var bus: Array = cable.linked_machines()
+		for entry: Dictionary in bus:
+			if entry.get("machine") == self:
+				return bus
+	return []
 
 
 ## Stop the local netplay core and clear the gate.

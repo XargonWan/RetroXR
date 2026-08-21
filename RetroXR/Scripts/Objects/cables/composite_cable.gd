@@ -25,6 +25,49 @@ class_name CompositeCable
 extends Node3D
 
 
+## Whether a running lockstep game has taken this lead's join/pull decision.
+##
+## Shared by all three link leads, because the rule is about the SESSION rather
+## than about the lead's shape: seating or pulling a link plug changes
+## deterministic state on both cores, and applying it the instant a hand moves
+## lands it on a different emulated frame on every peer. Both peers are then
+## wrong in the same way, so the CRC checker cannot even call it a desync.
+## LinkCoordinator says as much itself — the one thing it cannot enforce is that
+## Connect and Disconnect happen on the same emulated frame everywhere, and that
+## it is the caller's job.
+##
+## `join` is the bus the lead would make now, `held` the one it is still holding
+## (a pull has nothing to walk to). Every machine involved must be in the
+## session: a lead half in one is a bus the session cannot schedule, and joining
+## it locally anyway is the fork this exists to avoid. True means the caller
+## must do nothing else — the host has scheduled it and every peer, this one
+## included, applies it on the agreed frame.
+func netplay_took_bus(join: Array, held: Array) -> bool:
+	if not NetworkManager.netplay_running():
+		return false
+	var entries: Array = join if join.size() >= 2 else held
+	if entries.is_empty():
+		return false
+	for entry: Dictionary in entries:
+		if not NetworkManager.netplay_covers(entry.get("machine")):
+			return false
+	if NetworkManager.is_host():
+		NetworkManager.netplay_schedule_link(1 if join.size() >= 2 else 0, entries)
+	return true
+
+
+## The bus this lead makes, as [{machine, port}], or [] for a lead that joins
+## nothing. Overridden by every lead that can put two cores on a wire.
+func linked_machines() -> Array[Dictionary]:
+	return []
+
+
+## The bus this lead is still HOLDING, in the same shape. A pull has to name the
+## machines it was joined to, because by then the walk finds nothing.
+func held_machines() -> Array[Dictionary]:
+	return []
+
+
 ## Emitted whenever a plug is seated or pulled, after the devices have been told.
 signal topology_changed
 
