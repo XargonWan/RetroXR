@@ -214,6 +214,36 @@ func set_lid_angle_deg(open_deg: float) -> void:
 		pivot.rotation.x = deg_to_rad(rot)
 
 
+## Measure only the BASE when placing the system name, not the whole model.
+##
+## RetroSystem._body_aabb otherwise merges every mesh under here, and on a
+## clamshell three of them (Lid, TopBezel, HandheldScreen) ride LidPivot. Open
+## the lid and the box those are merged into grows up and back with it, so the
+## name is laid against a volume most of which is air, and it ends up floating
+## well above the machine. Shut the lid and it would move again.
+##
+## The base alone is 82 x 12 x 84.6 mm and does not move, so the legend stays
+## where it was put whatever the lid is doing. Same reasoning, and the same fix,
+## as the DS and 3DS clamshells already carry.
+func name_label_body() -> Node3D:
+	# Visible, or it counts for nothing: _body_aabb skips invisible meshes, hands
+	# back an empty box, and _place_name_label gives up and leaves the label at
+	# its authored scene pose -- which is the floating one this exists to fix.
+	var body := find_child("HandheldBody", true, false) as Node3D
+	if body != null and body.is_visible_in_tree():
+		return body
+	return null
+
+
+## Upright on the base's front edge rather than flat across the deck.
+##
+## The deck is where every control lives, so a legend laid flat on it sits over
+## the d-pad and the face buttons. A real SP prints its name on the front lip,
+## and that lip is thin, so the label centres and fills most of it.
+func name_label_placement() -> Dictionary:
+	return {"upright": true, "v_center": 0.5, "h_frac": 0.72}
+
+
 ## The stand-in has no bundled AV lead to hang the port on, so it takes the
 ## handheld default (rear edge, clear of the cart slot).
 func configure_cable_attach(attach_point: Node3D) -> void:
