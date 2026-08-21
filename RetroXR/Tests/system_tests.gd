@@ -99,6 +99,7 @@ func _ready() -> void:
 	_test_belongs_here()
 	_test_core_resolution()
 	_test_forced_options_merge()
+	_test_memcard_presence()
 	_test_bios_seed()
 	_test_bios_boot_table()
 	_test_power_on_verdict()
@@ -909,3 +910,66 @@ func _test_power_on_verdict() -> void:
 	_eq("verdict/a missing bios outranks an empty slot",
 		RetroSystem._power_on_verdict("pcee2", "playstation2", "", missing, "")["title"],
 		"BIOS required")
+
+
+# ---------------------------------------------------------------------------
+# What the console is told about its memory card slot.
+#
+# Two questions that look like one. What KIND of card the slot holds is
+# pcsx_rearmed_memcard1, and it gates the core's save buffer, so it is fixed for
+# the run. Whether a card is IN that slot is pcsx_rearmed_memcard1_inserted,
+# which touches nothing but what the SIO answers and moves whenever a hand does.
+#
+# Before the second key existed the room could only blank SAVE_RAM, and 128 KB
+# of zeroes is a card -- merely an unformatted one. A game whose card was pulled
+# mid-play offered to format it instead of saying there was no card in the slot.
+# ---------------------------------------------------------------------------
+
+func _test_memcard_presence() -> void:
+	# Instantiated and added rather than built with _system(): whether a machine
+	# takes cards is asked of the MODEL first, and a bare RetroSystem has none, so
+	# it answers no to everything. Adding it runs _ready, which loads one.
+	var psx := preload("res://Scenes/Objects/system.tscn").instantiate() as RetroSystem
+	psx.systemid = "playstation"
+	add_child(psx)
+
+	# Nothing seated: the slot is typed absent AND reported empty. Both, because
+	# they answer to different cores -- one built before the presence key shipped
+	# reads only the first, and must still see an empty slot.
+	var empty := psx._removable_media_options("pcsx_rearmed")
+	_eq("memcard/an empty slot is typed absent",
+		empty.get("pcsx_rearmed_memcard1", ""), "none")
+	_eq("memcard/and reported empty",
+		empty.get("pcsx_rearmed_memcard1_inserted", ""), "disabled")
+	_eq("memcard/the cabinet's second slot is always absent",
+		empty.get("pcsx_rearmed_memcard2", ""), "none")
+
+	# A card seated before the machine starts.
+	var card := Node3D.new()
+	psx._snapped_memcard = card
+	var seated := psx._removable_media_options("pcsx_rearmed")
+	_eq("memcard/a seated card types the slot",
+		seated.get("pcsx_rearmed_memcard1", ""), "libretro")
+	_eq("memcard/and is reported present",
+		seated.get("pcsx_rearmed_memcard1_inserted", ""), "enabled")
+
+	# Only pcsx_rearmed has these keys, and only a machine that takes cards has a
+	# slot. Pinning them anywhere else would write keys into another core's file.
+	_ok("memcard/another core is told nothing",
+		psx._removable_media_options("swanstation").is_empty())
+	var nes := preload("res://Scenes/Objects/system.tscn").instantiate() as RetroSystem
+	nes.systemid = "nes"
+	add_child(nes)
+	_ok("memcard/a cartridge console is told nothing",
+		nes._removable_media_options("pcsx_rearmed").is_empty())
+
+	# The runtime half. It reaches for the live core, so on a machine that is not
+	# running it must do nothing at all rather than fault -- which is also what
+	# guards the case where the option arrives before a core exists to take it.
+	psx._set_card_presence(false)
+	_ok("memcard/presence on a machine that is off does nothing",
+		not psx.is_powered_on)
+
+	card.free()
+	nes.queue_free()
+	psx.queue_free()

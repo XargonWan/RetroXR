@@ -2491,6 +2491,12 @@ func _removable_media_options(core: String) -> Dictionary:
 		# than left to the core's default, which is a shared card every game can
 		# see and no object in the room accounts for.
 		"pcsx_rearmed_memcard2": "none",
+		# And whether the card is actually IN it, which is a different question
+		# from what kind of card the slot holds and the only one that can change
+		# while the game runs. Set here too so a machine starts up agreeing with
+		# the room: the key is read at load like the others, and _set_card_presence
+		# keeps it honest from then on.
+		"pcsx_rearmed_memcard1_inserted": "enabled" if _snapped_memcard else "disabled",
 	}
 
 
@@ -3483,6 +3489,7 @@ func _on_memcard_inserted(card: Node3D) -> void:
 			push_warning("[RetroSystem] memory card ignored during netplay")
 		else:
 			_libretro.SetSramPath(_sram_path_for_run(_resolve_core()))
+			_set_card_presence(true)
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_INSERT,
 		{"sys": self, "card": card})
 
@@ -3495,11 +3502,43 @@ func _on_memcard_removed() -> void:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 			push_warning("[RetroSystem] memory card removal ignored during netplay")
 		else:
-			# No card, no saving. The C++ side blanks SAVE_RAM to match, so the
-			# game reports unformatted media instead of accepting a save into
-			# the card the core keeps for itself.
+			# No card, no saving. The C++ side blanks SAVE_RAM to match, so
+			# nothing is written into the card the core keeps for itself.
 			_libretro.SetSramPath("")
+			# And the console is told the slot is EMPTY, which blanking SAVE_RAM
+			# cannot say on its own: a 128 KB buffer of zeroes is a card, merely
+			# an unformatted one, so the game offered to format it instead of
+			# reporting no card at all.
+			_set_card_presence(false)
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_REMOVE, {"sys": self})
+
+
+## Tell the running console whether a card is in the slot.
+##
+## Presence and CONTENT are two different questions and only one of them can be
+## answered while a game runs. What kind of card the slot holds is
+## pcsx_rearmed_memcard1, and it gates the core's save buffer, so it is fixed at
+## load; whether a card is in that slot is pcsx_rearmed_memcard1_inserted, which
+## touches nothing but what the SIO reports and can move whenever a hand does.
+##
+## Down at the hardware this is the difference between a slot that answers "no
+## device" and one that answers with an unformatted card -- which is what the
+## room could only say before, and why pulling a card mid-game had the console
+## offer to format it rather than say there was no card in it.
+##
+## Older cores never registered the key, and the extension skips a key a core
+## does not have, so this is a no-op against a build from before the option
+## shipped rather than an error.
+func _set_card_presence(inserted: bool) -> void:
+	if not is_powered_on or not _uses_memory_cards():
+		return
+	if not _resolve_core().begins_with("pcsx_rearmed"):
+		return
+	# Through set_core_option rather than at the Libretro node, so the value the
+	# options panel shows and the value the core is running on cannot drift, and
+	# so a machine that is not running has it written to its .opt instead.
+	set_core_option("pcsx_rearmed_memcard1_inserted",
+		"enabled" if inserted else "disabled")
 
 
 ## The seated card's image moved (it was renamed), so re-point the running core
