@@ -329,7 +329,10 @@ func _log_ends(verb: String, ends: Array[Dictionary]) -> void:
 		if not is_instance_valid(end["libretro"]):
 			continue
 		var lib: Libretro = end["libretro"]
-		var machine := lib.get_parent()
+		# Typed, for the same reason the rope reads below are: Libretro is a
+		# GDExtension and what its methods hand back is only known to the parser
+		# where the extension is fully registered.
+		var machine: Node = lib.get_parent()
 		parts.append("%s (%d peers)" % [
 			machine.name if machine != null else "?", lib.LinkPeerCount(end["port"])])
 	print("[LinkCable] %s %s: %s" % [name, verb,
@@ -493,15 +496,21 @@ func _ride_junction() -> void:
 	var junction := get_node_or_null("Junction") as Node3D
 	if junction == null or _rope == null:
 		return
-	var n := _rope.point_count()
+	# Typed out rather than inferred, all three. VerletRope is a GDExtension, so
+	# what its methods return is only known to the parser where the extension is
+	# loaded and registered. It is on the desktop editor, which is why this read
+	# fine here for months; it was not on the Quest, and inferring a variable
+	# from a Variant is a hard parse ERROR rather than a warning, so the whole
+	# script failed to load on device and took the cable with it.
+	var n: int = _rope.point_count()
 	if n < 3:
 		return
 
 	# One particle short of the end, so there is always a next one to take the
 	# cord's direction from.
 	var i: int = clampi(int(round(JUNCTION_AT * float(n - 1))), 0, n - 2)
-	var here := _rope.point_position(i)
-	var ahead := _rope.point_position(i + 1)
+	var here: Vector3 = _rope.point_position(i)
+	var ahead: Vector3 = _rope.point_position(i + 1)
 	var along := ahead - here
 	if along.length_squared() < 1e-8:
 		return
