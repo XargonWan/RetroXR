@@ -31,7 +31,7 @@ const SOURCES := {
 		# URL — see base_url. It is only the version to show when GitHub cannot be
 		# reached, so an offline player still sees something truthful rather than
 		# a blank.
-		"known_tag": "retroxr-dolphin-libretro-v3",
+		"known_tag": "retroxr-dolphin-libretro-v4",
 		"label": "Dolphin (retroXR build)",
 		# Per platform, because we only publish what we build. A platform absent
 		# here is not an error — the manager falls back to the buildbot for it,
@@ -75,6 +75,33 @@ const SOURCES := {
 	#
 	# Play! is BSD, so unlike Dolphin the binary carries no source obligation;
 	# the fork is where it is built from all the same.
+	# mGBA, for the half of the link cable that is not the console.
+	#
+	# mGBA has carried its own lockstep coordinator for years and it was simply
+	# unreachable: nothing in libretro can express a cable, and every core
+	# instance is loaded from its own copy of the library, so two Game Boy
+	# Advances in one process share no globals and have exactly one thing in
+	# common, which is the frontend. Our build talks to a link bus the frontend
+	# hosts instead, and that is what makes two handhelds in one room able to
+	# play together, single-cartridge play work, and a GameCube lead reach a
+	# handheld at all.
+	#
+	# Unlike Dolphin this is not a GPL obligation -- mGBA is MPL-2.0 -- but the
+	# source sits on the tag beside the binary for the same practical reason: it
+	# is the only way anyone can tell what they are running.
+	#
+	# The Android asset DOES carry the "_android" infix, unlike azahar's. Worth
+	# saying because the two sit next to each other in this file and the wrong
+	# name here fails silently, as a core that simply never downloads.
+	"mgba": {
+		"repo":  "XenuIsWatching/mgba",
+		"known_tag": "retroxr-mgba-libretro-v1",
+		"label": "mGBA (retroXR build)",
+		"assets": {
+			"Windows": "mgba_libretro.dll.zip",
+			"Android": "mgba_libretro_android.so.zip",
+		},
+	},
 	"play": {
 		"repo":  "XenuIsWatching/Play-",
 		"known_tag": "retroxr-play-libretro-v1",
