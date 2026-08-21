@@ -472,6 +472,11 @@ func _drop_all() -> void:
 
 
 func _exit_tree() -> void:
+	# The captive cable is parented to current_scene so its rope can collide with
+	# the room; it is not a child and would otherwise survive a controller
+	# despawn (including a network despawn) as an orphaned plug and rope.
+	if is_instance_valid(_cable_instance):
+		_cable_instance.queue_free()
 	# Release any active pointer blocks so other objects aren't stuck.
 	if _blocking_left and is_instance_valid(_left_vr_ctrl):
 		_update_pointer_block(_left_vr_ctrl, false)

@@ -353,20 +353,22 @@ func _on_snap_zone_body_entered(target: Node3D) -> void:
 
 # Called when a body leaves the snap zone
 func _on_snap_zone_body_exited(target: Node3D) -> void:
-	# Ensure the object is not in our list
-	_object_in_grab_area.erase(target)
+	forget_object(target)
 
-	# Stop listening for dropped signals
+
+## Forget an overlap immediately when external state teleports an object away.
+## Physics will normally call this through body_exited, but network restores
+## must close neighbouring sockets, release, and move a plug in one operation;
+## retaining the old overlap until the next tick lets a deferred dropped signal
+## re-seat it in an adjacent zone first.
+func forget_object(target: Node3D) -> void:
+	_object_in_grab_area.erase(target)
 	if target.has_signal("dropped") and target.is_connected("dropped", _on_target_dropped):
 		target.disconnect("dropped", _on_target_dropped)
-
-	# LOCAL PATCH (RetroXR): stop tracking held-state changes
 	if target.has_signal("picked_up") and target.is_connected("picked_up", _on_area_object_state_changed):
 		target.disconnect("picked_up", _on_area_object_state_changed)
 	if target.has_signal("dropped") and target.is_connected("dropped", _on_area_object_state_changed):
 		target.disconnect("dropped", _on_area_object_state_changed)
-
-	# Hide highlight when nothing could be snapped
 	_update_close_highlight()
 
 

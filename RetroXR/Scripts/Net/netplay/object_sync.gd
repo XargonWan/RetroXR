@@ -913,7 +913,11 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 				a["ctrl"].restore_port_connection(a["sys"], int(a.get("port", 0)))
 		EV_PORT_UNPLUG:
 			if _valid(a, ["sys"]):
-				a["sys"].get_node("ControllerPort%d" % (int(a.get("port", 0)) + 1)).drop_object()
+				var port := int(a.get("port", 0))
+				if a["sys"].has_method("net_release_controller_port"):
+					a["sys"].net_release_controller_port(port)
+				else:
+					a["sys"].get_node("ControllerPort%d" % (port + 1)).drop_object()
 		EV_SYS_POWER:
 			# Client intent — the host toggles for real. Run un-suppressed so
 			# the host's own hook broadcasts EV_SYS_POWER_STATE afterwards.

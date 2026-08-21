@@ -3225,6 +3225,46 @@ func restore_controller_plug(port_index: int, plug: ControllerPlug) -> void:
 	_restoring_media = false
 
 
+## Release a controller port from replicated state. A plain SnapZone drop leaves
+## the plug centred in its grab volume, so it is immediately picked back up on
+## the next physics tick. The local player's hand naturally carries a pulled
+## plug away; a remote peer has no synced plug body, so park it by its controller
+## before re-enabling the socket.
+func net_release_controller_port(port_index: int) -> void:
+	if port_index < 0 or port_index >= _port_zones.size():
+		return
+	var zone := _port_zones[port_index] as XRToolsSnapZone
+	var plug := _port_plugs[port_index] as ControllerPlug
+	var plug_enabled := plug.enabled if is_instance_valid(plug) else false
+	var enabled: Array[bool] = []
+	for candidate: XRToolsSnapZone in _port_zones:
+		enabled.append(candidate.enabled)
+		candidate.enabled = false
+	if is_instance_valid(plug):
+		plug.enabled = false
+	zone.drop_object()
+	if is_instance_valid(plug):
+		for candidate: XRToolsSnapZone in _port_zones:
+			candidate.forget_object(plug)
+		var controller := plug.get_controller()
+		var attach := controller.get_node_or_null("CableAttachPoint") as Node3D \
+			if is_instance_valid(controller) else null
+		if attach != null:
+			plug.global_position = attach.global_position \
+				+ attach.global_basis * Vector3(0, 0, -0.12)
+		if plug is RigidBody3D:
+			(plug as RigidBody3D).linear_velocity = Vector3.ZERO
+			(plug as RigidBody3D).angular_velocity = Vector3.ZERO
+	# DROPPED-mode zones receive the plug's dropped signal deferred. Keep every
+	# neighbouring socket shut until that callback and a physics overlap refresh
+	# have both passed, or the plug simply hops from port 1 into port 2.
+	get_tree().create_timer(0.1).timeout.connect(func() -> void:
+		for i in _port_zones.size():
+			_port_zones[i].enabled = enabled[i]
+		if is_instance_valid(plug):
+			plug.enabled = plug_enabled, CONNECT_ONE_SHOT)
+
+
 ## Which cabinet socket holds this peripheral, or -1 if the system is not holding
 ## it at all.
 ##

@@ -11,11 +11,13 @@ const NM_SCRIPT := preload("res://Scripts/Net/network_manager.gd")
 const POSE_BROADCASTER := preload("res://Scripts/Net/netplay/pose_broadcaster.gd")
 const MEMORY_CARD := preload("res://Scenes/Objects/media/memory_card.tscn")
 const WIIMOTE := preload("res://Scenes/Objects/controllers/wii/wiimote.tscn")
+const RETRO_SYSTEM := preload("res://Scenes/Objects/system.tscn")
+const RETRO_CONTROLLER := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
 const TV := preload("res://Scenes/Objects/tv.tscn")
 const AVATAR := preload("res://Scenes/Net/remote_avatar.tscn")
 const PORT := 42917
 const GROUPS := ["registry", "snapshot", "spawn", "motion", "authority",
-	"hinges", "events", "relay", "avatars", "lifecycle"]
+	"controllers", "hinges", "events", "relay", "avatars", "lifecycle"]
 
 var _fail := 0
 var _ran := 0
@@ -295,6 +297,8 @@ func _ready() -> void:
 		await _test_motion(pair)
 	if _want("authority"):
 		await _test_authority(pair)
+	if _want("controllers"):
+		await _test_controller_end_to_end(pair)
 	if _want("hinges"):
 		await _test_hinges(pair)
 	if _want("events"):
@@ -596,6 +600,147 @@ func _test_authority(p: Pair) -> void:
 	_ok(client_card.freeze, "authority/the released client replica is frozen again")
 	hand.queue_free()
 	host_hand.queue_free()
+
+
+func _test_controller_end_to_end(p: Pair) -> void:
+	# This is deliberately a real system scene, real universal controller, real
+	# captive lead and real XR input tracker. The only absent piece is a core/ROM:
+	# PeekJoypadState reads the C++ frontend buffer that a core would poll.
+	var host_system := RETRO_SYSTEM.instantiate() as RetroSystem
+	host_system.name = "ControllerE2ESystem"
+	host_system.systemid = "netplay_test"
+	host_system.position = Vector3(-2.0, 0.8, 1.0)
+	p.host_root.add_child(host_system)
+	host_system.add_to_group("spawned")
+	p.host_nm.on_local_spawn(host_system)
+	var system_id := p.host_os.id_of(host_system)
+	_ok(system_id > 0, "controllers/a real console receives a network id")
+	_ok(await _until(func() -> bool:
+		return p.client_os.node_for_id(system_id) is RetroSystem, 600),
+		"controllers/the real console scene spawns on the client")
+	var client_system := p.client_os.node_for_id(system_id) as RetroSystem
+
+	var host_pad := RETRO_CONTROLLER.instantiate() as RetroController
+	host_pad.name = "ControllerE2EPad"
+	host_pad.position = Vector3(-1.6, 1.0, 1.0)
+	p.host_root.add_child(host_pad)
+	host_pad.add_to_group("spawned")
+	_ok(await _until(func() -> bool: return is_instance_valid(host_pad._cable_plug), 300),
+		"controllers/the real pad creates its captive cable and plug")
+	p.host_nm.on_local_spawn(host_pad)
+	var pad_id := p.host_os.id_of(host_pad)
+	_ok(pad_id > 0, "controllers/the real pad receives a network id")
+	_ok(await _until(func() -> bool:
+		return p.client_os.node_for_id(pad_id) is RetroPadController, 600),
+		"controllers/the exact controller scene spawns on the client")
+	var client_pad := p.client_os.node_for_id(pad_id) as RetroController
+	_ok(await _until(func() -> bool: return is_instance_valid(client_pad._cable_plug), 300),
+		"controllers/the client replica creates its own physical cable")
+	_eq(client_pad.scene_file_path, host_pad.scene_file_path,
+		"controllers/controller model identity survives serialization")
+
+	# Seat the host's actual connector, then send the same semantic event the
+	# production snap handler reports. The client must seat its own connector in
+	# its own console rather than retaining a cross-peer Node reference.
+	host_pad.restore_port_connection(host_system, 0)
+	_ok(await _until(func() -> bool: return host_system.port_holder(0) == host_pad),
+		"controllers/the host's real plug seats in the real console port")
+	p.host_os.report_event(NetObjectSync.EV_PORT_PLUG,
+		{"sys": host_system, "ctrl": host_pad, "port": 0})
+	_ok(await _until(func() -> bool:
+		return client_system.port_holder(0) == client_pad \
+			and client_pad._connected_system == client_system \
+			and client_pad._port_index == 0, 600),
+		"controllers/the physical port connection is rebuilt on the client")
+
+	# Feed a real XRController3D from a tracker, exactly as OpenXR does. Keep the
+	# maps deterministic instead of inheriting the player's user:// overrides.
+	var origin := XROrigin3D.new()
+	add_child(origin)
+	var xr_ctrl := XRController3D.new()
+	xr_ctrl.name = "ControllerE2EHand"
+	xr_ctrl.tracker = &"left_hand"
+	xr_ctrl.pose = &"default"
+	origin.add_child(xr_ctrl)
+	var tracker := XRControllerTracker.new()
+	tracker.name = &"left_hand"
+	XRServer.add_tracker(tracker)
+	tracker.set_pose(&"default", Transform3D.IDENTITY, Vector3.ZERO, Vector3.ZERO,
+		XRPose.XR_TRACKING_CONFIDENCE_HIGH)
+	tracker.set_input(&"ax_button", 1.0)
+	tracker.set_input(&"primary", Vector2(0.75, -0.5))
+	host_pad._button_map = ControllerBindings.DEFAULT_BUTTON_MAP.duplicate()
+	host_pad._stick_map = ControllerBindings.DEFAULT_STICK_MAP.duplicate()
+	host_pad._holding_ctrl = xr_ctrl
+	_ok(await _until(func() -> bool: return xr_ctrl.get_is_active(), 120),
+		"controllers/the fake OpenXR hand is active")
+	_num(xr_ctrl.get_float(&"ax_button"), 1.0,
+		"controllers/the tracked face button reaches XRController3D")
+	_ok(xr_ctrl.get_vector2(&"primary").distance_to(Vector2(0.75, -0.5)) < 0.001,
+		"controllers/the tracked stick reaches XRController3D")
+	host_pad._process(1.0 / 60.0)
+	var input_state: PackedInt32Array = host_system.get_libretro_node().PeekJoypadState(0)
+	_ok((host_pad as AnimatedController)._cur_btn != 0,
+		"controllers/the real pad assembles a non-neutral joypad frame")
+	_ok(input_state.size() == 5 \
+			and (input_state[0] & (1 << ControllerBindings.JOYPAD_X)) != 0 \
+			and (input_state[0] & (1 << ControllerBindings.JOYPAD_DOWN)) != 0 \
+			and (input_state[0] & (1 << ControllerBindings.JOYPAD_RIGHT)) != 0 \
+			and absi(input_state[1] - int(0.75 * 32767.0)) <= 1 \
+			and absi(input_state[2] - int(0.5 * 32767.0)) <= 1,
+		"controllers/XR button and stick input reaches the C++ libretro port buffer — got %s" \
+			% str(input_state))
+	tracker.set_input(&"ax_button", 0.0)
+	tracker.set_input(&"primary", Vector2.ZERO)
+	host_pad._holding_ctrl = null
+	_ok(await _until(func() -> bool:
+		return host_system.get_libretro_node().PeekJoypadState(0) == \
+			PackedInt32Array([0, 0, 0, 0, 0]), 300),
+		"controllers/releasing the hand sends a neutral state to the same port")
+
+	# Emit the real pickable signals. NetObjectSync's production signal binding
+	# must grant the client authority, stream the pose, then return authority.
+	var hand := Node3D.new()
+	p.client_root.add_child(hand)
+	client_pad.grabbed.emit(client_pad, hand)
+	_ok(await _until(func() -> bool:
+		return int(p.host_os._remote_held.get(pad_id, -1)) == p.client_id),
+		"controllers/a real controller grab transfers authority to the client")
+	client_pad.global_position = Vector3(1.25, 1.4, -0.8)
+	p.client_os._client_send_held()
+	_ok(await _until(func() -> bool:
+		return host_pad.global_position.distance_to(client_pad.global_position) < 0.001),
+		"controllers/the held controller pose reaches the host")
+	client_pad.dropped.emit(client_pad)
+	_ok(await _until(func() -> bool: return not p.host_os._remote_held.has(pad_id)),
+		"controllers/dropping the real pad returns authority to the host")
+
+	# Pulling the host plug and reporting the semantic event clears both actual
+	# snap zones and both controller-side connection records.
+	host_system.net_release_controller_port(0)
+	p.host_os.report_event(NetObjectSync.EV_PORT_UNPLUG,
+		{"sys": host_system, "port": 0})
+	_ok(await _until(func() -> bool:
+		return host_system.port_holder(0) == null and client_system.port_holder(0) == null \
+			and host_pad._connected_system == null and client_pad._connected_system == null, 600),
+		"controllers/unplug clears the physical port on both peers")
+
+	# A controller owns a separately-parented captive cable. Despawning the pad
+	# must remove both replicas and both cables, not leave invisible sync clutter.
+	var host_cable: Node = host_pad._cable_instance
+	var client_cable: Node = client_pad._cable_instance
+	host_pad.queue_free()
+	_ok(await _until(func() -> bool:
+		return p.host_os.node_for_id(pad_id) == null \
+			and p.client_os.node_for_id(pad_id) == null, 600),
+		"controllers/despawning the pad removes both controller replicas")
+	await _frames(2)
+	_ok(not is_instance_valid(host_cable) and not is_instance_valid(client_cable),
+		"controllers/despawning a pad also removes both captive cables")
+
+	hand.queue_free()
+	origin.queue_free()
+	XRServer.remove_tracker(tracker)
 
 
 func _test_hinges(p: Pair) -> void:
