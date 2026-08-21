@@ -379,9 +379,39 @@ can never hang the run.
   `xrCreateInstance failed`, missing GDExtension DLLs in the `template_debug` path
   (`libgodotopenxrvendors`, `godot-pdfium`, `libretro_godot`), `.NET Sdk not found`, and
   `xr_staging_shim.gd ... is_xr_class ... placeholder instance`. Grep these out.
+- **A `.tscn` `Transform3D` lists the basis by ROWS**, not the columns the
+  `Transform3D(x_axis, y_axis, z_axis, origin)` constructor takes. For a rotation the
+  two differ by a transpose — an inverse — so a hand-written rotation comes out
+  backwards. Copyable forms: `R_y(+90)`, local +Z → world +X, is
+  `0, 0, 1, 0, 1, 0, -1, 0, 0`; `R_y(-90)` is `0, 0, -1, 0, 1, 0, 1, 0, 0`;
+  `R_x(-90)` is `1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08`. **Never check one
+  against a 180° or an otherwise symmetric matrix** — those read the same under both
+  conventions and confirm whichever reading you already had, which is how the Wii
+  ports and then the Game Boy link socket were both authored inside out. Print
+  `node.transform.basis.x/.y/.z` from a throwaway probe and compare it with what you
+  meant, before rendering anything.
 - **PowerShell buffers `& $godot ... | Out-String` until the process exits**, so a
   backgrounded run shows an empty output file until it finishes. The Bash tool with
   `timeout 90 "$godot" ... 2>&1 | grep` streams and bounds the run — prefer it.
+
+### Verify with a check that can fail
+
+**A green check that cannot tell the two outcomes apart is not a check.** Ask what
+the WRONG version would look like before believing the right one; if the answer is
+"the same", that is not the check to use.
+
+Two of them in a row cost the Game Boy link socket a whole round trip. It was
+authored facing INTO the shell, and the render looked identical because a
+rectangular port recess is symmetric, while the room probe passed either way because
+a snap zone does not care which way round a plug goes in. Both were green and
+neither could have gone red. What settles a facing is a printed basis, or a render
+of something ASYMMETRIC — a seated lead, not an empty socket.
+
+**And read the note before authoring, not after the bug.** The gotchas above and the
+session memory are each one line in an index, which is enough to recognise a topic
+and not enough to act on; acting from the summary is how the same mistake arrives a
+second time. `.tscn` transforms, a model's facing and a port's seat all have notes,
+and all three were sitting in the index while that socket was written backwards.
 
 No compiled C++ test harness exists; GDExtension changes are validated by rebuilding
 (above) and loading in the headless editor.
