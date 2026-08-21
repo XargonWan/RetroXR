@@ -47,6 +47,7 @@ func _ready() -> void:
 	_test_psx_cable_is_not_av()
 	_test_psx_cable_is_spawnable()
 	await _test_psx_socket_follows_the_hardware()
+	await _test_psx_socket_is_in_the_panel()
 	await _test_psx_lead_will_seat()
 	await _test_psx_cable_joins_a_pair()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -1173,4 +1174,96 @@ func _test_psx_cable_joins_a_pair() -> void:
 	cable.queue_free()
 	m1.queue_free()
 	m2.queue_free()
+	await get_tree().process_frame
+
+
+## The socket is IN the back panel, not floating off it.
+##
+## The regression record for the one bug a render could not show. A port is
+## placed where the seated plug's ORIGIN belongs, and the two connectors on this
+## panel put their origin in different places: a phono plug's is 10 mm out with
+## its barrel reaching back, this one's is its mating face. Copying the phono
+## row's z left the socket hanging 10 mm off the back of the console with the
+## plug's nose stopping 3 mm short of it -- and photographed head-on that reads
+## as a plug resting against the panel, which is why it survived two rounds of
+## looking at pictures.
+##
+## So this measures rather than looks: the mouth of the recess against the body's
+## own back face, and the nose of a seated plug against the same plane.
+func _test_psx_socket_is_in_the_panel() -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	if sys_scene == null:
+		return
+	var psx: Node3D = sys_scene.instantiate()
+	psx.systemid = "playstation"
+	add_child(psx)
+	var lead: Node3D = load(PSX_CABLE_SCENE).instantiate()
+	add_child(lead)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var body := psx.find_child("SystemBody", true, false) as MeshInstance3D
+	var port := psx.find_child("PsxLinkPort", true, false) as Node3D
+	var jack := port.find_child("PsxLinkJack", true, false) as MeshInstance3D if port != null else null
+	_ok("the console has a body and a socket", body != null and port != null and jack != null)
+	if body == null or port == null or jack == null:
+		psx.queue_free()
+		lead.queue_free()
+		return
+
+	# The back face of the box, in the machine's own frame.
+	var panel_z: float = body.get_aabb().position.z
+
+	# The recess, likewise. Its MOUTH is the end nearest the outside world, which
+	# is the most negative z of the two.
+	var ab := jack.get_aabb()
+	var c0: Vector3 = psx.to_local(jack.global_transform * ab.position)
+	var c1: Vector3 = psx.to_local(jack.global_transform * (ab.position + ab.size))
+	var mouth: float = minf(c0.z, c1.z)
+	var back: float = maxf(c0.z, c1.z)
+
+	_ok("the mouth of the recess is level with the panel",
+		absf(mouth - panel_z) < 0.0005,
+		"mouth %.4f against panel %.4f" % [mouth, panel_z])
+	_ok("and the rest of it lies inside the console", back > panel_z,
+		"recess ends at %.4f, panel at %.4f" % [back, panel_z])
+
+	# And a seated plug actually enters. A connector whose nose stops short of the
+	# panel is a connector resting against the outside of the console.
+	port.pick_up_object(lead.get_node("PlugA0"))
+	for i in range(12):
+		await get_tree().process_frame
+	var nose := lead.get_node("PlugA0").find_child("PlugNose", true, false) as MeshInstance3D
+	if nose != null:
+		var nb := nose.get_aabb()
+		var n0: Vector3 = psx.to_local(nose.global_transform * nb.position)
+		var n1: Vector3 = psx.to_local(nose.global_transform * (nb.position + nb.size))
+		_ok("a seated plug's nose is inside the panel", maxf(n0.z, n1.z) > panel_z,
+			"nose reaches %.4f, panel at %.4f" % [maxf(n0.z, n1.z), panel_z])
+		# And the shell stays out, or the lead has been swallowed.
+		var tip := lead.get_node("PlugA0").find_child("PlugTip", true, false) as MeshInstance3D
+		var t0: Vector3 = psx.to_local(tip.global_transform * tip.get_aabb().position)
+		_ok("and its shell stays outside", t0.z < panel_z,
+			"shell at %.4f, panel at %.4f" % [t0.z, panel_z])
+
+	# The lettering has to read from OUTSIDE the console. The port is turned to
+	# face out, which flips the frame the glyphs are laid out in; the plate undoes
+	# that turn, and a plate that stopped undoing it would print SERIAL I/O
+	# backwards without anything else noticing.
+	var legend := port.find_child("Legend", true, false) as Node3D
+	_ok("the socket carries a legend", legend != null)
+	if legend != null:
+		var label := legend.find_child("Label", true, false) as Label3D
+		_ok("and it says what the socket is",
+			label != null and label.text == "SERIAL I/O",
+			label.text if label != null else "no label")
+		# Its own +X must end up pointing the same way the machine's does, or the
+		# text runs right to left.
+		var right: Vector3 = legend.global_transform.basis.x.normalized()
+		var machine_right: Vector3 = psx.global_transform.basis.x.normalized()
+		_ok("and it reads the right way round", right.dot(machine_right) < -0.9,
+			"legend +X . machine +X = %.2f" % right.dot(machine_right))
+
+	psx.queue_free()
+	lead.queue_free()
 	await get_tree().process_frame
