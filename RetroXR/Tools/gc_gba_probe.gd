@@ -83,6 +83,18 @@ func _run() -> void:
 		if arg.begins_with("--root="):
 			root = arg.trim_prefix("--root=")
 			print("[gcgba] core root: %s" % root)
+		elif arg.begins_with("--latency="):
+			# Raise the mixer's target queue depth for this run. The default is
+			# 2048 frames, about 43 ms, and that was sized against the longest
+			# MAIN-THREAD stall the app suffers. A linked machine is also stalled
+			# by the bus, which is a source that budget never counted. Not saved:
+			# it lasts as long as this process.
+			var mx: Object = _meta_audio()
+			if mx != null:
+				mx.call("set_target_latency_ms", float(arg.trim_prefix("--latency=")))
+				print("[gcgba] audio target now %.0f ms" % float(mx.call("get_target_latency_ms")))
+			else:
+				print("[gcgba] no Meta XR audio to retune; leaving the default")
 	for pair: Array in [[GC_CORE, "dolphin_libretro.dll"], [GBA_CORE, "mgba_libretro.dll"]]:
 		if not FileAccess.file_exists(root.path_join("cores").path_join(pair[1])):
 			print("[gcgba] SKIP  %s is not installed" % pair[0])
@@ -198,7 +210,18 @@ func _run() -> void:
 	_shot("c_end")
 
 	print("[gcgba] audio sink floor per machine (%% of 100 ms held): %s" % str(_floor))
-	print("[gcgba] samples under 20%%: %s of %d" % [str(_dips), 110])
+	print("[gcgba] samples under 20%%: %s of %d" % [str(_dips), _samples])
+	print("[gcgba] samples EMPTY (a hole in the sound): %s of %d" % [str(_empty), _samples])
+	# The mixer's OWN count, which is the authoritative one. An occupancy sample
+	# that reads zero is not proof of a gap: the mixer drains in 256-frame blocks
+	# and a producer refilling once an emulated frame can legitimately touch
+	# bottom between the two without anything being heard. This counter only goes
+	# up when the mixer actually wanted samples and had none.
+	var mx: Object = _meta_audio()
+	if mx != null and mx.has_method("get_underrun_count"):
+		print("[gcgba] mixer underruns (the real number): %d" % int(mx.call("get_underrun_count")))
+	else:
+		print("[gcgba] mixer exposes no underrun count")
 
 	var moved := 0
 	var now := _sent()
@@ -381,13 +404,20 @@ var _floor: Array[int] = []
 var _dips: Array[int] = []
 
 
+var _samples := 0
+var _empty: Array[int] = []
+
+
 func _sample_audio() -> void:
 	var all := _all()
 	if _floor.size() != all.size():
 		_floor.resize(all.size())
 		_dips.resize(all.size())
+		_empty.resize(all.size())
 		_floor.fill(100)
 		_dips.fill(0)
+		_empty.fill(0)
+	_samples += 1
 	for i in range(all.size()):
 		var occ: int = int(all[i].GetAudioBufferOccupancy())
 		if occ < _floor[i]:
@@ -395,6 +425,9 @@ func _sample_audio() -> void:
 		# Under a fifth of the sink is a machine within ~20 ms of silence.
 		if occ < 20:
 			_dips[i] += 1
+		# And empty is a hole in the sound, not a near miss.
+		if occ <= 0:
+			_empty[i] += 1
 
 
 func _settle(frames: int) -> void:
@@ -403,6 +436,7 @@ func _settle(frames: int) -> void:
 	for machine: Libretro in _all():
 		base.append(machine.GetFrameCount())
 	while Time.get_ticks_msec() < deadline:
+		_sample_audio()
 		var done := true
 		var machines := _all()
 		for i in machines.size():
@@ -492,3 +526,13 @@ func _restore() -> void:
 	if writer != null:
 		writer.store_string(_opt_backup)
 		writer.close()
+
+
+## The Meta XR mixer, or null where it is not the audio backend.
+func _meta_audio() -> Object:
+	if not Engine.has_singleton("MetaXRAudio"):
+		return null
+	var mx: Object = Engine.get_singleton("MetaXRAudio")
+	if mx == null or not bool(mx.call("is_available")):
+		return null
+	return mx
