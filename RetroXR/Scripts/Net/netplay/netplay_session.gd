@@ -26,6 +26,11 @@ extends Node
 
 const CH_CONTROL := 0   # reliable
 const CH_NPINPUT := 2   # unreliable
+## How long a peer may take to get its core up before the session gives up on
+## it. StartContent spins the emulation thread and returns, so a core that is
+## missing, refused or wedged fails ASYNCHRONOUSLY: this deadline is the only
+## thing standing between that and a peer reporting itself ready with no core.
+const CORE_READY_MS := 10000
 const SEND_WINDOW := 5          # frames of redundancy per packet
 const STALL_MS := 100           # gate stall before a reliable re-request
 const REREQ_THROTTLE_MS := 50
@@ -65,6 +70,26 @@ var _pending: Dictionary = {}
 var _running := false
 var _join_paused := false                # host: pipeline frozen for a late join
 
+# Cold start is asynchronous. net_start_core hands back the node and returns;
+# the core loads on its own thread and may still fail. Until it reports an
+# identity there is nothing to be ready WITH, so the session waits here first:
+# "host" (broadcast _np_start once we know what we are running), "cold" (a
+# client answering a cold start) or "join" (a late joiner about to load a
+# state). Empty when not waiting.
+var _await_core := ""
+var _await_deadline := 0
+var _await_sram := PackedByteArray()     # host: bytes to ship with _np_start
+var _await_state := PackedByteArray()    # joiner: state to load once the core is up
+var _await_state_frame := 0
+
+# Core build identity (library_name/library_version/api_version/serialize_size).
+# The host's is the reference every peer must match; a peer's own is what it
+# reports. This is the ONLY identity that survives cross-platform play: a
+# Windows player and a Quest player never hold the same core file, so a hash of
+# the binary would refuse every legitimate session and catch nothing.
+var _host_identity: Dictionary = {}
+var _local_identity: Dictionary = {}
+
 # Aux input (sensor tilt + touch pointer, port 0) — part of the deterministic
 # frame payload: [flags, sx, sy, sz (milli-g), px, py, pressed]. flags bit0 =
 # sensor valid, bit1 = pointer valid. Only the port-0 owner supplies it.
@@ -79,6 +104,15 @@ var _drain_ports: Dictionary = {}          # port -> true
 # up to KEY_SLOTS per scheduled frame as [keycode|down<<16, character] pairs.
 # Like aux, supplied by the port-0 owner. Overflow rolls to the next frame.
 const KEY_SLOTS := 4
+## Wire sizes of the two fixed blocks that follow a frame's ports. Named
+## because every reader has to check it has them before unpacking, and the
+## three call sites used to carry the number by hand: they said 15 where
+## _put_aux writes 13, so every reader demanded two bytes more than the writer
+## produced and bailed out on the LAST frame of every packet. The redundancy
+## window hid it for streamed frames and could not hide it for a re-request,
+## which sends one frame and had it dropped every time.
+const AUX_BYTES := 13
+const KEY_BYTES := KEY_SLOTS * 4
 var _local_keys: Array = []                  # pending [packed, char] pairs
 var _local_keys_by_frame: Dictionary = {}    # frame -> Array (redundant resend)
 var _recv_keys: Dictionary = {}              # host: frame -> Array
@@ -116,7 +150,7 @@ func is_running() -> bool:
 
 
 func is_active() -> bool:
-	return _running or _join_paused or not _ready_peers.is_empty()
+	return _running or _join_paused or not _await_core.is_empty() or not _ready_peers.is_empty()
 
 
 # ── Cold start (host) ─────────────────────────────────────────────────────────
@@ -127,6 +161,11 @@ func is_active() -> bool:
 func start_host(system: Object, core: String, rom_md5: String, owners: Dictionary,
 		delay: int, rollback := -1) -> bool:
 	if not _nm.is_host():
+		return false
+	# A cold start is no longer instantaneous — the host's own core has to come
+	# up before anyone is invited — so a second press of the power button lands
+	# in the middle of the first one's wait. Refuse rather than restart.
+	if is_active():
 		return false
 	if not NetplayCores.is_capable(core):
 		push_warning("[Netplay] core '%s' is not determinism-verified; refusing to start" % core)
@@ -143,32 +182,39 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 		_rollback = false
 	_set_owners(owners)
 	_ready_peers.clear()
+	_host_identity.clear()
+	_local_identity.clear()
 
-	var opt_wire := _options
 	# SRAM: every peer must boot with IDENTICAL battery-save content or the
 	# cores desync at frame 0. Ship the host's .srm bytes; the host itself
 	# boots from the same bytes but keeps its real file for persistence.
-	var sram := PackedByteArray()
+	_await_sram = PackedByteArray()
 	if system.has_method("net_sram_file_bytes"):
-		sram = system.net_sram_file_bytes()
-	# Everyone (incl. host) cold-starts through the same path. The host loads
-	# from its own file — byte-identical to `sram` since it was read just now.
-	_np_start.rpc(_sys_net_id, _core, _rom_md5, opt_wire, _owners, _delay, 0, _rollback, sram)
-	_cold_start_local(0)
-	_mark_ready(1)
+		_await_sram = system.net_sram_file_bytes()
+
+	# The host's core comes up FIRST, before anyone is invited. Until it does,
+	# the host cannot say what build it is running, and that is the one thing
+	# every peer has to match. _np_start goes out from _poll_core_ready.
+	if not _cold_start_local(0):
+		push_warning("[Netplay] host could not start core '%s'" % _core)
+		_stop_local("host could not start its core")
+		return false
+	_begin_await("host")
 	return true
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictionary,
 		owners: Dictionary, delay: int, start_frame: int, rollback := false,
-		sram := PackedByteArray()) -> void:
+		sram := PackedByteArray(), host_identity := {}) -> void:
 	_sys_net_id = sys_net_id
 	_core = core
 	_rom_md5 = rom_md5
 	_options = options
 	_delay = delay
 	_rollback = rollback
+	_host_identity = host_identity.duplicate()
+	_local_identity.clear()
 	_set_owners(owners)
 	_system = _resolve_system(sys_net_id)
 	if _system == null:
@@ -183,12 +229,16 @@ func _np_start(sys_net_id: int, core: String, rom_md5: String, options: Dictiona
 	# Boot with the host's SRAM, and never persist someone else's game locally.
 	if _system.has_method("net_set_sram"):
 		_system.net_set_sram("", sram)
-	_cold_start_local(start_frame)
-	_np_ready.rpc_id(1)
+	if not _cold_start_local(start_frame):
+		_np_ready_fail.rpc_id(1, "cannot start core '%s'" % core)
+		return
+	_begin_await("cold")
 
 
-## Bring the local core up under the netplay gate at `start_frame`.
-func _cold_start_local(start_frame: int) -> void:
+## Bring the local core up under the netplay gate at `start_frame`. False when
+## the machine refused outright (no core for this systemid, no cartridge, no
+## television). A true here means "started", NOT "running" — see _begin_await.
+func _cold_start_local(start_frame: int) -> bool:
 	_reset_runtime(start_frame)
 	# Rollback flags must be set before StartContent spins the emu thread up.
 	# get_libretro_node() exists on every system implementation (incl. mocks).
@@ -200,10 +250,117 @@ func _cold_start_local(start_frame: int) -> void:
 		pre_lib.SetNetplayRollback(_rollback, local_mask, MAX_AHEAD)
 	# net_start_core sets the gate (SetNetplayMode) BEFORE StartContent so the
 	# core holds at the start frame until inputs post.
-	_lib = _system.net_start_core(_port_mask, start_frame, _options)
-	if _lib != null and _lib.has_signal("netplay_crc"):
+	#
+	# The core NAME comes from the host, not from _resolve_core(). A machine
+	# resolves its own default per systemid, and those defaults differ per
+	# player and per platform — a core the buildbot ships for Windows may not
+	# exist for Android at all. Two peers quietly running different emulators
+	# is not a desync anyone can diagnose from the symptom.
+	_lib = _system.net_start_core(_core, _port_mask, start_frame, _options)
+	if _lib == null:
+		return false
+	if _lib.has_signal("netplay_crc"):
 		if not _lib.netplay_crc.is_connected(_on_local_crc):
 			_lib.netplay_crc.connect(_on_local_crc)
+	return true
+
+
+# ── Waiting for the local core, and checking what came up ─────────────────────
+
+## Begin waiting for the local core to report an identity. `kind` says what to
+## do once it does: "host" broadcasts the invitation, "cold" answers one, "join"
+## loads the state a late joiner was sent.
+func _begin_await(kind: String) -> void:
+	_await_core = kind
+	_await_deadline = _now() + CORE_READY_MS
+
+
+## The running core's build identity, or {} while it is still coming up. Doubles
+## as the readiness test: the C++ side publishes it from the emulation thread
+## the moment retro_load_game has succeeded, and clears it when content stops.
+func _core_identity() -> Dictionary:
+	if _lib == null or not _lib.has_method("GetCoreIdentity"):
+		return {}
+	return _lib.GetCoreIdentity()
+
+
+func _poll_core_ready() -> void:
+	var ident: Dictionary = _core_identity()
+	if ident.is_empty():
+		if _now() < _await_deadline:
+			return
+		var kind_late := _await_core
+		_await_core = ""
+		var why := "core '%s' did not come up" % _core
+		if _nm.is_host() and kind_late == "host":
+			push_warning("[Netplay] %s" % why)
+			_stop_local(why)
+		else:
+			_np_ready_fail.rpc_id(1, why)
+			_stop_local(why)
+		return
+
+	var kind := _await_core
+	_await_core = ""
+	_local_identity = ident
+
+	if kind == "host":
+		_host_identity = ident
+		print("[Netplay] host core: %s" % identity_str(ident))
+		_np_start.rpc(_sys_net_id, _core, _rom_md5, _options, _owners, _delay, 0,
+			_rollback, _await_sram, ident)
+		_await_sram = PackedByteArray()
+		_mark_ready(1)
+		return
+
+	# Every client checks itself against the host's build before answering. Same
+	# core name is not the same core: cross-platform peers take their builds from
+	# four different nightly directories, cut at four different times.
+	var bad := identity_mismatch(_host_identity, ident)
+	if not bad.is_empty():
+		push_warning("[Netplay] %s" % bad)
+		_np_ready_fail.rpc_id(1, bad)
+		_stop_local(bad)
+		return
+
+	if kind == "join":
+		if _lib != null and _lib.has_method("RequestLoadState"):
+			if not _lib.savestate_loaded.is_connected(_on_join_loaded):
+				_lib.savestate_loaded.connect(_on_join_loaded)
+			_lib.RequestLoadState(_await_state, _await_state_frame)
+		_await_state = PackedByteArray()
+		return
+
+	_np_ready.rpc_id(1)
+
+
+## Why `got` cannot play against `want`, or "" when it can. Ordered so the
+## message names the most specific difference: which build, then whether a
+## savestate can even cross between them, then the API they were built against.
+static func identity_mismatch(want: Dictionary, got: Dictionary) -> String:
+	if want.is_empty() or got.is_empty():
+		return "core did not report a build identity"
+	if str(want.get("library_name", "")) != str(got.get("library_name", "")) \
+			or str(want.get("library_version", "")) != str(got.get("library_version", "")):
+		return "core build mismatch: host runs %s, you run %s" % [
+			identity_str(want), identity_str(got)]
+	# A late join and every desync resync ship the host's serialized state for
+	# this peer to load. Different sizes means that transfer cannot work, and
+	# the symptom would be a failed join rather than anything naming the cause.
+	if int(want.get("serialize_size", 0)) != int(got.get("serialize_size", 0)):
+		return "savestate size mismatch: host %d bytes, you %d" % [
+			int(want.get("serialize_size", 0)), int(got.get("serialize_size", 0))]
+	if int(want.get("api_version", 0)) != int(got.get("api_version", 0)):
+		return "libretro API mismatch: host %d, you %d" % [
+			int(want.get("api_version", 0)), int(got.get("api_version", 0))]
+	return ""
+
+
+static func identity_str(ident: Dictionary) -> String:
+	if ident.is_empty():
+		return "(unknown)"
+	return "%s %s" % [str(ident.get("library_name", "?")),
+		str(ident.get("library_version", "?"))]
 
 
 @rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
@@ -303,6 +460,13 @@ func _stop_local(reason: String) -> void:
 		return
 	_running = false
 	_join_paused = false
+	# Cleared here rather than in _reset_runtime: the host's identity arrives in
+	# _np_start, and a cold start reaches _reset_runtime AFTER that.
+	_await_core = ""
+	_await_sram = PackedByteArray()
+	_await_state = PackedByteArray()
+	_host_identity.clear()
+	_local_identity.clear()
 	if _lib != null and _lib.has_signal("netplay_crc") and _lib.netplay_crc.is_connected(_on_local_crc):
 		_lib.netplay_crc.disconnect(_on_local_crc)
 	if _lib != null and _lib.has_method("SetNetplayRollback"):
@@ -593,6 +757,8 @@ func _is_linked(system: Object) -> bool:
 # ── Per-frame drive ───────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
+	if not _await_core.is_empty():
+		_poll_core_ready()
 	if not _running or _lib == null:
 		return
 	if _rollback:
@@ -706,7 +872,7 @@ func _np_input(bytes: PackedByteArray) -> void:
 			# pending handoff), and only for frames not yet assembled.
 			if _owner_for_frame(port, f) == sender and f > _complete_upto:
 				_recv_put(f, port, vals)
-		if buf.get_available_bytes() < 15 + KEY_SLOTS * 4:
+		if buf.get_available_bytes() < AUX_BYTES + KEY_BYTES:
 			return
 		var aux := _get_aux(buf)
 		var keys := _get_keys(buf)
@@ -786,7 +952,7 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 		return
 	var nframes := buf.get_u8()
 	for _i in range(nframes):
-		var need := 4 + _all_ports.size() * 10 + 15 + KEY_SLOTS * 4
+		var need := 4 + _all_ports.size() * 10 + AUX_BYTES + KEY_BYTES
 		if buf.get_available_bytes() < need:
 			return
 		var f := int(buf.get_u32())
@@ -911,19 +1077,21 @@ func _on_savestate_for_join(data: PackedByteArray, frame: int) -> void:
 		return
 	for peer_id: int in _joining.keys():
 		_np_savestate.rpc_id(peer_id, _sys_net_id, _core, _rom_md5, _options,
-			_owners, _delay, data, frame, _rollback)
+			_owners, _delay, data, frame, _rollback, _host_identity)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_savestate(sys_net_id: int, core: String, rom_md5: String, options: Dictionary,
 		owners: Dictionary, delay: int, data: PackedByteArray, frame: int,
-		rollback := false) -> void:
+		rollback := false, host_identity := {}) -> void:
 	_sys_net_id = sys_net_id
 	_core = core
 	_rom_md5 = rom_md5
 	_options = options
 	_delay = delay
 	_rollback = rollback
+	_host_identity = host_identity.duplicate()
+	_local_identity.clear()
 	_set_owners(owners)
 	_system = _resolve_system(sys_net_id)
 	if _system == null:
@@ -935,11 +1103,16 @@ func _np_savestate(sys_net_id: int, core: String, rom_md5: String, options: Dict
 	# Late joiner: SRAM arrives inside the serialized state; don't persist.
 	if _system.has_method("net_set_sram"):
 		_system.net_set_sram("", PackedByteArray())
-	_cold_start_local(frame)
-	if _lib != null and _lib.has_method("RequestLoadState"):
-		if not _lib.savestate_loaded.is_connected(_on_join_loaded):
-			_lib.savestate_loaded.connect(_on_join_loaded)
-		_lib.RequestLoadState(data, frame)
+	if not _cold_start_local(frame):
+		_np_ready_fail.rpc_id(1, "cannot start core '%s'" % core)
+		return
+	# The state cannot be loaded into a core that has not finished loading its
+	# content, and a state from a different build cannot be loaded at all — so
+	# both the wait and the identity check come first, and the load happens in
+	# _poll_core_ready.
+	_await_state = data
+	_await_state_frame = frame
+	_begin_await("join")
 
 
 func _on_join_loaded(ok: bool) -> void:
@@ -1095,7 +1268,7 @@ func _get_port(buf: StreamPeerBuffer) -> Array:
 	return [buf.get_u16(), buf.get_16(), buf.get_16(), buf.get_16(), buf.get_16()]
 
 
-## Aux wire block (15 bytes): u8 flags, 3x s16 sensor milli-g, 2x s16 pointer,
+## Aux wire block (AUX_BYTES): u8 flags, 3x s16 sensor milli-g, 2x s16 pointer,
 ## u8 pressed, u8 reserved.
 func _put_aux(buf: StreamPeerBuffer, aux: Array) -> void:
 	buf.put_u8(int(aux[0]) & 0xFF)

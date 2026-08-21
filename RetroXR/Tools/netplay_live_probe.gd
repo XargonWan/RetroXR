@@ -50,7 +50,9 @@ class LiveSys extends Node3D:
 	func get_libretro_node() -> Node:
 		return lib
 
-	func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Node:
+	func net_start_core(net_core: String, port_mask: int, start_frame: int, options: Dictionary) -> Node:
+		if not net_core.is_empty():
+			core = net_core          # the host names the core; every peer runs THAT one
 		for k: Variant in options:
 			lib.SetCoreOption(str(k), str(options[k]))
 		lib.SetNetplayMode(true, port_mask, start_frame)

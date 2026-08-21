@@ -22,7 +22,7 @@ const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glpro
 ## pair. A v1 peer sends no model_id, so a v2 host would silently give it default
 ## hardware at the right position — visual divergence with no error, which is a
 ## worse outcome than being turned away at the door.
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 3
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels

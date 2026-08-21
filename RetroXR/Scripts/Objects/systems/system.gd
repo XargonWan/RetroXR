@@ -2386,14 +2386,19 @@ func net_resolve_rom(md5: String) -> bool:
 ## Start the local core under the netplay gate. The gate (SetNetplayMode) is set
 ## BEFORE StartContent so the core holds at `start_frame` until inputs post.
 ## Returns the Libretro node (the session connects its signals). null on failure.
-func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
+func net_start_core(core: String, port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
 	if not _has_display():
 		push_error("RetroSystem: netplay start — no display (connect a TV)")
 		return null
 	if rom_path.is_empty():
 		push_error("RetroSystem: netplay start — no cartridge inserted")
 		return null
-	var resolved_core := _resolve_core()
+	# The host names the core, and every peer runs THAT one. _resolve_core() is
+	# this machine's own preference, which is a per-player, per-platform answer:
+	# taking it here is how two peers end up on different emulators with no way
+	# to tell from the symptom. Falling back to it only covers a caller with
+	# nothing to say (an offline-style start).
+	var resolved_core := core if not core.is_empty() else _resolve_core()
 	if resolved_core.is_empty():
 		push_error("RetroSystem: netplay start — no core for systemid '%s'" % systemid)
 		return null
