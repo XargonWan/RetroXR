@@ -134,6 +134,12 @@ const ACCEL_SMOOTHING := 0.25
 ## games are read as a direct measure of the wrist, so over-smoothing them feels
 ## like lag rather than steadiness.
 const GYRO_SMOOTHING := 0.45
+## Which sub-device of this port the Nunchuk's accelerometer is. libretro
+## addresses one accelerometer per port and a Wii Remote with a Nunchuk is one
+## player with two, so the pair's second one rides a sub-device index; 0 is the
+## remote itself. See libretro-godot's SensorIndex.hpp.
+const NUNCHUK_SENSOR_INDEX := 1
+
 ## Rotations smaller than this over one frame are treated as no rotation at all.
 ## Quaternion.get_axis() has no meaningful answer at zero angle (it returns a
 ## fixed axis), so without a floor a motionless remote reports a steady spin
@@ -194,7 +200,10 @@ var _blocking_right: bool = false
 
 # Accelerometer derivation
 var _prev_velocity := Vector3.ZERO
-var _accel_smoothed := Vector3.ZERO
+## Starts at the at-rest reading rather than at zero, which is freefall: a remote
+## that has only just appeared has not been dropped, and the same value is what
+## on_unplugged puts back.
+var _accel_smoothed := Vector3.UP * G
 
 # Gyroscope derivation. The previous orientation of the barrel, and whether one
 # has been recorded yet. The first frame after pairing has nothing to difference
@@ -415,9 +424,12 @@ func on_unplugged() -> void:
 	_connected_system = null
 	_port_index = -1
 	# Drop the motion history with the slot. However far the remote is carried
-	# while unpaired, the next pairing must not read that as one frame's rotation.
+	# while unpaired, the next pairing must not read that as one frame's rotation
+	# or as one frame's acceleration.
 	_has_prev_tip_basis = false
 	_gyro_smoothed = Vector3.ZERO
+	_prev_velocity = Vector3.ZERO
+	_accel_smoothed = Vector3.UP * G
 	_screen_mesh = null
 	_screen_w = 0.0
 	_screen_h = 0.0
@@ -615,8 +627,17 @@ func _set_device_type(dev: int) -> void:
 	if dev == device_type:
 		return
 	device_type = dev
-	if _connected_system != null and _port_index >= 0:
-		_connected_system.set_controller_port_device(_port_index, device_type)
+	if _connected_system == null or _port_index < 0:
+		return
+	_connected_system.set_controller_port_device(_port_index, device_type)
+	if _has_nunchuk():
+		return
+	# Nothing on the expansion port any more. Put the sub-device back to a device
+	# lying still, so the pulled Nunchuk's last pose cannot be read as the next
+	# one's first frame.
+	var libretro := _connected_system.get_libretro_node()
+	if is_instance_valid(libretro):
+		libretro.SetSensorAccel(_port_index, 0.0, 0.0, 1.0, NUNCHUK_SENSOR_INDEX)
 		print("[Wiimote] extension changed — slot %d re-announced as %d"
 			% [_port_index, device_type])
 
@@ -1330,6 +1351,14 @@ func _send_accel(libretro: Libretro, delta: float) -> void:
 
 	var g_vec := accel_in_wiimote_frame()
 	libretro.SetSensorAccel(_port_index, g_vec.x, g_vec.y, g_vec.z)
+
+	# And the Nunchuk's, on the same port. The remote owns the slot and makes
+	# every core call for the pair, so a Nunchuk seated directly and one seated
+	# behind a dongle are the same thing from here: _nunchuk is the one answer.
+	if _has_nunchuk() and _nunchuk != null:
+		var n_vec: Vector3 = _nunchuk.accel_in_nunchuk_frame()
+		libretro.SetSensorAccel(_port_index, n_vec.x, n_vec.y, n_vec.z,
+			NUNCHUK_SENSOR_INDEX)
 
 
 ## The smoothed world acceleration expressed on the emulated remote's own axes,
