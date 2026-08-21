@@ -489,12 +489,20 @@ func configure_handheld_controls(host: Node3D) -> void:
 			if _host != null and _host.has_method("toggle_power"):
 				_host.toggle_power())
 	elif _power_switch:
-		_power_switch.value_changed.connect(func(v: float) -> void:
-			if _host == null or not _host.has_method("toggle_power"):
-				return
-			var want_on := v > 0.5
-			if want_on != bool(_host.get("is_powered_on")):
-				_host.toggle_power())
+		_power_switch.value_changed.connect(_on_power_switch_changed)
+
+
+func _on_power_switch_changed(v: float) -> void:
+	if _host == null or not _host.has_method("toggle_power"):
+		return
+	# ObjectSync also carries the authoritative power action. Applying the
+	# replicated switch position must only move the cap; otherwise this callback
+	# toggles the remote core once here and again when EV_SYS_POWER arrives.
+	if NetworkManager.is_event_applying():
+		return
+	var want_on := v > 0.5
+	if want_on != bool(_host.get("is_powered_on")):
+		_host.toggle_power()
 
 
 ## Reflect externally-driven power changes (e.g. cart removal powers off, or a

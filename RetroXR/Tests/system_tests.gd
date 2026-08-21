@@ -99,6 +99,7 @@ func _ready() -> void:
 	_test_belongs_here()
 	_test_core_resolution()
 	_test_forced_options_merge()
+	_test_net_link_group_merge()
 	_test_memcard_presence()
 	_test_bios_seed()
 	_test_bios_boot_table()
@@ -910,6 +911,35 @@ func _test_power_on_verdict() -> void:
 	_eq("verdict/a missing bios outranks an empty slot",
 		RetroSystem._power_on_verdict("pcee2", "playstation2", "", missing, "")["title"],
 		"BIOS required")
+
+
+# ---------------------------------------------------------------------------
+# Which machines belong to one replicated linked session.
+# ---------------------------------------------------------------------------
+
+func _test_net_link_group_merge() -> void:
+	var console := Node.new()
+	var gba1 := Node.new()
+	var gba2 := Node.new()
+	var gba3 := Node.new()
+	var unrelated := Node.new()
+	var buses: Array = [
+		[{"machine": console}, {"machine": gba1}],
+		[{"machine": console}, {"machine": gba2}],
+		[{"machine": gba2}, {"machine": gba3}],
+		[{"machine": unrelated}],
+	]
+	var group := RetroSystem.merge_link_buses(console, buses)
+	_eq("link-group/the anchor stays first", group[0], console)
+	_eq("link-group/every directly cabled machine is included", group.size(), 4)
+	_ok("link-group/a second controller-port cable is not lost", group.has(gba2))
+	_ok("link-group/transitively linked machines are included", group.has(gba3))
+	_ok("link-group/an unrelated cable is excluded", not group.has(unrelated))
+	console.free()
+	gba1.free()
+	gba2.free()
+	gba3.free()
+	unrelated.free()
 
 
 # ---------------------------------------------------------------------------

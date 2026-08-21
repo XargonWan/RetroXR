@@ -1,8 +1,8 @@
 ## NetplaySession — deterministic delay-based lockstep netplay (multiplayer M4b).
 ##
 ## Fixed-path child of NetworkManager ("Netplay") so RPC node paths match on
-## every peer. Every peer runs the SAME core+ROM locally; the only thing that
-## crosses the wire is one input frame per participating port. The C++ side
+## every peer. Every peer runs the same per-machine core+ROM set locally; the
+## only continuous traffic is one input frame per participating port. The C++ side
 ## (Wrapper netplay gate) runs frame N only once PostNetplayInputs(N) arrives,
 ## so identical input timelines ⇒ identical video+audio on every peer.
 ##
@@ -39,6 +39,7 @@ const PRUNE_BEHIND := 120       # keep this many frames behind the gate
 const MAX_AHEAD := 10           # rollback: speculation cap past the confirmed frame
 const TRANSFER_LEAD := 8        # frames ahead a port-ownership handoff is scheduled
 const DISK_LEAD := 8            # frames ahead a disc eject/swap is scheduled
+const RESET_LEAD := 8           # frames ahead a front-panel reset is scheduled
 const LINK_LEAD := 8            # frames ahead a link plug/pull is scheduled
 ## Ports per machine, and the stride of a global port index. A session over a
 ## cabled pair has two machines' pads in one frame, so a port is identified by
@@ -75,9 +76,11 @@ var _libs: Array = []
 var _system: Object = null
 var _lib: Object = null
 var _group_net_ids: PackedInt32Array = PackedInt32Array()
+# One launch description per machine: {core, rom_md5, options, sram}.  A linked
+# session can be heterogeneous (GameCube + GBA), and even two identical
+# consoles normally carry different cartridges and battery saves.
+var _machine_specs: Array = []
 var _core := ""
-var _rom_md5 := ""
-var _options: Dictionary = {}
 var _delay := 3
 var _rollback := false          # GGPO-style: local input live, remote predicted
 var _all_ports: PackedInt32Array = PackedInt32Array()   # sorted participating ports
@@ -101,7 +104,6 @@ var _join_paused := false                # host: pipeline frozen for a late join
 # state). Empty when not waiting.
 var _await_core := ""
 var _await_deadline := 0
-var _await_sram := PackedByteArray()     # host: bytes to ship with _np_start
 var _await_states: Array = []            # joiner: one state per machine, once the cores are up
 var _await_state_frame := 0
 # Host: states being collected for a late joiner, one slot per machine, and the
@@ -109,22 +111,24 @@ var _await_state_frame := 0
 var _join_states: Array = []
 var _join_frame := -1
 var _join_loaded := 0
+var _join_capture_pending := false
+var _join_capture_frame := -1
 
 # Core build identity (library_name/library_version/api_version/serialize_size).
 # The host's is the reference every peer must match; a peer's own is what it
 # reports. This is the ONLY identity that survives cross-platform play: a
 # Windows player and a Quest player never hold the same core file, so a hash of
 # the binary would refuse every legitimate session and catch nothing.
-var _host_identity: Dictionary = {}
-var _local_identity: Dictionary = {}
+var _host_identities: Array = []
+var _local_identities: Array = []
 
-# Aux input (sensor tilt + touch pointer, port 0) — part of the deterministic
-# frame payload: [flags, sx, sy, sz (milli-g), px, py, pressed]. flags bit0 =
-# sensor valid, bit1 = pointer valid. Only the port-0 owner supplies it.
+# Aux input (sensor tilt + touch pointer, port 0), one block per machine.
+# [flags, sx, sy, sz (milli-g), px, py, pressed]. flags bit0 = sensor valid,
+# bit1 = pointer valid. Each machine's port-0 owner supplies its block.
 const AUX_INTS := 7
-var _local_aux: Array = [0, 0, 0, 0, 0, 0, 0]
-var _local_aux_by_frame: Dictionary = {}   # frame -> Array(7) (redundant resend)
-var _recv_aux: Dictionary = {}             # host: frame -> Array(7)
+var _local_aux: Dictionary = {}             # machine -> Array(7)
+var _local_aux_by_frame: Dictionary = {}    # frame -> {machine -> Array(7)}
+var _recv_aux: Dictionary = {}              # host: frame -> {machine -> Array(7)}
 # Ports whose scheduled values are per-frame DELTAS (mouse dx/dy): zeroed after
 # the first scheduled frame consumes them, unlike held joypad state.
 var _drain_ports: Dictionary = {}          # port -> true
@@ -141,9 +145,9 @@ const KEY_SLOTS := 4
 ## which sends one frame and had it dropped every time.
 const AUX_BYTES := 13
 const KEY_BYTES := KEY_SLOTS * 4
-var _local_keys: Array = []                  # pending [packed, char] pairs
-var _local_keys_by_frame: Dictionary = {}    # frame -> Array (redundant resend)
-var _recv_keys: Dictionary = {}              # host: frame -> Array
+var _local_keys: Dictionary = {}             # machine -> pending [packed, char] pairs
+var _local_keys_by_frame: Dictionary = {}    # frame -> {machine -> Array}
+var _recv_keys: Dictionary = {}              # host: frame -> {machine -> Array}
 
 # Scheduling / assembly.
 var _sched_frame := 0                    # next frame to schedule local input for
@@ -153,6 +157,26 @@ var _pending_local_route: Dictionary = {}  # port -> [btn,alx,aly,arx,ary] (this
 var _local_inputs: Dictionary = {}       # frame -> {port -> Array(5)} (for redundant resend)
 var _recv: Dictionary = {}               # host: frame -> {port -> Array(5)}
 var _frames: Dictionary = {}             # frame -> PackedInt32Array(20), ready to post
+# Link operations keyed by their agreed frame.  They are applied on the main
+# thread immediately before that frame's inputs are released to ANY core.  At
+# that point every emulation thread is still gated below the boundary, which is
+# the only way to keep every core on a local bus on the same topology.
+var _link_ops: Dictionary = {}           # frame -> Array[{op,members,ports}]
+var _link_serial := 0
+## Host only: serial -> peers that have not yet queued the reliable operation.
+## Assembly pauses until each participant acknowledges, so frame traffic cannot
+## overtake a topology change sent on another ENet channel.
+var _link_waiting: Dictionary = {}
+var _disc_serial := 0
+## Disc changes travel on the reliable control channel while completed input
+## frames use a different channel. Pause assembly until every participant has
+## armed the native frame schedule, or frame traffic can overtake the swap.
+var _disc_waiting: Dictionary = {}
+var _reset_serial := 0
+## Reset changes deterministic core state just like a disc swap. Assembly waits
+## until every peer has armed the native reset at the same future frame.
+var _reset_waiting: Dictionary = {}
+var _deferred_joiners: Dictionary = {}
 
 var _last_progress_ms := 0
 var _last_rereq_ms := 0
@@ -195,13 +219,14 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 	# in the middle of the first one's wait. Refuse rather than restart.
 	if is_active():
 		return false
-	if not NetplayCores.is_capable(core):
-		push_warning("[Netplay] core '%s' is not determinism-verified; refusing to start" % core)
-		return false
 	_set_group(_resolve_group(system))
-	_core = core
-	_rom_md5 = rom_md5
-	_options = NetplayCores.forced_options(core)
+	if not _build_machine_specs(core, rom_md5):
+		_group = []
+		_system = null
+		return false
+	_core = str(_machine_specs[0]["core"])
+	print("[Netplay] preparing %d machine(s): %s" % [
+		_machine_specs.size(), str(_spec_summaries(_machine_specs))])
 	_delay = clampi(delay, 1, 8)
 	_rollback = NetplayCores.rollback_capable(core) if rollback < 0 else rollback == 1
 	if _rollback and (_group.size() > 1 or _is_linked(system)):
@@ -209,15 +234,8 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 		_rollback = false
 	_set_owners(owners)
 	_ready_peers.clear()
-	_host_identity.clear()
-	_local_identity.clear()
-
-	# SRAM: every peer must boot with IDENTICAL battery-save content or the
-	# cores desync at frame 0. Ship the host's .srm bytes; the host itself
-	# boots from the same bytes but keeps its real file for persistence.
-	_await_sram = PackedByteArray()
-	if system.has_method("net_sram_file_bytes"):
-		_await_sram = system.net_sram_file_bytes()
+	_host_identities.clear()
+	_local_identities.clear()
 
 	# The host's core comes up FIRST, before anyone is invited. Until it does,
 	# the host cannot say what build it is running, and that is the one thing
@@ -231,32 +249,27 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
-func _np_start(group_net_ids: PackedInt32Array, core: String, rom_md5: String,
-		options: Dictionary, owners: Dictionary, delay: int, start_frame: int,
-		rollback := false, sram := PackedByteArray(), host_identity := {}) -> void:
-	_core = core
-	_rom_md5 = rom_md5
-	_options = options
+func _np_start(group_net_ids: PackedInt32Array, machine_specs: Array,
+		owners: Dictionary, delay: int, start_frame: int, rollback := false,
+		host_identities: Array = []) -> void:
+	_machine_specs = machine_specs.duplicate(true)
+	_core = str(_machine_specs[0].get("core", "")) if not _machine_specs.is_empty() else ""
 	_delay = delay
 	_rollback = rollback
-	_host_identity = host_identity.duplicate()
-	_local_identity.clear()
+	_host_identities = host_identities.duplicate(true)
+	_local_identities.clear()
 	_set_owners(owners)
 	# Every machine on the bus, not just the one the host anchored to: a peer
 	# missing the far end would run half a cable.
 	if not _adopt_group(group_net_ids):
 		_np_ready_fail.rpc_id(1, "cannot resolve every machine in the game")
 		return
-	# ROM policy: verify-by-hash only (never transferred). A peer without a
-	# byte-identical local copy can't join the lockstep game.
-	if _system.has_method("net_resolve_rom") and not _system.net_resolve_rom(rom_md5):
-		_np_ready_fail.rpc_id(1, "missing ROM (md5 %s…)" % rom_md5.left(8))
+	if not _prepare_local_media():
+		_np_ready_fail.rpc_id(1, "missing ROM for one of the linked machines")
 		return
-	# Boot with the host's SRAM, and never persist someone else's game locally.
-	if _system.has_method("net_set_sram"):
-		_system.net_set_sram("", sram)
 	if not _cold_start_local(start_frame):
-		_np_ready_fail.rpc_id(1, "cannot start core '%s'" % core)
+		_np_ready_fail.rpc_id(1, "cannot start one of the linked cores")
+		_stop_local("cannot start one of the linked cores")
 		return
 	_begin_await("cold")
 
@@ -298,6 +311,68 @@ func _set_group(group: Array) -> void:
 		_group_net_ids.append(_resolve_net_id(machine))
 
 
+## Capture exactly what every machine is running.  The anchor's values are
+## supplied by the power-button caller; every other machine owns its own core,
+## cartridge and SRAM and must not inherit the anchor's by accident.
+func _build_machine_specs(anchor_core: String, anchor_rom_md5: String) -> bool:
+	_machine_specs.clear()
+	for i in range(_group.size()):
+		var machine: Object = _group[i]
+		var core := anchor_core
+		var rom_md5 := anchor_rom_md5
+		if i > 0:
+			if machine != null and machine.has_method("resolve_core_name"):
+				core = str(machine.resolve_core_name())
+			if machine != null and machine.has_method("net_rom_md5"):
+				rom_md5 = str(machine.net_rom_md5())
+		if not NetplayCores.is_capable(core):
+			push_warning("[Netplay] core '%s' is not determinism-verified; refusing to start" % core)
+			_machine_specs.clear()
+			return false
+		if rom_md5.is_empty():
+			push_warning("[Netplay] linked machine %d has no ROM hash" % i)
+			_machine_specs.clear()
+			return false
+		var sram := PackedByteArray()
+		if machine != null and machine.has_method("net_sram_file_bytes"):
+			sram = machine.net_sram_file_bytes()
+		_machine_specs.append({
+			"core": core,
+			"rom_md5": rom_md5,
+			"options": NetplayCores.forced_options(core),
+			"sram": sram,
+		})
+	return not _machine_specs.is_empty()
+
+
+## Resolve and seed every local machine from the host's corresponding launch
+## description.  ROMs remain verify-only; only SRAM bytes cross the wire.
+func _prepare_local_media() -> bool:
+	if _machine_specs.size() != _group.size():
+		return false
+	for i in range(_group.size()):
+		var machine: Object = _group[i]
+		var spec: Dictionary = _machine_specs[i]
+		var md5 := str(spec.get("rom_md5", ""))
+		if machine != null and machine.has_method("net_resolve_rom") \
+				and not machine.net_resolve_rom(md5):
+			push_warning("[Netplay] machine %d has no ROM matching md5 %s…" % [i, md5.left(8)])
+			return false
+		if machine != null and machine.has_method("net_set_sram"):
+			machine.net_set_sram("", spec.get("sram", PackedByteArray()))
+		print("[Netplay] machine %d media verified (core=%s rom=%s…)" % [
+			i, str(spec.get("core", "")), md5.left(8)])
+	return true
+
+
+static func _spec_summaries(specs: Array) -> Array[String]:
+	var out: Array[String] = []
+	for spec: Dictionary in specs:
+		out.append("%s/%s…" % [str(spec.get("core", "?")),
+			str(spec.get("rom_md5", "")).left(8)])
+	return out
+
+
 ## Client side: rebuild the host's group locally from its net ids. False when
 ## any machine is missing here, which has to fail the whole peer rather than
 ## quietly running a shorter bus.
@@ -337,6 +412,10 @@ func _cold_start_local(start_frame: int) -> bool:
 	_libs = []
 	for i in range(_group.size()):
 		var machine: Object = _group[i]
+		if i >= _machine_specs.size():
+			_libs = []
+			return false
+		var spec: Dictionary = _machine_specs[i]
 		# Rollback flags must be set before StartContent spins the emu thread up.
 		# get_libretro_node() exists on every system implementation (incl. mocks).
 		var pre_lib: Object = machine.get_libretro_node() if machine.has_method("get_libretro_node") else null
@@ -354,8 +433,8 @@ func _cold_start_local(start_frame: int) -> bool:
 		# player and per platform — a core the buildbot ships for Windows may
 		# not exist for Android at all. Two peers quietly running different
 		# emulators is not a desync anyone can diagnose from the symptom.
-		var lib: Object = machine.net_start_core(_core, _mask_for_machine(i),
-			start_frame, _options)
+		var lib: Object = machine.net_start_core(str(spec.get("core", "")),
+			_mask_for_machine(i), start_frame, spec.get("options", {}))
 		if lib == null:
 			_libs = []
 			return false
@@ -381,22 +460,25 @@ func _begin_await(kind: String) -> void:
 ## The running core's build identity, or {} while it is still coming up. Doubles
 ## as the readiness test: the C++ side publishes it from the emulation thread
 ## the moment retro_load_game has succeeded, and clears it when content stops.
-func _core_identity() -> Dictionary:
+func _core_identities() -> Array:
 	if _libs.is_empty():
-		return {}
+		return []
 	# EVERY machine, not just the anchor. Answering ready while the far end of
 	# a cable is still loading is how a peer joins a bus it cannot serve.
+	var identities: Array = []
 	for lib: Object in _libs:
 		if lib == null or not lib.has_method("GetCoreIdentity"):
-			return {}
-		if (lib.GetCoreIdentity() as Dictionary).is_empty():
-			return {}
-	return _libs[0].GetCoreIdentity()
+			return []
+		var identity: Dictionary = lib.GetCoreIdentity()
+		if identity.is_empty():
+			return []
+		identities.append(identity)
+	return identities
 
 
 func _poll_core_ready() -> void:
-	var ident: Dictionary = _core_identity()
-	if ident.is_empty():
+	var identities := _core_identities()
+	if identities.is_empty():
 		if _now() < _await_deadline:
 			return
 		var kind_late := _await_core
@@ -412,26 +494,41 @@ func _poll_core_ready() -> void:
 
 	var kind := _await_core
 	_await_core = ""
-	_local_identity = ident
+	_local_identities = identities
+	# Restarting a core drops every LinkCoordinator endpoint it owned, while the
+	# physical plugs remain seated. Re-resolve those cables now that every core
+	# is attached again and before frame zero is released.
+	if _group.size() > 1 and _system != null \
+			and _system.has_method("net_refresh_link_cables"):
+		_system.net_refresh_link_cables()
+		print("[Netplay] restored the physical link topology after core restart")
 
 	if kind == "host":
-		_host_identity = ident
-		print("[Netplay] host core: %s" % identity_str(ident))
-		_np_start.rpc(_group_net_ids, _core, _rom_md5, _options, _owners, _delay, 0,
-			_rollback, _await_sram, ident)
-		_await_sram = PackedByteArray()
+		_host_identities = identities.duplicate(true)
+		print("[Netplay] host cores: %s" % str(_identity_strings(identities)))
+		_np_start.rpc(_group_net_ids, _machine_specs, _owners, _delay, 0,
+			_rollback, _host_identities)
 		_mark_ready(1)
 		return
 
 	# Every client checks itself against the host's build before answering. Same
 	# core name is not the same core: cross-platform peers take their builds from
 	# four different nightly directories, cut at four different times.
-	var bad := identity_mismatch(_host_identity, ident)
-	if not bad.is_empty():
-		push_warning("[Netplay] %s" % bad)
-		_np_ready_fail.rpc_id(1, bad)
-		_stop_local(bad)
+	if _host_identities.size() != identities.size():
+		var count_bad := "linked core count mismatch: host %d, you %d" % [
+			_host_identities.size(), identities.size()]
+		push_warning("[Netplay] %s" % count_bad)
+		_np_ready_fail.rpc_id(1, count_bad)
+		_stop_local(count_bad)
 		return
+	for i in range(identities.size()):
+		var bad := identity_mismatch(_host_identities[i], identities[i])
+		if not bad.is_empty():
+			bad = "machine %d: %s" % [i, bad]
+			push_warning("[Netplay] %s" % bad)
+			_np_ready_fail.rpc_id(1, bad)
+			_stop_local(bad)
+			return
 
 	if kind == "join":
 		_join_loaded = 0
@@ -487,6 +584,13 @@ static func identity_str(ident: Dictionary) -> String:
 		return "(unknown)"
 	return "%s %s" % [str(ident.get("library_name", "?")),
 		str(ident.get("library_version", "?"))]
+
+
+static func _identity_strings(identities: Array) -> Array[String]:
+	var out: Array[String] = []
+	for identity: Dictionary in identities:
+		out.append(identity_str(identity))
+	return out
 
 
 @rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
@@ -586,16 +690,22 @@ func _stop_local(reason: String) -> void:
 		return
 	_running = false
 	_join_paused = false
+	# Save/load callbacks may arrive from the emulation thread after a network
+	# stop. Disconnect them while the old core nodes still exist so they cannot
+	# revive late-join bookkeeping in the next session.
+	_disconnect_join_save_handlers()
+	_disconnect_join_loaded()
 	# Cleared here rather than in _reset_runtime: the host's identity arrives in
 	# _np_start, and a cold start reaches _reset_runtime AFTER that.
 	_await_core = ""
-	_await_sram = PackedByteArray()
 	_await_states = []
 	_join_states = []
 	_join_frame = -1
 	_join_loaded = 0
-	_host_identity.clear()
-	_local_identity.clear()
+	_join_capture_pending = false
+	_join_capture_frame = -1
+	_host_identities.clear()
+	_local_identities.clear()
 	for i in range(_libs.size()):
 		var lib: Object = _libs[i]
 		if lib == null:
@@ -612,12 +722,20 @@ func _stop_local(reason: String) -> void:
 	_libs = []
 	_group = []
 	_group_net_ids = PackedInt32Array()
+	_machine_specs = []
 	_lib = null
 	_system = null
 	_ready_peers.clear()
 	_frames.clear()
 	_recv.clear()
 	_local_inputs.clear()
+	_link_ops.clear()
+	_link_waiting.clear()
+	_disc_waiting.clear()
+	_reset_waiting.clear()
+	_deferred_joiners.clear()
+	_joining.clear()
+	_spectators.clear()
 	_crc_table.clear()
 	_pending.clear()
 	session_stopped.emit(reason)
@@ -631,13 +749,20 @@ func _reset_runtime(start_frame: int) -> void:
 	_frames.clear()
 	_recv.clear()
 	_local_inputs.clear()
+	_link_ops.clear()
+	_link_waiting.clear()
+	_disc_waiting.clear()
+	_reset_waiting.clear()
+	_deferred_joiners.clear()
 	_pending_local_route.clear()
 	_crc_table.clear()
 	_strikes.clear()
 	_spectators.clear()
 	_joining.clear()
+	_join_capture_pending = false
+	_join_capture_frame = -1
 	_pending.clear()
-	_local_aux = [0, 0, 0, 0, 0, 0, 0]
+	_local_aux.clear()
 	_local_aux_by_frame.clear()
 	_recv_aux.clear()
 	_drain_ports.clear()
@@ -693,34 +818,49 @@ func _capture_local() -> Dictionary:
 
 ## Aux feeds from the game system (only meaningful on the port-0 owner).
 func set_aux_sensor(system: Object, x_mg: int, y_mg: int, z_mg: int) -> void:
-	if system != _system or not _local_ports.has(0):
+	var machine_index := _group.find(system)
+	if machine_index < 0 or not _local_ports.has(machine_index * PORTS_PER_MACHINE):
 		return
-	_local_aux[0] = int(_local_aux[0]) | 1
-	_local_aux[1] = x_mg
-	_local_aux[2] = y_mg
-	_local_aux[3] = z_mg
+	var aux: Array = _local_aux.get(machine_index, [0, 0, 0, 0, 0, 0, 0])
+	aux[0] = int(aux[0]) | 1
+	aux[1] = x_mg
+	aux[2] = y_mg
+	aux[3] = z_mg
+	_local_aux[machine_index] = aux
 
 
 func set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
-	if system != _system or not _local_ports.has(0):
+	var machine_index := _group.find(system)
+	if machine_index < 0 or not _local_ports.has(machine_index * PORTS_PER_MACHINE):
 		return
-	_local_aux[0] = int(_local_aux[0]) | 2
-	_local_aux[4] = px
-	_local_aux[5] = py
-	_local_aux[6] = 1 if pressed else 0
+	var aux: Array = _local_aux.get(machine_index, [0, 0, 0, 0, 0, 0, 0])
+	aux[0] = int(aux[0]) | 2
+	aux[4] = px
+	aux[5] = py
+	aux[6] = 1 if pressed else 0
+	_local_aux[machine_index] = aux
 
 
 ## Queue a keyboard transition into the deterministic schedule. Returns true
 ## when consumed (a lockstep game is running for this system and this peer
 ## supplies the keyboard block).
 func queue_key_event(system: Object, keycode: int, down: bool, character: int) -> bool:
-	if not _running or _rollback or system != _system:
+	if not _running or _rollback:
 		return false
-	if not _local_ports.has(0):
+	var machine_index := _group.find(system)
+	if machine_index < 0:
+		return false
+	var global_port := machine_index * PORTS_PER_MACHINE
+	if not _is_participating(global_port):
+		return false
+	if not _local_ports.has(global_port):
 		# Participating game but another peer owns the keyboard feed — swallow
 		# so the local core isn't driven directly (would desync).
 		return true
-	_local_keys.append([(keycode & 0xFFFF) | (65536 if down else 0), character])
+	if not _local_keys.has(machine_index):
+		_local_keys[machine_index] = []
+	_local_keys[machine_index].append([
+		(keycode & 0xFFFF) | (65536 if down else 0), character])
 	return true
 
 
@@ -741,10 +881,15 @@ func handoff_controller(controller: Object, new_owner: int) -> void:
 		return
 	if controller == null or not is_instance_valid(controller):
 		return
-	if controller.get("_connected_system") != _system:
+	var machine: Object = controller.get("_connected_system")
+	var machine_index := _group.find(machine)
+	if machine_index < 0:
 		return
-	var port := int(controller.get("_port_index"))
-	if port < 0 or not _is_participating(port):
+	var local_port := int(controller.get("_port_index"))
+	if local_port < 0:
+		return
+	var port := machine_index * PORTS_PER_MACHINE + local_port
+	if not _is_participating(port):
 		return
 	# Compare against the latest intended owner so a rapid grab/drop coalesces
 	# (a second schedule just overwrites the not-yet-landed one).
@@ -814,44 +959,165 @@ func _apply_pending_transfers(f: int) -> void:
 ## Host: schedule a disc op for this session's system. op 0 = eject,
 ## op 1 = replace the image at `index` with the disc whose md5 matches.
 func schedule_disk_op(system: Object, op: int, md5: String, index: int) -> void:
-	if not _nm.is_host() or not _running or _rollback or system != _system:
+	if not _nm.is_host() or not _running or _rollback:
+		return
+	var machine_index := _group.find(system)
+	if machine_index < 0:
 		return
 	var frame := _complete_upto + _delay + DISK_LEAD
-	print("[Netplay] disc op %d (md5 %s…) @frame %d" % [op, md5.left(8), frame])
-	_np_disk.rpc(op, md5, index, frame)
-	_apply_disk_op(op, md5, index, frame)
+	_disc_serial += 1
+	var serial := _disc_serial
+	var waiting := _participating_remote_peers()
+	if not waiting.is_empty():
+		_disc_waiting[serial] = waiting
+	print("[Netplay] disc op %d/%d machine=%d (md5 %s…) @frame %d; waiting=%s" % [
+		serial, op, machine_index, md5.left(8), frame, str(waiting.keys())])
+	if not _apply_disk_op(machine_index, op, md5, index, frame):
+		stop("could not queue disc operation %d" % serial)
+		return
+	for peer_id: int in waiting:
+		_np_disk.rpc_id(peer_id, serial, machine_index, op, md5, index, frame)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
-func _np_disk(op: int, md5: String, index: int, frame: int) -> void:
-	_apply_disk_op(op, md5, index, frame)
+func _np_disk(serial: int, machine_index: int, op: int, md5: String,
+		index: int, frame: int) -> void:
+	if _apply_disk_op(machine_index, op, md5, index, frame):
+		_np_disk_ready.rpc_id(1, serial)
+	else:
+		_np_disk_failed.rpc_id(1, serial, "disc is unavailable or operation arrived late")
 
 
-func _apply_disk_op(op: int, md5: String, index: int, frame: int) -> void:
-	if _lib == null or not _lib.has_method("ScheduleDiscOp"):
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_disk_ready(serial: int) -> void:
+	if not _nm.is_host() or not _disc_waiting.has(serial):
 		return
+	var waiting: Dictionary = _disc_waiting[serial]
+	waiting.erase(multiplayer.get_remote_sender_id())
+	if waiting.is_empty():
+		_disc_waiting.erase(serial)
+		print("[Netplay] disc op %d acknowledged by every peer" % serial)
+
+
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_disk_failed(serial: int, reason: String) -> void:
+	if not _nm.is_host() or not _disc_waiting.has(serial):
+		return
+	stop("disc op %d failed: %s" % [serial, reason])
+
+
+func _apply_disk_op(machine_index: int, op: int, md5: String, index: int,
+		frame: int) -> bool:
+	if machine_index < 0 or machine_index >= _libs.size():
+		return false
+	var lib: Object = _libs[machine_index]
+	if lib == null or not lib.has_method("ScheduleDiscOp"):
+		return false
+	if frame < _next_post:
+		push_warning("[Netplay] disc op for frame %d arrived after frame %d was posted" % [
+			frame, _next_post - 1])
+		return false
 	var path := ""
 	if op == 1:
-		path = _resolve_disk_path(md5)
+		path = _resolve_disk_path(machine_index, md5)
 		if path.is_empty():
-			# No local copy of the new disc — this peer will desync at the
-			# swap frame; the CRC checker's savestate resync (or spectator
-			# demotion) takes it from there.
 			push_warning("[Netplay] disc swap: no local file for md5 %s…" % md5.left(8))
-			return
-	print("[Netplay] disc op %d armed @frame %d%s" %
-		[op, frame, "" if path.is_empty() else " (" + path.get_file() + ")"])
-	_lib.ScheduleDiscOp(frame, op, index, path)
+			return false
+	print("[Netplay] machine %d disc op %d armed @frame %d%s" %
+		[machine_index, op, frame, "" if path.is_empty() else " (" + path.get_file() + ")"])
+	lib.ScheduleDiscOp(frame, op, index, path)
+	return true
+
+
+# ── Front-panel reset ────────────────────────────────────────────────────────
+
+## Host: reset one machine on a confirmed future boundary. Reset changes core
+## state outside the input frame, so applying it whenever each peer receives a
+## button event would immediately fork the emulation timeline.
+func schedule_reset(system: Object) -> void:
+	if not _nm.is_host() or not _running:
+		return
+	var machine_index := _group.find(system)
+	if machine_index < 0:
+		return
+	var frame := _complete_upto + _delay + RESET_LEAD
+	_reset_serial += 1
+	var serial := _reset_serial
+	var waiting := _participating_remote_peers()
+	if not waiting.is_empty():
+		_reset_waiting[serial] = waiting
+	print("[Netplay] reset %d machine=%d @frame %d; waiting=%s" % [
+		serial, machine_index, frame, str(waiting.keys())])
+	if not _apply_reset(machine_index, frame):
+		stop("could not queue reset %d" % serial)
+		return
+	for peer_id: int in waiting:
+		_np_reset.rpc_id(peer_id, serial, machine_index, frame)
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_reset(serial: int, machine_index: int, frame: int) -> void:
+	if _apply_reset(machine_index, frame):
+		_np_reset_ready.rpc_id(1, serial)
+	else:
+		_np_reset_failed.rpc_id(1, serial, "reset arrived late or core cannot schedule it")
+
+
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_reset_ready(serial: int) -> void:
+	if not _nm.is_host() or not _reset_waiting.has(serial):
+		return
+	var waiting: Dictionary = _reset_waiting[serial]
+	waiting.erase(multiplayer.get_remote_sender_id())
+	if waiting.is_empty():
+		_reset_waiting.erase(serial)
+		print("[Netplay] reset %d acknowledged by every peer" % serial)
+
+
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_reset_failed(serial: int, reason: String) -> void:
+	if not _nm.is_host() or not _reset_waiting.has(serial):
+		return
+	stop("reset %d failed: %s" % [serial, reason])
+
+
+func _apply_reset(machine_index: int, frame: int) -> bool:
+	if machine_index < 0 or machine_index >= _libs.size():
+		return false
+	var lib: Object = _libs[machine_index]
+	if lib == null or not lib.has_method("ScheduleReset"):
+		return false
+	if frame < _next_post:
+		push_warning("[Netplay] reset for frame %d arrived after frame %d was posted" % [
+			frame, _next_post - 1])
+		return false
+	var machine: Object = _group[machine_index]
+	if machine != null and machine.has_method("net_play_reset"):
+		machine.net_play_reset()
+	lib.ScheduleReset(frame)
+	return true
+
+
+func _participating_remote_peers() -> Dictionary:
+	var waiting := {}
+	for peer_id: int in _nm.peers:
+		if peer_id != 1 and _ready_peers.has(peer_id) and not _spectators.has(peer_id) \
+				and not _joining.has(peer_id):
+			waiting[peer_id] = true
+	return waiting
 
 
 ## Find this peer's byte-identical copy of the new disc (verify-only, never
 ## transferred — same policy as ROMs at cold start).
-func _resolve_disk_path(md5: String) -> String:
+func _resolve_disk_path(machine_index: int, md5: String) -> String:
 	if md5.is_empty():
 		return ""
-	if _system != null and _system.has_method("net_resolve_rom") \
-			and _system.net_resolve_rom(md5):
-		return str(_system.get("rom_path"))
+	if machine_index < 0 or machine_index >= _group.size():
+		return ""
+	var machine: Object = _group[machine_index]
+	if machine != null and machine.has_method("net_resolve_rom") \
+			and machine.net_resolve_rom(md5):
+		return str(machine.get("rom_path"))
 	return ""
 
 
@@ -885,9 +1151,18 @@ func schedule_link_op(system: Object, op: int, members: Array, ports: Array) -> 
 	var port_ids := PackedInt32Array()
 	for pt: int in ports:
 		port_ids.append(int(pt))
-	print("[Netplay] link op %d over machines %s @frame %d" % [op, str(member_ids), frame])
-	_np_link.rpc(op, member_ids, port_ids, frame)
-	_apply_link_op(op, member_ids, port_ids, frame)
+	_link_serial += 1
+	var serial := _link_serial
+	var waiting := _participating_remote_peers()
+	if not waiting.is_empty():
+		_link_waiting[serial] = waiting
+	print("[Netplay] link op %d/%d over machines %s @frame %d; waiting=%s" % [
+		serial, op, str(member_ids), frame, str(waiting.keys())])
+	if not _apply_link_op(op, member_ids, port_ids, frame):
+		stop("could not queue link operation %d" % serial)
+		return
+	for peer_id: int in waiting:
+		_np_link.rpc_id(peer_id, serial, op, member_ids, port_ids, frame)
 
 
 ## True when `machine` is one of the machines this session is running, which is
@@ -917,28 +1192,100 @@ func schedule_link_for(op: int, entries: Array) -> void:
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
-func _np_link(op: int, members: PackedInt32Array, ports: PackedInt32Array, frame: int) -> void:
-	_apply_link_op(op, members, ports, frame)
+func _np_link(serial: int, op: int, members: PackedInt32Array,
+		ports: PackedInt32Array, frame: int) -> void:
+	if _apply_link_op(op, members, ports, frame):
+		_np_link_ready.rpc_id(1, serial)
+	else:
+		_np_link_failed.rpc_id(1, serial, "operation arrived after its frame")
 
 
-## Hand the op to the C++ gate, which applies it on the emulation thread
-## strictly before running `frame` — the same path a netplay disc swap takes.
-## Doing it from here instead would land it whenever the main thread got round
-## to it, which is a different frame on every peer.
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_link_ready(serial: int) -> void:
+	if not _nm.is_host() or not _link_waiting.has(serial):
+		return
+	var waiting: Dictionary = _link_waiting[serial]
+	waiting.erase(multiplayer.get_remote_sender_id())
+	if waiting.is_empty():
+		_link_waiting.erase(serial)
+		print("[Netplay] link op %d acknowledged by every peer" % serial)
+
+
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_link_failed(serial: int, reason: String) -> void:
+	if not _nm.is_host() or not _link_waiting.has(serial):
+		return
+	stop("link op %d failed: %s" % [serial, reason])
+
+
+## Queue the op until the frame gate is about to release `frame`.  Scheduling it
+## on only the head core's emulation thread races every other core on the bus:
+## one of them may already run the boundary frame before the head changes the
+## topology.  _drain_to_core applies it while ALL cores are still gated, then
+## posts that frame to each of them.
 func _apply_link_op(op: int, members: PackedInt32Array, ports: PackedInt32Array,
-		frame: int) -> void:
-	if members.is_empty() or _libs.size() <= int(members[0]):
-		return
-	var head: Object = _libs[int(members[0])]
-	if head == null or not head.has_method("ScheduleLinkOp"):
-		return
-	var others: Array = []
-	for i in range(1, members.size()):
-		var idx := int(members[i])
+		frame: int) -> bool:
+	if frame < _next_post:
+		push_warning("[Netplay] link op for frame %d arrived after frame %d was posted" % [
+			frame, _next_post - 1])
+		return false
+	if members.is_empty() or members.size() != ports.size():
+		return false
+	for member: int in members:
+		var idx := int(member)
 		if idx < 0 or idx >= _libs.size():
-			return
-		others.append(_libs[idx])
-	head.ScheduleLinkOp(frame, op, others, ports)
+			return false
+	if not _link_ops.has(frame):
+		_link_ops[frame] = []
+	_link_ops[frame].append({"op": op, "members": members, "ports": ports})
+	print("[Netplay] link op %d queued locally @frame %d (queue=%d)" % [
+		op, frame, _link_ops[frame].size()])
+	return true
+
+
+## Apply every cable event at this boundary in network order.  Multiple cables
+## can move before the same future frame, so this is an array rather than one
+## dictionary entry that overwrites its predecessor.
+func _land_link_ops(frame: int) -> bool:
+	var ops: Array = _link_ops.get(frame, [])
+	_link_ops.erase(frame)
+	for pending: Dictionary in ops:
+		var members: PackedInt32Array = pending["members"]
+		var ports: PackedInt32Array = pending["ports"]
+		if members.is_empty() or members.size() != ports.size():
+			continue
+		var head_idx := int(members[0])
+		if head_idx < 0 or head_idx >= _libs.size():
+			continue
+		var head: Object = _libs[head_idx]
+		if head == null:
+			return false
+		if int(pending["op"]) == 0:
+			if not head.has_method("LinkDisconnect"):
+				return false
+			head.LinkDisconnect(int(ports[0]))
+			print("[Netplay] link PULL landed @frame %d machine=%d port=%d" % [
+				frame, head_idx, int(ports[0])])
+			continue
+		if not head.has_method("LinkConnectGroup"):
+			return false
+		var others: Array = []
+		for i in range(1, members.size()):
+			others.append(_libs[int(members[i])])
+		var ok: bool = head.LinkConnectGroup(others, ports)
+		print("[Netplay] link JOIN landed @frame %d machines=%s ok=%s" % [
+			frame, str(members), ok])
+		if not ok:
+			return false
+	return true
+
+
+func _all_cores_at_link_boundary(frame: int) -> bool:
+	for lib: Object in _libs:
+		if lib == null or not lib.has_method("GetFrameCount") \
+				or int(lib.GetFrameCount()) < frame:
+			return false
+	return true
 
 
 # ── The link cable ────────────────────────────────────────────────────────────
@@ -966,9 +1313,10 @@ const LINK_PORTS: Array[int] = [0, 1]
 ## coordinator to one frame, which is a project rather than a flag, and the plan
 ## records it as such.
 ##
-## Asked of the CORE rather than of the room, deliberately: the cable is what
-## joined them, but the core is what knows it is joined, and it keeps knowing
-## across the restart a cold start puts it through.
+## Asked of the CORE rather than inferred from a nearby socket: the cable is
+## what joined them, but LinkCoordinator is the authority on whether another
+## running endpoint is actually present. A later cold start explicitly
+## re-resolves the physical cables because stopping content drops that state.
 func _is_linked(system: Object) -> bool:
 	if system == null or not system.has_method("get_libretro_node"):
 		return false
@@ -995,9 +1343,11 @@ func _process(_delta: float) -> void:
 	else:
 		_schedule_local()
 	if _nm.is_host():
-		if not _join_paused:
+		if not _join_paused and _link_waiting.is_empty() and _disc_waiting.is_empty() \
+				and _reset_waiting.is_empty():
 			_host_assemble()
 	_drain_to_core()
+	_poll_join_capture()
 	_check_stall()
 	_prune()
 
@@ -1033,20 +1383,28 @@ func _schedule_local() -> void:
 		_apply_pending_transfers(_sched_frame)
 		var inp := _capture_local()
 		_local_inputs[_sched_frame] = inp
-		if _local_ports.has(0):
-			_local_aux_by_frame[_sched_frame] = _local_aux.duplicate()
+		var aux_frame := {}
+		var keys_frame := {}
+		for machine_index in range(_group.size()):
+			if not _local_ports.has(machine_index * PORTS_PER_MACHINE):
+				continue
+			aux_frame[machine_index] = (_local_aux.get(machine_index,
+				[0, 0, 0, 0, 0, 0, 0]) as Array).duplicate()
 			var kv: Array = []
-			while not _local_keys.is_empty() and kv.size() < KEY_SLOTS * 2:
-				var ev: Array = _local_keys.pop_front()
+			var pending_keys: Array = _local_keys.get(machine_index, [])
+			while not pending_keys.is_empty() and kv.size() < KEY_SLOTS * 2:
+				var ev: Array = pending_keys.pop_front()
 				kv.append(int(ev[0]))
 				kv.append(int(ev[1]))
-			_local_keys_by_frame[_sched_frame] = kv
+			_local_keys[machine_index] = pending_keys
+			keys_frame[machine_index] = kv
+		_local_aux_by_frame[_sched_frame] = aux_frame
+		_local_keys_by_frame[_sched_frame] = keys_frame
 		if _nm.is_host():
 			for port: int in inp:
 				_recv_put(_sched_frame, port, inp[port])
-			if _local_ports.has(0):
-				_recv_aux[_sched_frame] = _local_aux.duplicate()
-				_recv_keys[_sched_frame] = _local_keys_by_frame[_sched_frame]
+			_recv_aux[_sched_frame] = aux_frame.duplicate(true)
+			_recv_keys[_sched_frame] = keys_frame.duplicate(true)
 		_sched_frame += 1
 	if not _nm.is_host():
 		_send_local_window()
@@ -1070,8 +1428,11 @@ func _send_local_window() -> void:
 		buf.put_u8(inp.size())
 		for port: int in inp:
 			_put_port(buf, port, inp[port])
-		_put_aux(buf, _local_aux_by_frame.get(f, [0, 0, 0, 0, 0, 0, 0]))
-		_put_keys(buf, _local_keys_by_frame.get(f, []))
+		var aux_frame: Dictionary = _local_aux_by_frame.get(f, {})
+		var keys_frame: Dictionary = _local_keys_by_frame.get(f, {})
+		for machine_index in range(_group.size()):
+			_put_aux(buf, aux_frame.get(machine_index, [0, 0, 0, 0, 0, 0, 0]))
+			_put_keys(buf, keys_frame.get(machine_index, []))
 	_np_input.rpc_id(1, buf.data_array)
 
 
@@ -1101,14 +1462,20 @@ func _np_input(bytes: PackedByteArray) -> void:
 			# pending handoff), and only for frames not yet assembled.
 			if _owner_for_frame(port, f) == sender and f > _complete_upto:
 				_recv_put(f, port, vals)
-		if buf.get_available_bytes() < AUX_BYTES + KEY_BYTES:
+		if buf.get_available_bytes() < _machine_count() * (AUX_BYTES + KEY_BYTES):
 			return
-		var aux := _get_aux(buf)
-		var keys := _get_keys(buf)
-		# Aux (tilt/touch) + key events ride with the port-0 owner packets.
-		if _owner_for_frame(0, f) == sender and f > _complete_upto:
-			_recv_aux[f] = aux
-			_recv_keys[f] = keys
+		for machine_index in range(_machine_count()):
+			var aux := _get_aux(buf)
+			var keys := _get_keys(buf)
+			# Each aux/key block rides with that machine's port-0 owner.
+			var global_port := machine_index * PORTS_PER_MACHINE
+			if _owner_for_frame(global_port, f) == sender and f > _complete_upto:
+				if not _recv_aux.has(f):
+					_recv_aux[f] = {}
+				if not _recv_keys.has(f):
+					_recv_keys[f] = {}
+				_recv_aux[f][machine_index] = aux
+				_recv_keys[f][machine_index] = keys
 
 
 func _host_assemble() -> void:
@@ -1118,7 +1485,7 @@ func _host_assemble() -> void:
 		if not _frame_ready(f):
 			break
 		_frames[f] = _flat_from_frame(_recv.get(f, {}),
-			_recv_aux.get(f, [0, 0, 0, 0, 0, 0, 0]), _recv_keys.get(f, []))
+			_recv_aux.get(f, {}), _recv_keys.get(f, {}))
 		_complete_upto = f
 		changed = true
 	if changed:
@@ -1154,11 +1521,9 @@ func _broadcast_frames() -> void:
 			buf.put_u16(int(flat[base]) & 0xFFFF)
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
-		_put_aux(buf, _aux_of(flat))
-		var kflat: Array = []
-		for i in range(KEY_SLOTS * 2):
-			kflat.append(flat[_port_ints() + AUX_INTS + i])
-		_put_keys(buf, kflat)
+		for machine_index in range(_machine_count()):
+			_put_aux(buf, _aux_of(flat, machine_index))
+			_put_keys(buf, _keys_of(flat, machine_index))
 	_np_frame.rpc(buf.data_array)
 
 
@@ -1181,23 +1546,26 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 		return
 	var nframes := buf.get_u8()
 	for _i in range(nframes):
-		var need := 4 + _all_ports.size() * 10 + AUX_BYTES + KEY_BYTES
+		var need := 4 + _all_ports.size() * 10 \
+			+ _machine_count() * (AUX_BYTES + KEY_BYTES)
 		if buf.get_available_bytes() < need:
 			return
 		var f := int(buf.get_u32())
 		var flat := PackedInt32Array()
-		flat.resize(_port_ints() + AUX_INTS + KEY_SLOTS * 2)
+		flat.resize(_frame_ints())
 		for port in _all_ports:
 			var base := port * 5
 			flat[base] = buf.get_u16()
 			flat[base + 1] = buf.get_16(); flat[base + 2] = buf.get_16()
 			flat[base + 3] = buf.get_16(); flat[base + 4] = buf.get_16()
-		var aux := _get_aux(buf)
-		for i in range(AUX_INTS):
-			flat[_port_ints() + i] = int(aux[i])
-		var keys := _get_keys(buf)
-		for i in range(KEY_SLOTS * 2):
-			flat[_port_ints() + AUX_INTS + i] = int(keys[i])
+		for machine_index in range(_machine_count()):
+			var aux := _get_aux(buf)
+			var keys := _get_keys(buf)
+			var tail := _machine_tail_offset(machine_index)
+			for i in range(AUX_INTS):
+				flat[tail + i] = int(aux[i])
+			for i in range(KEY_SLOTS * 2):
+				flat[tail + AUX_INTS + i] = int(keys[i])
 		if f >= _next_post and not _frames.has(f):
 			_frames[f] = flat
 
@@ -1205,17 +1573,27 @@ func _ingest_frame_packet(bytes: PackedByteArray) -> void:
 func _drain_to_core() -> void:
 	var progressed := false
 	while _frames.has(_next_post):
+		if _link_ops.has(_next_post) and not _all_cores_at_link_boundary(_next_post):
+			break
 		var flat: PackedInt32Array = _frames[_next_post]
+		if not _land_link_ops(_next_post):
+			stop("link operation failed at frame %d" % _next_post)
+			return
 		for i in range(_libs.size()):
 			_libs[i].PostNetplayInputs(_next_post, _slice_for_machine(flat, i))
 		_next_post += 1
 		progressed = true
 	if progressed:
 		_last_progress_ms = _now()
+	if _nm.is_host():
+		_start_next_deferred_join()
 
 
 ## Reliable re-request when the gate has been starved past STALL_MS.
 func _check_stall() -> void:
+	if _nm.is_host() and (not _link_waiting.is_empty() or not _disc_waiting.is_empty() \
+			or not _reset_waiting.is_empty()):
+		return
 	if _frames.has(_next_post):
 		return
 	var now := _now()
@@ -1259,11 +1637,9 @@ func _np_frame_req(frame: int) -> void:
 			buf.put_u16(int(flat[base]) & 0xFFFF)
 			buf.put_16(flat[base + 1]); buf.put_16(flat[base + 2])
 			buf.put_16(flat[base + 3]); buf.put_16(flat[base + 4])
-		_put_aux(buf, _aux_of(flat))
-		var kflat: Array = []
-		for i in range(KEY_SLOTS * 2):
-			kflat.append(flat[_port_ints() + AUX_INTS + i])
-		_put_keys(buf, kflat)
+		for machine_index in range(_machine_count()):
+			_put_aux(buf, _aux_of(flat, machine_index))
+			_put_keys(buf, _keys_of(flat, machine_index))
 	_np_frame_reliable.rpc_id(sender, buf.data_array)
 
 
@@ -1279,8 +1655,11 @@ func _np_input_req(frame: int) -> void:
 	buf.put_u8(inp.size())
 	for port: int in inp:
 		_put_port(buf, port, inp[port])
-	_put_aux(buf, _local_aux_by_frame.get(frame, [0, 0, 0, 0, 0, 0, 0]))
-	_put_keys(buf, _local_keys_by_frame.get(frame, []))
+	var aux_frame: Dictionary = _local_aux_by_frame.get(frame, {})
+	var keys_frame: Dictionary = _local_keys_by_frame.get(frame, {})
+	for machine_index in range(_machine_count()):
+		_put_aux(buf, aux_frame.get(machine_index, [0, 0, 0, 0, 0, 0, 0]))
+		_put_keys(buf, keys_frame.get(machine_index, []))
 	_np_input.rpc_id(1, buf.data_array)
 
 
@@ -1290,18 +1669,56 @@ func _np_input_req(frame: int) -> void:
 func on_peer_joined(peer_id: int) -> void:
 	if not _nm.is_host() or not _running:
 		return
+	# A core savestate does not contain LinkCoordinator's in-flight messages or
+	# clock horizons. Until the bus itself has a snapshot format, loading only
+	# the cores would create a subtly different linked machine on the newcomer.
+	if _group.size() > 1:
+		_spectators[peer_id] = true
+		print("[Netplay] peer %d remains spectator: linked games cannot late-join safely" % peer_id)
+		_np_join_refused.rpc_id(peer_id,
+			"Late join is unavailable while emulated machines are linked")
+		return
+	if _join_paused or _join_capture_pending or not _link_waiting.is_empty() \
+			or not _disc_waiting.is_empty() \
+			or not _reset_waiting.is_empty() \
+			or not _link_ops.is_empty():
+		_deferred_joiners[peer_id] = true
+		print("[Netplay] peer %d late join deferred until the current boundary settles" % peer_id)
+		return
+	_begin_join_capture(peer_id)
+
+
+func _begin_join_capture(peer_id: int) -> void:
 	_joining[peer_id] = true
 	_ready_peers.erase(peer_id)
 	_join_paused = true      # freeze the pipeline — everyone stalls at the gate
+	_join_capture_pending = true
+	_join_capture_frame = -1
+	print("[Netplay] pausing at a common frame for peer %d's snapshot" % peer_id)
+
+
+## Once every already-posted frame has executed on every local core, request
+## the state. This keeps a snapshot from pairing frame N of one core with frame
+## N+1 of another. Linked sessions are refused above because their external bus
+## queues still need their own serialization format.
+func _poll_join_capture() -> void:
+	if not _nm.is_host() or not _join_capture_pending:
+		return
+	if _join_capture_frame < 0:
+		_join_capture_frame = _next_post
+	if not _all_cores_at_link_boundary(_join_capture_frame):
+		return
+	_join_capture_pending = false
 	# A state per machine: a joiner arriving into a cabled pair needs both ends
 	# of the bus, or it resumes half a conversation.
 	_join_states.clear()
 	_join_states.resize(_libs.size())
-	_join_frame = -1
+	_join_frame = _join_capture_frame
 	for i in range(_libs.size()):
 		var lib: Object = _libs[i]
 		if lib == null or not lib.has_method("RequestSaveState"):
-			continue
+			_fail_join_capture("machine %d cannot save state" % i)
+			return
 		var handler := _on_savestate_for_join.bind(i)
 		if not lib.savestate_ready.is_connected(handler):
 			lib.savestate_ready.connect(handler)
@@ -1315,49 +1732,75 @@ func _on_savestate_for_join(data: PackedByteArray, frame: int, machine_index: in
 		if lib.savestate_ready.is_connected(handler):
 			lib.savestate_ready.disconnect(handler)
 	if data.is_empty():
-		push_warning("[Netplay] late-join savestate failed; core lacks serialization")
-		_join_states.clear()
-		_join_paused = false
+		_fail_join_capture("machine %d could not serialize" % machine_index)
+		return
+	if frame != _join_frame:
+		_fail_join_capture("machine %d saved frame %d, expected %d" % [
+			machine_index, frame, _join_frame])
 		return
 	if machine_index < _join_states.size():
 		_join_states[machine_index] = data
-	# The joiner resumes at ONE frame, and the anchor machine's is the session's.
-	if machine_index == 0:
-		_join_frame = frame
 	for state: Variant in _join_states:
 		if state == null:
 			return          # still collecting the rest of the bus
 	if _join_frame < 0:
 		return
 	for peer_id: int in _joining.keys():
-		_np_savestate.rpc_id(peer_id, _group_net_ids, _core, _rom_md5, _options,
-			_owners, _delay, _join_states.duplicate(), _join_frame, _rollback,
-			_host_identity)
+		_np_savestate.rpc_id(peer_id, _group_net_ids, _machine_specs, _owners,
+			_delay, _join_states.duplicate(), _join_frame, _rollback,
+			_host_identities)
+
+
+func _fail_join_capture(reason: String) -> void:
+	push_warning("[Netplay] late-join snapshot failed: %s" % reason)
+	_disconnect_join_save_handlers()
+	_join_states.clear()
+	_join_capture_pending = false
+	_join_capture_frame = -1
+	for peer_id: int in _joining.keys():
+		_spectators[peer_id] = true
+		_np_join_refused.rpc_id(peer_id, reason)
+	_joining.clear()
+	_join_paused = false
+	_start_next_deferred_join()
+
+
+func _disconnect_join_save_handlers() -> void:
+	for i in range(_libs.size()):
+		var lib: Object = _libs[i]
+		if lib != null and lib.has_signal("savestate_ready"):
+			var handler := _on_savestate_for_join.bind(i)
+			if lib.savestate_ready.is_connected(handler):
+				lib.savestate_ready.disconnect(handler)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
-func _np_savestate(group_net_ids: PackedInt32Array, core: String, rom_md5: String,
-		options: Dictionary, owners: Dictionary, delay: int, states: Array, frame: int,
-		rollback := false, host_identity := {}) -> void:
-	_core = core
-	_rom_md5 = rom_md5
-	_options = options
+func _np_join_refused(reason: String) -> void:
+	print("[Netplay] remaining spectator: %s" % reason)
+	if _nm.has_signal("status_changed"):
+		_nm.status_changed.emit(reason)
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_savestate(group_net_ids: PackedInt32Array, machine_specs: Array,
+		owners: Dictionary, delay: int, states: Array, frame: int,
+		rollback := false, host_identities: Array = []) -> void:
+	_machine_specs = machine_specs.duplicate(true)
+	_core = str(_machine_specs[0].get("core", "")) if not _machine_specs.is_empty() else ""
 	_delay = delay
 	_rollback = rollback
-	_host_identity = host_identity.duplicate()
-	_local_identity.clear()
+	_host_identities = host_identities.duplicate(true)
+	_local_identities.clear()
 	_set_owners(owners)
 	if not _adopt_group(group_net_ids):
 		_np_ready_fail.rpc_id(1, "cannot resolve every machine in the game")
 		return
-	if _system.has_method("net_resolve_rom") and not _system.net_resolve_rom(rom_md5):
-		_np_ready_fail.rpc_id(1, "missing ROM (md5 %s…)" % rom_md5.left(8))
+	if not _prepare_local_media():
+		_np_ready_fail.rpc_id(1, "missing ROM for one of the linked machines")
 		return
-	# Late joiner: SRAM arrives inside the serialized state; don't persist.
-	if _system.has_method("net_set_sram"):
-		_system.net_set_sram("", PackedByteArray())
 	if not _cold_start_local(frame):
-		_np_ready_fail.rpc_id(1, "cannot start core '%s'" % core)
+		_np_ready_fail.rpc_id(1, "cannot start one of the linked cores")
+		_stop_local("cannot start one of the linked cores")
 		return
 	# The state cannot be loaded into a core that has not finished loading its
 	# content, and a state from a different build cannot be loaded at all — so
@@ -1397,7 +1840,21 @@ func _resume_after_join(peer_id: int) -> void:
 	_joining.erase(peer_id)
 	if _joining.is_empty():
 		_join_paused = false
+		_join_capture_frame = -1
 		_last_progress_ms = _now()
+		_start_next_deferred_join()
+
+
+func _start_next_deferred_join() -> void:
+	if not _nm.is_host() or _join_paused or _join_capture_pending \
+			or not _link_waiting.is_empty() or not _disc_waiting.is_empty() \
+			or not _reset_waiting.is_empty() \
+			or not _link_ops.is_empty() \
+			or _deferred_joiners.is_empty():
+		return
+	var peer_id := int(_deferred_joiners.keys()[0])
+	_deferred_joiners.erase(peer_id)
+	_begin_join_capture(peer_id)
 
 
 ## Host: a peer disconnected. A departed port owner stalls the assembler
@@ -1409,6 +1866,22 @@ func on_peer_left(peer_id: int) -> void:
 	_joining.erase(peer_id)
 	_strikes.erase(peer_id)
 	_spectators.erase(peer_id)
+	_deferred_joiners.erase(peer_id)
+	for serial: int in _link_waiting.keys():
+		var waiting: Dictionary = _link_waiting[serial]
+		waiting.erase(peer_id)
+		if waiting.is_empty():
+			_link_waiting.erase(serial)
+	for serial: int in _disc_waiting.keys():
+		var waiting: Dictionary = _disc_waiting[serial]
+		waiting.erase(peer_id)
+		if waiting.is_empty():
+			_disc_waiting.erase(serial)
+	for serial: int in _reset_waiting.keys():
+		var waiting: Dictionary = _reset_waiting[serial]
+		waiting.erase(peer_id)
+		if waiting.is_empty():
+			_reset_waiting.erase(serial)
 	if _joining.is_empty():
 		_join_paused = false
 	for port: int in _owners:
@@ -1425,6 +1898,7 @@ func on_peer_left(peer_id: int) -> void:
 	# Cold-start may have been waiting on this peer's _np_ready.
 	if not _running and not _ready_peers.is_empty():
 		_mark_ready(1)
+	_start_next_deferred_join()
 
 
 # ── Desync detection ──────────────────────────────────────────────────────────
@@ -1516,23 +1990,31 @@ func _recv_put(frame: int, port: int, vals: Array) -> void:
 
 
 ## Ints of port data in an assembled frame: every machine in the group gets
-## PORTS_PER_MACHINE x 5, and aux and keys follow all of them.
+## PORTS_PER_MACHINE x 5, followed by one aux/key tail for each machine.
 func _port_ints() -> int:
-	return maxi(_group.size(), 1) * PORTS_PER_MACHINE * 5
+	return _machine_count() * PORTS_PER_MACHINE * 5
 
 
-## Assembled frame: one 5-int block per GLOBAL port, then aux
-## [flags, sx, sy, sz, px, py, pressed], then up to KEY_SLOTS key events x 2
-## ints [keycode|down<<16, character].
-##
-## Aux and keys are the group's, not each machine's: a tilt or a keystroke comes
-## from one player's hands and there is one set of them per session. They ride
-## with the port-0 owner of the FIRST machine and every core is handed the same
-## block, which is what the gate has always been given.
-func _flat_from_frame(pm: Dictionary, aux: Array, keys: Array) -> PackedInt32Array:
+func _machine_count() -> int:
+	return maxi(_group.size(), 1)
+
+
+func _machine_tail_offset(machine_index: int) -> int:
+	return _port_ints() + machine_index * (AUX_INTS + KEY_SLOTS * 2)
+
+
+func _frame_ints() -> int:
+	return _port_ints() + _machine_count() * (AUX_INTS + KEY_SLOTS * 2)
+
+
+## Assembled frame: one 5-int block per GLOBAL port, then one aux + keyboard
+## block per machine. A linked handheld's tilt or keyboard belongs to that
+## handheld alone and must not be dropped or copied into every other core.
+func _flat_from_frame(pm: Dictionary, aux_by_machine: Dictionary,
+		keys_by_machine: Dictionary) -> PackedInt32Array:
 	var port_ints := _port_ints()
 	var flat := PackedInt32Array()
-	flat.resize(port_ints + AUX_INTS + KEY_SLOTS * 2)
+	flat.resize(_frame_ints())
 	for port: int in pm:
 		var v: Array = pm[port]
 		var base := int(port) * 5
@@ -1540,33 +2022,45 @@ func _flat_from_frame(pm: Dictionary, aux: Array, keys: Array) -> PackedInt32Arr
 			continue
 		for i in range(5):
 			flat[base + i] = int(v[i])
-	for i in range(AUX_INTS):
-		flat[port_ints + i] = int(aux[i])
-	for i in range(mini(keys.size(), KEY_SLOTS * 2)):
-		flat[port_ints + AUX_INTS + i] = int(keys[i])
+	for machine_index in range(_machine_count()):
+		var tail := _machine_tail_offset(machine_index)
+		var aux: Array = aux_by_machine.get(machine_index, [0, 0, 0, 0, 0, 0, 0])
+		var keys: Array = keys_by_machine.get(machine_index, [])
+		for i in range(AUX_INTS):
+			flat[tail + i] = int(aux[i])
+		for i in range(mini(keys.size(), KEY_SLOTS * 2)):
+			flat[tail + AUX_INTS + i] = int(keys[i])
 	return flat
 
 
 ## One machine's share of an assembled frame, in the shape a core expects:
-## its own four ports, then the group's aux and key blocks. The C++ gate has
-## never known about anything but its own machine and does not need to.
+## its own four ports, then its own aux and key blocks. The C++ gate has never
+## known about anything but its own machine and does not need to.
 func _slice_for_machine(flat: PackedInt32Array, machine_index: int) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	out.resize(PORTS_PER_MACHINE * 5 + AUX_INTS + KEY_SLOTS * 2)
 	var base := machine_index * PORTS_PER_MACHINE * 5
 	for i in range(PORTS_PER_MACHINE * 5):
 		out[i] = flat[base + i] if base + i < flat.size() else 0
-	var tail := _port_ints()
+	var tail := _machine_tail_offset(machine_index)
 	for i in range(AUX_INTS + KEY_SLOTS * 2):
 		out[PORTS_PER_MACHINE * 5 + i] = flat[tail + i] if tail + i < flat.size() else 0
 	return out
 
 
-## The group's aux block out of an assembled frame.
-func _aux_of(flat: PackedInt32Array) -> Array:
-	var base := _port_ints()
+## One machine's aux block out of an assembled frame.
+func _aux_of(flat: PackedInt32Array, machine_index: int) -> Array:
+	var base := _machine_tail_offset(machine_index)
 	var out: Array = []
 	for i in range(AUX_INTS):
+		out.append(flat[base + i] if base + i < flat.size() else 0)
+	return out
+
+
+func _keys_of(flat: PackedInt32Array, machine_index: int) -> Array:
+	var base := _machine_tail_offset(machine_index) + AUX_INTS
+	var out: Array = []
+	for i in range(KEY_SLOTS * 2):
 		out.append(flat[base + i] if base + i < flat.size() else 0)
 	return out
 

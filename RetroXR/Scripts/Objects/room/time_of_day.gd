@@ -544,10 +544,19 @@ func _apply_street_lamp(t: float) -> void:
 ## it — t = 0 is morning, not the night before — and a lamp still blazing at the
 ## lever's leftmost position read as 4am rather than as the start of the day.
 func _on_lever_released(v: float) -> void:
+	NetworkManager.report_event(NetObjectSync.EV_TIME_OF_DAY,
+		{"clock": self, "time": clampf(v, 0.0, 1.0)})
 	if not persist:
 		return
 	AppPrefs.bedroom_time_of_day = clampf(v, 0.0, 1.0)
 	AppPrefs.save_prefs()
+
+
+func net_set_time(value: float) -> void:
+	var v := clampf(value, 0.0, 1.0)
+	if _lever != null:
+		_lever.set_value_no_signal(v)
+	apply_now(v)
 
 
 func _lamp_gain(t: float) -> float:

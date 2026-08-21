@@ -42,17 +42,59 @@ extends Node3D
 ## it locally anyway is the fork this exists to avoid. True means the caller
 ## must do nothing else — the host has scheduled it and every peer, this one
 ## included, applies it on the agreed frame.
+var _netplay_held: Array = []
+## Test seam for the deterministic topology policy. Runtime always uses the
+## NetworkManager autoload.
+var netplay_manager_override: Object = null
+
+
 func netplay_took_bus(join: Array, held: Array) -> bool:
-	if not NetworkManager.netplay_running():
+	var manager: Object = netplay_manager_override if netplay_manager_override != null \
+		else NetworkManager
+	if not manager.netplay_running():
+		_netplay_held.clear()
 		return false
-	var entries: Array = join if join.size() >= 2 else held
+	var is_join := join.size() >= 2
+	var entries: Array = join if is_join else held
+	# A scheduled join has not updated the cable's ordinary `_linked` cache yet.
+	# If the player pulls it again inside LINK_LEAD, retain the intended bus here
+	# so the inverse operation can cancel it at the next agreed boundary.
+	if entries.is_empty() and not is_join:
+		entries = _netplay_held
 	if entries.is_empty():
 		return false
+	var covered := 0
 	for entry: Dictionary in entries:
-		if not NetworkManager.netplay_covers(entry.get("machine")):
+		if manager.netplay_covers(entry.get("machine")):
+			covered += 1
+	if covered == 0:
+		return false
+	if covered != entries.size():
+		# Never fall through to an immediate local join when only one endpoint is
+		# deterministic.  That forks this peer from the rest of the session.
+		if manager.is_host():
+			push_warning("[Netplay] cable touches a machine outside the session; topology change refused")
+		return true
+	if is_join and _same_netplay_bus(_netplay_held, entries):
+		return true
+	if manager.is_host():
+		manager.netplay_schedule_link(1 if is_join else 0, entries)
+	if is_join:
+		_netplay_held = entries.duplicate(true)
+	else:
+		_netplay_held.clear()
+	return true
+
+
+func _same_netplay_bus(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in range(a.size()):
+		var left: Dictionary = a[i]
+		var right: Dictionary = b[i]
+		if left.get("machine") != right.get("machine") \
+				or int(left.get("port", 0)) != int(right.get("port", 0)):
 			return false
-	if NetworkManager.is_host():
-		NetworkManager.netplay_schedule_link(1 if join.size() >= 2 else 0, entries)
 	return true
 
 

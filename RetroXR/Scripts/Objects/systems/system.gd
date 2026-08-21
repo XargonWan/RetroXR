@@ -1919,7 +1919,7 @@ func _process(_delta: float) -> void:
 	if is_powered_on and _model != null and _model.is_handheld():
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
 		if NetworkManager.netplay_running():
-			if NetworkManager.netplay_system() == self:
+			if NetworkManager.netplay_covers(self):
 				NetworkManager.netplay_set_aux_sensor(self,
 					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
 		else:
@@ -1968,7 +1968,7 @@ func feed_touch(uv: Vector2, pressed: bool) -> void:
 	var px := int(clampf(uv.x, 0.0, 1.0) * 65534.0) - 32767
 	var py := int(clampf(uv.y, 0.0, 1.0) * 65534.0) - 32767
 	if NetworkManager.netplay_running():
-		if NetworkManager.netplay_system() == self:
+		if NetworkManager.netplay_covers(self):
 			NetworkManager.netplay_set_aux_pointer(self, px, py, pressed)
 		return
 	_libretro.SetPointerState(0, px, py, pressed)
@@ -2442,11 +2442,81 @@ func net_start_core(core: String, port_mask: int, start_frame: int, options: Dic
 ## the savestate. Only the host walks this; every other peer is told the answer,
 ## so the order has to be stable within one process rather than across them.
 func net_link_group() -> Array:
-	var machines: Array = [self]
-	for entry: Dictionary in net_link_bus():
-		var machine: Object = entry.get("machine")
-		if machine != null and not machines.has(machine):
-			machines.append(machine)
+	if not is_inside_tree():
+		return [self]
+	# A console may have one independent link cable per controller socket (four
+	# GameCube-to-GBA leads are the common case).  No single cable's bus contains
+	# the other handhelds, so collect every bus that contains this machine.
+	return merge_link_buses(self, net_link_buses())
+
+
+## Every distinct physical cable bus containing this machine. This is also the
+## list netplay re-resolves after restarting cores, because StopContent drops
+## LinkCoordinator ownership while the plugs themselves never moved.
+func net_link_buses() -> Array:
+	var buses: Array = []
+	var seen_cables := {}
+	if not is_inside_tree():
+		return buses
+	for plug in get_tree().get_nodes_in_group("link_plug") \
+			+ get_tree().get_nodes_in_group("controller_plug"):
+		var cable: Object = plug.get("cable")
+		if cable == null or not is_instance_valid(cable) or seen_cables.has(cable) \
+				or not cable.has_method("linked_machines"):
+			continue
+		seen_cables[cable] = true
+		var bus: Array = cable.linked_machines()
+		for entry: Dictionary in bus:
+			if entry.get("machine") == self:
+				buses.append(bus)
+				break
+	return buses
+
+
+func net_refresh_link_cables() -> void:
+	var seen_cables := {}
+	for plug in get_tree().get_nodes_in_group("link_plug") \
+			+ get_tree().get_nodes_in_group("controller_plug"):
+		var cable: Object = plug.get("cable")
+		if cable == null or not is_instance_valid(cable) or seen_cables.has(cable) \
+				or not cable.has_method("linked_machines"):
+			continue
+		seen_cables[cable] = true
+		var touches := false
+		for entry: Dictionary in cable.linked_machines():
+			if entry.get("machine") == self:
+				touches = true
+				break
+		if touches and cable.has_method("_disconnect") and cable.has_method("_resolve"):
+			# Its cached endpoints still name the same Libretro nodes, but
+			# StopContent removed those nodes from LinkCoordinator. Force a real
+			# disconnect/rejoin instead of letting the cache call it a no-op.
+			cable.call("_disconnect")
+			cable.call("_resolve")
+
+
+## Flatten every cable bus reachable from `anchor`.  Kept pure so the rule can
+## be tested without constructing sockets and cables: one console with several
+## independent controller-port leads still needs every far machine in its
+## replicated netplay group.
+static func merge_link_buses(anchor: Object, buses: Array) -> Array:
+	var machines: Array = [anchor]
+	var changed := true
+	while changed:
+		changed = false
+		for bus: Array in buses:
+			var touches := false
+			for entry: Dictionary in bus:
+				if machines.has(entry.get("machine")):
+					touches = true
+					break
+			if not touches:
+				continue
+			for entry: Dictionary in bus:
+				var machine: Object = entry.get("machine")
+				if machine != null and not machines.has(machine):
+					machines.append(machine)
+					changed = true
 	return machines
 
 
@@ -2509,6 +2579,18 @@ func net_set_remote_power(on: bool) -> void:
 ## every thread parked. Nothing is torn down here, so the screen, the audio
 ## voices and the port bindings all survive and there is nothing to rebind.
 func reset() -> void:
+	if NetworkManager.is_active() and not NetworkManager.is_event_applying():
+		if NetworkManager.netplay_running() and NetworkManager.netplay_covers(self):
+			if NetworkManager.is_client():
+				NetworkManager.report_event(NetObjectSync.EV_SYS_RESET, {"sys": self})
+			else:
+				NetworkManager.netplay_schedule_reset(self)
+			return
+		# Before lockstep starts, clients hold only a visual replica; reset the
+		# host's running core instead of returning because this copy is powered off.
+		if NetworkManager.is_client():
+			NetworkManager.report_event(NetObjectSync.EV_SYS_RESET, {"sys": self})
+			return
 	if not is_powered_on:
 		return
 	_model.play_reset()
@@ -2520,6 +2602,13 @@ func reset() -> void:
 	_sync_core_tray()
 	print("[RetroSystem] Resetting: rom=%s" % rom_path)
 	_libretro.RequestReset()
+
+
+## Visual half of a frame-scheduled netplay reset. The core half is armed on
+## every peer by NetplaySession and executes at the agreed emulated frame.
+func net_play_reset() -> void:
+	if is_powered_on and _model != null:
+		_model.play_reset()
 
 
 ## Make the console report an EMPTY slot when no card is seated.
@@ -3335,7 +3424,7 @@ const DISK_OP_CLOSE := 1
 ## Netplay: frame-scheduled so every lockstep peer swaps on the same frame
 ## (host schedules; clients send intent via EV_DISK_OP).
 func _request_disk_op(op: int, path: String) -> void:
-	if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+	if NetworkManager.netplay_running() and NetworkManager.netplay_covers(self):
 		var md5 := "" if path.is_empty() else NetFileTransfer.hash_of(path)
 		if NetworkManager.is_host():
 			NetworkManager.netplay_schedule_disk(self, op, md5, _disc_index)

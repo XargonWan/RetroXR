@@ -37,7 +37,12 @@ func _resolve() -> void:
 	var console := _console_end()
 	var handheld := _handheld_end()
 	if netplay_took_bus(linked_machines(), held_machines()):
-		pass    # a lockstep game owns these machines; the host schedules it
+		if console.is_empty() or handheld == null:
+			_linked = {}
+		else:
+			_linked = {"libretro": console["libretro"], "gba": handheld,
+				"port": console["port"], "machine": console.get("machine"),
+				"gba_machine": _machine_of(handheld)}
 	elif console.is_empty() or handheld == null:
 		_disconnect()
 	else:

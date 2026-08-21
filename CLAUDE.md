@@ -318,6 +318,25 @@ It writes the player's real `user://controller_bindings.json` and
 `user://gamepad_bindings.json` — the paths are consts on the two classes and cannot be
 pointed elsewhere — so both are snapshotted up front and restored at the end.
 
+`RetroXR/Tests/object_sync_tests.tscn` covers the shared-room network layer with
+two and three real in-process ENet peers: initial and replacement snapshots,
+host/client spawning and despawning, rigid-body transform flow, grab arbitration,
+release velocities, disconnect cleanup, event relay, plain + spring-latched
+hinge mechanics (including push-push trays), knobs, plain + spring-return
+sliders, levers, and remote head/hand avatars. Momentary button depression is
+deliberately not replicated;
+the semantic action it triggers is. The event cases cover platform power/reset,
+tray/eject and media insertion, every TV bezel/remote action (power, volume,
+mute, CRT, stereo/audio modes, aspect, source and channel), deck transports,
+cables/ports, book controls, wall and pull-chain lights, blinds and time of day.
+Late-join snapshots also carry the TV control state and those fixed room controls,
+not only spawned objects. It has no ROM, headset or display dependency.
+Each group is independently runnable.
+```bash
+"$godot" --headless --path RetroXR res://Tests/object_sync_tests.tscn
+"$godot" --headless --path RetroXR res://Tests/object_sync_tests.tscn -- --only=hinges
+```
+
 That a binding reaches a RUNNING core is deliberately not here: it needs a real system,
 a real controller and the `binding_consumers` fan-out, and lives in
 `Tools/binding_live_probe.tscn`. Drive that probe through the view's OWN
@@ -656,20 +675,22 @@ buses agreeing. A cabled pair is therefore ONE session over TWO machines, which
 is why `NetplaySession` holds a `_group` rather than a system.
 
 Ports are named `machine * PORTS_PER_MACHINE + port`, so both machines' pads fit
-in one assembled frame; each core is handed only its own 20-int block plus the
-group's shared aux and key blocks, which is exactly what the gate always got.
-Aux (tilt, touch) and keyboard belong to the GROUP, not per machine — one
-player's hands, one set of them — and ride with the port-0 owner of machine 0.
-A late join ships one savestate per machine and resumes only once every core has
-taken its own.
+in one assembled frame; each core is handed only its own 20-int block plus that
+machine's aux and key blocks. Aux (tilt, touch) and keyboard ride with each
+machine's own port-0 owner — copying the anchor's tilt into every linked handheld
+is just as wrong as dropping the far handheld's input. A linked late join stays
+a spectator: core savestates do not include LinkCoordinator's queued messages or
+clock horizons, so the bus needs a snapshot format before that can be safe.
 
 Two things this had to get right, and both are the same rule:
 
-- **Every machine on the wire is in the session.** When it held one, the far end
+- **Every machine on every connected wire is in the session.** When it held one, the far end
   was ungated on the host and not running at all on a client, so the client's
   gated core sat on a bus whose other end never published — and the coordinator
   waits for a peer that is behind rather than guessing, with deliberately no
-  timeout. Host fine, client wedged.
+  timeout. Host fine, client wedged. A console can have several independent
+  leads (four GameCube-to-GBA cables are the obvious case), so the group is the
+  transitive merge of every cable bus touching the anchor, not the first match.
 - **All THREE leads, not just the handheld one.** Every lead that can put two
   cores on a wire answers `linked_machines()` / `held_machines()`, and a machine
   finds its bus by asking the leads rather than searching its own sockets. That
@@ -682,10 +703,11 @@ Two things this had to get right, and both are the same rule:
 - **A plug seated mid-game lands on ONE agreed frame.** `LinkCoordinator.hpp`
   says so itself: the thing it cannot enforce is that Connect and Disconnect
   happen on the same emulated frame on every peer, and that is the caller's job.
-  Nothing was doing it. Now `Wrapper::ScheduleLinkOp` / `ApplyScheduledLinkOps`
-  applies it on the emulation thread strictly before its frame, the disc-swap
-  path exactly, and `link_cable._resolve` hands the decision to the host instead
-  of joining on the spot whenever a hand moves.
+  Nothing was doing it. The host now waits for every peer to acknowledge the
+  reliable topology command, then holds the boundary until every local core has
+  finished the preceding frame; only then does it change the bus and release
+  that frame to any core. `link_cable._resolve` hands the decision to the host
+  instead of joining on the spot whenever a hand moves.
 
 `RetroXR/Tools/netplay_link_probe.tscn` is the real-core half — two gambatte
 Game Boys, the real bus, ROMs from `Tools/gen_gblink_rom.py`:

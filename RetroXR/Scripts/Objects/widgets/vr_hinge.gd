@@ -160,6 +160,18 @@ func set_rotation_deg_no_signal(deg: float) -> void:
 	_apply(deg, false)
 
 
+## Apply a network-authored angle through the normal signal path. Model-specific
+## listeners (the NES flap is the important one) still have to move their visible
+## geometry; NetObjectSync suppresses the resulting echo while applying it.
+func set_rotation_deg_remote(deg: float) -> void:
+	_release_angular_velocity_deg = 0.0
+	_apply(deg, true)
+
+
+func get_rotation_deg() -> float:
+	return rad_to_deg(target.rotation.x) if target != null else min_deg
+
+
 func _process(delta: float) -> void:
 	# NB: the previous held state is remembered ACROSS frames (_held_prev, set at the
 	# bottom). Sampling it here instead missed every desktop release — pointer_event

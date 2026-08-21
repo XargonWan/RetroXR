@@ -48,7 +48,20 @@ func _resolve() -> void:
 	var a := _console_end(End.A)
 	var b := _console_end(End.B)
 	if netplay_took_bus(linked_machines(), held_machines()):
-		pass    # a lockstep game owns both consoles; the host schedules it
+		if a.is_empty() or b.is_empty() or a["libretro"] == b["libretro"]:
+			_linked = {}
+			_powered = {}
+		else:
+			_linked = {
+				"a": a["libretro"], "b": b["libretro"],
+				"machine_a": a["machine"], "machine_b": b["machine"],
+				"port_a": a["port"], "port_b": b["port"],
+			}
+			_powered = {
+				"machine_a": bool(a["machine"].is_powered_on),
+				"machine_b": bool(b["machine"].is_powered_on),
+			}
+		_restate_wait = RESTATE_COOLDOWN
 	elif a.is_empty() or b.is_empty() or a["libretro"] == b["libretro"]:
 		_disconnect()
 	else:

@@ -58,7 +58,11 @@ func _resolve() -> void:
 	var group := _machines_on_this_wire(wire)
 
 	if _bus_head(wire) == self and netplay_took_bus(linked_machines(), held_machines()):
-		pass    # the session scheduled it; every peer applies it on that frame
+		# Keep the physical cache in step with the accepted intent. The actual bus
+		# changes later at the agreed frame, but _watch must not resurrect a pull
+		# or forget a join while it waits.
+		_linked = group.duplicate() if group.size() >= 2 else []
+		_restate_wait = RESTATE_COOLDOWN
 	elif group.size() >= 2 and _bus_head(wire) == self:
 		_join(group)
 	else:

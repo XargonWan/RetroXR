@@ -299,7 +299,7 @@ func _test_wire() -> void:
 	# The assembled frame is one flat int array with a fixed layout; the gate
 	# indexes straight into it, so a field landing one slot over is silent.
 	var flat := np._flat_from_frame({0: [1, 2, 3, 4, 5], 2: [6, 7, 8, 9, 10]},
-		[3, 11, 12, 13, 14, 15, 1], [70 | 65536, 102])
+		{0: [3, 11, 12, 13, 14, 15, 1]}, {0: [70 | 65536, 102]})
 	_eq(flat.size(), 20 + NetplaySession.AUX_INTS + NetplaySession.KEY_SLOTS * 2,
 		"wire/an assembled frame is one fixed-size block")
 	_eq(flat[0], 1, "wire/port 0 lands at 0")
@@ -308,6 +308,23 @@ func _test_wire() -> void:
 	_eq(flat[20], 3, "wire/aux follows the four ports")
 	_eq(flat[26], 1, "wire/and ends with the pointer button")
 	_eq(flat[27], 70 | 65536, "wire/keys follow aux")
+
+	# A linked machine owns a separate aux/key tail. Sharing one tail copied the
+	# anchor handheld's tilt into every core and discarded the far machine's.
+	var far_wire_machine := Node.new()
+	np._group = [self, far_wire_machine]
+	var linked_flat := np._flat_from_frame({},
+		{0: [1, 10, 20, 30, 0, 0, 0], 1: [2, 0, 0, 0, 40, 50, 1]},
+		{0: [65, 97], 1: [66 | 65536, 98]})
+	var near_slice := np._slice_for_machine(linked_flat, 0)
+	var far_slice := np._slice_for_machine(linked_flat, 1)
+	_eq(near_slice[20], 1, "wire/the anchor keeps its own aux flags")
+	_eq(near_slice[21], 10, "wire/the anchor keeps its own sensor")
+	_eq(far_slice[20], 2, "wire/the far machine keeps its own aux flags")
+	_eq(far_slice[24], 40, "wire/the far machine keeps its own pointer")
+	_eq(near_slice[27], 65, "wire/the anchor keeps its own keyboard")
+	_eq(far_slice[27], 66 | 65536, "wire/the far machine keeps its own keyboard")
+	far_wire_machine.free()
 
 	np.get_parent().queue_free()
 	await get_tree().process_frame
@@ -671,7 +688,7 @@ func _test_join() -> void:
 	third.add_child(jsys)
 	third._netplay.system_override = jsys
 	var jnp: NetplaySession = third._netplay
-	third.join_game("127.0.0.1", PORT)
+	third.join_game("::1", PORT)
 	_ok(await _until(func() -> bool: return w.host_nm.peers.size() == 3),
 		"join/the newcomer is in the roster")
 	_ok(await _until(func() -> bool: return jnp.is_running(), 900),
@@ -706,7 +723,7 @@ func _test_join() -> void:
 	osys.lib.identity = IDENT_A.duplicate()
 	osys.lib.identity["library_version"] = "(SVN 2026-08-19)"
 	odd._netplay.system_override = osys
-	odd.join_game("127.0.0.1", PORT)
+	odd.join_game("::1", PORT)
 	_ok(await _until(func() -> bool: return w.host_np._spectators.has(_other_id(w.host_nm, w.client_id)), 900),
 		"join/a newcomer on a different build is refused")
 	_ok(not osys.lib.loaded_state, "join/and never loads the host's savestate")
@@ -714,6 +731,35 @@ func _test_join() -> void:
 	w.host_nm.netplay_stop("done")
 	await _await_frames(10)
 	odd.get_parent().queue_free()
+	_free(w)
+	await _await_frames(5)
+
+	# A failed host snapshot must release the gate and demote only the newcomer.
+	# Leaving _joining populated here freezes the existing game forever.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	await _until(func() -> bool: return w.host_np.is_running())
+	await _await_frames(40)
+	w.host_sys.lib.save_fails = true
+	var broken := _branch("JF")
+	var bsys := MockSys.new()
+	bsys.name = "Sys"
+	broken.add_child(bsys)
+	broken._netplay.system_override = bsys
+	broken.join_game("::1", PORT)
+	_ok(await _until(func() -> bool:
+		var newcomer := _other_id(w.host_nm, w.client_id)
+		return newcomer > 0 and w.host_np._spectators.has(newcomer), 900),
+		"join/a failed host snapshot demotes the newcomer")
+	_ok(not w.host_np._join_paused and w.host_np._joining.is_empty(),
+		"join/and releases every late-join gate")
+	var after_failure: int = w.host_sys.lib.GetFrameCount()
+	await _await_frames(90)
+	_ok(w.host_sys.lib.GetFrameCount() > after_failure,
+		"join/the existing game advances after snapshot failure")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(10)
+	broken.get_parent().queue_free()
 	_free(w)
 
 
@@ -814,6 +860,37 @@ func _test_rollback() -> void:
 # timeout. Host fine, client wedged, which is the worst shape a fault can have.
 
 func _test_link() -> void:
+	# A topology change cannot land while either local emulation thread is still
+	# finishing an earlier frame. The old head-only schedule let the fast core
+	# change the bus underneath the slow one.
+	var barrier_np := _stub_session()
+	var barrier_near := MockSys.new()
+	var barrier_far := MockSys.new()
+	barrier_np.add_child(barrier_near)
+	barrier_np.add_child(barrier_far)
+	barrier_near.lib.setup_gate(1, 5)
+	barrier_far.lib.setup_gate(1, 4)
+	barrier_np._group = [barrier_near, barrier_far]
+	barrier_np._libs = [barrier_near.lib, barrier_far.lib]
+	barrier_np._lib = barrier_near.lib
+	barrier_np._next_post = 5
+	barrier_np._frames[5] = barrier_np._flat_from_frame({}, {}, {})
+	barrier_np._apply_link_op(1, PackedInt32Array([0, 1]),
+		PackedInt32Array([0, 0]), 5)
+	barrier_np._drain_to_core()
+	_eq(barrier_np._next_post, 5,
+		"link/a slow local core holds the topology boundary shut")
+	_eq(barrier_near.lib.link_applied.size(), 0,
+		"link/so the fast core cannot change the bus underneath it")
+	barrier_far.lib.PostNetplayInputs(4, PackedInt32Array())
+	barrier_np._drain_to_core()
+	_eq(barrier_np._next_post, 6,
+		"link/the boundary opens once every local core reaches it")
+	_eq(barrier_near.lib.link_applied, [5],
+		"link/and topology lands before the boundary frame runs")
+	barrier_np.get_parent().queue_free()
+	await get_tree().process_frame
+
 	# The control. An uncabled machine is a group of one, and must stay one.
 	var w := await _pair()
 	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
@@ -822,6 +899,33 @@ func _test_link() -> void:
 	_eq(w.host_np.group_size(), 1, "link/and is a group of one")
 	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
+	_free(w)
+
+	# A heterogeneous bus names every machine's core independently. Until both
+	# have passed determinism vetting, refuse the session instead of silently
+	# booting the far machine with the anchor's unrelated core.
+	w = await _pair_cabled()
+	w.host_far.machine_core = "snes9x"
+	_ok(not w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
+		{0: 1, 4: w.client_id}, 3, 0),
+		"link/an unverified far-machine core refuses the whole bus")
+	_ok(not w.host_sys.started and not w.host_far.started,
+		"link/and no machine is launched with the wrong core")
+	_free(w)
+
+	# Build identity is per machine too. Matching anchors must not hide a
+	# different far-end build whose savestate and arithmetic can diverge.
+	w = await _pair_cabled()
+	w.client_far.lib.identity = IDENT_A.duplicate()
+	w.client_far.lib.identity["library_version"] = "(different far build)"
+	var far_stops: Array = []
+	w.host_np.session_stopped.connect(func(r: String) -> void: far_stops.append(r))
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
+		{0: 1, 4: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return far_stops.size() > 0),
+		"link/a far-machine build mismatch aborts the start")
+	_ok(str(far_stops[0] if not far_stops.is_empty() else "").contains("machine 1"),
+		"link/and identifies which machine differs")
 	_free(w)
 
 	# The pair. Both peers must bring up BOTH machines, or the bus is asymmetric.
@@ -834,6 +938,21 @@ func _test_link() -> void:
 	_ok(w.client_far.started, "link/and so does the client — the bus needs both ends")
 	_eq(w.client_far.started_core, "fceumm",
 		"link/the far machine runs the host's core too")
+	_eq(w.client_far.resolved_md5, "FAR_MD5",
+		"link/the far machine verifies its own cartridge, not the anchor's")
+	_eq(w.client_far.received_sram, PackedByteArray([9, 8, 7]),
+		"link/and boots from its corresponding host save")
+	_ok(w.host_sys.link_refreshes > 0 and w.client_sys.link_refreshes > 0,
+		"link/each peer re-seats the bus after restarting its cores")
+	w.client_np.set_aux_sensor(w.client_far, 111, -222, 333)
+	_ok(w.client_np._local_aux.has(1),
+		"link/the far machine can supply its own sensor block")
+	_eq((w.client_np._local_aux[1] as Array)[1], 111,
+		"link/without writing the anchor's sensor block")
+	_ok(w.client_np.queue_key_event(w.client_far, 65, true, 97),
+		"link/the far machine can queue its own keyboard input")
+	_ok(w.client_np._local_keys.has(1),
+		"link/and the event is scoped to that machine")
 
 	# Ports are per machine, so the second machine's pad is a different port
 	# from the first machine's pad, and both are in the same frame.
@@ -843,6 +962,37 @@ func _test_link() -> void:
 		"link/in step across peers, like the near one")
 	_ok(absi(w.host_sys.lib.GetFrameCount() - w.host_far.lib.GetFrameCount()) <= 10,
 		"link/and in step with the machine it is cabled to")
+	var far_controller := MockController.new()
+	far_controller._connected_system = w.host_far
+	far_controller._port_index = 0
+	w.host_nm.add_child(far_controller)
+	w.host_np.handoff_controller(far_controller, 1)
+	_ok(w.host_np._pending.has(4),
+		"link/a controller on the far machine hands off its global port")
+	w.host_np.schedule_disk_op(w.host_far, 0, "", 2)
+	w.host_np.schedule_disk_op(w.host_far, 1, "FAR_DISC", 2)
+	_ok(await _until(func() -> bool:
+		return w.host_far.lib.disc_ops.size() == 2 and w.client_far.lib.disc_ops.size() == 2),
+		"link/a far machine's disc operation reaches both peers")
+	_eq(w.host_far.lib.disc_ops[0][0], w.host_far.lib.disc_ops[1][0],
+		"link/rapid eject and replace keep both operations at one boundary")
+	_ok(await _until(func() -> bool: return w.host_np._disc_waiting.is_empty()),
+		"link/and every peer arms it before assembly resumes")
+	_eq(w.host_sys.lib.disc_ops.size(), 0,
+		"link/without being applied to the anchor machine")
+	w.host_np.schedule_reset(w.host_far)
+	_ok(await _until(func() -> bool:
+		return w.host_far.lib.reset_ops.size() == 1 \
+			and w.client_far.lib.reset_ops.size() == 1),
+		"link/a far machine reset reaches both peers")
+	_eq(w.host_far.lib.reset_ops[0], w.client_far.lib.reset_ops[0],
+		"link/the reset lands on the same emulated frame")
+	_ok(w.host_far.reset_visuals == 1 and w.client_far.reset_visuals == 1,
+		"link/the reset effect is shown on both peers")
+	_eq(w.host_sys.lib.reset_ops.size(), 0,
+		"link/without resetting another machine in the group")
+	_ok(await _until(func() -> bool: return w.host_np._reset_waiting.is_empty()),
+		"link/and every peer arms the reset before assembly resumes")
 	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
 	_ok(w.host_far.stopped and w.client_far.stopped,
@@ -856,9 +1006,8 @@ func _test_link() -> void:
 	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 4: w.client_id}, 3, 0)
 	await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running())
 	await _await_frames(60)
-	# The HEAD of the bus is the core that gets the op — LinkConnectGroup is
-	# called on machine 0 with the others as arguments — so that is where the
-	# landing frame shows up, on each peer's own copy of it.
+	# The HEAD of the bus applies the op while every core is still gated below
+	# the boundary frame, before that frame is posted to any of them.
 	var applied: Array = []
 	w.host_sys.lib.link_applied = applied
 	var client_applied: Array = []
@@ -881,8 +1030,30 @@ func _test_link() -> void:
 	_eq(int(applied[0]) if applied.size() > 0 else -1,
 		int(client_applied[0]) if client_applied.size() > 0 else -2,
 		"link/on one agreed frame")
+
+	# More than one cable can move before the same future boundary. A map keyed
+	# only by frame used to let the second event erase the first.
+	applied.clear()
+	client_applied.clear()
+	w.host_np.schedule_link_op(w.host_sys, 1, [0, 1], [0, 0])
+	w.host_np.schedule_link_op(w.host_sys, 0, [0], [0])
+	_ok(await _until(func() -> bool: return applied.size() >= 2 and client_applied.size() >= 2),
+		"link/two operations sharing a frame both land")
+	_eq(applied.slice(0, 2), client_applied.slice(0, 2),
+		"link/and land at the same boundaries on both peers")
+
+	# A core savestate does not serialize the process-wide LinkCoordinator bus.
+	# A newcomer may watch, but must not load two cores without that missing bus
+	# state and pretend to be a participant.
+	var linked_joiner := _branch("LJ")
+	linked_joiner.join_game("::1", PORT)
+	_ok(await _until(func() -> bool:
+		var newcomer := _other_id(w.host_nm, w.client_id)
+		return newcomer > 0 and w.host_np._spectators.has(newcomer), 900),
+		"link/a late joiner to a linked game remains a spectator")
 	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
+	linked_joiner.get_parent().queue_free()
 	_free(w)
 
 
@@ -912,10 +1083,13 @@ class MockLib extends Node:
 	var frames_at_identity := -1
 	var desync := false
 	var loaded_state := false
+	var save_fails := false
 	var link_peers: Dictionary = {}
 	## Frames at which a scheduled link op landed on this core, appended in
 	## order. A case hands in its own array so it can watch a single window.
 	var link_applied: Array = []
+	var disc_ops: Array = []
+	var reset_ops: Array = []
 
 	var _count := 0
 	var _acc := 0
@@ -939,14 +1113,18 @@ class MockLib extends Node:
 	func LinkPeerCount(port: int) -> int:
 		return int(link_peers.get(port, 0))
 
-	## Mirrors ScheduleDiscOp: the frontend hands the core an op and the frame
-	## it must land on, and the core applies it strictly before running that
-	## frame. Recording the frame is the whole point — two peers applying the
-	## same cable on different frames is a fork nothing downstream can see.
-	func ScheduleLinkOp(frame: int, _op: int, _peers: Array, _ports: PackedInt32Array) -> void:
-		link_pending[frame] = true
+	func LinkConnectGroup(_peers: Array, _ports: PackedInt32Array) -> bool:
+		link_applied.append(_count)
+		return true
 
-	var link_pending: Dictionary = {}
+	func LinkDisconnect(_port: int) -> void:
+		link_applied.append(_count)
+
+	func ScheduleDiscOp(frame: int, op: int, index: int, path: String) -> void:
+		disc_ops.append([frame, op, index, path])
+
+	func ScheduleReset(frame: int) -> void:
+		reset_ops.append(frame)
 
 	func setup_gate(_mask: int, start_frame: int) -> void:
 		_enabled = true
@@ -966,9 +1144,6 @@ class MockLib extends Node:
 	func PostNetplayInputs(frame: int, flat: PackedInt32Array) -> void:
 		if not _enabled or frame != _count:
 			return                  # the gate: only the expected next frame runs
-		if link_pending.has(frame):
-			link_pending.erase(frame)
-			link_applied.append(frame)
 		var h := frame
 		for v in flat:
 			h = (h * 1103515245 + int(v) + 12345) & 0x3FFFFFFF
@@ -978,6 +1153,9 @@ class MockLib extends Node:
 			netplay_crc.emit(_count, (_acc ^ 0xABCDE) & 0x3FFFFFFF if desync else _acc)
 
 	func RequestSaveState() -> void:
+		if save_fails:
+			savestate_ready.emit(PackedByteArray(), _count)
+			return
 		var d := PackedByteArray()
 		d.resize(8)
 		d.encode_s64(0, _acc)
@@ -1001,10 +1179,21 @@ class MockSys extends Node:
 	var started := false
 	var stopped := false
 	var started_core := ""
+	var machine_core := "fceumm"
+	var rom_md5 := "MD5"
+	var rom_path := "mock.rom"
+	var resolved_md5 := ""
+	var sram_bytes := PackedByteArray()
+	var received_sram := PackedByteArray()
+	var link_refreshes := 0
+	var reset_visuals := 0
 	## The machines on this one's link bus, itself included, or empty when the
 	## machine is not cabled to anything. This is the seam the session asks
 	## through, so a probe needs no cables and no room.
 	var link_group: Array = []
+
+	func net_play_reset() -> void:
+		reset_visuals += 1
 
 	func _init() -> void:
 		lib = MockLib.new()
@@ -1027,17 +1216,32 @@ class MockSys extends Node:
 		stopped = true
 		lib.stop()
 
-	func net_resolve_rom(_md5: String) -> bool:
+	func resolve_core_name() -> String:
+		return machine_core
+
+	func net_rom_md5() -> String:
+		return rom_md5
+
+	func net_resolve_rom(md5: String) -> bool:
+		resolved_md5 = md5
 		return true
 
 	func net_sram_file_bytes() -> PackedByteArray:
-		return PackedByteArray()
+		return sram_bytes
 
-	func net_set_sram(_path: String, _data: PackedByteArray) -> void:
-		pass
+	func net_set_sram(_path: String, data: PackedByteArray) -> void:
+		received_sram = data
 
 	func net_link_group() -> Array:
 		return link_group
+
+	func net_refresh_link_cables() -> void:
+		link_refreshes += 1
+
+
+class MockController extends Node:
+	var _connected_system: Object = null
+	var _port_index := -1
 
 
 ## A NetworkManager stand-in for the cases that need a session but no network.
@@ -1108,7 +1312,10 @@ func _pair() -> Pair:
 	p.host_np.system_override = p.host_sys
 	p.client_np.system_override = p.client_sys
 	p.host_nm.host_game(PORT)
-	p.client_nm.join_game("127.0.0.1", PORT)
+	# Godot 4.7's ENet loopback is IPv6-only on some Linux hosts even though
+	# ordinary IPv4 UDP works there.  This is an in-process transport test, so
+	# use the native loopback address and leave LAN address coverage to device QA.
+	p.client_nm.join_game("::1", PORT)
 	if not await _until(func() -> bool:
 			return p.host_nm.peers.size() == 2 and p.client_nm.peers.size() == 2):
 		_ok(false, "harness/the two peers never connected")
@@ -1124,9 +1331,12 @@ func _pair_cabled() -> Pair:
 	var p := await _pair()
 	p.host_far = MockSys.new()
 	p.host_far.name = "Far"
+	p.host_far.rom_md5 = "FAR_MD5"
+	p.host_far.sram_bytes = PackedByteArray([9, 8, 7])
 	p.host_nm.add_child(p.host_far)
 	p.client_far = MockSys.new()
 	p.client_far.name = "Far"
+	p.client_far.rom_md5 = "LOCAL_OTHER"
 	p.client_nm.add_child(p.client_far)
 	# Two machines with a lead between them: each names the whole bus, itself
 	# first, and the session takes the order from the machine it was started on.

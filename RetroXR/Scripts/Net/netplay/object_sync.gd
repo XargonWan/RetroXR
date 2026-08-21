@@ -20,8 +20,12 @@
 class_name NetObjectSync
 extends Node
 
+signal peer_world_ready(peer_id: int)
+
 const XFORM_INTERVAL := 1.0 / 15.0
 const HELD_INTERVAL := 1.0 / 20.0
+const HINGE_INTERVAL := 1.0 / 15.0
+const MAX_HINGES_PER_BATCH := 64
 const SNAP_DISTANCE := 1.0    # replica teleport threshold (metres)
 
 # Replicated event kinds.
@@ -63,6 +67,14 @@ enum {
 	EV_RCA_PLUG,         # {cable, end, cord, dev, port}  composite lead end seated
 	EV_RCA_UNPLUG,       # {cable, end, cord}             ...and pulled out again
 	EV_TV_AUDIO_MODE,    # {tv, mode}    speaker switch (0 stereo / 1 mono L / 2 mono R)
+	EV_SYS_RESET,        # {sys}         client intent -> host / deterministic reset
+	EV_TV_ASPECT,        # {tv, on}      false = 4:3, true = 16:9
+	EV_TV_SOURCE,        # {tv, source}  selected input
+	EV_TV_CHANNEL,       # {tv, source, rf, index} selected RF/tuner channel
+	EV_ROOM_LIGHTS,      # {switch, on}  wall-switch ceiling lights
+	EV_PULL_LIGHT,       # {cord, on}    bedside/desk pull-chain lamp
+	EV_BLINDS,           # {blinds, drop} window blind height
+	EV_TIME_OF_DAY,      # {clock, time} bedroom time lever
 }
 
 var _nm: Node = null
@@ -75,6 +87,8 @@ var _xform_targets: Dictionary = {}  # net_id -> [Vector3, Quaternion] (client l
 var _applying := false               # applying remote state — suppress echo
 var _xform_accum := 0.0
 var _held_accum := 0.0
+var _hinge_accum := 0.0
+var _hinge_pending: Dictionary = {} # "net_id:path" -> articulated-control update
 var _vcr_accum := 0.0                # host heartbeat for VCR drift sync (M5)
 var _world_ready := false
 var _pending_snapshot_peers: Dictionary = {}
@@ -124,6 +138,7 @@ func reset_for_scene_change() -> void:
 	_held_by_me.clear()
 	_remote_held.clear()
 	_xform_targets.clear()
+	_hinge_pending.clear()
 
 
 func end_session() -> void:
@@ -135,6 +150,26 @@ func end_session() -> void:
 			(node as RigidBody3D).freeze = false
 	reset_for_scene_change()
 	_applying = false
+
+
+## Host cleanup when a peer disappears while holding something. Without this,
+## the body remains frozen and every later grab is denied to a peer that no
+## longer exists.
+func on_peer_left(peer_id: int) -> void:
+	if not _nm.is_host():
+		return
+	for net_id: int in _remote_held.keys():
+		if int(_remote_held[net_id]) != peer_id:
+			continue
+		_remote_held.erase(net_id)
+		var node: Node = _registry.get(net_id)
+		if not is_instance_valid(node):
+			continue
+		_maybe_release_port(node)
+		if node is RigidBody3D and not _is_zone_snapped(node):
+			var body := node as RigidBody3D
+			body.freeze = false
+			body.sleeping = false
 
 
 ## Called by _place_spawned while in a session.
@@ -169,6 +204,14 @@ func _register_existing() -> void:
 ## if registered (cables and other side-effect nodes serialize empty -> skip).
 func _register_host(node: Node) -> bool:
 	if node.has_meta("net_id"):
+		var existing_id := int(node.get_meta("net_id", -1))
+		if existing_id < 0:
+			return false
+		# end_session() clears the registry but deliberately leaves the room and
+		# its metadata intact. Re-hosting must bind those existing IDs again.
+		if _registry.get(existing_id) != node:
+			_bind(node, existing_id)
+		_next_net_id = maxi(_next_net_id, existing_id + 1)
 		return true
 	if _persistence._serialize_node(node, 0, {}).is_empty():
 		return false
@@ -186,11 +229,49 @@ func _register_client(node: Node, id: int) -> void:
 func _bind(node: Node, id: int) -> void:
 	node.set_meta("net_id", id)
 	_registry[id] = node
-	if node.has_signal("grabbed"):
+	if node.has_signal("grabbed") and not node.is_connected("grabbed", _on_grabbed):
 		node.connect("grabbed", _on_grabbed)
-	if node.has_signal("dropped"):
+	if node.has_signal("dropped") and not node.is_connected("dropped", _on_dropped):
 		node.connect("dropped", _on_dropped)
-	node.tree_exiting.connect(_on_node_exiting.bind(id))
+	var exiting := _on_node_exiting.bind(id, node)
+	if not node.tree_exiting.is_connected(exiting):
+		node.tree_exiting.connect(exiting)
+	_bind_articulated_controls(node)
+
+
+func _bind_articulated_controls(owner: Node) -> void:
+	var hinges: Array[Node] = owner.find_children("*", "VRHinge", true, false)
+	if owner is VRHinge:
+		hinges.push_front(owner)
+	for candidate: Node in hinges:
+		var hinge := candidate as VRHinge
+		if hinge == null:
+			continue
+		var path := NodePath(str(owner.get_path_to(hinge)))
+		var handler := _on_hinge_changed.bind(owner, path, hinge)
+		if not hinge.rotation_changed.is_connected(handler):
+			hinge.rotation_changed.connect(handler)
+		if hinge is VRLever:
+			var lever := hinge as VRLever
+			var value_handler := _on_control_changed.bind(owner, path, "lever", lever)
+			if not lever.value_changed.is_connected(value_handler):
+				lever.value_changed.connect(value_handler)
+	for candidate: Node in owner.find_children("*", "VRKnob", true, false):
+		var knob := candidate as VRKnob
+		if knob == null:
+			continue
+		var path := NodePath(str(owner.get_path_to(knob)))
+		var handler := _on_control_changed.bind(owner, path, "knob", knob)
+		if not knob.value_changed.is_connected(handler):
+			knob.value_changed.connect(handler)
+	for candidate: Node in owner.find_children("*", "VRSlider", true, false):
+		var slider := candidate as VRSlider
+		if slider == null:
+			continue
+		var path := NodePath(str(owner.get_path_to(slider)))
+		var handler := _on_control_changed.bind(owner, path, "slider", slider)
+		if not slider.value_changed.is_connected(handler):
+			slider.value_changed.connect(handler)
 
 
 func _freeze_replica(node: Node) -> void:
@@ -230,6 +311,9 @@ func _request_snapshot() -> void:
 
 func _send_snapshot(peer_id: int) -> void:
 	_register_existing()
+	var root: Node = _nm._resolve_world_root()
+	if root == null:
+		return
 	var entries: Array = []
 	var node_to_id := {}
 	for id: int in _registry:
@@ -239,11 +323,11 @@ func _send_snapshot(peer_id: int) -> void:
 		if not entry.is_empty():
 			_augment_file_fields(_registry[id], entry)
 			entries.append(entry)
-	_world_snapshot.rpc_id(peer_id, entries)
+	_world_snapshot.rpc_id(peer_id, entries, _capture_room_state(root))
 
 
 @rpc("authority", "call_remote", "reliable", 0)
-func _world_snapshot(entries: Array) -> void:
+func _world_snapshot(entries: Array, room_state: Array) -> void:
 	var root: Node = _nm._resolve_world_root()
 	if root == null:
 		return
@@ -256,8 +340,66 @@ func _world_snapshot(entries: Array) -> void:
 		var node: Node = spawned.get(int((entry as Dictionary).get("id", -1)))
 		if node != null:
 			_resolve_file_fields(node, entry)
+	_apply_room_state(root, room_state)
 	_applying = false
 	print("[NetObjectSync] snapshot applied: %d objects" % spawned.size())
+	_snapshot_applied.rpc_id(1)
+
+
+## Scene-placed controls are not in the spawned-object registry, but a late
+## joiner still needs the room the host is actually standing in rather than the
+## scene defaults. Paths are relative to world_root so separate processes agree.
+func _capture_room_state(root: Node) -> Array:
+	var out: Array = []
+	for node: Node in root.find_children("*", "LightSwitch", true, false):
+		out.append({"path": str(root.get_path_to(node)), "kind": "lights",
+			"value": bool((node as LightSwitch).lights_on)})
+	for node: Node in root.find_children("*", "BeadPullCord", true, false):
+		var cord := node as BeadPullCord
+		if cord.light != null or not cord.glow.is_empty():
+			out.append({"path": str(root.get_path_to(cord)), "kind": "pull_light",
+				"value": cord.lit})
+	for node: Node in root.find_children("*", "WindowBlinds", true, false):
+		out.append({"path": str(root.get_path_to(node)), "kind": "blinds",
+			"value": float((node as WindowBlinds).drop)})
+	for node: Node in root.find_children("*", "TimeOfDay", true, false):
+		out.append({"path": str(root.get_path_to(node)), "kind": "time",
+			"value": float((node as TimeOfDay).time)})
+	return out
+
+
+func _apply_room_state(root: Node, records: Array) -> void:
+	for raw: Variant in records:
+		if not raw is Dictionary:
+			continue
+		var rec := raw as Dictionary
+		var path := str(rec.get("path", ""))
+		if path.is_empty() or path.is_absolute_path() or path.length() > 256:
+			continue
+		var node := root.get_node_or_null(NodePath(path))
+		if node == null or (node != root and not root.is_ancestor_of(node)):
+			continue
+		match str(rec.get("kind", "")):
+			"lights":
+				if node.has_method("set_lights_on"):
+					node.set_lights_on(bool(rec.get("value", true)))
+			"pull_light":
+				if node.has_method("set_lit_remote"):
+					node.set_lit_remote(bool(rec.get("value", true)))
+			"blinds":
+				var drop := float(rec.get("value", NAN))
+				if node.has_method("set_drop_remote") and is_finite(drop):
+					node.set_drop_remote(drop)
+			"time":
+				var value := float(rec.get("value", NAN))
+				if node.has_method("net_set_time") and is_finite(value):
+					node.net_set_time(value)
+
+
+@rpc("any_peer", "call_remote", "reliable", 0)
+func _snapshot_applied() -> void:
+	if _nm.is_host():
+		peer_world_ready.emit(multiplayer.get_remote_sender_id())
 
 
 ## Scoped clear: only spawned objects under our world root (probe-safe).
@@ -339,8 +481,10 @@ func _despawn(net_id: int) -> void:
 		_applying = false
 
 
-func _on_node_exiting(net_id: int) -> void:
-	if not _registry.has(net_id):
+func _on_node_exiting(net_id: int, exiting_node: Node) -> void:
+	# A replacement snapshot can bind a new object to the same id before the old
+	# queue_free reaches tree_exiting. The old callback must not erase the new one.
+	if _registry.get(net_id) != exiting_node:
 		return
 	var was_applying := _applying
 	_unregister(net_id)
@@ -367,6 +511,10 @@ func _unregister(net_id: int) -> void:
 func _process(delta: float) -> void:
 	if not _nm.is_active():
 		return
+	_hinge_accum += delta
+	if _hinge_accum >= HINGE_INTERVAL:
+		_hinge_accum = 0.0
+		_flush_hinge_updates()
 	if _nm.is_host():
 		_xform_accum += delta
 		if _xform_accum >= XFORM_INTERVAL:
@@ -382,6 +530,120 @@ func _process(delta: float) -> void:
 		if _held_accum >= HELD_INTERVAL:
 			_held_accum = 0.0
 			_client_send_held()
+
+
+# ── Articulated child-control sync ───────────────────────────────────────────
+
+## Root rigid-body transforms do not include articulated children: handheld
+## lids, console flaps, battery covers, knobs, sliders and levers can all move
+## while their owner stays perfectly still. Coalesce each control to 15 Hz, but
+## send the batch reliably so the final released value cannot be lost.
+func _on_hinge_changed(degrees: float, owner: Node, hinge_path: NodePath,
+		hinge: VRHinge) -> void:
+	if _applying or not _nm.is_active() or not is_instance_valid(owner) \
+			or bool(hinge.get_meta("net_restore_in_progress", false)):
+		return
+	var id := id_of(owner)
+	if id < 0 or not is_finite(degrees):
+		return
+	var path := str(hinge_path)
+	var rec := {
+		"owner": {"$id": id}, "path": path, "kind": "hinge", "value": degrees,
+	}
+	if hinge is VRSpringLatchedHinge:
+		rec["latched"] = (hinge as VRSpringLatchedHinge).is_latched_closed()
+	_hinge_pending["%d:%s" % [id, path]] = rec
+
+
+func _on_control_changed(value: float, owner: Node, control_path: NodePath,
+		kind: String, control: Node) -> void:
+	if _applying or not _nm.is_active() or not is_instance_valid(owner) \
+			or bool(control.get_meta("net_restore_in_progress", false)):
+		return
+	var id := id_of(owner)
+	if id < 0 or not is_finite(value):
+		return
+	var path := str(control_path)
+	_hinge_pending["%d:%s" % [id, path]] = {
+		"owner": {"$id": id}, "path": path, "kind": kind, "value": value,
+	}
+
+
+func _flush_hinge_updates() -> void:
+	if _hinge_pending.is_empty():
+		return
+	var updates: Array = _hinge_pending.values()
+	_hinge_pending.clear()
+	if updates.size() > MAX_HINGES_PER_BATCH:
+		updates.resize(MAX_HINGES_PER_BATCH)
+	if _nm.is_host():
+		_hinge_apply.rpc(updates)
+	else:
+		_hinge_request.rpc_id(1, updates)
+
+
+@rpc("any_peer", "call_remote", "reliable", 0)
+func _hinge_request(updates: Array) -> void:
+	if not _nm.is_host():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	var accepted := _apply_hinge_updates(updates)
+	if accepted.is_empty():
+		return
+	for peer_id: int in _nm.peers:
+		if peer_id != 1 and peer_id != sender:
+			_hinge_apply.rpc_id(peer_id, accepted)
+
+
+@rpc("authority", "call_remote", "reliable", 0)
+func _hinge_apply(updates: Array) -> void:
+	_apply_hinge_updates(updates)
+
+
+func _apply_hinge_updates(updates: Array) -> Array:
+	var accepted: Array = []
+	_applying = true
+	for raw: Variant in updates.slice(0, MAX_HINGES_PER_BATCH):
+		if not raw is Dictionary:
+			continue
+		var rec := raw as Dictionary
+		var decoded := _decode_args({"owner": rec.get("owner")})
+		var owner := decoded.get("owner") as Node
+		var path := str(rec.get("path", ""))
+		var kind := str(rec.get("kind", "hinge"))
+		var value := float(rec.get("value", rec.get("degrees", NAN)))
+		if owner == null or path.is_empty() or path.is_absolute_path() \
+				or path.length() > 256 or not is_finite(value):
+			continue
+		var control := owner.get_node_or_null(NodePath(path))
+		if control == null or (control != owner and not owner.is_ancestor_of(control)):
+			continue
+		match kind:
+			"hinge":
+				if not control is VRHinge:
+					continue
+				if control is VRSpringLatchedHinge:
+					(control as VRSpringLatchedHinge).set_state_remote(value,
+						bool(rec.get("latched", false)))
+				else:
+					(control as VRHinge).set_rotation_deg_remote(value)
+			"lever":
+				if not control is VRLever:
+					continue
+				(control as VRLever).set_value(value)
+			"knob":
+				if not control is VRKnob:
+					continue
+				(control as VRKnob).set_value(value)
+			"slider":
+				if not control is VRSlider:
+					continue
+				(control as VRSlider).set_value(value)
+			_:
+				continue
+		accepted.append(rec)
+	_applying = false
+	return accepted
 
 
 func _host_send_xforms() -> void:
@@ -470,6 +732,9 @@ func _on_grabbed(pickable: Node3D, by: Node3D) -> void:
 		_request_grab.rpc_id(1, id)
 	elif _nm.is_host():
 		# Host grabbed it back — revoke any remote hold.
+		var previous_owner := int(_remote_held.get(id, -1))
+		if previous_owner > 0:
+			_grab_denied.rpc_id(previous_owner, id)
 		_remote_held.erase(id)
 		_maybe_handoff_port(pickable, 1)
 
@@ -658,6 +923,12 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_SYS_POWER_STATE:
 			if _valid(a, ["sys"]) and a["sys"].has_method("net_set_remote_power"):
 				a["sys"].net_set_remote_power(bool(a.get("on", false)))
+		EV_SYS_RESET:
+			# Like power intent, reset is host-authoritative. RetroSystem.reset()
+			# frame-schedules the actual core reset when lockstep is active.
+			if _nm.is_host() and _valid(a, ["sys"]) and a["sys"].has_method("reset"):
+				_applying = false
+				a["sys"].reset()
 		EV_TV_POWER:
 			if _valid(a, ["tv"]):
 				a["tv"].remote_power_toggle()
@@ -679,6 +950,28 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 		EV_TV_AUDIO_MODE:
 			if _valid(a, ["tv"]):
 				a["tv"].set_audio_mode(int(a.get("mode", 0)))
+		EV_TV_ASPECT:
+			if _valid(a, ["tv"]) and a["tv"].has_method("set_widescreen"):
+				a["tv"].set_widescreen(bool(a.get("on", false)))
+		EV_TV_SOURCE:
+			if _valid(a, ["tv"]) and a["tv"].has_method("set_source"):
+				a["tv"].set_source(int(a.get("source", 0)))
+		EV_TV_CHANNEL:
+			if _valid(a, ["tv"]) and a["tv"].has_method("net_set_channel_state"):
+				a["tv"].net_set_channel_state(int(a.get("source", 0)),
+					int(a.get("rf", 3)), int(a.get("index", -1)))
+		EV_ROOM_LIGHTS:
+			if _valid(a, ["switch"]) and a["switch"].has_method("set_lights_on"):
+				a["switch"].set_lights_on(bool(a.get("on", true)))
+		EV_PULL_LIGHT:
+			if _valid(a, ["cord"]) and a["cord"].has_method("set_lit_remote"):
+				a["cord"].set_lit_remote(bool(a.get("on", true)))
+		EV_BLINDS:
+			if _valid(a, ["blinds"]) and a["blinds"].has_method("set_drop_remote"):
+				a["blinds"].set_drop_remote(float(a.get("drop", 1.0)))
+		EV_TIME_OF_DAY:
+			if _valid(a, ["clock"]) and a["clock"].has_method("net_set_time"):
+				a["clock"].net_set_time(float(a.get("time", 0.75)))
 		EV_SYS_VIDEO_OUT:
 			if _valid(a, ["sys"]):
 				a["sys"].set_video_out_enabled(bool(a.get("on", true)))

@@ -41,7 +41,13 @@ func _ready() -> void:
 
 
 func _on_pressed() -> void:
-	lights_on = not lights_on
+	set_lights_on(not lights_on)
+	NetworkManager.report_event(NetObjectSync.EV_ROOM_LIGHTS,
+		{"switch": self, "on": lights_on})
+
+
+func set_lights_on(on: bool) -> void:
+	lights_on = on
 	_apply()
 
 

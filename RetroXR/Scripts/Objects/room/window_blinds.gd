@@ -200,7 +200,14 @@ func pull_step() -> void:
 	var target: float = drop - step
 	if target < -0.001:
 		target = 1.0
-	_animate_to(clampf(target, 0.0, 1.0))
+	target = clampf(target, 0.0, 1.0)
+	_animate_to(target)
+	NetworkManager.report_event(NetObjectSync.EV_BLINDS,
+		{"blinds": self, "drop": target})
+
+
+func set_drop_remote(value: float) -> void:
+	_animate_to(clampf(value, 0.0, 1.0))
 
 
 func _animate_to(target: float) -> void:

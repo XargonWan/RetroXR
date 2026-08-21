@@ -121,6 +121,18 @@ func is_latched_closed() -> bool:
 	return _latched_closed
 
 
+## Restore/network application needs both the visible angle and the mechanism's
+## latch state. An open-looking lid that still thinks it is latched cannot be
+## grabbed and will not spring; an unlatched closed-looking one pops open again.
+func set_state_remote(degrees: float, latched: bool) -> void:
+	_latched_closed = latched
+	_latch_rebound = false
+	_latch_feedback_ctrl = null
+	_set_interactive(push_push or not latched)
+	_spring_logged_open = latched or is_equal_approx(degrees, max_deg)
+	_apply(degrees, true)
+
+
 # The hand can only grab an OPEN (unlatched) lid — button-only opening. A
 # push-push tray is the exception: a hand may take hold of a latched one, which is
 # how it is let up. Pure: this is polled every frame, so the unlatch belongs to the

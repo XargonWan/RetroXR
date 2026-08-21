@@ -31,6 +31,7 @@ func _ready() -> void:
 	_test_machine_lookup()
 	_test_libretro_lookup()
 	_test_cable_is_not_av()
+	_test_netplay_cable_guard()
 	await _test_disconnect_is_idempotent()
 	await _test_cable_scene()
 	await _test_port_scene()
@@ -53,6 +54,54 @@ func _ready() -> void:
 	await _test_every_lead_states_its_bus()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
+
+
+class _NetplayStub extends RefCounted:
+	var covered: Array = []
+	var scheduled: Array = []
+
+	func netplay_running() -> bool:
+		return true
+
+	func netplay_covers(machine: Object) -> bool:
+		return covered.has(machine)
+
+	func is_host() -> bool:
+		return true
+
+	func netplay_schedule_link(op: int, entries: Array) -> void:
+		scheduled.append({"op": op, "entries": entries.duplicate(true)})
+
+
+func _test_netplay_cable_guard() -> void:
+	var a := Node.new()
+	var b := Node.new()
+	var outside := Node.new()
+	var manager := _NetplayStub.new()
+	manager.covered = [a, b]
+	var cable := CompositeCable.new()
+	cable.netplay_manager_override = manager
+	var bus: Array = [{"machine": a, "port": 0}, {"machine": b, "port": 0}]
+	_ok("netplay/a covered join is claimed", cable.netplay_took_bus(bus, []))
+	_eq("netplay/and scheduled once", manager.scheduled.size(), 1)
+	_ok("netplay/re-resolving the same seated lead does not schedule twice",
+		cable.netplay_took_bus(bus, []))
+	_eq("netplay/the duplicate join was coalesced", manager.scheduled.size(), 1)
+	_ok("netplay/a pull before the join lands is still claimed",
+		cable.netplay_took_bus([], []))
+	_eq("netplay/and schedules the inverse operation", manager.scheduled.size(), 2)
+	if manager.scheduled.size() >= 2:
+		_eq("netplay/the inverse is a pull", manager.scheduled[1]["op"], 0)
+
+	manager.scheduled.clear()
+	var partial: Array = [{"machine": a, "port": 0}, {"machine": outside, "port": 0}]
+	_ok("netplay/a cable crossing the session boundary is claimed and refused",
+		cable.netplay_took_bus(partial, []))
+	_eq("netplay/so no local or scheduled partial bus is made", manager.scheduled.size(), 0)
+	a.free()
+	b.free()
+	outside.free()
+	cable.free()
 
 
 # -- The console-to-handheld lead --------------------------------------------

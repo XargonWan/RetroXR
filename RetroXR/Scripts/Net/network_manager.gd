@@ -19,10 +19,13 @@ const MAX_PLAYERS := 8
 ## out each of its roots.
 const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glprobe.cfg"
 ## 2: systems are replicated by model_id rather than by a (systemid, variant)
-## pair. A v1 peer sends no model_id, so a v2 host would silently give it default
-## hardware at the right position — visual divergence with no error, which is a
-## worse outcome than being turned away at the door.
-const PROTOCOL_VERSION := 3
+## pair. 3 added netplay. 4 made linked sessions carry a specification per
+## machine. 5 added per-machine aux/keyboard blocks and machine-addressed disc
+## operations. 6 adds articulated child-control batches (plain/spring hinges,
+## levers, knobs and sliders). 7 adds deterministic reset plus explicit TV
+## source/channel/aspect state. These wire layouts are intentionally refused across versions:
+## accepting an old peer would look connected while feeding different cores.
+const PROTOCOL_VERSION := 7
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels
@@ -82,6 +85,7 @@ func _ready() -> void:
 	_object_sync = OBJECT_SYNC.new()
 	_object_sync.name = "ObjectSync"
 	add_child(_object_sync)
+	_object_sync.peer_world_ready.connect(_on_peer_world_ready)
 	# Fixed-path netplay session (M4) — one active game at a time.
 	_netplay = NETPLAY.new()
 	_netplay.name = "Netplay"
@@ -152,11 +156,19 @@ func is_active() -> bool:
 
 
 func is_host() -> bool:
-	return _active and multiplayer != null and multiplayer.is_server()
+	if not _active or multiplayer == null or multiplayer.multiplayer_peer == null:
+		return false
+	if multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+		return false
+	return multiplayer.is_server()
 
 
 func is_client() -> bool:
-	return _active and multiplayer != null and not multiplayer.is_server()
+	if not _active or multiplayer == null or multiplayer.multiplayer_peer == null:
+		return false
+	if multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+		return false
+	return not multiplayer.is_server()
 
 
 func host_game(port := DEFAULT_PORT) -> Error:
@@ -172,6 +184,8 @@ func host_game(port := DEFAULT_PORT) -> Error:
 	_active = true
 	_accepted = true
 	peers = {1: _local_info(0)}
+	print("[NetworkManager] ENet host listening on UDP %d (protocol %d)" % [
+		port, PROTOCOL_VERSION])
 	_setup_world()
 	status_changed.emit("Hosting on port %d — %s" % [port, ", ".join(local_ips())])
 	session_started.emit(true)
@@ -191,6 +205,8 @@ func join_game(ip: String, port := DEFAULT_PORT) -> Error:
 	_active = true
 	_accepted = false
 	peers = {}
+	print("[NetworkManager] ENet connecting to %s:%d (protocol %d)" % [
+		ip, port, PROTOCOL_VERSION])
 	status_changed.emit("Connecting to %s…" % ip)
 	return OK
 
@@ -357,6 +373,13 @@ func netplay_schedule_disk(system: Object, op: int, md5: String, index: int) -> 
 		_netplay.schedule_disk_op(system, op, md5, index)
 
 
+## Host: frame-schedule a front-panel reset for one machine in the active
+## netplay group so every peer resets before the same emulated frame.
+func netplay_schedule_reset(system: Object) -> void:
+	if _netplay != null:
+		_netplay.schedule_reset(system)
+
+
 ## Aux input feeds for the running netplay game (port-0 owner only): tilt
 ## sensor in milli-g and touch pointer. Both ride the deterministic frame
 ## schedule so every peer's core sees identical values on identical frames.
@@ -414,12 +437,17 @@ func _wire_signals() -> void:
 		return
 	_signals_wired = true
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
-	multiplayer.connection_failed.connect(func(): leave_session("connection failed"))
-	multiplayer.server_disconnected.connect(func(): leave_session("host disconnected"))
+	multiplayer.connection_failed.connect(func():
+		print("[NetworkManager] ENet connection failed")
+		leave_session("connection failed"))
+	multiplayer.server_disconnected.connect(func():
+		print("[NetworkManager] ENet host disconnected")
+		leave_session("host disconnected"))
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 
 
 func _on_connected_to_server() -> void:
+	print("[NetworkManager] ENet connected as peer %d; registering" % multiplayer.get_unique_id())
 	_register.rpc_id(1, {"name": player_name, "is_vr": get_viewport().use_xr}, PROTOCOL_VERSION)
 
 
@@ -433,6 +461,8 @@ func _on_peer_disconnected(id: int) -> void:
 		_peer_left_msg.rpc(id)
 		peer_left.emit(id)
 		status_changed.emit("%d player(s) connected" % peers.size())
+		if _object_sync != null:
+			_object_sync.on_peer_left(id)
 		# A departed peer that owned a netplay port would stall the assembler
 		# forever — end the game for everyone.
 		if _netplay != null and _netplay.is_active():
@@ -472,6 +502,8 @@ func _register(info: Dictionary, version: int) -> void:
 		"color_idx": _next_color_idx(),
 	}
 	peers[sender] = entry
+	print("[NetworkManager] accepted peer %d (%s); roster=%d" % [
+		sender, entry["name"], peers.size()])
 	var scene_id: String = SceneManager.current_scene_id if has_node("/root/SceneManager") else ""
 	_accept.rpc_id(sender, peers.duplicate(true), scene_id)
 	for id: int in peers:
@@ -480,15 +512,22 @@ func _register(info: Dictionary, version: int) -> void:
 	_add_avatar(sender, entry)
 	peer_registered.emit(sender, entry)
 	status_changed.emit("%d player(s) connected" % peers.size())
-	# A peer joining mid-game gets caught up via the netplay savestate flow.
+
+
+func _on_peer_world_ready(peer_id: int) -> void:
+	print("[NetworkManager] peer %d applied the world snapshot" % peer_id)
+	# Netplay references systems by ids minted in that snapshot. Starting the
+	# late-join handshake before the client confirms it has instantiated them is
+	# a race that intermittently resolves every machine as null.
 	if _netplay != null and _netplay.is_running():
-		_netplay.on_peer_joined(sender)
+		_netplay.on_peer_joined(peer_id)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _accept(roster: Dictionary, scene_id: String) -> void:
 	peers = roster
 	_accepted = true
+	print("[NetworkManager] registration accepted; roster=%d" % peers.size())
 	if has_node("/root/SceneManager") and not scene_id.is_empty() \
 			and scene_id != SceneManager.current_scene_id:
 		_follow_host_scene(scene_id)

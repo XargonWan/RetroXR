@@ -148,6 +148,10 @@ func _on_power_slider_changed(v: float) -> void:
 	var host := get_parent()
 	if host == null or not host.has_method("toggle_power"):
 		return
+	# The replicated position is visual state; EV_SYS_POWER is the one semantic
+	# action. Letting both paths toggle would turn a remote machine twice.
+	if NetworkManager.is_event_applying():
+		return
 	if (v > 0.5) != bool(host.get("is_powered_on")):
 		host.toggle_power()
 
