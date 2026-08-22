@@ -1006,9 +1006,10 @@ jobs:
       # "sent".
       #
       # So: poke the webhook, then ask the public listing what SideQuest is
-      # actually serving, and believe only that. Failing here does not unpublish
-      # anything - the release is already out by this point - it just says the
-      # portal needs a hand.
+      # actually serving, and believe only that. Nothing here is blocking -
+      # the release is already out by this point - a missing secret or a dead
+      # sync just lands a ::warning and a Summary tab entry saying the portal
+      # needs a hand.
       - name: Point SideQuest at the new APK
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1018,7 +1019,19 @@ jobs:
           APP_ID: '61366'
         run: |
           set -euo pipefail
-          [ -n "${WEBHOOK:-}" ] || { echo "::error::secret SIDEQUEST_RELEASE_WEBHOOK is unset"; exit 1; }
+          # Like the quest keystore: a missing secret must not sink the run.
+          # The release itself is already out; only the portal poke is lost,
+          # and the Summary tab says how to do that poke by hand.
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "::warning::secret SIDEQUEST_RELEASE_WEBHOOK is unset - SideQuest was not notified"
+            {
+              echo "### ⚠️ SideQuest was not notified"
+              echo ""
+              echo 'Secret `SIDEQUEST_RELEASE_WEBHOOK` is unset on this repository, so the release webhook could not be poked. The GitHub Release itself is out.'
+              echo "Point the listing at it by hand: Developer Portal > RetroXR > Edit listing > Distribution > Release."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           # api.sidequestvr.com 403s a bare urllib-style client; curl is fine.
           serving() {
@@ -1055,5 +1068,13 @@ jobs:
           done
 
           echo "listing still serves: ${now:-<unreadable>}"
-          echo "::error::SideQuest did not pick up $TAG (webhook said HTTP $code). Set it by hand: Developer Portal > RetroXR > Edit listing > Distribution > Release, choose $TAG, Save & publish. That dropdown reads the repo's releases directly, so $TAG is already in it."
-          exit 1
+          # Not blocking, like the keystore fallback: the release is already
+          # published, this only reports that the portal needs a hand.
+          echo "::warning::SideQuest did not pick up $TAG (webhook said HTTP $code) - set it by hand: Developer Portal > RetroXR > Edit listing > Distribution > Release, choose $TAG, Save & publish. That dropdown reads the repo's releases directly, so $TAG is already in it."
+          {
+            echo "### ⚠️ SideQuest did not pick up $TAG"
+            echo ""
+            echo "The webhook answered HTTP $code but the listing still serves: ${now:-<unreadable>}."
+            echo "Set it by hand: Developer Portal > RetroXR > Edit listing > Distribution > Release, choose $TAG, Save & publish. That dropdown reads the repo's releases directly, so $TAG is already in it."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
