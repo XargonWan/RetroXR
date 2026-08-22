@@ -265,6 +265,39 @@ static func get_global() -> Dictionary:
     return get_for_system("")
 
 
+## True when this system carries a profile of its own rather than falling back to
+## the global map. The presence of the profile IS the override switch — there is
+## no separate flag, so clearing the profile is what turns the override off.
+static func has_system_override(systemid: String) -> bool:
+    if systemid.is_empty():
+        return false
+    var per_sys: Dictionary = _load_file().get("per_system", {}) as Dictionary
+    return per_sys.has(systemid)
+
+
+## Drop a system's profile so it falls back to global again. Other systems' own
+## profiles are left standing.
+static func clear_system_override(systemid: String) -> void:
+    if systemid.is_empty():
+        return
+    var data := _load_file()
+    var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
+    if not per_sys.has(systemid):
+        return
+    per_sys.erase(systemid)
+    data["per_system"] = per_sys
+    _save_file(data)
+
+
+## Every systemid carrying a profile, for the per-platform tile badges.
+static func overridden_systems() -> Array[String]:
+    var out: Array[String] = []
+    var per_sys: Dictionary = _load_file().get("per_system", {}) as Dictionary
+    for sid: String in per_sys:
+        out.append(sid)
+    return out
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Apply base, then overlay1, then overlay2. Returns a new dictionary (last writer wins).

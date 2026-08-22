@@ -224,6 +224,14 @@ func _on_pulled() -> void:
 	lit = not lit
 	_apply()
 	pulled.emit(lit)
+	if light != null or not glow.is_empty():
+		NetworkManager.report_event(NetObjectSync.EV_PULL_LIGHT,
+			{"cord": self, "on": lit})
+
+
+func set_lit_remote(on: bool) -> void:
+	lit = on
+	_apply()
 
 
 func _apply() -> void:

@@ -33,6 +33,9 @@
 [ext_resource type="Script" path="res://Scripts/Objects/room/string_lights.gd" id="36_strlights"]
 [ext_resource type="Script" path="res://Scripts/Objects/room/bead_pull_cord.gd" id="48_pullcord"]
 [ext_resource type="Script" path="res://Scripts/Objects/room/window_blinds.gd" id="49_blinds"]
+[ext_resource type="Script" path="res://Scripts/Objects/room/time_of_day.gd" id="50_timeofday"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_lever.gd" id="51_vrlever"]
+[ext_resource type="FontFile" uid="uid://bv8kh41jwy8bc" path="res://fonts/SymbolsNerdFont-Regular.ttf" id="52_nerdfont"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/throw_pillows_01_1k.gltf" id="37_pillows"]
 [ext_resource type="PackedScene" path="res://imported-assets/bedroom/props/potted_plant_04_1k.gltf" id="38_plant"]
 [ext_resource type="Texture2D" path="res://imported-assets/bedroom/props/textures/throw_pillows_01_nor_gl_1k.jpg" id="42_cu_nrm"]
@@ -272,6 +275,53 @@ size = Vector3(0.02, 0.014, 0.044)
 albedo_color = Color(0.93, 0.9, 0.83, 1)
 roughness = 0.5
 
+; --- Time-of-day lever -------------------------------------------------------
+; Plate lies flat on the west wall: thin in the mount's local X (the wall normal),
+; 0.32 along the wall and 0.17 tall — wide enough to hold both the ball at the ends
+; of its throw and the tick arc outside it, neither of which a 0.24 plate did. Its outer face sits 12 mm proud, the same
+; relief the light switch beside it has.
+[sub_resource type="BoxMesh" id="Mesh_tod_plate"]
+size = Vector3(0.012, 0.37, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_plate"]
+albedo_color = Color(0.55, 0.53, 0.5, 1)
+roughness = 0.55
+
+; CylinderMesh runs along its own +Y, so the Arm node carries an R_x(-90) to lay it
+; down the mount's -Z, which is up.
+[sub_resource type="CylinderMesh" id="Mesh_tod_arm"]
+top_radius = 0.004
+bottom_radius = 0.005
+height = 0.11
+radial_segments = 10
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_arm"]
+albedo_color = Color(0.18, 0.18, 0.2, 1)
+metallic = 0.7
+roughness = 0.35
+
+; The ball. Emissive as well as lit, because the whole point of the lever is to be
+; findable at t = 1, when the room it controls is dark.
+[sub_resource type="SphereMesh" id="Mesh_tod_ball"]
+radius = 0.022
+height = 0.044
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_tod_ball"]
+albedo_color = Color(0.96, 0.78, 0.09, 1)
+roughness = 0.35
+emission_enabled = true
+emission = Color(1, 0.8, 0.15, 1)
+emission_energy_multiplier = 0.55
+
+[sub_resource type="SphereShape3D" id="Shape_tod_ball"]
+radius = 0.035
+
+; The plate is a shade darker than the light switch beside it. A cream plate is
+; right for a switch and wrong here: the day glyph is near-white, and on cream it
+; disappeared entirely.
 [sub_resource type="BoxShape3D" id="Shape_bookcase"]
 size = Vector3(0.36, 1.8, 0.95)
 
@@ -498,11 +548,17 @@ environment = SubResource("Env_bedroom")
 ;   ExteriorSun -> layer 2 only (the street)    energy 1.5
 ;
 ; Scripts/Objects/room/bedroom_exterior.gd puts every renderable under Exterior on layer 2.
+; sky_mode 2 is SKY_MODE_LIGHT_ONLY. A ProceduralSkyMaterial paints a sun disc for
+; every one of LIGHT0..3, so an indoor fill and a blue sky fill were both smearing
+; glows across a sky authored for ONE sun. Light-only also means moving these two
+; no longer dirties the sky, which is what keeps a time-of-day drag cheap: the
+; radiance cubemap and its mip chain rebuild whenever the sky shader's inputs change.
 [node name="Dusk" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.94, -0.24, 0.24, 0, 0.7, 0.71, -0.34, -0.67, 0.66, 0, 2.2, -2.2)
 light_color = Color(1, 0.72, 0.5, 1)
 light_energy = 0.15
 light_cull_mask = 1
+sky_mode = 2
 
 [node name="ExteriorSun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.87, -0.32, 0.37, 0, 0.76, 0.65, -0.49, -0.57, 0.66, 0, 8, -14)
@@ -516,6 +572,7 @@ transform = Transform3D(-0.87, 0.28, -0.4, 0, 0.82, 0.57, 0.49, 0.5, -0.71, 0, 8
 light_color = Color(0.45, 0.55, 0.85, 1)
 light_energy = 0.5
 light_cull_mask = 2
+sky_mode = 2
 
 [node name="PlayerRig" parent="." instance=ExtResource("2_playerrig")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 0, 0.55)
@@ -879,6 +936,147 @@ shape = SubResource("Shape_lever")
 [node name="ButtonMesh" type="MeshInstance3D" parent="Furniture/LightSwitch/Button"]
 mesh = SubResource("Mesh_lever")
 surface_material_override/0 = SubResource("Mat_lever")
+
+
+; --- Time-of-day lever -------------------------------------------------------
+; West wall, same pier as the light switch, 0.30 m north of it so the two never
+; share a grab volume, and 0.45 m clear of the door opening (z 0.70 .. 1.70).
+;
+; The basis IS the hinge axis, and it was derived by round-tripping a real node
+; rather than written by hand: .tscn Transform3D lists the basis ROWS, the transpose
+; of what the constructor takes, and guessing it wrong is silent.
+;   local X = world +X  the axis, straight out of the wall
+;   local Y = world +Z  toward the door, so a positive angle swings that way
+;   local Z = world -Y  so local -Z is UP and the arm stands up at 0 deg
+; Verified: the ball's world x holds at -2.525 across the whole sweep (a turn about
+; the wall normal) while z sweeps 0.150 .. 0.350.
+[node name="TimeLever" type="Node3D" parent="Furniture"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -2.525, 1.15, 0.25)
+
+[node name="Plate" type="MeshInstance3D" parent="Furniture/TimeLever"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.006, 0, -0.085)
+mesh = SubResource("Mesh_tod_plate")
+surface_material_override/0 = SubResource("Mat_tod_plate")
+
+; Four glyphs from the Nerd Font's Weather Icons set, one per time the lever
+; selects, each tinted in that time's own colour.
+;
+; They must carry the BUNDLED font. A bare Unicode sun or moon renders as tofu on
+; Quest, where the theme font has no such glyph — these codepoints are in the
+; Private Use Area and exist only in SymbolsNerdFont-Regular.ttf. Tests/
+; time_of_day_tests.tscn --only=glyphs asserts the font is attached AND that it
+; actually has each codepoint, because a tofu box is a silent failure.
+;
+; Tinted as well as drawn, because sunrise and sunset are the same sun over the
+; same horizon and differ only in which way the chevron points — at 20 mm on a
+; wall that is not a difference. Colour and arc position carry it; the glyph is the
+; support cue. (menu_icons.gd records the same reasoning for its two bins.)
+;
+; Label3D, one draw call each. Unshaded so the tint IS the colour, and outlined so
+; every one of them reads against the plate whatever the room's light is doing.
+;
+; They ring the ball's path at radius 0.160 — 28 mm beyond the 0.132 the ball's far
+; edge reaches, which is what it takes for an END glyph to stay READABLE with the
+; lever parked on it. At 0.132 the ball sat straight on top of the evening glyph;
+; even at 0.150 it still covered most of the morning and night ones, hiding each
+; label at exactly the position it names.
+;
+; The plate (0.37 x 0.20, centred at -0.085) is sized from the glyphs' measured
+; AABBs, not from their origins. Drawn, these are 40-60 mm across — the sunrise one
+; is the widest — so an origin comfortably inside the plate still hung its rays over
+; the edge. Tests/time_of_day_tests.tscn --only=glyphs measures the real corners.
+; The plate also has to reach down past the pivot the arm turns about, which is what
+; puts its centre well below the arc.
+[node name="TickMorning" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, 0.1450, 0.0174)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(1, 0.78, 0.5, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
+
+[node name="TickDay" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, 0.0602, -0.0632)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(1, 0.85, 0.22, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
+
+[node name="TickEvening" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, -0.0568, -0.0646)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(0.98, 0.45, 0.16, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
+
+[node name="TickNight" type="Label3D" parent="Furniture/TimeLever/Plate"]
+transform = Transform3D(0, 0, 1, -1, 0, 0, 0, -1, 0, 0.007, -0.1450, 0.0174)
+pixel_size = 0.00075
+billboard = 0
+shaded = false
+double_sided = false
+modulate = Color(0.5, 0.66, 1, 1)
+outline_modulate = Color(0.12, 0.11, 0.1, 0.85)
+text = ""
+font = ExtResource("52_nerdfont")
+font_size = 72
+outline_size = 5
+
+; IDENTITY, and VRLever's target. The hinge writes target.rotation.x and measures
+; the hand in the parent frame, so the basis has to live on the mount above and this
+; node has to stay clean.
+[node name="LeverPivot" type="Node3D" parent="Furniture/TimeLever"]
+
+[node name="Arm" type="MeshInstance3D" parent="Furniture/TimeLever/LeverPivot"]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.018, 0, -0.055)
+mesh = SubResource("Mesh_tod_arm")
+surface_material_override/0 = SubResource("Mat_tod_arm")
+
+[node name="Ball" type="MeshInstance3D" parent="Furniture/TimeLever/LeverPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.018, 0, -0.11)
+mesh = SubResource("Mesh_tod_ball")
+surface_material_override/0 = SubResource("Mat_tod_ball")
+
+; The Area3D sits ON the ball, not on the pivot: VRHinge measures tip proximity from
+; this node's own origin, so a hinge parked at the pivot would arm when a hand came
+; near the hub instead of near the handle. Child of the pivot, so it rides the arm.
+;
+; value_at_max = 0 puts MORNING at +65 deg, the door side, which is the player's left
+; when facing this wall; night is the far end. Left to right, as it reads.
+[node name="Lever" type="Area3D" parent="Furniture/TimeLever/LeverPivot" node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.018, 0, -0.11)
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("51_vrlever")
+target = NodePath("..")
+min_deg = -65.0
+max_deg = 65.0
+engage_radius = 0.05
+value_at_min = 1.0
+value_at_max = 0.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Furniture/TimeLever/LeverPivot/Lever"]
+shape = SubResource("Shape_tod_ball")
+
+[node name="HingeHint" type="Label3D" parent="Furniture/TimeLever/LeverPivot/Lever"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.055, 0, -0.03)
 
 ; Fan blades spin about the hub; the glass shade must ride the STATIC mount or
 ; the light swings round the room with them (the den learned this the hard way).
@@ -1418,5 +1616,27 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 1.08, -1.78)
 light_color = Color(1, 0.82, 0.58, 1)
 light_energy = 1.0
 omni_range = 3.0
+
+
+; --- Time of day --------------------------------------------------------------
+; LAST child of Root on purpose. _ready() runs depth-first in tree order, and
+; Furniture/Blinds REPLACES the WorldEnvironment's environment with a duplicate of
+; its own during its _ready(); anything that resolved the environment earlier would
+; be holding the copy that gets discarded. TimeOfDay also defers its first apply,
+; so this ordering is belt and braces rather than the only thing holding it up.
+;
+; It drives the daylight and the street, never the room's own lamps: the wall
+; switch, the two pull cords and the string lights keep those.
+[node name="TimeOfDay" type="Node3D" parent="."]
+script = ExtResource("50_timeofday")
+world_env_path = NodePath("../WorldEnvironment")
+blinds_path = NodePath("../Furniture/Blinds")
+room_daylight_path = NodePath("../Dusk")
+window_sun_path = NodePath("../WindowSun")
+exterior_sun_path = NodePath("../ExteriorSun")
+exterior_fill_path = NodePath("../ExteriorFill")
+street_lamp_path = NodePath("../Exterior/StreetLamp/Light")
+street_lamp_head_path = NodePath("../Exterior/StreetLamp/Head")
+lever_path = NodePath("../Furniture/TimeLever/LeverPivot/Lever")
 
 [connection signal="pulled" from="Furniture/BlindCord" to="Furniture/Blinds" method="_on_cord_pulled"]

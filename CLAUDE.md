@@ -29,9 +29,13 @@ git submodule update --init --recursive
 
 ### One command for every extension
 
-`Tools/build.py` builds all six GDExtensions for one platform, sequentially (they
-cannot share a scons invocation — see below). Prefer it over the per-extension
-recipes further down, which are kept because they document each build's quirks.
+`Tools/build.py` builds all six GDExtensions for one platform. It first builds one
+shared, trimmed `godot-cpp` static library for each target, then runs the extensions
+sequentially with `build_library=no` (they still cannot share a scons invocation —
+see below). Prefer it over the per-extension recipes further down, which are kept
+because they document each build's quirks. The shared API allowlist is
+`Tools/godot_cpp_profile.json`; add a Godot class there when extension C++ starts
+including or calling it.
 
 ```bash
 python Tools/build.py windows              # both template_debug and template_release
@@ -183,10 +187,12 @@ tests. This works without a VR headset (desktop fallback) and without a display.
 
 **`RetroXR/Tests/` is the exception, and the bar for living there is exact:** a scene
 that checks itself, runs unattended with no ROM, core, headset or device, and **exits
-non-zero on failure**, so it can gate a commit. Five so far — the A/V suite in §2c, the
+non-zero on failure**, so it can gate a commit. Among them — the A/V suite in §2c, the
 RomM and scene-management ones below, `system_tests` over the machine controller's
-port, pad, save and disc rules, and `rope_tests` over what a cable does when it meets
-furniture. Everything else is a probe and stays in `RetroXR/Tools/`, including
+port, pad, save and disc rules, `rope_tests` over what a cable does when it meets
+furniture, `binding_tests` over which control map a platform resolves to, and
+`netplay_tests` (§2f) over the whole lockstep stack, two NetworkManagers deep.
+Everything else is a probe and stays in `RetroXR/Tools/`, including
 the ones that assert: they want real cores and ROMs (`azahar_probe`, `sram_probe`,
 `vb_probe`, `nds_probe`, `handheld_probe`, `gl_video_probe`), a headset or a Quest
 (`netplay_spike`), or they are reproductions of open bugs and report failures BY DESIGN
@@ -292,6 +298,56 @@ made the first conform sample every interior ray at depth zero. And a poster is 
 RAY as often as by hand, where `dropped` never fires; a release has to be detected from
 `freeze`, so a test that only simulates a hand grab proves nothing about the real gesture.
 
+`RetroXR/Tests/binding_tests.tscn` covers the resolution rules behind per-platform
+control overrides. Both stores — `ControllerBindings` (VR controllers) and
+`GamepadBindings` (a real pad) — merge default → global → per-system, and a platform's
+stored profile IS its override switch; there is no separate flag. So three rules are
+load-bearing and each has cases here: a platform with no profile is indistinguishable
+from global, a profile shadows global completely INCLUDING global edits made after it
+(which is why a profile is always written whole), and clearing one puts that platform
+back on global without touching anyone else's. DesktopBindings is the odd one
+and has its own cases: its consumers all read the process-global InputMap, so a
+platform's keys cannot be looked up per system — they are APPLIED, and the Scroll
+Lock capture decides when (RetroController._sync_desktop_scope). Its legacy flat
+file is read as the global layer, which is covered too, because losing it would
+wipe every desktop player's key map on first launch. It also covers ConsolePadArt, the
+table a platform's own controller is drawn from — that a control key's index in
+GamepadBindings.TARGET_ORDER really is its RetroPad bit (the trick that lets one
+table serve both the XR and the physical-pad sections), and that every control
+has an anchor and a row. 73 cases, ~2 s.
+```bash
+"$godot" --headless --path RetroXR res://Tests/binding_tests.tscn
+```
+It writes the player's real `user://controller_bindings.json` and
+`user://gamepad_bindings.json` — the paths are consts on the two classes and cannot be
+pointed elsewhere — so both are snapshotted up front and restored at the end.
+
+`RetroXR/Tests/object_sync_tests.tscn` covers the shared-room network layer with
+two and three real in-process ENet peers: initial and replacement snapshots,
+host/client spawning and despawning, rigid-body transform flow, grab arbitration,
+release velocities, disconnect cleanup, event relay, plain + spring-latched
+hinge mechanics (including push-push trays), knobs, plain + spring-return
+sliders, levers, and remote head/hand avatars. Momentary button depression is
+deliberately not replicated;
+the semantic action it triggers is. The event cases cover platform power/reset,
+tray/eject and media insertion, every TV bezel/remote action (power, volume,
+mute, CRT, stereo/audio modes, aspect, source and channel), deck transports,
+cables/ports, book controls, wall and pull-chain lights, blinds and time of day.
+Late-join snapshots also carry the TV control state and those fixed room controls,
+not only spawned objects. It has no ROM, headset or display dependency.
+Each group is independently runnable.
+```bash
+"$godot" --headless --path RetroXR res://Tests/object_sync_tests.tscn
+"$godot" --headless --path RetroXR res://Tests/object_sync_tests.tscn -- --only=hinges
+```
+
+That a binding reaches a RUNNING core is deliberately not here: it needs a real system,
+a real controller and the `binding_consumers` fan-out, and lives in
+`Tools/binding_live_probe.tscn`. Drive that probe through the view's OWN
+`_global_editor` rather than a fresh `ControlsBindingEditor` — a detached editor writes
+to disk and reaches nobody, so every "applies immediately" case fails for a reason the
+player never sees.
+
 **For anything visual, a photo (or a VIDEO if it's animated — mp4 preferred over
 animated GIF) is the preferred proof of validation, delivered inline in the chat.**
 Headless runs catch parse/scene/shader errors but cannot confirm how something *looks*
@@ -347,12 +403,49 @@ can never hang the run.
   `xrCreateInstance failed`, missing GDExtension DLLs in the `template_debug` path
   (`libgodotopenxrvendors`, `godot-pdfium`, `libretro_godot`), `.NET Sdk not found`, and
   `xr_staging_shim.gd ... is_xr_class ... placeholder instance`. Grep these out.
+- **A renamed/deleted source texture can leave the editor filesystem cache
+  pointing at a dead `.godot/imported/*.ctex`.** Re-running an ordinary import
+  may keep trusting that stale entry. Move/delete
+  `RetroXR/.godot/editor/filesystem_cache*`, then run `--editor --import --quit`;
+  Godot rebuilds the class cache and replacement texture imports. This is
+  generated local state, not a file to commit.
+- **A `.tscn` `Transform3D` lists the basis by ROWS**, not the columns the
+  `Transform3D(x_axis, y_axis, z_axis, origin)` constructor takes. For a rotation the
+  two differ by a transpose — an inverse — so a hand-written rotation comes out
+  backwards. Copyable forms: `R_y(+90)`, local +Z → world +X, is
+  `0, 0, 1, 0, 1, 0, -1, 0, 0`; `R_y(-90)` is `0, 0, -1, 0, 1, 0, 1, 0, 0`;
+  `R_x(-90)` is `1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08`. **Never check one
+  against a 180° or an otherwise symmetric matrix** — those read the same under both
+  conventions and confirm whichever reading you already had, which is how the Wii
+  ports and then the Game Boy link socket were both authored inside out. Print
+  `node.transform.basis.x/.y/.z` from a throwaway probe and compare it with what you
+  meant, before rendering anything.
 - **PowerShell buffers `& $godot ... | Out-String` until the process exits**, so a
   backgrounded run shows an empty output file until it finishes. The Bash tool with
   `timeout 90 "$godot" ... 2>&1 | grep` streams and bounds the run — prefer it.
 
-No compiled C++ test harness exists; GDExtension changes are validated by rebuilding
-(above) and loading in the headless editor.
+### Verify with a check that can fail
+
+**A green check that cannot tell the two outcomes apart is not a check.** Ask what
+the WRONG version would look like before believing the right one; if the answer is
+"the same", that is not the check to use.
+
+Two of them in a row cost the Game Boy link socket a whole round trip. It was
+authored facing INTO the shell, and the render looked identical because a
+rectangular port recess is symmetric, while the room probe passed either way because
+a snap zone does not care which way round a plug goes in. Both were green and
+neither could have gone red. What settles a facing is a printed basis, or a render
+of something ASYMMETRIC — a seated lead, not an empty socket.
+
+**And read the note before authoring, not after the bug.** The gotchas above and the
+session memory are each one line in an index, which is enough to recognise a topic
+and not enough to act on; acting from the summary is how the same mistake arrives a
+second time. `.tscn` transforms, a model's facing and a port's seat all have notes,
+and all three were sitting in the index while that socket was written backwards.
+
+`libretro-godot/tests/run_tests.py` is the small Godot-free C++ harness for the
+link coordinator and sensor-id encoding. Other GDExtension changes are validated
+by rebuilding (above) and loading in the headless editor.
 
 ### 2b. The bedroom's saved visual probe
 
@@ -412,6 +505,259 @@ It is mutation-tested: reverting the deck to reading one cable, disabling the pa
 guard, or restoring the frozen-frame bug each fails exactly the cases that name them.
 Adding a case that cannot fail is worse than no case, so break the code and watch it go
 red before believing a new one.
+
+### 2d. The BIOS-boot survey — a probe that must stay one core per process
+
+`RetroXR/Tools/bios_boot_probe.tscn` + `Tools/bios_boot_survey.sh` are the provenance
+of the `BiosBoot` table, and the only way to refresh it when a core is updated. The
+probe reports one core's firmware status, its boot-ROM-ish option keys, and whether it
+will start with no content; the survey drives every candidate and prints a table.
+
+```bash
+Tools/bios_boot_survey.sh                # every candidate
+Tools/bios_boot_survey.sh mgba flycast   # just these
+```
+
+**Never loop cores inside one Godot process.** Starting a core with a game info it did
+not expect runs code its author may never have exercised, and the extension is built
+`-fno-exceptions` with no sandbox: of sixteen cores surveyed 2026-08-20, **six killed the
+process** — mgba and parallel_n64 dereference a null `retro_game_info`, and
+mednafen_saturn, neocd, dolphin and same_cdi die on a zeroed one. One process per attempt
+is what makes a casualty cost one table row instead of the run.
+
+Two things the survey settled that are easy to re-derive wrongly:
+
+- **`supports_no_game` in the `.info` is useless here** — all sixteen candidates declare
+  it `false`, and it is *also* true that none of them starts without content. The flag is
+  not consulted anywhere; the table records what was measured.
+- **The mechanism is empty MEDIA, not an empty path.** Only pcsx_rearmed accepts a
+  zero-byte image, and it gives the real PS1 BIOS. flycast (gdi/cdi/chd),
+  mednafen_saturn, mednafen_pce and neocd all refuse one.
+
+It **writes the player's real `core_options/`** — a core serialises its whole option set
+on shutdown, and a crashed run can leave a key moved (a crashed mgba run flipped
+`mgba_skip_bios` to `ON`). The survey snapshots the directory up front and restores it on
+exit, including on failure. A probe run by hand does not, so restore by hand or re-run the
+survey afterwards.
+
+### 2e. The Game Boy link probes — three layers, two cores, two clocks
+
+`RetroXR/Tools/gb_link_probe.tscn` drives the bus directly, `gb_link_room_probe.tscn`
+drives the path a player uses (pick a lead up, push a plug into a socket), and
+`gb_tetris_link_probe.tscn` runs a commercial two-player game over the result.
+Probes rather than tests: they want a real core and, for Tetris, a real ROM.
+
+```bash
+"$godot" --headless --path RetroXR res://Tools/gb_link_probe.tscn -- --core=mgba
+"$godot" --headless --path RetroXR res://Tools/gb_link_room_probe.tscn
+"$godot" --headless --path RetroXR res://Tools/gb_tetris_link_probe.tscn -- --roms=Z:/roms --core=gambatte --core2=mgba
+```
+
+**Both cores, and between them.** gambatte and mGBA each carry a Game Boy, both
+answer `RETRO_ENVIRONMENT_GET_LINK_INTERFACE`, and both call the wire `gb-sio-1`
+with the same message layout -- so a gambatte Game Boy and an mGBA one join the
+same cable, which `--core2` is there to prove. mGBA needs its GB driver as well
+as its GBA one: they are separate cores with separate serial ports, and before
+`gb_sio_netlink.c` a lead between two mGBA Game Boys carried nothing, silently.
+
+The ROMs the first two run come from `Tools/gen_gblink_rom.py` and swap a known
+byte for ever, painting the screen white while the byte coming back is right. No
+assertion is made against an absolute shade -- a core picks a palette per game --
+only that a cabled screen is neither of the two an uncabled pair shows. The
+`_fast` pair is the same exchange at the Game Boy Color's 262144 Hz clock, a
+transfer of 128 cycles against 4096, which is the one path a Game Boy cannot
+reach: SC bit 1 reads back as one on a DMG whatever is written.
+
+**Drive the two machines one at a time.** Tetris settles which unit owns the
+clock by having both send 0x29 until one is listening when the other calls, so
+two machines driven on the same emulated frame both call and neither listens --
+the trace reads as two masters clocking the same tick for ever, each getting the
+0xFF of a cable nobody is holding. Real hardware cannot stay there because two
+people are never frame-perfect; a script can, and will. The same probe also
+presses START and then LOOKS, because in Tetris that button picks a game type,
+confirms a level, starts the match AND pauses it, and the pause travels down the
+wire.
+
+**Tetris DX is not a usable target.** Its 1PLAYER and 2PLAYER entries are greyed
+out until a profile exists, so each machine needs a scripted name entry through
+an on-screen keyboard first, and the two routes drift apart. The Game Boy Color
+path is covered by the `_fast` ROMs instead.
+
+### 2f. Netplay — a suite, and the one thing it cannot cover
+
+`RetroXR/Tests/netplay_tests.tscn` is 264 cases over the whole lockstep stack,
+headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
+`identity/` (which core builds may play each other), `wire/` (every packed
+block's round trip, including per-port accelerometer, gyro, IR/touch and
+lightgun state), `owners/` (who supplies which port on which frame),
+`assemble/` (frame completion and pruning), `start/` (the asynchronous cold
+start), `lockstep/`, `desync/`, `join/`, `leave/`, `rollback/`, `link/` (a
+cabled pair as one session).
+
+```bash
+"$godot" --headless --path RetroXR res://Tests/netplay_tests.tscn
+"$godot" --headless --path RetroXR res://Tests/netplay_tests.tscn -- --only=start
+```
+
+**It runs two — for the join cases, three — complete NetworkManagers in ONE
+process**, each under its own `SceneMultiplayer`, over real loopback ENet. Do
+not reach for two OS processes instead: the RPCs, channels, serialization and
+handshake are already the real ones, and one process keeps the run deterministic
+and headless. It replaced `Tools/netplay_session_probe.tscn`, which was the same
+idea at a quarter of the coverage.
+
+What no suite here can cover is a real core's arithmetic. That is
+`Tools/netplay_spike.gd`, and it now has a **cross-machine leg**, which is the
+only thing that tests the one payload lockstep actually puts on the wire — a
+savestate, shipped for a late join or a desync resync:
+
+```bash
+machine 1:  ... res://Tools/netplay_spike.tscn -- --spike-state-out=Z:/np.bin
+machine 2:  ... res://Tools/netplay_spike.tscn -- --spike-state-in=Z:/np.bin
+```
+
+Machine 1 writes its state, the frame, its core identity and its whole phase-A
+CRC table; machine 2 loads that state into ITS core and replays the same input
+timeline against machine 1's CRCs. Run it x86_64 → arm64 and back. Cold-start
+CRC determinism was verified across those two in 2026-07-06; a foreign savestate
+crossing between them was not, and a libretro state is a struct dump for most
+cores.
+
+**ROM/device validation still owed:** the automated suite proves that lightgun,
+accelerometer, gyroscope and multi-point IR/touch values survive the network,
+reach the native input handler and keep their sub-device index. It does not prove
+that a real content core consumes those values correctly. In particular, Wii
+Remote accel/gyro/IR through Dolphin and a real lightgun title still need a ROM,
+the matching core and preferably the real controller. The user does not plan to
+obtain a ROM, so leave this as an explicit unverified hardware/content check; do
+not represent the mock/no-ROM suite as that proof.
+
+**Cross-platform play is a build-identity problem before it is a determinism
+problem.** `core_download_manager.gd` points every platform at
+`nightly/<platform>/latest/`, so five separate builds are in play (win-x64,
+linux-x64, android-arm64, osx-arm64, osx-x64) cut at five different times from
+five different commits. Two Windows players who downloaded the same day are
+byte-identical; a Windows player and a Quest player essentially never are. The
+core FILE can therefore never be compared — what is compared is
+`Libretro.GetCoreIdentity()`, which the C++ publishes from the emulation thread
+once `retro_load_game` succeeds: `library_name`, `library_version`,
+`api_version`, `serialize_size`. fceumm puts its git hash in the version
+(`FCEUmm (SVN) 5cd4a43`), so nightly skew really is visible there.
+
+That dictionary is **empty until content has loaded and empty again after it
+stops**, which makes it the readiness test as well as the identity. That matters
+more than it sounds: `StartContent` spins the emulation thread and returns, so a
+core that is missing, refused or wedged fails ASYNCHRONOUSLY — a real fceumm
+took **34 frames** to come up in a probe here. Reporting a peer ready before
+then is reporting a peer with no core.
+
+**The identity is published in two halves, at the two moments each half is safe
+at, and both constraints are load-bearing:**
+
+- `library_name`/`library_version`/`api_version` land **at load**. They were
+  read from `retro_get_system_info` during `Core::Load` and cost no call into
+  the core, so they are safe everywhere.
+- `serialize_size` lands **after the first `retro_run`**, and is 0 until then.
+  Dolphin answers `retro_serialize_size` by marshalling onto its CPU thread and
+  walking every subsystem, so asking at load segfaults it on a machine that does
+  not exist yet — and because the publish sat on the unconditional load path,
+  that broke every Dolphin boot, not just netplay.
+
+It cannot simply move to after the first frame either: **the netplay gate does
+not run frame 0 until every peer reports ready, and readiness is this dictionary
+being non-empty.** Requiring a frame deadlocks every cold start — measured, the
+identity never arrived in 2888 ticks — and the symptom is a 10 s timeout saying
+"core did not come up". So a reader comparing sizes across peers must treat 0 as
+"not measured yet" rather than as a difference; at cold start both peers are
+usually 0 and the version comparison carries the weight.
+
+`RetroXR/Tools/core_identity_probe.tscn` is the guard for all of that, and it
+needs a real core so it stays a probe. It runs the same core twice, gated (a
+netplay cold start: identity must arrive with ZERO frames run) and ungated (the
+size must really get measured), and exits non-zero.
+
+```bash
+"$godot" --headless --path RetroXR res://Tools/core_identity_probe.tscn -- \
+  --ident-core=fceumm "--ident-rom=$HOME/retroxr/roms/nes/rom.nes"
+```
+
+**Run it against dolphin, not just a quick NES core** — fceumm cannot fail the
+half that matters. And give Dolphin `--ident-leg=gated` and `--ident-leg=ungated`
+in separate processes: both legs in one run means a restart, Dolphin is one of
+the cores that will not unwind, and the abandoned thread segfaults on the way
+out looking exactly like an identity crash.
+
+### 2g. Netplay over a link cable — one session, two machines
+
+**A link cable never crosses the network.** `LinkCoordinator` is a process-wide
+singleton joining two cores in the SAME process, so under netplay every peer
+replicates BOTH machines and it is determinism, not a wire, that keeps the two
+buses agreeing. A cabled pair is therefore ONE session over TWO machines, which
+is why `NetplaySession` holds a `_group` rather than a system.
+
+Ports are named `machine * PORTS_PER_MACHINE + port`, so both machines' pads fit
+in one assembled frame; each core is handed only its own 20-int block plus that
+machine's aux and key blocks. Aux (tilt, touch) and keyboard ride with each
+machine's own port-0 owner — copying the anchor's tilt into every linked handheld
+is just as wrong as dropping the far handheld's input. A linked late join pauses
+every local core at one boundary and transfers both core savestates plus
+`LinkCoordinator`'s clock horizons and queued messages. The joiner restores the
+physical bus first, then its external bus snapshot, then the core states, so it
+cannot resume half of an in-flight serial conversation.
+
+The per-machine launch spec also records `rom`, `empty_media`, or `no_content`.
+That last mode is the cartridge-less GBA in single-pak play: it cold-boots mGBA
+with the BIOS only, then an ordinary core savestate carries the downloaded
+program, RAM, registers and link state just like a cartridge-backed machine.
+Empty-disc BIOS menus use `empty_media` instead and regenerate the zero-byte
+image locally; BIOS files themselves are never transferred. Every peer must
+already have matching firmware. The no-ROM tests cover this launch/state
+plumbing with mock cores, but mGBA is not yet in `NetplayCores`: a real
+single-pak netplay run still needs a payload-carrying game ROM and determinism
+vetting, which the user does not plan to obtain, so leave that validation noted
+as outstanding rather than enabling the core on inference.
+
+Two things this had to get right, and both are the same rule:
+
+- **Every machine on every connected wire is in the session.** When it held one, the far end
+  was ungated on the host and not running at all on a client, so the client's
+  gated core sat on a bus whose other end never published — and the coordinator
+  waits for a peer that is behind rather than guessing, with deliberately no
+  timeout. Host fine, client wedged. A console can have several independent
+  leads (four GameCube-to-GBA cables are the obvious case), so the group is the
+  transitive merge of every cable bus touching the anchor, not the first match.
+- **All THREE leads, not just the handheld one.** Every lead that can put two
+  cores on a wire answers `linked_machines()` / `held_machines()`, and a machine
+  finds its bus by asking the leads rather than searching its own sockets. That
+  is not tidiness: a GameCube-to-GBA lead puts its wide end in a **controller**
+  socket, so there is no `LinkPort` on the console side to walk out of, and a
+  search from the machine would have decided a cabled GameCube was on no bus at
+  all. `net_link_bus` therefore sweeps both the `link_plug` and `controller_plug`
+  groups. (That the GC end is in `controller_plug` and not `link_plug` is pinned
+  by `link_tests`; that `net_link_bus` must consult both is only reasoned.)
+- **A plug seated mid-game lands on ONE agreed frame.** `LinkCoordinator.hpp`
+  says so itself: the thing it cannot enforce is that Connect and Disconnect
+  happen on the same emulated frame on every peer, and that is the caller's job.
+  Nothing was doing it. The host now waits for every peer to acknowledge the
+  reliable topology command, then holds the boundary until every local core has
+  finished the preceding frame; only then does it change the bus and release
+  that frame to any core. `link_cable._resolve` hands the decision to the host
+  instead of joining on the spot whenever a hand moves.
+
+`RetroXR/Tools/netplay_link_probe.tscn` is the real-core half — two gambatte
+Game Boys, the real bus, ROMs from `Tools/gen_gblink_rom.py`:
+
+```bash
+python Tools/gen_gblink_rom.py     # once, into RetroXR/Tools/gblink/
+"$godot" --headless --path RetroXR res://Tools/netplay_link_probe.tscn
+```
+
+Its two legs pull opposite ways and both must hold. Fed on both machines, the
+pair runs and trades bytes (240 frames, 293/431 messages). Fed on only the near
+one — a client before the group existed — **the near core reaches frame 2 and
+stops dead.** That second leg is the reproduction, and a green there would mean
+the bus had stopped waiting, which is worse than the hang: a cabled netplay pair
+would desync instead of stalling.
 
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
@@ -616,6 +962,33 @@ carried alongside it.
   get a link error on the platform you weren't building. Each `lib/<plat>/` carries a `VERSION`
   stamp of the release it came from, and the top-level one belongs to `include/`; they are
   allowed to differ, and the script prints them so you can see when they do.
+- **Controller art** — three sources feed the Controls remap diagrams, and the
+  licence of each is recorded in `RetroXR/Textures/Controllers/ATTRIBUTIONS.txt`.
+  `bake_controller_art.py` bakes the Quest Touch art from a glTF (MIT), because a
+  Touch controller's shape cannot be guessed. `gen_gamepad_art.py` DRAWS its pad —
+  circles, capsules and a cross on a symmetric body — which keeps the anchors as
+  chosen coordinates that cannot drift from a render; it is an Xbox *layout* and
+  deliberately not an Xbox, so there is no mark being borrowed. The NES pad is a
+  Wikimedia Commons drawing by Fant0men used under **CC BY-SA 3.0** with the
+  Nintendo wordmark's eleven paths deleted — the repo's ONLY share-alike asset,
+  so it carries two live obligations: the About panel must keep crediting it,
+  and the modified file stays CC BY-SA (it does not relicense anything else).
+  Its anchors are MEASURED out of a Godot render by
+  `Tools/nes_pad_anchors.py` (red discs → A/B, black cross → d-pad, black pills →
+  Select/Start) rather than chosen. That tool also counts leader-line
+  intersections over a sweep of panel sizes, and the count must stay 0.
+  ```bash
+  python Tools/nes_pad_anchors.py RetroXR/probe_out/nes_colour_raw.png
+  ```
+  **A console pad's art is drawn inside `_draw()`, not parented as a TextureRect**
+  — a Control renders its own `_draw()` behind its children, so a child texture
+  hides the leader lines and anchor dots. Invisible with line art, whose body is
+  nearly transparent; total with a colour illustration.
+- **`Tools/gen_gblink_rom.py`** — builds the four Game Boy ROMs the link probes run,
+  two at the Game Boy's clock and two at the Game Boy Color's. Ours, so they ship
+  freely; the header logo carries only its first four bytes, which is the signature
+  a loader matches to decide a file is a Game Boy ROM at all (mGBA refuses one
+  without them) and not the artwork.
 - **`Tools/glb/decimate_glb.py`** — Blender-headless triangle reduction for a downloaded shell.
   Sketchfab assets arrive subdivided for renders: the Atari 2600 console shipped 1,080,733
   triangles and 57.7 MB, against 27,893 for the NES. **Weld first** — these exports are

@@ -148,6 +148,10 @@ func _on_power_slider_changed(v: float) -> void:
 	var host := get_parent()
 	if host == null or not host.has_method("toggle_power"):
 		return
+	# The replicated position is visual state; EV_SYS_POWER is the one semantic
+	# action. Letting both paths toggle would turn a remote machine twice.
+	if NetworkManager.is_event_applying():
+		return
 	if (v > 0.5) != bool(host.get("is_powered_on")):
 		host.toggle_power()
 
@@ -545,6 +549,19 @@ func build_disc_bay(_host: Node3D, _slot: Node3D, _systemid: String, _front: boo
 
 ## Draw the mouth a slot-loaded disc goes in through. Same split as
 ## build_disc_bay: a bespoke shell already has one.
+## Put this machine's serial socket on it, if it has one.
+##
+## A hook rather than a fixed node on the cabinet because it is the SHELL that
+## knows where the socket is: a model with a baked body has a moulded recess to
+## sit it in, and the primitive box has only a back panel to lay it against. The
+## cabinet cannot place something it cannot measure.
+##
+## Nothing here by default. A console with no serial port is the ordinary case,
+## and a model that draws its own can override this without the cabinet caring.
+func build_serial_port(_host: Node3D, _systemid: String) -> void:
+	pass
+
+
 func build_disc_slit(_host: Node3D, _systemid: String) -> void:
 	pass
 

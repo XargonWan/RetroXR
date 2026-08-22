@@ -6,11 +6,11 @@
     python Tools/build.py linux --only vlc-godot
     python Tools/build.py macos --target debug
 
-Six extensions live in this workspace and each needs its OWN scons invocation:
-they share the `godot-cpp` submodule, and godot-cpp's SConstruct can only be run
-once per process, so a single scons run cannot cover two of them. Each also has
-its own `VariantDir('Temp')`, which is why each builds from its own directory —
-except libretro-godot, whose SConstruct is the workspace root's.
+Six extensions live in this workspace and each needs its OWN scons invocation.
+They share one profiled `godot-cpp` static library, which this script builds once
+per platform/target before linking the extensions with `build_library=no`. Each
+extension also has its own `VariantDir('Temp')`, so it still builds from its own
+directory — except libretro-godot, whose SConstruct is the workspace root's.
 
 Asking for `linux` from Windows re-invokes this script inside WSL. Asking for it
 from Linux just builds. (Replaces the old Tools/build_linux.sh, which did the
@@ -34,6 +34,8 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+GODOT_CPP = REPO / "libretro-godot/godot-cpp"
+GODOT_CPP_PROFILE = REPO / "Tools/godot_cpp_profile.json"
 
 # name, directory scons runs in (relative to REPO), where the artifacts land, and
 # the platforms the extension actually ships on.
@@ -107,9 +109,8 @@ def build_env(platform: str, ndk: str) -> dict[str, str]:
     return env
 
 
-def run_one(name: str, subdir: str, platform: str, arch: str, target: str,
-            scons: str, env: dict[str, str], jobs: int, extra: list[str]) -> tuple[bool, float]:
-    cwd = REPO / subdir
+def scons_command(platform: str, arch: str, target: str, scons: str,
+                  jobs: int, extra: list[str]) -> list[str]:
     cmd = [scons, f"platform={platform}", f"arch={arch}", f"target={target}", f"-j{jobs}"]
     if platform == "android":
         cmd.append("ANDROID_HOME=")
@@ -119,11 +120,25 @@ def run_one(name: str, subdir: str, platform: str, arch: str, target: str,
         # macos_deployment_target= override still wins.
         cmd.append(f"macos_deployment_target={MACOS_DEPLOYMENT_TARGET}")
     cmd += extra
+    return cmd
+
+
+def run_build(name: str, cwd: Path, platform: str, arch: str, target: str,
+              scons: str, env: dict[str, str], jobs: int,
+              extra: list[str]) -> tuple[bool, float]:
+    cmd = scons_command(platform, arch, target, scons, jobs, extra)
     print(f"\n=== {name}  [{platform} {arch} {target}] ===", flush=True)
     print(f"    {cwd}$ {' '.join(cmd)}", flush=True)
     t0 = time.monotonic()
     rc = subprocess.run(cmd, cwd=cwd, env=env).returncode
     return rc == 0, time.monotonic() - t0
+
+
+def run_one(name: str, subdir: str, platform: str, arch: str, target: str,
+            scons: str, env: dict[str, str], jobs: int,
+            extra: list[str]) -> tuple[bool, float]:
+    return run_build(name, REPO / subdir, platform, arch, target,
+                     scons, env, jobs, extra)
 
 
 def to_wsl_path(p: Path) -> str:
@@ -179,6 +194,9 @@ def main() -> int:
     ap.add_argument("scons_args", nargs="*", help="extra args passed through to scons")
     args = ap.parse_args()
 
+    if any(arg.startswith("build_library=") for arg in args.scons_args):
+        ap.error("build_library is managed by build.py")
+
     # linux asked for from Windows -> hand the whole thing to WSL and stop here.
     if args.platform == "linux" and sys.platform == "win32":
         passthrough: list[str] = []
@@ -224,6 +242,7 @@ def main() -> int:
     arch = args.arch or ARCH[args.platform]
     scons = find_scons()
     env = build_env(args.platform, args.ndk)
+    profile_arg = f"build_profile={GODOT_CPP_PROFILE}"
 
     print(f"[build] {args.platform}/{arch}  targets={','.join(TARGETS[args.target])}  "
           f"jobs={args.jobs}\n[build] scons: {scons}")
@@ -234,9 +253,28 @@ def main() -> int:
 
     results: list[tuple[str, str, bool, float]] = []
     for target in TARGETS[args.target]:
+        # All extensions use the same godot-cpp ABI and build profile. Build its
+        # static library once from a canonical working directory; otherwise six
+        # independent SCons databases repeatedly compile/archive the same ~1,000
+        # generated wrappers. Extension-only flags also cannot leak back into
+        # this library when the later invocations use build_library=no.
+        godot_cpp_args = [profile_arg]
+        if (target != "template_release"
+                and not any(arg.startswith("debug_symbols=") for arg in args.scons_args)):
+            # Preserve the historical local-build default. CI can override this
+            # with debug_symbols=no for its load-only DLLs.
+            godot_cpp_args.append("debug_symbols=yes")
+        godot_cpp_args += args.scons_args
+        ok, secs = run_build("godot-cpp", GODOT_CPP, args.platform, arch,
+                             target, scons, env, args.jobs, godot_cpp_args)
+        results.append(("godot-cpp", target, ok, secs))
+        if not ok:
+            continue
+
+        extension_args = [profile_arg, "build_library=no", *args.scons_args]
         for name, subdir, _out, _plats in exts:
             ok, secs = run_one(name, subdir, args.platform, arch, target,
-                               scons, env, args.jobs, args.scons_args)
+                               scons, env, args.jobs, extension_args)
             results.append((name, target, ok, secs))
 
     print("\n" + "=" * 62)
@@ -246,7 +284,7 @@ def main() -> int:
     if failed:
         print(f"\n{len(failed)} of {len(results)} builds FAILED: {', '.join(failed)}")
         return 1
-    print(f"\nall {len(results)} builds OK -> RetroXR/")
+    print(f"\nall {len(results)} build steps OK -> RetroXR/")
     return 0
 
 

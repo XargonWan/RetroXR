@@ -24,6 +24,16 @@ var autosave_interval: float = 60.0
 const AUTOSAVE_INTERVAL_MIN := 15.0
 const AUTOSAVE_INTERVAL_MAX := 300.0
 var aim_crosshair:    bool = true
+enum XRDisplayMode {
+	CONTROLLERS,
+	HANDS,
+	BOTH,
+}
+## What the physical XR input devices look like. BOTH is deliberately the
+## missing-key default too, so an existing install receives Capsense hands on
+## its first run after the feature arrives rather than silently keeping the old
+## controller-only presentation.
+var xr_display_mode: XRDisplayMode = XRDisplayMode.BOTH
 var controller_hands: bool = false
 var system_filter:    bool = true
 ## Whether the spawn menu wraps onto a cylinder. Unlike the rest, this one is not
@@ -66,6 +76,14 @@ var show_hidden_systems: bool = false
 ## core count, no source badge. One pref for both, like the hidden list: it is a
 ## statement about how you want to read a grid, not about one tab.
 var compact_tiles: bool = false
+
+## The bedroom's time-of-day lever, 0 = morning .. 1 = night. 0.75 is the dusk the
+## room was authored at, so an unset pref opens the room exactly as it always was.
+##
+## Here rather than in a save slot because the bedroom has none: SLOT_ROOMS is
+## ["arcade", "passthrough"], and scene_persistence only tracks the "spawned" group,
+## which an authored wall fixture is not in.
+var bedroom_time_of_day: float = 0.75
 ## What GET_PREFERRED_HW_RENDER advertises to a core with no opinion of its own,
 ## matching the default the extension itself carries. A constant rather than a
 ## setting: there is no global switch for this, because the question is only
@@ -197,6 +215,7 @@ func _load_prefs() -> void:
 	# on PerfHud's statics and is off again every launch. A "show_fps" left in an
 	# old file is simply ignored.
 	aim_crosshair    = _prefs_bool(data, "aim_crosshair",    aim_crosshair)
+	xr_display_mode = _prefs_xr_display_mode(data, "xr_display_mode", xr_display_mode)
 	controller_hands = _prefs_bool(data, "controller_hands", controller_hands)
 	system_filter    = _prefs_bool(data, "system_filter",    system_filter)
 	menu_curved      = _prefs_bool(data, "menu_curved",      menu_curved)
@@ -208,6 +227,8 @@ func _load_prefs() -> void:
 	hidden_systems      = _prefs_strings(data, "hidden_systems")
 	show_hidden_systems = _prefs_bool(data, "show_hidden_systems", show_hidden_systems)
 	compact_tiles       = _prefs_bool(data, "compact_tiles",       compact_tiles)
+	bedroom_time_of_day = clampf(_prefs_float(data, "bedroom_time_of_day",
+		bedroom_time_of_day), 0.0, 1.0)
 	hw_render_overrides = _prefs_dict(data, "hw_render_overrides", hw_render_overrides)
 
 
@@ -221,6 +242,7 @@ func save_prefs() -> void:
 		"autosave_periodic": autosave_periodic,
 		"autosave_interval": autosave_interval,
 		"aim_crosshair":    aim_crosshair,
+		"xr_display_mode":  xr_display_mode,
 		"controller_hands": controller_hands,
 		"system_filter":    system_filter,
 		"menu_curved":      menu_curved,
@@ -232,6 +254,7 @@ func save_prefs() -> void:
 		"hidden_systems":    hidden_systems,
 		"show_hidden_systems": show_hidden_systems,
 		"compact_tiles":     compact_tiles,
+		"bedroom_time_of_day": bedroom_time_of_day,
 		"hw_render_overrides": hw_render_overrides,
 	}, "\t"))
 	file.close()
@@ -252,6 +275,19 @@ func _prefs_float(data: Dictionary, key: String, fallback: float) -> float:
 	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
 		return float(value)
 	return fallback
+
+
+## Accept only the three named display modes. JSON numbers may be int or float;
+## a stale or hand-edited value keeps the safe BOTH default.
+func _prefs_xr_display_mode(data: Dictionary, key: String,
+		fallback: XRDisplayMode) -> XRDisplayMode:
+	var value: Variant = data.get(key)
+	if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+		return fallback
+	var mode := int(value)
+	if mode < XRDisplayMode.CONTROLLERS or mode > XRDisplayMode.BOTH:
+		return fallback
+	return mode as XRDisplayMode
 
 
 ## JSON has no packed-array type, so a saved PackedStringArray reads back as a

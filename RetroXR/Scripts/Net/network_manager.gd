@@ -19,10 +19,16 @@ const MAX_PLAYERS := 8
 ## out each of its roots.
 const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glprobe.cfg"
 ## 2: systems are replicated by model_id rather than by a (systemid, variant)
-## pair. A v1 peer sends no model_id, so a v2 host would silently give it default
-## hardware at the right position — visual divergence with no error, which is a
-## worse outcome than being turned away at the door.
-const PROTOCOL_VERSION := 2
+## pair. 3 added netplay. 4 made linked sessions carry a specification per
+## machine. 5 added per-machine aux/keyboard blocks and machine-addressed disc
+## operations. 6 adds articulated child-control batches (plain/spring hinges,
+## levers, knobs and sliders). 7 adds deterministic reset plus explicit TV
+## source/channel/aspect state. 8 adds per-port accel/gyro/pointer frames. 9
+## carries the external link-bus snapshot needed by linked late join. 10 makes
+## each machine's ROM/empty-media/no-content boot mode explicit. These
+## wire layouts are intentionally refused across versions:
+## accepting an old peer would look connected while feeding different cores.
+const PROTOCOL_VERSION := 10
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels
@@ -82,6 +88,7 @@ func _ready() -> void:
 	_object_sync = OBJECT_SYNC.new()
 	_object_sync.name = "ObjectSync"
 	add_child(_object_sync)
+	_object_sync.peer_world_ready.connect(_on_peer_world_ready)
 	# Fixed-path netplay session (M4) — one active game at a time.
 	_netplay = NETPLAY.new()
 	_netplay.name = "Netplay"
@@ -152,11 +159,19 @@ func is_active() -> bool:
 
 
 func is_host() -> bool:
-	return _active and multiplayer != null and multiplayer.is_server()
+	if not _active or multiplayer == null or multiplayer.multiplayer_peer == null:
+		return false
+	if multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+		return false
+	return multiplayer.is_server()
 
 
 func is_client() -> bool:
-	return _active and multiplayer != null and not multiplayer.is_server()
+	if not _active or multiplayer == null or multiplayer.multiplayer_peer == null:
+		return false
+	if multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+		return false
+	return not multiplayer.is_server()
 
 
 func host_game(port := DEFAULT_PORT) -> Error:
@@ -172,6 +187,8 @@ func host_game(port := DEFAULT_PORT) -> Error:
 	_active = true
 	_accepted = true
 	peers = {1: _local_info(0)}
+	print("[NetworkManager] ENet host listening on UDP %d (protocol %d)" % [
+		port, PROTOCOL_VERSION])
 	_setup_world()
 	status_changed.emit("Hosting on port %d — %s" % [port, ", ".join(local_ips())])
 	session_started.emit(true)
@@ -191,6 +208,8 @@ func join_game(ip: String, port := DEFAULT_PORT) -> Error:
 	_active = true
 	_accepted = false
 	peers = {}
+	print("[NetworkManager] ENet connecting to %s:%d (protocol %d)" % [
+		ip, port, PROTOCOL_VERSION])
 	status_changed.emit("Connecting to %s…" % ip)
 	return OK
 
@@ -268,6 +287,20 @@ func netplay_system() -> Object:
 	return _netplay._system if _netplay != null else null
 
 
+## True when a running netplay session covers `machine` — i.e. a cable seated on
+## it has to be scheduled onto an agreed frame rather than joined on the spot.
+func netplay_covers(machine: Object) -> bool:
+	return _netplay != null and _netplay.covers(machine)
+
+
+## Host: schedule a link-cable change for the running session. `entries` are
+## [{machine, port}, ...], head first. op 1 joins them as one bus, op 0 drops
+## the single named port.
+func netplay_schedule_link(op: int, entries: Array) -> void:
+	if _netplay != null and is_host():
+		_netplay.schedule_link_for(op, entries)
+
+
 ## Host: begin netplay for `system`. `owners` maps port -> peer_id (defaults to
 ## a sensible assignment across connected peers). rollback: -1 auto (core
 ## capability), 0 force lockstep, 1 force rollback. Returns false if not host,
@@ -287,16 +320,39 @@ func default_owners(system: Object) -> Dictionary:
 	var ids: Array = peers.keys()
 	ids.sort()
 	var owners := {}
+	# Over the whole bus, not just the machine the power button was pressed on:
+	# a cabled pair is one session over two machines, and a port is named by
+	# machine * PORTS_PER_MACHINE + port so both machines' pads fit in one frame.
+	var group: Array = [system]
+	if system != null and system.has_method("net_link_group"):
+		var bus: Array = system.net_link_group()
+		if bus.size() > 1:
+			group = bus
 	var plugged: Array = []
-	if system != null and "_port_controllers" in system:
-		var pc: Array = system.get("_port_controllers")
-		for i in range(pc.size()):
-			if pc[i] != null:
-				plugged.append(i)
-	if plugged.is_empty():
-		plugged = [0]   # at least port 0 participates
+	for m in range(group.size()):
+		var machine: Object = group[m]
+		var found := false
+		if machine != null and "_port_controllers" in machine:
+			var pc: Array = machine.get("_port_controllers")
+			for i in range(pc.size()):
+				if pc[i] != null:
+					plugged.append(m * NetplaySession.PORTS_PER_MACHINE + i)
+					found = true
+		if not found:
+			# Every machine on the wire needs at least one port in the frame, or
+			# its core is gated on inputs the assembler never asks anyone for.
+			plugged.append(m * NetplaySession.PORTS_PER_MACHINE)
 	for i in range(plugged.size()):
-		owners[plugged[i]] = ids[i % ids.size()]
+		var global_port := int(plugged[i])
+		var machine: Object = group[NetplaySession.machine_of_port(global_port)]
+		var local_port := NetplaySession.port_on_machine(global_port)
+		var controller: Object = null
+		if machine != null and "_port_controllers" in machine:
+			var pc: Array = machine.get("_port_controllers")
+			if local_port < pc.size():
+				controller = pc[local_port]
+		var holder := _object_sync.holder_peer(controller) if _object_sync != null else 0
+		owners[global_port] = holder if holder > 0 else ids[i % ids.size()]
 	return owners
 
 
@@ -320,6 +376,11 @@ func netplay_handoff(controller: Object, peer_id: int) -> void:
 		_netplay.handoff_controller(controller, peer_id)
 
 
+func netplay_handoff_port(system: Object, port: int, peer_id: int) -> void:
+	if _netplay != null:
+		_netplay.handoff_port(system, port, peer_id)
+
+
 ## Host: frame-schedule a disc eject/swap for the running netplay game so
 ## every peer's core applies it on the same frame. op 0 = eject, op 1 =
 ## replace image `index` with the disc whose md5 matches (resolved locally
@@ -329,17 +390,34 @@ func netplay_schedule_disk(system: Object, op: int, md5: String, index: int) -> 
 		_netplay.schedule_disk_op(system, op, md5, index)
 
 
-## Aux input feeds for the running netplay game (port-0 owner only): tilt
-## sensor in milli-g and touch pointer. Both ride the deterministic frame
-## schedule so every peer's core sees identical values on identical frames.
-func netplay_set_aux_sensor(system: Object, x_mg: int, y_mg: int, z_mg: int) -> void:
+## Host: frame-schedule a front-panel reset for one machine in the active
+## netplay group so every peer resets before the same emulated frame.
+func netplay_schedule_reset(system: Object) -> void:
 	if _netplay != null:
-		_netplay.set_aux_sensor(system, x_mg, y_mg, z_mg)
+		_netplay.schedule_reset(system)
 
 
-func netplay_set_aux_pointer(system: Object, px: int, py: int, pressed: bool) -> void:
-	if _netplay != null:
-		_netplay.set_aux_pointer(system, px, py, pressed)
+## Aux input feeds for the running game. True means netplay consumed the input.
+func netplay_set_aux_sensor(system: Object, port: int, sensor_index: int,
+		x_mg: int, y_mg: int, z_mg: int, gyro := false) -> bool:
+	return _netplay != null and _netplay.set_aux_sensor(system, port, sensor_index,
+		x_mg, y_mg, z_mg, gyro)
+
+
+func netplay_set_aux_pointer(system: Object, port: int, pointer_index: int,
+		px: int, py: int, pressed: bool) -> bool:
+	return _netplay != null and _netplay.set_aux_pointer(system, port, pointer_index,
+		px, py, pressed)
+
+
+func netplay_set_lightgun_button(system: Object, port: int, button: int,
+		pressed: bool) -> bool:
+	return _netplay != null and _netplay.set_lightgun_button(system, port, button, pressed)
+
+
+func netplay_set_lightgun_aim(system: Object, port: int, px: int, py: int,
+		offscreen: bool) -> bool:
+	return _netplay != null and _netplay.set_lightgun_aim(system, port, px, py, offscreen)
 
 
 ## Queue a keyboard transition into the running netplay game's deterministic
@@ -386,12 +464,17 @@ func _wire_signals() -> void:
 		return
 	_signals_wired = true
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
-	multiplayer.connection_failed.connect(func(): leave_session("connection failed"))
-	multiplayer.server_disconnected.connect(func(): leave_session("host disconnected"))
+	multiplayer.connection_failed.connect(func():
+		print("[NetworkManager] ENet connection failed")
+		leave_session("connection failed"))
+	multiplayer.server_disconnected.connect(func():
+		print("[NetworkManager] ENet host disconnected")
+		leave_session("host disconnected"))
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 
 
 func _on_connected_to_server() -> void:
+	print("[NetworkManager] ENet connected as peer %d; registering" % multiplayer.get_unique_id())
 	_register.rpc_id(1, {"name": player_name, "is_vr": get_viewport().use_xr}, PROTOCOL_VERSION)
 
 
@@ -405,6 +488,8 @@ func _on_peer_disconnected(id: int) -> void:
 		_peer_left_msg.rpc(id)
 		peer_left.emit(id)
 		status_changed.emit("%d player(s) connected" % peers.size())
+		if _object_sync != null:
+			_object_sync.on_peer_left(id)
 		# A departed peer that owned a netplay port would stall the assembler
 		# forever — end the game for everyone.
 		if _netplay != null and _netplay.is_active():
@@ -444,6 +529,8 @@ func _register(info: Dictionary, version: int) -> void:
 		"color_idx": _next_color_idx(),
 	}
 	peers[sender] = entry
+	print("[NetworkManager] accepted peer %d (%s); roster=%d" % [
+		sender, entry["name"], peers.size()])
 	var scene_id: String = SceneManager.current_scene_id if has_node("/root/SceneManager") else ""
 	_accept.rpc_id(sender, peers.duplicate(true), scene_id)
 	for id: int in peers:
@@ -452,15 +539,22 @@ func _register(info: Dictionary, version: int) -> void:
 	_add_avatar(sender, entry)
 	peer_registered.emit(sender, entry)
 	status_changed.emit("%d player(s) connected" % peers.size())
-	# A peer joining mid-game gets caught up via the netplay savestate flow.
+
+
+func _on_peer_world_ready(peer_id: int) -> void:
+	print("[NetworkManager] peer %d applied the world snapshot" % peer_id)
+	# Netplay references systems by ids minted in that snapshot. Starting the
+	# late-join handshake before the client confirms it has instantiated them is
+	# a race that intermittently resolves every machine as null.
 	if _netplay != null and _netplay.is_running():
-		_netplay.on_peer_joined(sender)
+		_netplay.on_peer_joined(peer_id)
 
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _accept(roster: Dictionary, scene_id: String) -> void:
 	peers = roster
 	_accepted = true
+	print("[NetworkManager] registration accepted; roster=%d" % peers.size())
 	if has_node("/root/SceneManager") and not scene_id.is_empty() \
 			and scene_id != SceneManager.current_scene_id:
 		_follow_host_scene(scene_id)
@@ -636,6 +730,8 @@ func _attach_broadcaster() -> void:
 func _on_scene_changed(scene_id: String) -> void:
 	if not _active or not _accepted:
 		return
+	if _netplay != null and _netplay.is_active():
+		_netplay.stop("room changed")
 	_object_sync.reset_for_scene_change()
 	_teardown_world()
 	world_root = null

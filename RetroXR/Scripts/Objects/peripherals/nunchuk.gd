@@ -6,9 +6,10 @@
 ## the remote's expansion port is what flips that remote from WIIMOTE to
 ## WIIMOTE_NC; pulling it out flips it back.
 ##
-## No motion of its own: the core leaves the Nunchuk's Tilt and Swing groups
-## compiled out and binds its shake to a button, so a real accelerometer here
-## would have nowhere to go.
+## Motion is the one thing it does report on its own account, and even that goes
+## out through the remote. libretro addresses one accelerometer per port, so the
+## pair's second one rides a sub-device index (see libretro-godot's
+## SensorIndex.hpp); the remote reads accel_in_nunchuk_frame() and sends it.
 class_name Nunchuk
 extends XRToolsPickable
 
@@ -34,8 +35,17 @@ const BUTTON_PRESS := 0.0015
 const ANIM_WEIGHT := 0.4
 
 ## Shake threshold in m/s^2 of proper acceleration, over gravity. The core takes
-## the Nunchuk's shake as a button, so this is where the gesture becomes one.
+## the Nunchuk's shake as a button as well as a sensor, so this is where the
+## gesture becomes one.
 const SHAKE_THRESHOLD := 14.0
+
+## Gravity used to convert measured acceleration into g, matching the remote's.
+## The core multiplies by the same constant on the way back in.
+const G := 9.80665
+## Low-pass weight on the derived acceleration. Same reason as the remote's: VR
+## linear_velocity is noisy enough that raw differentiation reads as a permanent
+## shake.
+const ACCEL_SMOOTHING := 0.25
 
 # Cable
 var _cable_instance: Node3D = null
@@ -47,8 +57,9 @@ var _max_rope_length: float = 0.0
 var _holding_ctrl: XRController3D = null
 var _hint: HeldHint = null
 
-# Shake detection
+# Motion
 var _prev_velocity := Vector3.ZERO
+var _accel_smoothed := Vector3.UP * G
 var _shaking := false
 
 # Active bindings
@@ -170,21 +181,41 @@ func _held(source: Variant) -> bool:
 
 
 func _process(delta: float) -> void:
-	_update_shake(delta)
+	_update_accel(delta)
 	var state := get_state()
 	_animate(_c_button, _c_rest, state.get("c", false))
 	_animate(_z_button, _z_rest, state.get("z", false))
 
 
-## A jerk of the whole object, not a button. Uses the same proper-acceleration
-## reading the remote does — motion minus gravity — so simply holding it still
-## while the room moves cannot register.
-func _update_shake(delta: float) -> void:
+## Derive what this Nunchuk's accelerometer would read, the same way the remote
+## derives its own: proper acceleration is motion MINUS gravity, so one at rest
+## reads +1g upward rather than nothing, and simply holding it still while the
+## room moves cannot register as a jerk.
+func _update_accel(delta: float) -> void:
 	if delta <= 0.0:
 		return
-	var accel := (linear_velocity - _prev_velocity) / delta + Vector3.UP * 9.80665
-	_prev_velocity = linear_velocity
-	_shaking = accel.length() > SHAKE_THRESHOLD
+	var velocity := linear_velocity
+	var a_world := (velocity - _prev_velocity) / delta + Vector3.UP * G
+	_prev_velocity = velocity
+	# Shake reads the RAW magnitude. Smoothing is there so a core sees a steady
+	# sensor, and taking the gesture off the smoothed vector would blunt exactly
+	# the spike the gesture exists to notice.
+	_shaking = a_world.length() > SHAKE_THRESHOLD
+	_accel_smoothed = _accel_smoothed.lerp(a_world, ACCEL_SMOOTHING)
+
+
+## The reading in the Nunchuk's own axes, in g, ready for the core.
+##
+## Godot has +X right, +Y up, -Z forward; Dolphin's IMUAccelerometer has +X
+## LEFT, +Y BACK, +Z UP. That makes the swap (-x, z, y), which is the same one
+## the remote applies to its own reading — not because the two are
+## interchangeable but because both shells are authored the same way up. The
+## Nunchuk's stick end is its +Y and its C/Z face is its -Z, so the device's own
+## up and forward are Godot's, exactly as the remote's are. Held upright at
+## rest this returns (0, 0, 1).
+func accel_in_nunchuk_frame() -> Vector3:
+	var local := global_transform.basis.orthonormalized().inverse() * (_accel_smoothed / G)
+	return Vector3(-local.x, local.z, local.y)
 
 
 func _animate(node: MeshInstance3D, rest: Transform3D, down: bool) -> void:

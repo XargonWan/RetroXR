@@ -3,12 +3,13 @@
 ## Mirrors ControllerBindings, but for real joypads read directly through the
 ## Godot Input singleton (Input.is_joy_button_pressed / get_joy_axis) rather than
 ## InputMap actions. Bindings are stored in user://gamepad_bindings.json and merged
-## default → global (per-system layer intentionally left open for later).
+## default → global → per-system, the same three layers ControllerBindings uses.
 ##
 ## One pad, one destination: poll() reads a single named device, and the caller
 ## decides which. A PadReceiver plugged into a console port names the pad it was
 ## spawned for; a handheld names the pad its own Controllers panel selects. The map
-## itself stays global — every pad plays the same RetroPad layout.
+## itself is per-platform: a system with no profile of its own plays the global
+## RetroPad layout.
 class_name GamepadBindings
 extends RefCounted
 
@@ -122,14 +123,71 @@ static func save_global(button_map: Dictionary, stick_map: Dictionary) -> void:
 	_save_file(data)
 
 
-## Merged global bindings (global overrides of defaults). Keys "buttons", "sticks".
-static func get_global() -> Dictionary:
+## Merged bindings for one system: per-system overrides global, which overrides
+## defaults. Keys "buttons", "sticks". Mirrors ControllerBindings.get_for_system.
+static func get_for_system(systemid: String) -> Dictionary:
 	var data := _load_file()
 	var global_data: Dictionary = data.get("global", {}) as Dictionary
+	var sys_data: Dictionary = {}
+	if not systemid.is_empty():
+		var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
+		sys_data = per_sys.get(systemid, {}) as Dictionary
 	return {
-		"buttons": _merge(DEFAULT_BUTTON_MAP, global_data.get("buttons", {})),
-		"sticks":  _merge(DEFAULT_STICK_MAP,  global_data.get("sticks",  {})),
+		"buttons": _merge(DEFAULT_BUTTON_MAP, global_data.get("buttons", {}), sys_data.get("buttons", {})),
+		"sticks":  _merge(DEFAULT_STICK_MAP,  global_data.get("sticks",  {}), sys_data.get("sticks",  {})),
 	}
+
+
+## Merged global bindings (global overrides of defaults), with no per-system layer.
+static func get_global() -> Dictionary:
+	return get_for_system("")
+
+
+## Save per-system bindings. Falls back to save_global when systemid is empty —
+## the fall-through the shared binding editor relies on to serve both pages.
+static func save_for_system(systemid: String, button_map: Dictionary, stick_map: Dictionary) -> void:
+	if systemid.is_empty():
+		save_global(button_map, stick_map)
+		return
+	var data := _load_file()
+	if not data.has("per_system"):
+		data["per_system"] = {}
+	data["per_system"][systemid] = {
+		"buttons": button_map,
+		"sticks":  stick_map,
+	}
+	_save_file(data)
+
+
+## True when this system carries a profile of its own. The profile IS the
+## override switch; clearing it is what turns the override off.
+static func has_system_override(systemid: String) -> bool:
+	if systemid.is_empty():
+		return false
+	var per_sys: Dictionary = _load_file().get("per_system", {}) as Dictionary
+	return per_sys.has(systemid)
+
+
+## Drop a system's profile so it falls back to global again.
+static func clear_system_override(systemid: String) -> void:
+	if systemid.is_empty():
+		return
+	var data := _load_file()
+	var per_sys: Dictionary = data.get("per_system", {}) as Dictionary
+	if not per_sys.has(systemid):
+		return
+	per_sys.erase(systemid)
+	data["per_system"] = per_sys
+	_save_file(data)
+
+
+## Every systemid carrying a profile, for the per-platform tile badges.
+static func overridden_systems() -> Array[String]:
+	var out: Array[String] = []
+	var per_sys: Dictionary = _load_file().get("per_system", {}) as Dictionary
+	for sid: String in per_sys:
+		out.append(sid)
+	return out
 
 
 ## Encode a captured joypad InputEvent into a binding string ("" if unsupported).
@@ -351,9 +409,12 @@ static func _stick_to_dpad(v: Vector2) -> int:
 	return bits
 
 
-## Apply base then overlay (last writer wins). Returns a new dictionary.
-static func _merge(base: Dictionary, overlay: Dictionary) -> Dictionary:
+## Apply base, then overlay1, then overlay2 (last writer wins). Returns a new
+## dictionary.
+static func _merge(base: Dictionary, overlay1: Dictionary, overlay2: Dictionary = {}) -> Dictionary:
 	var result := base.duplicate()
-	for k: String in overlay:
-		result[k] = overlay[k]
+	for k: String in overlay1:
+		result[k] = overlay1[k]
+	for k: String in overlay2:
+		result[k] = overlay2[k]
 	return result

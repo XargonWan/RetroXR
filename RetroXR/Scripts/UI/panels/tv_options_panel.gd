@@ -154,11 +154,9 @@ func _refresh_channels() -> void:
 func _on_channel_selected(index: int) -> void:
 	if not _tv or not is_instance_valid(_tv):
 		return
-	# Picking a channel implies wanting to watch it, so the set switches inputs
-	# rather than tuning something the viewer cannot see.
-	if _tv.get_source() != RetroTV.Source.TV:
-		_tv.set_source(RetroTV.Source.TV)
-	_tv.get_tuner().tune(index)
+	# Picking a channel implies wanting to watch it, and the TV owns replication
+	# of the resulting source + tuner state.
+	_tv.set_channel_index(index)
 	_refresh_channels()
 
 

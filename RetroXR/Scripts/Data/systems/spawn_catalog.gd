@@ -150,6 +150,39 @@ const _VGA_CABLE: Dictionary = {"kind": "peripheral", "label": "VGA Cable",
 ## for computers only, for the same reason the VGA lead is: the sockets a 3.5 mm plug
 ## fits are the tower's line out and the right speaker's line in, and a console has
 ## neither.
+## The link lead, offered on the platforms that have a socket to put it in. Two
+## handhelds and one cable is the whole of GBA multiplayer, and that lead carries
+## a junction so a third and fourth can chain on.
+##
+## The Game Boy's is a different lead: black, and with nothing in the middle,
+## because a Game Boy link is two machines and no more. The PlayStation's is
+## different again -- different connector, different protocol -- so the three are
+## three entries and can never be offered as one.
+const _LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable", "spawn": "link_cable"}
+const _GB_LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable",
+	"spawn": "gb_link_cable"}
+const _PSX_LINK_CABLE: Dictionary = {"kind": "peripheral", "label": "Link Cable",
+	"spawn": "psx_link_cable"}
+
+## The console-to-handheld lead, offered on BOTH platforms it joins. A player
+## spawning a GameCube for Four Swords Adventures should be offered one without
+## having to know it is filed under the handheld, and a player spawning a Game
+## Boy Advance should be offered it without having to know it is filed under the
+## console: it is one cable and it belongs to neither of them.
+const _GC_GBA_CABLE: Dictionary = {"kind": "peripheral", "label": "GC-GBA Cable",
+	"spawn": "gc_gba_cable"}
+const _GC_GBA_PLATFORMS: Array = ["gamecube", "game_boy_advance"]
+
+## Which lead each platform is offered, keyed on the PLATFORM rather than the
+## model: the GBA and the SP are two models of one platform and both have the
+## socket.
+const _LINK_LEADS: Dictionary = {
+	"game_boy_advance": _LINK_CABLE,
+	"game_boy": _GB_LINK_CABLE,
+	"playstation": _PSX_LINK_CABLE,
+}
+
+
 const _TRS_KIT: Array = [
 	{"kind": "peripheral", "label": "Speakers", "spawn": "speaker_pair"},
 	{"kind": "peripheral", "label": "3.5 mm Cable", "spawn": "trs_cable"},
@@ -194,6 +227,10 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
 	items.append_array(imported)
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
+	if _LINK_LEADS.has(systemid):
+		items.append((_LINK_LEADS[systemid] as Dictionary).duplicate())
+	if _GC_GBA_PLATFORMS.has(systemid):
+		items.append(_GC_GBA_CABLE.duplicate())
 	var info := SystemInfo.for_system(systemid)
 	if info != null and info.computer:
 		items.append_array(_COMPUTER_INPUT.duplicate(true))

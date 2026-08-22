@@ -20,6 +20,25 @@ extends Node3D
 @onready var body: XRToolsPlayerBody = $Staging/XROrigin3D/PlayerBody
 
 
+func _ready() -> void:
+	var xri := XRServer.find_interface("OpenXR")
+	if xri != null and xri.has_signal("session_begun"):
+		xri.connect("session_begun", _enable_simultaneous_hands)
+	_enable_simultaneous_hands.call_deferred()
+
+
+## Meta exposes controller-inferred Capsense joints and camera hands together
+## only after this session-level opt-in. Other runtimes simply have no singleton
+## (or report unsupported) and continue with ordinary hand tracking.
+func _enable_simultaneous_hands() -> void:
+	if not Engine.has_singleton("OpenXRMetaSimultaneousHandsAndControllersExtension"):
+		return
+	var ext: Object = Engine.get_singleton(
+		"OpenXRMetaSimultaneousHandsAndControllersExtension")
+	if ext != null and ext.call("is_simultaneous_hands_and_controllers_supported"):
+		ext.call("resume_simultaneous_hands_and_controllers_tracking")
+
+
 ## Cut every tie to the room about to be torn down.
 ##
 ## The body goes with it: the floor is part of the room, and a body left running

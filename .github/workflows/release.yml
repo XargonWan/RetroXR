@@ -44,6 +44,8 @@ jobs:
 
       - name: Read and check the preset versions
         id: v
+        env:
+          CHECK_RELEASE_VERSION: ${{ github.ref_type == 'tag' || inputs.publish }}
         run: |
           set -euo pipefail
           cfg=RetroXR/export_presets.cfg
@@ -52,10 +54,15 @@ jobs:
           [ -n "$name" ] && [ -n "$code" ] || { echo "::error::could not parse version/name+code from $cfg"; exit 1; }
           echo "preset: name=$name code=$code"
 
-          # custom_features pairs with a run/main_scene.<tag> override and would
-          # reroute the boot scene for every APK exported from the tree.
-          if grep -q '^custom_features="..*"' "$cfg"; then
-            echo "::error::custom_features is set in $cfg - it must be empty"; exit 1
+          # custom_features pairs with a run/main_scene.<tag> override. Check
+          # the shipping Quest preset specifically: separate probe presets are
+          # expected to select their own tagged entry points.
+          quest_features=$(awk '
+            $0 == "name=\"Quest\"" { quest = 1; next }
+            quest && /^custom_features=/ { print; exit }
+          ' "$cfg")
+          if [ "$quest_features" != 'custom_features=""' ]; then
+            echo "::error::Quest custom_features must be empty (found: ${quest_features:-missing})"; exit 1
           fi
 
           if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
@@ -63,17 +70,20 @@ jobs:
               echo "::error::tag $GITHUB_REF_NAME does not match version/name=$name"; exit 1; }
           fi
 
-          # SideQuest refuses any build whose versionCode is not higher than the
-          # one already listed, so a stale code is a wasted release.
-          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-          if [ -n "$prev" ]; then
-            # export_presets.cfg only became tracked in 7785958, so it is absent
-            # from v0.2.0 and earlier; a missing file just skips the comparison.
-            prev_code=$(git show "$prev:$cfg" 2>/dev/null | sed -n 's/^version\/code=\([0-9]*\)$/\1/p' | head -1 || true)
-            echo "previous tag $prev had code=${prev_code:-<not tracked>}"
-            if [ -n "$prev_code" ] && [ "$code" -le "$prev_code" ]; then
-              echo "::error::version/code=$code is not greater than $prev_code (tag $prev) - SideQuest would reject it"
-              exit 1
+          # SideQuest refuses a published build whose versionCode is not higher
+          # than the one already listed. Non-publishing workflow_dispatch runs
+          # deliberately rebuild the current version and must remain testable.
+          if [ "$CHECK_RELEASE_VERSION" = true ]; then
+            prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+            if [ -n "$prev" ]; then
+              # export_presets.cfg only became tracked in 7785958, so it is absent
+              # from v0.2.0 and earlier; a missing file skips the comparison.
+              prev_code=$(git show "$prev:$cfg" 2>/dev/null | sed -n 's/^version\/code=\([0-9]*\)$/\1/p' | head -1 || true)
+              echo "previous tag $prev had code=${prev_code:-<not tracked>}"
+              if [ -n "$prev_code" ] && [ "$code" -le "$prev_code" ]; then
+                echo "::error::version/code=$code is not greater than $prev_code (tag $prev) - SideQuest would reject it"
+                exit 1
+              fi
             fi
           fi
 
@@ -110,6 +120,19 @@ jobs:
 
       - run: pip install scons
 
+      # SCons' content cache already deduplicates identical godot-cpp objects
+      # between the extension builds in this job. Persist it as well, so a new
+      # release does not start by recompiling the same generated bindings.
+      # Quest has its own key because this job also caches Android/NDK objects
+      # and runs concurrently with the desktop job.
+      - name: Restore the SCons cache
+        uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-v1-quest-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ github.sha }}
+          restore-keys: |
+            scons-v1-quest-${{ runner.os }}-${{ env.GODOT_VERSION }}-
+
       - name: Check the preinstalled NDK is the one build.py expects
         shell: bash
         run: |
@@ -127,13 +150,15 @@ jobs:
       # unresolved scenes. Nothing debug ships: the APK gets
       # android.release.arm64, picked by the exported game's own feature tags.
       #
-      # SCONS_CACHE matters because each extension has its own VariantDir and
-      # .sconsign, so all six otherwise rebuild godot-cpp from scratch. It is
-      # populated and consumed inside this one job.
+      # build.py compiles the profiled godot-cpp library once, then links every
+      # extension against it. SCONS_CACHE also reuses its object files across
+      # release runs after the restore step above.
       - name: Build the host-side extensions the editor needs (windows, debug)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python Tools/build.py windows --target debug
+        # These DLLs only register classes in the exporting editor; they are not
+        # shipped or debugged in CI, so PDB generation and hot reload are waste.
+        run: python Tools/build.py windows --target debug debug_symbols=no use_hot_reload=no
 
       - name: Build the six GDExtensions (android arm64, release)
         env:
@@ -344,6 +369,14 @@ jobs:
 
       - run: pip install scons
 
+      - name: Restore the SCons cache
+        uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-v1-desktop-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ github.sha }}
+          restore-keys: |
+            scons-v1-desktop-${{ runner.os }}-${{ env.GODOT_VERSION }}-
+
       # No Vulkan SDK install: vulkan-1.lib is vendored in the libretro-godot
       # submodule (external/vulkan-loader/), which is the whole reason a Windows
       # runner needs nothing beyond MSVC here.
@@ -355,7 +388,7 @@ jobs:
       - name: Build the six GDExtensions (windows x86_64, debug + release)
         env:
           SCONS_CACHE: ${{ github.workspace }}/.scons-cache
-        run: python Tools/build.py windows --target both
+        run: python Tools/build.py windows --target both debug_symbols=no use_hot_reload=no
 
       - name: Install Godot ${{ env.GODOT_VERSION }} and its export templates
         shell: pwsh

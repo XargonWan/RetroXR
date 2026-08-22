@@ -1,0 +1,144 @@
+Controller art — attribution
+============================
+
+Art in this directory feeds the CONTROLS tab's remap diagrams, and — in the
+case of wii_marks/ — the 3D hardware in the room. Four sources, each
+redistributable and none carrying anyone's branding.
+
+
+quest_touch_plus_left.png / quest_touch_plus_right.png
+------------------------------------------------------
+  Baked by Tools/bake_controller_art.py from the meta-quest-touch-plus glTF.
+
+  Source   : https://github.com/immersive-web/webxr-input-profiles
+  Licence  : MIT
+  Note     : white RGB with the drawing in the alpha channel, so the diagram
+             tints it with modulate. Meta's own controller art is NOT
+             redistributable and is deliberately absent from this repo.
+
+
+gamepad_line.svg
+----------------
+  Our own work, drawn by Tools/gen_gamepad_art.py. An Xbox *layout* — offset
+  sticks, ABXY diamond, bumpers and triggers — and deliberately not an Xbox:
+  no logo, nothing traced, so there is no mark being borrowed.
+
+  Licence  : same as this project.
+
+
+nes_pad_colour.svg
+------------------
+  Source   : https://commons.wikimedia.org/wiki/File:Nes_controller.svg
+  Author   : Fant0men (Wikimedia Commons), 2007.
+  Licence  : dual-licensed CC BY-SA 3.0 Unported / GFDL 1.2+.
+             WE TAKE THE CC BY-SA 3.0 OPTION. GFDL is a poor fit for artwork —
+             it would oblige us to ship the whole licence text with the game.
+  SHA-256 of the file as downloaded:
+             1a9d33fa326704cb806b44a23c026739b8f035f5a81c96e7210f06889787973b
+
+  THIS IS THE ONLY SHARE-ALIKE ASSET IN THE REPO. Two obligations follow, and
+  neither is optional:
+
+    1. ATTRIBUTION. Credit the author and name the licence wherever the game is
+       distributed. Done in the ARTWORK section of the in-app About panel
+       (Scripts/UI/spawn_menu/views/about_view.gd) as well as here.
+
+    2. SHARE-ALIKE. This file is a DERIVATIVE (see below), so the modified file
+       is itself CC BY-SA 3.0 and must stay so. It does NOT relicense the rest
+       of the project: an asset shipped alongside the code is not a combined
+       work with it, and every other file keeps its own terms. Do not paste
+       parts of this drawing into art that is meant to be ours.
+
+  Modified : the "Nintendo(R)" wordmark was REMOVED — eleven #FE0016 paths,
+             ids path6991/6995/6999/7003/7007/7011/7015/7019/7023/7027/7029,
+             which together drew the eight letters and the registered-trademark
+             mark in the top right of the face. Nothing else was touched: no
+             other path, no colour, no transform, and the viewBox is upstream's
+             own ("-0.004 270.034 612.002 251.924"), already tight to the pad.
+             Removing a trademark is a trade-dress measure, not a licence one;
+             CC BY-SA permits the modification either way.
+
+  Branding : none remains. The SELECT / START legends and the B / A button
+             letters are kept — those are functional labels naming the controls
+             the diagram binds, not anyone's mark.
+
+  Anchors  : measured from a Godot render by Tools/nes_pad_anchors.py and stored
+             in Scripts/Data/systems/console_pad_art.gd. Re-run that tool if this
+             file is ever replaced.
+
+
+wii_remote.svg
+--------------
+  COMPOSED by Tools/gen_wii_remote_art.py from two CC0 sources. Re-run that
+  script rather than editing this file; it also prints the anchors.
+
+  the shell : MilkToastRat Pack, SVG/wii.svg
+              https://github.com/milktoastrat/milktoastrat-pack
+              Licence : CC0-1.0 (LICENSE file in that repo)
+
+  the marks : Kenney, "Input Prompts" 1.5, Nintendo Wii/Vector/wii_button_*.svg
+              https://kenney.nl/assets/input-prompts
+              Licence : CC0-1.0 (stated on the asset page and in the download)
+
+  Modified : the shell arrives with BLANK buttons, which is no use in a remap
+             diagram where a row called "minus" has to be matched to a physical
+             cap. Seven marks are lifted out of Kenney's glyphs and printed onto
+             it — power, A, minus, home, plus, 1, 2 — each scaled by its own cap
+             so it keeps the proportion Kenney drew it at. The viewBox is cropped
+             from the source's 1000 square to the drawing's own extent;
+             uncropped, three quarters of the diagram is empty.
+
+             Kenney draws all of these white, which is invisible on a white
+             shell, so each is re-inked to follow the hardware:
+
+               power        #cc3327  red     not a game input, and the only
+                                             thing on the page that says so
+               A            #3d3d3d  dark    the button you actually press
+               minus plus   #75757a  grey    a stop lighter than A, so the
+               1     2                       hierarchy reads at diagram size
+               home         #16b4e6  blue    the source file's OWN accent — it
+                                             is the lit player LED at the foot
+                                             of the remote, so the blue is the
+                                             artist's, not one invented for it
+
+             Power carries no anchor, no lead and no binding row: it is printed
+             because the remote has one, not because anything can be bound to it.
+
+  Why these : both are CC0, so neither adds a second share-alike obligation
+             alongside nes_pad_colour.svg. Taking the marks from the same Kenney
+             family the diagrams already use for their legend chips also means
+             the mark on the picture and the chip beside it are one drawing
+             rather than two artists' idea of a plus sign.
+
+  Branding : none. The marks are the functional labels naming the controls the
+             diagram binds; there is no wordmark on the shell and none was added.
+
+
+wii_marks/wii_mark_*.svg
+------------------------
+  CUT OUT of wii_remote.svg above by Tools/gen_wii_face_marks.py, one per cap,
+  so the same seven marks are printed on the 3D remote you pick up in the room.
+  Same origin and same licence as the diagram's: Kenney, CC0-1.0.
+
+  Re-run that script rather than editing these, and re-run it AFTER
+  gen_wii_remote_art.py if the diagram is ever regenerated — it reads its input
+  from the diagram, which is the point. The sizing decision that matters (scale
+  each mark by its own CAP, so a minus stays a minus beside an A) is made once,
+  there, and inherited here.
+
+  Modified : re-inked a second time, and only where the medium forces it. The
+             diagram prints on a near-white drawing; these print on moulded grey
+             caps, and POWER's cap is red.
+
+               power        #e9e9ec  pale    a red power symbol on a red cap is
+                                             not a design, it is an absence. The
+                                             diagram inks this red to say "not a
+                                             game input"; on the model the CAP
+                                             already says it.
+               minus plus   #4a4a50  darker  #75757a was chosen to stay legible
+               1     2                       on white. These caps are Mat_cap,
+                                             and grey on grey is not legible.
+               A            #3d3d3d          unchanged, contrast to spare
+               home         #16b4e6          unchanged, and it ties to the four
+                                             player LEDs 60 mm below it, which
+                                             really are that blue on this model

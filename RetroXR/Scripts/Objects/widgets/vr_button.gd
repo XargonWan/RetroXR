@@ -197,13 +197,13 @@ func _release_touch() -> void:
 		_update_visual_state()
 
 
-## Hand the fingertip nib to this button's cap so it lands ON the face you press
-## rather than floating over it or sinking through. Purely visual — the gate is
+## Hand the fingertip contact disc to this button's cap so it lands ON the face
+## you press rather than floating over it or sinking through. Purely visual — the gate is
 ## contact_margin, not trigger_radius, and it fires nothing.
 ##
 ## Gated on the tip being inside the contact box, which matters in TRIGGER mode:
 ## that latch deliberately survives the hand roaming away, and without the gate
-## the nib would stretch after it.
+## the disc would slide after it.
 func _claim_contact() -> void:
 	if not is_instance_valid(_mesh) or _mesh.mesh == null:
 		return
@@ -393,7 +393,7 @@ func set_color(color: Color) -> void:
 
 ## Put this button in or out of play. Hiding it is NOT enough: `visible` stops the
 ## drawing and nothing else, so a hidden cap keeps polling fingertips in _process
-## — it fires, and PokeTip.claim_box_face bends the visible nib onto its contact
+## — it fires, and PokeTip.claim_box_face places the visible disc on its contact
 ## box. A console whose model replaced these with its own controls (the Atari
 ## 2600's slide switches) grew a pair of invisible buttons on its front face,
 ## where the generic cabinet had put START and RESET.
@@ -441,6 +441,23 @@ func set_latched_pressed(pressed: bool) -> void:
 ## feed that straight back out again.
 func is_held() -> bool:
 	return _touch_pressed or _pointer_pressed or _trigger_pressed
+
+
+## The HAND holding this button down, or null.
+##
+## is_held answers whether; this answers which, which a caller needs the moment a
+## press drives something continuous rather than an edge — a rumble that runs for
+## as long as the finger stays on the cap has to know whose finger it is, and
+## touch mode can hand a held button from one hand to the other mid-press.
+##
+## Null for a pointer press. The desktop reticle has no hand to rumble at all,
+## and a laser is not touching anything.
+func held_by() -> XRController3D:
+	if _touch_pressed:
+		return _touch_ctrl
+	if _trigger_pressed:
+		return _engaged_ctrl
+	return null
 
 
 func _update_visual_state() -> void:

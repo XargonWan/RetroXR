@@ -77,6 +77,10 @@ const MONO_CABLE_SCENE       := preload("res://Scenes/Objects/cables/mono_compos
 const WII_AV_CABLE_SCENE     := preload("res://Scenes/Objects/system_models/wii/wii_av_cable.tscn")
 const VGA_CABLE_SCENE        := preload("res://Scenes/Objects/cables/vga_cable.tscn")
 const TRS_CABLE_SCENE        := preload("res://Scenes/Objects/cables/trs_cable.tscn")
+const LINK_CABLE_SCENE       := preload("res://Scenes/Objects/cables/link_cable.tscn")
+const GB_LINK_CABLE_SCENE    := preload("res://Scenes/Objects/cables/gb_link_cable.tscn")
+const GC_GBA_CABLE_SCENE     := preload("res://Scenes/Objects/cables/gc_gba_cable.tscn")
+const PSX_LINK_CABLE_SCENE   := preload("res://Scenes/Objects/cables/psx_link_cable.tscn")
 const SPEAKER_PAIR_SCENE     := preload("res://Scenes/Objects/appliances/speaker_pair.tscn")
 const TRASH_CAN_SCENE        := preload("res://Scenes/Objects/appliances/trash_can.tscn")
 const RETRO_MOUSE_SCENE      := preload("res://Scenes/Objects/peripherals/retro_mouse.tscn")
@@ -597,6 +601,18 @@ static func _entry_validation_error(entry: Dictionary, ids: Dictionary) -> Strin
 		for key: Variant in (entry["crt_params"] as Dictionary):
 			if not key is String or not _is_finite_number(entry["crt_params"][key]):
 				return "crt_params contains a non-numeric value"
+	if entry.has("controls"):
+		if not entry["controls"] is Dictionary:
+			return "controls is not a dictionary"
+		var controls := entry["controls"] as Dictionary
+		for field: String in ["enabled", "muted", "widescreen"]:
+			if controls.has(field) and not controls[field] is bool:
+				return "controls.%s is not a boolean" % field
+		if controls.has("volume") and not _is_finite_number(controls["volume"]):
+			return "controls.volume is not a finite number"
+		for field: String in ["source", "rf_channel", "channel_index", "audio_mode"]:
+			if controls.has(field) and not _is_integer(controls[field]):
+				return "controls.%s is not an integer" % field
 	if entry.has("boxes"):
 		var boxes_error := _pose_records_validation_error(entry["boxes"], ids, false)
 		if not boxes_error.is_empty():
@@ -871,6 +887,8 @@ func _let_go(held: Dictionary) -> void:
 func _restore_connections(root: Node, spawned: Dictionary, entries: Dictionary) -> void:
 	for id: int in spawned:
 		_restore_entry(root, id, spawned, entries)
+	for id: int in spawned:
+		_restore_rope_layouts(spawned[id], entries[id])
 	_report_restored(spawned)
 
 
@@ -887,7 +905,36 @@ func _restore_connections_async(root: Node, spawned: Dictionary, entries: Dictio
 		if not _still_ours(root, generation):
 			return
 		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
+	for id: int in spawned:
+		_restore_rope_layouts(spawned[id], entries[id])
+		if Time.get_ticks_usec() < deadline:
+			continue
+		await tree.process_frame
+		if not _still_ours(root, generation):
+			return
+		deadline = Time.get_ticks_usec() + FRAME_BUDGET_USEC
 	_report_restored(spawned)
+
+
+## Restore after pass 2 has seated every plug. The saved particles preserve the
+## actual route round furniture; VerletRope validates topology immediately and
+## validates the route against live collision geometry on its next physics tick.
+func _restore_rope_layouts(obj: Node, entry: Dictionary) -> void:
+	if not is_instance_valid(obj):
+		return
+	for rec: Dictionary in entry.get("rope_layouts", []):
+		var rope := obj.get_node_or_null(NodePath(str(rec.get("path", "")))) as VerletRope
+		if rope == null:
+			continue
+		var points := PackedVector3Array()
+		for raw: Variant in rec.get("points", []):
+			if not raw is Array or (raw as Array).size() < 3:
+				points = PackedVector3Array()
+				break
+			var xyz := raw as Array
+			points.append(Vector3(float(xyz[0]), float(xyz[1]), float(xyz[2])))
+		if not rope.restore_points(points):
+			push_warning("ScenePersistence: rejected rope layout at %s" % rec.get("path", ""))
 
 
 ## False once the room we are building into has gone, or once a newer restore
@@ -923,6 +970,7 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		return
 	var obj: Node = spawned[id]
 	var d: Dictionary = entries[id]
+	_restore_articulated_controls(obj, d.get("articulated", d.get("hinges", [])))
 
 	if obj is RetroSystem:
 		var sys := obj as RetroSystem
@@ -953,6 +1001,8 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 		var lid_angle := float(d.get("lid_angle", -1.0))
 		if lid_angle >= 0.0:
 			sys.set_lid_angle_deg.call_deferred(lid_angle)
+	elif obj is RetroTV:
+		(obj as RetroTV).restore_control_state(d.get("controls", {}))
 	elif obj is VCRPlayer:
 		var tape := _resolve_ref(root, spawned, d.get("tape")) as VCRTape
 		if tape:
@@ -1043,7 +1093,108 @@ func _base(id: int, type_name: String, n3d: Node3D) -> Dictionary:
 		floating = bool(n3d.get("ignore_gravity"))
 	if floating:
 		out["ignore_gravity"] = true
+	var articulated := _serialize_articulated_controls(n3d)
+	if not articulated.is_empty():
+		out["articulated"] = articulated
+	var rope_layouts := _serialize_rope_layouts(n3d)
+	if not rope_layouts.is_empty():
+		out["rope_layouts"] = rope_layouts
 	return out
+
+
+## Articulated child transforms are not represented by the spawned object's
+## root pose. Persist every VRHinge by its stable path inside the object so a
+## snapshot/reload preserves handheld lids, console flaps and battery covers.
+func _serialize_articulated_controls(root: Node3D) -> Array:
+	var out: Array = []
+	var hinges: Array[Node] = root.find_children("*", "VRHinge", true, false)
+	if root is VRHinge:
+		hinges.push_front(root)
+	for candidate: Node in hinges:
+		var hinge := candidate as VRHinge
+		if hinge == null or hinge.target == null:
+			continue
+		var rec := {"path": str(root.get_path_to(hinge))}
+		if hinge is VRLever:
+			rec["kind"] = "lever"
+			rec["value"] = (hinge as VRLever).get_value()
+		else:
+			rec["kind"] = "hinge"
+			rec["value"] = hinge.get_rotation_deg()
+			if hinge is VRSpringLatchedHinge:
+				rec["latched"] = (hinge as VRSpringLatchedHinge).is_latched_closed()
+		out.append(rec)
+	for candidate: Node in root.find_children("*", "VRKnob", true, false):
+		var knob := candidate as VRKnob
+		if knob != null:
+			out.append({"path": str(root.get_path_to(knob)),
+				"kind": "knob", "value": knob.get_value()})
+	for candidate: Node in root.find_children("*", "VRSlider", true, false):
+		var slider := candidate as VRSlider
+		if slider != null:
+			out.append({"path": str(root.get_path_to(slider)),
+				"kind": "slider", "value": slider.value})
+	return out
+
+
+func _restore_articulated_controls(root: Node, records: Array) -> void:
+	for raw: Variant in records:
+		if not raw is Dictionary:
+			continue
+		var rec := raw as Dictionary
+		var path := str(rec.get("path", ""))
+		if path.is_empty() or path.is_absolute_path() or path.length() > 256:
+			continue
+		var control := root.get_node_or_null(NodePath(path))
+		if control == null or (control != root and not root.is_ancestor_of(control)):
+			continue
+		var kind := str(rec.get("kind", "hinge"))
+		var value := float(rec.get("value", rec.get("degrees", NAN)))
+		if not is_finite(value):
+			continue
+		# Model listeners still need the rotation_changed signal to move dependent
+		# geometry, but an ObjectSync snapshot must not echo the restore back out.
+		control.set_meta("net_restore_in_progress", true)
+		match kind:
+			"hinge":
+				if control is VRSpringLatchedHinge:
+					(control as VRSpringLatchedHinge).set_state_remote(value,
+						bool(rec.get("latched", false)))
+				elif control is VRHinge:
+					(control as VRHinge).set_rotation_deg_remote(value)
+			"lever":
+				if control is VRLever:
+					(control as VRLever).set_value(value)
+			"knob":
+				if control is VRKnob:
+					(control as VRKnob).set_value(value)
+			"slider":
+				if control is VRSlider:
+					(control as VRSlider).set_value(value)
+		control.remove_meta("net_restore_in_progress")
+
+
+## Save world-space particles, keyed by a stable path inside the spawned object.
+## Endpoints alone cannot reconstruct which side of a table, post or partition a
+## player routed a lead around.
+func _serialize_rope_layouts(root: Node3D) -> Array:
+	var layouts: Array = []
+	var ropes: Array[Node] = root.find_children("*", "VerletRope", true, false)
+	if root is VerletRope:
+		ropes.push_front(root)
+	for child: Node in ropes:
+		var rope := child as VerletRope
+		if rope == null:
+			continue
+		var encoded: Array = []
+		for point: Vector3 in rope.get_points():
+			encoded.append([point.x, point.y, point.z])
+		if not encoded.is_empty():
+			layouts.append({
+				"path": str(root.get_path_to(rope)),
+				"points": encoded,
+			})
+	return layouts
 
 
 ## An ordered chain, not a lookup table: `is` matches every ancestor, so a
@@ -1104,6 +1255,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"crt_params": tv.get_crt_params(),
 			"scale_factor": tv.scale_factor,
 			"stereo_mode": tv.stereo_mode,
+			"controls": tv.get_control_state(),
 		})
 	elif node is SensorBar:
 		# Pose, plus which console is powering it. Unlike the Nunchuk this end DOES
@@ -1477,6 +1629,14 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 					lead = VGA_CABLE_SCENE
 				elif kind == "trs_cable":
 					lead = TRS_CABLE_SCENE
+				elif kind == "link_cable":
+					lead = LINK_CABLE_SCENE
+				elif kind == "gb_link_cable":
+					lead = GB_LINK_CABLE_SCENE
+				elif kind == "gc_gba_cable":
+					lead = GC_GBA_CABLE_SCENE
+				elif kind == "psx_link_cable":
+					lead = PSX_LINK_CABLE_SCENE
 				elif kind == "rf_switch":
 					lead = RF_SWITCH_SCENE
 				elif kind == "mono_composite_cable" or int(data.get("cords", 3)) == 2:

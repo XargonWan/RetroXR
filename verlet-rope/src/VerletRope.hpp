@@ -43,6 +43,7 @@
 // the m_seg_* segment table and the m_fray chain table below.
 
 #include <godot_cpp/classes/array_mesh.hpp>
+#include <godot_cpp/classes/capsule_shape3d.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/physics_point_query_parameters3d.hpp>
@@ -57,6 +58,7 @@
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace Xenu
@@ -67,6 +69,19 @@ class VerletRope : public godot::MeshInstance3D
     GDCLASS(VerletRope, godot::MeshInstance3D)
 
 public:
+    // Endpoint authority is explicit at the rope boundary. AUTO preserves old
+    // scenes by deriving the live state from the node, while authored roles let
+    // callers state the contract without relying on RigidBody freeze/pickup
+    // implementation details.
+    enum EndpointRole
+    {
+        ENDPOINT_AUTO = 0,
+        ENDPOINT_HOST,
+        ENDPOINT_FREE_PLUG,
+        ENDPOINT_HELD_PLUG,
+        ENDPOINT_SOCKETED_PLUG,
+    };
+
     VerletRope() = default;
     ~VerletRope() override = default;
 
@@ -88,7 +103,19 @@ public:
     void Wake();
     double RestLength() const;
     godot::PackedVector3Array GetPoints() const;
+    bool RestorePoints(const godot::PackedVector3Array &p_points);
+    godot::Dictionary GetSleepMetrics() const;
     void NudgePoint(int p_index, const godot::Vector3 &p_delta);
+
+    /// How many particles the cord is made of, and where one of them is in
+    /// world space. Read-only counterparts to NudgePoint, for anything that has
+    /// to RIDE a cord rather than pull on it — the moulded junction partway
+    /// along a GBA link cable being the case this was added for. Returns the
+    /// zero vector for an index off the end rather than faulting, because the
+    /// particle count changes with segment_count and a caller that cached one
+    /// should get a harmless answer.
+    int PointCount() const;
+    godot::Vector3 PointPosition(int p_index) const;
     void SetRopeLength(double p_length);
 
     // Anchors. Held as ObjectIDs rather than raw pointers: a plug or a host
@@ -110,7 +137,12 @@ public:
     XENU_ROPE_PROP(int, ConstraintIterations, m_constraint_iterations)
     XENU_ROPE_PROP(double, StretchStiffness, m_stretch_stiffness)
     XENU_ROPE_PROP(double, BendStiffness, m_bend_stiffness)
+    XENU_ROPE_PROP(double, StretchCompliance, m_stretch_compliance)
+    XENU_ROPE_PROP(double, BendCompliance, m_bend_compliance)
+    XENU_ROPE_PROP(double, ContactCompliance, m_contact_compliance)
     XENU_ROPE_PROP(double, MaxBendDegrees, m_max_bend_degrees)
+    XENU_ROPE_PROP(double, BendStiffenDegrees, m_bend_stiffen_degrees)
+    XENU_ROPE_PROP(double, BendLimitDegrees, m_bend_limit_degrees)
     XENU_ROPE_PROP(double, TubeRadius, m_tube_radius)
     XENU_ROPE_PROP(int, TubeSides, m_tube_sides)
     XENU_ROPE_PROP(int, Smoothing, m_smoothing)
@@ -121,7 +153,18 @@ public:
     XENU_ROPE_PROP(bool, SelfCollision, m_self_collision)
     XENU_ROPE_PROP(double, AnchorPull, m_anchor_pull)
     XENU_ROPE_PROP(double, EndAlignStiffness, m_end_align_stiffness)
-    XENU_ROPE_PROP(godot::Vector3, PlugExitAxis, m_plug_exit_axis)
+    // Legacy whole-rope alias. Setting it updates both ends so old scenes keep
+    // their exact behaviour; new code should author the two axes independently.
+    void SetPlugExitAxis(const godot::Vector3 &v)
+    {
+        m_start_exit_axis = v;
+        m_end_exit_axis = v;
+    }
+    godot::Vector3 GetPlugExitAxis() const { return m_end_exit_axis; }
+    XENU_ROPE_PROP(godot::Vector3, StartExitAxis, m_start_exit_axis)
+    XENU_ROPE_PROP(godot::Vector3, EndExitAxis, m_end_exit_axis)
+    XENU_ROPE_PROP(int, StartEndpointRole, m_start_endpoint_role)
+    XENU_ROPE_PROP(int, EndEndpointRole, m_end_endpoint_role)
     XENU_ROPE_PROP(godot::Vector3, StartAnchorOffset, m_start_anchor_offset)
     XENU_ROPE_PROP(godot::Vector3, EndAnchorOffset, m_end_anchor_offset)
     XENU_ROPE_PROP(double, EndStiffness, m_end_stiffness)
@@ -203,17 +246,22 @@ private:
     void SolveSurfaceCollision(bool p_do_rest);
     void ApplyAnchorCoupling();
     void UpdateSleepState();
+    bool EnvironmentChangedWhileSleeping();
 
     void SolveFrayConstraints(int p_iter, double p_k_stretch, double p_k_bend, double p_allowed_dev);
 
-    inline void SolvePair(int a, int b, double rest, double k);
+    inline void SolvePair(int a, int b, double rest, double k, double *lambda = nullptr);
     inline void SolveBend(int b, int spacing, double allowed_dev, double k);
     inline void SolveBendTriple(int a, int b, int c, double allowed_dev, double k);
+    inline void SolveAngleBend(int a, int b, int c, double free_angle, double k);
     inline void SolveBendAnchored(int a, int b, int c, double k);
-    inline void SolveMidContact(int s);
-    inline void ProjectPlane(int i, const godot::Vector3 &cp, const godot::Vector3 &n);
-    inline void PinAnchors();
+    inline void SolveMidContact(int s, bool second);
+    inline void ProjectPlane(int i, const godot::Vector3 &cp, const godot::Vector3 &n,
+                             double &lambda);
+    void PinAnchors();
     inline void ResolveContact(int i, const godot::Vector3 &contact, const godot::Vector3 &normal);
+    uint64_t BendLambdaKey(int a, int b, int c, bool anchored,
+                           double allowed_dev, double strength) const;
     double StubWeight(double base, int k, int n) const;
     bool PlaneValid(int i, const godot::Vector3 &cp, const godot::Vector3 &n) const;
 
@@ -222,14 +270,19 @@ private:
                                const godot::Vector3 &fallback) const;
     bool AnchorsMoved() const;
     bool AnchorTeleported() const;
+    EndpointRole ResolveEndpointRole(godot::Node3D *node, int configured_role) const;
+    static bool EndpointIsFixed(EndpointRole role);
+    static bool EndpointIsDirectional(EndpointRole role);
+    static bool EndpointIsFree(EndpointRole role);
     bool PlugIsFixed(godot::Node3D *node) const;
-    godot::Vector3 PlugExitDir(godot::Node3D *node) const;
+    godot::Vector3 PlugExitDir(godot::Node3D *node, const godot::Vector3 &axis) const;
     void AlignAnchorPlug(godot::Node3D *node, const godot::Vector3 &offset,
-                         const godot::Vector3 &target_dir, double k);
+                         const godot::Vector3 &axis, const godot::Vector3 &target_dir, double k);
     void RefreshExclusions();
     void DepenetrateLay();
     // Resolved once per tick so the hot paths don't repeat the ObjectDB lookup.
     void CacheAnchors();
+    bool ReconcileAnchors();
 
     // ── Ribbon ───────────────────────────────────────────────────────────────
     // Lateral pitch between neighbouring cords. Zero means "touching".
@@ -272,6 +325,10 @@ private:
     std::vector<uint8_t> m_mid_contact;
     std::vector<godot::Vector3> m_mid_contact_point;
     std::vector<godot::Vector3> m_mid_contact_normal;
+    std::vector<float> m_mid_contact_t;
+    std::vector<godot::Vector3> m_mid_contact_point_2;
+    std::vector<godot::Vector3> m_mid_contact_normal_2;
+    std::vector<float> m_mid_contact_t_2;
 
     std::vector<uint8_t> m_c_flags;
     std::vector<godot::Vector3> m_c_p1;
@@ -296,6 +353,16 @@ private:
     // it across took the rope_bench settle count from 9 cables still awake
     // to 15.
     std::vector<double> m_seg_rest;
+    // XPBD multipliers live for one physics step and accumulate across solver
+    // iterations. They are reset before every solve, never persisted in saves.
+    std::vector<double> m_stretch_lambda;
+    std::vector<double> m_mid_contact_lambda;
+    std::vector<double> m_mid_contact_lambda_2;
+    std::vector<double> m_contact_lambda_1;
+    std::vector<double> m_contact_lambda_2;
+    std::unordered_map<uint64_t, godot::Vector3> m_bend_lambda;
+    std::unordered_map<uint64_t, double> m_angle_lambda;
+    double m_step_dt_sq = 1.0 / (60.0 * 60.0);
     // Segment starting at each particle, or -1 — only used to invalidate a
     // midpoint cache after the tunnel recovery moves a particle.
     std::vector<int> m_next_seg;
@@ -323,7 +390,6 @@ private:
     std::vector<godot::Vector3> m_render_points;
     std::vector<godot::Vector3> m_prev_render;
     std::vector<godot::Vector3> m_curr_render;
-    std::vector<godot::Vector3> m_sleep_ref;
 
     std::vector<float> m_cos_table;
     std::vector<float> m_sin_table;
@@ -343,8 +409,10 @@ private:
     std::vector<godot::Ref<godot::ShaderMaterial>> m_materials;
     godot::Ref<godot::PhysicsRayQueryParameters3D> m_ray_query;
     godot::Ref<godot::PhysicsShapeQueryParameters3D> m_shape_query;
+    godot::Ref<godot::PhysicsShapeQueryParameters3D> m_segment_shape_query;
     godot::Ref<godot::PhysicsPointQueryParameters3D> m_point_query;
     godot::Ref<godot::SphereShape3D> m_sphere;
+    godot::Ref<godot::CapsuleShape3D> m_segment_capsule;
 
     uint64_t m_start_node_id = 0;
     uint64_t m_end_node_id = 0;
@@ -354,17 +422,23 @@ private:
     godot::RigidBody3D *m_end_body = nullptr;
 
     int m_raycast_frame = 0;
+    int m_sleep_environment_frame = 0;
+    int m_environment_change_polls = 0;
     // Set by InitPoints, consumed by the first Step after a lay: run
     // DepenetrateLay there, where space-state queries are legal.
     bool m_depen_pending = false;
+    bool m_settle_repair_attempted = false;
     bool m_asleep = false;
     int m_still_frames = 0;
-    int m_ref_frames = 0;
-    double m_max_excursion_sq = 0.0;
+    int m_contact_stable_frames = 0;
     godot::Vector3 m_sleep_anchor_start;
     godot::Vector3 m_sleep_anchor_end;
     bool m_mesh_dirty = true;
     bool m_interpolating = false;
+    double m_debug_max_velocity = 0.0;
+    double m_debug_rms_velocity = 0.0;
+    double m_debug_stretch_error = 0.0;
+    double m_debug_contact_error = 0.0;
     // Cord count and ring count the current ArrayMesh was built for, so a
     // resize after _ready rebuilds instead of overrunning the ring buffers.
     int m_built_cords = 0;
@@ -379,7 +453,17 @@ private:
     int m_constraint_iterations = 5;
     double m_stretch_stiffness = 1.0;
     double m_bend_stiffness = 0.0;
+    // Physical compliance (inverse stiffness), divided by dt^2 by XPBD. Zero
+    // deliberately selects the legacy stiffness path for scene compatibility.
+    double m_stretch_compliance = 0.0;
+    double m_bend_compliance = 0.0;
+    double m_contact_compliance = 0.000001;
     double m_max_bend_degrees = 0.0;
+    // Above this local turn, bend_stiffness ramps progressively. The limit is
+    // the adjacent-segment case self-collision cannot handle because neighbours
+    // share a particle and are deliberately excluded from each other.
+    double m_bend_stiffen_degrees = 150.0;
+    double m_bend_limit_degrees = 175.0;
     double m_tube_radius = 0.005;
     int m_tube_sides = 8;
     int m_smoothing = 0;
@@ -391,7 +475,10 @@ private:
     bool m_self_collision = false;
     double m_anchor_pull = 0.0;
     double m_end_align_stiffness = 0.0;
-    godot::Vector3 m_plug_exit_axis = godot::Vector3(0, 0, -1);
+    godot::Vector3 m_start_exit_axis = godot::Vector3(0, 0, -1);
+    godot::Vector3 m_end_exit_axis = godot::Vector3(0, 0, -1);
+    int m_start_endpoint_role = ENDPOINT_AUTO;
+    int m_end_endpoint_role = ENDPOINT_AUTO;
     godot::Vector3 m_start_anchor_offset;
     godot::Vector3 m_end_anchor_offset;
     double m_end_stiffness = 0.0;
@@ -416,3 +503,5 @@ private:
 };
 
 } // namespace Xenu
+
+VARIANT_ENUM_CAST(Xenu::VerletRope::EndpointRole);

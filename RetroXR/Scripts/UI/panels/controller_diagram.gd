@@ -146,7 +146,7 @@ func setup(button_map: Dictionary, options: Array) -> void:
 			# Overlay the option list instead of growing this fixed-height
 			# control, which otherwise bleeds into the section below.
 			drop.float_panel = true
-			var glyph := load(GLYPH_DIR + GLYPHS[source] + ".png") as Texture2D
+			var glyph := load(GLYPH_DIR + GLYPHS[source] + ConsolePadDiagram.GLYPH_EXT) as Texture2D
 			if glyph:
 				drop.set_icon(glyph, GLYPH_PX)
 			var captured := source
@@ -166,7 +166,7 @@ func _with_glyphs(options: Array) -> Array:
 	for entry: Array in options:
 		var id: Variant = entry[1]
 		if id is int and RETROPAD_GLYPHS.has(id):
-			var tex := load(GLYPH_DIR + RETROPAD_GLYPHS[id] + ".png") as Texture2D
+			var tex := load(GLYPH_DIR + RETROPAD_GLYPHS[id] + ConsolePadDiagram.GLYPH_EXT) as Texture2D
 			if tex:
 				out.append(["", id, tex])
 				continue

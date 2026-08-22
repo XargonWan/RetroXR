@@ -167,7 +167,8 @@ func setup(button_map: Dictionary) -> void:
 			Vector2(96, ROW_H - 4), 18)
 		drop.tooltip_text = INPUT_LABELS.get(input, input)
 		drop.float_panel = true
-		var glyph := load(GLYPH_DIR + String(INPUTS[input]["glyph"]) + ".png") as Texture2D
+		var glyph := load(GLYPH_DIR + String(INPUTS[input]["glyph"])
+			+ ConsolePadDiagram.GLYPH_EXT) as Texture2D
 		if glyph:
 			drop.set_icon(glyph, GLYPH_PX)
 		var captured := input
@@ -213,7 +214,8 @@ func _target_options() -> Array:
 	for target: String in GamepadBindings.TARGET_ORDER:
 		var label := String(GamepadBindings.TARGET_LABELS.get(target, target))
 		if TARGET_GLYPHS.has(target):
-			var tex := load(GLYPH_DIR + String(TARGET_GLYPHS[target]) + ".png") as Texture2D
+			var tex := load(GLYPH_DIR + String(TARGET_GLYPHS[target])
+				+ ConsolePadDiagram.GLYPH_EXT) as Texture2D
 			if tex:
 				out.append(["", target, tex])
 				continue

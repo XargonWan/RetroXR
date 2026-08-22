@@ -94,13 +94,16 @@ func _on_power_slider(v: float) -> void:
 	if on == _was_on:
 		return
 	_was_on = on
+	# ObjectSync moves this cap on the other peers, but the authoritative power
+	# intent travels separately. Do not turn their cores on/off from the visual
+	# replay or the same physical move is applied twice.
+	if NetworkManager.is_event_applying():
+		return
 	var sys := _connected_system
 	if sys == null:
 		return
-	if on and not sys.is_powered_on:
-		sys.power_on()
-	elif not on and sys.is_powered_on:
-		sys.power_off()
+	if on != sys.is_powered_on:
+		sys.toggle_power()
 
 
 ## Reflect the console's state if it was powered some other way (the cabinet

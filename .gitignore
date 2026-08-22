@@ -76,6 +76,8 @@ metaxr-audio-godot/Temp/
 
 # Output of RetroXR/Tools/bedroom_probe.tscn — renders, never source.
 RetroXR/probe_out/
+# Tools/bios_boot_survey.sh output: per-attempt logs and the options snapshot
+bios_survey_out/
 *.mp4
 
 # Audio .import files carry compress/mode=0 — QOA-compressed clips cannot be
@@ -146,3 +148,5 @@ RetroXR/metaxr-audio/*metaxr-audio.*.so
 
 # Its own repo, cloned beside the tools that build its core.
 Tools/azahar-libretro-vr/
+
+.claude/worktrees/

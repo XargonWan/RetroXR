@@ -26,6 +26,7 @@ var _animation_time: float = 0.0
 var _status_text: String = "PREPARING ROOM"
 var _last_percent: int = -1
 var _last_status_rendered: String = ""
+var _load_failed: bool = false
 
 
 ## Hand over the player's rig, which the caller is keeping alive across the
@@ -87,6 +88,8 @@ func set_title(title: String) -> void:
 
 
 func set_progress(value: float) -> void:
+	if _load_failed:
+		return
 	# Threaded-loader progress should be monotonic, but individual dependency
 	# reports can briefly move backwards. A loading bar must never do the same.
 	_progress = maxf(_progress, clampf(value, 0.0, 1.0))
@@ -106,9 +109,22 @@ func set_progress(value: float) -> void:
 	_update_status_label()
 
 
+## Leave the player's tracked view and menu alive while making the failure
+## unmistakable. SceneManager keeps this rig in the tree until the player retries
+## or chooses another room.
+func show_load_error() -> void:
+	_load_failed = true
+	_title_label.text = "LOAD FAILED"
+	_status_text = "RETRY OR CHOOSE ANOTHER ROOM"
+	_percent_label.text = "!"
+	_progress_material.set_shader_parameter("failed", true)
+	_progress_material.set_shader_parameter("progress", 1.0)
+	_update_status_label()
+
+
 func _update_status_label() -> void:
 	var rendered := _status_text
-	if _progress >= 1.0:
+	if _load_failed or _progress >= 1.0:
 		rendered += "   "
 	else:
 		var dot_count := int(_animation_time / 0.35) % 4

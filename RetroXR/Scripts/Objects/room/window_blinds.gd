@@ -171,6 +171,23 @@ func _apply() -> void:
 		_env.ambient_light_energy = lerpf(ambient_shut, ambient_open, open)
 
 
+## Replace the daylight BASE these three energies are scaled from.
+##
+## TimeOfDay owns the numbers; this script keeps the only writes to
+## WindowSun.light_energy, Dusk.light_energy and Environment.ambient_light_energy,
+## so there is still exactly one writer per property. Colours are deliberately not
+## here — nothing in this script has ever written a light_color, and TimeOfDay
+## writes those direct.
+func set_daylight_base(p_sun_energy: float, p_daylight_open: float,
+		p_daylight_shut: float, p_ambient_open: float, p_ambient_shut: float) -> void:
+	sun_energy = p_sun_energy
+	daylight_open = p_daylight_open
+	daylight_shut = p_daylight_shut
+	ambient_open = p_ambient_open
+	ambient_shut = p_ambient_shut
+	_apply()
+
+
 ## Signal target for BeadPullCord.pulled, which carries a bool that means nothing
 ## here — a blind has no on/off, only a height. Needed as its own method because
 ## GDScript will not connect a 1-argument signal to a 0-argument callable.
@@ -183,7 +200,14 @@ func pull_step() -> void:
 	var target: float = drop - step
 	if target < -0.001:
 		target = 1.0
-	_animate_to(clampf(target, 0.0, 1.0))
+	target = clampf(target, 0.0, 1.0)
+	_animate_to(target)
+	NetworkManager.report_event(NetObjectSync.EV_BLINDS,
+		{"blinds": self, "drop": target})
+
+
+func set_drop_remote(value: float) -> void:
+	_animate_to(clampf(value, 0.0, 1.0))
 
 
 func _animate_to(target: float) -> void:

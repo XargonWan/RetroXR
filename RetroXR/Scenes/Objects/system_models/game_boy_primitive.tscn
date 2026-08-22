@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://coe03tlg0awc2" path="res://Scripts/Objects/system_models/game_boy_model.gd" id="1_model"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_slider"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/link_port.tscn" id="9_linkport"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_a5vr4"]
 size = Vector3(0.0853017, 0.031066652, 0.13806148)
@@ -160,3 +161,21 @@ pixel_size = 0.00016
 modulate = Color(0.1, 0.1, 0.12, 1)
 text = "POWER"
 font_size = 16
+
+; The EXT connector, on the right edge under the volume dial, where a DMG keeps
+; it behind a little door.
+;
+; +Z points OUT of the shell, the convention every port in the room follows, so
+; this one is turned a quarter turn about Y to look along +X. 1 mm proud of the
+; panel: a seated link plug's origin is the front face of its shell, and that
+; face stops almost flush against the socket's rim.
+;
+; A .tscn lists a basis by ROWS, not by the columns the Transform3D constructor
+; takes, so a quarter turn written from the columns comes out as its own
+; transpose -- which for a rotation is its inverse. That put +Z along -X, into
+; the shell, and the lead left the plug through the console and had to climb back
+; over the screen. Copy this basis from the junction's own LinkPort, which faces
+; +X too; do NOT copy it from the GBA's, whose matrix is symmetric and reads the
+; same under either convention.
+[node name="LinkPort" parent="." instance=ExtResource("9_linkport")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.0437, 0, 0.008)

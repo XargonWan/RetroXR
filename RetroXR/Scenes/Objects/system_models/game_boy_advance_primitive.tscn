@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://b514vw5ug1a0j" path="res://Scripts/Objects/system_models/game_boy_advance_model.gd" id="1_model"]
 [ext_resource type="Script" uid="uid://d2fhmqypnc4e4" path="res://Scripts/Objects/widgets/vr_slider.gd" id="2_slider"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/link_port.tscn" id="9_linkport"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_vufj4"]
 size = Vector3(0.13337943, 0.025836494, 0.07409274)
@@ -160,3 +161,16 @@ pixel_size = 0.00016
 modulate = Color(0.1, 0.1, 0.12, 1)
 text = "POWER"
 font_size = 16
+
+; The EXT socket, on the far edge beside where the L button and the cart slot are.
+;
+; +Z points OUT of the shell, which is the convention every port in the room
+; follows: the seated plug's shaft goes in along the port's -Z and its shell stays
+; outside. Copy this node's transform shape from any other port and a plug still
+; seats the right way round. Turned 180 degrees about Y because this face looks
+; along -Z.
+;
+; 1 mm proud of the panel. A seated link plug's origin is the front face of its
+; shell, and that face stops almost flush against the socket's rim.
+[node name="LinkPort" parent="." instance=ExtResource("9_linkport")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.045, 0, -0.038)

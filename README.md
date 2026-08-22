@@ -238,11 +238,12 @@ python Tools/build.py macos --arch x86_64        # Intel Mac binaries
 python Tools/build.py windows --jobs 8 -- verbose=yes    # extra args go to scons
 ```
 
-It runs every eligible extension/target build in sequence, prints a pass/fail table, and
-exits non-zero if any failed. Architecture follows the platform: `x86_64` for Windows and
-Linux, `arm64` for Android, and the host architecture for macOS. Mac builds target macOS
-13.0 by default; build each architecture separately when both are needed. Libretro Vulkan
-hardware rendering on macOS uses the MoltenVK runtime embedded in official Godot builds.
+It builds one shared, trimmed `godot-cpp` library per target, then runs every eligible
+extension build in sequence, prints a pass/fail table, and exits non-zero if any failed.
+Architecture follows the platform: `x86_64` for Windows and Linux, `arm64` for Android,
+and the host architecture for macOS. Mac builds target macOS 13.0 by default; build each
+architecture separately when both are needed. Libretro Vulkan hardware rendering on macOS
+uses the MoltenVK runtime embedded in official Godot builds.
 
 Asking for `linux` **from Windows** re-invokes the script inside WSL (`--distro`, default
 `Ubuntu`) with `HOME` and `PATH` reset — WSL inherits the Windows environment, whose PATH
@@ -397,5 +398,5 @@ CC BY 4.0. Several of the 3D models are CC BY and **attribution is a licence
 condition**: the full credit list is in the app under OPTIONS → ABOUT, and each
 asset directory carries its own `LICENSE-*` file.
 
-Meta's controller art in `RetroXR/Models/oculus-controller-art-v1.8/` is licensed
-by Meta for use in a VR experience only, and is not redistributable on its own.
+The controller you see in your hands is supplied by the XR runtime at runtime
+(OpenXR render models), so no headset vendor's controller art is shipped here.

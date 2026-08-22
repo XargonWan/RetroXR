@@ -335,7 +335,8 @@ func _parse_jeu(jeu: Dictionary) -> Dictionary:
 	result["releasedate"] = _pick_by_region(jeu.get("dates", []))
 
 	# Media URLs — pass ROM region codes so media selection prefers the ROM's own region
-	result["media"] = _extract_media_urls(jeu.get("medias", []), regions_short, disc_num)
+	result["media"] = _extract_media_urls(
+		jeu.get("medias", []), regions_short, disc_num, result["disc_total"])
 
 	return result
 
@@ -381,8 +382,10 @@ func _pick_by_language(arr) -> String:
 ## Extract media URLs we care about from the medias array.
 ## rom_region_codes: short region codes from the matched ROM (e.g. ["us"]) — used as top priority.
 ## disc_num: the ROM's disc number, used to pick its own disc label (0 = unknown).
+## disc_total: how many discs the set holds (0 = unknown); 1 means there is no disc to tell apart.
 ## Returns {wheel: url, box: url, label: url, manual: url} (empty string if not found).
-func _extract_media_urls(medias, rom_region_codes: Array = [], disc_num: int = 0) -> Dictionary:
+func _extract_media_urls(medias, rom_region_codes: Array = [], disc_num: int = 0,
+						 disc_total: int = 0) -> Dictionary:
 	var result := {"wheel": "", "box": "", "label": "", "manual": ""}
 	if not medias is Array:
 		return result
@@ -428,7 +431,14 @@ func _extract_media_urls(medias, rom_region_codes: Array = [], disc_num: int = 0
 	# Disc identity outranks region: a disc-2 label from another region beats
 	# disc 1 from the ROM's own. Game-level media (box, manual) carry no
 	# "support" and stay untouched.
-	if disc_num > 0:
+	#
+	# Only a set with more than one disc is filtered. "support" is optional
+	# metadata that most cartridge labels do not carry, and a single-cartridge
+	# ROM still reports romnumsupport 1, so filtering on that alone scored every
+	# unnumbered label as disc 0 and threw it away: Super Mario Advance (USA,
+	# Europe) has us and eu labels with no number and jp ones numbered 1, and
+	# scraped the Japanese cartridge.
+	if disc_num > 0 and disc_total > 1:
 		var all_labels: Array = candidates["label"]
 		var own_disc: Array = all_labels.filter(
 			func(c: Dictionary) -> bool: return int(c.get("support", 0)) == disc_num

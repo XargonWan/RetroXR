@@ -103,6 +103,7 @@ var _rf_channel: int = 3
 
 var _power_light_mesh: MeshInstance3D = null
 var _power_light_mats: Array[StandardMaterial3D] = []
+var _power_light_glow: OmniLight3D = null
 var _power_button: VRButton = null
 
 # Switch sounds, recorded off the real NES-001 with a contact mic on the shell
@@ -184,6 +185,13 @@ func _ready() -> void:
 	var preview := find_child("SeatPreview", true, false)
 	if preview is Node3D:
 		(preview as Node3D).visible = false
+
+	# nes.tscn deliberately authors this imported pivot OPEN so the complete shell
+	# and both activation boxes can be edited together. Runtime starts from the real
+	# shut rest pose; the flap interaction below then owns all subsequent movement.
+	var editor_lid_pivot := _glb.find_child("NesLidPivot", true, false) as Node3D
+	if editor_lid_pivot != null:
+		editor_lid_pivot.rotation = Vector3.ZERO
 
 	# The shell is authored centred on its own middle, so half of it would hang
 	# below any surface it is placed on. Recentre on X/Z and rest the base at
@@ -321,6 +329,39 @@ func _process(_delta: float) -> void:
 
 # --- power LED ------------------------------------------------------------------
 
+## How far in front of the lens face the light source sits. Level with the lens
+## the pool is a hard dot; a few millimetres out it spreads across the front
+## panel the way the real one bleeds into the plastic around it.
+const LED_STANDOFF := 0.006
+## A luminous intensity, not a brightness dial, because LED_DECAY is 2.0.
+##
+## Godot 4 attenuates a positional light as
+##     (1 - (d/range)^4)^2 * d^(-decay)
+## so with decay 2 the falloff IS inverse square and light_energy carries the
+## units of candelas, once scaled into whatever "1.0" means in this project.
+## BedroomScene's DeskLampLight fixes that scale: energy 1.0 over a 3 m range
+## stands in for a ~400 lm bulb, which is 127 lux at half a metre against the 2.0
+## the formula returns there -- so one unit of energy is about 64 lux, and a light
+## of I millicandela wants an energy of I/64000.
+##
+## A vintage diffused red panel indicator runs 10-50 mcd (modern "plain" ones
+## start around 80 mcd, and 200 is already attention-grabbing). 30 mcd is the
+## middle of that, and rendering the whole bracket in the bedroom agreed: 10 is
+## barely there, 100 is a machine with a warning lamp on it.
+const LED_ENERGY := 0.00047
+## True inverse square. The pool has to FADE, and to fade at the rate the eye
+## expects of something this small and this close.
+const LED_DECAY := 2.0
+## Purely where the light stops being evaluated -- with an inverse-square decay it
+## is the decay, not this, that shapes the pool. Set it tight and the range window
+## becomes a visible hard edge partway through the falloff, which is exactly what
+## 0.05 did here: every point inside it sat 5-14x over white, so the "pool" was a
+## saturated blob whose edge was the cutoff. By 0.45 m the LED puts under 4% of
+## the night ambient on the carpet, so culling it there costs nothing.
+const LED_RANGE := 0.45
+const LED_COLOR := Color(1.0, 0.09, 0.03)
+
+
 ## Give the LED an emissive material so it glows red when the console is on and
 ## reads as a dark unlit lens when off, instead of just toggling visibility.
 func _prep_power_light() -> void:
@@ -335,11 +376,56 @@ func _prep_power_light() -> void:
 		m.emission_energy_multiplier = 0.0
 		_power_light_mesh.set_surface_override_material(s, m)
 		_power_light_mats.append(m)
+	_build_power_glow()
+
+
+## A glowing lens is not the same as the LED lighting anything. This hangs a real
+## OmniLight3D just off the lens face, so a powered console lays a red pool on its
+## own front panel and on whatever it is standing on.
+##
+## OMNI rather than a forward SpotLight3D, which is what the TV's Ambilight uses
+## and what an LED behind a lens physically is. Rendered both: a cone aimed out of
+## the front face cannot light that face, because the two are coplanar, so it
+## loses the ring of glow around the lens -- the most recognisable thing about a
+## switched-on NES -- and leaves a disc of light on the floor a hand's width
+## ahead, attached to nothing. What the omni costs is that with no shadow map it
+## lights backwards through the shell too; at this intensity that reaches the
+## carpet behind the machine at under a tenth of the night ambient, in the red
+## channel only, which is below noticing.
+##
+## Shadows are off (the "no_shadow" group, which QualityManager honours): the
+## source sits millimetres from the panel it lights, where a shadow map buys
+## nothing but acne, and a hallway of consoles would each want an atlas slot. The
+## distance fade drops it out entirely past 4.5 m for the same reason -- the
+## whole pool is a couple of pixels by then.
+func _build_power_glow() -> void:
+	_power_light_glow = OmniLight3D.new()
+	_power_light_glow.name = "PowerLightGlow"
+	_power_light_glow.add_to_group("no_shadow")
+	_power_light_glow.light_color = LED_COLOR
+	_power_light_glow.light_energy = LED_ENERGY
+	_power_light_glow.omni_range = LED_RANGE
+	_power_light_glow.omni_attenuation = LED_DECAY
+	_power_light_glow.shadow_enabled = false
+	_power_light_glow.distance_fade_enabled = true
+	_power_light_glow.distance_fade_begin = 3.0
+	_power_light_glow.distance_fade_length = 1.5
+	_power_light_glow.visible = false
+	add_child(_power_light_glow)
+	# Measured off the lens rather than quoted from the asset: the shell is
+	# recentred on load, so the GLB's own coordinates are not this node's.
+	var to_model := global_transform.affine_inverse() * _power_light_mesh.global_transform
+	var lens := to_model * _power_light_mesh.get_aabb().get_center()
+	_power_light_glow.position = lens + Vector3(0.0, 0.0, LED_STANDOFF)
 
 
 func _set_power_light(on: bool) -> void:
 	for m in _power_light_mats:
 		m.emission_energy_multiplier = 3.0 if on else 0.0
+	if _power_light_glow != null:
+		# Hidden rather than dimmed to zero: an energy-0 light is still a light
+		# the renderer culls and binds per object.
+		_power_light_glow.visible = on
 
 
 func _model_aabb(inst: Node3D) -> AABB:
@@ -392,6 +478,7 @@ func play_open() -> void:
 	if _lid_open:
 		return
 	_lid_open = true
+	print("[NES state] lid: OPENING (automatic)")
 	_tween_lid(1.0)
 	if _flap_hinge != null:
 		_flap_hinge.set_rotation_deg_no_signal(_deg_open)
@@ -404,6 +491,7 @@ func play_close() -> void:
 	if not _lid_open:
 		return
 	_lid_open = false
+	print("[NES state] lid: CLOSING (automatic)")
 	_tween_lid(0.0)
 	if _flap_hinge != null:
 		_flap_hinge.set_rotation_deg_no_signal(0.0)
@@ -476,19 +564,51 @@ func _setup_flap_hinge() -> void:
 	# flap, so the grip is free to mean "open this" here; the hinge mutes that
 	# hand's pickup while it is on the flap so the console stays put.
 	_flap_hinge.grip_engages = true
+	_flap_hinge.box_engages = true
+	# In this asset the flap's outward/front face is local +Z. Its torque decides
+	# direction; the bottom (-Y) remains open-only and the top (+Y) close-only.
+	_flap_hinge.poke_open_faces = VRHinge.FACE_Y_NEG
+	_flap_hinge.poke_close_faces = VRHinge.FACE_Y_POS
+	_flap_hinge.poke_torque_faces = VRHinge.FACE_Z_POS
+	_flap_hinge.poke_release_momentum = true
+	_flap_hinge.state_log_name = "lid"
 	_flap_hinge.target = _flap_pivot
 	_flap_hinge.min_deg = minf(0.0, _deg_open)
 	_flap_hinge.max_deg = maxf(0.0, _deg_open)
 	_flap_hinge.engage_radius = clampf(maxf(a.size.x, a.size.y * 0.5) * 0.6, 0.03, 0.09)
 	_lid_mesh.add_child(_flap_hinge)
-	_flap_hinge.transform = Transform3D(Basis.IDENTITY,
-		Vector3(cx, a.position.y + a.size.y * 0.25, cz))
-	var col := CollisionShape3D.new()
-	col.name = "CollisionShape3D"
-	var box := BoxShape3D.new()
-	box.size = Vector3(a.size.x * 0.9, a.size.y * 0.5, maxf(a.size.z, 0.006) + 0.012)
-	col.shape = box
-	_flap_hinge.add_child(col)
+	var col := _lid_mesh.find_child("LidActivationBox", true, false) as CollisionShape3D
+	if col != null and col.shape is BoxShape3D:
+		# The scene owns both transform and size. Move the shape under the live Area3D
+		# while preserving exactly what was authored relative to the lid mesh.
+		var preview_area := col.get_parent() as Area3D
+		_flap_hinge.global_transform = col.global_transform
+		col.reparent(_flap_hinge, true)
+		col.transform = Transform3D.IDENTITY
+		if preview_area != null:
+			preview_area.queue_free()
+	else:
+		# Fallback for a bare script instance: the shipped model always takes the
+		# authored branch, but keeping this makes the class independently usable.
+		_flap_hinge.transform = Transform3D(Basis.IDENTITY,
+			Vector3(cx, a.position.y + a.size.y * 0.25, cz))
+		col = CollisionShape3D.new()
+		col.name = "LidActivationBox"
+		var fallback_box := BoxShape3D.new()
+		fallback_box.size = Vector3(a.size.x * 0.9, a.size.y * 0.5,
+			maxf(a.size.z, 0.006) + 0.012)
+		col.shape = fallback_box
+		_flap_hinge.add_child(col)
+	# Poke uses two thin boxes matching the lid's horizontal and front planes,
+	# independent of the generous trigger/grip box above. Move the authored shapes
+	# under the live hinge so they follow the flap while retaining lid-local poses.
+	var poke_area := _lid_mesh.get_node_or_null("LidPokeSurfaces") as Area3D
+	if poke_area != null:
+		for node in poke_area.find_children("*", "CollisionShape3D", true, false):
+			var poke_shape := node as CollisionShape3D
+			if poke_shape != null:
+				poke_shape.reparent(_flap_hinge, true)
+		poke_area.queue_free()
 	# Hint in the flap's OWN plane, just past the grab box. Derived from the pivot
 	# rather than written as a literal -Y: this hinge hangs off the flap MESH while
 	# its pivot lives under _flap_frame, so their axes only happen to line up.
@@ -496,8 +616,9 @@ func _setup_flap_hinge() -> void:
 	var radial: Vector3 = _flap_hinge.global_position - _flap_pivot.global_position
 	radial -= ax_w * radial.dot(ax_w)
 	if radial.length() > 0.0001:
+		var box_size: Vector3 = (col.shape as BoxShape3D).size
 		_flap_hinge.place_hint(_flap_hinge.to_local(_flap_hinge.global_position
-			+ radial.normalized() * (a.size.y * 0.25 + 0.014)))
+			+ radial.normalized() * (box_size.y * 0.5 + 0.014)))
 	_flap_hinge.rotation_changed.connect(_on_flap_drag)
 
 
@@ -511,6 +632,8 @@ func _on_flap_drag(deg: float) -> void:
 	if open == _lid_open:
 		return
 	_lid_open = open
+	print("[NES state] lid: %s at %.2f deg" % [
+		"OPEN" if open else "CLOSED", absf(deg)])
 	if _cartridge_slot != null:
 		_cartridge_slot.enabled = _lid_open
 
@@ -960,6 +1083,7 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	var cradle := _cradle_mesh()
 	if cradle == null:
 		return
+	var authored_col := cradle.find_child("CradleActivationBox", true, false) as CollisionShape3D
 	var to_model := global_transform.affine_inverse()
 	var ab: AABB = ((to_model * cradle.global_transform) * cradle.get_aabb())
 	_tray_pivot = Node3D.new()
@@ -988,19 +1112,30 @@ func _setup_cart_tray(slot: Node3D) -> void:
 	_tray_hinge.spring_speed_deg = TRAY_SPRING_DEG
 	# An empty bay rests UP, where the springs hold it — not shut like a disc lid.
 	_tray_hinge.start_closed = false
-	_tray_hinge.engage_radius = 0.05
+	_tray_hinge.box_engages = true
+	# The NES push-push carriage is worked only from its top face: first press
+	# drives it home and latches, the next adds overtravel and releases the latch.
+	_tray_hinge.poke_close_faces = VRHinge.FACE_Y_POS
+	_tray_hinge.state_log_name = "cradle"
 	_tray_pivot.add_child(_tray_hinge)
-	# The grab box lies over the cart's LABEL, which is the face a hand pushes on.
-	# The cart's sides and front stay clear, so the grab that pulls it back out
-	# still reaches the cart itself.
-	var cart: Vector3 = MediaDimensions.cart_size("nes")
-	_tray_hinge.position = _seat_in_tray.origin + Vector3(0, cart.z * 0.5 + 0.004, 0)
-	var col := CollisionShape3D.new()
-	col.name = "CollisionShape3D"
-	var box := BoxShape3D.new()
-	box.size = Vector3(cart.x * 0.9, 0.008, cart.y * 0.6)
-	col.shape = box
-	_tray_hinge.add_child(col)
+	if authored_col != null and authored_col.shape is BoxShape3D:
+		# It was authored under NesCradle, so at this point it has already inherited
+		# the sink and sprung-up tray pose. Make that exact pose the live Area origin.
+		var preview_area := authored_col.get_parent() as Area3D
+		_tray_hinge.global_transform = authored_col.global_transform
+		authored_col.reparent(_tray_hinge, true)
+		authored_col.transform = Transform3D.IDENTITY
+		if preview_area != null:
+			preview_area.queue_free()
+	else:
+		var cart: Vector3 = MediaDimensions.cart_size("nes")
+		_tray_hinge.position = _seat_in_tray.origin + Vector3(0, cart.z * 0.5 + 0.004, 0)
+		authored_col = CollisionShape3D.new()
+		authored_col.name = "CradleActivationBox"
+		var fallback_box := BoxShape3D.new()
+		fallback_box.size = Vector3(cart.x * 0.9, 0.008, cart.y * 0.6)
+		authored_col.shape = fallback_box
+		_tray_hinge.add_child(authored_col)
 	_tray_hinge.push_push = true       # a hand may take hold of it to let it up
 	_tray_hinge.rotation_changed.connect(_on_tray_moved)
 
@@ -1072,6 +1207,7 @@ func _set_tray_down(down: bool) -> void:
 	if down == _tray_down:
 		return
 	_tray_down = down
+	print("[NES state] cradle: %s" % ("LOCKED_DOWN" if down else "RELEASED_UP"))
 	if _hand_did_it():
 		_play_sfx(_sfx_tray_down if down else _sfx_tray_up, "tray")
 	cart_tray_changed.emit(down)

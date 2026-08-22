@@ -338,15 +338,23 @@ const _MEDIA_COMPAT: Dictionary = {
 }
 
 ## The same idea for connectors: controllers of these systemids ALSO fit this
-## system's ports. Deliberately empty — each console takes its own pad and
-## nothing else.
+## system's ports.
 ##
-## Real hardware is looser than this, and each of these is one line if wanted:
+## The Wii row is the same fact as the Wii row above, seen from the front of the
+## machine: a console that plays GameCube discs has the four GameCube controller
+## sockets to play them with, under the flap. Without it a GameCube pad, or a
+## GameCube-to-Game Boy Advance lead, is refused by the only machine in the room
+## that can use one, and the refusal is silent because a snap zone that declines
+## an object simply does nothing.
+##
+## Real hardware is looser still, and each of these is one line if wanted:
 ##   "playstation2": ["playstation"]   PS2 takes PS1 pads (identical connector)
 ##   "mega_drive":   ["atari_2600"]    the DE-9 is shared, and vice versa
 ## Physical fit only — a plug that cannot enter the socket does not belong here
 ## however well its buttons would map.
-const _CONTROLLER_COMPAT: Dictionary = {}
+const _CONTROLLER_COMPAT: Dictionary = {
+	"wii": ["gamecube"],
+}
 
 # RETRO_DEVICE_* types relevant to port routing (libretro.h).
 const RETRO_DEVICE_NONE := 0
@@ -387,6 +395,7 @@ func _ready() -> void:
 	_libretro.rumble_state_changed.connect(_on_rumble_state_changed)
 	_libretro.disk_control_ready.connect(_on_disk_control_ready)
 	_libretro.sram_flushed.connect(_on_sram_flushed)
+	_libretro.content_load_failed.connect(_on_content_load_failed)
 	# Wire controller port snap signals
 	for i in range(4):
 		var idx := i
@@ -615,6 +624,10 @@ func _load_system_model() -> void:
 		video_out_enabled = true
 	_model.configure_cartridge_slot(_cartridge_slot)
 	_wire_push_tray()
+	# The serial socket, for the consoles that have one. Placed by the model for
+	# the same reason the A/V sockets are: it goes on the back panel, and only
+	# the thing that draws the back panel knows where that is.
+	_model.build_serial_port(self, systemid)
 	_model.configure_collision(self)
 	# Native controller ports: prefer the per-system SystemInfo descriptor (the
 	# real console's built-in port count) over the model's default, clamped to
@@ -1905,11 +1918,8 @@ func _process(_delta: float) -> void:
 	# instead of feeding the core directly.
 	if is_powered_on and _model != null and _model.is_handheld():
 		var a := global_transform.basis.orthonormalized().transposed() * Vector3.UP
-		if NetworkManager.netplay_running():
-			if NetworkManager.netplay_system() == self:
-				NetworkManager.netplay_set_aux_sensor(self,
-					int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0))
-		else:
+		if not NetworkManager.netplay_set_aux_sensor(self, 0, 0,
+				int(a.x * 1000.0), int(-a.z * 1000.0), int(a.y * 1000.0)):
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
 	_update_disc_spin(_delta)
 	_ensure_audio_bound()
@@ -1954,11 +1964,8 @@ func feed_touch(uv: Vector2, pressed: bool) -> void:
 		return
 	var px := int(clampf(uv.x, 0.0, 1.0) * 65534.0) - 32767
 	var py := int(clampf(uv.y, 0.0, 1.0) * 65534.0) - 32767
-	if NetworkManager.netplay_running():
-		if NetworkManager.netplay_system() == self:
-			NetworkManager.netplay_set_aux_pointer(self, px, py, pressed)
-		return
-	_libretro.SetPointerState(0, px, py, pressed)
+	if not NetworkManager.netplay_set_aux_pointer(self, 0, 0, px, py, pressed):
+		_libretro.SetPointerState(0, px, py, pressed)
 
 
 func _physics_process(_delta: float) -> void:
@@ -2020,35 +2027,52 @@ func power_on() -> void:
 				% _av_tv.name + "no video cord is linked. Check the yellow lead at BOTH ends.")
 		else:
 			print("[RetroSystem] Powering on with no display connected (connect a TV to see output)")
-	if rom_path.is_empty():
-		push_error("RetroSystem: Cannot power on - no cartridge inserted")
-		# Orange rather than the red of a fault: nothing is broken, the machine is
-		# just waiting for something the player can put in from where they stand.
-		var empty_toast := _machine_toast()
-		if empty_toast != null:
-			var medium := "disc" if MediaDimensions.is_disc_system(systemid) else "cartridge"
-			empty_toast.show_notice(_display_name(), "No game inserted",
-				"Put a %s in, then switch it on." % medium,
-				AchievementToast.ACCENT_WAITING)
-		return
-
 	# Through the same resolvers as every other path — the options panel, netplay,
 	# the SRAM paths and achievements all ask these two, and the power button
 	# answering them itself is how it would end up running a different core.
+	# Resolved BEFORE the empty-slot check, which cannot be answered without
+	# knowing the core: whether a machine shows its BIOS is a fact about the core
+	# and the files in its system directory, not about the systemid.
 	var resolved_core := _resolve_core()
-	if resolved_core.is_empty():
-		push_error("RetroSystem: Cannot power on - no core set and no default for systemid '%s'" % systemid)
-		return
 	var resolved_dir := _resolve_dir()
+
+	# Only when the slot is empty: empty_media_path CREATES the blank image, and
+	# a machine with a game in it must not leave one behind.
+	var blank := ""
+	if rom_path.is_empty() and BiosBoot.can_boot_empty(resolved_core, systemid):
+		blank = BiosBoot.empty_media_path(
+			BiosBoot.empty_media_extension(resolved_core, systemid))
+
+	var verdict := _power_on_verdict(resolved_core, systemid, rom_path,
+		BiosBoot.missing_required(resolved_core), blank,
+		rom_path.is_empty() and BiosBoot.can_boot_empty(resolved_core, systemid)
+			and BiosBoot.boots_with_no_content(resolved_core, systemid))
+	if not bool(verdict["start"]):
+		push_error("RetroSystem: Cannot power on - %s" % verdict["log"])
+		# Over the hardware rather than the picture: every one of these is a
+		# state of the console, and half the machines they fire on have no set
+		# connected to show anything on.
+		var refusal_toast := _machine_toast()
+		if refusal_toast != null:
+			refusal_toast.show_notice(_display_name(), str(verdict["title"]),
+				str(verdict["description"]), Color(verdict["accent"]))
+		return
+
+	# May be empty media: a machine with nothing in it whose BIOS is installed is
+	# handed a blank disc, which is what a console with a closed empty tray is.
+	rom_path = str(verdict["rom"])
 
 	print("[RetroSystem] Powering on: core=%s dir=%s rom=%s" % [resolved_core, resolved_dir, rom_path])
 
 	# The core is handed rom_path verbatim: nothing downstream unpacks an archive
-	# the core cannot read, and a refused retro_load_game raises no signal at all,
-	# so without this the machine sits powered on and black.
+	# the core cannot read, so without this the machine sits powered on and black.
 	if not _resolve_content(resolved_core):
 		return
 
+	# Before the forced options, which win: these are defaults the player may
+	# turn back off, and a pin is something they may not.
+	CoreOptionsStore.seed_values(resolved_dir, resolved_core,
+		BiosBoot.splash_options(resolved_core, systemid))
 	_apply_forced_core_options(resolved_dir, resolved_core)
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetSramPath(_sram_path_for_run(resolved_core))
@@ -2058,7 +2082,17 @@ func power_on() -> void:
 	# all of which just mean this machine runs without achievements.
 	_claim_achievements_session()
 	_protect_active_rom()
+	# A machine starting with NOTHING in it needs the core handed a null game
+	# info rather than an empty path, and most cores do not survive that -- six of
+	# sixteen surveyed took the process down. It is switched on only for the
+	# machines measured to want it, and off again straight after so the next
+	# machine to start is not handed a setting it never asked for.
+	var no_content := rom_path.is_empty() 		and BiosBoot.boots_with_no_content(resolved_core, systemid) 		and BiosBoot.can_boot_empty(resolved_core, systemid)
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", true)
 	_libretro.StartContent(resolved_dir, resolved_core, rom_path)
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", false)
 	_after_core_started()
 
 
@@ -2084,6 +2118,84 @@ func _after_core_started() -> void:
 	# swap). The emulation thread is only starting here, so this queues and is
 	# answered once the core is up.
 	_libretro.RequestDiskInfo()
+
+
+## Should the power button do anything, and with what in the slot?
+##
+## Static and pure so the decision can be asserted without a core, a model or a
+## scene — power_on() itself dereferences all three, which is why the rules used
+## to be untestable. The two facts that need the disk are looked up by the
+## caller and passed in: `missing` is BiosBoot.missing_required(), and `blank` is
+## the path to an empty image when this machine can show its BIOS with an empty
+## slot, "" otherwise. Returns
+##   {start: bool, rom: String, log: String, title, description, accent}
+## with the card fields filled in whenever `start` is false.
+##
+## Three refusals and one substitution, in the order they can be answered:
+##   * no core resolved — used to be a bare push_error with nothing shown at all
+##   * a required BIOS is missing — used to be a black screen and no explanation
+##   * an empty slot the machine cannot boot from — the long-standing card
+##   * an empty slot it CAN boot from — hand it a blank disc and start
+static func _power_on_verdict(core_name: String, sysid: String, rom: String,
+		missing: Array[Dictionary], blank: String, empty_ok := false) -> Dictionary:
+	var waiting := AchievementToast.ACCENT_WAITING
+	var fault := AchievementToast.ACCENT_NOTICE
+
+	if core_name.is_empty():
+		return {
+			"start": false, "rom": "",
+			"log": "no core set and no default for systemid '%s'" % sysid,
+			"title": "No core installed",
+			"description": "Pick one in OPTIONS > Cores, then switch it on.",
+			"accent": waiting,
+		}
+
+	# Asked even when a game IS inserted: a PS2 with no bios folder cannot run
+	# anything, and the failure looks identical to a broken core.
+	if not missing.is_empty():
+		var first: Dictionary = missing[0]
+		var path := str(first.get("path", ""))
+		var more := "" if missing.size() == 1 else " (+%d more)" % (missing.size() - 1)
+		return {
+			"start": false, "rom": rom,
+			"log": "core '%s' is missing required firmware: %s" % [core_name, path],
+			"title": "BIOS required",
+			# Two lines, and no absolute path. The card is 520x132 at 1400 px/m —
+			# about a playing card held at arm's length — and a Windows system path
+			# overflowed it top AND bottom, clipping the one line that says what to
+			# do about it. The BIOS / Extras tab prints the folder itself ("Files go
+			# in: …"), so repeating it here bought nothing and cost the instruction.
+			"description": "%s%s is missing.\nAdd it in OPTIONS > Cores > BIOS / Extras."
+				% [path, more],
+			"accent": fault,
+		}
+
+	if not rom.is_empty():
+		return {"start": true, "rom": rom, "log": "", "title": "", "description": "", "accent": waiting}
+
+	# Nothing in the slot. A machine whose BIOS is installed and whose core will
+	# take a blank disc starts anyway, silently, the way the hardware does.
+	if not blank.is_empty():
+		return {"start": true, "rom": blank, "log": "", "title": "", "description": "", "accent": waiting}
+
+	# Or whose core will start with nothing handed to it at all, which is a
+	# different mechanism and a rarer one: a Game Boy Advance with no cartridge
+	# draws its BIOS screen and then listens on the link port, which is how it
+	# ends up on the end of a GameCube lead or receiving a game from another
+	# handheld. An empty file would not do -- there is no drive to look at.
+	if empty_ok:
+		return {"start": true, "rom": "", "log": "", "title": "", "description": "", "accent": waiting}
+
+	# Orange rather than the red of a fault: nothing is broken, the machine is
+	# just waiting for something the player can put in from where they stand.
+	var medium := "disc" if MediaDimensions.is_disc_system(sysid) else "cartridge"
+	return {
+		"start": false, "rom": "",
+		"log": "no cartridge inserted",
+		"title": "No game inserted",
+		"description": "Put a %s in, then switch it on." % medium,
+		"accent": waiting,
+	}
 
 
 ## Settle rom_path against what this core actually declares it can load.
@@ -2198,11 +2310,12 @@ func toggle_power() -> void:
 
 
 ## True if this system can run lockstep netplay right now: a determinism-verified
-## core is resolvable and a ROM is inserted.
+## core is resolvable and its present boot (game, empty media, or BIOS-only) can
+## be reproduced by every peer.
 func _netplay_eligible() -> bool:
-	if rom_path.is_empty():
-		return false
-	return NetworkManager.netplay_capable(_resolve_core())
+	var resolved_core := _resolve_core()
+	return NetworkManager.netplay_capable(resolved_core) \
+		and not net_boot_spec(resolved_core).is_empty()
 
 
 ## Which core this machine would actually load. Public because the core manager
@@ -2234,6 +2347,108 @@ func net_rom_md5() -> String:
 	if rom_path.is_empty():
 		return ""
 	return NetFileTransfer.hash_of(rom_path)
+
+
+## Reproducible launch description for netplay. A BIOS-only core still has a
+## full deterministic machine state; it simply has no copyrighted content to
+## hash or transfer. Empty media is regenerated locally from its extension.
+func net_boot_spec(core: String) -> Dictionary:
+	var empty_extension := BiosBoot.empty_media_extension(core, systemid)
+	var generated_empty := ""
+	if not empty_extension.is_empty():
+		generated_empty = CoreDownloadManager.default_core_root().path_join("temp") \
+			.path_join("no_disc." + empty_extension)
+	var has_real_media := not rom_path.is_empty() and rom_path != generated_empty
+	if has_real_media:
+		var md5 := net_rom_md5()
+		if md5.is_empty():
+			return {}
+		var game_boot := {"mode": "rom", "rom_md5": md5}
+		var splash := BiosBoot.splash_options(core, systemid)
+		if not splash.is_empty():
+			game_boot["boot_options"] = splash
+			game_boot["firmware"] = _net_firmware_signature(core)
+		return game_boot
+	if not BiosBoot.can_boot_empty(core, systemid):
+		return {}
+	var empty_boot := {
+		"boot_options": BiosBoot.empty_boot_options(core, systemid),
+		"firmware": _net_firmware_signature(core),
+	}
+	if BiosBoot.boots_with_no_content(core, systemid):
+		empty_boot["mode"] = "no_content"
+	else:
+		empty_boot["mode"] = "empty_media"
+		empty_boot["extension"] = empty_extension
+	return empty_boot
+
+
+## Fingerprint every candidate boot ROM (or every file under a declared BIOS
+## directory). Optional regional alternatives are included too: a core in
+## "auto" mode may select a different one, so equal presence is not enough.
+func _net_firmware_signature(core: String) -> String:
+	var rows: Array[String] = []
+	for relative: String in BiosBoot.boot_rom_paths(core, systemid):
+		var dest := FirmwareRequirements.destination(core, relative)
+		if DirAccess.dir_exists_absolute(dest):
+			_append_net_firmware_dir(dest, relative, rows)
+		elif FileAccess.file_exists(dest):
+			rows.append("%s=%s" % [relative, FileAccess.get_md5(dest).to_lower()])
+		else:
+			rows.append("%s=<missing>" % relative)
+	rows.sort()
+	return "\n".join(PackedStringArray(rows)).sha256_text()
+
+
+func _append_net_firmware_dir(root: String, relative: String,
+		rows: Array[String]) -> void:
+	var dir := DirAccess.open(root)
+	if dir == null:
+		rows.append("%s=<missing>" % relative)
+		return
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while not name.is_empty():
+		var full := root.path_join(name)
+		var child := relative.path_join(name)
+		if dir.current_is_dir():
+			_append_net_firmware_dir(full, child, rows)
+		else:
+			rows.append("%s=%s" % [child, FileAccess.get_md5(full).to_lower()])
+		name = dir.get_next()
+	dir.list_dir_end()
+
+
+## Recreate a host machine's launch mode locally before net_start_core. ROMs
+## are only resolved by hash; BIOS files are never sent and must already be
+## installed on this peer.
+func net_prepare_boot(spec: Dictionary) -> bool:
+	var core := str(spec.get("core", ""))
+	if spec.has("firmware") \
+			and str(spec.get("firmware", "")) != _net_firmware_signature(core):
+		push_warning("[RetroSystem] netplay: BIOS/firmware differs from the host")
+		return false
+	match str(spec.get("mode", "rom")):
+		"rom":
+			_net_no_content_override = false
+			return net_resolve_rom(str(spec.get("rom_md5", "")))
+		"no_content":
+			if not BiosBoot.can_boot_empty(core, systemid) \
+					or not BiosBoot.boots_with_no_content(core, systemid):
+				return false
+			rom_path = ""
+			_net_no_content_override = true
+			return true
+		"empty_media":
+			var extension := str(spec.get("extension", ""))
+			if not BiosBoot.can_boot_empty(core, systemid) \
+					or BiosBoot.boots_with_no_content(core, systemid) \
+					or extension != BiosBoot.empty_media_extension(core, systemid):
+				return false
+			rom_path = BiosBoot.empty_media_path(extension)
+			_net_no_content_override = false
+			return not rom_path.is_empty()
+	return false
 
 
 ## Netplay cold start (client): make sure we own a byte-identical copy of the
@@ -2268,23 +2483,38 @@ func net_resolve_rom(md5: String) -> bool:
 ## Start the local core under the netplay gate. The gate (SetNetplayMode) is set
 ## BEFORE StartContent so the core holds at `start_frame` until inputs post.
 ## Returns the Libretro node (the session connects its signals). null on failure.
-func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
+func net_start_core(core: String, port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
+	var requested_no_content := _net_no_content_override
+	_net_no_content_override = false
 	if not _has_display():
 		push_error("RetroSystem: netplay start — no display (connect a TV)")
 		return null
-	if rom_path.is_empty():
-		push_error("RetroSystem: netplay start — no cartridge inserted")
-		return null
-	var resolved_core := _resolve_core()
+	# The host names the core, and every peer runs THAT one. _resolve_core() is
+	# this machine's own preference, which is a per-player, per-platform answer:
+	# taking it here is how two peers end up on different emulators with no way
+	# to tell from the symptom. Falling back to it only covers a caller with
+	# nothing to say (an offline-style start).
+	var resolved_core := core if not core.is_empty() else _resolve_core()
 	if resolved_core.is_empty():
 		push_error("RetroSystem: netplay start — no core for systemid '%s'" % systemid)
+		return null
+	var no_content := requested_no_content and rom_path.is_empty() \
+		and BiosBoot.boots_with_no_content(resolved_core, systemid)
+	if rom_path.is_empty() and not no_content:
+		push_error("RetroSystem: netplay start — boot media was not prepared")
 		return null
 	if is_powered_on:
 		_libretro.StopContent()
 		_release_cache_protection()
 		is_powered_on = false
-	for k: Variant in options:
-		_libretro.SetCoreOption(str(k), str(options[k]))
+	# SetCoreOption is a live-core command and is intentionally ignored before
+	# StartContent. Netplay options must therefore go through the same persisted
+	# store the core reads during startup, or every "forced" option here is a
+	# no-op and peers can boot with different saved settings.
+	if not options.is_empty() \
+			and not CoreOptionsStore.merge_values(_resolve_dir(), resolved_core, options):
+		push_error("RetroSystem: netplay start — could not pin deterministic core options")
+		return null
 	# SRAM: netplay override (session-injected identical bytes) or the normal
 	# local composition when the session didn't set one (offline-like start).
 	if _net_sram_override:
@@ -2299,7 +2529,11 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_protect_active_rom()
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", true)
 	_libretro.StartContent(_resolve_dir(), resolved_core, rom_path)
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", false)
 	_after_core_started()
 	net_remote_powered = false
 	if connected_tv:
@@ -2307,9 +2541,129 @@ func net_start_core(port_mask: int, start_frame: int, options: Dictionary) -> Li
 	return _libretro
 
 
+## Every machine on this one's link bus, ITSELF FIRST, or just itself when
+## nothing is cabled to it.
+##
+## Netplay asks this because a link cable never crosses the network: the bus is
+## a process-wide singleton joining two cores in one process, so a cabled pair
+## is one session over two machines that every peer replicates, not two players'
+## machines talking to each other.
+##
+## Self first because index 0 anchors the session — it owns the frame clock and
+## the savestate. Only the host walks this; every other peer is told the answer,
+## so the order has to be stable within one process rather than across them.
+func net_link_group() -> Array:
+	if not is_inside_tree():
+		return [self]
+	# A console may have one independent link cable per controller socket (four
+	# GameCube-to-GBA leads are the common case).  No single cable's bus contains
+	# the other handhelds, so collect every bus that contains this machine.
+	return merge_link_buses(self, net_link_buses())
+
+
+## Every distinct physical cable bus containing this machine. This is also the
+## list netplay re-resolves after restarting cores, because StopContent drops
+## LinkCoordinator ownership while the plugs themselves never moved.
+func net_link_buses() -> Array:
+	var buses: Array = []
+	var seen_cables := {}
+	if not is_inside_tree():
+		return buses
+	for plug in get_tree().get_nodes_in_group("link_plug") \
+			+ get_tree().get_nodes_in_group("controller_plug"):
+		var cable: Object = plug.get("cable")
+		if cable == null or not is_instance_valid(cable) or seen_cables.has(cable) \
+				or not cable.has_method("linked_machines"):
+			continue
+		seen_cables[cable] = true
+		var bus: Array = cable.linked_machines()
+		for entry: Dictionary in bus:
+			if entry.get("machine") == self:
+				buses.append(bus)
+				break
+	return buses
+
+
+func net_refresh_link_cables() -> void:
+	var seen_cables := {}
+	for plug in get_tree().get_nodes_in_group("link_plug") \
+			+ get_tree().get_nodes_in_group("controller_plug"):
+		var cable: Object = plug.get("cable")
+		if cable == null or not is_instance_valid(cable) or seen_cables.has(cable) \
+				or not cable.has_method("linked_machines"):
+			continue
+		seen_cables[cable] = true
+		var touches := false
+		for entry: Dictionary in cable.linked_machines():
+			if entry.get("machine") == self:
+				touches = true
+				break
+		if touches and cable.has_method("_disconnect") and cable.has_method("_resolve"):
+			# Its cached endpoints still name the same Libretro nodes, but
+			# StopContent removed those nodes from LinkCoordinator. Force a real
+			# disconnect/rejoin instead of letting the cache call it a no-op.
+			cable.call("_disconnect")
+			cable.call("_resolve")
+
+
+## Flatten every cable bus reachable from `anchor`.  Kept pure so the rule can
+## be tested without constructing sockets and cables: one console with several
+## independent controller-port leads still needs every far machine in its
+## replicated netplay group.
+static func merge_link_buses(anchor: Object, buses: Array) -> Array:
+	var machines: Array = [anchor]
+	var changed := true
+	while changed:
+		changed = false
+		for bus: Array in buses:
+			var touches := false
+			for entry: Dictionary in bus:
+				if machines.has(entry.get("machine")):
+					touches = true
+					break
+			if not touches:
+				continue
+			for entry: Dictionary in bus:
+				var machine: Object = entry.get("machine")
+				if machine != null and not machines.has(machine):
+					machines.append(machine)
+					changed = true
+	return machines
+
+
+## The bus this machine is on, as [{machine, port}], or [] when it is on none.
+##
+## Asked of every LEAD in the room rather than walked out of this machine's own
+## sockets, because the three kinds of link cable do not attach the same way and
+## two of them cannot be found from here at all. A handheld lead and a
+## PlayStation null modem both sit in LinkPorts, but a GameCube-to-GBA lead puts
+## its wide end in a CONTROLLER socket — there is no LinkPort on the console
+## side to walk out of, and a search from this machine would silently decide a
+## cabled GameCube was on no bus.
+func net_link_bus() -> Array:
+	if not is_inside_tree():
+		return []
+	for plug in get_tree().get_nodes_in_group("link_plug") \
+			+ get_tree().get_nodes_in_group("controller_plug"):
+		var cable: Object = plug.get("cable")
+		if cable == null or not is_instance_valid(cable):
+			continue
+		if not cable.has_method("linked_machines"):
+			continue
+		var bus: Array = cable.linked_machines()
+		for entry: Dictionary in bus:
+			if entry.get("machine") == self:
+				return bus
+	return []
+
+
 ## Stop the local netplay core and clear the gate.
 func net_stop_core() -> void:
 	_libretro.SetNetplayMode(false, 1, 0)
+	_net_no_content_override = false
+	_net_sram_override = false
+	_net_sram_path = ""
+	_net_sram_data = PackedByteArray()
 	if is_powered_on:
 		_stop_core()
 	else:
@@ -2340,6 +2694,18 @@ func net_set_remote_power(on: bool) -> void:
 ## every thread parked. Nothing is torn down here, so the screen, the audio
 ## voices and the port bindings all survive and there is nothing to rebind.
 func reset() -> void:
+	if NetworkManager.is_active() and not NetworkManager.is_event_applying():
+		if NetworkManager.netplay_running() and NetworkManager.netplay_covers(self):
+			if NetworkManager.is_client():
+				NetworkManager.report_event(NetObjectSync.EV_SYS_RESET, {"sys": self})
+			else:
+				NetworkManager.netplay_schedule_reset(self)
+			return
+		# Before lockstep starts, clients hold only a visual replica; reset the
+		# host's running core instead of returning because this copy is powered off.
+		if NetworkManager.is_client():
+			NetworkManager.report_event(NetObjectSync.EV_SYS_RESET, {"sys": self})
+			return
 	if not is_powered_on:
 		return
 	_model.play_reset()
@@ -2351,6 +2717,13 @@ func reset() -> void:
 	_sync_core_tray()
 	print("[RetroSystem] Resetting: rom=%s" % rom_path)
 	_libretro.RequestReset()
+
+
+## Visual half of a frame-scheduled netplay reset. The core half is armed on
+## every peer by NetplaySession and executes at the agreed emulated frame.
+func net_play_reset() -> void:
+	if is_powered_on and _model != null:
+		_model.play_reset()
 
 
 ## Make the console report an EMPTY slot when no card is seated.
@@ -2373,6 +2746,12 @@ func _removable_media_options(core: String) -> Dictionary:
 		# than left to the core's default, which is a shared card every game can
 		# see and no object in the room accounts for.
 		"pcsx_rearmed_memcard2": "none",
+		# And whether the card is actually IN it, which is a different question
+		# from what kind of card the slot holds and the only one that can change
+		# while the game runs. Set here too so a machine starts up agreeing with
+		# the room: the key is read at load like the others, and _set_card_presence
+		# keeps it honest from then on.
+		"pcsx_rearmed_memcard1_inserted": "enabled" if _snapped_memcard else "disabled",
 	}
 
 
@@ -2402,6 +2781,22 @@ func _apply_forced_core_options(dir: String, core: String) -> void:
 
 
 # --- Core options ---
+
+## The run never started. Until this signal existed a refused load raised
+## nothing at all, so the machine reported is_powered_on = true and sat dark —
+## indistinguishable from a broken core, a missing BIOS or a dead TV.
+##
+## Powers back off rather than leaving the button saying STOP on a machine with
+## no core behind it, and says why on the hardware, where the player is.
+func _on_content_load_failed(reason: String) -> void:
+	push_error("RetroSystem: content load failed — %s" % reason)
+	if is_powered_on:
+		_stop_core()
+	var toast := _machine_toast()
+	if toast != null:
+		toast.show_notice(_display_name(), "Could not start", reason,
+			AchievementToast.ACCENT_NOTICE)
+
 
 ## Fired by the Libretro node (via options_ready signal) once the emulation core
 ## has registered its option set. Caches the data and refreshes the panel if it
@@ -2945,6 +3340,46 @@ func restore_controller_plug(port_index: int, plug: ControllerPlug) -> void:
 	_restoring_media = false
 
 
+## Release a controller port from replicated state. A plain SnapZone drop leaves
+## the plug centred in its grab volume, so it is immediately picked back up on
+## the next physics tick. The local player's hand naturally carries a pulled
+## plug away; a remote peer has no synced plug body, so park it by its controller
+## before re-enabling the socket.
+func net_release_controller_port(port_index: int) -> void:
+	if port_index < 0 or port_index >= _port_zones.size():
+		return
+	var zone := _port_zones[port_index] as XRToolsSnapZone
+	var plug := _port_plugs[port_index] as ControllerPlug
+	var plug_enabled := plug.enabled if is_instance_valid(plug) else false
+	var enabled: Array[bool] = []
+	for candidate: XRToolsSnapZone in _port_zones:
+		enabled.append(candidate.enabled)
+		candidate.enabled = false
+	if is_instance_valid(plug):
+		plug.enabled = false
+	zone.drop_object()
+	if is_instance_valid(plug):
+		for candidate: XRToolsSnapZone in _port_zones:
+			candidate.forget_object(plug)
+		var controller := plug.get_controller()
+		var attach := controller.get_node_or_null("CableAttachPoint") as Node3D \
+			if is_instance_valid(controller) else null
+		if attach != null:
+			plug.global_position = attach.global_position \
+				+ attach.global_basis * Vector3(0, 0, -0.12)
+		if plug is RigidBody3D:
+			(plug as RigidBody3D).linear_velocity = Vector3.ZERO
+			(plug as RigidBody3D).angular_velocity = Vector3.ZERO
+	# DROPPED-mode zones receive the plug's dropped signal deferred. Keep every
+	# neighbouring socket shut until that callback and a physics overlap refresh
+	# have both passed, or the plug simply hops from port 1 into port 2.
+	get_tree().create_timer(0.1).timeout.connect(func() -> void:
+		for i in _port_zones.size():
+			_port_zones[i].enabled = enabled[i]
+		if is_instance_valid(plug):
+			plug.enabled = plug_enabled, CONNECT_ONE_SHOT)
+
+
 ## Which cabinet socket holds this peripheral, or -1 if the system is not holding
 ## it at all.
 ##
@@ -3144,7 +3579,7 @@ const DISK_OP_CLOSE := 1
 ## Netplay: frame-scheduled so every lockstep peer swaps on the same frame
 ## (host schedules; clients send intent via EV_DISK_OP).
 func _request_disk_op(op: int, path: String) -> void:
-	if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
+	if NetworkManager.netplay_running() and NetworkManager.netplay_covers(self):
 		var md5 := "" if path.is_empty() else NetFileTransfer.hash_of(path)
 		if NetworkManager.is_host():
 			NetworkManager.netplay_schedule_disk(self, op, md5, _disc_index)
@@ -3333,6 +3768,7 @@ var _card_save_hashes: Dictionary = {}
 var _net_sram_override := false
 var _net_sram_path := ""
 var _net_sram_data := PackedByteArray()
+var _net_no_content_override := false
 
 
 func get_snapped_memcard() -> Node3D:
@@ -3349,6 +3785,7 @@ func _on_memcard_inserted(card: Node3D) -> void:
 			push_warning("[RetroSystem] memory card ignored during netplay")
 		else:
 			_libretro.SetSramPath(_sram_path_for_run(_resolve_core()))
+			_set_card_presence(true)
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_INSERT,
 		{"sys": self, "card": card})
 
@@ -3361,11 +3798,43 @@ func _on_memcard_removed() -> void:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 			push_warning("[RetroSystem] memory card removal ignored during netplay")
 		else:
-			# No card, no saving. The C++ side blanks SAVE_RAM to match, so the
-			# game reports unformatted media instead of accepting a save into
-			# the card the core keeps for itself.
+			# No card, no saving. The C++ side blanks SAVE_RAM to match, so
+			# nothing is written into the card the core keeps for itself.
 			_libretro.SetSramPath("")
+			# And the console is told the slot is EMPTY, which blanking SAVE_RAM
+			# cannot say on its own: a 128 KB buffer of zeroes is a card, merely
+			# an unformatted one, so the game offered to format it instead of
+			# reporting no card at all.
+			_set_card_presence(false)
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_REMOVE, {"sys": self})
+
+
+## Tell the running console whether a card is in the slot.
+##
+## Presence and CONTENT are two different questions and only one of them can be
+## answered while a game runs. What kind of card the slot holds is
+## pcsx_rearmed_memcard1, and it gates the core's save buffer, so it is fixed at
+## load; whether a card is in that slot is pcsx_rearmed_memcard1_inserted, which
+## touches nothing but what the SIO reports and can move whenever a hand does.
+##
+## Down at the hardware this is the difference between a slot that answers "no
+## device" and one that answers with an unformatted card -- which is what the
+## room could only say before, and why pulling a card mid-game had the console
+## offer to format it rather than say there was no card in it.
+##
+## Older cores never registered the key, and the extension skips a key a core
+## does not have, so this is a no-op against a build from before the option
+## shipped rather than an error.
+func _set_card_presence(inserted: bool) -> void:
+	if not is_powered_on or not _uses_memory_cards():
+		return
+	if not _resolve_core().begins_with("pcsx_rearmed"):
+		return
+	# Through set_core_option rather than at the Libretro node, so the value the
+	# options panel shows and the value the core is running on cannot drift, and
+	# so a machine that is not running has it written to its .opt instead.
+	set_core_option("pcsx_rearmed_memcard1_inserted",
+		"enabled" if inserted else "disabled")
 
 
 ## The seated card's image moved (it was renamed), so re-point the running core

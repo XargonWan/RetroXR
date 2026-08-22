@@ -316,7 +316,8 @@ func _ready() -> void:
 	_ch_up_btn.button_pressed.connect(_on_channel_up)
 	_vol_down_btn.set_color(Color(0.1, 0.3, 0.9))   # blue
 	_vol_up_btn.set_color(Color(0.0, 0.9, 0.9))     # cyan
-	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0))  # green = on
+	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0) if _tv_enabled
+		else Color(1.0, 0.1, 0.1))
 	_update_mute_button_color()
 	_update_audio_mode_button()
 	# Hidden until a stereo source is connected (see _update_stereo_button).
@@ -1265,6 +1266,8 @@ func set_widescreen(on: bool) -> void:
 	_apply_aspect()
 	_update_aspect_button()
 	show_osd_timed("16:9" if widescreen else "4:3", 1.5)
+	NetworkManager.report_event(NetObjectSync.EV_TV_ASPECT,
+		{"tv": self, "on": widescreen})
 
 
 ## How much of the glass the picture should cover, as a fraction per axis.
@@ -1920,11 +1923,13 @@ func remote_source_cycle() -> void:
 func remote_channel_up() -> void:
 	if _tuner and current_source == Source.TV:
 		_tuner.channel_up()
+		_report_channel_state()
 
 
 func remote_channel_down() -> void:
 	if _tuner and current_source == Source.TV:
 		_tuner.channel_down()
+		_report_channel_state()
 
 
 # Bezel channel keys. Unlike the remote's — which only appear once the tuner is
@@ -1953,6 +1958,7 @@ func _select_tv_then(up: bool) -> void:
 		rf_channel = RF_CHANNELS[((i if i >= 0 else 0) + (1 if up else n - 1)) % n]
 		_apply_audio_volume()
 		show_osd_timed(_source_banner(), 2.0)
+		_report_channel_state()
 		return
 	if current_source != Source.TV:
 		set_source(Source.TV)
@@ -1964,6 +1970,36 @@ func _select_tv_then(up: bool) -> void:
 		_ensure_tuner().channel_up()
 	else:
 		_ensure_tuner().channel_down()
+	_report_channel_state()
+
+
+## Options-panel channel selection uses the same replicated state as the bezel
+## and remote buttons instead of mutating the tuner behind ObjectSync's back.
+func set_channel_index(index: int) -> void:
+	if current_source != Source.TV:
+		set_source(Source.TV)
+	_ensure_tuner().tune(index)
+	_report_channel_state()
+
+
+func _report_channel_state() -> void:
+	NetworkManager.report_event(NetObjectSync.EV_TV_CHANNEL, {
+		"tv": self,
+		"source": current_source,
+		"rf": rf_channel,
+		"index": _tuner.current_index if _tuner != null else -1,
+	})
+
+
+## Apply one explicit channel state. Sending the result rather than only UP/DOWN
+## makes the operation self-healing if a peer joined with a stale tuner index.
+func net_set_channel_state(source: int, rf: int, index: int) -> void:
+	set_source(source)
+	rf_channel = rf if RF_CHANNELS.has(rf) else RF_CHANNELS[0]
+	if current_source == Source.TV and index >= 0:
+		_ensure_tuner().tune(index)
+	_apply_audio_volume()
+	show_osd_timed(_source_banner(), 2.0)
 
 
 # ── Input selection (SOURCE) ──────────────────────────────────────────────────
@@ -2044,6 +2080,8 @@ func set_source(source: int) -> void:
 
 	show_osd_timed(_source_banner(), 2.0)
 	source_changed.emit(current_source)
+	NetworkManager.report_event(NetObjectSync.EV_TV_SOURCE,
+		{"tv": self, "source": current_source})
 
 
 func _source_banner() -> String:
@@ -2100,6 +2138,47 @@ func has_channels() -> bool:
 
 func get_source() -> int:
 	return current_source
+
+
+## Complete user-facing control state for save files and netplay snapshots.
+func get_control_state() -> Dictionary:
+	return {
+		"enabled": _tv_enabled,
+		"volume": _volume,
+		"muted": _muted,
+		"widescreen": widescreen,
+		"source": current_source,
+		"rf_channel": rf_channel,
+		"channel_index": _tuner.current_index if _tuner != null else -1,
+		"audio_mode": audio_mode,
+	}
+
+
+## Restore after the TV is in the tree, so buttons, materials, audio routes and
+## the optional tuner all receive the state rather than only its backing fields.
+func restore_control_state(state: Dictionary) -> void:
+	_volume = clampf(float(state.get("volume", _volume)), 0.0, 1.0)
+	_muted = bool(state.get("muted", _muted))
+	_tv_enabled = bool(state.get("enabled", _tv_enabled))
+	widescreen = bool(state.get("widescreen", widescreen))
+	audio_mode = clampi(int(state.get("audio_mode", audio_mode)), 0, 2)
+	rf_channel = int(state.get("rf_channel", rf_channel))
+	if not RF_CHANNELS.has(rf_channel):
+		rf_channel = RF_CHANNELS[0]
+	set_source(int(state.get("source", current_source)))
+	var index := int(state.get("channel_index", -1))
+	if current_source == Source.TV and index >= 0:
+		_ensure_tuner().tune(index)
+	_tv_toggle_btn.set_color(Color(0.0, 1.0, 0.0) if _tv_enabled
+		else Color(1.0, 0.1, 0.1))
+	_update_mute_button_color()
+	_update_audio_mode_button()
+	_update_aspect_button()
+	_apply_aspect()
+	if _tuner != null:
+		_tuner.set_active(_tv_enabled and current_source == Source.TV)
+	_apply_audio_channel_mode()
+	_apply_audio_volume()
 
 
 # ── Options panel / display scale ────────────────────────────────────────────────

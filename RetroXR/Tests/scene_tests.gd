@@ -165,6 +165,7 @@ func _test_transition() -> void:
 	SceneManager.current_scene_id = "arcade"
 	SceneManager._transitioning = false
 	SceneManager._pending_scene_id = ""
+	SceneManager._last_load_failed = false
 
 	# An unknown room is refused outright rather than claiming a transition.
 	SceneManager.change_scene("nonesuch")
@@ -183,6 +184,12 @@ func _test_transition() -> void:
 	SceneManager._pending_scene_id = "den"
 	SceneManager.change_scene("arcade")
 	_eq(SceneManager._pending_scene_id, "", "transition/same room cancels the queue")
+	_ok(SceneManager._same_scene_request_is_noop("arcade"),
+		"transition/live same room is a no-op")
+	SceneManager._last_load_failed = true
+	_ok(not SceneManager._same_scene_request_is_noop("arcade"),
+		"transition/failed destination can be retried")
+	SceneManager._last_load_failed = false
 
 	# While one is in flight, the newest request wins rather than stacking.
 	SceneManager.change_scene("den")
@@ -191,8 +198,20 @@ func _test_transition() -> void:
 	_eq(SceneManager._pending_scene_id, "bedroom", "transition/last intent wins")
 	_eq(SceneManager.current_scene_id, "arcade", "transition/queued request does not move the id")
 
+	# With no outgoing scene after a failure, the next attempt must recover the
+	# parked player rather than allowing the incoming room to keep a second one.
+	var parked := PlayerRig.new()
+	SceneManager._parked_player = parked
+	_ok(SceneManager._player_for_transition(null) == parked,
+		"transition/failed load recovers parked player")
+	SceneManager._parked_player = null
+	parked.free()
+
 	SceneManager._transitioning = false
 	SceneManager._pending_scene_id = ""
+	SceneManager._last_load_failed = false
+	SceneManager._parked_player = null
+	SceneManager._failed_loading_rig = null
 
 
 # ── Periodic autosave ─────────────────────────────────────────────────────────

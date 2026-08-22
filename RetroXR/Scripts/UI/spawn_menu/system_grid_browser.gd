@@ -590,7 +590,7 @@ func _make_tile(s: Dictionary) -> Button:
 			big.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			big.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			btn.add_child(big)
-		_style_tile(btn, alt)
+		style_tile(btn, alt)
 		btn.pressed.connect(open_system.bind(sid))
 		return btn
 
@@ -701,14 +701,15 @@ func _make_tile(s: Dictionary) -> Button:
 		else:
 			corner.add_child(_badge_number(_compact_count(mark_count), COLOR_LICENSE))
 
-	_style_tile(btn, alt)
+	style_tile(btn, alt)
 	btn.pressed.connect(open_system.bind(sid))
 	return btn
 
 
 ## The rounded plate a tile sits on. Shared by both tile shapes so the compact
-## grid is visibly the same furniture, only smaller.
-static func _style_tile(btn: Button, alt: bool = false) -> void:
+## grid is visibly the same furniture, only smaller, and public so the CONTROLS
+## tab's per-platform grid wears the same plate without owning a browser.
+static func style_tile(btn: Button, alt: bool = false) -> void:
 	var base := StyleBoxFlat.new()
 	base.bg_color = COLOR_TILE_ALT if alt else COLOR_TILE
 	var hover := StyleBoxFlat.new()

@@ -102,6 +102,72 @@ static func merge_values(root: String, core_name: String, forced: Dictionary) ->
 	return save_values(root, core_name, values)
 
 
+## Write a set of keys ONCE, then never again for this core.
+##
+## The default-setting counterpart to merge_values, and deliberately not the
+## same primitive. merge_values overwrites every launch, which is right for a
+## hardware pin the player may not move; a default has to lose to the player the
+## moment they change it, so a key seeded here is recorded and left alone
+## forever after -- including when they set it straight back.
+##
+## "Has it been seeded?" cannot be answered by looking for the key in the .opt
+## file. A core serialises its WHOLE option set when it shuts down, so after one
+## run every key it declares is present, and a BIOS installed later would find
+## nothing to seed. The record is kept separately for that reason.
+##
+## Returns true when the file was rewritten.
+static func seed_values(root: String, core_name: String, values: Dictionary) -> bool:
+	if values.is_empty():
+		return false
+	var seeded := _load_seeded(root)
+	var fresh: Dictionary = {}
+	for k: Variant in values:
+		var key := str(k)
+		if not seeded.has(core_name + "/" + key):
+			fresh[key] = str(values[k])
+	if fresh.is_empty():
+		return false
+
+	# Recorded even if the write fails: a core whose .opt cannot be written will
+	# not be fixed by trying again on every power-on, and a player watching the
+	# same warning each time learns nothing new.
+	for key: String in fresh:
+		seeded[core_name + "/" + key] = true
+	_save_seeded(root, seeded)
+
+	var current := load_values(root, core_name)
+	current.merge(fresh, true)
+	return save_values(root, core_name, current)
+
+
+## Which (core, key) pairs have already been seeded. Its own small file next to
+## the option files -- it describes them, and it must survive a core rewriting
+## its .opt wholesale.
+static func seeded_path(root: String) -> String:
+	return root.path_join("bios_seeded.json")
+
+
+static func _load_seeded(root: String) -> Dictionary:
+	var f := FileAccess.open(seeded_path(root), FileAccess.READ)
+	if f == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed is Dictionary and (parsed as Dictionary).get("seeded") is Dictionary:
+		return (parsed as Dictionary)["seeded"]
+	return {}
+
+
+static func _save_seeded(root: String, seeded: Dictionary) -> void:
+	DirAccess.make_dir_recursive_absolute(root)
+	var f := FileAccess.open(seeded_path(root), FileAccess.WRITE)
+	if f == null:
+		push_warning("CoreOptionsStore: cannot write %s" % seeded_path(root))
+		return
+	f.store_string(JSON.stringify({"version": 1, "seeded": seeded}, "\t"))
+	f.close()
+
+
 ## Set one key and persist, leaving every other key alone.
 static func set_value(root: String, core_name: String, key: String, value: String) -> bool:
 	var values := load_values(root, core_name)

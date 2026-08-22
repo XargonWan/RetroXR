@@ -1,0 +1,236 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/cables/link_cable.gd" id="1_cablescript"]
+[ext_resource type="Script" path="res://Scripts/Objects/cables/link_plug.gd" id="2_plugscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="3_pickhigh"]
+[ext_resource type="PackedScene" uid="uid://dh8grd7s3n8kg" path="res://addons/godot-xr-tools/objects/grab_points/grab_point_snap.tscn" id="4_snapgp"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/cables/link_port.tscn" id="5_linkport"]
+
+; PLACEHOLDER GEOMETRY. Two boxes, not a model.
+;
+; Every other connector in the room is an authored mesh, and this one will want to
+; be as well. It is primitives for now for one reason: the repo ships only assets
+; it has the right to, and a GBA link connector is not something to guess at with
+; someone else's export. Boxes are generated, so they carry no licence at all.
+;
+; The numbers are still real, because the scale is what everything else keys off:
+; a link plug's shell is about 13 x 9 mm and 20 mm deep, with a smaller keyed nose
+; standing 7 mm proud of the mating face. Replacing this with a model that keeps
+; those dimensions needs no other change.
+;
+; The colours are real too, sampled off a photograph of an AGB-005: a grey cord,
+; one purple shell and one grey, bare metal on both noses.
+
+; The shell, running BACK from the mating face. The plug's ORIGIN is that face,
+; which is the convention every port in the room places against, so the body is
+; offset half its depth along -Z rather than sitting centred on the origin.
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.013, 0.009, 0.02)
+
+[sub_resource type="StandardMaterial3D" id="Mat_shell_purple"]
+albedo_color = Color(0.32, 0.3, 0.55, 1)
+roughness = 0.65
+
+[sub_resource type="StandardMaterial3D" id="Mat_shell_grey"]
+albedo_color = Color(0.55, 0.55, 0.53, 1)
+roughness = 0.65
+
+; The keyed nose, forward of the mating face — the part that actually enters the
+; socket. Separate from PlugTip on purpose: RcaPlug derives the cord's exit from
+; PlugTip's AABB alone, so folding the nose into that mesh would push the anchor
+; forward and run the tail out through the barrel.
+[sub_resource type="BoxMesh" id="BoxMesh_nose"]
+size = Vector3(0.0085, 0.0055, 0.007)
+
+; Bare metal on both ends, as on the real connector, but only lightly metallic.
+; A fully metallic surface takes its colour from what it reflects, and a room
+; with no sky and no reflection probe gives it almost nothing to reflect — the
+; nose then renders near-black in exactly the dim corners a handheld gets used
+; in. Mostly-diffuse with a little specular reads as brushed metal anywhere.
+[sub_resource type="StandardMaterial3D" id="Mat_nose"]
+albedo_color = Color(0.72, 0.71, 0.69, 1)
+metallic = 0.25
+metallic_specular = 0.75
+roughness = 0.4
+
+; Shell and nose together, 27 mm end to end, centred 6.5 mm behind the face.
+[sub_resource type="BoxShape3D" id="BoxShape3D_plug"]
+size = Vector3(0.013, 0.009, 0.027)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
+bounce = 0.0
+friction = 0.8
+
+; Laser target, deliberately far larger than the physics box. Same reasoning as
+; the TRS lead: this is a small connector and a beam from across the room has to
+; be able to find it. Only the pointer answers this shape (mask 0), so nothing
+; else notices it is generous.
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.035, 0.035, 0.06)
+
+; The inline junction: the purple block moulded partway along the cord, whose
+; socket is how a third and fourth machine chain onto the same wire. Roughly a
+; 17 mm cube on the real lead.
+[sub_resource type="BoxMesh" id="BoxMesh_junction"]
+size = Vector3(0.017, 0.017, 0.017)
+
+[sub_resource type="StandardMaterial3D" id="Mat_junction"]
+albedo_color = Color(0.32, 0.3, 0.55, 1)
+roughness = 0.65
+
+; A 1.2 m GBA link cable: ONE cord, a link plug at each end.
+;
+; LinkCable rather than CompositeCable, which is the only difference that matters.
+; It inherits the whole lead — rope, clamping, seating persistence, multiplayer
+; replication of which end sits where — and changes only what a seated pair MEANS:
+; two cores told they share a wire, instead of a routing decision.
+;
+; No cord_colors, and LinkCable overrides _tint_plug to leave the shells alone.
+; That palette exists so the WIRES of a multi-cord lead can be told apart at both
+; ends; this lead has one wire and its two ends differ by ROLE instead. End A is
+; always the one handed to LinkConnect first, so its machine takes bus index 0
+; and owns the clock — which on the real cable is the purple connector, with the
+; secondary in grey. Painting both from a one-entry palette would erase exactly
+; the distinction worth seeing.
+[node name="LinkCable" type="Node3D"]
+script = ExtResource("1_cablescript")
+
+; -- End A --------------------------------------------------------------------
+; Turned about Y so the cord trails toward the far end: the plug is authored
+; connector-on-+Z with the cord leaving -Z, which is also VerletRope's
+; plug_exit_axis, so an unturned plug here would leave its tail with a hairpin.
+[node name="PlugA0" type="RigidBody3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -0.48)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.025
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("2_plugscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0065)
+shape = SubResource("BoxShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01)
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_shell_purple")
+
+[node name="PlugNose" type="MeshInstance3D" parent="PlugA0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0035)
+mesh = SubResource("BoxMesh_nose")
+surface_material_override/0 = SubResource("Mat_nose")
+
+[node name="PointerArea" type="StaticBody3D" parent="PlugA0"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugA0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0065)
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="PlugA0"]
+script = ExtResource("3_pickhigh")
+
+[node name="SnapGrabPoint" parent="PlugA0" instance=ExtResource("4_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; -- End B --------------------------------------------------------------------
+; Unturned: its cord already trails -Z, back toward end A.
+[node name="PlugB0" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.48)
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_plug")
+mass = 0.025
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("2_plugscript")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0065)
+shape = SubResource("BoxShape3D_plug")
+
+[node name="PlugTip" type="MeshInstance3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.01)
+mesh = SubResource("BoxMesh_body")
+surface_material_override/0 = SubResource("Mat_shell_grey")
+
+[node name="PlugNose" type="MeshInstance3D" parent="PlugB0"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.0035)
+mesh = SubResource("BoxMesh_nose")
+surface_material_override/0 = SubResource("Mat_nose")
+
+[node name="PointerArea" type="StaticBody3D" parent="PlugB0"]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlugB0/PointerArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0065)
+shape = SubResource("BoxShape3D_pointer")
+
+[node name="PickableHighlight" type="Node3D" parent="PlugB0"]
+script = ExtResource("3_pickhigh")
+
+[node name="SnapGrabPoint" parent="PlugB0" instance=ExtResource("4_snapgp")]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+
+; -- The junction ---------------------------------------------------------------
+; top_level because it RIDES the cord rather than hanging off the cable's origin:
+; LinkCable places it on a rope particle every physics frame, and a socket that
+; did not move with the lead it is moulded into would read as broken.
+;
+; Its own socket is a full LinkPort, not a decoration. A junction that looked
+; like a socket and refused a plug would be worse than none at all, and the whole
+; point of it is that the third and fourth players are real.
+[node name="Junction" type="Node3D" parent="."]
+top_level = true
+
+[node name="Box" type="MeshInstance3D" parent="Junction"]
+mesh = SubResource("BoxMesh_junction")
+surface_material_override/0 = SubResource("Mat_junction")
+
+; On the block's flank, MOUTH OUTWARD. The junction is oriented with -Z along the
+; cord, so a socket left facing forward would point back down the wire it is
+; moulded into; +X puts it on the side where a plug can reach it.
+;
+; The facing is the part that was wrong, and it is worth being explicit about
+; because it is not visible in the number. A port's +Z points OUT of the thing it
+; is a socket on, which is where the seated shell ends up; the nose travels the
+; other way, into the shell. Every machine's port is authored that way. This one
+; was turned round, which put the 20 mm shell inside a 17 mm block and left the
+; 7 mm nose waving in the air. The block is small enough that this reads as the
+; plug having been swallowed rather than as anything being the wrong way about.
+[node name="LinkPort" parent="Junction" instance=ExtResource("5_linkport")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.0085, 0, 0)
+
+; 40 x 30 mm = 1.20 m, the length a GBA link cable ships at, against 0.96 m
+; between the plugs so it hangs rather than pulling straight.
+;
+; The TRS lead's tuning: this is a thin cord, not an 8.3 mm shielded A/V jacket,
+; so it wants the softer bend and the tighter standoff. collision_radius is the
+; distance the solver holds each particle at from a contact plane, so it has to
+; track the tube or the cord sinks into whatever it lies on.
+;
+; No ribbon_count and no fray: this is one wire. CompositeCable's single-cord path
+; anchors the rope's two ends straight to the two plugs, so there is no breakout
+; junction for a fray to hang off.
+[node name="VerletRope" type="VerletRope" parent="."]
+segment_count = 40
+segment_length = 0.03
+constraint_iterations = 8
+bend_stiffness = 0.15
+tube_radius = 0.0018
+tube_sides = 8
+smoothing = 2
+rope_color = Color(0.54, 0.54, 0.52, 1.0)
+surface_collision_mask = 7
+collision_radius = 0.003
+self_collision = true
+end_align_stiffness = 0.7
+end_stiffness = 0.3
+end_stiff_segments = 2

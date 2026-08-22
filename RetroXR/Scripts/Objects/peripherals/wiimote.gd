@@ -134,6 +134,12 @@ const ACCEL_SMOOTHING := 0.25
 ## games are read as a direct measure of the wrist, so over-smoothing them feels
 ## like lag rather than steadiness.
 const GYRO_SMOOTHING := 0.45
+## Which sub-device of this port the Nunchuk's accelerometer is. libretro
+## addresses one accelerometer per port and a Wii Remote with a Nunchuk is one
+## player with two, so the pair's second one rides a sub-device index; 0 is the
+## remote itself. See libretro-godot's SensorIndex.hpp.
+const NUNCHUK_SENSOR_INDEX := 1
+
 ## Rotations smaller than this over one frame are treated as no rotation at all.
 ## Quaternion.get_axis() has no meaningful answer at zero angle (it returns a
 ## fixed axis), so without a floor a motionless remote reports a steady spin
@@ -194,7 +200,10 @@ var _blocking_right: bool = false
 
 # Accelerometer derivation
 var _prev_velocity := Vector3.ZERO
-var _accel_smoothed := Vector3.ZERO
+## Starts at the at-rest reading rather than at zero, which is freefall: a remote
+## that has only just appeared has not been dropped, and the same value is what
+## on_unplugged puts back.
+var _accel_smoothed := Vector3.UP * G
 
 # Gyroscope derivation. The previous orientation of the barrel, and whether one
 # has been recorded yet. The first frame after pairing has nothing to difference
@@ -239,6 +248,34 @@ const FACE_BUTTONS: Dictionary = {
 	"home":  "HomeButton",
 }
 var _face_buttons: Dictionary = {}   # control name -> VRButton
+
+## Seconds a finger must stay on POWER before the paired console shuts down.
+##
+## There is no hardware figure to copy. Nintendo's own manual says only "Press to
+## turn the console ON or OFF", and on a real remote a tap does both — the one
+## documented hold in the Wii family is the CONSOLE's own key, about four seconds
+## from standby to a full shutdown, which is far too long to stand there with a
+## fingertip on a 6 mm cap. A second is what the remote is commonly reported to
+## want, and it is long enough that no brush of the shell can reach it.
+const POWER_HOLD_SEC := 1.0
+
+## Rumble queue slot for that hold. Its own key rather than VRButton's HAPTIC_KEY,
+## which the cap's own press tick already owns — sharing it would mean the press
+## tick cancelling the hold a frame after starting it.
+const POWER_HAPTIC_KEY := &"wiimote_power"
+## How hard it buzzes. Low on purpose: this runs for a whole second, and the
+## magnitude a button click uses (0.5) is a power tool at that length. It says
+## "something is counting", not "something fired".
+const POWER_HAPTIC_MAGNITUDE := 0.15
+
+var _power_held_for := 0.0
+## The hand being rumbled through the hold, so it can be stopped on the same hand
+## that started — a touch press may be relayed between hands mid-hold.
+var _power_haptic_ctrl: XRController3D = null
+## Latched for the whole of one contact, so a hold that has already acted cannot
+## act again without letting go first — which is what stops the power-off rolling
+## straight into a power-on under a finger that never moved.
+var _power_fired := false
 var _trigger_rest := Transform3D()
 var _dpad_rest := Transform3D()
 
@@ -251,6 +288,11 @@ const DPAD_THRESHOLD := 0.35
 @onready var _laser_dot: MeshInstance3D = $LaserDot
 @onready var _expansion_port: XRToolsSnapZone = $ExpansionPort
 @onready var _sync_button: VRButton = $SyncButton
+## The red key at the top left of the face. Deliberately absent from FACE_BUTTONS,
+## from DESKTOP_BUTTON_MAP and from ControllerBindings: no core sees it and no
+## controller input maps to it, so the only way to work it is a finger on the cap
+## (or the pointer, on desktop). That is what makes the hold below meaningful.
+@onready var _power_button: VRButton = $PowerButton
 ## Under CoverPivot, not beside it: the hinge's grab box has to ride the cover it
 ## swings, or it stays over the shut position while the lid moves out from under it.
 @onready var _battery_cover: VRHinge = $CoverPivot/BatteryCover
@@ -277,6 +319,17 @@ func _ready() -> void:
 		ICON_CAPTURE, ICON_SIZE)
 	_hint.add_row(&"capture", HeldHint.PLATFORM_DESKTOP,
 		["keyboard_scroll_lock_outline"], "Send keys here")
+	# One VR hand carries five usable inputs against this remote's seven buttons
+	# and a d-pad, so the hand binding alone can never reach all of them. The
+	# answer is the one the hardware itself suggests — hold it in one hand, poke
+	# the awkward ones with the other — but nothing on screen says so, and a
+	# player who does not think of it simply cannot press 1, 2 or minus.
+	#
+	# VR only. On desktop the same buttons are keys under Scroll Lock capture,
+	# which the row above already explains.
+	_hint.add_row(&"poke_buttons", HeldHint.PLATFORM_VR,
+		["generic_button_finger"], "Press its buttons with your other hand",
+		HeldHint.WHEN_HELD)
 	_laser_dot.visible = false
 	var tan_y := tan(deg_to_rad(CAMERA_FOV_X_DEG / CAMERA_AR) * 0.5)
 	_tan_half_fov = Vector2(CAMERA_AR * tan_y, tan_y)
@@ -371,9 +424,12 @@ func on_unplugged() -> void:
 	_connected_system = null
 	_port_index = -1
 	# Drop the motion history with the slot. However far the remote is carried
-	# while unpaired, the next pairing must not read that as one frame's rotation.
+	# while unpaired, the next pairing must not read that as one frame's rotation
+	# or as one frame's acceleration.
 	_has_prev_tip_basis = false
 	_gyro_smoothed = Vector3.ZERO
+	_prev_velocity = Vector3.ZERO
+	_accel_smoothed = Vector3.UP * G
 	_screen_mesh = null
 	_screen_w = 0.0
 	_screen_h = 0.0
@@ -571,8 +627,19 @@ func _set_device_type(dev: int) -> void:
 	if dev == device_type:
 		return
 	device_type = dev
-	if _connected_system != null and _port_index >= 0:
-		_connected_system.set_controller_port_device(_port_index, device_type)
+	if _connected_system == null or _port_index < 0:
+		return
+	_connected_system.set_controller_port_device(_port_index, device_type)
+	if _has_nunchuk():
+		return
+	# Nothing on the expansion port any more. Put the sub-device back to a device
+	# lying still, so the pulled Nunchuk's last pose cannot be read as the next
+	# one's first frame.
+	var libretro := _connected_system.get_libretro_node()
+	if is_instance_valid(libretro):
+		if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index,
+				NUNCHUK_SENSOR_INDEX, 0, 0, 1000):
+			libretro.SetSensorAccel(_port_index, 0.0, 0.0, 1.0, NUNCHUK_SENSOR_INDEX)
 		print("[Wiimote] extension changed — slot %d re-announced as %d"
 			% [_port_index, device_type])
 
@@ -658,6 +725,7 @@ func _drop_all() -> void:
 
 
 func _exit_tree() -> void:
+	_stop_power_haptic()
 	if _blocking_left and is_instance_valid(_left_vr_ctrl):
 		_update_pointer_block(_left_vr_ctrl, false)
 	if _blocking_right and is_instance_valid(_right_vr_ctrl):
@@ -752,6 +820,81 @@ func _desktop_dpad_mask() -> int:
 	return mask
 
 
+# ── POWER ─────────────────────────────────────────────────────────────────────
+
+## The two halves of POWER are not symmetric, and that asymmetry is the design.
+##
+## OFF, a press acts at once: that is what the manual describes and what anyone
+## picking up a remote expects. ON, a press does nothing at all and only a HOLD
+## of POWER_HOLD_SEC stops the machine, because a tap is exactly what putting the
+## remote down on a table looks like, and losing a running game to that is not a
+## thing the room should permit.
+##
+## toggle_power rather than power_on/power_off: it is the same entry the cabinet's
+## own key uses, and it carries the netplay rules (a lockstep session stops on
+## every peer, a client sends the intent instead of acting) that a direct call
+## would quietly skip.
+func _update_power_hold(delta: float) -> void:
+	if not _power_button.is_held():
+		_stop_power_haptic()
+		_power_held_for = 0.0
+		_power_fired = false
+		return
+
+	if _power_fired:
+		return
+
+	if not is_instance_valid(_connected_system):
+		# Said once per press, not once per frame. A remote that is not paired has
+		# no console to switch, and from the room that looks the same as a dead
+		# button.
+		_power_fired = true
+		print("[Wiimote] POWER with no console paired — press SYNC on both first")
+		return
+
+	if not _connected_system.is_powered_on:
+		_power_fired = true
+		print("[Wiimote] POWER — switching the console on")
+		_connected_system.toggle_power()
+		return
+
+	# The rumble IS the timer, and it is the only thing that is: there is no dial
+	# and no sound, so without it a player holding a red cap has nothing telling
+	# them the hold is being counted rather than ignored. It starts on the first
+	# frame of the count and is cut the instant the machine acts, which is what
+	# makes the stop read as "done" rather than as a dropped press.
+	_set_power_haptic(_power_button.held_by())
+
+	_power_held_for += delta
+	if _power_held_for < POWER_HOLD_SEC:
+		return
+	_stop_power_haptic()
+	_power_fired = true
+	print("[Wiimote] POWER held %.1fs — switching the console off" % POWER_HOLD_SEC)
+	_connected_system.toggle_power()
+
+
+## Rumble [param ctrl] for the length of the hold, moving the buzz if the press is
+## relayed to the other hand. A null hand (the pointer, or the desktop reticle)
+## simply stops it: there is nothing there to feel it.
+func _set_power_haptic(ctrl: XRController3D) -> void:
+	if ctrl == _power_haptic_ctrl:
+		return
+	_stop_power_haptic()
+	if is_instance_valid(ctrl):
+		_power_haptic_ctrl = ctrl
+		Haptics.hold(ctrl, POWER_HAPTIC_MAGNITUDE, POWER_HAPTIC_KEY)
+
+
+## Every path that can end the hold calls this — firing, letting go, dropping the
+## remote, leaving the tree. Haptics.hold is indefinite, so one missed stop is a
+## controller that buzzes until the room is torn down.
+func _stop_power_haptic() -> void:
+	if is_instance_valid(_power_haptic_ctrl):
+		Haptics.stop(_power_haptic_ctrl, POWER_HAPTIC_KEY)
+	_power_haptic_ctrl = null
+
+
 # ── Shell animation ───────────────────────────────────────────────────────────
 
 func _cache_controls() -> void:
@@ -759,6 +902,14 @@ func _cache_controls() -> void:
 		var b := get_node_or_null(String(FACE_BUTTONS[key])) as VRButton
 		if b != null:
 			_face_buttons[key] = b
+			# Only a POKE retires the poke hint, which is why this listens to the
+			# VRButton rather than to _pressed_now(): that merges the poked state
+			# with the held hand's bindings, so pressing A from the controller
+			# would count as having learned to use the other hand.
+			b.button_pressed.connect(_note_poked)
+	# POWER is not a face button — it drives no core — but pressing it IS the
+	# other-hand poke the hint teaches, so it retires the row like the rest.
+	_power_button.button_pressed.connect(_note_poked)
 	if _trigger_pivot != null:
 		_trigger_rest = _trigger_pivot.transform
 	if _dpad != null:
@@ -852,6 +1003,23 @@ func _animate_controls(pressed: Dictionary) -> void:
 func _set_face_buttons_active(active: bool) -> void:
 	for key: String in _face_buttons:
 		(_face_buttons[key] as VRButton).set_interactive(active)
+	# POWER goes with them. It is on the pointable layer too, and a remote across
+	# the room whose red key answers the laser is a remote you cannot pick up by
+	# pointing at it without switching a console off.
+	_power_button.set_interactive(active)
+	if not active:
+		_stop_power_haptic()
+		_power_held_for = 0.0
+		_power_fired = false
+
+
+## Count the poke hint as learned the first time a face button is actually
+## pressed in a hold. Without this the row would reappear on every pickup for
+## ever — note_used is what retires it after HeldHint.LEARNED_AFTER holds, and it
+## is already idempotent within one hold.
+func _note_poked() -> void:
+	if _hint:
+		_hint.note_used(&"poke_buttons")
 
 
 ## What the aim is doing, printed only when the answer CHANGES.
@@ -974,6 +1142,7 @@ func _button_mask(pressed: Dictionary) -> int:
 
 func _process(delta: float) -> void:
 	_update_leds(delta)
+	_update_power_hold(delta)
 
 	if _is_combo_pressed(_holding_ctrl):
 		_drop_all()
@@ -998,8 +1167,10 @@ func _process(delta: float) -> void:
 	# Right stick stays at zero on purpose: with a Nunchuk attached in pointer IR
 	# mode the core binds the Tilt group to it, which would fight the real
 	# accelerometer below.
-	libretro.SetJoypadState(_port_index, _button_mask(pressed),
-		int(nstick.x * ANALOG_SCALE), int(-nstick.y * ANALOG_SCALE), 0, 0)
+	var joy := {"btn": _button_mask(pressed), "alx": int(nstick.x * ANALOG_SCALE),
+		"aly": int(-nstick.y * ANALOG_SCALE), "arx": 0, "ary": 0}
+	if not NetworkManager.netplay_route(_connected_system, _port_index, joy):
+		libretro.SetJoypadState(_port_index, joy.btn, joy.alx, joy.aly, 0, 0)
 
 	_update_aim(libretro)
 	_send_accel(libretro, delta)
@@ -1078,6 +1249,12 @@ func _visible_leds() -> Array[Vector3]:
 	return out
 
 
+func _send_pointer(libretro: Libretro, index: int, x: int, y: int, pressed: bool) -> void:
+	if not NetworkManager.netplay_set_aux_pointer(_connected_system, _port_index,
+			index, x, y, pressed):
+		libretro.SetPointerIndexState(_port_index, index, x, y, pressed)
+
+
 ## Report every IR object as unseen. Dolphin skips any object whose size is zero,
 ## so an all-blank frame is a camera looking at nothing — which is what the Wii's
 ## own software reads as "the remote is pointed away", and is how the cursor gets
@@ -1086,7 +1263,7 @@ func _visible_leds() -> Array[Vector3]:
 ## border.
 func _blank_ir(libretro: Libretro) -> void:
 	for i in range(IR_OBJECTS):
-		libretro.SetPointerIndexState(_port_index, i, 0, 0, false)
+		_send_pointer(libretro, i, 0, 0, false)
 	_laser_dot.visible = false
 
 
@@ -1123,7 +1300,7 @@ func _update_aim(libretro: Libretro) -> void:
 		# Normalised over the sensor, because the core's IRPassthrough group scales
 		# a 0..1 control back up by (RES - 1). It reads the POSITIVE half of the
 		# pointer range only, so 0 is the left/top edge and 32767 the right/bottom.
-		libretro.SetPointerIndexState(_port_index, i,
+		_send_pointer(libretro, i,
 			int(p.x / (CAMERA_RES_X - 1.0) * POINTER_SCALE),
 			int(p.y / (CAMERA_RES_Y - 1.0) * POINTER_SCALE),
 			p.z > 0.0)
@@ -1183,7 +1360,20 @@ func _send_accel(libretro: Libretro, delta: float) -> void:
 	_accel_smoothed = _accel_smoothed.lerp(a_world, ACCEL_SMOOTHING)
 
 	var g_vec := accel_in_wiimote_frame()
-	libretro.SetSensorAccel(_port_index, g_vec.x, g_vec.y, g_vec.z)
+	if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index, 0,
+			int(g_vec.x * 1000.0), int(g_vec.y * 1000.0), int(g_vec.z * 1000.0)):
+		libretro.SetSensorAccel(_port_index, g_vec.x, g_vec.y, g_vec.z)
+
+	# And the Nunchuk's, on the same port. The remote owns the slot and makes
+	# every core call for the pair, so a Nunchuk seated directly and one seated
+	# behind a dongle are the same thing from here: _nunchuk is the one answer.
+	if _has_nunchuk() and _nunchuk != null:
+		var n_vec: Vector3 = _nunchuk.accel_in_nunchuk_frame()
+		if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index,
+				NUNCHUK_SENSOR_INDEX, int(n_vec.x * 1000.0), int(n_vec.y * 1000.0),
+				int(n_vec.z * 1000.0)):
+			libretro.SetSensorAccel(_port_index, n_vec.x, n_vec.y, n_vec.z,
+				NUNCHUK_SENSOR_INDEX)
 
 
 ## The smoothed world acceleration expressed on the emulated remote's own axes,
@@ -1248,7 +1438,9 @@ func _send_gyro(libretro: Libretro, delta: float) -> void:
 	_gyro_smoothed = _gyro_smoothed.lerp(w_world, GYRO_SMOOTHING)
 
 	var rad := gyro_in_wiimote_frame()
-	libretro.SetSensorGyro(_port_index, rad.x, rad.y, rad.z)
+	if not NetworkManager.netplay_set_aux_sensor(_connected_system, _port_index, 0,
+			int(rad.x * 100.0), int(rad.y * 100.0), int(rad.z * 100.0), true):
+		libretro.SetSensorGyro(_port_index, rad.x, rad.y, rad.z)
 
 
 ## The smoothed angular velocity on the emulated remote's own axes, in rad/s.

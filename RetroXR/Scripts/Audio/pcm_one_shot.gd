@@ -38,9 +38,23 @@ func _ready() -> void:
 func play(frames: PackedVector2Array) -> void:
 	if frames.is_empty():
 		return
+	# Always clear first, so a voice reused after a play_from() does not keep
+	# emitting from a point the next sound has nothing to do with.
+	_emitter.clear_emit_position()
 	_frames = frames
 	_read = 0
 	_emitter.set_volume(volume)
+
+
+## Play from somewhere other than this node.
+##
+## For a sound whose SOURCE is not the object that owns the clip: a controller's
+## plug goes into a socket on the console, so it belongs at that socket, not at
+## the pad — which may be lying on a table on the other side of the room.
+func play_from(frames: PackedVector2Array, at: Vector3) -> void:
+	play(frames)
+	if not frames.is_empty():
+		_emitter.set_emit_position(at)
 
 
 func is_playing() -> bool:

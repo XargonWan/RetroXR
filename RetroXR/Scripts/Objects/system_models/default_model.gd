@@ -4,6 +4,10 @@
 class_name RetroSystemModelDefault
 extends RetroSystemModel
 
+## Loaded here rather than in build_serial_port so the cost is paid once per
+## build of the script, not once per console spawned.
+const SERIAL_PORT_SCENE := preload("res://Scenes/Objects/cables/psx_link_port.tscn")
+
 var _power_btn: VRButton = null
 var _reset_btn: VRButton = null
 
@@ -25,6 +29,44 @@ func build_disc_bay(host: Node3D, slot: Node3D, systemid: String, front: bool,
 
 func build_disc_slit(host: Node3D, systemid: String) -> void:
 	ProceduralDiscBay.build_slit(host, systemid)
+
+
+## The serial socket, on the back panel beside the A/V row.
+##
+## Asked of SystemInfo rather than named here, so this is the same switch that
+## shows the memory-card slot: a console either has the socket or it does not,
+## and that is a fact about the hardware rather than about this box.
+##
+## Placed at x = 0.045 against the A/V row's 0.082 upward. The 37 mm gap is what
+## the number is for: a 21 mm shell and a phono plug reached for at the same time
+## should not be fighting over the same handful of panel.
+##
+## Not an attempt at the real console's panel order. This box is the stand-in
+## every machine without a model of its own wears, and it is not a PlayStation
+## shape to begin with; a shell that draws its own back panel puts the socket
+## where the mould actually has it by overriding this.
+##
+## Same turn as configure_av_ports uses -- 180 degrees about X, so the socket's
+## local +Z points out of the panel, which is where a plug arrives from -- but
+## NOT the same z, and the difference is the whole of it. A port sits where the
+## seated plug's ORIGIN belongs, and the two connectors put their origin in
+## different places: a phono plug's is 10 mm out from the panel with its barrel
+## reaching back to it, so rca_port pushes its jack back by that same 10 mm to
+## land the flange on the panel. This connector's origin is its mating face,
+## which stops about a millimetre proud. Copying the phono row's -0.135 left the
+## socket hanging 10 mm off the back of the console with the plug's nose ending
+## 3 mm short of it -- close enough to read as seated in a render, which is why
+## it took a measurement rather than a look.
+func build_serial_port(host: Node3D, systemid: String) -> void:
+	var info := SystemInfo.for_system(systemid)
+	if info == null or not info.serial_port:
+		return
+	var port := SERIAL_PORT_SCENE.instantiate() as Node3D
+	if port == null:
+		return
+	host.add_child(port)
+	port.position = Vector3(0.045, 0.0, -0.126)
+	port.rotation = Vector3(PI, 0.0, 0.0)
 
 
 func get_controller_port_count() -> int:

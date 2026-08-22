@@ -32,6 +32,15 @@ enum MediaType { CARTRIDGE = 0, DISC_TRAY = 1, DISC_INSERT = 2 }
 ## persists, which is why the card slot and the save path are the same switch.
 @export var memory_cards: bool = false
 
+## True when this hardware has a serial port on the back for a link cable
+## between two consoles -- the PlayStation's SIO1, not the controller bus.
+##
+## Shows the socket on the console body, the way memory_cards shows the card
+## slot. It says nothing about whether the running core can carry a link: a core
+## that cannot simply never joins the bus, and the lead sits there doing nothing,
+## which is also what a cable does when the machine on the other end is off.
+@export var serial_port: bool = false
+
 ## True when a multitap accessory extended the console past its native ports.
 @export var supports_multitap: bool = false
 

@@ -472,6 +472,11 @@ func _drop_all() -> void:
 
 
 func _exit_tree() -> void:
+	# The captive cable is parented to current_scene so its rope can collide with
+	# the room; it is not a child and would otherwise survive a controller
+	# despawn (including a network despawn) as an orphaned plug and rope.
+	if is_instance_valid(_cable_instance):
+		_cable_instance.queue_free()
 	# Release any active pointer blocks so other objects aren't stuck.
 	if _blocking_left and is_instance_valid(_left_vr_ctrl):
 		_update_pointer_block(_left_vr_ctrl, false)
@@ -487,6 +492,8 @@ func _exit_tree() -> void:
 		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
 	if _capture:
 		_capture.release()
+		# _process will not run again, so the global map has to go back now.
+		_sync_desktop_scope()
 	_allow_drop = true
 	super._exit_tree()
 
@@ -504,6 +511,9 @@ func on_unplugged() -> void:
 	print("[RetroController] unplugged from port %d" % _port_index)
 	_connected_system = null
 	_port_index = -1
+	# Back to the global map. Keeping the last console's profile would mean a pad
+	# pulled out of a NES still played a NES layout in your hand.
+	_load_bindings()
 	# Stop any lingering rumble when the cable is yanked. Usually already
 	# cleared by RetroSystem._on_port_released, but idempotent and safer.
 	_rumble_weak = 0.0
@@ -619,6 +629,11 @@ func _apply_buttons_for_ctrl(ctrl: XRController3D, left_hand: bool) -> int:
 # ── Input forwarding ──────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
+	# Ahead of every early return below. The keyboard scope follows the CAPTURE,
+	# which can be taken or dropped while this pad is neither held nor plugged —
+	# behind the _desktop_held gate it simply never ran.
+	_sync_desktop_scope()
+
 	var secondary_ctrl := _get_secondary_ctrl()
 	_combo_debug(_holding_ctrl)
 
@@ -708,7 +723,35 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Which desktop key map is loaded into the InputMap, and whether WE put it
+## there. The map is global to the process, so only the controller holding the
+## Scroll Lock capture may drive it — otherwise every other pad in the room would
+## keep stamping the global map back over the captured one's.
+var _desktop_scope := ""
+var _owns_desktop_scope := false
+
+
+## Point the InputMap at this machine's key map while this pad holds the
+## keyboard, and put the global map back when it lets go. Cheap enough to call
+## every frame: it only touches the InputMap when the answer changes.
+func _sync_desktop_scope() -> void:
+	var active := _capture != null and _capture.is_active()
+	if active:
+		var sysid := ""
+		if is_instance_valid(_connected_system):
+			sysid = _connected_system.systemid
+		if not _owns_desktop_scope or _desktop_scope != sysid:
+			_owns_desktop_scope = true
+			_desktop_scope = sysid
+			DesktopBindings.apply_for_system(sysid)
+	elif _owns_desktop_scope:
+		_owns_desktop_scope = false
+		_desktop_scope = ""
+		DesktopBindings.apply_for_system("")
+
+
 func _process_desktop_joypad() -> void:
+
 	var btn: int = 0
 	var alx := 0
 	var aly := 0
