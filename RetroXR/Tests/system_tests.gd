@@ -832,6 +832,14 @@ func _test_bios_boot_table() -> void:
 	# sixteen cores, and the rest refuse a blank image or crash on one.
 	_eq("table/a PlayStation takes a blank disc",
 		BiosBoot.empty_media_extension("pcsx_rearmed", "playstation"), "cue")
+	_eq("table/a cartridge-less GBA pins its real BIOS path",
+		BiosBoot.empty_boot_options("mgba", "game_boy_advance").get("mgba_skip_bios"),
+		"OFF")
+	_eq("table/an empty PlayStation pins automatic real BIOS selection",
+		BiosBoot.empty_boot_options("pcsx_rearmed", "playstation").get("pcsx_rearmed_bios"),
+		"auto")
+	_eq("table/the GBA fingerprint names its boot ROM",
+		BiosBoot.boot_rom_paths("mgba", "game_boy_advance"), ["gba_bios.bin"])
 	_eq("table/a GameCube does not",
 		BiosBoot.empty_media_extension("dolphin", "gamecube"), "")
 	_eq("table/nor does a machine with no row",

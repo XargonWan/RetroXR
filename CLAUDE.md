@@ -403,6 +403,12 @@ can never hang the run.
   `xrCreateInstance failed`, missing GDExtension DLLs in the `template_debug` path
   (`libgodotopenxrvendors`, `godot-pdfium`, `libretro_godot`), `.NET Sdk not found`, and
   `xr_staging_shim.gd ... is_xr_class ... placeholder instance`. Grep these out.
+- **A renamed/deleted source texture can leave the editor filesystem cache
+  pointing at a dead `.godot/imported/*.ctex`.** Re-running an ordinary import
+  may keep trusting that stale entry. Move/delete
+  `RetroXR/.godot/editor/filesystem_cache*`, then run `--editor --import --quit`;
+  Godot rebuilds the class cache and replacement texture imports. This is
+  generated local state, not a file to commit.
 - **A `.tscn` `Transform3D` lists the basis by ROWS**, not the columns the
   `Transform3D(x_axis, y_axis, z_axis, origin)` constructor takes. For a rotation the
   two differ by a transpose — an inverse — so a hand-written rotation comes out
@@ -437,8 +443,9 @@ and not enough to act on; acting from the summary is how the same mistake arrive
 second time. `.tscn` transforms, a model's facing and a port's seat all have notes,
 and all three were sitting in the index while that socket was written backwards.
 
-No compiled C++ test harness exists; GDExtension changes are validated by rebuilding
-(above) and loading in the headless editor.
+`libretro-godot/tests/run_tests.py` is the small Godot-free C++ harness for the
+link coordinator and sensor-id encoding. Other GDExtension changes are validated
+by rebuilding (above) and loading in the headless editor.
 
 ### 2b. The bedroom's saved visual probe
 
@@ -578,7 +585,7 @@ path is covered by the `_fast` ROMs instead.
 
 ### 2f. Netplay — a suite, and the one thing it cannot cover
 
-`RetroXR/Tests/netplay_tests.tscn` is 242 cases over the whole lockstep stack,
+`RetroXR/Tests/netplay_tests.tscn` is 264 cases over the whole lockstep stack,
 headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
 `identity/` (which core builds may play each other), `wire/` (every packed
 block's round trip, including per-port accelerometer, gyro, IR/touch and
@@ -615,6 +622,15 @@ timeline against machine 1's CRCs. Run it x86_64 → arm64 and back. Cold-start
 CRC determinism was verified across those two in 2026-07-06; a foreign savestate
 crossing between them was not, and a libretro state is a struct dump for most
 cores.
+
+**ROM/device validation still owed:** the automated suite proves that lightgun,
+accelerometer, gyroscope and multi-point IR/touch values survive the network,
+reach the native input handler and keep their sub-device index. It does not prove
+that a real content core consumes those values correctly. In particular, Wii
+Remote accel/gyro/IR through Dolphin and a real lightgun title still need a ROM,
+the matching core and preferably the real controller. The user does not plan to
+obtain a ROM, so leave this as an explicit unverified hardware/content check; do
+not represent the mock/no-ROM suite as that proof.
 
 **Cross-platform play is a build-identity problem before it is a determinism
 problem.** `core_download_manager.gd` points every platform at
@@ -683,9 +699,23 @@ Ports are named `machine * PORTS_PER_MACHINE + port`, so both machines' pads fit
 in one assembled frame; each core is handed only its own 20-int block plus that
 machine's aux and key blocks. Aux (tilt, touch) and keyboard ride with each
 machine's own port-0 owner — copying the anchor's tilt into every linked handheld
-is just as wrong as dropping the far handheld's input. A linked late join stays
-a spectator: core savestates do not include LinkCoordinator's queued messages or
-clock horizons, so the bus needs a snapshot format before that can be safe.
+is just as wrong as dropping the far handheld's input. A linked late join pauses
+every local core at one boundary and transfers both core savestates plus
+`LinkCoordinator`'s clock horizons and queued messages. The joiner restores the
+physical bus first, then its external bus snapshot, then the core states, so it
+cannot resume half of an in-flight serial conversation.
+
+The per-machine launch spec also records `rom`, `empty_media`, or `no_content`.
+That last mode is the cartridge-less GBA in single-pak play: it cold-boots mGBA
+with the BIOS only, then an ordinary core savestate carries the downloaded
+program, RAM, registers and link state just like a cartridge-backed machine.
+Empty-disc BIOS menus use `empty_media` instead and regenerate the zero-byte
+image locally; BIOS files themselves are never transferred. Every peer must
+already have matching firmware. The no-ROM tests cover this launch/state
+plumbing with mock cores, but mGBA is not yet in `NetplayCores`: a real
+single-pak netplay run still needs a payload-carrying game ROM and determinism
+vetting, which the user does not plan to obtain, so leave that validation noted
+as outstanding rather than enabling the core on inference.
 
 Two things this had to get right, and both are the same rule:
 

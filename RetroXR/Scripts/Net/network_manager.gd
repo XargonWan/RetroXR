@@ -23,10 +23,12 @@ const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glpro
 ## machine. 5 added per-machine aux/keyboard blocks and machine-addressed disc
 ## operations. 6 adds articulated child-control batches (plain/spring hinges,
 ## levers, knobs and sliders). 7 adds deterministic reset plus explicit TV
-## source/channel/aspect state. 8 adds per-port accel/gyro/pointer frames. These
+## source/channel/aspect state. 8 adds per-port accel/gyro/pointer frames. 9
+## carries the external link-bus snapshot needed by linked late join. 10 makes
+## each machine's ROM/empty-media/no-content boot mode explicit. These
 ## wire layouts are intentionally refused across versions:
 ## accepting an old peer would look connected while feeding different cores.
-const PROTOCOL_VERSION := 8
+const PROTOCOL_VERSION := 10
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels

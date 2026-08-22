@@ -309,6 +309,17 @@ func _test_wire() -> void:
 	_eq(inp.get_size(), 4 + 1 + 11 + NetplaySession.AUX_BYTES + NetplaySession.KEY_BYTES,
 		"wire/and an input frame is the size the host budgets for")
 
+	# Five-frame redundancy used to exceed ENet's MTU once linked machines each
+	# gained their own sensor/pointer tail. The window shrinks, never the frame:
+	# dropping aux data to fit would make only the network copy deterministic.
+	for machines in [1, 2, 4]:
+		var broadcast_frame: int = 4 + int(machines) * 4 * 10 \
+			+ int(machines) * (NetplaySession.AUX_BYTES + NetplaySession.KEY_BYTES)
+		var window: int = np._unreliable_frame_window(broadcast_frame)
+		_ok(1 + window * broadcast_frame <= NetplaySession.UNRELIABLE_PAYLOAD_MAX,
+			"wire/%d-machine redundancy stays below the unreliable payload budget" % machines)
+		_ok(window >= 1, "wire/%d-machine packets still carry a complete frame" % machines)
+
 	# The assembled frame is one flat int array with a fixed layout; the gate
 	# indexes straight into it, so a field landing one slot over is silent.
 	var port0_aux: Array = np._aux_default()
@@ -943,13 +954,23 @@ func _test_rollback() -> void:
 		"rollback/an uncabled machine starts")
 	_ok(w.host_np._rollback, "rollback/and is allowed to roll back")
 	await _until(func() -> bool: return w.host_np.is_running())
-	var topology_stops: Array = []
-	w.host_np.session_stopped.connect(func(reason: String) -> void: topology_stops.append(reason))
-	w.host_np.handoff_port(w.host_sys, 0, 0)
-	_ok(await _until(func() -> bool: return not w.host_np.is_active()),
-		"rollback/an ownership change stops instead of leaving stale input")
-	_ok(not topology_stops.is_empty() and str(topology_stops[0]).contains("ownership"),
-		"rollback/the stop explains that the topology must restart")
+	w.host_np.handoff_port(w.host_sys, 0, w.client_id)
+	_ok(await _until(func() -> bool: return not w.client_sys.lib.rollback_masks.is_empty()),
+		"rollback/an ownership change reaches every peer's emulation gate")
+	_ok(not w.host_sys.lib.rollback_masks.is_empty(),
+		"rollback/the host schedules its own mask too")
+	var transfer_frame := int(w.host_sys.lib.rollback_masks[-1][0])
+	_eq(w.host_sys.lib.rollback_masks[-1][1], 0,
+		"rollback/the old owner stops sampling at the boundary")
+	_eq(w.client_sys.lib.rollback_masks[-1][1], 0b11,
+		"rollback/the new owner samples both of its ports there")
+	w.host_np._apply_pending_transfers(transfer_frame)
+	w.client_np._apply_pending_transfers(transfer_frame)
+	_eq(w.host_np._owners[0], w.client_id,
+		"rollback/the logical owner lands on the same scheduled frame")
+	_ok(w.host_np.is_running() and w.client_np.is_running(),
+		"rollback/the session keeps running through the handoff")
+	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
 
 	w.host_sys.lib.link_peers = {0: 2}
@@ -1074,6 +1095,67 @@ func _test_link() -> void:
 	await _await_frames(5)
 	_free(w)
 
+	# A running machine does not need a cartridge to have state. In single-pak
+	# GBA play the empty handheld boots its BIOS, receives a program into RAM and
+	# then serializes like any other core. The cold-start descriptor, not a fake
+	# ROM hash, is what a new peer needs before that state can be loaded.
+	w = await _pair_cabled()
+	w.host_far.boot_mode = "no_content"
+	w.host_far.rom_md5 = ""
+	w.host_far.boot_options = {"skip_bios": "off"}
+	w.host_far.firmware_signature = "gba-bios-A"
+	w.client_far.boot_mode = "no_content"
+	w.client_far.rom_md5 = ""
+	w.client_far.firmware_signature = "gba-bios-A"
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
+		{0: 1, 4: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running()),
+		"link/a cartridge-less far machine cold-starts with the linked game")
+	_eq(str(w.host_np._machine_specs[1].get("mode", "")), "no_content",
+		"link/its BIOS-only launch mode replaces the nonexistent ROM hash")
+	_eq((w.host_np._machine_specs[1].get("options", {}) as Dictionary).get("skip_bios"),
+		"off", "link/the BIOS boot option is pinned for every peer")
+	_eq(w.host_far.prepared_boot, "no_content",
+		"link/the host prepares the BIOS-only core")
+	_eq(w.client_far.prepared_boot, "no_content",
+		"link/and every peer reproduces that boot before state transfer")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	_free(w)
+
+	# A matching core build is not enough when the firmware bytes differ: the
+	# BIOS executes before the transferred program and is part of determinism.
+	w = await _pair_cabled()
+	w.host_far.boot_mode = "no_content"
+	w.host_far.rom_md5 = ""
+	w.host_far.firmware_signature = "gba-bios-A"
+	w.client_far.boot_mode = "no_content"
+	w.client_far.rom_md5 = ""
+	w.client_far.firmware_signature = "gba-bios-B"
+	var firmware_stops: Array = []
+	w.host_np.session_stopped.connect(func(r: String) -> void: firmware_stops.append(r))
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
+		{0: 1, 4: w.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return not firmware_stops.is_empty()),
+		"link/different BIOS bytes refuse the session")
+	_free(w)
+
+	# Empty-image BIOS boots (for example a PlayStation's no-disc screen) use a
+	# different mechanism and must not accidentally take the null-content path.
+	w = await _pair()
+	w.host_sys.boot_mode = "empty_media"
+	w.host_sys.rom_md5 = ""
+	w.client_sys.boot_mode = "empty_media"
+	w.client_sys.rom_md5 = ""
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "", {0: 1}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running()),
+		"link/a general empty-media BIOS boot can start a session")
+	_eq(w.client_sys.prepared_boot, "empty_media",
+		"link/the peer regenerates empty media instead of asking for a ROM")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	_free(w)
+
 	# A heterogeneous bus names every machine's core independently. Until both
 	# have passed determinism vetting, refuse the session instead of silently
 	# booting the far machine with the anchor's unrelated core.
@@ -1176,6 +1258,10 @@ func _test_link() -> void:
 	# has to land on the SAME emulated frame everywhere — the same rule as a
 	# disc swap. Applying it the instant a hand moves forks the session.
 	w = await _pair_cabled()
+	w.host_far.boot_mode = "no_content"
+	w.host_far.rom_md5 = ""
+	w.client_far.boot_mode = "no_content"
+	w.client_far.rom_md5 = ""
 	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 4: w.client_id}, 3, 0)
 	await _until(func() -> bool: return w.host_np.is_running() and w.client_np.is_running())
 	await _await_frames(60)
@@ -1215,15 +1301,35 @@ func _test_link() -> void:
 	_eq(applied.slice(0, 2), client_applied.slice(0, 2),
 		"link/and land at the same boundaries on both peers")
 
-	# A core savestate does not serialize the process-wide LinkCoordinator bus.
-	# A newcomer may watch, but must not load two cores without that missing bus
-	# state and pretend to be a participant.
+	# A core savestate does not serialize the process-wide LinkCoordinator bus,
+	# so linked late join also transfers that bus's clocks and in-flight messages.
 	var linked_joiner := _branch("LJ")
+	var join_near := MockSys.new()
+	var join_far := MockSys.new()
+	join_near.name = "Sys"
+	join_far.name = "Far"
+	join_near.link_group = [join_near, join_far]
+	join_far.link_group = [join_near, join_far]
+	join_far.boot_mode = "no_content"
+	join_far.rom_md5 = ""
+	join_near.lib.link_peers = {0: 2}
+	join_far.lib.link_peers = {0: 2}
+	linked_joiner.add_child(join_near)
+	linked_joiner.add_child(join_far)
+	var join_np: NetplaySession = linked_joiner._netplay
+	join_np.systems_override = {0: join_near, 1: join_far}
 	linked_joiner.join_game("::1", PORT)
 	_ok(await _until(func() -> bool:
-		var newcomer := _other_id(w.host_nm, w.client_id)
-		return newcomer > 0 and w.host_np._spectators.has(newcomer), 900),
-		"link/a late joiner to a linked game remains a spectator")
+		return join_np.is_running(), 900),
+		"link/a late joiner starts every core in the linked game")
+	_ok(join_near.lib.loaded_state and join_far.lib.loaded_state,
+		"link/the newcomer restores the game and BIOS-only core savestates")
+	_eq(join_far.prepared_boot, "no_content",
+		"link/the late joiner cold-boots the empty handheld before loading its RAM state")
+	_ok(not join_near.lib.restored_link_state.is_empty(),
+		"link/and restores the external bus state before resuming")
+	_ok(await _until(func() -> bool: return not w.host_np._join_paused),
+		"link/the existing peers resume after the linked snapshot")
 	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
 	linked_joiner.get_parent().queue_free()
@@ -1263,7 +1369,9 @@ class MockLib extends Node:
 	var link_applied: Array = []
 	var disc_ops: Array = []
 	var reset_ops: Array = []
+	var rollback_masks: Array = []
 	var last_input := PackedInt32Array()
+	var restored_link_state: Array = []
 
 	var _count := 0
 	var _acc := 0
@@ -1294,11 +1402,29 @@ class MockLib extends Node:
 	func LinkDisconnect(_port: int) -> void:
 		link_applied.append(_count)
 
+	func LinkCaptureGroup(others: Array, ports: PackedInt32Array) -> Array:
+		var out: Array = []
+		for i in range(others.size() + 1):
+			out.append({"published": true, "origin": 100 + i,
+				"local_delta": 200 + i, "safe_delta": 300 + i,
+				"last_grant": 400 + i, "inbox": []})
+		return out if ports.size() == others.size() + 1 else []
+
+	func LinkRestoreGroup(others: Array, ports: PackedInt32Array, states: Array) -> bool:
+		if ports.size() != others.size() + 1 or states.size() != ports.size():
+			return false
+		restored_link_state = states.duplicate(true)
+		return true
+
 	func ScheduleDiscOp(frame: int, op: int, index: int, path: String) -> void:
 		disc_ops.append([frame, op, index, path])
 
 	func ScheduleReset(frame: int) -> void:
 		reset_ops.append(frame)
+
+	func ScheduleNetplayLocalMask(frame: int, mask: int) -> bool:
+		rollback_masks.append([frame, mask])
+		return true
 
 	func setup_gate(_mask: int, start_frame: int) -> void:
 		_enabled = true
@@ -1357,6 +1483,11 @@ class MockSys extends Node:
 	var machine_core := "fceumm"
 	var rom_md5 := "MD5"
 	var rom_path := "mock.rom"
+	var boot_mode := "rom"
+	var empty_media_extension := "cue"
+	var boot_options: Dictionary = {}
+	var firmware_signature := ""
+	var prepared_boot := ""
 	var resolved_md5 := ""
 	var sram_bytes := PackedByteArray()
 	var received_sram := PackedByteArray()
@@ -1398,6 +1529,29 @@ class MockSys extends Node:
 	func net_rom_md5() -> String:
 		return rom_md5
 
+	func net_boot_spec(_core: String) -> Dictionary:
+		var spec: Dictionary
+		match boot_mode:
+			"rom": spec = {"mode": "rom", "rom_md5": rom_md5}
+			"no_content": spec = {"mode": "no_content"}
+			"empty_media": spec = {"mode": "empty_media",
+				"extension": empty_media_extension}
+			_: return {}
+		if not boot_options.is_empty():
+			spec["boot_options"] = boot_options.duplicate()
+		if not firmware_signature.is_empty():
+			spec["firmware"] = firmware_signature
+		return spec
+
+	func net_prepare_boot(spec: Dictionary) -> bool:
+		prepared_boot = str(spec.get("mode", "rom"))
+		if prepared_boot != boot_mode:
+			return false
+		if spec.has("firmware") and str(spec["firmware"]) != firmware_signature:
+			return false
+		return net_resolve_rom(str(spec.get("rom_md5", ""))) \
+			if prepared_boot == "rom" else true
+
 	func net_resolve_rom(md5: String) -> bool:
 		resolved_md5 = md5
 		return true
@@ -1410,6 +1564,14 @@ class MockSys extends Node:
 
 	func net_link_group() -> Array:
 		return link_group
+
+	func net_link_buses() -> Array:
+		if link_group.size() < 2:
+			return []
+		var bus: Array = []
+		for machine: Object in link_group:
+			bus.append({"machine": machine, "port": 0})
+		return [bus]
 
 	func net_refresh_link_cables() -> void:
 		link_refreshes += 1

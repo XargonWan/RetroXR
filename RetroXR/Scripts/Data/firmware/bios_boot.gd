@@ -65,6 +65,7 @@ const _ROWS := {
 		"boot_rom": ["gba_bios.bin"],
 		"empty_media": "",
 		"no_content": true,
+		"empty_options": {"mgba_use_bios": "ON", "mgba_skip_bios": "OFF"},
 		"splash": {},
 		"why": "Boots its own BIOS with no cartridge, and then listens on the link port",
 	},
@@ -78,6 +79,8 @@ const _ROWS := {
 	"pcsx_rearmed/playstation": {
 		"boot_rom": ["scph5501.bin", "scph5500.bin", "scph5502.bin", "psxonpsp660.bin"],
 		"empty_media": "cue",
+		"empty_options": {"pcsx_rearmed_show_bios_bootlogo": "enabled",
+			"pcsx_rearmed_bios": "auto"},
 		"splash": {},
 		"why": "An empty disc gives the PS1 BIOS; measured, and the only machine where this works",
 	},
@@ -207,6 +210,19 @@ static func can_boot_empty(core_name: String, systemid: String) -> bool:
 ## measured, never assumed.
 static func boots_with_no_content(core_name: String, systemid: String) -> bool:
 	return bool(entry(core_name, systemid).get("no_content", false))
+
+
+## Options that make an empty-slot boot take the measured BIOS path. They are
+## explicit even when they match a core's shipped defaults: netplay cannot let
+## one peer's saved option skip the BIOS while another waits in it.
+static func empty_boot_options(core_name: String, systemid: String) -> Dictionary:
+	return (entry(core_name, systemid).get("empty_options", {}) as Dictionary).duplicate()
+
+
+## Firmware paths whose bytes decide the BIOS boot. Public for netplay's local
+## fingerprint; firmware is never transferred.
+static func boot_rom_paths(core_name: String, systemid: String) -> Array:
+	return (entry(core_name, systemid).get("boot_rom", []) as Array).duplicate()
 
 
 ## Core options that make a loaded game play its boot ROM first. Empty unless

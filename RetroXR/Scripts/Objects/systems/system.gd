@@ -2310,11 +2310,12 @@ func toggle_power() -> void:
 
 
 ## True if this system can run lockstep netplay right now: a determinism-verified
-## core is resolvable and a ROM is inserted.
+## core is resolvable and its present boot (game, empty media, or BIOS-only) can
+## be reproduced by every peer.
 func _netplay_eligible() -> bool:
-	if rom_path.is_empty():
-		return false
-	return NetworkManager.netplay_capable(_resolve_core())
+	var resolved_core := _resolve_core()
+	return NetworkManager.netplay_capable(resolved_core) \
+		and not net_boot_spec(resolved_core).is_empty()
 
 
 ## Which core this machine would actually load. Public because the core manager
@@ -2346,6 +2347,108 @@ func net_rom_md5() -> String:
 	if rom_path.is_empty():
 		return ""
 	return NetFileTransfer.hash_of(rom_path)
+
+
+## Reproducible launch description for netplay. A BIOS-only core still has a
+## full deterministic machine state; it simply has no copyrighted content to
+## hash or transfer. Empty media is regenerated locally from its extension.
+func net_boot_spec(core: String) -> Dictionary:
+	var empty_extension := BiosBoot.empty_media_extension(core, systemid)
+	var generated_empty := ""
+	if not empty_extension.is_empty():
+		generated_empty = CoreDownloadManager.default_core_root().path_join("temp") \
+			.path_join("no_disc." + empty_extension)
+	var has_real_media := not rom_path.is_empty() and rom_path != generated_empty
+	if has_real_media:
+		var md5 := net_rom_md5()
+		if md5.is_empty():
+			return {}
+		var game_boot := {"mode": "rom", "rom_md5": md5}
+		var splash := BiosBoot.splash_options(core, systemid)
+		if not splash.is_empty():
+			game_boot["boot_options"] = splash
+			game_boot["firmware"] = _net_firmware_signature(core)
+		return game_boot
+	if not BiosBoot.can_boot_empty(core, systemid):
+		return {}
+	var empty_boot := {
+		"boot_options": BiosBoot.empty_boot_options(core, systemid),
+		"firmware": _net_firmware_signature(core),
+	}
+	if BiosBoot.boots_with_no_content(core, systemid):
+		empty_boot["mode"] = "no_content"
+	else:
+		empty_boot["mode"] = "empty_media"
+		empty_boot["extension"] = empty_extension
+	return empty_boot
+
+
+## Fingerprint every candidate boot ROM (or every file under a declared BIOS
+## directory). Optional regional alternatives are included too: a core in
+## "auto" mode may select a different one, so equal presence is not enough.
+func _net_firmware_signature(core: String) -> String:
+	var rows: Array[String] = []
+	for relative: String in BiosBoot.boot_rom_paths(core, systemid):
+		var dest := FirmwareRequirements.destination(core, relative)
+		if DirAccess.dir_exists_absolute(dest):
+			_append_net_firmware_dir(dest, relative, rows)
+		elif FileAccess.file_exists(dest):
+			rows.append("%s=%s" % [relative, FileAccess.get_md5(dest).to_lower()])
+		else:
+			rows.append("%s=<missing>" % relative)
+	rows.sort()
+	return "\n".join(PackedStringArray(rows)).sha256_text()
+
+
+func _append_net_firmware_dir(root: String, relative: String,
+		rows: Array[String]) -> void:
+	var dir := DirAccess.open(root)
+	if dir == null:
+		rows.append("%s=<missing>" % relative)
+		return
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while not name.is_empty():
+		var full := root.path_join(name)
+		var child := relative.path_join(name)
+		if dir.current_is_dir():
+			_append_net_firmware_dir(full, child, rows)
+		else:
+			rows.append("%s=%s" % [child, FileAccess.get_md5(full).to_lower()])
+		name = dir.get_next()
+	dir.list_dir_end()
+
+
+## Recreate a host machine's launch mode locally before net_start_core. ROMs
+## are only resolved by hash; BIOS files are never sent and must already be
+## installed on this peer.
+func net_prepare_boot(spec: Dictionary) -> bool:
+	var core := str(spec.get("core", ""))
+	if spec.has("firmware") \
+			and str(spec.get("firmware", "")) != _net_firmware_signature(core):
+		push_warning("[RetroSystem] netplay: BIOS/firmware differs from the host")
+		return false
+	match str(spec.get("mode", "rom")):
+		"rom":
+			_net_no_content_override = false
+			return net_resolve_rom(str(spec.get("rom_md5", "")))
+		"no_content":
+			if not BiosBoot.can_boot_empty(core, systemid) \
+					or not BiosBoot.boots_with_no_content(core, systemid):
+				return false
+			rom_path = ""
+			_net_no_content_override = true
+			return true
+		"empty_media":
+			var extension := str(spec.get("extension", ""))
+			if not BiosBoot.can_boot_empty(core, systemid) \
+					or BiosBoot.boots_with_no_content(core, systemid) \
+					or extension != BiosBoot.empty_media_extension(core, systemid):
+				return false
+			rom_path = BiosBoot.empty_media_path(extension)
+			_net_no_content_override = false
+			return not rom_path.is_empty()
+	return false
 
 
 ## Netplay cold start (client): make sure we own a byte-identical copy of the
@@ -2381,11 +2484,10 @@ func net_resolve_rom(md5: String) -> bool:
 ## BEFORE StartContent so the core holds at `start_frame` until inputs post.
 ## Returns the Libretro node (the session connects its signals). null on failure.
 func net_start_core(core: String, port_mask: int, start_frame: int, options: Dictionary) -> Libretro:
+	var requested_no_content := _net_no_content_override
+	_net_no_content_override = false
 	if not _has_display():
 		push_error("RetroSystem: netplay start — no display (connect a TV)")
-		return null
-	if rom_path.is_empty():
-		push_error("RetroSystem: netplay start — no cartridge inserted")
 		return null
 	# The host names the core, and every peer runs THAT one. _resolve_core() is
 	# this machine's own preference, which is a per-player, per-platform answer:
@@ -2396,12 +2498,23 @@ func net_start_core(core: String, port_mask: int, start_frame: int, options: Dic
 	if resolved_core.is_empty():
 		push_error("RetroSystem: netplay start — no core for systemid '%s'" % systemid)
 		return null
+	var no_content := requested_no_content and rom_path.is_empty() \
+		and BiosBoot.boots_with_no_content(resolved_core, systemid)
+	if rom_path.is_empty() and not no_content:
+		push_error("RetroSystem: netplay start — boot media was not prepared")
+		return null
 	if is_powered_on:
 		_libretro.StopContent()
 		_release_cache_protection()
 		is_powered_on = false
-	for k: Variant in options:
-		_libretro.SetCoreOption(str(k), str(options[k]))
+	# SetCoreOption is a live-core command and is intentionally ignored before
+	# StartContent. Netplay options must therefore go through the same persisted
+	# store the core reads during startup, or every "forced" option here is a
+	# no-op and peers can boot with different saved settings.
+	if not options.is_empty() \
+			and not CoreOptionsStore.merge_values(_resolve_dir(), resolved_core, options):
+		push_error("RetroSystem: netplay start — could not pin deterministic core options")
+		return null
 	# SRAM: netplay override (session-injected identical bytes) or the normal
 	# local composition when the session didn't set one (offline-like start).
 	if _net_sram_override:
@@ -2416,7 +2529,11 @@ func net_start_core(core: String, port_mask: int, start_frame: int, options: Dic
 	AppPrefs.apply_hw_render_for(resolved_core)
 	_libretro.SetNetplayMode(true, port_mask, start_frame)
 	_protect_active_rom()
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", true)
 	_libretro.StartContent(_resolve_dir(), resolved_core, rom_path)
+	if no_content:
+		ClassDB.class_call_static("Libretro", "SetNoContentPassesNull", false)
 	_after_core_started()
 	net_remote_powered = false
 	if connected_tv:
@@ -2543,6 +2660,10 @@ func net_link_bus() -> Array:
 ## Stop the local netplay core and clear the gate.
 func net_stop_core() -> void:
 	_libretro.SetNetplayMode(false, 1, 0)
+	_net_no_content_override = false
+	_net_sram_override = false
+	_net_sram_path = ""
+	_net_sram_data = PackedByteArray()
 	if is_powered_on:
 		_stop_core()
 	else:
@@ -3647,6 +3768,7 @@ var _card_save_hashes: Dictionary = {}
 var _net_sram_override := false
 var _net_sram_path := ""
 var _net_sram_data := PackedByteArray()
+var _net_no_content_override := false
 
 
 func get_snapped_memcard() -> Node3D:
