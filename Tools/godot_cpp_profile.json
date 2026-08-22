@@ -1,6 +1,7 @@
 {
   "enabled_classes": [
     "ArrayMesh",
+    "AudioFrame",
     "AudioServer",
     "AudioStream",
     "AudioStreamGenerator",
